@@ -71,24 +71,29 @@ public class BundledProcessBuilderPackageTests {
 	];
 
 	/// <summary>
-	/// SHA-256 of the committed archive. Produced by <c>rebundle-process-builder.ps1 -Version 1.4.0.22</c> from
+	/// SHA-256 of the committed archive. Produced by <c>rebundle-process-builder.ps1</c> at
+	/// <see cref="ExpectedArchiveVersion"/> from
 	/// the <c>ProcessBuilder</c> repository (<c>packages/CrtProcessBuilder</c>, branch
 	/// <c>feature/ENG-95891-formula-expressions</c>), at the commit recorded mechanically in
 	/// <see cref="ExpectedProducingCommit"/> — the script captures <c>git rev-parse HEAD</c> and refuses to cut
 	/// from a tree with uncommitted changes, so this reference is no longer a sentence anyone has to keep true
-	/// by hand. 1.4.0.9, .12, .14, .16, .17 and .19 are deliberately skipped: two archives were cut under .9 on the same day, one
-	/// from this branch and one from the branch that forks off it, and .12 and .14 belong to that other branch.
-	/// Two branches drawing from one monotonic sequence collide unless the number is claimed before it is cut, so
-	/// a burned number is always cheaper than an ambiguous one.
+	/// by hand. Several numbers below the current one are deliberately burned rather than reused: two archives were
+	/// cut under .9 on the same day, one from this branch and one from the branch that forks off it; .12 and .14
+	/// belong to that other branch; and the rest were cut, superseded before leaving this machine, and abandoned
+	/// rather than re-pointed. Two branches drawing from one monotonic sequence collide unless the number is
+	/// claimed before it is cut, so a burned number is always cheaper than an ambiguous one — and a version that
+	/// identifies two different byte sets is worse than either. The exact list is deliberately NOT enumerated
+	/// here: it aged out of date four times, in the one file whose whole job is that two statements about the
+	/// same bytes must not disagree.
 	/// <para>What this cut carries, over the 1.3.1.1 performer/lookup delivery it replaces: server-side
 	/// VALIDATION of formula expressions — an <c>expression</c> mapping source and a conditional-flow condition
 	/// are now parsed, their parameter references resolved against the process, and their result type checked
 	/// against the declared target, instead of being stored unchecked. The MINOR digit moved at 1.4.0.0 because
-	/// that is a new capability; .1 through .3 are patches over it, each fixing something a review or a manual
-	/// case found, and each raised so a stand still carrying an earlier one is DETECTABLY behind — same-version
-	/// re-cuts make equal version numbers mean nothing, which the convergence check cannot see through.</para>
+	/// that is a new capability; every PATCH digit over it fixes something a review or a manual case found, and
+	/// each is raised so a stand still carrying an earlier one is DETECTABLY behind — same-version re-cuts make
+	/// equal version numbers mean nothing, which the convergence check cannot see through.</para>
 	/// <para>
-	/// The cut ran with the package's own gate tests (958 passing) rather than under <c>-SkipTests</c>, and the
+	/// The cut ran with the package's own gate tests passing rather than under <c>-SkipTests</c>, and the
 	/// script verified the archive inventory it produced. The byte-for-byte comparison of every archive entry
 	/// against the commit's CHECKOUT rendering was NOT re-run here, and the clean-tree refusal does NOT cover
 	/// it: a clean TREE and a clean CHECKOUT are different states. `git add` normalises to LF in the INDEX while
@@ -691,10 +696,11 @@ public class BundledProcessBuilderPackageTests {
 		declared.Should().HaveCountGreaterThanOrEqualTo(5,
 			because: "the five process-designer gates must be visible to this scan; if it finds fewer, the "
 				+ "reflection is broken and the version loop below is silently inspecting nothing");
-		// The loop is vacuous today — two of the five now carry a version literal (create/modify, 1.4.0.3), so the loop below EXECUTES — and that is the intended state.
-		// It asserts an invariant that must hold WHEN a literal appears, and the commit that adds the first
-		// one is exactly when it must already be in place. It replaces the old pin (descriptor version == a
-		// constant), which needed hand-synchronising on every rebundle and asserted a coincidence, not a rule.
+		// The loop EXECUTES today: two of the five carry a version literal (create/modify, 1.4.0.3). It was
+		// vacuous when written, deliberately — the invariant had to be in place before the first literal
+		// appeared, because the commit that adds one is exactly when it must already work. It replaces the old
+		// pin (descriptor version == a constant), which needed hand-synchronising on every rebundle and
+		// asserted a coincidence, not a rule.
 		foreach (string declaredVersion in versioned.ConvertAll(r => r.Version)) {
 			PackageVersion.TryParseVersion(declaredVersion, out PackageVersion required).Should().BeTrue(
 				because: $"RequiredPackageChecker parses '{declaredVersion}' through System.Version, so an "

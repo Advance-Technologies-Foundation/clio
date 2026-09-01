@@ -605,8 +605,14 @@ public sealed class ModifyBusinessProcessToolE2ETests {
 		// Assert
 		string callResultJson = JsonSerializer.Serialize(callResult);
 		callResultJson.Should().Contain("NoSuchThing",
-			because: "the refusal must NAME the offending identifier - that is what makes it actionable rather than "
-				+ "a generic 'invalid formula'");
+			because: "the refusal must NAME the offending identifier - that is what makes it actionable");
+		// Deliberately apostrophe-free: the server writes "references 'NoSuchThing', which does not exist", and
+		// JsonSerializer escapes the apostrophes to ', so an assertion carrying them would never match.
+		callResultJson.Should().Contain("which does not exist",
+			because: "the ARM has to be pinned, not just the identifier. The server appends the expression text to "
+				+ "EVERY refusal arm, so the identifier alone is present whichever arm ran - and this wording "
+				+ "belongs only to the unknown-identifier arm, whose loss is the fall back to a generic "
+				+ "\"invalid formula\" that this test exists to prevent");
 		DescribedFlow branch = await ReadFlowAsync(context, processName, "task1", "EndEvent1");
 		branch.Kind.Should().Be("sequence",
 			because: "a refused edit is atomic: the flow must be left exactly as it was, not half-converted");

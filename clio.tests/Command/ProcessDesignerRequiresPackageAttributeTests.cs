@@ -67,7 +67,7 @@ namespace Clio.Tests
         [TestCase(typeof(CreateBusinessProcessOptions))]
         [TestCase(typeof(ModifyBusinessProcessOptions))]
         [Test]
-        [Description("Create and Modify declare a VERSIONED requirement naming the newest operation they send that an older server does not have: today `setFlowCondition` and the formula validator behind an `expression` mapping, shipped in the 1.4.0.3 archive — an older server does not carry the operation at all, and it stores an `expression` mapping with NO validation, so the same call that is refused on a current environment silently persists a broken formula on an older one; presence alone cannot express either (the performer 1.3.1.1 floor and the 1.2.0.1 email floor set the precedent and are subsumed). This is the doc's rule applied ('add a literal in the commit where a command starts calling an operation an older server does not have'), and the bundled-archive guard asserts the shipped archive satisfies the literal, so it can never demand a version clio does not carry.")]
+        [Description("Create and Modify declare a VERSIONED requirement naming the newest operation they send that an older server does not have: today `setFlowCondition` and the formula validator behind an `expression` mapping. Both SHIP in 1.4.0.0; the floor is 1.4.0.3 because .0 and .1 disagree with the platform's own pre-save gate on declared types and .2 is the first archive that agrees — a tightened VALIDATOR, not a new operation, is what sets this number. An older server does not carry `setFlowCondition` at all, and it stores an `expression` mapping with NO validation, so the same call that is refused on a current environment silently persists a broken formula on an older one; presence alone cannot express either (the performer 1.3.1.1 floor and the 1.2.0.1 email floor set the precedent and are subsumed). This is the doc's rule applied ('add a literal in the commit where a command starts calling an operation an older server does not have'), and the bundled-archive guard asserts the shipped archive satisfies the literal, so it can never demand a version clio does not carry.")]
         public void OptionsType_ShouldDeclareVersionedProcessBuilderRequirement_WhenTheCommandShipsVersionedOperations(
             Type optionsType)
         {
@@ -78,13 +78,15 @@ namespace Clio.Tests
             requirement.Should().NotBeNull(
                 because: $"{optionsType.Name} must carry the declarative {BundledPackages.ProcessBuilderPackageName} requirement so the MCP gate fires");
             requirement!.Version.Should().Be("1.4.0.3",
-                because: "1.4.0.3 is the archive where BOTH newly-sent behaviours ship, for the two distinct "
-                    + "reasons the bundled-packages article names. setFlowCondition is an operation an older server "
-                    + "does not carry AT ALL — its dispatch registry rejects the token, which reads to a caller as a "
-                    + "clio bug rather than a stale environment. And the formula validator behind an 'expression' "
-                    + "mapping is a TIGHTENED VALIDATOR — an older server stores such a mapping unchecked, so the "
-                    + "same call refused on a current environment silently persists a broken formula on an older "
-                    + "one. Convergence only WARNS; the literal is what fails CLOSED. This subsumes the earlier "
+                because: "the floor is set by the two distinct reasons the bundled-packages article names, and it "
+                    + "is NOT the version the behaviours first shipped in — both setFlowCondition and the formula "
+                    + "validator ship from 1.4.0.0. setFlowCondition is an operation an older server does not carry "
+                    + "AT ALL — its dispatch registry rejects the token, which reads to a caller as a clio bug "
+                    + "rather than a stale environment. The formula validator is a TIGHTENED VALIDATOR, and that is "
+                    + "what moves the number past .0: 1.4.0.0 and .1 disagree with the platform's own pre-save gate "
+                    + "on declared types, .2 is the first archive that agrees, and .3 carries a further round of "
+                    + "fixes. An older server stores an 'expression' mapping unchecked, so the same call refused on "
+                    + "a current environment silently persists a broken formula on an older one. Convergence only WARNS; the literal is what fails CLOSED. This subsumes the earlier "
                     + "1.3.1.1 performer floor and the 1.2.0.1 email floor. When the next versioned operation "
                     + "ships, move this pin WITH the rebundle in the same commit");
         }
