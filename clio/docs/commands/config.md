@@ -78,7 +78,7 @@ article changes, configured mode remains `auto` while effective mode becomes
                                    full for comprehensive internal reports;
                                    sanitized for public-safe reports.
 
---reset                            Clear the stored deploy-creatio defaults.
+--reset                            Clear custom deploy-creatio defaults and restore built-ins.
 
 --show                             Show the current configuration defaults (default when no
                                    other arguments are supplied).
@@ -122,7 +122,7 @@ the site name before deployment proceeds.
   persists them, and prints the resulting defaults.
 - A configured fixed site port takes precedence over the range. Setting
   `--deploy-site-port-range` clears that fixed port so automatic selection is active.
-- With `--reset`, removes the stored deploy-creatio defaults entirely.
+- With `--reset`, removes custom deploy-creatio defaults and restores `site-port-range` `[40100, 40199]`.
 - `--reset` takes precedence over any `--deploy-*` arguments in the same call.
 - Knowledge-feedback policy can also be inspected with the non-resident
   `get-knowledge-feedback-policy` MCP tool and changed with

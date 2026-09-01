@@ -187,6 +187,26 @@ public sealed class DeployCreatioDefaultsResolverTests : BaseClioModuleTests {
 	}
 
 	[Test]
+	[Description("Keeps an explicit command-line site port ahead of both configured fixed and range defaults.")]
+	public void ApplyDefaults_ShouldPreferExplicitSitePort_WhenAllPortDefaultsConfigured() {
+		// Arrange
+		_settingsRepository.GetDeployCreatioDefaults().Returns(new DeployCreatioDefaults {
+			SitePort = 40018,
+			SitePortRange = [40100, 40199]
+		});
+		PfInstallerOptions options = new() { SitePort = 40004 };
+
+		// Act
+		_sut.ApplyDefaults(options);
+
+		// Assert
+		options.SitePort.Should().Be(40004,
+			because: "an explicit command-line override must remain the selected exact port");
+		options.SitePortRange.Should().BeNull(
+			because: "automatic allocation stays inactive when an explicit port is supplied");
+	}
+
+	[Test]
 	[Description("Overrides the parser 'auto' deployment default with the configured deployment method.")]
 	public void ApplyDefaults_ShouldOverrideAutoDeployment_WhenDefaultConfigured() {
 		// Arrange

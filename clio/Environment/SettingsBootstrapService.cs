@@ -196,7 +196,7 @@ public sealed class SettingsBootstrapService : ISettingsBootstrapService {
 		// Migration 2 makes automatic IIS port selection visible and immediately usable after an upgrade.
 		// Preserve a user-configured range; only materialize the built-in range when the setting was absent.
 		if ((settings.SettingsVersion ?? 0) < 2
-			&& settings.DeployCreatioDefaults?.SitePortRange is not { Length: > 0 }) {
+			&& settings.DeployCreatioDefaults?.SitePortRange is null) {
 			settings.DeployCreatioDefaults ??= new DeployCreatioDefaults();
 			settings.DeployCreatioDefaults.SitePortRange = [
 				DeployCreatioDefaults.DefaultSitePortRangeStart,

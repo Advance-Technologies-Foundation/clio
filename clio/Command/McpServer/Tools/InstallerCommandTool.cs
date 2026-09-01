@@ -73,7 +73,6 @@ public class InstallerCommandTool(
 		{
 			SiteName = args.SiteName,
 			ZipFile = args.ZipFile,
-			SitePort = args.SitePort ?? 0,
 			DbServerName = args.DbServerName,
 			RedisServerName = args.RedisServerName,
 			UseHttps = args.UseHttps,
@@ -83,6 +82,9 @@ public class InstallerCommandTool(
 			IsSilent = true,
 			DropIfExists = true
 		};
+		if (args.SitePort.HasValue) {
+			options.SitePort = args.SitePort.Value;
+		}
 
 		// Subscribe the injected command (an IStageEventSource) so each ClioStageEvent is forwarded as a
 		// notifications/progress with the typed envelope in _meta.clioStageEvent. No-op when the caller

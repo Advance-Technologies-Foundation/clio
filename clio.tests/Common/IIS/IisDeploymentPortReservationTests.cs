@@ -71,6 +71,41 @@ public sealed class IisDeploymentPortReservationTests {
 	}
 
 	[Test]
+	[Description("Continues to the next candidate when exact under-lock revalidation rejects the initially available port.")]
+	public void AcquireFirstAvailable_ShouldContinue_WhenFirstCandidateFailsRevalidation() {
+		// Arrange
+		if (!OperatingSystem.IsWindows()) {
+			Assert.Ignore("Machine-wide IIS deployment reservations are Windows-specific.");
+		}
+		int firstPort = Random.Shared.Next(50000, 55000);
+		int secondPort = firstPort + 1;
+		IAvailableIisPortService availability = Substitute.For<IAvailableIisPortService>();
+		availability.FindAsync(firstPort, secondPort).Returns(new FindAvailableIisPortResult(
+			"available", "first initially looks free", firstPort, secondPort, firstPort, 0, 0));
+		availability.FindAsync(firstPort, firstPort).Returns(new FindAvailableIisPortResult(
+			"unavailable", "first became occupied", firstPort, firstPort, null, 1, 0));
+		FindAvailableIisPortResult secondAvailable = new(
+			"available", "second is free", secondPort, secondPort, secondPort, 0, 0);
+		availability.FindAsync(secondPort, secondPort).Returns(secondAvailable, secondAvailable);
+		IIisDeploymentPortReservation sut = new IisDeploymentPortReservation(availability);
+
+		// Act
+		using IisDeploymentPortLease lease = sut.AcquireFirstAvailable(firstPort, secondPort);
+		string firstLockPath = Path.Combine(
+			Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData),
+			"Creatio", "clio", "deployment-locks", $"iis-port-{firstPort}.lock");
+		using FileStream releasedFirstLease = new(
+			firstLockPath, FileMode.OpenOrCreate, FileAccess.Read, FileShare.None);
+
+		// Assert
+		lease.Port.Should().Be(secondPort,
+			because: "selection must continue after closing the TOCTOU window rejects the initial candidate");
+		releasedFirstLease.CanRead.Should().BeTrue(
+			because: "the rejected candidate lock must be released before the next candidate is returned");
+		availability.Received(2).FindAsync(secondPort, secondPort);
+	}
+
+	[Test]
 	[Description("Fails with the configured range when no IIS port can be reserved.")]
 	public void AcquireFirstAvailable_ShouldFailWithRange_WhenNoPortIsAvailable() {
 		// Arrange

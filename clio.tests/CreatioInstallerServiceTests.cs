@@ -497,6 +497,81 @@ internal class CreatioInstallerServiceTests : BaseClioModuleTests{
 
 	[Test]
 	[Category("Unit")]
+	[Description("IIS deployment rejects an explicitly configured empty site-port range instead of treating it as absent.")]
+	public void Execute_ShouldRejectEmptyConfiguredRange_BeforeReservations() {
+		// Arrange
+		PfInstallerOptions options = new() {
+			SiteName = "empty-range-probe",
+			SitePortRange = [],
+			ZipFile = Path.Combine(_localArtifactServerPath, "8.1.1",
+				"8.1.1.1417_Studio_Softkey_PostgreSQL_ENU.zip"),
+			DeploymentMethod = "iis",
+			AutoRun = false,
+			IsSilent = true
+		};
+
+		// Act
+		Action act = () => _creatioInstallerService.Execute(options);
+
+		// Assert
+		act.Should().Throw<InvalidOperationException>().WithMessage("*exactly two ports*",
+			because: "an empty configured range is invalid rather than an instruction to prompt or restore defaults");
+		_deploymentTargetReservation.DidNotReceive().Acquire(Arg.Any<string>());
+		_iisDeploymentPortReservation.DidNotReceive().AcquireFirstAvailable(Arg.Any<int>(), Arg.Any<int>());
+	}
+
+	[TestCase(0)]
+	[TestCase(65536)]
+	[Category("Unit")]
+	[Description("IIS deployment rejects an invalid explicitly supplied site port instead of falling back to automatic selection.")]
+	public void Execute_ShouldRejectInvalidExplicitSitePort_BeforeReservations(int sitePort) {
+		// Arrange
+		PfInstallerOptions options = new() {
+			SiteName = "invalid-explicit-port-probe",
+			SitePort = sitePort,
+			SitePortRange = [40100, 40199],
+			ZipFile = Path.Combine(_localArtifactServerPath, "8.1.1",
+				"8.1.1.1417_Studio_Softkey_PostgreSQL_ENU.zip"),
+			DeploymentMethod = "iis",
+			AutoRun = false,
+			IsSilent = true
+		};
+
+		// Act
+		Action act = () => _creatioInstallerService.Execute(options);
+
+		// Assert
+		act.Should().Throw<InvalidOperationException>().WithMessage("*Invalid explicit site port*",
+			because: "an explicit override must be validated exactly and never turn into omission");
+		_deploymentTargetReservation.DidNotReceive().Acquire(Arg.Any<string>());
+		_iisDeploymentPortReservation.DidNotReceive().AcquireFirstAvailable(Arg.Any<int>(), Arg.Any<int>());
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Silent IIS deployment fails fast when neither a fixed port nor a configured range is available.")]
+	public void Execute_ShouldFailFast_WhenSilentIisDeploymentHasNoPortConfiguration() {
+		// Arrange
+		PfInstallerOptions options = new() {
+			SiteName = "missing-port-config-probe",
+			ZipFile = Path.Combine(_localArtifactServerPath, "8.1.1",
+				"8.1.1.1417_Studio_Softkey_PostgreSQL_ENU.zip"),
+			DeploymentMethod = "iis",
+			AutoRun = false,
+			IsSilent = true
+		};
+
+		// Act
+		Action act = () => _creatioInstallerService.Execute(options);
+
+		// Assert
+		act.Should().Throw<InvalidOperationException>().WithMessage("*requires --site-port*site-port-range*",
+			because: "silent and MCP invocations cannot answer an interactive port prompt");
+		_deploymentTargetReservation.DidNotReceive().Acquire(Arg.Any<string>());
+	}
+
+	[Test]
+	[Category("Unit")]
 	[Description("Deployment target reservation is acquired before the IIS port or any target mutation.")]
 	public void Execute_ShouldFailBeforePortReservation_WhenDeploymentTargetIsAlreadyReserved() {
 		// Arrange

@@ -104,6 +104,8 @@ public sealed class InstallerCommandToolTests
 			because: "zip-file should map directly into PfInstallerOptions");
 		command.ReceivedOptions.SitePort.Should().Be(8080,
 			because: "site-port should map directly into PfInstallerOptions");
+		command.ReceivedOptions.SitePortWasSpecified.Should().BeTrue(
+			because: "an explicit MCP sitePort must be validated as an exact override");
 		command.ReceivedOptions.DbServerName.Should().Be("sql-main",
 			because: "local DB server selection should be forwarded when provided");
 		command.ReceivedOptions.RedisServerName.Should().Be("redis-main",
@@ -160,6 +162,8 @@ public sealed class InstallerCommandToolTests
 			because: "db-server-name must remain optional so Kubernetes can stay the default deployment path");
 		command.ReceivedOptions.SitePort.Should().Be(0,
 			because: "an omitted MCP sitePort must remain unset for the defaults resolver and IIS range allocator");
+		command.ReceivedOptions.SitePortWasSpecified.Should().BeFalse(
+			because: "omission must remain distinguishable from an explicit invalid zero");
 		command.ReceivedOptions.RedisDb.Should().Be(-1,
 			because: "redis-db should default to auto-detection when omitted");
 		typeof(DeployCreatioArgs).GetProperties().Select(property => property.Name).Should().BeEquivalentTo(

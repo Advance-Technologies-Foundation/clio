@@ -140,11 +140,23 @@ public class PfInstallerOptions : EnvironmentNameOptions{
 		set { if (!string.IsNullOrEmpty(value)) SiteName = value; }
 	}
 
+	private int _sitePort;
+
 	/// <summary>
 	/// Gets or sets the site port for the deployed application.
 	/// </summary>
 	[Option("site-port", Required = false, HelpText = "Site port")]
-	public int SitePort { get; set; }
+	public int SitePort {
+		get => _sitePort;
+		set {
+			_sitePort = value;
+			SitePortWasSpecified = true;
+		}
+	}
+
+	internal bool SitePortWasSpecified { get; private set; }
+
+	internal void ApplyConfiguredSitePort(int value) => _sitePort = value;
 
 	/// <summary>
 	/// Gets or sets the configured inclusive IIS site-port range used when <see cref="SitePort"/> is unset.
@@ -155,7 +167,7 @@ public class PfInstallerOptions : EnvironmentNameOptions{
 	[Option("SitePort", Required = false, Hidden = true, HelpText = "Alias for --site-port")]
 	public int SitePortAlias {
 		get => SitePort;
-		set { if (value != 0) SitePort = value; }
+		set => SitePort = value;
 	}
 
 	/// <summary>

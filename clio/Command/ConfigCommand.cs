@@ -123,8 +123,8 @@ public class ConfigCommand : Command<ConfigOptions> {
 	/// <inheritdoc/>
 	public override int Execute(ConfigOptions options) {
 		if (options.Reset) {
-			_settingsRepository.SetDeployCreatioDefaults(null);
-			_logger.WriteInfo("Deploy-creatio defaults were cleared.");
+			_settingsRepository.SetDeployCreatioDefaults(DeployCreatioDefaults.CreateWithDefaultSitePortRange());
+			_logger.WriteInfo("Custom deploy-creatio defaults were cleared and built-in defaults were restored.");
 			return 0;
 		}
 
@@ -235,12 +235,14 @@ public class ConfigCommand : Command<ConfigOptions> {
 		if (!string.IsNullOrWhiteSpace(options.DeploySiteName)) {
 			defaults.SiteName = options.DeploySiteName.Trim();
 		}
-		if (options.DeploySitePort.HasValue) {
-			defaults.SitePort = options.DeploySitePort.Value;
-		}
 		if (options.DeploySitePortRange is not null) {
 			defaults.SitePortRange = options.DeploySitePortRange.ToArray();
-			defaults.SitePort = null;
+			if (!options.DeploySitePort.HasValue) {
+				defaults.SitePort = null;
+			}
+		}
+		if (options.DeploySitePort.HasValue) {
+			defaults.SitePort = options.DeploySitePort.Value;
 		}
 		if (!string.IsNullOrWhiteSpace(options.DeployDeployment)) {
 			defaults.DeploymentMethod = options.DeployDeployment.Trim().ToLowerInvariant();

@@ -73,7 +73,7 @@ OPTIONS
                                       full for comprehensive internal reports;
                                       sanitized for public-safe reports.
 
-    --reset                            Clear the stored deploy-creatio defaults.
+    --reset                            Clear custom deploy-creatio defaults and restore built-ins.
 
     --show                             Show the current configuration defaults.
                                        This is also the default when no other
@@ -108,7 +108,7 @@ BEHAVIOR
       persists them, and prints the resulting defaults.
 	- A configured fixed site port takes precedence over the range. Setting
 	  --deploy-site-port-range clears that fixed port so automatic selection is active.
-    - With --reset, removes the stored deploy-creatio defaults entirely.
+    - With --reset, removes custom deploy-creatio defaults and restores site-port-range [40100, 40199].
     - --reset takes precedence over any --deploy-* arguments in the same call.
     - Non-resident MCP tools get-knowledge-feedback-policy and
       configure-knowledge-feedback-policy expose the same policy through clio-run.

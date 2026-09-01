@@ -1377,10 +1377,14 @@ public class CreatioInstallerService : Command<PfInstallerOptions>, ICreatioInst
 		}
 
 		// Determine deployment strategy to know whether to use IIS or DotNet
+		if (options.SitePortWasSpecified && options.SitePort is <= 0 or > 65535) {
+			throw new InvalidOperationException(
+				$"Invalid explicit site port '{options.SitePort}'. Specify a value between 1 and 65535.");
+		}
 		IDeploymentStrategy strategy = SelectDeploymentStrategy(options);
 		bool isIisDeployment = strategy is IISDeploymentStrategy;
 		if (isIisDeployment && (options.SitePort is <= 0 or > 65535)
-			&& options.SitePortRange is { Length: > 0 }) {
+			&& options.SitePortRange is not null) {
 			ValidateSitePortRange(options.SitePortRange);
 		}
 
@@ -1411,7 +1415,11 @@ public class CreatioInstallerService : Command<PfInstallerOptions>, ICreatioInst
 		// Only prompt for port on Windows IIS deployments
 		// DotNet deployments on macOS/Linux use default port or user-specified port
 		if (isIisDeployment) {
-			if (options.SitePortRange is not { Length: > 0 }) {
+			if (options.SitePortRange is null) {
+				if (options.IsSilent && options.SitePort is <= 0 or > 65535) {
+					throw new InvalidOperationException(
+						"IIS deployment requires --site-port or deploy-creatio-defaults.site-port-range in silent mode.");
+				}
 				while (options.SitePort is <= 0 or > 65535) {
 					_logger.WriteLine(
 						$"Please enter site port, Max value - 65535:{Environment.NewLine}(recommended range between 40000 and 40100)");
@@ -1684,7 +1692,7 @@ public class CreatioInstallerService : Command<PfInstallerOptions>, ICreatioInst
 		ValidateSitePortRange(options.SitePortRange);
 		IisDeploymentPortLease lease = _iisDeploymentPortReservation.AcquireFirstAvailable(
 			options.SitePortRange[0], options.SitePortRange[1]);
-		options.SitePort = lease.Port;
+		options.ApplyConfiguredSitePort(lease.Port);
 		_logger.WriteInfo(
 			$"[Site Port] - {lease.Port} (first available in configured range "
 			+ $"[{options.SitePortRange[0]}, {options.SitePortRange[1]}])");

@@ -53,8 +53,8 @@ public sealed class ConfigCommandTests : BaseCommandTests<ConfigOptions> {
 	}
 
 	[Test]
-	[Description("Clears the stored deploy-creatio defaults when --reset is supplied.")]
-	public void Execute_ShouldClearDefaults_WhenResetSupplied() {
+	[Description("Clears custom deploy-creatio defaults and restores the built-in site-port range when --reset is supplied.")]
+	public void Execute_ShouldRestoreBuiltInDefaults_WhenResetSupplied() {
 		// Arrange
 		ConfigOptions options = new() { Reset = true };
 
@@ -63,12 +63,13 @@ public sealed class ConfigCommandTests : BaseCommandTests<ConfigOptions> {
 
 		// Assert
 		result.Should().Be(0, because: "resetting the configuration always succeeds");
-		_settingsRepository.Received(1).SetDeployCreatioDefaults(null);
+		_settingsRepository.Received(1).SetDeployCreatioDefaults(
+			Arg.Is<DeployCreatioDefaults>(defaults => defaults.SitePortRange.SequenceEqual(new[] { 40100, 40199 })));
 	}
 
 	[Test]
-	[Description("Reset takes precedence over set arguments supplied in the same call.")]
-	public void Execute_ShouldClearDefaults_WhenResetAndSetArgumentsSupplied() {
+	[Description("Reset restores built-ins and takes precedence over set arguments supplied in the same call.")]
+	public void Execute_ShouldRestoreBuiltIns_WhenResetAndSetArgumentsSupplied() {
 		// Arrange
 		ConfigOptions options = new() { Reset = true, DeployDbServerName = "my-local-postgres" };
 
@@ -77,8 +78,9 @@ public sealed class ConfigCommandTests : BaseCommandTests<ConfigOptions> {
 
 		// Assert
 		result.Should().Be(0, because: "reset wins over set arguments and always succeeds");
-		_settingsRepository.Received(1).SetDeployCreatioDefaults(null);
-		_settingsRepository.DidNotReceive().SetDeployCreatioDefaults(Arg.Is<DeployCreatioDefaults>(d => d != null));
+		_settingsRepository.Received(1).SetDeployCreatioDefaults(
+			Arg.Is<DeployCreatioDefaults>(defaults => defaults.DbServerName == null
+				&& defaults.SitePortRange.SequenceEqual(new[] { 40100, 40199 })));
 	}
 
 	[Test]
@@ -140,6 +142,26 @@ public sealed class ConfigCommandTests : BaseCommandTests<ConfigOptions> {
 		result.Should().Be(0, because: "a valid inclusive range should be accepted");
 		_settingsRepository.Received(1).SetDeployCreatioDefaults(
 			Arg.Is<DeployCreatioDefaults>(defaults => defaults.SitePort == null
+				&& defaults.SitePortRange.SequenceEqual(new[] { 41000, 41010 })));
+	}
+
+	[Test]
+	[Description("Keeps a fixed site port active when fixed and range defaults are configured together.")]
+	public void Execute_ShouldPreferFixedSitePort_WhenFixedPortAndRangeSupplied() {
+		// Arrange
+		_settingsRepository.GetDeployCreatioDefaults().Returns(new DeployCreatioDefaults());
+		ConfigOptions options = new() {
+			DeploySitePort = 40018,
+			DeploySitePortRange = [41000, 41010]
+		};
+
+		// Act
+		int result = _sut.Execute(options);
+
+		// Assert
+		result.Should().Be(0, because: "both valid defaults can be persisted together");
+		_settingsRepository.Received(1).SetDeployCreatioDefaults(
+			Arg.Is<DeployCreatioDefaults>(defaults => defaults.SitePort == 40018
 				&& defaults.SitePortRange.SequenceEqual(new[] { 41000, 41010 })));
 	}
 

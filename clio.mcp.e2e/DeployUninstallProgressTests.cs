@@ -125,6 +125,7 @@ public sealed class DeployUninstallProgressTests : McpContractFixtureBase {
 	[Description("Invokes deploy-creatio while a real TCP listener owns the requested port and verifies the command fails before creating the deployment directory.")]
 	[AllureTag(ToolName)]
 	[AllureName("Deploy creatio rejects an occupied port before mutation")]
+	[AllureDescription("Uses an isolated real MCP process and a loopback listener to prove explicit IIS port collisions fail before any deployment directory is created.")]
 	public async Task DeployCreatio_Should_Fail_Before_Mutation_When_Port_Is_Occupied() {
 		// Arrange
 		if (!OperatingSystem.IsWindows()) {
@@ -185,6 +186,7 @@ public sealed class DeployUninstallProgressTests : McpContractFixtureBase {
 	[Description("Invokes deploy-creatio without sitePort and verifies the real MCP command selects a configured-range IIS port before failing non-destructively at corrupt archive extraction.")]
 	[AllureTag(ToolName)]
 	[AllureName("Deploy creatio automatically reserves a configured-range IIS port")]
+	[AllureDescription("Omits sitePort over the real MCP transport and uses a corrupt archive to prove configured-range selection without completing a destructive deployment.")]
 	public async Task DeployCreatio_Should_Select_Configured_Range_Port_When_SitePort_Is_Omitted() {
 		// Arrange
 		if (!OperatingSystem.IsWindows()) {
