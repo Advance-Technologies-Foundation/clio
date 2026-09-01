@@ -94,7 +94,8 @@ public class BundledProcessBuilderPackageTests {
 	/// it: a clean TREE and a clean CHECKOUT are different states. `git add` normalises to LF in the INDEX while
 	/// the working tree keeps what was written, so LF files can be committed, leave the tree clean, pass the
 	/// gate, and still be packed as LF where a checkout of that same commit renders CRLF. The gate closes the
-	/// dirty-tree and uncommitted-restamp failures; this one it cannot see.
+	/// DIRTY-TREE failure and that one only — see the paragraph above for why it does not close the
+	/// commit-is-behind one either.
 	/// It earned its keep on the 1.3.1.1 cut — freshly written files carried LF
 	/// where a checkout on a <c>core.autocrlf=true</c> host produces CRLF, an archive corresponding to no commit
 	/// at all — so re-run the line-ending audit whenever the archive is cut from a tree with just-written files,
@@ -117,8 +118,17 @@ public class BundledProcessBuilderPackageTests {
 	/// <c>/Date(1786345127000)/</c>: that time the COMMIT was behind, because the restamp a rebundle performs
 	/// happens in the package checkout and was left uncommitted there. Both failures look identical to whoever
 	/// follows the reference — a different hash — so the check is the same: the <c>ModifiedOnUtc</c> pinned
-	/// below must match the descriptor at the commit named above. Committing that restamp on the package side
-	/// is part of every rebundle; the runbook says so.
+	/// below CANNOT match the descriptor at the commit named above, and expecting it to was the error in this
+	/// paragraph. The script captures <c>rev-parse HEAD</c> at step 0b and performs the restamp at step 2, so
+	/// the pin names the commit BEFORE the version moved — by design, and unavoidably, because the script does
+	/// not commit. Today's pins show it plainly: <see cref="ExpectedProducingCommit"/> resolves to a descriptor
+	/// reading 1.4.0.15 while the archive is 1.4.0.18.
+	/// <para>So reproducing the bytes is a two-step check, not a checkout: check out the pin, re-run the same
+	/// <c>set-pkg-version</c> with the pinned version, then pack. What the pin establishes is which SOURCES the
+	/// archive was built from — which is the question that actually matters, since the descriptor is the one
+	/// file the rebundle rewrites and the one whose expected content is pinned separately. Committing the
+	/// restamp afterwards is still part of every rebundle, because otherwise the pin names a commit that is
+	/// not on any branch.</para>
 	/// </para>
 	/// <para>
 	/// It has since been wrong a THIRD way, which no amount of checking the date would have caught: the bytes

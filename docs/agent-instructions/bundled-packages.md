@@ -358,9 +358,14 @@ target's configuration build. Lose it and the package installs, the gate reports
 version from the archive, so nothing in the product can fall out of step with it. `ExpectedArchiveVersion`
 is a test-side pin with no runtime consumer, and it exists for the same reason the SHA pin does — a `.gz`
 renders in a diff as a changed byte count, so without that line a reviewer cannot see whether the version
-moved. The script writes all four. Three come from the archive it produced; `ExpectedProducingCommit`
-comes from the package repository's HEAD, which is why the manual path has to supply it by hand — and why
-forgetting it is worse than forgetting the others. A stale SHA turns the fixture red. A stale producing
+moved. The script writes all four, but they do not come from one place, and the difference decides how a
+reviewer reproduces them. Only `ExpectedArchiveSha256` is computed from the archive. `ExpectedArchiveVersion`
+is the `-Version` argument, canonicalised — deliberately not read back, for the reason the script states at
+that line. `ExpectedDescriptorModifiedOnUtc` is read from the package repository's `descriptor.json` AFTER
+the restamp. And `ExpectedProducingCommit` is that repository's HEAD BEFORE it, so the pin names the commit
+whose descriptor still carries the OLD version — by design, and unavoidably, since the script does not
+commit. Reproducing the bytes is therefore: check out the pin, re-run `set-pkg-version` with the pinned
+version, then pack. Forgetting this pin on the manual path is worse than forgetting the others. A stale SHA turns the fixture red. A stale producing
 commit stays 40 hex characters, passes every test, and points confidently at the wrong commit, which is
 the failure the constant was added to remove.
 
