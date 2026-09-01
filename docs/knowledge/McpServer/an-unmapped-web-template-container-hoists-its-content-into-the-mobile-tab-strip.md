@@ -89,16 +89,27 @@ rules instead of retargeting them. Unreachable on the shipped rules today. Do NO
 probe failed, so that predicate would reopen the general-tab hole in exactly the degraded run the rest
 of this record is about. Gate any narrowing on the mobile type having actually been read.
 
-**Component TYPES are data, never constants in the analyser.** The tab type and the tab-strip type both
-come from `tabAreaLayers` (`tabComponentType`, `tabPanelComponentType`), the same section
-`BuildTabAreaLayers` already reads. That is not style: the rules file is fetched at RUNTIME while this
-assembly is not, so a platform that renames either type is a rules edit — a constant here would quietly
-stop matching and the tab-strip report would go silent on exactly the environments that changed. An
-explicit null/empty on either type switches the pass off rather than falling back to a guess, matching
-what the same value already does for `BuildTabAreaLayers`. `MobileTabsElementName` is the one
-deliberate exception and it is a NAME, not a type: it seeds the strip set so the report survives an
-unreadable mobile template, and `AssignConvertedTabIndexes` treats the same name as a constant of the
-mobile tabbed template for the same reason.
+**Component TYPES are data, never constants in the analyser, and the rule is an ACCEPT-list.** Which
+receivers can host arbitrary children is `contentContainerTypes`; which child is a tab is
+`tabAreaLayers.tabComponentType`. The detection pass therefore names no component type at all — a type
+that cannot host children (a `crt.TabPanel`, and it is not the only one) is handled by being ABSENT
+from the list. A reject-list would have to enumerate the one bad receiver somebody already met, so the
+next such type ships as a fresh silent defect; an accept-list has no such gap. This is not style: the
+rules file is fetched at RUNTIME while the assembly is not, so a platform that renames a type is a
+rules edit, and a constant would quietly stop matching on exactly the environments that changed.
+
+`contentContainerTypes` is deliberately NOT `emptyContainerRemoval.removableTypes` — that list is this
+one plus `crt.TabPanel`, correct for ITS purpose (an emptied strip must be removed). One shared list
+would make an addition to one meaning silently change the other. The registry's `container` flag is not
+a substitute either: it reads false for both `crt.GridContainer` and `crt.TabPanel`.
+
+Two scoping facts the pass needs, both learned by getting them wrong first: it applies only to the
+generic `items` slot (a menu item in a button's `menuItems`, a header in an expansion panel's `tools`
+is hosted by that named slot, not by the parent's ability to hold arbitrary content), and a child whose
+own type is the tab type is exempt (a strip exists to hold tabs). `MobileTabsElementName` is the one
+constant kept, and it is a NAME, not a type: it lets the report survive an unreadable mobile template,
+and `AssignConvertedTabIndexes` treats the same name as a constant of the mobile tabbed template
+already.
 
 **What breaks if you ignore it** — the failure is SILENT end to end. Unit coverage did not catch the
 missing `GeneralInfoTab` entry because `WebToMobileConversionServiceTests` hands the analyzer a

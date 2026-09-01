@@ -66,6 +66,22 @@ public sealed class WebToMobilePageConversionRules {
 	public IReadOnlyList<ComponentPropertyOverrideRule> ComponentPropertyOverrides { get; init; } = [];
 
 	/// <summary>
+	/// Mobile component types that can host arbitrary children. A converted element may only be placed in a
+	/// receiver whose MOBILE type is listed here; a receiver of any other type renders nothing for the child it
+	/// is given (a <c>crt.TabPanel</c> shows only tabs, and it is not the only such type). Stated as an
+	/// ACCEPT-list on purpose: the converter then names no bad receiver at all, so a type that cannot host
+	/// children is handled by being absent rather than by another branch.
+	/// <para>
+	/// Deliberately NOT <see cref="EmptyContainerRemoval"/>'s <c>removableTypes</c>, which is this list plus
+	/// <c>crt.TabPanel</c> — correct for ITS purpose (an emptied tab strip must go). Sharing one list would make
+	/// an addition to one meaning silently change the other. The registry's <c>container</c> flag is not a
+	/// substitute either: it reads false for both <c>crt.GridContainer</c> and <c>crt.TabPanel</c>.
+	/// </para>
+	/// </summary>
+	[JsonPropertyName("contentContainerTypes")]
+	public IReadOnlyList<string> ContentContainerTypes { get; init; } = [];
+
+	/// <summary>
 	/// Group: deterministic removal of converter-created layout containers that end up EMPTY after all
 	/// element-map decisions — a closed allowlist of removable types, evaluated bottom-up so
 	/// emptiness cascades. Null when the section is absent from the rules file — the removal pass is then
@@ -230,15 +246,6 @@ public sealed class TabAreaLayersRule {
 	/// </summary>
 	[JsonPropertyName("tabComponentType")]
 	public string TabComponentType { get; init; } = "crt.TabContainer";
-
-	/// <summary>
-	/// Mobile component type of the tab STRIP — the element whose items may only be
-	/// <see cref="TabComponentType"/>. Declared here beside the tab type because it is the same fact family:
-	/// what a tab is, and what may hold one. Read by the pass that reports content the conversion would drop
-	/// into a strip without it being a tab. Absent from the rules file means the platform's own strip type.
-	/// </summary>
-	[JsonPropertyName("tabPanelComponentType")]
-	public string TabPanelComponentType { get; init; } = "crt.TabPanel";
 
 	/// <summary>
 	/// The synthesized tab-body grid (layer 2, the tab's direct child); carries the nested

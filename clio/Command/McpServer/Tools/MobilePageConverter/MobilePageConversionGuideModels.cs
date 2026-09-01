@@ -343,11 +343,6 @@ public sealed class SectionRegistrationInfo {
 }
 
 /// <summary>
-/// Deterministic advisory "conversion guide" for turning a source page into a Freedom UI mobile
-/// page. The model executes the conversion using this guide; the tool builds nothing. The
-/// <see cref="SourceType"/> records which source page type was detected (today: <c>freedom-web</c>).
-/// </summary>
-/// <summary>
 /// One element the conversion could not place: it would become a child of a mobile <c>crt.TabPanel</c>
 /// without being a <c>crt.TabContainer</c>, which the mobile designer renders as nothing.
 /// </summary>
@@ -367,6 +362,11 @@ public sealed record TabStripPlacementLoss {
 	public string ParentName { get; init; }
 }
 
+/// <summary>
+/// Deterministic advisory "conversion guide" for turning a source page into a Freedom UI mobile
+/// page. The model executes the conversion using this guide; the tool builds nothing. The
+/// <see cref="SourceType"/> records which source page type was detected (today: <c>freedom-web</c>).
+/// </summary>
 public sealed class MobilePageConversionGuide {
 	// ── Source analysis ───────────────────────────────────────────────
 	[JsonPropertyName("sourcePage")]

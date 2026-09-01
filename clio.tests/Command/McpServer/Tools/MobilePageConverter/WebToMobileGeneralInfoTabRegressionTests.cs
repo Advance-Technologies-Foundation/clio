@@ -344,35 +344,33 @@ public sealed class WebToMobileGeneralInfoTabRegressionTests {
 	}
 
 	[Test]
-	[Description("The tab and tab-strip component types are DATA, not code: renaming them in the rules file must move the tab-strip report with them. Proven on the TAB type — a converted tab of the renamed type must not be reported as a loss, which a hardcoded crt.TabContainer would get wrong. The rules are fetched at runtime while the assembly is not, so a constant here silently stops matching on a platform that renames either type.")]
-	public void Analyze_ShouldTakeTheTabAndStripTypes_FromTheRulesRatherThanFromCode() {
+	[Description("Component types are DATA, not code: which receivers can host arbitrary children is the rules' contentContainerTypes accept-list, and which child is a tab is tabAreaLayers.tabComponentType. Renaming the tab type in the rules and in the page must move both decisions with it — a constant in the analyser would report a correctly converted tab as a loss. The rules are fetched at runtime while the assembly is not.")]
+	public void Analyze_ShouldTakeTheReceiverAndTabTypes_FromTheRulesRatherThanFromCode() {
 		// Arrange — the shipped rules with BOTH tab types renamed to values no code could know, and the fixture
 		// retyped to match. Nothing else changes: the same page, the same missing general-tab containers entry.
 		JsonObject fixture = LoadFixture();
 		RetypeComponents(fixture, "crt.TabPanel", "usr.RenamedStrip");
 		RetypeComponents(fixture, "crt.TabContainer", "usr.RenamedTab");
 		WebToMobilePageConversionRules rules = RulesWithoutTheGeneralTabEntry(
-			renameTabTypeTo: "usr.RenamedTab", renameStripTypeTo: "usr.RenamedStrip");
+			renameTabTypeTo: "usr.RenamedTab", renameAcceptedTabContainerTypeTo: "usr.RenamedTab");
 
 		// Act
 		MobilePageConversionGuide guide = Convert(
 			fixture, rules, mobileTypes: MobileTypesWith("usr.RenamedStrip", "usr.RenamedTab"));
 
 		// Assert
-		// This half would also hold with a hardcoded strip type: the strip set is additionally seeded by the
-		// mobile tabbed template's NAME, which the rename does not touch. It is asserted to keep the arrangement
-		// honest (the page still loses its general tab), not as the proof.
 		guide.TabStripPlacementLosses.Should().NotBeNullOrEmpty(
-			because: "the arrangement must still reproduce the loss after the rename, or the assertion below "
+			because: "the arrangement must still reproduce the loss after the rename, or the assertions below "
 				+ "would be judging an empty list");
-		// This half is the proof. CaseHistoryTab is a converted tab of the RENAMED tab type sitting in the strip;
-		// it is legitimate there, so it must NOT be reported. A hardcoded crt.TabContainer would fail to
-		// recognise it and would report a correct conversion as a loss.
-		guide.TabStripPlacementLosses.Should().OnlyContain(l => l.MobileType != "usr.RenamedTab",
-			because: "a tab is legitimate inside a strip whatever the platform calls it, so the tab type must "
-				+ "come from the rules; a constant would turn every converted tab into a false loss report");
+		// The proof. CaseHistoryTab is a converted tab of the RENAMED tab type sitting in the renamed strip; it
+		// is legitimate there, so it must NOT be reported. Both halves of that judgement are data: the strip is
+		// a non-hosting receiver because its type is absent from contentContainerTypes, and the child is exempt
+		// because its type IS tabAreaLayers.tabComponentType. Constants would get both wrong.
 		guide.ElementMap.Should().Contain(e => e.WebName == "CaseHistoryTab" && e.MobileType == "usr.RenamedTab",
-			because: "the proof above is vacuous unless a renamed tab actually reached the strip");
+			because: "the proof is vacuous unless a renamed tab actually reached the renamed strip");
+		guide.TabStripPlacementLosses.Should().OnlyContain(l => l.MobileType != "usr.RenamedTab",
+			because: "a tab is legitimate inside a strip whatever the platform calls it — the exemption reads "
+				+ "the tab type from the rules, and a constant would turn every converted tab into a false loss");
 	}
 
 	// ── helpers ──────────────────────────────────────────────────────────────────────────────────
@@ -463,13 +461,18 @@ public sealed class WebToMobileGeneralInfoTabRegressionTests {
 	/// under test while staying green.
 	/// </summary>
 	private static WebToMobilePageConversionRules RulesWithoutTheGeneralTabEntry(
-		string renameTabTypeTo = null, string renameStripTypeTo = null) {
+		string renameTabTypeTo = null, string renameAcceptedTabContainerTypeTo = null) {
 		JsonObject rules = JsonNode.Parse(BundledRulesJson())!.AsObject();
 		if (renameTabTypeTo is not null) {
 			rules["tabAreaLayers"]!["tabComponentType"] = renameTabTypeTo;
 		}
-		if (renameStripTypeTo is not null) {
-			rules["tabAreaLayers"]!["tabPanelComponentType"] = renameStripTypeTo;
+		if (renameAcceptedTabContainerTypeTo is not null) {
+			JsonArray accepted = rules["contentContainerTypes"]!.AsArray();
+			for (int i = 0; i < accepted.Count; i++) {
+				if (string.Equals(accepted[i]!.ToString(), "crt.TabContainer", StringComparison.OrdinalIgnoreCase)) {
+					accepted[i] = renameAcceptedTabContainerTypeTo;
+				}
+			}
 		}
 		JsonArray containers = rules["templates"]!.AsArray()
 			.Single(t => t!["web"]!.ToString() == "PageWithTabsFreedomTemplate")!["containers"]!.AsArray();

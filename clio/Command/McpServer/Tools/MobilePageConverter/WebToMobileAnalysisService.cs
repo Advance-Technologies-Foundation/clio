@@ -4600,57 +4600,69 @@ public static class WebToMobileAnalysisService {
 	}
 
 	/// <summary>
-	/// Names the converted elements the element map would insert straight into a mobile <c>crt.TabPanel</c>
-	/// without being a <c>crt.TabContainer</c> themselves. A tab strip renders only tabs, so such a child is
-	/// invisible in Mobile Designer and its whole subtree is lost from the converted page — SILENTLY, which is
-	/// how ENG-94951 shipped: the general-information tab was subtracted as inherited web-template chrome and
-	/// its content was hoisted one level up into <c>Tabs</c>.
+	/// Reports every converted element the element map would place in a receiver that cannot host it — a
+	/// receiver whose MOBILE type is absent from the rules' <c>contentContainerTypes</c>. Such a child, and
+	/// everything nested inside it, renders as nothing: a <c>crt.TabPanel</c> shows only its tabs, and it is
+	/// merely the instance that surfaced first (ENG-94951, where the general-information tab was subtracted as
+	/// inherited web-template chrome and its content hoisted one level up into <c>Tabs</c>).
 	/// <para>
-	/// The cure is a <c>containers</c> entry in the rules file mapping the web tab onto the mobile tab's CONTENT
-	/// container (e.g. <c>GeneralInfoTab -&gt; GeneralTabContainer</c>). This pass cannot apply that mapping —
-	/// only the rules know the mobile counterpart — so it reports the loss instead of letting it pass unseen.
-	/// The rules file is fetched at runtime, so a published rules file missing an entry reintroduces the defect
-	/// with no code change; this keeps that debuggable from the guide alone.
+	/// The rule is stated as an ACCEPT-list so this pass names no component type at all: a type that cannot host
+	/// arbitrary children is handled by being absent from the list, not by a branch here, so the next such type
+	/// needs a rules edit rather than a code change. That matters because the rules file is fetched at RUNTIME
+	/// while this assembly is not.
+	/// </para>
+	/// <para>
+	/// The cure for a reported loss is a <c>containers</c> entry mapping the web container onto the mobile
+	/// container that should receive its children (e.g. <c>GeneralInfoTab</c>). This pass cannot apply that
+	/// mapping — only the rules know the counterpart — so it reports the loss rather than letting it pass
+	/// unseen. With no <c>contentContainerTypes</c> declared it reports nothing, exactly as an absent
+	/// <c>tabAreaLayers.tabComponentType</c> switches its own pass off.
 	/// </para>
 	/// </summary>
 	private static List<TabStripPlacementLoss> CollectNonTabChildrenOfTabPanels(
 		IReadOnlyList<ElementMapEntry> elementMap,
 		IReadOnlyDictionary<string, string> mobileTypesByName,
 		WebToMobilePageConversionRules rules) {
-		// Both component types come from the RULES, never from a constant here: the rules file already owns
-		// "what a tab is" for BuildTabAreaLayers, and "what may hold a tab" is the same fact. A platform that
-		// renames either type is then a rules edit, not a code change — which matters because the rules are
-		// fetched at runtime while this assembly is not. An explicit null/empty on either switches the pass
-		// off, exactly as it switches BuildTabAreaLayers off, rather than silently falling back to a guess.
-		string stripType = rules?.TabAreaLayers?.TabPanelComponentType;
-		string tabType = rules?.TabAreaLayers?.TabComponentType;
-		if (string.IsNullOrWhiteSpace(stripType) || string.IsNullOrWhiteSpace(tabType)) {
+		var accepting = new HashSet<string>(
+			(rules?.ContentContainerTypes ?? []).Where(t => !string.IsNullOrWhiteSpace(t)),
+			StringComparer.OrdinalIgnoreCase);
+		if (accepting.Count == 0) {
 			return [];
 		}
-		// A parent is a tab strip when the mobile tabbed template's OWN strip name (a constant of that template,
-		// exactly as AssignConvertedTabIndexes treats it — see its remarks), when the MOBILE TEMPLATE declares it
-		// as one, or when the conversion itself inserts it as one (a page-authored crt.TabPanel). The constant is
-		// the floor on purpose: mobileTypesByName is EMPTY whenever the mobile-template probe failed, and this
-		// report would otherwise vanish in exactly the degraded run that most needs it — chrome subtraction is
-		// driven by the web baseline and the rules alone, so the hoist still happens with no mobile template read.
-		var tabPanelNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { MobileTabsElementName };
-		foreach (KeyValuePair<string, string> pair in mobileTypesByName) {
-			if (string.Equals(pair.Value, stripType, StringComparison.OrdinalIgnoreCase)) {
-				tabPanelNames.Add(pair.Key);
-			}
-		}
+
+		// A receiver's mobile type: what the MOBILE TEMPLATE declares for that name, or what the conversion
+		// itself inserts under it. A receiver of unknown type is left alone -- reporting on a type nobody could
+		// resolve would flag correct conversions on every environment whose template could not be read.
+		var receiverTypes = new Dictionary<string, string>(mobileTypesByName, StringComparer.OrdinalIgnoreCase);
 		foreach (ElementMapEntry entry in elementMap) {
 			if (string.Equals(entry.Operation, "insert", StringComparison.Ordinal)
-				&& string.Equals(entry.MobileType, stripType, StringComparison.OrdinalIgnoreCase)
-				&& !string.IsNullOrEmpty(entry.MobileName)) {
-				tabPanelNames.Add(entry.MobileName);
+				&& entry.MobileName is { Length: > 0 } && entry.MobileType is { Length: > 0 }) {
+				receiverTypes[entry.MobileName] = entry.MobileType;
 			}
 		}
+		// One receiver is known WITHOUT its type: the mobile tabbed template's own strip. Its NAME is a constant
+		// of that template (AssignConvertedTabIndexes treats it the same way), so the report survives an
+		// unreadable mobile template -- the degraded run is exactly the one where a published rules file missing
+		// a containers entry goes unnoticed. Expressed as a name, deliberately: naming a TYPE here would put back
+		// the hardcode the accept-list exists to remove.
+		bool CannotHostChildren(string receiver) =>
+			receiverTypes.TryGetValue(receiver, out string type) && type is { Length: > 0 }
+				? !accepting.Contains(type)
+				: string.Equals(receiver, MobileTabsElementName, StringComparison.OrdinalIgnoreCase);
+
+		// A tab is the one child a non-hosting receiver legitimately takes: a strip exists to hold tabs. The type
+		// comes from the rules, like everything else here.
+		string tabType = rules?.TabAreaLayers?.TabComponentType;
+
 		return [.. elementMap
 			.Where(e => string.Equals(e.Operation, "insert", StringComparison.Ordinal)
-				&& !string.IsNullOrEmpty(e.ParentName)
-				&& tabPanelNames.Contains(e.ParentName)
-				&& !string.Equals(e.MobileType, tabType, StringComparison.OrdinalIgnoreCase))
+				&& e.ParentName is { Length: > 0 }
+				// Only the generic content slot. A child placed in a NAMED slot the parent declares (a menu item
+				// in a button's menuItems, a header in an expansion panel's tools) is hosted by that slot, not by
+				// the parent's ability to hold arbitrary content, and the accept-list says nothing about it.
+				&& (e.PropertyName is null or "" || string.Equals(e.PropertyName, ItemsPropertyName, StringComparison.OrdinalIgnoreCase))
+				&& !(tabType is { Length: > 0 } && string.Equals(e.MobileType, tabType, StringComparison.OrdinalIgnoreCase))
+				&& CannotHostChildren(e.ParentName))
 			.Select(e => new TabStripPlacementLoss {
 				Name = string.IsNullOrEmpty(e.MobileName) ? e.WebName : e.MobileName,
 				MobileType = e.MobileType,

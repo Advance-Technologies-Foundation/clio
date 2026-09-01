@@ -135,7 +135,6 @@
   ],
   "tabAreaLayers": {
     "tabComponentType": "crt.TabContainer",
-    "tabPanelComponentType": "crt.TabPanel",
     "mainTabContainer": {
       "namePrefix": "MainTabContainer_",
       "values": {
@@ -181,6 +180,7 @@
       }
     }
   ],
+  "contentContainerTypes": [ "crt.FlexContainer", "crt.GridContainer", "crt.TabContainer", "crt.ExpansionPanel" ],
   "emptyContainerRemoval": {
     "removableTypes": [
       "crt.FlexContainer",
