@@ -181,6 +181,12 @@
       }
     }
   ],
+  "contentContainerTypes": [
+    "crt.FlexContainer",
+    "crt.GridContainer",
+    "crt.TabContainer",
+    "crt.ExpansionPanel"
+  ],
   "emptyContainerRemoval": {
     "removableTypes": [
       "crt.FlexContainer",

@@ -286,7 +286,7 @@ public sealed class WebToMobileGeneralInfoTabRegressionTests {
 	}
 
 	[Test]
-	[Description("A childrenTo naming an element the mobile template does not have must not park a whole tab's content under a name that does not exist. The rules are CDN-fetched, so a typo in a published file reaches users with no code change; the children fall back to the twin, which is always real, and the entry says why. This is the only runtime diagnostic left on the placement path.")]
+	[Description("A childrenTo naming an element the mobile template does not have must not park a whole tab's content under a name that does not exist. The rules are CDN-fetched, so a typo in a published file reaches users with no code change; the children fall back to the twin, which is always real, and the merge entry's own reason says why -- not a second entry claiming the element was dropped when it was merged.")]
 	public void Analyze_ShouldFallBackToTheTwin_WhenChildrenToNamesAMissingElement() {
 		// Arrange
 		JsonObject fixture = LoadFixture();
@@ -301,11 +301,13 @@ public sealed class WebToMobileGeneralInfoTabRegressionTests {
 				because: $"'{name}' must land on a real element; the twin is the one parent that always exists, "
 					+ "so an unresolvable childrenTo degrades to it rather than to a name nothing will match");
 		}
-		guide.ElementMap.Should().Contain(
-			e => e.Operation == "drop" && e.WebName == MobileGeneralTab
-				&& e.Reason.Contains("UsrNoSuchContainer"),
+		ElementMapEntry tab = guide.ElementMap.Single(e => e.WebName == MobileGeneralTab);
+		tab.Operation.Should().Be("merge",
+			because: "the tab IS merged onto its twin; a second entry saying 'drop' for the same source element "
+				+ "would contradict both that and the guide's own promise of one entry per source element");
+		tab.Reason.Should().Contain("UsrNoSuchContainer",
 			because: "silently ignoring the bad declaration would leave the rules file broken and nobody the "
-				+ "wiser; the entry names the tab whose children moved and puts the missing target in the reason");
+				+ "wiser, and reason is the field a reader already consults for how this entry was placed");
 	}
 
 	[Test]
@@ -325,15 +327,59 @@ public sealed class WebToMobileGeneralInfoTabRegressionTests {
 		}
 	}
 
+	[Test]
+	[Description("The DEFAULT resolution, with no rules entry involved at all: strip both general-tab containers entries and the page still converts into the mobile general tab's grid. This is the class of the defect rather than its instance -- the rules file is CDN-fetched, so a published file that loses an entry must not be able to reproduce ENG-94951 on a user's machine.")]
+	public void Analyze_ShouldReHomeTabStripChildren_WhenNoContainersEntryMapsTheGeneralTab() {
+		// Arrange
+		JsonObject fixture = LoadFixture();
+
+		// Act
+		MobilePageConversionGuide guide = Convert(fixture, RulesWithoutTheGeneralTabEntries());
+
+		// Assert
+		foreach (string name in GeneralTabContent) {
+			Element(guide, name).ParentName.Should().Be(MobileGeneralTabContainer,
+				because: $"'{name}' would otherwise be hoisted into the tab strip and render as nothing; the walk "
+					+ "carries the nearest ancestor that can hold arbitrary children, and for this template that "
+					+ "is the general tab's grid");
+		}
+		NonTabChildrenOfTabStrips(guide).Should().BeEmpty(
+			because: "the invariant must hold for ANY rules file, not only for one whose containers list "
+				+ "happens to be complete");
+	}
+
+	[Test]
+	[Description("A re-homed element explains itself in its own reason, so the move is visible to a reader of the guide without a second entry or a separate report. The reason is the field the guide already uses to say how an entry was placed.")]
+	public void Analyze_ShouldExplainTheReHoming_InTheElementsOwnReason() {
+		// Arrange
+		JsonObject fixture = LoadFixture();
+
+		// Act
+		MobilePageConversionGuide guide = Convert(fixture, RulesWithoutTheGeneralTabEntries());
+
+		// Assert
+		Element(guide, GeneralTabContent[0]).Reason.Should().Contain("re-homed",
+			because: "a placement the walk changed on the reader's behalf is exactly what reason exists to "
+				+ "record; silently moving an element would be as opaque as silently losing it");
+	}
+
+	[Test]
+	[Description("A tab keeps its strip even though a crt.TabPanel is absent from contentContainerTypes. The exemption is what stops the re-homing rule from dismantling every converted tab, and it is read from the rules' tabAreaLayers.tabComponentType rather than from a constant in the analyser.")]
+	public void Analyze_ShouldExemptTabs_FromTheReHomingRule() {
+		// Arrange
+		JsonObject fixture = LoadFixture();
+
+		// Act
+		MobilePageConversionGuide guide = Convert(fixture, RulesWithoutTheGeneralTabEntries());
+
+		// Assert
+		guide.ElementMap.Where(e => e.Operation == "insert" && e.MobileType == "crt.TabContainer")
+			.Should().OnlyContain(e => e.ParentName == MobileTabsPanel,
+				because: "a tab belongs to a strip -- the one receiver outside the accept-list that is correct");
+	}
+
 	// ── helpers ──────────────────────────────────────────────────────────────────────────────────
 
-	/// <summary>
-	/// Asserts the pinned capture still has the shape the reproduction depends on. <see cref="Convert"/> calls
-	/// it on every conversion, so every test that goes through the fixture is covered without having to
-	/// remember; a hand-built bundle is skipped. It matters because
-	/// a refreshed fixture with a different shape would leave most assertions here trivially true rather than
-	/// failing — silent vacuity is the one outcome a regression suite must not have.
-	/// </summary>
 	/// <summary>
 	/// The anti-vacuity floor, asserted by <see cref="Convert"/> on EVERY conversion of the pinned capture,
 	/// including the variants some tests build from it (the template grid put back, the component types
@@ -430,6 +476,24 @@ public sealed class WebToMobileGeneralInfoTabRegressionTests {
 			["name"] = "GeneralInfoTabContainer", ["type"] = "crt.GridContainer", ["items"] = restored
 		});
 		return fixture;
+	}
+
+	/// <summary>
+	/// The shipped rules with BOTH general-tab containers entries removed — the tabbed template exactly as it
+	/// was before this branch, which is also the shape a published rules file would have if it lost them.
+	/// </summary>
+	private static WebToMobilePageConversionRules RulesWithoutTheGeneralTabEntries() {
+		JsonObject rules = JsonNode.Parse(BundledRulesJson())!.AsObject();
+		JsonArray containers = rules["templates"]!.AsArray()
+			.Single(t => t!["web"]!.ToString() == "PageWithTabsFreedomTemplate")!["containers"]!.AsArray();
+		foreach (JsonNode entry in containers.ToList()) {
+			string web = entry!["web"]!.ToString();
+			if (web is "GeneralInfoTab" or "GeneralInfoTabContainer") {
+				containers.Remove(entry);
+			}
+		}
+		using var stream = new MemoryStream(System.Text.Encoding.UTF8.GetBytes(rules.ToJsonString()));
+		return WebToMobilePageConversionRulesCatalog.ParseStream(stream);
 	}
 
 	/// <summary>The shipped rules with one containers entry's <c>childrenTo</c> pointed at a given name.</summary>
