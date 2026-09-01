@@ -535,7 +535,8 @@ namespace Clio.Command
 		// operator off to fix a working login. The token must also stand alone, so a port or an id containing
 		// 401 does not qualify.
 		private static readonly Regex UnauthorizedStatusToken =
-			new(@"(?<![0-9])401(?![0-9])", RegexOptions.Compiled | RegexOptions.CultureInvariant);
+			new(@"(?<![0-9])401(?![0-9])", RegexOptions.Compiled | RegexOptions.CultureInvariant,
+				TimeSpan.FromSeconds(1));
 
 		// Only 401 is a credential signal. 404 is a routing/resource error — a misconfigured environment URL
 		// or a renamed DataService endpoint would otherwise send the operator off to fix working credentials.
