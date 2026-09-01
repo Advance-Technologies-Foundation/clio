@@ -64,6 +64,10 @@ name instead of trying to edit a non-existent local `insert`.
   `usr.HandleSomeRequest`). Call `clio get-guidance --name page-schema-handlers` for details.
 - **SCHEMA_VALIDATORS keys** (object form) must follow `VendorPrefix.ValidatorName` format
   (e.g., `usr.RequiredValidator`). Call `clio get-guidance --name page-schema-validators` for details.
+- **Handler, converter, and validator calls** must resolve to a declaration in the page factory scope,
+  a callback parameter, or a known JavaScript/Creatio global. An undefined direct helper call is rejected
+  before the body is sent to Creatio; Page Designer can remove module-scope declarations while preserving
+  handler entries, leaving a runtime `ReferenceError` otherwise.
 - **Mobile page rules.** These run only on the MCP `update-page` / `sync-pages` / `validate-page` tools.
   The CLI `update-page` verb does **not** run them — it validates a mobile body only for disallowed
   sections — so a body rejected through MCP still saves from the command line.
