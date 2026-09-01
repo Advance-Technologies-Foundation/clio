@@ -67,7 +67,7 @@ namespace Clio.Tests
         [TestCase(typeof(CreateBusinessProcessOptions))]
         [TestCase(typeof(ModifyBusinessProcessOptions))]
         [Test]
-        [Description("Create and Modify declare a VERSIONED requirement naming the newest operation they send that an older server does not have: today the element-level performer block and the reference-existence guard behind it, shipped in the 1.3.1.1 archive — an older server has no performer member and silently discards the block while answering success, and a pre-guard server stores a dead id instead of refusing it; presence alone cannot express either (the 1.2.0.1 email floor set the precedent and is subsumed). This is the doc's rule applied ('add a literal in the commit where a command starts calling an operation an older server does not have'), and the bundled-archive guard asserts the shipped archive satisfies the literal, so it can never demand a version clio does not carry.")]
+        [Description("Create and Modify declare a VERSIONED requirement naming the newest operation they send that an older server does not have: today the preconfiguredPage block, shipped in the 1.4.0.0 archive — a server without that element still accepts it through the documented userTask fallback route, a plain user task it does recognise, and silently discards the block while answering success, so the process saves carrying a step that shows nobody a page. The performer block and its reference-existence guard (1.3.1.1) fail the same way and are subsumed, as the 1.2.0.1 email floor was before them; presence alone cannot express any of it. This is the doc's rule applied ('add a literal in the commit where a command starts calling an operation an older server does not have'), and the bundled-archive guard asserts the shipped archive satisfies the literal, so it can never demand a version clio does not carry.")]
         public void OptionsType_ShouldDeclareVersionedProcessBuilderRequirement_WhenTheCommandShipsVersionedOperations(
             Type optionsType)
         {
@@ -77,11 +77,11 @@ namespace Clio.Tests
             // Assert
             requirement.Should().NotBeNull(
                 because: $"{optionsType.Name} must carry the declarative {BundledPackages.ProcessBuilderPackageName} requirement so the MCP gate fires");
-            requirement!.Version.Should().Be("1.3.1.1",
-                because: "the performer block and the reference-existence guard these commands send were "
-                    + "introduced in the 1.3.1.1 archive — an older server ignores the block or stores a dead id "
-                    + "and still answers success, so the literal is what fails CLOSED (the convergence rule only "
-                    + "WARNS when it cannot read the archive or the version carries a pre-release suffix); "
+            requirement!.Version.Should().Be("1.4.0.0",
+                because: "the preconfiguredPage block these commands send was introduced in the 1.4.0.0 archive "
+                    + "— an older server takes it through the userTask fallback route and silently discards the "
+                    + "block while answering success, so the literal is what fails CLOSED (the convergence rule "
+                    + "only WARNS when it cannot read the archive or the version carries a pre-release suffix); "
                     + "when the next versioned operation ships, move this pin WITH the rebundle in the same commit");
         }
 

@@ -15,14 +15,14 @@ namespace Clio.Command;
 /// Consumed by the MCP <c>modify-business-process</c> tool, which sets these properties directly.
 /// </summary>
 // The version literal states what THIS command's code needs — the newest operation it sends that an
-// older server does not have. Today that is the element-level performer block and the
-// reference-existence guard behind it (bare-Guid Lookup values, performer contact/role), shipped in
-// the 1.3.1.1 archive: an older server has no performer member and silently discards the block while
-// answering success, and a pre-guard server stores a dead id instead of refusing it. Presence alone
-// cannot express either — the email block's 1.2.0.1 floor set this precedent and is subsumed by this
-// literal. The guard fixture asserts the shipped archive satisfies the literal, so clio can never
+// older server does not have. Today that is the preconfiguredPage block, shipped in the 1.4.0.0
+// archive: a server without it accepts the element through the documented userTask fallback route —
+// a plain user task it does recognise — and silently discards the block while answering success, so
+// the process saves carrying a step that shows nobody a page. The element-level performer block and
+// its reference-existence guard (1.3.1.1) fail the same way and are subsumed by this literal, as the
+// email block's 1.2.0.1 floor was before them. Presence alone cannot express any of it. The guard fixture asserts the shipped archive satisfies the literal, so clio can never
 // demand a version it does not itself carry.
-[RequiresPackage(BundledPackages.ProcessBuilderPackageName, "1.3.1.1",
+[RequiresPackage(BundledPackages.ProcessBuilderPackageName, "1.4.0.0",
 	Hint = BundledPackages.ProcessBuilderInstallHint)]
 public sealed class ModifyBusinessProcessOptions : EnvironmentOptions {
 	/// <summary>Process code (schema Name) to edit. Provide exactly one of <see cref="ProcessName"/> or <see cref="ProcessUid"/>.</summary>
