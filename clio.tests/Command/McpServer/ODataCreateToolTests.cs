@@ -2,6 +2,8 @@
 using System.Linq;
 using System.Net.Http;
 using System.IO;
+using System.IO.Abstractions.TestingHelpers;
+using System.Text;
 using System.Text.Json;
 using Clio.Command.McpServer.Tools;
 using Clio.Common;
@@ -20,8 +22,9 @@ public sealed class ODataCreateToolTests {
 	[Description("Reads a large create payload from rows-file and posts its rows without requiring an inline rows array.")]
 	public void Create_Should_Read_Rows_From_File() {
 		// Arrange
-		string rowsFile = Path.Combine(Path.GetTempPath(), $"odata-create-{System.Guid.NewGuid():N}.json");
-		File.WriteAllText(rowsFile, "[{\"Name\":\"Acme\"}]");
+		MockFileSystem fileSystem = new();
+		string rowsFile = fileSystem.Path.Combine(fileSystem.Path.GetTempPath(), $"odata-create-{System.Guid.NewGuid():N}.json");
+		fileSystem.AddFile(rowsFile, new MockFileData("[{\"Name\":\"Acme\"}]", Encoding.UTF8));
 		IApplicationClient client = Substitute.For<IApplicationClient>();
 		IServiceUrlBuilder urlBuilder = Substitute.For<IServiceUrlBuilder>();
 		IToolCommandResolver resolver = Substitute.For<IToolCommandResolver>();
@@ -30,49 +33,42 @@ public sealed class ODataCreateToolTests {
 		urlBuilder.Build(Arg.Any<string>()).Returns("http://creatio/odata/Account");
 		client.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
 			.Returns("{\"Id\":\"11111111-1111-1111-1111-111111111111\"}");
-		ODataCreateTool tool = new(resolver, new System.IO.Abstractions.FileSystem());
+		ODataCreateTool tool = new(resolver, fileSystem);
 
-		try {
-			// Act
-			ODataCreateBatchResponse response = tool.Create(new ODataCreateArgs {
-				EnvironmentName = "dev", Entity = "Account", RowsFile = rowsFile
-			});
+		// Act
+		ODataCreateBatchResponse response = tool.Create(new ODataCreateArgs {
+			EnvironmentName = "dev", Entity = "Account", RowsFile = rowsFile
+		});
 
-			// Assert
-			response.Created.Should().Be(1, because: "the row loaded from disk should be posted and reported as created");
-			client.Received(1).ExecutePostRequest("http://creatio/odata/Account", "{\"Name\":\"Acme\"}", 30_000, 1, 1);
-		} finally {
-			if (File.Exists(rowsFile)) File.Delete(rowsFile);
-		}
+		// Assert
+		response.Created.Should().Be(1, because: "the row loaded from disk should be posted and reported as created");
+		client.Received(1).ExecutePostRequest("http://creatio/odata/Account", "{\"Name\":\"Acme\"}", 30_000, 1, 1);
 	}
 	[Test]
 	[Category("Unit")]
 	[Description("Rejects rows and rows-file together instead of silently preferring one, so a caller never sends a payload it did not mean to.")]
 	public void Create_Should_Reject_Rows_And_RowsFile_Together() {
 		// Arrange
-		string rowsFile = Path.Combine(Path.GetTempPath(), $"odata-create-{System.Guid.NewGuid():N}.json");
-		File.WriteAllText(rowsFile, "[{\"Name\":\"FromFile\"}]");
+		MockFileSystem fileSystem = new();
+		string rowsFile = fileSystem.Path.Combine(fileSystem.Path.GetTempPath(), $"odata-create-{System.Guid.NewGuid():N}.json");
+		fileSystem.AddFile(rowsFile, new MockFileData("[{\"Name\":\"FromFile\"}]", Encoding.UTF8));
 		IApplicationClient client = Substitute.For<IApplicationClient>();
 		IToolCommandResolver resolver = Substitute.For<IToolCommandResolver>();
 		resolver.Resolve<IApplicationClient>(Arg.Any<EnvironmentOptions>()).Returns(client);
-		ODataCreateTool tool = new(resolver, Substitute.For<System.IO.Abstractions.IFileSystem>());
+		ODataCreateTool tool = new(resolver, fileSystem);
 
-		try {
-			// Act
-			ODataCreateBatchResponse response = tool.Create(new ODataCreateArgs {
-				EnvironmentName = "dev", Entity = "Account", Rows = Arr("[{\"Name\":\"Inline\"}]"), RowsFile = rowsFile
-			});
+		// Act
+		ODataCreateBatchResponse response = tool.Create(new ODataCreateArgs {
+			EnvironmentName = "dev", Entity = "Account", Rows = Arr("[{\"Name\":\"Inline\"}]"), RowsFile = rowsFile
+		});
 
-			// Assert
-			response.Created.Should().Be(0,
-				because: "two payload sources are ambiguous and picking one silently would send data the caller did not choose");
-			response.Error.Should().Contain("not both",
-				because: "the caller has to be told which argument to drop");
-			client.DidNotReceiveWithAnyArgs().ExecutePostRequest(
-				Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>());
-		} finally {
-			if (File.Exists(rowsFile)) File.Delete(rowsFile);
-		}
+		// Assert
+		response.Created.Should().Be(0,
+			because: "two payload sources are ambiguous and picking one silently would send data the caller did not choose");
+		response.Error.Should().Contain("not both",
+			because: "the caller has to be told which argument to drop");
+		client.DidNotReceiveWithAnyArgs().ExecutePostRequest(
+			Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>());
 	}
 
 	[Test]
@@ -80,11 +76,12 @@ public sealed class ODataCreateToolTests {
 	[Description("Reports a missing rows-file as a structured request error rather than letting the file exception escape as a protocol failure.")]
 	public void Create_Should_Report_Missing_RowsFile() {
 		// Arrange
-		string rowsFile = Path.Combine(Path.GetTempPath(), $"odata-create-absent-{System.Guid.NewGuid():N}.json");
+		MockFileSystem fileSystem = new();
+		string rowsFile = fileSystem.Path.Combine(fileSystem.Path.GetTempPath(), $"odata-create-absent-{System.Guid.NewGuid():N}.json");
 		IApplicationClient client = Substitute.For<IApplicationClient>();
 		IToolCommandResolver resolver = Substitute.For<IToolCommandResolver>();
 		resolver.Resolve<IApplicationClient>(Arg.Any<EnvironmentOptions>()).Returns(client);
-		ODataCreateTool tool = new(resolver, new System.IO.Abstractions.FileSystem());
+		ODataCreateTool tool = new(resolver, fileSystem);
 
 		// Act
 		ODataCreateBatchResponse response = tool.Create(new ODataCreateArgs {
@@ -105,29 +102,26 @@ public sealed class ODataCreateToolTests {
 	[Description("Reports malformed rows-file JSON as a structured request error instead of surfacing a raw parser exception.")]
 	public void Create_Should_Report_Invalid_RowsFile_Json() {
 		// Arrange
-		string rowsFile = Path.Combine(Path.GetTempPath(), $"odata-create-bad-{System.Guid.NewGuid():N}.json");
-		File.WriteAllText(rowsFile, "{ not json");
+		MockFileSystem fileSystem = new();
+		string rowsFile = fileSystem.Path.Combine(fileSystem.Path.GetTempPath(), $"odata-create-bad-{System.Guid.NewGuid():N}.json");
+		fileSystem.AddFile(rowsFile, new MockFileData("{ not json", Encoding.UTF8));
 		IApplicationClient client = Substitute.For<IApplicationClient>();
 		IToolCommandResolver resolver = Substitute.For<IToolCommandResolver>();
 		resolver.Resolve<IApplicationClient>(Arg.Any<EnvironmentOptions>()).Returns(client);
-		ODataCreateTool tool = new(resolver, new System.IO.Abstractions.FileSystem());
+		ODataCreateTool tool = new(resolver, fileSystem);
 
-		try {
-			// Act
-			ODataCreateBatchResponse response = tool.Create(new ODataCreateArgs {
-				EnvironmentName = "dev", Entity = "Account", RowsFile = rowsFile
-			});
+		// Act
+		ODataCreateBatchResponse response = tool.Create(new ODataCreateArgs {
+			EnvironmentName = "dev", Entity = "Account", RowsFile = rowsFile
+		});
 
-			// Assert
-			response.Created.Should().Be(0,
-				because: "an unparseable payload must fail the request, not the MCP protocol frame");
-			response.Error.Should().Contain("must contain valid JSON",
-				because: "the caller has to know the file content is at fault, not the request shape");
-			client.DidNotReceiveWithAnyArgs().ExecutePostRequest(
-				Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>());
-		} finally {
-			if (File.Exists(rowsFile)) File.Delete(rowsFile);
-		}
+		// Assert
+		response.Created.Should().Be(0,
+			because: "an unparseable payload must fail the request, not the MCP protocol frame");
+		response.Error.Should().Contain("must contain valid JSON",
+			because: "the caller has to know the file content is at fault, not the request shape");
+		client.DidNotReceiveWithAnyArgs().ExecutePostRequest(
+			Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>());
 	}
 
 	[Test]
@@ -135,29 +129,26 @@ public sealed class ODataCreateToolTests {
 	[Description("Rejects a rows-file holding a JSON object: create takes an array of rows, and a lone object would otherwise fall through the array check with a confusing message.")]
 	public void Create_Should_Reject_RowsFile_That_Is_Not_An_Array() {
 		// Arrange
-		string rowsFile = Path.Combine(Path.GetTempPath(), $"odata-create-obj-{System.Guid.NewGuid():N}.json");
-		File.WriteAllText(rowsFile, "{\"Name\":\"Acme\"}");
+		MockFileSystem fileSystem = new();
+		string rowsFile = fileSystem.Path.Combine(fileSystem.Path.GetTempPath(), $"odata-create-obj-{System.Guid.NewGuid():N}.json");
+		fileSystem.AddFile(rowsFile, new MockFileData("{\"Name\":\"Acme\"}", Encoding.UTF8));
 		IApplicationClient client = Substitute.For<IApplicationClient>();
 		IToolCommandResolver resolver = Substitute.For<IToolCommandResolver>();
 		resolver.Resolve<IApplicationClient>(Arg.Any<EnvironmentOptions>()).Returns(client);
-		ODataCreateTool tool = new(resolver, new System.IO.Abstractions.FileSystem());
+		ODataCreateTool tool = new(resolver, fileSystem);
 
-		try {
-			// Act
-			ODataCreateBatchResponse response = tool.Create(new ODataCreateArgs {
-				EnvironmentName = "dev", Entity = "Account", RowsFile = rowsFile
-			});
+		// Act
+		ODataCreateBatchResponse response = tool.Create(new ODataCreateArgs {
+			EnvironmentName = "dev", Entity = "Account", RowsFile = rowsFile
+		});
 
-			// Assert
-			response.Created.Should().Be(0,
-				because: "a single object is not a batch of rows and must not be posted as one");
-			response.Error.Should().Contain("non-empty array",
-				because: "the caller has to know the expected payload shape");
-			client.DidNotReceiveWithAnyArgs().ExecutePostRequest(
-				Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>());
-		} finally {
-			if (File.Exists(rowsFile)) File.Delete(rowsFile);
-		}
+		// Assert
+		response.Created.Should().Be(0,
+			because: "a single object is not a batch of rows and must not be posted as one");
+		response.Error.Should().Contain("non-empty array",
+			because: "the caller has to know the expected payload shape");
+		client.DidNotReceiveWithAnyArgs().ExecutePostRequest(
+			Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>());
 	}
 
 	[Test]

@@ -1,5 +1,7 @@
 ﻿using System.Linq;
 using System.IO;
+using System.IO.Abstractions.TestingHelpers;
+using System.Text;
 using System.Text.Json;
 using Clio.Command.McpServer.Tools;
 using Clio.Common;
@@ -18,55 +20,49 @@ public sealed class ODataUpdateToolTests {
 	[Description("Reads a large update payload from rows-file and sends it as the PATCH body after confirmation.")]
 	public void Update_Should_Read_Data_From_Rows_File() {
 		// Arrange
-		string rowsFile = Path.Combine(Path.GetTempPath(), $"odata-update-{System.Guid.NewGuid():N}.json");
-		File.WriteAllText(rowsFile, "{\"Name\":\"New\"}");
+		MockFileSystem fileSystem = new();
+		string rowsFile = fileSystem.Path.Combine(fileSystem.Path.GetTempPath(), $"odata-update-{System.Guid.NewGuid():N}.json");
+		fileSystem.AddFile(rowsFile, new MockFileData("{\"Name\":\"New\"}", Encoding.UTF8));
 		IApplicationClient client = Substitute.For<IApplicationClient>();
 		IServiceUrlBuilder urlBuilder = Substitute.For<IServiceUrlBuilder>();
 		IToolCommandResolver resolver = Substitute.For<IToolCommandResolver>();
 		resolver.Resolve<IApplicationClient>(Arg.Any<EnvironmentOptions>()).Returns(client);
 		resolver.Resolve<IServiceUrlBuilder>(Arg.Any<EnvironmentOptions>()).Returns(urlBuilder);
 		urlBuilder.Build(Arg.Any<string>()).Returns("http://creatio/odata/Contact(" + Guid + ")");
-		try {
-			// Act
-			ODataWriteResponse response = new ODataUpdateTool(resolver, new System.IO.Abstractions.FileSystem()).Update(new ODataUpdateArgs {
-				EnvironmentName = "dev", Entity = "Contact", Id = Guid, RowsFile = rowsFile, Confirm = true
-			});
+		// Act
+		ODataWriteResponse response = new ODataUpdateTool(resolver, fileSystem).Update(new ODataUpdateArgs {
+			EnvironmentName = "dev", Entity = "Contact", Id = Guid, RowsFile = rowsFile, Confirm = true
+		});
 
-			// Assert
-			response.Success.Should().BeTrue(because: "a valid file payload should follow the same PATCH path as inline data");
-			client.Received(1).ExecutePatchRequest("http://creatio/odata/Contact(" + Guid + ")", "{\"Name\":\"New\"}", 30_000, 1, 1);
-		} finally {
-			if (File.Exists(rowsFile)) File.Delete(rowsFile);
-		}
+		// Assert
+		response.Success.Should().BeTrue(because: "a valid file payload should follow the same PATCH path as inline data");
+		client.Received(1).ExecutePatchRequest("http://creatio/odata/Contact(" + Guid + ")", "{\"Name\":\"New\"}", 30_000, 1, 1);
 	}
 	[Test]
 	[Category("Unit")]
 	[Description("Rejects data and rows-file together instead of silently preferring one, so a caller never PATCHes a payload it did not choose.")]
 	public void Update_Should_Reject_Data_And_RowsFile_Together() {
 		// Arrange
-		string rowsFile = Path.Combine(Path.GetTempPath(), $"odata-update-{System.Guid.NewGuid():N}.json");
-		File.WriteAllText(rowsFile, "{\"Name\":\"FromFile\"}");
+		MockFileSystem fileSystem = new();
+		string rowsFile = fileSystem.Path.Combine(fileSystem.Path.GetTempPath(), $"odata-update-{System.Guid.NewGuid():N}.json");
+		fileSystem.AddFile(rowsFile, new MockFileData("{\"Name\":\"FromFile\"}", Encoding.UTF8));
 		IApplicationClient client = Substitute.For<IApplicationClient>();
 		IToolCommandResolver resolver = Substitute.For<IToolCommandResolver>();
 		resolver.Resolve<IApplicationClient>(Arg.Any<EnvironmentOptions>()).Returns(client);
 
-		try {
-			// Act
-			ODataWriteResponse response = new ODataUpdateTool(resolver, Substitute.For<System.IO.Abstractions.IFileSystem>()).Update(new ODataUpdateArgs {
-				EnvironmentName = "dev", Entity = "Contact", Id = Guid,
-				Data = Obj("{\"Name\":\"Inline\"}"), RowsFile = rowsFile, Confirm = true
-			});
+		// Act
+		ODataWriteResponse response = new ODataUpdateTool(resolver, fileSystem).Update(new ODataUpdateArgs {
+			EnvironmentName = "dev", Entity = "Contact", Id = Guid,
+			Data = Obj("{\"Name\":\"Inline\"}"), RowsFile = rowsFile, Confirm = true
+		});
 
-			// Assert
-			response.Success.Should().BeFalse(
-				because: "two payload sources are ambiguous and picking one silently would write data the caller did not choose");
-			response.Error.Should().Contain("not both",
-				because: "the caller has to be told which argument to drop");
-			client.DidNotReceiveWithAnyArgs().ExecutePatchRequest(
-				Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>());
-		} finally {
-			if (File.Exists(rowsFile)) File.Delete(rowsFile);
-		}
+		// Assert
+		response.Success.Should().BeFalse(
+			because: "two payload sources are ambiguous and picking one silently would write data the caller did not choose");
+		response.Error.Should().Contain("not both",
+			because: "the caller has to be told which argument to drop");
+		client.DidNotReceiveWithAnyArgs().ExecutePatchRequest(
+			Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>());
 	}
 
 	[Test]
@@ -74,13 +70,14 @@ public sealed class ODataUpdateToolTests {
 	[Description("An exploratory confirm=false call answers with the confirmation prompt even when rows-file does not exist: the confirm gate is the first guard, so the agent learns the operation is destructive before it fixes the path.")]
 	public void Update_Should_Require_Confirmation_Before_Touching_RowsFile() {
 		// Arrange
-		string rowsFile = Path.Combine(Path.GetTempPath(), $"odata-update-absent-{System.Guid.NewGuid():N}.json");
+		MockFileSystem fileSystem = new();
+		string rowsFile = fileSystem.Path.Combine(fileSystem.Path.GetTempPath(), $"odata-update-absent-{System.Guid.NewGuid():N}.json");
 		IApplicationClient client = Substitute.For<IApplicationClient>();
 		IToolCommandResolver resolver = Substitute.For<IToolCommandResolver>();
 		resolver.Resolve<IApplicationClient>(Arg.Any<EnvironmentOptions>()).Returns(client);
 
 		// Act
-		ODataWriteResponse response = new ODataUpdateTool(resolver, Substitute.For<System.IO.Abstractions.IFileSystem>()).Update(new ODataUpdateArgs {
+		ODataWriteResponse response = new ODataUpdateTool(resolver, fileSystem).Update(new ODataUpdateArgs {
 			EnvironmentName = "dev", Entity = "Contact", Id = Guid, RowsFile = rowsFile, Confirm = false
 		});
 
@@ -99,13 +96,14 @@ public sealed class ODataUpdateToolTests {
 	[Description("Reports a missing rows-file as a structured failure once confirmation has passed, rather than letting the file exception escape as a protocol error.")]
 	public void Update_Should_Report_Missing_RowsFile_After_Confirmation() {
 		// Arrange
-		string rowsFile = Path.Combine(Path.GetTempPath(), $"odata-update-absent-{System.Guid.NewGuid():N}.json");
+		MockFileSystem fileSystem = new();
+		string rowsFile = fileSystem.Path.Combine(fileSystem.Path.GetTempPath(), $"odata-update-absent-{System.Guid.NewGuid():N}.json");
 		IApplicationClient client = Substitute.For<IApplicationClient>();
 		IToolCommandResolver resolver = Substitute.For<IToolCommandResolver>();
 		resolver.Resolve<IApplicationClient>(Arg.Any<EnvironmentOptions>()).Returns(client);
 
 		// Act
-		ODataWriteResponse response = new ODataUpdateTool(resolver, new System.IO.Abstractions.FileSystem()).Update(new ODataUpdateArgs {
+		ODataWriteResponse response = new ODataUpdateTool(resolver, fileSystem).Update(new ODataUpdateArgs {
 			EnvironmentName = "dev", Entity = "Contact", Id = Guid, RowsFile = rowsFile, Confirm = true
 		});
 
@@ -123,28 +121,25 @@ public sealed class ODataUpdateToolTests {
 	[Description("Reports malformed rows-file JSON as a structured failure instead of surfacing a raw parser exception.")]
 	public void Update_Should_Report_Invalid_RowsFile_Json() {
 		// Arrange
-		string rowsFile = Path.Combine(Path.GetTempPath(), $"odata-update-bad-{System.Guid.NewGuid():N}.json");
-		File.WriteAllText(rowsFile, "{ not json");
+		MockFileSystem fileSystem = new();
+		string rowsFile = fileSystem.Path.Combine(fileSystem.Path.GetTempPath(), $"odata-update-bad-{System.Guid.NewGuid():N}.json");
+		fileSystem.AddFile(rowsFile, new MockFileData("{ not json", Encoding.UTF8));
 		IApplicationClient client = Substitute.For<IApplicationClient>();
 		IToolCommandResolver resolver = Substitute.For<IToolCommandResolver>();
 		resolver.Resolve<IApplicationClient>(Arg.Any<EnvironmentOptions>()).Returns(client);
 
-		try {
-			// Act
-			ODataWriteResponse response = new ODataUpdateTool(resolver, new System.IO.Abstractions.FileSystem()).Update(new ODataUpdateArgs {
-				EnvironmentName = "dev", Entity = "Contact", Id = Guid, RowsFile = rowsFile, Confirm = true
-			});
+		// Act
+		ODataWriteResponse response = new ODataUpdateTool(resolver, fileSystem).Update(new ODataUpdateArgs {
+			EnvironmentName = "dev", Entity = "Contact", Id = Guid, RowsFile = rowsFile, Confirm = true
+		});
 
-			// Assert
-			response.Success.Should().BeFalse(
-				because: "an unparseable payload must fail the request, not the MCP protocol frame");
-			response.Error.Should().Contain("must contain valid JSON",
-				because: "the caller has to know the file content is at fault, not the request shape");
-			client.DidNotReceiveWithAnyArgs().ExecutePatchRequest(
-				Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>());
-		} finally {
-			if (File.Exists(rowsFile)) File.Delete(rowsFile);
-		}
+		// Assert
+		response.Success.Should().BeFalse(
+			because: "an unparseable payload must fail the request, not the MCP protocol frame");
+		response.Error.Should().Contain("must contain valid JSON",
+			because: "the caller has to know the file content is at fault, not the request shape");
+		client.DidNotReceiveWithAnyArgs().ExecutePatchRequest(
+			Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>());
 	}
 
 	private const string Guid = "8ecab4a1-0ca3-4515-9399-efe0a19390bd";
