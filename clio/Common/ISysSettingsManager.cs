@@ -145,6 +145,24 @@ public class SysSettingsManager : ISysSettingsManager
 	/// </summary>
 	private const int MaxAuthProbeJsonDepth = 20;
 
+	/// <summary>
+	/// Finite timeout for the authentication preflight, in milliseconds. The probe now runs before every
+	/// create/update and before every ambiguous empty read, and the default overload uses
+	/// <see cref="Timeout.Infinite"/> - so a half-open endpoint would hang the command forever before its
+	/// real operation ever started. One SelectQuery that returns a single Id is a small read; a minute is
+	/// generous for it and still terminates.
+	/// </summary>
+	private const int AuthProbeRequestTimeoutMilliseconds = 60_000;
+
+	/// <summary>
+	/// Attempts for the authentication preflight. Exactly one: the probe reads nothing and changes nothing,
+	/// but a retry loop in front of every write multiplies the stall a half-open endpoint can cause.
+	/// </summary>
+	private const int AuthProbeMaxAttempts = 1;
+
+	/// <summary>Delay between preflight attempts, in seconds. Unused at one attempt; passed for clarity.</summary>
+	private const int AuthProbeRetryDelaySeconds = 1;
+
 	/// <summary>Cap on the server-controlled detail embedded in an authentication exception message.</summary>
 	private const int MaxAuthenticationDetailLength = 300;
 
@@ -698,7 +716,8 @@ public class SysSettingsManager : ISysSettingsManager
 		string url = _serviceUrlBuilder.Build(ServiceUrlBuilder.KnownRoute.Select);
 		string response;
 		try {
-			response = _creatioClient.ExecutePostRequest(url, AuthenticatedReadinessQuery);
+			response = _creatioClient.ExecutePostRequest(url, AuthenticatedReadinessQuery,
+				AuthProbeRequestTimeoutMilliseconds, AuthProbeMaxAttempts, AuthProbeRetryDelaySeconds);
 		} catch (Exception exception) when (IsAuthenticationException(exception)) {
 			throw new AuthenticationException(
 				$"Authentication failed while {operationLabel}. Verify the environment credentials and retry.",

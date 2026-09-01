@@ -44,12 +44,19 @@ public class SysSettingsManagerNewBehaviorTests {
 		IApplicationClient applicationClient = Substitute.For<IApplicationClient>();
 		applicationClient.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>())
 			.Returns(AcceptedDataServiceResponse);
+		//The probe uses the timeout-bearing overload. NSubstitute matches per overload, so without
+		//this twin the two-argument stub above leaves the probe returning null.
+		applicationClient.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+			.Returns(AcceptedDataServiceResponse);
 		return applicationClient;
 	}
 
 	private static IApplicationClient BuildRejectingClient(string response) {
 		IApplicationClient applicationClient = Substitute.For<IApplicationClient>();
 		applicationClient.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>()).Returns(response);
+		//The probe uses the timeout-bearing overload. NSubstitute matches per overload, so without
+		//this twin the two-argument stub above leaves the probe returning null.
+		applicationClient.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>()).Returns(response);
 		return applicationClient;
 	}
 
@@ -282,11 +289,41 @@ public class SysSettingsManagerNewBehaviorTests {
 	#region Authentication failure handling
 
 	[Test]
+	[Description("The authentication preflight is issued with a finite timeout and a single attempt, so a half-open endpoint cannot hang the command before its real operation starts.")]
+	public void EnsureAuthenticatedDataServiceResponse_ShouldUseBoundedRequestOptions() {
+		// Arrange
+		IApplicationClient applicationClient = BuildAcceptedClient();
+		IDataProvider dataProvider = new DataProviderMock();
+		ISysSettingsManager sut = BuildSut(dataProvider, applicationClient);
+
+		// Act
+		sut.GetAllSysSettingsWithValues();
+
+		// Assert
+		applicationClient.Received(1).ExecutePostRequest(
+			Arg.Is<string>(url => url.Contains("SelectQuery")),
+			Arg.Any<string>(),
+			60_000,
+			1,
+			1);
+		applicationClient.DidNotReceive().ExecutePostRequest(
+			Arg.Is<string>(url => url.Contains("SelectQuery")),
+			Arg.Any<string>(),
+			System.Threading.Timeout.Infinite,
+			Arg.Any<int>(),
+			Arg.Any<int>());
+	}
+
+	[Test]
 	[Description("GetAllSysSettingsWithValues fails closed when the DataService returns Creatio's expired-password authentication error instead of allowing the repository provider to expose an empty list.")]
 	public void GetAllSysSettingsWithValues_ShouldThrowAuthenticationException_WhenCredentialsAreRejected() {
 		// Arrange
 		IApplicationClient applicationClient = Substitute.For<IApplicationClient>();
 		applicationClient.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>())
+			.Returns("{\"success\":false,\"errorInfo\":{\"errorCode\":\"5\",\"message\":\"Your password has expired\"}}");
+		//The probe uses the timeout-bearing overload. NSubstitute matches per overload, so without
+		//this twin the two-argument stub above leaves the probe returning null.
+		applicationClient.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
 			.Returns("{\"success\":false,\"errorInfo\":{\"errorCode\":\"5\",\"message\":\"Your password has expired\"}}");
 		ISysSettingsManager sut = BuildSut(new DataProviderMock(), applicationClient);
 
@@ -308,6 +345,10 @@ public class SysSettingsManagerNewBehaviorTests {
 		DataProviderMock providerMock = SetupSysSettingsMock(Guid.NewGuid(), "UsrAuthFailure", "Text");
 		IApplicationClient applicationClient = Substitute.For<IApplicationClient>();
 		applicationClient.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>())
+			.Returns("{\"success\":false,\"responseStatus\":{\"ErrorCode\":\"5\",\"Message\":\"Your password has expired\"}}");
+		//The probe uses the timeout-bearing overload. NSubstitute matches per overload, so without
+		//this twin the two-argument stub above leaves the probe returning null.
+		applicationClient.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
 			.Returns("{\"success\":false,\"responseStatus\":{\"ErrorCode\":\"5\",\"Message\":\"Your password has expired\"}}");
 		ISysSettingsManager sut = BuildSut(providerMock, applicationClient);
 
@@ -332,6 +373,10 @@ public class SysSettingsManagerNewBehaviorTests {
 		IApplicationClient applicationClient = Substitute.For<IApplicationClient>();
 		applicationClient.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>())
 			.Returns("{\"success\":false,\"responseStatus\":{\"ErrorCode\":\"5\",\"Message\":\"Your password has expired\"}}");
+		//The probe uses the timeout-bearing overload. NSubstitute matches per overload, so without
+		//this twin the two-argument stub above leaves the probe returning null.
+		applicationClient.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+			.Returns("{\"success\":false,\"responseStatus\":{\"ErrorCode\":\"5\",\"Message\":\"Your password has expired\"}}");
 		ISysSettingsManager sut = BuildSut(new DataProviderMock(), applicationClient);
 
 		// Act
@@ -354,6 +399,10 @@ public class SysSettingsManagerNewBehaviorTests {
 		// Arrange
 		IApplicationClient applicationClient = Substitute.For<IApplicationClient>();
 		applicationClient.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>())
+			.Returns(_ => throw new HttpRequestException("Response status code does not indicate success: 401 (Unauthorized)."));
+		//The probe uses the timeout-bearing overload. NSubstitute matches per overload, so without
+		//this twin the two-argument stub above leaves the probe returning null.
+		applicationClient.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
 			.Returns(_ => throw new HttpRequestException("Response status code does not indicate success: 401 (Unauthorized)."));
 		ISysSettingsManager sut = BuildSut(new DataProviderMock(), applicationClient);
 
@@ -380,6 +429,11 @@ public class SysSettingsManagerNewBehaviorTests {
 		applicationClient
 			.ExecutePostRequest(Arg.Any<string>(), Arg.Do<string>(b => capturedBody = b))
 			.Returns(InsertSuccessJson);
+		//The probe uses the timeout-bearing overload. NSubstitute matches per overload, so without
+		//this twin the two-argument stub above leaves the probe returning null.
+		applicationClient
+			.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+			.Returns(InsertSuccessJson);
 		Guid refUId = new("b80eb7bb-193c-4bb2-ad51-e0beb1670278");
 		ISysSettingsManager sut = BuildSut(new DataProviderMock(), applicationClient);
 
@@ -402,6 +456,11 @@ public class SysSettingsManagerNewBehaviorTests {
 		applicationClient
 			.ExecutePostRequest(Arg.Any<string>(), Arg.Do<string>(b => capturedBody = b))
 			.Returns(InsertSuccessJson);
+		//The probe uses the timeout-bearing overload. NSubstitute matches per overload, so without
+		//this twin the two-argument stub above leaves the probe returning null.
+		applicationClient
+			.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+			.Returns(InsertSuccessJson);
 		ISysSettingsManager sut = BuildSut(new DataProviderMock(), applicationClient);
 
 		sut.InsertSysSetting("Plain", "UsrPlain", "Text");
@@ -422,6 +481,11 @@ public class SysSettingsManagerNewBehaviorTests {
 		applicationClient
 			.ExecutePostRequest(Arg.Any<string>(), Arg.Do<string>(b => capturedBody = b))
 			.Returns(InsertSuccessJson);
+		//The probe uses the timeout-bearing overload. NSubstitute matches per overload, so without
+		//this twin the two-argument stub above leaves the probe returning null.
+		applicationClient
+			.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+			.Returns(InsertSuccessJson);
 		ISysSettingsManager sut = BuildSut(new DataProviderMock(), applicationClient);
 
 		sut.InsertSysSetting("N", "UsrCode", input);
@@ -441,6 +505,11 @@ public class SysSettingsManagerNewBehaviorTests {
 		applicationClient.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>())
 			.Returns(
 				"""{"saveResult":{"UsrAny":true},"rowsAffected":-1,"nextPrcElReady":false,"success":false}""");
+		//The probe uses the timeout-bearing overload. NSubstitute matches per overload, so without
+		//this twin the two-argument stub above leaves the probe returning null.
+		applicationClient.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+			.Returns(
+				"""{"saveResult":{"UsrAny":true},"rowsAffected":-1,"nextPrcElReady":false,"success":false}""");
 		ISysSettingsManager sut = BuildSut(new DataProviderMock(), applicationClient);
 
 		sut.UpdateSysSetting("UsrAny", "value").Should().BeTrue(
@@ -452,6 +521,11 @@ public class SysSettingsManagerNewBehaviorTests {
 	public void UpdateSysSetting_ReturnsFalse_WhenSaveResultReportsFailureForCode() {
 		IApplicationClient applicationClient = Substitute.For<IApplicationClient>();
 		applicationClient.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>())
+			.Returns(
+				"""{"saveResult":{"UsrAny":false},"rowsAffected":-1,"nextPrcElReady":false,"success":false,"responseStatus":{"ErrorCode":"","Message":"denied","Errors":[]}}""");
+		//The probe uses the timeout-bearing overload. NSubstitute matches per overload, so without
+		//this twin the two-argument stub above leaves the probe returning null.
+		applicationClient.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
 			.Returns(
 				"""{"saveResult":{"UsrAny":false},"rowsAffected":-1,"nextPrcElReady":false,"success":false,"responseStatus":{"ErrorCode":"","Message":"denied","Errors":[]}}""");
 		ISysSettingsManager sut = BuildSut(new DataProviderMock(), applicationClient);
@@ -467,6 +541,11 @@ public class SysSettingsManagerNewBehaviorTests {
 		applicationClient.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>())
 			.Returns(
 				"""{"saveResult":{"OtherCode":true},"rowsAffected":-1,"nextPrcElReady":false,"success":false}""");
+		//The probe uses the timeout-bearing overload. NSubstitute matches per overload, so without
+		//this twin the two-argument stub above leaves the probe returning null.
+		applicationClient.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+			.Returns(
+				"""{"saveResult":{"OtherCode":true},"rowsAffected":-1,"nextPrcElReady":false,"success":false}""");
 		ISysSettingsManager sut = BuildSut(new DataProviderMock(), applicationClient);
 
 		sut.UpdateSysSetting("UsrAny", "value").Should().BeFalse(
@@ -479,10 +558,19 @@ public class SysSettingsManagerNewBehaviorTests {
 		IApplicationClient applicationClient = Substitute.For<IApplicationClient>();
 		applicationClient.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>())
 			.Returns(string.Empty);
+		//The probe uses the timeout-bearing overload. NSubstitute matches per overload, so without
+		//this twin the two-argument stub above leaves the probe returning null.
+		applicationClient.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+			.Returns(string.Empty);
 		// The credentials are fine here; it is the WRITE acknowledgement that is missing, so the
 		// probe route answers normally and only the update comes back empty.
 		applicationClient
 			.ExecutePostRequest(Arg.Is<string>(url => url.Contains("SelectQuery")), Arg.Any<string>())
+			.Returns(AcceptedDataServiceResponse);
+		//The probe uses the timeout-bearing overload. NSubstitute matches per overload, so without
+		//this twin the two-argument stub above leaves the probe returning null.
+		applicationClient
+			.ExecutePostRequest(Arg.Is<string>(url => url.Contains("SelectQuery")), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
 			.Returns(AcceptedDataServiceResponse);
 		ISysSettingsManager sut = BuildSut(new DataProviderMock(), applicationClient);
 
@@ -518,6 +606,9 @@ public class SysSettingsManagerNewBehaviorTests {
 		result.Should().BeFalse(
 			because: "an agent-supplied code with a quote character could otherwise break the request JSON payload");
 		applicationClient.DidNotReceive().ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>());
+		//The probe uses the timeout-bearing overload. NSubstitute matches per overload, so without
+		//this twin the two-argument stub above leaves the probe returning null.
+		applicationClient.DidNotReceive().ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>());
 	}
 
 	[Test]
@@ -527,6 +618,10 @@ public class SysSettingsManagerNewBehaviorTests {
 		IApplicationClient applicationClient = Substitute.For<IApplicationClient>();
 		string capturedBody = null;
 		applicationClient.ExecutePostRequest(Arg.Any<string>(), Arg.Do<string>(b => capturedBody = b))
+			.Returns("""{"saveResult":{"UsrEscapeCode":true},"success":false}""");
+		//The probe uses the timeout-bearing overload. NSubstitute matches per overload, so without
+		//this twin the two-argument stub above leaves the probe returning null.
+		applicationClient.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
 			.Returns("""{"saveResult":{"UsrEscapeCode":true},"success":false}""");
 		ISysSettingsManager sut = BuildSut(providerMock, applicationClient);
 
@@ -554,6 +649,9 @@ public class SysSettingsManagerNewBehaviorTests {
 		result.Should().BeFalse(
 			because: "there is no sys-setting to resolve a reference schema against, so the update must fail closed instead of throwing");
 		applicationClient.DidNotReceive().ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>());
+		//The probe uses the timeout-bearing overload. NSubstitute matches per overload, so without
+		//this twin the two-argument stub above leaves the probe returning null.
+		applicationClient.DidNotReceive().ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>());
 	}
 
 	#endregion
@@ -712,6 +810,12 @@ public class SysSettingsManagerNewBehaviorTests {
 			.Returns(_ => capturedBodies.Count == 1
 				? $$"""{"rows":[{"Id":"{{resolvedId}}"}]}"""
 				: """{"saveResult":{"UsrLookupCode":true},"success":false}""");
+		//The probe uses the timeout-bearing overload. NSubstitute matches per overload, so without
+		//this twin the two-argument stub above leaves the probe returning null.
+		applicationClient.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+			.Returns(_ => capturedBodies.Count == 1
+				? $$"""{"rows":[{"Id":"{{resolvedId}}"}]}"""
+				: """{"saveResult":{"UsrLookupCode":true},"success":false}""");
 		SysSettingsManager sut = BuildSutWithStubbedTemplate(providerMock, applicationClient,
 			SelectIdByDisplayValueTemplate);
 
@@ -750,6 +854,10 @@ public class SysSettingsManagerNewBehaviorTests {
 
 		IApplicationClient applicationClient = Substitute.For<IApplicationClient>();
 		applicationClient.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>())
+			.Returns("""{"rows":[{"Id":"11111111-1111-1111-1111-111111111111"},{"Id":"22222222-2222-2222-2222-222222222222"}]}""");
+		//The probe uses the timeout-bearing overload. NSubstitute matches per overload, so without
+		//this twin the two-argument stub above leaves the probe returning null.
+		applicationClient.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
 			.Returns("""{"rows":[{"Id":"11111111-1111-1111-1111-111111111111"},{"Id":"22222222-2222-2222-2222-222222222222"}]}""");
 		SysSettingsManager sut = BuildSutWithStubbedTemplate(providerMock, applicationClient,
 			SelectIdByDisplayValueTemplate);
@@ -875,6 +983,10 @@ public class SysSettingsManagerNewBehaviorTests {
 		string capturedBody = null;
 		applicationClient.ExecutePostRequest(Arg.Any<string>(), Arg.Do<string>(b => capturedBody = b))
 			.Returns("""{"saveResult":{"UsrMoneyCode":true},"success":false}""");
+		//The probe uses the timeout-bearing overload. NSubstitute matches per overload, so without
+		//this twin the two-argument stub above leaves the probe returning null.
+		applicationClient.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+			.Returns("""{"saveResult":{"UsrMoneyCode":true},"success":false}""");
 		ISysSettingsManager sut = BuildSut(providerMock, applicationClient);
 
 		sut.UpdateSysSetting("UsrMoneyCode", "19.95").Should().BeTrue(
@@ -890,6 +1002,10 @@ public class SysSettingsManagerNewBehaviorTests {
 		IApplicationClient applicationClient = Substitute.For<IApplicationClient>();
 		string capturedBody = null;
 		applicationClient.ExecutePostRequest(Arg.Any<string>(), Arg.Do<string>(b => capturedBody = b))
+			.Returns("""{"saveResult":{"UsrFloatCode":true},"success":false}""");
+		//The probe uses the timeout-bearing overload. NSubstitute matches per overload, so without
+		//this twin the two-argument stub above leaves the probe returning null.
+		applicationClient.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
 			.Returns("""{"saveResult":{"UsrFloatCode":true},"success":false}""");
 		ISysSettingsManager sut = BuildSut(providerMock, applicationClient);
 
@@ -908,6 +1024,10 @@ public class SysSettingsManagerNewBehaviorTests {
 		IApplicationClient applicationClient = Substitute.For<IApplicationClient>();
 		string capturedBody = null;
 		applicationClient.ExecutePostRequest(Arg.Any<string>(), Arg.Do<string>(b => capturedBody = b))
+			.Returns("""{"saveResult":{"LogoImage":true},"success":false}""");
+		//The probe uses the timeout-bearing overload. NSubstitute matches per overload, so without
+		//this twin the two-argument stub above leaves the probe returning null.
+		applicationClient.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
 			.Returns("""{"saveResult":{"LogoImage":true},"success":false}""");
 		ISysSettingsManager sut = BuildSut(providerMock, applicationClient);
 
@@ -936,6 +1056,9 @@ public class SysSettingsManagerNewBehaviorTests {
 		updated.Should().BeFalse(
 			because: "a Binary value that is not valid Base64 must fail fast rather than post a bad payload");
 		applicationClient.DidNotReceive().ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>());
+		//The probe uses the timeout-bearing overload. NSubstitute matches per overload, so without
+		//this twin the two-argument stub above leaves the probe returning null.
+		applicationClient.DidNotReceive().ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>());
 	}
 
 	[Test]
@@ -955,6 +1078,9 @@ public class SysSettingsManagerNewBehaviorTests {
 		updated.Should().BeFalse(
 			because: "a Binary payload over the decoded-byte cap must be rejected regardless of input form");
 		applicationClient.DidNotReceive().ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>());
+		//The probe uses the timeout-bearing overload. NSubstitute matches per overload, so without
+		//this twin the two-argument stub above leaves the probe returning null.
+		applicationClient.DidNotReceive().ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>());
 	}
 
 	#endregion
