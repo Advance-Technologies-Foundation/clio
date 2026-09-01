@@ -547,6 +547,26 @@ internal class RemoteEntitySchemaColumnManagerTests
 		// because: changing a lookup's reference schema changes a navigation property in the OData contract
 	}
 
+	[Test]
+	[Description("Resolves the OData contract impact as Changed when a modify renames the column, since the property name is what the OData contract publishes.")]
+	public void ModifyColumn_ResolvesChangedImpact_WhenModifyRenamesColumn() {
+		// Arrange
+		EntitySchemaColumnDto column = CreateTextColumn("Status", CodeColumnUId);
+		_loadedSchema = CreateSchema(columns: [CreateGuidColumn("Id", IdColumnUId), column], primaryDisplayColumn: null);
+		SetupLoadedSchema();
+		var options = new ModifyEntitySchemaColumnOptions {
+			Package = "UsrPkg", SchemaName = "UsrVehicle", Action = "modify", ColumnName = "Status", NewName = "UsrStatus"
+		};
+
+		// Act
+		_manager.ModifyColumn(options);
+
+		// Assert
+		_entitySchemaPublisher.Received(1).PublishSavedChanges(
+			Arg.Any<Clio.Command.RemoteCommandOptions>(), "UsrVehicle", "columns were saved", ODataContractImpact.Changed);
+		// because: the property name is the first thing the OData contract carries, so a rename leaves the old name published until the entities assembly is rebuilt
+	}
+
 	[TestCase(nameof(ModifyEntitySchemaColumnOptions.Title), "Vehicle status")]
 	[TestCase(nameof(ModifyEntitySchemaColumnOptions.Description), "Status description")]
 	[TestCase(nameof(ModifyEntitySchemaColumnOptions.DefaultValue), "1")]

@@ -1243,8 +1243,9 @@ internal sealed class RemoteEntitySchemaColumnManager : IRemoteEntitySchemaColum
 	/// whether the OData entities assembly has to be rebuilt after the publish.
 	/// </summary>
 	/// <remarks>
-	/// Adding or removing a column changes the property list; changing a column's type changes its EDM type;
-	/// changing its reference schema changes a navigation property. Everything else a modify can touch -
+	/// Adding or removing a column changes the property list; renaming one changes the property name;
+	/// changing a column's type changes its EDM type; changing its reference schema changes a navigation
+	/// property. Everything else a modify can touch -
 	/// caption, description, default value, mask, usage type, required - is absent from the contract, verified
 	/// against a live stand by publishing those mutations with the rebuild suppressed and diffing the
 	/// <c>$metadata</c> document, which came back byte-for-byte identical. A type or reference supplied with
@@ -1258,7 +1259,8 @@ internal sealed class RemoteEntitySchemaColumnManager : IRemoteEntitySchemaColum
 			return action switch {
 				EntitySchemaColumnAction.Add => true,
 				EntitySchemaColumnAction.Remove => true,
-				_ => !string.IsNullOrWhiteSpace(operation.Type)
+				_ => !string.IsNullOrWhiteSpace(operation.NewName)
+					|| !string.IsNullOrWhiteSpace(operation.Type)
 					|| !string.IsNullOrWhiteSpace(operation.ReferenceSchemaName)
 			};
 		});

@@ -1,12 +1,6 @@
 using System;
-using System.Collections.ObjectModel;
 using System.Diagnostics;
 using System.Globalization;
-using System.IO;
-using System.Linq;
-using System.Net;
-using System.Net.Http;
-using System.Net.Sockets;
 using Clio.Common;
 
 namespace Clio.Command.EntitySchemaDesigner;
@@ -73,27 +67,10 @@ internal sealed class EntitySchemaPublisher : IEntitySchemaPublisher
 		try {
 			_client.RunODataBuild(options);
 			_logger.WriteInfo($"OData entities rebuild requested for '{schemaName}'.");
-		} catch (Exception odataException) when (IsExpectedODataBuildFault(odataException)) {
+		} catch (Exception odataException) when (ODataBuildFaults.IsExpected(odataException)) {
 			_logger.WriteWarning(
 				$"Schema '{schemaName}' was published, but {ODataBuildRequestFailedWarningFragment}: " +
 				$"{odataException.Message} It is usable; it may not be reachable over OData until an OData build runs.");
 		}
-	}
-
-	// Creatio's client runs via Task.Result, so transport faults arrive wrapped in AggregateException — unwrap
-	// recursively. Allow-list, not a blanket catch, so genuine programming errors still surface.
-	private static bool IsExpectedODataBuildFault(Exception exception) {
-		if (exception is AggregateException aggregate) {
-			// Count > 0: an empty aggregate has no diagnosable fault (All is vacuously true), so let it surface.
-			ReadOnlyCollection<Exception> inner = aggregate.Flatten().InnerExceptions;
-			return inner.Count > 0 && inner.All(IsExpectedODataBuildFault);
-		}
-		return exception is InvalidOperationException
-			or HttpRequestException
-			or WebException
-			or SocketException
-			or IOException
-			or OperationCanceledException
-			or Newtonsoft.Json.JsonException;
 	}
 }

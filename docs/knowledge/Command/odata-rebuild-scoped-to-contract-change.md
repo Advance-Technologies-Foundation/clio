@@ -15,7 +15,8 @@ suppressed and diffing `$metadata` before and after: caption, description, defau
 usage type, and the `required` flag are all absent from the document, so a mutation that only
 touches one of those leaves `$metadata` byte-for-byte identical. `required` in particular does not
 map onto the EDM `Nullable` attribute — the two are tracked separately, so setting `required` is not
-a nullability change from OData's point of view. Only adding/removing a column, changing a column's
+a nullability change from OData's point of view. Only adding/removing a column, renaming a column
+(`--new-name`, which is literally the property name the document publishes), changing a column's
 type, or changing a column's reference schema alters the document, and only those mutations request
 the rebuild (`ODataContractImpact.Changed`); everything else takes the `Unchanged` branch and skips
 it. `WorkspaceBuilder.BuildOData` — the method that actually recompiles the OData entities assembly —

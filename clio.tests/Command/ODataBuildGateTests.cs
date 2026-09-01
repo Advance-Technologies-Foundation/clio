@@ -1,7 +1,10 @@
 using System;
+using System.Net.Http;
+using System.Net.Sockets;
 using Clio.Command;
 using Clio.Command.EntitySchemaDesigner;
 using Clio.Common;
+using Clio.Package;
 using FluentAssertions;
 using NSubstitute;
 using NUnit.Framework;
@@ -106,4 +109,65 @@ public sealed class ODataBuildGateTests
 			&& message.Contains("UsrVehicle", StringComparison.Ordinal)));
 		// because: a caller whose publish may still collide with the build must be told which schema is at risk
 	}
+
+	[TestCaseSource(nameof(ProbeFaults))]
+	[Description("Absorbs an environment or transport fault raised by the first probe: the gate warns and returns instead of letting the exception abort a mutation that has already been saved.")]
+	public void WaitUntilIdle_ShouldWarnAndReturn_WhenFirstProbeFaults(Exception fault) {
+		// Arrange
+		_client.TryGetIsODataBuildRunning(_options).Returns(_ => throw fault);
+
+		// Act
+		Action act = () => _gate.WaitUntilIdle(_options, "UsrVehicle");
+
+		// Assert
+		act.Should().NotThrow(
+			because: "the schema is already saved when the gate runs, and the publisher calls the gate outside its own try block, so a probe fault would leave the mutation persisted but unpublished");
+		_retryDelay.DidNotReceiveWithAnyArgs().Wait(default);
+		// because: a probe that could not answer gives no reason to wait
+		_logger.Received(1).WriteWarning(Arg.Is<string>(message =>
+			message.Contains("Could not read the OData entities build status", StringComparison.Ordinal)));
+		// because: the caller must learn the wait was skipped, since a collision with a running build stays possible
+	}
+
+	[Test]
+	[Description("Absorbs a transport fault raised mid-poll: the gate stops waiting and returns instead of killing the command after the publish already started waiting.")]
+	public void WaitUntilIdle_ShouldStopWaitingAndReturn_WhenPollFaults() {
+		// Arrange
+		_client.TryGetIsODataBuildRunning(_options).Returns(
+			_ => true,
+			_ => throw new HttpRequestException("connection reset"));
+
+		// Act
+		Action act = () => _gate.WaitUntilIdle(_options, "UsrVehicle");
+
+		// Assert
+		act.Should().NotThrow(
+			because: "a dropped connection during the wait must not fail a publish the caller legitimately asked for");
+		_retryDelay.Received(1).Wait(ODataBuildGate.PollInterval);
+		// because: the gate must abandon the remaining budget as soon as a poll can no longer answer
+	}
+
+	[Test]
+	[Description("Does not record the environment as lacking the status method when the probe faults, so a later publish over a healthy connection probes again.")]
+	public void WaitUntilIdle_ShouldNotRememberUnsupported_WhenProbeFaults() {
+		// Arrange
+		_client.TryGetIsODataBuildRunning(_options).Returns(
+			_ => throw new HttpRequestException("connection reset"),
+			_ => false);
+
+		// Act
+		_gate.WaitUntilIdle(_options, "UsrVehicle");
+		_gate.WaitUntilIdle(_options, "UsrVehicle2");
+
+		// Assert
+		_client.Received(2).TryGetIsODataBuildRunning(_options);
+		// because: a dropped connection says nothing about whether the deployed platform exposes the status method, unlike an HTML answer
+	}
+
+	private static readonly object[] ProbeFaults = [
+		new object[] { new HttpRequestException("connection reset") },
+		new object[] { new NonJsonServiceResponseException("<html>404</html>") },
+		new object[] { new InvalidOperationException("IsODataBuildRunning failed: success=false") },
+		new object[] { new AggregateException(new SocketException()) }
+	];
 }

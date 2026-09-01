@@ -309,7 +309,7 @@ public sealed class UpdateEntitySchemaTool(
 	[McpServerTool(Name = UpdateEntitySchemaToolName, ReadOnly = false, Destructive = true, Idempotent = false,
 		OpenWorld = false)]
 	[Description("Applies a batch of add, modify, and remove column operations to a remote Creatio entity schema. " +
-		"The batch is always published. An OData entities rebuild is requested only if at least one operation in the batch changes the published OData contract — adding or removing a column, or changing its type or reference schema; caption, description, default value, mask, usage type, and required changes leave the contract unchanged and do not trigger a rebuild. When a rebuild is requested, changed columns become reachable over OData (/0/odata/<Entity>) asynchronously (~1-2 min): a 404 (or \"The request is invalid\") from an odata-* tool right after a change is the expected async gap — wait briefly and retry, do not compile. " +
+		"The batch is always published. An OData entities rebuild is requested only if at least one operation in the batch changes the published OData contract — adding or removing a column, renaming one (newName), or changing its type or reference schema; caption, description, default value, mask, usage type, and required changes leave the contract unchanged and do not trigger a rebuild. When a rebuild is requested, changed columns become reachable over OData (/0/odata/<Entity>) asynchronously (~1-2 min): a 404 (or \"The request is invalid\") from an odata-* tool right after a change is the expected async gap — wait briefly and retry, do not compile. " +
 		"An INHERITED column can have only its caption/description overridden (title-localizations / description-localizations); its name, type, and flags stay read-only. " +
 		"Entity business rules (conditional editability/required/values) are separate artifacts — call get-guidance with name business-rules to learn more. For the schema-design workflow call get-guidance with name app-modeling.")]
 	public async Task<CommandExecutionResult> UpdateEntitySchema(
@@ -585,7 +585,8 @@ public sealed class ModifyEntitySchemaColumnTool(ModifyEntitySchemaColumnCommand
 		OpenWorld = false)]
 	[Description("Adds, modifies, or removes a column in a remote Creatio entity schema. "
 		+ "The change is always published. An OData entities rebuild is requested only when the mutation changes "
-		+ "the published OData contract — adding or removing a column, or changing its type or reference schema; "
+		+ "the published OData contract — adding or removing a column, renaming one (newName), or changing its "
+		+ "type or reference schema; "
 		+ "changing a column's caption, description, default value, mask, usage type, or required flag leaves the "
 		+ "contract unchanged and does not trigger a rebuild. When a rebuild is requested, the column becomes "
 		+ "reachable over OData (/0/odata/<Entity>) asynchronously (~1-2 min): a 404 (or \"The request is invalid\") "

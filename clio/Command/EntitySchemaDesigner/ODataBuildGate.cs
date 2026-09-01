@@ -68,7 +68,10 @@ internal sealed class ODataBuildGate : IODataBuildGate
 		if (_statusMethodSupport.TryGetValue(environmentKey, out bool isSupported) && !isSupported) {
 			return;
 		}
-		bool? isRunning = _client.TryGetIsODataBuildRunning(options);
+		bool? isRunning = Probe(options, out bool probeFaulted);
+		if (probeFaulted) {
+			return;
+		}
 		if (isRunning is null) {
 			// Unknown, not idle: the server has no such method. Record it so the remaining publishes in this
 			// process do not pay for the probe again.
@@ -83,7 +86,8 @@ internal sealed class ODataBuildGate : IODataBuildGate
 			$"Waiting for the running OData entities build to finish before publishing '{schemaName}'.");
 		for (int attempt = 1; attempt <= PollAttemptCount; attempt++) {
 			_retryDelay.Wait(PollInterval);
-			if (_client.TryGetIsODataBuildRunning(options) != true) {
+			bool? pollResult = Probe(options, out bool pollFaulted);
+			if (pollFaulted || pollResult != true) {
 				return;
 			}
 		}
@@ -94,5 +98,23 @@ internal sealed class ODataBuildGate : IODataBuildGate
 			$"The OData entities build is still running after {(PollAttemptCount * PollInterval).TotalSeconds:0}s; " +
 			$"publishing '{schemaName}' anyway. If the publish fails on a locked configuration file, retry the " +
 			"command once the build has finished.");
+	}
+
+	// The gate runs AFTER the schema has already been saved and BEFORE the publisher's own try block, so
+	// anything this probe throws would abort a mutation that is already persisted and leave it unpublished.
+	// The probe only decides whether to wait, so every environment or transport fault is absorbed: the caller
+	// stops waiting and publishes, exactly as it does when the wait budget is spent. The support flag is left
+	// untouched on a fault - a dropped connection says nothing about whether the platform exposes the method.
+	private bool? Probe(RemoteCommandOptions options, out bool faulted) {
+		faulted = false;
+		try {
+			return _client.TryGetIsODataBuildRunning(options);
+		} catch (Exception exception) when (ODataBuildFaults.IsExpected(exception)) {
+			faulted = true;
+			_logger.WriteWarning(
+				$"Could not read the OData entities build status: {exception.Message} Publishing without waiting; " +
+				"if the publish fails on a locked configuration file, retry the command once the build has finished.");
+			return null;
+		}
 	}
 }

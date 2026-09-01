@@ -19,9 +19,10 @@ DESCRIPTION
     After saving, the configuration is always published, so the changed column
     becomes visible to lookup pickers without a manual compile. The OData
     entities are rebuilt only when the mutation changes the published OData
-    contract - adding or removing a column, or changing its type or reference
-    schema. Changing a column's caption, description, default value, mask,
-    usage type, or required flag leaves the OData contract unchanged and does
+    contract - adding or removing a column, renaming one (--new-name), or
+    changing its type or reference schema. Changing a column's caption,
+    description, default value, mask, usage type, or required flag leaves the
+    OData contract unchanged and does
     not trigger a rebuild. When a rebuild is requested, it runs in the
     background (~1-2 min); a 404 from OData right after the change is the
     expected async gap, so wait and retry rather than compiling. Each call

@@ -240,6 +240,29 @@ internal class RemoteEntitySchemaDesignerClientTests
 	}
 
 	[Test]
+	[Description("Issues exactly one attempt for the IsODataBuildRunning probe, regardless of the command-level MaxAttempts, so a failing poll does not burn three attempts plus backoff before the gate gives up.")]
+	public void TryGetIsODataBuildRunning_ShouldIssueSingleAttempt_RegardlessOfCommandMaxAttempts() {
+		// Arrange
+		_serviceUrlBuilder.Build("ServiceModel/WorkspaceExplorerService.svc")
+			.Returns("http://local/ServiceModel/WorkspaceExplorerService.svc");
+		int capturedMaxAttempts = -1;
+		_applicationClient.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(),
+				Arg.Any<int>())
+			.Returns(callInfo => {
+				capturedMaxAttempts = callInfo.ArgAt<int>(3);
+				return "{\"success\":true,\"value\":false}";
+			});
+
+		// Act — seed a non-default MaxAttempts (default is 3) so the assertion distinguishes the hard-coded 1
+		// from a regression that forwards options.MaxAttempts.
+		_client.TryGetIsODataBuildRunning(new RemoteCommandOptions { MaxAttempts = 5 });
+
+		// Assert
+		capturedMaxAttempts.Should().Be(1,
+			because: "the probe is a status read whose answer is stale the moment it arrives, and the gate polls again anyway — retrying it only makes a faulted poll cost three attempts plus backoff before the publish can proceed");
+	}
+
+	[Test]
 	[Description("Returns the reported running state when the server answers IsODataBuildRunning with JSON.")]
 	public void TryGetIsODataBuildRunning_ReturnsValue_WhenServerRespondsWithJson() {
 		// Arrange

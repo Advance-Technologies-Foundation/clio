@@ -181,11 +181,12 @@ internal sealed class RemoteEntitySchemaDesignerClient : IRemoteEntitySchemaDesi
 	}
 
 	public bool? TryGetIsODataBuildRunning(RemoteCommandOptions options) {
-		// Same URL shape as RunODataBuild, and the same single attempt: this is a status read whose answer is
-		// stale the moment it arrives, so a retry buys nothing a later poll does not.
+		// Same URL shape as RunODataBuild, and the same single attempt (maxAttempts: 1, overriding the
+		// command-level default of 3): this is a status read whose answer is stale the moment it arrives, so a
+		// retry buys nothing a later poll does not, and retrying a faulted poll would only delay the publish.
 		string url = $"{_serviceUrlBuilder.Build(WorkspaceExplorerServicePath)}/IsODataBuildRunning";
 		BoolResponse? response = TryPostToUrl<object, BoolResponse>(url, new object(), options,
-			"IsODataBuildRunning");
+			"IsODataBuildRunning", maxAttempts: 1);
 		return response?.Value;
 	}
 
@@ -292,13 +293,15 @@ internal sealed class RemoteEntitySchemaDesignerClient : IRemoteEntitySchemaDesi
 		return EnsureSuccess(response, methodName);
 	}
 
+	// maxAttempts: null keeps the command-level default; pass an explicit value for a non-idempotent or
+	// throwaway request that must not be retried.
 	private TResponse? TryPostToUrl<TRequest, TResponse>(string url, TRequest request, RemoteCommandOptions options,
-		string methodName)
+		string methodName, int? maxAttempts = null)
 		where TRequest : class
 		where TResponse : BaseResponse {
 		string requestBody = request == null ? "{}" : _jsonConverter.SerializeObject(request);
-		string rawResponse = _applicationClient.ExecutePostRequest(url, requestBody, options.TimeOut, options.MaxAttempts,
-			options.RetryDelay);
+		string rawResponse = _applicationClient.ExecutePostRequest(url, requestBody, options.TimeOut,
+			maxAttempts ?? options.MaxAttempts, options.RetryDelay);
 		if (IsHtmlResponse(rawResponse)) {
 			return null;
 		}

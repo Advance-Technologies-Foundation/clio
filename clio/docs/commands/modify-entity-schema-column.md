@@ -16,9 +16,10 @@ Add, modify, or remove a column in a remote Creatio entity schema.
 After saving the column the command always publishes the configuration, so the
 changed column becomes visible to lookup pickers without a manual compile. The
 command additionally requests an OData entities rebuild only when the mutation
-changes the published OData contract — adding or removing a column, or changing
-its type or reference schema. Changing a column's caption, description, default
-value, mask, usage type, or required flag leaves the OData contract unchanged
+changes the published OData contract — adding or removing a column, renaming one
+(`--new-name`), or changing its type or reference schema. Changing a column's
+caption, description, default value, mask, usage type, or required flag leaves
+the OData contract unchanged
 and does not trigger a rebuild. When a rebuild is requested, it runs in the
 background — OData access (`/0/odata/<Entity>`) appears within a few minutes,
 not immediately. A 404 (or "The request is invalid") from OData right after
