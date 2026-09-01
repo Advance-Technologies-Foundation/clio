@@ -45,7 +45,9 @@ public interface IConfinedFileAccess {
 /// <remarks>Dispatches to the platform implementation; the two differ in mechanism, not in contract.</remarks>
 public sealed class ConfinedFileAccess : IConfinedFileAccess {
 
-	private readonly IConfinedFileAccess _platform =
+	private readonly IConfinedFileAccess _platform = CreatePlatformAccess();
+
+	private static IConfinedFileAccess CreatePlatformAccess() =>
 		OperatingSystem.IsWindows() ? new WindowsConfinedFileAccess() : new UnixConfinedFileAccess();
 
 	/// <inheritdoc/>
