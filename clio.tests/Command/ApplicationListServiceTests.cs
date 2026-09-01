@@ -26,7 +26,9 @@ public sealed class ApplicationListServiceTests {
 
 	private ISettingsRepository _settingsRepository = null!;
 	private IApplicationClientFactory _applicationClientFactory = null!;
-	private IApplicationClient _applicationClient = null!;
+	[System.Diagnostics.CodeAnalysis.SuppressMessage("Structure", "NUnit1032:An IDisposable field/property should be Disposed in a TearDown method",
+		Justification = "The system under test owns and disposes the factory-returned substitute.")]
+	private IOwnedApplicationClient _applicationClient = null!;
 	private ApplicationListService _sut = null!;
 	private EnvironmentSettings _environment = null!;
 
@@ -34,7 +36,7 @@ public sealed class ApplicationListServiceTests {
 	public void SetUp() {
 		_settingsRepository = Substitute.For<ISettingsRepository>();
 		_applicationClientFactory = Substitute.For<IApplicationClientFactory>();
-		_applicationClient = Substitute.For<IApplicationClient>();
+		_applicationClient = Substitute.For<IOwnedApplicationClient>();
 		_environment = new EnvironmentSettings {
 			Uri = "https://example.invalid",
 			Login = "Supervisor",
