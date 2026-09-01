@@ -472,6 +472,46 @@ public class PageBodyMergerTests {
 	}
 
 	[Test]
+	[Description("A clean in-place replacement drops nothing, so it must emit NO warning — this is the case that catches a drop message escaping onto the replace branch")]
+	public void Merge_ShouldReportNoDrops_WhenTheFragmentReplacesASingleCurrentEntry() {
+		// Arrange — one current entry, one incoming entry, same identity. The replace branch runs and the
+		// drop branch must not. Deliberately distinct from the no-collision case: this exercises the
+		// `replaced.Add(identity)` TRUE path, which the other test never reaches.
+		const string current = """[{"operation":"merge","name":"B","values":{"title":"old"}}]""";
+		const string incoming = """[{"operation":"merge","name":"B","values":{"title":"new"}}]""";
+
+		// Act
+		string merged = PageBodyMerger.Merge(WebBody(current), WebBody(incoming), out IReadOnlyList<string> drops);
+
+		// Assert
+		drops.Should().BeEmpty(
+			because: "nothing was dropped — one entry was replaced in place. A warning here would be a false positive, and without this case a drop message escaping onto the replace branch would leave the whole suite green");
+		merged.Should().Contain("\"title\": \"new\"",
+			because: "the replacement still happened");
+	}
+
+	[Test]
+	[Description("Three current entries of one superseded identity yield ONE warning, not two — CombineWarnings does not dedupe, so the merger must")]
+	public void Merge_ShouldReportOneWarningPerIdentity_WhenTheCurrentBodyCarriesItThreeTimes() {
+		// Arrange
+		const string current = """
+			[
+				{"operation":"merge","name":"B","values":{"a":1}},
+				{"operation":"merge","name":"B","values":{"b":2}},
+				{"operation":"merge","name":"B","values":{"c":3}}
+			]
+			""";
+		const string incoming = """[{"operation":"merge","name":"B","values":{"a":9}}]""";
+
+		// Act
+		PageBodyMerger.Merge(WebBody(current), WebBody(incoming), out IReadOnlyList<string> drops);
+
+		// Assert
+		drops.Should().ContainSingle(
+			because: "two entries were dropped but they share one identity; emitting the same sentence twice is noise the caller cannot act on differently");
+	}
+
+	[Test]
 	[Description("A set targeting properties and a set targeting the element are distinct operations: Set calls Remove, which strips keys in place for the properties form and detaches the element for the bare form")]
 	public void Merge_ShouldKeepBothSets_WhenOneTargetsPropertiesAndOneTargetsTheElement() {
 		// Arrange

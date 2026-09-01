@@ -209,6 +209,12 @@ internal static class PageBodyMerger {
 	/// section to an older page, first manually insert the empty marker pair into the body, then call
 	/// <c>Merge</c> with the desired content.
 	/// </remarks>
+	/// <remarks>
+	/// Discards the merge's warnings. A production caller that SAVES the result should use
+	/// <see cref="Merge(string, string, out IReadOnlyList{string})"/> instead and surface them — silently
+	/// dropping an operation the caller did not send is the defect #1132 filed. This overload exists for
+	/// call sites that only need the merged text (tests, previews).
+	/// </remarks>
 	public static string Merge(string currentBody, string incomingBody) =>
 		Merge(currentBody, incomingBody, out _);
 
@@ -219,8 +225,14 @@ internal static class PageBodyMerger {
 	/// <param name="currentBody">The schema's existing body on the server.</param>
 	/// <param name="incomingBody">The fragment the caller wants to add.</param>
 	/// <param name="supersededDropWarnings">
-	/// One actionable warning per current entry dropped because the incoming fragment superseded an identity
-	/// the current body carried more than once. Empty — never <see langword="null"/> — in the normal case.
+	/// One actionable warning per IDENTITY whose further current entries were dropped because the incoming
+	/// fragment superseded it. Empty — never <see langword="null"/> — in the normal case.
+	/// <para>
+	/// Deliberately covers the CURRENT body only. If the incoming fragment itself repeats one identity, last
+	/// spelling wins and the earlier one is discarded without a warning: that body is the caller's own, they
+	/// can read it, and warning about their own input would be noise. The current body is different — the
+	/// caller cannot see what the server held.
+	/// </para>
 	/// </param>
 	/// <remarks>
 	/// #1132 asks that where the merge cannot preserve an operation it "fail before saving with an actionable
@@ -539,6 +551,7 @@ internal static class PageBodyMerger {
 			}
 		}
 		var replaced = new HashSet<OperationIdentity>();
+		var warned = new HashSet<OperationIdentity>();
 		var merged = new JArray();
 		foreach (JToken item in current) {
 			if (!TryGetOperationIdentity(item, out OperationIdentity identity) ||
@@ -556,7 +569,11 @@ internal static class PageBodyMerger {
 				continue;
 			}
 			// The one loss the merge cannot avoid, so it is REPORTED rather than silent (#1132 AC4).
-			drops.Add(BuildSupersededDropMessage(identity));
+			// One warning per IDENTITY, not per dropped entry: three carried occurrences would otherwise
+			// emit two byte-identical sentences, and CombineWarnings does not dedupe.
+			if (warned.Add(identity)) {
+				drops.Add(BuildSupersededDropMessage(identity));
+			}
 		}
 		// Ordered pass over `incoming` so an unidentified entry keeps the position the caller gave it.
 		var emitted = new HashSet<OperationIdentity>();
@@ -587,17 +604,6 @@ internal static class PageBodyMerger {
 	private readonly record struct OperationIdentity(string Operation, string Name, bool TargetsProperties);
 
 	/// <summary>
-	/// Computes an entry's <see cref="OperationIdentity"/>. Returns <see langword="false"/> for a
-	/// non-object element, or one whose <c>name</c> is not a non-empty JSON string — such an entry is
-	/// never merged and never reordered, which is the safe direction.
-	/// </summary>
-	/// <remarks>
-	/// <c>operation</c> is ordinal and never case-folded: <see cref="JsonDiffApplier"/> switches on the raw
-	/// string with no default case, so a mis-cased <c>"Merge"</c> is discarded at apply time and must not
-	/// be allowed to replace a working <c>"merge"</c>. A missing <c>operation</c> is not defaulted either —
-	/// guessing one would replace an operation the caller never named.
-	/// </remarks>
-	/// <summary>
 	/// Actionable warning for a current entry dropped because the incoming fragment superseded an identity
 	/// the current body carried more than once.
 	/// </summary>
@@ -609,9 +615,9 @@ internal static class PageBodyMerger {
 	private static string BuildSupersededDropMessage(OperationIdentity identity) {
 		string verb = string.IsNullOrEmpty(identity.Operation) ? "(no operation)" : identity.Operation;
 		return $"Component '{identity.Name}' carried more than one '{verb}' operation in the page's own body, " +
-			"and the appended fragment supersedes that operation. Only the first occurrence was replaced; the " +
-			"later one was dropped, because keeping it would re-apply its values AFTER your replacement. If the " +
-			"two set different keys, the later entry's keys are gone from the saved page. Re-read the page with " +
+			"and the appended fragment supersedes that operation. Only the first occurrence was replaced; every " +
+			"later one was dropped, because keeping it would re-apply its values AFTER your replacement. If they " +
+			"set different keys, the dropped entries' keys are gone from the saved page. Re-read the page with " +
 			"get-page and re-apply anything missing. See docs://mcp/guides/page-modification.";
 	}
 
@@ -624,6 +630,17 @@ internal static class PageBodyMerger {
 		string.Equals(operation, RemoveOperationName, StringComparison.Ordinal)
 		|| string.Equals(operation, SetOperationName, StringComparison.Ordinal);
 
+	/// <summary>
+	/// Computes an entry's <see cref="OperationIdentity"/>. Returns <see langword="false"/> for a
+	/// non-object element, or one whose <c>name</c> is not a non-empty JSON string — such an entry is
+	/// never merged and never reordered, which is the safe direction.
+	/// </summary>
+	/// <remarks>
+	/// <c>operation</c> is ordinal and never case-folded: <see cref="JsonDiffApplier"/> switches on the raw
+	/// string with no default case, so a mis-cased <c>"Merge"</c> is discarded at apply time and must not
+	/// be allowed to replace a working <c>"merge"</c>. A missing <c>operation</c> is not defaulted either —
+	/// guessing one would replace an operation the caller never named.
+	/// </remarks>
 	private static bool TryGetOperationIdentity(JToken item, out OperationIdentity identity) {
 		identity = default;
 		if (item is not JObject operationItem) {
