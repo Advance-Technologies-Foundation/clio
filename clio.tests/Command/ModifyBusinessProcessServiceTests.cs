@@ -38,7 +38,7 @@ public sealed class ModifyBusinessProcessServiceTests {
 	[Description("Posts the process identity + operations array wrapped under 'request' to the ModifyProcess route and returns the applied-operation count on success.")]
 	public void ModifyProcess_ShouldPostWrappedRequestToModifyRoute_AndReturnResult_OnSuccess() {
 		// Arrange
-		IApplicationClient client = Substitute.For<IApplicationClient>();
+		IOwnedApplicationClient client = Substitute.For<IOwnedApplicationClient>();
 		client.ExecutePostRequest(ModifyUrl, Arg.Any<string>()).Returns(
 			"{\"ModifyProcessResult\":{\"success\":true,\"schemaName\":\"UsrProc\",\"schemaUId\":\"5c58c4c4-134b-4744-9c67-96d9c69c9d55\",\"appliedOperations\":1}}");
 		ModifyBusinessProcessService service = CreateService(client);
@@ -58,7 +58,7 @@ public sealed class ModifyBusinessProcessServiceTests {
 	[Description("Reads the server's warnings[] off a SUCCESSFUL edit — the channel that carries the two outcomes which apply but are not what a caller assumes, and which an undeclared member would drop in silence.")]
 	public void ModifyProcess_ShouldReadWarnings_WhenServerReportsThemOnASuccessfulEdit() {
 		// Arrange
-		IApplicationClient client = Substitute.For<IApplicationClient>();
+		IOwnedApplicationClient client = Substitute.For<IOwnedApplicationClient>();
 		client.ExecutePostRequest(ModifyUrl, Arg.Any<string>()).Returns(
 			"{\"ModifyProcessResult\":{\"success\":true,\"schemaName\":\"UsrProc\",\"appliedOperations\":1,"
 			+ "\"warnings\":[\"Connection 'OmniChat' is not registered\"]}}");
@@ -79,7 +79,7 @@ public sealed class ModifyBusinessProcessServiceTests {
 	[Description("Leaves Warnings null when the server reports none, so the absent case cannot be mistaken for an empty-but-present list by a caller that enumerates it.")]
 	public void ModifyProcess_ShouldLeaveWarningsNull_WhenServerReportsNone() {
 		// Arrange
-		IApplicationClient client = Substitute.For<IApplicationClient>();
+		IOwnedApplicationClient client = Substitute.For<IOwnedApplicationClient>();
 		client.ExecutePostRequest(ModifyUrl, Arg.Any<string>()).Returns(
 			"{\"ModifyProcessResult\":{\"success\":true,\"schemaName\":\"UsrProc\",\"appliedOperations\":1}}");
 		ModifyBusinessProcessService service = CreateService(client);
@@ -96,7 +96,7 @@ public sealed class ModifyBusinessProcessServiceTests {
 	[Test]
 	[Description("Surfaces the server's errorMessage when the ModifyProcess result reports success=false (an aborted edit).")]
 	public void ModifyProcess_ShouldThrowWithServerMessage_WhenSuccessFalse() {
-		IApplicationClient client = Substitute.For<IApplicationClient>();
+		IOwnedApplicationClient client = Substitute.For<IOwnedApplicationClient>();
 		client.ExecutePostRequest(ModifyUrl, Arg.Any<string>()).Returns(
 			"{\"ModifyProcessResult\":{\"success\":false,\"errorMessage\":\"Element 'X' was not found.\"}}");
 		ModifyBusinessProcessService service = CreateService(client);
@@ -110,7 +110,7 @@ public sealed class ModifyBusinessProcessServiceTests {
 	[Test]
 	[Description("Throws a clear error when the response envelope has no ModifyProcessResult payload.")]
 	public void ModifyProcess_ShouldThrow_WhenResponseShapeUnexpected() {
-		IApplicationClient client = Substitute.For<IApplicationClient>();
+		IOwnedApplicationClient client = Substitute.For<IOwnedApplicationClient>();
 		client.ExecutePostRequest(ModifyUrl, Arg.Any<string>()).Returns("{}");
 		ModifyBusinessProcessService service = CreateService(client);
 
@@ -123,7 +123,7 @@ public sealed class ModifyBusinessProcessServiceTests {
 	[Test]
 	[Description("Rejects a request with neither a process name nor a uid before any server call.")]
 	public void ModifyProcess_ShouldThrow_WhenNeitherNameNorUid() {
-		IApplicationClient client = Substitute.For<IApplicationClient>();
+		IOwnedApplicationClient client = Substitute.For<IOwnedApplicationClient>();
 		ModifyBusinessProcessService service = CreateService(client);
 
 		Action act = () => service.ModifyProcess(Env, new ModifyBusinessProcessRequest(null, null, Operations));
@@ -135,7 +135,7 @@ public sealed class ModifyBusinessProcessServiceTests {
 	[Test]
 	[Description("Rejects operations content that is not a JSON array.")]
 	public void ModifyProcess_ShouldThrow_WhenOperationsNotArray() {
-		IApplicationClient client = Substitute.For<IApplicationClient>();
+		IOwnedApplicationClient client = Substitute.For<IOwnedApplicationClient>();
 		ModifyBusinessProcessService service = CreateService(client);
 
 		Action act = () => service.ModifyProcess(Env, new ModifyBusinessProcessRequest("UsrProc", null, "{}"));

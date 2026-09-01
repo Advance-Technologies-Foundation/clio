@@ -498,7 +498,7 @@ public sealed class RequestInfoToolTests {
 		// Arrange
 		RequestInfoCatalog catalog = new(new InMemoryRequestRegistryClient(TestRegistryJson));
 		IPlatformVersionResolverFactory factory = Substitute.For<IPlatformVersionResolverFactory>();
-		IPlatformVersionResolver resolver = Substitute.For<IPlatformVersionResolver>();
+		IOwnedPlatformVersionResolver resolver = Substitute.For<IOwnedPlatformVersionResolver>();
 		resolver.ResolveAsync(Arg.Any<CancellationToken>())
 			.Returns(new PlatformVersionResolution("8.3.4", VersionResolutionSource.Environment));
 		factory.Create(Arg.Any<EnvironmentSettings>()).Returns(resolver);
@@ -526,7 +526,7 @@ public sealed class RequestInfoToolTests {
 		// Arrange
 		RequestInfoCatalog catalog = new(new InMemoryRequestRegistryClient(TestRegistryJson));
 		IPlatformVersionResolverFactory factory = Substitute.For<IPlatformVersionResolverFactory>();
-		IPlatformVersionResolver resolver = Substitute.For<IPlatformVersionResolver>();
+		IOwnedPlatformVersionResolver resolver = Substitute.For<IOwnedPlatformVersionResolver>();
 		resolver.ResolveAsync(Arg.Any<CancellationToken>())
 			.Returns(new PlatformVersionResolution("8.3.4", VersionResolutionSource.Environment));
 		factory.Create(Arg.Any<EnvironmentSettings>()).Returns(resolver);
@@ -817,7 +817,7 @@ public sealed class RequestInfoToolTests {
 		IMobileRequestInfoCatalog? mobileCatalog = null) {
 		IPlatformVersionResolverFactory factory = Substitute.For<IPlatformVersionResolverFactory>();
 		if (resolution is not null || environmentVersion is not null) {
-			IPlatformVersionResolver resolver = Substitute.For<IPlatformVersionResolver>();
+			IOwnedPlatformVersionResolver resolver = Substitute.For<IOwnedPlatformVersionResolver>();
 			resolver.ResolveAsync(Arg.Any<CancellationToken>())
 				.Returns(resolution ?? new PlatformVersionResolution(environmentVersion!, VersionResolutionSource.Environment));
 			factory.Create(Arg.Any<EnvironmentSettings>()).Returns(resolver);

@@ -39,7 +39,7 @@ public sealed class CreateBusinessProcessServiceTests {
 	[Description("Posts the descriptor wrapped under 'request' to the resolved BuildProcess route (with the package override applied) and returns the created schema identity on success.")]
 	public void BuildProcess_ShouldPostWrappedRequestToBuildRoute_AndReturnResult_OnSuccess() {
 		// Arrange
-		IApplicationClient client = Substitute.For<IApplicationClient>();
+		IOwnedApplicationClient client = Substitute.For<IOwnedApplicationClient>();
 		client.ExecutePostRequest(BuildUrl, Arg.Any<string>()).Returns(
 			"{\"BuildProcessResult\":{\"success\":true,\"schemaName\":\"UsrSampleProcess\",\"schemaUId\":\"5c58c4c4-134b-4744-9c67-96d9c69c9d55\"}}");
 		CreateBusinessProcessService service = CreateService(client, out _);
@@ -58,7 +58,7 @@ public sealed class CreateBusinessProcessServiceTests {
 	[Test]
 	[Description("Surfaces the server's errorMessage as an exception when the BuildProcess result reports success=false.")]
 	public void BuildProcess_ShouldThrowWithServerMessage_WhenSuccessFalse() {
-		IApplicationClient client = Substitute.For<IApplicationClient>();
+		IOwnedApplicationClient client = Substitute.For<IOwnedApplicationClient>();
 		client.ExecutePostRequest(BuildUrl, Arg.Any<string>()).Returns(
 			"{\"BuildProcessResult\":{\"success\":false,\"errorMessage\":\"Package 'Custom' was not found.\"}}");
 		CreateBusinessProcessService service = CreateService(client, out _);
@@ -72,7 +72,7 @@ public sealed class CreateBusinessProcessServiceTests {
 	[Test]
 	[Description("Throws a clear error when the response envelope has no BuildProcessResult payload.")]
 	public void BuildProcess_ShouldThrow_WhenResponseShapeUnexpected() {
-		IApplicationClient client = Substitute.For<IApplicationClient>();
+		IOwnedApplicationClient client = Substitute.For<IOwnedApplicationClient>();
 		client.ExecutePostRequest(BuildUrl, Arg.Any<string>()).Returns("{}");
 		CreateBusinessProcessService service = CreateService(client, out _);
 
@@ -85,7 +85,7 @@ public sealed class CreateBusinessProcessServiceTests {
 	[Test]
 	[Description("Throws (without calling the server) when the target environment is not registered.")]
 	public void BuildProcess_ShouldThrow_WhenEnvironmentNotFound() {
-		IApplicationClient client = Substitute.For<IApplicationClient>();
+		IOwnedApplicationClient client = Substitute.For<IOwnedApplicationClient>();
 		ISettingsRepository settings = Substitute.For<ISettingsRepository>();
 		settings.FindEnvironment(Env).Returns((EnvironmentSettings)null);
 		IServiceUrlBuilder urlBuilder = Substitute.For<IServiceUrlBuilder>();
@@ -101,7 +101,7 @@ public sealed class CreateBusinessProcessServiceTests {
 	[Test]
 	[Description("Rejects a blank descriptor before any environment lookup or server call.")]
 	public void BuildProcess_ShouldThrow_WhenDescriptorBlank() {
-		IApplicationClient client = Substitute.For<IApplicationClient>();
+		IOwnedApplicationClient client = Substitute.For<IOwnedApplicationClient>();
 		CreateBusinessProcessService service = CreateService(client, out _);
 
 		Action act = () => service.BuildProcess(Env, new CreateBusinessProcessRequest("  "));

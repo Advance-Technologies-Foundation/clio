@@ -4,6 +4,7 @@ using Clio.Tests.Infrastructure;
 using Clio.UserEnvironment;
 using FluentAssertions;
 using Newtonsoft.Json;
+using Newtonsoft.Json.Linq;
 using NUnit.Framework;
 
 namespace Clio.Tests.Command;
@@ -34,10 +35,12 @@ public sealed class SettingsBootstrapServiceTests {
 			because: "bootstrap must not auto-select a fallback environment — only the user may set the active environment");
 		result.Report.Issues.Should().ContainSingle(issue => issue.Code == "invalid-active-environment",
 			because: "the issue must be reported so diagnostics tools and error messages can surface it");
-		result.Report.RepairsApplied.Should().BeEmpty(
-			because: "no automatic repair should be applied — the user must explicitly call set-active-environment");
-		persistedContent.Should().Be(originalContent,
-			because: "appsettings.json must not be modified when bootstrap only detects issues without applying repairs");
+		result.Report.RepairsApplied.Should().ContainSingle(
+			repair => repair.Code == "deploy-creatio-site-port-range-added",
+			because: "the unrelated settings-version migration may run without repairing the invalid active environment");
+		Settings persisted = JsonConvert.DeserializeObject<Settings>(persistedContent);
+		persisted.ActiveEnvironmentKey.Should().Be("wrong-dev",
+			because: "the settings migration must preserve the invalid key for an explicit user decision");
 	}
 
 	[Test]
@@ -199,7 +202,7 @@ public sealed class SettingsBootstrapServiceTests {
 			because: "the migration must surface that auto-update was re-enabled so the user is informed");
 		persisted.Autoupdate.Should().BeNull(
 			because: "the cleared value must be persisted — NullValueHandling.Ignore drops the key entirely");
-		persisted.SettingsVersion.Should().Be(1,
+		persisted.SettingsVersion.Should().Be(2,
 			because: "the settings version must be stamped so the one-time migration never runs again");
 		persistedContent.Should().NotContain("Autoupdate",
 			because: "a null Autoupdate is omitted from the file, restoring the pristine default state");
@@ -209,12 +212,15 @@ public sealed class SettingsBootstrapServiceTests {
 	[Category("Unit")]
 	[Description("A deliberate Autoupdate=false on a file already at the current settings version is preserved across bootstrap and never reverted — proving the opt-out is not broken.")]
 	public void GetResult_Should_Preserve_Deliberate_Autoupdate_False_After_Migration() {
-		// Arrange: file already migrated (SettingsVersion=1) with a deliberate opt-out
+		// Arrange: file already migrated (SettingsVersion=2) with a deliberate opt-out
 		MockFileSystem fileSystem = TestFileSystem.MockFileSystem();
 		fileSystem.AddFile(SettingsRepository.AppSettingsFile, new MockFileData("""
 			{
 			  "Autoupdate": false,
-			  "SettingsVersion": 1,
+			  "SettingsVersion": 2,
+			  "deploy-creatio-defaults": {
+			    "site-port-range": [40100, 40199]
+			  },
 			  "Environments": {}
 			}
 			"""));
@@ -272,11 +278,118 @@ public sealed class SettingsBootstrapServiceTests {
 		SettingsBootstrapResult result = service.GetResult();
 		string persistedContent = fileSystem.File.ReadAllText(SettingsRepository.AppSettingsFile);
 		Settings persisted = JsonConvert.DeserializeObject<Settings>(persistedContent);
+		JArray persistedRange = (JArray)JObject.Parse(persistedContent)["deploy-creatio-defaults"]!["site-port-range"]!;
 
 		// Assert
-		persisted.SettingsVersion.Should().Be(1,
+		persisted.SettingsVersion.Should().Be(2,
 			because: "new installs must be born at the current settings version so the legacy migration never runs for them");
 		result.Settings.Autoupdate.Should().BeNull(
 			because: "a fresh file has no Autoupdate key, so auto-update stays at the enabled opt-out default");
+		persisted.DeployCreatioDefaults.Should().NotBeNull(
+			because: "fresh installations must visibly persist deploy-creatio-defaults in appsettings.json");
+		persisted.DeployCreatioDefaults.SitePortRange.Should().Equal(new[] { 40100, 40199 },
+			because: "fresh installations must receive the built-in inclusive automatic IIS port range");
+		persistedRange.Values<int>().Should().Equal(new[] { 40100, 40199 },
+			because: "the generated JSON must use the exact documented site-port-range key");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Upgrading a version-1 settings file materializes deploy-creatio-defaults.site-port-range and preserves existing deployment defaults.")]
+	public void GetResult_Should_Add_Default_Site_Port_Range_When_Upgrading_Version_One_Settings() {
+		// Arrange
+		MockFileSystem fileSystem = TestFileSystem.MockFileSystem();
+		fileSystem.AddFile(SettingsRepository.AppSettingsFile, new MockFileData("""
+			{
+			  "SettingsVersion": 1,
+			  "Environments": {},
+			  "deploy-creatio-defaults": {
+			    "db-server-name": "postgres-local",
+			    "site-port": 40018
+			  }
+			}
+			"""));
+		SettingsBootstrapService service = new(fileSystem);
+
+		// Act
+		SettingsBootstrapResult result = service.GetResult();
+		string persistedContent = fileSystem.File.ReadAllText(SettingsRepository.AppSettingsFile);
+		Settings persisted = JsonConvert.DeserializeObject<Settings>(persistedContent);
+		JArray persistedRange = (JArray)JObject.Parse(persistedContent)["deploy-creatio-defaults"]!["site-port-range"]!;
+
+		// Assert
+		result.Report.RepairsApplied.Should().ContainSingle(
+			repair => repair.Code == "deploy-creatio-site-port-range-added",
+			because: "the version-2 migration should report the newly materialized automatic range");
+		persisted.SettingsVersion.Should().Be(2,
+			because: "the upgraded file must be stamped so the migration runs once");
+		persisted.DeployCreatioDefaults.DbServerName.Should().Be("postgres-local",
+			because: "upgrading the range must preserve the configured database default");
+		persisted.DeployCreatioDefaults.SitePort.Should().Be(40018,
+			because: "the backward-compatible fixed port must remain configured and take precedence");
+		persisted.DeployCreatioDefaults.SitePortRange.Should().Equal(new[] { 40100, 40199 },
+			because: "an absent range must be visibly populated with Clio's built-in range");
+		persistedRange.Values<int>().Should().Equal(new[] { 40100, 40199 },
+			because: "the migration must persist the exact documented site-port-range key");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Upgrading preserves an explicitly configured empty site-port range so deployment validation can report it instead of silently replacing it.")]
+	public void GetResult_ShouldPreserveEmptySitePortRange_WhenUpgrading() {
+		// Arrange
+		MockFileSystem fileSystem = TestFileSystem.MockFileSystem();
+		fileSystem.AddFile(SettingsRepository.AppSettingsFile, new MockFileData("""
+			{
+			  "SettingsVersion": 1,
+			  "Environments": {},
+			  "deploy-creatio-defaults": {
+			    "site-port-range": []
+			  }
+			}
+			"""));
+		SettingsBootstrapService service = new(fileSystem);
+
+		// Act
+		SettingsBootstrapResult result = service.GetResult();
+		Settings persisted = JsonConvert.DeserializeObject<Settings>(
+			fileSystem.File.ReadAllText(SettingsRepository.AppSettingsFile));
+
+		// Assert
+		persisted.DeployCreatioDefaults.SitePortRange.Should().BeEmpty(
+			because: "migration must distinguish an invalid configured value from an absent value");
+		result.Report.RepairsApplied.Should().NotContain(
+			repair => repair.Code == "deploy-creatio-site-port-range-added",
+			because: "an explicitly configured range must not be overwritten during upgrade");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Upgrading settings preserves a user-configured deploy-creatio site-port-range instead of replacing it with the built-in range.")]
+	public void GetResult_Should_Preserve_Custom_Site_Port_Range_When_Upgrading() {
+		// Arrange
+		MockFileSystem fileSystem = TestFileSystem.MockFileSystem();
+		fileSystem.AddFile(SettingsRepository.AppSettingsFile, new MockFileData("""
+			{
+			  "SettingsVersion": 1,
+			  "Environments": {},
+			  "deploy-creatio-defaults": {
+			    "site-port-range": [41000, 41010]
+			  }
+			}
+			"""));
+		SettingsBootstrapService service = new(fileSystem);
+
+		// Act
+		SettingsBootstrapResult result = service.GetResult();
+		Settings persisted = JsonConvert.DeserializeObject<Settings>(
+			fileSystem.File.ReadAllText(SettingsRepository.AppSettingsFile));
+
+		// Assert
+		persisted.DeployCreatioDefaults.SitePortRange.Should().Equal(new[] { 41000, 41010 },
+			because: "settings migration must never overwrite a user's configured range");
+		result.Report.RepairsApplied.Should().NotContain(
+			repair => repair.Code == "deploy-creatio-site-port-range-added",
+			because: "no range was added when a user-configured range already existed");
 	}
 }

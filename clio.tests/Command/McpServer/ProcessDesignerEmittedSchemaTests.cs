@@ -38,8 +38,9 @@ public sealed class ProcessDesignerEmittedSchemaTests {
 	private static McpToolInvokerRegistry BuildProductionRegistry() {
 		IServiceProvider provider = Substitute.For<IServiceProvider>();
 		IFeatureToggleService featureToggle = Substitute.For<IFeatureToggleService>();
-		// The process-designer tools sit behind [FeatureToggle("process-designer")]; the schema contract is
-		// asserted with the toggle on, because that is the only state in which a client sees these tools.
+		// All toggles report enabled so the registry mirrors the full production catalog. The
+		// process-designer tools themselves ship gate-free since go-live (ENG-96132); the blanket
+		// substitute just keeps unrelated gated tools from perturbing the scan.
 		featureToggle.IsEnabled(Arg.Any<Type>()).Returns(true);
 		return new McpToolInvokerRegistry(
 			provider,
@@ -212,5 +213,26 @@ public sealed class ProcessDesignerEmittedSchemaTests {
 		RequiredNames(args).Should().Contain("process-name",
 			because: "process-name is the ONLY way to identify a process on this surface, so it is genuinely " +
 				"mandatory; this pins the boundary of the relaxation applied to the sibling tools");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("run-process demands only process-name: parameters, result-parameters, timeout and environment-name are all legitimately absent from a valid payload, so a strict client must not be forced to send them.")]
+	public void RunProcess_Should_RequireOnlyTheProcessName_InEmittedSchema() {
+		// Arrange & Act
+		using JsonDocument schema = EmittedInputSchema(RunProcessTool.ToolName);
+		JsonElement args = ArgsSchema(schema);
+		List<string> required = RequiredNames(args);
+
+		// Assert
+		required.Should().Contain("process-name",
+			because: "process-name is the only way to identify the process to launch");
+		foreach (string optional in new[] { "parameters", "result-parameters", "timeout", "environment-name" }) {
+			ShouldAdvertise(args, optional);
+			required.Should().NotContain(optional,
+				because: $"a process can legitimately be launched without '{optional}' - a parameterless " +
+					"process, a process with no outputs, an unbounded request, and the direct-connection " +
+					"fallback are each a complete payload without it");
+		}
 	}
 }

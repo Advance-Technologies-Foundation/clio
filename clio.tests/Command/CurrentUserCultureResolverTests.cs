@@ -196,7 +196,7 @@ public sealed class CurrentUserCultureResolverTests
 	public async Task ResolveAsync_ShouldProbeOnce_WhenCalledTwiceAcrossFactoryCreatesWithinTtl()
 	{
 		// Arrange
-		IApplicationClient client = SubstituteClient(
+		IOwnedApplicationClient client = SubstituteClient(
 			"""{ "applicationInfo": { "sysValues": { "userCulture": { "displayValue": "uk-UA" } } } }""");
 		IApplicationClientFactory clientFactory = Substitute.For<IApplicationClientFactory>();
 		clientFactory.CreateEnvironmentClient(Arg.Any<EnvironmentSettings>()).Returns(client);
@@ -268,9 +268,9 @@ public sealed class CurrentUserCultureResolverTests
 		secondResolution.Culture.Should().Be("uk-UA");
 	}
 
-	private static IApplicationClient SubstituteClient(string responseBody)
+	private static IOwnedApplicationClient SubstituteClient(string responseBody)
 	{
-		IApplicationClient client = Substitute.For<IApplicationClient>();
+		IOwnedApplicationClient client = Substitute.For<IOwnedApplicationClient>();
 		client.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
 			.Returns(responseBody);
 		return client;
