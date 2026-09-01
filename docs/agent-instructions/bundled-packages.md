@@ -140,10 +140,17 @@ number mean "these bytes" again, and it is cheap: the script does the whole thin
 A corollary, learned the expensive way: **claim the number before you cut, not after.** Two archives were
 produced under `1.4.0.9` on one day by two branches that fork off each other, and the number is burned —
 a gap in the sequence is always cheaper than a number that names two different sets of bytes. Others are
-skipped for the same reason — but do NOT take the list from here. The authoritative one is the provenance
-block on `ExpectedArchiveSha256` in `clio.tests/Common/BundledProcessBuilderPackageTests.cs`, which the
-rebundle script's own commit touches; a second list in prose is exactly the thing that drifts, and this
-one already did. Read that block before choosing a number.
+skipped for the same reason. **There is no curated list of burned numbers, and you should not go looking
+for one** — three have existed in this repository and all three went stale, the last of them in the very
+file whose job is that two statements about one set of bytes must not disagree. A list of gaps is
+write-only knowledge: it is appended to by whoever burns a number and read by nobody until it is already
+wrong.
+
+Choose the next number mechanically instead. `ExpectedArchiveVersion` in
+`clio.tests/Common/BundledProcessBuilderPackageTests.cs` is the highest number THIS branch has cut;
+`git log --all -p -- clio.tests/Common/BundledProcessBuilderPackageTests.cs | grep ExpectedArchiveVersion`
+is the highest anyone has, across every branch that ever touched it. Take one above that, and take it
+before you cut. Nothing has to be maintained for that to keep working.
 
 And do not read a stand's installed version as the sequence's high-water mark. It records what someone
 last installed, which may be a branch that never merges. The sequence is owned by the branches, not by

@@ -77,14 +77,16 @@ public class BundledProcessBuilderPackageTests {
 	/// <c>feature/ENG-95891-formula-expressions</c>), at the commit recorded mechanically in
 	/// <see cref="ExpectedProducingCommit"/> — the script captures <c>git rev-parse HEAD</c> and refuses to cut
 	/// from a tree with uncommitted changes, so this reference is no longer a sentence anyone has to keep true
-	/// by hand. Several numbers below the current one are deliberately burned rather than reused: two archives were
-	/// cut under .9 on the same day, one from this branch and one from the branch that forks off it; .12 and .14
-	/// belong to that other branch; and the rest were cut, superseded before leaving this machine, and abandoned
-	/// rather than re-pointed. Two branches drawing from one monotonic sequence collide unless the number is
-	/// claimed before it is cut, so a burned number is always cheaper than an ambiguous one — and a version that
-	/// identifies two different byte sets is worse than either. The exact list is deliberately NOT enumerated
-	/// here: it aged out of date four times, in the one file whose whole job is that two statements about the
-	/// same bytes must not disagree.
+	/// by hand. Many numbers below the current one are burned rather than reused — some because two branches drew
+	/// from one monotonic sequence on the same day, most because a cut was superseded before it left the machine
+	/// and abandoned rather than re-pointed. Two branches collide unless the number is claimed BEFORE it is cut,
+	/// so a gap is always cheaper than an ambiguous number, and a version identifying two different byte sets is
+	/// worse than either.
+	/// <para>Which numbers are burned is deliberately NOT recorded, here or anywhere: three lists have existed and
+	/// all three went stale, the last of them in this file. To pick the next number, read this constant for the
+	/// highest THIS branch has cut and
+	/// <c>git log --all -p -- clio.tests/Common/BundledProcessBuilderPackageTests.cs</c> for the highest anyone
+	/// has. Both are mechanical; neither needs maintaining.</para>
 	/// <para>What this cut carries, over the 1.3.1.1 performer/lookup delivery it replaces: server-side
 	/// VALIDATION of formula expressions — an <c>expression</c> mapping source and a conditional-flow condition
 	/// are now parsed, their parameter references resolved against the process, and their result type checked
