@@ -269,15 +269,24 @@ public abstract class BaseServiceCommand<T> : RemoteCommand<T> where T : CallSer
 		// Stripping has to loop: a single pass over "0/0/odata/Entity" leaves one "0/" layer behind,
 		// which ServiceUrlBuilder.Build then double-adds on .NET Framework environments. The prefix is
 		// purely numeric, so Ordinal is the correct comparison - digits have no case variants.
-		string normalized = servicePath.Trim();
-		while (normalized.StartsWith("/0/", StringComparison.Ordinal)) {
-			normalized = normalized[3..];
+		//
+		// The loop advances an INDEX rather than re-slicing the string. Each string range materializes the
+		// whole remaining suffix, so a path built from repeated "0/" prefixes was quadratic: 2,000/4,000/
+		// 8,000 prefixes allocated roughly 8/32/128 MB before the URL was even constructed. One string is
+		// created at the end instead.
+		ReadOnlySpan<char> normalized = servicePath.AsSpan().Trim();
+		while (true) {
+			if (normalized.StartsWith("/0/", StringComparison.Ordinal)) {
+				normalized = normalized[3..];
+				continue;
+			}
+			break;
 		}
 		while (normalized.StartsWith("0/", StringComparison.Ordinal)) {
 			normalized = normalized[2..];
 		}
 
-		return normalized.TrimStart('/');
+		return normalized.TrimStart('/').ToString();
 	}
 
 	// A timeout-guarded regex throws RegexMatchTimeoutException when the bound fires, and nothing up the

@@ -154,15 +154,33 @@ internal static class CreatioResponseError {
 		if (string.IsNullOrEmpty(body)) {
 			return ReadOnlySpan<char>.Empty;
 		}
-		ReadOnlySpan<char> stripped = body.AsSpan().TrimStart(ZeroWidthPreambleChars).TrimStart();
+		ReadOnlySpan<char> stripped = body.AsSpan();
+		//Whitespace and zero-width characters interleave in any order, so trimming each once - or trimming
+		//only whitespace after a processing instruction - leaves the other kind in front of the first tag.
+		//" ﻿<!DOCTYPE html>" kept its BOM and "<?xml ?>﻿<html>" kept one after the declaration,
+		//and in both cases IsMarkup returned false and an IIS error page was saved as a successful answer.
+		stripped = TrimLeadingBlanks(stripped);
 		while (stripped.StartsWith("<?", StringComparison.Ordinal)) {
 			int end = stripped.IndexOf("?>", StringComparison.Ordinal);
 			if (end < 0) {
 				break;
 			}
-			stripped = stripped[(end + 2)..].TrimStart();
+			stripped = TrimLeadingBlanks(stripped[(end + 2)..]);
 		}
 		return stripped;
+	}
+
+	/// <summary>
+	/// Trims leading whitespace and zero-width characters until neither kind remains, whatever order they
+	/// arrive in.
+	/// </summary>
+	private static ReadOnlySpan<char> TrimLeadingBlanks(ReadOnlySpan<char> value) {
+		int length;
+		do {
+			length = value.Length;
+			value = value.TrimStart().TrimStart(ZeroWidthPreambleChars);
+		} while (value.Length != length);
+		return value;
 	}
 
 	/// <summary>

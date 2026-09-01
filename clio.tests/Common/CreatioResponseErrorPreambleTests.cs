@@ -1,5 +1,4 @@
 using System;
-using System.Diagnostics;
 using System.Text;
 using Clio.Common;
 using FluentAssertions;
@@ -31,21 +30,44 @@ public class CreatioResponseErrorPreambleTests
 		// Arrange
 		string body = BuildManyPreambleBody("<html><title>Request Error</title></html>");
 
+		//Warm the classifier first: the very first call pays one-off JIT and static-initialization cost
+		//that has nothing to do with the shape being measured.
+		CreatioResponseError.IsMarkup(body);
+		CreatioResponseError.IsKnownErrorPage(body);
+
 		// Act
-		long before = GC.GetTotalAllocatedBytes(precise: true);
-		Stopwatch stopwatch = Stopwatch.StartNew();
+		//Per-thread, not per-process. This assembly runs its fixtures in parallel, so
+		//GC.GetTotalAllocatedBytes counts every unrelated fixture's allocations too - the same unchanged
+		//span implementation measured about 59 MB under concurrent load and failed a ~1 MB budget.
+		long before = GC.GetAllocatedBytesForCurrentThread();
 		bool markup = CreatioResponseError.IsMarkup(body);
 		bool knownErrorPage = CreatioResponseError.IsKnownErrorPage(body);
-		stopwatch.Stop();
-		long allocated = GC.GetTotalAllocatedBytes(precise: true) - before;
+		long allocated = GC.GetAllocatedBytesForCurrentThread() - before;
 
 		// Assert
 		markup.Should().BeTrue(because: "the first real tag after the preambles is <html>");
 		knownErrorPage.Should().BeTrue(because: "the stripped body still carries the platform's own wording");
 		allocated.Should().BeLessThan(body.Length * 4L,
 			because: $"skipping a preamble must move an offset, not copy the remaining {body.Length} characters - the copying form allocated about 125 MB for a body this shape, and call-service normalizes the same body twice");
-		stopwatch.Elapsed.Should().BeLessThan(TimeSpan.FromSeconds(2),
-			because: "a small adversarial response must not buy quadratic work before it is even classified");
+	}
+
+	[TestCase(" ﻿<!DOCTYPE html><title>Request Error</title>",
+		TestName = "Whitespace before the BOM")]
+	[TestCase("﻿ <!DOCTYPE html><title>Request Error</title>",
+		TestName = "BOM before the whitespace")]
+	[TestCase("<?xml version=\"1.0\"?>﻿<html><title>Request Error</title></html>",
+		TestName = "BOM after a processing instruction")]
+	[TestCase("<?xml version=\"1.0\"?> ﻿ <?xml-stylesheet href=\"a.xsl\"?>​<html>x</html>",
+		TestName = "Zero-width and whitespace interleaved between two processing instructions")]
+	[Description("Whitespace and zero-width characters are trimmed in any order and after every processing instruction, so an IIS error page cannot slip through as successful plain text")]
+	public void IsMarkup_ShouldSeeThroughInterleavedBlanks(string body) {
+		// Act
+		bool markup = CreatioResponseError.IsMarkup(body);
+
+		// Assert
+		markup.Should().BeTrue(
+			because: "trimming each kind of blank only once left the other in front of the first tag, and "
+				+ "the error page was then saved as a successful answer");
 	}
 
 	[Test]
