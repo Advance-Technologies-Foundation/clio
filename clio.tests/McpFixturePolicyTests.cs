@@ -1,8 +1,10 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Reflection;
 using Clio.Mcp.E2E;
+using Clio.Tests.Command;
+using Clio.Tests.Command.ProcessModel;
 using Clio.Tests.Common;
 using FluentAssertions;
 using NUnit.Framework;
@@ -76,6 +78,8 @@ public sealed class McpFixturePolicyTests {
 			because: "UninstallCreatioWarningE2ETests is a documented LocalOnly member; if it lost the category this invariant must fail rather than pass on the remaining fixture");
 		localOnlyFixtures.Should().Contain(typeof(DbHubLifecycleWarningE2ETests),
 			because: "DbHubLifecycleWarningE2ETests is the other documented LocalOnly member; asserting it explicitly stops a silent category drop from being masked by the open-ended scan");
+		localOnlyFixtures.Should().Contain(typeof(DataBindingDbColorSchemaE2ETests),
+			because: "DataBindingDbColorSchemaE2ETests publishes a schema through create-entity-schema, which starts the global OData rebuild; if it lost the category it would run in the automatic lane again and make every concurrent test on the shared stand fail with \"Creatio is currently rebuilding the OData library\"");
 		misconfigured.Should().BeEmpty(
 			because: "a destructive LocalOnly fixture must stay [Explicit] and keep McpE2E.Sandbox + McpE2E.Manual (additive-only per the tiering spec) so it never runs automatically in CI nor drops its tier classification");
 	}
@@ -122,6 +126,36 @@ public sealed class McpFixturePolicyTests {
 		// Assert
 		missing.Should().BeEmpty(
 			because: "the developer-local uninstall exemption relies on these off-stand tests as the only automated guard of the warning contract; a rename or removal must fail here and point back to the exemption rather than silently losing coverage");
+	}
+
+	[Test]
+	[Description("Asserts the off-stand tests that cover the Color data-binding contract still exist, since DataBindingDbColorSchemaE2ETests is [Explicit] and never runs in CI to catch a regression itself.")]
+	public void ColorDataBindingContract_ShouldStayCoveredOffStand_WhenExplicitFixtureNeverRunsInCi() {
+		// Arrange
+		(Type Fixture, string Method)[] coveringTests = [
+			(typeof(SchemaTestFixture),
+				nameof(SchemaTestFixture.FromRuntimeValueType_Should_Map_Color_To_NativeColorDataType)),
+			(typeof(SchemaTestFixture),
+				nameof(SchemaTestFixture.ConvertValue_Should_Pass_Through_The_Hex_Literal_For_A_Color_Column)),
+			(typeof(SchemaTestFixture),
+				nameof(SchemaTestFixture.ConvertValue_Should_Reject_A_Numeric_Value_For_A_Color_Column)),
+			(typeof(SchemaTestFixture),
+				nameof(SchemaTestFixture.ConvertValue_Should_Reject_An_Object_Value_For_A_Color_Column)),
+			(typeof(DataBindingDbCommandTests),
+				nameof(DataBindingDbCommandTests.CreateDataBindingDb_Should_Support_Color_Runtime_Column))
+		];
+
+		// Act
+		string[] missing = coveringTests
+			.Where(covering => covering.Fixture.GetMethod(covering.Method,
+				BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic) is null)
+			.Select(covering => $"{covering.Fixture.Name}.{covering.Method}")
+			.OrderBy(name => name, StringComparer.Ordinal)
+			.ToArray();
+
+		// Assert
+		missing.Should().BeEmpty(
+			because: "pulling the Color round-trip out of the automatic lane is only safe while these off-stand tests remain the automated guard of the Color mapping and its wire format; a rename or removal must fail here and point back to the exemption");
 	}
 
 	private static IReadOnlyList<Type> GetFixturesWithCategory(string category) =>

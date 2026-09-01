@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.IO;
@@ -1336,9 +1336,12 @@ internal sealed class DataBindingValueConverter : IDataBindingValueConverter {
 		}
 
 		//Color joins the string branch by WIRE format, not by CLR type: Creatio stores a Color column as a
-		//"#RRGGBB" hex literal and the binding row carries that literal verbatim. Resolve() still reports
-		//System.Drawing.Color, which is what process signatures and codegen need.
-		if (targetType == typeof(string) || DataValueTypeMap.IsColor(dataTypeUId)) {
+		//"#RRGGBB" hex literal and the binding row carries that literal verbatim, so a valid Color value has
+		//already returned from the string branch above. Resolve() still reports System.Drawing.Color, which
+		//is what process signatures and codegen need. Deliberately no Color fallback here: a non-string wire
+		//value is only ever reached by a number or an object, and stringifying those would ship "123" or
+		//{"r":0,"g":157,"b":227} as a Color instead of raising the type-validation error below.
+		if (targetType == typeof(string)) {
 			string stringValue = valueNode.ToJsonString().Trim('"');
 			if (!allowEmptyString && string.IsNullOrWhiteSpace(stringValue)) {
 				throw new InvalidOperationException($"Column '{columnName}' cannot be empty.");

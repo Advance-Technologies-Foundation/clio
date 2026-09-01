@@ -91,6 +91,46 @@ public class SchemaTestFixture{
 				+ "break the wire format");
 	}
 
+	[Test]
+	[Description("A numeric wire value for a Color column is rejected instead of being stringified into an invalid Color.")]
+	public void ConvertValue_Should_Reject_A_Numeric_Value_For_A_Color_Column() {
+		// Arrange
+		Guid colorUId = DataValueTypeMap.FromRuntimeValueType(18);
+		DataBindingValueConverter converter = new(Substitute.For<IFileSystem>());
+		JsonNode valueNode = JsonValue.Create(123);
+
+		// Act
+		Action act = () => converter.ConvertValue(valueNode, colorUId, "UsrColor", allowEmptyString: false);
+
+		// Assert
+		act.Should().Throw<InvalidOperationException>(
+			because: "a valid Color arrives as a hex string; turning 123 into \"123\" would ship an invalid "
+				+ "Color to the platform instead of failing type validation")
+			.WithMessage("*UsrColor*");
+	}
+
+	[Test]
+	[Description("An object wire value for a Color column is rejected instead of being serialized as JSON text.")]
+	public void ConvertValue_Should_Reject_An_Object_Value_For_A_Color_Column() {
+		// Arrange
+		Guid colorUId = DataValueTypeMap.FromRuntimeValueType(18);
+		DataBindingValueConverter converter = new(Substitute.For<IFileSystem>());
+		JsonNode valueNode = new JsonObject {
+			["r"] = 0,
+			["g"] = 157,
+			["b"] = 227
+		};
+
+		// Act
+		Action act = () => converter.ConvertValue(valueNode, colorUId, "UsrColor", allowEmptyString: false);
+
+		// Assert
+		act.Should().Throw<InvalidOperationException>(
+			because: "serializing the object would send {\"r\":0,\"g\":157,\"b\":227} as the Color wire value; "
+				+ "the type-validation error is the correct outcome")
+			.WithMessage("*UsrColor*");
+	}
+
 	[TestCase("ProcessSchemaResponse0.json")]
 	[TestCase("ProcessSchemaResponse1.json")]
 	public async Task Should_Parse_ProcessSchemaResponse(string fileName) {
