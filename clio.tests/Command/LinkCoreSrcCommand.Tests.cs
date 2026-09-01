@@ -25,6 +25,7 @@ namespace Clio.Tests.Command {
 		private IFileSystem _fileSystemMock;
 		private ISettingsRepository _settingsRepositoryMock;
 		private ISystemServiceManager _systemServiceManagerMock;
+		private ICreatioHostEnvironmentStore _environmentStoreMock;
 		private IValidator<LinkCoreSrcOptions> _validator;
 		private LinkCoreSrcCommand _command;
 
@@ -46,9 +47,11 @@ namespace Clio.Tests.Command {
 			_fileSystemMock ??= Substitute.For<IFileSystem>();
 			_settingsRepositoryMock ??= Substitute.For<ISettingsRepository>();
 			_systemServiceManagerMock ??= Substitute.For<ISystemServiceManager>();
+			_environmentStoreMock ??= Substitute.For<ICreatioHostEnvironmentStore>();
 			containerBuilder.AddSingleton<IFileSystem>(_fileSystemMock);
 			containerBuilder.AddSingleton<ISettingsRepository>(_settingsRepositoryMock);
 			containerBuilder.AddSingleton<ISystemServiceManager>(_systemServiceManagerMock);
+			containerBuilder.AddSingleton<ICreatioHostEnvironmentStore>(_environmentStoreMock);
 		}
 
 	#endregion
@@ -164,6 +167,34 @@ namespace Clio.Tests.Command {
 			because: "link-core-src must not introduce a plaintext listener for an HTTPS-registered environment");
 		GetJsonString(result, "Kestrel", "Endpoints", "Https", "Certificate", "Path").Should().Be("server.pfx",
 			because: "the existing HTTPS certificate configuration must remain attached to the endpoint");
+	}
+
+	[Test]
+	[Description("Removes every HTTP Kestrel endpoint when link-core-src targets an HTTPS environment.")]
+	public void UpdateConfigWithPort_ShouldRemoveHttpEndpoints_WhenTargetSchemeIsHttps() {
+		// Arrange
+		const string existingJson = """
+			{
+			  "Kestrel": {
+			    "Endpoints": {
+			      "Http": { "Url": "http://localhost:5000" },
+			      "PublicHttp": { "Url": "http://0.0.0.0:5001" },
+			      "Https": { "Url": "https://localhost:5002", "Certificate": { "Path": "server.pfx" } }
+			    }
+			  }
+			}
+			""";
+
+		// Act
+		string result = _command.UpdateConfigWithPort(existingJson, 40123, "/tmp/appsettings.json", Uri.UriSchemeHttps);
+
+		// Assert
+		HasJsonProperty(result, "Kestrel", "Endpoints", "Http").Should().BeFalse(
+			because: "an HTTPS-linked environment must not retain its canonical plaintext endpoint");
+		HasJsonProperty(result, "Kestrel", "Endpoints", "PublicHttp").Should().BeFalse(
+			because: "an HTTPS-linked environment must not retain an additional plaintext endpoint");
+		GetJsonString(result, "Kestrel", "Endpoints", "Https", "Url").Should().Be("https://localhost:40123",
+			because: "the selected HTTPS endpoint must receive the linked environment port");
 	}
 
 	[Test]
@@ -593,6 +624,29 @@ namespace Clio.Tests.Command {
 
 		// Assert
 		result.Should().Be(1, "because validation failed");
+	}
+
+	[Test]
+	[Description("Moves protected dotnet certificate values when link-core-src changes the registered environment path.")]
+	public void MigrateHostEnvironment_ShouldMoveProtectedValuesToNewEnvironmentPath() {
+		// Arrange
+		IReadOnlyDictionary<string, string> environmentVariables = new Dictionary<string, string> {
+			["Kestrel__Endpoints__Https__Certificate__Password"] = "secret"
+		};
+		_environmentStoreMock.Load(Path.GetFullPath("/tmp/creatio-app")).Returns(environmentVariables);
+		_environmentStoreMock.Load(Path.GetFullPath("/tmp/creatio-core")).Returns(
+			new Dictionary<string, string>());
+
+		// Act
+		_command.MigrateHostEnvironment("/tmp/creatio-app", "/tmp/creatio-core");
+
+		// Assert
+		_environmentStoreMock.Received(1).Save(
+			Path.GetFullPath("/tmp/creatio-core"),
+			environmentVariables);
+		_environmentStoreMock.Received(1).Save(
+			Path.GetFullPath("/tmp/creatio-app"),
+			Arg.Is<IReadOnlyDictionary<string, string>>(variables => variables.Count == 0));
 	}
 
 	#endregion

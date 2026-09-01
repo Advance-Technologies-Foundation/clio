@@ -4,6 +4,7 @@ applies-to:
   - clio/Common/CreatioHostEnvironmentStore.cs
   - clio/Common/CreatioHostService.cs
   - clio/Common/DeploymentStrategies/DotNetDeploymentStrategy.cs
+  - clio/Command/LinkCoreSrcCommand.cs
 date: 2026-09-01
 ---
 
@@ -15,7 +16,9 @@ accepts only the generated `Kestrel__Endpoints__*__Certificate__Password` and
 `Kestrel__Certificates__*__Password` names; Unix permissions and Windows ACLs are tightened on both
 the directory and file, and the store refuses symbolic-link targets. The macOS terminal launcher
 uses the same protected directory and applies the same symbolic-link/reparse-point refusal before
-creating its temporary wrapper.
+creating its temporary wrapper. When `link-core-src` changes a registered dotnet environment from
+the deployed application directory to its core source directory, it migrates the protected map to
+the new path before completing the registration.
 
 **Why it is this way** — The first background process can receive a password through its environment,
 but a later `clio start` is a new process and cannot recover that value from memory. Persisting the

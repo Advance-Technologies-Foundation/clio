@@ -292,18 +292,30 @@ public class LinkCoreSrcCommand : Command<LinkCoreSrcOptions>
 	private readonly ISettingsRepository _settingsRepository;
 	private readonly IValidator<LinkCoreSrcOptions> _validator;
 	private readonly ISystemServiceManager _systemServiceManager;
+	private readonly ICreatioHostEnvironmentStore _environmentStore;
 	private readonly IUpdateIISSitePhysicalPathHandler _updateIISSitePhysicalPathHandler;
 
 	#endregion
 
 	#region Constructors: Public
 
+	/// <summary>
+	/// Initializes a new instance of the <see cref="LinkCoreSrcCommand"/> class.
+	/// </summary>
+	/// <param name="logger">Logger used for link progress and diagnostics.</param>
+	/// <param name="fileSystem">File-system abstraction used to inspect and update source files.</param>
+	/// <param name="settingsRepository">Repository containing the registered environment.</param>
+	/// <param name="validator">Validator for link-core-src options.</param>
+	/// <param name="systemServiceManager">Operating-system service manager used for restart.</param>
+	/// <param name="environmentStore">Protected store for dotnet host certificate values.</param>
+	/// <param name="updateIISSitePhysicalPathHandler">Handler used to update a Windows IIS physical path.</param>
 	public LinkCoreSrcCommand(
 		ILogger logger,
 		IFileSystem fileSystem,
 		ISettingsRepository settingsRepository,
 		IValidator<LinkCoreSrcOptions> validator,
 		ISystemServiceManager systemServiceManager,
+		ICreatioHostEnvironmentStore environmentStore,
 		IUpdateIISSitePhysicalPathHandler updateIISSitePhysicalPathHandler)
 	{
 		_logger = logger;
@@ -311,6 +323,7 @@ public class LinkCoreSrcCommand : Command<LinkCoreSrcOptions>
 		_settingsRepository = settingsRepository;
 		_validator = validator;
 		_systemServiceManager = systemServiceManager;
+		_environmentStore = environmentStore;
 		_updateIISSitePhysicalPathHandler = updateIISSitePhysicalPathHandler;
 	}
 
@@ -565,12 +578,16 @@ public class LinkCoreSrcCommand : Command<LinkCoreSrcOptions>
 
 			JsonObject kestrel = GetOrCreateObject(root, "Kestrel");
 			JsonObject endpoints = GetOrCreateObject(kestrel, "Endpoints");
-			RejectPlaintextCertificatePasswords(kestrel, endpoints);
 			string targetScheme = scheme.ToLowerInvariant();
 			if (targetScheme is not ("http" or "https"))
 			{
 				throw new InvalidOperationException($"Unsupported endpoint URI scheme: {scheme}");
 			}
+			if (targetScheme == Uri.UriSchemeHttps)
+			{
+				RemoveEndpointsByScheme(endpoints, "http");
+			}
+			RejectPlaintextCertificatePasswords(kestrel, endpoints);
 			string targetEndpointName = targetScheme == Uri.UriSchemeHttps ? "Https" : "Http";
 			string? canonicalEndpointName = FindCanonicalEndpointName(endpoints, targetEndpointName, targetScheme);
 			bool hasTargetEndpoint = false;
@@ -733,6 +750,25 @@ public class LinkCoreSrcCommand : Command<LinkCoreSrcOptions>
 		}
 
 		return null;
+	}
+
+	private static void RemoveEndpointsByScheme(JsonObject endpoints, string scheme)
+	{
+		List<string> namesToRemove = new();
+		foreach (KeyValuePair<string, JsonNode?> property in endpoints)
+		{
+			if (string.Equals(property.Key, "Http", StringComparison.OrdinalIgnoreCase)
+				|| property.Value is JsonObject endpoint
+					&& string.Equals(GetUriScheme(GetStringProperty(endpoint, "Url")), scheme, StringComparison.OrdinalIgnoreCase))
+			{
+				namesToRemove.Add(property.Key);
+			}
+		}
+
+		foreach (string name in namesToRemove)
+		{
+			endpoints.Remove(name);
+		}
 	}
 
 	private static string? GetStringProperty(JsonObject parent, string propertyName)
@@ -1049,14 +1085,81 @@ public class LinkCoreSrcCommand : Command<LinkCoreSrcOptions>
 				coreWebHostPath = Path.GetDirectoryName(coreWebHostPath);
 			}
 
-			// Update environment configuration with core path
+			string previousEnvironmentPath = env.EnvironmentPath;
+			// Update the registered path before migrating the protected host values. If migration
+			// fails, restore the path so `start` cannot point at a source tree without its certificate.
 			env.EnvironmentPath = coreWebHostPath;
 			_settingsRepository.ConfigureEnvironment(options.Environment, env);
+			try
+			{
+				MigrateHostEnvironment(previousEnvironmentPath, coreWebHostPath);
+			}
+			catch
+			{
+				env.EnvironmentPath = previousEnvironmentPath;
+				try
+				{
+					_settingsRepository.ConfigureEnvironment(options.Environment, env);
+				}
+				catch (Exception rollbackException)
+				{
+					_logger.WriteError($"  ✗ Error restoring environment path after host-environment migration failure: {rollbackException.Message}");
+				}
+				throw;
+			}
 			_logger.WriteInfo($"  ✓ Environment configuration updated with core path: {coreWebHostPath}");
 		}
 		catch (Exception ex)
 		{
 			_logger.WriteError($"  ✗ Error updating environment: {ex.Message}");
+			throw;
+		}
+	}
+
+	internal void MigrateHostEnvironment(string previousEnvironmentPath, string newEnvironmentPath)
+	{
+		if (string.IsNullOrWhiteSpace(previousEnvironmentPath)
+			|| string.IsNullOrWhiteSpace(newEnvironmentPath))
+		{
+			return;
+		}
+
+		string normalizedPreviousPath = Path.GetFullPath(previousEnvironmentPath);
+		string normalizedNewPath = Path.GetFullPath(newEnvironmentPath);
+		StringComparison pathComparison = OperatingSystem.IsWindows()
+			? StringComparison.OrdinalIgnoreCase
+			: StringComparison.Ordinal;
+		if (string.Equals(normalizedPreviousPath, normalizedNewPath, pathComparison))
+		{
+			return;
+		}
+
+		IReadOnlyDictionary<string, string> previousEnvironmentVariables =
+			_environmentStore.Load(normalizedPreviousPath)
+			?? new Dictionary<string, string>();
+		if (previousEnvironmentVariables.Count == 0)
+		{
+			return;
+		}
+
+		IReadOnlyDictionary<string, string> existingNewEnvironmentVariables =
+			_environmentStore.Load(normalizedNewPath)
+			?? new Dictionary<string, string>();
+		_environmentStore.Save(normalizedNewPath, previousEnvironmentVariables);
+		try
+		{
+			_environmentStore.Save(normalizedPreviousPath, new Dictionary<string, string>());
+		}
+		catch
+		{
+			try
+			{
+				_environmentStore.Save(normalizedNewPath, existingNewEnvironmentVariables);
+			}
+			catch (Exception rollbackException)
+			{
+				_logger.WriteError($"  ✗ Error restoring the target host environment after migration failure: {rollbackException.Message}");
+			}
 			throw;
 		}
 	}
