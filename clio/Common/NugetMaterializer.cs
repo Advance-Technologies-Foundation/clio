@@ -44,7 +44,8 @@ public class NugetMaterializer : INugetMaterializer
 
 	//NuGet's package-identifier grammar: dot-separated segments of letters, digits, underscores and hyphens.
 	private static readonly Regex NugetPackageIdentifierPattern =
-		new(@"^\w+([_.-]\w+)*$", RegexOptions.Compiled | RegexOptions.CultureInvariant);
+		new(@"^\w+([_.-]\w+)*$", RegexOptions.Compiled | RegexOptions.CultureInvariant,
+			TimeSpan.FromSeconds(1));
 
 	//NuGet's own ceiling for a package identifier.
 	private const int MaximumNugetPackageIdentifierLength = 100;
