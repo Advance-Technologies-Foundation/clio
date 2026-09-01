@@ -21,8 +21,13 @@ internal sealed class MockConfinedFileAccess(IFileSystem fileSystem) : IConfined
 		fileSystem ?? throw new ArgumentNullException(nameof(fileSystem));
 
 	/// <inheritdoc/>
-	public Stream OpenRead(string canonicalPath) =>
-		new MemoryStream(_fileSystem.File.ReadAllBytes(canonicalPath), writable: false);
+	public Stream OpenRead(string canonicalPath, long maxBytes) {
+		byte[] content = _fileSystem.File.ReadAllBytes(canonicalPath);
+		if (content.LongLength > maxBytes) {
+			throw new IOException($"file is at least {content.LongLength} bytes, which exceeds the {maxBytes}-byte limit.");
+		}
+		return new MemoryStream(content, writable: false);
+	}
 
 	/// <inheritdoc/>
 	public void WriteNew(string canonicalPath, byte[] content) {

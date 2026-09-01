@@ -3,6 +3,8 @@ namespace Clio.Tests.Common;
 using System;
 using System.IO;
 using System.Text;
+using System.Threading;
+using System.Threading.Tasks;
 using Clio.Common;
 using FluentAssertions;
 using NUnit.Framework;
@@ -19,6 +21,8 @@ using NUnit.Framework;
 [TestFixture]
 [Property("Module", "Common")]
 public sealed class ConfinedFileAccessTests {
+
+	private const long TestCeiling = 10L * 1024 * 1024;
 
 	private readonly IConfinedFileAccess _access = new ConfinedFileAccess();
 	private string _sandbox;
@@ -54,7 +58,7 @@ public sealed class ConfinedFileAccessTests {
 		File.WriteAllText(path, "{\"ok\":true}");
 
 		// Act
-		using Stream stream = _access.OpenRead(path);
+		using Stream stream = _access.OpenRead(path, TestCeiling);
 		using StreamReader reader = new(stream, Encoding.UTF8);
 		string content = reader.ReadToEnd();
 
@@ -86,7 +90,7 @@ public sealed class ConfinedFileAccessTests {
 			Assert.Ignore("Symbolic-link creation is unavailable in this environment.");
 		}
 		Action read = () => {
-			using Stream stream = _access.OpenRead(canonical);
+			using Stream stream = _access.OpenRead(canonical, TestCeiling);
 			using StreamReader reader = new(stream, Encoding.UTF8);
 			reader.ReadToEnd().Should().NotContain("secret",
 				because: "if the read is allowed at all it must land on the approved file, never on the swap target");
@@ -114,7 +118,7 @@ public sealed class ConfinedFileAccessTests {
 		}
 
 		// Act
-		Action read = () => _access.OpenRead(Path.Combine(_sandbox, "link.json")).Dispose();
+		Action read = () => _access.OpenRead(Path.Combine(_sandbox, "link.json"), TestCeiling).Dispose();
 
 		// Assert
 		// The platform flag values this relies on (O_NOFOLLOW / the reparse-point attribute) fail silently in
@@ -142,6 +146,61 @@ public sealed class ConfinedFileAccessTests {
 		second.Should().Throw<IOException>(
 			because: "an explicit output-file is additive and must never overwrite an existing file")
 			.WithMessage("*already exists*");
+	}
+
+	[Test]
+	[Category("Integration")]
+	[Description("Refuses a file past the ceiling WITHOUT copying it into memory first, so a large file inside an allowed root cannot exhaust the process before the published bound runs.")]
+	public void OpenRead_ShouldRefuse_AFilePastTheCeiling_BeforeBuffering() {
+		// Arrange
+		string path = Path.Combine(_sandbox, "oversized.json");
+		File.WriteAllBytes(path, new byte[2048]);
+
+		// Act
+		Action read = () => _access.OpenRead(path, maxBytes: 1024).Dispose();
+
+		// Assert
+		read.Should().Throw<IOException>(
+			because: "the ceiling has to bound the read itself; a stream handed back and measured afterwards "
+				+ "has already cost whatever the file contained")
+			.WithMessage("*exceeds*");
+	}
+
+	[Test]
+	[Category("Integration")]
+	[Description("Only one of two concurrent writers to the same path may win, and the winner's bytes survive - a check-then-rename publish would let the second silently overwrite the first.")]
+	public void WriteNew_ShouldLetExactlyOneOfTwoConcurrentWritersWin() {
+		// Arrange
+		string path = Path.Combine(_sandbox, "contended.json");
+		using Barrier barrier = new(2);
+		int successes = 0;
+		string winner = null;
+
+		void Write(string marker) {
+			barrier.SignalAndWait();
+			try {
+				_access.WriteNew(path, Encoding.UTF8.GetBytes(marker));
+				Interlocked.Increment(ref successes);
+				winner = marker;
+			}
+			catch (IOException) {
+				// Expected for the loser: the name was taken first.
+			}
+		}
+
+		// Act
+		Task first = Task.Run(() => Write("{\"writer\":\"a\"}"));
+		Task second = Task.Run(() => Write("{\"writer\":\"b\"}"));
+		Task.WaitAll(first, second);
+
+		// Assert
+		successes.Should().Be(1,
+			because: "publishing must be an atomic test-and-create; a check followed by a replacing rename "
+				+ "lets both writers observe an absent target and both report success");
+		File.ReadAllText(path).Should().Be(winner,
+			because: "the winner's content must survive intact - the loser must not have overwritten it");
+		Directory.GetFiles(_sandbox, "*.tmp").Should().BeEmpty(
+			because: "the loser must clean up its own temporary sibling");
 	}
 
 	[Test]

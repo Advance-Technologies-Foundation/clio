@@ -2,7 +2,6 @@ using System;
 using System.Collections.Generic;
 using System.ComponentModel;
 using System.ComponentModel.DataAnnotations;
-using System.Net.Http;
 using System.Text;
 using System.Text.Json.Serialization;
 using System.Threading;
@@ -94,7 +93,10 @@ public sealed class ODataReadToFileTool(IToolCommandResolver commandResolver, IO
 			}
 			// Checked AFTER the fetch and BEFORE anything is published: the transport may well finish an
 			// abandoned request, and a file appearing for a call the caller was told nothing about is worse
-			// than a slow one. Nothing has been written yet, so there is nothing to clean up either.
+			// than a slow one. Nothing has been written yet, so there is nothing to clean up either. This is
+			// honoured but NOT advertised: a cancelled MCP call is not observed to reach the running tool
+			// (docs/knowledge/McpServer/mcp-cancellation-does-not-reach-tools.md), so the guarantee the tool
+			// states is the size ceiling, not cancellation.
 			cancellationToken.ThrowIfCancellationRequested();
 			// The response is NOT parsed into an inline response first: for the file mode that second parse
 			// (plus the value Clone) allocated several times the response size for a value that is thrown
@@ -134,9 +136,10 @@ public sealed class ODataReadToFileTool(IToolCommandResolver commandResolver, IO
 	/// <param name="responseUtf8">Response body when the method returns <see langword="true"/>.</param>
 	/// <param name="error">Caller-facing error when the method returns <see langword="false"/>.</param>
 	/// <remarks>
-	/// The streaming path needs the transport-level client. A client that does not offer it still works
-	/// through the buffered call below - the ceiling is then applied to a body already in memory, which is
-	/// weaker, and is why the streaming path is preferred whenever it is available.
+	/// The streaming path needs the transport-level client, which pulls the body incrementally and abandons
+	/// the transfer at the ceiling. A client that does not offer it still works through the buffered call -
+	/// the ceiling is then applied to a body already in memory, which is strictly weaker, and is why the
+	/// streamed path is preferred whenever it exists.
 	/// </remarks>
 	private static bool TryFetch(
 		IApplicationClient client,
@@ -146,24 +149,35 @@ public sealed class ODataReadToFileTool(IToolCommandResolver commandResolver, IO
 		out string error) {
 		responseUtf8 = null;
 		error = null;
-		if (client is ICreatioApplicationClient streamingClient) {
-			using HttpResponseMessage response = streamingClient
-				.ExecuteGetRequestAsync(url, RequestTimeoutMs, cancellationToken: cancellationToken)
-				.GetAwaiter()
-				.GetResult();
-			return BoundedHttpResponseReader.TryRead(
-				response, ODataFileContract.MaxResponseBytes, cancellationToken, out responseUtf8, out error);
+		try {
+			if (client is ICreatioApplicationClient streamingClient) {
+				responseUtf8 = streamingClient
+					.ExecuteGetRequestBoundedAsync(
+						url, ODataFileContract.MaxResponseBytes, RequestTimeoutMs, cancellationToken)
+					.GetAwaiter()
+					.GetResult();
+				return true;
+			}
+		} catch (ResponseTooLargeException tooLarge) {
+			error = DescribeTooLarge(tooLarge.ObservedBytes);
+			return false;
+		} catch (NotSupportedException) {
+			// The transport cannot stream; fall through to the buffered path below.
 		}
 		cancellationToken.ThrowIfCancellationRequested();
 		string buffered = client.ExecuteGetRequest(url, RequestTimeoutMs);
 		if (buffered is not null && (long)buffered.Length * sizeof(char) > ODataFileContract.MaxResponseBytes) {
-			error = $"OData response exceeds the {ODataFileContract.MaxResponseBytes}-byte limit for one call. "
-				+ "Narrow the query with select, or page it with top and skip.";
+			error = DescribeTooLarge((long)buffered.Length * sizeof(char));
 			return false;
 		}
 		responseUtf8 = Encoding.UTF8.GetBytes(buffered ?? string.Empty);
 		return true;
 	}
+
+	private static string DescribeTooLarge(long observedBytes) =>
+		$"OData response is at least {observedBytes} bytes, which exceeds the "
+		+ $"{ODataFileContract.MaxResponseBytes}-byte limit for one call. Narrow the query with select, or "
+		+ "page it with top and skip.";
 }
 
 /// <summary>Arguments for <see cref="ODataReadToFileTool"/>: every <see cref="ODataReadArgs"/> member plus the file destination.</summary>

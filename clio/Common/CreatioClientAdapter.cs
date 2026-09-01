@@ -1,5 +1,7 @@
 using System;
 using System.Collections.Generic;
+using System.IO;
+using System.Net;
 using System.Net.Http;
 using System.Net.WebSockets;
 using System.Threading;
@@ -208,6 +210,62 @@ public class CreatioClientAdapter : IOwnedApplicationClient {
 		int maxAttempts = 1, int delaySec = 1, CancellationToken cancellationToken = default) =>
 		_loginDiagnostics.TrackRequestAsync(() =>
 			Client.ExecuteGetRequestAsync(url, requestTimeout, maxAttempts, delaySec, cancellationToken));
+
+	/// <inheritdoc />
+	public async Task<byte[]> ExecuteGetRequestBoundedAsync(string url, long maxBytes,
+		int requestTimeout = 100_000, CancellationToken cancellationToken = default) {
+		// The session is established through the ordinary client so this path never invents its own
+		// authentication; it only borrows the cookies that session already holds.
+		IReadOnlyList<CreatioSessionCookie> cookies = ExportSessionCookies();
+		if (cookies.Count == 0) {
+			Login();
+			cookies = ExportSessionCookies();
+		}
+		CookieContainer jar = new();
+		foreach (CreatioSessionCookie cookie in cookies) {
+			jar.Add(new Cookie(
+				cookie.Name,
+				cookie.Value,
+				string.IsNullOrEmpty(cookie.Path) ? "/" : cookie.Path,
+				cookie.Domain) {
+				Secure = cookie.Secure,
+				HttpOnly = cookie.HttpOnly
+			});
+		}
+		using HttpClientHandler handler = new() { CookieContainer = jar, UseCookies = true };
+		using HttpClient http = new(handler, disposeHandler: false) {
+			Timeout = requestTimeout > 0 ? TimeSpan.FromMilliseconds(requestTimeout) : System.Threading.Timeout.InfiniteTimeSpan
+		};
+		using HttpRequestMessage request = new(HttpMethod.Get, url);
+		// ResponseHeadersRead is the whole point: the default completes only after the entire body has been
+		// buffered, so a ceiling checked afterwards has already lost. Here the body is pulled incrementally
+		// and the response is disposed as soon as the limit is passed, which drops the connection and stops
+		// the server sending the rest.
+		using HttpResponseMessage response = await http
+			.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken)
+			.ConfigureAwait(false);
+		if (response.Content.Headers.ContentLength is { } declared && declared > maxBytes) {
+			throw new ResponseTooLargeException(declared, maxBytes);
+		}
+		using Stream body = await response.Content.ReadAsStreamAsync(cancellationToken).ConfigureAwait(false);
+		using MemoryStream buffer = new();
+		byte[] chunk = new byte[StreamChunkBytes];
+		long total = 0;
+		while (true) {
+			int read = await body.ReadAsync(chunk.AsMemory(0, chunk.Length), cancellationToken).ConfigureAwait(false);
+			if (read == 0) {
+				break;
+			}
+			total += read;
+			if (total > maxBytes) {
+				throw new ResponseTooLargeException(total, maxBytes);
+			}
+			buffer.Write(chunk, 0, read);
+		}
+		return buffer.ToArray();
+	}
+
+	private const int StreamChunkBytes = 64 * 1024;
 
 	public string ExecutePostRequest(string url, string requestData, int requestTimeout = Timeout.Infinite,
 		int maxAttempts = 1, int delaySec = 1) {

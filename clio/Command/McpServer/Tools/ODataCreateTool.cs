@@ -58,7 +58,7 @@ public sealed class ODataCreateTool(IToolCommandResolver commandResolver, IOData
 	internal const int MaxBatchDurationMs = 5 * 60 * 1000;
 
 	private const string CancelledMessage =
-		"row was not attempted: the caller cancelled the batch.";
+		"row was not attempted: the batch was cancelled.";
 
 	private const string DeadlineMessage =
 		"row was not attempted: the batch exceeded its "
@@ -98,8 +98,8 @@ public sealed class ODataCreateTool(IToolCommandResolver commandResolver, IOData
 		"Provide the entity set name and a 'rows' array of field/value objects; pass all rows for the same " +
 		"entity in one call rather than one call per row. " + RowCountLimitDescription + " Each row is inserted " +
 		"sequentially and reported independently — a failed row does not abort the rest unless 'stop-on-error' is set. " +
-		"The batch also stops when the caller cancels it or when it exceeds its wall-clock budget; the first " +
-		"row that was not attempted is reported with record-created=false and the reason. " +
+		"The batch stops when it exceeds its wall-clock budget; the first row that was not attempted is then " +
+		"reported with record-created=false and the reason. " +
 		"Returns a created/failed summary and a per-row result array with each created record's Id. " +
 		"CRITICAL for failed rows — read 'record-created' before reacting: true inserted, false definitely not " +
 		"inserted (rejected locally, safe to fix and re-send), null UNKNOWN. Null means Creatio failed the call " +
@@ -168,8 +168,11 @@ public sealed class ODataCreateTool(IToolCommandResolver commandResolver, IOData
 		CancellationToken cancellationToken) {
 		List<ODataRowResult> results = [];
 		int index = 0;
-		//The batch is bounded in BOTH directions the caller cares about: it stops when the caller cancels
-		//(the MCP host disconnecting cancels the request token) and when it runs out of wall-clock budget.
+		//The bound the batch actually PROMISES is the wall-clock budget: it is deterministic and depends on
+		//nothing outside this process. The cancellation token is honoured too, but is deliberately NOT
+		//advertised as a guarantee - measured end to end, a cancelled MCP call does not reach the running
+		//tool (see docs/knowledge/McpServer/mcp-cancellation-does-not-reach-tools.md), so promising that
+		//later rows stop on cancellation would be promising something a caller cannot rely on.
 		//Both are checked BETWEEN rows, so a row that is already in flight completes and is reported -
 		//abandoning it mid-POST would leave its side effect unknown for no gain.
 		Stopwatch elapsed = Stopwatch.StartNew();

@@ -15,6 +15,33 @@ public interface ICreatioApplicationClient : IApplicationClient {
 	Task<HttpResponseMessage> ExecuteGetRequestAsync(string url, int requestTimeout = 100_000,
 		int maxAttempts = 1, int delaySec = 1, CancellationToken cancellationToken = default);
 
+	/// <summary>
+	/// Executes a GET whose response body is STREAMED, with a hard ceiling enforced as the bytes arrive.
+	/// </summary>
+	/// <param name="url">The absolute request URL.</param>
+	/// <param name="maxBytes">Hard ceiling on the response body.</param>
+	/// <param name="requestTimeout">The request timeout in milliseconds.</param>
+	/// <param name="cancellationToken">Token that abandons the transfer.</param>
+	/// <returns>The response body as UTF-8 bytes.</returns>
+	/// <exception cref="ResponseTooLargeException">The body reached the ceiling; the transfer is abandoned.</exception>
+	/// <remarks>
+	/// <see cref="ExecuteGetRequestAsync"/> completes only once the WHOLE body has been buffered, so a
+	/// ceiling applied to its result cannot prevent the allocation it exists to prevent - a large response
+	/// is already in memory by the time it can be rejected. This overload reads response headers first and
+	/// then pulls the body incrementally, so the transfer is abandoned near the limit instead of after it.
+	/// <para>
+	/// Defaulted rather than abstract, for the same reason as <see cref="IApplicationClient.ExecutePutRequest"/>:
+	/// this contract has implementations outside this repository, and an abstract member breaks every one of
+	/// them at compile time. A transport that cannot stream says so at the call site, and the caller falls
+	/// back to the buffered path.
+	/// </para>
+	/// </remarks>
+	Task<byte[]> ExecuteGetRequestBoundedAsync(string url, long maxBytes, int requestTimeout = 100_000,
+		CancellationToken cancellationToken = default) =>
+		throw new NotSupportedException(
+			$"{GetType().Name} does not implement a streamed GET. Use a client that overrides "
+			+ $"{nameof(ExecuteGetRequestBoundedAsync)}.");
+
 	/// <summary>Executes a cancellation-aware POST and transfers response ownership to the caller.</summary>
 	Task<HttpResponseMessage> ExecutePostRequestAsync(string url, string requestData,
 		int requestTimeout = 100_000, int maxAttempts = 1, int delaySec = 1,

@@ -1,6 +1,7 @@
 using System.Diagnostics;
 using System.Globalization;
 using System.Net;
+using System.Net.Http;
 using System.Net.Sockets;
 using System.Text.Json;
 
@@ -39,6 +40,15 @@ internal sealed class RuntimeDetectionStubServer : IAsyncDisposable {
 		}
 
 		return new RuntimeDetectionStubServer(process, scriptPath, $"http://127.0.0.1:{port.ToString(CultureInfo.InvariantCulture)}");
+	}
+
+	/// <summary>Bytes the oversized OData endpoint managed to send before the client abandoned the transfer.</summary>
+	/// <param name="cancellationToken">Token for the probe request.</param>
+	public async Task<long> GetODataSentBytesAsync(CancellationToken cancellationToken) {
+		using HttpClient client = new();
+		string body = await client.GetStringAsync($"{BaseUrl}/stub/odata-sent-bytes", cancellationToken);
+		using JsonDocument document = JsonDocument.Parse(body);
+		return document.RootElement.GetProperty("sent").GetInt64();
 	}
 
 	public async ValueTask DisposeAsync() {
@@ -97,11 +107,20 @@ function sendText(response, statusCode, body) {
   response.end(body);
 }
 
+// Bytes the oversized endpoint managed to push before the client hung up. A test cannot see "the transfer
+// was abandoned" from the client side - the call simply returns an error either way - so the server reports
+// how far it got.
+let sentBytes = 0;
+
 http.createServer((request, response) => {
   let body = "";
   request.on("data", chunk => { body += chunk; });
   request.on("end", () => {
     const url = request.url || "";
+    if (request.method === "GET" && url === "/stub/odata-sent-bytes") {
+      sendJson(response, 200, { sent: sentBytes });
+      return;
+    }
     if (request.method === "POST" && url === "/ServiceModel/AuthService.svc/Login") {
       sendJson(
         response,
@@ -170,17 +189,28 @@ http.createServer((request, response) => {
       if (request.method === "GET") {
         const oversized = config.ODataOversizedBytes || 0;
         if (oversized > 0) {
-          // Streams a body past clio's ceiling WITHOUT a Content-Length, so the rejection can only come
-          // from the running total as the bytes arrive.
+          // Streams a body far past clio's ceiling WITHOUT a Content-Length, honouring backpressure, and
+          // records how much it actually managed to send. A client that buffers the whole response before
+          // applying its limit drains everything; one that stops at the limit makes the server stop far
+          // short, and sentBytes is what tells the two apart.
           response.writeHead(200, { "Content-Type": "application/json" });
           response.write("{\"value\":[{\"Id\":\"1\",\"Filler\":\"");
           const chunk = "x".repeat(64 * 1024);
-          let written = 0;
-          while (written < oversized) {
-            response.write(chunk);
-            written += chunk.length;
-          }
-          response.end("\"}]}");
+          let stopped = false;
+          const stop = () => { stopped = true; };
+          response.on("close", stop);
+          response.on("error", stop);
+          const pump = () => {
+            while (!stopped && sentBytes < oversized) {
+              sentBytes += chunk.length;
+              if (!response.write(chunk)) {
+                response.once("drain", pump);
+                return;
+              }
+            }
+            if (!stopped) { response.end("\"}]}"); }
+          };
+          pump();
           return;
         }
         response.writeHead(200, { "Content-Type": "application/json" });

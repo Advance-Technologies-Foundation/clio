@@ -20,13 +20,21 @@ namespace Clio.Common;
 internal sealed class UnixConfinedFileAccess : IConfinedFileAccess {
 
 	/// <inheritdoc/>
-	public Stream OpenRead(string canonicalPath) {
+	public Stream OpenRead(string canonicalPath, long maxBytes) {
 		using DirectoryDescriptor directory = OpenParent(canonicalPath, out string fileName);
 		int fd = Interop.OpenAt(directory.Value, fileName, Flags.ReadOnly | Flags.NoFollow | Flags.CloseOnExec);
 		if (fd < 0) {
 			throw LastError(canonicalPath, "open");
 		}
-		return new FileStream(new SafeFileHandle((IntPtr)fd, ownsHandle: true), FileAccess.Read);
+		FileStream stream = new(new SafeFileHandle((IntPtr)fd, ownsHandle: true), FileAccess.Read);
+		// The length comes from the SAME open descriptor, so the file that is measured is the file that will
+		// be read - and it is measured before anything is copied out of it.
+		long length = stream.Length;
+		if (length > maxBytes) {
+			stream.Dispose();
+			throw new IOException(ConfinedFileAccess.DescribeTooLarge(length, maxBytes));
+		}
+		return stream;
 	}
 
 	/// <inheritdoc/>
@@ -64,18 +72,22 @@ internal sealed class UnixConfinedFileAccess : IConfinedFileAccess {
 				stream.Write(content, 0, content.Length);
 				stream.Flush();
 			}
-			// rename() would happily replace an existing file, so the additive contract is kept by checking
-			// first - against the same descriptor, so the check and the publish cannot address two different
-			// directories.
-			if (Interop.FAccessAt(directory.Value, fileName, FileExists, 0) == 0) {
-				Interop.UnlinkAt(directory.Value, temporaryName);
-				throw new IOException(
-					$"output-file '{canonicalPath}' already exists; refusing to overwrite it. Choose a "
-					+ "different path or remove the existing file.");
-			}
-			if (Interop.RenameAt(directory.Value, temporaryName, directory.Value, fileName) != 0) {
+			// linkat, NOT rename: rename REPLACES an existing entry, so a check-then-rename pair leaves a
+			// window in which a second writer creates the target between the two steps and is then silently
+			// overwritten - two concurrent calls would both report success while one result was destroyed.
+			// linkat fails with EEXIST if the name is taken, and that test-and-create is ONE atomic operation,
+			// which is what the non-destructive contract actually requires. The temporary entry is then
+			// unlinked, leaving exactly the published file.
+			if (Interop.LinkAt(directory.Value, temporaryName, directory.Value, fileName, 0) != 0) {
+				int error = Marshal.GetLastWin32Error();
+				if (error == FileAlreadyExists) {
+					throw new IOException(
+						$"output-file '{canonicalPath}' already exists; refusing to overwrite it. Choose a "
+						+ "different path or remove the existing file.");
+				}
 				throw LastError(canonicalPath, "publish");
 			}
+			Interop.UnlinkAt(directory.Value, temporaryName);
 		}
 		catch {
 			Interop.UnlinkAt(directory.Value, temporaryName);
@@ -136,8 +148,8 @@ internal sealed class UnixConfinedFileAccess : IConfinedFileAccess {
 			: new IOException($"could not {operation} '{path}' (error {error}).");
 	}
 
-	// F_OK - existence only, no permission bits requested.
-	private const int FileExists = 0;
+	// EEXIST - the publish name was taken by someone else first.
+	private const int FileAlreadyExists = 17;
 
 	// ELOOP / ENOTDIR are what O_NOFOLLOW and O_DIRECTORY report for a symlinked component; the numbers are
 	// the same on Linux and macOS.
@@ -223,11 +235,8 @@ internal sealed class UnixConfinedFileAccess : IConfinedFileAccess {
 		[DllImport("libc", EntryPoint = "fchmod", SetLastError = true)]
 		internal static extern int FChmod(int fd, int mode);
 
-		[DllImport("libc", EntryPoint = "renameat", SetLastError = true)]
-		internal static extern int RenameAt(int oldDirFd, string oldPath, int newDirFd, string newPath);
-
-		[DllImport("libc", EntryPoint = "faccessat", SetLastError = true)]
-		internal static extern int FAccessAt(int dirFd, string path, int mode, int flags);
+		[DllImport("libc", EntryPoint = "linkat", SetLastError = true)]
+		internal static extern int LinkAt(int oldDirFd, string oldPath, int newDirFd, string newPath, int flags);
 
 		[DllImport("libc", EntryPoint = "close", SetLastError = true)]
 		internal static extern int Close(int fd);

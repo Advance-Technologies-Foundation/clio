@@ -2299,7 +2299,7 @@ internal static class ToolContractCatalog {
 			OdataUnregisteredEntityAntiPatterns(),
 			Preconditions: [
 				ODataCreateTool.RowCountLimitDescription,
-				"The batch is bounded in wall-clock time as well as row count: rows are POSTed sequentially, and once the batch budget is spent (or the caller cancels) the first row that was not attempted is reported with record-created=false and the reason, and no further row is sent."
+				"The batch is bounded in wall-clock time as well as row count: rows are POSTed sequentially, and once the batch budget is spent the first row that was not attempted is reported with record-created=false and the reason, and no further row is sent."
 			]);
 	}
 

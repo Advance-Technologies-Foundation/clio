@@ -296,13 +296,11 @@ public sealed class ODataReadToFileToolTests {
 		resolver.Resolve<IApplicationClient>(Arg.Any<EnvironmentOptions>()).Returns(client);
 		resolver.Resolve<IServiceUrlBuilder>(Arg.Any<EnvironmentOptions>()).Returns(urlBuilder);
 		urlBuilder.Build(Arg.Any<string>()).Returns("http://creatio/odata/Contact?$top=25");
-		//A body one byte past the ceiling, served WITHOUT a Content-Length, so the rejection can only come
-		//from the running total as the bytes arrive - which is the guarantee under test.
-		HttpResponseMessage response = new(HttpStatusCode.OK) {
-			Content = new StreamContent(new MemoryStream(new byte[ODataFileContract.MaxResponseBytes + 1]))
-		};
-		client.ExecuteGetRequestAsync(Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<CancellationToken>())
-			.Returns(Task.FromResult(response));
+		//The transport abandons the transfer at the ceiling and reports it as ResponseTooLargeException; the
+		//tool has to turn that into an actionable caller-facing message rather than a transport error.
+		client.ExecuteGetRequestBoundedAsync(Arg.Any<string>(), Arg.Any<long>(), Arg.Any<int>(), Arg.Any<CancellationToken>())
+			.Returns<Task<byte[]>>(_ => throw new ResponseTooLargeException(
+				ODataFileContract.MaxResponseBytes + 1, ODataFileContract.MaxResponseBytes));
 		ODataReadToFileTool tool = new(resolver, new ODataFileContract(fileSystem, new MockConfinedFileAccess(fileSystem)));
 
 		// Act
@@ -333,12 +331,10 @@ public sealed class ODataReadToFileToolTests {
 		resolver.Resolve<IServiceUrlBuilder>(Arg.Any<EnvironmentOptions>()).Returns(urlBuilder);
 		urlBuilder.Build(Arg.Any<string>()).Returns("http://creatio/odata/Contact?$top=25");
 		using CancellationTokenSource cancellation = new();
-		client.ExecuteGetRequestAsync(Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<CancellationToken>())
+		client.ExecuteGetRequestBoundedAsync(Arg.Any<string>(), Arg.Any<long>(), Arg.Any<int>(), Arg.Any<CancellationToken>())
 			.Returns(_ => {
 				cancellation.Cancel();
-				return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK) {
-					Content = new StreamContent(new MemoryStream(Encoding.UTF8.GetBytes("{\"value\":[]}")))
-				});
+				return Task.FromResult(Encoding.UTF8.GetBytes("{\"value\":[]}"));
 			});
 		ODataReadToFileTool tool = new(resolver, new ODataFileContract(fileSystem, new MockConfinedFileAccess(fileSystem)));
 

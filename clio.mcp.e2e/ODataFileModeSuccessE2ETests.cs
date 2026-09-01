@@ -195,8 +195,10 @@ public sealed class ODataFileModeSuccessE2ETests {
 		try {
 			await StubEnvironmentStand.RunAsync(
 				"clio-odata-oversized-e2e",
-				EchoStubConfiguration(oversizedBytes: 70 * 1024 * 1024),
-				async (session, environmentName, _, cancellationToken) => {
+				// Far more than the ceiling, so "the server was cut off near the limit" and "the client drained
+				// everything" are numerically unmistakable.
+				EchoStubConfiguration(oversizedBytes: 512 * 1024 * 1024),
+				async (session, environmentName, stubServer, cancellationToken) => {
 					// Act
 					CallToolResult callResult = await session.CallToolAsync(
 						ODataReadToFileTool.ToolName,
@@ -217,6 +219,17 @@ public sealed class ODataFileModeSuccessE2ETests {
 						because: "the caller has to be told the response was too large and how to narrow it");
 					File.Exists(outputFile).Should().BeFalse(
 						because: "nothing may be published for a body that was refused");
+
+					// Assert - the PRODUCER was cut off near the limit, not after the whole body arrived.
+					// This is what separates a real streaming bound from one applied to an already-buffered
+					// response: with the latter the server drains all 512 MiB before anything is rejected.
+					long sent = await stubServer.GetODataSentBytesAsync(cancellationToken);
+					// Measured: the server gets ~72 MiB out against a 67 MiB ceiling - the overshoot is bytes
+					// already in flight in the socket buffers. Twice the ceiling leaves room for that while
+					// staying nowhere near the 512 MiB a client that buffered the whole body would have drained.
+					sent.Should().BeLessThan(2L * ODataFileContract.MaxResponseBytes,
+						because: "the transfer must be abandoned close to the ceiling; draining the whole "
+							+ $"512 MiB body would mean the limit ran too late (server sent {sent} bytes)");
 
 					// Assert - the session survives the refusal and still answers the next call.
 					CallToolResult followUp = await session.CallToolAsync(

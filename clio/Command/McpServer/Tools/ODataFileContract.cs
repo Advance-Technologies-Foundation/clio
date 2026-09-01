@@ -105,12 +105,11 @@ public sealed class ODataFileContract(IFileSystem fileSystem, IConfinedFileAcces
 			// descent refuses to follow a link at any component, so a directory replaced between the
 			// approval and the open cannot redirect the read. The length bound and the bytes both come
 			// from that one opened stream, so no re-open can land on a different file either.
-			using Stream stream = _confinedFileAccess.OpenRead(resolvedPath);
+			// The ceiling is passed INTO the open so it bounds the read itself: a stream handed back and
+			// measured afterwards has already cost whatever the file contained, which is the exhaustion the
+			// bound exists to prevent.
+			using Stream stream = _confinedFileAccess.OpenRead(resolvedPath, MaxPayloadBytes);
 			long length = stream.Length;
-			if (length > MaxPayloadBytes) {
-				error = $"{optionName} is {length} bytes, which exceeds the {MaxPayloadBytes}-byte limit.";
-				return false;
-			}
 			byte[] payload = new byte[(int)length];
 			stream.ReadExactly(payload, 0, payload.Length);
 			//Decode explicitly rather than through a StreamReader: a StreamReader detects the byte-order mark
@@ -120,6 +119,10 @@ public sealed class ODataFileContract(IFileSystem fileSystem, IConfinedFileAcces
 			//and the caller gets the input error.
 			json = StrictUtf8.GetString(StripUtf8Bom(payload));
 			return true;
+		} catch (IOException ex) when (ex.Message.Contains("exceeds", StringComparison.Ordinal)) {
+			// The size ceiling, reported by the confined open before the content was pulled into memory.
+			error = $"{optionName} {ex.Message}";
+			return false;
 		} catch (DecoderFallbackException) {
 			// Encoding.UTF8 replaces an invalid byte sequence with U+FFFD, so a corrupted payload still parsed
 			// as JSON and was POSTed or PATCHed with silently altered characters. Strict decoding turns that

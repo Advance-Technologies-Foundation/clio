@@ -30,7 +30,7 @@ namespace Clio.Common;
 internal sealed class WindowsConfinedFileAccess : IConfinedFileAccess {
 
 	/// <inheritdoc/>
-	public Stream OpenRead(string canonicalPath) {
+	public Stream OpenRead(string canonicalPath, long maxBytes) {
 		using PinnedPath pinned = PinnedPath.Descend(canonicalPath);
 		RejectReparsePoint(canonicalPath);
 		FileStreamOptions options = new() {
@@ -38,15 +38,38 @@ internal sealed class WindowsConfinedFileAccess : IConfinedFileAccess {
 			Access = FileAccess.Read,
 			Share = FileShare.Read
 		};
-		// The content is copied out while the path is still pinned, so the stream handed back never
-		// outlives the checks that approved it.
+		// The content is copied out while the path is still pinned, so the stream handed back never outlives
+		// the checks that approved it. The ceiling is applied to the copy ITSELF, not to the result: copying
+		// first and measuring afterwards means a huge (or sparse) file inside an allowed root has already
+		// been pulled into memory by the time anything could reject it.
 		MemoryStream buffer = new();
 		using (FileStream source = new(canonicalPath, options)) {
-			source.CopyTo(buffer);
+			if (source.Length > maxBytes) {
+				throw new IOException(ConfinedFileAccess.DescribeTooLarge(source.Length, maxBytes));
+			}
+			CopyBounded(source, buffer, maxBytes);
 		}
 		pinned.Reverify();
 		buffer.Position = 0;
 		return buffer;
+	}
+
+	// Stops at maxBytes + 1 bytes, so a file whose reported length lies (a sparse or concurrently grown
+	// file) cannot make the copy unbounded either.
+	private static void CopyBounded(Stream source, Stream destination, long maxBytes) {
+		byte[] chunk = new byte[64 * 1024];
+		long total = 0;
+		while (true) {
+			int read = source.Read(chunk, 0, chunk.Length);
+			if (read == 0) {
+				return;
+			}
+			total += read;
+			if (total > maxBytes) {
+				throw new IOException(ConfinedFileAccess.DescribeTooLarge(total, maxBytes));
+			}
+			destination.Write(chunk, 0, read);
+		}
 	}
 
 	/// <inheritdoc/>
@@ -116,7 +139,10 @@ internal sealed class WindowsConfinedFileAccess : IConfinedFileAccess {
 	private sealed class PinnedPath : IDisposable {
 
 		private const uint GenericRead = 0x80000000;
-		private const uint FileShareAll = 0x00000007; // read | write | delete
+		// READ | WRITE only. FILE_SHARE_DELETE would let the directory be RENAMED while the handle is open,
+		// which is precisely the swap the handle is held to prevent - a probe with delete sharing renamed a
+		// pinned directory successfully.
+		private const uint FileShareReadWrite = 0x00000003;
 		private const uint OpenExisting = 3;
 		private const uint BackupSemantics = 0x02000000;
 		private const uint OpenReparsePoint = 0x00200000;
@@ -139,10 +165,7 @@ internal sealed class WindowsConfinedFileAccess : IConfinedFileAccess {
 					// Runs for EVERY component and is never skipped: this is the check that catches a link
 					// planted before the operation began.
 					RejectReparsePoint(component);
-					SafeFileHandle handle = OpenDirectoryHandle(component);
-					if (handle is not null) {
-						handles.Add(handle);
-					}
+					handles.Add(OpenDirectoryHandle(component));
 				}
 				return new PinnedPath(handles, components);
 			}
@@ -169,19 +192,22 @@ internal sealed class WindowsConfinedFileAccess : IConfinedFileAccess {
 
 		// A directory handle needs FILE_FLAG_BACKUP_SEMANTICS; without it CreateFile refuses a directory
 		// outright, and a FileStream over a directory path throws. FILE_FLAG_OPEN_REPARSE_POINT makes the
-		// handle refer to the component itself rather than a link target. Returns null - never throws - when
-		// the handle cannot be taken: holding it is a hardening measure, and the link checks stand on their
-		// own without it.
+		// handle refer to the component itself rather than a link target.
+		// FAIL CLOSED: a handle that cannot be taken means the component is not pinned, and an unpinned
+		// component can be swapped mid-operation. Accepting that silently is what turned the guarantee into
+		// a best-effort check.
 		private static SafeFileHandle OpenDirectoryHandle(string directory) {
-			try {
-				SafeFileHandle handle = CreateFileW(
-					directory, GenericRead, FileShareAll, IntPtr.Zero, OpenExisting,
-					BackupSemantics | OpenReparsePoint, IntPtr.Zero);
-				return handle.IsInvalid ? null : handle;
+			SafeFileHandle handle = CreateFileW(
+				directory, GenericRead, FileShareReadWrite, IntPtr.Zero, OpenExisting,
+				BackupSemantics | OpenReparsePoint, IntPtr.Zero);
+			if (handle.IsInvalid) {
+				int error = Marshal.GetLastWin32Error();
+				handle.Dispose();
+				throw new IOException(
+					$"could not pin path component '{directory}' (error {error}); refusing to continue, "
+					+ "because an unpinned component can be replaced while the operation runs.");
 			}
-			catch (Exception) {
-				return null;
-			}
+			return handle;
 		}
 
 		[DllImport("kernel32.dll", EntryPoint = "CreateFileW", CharSet = CharSet.Unicode, SetLastError = true)]
