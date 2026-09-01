@@ -284,6 +284,9 @@ public class LinkCoreSrcOptionsValidator : AbstractValidator<LinkCoreSrcOptions>
 
 public class LinkCoreSrcCommand : Command<LinkCoreSrcOptions>
 {
+	private const string HttpScheme = "http";
+	private const string HttpsScheme = "https";
+	private const string CertificateSectionName = "Certificate";
 
 	#region Fields: Private
 
@@ -558,7 +561,7 @@ public class LinkCoreSrcCommand : Command<LinkCoreSrcOptions>
 			Uri uri = new Uri(env.Uri);
 			int port = uri.Port;
 			string scheme = uri.Scheme.ToLowerInvariant();
-			if (scheme is not ("http" or "https"))
+			if (scheme is not (HttpScheme or HttpsScheme))
 			{
 				throw new InvalidOperationException($"Unsupported environment URI scheme: {uri.Scheme}");
 			}
@@ -581,7 +584,7 @@ public class LinkCoreSrcCommand : Command<LinkCoreSrcOptions>
 
 			// Try to parse as JSON first, then as XML
 			string updatedContent = UpdateConfigWithPort(content, port, appSettingsPath, scheme);
-			if (scheme == Uri.UriSchemeHttps)
+			if (scheme == HttpsScheme)
 			{
 				ValidateHttpsConfiguration(updatedContent, appSettingsPath, env.EnvironmentPath);
 			}
@@ -619,131 +622,154 @@ public class LinkCoreSrcCommand : Command<LinkCoreSrcOptions>
 	/// <param name="port">The port selected by the environment URI.</param>
 	/// <param name="filePath">The path used in parse diagnostics.</param>
 	/// <returns>Updated JSON or XML configuration.</returns>
-	internal string UpdateConfigWithPort(string content, int port, string filePath, string scheme = "http")
+	internal string UpdateConfigWithPort(string content, int port, string filePath, string scheme = HttpScheme)
 	{
-		// Try JSON format first (for appsettings.json)
-		bool jsonParsed = false;
+		JsonNode? parsed;
 		try
 		{
-			JsonNode? parsed = JsonNode.Parse(content);
-			jsonParsed = true;
-			if (parsed is not JsonObject root)
+			parsed = JsonNode.Parse(content);
+		}
+		catch (JsonException jsonEx)
+		{
+			return UpdateXmlConfiguration(content, port, filePath, jsonEx);
+		}
+
+		if (parsed is not JsonObject root)
+		{
+			throw new JsonException("The application configuration root must be a JSON object.");
+		}
+
+		return UpdateJsonConfiguration(root, port, scheme);
+	}
+
+	private static string UpdateJsonConfiguration(JsonObject root, int port, string scheme)
+	{
+		string targetScheme = scheme.ToLowerInvariant();
+		if (targetScheme is not (HttpScheme or HttpsScheme))
+		{
+			throw new InvalidOperationException($"Unsupported endpoint URI scheme: {scheme}");
+		}
+
+		JsonObject kestrel = GetOrCreateObject(root, "Kestrel");
+		JsonObject endpoints = GetOrCreateObject(kestrel, "Endpoints");
+		if (targetScheme == HttpsScheme)
+		{
+			RemoveEndpointsByScheme(endpoints, HttpScheme);
+		}
+
+		RejectPlaintextCertificatePasswords(kestrel, endpoints);
+		string targetEndpointName = targetScheme == HttpsScheme ? "Https" : "Http";
+		string? canonicalEndpointName = FindCanonicalEndpointName(endpoints, targetEndpointName, targetScheme);
+		JsonObject? targetEndpoint = RewriteEndpointUrls(
+			endpoints,
+			targetScheme,
+			canonicalEndpointName,
+			port);
+
+		if (targetEndpoint is null)
+		{
+			targetEndpoint = FindOrCreateEndpoint(endpoints, targetEndpointName);
+			SetStringProperty(targetEndpoint, "Url", $"{targetScheme}://localhost:{port}");
+		}
+
+		if (targetScheme == HttpsScheme && !HasUsableHttpsCertificate(targetEndpoint, kestrel))
+		{
+			throw new InvalidOperationException(
+				"HTTPS link-core-src requires a certificate on the selected endpoint or in Kestrel.Certificates:Default.");
+		}
+
+		EnsureNoHttpHttpsPortConflict(endpoints);
+		EnsureNoDuplicateEndpointBindings(endpoints);
+		return root.ToJsonString(new JsonSerializerOptions { WriteIndented = true });
+	}
+
+	private static JsonObject? RewriteEndpointUrls(
+		JsonObject endpoints,
+		string targetScheme,
+		string? canonicalEndpointName,
+		int port)
+	{
+		JsonObject? targetEndpoint = null;
+		foreach (KeyValuePair<string, JsonNode?> property in endpoints)
+		{
+			if (property.Value is not JsonObject endpoint)
 			{
-				throw new JsonException("The application configuration root must be a JSON object.");
+				throw new JsonException($"Configuration property '{property.Key}' must be a JSON object.");
 			}
 
-			JsonObject kestrel = GetOrCreateObject(root, "Kestrel");
-			JsonObject endpoints = GetOrCreateObject(kestrel, "Endpoints");
-			string targetScheme = scheme.ToLowerInvariant();
-			if (targetScheme is not ("http" or "https"))
+			string? url = GetStringProperty(endpoint, "Url");
+			string? endpointScheme = GetUriScheme(url);
+			if (url is null || endpointScheme is null
+				|| !IsHttpOrHttpsScheme(endpointScheme))
 			{
-				throw new InvalidOperationException($"Unsupported endpoint URI scheme: {scheme}");
+				continue;
 			}
-			if (targetScheme == Uri.UriSchemeHttps)
+
+			string rewrittenUrl = KestrelEndpointUrl.ReplaceHost(url, "localhost")
+				?? throw new JsonException($"Kestrel endpoint '{property.Key}' has an unsupported URL: {url}");
+			if (string.Equals(endpointScheme, targetScheme, StringComparison.OrdinalIgnoreCase)
+				&& string.Equals(property.Key, canonicalEndpointName, StringComparison.OrdinalIgnoreCase))
 			{
-				RemoveEndpointsByScheme(endpoints, "http");
+				rewrittenUrl = KestrelEndpointUrl.ReplacePort(rewrittenUrl, port);
+				targetEndpoint = endpoint;
 			}
-			RejectPlaintextCertificatePasswords(kestrel, endpoints);
-			string targetEndpointName = targetScheme == Uri.UriSchemeHttps ? "Https" : "Http";
-			string? canonicalEndpointName = FindCanonicalEndpointName(endpoints, targetEndpointName, targetScheme);
-			bool hasTargetEndpoint = false;
-			foreach (KeyValuePair<string, JsonNode?> property in endpoints)
+
+			SetStringProperty(endpoint, "Url", rewrittenUrl);
+		}
+
+		return targetEndpoint;
+	}
+
+	private static bool IsHttpOrHttpsScheme(string scheme) =>
+		string.Equals(scheme, HttpScheme, StringComparison.OrdinalIgnoreCase)
+		|| string.Equals(scheme, HttpsScheme, StringComparison.OrdinalIgnoreCase);
+
+	private static string UpdateXmlConfiguration(string content, int port, string filePath, JsonException jsonException)
+	{
+		try
+		{
+			XmlDocument doc = new XmlDocument();
+			doc.LoadXml(content);
+
+			XmlNode? portNode = doc.DocumentElement?.SelectSingleNode("//add[@key='Port']")
+				?? doc.DocumentElement?.SelectSingleNode("//appSettings/add[@key='Port']");
+			if (portNode is not null)
 			{
-				if (property.Value is not JsonObject endpoint)
+				XmlAttribute? valueAttribute = portNode.Attributes?["value"];
+				if (valueAttribute is null)
 				{
-					throw new JsonException($"Configuration property '{property.Key}' must be a JSON object.");
+					throw new XmlException("The existing Port setting does not have a value attribute.");
 				}
 
-				string? url = GetStringProperty(endpoint, "Url");
-				string? endpointScheme = GetUriScheme(url);
-				if (url is null || endpointScheme is null
-					|| (!string.Equals(endpointScheme, "http", StringComparison.OrdinalIgnoreCase)
-						&& !string.Equals(endpointScheme, "https", StringComparison.OrdinalIgnoreCase)))
-				{
-					continue;
-				}
-
-				string rewrittenUrl = KestrelEndpointUrl.ReplaceHost(url, "localhost")
-					?? throw new JsonException($"Kestrel endpoint '{property.Key}' has an unsupported URL: {url}");
-				if (string.Equals(endpointScheme, targetScheme, StringComparison.OrdinalIgnoreCase)
-					&& string.Equals(property.Key, canonicalEndpointName, StringComparison.OrdinalIgnoreCase))
-				{
-					rewrittenUrl = KestrelEndpointUrl.ReplacePort(rewrittenUrl, port);
-					hasTargetEndpoint = true;
-				}
-
-				SetStringProperty(endpoint, "Url", rewrittenUrl);
-			}
-
-			JsonObject targetEndpoint;
-			if (hasTargetEndpoint)
-			{
-				targetEndpoint = (JsonObject)endpoints[canonicalEndpointName!]!;
+				valueAttribute.Value = port.ToString();
 			}
 			else
 			{
-				targetEndpoint = FindOrCreateEndpoint(endpoints, targetEndpointName);
-				SetStringProperty(targetEndpoint, "Url", $"{targetScheme}://localhost:{port}");
+				XmlNode? appSettingsNode = doc.DocumentElement?.SelectSingleNode("//appSettings");
+				if (appSettingsNode is null)
+				{
+					appSettingsNode = doc.CreateElement("appSettings");
+					doc.DocumentElement?.AppendChild(appSettingsNode);
+				}
+
+				XmlElement portElement = doc.CreateElement("add");
+				portElement.SetAttribute("key", "Port");
+				portElement.SetAttribute("value", port.ToString());
+				appSettingsNode.AppendChild(portElement);
 			}
 
-			if (targetScheme == Uri.UriSchemeHttps && !HasUsableHttpsCertificate(targetEndpoint, kestrel))
-			{
-				throw new InvalidOperationException(
-					"HTTPS link-core-src requires a certificate on the selected endpoint or in Kestrel.Certificates:Default.");
-			}
-
-			EnsureNoHttpHttpsPortConflict(endpoints);
-			EnsureNoDuplicateEndpointBindings(endpoints);
-
-			return root.ToJsonString(new JsonSerializerOptions { WriteIndented = true });
+			using StringWriter writer = new();
+			doc.Save(writer);
+			return writer.ToString();
 		}
-		catch (JsonException jsonEx) when (!jsonParsed)
+		catch (Exception xmlException)
 		{
-			// If not JSON, try XML format
-			try
-			{
-				XmlDocument doc = new XmlDocument();
-				doc.LoadXml(content);
-
-				// Look for port setting in appSettings
-				XmlNode portNode = doc.DocumentElement?.SelectSingleNode("//add[@key='Port']") ??
-								   doc.DocumentElement?.SelectSingleNode("//appSettings/add[@key='Port']");
-
-				if (portNode != null)
-				{
-					portNode.Attributes["value"].Value = port.ToString();
-				}
-				else
-				{
-					// Create port node if doesn't exist
-					XmlNode appSettingsNode = doc.DocumentElement?.SelectSingleNode("//appSettings");
-					if (appSettingsNode == null)
-					{
-						appSettingsNode = doc.CreateElement("appSettings");
-						doc.DocumentElement?.AppendChild(appSettingsNode);
-					}
-
-					XmlElement portElement = doc.CreateElement("add");
-					portElement.SetAttribute("key", "Port");
-					portElement.SetAttribute("value", port.ToString());
-					appSettingsNode.AppendChild(portElement);
-				}
-
-				using (var writer = new StringWriter())
-				{
-					doc.Save(writer);
-					return writer.ToString();
-				}
-			}
-			catch (Exception xmlEx)
-			{
-				string contentPreview = content.Length > 300 ? content.Substring(0, 300) + "..." : content;
-				throw new Exception($"Unable to parse appsettings.json at '{filePath}' (unsupported format).\n" +
-					$"Expected JSON with Kestrel configuration or XML format.\n" +
-					$"File content preview:\n{contentPreview}\n" +
-					$"JSON parsing error: {jsonEx.Message}\n" +
-					$"XML parsing error: {xmlEx.Message}");
-			}
+			string contentPreview = content.Length > 300 ? content.Substring(0, 300) + "..." : content;
+			throw new Exception($"Unable to parse appsettings.json at '{filePath}' (unsupported format).\n" +
+				$"Expected JSON with Kestrel configuration or XML format.\n" +
+				$"File content preview:\n{contentPreview}\n" +
+				$"JSON parsing error: {jsonException.Message}\n" +
+				$"XML parsing error: {xmlException.Message}");
 		}
 	}
 
@@ -816,7 +842,7 @@ public class LinkCoreSrcCommand : Command<LinkCoreSrcOptions>
 			string? endpointScheme = property.Value is JsonObject endpoint
 				? GetUriScheme(GetStringProperty(endpoint, "Url"))
 				: null;
-			bool isCanonicalHttpWithoutScheme = scheme == Uri.UriSchemeHttp
+			bool isCanonicalHttpWithoutScheme = scheme == HttpScheme
 				&& string.Equals(property.Key, "Http", StringComparison.OrdinalIgnoreCase)
 				&& endpointScheme is null;
 			if (string.Equals(endpointScheme, scheme, StringComparison.OrdinalIgnoreCase)
@@ -858,7 +884,7 @@ public class LinkCoreSrcCommand : Command<LinkCoreSrcOptions>
 
 	private static bool HasUsableHttpsCertificate(JsonObject endpoint, JsonObject kestrel)
 	{
-		JsonObject? endpointCertificate = GetObjectProperty(endpoint, "Certificate");
+		JsonObject? endpointCertificate = GetObjectProperty(endpoint, CertificateSectionName);
 		if (endpointCertificate is not null)
 		{
 			return HasUsableCertificateConfiguration(endpointCertificate);
@@ -874,7 +900,7 @@ public class LinkCoreSrcCommand : Command<LinkCoreSrcOptions>
 		foreach (KeyValuePair<string, JsonNode?> property in endpoints)
 		{
 			if (property.Value is JsonObject endpoint
-				&& GetObjectProperty(endpoint, "Certificate") is JsonObject certificate
+				&& GetObjectProperty(endpoint, CertificateSectionName) is JsonObject certificate
 				&& FindPropertyName(certificate, "Password") is not null)
 			{
 				throw new InvalidOperationException(
@@ -934,15 +960,9 @@ public class LinkCoreSrcCommand : Command<LinkCoreSrcOptions>
 
 	private static string? FindPropertyName(JsonObject parent, string propertyName)
 	{
-		foreach (KeyValuePair<string, JsonNode?> property in parent)
-		{
-			if (string.Equals(property.Key, propertyName, StringComparison.OrdinalIgnoreCase))
-			{
-				return property.Key;
-			}
-		}
-
-		return null;
+		return parent
+			.FirstOrDefault(property => string.Equals(property.Key, propertyName, StringComparison.OrdinalIgnoreCase))
+			.Key;
 	}
 
 	private static void EnsureNoHttpHttpsPortConflict(JsonObject endpoints)
@@ -951,7 +971,10 @@ public class LinkCoreSrcCommand : Command<LinkCoreSrcOptions>
 		HashSet<int> httpsPorts = new();
 		foreach (KeyValuePair<string, JsonNode?> property in endpoints)
 		{
-			JsonObject endpoint = (JsonObject)property.Value!;
+			if (property.Value is not JsonObject endpoint)
+			{
+				continue;
+			}
 			string? url = GetStringProperty(endpoint, "Url");
 			string? scheme = GetUriScheme(url);
 			if (url is null || scheme is null)
@@ -960,23 +983,24 @@ public class LinkCoreSrcCommand : Command<LinkCoreSrcOptions>
 			}
 
 			string normalizedScheme = scheme.ToLowerInvariant();
-			if (normalizedScheme is not ("http" or "https"))
+			if (normalizedScheme is not (HttpScheme or HttpsScheme))
 			{
 				continue;
 			}
 
 			int endpointPort = KestrelEndpointUrl.GetPort(url, normalizedScheme);
-			(normalizedScheme == "http" ? httpPorts : httpsPorts).Add(endpointPort);
+			(normalizedScheme == HttpScheme ? httpPorts : httpsPorts).Add(endpointPort);
 		}
 
-		foreach (int endpointPort in httpPorts)
+		int? conflictingPort = httpPorts
+			.Where(httpsPorts.Contains)
+			.Select(endpointPort => (int?)endpointPort)
+			.FirstOrDefault();
+		if (conflictingPort is int conflictingEndpointPort)
 		{
-			if (httpsPorts.Contains(endpointPort))
-			{
-				throw new InvalidOperationException(
-					$"The Kestrel HTTP and HTTPS endpoints both use port {endpointPort}. "
-					+ "Choose a different environment port or update the existing HTTPS configuration.");
-			}
+			throw new InvalidOperationException(
+				$"The Kestrel HTTP and HTTPS endpoints both use port {conflictingEndpointPort}. "
+				+ "Choose a different environment port or update the existing HTTPS configuration.");
 		}
 	}
 
@@ -985,7 +1009,10 @@ public class LinkCoreSrcCommand : Command<LinkCoreSrcOptions>
 		Dictionary<string, string> endpointNamesByBinding = new(StringComparer.OrdinalIgnoreCase);
 		foreach (KeyValuePair<string, JsonNode?> property in endpoints)
 		{
-			JsonObject endpoint = (JsonObject)property.Value!;
+			if (property.Value is not JsonObject endpoint)
+			{
+				continue;
+			}
 			string? url = GetStringProperty(endpoint, "Url");
 			string? scheme = GetUriScheme(url);
 			if (url is null || scheme is null)
@@ -994,7 +1021,7 @@ public class LinkCoreSrcCommand : Command<LinkCoreSrcOptions>
 			}
 
 			string normalizedScheme = scheme.ToLowerInvariant();
-			if (normalizedScheme is not ("http" or "https"))
+			if (normalizedScheme is not (HttpScheme or HttpsScheme))
 			{
 				continue;
 			}

@@ -1,4 +1,5 @@
 using System;
+using System.Linq;
 using System.Net;
 using System.Net.Sockets;
 
@@ -41,14 +42,12 @@ internal static class KestrelEndpointUrl
 					return null;
 				}
 			}
-			else if (authority.Contains(':'))
-			{
-				if (!IPAddress.TryParse(authority, out IPAddress? address)
+			else if (authority.Contains(':')
+				&& (!IPAddress.TryParse(authority, out IPAddress? address)
 					|| address.AddressFamily != AddressFamily.InterNetworkV6
-					|| IsAmbiguousUnbracketedIpv6Port(authority))
-				{
-					return null;
-				}
+					|| IsAmbiguousUnbracketedIpv6Port(authority)))
+			{
+				return null;
 			}
 		}
 
@@ -126,20 +125,7 @@ internal static class KestrelEndpointUrl
 
 	private static bool IsDigits(string value)
 	{
-		if (value.Length == 0)
-		{
-			return false;
-		}
-
-		foreach (char character in value)
-		{
-			if (!char.IsDigit(character))
-			{
-				return false;
-			}
-		}
-
-		return true;
+		return value.Length > 0 && value.All(char.IsDigit);
 	}
 
 	private static bool TryGetExplicitPort(string authority, out string port)

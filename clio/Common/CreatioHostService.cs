@@ -245,13 +245,10 @@ public class CreatioHostService : ICreatioHostService
 	internal static string EscapeWindowsCommandArgument(string value)
 	{
 		const string unsafeCommandCharacters = "\"%!&|<>^()\r\n";
-		foreach (char character in value)
+		if (value.Any(character => unsafeCommandCharacters.IndexOf(character) >= 0))
 		{
-			if (unsafeCommandCharacters.IndexOf(character) >= 0)
-			{
-				throw new InvalidOperationException(
-					"The environment name contains characters that cannot be safely passed to a Windows terminal launcher.");
-			}
+			throw new InvalidOperationException(
+				"The environment name contains characters that cannot be safely passed to a Windows terminal launcher.");
 		}
 
 		return $"\"{value}\"";
