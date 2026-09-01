@@ -487,6 +487,11 @@ public class SysSettingsManagerNewBehaviorTests {
 	[TestCase("null", TestName = "JsonNull")]
 	[TestCase("{\"error\":\"502\"}", TestName = "GatewayError")]
 	[TestCase("{\"data\":{\"items\":[]}}", TestName = "UnknownEnvelope")]
+	//A single marker property is enough for the readiness poll but not for proof of authentication:
+	//a proxy that knows only the word "success" produced both of these, and each one used to be cached
+	//as permanent proof, so every later read and write skipped the probe.
+	[TestCase("{\"success\":true}", TestName = "BareSuccessFlag")]
+	[TestCase("{\"success\":false}", TestName = "BareFailureFlag")]
 	[Description("Parseable JSON that is not a DataService envelope does not confirm the credentials: the read fails instead of returning an authentication-collapsed empty result.")]
 	public void GetAllSysSettingsWithValues_ShouldNotAcceptArbitraryJson_AsProofOfAuthentication(string response) {
 		// Arrange

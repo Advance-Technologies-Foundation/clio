@@ -759,18 +759,39 @@ public class SysSettingsManager : ISysSettingsManager
 			//authentication-collapsed empty provider read was returned as a valid empty result again. Only a
 			//DataService envelope proves the request was authenticated AND executed, which is the same rule
 			//ServerReadinessWaiter applies to this proxy/gateway failure mode.
-			if (!ServerReadinessWaiter.IsGenuineAuthenticatedJsonAnswer(response)) {
+			if (!ServerReadinessWaiter.IsGenuineAuthenticatedJsonAnswer(response)
+				|| !IsCoherentDataServiceEnvelope(document.RootElement)) {
 				throw new InvalidOperationException(
 					$"Failed {operationLabel}: the environment answered with JSON that is not a DataService "
 					+ "response envelope, so the credentials were not confirmed. Verify the environment URL "
 					+ "points at Creatio rather than at a proxy or gateway, and retry.");
 			}
 			_authProbeSucceeded = true;
-			return;
 		} catch (JsonException) {
 			throw new InvalidOperationException(
 				$"Failed {operationLabel}: the environment returned a non-JSON response instead of a DataService response.");
 		}
+	}
+
+	/// <summary>
+	/// True when the probe answer is a COMPLETE DataService envelope rather than a single marker property.
+	/// </summary>
+	/// <remarks>
+	/// <see cref="ServerReadinessWaiter.IsGenuineAuthenticatedJsonAnswer"/> accepts any one contract marker,
+	/// which is the right rule for a readiness poll but too weak for proof of authentication: a bare
+	/// <c>{"success":false}</c> or <c>{"success":true}</c> from a proxy qualified, and that answer then cached
+	/// <c>_authProbeSucceeded</c> for the rest of the manager's life, so every later read or write skipped the
+	/// probe. A real answer carries the payload the operation produced (<c>rows</c>, <c>rowsAffected</c>,
+	/// <c>saveResult</c>); a real refusal carries the error envelope beside the flag. Neither shape can be
+	/// produced by an intermediary that only knows the word <c>success</c>. The stricter rule stays local
+	/// because the readiness poll has its own, looser contract.
+	/// </remarks>
+	private static bool IsCoherentDataServiceEnvelope(JsonElement root) {
+		if (root.ValueKind != JsonValueKind.Object) {
+			return false;
+		}
+		string[] payloadMarkers = ["rows", "rowsAffected", "saveResult", "errorInfo", "responseStatus"];
+		return payloadMarkers.Any(marker => root.TryGetProperty(marker, out JsonElement _));
 	}
 
 	/// <summary>

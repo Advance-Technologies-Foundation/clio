@@ -47,7 +47,7 @@ public static class AuthenticationFailureClassifier {
 	/// server-controlled prose.
 	/// </remarks>
 	private static readonly Regex TransportSecurityFailure =
-		new(@"certificate|SSL|TLS|secure channel|handshake|trust relationship",
+		new(@"certificate|\bSSL\b|\bTLS\b|secure channel|handshake|trust relationship",
 			RegexOptions.Compiled | RegexOptions.CultureInvariant | RegexOptions.IgnoreCase,
 			TimeSpan.FromSeconds(1));
 
