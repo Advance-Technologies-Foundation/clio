@@ -151,12 +151,12 @@ public class StartCommand : Command<StartOptions>
 				_logger.WriteInfo($"Starting Creatio application '{envName}' as a background service...");
 				_logger.WriteInfo($"Path: {env.EnvironmentPath}");
 				int? processId = _creatioHostService.StartInBackground(env.EnvironmentPath);
-				if (processId.HasValue) {
-					_logger.WriteInfo($"✓ Creatio application started successfully as background service (PID: {processId.Value})!");
-					_logger.WriteInfo("Use 'clio start -w' to start with terminal window for logs.");
-				} else {
-					_logger.WriteInfo("✓ Creatio application started successfully as background service!");
+				if (!processId.HasValue) {
+					_logger.WriteError("Failed to start Creatio application as a background service.");
+					return 1;
 				}
+				_logger.WriteInfo($"✓ Creatio application started successfully as background service (PID: {processId.Value})!");
+				_logger.WriteInfo("Use 'clio start -w' to start with terminal window for logs.");
 				var p =  await PingSite(envName);
 				ProgressNotificationValue progressStep2 = new() {
 					Progress = ++stepsCompleted,

@@ -393,6 +393,31 @@ public class StartCommandTestCase : BaseCommandTests<StartOptions>
 	}
 
 	[Test]
+	[Description("Returns failure when the dotnet background host process cannot be started")]
+	public void Execute_ReturnsError_WhenDotNetBackgroundProcessFailsToStart()
+	{
+		// Arrange
+		string envPath = @"C:\Creatio\Unavailable";
+		string dllPath = Path.Combine(envPath, "Terrasoft.WebHost.dll");
+		EnvironmentSettings env = new() { EnvironmentPath = envPath, Uri = "https://localhost:5000" };
+		StartOptions options = new() { Environment = "development" };
+
+		_settingsRepository.GetEnvironment("development").Returns(env);
+		_fileSystem.ExistsDirectory(envPath).Returns(true);
+		_fileSystem.ExistsFile(dllPath).Returns(true);
+		_iisSiteDetector.GetSitesByPath(envPath).Returns(Task.FromResult(new List<IISSiteInfo>()));
+		_creatioHostService.StartInBackground(envPath).Returns((int?)null);
+
+		// Act
+		int result = _command.Execute(options);
+
+		// Assert
+		result.Should().Be(1, because: "a missing background host process is a failed start");
+		_applicationClient.DidNotReceive().ExecuteGetRequest(Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>());
+		_logger.Received().WriteError(Arg.Is<string>(message => message.Contains("Failed to start Creatio application", StringComparison.Ordinal)));
+	}
+
+	[Test]
 	[Description("Pings site after starting .NET Core in terminal mode")]
 	public void Execute_PingsSite_AfterStartingDotNetCoreInTerminal()
 	{
