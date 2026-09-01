@@ -12,6 +12,7 @@ using Clio.Command.EntitySchemaDesigner;
 using Clio.Common;
 using Clio.Common.Responses;
 using Clio.UserEnvironment;
+using Creatio.Client;
 using Creatio.Client.Dto;
 using FluentAssertions;
 using NSubstitute;
@@ -25,7 +26,9 @@ namespace Clio.Tests.Command;
 public sealed class ApplicationSectionCreateServiceTests {
 	private ISettingsRepository _settingsRepository = null!;
 	private IApplicationClientFactory _applicationClientFactory = null!;
-	private IApplicationClient _applicationClient = null!;
+	[System.Diagnostics.CodeAnalysis.SuppressMessage("Structure", "NUnit1032:An IDisposable field/property should be Disposed in a TearDown method",
+		Justification = "The system under test owns and disposes the factory-returned substitute.")]
+	private IOwnedApplicationClient _applicationClient = null!;
 	private IServiceUrlBuilder _serviceUrlBuilder = null!;
 	private IApplicationInfoService _applicationInfoService = null!;
 	private ISysSettingsManager _sysSettingsManager = null!;
@@ -39,7 +42,7 @@ public sealed class ApplicationSectionCreateServiceTests {
 		// Arrange
 		_settingsRepository = Substitute.For<ISettingsRepository>();
 		_applicationClientFactory = Substitute.For<IApplicationClientFactory>();
-		_applicationClient = Substitute.For<IApplicationClient>();
+		_applicationClient = Substitute.For<IOwnedApplicationClient>();
 		_serviceUrlBuilder = Substitute.For<IServiceUrlBuilder>();
 		_applicationInfoService = Substitute.For<IApplicationInfoService>();
 		_logger = new NullLogger();
@@ -3025,7 +3028,7 @@ public sealed class ApplicationSectionCreateServiceTests {
 	// destructive commit end-to-end. NSubstitute is not designed for concurrent invocation of one substitute, so
 	// the whole SUT dependency graph on the concurrent path is hand-written and thread-safe. Only ExecutePostRequest
 	// is exercised on the create-section path; every other member is unused here and throws.
-	private sealed class RecordingConcurrencyApplicationClient(int insertOverlapWindowMs) : IApplicationClient {
+	private sealed class RecordingConcurrencyApplicationClient(int insertOverlapWindowMs) : IOwnedApplicationClient {
 		private readonly object _maxLock = new();
 		private int _inFlightInserts;
 		private int _maxConcurrentInserts;
@@ -3100,6 +3103,14 @@ public sealed class ApplicationSectionCreateServiceTests {
 		public string ExecuteGetRequest(string url, int requestTimeout = Timeout.Infinite, int maxAttempts = 1,
 			int delaySec = 1) => throw new NotSupportedException();
 
+		public Task<HttpResponseMessage> ExecuteGetRequestAsync(string url, int requestTimeout = 100_000,
+			int maxAttempts = 1, int delaySec = 1,
+			CancellationToken cancellationToken = default) => throw new NotSupportedException();
+
+		public Task<HttpResponseMessage> ExecutePostRequestAsync(string url, string requestData,
+			int requestTimeout = 100_000, int maxAttempts = 1, int delaySec = 1,
+			CancellationToken cancellationToken = default) => throw new NotSupportedException();
+
 		public T ExecutePostRequest<T>(string url, string requestData, int requestTimeout = Timeout.Infinite,
 			int maxAttempts = 1, int delaySec = 1) where T : BaseResponse, new() => throw new NotSupportedException();
 
@@ -3113,23 +3124,41 @@ public sealed class ApplicationSectionCreateServiceTests {
 
 		public void Login() => throw new NotSupportedException();
 
+		public Task<HttpResponseMessage> LoginAsync(int requestTimeout = 100_000,
+			CancellationToken cancellationToken = default) => throw new NotSupportedException();
+
+		public IReadOnlyList<CreatioSessionCookie> ExportSessionCookies() => throw new NotSupportedException();
+
+		public void ImportSessionCookies(IEnumerable<CreatioSessionCookie> cookies) => throw new NotSupportedException();
+
 		public string UploadAlmFile(string url, string filePath) => throw new NotSupportedException();
 
 		public string UploadAlmFileByChunk(string url, string filePath) => throw new NotSupportedException();
 
 		public string UploadFile(string url, string filePath) => throw new NotSupportedException();
+
+		public Task<HttpResponseMessage> UploadImageAsync(string url, byte[] data, string fileName,
+			string mimeType, int requestTimeout = 100_000,
+			CancellationToken cancellationToken = default) => throw new NotSupportedException();
+
+		public void Dispose() { }
 	}
 
 	// FIX C (#3613524250): thread-safe hand-written collaborators for the concurrency test. Each per-call
 	// dependency returns a constant, so the ONLY behaviour under genuine concurrency is the real service path plus
 	// the real SectionCreateSerializationGuard. The settings-based CreateSection overload is used so
 	// ISettingsRepository is never consulted.
-	private sealed class ConcurrencyCollaborators(IApplicationClient client, ApplicationInfoResult applicationInfo)
+	private sealed class ConcurrencyCollaborators(IOwnedApplicationClient client, ApplicationInfoResult applicationInfo)
 		: IApplicationClientFactory, IServiceUrlBuilderFactory, IServiceUrlBuilder, ICaptionCultureResolver,
 			IApplicationInfoService {
 		public IApplicationClient CreateClient(EnvironmentSettings environment) => client;
 
 		public IApplicationClient CreateEnvironmentClient(EnvironmentSettings environment) => client;
+
+		public IOwnedApplicationClient CreateFormsEnvironmentClient(EnvironmentSettings environment) => client;
+
+		public IOwnedApplicationClient CreateBearerEnvironmentClient(EnvironmentSettings environment,
+			string accessToken) => client;
 
 		public IServiceUrlBuilder Create(EnvironmentSettings environmentSettings) => this;
 

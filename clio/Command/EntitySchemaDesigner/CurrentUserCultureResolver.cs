@@ -27,6 +27,9 @@ public interface ICurrentUserCultureResolver
 	Task<CultureResolution> ResolveAsync(CancellationToken cancellationToken = default);
 }
 
+/// <summary>A culture resolver whose factory-created transport must be disposed by the caller.</summary>
+public interface IOwnedCurrentUserCultureResolver : ICurrentUserCultureResolver, IDisposable { }
+
 /// <summary>
 /// Default <see cref="ICurrentUserCultureResolver"/> backed by a specific environment's
 /// <see cref="IApplicationClient"/> and <see cref="EnvironmentSettings"/>, sharing the singleton
@@ -35,7 +38,7 @@ public interface ICurrentUserCultureResolver
 /// via <see cref="Task.Run(System.Action,CancellationToken)"/> so the long-lived MCP host loop is
 /// never blocked.
 /// </summary>
-public sealed class CurrentUserCultureResolver : ICurrentUserCultureResolver
+public sealed class CurrentUserCultureResolver : IOwnedCurrentUserCultureResolver
 {
 	/// <summary>
 	/// Standard Creatio service that returns the logged-in user's profile culture without requiring
@@ -55,6 +58,7 @@ public sealed class CurrentUserCultureResolver : ICurrentUserCultureResolver
 	private readonly IServiceUrlBuilderFactory _serviceUrlBuilderFactory;
 	private readonly ICurrentUserCultureCache _cache;
 	private readonly ILogger<CurrentUserCultureResolver> _logger;
+	private readonly IOwnedApplicationClient? _ownedApplicationClient;
 
 	/// <summary>Initializes the resolver for one environment.</summary>
 	public CurrentUserCultureResolver(
@@ -69,6 +73,22 @@ public sealed class CurrentUserCultureResolver : ICurrentUserCultureResolver
 		_serviceUrlBuilderFactory = serviceUrlBuilderFactory ?? throw new ArgumentNullException(nameof(serviceUrlBuilderFactory));
 		_cache = cache ?? throw new ArgumentNullException(nameof(cache));
 		_logger = logger ?? throw new ArgumentNullException(nameof(logger));
+	}
+
+	internal CurrentUserCultureResolver(
+		IOwnedApplicationClient applicationClient,
+		EnvironmentSettings environmentSettings,
+		IServiceUrlBuilderFactory serviceUrlBuilderFactory,
+		ICurrentUserCultureCache cache,
+		ILogger<CurrentUserCultureResolver> logger)
+		: this((IApplicationClient)applicationClient, environmentSettings, serviceUrlBuilderFactory, cache, logger) {
+		_ownedApplicationClient = applicationClient;
+	}
+
+	/// <inheritdoc />
+	public void Dispose() {
+		_ownedApplicationClient?.Dispose();
+		GC.SuppressFinalize(this);
 	}
 
 	/// <inheritdoc />

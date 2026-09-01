@@ -6,7 +6,7 @@ using Creatio.Client.Dto;
 
 namespace Clio.Common;
 
-public interface IApplicationClient{
+public interface IApplicationClient {
 	public event EventHandler<WebSocketState> ConnectionStateChanged;
 
 	public event EventHandler<WsMessage> MessageReceived;
@@ -47,6 +47,7 @@ public interface IApplicationClient{
 
 	void Listen(CancellationToken cancellationToken);
 	void Login();
+
 	string UploadAlmFile(string url, string filePath);
 
 	string UploadAlmFileByChunk(string url, string filePath);

@@ -15,7 +15,9 @@ namespace Clio.Tests.Command;
 public sealed class ApplicationInfoServiceTests {
 	private ISettingsRepository _settingsRepository = null!;
 	private IApplicationClientFactory _applicationClientFactory = null!;
-	private IApplicationClient _applicationClient = null!;
+	[System.Diagnostics.CodeAnalysis.SuppressMessage("Structure", "NUnit1032:An IDisposable field/property should be Disposed in a TearDown method",
+		Justification = "The system under test owns and disposes the factory-returned substitute.")]
+	private IOwnedApplicationClient _applicationClient = null!;
 	private IServiceUrlBuilderFactory _serviceUrlBuilderFactory = null!;
 	private ISysSettingsManager _sysSettingsManager = null!;
 	private ApplicationInfoService _sut = null!;
@@ -25,7 +27,7 @@ public sealed class ApplicationInfoServiceTests {
 	public void SetUp() {
 		_settingsRepository = Substitute.For<ISettingsRepository>();
 		_applicationClientFactory = Substitute.For<IApplicationClientFactory>();
-		_applicationClient = Substitute.For<IApplicationClient>();
+		_applicationClient = Substitute.For<IOwnedApplicationClient>();
 		_serviceUrlBuilderFactory = new ServiceUrlBuilderFactory();
 		_sysSettingsManager = Substitute.For<ISysSettingsManager>();
 		_environment = new EnvironmentSettings {
@@ -76,6 +78,7 @@ public sealed class ApplicationInfoServiceTests {
 			because: "application info should now surface primary-package page metadata");
 		result.Pages[0].SchemaName.Should().Be("UsrAlpha_FormPage",
 			because: "page metadata should use schema-name semantics consistently");
+		_applicationClient.Received(1).Dispose();
 	}
 
 	[Test]

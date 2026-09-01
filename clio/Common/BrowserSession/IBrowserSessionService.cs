@@ -5,7 +5,7 @@ namespace Clio.Common.BrowserSession;
 
 /// <summary>
 /// Orchestrates browser-session retrieval: returns a valid cached storageState when one exists, or
-/// authenticates (via <see cref="ICreatioAuthClient"/>) and caches a fresh one. Hides caching,
+/// authenticates through <see cref="IApplicationClient"/> and caches a fresh one. Hides caching,
 /// validation, and authentication behind a single call.
 /// </summary>
 public interface IBrowserSessionService {
