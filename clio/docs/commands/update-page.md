@@ -155,8 +155,12 @@ After a successful save with a baseline in play, the response carries `newChecks
 Successful saves may also return `warnings`. Every entry is informational only — the
 schema save already succeeded, so never retry on a warning. Today they cover the live
 Designer Presence push, a component whose `insert` the submitted body replaced with a
-`merge`/`move`/`remove`, and an operation the differ will drop because another operation
-for the same component name cancels it (see "Write modes").
+`merge`/`move`/`remove`, an operation the differ will drop because another operation
+for the same component name cancels it (see "Write modes"), and — on `append` — an
+existing operation the merge could not preserve because your fragment superseded an
+identity the page carried more than once. That last one names the component and tells you
+to re-read with `get-page`, because it is the one case where appending removes something
+you did not send.
 
 Baseline sources: both the CLI verb and the MCP `update-page` tool arm this check
 automatically from the baseline that a previous `get-page` stores in

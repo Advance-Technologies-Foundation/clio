@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.ComponentModel;
 using System.Diagnostics.CodeAnalysis;
@@ -4852,7 +4852,7 @@ internal static class ToolContractCatalog {
 				Field("bodyLength", NumberType, "Saved body length."),
 				Field("dryRun", BooleanType, "Whether the call ran in validation mode."),
 				Field("resourcesRegistered", NumberType, "Number of registered resources."),
-				Field("warnings", ArrayType, "Advisory non-fatal warnings; omitted when there are none. The save already succeeded — never retry on a warning. Covers an operation the differ will silently drop because another operation for the same component name cancels it (see `mode`), an `insert` this body replaced with a `merge`/`move`/`remove`, page-body lint findings, and the best-effort Designer Presence push."),
+				Field("warnings", ArrayType, "Advisory non-fatal warnings; omitted when there are none. The save already succeeded — never retry on a warning. Covers an operation the differ will silently drop because another operation for the same component name cancels it (see `mode`), an `insert` this body replaced with a `merge`/`move`/`remove`, an existing operation an `append` could not preserve because the fragment superseded an identity the page carried twice (re-read with get-page), page-body lint findings, and the best-effort Designer Presence push."),
 				Field(ErrorFieldName, StringType, FailureMessageDescription)
 			),
 			CommonErrorContract,

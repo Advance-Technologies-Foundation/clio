@@ -1,4 +1,4 @@
-﻿namespace Clio.Command {
+namespace Clio.Command {
 	using System;
 	using System.Collections.Generic;
 	using System.IO;
@@ -194,7 +194,7 @@
 					return true;
 				}
 				if (!TryLoadSchemaForSave(options.SchemaName, context, out JObject schemaToSave, out response)) return false;
-				if (!TryResolveBodyToWrite(schemaToSave, options, out string bodyToWrite, out response)) return false;
+				if (!TryResolveBodyToWrite(schemaToSave, options, out string bodyToWrite, out IReadOnlyList<string> mergeWarnings, out response)) return false;
 				IReadOnlyList<string> downgradeWarnings = PageInsertDowngradeDetector.Detect(schemaToSave["body"]?.ToString(), bodyToWrite);
 				IReadOnlyList<string> inertWarnings = PageInertOperationDetector.Detect(bodyToWrite);
 				List<string> registeredKeys = UpdateSchemaBody(schemaToSave, bodyToWrite, context.SchemaType, explicitResources, parsedOptionalProperties);
@@ -202,7 +202,7 @@
 				if (captionError != null) { response = captionError; return false; }
 				if (!TrySaveSchema(schemaToSave, out response)) return false;
 				response = CreateSuccessResponse(options, dryRun: false, registeredKeys);
-				response.Warnings = CombineWarnings(downgradeWarnings, inertWarnings);
+				response.Warnings = CombineWarnings(mergeWarnings, downgradeWarnings, inertWarnings);
 				PopulatePostSaveChecksum(options, context, response);
 				AppendDesignerPresenceWarning(options, response);
 				return true;
@@ -357,14 +357,15 @@
 			return true;
 		}
 
-		private static bool TryResolveBodyToWrite(JObject schemaToSave, PageUpdateOptions options, out string bodyToWrite, out PageUpdateResponse response) {
+		private static bool TryResolveBodyToWrite(JObject schemaToSave, PageUpdateOptions options, out string bodyToWrite, out IReadOnlyList<string> mergeWarnings, out PageUpdateResponse response) {
 			bodyToWrite = options.Body;
+			mergeWarnings = null;
 			response = null;
 			if (!string.Equals(options.Mode, "append", StringComparison.OrdinalIgnoreCase)) return true;
 			string currentBody = schemaToSave["body"]?.ToString();
 			if (string.IsNullOrWhiteSpace(currentBody)) return true;
 			try {
-				bodyToWrite = PageBodyMerger.Merge(currentBody, options.Body);
+				bodyToWrite = PageBodyMerger.Merge(currentBody, options.Body, out mergeWarnings);
 				return true;
 			} catch (Exception ex) {
 				// A full-config rejection (identified by its dedicated exception type, not by re-parsing the
