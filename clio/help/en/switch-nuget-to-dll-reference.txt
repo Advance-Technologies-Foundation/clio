@@ -5,7 +5,13 @@ DESCRIPTION
     Rewrites project references from NuGet packages to direct DLL references.
 
 SYNOPSIS
-    clio switch-nuget-to-dll-reference [OPTIONS]
+    clio switch-nuget-to-dll-reference <PackageName> [OPTIONS]
+
+ARGUMENTS
+    <PackageName>
+        Required. Name of the workspace package whose csproj is converted. The
+        name must match a package declared by the current workspace; anything
+        else exits with code 1.
 
 OPTIONS
     Supports the canonical switch-nuget-to-dll-reference command options.
@@ -20,8 +26,12 @@ NOTES
     by an older clio version, and its import, are removed on the next run.
 
 EXAMPLES
-    clio switch-nuget-to-dll-reference --help
-        Display canonical options and usage examples
+    clio switch-nuget-to-dll-reference MyPackage
+        Convert the NuGet references of the workspace package MyPackage to dll
+        references
+
+    clio nuget2dll MyPackage
+        Same conversion through the short alias
 
 SEE ALSO
     ref-to - Update project core reference paths

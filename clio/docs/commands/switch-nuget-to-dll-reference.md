@@ -11,7 +11,15 @@ Rewrites project references from NuGet packages to direct DLL references.
 ## Synopsis
 
 ```bash
-clio switch-nuget-to-dll-reference [OPTIONS]
+clio switch-nuget-to-dll-reference <PackageName> [OPTIONS]
+```
+
+## Arguments
+
+```bash
+<PackageName>
+Required. Name of the workspace package whose csproj is converted. The name must match a package
+declared by the current workspace; anything else exits with code `1`.
 ```
 
 ## Options
@@ -46,8 +54,13 @@ import removed, so the package builds again.
 ## Examples
 
 ```bash
-clio switch-nuget-to-dll-reference --help
-Display canonical options and usage examples
+clio switch-nuget-to-dll-reference MyPackage
+Convert the NuGet references of the workspace package MyPackage to dll references
+```
+
+```bash
+clio nuget2dll MyPackage
+Same conversion through the short alias
 ```
 
 ## See Also
