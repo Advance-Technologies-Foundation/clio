@@ -1,10 +1,11 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Net;
 using System.Net.Http;
 using System.Net.Sockets;
+using System.Reflection;
 using System.Security.Authentication;
 using System.Text.RegularExpressions;
 using Clio.Common;
@@ -514,7 +515,13 @@ namespace Clio.Command
 		}
 
 		internal static string CategorizeError(Exception ex, string operationLabel) {
-			return ex switch {
+			//The Creatio client reaches transport faults through Task.Result, which wraps them in an
+			//AggregateException. Switching on the outer type alone therefore saw the wrapper, not the
+			//fault, and an aggregate carrying an AuthenticationException or a typed 401 fell through to
+			//the generic "Failed ..." - losing exactly the credential diagnosis this command exists to
+			//report.
+			Exception fault = UnwrapTransportFault(ex);
+			return fault switch {
 				HttpRequestException httpEx when IsAuthenticationFailure(httpEx)
 					=> $"Authentication error {operationLabel}.",
 				HttpRequestException => $"Network error {operationLabel}.",
@@ -524,10 +531,44 @@ namespace Clio.Command
 				SocketException => $"Network error {operationLabel}.",
 				UnauthorizedAccessException => $"Authentication error {operationLabel}.",
 				AuthenticationException => $"Authentication error {operationLabel}.",
+				//An aggregate that carries several distinct faults is not unwrapped, because no single
+				//inner represents it - but a credential failure among them still has to be reported as one.
+				AggregateException aggregate when IsAuthenticationFailure(aggregate)
+					=> $"Authentication error {operationLabel}.",
 				ArgumentException argEx => argEx.Message,
 				InvalidOperationException invEx => invEx.Message,
 				_ => $"Failed {operationLabel}."
 			};
+		}
+
+		// Bounds every walk over an exception chain. A chain this deep is not something a transport
+		// produces, and the bound is what keeps a hand-built or self-referencing chain from looping.
+		private const int MaxExceptionUnwrapDepth = 16;
+
+		/// <summary>
+		/// Returns the exception that should be classified: a wrapper carrying exactly one fault unwraps
+		/// to that fault, and everything else is returned unchanged.
+		/// </summary>
+		/// <remarks>
+		/// A multi-fault <see cref="AggregateException"/> is deliberately NOT unwrapped - picking its first
+		/// inner would report one of several failures as if it were the whole story. Those are handled by
+		/// the aggregate arm in <see cref="CategorizeError"/> instead.
+		/// </remarks>
+		private static Exception UnwrapTransportFault(Exception exception) {
+			Exception current = exception;
+			for (int depth = 0; depth < MaxExceptionUnwrapDepth; depth++) {
+				Exception inner = current switch {
+					AggregateException aggregate when aggregate.InnerExceptions.Count == 1
+						=> aggregate.InnerExceptions[0],
+					TargetInvocationException { InnerException: { } target } => target,
+					var _ => null
+				};
+				if (inner is null) {
+					return current;
+				}
+				current = inner;
+			}
+			return current;
 		}
 
 		// A bounded 401 token, not any occurrence of the digits. "Connection refused at
@@ -542,20 +583,40 @@ namespace Clio.Command
 		// or a renamed DataService endpoint would otherwise send the operator off to fix working credentials.
 		// The typed status is preferred wherever the exception carries one; the text match is the last resort
 		// for transports that only report the failure in prose.
-		private static bool IsAuthenticationFailure(Exception exception) {
-			if (exception is HttpRequestException { StatusCode: HttpStatusCode.Unauthorized }) {
+		private static bool IsAuthenticationFailure(Exception exception) =>
+			IsAuthenticationFailure(exception, depth: 0);
+
+		private static bool IsAuthenticationFailure(Exception exception, int depth) {
+			if (exception is null || depth >= MaxExceptionUnwrapDepth) {
+				return false;
+			}
+			// An aggregate is a container, not a fault: its own message is a generic
+			// "One or more errors occurred", so matching prose on it proves nothing. Every fault it holds
+			// is examined instead - a single credential rejection among several failures is still one.
+			if (exception is AggregateException aggregate) {
+				return aggregate.InnerExceptions.Any(inner => IsAuthenticationFailure(inner, depth + 1));
+			}
+			// A typed status is authoritative in BOTH directions. Only 401 used to short-circuit, so a
+			// typed 404 or 500 fell through to the prose match and a routing or server failure whose text
+			// or inner exception mentioned a standalone 401 was reported as rejected credentials - sending
+			// the operator off to fix a working login.
+			// The types CategorizeError already treats as credential failures at the top level mean the
+			// same thing inside a wrapper. Without this, an aggregate carrying an AuthenticationException
+			// was judged by that exception PROSE - and "credentials were rejected" carries neither the
+			// word unauthorized nor a 401 token, so the diagnosis was lost exactly where it was wrapped.
+			if (exception is AuthenticationException or UnauthorizedAccessException) {
 				return true;
 			}
+			if (exception is HttpRequestException { StatusCode: { } httpStatus }) {
+				return httpStatus == HttpStatusCode.Unauthorized;
+			}
 			if (exception is WebException { Response: HttpWebResponse response }) {
-				// The response carries the authoritative answer, so do not fall through to the prose match:
-				// a 404 body that happens to mention 401 must not be read as a credential failure.
-				return response.StatusCode == HttpStatusCode.Unauthorized
-					|| (exception.InnerException is not null && IsAuthenticationFailure(exception.InnerException));
+				return response.StatusCode == HttpStatusCode.Unauthorized;
 			}
 			string message = exception.Message ?? string.Empty;
 			return message.Contains("unauthorized", StringComparison.OrdinalIgnoreCase)
 				|| UnauthorizedStatusToken.IsMatch(message)
-				|| (exception.InnerException is not null && IsAuthenticationFailure(exception.InnerException));
+				|| IsAuthenticationFailure(exception.InnerException, depth + 1);
 		}
 
 		private static string DescribeUnreadableBinaryTarget(string code) {
