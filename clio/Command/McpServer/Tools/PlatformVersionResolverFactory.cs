@@ -14,6 +14,23 @@ public interface IPlatformVersionResolverFactory {
 	IPlatformVersionResolver Create(EnvironmentSettings settings);
 }
 
+/// <summary>Ownership-aware access to platform-version resolvers created by a compatible factory.</summary>
+public static class PlatformVersionResolverFactoryExtensions {
+	/// <summary>Creates a resolver whose lifetime is scoped to the caller.</summary>
+	public static IOwnedPlatformVersionResolver CreateOwned(
+		this IPlatformVersionResolverFactory factory, EnvironmentSettings settings) {
+		IPlatformVersionResolver resolver = factory.Create(settings);
+		return resolver as IOwnedPlatformVersionResolver ?? new BorrowedPlatformVersionResolverLease(resolver);
+	}
+
+	private readonly struct BorrowedPlatformVersionResolverLease(IPlatformVersionResolver resolver)
+		: IOwnedPlatformVersionResolver {
+		public System.Threading.Tasks.Task<PlatformVersionResolution> ResolveAsync(
+			System.Threading.CancellationToken cancellationToken = default) => resolver.ResolveAsync(cancellationToken);
+		public void Dispose() { }
+	}
+}
+
 /// <summary>
 /// Default implementation: re-uses the same building blocks as the ambient singleton
 /// (<see cref="IApplicationClientFactory.CreateEnvironmentClient"/>, <see cref="IServiceUrlBuilderFactory"/>,
@@ -41,15 +58,20 @@ public sealed class PlatformVersionResolverFactory : IPlatformVersionResolverFac
 		if (settings is null) {
 			throw new ArgumentNullException(nameof(settings));
 		}
-		IApplicationClient applicationClient = _applicationClientFactory.CreateEnvironmentClient(settings);
-		// Loggers are constructed per call rather than stored as ILogger<PlatformVersionResolver>
-		// on the factory — that would mismatch the factory's enclosing type (Sonar S6672) and
-		// the factory itself has no logging of its own to justify a typed instance field.
-		return new PlatformVersionResolver(
-			applicationClient,
-			settings,
-			_serviceUrlBuilderFactory,
-			_timeProvider,
-			_loggerFactory.CreateLogger<PlatformVersionResolver>());
+		IOwnedApplicationClient applicationClient = _applicationClientFactory.CreateOwnedEnvironmentClient(settings);
+		try {
+			// Loggers are constructed per call rather than stored as ILogger<PlatformVersionResolver>
+			// on the factory — that would mismatch the factory's enclosing type (Sonar S6672) and
+			// the factory itself has no logging of its own to justify a typed instance field.
+			return new PlatformVersionResolver(
+				applicationClient,
+				settings,
+				_serviceUrlBuilderFactory,
+				_timeProvider,
+				_loggerFactory.CreateLogger<PlatformVersionResolver>());
+		} catch {
+			applicationClient.Dispose();
+			throw;
+		}
 	}
 }

@@ -74,7 +74,7 @@ internal sealed class EnvironmentRestartService(
 	IApplicationClientFactory applicationClientFactory,
 	RestartCommand restartCommand) : IEnvironmentRestartService {
 	public int Restart(EnvironmentSettings environment) {
-		IApplicationClient applicationClient = applicationClientFactory.CreateEnvironmentClient(environment);
+		using IOwnedApplicationClient applicationClient = applicationClientFactory.CreateOwnedEnvironmentClient(environment);
 		return restartCommand.ExecuteForEnvironment(new RestartOptions(), environment, applicationClient);
 	}
 }

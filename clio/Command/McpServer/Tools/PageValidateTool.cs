@@ -36,6 +36,15 @@ public sealed class PageValidateTool(
 			PageSyncValidationResult mobileResult = await MobilePageValidation.RunAsync(
 				args.Body, mobileComponentCatalog, webComponentCatalog, mobileResources,
 				cancellationToken: cancellationToken).ConfigureAwait(false);
+			// Run-process button structure is a purely offline check (no environment), and validate-page is the
+			// pre-flight the agent runs before update-page — so it must reach the same structural gate update-page
+			// applies, otherwise a green validate-page misreads as "the button is wired" (ENG-95822). The mobile
+			// apply-oracle does not cover it, so fold it in here for the mobile body too.
+			SchemaValidationResult mobileRunProcessResult =
+				SchemaValidationService.ValidateRunProcessButtonStructure(args.Body);
+			if (!mobileRunProcessResult.IsValid) {
+				mobileResult = FoldInContentErrors(mobileResult, mobileRunProcessResult);
+			}
 			return new PageValidateResponse {
 				Valid = mobileResult.ContentOk,
 				Validation = mobileResult
@@ -47,7 +56,13 @@ public sealed class PageValidateTool(
 		SchemaValidationResult chartResult =
 			await ChartWidgetValidation.ValidateAsync(args.Body, webComponentCatalog, args.Version, cancellationToken).ConfigureAwait(false);
 		if (!chartResult.IsValid) {
-			result = FoldInChartErrors(result, chartResult);
+			result = FoldInContentErrors(result, chartResult);
+		}
+		// Same offline run-process structural gate on the web body — validate-page mirrors update-page (ENG-95822).
+		SchemaValidationResult runProcessResult =
+			SchemaValidationService.ValidateRunProcessButtonStructure(args.Body);
+		if (!runProcessResult.IsValid) {
+			result = FoldInContentErrors(result, runProcessResult);
 		}
 		return new PageValidateResponse {
 			Valid = result.MarkersOk && result.JsSyntaxOk && result.ContentOk,
@@ -55,10 +70,12 @@ public sealed class PageValidateTool(
 		};
 	}
 
-	private static PageSyncValidationResult FoldInChartErrors(
-		PageSyncValidationResult result, SchemaValidationResult chartResult) {
+	// Folds an extra content-validation result's errors into the envelope and forces ContentOk=false; shared by the
+	// async chart-widget and run-process structural checks that run outside the static content-validation pipeline.
+	private static PageSyncValidationResult FoldInContentErrors(
+		PageSyncValidationResult result, SchemaValidationResult extraResult) {
 		List<string> mergedErrors = result.Errors is null ? new List<string>() : new List<string>(result.Errors);
-		mergedErrors.AddRange(chartResult.Errors);
+		mergedErrors.AddRange(extraResult.Errors);
 		return new PageSyncValidationResult {
 			MarkersOk = result.MarkersOk,
 			JsSyntaxOk = result.JsSyntaxOk,
