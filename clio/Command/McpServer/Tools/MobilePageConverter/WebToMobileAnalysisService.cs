@@ -281,8 +281,10 @@ public static class WebToMobileAnalysisService {
 		// (discarded, never translated). Which component, which properties and which values all come from
 		// the rules file — this pass knows none of them. Runs AFTER the tab-area pass so one pass covers
 		// converted and synthesized elements alike (the invariant is per-element-map, not per-origin);
-		// merge twins the mobile template provides are never touched. Each rule also declares the report
-		// group it feeds, so two standards never bleed into each other's summary.
+		// merge twins the mobile template provides are never touched. The report group is derived from the
+		// component TYPE, not declared by the rule, so two standards targeting the SAME type (the
+		// unconditional gap rule and the narrowed corner-radius one both target crt.GridContainer) share one
+		// summary section — read each entry's own properties rather than the section name.
 		ComponentPropertyOverrideResult componentPropertyOverrides = ApplyComponentPropertyOverrides(elementMap, rules);
 
 		// Complete every layoutConfig the map carries, whoever wrote it — the placement passes above, the
@@ -362,11 +364,14 @@ public static class WebToMobileAnalysisService {
 			// preserved verbatim. Every standard — spacing included — is also reported under normalizations.
 			SpacingNormalization = spacingNormalization.Count > 0
 				? new SpacingNormalizationInfo {
-					Note = "Mobile follows the mobile spacing standard: the web page's container spacing was "
-						+ "IGNORED (not translated) and every inserted crt.GridContainer / crt.FlexContainer "
-						+ "carries gap Medium, already baked into elementMap[].mobileValues — nothing separate "
-						+ "to apply. Silent normalization, not a gate decision: report it as ONE aggregated "
-						+ "line and never restore the web spacing.",
+					Note = "Mobile follows the mobile container standards: the web page's own value for every "
+						+ "property listed below was IGNORED (not translated), and the mobile value is already "
+						+ "baked into elementMap[].mobileValues — nothing separate to apply. Read each entry's "
+						+ "`properties` for what was actually written on that element: this section carries "
+						+ "EVERY standard that targets a container type (gap, and any other such as the corner "
+						+ "radius), not the spacing alone, so do not assume it from the section name. Silent "
+						+ "normalization, not a gate decision: report it as ONE aggregated line and never "
+						+ "restore the web values.",
 					Normalized = [.. spacingNormalization.Select(n => new SpacingNormalizationEntry {
 						Name = n.Name, Type = n.Type, Properties = n.Properties
 					})]
@@ -393,6 +398,7 @@ public static class WebToMobileAnalysisService {
 				hasExcludedComponents: excludedRemovedNames.Count > 0,
 			exclusionSearchTruncated: excludedDiagnostics.DepthBudgetTruncated,
 				discardedExclusionFilters: excludedDiagnostics.DiscardedFilterCount,
+				skippedOverrideRules: componentPropertyOverrides.SkippedRulesWithoutFilters,
 				retargetParentsOnTemplate: elementMap
 					.Where(e => e.ParentExistsOnTemplate == true && !string.IsNullOrEmpty(e.ParentName))
 					.Select(e => e.ParentName)
@@ -1719,7 +1725,7 @@ public static class WebToMobileAnalysisService {
 		bool hasEmptyContainerRemovals = false, ComponentPropertyOverrideResult normalization = null,
 		bool webTemplateUnavailable = false, bool hasComponentTwin = false,
 		bool exclusionSearchTruncated = false, int discardedExclusionFilters = 0,
-		bool hasExcludedComponents = false,
+		int skippedOverrideRules = 0, bool hasExcludedComponents = false,
 		IReadOnlyList<string> retargetParentsOnTemplate = null) {
 		var constraints = new List<string> {
 			"Mobile body is plain JSON with only viewConfigDiff / viewModelConfigDiff / modelConfigDiff — no AMD, no markers, no define() wrapper.",
@@ -1849,6 +1855,17 @@ public static class WebToMobileAnalysisService {
 				$"{discardedExclusionFilters} excludedComponents filter(s) were ignored because they declare no "
 				+ "\"type\" or no \"parentType\". Those exclusions did NOT run — check the rules file for a "
 				+ "misspelled property name.");
+		}
+		if (skippedOverrideRules > 0) {
+			// Same reasoning as the exclusion-filter count above, and a likelier trigger: an entry authored
+			// against the removed `type` field, or a mistyped "filter", parses with no filters at all and is
+			// refused. Without this line the page just ships un-normalized, which the report cannot tell apart
+			// from "nothing needed normalizing".
+			constraints.Add(
+				$"{skippedOverrideRules} componentPropertyOverrides rule(s) were ignored because they declare "
+				+ "no \"filters\" — those standards did NOT run, so the elements they target keep their WEB "
+				+ "values. Check the rules file for a misspelled property name or an entry still written with "
+				+ "a top-level \"type\".");
 		}
 		if (hasExcludedComponents) {
 			constraints.Add(
@@ -3279,15 +3296,62 @@ public static class WebToMobileAnalysisService {
 		}
 	}
 
-	/// <summary>True when any filter matches the node, or the mapping declares none (match everything).</summary>
+	/// <summary>
+	/// True when any filter matches the SOURCE web node, or the mapping declares none — which this group reads
+	/// as "match everything". Note that the sibling caller does NOT: an override rule with no filters is
+	/// skipped, because there the filters are the rule's only selector (see
+	/// <see cref="ComponentPropertyOverrideRule.Filters"/>). The permissive reading here is pre-existing
+	/// behavior, not a safer case — nothing else anchors a template entry either.
+	/// Shares <see cref="ElementFilterRule"/> and its match rule with the override pass (see
+	/// <see cref="MatchesFilters"/>): the filters are OR-ed, and each one AND-s every constraint it declares —
+	/// its <c>type</c> and any value constraint. A value constraint is compared through the same
+	/// <see cref="JsonValueEquals"/> the override pass uses, so the two sides can never drift apart on what
+	/// "equal" means; the Newtonsoft node is adapted lazily, so a type-only filter (all of them today) costs
+	/// nothing extra.
+	/// </summary>
 	private static bool MatchesAnyFilter(IReadOnlyList<ElementFilterRule> filters, JObject node) {
 		if (filters is not { Count: > 0 }) {
 			return true;
 		}
 		string type = node["type"]?.ToString();
-		return filters.Any(f => !string.IsNullOrWhiteSpace(f?.Type)
-			&& string.Equals(f.Type, type, StringComparison.OrdinalIgnoreCase));
+		return filters.Any(f => Declares(f)
+			&& (string.IsNullOrWhiteSpace(f.Type) || string.Equals(f.Type, type, StringComparison.OrdinalIgnoreCase))
+			&& MatchesValueConstraints(f, key => ToJsonNode(node[key])));
 	}
+
+	/// <summary>
+	/// True when the filter constrains anything at all. A filter that declares neither a type nor a value is a
+	/// rules-file mistake, and reading it as "matches everything" would silently widen the rule it was written
+	/// to narrow — so it matches nothing instead, on both sides.
+	/// </summary>
+	private static bool Declares(ElementFilterRule filter) =>
+		filter is not null && (!string.IsNullOrWhiteSpace(filter.Type) || filter.Values is { Count: > 0 });
+
+	/// <summary>
+	/// True when every value constraint the filter declares is DEEP-equal to what <paramref name="resolve"/>
+	/// returns for that property name. An absent property resolves to null and therefore never matches.
+	/// </summary>
+	private static bool MatchesValueConstraints(ElementFilterRule filter, Func<string, JsonNode> resolve) {
+		if (filter.Values is not { Count: > 0 }) {
+			return true;
+		}
+		foreach (KeyValuePair<string, JsonElement> constraint in filter.Values) {
+			if (!JsonValueEquals(resolve(constraint.Key), constraint.Value)) {
+				return false;
+			}
+		}
+		return true;
+	}
+
+	/// <summary>
+	/// Adapts a Newtonsoft token to a <see cref="JsonNode"/> so one comparer serves both JSON stacks. Called
+	/// only for a filter that actually declares a value constraint, so the common type-only filter never pays
+	/// for the round-trip.
+	/// </summary>
+	private static JsonNode ToJsonNode(JToken token) =>
+		token is null || token.Type == JTokenType.Null
+			? null
+			: JsonNode.Parse(token.ToString(Newtonsoft.Json.Formatting.None));
 
 	/// <summary>
 	/// True when a rule's <c>path</c> scope is satisfied for a node. Empty (or null) path = no scoping (matches
@@ -4803,8 +4867,10 @@ public static class WebToMobileAnalysisService {
 
 	/// <summary>
 	/// Applies the rules' <c>componentPropertyOverrides</c> to every element-map INSERT, stamping each mobile
-	/// standard the rules file declares (container spacing, metric style). For each entry whose
-	/// <c>mobileType</c> matches an override rule, the listed properties are SET on the prebuilt
+	/// standard the rules file declares (container spacing, metric style). A rule is selected purely by its
+	/// <c>filters</c> — the component type is one constraint among them, evaluated by the same matcher the
+	/// components group uses (see <see cref="MatchesFilters"/>) — and EVERY matching rule is applied, in the
+	/// order the rules file declares them. For each match the listed properties are SET on the prebuilt
 	/// <c>mobileValues</c> — by default REPLACING whatever the web page carried (any shape: token, px
 	/// number, CSS string, per-axis object; the web value is discarded, never translated) and ADDED when
 	/// the web page carried none, so the converted body is self-describing instead of leaning on the
@@ -4814,8 +4880,10 @@ public static class WebToMobileAnalysisService {
 	/// overwritten, and for why an ABSENT branch is created. Covers converted and synthesized inserts alike (run it after the tab-area pass);
 	/// merge twins, drops and relocate hints are never touched, and the element identity keys
 	/// (<c>name</c>/<c>type</c>) can never be overridden. Switched by DATA: an absent/empty group is a
-	/// no-op. Returns one advisory entry per normalized element, bucketed into the report section its rule
-	/// declared via <c>reportGroup</c>.
+	/// no-op. Returns one advisory entry per normalized element — ONE per element, whatever the number of
+	/// rules that wrote it — bucketed into the report section <see cref="ResolveReportGroup"/> derives from
+	/// the component TYPE. The section is therefore per-type, not per-rule: two standards targeting the same
+	/// type report into the same section.
 	/// </summary>
 	private static ComponentPropertyOverrideResult ApplyComponentPropertyOverrides(
 		List<ElementMapEntry> elementMap, WebToMobilePageConversionRules rules) {
@@ -4824,42 +4892,143 @@ public static class WebToMobileAnalysisService {
 		if (overrides is not { Count: > 0 }) {
 			return result;
 		}
-		// One rule per mobile type: a duplicate `type` in the rules file LAST-WINS, silently. That also means
-		// a type cannot carry two rules (e.g. replace one key, merge another) — a limit to lift here, in the
-		// pass, if a standard ever needs it, rather than by loosening the per-rule merge flag.
-		var byType = new Dictionary<string, ComponentPropertyOverrideRule>(StringComparer.OrdinalIgnoreCase);
-		foreach (ComponentPropertyOverrideRule rule in overrides) {
-			if (!string.IsNullOrWhiteSpace(rule?.Type) && rule.Values is { Count: > 0 }) {
-				byType[rule.Type] = rule;
-			}
-		}
-		if (byType.Count == 0) {
+		// No index by type: the component type is one FILTER constraint among others, so a rule is selected
+		// exactly the way a components-group entry is — by running its filters. Every rule that matches is
+		// applied, in DECLARATION order, and two matching rules that write the same key resolve
+		// last-declared-wins per KEY. That is also how one type mixes replace and merge semantics without
+		// loosening the per-rule merge flag.
+		//
+		// Dropped up front: a rule that stamps nothing, and a rule with NO `filters` key at all. The second is
+		// the important one — the filters are the whole of what an override rule targets, so a rule missing
+		// them is incomplete, not universal, and treating it as "matches everything" would let one forgotten
+		// key stamp values onto every component on the page, silently. An EMPTY list still means "everything":
+		// that form can only be written deliberately, so it stays available.
+		List<ComponentPropertyOverrideRule> stampers = [.. overrides.Where(r => r?.Values is { Count: > 0 })];
+		result.SkippedRulesWithoutFilters = stampers.Count(r => r.Filters is null);
+		List<ComponentPropertyOverrideRule> declared = [.. stampers.Where(r => r.Filters is not null)];
+		if (declared.Count == 0) {
 			return result;
 		}
 		foreach (ElementMapEntry entry in elementMap) {
 			if (!string.Equals(entry.Operation, "insert", StringComparison.Ordinal)
 				|| entry.MobileType is not { Length: > 0 }
-				|| entry.MobileValues is not JsonObject values
-				|| !byType.TryGetValue(entry.MobileType, out ComponentPropertyOverrideRule rule)) {
+				|| entry.MobileValues is not JsonObject values) {
 				continue;
 			}
+			// Which rules apply is decided against the element as it ENTERED the pass — every filter is
+			// evaluated BEFORE the first value is stamped. Evaluating them lazily would let an earlier rule
+			// silently enable or disable a later one (a rule stamping borderRadius Large would stop a rule
+			// filtered on borderRadius Medium from ever matching), making the outcome depend on the order the
+			// file happens to list them in. Only the WRITING follows declaration order.
+			List<ComponentPropertyOverrideRule> matched =
+				[.. declared.Where(rule => MatchesFilters(values, rule.Filters))];
 			var properties = new List<string>();
 			var skippedPaths = new List<string>();
-			foreach (KeyValuePair<string, JsonElement> pair in rule.Values) {
-				if (string.Equals(pair.Key, "name", StringComparison.OrdinalIgnoreCase)
-					|| string.Equals(pair.Key, "type", StringComparison.OrdinalIgnoreCase)) {
-					continue; // element identity is never overridable, whatever the rules file says
+			foreach (ComponentPropertyOverrideRule rule in matched) {
+				foreach (KeyValuePair<string, JsonElement> pair in rule.Values) {
+					if (string.Equals(pair.Key, "name", StringComparison.OrdinalIgnoreCase)
+						|| string.Equals(pair.Key, "type", StringComparison.OrdinalIgnoreCase)) {
+						continue; // element identity is never overridable, whatever the rules file says
+					}
+					StampOverrideValue(values, pair.Key, pair.Value, rule.MergeNestedObjects, properties, skippedPaths);
 				}
-				StampOverrideValue(values, pair.Key, pair.Value, rule.MergeNestedObjects, properties, skippedPaths);
 			}
 			// An element that was only partly normalized (or not at all) is still reported — as a skip entry —
-			// so a caller can tell "nothing to normalize" from "could not normalize".
+			// so a caller can tell "nothing to normalize" from "could not normalize". The paths are
+			// de-duplicated: an element two rules both wrote is ONE normalized element, not two, and a key
+			// they both touched is one property.
 			if (properties.Count > 0 || skippedPaths.Count > 0) {
 				result.Add(ResolveReportGroup(entry.MobileType), entry.MobileName, entry.MobileType,
-					properties, skippedPaths);
+					[.. properties.Distinct(StringComparer.Ordinal)],
+					[.. skippedPaths.Distinct(StringComparer.Ordinal)]);
 			}
 		}
 		return result;
+	}
+
+	/// <summary>
+	/// Whether an override rule applies to the element carrying <paramref name="values"/>. A rule with no
+	/// filters (an EMPTY list; an absent one never gets here) applies to every insert. Otherwise the same rule as
+	/// <see cref="MatchesAnyFilter"/> on the source side: the filters are OR-ed, each one AND-s every
+	/// constraint it declares, a value matches only on DEEP equality (so an ABSENT property never matches),
+	/// and a filter that declares nothing matches nothing. The element's values are only READ here — see the
+	/// caller for why every rule of a type is matched before any of them writes.
+	/// </summary>
+	private static bool MatchesFilters(JsonObject values, IReadOnlyList<ElementFilterRule> filters) {
+		if (filters is not { Count: > 0 }) {
+			// Only the EMPTY list reaches this — the caller has already dropped a rule whose `filters` key is
+			// absent — and an empty list is the deliberate "every insert of every type".
+			return true;
+		}
+		string type = values["type"] is JsonValue node && node.TryGetValue(out string declared) ? declared : null;
+		return filters.Any(f => Declares(f)
+			&& (string.IsNullOrWhiteSpace(f.Type) || string.Equals(f.Type, type, StringComparison.OrdinalIgnoreCase))
+			&& MatchesValueConstraints(f, key => values[key]));
+	}
+
+	/// <summary>
+	/// Deep JSON equality between an element's live value (<see cref="JsonNode"/>) and a rule's filter value
+	/// (<see cref="JsonElement"/>).
+	/// <para>
+	/// Hand-written for two reasons, neither of which is framework availability —
+	/// <c>JsonNode.DeepEquals</c> IS available here and this file calls it elsewhere. First, the operands are
+	/// of different types, so any library comparer would need a conversion on every call anyway. Second, and
+	/// decisive, this comparison needs semantics a general JSON comparer does not give: a number matches by
+	/// PARSED VALUE, so a filter writing <c>4</c> matches an element carrying <c>4.0</c> —
+	/// <c>JToken.DeepEquals</c> treats those as unequal because it compares by JSON number type, which would
+	/// make a filter silently miss. Objects still match key-for-key (a filter object is an exact description,
+	/// not a subset) and arrays element-for-element in order.
+	/// </para>
+	/// </summary>
+	private static bool JsonValueEquals(JsonNode actual, JsonElement expected) {
+		switch (expected.ValueKind) {
+			case JsonValueKind.Object: {
+				if (actual is not JsonObject actualObject) {
+					return false;
+				}
+				int declared = 0;
+				foreach (JsonProperty property in expected.EnumerateObject()) {
+					declared++;
+					if (!actualObject.TryGetPropertyValue(property.Name, out JsonNode child)
+						|| !JsonValueEquals(child, property.Value)) {
+						return false;
+					}
+				}
+				return actualObject.Count == declared;
+			}
+			case JsonValueKind.Array: {
+				if (actual is not JsonArray actualArray) {
+					return false;
+				}
+				int index = 0;
+				foreach (JsonElement item in expected.EnumerateArray()) {
+					if (index >= actualArray.Count || !JsonValueEquals(actualArray[index], item)) {
+						return false;
+					}
+					index++;
+				}
+				return actualArray.Count == index;
+			}
+			case JsonValueKind.String:
+				return actual is JsonValue text && text.TryGetValue(out string actualText)
+					&& string.Equals(actualText, expected.GetString(), StringComparison.Ordinal);
+			case JsonValueKind.Number:
+				// Exact equality is correct here, and the usual "never compare floats exactly" caution does not
+				// apply: BOTH operands are JSON literals parsed into double — the element's value and the rules
+				// file's — never the result of arithmetic, so there is no accumulated error for a tolerance to
+				// absorb. Equal literals parse to bit-identical doubles, which is exactly what makes 4 and 4.0
+				// match. A tolerance here would guard nothing while implying the values are computed.
+				return actual is JsonValue number && number.TryGetValue(out double actualNumber)
+					&& expected.TryGetDouble(out double expectedNumber)
+					&& actualNumber.Equals(expectedNumber);
+			case JsonValueKind.True:
+			case JsonValueKind.False:
+				return actual is JsonValue flag && flag.TryGetValue(out bool actualFlag)
+					&& actualFlag == (expected.ValueKind == JsonValueKind.True);
+			default:
+				// Null / Undefined: an explicit JSON null in the element map is a null node.
+				return actual is null;
+		}
 	}
 
 	/// <summary>
@@ -5052,6 +5221,15 @@ public static class WebToMobileAnalysisService {
 	private sealed class ComponentPropertyOverrideResult {
 		private readonly Dictionary<string, GroupAccumulator> _groups = new(StringComparer.OrdinalIgnoreCase);
 		private readonly List<string> _order = [];
+
+		/// <summary>
+		/// Rules the pass REFUSED to run because they declare no <c>filters</c> — the whole of what an override
+		/// rule targets. Counted rather than ignored: the rules file can be fetched from the CDN at runtime, so
+		/// a mistyped <c>"filter"</c> or an entry authored against the removed <c>type</c> field silently drops
+		/// its standard, and the page then ships un-normalized in a way the report cannot otherwise distinguish
+		/// from "nothing needed normalizing".
+		/// </summary>
+		public int SkippedRulesWithoutFilters { get; set; }
 
 		/// <summary>Report groups that recorded something, in first-seen (element-map) order.</summary>
 		public IEnumerable<KeyValuePair<string, GroupAccumulator>> Groups =>

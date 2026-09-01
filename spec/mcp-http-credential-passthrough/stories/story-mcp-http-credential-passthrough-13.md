@@ -31,7 +31,7 @@ a public/shared edge cannot leak the credentials it forwards, even under `--debu
 - [ ] **AC-02** — Given any MCP tool response and CLI stdout, when inspected, then no secret value appears (maps FR-11; AC-11).
 - [ ] **AC-03** — Given any exception path (including `--debug` stack traces), when an error surfaces, then no secret value is embedded in the message (maps FR-11; AC-11).
 - [ ] **AC-04** — Given `EnvironmentSettings.ShowSettingsTo` / any settings dump, when invoked, then the secret fields are absent (mirrors Story 3 `[JsonIgnore]`/`[YamlIgnore]`) (maps FR-11).
-- [ ] **AC-05** — Given the sweep, when complete, then it mirrors the existing `CreatioAuthClient` "cookie names only, never values" discipline as the reference pattern (maps FR-11).
+- [ ] **AC-05** — Given the sweep, when complete, then cookie values remain confined to the explicit protected browser storage-state artifact and never enter logs or errors (maps FR-11).
 
 ## Implementation Notes
 
@@ -39,11 +39,11 @@ From ADR step 13 (FR-11):
 
 - Audit **every** sink touched by the passthrough path: header parse (Story 4), resolution (Story 7), the AsyncLocal log capture (Story 9), cache-key building (Story 8 — already hashed), MCP responses, CLI stdout, exception messages, `--debug`.
 - Enforce url-only logging; redact/omit secret material at the source (do not rely on downstream filtering).
-- Reference discipline: existing `CreatioAuthClient` logs cookie **names only, never values**.
+- Reference discipline: `BrowserSessionService` transfers cookie values only to the protected storage-state artifact; the shared Creatio client path does not log them.
 - This is a cross-cutting sweep; the exhaustive assertion is the Story 15b secret-leak test matrix — this story fixes the sinks, Story 15b proves them.
 
 Key files: sinks across `clio/Command/McpServer/**`, `clio/Common/Logger/**`, `EnvironmentSettings.ShowSettingsTo`.
-Pattern to follow: `CreatioAuthClient` secret-name-only logging.
+Pattern to follow: `BrowserSessionService` explicit artifact boundary plus the secret-absence matrix below.
 
 ## Test Requirements
 
@@ -90,7 +90,7 @@ Targeted run: `dotnet test clio.tests/clio.tests.csproj --filter "Category=Unit&
 | `EnvironmentSettings.ShowSettingsTo` / serialization | `ConfigurationOptions.ShowSettingsTo` | CLEAN — `AccessToken/AccessTokenType/Cookie` are `[YamlIgnore]`+`[Newtonsoft.Json.JsonIgnore]` (Story 3); ShowSettingsTo serializes via Newtonsoft. Already covered by `Common/EnvironmentSettingsTests`. |
 
 ### Residual / fixes
-None. Every audited sink was already secret-free at source; no redaction or omission was added (the task requires not inventing changes). Reference discipline (`CreatioAuthClient` names-only) confirmed present.
+None. Every audited sink was already secret-free at source; no redaction or omission was added (the task requires not inventing changes). The explicit browser storage-state artifact remains the only session-cookie value boundary.
 
 ### Tests added
 `clio.tests/Command/McpServer/CredentialPassthroughSecretHygieneTests.cs` — seeds one distinctive literal `SUPER-SECRET-TOKEN-9c3f2a` as accessToken/cookie/password and asserts ABSENCE across: header-parse error (missing-url + malformed-JSON), FR-19 reject, FR-12 cookie/missing-auth/non-Bearer, both cache keys, the System.Text.Json-serialized `CommandExecutionResult` for a failing passthrough resolve (`FromResolverError` + `FromException`), the `SensitiveErrorTextRedactor` (Bearer/cookie/password shapes), and Newtonsoft serialization of an ephemeral passthrough `EnvironmentSettings`. AC-04's ShowSettingsTo/JSON/YAML absence remains authoritatively covered by `Common/EnvironmentSettingsTests`.

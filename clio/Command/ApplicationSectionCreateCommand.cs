@@ -341,7 +341,7 @@ public sealed class ApplicationSectionCreateService(
 		int? readbackTimeoutMsOverride,
 		bool enableContentionRetry,
 		Action<string>? reportStage = null) {
-		IApplicationClient client = applicationClientFactory.CreateEnvironmentClient(environmentSettings);
+		using IOwnedApplicationClient client = applicationClientFactory.CreateOwnedEnvironmentClient(environmentSettings);
 		// The stored section caption is localized server-side under the connected user's profile.
 		// This effective culture only drives which value the readback surfaces (override > profile > en-US).
 		string effectiveCultureName = resolveCaptionCulture(request.CaptionCulture);
