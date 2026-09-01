@@ -171,6 +171,26 @@ public sealed class ContainerMappingRule {
 	[JsonPropertyName("mobile")]
 	public string Mobile { get; init; }
 
+	/// <summary>
+	/// Optional. The mobile container this element's CHILDREN go into, when that is not the element itself.
+	/// <para>
+	/// A <c>containers</c> entry answers two different questions and they are not always the same answer:
+	/// WHICH mobile element this one IS (<see cref="Mobile"/>, read by identity passes such as the
+	/// page-business-rule survivor map) and WHERE its children belong (this property, read by the element-map
+	/// walk). Keeping them in one field forced a choice: a cross-type pair placed children correctly but lied
+	/// about identity, and a type-aligned pair told the truth about identity while scattering children across
+	/// two containers depending on the source page's shape. Declaring both lets each pass read the one it
+	/// means. Null means children go into <see cref="Mobile"/>, which is the ordinary case.
+	/// </para>
+	/// <para>
+	/// The general tab uses it: <c>GeneralInfoTab</c> IS the mobile <c>GeneralInfoTab</c>, and its children
+	/// belong in <c>GeneralTabContainer</c> — the same place a page that kept the template's own content grid
+	/// puts them. Without it, two web pages that render identically produce different mobile trees.
+	/// </para>
+	/// </summary>
+	[JsonPropertyName("childrenTo")]
+	public string ChildrenTo { get; init; }
+
 	[JsonPropertyName("note")]
 	public string Note { get; init; }
 }

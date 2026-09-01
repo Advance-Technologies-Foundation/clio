@@ -28,7 +28,7 @@
       "note": "Tabbed record page (Tabs + Feed + Attachments). Preferred target for web tabbed record pages.",
       "containers": [
         { "web": "Tabs", "mobile": "Tabs" },
-        { "web": "GeneralInfoTab", "mobile": "GeneralInfoTab" },
+        { "web": "GeneralInfoTab", "mobile": "GeneralInfoTab", "childrenTo": "GeneralTabContainer" },
         { "web": "GeneralInfoTabContainer", "mobile": "GeneralTabContainer" },
         { "web": "FeedTabContainer", "mobile": "FeedContainer" },
         { "web": "AttachmentsTabContainer", "mobile": "AttachmentsContainer" },

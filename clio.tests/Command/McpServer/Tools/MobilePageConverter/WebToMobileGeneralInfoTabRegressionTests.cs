@@ -40,11 +40,10 @@ public sealed class WebToMobileGeneralInfoTabRegressionTests {
 
 	/// <summary>
 	/// The mobile general TAB. It and its content grid are BOTH type-aligned twins of their web counterparts
-	/// (GeneralInfoTab to GeneralInfoTab, GeneralInfoTabContainer to GeneralTabContainer), so where the page's
-	/// content lands follows where the WEB page put it: a page that kept the template's grid lands in the grid,
-	/// a page that removed it lands in the tab's own body. Both sit inside the Details tab and both are
-	/// receivers the rules list as able to host content, which is what the ticket asks for. What must never
-	/// happen is landing in the tab STRIP.
+	/// (GeneralInfoTab to GeneralInfoTab, GeneralInfoTabContainer to GeneralTabContainer), so identity is
+	/// honest on both. WHERE the children go is a separate answer the rules give with `childrenTo`, which
+	/// sends the tab's own children into the content grid — the same place a page that kept the template's
+	/// grid puts them. Both source shapes therefore converge on one mobile tree.
 	/// </summary>
 	private const string MobileGeneralTab = "GeneralInfoTab";
 
@@ -66,8 +65,8 @@ public sealed class WebToMobileGeneralInfoTabRegressionTests {
 	private static readonly string[] GeneralTabLeafContent = ["ServiceTeamMemberList", "ServicePactList"];
 
 	[Test]
-	[Description("ENG-94951: content the web page puts directly inside the template-owned GeneralInfoTab is converted into the mobile general TAB's own body - a receiver the rules list as able to host content - instead of being emitted as a bare child of the mobile Tabs panel, and the content nested inside it survives too.")]
-	public void Analyze_ShouldPlaceGeneralInfoTabContent_IntoTheMobileGeneralTab() {
+	[Description("ENG-94951: content the web page puts directly inside the template-owned GeneralInfoTab is converted into the mobile general tab's CONTENT CONTAINER - the ticket's acceptance criterion - rather than being emitted as a bare child of the mobile Tabs panel, and the content nested inside it survives too.")]
+	public void Analyze_ShouldPlaceGeneralInfoTabContent_IntoTheMobileGeneralTabContainer() {
 		// Arrange
 		JsonObject fixture = LoadFixture();
 
@@ -80,11 +79,11 @@ public sealed class WebToMobileGeneralInfoTabRegressionTests {
 			ElementMapEntry entry = Element(guide, name);
 			entry.Operation.Should().Be("insert",
 				because: $"'{name}' is page-authored content and must reach the mobile page");
-			entry.ParentName.Should().Be(MobileGeneralTab,
-				because: $"'{name}' sits directly under the web general tab on this page, and that tab is a "
-					+ "type-aligned twin of the mobile one, so it lands in the tab's own body; parenting it to "
-					+ "the Tabs panel instead puts a non-tab child inside a crt.TabPanel, which renders nothing "
-					+ "and is exactly ENG-94951");
+			entry.ParentName.Should().Be(MobileGeneralTabContainer,
+				because: $"'{name}' sits directly under the web general tab, whose containers entry sends its "
+					+ "children into the mobile general tab's content grid; parenting it to the Tabs panel "
+					+ "instead puts a non-tab child inside a crt.TabPanel, which renders nothing and is exactly "
+					+ "ENG-94951");
 		}
 		foreach (string name in GeneralTabLeafContent) {
 			Element(guide, name).Operation.Should().Be("insert",
@@ -103,7 +102,6 @@ public sealed class WebToMobileGeneralInfoTabRegressionTests {
 		MobilePageConversionGuide guide = Convert(fixture);
 
 		// Assert
-		RequireReproductionShape(fixture, guide);
 		IReadOnlyList<ElementMapEntry> offenders = NonTabChildrenOfTabStrips(guide);
 		offenders.Should().BeEmpty(
 			because: "a mobile tab strip is a crt.TabPanel: anything but a crt.TabContainer inserted into it is "
@@ -122,7 +120,6 @@ public sealed class WebToMobileGeneralInfoTabRegressionTests {
 		MobilePageConversionGuide guide = Convert(fixture);
 
 		// Assert
-		RequireReproductionShape(fixture, guide);
 		ElementMapEntry tab = Element(guide, "CaseHistoryTab");
 		tab.Operation.Should().Be("insert",
 			because: "a tab the page added has no mobile counterpart, so it is created rather than merged");
@@ -142,7 +139,6 @@ public sealed class WebToMobileGeneralInfoTabRegressionTests {
 		MobilePageConversionGuide guide = Convert(fixture);
 
 		// Assert
-		RequireReproductionShape(fixture, guide);
 		guide.ElementMap.Should().NotContain(
 			e => e.Operation == "insert" && string.Equals(e.MobileName, "GeneralInfoTab", StringComparison.OrdinalIgnoreCase),
 			because: "the mobile template already provides the general tab; inserting a second one under Tabs "
@@ -303,11 +299,12 @@ public sealed class WebToMobileGeneralInfoTabRegressionTests {
 		AdaptiveLayoutGroup grid = guide.AdaptiveLayout
 			.Single(g => g.Items.Any(i => i.Name == "AreaProfileContainer"));
 		IReadOnlyList<string> placed = [.. grid.Items.Select(i => i.Name)];
-		placed.Should().Equal(["AreaProfileContainer", "TermsContainer"],
-			because: "the template's profile card is the general tab grid's first child and the page's own side "
+		placed.Should().Equal(
+			["AreaProfileContainer", "TermsContainer", "ServiceTeamMemberExpansionPanel", "ServicePactExpansionPanel"],
+			because: "the template's profile card is the general tab grid's first child and the re-homed tab "
 				+ "content follows it; a gap or a repeat means a phantom child took a row");
 		grid.Items.Select(i => i.LayoutConfigAdaptive!["small"]!["row"]!.GetValue<int>())
-			.Should().Equal([1, 2],
+			.Should().Equal([1, 2, 3, 4],
 				because: "rows must be contiguous — the mobile grid does not auto-place, so a skipped row is a "
 					+ "child that was counted but never rendered");
 		Element(guide, "SideAreaProfileContainer").MobileValues!.AsObject()
@@ -436,12 +433,83 @@ public sealed class WebToMobileGeneralInfoTabRegressionTests {
 				+ "no basis to claim it cannot hold its child; guessing here would stop a correct conversion");
 	}
 
+	[Test]
+	[Description("Two web pages that render identically must produce the SAME mobile tree: whether the page kept the web template's content grid or removed it and put its content straight under the tab, the converted content lands in one place. Without childrenTo the two shapes diverge, because a type-aligned tab twin sends its children into the tab body while the grid twin sends them into the grid.")]
+	public void Analyze_ShouldConvergeBothSourceShapes_OnTheSameMobileContainer() {
+		// Arrange - the pinned page (grid REMOVED) and the same page with the template's grid put back.
+		JsonObject removedGrid = LoadFixture();
+		JsonObject keptGrid = WithTemplateContentGridRestored(LoadFixture());
+
+		// Act
+		MobilePageConversionGuide fromRemoved = Convert(removedGrid);
+		MobilePageConversionGuide fromKept = Convert(keptGrid);
+
+		// Assert
+		foreach (string name in GeneralTabContent) {
+			Element(fromRemoved, name).ParentName.Should().Be(
+				Element(fromKept, name).ParentName,
+				because: $"'{name}' renders in the same place on both web pages, so a reader of the converted "
+					+ "mobile page must not be able to tell which source shape it came from");
+			Element(fromRemoved, name).ParentName.Should().Be(MobileGeneralTabContainer,
+				because: "and the place they converge on is the one the acceptance criterion names");
+		}
+	}
+
+	[Test]
+	[Description("childrenTo is DATA: it is what sends the tab's children into the content grid, and dropping it from the rules moves them back into the tab body. Pins that the convergence above is a rules decision the analyser reads, not behaviour hardcoded around the general tab's name.")]
+	public void Analyze_ShouldFollowChildrenTo_FromTheRulesRatherThanTheTabName() {
+		// Arrange
+		JsonObject fixture = LoadFixture();
+
+		// Act
+		MobilePageConversionGuide withRule = Convert(fixture);
+		MobilePageConversionGuide withoutRule = Convert(fixture, RulesWithoutChildrenTo("GeneralInfoTab"));
+
+		// Assert
+		Element(withRule, GeneralTabContent[0]).ParentName.Should().Be(MobileGeneralTabContainer,
+			because: "the rules declare childrenTo for the general tab");
+		Element(withoutRule, GeneralTabContent[0]).ParentName.Should().Be(MobileGeneralTab,
+			because: "with the declaration gone the children fall back to the twin itself, which proves the "
+				+ "placement follows the rules and is not keyed on the element's name in code");
+	}
+
 	// ── helpers ──────────────────────────────────────────────────────────────────────────────────
 
 	/// <summary>
-	/// Asserts the pinned capture still has the shape the reproduction depends on. Every test calls it, because
+	/// Asserts the pinned capture still has the shape the reproduction depends on. <see cref="Convert"/> calls
+	/// it on every conversion, so every test that goes through the fixture is covered without having to
+	/// remember; a hand-built bundle is skipped. It matters because
 	/// a refreshed fixture with a different shape would leave most assertions here trivially true rather than
 	/// failing — silent vacuity is the one outcome a regression suite must not have.
+	/// </summary>
+	/// <summary>
+	/// The anti-vacuity floor, asserted by <see cref="Convert"/> on EVERY conversion of the pinned capture,
+	/// including the variants some tests build from it (the template grid put back, the component types
+	/// renamed). It states only what every variant keeps: the page has a tab strip, the general tab inside it,
+	/// and the two named panels somewhere. A refreshed capture that lost any of them would otherwise leave most
+	/// assertions in this fixture trivially true instead of failing. A hand-built bundle is skipped — there is
+	/// no pinned shape to guard.
+	/// </summary>
+	private static void RequireFixtureIsUsable(JsonObject fixture, MobilePageConversionGuide guide) {
+		if (fixture["page"]?["viewConfig"] is null || FindNode(fixture["page"]!["viewConfig"]!, "Tabs") is null) {
+			return;
+		}
+		IReadOnlyDictionary<string, string> parents = WebParents(fixture);
+		parents.Should().ContainKey("GeneralInfoTab",
+			because: "every variant of this capture keeps the template-owned general tab; without it the whole "
+				+ "fixture stops reproducing anything and its assertions go quietly true");
+		foreach (string name in GeneralTabContent) {
+			parents.Should().ContainKey(name,
+				because: $"'{name}' is the content whose loss this suite is about — a capture without it cannot "
+					+ "fail any of these tests for the right reason");
+		}
+		guide.ElementMap.Should().NotBeEmpty(because: "an empty element map would make every assertion vacuous");
+	}
+
+	/// <summary>
+	/// The STRICT guard: the capture is still the REPORTED shape — the page removed the web template's own
+	/// content grid and put its content directly under the tab. Opt-in, because several tests deliberately
+	/// build a different variant from the same capture and would fail this by design.
 	/// </summary>
 	private static void RequireReproductionShape(JsonObject fixture, MobilePageConversionGuide guide) {
 		IReadOnlyDictionary<string, string> parents = WebParents(fixture);
@@ -508,6 +576,36 @@ public sealed class WebToMobileGeneralInfoTabRegressionTests {
 		var types = new HashSet<string>(MobileTypes(), StringComparer.OrdinalIgnoreCase);
 		types.UnionWith(extra);
 		return types;
+	}
+
+	/// <summary>The shipped rules with one containers entry's <c>childrenTo</c> removed.</summary>
+	private static WebToMobilePageConversionRules RulesWithoutChildrenTo(string web) {
+		JsonObject rules = JsonNode.Parse(BundledRulesJson())!.AsObject();
+		JsonObject entry = rules["templates"]!.AsArray()
+			.Single(t => t!["web"]!.ToString() == "PageWithTabsFreedomTemplate")!["containers"]!.AsArray()
+			.Single(c => c!["web"]!.ToString() == web)!.AsObject();
+		entry.Remove("childrenTo");
+		using var stream = new MemoryStream(System.Text.Encoding.UTF8.GetBytes(rules.ToJsonString()));
+		return WebToMobilePageConversionRulesCatalog.ParseStream(stream);
+	}
+
+	/// <summary>
+	/// Puts the web template's own <c>GeneralInfoTabContainer</c> back around the page's general-tab content —
+	/// the ordinary shape, which the pinned page (the reported one) removed.
+	/// </summary>
+	private static JsonObject WithTemplateContentGridRestored(JsonObject fixture) {
+		JsonObject generalTab = FindNode(fixture["page"]!["viewConfig"]!, "GeneralInfoTab")
+			?? throw new AssertionException("fixture no longer carries GeneralInfoTab");
+		JsonArray tabItems = generalTab["items"]!.AsArray();
+		var restored = new JsonArray();
+		foreach (JsonNode child in tabItems.ToList()) {
+			tabItems.Remove(child);
+			restored.Add(child);
+		}
+		tabItems.Add(new JsonObject {
+			["name"] = "GeneralInfoTabContainer", ["type"] = "crt.GridContainer", ["items"] = restored
+		});
+		return fixture;
 	}
 
 	private static JsonObject LoadFixture() {
@@ -620,13 +718,14 @@ public sealed class WebToMobileGeneralInfoTabRegressionTests {
 		Dictionary<string, JObject> webBaselineNodes =
 			WebToMobileAnalysisService.CollectComponentNodesByName(webTemplateViewConfig);
 
-		return WebToMobileAnalysisService.Analyze(
+		MobilePageConversionGuide guide = WebToMobileAnalysisService.Analyze(
 			bundle, mobileTypes ?? MobileTypes(), new HashSet<string>(StringComparer.OrdinalIgnoreCase),
 			webByType: new Dictionary<string, ComponentRegistryEntry>(StringComparer.OrdinalIgnoreCase),
 			mobileByType: null, rules, templateRule,
 			sourcePage: "Services_FormPage", sourceTemplate: "PageWithTabsFreedomTemplate",
 			suggestedTarget: "Services_MobileFormPage",
 			containerNameMap: MobilePageConversionGuideTool.BuildContainerNameMap(templateRule),
+			containerChildrenTargets: MobilePageConversionGuideTool.BuildContainerChildrenTargetMap(templateRule),
 			componentNameMap: MobilePageConversionGuideTool.BuildComponentNameMap(templateRule),
 			positionalPlacements: withPositionalPlacements
 				? MobilePageConversionGuideTool.BuildPositionalPlacements(templateRule)
@@ -638,6 +737,8 @@ public sealed class WebToMobileGeneralInfoTabRegressionTests {
 				: null,
 			mobileTemplateTypesByName: mobileTemplateAvailable ? MobileTemplateTypes(fixture) : null,
 			webTemplateBaselineNodes: webBaselineNodes);
+		RequireFixtureIsUsable(fixture, guide);
+		return guide;
 	}
 
 	/// <summary>Component name → type of the recommended mobile template, as the tool's probe supplies it.</summary>

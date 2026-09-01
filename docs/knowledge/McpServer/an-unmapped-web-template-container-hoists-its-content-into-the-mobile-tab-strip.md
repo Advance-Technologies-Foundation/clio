@@ -2,6 +2,8 @@
 description: web→mobile conversion silently loses a whole tab's content when the rules file has no containers entry for a web-template container that sits inside Tabs
 applies-to:
   - clio/Command/McpServer/Data/WebToMobilePageConversionRules.json
+  - clio/Command/McpServer/Tools/MobilePageConverter/WebToMobilePageConversionRulesModels.cs
+  - clio/Command/McpServer/Tools/MobilePageConverter/MobilePageConversionGuideTool.cs
   - clio/Command/McpServer/Tools/MobilePageConverter/MobilePageConversionGuideModels.cs
   - clio/Command/McpServer/Tools/MobilePageConverter/WebToMobileAnalysisService.cs
   - clio.tests/Command/McpServer/Tools/MobilePageConverter/WebToMobileGeneralInfoTabRegressionTests.cs
@@ -21,10 +23,19 @@ nothing.
 
 That is why `PageWithTabsFreedomTemplate` maps BOTH halves of the general tab, and maps each onto its own
 counterpart: `GeneralInfoTab` -> `GeneralInfoTab` (a `crt.TabContainer` on both sides) and
-`GeneralInfoTabContainer` -> `GeneralTabContainer` (a `crt.GridContainer` on both sides). Where a page's
-content lands then follows where the WEB page put it -- a page that kept the template's grid lands in the
-grid, a page that removed it lands in the tab's own body -- and both receivers are inside the Details tab
-and both are in `contentContainerTypes`.
+`GeneralInfoTabContainer` -> `GeneralTabContainer` (a `crt.GridContainer` on both sides).
+
+A third field settles where the CONTENT goes: `childrenTo`. The tab entry declares
+`childrenTo: GeneralTabContainer`, so a page that REMOVED the template's grid and a page that KEPT it
+converge on the same mobile container -- the one the acceptance criterion names. Without it the two shapes
+diverge, because a type-aligned tab twin sends its children into the tab body while the grid twin sends
+them into the grid, and two web pages that render identically would produce different mobile trees.
+`mobile` answers WHICH element this is (identity: the page-business-rule survivor map, the caption);
+`childrenTo` answers WHERE its children go (placement: the element-map walk). One field could not answer
+both, which is why this mapping was reworked three times before the two questions were separated. A
+`childrenTo` naming an element the mobile template does not have falls back to the twin and is reported --
+the rules are CDN-fetched, and a typo there would otherwise park a whole tab's content under a name that
+does not exist.
 
 Two TYPE-ALIGNED pairs were chosen over one cross-type pair (`GeneralInfoTab` -> `GeneralTabContainer`),
 which also placed the content correctly. The reason is identity, not placement: a `containers` entry is
@@ -50,7 +61,7 @@ Do not reason about a residual gap for a web `FeedTab`; it has no such element.
 The residual exposure is therefore not in this template but in the general rule: ANY web-template
 container inside a `crt.TabPanel`, in this or a future template family, that reaches the rules file
 without a `containers` entry reproduces ENG-94951 verbatim. That is what
-`CollectNonTabChildrenOfTabPanels` reports.
+`CollectUnhostablePlacements` reports.
 
 **Why it is this way** — chrome subtraction is name-based and has no notion of which mobile parent can
 legally host which child; only the rules know a web container's mobile counterpart. Hoisting is the
@@ -115,7 +126,7 @@ class of drift. A test that must catch this defect has to load the SHIPPED rules
 (`WebToMobilePageConversionRulesCatalog.LoadBundled()`) together with a REAL web-template baseline —
 with no baseline, chrome subtraction never runs and the defect is unreproducible. The rules file is
 also fetched from the CDN at runtime, so a published file missing an entry reintroduces the defect with
-no code change; `CollectNonTabChildrenOfTabPanels` exists only to make that visible in the guide's
+no code change; `CollectUnhostablePlacements` exists only to make that visible in the guide's
 `constraints`, and it cannot repair the placement. It seeds its tab-strip set with the
 `MobileTabsElementName` constant on purpose: the mobile-template probe is best-effort and yields an
 EMPTY type map on failure, and the guard must not disappear in the same degraded run that most needs it.

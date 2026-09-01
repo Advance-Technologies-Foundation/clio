@@ -2425,7 +2425,7 @@ public sealed class WebToMobileConversionServiceTests {
 	}
 
 	[Test]
-	[Description("ENG-94951 over-correction guard: only a TAB twin whose mobile name DIFFERS is excluded. A same-name tab twin still identifies one element, so a rule targeting it must keep converting.")]
+	[Description("Characterization: a container twin that keeps its name identifies one element, so a page business rule targeting it converts and keeps that name. Pins current behaviour — ConvertPageBusinessRules applies no tab-specific exclusion.")]
 	public void ConvertPageBusinessRules_SameNameTabTwin_StillConverts() {
 		// Arrange
 		PageBusinessRuleProbeResult probe = ProbeOf(
@@ -2444,7 +2444,7 @@ public sealed class WebToMobileConversionServiceTests {
 	}
 
 	[Test]
-	[Description("ENG-94951 over-correction guard: a NON-tab renaming twin (SideAreaProfileContainer -> AreaProfileContainer, a crt.GridContainer pair) is an ordinary identity twin and must keep converting — the exclusion must not swallow every renaming merge.")]
+	[Description("Characterization: a renaming container twin (SideAreaProfileContainer -> AreaProfileContainer, a crt.GridContainer pair) converts with the action retargeted onto its mobile name. Pins current behaviour — ConvertPageBusinessRules applies no tab-specific exclusion.")]
 	public void ConvertPageBusinessRules_NonTabRenamingTwin_StillConverts() {
 		// Arrange
 		PageBusinessRuleProbeResult probe = ProbeOf(

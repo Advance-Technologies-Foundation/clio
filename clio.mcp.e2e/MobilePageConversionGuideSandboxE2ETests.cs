@@ -659,9 +659,13 @@ public sealed class MobilePageConversionGuideSandboxE2ETests : McpContractFixtur
 			// WebToMobileGeneralInfoTabRegressionTests against the OOTB Services_FormPage. What is NOT covered
 			// while this is silent is the RUNTIME-FETCHED rules file reaching the same verdict through the real
 			// clio mcp-server process — the one failure mode no hermetic unit test can see.
-			TestContext.Out.WriteLine(
-				$"No seeded page of '{ApplicationCode}' on environment '{environmentName}' produced a converted tab, "
-				+ "so the ENG-94951 tab-strip invariant was not exercised over the real transport. Add a tabbed "
+			Assert.Ignore(
+				$"None of the {candidates.Count} seeded page(s) of '{ApplicationCode}' on environment "
+				+ $"'{environmentName}' produced a converted tab, so the ENG-94951 placement invariant could not be "
+				+ "exercised end to end. This is not a coverage gap for the rule itself \u2014 "
+				+ "WebToMobileGeneralInfoTabRegressionTests pins it hermetically on the OOTB Services_FormPage and "
+				+ "runs on every build. What is NOT covered while this skips is the RUNTIME-FETCHED rules file "
+				+ "reaching the same verdict through the real clio mcp-server process. To close it, add a tabbed "
 				+ "record page whose General information tab holds an expansion panel to the seed application.");
 		}
 	}

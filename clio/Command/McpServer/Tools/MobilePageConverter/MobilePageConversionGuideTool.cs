@@ -164,6 +164,7 @@ public sealed class MobilePageConversionGuideTool {
 		string effectiveTemplate = ResolveEffectiveTemplateName(pageResponse.Page, pageResponse.Bundle, rules);
 		TemplateMappingRule templateRule = ResolveTemplateRule(rules, effectiveTemplate);
 		IReadOnlyDictionary<string, string> containerNameMap = BuildContainerNameMap(templateRule);
+		IReadOnlyDictionary<string, string> containerChildrenTargets = BuildContainerChildrenTargetMap(templateRule);
 		IReadOnlyDictionary<string, ComponentMappingRule> componentNameMap = BuildComponentNameMap(templateRule);
 		IReadOnlyList<WebToMobileAnalysisService.PositionalPlacement> positionalPlacements = BuildPositionalPlacements(templateRule);
 
@@ -212,6 +213,7 @@ public sealed class MobilePageConversionGuideTool {
 				sourceTemplate: effectiveTemplate,
 				suggestedTarget: targetName,
 				containerNameMap: containerNameMap,
+				containerChildrenTargets: containerChildrenTargets,
 				sectionRegistration: sectionRegistration,
 				pageBusinessRulesProbe: pageBusinessRules,
 				templateComponentNames: webTemplateBaseline.Names,
@@ -430,6 +432,29 @@ public sealed class MobilePageConversionGuideTool {
 			if (!string.IsNullOrWhiteSpace(c?.Web) && !string.IsNullOrWhiteSpace(c.Mobile)
 				&& !c.Web.Contains(':') && !c.Mobile.Contains(':')) {
 				map[c.Web] = c.Mobile;
+			}
+		}
+		return map.Count > 0 ? map : null;
+	}
+
+	/// <summary>
+	/// Web container name → the mobile container its CHILDREN go into, for the entries that declare
+	/// <see cref="ContainerMappingRule.ChildrenTo"/>. Separate from
+	/// <see cref="BuildContainerNameMap"/> on purpose: that one answers identity, this one answers placement,
+	/// and an entry may need different answers to the two.
+	/// </summary>
+	internal static IReadOnlyDictionary<string, string> BuildContainerChildrenTargetMap(TemplateMappingRule rule) {
+		if (rule?.Containers is null || rule.Containers.Count == 0) {
+			return null;
+		}
+		var map = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+		foreach (ContainerMappingRule c in rule.Containers) {
+			if (!string.IsNullOrWhiteSpace(c?.Web) && !string.IsNullOrWhiteSpace(c.ChildrenTo)
+				&& !c.Web.Contains(':')) {
+				// Last entry wins on a duplicate web name, as BuildContainerNameMap does for the same input --
+				// a rules file that declares one web container twice is malformed, and the two maps must not
+				// disagree about which of the duplicates they took.
+				map[c.Web] = c.ChildrenTo;
 			}
 		}
 		return map.Count > 0 ? map : null;

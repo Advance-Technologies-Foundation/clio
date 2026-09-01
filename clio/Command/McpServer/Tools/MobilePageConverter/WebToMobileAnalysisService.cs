@@ -113,7 +113,8 @@ public static class WebToMobileAnalysisService {
 		IReadOnlyDictionary<string, JsonObject> mobileTemplateLayoutConfigs = null,
 		IReadOnlyDictionary<string, JObject> webTemplateBaselineNodes = null,
 		bool webTemplateUnavailable = false,
-		JObject webTemplateResources = null) {
+		JObject webTemplateResources = null,
+		IReadOnlyDictionary<string, string> containerChildrenTargets = null) {
 		ArgumentNullException.ThrowIfNull(bundle);
 		ArgumentNullException.ThrowIfNull(mobileTypes);
 		ArgumentNullException.ThrowIfNull(webTypes);
@@ -121,6 +122,8 @@ public static class WebToMobileAnalysisService {
 
 		IReadOnlyDictionary<string, string> map =
 			containerNameMap ?? new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+		IReadOnlyDictionary<string, string> childrenTargets =
+			containerChildrenTargets ?? new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
 		IReadOnlyDictionary<string, ComponentMappingRule> componentMap =
 			componentNameMap ?? new Dictionary<string, ComponentMappingRule>(StringComparer.OrdinalIgnoreCase);
 		IReadOnlyDictionary<string, string> mobileTypesByName =
@@ -199,7 +202,7 @@ public static class WebToMobileAnalysisService {
 			tree, map, componentMap, mobileTypes, mobileByType, webByType, rules, attrToColumn, resources,
 			requestMap, convertedRequests, droppedRequests, flaggedRequests, sourceLayouts, gridContainerColumns,
 			positionalParentByAnchor, positionalAnchorByWebAnchor,
-			mobileTypesByName, webBaselineNodes, webTemplateResources);
+			mobileTypesByName, webBaselineNodes, webTemplateResources, childrenTargets);
 
 		// Removes components an excludedComponents rule bans from a host (type-agnostic — which
 		// type/host/property is banned comes entirely from the rules), in the two shapes a banned component
@@ -1972,7 +1975,8 @@ public static class WebToMobileAnalysisService {
 		IReadOnlyDictionary<string, string> MobileTypesByName,
 		IReadOnlyDictionary<string, JObject> WebBaselineNodes,
 		JObject WebBaselineResources,
-		IReadOnlySet<string> ScopeContainerNames);
+		IReadOnlySet<string> ScopeContainerNames,
+		IReadOnlyDictionary<string, string> ChildrenTargets);
 
 	/// <summary>
 	/// The set of NON-CONVERTING scope container names — declared EXPLICITLY by the rules'
@@ -2013,7 +2017,8 @@ public static class WebToMobileAnalysisService {
 		IReadOnlyDictionary<string, string> positionalAnchorByWebAnchor,
 		IReadOnlyDictionary<string, string> mobileTypesByName,
 		IReadOnlyDictionary<string, JObject> webBaselineNodes,
-		JObject webBaselineResources) {
+		JObject webBaselineResources,
+		IReadOnlyDictionary<string, string> childrenTargets) {
 		var ctx = new ElementMapContext(map,
 			componentMap ?? new Dictionary<string, ComponentMappingRule>(StringComparer.OrdinalIgnoreCase),
 			mobileTypes, mobileByType ?? new Dictionary<string, ComponentRegistryEntry>(),
@@ -2025,7 +2030,8 @@ public static class WebToMobileAnalysisService {
 			mobileTypesByName ?? new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase),
 			webBaselineNodes ?? new Dictionary<string, JObject>(StringComparer.OrdinalIgnoreCase),
 			webBaselineResources,
-			CollectScopeContainerNames(rules));
+			CollectScopeContainerNames(rules),
+			childrenTargets ?? new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase));
 		WalkElements(ctx, tree, mobileParentName: null);
 		return ctx.Out;
 	}
@@ -2173,8 +2179,32 @@ public static class WebToMobileAnalysisService {
 					MergeParentName = ResolveParent(ctx, mobileParentName),
 					Reason = TwinReason(name)
 				});
+				// A containers entry answers identity with `mobile` and placement with `childrenTo`, and they are
+				// not always the same element. The general tab IS the mobile GeneralInfoTab (so the survivor map
+				// and the caption are right) while its children belong in GeneralTabContainer -- the same place a
+				// page that KEPT the template's own content grid puts them. Without this, two web pages that
+				// render identically produce different mobile trees. Absent childrenTo keeps the ordinary case:
+				// children go into the twin itself.
+				string twinChildParent = twinMobileName;
+				if (ctx.ChildrenTargets.TryGetValue(name, out string childTarget)
+					&& !string.IsNullOrWhiteSpace(childTarget)) {
+					// The rules are fetched at RUNTIME, so a typo in a published childrenTo would park every child
+					// of this tab under a name the mobile template does not have -- the same silent loss this pass
+					// exists to prevent, and one CollectUnhostablePlacements cannot catch (an unknown receiver has
+					// no resolvable type, so it is deliberately left alone). Fall back to the twin, which is always
+					// a real element, and say so. Mirrors what the retarget path already does with
+					// RetargetTargetMissing rather than inventing a second policy for the same hazard.
+					if (RetargetTargetMissing(ctx, childTarget)) {
+						ctx.Out.Add(Drop(childTarget, null,
+							$"a containers entry sends '{name}' children into '{childTarget}', which is not present "
+							+ $"on the mobile template \u2014 they were placed in '{twinMobileName}' instead. Fix the "
+							+ "rules file or the target template."));
+					} else {
+						twinChildParent = childTarget;
+					}
+				}
 				if (items is not null) {
-					WalkElements(ctx, items, twinMobileName, sourceAncestors: Append(sourceAncestors, name));
+					WalkElements(ctx, items, twinChildParent, sourceAncestors: Append(sourceAncestors, name));
 				}
 				continue;
 			}
@@ -4572,10 +4602,10 @@ public static class WebToMobileAnalysisService {
 	private const string MobileTabComponentType = "crt.TabContainer";
 
 	/// <summary>Case-insensitive comparer for the (name, parent) identity of a tab-strip placement loss.</summary>
-	private static readonly IEqualityComparer<(string Name, string Parent)> TupleComparer =
-		new TabStripLossKeyComparer();
+	private static readonly IEqualityComparer<(string Name, string Parent)> PlacementLossKeyComparer =
+		new PlacementLossKeyEquality();
 
-	private sealed class TabStripLossKeyComparer : IEqualityComparer<(string Name, string Parent)> {
+	private sealed class PlacementLossKeyEquality : IEqualityComparer<(string Name, string Parent)> {
 		public bool Equals((string Name, string Parent) x, (string Name, string Parent) y) =>
 			string.Equals(x.Name, y.Name, StringComparison.OrdinalIgnoreCase)
 			&& string.Equals(x.Parent, y.Parent, StringComparison.OrdinalIgnoreCase);
@@ -4672,7 +4702,7 @@ public static class WebToMobileAnalysisService {
 				MobileType = e.MobileType,
 				ParentName = e.ParentName
 			})
-			.DistinctBy(l => (l.Name, l.ParentName), TupleComparer)];
+			.DistinctBy(l => (l.Name, l.ParentName), PlacementLossKeyComparer)];
 	}
 
 	/// <summary>

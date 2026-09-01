@@ -237,7 +237,8 @@ public sealed class WebToMobilePageConversionRulesCatalogTests {
 		tabbed.Containers.Should().Contain(c => c.Web == "SideAreaProfileContainer" && c.Mobile == "AreaProfileContainer",
 			because: "the web profile island merges into the template's profile Area card — its children " +
 				"land inside AreaProfileContainer, not directly in GeneralTabContainer, so the Area is never left empty");
-		tabbed.Containers.Should().Contain(c => c.Web == "GeneralInfoTab" && c.Mobile == "GeneralInfoTab",
+		tabbed.Containers.Should().Contain(
+			c => c.Web == "GeneralInfoTab" && c.Mobile == "GeneralInfoTab" && c.ChildrenTo == "GeneralTabContainer",
 			because: "without it the general-information tab is subtracted as inherited chrome and its content is "
 				+ "hoisted straight into the crt.TabPanel, which renders only tabs — the whole tab is lost (ENG-94951)");
 		tabbed.Containers.Should().Contain(c => c.Web == "GeneralInfoTabContainer" && c.Mobile == "GeneralTabContainer",
