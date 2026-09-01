@@ -613,22 +613,31 @@ public sealed class DataBindingDbToolE2ETests : McpContractFixtureBase {
 			cancellationTokenSource);
 	}
 
+	/// <summary>
+	/// Returns the sandbox environment this fixture owns, or skips the test.
+	/// </summary>
+	/// <remarks>
+	/// The environment has to be configured explicitly. Falling back to whatever "d2" happened to
+	/// resolve to meant the fixture created packages, schemas and rows on a stand nobody had declared
+	/// as disposable - and the teardown then deleted a package on it. A run without
+	/// McpE2E__Sandbox__EnvironmentName is skipped instead of quietly picking a target.
+	/// </remarks>
 	private static async Task<string> ResolveReachableEnvironmentAsync(McpE2ESettings settings) {
 		string? configuredEnvironmentName = settings.Sandbox.EnvironmentName;
-		if (!string.IsNullOrWhiteSpace(configuredEnvironmentName) &&
-			await CanReachEnvironmentAsync(settings, configuredEnvironmentName)) {
+		if (string.IsNullOrWhiteSpace(configuredEnvironmentName)) {
+			Assert.Ignore(
+				"DB-first data-binding MCP E2E writes to a Creatio stand, so it needs an explicitly "
+				+ "configured sandbox: set McpE2E__Sandbox__EnvironmentName to an environment this suite "
+				+ "may create and delete packages on.");
+			return string.Empty;
+		}
+		if (await CanReachEnvironmentAsync(settings, configuredEnvironmentName)) {
 			return configuredEnvironmentName;
 		}
 
-		const string fallbackEnvironmentName = "d2";
-		if (await CanReachEnvironmentAsync(settings, fallbackEnvironmentName)) {
-			return fallbackEnvironmentName;
-		}
-
 		Assert.Ignore(
-			$"DB-first data-binding MCP E2E requires a reachable environment. " +
-			$"Configured sandbox environment '{configuredEnvironmentName}' was not reachable, " +
-			$"and fallback environment '{fallbackEnvironmentName}' was also unavailable.");
+			$"DB-first data-binding MCP E2E requires a reachable environment, and the configured sandbox "
+			+ $"environment '{configuredEnvironmentName}' did not answer ping-app.");
 		return string.Empty;
 	}
 
@@ -725,12 +734,47 @@ public sealed class DataBindingDbToolE2ETests : McpContractFixtureBase {
 		string? EnvironmentName,
 		McpServerSession Session,
 		CancellationTokenSource CancellationTokenSource) : System.IAsyncDisposable {
-		public System.Threading.Tasks.ValueTask DisposeAsync() {
+
+		/// <summary>
+		/// Removes what this fixture created: the package it pushed to the sandbox, and - unless the
+		/// test failed - the local workspace.
+		/// </summary>
+		/// <remarks>
+		/// The remote package is deleted on every outcome, because leaving it behind accumulates
+		/// fixture-owned packages, schemas and rows on the shared stand run after run. The local
+		/// workspace is kept when the test failed: its binding descriptor and data files are the
+		/// evidence, and deleting them leaves only the assertion text to diagnose from. The path is
+		/// written to the test output so it can be found.
+		/// </remarks>
+		public async System.Threading.Tasks.ValueTask DisposeAsync() {
+			await DeleteRemotePackageAsync();
 			CancellationTokenSource.Dispose();
-			if (Directory.Exists(RootDirectory)) {
-				Directory.Delete(RootDirectory, recursive: true);
+			if (!Directory.Exists(RootDirectory)) {
+				return;
 			}
-			return System.Threading.Tasks.ValueTask.CompletedTask;
+			if (TestContext.CurrentContext.Result.Outcome.Status == NUnit.Framework.Interfaces.TestStatus.Failed) {
+				TestContext.Out.WriteLine(
+					$"Test failed; keeping the workspace for diagnosis: {RootDirectory}");
+				return;
+			}
+			Directory.Delete(RootDirectory, recursive: true);
+		}
+
+		private async Task DeleteRemotePackageAsync() {
+			if (string.IsNullOrWhiteSpace(EnvironmentName)) {
+				return;
+			}
+			//Teardown must never turn a passing test red or mask the real failure of a failing one, so
+			//the exit code is reported rather than asserted. A package that was never pushed - the
+			//arrange step failed before push-workspace - simply makes this a no-op on the stand.
+			ClioCliCommandResult result = await ClioCliCommandRunner.RunAsync(
+				Settings,
+				["delete-pkg-remote", PackageName, "-e", EnvironmentName]);
+			if (result.ExitCode != 0) {
+				TestContext.Out.WriteLine(
+					$"Could not delete the fixture package '{PackageName}' from '{EnvironmentName}' "
+					+ $"(exit {result.ExitCode}); it may need removing by hand.");
+			}
 		}
 	}
 
