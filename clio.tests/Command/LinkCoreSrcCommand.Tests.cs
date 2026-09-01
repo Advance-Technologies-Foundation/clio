@@ -247,6 +247,49 @@ namespace Clio.Tests.Command {
 	}
 
 	[Test]
+	[Description("Rejects linked HTTPS configuration when the selected certificate file cannot be loaded before appsettings.json is written.")]
+	public void ValidateHttpsConfiguration_ShouldRejectInvalidCertificateMaterial() {
+		// Arrange
+		string temporaryDirectory = Path.Combine(Path.GetTempPath(), "clio-link-core-" + Guid.NewGuid().ToString("N"));
+		Directory.CreateDirectory(temporaryDirectory);
+		try
+		{
+			string certificatePath = Path.Combine(temporaryDirectory, "server.pfx");
+			File.WriteAllText(certificatePath, "not a certificate");
+			string configuration = $$"""
+				{
+				  "Kestrel": {
+				    "Endpoints": {
+				      "Https": {
+				        "Url": "https://localhost:40123",
+				        "Certificate": { "Path": "{{Path.GetFileName(certificatePath)}}" }
+				      }
+				    }
+				  }
+				}
+				""";
+
+			// Act
+			Action action = () => _command.ValidateHttpsConfiguration(
+				configuration,
+				Path.Combine(temporaryDirectory, "appsettings.json"),
+				Path.Combine(temporaryDirectory, "environment"));
+
+			// Assert
+			action.Should().Throw<InvalidOperationException>()
+				.WithMessage("The certificate specified by --cert-path is invalid or cannot be loaded: *",
+				because: "link-core-src must fail before writing an HTTPS configuration that Kestrel cannot load");
+		}
+		finally
+		{
+			if (Directory.Exists(temporaryDirectory))
+			{
+				Directory.Delete(temporaryDirectory, recursive: true);
+			}
+		}
+	}
+
+	[Test]
 	[Description("Rejects a link-core-src port that would make the preserved HTTP and HTTPS Kestrel endpoints collide.")]
 	public void UpdateConfigWithPort_ShouldRejectHttpHttpsPortConflict() {
 		// Arrange

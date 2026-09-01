@@ -652,7 +652,7 @@ public class DotNetDeploymentStrategy : IDeploymentStrategy
 		}
 	}
 
-	private static void ValidateExistingCertificateFiles(
+	internal static void ValidateExistingCertificateFiles(
 		string applicationPath,
 		string configurationJson,
 		IReadOnlyDictionary<string, string> environmentVariables)

@@ -547,6 +547,10 @@ public class LinkCoreSrcCommand : Command<LinkCoreSrcOptions>
 
 			// Try to parse as JSON first, then as XML
 			string updatedContent = UpdateConfigWithPort(content, port, appSettingsPath, scheme);
+			if (scheme == Uri.UriSchemeHttps)
+			{
+				ValidateHttpsConfiguration(updatedContent, appSettingsPath, env.EnvironmentPath);
+			}
 			_fileSystem.WriteAllTextToFile(appSettingsPath, updatedContent);
 			_logger.WriteInfo($"  ✓ Port {port} configured in appsettings.json");
 		}
@@ -554,6 +558,24 @@ public class LinkCoreSrcCommand : Command<LinkCoreSrcOptions>
 		{
 			_logger.WriteError($"  ✗ Error configuring ports: {ex.Message}"); _logger.WriteError($"     Details: {ex.InnerException?.Message ?? "No additional details"}"); throw;
 		}
+	}
+
+	/// <summary>
+	/// Validates certificate files in a linked HTTPS configuration before it is written to appsettings.json.
+	/// </summary>
+	/// <param name="configurationJson">The generated appsettings.json content.</param>
+	/// <param name="appSettingsPath">The path of the appsettings.json file.</param>
+	/// <param name="environmentPath">The currently registered environment path containing protected certificate values.</param>
+	internal void ValidateHttpsConfiguration(string configurationJson, string appSettingsPath, string environmentPath)
+	{
+		string applicationPath = Path.GetDirectoryName(appSettingsPath)
+			?? throw new InvalidOperationException("The linked appsettings.json path has no parent directory.");
+		IReadOnlyDictionary<string, string> environmentVariables = _environmentStore.Load(environmentPath)
+			?? new Dictionary<string, string>();
+		DotNetDeploymentStrategy.ValidateExistingCertificateFiles(
+			applicationPath,
+			configurationJson,
+			environmentVariables);
 	}
 
 	/// <summary>

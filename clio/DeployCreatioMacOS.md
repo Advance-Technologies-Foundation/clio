@@ -13,7 +13,7 @@ For experienced users, here's the minimal command sequence:
 clio deploy-infrastructure
 
 # 2. Deploy Creatio (interactive prompts for site name and port)
-clio deploy-creatio --ZipFile ~/Downloads/creatio-8.x.x.zip
+clio deploy-creatio --zip-file ~/Downloads/creatio-8.x.x.zip
 
 # 3. Access your application
 # URL: http://localhost:8080
@@ -203,7 +203,7 @@ After successfully deploying the infrastructure, you can deploy the Creatio appl
 ### Command
 
 ```bash
-clio deploy-creatio --ZipFile ~/Downloads/creatio-8.1.2.zip
+clio deploy-creatio --zip-file ~/Downloads/creatio-8.1.2.zip
 ```
 
 > **Note:** Replace `~/Downloads/creatio-8.1.2.zip` with the actual path to your ZIP file.
@@ -262,7 +262,7 @@ Example: `~/creatio/dev1/`
 
 ```bash
 clio deploy-creatio \
-  --ZipFile ~/Downloads/creatio-8.1.2.zip \
+  --zip-file ~/Downloads/creatio-8.1.2.zip \
   --SiteName dev1 \
   --SitePort 8080 \
   --db pg \
@@ -275,14 +275,14 @@ clio deploy-creatio \
 ```bash
 # Deploy with HTTPS
 clio deploy-creatio \
-  --ZipFile ~/Downloads/creatio.zip \
+  --zip-file ~/Downloads/creatio.zip \
   --use-https \
   --cert-path ~/certs/app.pem \
   --cert-key-path ~/certs/app.key
 
 # For a password-protected PFX, pass an environment-variable name or password-file path
 clio deploy-creatio \
-  --ZipFile ~/Downloads/creatio.zip \
+  --zip-file ~/Downloads/creatio.zip \
   --use-https \
   --cert-path ~/certs/app.pfx \
   --cert-password-file /run/secrets/creatio-cert-password
@@ -293,7 +293,7 @@ process exits; protect the Clio home directory and password file accordingly.
 
 # Network-facing dotnet hosting is opt-in and HTTPS-only
 clio deploy-creatio \
-  --ZipFile ~/Downloads/creatio.zip \
+  --zip-file ~/Downloads/creatio.zip \
   --deployment dotnet \
   --use-https \
   --bind-all-interfaces \
@@ -301,13 +301,13 @@ clio deploy-creatio \
 
 # Specify custom installation path
 clio deploy-creatio \
-  --ZipFile ~/Downloads/creatio.zip \
+  --zip-file ~/Downloads/creatio.zip \
   --app-path /custom/path \
   --SiteName myapp
 
 # Disable automatic browser opening
 clio deploy-creatio \
-  --ZipFile ~/Downloads/creatio.zip \
+  --zip-file ~/Downloads/creatio.zip \
   --auto-run false
 ```
 
@@ -463,7 +463,7 @@ Example: Site `dev1` -> Database `creatio_dev1`
 clio deploy-infrastructure
 
 # 2. Deploy Creatio application
-clio deploy-creatio --ZipFile ~/Downloads/creatio.zip
+clio deploy-creatio --zip-file ~/Downloads/creatio.zip
 # Enter site name: dev1
 # Enter port: 8080 (or press Enter)
 
@@ -488,9 +488,9 @@ clio start -e dev1 --terminal
 
 ```bash
 # Deploy multiple applications
-clio deploy-creatio --ZipFile ~/Downloads/creatio-8.1.2.zip --SiteName dev1 --SitePort 8080
-clio deploy-creatio --ZipFile ~/Downloads/creatio-8.1.3.zip --SiteName dev2 --SitePort 8081
-clio deploy-creatio --ZipFile ~/Downloads/creatio-8.2.0.zip --SiteName test1 --SitePort 8082
+clio deploy-creatio --zip-file ~/Downloads/creatio-8.1.2.zip --SiteName dev1 --SitePort 8080
+clio deploy-creatio --zip-file ~/Downloads/creatio-8.1.3.zip --SiteName dev2 --SitePort 8081
+clio deploy-creatio --zip-file ~/Downloads/creatio-8.2.0.zip --SiteName test1 --SitePort 8082
 
 # View all environments
 clio hosts
@@ -561,7 +561,7 @@ clio deploy-infrastructure
 
 ```bash
 # Option 1: Use different port
-clio deploy-creatio --ZipFile ~/Downloads/creatio.zip --SitePort 8081
+clio deploy-creatio --zip-file ~/Downloads/creatio.zip --SitePort 8081
 
 # Option 2: Find and stop process using port
 lsof -i :8080
