@@ -163,11 +163,6 @@ public abstract class BaseServiceCommand<T> : RemoteCommand<T> where T : CallSer
 
 	#region Methods: Protected
 
-	/// <summary>
-	/// Whether the caller authorized replaying a non-idempotent request by choosing the attempt count.
-	/// </summary>
-	protected bool RetryWritesAuthorized { get; private set; }
-
 	protected virtual string BuildUrl(T options) => ServiceUrlBuilderInstance.Build(options.ServicePath);
 
 	protected string ExecuteServiceRequest(string url, string requestData, string resultFileName = null,
@@ -183,9 +178,11 @@ public abstract class BaseServiceCommand<T> : RemoteCommand<T> where T : CallSer
 		//Attempts are NOT inherited the same way. Creatio.Client retries on every transport exception, so
 		//a POST/DELETE/PATCH/PUT that commits and then loses its response would be replayed up to twice
 		//under the default of 3, duplicating records or business side effects on a service call the caller
-		//supplied. Only a GET - which changes nothing - inherits the default; a write is issued once unless
-		//the caller set the attempt count itself and therefore vouched for the endpoint being replayable.
-		int attempts = normalizedMethod == "GET" || RetryWritesAuthorized ? MaxAttempts : 1;
+		//supplied. Only a GET - which changes nothing - inherits the default; a write is always issued once.
+		//There is deliberately no caller-side override: MaxAttempts carries no [Option], so no real
+		//call-service user could ever reach one, and an escape hatch only internal plumbing can open is a
+		//replay risk with no corresponding capability.
+		int attempts = normalizedMethod == "GET" ? MaxAttempts : 1;
 		string jsonResult = normalizedMethod switch {
 					"POST" => ApplicationClient.ExecutePostRequest(url, requestData, RequestTimeout,
 						attempts, DelaySec),
@@ -236,7 +233,6 @@ public abstract class BaseServiceCommand<T> : RemoteCommand<T> where T : CallSer
 		//normally applied, so they have to be read off the options here.
 		RequestTimeout = options.TimeOut;
 		MaxAttempts = options.MaxAttempts;
-		RetryWritesAuthorized = options.IsMaxAttemptsExplicit;
 		DelaySec = options.RetryDelay;
 		if (string.IsNullOrWhiteSpace(options.RequestFileName) && string.IsNullOrWhiteSpace(options.RequestBody)) {
 			ExecuteServiceRequest(BuildUrl(options), string.Empty, options.ResultFileName, options.HttpMethodName);

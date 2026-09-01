@@ -30,13 +30,6 @@ namespace Clio.Command
             internal set => _maxAttempts = value;
         }
 
-        /// <summary>
-        /// Whether the caller chose the attempt count, as opposed to inheriting the default. A command
-        /// issuing a non-idempotent request uses this to decide whether replaying it is authorized: the
-        /// default of 3 is safe for reads and duplicates records for writes.
-        /// </summary>
-        internal bool IsMaxAttemptsExplicit => _maxAttempts.HasValue;
-
         public int RetryDelay { get; internal set; } = 1;
 
 

@@ -42,8 +42,17 @@ public interface IApplicationClient {
 	/// <param name="maxAttempts">The maximum number of attempts.</param>
 	/// <param name="delaySec">The delay between retry attempts in seconds.</param>
 	/// <returns>The raw response body.</returns>
+	/// <remarks>
+	/// Defaulted rather than abstract. This is a stable public contract with implementations outside
+	/// this repository; an abstract member here is a source-breaking change that fails every one of
+	/// them with CS0535, exactly as it failed <c>ApplicationClientLease</c> in-tree. A transport that
+	/// does not speak PUT keeps compiling and says so at the call site instead.
+	/// </remarks>
 	string ExecutePutRequest(string url, string requestData, int requestTimeout = Timeout.Infinite,
-		int maxAttempts = 1, int delaySec = 1);
+		int maxAttempts = 1, int delaySec = 1) =>
+		throw new NotSupportedException(
+			$"{GetType().Name} does not implement HTTP PUT. Use a client that overrides "
+			+ $"{nameof(ExecutePutRequest)}, or call the service with POST or PATCH.");
 
 	void Listen(CancellationToken cancellationToken);
 	void Login();

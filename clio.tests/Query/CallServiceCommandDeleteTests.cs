@@ -87,8 +87,8 @@ public class CallServiceCommandDeleteTests : BaseCommandTests<CallServiceCommand
 	}
 
 	[Test]
-	[Description("Forwards the caller's own attempt count to a write, because choosing it is how the caller vouches for the endpoint being replayable")]
-	public void Execute_Should_Forward_Explicit_Attempts_For_Writes() {
+	[Description("A write is issued once no matter what the attempt count says, because no call-service caller can authorize replaying it")]
+	public void Execute_Should_Never_Replay_Writes_Even_With_An_Explicit_Attempt_Count() {
 		// Arrange
 		IApplicationClient applicationClient = Substitute.For<IApplicationClient>();
 		EnvironmentSettings settings = new();
@@ -109,8 +109,9 @@ public class CallServiceCommandDeleteTests : BaseCommandTests<CallServiceCommand
 		command.Execute(options);
 
 		// Assert
-		applicationClient.Received(1).ExecutePostRequest("http://host/svc", "{}", 12_345, 4, Arg.Any<int>());
-		// because: the single-attempt rule guards the DEFAULT, it does not override a deliberate choice
+		applicationClient.Received(1).ExecutePostRequest("http://host/svc", "{}", 12_345, 1, Arg.Any<int>());
+		// because: MaxAttempts carries no [Option] and its setter is internal, so a raised count can only
+		// come from plumbing - never from a caller who vouched for the endpoint being replayable
 	}
 
 	[Test]
@@ -171,7 +172,7 @@ public class CallServiceCommandDeleteTests : BaseCommandTests<CallServiceCommand
 	}
 
 	[Test]
-	[Description("Executes PATCH when method is patch and passes body")]
+	[Description("Executes PATCH when method is patch, passes the body, and issues it exactly once")]
 	public void Execute_Should_Call_Patch_When_Method_Patch() {
 		// Arrange
 		IApplicationClient applicationClient = Substitute.For<IApplicationClient>();
@@ -196,7 +197,7 @@ public class CallServiceCommandDeleteTests : BaseCommandTests<CallServiceCommand
 		// Assert
 		applicationClient
 			.Received(1)
-			.ExecutePatchRequest("http://host/svc", "{\"id\":1}", 12_345, 7, 3);
+			.ExecutePatchRequest("http://host/svc", "{\"id\":1}", 12_345, 1, 3);
 		applicationClient.DidNotReceiveWithAnyArgs().ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>(),
 			Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>());
 		applicationClient.DidNotReceiveWithAnyArgs().ExecuteDeleteRequest(Arg.Any<string>(), Arg.Any<string>(),
@@ -204,7 +205,7 @@ public class CallServiceCommandDeleteTests : BaseCommandTests<CallServiceCommand
 	}
 
 	[Test]
-	[Description("Executes PUT when method is put and passes body")]
+	[Description("A PUT is issued exactly once even when the attempt count is raised, because a write that commits and loses its response must not be replayed")]
 	public void Execute_Should_Call_Put_When_Method_Put() {
 		// Arrange
 		IApplicationClient applicationClient = Substitute.For<IApplicationClient>();
@@ -229,7 +230,7 @@ public class CallServiceCommandDeleteTests : BaseCommandTests<CallServiceCommand
 		// Assert
 		applicationClient
 			.Received(1)
-			.ExecutePutRequest("http://host/svc", "{\"id\":1}", 54_321, 5, 2);
+			.ExecutePutRequest("http://host/svc", "{\"id\":1}", 54_321, 1, 2);
 		applicationClient.DidNotReceiveWithAnyArgs().ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>(),
 			Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>());
 		applicationClient.DidNotReceiveWithAnyArgs().ExecutePatchRequest(Arg.Any<string>(), Arg.Any<string>(),
