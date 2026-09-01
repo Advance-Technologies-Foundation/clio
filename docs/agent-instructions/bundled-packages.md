@@ -145,6 +145,38 @@ And do not read a stand's installed version as the sequence's high-water mark. I
 last installed, which may be a branch that never merges. The sequence is owned by the branches, not by
 the environment.
 
+### A numeric floor cannot express a CAPABILITY once two branches cut numbers
+
+`[RequiresPackage("X", "A.B.C.D")]` says "this code needs version D or later", and the guard fixture
+checks the shipped archive satisfies every such literal. Both are comparisons of NUMBERS. They express
+"at least this version" and they cannot express "contains this capability" — which is the same thing only
+while every version comes from ONE line of development.
+
+Two branches cutting independently break that. A branch whose floor is `1.4.0.8` and whose feature
+landed in its own `1.4.0.16` will happily ship an archive numbered `1.4.0.18` cut from the OTHER branch:
+18 ≥ 8, the literal is satisfied, the guard fixture is green, and the capability is absent. The tool
+description, the prompt, the capability map and the E2E all promise it; the server silently drops the
+field it does not know and answers success. That is the failure the floor exists to prevent, reached
+through the floor's own arithmetic.
+
+It is the same root as the second-merger rule above, seen from the other end: **"newer" stops meaning**
+**"contains" as soon as two version numbers come from trees that do not contain each other.** Nothing
+in either repository detects it, for the reason the previous section gives — the fixture can compare
+numbers, not ask what an archive can do.
+
+So when a branch takes an archive cut from a branch that is not its ancestor, the floor is not evidence.
+Check the CAPABILITY, in the bytes:
+
+- decompress the committed archive and grep for something distinctive to the feature —
+  `python -c "import gzip;print(gzip.open('clio/<Pkg>/<Pkg>.gz','rb').read().count(b'<probe>'))"`;
+- **choose the probe so that it cannot match anything older.** A field name a feature merely READS is
+  usually ancient; what is new is the place it becomes writable. Probing `DataMember(Name = "caption")`
+  for an editable-caption feature matches the create-time contract that shipped years earlier, so a
+  non-zero answer proves nothing — the probe that settles it is the property on the MODIFY descriptor;
+- a probe that agrees with what you already believe is the expensive kind. Confirm it can also come back
+  the other way: run it against an archive that definitely lacks the feature, and against one that
+  definitely has it.
+
 ### The currency gates prove the cut was current WHEN CUT, not that it still is
 
 `rebundle-process-builder.ps1` refuses a dirty tree, a detached HEAD, and a branch behind its upstream. All
