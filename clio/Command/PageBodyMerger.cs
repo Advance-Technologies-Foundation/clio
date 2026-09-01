@@ -1,4 +1,4 @@
-namespace Clio.Command;
+﻿namespace Clio.Command;
 
 using System;
 using System.Collections.Generic;
@@ -196,7 +196,21 @@ internal static class PageBodyMerger {
 	/// section to an older page, first manually insert the empty marker pair into the body, then call
 	/// <c>Merge</c> with the desired content.
 	/// </remarks>
-	public static string Merge(string currentBody, string incomingBody) {
+	public static string Merge(string currentBody, string incomingBody) =>
+		Merge(currentBody, incomingBody, out _);
+
+	/// <summary>
+	/// Overload that additionally reports what the merge did to the <c>viewConfigDiff</c> array, so a
+	/// caller can show the outcome BEFORE committing to it (GitHub #1150: <c>--dry-run</c> returned
+	/// <c>success</c> without saying what the write would change). The projection is a by-product of the
+	/// one real merge, never a second computation: a separate predictor would be free to drift from the
+	/// identity rules below, and the whole point is to report what will actually happen.
+	/// </summary>
+	/// <param name="projection">
+	/// Counts, replaced entries, and dropped entries for the <c>viewConfigDiff</c> section. Never
+	/// <see langword="null"/> on a successful merge.
+	/// </param>
+	public static string Merge(string currentBody, string incomingBody, out PageAppendProjection projection) {
 		if (string.IsNullOrWhiteSpace(currentBody)) {
 			throw new InvalidOperationException("Current body is empty — cannot perform append merge.");
 		}
@@ -219,20 +233,24 @@ internal static class PageBodyMerger {
 		if (UsesUnsupportedFullConfigForm(currentBody, PageBodyRole.Current, out string currentFullConfigMessage)) {
 			throw new FullConfigAppendNotSupportedException(currentFullConfigMessage);
 		}
-		return PageSchemaTypeExtensions.FromBody(currentBody) == PageSchemaType.Mobile
-			? MergeMobile(currentBody, incomingBody)
-			: MergeWeb(currentBody, incomingBody);
+		var collector = new ProjectionCollector();
+		string merged = PageSchemaTypeExtensions.FromBody(currentBody) == PageSchemaType.Mobile
+			? MergeMobile(currentBody, incomingBody, collector)
+			: MergeWeb(currentBody, incomingBody, collector);
+		projection = collector.Build();
+		return merged;
 	}
 
 	/// <summary>
 	/// Merges two web (AMD) page bodies using marker-based section replacement.
 	/// </summary>
-	private static string MergeWeb(string currentBody, string incomingBody) {
+	private static string MergeWeb(string currentBody, string incomingBody, ProjectionCollector collector) {
 		// Precondition: Merge() has already rejected a full-config current or incoming body via the shared
 		// UsesUnsupportedFullConfigForm predicate, so this method only ever sees diff-form bodies.
 		JArray mergedViewConfigDiff = MergeViewConfigDiffOperations(
 			ReadJsonArray(currentBody, "SCHEMA_VIEW_CONFIG_DIFF"),
-			ReadJsonArray(incomingBody, "SCHEMA_VIEW_CONFIG_DIFF"));
+			ReadJsonArray(incomingBody, "SCHEMA_VIEW_CONFIG_DIFF"),
+			collector);
 		JArray mergedViewModelConfigDiff = MergeArrayAppend(
 			ReadJsonArray(currentBody, "SCHEMA_VIEW_MODEL_CONFIG_DIFF"),
 			ReadJsonArray(incomingBody, "SCHEMA_VIEW_MODEL_CONFIG_DIFF"));
@@ -259,7 +277,7 @@ internal static class PageBodyMerger {
 	/// Merges two mobile page bodies (plain JSON with top-level <c>viewConfigDiff</c>,
 	/// <c>viewModelConfigDiff</c>, and <c>modelConfigDiff</c> arrays).
 	/// </summary>
-	private static string MergeMobile(string currentBody, string incomingBody) {
+	private static string MergeMobile(string currentBody, string incomingBody, ProjectionCollector collector) {
 		JObject current;
 		JObject incoming;
 		try {
@@ -280,7 +298,8 @@ internal static class PageBodyMerger {
 		// modelConfig on the current body (ENG-93090 RC-9) — so this method only ever sees diff-form bodies.
 		JArray mergedViewConfigDiff = MergeViewConfigDiffOperations(
 			current["viewConfigDiff"] as JArray ?? new JArray(),
-			incoming["viewConfigDiff"] as JArray ?? new JArray());
+			incoming["viewConfigDiff"] as JArray ?? new JArray(),
+			collector);
 		JArray mergedViewModelConfigDiff = MergeArrayAppend(
 			current["viewModelConfigDiff"] as JArray ?? new JArray(),
 			incoming["viewModelConfigDiff"] as JArray ?? new JArray());
@@ -493,7 +512,7 @@ internal static class PageBodyMerger {
 	/// is, and why a transform kept beside an <c>insert</c> is inert (GH-1240), are recorded in
 	/// <c>docs/knowledge/Command/viewconfigdiff-carries-multiple-operations-per-component-name.md</c>.
 	/// </remarks>
-	private static JArray MergeViewConfigDiffOperations(JArray current, JArray incoming) {
+	private static JArray MergeViewConfigDiffOperations(JArray current, JArray incoming, ProjectionCollector collector) {
 		// Last spelling wins within one fragment; the emit pass below still places it at the first
 		// occurrence's position.
 		var incomingByIdentity = new Dictionary<OperationIdentity, JToken>();
@@ -517,6 +536,9 @@ internal static class PageBodyMerger {
 			// of losing its keys when the two set disjoint ones.
 			if (replaced.Add(identity)) {
 				merged.Add(replacement);
+				collector.RecordReplaced(identity);
+			} else {
+				collector.RecordDropped(identity);
 			}
 		}
 		// Ordered pass over `incoming` so an unidentified entry keeps the position the caller gave it.
@@ -528,8 +550,10 @@ internal static class PageBodyMerger {
 			}
 			if (!replaced.Contains(identity) && emitted.Add(identity)) {
 				merged.Add(incomingByIdentity[identity]);
+				collector.RecordAdded();
 			}
 		}
+		collector.RecordCounts(current.Count, incoming.Count, merged.Count);
 		return merged;
 	}
 
@@ -698,5 +722,79 @@ internal static class PageBodyMerger {
 		Regex regex = new(pattern, RegexOptions.CultureInvariant | RegexOptions.Compiled, RegexTimeout);
 		string replacement = $"/**{marker}*/{newContent}/**{marker}*/";
 		return regex.Replace(body, _ => replacement, 1);
+	}
+	/// <summary>
+	/// Accumulates a <see cref="PageAppendProjection"/> while the real merge runs. Mutable and single-use;
+	/// one instance per <c>Merge</c> call, never shared.
+	/// </summary>
+	private sealed class ProjectionCollector {
+
+		/// <summary>
+		/// Ceiling on NAMED entries per list, so a pathological fragment cannot bury the response. The
+		/// COUNTS are always exact and unbounded, so a truncated list never understates the scale — the
+		/// consumer reports the remainder from the count.
+		/// </summary>
+		private const int MaxNamedOperations = 25;
+
+		private readonly List<string> _replaced = [];
+		private readonly List<string> _dropped = [];
+		private int _added;
+		private int _currentCount;
+		private int _incomingCount;
+		private int _projectedCount;
+
+		private int _replacedCount;
+		private int _droppedCount;
+
+		public void RecordReplaced(OperationIdentity identity) {
+			_replacedCount++;
+			Append(_replaced, identity);
+		}
+
+		public void RecordDropped(OperationIdentity identity) {
+			_droppedCount++;
+			Append(_dropped, identity);
+		}
+
+		public void RecordAdded() => _added++;
+
+		public void RecordCounts(int currentCount, int incomingCount, int projectedCount) {
+			_currentCount = currentCount;
+			_incomingCount = incomingCount;
+			_projectedCount = projectedCount;
+		}
+
+		public PageAppendProjection Build() =>
+			new() {
+				CurrentOperationCount = _currentCount,
+				IncomingOperationCount = _incomingCount,
+				ProjectedOperationCount = _projectedCount,
+				AddedOperationCount = _added,
+				ReplacedOperations = _replaced,
+				ReplacedOperationCount = _replacedCount,
+				DroppedOperations = _dropped,
+				DroppedOperationCount = _droppedCount
+			};
+
+		private static void Append(List<string> target, OperationIdentity identity) {
+			if (target.Count >= MaxNamedOperations) {
+				return;
+			}
+			target.Add(Describe(identity));
+		}
+
+		/// <summary>
+		/// Renders an identity as a short label. The three discriminators are all spelled out, because two
+		/// entries that differ only in <c>TargetsProperties</c> would otherwise read as one repeated line.
+		/// An absent verb is named rather than blanked — it is a real, distinct identity in the merge.
+		/// </summary>
+		private static string Describe(OperationIdentity identity) {
+			string verb = identity.Operation.Length == 0
+				? "(no operation)"
+				: identity.TargetsProperties
+					? $"{identity.Operation}(properties)"
+					: identity.Operation;
+			return $"{verb} {identity.Name}";
+		}
 	}
 }

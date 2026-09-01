@@ -1,4 +1,4 @@
-namespace Clio.Command;
+﻿namespace Clio.Command;
 
 using System.Collections.Generic;
 using System.Runtime.Serialization;
@@ -710,6 +710,103 @@ public sealed class PageSamplingReview {
 }
 
 /// <summary>
+/// What an append merge would do — or did — to a page's <c>viewConfigDiff</c> array.
+/// </summary>
+/// <remarks>
+/// Exists so <c>--dry-run</c> can answer "what will this write change?" before the write happens
+/// (GitHub #1150: the dry run reported <c>success</c> and named nothing). Produced as a by-product of
+/// the one real merge in <c>PageBodyMerger</c>, never by a second predictor that could drift from the
+/// merge's identity rules.
+/// <para>
+/// Scoped to <c>viewConfigDiff</c> deliberately: it is the only section merged by operation identity,
+/// and the only one this projection speaks for. The sibling <c>*_DIFF</c> arrays append unconditionally,
+/// so they cannot lose a current entry and have nothing to report. Handlers and converters are a
+/// different case and NOT covered here — say so rather than implying otherwise: converters key on
+/// property name and replace, but <c>MergeHandlersRaw</c> drops EVERY current handler whose
+/// <c>request</c> appears in the fragment, so a current body carrying that request twice keeps neither
+/// and the fragment contributes one. That is the same shape of quiet loss this projection exists to
+/// report, in a section it does not read. Widening it means giving the raw handler-text merge a
+/// structured identity first; until then, reporting zeros for handlers would read as coverage.
+/// </para>
+/// </remarks>
+[DataContract]
+public sealed class PageAppendProjection {
+
+	/// <summary>
+	/// Gets the number of <c>viewConfigDiff</c> operations in the schema's current body.
+	/// </summary>
+	[DataMember(Name = "currentOperationCount")]
+	[JsonProperty("currentOperationCount")]
+	[JsonPropertyName("currentOperationCount")]
+	public int CurrentOperationCount { get; init; }
+
+	/// <summary>
+	/// Gets the number of <c>viewConfigDiff</c> operations in the incoming fragment.
+	/// </summary>
+	[DataMember(Name = "incomingOperationCount")]
+	[JsonProperty("incomingOperationCount")]
+	[JsonPropertyName("incomingOperationCount")]
+	public int IncomingOperationCount { get; init; }
+
+	/// <summary>
+	/// Gets the number of <c>viewConfigDiff</c> operations the merged body carries. NOT necessarily
+	/// current + incoming: an incoming entry that replaces a current one adds nothing to the total, and
+	/// a dropped entry subtracts from it. This is the number to compare against the one you expect.
+	/// </summary>
+	[DataMember(Name = "projectedOperationCount")]
+	[JsonProperty("projectedOperationCount")]
+	[JsonPropertyName("projectedOperationCount")]
+	public int ProjectedOperationCount { get; init; }
+
+	/// <summary>
+	/// Gets the number of incoming operations that add a new identity rather than replace a current one.
+	/// </summary>
+	[DataMember(Name = "addedOperationCount")]
+	[JsonProperty("addedOperationCount")]
+	[JsonPropertyName("addedOperationCount")]
+	public int AddedOperationCount { get; init; }
+
+	/// <summary>
+	/// Gets the current operations the incoming fragment replaces in place, as <c>verb name</c> labels.
+	/// Not a loss — the operation survives carrying the caller's values instead of the server's. Capped
+	/// in length; <see cref="ReplacedOperationCount"/> is exact.
+	/// </summary>
+	[DataMember(Name = "replacedOperations")]
+	[JsonProperty("replacedOperations", NullValueHandling = NullValueHandling.Ignore)]
+	[JsonPropertyName("replacedOperations")]
+	[System.Text.Json.Serialization.JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+	public IReadOnlyList<string> ReplacedOperations { get; init; }
+
+	/// <summary>
+	/// Gets the exact number of replaced operations, which may exceed <see cref="ReplacedOperations"/>.
+	/// </summary>
+	[DataMember(Name = "replacedOperationCount")]
+	[JsonProperty("replacedOperationCount")]
+	[JsonPropertyName("replacedOperationCount")]
+	public int ReplacedOperationCount { get; init; }
+
+	/// <summary>
+	/// Gets the current operations the merge would not carry over — the one remaining way an append
+	/// loses an operation: a FURTHER current entry of an identity the fragment already superseded,
+	/// dropped rather than re-applied after the replacement. Empty for the overwhelming majority of
+	/// appends. Capped in length; <see cref="DroppedOperationCount"/> is exact.
+	/// </summary>
+	[DataMember(Name = "droppedOperations")]
+	[JsonProperty("droppedOperations", NullValueHandling = NullValueHandling.Ignore)]
+	[JsonPropertyName("droppedOperations")]
+	[System.Text.Json.Serialization.JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+	public IReadOnlyList<string> DroppedOperations { get; init; }
+
+	/// <summary>
+	/// Gets the exact number of dropped operations, which may exceed <see cref="DroppedOperations"/>.
+	/// </summary>
+	[DataMember(Name = "droppedOperationCount")]
+	[JsonProperty("droppedOperationCount")]
+	[JsonPropertyName("droppedOperationCount")]
+	public int DroppedOperationCount { get; init; }
+}
+
+/// <summary>
 /// Represents the <c>update-page</c> response envelope.
 /// </summary>
 [DataContract]
@@ -771,6 +868,17 @@ public sealed class PageUpdateResponse {
 	[JsonPropertyName("warnings")]
 	[System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
 	public IReadOnlyList<string> Warnings { get; set; }
+
+	/// <summary>
+	/// Gets or sets what the append merge did to the page's <c>viewConfigDiff</c> array. Populated only
+	/// for <c>mode: append</c> — <c>null</c> for <c>replace</c>, which writes the body verbatim and so
+	/// has nothing to project. On a dry run this is the whole point of the call: it reports the outcome
+	/// before the write (GitHub #1150).
+	/// </summary>
+	[JsonProperty("appendProjection", NullValueHandling = NullValueHandling.Ignore)]
+	[JsonPropertyName("appendProjection")]
+	[System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+	public PageAppendProjection AppendProjection { get; set; }
 
 	[JsonProperty("page", NullValueHandling = NullValueHandling.Ignore)]
 	[JsonPropertyName("page")]

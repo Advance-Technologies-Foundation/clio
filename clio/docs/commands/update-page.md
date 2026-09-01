@@ -207,9 +207,43 @@ changes nothing.
 
 The warning is advisory because it reads one schema body and cannot see the replacing chain: a
 parent schema that inserts the same name puts the component in the base and can make the transform
-apply after all. A `--dry-run` reports it too, so you can check a body before writing it — in append
-mode a dry run sees only your incoming fragment, so a pair formed by the server's `insert` plus your
-`merge` is reported on the real save.
+apply after all. A `--dry-run` reports it too, against the body that would actually be written — so
+in append mode it sees pairs formed between your fragment and the server's body, not only pairs
+inside your fragment.
+
+### What a `--dry-run` tells you about an append
+
+In append mode a dry run resolves the current server body and computes the merge, then returns
+without saving. It reports the outcome as `appendProjection`:
+
+| Field | Meaning |
+|---|---|
+| `currentOperationCount` | `viewConfigDiff` operations in the page's own body today |
+| `incomingOperationCount` | operations in your fragment |
+| `projectedOperationCount` | operations the merged body would carry — **compare this against the number you expect** |
+| `addedOperationCount` | incoming entries that introduce a new identity |
+| `replacedOperations` / `replacedOperationCount` | existing entries your fragment replaces in place; not a loss, the operation survives with your values |
+| `droppedOperations` / `droppedOperationCount` | existing entries the merge would **not** carry over — the further-duplicate exception above |
+
+A non-zero `droppedOperationCount` also raises an advisory `warnings` entry naming each operation,
+so a loss is never something you have to compute from the counts yourself. The named lists are
+capped in length; the counts are always exact.
+
+Two consequences worth knowing:
+
+- An append whose real save could not merge — a full-config current body, for instance — now **fails
+  the dry run** with the same error, instead of reporting `success` and failing on the write.
+- `--mode replace` is unaffected. It writes the body verbatim, so there is nothing to project and no
+  extra server round-trip is made; `appendProjection` is absent.
+
+The same `appendProjection` is returned on a real append save, for the caller who skipped the dry
+run.
+
+`appendProjection` speaks for `viewConfigDiff` only. The sibling `*_DIFF` arrays append
+unconditionally and cannot lose an entry, so they have nothing to report. Handlers are **not**
+covered: they dedupe by `request`, and the merge drops every current handler whose `request` appears
+in your fragment — so a current body that carries one `request` twice keeps neither and your fragment
+contributes one. Check the handlers section by hand when that shape is possible.
 
 Append requires the **diff form**. A full-config body — the `SCHEMA_VIEW_MODEL_CONFIG` /
 `SCHEMA_MODEL_CONFIG` markers (mobile: top-level `viewModelConfig` / `modelConfig`) instead
