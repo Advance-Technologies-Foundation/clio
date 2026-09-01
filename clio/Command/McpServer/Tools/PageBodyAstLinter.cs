@@ -476,8 +476,9 @@ internal static class PageBodyAstLinter {
 
 	private static PageBodyLintFinding BuildOmittedSummary(
 		OmittedCallLocation lastOmitted, UndefinedCallBudget budget) {
+		string floorPrefix = budget.OmittedNameCountIsFloor ? "at least " : string.Empty;
 		string namesPart = budget.OmittedNameCount > 0
-			? $"{(budget.OmittedNameCountIsFloor ? "at least " : string.Empty)}{budget.OmittedNameCount} "
+			? $"{floorPrefix}{budget.OmittedNameCount} "
 				+ $"further undeclared name(s) past the first {MaxUndefinedSectionCallNames}, and "
 			: string.Empty;
 		return new PageBodyLintFinding(
