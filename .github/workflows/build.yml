@@ -115,6 +115,39 @@ jobs:
             --configuration Release `
             -p:RunAnalyzers=false;
 
+  # ── Unix file-mode gate ─────────────────────────────────────────────
+  # The unit job above runs on windows-latest, where Unix file modes have no meaning and
+  # OutputPathConfinementTests skips its 0600 regressions outright. Without this leg CI stays green if
+  # UnixCreateMode is removed or downgraded to a create-then-chmod, and the confidentiality guarantee for a
+  # raw service response written under the SHARED OS temp root is unprotected. One Linux runner, one fixture.
+  unix-file-mode-tests:
+    name: Unix File Mode Tests
+    needs: changes
+    if: >-
+      needs.changes.outputs.clio-src == 'true' ||
+      needs.changes.outputs.tests   == 'true' ||
+      github.ref == 'refs/heads/master'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 1
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: |
+            8.0.x
+            10.0.x
+
+      - name: Run output-path confinement tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          dotnet test ./clio.tests/clio.tests.csproj \
+            --framework net10.0 \
+            --filter "FullyQualifiedName~OutputPathConfinementTests&Category!=Integration" \
+            -p:RunAnalyzers=false
+
   # ── ClioGate tests (only when the bundled service changes) ──────────
   cliogate-tests:
     name: ClioGate Tests

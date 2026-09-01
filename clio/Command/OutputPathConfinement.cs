@@ -175,6 +175,19 @@ internal static class OutputPathConfinement {
 		WriteThroughTemporaryFile(fileSystem, resolvedPath, stream => stream.Write(content, 0, content.Length));
 
 	/// <summary>
+	/// Test seam: writes through the same sibling-temporary-file path, letting the caller run assertions while
+	/// the temporary file is still open.
+	/// </summary>
+	/// <remarks>
+	/// The 0600 guarantee is about the window in which the temporary file EXISTS, so asserting only on the
+	/// renamed final file cannot tell a creation-time mode from an unsafe create-then-chmod. Only a writer that
+	/// observes the open temporary file can.
+	/// </remarks>
+	internal static void WriteAtomicForTest(IoFileSystem fileSystem, string resolvedPath,
+		Action<Stream> writeContent) =>
+		WriteThroughTemporaryFile(fileSystem, resolvedPath, writeContent);
+
+	/// <summary>
 	/// Completes the content in a sibling temporary file and only then moves it onto the final name, without
 	/// replacing an existing file.
 	/// </summary>

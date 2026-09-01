@@ -291,7 +291,7 @@ public sealed class OutputPathConfinementTests {
 	}
 
 	[Test]
-	[Description("On Unix, WriteAtomic creates the output under the SHARED temp root with owner-only permissions (0600), so a raw service response is not left readable by other local users of that root. Skipped on Windows, where the mode has no meaning; note that CI runs the unit-test job on windows-latest, so this regression only executes on a Unix developer machine.")]
+	[Description("On Unix, WriteAtomic creates the output under the SHARED temp root with owner-only permissions (0600), so a raw service response is not left readable by other local users of that root. Skipped on Windows, where the mode has no meaning; the Unix File Mode Tests job in build.yml runs this fixture on ubuntu-latest so the guarantee is gated in CI.")]
 	public void WriteAtomic_ShouldCreateOwnerOnlyFile_UnderSharedTempRoot() {
 		if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows)) {
 			Assert.Ignore("Unix file modes do not apply on Windows.");
@@ -309,6 +309,40 @@ public sealed class OutputPathConfinementTests {
 		File.GetUnixFileMode(outputFile).Should().Be(OutputPathConfinement.OwnerOnlyFile,
 			because: "the payload is a raw service response written into a shared root, so no group or other bit "
 				+ "may be set - and the final name inherits the mode because the move renames the same inode");
+	}
+
+	[Test]
+	[Description("On Unix the TEMPORARY file is already owner-only while its stream is open, which is what distinguishes a creation-time 0600 from an unsafe create-then-chmod: the latter leaves a window in which the raw service response is world-readable under the shared temp root. Gated in CI by the Unix File Mode Tests job.")]
+	public void WriteAtomic_ShouldCreateTheTemporaryFileOwnerOnly_WhileItsStreamIsOpen() {
+		if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows)) {
+			Assert.Ignore("Unix file modes do not apply on Windows.");
+		}
+
+		// Arrange
+		string outputFile = Path.Combine(_sandbox, "odata-response.json");
+		(string path, string error) = OutputPathConfinement.Resolve(_fileSystem, outputFile);
+		error.Should().BeNull(because: "a fresh path under the temp-root sandbox is inside an allowed zone");
+		UnixFileMode? temporaryMode = null;
+		string temporaryName = null;
+
+		// Act — the assertion has to happen INSIDE the write, while the sibling temporary file still exists
+		OutputPathConfinement.WriteAtomicForTest(_fileSystem, path, stream => {
+			string[] temporaries = Directory.GetFiles(_sandbox, "*.tmp");
+			temporaries.Should().HaveCount(1,
+				because: "the payload is completed in one sibling temporary file before it is renamed");
+			temporaryName = temporaries[0];
+			temporaryMode = File.GetUnixFileMode(temporaryName);
+			stream.Write("{\"value\":[]}"u8);
+		});
+
+		// Assert
+		temporaryMode.Should().Be(OutputPathConfinement.OwnerOnlyFile,
+			because: "the mode must be set when the file is CREATED - a chmod afterwards leaves a window in "
+				+ "which a raw service response is readable by every other local user of the shared temp root");
+		File.Exists(temporaryName).Should().BeFalse(
+			because: "the temporary file is renamed onto the final name, not left behind");
+		File.GetUnixFileMode(outputFile).Should().Be(OutputPathConfinement.OwnerOnlyFile,
+			because: "the move renames the same inode, so the final name keeps the mode it was created with");
 	}
 
 	[Test]
