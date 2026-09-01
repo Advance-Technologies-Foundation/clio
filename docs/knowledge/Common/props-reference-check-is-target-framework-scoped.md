@@ -11,8 +11,11 @@ That check has to honour the `Condition` of the `<Reference>` and of every enclo
 `<Choose>`/`<When>`. `XDocument.Descendants` walks into conditional blocks and returns elements that
 do not apply to the target framework being built.
 
-Only conditions written against `$(TargetFramework)` are interpreted. Any other condition is assumed
-to apply, which keeps the earlier behaviour for expressions clio cannot evaluate.
+Only a condition that is a single `$(TargetFramework)` comparison is interpreted. A condition that
+mentions the property inside something more complex - an `And`, an `Or`, a negation, a property
+function - is treated as NOT applying, so the dll **is** written into the props file. That direction
+is deliberate: a duplicate reference is an MSBuild warning, while a missing one is a compile error.
+A condition that does not mention `$(TargetFramework)` at all is assumed to apply, as before.
 
 **Why it is this way** — the package template clio ships declares a dependency twice: a `<Reference>`
 for `net472` and a `<PackageReference>` for `netstandard2.0` (`System.Text.Json`,
