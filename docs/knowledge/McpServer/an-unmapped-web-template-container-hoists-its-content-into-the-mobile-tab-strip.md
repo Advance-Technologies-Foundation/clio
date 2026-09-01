@@ -84,38 +84,41 @@ unconditionally: it was once passed only when the rule declared positional (`:to
 and since only `PageWithTabsFreedomTemplate` has any, twin placement was dead for every other template
 family.
 
-**Component TYPES are data, never constants in the analyser — and "not on the accept-list" is NOT the
-test.** Two rules lists decide it, and it is their DIFFERENCE that means "a container this converter
-knows, which cannot hold arbitrary children": a receiver is reported only when
-`emptyContainerRemoval.removableTypes` recognises its type as a layout container AND
-`contentContainerTypes` does not list it as content-hosting. Today that difference is exactly
-`crt.TabPanel`.
+**Component TYPES are data, never constants in the analyser — and the list is a DENY-list.** Which
+receivers cannot host arbitrary children is `nonHostingContainerTypes` (today: `crt.TabPanel`); which
+child is a tab is `tabAreaLayers.tabComponentType`. The pass names no component type at all.
 
-The accept-list ALONE was tried first and is wrong for a detector. It names four types while the
-mobile registry ships ten more with an `items` slot (`crt.Scaffold`, `crt.Gallery`, `crt.Timeline`,
-`crt.List`, `crt.FileList`, `crt.ComboBox`, `crt.QuickFilterGroup`, `crt.Sort`,
-`crt.CommunicationOptions`, plus any partner `usr.*` container), so "absent from the list" reported a
-confident loss for every legitimate host it happened not to name — and this report tells the caller to
-STOP, which turns a false positive into a halted, correct conversion. The registry cannot break the tie
-either: `crt.TabPanel` declares `items` exactly like `crt.Gallery` does; what differs is that a strip's
-items are tabs, which no machine-readable field says. An accept-list is right for the placement
-FALLBACK (where you must know where you CAN put something); a detector needs the safe default, which is
-"say nothing about a type the rules do not recognise".
+The polarity is the load-bearing part, and it was got wrong twice. An ACCEPT-list ("these can host
+children") named four types while the mobile registry ships ten more with an `items` slot
+(`crt.Scaffold`, `crt.Gallery`, `crt.Timeline`, `crt.List`, `crt.FileList`, `crt.ComboBox`,
+`crt.QuickFilterGroup`, `crt.Sort`, `crt.CommunicationOptions`, plus any partner `usr.*` container), so
+every legitimate host it happened not to name produced a confident loss report. Deriving the answer as
+`removableTypes` MINUS that accept-list was the same bug one step removed: adding a type to
+`removableTypes` for ITS purpose — an emptied shell should be cleaned up — would silently turn every
+insert into that type into a STOP, shipped by a rules publish with no code change. This report tells
+the caller to REPORT AND STOP, so a false positive halts a conversion that was correct; a deny-list's
+failure mode is the safe one, because a type nobody classified is simply not reported. An accept-list
+is still right for the placement FALLBACK, where a false negative just bubbles one level higher.
 
-The two lists are not shared — each keeps its own meaning, and `removableTypes` is correctly this list
-plus `crt.TabPanel` for its own purpose. A future non-hosting type is declared by adding it to
-`removableTypes` and leaving it out of `contentContainerTypes`. Neither type is named in the analyser.
+The registry cannot decide it either: `crt.TabPanel` declares `items` exactly as `crt.Gallery` does,
+and what differs — that a strip's items are tabs — is in prose, not in a field.
 
 Two scoping facts the pass needs, both learned by getting them wrong first: it applies only to the
 generic `items` slot (a menu item in a button's `menuItems`, a header in an expansion panel's `tools`,
 is hosted by that named slot, not by the parent's ability to hold arbitrary content), and a child whose
-own type is `tabAreaLayers.tabComponentType` is exempt (a strip exists to hold tabs).
-`MobileTabsElementName` is the one constant kept, and it is a NAME, not a type: it lets the report
-survive an unreadable mobile template, and `AssignConvertedTabIndexes` treats the same name as a
-constant of the mobile tabbed template already. The rules are CDN-fetched with the bundled copy as the
-FAILURE fallback only, so a successfully fetched OLDER file has `containers` but neither type list —
-the pass falls back to the bundled lists rather than switching itself off in the one situation it
-exists for.
+own type is the tab type is exempt (a strip exists to hold tabs).
+
+`MobileTabsElementName` is the one constant kept, and it is a NAME, not a type. It is the net for a
+receiver whose type cannot be resolved at all, which happens when the mobile-template probe failed —
+the degraded run where a published rules file missing an entry would otherwise go unnoticed.
+`AssignConvertedTabIndexes` treats the same name as a constant of the mobile tabbed template already.
+Its limitation, worth knowing before relying on it: it covers only a strip literally named `Tabs`, so
+a future mobile template that names its strip differently is unprotected in that degraded run.
+
+The rules are CDN-fetched with the bundled copy as the FAILURE fallback only, so a successfully fetched
+OLDER file has `containers` but no `nonHostingContainerTypes`. The pass then uses the BUNDLED list
+rather than switching itself off — a file that merely predates the key is exactly the case it exists
+for.
 
 **What breaks if you ignore it** — the failure is SILENT end to end. Unit coverage did not catch the
 missing `GeneralInfoTab` entry because `WebToMobileConversionServiceTests` hands the analyzer a

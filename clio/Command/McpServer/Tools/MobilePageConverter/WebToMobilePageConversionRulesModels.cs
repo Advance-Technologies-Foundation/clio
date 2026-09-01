@@ -66,20 +66,28 @@ public sealed class WebToMobilePageConversionRules {
 	public IReadOnlyList<ComponentPropertyOverrideRule> ComponentPropertyOverrides { get; init; } = [];
 
 	/// <summary>
-	/// Mobile component types that can host arbitrary children. A converted element may only be placed in a
-	/// receiver whose MOBILE type is listed here; a receiver of any other type renders nothing for the child it
-	/// is given (a <c>crt.TabPanel</c> shows only tabs, and it is not the only such type). Stated as an
-	/// ACCEPT-list on purpose: the converter then names no bad receiver at all, so a type that cannot host
-	/// children is handled by being absent rather than by another branch.
+	/// Mobile component types that CANNOT host arbitrary children — a <c>crt.TabPanel</c> shows only its tabs,
+	/// so anything else placed in it renders as nothing. Stated as a DENY-list, and that polarity is the whole
+	/// point: this list drives a report that tells the caller to STOP, so a false positive halts a conversion
+	/// that was correct. A deny-list's failure mode is the safe one — a type nobody classified is simply not
+	/// reported.
 	/// <para>
-	/// Deliberately NOT <see cref="EmptyContainerRemoval"/>'s <c>removableTypes</c>, which is this list plus
-	/// <c>crt.TabPanel</c> — correct for ITS purpose (an emptied tab strip must go). Sharing one list would make
-	/// an addition to one meaning silently change the other. The registry's <c>container</c> flag is not a
-	/// substitute either: it reads false for both <c>crt.GridContainer</c> and <c>crt.TabPanel</c>.
+	/// An accept-list ("these types CAN host children") was tried first and is wrong here. It named four types
+	/// while the mobile registry ships ten more with an <c>items</c> slot, so every legitimate host it happened
+	/// not to name produced a confident STOP. Deriving the answer from
+	/// <see cref="EmptyContainerRemoval"/>'s <c>removableTypes</c> minus that accept-list was wrong for the
+	/// same reason once removed: adding a type to <c>removableTypes</c> for ITS purpose — an emptied shell
+	/// should be cleaned up — would silently turn every insert into that type into a STOP. One list, one
+	/// meaning, and the next non-hosting type is a deliberate rules edit rather than a side effect of an
+	/// unrelated one.
+	/// </para>
+	/// <para>
+	/// The registry cannot decide this: <c>crt.TabPanel</c> declares <c>items</c> exactly as <c>crt.Gallery</c>
+	/// does, and what differs — that a strip's items are tabs — is in prose, not in a field.
 	/// </para>
 	/// </summary>
-	[JsonPropertyName("contentContainerTypes")]
-	public IReadOnlyList<string> ContentContainerTypes { get; init; } = [];
+	[JsonPropertyName("nonHostingContainerTypes")]
+	public IReadOnlyList<string> NonHostingContainerTypes { get; init; } = [];
 
 	/// <summary>
 	/// Group: deterministic removal of converter-created layout containers that end up EMPTY after all

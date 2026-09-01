@@ -12,7 +12,7 @@
         { "web": "ListContainer", "mobile": "ListContainer" }
       ],
       "components": [
-        { "web": "DataTable", "mobile": "List" },
+        { "web": "DataTable", "mobile": "List", "note": "Primary list component." },
         {
           "web": "FolderTree",
           "mobile": "FolderTreeActions",
@@ -39,7 +39,7 @@
         { "web": "CardContentWrapper:bottom", "mobile": "Tabs:bottom" }
       ],
       "components": [
-        { "web": "AttachmentList", "mobile": "AttachmentFileList" }
+        { "web": "AttachmentList", "mobile": "AttachmentFileList", "note": "Attachments detail. Same component on both sides (crt.FileList) under a different template name, so the page's delta over the web-template baseline — the object-specific link column recordColumnName included — merges onto the template-provided AttachmentFileList; an unchanged property is omitted so the mobile default (e.g. RecordId) stands." }
       ]
     },
     {
@@ -181,7 +181,7 @@
       }
     }
   ],
-  "contentContainerTypes": [ "crt.FlexContainer", "crt.GridContainer", "crt.TabContainer", "crt.ExpansionPanel" ],
+  "nonHostingContainerTypes": [ "crt.TabPanel" ],
   "emptyContainerRemoval": {
     "removableTypes": [
       "crt.FlexContainer",

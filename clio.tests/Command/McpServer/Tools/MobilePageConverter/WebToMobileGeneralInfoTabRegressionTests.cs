@@ -378,7 +378,7 @@ public sealed class WebToMobileGeneralInfoTabRegressionTests {
 	}
 
 	[Test]
-	[Description("The placement check is NOT about tabs: a receiver is non-hosting when the rules recognise its type as a layout container (emptyContainerRemoval.removableTypes) but do NOT list it as able to hold arbitrary content (contentContainerTypes). Proven with no tab anywhere in the page — a plain crt.GridContainer becomes non-hosting purely by being dropped from the accept-list, which a tab-shaped check could never detect.")]
+	[Description("The placement check is NOT about tabs: a receiver is non-hosting when the rules name its type in nonHostingContainerTypes, whatever that type is. Proven with no tab anywhere in the page — a plain crt.GridContainer becomes non-hosting purely by being named there, which a tab-shaped check could never detect.")]
 	public void Analyze_ShouldReportAPlacementLoss_WhenTheReceiverTypeIsNotInTheAcceptList() {
 		// Arrange — a page with no tab strip and no tab at all. The only lever is the accept-list.
 		var bundle = new PageBundleInfo {
@@ -394,18 +394,18 @@ public sealed class WebToMobileGeneralInfoTabRegressionTests {
 		// Act — twice over the SAME page: once with the shipped accept-list, once with crt.GridContainer
 		// removed from it. Nothing else differs, so the accept-list alone decides the verdict.
 		MobilePageConversionGuide accepted = AnalyzeBlank(bundle, WebToMobilePageConversionRulesCatalog.LoadBundled());
-		MobilePageConversionGuide rejected = AnalyzeBlank(bundle, RulesWithoutAcceptedType("crt.GridContainer"));
+		MobilePageConversionGuide rejected = AnalyzeBlank(bundle, RulesWithNonHostingType("crt.GridContainer"));
 
 		// Assert
 		accepted.PlacementLosses.Should().BeNullOrEmpty(
-			because: "a crt.GridContainer is on the shipped accept-list, so it hosts its child and nothing is lost");
+			because: "the shipped rules do not call a crt.GridContainer non-hosting, so it holds its child");
 		rejected.PlacementLosses.Should().ContainSingle(l => l.Name == "UsrField" && l.ParentName == "UsrHost",
-			because: "with its type off the accept-list the very same container can no longer host the very same "
-				+ "child — the decision is the rules' data, not a component type named in the analyser");
+			because: "named as non-hosting, the very same container can no longer hold the very same child — the "
+				+ "decision is the rules' data, not a component type named in the analyser");
 	}
 
 	[Test]
-	[Description("No false positive on a host the rules simply do not name. contentContainerTypes lists four types while the mobile registry ships many more with an items slot (crt.Scaffold, crt.Gallery, crt.Timeline, a partner's own usr.* container), so treating \"absent from the accept-list\" as \"cannot host\" would report a confident loss on every one of them - and this report tells the caller to STOP, so a false positive halts a correct conversion. Only a type the rules RECOGNISE as a layout container and do not list as content-hosting is reported.")]
+	[Description("No false positive on a host the rules simply do not name. the mobile registry ships many types with an items slot (crt.Scaffold, crt.Gallery, crt.Timeline, a partner's own usr.* container) and the rules name none of them non-hosting. A deny-list reports only what it names, so an unclassified host stays silent - which matters because this report tells the caller to STOP, and a false positive halts a correct conversion.")]
 	public void Analyze_ShouldNotReportAPlacementLoss_ForAHostTheRulesDoNotName() {
 		// Arrange - two receivers neither list names: a partner container and a registry type with an items
 		// slot that is not in contentContainerTypes.
@@ -629,22 +629,18 @@ public sealed class WebToMobileGeneralInfoTabRegressionTests {
 			rules["tabAreaLayers"]!["tabComponentType"] = renameTabTypeTo;
 		}
 		if (renameAcceptedTabContainerTypeTo is not null) {
-			JsonArray accepted = rules["contentContainerTypes"]!.AsArray();
-			for (int i = 0; i < accepted.Count; i++) {
-				if (string.Equals(accepted[i]!.ToString(), "crt.TabContainer", StringComparison.OrdinalIgnoreCase)) {
-					accepted[i] = renameAcceptedTabContainerTypeTo;
-				}
-			}
+			// nothing to rename on the deny-list side: crt.TabContainer is not on it. The tab exemption the
+			// renamed-platform test proves comes from tabAreaLayers.tabComponentType, renamed above.
 		}
 		JsonArray containers = rules["templates"]!.AsArray()
 			.Single(t => t!["web"]!.ToString() == "PageWithTabsFreedomTemplate")!["containers"]!.AsArray();
 		JsonNode generalTab = containers.Single(c => c!["web"]!.ToString() == "GeneralInfoTab");
 		containers.Remove(generalTab);
 		if (renameKnownContainerTypes is { } rename) {
-			JsonArray known = rules["emptyContainerRemoval"]!["removableTypes"]!.AsArray();
-			for (int i = 0; i < known.Count; i++) {
-				if (string.Equals(known[i]!.ToString(), rename.From, StringComparison.OrdinalIgnoreCase)) {
-					known[i] = rename.To;
+			JsonArray nonHosting = rules["nonHostingContainerTypes"]!.AsArray();
+			for (int i = 0; i < nonHosting.Count; i++) {
+				if (string.Equals(nonHosting[i]!.ToString(), rename.From, StringComparison.OrdinalIgnoreCase)) {
+					nonHosting[i] = rename.To;
 				}
 			}
 		}
@@ -652,12 +648,10 @@ public sealed class WebToMobileGeneralInfoTabRegressionTests {
 		return WebToMobilePageConversionRulesCatalog.ParseStream(stream);
 	}
 
-	/// <summary>The shipped rules with one type removed from the content-container accept-list.</summary>
-	private static WebToMobilePageConversionRules RulesWithoutAcceptedType(string type) {
+	/// <summary>The shipped rules with one more type declared as unable to host arbitrary children.</summary>
+	private static WebToMobilePageConversionRules RulesWithNonHostingType(string type) {
 		JsonObject rules = JsonNode.Parse(BundledRulesJson())!.AsObject();
-		JsonArray accepted = rules["contentContainerTypes"]!.AsArray();
-		JsonNode entry = accepted.Single(t => string.Equals(t!.ToString(), type, StringComparison.OrdinalIgnoreCase));
-		accepted.Remove(entry);
+		rules["nonHostingContainerTypes"]!.AsArray().Add(type);
 		using var stream = new MemoryStream(System.Text.Encoding.UTF8.GetBytes(rules.ToJsonString()));
 		return WebToMobilePageConversionRulesCatalog.ParseStream(stream);
 	}

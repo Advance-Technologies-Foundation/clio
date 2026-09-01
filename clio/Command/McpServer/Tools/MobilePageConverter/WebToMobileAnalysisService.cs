@@ -4616,7 +4616,7 @@ public static class WebToMobileAnalysisService {
 
 	/// <summary>
 	/// Reports every converted element the element map would place in a receiver that cannot host it — a
-	/// receiver whose MOBILE type is absent from the rules' <c>contentContainerTypes</c>. Such a child, and
+	/// receiver whose MOBILE type the rules list in <c>nonHostingContainerTypes</c>. Such a child, and
 	/// everything nested inside it, renders as nothing: a <c>crt.TabPanel</c> shows only its tabs, and it is
 	/// merely the instance that surfaced first (ENG-94951, where the general-information tab was subtracted as
 	/// inherited web-template chrome and its content hoisted one level up into <c>Tabs</c>).
@@ -4630,8 +4630,10 @@ public static class WebToMobileAnalysisService {
 	/// The cure for a reported loss is a <c>containers</c> entry mapping the web container onto the mobile
 	/// container that should receive its children (e.g. <c>GeneralInfoTab</c>). This pass cannot apply that
 	/// mapping — only the rules know the counterpart — so it reports the loss rather than letting it pass
-	/// unseen. With no <c>contentContainerTypes</c> declared it reports nothing, exactly as an absent
-	/// <c>tabAreaLayers.tabComponentType</c> switches its own pass off.
+	/// unseen. A rules file that declares no <c>nonHostingContainerTypes</c> does NOT switch the report off:
+	/// the bundled list is used instead, because a published file that merely predates the key is exactly the
+	/// case the report exists for. Only an absent <c>tabAreaLayers.tabComponentType</c> disables the pass, and
+	/// that is the pass's own switch.
 	/// </para>
 	/// </summary>
 	private static List<PlacementLoss> CollectUnhostablePlacements(
@@ -4639,28 +4641,19 @@ public static class WebToMobileAnalysisService {
 		IReadOnlyDictionary<string, string> mobileTypesByName,
 		WebToMobilePageConversionRules rules) {
 		// The rules file is CDN-fetched and the bundled copy is only the FAILURE fallback, so a successfully
-		// fetched OLDER file has containers but no contentContainerTypes. Treating that as "nothing to check"
-		// switches this report off in exactly the situation it exists for, so fall back to the bundled lists.
-		WebToMobilePageConversionRules typeRules =
-			(rules?.ContentContainerTypes is { Count: > 0 }) && (rules.EmptyContainerRemoval?.RemovableTypes is { Count: > 0 })
-				? rules
-				: WebToMobilePageConversionRulesCatalog.LoadBundled();
+		// fetched OLDER file has containers but no nonHostingContainerTypes. Treating that as "nothing to check"
+		// switches this report off in exactly the situation it exists for, so fall back to the bundled list.
+		WebToMobilePageConversionRules typeRules = rules?.NonHostingContainerTypes is { Count: > 0 }
+			? rules
+			: WebToMobilePageConversionRulesCatalog.LoadBundled();
 
-		var accepting = new HashSet<string>(
-			(typeRules?.ContentContainerTypes ?? []).Where(t => !string.IsNullOrWhiteSpace(t)),
+		// ONE list with ONE meaning. Deriving this from removableTypes minus an accept-list was the same
+		// coupling the accept-list's own doc warned against: adding a type to removableTypes for ITS purpose --
+		// an emptied shell should be cleaned up -- would silently turn every insert into that type into a STOP.
+		var nonHosting = new HashSet<string>(
+			(typeRules?.NonHostingContainerTypes ?? []).Where(t => !string.IsNullOrWhiteSpace(t)),
 			StringComparer.OrdinalIgnoreCase);
-		// A receiver is reported ONLY when the rules recognise its type as a layout container AND do not list it
-		// as able to host arbitrary content. "Absent from contentContainerTypes" alone is the wrong test: that
-		// list names four types while the mobile registry ships many more with an items slot (crt.Scaffold,
-		// crt.Gallery, crt.Timeline, ...), so an accept-list used on its own reports a confident, loud false
-		// positive for every legitimate host it happens not to name — and this report tells the caller to STOP.
-		// The two lists are NOT shared: each keeps its own meaning, and it is their DIFFERENCE that means
-		// "a container this converter knows, which cannot hold arbitrary children". Today that is crt.TabPanel.
-		var knownContainers = new HashSet<string>(
-			(typeRules?.EmptyContainerRemoval?.RemovableTypes ?? []).Where(t => !string.IsNullOrWhiteSpace(t)),
-			StringComparer.OrdinalIgnoreCase);
-		knownContainers.ExceptWith(accepting);
-		if (knownContainers.Count == 0) {
+		if (nonHosting.Count == 0) {
 			return [];
 		}
 
@@ -4681,7 +4674,7 @@ public static class WebToMobileAnalysisService {
 		// the hardcode the accept-list exists to remove.
 		bool CannotHostChildren(string receiver) =>
 			receiverTypes.TryGetValue(receiver, out string type) && type is { Length: > 0 }
-				? knownContainers.Contains(type)
+				? nonHosting.Contains(type)
 				: string.Equals(receiver, MobileTabsElementName, StringComparison.OrdinalIgnoreCase);
 
 		// A tab is the one child a non-hosting receiver legitimately takes: a strip exists to hold tabs. The type
