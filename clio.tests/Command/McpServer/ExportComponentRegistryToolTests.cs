@@ -51,7 +51,7 @@ public sealed class ExportComponentRegistryToolTests {
 		// Arrange
 		ExportComponentRegistryCommand command = CreateCommand(out _, out _);
 		IPlatformVersionResolverFactory resolverFactory = Substitute.For<IPlatformVersionResolverFactory>();
-		IPlatformVersionResolver resolver = Substitute.For<IPlatformVersionResolver>();
+		IOwnedPlatformVersionResolver resolver = Substitute.For<IOwnedPlatformVersionResolver>();
 		resolver.ResolveAsync(Arg.Any<CancellationToken>())
 			.Returns(Task.FromResult(new PlatformVersionResolution("8.3.4", VersionResolutionSource.Environment)));
 		resolverFactory.Create(Arg.Any<EnvironmentSettings>()).Returns(resolver);
@@ -222,7 +222,7 @@ public sealed class ExportComponentRegistryToolTests {
 
 	private static ExportComponentRegistryTool CreateToolWithFailingProbe(Exception failure) {
 		ExportComponentRegistryCommand command = CreateCommand(out _, out _);
-		IPlatformVersionResolver resolver = Substitute.For<IPlatformVersionResolver>();
+		IOwnedPlatformVersionResolver resolver = Substitute.For<IOwnedPlatformVersionResolver>();
 		resolver.ResolveAsync(Arg.Any<CancellationToken>())
 			.Returns(_ => Task.FromException<PlatformVersionResolution>(failure));
 		IPlatformVersionResolverFactory resolverFactory = Substitute.For<IPlatformVersionResolverFactory>();

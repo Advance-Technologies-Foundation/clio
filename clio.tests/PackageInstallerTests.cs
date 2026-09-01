@@ -22,7 +22,7 @@ internal class PackageInstallerTests : BaseClioModuleTests
 		FileSystem.AddFile(packagePath, new System.IO.Abstractions.TestingHelpers.MockFileData(new byte[0]));
 		EnvironmentSettings environmentSettings = new EnvironmentSettings();
 		var applicationClientFactory = Substitute.For<IApplicationClientFactory>();
-		var applicationClient = Substitute.For<IApplicationClient>();
+		var applicationClient = Substitute.For<IOwnedApplicationClient>();
 		applicationClientFactory.CreateClient(Arg.Any<EnvironmentSettings>()).Returns(applicationClient);
 		applicationClient.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>())
 			.Returns("{\"success\":false}");
