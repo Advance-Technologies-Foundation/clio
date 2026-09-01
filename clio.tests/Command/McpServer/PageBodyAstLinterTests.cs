@@ -1050,6 +1050,66 @@ internal class PageBodyAstLinterTests {
 			because: "the caller must still learn how many were suppressed");
 	}
 
+	[TestCase("innerWidth", TestName = "Window value property")]
+	[TestCase("caches", TestName = "Host object")]
+	[TestCase("Map", TestName = "Constructor that throws without new")]
+	[TestCase("Math", TestName = "Namespace object")]
+	[Description("A bare call to a global the runtime supplies as a VALUE is reported, because the call throws a TypeError at runtime even though the name exists")]
+	public void Lint_ShouldReportBareCall_WhenTheAmbientGlobalIsNotCallable(string globalName) {
+		// Arrange
+		string body =
+			"define(\"X\", [], function() { " +
+			$"return {{ handlers: [{{ request: \"crt.R\", handler: async () => {globalName}() }}] }}; }});";
+
+		// Act
+		IReadOnlyList<PageBodyLintFinding> findings = LintBody(body);
+
+		// Assert
+		PageBodyLintFinding finding = findings
+			.SingleOrDefault(f => f.Rule == PageBodyAstLinter.RuleUndefinedSectionCall);
+		finding.Rule.Should().Be(PageBodyAstLinter.RuleUndefinedSectionCall,
+			because: $"the whole catalog was treated as callable, so `{globalName}()` passed lint and then "
+				+ "failed at runtime with a TypeError");
+		finding.Message.Should().Contain("as a value rather than as a function",
+			because: "\"you did not declare this\" is false for a name the runtime does supply, and would "
+				+ "send the author looking for a missing helper");
+	}
+
+	[TestCase("createImageBitmap", TestName = "Callable browser global")]
+	[TestCase("fetch", TestName = "Callable browser global, fetch")]
+	[TestCase("parseInt", TestName = "Callable ECMAScript global")]
+	[TestCase("addEventListener", TestName = "Callable Window method")]
+	[TestCase("Number", TestName = "Constructor callable without new")]
+	[TestCase("define", TestName = "AMD loader global")]
+	[Description("A bare call to a global the runtime supplies as a callable is accepted, so splitting the catalog did not start rejecting working pages")]
+	public void Lint_ShouldAcceptBareCall_WhenTheAmbientGlobalIsCallable(string globalName) {
+		// Arrange
+		string body =
+			"define(\"X\", [], function() { " +
+			$"return {{ handlers: [{{ request: \"crt.R\", handler: async () => {globalName}() }}] }}; }});";
+
+		// Act
+		IReadOnlyList<PageBodyLintFinding> findings = LintBody(body);
+
+		// Assert
+		findings.Should().NotContain(f => f.Rule == PageBodyAstLinter.RuleUndefinedSectionCall,
+			because: $"`{globalName}()` is a real call the runtime answers, and blocking it would reject a "
+				+ "working page");
+	}
+
+	[Test]
+	[Description("The callable and value-only partitions stay disjoint and together cover the whole catalog, so no name silently falls out of both")]
+	public void CallableAndNonCallableGlobals_ShouldPartitionTheCatalog() {
+		// Assert
+		PageBodyAstLinter.CallableRuntimeGlobals.Should()
+			.NotIntersectWith(PageBodyAstLinter.NonCallableRuntimeGlobals,
+				because: "a name is either callable bare or it is not");
+		PageBodyAstLinter.CallableRuntimeGlobals
+			.Concat(PageBodyAstLinter.NonCallableRuntimeGlobals)
+			.Should().BeEquivalentTo(PageBodyAstLinter.KnownRuntimeGlobals,
+				because: "a catalog entry that lands in neither partition would be rejected as undeclared");
+	}
+
 	#endregion
 
 }

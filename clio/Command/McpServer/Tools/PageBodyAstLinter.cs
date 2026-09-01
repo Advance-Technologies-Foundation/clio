@@ -257,6 +257,7 @@ internal static class PageBodyAstLinter {
 		"requestAnimationFrame", "requestIdleCallback", "Request", "ResizeObserver", "Response", "screen",
 		"self", "sessionStorage", "setInterval", "setTimeout", "structuredClone", "TextDecoder",
 		"TextEncoder", "top", "URL", "URLSearchParams", "WebSocket", "window", "Worker", "XMLHttpRequest",
+		"createImageBitmap", "setImmediate", "reportError",
 		// The Window object's own methods and properties, callable bare because Window IS the global object.
 		// A page calling `open()`, `close()`, `postMessage()` or `addEventListener()` was rejected outright
 		// before these were listed - the same gap `alert`/`btoa`/`queueMicrotask` came from, one level up:
@@ -278,6 +279,51 @@ internal static class PageBodyAstLinter {
 	internal static readonly IReadOnlyCollection<string> KnownRuntimeGlobals =
 		new HashSet<string>(
 			EcmaScriptGlobals.Concat(BrowserGlobals).Concat(AmdGlobals).Concat(CreatioGlobals),
+			StringComparer.Ordinal);
+
+	// The names above answer "does the runtime supply this?", which is NOT the question a bare call
+	// asks. `innerWidth` and `caches` exist and are not functions, and `Map` and `Promise` are functions
+	// that throw when called without `new`; treating the whole catalog as callable let `innerWidth()`
+	// and `Map()` through lint and fail at runtime with a TypeError. These are the catalog entries that
+	// a bare `name()` must never satisfy - value properties, namespace objects, and constructors the
+	// language requires `new` for.
+	private static readonly string[] NonCallableGlobalNames = [
+		// ECMAScript value properties and namespace objects.
+		"Atomics", "globalThis", "Infinity", "Intl", "JSON", "Math", "NaN", "Reflect", "undefined",
+		// ECMAScript constructors that throw without `new`.
+		"AggregateError", "ArrayBuffer", "BigInt64Array", "BigUint64Array", "DataView",
+		"FinalizationRegistry", "Float32Array", "Float64Array", "Int16Array", "Int32Array", "Int8Array",
+		"Map", "Promise", "Proxy", "Set", "SharedArrayBuffer", "Uint16Array", "Uint32Array", "Uint8Array",
+		"Uint8ClampedArray", "WeakMap", "WeakRef", "WeakSet",
+		// Browser host objects and Window value properties.
+		"caches", "console", "crypto", "CSS", "customElements", "devicePixelRatio", "document", "closed",
+		"frameElement", "frames", "history", "indexedDB", "innerHeight", "innerWidth", "isSecureContext",
+		"length", "localStorage", "location", "name", "navigator", "opener", "origin", "outerHeight",
+		"outerWidth", "pageXOffset", "pageYOffset", "parent", "performance", "screen", "screenLeft",
+		"screenTop", "screenX", "screenY", "scrollX", "scrollY", "self", "sessionStorage", "top",
+		"visualViewport", "window",
+		// Browser constructors that throw without `new`, plus the DOM interface objects a page reads
+		// off but never calls.
+		"AbortController", "AbortSignal", "Audio", "Blob", "CustomEvent", "DOMParser", "Element", "Event",
+		"EventSource", "EventTarget", "File", "FileReader", "FormData", "Headers", "HTMLElement", "Image",
+		"IntersectionObserver", "MutationObserver", "Node", "Notification", "Request", "ResizeObserver",
+		"Response", "URL", "URLSearchParams", "WebSocket", "Worker", "XMLHttpRequest",
+		// Creatio and AMD namespace objects. `define`, `require` and `requirejs` stay callable.
+		"BPMSoft", "crt", "Ext", "sdk", "Terrasoft"
+	];
+
+	// What a bare `name()` is allowed to resolve to: the catalog minus everything the runtime supplies
+	// as a value rather than as a callable.
+	internal static readonly IReadOnlyCollection<string> CallableRuntimeGlobals =
+		new HashSet<string>(
+			KnownRuntimeGlobals.Except(NonCallableGlobalNames, StringComparer.Ordinal),
+			StringComparer.Ordinal);
+
+	// Known, but not callable: reported with its own message, because "you did not declare this" is
+	// simply false for `innerWidth()` and would send the author looking for a missing helper.
+	internal static readonly IReadOnlyCollection<string> NonCallableRuntimeGlobals =
+		new HashSet<string>(
+			KnownRuntimeGlobals.Intersect(NonCallableGlobalNames, StringComparer.Ordinal),
 			StringComparer.Ordinal);
 
 	// One finding per distinct callee name, and at most this many names. An LLM-truncated body can
@@ -390,7 +436,7 @@ internal static class PageBodyAstLinter {
 
 	private static void CheckUndefinedSectionCalls(Script ast, List<PageBodyLintFinding> findings) {
 		LexicalScope scriptScope = new(null);
-		foreach (string global in KnownRuntimeGlobals) {
+		foreach (string global in CallableRuntimeGlobals) {
 			scriptScope.Declare(global);
 		}
 		bool strict = HasUseStrictDirective(ast.Body);
@@ -662,7 +708,9 @@ internal static class PageBodyAstLinter {
 					Severity: LintSeverity.Error,
 					Line: identifier.Location.Start.Line,
 					Column: identifier.Location.Start.Column + 1,
-					Message: $"Call to `{identifier.Name}()` in a handlers/converters/validators section references an identifier that is not declared in the enclosing scopes of this page body and is not a known JavaScript, browser, AMD or Creatio global. A module-scope helper may have been removed by Page Designer; re-add it before the `return` statement."));
+					Message: NonCallableRuntimeGlobals.Contains(identifier.Name)
+						? $"Call to `{identifier.Name}()` in a handlers/converters/validators section: the runtime does supply `{identifier.Name}`, but as a value rather than as a function callable without `new`, so this call throws a TypeError. Read it as a property, or construct it with `new`."
+						: $"Call to `{identifier.Name}()` in a handlers/converters/validators section references an identifier that is not declared in the enclosing scopes of this page body and is not a known JavaScript, browser, AMD or Creatio global. A module-scope helper may have been removed by Page Designer; re-add it before the `return` statement."));
 			} else {
 				budget.RecordOmitted(
 					identifier.Location.Start.Line, identifier.Location.Start.Column + 1);
