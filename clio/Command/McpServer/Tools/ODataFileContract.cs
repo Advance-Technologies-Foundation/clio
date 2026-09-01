@@ -225,62 +225,88 @@ public sealed class ODataFileContract(IFileSystem fileSystem) : IODataFileContra
 		}
 		using (document) {
 			JsonElement root = document.RootElement;
-			if (ODataResponseError.TryDetect(root, out string serverError)) {
-				// Nothing is written for an error body: a file named after a successful read that holds a
-				// server error is worse than no file at all.
-				return (null, SensitiveErrorTextRedactor.Redact(serverError));
+			string contentError = RejectNonODataContent(root);
+			if (contentError is not null) {
+				return (null, contentError);
 			}
-			// Only an object or an array is OData content. A scalar body - null, true, 42, "Unauthorized" -
-			// is what a proxy, an auth redirect or a misrouted request returns; persisting one as the raw
-			// response reported a successful read of a file holding no records at all.
-			if (root.ValueKind is not (JsonValueKind.Object or JsonValueKind.Array)) {
-				return (null,
-					$"OData response is a JSON {ODataReadQuery.DescribeKind(root.ValueKind)}, not a record or a "
-					+ "collection. The endpoint did not answer with OData content; check the environment and the entity name.");
-			}
-			// Three shapes reach here: the OData collection envelope, a bare top-level array (some endpoints
-			// and $expand projections return one), and a single entity object. Without the bare-array branch
-			// such a response summarized silently as zero rows and no columns. The kind has to be settled
-			// BEFORE probing for the envelope property: TryGetProperty throws on anything that is not an
-			// object, so a bare top-level array never reached the branch written for it.
-			bool hasEnvelope = root.ValueKind == JsonValueKind.Object;
-			JsonElement rows = root;
-			if (hasEnvelope
-				&& root.TryGetProperty("value", out JsonElement value)
-				&& value.ValueKind == JsonValueKind.Array) {
-				rows = value;
-			}
-			long? totalCount = hasEnvelope
-				&& root.TryGetProperty("@odata.count", out JsonElement totalCountElement)
-				&& totalCountElement.TryGetInt64(out long parsedTotalCount)
-				? parsedTotalCount
-				: null;
+			(JsonElement rows, string nextLink, long? totalCount) = ReadEnvelope(root);
 			if (countRequested && !totalCount.HasValue) {
 				return (null, "Creatio did not return @odata.count for count=true; total count cannot be verified.");
 			}
-			string nextLink = hasEnvelope
-				&& root.TryGetProperty("@odata.nextLink", out JsonElement nextLinkElement)
-				&& nextLinkElement.ValueKind == JsonValueKind.String
-				? nextLinkElement.GetString()
-				: null;
-			IEnumerable<JsonElement> rowElements = rows.ValueKind == JsonValueKind.Array
-				? rows.EnumerateArray()
-				: [rows];
 			int recordCount = rows.ValueKind == JsonValueKind.Array ? rows.GetArrayLength() : 1;
-			Dictionary<string, long> columnSizes = new(StringComparer.Ordinal);
-			int rowCount = 0;
-			foreach (JsonElement row in rowElements) {
-				if (row.ValueKind != JsonValueKind.Object) {
-					continue;
-				}
-				rowCount++;
-				foreach (JsonProperty property in row.EnumerateObject()) {
-					long size = Encoding.UTF8.GetByteCount(property.Value.GetRawText());
-					columnSizes[property.Name] = columnSizes.TryGetValue(property.Name, out long current) ? current + size : size;
-				}
-			}
+			(int rowCount, Dictionary<string, long> columnSizes) = SummarizeRows(rows);
 			return (new ODataReadFileSummary(rowCount, columnSizes, recordCount, nextLink, totalCount), null);
 		}
+	}
+
+	/// <summary>
+	/// Rejects a body that is not OData content at all, before anything about it is summarized or written.
+	/// </summary>
+	/// <param name="root">Parsed response root.</param>
+	/// <returns><c>null</c> when the body may be summarized, otherwise the caller-facing error.</returns>
+	private static string RejectNonODataContent(JsonElement root) {
+		if (ODataResponseError.TryDetect(root, out string serverError)) {
+			// Nothing is written for an error body: a file named after a successful read that holds a
+			// server error is worse than no file at all.
+			return SensitiveErrorTextRedactor.Redact(serverError);
+		}
+		// Only an object or an array is OData content. A scalar body - null, true, 42, "Unauthorized" -
+		// is what a proxy, an auth redirect or a misrouted request returns; persisting one as the raw
+		// response reported a successful read of a file holding no records at all.
+		return root.ValueKind is JsonValueKind.Object or JsonValueKind.Array
+			? null
+			: $"OData response is a JSON {ODataReadQuery.DescribeKind(root.ValueKind)}, not a record or a "
+				+ "collection. The endpoint did not answer with OData content; check the environment and the entity name.";
+	}
+
+	/// <summary>
+	/// Separates the rows from the OData envelope and reads its paging annotations.
+	/// </summary>
+	/// <param name="root">Parsed response root, already known to be an object or an array.</param>
+	/// <returns>The row carrier, the next-link, and the verified total count when the envelope carried one.</returns>
+	/// <remarks>
+	/// Three shapes reach here: the collection envelope, a bare top-level array (some endpoints and $expand
+	/// projections return one), and a single entity object. The kind has to be settled BEFORE probing for the
+	/// envelope property: TryGetProperty throws on anything that is not an object, so a bare top-level array
+	/// never reached the branch written for it.
+	/// </remarks>
+	private static (JsonElement rows, string nextLink, long? totalCount) ReadEnvelope(JsonElement root) {
+		if (root.ValueKind != JsonValueKind.Object) {
+			return (root, null, null);
+		}
+		JsonElement rows = root.TryGetProperty("value", out JsonElement value) && value.ValueKind == JsonValueKind.Array
+			? value
+			: root;
+		long? totalCount = root.TryGetProperty("@odata.count", out JsonElement totalCountElement)
+			&& totalCountElement.TryGetInt64(out long parsedTotalCount)
+			? parsedTotalCount
+			: null;
+		string nextLink = root.TryGetProperty("@odata.nextLink", out JsonElement nextLinkElement)
+			&& nextLinkElement.ValueKind == JsonValueKind.String
+			? nextLinkElement.GetString()
+			: null;
+		return (rows, nextLink, totalCount);
+	}
+
+	/// <summary>Counts object rows and totals each column's UTF-8 byte size across them.</summary>
+	/// <param name="rows">Row array, or a single entity object.</param>
+	private static (int rowCount, Dictionary<string, long> columnSizes) SummarizeRows(JsonElement rows) {
+		IEnumerable<JsonElement> rowElements = rows.ValueKind == JsonValueKind.Array
+			? rows.EnumerateArray()
+			: [rows];
+		Dictionary<string, long> columnSizes = new(StringComparer.Ordinal);
+		int rowCount = 0;
+		foreach (JsonElement row in rowElements) {
+			if (row.ValueKind != JsonValueKind.Object) {
+				continue;
+			}
+			rowCount++;
+			foreach (JsonProperty property in row.EnumerateObject()) {
+				long size = Encoding.UTF8.GetByteCount(property.Value.GetRawText());
+				columnSizes[property.Name] = columnSizes.TryGetValue(property.Name, out long current) ? current + size : size;
+			}
+		}
+		return (rowCount, columnSizes);
 	}
 }
 

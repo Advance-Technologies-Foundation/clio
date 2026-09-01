@@ -147,6 +147,25 @@ public sealed class ODataCreateTool(IToolCommandResolver commandResolver, IOData
 		}
 
 		string url = urlBuilder.Build(ODataKeyFormatter.CollectionPath(args.Entity));
+		return ODataCreateBatchResponse.From(PostRows(client, url, rows, args.StopOnError, cancellationToken));
+	}
+
+	/// <summary>
+	/// POSTs each row in turn and returns the per-row outcomes, stopping early on cancellation, on the batch
+	/// deadline, or on the first failure when <paramref name="stopOnError"/> is set.
+	/// </summary>
+	/// <param name="client">Environment-scoped client used for the POSTs.</param>
+	/// <param name="url">Collection endpoint every row is posted to.</param>
+	/// <param name="rows">Validated non-empty JSON array of row objects.</param>
+	/// <param name="stopOnError">Whether the first failed row aborts the rest.</param>
+	/// <param name="cancellationToken">Caller token; the MCP host cancels it when it disconnects.</param>
+	/// <returns>Outcomes for every ATTEMPTED row, plus the first unattempted row when the batch stopped early.</returns>
+	private static List<ODataRowResult> PostRows(
+		IApplicationClient client,
+		string url,
+		JsonElement rows,
+		bool stopOnError,
+		CancellationToken cancellationToken) {
 		List<ODataRowResult> results = [];
 		int index = 0;
 		//The batch is bounded in BOTH directions the caller cares about: it stops when the caller cancels
@@ -156,9 +175,7 @@ public sealed class ODataCreateTool(IToolCommandResolver commandResolver, IOData
 		Stopwatch elapsed = Stopwatch.StartNew();
 		foreach (JsonElement row in rows.EnumerateArray()) {
 			int remainingMs = MaxBatchDurationMs - (int)Math.Min(elapsed.ElapsedMilliseconds, MaxBatchDurationMs);
-			string abortReason = cancellationToken.IsCancellationRequested
-				? CancelledMessage
-				: remainingMs <= 0 ? DeadlineMessage : null;
+			string abortReason = DescribeAbort(cancellationToken, remainingMs);
 			if (abortReason is not null) {
 				// Not attempted, so not-inserted is KNOWN - the same shape as a locally rejected row.
 				results.Add(new ODataRowResult {
@@ -173,12 +190,22 @@ public sealed class ODataCreateTool(IToolCommandResolver commandResolver, IOData
 			// the deadline by a further full timeout.
 			ODataRowResult result = CreateRow(client, url, row, index, Math.Min(RowRequestTimeoutMs, remainingMs));
 			results.Add(result);
-			if (!result.Success && args.StopOnError) {
+			if (!result.Success && stopOnError) {
 				break;
 			}
 			index++;
 		}
-		return ODataCreateBatchResponse.From(results);
+		return results;
+	}
+
+	/// <summary>Reason to stop before the next row, or <see langword="null"/> to keep going.</summary>
+	/// <param name="cancellationToken">Caller token.</param>
+	/// <param name="remainingMs">Milliseconds left of the batch budget.</param>
+	private static string DescribeAbort(CancellationToken cancellationToken, int remainingMs) {
+		if (cancellationToken.IsCancellationRequested) {
+			return CancelledMessage;
+		}
+		return remainingMs <= 0 ? DeadlineMessage : null;
 	}
 
 	/// <summary>
