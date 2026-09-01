@@ -168,13 +168,21 @@ So when a branch takes an archive cut from a branch that is not its ancestor, th
 Check the CAPABILITY, in the bytes:
 
 - decompress the committed archive and grep for something distinctive to the feature —
-  `python -c "import gzip;print(gzip.open('clio/<Pkg>/<Pkg>.gz','rb').read().count(b'<probe>'))"`;
-- **choose the probe so that it cannot match anything older.** A field name a feature merely READS is
-  usually ancient; what is new is the place it becomes writable. Probing `DataMember(Name = "caption")`
-  for an editable-caption feature matches the create-time contract that shipped years earlier, so a
-  non-zero answer proves nothing — the probe that settles it is the property on the MODIFY descriptor;
-- a probe that agrees with what you already believe is the expensive kind. Confirm it can also come back
-  the other way: run it against an archive that definitely lacks the feature, and against one that
+  `python -c "import gzip;print(gzip.open('clio/<Pkg>/<Pkg>.gz','rb').read().count(b'<probe>'))"` — and
+  note that this searches the WHOLE archive, which is the wider scope the next bullet warns about;
+- **a field NAME cannot be a probe at all.** One name lives in three separate contracts — create,
+  describe and modify — and which of the three carries it is the only thing that distinguishes a feature
+  from its ancestor. `DataMember(Name = "caption")` counts 7 across the archive that does NOT support an
+  editable caption (1 in the create contract, 3 in describe, 3 in the descriptor contracts) and 0 in the
+  modify contract of that same archive. Both numbers are true and they are about different things, so the
+  count answers a question nobody asked. Only a FIELD ON A NAMED TYPE settles it: here
+  `ProcessElementUpdateDescriptor.Caption`, 0 without the feature and 1 with it;
+- a probe that agrees with what you already believe is the expensive kind, and agreeing is not evidence
+  even when the conclusion turns out right. The zero above was measured by someone who grepped the modify
+  contract because that is where they had added the field — not because they had reasoned that the older
+  copies live in the create and describe contracts. The same command one directory wider returns 7 and
+  reads as "the feature is present", which is the answer that opens a pull request. Confirm a probe can
+  come back BOTH ways: run it against an archive that definitely lacks the feature and one that
   definitely has it.
 
 ### The currency gates prove the cut was current WHEN CUT, not that it still is
