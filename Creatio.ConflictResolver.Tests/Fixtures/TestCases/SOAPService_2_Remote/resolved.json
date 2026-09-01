@@ -1,0 +1,79 @@
+{
+  "MetaData": {
+    "Schema": {
+      "ManagerName": "ServiceSchemaManager",
+      "UId": "2a16e64b-7204-407b-b2b6-ca4e05dcbdf1",
+      "A2": "SOAPService_2_Remote",
+      "A5": "65344ecb-f697-4f9a-bad8-ef0e5f5a46a2",
+      "B1": [],
+      "B2": [],
+      "B3": [],
+      "B6": "6bbbf8ec-3042-49f8-b273-5eb50b9d2473",
+      "B8": "8.3.3.2060",
+      "IQ1": "http://localhost/SOAPService2Local",
+      "IQ2": 3,
+      "IQ3": 8,
+      "IQ7": [
+        {
+          "UId": "9cdd962b-08e6-406b-bba0-cdb626bc36ba",
+          "A2": "http://SOAPService_2_Base.org/",
+          "A3": "2a16e64b-7204-407b-b2b6-ca4e05dcbdf1",
+          "A4": "2a16e64b-7204-407b-b2b6-ca4e05dcbdf1",
+          "JG1": "tem",
+          "JG2": true
+        }
+      ],
+      "IQ4": [
+        {
+          "UId": "43c7381a-53e1-404c-a9e2-2cddfc98fa76",
+          "A2": "SOAPMethod2Local",
+          "A3": "2a16e64b-7204-407b-b2b6-ca4e05dcbdf1",
+          "A4": "2a16e64b-7204-407b-b2b6-ca4e05dcbdf1",
+          "IR3": 1200,
+          "IR5": "SOAPMethod2Local",
+          "IR1": {
+            "IW2": 2,
+            "IW1": [
+              {
+                "UId": "6a628118-c903-44fc-97f2-252e3ee2998b",
+                "A2": "preq2l",
+                "IU1": "preq2l",
+                "IU2": "Text",
+                "IU8": "item",
+                "IU4": 5,
+                "IU5": {
+                  "IV1": "preq2l",
+                  "IV2": 1
+                },
+                "IU6": []
+              }
+            ],
+            "IT2": 2,
+            "IT1": "SOAPMethod2Local"
+          },
+          "IR2": {
+            "IW2": 2,
+            "IW1": [
+              {
+                "UId": "22deb001-8b21-40b8-a9e7-2053fd52d097",
+                "A2": "pres2l",
+                "IU1": "pres2l",
+                "IU2": "Date",
+                "IU8": "item",
+                "IU4": 1,
+                "IU5": {
+                  "IV1": "2026-02-23T17:18:39.538Z",
+                  "IV2": 1
+                },
+                "IU6": []
+              }
+            ]
+          }
+        }
+      ],
+      "IQ5": {
+        "IY1": 3
+      }
+    }
+  }
+}

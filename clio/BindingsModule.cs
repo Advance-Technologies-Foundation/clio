@@ -262,25 +262,6 @@ public class BindingsModule {
 		// mutable property — see code-review #1 on PR #599).
 		services.AddHttpClient(ComponentRegistryClient.HttpClientName)
 			.ConfigureHttpClient(client => client.Timeout = ComponentRegistryClient.CdnFetchTimeout);
-		// Dedicated forms-auth client for browser-session harvesting. UseCookies=false keeps the
-		// Set-Cookie response headers readable (the cookie jar would otherwise consume them), and
-		// AllowAutoRedirect=false ensures the direct AuthService.svc/Login response is observed
-		// rather than a followed login-page redirect.
-		services.AddHttpClient(Clio.Common.BrowserSession.CreatioAuthClient.HttpClientName)
-			.ConfigureHttpClient(c => c.Timeout = TimeSpan.FromSeconds(30))
-			.ConfigurePrimaryHttpMessageHandler(() => new System.Net.Http.HttpClientHandler {
-				UseCookies = false,
-				AllowAutoRedirect = false
-			});
-		// Dedicated client for the SysImage upload + verification read (upload-image). Same handler
-		// shape as the auth client (manual Cookie header, raw 3xx on expired session), but with a
-		// 100-second budget: a cold IIS site routinely exceeds the auth client's 30 seconds.
-		services.AddHttpClient(Clio.Common.SysImageUploader.HttpClientName)
-			.ConfigureHttpClient(c => c.Timeout = TimeSpan.FromSeconds(100))
-			.ConfigurePrimaryHttpMessageHandler(() => new System.Net.Http.HttpClientHandler {
-				UseCookies = false,
-				AllowAutoRedirect = false
-			});
 		// Named HttpClient for background telemetry uploads — same registration-time-only
 		// timeout rule as the component-registry client above.
 		services.AddHttpClient(TelemetryFlushService.HttpClientName)
@@ -374,8 +355,11 @@ public class BindingsModule {
 		services.AddTransient<Clio.Common.IFileSystem, Clio.Common.FileSystem>();
 		services.AddTransient<IFileSecurityHardening, FileSecurityHardening>();
 		services.AddTransient<Clio.Common.BrowserSession.IBrowserSessionCache, Clio.Common.BrowserSession.BrowserSessionCache>();
-		services.AddTransient<Clio.Common.BrowserSession.ICreatioAuthClient, Clio.Common.BrowserSession.CreatioAuthClient>();
-		services.AddTransient<Clio.Common.BrowserSession.IBrowserSessionService, Clio.Common.BrowserSession.BrowserSessionService>();
+		services.AddTransient<Clio.Common.BrowserSession.IBrowserSessionService>(sp =>
+			new Clio.Common.BrowserSession.BrowserSessionService(
+				sp.GetRequiredService<IApplicationClientFactory>(),
+				sp.GetRequiredService<Clio.Common.BrowserSession.IBrowserSessionCache>(),
+				sp.GetRequiredService<Clio.Common.IFileSystem>()));
 		services.AddTransient<Clio.Common.BrowserSession.IChromiumLocator, Clio.Common.BrowserSession.ChromiumLocator>();
 		services.AddTransient<Clio.Common.BrowserSession.IAuthenticatedBrowserLauncher, Clio.Common.BrowserSession.AuthenticatedBrowserLauncher>();
 		IDeserializer deserializer = new DeserializerBuilder()
@@ -489,8 +473,12 @@ public class BindingsModule {
 		services.AddTransient<IClassicEnumVocabularySourceParser, ClassicEnumVocabularySourceParser>();
 		services.AddTransient<IClassicEnumVocabularyResolver, ClassicEnumVocabularyResolver>();
 		services.AddTransient<IPageSchemaBodyParser, PageSchemaBodyParser>();
-		services.AddTransient<IPageJsonDiffApplier, PageJsonDiffApplier>();
-		services.AddTransient<IPageJsonPathDiffApplier, PageJsonPathDiffApplier>();
+		// The diff appliers retain per-chain alias state, so PageBundleBuilder needs a FRESH instance per diff
+		// chain (not one shared instance): inject the factory and call it per chain. Registered as Func<> here
+		// (and skipped in RegisterAssemblyInterfaceTypes) because the applier ctor takes a primitive bool arg DI
+		// cannot resolve, so a plain type registration would fail ValidateOnBuild.
+		services.AddTransient<Func<IJsonDiffApplier>>(_ => () => new JsonDiffApplier());
+		services.AddTransient<Func<IJsonPathDiffApplier>>(_ => () => new JsonPathDiffApplier());
 		services.AddTransient<IPageBundleBuilder, PageBundleBuilder>();
 		services.AddSingleton<TimeProvider>(TimeProvider.System);
 		services.AddSingleton<IComponentRegistryCacheStore, ComponentRegistryCacheStore>();
@@ -616,6 +604,7 @@ public class BindingsModule {
 		services.AddTransient<SchemaUpdateTool>();
 		services.AddTransient<GetSchemaTool>();
 		services.AddTransient<GetProcessSignatureTool>();
+		services.AddTransient<RunProcessTool>();
 		services.AddTransient<ListPrintablesTool>();
 		services.AddTransient<ClientUnitSchemaCreateTool>();
 		services.AddTransient<ClientUnitSchemaUpdateTool>();
@@ -668,9 +657,16 @@ public class BindingsModule {
 				KnowledgeFeedbackPolicyTools.GetToolName,
 				KnowledgeManagementTools.ListKnowledgeExamplesToolName
 			}));
+		// LOCAL DEV TOGGLE (off by default): let a Git knowledge bundle that omits the explicit
+		// "sequence" (e.g. clio-knowledge master) load for local iteration. The key is declared in
+		// ExperimentalCommand.StandaloneFeatureKeys so `clio experimental` lists and sets it.
+		services.AddSingleton(provider => new KnowledgeUnsequencedGitOptions(
+			provider.GetRequiredService<IFeatureToggleService>()
+				.IsFeatureEnabled(KnowledgeUnsequencedGitOptions.FeatureName)));
 		services.AddSingleton<IKnowledgeResolver, KnowledgeResolver>();
 		services.AddSingleton<IKnowledgeBundleRuntime, KnowledgeBundleRuntime>();
 		services.AddSingleton<IKnowledgeRootPathProvider, KnowledgeRootPathProvider>();
+		services.AddSingleton<IKnowledgeManagedTreeDeleter, KnowledgeManagedTreeDeleter>();
 		services.AddSingleton<IKnowledgeSourceInstallationStore, KnowledgeSourceInstallationStore>();
 		services.AddSingleton<IKnowledgeRuntimeConfigurationProvider, KnowledgeRuntimeConfigurationProvider>();
 		services.AddSingleton<IKnowledgeGitRepositoryReader, KnowledgeGitRepositoryReader>();
@@ -717,6 +713,7 @@ public class BindingsModule {
 		services.AddTransient<CreateUiProjectTool>();
 		services.AddTransient<DataForgeTool>();
 		services.AddTransient<GetTargetPackageTool>();
+		services.AddTransient<PackageFileTool>();
 		services.AddTransient<SysSettingGetTool>();
 		services.AddTransient<SysSettingsListTool>();
 		services.AddTransient<SysSettingCreateTool>();
@@ -807,6 +804,10 @@ public class BindingsModule {
 		services.AddTransient<UnregisterCommand>();
 		
 		services.AddTransient<IUserPromptService, UserPromptService>();
+		services.AddSingleton<Creatio.ConflictResolver.IConflictResolver,
+			Creatio.ConflictResolver.ConflictResolver>();
+		services.AddSingleton<ICreatioArtifactMergeService, CreatioArtifactMergeService>();
+		services.AddTransient<CreatioArtifactMergeCommand>();
 		services.AddTransient<DeletePackageCommand>();
 		services.AddTransient<GetPkgListCommand>();
 		services.AddTransient<RestoreWorkspaceCommand>();
@@ -888,7 +889,11 @@ public class BindingsModule {
 		services.AddTransient<DeleteThemeCommand>();
 		services.AddTransient<IUserThemeApplier, UserThemeApplier>();
 		services.AddTransient<SetUserThemeCommand>();
-		services.AddTransient<ISysImageUploader, SysImageUploader>();
+		services.AddTransient<ISysImageUploader>(sp => new SysImageUploader(
+			sp.GetRequiredService<EnvironmentSettings>(),
+			sp.GetRequiredService<IApplicationClientFactory>(),
+			sp.GetRequiredService<IServiceUrlBuilder>(),
+			sp.GetRequiredService<Clio.Common.IFileSystem>()));
 		services.AddTransient<UploadImageCommand>();
 		services.AddTransient<SetBackgroundImageCommand>();
 		services.AddTransient<SetLogoCommand>();
@@ -1027,6 +1032,7 @@ public class BindingsModule {
 		services.AddTransient<GenerateProcessModelCommand>();
 		services.AddTransient<DescribeProcessCommand>();
 		services.AddTransient<GetProcessSignatureCommand>();
+		services.AddTransient<RunProcessCommand>();
 		services.AddTransient<ListPrintablesCommand>();
 		services.AddTransient<AddItemCommand>();
 		services.AddTransient<IZipFile, ZipFileWrapper>();
@@ -1147,16 +1153,24 @@ public class BindingsModule {
 		services.AddTransient<IDataProvider>(_ => new LazyDataProvider(() => BuildRemoteDataProvider(activeSettings)));
 		// Bearer-first; AccessToken must never reach the "Supervisor" fallback below
 		// (multi-tenant safety, ENG-93208 B1).
-		Lazy<CreatioClient> lazyCreatioClient = new(() => BuildCreatioClient(activeSettings));
-		services.AddSingleton<CreatioClient>(_ => lazyCreatioClient.Value);
-		services.AddSingleton<IApplicationClient>(sp =>
+		// Keep the directly resolvable compatibility service separate from the adapter's transport.
+		// Microsoft DI owns/disposes factory-returned IDisposable services, so sharing that instance
+		// would bypass the adapter's SignalR listener guard during provider teardown. Both remain lazy,
+		// which is required because constructing an OAuth client fetches its token over the network.
+		Lazy<CreatioClient> compatibilityClient = new(() => BuildCreatioClient(activeSettings));
+		Lazy<CreatioClient> adapterClient = new(() => BuildCreatioClient(activeSettings));
+		services.AddSingleton<CreatioClient>(_ => compatibilityClient.Value);
+		services.AddSingleton<IApplicationClient>(sp => {
 			// Bearer path must never re-login: wire NoReauthExecutor (the DI'd IReauthExecutor)
 			// so an ephemeral bearer client cannot fall back to a login/password re-auth
 			// (multi-tenant safety, ENG-93208 B1). Non-bearer keeps the adapter's default
-			// internal closure-based ReauthExecutor byte-for-byte.
-			!string.IsNullOrEmpty(activeSettings.AccessToken)
-				? new CreatioClientAdapter(lazyCreatioClient, sp.GetRequiredService<IReauthExecutor>())
-				: new CreatioClientAdapter(lazyCreatioClient));
+			// internal closure-based ReauthExecutor byte-for-byte. The adapter is the sole
+			// lifetime owner; registering the raw disposable client would bypass its listener
+			// teardown guard when the child provider is disposed.
+			return !string.IsNullOrEmpty(activeSettings.AccessToken)
+				? new CreatioClientAdapter(adapterClient, sp.GetRequiredService<IReauthExecutor>())
+				: new CreatioClientAdapter(adapterClient, ownsClient: true);
+		});
 		services.AddTransient<SysSettingsManager>();
 	}
 
@@ -1295,6 +1309,16 @@ public class BindingsModule {
 					// LoginDiagnostics holds per-adapter state (client correlation token, attempt
 					// counter); it is created by CreatioClientAdapter, not resolved from DI.
 					|| implementedInterface == typeof(ILoginDiagnostics)
+					// Application-client implementations have ownership-sensitive constructors and
+					// are registered explicitly for the active environment. Auto-registration would
+					// either create an unbound adapter or introduce a circular ownership lease.
+					|| implementedInterface == typeof(IApplicationClient)
+					|| implementedInterface == typeof(ICreatioApplicationClient)
+					|| implementedInterface == typeof(IOwnedApplicationClient)
+					// These services retain obsolete public constructors for binary compatibility;
+					// their modern constructors are selected by explicit factory registrations.
+					|| implementedInterface == typeof(Clio.Common.BrowserSession.IBrowserSessionService)
+					|| implementedInterface == typeof(ISysImageUploader)
 					// CliogateHttpReadinessProbe takes runtime-only ctor args (an HttpClient, the
 					// attempt budget, and inter-attempt delays); it is constructed by the e2e
 					// readiness wait, not resolved from DI.
@@ -1345,7 +1369,13 @@ public class BindingsModule {
 					|| implementedInterface.Namespace == typeof(Command.McpServer.Knowledge.IKnowledgeBundleRuntime).Namespace
 					|| implementedInterface == typeof(IKnowledgeSourceManagementService)
 					|| implementedInterface == typeof(IKnowledgeReferenceExampleService)
-					|| implementedInterface == typeof(IKnowledgeGuidanceResourceAdapter)) {
+					|| implementedInterface == typeof(IKnowledgeGuidanceResourceAdapter)
+					// The page-bundle diff appliers are registered explicitly as per-call Func<> factories
+					// (they retain per-chain alias state, so each diff chain needs its own instance). Their ctor
+					// takes a primitive bool arg DI cannot resolve, so auto-registering the type here would fail
+					// ValidateOnBuild.
+					|| implementedInterface == typeof(IJsonDiffApplier)
+					|| implementedInterface == typeof(IJsonPathDiffApplier)) {
 					continue;
 				}
 				services.AddTransient(implementedInterface, type);

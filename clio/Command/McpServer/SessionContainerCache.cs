@@ -118,21 +118,14 @@ public static class SessionContainerCacheDefaults {
 /// <remarks>
 /// <para>
 /// <b>Disposal / GC-safety (Story 8, AC-05 — decision (a)).</b> On eviction the child
-/// <see cref="IServiceProvider"/> is disposed, which is sufficient. Decompiling
-/// <c>Creatio.Client.CreatioClient</c> (creatio.client 1.0.38, netstandard2.0) shows it is declared
-/// <c>class CreatioClient : ICreatioClient</c> — it does NOT implement <see cref="IDisposable"/> — and
-/// holds no long-lived per-instance transport: its only fields are <c>string</c>/<c>bool</c>,
-/// a <c>CookieContainer</c>, an <c>ICredentials</c> and a <c>RetryPolicy</c>. Every HTTP call creates
-/// and disposes its own <c>HttpClient</c>/<c>HttpClientHandler</c> inside a <c>using</c> block
-/// (per-request, no shared static or pooled handler), and the WebSocket listener
-/// (<c>WsListenerNetFramework</c>, which owns a <c>ClientWebSocket</c> + 8&#160;MB buffer) is a
-/// separate <see cref="IDisposable"/> object created only inside <c>StartListening</c> — it is never a
-/// field of <c>CreatioClient</c> and is not touched by the request/response command path that the
-/// cached passthrough containers use. <c>CreatioClientAdapter</c>/<c>IApplicationClient</c> are
-/// likewise not <see cref="IDisposable"/> and wrap nothing long-lived. Therefore an evicted container
-/// leaks no transport resource: disposing the provider releases any incidental IDisposable services,
-/// and the adapter + client are then plain GC-collectable managed state. No custom transport
-/// lifecycle (option (b)) is required.
+/// <see cref="IServiceProvider"/> is disposed, which is sufficient. Creatio.Client 2.x owns a pooled
+/// <c>HttpClient</c> and implements <see cref="IDisposable"/>; the environment-scoped
+/// <c>CreatioClientAdapter</c> is the sole owner of its lazy client and is tracked as a disposable service
+/// by the provider. The separately resolvable compatibility client has its own lazy instance, so DI cannot
+/// bypass the adapter's listener guard. Disposing an evicted container therefore releases pooled transports.
+/// Cached passthrough containers never call <c>Listen</c>; listener
+/// clients deliberately use a different cancellation lifetime because their SignalR reconnect can
+/// outlive service-provider teardown.
 /// </para>
 /// </remarks>
 public sealed class SessionContainerCache : ISessionContainerCache {

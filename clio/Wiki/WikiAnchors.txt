@@ -144,6 +144,7 @@ disable-knowledge-source:disable-knowledge-source
 list-knowledge-sources:list-knowledge-sources
 list-knowledge-examples:list-knowledge-examples
 merge-workspaces:merge-workspaces,mergew
+merge-creatio-artifact:merge-creatio-artifact
 mock-data:mock-data,data-mock
 modify-entity-schema-column:modify-entity-schema-column
 modify-user-task-parameters:modify-user-task-parameters

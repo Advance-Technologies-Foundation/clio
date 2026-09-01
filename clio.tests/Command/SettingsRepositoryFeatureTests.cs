@@ -111,6 +111,35 @@ public sealed class SettingsRepositoryFeatureTests {
 			because: "NuGet sources require a package identity and signing trust while Git sources do not");
 	}
 
+	[Test]
+	[Description("Documents every persisted deploy-creatio default and constrains the automatic site-port range shape.")]
+	public void AppSettingsSchema_ShouldDescribeDeployCreatioDefaults() {
+		// Arrange
+		string templatePath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "tpl", "jsonschema", "schema.json.tpl");
+		JsonObject schema = JsonNode.Parse(File.ReadAllText(templatePath))!.AsObject();
+		JsonObject rootProperties = schema["properties"]!.AsObject();
+		JsonObject defaults = schema["definitions"]!["deploycreatiodefaults"]!.AsObject();
+		JsonObject properties = defaults["properties"]!.AsObject();
+		JsonObject range = properties["site-port-range"]!.AsObject();
+
+		// Act
+		string[] keys = properties.Select(property => property.Key).ToArray();
+		int[] defaultRange = range["default"]!.AsArray().Select(value => value!.GetValue<int>()).ToArray();
+
+		// Assert
+		rootProperties.Should().ContainKey("deploy-creatio-defaults",
+			because: "the generated settings file points editors at this bundled schema");
+		keys.Should().BeEquivalentTo([
+			"db-server-name", "redis-server-name", "site-name", "site-port", "site-port-range", "deployment"
+		], because: "editor completion must expose every deploy default persisted by SettingsRepository");
+		range["minItems"]!.GetValue<int>().Should().Be(2,
+			because: "runtime validation requires exactly a start and end port");
+		range["maxItems"]!.GetValue<int>().Should().Be(2,
+			because: "runtime validation rejects extra range values");
+		defaultRange.Should().Equal(new[] { 40100, 40199 },
+			because: "schema hover and completion must agree with the materialized built-in value");
+	}
+
 	private static string[] RequiredForTransport(JsonObject source, string transportType) => source["allOf"]!
 		.AsArray()
 		.Single(rule => rule!["if"]!["properties"]!["type"]!["const"]!.GetValue<string>() == transportType)!

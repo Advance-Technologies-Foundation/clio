@@ -637,7 +637,9 @@ public class PageToolsTests
 		serviceUrlBuilder.Build("/DataService/json/SyncReply/SelectQuery").Returns("http://test/url");
 		var dataServiceResponse = new JObject {
 			["success"] = true,
-			["rows"] = new JArray()
+			["rows"] = new JArray {
+				new JObject { ["Name"] = "MyPage", ["UId"] = "page-uid", ["PackageName"] = "MyPackage" }
+			}
 		};
 		applicationClient.ExecutePostRequest(
 			Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
@@ -645,12 +647,128 @@ public class PageToolsTests
 		var command = new PageListCommand(applicationClient, serviceUrlBuilder, logger);
 		var options = new PageListOptions { PackageName = "MyPackage", Limit = 50 };
 		command.TryListPages(options, out PageListResponse response);
-		// The data query returns zero rows (count 0 < limit 50), so the page is provably complete and
+		// The data query returns one row (count 1 < limit 50), so the page is provably complete and
 		// the supplementary count round-trip is skipped — only the single data query carries the filter.
 		applicationClient.Received(1).ExecutePostRequest(
 			Arg.Any<string>(),
 			Arg.Is<string>(body => body.Contains("SysPackage.Name") && body.Contains("MyPackage")),
 			Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>());
+	}
+
+	[Test]
+	[Description("TryListPages cross-checks an empty package filter with a broader query and filters package names case-insensitively")]
+	public void TryListPages_ShouldCrossCheckBroaderQuery_WhenPackageFilterReturnsEmpty() {
+		// Arrange
+		var applicationClient = Substitute.For<IApplicationClient>();
+		var serviceUrlBuilder = Substitute.For<IServiceUrlBuilder>();
+		var logger = Substitute.For<ILogger>();
+		serviceUrlBuilder.Build("/DataService/json/SyncReply/SelectQuery").Returns("http://test/url");
+		var filteredResponse = new JObject {
+			["success"] = true,
+			["rows"] = new JArray()
+		};
+		var broaderResponse = new JObject {
+			["success"] = true,
+			["rows"] = new JArray {
+				new JObject { ["Name"] = "labReservation_FormPage", ["UId"] = "page-1", ["PackageName"] = "labFORENOM" },
+				new JObject { ["Name"] = "Other_FormPage", ["UId"] = "page-2", ["PackageName"] = "OtherPackage" }
+			}
+		};
+		List<string> requests = [];
+		applicationClient.ExecutePostRequest(
+			Arg.Any<string>(),
+			Arg.Do<string>(body => requests.Add(body)),
+			Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+			.Returns(filteredResponse.ToString(), broaderResponse.ToString());
+		var command = new PageListCommand(applicationClient, serviceUrlBuilder, logger);
+		var options = new PageListOptions { PackageName = "labforenom", Limit = 50 };
+
+		// Act
+		bool result = command.TryListPages(options, out PageListResponse response);
+
+		// Assert
+		result.Should().BeTrue(
+			because: "the broader cross-check returned a page from the requested package");
+		response.Pages.Should().ContainSingle(
+			page => page.SchemaName == "labReservation_FormPage",
+			because: "package-name comparison should be ordinal-ignore-case and exclude other packages");
+		response.Total.Should().Be(1,
+			because: "the fallback total should count all locally matched package rows");
+		response.Truncated.Should().BeFalse(
+			because: "one matching page fits within the requested limit");
+		requests.Should().HaveCount(2,
+			because: "the broader query should run only after the filtered query returns no rows");
+		JObject.Parse(requests[0])["filters"]!["items"]!["PackageName"].Should().NotBeNull(
+			because: "the fast path should retain the server-side package filter");
+		JObject.Parse(requests[1])["filters"]!["items"]!["PackageName"].Should().BeNull(
+			because: "the fallback must remove the unreliable package filter before filtering locally");
+	}
+
+	[TestCase("{\"success\":false}")]
+	[TestCase("not-json")]
+	[TestCase("{\"success\":true}")]
+	[Description("TryListPages refuses to confirm an empty package when its broader verification response is unsuccessful or malformed")]
+	public void TryListPages_ShouldFail_WhenBroaderVerificationCannotBeRead(string fallbackResponse) {
+		// Arrange
+		var applicationClient = Substitute.For<IApplicationClient>();
+		var serviceUrlBuilder = Substitute.For<IServiceUrlBuilder>();
+		var logger = Substitute.For<ILogger>();
+		serviceUrlBuilder.Build("/DataService/json/SyncReply/SelectQuery").Returns("http://test/url");
+		string filteredResponse = new JObject {
+			["success"] = true,
+			["rows"] = new JArray()
+		}.ToString();
+		applicationClient.ExecutePostRequest(
+			Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+			.Returns(filteredResponse, fallbackResponse);
+		var command = new PageListCommand(applicationClient, serviceUrlBuilder, logger);
+		var options = new PageListOptions { PackageName = "labFORENOM", Limit = 50 };
+
+		// Act
+		bool result = command.TryListPages(options, out PageListResponse response);
+
+		// Assert
+		result.Should().BeFalse(
+			because: "absence cannot be confirmed when the broader verification response is unusable");
+		response.Success.Should().BeFalse(
+			because: "the response must not encode an unverified empty package as success");
+		response.Error.Should().Be(
+			"The package-filtered query returned no rows, and the broader verification query failed.",
+			because: "the caller needs an actionable but non-sensitive verification failure");
+	}
+
+	[Test]
+	[Description("TryListPages redacts fallback transport failures by returning a stable verification error")]
+	public void TryListPages_ShouldReturnStableError_WhenBroaderVerificationThrows() {
+		// Arrange
+		var applicationClient = Substitute.For<IApplicationClient>();
+		var serviceUrlBuilder = Substitute.For<IServiceUrlBuilder>();
+		var logger = Substitute.For<ILogger>();
+		serviceUrlBuilder.Build("/DataService/json/SyncReply/SelectQuery").Returns("http://test/url");
+		string filteredResponse = new JObject {
+			["success"] = true,
+			["rows"] = new JArray()
+		}.ToString();
+		int requestCount = 0;
+		applicationClient.ExecutePostRequest(
+			Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+			.Returns(_ => ++requestCount == 1
+				? filteredResponse
+				: throw new System.Net.WebException("https://user:secret@example.test?token=sensitive"));
+		var command = new PageListCommand(applicationClient, serviceUrlBuilder, logger);
+		var options = new PageListOptions { PackageName = "labFORENOM", Limit = 50 };
+
+		// Act
+		bool result = command.TryListPages(options, out PageListResponse response);
+
+		// Assert
+		result.Should().BeFalse(
+			because: "a fallback transport exception prevents absence from being verified");
+		response.Error.Should().Be(
+			"The package-filtered query returned no rows, and the broader verification query failed.",
+			because: "connection details from the transport exception must not cross the command or MCP boundary");
+		response.Error.Should().NotContain("secret",
+			because: "credential material must not be exposed in the structured error");
 	}
 
 	[Test]
@@ -1102,7 +1220,7 @@ public class PageToolsTests
 					    operation: 'insert',
 					    name: 'NameField',
 					    parentName: 'MainContainer',
-					    path: ['items'],
+					    propertyName: 'items',
 					    values: {
 					      type: 'crt.Input'
 					    }
@@ -1124,7 +1242,8 @@ public class PageToolsTests
 					    operation: 'insert',
 					    name: 'MainContainer',
 					    values: {
-					      type: 'crt.FlexContainer'
+					      type: 'crt.FlexContainer',
+					      items: []
 					    }
 					  }
 					]
@@ -1206,7 +1325,7 @@ public class PageToolsTests
 			    operation: 'insert',
 			    name: 'NameField',
 			    parentName: 'MainContainer',
-			    path: ['items'],
+			    propertyName: 'items',
 			    values: {
 			      type: 'crt.Input'
 			    }
@@ -1375,6 +1494,146 @@ public class PageToolsTests
 			because: "the MCP-facing response should serialize the raw payload block");
 		serializedResponse.Should().Contain("\"packageUId\":\"99999999-2222-3333-4444-555555555555\"",
 			because: "the MCP-facing response should keep the package identifier stable");
+	}
+
+	[Test]
+	[Description("TryGetPage surfaces a named, actionable success:false failure (not a raw applier error) when the strict client-faithful applier rejects the merged inherited chain.")]
+	public void TryGetPage_WhenStrictApplierRejectsChain_ReturnsActionableFailure() {
+		// Arrange - the current page contributes a view-config op the platform itself rejects (parentName == name
+		// is a cyclic dependency), so the strict applier throws while resolving the merged bundle.
+		IApplicationClient applicationClient = Substitute.For<IApplicationClient>();
+		IServiceUrlBuilder serviceUrlBuilder = Substitute.For<IServiceUrlBuilder>();
+		ILogger logger = Substitute.For<ILogger>();
+		serviceUrlBuilder.Build(Arg.Any<string>()).Returns(callInfo => $"http://test{callInfo.Arg<string>()}");
+		JObject metadataResponse = CreateMetadataResponse(
+			"UsrBad_FormPage",
+			"bad-schema-uid",
+			"bad-package-uid",
+			"UsrBad",
+			"PageWithTabsFreedomTemplate");
+		JObject hierarchyResponse = CreateHierarchyResponse(
+			new JObject {
+				["uId"] = "bad-schema-uid",
+				["name"] = "UsrBad_FormPage",
+				["package"] = new JObject { ["uId"] = "bad-package-uid", ["name"] = "UsrBad" },
+				["schemaVersion"] = 1,
+				["body"] = CreatePageBody("""
+					[
+					  {
+					    operation: 'insert',
+					    name: 'Loop',
+					    parentName: 'Loop',
+					    values: { type: 'crt.Input' }
+					  }
+					]
+					""")
+			},
+			new JObject {
+				["uId"] = "base-uid",
+				["name"] = "PageWithTabsFreedomTemplate",
+				["package"] = new JObject { ["uId"] = "base-pkg-uid", ["name"] = "CrtBase" },
+				["schemaVersion"] = 1,
+				["body"] = CreatePageBody("""
+					[
+					  {
+					    operation: 'insert',
+					    name: 'MainContainer',
+					    values: { type: 'crt.FlexContainer', items: [] }
+					  }
+					]
+					""")
+			});
+		int callIndex = 0;
+		applicationClient.ExecutePostRequest(
+				Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+			.Returns(_ => ++callIndex == 1 ? metadataResponse.ToString() : hierarchyResponse.ToString());
+		PageGetCommand command = CreatePageGetCommand(applicationClient, serviceUrlBuilder, logger);
+		PageGetOptions options = new() { SchemaName = "UsrBad_FormPage" };
+
+		// Act
+		bool result = command.TryGetPage(options, out PageGetResponse response);
+
+		// Assert
+		result.Should().BeFalse(
+			because: "a schema chain the platform would reject must not resolve to a silent wrong bundle");
+		response.Success.Should().BeFalse(
+			because: "the strict-applier rejection should be reported as an explicit failure envelope");
+		response.Error.Should().Contain("Failed to resolve page bundle for 'UsrBad_FormPage'",
+			because: "the failure should name the page instead of surfacing a bare applier error");
+		response.Error.Should().Contain("the platform itself would reject",
+			because: "the message should explain the chain is rejected by the same engine the platform uses");
+		response.Error.Should().Contain("Cyclic dependency",
+			because: "the original applier diagnostic should be preserved so the offending operation is identifiable");
+	}
+
+	[Test]
+	[Description("TryGetPage returns success:false with the actionable message when a child is inserted into a container whose collection was never seeded - the strict applier rejects it (client parity) instead of silently auto-creating the collection.")]
+	public void TryGetPage_WhenContainerCollectionNotSeeded_ReturnsActionableFailure() {
+		// Arrange - the base template inserts MainContainer WITHOUT an items collection; the current page then
+		// inserts a child into MainContainer.items. The faithful applier throws "not a container" (the client does
+		// the same), where the retired tolerant applier would have auto-created the missing items array.
+		IApplicationClient applicationClient = Substitute.For<IApplicationClient>();
+		IServiceUrlBuilder serviceUrlBuilder = Substitute.For<IServiceUrlBuilder>();
+		ILogger logger = Substitute.For<ILogger>();
+		serviceUrlBuilder.Build(Arg.Any<string>()).Returns(callInfo => $"http://test{callInfo.Arg<string>()}");
+		JObject metadataResponse = CreateMetadataResponse(
+			"UsrUnseeded_FormPage",
+			"unseeded-schema-uid",
+			"unseeded-package-uid",
+			"UsrUnseeded",
+			"PageWithTabsFreedomTemplate");
+		JObject hierarchyResponse = CreateHierarchyResponse(
+			new JObject {
+				["uId"] = "unseeded-schema-uid",
+				["name"] = "UsrUnseeded_FormPage",
+				["package"] = new JObject { ["uId"] = "unseeded-package-uid", ["name"] = "UsrUnseeded" },
+				["schemaVersion"] = 1,
+				["body"] = CreatePageBody("""
+					[
+					  {
+					    operation: 'insert',
+					    name: 'NameField',
+					    parentName: 'MainContainer',
+					    propertyName: 'items',
+					    values: { type: 'crt.Input' }
+					  }
+					]
+					""")
+			},
+			new JObject {
+				["uId"] = "base-uid",
+				["name"] = "PageWithTabsFreedomTemplate",
+				["package"] = new JObject { ["uId"] = "base-pkg-uid", ["name"] = "CrtBase" },
+				["schemaVersion"] = 1,
+				["body"] = CreatePageBody("""
+					[
+					  {
+					    operation: 'insert',
+					    name: 'MainContainer',
+					    values: { type: 'crt.FlexContainer' }
+					  }
+					]
+					""")
+			});
+		int callIndex = 0;
+		applicationClient.ExecutePostRequest(
+				Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+			.Returns(_ => ++callIndex == 1 ? metadataResponse.ToString() : hierarchyResponse.ToString());
+		PageGetCommand command = CreatePageGetCommand(applicationClient, serviceUrlBuilder, logger);
+		PageGetOptions options = new() { SchemaName = "UsrUnseeded_FormPage" };
+
+		// Act
+		bool result = command.TryGetPage(options, out PageGetResponse response);
+
+		// Assert
+		result.Should().BeFalse(
+			because: "a child insert into an unseeded container collection is rejected, not silently repaired");
+		response.Success.Should().BeFalse(
+			because: "the strict-applier rejection surfaces as an explicit failure envelope");
+		response.Error.Should().Contain("Failed to resolve page bundle for 'UsrUnseeded_FormPage'",
+			because: "the failure names the page instead of surfacing a bare applier error");
+		response.Error.Should().Contain("not a container",
+			because: "the preserved applier diagnostic identifies the unseeded container as the offending target");
 	}
 
 	[Test]
@@ -2970,7 +3229,7 @@ public class PageToolsTests
 			logger,
 			hierarchyClient ?? new PageDesignerHierarchyClient(applicationClient, serviceUrlBuilder),
 			new PageSchemaBodyParser(),
-			new PageBundleBuilder(new PageJsonDiffApplier(), new PageJsonPathDiffApplier()),
+			new PageBundleBuilder(() => new JsonDiffApplier(), () => new JsonPathDiffApplier()),
 			CreatePassthroughPageFileWriter());
 	}
 
@@ -3668,33 +3927,8 @@ public class PageToolsTests
 				}
 			}
 		});
-		var jsonDiff = Substitute.For<IPageJsonDiffApplier>();
-		jsonDiff.ApplyDiff(Arg.Any<Newtonsoft.Json.Linq.JArray>(), Arg.Any<IReadOnlyList<Newtonsoft.Json.Linq.JArray>>(), Arg.Any<IReadOnlyList<PageJsonDiffApplyOptions>>())
-			.Returns(ci => {
-				var array = new Newtonsoft.Json.Linq.JArray {
-					new Newtonsoft.Json.Linq.JObject {
-						["name"] = "RootContainer",
-						["type"] = "crt.FlexContainer",
-						["items"] = new Newtonsoft.Json.Linq.JArray {
-							new Newtonsoft.Json.Linq.JObject {
-								["name"] = "NestedContainer",
-								["type"] = "crt.Grid",
-								["items"] = new Newtonsoft.Json.Linq.JArray {
-									new Newtonsoft.Json.Linq.JObject {
-										["name"] = "LeafButton",
-										["type"] = "crt.Button"
-									}
-								}
-							}
-						}
-					}
-				};
-				return array;
-			});
-		var pathDiff = Substitute.For<IPageJsonPathDiffApplier>();
-		pathDiff.Apply(Arg.Any<Newtonsoft.Json.Linq.JObject>(), Arg.Any<Newtonsoft.Json.Linq.JArray>())
-			.Returns(ci => new Newtonsoft.Json.Linq.JObject());
-		var builder = new PageBundleBuilder(jsonDiff, pathDiff);
+		// The real client-faithful applier resolves the parser's ViewConfigDiff into the container tree under test.
+		var builder = new PageBundleBuilder(() => new JsonDiffApplier(), () => new JsonPathDiffApplier());
 		var parts = new List<PageSchemaBundlePart> {
 			new(
 				new PageDesignerHierarchySchema { UId = "u", Name = "TestPage", PackageUId = "p", Body = "x" },

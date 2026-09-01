@@ -31,8 +31,11 @@ public sealed class ThemeCssBuilderTests {
 	}
 
 	[Test]
-	[Description("Build reproduces the golden output exactly for every case (the full-pipeline bit-exact gate).")]
-	public void Build_ShouldMatchTsGolden_ForEveryBuilderFixtureCase() {
+	[Description("Build reproduces the golden output exactly for every case (the full-pipeline bit-exact gate). "
+		+ "The fixture was captured from the retired @creatio/theming TS package and now pins regressions "
+		+ "rather than gating cross-implementation parity; the palette and OKLCH parity layers live in "
+		+ "ColorMathParityTests.")]
+	public void Build_ShouldMatchCommittedGolden_ForEveryBuilderFixtureCase() {
 		// Arrange
 		string template = Template();
 		IReadOnlyList<GoldenCase> cases = LoadGolden();
@@ -64,6 +67,7 @@ public sealed class ThemeCssBuilderTests {
 		css.Should().Contain("--crt-color-text-accent: var(--crt-palette-accent-600);", because: "text-accent finalizes to the first AA-passing accent stop");
 		css.Should().Contain("--crt-color-text-link-hover: var(--crt-palette-primary-600);", because: "link-hover is one stop darker than link");
 		css.Should().Contain("--crt-color-text-on-primary: var(--crt-color-base-light);", because: "white passes over the dark primary background");
+		css.Should().Contain("--crt-color-text-on-accent: var(--crt-color-base-dark);", because: "neither white nor accent-900 passes over the accent background, so the dark reference is used");
 		css.Should().NotContain("<%", because: "no template placeholder may survive");
 		css.Should().NotContain("@import", because: "the default Montserrat font emits no Google Fonts import");
 	}

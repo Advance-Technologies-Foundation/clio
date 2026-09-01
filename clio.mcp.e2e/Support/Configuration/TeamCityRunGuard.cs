@@ -12,6 +12,7 @@ namespace Clio.Mcp.E2E.Support.Configuration;
 /// </summary>
 public static class TeamCityRunGuard {
 	private const string TeamCityVersionVariable = "TEAMCITY_VERSION";
+	private const string GitHubActionsVariable = "GITHUB_ACTIONS";
 
 	/// <summary>
 	/// Returns <see langword="true"/> when the <c>TEAMCITY_VERSION</c> environment variable is
@@ -29,6 +30,21 @@ public static class TeamCityRunGuard {
 		!string.IsNullOrWhiteSpace(teamCityVersion);
 
 	/// <summary>
+	/// Returns <see langword="true"/> when either TeamCity or GitHub Actions is executing the tests.
+	/// </summary>
+	public static bool IsRunningUnderTeamCityOrGitHubActions() =>
+		IsRunningUnderTeamCityOrGitHubActions(
+			Environment.GetEnvironmentVariable(TeamCityVersionVariable),
+			Environment.GetEnvironmentVariable(GitHubActionsVariable));
+
+	/// <summary>Pure overload used to verify both automation environment variables.</summary>
+	/// <param name="teamCityVersion">The <c>TEAMCITY_VERSION</c> value.</param>
+	/// <param name="githubActions">The <c>GITHUB_ACTIONS</c> value.</param>
+	public static bool IsRunningUnderTeamCityOrGitHubActions(string? teamCityVersion, string? githubActions) =>
+		IsRunningUnderTeamCity(teamCityVersion) ||
+		string.Equals(githubActions?.Trim(), "true", StringComparison.OrdinalIgnoreCase);
+
+	/// <summary>
 	/// Skips the calling test with <c>Assert.Ignore</c> when running under TeamCity. Single shared
 	/// check-and-ignore entry point so destructive developer-local fixtures cannot independently
 	/// diverge (a trailing <c>return</c>, a forgotten <c>Assert.Ignore</c>) or drift from one another.
@@ -36,6 +52,14 @@ public static class TeamCityRunGuard {
 	/// <param name="reason">Human-readable skip reason surfaced in the test report.</param>
 	public static void IgnoreIfRunningUnderTeamCity(string reason) {
 		if (IsRunningUnderTeamCity()) {
+			Assert.Ignore(reason);
+		}
+	}
+
+	/// <summary>Skips a developer-local test selected under TeamCity or GitHub Actions.</summary>
+	/// <param name="reason">Human-readable skip reason surfaced in the test report.</param>
+	public static void IgnoreIfRunningUnderTeamCityOrGitHubActions(string reason) {
+		if (IsRunningUnderTeamCityOrGitHubActions()) {
 			Assert.Ignore(reason);
 		}
 	}

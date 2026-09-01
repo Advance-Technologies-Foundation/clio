@@ -107,7 +107,7 @@ public sealed class PageUpdateToolTests {
 		_commandResolver.Resolve<EnvironmentSettings>(
 				Arg.Is<EnvironmentOptions>(options => string.IsNullOrWhiteSpace(options.Environment)))
 			.Returns(headerTenantSettings);
-		IPlatformVersionResolver resolver = Substitute.For<IPlatformVersionResolver>();
+		IOwnedPlatformVersionResolver resolver = Substitute.For<IOwnedPlatformVersionResolver>();
 		resolver.ResolveAsync(Arg.Any<CancellationToken>())
 			.Returns(new PlatformVersionResolution("9.9.9", VersionResolutionSource.Environment));
 		_resolverFactory.Create(headerTenantSettings).Returns(resolver);
@@ -151,7 +151,7 @@ public sealed class PageUpdateToolTests {
 		_commandResolver.Resolve<EnvironmentSettings>(
 				Arg.Is<EnvironmentOptions>(options => options.Environment == "sandbox"))
 			.Returns(registeredSettings);
-		IPlatformVersionResolver resolver = Substitute.For<IPlatformVersionResolver>();
+		IOwnedPlatformVersionResolver resolver = Substitute.For<IOwnedPlatformVersionResolver>();
 		resolver.ResolveAsync(Arg.Any<CancellationToken>())
 			.Returns(new PlatformVersionResolution("8.3.4", VersionResolutionSource.Environment));
 		_resolverFactory.Create(registeredSettings).Returns(resolver);
@@ -219,7 +219,7 @@ public sealed class PageUpdateToolTests {
 				.Returns("""{"success":true,"rows":[]}""");
 			PageGetCommand getCommand = new(getClient, Substitute.For<IServiceUrlBuilder>(), Substitute.For<ILogger>(),
 				Substitute.For<IPageDesignerHierarchyClient>(), new PageSchemaBodyParser(),
-				new PageBundleBuilder(new PageJsonDiffApplier(), new PageJsonPathDiffApplier()),
+				new PageBundleBuilder(() => new JsonDiffApplier(), () => new JsonPathDiffApplier()),
 				Substitute.For<IPageFileWriter>());
 			_commandResolver.Resolve<PageGetCommand>(Arg.Do<EnvironmentOptions>(o => captured = o)).Returns(getCommand);
 

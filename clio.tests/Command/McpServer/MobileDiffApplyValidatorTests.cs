@@ -56,6 +56,48 @@ public sealed class MobileDiffApplyValidatorTests {
 	}
 
 	[Test]
+	[Description("A NEWLY-INSERTED container (no 'items' in its own values) that a later insert targets via parentName/items reproduces the exact production error from the mobile page converter bug: 'Item \"X\" is not a container for other items'. This is the container-level sibling of Validate_InsertIntoUndeclaredParentSlot_ReportsNotAContainer above (that one used 'itemLayout' one level down the tree).")]
+	public void Validate_ContainerInsertMissingItemsSlot_ReportsNotAContainer() {
+		// Arrange
+		const string body = """
+			{ "viewConfigDiff": [
+				{ "operation": "insert", "name": "SalesTab", "parentName": "Tabs", "propertyName": "items",
+					"values": { "type": "crt.TabContainer", "caption": "#ResourceString(SalesTab_caption)#" } },
+				{ "operation": "insert", "name": "ProductsExpansionPanel", "parentName": "SalesTab", "propertyName": "items",
+					"values": { "type": "crt.ExpansionPanel" } }
+			] }
+			""";
+
+		// Act
+		SchemaValidationResult result = MobileDiffApplyValidator.Validate(body);
+
+		// Assert
+		result.IsValid.Should().BeFalse(
+			because: "SalesTab's own values carry no 'items' array, so the differ has nowhere to place ProductsExpansionPanel");
+		result.Errors.Should().ContainSingle(e =>
+			e.Contains("SalesTab") && e.Contains("is not a container for other items"),
+			because: "this is the literal error the mobile page converter's elementMap used to produce before its container inserts declared an items slot");
+	}
+
+	[Test]
+	[Description("The fix's contract: once the container insert declares an empty 'items' array, the identical child insert applies cleanly — this is exactly what WebToMobileAnalysisService.InitializeContainerChildSlots now guarantees for every converter-created container.")]
+	public void Validate_ContainerInsertWithItemsSlot_IsValid() {
+		// Arrange
+		const string body = """
+			{ "viewConfigDiff": [
+				{ "operation": "insert", "name": "SalesTab", "parentName": "Tabs", "propertyName": "items",
+					"values": { "type": "crt.TabContainer", "caption": "#ResourceString(SalesTab_caption)#", "items": [] } },
+				{ "operation": "insert", "name": "ProductsExpansionPanel", "parentName": "SalesTab", "propertyName": "items",
+					"values": { "type": "crt.ExpansionPanel" } }
+			] }
+			""";
+
+		// Act / Assert
+		MobileDiffApplyValidator.Validate(body).IsValid.Should().BeTrue(
+			because: "SalesTab now declares an empty 'items' array, so the differ can place ProductsExpansionPanel into it");
+	}
+
+	[Test]
 	[Description("An operation whose parentName equals its name reproduces the differ's cyclic-dependency error.")]
 	public void Validate_LoopDependency_ReportsCyclicDependency() {
 		const string body = """

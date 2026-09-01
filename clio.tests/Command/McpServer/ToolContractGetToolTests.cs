@@ -67,6 +67,51 @@ public sealed class ToolContractGetToolTests {
 			because: "the MCP tool name must stay stable for clients that bootstrap from the contract tool");
 	}
 
+	[Test]
+	[Category("Unit")]
+	[Description("Publishes the explicit supported and not-implemented Creatio merge surface through get-tool-contract.")]
+	public void ToolContractGet_Should_Return_Canonical_Creatio_Merge_Contract() {
+		// Arrange
+		ToolContractGetTool tool = BuildToolWithRegistry();
+
+		// Act
+		ToolContractGetResponse result = tool.GetToolContracts(new ToolContractGetArgs([
+			CreatioArtifactMergeTool.ToolName
+		]));
+		ToolContractDefinition contract = result.Tools!.Single();
+
+		// Assert
+		contract.Name.Should().Be(CreatioArtifactMergeTool.ToolName,
+			because: "the resident merge tool must have a stable discoverable contract");
+		contract.InputSchema.Required.Should().BeEquivalentTo(
+			["artifact-path", "base-content", "ours-content", "theirs-content"],
+			because: "all three Git stages and the classification path are the minimal merge input");
+		contract.InputSchema.Properties.Select(field => field.Name).Should().Contain("descriptor-content",
+			because: "metadata and data bindings require explicit inline descriptor evidence");
+		contract.Description.Should().Contain("EntitySchema",
+			because: "agents must see the supported schema slice before calling");
+		contract.Description.Should().Contain("ProcessSchema metadata/descriptors/resources, C#, and SQL return status 'not-implemented'",
+			because: "agents must see the recognized roadmap exclusions before calling");
+		contract.Description.Should().Contain("Merge for <artifact-kind> is not implemented yet.",
+			because: "agents must see the exact roadmap refusal before calling");
+		contract.Description.Should().Contain("do not choose a side before the user answers",
+			because: "agents must preserve the human decision boundary for true semantic conflicts");
+		contract.OutputContract.Fields.Single(field => field.Name == "diagnostics").Description.Should()
+			.Contain("ready-to-ask question",
+				because: "the agent must know where the human-readable conflict question is returned");
+		contract.OutputContract.Fields.Single(field => field.Name == "status").Description.Should()
+			.Contain("resolved",
+				because: "the caller must branch on the documented domain-status set");
+		contract.OutputContract.Fields.Single(field => field.Name == "status").Description.Should()
+			.Contain("conflicts-remain",
+				because: "the caller must distinguish marker content from clean resolved content");
+		contract.OutputContract.Fields.Single(field => field.Name == "status").Description.Should()
+			.Contain("not-implemented",
+				because: "the caller must distinguish planned schema support from unknown shapes");
+		contract.Preconditions.Should().Contain(item => item.Contains("4 MiB", StringComparison.Ordinal),
+			because: "the bounded inline input contract should be discoverable before execution");
+	}
+
 	// Codex review #1 (PR #743): in lazy mode the long tail is hidden from tools/list but stays
 	// invokable via clio-run / clio-run-destructive. The review claimed high-impact hidden tools have
 	// NO discoverable contract. They DO: get-tool-contract resolves a contract entry for every one
@@ -580,8 +625,13 @@ public sealed class ToolContractGetToolTests {
 			because: "a successful query reports the number of returned rows");
 		contract.OutputContract.Fields.Should().Contain(field => field.Name == "success",
 			because: "the envelope must expose the success flag");
+		contract.OutputContract.Fields.Should().Contain(field =>
+			field.Name == "error-class" && field.Description.Contains("result-too-large", StringComparison.Ordinal),
+			because: "the contract must advertise the machine-readable oversized-result recovery signal");
 		contract.Description.Should().Contain("get-guidance",
 			because: "the contract should steer callers to read the esq guidance before composing a query");
+		contract.Description.Should().Contain(ExecuteEsqTool.MaxResponseSizeBytes.ToString(),
+			because: "the agent-facing contract must state the executable response budget");
 	}
 
 	[Test]
@@ -610,6 +660,10 @@ public sealed class ToolContractGetToolTests {
 			because: "the contract should advertise the stable guidance-name selector");
 		contract.OutputContract.Fields.Should().Contain(field => field.Name == "guidance",
 			because: "successful lookups should return the resolved article payload");
+		contract.OutputContract.Fields.Should().Contain(field =>
+				field.Name == "diagnostics" && field.Description.Contains("observed data", StringComparison.Ordinal),
+			because: "an agent reading this field must be told by the contract that its content comes from "
+				+ "the configured repository rather than from clio");
 		contract.OutputContract.Fields.Should().Contain(field => field.Name == "available-guides",
 			because: "failed lookups should expose recovery names");
 		contract.Examples.Any(example =>
@@ -2100,8 +2154,8 @@ public sealed class ToolContractGetToolTests {
 
 		// Assert
 		result.Success.Should().BeTrue(
-			because: "the five process-designer tools are feature-gated and may be absent, so their remediation "
-				+ "tool must be discoverable through get-tool-contract to be reachable at all");
+			because: "install-process-builder is non-resident, so this curated contract is the only "
+				+ "description of the remediation an agent ever receives");
 		ToolContractDefinition contract = result.Tools!.Single();
 		// The CURATED string, which is what an agent actually reads: install-process-builder is deliberately
 		// non-resident, so it is never in tools/list and this contract is its only description. The tool's
@@ -2154,8 +2208,8 @@ public sealed class ToolContractGetToolTests {
 			because: "the package ships inside clio, so the target environment is the only thing to supply");
 		contract.PreferredFlow.Tools.Should().Equal(
 			new[] { InstallProcessBuilderTool.InstallProcessBuilderToolName },
-			because: "the flow must stop at this tool: naming a process-designer tool as the follow-up would "
-				+ "point at one this server may not expose while the feature is off");
+			because: "the flow must stop at this tool: any of the five process-designer tools may have sent "
+				+ "the caller here, so the contract cannot name which call to retry");
 		// A CLAIM-shaped guard, not a phrase ban — and note what CANNOT work here. The previous form banned
 		// the literal "which build is serving", and a reworded copy walked past it: the shipped note went
 		// back to "the NEW build is serving: it compares the version the serving build reports against the
@@ -2202,18 +2256,17 @@ public sealed class ToolContractGetToolTests {
 
 		ToolContractDefinition deploy = result.Tools!.Single(contract =>
 			contract.Name == InstallerCommandTool.DeployCreatioToolName);
-		deploy.InputSchema.Required.Should().Contain(["siteName", "zipFile", "sitePort"],
-			because: "deploy-creatio requires the site name, build archive, and port");
+		deploy.InputSchema.Required.Should().Equal(["siteName", "zipFile"],
+			because: "deploy-creatio can select a local IIS port from the configured range when sitePort is omitted");
 		deploy.OutputContract.Kind.Should().Be("command-execution-result",
 			because: "deploy-creatio returns the standard command execution result payload");
 		deploy.PreferredFlow.Tools.Should().Equal(
 			new[] {
 				AssertInfrastructureTool.AssertInfrastructureToolName,
 				ShowPassingInfrastructureTool.ShowPassingInfrastructureToolName,
-				FindEmptyIisPortTool.FindEmptyIisPortToolName,
 				InstallerCommandTool.DeployCreatioToolName
 			},
-			because: "deploy-creatio should advertise the canonical deploy preflight order");
+			because: "deploy-creatio should advertise the required preflight without making optional port inspection mandatory");
 		deploy.Preconditions.Should().NotBeNullOrEmpty(
 			because: "the most consequential tool must spell out its preconditions");
 

@@ -33,6 +33,7 @@ namespace Clio.Command {
 		private const string ExpressionKey = "expression";
 		private const string SuccessKey = "success";
 		private const int ContainsComparisonType = 11;
+		private const int EmptyFilterFallbackRowCount = 10000;
 
 		/// <summary>
 		/// Result cap applied when <c>limit</c> is omitted or supplied as 0 ("use the default").
@@ -42,6 +43,18 @@ namespace Clio.Command {
 		private readonly IApplicationClient _applicationClient;
 		private readonly IServiceUrlBuilder _serviceUrlBuilder;
 		private readonly ILogger _logger;
+
+		private sealed record PageQueryContext(
+			string Url,
+			string PackageName,
+			string NameFilter,
+			string UId,
+			int EffectiveLimit);
+
+		private sealed record PageFallbackResult(
+			List<PageListItem> Pages,
+			int Total,
+			bool MayBeCapped);
 
 		public PageListCommand(
 			IApplicationClient applicationClient,
@@ -54,130 +67,149 @@ namespace Clio.Command {
 
 		public bool TryListPages(PageListOptions options, out PageListResponse response) {
 			try {
-				if (!string.IsNullOrWhiteSpace(options.PackageName) && !string.IsNullOrWhiteSpace(options.AppCode)) {
-					response = new PageListResponse {
-						Success = false,
-						Error = "Provide either package-name or app-code, not both."
-					};
+				if (!TryCreateQueryContext(options, out PageQueryContext context, out response)) {
 					return false;
 				}
-				// A negative limit must NOT silently disable the result cap (Creatio treats a
-				// negative rowCount as "no limit", which would return every page on the
-				// environment). Reject it; treat 0 as "use the default".
-				if (options.Limit < 0) {
-					response = new PageListResponse {
-						Success = false,
-						Error = $"limit must be zero or greater (got {options.Limit}). Omit limit or pass 0 to use the default of {DefaultLimit}."
-					};
-					return false;
-				}
-				int effectiveLimit = options.Limit == 0 ? DefaultLimit : options.Limit;
-				string packageName = options.PackageName;
-				if (string.IsNullOrWhiteSpace(packageName) && !string.IsNullOrWhiteSpace(options.AppCode)) {
-					packageName = ResolvePrimaryPackageName(options.AppCode);
-				}
-				string nameFilter = options.SearchPattern?.Trim('*', ' ') ?? string.Empty;
-				var selectQuery = new JObject {
-					["rootSchemaName"] = "SysSchema",
-					["operationType"] = 0,
-					["filters"] = BuildPageFilters(packageName, nameFilter, options.UId),
-					["columns"] = new JObject {
-						[ItemsKey] = new JObject {
-							["Name"] = new JObject {
-								[ExpressionKey] = new JObject {
-									[ExpressionTypeKey] = 0,
-									[ColumnPathKey] = "Name"
-								},
-								["orderDirection"] = 0,
-								["orderPosition"] = -1,
-								["isVisible"] = true
-							},
-							["UId"] = new JObject {
-								[ExpressionKey] = new JObject {
-									[ExpressionTypeKey] = 0,
-									[ColumnPathKey] = "UId"
-								},
-								["orderDirection"] = 0,
-								["orderPosition"] = -1,
-								["isVisible"] = true
-							},
-							["PackageName"] = new JObject {
-								[ExpressionKey] = new JObject {
-									[ExpressionTypeKey] = 0,
-									[ColumnPathKey] = "SysPackage.Name"
-								},
-								["orderDirection"] = 0,
-								["orderPosition"] = -1,
-								["isVisible"] = true
-							},
-							["ParentSchemaName"] = new JObject {
-								[ExpressionKey] = new JObject {
-									[ExpressionTypeKey] = 0,
-									[ColumnPathKey] = "[SysSchema:Id:Parent].Name"
-								},
-								["orderDirection"] = 0,
-								["orderPosition"] = -1,
-								["isVisible"] = true
-							}
-						}
-					},
-					["rowCount"] = effectiveLimit
-				};
-				string url = _serviceUrlBuilder.Build("/DataService/json/SyncReply/SelectQuery");
-				string requestBody = selectQuery.ToString(Formatting.None);
-				string responseJson = _applicationClient.ExecutePostRequest(url, requestBody);
-				var rawResponse = JObject.Parse(responseJson);
-				if (!(rawResponse[SuccessKey]?.Value<bool>() ?? false)) {
+				List<PageListItem>? queriedPages = TryQueryPages(
+					context.Url,
+					context.PackageName,
+					context.NameFilter,
+					context.UId,
+					context.EffectiveLimit);
+				if (queriedPages is null) {
 					response = new PageListResponse { Success = false, Error = "Query failed" };
 					return false;
 				}
-				JArray rows = rawResponse["rows"] as JArray ?? [];
-				List<PageListItem> pages = rows
-					.Select(row => new PageListItem {
-						SchemaName = row["Name"]?.ToString(),
-						UId = row["UId"]?.ToString(),
-						PackageName = row["PackageName"]?.ToString(),
-						ParentSchemaName = row["ParentSchemaName"]?.ToString()
-					})
-					.ToList();
-				// The capped data query cannot reveal how many pages matched in total, so a caller
-				// could not otherwise tell a 50-item page from a complete result. Only when the page
-				// is provably full (count >= the cap) is a separate COUNT(Id) round-trip worth its
-				// cost: a short page (count < cap) is already complete, so issuing the count there is
-				// pure waste. When the page IS capped and the count query fails, we cannot prove
-				// completeness, so the result must be reported as truncated.
-				int total;
-				bool truncated;
-				if (pages.Count < effectiveLimit) {
-					total = pages.Count;
-					truncated = false;
-				}
-				else {
-					(bool countSucceeded, int countTotal) = QueryTotalPageCount(url, packageName, nameFilter, options.UId, pages.Count);
-					if (countSucceeded) {
-						total = Math.Max(countTotal, pages.Count);
-						truncated = total > pages.Count;
+				List<PageListItem> pages = queriedPages;
+				PageFallbackResult? fallback = null;
+				if (pages.Count == 0 && !string.IsNullOrWhiteSpace(context.PackageName)) {
+					fallback = CrossCheckEmptyPackagePages(context);
+					if (fallback is null) {
+						response = new PageListResponse {
+							Success = false,
+							Error = "The package-filtered query returned no rows, and the broader verification query failed."
+						};
+						return false;
 					}
-					else {
-						// The page filled the cap but the supplementary count failed, so completeness
-						// is unprovable — surface it as truncated rather than wrongly claiming a full set.
-						total = pages.Count;
-						truncated = true;
-					}
+					pages = fallback.Pages;
 				}
-				response = new PageListResponse {
-					Success = true,
-					Count = pages.Count,
-					Total = total,
-					Truncated = truncated,
-					Pages = pages
-				};
+				response = CreateSuccessResponse(pages, context, fallback);
 				return true;
 			}
 			catch (Exception ex) {
 				response = new PageListResponse { Success = false, Error = ex.Message };
 				return false;
 			}
+		}
+
+		private bool TryCreateQueryContext(
+			PageListOptions options,
+			out PageQueryContext context,
+			out PageListResponse response) {
+			context = null;
+			if (!string.IsNullOrWhiteSpace(options.PackageName) && !string.IsNullOrWhiteSpace(options.AppCode)) {
+				response = new PageListResponse {
+					Success = false,
+					Error = "Provide either package-name or app-code, not both."
+				};
+				return false;
+			}
+			// A negative limit must NOT silently disable the result cap (Creatio treats a
+			// negative rowCount as "no limit", which would return every page on the
+			// environment). Reject it; treat 0 as "use the default".
+			if (options.Limit < 0) {
+				response = new PageListResponse {
+					Success = false,
+					Error = $"limit must be zero or greater (got {options.Limit}). Omit limit or pass 0 to use the default of {DefaultLimit}."
+				};
+				return false;
+			}
+			string packageName = options.PackageName;
+			if (string.IsNullOrWhiteSpace(packageName) && !string.IsNullOrWhiteSpace(options.AppCode)) {
+				packageName = ResolvePrimaryPackageName(options.AppCode);
+			}
+			context = new PageQueryContext(
+				_serviceUrlBuilder.Build("/DataService/json/SyncReply/SelectQuery"),
+				packageName,
+				options.SearchPattern?.Trim('*', ' ') ?? string.Empty,
+				options.UId,
+				options.Limit == 0 ? DefaultLimit : options.Limit);
+			response = null;
+			return true;
+		}
+
+		private PageFallbackResult? CrossCheckEmptyPackagePages(PageQueryContext context) {
+			// Issue #1213: a freshly-created package returned no rows through the package-name
+			// relation filter while the same rows were already visible through an unscoped read.
+			// Cross-check an empty result once and filter the returned package names locally before
+			// treating the package as absent. The normal filtered query remains the fast path.
+			List<PageListItem>? broaderPages;
+			try {
+				broaderPages = TryQueryPages(
+					context.Url,
+					packageName: string.Empty,
+					context.NameFilter,
+					context.UId,
+					EmptyFilterFallbackRowCount);
+			}
+			catch (Exception exception) when (exception is System.Net.Http.HttpRequestException
+				or System.Net.WebException
+				or TimeoutException
+				or Newtonsoft.Json.JsonException) {
+				broaderPages = null;
+			}
+			if (broaderPages is null) {
+				return null;
+			}
+			List<PageListItem> packageMatches = broaderPages
+				.Where(page => string.Equals(
+					page.PackageName,
+					context.PackageName,
+					StringComparison.OrdinalIgnoreCase))
+				.ToList();
+			return new PageFallbackResult(
+				packageMatches.Take(context.EffectiveLimit).ToList(),
+				packageMatches.Count,
+				broaderPages.Count >= EmptyFilterFallbackRowCount);
+		}
+
+		private PageListResponse CreateSuccessResponse(
+			List<PageListItem> pages,
+			PageQueryContext context,
+			PageFallbackResult? fallback) {
+			// The capped data query cannot reveal how many pages matched in total, so a caller
+			// could not otherwise tell a 50-item page from a complete result. Only when the page
+			// is provably full (count >= the cap) is a separate COUNT(Id) round-trip worth its
+			// cost: a short page (count < cap) is already complete, so issuing the count there is
+			// pure waste. When the page IS capped and the count query fails, we cannot prove
+			// completeness, so the result must be reported as truncated.
+			if (fallback is not null) {
+				return CreateSuccessResponse(pages, fallback.Total, fallback.MayBeCapped || fallback.Total > pages.Count);
+			}
+			if (pages.Count < context.EffectiveLimit) {
+				return CreateSuccessResponse(pages, pages.Count, truncated: false);
+			}
+			(bool countSucceeded, int countTotal) = QueryTotalPageCount(
+				context.Url,
+				context.PackageName,
+				context.NameFilter,
+				context.UId,
+				pages.Count);
+			int total = countSucceeded ? Math.Max(countTotal, pages.Count) : pages.Count;
+			return CreateSuccessResponse(pages, total, !countSucceeded || total > pages.Count);
+		}
+
+		private static PageListResponse CreateSuccessResponse(
+			List<PageListItem> pages,
+			int total,
+			bool truncated) {
+			return new PageListResponse {
+				Success = true,
+				Count = pages.Count,
+				Total = total,
+				Truncated = truncated,
+				Pages = pages
+			};
 		}
 
 		private static JObject BuildPageFilters(string packageName, string nameFilter, string uId) {
@@ -199,6 +231,64 @@ namespace Clio.Command {
 				filters[ItemsKey]["UId"] = BuildComparisonFilter("UId", uId, 0, 3);
 			}
 			return filters;
+		}
+
+		private List<PageListItem>? TryQueryPages(
+			string url,
+			string packageName,
+			string nameFilter,
+			string uId,
+			int rowCount) {
+			var query = new JObject {
+				["rootSchemaName"] = "SysSchema",
+				["operationType"] = 0,
+				["filters"] = BuildPageFilters(packageName, nameFilter, uId),
+				["columns"] = new JObject {
+					[ItemsKey] = BuildPageColumns()
+				},
+				["rowCount"] = rowCount
+			};
+			string responseJson = _applicationClient.ExecutePostRequest(url, query.ToString(Formatting.None));
+			var rawResponse = JObject.Parse(responseJson);
+			if (!(rawResponse[SuccessKey]?.Value<bool>() ?? false)) {
+				return null;
+			}
+			if (rawResponse["rows"] is not JArray rows) {
+				return null;
+			}
+			return rows
+				.Select(MapPage)
+				.ToList();
+		}
+
+		private static JObject BuildPageColumns() {
+			return new JObject {
+				["Name"] = BuildPageColumn("Name"),
+				["UId"] = BuildPageColumn("UId"),
+				["PackageName"] = BuildPageColumn("SysPackage.Name"),
+				["ParentSchemaName"] = BuildPageColumn("[SysSchema:Id:Parent].Name")
+			};
+		}
+
+		private static JObject BuildPageColumn(string columnPath) {
+			return new JObject {
+				[ExpressionKey] = new JObject {
+					[ExpressionTypeKey] = 0,
+					[ColumnPathKey] = columnPath
+				},
+				["orderDirection"] = 0,
+				["orderPosition"] = -1,
+				["isVisible"] = true
+			};
+		}
+
+		private static PageListItem MapPage(JToken row) {
+			return new PageListItem {
+				SchemaName = row["Name"]?.ToString(),
+				UId = row["UId"]?.ToString(),
+				PackageName = row["PackageName"]?.ToString(),
+				ParentSchemaName = row["ParentSchemaName"]?.ToString()
+			};
 		}
 
 		/// <summary>

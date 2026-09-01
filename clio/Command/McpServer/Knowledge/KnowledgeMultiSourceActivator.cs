@@ -367,6 +367,12 @@ internal sealed class KnowledgeMultiSourceActivator : IKnowledgeBundleActivator 
 				activation.Diagnostic ?? $"Git knowledge source '{alias}' was rejected.");
 			return;
 		}
+		// An accepted activation can still carry an advisory - a knowledge-allow-unsequenced replacement
+		// under an unchanged synthesized sequence relaxes content-integrity checking. Dropping it here
+		// would make that the one guard bypass with no trace on the activation pass.
+		if (!string.IsNullOrWhiteSpace(activation.Diagnostic)) {
+			diagnostics.Add(activation.Diagnostic);
+		}
 		_observed[alias] = lockedIdentity;
 		_observedGitConfiguration[alias] = GitConfigurationIdentity(source);
 		_failed.Remove(alias);

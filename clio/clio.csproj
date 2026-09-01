@@ -130,6 +130,7 @@
 	</Choose>
 
 	<ItemGroup>
+		<ProjectReference Include="..\Creatio.ConflictResolver\Creatio.ConflictResolver.csproj" />
 		<ProjectReference Condition="'$(Configuration)|$(Platform)'!='Release|AnyCPU'"
 						  Include="..\Clio.Analyzers\Clio.Analyzers.csproj"
 		                  OutputItemType="Analyzer"

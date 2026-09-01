@@ -24,6 +24,9 @@ public interface IPlatformVersionResolver {
 	Task<PlatformVersionResolution> ResolveAsync(CancellationToken cancellationToken = default);
 }
 
+/// <summary>A platform-version resolver whose factory-created transport must be disposed by the caller.</summary>
+public interface IOwnedPlatformVersionResolver : IPlatformVersionResolver, IDisposable { }
+
 /// <summary>
 /// Outcome of a platform-version probe.
 /// </summary>
@@ -83,7 +86,7 @@ public enum VersionFallbackReason {
 /// platform versions change at upgrade time, not within an AI session, so probing more often
 /// would be pure overhead.
 /// </summary>
-public sealed class PlatformVersionResolver : IPlatformVersionResolver {
+public sealed class PlatformVersionResolver : IOwnedPlatformVersionResolver {
 	/// <summary>
 	/// Standard Creatio service that returns the core version without requiring cliogate —
 	/// only an authenticated session. Preferred over <see cref="GetSysInfoServicePath"/> so
@@ -113,6 +116,7 @@ public sealed class PlatformVersionResolver : IPlatformVersionResolver {
 	private readonly TimeProvider _timeProvider;
 	private readonly ILogger<PlatformVersionResolver> _logger;
 	private readonly ConcurrentDictionary<string, CacheEntry> _cache;
+	private readonly IOwnedApplicationClient? _ownedApplicationClient;
 
 	public PlatformVersionResolver(
 		IApplicationClient applicationClient,
@@ -126,6 +130,23 @@ public sealed class PlatformVersionResolver : IPlatformVersionResolver {
 		_timeProvider = timeProvider ?? throw new ArgumentNullException(nameof(timeProvider));
 		_logger = logger ?? throw new ArgumentNullException(nameof(logger));
 		_cache = new ConcurrentDictionary<string, CacheEntry>(StringComparer.OrdinalIgnoreCase);
+	}
+
+	internal PlatformVersionResolver(
+		IOwnedApplicationClient applicationClient,
+		EnvironmentSettings environmentSettings,
+		IServiceUrlBuilderFactory serviceUrlBuilderFactory,
+		TimeProvider timeProvider,
+		ILogger<PlatformVersionResolver> logger)
+		: this((IApplicationClient)applicationClient, environmentSettings, serviceUrlBuilderFactory,
+			timeProvider, logger) {
+		_ownedApplicationClient = applicationClient;
+	}
+
+	/// <inheritdoc />
+	public void Dispose() {
+		_ownedApplicationClient?.Dispose();
+		GC.SuppressFinalize(this);
 	}
 
 	/// <inheritdoc />

@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Globalization;
 using System.Text.Json;
 using Clio.ProcessFixture;
 
@@ -8,6 +9,7 @@ const string growDirectoryArgument = "--grow-directory-with-inherited-pipes";
 const string spawnGrowingDescendantArgument = "--spawn-growing-inherited-handle-descendant";
 const string overflowOutputArgument = "--overflow-output-with-inherited-handle-descendant";
 const string carriageReturnOutputArgument = "--write-carriage-return-output";
+const string readStandardInputArgument = "--read-standard-input-to-end";
 const string invocationMarkerFileName = "invoked.marker";
 const string descendantIdentityFileName = "descendant.identity";
 
@@ -42,6 +44,20 @@ if (args.Length == 2 && string.Equals(args[0], overflowOutputArgument, StringCom
 	using Process descendant = StartPipeHoldingDescendant();
 	await WriteProcessIdentityAsync(args[1], descendant);
 	await WriteOutputAsync(new string('x', 8192));
+	return 0;
+}
+
+// Blocks until stdin reaches EOF, then records what it read. A parent that redirects stdin and closes it
+// releases this immediately; a parent that leaves an open handle behind holds it here forever, which is
+// exactly the shape that hung `git remote get-url` under the MCP server.
+if (args.Length == 2 && string.Equals(args[0], readStandardInputArgument, StringComparison.Ordinal)) {
+	string standardInput = await Console.In.ReadToEndAsync();
+	// Published by rename, so a watcher never observes a created-but-unwritten marker: File.Exists goes
+	// true the instant the handle is created, before the byte is written and before it is closed.
+	string stagedMarker = args[1] + ".staged";
+	await File.WriteAllTextAsync(stagedMarker, standardInput.Length.ToString(CultureInfo.InvariantCulture));
+	File.Move(stagedMarker, args[1], overwrite: true);
+	await WriteOutputAsync($"stdin:{standardInput.Length}:{standardInput}");
 	return 0;
 }
 

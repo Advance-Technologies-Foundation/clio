@@ -102,7 +102,7 @@ public sealed class PageSyncToolTests {
 		// IToolCommandResolver the tool uses for command resolution (Pattern-A) — no
 		// direct ISettingsRepository dependency anymore.
 		commandResolver.Resolve<EnvironmentSettings>(Arg.Any<EnvironmentOptions>()).Returns(new EnvironmentSettings());
-		IPlatformVersionResolver resolver = Substitute.For<IPlatformVersionResolver>();
+		IOwnedPlatformVersionResolver resolver = Substitute.For<IOwnedPlatformVersionResolver>();
 		resolver.ResolveAsync(Arg.Any<CancellationToken>())
 			.Returns(new PlatformVersionResolution("8.2.1", VersionResolutionSource.Environment));
 		IPlatformVersionResolverFactory resolverFactory = Substitute.For<IPlatformVersionResolverFactory>();
@@ -909,7 +909,7 @@ public sealed class PageSyncToolTests {
 			.Returns("""{"success":true,"rows":[]}""");
 		PageGetCommand getCommand = new(getAppClient, Substitute.For<IServiceUrlBuilder>(), Substitute.For<ILogger>(),
 			Substitute.For<IPageDesignerHierarchyClient>(), new PageSchemaBodyParser(),
-			new PageBundleBuilder(new PageJsonDiffApplier(), new PageJsonPathDiffApplier()),
+			new PageBundleBuilder(() => new JsonDiffApplier(), () => new JsonPathDiffApplier()),
 			Substitute.For<IPageFileWriter>());
 		Clio.EnvironmentOptions capturedGetOptions = null;
 		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
@@ -952,7 +952,7 @@ public sealed class PageSyncToolTests {
 			.Returns("""{"success":true,"rows":[]}""");
 		PageGetCommand getCommand = new(getAppClient, Substitute.For<IServiceUrlBuilder>(), Substitute.For<ILogger>(),
 			Substitute.For<IPageDesignerHierarchyClient>(), new PageSchemaBodyParser(),
-			new PageBundleBuilder(new PageJsonDiffApplier(), new PageJsonPathDiffApplier()),
+			new PageBundleBuilder(() => new JsonDiffApplier(), () => new JsonPathDiffApplier()),
 			Substitute.For<IPageFileWriter>());
 		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
 		commandResolver.Resolve<PageUpdateCommand>(Arg.Any<PageUpdateOptions>()).Returns(updateCommand);
@@ -994,7 +994,7 @@ public sealed class PageSyncToolTests {
 			.Returns("""{"success":true,"rows":[]}""");
 		PageGetCommand getCommand = new(getAppClient, Substitute.For<IServiceUrlBuilder>(), Substitute.For<ILogger>(),
 			Substitute.For<IPageDesignerHierarchyClient>(), new PageSchemaBodyParser(),
-			new PageBundleBuilder(new PageJsonDiffApplier(), new PageJsonPathDiffApplier()),
+			new PageBundleBuilder(() => new JsonDiffApplier(), () => new JsonPathDiffApplier()),
 			Substitute.For<IPageFileWriter>());
 		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
 		commandResolver.Resolve<PageUpdateCommand>(Arg.Any<PageUpdateOptions>()).Returns(updateCommand);
@@ -1127,7 +1127,7 @@ public sealed class PageSyncToolTests {
 			Substitute.For<ILogger>(),
 			hierarchyClient,
 			new PageSchemaBodyParser(),
-			new PageBundleBuilder(new PageJsonDiffApplier(), new PageJsonPathDiffApplier()),
+			new PageBundleBuilder(() => new JsonDiffApplier(), () => new JsonPathDiffApplier()),
 			CreatePassthroughPageFileWriter());
 	}
 
@@ -1146,7 +1146,7 @@ public sealed class PageSyncToolTests {
 			Substitute.For<ILogger>(),
 			Substitute.For<IPageDesignerHierarchyClient>(),
 			new PageSchemaBodyParser(),
-			new PageBundleBuilder(new PageJsonDiffApplier(), new PageJsonPathDiffApplier()),
+			new PageBundleBuilder(() => new JsonDiffApplier(), () => new JsonPathDiffApplier()),
 			CreatePassthroughPageFileWriter());
 	}
 
@@ -1257,7 +1257,7 @@ public sealed class PageSyncToolTests {
 		// resolver resolves ephemeral settings from the header's credential context.
 		commandResolver.Resolve<EnvironmentSettings>(Arg.Any<EnvironmentOptions>())
 			.Returns(new EnvironmentSettings());
-		IPlatformVersionResolver resolver = Substitute.For<IPlatformVersionResolver>();
+		IOwnedPlatformVersionResolver resolver = Substitute.For<IOwnedPlatformVersionResolver>();
 		resolver.ResolveAsync(Arg.Any<CancellationToken>())
 			.Returns(new PlatformVersionResolution("8.2.1", VersionResolutionSource.Environment));
 		IPlatformVersionResolverFactory resolverFactory = Substitute.For<IPlatformVersionResolverFactory>();
