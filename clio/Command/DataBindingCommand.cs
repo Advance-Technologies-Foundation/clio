@@ -1335,7 +1335,10 @@ internal sealed class DataBindingValueConverter : IDataBindingValueConverter {
 			}
 		}
 
-		if (targetType == typeof(string)) {
+		//Color joins the string branch by WIRE format, not by CLR type: Creatio stores a Color column as a
+		//"#RRGGBB" hex literal and the binding row carries that literal verbatim. Resolve() still reports
+		//System.Drawing.Color, which is what process signatures and codegen need.
+		if (targetType == typeof(string) || DataValueTypeMap.IsColor(dataTypeUId)) {
 			string stringValue = valueNode.ToJsonString().Trim('"');
 			if (!allowEmptyString && string.IsNullOrWhiteSpace(stringValue)) {
 				throw new InvalidOperationException($"Column '{columnName}' cannot be empty.");

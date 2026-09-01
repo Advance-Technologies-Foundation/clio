@@ -405,6 +405,10 @@ public sealed class DataBindingDbToolE2ETests : McpContractFixtureBase {
 		//column as something else and the value stops round-tripping.
 		const string colorDataValueTypeUId = "dafb71f9-ee9f-4e0b-a4d7-37aa15987155";
 		string rowName = $"E2E Color {arrangeContext.PackageName}";
+		//One explicit Id used by BOTH writes. Without it UpsertRow calls EnsureRowId, mints a fresh GUID
+		//and takes the INSERT branch, so the scenario would add a second row and still pass merely because
+		//the read output happens to contain the new hex value.
+		string rowId = System.Guid.NewGuid().ToString();
 
 		CommandExecutionActResult createSchemaResult = await ActCommandAsync(
 			arrangeContext,
@@ -441,7 +445,8 @@ public sealed class DataBindingDbToolE2ETests : McpContractFixtureBase {
 				["schema-name"] = schemaName,
 				["binding-name"] = bindingName,
 				["rows"] =
-					$"[{{\"values\":{{\"{nameColumnName}\":\"{rowName}\",\"{colorColumnName}\":\"{colorValue}\"}}}}]"
+					$"[{{\"values\":{{\"Id\":\"{rowId}\",\"{nameColumnName}\":\"{rowName}\","
+					+ $"\"{colorColumnName}\":\"{colorValue}\"}}}}]"
 			});
 
 		// Act - read the binding back so the stored Color value is observed over the wire
@@ -500,7 +505,8 @@ public sealed class DataBindingDbToolE2ETests : McpContractFixtureBase {
 				["package-name"] = arrangeContext.PackageName,
 				["binding-name"] = bindingName,
 				["values"] =
-					$"{{\"{nameColumnName}\":\"{rowName}\",\"{colorColumnName}\":\"{updatedColorValue}\"}}"
+					$"{{\"Id\":\"{rowId}\",\"{nameColumnName}\":\"{rowName}\","
+					+ $"\"{colorColumnName}\":\"{updatedColorValue}\"}}"
 			});
 		CommandExecutionActResult readAfterUpsertResult = await ActCommandAsync(
 			arrangeContext,
@@ -515,8 +521,41 @@ public sealed class DataBindingDbToolE2ETests : McpContractFixtureBase {
 		AssertToolCallSucceeded(upsertResult);
 		AssertCommandExitCode(upsertResult, 0,
 			"upsert-data-binding-row-db must be able to write a Color column too, not only the create path");
+		AssertToolCallSucceeded(readAfterUpsertResult);
+		AssertCommandExitCode(readAfterUpsertResult, 0,
+			"the read that proves the update landed has to have succeeded before its output means anything");
 		AssertOutputContains(readAfterUpsertResult, updatedColorValue,
 			"the upserted Color value must be the one the binding reports afterwards");
+		AssertOutputDoesNotContain(readAfterUpsertResult, colorValue,
+			"reusing the row Id makes the upsert an UPDATE; if the original hex is still there the tool "
+			+ "inserted a second row instead");
+		CountOutputOccurrences(readAfterUpsertResult, rowId).Should().Be(1,
+			because: "the binding must still hold exactly one row - the one the create wrote and the "
+				+ "upsert updated in place");
+	}
+
+	private static void AssertOutputDoesNotContain(CommandExecutionActResult actResult, string unexpected,
+		string because) {
+		actResult.Execution.Output.Should().NotBeNullOrEmpty(
+			because: "command execution should emit human-readable diagnostics");
+		actResult.Execution.Output!
+			.Select(message => message.Value?.ToString() ?? string.Empty)
+			.Should().NotContain(text => text.Contains(unexpected), because: because);
+	}
+
+	private static int CountOutputOccurrences(CommandExecutionActResult actResult, string needle) =>
+		(actResult.Execution.Output ?? [])
+			.Select(message => message.Value?.ToString() ?? string.Empty)
+			.Sum(text => CountOccurrences(text, needle));
+
+	private static int CountOccurrences(string haystack, string needle) {
+		int count = 0;
+		for (int index = haystack.IndexOf(needle, System.StringComparison.OrdinalIgnoreCase);
+				index >= 0;
+				index = haystack.IndexOf(needle, index + needle.Length, System.StringComparison.OrdinalIgnoreCase)) {
+			count++;
+		}
+		return count;
 	}
 
 	private static void AssertOutputContains(CommandExecutionActResult actResult, string expected, string because) {
