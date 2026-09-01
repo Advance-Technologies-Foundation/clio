@@ -151,6 +151,11 @@ public class RunProcessCommand(
 		string rawResponse = applicationClient.ExecutePostRequest(url, StjSerializer.Serialize(args),
 			ResolveRequestTimeout(options.TimeoutSeconds), maxAttempts: 1);
 
+		if (string.IsNullOrWhiteSpace(rawResponse)) {
+			response = Failure("RunProcess returned an empty response");
+			return false;
+		}
+
 		ProcessStartResponse platformResponse;
 		try {
 			platformResponse = StjSerializer.Deserialize<ProcessStartResponse>(rawResponse);

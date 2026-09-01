@@ -121,7 +121,8 @@ public sealed record RunProcessArgs {
 	public Dictionary<string, JsonElement>? Parameters { get; init; }
 
 	[JsonPropertyName("result-parameters")]
-	[Description("Codes of the parameters to read back after the run.")]
+	[Description("Codes of the parameters to read back after the run; a non-empty list forces a "
+		+ "background-mode process to run synchronously.")]
 	public string[]? ResultParameters { get; init; }
 
 	[JsonPropertyName("timeout")]

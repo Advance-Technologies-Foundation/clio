@@ -365,6 +365,24 @@ public sealed class RunProcessToolTests {
 		completedResult.Should().BeTrue(because: "a terminal successful run is the one case that exits 0");
 	}
 
+	[TestCase("")]
+	[TestCase("   ")]
+	[Category("Unit")]
+	[Description("An empty transport response is reported with the crafted 'empty response' error instead of the ArgumentNullException that JsonSerializer.Deserialize would throw past the StjJsonException catch.")]
+	public void TryRun_Should_Report_An_Empty_Platform_Response_As_A_Failure(string rawResponse) {
+		// Arrange
+		Harness harness = BuildHarness(MigratorSignature(), rawResponse);
+		RunProcessOptions options = new() { ProcessName = ProcessCode };
+
+		// Act
+		bool launched = harness.Command.TryRun(options, out RunProcessResponse response);
+
+		// Assert
+		launched.Should().BeFalse(because: "no launch verdict exists when the platform answered nothing");
+		response.Error.Should().Be("RunProcess returned an empty response",
+			because: "the caller should get the crafted message, not a raw serializer exception");
+	}
+
 	#endregion
 
 	#region Response projection
