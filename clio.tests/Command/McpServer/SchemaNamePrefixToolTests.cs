@@ -31,9 +31,17 @@ public sealed class SchemaNamePrefixToolTests {
 	// authenticated DataService probe has to answer with a real envelope; a substituted client
 	// returns null, and an empty body is deliberately no longer taken as proof of authentication.
 	private static IApplicationClient BuildAuthenticatedClient() {
+		const string acceptedCredentialsEnvelope = "{\"rows\":[],\"success\":true}";
 		IApplicationClient applicationClient = Substitute.For<IApplicationClient>();
 		applicationClient.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>())
-			.Returns("{\"rows\":[],\"success\":true}");
+			.Returns(acceptedCredentialsEnvelope);
+		// ExecutePostRequest takes the timeout, attempt count and delay as optional parameters, so a
+		// two-argument stub only matches calls that leave all three at their defaults. The bounded
+		// authentication probe passes its own values, so without this second stub NSubstitute answers
+		// it with null and the empty body is read as rejected credentials.
+		applicationClient.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(),
+				Arg.Any<int>(), Arg.Any<int>())
+			.Returns(acceptedCredentialsEnvelope);
 		return applicationClient;
 	}
 
