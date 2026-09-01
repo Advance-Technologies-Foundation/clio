@@ -232,6 +232,15 @@ public sealed class TabAreaLayersRule {
 	public string TabComponentType { get; init; } = "crt.TabContainer";
 
 	/// <summary>
+	/// Mobile component type of the tab STRIP — the element whose items may only be
+	/// <see cref="TabComponentType"/>. Declared here beside the tab type because it is the same fact family:
+	/// what a tab is, and what may hold one. Read by the pass that reports content the conversion would drop
+	/// into a strip without it being a tab. Absent from the rules file means the platform's own strip type.
+	/// </summary>
+	[JsonPropertyName("tabPanelComponentType")]
+	public string TabPanelComponentType { get; init; } = "crt.TabPanel";
+
+	/// <summary>
 	/// The synthesized tab-body grid (layer 2, the tab's direct child); carries the nested
 	/// <see cref="SynthesizedContainerRule.AreaContainer"/> that receives the tab's content.
 	/// </summary>

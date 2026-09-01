@@ -89,6 +89,17 @@ rules instead of retargeting them. Unreachable on the shipped rules today. Do NO
 probe failed, so that predicate would reopen the general-tab hole in exactly the degraded run the rest
 of this record is about. Gate any narrowing on the mobile type having actually been read.
 
+**Component TYPES are data, never constants in the analyser.** The tab type and the tab-strip type both
+come from `tabAreaLayers` (`tabComponentType`, `tabPanelComponentType`), the same section
+`BuildTabAreaLayers` already reads. That is not style: the rules file is fetched at RUNTIME while this
+assembly is not, so a platform that renames either type is a rules edit — a constant here would quietly
+stop matching and the tab-strip report would go silent on exactly the environments that changed. An
+explicit null/empty on either type switches the pass off rather than falling back to a guess, matching
+what the same value already does for `BuildTabAreaLayers`. `MobileTabsElementName` is the one
+deliberate exception and it is a NAME, not a type: it seeds the strip set so the report survives an
+unreadable mobile template, and `AssignConvertedTabIndexes` treats the same name as a constant of the
+mobile tabbed template for the same reason.
+
 **What breaks if you ignore it** — the failure is SILENT end to end. Unit coverage did not catch the
 missing `GeneralInfoTab` entry because `WebToMobileConversionServiceTests` hands the analyzer a
 HAND-WRITTEN container map (`TabbedContainerMap`) that carried `GeneralInfoTabContainer` →

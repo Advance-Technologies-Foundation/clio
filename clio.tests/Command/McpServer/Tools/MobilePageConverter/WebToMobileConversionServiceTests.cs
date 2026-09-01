@@ -2415,7 +2415,11 @@ public sealed class WebToMobileConversionServiceTests {
 		var elementMap = new List<ElementMapEntry> { TabToContentTwin("GeneralInfoTab", "GeneralTabContainer") };
 
 		// Act
-		PageBusinessRuleConversionInfo result = WebToMobileAnalysisService.ConvertPageBusinessRules(probe, elementMap);
+		// The predicate reads the tab type from the RULES, so the shipped rules are part of the arrangement:
+		// this test is about the twin identity rule, not about what a conversion does with no rules at all.
+		PageBusinessRuleConversionInfo result = WebToMobileAnalysisService.ConvertPageBusinessRules(
+			probe, elementMap, viewModelConfig: null,
+			rules: WebToMobilePageConversionRulesCatalog.LoadBundled());
 
 		// Assert
 		result.ConvertedRules.Should().BeEmpty(
@@ -2436,7 +2440,11 @@ public sealed class WebToMobileConversionServiceTests {
 		var elementMap = new List<ElementMapEntry> { TabToContentTwin("FeedTabContainer", "FeedContainer") };
 
 		// Act
-		PageBusinessRuleConversionInfo result = WebToMobileAnalysisService.ConvertPageBusinessRules(probe, elementMap);
+		// The predicate reads the tab type from the RULES, so the shipped rules are part of the arrangement:
+		// this test is about the twin identity rule, not about what a conversion does with no rules at all.
+		PageBusinessRuleConversionInfo result = WebToMobileAnalysisService.ConvertPageBusinessRules(
+			probe, elementMap, viewModelConfig: null,
+			rules: WebToMobilePageConversionRulesCatalog.LoadBundled());
 
 		// Assert
 		result.ConvertedRules.Should().BeEmpty(

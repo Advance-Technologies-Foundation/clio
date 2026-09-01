@@ -343,6 +343,38 @@ public sealed class WebToMobileGeneralInfoTabRegressionTests {
 				+ "positional rules — gating one on the other is what made this dead for five of six families");
 	}
 
+	[Test]
+	[Description("The tab and tab-strip component types are DATA, not code: renaming them in the rules file must move the tab-strip report with them. Proven on the TAB type — a converted tab of the renamed type must not be reported as a loss, which a hardcoded crt.TabContainer would get wrong. The rules are fetched at runtime while the assembly is not, so a constant here silently stops matching on a platform that renames either type.")]
+	public void Analyze_ShouldTakeTheTabAndStripTypes_FromTheRulesRatherThanFromCode() {
+		// Arrange — the shipped rules with BOTH tab types renamed to values no code could know, and the fixture
+		// retyped to match. Nothing else changes: the same page, the same missing general-tab containers entry.
+		JsonObject fixture = LoadFixture();
+		RetypeComponents(fixture, "crt.TabPanel", "usr.RenamedStrip");
+		RetypeComponents(fixture, "crt.TabContainer", "usr.RenamedTab");
+		WebToMobilePageConversionRules rules = RulesWithoutTheGeneralTabEntry(
+			renameTabTypeTo: "usr.RenamedTab", renameStripTypeTo: "usr.RenamedStrip");
+
+		// Act
+		MobilePageConversionGuide guide = Convert(
+			fixture, rules, mobileTypes: MobileTypesWith("usr.RenamedStrip", "usr.RenamedTab"));
+
+		// Assert
+		// This half would also hold with a hardcoded strip type: the strip set is additionally seeded by the
+		// mobile tabbed template's NAME, which the rename does not touch. It is asserted to keep the arrangement
+		// honest (the page still loses its general tab), not as the proof.
+		guide.TabStripPlacementLosses.Should().NotBeNullOrEmpty(
+			because: "the arrangement must still reproduce the loss after the rename, or the assertion below "
+				+ "would be judging an empty list");
+		// This half is the proof. CaseHistoryTab is a converted tab of the RENAMED tab type sitting in the strip;
+		// it is legitimate there, so it must NOT be reported. A hardcoded crt.TabContainer would fail to
+		// recognise it and would report a correct conversion as a loss.
+		guide.TabStripPlacementLosses.Should().OnlyContain(l => l.MobileType != "usr.RenamedTab",
+			because: "a tab is legitimate inside a strip whatever the platform calls it, so the tab type must "
+				+ "come from the rules; a constant would turn every converted tab into a false loss report");
+		guide.ElementMap.Should().Contain(e => e.WebName == "CaseHistoryTab" && e.MobileType == "usr.RenamedTab",
+			because: "the proof above is vacuous unless a renamed tab actually reached the strip");
+	}
+
 	// ── helpers ──────────────────────────────────────────────────────────────────────────────────
 
 	/// <summary>
@@ -389,6 +421,34 @@ public sealed class WebToMobileGeneralInfoTabRegressionTests {
 			&& !string.Equals(e.MobileType, "crt.TabContainer", StringComparison.OrdinalIgnoreCase))];
 	}
 
+	/// <summary>Rewrites every <c>type</c> equal to <paramref name="from"/> across the whole fixture.</summary>
+	private static void RetypeComponents(JsonNode node, string from, string to) {
+		switch (node) {
+			case JsonArray array:
+				foreach (JsonNode item in array.Where(i => i is not null)) {
+					RetypeComponents(item!, from, to);
+				}
+				break;
+			case JsonObject obj:
+				if (string.Equals(obj["type"]?.ToString(), from, StringComparison.OrdinalIgnoreCase)) {
+					obj["type"] = to;
+				}
+				foreach (KeyValuePair<string, JsonNode> pair in obj.ToList()) {
+					if (pair.Value is JsonArray or JsonObject) {
+						RetypeComponents(pair.Value!, from, to);
+					}
+				}
+				break;
+		}
+	}
+
+	/// <summary>The pinned mobile registry plus the extra types a renamed-platform test needs.</summary>
+	private static IReadOnlySet<string> MobileTypesWith(params string[] extra) {
+		var types = new HashSet<string>(MobileTypes(), StringComparer.OrdinalIgnoreCase);
+		types.UnionWith(extra);
+		return types;
+	}
+
 	private static JsonObject LoadFixture() {
 		string path = Path.Combine(
 			TestContext.CurrentContext.TestDirectory, "Command", "McpServer", "Fixtures", FixtureName);
@@ -402,8 +462,15 @@ public sealed class WebToMobileGeneralInfoTabRegressionTests {
 	/// loses any property added to that class later, and the A/B would then differ in more than the section
 	/// under test while staying green.
 	/// </summary>
-	private static WebToMobilePageConversionRules RulesWithoutTheGeneralTabEntry() {
+	private static WebToMobilePageConversionRules RulesWithoutTheGeneralTabEntry(
+		string renameTabTypeTo = null, string renameStripTypeTo = null) {
 		JsonObject rules = JsonNode.Parse(BundledRulesJson())!.AsObject();
+		if (renameTabTypeTo is not null) {
+			rules["tabAreaLayers"]!["tabComponentType"] = renameTabTypeTo;
+		}
+		if (renameStripTypeTo is not null) {
+			rules["tabAreaLayers"]!["tabPanelComponentType"] = renameStripTypeTo;
+		}
 		JsonArray containers = rules["templates"]!.AsArray()
 			.Single(t => t!["web"]!.ToString() == "PageWithTabsFreedomTemplate")!["containers"]!.AsArray();
 		JsonNode generalTab = containers.Single(c => c!["web"]!.ToString() == "GeneralInfoTab");
@@ -431,7 +498,8 @@ public sealed class WebToMobileGeneralInfoTabRegressionTests {
 		JsonObject fixture,
 		WebToMobilePageConversionRules overrideRules = null,
 		bool mobileTemplateAvailable = true,
-		bool withPositionalPlacements = true) {
+		bool withPositionalPlacements = true,
+		IReadOnlySet<string> mobileTypes = null) {
 		JsonObject page = fixture["page"]!.AsObject();
 		JsonArray webTemplateViewConfig = fixture["webTemplate"]!["viewConfig"]!.DeepClone().AsArray();
 
@@ -452,7 +520,7 @@ public sealed class WebToMobileGeneralInfoTabRegressionTests {
 			WebToMobileAnalysisService.CollectComponentNodesByName(webTemplateViewConfig);
 
 		return WebToMobileAnalysisService.Analyze(
-			bundle, MobileTypes(), new HashSet<string>(StringComparer.OrdinalIgnoreCase),
+			bundle, mobileTypes ?? MobileTypes(), new HashSet<string>(StringComparer.OrdinalIgnoreCase),
 			webByType: new Dictionary<string, ComponentRegistryEntry>(StringComparer.OrdinalIgnoreCase),
 			mobileByType: null, rules, templateRule,
 			sourcePage: "Services_FormPage", sourceTemplate: "PageWithTabsFreedomTemplate",

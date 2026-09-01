@@ -302,7 +302,7 @@ public static class WebToMobileAnalysisService {
 		// mutating pass and surfaced BOTH as a typed guide field (the thing to assert on) and as the sentence
 		// rendered from it in constraints.
 		List<TabStripPlacementLoss> tabStripPlacementLosses =
-			CollectNonTabChildrenOfTabPanels(elementMap, mobileTypesByName);
+			CollectNonTabChildrenOfTabPanels(elementMap, mobileTypesByName, rules);
 
 		// 6. Data sections applied to the mobile body verbatim/filtered (identical structural support on
 		//    mobile): modelConfig is carried over as-is (preserving attribute types like ForwardReference);
@@ -338,7 +338,7 @@ public static class WebToMobileAnalysisService {
 		// 7. Page-level business rules: carry each rule's condition (operand paths remapped from the source
 		//    DS column path to the mobile viewModel attribute name) and only the actions that survive on
 		//    mobile; drop a rule whose every action drops (object-level rules are untouched).
-		PageBusinessRuleConversionInfo pageBusinessRules = ConvertPageBusinessRules(pageBusinessRulesProbe, elementMap, bundle?.ViewModelConfig);
+		PageBusinessRuleConversionInfo pageBusinessRules = ConvertPageBusinessRules(pageBusinessRulesProbe, elementMap, bundle?.ViewModelConfig, rules);
 
 		// 8. Every localized string the converted body references (top-level captions AND nested tokens such
 		//    as config.title / text.template), resolved to its text — so the caller registers them all.
@@ -432,9 +432,10 @@ public static class WebToMobileAnalysisService {
 	/// Passes that resolve an element's IDENTITY (the page-business-rule survivor map) must skip it; passes that
 	/// resolve PLACEMENT (the element map's parent resolution) must not.
 	/// </summary>
-	private static bool IsTabToContentContainerTwin(ElementMapEntry entry) =>
+	private static bool IsTabToContentContainerTwin(ElementMapEntry entry, WebToMobilePageConversionRules rules) =>
 		string.Equals(entry.Operation, "merge", StringComparison.OrdinalIgnoreCase)
-		&& string.Equals(entry.WebType, MobileTabComponentType, StringComparison.OrdinalIgnoreCase)
+		&& rules?.TabAreaLayers?.TabComponentType is { Length: > 0 } tabType
+		&& string.Equals(entry.WebType, tabType, StringComparison.OrdinalIgnoreCase)
 		&& !string.IsNullOrWhiteSpace(entry.MobileName)
 		&& !string.Equals(entry.MobileName, entry.WebName, StringComparison.OrdinalIgnoreCase);
 
@@ -453,7 +454,8 @@ public static class WebToMobileAnalysisService {
 	internal static PageBusinessRuleConversionInfo ConvertPageBusinessRules(
 		PageBusinessRuleProbeResult probe,
 		IReadOnlyList<ElementMapEntry> elementMap,
-		JsonNode viewModelConfig = null) {
+		JsonNode viewModelConfig = null,
+		WebToMobilePageConversionRules rules = null) {
 		if (probe is null) {
 			return null;
 		}
@@ -474,7 +476,7 @@ public static class WebToMobileAnalysisService {
 			// BODY — "hide GeneralInfoTab" would blank the tab's content while leaving the header in the strip.
 			// Excluded so the action is filtered out and the rule is reported in droppedRules instead, which is an
 			// explicit loss the user can act on rather than a wrong conversion nobody sees.
-			if (IsTabToContentContainerTwin(entry)) {
+			if (IsTabToContentContainerTwin(entry, rules)) {
 				continue;
 			}
 			if (string.Equals(entry.Operation, "merge", StringComparison.OrdinalIgnoreCase)
@@ -4597,9 +4599,6 @@ public static class WebToMobileAnalysisService {
 			obj.Name?.ToLowerInvariant(), obj.Parent?.ToLowerInvariant());
 	}
 
-	/// <summary>Mobile component type of the tab strip, whose items may only be <see cref="MobileTabComponentType"/>.</summary>
-	private const string MobileTabPanelComponentType = "crt.TabPanel";
-
 	/// <summary>
 	/// Names the converted elements the element map would insert straight into a mobile <c>crt.TabPanel</c>
 	/// without being a <c>crt.TabContainer</c> themselves. A tab strip renders only tabs, so such a child is
@@ -4616,7 +4615,18 @@ public static class WebToMobileAnalysisService {
 	/// </summary>
 	private static List<TabStripPlacementLoss> CollectNonTabChildrenOfTabPanels(
 		IReadOnlyList<ElementMapEntry> elementMap,
-		IReadOnlyDictionary<string, string> mobileTypesByName) {
+		IReadOnlyDictionary<string, string> mobileTypesByName,
+		WebToMobilePageConversionRules rules) {
+		// Both component types come from the RULES, never from a constant here: the rules file already owns
+		// "what a tab is" for BuildTabAreaLayers, and "what may hold a tab" is the same fact. A platform that
+		// renames either type is then a rules edit, not a code change — which matters because the rules are
+		// fetched at runtime while this assembly is not. An explicit null/empty on either switches the pass
+		// off, exactly as it switches BuildTabAreaLayers off, rather than silently falling back to a guess.
+		string stripType = rules?.TabAreaLayers?.TabPanelComponentType;
+		string tabType = rules?.TabAreaLayers?.TabComponentType;
+		if (string.IsNullOrWhiteSpace(stripType) || string.IsNullOrWhiteSpace(tabType)) {
+			return [];
+		}
 		// A parent is a tab strip when the mobile tabbed template's OWN strip name (a constant of that template,
 		// exactly as AssignConvertedTabIndexes treats it — see its remarks), when the MOBILE TEMPLATE declares it
 		// as one, or when the conversion itself inserts it as one (a page-authored crt.TabPanel). The constant is
@@ -4625,13 +4635,13 @@ public static class WebToMobileAnalysisService {
 		// driven by the web baseline and the rules alone, so the hoist still happens with no mobile template read.
 		var tabPanelNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { MobileTabsElementName };
 		foreach (KeyValuePair<string, string> pair in mobileTypesByName) {
-			if (string.Equals(pair.Value, MobileTabPanelComponentType, StringComparison.OrdinalIgnoreCase)) {
+			if (string.Equals(pair.Value, stripType, StringComparison.OrdinalIgnoreCase)) {
 				tabPanelNames.Add(pair.Key);
 			}
 		}
 		foreach (ElementMapEntry entry in elementMap) {
 			if (string.Equals(entry.Operation, "insert", StringComparison.Ordinal)
-				&& string.Equals(entry.MobileType, MobileTabPanelComponentType, StringComparison.OrdinalIgnoreCase)
+				&& string.Equals(entry.MobileType, stripType, StringComparison.OrdinalIgnoreCase)
 				&& !string.IsNullOrEmpty(entry.MobileName)) {
 				tabPanelNames.Add(entry.MobileName);
 			}
@@ -4640,7 +4650,7 @@ public static class WebToMobileAnalysisService {
 			.Where(e => string.Equals(e.Operation, "insert", StringComparison.Ordinal)
 				&& !string.IsNullOrEmpty(e.ParentName)
 				&& tabPanelNames.Contains(e.ParentName)
-				&& !string.Equals(e.MobileType, MobileTabComponentType, StringComparison.OrdinalIgnoreCase))
+				&& !string.Equals(e.MobileType, tabType, StringComparison.OrdinalIgnoreCase))
 			.Select(e => new TabStripPlacementLoss {
 				Name = string.IsNullOrEmpty(e.MobileName) ? e.WebName : e.MobileName,
 				MobileType = e.MobileType,

@@ -135,6 +135,7 @@
   ],
   "tabAreaLayers": {
     "tabComponentType": "crt.TabContainer",
+    "tabPanelComponentType": "crt.TabPanel",
     "mainTabContainer": {
       "namePrefix": "MainTabContainer_",
       "values": {
