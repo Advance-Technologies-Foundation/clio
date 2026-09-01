@@ -437,7 +437,7 @@ public class CreateThemeToolTests {
 		FakeCreateThemeCommand resolvedCommand = new(createdId: "generated-id");
 		BuildThemeCommandHarness build = new(css: builtCss);
 		EnvironmentSettings resolvedSettings = new() { Uri = "https://docker-fix2.creatio.com" };
-		IPlatformVersionResolver versionResolver = Substitute.For<IPlatformVersionResolver>();
+		IOwnedPlatformVersionResolver versionResolver = Substitute.For<IOwnedPlatformVersionResolver>();
 		versionResolver.ResolveAsync(Arg.Any<CancellationToken>())
 			.Returns(Task.FromResult(new PlatformVersionResolution("10.0.1", VersionResolutionSource.Environment)));
 		build.ResolverFactory.Create(resolvedSettings).Returns(versionResolver);
@@ -932,7 +932,7 @@ public class CreateThemeToolTests {
 			.Build(Arg.Any<string>(), Arg.Any<BuildThemeInput>())
 			.Returns(_ => throw new ArgumentException(buildError));
 		EnvironmentSettings resolvedSettings = new() { Uri = "https://docker-fix2.creatio.com" };
-		IPlatformVersionResolver versionResolver = Substitute.For<IPlatformVersionResolver>();
+		IOwnedPlatformVersionResolver versionResolver = Substitute.For<IOwnedPlatformVersionResolver>();
 		versionResolver.ResolveAsync(Arg.Any<CancellationToken>())
 			.Returns(Task.FromResult(new PlatformVersionResolution("10.0.1", VersionResolutionSource.Environment)));
 		build.ResolverFactory.Create(resolvedSettings).Returns(versionResolver);
@@ -1262,7 +1262,7 @@ public class CreateThemeToolTests {
 		FakeCreateThemeCommand resolvedCommand = new(createdId: "generated-id");
 		BuildThemeCommandHarness build = new();
 		EnvironmentSettings settings = new() { Uri = "https://tenant.example" };
-		IPlatformVersionResolver versionResolver = Substitute.For<IPlatformVersionResolver>();
+		IOwnedPlatformVersionResolver versionResolver = Substitute.For<IOwnedPlatformVersionResolver>();
 		versionResolver.ResolveAsync(Arg.Any<CancellationToken>())
 			.Returns(Task.FromResult(new PlatformVersionResolution("10.0.0.999", VersionResolutionSource.Environment)));
 		build.ResolverFactory.Create(settings).Returns(versionResolver);

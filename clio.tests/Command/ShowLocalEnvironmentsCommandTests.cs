@@ -131,12 +131,12 @@ public class ShowLocalEnvironmentsCommandTests : BaseCommandTests<ShowLocalEnvir
 	}
 
 	private void SetupPingSuccess(EnvironmentSettings environment) {
-		IApplicationClient pingClient = Substitute.For<IApplicationClient>();
+		IOwnedApplicationClient pingClient = Substitute.For<IOwnedApplicationClient>();
 		_clientFactory.CreateEnvironmentClient(environment).Returns(pingClient);
 	}
 
 	private void SetupPingFailure(EnvironmentSettings environment, string message) {
-		IApplicationClient pingClient = Substitute.For<IApplicationClient>();
+		IOwnedApplicationClient pingClient = Substitute.For<IOwnedApplicationClient>();
 		_clientFactory.CreateEnvironmentClient(environment).Returns(pingClient);
 		pingClient
 			.When(c => c.ExecuteGetRequest(Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>()))
@@ -147,12 +147,12 @@ public class ShowLocalEnvironmentsCommandTests : BaseCommandTests<ShowLocalEnvir
 	}
 
 	private void SetupLoginSuccess(EnvironmentSettings environment) {
-		IApplicationClient loginClient = Substitute.For<IApplicationClient>();
+		IOwnedApplicationClient loginClient = Substitute.For<IOwnedApplicationClient>();
 		_clientFactory.CreateClient(environment).Returns(loginClient);
 	}
 
 	private void SetupLoginFailure(EnvironmentSettings environment, string message) {
-		IApplicationClient loginClient = Substitute.For<IApplicationClient>();
+		IOwnedApplicationClient loginClient = Substitute.For<IOwnedApplicationClient>();
 		_clientFactory.CreateClient(environment).Returns(loginClient);
 		loginClient.When(c => c.Login()).Do(_ => throw new System.Exception(message));
 	}

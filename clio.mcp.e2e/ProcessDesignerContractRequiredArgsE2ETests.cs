@@ -27,21 +27,45 @@ namespace Clio.Mcp.E2E;
 /// declared both identities as non-nullable positional parameters, so both were advertised as required while
 /// the tool itself refused a payload carrying both, leaving no sendable call at all.
 /// <para>
-/// Not in CI: process-designer fixtures carry <see cref="ProcessDesignerE2EGate.CategoryName"/> and CI lanes
-/// exclude that category, because the feature ships with the CrtProcessBuilder package rather than with the
-/// default stand. The in-CI guard over the same contract is
-/// <c>clio.tests/Command/McpServer/ProcessDesignerEmittedSchemaTests.cs</c>; this fixture proves the same
-/// facts survive the real server process and the real serializer.
+/// Stand-free and in CI (the <c>McpE2E.NoEnvironment</c> lane): the tools ship gate-free since go-live
+/// (ENG-96132), so the fixture pins the shipping default by construction — an isolated <c>CLIO_HOME</c>
+/// whose <c>Features</c> map is empty — instead of the former feature-enabled developer settings. The unit
+/// twin over the same contract is <c>clio.tests/Command/McpServer/ProcessDesignerEmittedSchemaTests.cs</c>;
+/// this fixture proves the same facts survive the real server process and the real serializer.
 /// </para>
 /// </remarks>
 [TestFixture]
 [AllureNUnit]
 [AllureFeature("process-designer")]
-[Category(ProcessDesignerE2EGate.CategoryName)]
+[Category("McpE2E.NoEnvironment")]
 [Parallelizable(ParallelScope.Self)]
 public sealed class ProcessDesignerContractRequiredArgsE2ETests : McpContractFixtureBase {
 
 	private static readonly string[] DescribeIdentities = ["process-name", "process-uid", "process-caption"];
+
+	/// <inheritdoc />
+	private protected override void ConfigureMcpServerSettings(McpE2ESettings settings) {
+		// An EMPTY Features map is the shipping default of every fresh install; since go-live (ENG-96132)
+		// the process-designer contracts must be advertised on exactly this server, so the fixture pins the
+		// state by construction instead of inheriting whatever the developer's own appsettings says.
+		settings.ProcessEnvironmentVariables["CLIO_HOME"] = CreateIsolatedClioHome(
+			"""
+			{
+			  "ActiveEnvironmentKey": "dev",
+			  "Autoupdate": false,
+			  "Features": {},
+			  "Environments": {
+			    "dev": {
+			      "Uri": "http://localhost",
+			      "Login": "Supervisor",
+			      "Password": "Supervisor",
+			      "IsNetCore": true
+			    }
+			  }
+			}
+			""",
+			GetType().Name);
+	}
 
 	[Test]
 	[Description("Verifies the real clio MCP server does not advertise either mutually exclusive process identity of modify-business-process as required, while environment-name and operations stay required.")]
@@ -49,7 +73,6 @@ public sealed class ProcessDesignerContractRequiredArgsE2ETests : McpContractFix
 	[AllureName("modify-business-process advertises neither process identity as required")]
 	public async Task ModifyBusinessProcess_Should_NotAdvertiseEitherIdentityAsRequired() {
 		// Arrange
-		SkipIfProcessDesignerDisabled();
 		await using ArrangeContext context = Arrange(TimeSpan.FromMinutes(3));
 
 		// Act
@@ -75,7 +98,6 @@ public sealed class ProcessDesignerContractRequiredArgsE2ETests : McpContractFix
 	[AllureName("describe-business-process advertises no single identity as required")]
 	public async Task DescribeBusinessProcess_Should_NotAdvertiseAnyIdentityAsRequired() {
 		// Arrange
-		SkipIfProcessDesignerDisabled();
 		await using ArrangeContext context = Arrange(TimeSpan.FromMinutes(3));
 
 		// Act
@@ -100,7 +122,6 @@ public sealed class ProcessDesignerContractRequiredArgsE2ETests : McpContractFix
 	[AllureName("create-business-process advertises package-name as optional")]
 	public async Task CreateBusinessProcess_Should_NotAdvertisePackageNameAsRequired() {
 		// Arrange
-		SkipIfProcessDesignerDisabled();
 		await using ArrangeContext context = Arrange(TimeSpan.FromMinutes(3));
 
 		// Act
@@ -115,18 +136,6 @@ public sealed class ProcessDesignerContractRequiredArgsE2ETests : McpContractFix
 			because: "environment-name stays mandatory, which keeps the negative above non-vacuous");
 		required.Should().Contain("descriptor",
 			because: "the descriptor is the process definition, so the tool cannot run without it");
-	}
-
-	/// <summary>
-	/// Skips when <c>process-designer</c> is off in the appsettings the server process loads. The gate resolves
-	/// that file FROM <see cref="McpE2ESettings.ClioProcessPath" />, so the path has to be filled in exactly as
-	/// the shared fixture fills it - a bare <c>TestConfiguration.Load()</c> would look in the wrong place, read
-	/// no feature map, and fail closed into a permanent skip that looks like a passing suite.
-	/// </summary>
-	private static void SkipIfProcessDesignerDisabled() {
-		McpE2ESettings settings = TestConfiguration.Load();
-		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
-		ProcessDesignerE2EGate.SkipIfFeatureDisabled(settings);
 	}
 
 	/// <summary>

@@ -75,7 +75,7 @@ public abstract class DataBindingDbFixtureBase : McpContractFixtureBase {
 		string workspaceName = $"workspace-{System.Guid.NewGuid():N}";
 		string workspacePath = Path.Combine(rootDirectory, workspaceName);
 		string packageName = $"Pkg{System.Guid.NewGuid():N}".Substring(0, 18);
-		CancellationTokenSource cancellationTokenSource = new(System.TimeSpan.FromMinutes(5));
+		CancellationTokenSource cancellationTokenSource = new(System.TimeSpan.FromMinutes(8));
 
 		await ClioCliCommandRunner.RunAndAssertSuccessAsync(
 			settings,
@@ -92,11 +92,19 @@ public abstract class DataBindingDbFixtureBase : McpContractFixtureBase {
 				["push-workspace", "-e", environmentName],
 				workingDirectory: workspacePath,
 				cancellationToken: cancellationTokenSource.Token);
+			await ClioCliCommandRunner.WaitForEnvironmentRecoveryAsync(
+				settings,
+				environmentName,
+				cancellationTokenSource.Token);
 			await ClioCliCommandRunner.RunAndAssertSuccessAsync(
 				settings,
 				["pkg-hotfix", packageName, "true", "-e", environmentName],
 				workingDirectory: workspacePath,
 				cancellationToken: cancellationTokenSource.Token);
+			await ClioCliCommandRunner.WaitForEnvironmentRecoveryAsync(
+				settings,
+				environmentName,
+				cancellationTokenSource.Token);
 		}
 
 		McpServerSession session = Session;

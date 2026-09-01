@@ -33,13 +33,13 @@ internal class ApplicationClientFactory : IApplicationClientFactory{
 			GuardBearerSettings(settings);
 			Lazy<CreatioClient> client = new(() =>
 				new CreatioClient(settings.Uri, settings.AccessToken, settings.IsNetCore));
-			return new CreatioClientAdapter(client, _noReauthExecutor);
+			return new CreatioClientAdapter(client, null, _noReauthExecutor, ownsClient: true);
 		}
 
 		if (!string.IsNullOrEmpty(settings.Cookie)) {
 			throw new NotSupportedException(
-				"Cookie-based authentication is not supported in v1 (no supported CreatioClient " +
-				"cookie-injection path); use an access token.");
+				"A raw EnvironmentSettings.Cookie value is not a supported structured Creatio session; " +
+				"use an access token or import typed session cookies on a forms-auth client.");
 		}
 
 		if (string.IsNullOrEmpty(settings.ClientId)) {
@@ -59,13 +59,14 @@ internal class ApplicationClientFactory : IApplicationClientFactory{
 			GuardBearerSettings(settings);
 			Lazy<CreatioClient> client = new(() =>
 				new CreatioClient(settings.Uri, settings.AccessToken, settings.IsNetCore));
-			return new CreatioClientAdapter(client, new ServiceUrlBuilder(settings), _noReauthExecutor);
+			return new CreatioClientAdapter(client, new ServiceUrlBuilder(settings), _noReauthExecutor,
+				ownsClient: true);
 		}
 
 		if (!string.IsNullOrEmpty(settings.Cookie)) {
 			throw new NotSupportedException(
-				"Cookie-based authentication is not supported in v1 (no supported CreatioClient " +
-				"cookie-injection path); use an access token.");
+				"A raw EnvironmentSettings.Cookie value is not a supported structured Creatio session; " +
+				"use an access token or import typed session cookies on a forms-auth client.");
 		}
 
 		ServiceUrlBuilder serviceUrlBuilder = new(settings);
@@ -78,6 +79,34 @@ internal class ApplicationClientFactory : IApplicationClientFactory{
 			settings.ClientSecret, settings.AuthAppUri, settings.IsNetCore, serviceUrlBuilder);
 	}
 
+	/// <inheritdoc />
+	public IOwnedApplicationClient CreateFormsEnvironmentClient(EnvironmentSettings environment) {
+		ArgumentNullException.ThrowIfNull(environment);
+		if (string.IsNullOrWhiteSpace(environment.Login) || string.IsNullOrWhiteSpace(environment.Password)) {
+			throw new ArgumentException(
+				"Forms authentication requires non-empty login and password values.", nameof(environment));
+		}
+		return new CreatioClientAdapter(environment.Uri, environment.Login, environment.Password,
+			useUntrustedSsl: false, environment.IsNetCore, new ServiceUrlBuilder(environment));
+	}
+
+	/// <inheritdoc />
+	public IOwnedApplicationClient CreateBearerEnvironmentClient(EnvironmentSettings environment,
+		string accessToken) {
+		ArgumentNullException.ThrowIfNull(environment);
+		EnvironmentSettings bearerSettings = new() {
+			Uri = environment.Uri,
+			IsNetCore = environment.IsNetCore,
+			AccessToken = accessToken,
+			AccessTokenType = AuthenticationScheme.Bearer
+		};
+		GuardBearerSettings(bearerSettings);
+		Lazy<CreatioClient> client = new(() => new CreatioClient(environment.Uri, accessToken,
+			useUntrustedSsl: false, environment.IsNetCore));
+		return new CreatioClientAdapter(client, new ServiceUrlBuilder(environment), _noReauthExecutor,
+			ownsClient: true);
+	}
+
 	#endregion
 
 	#region Methods: Private
@@ -86,6 +115,9 @@ internal class ApplicationClientFactory : IApplicationClientFactory{
 	// secret token value (FR-12): a blank url is named explicitly, and an unsupported token type
 	// is reported by type name only.
 	private static void GuardBearerSettings(EnvironmentSettings settings) {
+		if (string.IsNullOrWhiteSpace(settings.AccessToken)) {
+			throw new ArgumentException("Bearer authentication requires a non-empty access token.", nameof(settings));
+		}
 		if (string.IsNullOrWhiteSpace(settings.Uri)) {
 			throw new ArgumentException(
 				"An access token was supplied but the environment url is missing; provide a non-empty url.",
