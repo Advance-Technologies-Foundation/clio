@@ -60,6 +60,9 @@ public sealed class CreatioHostServiceTests : BaseClioModuleTests {
 			&& options.InheritedEnvironmentVariableAllowlist.Contains("PATH")
 			&& options.InheritedEnvironmentVariableAllowlist.Contains("DOTNET_SYSTEM_GLOBALIZATION_INVARIANT")
 			&& options.InheritedEnvironmentVariableAllowlist.Contains("LD_LIBRARY_PATH")
+			&& options.InheritedEnvironmentVariableAllowlist.Contains("DISPLAY")
+			&& options.InheritedEnvironmentVariableAllowlist.Contains("XDG_RUNTIME_DIR")
+			&& options.InheritedEnvironmentVariableAllowlist.Contains("DBUS_SESSION_BUS_ADDRESS")
 			&& options.InheritedEnvironmentVariableAllowlist.Contains("ASPNETCORE_ENVIRONMENT")
 			&& options.InheritedEnvironmentVariableAllowlist.Contains("DOTNET_ENVIRONMENT")
 			&& !options.InheritedEnvironmentVariableAllowlist.Contains("Kestrel__Endpoints__Https__Certificate__Password")));
@@ -143,7 +146,7 @@ public sealed class CreatioHostServiceTests : BaseClioModuleTests {
 
 		// Assert
 		script.Should().Contain(
-			$"export Kestrel__Endpoints__Https__Certificate__Password=\"$(/usr/bin/plutil -extract 'Kestrel__Endpoints__Https__Certificate__Password' raw -o - '{CreatioHostEnvironmentStore.GetStorePath(workingDirectory)}')\"",
+			$"'Kestrel__Endpoints__Https__Certificate__Password'=\"$(/usr/bin/plutil -extract 'Kestrel__Endpoints__Https__Certificate__Password' raw -o - '{CreatioHostEnvironmentStore.GetStorePath(workingDirectory)}')\" \\",
 			because: "the launcher must load certificate values from the protected store at runtime");
 		script.Should().NotContain("secret'with;metachar",
 			because: "a terminated terminal launcher must not leave the certificate password embedded on disk");
@@ -153,8 +156,26 @@ public sealed class CreatioHostServiceTests : BaseClioModuleTests {
 		script.Should().Contain(
 			"echo 'Starting Creatio [dev; touch /tmp/name-pwned]...'",
 			because: "the environment label must remain a literal display value in the terminal script");
-		script.Should().EndWith("dotnet Terrasoft.WebHost.dll" + Environment.NewLine,
+		script.Should().EndWith("  dotnet Terrasoft.WebHost.dll" + Environment.NewLine,
 			because: "the launcher must run only the fixed Creatio host command after setting its safe inputs");
+	}
+
+	[Test]
+	[Description("Passes a hyphenated Kestrel endpoint environment key through env without interpreting it as shell assignment syntax")]
+	public void BuildTerminalLaunchScript_ShouldSupportHyphenatedKestrelEnvironmentKeys()
+	{
+		// Arrange
+		const string key = "Kestrel__Endpoints__https-prod__Certificate__Password";
+
+		// Act
+		string script = CreatioHostService.BuildTerminalLaunchScript(
+			"/tmp/creatio",
+			"dev",
+			new Dictionary<string, string> { [key] = "secret" });
+
+		// Assert
+		script.Should().Contain($"'{key}'=\"$(/usr/bin/plutil -extract '{key}' raw -o -",
+			because: "the env utility accepts the generated Kestrel key while shell quoting protects it");
 	}
 
 	[Test]
@@ -162,7 +183,7 @@ public sealed class CreatioHostServiceTests : BaseClioModuleTests {
 	public void BuildTerminalLaunchScript_ShouldRejectInvalidEnvironmentVariableNames() {
 		// Arrange
 		IReadOnlyDictionary<string, string> environmentVariables = new Dictionary<string, string> {
-			["Kestrel-Https-Password"] = "secret"
+			["Kestrel__Endpoints__https.prod__Certificate__Password"] = "secret"
 		};
 
 		// Act
@@ -174,5 +195,19 @@ public sealed class CreatioHostServiceTests : BaseClioModuleTests {
 		// Assert
 		act.Should().Throw<InvalidOperationException>(
 			because: "a terminal launcher must not turn an invalid environment key into executable shell syntax");
+	}
+
+	[Test]
+	[Description("Rejects Windows terminal environment names containing command metacharacters instead of interpolating them into cmd.exe arguments.")]
+	public void EscapeWindowsCommandArgument_ShouldRejectCommandMetacharacters() {
+		// Arrange
+		const string hostileEnvironmentName = "dev\" & whoami";
+
+		// Act
+		Action act = () => CreatioHostService.EscapeWindowsCommandArgument(hostileEnvironmentName);
+
+		// Assert
+		act.Should().Throw<InvalidOperationException>(
+			because: "registered environment names must not become executable cmd.exe syntax");
 	}
 }

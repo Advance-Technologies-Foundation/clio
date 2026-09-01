@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using System.Runtime.InteropServices;
 using System.Reflection;
 
@@ -60,6 +61,17 @@ public class CreatioHostService : ICreatioHostService
 		"DOTNET_CLI_HOME",
 		"DOTNET_SYSTEM_GLOBALIZATION_INVARIANT",
 		"LD_LIBRARY_PATH",
+		"DISPLAY",
+		"WAYLAND_DISPLAY",
+		"XDG_RUNTIME_DIR",
+		"DBUS_SESSION_BUS_ADDRESS",
+		"XAUTHORITY",
+		"LANG",
+		"LC_ALL",
+		"LC_CTYPE",
+		"LC_MESSAGES",
+		"TERM",
+		"COLORTERM",
 		"ASPNETCORE_ENVIRONMENT",
 		"DOTNET_ENVIRONMENT",
 		"SystemRoot",
@@ -223,8 +235,20 @@ public class CreatioHostService : ICreatioHostService
 			.Replace("$", "\\$", StringComparison.Ordinal)
 			.Replace("`", "\\`", StringComparison.Ordinal);
 
-	private static string EscapeWindowsCommandArgument(string value) =>
-		$"\"{value.Replace("\"", "\\\"", StringComparison.Ordinal)}\"";
+	internal static string EscapeWindowsCommandArgument(string value)
+	{
+		const string unsafeCommandCharacters = "\"%!&|<>^()\r\n";
+		foreach (char character in value)
+		{
+			if (unsafeCommandCharacters.IndexOf(character) >= 0)
+			{
+				throw new InvalidOperationException(
+					"The environment name contains characters that cannot be safely passed to a Windows terminal launcher.");
+			}
+		}
+
+		return $"\"{value}\"";
+	}
 
 	private static string GetClioInvocation(bool useWindowsQuoting)
 	{
@@ -295,25 +319,30 @@ public class CreatioHostService : ICreatioHostService
 			"cleanup() { rm -f -- \"$0\"; }",
 			"trap cleanup EXIT HUP INT TERM"
 		];
-		foreach (string key in (environmentVariables ?? new Dictionary<string, string>()).Keys)
-		{
-			if (!IsValidShellEnvironmentVariableName(key))
-			{
-				throw new InvalidOperationException(
-					$"The host environment variable '{key}' cannot be passed to a POSIX terminal launcher.");
-			}
-
-			// Read the secret from the owner-only store at launch time. Keeping only the key and store
-			// path in this temporary launcher prevents a terminated shell from leaving a certificate
-			// password behind in the generated script.
-			lines.Add(
-				$"export {key}=\"$(/usr/bin/plutil -extract {EscapeShellSingleQuoted(key)} raw -o - {EscapeShellSingleQuoted(environmentStorePath)})\"");
-		}
-
 		string displayName = string.IsNullOrWhiteSpace(envName) ? "environment" : envName;
 		lines.Add($"cd -- {EscapeShellSingleQuoted(workingDirectory)}");
 		lines.Add($"echo {EscapeShellSingleQuoted($"Starting Creatio [{displayName}]...")}");
-		lines.Add("dotnet Terrasoft.WebHost.dll");
+		IReadOnlyCollection<string> environmentKeys =
+			(environmentVariables ?? new Dictionary<string, string>()).Keys.ToArray();
+		string invalidKey = environmentKeys.FirstOrDefault(key => !IsValidShellEnvironmentVariableName(key));
+		if (invalidKey is not null)
+		{
+			throw new InvalidOperationException(
+				$"The host environment variable '{invalidKey}' cannot be passed to a POSIX terminal launcher.");
+		}
+
+		lines.Add("exec /usr/bin/env \\");
+		foreach (string key in environmentKeys)
+		{
+			// Read the secret from the owner-only store at launch time. Keeping only the key and store
+			// path in this temporary launcher prevents a terminated shell from leaving a certificate
+			// password behind in the generated script. /usr/bin/env accepts Kestrel names containing
+			// hyphens, while quoting keeps the key and value one literal argument to env.
+			lines.Add(
+				$"  {EscapeShellSingleQuoted(key)}=\"$(/usr/bin/plutil -extract {EscapeShellSingleQuoted(key)} raw -o - {EscapeShellSingleQuoted(environmentStorePath)})\" \\");
+		}
+
+		lines.Add("  dotnet Terrasoft.WebHost.dll");
 		return string.Join(Environment.NewLine, lines) + Environment.NewLine;
 	}
 
@@ -328,7 +357,7 @@ public class CreatioHostService : ICreatioHostService
 		for (int index = 1; index < value.Length; index++)
 		{
 			char character = value[index];
-			if (!(character == '_' || character is >= 'A' and <= 'Z' or >= 'a' and <= 'z' or >= '0' and <= '9'))
+			if (!(character == '_' || character == '-' || character is >= 'A' and <= 'Z' or >= 'a' and <= 'z' or >= '0' and <= '9'))
 			{
 				return false;
 			}

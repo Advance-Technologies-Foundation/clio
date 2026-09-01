@@ -178,7 +178,7 @@ public sealed class CreatioHostEnvironmentStore : ICreatioHostEnvironmentStore
 		for (int index = 1; index < value.Length; index++)
 		{
 			char character = value[index];
-			if (!(character == '_' || character is >= 'A' and <= 'Z' or >= 'a' and <= 'z' or >= '0' and <= '9'))
+			if (!(character == '_' || character == '-' || character is >= 'A' and <= 'Z' or >= 'a' and <= 'z' or >= '0' and <= '9'))
 			{
 				return false;
 			}

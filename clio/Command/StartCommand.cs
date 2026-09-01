@@ -102,7 +102,7 @@ public class StartCommand : Command<StartOptions>
 				return 1;
 			}
 
-			string envName = options.Environment ?? "default";
+			string envName = ResolveEnvironmentName(options, env);
 
 			// Check if this is an IIS deployment
 			if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
@@ -296,6 +296,18 @@ public class StartCommand : Command<StartOptions>
 		// Get environment by name (uses default if not specified)
 		// Don't use GetEnvironment(options) as Fill() doesn't preserve EnvironmentPath
 		return _settingsRepository.GetEnvironment(options.Environment);
+	}
+
+	private string ResolveEnvironmentName(StartOptions options, EnvironmentSettings environment) {
+		if (!string.IsNullOrWhiteSpace(options.Environment)) {
+			return options.Environment;
+		}
+
+		Dictionary<string, EnvironmentSettings>? environments = _settingsRepository.GetAllEnvironments();
+		KeyValuePair<string, EnvironmentSettings>? matchingEnvironment = environments is null
+			? null
+			: environments.FirstOrDefault(entry => ReferenceEquals(entry.Value, environment));
+		return matchingEnvironment?.Key ?? "default";
 	}
 
 	private void ShowAvailableEnvironments() {

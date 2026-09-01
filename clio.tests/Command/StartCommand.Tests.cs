@@ -304,6 +304,33 @@ public class StartCommandTestCase : BaseCommandTests<StartOptions>
 	}
 
 	[Test]
+	[Description("Uses the registered active environment key when launching a terminal without an explicit environment option")]
+	public void Execute_UsesRegisteredActiveEnvironmentName_WhenNoEnvironmentSpecified()
+	{
+		// Arrange
+		string envPath = @"C:\Creatio\Active";
+		string dllPath = Path.Combine(envPath, "Terrasoft.WebHost.dll");
+		EnvironmentSettings env = new() { EnvironmentPath = envPath, Uri = "https://localhost:5000" };
+		StartOptions options = new() { Terminal = true };
+
+		_settingsRepository.FindEnvironment(null).Returns(env);
+		_settingsRepository.GetEnvironment((string)null).Returns(env);
+		_settingsRepository.GetAllEnvironments().Returns(new Dictionary<string, EnvironmentSettings> {
+			["production-eu"] = env
+		});
+		_fileSystem.ExistsDirectory(envPath).Returns(true);
+		_fileSystem.ExistsFile(dllPath).Returns(true);
+		_iisSiteDetector.GetSitesByPath(envPath).Returns(Task.FromResult(new List<IISSiteInfo>()));
+
+		// Act
+		int result = _command.Execute(options);
+
+		// Assert
+		result.Should().Be(0, because: "the active registered environment should start successfully");
+		_creatioHostService.Received(1).StartInNewTerminal(envPath, "production-eu");
+	}
+
+	[Test]
 	[Description("Pings site after starting IIS site successfully")]
 	public void Execute_PingsSite_AfterStartingIISSite()
 	{

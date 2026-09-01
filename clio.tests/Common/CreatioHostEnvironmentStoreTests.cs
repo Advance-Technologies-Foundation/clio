@@ -67,6 +67,25 @@ public sealed class CreatioHostEnvironmentStoreTests : BaseClioModuleTests
 	}
 
 	[Test]
+	[Description("Accepts a Kestrel endpoint name containing a hyphen when persisting its certificate password")]
+	public void Save_ShouldAcceptHyphenatedKestrelEndpointName()
+	{
+		// Arrange
+		IReadOnlyDictionary<string, string> environmentVariables = new Dictionary<string, string>
+		{
+			["Kestrel__Endpoints__https-prod__Certificate__Password"] = "secret"
+		};
+
+		// Act
+		_sut.Save("/tmp/creatio", environmentVariables);
+
+		// Assert
+		_fileSystem.Received(1).WriteOwnerOnlyTextToFile(
+			Arg.Any<string>(),
+			Arg.Is<string>(json => json.Contains("https-prod", StringComparison.Ordinal)));
+	}
+
+	[Test]
 	[Description("Loads the saved host environment values with case-insensitive variable lookup for a later dotnet start.")]
 	public void Load_ShouldReturnSavedEnvironmentValues()
 	{
