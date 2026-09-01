@@ -2,7 +2,6 @@
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
-using System.Text.Json.Nodes;
 using System.Threading.Tasks;
 using DataBindingValueConverter = Clio.Command.DataBindingValueConverter;
 using Clio.Command.ProcessModel;
@@ -72,63 +71,6 @@ public class SchemaTestFixture{
 				+ "localization row would ship a per-culture hex value that the platform never reads");
 		converter.IsStringLike(shortTextUId).Should().BeTrue(
 			because: "a real text column must still be localizable, so the guard is not simply off");
-	}
-
-	[Test]
-	[Description("A Color value still crosses the data-binding wire as its hex literal, even though its CLR type is System.Drawing.Color.")]
-	public void ConvertValue_Should_Pass_Through_The_Hex_Literal_For_A_Color_Column() {
-		// Arrange
-		Guid colorUId = DataValueTypeMap.FromRuntimeValueType(18);
-		DataBindingValueConverter converter = new(Substitute.For<IFileSystem>());
-		JsonNode valueNode = JsonValue.Create("#FF6900");
-
-		// Act
-		object converted = converter.ConvertValue(valueNode, colorUId, "UsrColor", allowEmptyString: false);
-
-		// Assert
-		converted.Should().Be("#FF6900",
-			because: "the binding row carries the literal verbatim; keeping the native CLR mapping must not "
-				+ "break the wire format");
-	}
-
-	[Test]
-	[Description("A numeric wire value for a Color column is rejected instead of being stringified into an invalid Color.")]
-	public void ConvertValue_Should_Reject_A_Numeric_Value_For_A_Color_Column() {
-		// Arrange
-		Guid colorUId = DataValueTypeMap.FromRuntimeValueType(18);
-		DataBindingValueConverter converter = new(Substitute.For<IFileSystem>());
-		JsonNode valueNode = JsonValue.Create(123);
-
-		// Act
-		Action act = () => converter.ConvertValue(valueNode, colorUId, "UsrColor", allowEmptyString: false);
-
-		// Assert
-		act.Should().Throw<InvalidOperationException>(
-			because: "a valid Color arrives as a hex string; turning 123 into \"123\" would ship an invalid "
-				+ "Color to the platform instead of failing type validation")
-			.WithMessage("*UsrColor*");
-	}
-
-	[Test]
-	[Description("An object wire value for a Color column is rejected instead of being serialized as JSON text.")]
-	public void ConvertValue_Should_Reject_An_Object_Value_For_A_Color_Column() {
-		// Arrange
-		Guid colorUId = DataValueTypeMap.FromRuntimeValueType(18);
-		DataBindingValueConverter converter = new(Substitute.For<IFileSystem>());
-		JsonNode valueNode = new JsonObject {
-			["r"] = 0,
-			["g"] = 157,
-			["b"] = 227
-		};
-
-		// Act
-		Action act = () => converter.ConvertValue(valueNode, colorUId, "UsrColor", allowEmptyString: false);
-
-		// Assert
-		act.Should().Throw<InvalidOperationException>(
-			because: "serializing the object would send {\"r\":0,\"g\":157,\"b\":227} as the Color wire value; "
-				+ "the type-validation error is the correct outcome")
-			.WithMessage("*UsrColor*");
 	}
 
 	[TestCase("ProcessSchemaResponse0.json")]

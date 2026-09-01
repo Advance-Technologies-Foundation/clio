@@ -288,6 +288,124 @@ internal sealed class DataBindingDbCommandTests : BaseClioModuleTests {
 	}
 
 	[Test]
+	[Description("Rejects a numeric value for a Color column before create-data-binding-db issues any remote write, instead of POSTing \"123\" under dataValueType 18.")]
+	public void CreateDataBindingDb_Should_Reject_A_Numeric_Color_Value_Before_Any_Remote_Write() {
+		// Arrange
+		_schemaResponseJson = BuildSchemaResponseJson(
+			"Account",
+			(Guid.Parse("ae0e45ca-c495-4fe7-a39d-3ab7278e1617"), "Id", 0),
+			(Guid.Parse("736c30a7-c0ec-4fa9-b034-2552b319b633"), "Name", 28),
+			(Guid.Parse("11111111-2222-3333-4444-555555555555"), "UsrColor", 18));
+		_bindingLookupResponseJson = BuildBindingLookupResponse("Account", "UsrAccountBinding");
+		CreateDataBindingDbOptions options = new() {
+			Environment = "dev",
+			PackageName = PackageName,
+			SchemaName = "Account",
+			BindingName = "UsrAccountBinding",
+			RowsJson = """[{"values":{"Name":"First row","UsrColor":"#009DE3"}},{"values":{"Name":"Second row","UsrColor":123}}]"""
+		};
+
+		// Act
+		int result = _createCommand.Execute(options);
+
+		// Assert
+		result.Should().Be(1,
+			because: "a numeric Color input is not a \"#RRGGBB\" literal and must fail type validation");
+		_logger.Received(1).WriteError(Arg.Is<string>(message => message.Contains("UsrColor")));
+		_applicationClient.DidNotReceive().ExecutePostRequest(
+			"http://localhost/0/DataService/json/SyncReply/InsertQuery",
+			Arg.Any<string>(),
+			Arg.Any<int>(),
+			Arg.Any<int>(),
+			Arg.Any<int>());
+		_applicationClient.DidNotReceive().ExecutePostRequest(
+			"http://localhost/0/ServiceModel/SchemaDataDesignerService.svc/SaveSchema",
+			Arg.Any<string>(),
+			Arg.Any<int>(),
+			Arg.Any<int>(),
+			Arg.Any<int>());
+	}
+
+	[Test]
+	[Description("Rejects an object value for a Color column before upsert-data-binding-row-db issues any remote write, instead of POSTing its JSON text under dataValueType 18.")]
+	public void UpsertDataBindingRowDb_Should_Reject_An_Object_Color_Value_Before_Any_Remote_Write() {
+		// Arrange
+		Guid rowId = Guid.Parse("bbbbbbbb-cccc-dddd-eeee-ffffffffffff");
+		_schemaResponseJson = BuildSchemaResponseJson(
+			"Account",
+			(Guid.Parse("ae0e45ca-c495-4fe7-a39d-3ab7278e1617"), "Id", 0),
+			(Guid.Parse("736c30a7-c0ec-4fa9-b034-2552b319b633"), "Name", 28),
+			(Guid.Parse("11111111-2222-3333-4444-555555555555"), "UsrColor", 18));
+		_bindingLookupResponseJson = BuildBindingLookupResponse("Account", "UsrAccountBinding");
+		UpsertDataBindingRowDbOptions options = new() {
+			Environment = "dev",
+			PackageName = PackageName,
+			BindingName = "UsrAccountBinding",
+			ValuesJson = $$$"""{"Id":"{{{rowId}}}","UsrColor":{"r":0,"g":157,"b":227}}"""
+		};
+
+		// Act
+		int result = _upsertCommand.Execute(options);
+
+		// Assert
+		result.Should().Be(1,
+			because: "serializing the object would write {\"r\":0,\"g\":157,\"b\":227} into a Color column");
+		_logger.Received(1).WriteError(Arg.Is<string>(message => message.Contains("UsrColor")));
+		_applicationClient.DidNotReceive().ExecutePostRequest(
+			"http://localhost/0/DataService/json/SyncReply/UpdateQuery",
+			Arg.Any<string>(),
+			Arg.Any<int>(),
+			Arg.Any<int>(),
+			Arg.Any<int>());
+		_applicationClient.DidNotReceive().ExecutePostRequest(
+			"http://localhost/0/DataService/json/SyncReply/InsertQuery",
+			Arg.Any<string>(),
+			Arg.Any<int>(),
+			Arg.Any<int>(),
+			Arg.Any<int>());
+	}
+
+	[Test]
+	[Description("Writes an explicit null Color as null rather than an empty string, so clearing a Color column does not store an invalid literal.")]
+	public void UpsertDataBindingRowDb_Should_Preserve_Null_For_A_Color_Column() {
+		// Arrange
+		Guid rowId = Guid.Parse("bbbbbbbb-cccc-dddd-eeee-ffffffffffff");
+		_schemaResponseJson = BuildSchemaResponseJson(
+			"Account",
+			(Guid.Parse("ae0e45ca-c495-4fe7-a39d-3ab7278e1617"), "Id", 0),
+			(Guid.Parse("736c30a7-c0ec-4fa9-b034-2552b319b633"), "Name", 28),
+			(Guid.Parse("11111111-2222-3333-4444-555555555555"), "UsrColor", 18));
+		_bindingLookupResponseJson = BuildBindingLookupResponse("Account", "UsrAccountBinding");
+		_boundSchemaDataItemsJson = JsonSerializer.Serialize(new[] {
+			new Dictionary<string, object?> {
+				["Id"] = rowId,
+				["Name"] = "Existing account"
+			}
+		});
+		UpsertDataBindingRowDbOptions options = new() {
+			Environment = "dev",
+			PackageName = PackageName,
+			BindingName = "UsrAccountBinding",
+			ValuesJson = $$"""{"Id":"{{rowId}}","UsrColor":null}"""
+		};
+
+		// Act
+		int result = _upsertCommand.Execute(options);
+
+		// Assert
+		result.Should().Be(0,
+			because: "clearing a Color column is a legitimate update");
+		_applicationClient.Received().ExecutePostRequest(
+			"http://localhost/0/DataService/json/SyncReply/UpdateQuery",
+			Arg.Is<string>(body =>
+				body.Contains("\"dataValueType\":18") &&
+				body.Contains("\"value\":null")),
+			Arg.Any<int>(),
+			Arg.Any<int>(),
+			Arg.Any<int>());
+	}
+
+	[Test]
 	[Description("Removes the last bound row through remove-data-binding-row-db, deletes the runtime row, and removes the package schema data record when no bound rows remain.")]
 	public void RemoveDataBindingRowDb_Should_Delete_Remote_Row_And_Package_Schema_Data_When_Last_Row_Is_Removed() {
 		// Arrange

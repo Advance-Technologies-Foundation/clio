@@ -145,13 +145,21 @@ public sealed class McpFixturePolicyTests {
 			(typeof(SchemaTestFixture),
 				nameof(SchemaTestFixture.FromRuntimeValueType_Should_Map_Color_To_NativeColorDataType)),
 			(typeof(SchemaTestFixture),
-				nameof(SchemaTestFixture.ConvertValue_Should_Pass_Through_The_Hex_Literal_For_A_Color_Column)),
-			(typeof(SchemaTestFixture),
-				nameof(SchemaTestFixture.ConvertValue_Should_Reject_A_Numeric_Value_For_A_Color_Column)),
-			(typeof(SchemaTestFixture),
-				nameof(SchemaTestFixture.ConvertValue_Should_Reject_An_Object_Value_For_A_Color_Column)),
+				nameof(SchemaTestFixture.IsStringLike_Should_Reject_Color_So_It_Stays_Out_Of_Localization_Rows)),
+			(typeof(DataBindingValueConverterTests),
+				nameof(DataBindingValueConverterTests.ConvertValue_Should_Pass_Through_The_Hex_Literal_For_A_Color_Column)),
+			(typeof(DataBindingValueConverterTests),
+				nameof(DataBindingValueConverterTests.ConvertValue_Should_Reject_A_Numeric_Value_For_A_Color_Column)),
+			(typeof(DataBindingValueConverterTests),
+				nameof(DataBindingValueConverterTests.ConvertValue_Should_Reject_An_Object_Value_For_A_Color_Column)),
 			(typeof(DataBindingDbCommandTests),
-				nameof(DataBindingDbCommandTests.CreateDataBindingDb_Should_Support_Color_Runtime_Column))
+				nameof(DataBindingDbCommandTests.CreateDataBindingDb_Should_Support_Color_Runtime_Column)),
+			(typeof(DataBindingDbCommandTests),
+				nameof(DataBindingDbCommandTests.CreateDataBindingDb_Should_Reject_A_Numeric_Color_Value_Before_Any_Remote_Write)),
+			(typeof(DataBindingDbCommandTests),
+				nameof(DataBindingDbCommandTests.UpsertDataBindingRowDb_Should_Reject_An_Object_Color_Value_Before_Any_Remote_Write)),
+			(typeof(DataBindingDbCommandTests),
+				nameof(DataBindingDbCommandTests.UpsertDataBindingRowDb_Should_Preserve_Null_For_A_Color_Column))
 		];
 
 		// Act

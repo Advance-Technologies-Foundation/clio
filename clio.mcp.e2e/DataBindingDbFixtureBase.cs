@@ -5,6 +5,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using Clio.Command.McpServer.Tools;
 using Clio.Common;
+using Clio.Mcp.E2E.Support;
 using Clio.Mcp.E2E.Support.Configuration;
 using Clio.Mcp.E2E.Support.Mcp;
 using Clio.Mcp.E2E.Support.Results;
@@ -85,17 +86,33 @@ public abstract class DataBindingDbFixtureBase : McpContractFixtureBase {
 		string workspacePath = Path.Combine(rootDirectory, workspaceName);
 		string packageName = $"Pkg{System.Guid.NewGuid():N}".Substring(0, 18);
 		CancellationTokenSource cancellationTokenSource = new(System.TimeSpan.FromMinutes(8));
+		//Cleanup ownership is taken before the first side effect, not after the last one. create-workspace,
+		//push-workspace and pkg-hotfix each create something that has to be removed again; returning the
+		//context only at the end means a throw or a cancellation in any later step leaves the caller with
+		//no `await using` value, so the remote package and the local workspace are never cleaned up.
+		DataBindingDbArrangeContext arrangeContext = new(
+			settings,
+			rootDirectory,
+			workspacePath,
+			packageName,
+			environmentName,
+			Session,
+			cancellationTokenSource);
 
-		await ClioCliCommandRunner.RunAndAssertSuccessAsync(
-			settings,
-			["create-workspace", workspaceName, "--empty", "--directory", rootDirectory],
-			cancellationToken: cancellationTokenSource.Token);
-		await ClioCliCommandRunner.RunAndAssertSuccessAsync(
-			settings,
-			["add-package", packageName],
-			workingDirectory: workspacePath,
-			cancellationToken: cancellationTokenSource.Token);
-		if (requireEnvironment && !string.IsNullOrWhiteSpace(environmentName)) {
+		return await ArrangeOwnership.CompleteOrDisposeAsync(arrangeContext, async () => {
+			await ClioCliCommandRunner.RunAndAssertSuccessAsync(
+				settings,
+				["create-workspace", workspaceName, "--empty", "--directory", rootDirectory],
+				cancellationToken: cancellationTokenSource.Token);
+			await ClioCliCommandRunner.RunAndAssertSuccessAsync(
+				settings,
+				["add-package", packageName],
+				workingDirectory: workspacePath,
+				cancellationToken: cancellationTokenSource.Token);
+			if (!requireEnvironment || string.IsNullOrWhiteSpace(environmentName)) {
+				return;
+			}
+
 			await ClioCliCommandRunner.RunAndAssertSuccessAsync(
 				settings,
 				["push-workspace", "-e", environmentName],
@@ -114,17 +131,7 @@ public abstract class DataBindingDbFixtureBase : McpContractFixtureBase {
 				settings,
 				environmentName,
 				cancellationTokenSource.Token);
-		}
-
-		McpServerSession session = Session;
-		return new DataBindingDbArrangeContext(
-			settings,
-			rootDirectory,
-			workspacePath,
-			packageName,
-			environmentName,
-			session,
-			cancellationTokenSource);
+		});
 	}
 
 	/// <summary>
@@ -267,6 +274,15 @@ public abstract class DataBindingDbFixtureBase : McpContractFixtureBase {
 		CancellationTokenSource CancellationTokenSource) : System.IAsyncDisposable {
 
 		/// <summary>
+		/// Bounds the teardown of the remote <c>delete-pkg-remote</c> call.
+		/// </summary>
+		/// <remarks>
+		/// The arrange token is deliberately not reused: by the time teardown runs it may already be
+		/// cancelled or expired, which is precisely the timed-out run whose leftovers still have to go.
+		/// </remarks>
+		private static readonly System.TimeSpan RemoteCleanupTimeout = System.TimeSpan.FromMinutes(3);
+
+		/// <summary>
 		/// Removes what this fixture created: the package it pushed to the sandbox, and - unless the
 		/// test failed - the local workspace.
 		/// </summary>
@@ -278,8 +294,43 @@ public abstract class DataBindingDbFixtureBase : McpContractFixtureBase {
 		/// written to the test output so it can be found.
 		/// </remarks>
 		public async System.Threading.Tasks.ValueTask DisposeAsync() {
-			await DeleteRemotePackageAsync();
-			CancellationTokenSource.Dispose();
+			try {
+				await DeleteRemotePackageAsync();
+			}
+			finally {
+				//The CTS and the local workspace are released whatever the remote call did, so a stalled or
+				//failing stand cannot also leak a token registration and a temp directory.
+				CancellationTokenSource.Dispose();
+				DeleteLocalWorkspace();
+			}
+		}
+
+		private async Task DeleteRemotePackageAsync() {
+			if (string.IsNullOrWhiteSpace(EnvironmentName)) {
+				return;
+			}
+			//Teardown must never turn a passing test red or mask the real failure of a failing one, so the
+			//outcome is reported rather than asserted. A package that was never pushed - the arrange step
+			//failed before push-workspace - simply makes this a no-op on the stand. The bounded token is
+			//what stops a stalled stand or a wedged child process from hanging the E2E worker forever:
+			//ClioCliCommandRunner.RunAsync hands its token to Process.WaitForExitAsync and kills the
+			//process tree when it fires.
+			string? diagnostics = await BoundedCleanup.RunAsync(
+				async cancellationToken => {
+					ClioCliCommandResult result = await ClioCliCommandRunner.RunAsync(
+						Settings,
+						["delete-pkg-remote", PackageName, "-e", EnvironmentName],
+						cancellationToken: cancellationToken);
+					return result.ExitCode;
+				},
+				RemoteCleanupTimeout,
+				$"Deleting the fixture package '{PackageName}' from '{EnvironmentName}'");
+			if (diagnostics is not null) {
+				TestContext.Out.WriteLine(diagnostics);
+			}
+		}
+
+		private void DeleteLocalWorkspace() {
 			if (!Directory.Exists(RootDirectory)) {
 				return;
 			}
@@ -288,23 +339,12 @@ public abstract class DataBindingDbFixtureBase : McpContractFixtureBase {
 					$"Test failed; keeping the workspace for diagnosis: {RootDirectory}");
 				return;
 			}
-			Directory.Delete(RootDirectory, recursive: true);
-		}
-
-		private async Task DeleteRemotePackageAsync() {
-			if (string.IsNullOrWhiteSpace(EnvironmentName)) {
-				return;
+			try {
+				Directory.Delete(RootDirectory, recursive: true);
 			}
-			//Teardown must never turn a passing test red or mask the real failure of a failing one, so
-			//the exit code is reported rather than asserted. A package that was never pushed - the
-			//arrange step failed before push-workspace - simply makes this a no-op on the stand.
-			ClioCliCommandResult result = await ClioCliCommandRunner.RunAsync(
-				Settings,
-				["delete-pkg-remote", PackageName, "-e", EnvironmentName]);
-			if (result.ExitCode != 0) {
+			catch (System.Exception exception) when (exception is IOException or System.UnauthorizedAccessException) {
 				TestContext.Out.WriteLine(
-					$"Could not delete the fixture package '{PackageName}' from '{EnvironmentName}' "
-					+ $"(exit {result.ExitCode}); it may need removing by hand.");
+					$"Could not delete the fixture workspace '{RootDirectory}': {exception.Message}");
 			}
 		}
 	}
