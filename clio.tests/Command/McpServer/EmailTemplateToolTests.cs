@@ -16,6 +16,7 @@ namespace Clio.Tests.Command.McpServer;
 public sealed class EmailTemplateToolTests {
 	private static readonly Guid EmailId = Guid.Parse("04c470db-65b6-4316-ae32-97a3e7286c94");
 	private static readonly Guid LanguageId = Guid.Parse("a5420246-0a8e-e111-84a3-00155d054c03");
+	private static readonly Guid BeefreeRecordId = Guid.Parse("5e1f0c58-9d1f-4a4b-9a2c-0b3f6d5e7a10");
 
 	[Test]
 	[Category("Unit")]
@@ -281,6 +282,118 @@ public sealed class EmailTemplateToolTests {
 		response.Error.Should().Be("language-id must be a GUID.",
 			because: "the caller should be told which identity is malformed");
 		resolver.DidNotReceive().Resolve<IApplicationClient>(Arg.Any<EnvironmentOptions>());
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Returns a checksum a re-read reproduces after a primary legacy write, so the next guarded update is not rejected as a concurrent change.")]
+	public void Update_ShouldReturnChecksumMatchingAReRead_WhenLegacyPrimaryVariantIsWritten() {
+		// Arrange — the host answers with the values the write applies, which is what a re-read would see.
+		(IApplicationClient client, EmailTemplateTool tool) = BuildTool(url => url switch {
+			var value when value.Contains("odata/BulkEmail?") => Rows(),
+			var value when value.Contains("odata/EmailTemplate?") => Rows(new {
+				Id = EmailId, Name = "Message", Subject = "Updated", Body = "<p>Primary</p>",
+				TemplateConfig = "{}", ConfigType = 1, IsHtmlBody = false
+			}),
+			var value when value.Contains("odata/BfEmailTemplate?") => Rows(),
+			var value when value.Contains("odata/EmailTemplateLang?") => Rows(),
+			_ => throw new InvalidOperationException($"Unexpected URL: {url}")
+		});
+		EmailTemplateContentVariant before = tool.Get(new EmailTemplateGetArgs {
+			EmailId = EmailId.ToString("D"), EnvironmentName = "dev"
+		}).Variants.Single(variant => variant.Format == "legacy");
+
+		// Act
+		EmailTemplateUpdateResponse update = tool.Update(new EmailTemplateUpdateArgs {
+			EmailId = EmailId.ToString("D"), EnvironmentName = "dev", Format = "legacy",
+			ExpectedChecksum = before.Checksum, Confirm = true, Subject = "Updated"
+		});
+		EmailTemplateContentVariant after = tool.Get(new EmailTemplateGetArgs {
+			EmailId = EmailId.ToString("D"), EnvironmentName = "dev"
+		}).Variants.Single(variant => variant.Format == "legacy");
+
+		// Assert
+		update.Success.Should().BeTrue(because: "the guarded write applies when the expected checksum still holds");
+		update.Checksum.Should().Be(after.Checksum,
+			because: "the receipt must describe what Creatio hands back - an omitted language-id and the read's null one are the same primary variant, so both sides must hash the same normalized slot");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Refuses a legacy write that carries only fields a bulk-email host cannot store, instead of dropping them and reporting success.")]
+	public void Update_ShouldRejectLegacyWrite_WhenBulkEmailHostCannotCarryTheRequestedFields() {
+		// Arrange
+		(IApplicationClient client, EmailTemplateTool tool) = BuildTool(url => url switch {
+			var value when value.Contains("odata/BulkEmail?") => Rows(new {
+				Id = EmailId, Name = "Bulk", TemplateSubject = "Subject", TemplateBody = "<p>Body</p>",
+				TemplateConfig = "{}"
+			}),
+			var value when value.Contains("odata/EmailTemplate?") => Rows(),
+			var value when value.Contains("odata/BfEmailTemplate?") => Rows(),
+			_ => throw new InvalidOperationException($"Unexpected URL: {url}")
+		});
+		EmailTemplateContentVariant before = tool.Get(new EmailTemplateGetArgs {
+			EmailId = EmailId.ToString("D"), EnvironmentName = "dev"
+		}).Variants.Single(variant => variant.Format == "legacy");
+		client.ClearReceivedCalls();
+
+		// Act
+		EmailTemplateUpdateResponse response = tool.Update(new EmailTemplateUpdateArgs {
+			EmailId = EmailId.ToString("D"), EnvironmentName = "dev", Format = "legacy",
+			ExpectedChecksum = before.Checksum, Confirm = true, ConfigType = 1, IsHtmlBody = true
+		});
+
+		// Assert
+		response.Success.Should().BeFalse(because: "a BulkEmail row carries neither ConfigType nor IsHtmlBody");
+		response.Error.Should().Be(
+			"config-type and is-html-body are supported only for EmailTemplate message-template hosts.",
+			because: "silently discarding the requested fields and returning a checksum computed from them reports a change that never happened");
+		client.DidNotReceive().ExecutePatchRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>());
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Resolves an omitted language to the existing default beefree row and edits it in place, instead of reporting it absent and creating a second default row.")]
+	public void Update_ShouldEditTheDefaultBeefreeRow_WhenNoLanguageIsRequested() {
+		// Arrange — the only row is the default one and its Language is not empty.
+		(IApplicationClient client, EmailTemplateTool tool) = BuildTool(url => url switch {
+			var value when value.Contains("odata/BulkEmail?") => Rows(),
+			var value when value.Contains("odata/EmailTemplate?") => Rows(new {
+				Id = EmailId, Name = "Message", Subject = "Primary", Body = "<p>Primary</p>",
+				TemplateConfig = "{}", ConfigType = 1, IsHtmlBody = false
+			}),
+			var value when value.Contains("odata/BfEmailTemplate?") => Rows(new {
+				Id = BeefreeRecordId, EmailId, Language = "en-US", PageJson = "{a:1}", PageHtml = "<h1/>",
+				AmpHtml = "", TemplateVersion = 3, IsDefault = true
+			}),
+			var value when value.Contains("odata/EmailTemplateLang?") => Rows(),
+			_ => throw new InvalidOperationException($"Unexpected URL: {url}")
+		});
+		EmailTemplateContentVariant beefree = tool.Get(new EmailTemplateGetArgs {
+			EmailId = EmailId.ToString("D"), EnvironmentName = "dev"
+		}).Variants.Single(variant => variant.Format == "beefree");
+		client.ClearReceivedCalls();
+
+		// Act
+		EmailTemplateUpdateResponse response = tool.Update(new EmailTemplateUpdateArgs {
+			EmailId = EmailId.ToString("D"), EnvironmentName = "dev", Format = "beefree",
+			ExpectedChecksum = beefree.Checksum, Confirm = true, PageJson = "{a:2}", PageHtml = "<h2/>"
+		});
+
+		// Assert
+		beefree.Exists.Should().BeTrue(
+			because: "an omitted language means the row the email sends by default, which is the IsDefault row rather than the one whose Language is empty");
+		beefree.IsDefault.Should().BeTrue(because: "the read must expose the flag it would otherwise overwrite unseen");
+		response.Success.Should().BeTrue();
+		response.Created.Should().BeFalse(because: "the default row already exists and must be edited in place");
+		client.DidNotReceiveWithAnyArgs().ExecutePostRequest(default, default, default);
+		// because: posting here would leave the email with two default beefree rows
+		client.Received(1).ExecutePatchRequest(
+			Arg.Any<string>(),
+			Arg.Is<string>(payload => !payload.Contains("IsDefault", StringComparison.Ordinal)
+				&& payload.Contains("\"Language\":\"en-US\"", StringComparison.Ordinal)),
+			30_000);
+		// because: IsDefault belongs to the create only - rewriting it on every update changes a column the caller never named
 	}
 
 	private static (IApplicationClient Client, EmailTemplateTool Tool) BuildTool(Func<string, string> response) {

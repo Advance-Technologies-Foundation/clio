@@ -32,7 +32,9 @@ public sealed class EmailTemplateTool(IEmailTemplateContentService service) {
 	[Description(
 		"Reads the content of a Creatio marketing email (BulkEmail) or message template (EmailTemplate). " +
 		"Returns every current Beefree variant (BfEmailTemplate PageJson/PageHtml/AmpHtml) and every legacy " +
-		"variant (Body/Subject/TemplateConfig), each with a checksum for guarded updates. Use the returned " +
+		"variant (Body/Subject/TemplateConfig), each with a checksum for guarded updates. Omitting language returns the " +
+		"Beefree variant the email sends by default (is-default), which is not necessarily the one with an empty language. " +
+		"Use the returned " +
 		"email-id and checksum with update-email-template; do not author legacy TemplateConfig when Beefree content is available.")]
 	public EmailTemplateContentResponse Get(
 		[Description("Parameters: email-id and environment-name (both required).")]
@@ -55,7 +57,10 @@ public sealed class EmailTemplateTool(IEmailTemplateContentService service) {
 		"Updates one Creatio email-content variant with an optimistic checksum guard. Supports current Beefree " +
 		"storage and legacy content for both BulkEmail and EmailTemplate hosts. A Beefree update creates the " +
 		"BfEmailTemplate row when the target host has none, enabling a get-source then update-target copy workflow " +
-		"without converting the content to legacy TemplateConfig. Call get-email-template immediately before this " +
+		"without converting the content to legacy TemplateConfig. Omitting language edits the existing default Beefree row " +
+		"in place rather than adding a second one, and is-default is set only when a row is created. config-type and " +
+		"is-html-body apply to EmailTemplate message-template hosts only; a request whose fields the host cannot carry is " +
+		"refused rather than partially applied. Call get-email-template immediately before this " +
 		"tool and pass that variant's checksum. Requires confirm=true.")]
 	public EmailTemplateUpdateResponse Update(
 		[Description("Parameters: email-id, environment-name, format, expected-checksum, confirm, and format-specific content.")]
@@ -203,7 +208,8 @@ public sealed record EmailTemplateContentVariant(
 	[property: JsonPropertyName("body")] string Body,
 	[property: JsonPropertyName("template-config")] string TemplateConfig,
 	[property: JsonPropertyName("config-type")] int? ConfigType,
-	[property: JsonPropertyName("is-html-body")] bool? IsHtmlBody);
+	[property: JsonPropertyName("is-html-body")] bool? IsHtmlBody,
+	[property: JsonPropertyName("is-default")] bool? IsDefault);
 
 /// <summary>Result of an email-content update.</summary>
 public sealed record EmailTemplateUpdateResponse(
@@ -322,16 +328,27 @@ public sealed class EmailTemplateContentService(IToolCommandResolver commandReso
 		IApplicationClient client, IServiceUrlBuilder urls, Guid emailId, string requestedLanguage) {
 		List<EmailTemplateContentVariant> variants = [];
 		foreach (JsonElement row in Read(client, urls, "BfEmailTemplate", $"EmailId eq {emailId:D}",
-			"Id,EmailId,Language,TemplateLanguageId,PageJson,PageHtml,AmpHtml,TemplateVersion", 100)) {
+			"Id,EmailId,Language,TemplateLanguageId,PageJson,PageHtml,AmpHtml,TemplateVersion,IsDefault", 100)) {
 			variants.Add(BeefreeVariant(row));
 		}
-		string beefreeLanguage = requestedLanguage ?? string.Empty;
+		// An omitted language means "the one this email sends by default", which is the IsDefault row - not
+		// necessarily the row whose Language is empty. Reading it as the empty language reported exists=false
+		// for an email that has content, and an update against that placeholder created a second default row.
+		string beefreeLanguage = requestedLanguage ?? DefaultBeefreeLanguage(variants);
 		if (!variants.Any(variant => variant.Format == BeefreeFormat
 				&& string.Equals(variant.Language ?? string.Empty, beefreeLanguage, StringComparison.OrdinalIgnoreCase))) {
 			variants.Add(AbsentBeefreeVariant(beefreeLanguage));
 		}
 		return variants;
 	}
+
+	/// <summary>
+	/// Language of the beefree variant the email sends when the caller names none: the row flagged
+	/// <c>IsDefault</c>, falling back to the empty language when no row claims the flag.
+	/// </summary>
+	private static string DefaultBeefreeLanguage(IEnumerable<EmailTemplateContentVariant> variants) =>
+		variants.FirstOrDefault(variant => variant.Format == BeefreeFormat && variant.IsDefault == true)
+			?.Language ?? string.Empty;
 
 	/// <summary>
 	/// Appends the primary legacy variant and every EmailTemplateLang translation of a message-template
@@ -357,7 +374,9 @@ public sealed class EmailTemplateContentService(IToolCommandResolver commandReso
 	private static EmailTemplateContentVariant FindVariant(
 		EmailTemplateContentResponse current, EmailTemplateUpdateArgs args, string format) {
 		if (format == BeefreeFormat) {
-			string language = args.Language ?? string.Empty;
+			// Same resolution the read used, so an update with no language edits the default row instead of
+			// creating a second one alongside it.
+			string language = args.Language ?? DefaultBeefreeLanguage(current.Variants);
 			return current.Variants.FirstOrDefault(v => v.Format == BeefreeFormat
 				&& string.Equals(v.Language ?? string.Empty, language, StringComparison.OrdinalIgnoreCase));
 		}
@@ -372,18 +391,25 @@ public sealed class EmailTemplateContentService(IToolCommandResolver commandReso
 		if (string.IsNullOrWhiteSpace(args.PageJson) || string.IsNullOrWhiteSpace(args.PageHtml)) {
 			return EmailTemplateUpdateResponse.Failure("page-json and page-html are required for format=beefree.");
 		}
+		// current carries the resolved language even when the row does not exist yet, because the read added
+		// its placeholder under that language.
+		string language = current?.Language ?? args.Language ?? string.Empty;
 		var data = new Dictionary<string, object> {
 			["EmailId"] = emailId,
-			["Language"] = args.Language ?? string.Empty,
+			["Language"] = language,
 			["PageJson"] = args.PageJson,
 			["PageHtml"] = args.PageHtml,
 			["AmpHtml"] = args.AmpHtml ?? current?.AmpHtml ?? string.Empty,
-			["TemplateVersion"] = args.TemplateVersion ?? current?.TemplateVersion ?? 0,
-			["IsDefault"] = string.IsNullOrEmpty(args.Language)
+			["TemplateVersion"] = args.TemplateVersion ?? current?.TemplateVersion ?? 0
 		};
 		bool created = current is null || !current.Exists;
+		if (created) {
+			// Only on create. Sending it on every update rewrote a column the caller never asked about, and the
+			// read could not even show its current value, so the caller had no way to preserve it.
+			data["IsDefault"] = string.IsNullOrEmpty(language);
+		}
 		Write(client, urls, "BfEmailTemplate", created ? null : current.RecordId, data);
-		string checksum = Hash(BeefreeFormat, args.Language, current?.LanguageId, args.PageJson, args.PageHtml,
+		string checksum = Hash(BeefreeFormat, language, current?.LanguageId, args.PageJson, args.PageHtml,
 			data["AmpHtml"]?.ToString(), data["TemplateVersion"]?.ToString());
 		return new(true, null, emailId.ToString("D"), BeefreeFormat, created, checksum);
 	}
@@ -397,6 +423,12 @@ public sealed class EmailTemplateContentService(IToolCommandResolver commandReso
 			return EmailTemplateUpdateResponse.Failure(validationError);
 		}
 		Dictionary<string, object> data = BuildLegacyPayload(hostType, args, translated);
+		if (data.Count == 0) {
+			// Every requested field was dropped by the host mapping. Issuing the PATCH anyway would send an
+			// empty body and report success with a checksum computed from values that were never written.
+			return EmailTemplateUpdateResponse.Failure(
+				"None of the requested fields apply to this email; no email content was changed.");
+		}
 		bool created = translated && (current is null || !current.Exists);
 		if (created) {
 			if (!Guid.TryParse(args.LanguageId, out Guid languageId)) {
@@ -409,6 +441,9 @@ public sealed class EmailTemplateContentService(IToolCommandResolver commandReso
 			Write(client, urls, LegacyEntityName(hostType, translated),
 				translated ? current.RecordId : emailId.ToString("D"), data);
 		}
+		// NormalizeGuid on both sides: LegacyVariant hashes the same normalized slot, so an omitted
+		// language-id ("") no longer produces a digest the next read cannot reproduce (it hashed null there,
+		// and Hash maps null to "<null>" but "" to ""), which broke every primary-variant write.
 		string checksum = Hash(LegacyFormat, null, NormalizeGuid(args.LanguageId),
 			args.Subject ?? current?.Subject, args.Body ?? current?.Body,
 			args.TemplateConfig ?? current?.TemplateConfig,
@@ -431,6 +466,11 @@ public sealed class EmailTemplateContentService(IToolCommandResolver commandReso
 		}
 		if (translated && hostType != MessageTemplateHost) {
 			return "language-id is supported only for EmailTemplate message-template hosts.";
+		}
+		// BuildLegacyPayload maps ConfigType and IsHtmlBody only for a message-template host, so on any other
+		// host they were silently dropped and the returned checksum was computed from the dropped values.
+		if (hostType != MessageTemplateHost && (args.ConfigType is not null || args.IsHtmlBody is not null)) {
+			return "config-type and is-html-body are supported only for EmailTemplate message-template hosts.";
 		}
 		return null;
 	}
@@ -514,7 +554,7 @@ public sealed class EmailTemplateContentService(IToolCommandResolver commandReso
 		return new EmailTemplateContentVariant(
 			BeefreeFormat, true, String(row, "Id"), language, languageId,
 			Hash(BeefreeFormat, language, languageId, pageJson, pageHtml, ampHtml, version?.ToString()),
-			pageJson, pageHtml, ampHtml, version, null, null, null, null, null);
+			pageJson, pageHtml, ampHtml, version, null, null, null, null, null, Bool(row, "IsDefault"));
 	}
 
 	private static EmailTemplateContentVariant LegacyVariant(JsonElement row, string languageId) {
@@ -525,22 +565,26 @@ public sealed class EmailTemplateContentService(IToolCommandResolver commandReso
 		bool? isHtml = Bool(row, "IsHtmlBody");
 		return new EmailTemplateContentVariant(
 			LegacyFormat, true, String(row, "Id"), null, languageId,
-			Hash(LegacyFormat, null, languageId, subject, body, config, configType?.ToString(), isHtml?.ToString()),
-			null, null, null, null, subject, body, config, configType, isHtml);
+			Hash(LegacyFormat, null, NormalizeGuid(languageId), subject, body, config, configType?.ToString(),
+				isHtml?.ToString()),
+			null, null, null, null, subject, body, config, configType, isHtml, null);
 	}
 
 	private static EmailTemplateContentVariant AbsentBeefreeVariant(string language) =>
 		new(BeefreeFormat, false, null, language, null,
 			AbsentChecksum(BeefreeFormat, language, null),
-			null, null, null, null, null, null, null, null, null);
+			null, null, null, null, null, null, null, null, null, null);
 
 	private static EmailTemplateContentVariant AbsentLegacyVariant(string languageId) =>
 		new(LegacyFormat, false, null, null, languageId,
 			AbsentChecksum(LegacyFormat, null, languageId),
-			null, null, null, null, null, null, null, null, null);
+			null, null, null, null, null, null, null, null, null, null);
 
+	// The legacy language-id slot is always normalized, so the digest a write returns matches the digest the
+	// next read produces: an omitted language-id and a null one are the same primary variant, and a GUID
+	// written in any casing or format is the same translation.
 	private static string AbsentChecksum(string format, string language, string languageId) =>
-		Hash(format, language, languageId, "<absent>");
+		Hash(format, language, format == LegacyFormat ? NormalizeGuid(languageId) : languageId, "<absent>");
 
 	private static string Hash(params string[] values) {
 		var builder = new StringBuilder();
