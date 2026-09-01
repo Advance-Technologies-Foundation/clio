@@ -135,7 +135,7 @@ This is a single design unit. Sequence: **isolate capture first, then narrow the
 - ~~Instead gate the **passthrough behavior**: check `IFeatureToggleService`/`ISettingsRepository.IsFeatureEnabled("mcp-http-credential-passthrough")` inside `McpHttpServerCommand.Run` at middleware-wiring time. Passthrough is thus doubly-gated: incubation feature flag **and** the API-key gate.~~ The verb itself, stdio, and `-e <env>` remain always-available.
 
 ### FR-11 — secret hygiene
-- New `EnvironmentSettings` secret fields are `[JsonIgnore]`/`[YamlIgnore]` (never persisted, never in `ShowSettingsTo`). Cache keys hash secrets. Logs emit only non-secret identifiers (`url`) — mirror the existing `CreatioAuthClient` "cookie names only, never values" discipline. No secret in exceptions, MCP responses, stdout, or under `--debug`. Covered by the FR-16 secret-leak test matrix.
+- New `EnvironmentSettings` secret fields are `[JsonIgnore]`/`[YamlIgnore]` (never persisted, never in `ShowSettingsTo`). Cache keys hash secrets. Logs emit only non-secret identifiers (`url`); browser-session cookie values cross the boundary only through the explicit protected storage-state artifact owned by `BrowserSessionService`. No secret in exceptions, MCP responses, stdout, or under `--debug`. Covered by the FR-16 secret-leak test matrix.
 
 ---
 

@@ -251,10 +251,10 @@ public sealed class MobilePageConversionGuideTool {
 	/// <c>environment-name</c>/<c>uri</c> is probed for its platform version; neither degrades to <c>latest</c>
 	/// on the fallback tier (surfaced as <c>latest-fallback</c> so the caller confirms with the user).
 	/// </summary>
-	private Task<PlatformVersionResolution> ResolveVersionAsync(
+	private async Task<PlatformVersionResolution> ResolveVersionAsync(
 		MobilePageConversionGuideArgs args, CancellationToken cancellationToken) {
 		if (!string.IsNullOrWhiteSpace(args.Version)) {
-			return Task.FromResult(new PlatformVersionResolution(args.Version.Trim(), VersionResolutionSource.Environment));
+			return new PlatformVersionResolution(args.Version.Trim(), VersionResolutionSource.Environment);
 		}
 		if (!string.IsNullOrWhiteSpace(args.EnvironmentName) || !string.IsNullOrWhiteSpace(args.Uri)) {
 			EnvironmentSettings settings = _settingsRepository.GetEnvironment(new EnvironmentOptions {
@@ -263,9 +263,10 @@ public sealed class MobilePageConversionGuideTool {
 				Login = args.Login,
 				Password = args.Password
 			});
-			return _versionResolverFactory.Create(settings).ResolveAsync(cancellationToken);
+			using IOwnedPlatformVersionResolver resolver = _versionResolverFactory.CreateOwned(settings);
+			return await resolver.ResolveAsync(cancellationToken).ConfigureAwait(false);
 		}
-		return Task.FromResult(ComponentInfoResolution.CreateNoActiveEnvironmentFallback());
+		return ComponentInfoResolution.CreateNoActiveEnvironmentFallback();
 	}
 
 	/// <summary>

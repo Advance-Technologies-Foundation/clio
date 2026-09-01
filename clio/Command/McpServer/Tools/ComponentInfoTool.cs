@@ -266,7 +266,7 @@ public sealed class ComponentInfoTool(
 
 		if (hasEnvironment) {
 			EnvironmentSettings settings = ResolveEnvironmentSettings(args);
-			IPlatformVersionResolver resolver = resolverFactory.Create(settings);
+			using IOwnedPlatformVersionResolver resolver = resolverFactory.CreateOwned(settings);
 			return resolver.ResolveAsync(cancellationToken);
 		}
 

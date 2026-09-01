@@ -138,8 +138,8 @@ public sealed class PageSyncTool(
 			if (settings is null) {
 				return null;
 			}
-			PlatformVersionResolution resolution = await resolverFactory.Create(settings)
-				.ResolveAsync(cancellationToken).ConfigureAwait(false);
+			using IOwnedPlatformVersionResolver resolver = resolverFactory.CreateOwned(settings);
+			PlatformVersionResolution resolution = await resolver.ResolveAsync(cancellationToken).ConfigureAwait(false);
 			return resolution?.ResolvedVersion;
 		} catch (OperationCanceledException) {
 			throw;
