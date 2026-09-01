@@ -5562,10 +5562,9 @@ internal static class ToolContractCatalog {
 				[
 					AssertInfrastructureTool.AssertInfrastructureToolName,
 					ShowPassingInfrastructureTool.ShowPassingInfrastructureToolName,
-					FindEmptyIisPortTool.FindEmptyIisPortToolName,
 					InstallerCommandTool.DeployCreatioToolName
 				],
-				"Canonical deploy preflight: assert full infrastructure, narrow to passing choices, pick a safe local IIS port, then deploy. See the deploy-lifecycle guidance topic via get-guidance."),
+				"Canonical deploy preflight: assert full infrastructure, narrow to passing choices, then deploy. Clio can select a local IIS port from its configured range. See the deploy-lifecycle guidance topic via get-guidance."),
 			[],
 			[]);
 	}
@@ -5603,7 +5602,7 @@ internal static class ToolContractCatalog {
 	private static ToolContractDefinition BuildFindEmptyIisPort() {
 		return new ToolContractDefinition(
 			FindEmptyIisPortTool.FindEmptyIisPortToolName,
-			"Finds the first free IIS deployment port between 40000 and 42000. Use this before deploy-creatio when you need a safe local IIS sitePort.",
+			"Finds the first free IIS deployment port between 40000 and 42000. Use this when you want to inspect or explicitly choose deploy-creatio sitePort; deploy-creatio can otherwise use its configured automatic range.",
 			new ToolInputSchemaContract([], []),
 			StructuredResultOutput(
 				Field("status", StringType, "Availability status for the requested range."),
@@ -5624,7 +5623,7 @@ internal static class ToolContractCatalog {
 					FindEmptyIisPortTool.FindEmptyIisPortToolName,
 					InstallerCommandTool.DeployCreatioToolName
 				],
-				"Pass firstAvailablePort as the deploy-creatio sitePort for a local IIS deployment."),
+				"Optionally pass firstAvailablePort as deploy-creatio sitePort to override its configured automatic range."),
 			[],
 			[]);
 	}
@@ -5632,13 +5631,13 @@ internal static class ToolContractCatalog {
 	private static ToolContractDefinition BuildDeployCreatio() {
 		return new ToolContractDefinition(
 			InstallerCommandTool.DeployCreatioToolName,
-			"Deploys Creatio from a zip archive using the real deploy-creatio command path. This is the most consequential, hardest-to-reverse lifecycle tool: it drops and recreates the target site. Run the deploy preflight first (assert-infrastructure -> show-passing-infrastructure -> find-empty-iis-port) and prefer the recommended bundle from show-passing-infrastructure. IIS deployment reserves and revalidates sitePort across concurrent clio processes before target mutation, and deploy/uninstall serialize by environment name and physical target directory. Deployment preserves the build database's existing forced-password-change state and does not clear it automatically.",
+			"Deploys Creatio from a zip archive using the real deploy-creatio command path. This is the most consequential, hardest-to-reverse lifecycle tool: it drops and recreates the target site. Run assert-infrastructure then show-passing-infrastructure and prefer the recommended bundle. For local IIS, omit sitePort to reserve the first available port from deploy-creatio-defaults.site-port-range, or pass an explicit override. IIS deployment reserves and revalidates the chosen port across concurrent clio processes before target mutation, and deploy/uninstall serialize by environment name and physical target directory. Deployment preserves the build database's existing forced-password-change state and does not clear it automatically.",
 			new ToolInputSchemaContract(
-				[SiteNameFieldName, ZipFileFieldName, SitePortFieldName],
+				[SiteNameFieldName, ZipFileFieldName],
 				[
 					Field(SiteNameFieldName, StringType, "Creatio instance name."),
 					Field(ZipFileFieldName, StringType, "Absolute path to the Creatio build archive (.zip). Pick a build from the configured creatio-products folder when the path is unknown."),
-					Field(SitePortFieldName, NumberType, "Port where Creatio will be deployed. Use find-empty-iis-port to choose a safe local IIS port."),
+					Field(SitePortFieldName, NumberType, "Optional explicit port. Omit for local IIS to reserve the first available port from deploy-creatio-defaults.site-port-range."),
 					Field(DbServerNameFieldName, StringType, "Optional local database server configuration name; omit to keep the default Kubernetes deployment path."),
 					Field(RedisServerNameFieldName, StringType, "Optional local Redis server configuration name."),
 					Field(UseHttpsFieldName, BooleanType, "Prefer HTTPS for local IIS deployment. Uses a matching usable LocalMachine/My certificate and falls back to HTTP with a warning when none is available.")
@@ -5651,7 +5650,6 @@ internal static class ToolContractCatalog {
 				Example("Deploy a local IIS instance after the deploy preflight", new Dictionary<string, object?> {
 					[SiteNameFieldName] = "creatio-app",
 					[ZipFileFieldName] = @"F:\CreatioBuilds\8.1.5.2176_StudioNet8_Softkey_PostgreSQL_ENU.zip",
-					[SitePortFieldName] = 40001,
 					[DbServerNameFieldName] = "postgres-local",
 					[RedisServerNameFieldName] = "redis-local",
 					[UseHttpsFieldName] = true
@@ -5661,7 +5659,6 @@ internal static class ToolContractCatalog {
 				[
 					AssertInfrastructureTool.AssertInfrastructureToolName,
 					ShowPassingInfrastructureTool.ShowPassingInfrastructureToolName,
-					FindEmptyIisPortTool.FindEmptyIisPortToolName,
 					InstallerCommandTool.DeployCreatioToolName
 				],
 				"Always run the full deploy preflight before deploy-creatio. After deployment, register the instance with reg-web-app and install cliogate with install-gate before using workspace tools."),
@@ -5669,7 +5666,7 @@ internal static class ToolContractCatalog {
 			[],
 			Preconditions: [
 				"assert-infrastructure was run and the targeted database/Redis sections pass (or were chosen from show-passing-infrastructure).",
-				"For a local IIS deployment, sitePort is a free port (use find-empty-iis-port).",
+				"For a local IIS deployment, omit sitePort to use the configured automatic range or pass a free explicit port (find-empty-iis-port can inspect one).",
 				"zipFile points at an existing Creatio build archive (pick one from the configured creatio-products folder)."
 			]);
 	}

@@ -99,8 +99,8 @@
 		private bool DeveloperModeEnabled(EnvironmentSettings environmentSettings) =>
 			environmentSettings.DeveloperModeEnabled.HasValue && environmentSettings.DeveloperModeEnabled.Value;
 
-		private IApplicationClient CreateApplicationClient(EnvironmentSettings environmentSettings) =>
-			_applicationClientFactory.CreateClient(environmentSettings);
+		private IOwnedApplicationClient CreateApplicationClient(EnvironmentSettings environmentSettings) =>
+			_applicationClientFactory.CreateOwnedClient(environmentSettings);
 
 		private void UnlockMaintainerPackageInternal(EnvironmentSettings environmentSettings) {
 			_packageLockManager.Unlock(Enumerable.Empty<string>());
@@ -121,7 +121,7 @@
 			_logger.WriteLine("Uploading...");
 			FileInfo fileInfo = new FileInfo(filePath);
 			string packageName = fileInfo.Name;
-			IApplicationClient applicationClient = CreateApplicationClient(environmentSettings);
+			using IOwnedApplicationClient applicationClient = CreateApplicationClient(environmentSettings);
 			applicationClient.UploadFile(GetCompleteUrl(UploadUrl, environmentSettings), filePath);
 			_logger.WriteLine("Uploaded");
 			return packageName;
@@ -133,7 +133,7 @@
 				_logger.WriteLine("Backup process...");
 				FileInfo fileInfo = new FileInfo(filePath);
 				string zipPackageName = fileInfo.Name;
-				IApplicationClient applicationClient = CreateApplicationClient(environmentSettings);
+				using IOwnedApplicationClient applicationClient = CreateApplicationClient(environmentSettings);
 				applicationClient.ExecutePostRequest(GetCompleteUrl(BackupUrl, environmentSettings), "{\"Name\":\"" + packageCode +
 						"\",\"Code\":\"" + packageCode +
 						"\",\"ZipPackageName\":\"" + zipPackageName +
@@ -183,7 +183,7 @@
 			string installUrl = packageInstallOptions == null
 				? InstallUrl
 				: InstallWithOptionsUrl;
-			IApplicationClient applicationClient = CreateApplicationClient(environmentSettings);
+			using IOwnedApplicationClient applicationClient = CreateApplicationClient(environmentSettings);
 			return applicationClient.ExecutePostRequest(GetCompleteUrl(installUrl, environmentSettings),
 				GetRequestData(fileName, packageInstallOptions), Timeout.Infinite);
 		}

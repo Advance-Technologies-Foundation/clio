@@ -1012,40 +1012,45 @@ public class EnvManageUiCommand : Command<EnvManageUiOptions>, IEnvManageUiComma
 	private int ExecuteRestart(string envName, EnvironmentSettings environmentSettings)
 	{
 		var settings = CloneEnvironmentSettings(environmentSettings);
+		using IOwnedApplicationClient client = _applicationClientFactory.CreateOwnedClient(settings);
 		var command = ActivatorUtilities.CreateInstance<RestartCommand>(_serviceProvider,
-			_applicationClientFactory.CreateClient(settings), settings);
+			client, settings);
 		return command.Execute(new RestartOptions { Environment = envName });
 	}
 
 	private int ExecuteClearRedis(string envName, EnvironmentSettings environmentSettings)
 	{
 		var settings = CloneEnvironmentSettings(environmentSettings);
+		using IOwnedApplicationClient client = _applicationClientFactory.CreateOwnedClient(settings);
 		var command = ActivatorUtilities.CreateInstance<RedisCommand>(_serviceProvider,
-			_applicationClientFactory.CreateClient(settings), settings);
+			client, settings);
 		return command.Execute(new ClearRedisOptions { Environment = envName });
 	}
 
 	private int ExecuteOpen(string envName, EnvironmentSettings environmentSettings)
 	{
 		var settings = CloneEnvironmentSettings(environmentSettings);
+		using IOwnedApplicationClient client = _applicationClientFactory.CreateOwnedClient(settings);
 		var command = ActivatorUtilities.CreateInstance<OpenAppCommand>(_serviceProvider,
-			_applicationClientFactory.CreateClient(settings), settings);
+			client, settings);
 		return command.Execute(new OpenAppOptions { Environment = envName });
 	}
 
 	private int ExecutePing(string envName, EnvironmentSettings environmentSettings)
 	{
 		var settings = CloneEnvironmentSettings(environmentSettings);
+		using IOwnedApplicationClient client = _applicationClientFactory.CreateOwnedClient(settings);
 		var command = ActivatorUtilities.CreateInstance<PingAppCommand>(_serviceProvider,
-			_applicationClientFactory.CreateClient(settings), settings);
+			client, settings);
 		return command.Execute(new PingAppOptions { Environment = envName });
 	}
 
 	private int ExecuteHealthcheck(string envName, EnvironmentSettings environmentSettings)
 	{
 		var settings = CloneEnvironmentSettings(environmentSettings, forceNetCore: true);
+		using IOwnedApplicationClient client = _applicationClientFactory.CreateOwnedClient(settings);
 		var command = ActivatorUtilities.CreateInstance<HealthCheckCommand>(_serviceProvider,
-			_applicationClientFactory.CreateClient(settings), settings);
+			client, settings);
 		return command.Execute(new HealthCheckOptions {
 			Environment = envName,
 			WebApp = "true",
@@ -1056,8 +1061,9 @@ public class EnvManageUiCommand : Command<EnvManageUiOptions>, IEnvManageUiComma
 	private int ExecuteGetInfo(string envName, EnvironmentSettings environmentSettings)
 	{
 		var settings = CloneEnvironmentSettings(environmentSettings);
+		using IOwnedApplicationClient client = _applicationClientFactory.CreateOwnedClient(settings);
 		var command = ActivatorUtilities.CreateInstance<GetCreatioInfoCommand>(_serviceProvider,
-			_applicationClientFactory.CreateClient(settings), settings);
+			client, settings);
 		return command.Execute(new GetCreatioInfoCommandOptions { Environment = envName });
 	}
 
@@ -1069,8 +1075,9 @@ public class EnvManageUiCommand : Command<EnvManageUiOptions>, IEnvManageUiComma
 		WarnHeavyCompilation();
 		var settings = CloneEnvironmentSettings(environmentSettings);
 		var serviceUrlBuilder = ActivatorUtilities.CreateInstance<ServiceUrlBuilder>(_serviceProvider, settings);
+		using IOwnedApplicationClient client = _applicationClientFactory.CreateOwnedClient(settings);
 		var command = ActivatorUtilities.CreateInstance<CompileConfigurationCommand>(_serviceProvider,
-			_applicationClientFactory.CreateClient(settings), settings, serviceUrlBuilder);
+			client, settings, serviceUrlBuilder);
 		return command.Execute(BuildEnvUiCompileOptions(envName));
 	}
 

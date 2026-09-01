@@ -157,23 +157,22 @@
   },
   "componentPropertyOverrides": [
     {
-      "type": "crt.GridContainer",
+      "filters": [{ "type": "crt.GridContainer" }],
       "values": { "gap": { "rowGap": "medium", "columnGap": "medium" } }
     },
     {
-      "type": "crt.FlexContainer",
+      "filters": [{ "type": "crt.FlexContainer" }],
       "values": { "gap": "medium" }
     },
     {
-      "type": "crt.IndicatorWidget",
+      "filters": [{ "type": "crt.IndicatorWidget" }],
       "mergeNestedObjects": true,
       "values": {
         "config": {
           "text": { "fontSizeMode": "extra-small" },
           "layout": { "border": { "hidden": true } }
         }
-      },
-      "note": "ENG-94230: crt.IndicatorWidget has no top-level size/hideBorder input - XS is the fontSizeMode enum value and hide-border is layout.border.hidden, so this rule merges instead of replacing to keep config.data (without which the widget renders nothing)."
+      }
     }
   ],
   "emptyContainerRemoval": {

@@ -704,9 +704,10 @@ internal class ExportComponentRegistryCommandTests : BaseCommandTests<ExportComp
 	private sealed class ThrowingResolverFactory(Exception failure) : IPlatformVersionResolverFactory {
 		public IPlatformVersionResolver Create(EnvironmentSettings settings) => new ThrowingResolver(failure);
 
-		private sealed class ThrowingResolver(Exception failure) : IPlatformVersionResolver {
+		private sealed class ThrowingResolver(Exception failure) : IOwnedPlatformVersionResolver {
 			public Task<PlatformVersionResolution> ResolveAsync(CancellationToken cancellationToken = default) =>
 				Task.FromException<PlatformVersionResolution>(failure);
+			public void Dispose() { }
 		}
 	}
 
@@ -718,9 +719,10 @@ internal class ExportComponentRegistryCommandTests : BaseCommandTests<ExportComp
 			return new StubResolver(result);
 		}
 
-		private sealed class StubResolver(PlatformVersionResolution result) : IPlatformVersionResolver {
+		private sealed class StubResolver(PlatformVersionResolution result) : IOwnedPlatformVersionResolver {
 			public Task<PlatformVersionResolution> ResolveAsync(CancellationToken cancellationToken = default) =>
 				Task.FromResult(result);
+			public void Dispose() { }
 		}
 	}
 }
