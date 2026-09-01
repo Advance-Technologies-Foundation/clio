@@ -167,8 +167,7 @@ public sealed class ODataWriteToolsE2ETests : McpContractFixtureBase {
 					["environment-name"] = $"missing-{Guid.NewGuid():N}",
 					["entity"] = "Contact",
 					["id"] = "all",
-					["rows"] = new object[] { new Dictionary<string, object?> { ["Name"] = "e2e" }
- }
+					["data"] = new Dictionary<string, object?> { ["Name"] = "e2e" }
 				}
 			},
 			arrange.CancellationTokenSource.Token);

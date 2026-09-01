@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.ComponentModel;
 using System.ComponentModel.DataAnnotations;
@@ -6,7 +6,6 @@ using System.Text.Json;
 using System.Text.Json.Serialization;
 using Clio.Common;
 using ModelContextProtocol.Server;
-using IoFileSystem = System.IO.Abstractions.IFileSystem;
 
 namespace Clio.Command.McpServer.Tools;
 
@@ -14,12 +13,12 @@ namespace Clio.Command.McpServer.Tools;
 /// MCP tool for updating a single Creatio record via OData v4 (HTTP PATCH).
 /// </summary>
 [McpServerToolType]
-public sealed class ODataUpdateTool(IToolCommandResolver commandResolver, IoFileSystem fileSystem) {
+public sealed class ODataUpdateTool(IToolCommandResolver commandResolver, IODataFileContract fileContract) {
 
-	//File access and confinement are core behaviour here, and IFileSystem is registered in DI, so a
-	//`new FileSystem()` fallback would mask missing wiring and let a unit test touch the real host.
-	private readonly IoFileSystem _fileSystem =
-		fileSystem ?? throw new ArgumentNullException(nameof(fileSystem));
+	//File I/O is behaviour, so it arrives through DI rather than being reached statically: that is what lets
+	//a failure-path test substitute a file-contract fake instead of driving the production write plumbing.
+	private readonly IODataFileContract _fileContract =
+		fileContract ?? throw new ArgumentNullException(nameof(fileContract));
 
 	internal const string ToolName = "odata-update";
 
@@ -136,7 +135,7 @@ public sealed class ODataUpdateTool(IToolCommandResolver commandResolver, IoFile
 	/// <returns><c>null</c> on success; otherwise the failure response to return to the caller.</returns>
 	private ODataWriteResponse ReadFileData(string rowsFile, out JsonElement fileData) {
 		fileData = default;
-		if (!ODataFileContract.TryReadJson(_fileSystem, rowsFile, "rows-file", out string dataJson, out string fileError)) {
+		if (!_fileContract.TryReadJson(rowsFile, "rows-file", out string dataJson, out string fileError)) {
 			return ODataWriteResponse.Failure(fileError);
 		}
 		try {

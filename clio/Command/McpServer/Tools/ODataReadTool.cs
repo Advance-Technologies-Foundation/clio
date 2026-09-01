@@ -1,13 +1,11 @@
 ﻿using System;
 using System.Collections.Generic;
-using System.Linq;
 using System.ComponentModel;
 using System.ComponentModel.DataAnnotations;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using Clio.Common;
 using ModelContextProtocol.Server;
-using IoFileSystem = System.IO.Abstractions.IFileSystem;
 
 namespace Clio.Command.McpServer.Tools;
 
@@ -15,379 +13,60 @@ namespace Clio.Command.McpServer.Tools;
 /// MCP tool for querying Creatio records via OData v4.
 /// </summary>
 [McpServerToolType]
-public sealed class ODataReadTool(IToolCommandResolver commandResolver, IoFileSystem fileSystem) {
-
-	//File access and confinement are core behaviour here, and IFileSystem is registered in DI, so a
-	//`new FileSystem()` fallback would mask missing wiring and let a unit test touch the real host.
-	private readonly IoFileSystem _fileSystem =
-		fileSystem ?? throw new ArgumentNullException(nameof(fileSystem));
+public sealed class ODataReadTool(IToolCommandResolver commandResolver) {
 
 	internal const string ToolName = "odata-read";
 
 	/// <summary>Smallest accepted value for the <c>top</c> argument.</summary>
-	internal const int MinTop = 1;
+	internal const int MinTop = ODataReadQuery.MinTop;
 
 	/// <summary>Largest accepted value for the <c>top</c> argument.</summary>
-	internal const int MaxTop = 100;
+	internal const int MaxTop = ODataReadQuery.MaxTop;
 
 	/// <summary>Number of records returned when <c>top</c> is omitted.</summary>
-	internal const int DefaultTop = 25;
+	internal const int DefaultTop = ODataReadQuery.DefaultTop;
 
 	private const string ValidArgumentsHint =
-		"Valid: entity, environment-name, filters, select, expand, order-by, top, skip, count, output-file. " +
-		"Raw filter strings are not supported; use the structured filters object.";
-
-	private static readonly IReadOnlyDictionary<string, string> ArgumentAliases =
-		new Dictionary<string, string>(StringComparer.Ordinal) {
-			["environmentName"] = "environment-name",
-			["environment_name"] = "environment-name",
-			["orderBy"] = "order-by",
-			["order_by"] = "order-by",
-			["outputFile"] = "output-file",
-			["output_file"] = "output-file",
-			["limit"] = "top"
-		};
-
-	private static readonly IReadOnlyDictionary<string, string> FilterGroupAliases =
-		new Dictionary<string, string>(StringComparer.Ordinal) {
-			["and"] = "all",
-			["or"] = "any"
-		};
-
-	private static readonly IReadOnlyDictionary<string, string> FilterConditionAliases =
-		new Dictionary<string, string>(StringComparer.Ordinal) {
-			["column"] = "field",
-			["operator"] = "op",
-			["values"] = "in"
-		};
-
-	private static readonly HashSet<string> SupportedFilterOperators = new(StringComparer.Ordinal) {
-		"eq", "ne", "gt", "ge", "lt", "le", "contains", "startswith", "endswith"
-	};
+		"Valid: entity, environment-name, filters, select, expand, order-by, top, skip, count. " +
+		"Raw filter strings are not supported; use the structured filters object. " +
+		"To keep a large response on disk, call odata-read-to-file instead.";
 
 	/// <summary>Reads Creatio records using OData v4.</summary>
-	// ReadOnly is FALSE because output-file writes a local file. The MCP read-deadline pipeline treats a
-	// ReadOnly call as retry-safe and races it against a deadline; if that deadline fired after the file
-	// landed but before the response returned, the retry would be refused by the "already exists" guard and
-	// the agent would be stuck with a file it was told was never written. Same reasoning as get-page.
-	// Idempotent is FALSE for the same reason: a second call to the same output-file is rejected, not a no-op.
-	[McpServerTool(Name = ToolName, ReadOnly = false, Destructive = false, Idempotent = false, OpenWorld = false)]
+	// ReadOnly and Idempotent are TRUE: this tool performs a GET and writes nothing, locally or remotely.
+	// The file destination lives in odata-read-to-file precisely so THIS tool keeps the ordinary read
+	// contract - raw-name compatibility, and the bounded retry-safe read semantics the MCP read-deadline
+	// pipeline (McpReadResponseDeadline) only applies to a ReadOnly tool.
+	[McpServerTool(Name = ToolName, ReadOnly = true, Destructive = false, Idempotent = true, OpenWorld = false)]
 	[Description(
 		"Query Creatio records via OData v4. " +
 		"Supports structured filters, select, expand, order by, top, skip, and total-count requests. " +
-		"Set output-file to write a large raw response to disk and receive a compact row/column-size summary. " +
-		"An output-file call is NOT retry-safe against the same path: the target must not already exist, so a retry must use a different path. " +
+		"Read-only and retry-safe: it never writes, locally or remotely. " +
+		"For a response too large to return inline, call odata-read-to-file, which takes the same arguments plus output-file. " +
 		"top must be between 1 and 100 (default 25); an out-of-range top (including 0 or negative) is rejected, never silently widened. " +
 		"skip must be zero or greater; use order-by with skip for stable paging. " +
 		"Unknown arguments and malformed filter conditions fail before any Creatio request; raw filter strings are not supported. " +
 		"Call get-tool-contract for odata-read to see usage examples and discovery workflow hints.")]
 	public ODataReadResponse Read(
-		[Description("Parameters: entity, environment-name (required); filters, select, expand, order-by, top, skip, count, output-file (optional).")]
+		[Description("Parameters: entity, environment-name (required); filters, select, expand, order-by, top, skip, count (optional).")]
 		[Required]
 		ODataReadArgs args) {
 		try {
-			string? argumentError = ValidateArguments(args);
+			string argumentError = ODataReadQuery.ValidateArguments(args, ODataReadQuery.SharedArgumentAliases, ValidArgumentsHint)
+				?? ODataReadQuery.ValidateTarget(args);
 			if (argumentError is not null) {
 				return ODataReadResponse.Failure(argumentError);
-			}
-			if (string.IsNullOrWhiteSpace(args.Entity)) {
-				return ODataReadResponse.Failure("entity is required.");
-			}
-			if (!ODataKeyFormatter.IsValidEntityName(args.Entity)) {
-				return ODataReadResponse.Failure("entity must be a valid OData entity set name (letters, digits, underscore).");
-			}
-			if (args.Top is { } requestedTop && (requestedTop < MinTop || requestedTop > MaxTop)) {
-				// An out-of-range top must NOT silently fall through to the default (which would
-				// return a page when the caller asked for 0, or be misread as "all" on negatives).
-				return ODataReadResponse.Failure(
-					$"top must be between {MinTop} and {MaxTop} (got {requestedTop}). Omit top to use the default of {DefaultTop}.");
 			}
 
 			EnvironmentOptions options = new() { Environment = args.EnvironmentName };
 			IApplicationClient client = commandResolver.Resolve<IApplicationClient>(options);
 			IServiceUrlBuilder urlBuilder = commandResolver.Resolve<IServiceUrlBuilder>(options);
 
-			string queryString = BuildQueryString(args);
-			string path = $"odata/{args.Entity.Trim()}{queryString}";
-			string url = urlBuilder.Build(path);
-
-			// Confine the output path BEFORE the fetch: a rejected path should not cost a full (possibly large)
-			// OData response first.
-			string outputPath = null;
-			if (!string.IsNullOrWhiteSpace(args.OutputFile)
-				&& !ODataFileContract.TryResolveOutputPath(_fileSystem, args.OutputFile, out outputPath, out string pathError)) {
-				return ODataReadResponse.Failure(pathError);
-			}
-
+			string url = urlBuilder.Build(ODataReadQuery.BuildRequestPath(args));
 			string responseJson = client.ExecuteGetRequest(url, 30_000);
-			ODataReadResponse response = ParseODataResponse(responseJson, args.Count);
-			if (response.Success && outputPath is not null) {
-				if (!ODataFileContract.TryWriteReadResponse(
-					_fileSystem, outputPath, responseJson, out ODataReadFileSummary summary, out string fileError)) {
-					return ODataReadResponse.Failure(fileError);
-				}
-				return response with { Value = null, OutputFile = outputPath, RowCount = summary.RowCount, ColumnSizes = summary.ColumnSizes };
-			}
-			return response;
+			return ODataReadQuery.ParseODataResponse(responseJson, args.Count);
 		} catch (Exception ex) {
 			return ODataReadResponse.Failure(SensitiveErrorTextRedactor.Redact(ex.Message));
 		}
-	}
-
-	private static string? ValidateArguments(ODataReadArgs args) {
-		if (args.ExtensionData?.ContainsKey("filter") == true) {
-			return "Argument 'filter' is unsupported because raw filter strings are not accepted. " +
-				"Use a structured filter, for example: " +
-				"filters: {\"all\":[{\"field\":\"Name\",\"op\":\"eq\",\"value\":\"Acme\"}]}.";
-		}
-		string? argumentError = McpToolArgumentSupport.BuildLegacyAliasError(
-			args.ExtensionData,
-			ArgumentAliases,
-			".",
-			ValidArgumentsHint);
-		if (argumentError is not null) {
-			return argumentError;
-		}
-		if (args.Skip is < 0) {
-			return $"skip must be zero or greater (got {args.Skip}).";
-		}
-		if (args.FiltersProvided && args.Filters is null) {
-			return "filters must be a structured object containing at least one condition in all or any; null is not supported.";
-		}
-		if (args.Filters is null) {
-			return null;
-		}
-
-		string? groupError = McpToolArgumentSupport.BuildLegacyAliasError(
-			args.Filters.ExtensionData,
-			FilterGroupAliases,
-			".",
-			"Valid filter groups: all, any.");
-		if (groupError is not null) {
-			return $"filters: {groupError}";
-		}
-
-		List<(string Path, ODataFilterCondition? Condition)> conditions = [];
-		AddConditions(conditions, "filters.all", args.Filters.All);
-		AddConditions(conditions, "filters.any", args.Filters.Any);
-		if (conditions.Count == 0) {
-			return "filters must contain at least one condition in all or any.";
-		}
-		foreach ((string path, ODataFilterCondition? condition) in conditions) {
-			string? conditionError = ValidateCondition(path, condition);
-			if (conditionError is not null) {
-				return conditionError;
-			}
-		}
-		return null;
-	}
-
-	private static void AddConditions(
-		ICollection<(string Path, ODataFilterCondition? Condition)> destination,
-		string path,
-		IReadOnlyList<ODataFilterCondition?>? conditions) {
-		if (conditions is null) {
-			return;
-		}
-		for (int index = 0; index < conditions.Count; index++) {
-			destination.Add(($"{path}[{index}]", conditions[index]));
-		}
-	}
-
-	private static string? ValidateCondition(string path, ODataFilterCondition? condition) {
-		if (condition is null) {
-			return $"{path} must be a filter condition object; null is not supported.";
-		}
-		string? memberError = McpToolArgumentSupport.BuildLegacyAliasError(
-			condition.ExtensionData,
-			FilterConditionAliases,
-			".",
-			"Valid filter condition members: field, op, value, in.");
-		if (memberError is not null) {
-			return $"{path}: {memberError}";
-		}
-		if (string.IsNullOrWhiteSpace(condition.Field)) {
-			return $"{path}.field is required.";
-		}
-		if (!ODataKeyFormatter.IsValidMemberPath(condition.Field)) {
-			return $"{path}.field must be an OData member path containing only letters, digits, underscores, and '/' separators.";
-		}
-		bool hasValue = condition.Value.ValueKind != JsonValueKind.Undefined;
-		bool hasInValues = condition.InValues.ValueKind != JsonValueKind.Undefined;
-		if (hasValue == hasInValues) {
-			return $"{path} must provide exactly one of value or in.";
-		}
-		if (hasInValues) {
-			JsonElement inValues = condition.InValues;
-			if (inValues.ValueKind != JsonValueKind.Array || inValues.GetArrayLength() == 0) {
-				return $"{path}.in must be a non-empty array.";
-			}
-			if (!string.IsNullOrWhiteSpace(condition.Op)) {
-				return $"{path}.op must be omitted when in is provided; in expands to equality conditions.";
-			}
-			return null;
-		}
-		string operation = string.IsNullOrWhiteSpace(condition.Op) ? "eq" : condition.Op;
-		return SupportedFilterOperators.Contains(operation)
-			? null
-			: $"{path}.op must be one of: {string.Join(", ", SupportedFilterOperators)} (got {operation}).";
-	}
-
-	private static string LiteralFor(string field, JsonElement value) =>
-		ODataKeyFormatter.LiteralFor(field, value);
-
-	private static string? JoinConditions(IReadOnlyList<string> conditions, string separator) {
-		return conditions.Count switch {
-			0 => null,
-			1 => conditions[0],
-			_ => $"({string.Join(separator, conditions)})"
-		};
-	}
-
-	private static List<string> BuildConditions(IEnumerable<ODataFilterCondition>? conditions) {
-		if (conditions is null) {
-			return [];
-		}
-		return conditions
-			.Select(BuildCondition)
-			.Where(condition => condition is not null)
-			.Cast<string>()
-			.ToList();
-	}
-
-	private static string? BuildCondition(ODataFilterCondition c) {
-		if (string.IsNullOrWhiteSpace(c.Field)) {
-			return null;
-		}
-		string field = c.Field;
-		if (c.InValues.ValueKind == JsonValueKind.Array) {
-			List<string> inParts = c.InValues.EnumerateArray()
-				.Select(v => $"{field} eq {LiteralFor(field, v)}")
-				.ToList();
-			return JoinConditions(inParts, " or ");
-		}
-		if (c.Value.ValueKind == JsonValueKind.Undefined) {
-			return null;
-		}
-		string op = string.IsNullOrWhiteSpace(c.Op) ? "eq" : c.Op;
-		JsonElement val = c.Value;
-		if (op is "contains" or "startswith" or "endswith") {
-			return $"{op}({field},{LiteralFor(field, val)})";
-		}
-		if (val.ValueKind == JsonValueKind.Null && op is "eq" or "ne") {
-			return $"{field} {op} null";
-		}
-		return $"{field} {op} {LiteralFor(field, val)}";
-	}
-
-	private static string? BuildFilterFromStructured(ODataFilters filters) {
-		List<string> andParts = BuildConditions(filters.All);
-		List<string> orParts = BuildConditions(filters.Any);
-		var parts = new List<string>();
-		string? allFilter = JoinConditions(andParts, " and ");
-		if (allFilter is not null) {
-			parts.Add(allFilter);
-		}
-		string? anyFilter = JoinConditions(orParts, " or ");
-		if (anyFilter is not null) {
-			parts.Add(anyFilter);
-		}
-		return parts.Count > 0 ? string.Join(" and ", parts) : null;
-	}
-
-	private static string BuildQueryString(ODataReadArgs args) {
-		var parts = new List<string>();
-
-		string? effectiveFilter = args.Filters is not null ? BuildFilterFromStructured(args.Filters) : null;
-		if (effectiveFilter is not null) {
-			parts.Add($"$filter={Uri.EscapeDataString(effectiveFilter)}");
-		}
-
-		if (args.Select is { Length: > 0 }) {
-			parts.Add($"$select={Uri.EscapeDataString(string.Join(",", args.Select))}");
-		}
-
-		if (args.Expand is { Length: > 0 }) {
-			parts.Add($"$expand={Uri.EscapeDataString(string.Join(",", args.Expand))}");
-		}
-
-		if (!string.IsNullOrWhiteSpace(args.OrderBy)) {
-			parts.Add($"$orderby={Uri.EscapeDataString(args.OrderBy!.Trim())}");
-		}
-
-		if (args.Skip is { } skip) {
-			parts.Add($"$skip={skip}");
-		}
-
-		if (args.Count) {
-			parts.Add("$count=true");
-		}
-
-		// Read() rejects out-of-range top before reaching here, so top is either unset (default)
-		// or already validated to be within [MinTop, MaxTop].
-		int top = args.Top ?? DefaultTop;
-		parts.Add($"$top={top}");
-
-		return $"?{string.Join("&", parts)}";
-	}
-
-	private static ODataReadResponse ParseODataResponse(string json, bool countRequested) {
-		try {
-			using JsonDocument doc = JsonDocument.Parse(json);
-			JsonElement root = doc.RootElement;
-
-			if (ODataResponseError.TryDetect(root, out string serverError)) {
-				// Redact like the sibling error paths: a routing Message can embed the absolute request
-				// URI (host/port/app path), which must not leak into the MCP transcript or logs.
-				return ODataReadResponse.Failure(SensitiveErrorTextRedactor.Redact(serverError));
-			}
-
-			// A bare top-level array — some endpoints and $expand projections return one — is a COLLECTION,
-			// not a single entity. Counting it as 1 reported a page of n rows as one record. The kind is also
-			// checked before TryGetProperty, which throws on anything that is not an object.
-			if (root.ValueKind == JsonValueKind.Array) {
-				return ParseCollectionResponse(root, root, countRequested);
-			}
-
-			if (root.ValueKind == JsonValueKind.Object
-				&& root.TryGetProperty("value", out JsonElement valueEl)) {
-				return ParseCollectionResponse(root, valueEl, countRequested);
-			}
-
-			// Single-entity response (no value wrapper)
-			return new ODataReadResponse(true, null, 1, root.Clone(), null);
-		} catch (Exception ex) {
-			string preview = string.IsNullOrWhiteSpace(json) ? "<empty>" : json;
-			if (preview.Length > 500) {
-				preview = preview[..500] + "...";
-			}
-			return ODataReadResponse.Failure(SensitiveErrorTextRedactor.Redact($"Failed to parse OData response: {ex.Message} | Response: {preview}"));
-		}
-	}
-
-	private static ODataReadResponse ParseCollectionResponse(
-		JsonElement root,
-		JsonElement valueElement,
-		bool countRequested) {
-		int count = valueElement.ValueKind == JsonValueKind.Array ? valueElement.GetArrayLength() : 1;
-		// A bare top-level array carries no envelope, and TryGetProperty throws on a non-object, so the
-		// annotations are read only when there is an object to read them from.
-		bool hasEnvelope = root.ValueKind == JsonValueKind.Object;
-		long? totalCount = hasEnvelope
-			&& root.TryGetProperty("@odata.count", out JsonElement totalCountElement)
-			&& totalCountElement.TryGetInt64(out long parsedTotalCount)
-			? parsedTotalCount
-			: null;
-		if (countRequested && !totalCount.HasValue) {
-			return ODataReadResponse.Failure(
-				"Creatio did not return @odata.count for count=true; total count cannot be verified.");
-		}
-		string? nextLink = hasEnvelope
-			&& root.TryGetProperty("@odata.nextLink", out JsonElement nextLinkElement)
-			&& nextLinkElement.ValueKind == JsonValueKind.String
-			? nextLinkElement.GetString()
-			: null;
-		return new ODataReadResponse(true, null, count, valueElement.Clone(), nextLink, totalCount);
 	}
 
 }
@@ -395,7 +74,7 @@ public sealed class ODataReadTool(IToolCommandResolver commandResolver, IoFileSy
 /// <summary>
 /// Arguments for <see cref="ODataReadTool"/>.
 /// </summary>
-public sealed record ODataReadArgs {
+public record ODataReadArgs {
 	private ODataFilters? _filters;
 
 	/// <summary>Creatio OData entity set name (e.g., Contact, Account, Activity).</summary>
@@ -440,11 +119,6 @@ public sealed record ODataReadArgs {
 	[JsonPropertyName("count")]
 	[Description("When true, requests the total number of matching records before top/skip paging; returned as total-count. Response count remains the number of records in this page.")]
 	public bool Count { get; init; }
-
-	/// <summary>Optional path where the raw OData JSON response is written.</summary>
-	[JsonPropertyName("output-file")]
-	[Description("Optional path for the raw OData JSON response, confined to the workspace or the OS temp directory. When set, the inline value is omitted and a compact row/column-size summary is returned. The file must not already exist, so a retry must use a different path.")]
-	public string? OutputFile { get; init; }
 
 	/// <summary>Structured filter used to narrow matching records.</summary>
 	[JsonPropertyName("filters")]

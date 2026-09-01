@@ -71,6 +71,15 @@ internal sealed class RuntimeDetectionStubServer : IAsyncDisposable {
 	/// </summary>
 	public const string ODataNonJsonBodyMarker = "odata-nonjson-secret-marker";
 
+	/// <summary>
+	/// The exact body the stub returns for a GET against
+	/// <see cref="RuntimeDetectionStubServerConfiguration.ODataEchoEntity"/>. Held as a single constant so a
+	/// file-mode test can assert the persisted bytes are byte-for-byte the response, not a re-serialization.
+	/// </summary>
+	public const string ODataEchoCollectionBody =
+		"{\"@odata.count\":2,\"value\":[{\"Id\":\"11111111-1111-1111-1111-111111111111\",\"Name\":\"Alpha\"},"
+		+ "{\"Id\":\"22222222-2222-2222-2222-222222222222\",\"Name\":\"Beta\"}]}";
+
 	private static string BuildScript(RuntimeDetectionStubServerConfiguration configuration, int port) {
 		string configJson = JsonSerializer.Serialize(configuration);
 		return $$"""
@@ -153,6 +162,40 @@ http.createServer((request, response) => {
       sendText(response, 404, "Not Found");
       return;
     }
+    if (config.ODataEchoEntity && url.includes("/odata/" + config.ODataEchoEntity)) {
+      // A minimal but REAL OData endpoint: GET answers a fixed collection byte-for-byte, POST echoes the
+      // row's Name back as the created record Id, and PATCH succeeds only when the request body carries the
+      // expected marker. That is what makes a successful file-mode call provable end to end - the response
+      // bytes on disk, and the fact that a file-backed payload actually reached the write request.
+      if (request.method === "GET") {
+        response.writeHead(200, { "Content-Type": "application/json" });
+        response.end({{JsonSerializer.Serialize(ODataEchoCollectionBody)}});
+        return;
+      }
+      if (request.method === "POST") {
+        let name = null;
+        try { name = JSON.parse(body).Name; } catch (error) { name = null; }
+        if (!name) {
+          response.writeHead(200, { "Content-Type": "text/html" });
+          response.end("<html><body>post body did not carry a Name</body></html>");
+          return;
+        }
+        sendJson(response, 200, { Id: String(name) });
+        return;
+      }
+      if (request.method === "PATCH") {
+        if (!config.ODataWriteRequiredMarker || !body.includes(config.ODataWriteRequiredMarker)) {
+          response.writeHead(200, { "Content-Type": "text/html" });
+          response.end("<html><body>patch body did not carry the expected marker</body></html>");
+          return;
+        }
+        response.writeHead(204);
+        response.end();
+        return;
+      }
+      sendText(response, 405, "Method Not Allowed");
+      return;
+    }
     if (config.ODataNonJsonEntity && url.includes("/odata/" + config.ODataNonJsonEntity)) {
       // ENG-95971: the stand answered an odata request (read or write) with an IIS-style HTML error
       // page instead of JSON or a recognized error shape - the request reached the stub but never
@@ -195,4 +238,6 @@ internal sealed record RuntimeDetectionStubServerConfiguration(
 	bool NetFrameworkUiMarkerEnabled = false,
 	string? ODataRoutingErrorEntity = null,
 	string? HtmlSelectQuerySchemaName = null,
-	string? ODataNonJsonEntity = null);
+	string? ODataNonJsonEntity = null,
+	string? ODataEchoEntity = null,
+	string? ODataWriteRequiredMarker = null);

@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Text.Json;
 using Clio.Command.McpServer.Tools;
 using Clio.Common;
@@ -36,9 +36,10 @@ public sealed class ODataWriteToolsLiveIntegrationTests {
 	[Test]
 	public void Create_Read_Update_Delete_RoundTrip() {
 		IToolCommandResolver resolver = BuildResolver();
-		ODataCreateTool create = new(resolver, new System.IO.Abstractions.FileSystem());
-		ODataReadTool read = new(resolver, new System.IO.Abstractions.FileSystem());
-		ODataUpdateTool update = new(resolver, new System.IO.Abstractions.FileSystem());
+		ODataFileContract fileContract = new(new System.IO.Abstractions.FileSystem());
+		ODataCreateTool create = new(resolver, fileContract);
+		ODataReadTool read = new(resolver);
+		ODataUpdateTool update = new(resolver, fileContract);
 		ODataDeleteTool delete = new(resolver);
 		string name = $"clio-crud-it-{Guid.NewGuid():N}";
 		string? id = null;

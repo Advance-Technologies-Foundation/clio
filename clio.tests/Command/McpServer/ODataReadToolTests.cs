@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
@@ -20,97 +20,7 @@ namespace Clio.Tests.Command.McpServer;
 public sealed class ODataReadToolTests {
 	[Test]
 	[Category("Unit")]
-	[Description("Writes a successful OData response to output-file, omits the inline value, and returns row and per-column byte summaries.")]
-	public void Read_Should_Write_Response_To_Output_File_When_Requested() {
-		// Arrange
-		MockFileSystem fileSystem = new();
-		string outputFile = fileSystem.Path.Combine(fileSystem.Path.GetTempPath(), $"odata-read-{Guid.NewGuid():N}.json");
-		IApplicationClient client = Substitute.For<IApplicationClient>();
-		IServiceUrlBuilder urlBuilder = Substitute.For<IServiceUrlBuilder>();
-		IToolCommandResolver resolver = Substitute.For<IToolCommandResolver>();
-		resolver.Resolve<IApplicationClient>(Arg.Any<EnvironmentOptions>()).Returns(client);
-		resolver.Resolve<IServiceUrlBuilder>(Arg.Any<EnvironmentOptions>()).Returns(urlBuilder);
-		urlBuilder.Build(Arg.Any<string>()).Returns("http://creatio/odata/Contact?$top=25");
-		client.ExecuteGetRequest(Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
-			.Returns("{\"value\":[{\"Id\":\"1\",\"Name\":\"John\"},{\"Id\":\"2\",\"Name\":\"Jane\"}]}");
-		ODataReadTool tool = new(resolver, fileSystem);
-
-		// Act
-		ODataReadResponse response = tool.Read(new ODataReadArgs {
-			EnvironmentName = "dev", Entity = "Contact", OutputFile = outputFile
-		});
-
-		// Assert
-		response.Success.Should().BeTrue(because: "a successful OData response should be persisted when output-file is requested");
-		response.Value.Should().BeNull(because: "large response values must not be duplicated into the MCP result");
-		response.OutputFile.Should().Be(fileSystem.Path.GetFullPath(outputFile), because: "the caller needs the resolved file path");
-		response.RowCount.Should().Be(2, because: "the summary should count returned object rows");
-		response.ColumnSizes.Should().ContainKey("Name", because: "the summary should expose sizes for returned columns");
-		fileSystem.File.ReadAllText(outputFile).Should().Contain("John", because: "the raw OData response must be written unchanged");
-	}
-	[Test]
-	[Category("Unit")]
-	[Description("Refuses an output-file that already exists, and refuses it BEFORE the OData request so a rejected path never costs a full fetch first.")]
-	public void Read_Should_Reject_Existing_Output_File_Before_Fetching() {
-		// Arrange
-		MockFileSystem fileSystem = new();
-		string outputFile = fileSystem.Path.Combine(fileSystem.Path.GetTempPath(), $"odata-read-existing-{Guid.NewGuid():N}.json");
-		fileSystem.AddFile(outputFile, new MockFileData("{}", Encoding.UTF8));
-		IApplicationClient client = Substitute.For<IApplicationClient>();
-		IServiceUrlBuilder urlBuilder = Substitute.For<IServiceUrlBuilder>();
-		IToolCommandResolver resolver = Substitute.For<IToolCommandResolver>();
-		resolver.Resolve<IApplicationClient>(Arg.Any<EnvironmentOptions>()).Returns(client);
-		resolver.Resolve<IServiceUrlBuilder>(Arg.Any<EnvironmentOptions>()).Returns(urlBuilder);
-		urlBuilder.Build(Arg.Any<string>()).Returns("http://creatio/odata/Contact?$top=25");
-		ODataReadTool tool = new(resolver, fileSystem);
-
-		// Act
-		ODataReadResponse response = tool.Read(new ODataReadArgs {
-			EnvironmentName = "dev", Entity = "Contact", OutputFile = outputFile
-		});
-
-		// Assert
-		response.Success.Should().BeFalse(
-			because: "an explicit output-file is additive and must never overwrite an existing file");
-		response.Error.Should().Contain("already exists",
-			because: "the caller has to know to choose a different path");
-		client.DidNotReceive().ExecuteGetRequest(
-			Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>());
-	}
-
-	[Test]
-	[Category("Unit")]
-	[Description("Refuses an output-file outside the workspace and the OS temp directory, so an agent-supplied path cannot land a write on an arbitrary file.")]
-	public void Read_Should_Reject_Output_File_Outside_The_Allowed_Locations() {
-		// Arrange
-		IApplicationClient client = Substitute.For<IApplicationClient>();
-		IServiceUrlBuilder urlBuilder = Substitute.For<IServiceUrlBuilder>();
-		IToolCommandResolver resolver = Substitute.For<IToolCommandResolver>();
-		resolver.Resolve<IApplicationClient>(Arg.Any<EnvironmentOptions>()).Returns(client);
-		resolver.Resolve<IServiceUrlBuilder>(Arg.Any<EnvironmentOptions>()).Returns(urlBuilder);
-		urlBuilder.Build(Arg.Any<string>()).Returns("http://creatio/odata/Contact?$top=25");
-		ODataReadTool tool = new(resolver, Substitute.For<System.IO.Abstractions.IFileSystem>());
-		string outsidePath = Path.Combine(
-			Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
-			$"clio-odata-output-probe-{Guid.NewGuid():N}.json");
-
-		// Act
-		ODataReadResponse response = tool.Read(new ODataReadArgs {
-			EnvironmentName = "dev", Entity = "Contact", OutputFile = outsidePath
-		});
-
-		// Assert
-		response.Success.Should().BeFalse(
-			because: "a path outside the allowed locations must never be written");
-		response.Error.Should().Contain("allowed locations",
-			because: "the caller has to be told the path was refused by confinement");
-		File.Exists(outsidePath).Should().BeFalse(
-			because: "the refusal must happen before anything is created on disk");
-	}
-
-	[Test]
-	[Category("Unit")]
-	[Description("Advertises a stable MCP tool name for odata-read, and the safety annotations that match its local-write side effect.")]
+	[Description("Advertises a stable MCP tool name for odata-read, and the read-only annotations an ordinary query must keep.")]
 	public void Read_Should_Advertise_Stable_Tool_Name() {
 		// Arrange
 
@@ -123,14 +33,38 @@ public sealed class ODataReadToolTests {
 		// Assert
 		attribute.Name.Should().Be(ODataReadTool.ToolName,
 			because: "the MCP tool name must stay stable for callers and tests");
-		attribute.ReadOnly.Should().BeFalse(
-			because: "output-file writes a local file, and a ReadOnly annotation would make the MCP read-deadline "
-				+ "pipeline treat the call as retry-safe - a deadline firing after the file landed would leave the "
-				+ "agent with a retry the already-exists guard refuses");
-		attribute.Idempotent.Should().BeFalse(
-			because: "a second call to the same output-file is refused, not a no-op");
+		attribute.ReadOnly.Should().BeTrue(
+			because: "odata-read writes nothing, and only a ReadOnly tool keeps the bounded retry-safe read "
+				+ "semantics of the MCP read-deadline pipeline - the file destination lives in odata-read-to-file "
+				+ "precisely so this contract survives");
+		attribute.Idempotent.Should().BeTrue(
+			because: "repeating an odata-read call has no side effect to repeat");
 		attribute.Destructive.Should().BeFalse(
 			because: "odata-read must not mutate remote Creatio state");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Rejects output-file on odata-read so the file destination cannot re-enter the read-only tool through the unbound-argument bag.")]
+	public void Read_Should_Reject_Output_File_Argument() {
+		// Arrange
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		IApplicationClient applicationClient = Substitute.For<IApplicationClient>();
+		commandResolver.Resolve<IApplicationClient>(Arg.Any<EnvironmentOptions>()).Returns(applicationClient);
+		ODataReadTool tool = new(commandResolver);
+		ODataReadArgs args = JsonSerializer.Deserialize<ODataReadArgs>(
+			"""{"environment-name":"dev","entity":"Contact","output-file":"out.json"}""")!;
+
+		// Act
+		ODataReadResponse response = tool.Read(args);
+
+		// Assert
+		response.Success.Should().BeFalse(
+			because: "output-file is not an argument of the read-only tool");
+		response.Error.Should().Contain("odata-read-to-file",
+			because: "the caller must be pointed at the tool that does take a file destination");
+		applicationClient.ReceivedCalls().Should().BeEmpty(
+			because: "an unbound argument is rejected before any Creatio request");
 	}
 
 	[Test]
@@ -146,7 +80,7 @@ public sealed class ODataReadToolTests {
 		serviceUrlBuilder.Build(Arg.Any<string>()).Returns(call => $"http://creatio/{call.Arg<string>()}");
 		applicationClient.ExecuteGetRequest(Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
 			.Returns("{\"value\":[{\"Id\":\"11111111-1111-1111-1111-111111111111\",\"Name\":\"John\"}]}");
-		ODataReadTool tool = new(commandResolver, Substitute.For<System.IO.Abstractions.IFileSystem>());
+		ODataReadTool tool = new(commandResolver);
 
 		// Arrange (continued)
 		JsonElement nameValue = JsonDocument.Parse("\"John\"").RootElement.Clone();
@@ -190,7 +124,7 @@ public sealed class ODataReadToolTests {
 		serviceUrlBuilder.Build(Arg.Any<string>()).Returns(call => $"http://creatio/{call.Arg<string>()}");
 		applicationClient.ExecuteGetRequest(Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
 			.Returns("{\"@odata.count\":104,\"value\":[{\"Id\":\"1\"},{\"Id\":\"2\"},{\"Id\":\"3\"},{\"Id\":\"4\"}]}");
-		ODataReadTool tool = new(commandResolver, Substitute.For<System.IO.Abstractions.IFileSystem>());
+		ODataReadTool tool = new(commandResolver);
 
 		// Act
 		ODataReadResponse response = tool.Read(new ODataReadArgs {
@@ -227,7 +161,7 @@ public sealed class ODataReadToolTests {
 		serviceUrlBuilder.Build(Arg.Any<string>()).Returns("http://creatio/odata/Contact?$top=1");
 		applicationClient.ExecuteGetRequest(Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
 			.Returns("{\"@odata.nextLink\":\"https://creatio/odata/Contact?$skip=1\",\"value\":[{\"Id\":\"1\"}]}");
-		ODataReadTool tool = new(commandResolver, Substitute.For<System.IO.Abstractions.IFileSystem>());
+		ODataReadTool tool = new(commandResolver);
 
 		// Act
 		ODataReadResponse response = tool.Read(new ODataReadArgs {
@@ -256,7 +190,7 @@ public sealed class ODataReadToolTests {
 		serviceUrlBuilder.Build(Arg.Any<string>()).Returns("http://creatio/odata/Contact?$top=1");
 		applicationClient.ExecuteGetRequest(Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
 			.Returns("{\"@odata.nextLink\":42,\"value\":[{\"Id\":\"1\"}]}");
-		ODataReadTool tool = new(commandResolver, Substitute.For<System.IO.Abstractions.IFileSystem>());
+		ODataReadTool tool = new(commandResolver);
 
 		// Act
 		ODataReadResponse response = tool.Read(new ODataReadArgs {
@@ -280,7 +214,7 @@ public sealed class ODataReadToolTests {
 	public void Read_Should_Reject_Raw_Filter_Argument_Before_Remote_Access() {
 		// Arrange
 		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
-		ODataReadTool tool = new(commandResolver, Substitute.For<System.IO.Abstractions.IFileSystem>());
+		ODataReadTool tool = new(commandResolver);
 		ODataReadArgs args = new() {
 			EnvironmentName = "dev",
 			Entity = "Contact",
@@ -308,7 +242,7 @@ public sealed class ODataReadToolTests {
 	public void Read_Should_Reject_Explicitly_Null_Filters_Before_Remote_Access() {
 		// Arrange
 		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
-		ODataReadTool tool = new(commandResolver, Substitute.For<System.IO.Abstractions.IFileSystem>());
+		ODataReadTool tool = new(commandResolver);
 		ODataReadArgs args = JsonSerializer.Deserialize<ODataReadArgs>(
 			"""{"environment-name":"dev","entity":"Contact","filters":null}""")!;
 
@@ -329,7 +263,7 @@ public sealed class ODataReadToolTests {
 	public void Read_Should_Reject_Null_Filter_Condition_Before_Remote_Access() {
 		// Arrange
 		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
-		ODataReadTool tool = new(commandResolver, Substitute.For<System.IO.Abstractions.IFileSystem>());
+		ODataReadTool tool = new(commandResolver);
 		ODataReadArgs args = JsonSerializer.Deserialize<ODataReadArgs>(
 			"""{"environment-name":"dev","entity":"Contact","filters":{"all":[null]}}""")!;
 
@@ -357,7 +291,7 @@ public sealed class ODataReadToolTests {
 		serviceUrlBuilder.Build(Arg.Any<string>()).Returns(call => $"http://creatio/{call.Arg<string>()}");
 		applicationClient.ExecuteGetRequest(Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
 			.Returns("{\"value\":[]}");
-		ODataReadTool tool = new(commandResolver, Substitute.For<System.IO.Abstractions.IFileSystem>());
+		ODataReadTool tool = new(commandResolver);
 		ODataReadArgs args = JsonSerializer.Deserialize<ODataReadArgs>(
 			"""{"environment-name":"dev","entity":"Contact","filters":{"all":[{"field":"Name","op":"eq","value":null}]}}""")!;
 
@@ -376,7 +310,7 @@ public sealed class ODataReadToolTests {
 	public void Read_Should_Reject_OData_Grammar_In_Filter_Field_Before_Remote_Access() {
 		// Arrange
 		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
-		ODataReadTool tool = new(commandResolver, Substitute.For<System.IO.Abstractions.IFileSystem>());
+		ODataReadTool tool = new(commandResolver);
 
 		// Act
 		ODataReadResponse response = tool.Read(new ODataReadArgs {
@@ -404,7 +338,7 @@ public sealed class ODataReadToolTests {
 	public void Read_Should_Reject_Unknown_Argument_Before_Remote_Access() {
 		// Arrange
 		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
-		ODataReadTool tool = new(commandResolver, Substitute.For<System.IO.Abstractions.IFileSystem>());
+		ODataReadTool tool = new(commandResolver);
 		ODataReadArgs args = new() {
 			EnvironmentName = "dev",
 			Entity = "Contact",
@@ -430,7 +364,7 @@ public sealed class ODataReadToolTests {
 	public void Read_Should_Reject_Unknown_Filter_Group_Member_Before_Remote_Access() {
 		// Arrange
 		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
-		ODataReadTool tool = new(commandResolver, Substitute.For<System.IO.Abstractions.IFileSystem>());
+		ODataReadTool tool = new(commandResolver);
 		ODataReadArgs args = new() {
 			EnvironmentName = "dev",
 			Entity = "Contact",
@@ -458,7 +392,7 @@ public sealed class ODataReadToolTests {
 	public void Read_Should_Reject_Unknown_Filter_Condition_Member_Before_Remote_Access() {
 		// Arrange
 		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
-		ODataReadTool tool = new(commandResolver, Substitute.For<System.IO.Abstractions.IFileSystem>());
+		ODataReadTool tool = new(commandResolver);
 		ODataReadArgs args = new() {
 			EnvironmentName = "dev",
 			Entity = "Contact",
@@ -490,7 +424,7 @@ public sealed class ODataReadToolTests {
 	public void Read_Should_Reject_Filter_Condition_When_Value_Is_Missing() {
 		// Arrange
 		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
-		ODataReadTool tool = new(commandResolver, Substitute.For<System.IO.Abstractions.IFileSystem>());
+		ODataReadTool tool = new(commandResolver);
 
 		// Act
 		ODataReadResponse response = tool.Read(new ODataReadArgs {
@@ -522,7 +456,7 @@ public sealed class ODataReadToolTests {
 		environmentUrlBuilder.Build(Arg.Any<string>()).Returns(call => $"http://env/{call.Arg<string>()}");
 		environmentClient.ExecuteGetRequest(Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
 			.Returns("{\"value\":[]}");
-		ODataReadTool tool = new(commandResolver, Substitute.For<System.IO.Abstractions.IFileSystem>());
+		ODataReadTool tool = new(commandResolver);
 
 		// Act
 		ODataReadResponse response = tool.Read(new ODataReadArgs {
@@ -544,7 +478,7 @@ public sealed class ODataReadToolTests {
 	[Description("Returns a structured validation failure when the required entity argument is missing.")]
 	public void Read_Should_Return_Failure_When_Entity_Is_Missing() {
 		// Arrange
-		ODataReadTool tool = new(Substitute.For<IToolCommandResolver>(), Substitute.For<System.IO.Abstractions.IFileSystem>());
+		ODataReadTool tool = new(Substitute.For<IToolCommandResolver>());
 
 		// Act
 		ODataReadResponse response = tool.Read(new ODataReadArgs {
@@ -573,7 +507,7 @@ public sealed class ODataReadToolTests {
 		urlBuilder.Build(Arg.Any<string>()).Returns(call => $"http://host/{call.Arg<string>()}");
 		client.ExecuteGetRequest(Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
 			.Returns("{\"value\":[]}");
-		ODataReadTool tool = new(commandResolver, Substitute.For<System.IO.Abstractions.IFileSystem>());
+		ODataReadTool tool = new(commandResolver);
 		JsonElement guidValue = JsonDocument.Parse($"\"{guid}\"").RootElement.Clone();
 
 		// Act
@@ -603,7 +537,7 @@ public sealed class ODataReadToolTests {
 		urlBuilder.Build(Arg.Any<string>()).Returns(call => $"http://host/{call.Arg<string>()}");
 		client.ExecuteGetRequest(Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
 			.Returns("{\"value\":[]}");
-		ODataReadTool tool = new(commandResolver, Substitute.For<System.IO.Abstractions.IFileSystem>());
+		ODataReadTool tool = new(commandResolver);
 		JsonElement guidValue = JsonDocument.Parse($"\"{guid}\"").RootElement.Clone();
 
 		// Act
@@ -633,7 +567,7 @@ public sealed class ODataReadToolTests {
 		urlBuilder.Build(Arg.Any<string>()).Returns(call => $"http://host/{call.Arg<string>()}");
 		client.ExecuteGetRequest(Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
 			.Returns("{\"value\":[]}");
-		ODataReadTool tool = new(commandResolver, Substitute.For<System.IO.Abstractions.IFileSystem>());
+		ODataReadTool tool = new(commandResolver);
 		JsonElement stringValue = JsonDocument.Parse("\"Acme\"").RootElement.Clone();
 
 		// Act
@@ -662,7 +596,7 @@ public sealed class ODataReadToolTests {
 		urlBuilder.Build(Arg.Any<string>()).Returns(call => $"http://host/{call.Arg<string>()}");
 		client.ExecuteGetRequest(Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
 			.Returns("{\"value\":[]}");
-		ODataReadTool tool = new(commandResolver, Substitute.For<System.IO.Abstractions.IFileSystem>());
+		ODataReadTool tool = new(commandResolver);
 		JsonElement numberValue = JsonDocument.Parse("1000000").RootElement.Clone();
 
 		// Act
@@ -693,7 +627,7 @@ public sealed class ODataReadToolTests {
 		urlBuilder.Build(Arg.Any<string>()).Returns(call => $"http://host/{call.Arg<string>()}");
 		client.ExecuteGetRequest(Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
 			.Returns("{\"value\":[]}");
-		ODataReadTool tool = new(commandResolver, Substitute.For<System.IO.Abstractions.IFileSystem>());
+		ODataReadTool tool = new(commandResolver);
 		JsonElement inArray = JsonDocument.Parse($"[\"{guid1}\",\"{guid2}\"]").RootElement.Clone();
 
 		// Act
@@ -725,7 +659,7 @@ public sealed class ODataReadToolTests {
 		urlBuilder.Build(Arg.Any<string>()).Returns(call => $"http://host/{call.Arg<string>()}");
 		client.ExecuteGetRequest(Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
 			.Returns("{\"value\":[]}");
-		ODataReadTool tool = new(commandResolver, Substitute.For<System.IO.Abstractions.IFileSystem>());
+		ODataReadTool tool = new(commandResolver);
 		JsonElement guidValue = JsonDocument.Parse($"\"{guid}\"").RootElement.Clone();
 		JsonElement trueValue = JsonDocument.Parse("true").RootElement.Clone();
 		JsonElement status1 = JsonDocument.Parse("\"Active\"").RootElement.Clone();
@@ -766,7 +700,7 @@ public sealed class ODataReadToolTests {
 		urlBuilder.Build(Arg.Any<string>()).Returns(call => $"http://host/{call.Arg<string>()}");
 		client.ExecuteGetRequest(Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
 			.Returns("{\"value\":[]}");
-		ODataReadTool tool = new(commandResolver, Substitute.For<System.IO.Abstractions.IFileSystem>());
+		ODataReadTool tool = new(commandResolver);
 
 		// Act
 		ODataReadResponse response = tool.Read(new ODataReadArgs {
@@ -790,7 +724,7 @@ public sealed class ODataReadToolTests {
 	public void Read_Should_Reject_Skip_When_Negative() {
 		// Arrange
 		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
-		ODataReadTool tool = new(commandResolver, Substitute.For<System.IO.Abstractions.IFileSystem>());
+		ODataReadTool tool = new(commandResolver);
 
 		// Act
 		ODataReadResponse response = tool.Read(new ODataReadArgs {
@@ -820,7 +754,7 @@ public sealed class ODataReadToolTests {
 		serviceUrlBuilder.Build(Arg.Any<string>()).Returns("http://creatio/odata/Contact?$count=true&$top=25");
 		applicationClient.ExecuteGetRequest(Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
 			.Returns("{\"value\":[]}");
-		ODataReadTool tool = new(commandResolver, Substitute.For<System.IO.Abstractions.IFileSystem>());
+		ODataReadTool tool = new(commandResolver);
 
 		// Act
 		ODataReadResponse response = tool.Read(new ODataReadArgs {
@@ -846,7 +780,7 @@ public sealed class ODataReadToolTests {
 		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
 		commandResolver.Resolve<IApplicationClient>(Arg.Any<EnvironmentOptions>()).Returns(client);
 		commandResolver.Resolve<IServiceUrlBuilder>(Arg.Any<EnvironmentOptions>()).Returns(urlBuilder);
-		ODataReadTool tool = new(commandResolver, Substitute.For<System.IO.Abstractions.IFileSystem>());
+		ODataReadTool tool = new(commandResolver);
 
 		// Act
 		ODataReadResponse response = tool.Read(new ODataReadArgs {
@@ -873,7 +807,7 @@ public sealed class ODataReadToolTests {
 		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
 		commandResolver.Resolve<IApplicationClient>(Arg.Any<EnvironmentOptions>()).Returns(client);
 		commandResolver.Resolve<IServiceUrlBuilder>(Arg.Any<EnvironmentOptions>()).Returns(urlBuilder);
-		ODataReadTool tool = new(commandResolver, Substitute.For<System.IO.Abstractions.IFileSystem>());
+		ODataReadTool tool = new(commandResolver);
 
 		// Act
 		ODataReadResponse response = tool.Read(new ODataReadArgs {
@@ -900,7 +834,7 @@ public sealed class ODataReadToolTests {
 		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
 		commandResolver.Resolve<IApplicationClient>(Arg.Any<EnvironmentOptions>()).Returns(client);
 		commandResolver.Resolve<IServiceUrlBuilder>(Arg.Any<EnvironmentOptions>()).Returns(urlBuilder);
-		ODataReadTool tool = new(commandResolver, Substitute.For<System.IO.Abstractions.IFileSystem>());
+		ODataReadTool tool = new(commandResolver);
 
 		// Act
 		ODataReadResponse response = tool.Read(new ODataReadArgs {
@@ -930,7 +864,7 @@ public sealed class ODataReadToolTests {
 		urlBuilder.Build(Arg.Any<string>()).Returns(call => $"http://host/{call.Arg<string>()}");
 		client.ExecuteGetRequest(Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
 			.Returns("{\"value\":[]}");
-		ODataReadTool tool = new(commandResolver, Substitute.For<System.IO.Abstractions.IFileSystem>());
+		ODataReadTool tool = new(commandResolver);
 
 		// Act
 		ODataReadResponse response = tool.Read(new ODataReadArgs {
@@ -958,7 +892,7 @@ public sealed class ODataReadToolTests {
 		urlBuilder.Build(Arg.Any<string>()).Returns("http://creatio/odata/AddressType?$top=25");
 		client.ExecuteGetRequest(Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
 			.Returns("{\"Message\":\"An error has occurred.\",\"ExceptionMessage\":\"Object reference not set to an instance of an object.\",\"ExceptionType\":\"System.NullReferenceException\",\"StackTrace\":\"   at Terrasoft.Web.OData.ODataEntityModelBuilder...\"}");
-		ODataReadTool tool = new(commandResolver, Substitute.For<System.IO.Abstractions.IFileSystem>());
+		ODataReadTool tool = new(commandResolver);
 
 		ODataReadResponse response = tool.Read(new ODataReadArgs { EnvironmentName = "dev", Entity = "AddressType" });
 
@@ -981,7 +915,7 @@ public sealed class ODataReadToolTests {
 		urlBuilder.Build(Arg.Any<string>()).Returns("http://creatio/0/odata/UsrCustomerStatus?$top=25");
 		client.ExecuteGetRequest(Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
 			.Returns("{\"Message\":\"No HTTP resource was found that matches the request URI '.../0/odata/UsrCustomerStatus'.\",\"MessageDetail\":\"No type was found that matches the controller named 'UsrCustomerStatus'.\"}");
-		ODataReadTool tool = new(commandResolver, Substitute.For<System.IO.Abstractions.IFileSystem>());
+		ODataReadTool tool = new(commandResolver);
 
 		// Act
 		ODataReadResponse response = tool.Read(new ODataReadArgs { EnvironmentName = "dev", Entity = "UsrCustomerStatus" });
@@ -1008,7 +942,7 @@ public sealed class ODataReadToolTests {
 		urlBuilder.Build(Arg.Any<string>()).Returns("http://creatio/0/odata/Contact?$top=25");
 		client.ExecuteGetRequest(Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
 			.Returns("{\"Message\":\"Authorization has been denied for this request.\"}");
-		ODataReadTool tool = new(commandResolver, Substitute.For<System.IO.Abstractions.IFileSystem>());
+		ODataReadTool tool = new(commandResolver);
 
 		// Act
 		ODataReadResponse response = tool.Read(new ODataReadArgs { EnvironmentName = "dev", Entity = "Contact" });
@@ -1035,7 +969,7 @@ public sealed class ODataReadToolTests {
 		urlBuilder.Build(Arg.Any<string>()).Returns("http://creatio/odata/EmailMessageData?$top=1");
 		client.ExecuteGetRequest(Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
 			.Returns("{\"@odata.context\":\"http://creatio/odata/$metadata#EmailMessageData/$entity\",\"Id\":\"22222222-2222-2222-2222-222222222222\",\"Message\":\"Hello there\"}");
-		ODataReadTool tool = new(commandResolver, Substitute.For<System.IO.Abstractions.IFileSystem>());
+		ODataReadTool tool = new(commandResolver);
 
 		// Act
 		ODataReadResponse response = tool.Read(new ODataReadArgs { EnvironmentName = "dev", Entity = "EmailMessageData", Top = 1 });
@@ -1064,7 +998,7 @@ public sealed class ODataReadToolTests {
 		urlBuilder.Build(Arg.Any<string>()).Returns("http://secret-host:88/prod-app/0/odata/UsrCustomerStatus?$top=25");
 		client.ExecuteGetRequest(Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
 			.Returns("{\"Message\":\"No HTTP resource was found that matches the request URI 'http://secret-host:88/prod-app/0/odata/UsrCustomerStatus'.\"}");
-		ODataReadTool tool = new(commandResolver, Substitute.For<System.IO.Abstractions.IFileSystem>());
+		ODataReadTool tool = new(commandResolver);
 
 		// Act
 		ODataReadResponse response = tool.Read(new ODataReadArgs { EnvironmentName = "dev", Entity = "UsrCustomerStatus" });
@@ -1089,7 +1023,7 @@ public sealed class ODataReadToolTests {
 		urlBuilder.Build(Arg.Any<string>()).Returns("http://creatio/0/odata/Contact?$top=25");
 		client.ExecuteGetRequest(Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
 			.Returns("{\"Message\":\"The request is invalid.\",\"MessageDetail\":\"The value 'x' is not valid for property Name.\"}");
-		ODataReadTool tool = new(commandResolver, Substitute.For<System.IO.Abstractions.IFileSystem>());
+		ODataReadTool tool = new(commandResolver);
 
 		// Act
 		ODataReadResponse response = tool.Read(new ODataReadArgs { EnvironmentName = "dev", Entity = "Contact" });
@@ -1116,7 +1050,7 @@ public sealed class ODataReadToolTests {
 		urlBuilder.Build(Arg.Any<string>()).Returns("http://creatio/0/odata/Contact?$top=25");
 		client.ExecuteGetRequest(Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
 			.Returns("{\"Message\":\"\"}");
-		ODataReadTool tool = new(commandResolver, Substitute.For<System.IO.Abstractions.IFileSystem>());
+		ODataReadTool tool = new(commandResolver);
 
 		// Act
 		ODataReadResponse response = tool.Read(new ODataReadArgs { EnvironmentName = "dev", Entity = "Contact" });

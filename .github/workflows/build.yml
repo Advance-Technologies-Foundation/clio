@@ -173,7 +173,10 @@ jobs:
 
   unit-tests:
     name: Unit Tests
-    needs: [changes, unit-test-shards]
+    # The Unix file-mode leg is aggregated HERE, not left as a separate context: the branch ruleset requires
+    # `Unit Tests`, so a job it does not depend on can fail while every required context stays green - a
+    # mutation removing UnixCreateMode would have merged. Aggregating it makes the required gate cover it.
+    needs: [changes, unit-test-shards, unix-file-mode-tests]
     if: always()
     runs-on: ubuntu-latest
     permissions: {}
@@ -184,7 +187,8 @@ jobs:
           ((needs.changes.outputs.clio-src == 'true' ||
             needs.changes.outputs.tests   == 'true' ||
             github.ref == 'refs/heads/master') &&
-           needs.unit-test-shards.result != 'success')
+           (needs.unit-test-shards.result != 'success' ||
+            needs.unix-file-mode-tests.result != 'success'))
         run: exit 1
 
   # ── Unix file-mode gate ─────────────────────────────────────────────
@@ -217,7 +221,7 @@ jobs:
           set -euo pipefail
           dotnet test ./clio.tests/clio.tests.csproj \
             --framework net10.0 \
-            --filter "FullyQualifiedName~OutputPathConfinementTests&Category!=Integration" \
+            --filter "FullyQualifiedName~OutputPathConfinementTests&Category=Integration" \
             -p:RunAnalyzers=false
 
   # ── ClioGate tests (only when the bundled service changes) ──────────

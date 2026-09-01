@@ -1,5 +1,7 @@
-﻿using System;
+using System;
+using System.Globalization;
 using System.Linq;
+using System.Threading;
 using System.Net.Http;
 using System.IO;
 using System.IO.Abstractions.TestingHelpers;
@@ -33,7 +35,7 @@ public sealed class ODataCreateToolTests {
 		urlBuilder.Build(Arg.Any<string>()).Returns("http://creatio/odata/Account");
 		client.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
 			.Returns("{\"Id\":\"11111111-1111-1111-1111-111111111111\"}");
-		ODataCreateTool tool = new(resolver, fileSystem);
+		ODataCreateTool tool = new(resolver, new ODataFileContract(fileSystem));
 
 		// Act
 		ODataCreateBatchResponse response = tool.Create(new ODataCreateArgs {
@@ -58,7 +60,7 @@ public sealed class ODataCreateToolTests {
 		IApplicationClient client = Substitute.For<IApplicationClient>();
 		IToolCommandResolver resolver = Substitute.For<IToolCommandResolver>();
 		resolver.Resolve<IApplicationClient>(Arg.Any<EnvironmentOptions>()).Returns(client);
-		ODataCreateTool tool = new(resolver, fileSystem);
+		ODataCreateTool tool = new(resolver, new ODataFileContract(fileSystem));
 
 		// Act
 		ODataCreateBatchResponse response = tool.Create(new ODataCreateArgs {
@@ -84,7 +86,7 @@ public sealed class ODataCreateToolTests {
 		IApplicationClient client = Substitute.For<IApplicationClient>();
 		IToolCommandResolver resolver = Substitute.For<IToolCommandResolver>();
 		resolver.Resolve<IApplicationClient>(Arg.Any<EnvironmentOptions>()).Returns(client);
-		ODataCreateTool tool = new(resolver, fileSystem);
+		ODataCreateTool tool = new(resolver, new ODataFileContract(fileSystem));
 		ODataCreateArgs args = JsonSerializer.Deserialize<ODataCreateArgs>(
 			"""{"environment-name":"dev","entity":"Account","rows":[{"Name":"Inline"}],"rows_file":"C:/payload.json"}""")!;
 
@@ -110,7 +112,7 @@ public sealed class ODataCreateToolTests {
 		IApplicationClient client = Substitute.For<IApplicationClient>();
 		IToolCommandResolver resolver = Substitute.For<IToolCommandResolver>();
 		resolver.Resolve<IApplicationClient>(Arg.Any<EnvironmentOptions>()).Returns(client);
-		ODataCreateTool tool = new(resolver, fileSystem);
+		ODataCreateTool tool = new(resolver, new ODataFileContract(fileSystem));
 		ODataCreateArgs args = JsonSerializer.Deserialize<ODataCreateArgs>(
 			"""{"environment-name":"dev","entity":"Account","rows":[{"Name":"Inline"}],"stopOnErrors":true}""")!;
 
@@ -137,7 +139,7 @@ public sealed class ODataCreateToolTests {
 		IApplicationClient client = Substitute.For<IApplicationClient>();
 		IToolCommandResolver resolver = Substitute.For<IToolCommandResolver>();
 		resolver.Resolve<IApplicationClient>(Arg.Any<EnvironmentOptions>()).Returns(client);
-		ODataCreateTool tool = new(resolver, fileSystem);
+		ODataCreateTool tool = new(resolver, new ODataFileContract(fileSystem));
 
 		// Act
 		ODataCreateBatchResponse response = tool.Create(new ODataCreateArgs {
@@ -163,7 +165,7 @@ public sealed class ODataCreateToolTests {
 		IApplicationClient client = Substitute.For<IApplicationClient>();
 		IToolCommandResolver resolver = Substitute.For<IToolCommandResolver>();
 		resolver.Resolve<IApplicationClient>(Arg.Any<EnvironmentOptions>()).Returns(client);
-		ODataCreateTool tool = new(resolver, fileSystem);
+		ODataCreateTool tool = new(resolver, new ODataFileContract(fileSystem));
 
 		// Act
 		ODataCreateBatchResponse response = tool.Create(new ODataCreateArgs {
@@ -190,7 +192,7 @@ public sealed class ODataCreateToolTests {
 		IApplicationClient client = Substitute.For<IApplicationClient>();
 		IToolCommandResolver resolver = Substitute.For<IToolCommandResolver>();
 		resolver.Resolve<IApplicationClient>(Arg.Any<EnvironmentOptions>()).Returns(client);
-		ODataCreateTool tool = new(resolver, fileSystem);
+		ODataCreateTool tool = new(resolver, new ODataFileContract(fileSystem));
 
 		// Act
 		ODataCreateBatchResponse response = tool.Create(new ODataCreateArgs {
@@ -217,7 +219,7 @@ public sealed class ODataCreateToolTests {
 		IApplicationClient client = Substitute.For<IApplicationClient>();
 		IToolCommandResolver resolver = Substitute.For<IToolCommandResolver>();
 		resolver.Resolve<IApplicationClient>(Arg.Any<EnvironmentOptions>()).Returns(client);
-		ODataCreateTool tool = new(resolver, fileSystem);
+		ODataCreateTool tool = new(resolver, new ODataFileContract(fileSystem));
 
 		// Act
 		ODataCreateBatchResponse response = tool.Create(new ODataCreateArgs {
@@ -241,7 +243,7 @@ public sealed class ODataCreateToolTests {
 		IApplicationClient client = Substitute.For<IApplicationClient>();
 		IToolCommandResolver resolver = Substitute.For<IToolCommandResolver>();
 		resolver.Resolve<IApplicationClient>(Arg.Any<EnvironmentOptions>()).Returns(client);
-		ODataCreateTool tool = new(resolver, Substitute.For<System.IO.Abstractions.IFileSystem>());
+		ODataCreateTool tool = new(resolver, new ODataFileContract(Substitute.For<System.IO.Abstractions.IFileSystem>()));
 		string outsidePath = Path.Combine(
 			Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), "clio-odata-confinement-probe.json");
 
@@ -278,7 +280,7 @@ public sealed class ODataCreateToolTests {
 		urlBuilder.Build(Arg.Any<string>()).Returns("http://creatio/odata/Account");
 		client.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
 			.Returns("{\"Id\":\"11111111-1111-1111-1111-111111111111\"}");
-		ODataCreateTool tool = new(resolver, fileSystem);
+		ODataCreateTool tool = new(resolver, new ODataFileContract(fileSystem));
 
 		// Act
 		ODataCreateBatchResponse response = tool.Create(new ODataCreateArgs {
@@ -306,7 +308,7 @@ public sealed class ODataCreateToolTests {
 		IApplicationClient client = Substitute.For<IApplicationClient>();
 		IToolCommandResolver resolver = Substitute.For<IToolCommandResolver>();
 		resolver.Resolve<IApplicationClient>(Arg.Any<EnvironmentOptions>()).Returns(client);
-		ODataCreateTool tool = new(resolver, fileSystem);
+		ODataCreateTool tool = new(resolver, new ODataFileContract(fileSystem));
 
 		// Act
 		ODataCreateBatchResponse response = tool.Create(new ODataCreateArgs {
@@ -340,7 +342,7 @@ public sealed class ODataCreateToolTests {
 		IApplicationClient client = Substitute.For<IApplicationClient>();
 		IToolCommandResolver resolver = Substitute.For<IToolCommandResolver>();
 		resolver.Resolve<IApplicationClient>(Arg.Any<EnvironmentOptions>()).Returns(client);
-		ODataCreateTool tool = new(resolver, fileSystem);
+		ODataCreateTool tool = new(resolver, new ODataFileContract(fileSystem));
 
 		// Act
 		ODataCreateBatchResponse response = tool.Create(new ODataCreateArgs {
@@ -371,7 +373,7 @@ public sealed class ODataCreateToolTests {
 		IApplicationClient client = Substitute.For<IApplicationClient>();
 		IToolCommandResolver resolver = Substitute.For<IToolCommandResolver>();
 		resolver.Resolve<IApplicationClient>(Arg.Any<EnvironmentOptions>()).Returns(client);
-		ODataCreateTool tool = new(resolver, fileSystem);
+		ODataCreateTool tool = new(resolver, new ODataFileContract(fileSystem));
 
 		// Act
 		ODataCreateBatchResponse response = tool.Create(new ODataCreateArgs {
@@ -404,7 +406,7 @@ public sealed class ODataCreateToolTests {
 			.Returns("{\"Id\":\"00000000-0000-0000-0000-000000000001\"}");
 		IToolCommandResolver resolver = Substitute.For<IToolCommandResolver>();
 		resolver.Resolve<IApplicationClient>(Arg.Any<EnvironmentOptions>()).Returns(client);
-		ODataCreateTool tool = new(resolver, fileSystem);
+		ODataCreateTool tool = new(resolver, new ODataFileContract(fileSystem));
 
 		// Act
 		ODataCreateBatchResponse response = tool.Create(new ODataCreateArgs {
@@ -453,7 +455,7 @@ public sealed class ODataCreateToolTests {
 		urlBuilder.Build(Arg.Any<string>()).Returns("http://creatio/odata/Account");
 		client.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
 			.Returns("{\"Id\":\"11111111-1111-1111-1111-111111111111\"}");
-		ODataCreateTool tool = new(resolver, fileSystem);
+		ODataCreateTool tool = new(resolver, new ODataFileContract(fileSystem));
 		return tool.Create(configure(new ODataCreateArgs { EnvironmentName = "dev", Entity = "Account" }));
 	}
 
@@ -492,7 +494,7 @@ public sealed class ODataCreateToolTests {
 			.Returns(
 				"{\"Id\":\"11111111-1111-1111-1111-111111111111\",\"Name\":\"Acme\"}",
 				"{\"Id\":\"22222222-2222-2222-2222-222222222222\",\"Name\":\"Globex\"}");
-		ODataCreateTool tool = new(resolver, Substitute.For<System.IO.Abstractions.IFileSystem>());
+		ODataCreateTool tool = new(resolver, new ODataFileContract(Substitute.For<System.IO.Abstractions.IFileSystem>()));
 
 		// Act
 		ODataCreateBatchResponse response = tool.Create(new ODataCreateArgs {
@@ -525,7 +527,7 @@ public sealed class ODataCreateToolTests {
 		urlBuilder.Build(Arg.Any<string>()).Returns("http://env/odata/Account");
 		client.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
 			.Returns("{\"Id\":\"11111111-1111-1111-1111-111111111111\"}");
-		ODataCreateTool tool = new(resolver, Substitute.For<System.IO.Abstractions.IFileSystem>());
+		ODataCreateTool tool = new(resolver, new ODataFileContract(Substitute.For<System.IO.Abstractions.IFileSystem>()));
 
 		// Act
 		tool.Create(new ODataCreateArgs { EnvironmentName = "dev", Entity = "Account", Rows = Arr("[{\"Name\":\"A\"}]") });
@@ -541,7 +543,7 @@ public sealed class ODataCreateToolTests {
 	public void Create_Should_Fail_When_Entity_Missing() {
 		// Arrange
 		IToolCommandResolver resolver = Substitute.For<IToolCommandResolver>();
-		ODataCreateTool tool = new(resolver, Substitute.For<System.IO.Abstractions.IFileSystem>());
+		ODataCreateTool tool = new(resolver, new ODataFileContract(Substitute.For<System.IO.Abstractions.IFileSystem>()));
 
 		// Act
 		ODataCreateBatchResponse response = tool.Create(new ODataCreateArgs {
@@ -559,7 +561,7 @@ public sealed class ODataCreateToolTests {
 	public void Create_Should_Fail_When_Rows_Empty() {
 		// Arrange
 		IToolCommandResolver resolver = Substitute.For<IToolCommandResolver>();
-		ODataCreateTool tool = new(resolver, Substitute.For<System.IO.Abstractions.IFileSystem>());
+		ODataCreateTool tool = new(resolver, new ODataFileContract(Substitute.For<System.IO.Abstractions.IFileSystem>()));
 
 		// Act
 		ODataCreateBatchResponse response = tool.Create(new ODataCreateArgs {
@@ -584,7 +586,7 @@ public sealed class ODataCreateToolTests {
 		urlBuilder.Build(Arg.Any<string>()).Returns("http://creatio/odata/Account");
 		client.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
 			.Returns("{\"error\":{\"code\":\"\",\"message\":\"Column Name is required\"}}");
-		ODataCreateTool tool = new(resolver, Substitute.For<System.IO.Abstractions.IFileSystem>());
+		ODataCreateTool tool = new(resolver, new ODataFileContract(Substitute.For<System.IO.Abstractions.IFileSystem>()));
 
 		// Act
 		ODataCreateBatchResponse response = tool.Create(new ODataCreateArgs {
@@ -610,7 +612,7 @@ public sealed class ODataCreateToolTests {
 		urlBuilder.Build(Arg.Any<string>()).Returns("http://creatio/odata/AddressType");
 		client.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
 			.Returns("{\"Message\":\"An error has occurred.\",\"ExceptionMessage\":\"Object reference not set to an instance of an object.\",\"ExceptionType\":\"System.NullReferenceException\"}");
-		ODataCreateTool tool = new(resolver, Substitute.For<System.IO.Abstractions.IFileSystem>());
+		ODataCreateTool tool = new(resolver, new ODataFileContract(Substitute.For<System.IO.Abstractions.IFileSystem>()));
 
 		// Act
 		ODataCreateBatchResponse response = tool.Create(new ODataCreateArgs {
@@ -636,7 +638,7 @@ public sealed class ODataCreateToolTests {
 		urlBuilder.Build(Arg.Any<string>()).Returns("http://creatio/0/odata/UsrCustomerStatus");
 		client.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
 			.Returns("{\"Message\":\"No HTTP resource was found that matches the request URI '.../0/odata/UsrCustomerStatus'.\",\"MessageDetail\":\"No type was found that matches the controller named 'UsrCustomerStatus'.\"}");
-		ODataCreateTool tool = new(resolver, Substitute.For<System.IO.Abstractions.IFileSystem>());
+		ODataCreateTool tool = new(resolver, new ODataFileContract(Substitute.For<System.IO.Abstractions.IFileSystem>()));
 
 		// Act
 		ODataCreateBatchResponse response = tool.Create(new ODataCreateArgs {
@@ -665,7 +667,7 @@ public sealed class ODataCreateToolTests {
 		urlBuilder.Build(Arg.Any<string>()).Returns("http://creatio/odata/Account");
 		client.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
 			.Returns("{\"Message\":\"Authorization has been denied for this request.\"}");
-		ODataCreateTool tool = new(resolver, Substitute.For<System.IO.Abstractions.IFileSystem>());
+		ODataCreateTool tool = new(resolver, new ODataFileContract(Substitute.For<System.IO.Abstractions.IFileSystem>()));
 
 		// Act
 		ODataCreateBatchResponse response = tool.Create(new ODataCreateArgs {
@@ -692,7 +694,7 @@ public sealed class ODataCreateToolTests {
 		urlBuilder.Build(Arg.Any<string>()).Returns("http://creatio/odata/EmailMessageData");
 		client.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
 			.Returns("{\"@odata.context\":\"http://creatio/odata/$metadata#EmailMessageData/$entity\",\"Id\":\"22222222-2222-2222-2222-222222222222\",\"Message\":\"Hello there\"}");
-		ODataCreateTool tool = new(resolver, Substitute.For<System.IO.Abstractions.IFileSystem>());
+		ODataCreateTool tool = new(resolver, new ODataFileContract(Substitute.For<System.IO.Abstractions.IFileSystem>()));
 
 		// Act
 		ODataCreateBatchResponse response = tool.Create(new ODataCreateArgs {
@@ -718,7 +720,7 @@ public sealed class ODataCreateToolTests {
 		urlBuilder.Build(Arg.Any<string>()).Returns("http://secret-host:88/prod-app/0/odata/UsrCustomerStatus");
 		client.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
 			.Returns("{\"Message\":\"No HTTP resource was found that matches the request URI 'http://secret-host:88/prod-app/0/odata/UsrCustomerStatus'.\"}");
-		ODataCreateTool tool = new(resolver, Substitute.For<System.IO.Abstractions.IFileSystem>());
+		ODataCreateTool tool = new(resolver, new ODataFileContract(Substitute.For<System.IO.Abstractions.IFileSystem>()));
 
 		// Act
 		ODataCreateBatchResponse response = tool.Create(new ODataCreateArgs {
@@ -743,7 +745,7 @@ public sealed class ODataCreateToolTests {
 		urlBuilder.Build(Arg.Any<string>()).Returns("http://creatio/odata/Account");
 		client.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
 			.Returns("{\"Message\":\"\",\"MessageDetail\":\"\"}");
-		ODataCreateTool tool = new(resolver, Substitute.For<System.IO.Abstractions.IFileSystem>());
+		ODataCreateTool tool = new(resolver, new ODataFileContract(Substitute.For<System.IO.Abstractions.IFileSystem>()));
 
 		// Act
 		ODataCreateBatchResponse response = tool.Create(new ODataCreateArgs {
@@ -771,7 +773,7 @@ public sealed class ODataCreateToolTests {
 		// not recognize it; with no Id it falls through to the id-missing fallback branch.
 		client.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
 			.Returns("{\"Message\":\"The request is invalid.\",\"ModelState\":{\"row\":[\"failed calling http://secret-host:88/prod-app/0/odata/Account\"]}}");
-		ODataCreateTool tool = new(resolver, Substitute.For<System.IO.Abstractions.IFileSystem>());
+		ODataCreateTool tool = new(resolver, new ODataFileContract(Substitute.For<System.IO.Abstractions.IFileSystem>()));
 
 		// Act
 		ODataCreateBatchResponse response = tool.Create(new ODataCreateArgs {
@@ -796,7 +798,7 @@ public sealed class ODataCreateToolTests {
 		urlBuilder.Build(Arg.Any<string>()).Returns("http://creatio/odata/NumberKeyed");
 		client.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
 			.Returns("{\"Id\":42,\"Name\":\"Office\"}");
-		ODataCreateTool tool = new(resolver, Substitute.For<System.IO.Abstractions.IFileSystem>());
+		ODataCreateTool tool = new(resolver, new ODataFileContract(Substitute.For<System.IO.Abstractions.IFileSystem>()));
 
 		// Act
 		ODataCreateBatchResponse response = tool.Create(new ODataCreateArgs {
@@ -822,7 +824,7 @@ public sealed class ODataCreateToolTests {
 		urlBuilder.Build(Arg.Any<string>()).Returns("http://creatio/odata/AddressType");
 		client.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
 			.Returns("{\"Name\":\"Office\"}");
-		ODataCreateTool tool = new(resolver, Substitute.For<System.IO.Abstractions.IFileSystem>());
+		ODataCreateTool tool = new(resolver, new ODataFileContract(Substitute.For<System.IO.Abstractions.IFileSystem>()));
 
 		// Act
 		ODataCreateBatchResponse response = tool.Create(new ODataCreateArgs {
@@ -849,7 +851,7 @@ public sealed class ODataCreateToolTests {
 			.Returns(
 				"{\"error\":{\"code\":\"\",\"message\":\"bad row\"}}",
 				"{\"Id\":\"22222222-2222-2222-2222-222222222222\"}");
-		ODataCreateTool tool = new(resolver, Substitute.For<System.IO.Abstractions.IFileSystem>());
+		ODataCreateTool tool = new(resolver, new ODataFileContract(Substitute.For<System.IO.Abstractions.IFileSystem>()));
 
 		// Act
 		ODataCreateBatchResponse response = tool.Create(new ODataCreateArgs {
@@ -876,7 +878,7 @@ public sealed class ODataCreateToolTests {
 		urlBuilder.Build(Arg.Any<string>()).Returns("http://creatio/odata/Account");
 		client.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
 			.Returns("{\"error\":{\"code\":\"\",\"message\":\"bad row\"}}");
-		ODataCreateTool tool = new(resolver, Substitute.For<System.IO.Abstractions.IFileSystem>());
+		ODataCreateTool tool = new(resolver, new ODataFileContract(Substitute.For<System.IO.Abstractions.IFileSystem>()));
 
 		// Act
 		ODataCreateBatchResponse response = tool.Create(new ODataCreateArgs {
@@ -890,6 +892,91 @@ public sealed class ODataCreateToolTests {
 		client.Received(1).ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>(), 30_000, 1, 1);
 	}
 
+	[Test]
+	[Category("Unit")]
+	[Description("Stops the batch when the caller cancels it: no further row is POSTed, and the first unattempted row is reported as definitely not created.")]
+	public void Create_Should_Stop_Posting_When_The_Caller_Cancels() {
+		// Arrange
+		IApplicationClient client = Substitute.For<IApplicationClient>();
+		IServiceUrlBuilder urlBuilder = Substitute.For<IServiceUrlBuilder>();
+		IToolCommandResolver resolver = Substitute.For<IToolCommandResolver>();
+		resolver.Resolve<IApplicationClient>(Arg.Any<EnvironmentOptions>()).Returns(client);
+		resolver.Resolve<IServiceUrlBuilder>(Arg.Any<EnvironmentOptions>()).Returns(urlBuilder);
+		urlBuilder.Build(Arg.Any<string>()).Returns("http://creatio/odata/Account");
+		using CancellationTokenSource cancellation = new();
+		//Cancel from inside the first POST, so the guard is exercised BETWEEN rows exactly as a caller
+		//disconnecting mid-batch would trigger it.
+		client.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+			.Returns(_ => {
+				cancellation.Cancel();
+				return "{\"Id\":\"11111111-1111-1111-1111-111111111111\"}";
+			});
+		ODataCreateTool tool = new(resolver, new ODataFileContract(Substitute.For<System.IO.Abstractions.IFileSystem>()));
+
+		// Act
+		ODataCreateBatchResponse response = tool.Create(new ODataCreateArgs {
+			EnvironmentName = "dev",
+			Entity = "Account",
+			Rows = Arr("[{\"Name\":\"First\"},{\"Name\":\"Second\"},{\"Name\":\"Third\"}]")
+		}, cancellation.Token);
+
+		// Assert
+		client.Received(1).ExecutePostRequest(
+			Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>());
+		response.Created.Should().Be(1, because: "only the row already in flight completes");
+		response.Results.Should().HaveCount(2,
+			because: "the first row that was not attempted is reported, and nothing after it is sent");
+		response.Results[1].RecordCreated.Should().BeFalse(
+			because: "a row that was never sent definitely did not insert, so the caller can re-send it safely");
+		response.Results[1].Error.Should().Contain("cancelled",
+			because: "the caller has to know the batch stopped early and why");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Caps each row's request timeout to what is left of the batch budget, so the last row cannot overshoot the aggregate deadline by a further full timeout.")]
+	public void Create_Should_Cap_Row_Timeout_To_The_Batch_Budget() {
+		// Arrange
+		IApplicationClient client = Substitute.For<IApplicationClient>();
+		IServiceUrlBuilder urlBuilder = Substitute.For<IServiceUrlBuilder>();
+		IToolCommandResolver resolver = Substitute.For<IToolCommandResolver>();
+		resolver.Resolve<IApplicationClient>(Arg.Any<EnvironmentOptions>()).Returns(client);
+		resolver.Resolve<IServiceUrlBuilder>(Arg.Any<EnvironmentOptions>()).Returns(urlBuilder);
+		urlBuilder.Build(Arg.Any<string>()).Returns("http://creatio/odata/Account");
+		client.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+			.Returns("{\"Id\":\"11111111-1111-1111-1111-111111111111\"}");
+		ODataCreateTool tool = new(resolver, new ODataFileContract(Substitute.For<System.IO.Abstractions.IFileSystem>()));
+
+		// Act
+		tool.Create(new ODataCreateArgs {
+			EnvironmentName = "dev", Entity = "Account", Rows = Arr("[{\"Name\":\"Acme\"}]")
+		});
+
+		// Assert
+		client.Received(1).ExecutePostRequest(
+			Arg.Any<string>(),
+			Arg.Any<string>(),
+			Arg.Is<int>(timeout => timeout > 0 && timeout <= ODataCreateTool.RowRequestTimeoutMs),
+			Arg.Any<int>(),
+			Arg.Any<int>());
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Keeps the row-ceiling wording and the enforced ceiling derived from one another, so an agent cannot read one limit off a description and be rejected by another.")]
+	public void Create_Should_Publish_The_Enforced_Row_Ceiling() {
+		// Arrange
+
+		// Act
+		string limitText = ODataCreateTool.RowCountLimitDescription;
+
+		// Assert
+		ODataCreateTool.MaxRowCountText.Should().Be(ODataCreateTool.MaxRowCount.ToString(CultureInfo.InvariantCulture),
+			because: "the text form of the ceiling is what every description is built from, so it must equal the enforced value");
+		limitText.Should().Contain(ODataCreateTool.MaxRowCountText,
+			because: "the shared wording has to state the number it enforces");
+	}
+
 	#region record-created side-effect state
 
 	private static ODataCreateTool BuildTool(IApplicationClient client) {
@@ -898,7 +985,7 @@ public sealed class ODataCreateToolTests {
 		resolver.Resolve<IApplicationClient>(Arg.Any<EnvironmentOptions>()).Returns(client);
 		resolver.Resolve<IServiceUrlBuilder>(Arg.Any<EnvironmentOptions>()).Returns(urlBuilder);
 		urlBuilder.Build(Arg.Any<string>()).Returns(call => $"http://creatio/{call.Arg<string>()}");
-		return new ODataCreateTool(resolver, Substitute.For<System.IO.Abstractions.IFileSystem>());
+		return new ODataCreateTool(resolver, new ODataFileContract(Substitute.For<System.IO.Abstractions.IFileSystem>()));
 	}
 
 	[Test]

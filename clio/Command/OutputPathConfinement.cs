@@ -1,4 +1,4 @@
-﻿namespace Clio.Command;
+namespace Clio.Command;
 
 using System;
 using System.Collections.Generic;
@@ -47,14 +47,53 @@ internal static class OutputPathConfinement {
 	/// <returns>The resolved absolute path with a <c>null</c> error, or <c>(null, error)</c>.</returns>
 	internal static (string path, string error) ResolveForRead(
 		IoFileSystem fileSystem, string inputFile, string optionName) {
-		(string full, string error) = ResolveConfined(fileSystem, inputFile, optionName);
+		(string _, string real, string error) = ResolveConfined(fileSystem, inputFile, optionName);
 		if (error is not null) {
 			return (null, error);
 		}
-		if (!fileSystem.File.Exists(full)) {
+		if (!fileSystem.File.Exists(real)) {
 			return (null, $"{optionName} file was not found.");
 		}
-		return (full, null);
+		// The CANONICAL path is returned, not the lexical one. Returning the lexical form meant the check ran
+		// on the symlink-resolved path while the caller opened the unresolved one, so an intermediate link
+		// swapped after validation redirected the read outside the allowed roots.
+		return (real, null);
+	}
+
+	/// <summary>
+	/// Output-path counterpart of <see cref="ResolveForRead"/> that returns the CANONICAL (symlink-followed)
+	/// path rather than the lexical one, so the create runs against the same path confinement approved.
+	/// Used by the OData file contract, whose payload boundary is caller-supplied on both directions.
+	/// </summary>
+	/// <param name="fileSystem">File-system abstraction used for path resolution and the workspace-marker probe.</param>
+	/// <param name="outputFile">The caller-supplied output path (may be relative).</param>
+	/// <returns>The canonical absolute path with a <c>null</c> error, or <c>(null, error)</c>.</returns>
+	internal static (string path, string error) ResolveCanonicalOutput(IoFileSystem fileSystem, string outputFile) {
+		(string _, string real, string error) = ResolveConfined(fileSystem, outputFile, "output-file");
+		if (error is not null) {
+			return (null, error);
+		}
+		string existsError = RejectExistingTarget(fileSystem, real, outputFile);
+		return existsError is not null ? (null, existsError) : (real, null);
+	}
+
+	/// <summary>
+	/// Re-runs confinement on an ALREADY-canonical path and confirms it still canonicalizes to itself. Called
+	/// while the caller holds the file open, so a component swapped between resolution and the open is caught
+	/// before the handle's contents are used.
+	/// </summary>
+	/// <param name="fileSystem">File-system abstraction used for path resolution.</param>
+	/// <param name="resolvedPath">A path previously returned by <see cref="ResolveForRead"/>.</param>
+	/// <param name="optionName">Argument name used in the caller-facing message.</param>
+	/// <returns><c>null</c> when the path is unchanged and still confined, otherwise the caller-facing error.</returns>
+	internal static string RevalidateResolved(IoFileSystem fileSystem, string resolvedPath, string optionName) {
+		(string _, string real, string error) = ResolveConfined(fileSystem, resolvedPath, optionName);
+		if (error is not null) {
+			return error;
+		}
+		return string.Equals(real, resolvedPath, StringComparison.Ordinal)
+			? null
+			: $"{optionName} changed on disk while it was being read; refusing to continue.";
 	}
 
 	/// <summary>
@@ -71,26 +110,28 @@ internal static class OutputPathConfinement {
 		/// already exists is never overwritten, keeping every routing tool's Destructive=false honest).
 	/// </returns>
 	internal static (string path, string error) Resolve(IoFileSystem fileSystem, string outputFile) {
-		(string full, string error) = ResolveConfined(fileSystem, outputFile, "output-file");
+		(string full, string _, string error) = ResolveConfined(fileSystem, outputFile, "output-file");
 		if (error is not null) {
 			return (null, error);
 		}
-		// Keep the Destructive=false classification honest: an explicit output-file must not silently
-		// overwrite an existing file. Confinement bounds WHERE the write lands, not WHETHER it destroys
-		// existing content. The tool-owned default output path does not flow through here, so re-runs to it
-		// still overwrite their own output.
-		if (fileSystem.File.Exists(full) || fileSystem.Directory.Exists(full)) {
-			return (null,
-				$"output-file '{outputFile}' already exists; refusing to overwrite it. Choose a different " +
-				"path or remove the existing file.");
-		}
-		return (full, null);
+		string existsError = RejectExistingTarget(fileSystem, full, outputFile);
+		return existsError is not null ? (null, existsError) : (full, null);
 	}
+
+	// Keep the Destructive=false classification honest: an explicit output-file must not silently
+	// overwrite an existing file. Confinement bounds WHERE the write lands, not WHETHER it destroys
+	// existing content. The tool-owned default output path does not flow through here, so re-runs to it
+	// still overwrite their own output.
+	private static string RejectExistingTarget(IoFileSystem fileSystem, string resolved, string requested) =>
+		fileSystem.File.Exists(resolved) || fileSystem.Directory.Exists(resolved)
+			? $"output-file '{requested}' already exists; refusing to overwrite it. Choose a different " +
+				"path or remove the existing file."
+			: null;
 
 	// Everything both directions share: resolve to an absolute, symlink-followed path and confirm it stays
 	// inside a trusted workspace anchor or the OS temp root. The existence rule is the caller's, because the
 	// two directions want opposite answers.
-	private static (string path, string error) ResolveConfined(
+	private static (string path, string realPath, string error) ResolveConfined(
 		IoFileSystem fileSystem, string candidatePath, string optionName) {
 		// H1: reading the process-global cwd (for the anchor) must serialize against the MCP workspace tools that
 		// PIN cwd. In the MCP path this runs under the shared tool lock; in the single-threaded CLI path the lock
@@ -127,7 +168,7 @@ internal static class OutputPathConfinement {
 				// A confirmed symlink whose chain could not be resolved (cycle / pathological depth / a target
 				// that cannot be normalized). Fail CLOSED: never fall back to a lexical path that would slip past
 				// confinement (see ResolveRealPath / ResolveSymlink).
-				return (null,
+				return (null, null,
 					$"{optionName} '{candidatePath}' resolves through an unresolvable symbolic link; refusing to continue.");
 			}
 
@@ -138,12 +179,12 @@ internal static class OutputPathConfinement {
 			string trustedAnchor = IsTrustedAnchor(fileSystem, realAnchor, realHome) ? realAnchor : null;
 
 			if (!IsPathConfined(real, trustedAnchor, realTempRoot)) {
-				return (null,
+				return (null, null,
 					$"{optionName} '{candidatePath}' resolves outside the allowed locations; it must be inside the " +
 					"workspace or the OS temp directory.");
 			}
 
-			return (full, null);
+			return (full, real, null);
 		}
 	}
 
@@ -175,15 +216,20 @@ internal static class OutputPathConfinement {
 		WriteThroughTemporaryFile(fileSystem, resolvedPath, stream => stream.Write(content, 0, content.Length));
 
 	/// <summary>
-	/// Test seam: writes through the same sibling-temporary-file path, letting the caller run assertions while
-	/// the temporary file is still open.
+	/// Lowest-level of the three <see cref="WriteAtomic(IoFileSystem, string, string)"/> overloads: hands the
+	/// open temporary-file stream to <paramref name="writeContent"/> so a caller that produces its payload
+	/// incrementally does not have to materialize it first.
 	/// </summary>
 	/// <remarks>
-	/// The 0600 guarantee is about the window in which the temporary file EXISTS, so asserting only on the
-	/// renamed final file cannot tell a creation-time mode from an unsafe create-then-chmod. Only a writer that
-	/// observes the open temporary file can.
+	/// The 0600 guarantee is about the window in which the temporary file EXISTS, so an assertion on the
+	/// renamed final file alone cannot tell a creation-time mode from an unsafe create-then-chmod. Only a
+	/// writer that observes the open temporary file can, which is why this overload is part of the API rather
+	/// than an implementation detail.
 	/// </remarks>
-	internal static void WriteAtomicForTest(IoFileSystem fileSystem, string resolvedPath,
+	/// <param name="fileSystem">File-system abstraction used for the directory probe and the atomic write.</param>
+	/// <param name="resolvedPath">The confined absolute path returned by <see cref="Resolve"/>.</param>
+	/// <param name="writeContent">Writes the payload into the open temporary-file stream.</param>
+	internal static void WriteAtomic(IoFileSystem fileSystem, string resolvedPath,
 		Action<Stream> writeContent) =>
 		WriteThroughTemporaryFile(fileSystem, resolvedPath, writeContent);
 

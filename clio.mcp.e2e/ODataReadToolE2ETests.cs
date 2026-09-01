@@ -72,10 +72,30 @@ public sealed class ODataReadToolE2ETests : McpContractFixtureBase {
 	}
 
 	[Test]
-	[Description("Binds the output-file argument through the real MCP server and keeps the file contract available for large responses.")]
-	[AllureTag(ODataReadTool.ToolName)]
-	[AllureName("odata-read binds output-file over stdio")]
-	public async Task ODataRead_Should_Bind_Output_File_Argument() {
+	[Description("Exposes odata-read-to-file via the get-tool-contract compact index, so the split tool is discoverable wherever odata-read is.")]
+	[AllureTag(ODataReadToFileTool.ToolName)]
+	[AllureName("odata-read-to-file MCP tool is discoverable on the lazy surface")]
+	public async Task ODataReadToFile_Should_Be_Advertised() {
+		// Arrange
+		await using var arrangeContext = Arrange(TimeSpan.FromMinutes(3));
+
+		// Act
+		IReadOnlyList<ToolContractIndexEntry> index = await arrangeContext.Session.GetToolContractIndexAsync(
+			arrangeContext.CancellationTokenSource.Token);
+
+		// Assert
+		ToolContractIndexEntry entry = index.Should().ContainSingle(entry => entry.Name == ODataReadToFileTool.ToolName,
+			because: "a caller with a response too large to return inline must be able to find the file-mode tool")
+			.Which;
+		entry.Destructive.Should().NotBe(true,
+			because: "the tool reads remote data and only adds a local file");
+	}
+
+	[Test]
+	[Description("Binds the output-file argument of odata-read-to-file through the real MCP server, so the file contract stays reachable over stdio after the tool split.")]
+	[AllureTag(ODataReadToFileTool.ToolName)]
+	[AllureName("odata-read-to-file binds output-file over stdio")]
+	public async Task ODataReadToFile_Should_Bind_Output_File_Argument() {
 		// Arrange
 		await using var arrangeContext = Arrange(TimeSpan.FromMinutes(3));
 		string invalidEnvironmentName = $"missing-odata-output-env-{Guid.NewGuid():N}";
@@ -84,7 +104,7 @@ public sealed class ODataReadToolE2ETests : McpContractFixtureBase {
 		try {
 			// Act
 			CallToolResult callResult = await arrangeContext.Session.CallToolAsync(
-				ODataReadTool.ToolName,
+				ODataReadToFileTool.ToolName,
 				new Dictionary<string, object?> {
 					["args"] = new Dictionary<string, object?> {
 						["environment-name"] = invalidEnvironmentName,
@@ -97,7 +117,7 @@ public sealed class ODataReadToolE2ETests : McpContractFixtureBase {
 
 			// Assert
 			callResult.IsError.Should().NotBeTrue(
-				because: "output-file is a valid odata-read argument and should reach structured tool execution");
+				because: "output-file is a valid odata-read-to-file argument and should reach structured tool execution");
 			response.Error.Should().Contain(invalidEnvironmentName,
 				because: "the real dispatch should bind output-file before reporting the missing environment");
 		} finally {

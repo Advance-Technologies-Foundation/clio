@@ -1,4 +1,4 @@
-﻿#pragma warning disable CLIO001 // This is DI class, warning not applicable
+#pragma warning disable CLIO001 // This is DI class, warning not applicable
 
 using System;
 using System.Collections.Generic;
@@ -772,7 +772,9 @@ public class BindingsModule {
 		services.AddTransient<IDataForgeMaintenanceClient, DataForgeMaintenanceClient>();
 		services.AddTransient<IRuntimeEntitySchemaReader, RuntimeEntitySchemaReader>();
 		services.AddTransient<IDataForgeContextService, DataForgeContextService>();
+		services.AddTransient<IODataFileContract, ODataFileContract>();
 		services.AddTransient<ODataReadTool>();
+		services.AddTransient<ODataReadToFileTool>();
 		services.AddTransient<ODataCreateTool>();
 		services.AddTransient<ODataUpdateTool>();
 		services.AddTransient<ODataDeleteTool>();

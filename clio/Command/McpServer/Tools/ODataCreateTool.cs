@@ -1,12 +1,13 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.ComponentModel;
 using System.ComponentModel.DataAnnotations;
+using System.Diagnostics;
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using System.Threading;
 using Clio.Common;
 using ModelContextProtocol.Server;
-using IoFileSystem = System.IO.Abstractions.IFileSystem;
 
 namespace Clio.Command.McpServer.Tools;
 
@@ -14,12 +15,12 @@ namespace Clio.Command.McpServer.Tools;
 /// MCP tool for creating one or more Creatio records via OData v4 (HTTP POST) in a single call.
 /// </summary>
 [McpServerToolType]
-public sealed class ODataCreateTool(IToolCommandResolver commandResolver, IoFileSystem fileSystem) {
+public sealed class ODataCreateTool(IToolCommandResolver commandResolver, IODataFileContract fileContract) {
 
-	//File access and confinement are core behaviour here, and IFileSystem is registered in DI, so a
-	//`new FileSystem()` fallback would mask missing wiring and let a unit test touch the real host.
-	private readonly IoFileSystem _fileSystem =
-		fileSystem ?? throw new ArgumentNullException(nameof(fileSystem));
+	//File I/O is behaviour, so it arrives through DI rather than being reached statically: that is what lets
+	//a failure-path test substitute a file-contract fake instead of driving the production write plumbing.
+	private readonly IODataFileContract _fileContract =
+		fileContract ?? throw new ArgumentNullException(nameof(fileContract));
 
 	internal const string ToolName = "odata-create";
 
@@ -29,6 +30,39 @@ public sealed class ODataCreateTool(IToolCommandResolver commandResolver, IoFile
 	/// call. A caller with more rows than this is told to chunk them.
 	/// </summary>
 	internal const int MaxRowCount = 1000;
+
+	/// <summary>
+	/// <see cref="MaxRowCount"/> as text. A const interpolated string cannot take an int hole, so the two are
+	/// pinned to each other by a test rather than by the compiler.
+	/// </summary>
+	internal const string MaxRowCountText = "1000";
+
+	/// <summary>
+	/// The single wording of the row ceiling. Every agent-facing surface - the tool description, the argument
+	/// descriptions and the curated contract - is built from THIS constant, so a caller cannot read the limit
+	/// off one surface and be rejected by another.
+	/// </summary>
+	internal const string RowCountLimitDescription =
+		"At most " + MaxRowCountText + " rows per call: a larger array is rejected before the environment is "
+		+ "resolved and before any POST, so split the input into batches of at most " + MaxRowCountText + " rows.";
+
+	/// <summary>Per-row request timeout, and the ceiling for the remaining-budget cap.</summary>
+	internal const int RowRequestTimeoutMs = 30_000;
+
+	/// <summary>
+	/// Wall-clock ceiling for one batch. Rows are POSTed SEQUENTIALLY, so the row limit alone bounds nothing
+	/// in time: with the default stop-on-error=false, 1000 rows that each hit the per-row timeout would keep
+	/// one call running for more than eight hours - long after the MCP caller has disconnected. Once the
+	/// budget is spent the remaining rows are reported as not attempted instead of being sent.
+	/// </summary>
+	internal const int MaxBatchDurationMs = 5 * 60 * 1000;
+
+	private const string CancelledMessage =
+		"row was not attempted: the caller cancelled the batch.";
+
+	private const string DeadlineMessage =
+		"row was not attempted: the batch exceeded its "
+		+ "wall-clock budget. Re-send the remaining rows as a smaller batch.";
 
 	private const string ValidArgumentsHint =
 		"Valid: entity, environment-name, rows, rows-file, stop-on-error.";
@@ -62,8 +96,10 @@ public sealed class ODataCreateTool(IToolCommandResolver commandResolver, IoFile
 	[Description(
 		"Create one or more Creatio records via OData v4 (POST) in a single call. " +
 		"Provide the entity set name and a 'rows' array of field/value objects; pass all rows for the same " +
-		"entity in one call rather than one call per row. Each row is inserted sequentially and reported " +
-		"independently — a failed row does not abort the rest unless 'stop-on-error' is set. " +
+		"entity in one call rather than one call per row. " + RowCountLimitDescription + " Each row is inserted " +
+		"sequentially and reported independently — a failed row does not abort the rest unless 'stop-on-error' is set. " +
+		"The batch also stops when the caller cancels it or when it exceeds its wall-clock budget; the first " +
+		"row that was not attempted is reported with record-created=false and the reason. " +
 		"Returns a created/failed summary and a per-row result array with each created record's Id. " +
 		"CRITICAL for failed rows — read 'record-created' before reacting: true inserted, false definitely not " +
 		"inserted (rejected locally, safe to fix and re-send), null UNKNOWN. Null means Creatio failed the call " +
@@ -75,7 +111,8 @@ public sealed class ODataCreateTool(IToolCommandResolver commandResolver, IoFile
 	public ODataCreateBatchResponse Create(
 		[Description("Parameters: entity, rows or rows-file, environment-name (required); stop-on-error (optional).")]
 		[Required]
-		ODataCreateArgs args) {
+		ODataCreateArgs args,
+		CancellationToken cancellationToken = default) {
 		//Runs before the payload is resolved, before the environment is resolved and before any POST: an
 		//unbound file-source key such as rows_file would otherwise be dropped silently and the inline rows
 		//sent instead, which is the ambiguous request this rejects.
@@ -112,8 +149,29 @@ public sealed class ODataCreateTool(IToolCommandResolver commandResolver, IoFile
 		string url = urlBuilder.Build(ODataKeyFormatter.CollectionPath(args.Entity));
 		List<ODataRowResult> results = [];
 		int index = 0;
+		//The batch is bounded in BOTH directions the caller cares about: it stops when the caller cancels
+		//(the MCP host disconnecting cancels the request token) and when it runs out of wall-clock budget.
+		//Both are checked BETWEEN rows, so a row that is already in flight completes and is reported -
+		//abandoning it mid-POST would leave its side effect unknown for no gain.
+		Stopwatch elapsed = Stopwatch.StartNew();
 		foreach (JsonElement row in rows.EnumerateArray()) {
-			ODataRowResult result = CreateRow(client, url, row, index);
+			int remainingMs = MaxBatchDurationMs - (int)Math.Min(elapsed.ElapsedMilliseconds, MaxBatchDurationMs);
+			string abortReason = cancellationToken.IsCancellationRequested
+				? CancelledMessage
+				: remainingMs <= 0 ? DeadlineMessage : null;
+			if (abortReason is not null) {
+				// Not attempted, so not-inserted is KNOWN - the same shape as a locally rejected row.
+				results.Add(new ODataRowResult {
+					Index = index,
+					Success = false,
+					RecordCreated = false,
+					Error = abortReason
+				});
+				break;
+			}
+			// Cap the per-row timeout to what is left of the batch budget, so the LAST row cannot overshoot
+			// the deadline by a further full timeout.
+			ODataRowResult result = CreateRow(client, url, row, index, Math.Min(RowRequestTimeoutMs, remainingMs));
 			results.Add(result);
 			if (!result.Success && args.StopOnError) {
 				break;
@@ -136,7 +194,7 @@ public sealed class ODataCreateTool(IToolCommandResolver commandResolver, IoFile
 		}
 		JsonElement? fileRows = null;
 		if (args.Rows is null && hasRowsFile) {
-			if (!ODataFileContract.TryReadJson(_fileSystem, args.RowsFile, "rows-file", out string rowsJson, out string fileError)) {
+			if (!_fileContract.TryReadJson(args.RowsFile, "rows-file", out string rowsJson, out string fileError)) {
 				return ODataCreateBatchResponse.RequestError(fileError);
 			}
 			try {
@@ -167,7 +225,8 @@ public sealed class ODataCreateTool(IToolCommandResolver commandResolver, IoFile
 		return null;
 	}
 
-	private static ODataRowResult CreateRow(IApplicationClient client, string url, JsonElement row, int index) {
+	private static ODataRowResult CreateRow(
+		IApplicationClient client, string url, JsonElement row, int index, int requestTimeoutMs) {
 		try {
 			if (row.ValueKind != JsonValueKind.Object || !row.EnumerateObject().MoveNext()) {
 				return new ODataRowResult {
@@ -178,7 +237,7 @@ public sealed class ODataCreateTool(IToolCommandResolver commandResolver, IoFile
 					Error = "row must be a non-empty object of field/value pairs."
 				};
 			}
-			string responseJson = client.ExecutePostRequest(url, row.GetRawText(), 30_000);
+			string responseJson = client.ExecutePostRequest(url, row.GetRawText(), requestTimeoutMs);
 			return ParseCreated(responseJson, index);
 		} catch (Exception ex) {
 			// The request may have reached Creatio and been applied before the failure surfaced here, so the
@@ -264,9 +323,8 @@ public sealed record ODataCreateArgs {
 	[JsonPropertyName("rows")]
 	[Description(
 		"Array of row objects to insert; each row is an object of field/value pairs for one new record. " +
-		"Pass all rows for the same entity here rather than calling the tool once per row, up to " +
-		"1000 rows per call - a larger array is rejected before the environment is resolved and before " +
-		"any POST, so split it into batches of at most 1000. " +
+		"Pass all rows for the same entity here rather than calling the tool once per row. " +
+		ODataCreateTool.RowCountLimitDescription + " " +
 		"Use dataforge-get-table-columns to discover field names. " +
 		"Set lookup fields via their <Field>Id column with a GUID (e.g. AccountId), not the display name. " +
 		"Example: [ { \"Name\": \"Acme\", \"TypeId\": \"8ecab4a1-0ca3-4515-9399-efe0a19390bd\" }, { \"Name\": \"Globex\" } ] " +
@@ -281,7 +339,8 @@ public sealed record ODataCreateArgs {
 
 	/// <summary>Optional path to a JSON array of row objects, used instead of <see cref="Rows"/>.</summary>
 	[JsonPropertyName("rows-file")]
-	[Description("Optional path to a JSON array of field/value objects. Use this instead of rows for large payloads; the file must be readable JSON. The same 1000-row ceiling and 10 MB bound apply to the file contents.")]
+	[Description("Optional path to a JSON array of field/value objects. Use this instead of rows for large payloads; the file must be readable JSON. " +
+		ODataCreateTool.RowCountLimitDescription + " A 10 MB byte bound applies to the file contents.")]
 	public string? RowsFile { get; init; }
 
 	/// <summary>Registered clio environment name.</summary>
