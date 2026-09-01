@@ -110,6 +110,14 @@ server (clio clones `--filter=blob:none --depth=1`, which the dumb protocol cann
 Also confirm the local checkout has no uncommitted guidance edits: a Git source resolves a commit, so
 unstaged article changes are invisible to the executor.
 
+**5. Pin the revision on purpose, and check it carries the change.** The local checkout's HEAD is the
+convenient choice and it is not automatically the right one — it may sit on a detached commit older
+than the guidance you came to exercise. Assert that the commit which introduced that guidance is an
+ancestor of the pinned revision, and compare the article inventory (`git ls-tree` on the pinned
+revision against the branch), because an upstream split is invisible from inside a generation that
+predates it. A generation that is merely *old* passes both the identity and the serving gate, and then
+every guidance finding the run produces belongs to a library nobody is shipping.
+
 ## Phase 2 — build and install the package
 
 The canonical rebundle is one call, from the clio repo root:

@@ -100,6 +100,22 @@ comes back**. `info-knowledge` reporting `Valid: yes` does not mean the library 
 combination (valid, installed, serving nothing) is what step 2's cache deletion prevents. A large
 response is the pass; `guidance-unavailable` with an empty `availableGuides` is the failure.
 
+Gate 3 — the pinned generation must contain the guidance under test:
+
+```
+git -C $KB log --format='%H %s' --reverse -S '<a token the new guidance introduces>' --all -- guidance/ | head -1
+git -C $KB merge-base --is-ancestor <that commit> <the pinned revision> && echo contained || echo NOT contained
+git -C $KB ls-tree --name-only <the pinned revision> guidance/mcp/guides/<area>/
+```
+
+`NOT contained` means the run would measure a library older than the change, and every guidance finding
+it produces is an artefact. Pick a revision that contains the commit, or state in the report which
+generation was measured and treat guidance findings as unattributed.
+
+**Pin a revision deliberately.** Taking the local checkout's HEAD is convenient and was wrong once
+already: that checkout sat on a detached commit that predated both the article split and the guidance
+being tested. Prefer the branch that carries the change, and confirm the commit is pushed.
+
 ### 4. Prompt and scratch
 
 No prompt file yet → run `/bp-test-cases <ISSUE>` first. Then:

@@ -120,6 +120,18 @@ back. Skipping this control is the single most expensive mistake available here:
 library produces a flailing transcript, and phase 5 will attribute that flailing to guidance defects
 and argue for rewriting articles the executor never read.
 
+*Content* — the pinned generation must **contain the change under test**. Identity and serving both
+pass on a generation that predates the guidance you came to exercise, and the run then measures an
+old library while the report names the current one. Name the commit that introduced the guidance and
+assert it is an ancestor of the pinned revision; compare the article inventory too, since a split that
+already happened upstream is invisible in a generation that predates it.
+
+This gate was added because its absence produced two wrong diagnoses on the first real run: a stale
+generation manufactured a "guidance does not teach X" defect for guidance that already taught X on
+another branch, and a "the article is too large" defect for an article that had already been split.
+The observations were sound and the attributions were worthless. **A stale generation does not fail
+loudly — it fabricates guidance defects.**
+
 ## Phase 2 — local package on the stand
 
 Build and install the local `CrtProcessBuilder` package, then verify the installed version on the

@@ -36,6 +36,26 @@ Each row is a pattern to search for, what it means, and who owns the fix.
 | Success reached by a path the guidance does not describe | The guidance is behind the implementation — it worked by luck | Guidance article |
 | The agent asked the prompt for information it should have discovered | Prompt leaked implementation, or discovery is genuinely impossible | Prompt, or tool surface |
 
+## Before attributing anything to the knowledge library
+
+Check which generation actually served, and whether it contains the guidance you came to test:
+`info-knowledge` gives the version and revision, and the owning repository tells you whether the
+relevant commit is an ancestor of it. A run measures the **active** generation, whatever any branch
+contains.
+
+Skip this and the rubric works perfectly against the wrong library: every signal fires, every finding
+looks real, and the fix goes to an article that was already corrected. Three positions have to be
+kept apart, because only the third is a defect anyone can act on — closed in the served generation,
+closed in the repository's main branch, closed only on an unmerged branch.
+
+## A probe that can only come back one way is not evidence
+
+When a finding rests on a probe you wrote, confirm the probe can produce both answers before trusting
+the one it gave. A check that fails for its own reasons — a shell variable that is read-only and
+expands to something else, a grep whose pattern cannot match the shape it is looking for — reports the
+defect you suspected and is indistinguishable from a real result. Prefer a probe that names the exact
+symbol or field, and verify a negative control.
+
 ## Not findings
 
 Do not report these — they inflate the list and bury the real defects:
