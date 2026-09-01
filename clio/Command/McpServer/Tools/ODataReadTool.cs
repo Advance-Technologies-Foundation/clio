@@ -316,10 +316,17 @@ public sealed class ODataReadTool(IToolCommandResolver commandResolver) {
 			using JsonDocument doc = JsonDocument.Parse(json);
 			JsonElement root = doc.RootElement;
 
+			//A response whose @odata.context proves it IS the requested top-level entity is that entity,
+			//whatever its columns happen to be called. Running the error-member heuristics first rejected
+			//a genuine record with a legal persisted column named ExceptionMessage, ExceptionType or
+			//StackTrace as a server error. A real OData error envelope carries no matching context, so it
+			//loses nothing by being classified second.
+			bool hasMatchingIdentity = HasMatchingODataIdentity(root, entityName);
+
 			//The detected text is server-controlled prose and is dropped, not redacted: the redactor
 			//removes known secret shapes, but arbitrary instructions, opaque tokens, tenant data and
 			//line breaks survive it, and this transcript is read as trusted content by a model.
-			if (ODataResponseError.TryClassify(root, out bool isUnregisteredEntity)) {
+			if (!hasMatchingIdentity && ODataResponseError.TryClassify(root, out bool isUnregisteredEntity)) {
 				return ODataReadResponse.Failure(
 					ODataResponseError.DescribeServerReportedReadError(isUnregisteredEntity));
 			}
@@ -369,29 +376,77 @@ public sealed class ODataReadTool(IToolCommandResolver commandResolver) {
 	/// already requires.
 	/// </remarks>
 	private static bool IsCollectionResponse(JsonElement root, string entityName) =>
-		TryGetContextEntitySet(root, out string entitySet)
-		&& string.Equals(entitySet, entityName, StringComparison.OrdinalIgnoreCase);
+		MatchesTopLevelContext(root, entityName, singleEntity: false);
 
 	/// <summary>
 	/// Reads the entity-set name out of the <c>@odata.context</c> annotation: the fragment after
 	/// <c>#</c>, cut at a projection such as <c>(Id,Name)</c> or at a trailing segment such as
 	/// <c>/$entity</c>.
 	/// </summary>
-	private static bool TryGetContextEntitySet(JsonElement root, out string entitySet) {
-		entitySet = string.Empty;
+	private static bool MatchesTopLevelContext(JsonElement root, string entityName, bool singleEntity) {
+		if (!TryGetContextFragment(root, out string fragment)) {
+			return false;
+		}
+		if (singleEntity) {
+			if (!fragment.EndsWith(SingleEntitySuffix, StringComparison.Ordinal)) {
+				return false;
+			}
+			fragment = fragment[..^SingleEntitySuffix.Length];
+		} else if (fragment.EndsWith(SingleEntitySuffix, StringComparison.Ordinal)) {
+			//A collection response never terminates in /$entity.
+			return false;
+		}
+		//What may remain is the entity set plus at most one parenthesised projection. Anything after the
+		//closing parenthesis - a navigation segment, a second predicate - is not a top-level read of this
+		//set, and a key predicate is not one either: a projection lists column names, never a key value.
+		int projectionStart = fragment.IndexOf('(', StringComparison.Ordinal);
+		string entitySet = projectionStart < 0 ? fragment : fragment[..projectionStart];
+		if (projectionStart >= 0) {
+			if (!fragment.EndsWith(")", StringComparison.Ordinal)) {
+				return false;
+			}
+			string projection = fragment[(projectionStart + 1)..^1];
+			if (projection.Length == 0 || projection.IndexOfAny(ProjectionRejectChars) >= 0) {
+				return false;
+			}
+		}
+		//A containment or navigation suffix leaves a '/' behind once the projection is accounted for.
+		return entitySet.Length > 0
+			&& entitySet.IndexOf('/', StringComparison.Ordinal) < 0
+			&& string.Equals(entitySet, entityName, StringComparison.OrdinalIgnoreCase);
+	}
+
+	// Inside a projection these can only come from a nested navigation or a key predicate, neither of
+	// which a top-level $select/$expand list produces.
+	private static readonly char[] ProjectionRejectChars = ['(', ')', '/'];
+
+	private const string SingleEntitySuffix = "/$entity";
+
+	/// <summary>True when the body is a top-level read of the requested set, in either shape.</summary>
+	private static bool HasMatchingODataIdentity(JsonElement root, string entityName) =>
+		root.ValueKind == JsonValueKind.Object
+		&& (MatchesTopLevelContext(root, entityName, singleEntity: true)
+			|| MatchesTopLevelContext(root, entityName, singleEntity: false));
+
+	/// <summary>
+	/// Reads the whole <c>@odata.context</c> fragment - everything after the last <c>#</c> - without
+	/// cutting it at the first separator.
+	/// </summary>
+	private static bool TryGetContextFragment(JsonElement root, out string fragment) {
+		fragment = string.Empty;
 		if (!root.TryGetProperty("@odata.context", out JsonElement context)
 			|| context.ValueKind != JsonValueKind.String
 			|| context.GetString() is not { } contextValue) {
 			return false;
 		}
-		int fragmentStart = contextValue.IndexOf('#', StringComparison.Ordinal);
+		//$metadata itself sits behind a '#' ("...$metadata#Contact"), so the LAST '#' opens the fragment
+		//that names the set.
+		int fragmentStart = contextValue.LastIndexOf('#');
 		if (fragmentStart < 0) {
 			return false;
 		}
-		string fragment = contextValue[(fragmentStart + 1)..];
-		int entitySetEnd = fragment.IndexOfAny(['(', '/']);
-		entitySet = entitySetEnd < 0 ? fragment : fragment[..entitySetEnd];
-		return true;
+		fragment = contextValue[(fragmentStart + 1)..];
+		return fragment.Length > 0;
 	}
 
 	/// <summary>
@@ -404,12 +459,7 @@ public sealed class ODataReadTool(IToolCommandResolver commandResolver) {
 	/// </summary>
 	private static bool IsSingleEntityResponse(JsonElement root, string entityName) =>
 		root.ValueKind == JsonValueKind.Object
-		&& root.TryGetProperty("@odata.context", out JsonElement context)
-		&& context.ValueKind == JsonValueKind.String
-		&& context.GetString() is { } contextValue
-		&& contextValue.EndsWith("/$entity", StringComparison.Ordinal)
-		&& TryGetContextEntitySet(root, out string entitySet)
-		&& string.Equals(entitySet, entityName, StringComparison.OrdinalIgnoreCase);
+		&& MatchesTopLevelContext(root, entityName, singleEntity: true);
 
 	private static ODataReadResponse ParseCollectionResponse(
 		JsonElement root,

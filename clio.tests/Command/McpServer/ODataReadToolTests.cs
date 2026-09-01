@@ -15,6 +15,94 @@ namespace Clio.Tests.Command.McpServer;
 [TestFixture]
 [Property("Module", "McpServer")]
 public sealed class ODataReadToolTests {
+	private static ODataReadTool BuildToolReturning(string body,
+		out IApplicationClient applicationClient) {
+		applicationClient = Substitute.For<IApplicationClient>();
+		IServiceUrlBuilder serviceUrlBuilder = Substitute.For<IServiceUrlBuilder>();
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		commandResolver.Resolve<IApplicationClient>(Arg.Any<EnvironmentOptions>()).Returns(applicationClient);
+		commandResolver.Resolve<IServiceUrlBuilder>(Arg.Any<EnvironmentOptions>()).Returns(serviceUrlBuilder);
+		serviceUrlBuilder.Build(Arg.Any<string>()).Returns(call => $"http://creatio/{call.Arg<string>()}");
+		applicationClient.ExecuteGetRequest(Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+			.Returns(body);
+		return new ODataReadTool(commandResolver);
+	}
+
+	[TestCase("{\"@odata.context\":\"http://creatio/odata/$metadata#Contact(11111111-1111-1111-1111-111111111111)/Activities/$entity\",\"Id\":\"22222222-2222-2222-2222-222222222222\",\"Title\":\"Call\"}",
+		TestName = "Contained single entity reached through a navigation property")]
+	[TestCase("{\"@odata.context\":\"http://creatio/odata/$metadata#Contact(11111111-1111-1111-1111-111111111111)/Activities\",\"value\":[{\"Id\":\"22222222-2222-2222-2222-222222222222\"}]}",
+		TestName = "Contained collection reached through a navigation property")]
+	[TestCase("{\"@odata.context\":\"http://creatio/odata/$metadata#ContactCareer\",\"value\":[{\"Id\":\"1\"}]}",
+		TestName = "Different entity set that merely starts with the requested name")]
+	[TestCase("{\"@odata.context\":\"http://creatio/odata/$metadata#Contact(11111111-1111-1111-1111-111111111111)\",\"Id\":\"1\"}",
+		TestName = "Key predicate rather than a projection")]
+	[Category("Unit")]
+	[Description("Rejects an OData context that is not a top-level read of the requested entity set, so a contained or navigated record cannot be returned as the requested one.")]
+	public void Read_Should_Reject_A_Context_That_Is_Not_A_Top_Level_Read_Of_The_Requested_Set(string body) {
+		// Arrange
+		ODataReadTool tool = BuildToolReturning(body, out IApplicationClient _);
+
+		// Act
+		ODataReadResponse response = tool.Read(new ODataReadArgs {
+			EnvironmentName = "dev",
+			Entity = "Contact"
+		});
+
+		// Assert
+		response.Success.Should().BeFalse(
+			because: "cutting the context fragment at the first '(' or '/' made a containment or "
+				+ "navigation context indistinguishable from the requested top-level set, so an "
+				+ "Activity came back as the requested Contact");
+	}
+
+	[TestCase("{\"@odata.context\":\"http://creatio/odata/$metadata#Contact\",\"value\":[{\"Id\":\"1\"}]}",
+		TestName = "Plain collection")]
+	[TestCase("{\"@odata.context\":\"http://creatio/odata/$metadata#Contact(Id,Name)\",\"value\":[{\"Id\":\"1\"}]}",
+		TestName = "Collection with a projection")]
+	[Category("Unit")]
+	[Description("Still accepts the two top-level collection shapes a real read produces, so tightening the context check did not start rejecting valid answers.")]
+	public void Read_Should_Accept_A_Top_Level_Collection_Context(string body) {
+		// Arrange
+		ODataReadTool tool = BuildToolReturning(body, out IApplicationClient _);
+
+		// Act
+		ODataReadResponse response = tool.Read(new ODataReadArgs {
+			EnvironmentName = "dev",
+			Entity = "Contact"
+		});
+
+		// Assert
+		response.Success.Should().BeTrue(
+			because: "an entity set with an optional $select/$expand projection is exactly what this "
+				+ "request produces");
+	}
+
+	[TestCase("ExceptionMessage", TestName = "Business column named ExceptionMessage")]
+	[TestCase("ExceptionType", TestName = "Business column named ExceptionType")]
+	[TestCase("StackTrace", TestName = "Business column named StackTrace")]
+	[Category("Unit")]
+	[Description("A genuine record whose @odata.context matches the requested set is returned even when it carries a legal persisted column whose name looks like an error member.")]
+	public void Read_Should_Return_The_Record_When_A_Business_Column_Looks_Like_An_Error_Member(
+		string columnName) {
+		// Arrange
+		string body = "{\"@odata.context\":\"http://creatio/odata/$metadata#Contact/$entity\","
+			+ $"\"Id\":\"11111111-1111-1111-1111-111111111111\",\"{columnName}\":\"ordinary business value\"}}";
+		ODataReadTool tool = BuildToolReturning(body, out IApplicationClient _);
+
+		// Act
+		ODataReadResponse response = tool.Read(new ODataReadArgs {
+			EnvironmentName = "dev",
+			Entity = "Contact"
+		});
+
+		// Assert
+		response.Success.Should().BeTrue(
+			because: $"the error-member heuristics ran before the positive identity check, so a record "
+				+ $"with a persisted {columnName} column was rejected as a server error");
+		response.Count.Should().Be(1,
+			because: "a single-entity response carries exactly one record");
+	}
+
 	[Test]
 	[Category("Unit")]
 	[Description("Advertises a stable read-only MCP tool name for odata-read.")]
