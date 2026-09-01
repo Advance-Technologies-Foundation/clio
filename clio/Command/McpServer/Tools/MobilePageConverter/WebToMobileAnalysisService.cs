@@ -338,7 +338,7 @@ public static class WebToMobileAnalysisService {
 		// 7. Page-level business rules: carry each rule's condition (operand paths remapped from the source
 		//    DS column path to the mobile viewModel attribute name) and only the actions that survive on
 		//    mobile; drop a rule whose every action drops (object-level rules are untouched).
-		PageBusinessRuleConversionInfo pageBusinessRules = ConvertPageBusinessRules(pageBusinessRulesProbe, elementMap, bundle?.ViewModelConfig, rules);
+		PageBusinessRuleConversionInfo pageBusinessRules = ConvertPageBusinessRules(pageBusinessRulesProbe, elementMap, bundle?.ViewModelConfig);
 
 		// 8. Every localized string the converted body references (top-level captions AND nested tokens such
 		//    as config.title / text.template), resolved to its text — so the caller registers them all.
@@ -425,21 +425,6 @@ public static class WebToMobileAnalysisService {
 	}
 
 	/// <summary>
-	/// True when the entry is a container twin that maps a web TAB onto the mobile tab's CONTENT container
-	/// (e.g. <c>GeneralInfoTab</c> -&gt; <c>GeneralTabContainer</c>). Such a <c>containers</c> entry is a PLACEMENT
-	/// rule — it decides where the tab's children go — and NOT an identity rule: on the mobile template the two
-	/// names are different elements (the tab's <c>crt.TabContainer</c> and the <c>crt.GridContainer</c> inside it).
-	/// Passes that resolve an element's IDENTITY (the page-business-rule survivor map) must skip it; passes that
-	/// resolve PLACEMENT (the element map's parent resolution) must not.
-	/// </summary>
-	private static bool IsTabToContentContainerTwin(ElementMapEntry entry, WebToMobilePageConversionRules rules) =>
-		string.Equals(entry.Operation, "merge", StringComparison.OrdinalIgnoreCase)
-		&& rules?.TabAreaLayers?.TabComponentType is { Length: > 0 } tabType
-		&& string.Equals(entry.WebType, tabType, StringComparison.OrdinalIgnoreCase)
-		&& !string.IsNullOrWhiteSpace(entry.MobileName)
-		&& !string.Equals(entry.MobileName, entry.WebName, StringComparison.OrdinalIgnoreCase);
-
-	/// <summary>
 	/// Converts the source page's PAGE-level business rules for the mobile page (advisory).
 	/// Page rules carry only element actions (hide / show / make-editable / read-only / required /
 	/// optional). An action converts only for the referenced elements that survive on mobile (elementMap
@@ -454,8 +439,7 @@ public static class WebToMobileAnalysisService {
 	internal static PageBusinessRuleConversionInfo ConvertPageBusinessRules(
 		PageBusinessRuleProbeResult probe,
 		IReadOnlyList<ElementMapEntry> elementMap,
-		JsonNode viewModelConfig = null,
-		WebToMobilePageConversionRules rules = null) {
+		JsonNode viewModelConfig = null) {
 		if (probe is null) {
 			return null;
 		}
@@ -467,16 +451,6 @@ public static class WebToMobileAnalysisService {
 		var survivors = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
 		foreach (ElementMapEntry entry in elementMap ?? []) {
 			if (string.IsNullOrWhiteSpace(entry?.WebName)) {
-				continue;
-			}
-			// A container twin that maps a web TAB onto the mobile tab's CONTENT container (GeneralInfoTab ->
-			// GeneralTabContainer) is a PLACEMENT map, not an identity map: on mobile those are two different
-			// elements (the crt.TabContainer with its header, and the crt.GridContainer inside it). Carrying it
-			// into the survivor map would silently rewrite a rule action targeting the TAB into one targeting its
-			// BODY — "hide GeneralInfoTab" would blank the tab's content while leaving the header in the strip.
-			// Excluded so the action is filtered out and the rule is reported in droppedRules instead, which is an
-			// explicit loss the user can act on rather than a wrong conversion nobody sees.
-			if (IsTabToContentContainerTwin(entry, rules)) {
 				continue;
 			}
 			if (string.Equals(entry.Operation, "merge", StringComparison.OrdinalIgnoreCase)

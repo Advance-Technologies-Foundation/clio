@@ -38,6 +38,16 @@ public sealed class WebToMobileGeneralInfoTabRegressionTests {
 	/// <summary>The mobile general tab's content grid — the "Details tab content container" of the ticket.</summary>
 	private const string MobileGeneralTabContainer = "GeneralTabContainer";
 
+	/// <summary>
+	/// The mobile general TAB. It and its content grid are BOTH type-aligned twins of their web counterparts
+	/// (GeneralInfoTab to GeneralInfoTab, GeneralInfoTabContainer to GeneralTabContainer), so where the page's
+	/// content lands follows where the WEB page put it: a page that kept the template's grid lands in the grid,
+	/// a page that removed it lands in the tab's own body. Both sit inside the Details tab and both are
+	/// receivers the rules list as able to host content, which is what the ticket asks for. What must never
+	/// happen is landing in the tab STRIP.
+	/// </summary>
+	private const string MobileGeneralTab = "GeneralInfoTab";
+
 	/// <summary>The mobile tab strip. Only <c>crt.TabContainer</c> children of it are ever rendered.</summary>
 	private const string MobileTabsPanel = "Tabs";
 
@@ -56,8 +66,8 @@ public sealed class WebToMobileGeneralInfoTabRegressionTests {
 	private static readonly string[] GeneralTabLeafContent = ["ServiceTeamMemberList", "ServicePactList"];
 
 	[Test]
-	[Description("ENG-94951: content the web page puts inside the template-owned GeneralInfoTab is converted into the mobile general tab's content container, not emitted as a bare child of the mobile Tabs panel, and the content nested inside it survives too.")]
-	public void Analyze_ShouldPlaceGeneralInfoTabContent_IntoTheMobileGeneralTabContainer() {
+	[Description("ENG-94951: content the web page puts directly inside the template-owned GeneralInfoTab is converted into the mobile general TAB's own body - a receiver the rules list as able to host content - instead of being emitted as a bare child of the mobile Tabs panel, and the content nested inside it survives too.")]
+	public void Analyze_ShouldPlaceGeneralInfoTabContent_IntoTheMobileGeneralTab() {
 		// Arrange
 		JsonObject fixture = LoadFixture();
 
@@ -70,10 +80,11 @@ public sealed class WebToMobileGeneralInfoTabRegressionTests {
 			ElementMapEntry entry = Element(guide, name);
 			entry.Operation.Should().Be("insert",
 				because: $"'{name}' is page-authored content and must reach the mobile page");
-			entry.ParentName.Should().Be(MobileGeneralTabContainer,
-				because: $"'{name}' lives in the web General-information tab, so it belongs in the mobile "
-					+ "template's general tab content container; parenting it to the Tabs panel puts a "
-					+ "non-tab child inside a crt.TabPanel, which renders nothing and is exactly ENG-94951");
+			entry.ParentName.Should().Be(MobileGeneralTab,
+				because: $"'{name}' sits directly under the web general tab on this page, and that tab is a "
+					+ "type-aligned twin of the mobile one, so it lands in the tab's own body; parenting it to "
+					+ "the Tabs panel instead puts a non-tab child inside a crt.TabPanel, which renders nothing "
+					+ "and is exactly ENG-94951");
 		}
 		foreach (string name in GeneralTabLeafContent) {
 			Element(guide, name).Operation.Should().Be("insert",
@@ -170,19 +181,15 @@ public sealed class WebToMobileGeneralInfoTabRegressionTests {
 		// Assert
 		foreach (string name in GeneralTabContent) {
 			Element(guide, name).ParentName.Should().Be(MobileGeneralTabContainer,
-				because: $"'{name}' sits one level deeper here, but the extra container is inherited web-template "
-					+ "chrome: it is subtracted and its children hoisted into the mapped tab, which resolves to "
-					+ "the same mobile grid");
+				because: $"'{name}' sits inside the template's content grid here, and that grid is a type-aligned "
+					+ "twin of the mobile general tab's grid, so the content lands in the grid rather than in the "
+					+ "tab body");
 		}
 		NonTabChildrenOfTabStrips(guide).Should().BeEmpty(
 			because: "the shape a page keeps by default must not reintroduce the loss the ticket is about");
-		guide.ElementMap
-			.Count(e => string.Equals(e.MobileName, MobileGeneralTabContainer, StringComparison.OrdinalIgnoreCase)
-				&& string.Equals(e.WebName, "GeneralInfoTabContainer", StringComparison.OrdinalIgnoreCase))
-			.Should().Be(0,
-				because: "mapping GeneralInfoTabContainer onto the same mobile name as GeneralInfoTab would add a "
-					+ "second twin for one mobile element and make every by-MobileName lookup ambiguous — the "
-					+ "single GeneralInfoTab entry already covers this shape");
+		Element(guide, "GeneralInfoTabContainer").Operation.Should().Be("merge",
+			because: "the web content grid and the mobile one are the same element under two names, so the page "
+				+ "reuses the template's grid instead of inserting a second one");
 	}
 
 	[Test]
@@ -296,12 +303,11 @@ public sealed class WebToMobileGeneralInfoTabRegressionTests {
 		AdaptiveLayoutGroup grid = guide.AdaptiveLayout
 			.Single(g => g.Items.Any(i => i.Name == "AreaProfileContainer"));
 		IReadOnlyList<string> placed = [.. grid.Items.Select(i => i.Name)];
-		placed.Should().Equal(
-			["AreaProfileContainer", "TermsContainer", "ServiceTeamMemberExpansionPanel", "ServicePactExpansionPanel"],
-			because: "the template's profile card is the general tab grid's first child and the re-homed content "
-				+ "follows it; a gap or a repeat means a phantom child took a row");
+		placed.Should().Equal(["AreaProfileContainer", "TermsContainer"],
+			because: "the template's profile card is the general tab grid's first child and the page's own side "
+				+ "content follows it; a gap or a repeat means a phantom child took a row");
 		grid.Items.Select(i => i.LayoutConfigAdaptive!["small"]!["row"]!.GetValue<int>())
-			.Should().Equal([1, 2, 3, 4],
+			.Should().Equal([1, 2],
 				because: "rows must be contiguous — the mobile grid does not auto-place, so a skipped row is a "
 					+ "child that was counted but never rendered");
 		Element(guide, "SideAreaProfileContainer").MobileValues!.AsObject()

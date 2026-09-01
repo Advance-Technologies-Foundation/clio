@@ -19,13 +19,26 @@ is a tab inside `Tabs`, the children land directly in the mobile `crt.TabPanel`,
 `crt.TabContainer` items: the content is gone from the converted page and the mobile designer shows
 nothing.
 
-That is why `PageWithTabsFreedomTemplate` maps `GeneralInfoTab` onto the mobile general tab's CONTENT
-container (`GeneralTabContainer`), not onto the mobile tab. One entry covers both page shapes: a page
-that kept the template's `GeneralInfoTabContainer` has it chrome-subtracted and its children hoisted
-into the mapped tab, and a page that removed it puts its content there directly. Do NOT add a second
-entry for `GeneralInfoTabContainer` — a second web name on the same mobile name buys nothing and makes
-every by-`MobileName` lookup ambiguous (`containers` is already many-to-one: `CardContentWrapper` also
-targets `GeneralTabContainer`).
+That is why `PageWithTabsFreedomTemplate` maps BOTH halves of the general tab, and maps each onto its own
+counterpart: `GeneralInfoTab` -> `GeneralInfoTab` (a `crt.TabContainer` on both sides) and
+`GeneralInfoTabContainer` -> `GeneralTabContainer` (a `crt.GridContainer` on both sides). Where a page's
+content lands then follows where the WEB page put it -- a page that kept the template's grid lands in the
+grid, a page that removed it lands in the tab's own body -- and both receivers are inside the Details tab
+and both are in `contentContainerTypes`.
+
+Two TYPE-ALIGNED pairs were chosen over one cross-type pair (`GeneralInfoTab` -> `GeneralTabContainer`),
+which also placed the content correctly. The reason is identity, not placement: a `containers` entry is
+read by passes that resolve WHERE a child goes and by passes that resolve WHICH element something IS. A
+cross-type pair is right for the first and wrong for the second -- the page-business-rule survivor map
+turned "hide `GeneralInfoTab`" into "hide `GeneralTabContainer`", blanking the tab body while leaving its
+header in the strip. Type-aligned pairs are honest for both, so the predicate that had to special-case the
+cross-type twin does not need to exist, and a page that renamed the general tab's caption keeps it.
+
+A cross-type pair is still shipped for `FeedTabContainer` -> `FeedContainer` and
+`AttachmentsTabContainer` -> `AttachmentsContainer`, so the identity imprecision above remains for those
+two: a page rule targeting the web Feed tab retargets onto the mobile feed BODY. Pinned by
+`ConvertPageBusinessRules_CrossTypeTabTwin_RetargetsOntoTheTabBody` rather than fixed, because narrowing it
+is a behaviour change beyond ENG-94951.
 
 **All three tabs of `PageWithTabsFreedomTemplate` are mapped, under the names the WEB template
 actually uses.** Its tab elements are `GeneralInfoTab`, `FeedTabContainer` and
@@ -43,14 +56,6 @@ without a `containers` entry reproduces ENG-94951 verbatim. That is what
 legally host which child; only the rules know a web container's mobile counterpart. Hoisting is the
 correct default (it is what keeps page content alive when an inherited wrapper disappears), so the tab
 case cannot be fixed inside the prune pass.
-
-**A `containers` entry is a PLACEMENT rule, not an identity rule.** `GeneralInfoTab` →
-`GeneralTabContainer` pairs two DIFFERENT mobile elements (the tab's `crt.TabContainer` and the
-`crt.GridContainer` inside it). Passes that resolve placement must follow it; passes that resolve
-identity must not. The page-business-rule survivor map is the one that must not: without
-`IsTabToContentContainerTwin` guarding it, "hide `GeneralInfoTab`" converts into "hide
-`GeneralTabContainer`", blanking the tab's body while leaving its header in the strip — an explicit
-`droppedRules` entry turned into a silent wrong conversion.
 
 `IsTabToContentContainerTwin` keys on the twin's SHAPE (a `merge` whose web type is
 `crt.TabContainer` and whose mobile name differs), not on the general tab's name, so it covers
@@ -78,16 +83,6 @@ wrongly placed one does not. That map is a property of the mobile TEMPLATE, so i
 unconditionally: it was once passed only when the rule declared positional (`:top`/`:bottom`) entries,
 and since only `PageWithTabsFreedomTemplate` has any, twin placement was dead for every other template
 family.
-
-**`IsTabToContentContainerTwin` keys on the twin SHAPE, not on a name.** It therefore also covers
-`FeedTabContainer` → `FeedContainer` and `AttachmentsTabContainer` → `AttachmentsContainer` (both are
-`crt.TabContainer` on the web template and both rename), which is deliberate. Its known limitation: it
-does not look at the MOBILE type, so a future `containers` entry that renames a tab to a *tab*
-(`UsrTab` → `UsrMobileTab`, both `crt.TabContainer` — one element, one identity) would lose its page
-rules instead of retargeting them. Unreachable on the shipped rules today. Do NOT "fix" it by adding
-`MobileType != crt.TabContainer` as-is: `MobileType` falls back to the WEB type when the mobile-template
-probe failed, so that predicate would reopen the general-tab hole in exactly the degraded run the rest
-of this record is about. Gate any narrowing on the mobile type having actually been read.
 
 **Component TYPES are data, never constants in the analyser, and the rule is an ACCEPT-list.** Which
 receivers can host arbitrary children is `contentContainerTypes`; which child is a tab is

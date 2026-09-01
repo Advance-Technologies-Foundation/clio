@@ -2400,58 +2400,28 @@ public sealed class WebToMobileConversionServiceTests {
 
 	/// <summary>
 	/// A <c>containers</c> twin that pairs a web TAB with the mobile tab's CONTENT container, as the shipped
-	/// tabbed rule does for <c>GeneralInfoTab</c>, <c>FeedTabContainer</c> and <c>AttachmentsTabContainer</c>.
-	/// The web side is always a <c>crt.TabContainer</c>; the mobile side is the grid inside that tab.
+	/// tabbed rule still does for <c>FeedTabContainer</c> and <c>AttachmentsTabContainer</c>. The web side is a
+	/// <c>crt.TabContainer</c>; the mobile side is the grid inside that tab.
 	/// </summary>
 	private static ElementMapEntry TabToContentTwin(string web, string mobile) =>
 		new() { WebName = web, WebType = "crt.TabContainer", Operation = "merge", MobileName = mobile };
 
 	[Test]
-	[Description("ENG-94951: a containers twin pairing a web TAB with the mobile tab's CONTENT container is a PLACEMENT map, not an identity map, so a page business rule targeting the TAB is DROPPED rather than silently retargeted onto the tab's body.")]
-	public void ConvertPageBusinessRules_TabToContentContainerTwin_DropsRuleInsteadOfRetargetingOntoTheTabBody() {
-		// Arrange
-		PageBusinessRuleProbeResult probe = ProbeOf(
-			SourceRule("Hide general info", ElementAction("hide-element", "GeneralInfoTab")));
-		var elementMap = new List<ElementMapEntry> { TabToContentTwin("GeneralInfoTab", "GeneralTabContainer") };
-
-		// Act
-		// The predicate reads the tab type from the RULES, so the shipped rules are part of the arrangement:
-		// this test is about the twin identity rule, not about what a conversion does with no rules at all.
-		PageBusinessRuleConversionInfo result = WebToMobileAnalysisService.ConvertPageBusinessRules(
-			probe, elementMap, viewModelConfig: null,
-			rules: WebToMobilePageConversionRulesCatalog.LoadBundled());
-
-		// Assert
-		result.ConvertedRules.Should().BeEmpty(
-			because: "on mobile GeneralInfoTab (the crt.TabContainer with its header) and GeneralTabContainer "
-				+ "(the crt.GridContainer inside it) are DIFFERENT elements — emitting 'hide GeneralTabContainer' "
-				+ "would blank the tab's body while leaving its header in the strip, a wrong conversion nobody sees");
-		result.DroppedRules.Should().ContainSingle(r => r.Caption == "Hide general info",
-			because: "an explicit loss the user can act on is the correct outcome when the mobile element the "
-				+ "rule means has no entry of its own");
-	}
-
-	[Test]
-	[Description("ENG-94951 scope pin: the tab-to-content exclusion is a property of the twin SHAPE, not of the general tab — FeedTabContainer -> FeedContainer is the same shape and a rule targeting it drops too. Deliberate: this widens the pre-ENG-94951 behaviour, where such a rule was retargeted onto the tab's body.")]
-	public void ConvertPageBusinessRules_FeedTabToContentContainerTwin_DropsRuleForTheSameReason() {
+	[Description("A containers twin pairing a web TAB with the mobile tab's CONTENT container retargets a page business rule onto that content container. This is the long-standing behaviour and it is IMPRECISE for a cross-type pair -- on mobile the tab and its body are different elements, so 'hide FeedTabContainer' blanks the body while leaving the header in the strip. Pinned as-is because the general tab, the pair ENG-94951 was about, is now a type-aligned twin and no longer goes through this; narrowing it for Feed/Attachments is a behaviour change beyond that ticket.")]
+	public void ConvertPageBusinessRules_CrossTypeTabTwin_RetargetsOntoTheTabBody() {
 		// Arrange
 		PageBusinessRuleProbeResult probe = ProbeOf(
 			SourceRule("Hide the feed tab", ElementAction("hide-element", "FeedTabContainer")));
 		var elementMap = new List<ElementMapEntry> { TabToContentTwin("FeedTabContainer", "FeedContainer") };
 
 		// Act
-		// The predicate reads the tab type from the RULES, so the shipped rules are part of the arrangement:
-		// this test is about the twin identity rule, not about what a conversion does with no rules at all.
-		PageBusinessRuleConversionInfo result = WebToMobileAnalysisService.ConvertPageBusinessRules(
-			probe, elementMap, viewModelConfig: null,
-			rules: WebToMobilePageConversionRulesCatalog.LoadBundled());
+		PageBusinessRuleConversionInfo result = WebToMobileAnalysisService.ConvertPageBusinessRules(probe, elementMap);
 
 		// Assert
-		result.ConvertedRules.Should().BeEmpty(
-			because: "the shipped rules pair the web Feed TAB with the mobile Feed tab's content grid exactly as "
-				+ "they pair GeneralInfoTab with GeneralTabContainer, so the same identity argument applies");
-		result.DroppedRules.Should().ContainSingle(r => r.Caption == "Hide the feed tab",
-			because: "reporting the loss is right; retargeting the tab's header onto its body is not");
+		result.ConvertedRules.Should().ContainSingle()
+			.Which.Rule.ToJsonString().Should().Contain("FeedContainer",
+				because: "the survivor map is keyed by web name and carries the twin's mobile name, so the action "
+					+ "follows the containers entry; this pins the imprecision rather than hiding it");
 	}
 
 	[Test]
