@@ -36,6 +36,10 @@ public sealed class ODataReadToolTests {
 		TestName = "Different entity set that merely starts with the requested name")]
 	[TestCase("{\"@odata.context\":\"http://creatio/odata/$metadata#Contact(11111111-1111-1111-1111-111111111111)\",\"Id\":\"1\"}",
 		TestName = "Key predicate rather than a projection")]
+	[TestCase("{\"@odata.context\":\"http://creatio/odata/$metadata#Contact(Id,Account())/Address\",\"value\":[{\"Id\":\"1\"}]}",
+		TestName = "Navigation segment after a balanced projection")]
+	[TestCase("{\"@odata.context\":\"http://creatio/odata/$metadata#Contact(Id,Account()\",\"value\":[{\"Id\":\"1\"}]}",
+		TestName = "Projection that never closes")]
 	[Category("Unit")]
 	[Description("Rejects an OData context that is not a top-level read of the requested entity set, so a contained or navigated record cannot be returned as the requested one.")]
 	public void Read_Should_Reject_A_Context_That_Is_Not_A_Top_Level_Read_Of_The_Requested_Set(string body) {
@@ -59,6 +63,12 @@ public sealed class ODataReadToolTests {
 		TestName = "Plain collection")]
 	[TestCase("{\"@odata.context\":\"http://creatio/odata/$metadata#Contact(Id,Name)\",\"value\":[{\"Id\":\"1\"}]}",
 		TestName = "Collection with a projection")]
+	[TestCase("{\"@odata.context\":\"http://creatio/odata/$metadata#Contact(Id,Name,AccountId,Account())\",\"value\":[{\"Id\":\"1\"}]}",
+		TestName = "Collection with an expanded navigation property")]
+	[TestCase("{\"@odata.context\":\"http://creatio/odata/$metadata#Contact(Id,Account(Id,Name))\",\"value\":[{\"Id\":\"1\"}]}",
+		TestName = "Collection with a nested select list inside the expansion")]
+	[TestCase("{\"@odata.context\":\"http://creatio/odata/$metadata#Contact(Id,Account/Country())\",\"value\":[{\"Id\":\"1\"}]}",
+		TestName = "Collection with a navigation path inside the projection")]
 	[Category("Unit")]
 	[Description("Still accepts the two top-level collection shapes a real read produces, so tightening the context check did not start rejecting valid answers.")]
 	public void Read_Should_Accept_A_Top_Level_Collection_Context(string body) {

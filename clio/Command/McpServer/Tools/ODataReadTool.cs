@@ -398,17 +398,11 @@ public sealed class ODataReadTool(IToolCommandResolver commandResolver) {
 		}
 		//What may remain is the entity set plus at most one parenthesised projection. Anything after the
 		//closing parenthesis - a navigation segment, a second predicate - is not a top-level read of this
-		//set, and a key predicate is not one either: a projection lists column names, never a key value.
+		//set.
 		int projectionStart = fragment.IndexOf('(', StringComparison.Ordinal);
 		string entitySet = projectionStart < 0 ? fragment : fragment[..projectionStart];
-		if (projectionStart >= 0) {
-			if (!fragment.EndsWith(")", StringComparison.Ordinal)) {
-				return false;
-			}
-			string projection = fragment[(projectionStart + 1)..^1];
-			if (projection.Length == 0 || projection.IndexOfAny(ProjectionRejectChars) >= 0) {
-				return false;
-			}
+		if (projectionStart >= 0 && !IsBalancedTrailingProjection(fragment, projectionStart)) {
+			return false;
 		}
 		//A containment or navigation suffix leaves a '/' behind once the projection is accounted for.
 		return entitySet.Length > 0
@@ -416,9 +410,40 @@ public sealed class ODataReadTool(IToolCommandResolver commandResolver) {
 			&& string.Equals(entitySet, entityName, StringComparison.OrdinalIgnoreCase);
 	}
 
-	// Inside a projection these can only come from a nested navigation or a key predicate, neither of
-	// which a top-level $select/$expand list produces.
-	private static readonly char[] ProjectionRejectChars = ['(', ')', '/'];
+	/// <summary>
+	/// True when the projection that starts at <paramref name="projectionStart"/> is balanced and closes
+	/// on the last character of <paramref name="fragment"/>.
+	/// </summary>
+	/// <remarks>
+	/// The projection's own grammar is deliberately left opaque. $expand makes Creatio answer with a
+	/// nested list - <c>#Contact(Id,Name,AccountId,Account())</c> for <c>$expand=Account</c> - and OData
+	/// also allows nested select lists and navigation paths in there, so rejecting a parenthesis or a
+	/// slash anywhere inside discarded genuine rows. What still has to be rejected is everything the
+	/// projection is not: an unbalanced fragment, and any suffix after it such as a navigation segment
+	/// or a second predicate, which is what the "closes on the last character" requirement covers.
+	/// </remarks>
+	private static bool IsBalancedTrailingProjection(string fragment, int projectionStart) {
+		int depth = 0;
+		for (int index = projectionStart; index < fragment.Length; index++) {
+			switch (fragment[index]) {
+				case '(':
+					depth++;
+					break;
+				case ')':
+					depth--;
+					if (depth < 0) {
+						return false;
+					}
+					if (depth == 0) {
+						//An empty projection names nothing, and anything past the closing parenthesis
+						//puts this fragment outside a top-level read of the set.
+						return index > projectionStart + 1 && index == fragment.Length - 1;
+					}
+					break;
+			}
+		}
+		return false;
+	}
 
 	private const string SingleEntitySuffix = "/$entity";
 
