@@ -6,6 +6,7 @@ using System.Net;
 using System.Net.Http;
 using System.Net.Sockets;
 using System.Security.Authentication;
+using System.Text.RegularExpressions;
 using Clio.Common;
 using CommandLine;
 using CreatioModel;
@@ -529,16 +530,30 @@ namespace Clio.Command
 			};
 		}
 
+		// A bounded 401 token, not any occurrence of the digits. "Connection refused at
+		// http://localhost:40124" is a network error, and reporting it as rejected credentials sends the
+		// operator off to fix a working login. The token must also stand alone, so a port or an id containing
+		// 401 does not qualify.
+		private static readonly Regex UnauthorizedStatusToken =
+			new(@"(?<![0-9])401(?![0-9])", RegexOptions.Compiled | RegexOptions.CultureInvariant);
+
 		// Only 401 is a credential signal. 404 is a routing/resource error — a misconfigured environment URL
 		// or a renamed DataService endpoint would otherwise send the operator off to fix working credentials.
+		// The typed status is preferred wherever the exception carries one; the text match is the last resort
+		// for transports that only report the failure in prose.
 		private static bool IsAuthenticationFailure(Exception exception) {
-			if (exception is WebException { Response: HttpWebResponse response }
-				&& response.StatusCode == HttpStatusCode.Unauthorized) {
+			if (exception is HttpRequestException { StatusCode: HttpStatusCode.Unauthorized }) {
 				return true;
 			}
+			if (exception is WebException { Response: HttpWebResponse response }) {
+				// The response carries the authoritative answer, so do not fall through to the prose match:
+				// a 404 body that happens to mention 401 must not be read as a credential failure.
+				return response.StatusCode == HttpStatusCode.Unauthorized
+					|| (exception.InnerException is not null && IsAuthenticationFailure(exception.InnerException));
+			}
 			string message = exception.Message ?? string.Empty;
-			return message.Contains("401", StringComparison.OrdinalIgnoreCase)
-				|| message.Contains("unauthorized", StringComparison.OrdinalIgnoreCase)
+			return message.Contains("unauthorized", StringComparison.OrdinalIgnoreCase)
+				|| UnauthorizedStatusToken.IsMatch(message)
 				|| (exception.InnerException is not null && IsAuthenticationFailure(exception.InnerException));
 		}
 

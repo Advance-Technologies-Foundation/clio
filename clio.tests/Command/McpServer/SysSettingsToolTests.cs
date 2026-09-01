@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Net;
 using System.Net.Http;
 using ATF.Repository.Providers;
 using Clio.Command;
@@ -140,6 +141,35 @@ public sealed class SysSettingsToolTests {
 			because: "no value could be resolved, so the envelope must not synthesize one");
 		result.Error.Should().Be("Network error reading sys-setting.",
 			because: "the CategorizeError fallback maps HttpRequestException to the canonical 'Network error' message");
+	}
+
+	[TestCase("Connection refused at http://localhost:40124", TestName = "PortContaining401")]
+	[TestCase("No such host is known (host-4015.example:8080)", TestName = "HostnameContaining401")]
+	[TestCase("Request to correlation 9940123 failed", TestName = "IdentifierContaining401")]
+	[Category("Unit")]
+	[Description("get-sys-setting reports a transport failure whose text merely contains the digits 401 as a network error, not as rejected credentials.")]
+	public void GetSysSetting_Should_Not_Categorize_Incidental401Digits_As_Authentication_Failure(string message) {
+		SysSettingGetTool tool = new(BuildResolverThatThrows(new HttpRequestException(message)));
+
+		SysSettingGetResult result = tool.GetSysSetting(new GetSysSettingArgs("local", "MaxFileSize"));
+
+		result.Success.Should().BeFalse();
+		result.Error.Should().Be("Network error reading sys-setting.",
+			because: "a port, host or identifier that happens to contain 401 is not a status code, and telling the operator their credentials were rejected sends them to fix a working login");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("get-sys-setting reads the typed status of an HttpRequestException, so a 401 is recognized even when the message does not spell it out.")]
+	public void GetSysSetting_Should_Categorize_TypedUnauthorizedStatus_As_Authentication_Failure() {
+		SysSettingGetTool tool = new(BuildResolverThatThrows(
+			new HttpRequestException("The request failed.", null, HttpStatusCode.Unauthorized)));
+
+		SysSettingGetResult result = tool.GetSysSetting(new GetSysSettingArgs("local", "MaxFileSize"));
+
+		result.Success.Should().BeFalse();
+		result.Error.Should().Be("Authentication error reading sys-setting.",
+			because: "the typed status is authoritative and must be preferred over matching prose");
 	}
 
 	[Test]
