@@ -66,8 +66,8 @@ namespace Clio.Package
 		private string GetCompleteUrl(ServiceUrlBuilder.KnownRoute knownRoute, EnvironmentSettings environmentSettings) =>
 			_serviceUrlBuilder.Build(knownRoute, environmentSettings);
 
-		private IApplicationClient CreateApplicationClient(EnvironmentSettings environmentSettings) =>
-			_applicationClientFactory.CreateClient(environmentSettings);
+		private IOwnedApplicationClient CreateApplicationClient(EnvironmentSettings environmentSettings) =>
+			_applicationClientFactory.CreateOwnedClient(environmentSettings);
 
 		private string GetSafePackageName(string packageName) => packageName
 			.Replace(" ", string.Empty)
@@ -85,7 +85,7 @@ namespace Clio.Package
 				_logger.WriteLine($"Start download packages ({safePackageName}).");
 				string requestData = $"[\"{safePackageName}\"]";
 				string packageZipPath = GetPackageZipPath(packageName, destinationPath);
-				IApplicationClient applicationClient = CreateApplicationClient(environmentSettings);
+				using IOwnedApplicationClient applicationClient = CreateApplicationClient(environmentSettings);
 				string url = GetCompleteUrl(ServiceUrlBuilder.KnownRoute.GetZipPackage, environmentSettings);
 				applicationClient.Login();
 				applicationClient.DownloadFile(url, packageZipPath, requestData);
