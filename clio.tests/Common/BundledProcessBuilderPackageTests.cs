@@ -71,12 +71,12 @@ public class BundledProcessBuilderPackageTests {
 	];
 
 	/// <summary>
-	/// SHA-256 of the committed archive. Produced by <c>rebundle-process-builder.ps1 -Version 1.4.0.18</c> from
+	/// SHA-256 of the committed archive. Produced by <c>rebundle-process-builder.ps1 -Version 1.4.0.20</c> from
 	/// the <c>ProcessBuilder</c> repository (<c>packages/CrtProcessBuilder</c>, branch
 	/// <c>feature/ENG-95891-formula-expressions</c>), at the commit recorded mechanically in
 	/// <see cref="ExpectedProducingCommit"/> — the script captures <c>git rev-parse HEAD</c> and refuses to cut
 	/// from a tree with uncommitted changes, so this reference is no longer a sentence anyone has to keep true
-	/// by hand. 1.4.0.9, .12, .14, .16 and .17 are deliberately skipped: two archives were cut under .9 on the same day, one
+	/// by hand. 1.4.0.9, .12, .14, .16, .17 and .19 are deliberately skipped: two archives were cut under .9 on the same day, one
 	/// from this branch and one from the branch that forks off it, and .12 and .14 belong to that other branch.
 	/// Two branches drawing from one monotonic sequence collide unless the number is claimed before it is cut, so
 	/// a burned number is always cheaper than an ambiguous one.
@@ -145,7 +145,7 @@ public class BundledProcessBuilderPackageTests {
 	/// </para>
 	/// </remarks>
 	private const string ExpectedArchiveSha256 =
-		"D12538A277BE550BAD7B35695DA0DEF3FFDEE2F8548EE904EE6EB50CC3045880";
+		"1970ED20C456BE7481DD890F65B45D0C8D9941F2BCE5EB8C5F9ABF15C4BFAD38";
 
 	/// <summary>
 	/// The <c>PackageVersion</c> the shipped descriptor carries.
@@ -173,7 +173,7 @@ public class BundledProcessBuilderPackageTests {
 	/// </para>
 	/// </para>
 	/// </remarks>
-	private const string ExpectedArchiveVersion = "1.4.0.18";
+	private const string ExpectedArchiveVersion = "1.4.0.20";
 
 	/// <summary>
 	/// The commit of the PRODUCING repository the archive was cut from, written by
@@ -185,7 +185,7 @@ public class BundledProcessBuilderPackageTests {
 	/// corresponding to no commit" is unreachable rather than merely documented. Anyone with a checkout can
 	/// verify the rest with one `git checkout`.</para>
 	/// </summary>
-	private const string ExpectedProducingCommit = "39cb26fa8d7332edff5c33907e8c355f86548b76";
+	private const string ExpectedProducingCommit = "4c72c95cc4526746831fba336b5af7f6b7bf45d6";
 
 	/// <summary>
 	/// The <c>ModifiedOnUtc</c> the shipped descriptor carries.
@@ -211,7 +211,7 @@ public class BundledProcessBuilderPackageTests {
 	/// command — the previous pin ended in <c>431</c>, which is how the hand edit was eventually noticed.
 	/// </para>
 	/// </remarks>
-	private const string ExpectedDescriptorModifiedOnUtc = "/Date(1788246350000)/";
+	private const string ExpectedDescriptorModifiedOnUtc = "/Date(1788264653000)/";
 
 	/// <summary>
 	/// The <c>ModifiedOnUtc</c> the shipped COMPILE-MARKER SCHEMA descriptor carries.
