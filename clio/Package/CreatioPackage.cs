@@ -20,6 +20,7 @@ namespace Clio
 		public const string AssemblyInfoName = "AssemblyInfo.cs";
 		public const string PlaceholderFileName = "placeholder.txt";
 		public const string IgnoreFileName = "clioignore";
+		public const string FilesDirName = "Files";
 
 
 		public static string EditProjTpl => $"tpl{Path.DirectorySeparatorChar}EditProj.{CsprojExtension}.tpl";
@@ -28,7 +29,7 @@ namespace Clio
 		public static string IgnoreFileTpl => $"tpl{Path.DirectorySeparatorChar}package{Path.DirectorySeparatorChar}{IgnoreFileName}";
 
 		private readonly string[] _pkgDirectories = {
-			"Assemblies", "Data", "Schemas", "SqlScripts", "Resources", "Files", Path.Combine("Files", "cs")
+			"Assemblies", "Data", "Schemas", "SqlScripts", "Resources", FilesDirName, Path.Combine(FilesDirName, "cs")
 		};
 
 		private static string DescriptorTpl => $"tpl{Path.DirectorySeparatorChar}{DescriptorName}.tpl";
@@ -152,9 +153,9 @@ namespace Clio
 		}
 
 		protected CreatioPackage CreateEmptyClass() {
-			var csDirPath = Path.Combine(FullPath, "Files","cs");
+			var csDirPath = Path.Combine(FullPath, FilesDirName, "cs");
 			Directory.CreateDirectory(csDirPath);
-			var filePath = Path.Combine(FullPath, "Files","cs", "EmptyClass.cs");
+			var filePath = Path.Combine(FullPath, FilesDirName, "cs", "EmptyClass.cs");
 			File.Create(filePath).Dispose();
 			return this;
 		}
