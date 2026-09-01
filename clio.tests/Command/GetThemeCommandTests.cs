@@ -566,6 +566,57 @@ public sealed class GetThemeCommandTests : BaseCommandTests<GetThemeOptions> {
 	}
 
 	[Test, Category("Unit")]
+	[Description("Refuses to fetch a catalog-reported cssFilePath that carries a scheme (e.g. an absolute URL), because ServiceUrlBuilder.Build concatenates it onto the base URI as a plain string rather than combining it via System.Uri, so an unexpected value could still steer the request at a same-host path the caller never intended.")]
+	public void TryGetTheme_ShouldFail_WhenCssFilePathIsAnAbsoluteUrl() {
+		// Arrange
+		ArrangeCatalog("{\"success\":true,\"values\":[{\"id\":\"" + ThemeId + "\",\"caption\":\"Brand Dark\"," +
+			"\"cssClassName\":\"brand-dark\",\"cssFilePath\":\"http://attacker.example/theme.css\"}]}");
+
+		// Act
+		bool result = _command.TryGetTheme(new GetThemeOptions { Id = ThemeId }, out GetThemeResponse response);
+
+		// Assert
+		result.Should().BeFalse(because: "a cssFilePath carrying a scheme is not a plain relative static-asset path");
+		response.Error.Should().Contain("unexpected CSS file path",
+			because: "the error must explain why the fetch was refused");
+		_applicationClient.DidNotReceiveWithAnyArgs().ExecuteGetRequest(default);
+	}
+
+	[Test, Category("Unit")]
+	[Description("Refuses to fetch a catalog-reported cssFilePath starting with a protocol-relative '//' prefix, the same same-host-path concern as an absolute URL.")]
+	public void TryGetTheme_ShouldFail_WhenCssFilePathIsProtocolRelative() {
+		// Arrange
+		ArrangeCatalog("{\"success\":true,\"values\":[{\"id\":\"" + ThemeId + "\",\"caption\":\"Brand Dark\"," +
+			"\"cssClassName\":\"brand-dark\",\"cssFilePath\":\"//attacker.example/theme.css\"}]}");
+
+		// Act
+		bool result = _command.TryGetTheme(new GetThemeOptions { Id = ThemeId }, out GetThemeResponse response);
+
+		// Assert
+		result.Should().BeFalse(because: "a protocol-relative cssFilePath is not a plain relative static-asset path");
+		response.Error.Should().Contain("unexpected CSS file path",
+			because: "the error must explain why the fetch was refused");
+		_applicationClient.DidNotReceiveWithAnyArgs().ExecuteGetRequest(default);
+	}
+
+	[Test, Category("Unit")]
+	[Description("Refuses to fetch a catalog-reported cssFilePath carrying a '..' path segment, which could otherwise reach an unexpected same-host endpoint.")]
+	public void TryGetTheme_ShouldFail_WhenCssFilePathContainsParentSegment() {
+		// Arrange
+		ArrangeCatalog("{\"success\":true,\"values\":[{\"id\":\"" + ThemeId + "\",\"caption\":\"Brand Dark\"," +
+			"\"cssClassName\":\"brand-dark\",\"cssFilePath\":\"Terrasoft.Configuration/../../SomeOtherEndpoint\"}]}");
+
+		// Act
+		bool result = _command.TryGetTheme(new GetThemeOptions { Id = ThemeId }, out GetThemeResponse response);
+
+		// Assert
+		result.Should().BeFalse(because: "a '..' segment could walk the request path outside the expected static-asset location");
+		response.Error.Should().Contain("unexpected CSS file path",
+			because: "the error must explain why the fetch was refused");
+		_applicationClient.DidNotReceiveWithAnyArgs().ExecuteGetRequest(default);
+	}
+
+	[Test, Category("Unit")]
 	[Description("Writes the CSS to the output file and omits cssContent from the envelope (keeping cssContentLength) when --output-file is set.")]
 	public void TryGetTheme_ShouldWriteCssToFile_WhenOutputFileIsProvided() {
 		// Arrange

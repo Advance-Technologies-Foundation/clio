@@ -214,6 +214,11 @@ public class GetThemeCommand : Command<GetThemeOptions>
 			error = $"Theme '{theme.Id}' has no CSS file path in the theme catalog; there is no content to read.";
 			return false;
 		}
+		if (!IsExpectedRelativeCssPath(theme.CssFilePath)) {
+			error = $"Theme '{theme.Id}' reports an unexpected CSS file path in the theme catalog " +
+				$"('{TextUtilities.SanitizeForDisplay(theme.CssFilePath)}'); refusing to fetch it.";
+			return false;
+		}
 		string url = _urlBuilder.Build(theme.CssFilePath);
 		string content = _applicationClient.ExecuteGetRequest(url, options.TimeOut, options.MaxAttempts,
 			options.RetryDelay) ?? string.Empty;
@@ -231,5 +236,27 @@ public class GetThemeCommand : Command<GetThemeOptions>
 		cssContent = content;
 		error = null;
 		return true;
+	}
+
+	/// <summary>
+	/// Whether <paramref name="cssFilePath"/> looks like a plain relative static-asset path rather than
+	/// something that could steer <see cref="IServiceUrlBuilder.Build(string)"/> at an unexpected same-host
+	/// endpoint. <c>ServiceUrlBuilder.Build</c> concatenates the base URI and this value as plain strings
+	/// (not via <see cref="Uri"/> combination), so an absolute or protocol-relative value cannot redirect
+	/// off-host — but it, or a <c>..</c> segment, can still land the request on a same-host path the caller
+	/// never intended, and <c>cssFilePath</c> is server-reported catalog data this command does not control.
+	/// </summary>
+	/// <param name="cssFilePath">The catalog-reported CSS file path, already known non-empty.</param>
+	/// <returns><c>true</c> when the value carries no scheme, no protocol-relative prefix, and no <c>..</c>
+	/// path segment.</returns>
+	private static bool IsExpectedRelativeCssPath(string cssFilePath) {
+		if (cssFilePath.Contains("://", StringComparison.Ordinal)) {
+			return false;
+		}
+		if (cssFilePath.StartsWith("//", StringComparison.Ordinal)) {
+			return false;
+		}
+		string pathOnly = cssFilePath.Split('?', 2)[0];
+		return pathOnly.Split('/').All(segment => segment != "..");
 	}
 }

@@ -159,6 +159,8 @@ public sealed class GetThemeHappyPathE2ETests : McpContractFixtureBase {
 			$$"""
 			{
 			  "ActiveEnvironmentKey": "{{EnvironmentName}}",
+			  "Autoupdate": false,
+			  "Features": {},
 			  "Environments": {
 			    "{{EnvironmentName}}": {
 			      "Uri": "{{_stubServer.BaseUrl}}",
