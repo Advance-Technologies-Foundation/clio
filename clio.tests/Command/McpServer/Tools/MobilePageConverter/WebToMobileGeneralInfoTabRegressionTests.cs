@@ -358,7 +358,8 @@ public sealed class WebToMobileGeneralInfoTabRegressionTests {
 		RetypeComponents(fixture, "crt.TabPanel", "usr.RenamedStrip");
 		RetypeComponents(fixture, "crt.TabContainer", "usr.RenamedTab");
 		WebToMobilePageConversionRules rules = RulesWithoutTheGeneralTabEntry(
-			renameTabTypeTo: "usr.RenamedTab", renameAcceptedTabContainerTypeTo: "usr.RenamedTab");
+			renameTabTypeTo: "usr.RenamedTab", renameAcceptedTabContainerTypeTo: "usr.RenamedTab",
+			renameKnownContainerTypes: ("crt.TabPanel", "usr.RenamedStrip"));
 
 		// Act
 		MobilePageConversionGuide guide = Convert(
@@ -380,7 +381,7 @@ public sealed class WebToMobileGeneralInfoTabRegressionTests {
 	}
 
 	[Test]
-	[Description("The placement check is NOT about tabs: any receiver whose mobile type is absent from the rules' contentContainerTypes cannot host a child, and the report says so. Proven with no tab anywhere in the page — a plain crt.GridContainer becomes a non-hosting receiver purely by being dropped from the accept-list, which a tab-shaped check could never detect.")]
+	[Description("The placement check is NOT about tabs: a receiver is non-hosting when the rules recognise its type as a layout container (emptyContainerRemoval.removableTypes) but do NOT list it as able to hold arbitrary content (contentContainerTypes). Proven with no tab anywhere in the page — a plain crt.GridContainer becomes non-hosting purely by being dropped from the accept-list, which a tab-shaped check could never detect.")]
 	public void Analyze_ShouldReportAPlacementLoss_WhenTheReceiverTypeIsNotInTheAcceptList() {
 		// Arrange — a page with no tab strip and no tab at all. The only lever is the accept-list.
 		var bundle = new PageBundleInfo {
@@ -404,6 +405,35 @@ public sealed class WebToMobileGeneralInfoTabRegressionTests {
 		rejected.PlacementLosses.Should().ContainSingle(l => l.Name == "UsrField" && l.ParentName == "UsrHost",
 			because: "with its type off the accept-list the very same container can no longer host the very same "
 				+ "child — the decision is the rules' data, not a component type named in the analyser");
+	}
+
+	[Test]
+	[Description("No false positive on a host the rules simply do not name. contentContainerTypes lists four types while the mobile registry ships many more with an items slot (crt.Scaffold, crt.Gallery, crt.Timeline, a partner's own usr.* container), so treating \"absent from the accept-list\" as \"cannot host\" would report a confident loss on every one of them - and this report tells the caller to STOP, so a false positive halts a correct conversion. Only a type the rules RECOGNISE as a layout container and do not list as content-hosting is reported.")]
+	public void Analyze_ShouldNotReportAPlacementLoss_ForAHostTheRulesDoNotName() {
+		// Arrange - two receivers neither list names: a partner container and a registry type with an items
+		// slot that is not in contentContainerTypes.
+		var bundle = new PageBundleInfo {
+			ViewConfig = JsonNode.Parse("""
+				[ { "name": "MainContainer", "type": "crt.GridContainer", "items": [
+					{ "name": "UsrPartnerHost", "type": "usr.PartnerContainer", "items": [
+						{ "name": "UsrPartnerField", "type": "crt.Input", "label": "P" } ] },
+					{ "name": "Gal", "type": "crt.Gallery", "items": [
+						{ "name": "GalField", "type": "crt.Input", "label": "G" } ] } ] } ]
+				""")!.AsArray(),
+			ViewModelConfig = new JsonObject(), ModelConfig = new JsonObject(),
+			Resources = new PageResourceInfo { Strings = new JsonObject() }
+		};
+		var types = new HashSet<string>(MobileTypes(), StringComparer.OrdinalIgnoreCase)
+			{ "usr.PartnerContainer", "crt.Gallery" };
+
+		// Act
+		MobilePageConversionGuide guide = AnalyzeBlank(
+			bundle, WebToMobilePageConversionRulesCatalog.LoadBundled(), types);
+
+		// Assert
+		guide.PlacementLosses.Should().BeNullOrEmpty(
+			because: "neither receiver is a type the rules recognise as a layout container, so the converter has "
+				+ "no basis to claim it cannot hold its child; guessing here would stop a correct conversion");
 	}
 
 	// ── helpers ──────────────────────────────────────────────────────────────────────────────────
@@ -494,7 +524,8 @@ public sealed class WebToMobileGeneralInfoTabRegressionTests {
 	/// under test while staying green.
 	/// </summary>
 	private static WebToMobilePageConversionRules RulesWithoutTheGeneralTabEntry(
-		string renameTabTypeTo = null, string renameAcceptedTabContainerTypeTo = null) {
+		string renameTabTypeTo = null, string renameAcceptedTabContainerTypeTo = null,
+		(string From, string To)? renameKnownContainerTypes = null) {
 		JsonObject rules = JsonNode.Parse(BundledRulesJson())!.AsObject();
 		if (renameTabTypeTo is not null) {
 			rules["tabAreaLayers"]!["tabComponentType"] = renameTabTypeTo;
@@ -511,6 +542,14 @@ public sealed class WebToMobileGeneralInfoTabRegressionTests {
 			.Single(t => t!["web"]!.ToString() == "PageWithTabsFreedomTemplate")!["containers"]!.AsArray();
 		JsonNode generalTab = containers.Single(c => c!["web"]!.ToString() == "GeneralInfoTab");
 		containers.Remove(generalTab);
+		if (renameKnownContainerTypes is { } rename) {
+			JsonArray known = rules["emptyContainerRemoval"]!["removableTypes"]!.AsArray();
+			for (int i = 0; i < known.Count; i++) {
+				if (string.Equals(known[i]!.ToString(), rename.From, StringComparison.OrdinalIgnoreCase)) {
+					known[i] = rename.To;
+				}
+			}
+		}
 		using var stream = new MemoryStream(System.Text.Encoding.UTF8.GetBytes(rules.ToJsonString()));
 		return WebToMobilePageConversionRulesCatalog.ParseStream(stream);
 	}
@@ -527,14 +566,14 @@ public sealed class WebToMobileGeneralInfoTabRegressionTests {
 
 	/// <summary>Converts a hand-built page with no template pair — no chrome subtraction, no twins.</summary>
 	private static MobilePageConversionGuide AnalyzeBlank(
-		PageBundleInfo bundle, WebToMobilePageConversionRules rules) =>
+		PageBundleInfo bundle, WebToMobilePageConversionRules rules, IReadOnlySet<string> mobileTypes = null) =>
 		WebToMobileAnalysisService.Analyze(
 			new PageBundleInfo {
 				ViewConfig = bundle.ViewConfig!.DeepClone().AsArray(),
 				ViewModelConfig = new JsonObject(), ModelConfig = new JsonObject(),
 				Resources = new PageResourceInfo { Strings = new JsonObject() }
 			},
-			MobileTypes(), new HashSet<string>(StringComparer.OrdinalIgnoreCase),
+			mobileTypes ?? MobileTypes(), new HashSet<string>(StringComparer.OrdinalIgnoreCase),
 			webByType: new Dictionary<string, ComponentRegistryEntry>(StringComparer.OrdinalIgnoreCase),
 			mobileByType: null, rules, templateRule: null,
 			sourcePage: "Usr_FormPage", sourceTemplate: "BlankPageTemplate",

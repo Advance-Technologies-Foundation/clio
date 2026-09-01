@@ -3939,16 +3939,27 @@ public static class WebToMobileAnalysisService {
 				&& mobileContainerParents.TryGetValue(e.MobileName, out string mobileParent)
 				&& string.Equals(mobileParent, e.MergeParentName, StringComparison.OrdinalIgnoreCase)
 				&& colsByMobileParent.ContainsKey(e.MergeParentName);
-			// A twin's mobileValues stays NULL here on purpose. The group loop below skips a single-column grid,
-			// and a merge that reached the guide carrying an empty object would be pasted onto the template
-			// element as `values: {}` — noise the model still has to interpret. It is created only where a
-			// layoutConfig is actually written.
-			string parent = isPlaceableTwin ? e.MergeParentName : e.ParentName;
-			if ((!isPlaceableTwin && !string.Equals(e.Operation, "insert", StringComparison.Ordinal)) ||
-				string.IsNullOrEmpty(parent) ||
-				(!isPlaceableTwin && e.MobileValues is not JsonObject) ||
-				(isPlaceableTwin && e.MobileValues is not (null or JsonObject)) ||
-				!colsByMobileParent.ContainsKey(parent)) {
+			// Two kinds of child reach this group, and each has its own admission rule. Kept as two blocks
+			// rather than one composite: the twin flag used to appear at both polarities inside a negated
+			// disjunction, which no reader could evaluate without a table.
+			string parent;
+			if (isPlaceableTwin) {
+				// A twin's mobileValues stays NULL here on purpose. The group loop below skips a single-column
+				// grid, and a merge that reached the guide carrying an empty object would be pasted onto the
+				// template element as `values: {}` — noise the model still has to interpret. The object is
+				// created only where a layoutConfig is actually written.
+				if (e.MobileValues is not (null or JsonObject)) {
+					continue;
+				}
+				parent = e.MergeParentName;
+			} else {
+				if (!string.Equals(e.Operation, "insert", StringComparison.Ordinal)
+					|| e.MobileValues is not JsonObject) {
+					continue;
+				}
+				parent = e.ParentName;
+			}
+			if (string.IsNullOrEmpty(parent) || !colsByMobileParent.ContainsKey(parent)) {
 				continue;
 			}
 			// A positional sibling was rerouted OUT of the web grid it was declared in and into the anchor's
@@ -4597,10 +4608,29 @@ public static class WebToMobileAnalysisService {
 		IReadOnlyList<ElementMapEntry> elementMap,
 		IReadOnlyDictionary<string, string> mobileTypesByName,
 		WebToMobilePageConversionRules rules) {
+		// The rules file is CDN-fetched and the bundled copy is only the FAILURE fallback, so a successfully
+		// fetched OLDER file has containers but no contentContainerTypes. Treating that as "nothing to check"
+		// switches this report off in exactly the situation it exists for, so fall back to the bundled lists.
+		WebToMobilePageConversionRules typeRules =
+			(rules?.ContentContainerTypes is { Count: > 0 }) && (rules.EmptyContainerRemoval?.RemovableTypes is { Count: > 0 })
+				? rules
+				: WebToMobilePageConversionRulesCatalog.LoadBundled();
+
 		var accepting = new HashSet<string>(
-			(rules?.ContentContainerTypes ?? []).Where(t => !string.IsNullOrWhiteSpace(t)),
+			(typeRules?.ContentContainerTypes ?? []).Where(t => !string.IsNullOrWhiteSpace(t)),
 			StringComparer.OrdinalIgnoreCase);
-		if (accepting.Count == 0) {
+		// A receiver is reported ONLY when the rules recognise its type as a layout container AND do not list it
+		// as able to host arbitrary content. "Absent from contentContainerTypes" alone is the wrong test: that
+		// list names four types while the mobile registry ships many more with an items slot (crt.Scaffold,
+		// crt.Gallery, crt.Timeline, ...), so an accept-list used on its own reports a confident, loud false
+		// positive for every legitimate host it happens not to name — and this report tells the caller to STOP.
+		// The two lists are NOT shared: each keeps its own meaning, and it is their DIFFERENCE that means
+		// "a container this converter knows, which cannot hold arbitrary children". Today that is crt.TabPanel.
+		var knownContainers = new HashSet<string>(
+			(typeRules?.EmptyContainerRemoval?.RemovableTypes ?? []).Where(t => !string.IsNullOrWhiteSpace(t)),
+			StringComparer.OrdinalIgnoreCase);
+		knownContainers.ExceptWith(accepting);
+		if (knownContainers.Count == 0) {
 			return [];
 		}
 
@@ -4621,7 +4651,7 @@ public static class WebToMobileAnalysisService {
 		// the hardcode the accept-list exists to remove.
 		bool CannotHostChildren(string receiver) =>
 			receiverTypes.TryGetValue(receiver, out string type) && type is { Length: > 0 }
-				? !accepting.Contains(type)
+				? knownContainers.Contains(type)
 				: string.Equals(receiver, MobileTabsElementName, StringComparison.OrdinalIgnoreCase);
 
 		// A tab is the one child a non-hosting receiver legitimately takes: a strip exists to hold tabs. The type
