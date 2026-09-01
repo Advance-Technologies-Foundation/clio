@@ -72,9 +72,11 @@ public class BundledProcessBuilderPackageTests {
 
 	/// <summary>
 	/// SHA-256 of the committed archive. Produced by <c>rebundle-process-builder.ps1 -Version 1.4.0.0</c> from
-	/// the <c>ProcessBuilder</c> repository (<c>packages/CrtProcessBuilder</c>, branch
-	/// <c>chore/ENG-92705-bundle-1.4.0.0</c>, at commit <c>2a9e136</c> — the descriptor restamp on top of the
-	/// <c>8c40849</c> merge that landed ENG-92705, the Pre-configured page element).
+	/// the <c>ProcessBuilder</c> repository (<c>packages/CrtProcessBuilder</c>, commit <c>2a9e136</c> — the
+	/// descriptor restamp on top of the <c>8c40849</c> merge that landed ENG-92705, the Pre-configured page
+	/// element). That commit is ON <c>main</c>, reachable through the <c>ea194f7</c> merge of PR #39, so the
+	/// reference survives the branch being deleted: named the commit rather than the branch deliberately,
+	/// because a branch reference is exactly what stops being verifiable once the PR is done with.
 	/// 1.4.0.0 is a MINOR delivery, the digit this package moves for a new ELEMENT: readData took 1.2.0.0 and
 	/// changeData 1.3.0.0, and this cut adds the element that shows a Freedom UI page to a person mid-process
 	/// and resumes when they press a completing button — page reference, completing buttons, page-scoped
