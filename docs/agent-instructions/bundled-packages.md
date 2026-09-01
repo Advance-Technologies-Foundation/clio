@@ -145,6 +145,32 @@ And do not read a stand's installed version as the sequence's high-water mark. I
 last installed, which may be a branch that never merges. The sequence is owned by the branches, not by
 the environment.
 
+### The currency gates prove the cut was current WHEN CUT, not that it still is
+
+`rebundle-process-builder.ps1` refuses a dirty tree, a detached HEAD, and a branch behind its upstream. All
+three are asserted at CUT time. None of them says anything about the archive falling behind the branch
+AFTERWARDS — and that is not a hole in the gates, it is their boundary, as principled as the fact that
+"behind" is measured against the upstream ref as last fetched.
+
+It has already cost a shipped fix. An archive was cut at `1.4.0.15` from a clean, current checkout; a
+Blocker fix to the package landed in the next commit; and the branch then carried a bundled archive whose
+sources did not contain it. The pin was not wrong — that commit really was HEAD when the bytes were
+packed. Every test passed on both sides: the package's suite proved the fix, the clio guard fixture proved
+the pins matched the archive, and nothing compared the two.
+
+**No test in either repository can catch this, and that is worth understanding rather than working**
+**around.** A fixture in clio has one repository open, so it cannot ask where the package repository's
+branch now points. The script holds both, but it is not running at the moment that matters. The check
+belongs to the MERGE, not to the cut — so until CI checks out both sides, it is a human step:
+
+- before opening a pull request, and again before marking one ready, confirm the package repository has no
+  commit touching package sources after `ExpectedProducingCommit`. One command answers it:
+  `git -C <package repo> log --oneline <ExpectedProducingCommit>..HEAD -- packages/<Package>/`;
+- a restamp commit is the expected exception — it is what the cut itself produced. Anything else means the
+  archive is stale and the fix must be re-cut;
+- treat this as part of the pre-PR gate, not as tidiness. A stale archive ships a version number that
+  promises a fix the bytes do not carry, which is worse than shipping neither.
+
 ### One call — `rebundle-process-builder.ps1`
 
 The whole procedure, from the repository root:
