@@ -610,9 +610,13 @@ public sealed class DescribedFlow {
 	public string Kind { get; set; }
 
 	/// <summary>
-	/// For a <c>conditional</c> flow: the boolean expression deciding whether the branch is taken, exactly as
-	/// stored. <c>null</c> on every other kind, and on a conditional flow whose branch is chosen by an activity
-	/// result rather than by a formula.
+	/// The boolean expression deciding whether a branch is taken, exactly as stored.
+	/// <para>Reported whenever the flow carries condition TEXT - including on a flow whose <c>kind</c> is NOT
+	/// conditional, which an earlier version of this comment denied. Such text is dropped at generation time and
+	/// never evaluated, and <c>kind</c> is what says so; it is still reported because the parameter-delete and
+	/// element-retarget guards both SCAN it and refuse on it, so hiding it would leave a caller refused over
+	/// something no read API shows. <c>null</c> when there is no text, and on a conditional flow whose branch is
+	/// chosen by an activity result rather than by a formula - that flow ignores its expression entirely.</para>
 	/// </summary>
 	/// <remarks>
 	/// This field is NOT optional polish. <see cref="DescribedFlow"/> has no <c>[JsonExtensionData]</c> overflow
