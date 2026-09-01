@@ -21,7 +21,8 @@ public static class FindEmptyIisPortPrompt
 		 1. Run `{AssertInfrastructureTool.AssertInfrastructureToolName}` to check infrastructure health and identify failing areas.
 		 2. Run `{ShowPassingInfrastructureTool.ShowPassingInfrastructureToolName}` to select passing database and Redis targets.
 		 3. Run `{FindEmptyIisPortTool.FindEmptyIisPortToolName}` to find an available port in range {FindEmptyIisPortTool.RangeStart}–{FindEmptyIisPortTool.RangeEnd}.
-		 4. Pass the returned port as `sitePort` to `{InstallerCommandTool.DeployCreatioToolName}`.
+		 4. Pass the returned port as `sitePort` to `{InstallerCommandTool.DeployCreatioToolName}` only when
+		    you want to override its configured automatic site-port range.
 		 This workflow ensures no port conflicts and validates all prerequisites before deployment.
 		 """;
 }
