@@ -1,7 +1,6 @@
 using System.Collections.Generic;
 using System.IO;
 using System.Threading.Tasks;
-using Allure.NUnit;
 using Allure.NUnit.Attributes;
 using Clio.Mcp.E2E.Support.Configuration;
 using FluentAssertions;
@@ -30,7 +29,12 @@ namespace Clio.Mcp.E2E;
 [Category("McpE2E.Manual")]
 [Category("LocalOnly")]
 [Explicit("Publishes a schema and triggers the global OData rebuild on the shared stand; run it by hand against a leased sandbox.")]
-[AllureNUnit]
+// [AllureNUnit] is intentionally omitted, for the reason already recorded on
+// EntitySchemaToolE2ETests: the adapter installs NUnit lifecycle hooks that deadlock a fixture
+// containing many sequential async operations - 6+ awaited calls hung for 30+ minutes with no
+// timeout until the attribute was removed. This fixture performs more MCP and process calls than
+// that one, and a hang would stop the `await using` teardown from running, leaving the published
+// schema and its package on the stand. The [Allure*] metadata attributes below are unaffected.
 [AllureFeature("data-binding-db")]
 [NonParallelizable]
 public sealed class DataBindingDbColorSchemaE2ETests : DataBindingDbFixtureBase {
