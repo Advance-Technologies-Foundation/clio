@@ -89,7 +89,9 @@ public sealed class CreatioHostEnvironmentStoreTests : BaseClioModuleTests
 	{
 		// Arrange
 		_fileSystem.ExistsFile(Arg.Any<string>()).Returns(true);
-		_fileSystem.ReadAllText(Arg.Any<string>()).Returns("{\"Key\":\"first\",\"key\":\"second\"}");
+		_fileSystem.ReadAllText(Arg.Any<string>()).Returns(
+			"{\"Kestrel__Certificates__Default__Password\":\"first\","
+			+ "\"kestrel__certificates__default__password\":\"second\"}");
 
 		// Act
 		Action action = () => _sut.Load("/tmp/creatio");

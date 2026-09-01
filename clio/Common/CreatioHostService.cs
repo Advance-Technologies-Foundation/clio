@@ -50,6 +50,8 @@ public class CreatioHostService : ICreatioHostService
 		"DOTNET_ROOT",
 		"DOTNET_ROOT(x86)",
 		"DOTNET_CLI_HOME",
+		"DOTNET_SYSTEM_GLOBALIZATION_INVARIANT",
+		"LD_LIBRARY_PATH",
 		"ASPNETCORE_ENVIRONMENT",
 		"DOTNET_ENVIRONMENT",
 		"SystemRoot",
@@ -219,13 +221,14 @@ public class CreatioHostService : ICreatioHostService
 		string envName,
 		IReadOnlyDictionary<string, string> environmentVariables)
 	{
+		string environmentStorePath = CreatioHostEnvironmentStore.GetStorePath(workingDirectory);
 		List<string> lines = [
 			"#!/bin/sh",
 			"set -eu",
 			"cleanup() { rm -f -- \"$0\"; }",
 			"trap cleanup EXIT HUP INT TERM"
 		];
-		foreach ((string key, string value) in environmentVariables ?? new Dictionary<string, string>())
+		foreach (string key in (environmentVariables ?? new Dictionary<string, string>()).Keys)
 		{
 			if (!IsValidShellEnvironmentVariableName(key))
 			{
@@ -233,7 +236,11 @@ public class CreatioHostService : ICreatioHostService
 					$"The host environment variable '{key}' cannot be passed to a POSIX terminal launcher.");
 			}
 
-			lines.Add($"export {key}={EscapeShellSingleQuoted(value)}");
+			// Read the secret from the owner-only store at launch time. Keeping only the key and store
+			// path in this temporary launcher prevents a terminated shell from leaving a certificate
+			// password behind in the generated script.
+			lines.Add(
+				$"export {key}=\"$(/usr/bin/plutil -extract {EscapeShellSingleQuoted(key)} raw -o - {EscapeShellSingleQuoted(environmentStorePath)})\"");
 		}
 
 		string displayName = string.IsNullOrWhiteSpace(envName) ? "environment" : envName;

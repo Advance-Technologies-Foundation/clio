@@ -373,9 +373,12 @@ public class LinkCoreSrcCommand : Command<LinkCoreSrcOptions>
 				EnableLaxModeInAppConfig(options);
 			}
 
-			UpdateEnvironmentPath(options, env);
-
 			UpdateIISPhysicalPath(options, env);
+
+			// Update the registered path only after all source/configuration and IIS changes succeed,
+			// so a failed platform-path update cannot leave protected host values pointing at a
+			// partially linked source tree.
+			UpdateEnvironmentPath(options, env);
 
 			// Handle service restart if running
 			HandleServiceRestartAndReregistration(options.Environment);
@@ -779,9 +782,14 @@ public class LinkCoreSrcCommand : Command<LinkCoreSrcOptions>
 		List<string> namesToRemove = new();
 		foreach (KeyValuePair<string, JsonNode?> property in endpoints)
 		{
-			if (string.Equals(property.Key, "Http", StringComparison.OrdinalIgnoreCase)
-				|| property.Value is JsonObject endpoint
-					&& string.Equals(GetUriScheme(GetStringProperty(endpoint, "Url")), scheme, StringComparison.OrdinalIgnoreCase))
+			string? endpointScheme = property.Value is JsonObject endpoint
+				? GetUriScheme(GetStringProperty(endpoint, "Url"))
+				: null;
+			bool isCanonicalHttpWithoutScheme = scheme == Uri.UriSchemeHttp
+				&& string.Equals(property.Key, "Http", StringComparison.OrdinalIgnoreCase)
+				&& endpointScheme is null;
+			if (string.Equals(endpointScheme, scheme, StringComparison.OrdinalIgnoreCase)
+				|| isCanonicalHttpWithoutScheme)
 			{
 				namesToRemove.Add(property.Key);
 			}

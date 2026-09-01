@@ -58,6 +58,8 @@ public sealed class CreatioHostServiceTests : BaseClioModuleTests {
 			&& !options.Arguments.Contains("secret")
 			&& options.ClearInheritedEnvironment
 			&& options.InheritedEnvironmentVariableAllowlist.Contains("PATH")
+			&& options.InheritedEnvironmentVariableAllowlist.Contains("DOTNET_SYSTEM_GLOBALIZATION_INVARIANT")
+			&& options.InheritedEnvironmentVariableAllowlist.Contains("LD_LIBRARY_PATH")
 			&& options.InheritedEnvironmentVariableAllowlist.Contains("ASPNETCORE_ENVIRONMENT")
 			&& options.InheritedEnvironmentVariableAllowlist.Contains("DOTNET_ENVIRONMENT")
 			&& !options.InheritedEnvironmentVariableAllowlist.Contains("Kestrel__Endpoints__Https__Certificate__Password")));
@@ -101,7 +103,7 @@ public sealed class CreatioHostServiceTests : BaseClioModuleTests {
 	}
 
 	[Test]
-	[Description("Quotes macOS terminal launcher paths, labels, and environment values so hostile registered values remain data rather than shell syntax.")]
+	[Description("Quotes macOS terminal launcher paths and labels while loading certificate values from the protected store instead of embedding secrets in the shell script.")]
 	public void BuildTerminalLaunchScript_ShouldQuoteDynamicValues() {
 		// Arrange
 		const string workingDirectory = "/tmp/creatio; touch /tmp/pwned/'quoted";
@@ -118,8 +120,10 @@ public sealed class CreatioHostServiceTests : BaseClioModuleTests {
 
 		// Assert
 		script.Should().Contain(
-			"export Kestrel__Endpoints__Https__Certificate__Password='secret'\\''with;metachar'",
-			because: "certificate values must be represented as literal shell data in the protected launcher");
+			$"export Kestrel__Endpoints__Https__Certificate__Password=\"$(/usr/bin/plutil -extract 'Kestrel__Endpoints__Https__Certificate__Password' raw -o - '{CreatioHostEnvironmentStore.GetStorePath(workingDirectory)}')\"",
+			because: "the launcher must load certificate values from the protected store at runtime");
+		script.Should().NotContain("secret'with;metachar",
+			because: "a terminated terminal launcher must not leave the certificate password embedded on disk");
 		script.Should().Contain(
 			"cd -- '/tmp/creatio; touch /tmp/pwned/'\\''quoted'",
 			because: "the terminal must enter the registered application directory without executing path metacharacters");

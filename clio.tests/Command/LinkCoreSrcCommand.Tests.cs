@@ -170,6 +170,30 @@ namespace Clio.Tests.Command {
 	}
 
 	[Test]
+	[Description("Preserves an HTTPS endpoint whose legacy configuration name is Http when link-core-src targets an HTTPS environment.")]
+	public void UpdateConfigWithPort_ShouldPreserveHttpsEndpointNamedHttp_WhenTargetSchemeIsHttps() {
+		// Arrange
+		const string existingJson = """
+			{
+			  "Kestrel": {
+			    "Endpoints": {
+			      "Http": { "Url": "https://[::]:5002", "Certificate": { "Path": "server.pfx" } }
+			    }
+			  }
+			}
+			""";
+
+		// Act
+		string result = _command.UpdateConfigWithPort(existingJson, 40123, "/tmp/appsettings.json", Uri.UriSchemeHttps);
+
+		// Assert
+		GetJsonString(result, "Kestrel", "Endpoints", "Http", "Url").Should().Be("https://localhost:40123",
+			because: "the endpoint URL scheme, rather than the legacy endpoint name, determines whether it is secure");
+		GetJsonString(result, "Kestrel", "Endpoints", "Http", "Certificate", "Path").Should().Be("server.pfx",
+			because: "link-core-src must preserve the certificate attached to the selected HTTPS endpoint");
+	}
+
+	[Test]
 	[Description("Removes every HTTP Kestrel endpoint when link-core-src targets an HTTPS environment.")]
 	public void UpdateConfigWithPort_ShouldRemoveHttpEndpoints_WhenTargetSchemeIsHttps() {
 		// Arrange

@@ -187,7 +187,7 @@ public sealed class CreatioHostEnvironmentStore : ICreatioHostEnvironmentStore
 		return true;
 	}
 
-	private static string GetStorePath(string workingDirectory)
+	internal static string GetStorePath(string workingDirectory)
 	{
 		if (string.IsNullOrWhiteSpace(workingDirectory))
 		{
@@ -201,6 +201,12 @@ public sealed class CreatioHostEnvironmentStore : ICreatioHostEnvironmentStore
 			normalizedDirectory = normalizedDirectory.TrimEnd(
 				Path.DirectorySeparatorChar,
 				Path.AltDirectorySeparatorChar);
+		}
+		if (OperatingSystem.IsWindows())
+		{
+			// Windows paths are case-insensitive, so a different casing must address the same
+			// protected host-environment record.
+			normalizedDirectory = normalizedDirectory.ToUpperInvariant();
 		}
 		byte[] hash = SHA256.HashData(Encoding.UTF8.GetBytes(normalizedDirectory));
 		string key = Convert.ToHexString(hash).ToLowerInvariant();
