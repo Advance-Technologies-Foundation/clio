@@ -555,7 +555,7 @@ public class NugetMaterializerTests
 			.Returns(MockCsProjWithNugetContent());
 		_processExecutor
 			.ExecuteAndCaptureAsync(Arg.Is<ProcessExecutionOptions>(
-				o => o.Arguments.StartsWith("add package Nuget2")))
+				o => DescribeArguments(o).StartsWith("add package Nuget2")))
 			.Returns(_ => Task.FromResult(FailedRun));
 
 		//Act
@@ -579,7 +579,7 @@ public class NugetMaterializerTests
 		_fileSystem.ReadAllText(CsprojFileName)
 			.Returns(MockCsProjWithNugetContent());
 		_processExecutor
-			.ExecuteAndCaptureAsync(Arg.Is<ProcessExecutionOptions>(o => o.Arguments.StartsWith("build ")))
+			.ExecuteAndCaptureAsync(Arg.Is<ProcessExecutionOptions>(o => DescribeArguments(o).StartsWith("build ")))
 			.Returns(_ => Task.FromResult(FailedRun));
 
 		//Act
@@ -623,17 +623,74 @@ public class NugetMaterializerTests
 		_processExecutor.ReceivedCalls().Should().BeEmpty();
 	}
 
+	[TestCase("Nuget1 --source https://attacker.example/v3/index.json",
+		TestName = "OptionBearingInclude_Source")]
+	[TestCase("Nuget1 -s https://attacker.example/v3/index.json --interactive",
+		TestName = "OptionBearingInclude_ShortSourceAndFlag")]
+	[TestCase("--source https://attacker.example/v3/index.json", TestName = "OptionBearingInclude_OnlyOptions")]
+	[TestCase("../../Victim", TestName = "OptionBearingInclude_RelativePath")]
+	[Description("Refuses a PackageReference Include that is not a NuGet package identifier, so a project-controlled "
+		+ "value cannot reach dotnet add as extra options and steer the restore at another feed")]
+	public void Materializer_Rejects_IncludeThatIsNotAPackageIdentifier(string maliciousInclude){
+		// Arrange
+		_fileSystem.ReadAllText(CsprojFileName).Returns($@"
+			<Project Sdk=""Microsoft.NET.Sdk"">
+				<ItemGroup Label=""3rd Party References"">
+					<PackageReference Include=""{maliciousInclude}"" Version=""1.1.1"" />
+				</ItemGroup>
+			</Project>");
+
+		//Act
+		int actual = _sut.Materialize(PackageName);
+
+		//Assert
+		actual.Should().Be(1, because: "an Include carrying options is not a package and must not be restored");
+		_logger.Received(1).WriteError($"The '{maliciousInclude}' PackageReference Include is not a NuGet package "
+			+ $"identifier. No package reference was converted in the {PackageName} package");
+		_processExecutor.DidNotReceiveWithAnyArgs().ExecuteAndCaptureAsync(default);
+		// because: the value must be refused before the process starts, not merely quoted on the way in
+		_propsBuilder.DidNotReceive().Build(Arg.Any<string>());
+	}
+
+	[Test]
+	[Description("Passes the package identifier and version to dotnet add as separate argument tokens, leaving "
+		+ "Arguments empty, so the child process cannot re-split a project-controlled value into options")]
+	public void Materializer_PassesTokenizedArguments_ToDotnetAdd(){
+		// Arrange
+		_fileSystem.ReadAllText(CsprojFileName).Returns(MockCsProjWithNugetContent());
+
+		//Act
+		_sut.Materialize(PackageName);
+
+		//Assert
+		_processExecutor.Received(1).ExecuteAndCaptureAsync(Arg.Is<ProcessExecutionOptions>(o =>
+			o.ArgumentList.Count == 5
+			&& o.ArgumentList[0] == "add"
+			&& o.ArgumentList[1] == "package"
+			&& o.ArgumentList[2] == "Nuget1"
+			&& o.ArgumentList[3] == "-v"
+			&& o.ArgumentList[4] == "1.1.1"
+			&& string.IsNullOrEmpty(o.Arguments)));
+		// because: ProcessStartInfo throws when both Arguments and ArgumentList are set, and one interpolated
+		// string is exactly what let a crafted Include become an option
+	}
+
 	#region Methods: Private
+
+	// The command line is passed as tokens, not as one interpolated string, so the assertions describe the
+	// tokens rather than reading Arguments - which is deliberately left empty when ArgumentList is used.
+	private static string DescribeArguments(ProcessExecutionOptions options) =>
+		string.Join(' ', options.ArgumentList ?? Array.Empty<string>());
 
 	private void AssertRan(string arguments, string workingDirectory) =>
 		_processExecutor.Received(1).ExecuteAndCaptureAsync(
 			Arg.Is<ProcessExecutionOptions>(o => o.Program == "dotnet"
-				&& o.Arguments == arguments
+				&& DescribeArguments(o) == arguments
 				&& o.WorkingDirectory == workingDirectory));
 
 	private void AssertDidNotRun(string arguments) =>
 		_processExecutor.DidNotReceive().ExecuteAndCaptureAsync(
-			Arg.Is<ProcessExecutionOptions>(o => o.Arguments == arguments));
+			Arg.Is<ProcessExecutionOptions>(o => DescribeArguments(o) == arguments));
 
 	#endregion
 
