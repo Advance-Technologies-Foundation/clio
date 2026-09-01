@@ -256,6 +256,36 @@ public sealed class ToolContractGetToolTests {
 
 	[Test]
 	[Category("Unit")]
+	[Description("GitHub #1150: the curated update-page contract states that an append dry run projects the merge and returns appendProjection, and declares that field in the output envelope. update-page is non-resident, so this curated entry — not the tool's [Description] attribute — is the whole description an agent reads.")]
+	public void ToolContractGet_Should_State_That_An_Append_DryRun_Projects_The_Merge() {
+		// Arrange
+		ToolContractGetTool tool = new();
+
+		// Act
+		ToolContractGetResponse result = tool.GetToolContracts(new ToolContractGetArgs([PageUpdateTool.ToolName]));
+
+		// Assert
+		result.Success.Should().BeTrue(because: "update-page must resolve to a curated contract");
+		ToolContractDefinition entry = result.Tools!.Single();
+		ToolContractField dryRunField = entry.InputSchema.Properties.Single(field => field.Name == "dry-run");
+		dryRunField.Description.Should().Contain("appendProjection",
+			because: "a dry run that names nothing the write would change is the #1150 report; the contract has to point at the field that does");
+		dryRunField.Description.Should().Contain("not an offline check",
+			because: "an append dry run now costs a schema fetch and can fail, so a caller planning around a free local validation must be told");
+		dryRunField.Description.Should().Contain("fails here too",
+			because: "an append the save would reject must be known to fail the dry run, or the check keeps giving the false reassurance it was added to remove");
+		ToolContractField projectionField =
+			entry.OutputContract.Fields.Single(field => field.Name == "appendProjection");
+		projectionField.Description.Should().Contain("projectedOperationCount",
+			because: "the count the reporter compared against their expected total is what makes the projection actionable");
+		projectionField.Description.Should().Contain("droppedOperations",
+			because: "the one remaining way an append loses an operation must be named, not left to be derived from the counts");
+		projectionField.Description.Should().Contain("NOT a loss",
+			because: "a replaced operation survives with the caller's values; conflating it with a drop would make every ordinary append look lossy");
+	}
+
+	[Test]
+	[Category("Unit")]
 	[Description("Returns the canonical clio MCP full contract set when the request omits tool names and asks for detail=full (legacy back-compat behavior).")]
 	public void ToolContractGet_Should_Return_Canonical_Contracts_When_Request_Is_Empty_And_DetailIsFull() {
 		// Arrange

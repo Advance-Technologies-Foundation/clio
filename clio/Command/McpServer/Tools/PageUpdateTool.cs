@@ -644,7 +644,7 @@ public sealed record PageUpdateArgs(
 	string? Resources,
 
 	[property: JsonPropertyName("dry-run")]
-	[property: Description("If true, validate without saving. Default: false")]
+	[property: Description("If true, validate without saving. Default: false. With mode=append this resolves the current body and runs the real merge, returning `appendProjection` (what the write would change) and applying the body warnings to the merged body rather than to your fragment; an append the save could not merge fails here too.")]
 	bool? DryRun,
 
 	[property: JsonPropertyName("environment-name")]

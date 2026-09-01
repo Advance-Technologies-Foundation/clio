@@ -141,9 +141,32 @@ DESCRIPTION
       remove whose name the body also element-removes, unless an insert
       re-creates the element. Fold the values into the insert, or use set,
       which runs after it. Reordering the array changes nothing. The save
-      still succeeds; --dry-run reports it too.
+      still succeeds; --dry-run reports it too, against the body that would
+      actually be written - so in append mode it also catches a pair formed
+      between your fragment and the server's body.
       Advisory only: a parent schema inserting the same name can make the
       transform apply after all, and clio cannot see the replacing chain.
+
+    APPEND DRY RUN:
+    In append mode --dry-run resolves the current server body, computes the
+    merge and returns without saving, reporting the outcome as appendProjection:
+    currentOperationCount, incomingOperationCount, projectedOperationCount
+    (compare it against the number you expect), addedOperationCount,
+    replacedOperations / replacedOperationCount (replaced in place - not a
+    loss), and droppedOperations / droppedOperationCount (the further-duplicate
+    exception above). A non-zero drop count also raises a warning naming each
+    operation. The named lists are capped; the counts are exact.
+    Two consequences: an append whose real save could not merge now FAILS the
+    dry run with the same error instead of reporting success; and --mode replace
+    is unaffected - it writes verbatim, so there is nothing to project and no
+    extra round-trip is made. The same projection is returned on a real append
+    save.
+    appendProjection speaks for viewConfigDiff only. The sibling *_DIFF arrays
+    append unconditionally and cannot lose an entry. Handlers are NOT covered:
+    they dedupe by request, and the merge drops every current handler whose
+    request appears in your fragment - so a current body carrying one request
+    twice keeps neither and your fragment contributes one. Check handlers by
+    hand when that shape is possible.
     Append requires the diff form: a full-config body (the SCHEMA_VIEW_MODEL_CONFIG
     / SCHEMA_MODEL_CONFIG markers, instead of the *_DIFF markers) cannot be merged
     and is rejected with an actionable hint — use --mode replace for such a body.

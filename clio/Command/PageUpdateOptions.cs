@@ -182,19 +182,26 @@
 				PageUpdateResponse validationError = ValidateInput(options, context.SchemaType, explicitResources);
 				if (validationError != null) { response = validationError; return false; }
 				if (options.DryRun) {
+					// GH-1150: a dry run used to return HERE, before the merge, so in append mode it could not
+					// say what the write would change — and its body checks saw only the incoming fragment, never
+					// the body that would actually be saved. It now resolves the same body the save would write,
+					// through the same code path, and reports the projection.
+					if (!TryProjectDryRun(options, context, out string projectedBody, out string currentBody,
+						out PageAppendProjection projection, out response)) {
+						return false;
+					}
 					response = CreateSuccessResponse(options, dryRun: true, registeredKeys: null);
-					// A dry run is exactly the call that asks "is this body right before I write it?", and the
-					// inert-operation check is a pure function of one body, so it belongs here too. Note the honest
-					// limit: in append mode this sees only the INCOMING fragment, because the merge happens below.
-					// A pair formed by the server's insert plus your merge is therefore reported on the real save,
-					// not here. That is not worth its own warning — it would fire on every append dry run.
+					response.AppendProjection = projection;
 					response.Warnings = CombineWarnings(
 						BuildDryRunWidgetCaptionWarnings(options.Body, context.SchemaType, explicitResources),
-						PageInertOperationDetector.Detect(options.Body));
+						BuildProjectedLossWarnings(projection),
+						PageInsertDowngradeDetector.Detect(currentBody, projectedBody),
+						PageInertOperationDetector.Detect(projectedBody));
 					return true;
 				}
 				if (!TryLoadSchemaForSave(options.SchemaName, context, out JObject schemaToSave, out response)) return false;
-				if (!TryResolveBodyToWrite(schemaToSave, options, out string bodyToWrite, out response)) return false;
+				if (!TryResolveBodyToWrite(schemaToSave, options, out string bodyToWrite,
+					out PageAppendProjection saveProjection, out response)) return false;
 				IReadOnlyList<string> downgradeWarnings = PageInsertDowngradeDetector.Detect(schemaToSave["body"]?.ToString(), bodyToWrite);
 				IReadOnlyList<string> inertWarnings = PageInertOperationDetector.Detect(bodyToWrite);
 				List<string> registeredKeys = UpdateSchemaBody(schemaToSave, bodyToWrite, context.SchemaType, explicitResources, parsedOptionalProperties);
@@ -202,7 +209,11 @@
 				if (captionError != null) { response = captionError; return false; }
 				if (!TrySaveSchema(schemaToSave, out response)) return false;
 				response = CreateSuccessResponse(options, dryRun: false, registeredKeys);
-				response.Warnings = CombineWarnings(downgradeWarnings, inertWarnings);
+				response.AppendProjection = saveProjection;
+				// Same projection on the real save, for the same reason it exists on the dry run: it is the only
+				// place the caller learns a further same-identity entry was dropped rather than re-applied.
+				response.Warnings = CombineWarnings(
+					BuildProjectedLossWarnings(saveProjection), downgradeWarnings, inertWarnings);
 				PopulatePostSaveChecksum(options, context, response);
 				AppendDesignerPresenceWarning(options, response);
 				return true;
@@ -210,6 +221,81 @@
 				response = new PageUpdateResponse { Success = false, Error = ex.Message };
 				return false;
 			}
+		}
+
+		/// <summary>
+		/// Whether the caller asked for the incoming body to be merged with the schema's current body
+		/// rather than written verbatim.
+		/// </summary>
+		private static bool IsAppendMode(PageUpdateOptions options) =>
+			string.Equals(options.Mode, "append", StringComparison.OrdinalIgnoreCase);
+
+		/// <summary>
+		/// Resolves, for a dry run, the body the equivalent real save would write, plus the projection
+		/// describing how the append merge got there.
+		/// </summary>
+		/// <remarks>
+		/// Append is the ONLY mode whose written body differs from the submitted one, so it is the only
+		/// mode that needs the server's body to answer "what will this write do?". A <c>replace</c> dry run
+		/// therefore keeps its previous shape exactly — no extra schema fetch, no new way to fail — which
+		/// matters because <c>sync-pages</c> pins <c>replace</c> and runs at volume.
+		/// <para>
+		/// The fetch and the merge both run through the same helpers the real save uses
+		/// (<see cref="TryLoadSchemaForSave"/>, <see cref="TryResolveBodyToWrite"/>). Both are read-only:
+		/// the schema is loaded and a DTO is built in memory, and nothing is written until
+		/// <c>TrySaveSchema</c>, which a dry run never reaches. Reusing them is the point — a dry run that
+		/// predicted the merge with its own logic could disagree with the save, which is worse than not
+		/// predicting it at all.
+		/// </para>
+		/// A consequence worth stating: an append whose real save would fail to merge now fails the DRY RUN
+		/// too, with the identical error, instead of reporting success and failing later. That is the fix,
+		/// not a regression.
+		/// </remarks>
+		/// <returns><c>true</c> when the projection succeeded; <c>false</c> with a failure response.</returns>
+		private bool TryProjectDryRun(
+				PageUpdateOptions options,
+				EditableSchemaContext context,
+				out string projectedBody,
+				out string currentBody,
+				out PageAppendProjection projection,
+				out PageUpdateResponse response) {
+			projectedBody = options.Body;
+			currentBody = null;
+			projection = null;
+			response = null;
+			if (!IsAppendMode(options)) return true;
+			if (!TryLoadSchemaForSave(options.SchemaName, context, out JObject schemaForProjection, out response)) {
+				return false;
+			}
+			currentBody = schemaForProjection["body"]?.ToString();
+			return TryResolveBodyToWrite(schemaForProjection, options, out projectedBody, out projection, out response);
+		}
+
+		/// <summary>
+		/// Turns the one lossy case an append merge still has into advisory warnings: a further current
+		/// entry of an identity the incoming fragment already superseded, dropped rather than re-applied
+		/// after the replacement.
+		/// </summary>
+		/// <remarks>
+		/// Only the DROPPED set warns. A replacement is not a loss — the operation survives carrying the
+		/// caller's values — and warning on it would fire on most appends and train the reader to skip the
+		/// list that does matter. The counts stay in <c>appendProjection</c> for anyone who wants them.
+		/// </remarks>
+		private static IReadOnlyList<string> BuildProjectedLossWarnings(PageAppendProjection projection) {
+			if (projection is not { DroppedOperationCount: > 0 }) {
+				return null;
+			}
+			IReadOnlyList<string> named = projection.DroppedOperations ?? [];
+			string tail = named.Count < projection.DroppedOperationCount
+				? $"{string.Join(", ", named)} (+{projection.DroppedOperationCount - named.Count} more)"
+				: string.Join(", ", named);
+			return [
+				$"Append drops {projection.DroppedOperationCount} existing viewConfigDiff operation(s) the " +
+				$"incoming fragment supersedes a second time: {tail}. Each is a FURTHER entry whose identity " +
+				"the fragment already replaced, so re-applying it would put stale values back after the " +
+				"replacement. If both entries set keys you need, fold them into one operation in the fragment. " +
+				"See docs://mcp/guides/page-modification."
+			];
 		}
 
 		/// <summary>
@@ -357,14 +443,16 @@
 			return true;
 		}
 
-		private static bool TryResolveBodyToWrite(JObject schemaToSave, PageUpdateOptions options, out string bodyToWrite, out PageUpdateResponse response) {
+		private static bool TryResolveBodyToWrite(JObject schemaToSave, PageUpdateOptions options,
+				out string bodyToWrite, out PageAppendProjection projection, out PageUpdateResponse response) {
 			bodyToWrite = options.Body;
+			projection = null;
 			response = null;
-			if (!string.Equals(options.Mode, "append", StringComparison.OrdinalIgnoreCase)) return true;
+			if (!IsAppendMode(options)) return true;
 			string currentBody = schemaToSave["body"]?.ToString();
 			if (string.IsNullOrWhiteSpace(currentBody)) return true;
 			try {
-				bodyToWrite = PageBodyMerger.Merge(currentBody, options.Body);
+				bodyToWrite = PageBodyMerger.Merge(currentBody, options.Body, out projection);
 				return true;
 			} catch (Exception ex) {
 				// A full-config rejection (identified by its dedicated exception type, not by re-parsing the

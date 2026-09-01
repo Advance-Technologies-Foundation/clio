@@ -252,6 +252,44 @@ public sealed class PageUpdateToolE2ETests : McpContractFixtureBase {
 	}
 
 	[Test]
+	[Description("GitHub #1150: the update-page contract served over the real MCP transport states that an append dry run projects the merge and returns `appendProjection`, and declares that field in the output envelope. update-page is non-resident, so this curated string is the ENTIRE description an agent receives — the tool's [Description] attribute is never merged in.")]
+	[AllureTag(ToolName)]
+	[AllureName("update-page contract states that an append dry run projects the merge")]
+	[AllureDescription("Starts the real clio MCP server, fetches the update-page contract through get-tool-contract, and verifies the served 'dry-run' field states that append mode is not an offline check — it runs the real merge and returns appendProjection — and that the output envelope declares appendProjection with its projected count and dropped-operation fields. Guards against the contract rotting back to the bare 'Validate without saving', the claim the issue reported as useless: a dry run that names nothing the write would change. No environment-name is supplied: contract resolution must not touch an environment.")]
+	public async Task PageUpdateTool_Contract_Should_State_That_An_Append_DryRun_Projects_The_Merge() {
+		// Arrange
+		await using var arrangeContext = Arrange(TimeSpan.FromMinutes(3));
+
+		// Act
+		CallToolResult contractResult = await arrangeContext.Session.CallToolAsync(
+			ToolContractGetTool.ToolName,
+			new Dictionary<string, object?> {
+				["args"] = new Dictionary<string, object?> {
+					["tool-names"] = new[] { ToolName }
+				}
+			},
+			arrangeContext.CancellationTokenSource.Token);
+		ToolContractGetResponse contracts =
+			EntitySchemaStructuredResultParser.Extract<ToolContractGetResponse>(contractResult);
+
+		// Assert
+		contractResult.IsError.Should().NotBeTrue(
+			because: "resolving a tool contract is a structured read, not an MCP transport error");
+		ToolContractDefinition pageUpdate = contracts.Tools!.Single(definition => definition.Name == ToolName);
+		ToolContractField dryRunField = pageUpdate.InputSchema.Properties.Single(field => field.Name == "dry-run");
+		dryRunField.Description.Should().Contain("appendProjection",
+			because: "an agent has to know a dry run answers what the write would change, or it will keep treating success as the whole answer — the #1150 report");
+		dryRunField.Description.Should().Contain("not an offline check",
+			because: "an append dry run now costs a schema fetch and can fail, and a caller planning around a free local validation must be told on the wire");
+		ToolContractField projectionField =
+			pageUpdate.OutputContract.Fields.Single(field => field.Name == "appendProjection");
+		projectionField.Description.Should().Contain("projectedOperationCount",
+			because: "the count the reporter compared against their expected total is the field that makes the projection actionable");
+		projectionField.Description.Should().Contain("droppedOperations",
+			because: "the one remaining way an append loses an operation must be named in the envelope, not left for the caller to derive from the counts");
+	}
+
+	[Test]
 	[Description("update-page fails fast at the AST lint gate when a custom converter uses the reserved `crt.*` prefix — the lint rule `converter-crt-prefix-reserved` is unique to the AST pass (the regex layer treats `crt.*` as a valid vendor prefix), so this body is what proves the lint pass surfaces through the real MCP transport.")]
 	[AllureTag(ToolName)]
 	[AllureName("update-page fails fast on converter-crt-prefix-reserved lint error before any remote call")]
