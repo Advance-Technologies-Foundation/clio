@@ -42,6 +42,15 @@ internal enum CreatioResponseContext {
 }
 
 internal static class CreatioResponseError {
+
+	/// <summary>
+	/// The JSON property name carrying the human-readable error text across every envelope shape this
+	/// class recognizes (the DataService/AuthService envelope, <c>BaseResponse.errorInfo</c>, the
+	/// ASP.NET exception envelope, and the routing-error shape). Centralized so the six call sites stay
+	/// in sync instead of drifting if the casing or the set of aliased names ever changes.
+	/// </summary>
+	private const string MessagePropertyName = "Message";
+
 	/// <summary>
 	/// Hint appended to a detected routing error. A 404 "no controller found" is the shape Creatio
 	/// returns for an OData entity set that is not queryable yet. Its most common cause is the
@@ -218,7 +227,7 @@ internal static class CreatioResponseError {
 			&& codeValue != 0)) {
 			return false;
 		}
-		string detail = First(root, "Exception", "exception", "Message", "message");
+		string detail = First(root, "Exception", "exception", MessagePropertyName, "message");
 		if (string.IsNullOrWhiteSpace(detail)) {
 			return false;
 		}
@@ -246,7 +255,7 @@ internal static class CreatioResponseError {
 		bool hasPopulatedErrorInfo = false;
 		if (TryGetProperty(root, out JsonElement errorInfo, "errorInfo", "ErrorInfo")
 			&& errorInfo.ValueKind == JsonValueKind.Object) {
-			detail = First(errorInfo, "message", "Message", "errorMessage", "ErrorMessage");
+			detail = First(errorInfo, "message", MessagePropertyName, "errorMessage", "ErrorMessage");
 			string? errorCode = First(errorInfo, "errorCode", "ErrorCode", "code", "Code");
 			hasPopulatedErrorInfo = !string.IsNullOrWhiteSpace(detail) || !string.IsNullOrWhiteSpace(errorCode);
 			if (string.IsNullOrWhiteSpace(detail) && !string.IsNullOrWhiteSpace(errorCode)) {
@@ -261,7 +270,7 @@ internal static class CreatioResponseError {
 		if (!explicitFailure && !(hasPopulatedErrorInfo && !explicitSuccess)) {
 			return false;
 		}
-		detail ??= First(root, "errorMessage", "ErrorMessage", "message", "Message");
+		detail ??= First(root, "errorMessage", "ErrorMessage", "message", MessagePropertyName);
 		message = string.IsNullOrWhiteSpace(detail)
 			? "Creatio reported the request as failed without an error message."
 			: $"Creatio reported the request as failed: {detail}";
@@ -307,7 +316,7 @@ internal static class CreatioResponseError {
 			return false;
 		}
 		message = error.TryGetProperty("message", out JsonElement m) && m.ValueKind == JsonValueKind.String
-			? m.GetString()!
+			? m.GetString()
 			: error.GetRawText();
 		return true;
 	}
@@ -330,7 +339,7 @@ internal static class CreatioResponseError {
 		if (!isAspNetError) {
 			return false;
 		}
-		message = First(root, "ExceptionMessage", "Message") ?? "Creatio returned a server error.";
+		message = First(root, "ExceptionMessage", MessagePropertyName) ?? "Creatio returned a server error.";
 		return true;
 	}
 
@@ -348,7 +357,7 @@ internal static class CreatioResponseError {
 	private static bool TryDetectRoutingError(JsonElement root, CreatioResponseContext context,
 		out string message) {
 		message = string.Empty;
-		if (!(root.TryGetProperty("Message", out JsonElement bareMessage)
+		if (!(root.TryGetProperty(MessagePropertyName, out JsonElement bareMessage)
 			&& bareMessage.ValueKind == JsonValueKind.String
 			&& !HasNonRoutingErrorMembers(root))) {
 			return false;
@@ -398,7 +407,7 @@ internal static class CreatioResponseError {
 	/// </summary>
 	private static bool HasNonRoutingErrorMembers(JsonElement root) =>
 		root.EnumerateObject().Any(property =>
-			!property.NameEquals("Message") && !property.NameEquals("MessageDetail"));
+			!property.NameEquals(MessagePropertyName) && !property.NameEquals("MessageDetail"));
 
 	private static string? First(JsonElement root, params string[] names) {
 		foreach (string name in names) {
