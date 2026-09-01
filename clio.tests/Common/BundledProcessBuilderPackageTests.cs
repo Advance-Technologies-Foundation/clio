@@ -133,7 +133,7 @@ public class BundledProcessBuilderPackageTests {
 	/// </para>
 	/// </remarks>
 	private const string ExpectedArchiveSha256 =
-		"18DA458932CD40E6456AB5194FC4A7B7C93C311AE3477F655BC6B638B196C707";
+		"172DED0E22C6845484353464BC154129A6ABB9C88D983B6001EB8DC89895AC39";
 
 	/// <summary>
 	/// The <c>PackageVersion</c> the shipped descriptor carries.
@@ -161,7 +161,7 @@ public class BundledProcessBuilderPackageTests {
 	/// </para>
 	/// </para>
 	/// </remarks>
-	private const string ExpectedArchiveVersion = "1.4.3.0";
+	private const string ExpectedArchiveVersion = "1.4.4.0";
 
 	/// <summary>
 	/// The <c>ModifiedOnUtc</c> the shipped descriptor carries.
@@ -187,7 +187,7 @@ public class BundledProcessBuilderPackageTests {
 	/// command — the previous pin ended in <c>431</c>, which is how the hand edit was eventually noticed.
 	/// </para>
 	/// </remarks>
-	private const string ExpectedDescriptorModifiedOnUtc = "/Date(1788178456000)/";
+	private const string ExpectedDescriptorModifiedOnUtc = "/Date(1788260245000)/";
 
 	/// <summary>
 	/// The <c>ModifiedOnUtc</c> the shipped COMPILE-MARKER SCHEMA descriptor carries.
