@@ -149,10 +149,22 @@ def check_superseded_versions(current):
 
 
 def check_guidance_generation():
-    """The curated-name fixture must BE a regeneration of the library, not a hand edit of one."""
+    """The curated-name fixture must BE a regeneration of the library, not a hand edit of one.
+
+    Reads a SIBLING working directory, so its verdict depends on state outside this repository: the
+    same commit can pass, fail, or silently check nothing depending on what is checked out next door,
+    and "nothing checked" would otherwise print the same clean line as a real pass. That is why it is
+    opt-in, and why a missing sibling is REPORTED rather than skipped. A developer-loop check, not a
+    CI gate.
+    """
     raw = read(FIXTURE)
     bundle_path = os.path.join(KB, "bundle-source.json")
-    if not raw or not os.path.exists(bundle_path):
+    if not raw:
+        return
+    if not os.path.exists(bundle_path):
+        report("CHECK", FIXTURE,
+               "no knowledge library at {} - this check verified NOTHING. Set CLIO_KNOWLEDGE_PATH."
+               .format(KB))
         return
     fixture = json.loads(raw)
     bundle = json.load(io.open(bundle_path, encoding="utf-8"))
@@ -190,13 +202,16 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--strict", action="store_true", help="exit non-zero on BLOCKER/HIGH")
     parser.add_argument("--counted", action="store_true", help="also list counted claims, which need a human")
+    parser.add_argument("--knowledge", action="store_true",
+                        help="also compare the curated-name fixture against the sibling knowledge checkout")
     parser.add_argument("--versions", action="store_true",
                         help="also list versions named in prose below the shipped one (noisy: most are history)")
     args = parser.parse_args()
 
     current = check_archive_pins()
-    check_guidance_generation()
-    # Opt-in, both of them, and deliberately. Run over this repository they produce a dozen findings
+    if args.knowledge:
+        check_guidance_generation()
+    # Opt-in, all three, and deliberately. Run over this repository they produce a dozen findings
     # that are all legitimate - a version named because it is the RequiresPackage floor, a count that
     # is correct. A check with that signal-to-noise ratio is not a gate: it teaches the reader to skip
     # the output, which is the same failure as the stale list this script replaced. The exact
