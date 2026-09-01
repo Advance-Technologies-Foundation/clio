@@ -525,6 +525,62 @@ public class ProcessExecutorIntegrationTests {
 		}
 	}
 
+	[Test]
+	[Description("Verifies a tokenized command line actually launches, since ArgumentList leaves Arguments empty by design.")]
+	public async Task ExecuteAndCaptureAsync_ShouldRunTheProcess_WhenTheCommandLineComesFromArgumentTokens() {
+		// Arrange
+		ILogger logger = Substitute.For<ILogger>();
+		ProcessExecutor sut = new(logger);
+		ProcessExecutionOptions options = new("dotnet", string.Empty) {
+			ArgumentList = new[] {"--version"}
+		};
+
+		// Act
+		ProcessExecutionResult result = await sut.ExecuteAndCaptureAsync(options);
+
+		// Assert
+		result.Started.Should().BeTrue(
+			because: "validation rejected an empty Arguments string even when ArgumentList carried the whole "
+				+ "command line, so every tokenized dotnet call threw before launch");
+		result.ExitCode.Should().Be(0);
+		result.StandardOutput.Should().NotBeNullOrWhiteSpace(
+			because: "dotnet --version prints the SDK version, which proves the tokens reached the child");
+	}
+
+	[Test]
+	[Description("Verifies supplying both a raw argument string and argument tokens is rejected instead of throwing at launch.")]
+	public async Task ExecuteAndCaptureAsync_ShouldReject_WhenBothArgumentsAndArgumentListAreSupplied() {
+		// Arrange
+		ILogger logger = Substitute.For<ILogger>();
+		ProcessExecutor sut = new(logger);
+		ProcessExecutionOptions options = new("dotnet", "--info") {
+			ArgumentList = new[] {"--version"}
+		};
+
+		// Act
+		Func<Task> act = async () => await sut.ExecuteAndCaptureAsync(options);
+
+		// Assert
+		await act.Should().ThrowAsync<ArgumentException>(
+			because: "ProcessStartInfo throws when both are set, so the ambiguity has to be caught up front");
+	}
+
+	[Test]
+	[Description("Verifies supplying neither a raw argument string nor argument tokens is still rejected.")]
+	public async Task ExecuteAndCaptureAsync_ShouldReject_WhenNeitherArgumentsNorArgumentListAreSupplied() {
+		// Arrange
+		ILogger logger = Substitute.For<ILogger>();
+		ProcessExecutor sut = new(logger);
+		ProcessExecutionOptions options = new("dotnet", string.Empty);
+
+		// Act
+		Func<Task> act = async () => await sut.ExecuteAndCaptureAsync(options);
+
+		// Assert
+		await act.Should().ThrowAsync<ArgumentException>(
+			because: "a launch with no command line at all stays a caller error, as it was before tokens existed");
+	}
+
 	private sealed record ProcessIdentity(int ProcessId, long StartUtcTicks, string ExecutablePath);
 
 }
