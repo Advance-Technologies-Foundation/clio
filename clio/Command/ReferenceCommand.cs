@@ -44,20 +44,6 @@ namespace Clio.Command
 		private string CurrentProj =>
 			_fileSystem.DirectoryInfo.New(Environment.CurrentDirectory).GetFiles("*.csproj").FirstOrDefault()?.FullName;
 
-		/// <summary>
-		/// Reference style a given --ReferenceType asks for, used to tell a project that is
-		/// already in that style from one whose style was not recognized.
-		/// </summary>
-		private static RefType RequestedRefType(string referenceType) =>
-			referenceType switch {
-				"bin" => RefType.Bin,
-				"src" => RefType.CoreSrc,
-				"unit-bin" => RefType.UnitTest,
-				"unit-src" => RefType.UnitTest,
-				"custom" => RefType.Custom,
-				_ => RefType.Undef
-			};
-
 		public override int Execute(ReferenceOptions options) {
 			options.Path = options.Path ?? CurrentProj;
 			if (string.IsNullOrEmpty(options.Path)) {
@@ -96,29 +82,34 @@ namespace Clio.Command
 						throw new NotSupportedException($"You use not supported option type {options.ReferenceType}");
 				}
 				if (project.ChangedReferencesCount == 0) {
-					if (initialRefType == RequestedRefType(options.ReferenceType)) {
-						if (!project.HasPendingChanges) {
-							//Already in the requested style: running the command twice is not a failure
-							_logger.WriteLine($"{options.Path} already references {options.ReferenceType}, "
-								+ "nothing to change");
-							return 0;
-						}
-						//The hints already point at the requested location, but something else was
-						//rewritten - a strong-name suffix stripped from a Reference Include, or the
-						//packages.config entry removed. Returning here would compute those in memory and
-						//throw them away, which is what the reference-count gate used to do.
-						project.SaveChanges();
-						_logger.WriteLine($"{options.Path} already references {options.ReferenceType}; "
-							+ "normalized the remaining reference metadata");
-						_logger.WriteLine("Done");
+					if (initialRefType == RefType.Undef) {
+						//Nothing was rewritten AND the style was never recognized. Saving here would strip
+						//packages.config for RefToBin and RefToCoreSrc and leave references pointing at
+						//assemblies nothing restores any more.
+						//Diagnosed from the recognition signal itself, not from the change count: a
+						//recognized project can legitimately need no write - `custom` never yields
+						//RefType.Custom from detection, and unit-bin/unit-src match nothing on a non-UnitTest
+						//project - and reporting those as unrecognized contradicts what ref-to.md promises
+						//about exit 1.
+						_logger.WriteError($"Could not recognize the reference style of {options.Path}. "
+							+ "No reference was changed and the project was left unchanged.");
+						return 1;
+					}
+					if (!project.HasPendingChanges) {
+						//Recognized and no reference needed rewriting: running the command twice, or on a
+						//project no rule of this reference type matches, is not a failure.
+						_logger.WriteLine($"{options.Path} already references {options.ReferenceType}, "
+							+ "nothing to change");
 						return 0;
 					}
-					//Nothing was rewritten: the project's reference style was not recognized.
-					//Saving here would strip packages.config for RefToBin and RefToCoreSrc and
-					//leave references pointing at assemblies nothing restores any more.
-					_logger.WriteError($"Could not recognize the reference style of {options.Path}. "
-						+ "No reference was changed and the project was left unchanged.");
-					return 1;
+					//No HintPath moved, but something else was rewritten - a strong-name suffix stripped
+					//from a Reference Include. Returning here would compute it in memory and throw it away,
+					//which is what the reference-count gate used to do.
+					project.SaveChanges();
+					_logger.WriteLine($"{options.Path} already references {options.ReferenceType}; "
+						+ "normalized the remaining reference metadata");
+					_logger.WriteLine("Done");
+					return 0;
 				}
 				project.SaveChanges();
 				_logger.WriteLine($"Changed {project.ChangedReferencesCount} references");
