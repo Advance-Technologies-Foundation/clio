@@ -153,7 +153,7 @@ public class BundledProcessBuilderPackageTests {
 	/// </para>
 	/// </remarks>
 	private const string ExpectedArchiveSha256 =
-		"5E01082F7DC8EEEB67F90F4F6B7B89CBBCCB9D78FB4D2C49A3C89B11CAEF5F25";
+		"41CFEB54DA2238914BFCF07F5A0E5466EA5861BEEB799E4DA72815A9AEEF34FB";
 
 	/// <summary>
 	/// The <c>PackageVersion</c> the shipped descriptor carries.
@@ -181,7 +181,7 @@ public class BundledProcessBuilderPackageTests {
 	/// </para>
 	/// </para>
 	/// </remarks>
-	private const string ExpectedArchiveVersion = "1.4.0.23";
+	private const string ExpectedArchiveVersion = "1.4.0.24";
 
 	/// <summary>
 	/// The commit of the PRODUCING repository the archive was cut from, written by
@@ -193,7 +193,7 @@ public class BundledProcessBuilderPackageTests {
 	/// corresponding to no commit" is unreachable rather than merely documented. Anyone with a checkout can
 	/// verify the rest with one `git checkout`.</para>
 	/// </summary>
-	private const string ExpectedProducingCommit = "6d0f4420ddecf22abd6b78e85c3e3ca67ea1352c";
+	private const string ExpectedProducingCommit = "04dcf895789c89d131ff4b55a2e098debc927080";
 
 	/// <summary>
 	/// The <c>ModifiedOnUtc</c> the shipped descriptor carries.
@@ -219,7 +219,7 @@ public class BundledProcessBuilderPackageTests {
 	/// command — the previous pin ended in <c>431</c>, which is how the hand edit was eventually noticed.
 	/// </para>
 	/// </remarks>
-	private const string ExpectedDescriptorModifiedOnUtc = "/Date(1788274714000)/";
+	private const string ExpectedDescriptorModifiedOnUtc = "/Date(1788276435000)/";
 
 	/// <summary>
 	/// The <c>ModifiedOnUtc</c> the shipped COMPILE-MARKER SCHEMA descriptor carries.
