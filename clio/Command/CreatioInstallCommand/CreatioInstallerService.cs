@@ -1440,6 +1440,14 @@ public class CreatioInstallerService : Command<PfInstallerOptions>, ICreatioInst
 			if (options.SitePort is > 0 and <= 65535) {
 				// Port already set, skip prompting
 			}
+			else if (options.IsSilent) {
+				const int defaultDotNetPort = 8080;
+				if (!IsPortAvailable(defaultDotNetPort)) {
+					throw new InvalidOperationException(
+						$"Default DotNet deployment port {defaultDotNetPort} is not available. Specify --site-port explicitly.");
+				}
+				options.ApplyConfiguredSitePort(defaultDotNetPort);
+			}
 			else {
 				bool portSelected = false;
 

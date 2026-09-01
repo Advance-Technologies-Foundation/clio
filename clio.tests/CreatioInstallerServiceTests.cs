@@ -3,6 +3,8 @@ using System.Collections.Generic;
 using System.IO;
 using System.IO.Abstractions.TestingHelpers;
 using System.Linq;
+using System.Net;
+using System.Net.Sockets;
 using Clio.Command.CreatioInstallCommand;
 using Clio.Common;
 using Clio.Common.IIS;
@@ -568,6 +570,43 @@ internal class CreatioInstallerServiceTests : BaseClioModuleTests{
 		act.Should().Throw<InvalidOperationException>().WithMessage("*requires --site-port*site-port-range*",
 			because: "silent and MCP invocations cannot answer an interactive port prompt");
 		_deploymentTargetReservation.DidNotReceive().Acquire(Arg.Any<string>());
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Silent DotNet deployment never reads console input when its default port is occupied.")]
+	public void Execute_ShouldFailFast_WhenSilentDotNetDefaultPortIsOccupied() {
+		// Arrange
+		TcpListener? listener = null;
+		try {
+			listener = new TcpListener(IPAddress.Any, 8080);
+			listener.Start();
+		}
+		catch (SocketException exception) when (exception.SocketErrorCode == SocketError.AddressAlreadyInUse) {
+			listener?.Stop();
+			listener = null;
+		}
+		PfInstallerOptions options = new() {
+			SiteName = "silent-dotnet-port-probe",
+			ZipFile = Path.Combine(_localArtifactServerPath, "8.1.1",
+				"8.1.1.1417_Studio_Softkey_PostgreSQL_ENU.zip"),
+			DeploymentMethod = "dotnet",
+			AutoRun = false,
+			IsSilent = true
+		};
+
+		try {
+			// Act
+			Action act = () => _creatioInstallerService.Execute(options);
+
+			// Assert
+			act.Should().Throw<InvalidOperationException>().WithMessage("*8080*not available*--site-port*",
+				because: "silent and MCP invocations must fail instead of consuming console or JSON-RPC input");
+			_deploymentTargetReservation.DidNotReceive().Acquire(Arg.Any<string>());
+		}
+		finally {
+			listener?.Stop();
+		}
 	}
 
 	[Test]
