@@ -32,9 +32,17 @@ using Newtonsoft.Json.Linq;
 /// base does not.
 /// </para>
 /// Operation verbs are compared <see cref="StringComparer.Ordinal"/> and are never case-folded. This is
-/// load-bearing, not an oversight: the differ switches on the raw verb with no <c>default</c> branch, so
-/// a mis-cased <c>"Merge"</c> lands in no group and is discarded whole. Treating it as a live
+/// load-bearing, not an oversight: the differ switches on the raw verb and its <c>default</c> arm is
+/// empty, so a mis-cased <c>"Merge"</c> lands in no group and is discarded whole. Treating it as a live
 /// <c>merge</c> here would report a pair that does not exist.
+/// <para>
+/// Validated against the platform differ's own source
+/// (<c>Terrasoft.WebApp/Resources/ui/Terrasoft/utils/common/json-applier.js</c>): the group order, the
+/// verb switch, the <c>remove</c> split, <c>filterMoveOperation</c>, <c>set</c> and <c>merge</c> all
+/// match this clone. Note the platform <c>console.log</c>s "Element X was not moved." when a move
+/// fails to resolve — so a browser console shows something for that one path, while the caller, the
+/// CLI and the MCP result see nothing. Everything else drops with no diagnostic at all.
+/// </para>
 /// <para>
 /// The detector needs no knowledge of which mode produced the body — it inspects the resolved final
 /// body, so it covers <c>replace</c> and <c>append</c> identically, and applies to <c>sync-pages</c>
@@ -61,8 +69,8 @@ internal static class PageInertOperationDetector {
 
 	/// <summary>
 	/// The group a verb lands in, transcribed from <c>JsonDiffApplier.GetSplittedOperations</c>.
-	/// <see cref="Dropped"/> is that switch's MISSING <c>default</c> branch: an unknown or mis-cased verb
-	/// matches no case, lands in no group, and is discarded whole with no exception.
+	/// <see cref="Dropped"/> stands for the switch's EMPTY <c>default</c> arm: an unknown or mis-cased
+	/// verb matches no case, lands in no group, and is discarded whole with no exception.
 	/// </summary>
 	private enum ApplyGroup {
 
