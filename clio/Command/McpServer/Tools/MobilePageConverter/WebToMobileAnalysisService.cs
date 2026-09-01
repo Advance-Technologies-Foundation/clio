@@ -113,8 +113,7 @@ public static class WebToMobileAnalysisService {
 		IReadOnlyDictionary<string, JsonObject> mobileTemplateLayoutConfigs = null,
 		IReadOnlyDictionary<string, JObject> webTemplateBaselineNodes = null,
 		bool webTemplateUnavailable = false,
-		JObject webTemplateResources = null,
-		IReadOnlyDictionary<string, string> containerChildrenTargets = null) {
+		JObject webTemplateResources = null) {
 		ArgumentNullException.ThrowIfNull(bundle);
 		ArgumentNullException.ThrowIfNull(mobileTypes);
 		ArgumentNullException.ThrowIfNull(webTypes);
@@ -122,8 +121,6 @@ public static class WebToMobileAnalysisService {
 
 		IReadOnlyDictionary<string, string> map =
 			containerNameMap ?? new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
-		IReadOnlyDictionary<string, string> childrenTargets =
-			containerChildrenTargets ?? new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
 		IReadOnlyDictionary<string, ComponentMappingRule> componentMap =
 			componentNameMap ?? new Dictionary<string, ComponentMappingRule>(StringComparer.OrdinalIgnoreCase);
 		IReadOnlyDictionary<string, string> mobileTypesByName =
@@ -202,7 +199,7 @@ public static class WebToMobileAnalysisService {
 			tree, map, componentMap, mobileTypes, mobileByType, webByType, rules, attrToColumn, resources,
 			requestMap, convertedRequests, droppedRequests, flaggedRequests, sourceLayouts, gridContainerColumns,
 			positionalParentByAnchor, positionalAnchorByWebAnchor,
-			mobileTypesByName, webBaselineNodes, webTemplateResources, childrenTargets);
+			mobileTypesByName, webBaselineNodes, webTemplateResources);
 
 		// Removes components an excludedComponents rule bans from a host (type-agnostic — which
 		// type/host/property is banned comes entirely from the rules), in the two shapes a banned component
@@ -1951,7 +1948,6 @@ public static class WebToMobileAnalysisService {
 		IReadOnlyDictionary<string, JObject> WebBaselineNodes,
 		JObject WebBaselineResources,
 		IReadOnlySet<string> ScopeContainerNames,
-		IReadOnlyDictionary<string, string> ChildrenTargets,
 		IReadOnlySet<string> ContentContainerTypes);
 
 	/// <summary>
@@ -1993,8 +1989,7 @@ public static class WebToMobileAnalysisService {
 		IReadOnlyDictionary<string, string> positionalAnchorByWebAnchor,
 		IReadOnlyDictionary<string, string> mobileTypesByName,
 		IReadOnlyDictionary<string, JObject> webBaselineNodes,
-		JObject webBaselineResources,
-		IReadOnlyDictionary<string, string> childrenTargets) {
+		JObject webBaselineResources) {
 		var ctx = new ElementMapContext(map,
 			componentMap ?? new Dictionary<string, ComponentMappingRule>(StringComparer.OrdinalIgnoreCase),
 			mobileTypes, mobileByType ?? new Dictionary<string, ComponentRegistryEntry>(),
@@ -2007,7 +2002,6 @@ public static class WebToMobileAnalysisService {
 			webBaselineNodes ?? new Dictionary<string, JObject>(StringComparer.OrdinalIgnoreCase),
 			webBaselineResources,
 			CollectScopeContainerNames(rules),
-			childrenTargets ?? new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase),
 			ContentContainerTypesOf(rules));
 		WalkElements(ctx, tree, mobileParentName: null);
 		return ctx.Out;
@@ -2163,39 +2157,19 @@ public static class WebToMobileAnalysisService {
 				// A rules file published to the CDN that LOSES a containers entry no longer reproduces ENG-94951:
 				// the walk carries the nearest ancestor that can hold arbitrary children beside the ordinary parent,
 				// so a child of a receiver that cannot is re-homed rather than made invisible. That default needs no
-				// rules entry at all; childrenTo below is the explicit answer for the case the rules DO know.
-				// A containers entry answers identity with `mobile` and placement with `childrenTo`, and they are
-				// not always the same element. The general tab IS the mobile GeneralInfoTab (so the survivor map
-				// and the caption are right) while its children belong in GeneralTabContainer -- the same place a
-				// page that KEPT the template's own content grid puts them. Without this, two web pages that
-				// render identically produce different mobile trees. Absent childrenTo keeps the ordinary case:
-				// children go into the twin itself.
-				string twinChildParent = twinMobileName;
-				if (ctx.ChildrenTargets.TryGetValue(name, out string childTarget)
-					&& !string.IsNullOrWhiteSpace(childTarget)) {
-					// The rules are fetched at RUNTIME, so a typo in a published childrenTo would park every child
-					// of this tab under a name the mobile template does not have -- the same silent loss this pass
-					// exists to prevent, and one no report catches (an unknown receiver has
-					// no resolvable type, so it is deliberately left alone). Fall back to the twin, which is always
-					// a real element, and say so. Mirrors what the retarget path already does with
-					// RetargetTargetMissing rather than inventing a second policy for the same hazard.
-					if (RetargetTargetMissing(ctx, childTarget)) {
-						// The diagnostic goes ON THE MERGE ENTRY, not into a second entry of its own. The guide's
-						// nextSteps promises "one entry per source element" and says a drop means "skip it", so a
-						// merge and a drop sharing one WebName would ask the reader for two contradictory actions --
-						// and the drop would also be false: the twin IS merged, and its children went to the fallback
-						// receiver rather than being lost. Reason is mutable and already carries appended placement
-						// notes, so the diagnostic reaches the reader on the entry it is actually about.
-						twinEntry.Reason += "; its containers entry sends this element's children into "
-							+ $"'{childTarget}', which is not present on the mobile template — they were placed in "
-							+ $"'{twinMobileName}' instead. Fix the rules file or the target template.";
-					} else {
-						twinChildParent = childTarget;
-					}
-				}
+				// rules entry at all.
+				// Children go into the twin ITSELF, and a containers entry deliberately says nothing more than
+				// that. A web element the page did not remove is walked into its own entry, so a page that KEPT
+				// the template's content grid resolves its children through that grid's own pair
+				// (GeneralInfoTabContainer -> GeneralTabContainer); a page that REMOVED it has no such node, that
+				// pair never matches, and the children belong where the page put them — in the tab itself, which
+				// is a crt.TabContainer and hosts items. The two shapes DIFFER on web (the removed grid was a
+				// two-column layout with its own gap), so carrying the difference is the faithful conversion;
+				// redirecting the tab's children into a grid the page deleted would override a layout decision
+				// the developer made deliberately.
 				if (items is not null) {
-					WalkElements(ctx, items, twinChildParent, sourceAncestors: Append(sourceAncestors, name),
-						hostableParentName: NearestHostable(ctx, twinChildParent, hostableParentName));
+					WalkElements(ctx, items, twinMobileName, sourceAncestors: Append(sourceAncestors, name),
+						hostableParentName: NearestHostable(ctx, twinMobileName, hostableParentName));
 				}
 				continue;
 			}
@@ -4154,9 +4128,9 @@ public static class WebToMobileAnalysisService {
 	/// is lost — the nearest ancestor that can is used instead, and the move is explained in the entry's reason.
 	/// </summary>
 	/// <remarks>
-	/// This is the DEFAULT, for every container nobody mapped, in any template family; a <c>containers</c>
-	/// entry's <c>childrenTo</c> is the EXPLICIT answer where the rules know the exact receiver. They compose:
-	/// the explicit answer is already applied by the time the walk gets here.
+	/// This is the DEFAULT and the only rule: it applies to every container nobody mapped, in any template
+	/// family. A <c>containers</c> entry says which mobile element a web one IS; it never redirects that
+	/// element's children elsewhere, so the two answers can never disagree.
 	/// <para>
 	/// Three things are deliberately out of scope. A NAMED slot (<c>menuItems</c>, <c>tools</c>) does not
 	/// bubble: its child is hosted by the slot, not by the element's generic content. A POSITIONAL sibling has
