@@ -121,22 +121,40 @@ internal static class CreatioResponseError {
 	/// body used to fall through the JSON branch and be saved as a successful result.
 	/// </summary>
 	public static bool IsMarkup(string body) {
-		string stripped = StripMarkupPreamble(body);
+		ReadOnlySpan<char> stripped = TrimMarkupPreamble(body);
 		return stripped.StartsWith("<!doctype", StringComparison.OrdinalIgnoreCase)
 			|| stripped.StartsWith("<html", StringComparison.OrdinalIgnoreCase)
 			|| stripped.StartsWith("<title", StringComparison.OrdinalIgnoreCase)
 			|| stripped.StartsWith("<body", StringComparison.OrdinalIgnoreCase);
 	}
 
+	// A byte-order mark and a zero-width space, which a proxy can prepend to an error page.
+	private static readonly char[] ZeroWidthPreambleChars = ['﻿', '​'];
+
 	/// <summary>
 	/// Removes a byte-order mark, leading whitespace and any XML declaration or processing
 	/// instruction, so the first real tag is at the start of the returned span.
 	/// </summary>
 	public static string StripMarkupPreamble(string body) {
+		ReadOnlySpan<char> stripped = TrimMarkupPreamble(body);
+		return stripped.IsEmpty ? string.Empty : new string(stripped);
+	}
+
+	/// <summary>
+	/// The same preamble skip as <see cref="StripMarkupPreamble"/>, over the original characters.
+	/// </summary>
+	/// <remarks>
+	/// Slicing a span moves an offset; slicing a string copies the remainder. The string form copied the
+	/// whole rest of the body once per processing instruction, so a 25,027-character answer carrying 5,000
+	/// <c>&lt;?...?&gt;</c> prefixes allocated about 125 MB - and call-service normalizes the same body again
+	/// for the markup checks, so a small crafted response cost quadratic time and allocation before it was
+	/// even classified. Callers that only test the stripped text use this and allocate nothing.
+	/// </remarks>
+	internal static ReadOnlySpan<char> TrimMarkupPreamble(string body) {
 		if (string.IsNullOrEmpty(body)) {
-			return string.Empty;
+			return ReadOnlySpan<char>.Empty;
 		}
-		string stripped = body.TrimStart('﻿', '​').TrimStart();
+		ReadOnlySpan<char> stripped = body.AsSpan().TrimStart(ZeroWidthPreambleChars).TrimStart();
 		while (stripped.StartsWith("<?", StringComparison.Ordinal)) {
 			int end = stripped.IndexOf("?>", StringComparison.Ordinal);
 			if (end < 0) {
@@ -153,7 +171,7 @@ internal static class CreatioResponseError {
 	/// and carries no HTTP status line, so a status-code match alone misses it.
 	/// </summary>
 	public static bool IsKnownErrorPage(string body) {
-		string stripped = StripMarkupPreamble(body);
+		ReadOnlySpan<char> stripped = TrimMarkupPreamble(body);
 		return stripped.Contains("Request Error", StringComparison.OrdinalIgnoreCase)
 			|| stripped.Contains("Service Unavailable", StringComparison.OrdinalIgnoreCase);
 	}
