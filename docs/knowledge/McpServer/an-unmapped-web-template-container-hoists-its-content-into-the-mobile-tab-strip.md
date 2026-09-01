@@ -57,17 +57,6 @@ legally host which child; only the rules know a web container's mobile counterpa
 correct default (it is what keeps page content alive when an inherited wrapper disappears), so the tab
 case cannot be fixed inside the prune pass.
 
-`IsTabToContentContainerTwin` keys on the twin's SHAPE (a `merge` whose web type is
-`crt.TabContainer` and whose mobile name differs), not on the general tab's name, so it covers
-`FeedTabContainer` → `FeedContainer` and `AttachmentsTabContainer` → `AttachmentsContainer` too.
-That is intentional and it is a behaviour CHANGE beyond ENG-94951's own symptom: before the ticket a
-page rule targeting the web Feed tab was retargeted onto the mobile Feed tab's body; now it is
-reported in `droppedRules`. The identity argument is identical for all three, and a name-keyed
-exclusion would have left two silent wrong conversions behind. Pinned by
-`ConvertPageBusinessRules_FeedTabToContentContainerTwin_DropsRuleForTheSameReason`, with the two
-over-correction guards beside it (a same-name tab twin, and a renaming NON-tab twin, both still
-convert).
-
 **A container twin must be PLACED beside the content re-homed next to it.** A mobile
 `crt.GridContainer` positions children by `layoutConfig` alone (see
 `grid-containers-position-by-layoutconfig-not-item-order.md`), so once this fix puts page content into

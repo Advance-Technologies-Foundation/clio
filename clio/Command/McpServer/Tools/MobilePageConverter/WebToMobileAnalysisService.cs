@@ -301,8 +301,8 @@ public static class WebToMobileAnalysisService {
 		// Elements the map would drop into a tab strip without being tabs. Computed AFTER every elementMap
 		// mutating pass and surfaced BOTH as a typed guide field (the thing to assert on) and as the sentence
 		// rendered from it in constraints.
-		List<TabStripPlacementLoss> tabStripPlacementLosses =
-			CollectNonTabChildrenOfTabPanels(elementMap, mobileTypesByName, rules);
+		List<PlacementLoss> placementLosses =
+			CollectUnhostablePlacements(elementMap, mobileTypesByName, rules);
 
 		// 6. Data sections applied to the mobile body verbatim/filtered (identical structural support on
 		//    mobile): modelConfig is carried over as-is (preserving attribute types like ForwardReference);
@@ -386,7 +386,7 @@ public static class WebToMobileAnalysisService {
 				: null,
 			Normalizations = BuildNormalizations(componentPropertyOverrides),
 			ResourceStrings = resourceStrings.Count > 0 ? resourceStrings : null,
-			TabStripPlacementLosses = tabStripPlacementLosses.Count > 0 ? tabStripPlacementLosses : null,
+			PlacementLosses = placementLosses.Count > 0 ? placementLosses : null,
 			// Named arguments deliberately: the tail is a run of defaulted bools, so a positional call silently
 			// mis-wires the moment a parameter is inserted rather than appended.
 			Constraints = BuildConstraints(webOnly,
@@ -412,7 +412,7 @@ public static class WebToMobileAnalysisService {
 					.Select(e => e.ParentName)
 					.Distinct(StringComparer.OrdinalIgnoreCase)
 					.ToList(),
-				nonTabChildrenOfTabPanels: tabStripPlacementLosses),
+				placementLosses: placementLosses),
 			NextSteps = BuildNextSteps(
 				hasDataSections: modelConfig is not null || viewModelConfig is not null,
 				hasAdaptiveLayout: adaptiveLayout.Count > 0,
@@ -1736,7 +1736,7 @@ public static class WebToMobileAnalysisService {
 		bool exclusionSearchTruncated = false, int discardedExclusionFilters = 0,
 		int skippedOverrideRules = 0, bool hasExcludedComponents = false,
 		IReadOnlyList<string> retargetParentsOnTemplate = null,
-		IReadOnlyList<TabStripPlacementLoss> nonTabChildrenOfTabPanels = null) {
+		IReadOnlyList<PlacementLoss> placementLosses = null) {
 		var constraints = new List<string> {
 			"Mobile body is plain JSON with only viewConfigDiff / viewModelConfigDiff / modelConfigDiff — no AMD, no markers, no define() wrapper.",
 			"The mobile template provides the Scaffold root — do NOT add a second Scaffold.",
@@ -1845,16 +1845,16 @@ public static class WebToMobileAnalysisService {
 				"add an Area of your own. The synthesized containers have no web counterpart, so they carry no " +
 				"webName; tabs provided by the mobile template (merge) get no layers and must stay untouched.");
 		}
-		if (nonTabChildrenOfTabPanels is { Count: > 0 }) {
-			// Silent failure by construction: the mobile designer renders a tab strip's non-tab child as nothing,
-			// so without this line a lost subtree is indistinguishable from a page that never had it.
+		if (placementLosses is { Count: > 0 }) {
+			// Silent failure by construction: the mobile designer renders nothing for a child its parent cannot
+			// host, so without this line a lost subtree is indistinguishable from a page that never had it.
 			constraints.Add(
-				"CONVERSION IS INCOMPLETE. elementMap places element(s) directly in a mobile tab strip "
-				+ "(crt.TabPanel) that are NOT tabs: "
-				+ string.Join(", ", nonTabChildrenOfTabPanels.Select(
+				"CONVERSION IS INCOMPLETE. elementMap places element(s) in a parent that cannot host them "
+				+ "(a crt.TabPanel shows only its tabs; it is the commonest case, not the only one): "
+				+ string.Join(", ", placementLosses.Select(
 					l => $"{l.Name} ({(string.IsNullOrEmpty(l.MobileType) ? "no mobile type" : l.MobileType)}) -> {l.ParentName}"))
-				+ ". A crt.TabPanel renders only crt.TabContainer children, so each of these — and everything "
-				+ "nested inside it — would be INVISIBLE in Mobile Designer. The cause is a MISSING containers "
+				+ ". Each of these — and everything nested inside it — would be INVISIBLE in Mobile Designer. "
+				+ "The cause is a MISSING containers "
 				+ "entry in the web→mobile conversion rules for the web container these elements came from "
 				+ "(e.g. GeneralInfoTab → GeneralTabContainer), so the converter could not resolve where they "
 				+ "belong. REPORT this to the user and stop; do NOT guess a parent for them. Element placement in "
@@ -4593,7 +4593,7 @@ public static class WebToMobileAnalysisService {
 	/// <c>tabAreaLayers.tabComponentType</c> switches its own pass off.
 	/// </para>
 	/// </summary>
-	private static List<TabStripPlacementLoss> CollectNonTabChildrenOfTabPanels(
+	private static List<PlacementLoss> CollectUnhostablePlacements(
 		IReadOnlyList<ElementMapEntry> elementMap,
 		IReadOnlyDictionary<string, string> mobileTypesByName,
 		WebToMobilePageConversionRules rules) {
@@ -4637,7 +4637,7 @@ public static class WebToMobileAnalysisService {
 				&& (e.PropertyName is null or "" || string.Equals(e.PropertyName, ItemsPropertyName, StringComparison.OrdinalIgnoreCase))
 				&& !(tabType is { Length: > 0 } && string.Equals(e.MobileType, tabType, StringComparison.OrdinalIgnoreCase))
 				&& CannotHostChildren(e.ParentName))
-			.Select(e => new TabStripPlacementLoss {
+			.Select(e => new PlacementLoss {
 				Name = string.IsNullOrEmpty(e.MobileName) ? e.WebName : e.MobileName,
 				MobileType = e.MobileType,
 				ParentName = e.ParentName

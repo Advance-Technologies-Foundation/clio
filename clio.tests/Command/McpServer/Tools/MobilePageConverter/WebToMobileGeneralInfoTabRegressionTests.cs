@@ -52,7 +52,7 @@ public sealed class WebToMobileGeneralInfoTabRegressionTests {
 	private const string MobileTabsPanel = "Tabs";
 
 	/// <summary>Substring identifying the tab-strip loss report among the guide's constraints.</summary>
-	private const string TabStripLossReport = "INVISIBLE in Mobile Designer";
+	private const string PlacementLossReport = "INVISIBLE in Mobile Designer";
 
 	/// <summary>Page-authored content the web page places directly inside the template-owned general tab.</summary>
 	private static readonly string[] GeneralTabContent = [
@@ -202,10 +202,10 @@ public sealed class WebToMobileGeneralInfoTabRegressionTests {
 		MobilePageConversionGuide guide = Convert(fixture);
 
 		// Assert
-		guide.TabStripPlacementLosses.Should().BeNull(
+		guide.PlacementLosses.Should().BeNull(
 			because: "the shipped rules place the general tab's content correctly, so reporting a lost subtree "
 				+ "would be guidance the model acts on — corrupting a conversion that was already right");
-		guide.Constraints.Should().NotContain(c => c.Contains(TabStripLossReport),
+		guide.Constraints.Should().NotContain(c => c.Contains(PlacementLossReport),
 			because: "the rendered sentence must follow the typed field, never outlive it");
 	}
 
@@ -219,17 +219,17 @@ public sealed class WebToMobileGeneralInfoTabRegressionTests {
 		MobilePageConversionGuide guide = Convert(fixture, RulesWithoutTheGeneralTabEntry());
 
 		// Assert
-		guide.TabStripPlacementLosses.Should().ContainSingle(l => l.Name == "ServiceTeamMemberExpansionPanel"
+		guide.PlacementLosses.Should().ContainSingle(l => l.Name == "ServiceTeamMemberExpansionPanel"
 				&& l.MobileType == "crt.ExpansionPanel" && l.ParentName == MobileTabsPanel,
 			because: "the loss is reported as data the caller can act on, not only as prose it must parse");
-		string report = guide.Constraints.Should().ContainSingle(c => c.Contains(TabStripLossReport),
+		string report = guide.Constraints.Should().ContainSingle(c => c.Contains(PlacementLossReport),
 			because: "a subtree the mobile designer renders as nothing must be named in the report; without this "
 				+ "line a lost general-information tab is indistinguishable from a page that never had one")
 			.Subject;
 		report.Should().Contain("ServiceTeamMemberExpansionPanel",
 			because: "the report names the elements that are lost, so the defect is actionable without a debugger");
 		JsonSerializer.Deserialize<MobilePageConversionGuide>(JsonSerializer.Serialize(guide))!
-			.Constraints.Should().Contain(c => c.Contains(TabStripLossReport),
+			.Constraints.Should().Contain(c => c.Contains(PlacementLossReport),
 				because: "the constraint reaches the model over the wire, so it must survive serialization intact "
 					+ "rather than only existing as an in-memory string");
 	}
@@ -249,7 +249,7 @@ public sealed class WebToMobileGeneralInfoTabRegressionTests {
 		guide.ElementMap.Should().Contain(
 			e => e.Operation == "insert" && string.Equals(e.ParentName, MobileTabsPanel, StringComparison.OrdinalIgnoreCase),
 			because: "the precondition of this test is that the loss still occurs without the mobile template");
-		guide.TabStripPlacementLosses.Should().NotBeNullOrEmpty(
+		guide.PlacementLosses.Should().NotBeNullOrEmpty(
 			because: "the mobile-template probe is best-effort; a report that disappears together with it is no "
 				+ "guard at all, and this is the compound failure the guard exists for");
 	}
@@ -283,7 +283,7 @@ public sealed class WebToMobileGeneralInfoTabRegressionTests {
 			containerNameMap: new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase));
 
 		// Assert
-		guide.TabStripPlacementLosses.Should().ContainSingle(l => l.Name == "UsrStrayPanel",
+		guide.PlacementLosses.Should().ContainSingle(l => l.Name == "UsrStrayPanel",
 			because: "the invariant is a property of crt.TabPanel itself, not of the tabbed template — a strip "
 				+ "the page authored rejects a non-tab child exactly the same way");
 		NonTabChildrenOfTabStrips(guide).Should().ContainSingle(e => e.WebName == "UsrStrayPanel",
@@ -365,7 +365,7 @@ public sealed class WebToMobileGeneralInfoTabRegressionTests {
 			fixture, rules, mobileTypes: MobileTypesWith("usr.RenamedStrip", "usr.RenamedTab"));
 
 		// Assert
-		guide.TabStripPlacementLosses.Should().NotBeNullOrEmpty(
+		guide.PlacementLosses.Should().NotBeNullOrEmpty(
 			because: "the arrangement must still reproduce the loss after the rename, or the assertions below "
 				+ "would be judging an empty list");
 		// The proof. CaseHistoryTab is a converted tab of the RENAMED tab type sitting in the renamed strip; it
@@ -374,9 +374,36 @@ public sealed class WebToMobileGeneralInfoTabRegressionTests {
 		// because its type IS tabAreaLayers.tabComponentType. Constants would get both wrong.
 		guide.ElementMap.Should().Contain(e => e.WebName == "CaseHistoryTab" && e.MobileType == "usr.RenamedTab",
 			because: "the proof is vacuous unless a renamed tab actually reached the renamed strip");
-		guide.TabStripPlacementLosses.Should().OnlyContain(l => l.MobileType != "usr.RenamedTab",
+		guide.PlacementLosses.Should().OnlyContain(l => l.MobileType != "usr.RenamedTab",
 			because: "a tab is legitimate inside a strip whatever the platform calls it — the exemption reads "
 				+ "the tab type from the rules, and a constant would turn every converted tab into a false loss");
+	}
+
+	[Test]
+	[Description("The placement check is NOT about tabs: any receiver whose mobile type is absent from the rules' contentContainerTypes cannot host a child, and the report says so. Proven with no tab anywhere in the page — a plain crt.GridContainer becomes a non-hosting receiver purely by being dropped from the accept-list, which a tab-shaped check could never detect.")]
+	public void Analyze_ShouldReportAPlacementLoss_WhenTheReceiverTypeIsNotInTheAcceptList() {
+		// Arrange — a page with no tab strip and no tab at all. The only lever is the accept-list.
+		var bundle = new PageBundleInfo {
+			ViewConfig = JsonNode.Parse("""
+				[ { "name": "MainContainer", "type": "crt.GridContainer", "items": [
+					{ "name": "UsrHost", "type": "crt.GridContainer", "items": [
+						{ "name": "UsrField", "type": "crt.Input", "label": "F" } ] } ] } ]
+				""")!.AsArray(),
+			ViewModelConfig = new JsonObject(), ModelConfig = new JsonObject(),
+			Resources = new PageResourceInfo { Strings = new JsonObject() }
+		};
+
+		// Act — twice over the SAME page: once with the shipped accept-list, once with crt.GridContainer
+		// removed from it. Nothing else differs, so the accept-list alone decides the verdict.
+		MobilePageConversionGuide accepted = AnalyzeBlank(bundle, WebToMobilePageConversionRulesCatalog.LoadBundled());
+		MobilePageConversionGuide rejected = AnalyzeBlank(bundle, RulesWithoutAcceptedType("crt.GridContainer"));
+
+		// Assert
+		accepted.PlacementLosses.Should().BeNullOrEmpty(
+			because: "a crt.GridContainer is on the shipped accept-list, so it hosts its child and nothing is lost");
+		rejected.PlacementLosses.Should().ContainSingle(l => l.Name == "UsrField" && l.ParentName == "UsrHost",
+			because: "with its type off the accept-list the very same container can no longer host the very same "
+				+ "child — the decision is the rules' data, not a component type named in the analyser");
 	}
 
 	// ── helpers ──────────────────────────────────────────────────────────────────────────────────
@@ -487,6 +514,32 @@ public sealed class WebToMobileGeneralInfoTabRegressionTests {
 		using var stream = new MemoryStream(System.Text.Encoding.UTF8.GetBytes(rules.ToJsonString()));
 		return WebToMobilePageConversionRulesCatalog.ParseStream(stream);
 	}
+
+	/// <summary>The shipped rules with one type removed from the content-container accept-list.</summary>
+	private static WebToMobilePageConversionRules RulesWithoutAcceptedType(string type) {
+		JsonObject rules = JsonNode.Parse(BundledRulesJson())!.AsObject();
+		JsonArray accepted = rules["contentContainerTypes"]!.AsArray();
+		JsonNode entry = accepted.Single(t => string.Equals(t!.ToString(), type, StringComparison.OrdinalIgnoreCase));
+		accepted.Remove(entry);
+		using var stream = new MemoryStream(System.Text.Encoding.UTF8.GetBytes(rules.ToJsonString()));
+		return WebToMobilePageConversionRulesCatalog.ParseStream(stream);
+	}
+
+	/// <summary>Converts a hand-built page with no template pair — no chrome subtraction, no twins.</summary>
+	private static MobilePageConversionGuide AnalyzeBlank(
+		PageBundleInfo bundle, WebToMobilePageConversionRules rules) =>
+		WebToMobileAnalysisService.Analyze(
+			new PageBundleInfo {
+				ViewConfig = bundle.ViewConfig!.DeepClone().AsArray(),
+				ViewModelConfig = new JsonObject(), ModelConfig = new JsonObject(),
+				Resources = new PageResourceInfo { Strings = new JsonObject() }
+			},
+			MobileTypes(), new HashSet<string>(StringComparer.OrdinalIgnoreCase),
+			webByType: new Dictionary<string, ComponentRegistryEntry>(StringComparer.OrdinalIgnoreCase),
+			mobileByType: null, rules, templateRule: null,
+			sourcePage: "Usr_FormPage", sourceTemplate: "BlankPageTemplate",
+			suggestedTarget: "Usr_MobileFormPage",
+			containerNameMap: new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase));
 
 	private static string BundledRulesJson() {
 		using Stream stream = typeof(WebToMobilePageConversionRulesCatalog).Assembly

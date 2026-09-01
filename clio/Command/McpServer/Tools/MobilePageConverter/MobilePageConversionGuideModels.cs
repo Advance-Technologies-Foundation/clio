@@ -343,10 +343,12 @@ public sealed class SectionRegistrationInfo {
 }
 
 /// <summary>
-/// One element the conversion could not place: it would become a child of a mobile <c>crt.TabPanel</c>
-/// without being a <c>crt.TabContainer</c>, which the mobile designer renders as nothing.
+/// One element the conversion could not place: its resolved parent is a mobile component that cannot host
+/// arbitrary children, so the mobile designer renders nothing for it. The commonest instance is a
+/// <c>crt.TabPanel</c>, which shows only its tabs, but the rule is general — which types CAN host content is
+/// the rules file's <c>contentContainerTypes</c>, so this is not a tab-specific report.
 /// </summary>
-public sealed record TabStripPlacementLoss {
+public sealed record PlacementLoss {
 
 	/// <summary>Mobile element name (the web name when the conversion did not rename it).</summary>
 	[JsonPropertyName("name")]
@@ -357,7 +359,7 @@ public sealed record TabStripPlacementLoss {
 	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
 	public string MobileType { get; init; }
 
-	/// <summary>The tab strip it would have been inserted into.</summary>
+	/// <summary>The receiver it would have been inserted into, which cannot host it.</summary>
 	[JsonPropertyName("parentName")]
 	public string ParentName { get; init; }
 }
@@ -597,16 +599,17 @@ public sealed class MobilePageConversionGuide {
 	public IReadOnlyDictionary<string, string> ResourceStrings { get; init; }
 
 	/// <summary>
-	/// Elements the element map would place directly in a mobile tab strip (<c>crt.TabPanel</c>) without being
-	/// tabs themselves — a strip renders only <c>crt.TabContainer</c> children, so each of these and everything
-	/// nested inside it is lost from the converted page. Present ONLY when the conversion is incomplete, which
-	/// happens when the (runtime-fetched) rules file carries no <c>containers</c> entry for the web container
-	/// they came from. The matching <c>constraints</c> sentence is a rendering of this list; assert on the list,
-	/// not on that free text. Null when the conversion placed everything.
+	/// Elements the element map would place in a receiver that cannot host arbitrary children — a mobile
+	/// <c>crt.TabPanel</c> most often, which shows only its tabs, but the rule is general: which types can host
+	/// content is the rules file's <c>contentContainerTypes</c>. Each of these, and everything nested inside it,
+	/// is lost from the converted page. Present ONLY when the conversion is incomplete, which happens when the
+	/// (runtime-fetched) rules file carries no <c>containers</c> entry for the web container they came from. The
+	/// matching <c>constraints</c> sentence is a rendering of this list; assert on the list, not on that free
+	/// text. Null when the conversion placed everything.
 	/// </summary>
-	[JsonPropertyName("tabStripPlacementLosses")]
+	[JsonPropertyName("placementLosses")]
 	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-	public IReadOnlyList<TabStripPlacementLoss> TabStripPlacementLosses { get; init; }
+	public IReadOnlyList<PlacementLoss> PlacementLosses { get; init; }
 
 	// ── Guidance ──────────────────────────────────────────────────────
 	[JsonPropertyName("constraints")]

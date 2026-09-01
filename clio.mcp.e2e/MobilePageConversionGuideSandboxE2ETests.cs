@@ -604,7 +604,7 @@ public sealed class MobilePageConversionGuideSandboxE2ETests : McpContractFixtur
 			if (guide.TabAreaLayers is { Count: > 0 }) {
 				pagesWithTabAreaLayers++;
 			}
-			AssertNoNonTabChildOfATabStrip(guide, schemaName);
+			AssertNoUnhostablePlacement(guide, schemaName);
 			pagesWithAConvertedTab += guide.ElementMap.Any(e => e.Operation == "insert"
 				&& string.Equals(e.MobileType, MobileTabComponentType, StringComparison.OrdinalIgnoreCase))
 				? 1
@@ -679,7 +679,7 @@ public sealed class MobilePageConversionGuideSandboxE2ETests : McpContractFixtur
 	/// <c>crt.TabContainer</c> insert, so the set would come back empty and the loss would pass unseen.
 	/// </para>
 	/// </summary>
-	private static void AssertNoNonTabChildOfATabStrip(MobilePageConversionGuide guide, string schemaName) {
+	private static void AssertNoUnhostablePlacement(MobilePageConversionGuide guide, string schemaName) {
 		HashSet<string> strips = new(StringComparer.OrdinalIgnoreCase) { MobileTabsElementName };
 		strips.UnionWith(guide.ElementMap
 			.Where(e => e.Operation == "insert"
@@ -696,11 +696,11 @@ public sealed class MobilePageConversionGuideSandboxE2ETests : McpContractFixtur
 			because: $"on '{schemaName}' a crt.TabPanel accepts only crt.TabContainer children, so each of these is "
 				+ "invisible in Mobile Designer and its whole subtree is lost from the converted page (ENG-94951): "
 				+ string.Join(", ", offenders.Select(e => $"{e.MobileName}({e.MobileType})->{e.ParentName}")));
-		guide.TabStripPlacementLosses.Should().BeNullOrEmpty(
-			because: $"the converter's own tab-strip loss report must stay silent on '{schemaName}' — it fires only "
+		guide.PlacementLosses.Should().BeNullOrEmpty(
+			because: $"the converter's own placement-loss report must stay silent on '{schemaName}' — it fires only "
 				+ "when a RUNTIME-FETCHED rules file has lost a containers entry, which no hermetic unit test can "
 				+ "see. Reported: "
-				+ string.Join(", ", (guide.TabStripPlacementLosses ?? []).Select(l => $"{l.Name}->{l.ParentName}")));
+				+ string.Join(", ", (guide.PlacementLosses ?? []).Select(l => $"{l.Name}->{l.ParentName}")));
 	}
 
 	/// <summary>Mobile component type of a single tab; only this type may be a child of a crt.TabPanel.</summary>
