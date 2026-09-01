@@ -22,7 +22,21 @@ namespace Clio.Command
             internal set => _timeOut = value;
         }
 
-        public int MaxAttempts { get; internal set; } = 3;
+        private int? _maxAttempts;
+
+        public int MaxAttempts
+        {
+            get => _maxAttempts ?? 3;
+            internal set => _maxAttempts = value;
+        }
+
+        /// <summary>
+        /// Whether the caller chose the attempt count, as opposed to inheriting the default. A command
+        /// issuing a non-idempotent request uses this to decide whether replaying it is authorized: the
+        /// default of 3 is safe for reads and duplicates records for writes.
+        /// </summary>
+        internal bool IsMaxAttemptsExplicit => _maxAttempts.HasValue;
+
         public int RetryDelay { get; internal set; } = 1;
 
 

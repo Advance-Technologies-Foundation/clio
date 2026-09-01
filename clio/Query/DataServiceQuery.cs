@@ -163,6 +163,11 @@ public abstract class BaseServiceCommand<T> : RemoteCommand<T> where T : CallSer
 
 	#region Methods: Protected
 
+	/// <summary>
+	/// Whether the caller authorized replaying a non-idempotent request by choosing the attempt count.
+	/// </summary>
+	protected bool RetryWritesAuthorized { get; private set; }
+
 	protected virtual string BuildUrl(T options) => ServiceUrlBuilderInstance.Build(options.ServicePath);
 
 	protected string ExecuteServiceRequest(string url, string requestData, string resultFileName = null,
@@ -171,19 +176,26 @@ public abstract class BaseServiceCommand<T> : RemoteCommand<T> where T : CallSer
 			? "POST"
 			: httpMethod.ToUpperInvariant();
 
-		//Every verb carries the command's own timeout and retry settings. Omitting them bound the
-		//call to the interface defaults - Timeout.Infinite, one attempt, one second - so --timeout
-		//was ignored and a hung endpoint pinned the CLI or an MCP worker with no way out.
+		//Every verb carries the command's own timeout. Omitting it bound the call to the interface
+		//default of Timeout.Infinite, so --timeout was ignored and a hung endpoint pinned the CLI or an
+		//MCP worker with no way out.
+		//
+		//Attempts are NOT inherited the same way. Creatio.Client retries on every transport exception, so
+		//a POST/DELETE/PATCH/PUT that commits and then loses its response would be replayed up to twice
+		//under the default of 3, duplicating records or business side effects on a service call the caller
+		//supplied. Only a GET - which changes nothing - inherits the default; a write is issued once unless
+		//the caller set the attempt count itself and therefore vouched for the endpoint being replayable.
+		int attempts = normalizedMethod == "GET" || RetryWritesAuthorized ? MaxAttempts : 1;
 		string jsonResult = normalizedMethod switch {
 					"POST" => ApplicationClient.ExecutePostRequest(url, requestData, RequestTimeout,
-						MaxAttempts, DelaySec),
-					"GET" => ApplicationClient.ExecuteGetRequest(url, RequestTimeout, MaxAttempts, DelaySec),
+						attempts, DelaySec),
+					"GET" => ApplicationClient.ExecuteGetRequest(url, RequestTimeout, attempts, DelaySec),
 					"DELETE" => ApplicationClient.ExecuteDeleteRequest(url, requestData, RequestTimeout,
-						MaxAttempts, DelaySec),
+						attempts, DelaySec),
 					"PATCH" => ApplicationClient.ExecutePatchRequest(url, requestData, RequestTimeout,
-						MaxAttempts, DelaySec),
+						attempts, DelaySec),
 					"PUT" => ApplicationClient.ExecutePutRequest(url, requestData, RequestTimeout,
-						MaxAttempts, DelaySec),
+						attempts, DelaySec),
 					var _ => throw new ArgumentException($"Unsupported HTTP method '{httpMethod}'", nameof(httpMethod))
 				};
 
@@ -224,6 +236,7 @@ public abstract class BaseServiceCommand<T> : RemoteCommand<T> where T : CallSer
 		//normally applied, so they have to be read off the options here.
 		RequestTimeout = options.TimeOut;
 		MaxAttempts = options.MaxAttempts;
+		RetryWritesAuthorized = options.IsMaxAttemptsExplicit;
 		DelaySec = options.RetryDelay;
 		if (string.IsNullOrWhiteSpace(options.RequestFileName) && string.IsNullOrWhiteSpace(options.RequestBody)) {
 			ExecuteServiceRequest(BuildUrl(options), string.Empty, options.ResultFileName, options.HttpMethodName);
