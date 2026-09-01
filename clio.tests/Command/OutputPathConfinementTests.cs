@@ -416,5 +416,9 @@ public sealed class OutputPathConfinementTests {
 			because: "CreateNew fails atomically when the target exists, so no overwrite occurs");
 		File.ReadAllText(outputFile).Should().Be("planted",
 			because: "the pre-existing file is left untouched when the atomic create is refused");
+		Directory.GetFiles(_sandbox, "*.tmp").Should().BeEmpty(
+			because: "the raw response was already written to the sibling temporary file before the move was "
+				+ "refused; leaving it behind would leak the whole response body next to the target under a "
+				+ "name nobody cleans up");
 	}
 }

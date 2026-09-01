@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Collections.Generic;
 using System.ComponentModel;
 using System.ComponentModel.DataAnnotations;
 using System.Text.Json;
@@ -25,6 +26,22 @@ public sealed class ODataUpdateTool(IToolCommandResolver commandResolver, IoFile
 	private const string DataRequiredMessage =
 		"data is required and must be a non-empty object of field/value pairs.";
 
+	private const string ValidArgumentsHint =
+		"Valid: entity, id, environment-name, data, rows-file, confirm.";
+
+	/// <summary>
+	/// The camelCase / snake_case spellings an LLM emits for this tool's kebab-case fields. Without this map
+	/// (and the overflow bag it reads) a request carrying inline <c>data</c> plus <c>rows_file</c> bound only
+	/// the inline object, slipped past the mutual-exclusion check, and PATCHed an ambiguous request.
+	/// </summary>
+	private static readonly IReadOnlyDictionary<string, string> ArgumentAliases =
+		new Dictionary<string, string>(StringComparer.Ordinal) {
+			["environmentName"] = "environment-name",
+			["environment_name"] = "environment-name",
+			["rowsFile"] = "rows-file",
+			["rows_file"] = "rows-file"
+		};
+
 	/// <summary>Updates a single Creatio record using OData v4.</summary>
 	[McpServerTool(Name = ToolName, ReadOnly = false, Destructive = true, Idempotent = true, OpenWorld = false)]
 	[Description(
@@ -39,6 +56,17 @@ public sealed class ODataUpdateTool(IToolCommandResolver commandResolver, IoFile
 		[Required]
 		ODataUpdateArgs args) {
 		try {
+			//Runs before the confirmation gate, before the file is touched and before any PATCH: an unbound
+			//file-source key such as rows_file would otherwise be dropped silently and the inline data sent
+			//instead, which is the ambiguous request this rejects.
+			string? argumentError = McpToolArgumentSupport.BuildLegacyAliasError(
+				args.ExtensionData,
+				ArgumentAliases,
+				".",
+				ValidArgumentsHint);
+			if (argumentError is not null) {
+				return ODataWriteResponse.Failure(argumentError);
+			}
 			ODataWriteResponse invalidTarget = ODataKeyedWrite.ValidateTarget(args.Entity, args.Id, "update");
 			if (invalidTarget is not null) {
 				return invalidTarget;
@@ -160,4 +188,8 @@ public sealed record ODataUpdateArgs {
 	[JsonPropertyName("rows-file")]
 	[Description("Optional path to a JSON object of field/value pairs. Use this instead of data for large payloads; confirm=true is still required.")]
 	public string? RowsFile { get; init; }
+
+	/// <summary>Unbound JSON members, rejected before any file access or Creatio request.</summary>
+	[JsonExtensionData]
+	public Dictionary<string, JsonElement>? ExtensionData { get; init; }
 }

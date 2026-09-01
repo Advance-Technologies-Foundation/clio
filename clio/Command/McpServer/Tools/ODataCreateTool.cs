@@ -30,6 +30,24 @@ public sealed class ODataCreateTool(IToolCommandResolver commandResolver, IoFile
 	/// </summary>
 	internal const int MaxRowCount = 1000;
 
+	private const string ValidArgumentsHint =
+		"Valid: entity, environment-name, rows, rows-file, stop-on-error.";
+
+	/// <summary>
+	/// The camelCase / snake_case spellings an LLM emits for this tool's kebab-case fields. Without this map
+	/// (and the overflow bag it reads) a request carrying inline <c>rows</c> plus <c>rows_file</c> bound only
+	/// the inline rows, slipped past the mutual-exclusion check, and POSTed an ambiguous request.
+	/// </summary>
+	private static readonly IReadOnlyDictionary<string, string> ArgumentAliases =
+		new Dictionary<string, string>(StringComparer.Ordinal) {
+			["environmentName"] = "environment-name",
+			["environment_name"] = "environment-name",
+			["rowsFile"] = "rows-file",
+			["rows_file"] = "rows-file",
+			["stopOnError"] = "stop-on-error",
+			["stop_on_error"] = "stop-on-error"
+		};
+
 	/// <summary>
 	/// Next step offered when a row's side effect cannot be verified. Kept in one place so every unknown path
 	/// gives identical advice.
@@ -58,6 +76,17 @@ public sealed class ODataCreateTool(IToolCommandResolver commandResolver, IoFile
 		[Description("Parameters: entity, rows or rows-file, environment-name (required); stop-on-error (optional).")]
 		[Required]
 		ODataCreateArgs args) {
+		//Runs before the payload is resolved, before the environment is resolved and before any POST: an
+		//unbound file-source key such as rows_file would otherwise be dropped silently and the inline rows
+		//sent instead, which is the ambiguous request this rejects.
+		string? argumentError = McpToolArgumentSupport.BuildLegacyAliasError(
+			args.ExtensionData,
+			ArgumentAliases,
+			".",
+			ValidArgumentsHint);
+		if (argumentError is not null) {
+			return ODataCreateBatchResponse.RequestError(argumentError);
+		}
 		if (string.IsNullOrWhiteSpace(args.Entity)) {
 			return ODataCreateBatchResponse.RequestError("entity is required.");
 		}
@@ -260,4 +289,8 @@ public sealed record ODataCreateArgs {
 	[Description(McpToolDescriptions.EnvironmentName)]
 	[Required]
 	public required string EnvironmentName { get; init; }
+
+	/// <summary>Unbound JSON members, rejected before any file access or Creatio request.</summary>
+	[JsonExtensionData]
+	public Dictionary<string, JsonElement>? ExtensionData { get; init; }
 }

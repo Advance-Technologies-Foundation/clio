@@ -46,6 +46,88 @@ public sealed class ODataCreateToolTests {
 	}
 	[Test]
 	[Category("Unit")]
+	[Description("Rejects a rows-file larger than the 10 MiB payload bound with the byte-count diagnostic, before the environment is resolved and before any POST.")]
+	public void Create_Should_Reject_A_RowsFile_Over_The_Payload_Bound_Before_Any_Post() {
+		// Arrange
+		MockFileSystem fileSystem = new();
+		string rowsFile = fileSystem.Path.Combine(fileSystem.Path.GetTempPath(), $"odata-create-huge-{System.Guid.NewGuid():N}.json");
+		//One byte past the bound: the check has to be the limit itself, not a round approximation of it.
+		long overLimit = ODataFileContract.MaxPayloadBytes + 1;
+		string padding = new('x', (int)(overLimit - "[{\"Name\":\"\"}]".Length));
+		fileSystem.AddFile(rowsFile, new MockFileData($"[{{\"Name\":\"{padding}\"}}]", Encoding.UTF8));
+		IApplicationClient client = Substitute.For<IApplicationClient>();
+		IToolCommandResolver resolver = Substitute.For<IToolCommandResolver>();
+		resolver.Resolve<IApplicationClient>(Arg.Any<EnvironmentOptions>()).Returns(client);
+		ODataCreateTool tool = new(resolver, fileSystem);
+
+		// Act
+		ODataCreateBatchResponse response = tool.Create(new ODataCreateArgs {
+			EnvironmentName = "dev", Entity = "Account", RowsFile = rowsFile
+		});
+
+		// Assert
+		response.Created.Should().Be(0,
+			because: "reading, parsing and cloning an unbounded payload is the memory-exhaustion lever the bound exists to close");
+		response.Error.Should().Contain(ODataFileContract.MaxPayloadBytes.ToString(),
+			because: "the diagnostic has to name the limit so the caller knows what to split the payload against");
+		resolver.DidNotReceive().Resolve<IApplicationClient>(Arg.Any<EnvironmentOptions>());
+		client.DidNotReceiveWithAnyArgs().ExecutePostRequest(
+			Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>());
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Rejects a misspelled rows_file key instead of dropping it and posting the inline rows, which would execute an ambiguous request.")]
+	public void Create_Should_Reject_An_Unbound_File_Source_Alias_Before_Any_Post() {
+		// Arrange
+		MockFileSystem fileSystem = new();
+		IApplicationClient client = Substitute.For<IApplicationClient>();
+		IToolCommandResolver resolver = Substitute.For<IToolCommandResolver>();
+		resolver.Resolve<IApplicationClient>(Arg.Any<EnvironmentOptions>()).Returns(client);
+		ODataCreateTool tool = new(resolver, fileSystem);
+		ODataCreateArgs args = JsonSerializer.Deserialize<ODataCreateArgs>(
+			"""{"environment-name":"dev","entity":"Account","rows":[{"Name":"Inline"}],"rows_file":"C:/payload.json"}""")!;
+
+		// Act
+		ODataCreateBatchResponse response = tool.Create(args);
+
+		// Assert
+		response.Created.Should().Be(0,
+			because: "a request naming two payload sources is ambiguous, even when one of them is misspelled");
+		response.Error.Should().Contain("rows-file",
+			because: "the caller has to be told the canonical spelling of the key that was dropped");
+		resolver.DidNotReceive().Resolve<IApplicationClient>(Arg.Any<EnvironmentOptions>());
+		client.DidNotReceiveWithAnyArgs().ExecutePostRequest(
+			Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>());
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Rejects an entirely unknown argument before the environment is resolved, so a typo cannot execute a partially understood request.")]
+	public void Create_Should_Reject_An_Unknown_Argument_Before_Any_Post() {
+		// Arrange
+		MockFileSystem fileSystem = new();
+		IApplicationClient client = Substitute.For<IApplicationClient>();
+		IToolCommandResolver resolver = Substitute.For<IToolCommandResolver>();
+		resolver.Resolve<IApplicationClient>(Arg.Any<EnvironmentOptions>()).Returns(client);
+		ODataCreateTool tool = new(resolver, fileSystem);
+		ODataCreateArgs args = JsonSerializer.Deserialize<ODataCreateArgs>(
+			"""{"environment-name":"dev","entity":"Account","rows":[{"Name":"Inline"}],"stopOnErrors":true}""")!;
+
+		// Act
+		ODataCreateBatchResponse response = tool.Create(args);
+
+		// Assert
+		response.Created.Should().Be(0,
+			because: "an unbound argument means the request was not understood as written");
+		response.Error.Should().Contain("stopOnErrors",
+			because: "the caller has to see which key was not accepted");
+		client.DidNotReceiveWithAnyArgs().ExecutePostRequest(
+			Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>());
+	}
+
+	[Test]
+	[Category("Unit")]
 	[Description("Rejects rows and rows-file together instead of silently preferring one, so a caller never sends a payload it did not mean to.")]
 	public void Create_Should_Reject_Rows_And_RowsFile_Together() {
 		// Arrange

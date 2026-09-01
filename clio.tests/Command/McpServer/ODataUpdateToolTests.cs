@@ -40,6 +40,85 @@ public sealed class ODataUpdateToolTests {
 	}
 	[Test]
 	[Category("Unit")]
+	[Description("Rejects a rows-file larger than the 10 MiB payload bound with the byte-count diagnostic, before the environment is resolved and before any PATCH.")]
+	public void Update_Should_Reject_A_RowsFile_Over_The_Payload_Bound_Before_Any_Patch() {
+		// Arrange
+		MockFileSystem fileSystem = new();
+		string rowsFile = fileSystem.Path.Combine(fileSystem.Path.GetTempPath(), $"odata-update-huge-{System.Guid.NewGuid():N}.json");
+		//One byte past the bound: the check has to be the limit itself, not a round approximation of it.
+		long overLimit = ODataFileContract.MaxPayloadBytes + 1;
+		string padding = new('x', (int)(overLimit - "{\"Name\":\"\"}".Length));
+		fileSystem.AddFile(rowsFile, new MockFileData($"{{\"Name\":\"{padding}\"}}", Encoding.UTF8));
+		IApplicationClient client = Substitute.For<IApplicationClient>();
+		IToolCommandResolver resolver = Substitute.For<IToolCommandResolver>();
+		resolver.Resolve<IApplicationClient>(Arg.Any<EnvironmentOptions>()).Returns(client);
+
+		// Act
+		ODataWriteResponse response = new ODataUpdateTool(resolver, fileSystem).Update(new ODataUpdateArgs {
+			EnvironmentName = "dev", Entity = "Contact", Id = Guid, RowsFile = rowsFile, Confirm = true
+		});
+
+		// Assert
+		response.Success.Should().BeFalse(
+			because: "reading, parsing and cloning an unbounded payload is the memory-exhaustion lever the bound exists to close");
+		response.Error.Should().Contain(ODataFileContract.MaxPayloadBytes.ToString(),
+			because: "the diagnostic has to name the limit so the caller knows what to split the payload against");
+		resolver.DidNotReceive().Resolve<IApplicationClient>(Arg.Any<EnvironmentOptions>());
+		client.DidNotReceiveWithAnyArgs().ExecutePatchRequest(
+			Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>());
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Rejects a misspelled rows_file key instead of dropping it and PATCHing the inline data, which would execute an ambiguous request.")]
+	public void Update_Should_Reject_An_Unbound_File_Source_Alias_Before_Any_Patch() {
+		// Arrange
+		MockFileSystem fileSystem = new();
+		IApplicationClient client = Substitute.For<IApplicationClient>();
+		IToolCommandResolver resolver = Substitute.For<IToolCommandResolver>();
+		resolver.Resolve<IApplicationClient>(Arg.Any<EnvironmentOptions>()).Returns(client);
+		ODataUpdateArgs args = JsonSerializer.Deserialize<ODataUpdateArgs>(
+			$$"""{"environment-name":"dev","entity":"Contact","id":"{{Guid}}","data":{"Name":"Inline"},"confirm":true,"rows_file":"C:/payload.json"}""")!;
+
+		// Act
+		ODataWriteResponse response = new ODataUpdateTool(resolver, fileSystem).Update(args);
+
+		// Assert
+		response.Success.Should().BeFalse(
+			because: "a request naming two payload sources is ambiguous, even when one of them is misspelled");
+		response.Error.Should().Contain("rows-file",
+			because: "the caller has to be told the canonical spelling of the key that was dropped");
+		resolver.DidNotReceive().Resolve<IApplicationClient>(Arg.Any<EnvironmentOptions>());
+		client.DidNotReceiveWithAnyArgs().ExecutePatchRequest(
+			Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>());
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Rejects an entirely unknown argument before the confirmation gate and before any PATCH, so a typo cannot execute a partially understood destructive request.")]
+	public void Update_Should_Reject_An_Unknown_Argument_Before_Any_Patch() {
+		// Arrange
+		MockFileSystem fileSystem = new();
+		IApplicationClient client = Substitute.For<IApplicationClient>();
+		IToolCommandResolver resolver = Substitute.For<IToolCommandResolver>();
+		resolver.Resolve<IApplicationClient>(Arg.Any<EnvironmentOptions>()).Returns(client);
+		ODataUpdateArgs args = JsonSerializer.Deserialize<ODataUpdateArgs>(
+			$$"""{"environment-name":"dev","entity":"Contact","id":"{{Guid}}","data":{"Name":"Inline"},"confirm":true,"dryRun":true}""")!;
+
+		// Act
+		ODataWriteResponse response = new ODataUpdateTool(resolver, fileSystem).Update(args);
+
+		// Assert
+		response.Success.Should().BeFalse(
+			because: "an unbound argument means the destructive request was not understood as written");
+		response.Error.Should().Contain("dryRun",
+			because: "the caller has to see which key was not accepted");
+		client.DidNotReceiveWithAnyArgs().ExecutePatchRequest(
+			Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>());
+	}
+
+	[Test]
+	[Category("Unit")]
 	[Description("Rejects data and rows-file together instead of silently preferring one, so a caller never PATCHes a payload it did not choose.")]
 	public void Update_Should_Reject_Data_And_RowsFile_Together() {
 		// Arrange
