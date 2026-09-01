@@ -19,6 +19,9 @@ public class StartOptions : EnvironmentNameOptions
 {
 	[Option('w', "terminal", Required = false, HelpText = "Start Creatio in a new terminal window (default: background service)")]
 	public bool Terminal { get; set; }
+
+	[Option("foreground", Required = false, Hidden = true, HelpText = "Run the .NET host in the current terminal; used by terminal launchers")]
+	public bool Foreground { get; set; }
 }
 
 public class StartCommand : Command<StartOptions>
@@ -125,6 +128,11 @@ public class StartCommand : Command<StartOptions>
 				return 1;
 			}
 			
+			if (options.Foreground) {
+				_logger.WriteInfo($"Starting Creatio application '{envName}' in the current terminal...");
+				return _creatioHostService.StartInForeground(env.EnvironmentPath);
+			}
+
 			if (options.Terminal) {
 				_logger.WriteInfo($"Starting Creatio application '{envName}' in a new terminal window...");
 				_logger.WriteInfo($"Path: {env.EnvironmentPath}");

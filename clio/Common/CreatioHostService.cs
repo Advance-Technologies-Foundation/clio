@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Runtime.InteropServices;
+using System.Reflection;
 
 namespace Clio.Common;
 
@@ -32,6 +33,13 @@ public interface ICreatioHostService
 	/// Starts Creatio host in a new terminal window.
 	/// </summary>
 	void StartInNewTerminal(string workingDirectory, string envName);
+
+	/// <summary>
+	/// Starts Creatio host in the current terminal and waits for it to exit.
+	/// </summary>
+	/// <param name="workingDirectory">Directory containing the Creatio host.</param>
+	/// <returns>The host process exit code.</returns>
+	int StartInForeground(string workingDirectory);
 }
 
 /// <summary>
@@ -127,20 +135,52 @@ public class CreatioHostService : ICreatioHostService
 		_environmentStore.Save(workingDirectory, environmentVariables);
 	}
 
+	/// <inheritdoc />
+	public int StartInForeground(string workingDirectory)
+	{
+		try
+		{
+			IReadOnlyDictionary<string, string> environmentVariables = _environmentStore.Load(workingDirectory);
+			ProcessExecutionOptions options = new("dotnet", "Terrasoft.WebHost.dll") {
+				WorkingDirectory = workingDirectory,
+				EnvironmentVariables = environmentVariables,
+				ClearInheritedEnvironment = true,
+				InheritedEnvironmentVariableAllowlist = HostEnvironmentAllowlist,
+				MirrorOutputToLogger = true
+			};
+			ProcessExecutionResult result = _processExecutor.ExecuteWithRealtimeOutputAsync(options)
+				.GetAwaiter()
+				.GetResult();
+			if (!result.Started)
+			{
+				throw new InvalidOperationException(
+					$"Failed to start host process: {result.StandardError}");
+			}
+
+			return result.ExitCode ?? 1;
+		}
+		catch (Exception ex)
+		{
+			_logger.WriteError($"Failed to start host process in the foreground: {ex.Message}");
+			throw;
+		}
+	}
+
 	/// <summary>
 	/// Starts the Creatio host process in a new terminal window.
 	/// </summary>
 	public void StartInNewTerminal(string workingDirectory, string envName)
 	{
-		IReadOnlyDictionary<string, string> environmentVariables = _environmentStore.Load(workingDirectory);
 		if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
 		{
-			string windowsArgs = "/c start \"Creatio\" cmd.exe /k dotnet Terrasoft.WebHost.dll";
-			StartTerminalProcess("cmd.exe", windowsArgs, workingDirectory, environmentVariables);
+			string windowsCommand = $"{GetClioInvocation(useWindowsQuoting: true)} start --environment {EscapeWindowsCommandArgument(envName)} --foreground";
+			string windowsArgs = $"/c start \"Creatio\" cmd.exe /k {windowsCommand}";
+			StartTerminalProcess("cmd.exe", windowsArgs, workingDirectory, new Dictionary<string, string>());
 			return;
 		}
 		if (RuntimeInformation.IsOSPlatform(OSPlatform.OSX))
 		{
+			IReadOnlyDictionary<string, string> environmentVariables = _environmentStore.Load(workingDirectory);
 			string scriptPath = CreateMacOsTerminalLaunchScript(workingDirectory, envName, environmentVariables);
 			try
 			{
@@ -150,7 +190,7 @@ public class CreatioHostService : ICreatioHostService
 					"osascript",
 					$"-e \"{EscapeAppleScriptString(script)}\"",
 					workingDirectory,
-					environmentVariables);
+					new Dictionary<string, string>());
 				if (result is null || !result.Started)
 				{
 					throw new InvalidOperationException(
@@ -165,8 +205,9 @@ public class CreatioHostService : ICreatioHostService
 			return;
 		}
 		string terminal = GetLinuxTerminal();
-		string linuxArgs = "-e \"bash -c 'echo Starting Creatio...; dotnet Terrasoft.WebHost.dll; exec bash'\"";
-		StartTerminalProcess(terminal, linuxArgs, workingDirectory, environmentVariables);
+		string linuxCommand = $"{GetClioInvocation(useWindowsQuoting: false)} start --environment {EscapeShellSingleQuoted(envName)} --foreground";
+		string linuxArgs = $"-e \"bash -lc \\\"{EscapeShellDoubleQuoted(linuxCommand)}\\\"\"";
+		StartTerminalProcess(terminal, linuxArgs, workingDirectory, new Dictionary<string, string>());
 	}
 
 	private static string EscapeShellSingleQuoted(string value) =>
@@ -175,6 +216,32 @@ public class CreatioHostService : ICreatioHostService
 	private static string EscapeAppleScriptString(string value) =>
 		value.Replace("\\", "\\\\", StringComparison.Ordinal)
 			.Replace("\"", "\\\"", StringComparison.Ordinal);
+
+	private static string EscapeShellDoubleQuoted(string value) =>
+		value.Replace("\\", "\\\\", StringComparison.Ordinal)
+			.Replace("\"", "\\\"", StringComparison.Ordinal)
+			.Replace("$", "\\$", StringComparison.Ordinal)
+			.Replace("`", "\\`", StringComparison.Ordinal);
+
+	private static string EscapeWindowsCommandArgument(string value) =>
+		$"\"{value.Replace("\"", "\\\"", StringComparison.Ordinal)}\"";
+
+	private static string GetClioInvocation(bool useWindowsQuoting)
+	{
+		string? entryAssemblyPath = Assembly.GetEntryAssembly()?.Location;
+		if (!string.IsNullOrWhiteSpace(entryAssemblyPath)
+			&& string.Equals(Path.GetExtension(entryAssemblyPath), ".dll", StringComparison.OrdinalIgnoreCase))
+		{
+			return $"dotnet {(useWindowsQuoting
+				? EscapeWindowsCommandArgument(entryAssemblyPath)
+				: EscapeShellSingleQuoted(entryAssemblyPath))}";
+		}
+
+		string processPath = Environment.ProcessPath ?? "clio";
+		return useWindowsQuoting
+			? EscapeWindowsCommandArgument(processPath)
+			: EscapeShellSingleQuoted(processPath);
+	}
 
 	private string CreateMacOsTerminalLaunchScript(
 		string workingDirectory,

@@ -88,6 +88,29 @@ public sealed class CreatioHostServiceTests : BaseClioModuleTests {
 	}
 
 	[Test]
+	[Description("Loads protected certificate values only in the final foreground dotnet host process, not in a terminal launcher process.")]
+	public async Task StartInForeground_ShouldPassPersistedEnvironmentToHostProcess() {
+		// Arrange
+		_environmentStore.Load("/tmp/creatio").Returns(new Dictionary<string, string> {
+			["Kestrel__Endpoints__Https__Certificate__Password"] = "persisted-secret"
+		});
+		_processExecutor.ExecuteWithRealtimeOutputAsync(Arg.Any<ProcessExecutionOptions>()).Returns(
+			Task.FromResult(new ProcessExecutionResult { Started = true, ExitCode = 0 }));
+
+		// Act
+		int exitCode = _sut.StartInForeground("/tmp/creatio");
+
+		// Assert
+		exitCode.Should().Be(0,
+			because: "the foreground launcher must return the host process exit code");
+		await _processExecutor.Received(1).ExecuteWithRealtimeOutputAsync(Arg.Is<ProcessExecutionOptions>(options =>
+			options.Arguments == "Terrasoft.WebHost.dll"
+			&& options.EnvironmentVariables["Kestrel__Endpoints__Https__Certificate__Password"] == "persisted-secret"
+			&& options.ClearInheritedEnvironment
+			&& options.MirrorOutputToLogger));
+	}
+
+	[Test]
 	[Description("Delegates deployment host environment persistence to the protected environment store.")]
 	public void PersistEnvironmentVariables_ShouldDelegateToStore() {
 		// Arrange
