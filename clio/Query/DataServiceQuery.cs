@@ -376,10 +376,28 @@ public abstract class BaseServiceCommand<T> : RemoteCommand<T> where T : CallSer
 			? "POST"
 			: httpMethod.ToUpperInvariant();
 
+		//Every verb carries the command's own timeout. Omitting it bound the call to the interface
+		//default of Timeout.Infinite, so --timeout was ignored and a hung endpoint pinned the CLI or an
+		//MCP worker with no way out.
+		//
+		//Attempts are NOT inherited the same way. Creatio.Client retries on every transport exception, so
+		//a POST/DELETE/PATCH/PUT that commits and then loses its response would be replayed up to twice
+		//under the default of 3, duplicating records or business side effects on a service call the caller
+		//supplied. Only a GET - which changes nothing - inherits the default; a write is always issued once.
+		//There is deliberately no caller-side override: MaxAttempts carries no [Option], so no real
+		//call-service user could ever reach one, and an escape hatch only internal plumbing can open is a
+		//replay risk with no corresponding capability.
+		int attempts = normalizedMethod == "GET" ? MaxAttempts : 1;
 		string jsonResult = normalizedMethod switch {
-					"POST" => ApplicationClient.ExecutePostRequest(url, requestData),
-					"GET" => ApplicationClient.ExecuteGetRequest(url),
-					"DELETE" => ApplicationClient.ExecuteDeleteRequest(url, requestData),
+					"POST" => ApplicationClient.ExecutePostRequest(url, requestData, RequestTimeout,
+						attempts, DelaySec),
+					"GET" => ApplicationClient.ExecuteGetRequest(url, RequestTimeout, attempts, DelaySec),
+					"DELETE" => ApplicationClient.ExecuteDeleteRequest(url, requestData, RequestTimeout,
+						attempts, DelaySec),
+					"PATCH" => ApplicationClient.ExecutePatchRequest(url, requestData, RequestTimeout,
+						attempts, DelaySec),
+					"PUT" => ApplicationClient.ExecutePutRequest(url, requestData, RequestTimeout,
+						attempts, DelaySec),
 					var _ => throw new ArgumentException($"Unsupported HTTP method '{httpMethod}'", nameof(httpMethod))
 				};
 
@@ -428,6 +446,11 @@ public abstract class BaseServiceCommand<T> : RemoteCommand<T> where T : CallSer
 
 	public override int Execute(T options){
 		IsSilent = options.IsSilent;
+		//This override does not chain to RemoteCommand.Execute, which is where these three are
+		//normally applied, so they have to be read off the options here.
+		RequestTimeout = options.TimeOut;
+		MaxAttempts = options.MaxAttempts;
+		DelaySec = options.RetryDelay;
 		string requestData = string.Empty;
 		if (!(string.IsNullOrWhiteSpace(options.RequestFileName) && string.IsNullOrWhiteSpace(options.RequestBody))) {
 			requestData = string.IsNullOrWhiteSpace(options.RequestBody)

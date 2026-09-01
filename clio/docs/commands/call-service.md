@@ -40,7 +40,7 @@ Creatio behind IIS returns for "Request Error"/"Service Unavailable".
 ## Options
 
 ```bash
--m, --method           HTTP method. POST when omitted
+-m, --method           HTTP method: GET, POST, DELETE, PATCH, or PUT. Defaults to POST.
 -f, --input            File to read the request body from
 -b, --body             Request body JSON
 -d, --destination      File to write the response to

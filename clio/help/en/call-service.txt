@@ -48,7 +48,8 @@ OPTIONS
     --client-id            OAuth client id
     --client-secret        OAuth client secret
     --auth-app-uri         OAuth app URI
-    --maintainer           Maintainer name
+    --maintainer           Maintainer name. Long form only for this command, because -m is taken
+                           by --method here.
     -i, --IsNetCore        Target a .NET Core application
     -s, --safe             Safe action in this environment
     --silent               Use default behavior without user interaction
