@@ -160,7 +160,7 @@ public class RunProcessCommand(
 			return false;
 		}
 
-		response = Project(platformResponse, model.Code);
+		response = BuildResponse(platformResponse, model.Code);
 		// Feeds Execute's exit code, so it tracks the outcome rather than "a request was sent" — a refusal
 		// and a failed run would otherwise both exit 0.
 		return response.Error is null;
@@ -169,7 +169,7 @@ public class RunProcessCommand(
 	// A refusal, a background queueing and an inactive descriptor arrive with the SAME empty id and
 	// Inactive status; success and errorInfo are the only discriminators. See
 	// docs/knowledge/platform/runprocess-success-flag-is-not-the-run-verdict.md
-	internal static RunProcessResponse Project(ProcessStartResponse platformResponse, string processCode) {
+	internal static RunProcessResponse BuildResponse(ProcessStartResponse platformResponse, string processCode) {
 		if (platformResponse is null) {
 			return new RunProcessResponse { Error = "RunProcess returned an empty response" };
 		}
@@ -247,7 +247,7 @@ public class RunProcessCommand(
 
 		List<ProcessStartArgs.ParameterValues> built = [];
 		foreach ((string code, JsonElement value) in supplied) {
-			ProcessParameter parameter = FindByCode(signature, code);
+			ProcessParameter parameter = FindParameter(signature, code);
 			if (parameter is null) {
 				error = BuildUnknownCodeError(code, signature, ProcessParameterDirection.Output, "parameters");
 				return false;
@@ -280,7 +280,7 @@ public class RunProcessCommand(
 		}
 
 		foreach (string code in requested) {
-			ProcessParameter parameter = FindByCode(signature, code);
+			ProcessParameter parameter = FindParameter(signature, code);
 			if (parameter is null) {
 				// The platform verifies result names before the process starts and throws
 				// ItemNotFoundException, so catching it first turns an opaque abort into a list of codes.
@@ -299,7 +299,7 @@ public class RunProcessCommand(
 	}
 
 	// The platform matches names with StringComparison.Ordinal, so a case-only difference is a miss.
-	private static ProcessParameter FindByCode(List<ProcessParameter> signature, string code) =>
+	private static ProcessParameter FindParameter(List<ProcessParameter> signature, string code) =>
 		signature.FirstOrDefault(p => string.Equals(p.Name, code, StringComparison.Ordinal));
 
 	private static string BuildUnknownCodeError(string code, List<ProcessParameter> signature,

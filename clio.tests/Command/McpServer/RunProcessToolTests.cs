@@ -372,13 +372,13 @@ public sealed class RunProcessToolTests {
 	[Test]
 	[Category("Unit")]
 	[Description("A terminal successful run reports mode 'completed' with the real process id and status.")]
-	public void Project_Should_Report_Completed_For_A_Terminal_Successful_Run() {
+	public void BuildResponse_Should_Report_Completed_For_A_Terminal_Successful_Run() {
 		// Arrange
 		ProcessStartResponse platform = PlatformResponse(
 			"""{"processId":"0f5e3a2a-2c8f-4f1e-9d0b-6d4b2f1a7c31","processStatus":2,"success":true}""");
 
 		// Act
-		RunProcessResponse response = RunProcessCommand.Project(platform, ProcessCode);
+		RunProcessResponse response = RunProcessCommand.BuildResponse(platform, ProcessCode);
 
 		// Assert
 		response.Status.Should().Be("completed", because: "platform code 2 is ProcessStatus.Done");
@@ -390,13 +390,13 @@ public sealed class RunProcessToolTests {
 	[Test]
 	[Category("Unit")]
 	[Description("A failed run is reported as a failure even when the platform itself answered success=true, which it does whenever its Feature-SetErrorInfoIfProcessHasFailedExecution flag is off.")]
-	public void Project_Should_Fail_On_Error_Status_Even_When_The_Platform_Reported_Success() {
+	public void BuildResponse_Should_Fail_On_Error_Status_Even_When_The_Platform_Reported_Success() {
 		// Arrange
 		ProcessStartResponse platform = PlatformResponse(
 			"""{"processId":"0f5e3a2a-2c8f-4f1e-9d0b-6d4b2f1a7c31","processStatus":3,"success":true}""");
 
 		// Act
-		RunProcessResponse response = RunProcessCommand.Project(platform, ProcessCode);
+		RunProcessResponse response = RunProcessCommand.BuildResponse(platform, ProcessCode);
 
 		// Assert
 		response.Status.Should().Be("error", because: "platform code 3 is ProcessStatus.Error");
@@ -409,7 +409,7 @@ public sealed class RunProcessToolTests {
 	[Test]
 	[Category("Unit")]
 	[Description("The platform's errorInfo message is surfaced as text. It arrives as a JsonElement on an object-typed DTO field, which a reflection-based serializer renders as {\"ValueKind\":...} and loses entirely.")]
-	public void Project_Should_Surface_The_Platform_Error_Message_Not_The_JsonElement_Shape() {
+	public void BuildResponse_Should_Surface_The_Platform_Error_Message_Not_The_JsonElement_Shape() {
 		// Arrange
 		ProcessStartResponse platform = PlatformResponse(
 			"""
@@ -418,7 +418,7 @@ public sealed class RunProcessToolTests {
 			""");
 
 		// Act
-		RunProcessResponse response = RunProcessCommand.Project(platform, ProcessCode);
+		RunProcessResponse response = RunProcessCommand.BuildResponse(platform, ProcessCode);
 
 		// Assert
 		response.Error.Should().Contain("Process blew up",
@@ -431,7 +431,7 @@ public sealed class RunProcessToolTests {
 	[Test]
 	[Category("Unit")]
 	[Description("An empty process id with the Inactive status AND success=false is a startup refusal, not a background launch: the platform verifies a manual start event before anything runs.")]
-	public void Project_Should_Report_Refused_When_The_Platform_Declined_To_Start_The_Process() {
+	public void BuildResponse_Should_Report_Refused_When_The_Platform_Declined_To_Start_The_Process() {
 		// Arrange
 		ProcessStartResponse platform = PlatformResponse(
 			"""
@@ -441,7 +441,7 @@ public sealed class RunProcessToolTests {
 			""");
 
 		// Act
-		RunProcessResponse response = RunProcessCommand.Project(platform, ProcessCode);
+		RunProcessResponse response = RunProcessCommand.BuildResponse(platform, ProcessCode);
 
 		// Assert
 		response.Status.Should().Be("not-started",
@@ -456,13 +456,13 @@ public sealed class RunProcessToolTests {
 	[Test]
 	[Category("Unit")]
 	[Description("An empty process id with the Inactive status and success=true is the background fire-and-forget branch: the platform queues the process and returns an empty descriptor without waiting.")]
-	public void Project_Should_Report_QueuedBackground_When_The_Platform_Returned_No_Handle() {
+	public void BuildResponse_Should_Report_QueuedBackground_When_The_Platform_Returned_No_Handle() {
 		// Arrange
 		ProcessStartResponse platform = PlatformResponse(
 			"""{"processId":"00000000-0000-0000-0000-000000000000","processStatus":0,"success":true}""");
 
 		// Act
-		RunProcessResponse response = RunProcessCommand.Project(platform, ProcessCode);
+		RunProcessResponse response = RunProcessCommand.BuildResponse(platform, ProcessCode);
 
 		// Assert
 		response.Status.Should().Be("queued-background",
