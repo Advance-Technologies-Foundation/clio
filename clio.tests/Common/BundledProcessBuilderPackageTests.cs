@@ -122,13 +122,20 @@ public class BundledProcessBuilderPackageTests {
 	/// paragraph. The script captures <c>rev-parse HEAD</c> at step 0b and performs the restamp at step 2, so
 	/// the pin names the commit BEFORE the version moved — by design, and unavoidably, because the script does
 	/// not commit. Today's pins show it plainly: <see cref="ExpectedProducingCommit"/> resolves to a descriptor
-	/// reading 1.4.0.15 while the archive is 1.4.0.18.
-	/// <para>So reproducing the bytes is a two-step check, not a checkout: check out the pin, re-run the same
-	/// <c>set-pkg-version</c> with the pinned version, then pack. What the pin establishes is which SOURCES the
+	/// reading a version one restamp behind the archive beside it.
+	/// <para>So reproducing the bytes is not a checkout, and not two steps either: check out the pin, re-run
+	/// <c>set-pkg-version</c> with the pinned version, then hand-set <c>ModifiedOnUtc</c> to
+	/// <see cref="ExpectedDescriptorModifiedOnUtc"/>, then pack. The third step is not optional —
+	/// <c>SetPackageVersionCommand</c> writes <c>DateTime.Now</c> and takes no timestamp argument, so re-running
+	/// it stamps the present and the descriptor bytes differ every time. That pin exists for exactly this. Even
+	/// then the hash matches only on a host that renders the same line endings and the same path separator, which
+	/// is why the line-ending note above is not a footnote.</para> What the pin establishes is which SOURCES the
 	/// archive was built from — which is the question that actually matters, since the descriptor is the one
 	/// file the rebundle rewrites and the one whose expected content is pinned separately. Committing the
-	/// restamp afterwards is still part of every rebundle, because otherwise the pin names a commit that is
-	/// not on any branch.</para>
+	/// restamp afterwards is still part of every rebundle, but not for the reason first written here: the pin
+	/// names the PRE-restamp commit, which is on the branch either way. The real reasons are that the next cut's
+	/// clean-tree gate refuses a dirty tree, and that the pinned <c>ModifiedOnUtc</c> would otherwise exist in no
+	/// commit at all.</para>
 	/// </para>
 	/// <para>
 	/// It has since been wrong a THIRD way, which no amount of checking the date would have caught: the bytes

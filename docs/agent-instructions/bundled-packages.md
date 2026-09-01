@@ -125,7 +125,8 @@ descendant of the other's restamp those bumps are independent. Merging them conf
 This conflict is worth its own rule because of a property the others here do not have: **both resolutions
 look correct.** Take the other branch's line and the archive holds one branch's bytes under a number that
 promises both; take your own and you get the same thing mirrored. Nothing downstream disagrees with you —
-the pins are refreshed FROM the archive you just produced, so they are self-consistent whatever is in it,
+only the SHA is computed from the archive, yet all four pins are refreshed together, so they are
+self-consistent whatever is in it,
 and `ExpectedProducingCommit` names a commit that genuinely was HEAD when the bytes were packed. Every
 test passes, the provenance is honest about the commit, and the version is still a claim about content
 that nobody made. Compare the failure modes above, where at least one resolution is visibly worse.
@@ -235,7 +236,7 @@ one and an install run from them ships it. It names them all at the end.
 
 What it does beyond running the steps below:
 
-- computes the pins **from the archive it just produced**, so "the pins are stale" stops being a
+- refreshes all four pins in the same run, so "the pins are stale" stops being a
   reachable state;
 - reads the archive back and checks the inventory — exactly two DLLs and both from `Files/Libs`, the compile
   marker present, the package's own assembly absent, and nothing outside the allowed top-level set (in
@@ -365,7 +366,11 @@ that line. `ExpectedDescriptorModifiedOnUtc` is read from the package repository
 the restamp. And `ExpectedProducingCommit` is that repository's HEAD BEFORE it, so the pin names the commit
 whose descriptor still carries the OLD version — by design, and unavoidably, since the script does not
 commit. Reproducing the bytes is therefore: check out the pin, re-run `set-pkg-version` with the pinned
-version, then pack. Forgetting this pin on the manual path is worse than forgetting the others. A stale SHA turns the fixture red. A stale producing
+version, hand-set `ModifiedOnUtc` to the pinned value, then pack. That third step is not optional:
+`set-pkg-version` writes `DateTime.Now` and takes no timestamp argument, so re-running it stamps the present
+and the bytes differ every time — which is what `ExpectedDescriptorModifiedOnUtc` is for. And even then the
+hash matches only on a host rendering the same line endings and path separator. Forgetting the producing-commit
+pin on the manual path is worse than forgetting the others. A stale SHA turns the fixture red. A stale producing
 commit stays 40 hex characters, passes every test, and points confidently at the wrong commit, which is
 the failure the constant was added to remove.
 

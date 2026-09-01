@@ -141,7 +141,8 @@ $clioDll = $chosen.Dll
 Write-Host "Using clio $($chosen.Configuration)/$($chosen.Framework)" -ForegroundColor Cyan
 
 # ---------------------------------------------------------------- 0b. provenance, mechanically
-# The pins this script writes are all derived from the archive it just produced, so they agree with any
+# Only the SHA is computed from the archive; the other three come from the -Version argument, the descriptor
+# after the restamp, and HEAD before it. All four are refreshed together, so they agree with any
 # bytes from any tree - which is why the producing commit has been recorded in PROSE, and why that prose
 # has already been wrong three times (a commit whose descriptor could not yield the bytes; a commit that
 # was behind because the restamp was left uncommitted; bytes that corresponded to no commit at all, when a
@@ -524,8 +525,8 @@ if ($schemaFolders.Count -ne 1 -or $schemaFolders[0] -ne 'CrtProcessBuilderCompi
 }
 Ok "$($entries.Count) entries, $($dlls.Count) DLLs (both Files/Libs), compile marker present, no own assembly, nothing that executes on install"
 
-# ---------------------------------------------------------------- 6. pins, computed from the archive
-Step '6. Refresh the clio-side pins FROM the archive just produced'
+# ---------------------------------------------------------------- 6. pins (only the SHA comes from the archive)
+Step '6. Refresh the clio-side pins (SHA from the archive; version, stamp and commit from the package repo)'
 $sha = (Get-FileHash -LiteralPath $archive -Algorithm SHA256).Hash.ToUpperInvariant()
 $stamp = $afterStamp
 
