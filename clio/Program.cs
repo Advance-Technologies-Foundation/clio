@@ -436,7 +436,8 @@ internal class Program {
 			return 1;
 		}
 		return instance switch {
-			ExecuteAssemblyOptions opts => CreateRemoteCommand<AssemblyCommand>(opts).Execute(opts),
+			ExecuteAssemblyOptions opts => ExecuteRemoteCommand<AssemblyCommand, ExecuteAssemblyOptions>(opts,
+				static (command, options) => command.Execute(options)),
 			RestartOptions opts => Resolve<RestartCommand>(opts).Execute(opts),
 			StartOptions opts => Resolve<StartCommand>(opts).Execute(opts),
 			ClearRedisOptions opts => Resolve<RedisCommand>(opts).Execute(opts),
@@ -493,7 +494,8 @@ internal class Program {
 			SetFileContentStorageConnectionStringOptions opts =>
 				Resolve<SetFileContentStorageConnectionStringCommand>(opts).Execute(opts),
 			UnzipPkgOptions opts => Resolve<ExtractPackageCommand>().Execute(opts),
-			PingAppOptions opts => CreateRemoteCommand<PingAppCommand>(opts).Execute(opts),
+			PingAppOptions opts => ExecuteRemoteCommand<PingAppCommand, PingAppOptions>(opts,
+				static (command, options) => command.Execute(options)),
 			OpenAppOptions opts => Resolve<OpenAppCommand>(opts).Execute(opts),
 			GetBrowserSessionOptions opts => Resolve<GetBrowserSessionCommand>(opts).Execute(opts),
 			ClearBrowserSessionOptions opts => Resolve<ClearBrowserSessionCommand>(opts).Execute(opts),
@@ -795,16 +797,6 @@ internal class Program {
 
 	#region Properties: Private
 
-	private static CreatioClient _creatioClientInstance {
-		get {
-			if (string.IsNullOrEmpty(ClientId)) {
-				return new CreatioClient(Url, UserName, UserPassword, true, CreatioEnvironment.IsNetCore);
-			}
-			return CreatioClient.CreateOAuth20Client(Url, AuthAppUrl, ClientId, ClientSecret,
-				CreatioEnvironment.IsNetCore);
-		}
-	}
-
 	private static string ApiVersionUrl => AppUrl + @"/rest/CreatioApiGateway/GetApiVersion";
 
 	private static string AppUrl {
@@ -916,22 +908,34 @@ internal class Program {
 	}
 
 	/// <summary>
-	/// Creates a remote command with a client connection to the Creatio environment.
+	/// Executes a remote command while owning its client connection for the complete invocation.
 	/// </summary>
 	/// <typeparam name="TCommand">Type of command to create</typeparam>
+	/// <typeparam name="TOptions">Type of command options</typeparam>
 	/// <param name="options">Environment options</param>
+	/// <param name="execute">Command invocation delegate</param>
 	/// <param name="additionalConstructorArgs">Additional arguments to pass to the constructor</param>
-	/// <returns>Instantiated command with connection to remote environment</returns>
-	private static TCommand CreateRemoteCommand<TCommand>(EnvironmentOptions options,
-		params object[] additionalConstructorArgs){
+	/// <returns>Command exit code</returns>
+	private static int ExecuteRemoteCommand<TCommand, TOptions>(TOptions options,
+		Func<TCommand, TOptions, int> execute, params object[] additionalConstructorArgs)
+		where TOptions : EnvironmentOptions {
 		EnvironmentSettings settings = GetEnvironmentSettings(options);
-		CreatioClient creatioClient = string.IsNullOrEmpty(settings.ClientId) ? new CreatioClient(settings.Uri,
-				settings.Login, settings.Password, true, settings.IsNetCore) :
-			CreatioClient.CreateOAuth20Client(settings.Uri, settings.AuthAppUri, settings.ClientId,
-				settings.ClientSecret, settings.IsNetCore);
-		CreatioClientAdapter clientAdapter = new(creatioClient);
+		using CreatioClientAdapter clientAdapter = string.IsNullOrEmpty(settings.ClientId)
+			? new CreatioClientAdapter(settings.Uri, settings.Login, settings.Password,
+				useUntrustedSsl: true, settings.IsNetCore)
+			: new CreatioClientAdapter(settings.Uri, settings.ClientId, settings.ClientSecret,
+				settings.AuthAppUri, settings.IsNetCore);
 		object[] constructorArgs = new object[] {clientAdapter, settings}.Concat(additionalConstructorArgs).ToArray();
-		return (TCommand)Activator.CreateInstance(typeof(TCommand), constructorArgs);
+		TCommand command = (TCommand)Activator.CreateInstance(typeof(TCommand), constructorArgs);
+		return execute(command, options);
+	}
+
+	private static CreatioClient CreateCreatioClient(){
+		if (string.IsNullOrEmpty(ClientId)) {
+			return new CreatioClient(Url, UserName, UserPassword, true, CreatioEnvironment.IsNetCore);
+		}
+		return CreatioClient.CreateOAuth20Client(Url, AuthAppUrl, ClientId, ClientSecret,
+			CreatioEnvironment.IsNetCore);
 	}
 
 	/// <summary>
@@ -956,32 +960,35 @@ internal class Program {
 	/// <param name="_async">If true, performs the download asynchronously</param>
 	private static void DownloadZipPackagesInternal(string packageName, string destinationPath, bool _async){
 		try {
+			using CreatioClient client = CreateCreatioClient();
 			Console.WriteLine("Start download packages ({0}).", packageName);
 			int count = 0;
 			string packageNames
 				= string.Format("\"{0}\"", packageName.Replace(" ", string.Empty).Replace(",", "\",\""));
 			string requestData = "[" + packageNames + "]";
 			if (!_async) {
-				_creatioClientInstance.DownloadFile(GetZipPackageUrl, destinationPath, requestData, 600000);
+				client.DownloadFile(GetZipPackageUrl, destinationPath, requestData, 600000);
 			}
 			else {
-				_creatioClientInstance.ExecutePostRequest(DeleteExistsPackagesZipUrl, string.Empty);
+				client.ExecutePostRequest(DeleteExistsPackagesZipUrl, string.Empty);
 				// The warm-up download's payload is discarded (the real download follows below), so its temp-file
 				// lifecycle - owner-private location, guaranteed cleanup, and the background-thread exception
 				// boundary - is owned by an injectable, regression-tested service instead of an inline thread.
-				CreatioClient warmUpClient = _creatioClientInstance;
 				Container.GetRequiredService<IWarmUpPackageDownloader>().StartWarmUpDownload(
-					tempFilePath => warmUpClient.DownloadFile(GetZipPackageUrl, tempFilePath, requestData, 2000));
+					tempFilePath => {
+						using CreatioClient warmUpClient = CreateCreatioClient();
+						warmUpClient.DownloadFile(GetZipPackageUrl, tempFilePath, requestData, 2000);
+					});
 				bool again = false;
 				do {
 					Thread.Sleep(2000);
-					again = !bool.Parse(_creatioClientInstance.ExecutePostRequest(ExistsPackageZipUrl, string.Empty));
+					again = !bool.Parse(client.ExecutePostRequest(ExistsPackageZipUrl, string.Empty));
 					if (++count > 600) {
 						throw new TimeoutException("Timeout exception");
 					}
 				} while (again);
 				Thread.Sleep(1000);
-				_creatioClientInstance.DownloadFile(DownloadExistsPackageZipUrl, destinationPath, requestData, 60000);
+				client.DownloadFile(DownloadExistsPackageZipUrl, destinationPath, requestData, 60000);
 			}
 			Console.WriteLine("Download packages ({0}) completed.", packageName);
 		}
@@ -1007,7 +1014,8 @@ internal class Program {
 	private static Version GetAppApiVersion(){
 		Version apiVersion = new("0.0.0.0");
 		try {
-			string appVersionResponse = _creatioClientInstance.ExecuteGetRequest(ApiVersionUrl).Trim('"');
+			using CreatioClient client = CreateCreatioClient();
+			string appVersionResponse = client.ExecuteGetRequest(ApiVersionUrl).Trim('"');
 			apiVersion = new Version(appVersionResponse);
 		}
 		catch (Exception) { }

@@ -7,12 +7,12 @@ ticket: ENG-92558
 date: 2026-08-30
 ---
 
-**What is true** — `.github/workflows/build.yml` has exactly three test lanes:
-`clio.tests.csproj --filter "Category!=Integration"`, `clio.tests.csproj --filter
-"Category=Integration"`, and `Clio.Analyzers.Tests.csproj`. No workflow in `.github/workflows/`
-invokes `clio.mcp.e2e.csproj`. A test in that project is therefore never executed by a pull-request
-check, even when it is marked `[Category("Unit")]`, needs no environment and runs in milliseconds -
-and `clio.mcp.e2e` does contain such tests today.
+**What is true** — `.github/workflows/build.yml` builds `clio.tests.dll` and runs its existing
+`Category!=Integration` and `Category=Integration` predicates through GitHub-only shards; it also
+runs `Clio.Analyzers.Tests.csproj`. No workflow in `.github/workflows/` invokes
+`clio.mcp.e2e.csproj`. A test in that project is therefore never executed by a pull-request check,
+even when it is marked `[Category("Unit")]`, needs no environment and runs in milliseconds - and
+`clio.mcp.e2e` does contain such tests today.
 
 **Why it is this way** — the project was built around a live Creatio stand and is driven from
 TeamCity, so it was never wired into the GitHub lanes. Whether TeamCity currently executes the

@@ -72,6 +72,13 @@ public sealed class ProcessPageFactsTool(
 				};
 			}
 			resolvedCommand.TryGetFacts(options, out ProcessPageFactsResponse response);
+			if (!string.IsNullOrEmpty(response?.Error)) {
+				// The command's inner error can carry an HTTP/DataService message with the environment
+				// URI/host; redact before it lands in the MCP transcript (parity with the resolution-failure
+				// redaction above, and with GetClassicPageSourcesTool). Redacted HERE and not in the command:
+				// the CLI shows the full message, where it goes no further than the operator's terminal.
+				response.Error = SensitiveErrorTextRedactor.Redact(response.Error);
+			}
 			return response;
 		});
 	}

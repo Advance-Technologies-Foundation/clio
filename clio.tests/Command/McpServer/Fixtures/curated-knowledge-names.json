@@ -1,7 +1,7 @@
 {
   "library": "com.creatio.clio",
-  "libraryVersion": "1.13.53",
-  "sequence": 1013053000,
+  "libraryVersion": "1.13.54",
+  "sequence": 1013054000,
   "availableNames": [
     "agent-execution",
     "app-modeling",
@@ -82,6 +82,7 @@
     "creatio.page-schema-handlers",
     "creatio.page-schema-resources",
     "creatio.page-schema-validators",
+    "creatio.process-modeling",
     "creatio.process-script-task",
     "creatio.record-rights",
     "creatio.related-list",
@@ -138,6 +139,7 @@
     "page-schema-handlers",
     "page-schema-resources",
     "page-schema-validators",
+    "process-modeling",
     "process-script-task",
     "record-rights",
     "related-list",
@@ -158,8 +160,6 @@
   ],
   "featureGatedNames": [
     "creatio.freedom-page-web-to-mobile-conversion",
-    "creatio.process-modeling",
-    "freedom-page-web-to-mobile-conversion",
-    "process-modeling"
+    "freedom-page-web-to-mobile-conversion"
   ]
 }

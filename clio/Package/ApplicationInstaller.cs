@@ -45,7 +45,7 @@ namespace Clio.Package
 		#region Methods: Private
 
 		private bool InternalUnInstall(SysInstalledApp appInfo, EnvironmentSettings environmentSettings){
-			IApplicationClient client = _applicationClientFactory.CreateClient(environmentSettings);
+			using IOwnedApplicationClient client = _applicationClientFactory.CreateOwnedClient(environmentSettings);
 			string completeUrl = GetCompleteUrl(UnInstallUrl, environmentSettings);
 			_logger.WriteInfo($"Uninstalling {appInfo.Code}");
 			string result = client.ExecutePostRequest(completeUrl, "\"" + appInfo.Id + "\"");

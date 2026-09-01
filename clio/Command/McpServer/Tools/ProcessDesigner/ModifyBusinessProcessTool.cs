@@ -9,7 +9,6 @@ namespace Clio.Command.McpServer.Tools.ProcessDesigner;
 /// <summary>
 /// MCP tool that edits an existing business process on a Creatio environment by applying a list of operations.
 /// </summary>
-[FeatureToggle("process-designer")]
 public class ModifyBusinessProcessTool(
 	ModifyBusinessProcessCommand command,
 	ILogger logger,
@@ -43,10 +42,10 @@ public class ModifyBusinessProcessTool(
 		 + "elementParameter} or {targetProcessParameter}, and one source of {sourceElement, sourceElementParameter} "
 		 + "| processParameter | value | expression; parameter-to-parameter mappings require compatible types; "
 		 + "a Lookup target's 'value' takes a bare non-empty record Guid, stored as the ConstValue the runtime "
-		 + "actually reads (the route ships from CrtProcessBuilder 1.4.0.0; THIS clio additionally refuses any "
-		 + "environment older than the version it BUNDLES — up front, via the package-convergence message naming "
-		 + "both versions — while an older clio surfaces the old package's [#Lookup…#]-macro rejection; either "
-		 + "refusal means the ENVIRONMENT IS BEHIND, not that the parameter is unsettable: update the package); "
+		 + "actually reads (the floor is CrtProcessBuilder 1.4.0.0, the version this clio BUNDLES, and it "
+		 + "refuses any environment older than that — up front, via the convergence message naming both versions — while an "
+		 + "older clio surfaces the old package's [#Lookup…#]-macro rejection; either refusal means the "
+		 + "ENVIRONMENT IS BEHIND, not that the parameter is unsettable: update the package); "
 		 + "a non-Guid lookup value is refused with a message that leads with the bare-Guid route (the "
 		 + "[#Lookup…#] expression form stays the named fallback), Guid.Empty is refused as "
 		 + "referencing no record, and a Guid that exists in NO record of the parameter's reference object is "

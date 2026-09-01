@@ -39,7 +39,9 @@ public sealed class ApplicationSectionCreateToolPassthroughTests {
 
 	private ISettingsRepository _settingsRepository;
 	private IApplicationClientFactory _applicationClientFactory;
-	private IApplicationClient _applicationClient;
+	[System.Diagnostics.CodeAnalysis.SuppressMessage("Structure", "NUnit1032:An IDisposable field/property should be Disposed in a TearDown method",
+		Justification = "The system under test owns and disposes the factory-returned substitute.")]
+	private IOwnedApplicationClient _applicationClient;
 	private IServiceUrlBuilder _serviceUrlBuilder;
 	private IServiceUrlBuilderFactory _serviceUrlBuilderFactory;
 	private IApplicationInfoService _applicationInfoService;
@@ -52,7 +54,7 @@ public sealed class ApplicationSectionCreateToolPassthroughTests {
 	public void SetUp() {
 		_settingsRepository = Substitute.For<ISettingsRepository>();
 		_applicationClientFactory = Substitute.For<IApplicationClientFactory>();
-		_applicationClient = Substitute.For<IApplicationClient>();
+		_applicationClient = Substitute.For<IOwnedApplicationClient>();
 		_serviceUrlBuilder = Substitute.For<IServiceUrlBuilder>();
 		_serviceUrlBuilderFactory = Substitute.For<IServiceUrlBuilderFactory>();
 		_serviceUrlBuilderFactory.Create(Arg.Any<EnvironmentSettings>()).Returns(_serviceUrlBuilder);

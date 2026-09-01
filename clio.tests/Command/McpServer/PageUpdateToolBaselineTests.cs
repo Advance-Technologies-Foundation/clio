@@ -76,7 +76,7 @@ public sealed class PageUpdateToolBaselineTests
 		// header-aware passthrough call routes to the header tenant instead of a silent active-env probe.
 		ISettingsRepository settingsRepository = Substitute.For<ISettingsRepository>();
 		commandResolver.Resolve<EnvironmentSettings>(Arg.Any<EnvironmentOptions>()).Returns(new EnvironmentSettings());
-		IPlatformVersionResolver resolver = Substitute.For<IPlatformVersionResolver>();
+		IOwnedPlatformVersionResolver resolver = Substitute.For<IOwnedPlatformVersionResolver>();
 		resolver.ResolveAsync(Arg.Any<CancellationToken>())
 			.Returns(new PlatformVersionResolution("8.3.4", VersionResolutionSource.Environment));
 		IPlatformVersionResolverFactory resolverFactory = Substitute.For<IPlatformVersionResolverFactory>();

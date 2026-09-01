@@ -305,8 +305,10 @@ public sealed class ProcessPageFactsCommandTests {
 
 		// Assert
 		success.Should().BeTrue(because: "an empty page is not an error — but it must not read as a clean answer");
-		response.CompletingButtonCandidates.Should().BeEmpty();
-		response.Warnings.Should().ContainSingle()
+		response.CompletingButtonCandidates.Should().BeEmpty(
+			because: "the page carries no button the projection recognised");
+		response.Warnings.Should().ContainSingle(
+				because: "an empty candidate list is ambiguous and must not read as a clean answer")
 			.Which.Should().Contain("can never finish at run time");
 	}
 }

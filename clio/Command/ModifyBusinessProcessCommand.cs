@@ -101,7 +101,7 @@ public sealed class ModifyBusinessProcessService(
 			logger.WriteWarning(buttonWarning);
 		}
 
-		IApplicationClient client = applicationClientFactory.CreateEnvironmentClient(environmentSettings);
+		using IOwnedApplicationClient client = applicationClientFactory.CreateOwnedEnvironmentClient(environmentSettings);
 		string url = serviceUrlBuilder.Build(ServiceUrlBuilder.KnownRoute.ModifyProcess, environmentSettings);
 		// ProcessDesignService uses BodyStyle=Wrapped: the request is wrapped under a "request" property.
 		string requestBody = new JsonObject { ["request"] = requestObject }.ToJsonString();

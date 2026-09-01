@@ -15,6 +15,8 @@ using NUnit.Framework;
 /// composition in particular are the two an independent re-derivation gets wrong.</para>
 /// </summary>
 [TestFixture]
+[Category("Unit")]
+[Property("Module", "Command")]
 public class ProcessPageFactsProjectionTests {
 
 	#region Methods: Private
@@ -51,9 +53,12 @@ public class ProcessPageFactsProjectionTests {
 		(_, List<ProcessPageDataSource> dataSources) = ProcessPageFactsProjection.Project(bundle);
 
 		// Assert
-		dataSources.Should().HaveCount(1);
-		dataSources[0].Name.Should().Be("PDS");
-		dataSources[0].EntitySchemaName.Should().Be("ServiceItem");
+		dataSources.Should().HaveCount(1,
+			because: "only the page-scoped entity source qualifies; the list ones are view-element scoped");
+		dataSources[0].Name.Should().Be("PDS",
+			because: "the source's own key is what the runtime tag's middle segment carries");
+		dataSources[0].EntitySchemaName.Should().Be("ServiceItem",
+			because: "the entity types the generated parameter and resolves the record's primary column");
 	}
 
 	[Test]
@@ -71,7 +76,8 @@ public class ProcessPageFactsProjectionTests {
 		(_, List<ProcessPageDataSource> dataSources) = ProcessPageFactsProjection.Project(bundle);
 
 		// Assert
-		dataSources.Should().BeEmpty();
+		dataSources.Should().BeEmpty(
+			because: "a source the designer's own filter rejects would generate a parameter nothing ever fills");
 	}
 
 	#endregion
@@ -93,12 +99,16 @@ public class ProcessPageFactsProjectionTests {
 		(List<ProcessPageButton> buttons, _) = ProcessPageFactsProjection.Project(bundle);
 
 		// Assert
-		buttons.Should().HaveCount(1);
-		buttons[0].Name.Should().Be("SaveButton");
+		buttons.Should().HaveCount(1,
+			because: "one crt.Button node produces exactly one entry");
+		buttons[0].Name.Should().Be("SaveButton",
+			because: "the element identifies a button by this name and the runtime tag is composed from it");
 		buttons[0].Caption.Should().Be("Apply | SaveButton",
 			because: "the designer stores the resolved caption and the element name together");
-		buttons[0].Event.Should().Be("clicked");
-		buttons[0].Requests.Should().Equal("crt.SaveRecordRequest");
+		buttons[0].Event.Should().Be("clicked",
+			because: "the card writes only this event, and the stored tag is '<name>_clicked'");
+		buttons[0].Requests.Should().Equal(["crt.SaveRecordRequest"],
+			because: "the handler's request is what decides whether the button can complete the page");
 	}
 
 	[Test]
@@ -116,7 +126,8 @@ public class ProcessPageFactsProjectionTests {
 		(List<ProcessPageButton> buttons, _) = ProcessPageFactsProjection.Project(bundle, "de-DE");
 
 		// Assert
-		buttons[0].Caption.Should().Be("Zurück | BackButton");
+		buttons[0].Caption.Should().Be("Zurück | BackButton",
+			because: "the caption is resolved in the requested culture before the designer's composition");
 	}
 
 	[Test]
@@ -132,7 +143,8 @@ public class ProcessPageFactsProjectionTests {
 		(List<ProcessPageButton> buttons, _) = ProcessPageFactsProjection.Project(bundle);
 
 		// Assert
-		buttons[0].Caption.Should().Be("$Resources.Strings.Absent | CustomButton");
+		buttons[0].Caption.Should().Be("$Resources.Strings.Absent | CustomButton",
+			because: "an unresolvable macro is reported verbatim rather than silently blanked");
 	}
 
 	[Test]
@@ -149,8 +161,10 @@ public class ProcessPageFactsProjectionTests {
 		(List<ProcessPageButton> buttons, _) = ProcessPageFactsProjection.Project(bundle);
 
 		// Assert
-		buttons.Should().HaveCount(1);
-		buttons[0].Name.Should().Be("SaveButton");
+		buttons.Should().HaveCount(1,
+			because: "one crt.Button node produces exactly one entry");
+		buttons[0].Name.Should().Be("SaveButton",
+			because: "the element identifies a button by this name and the runtime tag is composed from it");
 	}
 
 	[Test]
@@ -170,8 +184,10 @@ public class ProcessPageFactsProjectionTests {
 		(List<ProcessPageButton> buttons, _) = ProcessPageFactsProjection.Project(bundle);
 
 		// Assert
-		buttons.Select(button => button.Name).Should().Equal("ApproveItem", "RejectItem");
-		buttons[0].Caption.Should().Be("Actions | Approve | ApproveItem");
+		buttons.Select(button => button.Name).Should().Equal(["ApproveItem", "RejectItem"],
+			because: "a menu button contributes one entry per LEAF item, not one for the menu");
+		buttons[0].Caption.Should().Be("Actions | Approve | ApproveItem",
+			because: "the caption path walks parent to leaf, the composition the designer's card stores");
 		buttons.Should().NotContain(button => button.Name == "ActionsButton",
 			because: "the menu itself is not pressable in the sense that completes the page");
 	}
@@ -191,8 +207,10 @@ public class ProcessPageFactsProjectionTests {
 		(List<ProcessPageButton> buttons, _) = ProcessPageFactsProjection.Project(bundle);
 
 		// Assert
-		buttons.Should().HaveCount(1);
-		buttons[0].Caption.Should().Be("Actions | More | Archive | ArchiveItem");
+		buttons.Should().HaveCount(1,
+			because: "only the leaf is addressable; the menus above it raise nothing");
+		buttons[0].Caption.Should().Be("Actions | More | Archive | ArchiveItem",
+			because: "every level of the menu path is kept, so a nested item stays identifiable");
 	}
 
 	[Test]
@@ -265,7 +283,8 @@ public class ProcessPageFactsProjectionTests {
 		(List<ProcessPageButton> buttons, _) = ProcessPageFactsProjection.Project(bundle);
 
 		// Assert
-		buttons.Should().ContainSingle();
+		buttons.Should().ContainSingle(
+			because: "two containers carrying the same button is one button");
 		buttons[0].Requests.Should().Equal(["crt.SaveRecordRequest"],
 			because: "the completing copy must win the collapse, or the button vanishes from the candidates");
 	}
@@ -282,8 +301,10 @@ public class ProcessPageFactsProjectionTests {
 		(List<ProcessPageButton> buttons, _) = ProcessPageFactsProjection.Project(bundle);
 
 		// Assert
-		buttons[0].Requests.Should().BeEmpty();
-		ProcessPageFactsProjection.IsCompletingCandidate(buttons[0]).Should().BeTrue();
+		buttons[0].Requests.Should().BeEmpty(
+			because: "a handlerless button declares none, which the card's own rule admits");
+		ProcessPageFactsProjection.IsCompletingCandidate(buttons[0]).Should().BeTrue(
+			because: "a custom button that only runs code can still be chosen to complete the page");
 	}
 
 	[Test]
@@ -298,7 +319,8 @@ public class ProcessPageFactsProjectionTests {
 		(List<ProcessPageButton> buttons, _) = ProcessPageFactsProjection.Project(bundle);
 
 		// Assert
-		buttons.Should().BeEmpty();
+		buttons.Should().BeEmpty(
+			because: "a node without a name cannot be stored on the element or matched at run time");
 	}
 
 	#endregion

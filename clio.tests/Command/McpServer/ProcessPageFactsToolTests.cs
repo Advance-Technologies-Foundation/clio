@@ -78,6 +78,41 @@ public class ProcessPageFactsToolTests {
 	}
 
 	[Test]
+	[Description("A PAGE-READ failure is redacted too, and it is the likelier of the two error paths: an unreachable environment, a failed authentication or a DataService message all arrive as the command's own Error, straight out of the HTTP layer. The resolution path was already redacted; this one returned the raw message verbatim into the transcript the agent keeps.")]
+	public void GetProcessPageFacts_ShouldRedactAPageReadFailure() {
+		// Arrange — the command succeeds at resolving and then fails at reading the page.
+		ConsoleLogger.Instance.ClearMessages();
+		IProcessPageReader pageReader = Substitute.For<IProcessPageReader>();
+		PageGetResponse failure = new() {
+			Success = false,
+			Error = "Cannot connect to https://stand.creatio.com/0/DataService: the remote name was not resolved"
+		};
+		pageReader.TryGetPage(Arg.Any<PageGetOptions>(), out Arg.Any<PageGetResponse>())
+			.Returns(call => {
+				call[1] = failure;
+				return false;
+			});
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		commandResolver.Resolve<ProcessPageFactsCommand>(Arg.Any<ProcessPageFactsOptions>())
+			.Returns(_ => new ProcessPageFactsCommand(pageReader, ConsoleLogger.Instance));
+		ProcessPageFactsTool tool = new(
+			new ProcessPageFactsCommand(pageReader, ConsoleLogger.Instance), ConsoleLogger.Instance,
+			commandResolver);
+
+		// Act
+		ProcessPageFactsResponse response =
+			tool.GetProcessPageFacts(new ProcessPageFactsArgs { SchemaName = "UsrRequest_FormPage" });
+
+		// Assert
+		response.Success.Should().BeFalse();
+		response.Error.Should().NotContain("https://stand.creatio.com",
+			because: "the environment URI must not reach the transcript, on this path as on the other one");
+		response.Error.Should().Contain("redacted",
+			because: "the message is still reported, with the host removed rather than the whole text dropped");
+		ConsoleLogger.Instance.ClearMessages();
+	}
+
+	[Test]
 	[Description("An environment-resolution failure is REDACTED before it becomes a tool result: resolution runs on the caller's connection details, and an MCP tool result is transcript the agent keeps. Pinned on the URI, which is what SensitiveErrorTextRedactor actually removes — a secret embedded in free prose is outside that redactor's scope, so this asserts the guarantee that exists rather than one that does not.")]
 	public void GetProcessPageFacts_ShouldRedactAnEnvironmentResolutionFailure() {
 		// Arrange

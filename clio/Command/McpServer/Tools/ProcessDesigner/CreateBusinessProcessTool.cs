@@ -9,7 +9,6 @@ namespace Clio.Command.McpServer.Tools.ProcessDesigner;
 /// <summary>
 /// MCP tool that builds a business process on a Creatio environment from a declarative JSON descriptor.
 /// </summary>
-[FeatureToggle("process-designer")]
 public class CreateBusinessProcessTool(
 	CreateBusinessProcessCommand command,
 	ILogger logger,
@@ -96,10 +95,11 @@ public class CreateBusinessProcessTool(
 		 + "CURRENT USER is used; omit showPage and the page is STILL shown automatically because that is the "
 		 + "task default, so do not send showPage:true to be sure — it is accepted only for type:user anyway), "
 		 + "recommendation? (a single line — a line break is rejected)}). "
-		 + "The pages buttons and data sources are FACTS, not values you may invent: a page inherits its "
+		 + "The page's buttons and data sources are FACTS, not values you may invent: a page inherits its "
 		 + "buttons from its template chain and the server cannot see them, so call get-process-page-facts "
-		 + "FIRST and pass its entries through unchanged. The pages PARAMETERS are deliberately absent from "
-		 + "the descriptor — the server reads them off the page itself and copies them onto the element, "
+		 + "FIRST and pass its entries through unchanged. The page's PARAMETERS are deliberately absent from "
+		 + "the descriptor — the server reads them off the page itself and copies them onto the element, so "
+		 + "do not declare them. "
 		 + "useBackgroundMode? (element-level: every element supports it; true runs it asynchronously via the "
 		 + "background scheduler — omit to keep the element kind's default, e.g. a signalStart defaults to true), signal?, "
 		 + "filter?}), flows[] ({source, target} of "
@@ -112,8 +112,8 @@ public class CreateBusinessProcessTool(
 		 + "element output as a process output); source is exactly one of {sourceElement, sourceElementParameter} "
 		 + "(another element's output), processParameter, value, or expression; parameter-to-parameter mappings "
 		 + "require compatible types; a Lookup target's 'value' takes a bare non-empty record Guid, stored as the "
-		 + "ConstValue the runtime actually reads (the route ships from CrtProcessBuilder 1.4.0.0; THIS clio "
-		 + "additionally refuses any environment older than the version it BUNDLES — up front, via the "
+		 + "ConstValue the runtime actually reads (the floor is CrtProcessBuilder 1.4.0.0, the version this clio "
+		 + "BUNDLES, and it refuses any environment older than that — up front, via the "
 		 + "package-convergence message naming both versions — while an older clio surfaces the old package's "
 		 + "[#Lookup…#]-macro rejection; either refusal means the environment is behind, not that the parameter "
 		 + "is unsettable), while a non-Guid lookup value is refused with a "
@@ -129,7 +129,7 @@ public class CreateBusinessProcessTool(
 		 + "A SUCCESSFUL build can still report caveats, and they arrive as message-type \"Warning\" entries "
 		 + "in execution-log-messages — there is no separate warnings field on the response, so looking for "
 		 + "one and finding nothing is not evidence there were none. Read them: a Pre-configured page whose "
-		 + "referenced page could not be loaded is built and SAVED carrying none of that pages parameters, "
+		 + "referenced page could not be loaded is built and SAVED carrying none of that page's parameters, "
 		 + "so anything you meant to map onto them is simply not there.")]
 	public CommandExecutionResult CreateBusinessProcess(
 		[Description("create-business-process parameters")] [Required] CreateBusinessProcessArgs args
