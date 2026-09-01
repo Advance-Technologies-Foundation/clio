@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.ComponentModel;
 using System.ComponentModel.DataAnnotations;
 using System.Linq;
@@ -54,8 +54,11 @@ public sealed class ODataUpdateTool(IToolCommandResolver commandResolver) {
 				return notConfirmed;
 			}
 
-			(IApplicationClient client, string url) = ODataKeyedWrite.ResolveTarget(commandResolver, args.EnvironmentName, args.Entity, args.Id);
-			IServiceUrlBuilder urlBuilder = commandResolver.Resolve<IServiceUrlBuilder>(new EnvironmentOptions { Environment = args.EnvironmentName });
+			//One resolve, one snapshot: validation and the PATCH share the client and URL builder that
+			//built this url. A second, independent resolve would reload the settings, so a repointed
+			//environment could validate against B and then write to A.
+			(IApplicationClient client, IServiceUrlBuilder urlBuilder, string url) =
+				ODataKeyedWrite.ResolveTarget(commandResolver, args.EnvironmentName, args.Entity, args.Id);
 			ODataWriteResponse fieldValidationError = ODataFieldValidation.ValidateDataFields(
 				client,
 				urlBuilder,

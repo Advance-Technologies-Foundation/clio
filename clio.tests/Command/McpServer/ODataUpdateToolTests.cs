@@ -852,4 +852,45 @@ public sealed class ODataUpdateToolTests {
 			because: "the key is compared as a GUID, so a casing difference from the service is not a mismatch");
 		f.Client.Received(1).ExecutePatchRequest(KeyUrl, """{"Name":"New"}""", 30000);
 	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Validation and the PATCH share one environment snapshot: the URL builder is resolved once, so repointing the environment between would-be resolves cannot send them to different roots.")]
+	public void Update_Should_Resolve_One_Environment_Target_For_Validation_And_The_Patch() {
+		// Arrange - the resolver answers a DIFFERENT root each time a URL builder is asked for, which is
+		// what a repointed environment looks like from here: ResolveSettingsAndKey reloads the settings on
+		// every resolve. A second resolve would therefore validate the field against environment B's type
+		// while the PATCH still went to environment A, and a field that exists only on B would pass
+		// validation and then be silently discarded by A with the tool reporting success.
+		IApplicationClient client = Substitute.For<IApplicationClient>();
+		client.ExecuteGetRequest(Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+			.Returns(CsdL());
+		client.ExecutePatchRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>())
+			.Returns(string.Empty);
+		IServiceUrlBuilder firstRoot = Substitute.For<IServiceUrlBuilder>();
+		firstRoot.Build(Arg.Any<string>()).Returns(call => $"http://creatio/{call.Arg<string>()}");
+		IServiceUrlBuilder repointedRoot = Substitute.For<IServiceUrlBuilder>();
+		repointedRoot.Build(Arg.Any<string>()).Returns(call => $"http://repointed/{call.Arg<string>()}");
+		IToolCommandResolver resolver = Substitute.For<IToolCommandResolver>();
+		resolver.Resolve<IApplicationClient>(Arg.Any<EnvironmentOptions>()).Returns(client);
+		resolver.Resolve<IServiceUrlBuilder>(Arg.Any<EnvironmentOptions>())
+			.Returns(firstRoot, repointedRoot);
+		ODataUpdateTool tool = new(resolver);
+
+		// Act
+		ODataWriteResponse response = tool.Update(new ODataUpdateArgs {
+			EnvironmentName = "dev",
+			Entity = "Contact",
+			Id = Guid,
+			Data = Obj("""{"Name":"New"}"""),
+			Confirm = true
+		});
+
+		// Assert
+		response.Success.Should().BeTrue();
+		resolver.Received(1).Resolve<IServiceUrlBuilder>(Arg.Any<EnvironmentOptions>());
+		repointedRoot.DidNotReceiveWithAnyArgs().Build(null);
+		client.Received(1).ExecuteGetRequest(MetadataUrl, Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>());
+		client.Received(1).ExecutePatchRequest(KeyUrl, """{"Name":"New"}""", 30000);
+	}
 }
