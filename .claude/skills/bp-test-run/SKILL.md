@@ -72,20 +72,40 @@ Two consequences, both load-bearing:
 A `browser` run needs a manifest from an `agent` run and refuses to guess without one: nothing else
 can tell it which of the processes on a shared stand belong to this test.
 
+## Quick start
+
+The ordered, copy-paste command sequence for both modes is
+[references/runbook.md](references/runbook.md). Follow it; read
+[references/environment.md](references/environment.md) when a step needs explaining or fails. The
+phases below are the contract the runbook implements — they say what must be true, the runbook says
+what to type.
+
 ## Phase 0 — preflight
 
 Resolve and print, one line each, before doing anything: issue, prompt path, stand alias and URL,
-executor mode, local `clio-knowledge` checkout and its HEAD, local package checkout and its HEAD.
+mode, isolation, local `clio-knowledge` checkout and its HEAD, local package checkout and its HEAD.
 
-Then **ask the user to confirm the stand** and proceed only on an explicit yes. Phase 2 installs a
-package onto a shared environment; the invocation is the gesture to run a test, not blanket
-permission to write to whichever stand a config file happened to name.
+**Probe the stand, do not trust the alias catalog.** Test stands are recycled constantly and a
+configured alias outlives the site it names — a dead one answers `404`, a refused connection, or
+*"ApplicationInfoService returned an unexpected response"*. On one run five of six candidate aliases
+were dead. Resolve liveness with `get-info` before anything downstream depends on the choice.
+
+Then **ask the user to confirm the stand** and proceed only on an explicit yes. Mode `agent` may
+install a package and mode `browser` executes processes; the invocation is the gesture to run a test,
+not blanket permission to write to whichever stand a config file happened to name.
 
 ## Phase 1 — local clio and local guidance
 
 Build clio from this working tree, and make the guidance library the executor sees come from the
-local `clio-knowledge` checkout rather than the published release. Commands are in
-`references/environment.md`.
+local `clio-knowledge` checkout rather than the published release. Commands in the runbook, order
+matters: back up the settings, enable `knowledge-allow-unsequenced`, hand-edit the `creatio-curated`
+entry into a Git override, **delete the cache**, then install.
+
+Three of those steps look skippable and are not. The flag is required because the library omits
+`sequence` by design and the Git transport demands it. The hand edit is required because no command
+can reach the override. The cache deletion is required because a derived sequence is orders of
+magnitude below a release-published one, so activation is refused — and refused *silently*, with every
+status command still reporting success.
 
 **Two gates, neither optional.**
 
@@ -217,9 +237,12 @@ unreachable; do not report it as posted.
 
 ## Phase 7 — teardown (mode `agent`)
 
-Knowledge sources are configured globally, so the local wiring outlives the run and applies to every
-later clio session on this machine. Restore it at the end of **every** `agent` run, successful or not.
-Commands and the exact state to print are in [references/environment.md](references/environment.md).
+Knowledge sources and feature flags are configured globally, so the wiring outlives the run and
+applies to every later clio session on this machine. Restore at the end of **every** `agent` run,
+successful or not, in three steps: disable the flag, copy the settings backup back, reinstall the
+released library. Skipping the third leaves the machine configured for a library it has not installed,
+because setup deleted the release generation. Commands and the exact state to print are in
+[references/environment.md](references/environment.md).
 
 Leaving the local library in place silently changes the guidance every unrelated session sees
 afterwards. That is a defect of the run, not a leftover detail.

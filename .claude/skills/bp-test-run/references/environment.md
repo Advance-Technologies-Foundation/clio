@@ -67,28 +67,48 @@ on. Without this control a deactivated library produces a transcript full of fla
 efficiency rubric will faithfully misattribute to guidance defects — the run would then argue for
 rewriting articles that were never read.
 
-**How the wiring actually works — measured, not assumed.** `libraryId` is unique across sources: a
-second source declaring `com.creatio.clio` is refused with *"library ... is already configured"*, and
-the built-in `creatio-curated` already holds it. So you cannot add a parallel source for the library.
-The supported path is to **override the `creatio-curated` alias itself** with a Git source — that is
-what it is for (clio#1017, "Allow curated knowledge Git source override") — which means
-`remove-knowledge-source` then `add-knowledge-source` under the same alias.
+**How the wiring actually works — measured on a real run, not assumed.** Four facts, each of which
+costs an hour if you meet it cold. The ordered commands are in
+[runbook.md](runbook.md); this is why they are in that order.
 
-Two things that will stop you the first time:
+**1. It is a settings-file edit, not a CLI operation.** The override of `creatio-curated` by a Git
+source is a supported mechanism — `CuratedKnowledgeBootstrapService.IsCuratedGitOverride` recognizes
+it deliberately — but no command reaches it. `remove-knowledge-source` refuses ("built-in knowledge
+source cannot be removed") and `add-knowledge-source` refuses ("alias or library is already
+configured"), because `libraryId` is unique and the built-in alias holds `com.creatio.clio` forever.
+So you edit the entry in `%LOCALAPPDATA%\creatio\clio\appsettings.json` by hand. Neither error
+message says so.
 
-- `remove-knowledge-source` refuses without `--force` in a non-interactive host. That is deliberate;
-  supply it rather than looking for another route.
-- The configured `library-id` must equal the one the repository's `bundle-source.json` declares
-  (`com.creatio.clio`). Inventing a distinct id to avoid the uniqueness rule gets the checkout
-  rejected at install with *"manifest identity ... does not match the configured library"* — the
-  message is accurate, the mistake is in the invocation.
+The override is only recognized when `location` matches the canonical URL **exactly**:
+`https://github.com/Advance-Technologies-Foundation/clio-knowledge.git`, with `priority: 100` and
+`participation: authoritative`. Any other address — a loopback included — stops being an override, and
+then you need a separate alias, a different `libraryId`, and every `docs://knowledge/com.creatio.clio/...`
+uri rewritten.
 
-Pin the exact content with `--commit <40-hex>`. When the local checkout's commit is pushed, pinning by
-SHA against the public repository serves byte-identical content and needs no local-path support; when
-it is not pushed, push it or accept that the run does not test what is on disk.
+**2. The library omits `sequence` on purpose, and a flag exists for it.** `clio-knowledge` master does
+not declare `sequence` in `bundle-source.json`; the release pipeline supplies it. The Git transport
+requires it and otherwise fails with *"manifest identity or required envelope is invalid"*. That is not
+a regression in either repository: enable `knowledge-allow-unsequenced`, which derives the sequence from
+`libraryVersion`. It also relaxes the equal-sequence guard, so you can edit an article and reinstall
+without bumping `libraryVersion` — which is exactly what iterating on guidance needs.
 
-Also confirm the local checkout is on the branch under test and has no uncommitted guidance edits: a
-Git source resolves a commit, so unstaged article changes are invisible to the executor.
+**3. Delete the cache BEFORE installing the Git source.** The derived sequence is short —
+`1.13.54` becomes `1013054` — while a release-published sequence is long: `1.13.25` was `1013025000`.
+Every derived value is therefore orders of magnitude *below* any release-installed one, and the
+rollback guard refuses activation. The failure is silent in the worst way: install reports success,
+`info-knowledge` reports `Installed: yes, Valid: yes, Library version 1.13.54`, and `get-guidance`
+returns `guidance-unavailable` with an empty `availableGuides` — no guidance at all. So run
+`delete-knowledge --source creatio-curated --force` first, and treat this as the reason Gate 2 exists.
+
+**4. A local path is not a supported location.** `ValidateRemoteUri` accepts HTTPS, or HTTP only on
+loopback: `file://`, an absolute path and a local bare repository are all rejected, and the validation
+runs even on a hand-written entry. So pin a **pushed** commit with `--commit <40-hex>` and get
+byte-identical content that way. Serving genuinely uncommitted local edits needs a loopback smart-HTTP
+server (clio clones `--filter=blob:none --depth=1`, which the dumb protocol cannot serve). There is no
+"point clio at a folder" mode; that is a product gap, not something to work around here.
+
+Also confirm the local checkout has no uncommitted guidance edits: a Git source resolves a commit, so
+unstaged article changes are invisible to the executor.
 
 ## Phase 2 — build and install the package
 
@@ -159,34 +179,43 @@ guess which file belongs to this run.
 `--isolation isolated` still loads `~/.claude/CLAUDE.md`, user-level skills, plugins, and hooks. Record
 the isolation in the report; efficiency counts across isolations are not comparable.
 
-## Teardown — restore the guidance configuration
+## Teardown — three steps, all required
 
-Knowledge sources are configured **globally**, in `%LOCALAPPDATA%\creatio\clio\appsettings.json`.
-The local wiring therefore outlives the run and silently applies to every later clio session on this
-machine, including ordinary work that has nothing to do with testing.
+Knowledge sources and feature flags are both configured **globally**, in
+`%LOCALAPPDATA%\creatio\clio\appsettings.json`. The wiring therefore outlives the run and applies to every
+later clio session on this machine, including work that has nothing to do with testing.
 
-Restore at the end of every `agent` run, including a failed one. Because the wiring replaced the
-built-in alias, restoring means putting it back exactly — these are its shipped values:
-
-```
-clio remove-knowledge-source --alias creatio-curated --force
-clio add-knowledge-source --alias creatio-curated --library-id com.creatio.clio --type github-release --location https://api.github.com/ --repository-owner Advance-Technologies-Foundation --repository-name clio-knowledge --asset-name clio-knowledge-bundle.zip --priority 100
-```
-
-Capture the source's own JSON with `list-knowledge-sources --json` **before** touching anything, so
-the restore uses observed values rather than the ones written here. If a run added an extra alias of
-its own, remove that too:
+Restore at the end of every `agent` run, including a failed one:
 
 ```
-clio disable-knowledge-source --alias <local alias>
-clio enable-knowledge-source --alias creatio-curated
+clio experimental --name knowledge-allow-unsequenced --disable
 ```
 
-Both are non-destructive: configuration and installed generations survive, so the next run re-enables
-the local alias without a fresh clone. `creatio-curated` is the built-in source alias.
+```
+copy appsettings.json.bpskills-backup over appsettings.json
+```
 
-Print the restored state (`clio list-knowledge-sources`) in the report. A run that leaves the local
-library enabled is a defect of the run, not a detail.
+```
+clio install-knowledge --source creatio-curated
+```
+
+Why each one:
+
+- **The flag** is persistent and global, and while it is on the content-integrity check that detects a
+  swapped guidance corpus does not apply to this source. Leaving it enabled is the most consequential
+  thing a run can forget.
+- **The settings copy** is the only exact restore available. `remove-knowledge-source` cannot remove the
+  built-in alias, so there is no command that puts the release transport back — take the backup during
+  setup and copy it back here. Capture `list-knowledge-sources --json` before touching anything so the
+  restore is checked against observed values rather than remembered ones.
+- **The reinstall** is needed because setup deleted the release generation to get past the sequence
+  guard. Restoring configuration alone leaves the machine configured for a library it has not
+  installed — guidance then serves nothing, and the next unrelated session pays for it.
+
+Print the restored state (`clio list-knowledge-sources`, `clio info-knowledge`) in the report. A run
+that leaves the local library or the flag in place is a defect of the run, not a detail.
+
+**Teardown does not touch the stand.** The processes the run created are the input to mode `browser`.
 
 ## Scratch layout
 
