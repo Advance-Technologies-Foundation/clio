@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Net.Http;
+using System.Threading;
 using System.Threading.Tasks;
 using Clio.Common;
 using Clio.Common.Responses;
@@ -102,6 +103,11 @@ namespace Clio.Command
 				ServerCertificateCustomValidationCallback = (_, _, _, _) => true
 			};
 
+		/// <summary>Test seam for the between-attempts delay (ENG-95709 retry). Defaults to a real sleep of the
+		/// given whole seconds; unit tests substitute a no-op so retry logic is exercised without wall-clock waits.</summary>
+		internal Action<int> SleepSeconds { get; set; } =
+			seconds => { if (seconds > 0) Thread.Sleep(TimeSpan.FromSeconds(seconds)); };
+
 		private static bool IsEnabled(string value) =>
 			string.Equals(value, "true", StringComparison.OrdinalIgnoreCase);
 
@@ -110,8 +116,32 @@ namespace Clio.Command
 			return $"{baseUri}{path}";
 		}
 
-		// Runs a single probe and returns its structured result. Human-readable progress/outcome lines are
-		// written only in non-JSON mode, so in --json mode stdout carries exactly one JSON object.
+		// Runs a single probe up to MaxAttempts times, waiting DelaySec seconds between attempts, and returns as
+		// soon as a probe is healthy. ENG-95709: the ENG-94417 move onto a clio-owned HttpClient bypassed the
+		// creatio.client retry path (ExecuteGetRequest honored MaxAttempts/DelaySec), so a freshly restarted app
+		// whose health endpoint answers with a transient 500 or a connect-but-never-answer stall during warm-up
+		// failed on the first and only attempt. Only TRANSIENT shapes are retried (5xx and transport
+		// failures/timeouts); a redirect or 4xx is a persistent misconfiguration that retrying cannot fix, so it
+		// fails fast — preserving the ENG-94417 "redirect is not followed and not healthy" behavior.
+		private HealthCheckEntry Probe(string checkName, string requestUri, bool jsonMode) {
+			int maxAttempts = Math.Max(1, MaxAttempts);
+			(HealthCheckEntry entry, bool retryable) = ProbeOnce(checkName, requestUri, jsonMode);
+			int attempt = 1;
+			while (!entry.Ok && retryable && attempt < maxAttempts) {
+				attempt++;
+				if (!jsonMode) {
+					Logger.WriteInfo($"\t{checkName} not ready ({entry.Error}); "
+						+ $"retrying in {DelaySec}s (attempt {attempt}/{maxAttempts}) ...");
+				}
+				SleepSeconds(DelaySec);
+				(entry, retryable) = ProbeOnce(checkName, requestUri, jsonMode);
+			}
+			return entry;
+		}
+
+		// A single probe attempt. Returns the structured result and whether the failure is transient (worth
+		// retrying). Human-readable progress/outcome lines are written only in non-JSON mode, so in --json mode
+		// stdout carries exactly one JSON object.
 		//
 		// The probe is issued through a clio-owned HttpClient rather than the external creatio.client
 		// (IApplicationClient.ExecuteGetRequest) on purpose (ENG-94417): creatio.client's per-request timeout
@@ -119,7 +149,7 @@ namespace Clio.Command
 		// stalled endpoint pinned the probe for the inherited 100s default and could even be reported OK. A
 		// clio-owned HttpClient makes the probe both BOUNDED (HttpClient.Timeout aborts the whole request at
 		// --timeout, AC3) and STATUS-AWARE (only a genuine 2xx is healthy; a non-2xx / stall is unhealthy, AC2).
-		private HealthCheckEntry Probe(string checkName, string requestUri, bool jsonMode) {
+		private (HealthCheckEntry Entry, bool Retryable) ProbeOnce(string checkName, string requestUri, bool jsonMode) {
 			if (!jsonMode) Logger.WriteInfo($"Checking {checkName} {requestUri} ...");
 			try
 			{
@@ -131,16 +161,20 @@ namespace Clio.Command
 				if (!response.IsSuccessStatusCode) {
 					string message = DescribeUnsuccessfulResponse(response);
 					if (!jsonMode) Logger.WriteError($"\tError: {message}");
-					return new HealthCheckEntry(checkName, requestUri, false, message);
+					// A 5xx is a transient warm-up shape and is retried; a 3xx/4xx is a persistent
+					// misconfiguration (e.g. a login redirect) that retrying cannot fix.
+					bool retryable = (int)response.StatusCode >= 500;
+					return (new HealthCheckEntry(checkName, requestUri, false, message), retryable);
 				}
 				if (!jsonMode) Logger.WriteInfo($"\t{checkName} - OK");
-				return new HealthCheckEntry(checkName, requestUri, true, null);
+				return (new HealthCheckEntry(checkName, requestUri, true, null), false);
 			}
 			catch (Exception ex)
 			{
 				string message = DescribeProbeFailure(ex);
 				if (!jsonMode) Logger.WriteError($"\tError: {message}");
-				return new HealthCheckEntry(checkName, requestUri, false, message);
+				// A transport failure or a timeout (connect-but-never-answer during warm-up) is transient.
+				return (new HealthCheckEntry(checkName, requestUri, false, message), true);
 			}
 		}
 

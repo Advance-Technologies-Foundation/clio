@@ -40,6 +40,9 @@ public class HealthCheckCommandTestCase
 		// Default to a healthy 200 probe so tests that do not care about the transport still pass without a
 		// real network call; individual tests override the factory to simulate failures/stalls.
 		UseHandler(StubHttpMessageHandler.RespondingWith(() => new HttpResponseMessage(HttpStatusCode.OK)));
+		// Never wall-clock sleep between retry attempts in unit tests (ENG-95709); tests that assert on the
+		// delay override this with a recording stub.
+		_hcCommand.SleepSeconds = _ => { };
 	}
 
 	private StubHttpMessageHandler _handler;
@@ -157,7 +160,7 @@ public class HealthCheckCommandTestCase
 		UseHandler(StubHttpMessageHandler.Stalling());
 
 		// Act
-		int result = _hcCommand.Execute(new HealthCheckOptions { TimeOut = 500 });
+		int result = _hcCommand.Execute(new HealthCheckOptions { TimeOut = 500, MaxAttempts = 1 });
 
 		// Assert
 		result.Should().Be(1,
@@ -173,7 +176,7 @@ public class HealthCheckCommandTestCase
 
 		// Act
 		Stopwatch stopwatch = Stopwatch.StartNew();
-		int result = _hcCommand.Execute(new HealthCheckOptions { WebHost = "true", TimeOut = 1000, Json = true });
+		int result = _hcCommand.Execute(new HealthCheckOptions { WebHost = "true", TimeOut = 1000, MaxAttempts = 1, Json = true });
 		stopwatch.Stop();
 
 		// Assert
@@ -239,7 +242,7 @@ public class HealthCheckCommandTestCase
 		UseHandler(StubHttpMessageHandler.Throwing(new HttpRequestException("boom")));
 
 		// Act
-		int result = _hcCommand.Execute(new HealthCheckOptions { WebHost = "true" });
+		int result = _hcCommand.Execute(new HealthCheckOptions { WebHost = "true", MaxAttempts = 1 });
 
 		// Assert
 		result.Should().Be(1, because: "the probe failed");
@@ -256,6 +259,88 @@ public class HealthCheckCommandTestCase
 		var container = bs.Register(_environmentSettings);
 		var command = container.GetRequiredService<HealthCheckCommand>();
 		command.Should().NotBeNull(because: "the command must be registered for CLI dispatch");
+	}
+
+	[Test]
+	[Description("ENG-95709: a transient warm-up 500 is retried and, once the app serves a 2xx, the healthcheck passes.")]
+	public void HealthCheckCommand_RetriesTransient500_ThenSucceeds() {
+		// Arrange — the health endpoint answers 500 twice (cold-start warm-up) then 200.
+		Queue<HttpStatusCode> statuses = new(new[] {
+			HttpStatusCode.InternalServerError, HttpStatusCode.InternalServerError, HttpStatusCode.OK });
+		UseHandler(StubHttpMessageHandler.RespondingWith(
+			() => new HttpResponseMessage(statuses.Count > 0 ? statuses.Dequeue() : HttpStatusCode.OK)));
+
+		// Act
+		int result = _hcCommand.Execute(new HealthCheckOptions { WebApp = "true", MaxAttempts = 3 });
+
+		// Assert
+		result.Should().Be(0, because: "the app became healthy within the retry budget");
+		_handler.RequestedUris.Should().HaveCount(3, because: "two warm-up 500s are retried before the 200");
+	}
+
+	[Test]
+	[Description("ENG-95709: a persistent 5xx is retried up to MaxAttempts and then reported unhealthy.")]
+	public void HealthCheckCommand_RetriesTransientError_UpToMaxAttempts_ThenFails() {
+		// Arrange
+		UseHandler(StubHttpMessageHandler.RespondingWith(() => new HttpResponseMessage(HttpStatusCode.ServiceUnavailable)));
+
+		// Act
+		int result = _hcCommand.Execute(new HealthCheckOptions { WebApp = "true", MaxAttempts = 3 });
+
+		// Assert
+		result.Should().Be(1, because: "a 5xx that never clears within the retry budget is unhealthy");
+		_handler.RequestedUris.Should().HaveCount(3, because: "the probe is attempted MaxAttempts times");
+	}
+
+	[Test]
+	[Description("ENG-95709: MaxAttempts bounds the number of probe attempts.")]
+	public void HealthCheckCommand_HonorsMaxAttempts() {
+		// Arrange
+		UseHandler(StubHttpMessageHandler.RespondingWith(() => new HttpResponseMessage(HttpStatusCode.InternalServerError)));
+
+		// Act
+		_hcCommand.Execute(new HealthCheckOptions { WebApp = "true", MaxAttempts = 2 });
+
+		// Assert
+		_handler.RequestedUris.Should().HaveCount(2, because: "exactly MaxAttempts (2) probes are issued");
+	}
+
+	[Test]
+	[Description("ENG-95709: a redirect is a persistent misconfiguration, not a warm-up shape — it is NOT retried (preserves ENG-94417).")]
+	public void HealthCheckCommand_DoesNotRetry_Redirect() {
+		// Arrange
+		UseHandler(StubHttpMessageHandler.RespondingWith(() => {
+			HttpResponseMessage redirect = new(HttpStatusCode.Found);
+			redirect.Headers.Location = new Uri("http://test.domain.com/Login/NuiLogin.aspx");
+			return redirect;
+		}));
+
+		// Act
+		int result = _hcCommand.Execute(new HealthCheckOptions { WebApp = "true", MaxAttempts = 3 });
+
+		// Assert
+		result.Should().Be(1, because: "a redirecting health endpoint is unhealthy");
+		_handler.RequestedUris.Should().ContainSingle(
+			because: "a 3xx is persistent, so it must fail fast without consuming the retry budget");
+	}
+
+	[Test]
+	[Description("ENG-95709: the command waits RetryDelay seconds between attempts.")]
+	public void HealthCheckCommand_WaitsRetryDelay_BetweenAttempts() {
+		// Arrange — one warm-up 500 then a 200; record the requested sleep durations.
+		Queue<HttpStatusCode> statuses = new(new[] { HttpStatusCode.InternalServerError, HttpStatusCode.OK });
+		UseHandler(StubHttpMessageHandler.RespondingWith(
+			() => new HttpResponseMessage(statuses.Count > 0 ? statuses.Dequeue() : HttpStatusCode.OK)));
+		List<int> sleeps = [];
+		_hcCommand.SleepSeconds = seconds => sleeps.Add(seconds);
+
+		// Act
+		int result = _hcCommand.Execute(new HealthCheckOptions { WebApp = "true", MaxAttempts = 3, RetryDelay = 7 });
+
+		// Assert
+		result.Should().Be(0);
+		sleeps.Should().ContainSingle(because: "exactly one wait precedes the single retry")
+			.Which.Should().Be(7, because: "the wait uses RetryDelay (7s)");
 	}
 
 	/// <summary>
