@@ -2154,6 +2154,13 @@ public static class WebToMobileAnalysisService {
 					MergeParentName = ResolveParent(ctx, mobileParentName),
 					Reason = TwinReason(name)
 				});
+				// ACCEPTED RUNTIME EXPOSURE, recorded here because the decision was made deliberately: a rules
+				// file published to the CDN that LOSES a containers entry silently reproduces ENG-94951 on a user's
+				// machine, with no report and no trace. The branch that used to detect that shipped a guide field
+				// telling the caller to stop, which meant the affected components were not converted at all; the
+				// follow-up removes the exposure properly by resolving the parent (walking up to the nearest
+				// ancestor that can host the child) instead of describing that it could not. Until then this is a
+				// known gap, not an oversight.
 				// A containers entry answers identity with `mobile` and placement with `childrenTo`, and they are
 				// not always the same element. The general tab IS the mobile GeneralInfoTab (so the survivor map
 				// and the caption are right) while its children belong in GeneralTabContainer -- the same place a
@@ -2170,10 +2177,12 @@ public static class WebToMobileAnalysisService {
 					// a real element, and say so. Mirrors what the retarget path already does with
 					// RetargetTargetMissing rather than inventing a second policy for the same hazard.
 					if (RetargetTargetMissing(ctx, childTarget)) {
-						ctx.Out.Add(Drop(childTarget, null,
-							$"a containers entry sends '{name}' children into '{childTarget}', which is not present "
-							+ $"on the mobile template \u2014 they were placed in '{twinMobileName}' instead. Fix the "
-							+ "rules file or the target template."));
+						// Named after the TAB, not after the missing target: a drop entry keyed on a name that
+						// exists on neither side would send the reader looking for an element in the source page.
+						ctx.Out.Add(Drop(name, type,
+							$"its containers entry sends this element's children into '{childTarget}', which is not "
+							+ $"present on the mobile template \u2014 they were placed in '{twinMobileName}' instead. "
+							+ "Fix the rules file or the target template."));
 					} else {
 						twinChildParent = childTarget;
 					}

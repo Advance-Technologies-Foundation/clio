@@ -285,6 +285,46 @@ public sealed class WebToMobileGeneralInfoTabRegressionTests {
 				+ "placement follows the rules and is not keyed on the element's name in code");
 	}
 
+	[Test]
+	[Description("A childrenTo naming an element the mobile template does not have must not park a whole tab's content under a name that does not exist. The rules are CDN-fetched, so a typo in a published file reaches users with no code change; the children fall back to the twin, which is always real, and the entry says why. This is the only runtime diagnostic left on the placement path.")]
+	public void Analyze_ShouldFallBackToTheTwin_WhenChildrenToNamesAMissingElement() {
+		// Arrange
+		JsonObject fixture = LoadFixture();
+
+		// Act
+		MobilePageConversionGuide guide = Convert(
+			fixture, RulesWithChildrenTo("GeneralInfoTab", "UsrNoSuchContainer"));
+
+		// Assert
+		foreach (string name in GeneralTabContent) {
+			Element(guide, name).ParentName.Should().Be(MobileGeneralTab,
+				because: $"'{name}' must land on a real element; the twin is the one parent that always exists, "
+					+ "so an unresolvable childrenTo degrades to it rather than to a name nothing will match");
+		}
+		guide.ElementMap.Should().Contain(
+			e => e.Operation == "drop" && e.WebName == MobileGeneralTab
+				&& e.Reason.Contains("UsrNoSuchContainer"),
+			because: "silently ignoring the bad declaration would leave the rules file broken and nobody the "
+				+ "wiser; the entry names the tab whose children moved and puts the missing target in the reason");
+	}
+
+	[Test]
+	[Description("childrenTo FAILS OPEN when the mobile template could not be read: with no template types to check the target against, the declaration is honoured rather than discarded. Discarding it would silently undo the fix on every environment whose template read failed, which is a worse outcome than trusting a rules file that is almost always right.")]
+	public void Analyze_ShouldHonourChildrenTo_WhenTheMobileTemplateIsUnavailable() {
+		// Arrange
+		JsonObject fixture = LoadFixture();
+
+		// Act
+		MobilePageConversionGuide guide = Convert(fixture, mobileTemplateAvailable: false);
+
+		// Assert
+		foreach (string name in GeneralTabContent) {
+			Element(guide, name).ParentName.Should().Be(MobileGeneralTabContainer,
+				because: $"'{name}' still belongs in the general tab's grid — the target could not be verified, "
+					+ "but an unverifiable target is not the same as a missing one");
+		}
+	}
+
 	// ── helpers ──────────────────────────────────────────────────────────────────────────────────
 
 	/// <summary>
@@ -392,61 +432,21 @@ public sealed class WebToMobileGeneralInfoTabRegressionTests {
 		return fixture;
 	}
 
+	/// <summary>The shipped rules with one containers entry's <c>childrenTo</c> pointed at a given name.</summary>
+	private static WebToMobilePageConversionRules RulesWithChildrenTo(string web, string target) {
+		JsonObject rules = JsonNode.Parse(BundledRulesJson())!.AsObject();
+		rules["templates"]!.AsArray()
+			.Single(t => t!["web"]!.ToString() == "PageWithTabsFreedomTemplate")!["containers"]!.AsArray()
+			.Single(c => c!["web"]!.ToString() == web)!.AsObject()["childrenTo"] = target;
+		using var stream = new MemoryStream(System.Text.Encoding.UTF8.GetBytes(rules.ToJsonString()));
+		return WebToMobilePageConversionRulesCatalog.ParseStream(stream);
+	}
+
 	private static JsonObject LoadFixture() {
 		string path = Path.Combine(
 			TestContext.CurrentContext.TestDirectory, "Command", "McpServer", "Fixtures", FixtureName);
 		return JsonNode.Parse(File.ReadAllText(path))!.AsObject();
 	}
-
-	/// <summary>
-	/// The shipped rules with the general-tab <c>containers</c> entry removed — the rules file that produced the
-	/// reported page, and the shape a CDN-published file can reintroduce at runtime. Re-parsed from the bundled
-	/// JSON rather than hand-copied onto a new <see cref="TemplateMappingRule"/>: a hand-copied baseline silently
-	/// loses any property added to that class later, and the A/B would then differ in more than the section
-	/// under test while staying green.
-	/// </summary>
-	private static WebToMobilePageConversionRules RulesWithoutTheGeneralTabEntry(
-		string renameTabTypeTo = null, string renameAcceptedTabContainerTypeTo = null,
-		(string From, string To)? renameKnownContainerTypes = null) {
-		JsonObject rules = JsonNode.Parse(BundledRulesJson())!.AsObject();
-		if (renameTabTypeTo is not null) {
-			rules["tabAreaLayers"]!["tabComponentType"] = renameTabTypeTo;
-		}
-		if (renameAcceptedTabContainerTypeTo is not null) {
-			// nothing to rename on the deny-list side: crt.TabContainer is not on it. The tab exemption the
-			// renamed-platform test proves comes from tabAreaLayers.tabComponentType, renamed above.
-		}
-		JsonArray containers = rules["templates"]!.AsArray()
-			.Single(t => t!["web"]!.ToString() == "PageWithTabsFreedomTemplate")!["containers"]!.AsArray();
-		JsonNode generalTab = containers.Single(c => c!["web"]!.ToString() == "GeneralInfoTab");
-		containers.Remove(generalTab);
-		if (renameKnownContainerTypes is { } rename) {
-			JsonArray nonHosting = rules["nonHostingContainerTypes"]!.AsArray();
-			for (int i = 0; i < nonHosting.Count; i++) {
-				if (string.Equals(nonHosting[i]!.ToString(), rename.From, StringComparison.OrdinalIgnoreCase)) {
-					nonHosting[i] = rename.To;
-				}
-			}
-		}
-		using var stream = new MemoryStream(System.Text.Encoding.UTF8.GetBytes(rules.ToJsonString()));
-		return WebToMobilePageConversionRulesCatalog.ParseStream(stream);
-	}
-
-	/// <summary>Converts a hand-built page with no template pair — no chrome subtraction, no twins.</summary>
-	private static MobilePageConversionGuide AnalyzeBlank(
-		PageBundleInfo bundle, WebToMobilePageConversionRules rules, IReadOnlySet<string> mobileTypes = null) =>
-		WebToMobileAnalysisService.Analyze(
-			new PageBundleInfo {
-				ViewConfig = bundle.ViewConfig!.DeepClone().AsArray(),
-				ViewModelConfig = new JsonObject(), ModelConfig = new JsonObject(),
-				Resources = new PageResourceInfo { Strings = new JsonObject() }
-			},
-			mobileTypes ?? MobileTypes(), new HashSet<string>(StringComparer.OrdinalIgnoreCase),
-			webByType: new Dictionary<string, ComponentRegistryEntry>(StringComparer.OrdinalIgnoreCase),
-			mobileByType: null, rules, templateRule: null,
-			sourcePage: "Usr_FormPage", sourceTemplate: "BlankPageTemplate",
-			suggestedTarget: "Usr_MobileFormPage",
-			containerNameMap: new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase));
 
 	private static string BundledRulesJson() {
 		using Stream stream = typeof(WebToMobilePageConversionRulesCatalog).Assembly

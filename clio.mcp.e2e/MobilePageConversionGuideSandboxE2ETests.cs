@@ -674,12 +674,12 @@ public sealed class MobilePageConversionGuideSandboxE2ETests : McpContractFixtur
 	/// ENG-94951: a parent that at least one <c>crt.TabContainer</c> insert targets IS a tab strip, and a
 	/// <c>crt.TabPanel</c> renders only <c>crt.TabContainer</c> children — so any OTHER insert targeting that
 	/// same parent is invisible in Mobile Designer and its whole subtree is lost from the converted page.
-	/// Derived from the serialized guide alone, deliberately NOT by calling the converter's own detection pass,
-	/// so this re-states the invariant over the real transport instead of re-running the implementation.
 	/// <para>
-	/// A pure STRUCTURAL statement: it reads the serialized guide and never calls the converter's own passes,
-	/// so it cannot pass merely because the implementation agrees with itself. The strip set is SEEDED with the
-	/// tabbed mobile template's own strip name, exactly as the unit-level statement of this invariant does. Deriving it from converted tabs ALONE makes the check vacuous on the
+	/// A pure STRUCTURAL statement: it reads the serialized guide and never calls the converter's own passes, so
+	/// it cannot pass merely because the implementation agrees with itself. The strip set is SEEDED with the
+	/// tabbed mobile template's own strip name, exactly as the unit-level statement of this invariant does —
+	/// deriving it from converted tabs ALONE makes the check vacuous on the very page shape the ticket reported,
+	/// where the only tab is the template's general one and no crt.TabContainer insert exists. Deriving it from converted tabs ALONE makes the check vacuous on the
 	/// very page shape the ticket reported — a page whose only tab is the template's general one authors no
 	/// <c>crt.TabContainer</c> insert, so the set would come back empty and the loss would pass unseen.
 	/// </para>

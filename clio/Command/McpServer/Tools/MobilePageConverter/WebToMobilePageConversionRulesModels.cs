@@ -66,30 +66,6 @@ public sealed class WebToMobilePageConversionRules {
 	public IReadOnlyList<ComponentPropertyOverrideRule> ComponentPropertyOverrides { get; init; } = [];
 
 	/// <summary>
-	/// Mobile component types that CANNOT host arbitrary children — a <c>crt.TabPanel</c> shows only its tabs,
-	/// so anything else placed in it renders as nothing. Stated as a DENY-list, and that polarity is the whole
-	/// point: this list drives a report that tells the caller to STOP, so a false positive halts a conversion
-	/// that was correct. A deny-list's failure mode is the safe one — a type nobody classified is simply not
-	/// reported.
-	/// <para>
-	/// An accept-list ("these types CAN host children") was tried first and is wrong here. It named four types
-	/// while the mobile registry ships ten more with an <c>items</c> slot, so every legitimate host it happened
-	/// not to name produced a confident STOP. Deriving the answer from
-	/// <see cref="EmptyContainerRemoval"/>'s <c>removableTypes</c> minus that accept-list was wrong for the
-	/// same reason once removed: adding a type to <c>removableTypes</c> for ITS purpose — an emptied shell
-	/// should be cleaned up — would silently turn every insert into that type into a STOP. One list, one
-	/// meaning, and the next non-hosting type is a deliberate rules edit rather than a side effect of an
-	/// unrelated one.
-	/// </para>
-	/// <para>
-	/// The registry cannot decide this: <c>crt.TabPanel</c> declares <c>items</c> exactly as <c>crt.Gallery</c>
-	/// does, and what differs — that a strip's items are tabs — is in prose, not in a field.
-	/// </para>
-	/// </summary>
-	[JsonPropertyName("nonHostingContainerTypes")]
-	public IReadOnlyList<string> NonHostingContainerTypes { get; init; } = [];
-
-	/// <summary>
 	/// Group: deterministic removal of converter-created layout containers that end up EMPTY after all
 	/// element-map decisions — a closed allowlist of removable types, evaluated bottom-up so
 	/// emptiness cascades. Null when the section is absent from the rules file — the removal pass is then

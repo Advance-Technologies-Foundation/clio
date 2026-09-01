@@ -181,7 +181,6 @@
       }
     }
   ],
-  "nonHostingContainerTypes": [ "crt.TabPanel" ],
   "emptyContainerRemoval": {
     "removableTypes": [
       "crt.FlexContainer",
