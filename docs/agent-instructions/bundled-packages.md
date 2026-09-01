@@ -141,16 +141,33 @@ A corollary, learned the expensive way: **claim the number before you cut, not a
 produced under `1.4.0.9` on one day by two branches that fork off each other, and the number is burned —
 a gap in the sequence is always cheaper than a number that names two different sets of bytes. Others are
 skipped for the same reason. **There is no curated list of burned numbers, and you should not go looking
-for one** — three have existed in this repository and all three went stale, the last of them in the very
-file whose job is that two statements about one set of bytes must not disagree. A list of gaps is
-write-only knowledge: it is appended to by whoever burns a number and read by nobody until it is already
+for one** — two files have carried one, both went stale, and the test file's went stale four times. A list
+of gaps is write-only knowledge: appended to by whoever burns a number, read by nobody until it is already
 wrong.
 
-Choose the next number mechanically instead. `ExpectedArchiveVersion` in
-`clio.tests/Common/BundledProcessBuilderPackageTests.cs` is the highest number THIS branch has cut;
-`git log --all -p -- clio.tests/Common/BundledProcessBuilderPackageTests.cs | grep ExpectedArchiveVersion`
-is the highest anyone has, across every branch that ever touched it. Take one above that, and take it
-before you cut. Nothing has to be maintained for that to keep working.
+Choose the next number like this instead.
+
+1. **Go up from YOUR OWN last cut.** `ExpectedArchiveVersion` in
+   `clio.tests/Common/BundledProcessBuilderPackageTests.cs` is it. That is what makes your change
+   detectable to an environment that already carries your package, which is the whole purpose of the
+   version moving.
+2. **Check the candidate is not already taken by anyone**, in BOTH histories — a cut can exist in the
+   package repository without ever reaching a clio commit (`1.4.0.4` and `1.4.0.6` are real examples):
+
+   ```
+   git -C <clio> log --all -p -- clio.tests/Common/BundledProcessBuilderPackageTests.cs      | grep -oE 'ExpectedArchiveVersion = "[0-9.]+"' | sort -u -V
+   git -C <package repo> log --all -p -- packages/CrtProcessBuilder/descriptor.json      | grep -oE '"PackageVersion": "[0-9.]+"' | sort -u -V
+   ```
+
+   `sort -V`, not plain `sort`: `1.4.0.9` sorts above `1.4.0.27` lexically. If your candidate appears,
+   skip to the next free one.
+3. **Do NOT take one above the global maximum.** Another branch may sit far ahead — at the time of
+   writing one is three minor digits up — and adopting its number buys nothing: your archive still does
+   not contain its work, which is exactly the "newer stops meaning contains" trap described below. The
+   collision worth preventing is two archives under the SAME number, not two branches at different
+   heights.
+
+And claim the number before you cut, not after.
 
 And do not read a stand's installed version as the sequence's high-water mark. It records what someone
 last installed, which may be a branch that never merges. The sequence is owned by the branches, not by

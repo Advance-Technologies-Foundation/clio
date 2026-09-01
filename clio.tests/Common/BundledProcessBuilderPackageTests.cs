@@ -82,11 +82,13 @@ public class BundledProcessBuilderPackageTests {
 	/// and abandoned rather than re-pointed. Two branches collide unless the number is claimed BEFORE it is cut,
 	/// so a gap is always cheaper than an ambiguous number, and a version identifying two different byte sets is
 	/// worse than either.
-	/// <para>Which numbers are burned is deliberately NOT recorded, here or anywhere: three lists have existed and
-	/// all three went stale, the last of them in this file. To pick the next number, read this constant for the
-	/// highest THIS branch has cut and
-	/// <c>git log --all -p -- clio.tests/Common/BundledProcessBuilderPackageTests.cs</c> for the highest anyone
-	/// has. Both are mechanical; neither needs maintaining.</para>
+	/// <para>Which numbers are burned is deliberately NOT recorded, here or anywhere: two files have carried such a
+	/// list, both went stale, and this file's went stale four times. To pick the next number, go UP from this
+	/// constant — the highest THIS branch has cut — and then check the candidate is unused in BOTH histories, this
+	/// file's and the package repository's <c>descriptor.json</c>, because a cut can exist there without ever
+	/// reaching a clio commit. Do not take one above the global maximum across all branches: another branch sitting
+	/// higher does not make its number yours to continue, and adopting it produces a version that looks newer than
+	/// work it does not contain. See docs/agent-instructions/bundled-packages.md for the commands.</para>
 	/// <para>What this cut carries, over the 1.3.1.1 performer/lookup delivery it replaces: server-side
 	/// VALIDATION of formula expressions — an <c>expression</c> mapping source and a conditional-flow condition
 	/// are now parsed, their parameter references resolved against the process, and their result type checked
