@@ -616,7 +616,8 @@ public sealed class DescribedFlow {
 	/// never evaluated, and <c>kind</c> is what says so; it is still reported because the parameter-delete and
 	/// element-retarget guards both SCAN it and refuse on it, so hiding it would leave a caller refused over
 	/// something no read API shows. <c>null</c> when there is no text, and on a conditional flow whose branch is
-	/// chosen by an activity result rather than by a formula - that flow ignores its expression entirely.</para>
+	/// chosen by an activity result the text is STILL reported, because the delete guard scans it - read
+	/// <c>branchesOnActivityResult</c> to learn that the flow ignores its expression entirely.</para>
 	/// </summary>
 	/// <remarks>
 	/// This field is NOT optional polish. <see cref="DescribedFlow"/> has no <c>[JsonExtensionData]</c> overflow
@@ -626,6 +627,19 @@ public sealed class DescribedFlow {
 	/// </remarks>
 	[JsonPropertyName("condition")]
 	public string Condition { get; set; }
+
+	/// <summary>
+	/// <c>true</c> when this flow's branch is decided by the RESULT of the preceding activity - which buttons it
+	/// was completed with - and NOT by <see cref="Condition"/>.
+	/// <para>The two are indistinguishable without it, and the difference is total: the platform reads the result
+	/// map FIRST and only falls back to the expression when it is empty, so on such a flow the condition text is
+	/// stored, reported, and never evaluated. <c>setFlowCondition</c> refuses to write one; before this field a
+	/// caller verifying their change read the OLD text and took it as proof the change landed.</para>
+	/// <para>Like <see cref="Condition"/>, this needs a property here or it is dropped on clio's re-serialize -
+	/// <see cref="DescribedFlow"/> has no <c>[JsonExtensionData]</c> overflow bag.</para>
+	/// </summary>
+	[JsonPropertyName("branchesOnActivityResult")]
+	public bool BranchesOnActivityResult { get; set; }
 }
 
 /// <summary>A parameter read back from the schema, with its value source decoded.</summary>
