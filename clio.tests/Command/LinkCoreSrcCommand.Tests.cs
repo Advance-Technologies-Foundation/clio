@@ -83,7 +83,7 @@ namespace Clio.Tests.Command {
 			""";
 
 		// Act
-		string result = _command.UpdateConfigWithPort(existingJson, 40123, "/tmp/appsettings.json");
+		string result = LinkCoreSrcCommand.UpdateConfigWithPort(existingJson, 40123, "/tmp/appsettings.json");
 
 		// Assert
 		GetJsonString(result, "Kestrel", "Endpoints", "Http", "Url").Should().Be("http://localhost:40123",
@@ -114,7 +114,7 @@ namespace Clio.Tests.Command {
 			""";
 
 		// Act
-		string result = _command.UpdateConfigWithPort(existingJson, 40123, "/tmp/appsettings.json");
+		string result = LinkCoreSrcCommand.UpdateConfigWithPort(existingJson, 40123, "/tmp/appsettings.json");
 
 		// Assert
 		GetJsonString(result, "Kestrel", "Endpoints", "Http", "Url").Should().Be("http://localhost:40123",
@@ -141,7 +141,7 @@ namespace Clio.Tests.Command {
 			""";
 
 		// Act
-		string result = _command.UpdateConfigWithPort(existingJson, 40123, "/tmp/appsettings.json");
+		string result = LinkCoreSrcCommand.UpdateConfigWithPort(existingJson, 40123, "/tmp/appsettings.json");
 
 		// Assert
 		GetJsonString(result, "Kestrel", "Endpoints", "Http", "Url").Should().Be("http://localhost:40123",
@@ -165,7 +165,7 @@ namespace Clio.Tests.Command {
 			""";
 
 		// Act
-		string result = _command.UpdateConfigWithPort(existingJson, 40123, "/tmp/appsettings.json", Uri.UriSchemeHttps);
+		string result = LinkCoreSrcCommand.UpdateConfigWithPort(existingJson, 40123, "/tmp/appsettings.json", Uri.UriSchemeHttps);
 
 		// Assert
 		GetJsonString(result, "Kestrel", "Endpoints", "Https", "Url").Should().Be("https://localhost:40123",
@@ -191,7 +191,7 @@ namespace Clio.Tests.Command {
 			""";
 
 		// Act
-		string result = _command.UpdateConfigWithPort(existingJson, 40123, "/tmp/appsettings.json", Uri.UriSchemeHttps);
+		string result = LinkCoreSrcCommand.UpdateConfigWithPort(existingJson, 40123, "/tmp/appsettings.json", Uri.UriSchemeHttps);
 
 		// Assert
 		GetJsonString(result, "Kestrel", "Endpoints", "Http", "Url").Should().Be("https://localhost:40123",
@@ -217,7 +217,7 @@ namespace Clio.Tests.Command {
 			""";
 
 		// Act
-		string result = _command.UpdateConfigWithPort(existingJson, 40123, "/tmp/appsettings.json", Uri.UriSchemeHttps);
+		string result = LinkCoreSrcCommand.UpdateConfigWithPort(existingJson, 40123, "/tmp/appsettings.json", Uri.UriSchemeHttps);
 
 		// Assert
 		HasJsonProperty(result, "Kestrel", "Endpoints", "Http").Should().BeFalse(
@@ -243,7 +243,7 @@ namespace Clio.Tests.Command {
 			""";
 
 		// Act
-		Action action = () => _command.UpdateConfigWithPort(existingJson, 40123, "/tmp/appsettings.json", Uri.UriSchemeHttps);
+		Action action = () => LinkCoreSrcCommand.UpdateConfigWithPort(existingJson, 40123, "/tmp/appsettings.json", Uri.UriSchemeHttps);
 
 		// Assert
 		action.Should().Throw<InvalidOperationException>()
@@ -269,7 +269,7 @@ namespace Clio.Tests.Command {
 			""";
 
 		// Act
-		Action action = () => _command.UpdateConfigWithPort(existingJson, 40123, "/tmp/appsettings.json", "https");
+		Action action = () => LinkCoreSrcCommand.UpdateConfigWithPort(existingJson, 40123, "/tmp/appsettings.json", "https");
 
 		// Assert
 		action.Should().Throw<InvalidOperationException>()
@@ -336,7 +336,7 @@ namespace Clio.Tests.Command {
 			""";
 
 		// Act
-		Action action = () => _command.UpdateConfigWithPort(existingJson, 5002, "/tmp/appsettings.json");
+		Action action = () => LinkCoreSrcCommand.UpdateConfigWithPort(existingJson, 5002, "/tmp/appsettings.json");
 
 		// Assert
 		action.Should().Throw<InvalidOperationException>()
@@ -351,7 +351,7 @@ namespace Clio.Tests.Command {
 		const string existingJson = "{\"Kestrel\":[]}";
 
 		// Act
-		Action action = () => _command.UpdateConfigWithPort(existingJson, 40123, "/tmp/appsettings.json");
+		Action action = () => LinkCoreSrcCommand.UpdateConfigWithPort(existingJson, 40123, "/tmp/appsettings.json");
 
 		// Assert
 		action.Should().Throw<JsonException>()

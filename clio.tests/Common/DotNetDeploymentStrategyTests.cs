@@ -89,7 +89,7 @@ public sealed class DotNetDeploymentStrategyTests : BaseClioModuleTests {
 		PfInstallerOptions options = new() { SitePort = 40123 };
 
 		// Act
-		string result = _sut.BuildApplicationConfiguration(null, options);
+		string result = DotNetDeploymentStrategy.BuildApplicationConfiguration(null, options);
 
 		// Assert
 		GetJsonString(result, "Kestrel", "Endpoints", "Http", "Url").Should().Be("http://localhost:40123",
@@ -111,7 +111,7 @@ public sealed class DotNetDeploymentStrategyTests : BaseClioModuleTests {
 		};
 
 		// Act
-		string result = _sut.BuildApplicationConfiguration(null, options);
+		string result = DotNetDeploymentStrategy.BuildApplicationConfiguration(null, options);
 
 		// Assert
 		GetJsonString(result, "Kestrel", "Endpoints", "Https", "Url").Should().Be("https://[::]:40123",
@@ -125,7 +125,7 @@ public sealed class DotNetDeploymentStrategyTests : BaseClioModuleTests {
 		PfInstallerOptions options = new() { SitePort = 40123, BindAllInterfaces = true };
 
 		// Act
-		Action action = () => _sut.BuildApplicationConfiguration(null, options);
+		Action action = () => DotNetDeploymentStrategy.BuildApplicationConfiguration(null, options);
 
 		// Assert
 		action.Should().Throw<InvalidOperationException>()
@@ -147,7 +147,7 @@ public sealed class DotNetDeploymentStrategyTests : BaseClioModuleTests {
 		};
 
 		// Act
-		DotNetApplicationConfiguration configuration = _sut.BuildApplicationConfigurationWithEnvironment(null, options);
+		DotNetApplicationConfiguration configuration = DotNetDeploymentStrategy.BuildApplicationConfigurationWithEnvironment(null, options);
 		string result = configuration.Json;
 
 		// Assert
@@ -192,7 +192,7 @@ public sealed class DotNetDeploymentStrategyTests : BaseClioModuleTests {
 		};
 
 		// Act
-		DotNetApplicationConfiguration configuration = _sut.BuildApplicationConfigurationWithEnvironment(existingJson, options);
+		DotNetApplicationConfiguration configuration = DotNetDeploymentStrategy.BuildApplicationConfigurationWithEnvironment(existingJson, options);
 
 		// Assert
 		configuration.EnvironmentVariables.Should().NotContainKey(
@@ -225,7 +225,7 @@ public sealed class DotNetDeploymentStrategyTests : BaseClioModuleTests {
 		PfInstallerOptions options = new() { SitePort = 40123, UseHttps = true };
 
 		// Act
-		Action action = () => _sut.BuildApplicationConfiguration(existingJson, options);
+		Action action = () => DotNetDeploymentStrategy.BuildApplicationConfiguration(existingJson, options);
 
 		// Assert
 		action.Should().Throw<JsonException>()
@@ -246,7 +246,7 @@ public sealed class DotNetDeploymentStrategyTests : BaseClioModuleTests {
 		};
 
 		// Act
-		string result = _sut.BuildApplicationConfiguration(null, options);
+		string result = DotNetDeploymentStrategy.BuildApplicationConfiguration(null, options);
 
 		// Assert
 		GetJsonString(result, "Kestrel", "Endpoints", "Https", "Url").Should().Be("https://[::]:40123",
@@ -266,7 +266,7 @@ public sealed class DotNetDeploymentStrategyTests : BaseClioModuleTests {
 		};
 
 		// Act
-		string result = _sut.BuildApplicationConfiguration(null, options);
+		string result = DotNetDeploymentStrategy.BuildApplicationConfiguration(null, options);
 
 		// Assert
 		GetJsonString(result, "Kestrel", "Endpoints", "Https", "Certificate", "Path").Should().Be(Path.GetFullPath(certificatePath),
@@ -288,7 +288,7 @@ public sealed class DotNetDeploymentStrategyTests : BaseClioModuleTests {
 		};
 
 		// Act
-		string result = _sut.BuildApplicationConfiguration(null, options);
+		string result = DotNetDeploymentStrategy.BuildApplicationConfiguration(null, options);
 
 		// Assert
 		GetJsonString(result, "Kestrel", "Endpoints", "Https", "Certificate", "Path").Should().Be(Path.GetFullPath(certificatePath),
@@ -310,7 +310,7 @@ public sealed class DotNetDeploymentStrategyTests : BaseClioModuleTests {
 		};
 
 		// Act
-		string result = _sut.BuildApplicationConfiguration(null, options);
+		string result = DotNetDeploymentStrategy.BuildApplicationConfiguration(null, options);
 
 		// Assert
 		GetJsonString(result, "Kestrel", "Endpoints", "Https", "Certificate", "Path").Should().Be(Path.GetFullPath(certificatePath),
@@ -341,7 +341,7 @@ public sealed class DotNetDeploymentStrategyTests : BaseClioModuleTests {
 		PfInstallerOptions options = new() { SitePort = 40123 };
 
 		// Act
-		DotNetApplicationConfiguration configuration = _sut.BuildApplicationConfigurationWithEnvironment(existingJson, options);
+		DotNetApplicationConfiguration configuration = DotNetDeploymentStrategy.BuildApplicationConfigurationWithEnvironment(existingJson, options);
 		string result = configuration.Json;
 
 		// Assert
@@ -378,7 +378,7 @@ public sealed class DotNetDeploymentStrategyTests : BaseClioModuleTests {
 		PfInstallerOptions options = new() { SitePort = 40123 };
 
 		// Act
-		string result = _sut.BuildApplicationConfiguration(existingJson, options);
+		string result = DotNetDeploymentStrategy.BuildApplicationConfiguration(existingJson, options);
 
 		// Assert
 		GetJsonString(result, "Kestrel", "Endpoints", "Http", "Url").Should().Be("http://localhost:40123",
@@ -412,7 +412,7 @@ public sealed class DotNetDeploymentStrategyTests : BaseClioModuleTests {
 		PfInstallerOptions options = new() { SitePort = 40123 };
 
 		// Act
-		Action action = () => _sut.BuildApplicationConfiguration(existingJson, options);
+		Action action = () => DotNetDeploymentStrategy.BuildApplicationConfiguration(existingJson, options);
 
 		// Assert
 		action.Should().Throw<InvalidOperationException>()
@@ -440,7 +440,7 @@ public sealed class DotNetDeploymentStrategyTests : BaseClioModuleTests {
 		PfInstallerOptions options = new() { SitePort = 5002 };
 
 		// Act
-		Action action = () => _sut.BuildApplicationConfiguration(existingJson, options);
+		Action action = () => DotNetDeploymentStrategy.BuildApplicationConfiguration(existingJson, options);
 
 		// Assert
 		action.Should().Throw<InvalidOperationException>()
@@ -465,7 +465,7 @@ public sealed class DotNetDeploymentStrategyTests : BaseClioModuleTests {
 		PfInstallerOptions options = new() { SitePort = 40123 };
 
 		// Act
-		Action action = () => _sut.BuildApplicationConfiguration(existingJson, options);
+		Action action = () => DotNetDeploymentStrategy.BuildApplicationConfiguration(existingJson, options);
 
 		// Assert
 		action.Should().Throw<InvalidOperationException>()
@@ -497,7 +497,7 @@ public sealed class DotNetDeploymentStrategyTests : BaseClioModuleTests {
 		PfInstallerOptions options = new() { SitePort = 40123, UseHttps = true };
 
 		// Act
-		string result = _sut.BuildApplicationConfiguration(existingJson, options);
+		string result = DotNetDeploymentStrategy.BuildApplicationConfiguration(existingJson, options);
 
 		// Assert
 		GetJsonString(result, "Kestrel", "Endpoints", "Https", "Url").Should().Be("https://localhost:40123",
@@ -517,7 +517,7 @@ public sealed class DotNetDeploymentStrategyTests : BaseClioModuleTests {
 		PfInstallerOptions options = new() { SitePort = 40123, UseHttps = true };
 
 		// Act
-		Action action = () => _sut.BuildApplicationConfiguration(null, options);
+		Action action = () => DotNetDeploymentStrategy.BuildApplicationConfiguration(null, options);
 
 		// Assert
 			action.Should().Throw<InvalidOperationException>()
@@ -534,7 +534,7 @@ public sealed class DotNetDeploymentStrategyTests : BaseClioModuleTests {
 		PfInstallerOptions options = new() { SitePort = 40123 };
 
 		// Act
-		Action action = () => _sut.BuildApplicationConfiguration(existingJson, options);
+		Action action = () => DotNetDeploymentStrategy.BuildApplicationConfiguration(existingJson, options);
 
 		// Assert
 		action.Should().Throw<JsonException>()
@@ -555,7 +555,7 @@ public sealed class DotNetDeploymentStrategyTests : BaseClioModuleTests {
 		};
 
 		// Act
-		Action action = () => _sut.BuildApplicationConfiguration(null, options);
+		Action action = () => DotNetDeploymentStrategy.BuildApplicationConfiguration(null, options);
 
 		// Assert
 		action.Should().Throw<InvalidOperationException>()
@@ -577,7 +577,7 @@ public sealed class DotNetDeploymentStrategyTests : BaseClioModuleTests {
 		};
 
 		// Act
-		Action action = () => _sut.BuildApplicationConfiguration(null, options);
+		Action action = () => DotNetDeploymentStrategy.BuildApplicationConfiguration(null, options);
 
 		// Assert
 		Exception exception = action.Should().Throw<InvalidOperationException>().Which;
@@ -604,7 +604,7 @@ public sealed class DotNetDeploymentStrategyTests : BaseClioModuleTests {
 		PfInstallerOptions options = new() { SitePort = 40123, UseHttps = true };
 
 		// Act
-		Action action = () => _sut.BuildApplicationConfiguration(existingJson, options);
+		Action action = () => DotNetDeploymentStrategy.BuildApplicationConfiguration(existingJson, options);
 
 		// Assert
 		action.Should().Throw<InvalidOperationException>()

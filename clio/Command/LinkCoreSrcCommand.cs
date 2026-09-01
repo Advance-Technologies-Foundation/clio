@@ -287,6 +287,7 @@ public class LinkCoreSrcCommand : Command<LinkCoreSrcOptions>
 	private const string HttpScheme = "http";
 	private const string HttpsScheme = "https";
 	private const string CertificateSectionName = "Certificate";
+	private const string ValueAttributeName = "value";
 
 	#region Fields: Private
 
@@ -622,7 +623,7 @@ public class LinkCoreSrcCommand : Command<LinkCoreSrcOptions>
 	/// <param name="port">The port selected by the environment URI.</param>
 	/// <param name="filePath">The path used in parse diagnostics.</param>
 	/// <returns>Updated JSON or XML configuration.</returns>
-	internal string UpdateConfigWithPort(string content, int port, string filePath, string scheme = HttpScheme)
+	internal static string UpdateConfigWithPort(string content, int port, string filePath, string scheme = HttpScheme)
 	{
 		JsonNode? parsed;
 		try
@@ -735,7 +736,7 @@ public class LinkCoreSrcCommand : Command<LinkCoreSrcOptions>
 				?? doc.DocumentElement?.SelectSingleNode("//appSettings/add[@key='Port']");
 			if (portNode is not null)
 			{
-				XmlAttribute? valueAttribute = portNode.Attributes?["value"];
+				XmlAttribute? valueAttribute = portNode.Attributes?[ValueAttributeName];
 				if (valueAttribute is null)
 				{
 					throw new XmlException("The existing Port setting does not have a value attribute.");
@@ -754,7 +755,7 @@ public class LinkCoreSrcCommand : Command<LinkCoreSrcOptions>
 
 				XmlElement portElement = doc.CreateElement("add");
 				portElement.SetAttribute("key", "Port");
-				portElement.SetAttribute("value", port.ToString());
+				portElement.SetAttribute(ValueAttributeName, port.ToString());
 				appSettingsNode.AppendChild(portElement);
 			}
 
@@ -1127,7 +1128,7 @@ public class LinkCoreSrcCommand : Command<LinkCoreSrcOptions>
 
 			if (cookieNode != null)
 			{
-				cookieNode.Attributes["value"].Value = "Lax";
+				cookieNode.Attributes[ValueAttributeName].Value = "Lax";
 			}
 			else
 			{
@@ -1141,7 +1142,7 @@ public class LinkCoreSrcCommand : Command<LinkCoreSrcOptions>
 
 				XmlElement cookieElement = doc.CreateElement("add");
 				cookieElement.SetAttribute("key", "CookiesSameSiteMode");
-				cookieElement.SetAttribute("value", "Lax");
+				cookieElement.SetAttribute(ValueAttributeName, "Lax");
 				appSettingsNode.AppendChild(cookieElement);
 			}
 

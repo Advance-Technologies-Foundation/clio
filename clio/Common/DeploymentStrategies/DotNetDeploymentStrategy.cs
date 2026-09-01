@@ -414,7 +414,7 @@ public class DotNetDeploymentStrategy : IDeploymentStrategy
 	/// <param name="existingJson">Existing JSON configuration, or <see langword="null"/> for a new deployment.</param>
 	/// <param name="options">The deployment options that determine the endpoint and certificate.</param>
 	/// <returns>Indented JSON configuration.</returns>
-	internal string BuildApplicationConfiguration(string? existingJson, PfInstallerOptions options)
+	internal static string BuildApplicationConfiguration(string? existingJson, PfInstallerOptions options)
 		=> BuildApplicationConfigurationWithEnvironment(existingJson, options).Json;
 
 	/// <summary>
@@ -423,7 +423,7 @@ public class DotNetDeploymentStrategy : IDeploymentStrategy
 	/// <param name="existingJson">Existing JSON configuration, or <see langword="null"/> for a new deployment.</param>
 	/// <param name="options">The deployment options that determine the endpoint and certificate.</param>
 	/// <returns>The generated configuration and child-process environment variables.</returns>
-	internal DotNetApplicationConfiguration BuildApplicationConfigurationWithEnvironment(
+	internal static DotNetApplicationConfiguration BuildApplicationConfigurationWithEnvironment(
 		string? existingJson,
 		PfInstallerOptions options)
 		=> BuildApplicationConfigurationWithEnvironment(existingJson, options, persistedEnvironmentVariables: null);
