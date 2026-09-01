@@ -1,4 +1,4 @@
-using System.ComponentModel;
+﻿using System.ComponentModel;
 using System.ComponentModel.DataAnnotations;
 using System.Text.Json.Serialization;
 using Clio.Common;
@@ -95,13 +95,17 @@ public class CreateBusinessProcessTool(
 		 + "element output as a process output); source is exactly one of {sourceElement, sourceElementParameter} "
 		 + "(another element's output), processParameter, value, or expression; parameter-to-parameter mappings "
 		 + "require compatible types; a Lookup target's 'value' takes a bare non-empty record Guid, stored as the "
-		 + "ConstValue the runtime actually reads (the route ships from CrtProcessBuilder 1.3.1.1; THIS clio "
+		 + "ConstValue the runtime actually reads (the route ships from CrtProcessBuilder 1.3.2.3; THIS clio "
 		 + "additionally refuses any environment older than the version it BUNDLES — up front, via the "
 		 + "package-convergence message naming both versions — while an older clio surfaces the old package's "
 		 + "[#Lookup…#]-macro rejection; either refusal means the environment is behind, not that the parameter "
 		 + "is unsettable), while a non-Guid lookup value is refused with a "
 		 + "bare-Guid-first message (the [#Lookup…#] expression form stays the named fallback) and Guid.Empty "
-		 + "as referencing no record. "
+		 + "as referencing no record; an already-composed [#Lookup.{objectUId}.{recordId}#] is ALSO accepted on a "
+		 + "Lookup target and decoded to that bare id, so a value echoed back from describe re-submits unchanged. "
+		 + "The referenced record's NAME is resolved and stored as the parameter's display value, which is what the "
+		 + "designer renders — so 'Task category' shows Call, not a Guid; describe reports it as valueDisplay beside "
+		 + "the unchanged bare-Guid value. "
 		 + "To run the process when a record "
 		 + "is saved/added/changed, use a "
 		 + "signalStart element with signal:{entity:<EntityName>, on:added|modified|deleted (one event), "

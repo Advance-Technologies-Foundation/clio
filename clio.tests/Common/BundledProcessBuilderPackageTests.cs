@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.IO;
 using System.IO.Compression;
@@ -72,33 +72,28 @@ public class BundledProcessBuilderPackageTests {
 	];
 
 	/// <summary>
-	/// SHA-256 of the committed archive. Produced by <c>rebundle-process-builder.ps1 -Version 1.3.1.1</c> from
+	/// SHA-256 of the committed archive. Produced by <c>rebundle-process-builder.ps1 -Version 1.3.2.3</c> from
 	/// the <c>ProcessBuilder</c> repository (<c>packages/CrtProcessBuilder</c>, branch
-	/// <c>feature/ENG-91846-perform-task-lookup-constants</c>, at commit
-	/// <c>2ce4ae34fdb95d70e3757560e41df7e174d1aa3a</c> — the tip on top of <c>948cae8f</c> that closes the re-review's Medium: both
-	/// performer routes resolve the parameter's reference by NAME as well as by UId and compose the lookup
-	/// macro from the RESOLVED object, so under name-only typing the contact existence check no longer skips
-	/// and the stored value is a valid macro rather than the bare Guid the platform refuses; the role macro's
-	/// object segment additionally gains the contract-known <c>SysAdminUnit</c> backstop.
-	/// 1.3.1.1 is a PATCH over 1.3.1.0 — the ENG-91846 version whose MINOR digit says the delivery adds a
-	/// capability (assigning a task to a team): this cut widens that capability's reach to the name-typed
-	/// parameter population, it does not add another. The whole route: the Lookup bare-Guid ConstValue
-	/// relaxation with the reference-existence guard, the Guid.Empty refusal, the bare-Guid-first rejection
-	/// message, and the element-level <c>performer</c> block (user/manager/role, the role landing in the
-	/// Activity's own <c>OwnerRole</c> column), with both performer fields taking an id or a name and refusing
-	/// what identifies no single record. Every stamp from 1.3.0.2 through 1.3.1.0 was branch-internal and
-	/// never released; each raise exists so a stand or checkout still carrying an older one is DETECTABLY
-	/// behind — same-version re-cuts make equal version numbers mean nothing, which the convergence check
-	/// cannot see through. There is no build step in the release path that could regenerate it here.
+	/// <c>feature/ENG-96325-lookup-constant-macro-form</c>, at commit
+	/// <c>27c0c5a84e7a0e837dae0900faac9a8d71bb929c</c> — the ENG-96325 design-time fix: a Lookup CONSTANT keeps
+	/// <c>Source = ConstValue</c> and its bare record Guid, and gains the referenced record's NAME in
+	/// <c>DisplayValue</c>, which is what the designer renders. The defect it closes was the raw id written
+	/// there, so "Task category" read as a Guid while the runtime had been correct all along. Keeping
+	/// <c>ConstValue</c> is load-bearing rather than conservative: <c>ActivityUserTask</c> derives its
+	/// allowed-results list from that source alone, client-side and server-side, so the macro form the original
+	/// brief proposed would have degraded the result dropdown to its default. Also in the cut: a
+	/// <c>[#Lookup…#]</c> passed as a <c>value</c> is decoded to the bare id, the change-data expression branch
+	/// renders the display macro, and describe gained <c>valueDisplay</c>.
+	/// 1.3.2.3 is a PATCH over 1.3.1.1 — no capability is added, an existing one stops lying to the designer.
+	/// 1.3.2.0 through 1.3.2.2 were cut and withdrawn before release; each raise exists so a stand or checkout
+	/// still carrying an older one is DETECTABLY behind, and a reused number would make equal versions mean
+	/// nothing, which the convergence check cannot see through.
 	/// <para>
-	/// BOTH prescribed cross-checks were RUN against that commit, not assumed: the <c>ModifiedOnUtc</c> pinned
-	/// below equals its descriptor, and all 114 archive entries equal that commit's CHECKOUT rendering byte for
-	/// byte — the only committed file absent from the archive being the <c>.DotSettings</c> that
-	/// <c>clioignore</c> excludes. The byte check earned its
-	/// keep on the previous cut: freshly written files carried LF where a checkout on a
-	/// <c>core.autocrlf=true</c> host produces CRLF — the third failure mode the remarks below describe, an
-	/// archive corresponding to no commit at all — and the tree was renormalised before cutting. Re-run the
-	/// line-ending audit whenever the archive is cut from a tree with just-written files.
+	/// BOTH prescribed cross-checks were RUN against that commit, not assumed. The <c>ModifiedOnUtc</c> pinned
+	/// below equals the descriptor at <c>27c0c5a</c> (<c>/Date(1788272145000)/</c>, read from the commit, not
+	/// from the working tree), as does <see cref="ExpectedArchiveVersion"/>. The archive holds 122 entries and
+	/// their contents are that commit's sources; the only committed file absent from it is the
+	/// <c>.DotSettings</c> that <c>clioignore</c> excludes.
 	/// </para>
 	/// Provenance rules live in <c>docs/agent-instructions/bundled-packages.md</c>.
 	/// </summary>
@@ -134,7 +129,7 @@ public class BundledProcessBuilderPackageTests {
 	/// </para>
 	/// </remarks>
 	private const string ExpectedArchiveSha256 =
-		"16FAB3958065EB7130D150926493F63B72E33A8CE5DEF0A6611F19FE62A5FCAF";
+		"3FD06A41B4E7B17B341EACB6E6039F4735ADC44DF7DD8DD589EB956C22BDAD21";
 
 	/// <summary>
 	/// The <c>PackageVersion</c> the shipped descriptor carries.
@@ -162,7 +157,7 @@ public class BundledProcessBuilderPackageTests {
 	/// </para>
 	/// </para>
 	/// </remarks>
-	private const string ExpectedArchiveVersion = "1.3.1.1";
+	private const string ExpectedArchiveVersion = "1.3.2.3";
 
 	/// <summary>
 	/// The <c>ModifiedOnUtc</c> the shipped descriptor carries.
@@ -188,7 +183,7 @@ public class BundledProcessBuilderPackageTests {
 	/// command — the previous pin ended in <c>431</c>, which is how the hand edit was eventually noticed.
 	/// </para>
 	/// </remarks>
-	private const string ExpectedDescriptorModifiedOnUtc = "/Date(1787902471000)/";
+	private const string ExpectedDescriptorModifiedOnUtc = "/Date(1788272145000)/";
 
 	/// <summary>
 	/// The <c>ModifiedOnUtc</c> the shipped COMPILE-MARKER SCHEMA descriptor carries.

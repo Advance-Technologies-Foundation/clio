@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text.Json;
@@ -1140,6 +1140,12 @@ public sealed class ModifyBusinessProcessToolE2ETests {
 			because: "a bare record Guid on a Lookup parameter must persist as the ConstValue the runtime's allowed-results derivation reads — the whole point of the ENG-91846 relaxation");
 		category.Value.Should().BeEquivalentTo(ToDoActivityCategoryId,
 			because: "the record id is stored verbatim, so the runtime resolves exactly the requested category");
+		category.ValueDisplay.Should().Be(ToDoActivityCategoryName,
+			because: "the referenced record's NAME is resolved into the parameter's display value — that is what the "
+				+ "designer renders in the \"Task category\" field, and writing the id there is what showed a raw "
+				+ "Guid to the user (the design-time half of ENG-96325)");
+		category.ValueDisplay.Should().NotBe(category.Value,
+			because: "a display value equal to the id is the defect itself, not a fix — the two must differ");
 		DescribedParameter owner = task.Parameters.Single(parameter => parameter.Name == "OwnerId");
 		owner.Source.Should().Be("Script",
 			because: "the [#SysVariable.CurrentUserContact#] performer route is an expression and stores as a formula source");
@@ -1252,6 +1258,46 @@ public sealed class ModifyBusinessProcessToolE2ETests {
 		DescribedElement task = await ReadTaskAsync(context, processName);
 		task.Parameters.Should().NotContain(parameter => parameter.Name == "ActivityCategory",
 			because: "a rejected mapping aborts the edit, so the parameter stays unbound and invisible in describe");
+	}
+
+	[Test]
+	[Description("Over the real MCP path: an already-composed [#Lookup.{objectUId}.{recordId}#] passed as a Lookup 'value' is decoded to the bare record id and stored as a ConstValue with the record's NAME as its display value — the round trip clio, its tests and the guide rely on, proven by feeding describe's own output straight back and reading an identical result.")]
+	[AllureTag(ToolName)]
+	[AllureName("modify-business-process decodes a fixed-lookup macro value and round-trips describe's output")]
+	public async Task ModifyBusinessProcess_Should_DecodeLookupMacroValue_AndRoundTripDescribeOutput() {
+		// Arrange
+		await using ArrangeContext context = await ArrangeAsync(requireReachableEnvironment: true);
+		string processName = $"UsrClioBpLookupMacroE2e{Guid.NewGuid():N}";
+		await CreateProcessAsync(context, processName, BuildPerformTaskDescriptor(processName));
+
+		// Act — the macro form a caller may legitimately hold, rather than the bare id.
+		await ModifyExpectingSuccessAsync(context, processName, $$"""
+			[ { "op": "addMapping", "mapping": { "elementName": "Task1", "elementParameter": "ActivityCategory",
+			    "value": "[#Lookup.{{ActivityCategoryObjectUId}}.{{ToDoActivityCategoryId}}#]" } } ]
+			""");
+		DescribedParameter category = (await ReadTaskAsync(context, processName)).Parameters
+			.Single(parameter => parameter.Name == "ActivityCategory");
+
+		// Assert — decoded to the bare id in the encoding the allowed-results derivation reads, and named.
+		category.Source.Should().Be("ConstValue",
+			because: "a decoded macro must land in the SAME encoding a bare id does — a Script macro here silently "
+				+ "degrades the Perform task's result list to the default");
+		category.Value.Should().BeEquivalentTo(ToDoActivityCategoryId,
+			because: "describe must return a bare Guid whatever form the caller wrote, or the round trip breaks");
+		category.ValueDisplay.Should().Be(ToDoActivityCategoryName,
+			because: "a decoded macro is a lookup constant like any other and gets the same resolved record name");
+
+		// And feeding describe's OWN output back is a no-op — the round trip the contract advertises.
+		await ModifyExpectingSuccessAsync(context, processName, $$"""
+			[ { "op": "addMapping", "mapping": { "elementName": "Task1", "elementParameter": "ActivityCategory",
+			    "value": "{{category.Value}}" } } ]
+			""");
+		DescribedParameter reapplied = (await ReadTaskAsync(context, processName)).Parameters
+			.Single(parameter => parameter.Name == "ActivityCategory");
+		reapplied.Value.Should().BeEquivalentTo(category.Value,
+			because: "re-submitting a described value must reproduce it exactly — that is what round-tripping means");
+		reapplied.ValueDisplay.Should().Be(category.ValueDisplay,
+			because: "the display name is re-derived on every write, so a re-apply must not lose or change it");
 	}
 
 	[Test]
@@ -1524,6 +1570,20 @@ public sealed class ModifyBusinessProcessToolE2ETests {
 	/// asserting the literal safe against any environment this suite runs on.
 	/// </summary>
 	private const string ToDoActivityCategoryId = "f51c4643-58e6-df11-971b-001d60e938c6";
+
+	/// <summary>
+	/// The display name of <see cref="ToDoActivityCategoryId"/> in the suite's en-US profile culture — what the
+	/// designer must show in place of the id. Asserted literally for the same reason the id is: the row is base
+	/// seed on every stand this suite runs on.
+	/// </summary>
+	private const string ToDoActivityCategoryName = "To do";
+
+	/// <summary>
+	/// The ActivityCategory OBJECT's schema UId — the first segment of a fixed-lookup macro naming a category
+	/// record. Only the macro-round-trip test needs it: everywhere else the parameter's own reference object
+	/// supplies the typing.
+	/// </summary>
+	private const string ActivityCategoryObjectUId = "961e2086-a12b-4d27-b095-40b1e64d6cc0";
 
 	/// <summary>
 	/// "High" — a base-seed ActivityPriority row, same-UId-everywhere for the same reason as the category
