@@ -343,28 +343,6 @@ public sealed class SectionRegistrationInfo {
 }
 
 /// <summary>
-/// One element the conversion could not place: its resolved parent is a mobile component that cannot host
-/// arbitrary children, so the mobile designer renders nothing for it. The commonest instance is a
-/// <c>crt.TabPanel</c>, which shows only its tabs, but the rule is general — which types CAN host content is
-/// the rules file's <c>contentContainerTypes</c>, so this is not a tab-specific report.
-/// </summary>
-public sealed record PlacementLoss {
-
-	/// <summary>Mobile element name (the web name when the conversion did not rename it).</summary>
-	[JsonPropertyName("name")]
-	public string Name { get; init; }
-
-	/// <summary>Mobile component type, or null when the conversion resolved none.</summary>
-	[JsonPropertyName("mobileType")]
-	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-	public string MobileType { get; init; }
-
-	/// <summary>The receiver it would have been inserted into, which cannot host it.</summary>
-	[JsonPropertyName("parentName")]
-	public string ParentName { get; init; }
-}
-
-/// <summary>
 /// Deterministic advisory "conversion guide" for turning a source page into a Freedom UI mobile
 /// page. The model executes the conversion using this guide; the tool builds nothing. The
 /// <see cref="SourceType"/> records which source page type was detected (today: <c>freedom-web</c>).
@@ -597,19 +575,6 @@ public sealed class MobilePageConversionGuide {
 	[JsonPropertyName("resourceStrings")]
 	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
 	public IReadOnlyDictionary<string, string> ResourceStrings { get; init; }
-
-	/// <summary>
-	/// Elements the element map would place in a receiver that cannot host arbitrary children — a mobile
-	/// <c>crt.TabPanel</c> most often, which shows only its tabs, but the rule is general: which types can host
-	/// content is the rules file's <c>contentContainerTypes</c>. Each of these, and everything nested inside it,
-	/// is lost from the converted page. Present ONLY when the conversion is incomplete, which happens when the
-	/// (runtime-fetched) rules file carries no <c>containers</c> entry for the web container they came from. The
-	/// matching <c>constraints</c> sentence is a rendering of this list; assert on the list, not on that free
-	/// text. Null when the conversion placed everything.
-	/// </summary>
-	[JsonPropertyName("placementLosses")]
-	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-	public IReadOnlyList<PlacementLoss> PlacementLosses { get; init; }
 
 	// ── Guidance ──────────────────────────────────────────────────────
 	[JsonPropertyName("constraints")]

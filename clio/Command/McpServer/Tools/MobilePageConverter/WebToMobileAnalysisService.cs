@@ -301,12 +301,6 @@ public static class WebToMobileAnalysisService {
 		IReadOnlyList<NormalizationEntry> spacingNormalization =
 			componentPropertyOverrides.EntriesOf(SpacingGroup);
 
-		// Elements the map would drop into a tab strip without being tabs. Computed AFTER every elementMap
-		// mutating pass and surfaced BOTH as a typed guide field (the thing to assert on) and as the sentence
-		// rendered from it in constraints.
-		List<PlacementLoss> placementLosses =
-			CollectUnhostablePlacements(elementMap, mobileTypesByName, rules);
-
 		// 6. Data sections applied to the mobile body verbatim/filtered (identical structural support on
 		//    mobile): modelConfig is carried over as-is (preserving attribute types like ForwardReference);
 		//    viewModelConfig drops attributes used only by dropped components.
@@ -389,7 +383,6 @@ public static class WebToMobileAnalysisService {
 				: null,
 			Normalizations = BuildNormalizations(componentPropertyOverrides),
 			ResourceStrings = resourceStrings.Count > 0 ? resourceStrings : null,
-			PlacementLosses = placementLosses.Count > 0 ? placementLosses : null,
 			// Named arguments deliberately: the tail is a run of defaulted bools, so a positional call silently
 			// mis-wires the moment a parameter is inserted rather than appended.
 			Constraints = BuildConstraints(webOnly,
@@ -414,8 +407,7 @@ public static class WebToMobileAnalysisService {
 					.Where(e => e.ParentExistsOnTemplate == true && !string.IsNullOrEmpty(e.ParentName))
 					.Select(e => e.ParentName)
 					.Distinct(StringComparer.OrdinalIgnoreCase)
-					.ToList(),
-				placementLosses: placementLosses),
+					.ToList()),
 			NextSteps = BuildNextSteps(
 				hasDataSections: modelConfig is not null || viewModelConfig is not null,
 				hasAdaptiveLayout: adaptiveLayout.Count > 0,
@@ -1738,8 +1730,7 @@ public static class WebToMobileAnalysisService {
 		bool webTemplateUnavailable = false, bool hasComponentTwin = false,
 		bool exclusionSearchTruncated = false, int discardedExclusionFilters = 0,
 		int skippedOverrideRules = 0, bool hasExcludedComponents = false,
-		IReadOnlyList<string> retargetParentsOnTemplate = null,
-		IReadOnlyList<PlacementLoss> placementLosses = null) {
+		IReadOnlyList<string> retargetParentsOnTemplate = null) {
 		var constraints = new List<string> {
 			"Mobile body is plain JSON with only viewConfigDiff / viewModelConfigDiff / modelConfigDiff — no AMD, no markers, no define() wrapper.",
 			"The mobile template provides the Scaffold root — do NOT add a second Scaffold.",
@@ -1847,22 +1838,6 @@ public static class WebToMobileAnalysisService {
 				"paste mobileValues verbatim — do NOT reparent, reorder or re-place anything yourself, and do NOT " +
 				"add an Area of your own. The synthesized containers have no web counterpart, so they carry no " +
 				"webName; tabs provided by the mobile template (merge) get no layers and must stay untouched.");
-		}
-		if (placementLosses is { Count: > 0 }) {
-			// Silent failure by construction: the mobile designer renders nothing for a child its parent cannot
-			// host, so without this line a lost subtree is indistinguishable from a page that never had it.
-			constraints.Add(
-				"CONVERSION IS INCOMPLETE. elementMap places element(s) in a parent that cannot host them "
-				+ "(a crt.TabPanel shows only its tabs; it is the commonest case, not the only one): "
-				+ string.Join(", ", placementLosses.Select(
-					l => $"{l.Name} ({(string.IsNullOrEmpty(l.MobileType) ? "no mobile type" : l.MobileType)}) -> {l.ParentName}"))
-				+ ". Each of these — and everything nested inside it — would be INVISIBLE in Mobile Designer. "
-				+ "The cause is a MISSING containers "
-				+ "entry in the web→mobile conversion rules for the web container these elements came from "
-				+ "(e.g. GeneralInfoTab → GeneralTabContainer), so the converter could not resolve where they "
-				+ "belong. REPORT this to the user and stop; do NOT guess a parent for them. Element placement in "
-				+ "this guide is otherwise authoritative — this line is the one case where it is known to be "
-				+ "wrong, and inventing a replacement is not a fix, it is a second unverifiable placement.");
 		}
 
 		// One constraint per report group the rules declared, in the wording the RULE carries — so a new
@@ -2190,7 +2165,7 @@ public static class WebToMobileAnalysisService {
 					&& !string.IsNullOrWhiteSpace(childTarget)) {
 					// The rules are fetched at RUNTIME, so a typo in a published childrenTo would park every child
 					// of this tab under a name the mobile template does not have -- the same silent loss this pass
-					// exists to prevent, and one CollectUnhostablePlacements cannot catch (an unknown receiver has
+					// exists to prevent, and one no report catches (an unknown receiver has
 					// no resolvable type, so it is deliberately left alone). Fall back to the twin, which is always
 					// a real element, and say so. Mirrors what the retarget path already does with
 					// RetargetTargetMissing rather than inventing a second policy for the same hazard.
@@ -4600,103 +4575,6 @@ public static class WebToMobileAnalysisService {
 
 	/// <summary>Mobile component type of a single tab.</summary>
 	private const string MobileTabComponentType = "crt.TabContainer";
-
-	/// <summary>Case-insensitive comparer for the (name, parent) identity of a tab-strip placement loss.</summary>
-	private static readonly IEqualityComparer<(string Name, string Parent)> PlacementLossKeyComparer =
-		new PlacementLossKeyEquality();
-
-	private sealed class PlacementLossKeyEquality : IEqualityComparer<(string Name, string Parent)> {
-		public bool Equals((string Name, string Parent) x, (string Name, string Parent) y) =>
-			string.Equals(x.Name, y.Name, StringComparison.OrdinalIgnoreCase)
-			&& string.Equals(x.Parent, y.Parent, StringComparison.OrdinalIgnoreCase);
-
-		public int GetHashCode((string Name, string Parent) obj) => HashCode.Combine(
-			obj.Name?.ToLowerInvariant(), obj.Parent?.ToLowerInvariant());
-	}
-
-	/// <summary>
-	/// Reports every converted element the element map would place in a receiver that cannot host it — a
-	/// receiver whose MOBILE type the rules list in <c>nonHostingContainerTypes</c>. Such a child, and
-	/// everything nested inside it, renders as nothing: a <c>crt.TabPanel</c> shows only its tabs, and it is
-	/// merely the instance that surfaced first (ENG-94951, where the general-information tab was subtracted as
-	/// inherited web-template chrome and its content hoisted one level up into <c>Tabs</c>).
-	/// <para>
-	/// The rule is stated as an ACCEPT-list so this pass names no component type at all: a type that cannot host
-	/// arbitrary children is handled by being absent from the list, not by a branch here, so the next such type
-	/// needs a rules edit rather than a code change. That matters because the rules file is fetched at RUNTIME
-	/// while this assembly is not.
-	/// </para>
-	/// <para>
-	/// The cure for a reported loss is a <c>containers</c> entry mapping the web container onto the mobile
-	/// container that should receive its children (e.g. <c>GeneralInfoTab</c>). This pass cannot apply that
-	/// mapping — only the rules know the counterpart — so it reports the loss rather than letting it pass
-	/// unseen. A rules file that declares no <c>nonHostingContainerTypes</c> does NOT switch the report off:
-	/// the bundled list is used instead, because a published file that merely predates the key is exactly the
-	/// case the report exists for. Only an absent <c>tabAreaLayers.tabComponentType</c> disables the pass, and
-	/// that is the pass's own switch.
-	/// </para>
-	/// </summary>
-	private static List<PlacementLoss> CollectUnhostablePlacements(
-		IReadOnlyList<ElementMapEntry> elementMap,
-		IReadOnlyDictionary<string, string> mobileTypesByName,
-		WebToMobilePageConversionRules rules) {
-		// The rules file is CDN-fetched and the bundled copy is only the FAILURE fallback, so a successfully
-		// fetched OLDER file has containers but no nonHostingContainerTypes. Treating that as "nothing to check"
-		// switches this report off in exactly the situation it exists for, so fall back to the bundled list.
-		WebToMobilePageConversionRules typeRules = rules?.NonHostingContainerTypes is { Count: > 0 }
-			? rules
-			: WebToMobilePageConversionRulesCatalog.LoadBundled();
-
-		// ONE list with ONE meaning. Deriving this from removableTypes minus an accept-list was the same
-		// coupling the accept-list's own doc warned against: adding a type to removableTypes for ITS purpose --
-		// an emptied shell should be cleaned up -- would silently turn every insert into that type into a STOP.
-		var nonHosting = new HashSet<string>(
-			(typeRules?.NonHostingContainerTypes ?? []).Where(t => !string.IsNullOrWhiteSpace(t)),
-			StringComparer.OrdinalIgnoreCase);
-		if (nonHosting.Count == 0) {
-			return [];
-		}
-
-		// A receiver's mobile type: what the MOBILE TEMPLATE declares for that name, or what the conversion
-		// itself inserts under it. A receiver of unknown type is left alone -- reporting on a type nobody could
-		// resolve would flag correct conversions on every environment whose template could not be read.
-		var receiverTypes = new Dictionary<string, string>(mobileTypesByName, StringComparer.OrdinalIgnoreCase);
-		foreach (ElementMapEntry entry in elementMap) {
-			if (string.Equals(entry.Operation, "insert", StringComparison.Ordinal)
-				&& entry.MobileName is { Length: > 0 } && entry.MobileType is { Length: > 0 }) {
-				receiverTypes[entry.MobileName] = entry.MobileType;
-			}
-		}
-		// One receiver is known WITHOUT its type: the mobile tabbed template's own strip. Its NAME is a constant
-		// of that template (AssignConvertedTabIndexes treats it the same way), so the report survives an
-		// unreadable mobile template -- the degraded run is exactly the one where a published rules file missing
-		// a containers entry goes unnoticed. Expressed as a name, deliberately: naming a TYPE here would put back
-		// the hardcode the accept-list exists to remove.
-		bool CannotHostChildren(string receiver) =>
-			receiverTypes.TryGetValue(receiver, out string type) && type is { Length: > 0 }
-				? nonHosting.Contains(type)
-				: string.Equals(receiver, MobileTabsElementName, StringComparison.OrdinalIgnoreCase);
-
-		// A tab is the one child a non-hosting receiver legitimately takes: a strip exists to hold tabs. The type
-		// comes from the rules, like everything else here.
-		string tabType = rules?.TabAreaLayers?.TabComponentType;
-
-		return [.. elementMap
-			.Where(e => string.Equals(e.Operation, "insert", StringComparison.Ordinal)
-				&& e.ParentName is { Length: > 0 }
-				// Only the generic content slot. A child placed in a NAMED slot the parent declares (a menu item
-				// in a button's menuItems, a header in an expansion panel's tools) is hosted by that slot, not by
-				// the parent's ability to hold arbitrary content, and the accept-list says nothing about it.
-				&& (e.PropertyName is null or "" || string.Equals(e.PropertyName, ItemsPropertyName, StringComparison.OrdinalIgnoreCase))
-				&& !(tabType is { Length: > 0 } && string.Equals(e.MobileType, tabType, StringComparison.OrdinalIgnoreCase))
-				&& CannotHostChildren(e.ParentName))
-			.Select(e => new PlacementLoss {
-				Name = string.IsNullOrEmpty(e.MobileName) ? e.WebName : e.MobileName,
-				MobileType = e.MobileType,
-				ParentName = e.ParentName
-			})
-			.DistinctBy(l => (l.Name, l.ParentName), PlacementLossKeyComparer)];
-	}
 
 	/// <summary>
 	/// 0-based index of the FIRST converted tab within the mobile Tabs items: 1 places it right after the

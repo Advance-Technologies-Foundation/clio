@@ -677,8 +677,9 @@ public sealed class MobilePageConversionGuideSandboxE2ETests : McpContractFixtur
 	/// Derived from the serialized guide alone, deliberately NOT by calling the converter's own detection pass,
 	/// so this re-states the invariant over the real transport instead of re-running the implementation.
 	/// <para>
-	/// The strip set is SEEDED with the tabbed mobile template's own strip name, exactly as the unit-level
-	/// statement of this invariant does. Deriving it from converted tabs ALONE makes the check vacuous on the
+	/// A pure STRUCTURAL statement: it reads the serialized guide and never calls the converter's own passes,
+	/// so it cannot pass merely because the implementation agrees with itself. The strip set is SEEDED with the
+	/// tabbed mobile template's own strip name, exactly as the unit-level statement of this invariant does. Deriving it from converted tabs ALONE makes the check vacuous on the
 	/// very page shape the ticket reported — a page whose only tab is the template's general one authors no
 	/// <c>crt.TabContainer</c> insert, so the set would come back empty and the loss would pass unseen.
 	/// </para>
@@ -700,11 +701,6 @@ public sealed class MobilePageConversionGuideSandboxE2ETests : McpContractFixtur
 			because: $"on '{schemaName}' a crt.TabPanel accepts only crt.TabContainer children, so each of these is "
 				+ "invisible in Mobile Designer and its whole subtree is lost from the converted page (ENG-94951): "
 				+ string.Join(", ", offenders.Select(e => $"{e.MobileName}({e.MobileType})->{e.ParentName}")));
-		guide.PlacementLosses.Should().BeNullOrEmpty(
-			because: $"the converter's own placement-loss report must stay silent on '{schemaName}' — it fires only "
-				+ "when a RUNTIME-FETCHED rules file has lost a containers entry, which no hermetic unit test can "
-				+ "see. Reported: "
-				+ string.Join(", ", (guide.PlacementLosses ?? []).Select(l => $"{l.Name}->{l.ParentName}")));
 	}
 
 	/// <summary>Mobile component type of a single tab; only this type may be a child of a crt.TabPanel.</summary>
