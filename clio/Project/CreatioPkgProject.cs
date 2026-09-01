@@ -83,6 +83,7 @@ namespace Clio
 				{
 					value = value.Substring(0, index);
 					element.SetAttributeValue(IncludeAttr, value);
+					HasPendingChanges = true;
 				}
 			}
 			var hintValue = element.Element(HintPath)?.Value;
@@ -99,6 +100,7 @@ namespace Clio
 					{
 						element.SetElementValue(HintPath, newHintValue);
 						ChangedReferencesCount++;
+						HasPendingChanges = true;
 					}
 				}
 			}
@@ -108,10 +110,25 @@ namespace Clio
 		{
 			var package = Document.Elements(ItemGroup)
 				.Descendants().FirstOrDefault(x => (string)x.Attribute(IncludeAttr) == "packages.config");
+			//Deliberately does NOT set HasPendingChanges. RefTo* calls this unconditionally, so treating it
+			//as pending work would make a project that is already in the requested style save on every run
+			//and lose packages.config for nothing. It rides along with a save the reference rewrites earned.
 			package?.Remove();
 		}
 
 		public int ChangedReferencesCount { get; private set; }
+
+		/// <summary>
+		/// Whether a reference was rewritten in memory: a HintPath, or a strong-name suffix stripped from a
+		/// Reference Include. The packages.config removal does not count - see DeletePackagesConfig.
+		/// </summary>
+		/// <remarks>
+		/// ChangedReferencesCount counts only the HintPath rewrites, so it is the wrong thing to gate a save
+		/// on: a project whose hints already point at the requested location, but whose Include attributes
+		/// still carry the strong name, produced a count of zero and had that normalization - and the
+		/// packages.config removal riding with it - computed and then thrown away.
+		/// </remarks>
+		public bool HasPendingChanges { get; private set; }
 
 		private void DetermineCurrentRef()
 		{

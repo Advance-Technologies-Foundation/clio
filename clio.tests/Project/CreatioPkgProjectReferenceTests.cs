@@ -165,6 +165,40 @@ public class CreatioPkgProjectReferenceTests
 	}
 
 	[Test]
+	[Description("Persists the strong-name normalization when the HintPaths already point at the requested location, instead of computing it in memory and discarding it (issue 1280)")]
+	public void Execute_SavesIncludeNormalization_When_HintPathsAreAlreadyCorrect(){
+		// Arrange — the hint is already the bin layout, so no HintPath is rewritten, but the Include still
+		// carries the strong name and packages.config is still declared.
+		string projectPath = Path.Combine(_workingDirectory, "TestPkg.csproj");
+		File.WriteAllText(projectPath, @"<?xml version=""1.0"" encoding=""utf-8""?>
+<Project ToolsVersion=""15.0"" xmlns=""http://schemas.microsoft.com/developer/msbuild/2003"">
+  <ItemGroup>
+    <Reference Include=""Terrasoft.Core, Version=7.15.2.501, Culture=neutral, PublicKeyToken=null"">
+      <HintPath>..\..\..\Bin\Terrasoft.Core.dll</HintPath>
+    </Reference>
+    <None Include=""packages.config"" />
+  </ItemGroup>
+</Project>");
+		ICreatioPkgProjectCreator creator = Substitute.For<ICreatioPkgProjectCreator>();
+		creator.CreateFromFile(projectPath).Returns(CreatioPkgProject.LoadFromFile(projectPath));
+		ILogger logger = Substitute.For<ILogger>();
+		ReferenceCommand command = new(creator, logger);
+
+		// Act
+		int actual = command.Execute(new ReferenceOptions {Path = projectPath, ReferenceType = "bin"});
+
+		// Assert
+		actual.Should().Be(0);
+		string saved = File.ReadAllText(projectPath);
+		saved.Should().Contain(@"Include=""Terrasoft.Core""",
+			because: "the strong-name suffix is stripped in memory, and the rewritten-reference count does not see it - gating the save on that count threw the normalization away");
+		saved.Should().NotContain("PublicKeyToken",
+			because: "the whole point of the normalization is that the strong name no longer pins a version the bin folder may not carry");
+		saved.Should().NotContain("packages.config",
+			because: "the removal rides along with the save the Include normalization earned, which is what the command did before the count gate was introduced");
+	}
+
+	[Test]
 	[Description("Reports an unrecognized reference style instead of silently changing nothing (issue 1280)")]
 	public void Execute_ReportsFailure_When_NoReferenceWasChanged(){
 		// Arrange

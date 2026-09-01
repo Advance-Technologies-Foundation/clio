@@ -97,9 +97,20 @@ namespace Clio.Command
 				}
 				if (project.ChangedReferencesCount == 0) {
 					if (initialRefType == RequestedRefType(options.ReferenceType)) {
-						//Already in the requested style: running the command twice is not a failure
-						_logger.WriteLine($"{options.Path} already references {options.ReferenceType}, "
-							+ "nothing to change");
+						if (!project.HasPendingChanges) {
+							//Already in the requested style: running the command twice is not a failure
+							_logger.WriteLine($"{options.Path} already references {options.ReferenceType}, "
+								+ "nothing to change");
+							return 0;
+						}
+						//The hints already point at the requested location, but something else was
+						//rewritten - a strong-name suffix stripped from a Reference Include, or the
+						//packages.config entry removed. Returning here would compute those in memory and
+						//throw them away, which is what the reference-count gate used to do.
+						project.SaveChanges();
+						_logger.WriteLine($"{options.Path} already references {options.ReferenceType}; "
+							+ "normalized the remaining reference metadata");
+						_logger.WriteLine("Done");
 						return 0;
 					}
 					//Nothing was rewritten: the project's reference style was not recognized.
