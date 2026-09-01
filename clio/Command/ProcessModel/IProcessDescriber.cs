@@ -562,6 +562,7 @@ public sealed class DescribedPreconfiguredPageButton {
 	[JsonExtensionData]
 	public Dictionary<string, JsonElement> AdditionalData { get; set; }}
 
+/// <summary>
 /// The performer of a user-task element ("Who performs the task?"), read back from its performer-assignment
 /// options: top-level on a described Perform task, inside the <c>email</c> block on a described Send email element.
 /// </summary>
