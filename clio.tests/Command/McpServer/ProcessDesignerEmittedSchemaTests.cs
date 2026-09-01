@@ -38,8 +38,9 @@ public sealed class ProcessDesignerEmittedSchemaTests {
 	private static McpToolInvokerRegistry BuildProductionRegistry() {
 		IServiceProvider provider = Substitute.For<IServiceProvider>();
 		IFeatureToggleService featureToggle = Substitute.For<IFeatureToggleService>();
-		// The process-designer tools sit behind [FeatureToggle("process-designer")]; the schema contract is
-		// asserted with the toggle on, because that is the only state in which a client sees these tools.
+		// All toggles report enabled so the registry mirrors the full production catalog. The
+		// process-designer tools themselves ship gate-free since go-live (ENG-96132); the blanket
+		// substitute just keeps unrelated gated tools from perturbing the scan.
 		featureToggle.IsEnabled(Arg.Any<Type>()).Returns(true);
 		return new McpToolInvokerRegistry(
 			provider,

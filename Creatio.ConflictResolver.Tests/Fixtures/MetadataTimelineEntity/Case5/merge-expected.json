@@ -1,0 +1,107 @@
+{
+  "MetaData": {
+    "Schema": {
+      "ManagerName": "AddonSchemaManager",
+      "UId": "07d280dc-b719-4068-8951-6e4398e88c53",
+      "A2": "UsrEntity_testTimelineEntity",
+      "A5": "ff5fdc90-5eb1-4c66-a824-ff94216138d8",
+      "B1": [],
+      "B2": [],
+      "B3": [],
+      "B6": "626887d8-bd46-4f5a-a04f-d81437851822",
+      "B8": "8.3.4.1975",
+      "AD1": "2ef46a48-5ed9-4a63-9a7a-942bacebd637",
+      "AD2": "EntitySchemaManager",
+      "AD3": "TimelineEntity",
+      "AD5": "3a2d6f51-1bfc-4c17-aacb-b53de4866b7c",
+      "AD4": {
+        "SchemaName": "UsrEntity_test",
+        "TypeColumnUId": "00000000-0000-0000-0000-000000000000",
+        "TimelineEntityValues": [
+          {
+            "UId": "a88e9396-1b73-8f37-0286-742b88fdc6dc",
+            "TypeColumnValue": "e2831dec-cfc0-df11-b00f-001d60e938c6",
+            "IsDefault": true,
+            "ComparisonType": 3,
+            "TileName": "Email",
+            "SortColumn": "SendDate",
+            "OwnerColumn": "SenderContact",
+            "ColumnLayouts": [
+              {
+                "ColumnName": "Title",
+                "ColumnLayout": "{\"column\": 1,\"row\": 1,\"colSpan\": 12,\"rowSpan\": 1}"
+              },
+              {
+                "ColumnName": "Title11111",
+                "ColumnLayout": "{\"column\": 1,\"row\": 1,\"colSpan\": 12,\"rowSpan\": 1}"
+              }
+            ]
+          },
+<<<<<<< Local
+          {
+            "UId": "a88e9396-1b73-8f37-0286-742b88fd2222",
+            "TypeColumnValue": "e2831dec-cfc0-df11-b00f-001d60e938c6",
+            "IsDefault": true,
+            "ComparisonType": 3,
+            "TileName": "Email2222",
+            "SortColumn": "SendDate2222",
+            "OwnerColumn": "SenderContact",
+            "ColumnLayouts": [
+              {
+                "ColumnName": "Title2222",
+                "ColumnLayout": "{\"column\": 1,\"row\": 1,\"colSpan\": 12,\"rowSpan\": 1}"
+              }
+            ]
+          },
+=======
+>>>>>>> Remote
+<<<<<<< Local
+=======
+          {
+            "UId": "a88e9396-1b73-8f37-0286-742b88fd3333",
+            "TypeColumnValue": "e2831dec-cfc0-df11-b00f-001d60e938c6",
+            "IsDefault": true,
+            "ComparisonType": 3,
+            "TileName": "Email3333",
+            "SortColumn": "SendDate333",
+            "OwnerColumn": "SenderContact",
+            "ColumnLayouts": [
+              {
+                "ColumnName": "Title333",
+                "ColumnLayout": "{\"column\": 1,\"row\": 1,\"colSpan\": 12,\"rowSpan\": 1}"
+              }
+            ]
+          },
+>>>>>>> Remote
+          {
+            "UId": "a88e9396-1b73-8f37-0286-742b88fdc000",
+            "TypeColumnValue": "e2831dec-cfc0-df11-b00f-001d60e938c6",
+            "IsDefault": true,
+            "ComparisonType": 4,
+            "TileName": "Activity",
+            "OwnerColumn": "Owner",
+            "ColumnLayouts": [
+              {
+                "ColumnName": "Title"
+              },
+<<<<<<< Local
+=======
+              {
+                "ColumnName": "Status",
+                "ColumnLayout": "{\"column\": 1,\"row\": 1,\"colSpan\": 6,\"rowSpan\": 1999999}"
+              },
+>>>>>>> Remote
+<<<<<<< Local
+              {
+                "ColumnName": "Status333333",
+                "ColumnLayout": "{\"column\": 1,\"row\": 1,\"colSpan\": 6,\"rowSpan\": 1333333}"
+              }
+=======
+>>>>>>> Remote
+            ]
+          }
+        ]
+      }
+    }
+  }
+}

@@ -13,8 +13,8 @@ using Newtonsoft.Json;
 using StjSerializer = System.Text.Json.JsonSerializer;
 using StjJsonException = System.Text.Json.JsonException;
 
-// Deliberately NOT [RequiresPackage], and the MCP tool NOT [FeatureToggle]-gated: the endpoint is built
-// into every Creatio, so a gate would only break consumers on stands without the toggle or the package.
+// Deliberately NOT [RequiresPackage]: the endpoint is built into every Creatio, so a gate would only
+// break consumers on stands without the package.
 public sealed class RunProcessOptions : EnvironmentOptions {
 
 	// A display caption is rejected: captions are not unique.

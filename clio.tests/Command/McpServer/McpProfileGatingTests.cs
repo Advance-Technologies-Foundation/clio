@@ -28,7 +28,8 @@ public sealed class McpProfileGatingTests
 	// only resident class declaring more than one [McpServerTool] — 8 methods) from the resident profile,
 	// and SysSettingGetTool / SysSettingsListTool (single-method, no ride-along) also moved to the long
 	// tail. With DataForgeTool gone, every remaining resident type declares exactly one tool, so the
-	// registered TOOL count (what lands in tools/list) equals the TYPE count, measured at 18 today. The
+	// registered TOOL count (what lands in tools/list) equals the TYPE count. Issue #1183 added the
+	// resident merge-creatio-artifact tool to the default surface. The
 	// budget is set to 20 to leave a small headroom while still catching a regression that would re-grow
 	// the surface toward the ~124-tool full catalog.
 	private const int MaxLazyToolCount = 20;
@@ -41,11 +42,10 @@ public sealed class McpProfileGatingTests
 	// when origin/master added resident tools (desktop-page, related-page-binding, business-rule CRUD,
 	// ...), and to 39*1024 when get-request-info joined the resident core tools. ENG-92761 then dropped
 	// DataForgeTool's 8-method schema block, and moving get-sys-setting / list-sys-settings to the long
-	// tail dropped 2 more single-method schemas, bringing the measured payload down to 30233 bytes. The
-	// ratchet is set to 31000 — just above the measurement with a small headroom — to lock in the win and
-	// catch any silent re-growth. Each raise/drop is a deliberate budget decision; the ratchet exists so
-	// the next resident change trips it and forces that decision again.
-	private const int MaxLazyToolsSerializedBytes = 31_000;
+	// tail dropped 2 more single-method schemas, bringing the measured payload down to 30233 bytes.
+	// Issue #1183 adds the semantic merge boundary to the default resident surface. The ratchet remains
+	// the deliberate guard against later default-surface growth.
+	private const int MaxLazyToolsSerializedBytes = 32 * 1024;
 
 	private static Assembly ClioAssembly => typeof(McpFeatureToggleFilter).Assembly;
 
@@ -63,6 +63,22 @@ public sealed class McpProfileGatingTests
 	private static Type[] EnabledToolTypes() =>
 		McpFeatureToggleFilter.GetEnabledTypes(
 			ClioAssembly, typeof(McpServerToolTypeAttribute), _ => true);
+
+	[Test]
+	[Category("Unit")]
+	[Description("Keeps the Creatio merge tool in the default MCP tools/list surface.")]
+	public void SelectToolTypes_ShouldIncludeCreatioArtifactMerge_WhenFeaturesAreDisabledByDefault() {
+		// Arrange
+		Type[] enabled = McpFeatureToggleFilter.GetEnabledTypes(
+			ClioAssembly, typeof(McpServerToolTypeAttribute), DefaultSurfaceEnabled);
+
+		// Act
+		Type[] selected = McpFeatureToggleFilter.SelectToolTypes(enabled).ToArray();
+
+		// Assert
+		selected.Should().Contain(typeof(CreatioArtifactMergeTool),
+			because: "the merge functionality must be discoverable without local feature configuration");
+	}
 
 	[Test]
 	[Category("Unit")]
@@ -85,6 +101,8 @@ public sealed class McpProfileGatingTests
 			because: "the schema-describe tool stays flat so the long tail is discoverable");
 		selected.Should().Contain(typeof(PageListTool),
 			because: "a core profile tool type stays flat");
+		selected.Should().Contain(typeof(CreatioArtifactMergeTool),
+			because: "agents need direct discovery of the supported semantic merge boundary");
 		selected.Should().NotContain(typeof(DataForgeTool),
 			because: "DataForgeTool was moved to the long tail (ENG-92761); it is reachable via clio-run / get-tool-contract, not flat in tools/list");
 		selected.Should().NotContain(typeof(SysSettingGetTool),

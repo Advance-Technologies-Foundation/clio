@@ -157,6 +157,143 @@ public sealed class MobilePageConversionGuideSandboxE2ETests : McpContractFixtur
 			because: $"the seeded page '{convertedSchemaName}' carries a MainHeader action that must convert into the FloatingActionButton");
 	}
 
+	[Test]
+	[Description("Non-vacuous excludedComponents TRANSPORT guard (ENG-95081): converts real seeded pages until one carries a component of a bundled-rule-banned type, then asserts NO surviving insert of a banned type reaches the banned host through the banned slot on the entry graph — the regression where crt.SearchFilter survived inside crt.ExpansionPanel's tools because the pass searched only verbatim-carried values. Any candidate that fails to convert fails the test immediately (a runtime regression, never a seed gap); when no seeded page carries any banned type it IGNORES with an explicit reason instead of passing silently. The rule's own acceptance criterion does not depend on this test — WebToMobileRealPageRegressionTests enforces it hermetically on the pinned OOTB Leads_FormPage — so what this one adds is the verdict travelling through the real clio mcp-server process.")]
+	[AllureTag(ToolName)]
+	[AllureName("get-mobile-page-conversion-guide honors bundled excludedComponents rules on the entry graph")]
+	[AllureDescription("Loads the bundled conversion rules' excludedComponents filters, iterates the seeded application's pages through the real clio MCP server, and on the first page whose element map mentions a banned type at all asserts that every surviving insert of a banned type has NO ancestor-entry chain reaching the banned host through the banned slot; a conversion failure fails the test, and a seed set with no banned type degrades to Ignore (never a vacuous pass).")]
+	public async Task MobilePageConversionGuideTool_Should_Honor_Bundled_ExcludedComponents_Rules() {
+		// Arrange
+		McpE2ESettings settings = TestConfiguration.Load();
+		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
+		await using ArrangeContext context = Arrange(TimeSpan.FromMinutes(5));
+		await RequireConverterFeatureOrIgnoreAsync(context);
+		string environmentName = await ResolveReachableEnvironmentAsync(settings);
+		IReadOnlyList<string> candidates = await ResolveSeededTabbedPageCandidatesOrIgnoreAsync(
+			context.Session, context.CancellationTokenSource.Token, environmentName);
+		List<ExcludedComponentFilterRule> filters = WebToMobilePageConversionRulesCatalog.LoadBundled()
+			.ExcludedComponents
+			.SelectMany(g => g?.Filters ?? [])
+			.Where(f => !string.IsNullOrWhiteSpace(f?.Type) && !string.IsNullOrWhiteSpace(f.ParentType))
+			.ToList();
+		filters.Should().NotBeEmpty(
+			because: "the bundled conversion rules ship excludedComponents filters — with none, this guard no longer tests anything and must be revisited");
+
+		// Act — convert candidates until one MENTIONS a banned type at all (as an insert OR a drop).
+		// A conversion FAILURE fails the test right here — it is a runtime regression, never a seed gap,
+		// and deferring it would let a later banned-type candidate mask it behind a green run.
+		bool bannedTypeExercised = false;
+		string convertedSchemaName = string.Empty;
+		foreach (string schemaName in candidates) {
+			CallToolResult callResult = await context.Session.CallToolAsync(
+				ToolName,
+				new Dictionary<string, object?> {
+					["args"] = new Dictionary<string, object?> {
+						["schema-name"] = schemaName,
+						["environment-name"] = environmentName
+					}
+				},
+				context.CancellationTokenSource.Token);
+			(callResult.IsError == true).Should().BeFalse(
+				because: $"get-mobile-page-conversion-guide must succeed on every seeded page, and '{schemaName}' "
+					+ "returned a transport-level error — a runtime regression, not missing seed data");
+			MobilePageConversionGuideResponse response =
+				EntitySchemaStructuredResultParser.Extract<MobilePageConversionGuideResponse>(callResult);
+			response.Success.Should().BeTrue(
+				because: $"get-mobile-page-conversion-guide must succeed on every seeded page, and '{schemaName}' "
+					+ $"failed with: {response.Error} — a runtime regression, not missing seed data");
+			MobilePageConversionGuide guide = response.Guide!;
+			// A page only EXERCISES the rule when a banned type survived conversion as an insert. Accepting a
+			// mere mention (including e.WebType, which a plain unsupported-type drop also satisfies) would let
+			// the loop break on a page where the exclusion pass had nothing to decide, and
+			// AssertExcludedComponentsHonored would then pass by construction — reporting a vacuous run as a
+			// real one, which is the exact failure the Ignore branch below exists to prevent.
+			bool exercisesBannedType = guide.ElementMap.Any(e =>
+				string.Equals(e.Operation, "insert", StringComparison.OrdinalIgnoreCase)
+				&& filters.Any(f => string.Equals(e.MobileType, f.Type, StringComparison.OrdinalIgnoreCase)));
+			if (exercisesBannedType) {
+				AssertExcludedComponentsHonored(guide, filters);
+				bannedTypeExercised = true;
+				convertedSchemaName = schemaName;
+				break;
+			}
+		}
+
+		// Assert
+		if (!bannedTypeExercised) {
+			Assert.Ignore(
+				$"None of the {candidates.Count} seeded page(s) of '{ApplicationCode}' on environment '{environmentName}' "
+				+ "converts a component of any excludedComponents-banned type into a surviving insert, so the TRANSPORT path could not be exercised "
+				+ "end to end. This skip is not a coverage gap for the rule itself: the acceptance criterion is enforced "
+				+ "hermetically on production-shaped metadata by WebToMobileRealPageRegressionTests (the pinned OOTB "
+				+ "Leads_FormPage), which runs on every build. What is NOT covered while this skips is the rule reaching "
+				+ "the same verdict through the real clio mcp-server process. To close that, add a seeded page with a "
+				+ "crt.SearchFilter inside a crt.ExpansionPanel's tools to the seed application.");
+		}
+		TestContext.Out.WriteLine(
+			$"excludedComponents invariant asserted against seeded page '{convertedSchemaName}'.");
+	}
+
+	/// <summary>
+	/// The entry-graph invariant of the excludedComponents pass, re-derived independently of the product
+	/// code: a SURVIVING insert of a banned <c>type</c> must have NO ancestor-entry chain (via
+	/// <c>parentName</c>, over insert/merge entries) that reaches a host of the banned <c>parentType</c>
+	/// through the banned slot — the edge entering the host must occupy <c>propertiesContainerName</c>
+	/// (absent <c>propertyName</c> = <c>items</c>; a filter with no slot accepts any). A banned-type entry
+	/// that appears only as a drop is the pass doing its job and passes this check by construction.
+	/// </summary>
+	private static void AssertExcludedComponentsHonored(
+		MobilePageConversionGuide guide, List<ExcludedComponentFilterRule> filters) {
+		Dictionary<string, ElementMapEntry> byMobileName = guide.ElementMap
+			.Where(e => (e.Operation == "insert" || e.Operation == "merge") && !string.IsNullOrEmpty(e.MobileName))
+			.GroupBy(e => e.MobileName!, StringComparer.OrdinalIgnoreCase)
+			.ToDictionary(g => g.Key, g => g.First(), StringComparer.OrdinalIgnoreCase);
+		foreach (ElementMapEntry entry in guide.ElementMap) {
+			if (entry.Operation != "insert" || string.IsNullOrEmpty(entry.MobileType)) {
+				continue;
+			}
+			foreach (ExcludedComponentFilterRule filter in filters) {
+				if (!string.Equals(entry.MobileType, filter.Type, StringComparison.OrdinalIgnoreCase)) {
+					continue;
+				}
+				string? bannedHost = FindBannedHostOnAncestorPath(entry, filter, byMobileName);
+				bannedHost.Should().BeNull(
+					because: $"surviving insert '{entry.MobileName}' of banned type '{filter.Type}' reaches host "
+						+ $"'{bannedHost}' of type '{filter.ParentType}'"
+						+ (string.IsNullOrWhiteSpace(filter.PropertiesContainerName)
+							? ""
+							: $" through its '{filter.PropertiesContainerName}' slot")
+						+ " — the excludedComponents pass must have dropped it (ENG-95081)");
+			}
+		}
+	}
+
+	/// <summary>The ancestor climb of <see cref="AssertExcludedComponentsHonored"/>: the banned host's
+	/// mobile name, or null when the entry's chain never reaches one in scope. Bounded and cycle-guarded —
+	/// the map arrives from a real environment.</summary>
+	private static string? FindBannedHostOnAncestorPath(
+		ElementMapEntry candidate, ExcludedComponentFilterRule filter,
+		Dictionary<string, ElementMapEntry> byMobileName) {
+		var visited = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+		ElementMapEntry current = candidate;
+		for (int depth = 0; depth <= 32; depth++) {
+			string? parentName = current.ParentName;
+			if (string.IsNullOrEmpty(parentName) || !visited.Add(parentName)
+				|| !byMobileName.TryGetValue(parentName, out ElementMapEntry? parent)) {
+				return null;
+			}
+			bool slotMatches = string.IsNullOrWhiteSpace(filter.PropertiesContainerName)
+				|| string.Equals(
+					string.IsNullOrEmpty(current.PropertyName) ? "items" : current.PropertyName,
+					filter.PropertiesContainerName, StringComparison.OrdinalIgnoreCase);
+			if (string.Equals(parent.MobileType, filter.ParentType, StringComparison.OrdinalIgnoreCase) && slotMatches) {
+				return parent.MobileName;
+			}
+			current = parent;
+		}
+		return null;
+	}
+
 	/// <summary>
 	/// Any element retargeted into <c>FloatingActionButton.menuItems</c> — a converted MainHeader action
 	/// (ENG-93152) — must be a <c>crt.MenuItem</c> insert carrying no visual properties (style/color/icon): the
@@ -169,6 +306,12 @@ public sealed class MobilePageConversionGuideSandboxE2ETests : McpContractFixtur
 		foreach (ElementMapEntry entry in fabEntries) {
 			entry.MobileType.Should().Be("crt.MenuItem",
 				because: $"a header action retargeted into the FAB ('{entry.WebName}') becomes a mobile menu item");
+			// ENG-93152: the recommended mobile record template provides the FloatingActionButton natively (in the
+			// Scaffold's floatAction slot). Reaching this retarget therefore means the probe found the FAB, so the entry
+			// MUST be flagged parentExistsOnTemplate:true — the caller inserts only the child and never re-declares the FAB.
+			entry.ParentExistsOnTemplate.Should().BeTrue(
+				because: $"the mobile template provides the FloatingActionButton natively, so the retargeted action "
+					+ $"('{entry.WebName}') must be flagged parentExistsOnTemplate:true over the real MCP transport");
 			if (entry.MobileValues is JsonObject values) {
 				values.ContainsKey("style").Should().BeFalse(
 					because: $"visual properties are denylisted on a converted FAB menu item ('{entry.WebName}')");
@@ -185,6 +328,13 @@ public sealed class MobilePageConversionGuideSandboxE2ETests : McpContractFixtur
 			guide.ElementMap.Should().NotContain(
 				e => e.WebName == "MainHeader" && (e.Operation == "insert" || e.Operation == "merge"),
 				because: "a non-converting scope container (MainHeader) is never emitted as a mobile element (AC 4.5)");
+			// ENG-93152 parentExistsOnTemplate contract: the FAB is template-provided, so the guide must NEVER emit an
+			// insert/merge that re-declares it — authoring a second FloatingActionButton would override the native one.
+			guide.ElementMap.Should().NotContain(
+				e => (e.Operation == "insert" || e.Operation == "merge")
+					&& (e.MobileName == "FloatingActionButton" || e.MobileType == "crt.FloatingActionButton"),
+				because: "the FloatingActionButton is provided by the mobile template, so the guide must never emit an "
+					+ "insert/merge that re-declares it (only the retargeted children are inserted)");
 		}
 	}
 
@@ -327,6 +477,102 @@ public sealed class MobilePageConversionGuideSandboxE2ETests : McpContractFixtur
 		guide.NextSteps.Should().Contain(s => s.Contains("tabAreaLayers") && s.Contains("MANDATORY"),
 			because: "the ordered steps must tell the caller to state the structure as fact, not ask for approval");
 	}
+
+	[Test]
+	[Description("ENG-96114 end to end: when the guide places content ABOVE a positional anchor, the anchor must not be left where the mobile template pinned it. Inserting at index 0 pushes the anchor down inside the parent's items, but a grid parent positions by layoutConfig — so the guide must also carry a merge moving the anchor's own row. Before this the converted progress bar rendered under the tab strip and nothing reported it.")]
+	[AllureTag(ToolName)]
+	[AllureName("get-mobile-page-conversion-guide frees the anchor's row for content placed above it")]
+	[AllureDescription("Iterates the seeded application's pages through the real clio MCP server until one converts with indexed positional inserts, then asserts the guide carries exactly one merge for that anchor and that its layoutConfig.row is no longer the template's row 1 — the anchor made room for the content above it. No seeded page with content above the wrapper degrades to Ignore, never a vacuous pass; a conversion failure always fails the test.")]
+	public async Task MobilePageConversionGuideTool_Should_Free_The_Anchor_Row_For_Content_Above_It() {
+		// Arrange
+		McpE2ESettings settings = TestConfiguration.Load();
+		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
+		await using ArrangeContext context = Arrange(TimeSpan.FromMinutes(5));
+		await RequireConverterFeatureOrIgnoreAsync(context);
+		string environmentName = await ResolveReachableEnvironmentAsync(settings);
+		IReadOnlyList<string> candidates = await ResolveSeededTabbedPageCandidatesOrIgnoreAsync(
+			context.Session, context.CancellationTokenSource.Token, environmentName);
+
+		// Act — convert candidates until one places content above an anchor. The converter's own reason text is
+		// the trigger; a conversion FAILURE is a regression, not a seed gap.
+		MobilePageConversionGuide guide = null;
+		string convertedSchemaName = string.Empty;
+		List<string> failedCandidates = [];
+		foreach (string schemaName in candidates) {
+			MobilePageConversionGuide candidate = await ConvertOrCollectFailureAsync(
+				context.Session, context.CancellationTokenSource.Token, environmentName, schemaName, failedCandidates);
+			if (PlacedAboveAnchor(candidate).Count > 0) {
+				guide = candidate;
+				convertedSchemaName = schemaName;
+				break;
+			}
+		}
+		if (guide is null) {
+			if (failedCandidates.Count > 0) {
+				Assert.Fail(
+					$"{failedCandidates.Count} of {candidates.Count} seeded page(s) of '{ApplicationCode}' on environment "
+					+ $"'{environmentName}' failed to convert; get-mobile-page-conversion-guide must succeed on every seeded "
+					+ $"page, so this is a runtime regression, not missing seed data: {string.Join("; ", failedCandidates)}");
+			}
+			Assert.Ignore(
+				$"All {candidates.Count} seeded page(s) of '{ApplicationCode}' on environment '{environmentName}' "
+				+ "converted successfully, but none placed content above a positional anchor. Add a tabbed record "
+				+ "page with an element above CardContentWrapper (e.g. a stage progress bar) to the seed application "
+				+ "to exercise this surface.");
+		}
+
+		// Assert — the anchor made room. The exact arithmetic is unit-tested; what must hold end to end is that
+		// the anchor no longer sits in the row the template pinned it to, and that it is re-placed exactly once.
+		List<ElementMapEntry> above = PlacedAboveAnchor(guide);
+		string anchorName = ResolveBundledPositionalAnchor();
+		anchorName.Should().NotBeNullOrEmpty(
+			because: "the bundled tabbed template rule must declare the mobile anchor its ':top' content is placed "
+				+ $"around, so '{convertedSchemaName}' has something to be positioned against");
+
+		List<ElementMapEntry> anchorMerges = [.. guide.ElementMap
+			.Where(e => e.Operation == "merge" && string.Equals(e.MobileName, anchorName, StringComparison.OrdinalIgnoreCase))];
+		anchorMerges.Should().ContainSingle(
+			because: "the anchor is re-placed exactly once, whether the page produced a template twin for it or not");
+		JsonNode row = anchorMerges[0].MobileValues?["layoutConfig"]?["row"];
+		row.Should().NotBeNull(
+			because: $"'{anchorName}' is positioned by layoutConfig, so the {above.Count} element(s) above it can "
+				+ "only be made room for by moving its row");
+		row!.GetValue<int>().Should().BeGreaterThan(1,
+			because: "leaving the anchor in the template's first row is exactly the defect — the content above it "
+				+ "would render below it");
+
+		foreach (ElementMapEntry entry in above) {
+			entry.MobileValues?["layoutConfig"].Should().NotBeNull(
+				because: $"'{entry.MobileName}' must carry its own row too: freeing the anchor's row is not enough, "
+					+ "the mobile runtime does not auto-place an unpositioned child into the free cell");
+		}
+	}
+
+	/// <summary>
+	/// Surviving inserts the converter routed ABOVE a positional anchor: they carry an index and say so in the
+	/// reason the converter composed. Keyed on the reason because the anchor name is page/template data, not
+	/// something this test may assume.
+	/// </summary>
+	private static List<ElementMapEntry> PlacedAboveAnchor(MobilePageConversionGuide guide) =>
+		guide?.ElementMap is null
+			? []
+			: [.. guide.ElementMap.Where(e =>
+				e.Operation == "insert" && e.Index is not null
+				&& e.Reason is not null && e.Reason.Contains("placed above the mobile ", StringComparison.Ordinal))];
+
+	/// <summary>
+	/// The MOBILE anchor the bundled tabbed-template rule places its positional content around, read from the
+	/// shipped rules file rather than parsed out of the converter's prose — a reason-wording change must not
+	/// break this test, and the rule is the authoritative source anyway. Mirrors
+	/// <see cref="ResolveBundledRemovableTypes"/>. Null when no rule declares a positional entry.
+	/// </summary>
+	private static string ResolveBundledPositionalAnchor() =>
+		WebToMobilePageConversionRulesCatalog.LoadBundled().Templates
+			.Where(t => t.Mobile == "MobilePageWithTabsFreedomTemplate")
+			.SelectMany(t => t.Containers)
+			.Where(c => c.Mobile is not null && c.Mobile.Contains(':'))
+			.Select(c => c.Mobile.Split(':', 2)[0].Trim())
+			.FirstOrDefault(anchor => anchor.Length > 0);
 
 	[Test]
 	[Description("Container child-slot regression guard: every surviving container insert that another surviving insert targets as parentName must physically declare THE SLOT IT IS TARGETED THROUGH ('items', 'tools', 'menuItems', …) in its mobileValues, and the viewConfigDiff assembled from the element map (in map order, exactly as the guide's nextSteps instruct the caller) must apply cleanly through the faithful differ clones. Before the converter declared those slots, the FIRST parent-child insert pair failed the Creatio differ with 'Item X is not a container for other items', so this is non-vacuous on any seeded page with nested containers. A conversion failure always fails the test, and so does a page that converted WITH tabAreaLayers yet produced no parent-targeting insert (the synthesized layers guarantee one by construction); Ignores only when the seed truly carries no nested structure at all.")]

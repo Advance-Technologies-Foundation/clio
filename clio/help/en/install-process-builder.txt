@@ -18,11 +18,9 @@ DESCRIPTION
     - list-user-tasks
     - validate-process-graph
 
-    They are additionally behind the 'process-designer' feature toggle, which is
-    off by default; enable it with 'clio experimental --name process-designer
-    --enable'. Each refuses to run against an environment where the package is
-    missing or older than the version bundled with clio, and names this command
-    in the refusal.
+    Each refuses to run against an environment where the package is missing or
+    older than the version bundled with clio, and names this command in the
+    refusal.
 
     The package ships as source, without a compiled assembly, and the target
     environment compiles it during installation against its own core. One archive

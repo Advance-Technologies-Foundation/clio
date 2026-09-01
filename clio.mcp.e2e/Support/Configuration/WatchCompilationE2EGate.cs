@@ -10,7 +10,7 @@ namespace Clio.Mcp.E2E.Support.Configuration;
 /// Skip-gate for the watch-compilation MCP E2E fixtures. The tool is
 /// <c>[FeatureToggle("watch-compilation")]</c>-gated, so the clio MCP server does NOT advertise it
 /// while the feature is off — which is the default. These fixtures <see cref="Assert.Ignore(string)"/>
-/// (skip) rather than fail when the feature is disabled, exactly like the process-designer gate.
+/// (skip) rather than fail when the feature is disabled, exactly like the reachable-environment gate.
 /// Enable the feature (<c>clio experimental --name watch-compilation --enable</c>) on the stand's
 /// clio settings to run them.
 /// </summary>

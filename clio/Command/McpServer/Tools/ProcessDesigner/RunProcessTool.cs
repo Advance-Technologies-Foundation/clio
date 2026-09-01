@@ -13,8 +13,8 @@ using ModelContextProtocol.Server;
 
 namespace Clio.Command.McpServer.Tools.ProcessDesigner;
 
-// Deliberately NOT [FeatureToggle]- or [RequiresPackage]-gated, unlike the rest of this folder: the
-// endpoint is built into every Creatio, so a gate would only break consumers. Does not extend BaseTool
+// Deliberately NOT [RequiresPackage]-gated, unlike the rest of this folder: the endpoint is built
+// into every Creatio, so a gate would only break consumers. Does not extend BaseTool
 // because its work can outlive the response deadline, and that path holds the per-tenant monitor for the
 // whole call — same shape as CompileCreatioTool.
 [McpServerToolType]

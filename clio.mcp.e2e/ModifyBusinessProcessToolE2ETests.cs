@@ -27,7 +27,7 @@ namespace Clio.Mcp.E2E;
 [AllureNUnit]
 [AllureFeature(ModifyBusinessProcessTool.ModifyBusinessProcessToolName)]
 [NonParallelizable]
-[Category(ProcessDesignerE2EGate.CategoryName)]
+[Category(McpE2ECategories.ProcessDesigner)]
 public sealed class ModifyBusinessProcessToolE2ETests {
 
 	private const string ToolName = ModifyBusinessProcessTool.ModifyBusinessProcessToolName;
@@ -1113,6 +1113,498 @@ public sealed class ModifyBusinessProcessToolE2ETests {
 			because: "the named failure mode is a value that persists and writes nothing, so proving the refusal means proving nothing was written");
 	}
 
+	// --- Perform task parameter families (ENG-91846) ------------------------------------------------------
+	// The rows of the ticket's verification matrix that only a real stand can answer: the scheduling pairs,
+	// the booleans, the performer expression route, the Recommendation constant (materialized into the schema
+	// RESOURCE by SaveSchema — live-verified to reach Activity.Title), and the bare-Guid ActivityCategory
+	// ConstValue the S2 validator relaxation admits (the encoding the runtime's allowed-results derivation
+	// actually reads). Every assertion goes through the TYPED describe model, per this file's own rationale.
+
+	[Test]
+	[Description("Over the real MCP path: one modify-business-process call configures a Perform task's three scheduling pairs, both booleans, the performer (expression route), Recommendation, InformationOnStep, plus ActivityCategory AND ActivityPriority as bare-Guid ConstValues (ENG-91846 relaxation), and the typed describe reads every written parameter back with its source and value.")]
+	[AllureTag(ToolName)]
+	[AllureName("modify-business-process configures perform-task parameter families and reads them back")]
+	public async Task ModifyBusinessProcess_Should_ConfigurePerformTaskParameterFamilies() {
+		// Arrange
+		await using ArrangeContext context = await ArrangeAsync(requireReachableEnvironment: true);
+		string processName = $"UsrClioBpPerformTaskE2e{Guid.NewGuid():N}";
+		await CreateProcessAsync(context, processName, BuildPerformTaskDescriptor(processName));
+
+		// Act — one edit covering every parameter family the ticket certifies.
+		await ModifyExpectingSuccessAsync(context, processName, ConfigurePerformTaskOperations());
+		DescribedElement task = await ReadTaskAsync(context, processName);
+
+		// Assert — typed read-back per family.
+		DescribedParameter category = task.Parameters.Single(parameter => parameter.Name == "ActivityCategory");
+		category.Source.Should().Be("ConstValue",
+			because: "a bare record Guid on a Lookup parameter must persist as the ConstValue the runtime's allowed-results derivation reads — the whole point of the ENG-91846 relaxation");
+		category.Value.Should().BeEquivalentTo(ToDoActivityCategoryId,
+			because: "the record id is stored verbatim, so the runtime resolves exactly the requested category");
+		DescribedParameter owner = task.Parameters.Single(parameter => parameter.Name == "OwnerId");
+		owner.Source.Should().Be("Script",
+			because: "the [#SysVariable.CurrentUserContact#] performer route is an expression and stores as a formula source");
+		owner.Value.Should().Be("[#SysVariable.CurrentUserContact#]",
+			because: "the macro is stored verbatim with zero rewriting");
+		task.Parameters.Single(parameter => parameter.Name == "Recommendation").Value.Should()
+			.Be("Call the client about the renewal",
+				because: "the Recommendation constant is materialized into the process schema resource by SaveSchema and read back as the parameter value");
+		DescribedParameter priority = task.Parameters.Single(parameter => parameter.Name == "ActivityPriority");
+		priority.Source.Should().Be("ConstValue",
+			because: "ActivityPriority rides the same bare-Guid relaxation as the category — the second parameter the route exists for");
+		priority.Value.Should().BeEquivalentTo(HighActivityPriorityId,
+			because: "the non-default priority proves the write took effect rather than reading back the shipped Medium default");
+		task.Parameters.Single(parameter => parameter.Name == "InformationOnStep").Value.Should()
+			.Be("Check the last invoice before calling",
+				because: "the hint constant is materialized into the process schema resource exactly like Recommendation");
+		task.Parameters.Single(parameter => parameter.Name == "Duration").Value.Should().Be("2",
+			because: "the scheduling constants persist as plain integer ConstValues");
+		task.Parameters.Single(parameter => parameter.Name == "DurationPeriod").Value.Should().Be("2",
+			because: "period 2 selects Days in the shared 0=minutes/1=hours/2=days/3=weeks/4=months enum");
+		task.Parameters.Single(parameter => parameter.Name == "StartIn").Value.Should().Be("1",
+			because: "the third scheduling pair (start delay) persists as written");
+		task.Parameters.Single(parameter => parameter.Name == "StartInPeriod").Value.Should().Be("1",
+			because: "period 1 selects Hours in the shared period enum");
+		task.Parameters.Single(parameter => parameter.Name == "RemindBefore").Value.Should().Be("30",
+			because: "the reminder offset persists as written");
+		task.Parameters.Single(parameter => parameter.Name == "RemindBeforePeriod").Value.Should().Be("0",
+			because: "period 0 selects Minutes in the shared period enum");
+		task.Parameters.Single(parameter => parameter.Name == "ShowExecutionPage").Value.Should().Be("true",
+			because: "the auto-open flag persists as written");
+		task.Parameters.Single(parameter => parameter.Name == "ShowInScheduler").Value.Should().Be("true",
+			because: "the calendar flag persists as written (the designer exposes it as the \"Show in calendar\" checkbox inherited from the base user-task properties page; addMapping sets the same parameter)");
+	}
+
+	[Test]
+	[Description("Over the real MCP path: a Perform task's OUTPUTS resolve as mapping SOURCES — CurrentActivityId (invisible in describe: no default, isResult=false) and ActivityResult both map into Guid PROCESS parameters and read back with the server-built [Element:{uid}] metapath (process parameters are the guidance-recommended target: mapping into a later task's own CurrentActivityId makes it ADOPT that activity, the documented wait-forever trap) — and the equivalent two-task graph shape validates clean.")]
+	[AllureTag(ToolName)]
+	[AllureName("modify-business-process maps perform-task outputs into process parameters")]
+	public async Task ModifyBusinessProcess_Should_MapPerformTaskOutputsIntoDownstreamElement() {
+		// Arrange — two perform tasks in sequence plus two Guid process parameters to receive the outputs.
+		await using ArrangeContext context = await ArrangeAsync(requireReachableEnvironment: true);
+		string processName = $"UsrClioBpOutputSourceE2e{Guid.NewGuid():N}";
+		await CreateProcessAsync(context, processName, BuildTwoTaskDescriptor(processName));
+
+		// Act — map both Task1 outputs into the process parameters, then read the graph back.
+		await ModifyExpectingSuccessAsync(context, processName, MapOutputsDownstreamOperations());
+		CallToolResult describeResult = await CallToolAsync(context, DescribeToolName, new Dictionary<string, object?> {
+			["environment-name"] = context.EnvironmentName,
+			["process-name"] = processName
+		});
+		DescribeProcessResult described = ParseDescribeResult(describeResult);
+		DescribedElement task1 = described.Elements.Single(element => element.Name == "Task1");
+
+		// Assert — the sources resolved even though CurrentActivityId is invisible in describe on Task1 itself.
+		task1.Parameters.Should().NotContain(parameter => parameter.Name == "CurrentActivityId",
+			because: "the unbound output has no default and no isResult, so describe omits it — absence is not non-existence, which is exactly what this test proves");
+		DescribedParameter activityId = described.Parameters.Single(parameter => parameter.Name == "FirstTaskActivityId");
+		activityId.Source.Should().Be("Script",
+			because: "an element-output source is stored as a server-built metapath formula");
+		activityId.Value.Should().Contain("[Element:{" + task1.Uid,
+			because: "the metapath must reference the SOURCE element's UId — that is what makes the mapping resolvable at run time");
+		DescribedParameter resultId = described.Parameters.Single(parameter => parameter.Name == "FirstTaskResultId");
+		resultId.Value.Should().Contain("[Element:{" + task1.Uid,
+			because: "the IsResult output rides the same server-built [Element:{uid}] metapath");
+
+		// And the same two-task SHAPE (validate-process-graph takes an inline graph, not the saved process)
+		// violates no BPMN connection rule.
+		CallToolResult validateResult = await CallToolAsync(context, ValidateProcessGraphTool.ToolName,
+			new Dictionary<string, object?> {
+				["environment-name"] = context.EnvironmentName,
+				["nodes"] = new[] {
+					new ProcessGraphNodeArg("s", "startEvent"), new ProcessGraphNodeArg("t1", "userTask"),
+					new ProcessGraphNodeArg("t2", "userTask"), new ProcessGraphNodeArg("e", "endEvent")
+				},
+				["edges"] = new[] {
+					new ProcessGraphEdgeArg("s", "t1", "sequence"), new ProcessGraphEdgeArg("t1", "t2", "sequence"),
+					new ProcessGraphEdgeArg("t2", "e", "sequence")
+				}
+			});
+		ValidateProcessGraphResponse validation =
+			EntitySchemaStructuredResultParser.Extract<ValidateProcessGraphResponse>(validateResult);
+		validation.Success.Should().BeTrue(because: "the graph validation call must succeed on a reachable environment");
+		validation.HasErrors.Should().BeFalse(
+			because: "start -> task -> task -> end over sequence flows violates no connection rule");
+	}
+
+	[Test]
+	[Description("Over the real MCP path: a NON-Guid 'value' on a Lookup element parameter is still rejected with the message naming both 'expression' and the [#Lookup…#] macro — the ENG-91846 Guid relaxation must not widen to display names — and the rejected edit is not persisted.")]
+	[AllureTag(ToolName)]
+	[AllureName("modify-business-process rejects a non-Guid lookup value and names the expression fallback")]
+	public async Task ModifyBusinessProcess_Should_RejectNonGuidLookupValue_AndNameExpressionFallback() {
+		// Arrange
+		await using ArrangeContext context = await ArrangeAsync(requireReachableEnvironment: true);
+		string processName = $"UsrClioBpLookupRejectE2e{Guid.NewGuid():N}";
+		await CreateProcessAsync(context, processName, BuildPerformTaskDescriptor(processName));
+
+		// Act — the classic AI mistake: the lookup's display name instead of its record id.
+		CallToolResult callResult = await CallToolAsync(context, ToolName, new Dictionary<string, object?> {
+			["environment-name"] = context.EnvironmentName,
+			["process-name"] = processName,
+			["operations"] = """[ { "op": "addMapping", "mapping": { "elementName": "Task1", "elementParameter": "ActivityCategory", "value": "To do" } } ]"""
+		});
+
+		// Assert — the instructive message survived the relaxation, and nothing was saved.
+		string text = SerializeToolText(callResult);
+		text.Should().Contain("expression",
+			because: "the message leads with the bare-Guid route and must keep naming the expression fallback");
+		text.Should().Contain("[#Lookup",
+			because: "the fallback's macro shape must survive rewording, or a caller on the expression path cannot self-correct");
+		DescribedElement task = await ReadTaskAsync(context, processName);
+		task.Parameters.Should().NotContain(parameter => parameter.Name == "ActivityCategory",
+			because: "a rejected mapping aborts the edit, so the parameter stays unbound and invisible in describe");
+	}
+
+	[Test]
+	[Description("Over the real MCP path: Guid.Empty as a Lookup 'value' is refused as referencing no record — the second refusal the tool description documents, and the newer of the two, so the bundled package regressing it must fail this suite — and the rejected edit is not persisted.")]
+	[AllureTag(ToolName)]
+	[AllureName("modify-business-process rejects Guid.Empty as a lookup value")]
+	public async Task ModifyBusinessProcess_Should_RejectGuidEmptyLookupValue_AsReferencingNoRecord() {
+		// Arrange
+		await using ArrangeContext context = await ArrangeAsync(requireReachableEnvironment: true);
+		string processName = $"UsrClioBpEmptyGuidE2e{Guid.NewGuid():N}";
+		await CreateProcessAsync(context, processName, BuildPerformTaskDescriptor(processName));
+
+		// Act — the placeholder an AI emits when it has no record id
+		CallToolResult callResult = await CallToolAsync(context, ToolName, new Dictionary<string, object?> {
+			["environment-name"] = context.EnvironmentName,
+			["process-name"] = processName,
+			["operations"] = """[ { "op": "addMapping", "mapping": { "elementName": "Task1", "elementParameter": "ActivityCategory", "value": "00000000-0000-0000-0000-000000000000" } } ]"""
+		});
+
+		// Assert — its own refusal (not the non-Guid macro message), and nothing saved.
+		string text = SerializeToolText(callResult);
+		text.Should().Contain("empty Guid",
+			because: "the refusal must name the actual defect — a parseable Guid that references no record");
+		text.Should().Contain("references no record",
+			because: "the message must say WHY the placeholder is refused, or the caller retries the same value");
+		DescribedElement task = await ReadTaskAsync(context, processName);
+		task.Parameters.Should().NotContain(parameter => parameter.Name == "ActivityCategory",
+			because: "a rejected mapping aborts the edit, so the parameter stays unbound and invisible in describe");
+	}
+
+	[Test]
+	[Description("Over the real MCP path: a 'performer' of type role on a Perform task resolves the role BY NAME, and the typed describe reads the block back top-level (type, the stored role macro, the display name, the designer-parity showPage=false); switching the performer to 'user' in a second edit replaces the choice in place.")]
+	[AllureTag(ToolName)]
+	[AllureName("modify-business-process assigns a role performer and reads it back")]
+	public async Task ModifyBusinessProcess_Should_AssignRolePerformer_AndReadItBack() {
+		// Arrange
+		await using ArrangeContext context = await ArrangeAsync(requireReachableEnvironment: true);
+		string processName = $"UsrClioBpPerformerE2e{Guid.NewGuid():N}";
+		await CreateProcessAsync(context, processName, BuildPerformTaskDescriptor(processName));
+
+		// Act — assign to a role by NAME ("All employees" is base-seed data present on every stand)
+		await ModifyExpectingSuccessAsync(context, processName,
+			@"[ { ""op"": ""setElement"", ""elementName"": ""Task1"", ""elementUpdate"": { ""performer"": { ""type"": ""role"", ""role"": ""All employees"" } } } ]");
+		DescribedElement roleTask = await ReadTaskAsync(context, processName);
+
+		// Assert — the claim model read back through the typed top-level block
+		roleTask.Performer.Should().NotBeNull(
+			because: "a Perform task's performer assignment must read back top-level, or the block is write-only");
+		roleTask.Performer!.Type.Should().Be("role",
+			because: "the Role assignment reads back as its contract token");
+		roleTask.Performer.Role.Should().Contain("[#Lookup.",
+			because: "the stored role macro is the re-appliable value the same block accepts back");
+		roleTask.Performer.RoleDisplay.Should().Be("All employees",
+			because: "a name-resolved role carries the human-readable name as its display value");
+		roleTask.Performer.ShowPage.Should().BeFalse(
+			because: "an omitted showPage defaults to false for a role performer — designer parity, because a "
+			+ "role activity has an EMPTY owner and an auto-opened page would target nobody");
+
+		// Act — switch the performer to a specific user; the choice replaces in place
+		await ModifyExpectingSuccessAsync(context, processName,
+			@"[ { ""op"": ""setElement"", ""elementName"": ""Task1"", ""elementUpdate"": { ""performer"": { ""type"": ""user"", ""contact"": ""[#SysVariable.CurrentUserContact#]"" } } } ]");
+		DescribedElement userTask = await ReadTaskAsync(context, processName);
+
+		// Assert
+		userTask.Performer!.Type.Should().Be("user",
+			because: "re-applying the performer replaces the previous choice in place, setElement semantics");
+		userTask.Performer.Contact.Should().Be("[#SysVariable.CurrentUserContact#]",
+			because: "the contact formula is stored verbatim and read back re-appliably");
+	}
+
+	[Test]
+	[Description("Over the real MCP path: a 'performer' of type MANAGER configured from a BARE Contact Guid — the two newly documented contract shapes in one write. The bare id is existence-checked and stored as the composed [#Lookup…#] macro (the designer's own encoding, so describe hands back a re-appliable value), and the manager kind reads back as its token with the designer-parity showPage=false. The managerless RUNTIME error ('process error when the contact's employee record has no manager') is an ACCEPTED coverage gap: it surfaces only when the process runs, and this suite verifies design-time contracts.")]
+	[AllureTag(ToolName)]
+	[AllureName("modify-business-process assigns a manager performer from a bare contact Guid")]
+	public async Task ModifyBusinessProcess_Should_AssignManagerPerformer_FromBareContactGuid() {
+		// Arrange
+		await using ArrangeContext context = await ArrangeAsync(requireReachableEnvironment: true);
+		string processName = $"UsrClioBpManagerE2e{Guid.NewGuid():N}";
+		await CreateProcessAsync(context, processName, BuildPerformTaskDescriptor(processName));
+
+		// Act — a bare base-seed contact id, not a formula
+		await ModifyExpectingSuccessAsync(context, processName,
+			$$"""[ { "op": "setElement", "elementName": "Task1", "elementUpdate": { "performer": { "type": "manager", "contact": "{{SupervisorContactId}}" } } } ]""");
+		DescribedElement task = await ReadTaskAsync(context, processName);
+
+		// Assert
+		task.Performer.Should().NotBeNull(
+			because: "the manager assignment must read back top-level exactly like the role one");
+		task.Performer!.Type.Should().Be("manager",
+			because: "the Manager kind reads back as its contract token");
+		task.Performer.Contact.Should().StartWith("[#Lookup.",
+			because: "a bare EXISTING contact id is stored as the composed lookup macro — the designer's own "
+			+ "encoding — instead of reaching the platform as a formula its pre-save validator refuses");
+		task.Performer.Contact.Should().Contain(SupervisorContactId,
+			because: "the macro must still carry the record the caller named");
+		task.Performer.ShowPage.Should().BeFalse(
+			because: "an omitted showPage defaults to false for a manager performer — designer parity: the "
+			+ "manager is resolved only at run time, so at design time there is nobody to open the page for");
+	}
+
+	[Test]
+	[Description("Over the real MCP path, at CREATE time: an element-level 'performer' inline in the create descriptor — the create tool's own deserialization path, distinct from modify's — lands on the created process and reads back with the bare contact Guid composed into the stored macro.")]
+	[AllureTag(CreateToolName)]
+	[AllureName("create-business-process takes an inline performer with a bare contact Guid")]
+	public async Task CreateBusinessProcess_Should_TakeInlinePerformer_WithBareContactGuid() {
+		// Arrange & Act — the performer travels INSIDE the create descriptor
+		await using ArrangeContext context = await ArrangeAsync(requireReachableEnvironment: true);
+		string processName = $"UsrClioBpCreatePerformerE2e{Guid.NewGuid():N}";
+		await CreateProcessAsync(context, processName,
+			$$"""
+			{
+			  "name": "{{processName}}",
+			  "caption": "Clio BP Create Performer E2E",
+			  "packageName": "Custom",
+			  "elements": [
+			    { "name": "StartEvent1", "type": "startEvent" },
+			    { "name": "Task1", "type": "performTask", "caption": "Perform task",
+			      "performer": { "type": "user", "contact": "{{SupervisorContactId}}" } },
+			    { "name": "EndEvent1", "type": "endEvent" }
+			  ],
+			  "flows": [
+			    { "source": "StartEvent1", "target": "Task1" },
+			    { "source": "Task1", "target": "EndEvent1" }
+			  ]
+			}
+			""");
+		DescribedElement task = await ReadTaskAsync(context, processName);
+
+		// Assert
+		task.Performer.Should().NotBeNull(
+			because: "an inline performer in the CREATE descriptor must land like modify's — create has its own "
+			+ "deserialization path, and a dropped member there would fail silently");
+		task.Performer!.Type.Should().Be("user",
+			because: "the User kind reads back as its contract token");
+		task.Performer.Contact.Should().StartWith("[#Lookup.",
+			because: "the bare contact id is composed into the stored macro on the create path too");
+		task.Performer.Contact.Should().Contain(SupervisorContactId,
+			because: "the macro must carry the record the descriptor named");
+	}
+
+	[Test]
+	[Description("Over the real MCP path: a syntactically valid but NON-EXISTENT role Guid in performer.role is REFUSED — the id route is existence-checked exactly like the name route, because an arbitrary Guid would otherwise be written into the Activity's OwnerRole (a column that does not control integrity) and read back through describe as a normal team assignment nobody can see.")]
+	[AllureTag(ToolName)]
+	[AllureName("modify-business-process rejects a non-existent role Guid in performer.role")]
+	public async Task ModifyBusinessProcess_Should_RejectPerformerRole_WhenRoleGuidDoesNotExist() {
+		// Arrange
+		await using ArrangeContext context = await ArrangeAsync(requireReachableEnvironment: true);
+		string processName = $"UsrClioBpGhostRoleE2e{Guid.NewGuid():N}";
+		await CreateProcessAsync(context, processName, BuildPerformTaskDescriptor(processName));
+		string ghostRole = Guid.NewGuid().ToString();
+
+		// Act — a well-formed Guid that belongs to no role on any environment
+		CallToolResult callResult = await CallToolAsync(context, ToolName, new Dictionary<string, object?> {
+			["environment-name"] = context.EnvironmentName,
+			["process-name"] = processName,
+			["operations"] = $$"""[ { "op": "setElement", "elementName": "Task1", "elementUpdate": { "performer": { "type": "role", "role": "{{ghostRole}}" } } } ]"""
+		});
+
+		// Assert — refused naming the value, and nothing was persisted
+		string text = SerializeToolText(callResult);
+		text.Should().Contain(ghostRole,
+			because: "the refusal must name the value it rejected, or the caller cannot tell which of several "
+			+ "ids in a batch was wrong");
+		text.Should().Contain("role",
+			because: "the refusal must say the id matched no ROLE, not merely that something was invalid");
+		DescribedElement task = await ReadTaskAsync(context, processName);
+		task.Performer.Should().BeNull(
+			because: "a rejected performer aborts the whole edit, so the element keeps no assignment — the "
+			+ "failure this guard exists to prevent is precisely a stored one that LOOKS valid in describe");
+	}
+
+	[Test]
+	[Description("Over the real MCP path: a SysAdminUnit role id pasted into the Contact-typed OwnerId is REFUSED naming the reference object — the shape check alone cannot tell a Contact id from a role id, and before this guard the value persisted as a well-formed ConstValue that referenced nothing at run time.")]
+	[AllureTag(ToolName)]
+	[AllureName("modify-business-process rejects a role id on OwnerId as the wrong entity")]
+	public async Task ModifyBusinessProcess_Should_RejectRoleGuidOnOwnerId_AsWrongEntity() {
+		// Arrange
+		await using ArrangeContext context = await ArrangeAsync(requireReachableEnvironment: true);
+		string processName = $"UsrClioBpWrongEntityE2e{Guid.NewGuid():N}";
+		await CreateProcessAsync(context, processName, BuildPerformTaskDescriptor(processName));
+
+		// Act — the "assign to a team" mistake: the base-seed "All employees" ROLE id into OwnerId
+		CallToolResult callResult = await CallToolAsync(context, ToolName, new Dictionary<string, object?> {
+			["environment-name"] = context.EnvironmentName,
+			["process-name"] = processName,
+			["operations"] = $$"""[ { "op": "addMapping", "mapping": { "elementName": "Task1", "elementParameter": "OwnerId", "value": "{{AllEmployeesRoleId}}" } } ]"""
+		});
+
+		// Assert — refused naming the reference object, and nothing was saved.
+		string text = SerializeToolText(callResult);
+		text.Should().Contain("no Contact record has this id",
+			because: "the refusal must name the reference object, or the caller retries other role ids forever");
+		DescribedElement task = await ReadTaskAsync(context, processName);
+		task.Parameters.Should().NotContain(parameter => parameter.Name == "OwnerId",
+			because: "a rejected mapping aborts the edit, so the fake assignment is not persisted");
+	}
+
+	[Test]
+	[Description("Over the real MCP path: a 'performer' on the retired CallUserTask is REFUSED by name with the Perform task route in the message — the Call element's runtime ignores the performer-assignment options, so accepting the block would assign nobody silently — and the aborted edit leaves no element behind.")]
+	[AllureTag(ToolName)]
+	[AllureName("modify-business-process refuses a performer on the retired Call element")]
+	public async Task ModifyBusinessProcess_Should_RefusePerformerOnRetiredCallTask() {
+		// Arrange
+		await using ArrangeContext context = await ArrangeAsync(requireReachableEnvironment: true);
+		string processName = $"UsrClioBpCallPerformerE2e{Guid.NewGuid():N}";
+		await CreateProcessAsync(context, processName, BuildPerformTaskDescriptor(processName));
+
+		// Act — add the retired Call element WITH a performer in one operation
+		CallToolResult callResult = await CallToolAsync(context, ToolName, new Dictionary<string, object?> {
+			["environment-name"] = context.EnvironmentName,
+			["process-name"] = processName,
+			["operations"] = @"[ { ""op"": ""addElement"", ""element"": { ""name"": ""Call1"", ""type"": ""userTask"", ""userTaskName"": ""CallUserTask"", ""performer"": { ""type"": ""user"" } } } ]"
+		});
+
+		// Assert — refused naming the retirement and the working route, and the whole edit aborted.
+		string text = SerializeToolText(callResult);
+		text.Should().Contain("retired",
+			because: "the refusal must say WHY the element cannot take a performer — its runtime ignores the options");
+		text.Should().Contain("ActivityUserTask",
+			because: "the refusal must route the caller to the Perform task element instead of dead-ending");
+		DescribedElement callFree = await ReadTaskAsync(context, processName);
+		callFree.Name.Should().Be("Task1",
+			because: "any failed operation aborts the whole edit, so the half-configured Call element is not saved "
+			+ "(the perform task remains the only task element)");
+	}
+
+	[Test]
+	[Description("Over the real MCP path: mapping a type-incompatible source (an Integer process parameter) onto the Perform task's Lookup->Contact performer parameter is rejected with the incompatible-types diagnosis and the edit is not persisted.")]
+	[AllureTag(ToolName)]
+	[AllureName("modify-business-process rejects a type-incompatible mapping onto the performer lookup")]
+	public async Task ModifyBusinessProcess_Should_RejectTypeIncompatibleMapping_OntoPerformerLookup() {
+		// Arrange — the descriptor carries an Integer parameter to misuse as the source.
+		await using ArrangeContext context = await ArrangeAsync(requireReachableEnvironment: true);
+		string processName = $"UsrClioBpIncompatMapE2e{Guid.NewGuid():N}";
+		await CreateProcessAsync(context, processName, BuildPerformTaskWithIntegerParameterDescriptor(processName));
+
+		// Act
+		CallToolResult callResult = await CallToolAsync(context, ToolName, new Dictionary<string, object?> {
+			["environment-name"] = context.EnvironmentName,
+			["process-name"] = processName,
+			["operations"] = """[ { "op": "addMapping", "mapping": { "elementName": "Task1", "elementParameter": "OwnerId", "processParameter": "Attempts" } } ]"""
+		});
+
+		// Assert
+		SerializeToolText(callResult).Should().Contain("incompatible data value types",
+			because: "the type-compatibility gate is what stops a value the runtime could never assign to the performer");
+		DescribedElement task = await ReadTaskAsync(context, processName);
+		task.Parameters.Should().NotContain(parameter => parameter.Name == "OwnerId",
+			because: "the rejected mapping was discarded, so the performer parameter stays unbound");
+	}
+
+	/// <summary>
+	/// "All employees" — the base-seed SysAdminUnit role with the same UId on every stand. Used both as a
+	/// REAL role (the performer tests resolve it by name, and this id is what the stored macro carries) and
+	/// as the canonical WRONG-ENTITY id for the Contact-typed <c>OwnerId</c> in the rejection test.
+	/// </summary>
+	private const string AllEmployeesRoleId = "a29a3ba5-4b0d-de11-9a51-005056c00008";
+
+	/// <summary>
+	/// The Supervisor CONTACT — base-seed, same UId on every stand. Measured on the target stand: the
+	/// Supervisor <c>SysAdminUnit</c> is a DIFFERENT id (7f3b869f-…), so the pair also proves the
+	/// reference-existence guard distinguishes the two tables rather than matching a shared Guid. The
+	/// bare-Guid performer tests need an id that EXISTS, because the guard refuses an invented one by design.
+	/// </summary>
+	private const string SupervisorContactId = "410006e1-ca4e-4502-a9ec-e54d922d2c00";
+
+	/// <summary>
+	/// "To do" — a base-seed ActivityCategory row with the same UId on every stand: the platform runtime
+	/// itself hardcodes this Guid as the category fallback in <c>ActivityUserTask</c>, which is what makes
+	/// asserting the literal safe against any environment this suite runs on.
+	/// </summary>
+	private const string ToDoActivityCategoryId = "f51c4643-58e6-df11-971b-001d60e938c6";
+
+	/// <summary>
+	/// "High" — a base-seed ActivityPriority row, same-UId-everywhere for the same reason as the category
+	/// above (the shipped <c>ActivityUserTask</c> metadata hardcodes its sibling "Medium"
+	/// ab96fa02-7fe6-df11-971b-001d60e938c6 as the default). High is chosen BECAUSE it is not the default,
+	/// so the read-back discriminates an applied write from the shipped default.
+	/// </summary>
+	private const string HighActivityPriorityId = "d625a9fc-7ee6-df11-971b-001d60e938c6";
+
+	private static string ConfigurePerformTaskOperations() =>
+		$$"""
+		[
+		  { "op": "addMapping", "mapping": { "elementName": "Task1", "elementParameter": "Recommendation", "value": "Call the client about the renewal" } },
+		  { "op": "addMapping", "mapping": { "elementName": "Task1", "elementParameter": "OwnerId", "expression": "[#SysVariable.CurrentUserContact#]" } },
+		  { "op": "addMapping", "mapping": { "elementName": "Task1", "elementParameter": "InformationOnStep", "value": "Check the last invoice before calling" } },
+		  { "op": "addMapping", "mapping": { "elementName": "Task1", "elementParameter": "Duration", "value": "2" } },
+		  { "op": "addMapping", "mapping": { "elementName": "Task1", "elementParameter": "DurationPeriod", "value": "2" } },
+		  { "op": "addMapping", "mapping": { "elementName": "Task1", "elementParameter": "StartIn", "value": "1" } },
+		  { "op": "addMapping", "mapping": { "elementName": "Task1", "elementParameter": "StartInPeriod", "value": "1" } },
+		  { "op": "addMapping", "mapping": { "elementName": "Task1", "elementParameter": "RemindBefore", "value": "30" } },
+		  { "op": "addMapping", "mapping": { "elementName": "Task1", "elementParameter": "RemindBeforePeriod", "value": "0" } },
+		  { "op": "addMapping", "mapping": { "elementName": "Task1", "elementParameter": "ShowExecutionPage", "value": "true" } },
+		  { "op": "addMapping", "mapping": { "elementName": "Task1", "elementParameter": "ShowInScheduler", "value": "true" } },
+		  { "op": "addMapping", "mapping": { "elementName": "Task1", "elementParameter": "ActivityCategory", "value": "{{ToDoActivityCategoryId}}" } },
+		  { "op": "addMapping", "mapping": { "elementName": "Task1", "elementParameter": "ActivityPriority", "value": "{{HighActivityPriorityId}}" } }
+		]
+		""";
+
+	private static string MapOutputsDownstreamOperations() =>
+		"""
+		[
+		  { "op": "addMapping", "mapping": { "targetProcessParameter": "FirstTaskActivityId", "sourceElement": "Task1", "sourceElementParameter": "CurrentActivityId" } },
+		  { "op": "addMapping", "mapping": { "targetProcessParameter": "FirstTaskResultId", "sourceElement": "Task1", "sourceElementParameter": "ActivityResult" } }
+		]
+		""";
+
+	private static string BuildTwoTaskDescriptor(string processName) =>
+		$$"""
+		{
+		  "name": "{{processName}}",
+		  "caption": "Clio BP Output Source E2E",
+		  "packageName": "Custom",
+		  "elements": [
+		    { "name": "StartEvent1", "type": "startEvent" },
+		    { "name": "Task1", "type": "performTask", "caption": "First task" },
+		    { "name": "Task2", "type": "performTask", "caption": "Second task" },
+		    { "name": "EndEvent1", "type": "endEvent" }
+		  ],
+		  "flows": [
+		    { "source": "StartEvent1", "target": "Task1" },
+		    { "source": "Task1", "target": "Task2" },
+		    { "source": "Task2", "target": "EndEvent1" }
+		  ],
+		  "parameters": [
+		    { "name": "FirstTaskActivityId", "type": "Guid", "direction": "Variable" },
+		    { "name": "FirstTaskResultId", "type": "Guid", "direction": "Variable" }
+		  ]
+		}
+		""";
+
+	private static string BuildPerformTaskWithIntegerParameterDescriptor(string processName) =>
+		$$"""
+		{
+		  "name": "{{processName}}",
+		  "caption": "Clio BP Incompatible Mapping E2E",
+		  "packageName": "Custom",
+		  "elements": [
+		    { "name": "StartEvent1", "type": "startEvent" },
+		    { "name": "Task1", "type": "performTask", "caption": "Perform task" },
+		    { "name": "EndEvent1", "type": "endEvent" }
+		  ],
+		  "flows": [
+		    { "source": "StartEvent1", "target": "Task1" },
+		    { "source": "Task1", "target": "EndEvent1" }
+		  ],
+		  "parameters": [
+		    { "name": "Attempts", "type": "Integer", "direction": "Variable" }
+		  ]
+		}
+		""";
+
 	/// <summary>
 	/// Creates the process and asserts the create itself succeeded. An unchecked create turns every later
 	/// assertion into a statement about a process that does not exist.
@@ -1266,7 +1758,6 @@ public sealed class ModifyBusinessProcessToolE2ETests {
 	private static async Task<ArrangeContext> ArrangeAsync(bool requireReachableEnvironment) {
 		McpE2ESettings settings = TestConfiguration.Load();
 		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
-		ProcessDesignerE2EGate.SkipIfFeatureDisabled(settings);
 		string? environmentName = settings.Sandbox.EnvironmentName;
 		if (requireReachableEnvironment) {
 			if (string.IsNullOrWhiteSpace(environmentName)) {

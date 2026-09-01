@@ -21,6 +21,11 @@ namespace Clio.Tests.Command.McpServer.Tools.MobilePageConverter;
 [Property("Module", "McpServer")]
 public sealed class WebToMobilePageConversionRulesCatalogTests {
 
+	/// <summary>True when the rule's filters select the given mobile component type.</summary>
+	private static bool Targets(ComponentPropertyOverrideRule rule, string type) =>
+		rule.Filters.Any(f => string.Equals(f.Type, type, StringComparison.OrdinalIgnoreCase));
+
+
 	private static Stream JsonStream(string json) => new MemoryStream(Encoding.UTF8.GetBytes(json));
 
 	[Test]
@@ -136,7 +141,7 @@ public sealed class WebToMobilePageConversionRulesCatalogTests {
 
 		// Assert
 		ComponentPropertyOverrideRule metric = rules.ComponentPropertyOverrides
-			.Single(o => o.Type == "crt.IndicatorWidget");
+			.Single(o => Targets(o, "crt.IndicatorWidget"));
 		metric.MergeNestedObjects.Should().BeTrue(
 			because: "the rule targets nested leaves — replacing config wholesale would destroy the aggregation subtree");
 		JsonElement config = metric.Values["config"];
@@ -155,12 +160,16 @@ public sealed class WebToMobilePageConversionRulesCatalogTests {
 		WebToMobilePageConversionRules rules = WebToMobilePageConversionRulesCatalog.LoadBundled();
 
 		// Assert
-		rules.ComponentPropertyOverrides.Should().OnlyContain(
-			o => !string.IsNullOrWhiteSpace(o.Type) && o.Values.Count > 0,
-			because: "a rule without a type or values cannot stamp anything");
-		rules.ComponentPropertyOverrides.Select(o => o.Type).Should().OnlyHaveUniqueItems(
-			because: "the pass indexes by type and silently LAST-WINS, so a duplicate would ship a rule that "
-				+ "never fires — cheap to catch here for the bundled file");
+		rules.ComponentPropertyOverrides.Should().OnlyContain(o => o.Values.Count > 0,
+			because: "a rule without values cannot stamp anything");
+		rules.ComponentPropertyOverrides.Should().OnlyContain(o => o.Filters != null && o.Filters.Count > 0,
+			because: "filters are the rule's ONLY selector — an ABSENT list makes the pass skip the rule "
+				+ "outright, and an EMPTY one would stamp onto every insert of every type; no standard wants "
+				+ "either, so the bundled file must always name what it targets");
+		rules.ComponentPropertyOverrides
+			.SelectMany(o => o.Filters ?? [])
+			.Should().OnlyContain(f => !string.IsNullOrWhiteSpace(f.Type),
+				because: "a bundled filter that names no type would widen its standard across component types");
 	}
 
 	[Test]
@@ -171,10 +180,35 @@ public sealed class WebToMobilePageConversionRulesCatalogTests {
 
 		// Assert
 		rules.ComponentPropertyOverrides
-			.Where(o => o.Type is "crt.GridContainer" or "crt.FlexContainer")
-			.Should().HaveCount(2)
+			.Where(o => Targets(o, "crt.GridContainer") || Targets(o, "crt.FlexContainer"))
+			.Should().HaveCount(3)
 			.And.OnlyContain(o => !o.MergeNestedObjects,
 				because: "the spacing rules promise the web gap is discarded wholesale");
+	}
+
+	[Test]
+	[Description("The bundled rules promote a grid OR flex container left at the WEB DEFAULT corner radius (Medium) to the mobile default (Large), and match that token alone: a radius someone set deliberately, or none at all, is preserved.")]
+	public void LoadBundled_ReturnsSeededCornerRadiusOverride() {
+		// Arrange & Act
+		WebToMobilePageConversionRules rules = WebToMobilePageConversionRulesCatalog.LoadBundled();
+
+		// Assert
+		ComponentPropertyOverrideRule radius = rules.ComponentPropertyOverrides
+			.Single(o => Targets(o, "crt.GridContainer") && o.Filters.Any(f => f.Values is { Count: > 0 }));
+		radius.Values.Should().ContainKey("borderRadius", because: "the rule exists to promote the radius");
+		radius.Values["borderRadius"].GetString().Should().Be("large");
+		radius.MergeNestedObjects.Should().BeFalse(
+			because: "borderRadius is a scalar token — there is no nested subtree to preserve");
+		radius.Filters.Select(f => f.Type).Should().BeEquivalentTo(["crt.GridContainer", "crt.FlexContainer"],
+			because: "both container types can carry the radius, so the union names each one — the type is a "
+				+ "filter constraint like any other");
+		radius.Filters.Should().OnlyContain(f => f.Values.Count == 1,
+			because: "one discriminating property beyond the type");
+		radius.Filters.Select(f => f.Values["borderRadius"].GetString()).Should().AllBe("medium",
+			because: "Medium is the WEB DEFAULT radius, so matching it means 'left at the platform default' — "
+				+ "and Large is the mobile default. Any other radius was set deliberately by whoever designed "
+				+ "the page, so it is preserved rather than normalized away: this token IS the rule, not a "
+				+ "partial implementation of a wider one");
 	}
 
 	[Test]
@@ -231,6 +265,81 @@ public sealed class WebToMobilePageConversionRulesCatalogTests {
 			["crt.FlexContainer", "crt.GridContainer", "crt.TabPanel", "crt.TabContainer", "crt.ExpansionPanel"],
 			because: "the removable set is a closed allowlist of disposable layout scaffolding — content-bearing " +
 				"containers (crt.List, crt.Tabs) must never appear here");
+	}
+
+	[Test]
+	[Description("A rules file without the excludedComponents section parses to an empty list — the pass is then a no-op (data-switched feature), matching how emptyContainerRemoval/tabAreaLayers degrade when absent.")]
+	public void ParseStream_WithoutExcludedComponents_ParsesToEmptyList() {
+		const string json = """{ "version": "8.3.3", "templates": [], "components": [] }""";
+
+		WebToMobilePageConversionRules rules = WebToMobilePageConversionRulesCatalog.ParseStream(JsonStream(json));
+
+		rules.ExcludedComponents.Should().BeEmpty(
+			because: "an absent section must switch the removal pass off rather than throw or default to null");
+	}
+
+	[Test]
+	[Description("ParseStream parses a excludedComponents group into the typed filter rule: type, parentType and the optional propertiesContainerName all round-trip.")]
+	public void ParseStream_WithExcludedComponents_ParsesTypedFilterRule() {
+		const string json = """
+			{
+			  "version": "8.3.3",
+			  "excludedComponents": [
+			    {
+			      "filters": [
+			        { "type": "crt.SearchFilter", "parentType": "crt.ExpansionPanel", "propertiesContainerName": "tools" }
+			      ]
+			    }
+			  ]
+			}
+			""";
+
+		WebToMobilePageConversionRules rules = WebToMobilePageConversionRulesCatalog.ParseStream(JsonStream(json));
+
+		ExcludedComponentFilterRule filter = rules.ExcludedComponents.Single().Filters.Single();
+		filter.Type.Should().Be("crt.SearchFilter",
+			because: "the banned type must survive parsing verbatim — the pass matches on this string");
+		filter.ParentType.Should().Be("crt.ExpansionPanel",
+			because: "the host type is what scopes the search; losing it would widen the ban to the whole page");
+		filter.PropertiesContainerName.Should().Be("tools",
+			because: "the optional slot must bind when present — dropping it would widen the ban to the host's other properties");
+	}
+
+	[Test]
+	[Description("propertiesContainerName is genuinely optional on a excludedComponents filter — it parses to null when omitted, so the runtime pass can fall back to searching the whole host subtree instead of one named property.")]
+	public void ParseStream_ExcludedComponentsWithoutPropertiesContainerName_ParsesToNull() {
+		const string json = """
+			{
+			  "version": "8.3.3",
+			  "excludedComponents": [
+			    { "filters": [ { "type": "usr.Foo", "parentType": "usr.Bar" } ] }
+			  ]
+			}
+			""";
+
+		WebToMobilePageConversionRules rules = WebToMobilePageConversionRulesCatalog.ParseStream(JsonStream(json));
+
+		rules.ExcludedComponents.Single().Filters.Single().PropertiesContainerName.Should().BeNull(
+			because: "an absent propertiesContainerName means 'search the whole host subtree', not 'match nothing'");
+	}
+
+	[Test]
+	[Description("The bundled rules carry the excludedComponents entry for crt.SearchFilter inside crt.ExpansionPanel.tools: the search field does not fit the panel's compact icon-only header strip, so it is stripped from tools specifically (not banned everywhere on the page).")]
+	public void LoadBundled_ExcludedComponents_CarriesSearchFilterInsideExpansionPanelToolsRule() {
+		WebToMobilePageConversionRules rules = WebToMobilePageConversionRulesCatalog.LoadBundled();
+
+		rules.ExcludedComponents.Should().NotBeEmpty(
+			because: "the bundled rules ship the crt.SearchFilter / crt.ExpansionPanel.tools exclusion");
+		ExcludedComponentFilterRule filter = rules.ExcludedComponents
+			.SelectMany(g => g.Filters)
+			.Single(f => f.Type == "crt.SearchFilter");
+		filter.ParentType.Should().Be("crt.ExpansionPanel",
+			because: "the defect is positional — crt.SearchFilter does not fit THIS host's tools strip, not unsupported everywhere");
+		filter.PropertiesContainerName.Should().Be("tools",
+			because: "the search is scoped to the panel's tools property, not its whole mobileValues subtree");
+		filter.Note.Should().NotBeNullOrWhiteSpace(
+			because: "the rules file is where the next rule author looks for WHY an exclusion exists — the drop "
+				+ "reason deliberately carries only the mechanical fact, so the motivation has to live here");
 	}
 
 	[Test]

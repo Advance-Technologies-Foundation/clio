@@ -556,7 +556,7 @@ public sealed class RunProcessToolTests {
 
 	[Test]
 	[Category("Unit")]
-	[Description("run-process must NOT carry [FeatureToggle], unlike the rest of the process-designer suite: it calls a built-in endpoint, and gating it would break every consumer on a stand without the toggle.")]
+	[Description("run-process must never carry [FeatureToggle]: it calls a built-in endpoint, so a toggle would only make it unavailable where it would have worked.")]
 	public void RunProcessTool_Should_Not_Be_FeatureGated() {
 		// Arrange & Act
 		object[] toggles = typeof(RunProcessTool)

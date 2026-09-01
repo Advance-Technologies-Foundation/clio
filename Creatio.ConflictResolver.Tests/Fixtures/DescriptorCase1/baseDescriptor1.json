@@ -1,0 +1,14 @@
+﻿{
+  "Descriptor": {
+    "UId": "6ad77014-f69c-42e8-84b6-c415c7780434",
+    "Name": "ParallelDev",
+    "ModifiedOnUtc": "\/Date(1770192944000)\/",
+    "Parent": {
+      "UId": "1bab9dcf-17d5-49f8-9536-8e0064f1dce0",
+      "Name": "BaseEntity"
+    },
+    "ManagerName": "EntitySchemaManager",
+    "Caption": "ParallelDev",
+    "DependsOn": []
+  }
+}

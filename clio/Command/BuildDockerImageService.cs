@@ -96,7 +96,8 @@ public sealed class BuildDockerImageService(
 			stagingRoot = CreateTemporaryDirectory("build-docker-image");
 			_logger.WriteInfo($"Created temp directory: {stagingRoot}");
 
-			PreparedDockerBuildSource preparedSource = PrepareBuildSource(sourcePath, stagingRoot, templateRequests);
+			PreparedDockerBuildSource preparedSource =
+				PrepareBuildSource(sourcePath, stagingRoot, templateRequests, options.IncludeDb);
 			ContainerImageCliKind containerImageCli = ResolveContainerImageCli(options);
 			ProcessExecutionResult versionResult = ExecuteContainerCli(containerImageCli, "--version", null);
 			if (!WasSuccessful(versionResult)) {
@@ -272,7 +273,8 @@ public sealed class BuildDockerImageService(
 	private PreparedDockerBuildSource PrepareBuildSource(
 		string sourcePath,
 		string stagingRoot,
-		IReadOnlyList<BuildDockerTemplateRequest> templateRequests) {
+		IReadOnlyList<BuildDockerTemplateRequest> templateRequests,
+		bool includeDatabaseInApplicationImage) {
 		if (string.IsNullOrWhiteSpace(sourcePath)) {
 			return new PreparedDockerBuildSource(string.Empty, string.Empty, string.Empty);
 		}
@@ -293,7 +295,7 @@ public sealed class BuildDockerImageService(
 		if (requiresApplicationSource) {
 			string resolvedApplicationSourceRoot = ResolveApplicationRoot(rawSourceRoot);
 			ValidateDotNetPayload(resolvedApplicationSourceRoot);
-			if (ContainsDatabaseDirectory(resolvedApplicationSourceRoot)) {
+			if (!includeDatabaseInApplicationImage && ContainsDatabaseDirectory(resolvedApplicationSourceRoot)) {
 				string preparedApplicationSourceRoot = _fileSystem.Combine(stagingRoot, "prepared-app-source");
 				_fileSystem.CopyDirectory(resolvedApplicationSourceRoot, preparedApplicationSourceRoot, true);
 				RemoveDatabaseDirectory(preparedApplicationSourceRoot);
@@ -557,10 +559,23 @@ public sealed class BuildDockerImageService(
 		}
 
 		if (!isBaseTemplate && !IsDbTemplate(templateResolution)) {
-			EnsureDockerIgnoreExcludesDatabase(buildContextPath);
+			// --include-db keeps the source `db` payload in the application image at /app/db, matching the
+			// published Creatio image. The creatio-helm chart's databaseBootstrap copy-backup init container
+			// reads the backup from that path out of the application image, so an image built without it
+			// cannot seed a template database. Excluding it stays the default: it costs a few hundred MB per
+			// image, and clio ships the same payload as a dedicated `db` template image.
+			if (!options.IncludeDb) {
+				EnsureDockerIgnoreExcludesDatabase(buildContextPath);
+			}
+
 			string buildContextSourcePath = _fileSystem.Combine(buildContextPath, SourceFolderName);
 			_fileSystem.CopyDirectory(sourceRootPath, buildContextSourcePath, true);
-			RemoveDatabaseDirectory(buildContextSourcePath);
+			if (!options.IncludeDb) {
+				// Defensive re-check, not the primary enforcement point: PrepareBuildSource has already
+				// stripped `db` from the application source root when the flag is off. Kept so a future
+				// change to that method cannot silently start shipping the payload from here.
+				RemoveDatabaseDirectory(buildContextSourcePath);
+			}
 		}
 
 		StageBundledDevAssets(buildContextPath, templateResolution, options);
