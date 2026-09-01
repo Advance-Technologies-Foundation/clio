@@ -177,6 +177,141 @@ public sealed class ODataCreateToolTests {
 				Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>());
 	}
 
+	[Test]
+	[Category("Unit")]
+	[Description("Accepts a rows-file holding exactly the 1000-row ceiling, so the limit is inclusive rather than off by one.")]
+	public void Create_Should_Accept_A_RowsFile_At_The_Row_Ceiling() {
+		// Arrange
+		MockFileSystem fileSystem = new();
+		string rowsFile = fileSystem.Path.Combine(fileSystem.Path.GetTempPath(),
+			$"odata-create-ceiling-{System.Guid.NewGuid():N}.json");
+		string rows = "[" + string.Join(",", Enumerable.Range(0, ODataCreateTool.MaxRowCount)
+			.Select(index => $"{{\"Name\":\"Row{index}\"}}")) + "]";
+		fileSystem.AddFile(rowsFile, new MockFileData(rows, Encoding.UTF8));
+		IApplicationClient client = Substitute.For<IApplicationClient>();
+		IServiceUrlBuilder urlBuilder = Substitute.For<IServiceUrlBuilder>();
+		IToolCommandResolver resolver = Substitute.For<IToolCommandResolver>();
+		resolver.Resolve<IApplicationClient>(Arg.Any<EnvironmentOptions>()).Returns(client);
+		resolver.Resolve<IServiceUrlBuilder>(Arg.Any<EnvironmentOptions>()).Returns(urlBuilder);
+		urlBuilder.Build(Arg.Any<string>()).Returns("http://creatio/odata/Account");
+		client.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+			.Returns("{\"Id\":\"11111111-1111-1111-1111-111111111111\"}");
+		ODataCreateTool tool = new(resolver, fileSystem);
+
+		// Act
+		ODataCreateBatchResponse response = tool.Create(new ODataCreateArgs {
+			EnvironmentName = "dev", Entity = "Account", RowsFile = rowsFile
+		});
+
+		// Assert
+		response.Created.Should().Be(ODataCreateTool.MaxRowCount,
+			because: "the published ceiling is the largest accepted batch, not the first rejected one");
+		client.Received(ODataCreateTool.MaxRowCount).ExecutePostRequest(
+			"http://creatio/odata/Account", Arg.Any<string>(), 30_000, 1, 1);
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Rejects one row over the ceiling before the environment is resolved and before any POST, so a caller can batch without discovering the limit through a partial write.")]
+	public void Create_Should_Reject_A_RowsFile_Over_The_Row_Ceiling_Before_Resolving_Or_Posting() {
+		// Arrange
+		MockFileSystem fileSystem = new();
+		string rowsFile = fileSystem.Path.Combine(fileSystem.Path.GetTempPath(),
+			$"odata-create-over-{System.Guid.NewGuid():N}.json");
+		string rows = "[" + string.Join(",", Enumerable.Range(0, ODataCreateTool.MaxRowCount + 1)
+			.Select(index => $"{{\"Name\":\"Row{index}\"}}")) + "]";
+		fileSystem.AddFile(rowsFile, new MockFileData(rows, Encoding.UTF8));
+		IApplicationClient client = Substitute.For<IApplicationClient>();
+		IToolCommandResolver resolver = Substitute.For<IToolCommandResolver>();
+		resolver.Resolve<IApplicationClient>(Arg.Any<EnvironmentOptions>()).Returns(client);
+		ODataCreateTool tool = new(resolver, fileSystem);
+
+		// Act
+		ODataCreateBatchResponse response = tool.Create(new ODataCreateArgs {
+			EnvironmentName = "dev", Entity = "Account", RowsFile = rowsFile
+		});
+
+		// Assert
+		response.Created.Should().Be(0);
+		response.Error.Should().Contain($"{ODataCreateTool.MaxRowCount + 1} entries",
+			because: "the caller has to be told how far over the limit the payload was");
+		response.Error.Should().Contain($"{ODataCreateTool.MaxRowCount}-row limit");
+		resolver.DidNotReceiveWithAnyArgs().Resolve<IApplicationClient>(null);
+		client.DidNotReceiveWithAnyArgs().ExecutePostRequest(
+			Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>());
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Refuses a rows-file that is not valid UTF-8 and issues no POST, instead of decoding the invalid bytes to U+FFFD and sending silently altered data.")]
+	public void Create_Should_Reject_A_RowsFile_That_Is_Not_Valid_Utf8_Without_Posting() {
+		// Arrange - 0xC3 opens a two-byte sequence that 0x28 cannot continue, so strict UTF-8 rejects it.
+		MockFileSystem fileSystem = new();
+		string rowsFile = fileSystem.Path.Combine(fileSystem.Path.GetTempPath(),
+			$"odata-create-utf8-{System.Guid.NewGuid():N}.json");
+		byte[] invalidUtf8 = [
+			(byte)'[', (byte)'{', (byte)'"', (byte)'N', (byte)'"', (byte)':', (byte)'"',
+			0xC3, 0x28,
+			(byte)'"', (byte)'}', (byte)']'
+		];
+		fileSystem.AddFile(rowsFile, new MockFileData(invalidUtf8));
+		IApplicationClient client = Substitute.For<IApplicationClient>();
+		IToolCommandResolver resolver = Substitute.For<IToolCommandResolver>();
+		resolver.Resolve<IApplicationClient>(Arg.Any<EnvironmentOptions>()).Returns(client);
+		ODataCreateTool tool = new(resolver, fileSystem);
+
+		// Act
+		ODataCreateBatchResponse response = tool.Create(new ODataCreateArgs {
+			EnvironmentName = "dev", Entity = "Account", RowsFile = rowsFile
+		});
+
+		// Assert
+		response.Created.Should().Be(0);
+		response.Error.Should().Contain("not valid UTF-8",
+			because: "a corrupted payload is a caller-facing input error, not a transport failure");
+		client.DidNotReceiveWithAnyArgs().ExecutePostRequest(
+			Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>());
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Counts the same bare array identically whether it arrives inline or through rows-file, so the summary does not depend on how the payload was supplied.")]
+	public void Create_Should_Report_The_Same_Counts_For_Inline_And_File_Rows() {
+		// Arrange
+		const string bareArray = "[{\"Name\":\"A\"},{\"Name\":\"B\"},{\"Name\":\"C\"}]";
+		MockFileSystem fileSystem = new();
+		string rowsFile = fileSystem.Path.Combine(fileSystem.Path.GetTempPath(),
+			$"odata-create-parity-{System.Guid.NewGuid():N}.json");
+		fileSystem.AddFile(rowsFile, new MockFileData(bareArray, Encoding.UTF8));
+
+		// Act
+		ODataCreateBatchResponse inlineResponse = CreateWithRows(fileSystem,
+			args => args with { Rows = Arr(bareArray) });
+		ODataCreateBatchResponse fileResponse = CreateWithRows(fileSystem,
+			args => args with { RowsFile = rowsFile });
+
+		// Assert
+		fileResponse.Created.Should().Be(inlineResponse.Created,
+			because: "rows-file is a delivery mechanism for the same array, not a different contract");
+		fileResponse.Failed.Should().Be(inlineResponse.Failed);
+		fileResponse.Results.Should().HaveSameCount(inlineResponse.Results);
+		inlineResponse.Created.Should().Be(3, because: "all three rows of the bare array are posted");
+	}
+
+	private static ODataCreateBatchResponse CreateWithRows(
+		MockFileSystem fileSystem, Func<ODataCreateArgs, ODataCreateArgs> configure) {
+		IApplicationClient client = Substitute.For<IApplicationClient>();
+		IServiceUrlBuilder urlBuilder = Substitute.For<IServiceUrlBuilder>();
+		IToolCommandResolver resolver = Substitute.For<IToolCommandResolver>();
+		resolver.Resolve<IApplicationClient>(Arg.Any<EnvironmentOptions>()).Returns(client);
+		resolver.Resolve<IServiceUrlBuilder>(Arg.Any<EnvironmentOptions>()).Returns(urlBuilder);
+		urlBuilder.Build(Arg.Any<string>()).Returns("http://creatio/odata/Account");
+		client.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+			.Returns("{\"Id\":\"11111111-1111-1111-1111-111111111111\"}");
+		ODataCreateTool tool = new(resolver, fileSystem);
+		return tool.Create(configure(new ODataCreateArgs { EnvironmentName = "dev", Entity = "Account" }));
+	}
+
 	private static JsonElement Arr(string json) => JsonDocument.Parse(json).RootElement.Clone();
 
 	[Test]
