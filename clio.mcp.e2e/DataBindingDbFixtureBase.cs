@@ -30,6 +30,7 @@ public abstract class DataBindingDbFixtureBase : McpContractFixtureBase {
 	protected const string ReadDbToolName = ReadDataBindingDbTool.ReadDataBindingDbToolName;
 	protected const string ODataCreateToolName = ODataCreateTool.ToolName;
 	protected const string CreateEntitySchemaToolName = CreateEntitySchemaTool.CreateEntitySchemaToolName;
+	protected const string ODataReadToolName = ODataReadTool.ToolName;
 
 	private protected static void AssertOutputDoesNotContain(CommandExecutionActResult actResult, string unexpected,
 		string because) {
@@ -65,6 +66,14 @@ public abstract class DataBindingDbFixtureBase : McpContractFixtureBase {
 
 	private protected async Task<DataBindingDbArrangeContext> ArrangeAsync(bool requireEnvironment) {
 		McpE2ESettings settings = TestConfiguration.Load();
+		//The destructive opt-in is checked here, before anything else, because everything past
+		//this line touches the configured stand: push-workspace, pkg-hotfix, the schema this
+		//fixture publishes, and the remote package the teardown deletes. [Explicit] and the CI
+		//guard only stop automatic selection - a developer selecting the fixture by hand reaches
+		//this code with the opt-in off.
+		if (!DestructiveStandAuthorization.IsAuthorized(requireEnvironment, settings.AllowDestructiveMcpTests)) {
+			Assert.Ignore(DestructiveStandAuthorization.MissingOptInMessage);
+		}
 		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
 		string? environmentName = requireEnvironment
 			? await ResolveReachableEnvironmentAsync(settings)
@@ -151,6 +160,53 @@ public abstract class DataBindingDbFixtureBase : McpContractFixtureBase {
 			settings,
 			["ping-app", "-e", environmentName]);
 		return result.ExitCode == 0;
+	}
+
+	/// <summary>
+	/// Polls odata-read until the schema that was just published answers, or the window closes.
+	/// </summary>
+	/// <remarks>
+	/// create-entity-schema returns before the asynchronous global OData rebuild it starts has
+	/// finished, so the very next tool call can fail with "Creatio is currently rebuilding the OData
+	/// library" instead of exercising the column under test. An authenticated odata-read of the new
+	/// schema is the narrowest available proof that the rebuild published it: it uses the same OData
+	/// surface the binding tools do, and an empty result set counts as ready - the schema is
+	/// queryable, it simply has no rows yet. The poll is bounded so a stand that never publishes the
+	/// schema fails with that fact rather than as a confusing failure of the next step.
+	/// </remarks>
+	private protected static async Task WaitUntilSchemaIsQueryableAsync(
+		DataBindingDbArrangeContext arrangeContext, string schemaName) {
+		const int maximumAttempts = 24;
+		System.TimeSpan pollInterval = System.TimeSpan.FromSeconds(5);
+		string lastFailure = "<the readiness probe never ran>";
+		for (int attempt = 1; attempt <= maximumAttempts; attempt++) {
+			try {
+				CommandExecutionActResult probeResult = await ActCommandAsync(
+					arrangeContext,
+					ODataReadToolName,
+					new Dictionary<string, object?> {
+						["environment-name"] = arrangeContext.EnvironmentName,
+						["entity"] = schemaName,
+						["top"] = 1
+					});
+				if (probeResult.CallResult.IsError != true && probeResult.Execution.ExitCode == 0) {
+					return;
+				}
+				lastFailure = $"exit {probeResult.Execution.ExitCode}: {DescribeExecution(probeResult.Execution)}";
+			}
+			catch (System.InvalidOperationException failure) {
+				//An unparsable envelope is what a mid-rebuild OData surface answers with; it is a
+				//not-ready signal like any other and must not end the poll early.
+				lastFailure = failure.Message;
+			}
+			await Task.Delay(pollInterval, arrangeContext.CancellationTokenSource.Token);
+		}
+
+		Assert.Fail(
+			$"Schema '{schemaName}' was not queryable over OData within "
+			+ $"{maximumAttempts * pollInterval.TotalSeconds:F0}s of create-entity-schema, so the "
+			+ $"round-trip below would have measured the rebuild rather than the column. "
+			+ $"Last probe: {lastFailure}");
 	}
 
 	private protected static async Task<CommandExecutionActResult> ActCommandAsync(

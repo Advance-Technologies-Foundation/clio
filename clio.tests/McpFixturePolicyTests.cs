@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Linq;
 using System.Reflection;
 using Clio.Mcp.E2E;
@@ -23,6 +24,14 @@ namespace Clio.Tests;
 [TestFixture]
 [Category("Unit")]
 public sealed class McpFixturePolicyTests {
+
+	/// <summary>
+	/// The repository root, four levels above the test output directory
+	/// (<c>clio.tests/bin/&lt;configuration&gt;/&lt;framework&gt;</c>).
+	/// </summary>
+	private static readonly string RepositoryRoot =
+		Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..", "..", "..", ".."));
+
 
 	[Test]
 	[Description("Verifies that every fixture containing Sandbox tests is class-level NonParallelizable.")]
@@ -188,6 +197,50 @@ public sealed class McpFixturePolicyTests {
 			because: "the live Google Fonts fixture carries this category; an empty set means this guard pins nothing");
 		leaked.Should().BeEmpty(
 			because: "a live-network fixture selected by a blocking tier filter turns an unreachable endpoint into a gate failure instead of an excluded test");
+	}
+
+	[Test]
+	[TestCase(true, false, false, Description = "A stand-touching arrange without the opt-in is denied")]
+	[TestCase(true, true, true, Description = "A stand-touching arrange with the opt-in runs")]
+	[TestCase(false, false, true, Description = "An arrange that never reaches a stand needs no opt-in")]
+	[Description("Pins the destructive-authorization decision: an arrange step that reaches a Creatio stand runs only under McpE2E:AllowDestructiveMcpTests.")]
+	public void DestructiveStandAuthorization_ShouldAllowOnlyOptedInStandAccess(
+		bool touchesStand, bool allowDestructiveMcpTests, bool expected) {
+		// Act
+		bool authorized = DestructiveStandAuthorization.IsAuthorized(touchesStand, allowDestructiveMcpTests);
+
+		// Assert
+		authorized.Should().Be(expected,
+			because: "a fixture may mutate the configured sandbox only when the developer turned the destructive opt-in on");
+	}
+
+	[Test]
+	[Description("Proves the DB-first data-binding arrange consults the destructive opt-in before it resolves the environment or runs any clio command, so a hand-selected fixture cannot mutate the stand while the opt-in is false.")]
+	public void DataBindingDbArrange_ShouldCheckDestructiveOptIn_BeforeItRunsAnyCommand() {
+		// Arrange
+		string fixtureSourcePath = Path.Combine(
+			RepositoryRoot, "clio.mcp.e2e", "DataBindingDbFixtureBase.cs");
+		File.Exists(fixtureSourcePath).Should().BeTrue(
+			because: $"this guard reads the arrange step from {fixtureSourcePath}; a moved file must fail here rather than pass on a missing source");
+		string source = File.ReadAllText(fixtureSourcePath);
+
+		// Act
+		int authorizationIndex = source.IndexOf(
+			nameof(DestructiveStandAuthorization) + "." + nameof(DestructiveStandAuthorization.IsAuthorized),
+			StringComparison.Ordinal);
+		int[] standTouchingIndexes = [
+			source.IndexOf("ResolveReachableEnvironmentAsync(settings)", StringComparison.Ordinal),
+			source.IndexOf("ClioCliCommandRunner.RunAndAssertSuccessAsync", StringComparison.Ordinal),
+			source.IndexOf("ResolveFreshClioProcessPath", StringComparison.Ordinal)
+		];
+
+		// Assert
+		authorizationIndex.Should().BeGreaterThan(-1,
+			because: "the arrange step must consult DestructiveStandAuthorization.IsAuthorized; without it a hand-selected fixture pushes a package and publishes a schema on the configured stand with the opt-in off");
+		standTouchingIndexes.Should().OnlyContain(index => index > -1,
+			because: "this guard pins the order against the calls that actually reach the stand; if they were renamed the guard would silently pin nothing");
+		standTouchingIndexes.Should().OnlyContain(index => index > authorizationIndex,
+			because: "the opt-in has to be checked before the environment is resolved and before the first clio process is spawned, otherwise the guard runs after the damage");
 	}
 
 	private static bool HasCategory(IEnumerable<CategoryAttribute> attributes, string category) =>

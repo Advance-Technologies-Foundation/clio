@@ -89,6 +89,12 @@ public sealed class DataBindingDbColorSchemaE2ETests : DataBindingDbFixtureBase 
 		AssertCommandExitCode(createSchemaResult, 0,
 			"the schema carrying the Color column must exist before any binding can reference it");
 
+		//create-entity-schema returns while the global OData rebuild it started is still running, so
+		//the binding call below can hit "Creatio is currently rebuilding the OData library" instead of
+		//the Color column. Prove the new schema answers over OData first, otherwise the only real-
+		//process evidence for type 18 is decided by that race.
+		await WaitUntilSchemaIsQueryableAsync(arrangeContext, schemaName);
+
 		// Act - write the Color value through the DB-first binding
 		CommandExecutionActResult createBindingResult = await ActCommandAsync(
 			arrangeContext,
