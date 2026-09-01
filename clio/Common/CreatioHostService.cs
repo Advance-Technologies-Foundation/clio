@@ -187,7 +187,8 @@ public class CreatioHostService : ICreatioHostService
 		{
 			string windowsCommand = $"{GetClioInvocation(useWindowsQuoting: true)} start --environment {EscapeWindowsCommandArgument(envName)} --foreground";
 			string windowsArgs = $"/c start \"Creatio\" cmd.exe /k {windowsCommand}";
-			StartTerminalProcess("cmd.exe", windowsArgs, workingDirectory, new Dictionary<string, string>());
+			ProcessLaunchResult result = StartTerminalProcess("cmd.exe", windowsArgs, workingDirectory, new Dictionary<string, string>());
+			EnsureTerminalProcessStarted(result, "Windows terminal launcher");
 			return;
 		}
 		if (RuntimeInformation.IsOSPlatform(OSPlatform.OSX))
@@ -203,11 +204,7 @@ public class CreatioHostService : ICreatioHostService
 					$"-e \"{EscapeAppleScriptString(script)}\"",
 					workingDirectory,
 					new Dictionary<string, string>());
-				if (result is null || !result.Started)
-				{
-					throw new InvalidOperationException(
-						$"Unable to start the macOS terminal launcher: {result?.ErrorMessage ?? "process did not start"}.");
-				}
+				EnsureTerminalProcessStarted(result, "macOS terminal launcher");
 			}
 			catch
 			{
@@ -219,7 +216,17 @@ public class CreatioHostService : ICreatioHostService
 		string terminal = GetLinuxTerminal();
 		string linuxCommand = $"{GetClioInvocation(useWindowsQuoting: false)} start --environment {EscapeShellSingleQuoted(envName)} --foreground";
 		string linuxArgs = $"-e \"bash -lc \\\"{EscapeShellDoubleQuoted(linuxCommand)}\\\"\"";
-		StartTerminalProcess(terminal, linuxArgs, workingDirectory, new Dictionary<string, string>());
+		ProcessLaunchResult linuxResult = StartTerminalProcess(terminal, linuxArgs, workingDirectory, new Dictionary<string, string>());
+		EnsureTerminalProcessStarted(linuxResult, "Linux terminal launcher");
+	}
+
+	internal static void EnsureTerminalProcessStarted(ProcessLaunchResult result, string launcherDescription)
+	{
+		if (result is null || !result.Started)
+		{
+			throw new InvalidOperationException(
+				$"Unable to start the {launcherDescription}: {result?.ErrorMessage ?? "process did not start"}.");
+		}
 	}
 
 	private static string EscapeShellSingleQuoted(string value) =>
@@ -331,7 +338,7 @@ public class CreatioHostService : ICreatioHostService
 				$"The host environment variable '{invalidKey}' cannot be passed to a POSIX terminal launcher.");
 		}
 
-		lines.Add("exec /usr/bin/env \\");
+		lines.Add("/usr/bin/env \\");
 		foreach (string key in environmentKeys)
 		{
 			// Read the secret from the owner-only store at launch time. Keeping only the key and store

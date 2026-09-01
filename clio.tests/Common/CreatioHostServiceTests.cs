@@ -148,6 +148,8 @@ public sealed class CreatioHostServiceTests : BaseClioModuleTests {
 		script.Should().Contain(
 			$"'Kestrel__Endpoints__Https__Certificate__Password'=\"$(/usr/bin/plutil -extract 'Kestrel__Endpoints__Https__Certificate__Password' raw -o - '{CreatioHostEnvironmentStore.GetStorePath(workingDirectory)}')\" \\",
 			because: "the launcher must load certificate values from the protected store at runtime");
+		script.Should().Contain("/usr/bin/env \\",
+			because: "the wrapper shell must remain alive so its EXIT trap removes the one-shot launcher script");
 		script.Should().NotContain("secret'with;metachar",
 			because: "a terminated terminal launcher must not leave the certificate password embedded on disk");
 		script.Should().Contain(
@@ -209,5 +211,36 @@ public sealed class CreatioHostServiceTests : BaseClioModuleTests {
 		// Assert
 		act.Should().Throw<InvalidOperationException>(
 			because: "registered environment names must not become executable cmd.exe syntax");
+	}
+
+	[Test]
+	[Description("Reports a failed Windows, Linux, or macOS terminal launcher instead of treating an unstarted process as success")]
+	public void EnsureTerminalProcessStarted_ShouldRejectUnstartedProcess()
+	{
+		// Arrange
+		ProcessLaunchResult result = new() { Started = false, ErrorMessage = "terminal not found" };
+
+		// Act
+		Action act = () => CreatioHostService.EnsureTerminalProcessStarted(result, "terminal launcher");
+
+		// Assert
+		act.Should().Throw<InvalidOperationException>()
+			.WithMessage("Unable to start the terminal launcher: terminal not found.",
+			because: "a terminal launch failure must not be reported as a successful Creatio start");
+	}
+
+	[Test]
+	[Description("Accepts a terminal launcher result only after the operating-system process reports that it started")]
+	public void EnsureTerminalProcessStarted_ShouldAcceptStartedProcess()
+	{
+		// Arrange
+		ProcessLaunchResult result = new() { Started = true, ProcessId = 42 };
+
+		// Act
+		Action act = () => CreatioHostService.EnsureTerminalProcessStarted(result, "terminal launcher");
+
+		// Assert
+		act.Should().NotThrow(
+			because: "a successfully started terminal must continue to the host startup flow");
 	}
 }
