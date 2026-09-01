@@ -1,4 +1,6 @@
 using System;
+using System.Collections.Generic;
+using System.Linq;
 using Clio.Command;
 using Clio.Common;
 using Clio.UserEnvironment;
@@ -121,6 +123,39 @@ public sealed class ConfigCommandTests : BaseCommandTests<ConfigOptions> {
 		result.Should().Be(0, because: "a valid set operation succeeds");
 		_settingsRepository.Received(1).SetDeployCreatioDefaults(
 			Arg.Is<DeployCreatioDefaults>(d => d.SitePort == 40018));
+	}
+
+	[Test]
+	[Description("Persists a valid inclusive site-port range and clears a fixed port so automatic selection becomes effective.")]
+	public void Execute_ShouldPersistSitePortRangeAndClearFixedPort_WhenRangeSupplied() {
+		// Arrange
+		_settingsRepository.GetDeployCreatioDefaults()
+			.Returns(new DeployCreatioDefaults { SitePort = 40018 });
+		ConfigOptions options = new() { DeploySitePortRange = [41000, 41010] };
+
+		// Act
+		int result = _sut.Execute(options);
+
+		// Assert
+		result.Should().Be(0, because: "a valid inclusive range should be accepted");
+		_settingsRepository.Received(1).SetDeployCreatioDefaults(
+			Arg.Is<DeployCreatioDefaults>(defaults => defaults.SitePort == null
+				&& defaults.SitePortRange.SequenceEqual(new[] { 41000, 41010 })));
+	}
+
+	[TestCaseSource(nameof(InvalidSitePortRanges))]
+	[Description("Rejects site-port ranges that do not contain exactly two ordered valid TCP ports.")]
+	public void Execute_ShouldReturnError_WhenSitePortRangeInvalid(int[] range) {
+		// Arrange
+		ConfigOptions options = new() { DeploySitePortRange = range };
+
+		// Act
+		int result = _sut.Execute(options);
+
+		// Assert
+		result.Should().Be(1, because: "invalid ranges must fail before settings are persisted");
+		_settingsRepository.DidNotReceive().SetDeployCreatioDefaults(Arg.Any<DeployCreatioDefaults>());
+		_logger.Received().WriteError(Arg.Is<string>(message => message.Contains("1 <= start <= end <= 65535")));
 	}
 
 	[Test]
@@ -251,5 +286,12 @@ public sealed class ConfigCommandTests : BaseCommandTests<ConfigOptions> {
 		// Assert
 		result.Should().Be(1, because: "invalid feedback policy must not be persisted as success");
 		_logger.Received(1).WriteError("Invalid feedback policy.");
+	}
+
+	private static IEnumerable<int[]> InvalidSitePortRanges() {
+		yield return [40100];
+		yield return [40199, 40100];
+		yield return [0, 40100];
+		yield return [40100, 65536];
 	}
 }

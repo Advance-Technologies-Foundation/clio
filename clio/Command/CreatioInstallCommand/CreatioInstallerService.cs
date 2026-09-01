@@ -1379,6 +1379,10 @@ public class CreatioInstallerService : Command<PfInstallerOptions>, ICreatioInst
 		// Determine deployment strategy to know whether to use IIS or DotNet
 		IDeploymentStrategy strategy = SelectDeploymentStrategy(options);
 		bool isIisDeployment = strategy is IISDeploymentStrategy;
+		if (isIisDeployment && (options.SitePort is <= 0 or > 65535)
+			&& options.SitePortRange is { Length: > 0 }) {
+			ValidateSitePortRange(options.SitePortRange);
+		}
 
 		// STEP 1: Get a site name from a user
 		while (string.IsNullOrEmpty(options.SiteName)) {
@@ -1407,14 +1411,16 @@ public class CreatioInstallerService : Command<PfInstallerOptions>, ICreatioInst
 		// Only prompt for port on Windows IIS deployments
 		// DotNet deployments on macOS/Linux use default port or user-specified port
 		if (isIisDeployment) {
-			while (options.SitePort is <= 0 or > 65535) {
-				_logger.WriteLine(
-					$"Please enter site port, Max value - 65535:{Environment.NewLine}(recommended range between 40000 and 40100)");
-				if (int.TryParse(Console.ReadLine(), out int value)) {
-					options.SitePort = value;
-				}
-				else {
-					_logger.WriteLine("Site port must be an in value");
+			if (options.SitePortRange is not { Length: > 0 }) {
+				while (options.SitePort is <= 0 or > 65535) {
+					_logger.WriteLine(
+						$"Please enter site port, Max value - 65535:{Environment.NewLine}(recommended range between 40000 and 40100)");
+					if (int.TryParse(Console.ReadLine(), out int value)) {
+						options.SitePort = value;
+					}
+					else {
+						_logger.WriteLine("Site port must be an in value");
+					}
 				}
 			}
 		}
@@ -1483,7 +1489,12 @@ public class CreatioInstallerService : Command<PfInstallerOptions>, ICreatioInst
 			$"[OS Platform] - {(RuntimeInformation.IsOSPlatform(OSPlatform.OSX) ? "macOS" : RuntimeInformation.IsOSPlatform(OSPlatform.Linux) ? "Linux" : "Windows")}");
 		_logger.WriteInfo($"[Is IIS Deployment] - {isIisDeployment}");
 		_logger.WriteInfo($"[Site Name] - {options.SiteName}");
-		_logger.WriteInfo($"[Site Port] - {options.SitePort}");
+		if (options.SitePort is > 0 and <= 65535) {
+			_logger.WriteInfo($"[Site Port] - {options.SitePort}");
+		}
+		else if (isIisDeployment) {
+			_logger.WriteInfo($"[Site Port Range] - [{string.Join(", ", options.SitePortRange)}]");
+		}
 
 		// Emit the up-front manifest (built from the resolved execution path) before any stage runs, then
 		// wrap each real stage boundary with the emitter. Emission is observational only: with no
@@ -1501,9 +1512,7 @@ public class CreatioInstallerService : Command<PfInstallerOptions>, ICreatioInst
 			// features. Hold the name and target leases while preparing it, then validate the port.
 			iisDeploymentStrategy.PrepareHost();
 		}
-		using IDisposable portReservation = isIisDeployment
-			? _iisDeploymentPortReservation.Acquire(options.SitePort)
-			: null;
+		using IDisposable portReservation = isIisDeployment ? ReserveIisPort(options) : null;
 
 		// Target and IIS-port reservations are held before the first deployment mutation and remain held
 		// through registration. Deployments to independent target paths and ports can still run in parallel.
@@ -1665,6 +1674,32 @@ public class CreatioInstallerService : Command<PfInstallerOptions>, ICreatioInst
 		}
 
 		return 0;
+	}
+
+	private IDisposable ReserveIisPort(PfInstallerOptions options) {
+		if (options.SitePort is > 0 and <= 65535) {
+			return _iisDeploymentPortReservation.Acquire(options.SitePort);
+		}
+
+		ValidateSitePortRange(options.SitePortRange);
+		IisDeploymentPortLease lease = _iisDeploymentPortReservation.AcquireFirstAvailable(
+			options.SitePortRange[0], options.SitePortRange[1]);
+		options.SitePort = lease.Port;
+		_logger.WriteInfo(
+			$"[Site Port] - {lease.Port} (first available in configured range "
+			+ $"[{options.SitePortRange[0]}, {options.SitePortRange[1]}])");
+		return lease;
+	}
+
+	private static void ValidateSitePortRange(int[] range) {
+		if (range is not { Length: 2 }
+			|| range[0] is <= 0 or > 65535
+			|| range[1] is <= 0 or > 65535
+			|| range[0] > range[1]) {
+			throw new InvalidOperationException(
+				"Invalid deploy-creatio-defaults.site-port-range. Specify exactly two ports satisfying "
+				+ "1 <= start <= end <= 65535.");
+		}
 	}
 
 	internal static void ThrowIfServerNotReady(bool isReady) {

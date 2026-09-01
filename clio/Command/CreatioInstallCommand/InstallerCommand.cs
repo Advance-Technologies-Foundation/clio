@@ -146,6 +146,12 @@ public class PfInstallerOptions : EnvironmentNameOptions{
 	[Option("site-port", Required = false, HelpText = "Site port")]
 	public int SitePort { get; set; }
 
+	/// <summary>
+	/// Gets or sets the configured inclusive IIS site-port range used when <see cref="SitePort"/> is unset.
+	/// This value comes from <c>deploy-creatio-defaults</c> and is not a command-line option.
+	/// </summary>
+	public int[] SitePortRange { get; set; }
+
 	[Option("SitePort", Required = false, Hidden = true, HelpText = "Alias for --site-port")]
 	public int SitePortAlias {
 		get => SitePort;

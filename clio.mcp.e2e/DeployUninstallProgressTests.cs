@@ -45,6 +45,9 @@ public sealed class DeployUninstallProgressTests : McpContractFixtureBase {
 		JsonObject appSettings = new() {
 			["Autoupdate"] = false,
 			["iis-clio-root-path"] = _iisRoot,
+			["deploy-creatio-defaults"] = new JsonObject {
+				["site-port-range"] = new JsonArray(40100, 40199)
+			},
 			["dbhub"] = new JsonObject {
 				["enabled"] = true,
 				["config-path"] = dbHubConfig,
@@ -172,6 +175,51 @@ public sealed class DeployUninstallProgressTests : McpContractFixtureBase {
 				because: "pre-mutation port collisions must still publish the deploy manifest");
 			events[^1].RunCompleted!.Outcome.Should().Be(ClioStageEventContract.RunOutcomes.Failure,
 				because: "the occupied port must terminate the typed progress stream as failure");
+		}
+		finally {
+			File.Delete(corruptZipFile);
+		}
+	}
+
+	[Test]
+	[Description("Invokes deploy-creatio without sitePort and verifies the real MCP command selects a configured-range IIS port before failing non-destructively at corrupt archive extraction.")]
+	[AllureTag(ToolName)]
+	[AllureName("Deploy creatio automatically reserves a configured-range IIS port")]
+	public async Task DeployCreatio_Should_Select_Configured_Range_Port_When_SitePort_Is_Omitted() {
+		// Arrange
+		if (!OperatingSystem.IsWindows()) {
+			Assert.Ignore("IIS automatic port selection is Windows-specific.");
+		}
+		await using ArrangeContext arrangeContext = Arrange();
+		string siteName = $"automatic-port-{Guid.NewGuid():N}";
+		string corruptZipFile = Path.Combine(Path.GetTempPath(), $"corrupt-creatio-{Guid.NewGuid():N}.zip");
+		await File.WriteAllTextAsync(corruptZipFile, "not a zip archive",
+			arrangeContext.CancellationTokenSource.Token);
+
+		try {
+			// Act
+			CallToolResult callResult = await arrangeContext.Session.CallToolAsync(
+				ToolName,
+				new Dictionary<string, object?> {
+					["args"] = new Dictionary<string, object?> {
+						["siteName"] = siteName,
+						["zipFile"] = corruptZipFile,
+						["dbServerName"] = "e2e-unused-before-unzip"
+					}
+				},
+				arrangeContext.CancellationTokenSource.Token);
+			CommandExecutionEnvelope execution = McpCommandExecutionParser.Extract(callResult);
+
+			// Assert
+			execution.ExitCode.Should().NotBe(0,
+				because: "the corrupt archive keeps this automatic-port E2E path non-destructive");
+			execution.Output.Should().Contain(message => message.Value != null
+				&& message.Value.Contains("first available in configured range [40100, 40199]", StringComparison.Ordinal),
+				because: "the real MCP process must disclose the automatically reserved configured-range port");
+			execution.Output.Should().Contain(message => message.MessageType == LogDecoratorType.Error,
+				because: "the corrupt archive failure must remain a structured error outcome");
+			Directory.Exists(Path.Combine(_iisRoot, siteName)).Should().BeFalse(
+				because: "the corrupt archive must fail before a deployment directory or IIS site is created");
 		}
 		finally {
 			File.Delete(corruptZipFile);
@@ -387,6 +435,10 @@ public sealed class DeployUninstallProgressTests : McpContractFixtureBase {
 	private static async Task<ProgressToken> InvokeCorruptArchiveDeployAsync(ArrangeContext arrangeContext) {
 		string corruptZipFile = Path.Combine(Path.GetTempPath(), $"corrupt-creatio-{Guid.NewGuid():N}.zip");
 		ProgressToken progressToken = new($"clio-mcp-e2e-{Guid.NewGuid():N}");
+		using TcpListener listener = new(IPAddress.Loopback, 0);
+		listener.Start();
+		int sitePort = ((IPEndPoint)listener.LocalEndpoint).Port;
+		listener.Stop();
 		await File.WriteAllTextAsync(corruptZipFile, "not a zip archive",
 			arrangeContext.CancellationTokenSource.Token);
 		try {
@@ -396,7 +448,7 @@ public sealed class DeployUninstallProgressTests : McpContractFixtureBase {
 					["args"] = new Dictionary<string, object?> {
 						["siteName"] = $"e2e-{Guid.NewGuid():N}",
 						["zipFile"] = corruptZipFile,
-						["sitePort"] = 5011,
+						["sitePort"] = sitePort,
 						// Cross the FakeKubernetes/no-defaults preflight on clean CI agents. The corrupt
 						// archive fails at unzip before this deliberately nonexistent server is resolved.
 						["dbServerName"] = "e2e-unused-before-unzip"

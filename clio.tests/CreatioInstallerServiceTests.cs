@@ -435,8 +435,64 @@ internal class CreatioInstallerServiceTests : BaseClioModuleTests{
 			.WithMessage("*not available*",
 				because: "the machine-scoped port reservation is the first deployment mutation boundary");
 		_iisDeploymentPortReservation.Received(1).Acquire(port);
+		_iisDeploymentPortReservation.DidNotReceive().AcquireFirstAvailable(Arg.Any<int>(), Arg.Any<int>());
 		_deploymentTargetReservation.Received(1).Acquire(Arg.Is<string>(path =>
 			Path.IsPathFullyQualified(path) && path.EndsWith("collision-probe", StringComparison.Ordinal)));
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("IIS deployment uses the configured range when no explicit or fixed site port is present and fails before target mutation when the range is full.")]
+	public void Execute_ShouldUseConfiguredRangeAndFailBeforeMutation_WhenNoPortCanBeReserved() {
+		// Arrange
+		const int rangeStart = 40100;
+		const int rangeEnd = 40199;
+		string zipPath = Path.Combine(_localArtifactServerPath, "8.1.1",
+			"8.1.1.1417_Studio_Softkey_PostgreSQL_ENU.zip");
+		_iisDeploymentPortReservation.AcquireFirstAvailable(rangeStart, rangeEnd).Returns(_ =>
+			throw new InvalidOperationException("No available IIS port in [40100, 40199]."));
+		PfInstallerOptions options = new() {
+			SiteName = "automatic-port-probe",
+			SitePortRange = [rangeStart, rangeEnd],
+			ZipFile = zipPath,
+			DeploymentMethod = "iis",
+			AutoRun = false,
+			IsSilent = true
+		};
+
+		// Act
+		Action act = () => _creatioInstallerService.Execute(options);
+
+		// Assert
+		act.Should().Throw<InvalidOperationException>().WithMessage("*[40100, 40199]*",
+			because: "an exhausted configured range must be reported without prompting or falling back");
+		_iisDeploymentPortReservation.Received(1).AcquireFirstAvailable(rangeStart, rangeEnd);
+		_iisDeploymentPortReservation.DidNotReceive().Acquire(Arg.Any<int>());
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("IIS deployment rejects an invalid configured site-port range before acquiring target or port reservations.")]
+	public void Execute_ShouldRejectInvalidConfiguredRange_BeforeReservations() {
+		// Arrange
+		PfInstallerOptions options = new() {
+			SiteName = "invalid-range-probe",
+			SitePortRange = [40199, 40100],
+			ZipFile = Path.Combine(_localArtifactServerPath, "8.1.1",
+				"8.1.1.1417_Studio_Softkey_PostgreSQL_ENU.zip"),
+			DeploymentMethod = "iis",
+			AutoRun = false,
+			IsSilent = true
+		};
+
+		// Act
+		Action act = () => _creatioInstallerService.Execute(options);
+
+		// Assert
+		act.Should().Throw<InvalidOperationException>().WithMessage("*1 <= start <= end <= 65535*",
+			because: "invalid range configuration must fail before deployment can mutate the target");
+		_deploymentTargetReservation.DidNotReceive().Acquire(Arg.Any<string>());
+		_iisDeploymentPortReservation.DidNotReceive().AcquireFirstAvailable(Arg.Any<int>(), Arg.Any<int>());
 	}
 
 	[Test]

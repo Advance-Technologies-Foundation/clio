@@ -146,6 +146,47 @@ public sealed class DeployCreatioDefaultsResolverTests : BaseClioModuleTests {
 	}
 
 	[Test]
+	[Description("Copies the configured site-port range when neither an explicit nor fixed default site port is present.")]
+	public void ApplyDefaults_ShouldFillSitePortRange_WhenSitePortUnset() {
+		// Arrange
+		int[] configuredRange = [40100, 40199];
+		_settingsRepository.GetDeployCreatioDefaults()
+			.Returns(new DeployCreatioDefaults { SitePortRange = configuredRange });
+		PfInstallerOptions options = new() { SitePort = 0 };
+
+		// Act
+		_sut.ApplyDefaults(options);
+
+		// Assert
+		options.SitePort.Should().Be(0,
+			because: "automatic allocation happens only when IIS deployment owns the reservation boundary");
+		options.SitePortRange.Should().Equal(new[] { 40100, 40199 },
+			because: "the configured inclusive range must reach the deployment service");
+		options.SitePortRange.Should().NotBeSameAs(configuredRange,
+			because: "command options must not expose the mutable settings-owned array");
+	}
+
+	[Test]
+	[Description("Keeps the configured fixed site port ahead of site-port-range for backward compatibility.")]
+	public void ApplyDefaults_ShouldPreferFixedSitePort_WhenFixedPortAndRangeConfigured() {
+		// Arrange
+		_settingsRepository.GetDeployCreatioDefaults().Returns(new DeployCreatioDefaults {
+			SitePort = 40018,
+			SitePortRange = [40100, 40199]
+		});
+		PfInstallerOptions options = new();
+
+		// Act
+		_sut.ApplyDefaults(options);
+
+		// Assert
+		options.SitePort.Should().Be(40018,
+			because: "existing configured fixed ports must retain precedence over automatic allocation");
+		options.SitePortRange.Should().BeNull(
+			because: "the range is inactive when a fixed port was resolved");
+	}
+
+	[Test]
 	[Description("Overrides the parser 'auto' deployment default with the configured deployment method.")]
 	public void ApplyDefaults_ShouldOverrideAutoDeployment_WhenDefaultConfigured() {
 		// Arrange

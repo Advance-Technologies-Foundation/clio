@@ -87,6 +87,11 @@ public class DeployCreatioDefaultsResolver : IDeployCreatioDefaultsResolver {
 			_logger.WriteInfo($"[Config default] site-port = {defaults.SitePort.Value}");
 		}
 
+		if (options.SitePort == 0 && defaults.SitePortRange is { Length: > 0 }) {
+			options.SitePortRange = [.. defaults.SitePortRange];
+			_logger.WriteInfo($"[Config default] site-port-range = [{string.Join(", ", defaults.SitePortRange)}]");
+		}
+
 		// DeploymentMethod carries the "auto" parser default, so "auto" is treated as "not explicitly chosen"
 		// and can be overridden by a configured default.
 		if (IsDeploymentMethodUnset(options.DeploymentMethod) && !string.IsNullOrWhiteSpace(defaults.DeploymentMethod)) {

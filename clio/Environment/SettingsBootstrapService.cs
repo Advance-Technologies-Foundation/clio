@@ -59,7 +59,7 @@ public sealed record SettingsBootstrapResult(
 public sealed class SettingsBootstrapService : ISettingsBootstrapService {
 	private const string SettingsFileUnreadableCode = "settings-file-unreadable";
 	private const string SettingsFileMissingCode = "settings-file-missing";
-	private const int CurrentSettingsVersion = 1;
+	private const int CurrentSettingsVersion = 2;
 
 	/// <summary>
 	/// Status reported when appsettings.json does not exist and the caller asked for no repair write.
@@ -111,7 +111,11 @@ public sealed class SettingsBootstrapService : ISettingsBootstrapService {
 	private SettingsBootstrapResult LoadUnlocked(bool applyRepairs) {
 		string settingsFilePath = SettingsRepository.AppSettingsFile;
 		if (!_fileSystem.File.Exists(settingsFilePath)) {
-			Settings emptySettings = new() { Environments = [], SettingsVersion = CurrentSettingsVersion };
+			Settings emptySettings = new() {
+				Environments = [],
+				SettingsVersion = CurrentSettingsVersion,
+				DeployCreatioDefaults = DeployCreatioDefaults.CreateWithDefaultSitePortRange()
+			};
 			if (applyRepairs) {
 				SettingsRepository.SaveSettings(_fileSystem, emptySettings, expectedContent: null,
 					verifyExpectedContent: true);
@@ -182,12 +186,26 @@ public sealed class SettingsBootstrapService : ISettingsBootstrapService {
 		// silently disabling auto-update. Clear that legacy artifact so the opt-out default
 		// (enabled) applies again. Guarded by SettingsVersion, this runs once — a deliberate
 		// 'clio autoupdate --disable' made afterwards is preserved.
-		if (settings.Autoupdate == false) {
+		if ((settings.SettingsVersion ?? 0) < 1 && settings.Autoupdate == false) {
 			settings.Autoupdate = null;
 			repairs.Add(new SettingsRepair(
 				"autoupdate-legacy-default-reset",
 				"auto-update was disabled by a legacy default and has been re-enabled "
 				+ "(run 'clio autoupdate --disable' to opt out)"));
+		}
+		// Migration 2 makes automatic IIS port selection visible and immediately usable after an upgrade.
+		// Preserve a user-configured range; only materialize the built-in range when the setting was absent.
+		if ((settings.SettingsVersion ?? 0) < 2
+			&& settings.DeployCreatioDefaults?.SitePortRange is not { Length: > 0 }) {
+			settings.DeployCreatioDefaults ??= new DeployCreatioDefaults();
+			settings.DeployCreatioDefaults.SitePortRange = [
+				DeployCreatioDefaults.DefaultSitePortRangeStart,
+				DeployCreatioDefaults.DefaultSitePortRangeEnd
+			];
+			repairs.Add(new SettingsRepair(
+				"deploy-creatio-site-port-range-added",
+				$"deploy-creatio default site-port-range was set to "
+				+ $"[{DeployCreatioDefaults.DefaultSitePortRangeStart}, {DeployCreatioDefaults.DefaultSitePortRangeEnd}]"));
 		}
 		settings.SettingsVersion = CurrentSettingsVersion;
 		return true;

@@ -138,8 +138,8 @@ public sealed class InstallerCommandToolTests
 
 	[Test]
 	[Category("Unit")]
-	[Description("Keeps local server names optional and limits the deploy-creatio MCP argument type to the six approved fields.")]
-	public void DeployCreatio_Should_Keep_DbServerName_Optional_And_Expose_Only_Approved_Fields()
+	[Description("Keeps site port and local server names optional while limiting deploy-creatio to the six approved fields.")]
+	public void DeployCreatio_Should_Keep_SitePortAndServerNames_Optional_And_Expose_Only_Approved_Fields()
 	{
 		// Arrange
 		TestLogger logger = new();
@@ -148,10 +148,7 @@ public sealed class InstallerCommandToolTests
 			Substitute.For<IStageEventProgressForwarder>(), server: null!);
 		DeployCreatioArgs args = new(
 			SiteName: "creatio-app",
-			ZipFile: @"C:\temp\creatio.zip",
-			SitePort: 5000,
-			DbServerName: null,
-			RedisServerName: null);
+			ZipFile: @"C:\temp\creatio.zip");
 
 		// Act
 		tool.DeployCreatio((ProgressToken?)null, args);
@@ -161,6 +158,8 @@ public sealed class InstallerCommandToolTests
 			because: "the deploy-creatio tool should still execute when db-server-name is omitted");
 		command.ReceivedOptions!.DbServerName.Should().BeNull(
 			because: "db-server-name must remain optional so Kubernetes can stay the default deployment path");
+		command.ReceivedOptions.SitePort.Should().Be(0,
+			because: "an omitted MCP sitePort must remain unset for the defaults resolver and IIS range allocator");
 		command.ReceivedOptions.RedisDb.Should().Be(-1,
 			because: "redis-db should default to auto-detection when omitted");
 		typeof(DeployCreatioArgs).GetProperties().Select(property => property.Name).Should().BeEquivalentTo(
@@ -178,7 +177,7 @@ public sealed class InstallerCommandToolTests
 		// Arrange
 
 		// Act
-		string prompt = DeployCreatioPrompt.Prompt("site-a", @"C:\temp\creatio.zip", 8080);
+		string prompt = DeployCreatioPrompt.Prompt("site-a", @"C:\temp\creatio.zip");
 
 		// Assert
 		prompt.Should().Contain("assert-infrastructure",
@@ -186,7 +185,8 @@ public sealed class InstallerCommandToolTests
 		prompt.Should().Contain("show-passing-infrastructure",
 			because: "the prompt should direct the agent to retrieve deployable recommendations before deployment");
 		prompt.Should().Contain("find-empty-iis-port",
-			because: "the prompt should direct the agent to discover a safe local IIS port when sitePort selection matters");
+			because: "the prompt should preserve optional explicit port inspection guidance");
+		prompt.Should().Contain("configured", because: "the prompt should explain automatic range selection when sitePort is omitted");
 		prompt.Should().Contain("reserves and revalidates",
 			because: "the prompt should explain that port discovery is backed by command-level collision protection");
 		prompt.Should().Contain("deploy-creatio",
