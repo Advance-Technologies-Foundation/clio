@@ -181,34 +181,9 @@ public sealed class WebToMobilePageConversionRulesCatalogTests {
 		// Assert
 		rules.ComponentPropertyOverrides
 			.Where(o => Targets(o, "crt.GridContainer") || Targets(o, "crt.FlexContainer"))
-			.Should().HaveCount(3)
+			.Should().HaveCount(2)
 			.And.OnlyContain(o => !o.MergeNestedObjects,
 				because: "the spacing rules promise the web gap is discarded wholesale");
-	}
-
-	[Test]
-	[Description("The bundled rules promote a grid OR flex container left at the WEB DEFAULT corner radius (Medium) to the mobile default (Large), and match that token alone: a radius someone set deliberately, or none at all, is preserved.")]
-	public void LoadBundled_ReturnsSeededCornerRadiusOverride() {
-		// Arrange & Act
-		WebToMobilePageConversionRules rules = WebToMobilePageConversionRulesCatalog.LoadBundled();
-
-		// Assert
-		ComponentPropertyOverrideRule radius = rules.ComponentPropertyOverrides
-			.Single(o => Targets(o, "crt.GridContainer") && o.Filters.Any(f => f.Values is { Count: > 0 }));
-		radius.Values.Should().ContainKey("borderRadius", because: "the rule exists to promote the radius");
-		radius.Values["borderRadius"].GetString().Should().Be("large");
-		radius.MergeNestedObjects.Should().BeFalse(
-			because: "borderRadius is a scalar token — there is no nested subtree to preserve");
-		radius.Filters.Select(f => f.Type).Should().BeEquivalentTo(["crt.GridContainer", "crt.FlexContainer"],
-			because: "both container types can carry the radius, so the union names each one — the type is a "
-				+ "filter constraint like any other");
-		radius.Filters.Should().OnlyContain(f => f.Values.Count == 1,
-			because: "one discriminating property beyond the type");
-		radius.Filters.Select(f => f.Values["borderRadius"].GetString()).Should().AllBe("medium",
-			because: "Medium is the WEB DEFAULT radius, so matching it means 'left at the platform default' — "
-				+ "and Large is the mobile default. Any other radius was set deliberately by whoever designed "
-				+ "the page, so it is preserved rather than normalized away: this token IS the rule, not a "
-				+ "partial implementation of a wider one");
 	}
 
 	[Test]
