@@ -67,6 +67,37 @@ public sealed class ODataReadToolTests {
 			because: "an unbound argument is rejected before any Creatio request");
 	}
 
+	[TestCase("null")]
+	[TestCase("true")]
+	[TestCase("false")]
+	[TestCase("42")]
+	[TestCase("\"Unauthorized\"")]
+	[Category("Unit")]
+	[Description("Rejects a scalar JSON body instead of reporting it as one successful entity, which is what a proxy, an auth redirect or a misrouted request returns.")]
+	public void Read_Should_Reject_Scalar_Response_Body(string scalarBody) {
+		// Arrange
+		IApplicationClient client = Substitute.For<IApplicationClient>();
+		IServiceUrlBuilder urlBuilder = Substitute.For<IServiceUrlBuilder>();
+		IToolCommandResolver resolver = Substitute.For<IToolCommandResolver>();
+		resolver.Resolve<IApplicationClient>(Arg.Any<EnvironmentOptions>()).Returns(client);
+		resolver.Resolve<IServiceUrlBuilder>(Arg.Any<EnvironmentOptions>()).Returns(urlBuilder);
+		urlBuilder.Build(Arg.Any<string>()).Returns("http://creatio/odata/Contact?$top=25");
+		client.ExecuteGetRequest(Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+			.Returns(scalarBody);
+		ODataReadTool tool = new(resolver);
+
+		// Act
+		ODataReadResponse response = tool.Read(new ODataReadArgs { EnvironmentName = "dev", Entity = "Contact" });
+
+		// Assert
+		response.Success.Should().BeFalse(
+			because: "a scalar body is not OData content and must never be reported as one record");
+		response.Count.Should().NotBe(1,
+			because: "reporting count=1 for a scalar body told the caller a record was returned when none was");
+		response.Error.Should().Contain("not a record or a collection",
+			because: "the caller has to be told the endpoint did not answer with OData content");
+	}
+
 	[Test]
 	[Category("Unit")]
 	[Description("Builds an escaped OData URL from query arguments and returns the value array from the OData response.")]

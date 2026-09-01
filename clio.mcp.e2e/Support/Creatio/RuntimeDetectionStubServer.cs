@@ -1,6 +1,7 @@
 using System.Diagnostics;
 using System.Globalization;
 using System.Net;
+using System.Net.Http;
 using System.Net.Sockets;
 using System.Text.Json;
 
@@ -39,6 +40,14 @@ internal sealed class RuntimeDetectionStubServer : IAsyncDisposable {
 		}
 
 		return new RuntimeDetectionStubServer(process, scriptPath, $"http://127.0.0.1:{port.ToString(CultureInfo.InvariantCulture)}");
+	}
+
+	/// <summary>Number of POST requests the echo OData endpoint has received so far.</summary>
+	public async Task<int> GetODataPostCountAsync(CancellationToken cancellationToken) {
+		using HttpClient client = new();
+		string body = await client.GetStringAsync($"{BaseUrl}/stub/odata-post-count", cancellationToken);
+		using JsonDocument document = JsonDocument.Parse(body);
+		return document.RootElement.GetProperty("count").GetInt32();
 	}
 
 	public async ValueTask DisposeAsync() {
@@ -97,11 +106,19 @@ function sendText(response, statusCode, body) {
   response.end(body);
 }
 
+// Counts POSTs that reached the echo endpoint. A cancellation test cannot observe "no further request was
+// sent" from the client side - the call simply stops returning - so the stub has to report it.
+let postCount = 0;
+
 http.createServer((request, response) => {
   let body = "";
   request.on("data", chunk => { body += chunk; });
   request.on("end", () => {
     const url = request.url || "";
+    if (request.method === "GET" && url === "/stub/odata-post-count") {
+      sendJson(response, 200, { count: postCount });
+      return;
+    }
     if (request.method === "POST" && url === "/ServiceModel/AuthService.svc/Login") {
       sendJson(
         response,
@@ -173,6 +190,7 @@ http.createServer((request, response) => {
         return;
       }
       if (request.method === "POST") {
+        postCount += 1;
         let name = null;
         try { name = JSON.parse(body).Name; } catch (error) { name = null; }
         if (!name) {
@@ -180,7 +198,8 @@ http.createServer((request, response) => {
           response.end("<html><body>post body did not carry a Name</body></html>");
           return;
         }
-        sendJson(response, 200, { Id: String(name) });
+        const delay = config.ODataEchoPostDelayMs || 0;
+        setTimeout(() => sendJson(response, 200, { Id: String(name) }), delay);
         return;
       }
       if (request.method === "PATCH") {
@@ -240,4 +259,5 @@ internal sealed record RuntimeDetectionStubServerConfiguration(
 	string? HtmlSelectQuerySchemaName = null,
 	string? ODataNonJsonEntity = null,
 	string? ODataEchoEntity = null,
-	string? ODataWriteRequiredMarker = null);
+	string? ODataWriteRequiredMarker = null,
+	int ODataEchoPostDelayMs = 0);

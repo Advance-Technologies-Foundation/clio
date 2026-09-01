@@ -1,3 +1,4 @@
+using System.Linq;
 using Allure.NUnit;
 using Allure.NUnit.Attributes;
 using Clio.Command.McpServer.Tools;
@@ -182,6 +183,64 @@ public sealed class ODataFileModeSuccessE2ETests {
 				File.Delete(rowsFile);
 			}
 		}
+	}
+
+	[Test]
+	[AllureTag(ODataCreateTool.ToolName)]
+	[AllureName("odata-create stops POSTing when the caller cancels the request")]
+	[AllureDescription("Runs a slow multi-row odata-create against a loopback OData endpoint, cancels the MCP call mid-batch, and verifies the stub received fewer POSTs than the batch carried - proving the host's cancellation reaches the row loop over the real transport.")]
+	[Description("Cancelling the MCP call stops subsequent POSTs: the stub sees fewer requests than the batch had rows.")]
+	public async Task ODataCreate_Should_Stop_Posting_When_The_Transport_Call_Is_Cancelled() {
+		const int rowCount = 6;
+		const int postDelayMs = 1200;
+		await StubEnvironmentStand.RunAsync(
+			"clio-odata-cancel-e2e",
+			new RuntimeDetectionStubServerConfiguration(
+				NetCoreHealthEnabled: true,
+				NetFrameworkHealthEnabled: true,
+				NetCoreServiceEnabled: false,
+				NetFrameworkServiceEnabled: true,
+				NetCoreUiMarkerEnabled: false,
+				NetFrameworkUiMarkerEnabled: true,
+				ODataEchoEntity: EchoEntity,
+				ODataWriteRequiredMarker: PatchMarker,
+				ODataEchoPostDelayMs: postDelayMs),
+			async (session, environmentName, stubServer, cancellationToken) => {
+				// Arrange - a batch long enough that cancelling after two rows leaves several unsent.
+				object[] rows = Enumerable.Range(0, rowCount)
+					.Select(object (index) => new Dictionary<string, object?> { ["Name"] = $"row-{index}" })
+					.ToArray();
+				using CancellationTokenSource callCancellation =
+					CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+				callCancellation.CancelAfter(TimeSpan.FromMilliseconds(postDelayMs * 2.5));
+
+				// Act
+				try {
+					await session.CallToolAsync(
+						ODataCreateTool.ToolName,
+						new Dictionary<string, object?> {
+							["args"] = new Dictionary<string, object?> {
+								["environment-name"] = environmentName,
+								["entity"] = EchoEntity,
+								["rows"] = rows
+							}
+						},
+						callCancellation.Token);
+				} catch (OperationCanceledException) {
+					// Expected: the client stops waiting once it cancels the request.
+				}
+				// The row already in flight is allowed to finish, so give it more than one delay to land
+				// before counting - otherwise the assertion could pass for the wrong reason.
+				await Task.Delay(TimeSpan.FromMilliseconds(postDelayMs * 2), cancellationToken);
+
+				// Assert
+				int posted = await stubServer.GetODataPostCountAsync(cancellationToken);
+				posted.Should().BeGreaterThan(0,
+					because: "the batch must actually start before cancellation can be shown to stop it");
+				posted.Should().BeLessThan(rowCount,
+					because: "cancelling the MCP call must stop the row loop, leaving the remaining rows unsent");
+			},
+			TimeSpan.FromMinutes(3));
 	}
 
 	private static Task RunAgainstEchoStubAsync(
