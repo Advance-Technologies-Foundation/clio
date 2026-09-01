@@ -138,8 +138,8 @@ DESCRIPTION
       same name. It resolves against a base that lacks the component and is
       dropped. Same for a move whose name the body also element-removes; a
       merge whose name the body also element-removes or sets; and a property
-      remove whose name the body also element-removes, unless an insert
-      re-creates the element. Fold the values into the insert, or use set,
+      remove whose name the body also sets, or also element-removes unless an
+      insert re-creates the element. Fold the values into the insert, or use set,
       which runs after it. Reordering the array changes nothing. The save
       still succeeds; --dry-run reports it too.
       Advisory only: a parent schema inserting the same name can make the

@@ -1,4 +1,4 @@
-namespace Clio.Command;
+﻿namespace Clio.Command;
 
 using System;
 using System.Collections.Generic;
@@ -542,17 +542,36 @@ internal static class PageBodyMerger {
 	/// <c>docs/knowledge/Command/viewconfigdiff-carries-multiple-operations-per-component-name.md</c>.
 	/// </remarks>
 	private static JArray MergeViewConfigDiffOperations(JArray current, JArray incoming, List<string> drops) {
-		// Last spelling wins within one fragment; the emit pass below still places it at the first
-		// occurrence's position.
+		Dictionary<OperationIdentity, JToken> incomingByIdentity = IndexIncomingByIdentity(incoming);
+		var replaced = new HashSet<OperationIdentity>();
+		var merged = new JArray();
+		AppendCurrentEntries(current, incomingByIdentity, replaced, merged, drops);
+		AppendUnmatchedIncomingEntries(incoming, incomingByIdentity, replaced, merged);
+		return merged;
+	}
+
+	/// <summary>
+	/// Indexes the incoming fragment by operation identity. Last spelling wins within one fragment; the
+	/// emit pass still places it at the first occurrence's position.
+	/// </summary>
+	private static Dictionary<OperationIdentity, JToken> IndexIncomingByIdentity(JArray incoming) {
 		var incomingByIdentity = new Dictionary<OperationIdentity, JToken>();
 		foreach (JToken item in incoming) {
 			if (TryGetOperationIdentity(item, out OperationIdentity identity)) {
 				incomingByIdentity[identity] = item;
 			}
 		}
-		var replaced = new HashSet<OperationIdentity>();
+		return incomingByIdentity;
+	}
+
+	/// <summary>
+	/// Emits the current body in place, substituting the incoming entry wherever an identity collides,
+	/// and reporting the one entry the merge cannot preserve.
+	/// </summary>
+	private static void AppendCurrentEntries(JArray current,
+		Dictionary<OperationIdentity, JToken> incomingByIdentity, HashSet<OperationIdentity> replaced,
+		JArray merged, List<string> drops) {
 		var warned = new HashSet<OperationIdentity>();
-		var merged = new JArray();
 		foreach (JToken item in current) {
 			if (!TryGetOperationIdentity(item, out OperationIdentity identity) ||
 				!incomingByIdentity.TryGetValue(identity, out JToken replacement)) {
@@ -575,7 +594,15 @@ internal static class PageBodyMerger {
 				drops.Add(BuildSupersededDropMessage(identity));
 			}
 		}
-		// Ordered pass over `incoming` so an unidentified entry keeps the position the caller gave it.
+	}
+
+	/// <summary>
+	/// Appends the incoming entries that did not replace anything, in the order the caller gave them, so
+	/// an unidentified entry keeps its position.
+	/// </summary>
+	private static void AppendUnmatchedIncomingEntries(JArray incoming,
+		Dictionary<OperationIdentity, JToken> incomingByIdentity, HashSet<OperationIdentity> replaced,
+		JArray merged) {
 		var emitted = new HashSet<OperationIdentity>();
 		foreach (JToken item in incoming) {
 			if (!TryGetOperationIdentity(item, out OperationIdentity identity)) {
@@ -586,7 +613,6 @@ internal static class PageBodyMerger {
 				merged.Add(incomingByIdentity[identity]);
 			}
 		}
-		return merged;
 	}
 
 	/// <summary>

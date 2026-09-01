@@ -202,9 +202,11 @@ Operations are applied in whole **groups** in a fixed order (merges, then remove
 silently dropped; likewise a `move` for a name the same body also element-`remove`s, which the
 differ filters out before applying anything. The same applies wherever one operation's group runs
 after another's for one name: a `merge` beside an element `remove` or a `set` (the remove deletes,
-or the set replaces wholesale, what the merge just patched), and a property `remove` beside an
+or the set replaces wholesale, what the merge just patched); a property `remove` beside an
 element `remove` (the element is gone before property removals run — unless an `insert` re-creates
-it, which makes the property removal effective again). The save still succeeds and the
+it, which makes the property removal effective again); and a property `remove` beside a `set` (the
+property group runs first, then the set rebuilds the element from its own `values`, so the strip
+contributes nothing). The save still succeeds and the
 response carries an advisory `warnings` entry naming the component and the dead operation. Fix it by folding the transform's values into the
 `insert` itself, or by using `set`, which runs after the insert — not by reordering the array, which
 changes nothing.
