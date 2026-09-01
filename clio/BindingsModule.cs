@@ -772,6 +772,7 @@ public class BindingsModule {
 		services.AddTransient<IDataForgeMaintenanceClient, DataForgeMaintenanceClient>();
 		services.AddTransient<IRuntimeEntitySchemaReader, RuntimeEntitySchemaReader>();
 		services.AddTransient<IDataForgeContextService, DataForgeContextService>();
+		services.AddTransient<IConfinedFileAccess, ConfinedFileAccess>();
 		services.AddTransient<IODataFileContract, ODataFileContract>();
 		services.AddTransient<ODataReadTool>();
 		services.AddTransient<ODataReadToFileTool>();

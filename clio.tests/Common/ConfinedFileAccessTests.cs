@@ -1,0 +1,243 @@
+namespace Clio.Tests.Common;
+
+using System;
+using System.IO;
+using System.Text;
+using Clio.Common;
+using FluentAssertions;
+using NUnit.Framework;
+
+/// <summary>
+/// Real-file-system coverage for <see cref="ConfinedFileAccess"/>.
+/// </summary>
+/// <remarks>
+/// Every case here needs actual symbolic links and actual directory handles, so all of them are
+/// <c>Integration</c>: a mock file system has neither, and a unit-lane version of these tests would pass
+/// while proving nothing. Two of them exist specifically because the guarantee they check fails SILENTLY
+/// when it regresses - the open simply succeeds without no-follow semantics and nothing looks wrong.
+/// </remarks>
+[TestFixture]
+[Property("Module", "Common")]
+public sealed class ConfinedFileAccessTests {
+
+	private readonly IConfinedFileAccess _access = new ConfinedFileAccess();
+	private string _sandbox;
+
+	[SetUp]
+	public void SetUp() {
+		string requested = Path.Combine(Path.GetTempPath(), "cfa-" + Guid.NewGuid().ToString("N"));
+		Directory.CreateDirectory(requested);
+		// The descent refuses a symlinked component BY DESIGN, and the OS temp root is itself reached through
+		// one on macOS (/var -> /private/var). Production never hands it a raw path either: confinement
+		// resolves the canonical form first. The sandbox is canonicalized here for the same reason.
+		_sandbox = CanonicalDirectory(requested);
+	}
+
+	[TearDown]
+	public void TearDown() {
+		try {
+			if (Directory.Exists(_sandbox)) {
+				Directory.Delete(_sandbox, recursive: true);
+			}
+		}
+		catch (IOException) {
+			// Best-effort cleanup; a leftover temp directory must never fail a test.
+		}
+	}
+
+	[Test]
+	[Category("Integration")]
+	[Description("Reads an ordinary confined file through the handle-bound descent, so the guard does not break the normal path.")]
+	public void OpenRead_ShouldReturn_TheFileContent_ForAnOrdinaryPath() {
+		// Arrange
+		string path = Path.Combine(_sandbox, "payload.json");
+		File.WriteAllText(path, "{\"ok\":true}");
+
+		// Act
+		using Stream stream = _access.OpenRead(path);
+		using StreamReader reader = new(stream, Encoding.UTF8);
+		string content = reader.ReadToEnd();
+
+		// Assert
+		content.Should().Be("{\"ok\":true}",
+			because: "the descent must still deliver the bytes of the file it was asked for");
+	}
+
+	[Test]
+	[Category("Integration")]
+	[Description("Refuses to read through a directory that was replaced by a symbolic link AFTER its path was approved - the swap the pathname-based check could not see.")]
+	public void OpenRead_ShouldRefuse_AParentDirectoryReplacedByALinkAfterApproval() {
+		// Arrange - an approved file, and an out-of-reach file the swapped parent will point at.
+		string approvedDirectory = Path.Combine(_sandbox, "approved");
+		Directory.CreateDirectory(approvedDirectory);
+		string approvedFile = Path.Combine(approvedDirectory, "payload.json");
+		File.WriteAllText(approvedFile, "{\"approved\":true}");
+		string secretDirectory = Path.Combine(_sandbox, "secret");
+		Directory.CreateDirectory(secretDirectory);
+		File.WriteAllText(Path.Combine(secretDirectory, "payload.json"), "{\"secret\":true}");
+		string canonical = approvedFile;
+
+		// Act - the swap happens after the path is approved and before it is opened.
+		Directory.Delete(approvedDirectory, recursive: true);
+		try {
+			Directory.CreateSymbolicLink(approvedDirectory, "secret");
+		}
+		catch (Exception ex) when (ex is UnauthorizedAccessException or IOException or PlatformNotSupportedException) {
+			Assert.Ignore("Symbolic-link creation is unavailable in this environment.");
+		}
+		Action read = () => {
+			using Stream stream = _access.OpenRead(canonical);
+			using StreamReader reader = new(stream, Encoding.UTF8);
+			reader.ReadToEnd().Should().NotContain("secret",
+				because: "if the read is allowed at all it must land on the approved file, never on the swap target");
+		};
+
+		// Assert
+		read.Should().Throw<IOException>(
+			because: "a component that became a symbolic link after approval means the path is no longer the "
+				+ "one that was checked, so the read must fail closed rather than follow it");
+	}
+
+	[Test]
+	[Category("Integration")]
+	[Description("Refuses to read a file whose FINAL component is a symbolic link, which is the direct behavioural proof that no-follow semantics are actually in effect on this platform.")]
+	public void OpenRead_ShouldRefuse_ALinkedFinalComponent() {
+		// Arrange
+		string target = Path.Combine(_sandbox, "target.json");
+		File.WriteAllText(target, "{\"target\":true}");
+		string link = Path.Combine(_sandbox, "link.json");
+		try {
+			File.CreateSymbolicLink(link, "target.json");
+		}
+		catch (Exception ex) when (ex is UnauthorizedAccessException or IOException or PlatformNotSupportedException) {
+			Assert.Ignore("Symbolic-link creation is unavailable in this environment.");
+		}
+
+		// Act
+		Action read = () => _access.OpenRead(Path.Combine(_sandbox, "link.json")).Dispose();
+
+		// Assert
+		// The platform flag values this relies on (O_NOFOLLOW / the reparse-point attribute) fail silently in
+		// the DANGEROUS direction when they are wrong - the open just succeeds - so this assertion is the only
+		// thing standing between a bad constant and a guarantee that quietly does nothing.
+		read.Should().Throw<IOException>(
+			because: "a symbolic link in place of the file itself must be refused, not followed");
+	}
+
+	[Test]
+	[Category("Integration")]
+	[Description("Writes a new confined file and refuses a second write to the same path, keeping the additive no-overwrite contract.")]
+	public void WriteNew_ShouldCreateTheFile_AndRefuseAnExistingTarget() {
+		// Arrange
+		string path = Path.Combine(_sandbox, "nested", "out.json");
+		byte[] content = Encoding.UTF8.GetBytes("{\"written\":true}");
+
+		// Act
+		_access.WriteNew(Path.Combine(_sandbox, "nested", "out.json"), content);
+		Action second = () => _access.WriteNew(Path.Combine(_sandbox, "nested", "out.json"), content);
+
+		// Assert
+		File.ReadAllText(path).Should().Be("{\"written\":true}",
+			because: "the write must publish exactly the bytes it was given, creating the parent directory");
+		second.Should().Throw<IOException>(
+			because: "an explicit output-file is additive and must never overwrite an existing file")
+			.WithMessage("*already exists*");
+	}
+
+	[Test]
+	[Category("Integration")]
+	[Description("Publishes the file owner-readable and owner-writable only, so a raw service response under the shared OS temp root is not exposed to other local users - and so a file nobody can read is caught too.")]
+	public void WriteNew_ShouldPublish_AnOwnerOnlyFile() {
+		// Arrange
+		if (OperatingSystem.IsWindows()) {
+			Assert.Ignore("Unix file modes have no meaning on Windows.");
+		}
+		string path = Path.Combine(_sandbox, "owner-only.json");
+
+		// Act
+		_access.WriteNew(path, Encoding.UTF8.GetBytes("{\"a\":1}"));
+
+		// Assert
+		// This assertion exists because the mode CANNOT be passed to the create call: openat is variadic and
+		// its mode argument is not reachable through an ordinary P/Invoke on every platform. A regression
+		// there does not throw - it produces a file with arbitrary permissions, which is either a
+		// confidentiality hole or a file the owner cannot read, and only this check tells the difference.
+		File.GetUnixFileMode(path).Should().Be(UnixFileMode.UserRead | UnixFileMode.UserWrite,
+			because: "the payload is a raw service response and must not be readable by other local users");
+		File.ReadAllText(path).Should().Be("{\"a\":1}",
+			because: "the owner must still be able to read the file that was just written for them");
+	}
+
+	[Test]
+	[Category("Integration")]
+	[Description("Refuses to write through a parent directory replaced by a symbolic link after approval, and leaves nothing behind at the swap target.")]
+	public void WriteNew_ShouldRefuse_AParentDirectoryReplacedByALinkAfterApproval() {
+		// Arrange
+		string approvedDirectory = Path.Combine(_sandbox, "approved");
+		Directory.CreateDirectory(approvedDirectory);
+		string outsideDirectory = Path.Combine(_sandbox, "outside");
+		Directory.CreateDirectory(outsideDirectory);
+		string canonical = Path.Combine(_sandbox, "approved", "out.json");
+
+		// Act
+		Directory.Delete(approvedDirectory, recursive: true);
+		try {
+			Directory.CreateSymbolicLink(approvedDirectory, "outside");
+		}
+		catch (Exception ex) when (ex is UnauthorizedAccessException or IOException or PlatformNotSupportedException) {
+			Assert.Ignore("Symbolic-link creation is unavailable in this environment.");
+		}
+		Action write = () => _access.WriteNew(canonical, Encoding.UTF8.GetBytes("{}"));
+
+		// Assert
+		write.Should().Throw<IOException>(
+			because: "the approved parent is no longer the directory that was checked, so the write must fail closed");
+		File.Exists(Path.Combine(outsideDirectory, "out.json")).Should().BeFalse(
+			because: "nothing may be created at the swap target");
+	}
+
+	[Test]
+	[Category("Integration")]
+	[Description("Leaves no file and no temporary sibling when the content cannot be written, so a failed write is retryable rather than blocked by its own wreckage.")]
+	public void WriteNew_ShouldLeaveNothing_WhenTheTargetDirectoryDisappears() {
+		// Arrange
+		string missing = Path.Combine(_sandbox, "gone", "out.json");
+		Directory.CreateDirectory(Path.Combine(_sandbox, "gone"));
+		Directory.Delete(Path.Combine(_sandbox, "gone"));
+
+		// Act
+		_access.WriteNew(missing, Encoding.UTF8.GetBytes("{\"a\":1}"));
+
+		// Assert
+		File.Exists(missing).Should().BeTrue(
+			because: "a missing parent directory is created, not treated as a failure");
+		Directory.GetFiles(Path.Combine(_sandbox, "gone"), "*.tmp").Should().BeEmpty(
+			because: "the sibling temporary file must never survive a completed write");
+	}
+
+	// Resolves a directory to its real location by following a link at EVERY component, parent first - the
+	// same shape the confinement layer uses, so the tests address paths the way production hands them over.
+	private static string CanonicalDirectory(string directory) {
+		string parent = Path.GetDirectoryName(directory);
+		if (string.IsNullOrEmpty(parent) || string.Equals(parent, directory, StringComparison.Ordinal)) {
+			return directory;
+		}
+		string realParent = CanonicalDirectory(parent);
+		string combined = Path.Combine(realParent, Path.GetFileName(directory));
+		string target = ReadLinkTargetOrNull(combined);
+		if (target is null) {
+			return combined;
+		}
+		string resolved = Path.IsPathRooted(target) ? target : Path.Combine(realParent, target);
+		return CanonicalDirectory(Path.GetFullPath(resolved));
+	}
+
+	private static string ReadLinkTargetOrNull(string path) {
+		try {
+			return new DirectoryInfo(path).LinkTarget ?? new FileInfo(path).LinkTarget;
+		}
+		catch (Exception) {
+			return null;
+		}
+	}
+}

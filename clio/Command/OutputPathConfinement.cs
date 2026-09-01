@@ -78,25 +78,6 @@ internal static class OutputPathConfinement {
 	}
 
 	/// <summary>
-	/// Re-runs confinement on an ALREADY-canonical path and confirms it still canonicalizes to itself. Called
-	/// while the caller holds the file open, so a component swapped between resolution and the open is caught
-	/// before the handle's contents are used.
-	/// </summary>
-	/// <param name="fileSystem">File-system abstraction used for path resolution.</param>
-	/// <param name="resolvedPath">A path previously returned by <see cref="ResolveForRead"/>.</param>
-	/// <param name="optionName">Argument name used in the caller-facing message.</param>
-	/// <returns><c>null</c> when the path is unchanged and still confined, otherwise the caller-facing error.</returns>
-	internal static string RevalidateResolved(IoFileSystem fileSystem, string resolvedPath, string optionName) {
-		(string _, string real, string error) = ResolveConfined(fileSystem, resolvedPath, optionName);
-		if (error is not null) {
-			return error;
-		}
-		return string.Equals(real, resolvedPath, StringComparison.Ordinal)
-			? null
-			: $"{optionName} changed on disk while it was being read; refusing to continue.";
-	}
-
-	/// <summary>
 	/// Resolves <paramref name="outputFile"/> to an absolute path and confirms it stays inside a trusted
 	/// workspace anchor or the OS temp directory. Symlinks are resolved before the check so a link cannot smuggle
 	/// the write outside the allowed zones, and an anchor that is a filesystem root or an ancestor of the user's

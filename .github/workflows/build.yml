@@ -195,7 +195,10 @@ jobs:
   # The unit job above runs on windows-latest, where Unix file modes have no meaning and
   # OutputPathConfinementTests skips its 0600 regressions outright. Without this leg CI stays green if
   # UnixCreateMode is removed or downgraded to a create-then-chmod, and the confidentiality guarantee for a
-  # raw service response written under the SHARED OS temp root is unprotected. One Linux runner, one fixture.
+  # raw service response written under the SHARED OS temp root is unprotected.
+  # It also runs ConfinedFileAccessTests, whose no-follow guarantee rests on raw O_* flag values that differ
+  # per platform AND per Linux architecture. A wrong value fails silently in the dangerous direction - the
+  # open just succeeds without the guarantee - so the Linux values need a leg that actually exercises them.
   unix-file-mode-tests:
     name: Unix File Mode Tests
     needs: changes
@@ -221,7 +224,7 @@ jobs:
           set -euo pipefail
           dotnet test ./clio.tests/clio.tests.csproj \
             --framework net10.0 \
-            --filter "FullyQualifiedName~OutputPathConfinementTests&Category=Integration" \
+            --filter "(FullyQualifiedName~OutputPathConfinementTests|FullyQualifiedName~ConfinedFileAccessTests)&Category=Integration" \
             -p:RunAnalyzers=false
 
   # ── ClioGate tests (only when the bundled service changes) ──────────

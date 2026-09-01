@@ -186,75 +186,77 @@ public sealed class ODataFileModeSuccessE2ETests {
 	}
 
 	[Test]
-	[AllureTag(ODataCreateTool.ToolName)]
-	[AllureName("odata-create stops POSTing when the caller cancels the request")]
-	[AllureDescription("Runs a slow multi-row odata-create against a loopback OData endpoint, cancels the MCP call mid-batch, and verifies the stub received fewer POSTs than the batch carried - proving the host's cancellation reaches the row loop over the real transport.")]
-	[Description("Cancelling the MCP call stops subsequent POSTs: the stub sees fewer requests than the batch had rows.")]
-	public async Task ODataCreate_Should_Stop_Posting_When_The_Transport_Call_Is_Cancelled() {
-		const int rowCount = 6;
-		const int postDelayMs = 1200;
-		await StubEnvironmentStand.RunAsync(
-			"clio-odata-cancel-e2e",
-			new RuntimeDetectionStubServerConfiguration(
-				NetCoreHealthEnabled: true,
-				NetFrameworkHealthEnabled: true,
-				NetCoreServiceEnabled: false,
-				NetFrameworkServiceEnabled: true,
-				NetCoreUiMarkerEnabled: false,
-				NetFrameworkUiMarkerEnabled: true,
-				ODataEchoEntity: EchoEntity,
-				ODataWriteRequiredMarker: PatchMarker,
-				ODataEchoPostDelayMs: postDelayMs),
-			async (session, environmentName, stubServer, cancellationToken) => {
-				// Arrange - a batch long enough that cancelling after two rows leaves several unsent.
-				object[] rows = Enumerable.Range(0, rowCount)
-					.Select(object (index) => new Dictionary<string, object?> { ["Name"] = $"row-{index}" })
-					.ToArray();
-				using CancellationTokenSource callCancellation =
-					CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-				callCancellation.CancelAfter(TimeSpan.FromMilliseconds(postDelayMs * 2.5));
-
-				// Act
-				try {
-					await session.CallToolAsync(
-						ODataCreateTool.ToolName,
+	[AllureTag(ODataReadToFileTool.ToolName)]
+	[AllureName("odata-read-to-file refuses an oversized response and writes nothing")]
+	[AllureDescription("Points odata-read-to-file at a loopback endpoint that streams a body past clio's ceiling with no Content-Length, and verifies the call fails, no file is written, and the MCP session still serves the next call.")]
+	[Description("An oversized response is refused as the bytes arrive: no file is written and the session stays usable.")]
+	public async Task ODataReadToFile_Should_Refuse_An_Oversized_Response_And_Keep_The_Session_Usable() {
+		string outputFile = Path.Combine(Path.GetTempPath(), $"odata-oversized-{Guid.NewGuid():N}.json");
+		try {
+			await StubEnvironmentStand.RunAsync(
+				"clio-odata-oversized-e2e",
+				EchoStubConfiguration(oversizedBytes: 70 * 1024 * 1024),
+				async (session, environmentName, _, cancellationToken) => {
+					// Act
+					CallToolResult callResult = await session.CallToolAsync(
+						ODataReadToFileTool.ToolName,
 						new Dictionary<string, object?> {
 							["args"] = new Dictionary<string, object?> {
 								["environment-name"] = environmentName,
 								["entity"] = EchoEntity,
-								["rows"] = rows
+								["output-file"] = outputFile
 							}
 						},
-						callCancellation.Token);
-				} catch (OperationCanceledException) {
-					// Expected: the client stops waiting once it cancels the request.
-				}
-				// The row already in flight is allowed to finish, so give it more than one delay to land
-				// before counting - otherwise the assertion could pass for the wrong reason.
-				await Task.Delay(TimeSpan.FromMilliseconds(postDelayMs * 2), cancellationToken);
+						cancellationToken);
+					ODataReadResponse response = EntitySchemaStructuredResultParser.Extract<ODataReadResponse>(callResult);
 
-				// Assert
-				int posted = await stubServer.GetODataPostCountAsync(cancellationToken);
-				posted.Should().BeGreaterThan(0,
-					because: "the batch must actually start before cancellation can be shown to stop it");
-				posted.Should().BeLessThan(rowCount,
-					because: "cancelling the MCP call must stop the row loop, leaving the remaining rows unsent");
-			},
-			TimeSpan.FromMinutes(3));
+					// Assert
+					response.Success.Should().BeFalse(
+						because: "a response past the ceiling must be refused rather than summarized and written");
+					response.Error.Should().Contain("exceeds",
+						because: "the caller has to be told the response was too large and how to narrow it");
+					File.Exists(outputFile).Should().BeFalse(
+						because: "nothing may be published for a body that was refused");
+
+					// Assert - the session survives the refusal and still answers the next call.
+					CallToolResult followUp = await session.CallToolAsync(
+						ODataReadTool.ToolName,
+						new Dictionary<string, object?> {
+							["args"] = new Dictionary<string, object?> {
+								["environment-name"] = environmentName,
+								["entity"] = EchoEntity,
+								["output-file"] = "should-be-rejected.json"
+							}
+						},
+						cancellationToken);
+					EntitySchemaStructuredResultParser.Extract<ODataReadResponse>(followUp).Error.Should()
+						.Contain(ODataReadToFileTool.ToolName,
+							because: "the MCP session must still be serving tools after the oversized call was refused");
+				},
+				TimeSpan.FromMinutes(3));
+		} finally {
+			if (File.Exists(outputFile)) {
+				File.Delete(outputFile);
+			}
+		}
 	}
+
+	private static RuntimeDetectionStubServerConfiguration EchoStubConfiguration(int oversizedBytes = 0) =>
+		new(
+			NetCoreHealthEnabled: true,
+			NetFrameworkHealthEnabled: true,
+			NetCoreServiceEnabled: false,
+			NetFrameworkServiceEnabled: true,
+			NetCoreUiMarkerEnabled: false,
+			NetFrameworkUiMarkerEnabled: true,
+			ODataEchoEntity: EchoEntity,
+			ODataWriteRequiredMarker: PatchMarker,
+			ODataOversizedBytes: oversizedBytes);
 
 	private static Task RunAgainstEchoStubAsync(
 		Func<Support.Mcp.McpServerSession, string, CancellationToken, Task> act) =>
 		StubEnvironmentStand.RunAsync(
 			"clio-odata-file-mode-e2e",
-			new RuntimeDetectionStubServerConfiguration(
-				NetCoreHealthEnabled: true,
-				NetFrameworkHealthEnabled: true,
-				NetCoreServiceEnabled: false,
-				NetFrameworkServiceEnabled: true,
-				NetCoreUiMarkerEnabled: false,
-				NetFrameworkUiMarkerEnabled: true,
-				ODataEchoEntity: EchoEntity,
-				ODataWriteRequiredMarker: PatchMarker),
+			EchoStubConfiguration(),
 			(session, environmentName, _, cancellationToken) => act(session, environmentName, cancellationToken));
 }

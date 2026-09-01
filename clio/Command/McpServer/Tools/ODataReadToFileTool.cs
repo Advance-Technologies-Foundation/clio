@@ -2,7 +2,10 @@ using System;
 using System.Collections.Generic;
 using System.ComponentModel;
 using System.ComponentModel.DataAnnotations;
+using System.Net.Http;
+using System.Text;
 using System.Text.Json.Serialization;
+using System.Threading;
 using Clio.Common;
 using ModelContextProtocol.Server;
 
@@ -25,6 +28,9 @@ public sealed class ODataReadToFileTool(IToolCommandResolver commandResolver, IO
 		fileContract ?? throw new ArgumentNullException(nameof(fileContract));
 
 	internal const string ToolName = "odata-read-to-file";
+
+	/// <summary>Request timeout for the OData fetch, in milliseconds.</summary>
+	internal const int RequestTimeoutMs = 30_000;
 
 	private const string ValidArgumentsHint =
 		"Valid: entity, environment-name, output-file, filters, select, expand, order-by, top, skip, count. " +
@@ -59,7 +65,8 @@ public sealed class ODataReadToFileTool(IToolCommandResolver commandResolver, IO
 	public ODataReadResponse ReadToFile(
 		[Description("Parameters: entity, environment-name, output-file (required); filters, select, expand, order-by, top, skip, count (optional).")]
 		[Required]
-		ODataReadToFileArgs args) {
+		ODataReadToFileArgs args,
+		CancellationToken cancellationToken = default) {
 		try {
 			string argumentError = ODataReadQuery.ValidateArguments(args, ArgumentAliases, ValidArgumentsHint)
 				?? ODataReadQuery.ValidateTarget(args);
@@ -82,12 +89,19 @@ public sealed class ODataReadToFileTool(IToolCommandResolver commandResolver, IO
 			}
 
 			string url = urlBuilder.Build(ODataReadQuery.BuildRequestPath(args));
-			string responseJson = client.ExecuteGetRequest(url, 30_000);
+			if (!TryFetch(client, url, cancellationToken, out byte[] responseUtf8, out string fetchError)) {
+				return ODataReadResponse.Failure(fetchError);
+			}
+			// Checked AFTER the fetch and BEFORE anything is published: the transport may well finish an
+			// abandoned request, and a file appearing for a call the caller was told nothing about is worse
+			// than a slow one. Nothing has been written yet, so there is nothing to clean up either.
+			cancellationToken.ThrowIfCancellationRequested();
 			// The response is NOT parsed into an inline response first: for the file mode that second parse
 			// (plus the value Clone) allocated several times the response size for a value that is thrown
-			// away. Error detection, the paging annotations and the summary all come out of one pass.
+			// away. Error detection, the paging annotations and the summary all come out of one pass, and the
+			// file is published only after that pass accepts the body.
 			if (!_fileContract.TryWriteReadResponse(
-				outputPath, responseJson, args.Count, out ODataReadFileSummary summary, out string fileError)) {
+				outputPath, responseUtf8, args.Count, out ODataReadFileSummary summary, out string fileError)) {
 				return ODataReadResponse.Failure(fileError);
 			}
 			return new ODataReadResponse(
@@ -100,9 +114,55 @@ public sealed class ODataReadToFileTool(IToolCommandResolver commandResolver, IO
 				outputPath,
 				summary.RowCount,
 				summary.ColumnSizes);
+		} catch (OperationCanceledException) {
+			// The caller went away. Nothing has been written - the file is published only after the body is
+			// fully received and accepted - so there is nothing to clean up, and the failure says why.
+			return ODataReadResponse.Failure(
+				"The call was cancelled before the response was received; no output file was written.");
 		} catch (Exception ex) {
 			return ODataReadResponse.Failure(SensitiveErrorTextRedactor.Redact(ex.Message));
 		}
+	}
+
+	/// <summary>
+	/// Fetches the response body with the size ceiling enforced as the bytes arrive and the caller's
+	/// cancellation honored.
+	/// </summary>
+	/// <param name="client">Environment-scoped client.</param>
+	/// <param name="url">Absolute request URL.</param>
+	/// <param name="cancellationToken">Caller token; the MCP host cancels it when it disconnects.</param>
+	/// <param name="responseUtf8">Response body when the method returns <see langword="true"/>.</param>
+	/// <param name="error">Caller-facing error when the method returns <see langword="false"/>.</param>
+	/// <remarks>
+	/// The streaming path needs the transport-level client. A client that does not offer it still works
+	/// through the buffered call below - the ceiling is then applied to a body already in memory, which is
+	/// weaker, and is why the streaming path is preferred whenever it is available.
+	/// </remarks>
+	private static bool TryFetch(
+		IApplicationClient client,
+		string url,
+		CancellationToken cancellationToken,
+		out byte[] responseUtf8,
+		out string error) {
+		responseUtf8 = null;
+		error = null;
+		if (client is ICreatioApplicationClient streamingClient) {
+			using HttpResponseMessage response = streamingClient
+				.ExecuteGetRequestAsync(url, RequestTimeoutMs, cancellationToken: cancellationToken)
+				.GetAwaiter()
+				.GetResult();
+			return BoundedHttpResponseReader.TryRead(
+				response, ODataFileContract.MaxResponseBytes, cancellationToken, out responseUtf8, out error);
+		}
+		cancellationToken.ThrowIfCancellationRequested();
+		string buffered = client.ExecuteGetRequest(url, RequestTimeoutMs);
+		if (buffered is not null && (long)buffered.Length * sizeof(char) > ODataFileContract.MaxResponseBytes) {
+			error = $"OData response exceeds the {ODataFileContract.MaxResponseBytes}-byte limit for one call. "
+				+ "Narrow the query with select, or page it with top and skip.";
+			return false;
+		}
+		responseUtf8 = Encoding.UTF8.GetBytes(buffered ?? string.Empty);
+		return true;
 	}
 }
 

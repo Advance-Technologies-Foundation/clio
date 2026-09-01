@@ -1,6 +1,10 @@
 using System;
 using System.IO;
 using System.IO.Abstractions.TestingHelpers;
+using System.Net;
+using System.Net.Http;
+using System.Threading;
+using System.Threading.Tasks;
 using System.Linq;
 using System.Text;
 using System.Text.Json;
@@ -32,7 +36,7 @@ public sealed class ODataReadToFileToolTests {
 		urlBuilder.Build(Arg.Any<string>()).Returns("http://creatio/odata/Contact?$top=25");
 		client.ExecuteGetRequest(Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
 			.Returns("{\"value\":[{\"Id\":\"1\",\"Name\":\"John\"},{\"Id\":\"2\",\"Name\":\"Jane\"}]}");
-		ODataReadToFileTool tool = new(resolver, new ODataFileContract(fileSystem));
+		ODataReadToFileTool tool = new(resolver, new ODataFileContract(fileSystem, new MockConfinedFileAccess(fileSystem)));
 
 		// Act
 		ODataReadResponse response = tool.ReadToFile(new ODataReadToFileArgs {
@@ -62,7 +66,7 @@ public sealed class ODataReadToFileToolTests {
 		resolver.Resolve<IApplicationClient>(Arg.Any<EnvironmentOptions>()).Returns(client);
 		resolver.Resolve<IServiceUrlBuilder>(Arg.Any<EnvironmentOptions>()).Returns(urlBuilder);
 		urlBuilder.Build(Arg.Any<string>()).Returns("http://creatio/odata/Contact?$top=25");
-		ODataReadToFileTool tool = new(resolver, new ODataFileContract(fileSystem));
+		ODataReadToFileTool tool = new(resolver, new ODataFileContract(fileSystem, new MockConfinedFileAccess(fileSystem)));
 
 		// Act
 		ODataReadResponse response = tool.ReadToFile(new ODataReadToFileArgs {
@@ -89,7 +93,7 @@ public sealed class ODataReadToFileToolTests {
 		resolver.Resolve<IApplicationClient>(Arg.Any<EnvironmentOptions>()).Returns(client);
 		resolver.Resolve<IServiceUrlBuilder>(Arg.Any<EnvironmentOptions>()).Returns(urlBuilder);
 		urlBuilder.Build(Arg.Any<string>()).Returns("http://creatio/odata/Contact?$top=25");
-		ODataReadToFileTool tool = new(resolver, new ODataFileContract(new MockFileSystem()));
+		ODataReadToFileTool tool = new(resolver, new ODataFileContract(new MockFileSystem(), new MockConfinedFileAccess(new MockFileSystem())));
 		string outsidePath = Path.Combine(
 			Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
 			$"clio-odata-output-probe-{Guid.NewGuid():N}.json");
@@ -144,7 +148,7 @@ public sealed class ODataReadToFileToolTests {
 		IToolCommandResolver resolver = Substitute.For<IToolCommandResolver>();
 		resolver.Resolve<IApplicationClient>(Arg.Any<EnvironmentOptions>()).Returns(client);
 		resolver.Resolve<IServiceUrlBuilder>(Arg.Any<EnvironmentOptions>()).Returns(urlBuilder);
-		ODataReadToFileTool tool = new(resolver, new ODataFileContract(new MockFileSystem()));
+		ODataReadToFileTool tool = new(resolver, new ODataFileContract(new MockFileSystem(), new MockConfinedFileAccess(new MockFileSystem())));
 
 		// Act
 		ODataReadResponse response = tool.ReadToFile(new ODataReadToFileArgs {
@@ -177,7 +181,7 @@ public sealed class ODataReadToFileToolTests {
 		urlBuilder.Build(Arg.Any<string>()).Returns("http://creatio/odata/Contact?$top=25");
 		client.ExecuteGetRequest(Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
 			.Returns(scalarBody);
-		ODataReadToFileTool tool = new(resolver, new ODataFileContract(fileSystem));
+		ODataReadToFileTool tool = new(resolver, new ODataFileContract(fileSystem, new MockConfinedFileAccess(fileSystem)));
 
 		// Act
 		ODataReadResponse response = tool.ReadToFile(new ODataReadToFileArgs {
@@ -208,7 +212,7 @@ public sealed class ODataReadToFileToolTests {
 		urlBuilder.Build(Arg.Any<string>()).Returns("http://creatio/odata/Contact?$top=25");
 		client.ExecuteGetRequest(Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
 			.Returns("{\"@odata.count\":7,\"@odata.nextLink\":\"http://creatio/next\",\"value\":[{\"Id\":\"1\"}]}");
-		ODataReadToFileTool tool = new(resolver, new ODataFileContract(fileSystem));
+		ODataReadToFileTool tool = new(resolver, new ODataFileContract(fileSystem, new MockConfinedFileAccess(fileSystem)));
 
 		// Act
 		ODataReadResponse response = tool.ReadToFile(new ODataReadToFileArgs {
@@ -238,7 +242,7 @@ public sealed class ODataReadToFileToolTests {
 		urlBuilder.Build(Arg.Any<string>()).Returns("http://creatio/odata/Contact?$top=25");
 		client.ExecuteGetRequest(Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
 			.Returns("{\"value\":[{\"Id\":\"1\"}]}");
-		ODataReadToFileTool tool = new(resolver, new ODataFileContract(fileSystem));
+		ODataReadToFileTool tool = new(resolver, new ODataFileContract(fileSystem, new MockConfinedFileAccess(fileSystem)));
 
 		// Act
 		ODataReadResponse response = tool.ReadToFile(new ODataReadToFileArgs {
@@ -266,7 +270,7 @@ public sealed class ODataReadToFileToolTests {
 		urlBuilder.Build(Arg.Any<string>()).Returns("http://creatio/odata/Contact?$top=25");
 		client.ExecuteGetRequest(Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
 			.Returns("{\"error\":{\"code\":\"500\",\"message\":\"boom\"}}");
-		ODataReadToFileTool tool = new(resolver, new ODataFileContract(fileSystem));
+		ODataReadToFileTool tool = new(resolver, new ODataFileContract(fileSystem, new MockConfinedFileAccess(fileSystem)));
 
 		// Act
 		ODataReadResponse response = tool.ReadToFile(new ODataReadToFileArgs {
@@ -277,6 +281,78 @@ public sealed class ODataReadToFileToolTests {
 		response.Success.Should().BeFalse(because: "an OData error body is a failed read");
 		fileSystem.File.Exists(outputFile).Should().BeFalse(
 			because: "an error payload must not be persisted under a name that suggests a successful read");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Stops reading and writes nothing when the response passes the byte ceiling, so one call cannot exhaust the server's memory behind a small top.")]
+	public void ReadToFile_Should_Reject_A_Response_Past_The_Byte_Ceiling() {
+		// Arrange
+		MockFileSystem fileSystem = new();
+		string outputFile = fileSystem.Path.Combine(fileSystem.Path.GetTempPath(), $"odata-huge-{Guid.NewGuid():N}.json");
+		ICreatioApplicationClient client = Substitute.For<ICreatioApplicationClient>();
+		IServiceUrlBuilder urlBuilder = Substitute.For<IServiceUrlBuilder>();
+		IToolCommandResolver resolver = Substitute.For<IToolCommandResolver>();
+		resolver.Resolve<IApplicationClient>(Arg.Any<EnvironmentOptions>()).Returns(client);
+		resolver.Resolve<IServiceUrlBuilder>(Arg.Any<EnvironmentOptions>()).Returns(urlBuilder);
+		urlBuilder.Build(Arg.Any<string>()).Returns("http://creatio/odata/Contact?$top=25");
+		//A body one byte past the ceiling, served WITHOUT a Content-Length, so the rejection can only come
+		//from the running total as the bytes arrive - which is the guarantee under test.
+		HttpResponseMessage response = new(HttpStatusCode.OK) {
+			Content = new StreamContent(new MemoryStream(new byte[ODataFileContract.MaxResponseBytes + 1]))
+		};
+		client.ExecuteGetRequestAsync(Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<CancellationToken>())
+			.Returns(Task.FromResult(response));
+		ODataReadToFileTool tool = new(resolver, new ODataFileContract(fileSystem, new MockConfinedFileAccess(fileSystem)));
+
+		// Act
+		ODataReadResponse result = tool.ReadToFile(new ODataReadToFileArgs {
+			EnvironmentName = "dev", Entity = "Contact", OutputFile = outputFile
+		});
+
+		// Assert
+		result.Success.Should().BeFalse(
+			because: "a response past the ceiling must be refused, not summarized and written");
+		result.Error.Should().Contain("exceeds",
+			because: "the caller has to be told the response was too large and how to narrow it");
+		fileSystem.File.Exists(outputFile).Should().BeFalse(
+			because: "nothing may be published for a body that was refused");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Writes nothing and reports the cancellation when the caller abandons the call before the response arrives.")]
+	public void ReadToFile_Should_Write_Nothing_When_The_Caller_Cancels() {
+		// Arrange
+		MockFileSystem fileSystem = new();
+		string outputFile = fileSystem.Path.Combine(fileSystem.Path.GetTempPath(), $"odata-cancelled-{Guid.NewGuid():N}.json");
+		ICreatioApplicationClient client = Substitute.For<ICreatioApplicationClient>();
+		IServiceUrlBuilder urlBuilder = Substitute.For<IServiceUrlBuilder>();
+		IToolCommandResolver resolver = Substitute.For<IToolCommandResolver>();
+		resolver.Resolve<IApplicationClient>(Arg.Any<EnvironmentOptions>()).Returns(client);
+		resolver.Resolve<IServiceUrlBuilder>(Arg.Any<EnvironmentOptions>()).Returns(urlBuilder);
+		urlBuilder.Build(Arg.Any<string>()).Returns("http://creatio/odata/Contact?$top=25");
+		using CancellationTokenSource cancellation = new();
+		client.ExecuteGetRequestAsync(Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<CancellationToken>())
+			.Returns(_ => {
+				cancellation.Cancel();
+				return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK) {
+					Content = new StreamContent(new MemoryStream(Encoding.UTF8.GetBytes("{\"value\":[]}")))
+				});
+			});
+		ODataReadToFileTool tool = new(resolver, new ODataFileContract(fileSystem, new MockConfinedFileAccess(fileSystem)));
+
+		// Act
+		ODataReadResponse result = tool.ReadToFile(new ODataReadToFileArgs {
+			EnvironmentName = "dev", Entity = "Contact", OutputFile = outputFile
+		}, cancellation.Token);
+
+		// Assert
+		result.Success.Should().BeFalse(because: "an abandoned call is not a successful read");
+		result.Error.Should().Contain("cancelled",
+			because: "the caller has to be able to tell cancellation apart from a server failure");
+		fileSystem.File.Exists(outputFile).Should().BeFalse(
+			because: "a cancelled call must leave nothing behind for the caller to trip over on a retry");
 	}
 
 	[Test]
@@ -294,7 +370,7 @@ public sealed class ODataReadToFileToolTests {
 		urlBuilder.Build(Arg.Any<string>()).Returns(call => $"http://creatio/{call.Arg<string>()}");
 		client.ExecuteGetRequest(Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
 			.Returns("{\"value\":[]}");
-		ODataReadToFileTool tool = new(resolver, new ODataFileContract(fileSystem));
+		ODataReadToFileTool tool = new(resolver, new ODataFileContract(fileSystem, new MockConfinedFileAccess(fileSystem)));
 		JsonElement nameValue = JsonDocument.Parse("\"John\"").RootElement.Clone();
 
 		// Act

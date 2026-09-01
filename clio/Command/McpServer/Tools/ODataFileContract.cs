@@ -38,25 +38,31 @@ public interface IODataFileContract {
 	/// Writes a raw OData response to an already-confined path and returns its compact summary.
 	/// </summary>
 	/// <param name="resolvedPath">Path previously returned by <see cref="TryResolveOutputPath"/>.</param>
-	/// <param name="responseJson">Raw response body.</param>
+	/// <param name="responseUtf8">Raw response body, as the UTF-8 bytes that arrived on the wire.</param>
 	/// <param name="countRequested">Whether the caller asked for a verified total count.</param>
 	/// <param name="summary">Row/column summary when the method returns <see langword="true"/>.</param>
 	/// <param name="error">Caller-facing error when the method returns <see langword="false"/>.</param>
 	bool TryWriteReadResponse(
 		string resolvedPath,
-		string responseJson,
+		byte[] responseUtf8,
 		bool countRequested,
 		out ODataReadFileSummary summary,
 		out string error);
 }
 
 /// <inheritdoc cref="IODataFileContract"/>
-public sealed class ODataFileContract(IFileSystem fileSystem) : IODataFileContract {
+public sealed class ODataFileContract(IFileSystem fileSystem, IConfinedFileAccess confinedFileAccess)
+	: IODataFileContract {
 
 	//File access and confinement are the whole behaviour of this service, and IFileSystem is registered in
 	//DI, so a `new FileSystem()` fallback would mask missing wiring and let a unit test touch the real host.
 	private readonly IFileSystem _fileSystem =
 		fileSystem ?? throw new ArgumentNullException(nameof(fileSystem));
+
+	//The confinement DECISION is made against IFileSystem; the actual open is made through this, which binds
+	//the operation to directory handles so a component swapped after the decision cannot redirect it.
+	private readonly IConfinedFileAccess _confinedFileAccess =
+		confinedFileAccess ?? throw new ArgumentNullException(nameof(confinedFileAccess));
 
 	/// <summary>
 	/// Upper bound on a file-backed payload. The decoded string plus <c>JsonDocument.Parse</c> plus
@@ -66,10 +72,11 @@ public sealed class ODataFileContract(IFileSystem fileSystem) : IODataFileContra
 	public const long MaxPayloadBytes = 10L * 1024 * 1024;
 
 	/// <summary>
-	/// Upper bound on a response body persisted through <see cref="TryWriteReadResponse"/>. <c>top &lt;= 100</c>
-	/// bounds the ROW count, not the byte count: a single large field or an $expand projection can return tens
-	/// of megabytes, and summarizing it allocates several times its own size again. Without this bound one call
-	/// could exhaust the MCP server's memory. 64 MB is far above any legitimate page of 100 records.
+	/// Upper bound on a response body. <c>top &lt;= 100</c> bounds the ROW count, not the byte count: a single
+	/// large field or an $expand projection can return tens of megabytes. It is enforced WHILE the body is
+	/// received (see <c>BoundedHttpResponseReader</c>), because a check that runs after the body has been
+	/// materialized cannot prevent the allocation it is meant to prevent. 64 MB is far above any legitimate
+	/// page of 100 records.
 	/// </summary>
 	public const long MaxResponseBytes = 64L * 1024 * 1024;
 
@@ -94,24 +101,11 @@ public sealed class ODataFileContract(IFileSystem fileSystem) : IODataFileContra
 				error = pathError;
 				return false;
 			}
-			// ONE open, and every check runs against THAT handle: the length bound is read from the open
-			// stream and the bytes come from the same stream. Validating a path and then opening it again
-			// left a window in which an intermediate component could be swapped, so the size check and the
-			// read could land on different files - one of them outside the allowed roots.
-			FileStreamOptions options = new() {
-				Mode = FileMode.Open,
-				Access = FileAccess.Read,
-				Share = FileShare.Read
-			};
-			using Stream stream = _fileSystem.File.Open(resolvedPath, options);
-			// ResolveForRead returns the CANONICAL path, so nothing in it should still resolve elsewhere.
-			// Re-checking it while the handle is open catches a component swapped between the resolve and
-			// the open; the handle already points at the file this either accepts or abandons.
-			string revalidationError = OutputPathConfinement.RevalidateResolved(_fileSystem, resolvedPath, optionName);
-			if (revalidationError is not null) {
-				error = revalidationError;
-				return false;
-			}
+			// The open is bound to DIRECTORY HANDLES, not to the pathname that was just approved: the
+			// descent refuses to follow a link at any component, so a directory replaced between the
+			// approval and the open cannot redirect the read. The length bound and the bytes both come
+			// from that one opened stream, so no re-open can land on a different file either.
+			using Stream stream = _confinedFileAccess.OpenRead(resolvedPath);
 			long length = stream.Length;
 			if (length > MaxPayloadBytes) {
 				error = $"{optionName} is {length} bytes, which exceeds the {MaxPayloadBytes}-byte limit.";
@@ -185,38 +179,36 @@ public sealed class ODataFileContract(IFileSystem fileSystem) : IODataFileContra
 	/// </remarks>
 	public bool TryWriteReadResponse(
 		string resolvedPath,
-		string responseJson,
+		byte[] responseUtf8,
 		bool countRequested,
 		out ODataReadFileSummary summary,
 		out string error) {
 		summary = null;
 		error = null;
 		try {
-			// UTF-16 chars, so this over-counts a purely ASCII body by 2x - deliberately conservative, and it
-			// runs before the parse allocates anything further.
-			long responseBytes = responseJson is null ? 0 : (long)responseJson.Length * sizeof(char);
-			if (responseBytes > MaxResponseBytes) {
-				error = $"OData response is about {responseBytes} bytes, which exceeds the {MaxResponseBytes}-byte "
-					+ "limit for one call. Narrow the query with select, or page it with top and skip.";
-				return false;
-			}
-			(ODataReadFileSummary built, string summaryError) = BuildSummary(responseJson, countRequested);
+			// The ceiling is enforced by the caller WHILE the body arrives, which is the only place it can
+			// actually bound anything; by here the payload is already in memory and within it.
+			(ODataReadFileSummary built, string summaryError) = BuildSummary(responseUtf8 ?? [], countRequested);
 			if (summaryError is not null) {
-				error = summaryError;
-				return false;
+				return Fail(summaryError, out error);
 			}
-			byte[] payload = Encoding.UTF8.GetBytes(responseJson);
-			OutputPathConfinement.WriteAtomic(_fileSystem, resolvedPath, payload);
+			// The bytes go to disk exactly as they arrived - no decode to UTF-16 and re-encode, which would
+			// both double the footprint and let an encoding round-trip alter the persisted response.
+			_confinedFileAccess.WriteNew(resolvedPath, responseUtf8);
 			summary = built;
 			return true;
 		} catch (Exception ex) {
 			summary = null;
-			error = SensitiveErrorTextRedactor.Redact($"Failed to write output-file: {ex.Message}");
-			return false;
+			return Fail(SensitiveErrorTextRedactor.Redact($"Failed to write output-file: {ex.Message}"), out error);
 		}
 	}
 
-	private static (ODataReadFileSummary summary, string error) BuildSummary(string json, bool countRequested) {
+	private static bool Fail(string message, out string error) {
+		error = message;
+		return false;
+	}
+
+	private static (ODataReadFileSummary summary, string error) BuildSummary(byte[] json, bool countRequested) {
 		JsonDocument document;
 		try {
 			document = JsonDocument.Parse(json);
