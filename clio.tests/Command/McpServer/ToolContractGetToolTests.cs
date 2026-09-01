@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Linq;
 using System.Reflection;
 using System.Text.Json;
@@ -7,6 +8,7 @@ using System.Text.RegularExpressions;
 using System.Text.Json.Serialization;
 using Clio.Command;
 using Clio.Command.McpServer;
+using Clio.Command.McpServer.Prompts;
 using Clio.Command.McpServer.Tools;
 using FluentAssertions;
 using ModelContextProtocol.Protocol;
@@ -2284,8 +2286,25 @@ public sealed class ToolContractGetToolTests {
 			because: "deploy-creatio should advertise the common preflight order without making an IIS-only scan mandatory for dotnet");
 		deploy.PreferredFlow.Notes.Should().Contain("local IIS",
 			because: "the contract should explain when the optional IIS port scan is still required");
+		deploy.PreferredFlow.Notes.Should().Contain("omit sitePort",
+			because: "the contract must tell agents that the configured IIS range is the default port source");
+		deploy.PreferredFlow.Notes.Should().NotContain("also run find-empty-iis-port",
+			because: "the optional port inspection tool must not override the configured IIS range by default");
 		deploy.PreferredFlow.Tools.Should().NotContain(FindEmptyIisPortTool.FindEmptyIisPortToolName,
 			because: "dotnet deployment must not inherit an IIS-only tool as a mandatory preferred-flow step");
+		string prompt = DeployCreatioPrompt.Prompt("site-a", "/tmp/creatio.zip");
+		prompt.Should().Contain("Run `find-empty-iis-port` only",
+			because: "the prompt must keep explicit IIS port inspection optional");
+		string repositoryRoot = Path.GetFullPath(
+			Path.Combine(AppContext.BaseDirectory, "..", "..", "..", ".."));
+		string capabilityMapPath = Path.Combine(repositoryRoot, "docs", "McpCapabilityMap.md");
+		string capabilityMap = File.Exists(capabilityMapPath) ? File.ReadAllText(capabilityMapPath) : null;
+		capabilityMap.Should().NotBeNull(
+			because: $"the capability map is the published contract and must be readable at {capabilityMapPath}");
+		capabilityMap!.Should().Contain("optionally use `find-empty-iis-port`",
+			because: "the published capability map must not make the IIS-only port inspection mandatory");
+		capabilityMap.Should().NotContain("-> (for local IIS) `find-empty-iis-port` ->",
+			because: "the published deployment flow must match the optional sitePort behavior");
 		deploy.Preconditions.Should().NotBeNullOrEmpty(
 			because: "the most consequential tool must spell out its preconditions");
 

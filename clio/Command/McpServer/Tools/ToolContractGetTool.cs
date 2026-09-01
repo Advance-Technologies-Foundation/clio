@@ -5685,7 +5685,7 @@ internal static class ToolContractCatalog {
 					ShowPassingInfrastructureTool.ShowPassingInfrastructureToolName,
 					InstallerCommandTool.DeployCreatioToolName
 				],
-				"Always run the infrastructure preflight before deploy-creatio. For a local IIS deployment, also run find-empty-iis-port and pass its firstAvailablePort as sitePort; dotnet deployments do not require the IIS-only port scan. After deployment, register the instance with reg-web-app and install cliogate with install-gate before using workspace tools."),
+				"Always run the infrastructure preflight before deploy-creatio. For local IIS, omit sitePort to use the configured automatic range or pass a free explicit port; find-empty-iis-port is optional and can inspect a candidate. Dotnet deployments do not require the IIS-only port scan. After deployment, register the instance with reg-web-app and install cliogate with install-gate before using workspace tools."),
 			[],
 			[],
 			Preconditions: [
