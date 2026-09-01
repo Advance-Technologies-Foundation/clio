@@ -67,10 +67,25 @@ on. Without this control a deactivated library produces a transcript full of fla
 efficiency rubric will faithfully misattribute to guidance defects — the run would then argue for
 rewriting articles that were never read.
 
-Note on transports: `add-knowledge-source` documents credential-free public HTTPS Git and NuGet
-locations. Serving guidance from a local working copy is the subject of in-flight work on
-`fix/local-knowledge-source`, so the exact wiring may differ by branch — which is precisely why the
-commit assertion above is mandatory rather than advisory.
+**How the wiring actually works — measured, not assumed.** `libraryId` is unique across sources: a
+second source declaring `com.creatio.clio` is refused with *"library ... is already configured"*, and
+the built-in `creatio-curated` already holds it. So you cannot add a parallel source for the library.
+The supported path is to **override the `creatio-curated` alias itself** with a Git source — that is
+what it is for (clio#1017, "Allow curated knowledge Git source override") — which means
+`remove-knowledge-source` then `add-knowledge-source` under the same alias.
+
+Two things that will stop you the first time:
+
+- `remove-knowledge-source` refuses without `--force` in a non-interactive host. That is deliberate;
+  supply it rather than looking for another route.
+- The configured `library-id` must equal the one the repository's `bundle-source.json` declares
+  (`com.creatio.clio`). Inventing a distinct id to avoid the uniqueness rule gets the checkout
+  rejected at install with *"manifest identity ... does not match the configured library"* — the
+  message is accurate, the mistake is in the invocation.
+
+Pin the exact content with `--commit <40-hex>`. When the local checkout's commit is pushed, pinning by
+SHA against the public repository serves byte-identical content and needs no local-path support; when
+it is not pushed, push it or accept that the run does not test what is on disk.
 
 Also confirm the local checkout is on the branch under test and has no uncommitted guidance edits: a
 Git source resolves a commit, so unstaged article changes are invisible to the executor.
@@ -97,8 +112,12 @@ clio push-pkg <archive> -e <alias>
 clio list-packages -e <alias>
 ```
 
-The verb is `push-pkg` (`push-package` does not exist). Confirm the installed version equals the one
-just built before running anything.
+The verb is `push-pkg` (`push-package` does not exist). Before running anything, confirm the stand is
+**not older** than the local build — not that it is equal. A stand ahead of the branch is a normal
+state (another branch rebundled a higher version and installed it first), the install is then a no-op
+by design, and an equality assertion would abort a run that is perfectly valid. What must abort the
+run is a stand *behind* the version the cases require, or behind the local build when the change under
+test is what you came to exercise.
 
 Two platform behaviors that fail silently, both relevant here:
 
@@ -117,17 +136,17 @@ MCP config, next to the scratch directory — clio only, no Atlassian, no browse
 
 Generate a UUID per run, then launch from a scratch directory **outside** `C:\Projects`:
 
-Mode detection is mechanical: `bare` when the `ANTHROPIC_API_KEY` environment variable is set or
+Isolation detection is mechanical: `bare` when the `ANTHROPIC_API_KEY` environment variable is set or
 `apiKeyHelper` is configured in `~/.claude/settings.json`, otherwise `isolated`. Neither is present on
 this machine today, so runs default to `isolated` until an API key is provisioned.
 
-`bare` mode (true clean room; needs `ANTHROPIC_API_KEY` or `apiKeyHelper` — OAuth is never read):
+`--isolation bare` (true clean room; needs `ANTHROPIC_API_KEY` or `apiKeyHelper` — OAuth is never read):
 
 ```
 claude --bare -p "$(cat <prompt>)" --mcp-config ./mcp-clio-only.json --strict-mcp-config --session-id <uuid> --output-format stream-json
 ```
 
-`isolated` mode (no API key available):
+`--isolation isolated` (no API key available):
 
 ```
 claude -p "$(cat <prompt>)" --mcp-config ./mcp-clio-only.json --strict-mcp-config --session-id <uuid> --output-format stream-json
@@ -137,8 +156,8 @@ Capture stdout to `<scratch>\<uuid>.stream.json`. The session transcript also la
 `~\.claude\projects\<scratch-slug>\<uuid>.jsonl` — knowing the id in advance removes the need to
 guess which file belongs to this run.
 
-`isolated` mode still loads `~/.claude/CLAUDE.md`, user-level skills, plugins, and hooks. Record the
-mode in the report; efficiency counts across modes are not comparable.
+`--isolation isolated` still loads `~/.claude/CLAUDE.md`, user-level skills, plugins, and hooks. Record
+the isolation in the report; efficiency counts across isolations are not comparable.
 
 ## Teardown — restore the guidance configuration
 
@@ -146,7 +165,17 @@ Knowledge sources are configured **globally**, in `%LOCALAPPDATA%\creatio\clio\a
 The local wiring therefore outlives the run and silently applies to every later clio session on this
 machine, including ordinary work that has nothing to do with testing.
 
-Restore at the end of every run, including a failed one:
+Restore at the end of every `agent` run, including a failed one. Because the wiring replaced the
+built-in alias, restoring means putting it back exactly — these are its shipped values:
+
+```
+clio remove-knowledge-source --alias creatio-curated --force
+clio add-knowledge-source --alias creatio-curated --library-id com.creatio.clio --type github-release --location https://api.github.com/ --repository-owner Advance-Technologies-Foundation --repository-name clio-knowledge --asset-name clio-knowledge-bundle.zip --priority 100
+```
+
+Capture the source's own JSON with `list-knowledge-sources --json` **before** touching anything, so
+the restore uses observed values rather than the ones written here. If a run added an extra alias of
+its own, remove that too:
 
 ```
 clio disable-knowledge-source --alias <local alias>
@@ -169,3 +198,31 @@ library enabled is a defect of the run, not a detail.
 ```
 
 Scratch is disposable and never committed. The prompt and the report live in `spec/<feature>/`.
+
+## Run manifest — the handoff from `agent` to `browser`
+
+Written by the `agent` run next to its report, at
+`spec/<feature>/<feature>-manual-test-run-<YYYY-MM-DD>.manifest.json`. It is the only thing that tells
+a `browser` run which processes on a shared stand belong to this test; without it that run has to
+guess, and it refuses instead.
+
+```json
+{
+  "runId": "<uuid, the executor session id>",
+  "issue": "ENG-XXXXX",
+  "stand": { "alias": "krestov-test", "url": "http://..." },
+  "packageVersion": "1.4.0.16",
+  "prompt": { "path": "spec/<feature>/<feature>-manual-test-prompt.md", "commit": "<sha>" },
+  "isolation": "isolated",
+  "processes": [
+    { "case": "TC-11", "name": "<process name>", "uid": "<guid>", "package": "Custom" }
+  ]
+}
+```
+
+Record a process the moment it is read back in phase 4, not at the end — a run that stalls halfway
+still leaves a usable manifest for what it did create, and that partial verification is worth more
+than nothing.
+
+The `browser` run checks `stand.alias` against the environment it was given and stops on a mismatch:
+opening a designer on the wrong stand produces confident, entirely fictional verdicts.

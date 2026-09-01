@@ -1,6 +1,6 @@
 ---
 name: bp-test-run
-description: Debug CrtProcessBuilder, clio, and the clio knowledge library on a real stand by executing a business-process manual test prompt end to end — build local clio, wire the local knowledge library, install the local package, run the prompt in an isolated clean-room Claude session, verify design-time and runtime results in the browser, and analyze the executor's transcript for wasted or misordered tool calls. Use when asked to run manual testing on a stand, dogfood the package or MCP surface, or find guidance defects.
+description: Debug CrtProcessBuilder, clio, and the clio knowledge library on a real stand, in two modes. Mode agent runs a business-process manual test prompt in an isolated clean-room Claude session against locally built clio, guidance and package, then inspects only the read-back description of what was created and the session transcript. Mode browser runs afterwards against what that left on the stand: opens the processes in the designer, executes them, and verifies the runtime result in the browser. Use when asked to run manual testing on a stand, dogfood the package or MCP surface, find guidance defects, or verify a previous run in the browser.
 ---
 
 # BP manual test run
@@ -26,17 +26,51 @@ Two questions produce those defects:
 
 ## Invocation contract
 
-`/bp-test-run <ENG-KEY-or-URL> [--env <alias>] [--prompt <path>] [--mode bare|isolated] [--skip-install]`
+`/bp-test-run <ENG-KEY-or-URL> --mode <agent|browser> [--env <alias>] [--prompt <path>] [--isolation bare|isolated] [--run <id>] [--skip-install]`
 
 - `<ENG-KEY-or-URL>` — **required**.
+- `--mode` — **required**, and the biggest decision here. `agent` runs the tests and reads back what
+  was created; `browser` opens what a previous `agent` run left behind and executes it. See *Two
+  modes* below.
 - `--env <alias>` — clio environment to test on. Resolution and the persisted personal default are
   described in [references/environment.md](references/environment.md).
-- `--prompt <path>` — default `spec/<feature>/<feature>-manual-test-prompt.md`, written by
-  `/bp-test-cases`.
-- `--mode` — executor isolation. Default: `bare` when an Anthropic API key is available, otherwise
-  `isolated`. See *Phase 3*.
-- `--skip-install` — reuse what is already on the stand. Only valid when the stand already carries
-  the exact local build; the phase-2 verification still runs and still aborts on a mismatch.
+- `--prompt <path>` — mode `agent` only. Default `spec/<feature>/<feature>-manual-test-prompt.md`,
+  written by `/bp-test-cases`.
+- `--isolation` — mode `agent` only: how the executor session is launched. Default `bare` when an
+  Anthropic API key is available, otherwise `isolated`. See *Phase 3*.
+- `--run <id>` — mode `browser` only: which `agent` run to verify. Default: the most recent manifest
+  for this issue.
+- `--skip-install` — mode `agent` only. Reuse what is already on the stand; the phase-2 verification
+  still runs and still aborts if the stand is behind the local build.
+
+## Two modes
+
+The two questions this skill asks are answered by different machinery, at different cost, and one
+depends on the other. Running them as one pass makes the cheap half hostage to the expensive half.
+
+**`--mode agent`** — the tests run. A clean-room session executes the prompt against the stand, and
+the only thing inspected afterwards is **the description of what was created**, read back through the
+tool surface, plus the session transcript. No browser, no process execution. This is the fast,
+repeatable half: it answers *did the agent, guided only by the shipped library, build the right
+thing, and how directly did it get there*. Defects here are almost always clio or the knowledge
+library. Phases 0-3, 4, 5, 6, 7.
+
+**`--mode browser`** — run afterwards, against what the `agent` run left on the stand. The processes
+are opened in the designer and executed, and the result is verified in the browser. This is the half
+that needs a human-visible surface and real execution: it answers *does the platform actually render
+and run what was stored*. Defects here are almost always `CrtProcessBuilder` or the platform.
+Phases 0', 4B, 6'.
+
+Two consequences, both load-bearing:
+
+- **The `agent` run must not clean up what it created on the stand.** Its processes are the input to
+  the `browser` run. Only the knowledge configuration is restored (phase 7); stand artifacts stay.
+- **An `agent` run alone is never a pass for the feature.** It establishes the *Stored* level and
+  nothing more. Say so in the report, in those words — a stored-level green read as "it works" is
+  exactly the failure the three-level split exists to prevent.
+
+A `browser` run needs a manifest from an `agent` run and refuses to guess without one: nothing else
+can tell it which of the processes on a shared stand belong to this test.
 
 ## Phase 0 — preflight
 
@@ -79,10 +113,10 @@ The executor must know nothing but the prompt. This is not a request in the prom
 `CLAUDE.md` are in context before any instruction is read — it is a property of how the session is
 launched.
 
-- **`bare` mode** — `claude --bare` skips auto-memory and CLAUDE.md auto-discovery along with hooks,
+- **`--isolation bare`** — `claude --bare` skips auto-memory and CLAUDE.md auto-discovery along with hooks,
   plugin sync, and attribution. Requires `ANTHROPIC_API_KEY` or `apiKeyHelper`; OAuth and keychain
   are never read in this mode.
-- **`isolated` mode** — a scratch directory outside any repository. Its project slug has no memory
+- **`--isolation isolated`** — a scratch directory outside any repository. Its project slug has no memory
   directory, and no `CLAUDE.md` exists above `C:\Projects\`. The user-level `~/.claude/CLAUDE.md`,
   skills, plugins, and hooks still load. Acceptable and constant across runs, but it is *not* a
   clean room.
@@ -92,42 +126,80 @@ must not reach Jira — an executor that can read the issue stops testing the pr
 `--session-id` so the transcript path is known in advance, and `--output-format stream-json` captured
 to a file next to the prompt.
 
-**Record the mode in the report.** Efficiency numbers from `bare` and `isolated` runs are not
+**Record the isolation in the report.** Efficiency numbers from `bare` and `isolated` runs are not
 comparable.
 
 Bound the run. If the executor stops making progress, capture the transcript as it stands and treat
 the stall as a result — where it stalled is a finding. Do not relaunch and quietly report the second
 attempt; a retried run measures a different prompt than the one on file.
 
-## Phase 4 — browser verification
+## Phase 4 — read-back (mode `agent`)
 
-Verify in the browser what the prompt claims must be observable, per level the case declares — a
-read-back for the *Stored* level, the designer view for *Design time*, the record/task/process log
-for *Runtime*. The executor's own account of success is evidence of what it believed, not of what
-happened; a stored-level claim in particular is the one most easily reported as working when it is
-not visible anywhere a user looks.
+Read every process the run created back through the tool surface and compare it with what the case
+declares at the *Stored* level: the expression as written, the reference form, the source kind, the
+element and flow structure.
 
-Capture, per case and per level: what was expected, what is actually there, PASS or FAIL. A case that
-declares only a stored level is not a runtime pass and must not be reported as one.
+Read it back **yourself**. The executor's own account of success is evidence of what it believed, not
+of what is stored — and a stored-level claim is the one most easily reported as working when nothing
+a user looks at would show it.
 
-## Phase 5 — transcript analysis
+Capture per case: expected form, actual form, PASS or FAIL, and the identity of every process created
+(name, UId, package) — that identity is what phase 6 writes into the manifest and what the `browser`
+run depends on.
+
+Stop here. Do not open a designer, do not start a process: those belong to the other mode, and doing
+them here quietly makes the cheap run as expensive as the full one.
+
+## Phase 4B — designer and runtime verification (mode `browser`)
+
+Load the manifest named by `--run`, or the most recent one for this issue, and confirm the stand it
+names is the stand being addressed. A manifest from a different stand is a stop, not a warning.
+
+For each process the manifest lists, and each case that declares those levels:
+
+- **Design time** — open it in the process designer. Check the diagram shape, captions as a human
+  reads them, what the element settings show when opened, and what must *not* be there. Record what
+  the designer does on save when the case says it complains.
+- **Runtime** — start the process with the inputs the case names, then verify the outcome where a
+  person would see it: the record, the task, the Activity card, the process log. Which branch ran,
+  and which did not.
+
+A case marked *platform behaviour, recognized, not filed* is verified here in one specific way: check
+the neighbouring regression the case names, not the known-wrong outcome itself. "The designer cannot
+display it" needs no action; "the value is gone after saving" is a defect.
+
+Capture per case and per level: expected, actually observed, PASS or FAIL, with the evidence.
+
+## Phase 5 — transcript analysis (mode `agent`)
 
 Score the captured transcript against [references/efficiency-rubric.md](references/efficiency-rubric.md).
 Classify every finding by where the fix belongs — guidance article, tool description, tool behavior,
 or the prompt itself. A finding with no owner is an observation, not a result.
 
-## Phase 6 — report
+## Phase 6 — report and manifest
 
-Write `spec/<feature>/<feature>-manual-test-run-<YYYY-MM-DD>.md`. The date is part of the name on
-purpose: runs are compared against each other, so a report must never overwrite the evidence it is
-supposed to be measured against.
+Both modes write into **one** report per run: `spec/<feature>/<feature>-manual-test-run-<YYYY-MM-DD>.md`.
+The date is part of the name on purpose — runs are compared against each other, so a report must never
+overwrite the evidence it is supposed to be measured against. A `browser` run **appends to the report
+of the run it verifies**; it does not open a competing file, so a case's stored, design-time and
+runtime verdicts end up next to each other.
 
-- run header: issue, stand, executor mode, clio commit, knowledge commit, package version, and the
+Mode `agent` also writes a **manifest** — the handoff, without which the `browser` run cannot know
+which processes on the stand are the ones under test. It records the run id, the stand alias and URL,
+the package version, the prompt file and its commit, and for every process created: case, name, UId,
+package. Layout is in [references/environment.md](references/environment.md).
+
+**An `agent` report states its own limit in the verdict**, in words: *stored level only; design time
+and runtime not verified*. Not a footnote — the verdict line itself. A green stored-level result read
+as "the feature works" is the failure the three-level split exists to prevent, and the report is where
+it happens.
+
+- run header: issue, stand, mode, isolation, clio commit, knowledge commit, package version, and the
   positive-control result from phase 1
 - **baseline** — the minimum call sequence a well-guided agent would use, per case, stated before the
   numbers. Without it a call count means nothing and cannot be compared across runs
-- per case: PASS/FAIL **per declared level** (stored / design time / runtime), with the browser
-  evidence. Note explicitly which cases never reached runtime and why
+- per case: PASS/FAIL **per declared level** (stored / design time / runtime), with the evidence.
+  Levels no mode has covered yet are `not verified`, never blank and never assumed
 - **defects** — the point of the run. Each one carries: the observed behavior, the minimal
   reproduction, the owning component (`CrtProcessBuilder` / clio / knowledge library), and the
   repository the fix belongs in. A defect without a reproduction is an anecdote and will not survive
@@ -136,22 +208,28 @@ supposed to be measured against.
 - *Invalidated by the prompt* — cases where the prompt, not the product, was wrong, so the case
   measured nothing. These and only these feed `/bp-test-cases --revise`. Keep the list short and
   honest: moving a real product defect into this section makes it disappear
-- teardown confirmation (phase 7)
+- teardown confirmation (phase 7), and — for an `agent` run — the manifest path and the exact
+  `browser` invocation that continues it
 
 Post the summary to Jira with `addCommentToJiraIssue`. **Comments only** — never edit the issue
 description. If the Atlassian MCP is not authorized, say the report is on disk and Jira is
 unreachable; do not report it as posted.
 
-## Phase 7 — teardown
+## Phase 7 — teardown (mode `agent`)
 
 Knowledge sources are configured globally, so the local wiring outlives the run and applies to every
-later clio session on this machine. Restore it at the end of **every** run, successful or not —
-`disable-knowledge-source` on the local alias, `enable-knowledge-source` on `creatio-curated`. Both
-preserve configuration and caches, so the next run costs nothing extra. Commands and the exact state
-to print are in `references/environment.md`.
+later clio session on this machine. Restore it at the end of **every** `agent` run, successful or not.
+Commands and the exact state to print are in [references/environment.md](references/environment.md).
 
-Leaving the local library enabled silently changes the guidance every unrelated session sees
+Leaving the local library in place silently changes the guidance every unrelated session sees
 afterwards. That is a defect of the run, not a leftover detail.
+
+**What teardown must not touch: the stand.** The processes the run created are the input to the
+`browser` run, and deleting them turns a two-mode workflow into a one-mode one that can never reach
+runtime. Clean them up when the `browser` run is done and the report is written, or leave them — a
+dev stand accumulating test processes is cheaper than a verification that cannot happen.
+
+Mode `browser` restores nothing: it never wired a library and never installed anything.
 
 ## Where each defect goes
 
