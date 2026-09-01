@@ -66,7 +66,7 @@ public sealed class GetUserCultureTool(
 
 		try {
 			EnvironmentSettings settings = ResolveEnvironmentSettings(args);
-			ICurrentUserCultureResolver resolver = resolverFactory.Create(settings);
+			using IOwnedCurrentUserCultureResolver resolver = resolverFactory.CreateOwned(settings);
 			CultureResolution resolution = await resolver.ResolveAsync(cancellationToken).ConfigureAwait(false);
 
 			// Branch on Success first (CultureResolution invariant, NEW-6): never surface the
