@@ -131,4 +131,62 @@ public sealed class SysSettingsErrorClassificationTests {
 		message.Should().NotBeNullOrEmpty(
 			because: "the walk is depth-bounded, so an arbitrarily deep chain returns an answer rather than hanging");
 	}
+
+	[Test]
+	[Description("A TLS handshake failure - a status-less HttpRequestException wrapping an AuthenticationException - is a network error, because reporting it as rejected credentials hides the certificate diagnosis.")]
+	public void CategorizeError_Should_Report_Network_For_A_Tls_HandshakeFailure() {
+		HttpRequestException exception = new(
+			"The SSL connection could not be established, see inner exception.",
+			new AuthenticationException("The remote certificate is invalid according to the validation procedure."));
+
+		string message = SysSettingsCommand.CategorizeError(exception, Operation);
+
+		message.Should().Be(NetworkError,
+			because: "AuthenticationException is the framework's TLS exception as well as its credential one, and the certificate is what needs fixing");
+	}
+
+	[Test]
+	[Description("A bare TLS AuthenticationException is a network error too, so the diagnosis does not depend on which wrapper the transport happened to use.")]
+	public void CategorizeError_Should_Report_Network_For_A_Bare_Tls_AuthenticationException() {
+		AuthenticationException exception = new("The remote certificate is invalid according to the validation procedure.");
+
+		string message = SysSettingsCommand.CategorizeError(exception, Operation);
+
+		message.Should().Be(NetworkError);
+	}
+
+	[Test]
+	[Description("A WebException carrying TrustFailure reports a network error: the status sits on the exception, not on a response, so nothing else in the chain can be read for it.")]
+	public void CategorizeError_Should_Report_Network_For_A_WebException_TrustFailure() {
+		WebException exception = new(
+			"Could not establish trust relationship for the SSL/TLS secure channel.",
+			innerException: null,
+			WebExceptionStatus.TrustFailure,
+			response: null);
+
+		string message = SysSettingsCommand.CategorizeError(exception, Operation);
+
+		message.Should().Be(NetworkError);
+	}
+
+	[Test]
+	[Description("A domain credential rejection still reports an authentication error, so the TLS carve-out did not turn the classifier off for the case it exists to catch.")]
+	public void CategorizeError_Should_Still_Report_Authentication_For_A_Credential_Rejection() {
+		AuthenticationException exception = new("Creatio rejected the supplied credentials: the password has expired.");
+
+		string message = SysSettingsCommand.CategorizeError(exception, Operation);
+
+		message.Should().Be(AuthenticationError);
+	}
+
+	[Test]
+	[Description("A typed 401 stays a credential failure even when its prose mentions a certificate, because a typed status is authoritative.")]
+	public void CategorizeError_Should_Report_Authentication_For_A_Typed401_Mentioning_A_Certificate() {
+		HttpRequestException exception = new(
+			"Rejected while presenting the client certificate", null, HttpStatusCode.Unauthorized);
+
+		string message = SysSettingsCommand.CategorizeError(exception, Operation);
+
+		message.Should().Be(AuthenticationError);
+	}
 }

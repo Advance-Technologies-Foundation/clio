@@ -530,7 +530,12 @@ namespace Clio.Command
 				WebException => $"Network error {operationLabel}.",
 				SocketException => $"Network error {operationLabel}.",
 				UnauthorizedAccessException => $"Authentication error {operationLabel}.",
-				AuthenticationException => $"Authentication error {operationLabel}.",
+				//A bare AuthenticationException is asked the same question as the wrapped ones: the framework
+				//raises this type for a TLS handshake too, and a bad server certificate reported as rejected
+				//credentials hides the only diagnosis that leads to the fix.
+				AuthenticationException authEx when IsAuthenticationFailure(authEx)
+					=> $"Authentication error {operationLabel}.",
+				AuthenticationException => $"Network error {operationLabel}.",
 				//An aggregate that carries several distinct faults is not unwrapped, because no single
 				//inner represents it - but a credential failure among them still has to be reported as one.
 				AggregateException aggregate when IsAuthenticationFailure(aggregate)

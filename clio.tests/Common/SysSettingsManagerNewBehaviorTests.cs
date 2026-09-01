@@ -1,4 +1,5 @@
 ﻿using System;
+using System.IO;
 using System.Collections.Generic;
 using System.Linq;
 using System.Net.Http;
@@ -39,6 +40,10 @@ public class SysSettingsManagerNewBehaviorTests {
 	// default, and an empty body is no longer accepted as proof of authentication, so every test that
 	// reaches the probe needs a real envelope rather than silence.
 	private const string AcceptedDataServiceResponse = "{\"rows\":[],\"success\":true}";
+
+	/// <summary>The repository root, four levels above the test output directory.</summary>
+	private static readonly string RepositoryRoot =
+		Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..", "..", "..", ".."));
 
 	private static IApplicationClient BuildAcceptedClient() {
 		IApplicationClient applicationClient = Substitute.For<IApplicationClient>();
@@ -474,6 +479,56 @@ public class SysSettingsManagerNewBehaviorTests {
 		// Assert
 		act.Should().Throw<AuthenticationException>(
 			because: "the manager path must keep reporting a genuine 401; the fix narrows the match, it does not remove it");
+	}
+
+	[Test]
+	[TestCase("{}", TestName = "EmptyObject")]
+	[TestCase("[]", TestName = "EmptyArray")]
+	[TestCase("null", TestName = "JsonNull")]
+	[TestCase("{\"error\":\"502\"}", TestName = "GatewayError")]
+	[TestCase("{\"data\":{\"items\":[]}}", TestName = "UnknownEnvelope")]
+	[Description("Parseable JSON that is not a DataService envelope does not confirm the credentials: the read fails instead of returning an authentication-collapsed empty result.")]
+	public void GetAllSysSettingsWithValues_ShouldNotAcceptArbitraryJson_AsProofOfAuthentication(string response) {
+		// Arrange
+		IApplicationClient applicationClient = BuildRejectingClient(response);
+		ISysSettingsManager sut = BuildSut(new DataProviderMock(), applicationClient);
+
+		// Act
+		Action act = () => sut.GetAllSysSettingsWithValues();
+
+		// Assert
+		act.Should().Throw<InvalidOperationException>(
+			because: "only a DataService envelope proves the request was authenticated and executed; a proxy or half-initialized app tier can answer with any of these shapes")
+			.Which.Message.Should().Contain("not a DataService",
+				because: "the operator has to be told what the environment actually answered with");
+	}
+
+	[Test]
+	[Description("A non-envelope probe answer is not cached as proof: a second operation probes again rather than trusting the first indeterminate response, and no write is sent.")]
+	public void EnsureAuthenticatedDataServiceResponse_ShouldNotCacheSuccess_ForANonEnvelopeAnswer() {
+		// Arrange
+		IApplicationClient applicationClient = BuildRejectingClient("{}");
+		//An EMPTY provider is the shape that matters: a collapsed authentication read looks exactly like
+		//this, and it is the only shape that reaches the preflight on both operations.
+		ISysSettingsManager sut = BuildSut(new DataProviderMock(), applicationClient);
+
+		// Act
+		Action firstRead = () => sut.GetAllSysSettingsWithValues();
+		Action write = () => sut.UpdateSysSetting("UsrIndeterminate", "value");
+
+		// Assert
+		firstRead.Should().Throw<InvalidOperationException>();
+		write.Should().Throw<InvalidOperationException>(
+			because: "an indeterminate probe must never become permanent proof - that cached flag is what let later writes skip the preflight entirely");
+		applicationClient.Received(2).ExecutePostRequest(
+			Arg.Is<string>(url => url.Contains("SelectQuery")),
+			Arg.Any<string>(),
+			Arg.Any<int>(),
+			Arg.Any<int>(),
+			Arg.Any<int>());
+		applicationClient.DidNotReceive().ExecutePostRequest(
+			Arg.Is<string>(url => url.Contains("InsertSysSettingRequest") || url.Contains("UpdateSysSetting")),
+			Arg.Any<string>());
 	}
 
 	#endregion
@@ -1401,6 +1456,51 @@ public class SysSettingsManagerNewBehaviorTests {
 		// Assert
 		reauthExecutor.Should().NotBeOfType<NoReauthExecutor>(
 			because: "the non-bearer path must keep recovering from server-side session expiry");
+	}
+
+	[Test]
+	[TestCase("token", null, true, TestName = "AccessTokenProfile")]
+	[TestCase(null, "clio-client", true, TestName = "OAuthClientProfile")]
+	[TestCase(null, null, false, TestName = "LoginPasswordProfile")]
+	[Description("An OAuth client-credentials profile counts as token authentication alongside an access token, because neither carries a username or password for the forms-login reauthentication path.")]
+	public void UsesTokenAuthentication_ShouldTreatAnOAuthClientAsAToken(
+		string accessToken, string clientId, bool expected) {
+		// Arrange
+		EnvironmentSettings settings = new() {
+			Uri = "https://localhost",
+			AccessToken = accessToken,
+			ClientId = clientId,
+			Login = clientId is null && accessToken is null ? "Supervisor" : null,
+			Password = clientId is null && accessToken is null ? "Supervisor" : null
+		};
+		System.Reflection.MethodInfo predicate = typeof(BindingsModule).GetMethod(
+			"UsesTokenAuthentication",
+			System.Reflection.BindingFlags.Static | System.Reflection.BindingFlags.NonPublic);
+		predicate.Should().NotBeNull(
+			because: "BindingsModule.UsesTokenAuthentication is the single rule both adapter wirings ask");
+
+		// Act
+		bool usesToken = (bool)predicate!.Invoke(null, [settings]);
+
+		// Assert
+		usesToken.Should().Be(expected,
+			because: "an OAuth client has no username/password, so a login-page response must not send it down CreatioClient.Login()");
+	}
+
+	[Test]
+	[Description("Both places that choose the Creatio client adapter ask UsesTokenAuthentication, so an OAuth profile cannot regain the login-capable executor at one of them. The factory path itself cannot be exercised here: building an OAuth RemoteDataProvider fetches a token over the network.")]
+	public void AdapterWiring_ShouldSelectTheExecutor_ThroughTheSharedTokenRule() {
+		// Arrange
+		string bindingsSourcePath = Path.Combine(RepositoryRoot, "clio", "BindingsModule.cs");
+		File.Exists(bindingsSourcePath).Should().BeTrue(
+			because: $"this guard reads the adapter wiring from {bindingsSourcePath}");
+		string source = File.ReadAllText(bindingsSourcePath);
+
+		// Assert
+		source.Should().Contain("IApplicationClient applicationClient = UsesTokenAuthentication(envSettings)",
+			because: "the per-environment sys-settings factory must pick the no-login executor for every token shape");
+		source.Should().Contain("return UsesTokenAuthentication(activeSettings)",
+			because: "the active-environment registration must pick it by the same rule");
 	}
 
 	private static IReauthExecutor ResolveFactoryReauthExecutor(EnvironmentSettings envSettings) {

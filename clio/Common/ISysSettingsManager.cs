@@ -739,18 +739,53 @@ public class SysSettingsManager : ISysSettingsManager
 		}
 		try {
 			using JsonDocument document = JsonDocument.Parse(response);
-			if (!ContainsAuthenticationFailure(document.RootElement)) {
-				_authProbeSucceeded = true;
-				return;
+			if (ContainsAuthenticationFailure(document.RootElement)) {
+				string detail = FindStringProperty(document.RootElement, "message") ?? "Creatio rejected the credentials.";
+				throw new AuthenticationException(
+					$"Authentication failed while {operationLabel}: {SanitizeAuthenticationDetail(detail)} " +
+					"Verify the environment credentials and retry.");
 			}
-			string detail = FindStringProperty(document.RootElement, "message") ?? "Creatio rejected the credentials.";
-			throw new AuthenticationException(
-				$"Authentication failed while {operationLabel}: {SanitizeAuthenticationDetail(detail)} " +
-				"Verify the environment credentials and retry.");
+			//The rejection scan is bounded, and a payload deeper than the bound is unexamined rather than
+			//clean - so it must not become permanent proof either.
+			if (ExceedsProbeDepth(document.RootElement)) {
+				throw new InvalidOperationException(
+					$"Failed {operationLabel}: the environment returned a DataService response nested deeper than "
+					+ $"{MaxAuthProbeJsonDepth} levels, which this preflight cannot examine, so the credentials "
+					+ "were not confirmed.");
+			}
+			//Proof of authentication has to be POSITIVE. "No rejection marker found" is also true of {}, [],
+			//null, {"success":false} and a gateway's {"error":"502"} - and each of those used to set
+			//_authProbeSucceeded permanently, so every later operation skipped the probe and an
+			//authentication-collapsed empty provider read was returned as a valid empty result again. Only a
+			//DataService envelope proves the request was authenticated AND executed, which is the same rule
+			//ServerReadinessWaiter applies to this proxy/gateway failure mode.
+			if (!ServerReadinessWaiter.IsGenuineAuthenticatedJsonAnswer(response)) {
+				throw new InvalidOperationException(
+					$"Failed {operationLabel}: the environment answered with JSON that is not a DataService "
+					+ "response envelope, so the credentials were not confirmed. Verify the environment URL "
+					+ "points at Creatio rather than at a proxy or gateway, and retry.");
+			}
+			_authProbeSucceeded = true;
+			return;
 		} catch (JsonException) {
 			throw new InvalidOperationException(
 				$"Failed {operationLabel}: the environment returned a non-JSON response instead of a DataService response.");
 		}
+	}
+
+	/// <summary>
+	/// True when the payload nests deeper than the rejection scan examines. The scan answers "no failure"
+	/// on overflow, so without this check an over-deep payload would be cached as proof of authentication.
+	/// </summary>
+	private static bool ExceedsProbeDepth(JsonElement element, int depth = 0) {
+		if (depth > MaxAuthProbeJsonDepth) {
+			return true;
+		}
+		return element.ValueKind switch {
+			JsonValueKind.Object => element.EnumerateObject().Any(property => ExceedsProbeDepth(property.Value, depth + 1)),
+			JsonValueKind.Array => element.EnumerateArray().Any(item => ExceedsProbeDepth(item, depth + 1)),
+			var _ => false
+		};
 	}
 
 	private static bool ContainsAuthenticationFailure(JsonElement element, int depth = 0) {

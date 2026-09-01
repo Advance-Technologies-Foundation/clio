@@ -34,6 +34,24 @@ public static class AuthenticationFailureClassifier {
 			TimeSpan.FromSeconds(1));
 
 	/// <summary>
+	/// Names a transport-security failure rather than a rejected credential.
+	/// </summary>
+	/// <remarks>
+	/// <see cref="AuthenticationException"/> is the framework exception for a TLS handshake as well as
+	/// for a credential rejection: a bad server certificate arrives as
+	/// <c>HttpRequestException("The SSL connection could not be established")</c> wrapping
+	/// <c>AuthenticationException("The remote certificate is invalid")</c>, with no HTTP status at all.
+	/// Classifying that as rejected credentials replaced the actionable certificate diagnosis with
+	/// "verify the environment credentials", which sends the operator to repair a working login while
+	/// the untrusted certificate stays untouched. A timeout is supplied because the input is
+	/// server-controlled prose.
+	/// </remarks>
+	private static readonly Regex TransportSecurityFailure =
+		new(@"certificate|SSL|TLS|secure channel|handshake|trust relationship",
+			RegexOptions.Compiled | RegexOptions.CultureInvariant | RegexOptions.IgnoreCase,
+			TimeSpan.FromSeconds(1));
+
+	/// <summary>
 	/// Returns <see langword="true"/> when the exception represents rejected credentials rather than a
 	/// routing, network or server failure.
 	/// </summary>
@@ -57,18 +75,27 @@ public static class AuthenticationFailureClassifier {
 		if (exception is AggregateException aggregate) {
 			return aggregate.InnerExceptions.Any(inner => IsAuthenticationFailure(inner, depth + 1));
 		}
+		// A typed status is authoritative before anything else is examined, so a 401 keeps its diagnosis
+		// even when the prose around it happens to mention a certificate.
+		if (exception is HttpRequestException { StatusCode: { } httpStatus }) {
+			return httpStatus == HttpStatusCode.Unauthorized;
+		}
+		if (exception is WebException { Response: HttpWebResponse response }) {
+			return response.StatusCode == HttpStatusCode.Unauthorized;
+		}
+		// TLS is a transport failure, not a credential one. It arrives with no HTTP status to read: as a
+		// status-less HttpRequestException wrapping an AuthenticationException, or as a WebException whose
+		// TrustFailure/SecureChannelFailure status sits on the exception rather than on a response. Both
+		// would otherwise reach the credential arm below.
+		if (NamesTransportSecurityFailure(exception, depth)) {
+			return false;
+		}
 		// These types mean the same thing inside a wrapper as at the top level. Without this an aggregate
 		// carrying an AuthenticationException was judged by that exception's PROSE - and "credentials were
 		// rejected" carries neither the word unauthorized nor a 401 token, so the diagnosis was lost
 		// exactly where it had been wrapped.
 		if (exception is AuthenticationException or UnauthorizedAccessException) {
 			return true;
-		}
-		if (exception is HttpRequestException { StatusCode: { } httpStatus }) {
-			return httpStatus == HttpStatusCode.Unauthorized;
-		}
-		if (exception is WebException { Response: HttpWebResponse response }) {
-			return response.StatusCode == HttpStatusCode.Unauthorized;
 		}
 		string message = exception.Message ?? string.Empty;
 		return message.Contains("unauthorized", StringComparison.OrdinalIgnoreCase)
@@ -79,5 +106,25 @@ public static class AuthenticationFailureClassifier {
 			|| message.Contains("authentication failed", StringComparison.OrdinalIgnoreCase)
 			|| message.Contains("authentication error", StringComparison.OrdinalIgnoreCase)
 			|| IsAuthenticationFailure(exception.InnerException, depth + 1);
+	}
+
+	/// <summary>
+	/// True when this failure - or anything it wraps within the depth bound - names transport security
+	/// rather than a credential. The chain is walked because the certificate prose sits on an inner
+	/// exception while the outer one only says the connection could not be established.
+	/// </summary>
+	private static bool NamesTransportSecurityFailure(Exception exception, int depth) {
+		for (Exception current = exception;
+				current is not null && depth < MaxExceptionUnwrapDepth;
+				current = current.InnerException, depth++) {
+			if (current is WebException {
+					Status: WebExceptionStatus.TrustFailure or WebExceptionStatus.SecureChannelFailure }) {
+				return true;
+			}
+			if (TransportSecurityFailure.IsMatch(current.Message ?? string.Empty)) {
+				return true;
+			}
+		}
+		return false;
 	}
 }
