@@ -4,6 +4,7 @@ using System.Linq;
 using Clio.Command;
 using Clio.Common;
 using Clio.UserEnvironment;
+using CommandLine;
 using ConsoleTables;
 using FluentAssertions;
 using NSubstitute;
@@ -125,6 +126,28 @@ public sealed class ConfigCommandTests : BaseCommandTests<ConfigOptions> {
 		result.Should().Be(0, because: "a valid set operation succeeds");
 		_settingsRepository.Received(1).SetDeployCreatioDefaults(
 			Arg.Is<DeployCreatioDefaults>(d => d.SitePort == 40018));
+	}
+
+	[Test]
+	[Description("Treats the parser's empty site-port range collection as an omitted option.")]
+	public void Execute_ShouldPersistSitePort_WhenParsedRangeOptionIsOmitted() {
+		// Arrange
+		ParserResult<ConfigOptions> parseResult = Parser.Default.ParseArguments<ConfigOptions>(
+			["--deploy-site-port", "40155"]);
+		ConfigOptions options = ((Parsed<ConfigOptions>)parseResult).Value;
+
+		// Act
+		int result = _sut.Execute(options);
+
+		// Assert
+		parseResult.Tag.Should().Be(ParserResultType.Parsed,
+			because: "the regression must exercise the options produced by the real command-line parser");
+		options.DeploySitePortRange.Should().BeEmpty(
+			because: "the parser represents an omitted enumerable option with an empty collection");
+		result.Should().Be(0,
+			because: "an omitted range must not invalidate an otherwise valid fixed-port update");
+		_settingsRepository.Received(1).SetDeployCreatioDefaults(
+			Arg.Is<DeployCreatioDefaults>(defaults => defaults.SitePort == 40155));
 	}
 
 	[Test]

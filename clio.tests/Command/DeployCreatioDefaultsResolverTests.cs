@@ -135,7 +135,7 @@ public sealed class DeployCreatioDefaultsResolverTests : BaseClioModuleTests {
 		// Arrange
 		_settingsRepository.GetDeployCreatioDefaults()
 			.Returns(new DeployCreatioDefaults { SitePort = 40018 });
-		PfInstallerOptions options = new() { SitePort = 0 };
+		PfInstallerOptions options = new();
 
 		// Act
 		_sut.ApplyDefaults(options);
@@ -152,7 +152,7 @@ public sealed class DeployCreatioDefaultsResolverTests : BaseClioModuleTests {
 		int[] configuredRange = [40100, 40199];
 		_settingsRepository.GetDeployCreatioDefaults()
 			.Returns(new DeployCreatioDefaults { SitePortRange = configuredRange });
-		PfInstallerOptions options = new() { SitePort = 0 };
+		PfInstallerOptions options = new();
 
 		// Act
 		_sut.ApplyDefaults(options);
@@ -204,6 +204,28 @@ public sealed class DeployCreatioDefaultsResolverTests : BaseClioModuleTests {
 			because: "an explicit command-line override must remain the selected exact port");
 		options.SitePortRange.Should().BeNull(
 			because: "automatic allocation stays inactive when an explicit port is supplied");
+	}
+
+	[Test]
+	[Description("Preserves an explicitly supplied invalid zero site port so command validation can reject it.")]
+	public void ApplyDefaults_ShouldPreserveExplicitZeroSitePort_WhenDefaultsConfigured() {
+		// Arrange
+		_settingsRepository.GetDeployCreatioDefaults().Returns(new DeployCreatioDefaults {
+			SitePort = 40018,
+			SitePortRange = [40100, 40199]
+		});
+		PfInstallerOptions options = new() { SitePort = 0 };
+
+		// Act
+		_sut.ApplyDefaults(options);
+
+		// Assert
+		options.SitePort.Should().Be(0,
+			because: "an explicit invalid value must reach command validation instead of being replaced by a default");
+		options.SitePortRange.Should().BeNull(
+			because: "automatic allocation must remain inactive when any explicit port value was supplied");
+		options.SitePortWasSpecified.Should().BeTrue(
+			because: "the option setter records that zero came from an explicit command-line value");
 	}
 
 	[Test]

@@ -4,8 +4,6 @@ using System.IO;
 using System.IO.Abstractions;
 using System.Linq;
 using System.Management.Automation;
-using System.Net;
-using System.Net.NetworkInformation;
 using System.Runtime.InteropServices;
 using System.Threading;
 using System.Threading.Tasks;
@@ -138,6 +136,7 @@ public class CreatioInstallerService : Command<PfInstallerOptions>, ICreatioInst
 	private readonly ISettingsRepository _settingsRepository;
 	private readonly IStageEventEmitter _stageEventEmitter;
 	private readonly IDbHubSynchronizationService _dbHubSynchronizationService;
+	private readonly ITcpPortReservationReader _tcpPortReservationReader;
 	private readonly IIisDeploymentPortReservation _iisDeploymentPortReservation;
 	private readonly IDeploymentTargetReservation _deploymentTargetReservation;
 
@@ -167,6 +166,7 @@ public class CreatioInstallerService : Command<PfInstallerOptions>, ICreatioInst
 	/// <param name="creatioPackageVersionParser">Parser for version extraction from package filename.</param>
 	/// <param name="passwordResetScriptExecutor">Executor for post-restore password reset script.</param>
 	/// <param name="stageEventEmitter">Emitter that raises typed stage-progress events for the deploy run.</param>
+	/// <param name="tcpPortReservationReader">Reads active TCP reservations for DotNet port validation.</param>
 	/// <param name="iisDeploymentPortReservation">Machine-wide IIS port reservation held across deployment mutation.</param>
 	/// <param name="deploymentTargetReservation">Cross-process target-directory reservation held across deployment mutation.</param>
 	/// <param name="dbOperationLogContextAccessor">Accessor for the active database operation log session.</param>
@@ -184,6 +184,7 @@ public class CreatioInstallerService : Command<PfInstallerOptions>, ICreatioInst
 		ICreatioPackageVersionParser creatioPackageVersionParser,
 		IPasswordResetScriptExecutor passwordResetScriptExecutor,
 		IStageEventEmitter stageEventEmitter,
+		ITcpPortReservationReader tcpPortReservationReader,
 		IIisDeploymentPortReservation iisDeploymentPortReservation,
 		IDeploymentTargetReservation deploymentTargetReservation,
 		IDbOperationLogContextAccessor dbOperationLogContextAccessor = null,
@@ -212,6 +213,7 @@ public class CreatioInstallerService : Command<PfInstallerOptions>, ICreatioInst
 		_creatioPackageVersionParser = creatioPackageVersionParser;
 		_passwordResetScriptExecutor = passwordResetScriptExecutor;
 		_stageEventEmitter = stageEventEmitter;
+		_tcpPortReservationReader = tcpPortReservationReader;
 		_iisDeploymentPortReservation = iisDeploymentPortReservation;
 		_deploymentTargetReservation = deploymentTargetReservation;
 		_dbHubSynchronizationService = dbHubSynchronizationService;
@@ -686,22 +688,9 @@ public class CreatioInstallerService : Command<PfInstallerOptions>, ICreatioInst
 
 	private bool IsPortAvailable(int port) {
 		try {
-			IPGlobalProperties ipGlobalProperties = IPGlobalProperties.GetIPGlobalProperties();
-			TcpConnectionInformation[] tcpConnections = ipGlobalProperties.GetActiveTcpConnections();
-
-			foreach (TcpConnectionInformation tcpConnection in tcpConnections) {
-				if (tcpConnection.LocalEndPoint.Port == port) {
-					_logger.WriteWarning($"Port {port} is in use (active connection)");
-					return false;
-				}
-			}
-
-			IPEndPoint[] listeners = ipGlobalProperties.GetActiveTcpListeners();
-			foreach (IPEndPoint listener in listeners) {
-				if (listener.Port == port) {
-					_logger.WriteWarning($"Port {port} is in use (listening port)");
-					return false;
-				}
+			if (_tcpPortReservationReader.GetReservedPorts(port, port).Contains(port)) {
+				_logger.WriteWarning($"Port {port} is in use");
+				return false;
 			}
 
 			_logger.WriteInfo($"Port {port} is available");

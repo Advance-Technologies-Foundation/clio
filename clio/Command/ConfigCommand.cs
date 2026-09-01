@@ -176,8 +176,10 @@ public class ConfigCommand : Command<ConfigOptions> {
 		|| !string.IsNullOrWhiteSpace(options.DeployRedisServerName)
 		|| !string.IsNullOrWhiteSpace(options.DeploySiteName)
 		|| options.DeploySitePort.HasValue
-		|| options.DeploySitePortRange is not null
+		|| HasSitePortRange(options.DeploySitePortRange)
 		|| !string.IsNullOrWhiteSpace(options.DeployDeployment);
+
+	private static bool HasSitePortRange(IEnumerable<int> sitePortRange) => sitePortRange?.Any() == true;
 
 	private static bool HasKnowledgeFeedbackSetArguments(ConfigOptions options) =>
 		!string.IsNullOrWhiteSpace(options.KnowledgeFeedbackMode)
@@ -210,7 +212,7 @@ public class ConfigCommand : Command<ConfigOptions> {
 	}
 
 	private bool TryValidateSitePortRange(IEnumerable<int> sitePortRange) {
-		if (sitePortRange is null) {
+		if (!HasSitePortRange(sitePortRange)) {
 			return true;
 		}
 		int[] range = sitePortRange.ToArray();
@@ -235,7 +237,7 @@ public class ConfigCommand : Command<ConfigOptions> {
 		if (!string.IsNullOrWhiteSpace(options.DeploySiteName)) {
 			defaults.SiteName = options.DeploySiteName.Trim();
 		}
-		if (options.DeploySitePortRange is not null) {
+		if (HasSitePortRange(options.DeploySitePortRange)) {
 			defaults.SitePortRange = options.DeploySitePortRange.ToArray();
 			if (!options.DeploySitePort.HasValue) {
 				defaults.SitePort = null;

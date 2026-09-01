@@ -82,12 +82,12 @@ public class DeployCreatioDefaultsResolver : IDeployCreatioDefaultsResolver {
 			_logger.WriteInfo($"[Config default] site-name = {defaults.SiteName}");
 		}
 
-		if (options.SitePort == 0 && defaults.SitePort is > 0) {
+		if (!options.SitePortWasSpecified && options.SitePort == 0 && defaults.SitePort is > 0) {
 			options.ApplyConfiguredSitePort(defaults.SitePort.Value);
 			_logger.WriteInfo($"[Config default] site-port = {defaults.SitePort.Value}");
 		}
 
-		if (options.SitePort == 0 && defaults.SitePortRange is not null) {
+		if (!options.SitePortWasSpecified && options.SitePort == 0 && defaults.SitePortRange is not null) {
 			options.SitePortRange = [.. defaults.SitePortRange];
 			_logger.WriteInfo($"[Config default] site-port-range = [{string.Join(", ", defaults.SitePortRange)}]");
 		}

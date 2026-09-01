@@ -3,8 +3,6 @@ using System.Collections.Generic;
 using System.IO;
 using System.IO.Abstractions.TestingHelpers;
 using System.Linq;
-using System.Net;
-using System.Net.Sockets;
 using Clio.Command.CreatioInstallCommand;
 using Clio.Common;
 using Clio.Common.IIS;
@@ -48,6 +46,7 @@ internal class CreatioInstallerServiceTests : BaseClioModuleTests{
 	private IProcessExecutor _processExecutor;
 	private IIisDeploymentPortReservation _iisDeploymentPortReservation;
 	private IDeploymentTargetReservation _deploymentTargetReservation;
+	private ITcpPortReservationReader _tcpPortReservationReader;
 
 	#endregion
 
@@ -67,6 +66,9 @@ internal class CreatioInstallerServiceTests : BaseClioModuleTests{
 		containerBuilder.AddSingleton(_iisDeploymentPortReservation);
 		_deploymentTargetReservation = Substitute.For<IDeploymentTargetReservation>();
 		containerBuilder.AddSingleton(_deploymentTargetReservation);
+		_tcpPortReservationReader = Substitute.For<ITcpPortReservationReader>();
+		_tcpPortReservationReader.GetReservedPorts(Arg.Any<int>(), Arg.Any<int>()).Returns([]);
+		containerBuilder.AddSingleton(_tcpPortReservationReader);
 	}
 
 	protected override MockFileSystem CreateFs() {
@@ -577,15 +579,7 @@ internal class CreatioInstallerServiceTests : BaseClioModuleTests{
 	[Description("Silent DotNet deployment never reads console input when its default port is occupied.")]
 	public void Execute_ShouldFailFast_WhenSilentDotNetDefaultPortIsOccupied() {
 		// Arrange
-		TcpListener? listener = null;
-		try {
-			listener = new TcpListener(IPAddress.Any, 8080);
-			listener.Start();
-		}
-		catch (SocketException exception) when (exception.SocketErrorCode == SocketError.AddressAlreadyInUse) {
-			listener?.Stop();
-			listener = null;
-		}
+		_tcpPortReservationReader.GetReservedPorts(8080, 8080).Returns([8080]);
 		PfInstallerOptions options = new() {
 			SiteName = "silent-dotnet-port-probe",
 			ZipFile = Path.Combine(_localArtifactServerPath, "8.1.1",
@@ -595,18 +589,14 @@ internal class CreatioInstallerServiceTests : BaseClioModuleTests{
 			IsSilent = true
 		};
 
-		try {
-			// Act
-			Action act = () => _creatioInstallerService.Execute(options);
+		// Act
+		Action act = () => _creatioInstallerService.Execute(options);
 
-			// Assert
-			act.Should().Throw<InvalidOperationException>().WithMessage("*8080*not available*--site-port*",
-				because: "silent and MCP invocations must fail instead of consuming console or JSON-RPC input");
-			_deploymentTargetReservation.DidNotReceive().Acquire(Arg.Any<string>());
-		}
-		finally {
-			listener?.Stop();
-		}
+		// Assert
+		act.Should().Throw<InvalidOperationException>().WithMessage("*8080*not available*--site-port*",
+			because: "silent and MCP invocations must fail instead of consuming console or JSON-RPC input");
+		_deploymentTargetReservation.DidNotReceive().Acquire(Arg.Any<string>());
+		_tcpPortReservationReader.Received(1).GetReservedPorts(8080, 8080);
 	}
 
 	[Test]
