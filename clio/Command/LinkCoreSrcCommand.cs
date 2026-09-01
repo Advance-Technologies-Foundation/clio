@@ -373,12 +373,33 @@ public class LinkCoreSrcCommand : Command<LinkCoreSrcOptions>
 				EnableLaxModeInAppConfig(options);
 			}
 
+			string previousEnvironmentPath = env.EnvironmentPath;
+			bool iisPhysicalPathUpdated = false;
 			UpdateIISPhysicalPath(options, env);
+			iisPhysicalPathUpdated = RuntimeInformation.IsOSPlatform(OSPlatform.Windows);
 
 			// Update the registered path only after all source/configuration and IIS changes succeed,
 			// so a failed platform-path update cannot leave protected host values pointing at a
 			// partially linked source tree.
-			UpdateEnvironmentPath(options, env);
+			try
+			{
+				UpdateEnvironmentPath(options, env);
+			}
+			catch
+			{
+				if (iisPhysicalPathUpdated && !string.IsNullOrWhiteSpace(previousEnvironmentPath))
+				{
+					try
+					{
+						RestoreIISPhysicalPath(options.Environment, previousEnvironmentPath);
+					}
+					catch (Exception rollbackException)
+					{
+						_logger.WriteError($"  ✗ Error restoring IIS physical path after environment update failure: {rollbackException.Message}");
+					}
+				}
+				throw;
+			}
 
 			// Handle service restart if running
 			HandleServiceRestartAndReregistration(options.Environment);
@@ -412,12 +433,17 @@ public class LinkCoreSrcCommand : Command<LinkCoreSrcOptions>
 			coreWebHostPath = Path.GetDirectoryName(coreWebHostPath);
 		}
 
+		ApplyIISPhysicalPath(options.Environment, coreWebHostPath);
+	}
+
+	private void ApplyIISPhysicalPath(string environmentName, string physicalPath)
+	{
 		(int code, string message) = _updateIISSitePhysicalPathHandler.Handle(new UpdateIISSitePhysicalPathRequest()
 			{
 				Arguments = new Dictionary<string, string>()
 				{
-					{"siteName", options.Environment},
-					{"physicalPath", coreWebHostPath}
+					{"siteName", environmentName},
+					{"physicalPath", physicalPath}
 				}
 			}).Result.Value switch
 			{
@@ -435,6 +461,11 @@ public class LinkCoreSrcCommand : Command<LinkCoreSrcOptions>
 		}
 		
 		_logger.WriteInfo($"Finished updating IIS physical path: {message}");
+	}
+
+	internal void RestoreIISPhysicalPath(string environmentName, string physicalPath)
+	{
+		ApplyIISPhysicalPath(environmentName, physicalPath);
 	}
 
 	#endregion

@@ -2,9 +2,11 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Text.Json;
+using System.Threading.Tasks;
 using System.Xml;
 using Clio.Command;
 using Clio.Common;
+using Clio.Common.ScenarioHandlers;
 using Clio.Common.SystemServices;
 using Clio.UserEnvironment;
 using FluentAssertions;
@@ -12,6 +14,7 @@ using FluentValidation;
 using FluentValidation.Results;
 using NSubstitute;
 using NUnit.Framework;
+using OneOf;
 
 namespace Clio.Tests.Command {
 
@@ -26,6 +29,7 @@ namespace Clio.Tests.Command {
 		private ISettingsRepository _settingsRepositoryMock;
 		private ISystemServiceManager _systemServiceManagerMock;
 		private ICreatioHostEnvironmentStore _environmentStoreMock;
+		private IUpdateIISSitePhysicalPathHandler _updateIISSitePhysicalPathHandlerMock;
 		private IValidator<LinkCoreSrcOptions> _validator;
 		private LinkCoreSrcCommand _command;
 
@@ -38,6 +42,7 @@ namespace Clio.Tests.Command {
 			_fileSystemMock = Container.GetRequiredService<IFileSystem>();
 			_settingsRepositoryMock = Container.GetRequiredService<ISettingsRepository>();
 			_systemServiceManagerMock = Container.GetRequiredService<ISystemServiceManager>();
+			_updateIISSitePhysicalPathHandlerMock = Container.GetRequiredService<IUpdateIISSitePhysicalPathHandler>();
 			_validator = Container.GetRequiredService<IValidator<LinkCoreSrcOptions>>();
 			_command = Container.GetRequiredService<LinkCoreSrcCommand>();
 		}
@@ -48,10 +53,12 @@ namespace Clio.Tests.Command {
 			_settingsRepositoryMock ??= Substitute.For<ISettingsRepository>();
 			_systemServiceManagerMock ??= Substitute.For<ISystemServiceManager>();
 			_environmentStoreMock ??= Substitute.For<ICreatioHostEnvironmentStore>();
+			_updateIISSitePhysicalPathHandlerMock ??= Substitute.For<IUpdateIISSitePhysicalPathHandler>();
 			containerBuilder.AddSingleton<IFileSystem>(_fileSystemMock);
 			containerBuilder.AddSingleton<ISettingsRepository>(_settingsRepositoryMock);
 			containerBuilder.AddSingleton<ISystemServiceManager>(_systemServiceManagerMock);
 			containerBuilder.AddSingleton<ICreatioHostEnvironmentStore>(_environmentStoreMock);
+			containerBuilder.AddSingleton<IUpdateIISSitePhysicalPathHandler>(_updateIISSitePhysicalPathHandlerMock);
 		}
 
 	#endregion
@@ -714,6 +721,27 @@ namespace Clio.Tests.Command {
 		_environmentStoreMock.Received(1).Save(
 			Path.GetFullPath("/tmp/creatio-app"),
 			Arg.Is<IReadOnlyDictionary<string, string>>(variables => variables.Count == 0));
+	}
+
+	[Test]
+	[Description("Restores the previous IIS physical path when link-core-src must roll back an environment update")]
+	public void RestoreIISPhysicalPath_ShouldApplyPreviousEnvironmentPath() {
+		// Arrange
+		_updateIISSitePhysicalPathHandlerMock.Handle(Arg.Any<UpdateIISSitePhysicalPathRequest>())
+			.Returns(Task.FromResult<OneOf<BaseHandlerResponse, HandlerError>>(
+				new UpdateIISSitePhysicalPathResponse {
+					Status = BaseHandlerResponse.CompletionStatus.Success,
+					Description = "restored"
+				}));
+
+		// Act
+		_command.RestoreIISPhysicalPath("production", "/tmp/creatio-app");
+
+		// Assert
+		_updateIISSitePhysicalPathHandlerMock.Received(1).Handle(
+			Arg.Is<UpdateIISSitePhysicalPathRequest>(request =>
+				request.Arguments["siteName"] == "production"
+				&& request.Arguments["physicalPath"] == "/tmp/creatio-app"));
 	}
 
 	#endregion
