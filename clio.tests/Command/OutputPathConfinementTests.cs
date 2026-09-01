@@ -275,6 +275,37 @@ public sealed class OutputPathConfinementTests {
 	}
 
 	[Test]
+	[Description("A write that fails part-way leaves neither the final file nor the sibling temporary file behind, and the same path can be written again - the no-overwrite guard must not be left refusing every retry against a half-written file.")]
+	public void WriteAtomic_ShouldLeaveNoFileAndAllowRetry_WhenTheWriteFailsPartWay() {
+		// Arrange
+		string outputFile = Path.Combine(_sandbox, "nested", "odata-response.json");
+		(string path, string error) = OutputPathConfinement.Resolve(_fileSystem, outputFile);
+		error.Should().BeNull(because: "a fresh nested path under the sandbox is inside an allowed zone");
+
+		// Act - a payload that dies after some bytes have already reached the stream, the way a full disk does
+		Action failingWrite = () => OutputPathConfinement.WriteAtomicForTest(_fileSystem, path, stream => {
+			stream.Write("{\"value\":[{\"Id\":\"partial\""u8);
+			stream.Flush();
+			throw new IOException("There is not enough space on the disk.");
+		});
+
+		// Assert
+		failingWrite.Should().Throw<IOException>(
+			because: "the caller has to learn the write failed rather than believe a truncated file is the response");
+		File.Exists(outputFile).Should().BeFalse(
+			because: "the content is completed in a sibling temporary file and only then renamed, so a failed write never reaches the final name");
+		Directory.GetFiles(Path.GetDirectoryName(outputFile)!, "*.tmp").Should().BeEmpty(
+			because: "the temporary file is removed on every failure path, so a failed write leaves nothing at all - not even a half-written sibling");
+
+		// Act - the retry the stale-wreckage bug used to block
+		OutputPathConfinement.WriteAtomic(_fileSystem, path, "{\"value\":[]}");
+
+		// Assert
+		File.ReadAllText(outputFile).Should().Be("{\"value\":[]}",
+			because: "nothing was left occupying the name, so the next attempt writes the complete payload");
+	}
+
+	[Test]
 	[Description("WriteAtomic creates the parent directory and writes the content to a fresh confined path.")]
 	public void WriteAtomic_ShouldCreateParentAndWrite_FreshPath() {
 		// Arrange
