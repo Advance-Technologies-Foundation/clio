@@ -146,6 +146,67 @@ public sealed class ODataUpdateToolTests {
 
 	[Test]
 	[Category("Unit")]
+	[Description("A bare navigation property is not a writable field: it stays unverified and no PATCH is issued, even though $metadata declares it on the type.")]
+	public void Update_Should_Not_Patch_When_The_Field_Is_A_Bare_Navigation_Property() {
+		// Arrange
+		Fixture f = CsdLFixture();
+
+		// Act
+		ODataWriteResponse response = Update(f, "{\"Account\":\"" + Guid + "\"}");
+
+		// Assert
+		response.Success.Should().BeFalse(
+			because: "an OData relationship is written through bind semantics, not by assigning the "
+				+ "navigation name - listing Account alongside the structural properties let a raw "
+				+ "Account value through validation and issued one PATCH");
+		f.Client.DidNotReceiveWithAnyArgs()
+			.ExecutePatchRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>());
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("The fallback $select probe likewise leaves a bare navigation property unverified, because that probe only proves a field is readable and structural.")]
+	public void Update_Should_Not_Patch_A_Bare_Navigation_Property_On_The_Fallback_Path() {
+		// Arrange - $metadata is unavailable, so validation falls back to the keyed $select probe. A
+		// conforming service does not echo a navigation property as a scalar under $select, so the probe
+		// answer carries the addressed record WITHOUT Account, which is what leaves the name unverified.
+		Fixture f = new(string.Empty, _ =>
+			"{\"@odata.context\":\"http://creatio/odata/$metadata#Contact(" + Guid + ")\",\"Id\":\""
+			+ Guid + "\"}");
+
+		// Act
+		ODataWriteResponse response = Update(f, "{\"Account\":\"" + Guid + "\"}");
+
+		// Assert
+		response.Success.Should().BeFalse(
+			because: "the fallback probe proves a field is READABLE, which says nothing about writing a "
+				+ "relationship by its navigation name");
+		f.Client.DidNotReceiveWithAnyArgs()
+			.ExecutePatchRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>());
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("The structural foreign-key field the tool contract points callers at is still accepted and still PATCHes, so rejecting navigation names did not narrow the real contract.")]
+	public void Update_Should_Patch_When_The_Field_Is_The_Structural_Foreign_Key() {
+		// Arrange
+		Fixture f = CsdLFixture();
+		f.Client.ExecutePatchRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>())
+			.Returns(string.Empty);
+
+		// Act
+		ODataWriteResponse response = Update(f, "{\"AccountId\":\"" + Guid + "\"}");
+
+		// Assert
+		response.Success.Should().BeTrue(
+			because: "AccountId is a structural property and is exactly what the tool contract guides "
+				+ "callers to use for a relationship");
+		f.Client.Received(1)
+			.ExecutePatchRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>());
+	}
+
+	[Test]
+	[Category("Unit")]
 	[Description("Advertises a stable, destructive, idempotent MCP tool name for odata-update.")]
 	public void Update_Should_Advertise_Stable_Tool_Name() {
 		// Arrange

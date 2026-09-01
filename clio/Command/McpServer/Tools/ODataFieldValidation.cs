@@ -235,18 +235,25 @@ internal static class ODataFieldValidation {
 	}
 
 	/// <summary>
-	/// Records one element that belongs to the <paramref name="type"/> currently being read: a
-	/// <c>Property</c> contributes its name to the property set, a <c>NavigationProperty</c> is
-	/// recorded by <see cref="RecordNavigationProperty"/>, and a <c>ComplexType</c>/<c>EntityContainer</c>
-	/// ends the entity scope (the nested elements then belong to another construct).
+	/// Records one element that belongs to the <paramref name="type"/> currently being read: only a
+	/// structural <c>Property</c> contributes its name to the writable set, and a
+	/// <c>ComplexType</c>/<c>EntityContainer</c> ends the entity scope (the nested elements then belong
+	/// to another construct).
 	/// </summary>
+	/// <remarks>
+	/// A <c>NavigationProperty</c> is deliberately NOT recorded. It used to land in the same set as the
+	/// structural properties, so a raw <c>Account</c> in the update payload passed validation and issued
+	/// one PATCH - but an OData relationship is written through bind semantics, not by assigning the
+	/// navigation name, and the tool contract points callers at the structural <c>AccountId</c> field
+	/// instead. Leaving the name out keeps it unverified, which is also what the fallback <c>$select</c>
+	/// probe can honestly say about it: that probe only proves a field is READABLE and structural.
+	/// </remarks>
 	private static void RecordMember(XmlReader reader, CsdlType type, ref string? currentTypeName) {
 		if (reader.LocalName == "Property" && reader.GetAttribute("Name") is string propName) {
 			type.Properties.Add(propName);
 			return;
 		}
-		if (reader.LocalName == "NavigationProperty" && reader.GetAttribute("Name") is string navName) {
-			type.Properties.Add(navName);
+		if (reader.LocalName == "NavigationProperty") {
 			return;
 		}
 		if (reader.LocalName is "ComplexType" or "EntityContainer") {
