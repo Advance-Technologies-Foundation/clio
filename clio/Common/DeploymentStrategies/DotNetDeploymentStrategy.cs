@@ -299,6 +299,7 @@ public class DotNetDeploymentStrategy : IDeploymentStrategy
 				existingJson,
 				options,
 				persistedEnvironmentVariables);
+			ValidateExistingCertificateFiles(appPath, configuration.Json, configuration.EnvironmentVariables);
 			File.WriteAllText(configPath, configuration.Json);
 			_logger.WriteInfo($"Application configuration {(hadExistingConfiguration ? "updated" : "created")} at: {configPath}");
 			_logger.WriteInfo($"Kestrel listener configured at: {GetListeningEndpointUrl(options)}");
@@ -649,6 +650,108 @@ public class DotNetDeploymentStrategy : IDeploymentStrategy
 			throw new InvalidOperationException(
 				$"The certificate specified by --cert-path is invalid or cannot be loaded: {certificatePath}.", exception);
 		}
+	}
+
+	private static void ValidateExistingCertificateFiles(
+		string applicationPath,
+		string configurationJson,
+		IReadOnlyDictionary<string, string> environmentVariables)
+	{
+		JsonObject root = ParseConfiguration(configurationJson);
+		JsonObject? kestrel = GetObjectProperty(root, "Kestrel");
+		if (kestrel is null)
+		{
+			return;
+		}
+
+		JsonObject? endpoints = GetObjectProperty(kestrel, "Endpoints");
+		if (endpoints is not null)
+		{
+			foreach (KeyValuePair<string, JsonNode?> property in endpoints)
+			{
+				if (property.Value is not JsonObject endpoint)
+				{
+					throw new JsonException($"Configuration property '{property.Key}' must be a JSON object.");
+				}
+
+				JsonObject? certificate = GetObjectProperty(endpoint, "Certificate");
+				if (certificate is not null)
+				{
+					ValidateExistingCertificateFile(
+						applicationPath,
+						certificate,
+						$"Kestrel endpoint '{property.Key}'",
+						$"Kestrel__Endpoints__{property.Key}__Certificate__Password",
+						environmentVariables);
+				}
+			}
+		}
+
+		JsonObject? certificates = GetObjectProperty(kestrel, "Certificates");
+		if (certificates is null)
+		{
+			return;
+		}
+
+		foreach (KeyValuePair<string, JsonNode?> property in certificates)
+		{
+			if (property.Value is not JsonObject certificate)
+			{
+				throw new JsonException($"Configuration property '{property.Key}' must be a JSON object.");
+			}
+
+			ValidateExistingCertificateFile(
+				applicationPath,
+				certificate,
+				$"Kestrel certificate '{property.Key}'",
+				$"Kestrel__Certificates__{property.Key}__Password",
+				environmentVariables);
+		}
+	}
+
+	private static void ValidateExistingCertificateFile(
+		string applicationPath,
+		JsonObject certificate,
+		string certificateDescription,
+		string passwordEnvironmentVariableName,
+		IReadOnlyDictionary<string, string> environmentVariables)
+	{
+		string? configuredPath = GetStringProperty(certificate, "Path");
+		if (string.IsNullOrWhiteSpace(configuredPath))
+		{
+			return;
+		}
+
+		string certificatePath = Path.GetFullPath(configuredPath, applicationPath);
+		if (!File.Exists(certificatePath))
+		{
+			throw new InvalidOperationException(
+				$"The {certificateDescription} certificate file was not found: {certificatePath}.");
+		}
+
+		string? configuredKeyPath = GetStringProperty(certificate, "KeyPath");
+		CertificateFileFormat certificateFormat = GetCertificateFileFormat(certificatePath);
+		if (certificateFormat == CertificateFileFormat.Pkcs12 && !string.IsNullOrWhiteSpace(configuredKeyPath))
+		{
+			throw new InvalidOperationException(
+				$"The {certificateDescription} PFX configuration must not specify KeyPath.");
+		}
+
+		string? keyPath = string.IsNullOrWhiteSpace(configuredKeyPath)
+			? null
+			: Path.GetFullPath(configuredKeyPath, applicationPath);
+		if (keyPath is not null && !File.Exists(keyPath))
+		{
+			throw new InvalidOperationException(
+				$"The {certificateDescription} private key file was not found: {keyPath}.");
+		}
+
+		string? password = environmentVariables.TryGetValue(
+			passwordEnvironmentVariableName,
+			out string persistedPassword)
+			? persistedPassword
+			: null;
+		ValidateCertificateMaterial(certificatePath, keyPath, password, certificateFormat);
 	}
 
 	private static X509Certificate2 LoadDerCertificateWithPrivateKey(string certificatePath, string keyPath)

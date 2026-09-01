@@ -58,6 +58,8 @@ public sealed class CreatioHostServiceTests : BaseClioModuleTests {
 			&& !options.Arguments.Contains("secret")
 			&& options.ClearInheritedEnvironment
 			&& options.InheritedEnvironmentVariableAllowlist.Contains("PATH")
+			&& options.InheritedEnvironmentVariableAllowlist.Contains("ASPNETCORE_ENVIRONMENT")
+			&& options.InheritedEnvironmentVariableAllowlist.Contains("DOTNET_ENVIRONMENT")
 			&& !options.InheritedEnvironmentVariableAllowlist.Contains("Kestrel__Endpoints__Https__Certificate__Password")));
 	}
 

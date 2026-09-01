@@ -181,10 +181,11 @@ internal static class KestrelEndpointUrl
 		}
 
 		int firstColon = authority.IndexOf(':');
-		if (firstColon != lastColon
-			&& IPAddress.TryParse(authority, out IPAddress? address)
-			&& address.AddressFamily == AddressFamily.InterNetworkV6)
+		if (firstColon != lastColon)
 		{
+			// An unbracketed IPv6 address is handled by ReplaceHost after this method returns
+			// false. Any other multi-colon authority is malformed and must not be treated as
+			// host:port by taking only its final numeric segment.
 			return false;
 		}
 

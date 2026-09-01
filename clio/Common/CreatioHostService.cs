@@ -50,6 +50,8 @@ public class CreatioHostService : ICreatioHostService
 		"DOTNET_ROOT",
 		"DOTNET_ROOT(x86)",
 		"DOTNET_CLI_HOME",
+		"ASPNETCORE_ENVIRONMENT",
+		"DOTNET_ENVIRONMENT",
 		"SystemRoot",
 		"WINDIR",
 		"PATHEXT"

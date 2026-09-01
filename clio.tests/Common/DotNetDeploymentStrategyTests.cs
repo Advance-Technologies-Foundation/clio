@@ -404,6 +404,7 @@ public sealed class DotNetDeploymentStrategyTests : BaseClioModuleTests {
 	[TestCase("http://::1:5000")]
 	[TestCase("http://2001:db8::1:5000")]
 	[TestCase("http://fe80::1:5000")]
+	[TestCase("http://example.com:5000:6000")]
 	[Description("Rejects ambiguous unbracketed IPv6 endpoint strings that could silently lose an explicit port.")]
 	public void BuildApplicationConfiguration_ShouldRejectAmbiguousUnbracketedIpv6Port(string url) {
 		// Arrange
@@ -665,6 +666,8 @@ public sealed class DotNetDeploymentStrategyTests : BaseClioModuleTests {
 		// Arrange
 		string appDirectory = Path.Combine(_temporaryDirectory, "redeploy-app");
 		Directory.CreateDirectory(appDirectory);
+		string certificatePath = CreateTemporaryPfx("redeploy.pfx", "persisted-secret");
+		File.Copy(certificatePath, Path.Combine(appDirectory, "server.pfx"));
 		string configurationPath = Path.Combine(appDirectory, "appsettings.json");
 		File.WriteAllText(configurationPath, """
 			{
@@ -709,6 +712,46 @@ public sealed class DotNetDeploymentStrategyTests : BaseClioModuleTests {
 			Arg.Is<IReadOnlyDictionary<string, string>>(variables =>
 				variables.ContainsKey(environmentVariableName)
 				&& variables[environmentVariableName] == "persisted-secret"));
+	}
+
+	[Test]
+	[Description("Rejects an existing encrypted PFX before host launch when no protected password is available for it.")]
+	public async Task Deploy_ShouldFailBeforeStarting_WhenExistingPfxPasswordIsMissing() {
+		// Arrange
+		string appDirectory = Path.Combine(_temporaryDirectory, "missing-password-app");
+		Directory.CreateDirectory(appDirectory);
+		string certificatePath = CreateTemporaryPfx("existing-encrypted.pfx", "existing-secret");
+		File.Copy(certificatePath, Path.Combine(appDirectory, "server.pfx"));
+		string configurationPath = Path.Combine(appDirectory, "appsettings.json");
+		string previousConfiguration = """
+			{
+			  "Kestrel": {
+			    "Endpoints": {
+			      "Https": {
+			        "Url": "https://localhost:5000",
+			        "Certificate": { "Path": "server.pfx" }
+			      }
+			    }
+			  }
+			}
+			""";
+		File.WriteAllText(configurationPath, previousConfiguration);
+		PfInstallerOptions options = new() {
+			SiteName = "missing-password-test",
+			SitePort = GetAvailablePort(),
+			UseHttps = true,
+			AutoRun = false
+		};
+
+		// Act
+		int exitCode = await _sut.Deploy(appDirectory, options);
+
+		// Assert
+		exitCode.Should().Be(1,
+			because: "an encrypted existing PFX without a protected password cannot produce a working HTTPS host");
+		File.ReadAllText(configurationPath).Should().Be(previousConfiguration,
+			because: "certificate validation must fail before an existing deployment configuration is rewritten");
+		_creatioHostService.DidNotReceiveWithAnyArgs().StartInBackground(default, default);
 	}
 
 	[Test]
