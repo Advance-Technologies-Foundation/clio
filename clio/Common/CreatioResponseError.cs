@@ -106,11 +106,19 @@ internal static class CreatioResponseError {
 		//ordinary entity column: claiming it there reported a created record as failed AFTER the write
 		//had happened, which invites a duplicate retry.
 		bool isService = context == CreatioResponseContext.Service;
+		//An @odata.context annotation on an OData body proves what the payload IS: the service emitted
+		//an entity or a collection, not an error. The remaining two detectors decide by member name
+		//alone, so an ordinary business column called ExceptionMessage, StackTrace, Message or
+		//MessageDetail made a created record read as a server error - after the row existed, which
+		//invites a duplicate retry. Explicit error envelopes are unaffected: the DataService and OData
+		//v4 error shapes are checked before this and still win.
+		bool hasProvenODataIdentity = !isService && HasODataContextAnnotation(root);
 		return TryDetectDataServiceEnvelope(root, out message)
 			|| (isService && TryDetectBaseResponse(root, out message))
 			|| TryDetectODataV4Error(root, out message)
-			|| TryDetectAspNetException(root, out message)
-			|| TryDetectRoutingError(root, context, out message);
+			|| (!hasProvenODataIdentity
+				&& (TryDetectAspNetException(root, out message)
+					|| TryDetectRoutingError(root, context, out message)));
 	}
 
 	/// <summary>
@@ -305,6 +313,15 @@ internal static class CreatioResponseError {
 	}
 
 	// ASP.NET Web API HttpError envelope (ExceptionType / ExceptionMessage never appear on real entities).
+	/// <summary>
+	/// True when the body carries a non-empty <c>@odata.context</c> control annotation, which an OData
+	/// service emits only on a genuine entity or collection payload - never on an error body.
+	/// </summary>
+	private static bool HasODataContextAnnotation(JsonElement root) =>
+		root.TryGetProperty("@odata.context", out JsonElement context)
+		&& context.ValueKind == JsonValueKind.String
+		&& !string.IsNullOrWhiteSpace(context.GetString());
+
 	private static bool TryDetectAspNetException(JsonElement root, out string message) {
 		message = string.Empty;
 		bool isAspNetError = root.TryGetProperty("ExceptionType", out _)

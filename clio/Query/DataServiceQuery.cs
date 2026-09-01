@@ -171,8 +171,8 @@ public abstract class BaseServiceCommand<T> : RemoteCommand<T> where T : CallSer
 	// OData exports, and classifying with a throwaway tree and then re-parsing the same body to
 	// indent it doubled the full-tree parse and its transient allocation on every successful call.
 	// The document is handed back to the caller, which serializes that same document.
-	private static bool TryClassifyResponse(string response, out JsonDocument parsed,
-		out ServiceResponseClassification classification) {
+	private static bool TryClassifyResponse(string response, CreatioResponseContext responseContext,
+		out JsonDocument parsed, out ServiceResponseClassification classification) {
 		parsed = null;
 		classification = default;
 		if (string.IsNullOrWhiteSpace(response)) {
@@ -209,7 +209,7 @@ public abstract class BaseServiceCommand<T> : RemoteCommand<T> where T : CallSer
 
 		//The detected text is deliberately discarded: it is remote-authored prose and must not be
 		//logged. Only the fact that the service reported a failure is kept.
-		if (!CreatioResponseError.TryDetect(parsed.RootElement, CreatioResponseContext.Service, out string _)) {
+		if (!CreatioResponseError.TryDetect(parsed.RootElement, responseContext, out string _)) {
 			return true;
 		}
 		classification = new ServiceResponseClassification(ServiceResponseFailure.ReportedFailure);
@@ -335,6 +335,33 @@ public abstract class BaseServiceCommand<T> : RemoteCommand<T> where T : CallSer
 	protected virtual string BuildUrl(T options) => ServiceUrlBuilderInstance.Build(NormalizeServicePath(options.ServicePath));
 
 	/// <summary>
+	/// Decides which classifier the response body is routed to, from the same normalized path the URL
+	/// is built from.
+	/// </summary>
+	/// <remarks>
+	/// Every call-service response used to be classified as <c>Service</c>, including the documented
+	/// <c>odata/...</c> route. That misrouted both directions: a successful OData POST echo carrying a
+	/// business column named <c>Success</c> tripped BaseResponse detection after the record was created
+	/// - exit 1, and a retry creates a duplicate - while a bare OData <c>Message</c> error could be
+	/// saved as a successful custom-service payload. The canonical first segment is what separates the
+	/// two, and it is available here because <see cref="NormalizeServicePath"/> has already stripped the
+	/// leading slash and any <c>0/</c> layers.
+	/// </remarks>
+	private protected virtual CreatioResponseContext ResolveResponseContext(T options) {
+		string normalized = NormalizeServicePath(options.ServicePath);
+		if (string.IsNullOrWhiteSpace(normalized)) {
+			return CreatioResponseContext.Service;
+		}
+		int separator = normalized.IndexOf('/', StringComparison.Ordinal);
+		ReadOnlySpan<char> firstSegment = separator < 0
+			? normalized.AsSpan()
+			: normalized.AsSpan(0, separator);
+		return firstSegment.Equals("odata", StringComparison.OrdinalIgnoreCase)
+			? CreatioResponseContext.ODataPayload
+			: CreatioResponseContext.Service;
+	}
+
+	/// <summary>
 	/// The outcome of one service call. A nullable body cannot carry this: a no-content GET, POST or
 	/// DELETE legitimately answers with an empty body, and <see cref="TryClassifyResponse"/> accepts
 	/// that as success - so returning the body alone made a successful empty response
@@ -342,8 +369,9 @@ public abstract class BaseServiceCommand<T> : RemoteCommand<T> where T : CallSer
 	/// </summary>
 	protected readonly record struct ServiceRequestOutcome(bool Succeeded, string ResponseBody);
 
-	protected ServiceRequestOutcome ExecuteServiceRequest(string url, string requestData,
-		string resultFileName = null, string httpMethod = ""){
+	private protected ServiceRequestOutcome ExecuteServiceRequest(string url, string requestData,
+		string resultFileName = null, string httpMethod = "",
+		CreatioResponseContext responseContext = CreatioResponseContext.Service){
 		string normalizedMethod = string.IsNullOrWhiteSpace(httpMethod)
 			? "POST"
 			: httpMethod.ToUpperInvariant();
@@ -355,7 +383,7 @@ public abstract class BaseServiceCommand<T> : RemoteCommand<T> where T : CallSer
 					var _ => throw new ArgumentException($"Unsupported HTTP method '{httpMethod}'", nameof(httpMethod))
 				};
 
-		if (!TryClassifyResponse(jsonResult, out JsonDocument parsedResult,
+		if (!TryClassifyResponse(jsonResult, responseContext, out JsonDocument parsedResult,
 			out ServiceResponseClassification classification)) {
 			WriteServiceError(classification);
 			return new ServiceRequestOutcome(Succeeded: false, ResponseBody: jsonResult);
@@ -410,7 +438,8 @@ public abstract class BaseServiceCommand<T> : RemoteCommand<T> where T : CallSer
 			}
 		}
 		ServiceRequestOutcome outcome = ExecuteServiceRequest(
-			BuildUrl(options), requestData, options.ResultFileName, options.HttpMethodName);
+			BuildUrl(options), requestData, options.ResultFileName, options.HttpMethodName,
+			ResolveResponseContext(options));
 		return outcome.Succeeded ? 0 : 1;
 	}
 

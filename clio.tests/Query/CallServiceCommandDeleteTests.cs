@@ -281,42 +281,43 @@ public class CallServiceCommandDeleteTests : BaseCommandTests<CallServiceCommand
 	// Every shape below reached #1220's false-success path: the body was written to --destination and
 	// the command exited 0. The expectation is the same for all of them - exit 1, nothing written,
 	// no "Result saved" message.
-	[TestCase("{\"error\":{\"message\":\"The query specified in the URI is not valid.\"}}",
+	[TestCase("odata/BulkEmailCategory", "{\"error\":{\"message\":\"The query specified in the URI is not valid.\"}}",
 		TestName = "OData v4 error envelope")]
-	[TestCase("{\"Message\":\"An error has occurred.\",\"ExceptionType\":\"System.NullReferenceException\","
+	[TestCase("odata/BulkEmailCategory", "{\"Message\":\"An error has occurred.\",\"ExceptionType\":\"System.NullReferenceException\","
 		+ "\"StackTrace\":\"   at Terrasoft.Core\"}", TestName = "ASP.NET exception envelope")]
-	[TestCase("{\"Message\":\"No HTTP resource was found that matches the request URI.\","
+	[TestCase("odata/BulkEmailCategory", "{\"Message\":\"No HTTP resource was found that matches the request URI.\","
 		+ "\"MessageDetail\":\"No type was found that matches the controller named 'UsrThing'.\"}",
 		TestName = "ASP.NET routing error")]
-	[TestCase("{\"Code\":1,\"Message\":\"Unauthorized\"}", TestName = "authentication rejection")]
-	[TestCase("{\"success\":false,\"errorInfo\":{\"message\":\"Package UsrThing was not found.\"}}",
+	[TestCase("odata/BulkEmailCategory", "{\"Code\":1,\"Message\":\"Unauthorized\"}", TestName = "authentication rejection")]
+	[TestCase("ServiceModel/CustomService.svc/Run", "{\"success\":false,\"errorInfo\":{\"message\":\"Package UsrThing was not found.\"}}",
 		TestName = "BaseResponse failure with errorInfo")]
-	[TestCase("{\"success\":false}", TestName = "BaseResponse failure without any detail")]
-	[TestCase("{\"success\":false,\"errorInfo\":{\"message\":\"denied\"},\"value\":null}",
+	[TestCase("ServiceModel/CustomService.svc/Run", "{\"success\":false}", TestName = "BaseResponse failure without any detail")]
+	[TestCase("ServiceModel/CustomService.svc/Run", "{\"success\":false,\"errorInfo\":{\"message\":\"denied\"},\"value\":null}",
 		TestName = "BaseResponse failure keeping a value member")]
-	[TestCase("{\"success\":false,\"errorInfo\":{\"message\":\"denied\"},"
+	[TestCase("ServiceModel/CustomService.svc/Run", "{\"success\":false,\"errorInfo\":{\"message\":\"denied\"},"
 		+ "\"id\":\"7b3f6c1e-0e7a-4f2e-9a1f-2c0d5f4b8e11\"}",
 		TestName = "BaseResponse failure keeping an id member")]
-	[TestCase("{\"errorInfo\":{\"errorCode\":\"AccessDenied\",\"message\":\"Access to SysSchema is denied\"}}",
+	[TestCase("ServiceModel/CustomService.svc/Run", "{\"errorInfo\":{\"errorCode\":\"AccessDenied\",\"message\":\"Access to SysSchema is denied\"}}",
 		TestName = "populated errorInfo with no success member")]
-	[TestCase("{\"Code\":-1,\"Exception\":\"Access to the entity is denied.\","
+	[TestCase("odata/BulkEmailCategory", "{\"Code\":-1,\"Exception\":\"Access to the entity is denied.\","
 		+ "\"Id\":\"7b3f6c1e-0e7a-4f2e-9a1f-2c0d5f4b8e11\"}",
 		TestName = "explicit error envelope carrying an Id")]
-	[TestCase("<html><body>Access denied</body></html>", TestName = "HTML page carrying no status and no known marker")]
-	[TestCase("\uFEFF<!DOCTYPE html><html><head><title>500 - Internal server error.</title></head></html>",
+	[TestCase("odata/BulkEmailCategory", "<html><body>Access denied</body></html>", TestName = "HTML page carrying no status and no known marker")]
+	[TestCase("odata/BulkEmailCategory", "\uFEFF<!DOCTYPE html><html><head><title>500 - Internal server error.</title></head></html>",
 		TestName = "HTML page behind a byte-order mark")]
-	[TestCase("<?xml version=\"1.0\" encoding=\"utf-8\"?><!DOCTYPE HTML PUBLIC \"-//W3C//DTD HTML 4.01//EN\">"
+	[TestCase("odata/BulkEmailCategory", "<?xml version=\"1.0\" encoding=\"utf-8\"?><!DOCTYPE HTML PUBLIC \"-//W3C//DTD HTML 4.01//EN\">"
 		+ "<html><head><title>Request Error</title></head><body>Service Unavailable</body></html>",
 		TestName = "Creatio/IIS Request Error page behind an XML declaration")]
 	[Description("Recognizes every Creatio error envelope and error-page preamble the platform actually returns, not only {Code,Exception} and a body that starts exactly with a doctype (issue 1220)")]
-	public void Execute_ShouldFailWithoutSaving_WhenCreatioReturnsAKnownErrorShape(string responseBody) {
+	public void Execute_ShouldFailWithoutSaving_WhenCreatioReturnsAKnownErrorShape(string servicePath,
+		string responseBody) {
 		// Arrange
 		IApplicationClient applicationClient = Substitute.For<IApplicationClient>();
 		EnvironmentSettings settings = new();
 		IServiceUrlBuilder serviceUrlBuilder = Substitute.For<IServiceUrlBuilder>();
 		IFileSystem fileSystem = Substitute.For<IFileSystem>();
 		ILogger logger = Substitute.For<ILogger>();
-		serviceUrlBuilder.Build("odata/BulkEmailCategory").Returns("http://host/0/odata/BulkEmailCategory");
+		serviceUrlBuilder.Build(servicePath).Returns($"http://host/0/{servicePath}");
 		applicationClient.ExecuteGetRequest(Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
 			.Returns(responseBody);
 
@@ -324,7 +325,7 @@ public class CallServiceCommandDeleteTests : BaseCommandTests<CallServiceCommand
 			Logger = logger
 		};
 		CallServiceCommandOptions options = new() {
-			ServicePath = "odata/BulkEmailCategory",
+			ServicePath = servicePath,
 			HttpMethodName = "GET",
 			ResultFileName = "result.json"
 		};
@@ -340,24 +341,25 @@ public class CallServiceCommandDeleteTests : BaseCommandTests<CallServiceCommand
 
 	// The counterpart of the cases above: a payload that merely resembles an error envelope must
 	// still be saved, otherwise the fix trades false success for false failure.
-	[TestCase("{\"value\":[{\"Id\":\"1\",\"Code\":\"UsrCode\"}]}", TestName = "collection with a Code column")]
-	[TestCase("{\"Code\":0,\"Exception\":\"\"}", TestName = "successful DataService envelope")]
-	[TestCase("{\"Message\":\"ok\",\"value\":[]}", TestName = "payload carrying both Message and data")]
-	[TestCase("{\"@odata.context\":\"http://host/0/odata/$metadata#UsrThing/$entity\","
+	[TestCase("odata/BulkEmailCategory", "{\"value\":[{\"Id\":\"1\",\"Code\":\"UsrCode\"}]}", TestName = "collection with a Code column")]
+	[TestCase("odata/BulkEmailCategory", "{\"Code\":0,\"Exception\":\"\"}", TestName = "successful DataService envelope")]
+	[TestCase("ServiceModel/CustomService.svc/Run", "{\"Message\":\"ok\",\"value\":[]}", TestName = "payload carrying both Message and data")]
+	[TestCase("odata/BulkEmailCategory", "{\"@odata.context\":\"http://host/0/odata/$metadata#UsrThing/$entity\","
 		+ "\"Id\":\"7b3f6c1e-0e7a-4f2e-9a1f-2c0d5f4b8e11\",\"Code\":200,\"Message\":\"Created\"}",
 		TestName = "OData create echo carrying Code and Message")]
-	[TestCase("{\"success\":true,\"errorInfo\":null}", TestName = "BaseResponse success")]
-	[TestCase("{\"Message\":\"OK\"}", TestName = "custom endpoint answering with a bare Message")]
-	[TestCase("{\"Message\":\"Processed 12 records\",\"MessageDetail\":\"batch 7\"}",
+	[TestCase("ServiceModel/CustomService.svc/Run", "{\"success\":true,\"errorInfo\":null}", TestName = "BaseResponse success")]
+	[TestCase("ServiceModel/CustomService.svc/Run", "{\"Message\":\"OK\"}", TestName = "custom endpoint answering with a bare Message")]
+	[TestCase("ServiceModel/CustomService.svc/Run", "{\"Message\":\"Processed 12 records\",\"MessageDetail\":\"batch 7\"}",
 		TestName = "custom endpoint answering with Message and MessageDetail")]
 	[Description("A successful payload is still saved even when it carries members that look like error keys (issue 1220)")]
-	public void Execute_ShouldSaveResponse_WhenPayloadOnlyResemblesAnErrorEnvelope(string responseBody) {
+	public void Execute_ShouldSaveResponse_WhenPayloadOnlyResemblesAnErrorEnvelope(string servicePath,
+		string responseBody) {
 		// Arrange
 		IApplicationClient applicationClient = Substitute.For<IApplicationClient>();
 		EnvironmentSettings settings = new();
 		IServiceUrlBuilder serviceUrlBuilder = Substitute.For<IServiceUrlBuilder>();
 		IFileSystem fileSystem = Substitute.For<IFileSystem>();
-		serviceUrlBuilder.Build("odata/BulkEmailCategory").Returns("http://host/0/odata/BulkEmailCategory");
+		serviceUrlBuilder.Build(servicePath).Returns($"http://host/0/{servicePath}");
 		applicationClient.ExecuteGetRequest(Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
 			.Returns(responseBody);
 
@@ -365,7 +367,7 @@ public class CallServiceCommandDeleteTests : BaseCommandTests<CallServiceCommand
 			Logger = Substitute.For<ILogger>()
 		};
 		CallServiceCommandOptions options = new() {
-			ServicePath = "odata/BulkEmailCategory",
+			ServicePath = servicePath,
 			HttpMethodName = "GET",
 			ResultFileName = "result.json"
 		};
@@ -498,7 +500,10 @@ public class CallServiceCommandDeleteTests : BaseCommandTests<CallServiceCommand
 		IServiceUrlBuilder serviceUrlBuilder = Substitute.For<IServiceUrlBuilder>();
 		IFileSystem fileSystem = Substitute.For<IFileSystem>();
 		ILogger logger = Substitute.For<ILogger>();
-		serviceUrlBuilder.Build("odata/UsrThing").Returns("http://host/0/odata/UsrThing");
+		//A BaseResponse envelope is a custom-service shape, so the case is stated against a
+		//custom-service path: over odata/ a `success` member is an ordinary entity column.
+		serviceUrlBuilder.Build("ServiceModel/CustomService.svc/Run")
+			.Returns("http://host/0/ServiceModel/CustomService.svc/Run");
 		applicationClient.ExecuteGetRequest(Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
 			.Returns(responseBody);
 
@@ -506,7 +511,7 @@ public class CallServiceCommandDeleteTests : BaseCommandTests<CallServiceCommand
 			Logger = logger
 		};
 		CallServiceCommandOptions options = new() {
-			ServicePath = "odata/UsrThing",
+			ServicePath = "ServiceModel/CustomService.svc/Run",
 			HttpMethodName = "GET"
 		};
 
