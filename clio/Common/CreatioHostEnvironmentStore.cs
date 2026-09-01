@@ -54,6 +54,9 @@ public sealed class CreatioHostEnvironmentStore : ICreatioHostEnvironmentStore
 	public void Save(string workingDirectory, IReadOnlyDictionary<string, string> environmentVariables)
 	{
 		string path = GetStorePath(workingDirectory);
+		string directory = Path.GetDirectoryName(path)
+			?? throw new InvalidOperationException("The host environment store directory could not be resolved.");
+		EnsureSafeStorePath(path, directory);
 		if (environmentVariables is null || environmentVariables.Count == 0)
 		{
 			_fileSystem.DeleteFileIfExists(path);
@@ -70,10 +73,6 @@ public sealed class CreatioHostEnvironmentStore : ICreatioHostEnvironmentStore
 				nameof(environmentVariables));
 		}
 
-		string directory = Path.GetDirectoryName(path)
-			?? throw new InvalidOperationException("The host environment store directory could not be resolved.");
-		EnsureNotSymbolicLink(ClioRuntimePaths.Home, isDirectory: true);
-		EnsureNotSymbolicLink(directory, isDirectory: true);
 		_fileSystem.CreateDirectoryIfNotExists(directory);
 		EnsureNotSymbolicLink(directory, isDirectory: true);
 		_fileSecurityHardening.HardenDirectory(directory);
@@ -97,18 +96,17 @@ public sealed class CreatioHostEnvironmentStore : ICreatioHostEnvironmentStore
 	public IReadOnlyDictionary<string, string> Load(string workingDirectory)
 	{
 		string path = GetStorePath(workingDirectory);
-		if (!_fileSystem.ExistsFile(path))
-		{
-			return new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
-		}
+		string storeDirectory = Path.GetDirectoryName(path)
+			?? throw new InvalidOperationException("The host environment store directory could not be resolved.");
 
 		try
 		{
-			EnsureNotSymbolicLink(ClioRuntimePaths.Home, isDirectory: true);
-			string storeDirectory = Path.GetDirectoryName(path)
-				?? throw new InvalidOperationException("The host environment store directory could not be resolved.");
-			EnsureNotSymbolicLink(storeDirectory, isDirectory: true);
-			EnsureNotSymbolicLink(path, isDirectory: false);
+			EnsureSafeStorePath(path, storeDirectory);
+			if (!_fileSystem.ExistsFile(path))
+			{
+				return new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+			}
+
 			Dictionary<string, string>? environmentVariables =
 				JsonSerializer.Deserialize<Dictionary<string, string>>(_fileSystem.ReadAllText(path));
 			if (environmentVariables is null
@@ -126,6 +124,13 @@ public sealed class CreatioHostEnvironmentStore : ICreatioHostEnvironmentStore
 			throw new InvalidOperationException(
 				$"The saved Creatio host environment is invalid or cannot be read: {path}.", exception);
 		}
+	}
+
+	private void EnsureSafeStorePath(string path, string directory)
+	{
+		EnsureNotSymbolicLink(ClioRuntimePaths.Home, isDirectory: true);
+		EnsureNotSymbolicLink(directory, isDirectory: true);
+		EnsureNotSymbolicLink(path, isDirectory: false);
 	}
 
 	private void EnsureNotSymbolicLink(string path, bool isDirectory)

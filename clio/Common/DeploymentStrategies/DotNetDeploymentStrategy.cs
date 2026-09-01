@@ -32,15 +32,25 @@ public class DotNetDeploymentStrategy : IDeploymentStrategy
 	private readonly ILogger _logger;
 	private readonly ISystemServiceManager _serviceManager;
 	private readonly ICreatioHostService _creatioHostService;
+	private readonly ICreatioHostEnvironmentStore _environmentStore;
 
 	/// <summary>
 	/// Initializes a new instance of the DotNetDeploymentStrategy class.
 	/// </summary>
-	public DotNetDeploymentStrategy(ILogger logger, ISystemServiceManager serviceManager, ICreatioHostService creatioHostService)
+	/// <param name="logger">Logger used for deployment lifecycle messages.</param>
+	/// <param name="serviceManager">Operating-system service manager used for auto-run deployments.</param>
+	/// <param name="creatioHostService">Host process service used to start and persist the environment.</param>
+	/// <param name="environmentStore">Protected store used to preserve certificate environment values between deployments.</param>
+	public DotNetDeploymentStrategy(
+		ILogger logger,
+		ISystemServiceManager serviceManager,
+		ICreatioHostService creatioHostService,
+		ICreatioHostEnvironmentStore environmentStore)
 	{
 		_logger = logger ?? throw new ArgumentNullException(nameof(logger));
 		_serviceManager = serviceManager ?? throw new ArgumentNullException(nameof(serviceManager));
 		_creatioHostService = creatioHostService ?? throw new ArgumentNullException(nameof(creatioHostService));
+		_environmentStore = environmentStore ?? throw new ArgumentNullException(nameof(environmentStore));
 	}
 
 	/// <summary>
@@ -96,19 +106,31 @@ public class DotNetDeploymentStrategy : IDeploymentStrategy
             
 			// Create appsettings.json configuration and keep sensitive certificate values out of the file.
 			string configurationPath = Path.Combine(appDirectoryPath, "appsettings.json");
+			EnsureSafeConfigurationPath(appDirectoryPath, configurationPath);
 			bool hadExistingConfiguration = File.Exists(configurationPath);
 			string? previousConfiguration = hadExistingConfiguration
 				? File.ReadAllText(configurationPath)
 				: null;
+			IReadOnlyDictionary<string, string> previousEnvironmentVariables =
+				_environmentStore.Load(appDirectoryPath)
+				?? new Dictionary<string, string>();
 			IReadOnlyDictionary<string, string> environmentVariables;
 			try
 			{
-				environmentVariables = CreateApplicationConfiguration(appDirectoryPath, options);
+				environmentVariables = CreateApplicationConfiguration(
+					appDirectoryPath,
+					options,
+					previousEnvironmentVariables);
 				_creatioHostService.PersistEnvironmentVariables(appDirectoryPath, environmentVariables);
 			}
 			catch
 			{
-				RestoreApplicationConfiguration(configurationPath, hadExistingConfiguration, previousConfiguration);
+				RestoreFailedDeployment(
+					appDirectoryPath,
+					configurationPath,
+					hadExistingConfiguration,
+					previousConfiguration,
+					previousEnvironmentVariables);
 				throw;
 			}
 			_logger.WriteInfo("Application configuration created");
@@ -130,7 +152,8 @@ public class DotNetDeploymentStrategy : IDeploymentStrategy
 					appDirectoryPath,
 					configurationPath,
 					hadExistingConfiguration,
-					previousConfiguration);
+					previousConfiguration,
+					previousEnvironmentVariables);
 				throw;
 			}
 			_logger.WriteInfo($"Application control URL: {GetApplicationUrl(options)}");
@@ -260,7 +283,10 @@ public class DotNetDeploymentStrategy : IDeploymentStrategy
 	/// </summary>
 	/// <param name="appPath">The deployed application directory.</param>
 	/// <param name="options">The deployment options that determine the endpoint and certificate.</param>
-	internal IReadOnlyDictionary<string, string> CreateApplicationConfiguration(string appPath, PfInstallerOptions options)
+	internal IReadOnlyDictionary<string, string> CreateApplicationConfiguration(
+		string appPath,
+		PfInstallerOptions options,
+		IReadOnlyDictionary<string, string>? persistedEnvironmentVariables = null)
 	{
 		var configPath = Path.Combine(appPath, "appsettings.json");
 		DotNetApplicationConfiguration configuration = null;
@@ -269,7 +295,10 @@ public class DotNetDeploymentStrategy : IDeploymentStrategy
 		{
 			bool hadExistingConfiguration = File.Exists(configPath);
 			string? existingJson = hadExistingConfiguration ? File.ReadAllText(configPath) : null;
-			configuration = BuildApplicationConfigurationWithEnvironment(existingJson, options);
+			configuration = BuildApplicationConfigurationWithEnvironment(
+				existingJson,
+				options,
+				persistedEnvironmentVariables);
 			File.WriteAllText(configPath, configuration.Json);
 			_logger.WriteInfo($"Application configuration {(hadExistingConfiguration ? "updated" : "created")} at: {configPath}");
 			_logger.WriteInfo($"Kestrel listener configured at: {GetListeningEndpointUrl(options)}");
@@ -297,6 +326,7 @@ public class DotNetDeploymentStrategy : IDeploymentStrategy
 	{
 		try
 		{
+			EnsureSafeConfigurationPath(Path.GetDirectoryName(configurationPath)!, configurationPath);
 			if (hadExistingConfiguration)
 			{
 				File.WriteAllText(configurationPath, previousConfiguration!);
@@ -312,22 +342,50 @@ public class DotNetDeploymentStrategy : IDeploymentStrategy
 		}
 	}
 
+	private static void EnsureSafeConfigurationPath(string applicationDirectoryPath, string configurationPath)
+	{
+		EnsureNotSymbolicLink(applicationDirectoryPath, isDirectory: true);
+		EnsureNotSymbolicLink(configurationPath, isDirectory: false);
+	}
+
+	private static void EnsureNotSymbolicLink(string path, bool isDirectory)
+	{
+		FileSystemInfo fileSystemInfo = isDirectory
+			? new DirectoryInfo(path)
+			: new FileInfo(path);
+		if (!string.IsNullOrEmpty(fileSystemInfo.LinkTarget))
+		{
+			throw new IOException($"The dotnet configuration path must not be a symbolic link: {path}.");
+		}
+
+		if (!fileSystemInfo.Exists)
+		{
+			return;
+		}
+
+		if (fileSystemInfo.Attributes.HasFlag(FileAttributes.ReparsePoint))
+		{
+			throw new IOException($"The dotnet configuration path must not be a reparse point: {path}.");
+		}
+	}
+
 	private void RestoreFailedDeployment(
 		string appDirectoryPath,
 		string configurationPath,
 		bool hadExistingConfiguration,
-		string? previousConfiguration)
+		string? previousConfiguration,
+		IReadOnlyDictionary<string, string> previousEnvironmentVariables)
 	{
 		RestoreApplicationConfiguration(configurationPath, hadExistingConfiguration, previousConfiguration);
 		try
 		{
 			_creatioHostService.PersistEnvironmentVariables(
 				appDirectoryPath,
-				new Dictionary<string, string>());
+				previousEnvironmentVariables);
 		}
 		catch (Exception exception)
 		{
-			_logger.WriteError($"Failed to remove persisted host environment after deployment failure: {exception.Message}");
+			_logger.WriteError($"Failed to restore persisted host environment after deployment failure: {exception.Message}");
 		}
 	}
 
@@ -349,6 +407,12 @@ public class DotNetDeploymentStrategy : IDeploymentStrategy
 	internal DotNetApplicationConfiguration BuildApplicationConfigurationWithEnvironment(
 		string? existingJson,
 		PfInstallerOptions options)
+		=> BuildApplicationConfigurationWithEnvironment(existingJson, options, persistedEnvironmentVariables: null);
+
+	internal DotNetApplicationConfiguration BuildApplicationConfigurationWithEnvironment(
+		string? existingJson,
+		PfInstallerOptions options,
+		IReadOnlyDictionary<string, string>? persistedEnvironmentVariables)
 	{
 		if (options == null)
 			throw new ArgumentNullException(nameof(options));
@@ -362,7 +426,10 @@ public class DotNetDeploymentStrategy : IDeploymentStrategy
 		if (options.UseHttps)
 		{
 			RemoveEndpointsByScheme(endpoints, "http");
-			Dictionary<string, string> environmentVariables = ExtractCertificateEnvironmentVariables(kestrel, endpoints);
+			Dictionary<string, string> environmentVariables = ExtractCertificateEnvironmentVariables(
+				kestrel,
+				endpoints,
+				persistedEnvironmentVariables);
 			(string httpsEndpointName, JsonObject httpsEndpoint) = FindOrCreateEndpoint(endpoints, "Https", "https");
 			SetStringProperty(httpsEndpoint, "Url", BuildEndpointUrl("https", bindHost, options.SitePort));
 			ConfigureHttpsCertificate(httpsEndpointName, httpsEndpoint, kestrel, options, environmentVariables);
@@ -374,7 +441,10 @@ public class DotNetDeploymentStrategy : IDeploymentStrategy
 		}
 		else
 		{
-			Dictionary<string, string> environmentVariables = ExtractCertificateEnvironmentVariables(kestrel, endpoints);
+			Dictionary<string, string> environmentVariables = ExtractCertificateEnvironmentVariables(
+				kestrel,
+				endpoints,
+				persistedEnvironmentVariables);
 			(_, JsonObject httpEndpoint) = FindOrCreateEndpoint(endpoints, "Http", "http");
 			SetStringProperty(httpEndpoint, "Url", BuildEndpointUrl("http", bindHost, options.SitePort));
 			RewriteEndpointHosts(endpoints, "http", bindHost);
@@ -741,7 +811,8 @@ public class DotNetDeploymentStrategy : IDeploymentStrategy
 
 	private static Dictionary<string, string> ExtractCertificateEnvironmentVariables(
 		JsonObject kestrel,
-		JsonObject endpoints)
+		JsonObject endpoints,
+		IReadOnlyDictionary<string, string>? persistedEnvironmentVariables = null)
 	{
 		Dictionary<string, string> environmentVariables = new(StringComparer.OrdinalIgnoreCase);
 		foreach (KeyValuePair<string, JsonNode?> property in endpoints)
@@ -757,7 +828,8 @@ public class DotNetDeploymentStrategy : IDeploymentStrategy
 				ExtractCertificatePassword(
 					certificate,
 					$"Kestrel__Endpoints__{property.Key}__Certificate__Password",
-					environmentVariables);
+					environmentVariables,
+					persistedEnvironmentVariables);
 			}
 		}
 
@@ -777,7 +849,8 @@ public class DotNetDeploymentStrategy : IDeploymentStrategy
 			ExtractCertificatePassword(
 				certificate,
 				$"Kestrel__Certificates__{property.Key}__Password",
-				environmentVariables);
+				environmentVariables,
+				persistedEnvironmentVariables);
 		}
 
 		return environmentVariables;
@@ -786,7 +859,8 @@ public class DotNetDeploymentStrategy : IDeploymentStrategy
 	private static void ExtractCertificatePassword(
 		JsonObject certificate,
 		string environmentVariableName,
-		IDictionary<string, string> environmentVariables)
+		IDictionary<string, string> environmentVariables,
+		IReadOnlyDictionary<string, string>? persistedEnvironmentVariables)
 	{
 		string? passwordPropertyName = null;
 		foreach (KeyValuePair<string, JsonNode?> property in certificate)
@@ -806,6 +880,11 @@ public class DotNetDeploymentStrategy : IDeploymentStrategy
 
 		if (passwordPropertyName is null)
 		{
+			if (persistedEnvironmentVariables is not null
+				&& persistedEnvironmentVariables.TryGetValue(environmentVariableName, out string persistedPassword))
+			{
+				environmentVariables[environmentVariableName] = persistedPassword;
+			}
 			return;
 		}
 

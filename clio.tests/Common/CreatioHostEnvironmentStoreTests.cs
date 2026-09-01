@@ -190,6 +190,28 @@ public sealed class CreatioHostEnvironmentStoreTests : BaseClioModuleTests
 	}
 
 	[Test]
+	[Description("Rejects a symbolic-link store file before empty-state cleanup can delete through an attacker-controlled directory.")]
+	public void Save_ShouldRejectSymbolicLinkStoreFile_WhenEnvironmentIsEmpty()
+	{
+		// Arrange
+		System.IO.Abstractions.IFileInfo link =
+			Substitute.For<System.IO.Abstractions.IFileInfo>();
+		link.LinkTarget.Returns("/tmp/attacker-target");
+		_fileSystem.GetFilesInfos(Arg.Any<string>()).Returns(link);
+
+		// Act
+		Action action = () => _sut.Save("/tmp/creatio", new Dictionary<string, string>());
+
+		// Assert
+		action.Should().Throw<IOException>(because:
+			"empty-state cleanup must fail closed when the store file path is a planted symbolic link");
+		_fileSystem.ReceivedCalls()
+			.Where(call => call.GetMethodInfo().Name == nameof(IFileSystem.DeleteFileIfExists))
+			.Should().BeEmpty(
+				because: "cleanup must not follow or remove an untrusted symbolic-link path");
+	}
+
+	[Test]
 	[Description("Removes a partially written host environment file when ownership hardening fails after the secret is written.")]
 	public void Save_ShouldDeleteStoreFile_WhenFileHardeningFails()
 	{

@@ -23,14 +23,17 @@ namespace Clio.Tests.Common;
 [Property("Module", "Common")]
 public sealed class DotNetDeploymentStrategyTests : BaseClioModuleTests {
 	private ICreatioHostService _creatioHostService;
+	private ICreatioHostEnvironmentStore _environmentStore;
 	private ISystemServiceManager _serviceManager;
 	private DotNetDeploymentStrategy _sut;
 	private string _temporaryDirectory;
 
 	protected override void AdditionalRegistrations(IServiceCollection containerBuilder) {
 		_creatioHostService = Substitute.For<ICreatioHostService>();
+		_environmentStore = Substitute.For<ICreatioHostEnvironmentStore>();
 		_serviceManager = Substitute.For<ISystemServiceManager>();
 		containerBuilder.AddSingleton(_creatioHostService);
+		containerBuilder.AddSingleton(_environmentStore);
 		containerBuilder.AddSingleton(_serviceManager);
 	}
 
@@ -657,7 +660,59 @@ public sealed class DotNetDeploymentStrategyTests : BaseClioModuleTests {
 	}
 
 	[Test]
-	[Description("Restores the previous appsettings.json when protected certificate-environment persistence fails after configuration generation.")]
+	[Description("Preserves a protected certificate password when redeploying an HTTPS host whose appsettings.json no longer contains plaintext credentials.")]
+	public async Task Deploy_ShouldPreserveStoredCertificatePassword_WhenRedeploying() {
+		// Arrange
+		string appDirectory = Path.Combine(_temporaryDirectory, "redeploy-app");
+		Directory.CreateDirectory(appDirectory);
+		string configurationPath = Path.Combine(appDirectory, "appsettings.json");
+		File.WriteAllText(configurationPath, """
+			{
+			  "Kestrel": {
+			    "Endpoints": {
+			      "Https": {
+			        "Url": "https://localhost:5000",
+			        "Certificate": { "Path": "server.pfx" }
+			      }
+			    }
+			  }
+			}
+			""");
+		const string environmentVariableName = "Kestrel__Endpoints__Https__Certificate__Password";
+		IReadOnlyDictionary<string, string> persistedEnvironmentVariables = new Dictionary<string, string> {
+			[environmentVariableName] = "persisted-secret"
+		};
+		_environmentStore.Load(appDirectory).Returns(persistedEnvironmentVariables);
+		_creatioHostService.StartInBackground(
+			Arg.Any<string>(),
+			Arg.Any<IReadOnlyDictionary<string, string>>()).Returns(42);
+		PfInstallerOptions options = new() {
+			SiteName = "redeploy-test",
+			SitePort = GetAvailablePort(),
+			UseHttps = true,
+			AutoRun = false
+		};
+
+		// Act
+		int exitCode = await _sut.Deploy(appDirectory, options);
+
+		// Assert
+		exitCode.Should().Be(0,
+			because: "a secure redeploy should reuse the protected password for the existing certificate configuration");
+		_creatioHostService.Received(1).PersistEnvironmentVariables(
+			appDirectory,
+			Arg.Is<IReadOnlyDictionary<string, string>>(variables =>
+				variables.ContainsKey(environmentVariableName)
+				&& variables[environmentVariableName] == "persisted-secret"));
+		_creatioHostService.Received(1).StartInBackground(
+			appDirectory,
+			Arg.Is<IReadOnlyDictionary<string, string>>(variables =>
+				variables.ContainsKey(environmentVariableName)
+				&& variables[environmentVariableName] == "persisted-secret"));
+	}
+
+	[Test]
+	[Description("Restores both appsettings.json and the previous protected environment when certificate-environment persistence fails after configuration generation.")]
 	public async Task Deploy_ShouldRestoreConfiguration_WhenEnvironmentPersistenceFails() {
 		// Arrange
 		string appDirectory = Path.Combine(_temporaryDirectory, "rollback-app");
@@ -673,8 +728,17 @@ public sealed class DotNetDeploymentStrategyTests : BaseClioModuleTests {
 			CertificatePath = certificatePath,
 			AutoRun = false
 		};
+		const string environmentVariableName = "Kestrel__Endpoints__Https__Certificate__Password";
+		IReadOnlyDictionary<string, string> previousEnvironmentVariables = new Dictionary<string, string> {
+			[environmentVariableName] = "previous-secret"
+		};
+		_environmentStore.Load(appDirectory).Returns(previousEnvironmentVariables);
 		_creatioHostService.WhenForAnyArgs(service => service.PersistEnvironmentVariables(default, default))
-			.Do(_ => throw new IOException("protected environment store failed"));
+			.Do(call => {
+				if (call[1] is IReadOnlyDictionary<string, string> variables && variables.Count == 0) {
+					throw new IOException("protected environment store failed");
+				}
+			});
 
 		// Act
 		int exitCode = await _sut.Deploy(appDirectory, options);
@@ -684,11 +748,16 @@ public sealed class DotNetDeploymentStrategyTests : BaseClioModuleTests {
 			because: "deployment must report failure when certificate environment persistence cannot complete");
 		File.ReadAllText(configurationPath).Should().Be(previousConfiguration,
 			because: "a failed secret-store write must not leave the application with an unrecoverable rewritten configuration");
+		_creatioHostService.Received(1).PersistEnvironmentVariables(
+			appDirectory,
+			Arg.Is<IReadOnlyDictionary<string, string>>(variables =>
+				variables.ContainsKey(environmentVariableName)
+				&& variables[environmentVariableName] == "previous-secret"));
 	}
 
 	[Test]
-	[Description("Reports a failed dotnet deployment and restores configuration when the host process cannot be started.")]
-	public async Task Deploy_ShouldRestoreConfigurationAndClearEnvironment_WhenHostDoesNotStart() {
+	[Description("Reports a failed dotnet deployment and restores configuration and the previous protected environment when the host process cannot be started.")]
+	public async Task Deploy_ShouldRestoreConfigurationAndEnvironment_WhenHostDoesNotStart() {
 		// Arrange
 		string appDirectory = Path.Combine(_temporaryDirectory, "start-failure-app");
 		Directory.CreateDirectory(appDirectory);
@@ -697,6 +766,11 @@ public sealed class DotNetDeploymentStrategyTests : BaseClioModuleTests {
 		File.WriteAllText(configurationPath, previousConfiguration);
 		string certificatePath = CreateTemporaryPfx("start-failure.pfx", "start-failure-secret");
 		string passwordFile = CreateTemporaryPasswordFile("start-failure-secret");
+		const string environmentVariableName = "Kestrel__Endpoints__Https__Certificate__Password";
+		IReadOnlyDictionary<string, string> previousEnvironmentVariables = new Dictionary<string, string> {
+			[environmentVariableName] = "previous-secret"
+		};
+		_environmentStore.Load(appDirectory).Returns(previousEnvironmentVariables);
 		PfInstallerOptions options = new() {
 			SiteName = "start-failure-test",
 			SitePort = GetAvailablePort(),
@@ -722,9 +796,10 @@ public sealed class DotNetDeploymentStrategyTests : BaseClioModuleTests {
 				&& call.GetArguments()[0] is string path
 				&& path == appDirectory
 				&& call.GetArguments()[1] is IReadOnlyDictionary<string, string> variables
-				&& variables.Count == 0)
+				&& variables.TryGetValue(environmentVariableName, out string password)
+				&& password == "previous-secret")
 			.Should().ContainSingle(
-				because: "a failed host launch must clear the certificate values persisted for that deployment");
+				because: "a failed host launch must restore the certificate values that belonged to the previous deployment");
 	}
 
 	private string CreateTemporaryPfx(string fileName, string? password = null) {
