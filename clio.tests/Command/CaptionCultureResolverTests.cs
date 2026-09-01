@@ -18,7 +18,7 @@ public sealed class CaptionCultureResolverTests
 {
 	private static CaptionCultureResolver CreateResolver(CultureResolution profileResolution, bool settingsThrows = false)
 	{
-		ICurrentUserCultureResolver inner = Substitute.For<ICurrentUserCultureResolver>();
+		IOwnedCurrentUserCultureResolver inner = Substitute.For<IOwnedCurrentUserCultureResolver>();
 		inner.ResolveAsync(Arg.Any<CancellationToken>()).Returns(Task.FromResult(profileResolution));
 		ICurrentUserCultureResolverFactory factory = Substitute.For<ICurrentUserCultureResolverFactory>();
 		factory.Create(Arg.Any<EnvironmentSettings>()).Returns(inner);
@@ -115,7 +115,7 @@ public sealed class CaptionCultureResolverTests
 	private static (CaptionCultureResolver Resolver, ICurrentUserCultureResolverFactory Factory,
 		ISettingsRepository SettingsRepository) CreateResolverWithMocks(CultureResolution profileResolution)
 	{
-		ICurrentUserCultureResolver inner = Substitute.For<ICurrentUserCultureResolver>();
+		IOwnedCurrentUserCultureResolver inner = Substitute.For<IOwnedCurrentUserCultureResolver>();
 		inner.ResolveAsync(Arg.Any<CancellationToken>()).Returns(Task.FromResult(profileResolution));
 		ICurrentUserCultureResolverFactory factory = Substitute.For<ICurrentUserCultureResolverFactory>();
 		factory.Create(Arg.Any<EnvironmentSettings>()).Returns(inner);

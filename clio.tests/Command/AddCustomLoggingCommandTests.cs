@@ -216,7 +216,9 @@ public sealed class AddCustomLoggingCommandTests : BaseCommandTests<AddCustomLog
 [TestFixture]
 [Property("Module", "Command")]
 public sealed class EnvironmentRestartServiceTests : BaseClioModuleTests {
-	private IApplicationClient _applicationClient;
+	[System.Diagnostics.CodeAnalysis.SuppressMessage("Structure", "NUnit1032:An IDisposable field/property should be Disposed in a TearDown method",
+		Justification = "The system under test owns and disposes the factory-returned substitute.")]
+	private IOwnedApplicationClient _applicationClient;
 	private IApplicationClientFactory _applicationClientFactory;
 	private IEnvironmentRestartService _restartService;
 
@@ -227,7 +229,7 @@ public sealed class EnvironmentRestartServiceTests : BaseClioModuleTests {
 
 	protected override void AdditionalRegistrations(IServiceCollection services) {
 		base.AdditionalRegistrations(services);
-		_applicationClient = Substitute.For<IApplicationClient>();
+		_applicationClient = Substitute.For<IOwnedApplicationClient>();
 		_applicationClientFactory = Substitute.For<IApplicationClientFactory>();
 		_applicationClientFactory.CreateEnvironmentClient(Arg.Any<EnvironmentSettings>()).Returns(_applicationClient);
 		services.AddTransient(_ => _applicationClientFactory);

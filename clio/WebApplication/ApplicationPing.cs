@@ -51,8 +51,8 @@
 
 		#region Methods: Private
 
-		private IApplicationClient CreateApplicationClient(EnvironmentSettings environmentSettings) =>
-			_applicationClientFactory.CreateClient(environmentSettings);
+		private IOwnedApplicationClient CreateApplicationClient(EnvironmentSettings environmentSettings) =>
+			_applicationClientFactory.CreateOwnedClient(environmentSettings);
 
 		#endregion
 
@@ -60,7 +60,7 @@
 
 		public bool Ping(EnvironmentSettings environmentSettings) {
 			try {
-				IApplicationClient client = CreateApplicationClient(environmentSettings);
+				using IOwnedApplicationClient client = CreateApplicationClient(environmentSettings);
 				client.ExecuteGetRequest(PingUri);
 				return true;
 			} catch (Exception) {
