@@ -1,7 +1,10 @@
 using System;
+using System.Collections.Generic;
+using System.Linq;
 using Clio.Command;
 using Clio.Common;
 using Clio.UserEnvironment;
+using CommandLine;
 using ConsoleTables;
 using FluentAssertions;
 using NSubstitute;
@@ -51,8 +54,8 @@ public sealed class ConfigCommandTests : BaseCommandTests<ConfigOptions> {
 	}
 
 	[Test]
-	[Description("Clears the stored deploy-creatio defaults when --reset is supplied.")]
-	public void Execute_ShouldClearDefaults_WhenResetSupplied() {
+	[Description("Clears custom deploy-creatio defaults and restores the built-in site-port range when --reset is supplied.")]
+	public void Execute_ShouldRestoreBuiltInDefaults_WhenResetSupplied() {
 		// Arrange
 		ConfigOptions options = new() { Reset = true };
 
@@ -61,12 +64,13 @@ public sealed class ConfigCommandTests : BaseCommandTests<ConfigOptions> {
 
 		// Assert
 		result.Should().Be(0, because: "resetting the configuration always succeeds");
-		_settingsRepository.Received(1).SetDeployCreatioDefaults(null);
+		_settingsRepository.Received(1).SetDeployCreatioDefaults(
+			Arg.Is<DeployCreatioDefaults>(defaults => defaults.SitePortRange.SequenceEqual(new[] { 40100, 40199 })));
 	}
 
 	[Test]
-	[Description("Reset takes precedence over set arguments supplied in the same call.")]
-	public void Execute_ShouldClearDefaults_WhenResetAndSetArgumentsSupplied() {
+	[Description("Reset restores built-ins and takes precedence over set arguments supplied in the same call.")]
+	public void Execute_ShouldRestoreBuiltIns_WhenResetAndSetArgumentsSupplied() {
 		// Arrange
 		ConfigOptions options = new() { Reset = true, DeployDbServerName = "my-local-postgres" };
 
@@ -75,8 +79,9 @@ public sealed class ConfigCommandTests : BaseCommandTests<ConfigOptions> {
 
 		// Assert
 		result.Should().Be(0, because: "reset wins over set arguments and always succeeds");
-		_settingsRepository.Received(1).SetDeployCreatioDefaults(null);
-		_settingsRepository.DidNotReceive().SetDeployCreatioDefaults(Arg.Is<DeployCreatioDefaults>(d => d != null));
+		_settingsRepository.Received(1).SetDeployCreatioDefaults(
+			Arg.Is<DeployCreatioDefaults>(defaults => defaults.DbServerName == null
+				&& defaults.SitePortRange.SequenceEqual(new[] { 40100, 40199 })));
 	}
 
 	[Test]
@@ -121,6 +126,81 @@ public sealed class ConfigCommandTests : BaseCommandTests<ConfigOptions> {
 		result.Should().Be(0, because: "a valid set operation succeeds");
 		_settingsRepository.Received(1).SetDeployCreatioDefaults(
 			Arg.Is<DeployCreatioDefaults>(d => d.SitePort == 40018));
+	}
+
+	[Test]
+	[Description("Treats the parser's empty site-port range collection as an omitted option.")]
+	public void Execute_ShouldPersistSitePort_WhenParsedRangeOptionIsOmitted() {
+		// Arrange
+		ParserResult<ConfigOptions> parseResult = Parser.Default.ParseArguments<ConfigOptions>(
+			["--deploy-site-port", "40155"]);
+		ConfigOptions options = ((Parsed<ConfigOptions>)parseResult).Value;
+
+		// Act
+		int result = _sut.Execute(options);
+
+		// Assert
+		parseResult.Tag.Should().Be(ParserResultType.Parsed,
+			because: "the regression must exercise the options produced by the real command-line parser");
+		options.DeploySitePortRange.Should().BeEmpty(
+			because: "the parser represents an omitted enumerable option with an empty collection");
+		result.Should().Be(0,
+			because: "an omitted range must not invalidate an otherwise valid fixed-port update");
+		_settingsRepository.Received(1).SetDeployCreatioDefaults(
+			Arg.Is<DeployCreatioDefaults>(defaults => defaults.SitePort == 40155));
+	}
+
+	[Test]
+	[Description("Persists a valid inclusive site-port range and clears a fixed port so automatic selection becomes effective.")]
+	public void Execute_ShouldPersistSitePortRangeAndClearFixedPort_WhenRangeSupplied() {
+		// Arrange
+		_settingsRepository.GetDeployCreatioDefaults()
+			.Returns(new DeployCreatioDefaults { SitePort = 40018 });
+		ConfigOptions options = new() { DeploySitePortRange = [41000, 41010] };
+
+		// Act
+		int result = _sut.Execute(options);
+
+		// Assert
+		result.Should().Be(0, because: "a valid inclusive range should be accepted");
+		_settingsRepository.Received(1).SetDeployCreatioDefaults(
+			Arg.Is<DeployCreatioDefaults>(defaults => defaults.SitePort == null
+				&& defaults.SitePortRange.SequenceEqual(new[] { 41000, 41010 })));
+	}
+
+	[Test]
+	[Description("Keeps a fixed site port active when fixed and range defaults are configured together.")]
+	public void Execute_ShouldPreferFixedSitePort_WhenFixedPortAndRangeSupplied() {
+		// Arrange
+		_settingsRepository.GetDeployCreatioDefaults().Returns(new DeployCreatioDefaults());
+		ConfigOptions options = new() {
+			DeploySitePort = 40018,
+			DeploySitePortRange = [41000, 41010]
+		};
+
+		// Act
+		int result = _sut.Execute(options);
+
+		// Assert
+		result.Should().Be(0, because: "both valid defaults can be persisted together");
+		_settingsRepository.Received(1).SetDeployCreatioDefaults(
+			Arg.Is<DeployCreatioDefaults>(defaults => defaults.SitePort == 40018
+				&& defaults.SitePortRange.SequenceEqual(new[] { 41000, 41010 })));
+	}
+
+	[TestCaseSource(nameof(InvalidSitePortRanges))]
+	[Description("Rejects site-port ranges that do not contain exactly two ordered valid TCP ports.")]
+	public void Execute_ShouldReturnError_WhenSitePortRangeInvalid(int[] range) {
+		// Arrange
+		ConfigOptions options = new() { DeploySitePortRange = range };
+
+		// Act
+		int result = _sut.Execute(options);
+
+		// Assert
+		result.Should().Be(1, because: "invalid ranges must fail before settings are persisted");
+		_settingsRepository.DidNotReceive().SetDeployCreatioDefaults(Arg.Any<DeployCreatioDefaults>());
+		_logger.Received().WriteError(Arg.Is<string>(message => message.Contains("1 <= start <= end <= 65535")));
 	}
 
 	[Test]
@@ -251,5 +331,12 @@ public sealed class ConfigCommandTests : BaseCommandTests<ConfigOptions> {
 		// Assert
 		result.Should().Be(1, because: "invalid feedback policy must not be persisted as success");
 		_logger.Received(1).WriteError("Invalid feedback policy.");
+	}
+
+	private static IEnumerable<int[]> InvalidSitePortRanges() {
+		yield return [40100];
+		yield return [40199, 40100];
+		yield return [0, 40100];
+		yield return [40100, 65536];
 	}
 }
