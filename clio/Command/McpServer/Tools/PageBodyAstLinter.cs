@@ -256,7 +256,17 @@ internal static class PageBodyAstLinter {
 		"navigator", "Node", "Notification", "parent", "performance", "prompt", "queueMicrotask",
 		"requestAnimationFrame", "requestIdleCallback", "Request", "ResizeObserver", "Response", "screen",
 		"self", "sessionStorage", "setInterval", "setTimeout", "structuredClone", "TextDecoder",
-		"TextEncoder", "top", "URL", "URLSearchParams", "WebSocket", "window", "Worker", "XMLHttpRequest"
+		"TextEncoder", "top", "URL", "URLSearchParams", "WebSocket", "window", "Worker", "XMLHttpRequest",
+		// The Window object's own methods and properties, callable bare because Window IS the global object.
+		// A page calling `open()`, `close()`, `postMessage()` or `addEventListener()` was rejected outright
+		// before these were listed - the same gap `alert`/`btoa`/`queueMicrotask` came from, one level up:
+		// the earlier groups listed constructors and free functions but not the Window instance members.
+		"addEventListener", "removeEventListener", "dispatchEvent", "open", "close", "closed", "postMessage",
+		"focus", "blur", "print", "stop", "scroll", "scrollTo", "scrollBy", "moveBy", "moveTo", "resizeBy",
+		"resizeTo", "getSelection", "innerWidth", "innerHeight", "outerWidth", "outerHeight", "scrollX",
+		"scrollY", "pageXOffset", "pageYOffset", "screenX", "screenY", "screenLeft", "screenTop",
+		"devicePixelRatio", "frameElement", "frames", "length", "name", "origin", "opener", "isSecureContext",
+		"customElements", "indexedDB", "caches", "visualViewport", "reportError"
 	];
 
 	// AMD: a Freedom UI page body is an AMD module, so the loader's own names are always in scope.
@@ -276,6 +286,15 @@ internal static class PageBodyAstLinter {
 	// are replaced by a single summary finding that states how many were left out, so the response
 	// stays bounded without pretending the rest do not exist.
 	internal const int MaxUndefinedSectionCallNames = 20;
+
+	// How many DISTINCT omitted names the summary keeps before its count saturates. The names are never
+	// printed, only counted, so retaining every one of them buys nothing and costs megabytes on a generated
+	// page.
+	internal const int MaxTrackedOmittedNames = 200;
+
+	// Ceiling on findings of one rule. A page with thousands of offending entries produced a report measured
+	// in hundreds of kilobytes - unreadable, and the caller only ever fixes the first few before re-running.
+	internal const int MaxFindingsPerRule = 50;
 
 	/// <summary>
 	/// A lexical scope and its chain of enclosing scopes. Resolution walks outwards, so a name
@@ -328,6 +347,9 @@ internal static class PageBodyAstLinter {
 
 		public int OmittedNameCount => _omitted.Count;
 
+		/// <summary>True when distinct omitted names stopped being tracked, so the count is a floor.</summary>
+		public bool OmittedNameCountIsFloor { get; private set; }
+
 		public int OmittedOccurrenceCount { get; private set; }
 
 		public int ReportedNameCount => _reported.Count;
@@ -347,7 +369,16 @@ internal static class PageBodyAstLinter {
 				return false;
 			}
 			if (_reported.Count >= MaxUndefinedSectionCallNames) {
-				_omitted.Add(name);
+				// Bounded on purpose. This set exists only to count DISTINCT omitted names for the one summary
+				// line, and a generated page can carry tens of thousands of them: 50,000 distinct names retained
+				// about 2.94 MB and 100,000 about 6.07 MB while the response still returned 21 findings. Past the
+				// sample the count saturates and the summary says so, instead of the report's memory growing with
+				// input it never prints.
+				if (_omitted.Count < MaxTrackedOmittedNames || _omitted.Contains(name)) {
+					_omitted.Add(name);
+				} else {
+					OmittedNameCountIsFloor = true;
+				}
 				OmittedOccurrenceCount++;
 				return false;
 			}
@@ -400,8 +431,8 @@ internal static class PageBodyAstLinter {
 	private static PageBodyLintFinding BuildOmittedSummary(
 		OmittedCallLocation lastOmitted, UndefinedCallBudget budget) {
 		string namesPart = budget.OmittedNameCount > 0
-			? $"{budget.OmittedNameCount} further undeclared name(s) past the first "
-				+ $"{MaxUndefinedSectionCallNames}, and "
+			? $"{(budget.OmittedNameCountIsFloor ? "at least " : string.Empty)}{budget.OmittedNameCount} "
+				+ $"further undeclared name(s) past the first {MaxUndefinedSectionCallNames}, and "
 			: string.Empty;
 		return new PageBodyLintFinding(
 			Rule: RuleUndefinedSectionCall,
@@ -688,6 +719,10 @@ internal static class PageBodyAstLinter {
 	// as a valid vendor prefix by `ValidatePrefixedDeclarations` and the
 	// converter shape validators explicitly skip `crt.*` keys.
 	private static void CheckConvertersDirectKeys(ObjectExpression convertersObj, List<PageBodyLintFinding> findings) {
+		int reported = 0;
+		int suppressed = 0;
+		int lastLine = 0;
+		int lastColumn = 0;
 		foreach (Node element in convertersObj.Properties) {
 			if (!TryGetInitProperty(element, out Property entry, out string entryKey)) {
 				continue;
@@ -695,12 +730,32 @@ internal static class PageBodyAstLinter {
 			if (!entryKey.StartsWith("crt.", StringComparison.Ordinal)) {
 				continue;
 			}
+			lastLine = entry.Location.Start.Line;
+			lastColumn = entry.Location.Start.Column + 1;
+			if (reported < MaxFindingsPerRule) {
+				findings.Add(new PageBodyLintFinding(
+					Rule: RuleConverterCrtPrefixReserved,
+					Severity: LintSeverity.Error,
+					Line: lastLine,
+					Column: lastColumn,
+					Message: $"Custom converter `{entryKey}` uses the reserved `crt.*` namespace; only Creatio built-in converters may use this prefix"));
+				reported++;
+				continue;
+			}
+			// Every offending key carries the same fix, and a generated converters map can hold thousands of
+			// them: 5,000 keys formatted an ~871 KB error nobody reads. Past the cap they collapse into one
+			// counted line at the last offending position.
+			suppressed++;
+		}
+		if (suppressed > 0) {
 			findings.Add(new PageBodyLintFinding(
 				Rule: RuleConverterCrtPrefixReserved,
 				Severity: LintSeverity.Error,
-				Line: entry.Location.Start.Line,
-				Column: entry.Location.Start.Column + 1,
-				Message: $"Custom converter `{entryKey}` uses the reserved `crt.*` namespace; only Creatio built-in converters may use this prefix"));
+				Line: lastLine,
+				Column: lastColumn,
+				Message: $"{suppressed} further converter key(s) past the first {MaxFindingsPerRule} use the "
+					+ "reserved `crt.*` namespace and were omitted from this report; fix the listed ones and "
+					+ "re-run validate-page to see the rest."));
 		}
 	}
 

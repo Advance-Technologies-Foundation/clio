@@ -1,5 +1,6 @@
 ﻿using System.Collections.Generic;
 using System.Linq;
+using System.Text;
 using Acornima.Ast;
 using Clio.Command.McpServer.Tools;
 using FluentAssertions;
@@ -970,6 +971,83 @@ internal class PageBodyAstLinterTests {
 		// Assert
 		findings.Should().NotContain(f => f.Rule == PageBodyAstLinter.RuleUndefinedSectionCall,
 			because: "a function declaration is hoisted with its body, so the call resolves at runtime");
+	}
+
+	[TestCase("open", TestName = "WindowGlobal_open")]
+	[TestCase("close", TestName = "WindowGlobal_close")]
+	[TestCase("postMessage", TestName = "WindowGlobal_postMessage")]
+	[TestCase("addEventListener", TestName = "WindowGlobal_addEventListener")]
+	[TestCase("removeEventListener", TestName = "WindowGlobal_removeEventListener")]
+	[TestCase("getSelection", TestName = "WindowGlobal_getSelection")]
+	[Description("A bare call to a Window instance method is a standard browser global, so it must not block the write — the catalog listed constructors and free functions but not the members Window itself carries")]
+	public void Lint_ShouldNotEmitError_WhenSectionCallsABareWindowMethod(string globalName) {
+		// Arrange
+		string body =
+			"define(\"X\", [], function() { " +
+			"return { handlers: [{ request: \"crt.HandleViewModelInitRequest\", " +
+			$"handler: async (request, next) => {{ {globalName}(); return next?.handle(request); }} }}], " +
+			"converters: {}, validators: {} }; });";
+
+		// Act
+		IReadOnlyList<PageBodyLintFinding> findings = LintBody(body);
+
+		// Assert
+		findings.Should().NotContain(f => f.Rule == PageBodyAstLinter.RuleUndefinedSectionCall,
+			because: $"{globalName} is supplied by the browser on every Freedom UI page, so rejecting it turns a working page into a refused write");
+	}
+
+	[Test]
+	[Description("Thousands of distinct undeclared names do not grow the report: the omitted-name count saturates at the tracked sample and says so, instead of retaining every discarded identifier")]
+	public void Lint_ShouldSaturateOmittedNameCount_WhenDistinctUndeclaredNamesExceedTheSample() {
+		// Arrange — far past both the reported cap and the tracked-name sample.
+		int distinctNames = PageBodyAstLinter.MaxTrackedOmittedNames + PageBodyAstLinter.MaxUndefinedSectionCallNames + 500;
+		var calls = new StringBuilder();
+		for (int index = 0; index < distinctNames; index++) {
+			calls.Append($"missingHelper{index}(); ");
+		}
+		string body =
+			"define(\"X\", [], function() { " +
+			"return { handlers: [{ request: \"crt.HandleViewModelInitRequest\", " +
+			$"handler: async (request, next) => {{ {calls}return next?.handle(request); }} }}], " +
+			"converters: {}, validators: {} }; });";
+
+		// Act
+		IReadOnlyList<PageBodyLintFinding> findings = LintBody(body);
+
+		// Assert
+		List<PageBodyLintFinding> reported = findings
+			.Where(f => f.Rule == PageBodyAstLinter.RuleUndefinedSectionCall).ToList();
+		reported.Should().HaveCount(PageBodyAstLinter.MaxUndefinedSectionCallNames + 1,
+			because: "the per-name findings stay capped and one summary line closes the rule");
+		reported[^1].Message.Should().Contain($"at least {PageBodyAstLinter.MaxTrackedOmittedNames}",
+			because: "the distinct-name count is a floor once tracking saturates - retaining every discarded name cost megabytes on a generated page while the response still carried 21 findings");
+		reported[^1].Message.Should().Contain($"{distinctNames - PageBodyAstLinter.MaxUndefinedSectionCallNames} further call site(s)",
+			because: "occurrences are counted in full, since counting them costs nothing");
+	}
+
+	[Test]
+	[Description("A converters map with thousands of reserved crt.* keys collapses past the per-rule cap into one counted line, instead of formatting a report measured in hundreds of kilobytes")]
+	public void Lint_ShouldCapConverterKeyFindings_WhenTheMapCarriesMoreThanTheRuleCap() {
+		// Arrange
+		int keyCount = PageBodyAstLinter.MaxFindingsPerRule + 120;
+		var keys = new StringBuilder();
+		for (int index = 0; index < keyCount; index++) {
+			keys.Append($"\"crt.Converter{index}\": () => {index}, ");
+		}
+		string body =
+			"define(\"X\", [], function() { " +
+			$"return {{ handlers: [], converters: {{ {keys}}}, validators: {{}} }}; }});";
+
+		// Act
+		IReadOnlyList<PageBodyLintFinding> findings = LintBody(body);
+
+		// Assert
+		List<PageBodyLintFinding> reported = findings
+			.Where(f => f.Rule == PageBodyAstLinter.RuleConverterCrtPrefixReserved).ToList();
+		reported.Should().HaveCount(PageBodyAstLinter.MaxFindingsPerRule + 1,
+			because: "every offending key carries the same fix, so past the cap they collapse into one counted line");
+		reported[^1].Message.Should().Contain($"{keyCount - PageBodyAstLinter.MaxFindingsPerRule} further converter key(s)",
+			because: "the caller must still learn how many were suppressed");
 	}
 
 	#endregion
