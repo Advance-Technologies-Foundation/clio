@@ -2256,8 +2256,8 @@ public sealed class ToolContractGetToolTests {
 
 		ToolContractDefinition deploy = result.Tools!.Single(contract =>
 			contract.Name == InstallerCommandTool.DeployCreatioToolName);
-		deploy.InputSchema.Required.Should().Contain(["siteName", "zipFile", "sitePort"],
-			because: "deploy-creatio requires the site name, build archive, and port");
+		deploy.InputSchema.Required.Should().Equal(["siteName", "zipFile"],
+			because: "deploy-creatio can select a local IIS port from the configured range when sitePort is omitted");
 		deploy.InputSchema.Properties.Select(property => property.Name).Should().Contain([
 			"deployment", "bindAllInterfaces", "certificatePath", "certificateKeyPath", "certificatePassword",
 			"certificatePasswordFile"

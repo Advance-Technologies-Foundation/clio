@@ -156,7 +156,7 @@ public sealed class ApplicationCreateService(
 		CaptionCultureScriptGuard.EnsureCaptionMatchesCulture(profileCultureForCaption, request.Name, "name");
 		CaptionCultureScriptGuard.EnsureCaptionMatchesCulture(profileCultureForCaption, request.Description, "description");
 
-		IApplicationClient client = applicationClientFactory.CreateEnvironmentClient(environmentSettings);
+		using IOwnedApplicationClient client = applicationClientFactory.CreateOwnedEnvironmentClient(environmentSettings);
 		ISysSettingsManager sysSettingsManager = sysSettingsManagerFactory(environmentSettings);
 		string schemaNamePrefix = ReadSchemaNamePrefix(sysSettingsManager);
 		ResolvedApplicationCreateRequest resolvedRequest = ResolveRequest(request, client, environmentSettings, serviceUrlBuilder, logger, schemaNamePrefix);

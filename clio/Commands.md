@@ -740,7 +740,7 @@ Use `clio help` for the terminal overview and `clio <command> --help` for comman
 <a id="register"></a>
 - [`register`](docs/commands/register.md) - Register clio shell integrations
 <a id="config"></a>
-- [`config`](docs/commands/config.md) - View and set clio configuration defaults (e.g. deploy-creatio defaults used by the Explorer context menu)
+- [`config`](docs/commands/config.md) - View and set clio configuration defaults, including the deploy-creatio IIS port range
 <a id="pin-certificate"></a>
 - [`pin-certificate`](docs/commands/pin-certificate.md) - Select the preferred local IIS certificate for HTTPS deployments
 <a id="set-app-icon"></a>
