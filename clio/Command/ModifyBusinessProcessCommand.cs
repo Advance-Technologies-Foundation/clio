@@ -55,6 +55,7 @@ public sealed class ModifyBusinessProcessService(
 	ISettingsRepository settingsRepository,
 	IApplicationClientFactory applicationClientFactory,
 	IServiceUrlBuilder serviceUrlBuilder,
+	IProcessPageButtonChecker pageButtonChecker,
 	ILogger logger)
 	: IModifyBusinessProcessService {
 	private static readonly JsonSerializerOptions JsonOptions = new() {
@@ -89,6 +90,16 @@ public sealed class ModifyBusinessProcessService(
 			requestObject["uid"] = request.ProcessUid;
 		}
 		requestObject["operations"] = ParseOperations(request.OperationsJson);
+
+		// Same reason as the build path: an invented button name survives every server-side check and only
+		// shows itself at run time, as a step that never completes.
+		ProcessPageButtonCheckResult buttonCheck = pageButtonChecker.CheckButtons(environmentName, requestObject["operations"]);
+		if (!string.IsNullOrWhiteSpace(buttonCheck?.Error)) {
+			throw new InvalidOperationException(buttonCheck.Error);
+		}
+		foreach (string buttonWarning in buttonCheck?.Warnings ?? []) {
+			logger.WriteWarning(buttonWarning);
+		}
 
 		IApplicationClient client = applicationClientFactory.CreateEnvironmentClient(environmentSettings);
 		string url = serviceUrlBuilder.Build(ServiceUrlBuilder.KnownRoute.ModifyProcess, environmentSettings);

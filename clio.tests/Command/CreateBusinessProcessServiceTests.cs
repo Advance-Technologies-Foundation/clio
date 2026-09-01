@@ -1,6 +1,7 @@
 using System;
 using System.Text.Json.Nodes;
 using Clio.Command;
+using Clio.Command.ProcessModel;
 using Clio.Common;
 using Clio.UserEnvironment;
 using FluentAssertions;
@@ -24,7 +25,8 @@ public sealed class CreateBusinessProcessServiceTests {
 	private const string SampleDescriptor =
 		"{\"name\":\"UsrSampleProcess\",\"packageName\":\"Custom\",\"elements\":[],\"flows\":[]}";
 
-	private static CreateBusinessProcessService CreateService(IApplicationClient client, out EnvironmentSettings env) {
+	private static CreateBusinessProcessService CreateService(IApplicationClient client, out EnvironmentSettings env,
+			IProcessPageButtonChecker pageButtonChecker) {
 		env = new EnvironmentSettings { Uri = "http://sandbox", Login = "Supervisor", Password = "Supervisor" };
 		ISettingsRepository settings = Substitute.For<ISettingsRepository>();
 		settings.FindEnvironment(Env).Returns(env);
@@ -32,7 +34,38 @@ public sealed class CreateBusinessProcessServiceTests {
 		factory.CreateEnvironmentClient(env).Returns(client);
 		IServiceUrlBuilder urlBuilder = Substitute.For<IServiceUrlBuilder>();
 		urlBuilder.Build(ServiceUrlBuilder.KnownRoute.BuildProcess, env).Returns(BuildUrl);
-		return new CreateBusinessProcessService(settings, factory, urlBuilder, Substitute.For<ILogger>());
+		return new CreateBusinessProcessService(settings, factory, urlBuilder, pageButtonChecker,
+			Substitute.For<ILogger>());
+	}
+
+	[Test]
+	[Description("A refused button name STOPS the build: nothing is posted. The check exists because the server accepts an invented name and the failure only appears at run time, so letting the request through after refusing it would defeat the whole point.")]
+	public void BuildProcess_ShouldNotPost_WhenAButtonNameIsRefused() {
+		// Arrange
+		IApplicationClient client = Substitute.For<IApplicationClient>();
+		IProcessPageButtonChecker checker = Substitute.For<IProcessPageButtonChecker>();
+		checker.CheckButtons(Env, Arg.Any<JsonNode>())
+			.Returns(new ProcessPageButtonCheckResult("Page 'X' has no button named 'Ghost'.", []));
+		CreateBusinessProcessService service = CreateService(client, out EnvironmentSettings _, checker);
+
+		// Act
+		Action act = () => service.BuildProcess(Env, new CreateBusinessProcessRequest(SampleDescriptor));
+
+		// Assert
+		act.Should().Throw<InvalidOperationException>().WithMessage("*no button named 'Ghost'*");
+		client.DidNotReceive().ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>());
+	}
+
+	private static CreateBusinessProcessService CreateService(IApplicationClient client,
+			out EnvironmentSettings env) {
+		env = new EnvironmentSettings { Uri = "http://sandbox", Login = "Supervisor", Password = "Supervisor" };
+		ISettingsRepository settings = Substitute.For<ISettingsRepository>();
+		settings.FindEnvironment(Env).Returns(env);
+		IApplicationClientFactory factory = Substitute.For<IApplicationClientFactory>();
+		factory.CreateEnvironmentClient(env).Returns(client);
+		IServiceUrlBuilder urlBuilder = Substitute.For<IServiceUrlBuilder>();
+		urlBuilder.Build(ServiceUrlBuilder.KnownRoute.BuildProcess, env).Returns(BuildUrl);
+		return new CreateBusinessProcessService(settings, factory, urlBuilder, Substitute.For<IProcessPageButtonChecker>(), Substitute.For<ILogger>());
 	}
 
 	[Test]
@@ -131,7 +164,7 @@ public sealed class CreateBusinessProcessServiceTests {
 		settings.FindEnvironment(Env).Returns((EnvironmentSettings)null);
 		IServiceUrlBuilder urlBuilder = Substitute.For<IServiceUrlBuilder>();
 		var service = new CreateBusinessProcessService(settings,
-			Substitute.For<IApplicationClientFactory>(), urlBuilder, Substitute.For<ILogger>());
+			Substitute.For<IApplicationClientFactory>(), urlBuilder, Substitute.For<IProcessPageButtonChecker>(), Substitute.For<ILogger>());
 
 		Action act = () => service.BuildProcess(Env, new CreateBusinessProcessRequest(SampleDescriptor));
 

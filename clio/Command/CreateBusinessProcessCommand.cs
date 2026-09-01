@@ -52,6 +52,7 @@ public sealed class CreateBusinessProcessService(
 	ISettingsRepository settingsRepository,
 	IApplicationClientFactory applicationClientFactory,
 	IServiceUrlBuilder serviceUrlBuilder,
+	IProcessPageButtonChecker pageButtonChecker,
 	ILogger logger)
 	: ICreateBusinessProcessService {
 	private static readonly JsonSerializerOptions JsonOptions = new() {
@@ -76,6 +77,16 @@ public sealed class CreateBusinessProcessService(
 		JsonObject descriptor = ParseDescriptor(request.DescriptorJson);
 		if (!string.IsNullOrWhiteSpace(request.PackageNameOverride)) {
 			descriptor["packageName"] = request.PackageNameOverride;
+		}
+
+		// Before the build, not after: a button the page does not carry is accepted by the server, saved, and
+		// only fails at run time by waiting forever. clio is the only side that can see the page's buttons.
+		ProcessPageButtonCheckResult buttonCheck = pageButtonChecker.CheckButtons(environmentName, descriptor);
+		if (!string.IsNullOrWhiteSpace(buttonCheck?.Error)) {
+			throw new InvalidOperationException(buttonCheck.Error);
+		}
+		foreach (string buttonWarning in buttonCheck?.Warnings ?? []) {
+			logger.WriteWarning(buttonWarning);
 		}
 
 		IApplicationClient client = applicationClientFactory.CreateEnvironmentClient(environmentSettings);
