@@ -476,6 +476,38 @@ internal class CreatioInstallerServiceTests : BaseClioModuleTests{
 
 	[Test]
 	[Category("Unit")]
+	[Description("IIS deployment applies the automatically reserved port and releases its lease when a later stage fails.")]
+	public void Execute_ShouldApplySelectedRangePortAndReleaseLease_WhenUnzipFails() {
+		// Arrange
+		const int rangeStart = 40100;
+		const int rangeEnd = 40199;
+		const int selectedPort = 40123;
+		IDisposable reservation = Substitute.For<IDisposable>();
+		IisDeploymentPortLease lease = new(selectedPort, reservation);
+		_iisDeploymentPortReservation.AcquireFirstAvailable(rangeStart, rangeEnd).Returns(lease);
+		PfInstallerOptions options = new() {
+			SiteName = "automatic-port-success-probe",
+			SitePortRange = [rangeStart, rangeEnd],
+			ZipFile = Path.Combine(_localArtifactServerPath, "8.1.1",
+				"8.1.1.1417_Studio_Softkey_PostgreSQL_ENU.zip"),
+			DeploymentMethod = "iis",
+			AutoRun = false,
+			IsSilent = true
+		};
+
+		// Act
+		Action act = () => _creatioInstallerService.Execute(options);
+
+		// Assert
+		act.Should().Throw<Exception>(because: "the empty fixture archive deliberately stops deployment after reservation");
+		options.SitePort.Should().Be(selectedPort,
+			because: "the port carried by the acquired lease must become the IIS deployment port");
+		_iisDeploymentPortReservation.Received(1).AcquireFirstAvailable(rangeStart, rangeEnd);
+		reservation.Received(1).Dispose();
+	}
+
+	[Test]
+	[Category("Unit")]
 	[Description("IIS deployment rejects an invalid configured site-port range before acquiring target or port reservations.")]
 	public void Execute_ShouldRejectInvalidConfiguredRange_BeforeReservations() {
 		// Arrange

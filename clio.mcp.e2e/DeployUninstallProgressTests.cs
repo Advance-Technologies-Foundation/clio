@@ -2,6 +2,7 @@ using System.Text.Json;
 using System.Text.Json.Nodes;
 using System.Net;
 using System.Net.Sockets;
+using Allure.Net.Commons;
 using Allure.NUnit;
 using Allure.NUnit.Attributes;
 using Clio.Command.McpServer.Progress;
@@ -192,7 +193,8 @@ public sealed class DeployUninstallProgressTests : McpContractFixtureBase {
 		if (!OperatingSystem.IsWindows()) {
 			Assert.Ignore("IIS automatic port selection is Windows-specific.");
 		}
-		await using ArrangeContext arrangeContext = Arrange();
+		await using ArrangeContext arrangeContext = AllureApi.Step(
+			"Arrange an MCP session for automatic IIS port selection", () => Arrange());
 		string siteName = $"automatic-port-{Guid.NewGuid():N}";
 		string corruptZipFile = Path.Combine(Path.GetTempPath(), $"corrupt-creatio-{Guid.NewGuid():N}.zip");
 		await File.WriteAllTextAsync(corruptZipFile, "not a zip archive",
@@ -200,28 +202,34 @@ public sealed class DeployUninstallProgressTests : McpContractFixtureBase {
 
 		try {
 			// Act
-			CallToolResult callResult = await arrangeContext.Session.CallToolAsync(
-				ToolName,
-				new Dictionary<string, object?> {
-					["args"] = new Dictionary<string, object?> {
-						["siteName"] = siteName,
-						["zipFile"] = corruptZipFile,
-						["dbServerName"] = "e2e-unused-before-unzip"
-					}
-				},
-				arrangeContext.CancellationTokenSource.Token);
+			CallToolResult callResult = await AllureApi.Step(
+				"Invoke deploy-creatio without sitePort",
+				async () => await arrangeContext.Session.CallToolAsync(
+					ToolName,
+					new Dictionary<string, object?> {
+						["args"] = new Dictionary<string, object?> {
+							["siteName"] = siteName,
+							["zipFile"] = corruptZipFile,
+							["dbServerName"] = "e2e-unused-before-unzip"
+						}
+					},
+					arrangeContext.CancellationTokenSource.Token));
 			CommandExecutionEnvelope execution = McpCommandExecutionParser.Extract(callResult);
 
 			// Assert
-			execution.ExitCode.Should().NotBe(0,
-				because: "the corrupt archive keeps this automatic-port E2E path non-destructive");
-			execution.Output.Should().Contain(message => message.Value != null
-				&& message.Value.Contains("first available in configured range [40100, 40199]", StringComparison.Ordinal),
-				because: "the real MCP process must disclose the automatically reserved configured-range port");
-			execution.Output.Should().Contain(message => message.MessageType == LogDecoratorType.Error,
-				because: "the corrupt archive failure must remain a structured error outcome");
-			Directory.Exists(Path.Combine(_iisRoot, siteName)).Should().BeFalse(
-				because: "the corrupt archive must fail before a deployment directory or IIS site is created");
+			AllureApi.Step("Assert the corrupt archive keeps deployment non-destructive", () =>
+				execution.ExitCode.Should().NotBe(0,
+					because: "the corrupt archive keeps this automatic-port E2E path non-destructive"));
+			AllureApi.Step("Assert the configured-range port was selected", () =>
+				execution.Output.Should().Contain(message => message.Value != null
+					&& message.Value.Contains("first available in configured range [40100, 40199]", StringComparison.Ordinal),
+					because: "the real MCP process must disclose the automatically reserved configured-range port"));
+			AllureApi.Step("Assert the archive failure remains structured", () =>
+				execution.Output.Should().Contain(message => message.MessageType == LogDecoratorType.Error,
+					because: "the corrupt archive failure must remain a structured error outcome"));
+			AllureApi.Step("Assert no deployment directory or IIS site was created", () =>
+				Directory.Exists(Path.Combine(_iisRoot, siteName)).Should().BeFalse(
+					because: "the corrupt archive must fail before a deployment directory or IIS site is created"));
 		}
 		finally {
 			File.Delete(corruptZipFile);

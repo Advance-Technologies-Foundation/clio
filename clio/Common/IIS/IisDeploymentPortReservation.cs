@@ -28,18 +28,18 @@ public interface IIisDeploymentPortReservation {
 
 /// <summary>Represents an owned IIS deployment port reservation.</summary>
 public sealed class IisDeploymentPortLease : IDisposable {
-	private readonly FileStream _lockStream;
+	private readonly IDisposable _reservation;
 
-	internal IisDeploymentPortLease(int port, FileStream lockStream) {
+	internal IisDeploymentPortLease(int port, IDisposable reservation) {
 		Port = port;
-		_lockStream = lockStream;
+		_reservation = reservation;
 	}
 
 	/// <summary>Gets the reserved port.</summary>
 	public int Port { get; }
 
 	/// <inheritdoc />
-	public void Dispose() => _lockStream.Dispose();
+	public void Dispose() => _reservation.Dispose();
 }
 
 /// <summary>
