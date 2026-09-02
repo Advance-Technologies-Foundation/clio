@@ -159,18 +159,18 @@ internal static class ODataFieldValidation {
 					"the OData metadata response did not contain a type definition for the entity.");
 			} catch (Exception) {
 				return new EntityMetadata(false, [], null,
-					SensitiveErrorTextRedactor.Redact(ODataResponseError.DescribeNonJsonResponse(body)));
+					SensitiveErrorTextRedactor.Redact(CreatioResponseError.DescribeNonJsonResponse(body)));
 			}
 		}
 		try {
 			using JsonDocument doc = JsonDocument.Parse(body);
-			return ODataResponseError.TryDetect(doc.RootElement, out string serverError)
+			return CreatioResponseError.TryDetect(doc.RootElement, CreatioResponseContext.ODataPayload, out string serverError)
 				? new EntityMetadata(false, [], SensitiveErrorTextRedactor.Redact(serverError), null)
 				: new EntityMetadata(false, [], null,
-					SensitiveErrorTextRedactor.Redact(ODataResponseError.DescribeNonJsonResponse(body)));
+					SensitiveErrorTextRedactor.Redact(CreatioResponseError.DescribeNonJsonResponse(body)));
 		} catch (JsonException) {
 			return new EntityMetadata(false, [], null,
-				SensitiveErrorTextRedactor.Redact(ODataResponseError.DescribeNonJsonResponse(body)));
+				SensitiveErrorTextRedactor.Redact(CreatioResponseError.DescribeNonJsonResponse(body)));
 		}
 	}
 
@@ -424,7 +424,7 @@ internal static class ODataFieldValidation {
 			if (IsAddressedRecordWithKeys(doc.RootElement, id, keys, out string unverifiedReason)) {
 				// The positive check runs BEFORE error detection, and that order matters: the probe asked
 				// for a specific record with $select, so the caller's own column names sit at the root of a
-				// successful body, and ODataResponseError's ASP.NET branch fires on the mere presence of a
+				// successful body, and CreatioResponseError's ASP.NET branch fires on the mere presence of a
 				// root member named ExceptionType/ExceptionMessage/StackTrace - all legal column names on a
 				// log-shaped entity. Proof that this is the addressed record therefore outranks any error
 				// shape it may resemble.
@@ -433,7 +433,7 @@ internal static class ODataFieldValidation {
 			// Not proof. A recognized error envelope explains why; anything else is UNVERIFIED - never
 			// success. The absent-error branch used to return Succeeded: true, so a `{}` body (or any
 			// unrelated JSON object) confirmed the fields, sent the PATCH and recreated #1212.
-			return ODataResponseError.TryDetect(doc.RootElement, out string serverError)
+			return CreatioResponseError.TryDetect(doc.RootElement, CreatioResponseContext.ODataPayload, out string serverError)
 				? new ProbeResult(false, SensitiveErrorTextRedactor.Redact(serverError), null)
 				: new ProbeResult(false, null, SensitiveErrorTextRedactor.Redact(unverifiedReason));
 		} catch (JsonException) {

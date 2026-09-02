@@ -537,7 +537,7 @@ public sealed class ODataUpdateToolTests {
 
 	[Test]
 	[Category("Unit")]
-	[Description("A fallback $select probe whose record carries a caller-chosen column named ExceptionMessage confirms the field instead of reading it as a server error. This discrimination lives in the probe (a body with @odata.context or Id is the record it asked for), NOT in ODataResponseError - putting it there would blind every caller to real ASP.NET exceptions.")]
+	[Description("A fallback $select probe whose record carries a caller-chosen column named ExceptionMessage confirms the field instead of reading it as a server error. This discrimination lives in the probe (a body with @odata.context or Id is the record it asked for), NOT in CreatioResponseError - putting it there would blind every caller to real ASP.NET exceptions.")]
 	public void Update_Should_Treat_Error_Named_Column_On_Probe_As_Data() {
 		// Arrange
 		Fixture f = new(HtmlPage, _ => ProbeOk("ExceptionMessage"));

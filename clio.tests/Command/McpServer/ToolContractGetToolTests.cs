@@ -8,6 +8,7 @@ using System.Text.Json.Serialization;
 using Clio.Command;
 using Clio.Command.McpServer;
 using Clio.Command.McpServer.Tools;
+using Clio.Common;
 using FluentAssertions;
 using ModelContextProtocol.Protocol;
 using ModelContextProtocol.Server;
@@ -593,7 +594,7 @@ public sealed class ToolContractGetToolTests {
 		ToolContractDefinition contract = result.Tools!.Single();
 		contract.AntiPatterns.Should().NotBeNullOrEmpty(
 			because: $"'{toolName}' funnels through the shared TryDetect routing-error path and must advertise the unregistered-entity anti-pattern");
-		contract.AntiPatterns!.Should().Contain(pattern => pattern.Why.Contains(ODataResponseError.UnregisteredEntityHint, StringComparison.Ordinal),
+		contract.AntiPatterns!.Should().Contain(pattern => pattern.Why.Contains(CreatioResponseError.UnregisteredEntityHint, StringComparison.Ordinal),
 			because: "the anti-pattern rationale must be derived from the shared UnregisteredEntityHint constant so the two contracts cannot drift from the runtime hint");
 	}
 
@@ -1214,6 +1215,10 @@ public sealed class ToolContractGetToolTests {
 				field.Name == "resources" &&
 				field.Description.Contains("JSON object string"),
 			because: "update-page should clarify the concrete resources payload shape");
+		pageUpdateContract.InputSchema.Properties.Should().Contain(field =>
+				field.Name == "validate" &&
+				field.Description.Contains("pre-existing"),
+			because: "update-page should expose the guarded validation escape hatch in its curated contract");
 		ToolContractDefinition modifyColumnContract = contracts.Single(contract => contract.Name == ModifyEntitySchemaColumnTool.ModifyEntitySchemaColumnToolName);
 		modifyColumnContract.PreferredFlow.Tools.Should().Equal(
 				new[] {

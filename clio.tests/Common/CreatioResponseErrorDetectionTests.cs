@@ -1,13 +1,13 @@
 using System.Text.Json;
-using Clio.Command.McpServer.Tools;
+using Clio.Common;
 using FluentAssertions;
 using NUnit.Framework;
 
-namespace Clio.Tests.Command.McpServer;
+namespace Clio.Tests.Common;
 
 [TestFixture]
-[Property("Module", "McpServer")]
-public sealed class ODataResponseErrorTests {
+[Property("Module", "Common")]
+public sealed class CreatioResponseErrorDetectionTests {
 	[Test]
 	[Category("Unit")]
 	[Description("An ASP.NET HttpError carrying InnerException is still detected. ASP.NET Web API populates InnerException whenever error detail is enabled, so any 'does the body carry other members?' guard on this branch would report a genuine server exception as success through every caller of TryDetect.")]
@@ -20,7 +20,7 @@ public sealed class ODataResponseErrorTests {
 		JsonElement root = JsonDocument.Parse(body).RootElement;
 
 		// Act
-		bool isError = ODataResponseError.TryDetect(root, out string message);
+		bool isError = CreatioResponseError.TryDetect(root, CreatioResponseContext.ODataPayload, out string message);
 
 		// Assert
 		isError.Should().BeTrue(because:
@@ -40,7 +40,7 @@ public sealed class ODataResponseErrorTests {
 		JsonElement root = JsonDocument.Parse(body).RootElement;
 
 		// Act
-		bool isError = ODataResponseError.TryDetect(root, out _);
+		bool isError = CreatioResponseError.TryDetect(root, CreatioResponseContext.ODataPayload, out _);
 
 		// Assert
 		isError.Should().BeTrue(because:
@@ -59,7 +59,7 @@ public sealed class ODataResponseErrorTests {
 		JsonElement root = JsonDocument.Parse(body).RootElement;
 
 		// Act
-		bool isError = ODataResponseError.TryDetect(root, out string message);
+		bool isError = CreatioResponseError.TryDetect(root, CreatioResponseContext.ODataPayload, out string message);
 
 		// Assert
 		isError.Should().BeTrue(because:
@@ -79,7 +79,7 @@ public sealed class ODataResponseErrorTests {
 		JsonElement root = JsonDocument.Parse(body).RootElement;
 
 		// Act
-		bool isError = ODataResponseError.TryDetect(root, out string message);
+		bool isError = CreatioResponseError.TryDetect(root, CreatioResponseContext.ODataPayload, out string message);
 
 		// Assert
 		isError.Should().BeTrue(because: "the body carries only the routing-error keys, which is the recognized routing shape");

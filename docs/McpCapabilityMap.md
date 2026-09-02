@@ -332,7 +332,7 @@ This is one of the strongest and most AI-friendly parts of the MCP surface.
 - `get-page`
   Read a page as a merged bundle plus raw editable JavaScript body.
 - `update-page`
-  Write a full page body back to Creatio, optionally in `dry-run` mode.
+  Write a full page body back to Creatio, optionally in `dry-run` mode; its MCP surface also has an explicit `validate=false` escape hatch for pre-existing content defects while retaining syntax/loadability checks.
 - `sync-pages`
   Save many pages in one call with optional validation and optional read-back verification.
 - `component-info`
