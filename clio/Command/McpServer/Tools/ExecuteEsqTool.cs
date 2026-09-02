@@ -24,6 +24,7 @@ public sealed class ExecuteEsqTool(IToolCommandResolver commandResolver) {
 	private const int DefaultTimeoutMs = 30_000;
 	private const int MinTimeoutMs = 1_000;
 	private const int MaxTimeoutMs = 120_000;
+	private const int MaxDiagnosticPathLength = 500;
 	internal const int MaxResponseSizeBytes = 200_000;
 	internal const string ResultTooLargeErrorClass = "result-too-large";
 
@@ -44,7 +45,7 @@ public sealed class ExecuteEsqTool(IToolCommandResolver commandResolver) {
 			if (!TryNormalizeQuery(args.Query, out JsonElement query, out string queryError)) {
 				return ExecuteEsqResponse.Failure(queryError);
 			}
-			if (!TryValidateTemporalParameterValues(query, "$", out string temporalParameterError)) {
+			if (!TryValidateTemporalParameterValues(query, [], out string temporalParameterError)) {
 				return ExecuteEsqResponse.Failure(temporalParameterError);
 			}
 			if (!query.TryGetProperty("rootSchemaName", out JsonElement rootSchema)
@@ -87,28 +88,31 @@ public sealed class ExecuteEsqTool(IToolCommandResolver commandResolver) {
 	}
 
 	private static bool TryValidateTemporalParameterValues(
-		JsonElement element, string path, out string error) {
+		JsonElement element, List<(string? PropertyName, int? ArrayIndex)> path, out string error) {
 		error = string.Empty;
 		switch (element.ValueKind) {
 			case JsonValueKind.Object:
 				foreach (JsonProperty property in element.EnumerateObject()) {
-					string propertyPath = $"{path}.{property.Name}";
+					path.Add((property.Name, null));
 					if (property.NameEquals("parameter")
 						&& property.Value.ValueKind == JsonValueKind.Object
-						&& !TryValidateTemporalParameter(property.Value, propertyPath, out error)) {
+						&& !TryValidateTemporalParameter(property.Value, path, out error)) {
 						return false;
 					}
-					if (!TryValidateTemporalParameterValues(property.Value, propertyPath, out error)) {
+					if (!TryValidateTemporalParameterValues(property.Value, path, out error)) {
 						return false;
 					}
+					path.RemoveAt(path.Count - 1);
 				}
 				return true;
 			case JsonValueKind.Array:
 				int index = 0;
 				foreach (JsonElement item in element.EnumerateArray()) {
-					if (!TryValidateTemporalParameterValues(item, $"{path}[{index}]", out error)) {
+					path.Add((null, index));
+					if (!TryValidateTemporalParameterValues(item, path, out error)) {
 						return false;
 					}
+					path.RemoveAt(path.Count - 1);
 					index++;
 				}
 				return true;
@@ -117,32 +121,104 @@ public sealed class ExecuteEsqTool(IToolCommandResolver commandResolver) {
 		}
 	}
 
-	private static bool TryValidateTemporalParameter(JsonElement parameter, string path, out string error) {
+	private static bool TryValidateTemporalParameter(
+		JsonElement parameter, IReadOnlyList<(string? PropertyName, int? ArrayIndex)> path, out string error) {
 		error = string.Empty;
 		if (!parameter.TryGetProperty("dataValueType", out JsonElement dataValueType)
 			|| !dataValueType.TryGetInt32(out int dataValueTypeCode)
-			|| dataValueTypeCode is not (7 or 8 or 9)
-			|| !parameter.TryGetProperty("value", out JsonElement value)) {
+			|| dataValueTypeCode is not (7 or 8 or 9)) {
 			return true;
 		}
 
-		bool isJsonEncodedString = false;
-		if (value.ValueKind == JsonValueKind.String) {
-			try {
-				using JsonDocument decoded = JsonDocument.Parse(value.GetString() ?? string.Empty);
-				isJsonEncodedString = decoded.RootElement.ValueKind == JsonValueKind.String;
-			} catch (JsonException) {
-				// The server accepts temporal values only when the outer JSON string contains another JSON string.
-			}
-		}
+		bool isJsonEncodedString = parameter.TryGetProperty("value", out JsonElement value)
+			&& IsJsonEncodedString(value);
 		if (isJsonEncodedString) {
 			return true;
 		}
 
-		error = $"query temporal parameter at '{path}.value' has an invalid value for dataValueType "
-			+ $"{dataValueTypeCode}. Date, DateTime, and Time values must be JSON-encoded strings, for example "
-			+ "\"value\": \"\\\"2026-01-01T00:00:00.000Z\\\"\". A plain ISO string is not accepted. "
+		string renderedPath = RenderJsonPath(path);
+		error = $"query temporal parameter at '{renderedPath}.value' has an invalid or missing value for "
+			+ $"dataValueType {dataValueTypeCode}. Date, DateTime, and Time values must be JSON-encoded strings, "
+			+ "for example \"value\": \"\\\"2026-01-01T00:00:00.000Z\\\"\". A plain ISO string is not accepted. "
 			+ "See the 'esq' and 'esq-filters-frontend' guidance.";
+		return false;
+	}
+
+	private static bool IsJsonEncodedString(JsonElement value) {
+		if (value.ValueKind == JsonValueKind.String) {
+			string raw = value.GetString() ?? string.Empty;
+			if (raw.Length < 2
+				|| raw[0] is not ('"' or '\'')
+				|| raw[^1] != raw[0]) {
+				return false;
+			}
+			try {
+				return Newtonsoft.Json.JsonConvert.DeserializeObject<string>(raw) is not null;
+			} catch (Newtonsoft.Json.JsonException) {
+				return false;
+			}
+		}
+		return false;
+	}
+
+	private static string RenderJsonPath(
+		IReadOnlyList<(string? PropertyName, int? ArrayIndex)> segments) {
+		StringBuilder builder = new("$");
+		foreach ((string? propertyName, int? arrayIndex) in segments) {
+			if (arrayIndex is not null) {
+				if (!TryAppendBounded(builder, $"[{arrayIndex.Value}]")) {
+					break;
+				}
+				continue;
+			}
+			if (!TryAppendPropertyName(builder, propertyName ?? string.Empty)) {
+				break;
+			}
+		}
+		return builder.ToString();
+	}
+
+	private static bool TryAppendPropertyName(StringBuilder builder, string propertyName) {
+		bool isIdentifier = propertyName.Length > 0
+			&& (char.IsLetter(propertyName[0]) || propertyName[0] == '_')
+			&& propertyName.Skip(1).All(character => char.IsLetterOrDigit(character) || character == '_');
+		if (isIdentifier) {
+			return TryAppendBounded(builder, ".") && TryAppendBounded(builder, propertyName);
+		}
+
+		if (!TryAppendBounded(builder, "['")) {
+			return false;
+		}
+		foreach (char character in propertyName) {
+			string escaped = character switch {
+				'\\' => "\\\\",
+				'\'' => "\\'",
+				'\n' => "\\n",
+				'\r' => "\\r",
+				'\t' => "\\t",
+				_ when char.IsControl(character) => $"\\u{(int)character:x4}",
+				_ => character.ToString()
+			};
+			if (!TryAppendBounded(builder, escaped)) {
+				return false;
+			}
+		}
+		return TryAppendBounded(builder, "']");
+	}
+
+	private static bool TryAppendBounded(StringBuilder builder, string value) {
+		int remaining = MaxDiagnosticPathLength - builder.Length;
+		if (value.Length <= remaining) {
+			builder.Append(value);
+			return true;
+		}
+		const string truncationMarker = "...";
+		if (remaining < truncationMarker.Length) {
+			builder.Length = MaxDiagnosticPathLength - truncationMarker.Length;
+		} else {
+			builder.Append(value, 0, remaining - truncationMarker.Length);
+		}
+		builder.Append(truncationMarker);
 		return false;
 	}
 

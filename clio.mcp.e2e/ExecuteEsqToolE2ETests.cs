@@ -1,5 +1,6 @@
 using Allure.NUnit;
 using Allure.NUnit.Attributes;
+using Allure.Net.Commons;
 using Clio.Command.McpServer.Tools;
 using Clio.Mcp.E2E.Support.Mcp;
 using Clio.Mcp.E2E.Support.Results;
@@ -86,18 +87,28 @@ public sealed class ExecuteEsqToolE2ETests : McpContractFixtureBase {
 			because: "the structured failure should identify the missing environment name");
 	}
 
-	[Test]
-	[Description("Rejects a plain ISO DateTime parameter through the real stdio MCP server with a path-specific accepted-format diagnostic before environment resolution.")]
+	[TestCase(true)]
+	[TestCase(false)]
+	[Description("Rejects a malformed or missing DateTime parameter through the real stdio MCP server with a path-specific accepted-format diagnostic before environment resolution.")]
 	[AllureTag(ExecuteEsqTool.ToolName)]
 	[AllureName("execute-esq explains the required DateTime parameter encoding")]
-	[AllureDescription("Invokes execute-esq through the real stdio MCP server with a nested plain ISO DateTime value and verifies the structured response names the exact query path and required JSON-encoded shape without contacting an environment.")]
-	public async Task ExecuteEsq_ShouldRejectPlainDateTimeParameter_WhenCalledOverStdio() {
+	[AllureDescription("Invokes execute-esq through the real stdio MCP server with a nested malformed or missing DateTime value and verifies the structured response names the exact query path and required JSON-encoded shape without contacting an environment.")]
+	public async Task ExecuteEsq_ShouldRejectMalformedDateTimeParameter_WhenCalledOverStdio(bool includePlainValue) {
 		// Arrange
-		await using var arrangeContext = Arrange(TimeSpan.FromMinutes(3));
+		await using var arrangeContext = await AllureApi.Step(
+			"Arrange a real stdio MCP session",
+			() => Task.FromResult(Arrange(TimeSpan.FromMinutes(3))));
 		string invalidEnvironmentName = $"missing-esq-date-env-{Guid.NewGuid():N}";
 
 		// Act
-		CallToolResult callResult = await arrangeContext.Session.CallToolAsync(
+		Dictionary<string, object?> parameter = new() {
+			["dataValueType"] = 7
+		};
+		if (includePlainValue) {
+			parameter["value"] = "2026-08-10T00:00:00Z";
+		}
+		CallToolResult callResult = await AllureApi.Step("Act by submitting a malformed DateTime parameter", async () =>
+			await arrangeContext.Session.CallToolAsync(
 			ExecuteEsqTool.ToolName,
 			new Dictionary<string, object?> {
 				["args"] = new Dictionary<string, object?> {
@@ -109,10 +120,7 @@ public sealed class ExecuteEsqToolE2ETests : McpContractFixtureBase {
 								["ModifiedAfter"] = new Dictionary<string, object?> {
 									["rightExpression"] = new Dictionary<string, object?> {
 										["expressionType"] = 2,
-										["parameter"] = new Dictionary<string, object?> {
-											["dataValueType"] = 7,
-											["value"] = "2026-08-10T00:00:00Z"
-										}
+										["parameter"] = parameter
 									}
 								}
 							}
@@ -120,20 +128,32 @@ public sealed class ExecuteEsqToolE2ETests : McpContractFixtureBase {
 					}
 				}
 			},
-			arrangeContext.CancellationTokenSource.Token);
+			arrangeContext.CancellationTokenSource.Token));
 		ExecuteEsqResponse response = EntitySchemaStructuredResultParser.Extract<ExecuteEsqResponse>(callResult);
 
 		// Assert
-		callResult.IsError.Should().NotBeTrue(
-			because: "query validation failures should use the structured execute-esq response contract");
-		response.Success.Should().BeFalse(
-			because: "a plain ISO DateTime parameter is not a valid SelectQuery temporal value");
-		response.Error.Should().Contain("$.filters.items.ModifiedAfter.rightExpression.parameter.value",
-			because: "the stdio response should identify the exact malformed query location");
-		response.Error.Should().Contain("JSON-encoded strings",
-			because: "the stdio caller should receive the accepted temporal value format");
-		response.Error.Should().NotContain(invalidEnvironmentName,
-			because: "temporal validation should finish before environment resolution or network access");
+		await AllureApi.Step("Assert validation uses the structured tool response", () => {
+			callResult.IsError.Should().NotBeTrue(
+				because: "query validation failures should use the structured execute-esq response contract");
+			response.Success.Should().BeFalse(
+				because: "a plain or missing DateTime parameter is not a valid SelectQuery temporal value");
+			return Task.CompletedTask;
+		});
+		await AllureApi.Step("Assert the exact query path is reported", () => {
+			response.Error.Should().Contain("$.filters.items.ModifiedAfter.rightExpression.parameter.value",
+				because: "the stdio response should identify the exact malformed query location");
+			return Task.CompletedTask;
+		});
+		await AllureApi.Step("Assert the accepted temporal format is explained", () => {
+			response.Error.Should().Contain("JSON-encoded strings",
+				because: "the stdio caller should receive the accepted temporal value format");
+			return Task.CompletedTask;
+		});
+		await AllureApi.Step("Assert validation precedes environment access", () => {
+			response.Error.Should().NotContain(invalidEnvironmentName,
+				because: "temporal validation should finish before environment resolution or network access");
+			return Task.CompletedTask;
+		});
 	}
 
 }

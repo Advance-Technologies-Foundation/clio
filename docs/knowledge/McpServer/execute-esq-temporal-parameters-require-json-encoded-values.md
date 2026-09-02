@@ -10,7 +10,8 @@ date: 2026-09-02
 `value` of a DateTime (7), Date (8), or Time (9) parameter. The outer query JSON must carry a string
 whose content is another JSON string, for example `"value": "\"2026-01-01T00:00:00.000Z\""`.
 `ExecuteEsqTool` validates this recursively before resolving an environment and forwards a valid
-encoded value unchanged.
+encoded value unchanged. Creatio's Newtonsoft.Json parser also accepts the legacy single-quoted inner
+form; Clio preserves that compatibility, while the public guidance recommends standard double-quoted JSON.
 
 **Why it is this way** — Creatio's SelectQuery parameter deserializer performs a second JSON decode
 for temporal parameter values. This was reproduced on Creatio 10.0.0.858 and is also the shape emitted

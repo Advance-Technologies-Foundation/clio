@@ -251,7 +251,8 @@ public sealed class ExecuteEsqToolTests {
 	[Description("Rejects plain DateTime, Date, and Time parameter strings with the exact query path before resolving an environment or sending a request.")]
 	public void Execute_ShouldRejectPlainTemporalParameterValue_WhenDataValueTypeIsTemporal(int dataValueType) {
 		// Arrange
-		(ExecuteEsqTool tool, IApplicationClient client, _) = BuildTool("{\"success\":true,\"rows\":[]}");
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		ExecuteEsqTool tool = new(commandResolver);
 		JsonElement query = Json($$"""
 			{
 			  "rootSchemaName": "SysSchema",
@@ -288,16 +289,21 @@ public sealed class ExecuteEsqToolTests {
 			because: "the caller should be told which temporal value encoding the endpoint accepts");
 		response.Error.Should().Contain("\"value\": \"\\\"2026-01-01T00:00:00.000Z\\\"\"",
 			because: "the diagnostic should include a directly reusable valid value example");
-		client.DidNotReceiveWithAnyArgs().ExecutePostRequest(default!, default!, default, default, default);
+		commandResolver.DidNotReceiveWithAnyArgs().Resolve<IApplicationClient>(default!);
+		commandResolver.DidNotReceiveWithAnyArgs().Resolve<IServiceUrlBuilder>(default!);
 	}
 
-	[Test]
+	[TestCase(7, "\"2026-08-10T00:00:00.000Z\"")]
+	[TestCase(8, "\"2026-08-10\"")]
+	[TestCase(9, "\"2026-08-10T11:06:00.000Z\"")]
+	[TestCase(7, "'2026-08-10T00:00:00.000Z'")]
 	[Category("Unit")]
-	[Description("Passes a JSON-encoded DateTime parameter through to Creatio without rewriting its value or timezone.")]
-	public void Execute_ShouldPreserveJsonEncodedDateTimeParameter_WhenValueHasAcceptedShape() {
+	[Description("Passes accepted double-quoted DateTime, Date, and Time values and the compatible single-quoted form through to Creatio without rewriting.")]
+	public void Execute_ShouldPreserveJsonEncodedTemporalParameter_WhenValueHasAcceptedShape(
+		int dataValueType, string encodedValue) {
 		// Arrange
 		(ExecuteEsqTool tool, IApplicationClient client, _) = BuildTool("{\"success\":true,\"rows\":[]}");
-		JsonElement query = Json("""
+		JsonElement query = Json($$"""
 			{
 			  "rootSchemaName": "SysSchema",
 			  "filters": {
@@ -306,8 +312,8 @@ public sealed class ExecuteEsqToolTests {
 			        "rightExpression": {
 			          "expressionType": 2,
 			          "parameter": {
-			            "dataValueType": 7,
-			            "value": "\"2026-08-10T00:00:00.000Z\""
+			            "dataValueType": {{dataValueType}},
+			            "value": {{JsonSerializer.Serialize(encodedValue)}}
 			          }
 			        }
 			      }
@@ -327,6 +333,84 @@ public sealed class ExecuteEsqToolTests {
 			because: "the documented JSON-encoded DateTime value is accepted by the SelectQuery endpoint");
 		client.Received(1).ExecutePostRequest(
 			Arg.Any<string>(), query.GetRawText(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>());
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Rejects a missing temporal parameter value before resolving an environment or sending a request.")]
+	public void Execute_ShouldRejectMissingTemporalParameterValue_WhenDataValueTypeIsDateTime() {
+		// Arrange
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		ExecuteEsqTool tool = new(commandResolver);
+		JsonElement query = Json("""
+			{
+			  "rootSchemaName": "SysSchema",
+			  "filters": {
+			    "items": {
+			      "ModifiedAfter": {
+			        "rightExpression": {
+			          "expressionType": 2,
+			          "parameter": { "dataValueType": 7 }
+			        }
+			      }
+			    }
+			  }
+			}
+			""");
+
+		// Act
+		ExecuteEsqResponse response = tool.Execute(new ExecuteEsqArgs {
+			EnvironmentName = "missing-environment",
+			Query = query
+		});
+
+		// Assert
+		response.Success.Should().BeFalse(
+			because: "a temporal parameter without value would reach Creatio as null");
+		response.Error.Should().Contain("invalid or missing value",
+			because: "the failure should distinguish a missing temporal value from environment resolution");
+		commandResolver.DidNotReceiveWithAnyArgs().Resolve<IApplicationClient>(default!);
+		commandResolver.DidNotReceiveWithAnyArgs().Resolve<IServiceUrlBuilder>(default!);
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Escapes unsafe filter names and bounds the rendered query path in temporal validation errors.")]
+	public void Execute_ShouldEscapeAndBoundDiagnosticPath_WhenFilterNameContainsControlText() {
+		// Arrange
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		ExecuteEsqTool tool = new(commandResolver);
+		string unsafeFilterName = $"Modified.After[0]\n{new string('x', 2_000)}";
+		JsonElement query = Json($$"""
+			{
+			  "rootSchemaName": "SysSchema",
+			  "filters": {
+			    "items": {
+			      {{JsonSerializer.Serialize(unsafeFilterName)}}: {
+			        "rightExpression": {
+			          "parameter": { "dataValueType": 7, "value": "2026-08-10T00:00:00Z" }
+			        }
+			      }
+			    }
+			  }
+			}
+			""");
+
+		// Act
+		ExecuteEsqResponse response = tool.Execute(new ExecuteEsqArgs {
+			EnvironmentName = "missing-environment",
+			Query = query
+		});
+
+		// Assert
+		response.Error.Should().Contain("['Modified.After[0]\\n",
+			because: "unsafe property names should use escaped bracket notation in the diagnostic path");
+		response.Error.Should().NotContain("Modified.After[0]\n",
+			because: "control characters from untrusted property names must not create transcript lines");
+		response.Error.Should().Contain("...",
+			because: "an oversized property name should be visibly truncated");
+		response.Error.Length.Should().BeLessThan(1_000,
+			because: "an adversarial property name must not amplify the MCP diagnostic without bound");
 	}
 
 	[Test]
