@@ -332,8 +332,10 @@ public sealed class ExecuteEsqToolTests {
 		// Assert
 		response.Success.Should().BeTrue(
 			because: "the documented JSON-encoded DateTime value is accepted by the SelectQuery endpoint");
-		client.Received(1).ExecutePostRequest(
-			Arg.Any<string>(), query.GetRawText(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>());
+		client.ReceivedCalls().Should().ContainSingle(call =>
+			call.GetMethodInfo().Name == nameof(IApplicationClient.ExecutePostRequest)
+			&& Equals(call.GetArguments()[1], query.GetRawText()),
+			because: "the accepted temporal value must be posted exactly once without rewriting the query body");
 	}
 
 	[Test]

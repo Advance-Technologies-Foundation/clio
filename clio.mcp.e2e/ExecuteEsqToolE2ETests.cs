@@ -150,6 +150,9 @@ public sealed class ExecuteEsqToolE2ETests : McpContractFixtureBase {
 		await AllureApi.Step("Assert the accepted temporal format is explained", () => {
 			response.Error.Should().Contain("JSON-encoded strings",
 				because: "the stdio caller should receive the accepted temporal value format");
+			return Task.CompletedTask;
+		});
+		await AllureApi.Step("Assert the reusable example survives passthrough redaction", () => {
 			response.Error.Should().Contain(
 				"value text '2026-01-01T00:00:00.000Z' including the two single quote characters",
 				because: "the complete reusable value example must survive MCP passthrough redaction");
