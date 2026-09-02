@@ -5,6 +5,7 @@ using System.Diagnostics.CodeAnalysis;
 using System.Linq;
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using Clio.Common;
 using Clio.Command.BusinessRules;
 using Clio.Command.McpServer;
 using ModelContextProtocol.Protocol;
@@ -2187,13 +2188,13 @@ internal static class ToolContractCatalog {
 			OdataUnregisteredEntityAntiPatterns());
 	}
 
-	// Shared by odata-read and odata-create: both funnel through ODataResponseError.TryDetect and
+	// Shared by odata-read and odata-create: both funnel through CreatioResponseError.TryDetect and
 	// surface the identical routing-error hint, so the anti-pattern text is derived from the single
 	// UnregisteredEntityHint constant to keep the two contracts from drifting apart.
 	private static ToolAntiPattern[] OdataUnregisteredEntityAntiPatterns() => [
 		new ToolAntiPattern(
 			"Reading or writing a freshly-created custom object or lookup by entity name immediately after creating it and treating the routing error as a data gap.",
-			$"{ODataResponseError.UnregisteredEntityHint} Until it is queryable the odata-* tool returns success:false with a routing error (No type was found that matches the controller).")
+			$"{CreatioResponseError.UnregisteredEntityHint} Until it is queryable the odata-* tool returns success:false with a routing error (No type was found that matches the controller).")
 	];
 
 	private static ToolContractDefinition BuildODataCreate() {
