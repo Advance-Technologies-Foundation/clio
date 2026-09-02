@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.IO;
 using System.IO.Compression;
@@ -72,28 +72,31 @@ public class BundledProcessBuilderPackageTests {
 	];
 
 	/// <summary>
-	/// SHA-256 of the committed archive. Produced by <c>rebundle-process-builder.ps1 -Version 1.3.2.3</c> from
+	/// SHA-256 of the committed archive. Produced by <c>rebundle-process-builder.ps1 -Version 1.3.2.4</c> from
 	/// the <c>ProcessBuilder</c> repository (<c>packages/CrtProcessBuilder</c>, branch
 	/// <c>feature/ENG-96325-lookup-constant-macro-form</c>, at commit
-	/// <c>27c0c5a84e7a0e837dae0900faac9a8d71bb929c</c> — the ENG-96325 design-time fix: a Lookup CONSTANT keeps
-	/// <c>Source = ConstValue</c> and its bare record Guid, and gains the referenced record's NAME in
+	/// <c>c8c904af0d1044556fc0b8dfd81a5ac70956f250</c>) — the ENG-96325 design-time fix: a Lookup CONSTANT
+	/// keeps <c>Source = ConstValue</c> and its bare record Guid, and gains the referenced record's NAME in
 	/// <c>DisplayValue</c>, which is what the designer renders. The defect it closes was the raw id written
 	/// there, so "Task category" read as a Guid while the runtime had been correct all along. Keeping
 	/// <c>ConstValue</c> is load-bearing rather than conservative: <c>ActivityUserTask</c> derives its
 	/// allowed-results list from that source alone, client-side and server-side, so the macro form the original
 	/// brief proposed would have degraded the result dropdown to its default. Also in the cut: a
 	/// <c>[#Lookup…#]</c> passed as a <c>value</c> is decoded to the bare id, the change-data expression branch
-	/// renders the display macro, and describe gained <c>valueDisplay</c>.
-	/// 1.3.2.3 is a PATCH over 1.3.1.1 — no capability is added, an existing one stops lying to the designer.
-	/// 1.3.2.0 through 1.3.2.2 were cut and withdrawn before release; each raise exists so a stand or checkout
-	/// still carrying an older one is DETECTABLY behind, and a reused number would make equal versions mean
-	/// nothing, which the convergence check cannot see through.
+	/// renders the display macro, and describe gained <c>valueDisplay</c>. The record NAME is read through an
+	/// <c>EntitySchemaQuery</c> (localized, rights-checked) while the EXISTENCE guard stays a raw
+	/// <c>Select</c> — swapping them would refuse a valid id whose record the writer cannot read.
+	/// 1.3.2.4 is a PATCH over 1.3.1.1 — no capability is added, an existing one stops lying to the designer.
+	/// The 1.3.2.x stamps before it were cut and withdrawn before release, so no environment can carry one;
+	/// each raise exists so a stand or checkout still holding an older archive is DETECTABLY behind, and a
+	/// reused number would make equal versions mean nothing, which the convergence check cannot see through.
 	/// <para>
 	/// BOTH prescribed cross-checks were RUN against that commit, not assumed. The <c>ModifiedOnUtc</c> pinned
-	/// below equals the descriptor at <c>27c0c5a</c> (<c>/Date(1788272145000)/</c>, read from the commit, not
-	/// from the working tree), as does <see cref="ExpectedArchiveVersion"/>. The archive holds 122 entries and
-	/// their contents are that commit's sources; the only committed file absent from it is the
-	/// <c>.DotSettings</c> that <c>clioignore</c> excludes.
+	/// below equals the descriptor at <c>c8c904af</c> (<c>/Date(1788338237000)/</c>, read from the commit rather
+	/// than from the working tree), as does <see cref="ExpectedArchiveVersion"/>. All 122 archive entries are
+	/// BYTE-identical to that commit's checkout — line endings included, so these bytes are reproducible from it
+	/// on an <c>core.autocrlf=true</c> host, which the previous cut was not. The only committed file absent from
+	/// the archive is the <c>.DotSettings</c> that <c>clioignore</c> excludes.
 	/// </para>
 	/// Provenance rules live in <c>docs/agent-instructions/bundled-packages.md</c>.
 	/// </summary>
@@ -129,7 +132,7 @@ public class BundledProcessBuilderPackageTests {
 	/// </para>
 	/// </remarks>
 	private const string ExpectedArchiveSha256 =
-		"3FD06A41B4E7B17B341EACB6E6039F4735ADC44DF7DD8DD589EB956C22BDAD21";
+		"D9968F7459AE2EB93946CD8B03BA86BD35E8A23BBC9B98C7422B09E7EC3862E8";
 
 	/// <summary>
 	/// The <c>PackageVersion</c> the shipped descriptor carries.
@@ -157,7 +160,7 @@ public class BundledProcessBuilderPackageTests {
 	/// </para>
 	/// </para>
 	/// </remarks>
-	private const string ExpectedArchiveVersion = "1.3.2.3";
+	private const string ExpectedArchiveVersion = "1.3.2.4";
 
 	/// <summary>
 	/// The <c>ModifiedOnUtc</c> the shipped descriptor carries.
@@ -183,7 +186,7 @@ public class BundledProcessBuilderPackageTests {
 	/// command — the previous pin ended in <c>431</c>, which is how the hand edit was eventually noticed.
 	/// </para>
 	/// </remarks>
-	private const string ExpectedDescriptorModifiedOnUtc = "/Date(1788272145000)/";
+	private const string ExpectedDescriptorModifiedOnUtc = "/Date(1788338237000)/";
 
 	/// <summary>
 	/// The <c>ModifiedOnUtc</c> the shipped COMPILE-MARKER SCHEMA descriptor carries.

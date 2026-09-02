@@ -85,6 +85,53 @@ public sealed class ServerProcessDescriberTests {
 	}
 
 	[Test]
+	[Description("Deserializes a Lookup ConstValue's valueDisplay - the referenced record's NAME - into the DescribedParameter DTO, beside the unchanged bare-Guid value, so a caller can show a word without a second read.")]
+	public void Describe_ShouldReadParameterValueDisplay_WhenServerReportsIt() {
+		// Arrange - a Lookup constant the server resolved a name for (ENG-96325); value stays the bare record id
+		IApplicationClient client = ClientReturning(
+			"{\"DescribeProcessResult\":{\"success\":true,\"name\":\"UsrProc\","
+			+ "\"elements\":[{\"uid\":\"a1b2c3d4-0000-0000-0000-000000000001\",\"name\":\"task1\",\"type\":\"ProcessSchemaUserTask\",\"buildType\":\"usertask\","
+			+ "\"parameters\":[{\"name\":\"ActivityCategory\",\"uid\":\"p1\",\"type\":\"Lookup\",\"source\":\"ConstValue\","
+			+ "\"value\":\"03df85bf-6b19-4dea-8463-d5d49b80bb28\",\"valueDisplay\":\"Call\"}]}],"
+			+ "\"flows\":[],\"parameters\":[]}}");
+		ServerProcessDescriber describer = CreateDescriber(client);
+
+		// Act
+		ErrorOr<DescribeProcessResult> result = describer.Describe(new ProcessIdentity("UsrProc", null, null), null);
+
+		// Assert
+		result.IsError.Should().BeFalse(because: "the response is a valid graph");
+		DescribedParameter parameter = result.Value.Elements[0].Parameters[0];
+		parameter.Value.Should().Be("03df85bf-6b19-4dea-8463-d5d49b80bb28",
+			because: "the runtime encoding is the bare record Guid and the display name must not replace it");
+		parameter.ValueDisplay.Should().Be("Call",
+			because: "valueDisplay is what the designer renders; dropping it in the clio DTO reinstates the Guid the "
+				+ "fix removed, and only the manual e2e suite would notice");
+	}
+
+	[Test]
+	[Description("Leaves valueDisplay unset (null) when the server omits it - an older package, or a record whose name did not resolve - so the absent field serializes away instead of becoming an empty string.")]
+	public void Describe_ShouldLeaveValueDisplayNull_WhenServerOmitsIt() {
+		// Arrange - a pre-1.3.2.4 package: the Lookup constant is reported without a display name
+		IApplicationClient client = ClientReturning(
+			"{\"DescribeProcessResult\":{\"success\":true,\"name\":\"UsrProc\","
+			+ "\"elements\":[{\"uid\":\"a1b2c3d4-0000-0000-0000-000000000001\",\"name\":\"task1\",\"type\":\"ProcessSchemaUserTask\",\"buildType\":\"usertask\","
+			+ "\"parameters\":[{\"name\":\"ActivityCategory\",\"uid\":\"p1\",\"type\":\"Lookup\",\"source\":\"ConstValue\","
+			+ "\"value\":\"03df85bf-6b19-4dea-8463-d5d49b80bb28\"}]}],"
+			+ "\"flows\":[],\"parameters\":[]}}");
+		ServerProcessDescriber describer = CreateDescriber(client);
+
+		// Act
+		ErrorOr<DescribeProcessResult> result = describer.Describe(new ProcessIdentity("UsrProc", null, null), null);
+
+		// Assert
+		result.IsError.Should().BeFalse(because: "an older package omitting the field is not an error");
+		result.Value.Elements[0].Parameters[0].ValueDisplay.Should().BeNull(
+			because: "an omitted display name must stay null so it serializes away, rather than surfacing as an empty "
+				+ "label a caller would render");
+	}
+
+	[Test]
 	[Description("Leaves direction/isResult unset (null) when an older server omits them, so the absent fields serialize away cleanly.")]
 	public void Describe_ShouldLeaveDirectionAndIsResultNull_WhenServerOmitsThem() {
 		// Arrange — an older CrtProcessBuilder that does not report direction/isResult on parameters

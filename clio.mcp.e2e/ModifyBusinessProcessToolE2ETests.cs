@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text.Json;
@@ -1572,9 +1572,12 @@ public sealed class ModifyBusinessProcessToolE2ETests {
 	private const string ToDoActivityCategoryId = "f51c4643-58e6-df11-971b-001d60e938c6";
 
 	/// <summary>
-	/// The display name of <see cref="ToDoActivityCategoryId"/> in the suite's en-US profile culture — what the
-	/// designer must show in place of the id. Asserted literally for the same reason the id is: the row is base
-	/// seed on every stand this suite runs on.
+	/// The display name of <see cref="ToDoActivityCategoryId"/> — what the designer must show in place of the id.
+	/// Asserted literally for the same reason the id is: the row is base seed on every stand this suite runs on.
+	/// <para>NOT a profile-culture value, and do not debug it as one: the server reads the name with an
+	/// uncultured <c>Select</c> against the base table, so what lands here is the stand's PRIMARY data language,
+	/// whatever culture the caller's profile is set to. A stand seeded in another language is what would move
+	/// this literal.</para>
 	/// </summary>
 	private const string ToDoActivityCategoryName = "To do";
 
