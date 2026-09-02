@@ -311,9 +311,7 @@ internal static class ODataReadQuery {
 			// misrouted request returns; falling through to the single-entity branch reported those as
 			// success with count=1, and with a file destination the scalar was persisted as OData output.
 			if (root.ValueKind != JsonValueKind.Object) {
-				return ODataReadResponse.Failure(
-					$"OData response is a JSON {DescribeKind(root.ValueKind)}, not a record or a collection. " +
-					"The endpoint did not answer with OData content; check the environment and the entity name.");
+				return ODataReadResponse.Failure(DescribeNonODataContent(root.ValueKind));
 			}
 
 			if (root.TryGetProperty("value", out JsonElement valueEl)) {
@@ -330,6 +328,29 @@ internal static class ODataReadQuery {
 			return ODataReadResponse.Failure(SensitiveErrorTextRedactor.Redact($"Failed to parse OData response: {ex.Message} | Response: {preview}"));
 		}
 	}
+
+	/// <summary>
+	/// The rejection for a body that is not OData content. Owned here, and used verbatim by the file-mode
+	/// contract too: the two read paths must give the caller the SAME diagnostic for the same body, and
+	/// two copies of the sentence drifted the moment one of them was edited.
+	/// </summary>
+	/// <param name="kind">Kind of the response root.</param>
+	internal static string DescribeNonODataContent(JsonValueKind kind) =>
+		$"OData response is a JSON {DescribeKind(kind)}, not a record or a collection. "
+		+ "The endpoint did not answer with OData content; check the environment and the entity name.";
+
+	/// <summary>The rejection for count=true answered without the annotation. Shared with file mode.</summary>
+	internal const string MissingCountMessage =
+		"Creatio did not return @odata.count for count=true; total count cannot be verified.";
+
+	/// <summary>
+	/// Whether a response property is an OData control annotation rather than a data column. Any
+	/// <c>@odata.*</c> member belongs to the envelope, and a single-entity response carries
+	/// <c>@odata.context</c> alongside the real fields.
+	/// </summary>
+	/// <param name="name">Property name from the response object.</param>
+	internal static bool IsODataAnnotation(string name) =>
+		name.StartsWith("@odata.", StringComparison.Ordinal);
 
 	/// <summary>Names a JSON kind the way the caller-facing rejection messages quote it.</summary>
 	internal static string DescribeKind(JsonValueKind kind) => kind switch {
@@ -354,8 +375,7 @@ internal static class ODataReadQuery {
 			? parsedTotalCount
 			: null;
 		if (countRequested && !totalCount.HasValue) {
-			return ODataReadResponse.Failure(
-				"Creatio did not return @odata.count for count=true; total count cannot be verified.");
+			return ODataReadResponse.Failure(MissingCountMessage);
 		}
 		string nextLink = hasEnvelope
 			&& root.TryGetProperty("@odata.nextLink", out JsonElement nextLinkElement)

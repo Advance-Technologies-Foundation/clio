@@ -226,7 +226,7 @@ public sealed class ODataFileContract(IFileSystem fileSystem, IConfinedFileAcces
 			}
 			(JsonElement rows, string nextLink, long? totalCount) = ReadEnvelope(root);
 			if (countRequested && !totalCount.HasValue) {
-				return (null, "Creatio did not return @odata.count for count=true; total count cannot be verified.");
+				return (null, ODataReadQuery.MissingCountMessage);
 			}
 			int recordCount = rows.ValueKind == JsonValueKind.Array ? rows.GetArrayLength() : 1;
 			(int rowCount, Dictionary<string, long> columnSizes) = SummarizeRows(rows);
@@ -250,8 +250,7 @@ public sealed class ODataFileContract(IFileSystem fileSystem, IConfinedFileAcces
 		// response reported a successful read of a file holding no records at all.
 		return root.ValueKind is JsonValueKind.Object or JsonValueKind.Array
 			? null
-			: $"OData response is a JSON {ODataReadQuery.DescribeKind(root.ValueKind)}, not a record or a "
-				+ "collection. The endpoint did not answer with OData content; check the environment and the entity name.";
+			: ODataReadQuery.DescribeNonODataContent(root.ValueKind);
 	}
 
 	/// <summary>
@@ -297,6 +296,12 @@ public sealed class ODataFileContract(IFileSystem fileSystem, IConfinedFileAcces
 			}
 			rowCount++;
 			foreach (JsonProperty property in row.EnumerateObject()) {
+				// Envelope annotations are not columns. A single-entity response carries @odata.context
+				// beside its real fields, so the summary reported a data column the inline read never
+				// surfaces - the same body described two different ways by the two read paths.
+				if (ODataReadQuery.IsODataAnnotation(property.Name)) {
+					continue;
+				}
 				long size = Encoding.UTF8.GetByteCount(property.Value.GetRawText());
 				columnSizes[property.Name] = columnSizes.TryGetValue(property.Name, out long current) ? current + size : size;
 			}

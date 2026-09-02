@@ -55,6 +55,44 @@ public sealed class ODataReadToFileToolTests {
 
 	[Test]
 	[Category("Unit")]
+	[Description("Leaves OData control annotations out of the column summary, so the file-mode summary describes the same columns the inline read surfaces.")]
+	public void ReadToFile_Should_Not_Count_ODataAnnotations_As_Columns() {
+		// Arrange - a single-entity response, which is where Creatio attaches @odata.context beside the real
+		// fields. The inline read never surfaces it as data, so the file summary must not either.
+		MockFileSystem fileSystem = new();
+		string outputFile = fileSystem.Path.Combine(fileSystem.Path.GetTempPath(), $"odata-entity-{Guid.NewGuid():N}.json");
+		ICreatioApplicationClient client = Substitute.For<ICreatioApplicationClient>();
+		IServiceUrlBuilder urlBuilder = Substitute.For<IServiceUrlBuilder>();
+		IToolCommandResolver resolver = Substitute.For<IToolCommandResolver>();
+		resolver.Resolve<IApplicationClient>(Arg.Any<EnvironmentOptions>()).Returns(client);
+		resolver.Resolve<IServiceUrlBuilder>(Arg.Any<EnvironmentOptions>()).Returns(urlBuilder);
+		urlBuilder.Build(Arg.Any<string>()).Returns("http://creatio/odata/Contact(1)");
+		client.ExecuteGetRequestBoundedAsync(
+				Arg.Any<string>(), Arg.Any<long>(), Arg.Any<int>(), Arg.Any<CancellationToken>())
+			.Returns(Task.FromResult(Encoding.UTF8.GetBytes(
+				"{\"@odata.context\":\"http://creatio/odata/$metadata#Contact\",\"Id\":\"1\",\"Name\":\"John\"}")));
+		ODataReadToFileTool tool = new(resolver, new ODataFileContract(fileSystem, new MockConfinedFileAccess(fileSystem)));
+
+		// Act
+		ODataReadResponse response = tool.ReadToFile(new ODataReadToFileArgs {
+			EnvironmentName = "dev", Entity = "Contact", OutputFile = outputFile
+		});
+
+		// Assert
+		response.Success.Should().BeTrue(because: "a single-entity response is valid OData content");
+		response.ColumnSizes.Should().ContainKey("Id",
+			because: "the real fields of the entity are the columns the summary is about");
+		response.ColumnSizes.Should().ContainKey("Name",
+			because: "the real fields of the entity are the columns the summary is about");
+		response.ColumnSizes.Keys.Where(key => key.StartsWith("@odata.", StringComparison.Ordinal))
+			.Should().BeEmpty(
+				because: "an envelope annotation is not a data column, and reporting one made the two read paths describe the same body differently");
+		fileSystem.File.ReadAllText(outputFile).Should().Contain("@odata.context",
+			because: "the raw response is still written unchanged - only the summary excludes the annotation");
+	}
+
+	[Test]
+	[Category("Unit")]
 	[Description("Refuses an output-file that already exists, and refuses it BEFORE the OData request so a rejected path never costs a full fetch first.")]
 	public void ReadToFile_Should_Reject_Existing_Output_File_Before_Fetching() {
 		// Arrange

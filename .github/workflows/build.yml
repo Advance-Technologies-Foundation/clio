@@ -198,15 +198,23 @@ jobs:
   # raw service response written under the SHARED OS temp root is unprotected.
   # It also runs ConfinedFileAccessTests, whose no-follow guarantee rests on raw O_* flag values that differ
   # per platform AND per Linux architecture. A wrong value fails silently in the dangerous direction - the
-  # open just succeeds without the guarantee - so the Linux values need a leg that actually exercises them.
+  # open just succeeds without the guarantee - so every platform whose constant set differs needs a leg that
+  # actually exercises it. macOS is not optional here: the Darwin O_* values are entirely different numbers
+  # from the Linux ones, ELOOP is 62 there against 40 on Linux, and a Linux-only leg shipped that whole set
+  # unexercised on a product that supports macOS. The legs are a MATRIX rather than separate jobs so the
+  # `Unit Tests` aggregation below keeps covering all of them through one `needs` entry.
   unix-file-mode-tests:
-    name: Unix File Mode Tests
+    name: Unix File Mode Tests (${{ matrix.os }})
     needs: changes
     if: >-
       needs.changes.outputs.clio-src == 'true' ||
       needs.changes.outputs.tests   == 'true' ||
       github.ref == 'refs/heads/master'
-    runs-on: ubuntu-latest
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
     steps:
       - uses: actions/checkout@v5
         with:

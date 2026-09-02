@@ -57,6 +57,9 @@ internal sealed class UnixConfinedFileAccess : IConfinedFileAccess {
 		if (fd < 0) {
 			throw LastError(canonicalPath, "create");
 		}
+		// Wrapped IMMEDIATELY, not on the success path: a failing fchmod below used to leave the raw
+		// descriptor open for the lifetime of the process, since nothing owned it yet.
+		SafeFileHandle handle = new((IntPtr)fd, ownsHandle: true);
 		try {
 			// The permissions are narrowed to owner-only on the OPEN DESCRIPTOR, before a single byte of the
 			// payload is written. The mode cannot be passed to the create itself: openat is a VARIADIC
@@ -69,7 +72,7 @@ internal sealed class UnixConfinedFileAccess : IConfinedFileAccess {
 			if (Interop.FChmod(fd, OwnerReadWrite) != 0) {
 				throw LastError(canonicalPath, "restrict permissions on");
 			}
-			using (FileStream stream = new(new SafeFileHandle((IntPtr)fd, ownsHandle: true), FileAccess.Write)) {
+			using (FileStream stream = new(handle, FileAccess.Write)) {
 				stream.Write(content, 0, content.Length);
 				stream.Flush();
 			}
@@ -91,6 +94,9 @@ internal sealed class UnixConfinedFileAccess : IConfinedFileAccess {
 			Interop.UnlinkAt(directory.Value, temporaryName);
 		}
 		catch {
+			// The FileStream disposes the handle on the success path; on a failure before it is constructed
+			// this is the only owner there is.
+			handle.Dispose();
 			Interop.UnlinkAt(directory.Value, temporaryName);
 			throw;
 		}
@@ -158,7 +164,7 @@ internal sealed class UnixConfinedFileAccess : IConfinedFileAccess {
 
 	private static IOException LastError(string path, string operation) {
 		int error = Marshal.GetLastWin32Error();
-		bool linkInTheWay = error is Loop or NotDirectory;
+		bool linkInTheWay = error == Loop || error == NotDirectory;
 		return linkInTheWay
 			? new IOException(
 				$"could not {operation} '{path}': a path component is a symbolic link. The path changed after "
@@ -169,9 +175,14 @@ internal sealed class UnixConfinedFileAccess : IConfinedFileAccess {
 	// EEXIST - the publish name was taken by someone else first.
 	private const int FileAlreadyExists = 17;
 
-	// ELOOP / ENOTDIR are what O_NOFOLLOW and O_DIRECTORY report for a symlinked component; the numbers are
-	// the same on Linux and macOS.
-	private const int Loop = 62;
+	// ELOOP / ENOTDIR are what O_NOFOLLOW and O_DIRECTORY report for a symlinked component. ELOOP is NOT the
+	// same number on both: 62 on Darwin/BSD, 40 on Linux (asm-generic/errno.h). With the Darwin value
+	// hardcoded, a symlinked component on Linux still failed closed - the fd is negative either way - but
+	// LastError could not recognize it, so the caller got "error 40" instead of being told the path had a
+	// symbolic link in it. ENOTDIR is 20 on both.
+	private static int Loop =>
+		OperatingSystem.IsMacOS() || OperatingSystem.IsMacCatalyst() || OperatingSystem.IsFreeBSD() ? 62 : 40;
+
 	private const int NotDirectory = 20;
 
 	private const int OwnerReadWrite = 0x180; // 0600
