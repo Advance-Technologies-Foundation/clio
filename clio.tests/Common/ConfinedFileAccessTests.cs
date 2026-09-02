@@ -2,6 +2,7 @@ namespace Clio.Tests.Common;
 
 using System;
 using System.IO;
+using System.Runtime.InteropServices;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
@@ -205,6 +206,42 @@ public sealed class ConfinedFileAccessTests {
 
 	[Test]
 	[Category("Integration")]
+	[Description("Narrows the sibling temporary file to owner-only BEFORE any payload byte is written, which is the guarantee the published file's mode cannot prove.")]
+	public void WriteNew_ShouldRestrictTheTemporarySibling_BeforeWritingAnyByte() {
+		// Arrange
+		if (OperatingSystem.IsWindows()) {
+			Assert.Ignore("Unix file modes have no meaning on Windows.");
+		}
+		string path = Path.Combine(_sandbox, "creation-time-mode.json");
+		UnixFileMode? observedMode = null;
+		long observedLength = -1;
+		UnixConfinedFileAccess.NotifyTemporaryFileRestricted = temporaryName => {
+			string temporaryPath = Path.Combine(_sandbox, temporaryName);
+			observedMode = File.GetUnixFileMode(temporaryPath);
+			observedLength = new FileInfo(temporaryPath).Length;
+		};
+
+		try {
+			// Act
+			_access.WriteNew(path, Encoding.UTF8.GetBytes("{\"a\":1}"));
+		} finally {
+			UnixConfinedFileAccess.NotifyTemporaryFileRestricted = null;
+		}
+
+		// Assert
+		observedMode.Should().NotBeNull(
+			because: "the writer must reach the point where the temporary sibling exists and its mode is settled");
+		observedMode.Should().Be(UnixFileMode.UserRead | UnixFileMode.UserWrite,
+			because: "the sibling holds the same raw service response and lives under the shared OS temp root, so it must never be readable by other local users while the write is in progress");
+		observedLength.Should().Be(0,
+			because: "the ordering is the whole point - a mode narrowed after the write leaves the payload exposed for the length of the transfer, and the published inode is owner-only either way, so nothing else can tell the two apart");
+		File.GetUnixFileMode(path).Should().Be(UnixFileMode.UserRead | UnixFileMode.UserWrite);
+		Directory.GetFiles(_sandbox, "*.tmp").Should().BeEmpty(
+			because: "the temporary entry is unlinked once the content is published under its final name");
+	}
+
+	[Test]
+	[Category("Integration")]
 	[Description("Publishes the file owner-readable and owner-writable only, so a raw service response under the shared OS temp root is not exposed to other local users - and so a file nobody can read is caught too.")]
 	public void WriteNew_ShouldPublish_AnOwnerOnlyFile() {
 		// Arrange
@@ -225,6 +262,50 @@ public sealed class ConfinedFileAccessTests {
 			because: "the payload is a raw service response and must not be readable by other local users");
 		File.ReadAllText(path).Should().Be("{\"a\":1}",
 			because: "the owner must still be able to read the file that was just written for them");
+	}
+
+	[TestCase(Architecture.X64)]
+	[TestCase(Architecture.X86)]
+	[TestCase(Architecture.Arm64)]
+	[Category("Unit")]
+	[Description("Resolves O_NOFOLLOW and O_DIRECTORY to the asm-generic values on every 64-bit and x86 Linux architecture, including arm64, where only 32-bit ARM has its own constants.")]
+	public void Flags_ShouldUseTheGenericLinuxConstants_ForEveryArchitectureButArm32(Architecture architecture) {
+		// Act
+		int noFollow = UnixConfinedFileAccess.Flags.SelectFlag(
+			isDarwin: false, architecture, darwin: 0x0100, linuxArm32: 0x8000, linux: 0x20000);
+		int directory = UnixConfinedFileAccess.Flags.SelectFlag(
+			isDarwin: false, architecture, darwin: 0x100000, linuxArm32: 0x4000, linux: 0x10000);
+
+		// Assert
+		noFollow.Should().Be(0x20000,
+			because: "arm64 Linux uses the asm-generic O_NOFOLLOW, so folding it into the arch/arm column passed 0x8000 - O_LARGEFILE, a no-op on 64-bit - and the open ran without no-follow at all");
+		directory.Should().Be(0x10000,
+			because: "the arch/arm O_DIRECTORY value 0x4000 is O_DIRECT on asm-generic, so the descent stopped enforcing that a component is a directory");
+		// because: no CI leg runs on Linux arm64, and this mapping fails silently in the dangerous direction
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Keeps the arch/arm constants for 32-bit ARM Linux, the one architecture whose values genuinely differ.")]
+	public void Flags_ShouldKeepTheArmConstants_ForThirtyTwoBitArmLinux() {
+		// Act
+		int noFollow = UnixConfinedFileAccess.Flags.SelectFlag(
+			isDarwin: false, Architecture.Arm, darwin: 0x0100, linuxArm32: 0x8000, linux: 0x20000);
+
+		// Assert
+		noFollow.Should().Be(0x8000, because: "arch/arm defines its own O_NOFOLLOW and is why the override exists");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Uses the Darwin constants on Darwin whatever the architecture, so Apple silicon is not routed through an ARM Linux column.")]
+	public void Flags_ShouldUseTheDarwinConstants_OnDarwin() {
+		// Act
+		int noFollow = UnixConfinedFileAccess.Flags.SelectFlag(
+			isDarwin: true, Architecture.Arm64, darwin: 0x0100, linuxArm32: 0x8000, linux: 0x20000);
+
+		// Assert
+		noFollow.Should().Be(0x0100, because: "Darwin's O_NOFOLLOW is architecture-independent and is checked first");
 	}
 
 	[Test]

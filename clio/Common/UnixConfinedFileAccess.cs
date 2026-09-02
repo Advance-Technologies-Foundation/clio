@@ -38,6 +38,13 @@ internal sealed class UnixConfinedFileAccess : IConfinedFileAccess {
 	}
 
 	/// <inheritdoc/>
+	/// <summary>
+	/// Called with the sibling temporary file's name once its mode has been narrowed to owner-only and
+	/// before any payload byte is written. Exists solely so that ordering can be pinned by a test; it is
+	/// never set in production.
+	/// </summary>
+	internal static Action<string> NotifyTemporaryFileRestricted { get; set; }
+
 	public void WriteNew(string canonicalPath, byte[] content) {
 		// Missing parents are created BY the descent, each one relative to the descriptor of the directory
 		// above it. Directory.CreateDirectory used to run first, on the mutable absolute path: with two
@@ -72,6 +79,13 @@ internal sealed class UnixConfinedFileAccess : IConfinedFileAccess {
 			if (Interop.FChmod(fd, OwnerReadWrite) != 0) {
 				throw LastError(canonicalPath, "restrict permissions on");
 			}
+			// The ONLY point from which the creation-time guarantee can be observed. The published inode is
+			// owner-only whether the mode is narrowed before or after the write, so a regression that
+			// reordered these two statements - leaving the sibling world-readable for the whole transfer -
+			// would pass every assertion made on the finished file. There is no path-based handle on the
+			// temporary entry to look at from outside either: it is created and unlinked relative to a
+			// directory descriptor and never has a stable name a caller could stat in time.
+			NotifyTemporaryFileRestricted?.Invoke(temporaryName);
 			using (FileStream stream = new(handle, FileAccess.Write)) {
 				stream.Write(content, 0, content.Length);
 				stream.Flush();
@@ -230,11 +244,16 @@ internal sealed class UnixConfinedFileAccess : IConfinedFileAccess {
 	/// symbolic link and requires it to fail, which is a direct behavioural check of these constants on
 	/// whatever platform the suite runs on.
 	/// </remarks>
-	private static class Flags {
+	internal static class Flags {
 		private static readonly bool IsDarwin = OperatingSystem.IsMacOS() || OperatingSystem.IsMacCatalyst();
 
-		private static readonly bool IsLinuxArm =
-			RuntimeInformation.ProcessArchitecture is Architecture.Arm or Architecture.Arm64;
+		// 32-bit ARM ONLY. arch/arm has its own O_NOFOLLOW/O_DIRECTORY values, but arm64 Linux uses the
+		// asm-generic set - the same values as x64. Folding Arm64 in here handed the openat descent and the
+		// final open the 32-bit values on every arm64 Linux host, where 0x8000 is O_LARGEFILE (a no-op on
+		// 64-bit) and 0x4000 is O_DIRECT: both opens then ran WITHOUT no-follow, so a symlinked path
+		// component was followed and the escape this class exists to prevent was reopened. It fails in the
+		// dangerous direction and it fails silently, on Graviton, arm64 containers and linux/arm64 images.
+		private static readonly bool IsLinuxArm32 = RuntimeInformation.ProcessArchitecture is Architecture.Arm;
 
 		internal const int ReadOnly = 0x0000;
 		internal const int WriteOnly = 0x0001;
@@ -243,17 +262,31 @@ internal sealed class UnixConfinedFileAccess : IConfinedFileAccess {
 
 		internal static int Exclusive => IsDarwin ? 0x0800 : 0x80;
 
-		internal static int NoFollow => PerPlatform(darwin: 0x0100, linuxArm: 0x8000, linux: 0x20000);
+		internal static int NoFollow => PerPlatform(darwin: 0x0100, linuxArm32: 0x8000, linux: 0x20000);
 
-		internal static int Directory => PerPlatform(darwin: 0x100000, linuxArm: 0x4000, linux: 0x10000);
+		internal static int Directory => PerPlatform(darwin: 0x100000, linuxArm32: 0x4000, linux: 0x10000);
 
 		internal static int CloseOnExec => IsDarwin ? 0x1000000 : 0x80000;
 
-		private static int PerPlatform(int darwin, int linuxArm, int linux) {
-			if (IsDarwin) {
+		private static int PerPlatform(int darwin, int linuxArm32, int linux) =>
+			SelectFlag(IsDarwin, RuntimeInformation.ProcessArchitecture, darwin, linuxArm32, linux);
+
+		/// <summary>
+		/// Picks the open-flag value for one platform and architecture. Split out from the properties, and
+		/// with both inputs passed in, so the architecture mapping can be pinned from any host - the wrong
+		/// column costs a silently unenforced no-follow, and no CI leg runs on Linux arm64.
+		/// </summary>
+		/// <param name="isDarwin">Whether the host is Darwin.</param>
+		/// <param name="architecture">Process architecture of the host.</param>
+		/// <param name="darwin">Darwin value.</param>
+		/// <param name="linuxArm32">Value for 32-bit ARM Linux (arch/arm), which has its own constants.</param>
+		/// <param name="linux">Value for every other Linux architecture (asm-generic, including arm64).</param>
+		internal static int SelectFlag(
+			bool isDarwin, Architecture architecture, int darwin, int linuxArm32, int linux) {
+			if (isDarwin) {
 				return darwin;
 			}
-			return IsLinuxArm ? linuxArm : linux;
+			return architecture is Architecture.Arm ? linuxArm32 : linux;
 		}
 	}
 
