@@ -15,7 +15,6 @@ if ($DisableSharding) {
         include = @(
             @{
                 name = "$Suite-unsharded"
-                runConflictResolverTests = $Suite -eq "unit"
                 shardingDisabled = $true
             }
         )
@@ -32,7 +31,6 @@ if ($null -eq $suiteDefinition) {
 $include = @($suiteDefinition.shards | ForEach-Object {
     @{
         name = $_.name
-        runConflictResolverTests = $Suite -eq "unit" -and $_.name -eq "unit-2"
         shardingDisabled = $false
     }
 })

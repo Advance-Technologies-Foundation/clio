@@ -108,6 +108,36 @@ jobs:
             --framework net8.0 `
             -p:RunAnalyzers=false
 
+  # ── ConflictResolver tests (one hosted runner, concurrent with unit shards) ──
+  conflict-resolver-tests:
+    name: ConflictResolver Tests
+    needs: changes
+    permissions:
+      contents: read
+    if: >-
+      needs.changes.outputs.clio-src == 'true' ||
+      needs.changes.outputs.tests   == 'true' ||
+      github.ref == 'refs/heads/master'
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 1
+          persist-credentials: false
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.x
+
+      - name: Run ConflictResolver tests
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Stop'
+          Set-Location $env:GITHUB_WORKSPACE
+          dotnet test .\Creatio.ConflictResolver.Tests\Creatio.ConflictResolver.Tests.csproj `
+            --configuration Release `
+            -p:RunAnalyzers=false
+
   # ── Unit tests (four hosted runners; fast gate runs on every push) ────
   unit-test-shards:
     name: Unit Test Shard (${{ matrix.name }})
@@ -160,22 +190,11 @@ jobs:
             Suite = 'unit'
             ShardName = $env:SHARD_NAME
             ResultsDirectory = "TestResults/$($env:SHARD_NAME)"
-            EnableHangDiagnostics = $true
           }
           if ($env:SHARDING_DISABLED -eq 'true') {
             $arguments.DisableSharding = $true
           }
           & .\.github\scripts\Invoke-TestShard.ps1 @arguments
-
-      - name: Run ConflictResolver tests
-        if: matrix.runConflictResolverTests
-        shell: powershell
-        run: |
-          $ErrorActionPreference = 'Stop'
-          Set-Location $env:GITHUB_WORKSPACE
-          dotnet test .\Creatio.ConflictResolver.Tests\Creatio.ConflictResolver.Tests.csproj `
-            --configuration Release `
-            -p:RunAnalyzers=false
 
       - name: Upload unit test timing
         if: always()
@@ -183,13 +202,13 @@ jobs:
         with:
           name: test-results-${{ matrix.name }}
           overwrite: true
-          path: TestResults/${{ matrix.name }}/**
+          path: TestResults/${{ matrix.name }}/*.trx
           if-no-files-found: warn
           retention-days: 14
 
   unit-tests:
     name: Unit Tests
-    needs: [changes, unit-test-shards, net8-compatibility]
+    needs: [changes, unit-test-shards, net8-compatibility, conflict-resolver-tests]
     if: always()
     runs-on: ubuntu-latest
     permissions: {}
@@ -201,7 +220,8 @@ jobs:
             needs.changes.outputs.tests   == 'true' ||
             github.ref == 'refs/heads/master') &&
            (needs.unit-test-shards.result != 'success' ||
-            needs.net8-compatibility.result != 'success'))
+            needs.net8-compatibility.result != 'success' ||
+            needs.conflict-resolver-tests.result != 'success'))
         run: exit 1
 
   # ── ClioGate tests (only when the bundled service changes) ──────────

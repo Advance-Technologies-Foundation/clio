@@ -61,7 +61,37 @@ internal sealed class TestShardingWorkflowTests {
 	}
 
 	[Test]
-	[Description("The required Unit Tests check aggregates all unit shards and the standalone NET8 compatibility job.")]
+	[Description("ConflictResolver tests run once in a standalone job with the same change conditions as the unit shards.")]
+	public void BuildWorkflow_ShouldRunConflictResolverOnce_OutsideUnitShardMatrix() {
+		// Arrange
+		Dictionary<object, object> jobs = ReadJobs();
+		Dictionary<object, object> compatibilityJob = GetMap(jobs, "conflict-resolver-tests");
+		Dictionary<object, object> unitShardJob = GetMap(jobs, "unit-test-shards");
+		List<Dictionary<object, object>> compatibilitySteps = GetSteps(compatibilityJob);
+		string compatibilityRun = string.Join("\n", compatibilitySteps
+			.Where(step => step.ContainsKey("run"))
+			.Select(step => step["run"].ToString()));
+
+		// Act
+		bool hasMatrix = compatibilityJob.ContainsKey("strategy");
+
+		// Assert
+		compatibilityJob["name"].Should().Be("ConflictResolver Tests",
+			because: "the dedicated job should have one stable, descriptive check name");
+		compatibilityJob["needs"].Should().Be("changes",
+			because: "ConflictResolver tests should start as soon as change detection completes");
+		compatibilityJob["if"].Should().Be(unitShardJob["if"],
+			because: "ConflictResolver and unit tests should use the same relevance conditions");
+		hasMatrix.Should().BeFalse(
+			because: "ConflictResolver tests must run exactly once rather than once per shard");
+		compatibilityRun.Should().Contain("dotnet test .\\Creatio.ConflictResolver.Tests\\Creatio.ConflictResolver.Tests.csproj",
+			because: "the dedicated lane must execute the compatibility test project");
+		compatibilityRun.Should().Contain("--configuration Release",
+			because: "the compatibility suite should retain its existing build configuration");
+	}
+
+	[Test]
+	[Description("The required Unit Tests check aggregates all unit shards and both standalone compatibility jobs.")]
 	public void BuildWorkflow_ShouldFailUnitAggregate_WhenShardOrCompatibilityFails() {
 		// Arrange
 		Dictionary<object, object> jobs = ReadJobs();
@@ -80,18 +110,19 @@ internal sealed class TestShardingWorkflowTests {
 		aggregateCondition.Should().Be("always()",
 			because: "the aggregate must still run and report failure when one of its dependencies fails or is skipped");
 		dependencies.Select(value => value.ToString()).Should().BeEquivalentTo(
-			new[] { "changes", "unit-test-shards", "net8-compatibility" },
-			because: "the aggregate must wait for planning, every shard, and product compatibility");
+			new[] { "changes", "unit-test-shards", "net8-compatibility", "conflict-resolver-tests" },
+			because: "the aggregate must wait for planning, every shard, and both compatibility jobs");
 		normalizedFailureCondition.Should().Be(
 			"needs.changes.result!='success'||((needs.changes.outputs.clio-src=='true'||" +
 			"needs.changes.outputs.tests=='true'||github.ref=='refs/heads/master')&&" +
-			"(needs.unit-test-shards.result!='success'||needs.net8-compatibility.result!='success'))",
-			because: "the stable gate must fail for change detection or either relevant prerequisite without failing irrelevant changes");
+			"(needs.unit-test-shards.result!='success'||needs.net8-compatibility.result!='success'||" +
+			"needs.conflict-resolver-tests.result!='success'))",
+			because: "the stable gate must fail for change detection or any relevant prerequisite without failing irrelevant changes");
 	}
 
 	[Test]
-	[Description("Unit shard matrices preserve their sharded and unsharded contracts without assigning NET8 compatibility.")]
-	public void MatrixScript_ShouldPreserveUnitModes_WithoutAssigningNet8Compatibility() {
+	[Description("Unit shard matrices preserve their sharded and unsharded contracts without assigning compatibility jobs.")]
+	public void MatrixScript_ShouldPreserveUnitModes_WithoutAssigningCompatibilityJobs() {
 		// Arrange
 		JsonElement shardedMatrix = RunUnitMatrix(disableSharding: false);
 		JsonElement unshardedMatrix = RunUnitMatrix(disableSharding: true);
@@ -106,11 +137,8 @@ internal sealed class TestShardingWorkflowTests {
 			because: "normal unit execution must retain all four named shards");
 		shardedEntries.Should().OnlyContain(entry => !entry.GetProperty("shardingDisabled").GetBoolean(),
 			because: "normal matrix entries must continue to apply fixture filters");
-		shardedEntries.Count(entry => entry.GetProperty("runConflictResolverTests").GetBoolean()).Should().Be(1,
-			because: "ConflictResolver compatibility must run exactly once in sharded mode");
-		shardedEntries.Single(entry => entry.GetProperty("runConflictResolverTests").GetBoolean())
-			.GetProperty("name").GetString().Should().Be("unit-2",
-				because: "the fixed ConflictResolver cost is assigned to unit-2 in the committed balance");
+		shardedEntries.Should().OnlyContain(entry => !HasProperty(entry, "runConflictResolverTests"),
+			because: "ConflictResolver tests belong exclusively to their standalone workflow job");
 		shardedEntries.Should().OnlyContain(entry => !HasProperty(entry, "runNet8Compatibility"),
 			because: "NET8 compatibility belongs exclusively to its standalone workflow job");
 		unshardedEntries.Should().ContainSingle(
@@ -119,8 +147,8 @@ internal sealed class TestShardingWorkflowTests {
 			because: "the fallback worker has a stable diagnostic name");
 		unshardedEntries[0].GetProperty("shardingDisabled").GetBoolean().Should().BeTrue(
 			because: "the fallback worker must bypass fixture filtering");
-		unshardedEntries[0].GetProperty("runConflictResolverTests").GetBoolean().Should().BeTrue(
-			because: "ConflictResolver compatibility must still run exactly once when sharding is disabled");
+		unshardedEntries[0].TryGetProperty("runConflictResolverTests", out _).Should().BeFalse(
+			because: "disabled sharding must not move ConflictResolver tests back into the unit worker");
 		unshardedEntries[0].TryGetProperty("runNet8Compatibility", out _).Should().BeFalse(
 			because: "disabled sharding must not move NET8 compatibility back into the unit worker");
 	}

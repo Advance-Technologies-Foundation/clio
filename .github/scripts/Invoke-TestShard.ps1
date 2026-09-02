@@ -10,9 +10,7 @@ param(
 
     [string] $ResultsDirectory = "TestResults",
 
-    [switch] $DisableSharding,
-
-    [switch] $EnableHangDiagnostics
+    [switch] $DisableSharding
 )
 
 $ErrorActionPreference = "Stop"
@@ -106,14 +104,6 @@ $arguments = @(
     "--results-directory", $ResultsDirectory,
     "-p:RunAnalyzers=false"
 )
-
-if ($EnableHangDiagnostics) {
-    $arguments += @(
-        "--blame-hang",
-        "--blame-hang-timeout", "120s",
-        "--blame-hang-dump-type", "mini"
-    )
-}
 
 Write-Host "Running $ShardName with base predicate '$expectedBaseFilter' (sharding disabled: $DisableSharding)."
 & dotnet @arguments
