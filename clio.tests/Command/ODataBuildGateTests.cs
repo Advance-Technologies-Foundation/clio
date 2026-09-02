@@ -30,7 +30,8 @@ public sealed class ODataBuildGateTests
 		_retryDelay = Substitute.For<IRetryDelay>();
 		_logger = Substitute.For<ILogger>();
 		_options = new RemoteCommandOptions { Uri = "https://stand.example.local" };
-		_gate = new ODataBuildGate(_client, _retryDelay, _logger);
+		_gate = new ODataBuildGate(_client, Substitute.For<IServiceUrlBuilder>(),
+			Substitute.For<IJsonConverter>(), _retryDelay, _logger);
 	}
 
 	[TearDown]

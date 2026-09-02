@@ -66,7 +66,8 @@ public sealed class ApplicationCreateService(
 	Func<EnvironmentSettings, ISysSettingsManager> sysSettingsManagerFactory,
 	ILogger logger,
 	ICaptionCultureResolver captionCultureResolver,
-	IRetryDelay retryDelay)
+	IRetryDelay retryDelay,
+	IODataBuildGate oDataBuildGate)
 	: IApplicationCreateService
 {
 	private const string CreateApplicationRoute = "ServiceModel/AppInstallerService.svc/CreateApp";
@@ -162,6 +163,9 @@ public sealed class ApplicationCreateService(
 		ResolvedApplicationCreateRequest resolvedRequest = ResolveRequest(request, client, environmentSettings, serviceUrlBuilder, logger, schemaNamePrefix);
 		string requestUrl = serviceUrlBuilder.Build(CreateApplicationRoute, environmentSettings);
 		string requestBody = JsonSerializer.Serialize(CreateRequestDto.From(resolvedRequest), JsonOptions);
+		// CreateApp may trigger an asynchronous OData rebuild. Do not start another application mutation
+		// while that build still owns the platform configuration metadata file.
+		oDataBuildGate.WaitUntilIdle(client, environmentSettings, resolvedRequest.Code);
 
 		logger.BeginSpinner($"Creating application '{resolvedRequest.Name}' ({resolvedRequest.Code})...");
 		string responseBody;

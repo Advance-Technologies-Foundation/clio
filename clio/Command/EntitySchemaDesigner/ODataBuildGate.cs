@@ -1,5 +1,6 @@
 using System;
 using Clio.Common;
+using Clio.Common.Responses;
 
 namespace Clio.Command.EntitySchemaDesigner;
 
@@ -7,7 +8,7 @@ namespace Clio.Command.EntitySchemaDesigner;
 /// Holds a configuration publish back while a previously started background OData entities build is
 /// still running on the target environment.
 /// </summary>
-internal interface IODataBuildGate
+public interface IODataBuildGate
 {
 	/// <summary>
 	/// Blocks until the environment reports no running OData build, the wait budget is spent, or the
@@ -16,6 +17,14 @@ internal interface IODataBuildGate
 	/// <param name="options">Remote command options identifying the target environment.</param>
 	/// <param name="schemaName">Schema the caller is about to publish, used in progress messages.</param>
 	void WaitUntilIdle(RemoteCommandOptions options, string schemaName);
+
+	/// <summary>
+	/// Blocks until the target environment reports no running OData build using the caller's authenticated client.
+	/// </summary>
+	/// <param name="client">Authenticated client for the target environment.</param>
+	/// <param name="environmentSettings">Settings identifying the target environment.</param>
+	/// <param name="operationName">Operation about to start, used in progress messages.</param>
+	void WaitUntilIdle(IApplicationClient client, EnvironmentSettings environmentSettings, string operationName);
 }
 
 /// <summary>
@@ -47,6 +56,8 @@ internal sealed class ODataBuildGate : IODataBuildGate
 	internal static readonly TimeSpan PollInterval = TimeSpan.FromSeconds(3);
 
 	private readonly IRemoteEntitySchemaDesignerClient _client;
+	private readonly IServiceUrlBuilder _serviceUrlBuilder;
+	private readonly IJsonConverter _jsonConverter;
 	private readonly IRetryDelay _retryDelay;
 	private readonly ILogger _logger;
 
@@ -58,8 +69,11 @@ internal sealed class ODataBuildGate : IODataBuildGate
 	// holding because WaitUntilIdle probes repeatedly within the one call.
 	private bool? _statusMethodSupported;
 
-	public ODataBuildGate(IRemoteEntitySchemaDesignerClient client, IRetryDelay retryDelay, ILogger logger) {
+	public ODataBuildGate(IRemoteEntitySchemaDesignerClient client, IServiceUrlBuilder serviceUrlBuilder,
+		IJsonConverter jsonConverter, IRetryDelay retryDelay, ILogger logger) {
 		_client = client;
+		_serviceUrlBuilder = serviceUrlBuilder;
+		_jsonConverter = jsonConverter;
 		_retryDelay = retryDelay;
 		_logger = logger;
 	}
@@ -67,10 +81,23 @@ internal sealed class ODataBuildGate : IODataBuildGate
 	/// <inheritdoc />
 	public void WaitUntilIdle(RemoteCommandOptions options, string schemaName) {
 		ArgumentNullException.ThrowIfNull(options);
+		WaitUntilIdleCore(() => _client.TryGetIsODataBuildRunning(options), schemaName);
+	}
+
+	/// <inheritdoc />
+	public void WaitUntilIdle(IApplicationClient client, EnvironmentSettings environmentSettings, string operationName) {
+		ArgumentNullException.ThrowIfNull(client);
+		ArgumentNullException.ThrowIfNull(environmentSettings);
+		WaitUntilIdleCore(() => Probe(client, environmentSettings), operationName);
+	}
+
+	private void WaitUntilIdleCore(Func<bool?> probe, string operationName) {
+		ArgumentNullException.ThrowIfNull(probe);
+		ArgumentException.ThrowIfNullOrWhiteSpace(operationName);
 		if (_statusMethodSupported == false) {
 			return;
 		}
-		bool? isRunning = Probe(options, out bool probeFaulted);
+		bool? isRunning = Probe(probe, out bool probeFaulted);
 		if (probeFaulted) {
 			return;
 		}
@@ -85,10 +112,10 @@ internal sealed class ODataBuildGate : IODataBuildGate
 			return;
 		}
 		_logger.WriteInfo(
-			$"Waiting for the running OData entities build to finish before publishing '{schemaName}'.");
+			$"Waiting for the running OData entities build to finish before '{operationName}'.");
 		for (int attempt = 1; attempt <= PollAttemptCount; attempt++) {
 			_retryDelay.Wait(PollInterval);
-			bool? pollResult = Probe(options, out bool pollFaulted);
+			bool? pollResult = Probe(probe, out bool pollFaulted);
 			if (pollFaulted || pollResult != true) {
 				return;
 			}
@@ -98,7 +125,7 @@ internal sealed class ODataBuildGate : IODataBuildGate
 		// publish error already explains it.
 		_logger.WriteWarning(
 			$"The OData entities build is still running after {(PollAttemptCount * PollInterval).TotalSeconds:0}s; " +
-			$"publishing '{schemaName}' anyway. If the publish fails on a locked configuration file, retry the " +
+			$"starting '{operationName}' anyway. If the operation fails on a locked configuration file, retry the " +
 			"command once the build has finished.");
 	}
 
@@ -110,10 +137,10 @@ internal sealed class ODataBuildGate : IODataBuildGate
 	// must not be the thing that strands a saved schema. The caller stops waiting and publishes, exactly as
 	// it does when the wait budget is spent. The support flag is left untouched on a fault - a dropped
 	// connection says nothing about whether the platform exposes the method.
-	private bool? Probe(RemoteCommandOptions options, out bool faulted) {
+	private bool? Probe(Func<bool?> probe, out bool faulted) {
 		faulted = false;
 		try {
-			return _client.TryGetIsODataBuildRunning(options);
+			return probe();
 		} catch (Exception exception) {
 			faulted = true;
 			// The allow-list still earns its keep as a DIAGNOSTIC: an expected environment fault is ordinary
@@ -127,5 +154,12 @@ internal sealed class ODataBuildGate : IODataBuildGate
 				"if the publish fails on a locked configuration file, retry the command once the build has finished.");
 			return null;
 		}
+	}
+
+	private bool? Probe(IApplicationClient client, EnvironmentSettings environmentSettings) {
+		string url = _serviceUrlBuilder.Build(
+			"ServiceModel/WorkspaceExplorerService.svc/IsODataBuildRunning", environmentSettings);
+		string response = client.ExecutePostRequest(url, "{}", requestTimeout: 10_000, maxAttempts: 1, delaySec: 0);
+		return _jsonConverter.DeserializeObject<BoolResponse>(response)?.Value;
 	}
 }
