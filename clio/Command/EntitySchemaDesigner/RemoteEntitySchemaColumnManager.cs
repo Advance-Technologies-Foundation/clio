@@ -69,6 +69,7 @@ internal sealed class RemoteEntitySchemaColumnManager : IRemoteEntitySchemaColum
 	/// Synthetic package label reported by the merged (all-packages) schema read when no package is supplied.
 	/// </summary>
 	internal const string MergedSchemaPackageName = "(merged: all packages)";
+	private const string InheritedColumnSource = "inherited";
 
 	private readonly IApplicationPackageListProvider _applicationPackageListProvider;
 	private readonly IEntitySchemaDefaultValueSourceResolver _defaultValueSourceResolver;
@@ -276,7 +277,7 @@ internal sealed class RemoteEntitySchemaColumnManager : IRemoteEntitySchemaColum
 			schema.Name,
 			MergedSchemaPackageName,
 			runtimeColumn.Name,
-			runtimeColumn.IsInherited ? "inherited" : "own",
+			runtimeColumn.IsInherited ? InheritedColumnSource : "own",
 			runtimeColumn.Caption,
 			runtimeColumn.Description,
 			EntitySchemaDesignerSupport.GetFriendlyTypeName(runtimeColumn.DataValueType),
@@ -385,7 +386,7 @@ internal sealed class RemoteEntitySchemaColumnManager : IRemoteEntitySchemaColum
 		List<EntitySchemaColumnDto> inheritedColumns = schema.InheritedColumns?.ToList() ?? [];
 		List<EntitySchemaPropertyColumnInfo> columns = ownColumns
 			.Select(column => MapSchemaPropertyColumn(column, "own", cultureName))
-			.Concat(inheritedColumns.Select(column => MapSchemaPropertyColumn(column, "inherited", cultureName)))
+			.Concat(inheritedColumns.Select(column => MapSchemaPropertyColumn(column, InheritedColumnSource, cultureName)))
 			.ToList();
 		return new EntitySchemaPropertiesInfo(
 			schema.Name,
@@ -497,7 +498,7 @@ internal sealed class RemoteEntitySchemaColumnManager : IRemoteEntitySchemaColum
 		return new EntitySchemaPropertyColumnInfo(
 			column.Name,
 			column.UId,
-			column.IsInherited ? "inherited" : "own",
+			column.IsInherited ? InheritedColumnSource : "own",
 			column.Caption,
 			column.Description,
 			EntitySchemaDesignerSupport.GetFriendlyTypeName(column.DataValueType),
@@ -1000,7 +1001,7 @@ internal sealed class RemoteEntitySchemaColumnManager : IRemoteEntitySchemaColum
 		EntitySchemaColumnDto inheritedColumn = (schema.InheritedColumns?.ToList() ?? []).FirstOrDefault(column =>
 			string.Equals(column.Name, columnName, StringComparison.OrdinalIgnoreCase));
 		if (inheritedColumn != null) {
-			return (inheritedColumn, "inherited");
+			return (inheritedColumn, InheritedColumnSource);
 		}
 
 		throw new EntitySchemaDesignerException(
