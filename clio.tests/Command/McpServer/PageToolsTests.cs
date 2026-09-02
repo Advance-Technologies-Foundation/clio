@@ -4497,6 +4497,58 @@ public class PageToolsTests
 	}
 
 	[Test]
+	[Description("update-page: a save with nothing to report leaves response.Warnings NULL, so the envelope omits the field rather than emitting an empty array")]
+	public void TryUpdatePage_Should_LeaveWarningsNull_WhenNothingToReport() {
+		// Arrange - a body no detector has anything to say about: one insert, one name, no pairs, and a
+		// current body that introduces nothing to downgrade. CombineWarnings must therefore collapse
+		// three empty sources to null, NOT to an empty list: PageUpdateResponse.Warnings is serialized
+		// with null-omission on both Newtonsoft and STJ, so returning [] would ship "warnings":[] on
+		// every clean save. Nothing else pins that, and flipping the return would keep every other test
+		// green while the envelope silently gained a field.
+		var applicationClient = Substitute.For<IApplicationClient>();
+		var serviceUrlBuilder = Substitute.For<IServiceUrlBuilder>();
+		var logger = Substitute.For<ILogger>();
+		serviceUrlBuilder.Build(Arg.Any<string>()).Returns(ci => "http://test" + ci.ArgAt<string>(0));
+		applicationClient.ExecutePostRequest(
+				Arg.Is<string>(url => url.Contains("SelectQuery")),
+				Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+			.Returns(CreateMetadataResponse(
+				"UsrCleanSave_FormPage", "clean-schema-uid", "clean-package-uid", "UsrCleanPackage", "BasePage").ToString());
+		applicationClient.ExecutePostRequest(
+				Arg.Is<string>(url => url.Contains("GetSchema")),
+				Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+			.Returns(new JObject {
+				["success"] = true,
+				["schema"] = new JObject {
+					["body"] = CreatePageBody("""[{ "operation": "merge", "name": "UsrUntouched", "values": { "visible": true } }]"""),
+					["localizableStrings"] = new JArray()
+				}
+			}.ToString());
+		applicationClient.ExecutePostRequest(
+				Arg.Is<string>(url => url.Contains("SaveSchema")),
+				Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+			.Returns(new JObject { ["success"] = true }.ToString());
+		applicationClient.ExecutePostRequest(
+				Arg.Is<string>(url => url.Contains("ResetScriptCache")),
+				Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+			.Returns(string.Empty);
+		PageUpdateCommand command = new(applicationClient, serviceUrlBuilder, logger, Substitute.For<IPageBaselineGuard>());
+		PageUpdateOptions options = new() {
+			SchemaName = "UsrCleanSave_FormPage",
+			Body = CreatePageBody("""[{ "operation": "insert", "name": "UsrSolo", "values": { "type": "crt.Input" } }]"""),
+			DryRun = false
+		};
+
+		// Act
+		bool result = command.TryUpdatePage(options, out PageUpdateResponse response);
+
+		// Assert
+		result.Should().BeTrue(because: "the body is clean, so the save succeeds");
+		response.Warnings.Should().BeNull(
+			because: "CombineWarnings must return null rather than an empty list when every source is empty - the envelope omits the field only when it is null, and an empty array would appear on every clean save");
+	}
+
+	[Test]
 	[Description("update-page append: the #1132 AC4 superseded-drop warning reaches response.Warnings through the real save path, for web and mobile")]
 	public void TryUpdatePage_AppendMode_Should_SurfaceSupersededDropWarning_WhenCurrentBodyCarriesOneIdentityTwice(
 		[Values(PageSchemaType.Web, PageSchemaType.Mobile)] PageSchemaType kind) {

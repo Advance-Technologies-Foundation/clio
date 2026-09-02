@@ -29,7 +29,10 @@ using Newtonsoft.Json.Linq;
 /// <c>name</c> is skipped here while the differ stringifies it, so <c>remove name:123</c> and
 /// <c>move name:"123"</c> do interact at apply time; and a rule suppressed by <c>RescuedBy</c> assumes
 /// the rescuing operation resolves, which an <c>insert</c> whose <c>parentName</c> is absent from the
-/// base does not.
+/// base does not. A fourth is structural: apply groups are tracked as a SET per name, so MULTIPLICITY
+/// inside one group is invisible here — two <c>set</c> entries for one name leave the first fully
+/// inert, and two <c>move</c> entries duplicate the component. Both are real, neither is a PAIR of
+/// different groups, and GH-1240's scope is pairs; they need their own rule shape.
 /// </para>
 /// Operation verbs are compared <see cref="StringComparer.Ordinal"/> and are never case-folded. This is
 /// load-bearing, not an oversight: the differ switches on the raw verb and its <c>default</c> arm is
