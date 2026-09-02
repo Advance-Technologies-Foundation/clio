@@ -156,24 +156,26 @@ public static class AccessRightsBlockExpectation {
 	/// and must never be reported with the same words: an element with no filter at all matches nothing,
 	/// while one whose filter carries a root but no conditions narrows nothing and acts on every record.
 	/// </summary>
-	private static IReadOnlyList<KeyValuePair<string, bool>> FilterlessElements(
+	private static IReadOnlyList<KeyValuePair<string, RecordFilterState>> FilterlessElements(
 			DescribeProcessResult described, IReadOnlyList<string> expected) {
 		if (expected.Count == 0 || described?.Elements is null) {
-			return Array.Empty<KeyValuePair<string, bool>>();
+			return Array.Empty<KeyValuePair<string, RecordFilterState>>();
 		}
 
-		List<KeyValuePair<string, bool>> unfiltered = [];
+		List<KeyValuePair<string, RecordFilterState>> unfiltered = [];
 		foreach (string name in expected) {
 			DescribedElement? element = BlockExpectationJson.ResolveElement(described, name);
 
 			// Only an element the read-back actually returned can be judged; an absent one is reported by
 			// Unresolved() instead, so it is not accused twice.
-			if (element is null || !ReportsAccessRights(element) || HasRecordFilter(element)) {
+			if (element is null || !ReportsAccessRights(element)) {
 				continue;
 			}
 
-			// true = a filter object is present but narrows nothing; false = no filter at all.
-			unfiltered.Add(new KeyValuePair<string, bool>(name, element.Filter is not null));
+			RecordFilterState state = ClassifyRecordFilter(element);
+			if (state != RecordFilterState.Narrowing) {
+				unfiltered.Add(new KeyValuePair<string, RecordFilterState>(name, state));
+			}
 		}
 
 		return unfiltered;
@@ -185,15 +187,19 @@ public static class AccessRightsBlockExpectation {
 	/// </summary>
 	public static string? BuildNoFilterWarning(
 			DescribeProcessResult described, IReadOnlyList<string> expected) {
-		IReadOnlyList<KeyValuePair<string, bool>> unfiltered = FilterlessElements(described, expected);
+		IReadOnlyList<KeyValuePair<string, RecordFilterState>> unfiltered = FilterlessElements(described, expected);
 		if (unfiltered.Count == 0) {
 			return null;
 		}
 
-		// Two states, opposite consequences. Reporting them with one wording is how a caller who just built
-		// the WIDEST possible configuration gets told the element is inert and stops looking.
-		string absent = string.Join("', '", unfiltered.Where(e => !e.Value).Select(e => e.Key));
-		string conditionless = string.Join("', '", unfiltered.Where(e => e.Value).Select(e => e.Key));
+		// Three states, different consequences. Reporting them with one wording is how a caller who just built
+		// the WIDEST possible configuration gets told the element is inert and stops looking — and how a
+		// caller with a perfectly good legacy filter gets told to replace it.
+		string Names(RecordFilterState state) =>
+			string.Join("', '", unfiltered.Where(e => e.Value == state).Select(e => e.Key));
+		string absent = Names(RecordFilterState.Absent);
+		string conditionless = Names(RecordFilterState.Conditionless);
+		string undecodable = Names(RecordFilterState.Undecodable);
 
 		List<string> parts = [];
 		if (absent.Length > 0) {
@@ -206,20 +212,64 @@ public static class AccessRightsBlockExpectation {
 				+ "expect it to match EVERY record of the target object and change permissions on all of them");
 		}
 
+		if (undecodable.Length > 0) {
+			parts.Add($"'{undecodable}' HAS a stored record filter that this read-back could not decode (a "
+				+ "filter saved in the legacy designer format reads back empty) — it may be narrowing exactly "
+				+ "as intended, so verify it in the designer and do NOT replace it on the strength of this "
+				+ "message");
+		}
+
+		// The setFilter remedy belongs only to the states that actually lack a usable filter. Prescribing it
+		// for an undecodable one would tell the caller to overwrite a working filter on a live permission
+		// change — the failure this whole guard exists to prevent, pointed the other way.
+		bool missingAFilter = absent.Length > 0 || conditionless.Length > 0;
 		return "The 'accessRights' configuration was saved, but " + string.Join("; and ", parts)
-			+ ". Either way it happens silently, because the element has no output parameters, and nothing "
-			+ "refuses these states. Set the filter you actually mean with the setFilter operation (to act on "
-			+ "one record, filter Id against a process parameter or a trigger output), and do not report a "
-			+ "grant or revoke as applied until you have.";
+			+ ". This happens silently, because the element has no output parameters"
+			+ (missingAFilter
+				? ", and nothing refuses these states. Set the filter you actually mean with the setFilter "
+					+ "operation (to act on one record, filter Id against a process parameter or a trigger "
+					+ "output), and do not report a grant or revoke as applied until you have."
+				: ". Confirm the filter in the designer before reporting a grant or revoke as applied.");
 	}
 
-	// A filter counts as present only if it actually NARROWS something. The two states that fail this test
-	// are not equivalent: a null filter (no DataSourceFilters) makes the element match nothing, while a filter
-	// object carrying neither conditions nor groups matches everything. Both need reporting; they need
-	// DIFFERENT words, which is why the caller pairs each element with which state it is in.
-	private static bool HasRecordFilter(DescribedElement element) =>
-		element.Filter is not null
-		&& ((element.Filter.Conditions?.Count ?? 0) > 0 || (element.Filter.Groups?.Count ?? 0) > 0);
+	/// <summary>Which of the three reportable record-filter states an element's read-back puts it in.</summary>
+	private enum RecordFilterState {
+
+		/// <summary>A decoded filter carrying conditions or groups — it narrows something. Not reported.</summary>
+		Narrowing,
+
+		/// <summary>A decoded filter carrying neither conditions nor groups — it narrows nothing.</summary>
+		Conditionless,
+
+		/// <summary>A filter IS stored, but this read-back could not decode it.</summary>
+		Undecodable,
+
+		/// <summary>No filter is stored at all.</summary>
+		Absent
+	}
+
+	// The element parameter the record filter lives in; describe decodes it into DescribedElement.Filter.
+	private const string RecordFilterParameterName = "DataSourceFilters";
+
+	// A filter counts as present only if it actually NARROWS something — but "describe returned no filter" and
+	// "no filter is stored" are DIFFERENT facts, and collapsing them is how a caller gets told a working
+	// element is inert. describe decodes only the modern filter wrapper, so a legacy designer-built filter
+	// reads back as null while narrowing perfectly; claiming absence there invites a setFilter that OVERWRITES
+	// a correct filter on a live permission change. So the stored parameter is consulted before absence is
+	// claimed, and the three states get three different words.
+	private static RecordFilterState ClassifyRecordFilter(DescribedElement element) {
+		if (element.Filter is not null) {
+			return (element.Filter.Conditions?.Count ?? 0) > 0 || (element.Filter.Groups?.Count ?? 0) > 0
+				? RecordFilterState.Narrowing
+				: RecordFilterState.Conditionless;
+		}
+
+		DescribedParameter? stored = element.Parameters?.FirstOrDefault(parameter =>
+			string.Equals(parameter?.Name, RecordFilterParameterName, StringComparison.OrdinalIgnoreCase));
+		return string.IsNullOrWhiteSpace(stored?.Value)
+			? RecordFilterState.Absent
+			: RecordFilterState.Undecodable;
+	}
 
 	/// <summary>
 	/// The caller-facing warning for dropped blocks: what happened, why, and the one action that fixes it.
@@ -242,7 +292,9 @@ public static class AccessRightsBlockExpectation {
 			+ "revoke NOTHING when it runs, silently — it has no output parameters to report that. If you asked for "
 			+ "a REVOKE, treat those permissions as still in place and do not report the change as applied. Install "
 			+ "a package that supports the element (clio install-process-builder) and re-apply the block, or "
-			+ "configure the element in the designer.";
+			+ "configure the element in the designer. If re-applying reproduces this same warning, the package "
+			+ "bundled with THIS clio also predates the element — updating clio itself, or deploying a newer "
+			+ "CrtProcessBuilder by other means, is then the only fix, and the block cannot be applied here.";
 	}
 
 	// A server that supports the element reports the block through the extension bag, because DescribedElement

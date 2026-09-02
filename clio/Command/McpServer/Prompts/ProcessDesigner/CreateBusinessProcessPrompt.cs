@@ -46,7 +46,7 @@ public static class CreateBusinessProcessPrompt {
 		 WHICH records are affected, every grantee, and each entry's operations and level (call out `delegate` as
 		 onward re-sharing, `restrict` as the platform Deny level, which is UNVERIFIED (the same value is
 		 captioned "NotSet" elsewhere and no captured specimen uses it) and which lands in the `add`
-		 GRANT collection, so if it does not deny it has added an entry for that grantee instead, and a `remove` entry as a revoke), and get an explicit yes before calling
+		 GRANT collection, observed to write no right at all where UseDenyRecordRights is off - neither denying nor granting, with nothing reporting it, and a `remove` entry as a revoke), and get an explicit yes before calling
 		 `create-business-process` — the element reports nothing at run time about what it granted or revoked.
 		 Confirm the target package with the
 		 user before building.

@@ -54,12 +54,13 @@ public static class ModifyBusinessProcessPrompt {
 		 (nothing is saved). Example — switch a process to start on record save: `removeElement` the start event,
 		 `addElement` a `signalStart`, then `addFlow` from it to the first task. Confirm destructive removals
 		 (`removeElement` / `removeFlow` / `removeParameter` / `clearConnections`) with the user before proceeding.
-		 Confirm access-rights changes the same way: a `setElement` whose `accessRights` carries a `remove` entry
-		 or clears a collection with `[]` revokes or drops record permissions, and the element has NO output to
+		 Confirm access-rights changes the same way: a `setElement` carrying ANY `accessRights` block changes who
+		 can reach live records - an `add` widens access to everyone it names, and a `remove` entry or a
+		 collection cleared with `[]` revokes or drops record permissions, and the element has NO output to
 		 report what it did at run time — show the user the object, the record `filter` that decides WHICH
 		 records are affected, and every grantee with its operations and level — calling out `restrict` as the
-		 platform Deny level, UNVERIFIED and landing in the `add` GRANT collection, so if it does not
-		 deny it has added an entry for that grantee instead of blocking one, and a supplied `add`/`remove`
+		 platform Deny level, UNVERIFIED and landing in the `add` GRANT collection, observed to write no right at
+		 all where UseDenyRecordRights is off - neither denying nor granting, with nothing reporting it, and a supplied `add`/`remove`
 		 as a REPLACEMENT that drops every entry it does not restate — and get an explicit yes before applying it.
 		 If the element's `accessRights` read back with an EMPTY `add` or `remove`, say so plainly when you ask:
 		 describe cannot tell an empty collection from one it could not decode, so the before-state you are
