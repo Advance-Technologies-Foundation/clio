@@ -24,6 +24,8 @@ public sealed class ExecuteEsqTool(IToolCommandResolver commandResolver) {
 	private const int DefaultTimeoutMs = 30_000;
 	private const int MinTimeoutMs = 1_000;
 	private const int MaxTimeoutMs = 120_000;
+	private const int MaxDiagnosticPathLength = 500;
+	internal const int MaxQuerySizeBytes = 200_000;
 	internal const int MaxResponseSizeBytes = 200_000;
 	internal const string ResultTooLargeErrorClass = "result-too-large";
 
@@ -43,6 +45,11 @@ public sealed class ExecuteEsqTool(IToolCommandResolver commandResolver) {
 		try {
 			if (!TryNormalizeQuery(args.Query, out JsonElement query, out string queryError)) {
 				return ExecuteEsqResponse.Failure(queryError);
+			}
+			string queryJson = query.GetRawText();
+			if (Encoding.UTF8.GetByteCount(queryJson) > MaxQuerySizeBytes) {
+				return ExecuteEsqResponse.Failure(
+					$"query exceeds the {MaxQuerySizeBytes}-byte MCP safety limit; reduce selected columns or filters.");
 			}
 			if (!TryValidateTemporalParameterValues(query, [], out string temporalParameterError)) {
 				return ExecuteEsqResponse.Failure(temporalParameterError);
@@ -66,7 +73,7 @@ public sealed class ExecuteEsqTool(IToolCommandResolver commandResolver) {
 			IServiceUrlBuilder urlBuilder = commandResolver.Resolve<IServiceUrlBuilder>(options);
 
 			string url = urlBuilder.Build(ServiceUrlBuilder.KnownRoute.Select);
-			string responseJson = client.ExecutePostRequest(url, query.GetRawText(), timeout);
+			string responseJson = client.ExecutePostRequest(url, queryJson, timeout);
 			bool responseIsTooLarge = responseJson.Length > MaxResponseSizeBytes
 				|| Encoding.UTF8.GetByteCount(responseJson) > MaxResponseSizeBytes;
 			if (responseIsTooLarge) {
@@ -138,7 +145,7 @@ public sealed class ExecuteEsqTool(IToolCommandResolver commandResolver) {
 		string renderedPath = RenderJsonPath(path);
 		error = $"query temporal parameter at '{renderedPath}.value' has an invalid or missing value for "
 			+ $"dataValueType {dataValueTypeCode}. Date, DateTime, and Time values must be JSON-encoded strings, "
-			+ "for example value text '2026-01-01T00:00:00.000Z' including the two single quote characters. "
+			+ "for example value text [double quote]2026-01-01T00:00:00.000Z[double quote]. "
 			+ "A plain ISO string is not accepted. "
 			+ "See the 'esq' and 'esq-filters-frontend' guidance.";
 		return false;
@@ -164,9 +171,13 @@ public sealed class ExecuteEsqTool(IToolCommandResolver commandResolver) {
 	private static string RenderJsonPath(
 		IReadOnlyList<(string? PropertyName, int? ArrayIndex)> segments) {
 		StringBuilder builder = new("$");
+		bool truncated = false;
 		foreach ((string? propertyName, int? arrayIndex) in segments) {
 			if (arrayIndex is not null) {
-				builder.Append('[').Append(arrayIndex.Value).Append(']');
+				if (!TryAppendPath(builder, $"[{arrayIndex.Value}]")) {
+					truncated = true;
+					break;
+				}
 				continue;
 			}
 			string name = propertyName ?? string.Empty;
@@ -174,12 +185,36 @@ public sealed class ExecuteEsqTool(IToolCommandResolver commandResolver) {
 				&& (char.IsLetter(name[0]) || name[0] == '_')
 				&& name.Skip(1).All(character => char.IsLetterOrDigit(character) || character == '_');
 			if (isIdentifier) {
-				builder.Append('.').Append(name);
+				truncated = !TryAppendPath(builder, ".") || !TryAppendPath(builder, name);
+			} else if (TryAppendPath(builder, "[\"")) {
+				foreach (char character in name) {
+					string encodedCharacter = JsonEncodedText.Encode(character.ToString()).ToString();
+					if (!TryAppendPath(builder, encodedCharacter)) {
+						truncated = true;
+						break;
+					}
+				}
+				truncated = truncated || !TryAppendPath(builder, "\"]");
 			} else {
-				builder.Append('[').Append(JsonSerializer.Serialize(name)).Append(']');
+				truncated = true;
+			}
+			if (truncated) {
+				break;
 			}
 		}
-		return Truncate(builder.ToString());
+		return truncated ? builder.Append("...").ToString() : builder.ToString();
+	}
+
+	private static bool TryAppendPath(StringBuilder builder, string value) {
+		int remaining = MaxDiagnosticPathLength - 3 - builder.Length;
+		if (value.Length <= remaining) {
+			builder.Append(value);
+			return true;
+		}
+		if (remaining > 0 && value.All(character => char.IsLetterOrDigit(character) || character == '_')) {
+			builder.Append(value.AsSpan(0, remaining));
+		}
+		return false;
 	}
 
 	private static bool TryNormalizeQuery(JsonElement query, out JsonElement normalized, out string error) {
@@ -368,6 +403,7 @@ public sealed record ExecuteEsqArgs {
 	[JsonPropertyName("query")]
 	[Description(
 		"Raw ESQ SelectQuery object (the same shape stored in page bodies and accepted by the DataService). " +
+		"Maximum serialized size: 200000 UTF-8 bytes. " +
 		"Must include 'rootSchemaName' and usually 'columns' (with an 'items' map) and/or 'filters'. " +
 		"For a quick filter check, select a single COUNT(Id) aggregation column. See the 'esq' guidance for the envelope.")]
 	[Required]

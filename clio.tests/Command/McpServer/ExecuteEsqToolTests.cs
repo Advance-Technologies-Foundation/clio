@@ -287,7 +287,7 @@ public sealed class ExecuteEsqToolTests {
 			because: "the validation error should identify the exact malformed parameter");
 		response.Error.Should().Contain("JSON-encoded strings",
 			because: "the caller should be told which temporal value encoding the endpoint accepts");
-		response.Error.Should().Contain("value text '2026-01-01T00:00:00.000Z' including the two single quote characters",
+		response.Error.Should().Contain("value text [double quote]2026-01-01T00:00:00.000Z[double quote]",
 			because: "the diagnostic should include a directly reusable valid value example");
 		commandResolver.ReceivedCalls().Should().BeEmpty(
 			because: "temporal validation must finish before resolving an environment or constructing a request");
@@ -414,6 +414,38 @@ public sealed class ExecuteEsqToolTests {
 			because: "an oversized property name should be visibly truncated");
 		response.Error.Length.Should().BeLessThan(1_000,
 			because: "an adversarial property name must not amplify the MCP diagnostic without bound");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Rejects an oversized query before traversing attacker-controlled property names or resolving an environment.")]
+	public void Execute_ShouldRejectOversizedQuery_BeforeTemporalTraversal() {
+		// Arrange
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		ExecuteEsqTool tool = new(commandResolver);
+		string oversizedName = $"Modified.After[0]\n{new string('x', ExecuteEsqTool.MaxQuerySizeBytes)}";
+		JsonElement query = Json($$"""
+			{
+			  "rootSchemaName": "SysSchema",
+			  "filters": { "items": { {{JsonSerializer.Serialize(oversizedName)}}: {} } }
+			}
+			""");
+
+		// Act
+		long allocatedBefore = GC.GetAllocatedBytesForCurrentThread();
+		ExecuteEsqResponse response = tool.Execute(new ExecuteEsqArgs {
+			EnvironmentName = "missing-environment",
+			Query = query
+		});
+		long allocatedBytes = GC.GetAllocatedBytesForCurrentThread() - allocatedBefore;
+
+		// Assert
+		response.Error.Should().Contain("200000-byte MCP safety limit",
+			because: "oversized untrusted queries must fail before recursive validation allocates diagnostic paths");
+		allocatedBytes.Should().BeLessThan(1_000_000,
+			because: "the size gate should make at most one bounded linear copy of the already parsed query");
+		commandResolver.ReceivedCalls().Should().BeEmpty(
+			because: "an oversized query must not resolve environment-bound services");
 	}
 
 	[Test]
