@@ -427,6 +427,62 @@ public sealed class WorkerProcessSupervisorTests {
 	}
 
 	[Test]
+	[Description("The per-call budget kill actually FIRES: once the deadline passes, WaitWithinBudgetAsync kills the worker and reports BudgetExpired — the one behaviour the whole worker boundary exists to deliver, asserted here in a lane GitHub PR CI runs.")]
+	public async Task WaitWithinBudgetAsync_ShouldKillTheWorkerAndReportBudgetExpired_WhenTheDeadlinePasses() {
+		// Arrange — a sub-second budget and a worker that never exits on its own, so the ONLY way the wait
+		// can end is the budget path. Enforcement was previously proven only in the McpE2E lane, which
+		// GitHub does not run: a regression that silently disabled the kill passed every check here.
+		FakeContainment containment = new();
+		IStaleWorkerRegistry registry = Substitute.For<IStaleWorkerRegistry>();
+		WorkerProcessSupervisor sut = new(_logger, _processExecutor, containment, _pathProvider, registry,
+			concurrencyCap: 1);
+		using IWorkerLease lease = await sut.SpawnContainedAsync(
+			new WorkerSpawnRequest { Budget = TimeSpan.FromMilliseconds(200) },
+			CancellationToken.None);
+
+		// Act — bounded, so an unbounded wait is a failing test rather than a hung run.
+		WorkerRunResult result = await sut.WaitWithinBudgetAsync(lease, CancellationToken.None)
+			.WaitAsync(UnboundedWaitDetectionWindow);
+
+		// Assert
+		result.Status.Should().Be(WorkerRunStatus.BudgetExpired,
+			because: "the worker outlived its budget, and reporting anything else would let a caller treat an abandoned child as a completed run");
+		result.Termination.Should().Be(WorkerTerminationOutcome.ContainedJobTerminated,
+			because: "the outcome must say what was actually signalled, not merely that the deadline passed");
+		containment.Launched[0].KillCount.Should().Be(1,
+			because: "the deadline is not the guarantee — the kill is; a budget clock that expires without killing leaves exactly the wedge this change removes");
+		containment.Launched[0].HasExited.Should().BeTrue(
+			because: "the caller is told the worker was killed, so it must not still be holding a file or a socket");
+	}
+
+	[Test]
+	[Description("A worker that refuses to die is REPORTED, not hung on: the budget wait still returns BudgetExpired and surfaces the failed termination so the caller can act on it.")]
+	public async Task WaitWithinBudgetAsync_ShouldReportTheFailedTermination_WhenTheWorkerRefusesToDie() {
+		// Arrange — the state a real containment reports when the signal is refused (EPERM, a job object
+		// the host will not terminate).
+		FakeContainment containment = new() { WorkersRefuseToDie = true };
+		IStaleWorkerRegistry registry = Substitute.For<IStaleWorkerRegistry>();
+		WorkerProcessSupervisor sut = new(_logger, _processExecutor, containment, _pathProvider, registry,
+			concurrencyCap: 1);
+		using IWorkerLease lease = await sut.SpawnContainedAsync(
+			new WorkerSpawnRequest { Budget = TimeSpan.FromMilliseconds(200) },
+			CancellationToken.None);
+
+		// Act — the confirmation wait cannot be satisfied here, so this exercises the bounded-confirmation
+		// path; the assertion is that it ENDS.
+		WorkerRunResult result = await sut.WaitWithinBudgetAsync(lease, CancellationToken.None)
+			.WaitAsync(UnboundedWaitDetectionWindow);
+
+		// Assert
+		result.Status.Should().Be(WorkerRunStatus.BudgetExpired,
+			because: "the budget is what ended the run, whether or not the signal landed");
+		result.Termination.Should().Be(WorkerTerminationOutcome.Failed,
+			because: "a caller that is told the kill succeeded would stop looking for a child that is still running");
+		containment.Launched[0].KillCount.Should().Be(1,
+			because: "the kill must be attempted even when it cannot succeed");
+	}
+
+	[Test]
 	[Description("TC-U-202c: the supervisor's own last-mile check before a kill compares the WHOLE identity triple, so a live process that matches the recorded pid and start time but not the recorded executable is left alone.")]
 	public void TerminateStaleWorker_ShouldRefuseTheKill_WhenOnlyTheExecutablePathDisagrees() {
 		// Arrange — the recorded entry names THIS test host's pid and start time, which is the collision
@@ -907,7 +963,11 @@ public sealed class WorkerProcessSupervisorTests {
 		/// </summary>
 		public bool RefuseToDie { get; set; }
 
+	/// <summary>How many times the supervisor asked this worker to die.</summary>
+		public int KillCount { get; private set; }
+
 		public WorkerTerminationOutcome Kill() {
+			KillCount++;
 			if (RefuseToDie) {
 				return WorkerTerminationOutcome.Failed;
 			}
