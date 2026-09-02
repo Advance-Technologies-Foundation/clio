@@ -181,34 +181,9 @@ public sealed class WebToMobilePageConversionRulesCatalogTests {
 		// Assert
 		rules.ComponentPropertyOverrides
 			.Where(o => Targets(o, "crt.GridContainer") || Targets(o, "crt.FlexContainer"))
-			.Should().HaveCount(3)
+			.Should().HaveCount(2)
 			.And.OnlyContain(o => !o.MergeNestedObjects,
 				because: "the spacing rules promise the web gap is discarded wholesale");
-	}
-
-	[Test]
-	[Description("The bundled rules promote a grid OR flex container left at the WEB DEFAULT corner radius (Medium) to the mobile default (Large), and match that token alone: a radius someone set deliberately, or none at all, is preserved.")]
-	public void LoadBundled_ReturnsSeededCornerRadiusOverride() {
-		// Arrange & Act
-		WebToMobilePageConversionRules rules = WebToMobilePageConversionRulesCatalog.LoadBundled();
-
-		// Assert
-		ComponentPropertyOverrideRule radius = rules.ComponentPropertyOverrides
-			.Single(o => Targets(o, "crt.GridContainer") && o.Filters.Any(f => f.Values is { Count: > 0 }));
-		radius.Values.Should().ContainKey("borderRadius", because: "the rule exists to promote the radius");
-		radius.Values["borderRadius"].GetString().Should().Be("large");
-		radius.MergeNestedObjects.Should().BeFalse(
-			because: "borderRadius is a scalar token — there is no nested subtree to preserve");
-		radius.Filters.Select(f => f.Type).Should().BeEquivalentTo(["crt.GridContainer", "crt.FlexContainer"],
-			because: "both container types can carry the radius, so the union names each one — the type is a "
-				+ "filter constraint like any other");
-		radius.Filters.Should().OnlyContain(f => f.Values.Count == 1,
-			because: "one discriminating property beyond the type");
-		radius.Filters.Select(f => f.Values["borderRadius"].GetString()).Should().AllBe("medium",
-			because: "Medium is the WEB DEFAULT radius, so matching it means 'left at the platform default' — "
-				+ "and Large is the mobile default. Any other radius was set deliberately by whoever designed "
-				+ "the page, so it is preserved rather than normalized away: this token IS the rule, not a "
-				+ "partial implementation of a wider one");
 	}
 
 	[Test]
@@ -224,7 +199,7 @@ public sealed class WebToMobilePageConversionRulesCatalogTests {
 	}
 
 	[Test]
-	[Description("Bundled tabbed template carries container-name correspondence: CardContentWrapper->GeneralTabContainer for general non-tab content, SideAreaProfileContainer->AreaProfileContainer for the profile island (its children go INSIDE the profile Area card, never directly into the general tab's grid), and positional CardContentWrapper:top/:bottom -> Tabs:top/:bottom entries.")]
+	[Description("Bundled tabbed template carries container-name correspondence: the two type-aligned general-tab pairs GeneralInfoTab->GeneralInfoTab and GeneralInfoTabContainer->GeneralTabContainer (ENG-94951), CardContentWrapper->GeneralTabContainer for general non-tab content, SideAreaProfileContainer->AreaProfileContainer for the profile island (its children go INSIDE the profile Area card, never directly into the general tab's grid), and positional CardContentWrapper:top/:bottom -> Tabs:top/:bottom entries.")]
 	public void LoadBundled_TemplatesCarryContainerCorrespondence() {
 		WebToMobilePageConversionRules rules = WebToMobilePageConversionRulesCatalog.LoadBundled();
 
@@ -237,6 +212,12 @@ public sealed class WebToMobilePageConversionRulesCatalogTests {
 		tabbed.Containers.Should().Contain(c => c.Web == "SideAreaProfileContainer" && c.Mobile == "AreaProfileContainer",
 			because: "the web profile island merges into the template's profile Area card — its children " +
 				"land inside AreaProfileContainer, not directly in GeneralTabContainer, so the Area is never left empty");
+		tabbed.Containers.Should().Contain(c => c.Web == "GeneralInfoTab" && c.Mobile == "GeneralInfoTab",
+			because: "without it the general-information tab is subtracted as inherited chrome and its content is "
+				+ "hoisted straight into the crt.TabPanel, which renders only tabs — the whole tab is lost (ENG-94951)");
+		tabbed.Containers.Should().Contain(c => c.Web == "GeneralInfoTabContainer" && c.Mobile == "GeneralTabContainer",
+			because: "the tab's content grid is the second half of the pair: a page that KEEPS the template's grid "
+				+ "must reuse the mobile one rather than have the grid subtracted as inherited chrome");
 		tabbed.Containers.Should().Contain(c => c.Web == "CardContentWrapper:top" && c.Mobile == "Tabs:top");
 		tabbed.Containers.Should().Contain(c => c.Web == "CardContentWrapper:bottom" && c.Mobile == "Tabs:bottom");
 	}

@@ -784,6 +784,17 @@ public sealed class PageUpdateResponse {
 	[System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
 	public IReadOnlyList<string> Warnings { get; set; }
 
+	/// <summary>
+	/// Gets or sets a value indicating whether this failure came from the SKIPPABLE half of the
+	/// validation chain (content rules), as opposed to the structural floor. It is transport-only: the
+	/// MCP adapter reads it to decide whether to advertise <c>validate=false</c>, which is an MCP-only
+	/// flag the CLI parser does not expose. Never serialized — a CLI user must not be told about a flag
+	/// they cannot set.
+	/// </summary>
+	[Newtonsoft.Json.JsonIgnore]
+	[System.Text.Json.Serialization.JsonIgnore]
+	public bool ContentValidationFailure { get; set; }
+
 	[JsonProperty("page", NullValueHandling = NullValueHandling.Ignore)]
 	[JsonPropertyName("page")]
 	[System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
