@@ -22,6 +22,21 @@ public sealed class WebToMobilePageConversionRules {
 	public IReadOnlyList<TemplateMappingRule> Templates { get; init; } = [];
 
 	/// <summary>
+	/// The mobile template to recommend when the source page's web template matches NO
+	/// <see cref="Templates"/> entry — a custom or unrecognised web template.
+	/// </summary>
+	/// <remarks>
+	/// Without it such a page got no mobile template at all, and the consequence was not just a missing
+	/// recommendation: with no template to read, clio had no base to diff the data sections against, so both
+	/// diffs degraded to a single root merge (ENG-95827). A generic mobile base is a far better answer than
+	/// none — it gives `create-page` a target and gives the differ a real base. The fallback deliberately
+	/// carries NO container or component correspondence: for an unrecognised web template clio knows no
+	/// name twins, and inventing them would misplace elements rather than leave them where the walk puts them.
+	/// </remarks>
+	[JsonPropertyName("defaultMobileTemplate")]
+	public string DefaultMobileTemplate { get; init; }
+
+	/// <summary>
 	/// Group: equivalent components. An entry is EITHER a type-equivalence (web↔mobile mapping that is not a
 	/// same-type match, e.g. crt.Checkbox→crt.Toggle) OR a template group (<c>filters</c> naming the source
 	/// elements it applies to plus the <c>viewConfigTemplates</c> that produce their mobile values, e.g. the

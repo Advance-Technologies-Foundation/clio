@@ -1115,9 +1115,10 @@ public sealed class WebToMobileConversionServiceTests {
 		PageBundleInfo bundle = Bundle(
 			viewConfigJson: """[ { "name": "Main", "type": "crt.FlexContainer", "items": [] } ]""",
 			modelConfigJson: """{ "dataSources": { "PDS": { "config": { "attributes": {}, "sortColumns": [ { "columnName": "CreatedOn" } ] } } } }""");
-		// Act
+		// Act — a mobile template IS named (so a re-run could fix it) but its bundle could not be read.
 		MobilePageConversionGuide guide = Analyze(
 			bundle, webByType: Reg(("crt.FlexContainer", true)),
+			templateRule: new TemplateMappingRule { Mobile = "BaseMobilePageTemplate" },
 			mobileTemplateModelConfig: null, mobileTemplateUnavailable: true);
 		// Assert
 		JsonObject op = guide.ModelConfigDiff!.AsArray().Single()!.AsObject();
@@ -1151,6 +1152,46 @@ public sealed class WebToMobileConversionServiceTests {
 		JsonObject targeted = guide.ModelConfigDiff!.AsArray().First()!.AsObject();
 		targeted["path"]!.AsArray().Should().NotBeEmpty(
 			because: "a base was available, so the diff addresses a key rather than degrading to a root merge");
+	}
+
+	[Test]
+	[Description("ENG-95827: a template that was READ successfully but carries no modelConfig at all still degrades to a root merge, and that is NOT reported — the warning is that a root merge may strip arrays the template also owns, and a base that owns nothing there has nothing to strip. Reporting it was a false positive, and it fired on every page whose template lacks one of the two sections.")]
+	public void Analyze_ModelConfigWithReadableTemplateLackingTheSection_ReportsNothing() {
+		// Arrange — the template bundle read fine (Unavailable false); it simply declares no modelConfig.
+		PageBundleInfo bundle = Bundle(
+			viewConfigJson: """[ { "name": "Main", "type": "crt.FlexContainer", "items": [] } ]""",
+			modelConfigJson: """{ "dataSources": { "PDS": { "config": { "attributes": {} } } } }""");
+
+		// Act
+		MobilePageConversionGuide guide = Analyze(
+			bundle, webByType: Reg(("crt.FlexContainer", true)),
+			templateRule: new TemplateMappingRule { Mobile = "BaseMobilePageTemplate" },
+			mobileTemplateModelConfig: null, mobileTemplateUnavailable: false);
+
+		// Assert
+		guide.ModelConfigDiff!.AsArray().Single()!.AsObject()["path"]!.AsArray().Should().BeEmpty(
+			because: "with no base object the diff is still a root merge — the behaviour is unchanged, only the reporting is");
+		guide.Diagnostics.Should().BeNull(
+			because: "the template owns no modelConfig, so a root merge over it cannot lose a baseline entry — there is no loss to report");
+	}
+
+	[Test]
+	[Description("ENG-95827: when NO mobile template is known at all — no rule matched and the rules declare no defaultMobileTemplate — the root-merge degradation is reported with cause no-template-base, not mobile-template-unreadable. The distinction is the remedy: a named-but-unreadable template can be re-run against with environment-name/uri, a template that does not exist cannot.")]
+	public void Analyze_RootMergeWithNoTemplateKnown_ReportsNoTemplateBaseCause() {
+		// Arrange — no templateRule, so nothing was ever named to read.
+		PageBundleInfo bundle = Bundle(
+			viewConfigJson: """[ { "name": "Main", "type": "crt.FlexContainer", "items": [] } ]""",
+			modelConfigJson: """{ "dataSources": { "PDS": { "config": { "attributes": {} } } } }""");
+
+		// Act
+		MobilePageConversionGuide guide = Analyze(
+			bundle, webByType: Reg(("crt.FlexContainer", true)),
+			mobileTemplateModelConfig: null, mobileTemplateUnavailable: true);
+
+		// Assert
+		guide.Diagnostics.Should().ContainSingle(d => d.Code == "data-section-root-merge-fallback")
+			.Which.Cause.Should().Be("no-template-base",
+				because: "there is no template to re-read, so suggesting a re-run would hand out a remedy that cannot work");
 	}
 
 	[Test]
@@ -7121,13 +7162,18 @@ public sealed class WebToMobileConversionServiceTests {
 	}
 
 	[Test]
-	[Description("A branch nested past the search budget is abandoned rather than followed down — the same defence in depth the template renderer takes — while a match at sane depth in a SIBLING branch of the same host is still stripped.")]
-	public void Analyze_ShouldAbandonPathologicallyDeepBranch_AndStillStripTheSaneSibling() {
-		// Arrange — deep enough to pass the search budget (32), shallow enough that the JSON readers still
-		// accept it (their own limit is 64), so this exercises THIS guard rather than the parser's.
+	[Description("ENG-95827: a branch the OLD search budget of 32 abandoned is now searched to the bottom, so the banned component is removed instead of silently shipping with no drop entry. The budget now equals the JSON readers' own ceiling, which is what makes abandoning a branch unreachable — a document deep enough to exhaust it cannot be parsed at all — and is why the exclusion-search-truncated diagnostic could be removed rather than merely relocated.")]
+	public void Analyze_ShouldSearchPastTheOldBudget_AndStripBothBranches() {
+		// Arrange — 20 nested { "n": [ … ] } levels. Each level costs TWO recursion steps (the object, then its
+		// array value), so the banned component sits around depth 42: past the OLD budget of 32, inside the new
+		// one of 64, and inside the JSON readers' own limit of 64 so the parser is not what refuses. The
+		// wrapper is deliberately object→ARRAY: the strip only removes a matching ARRAY ELEMENT, because a
+		// matching plain property value is a config object rather than a component. The previous fixture
+		// wrapped it in plain objects, which made the deep node unremovable by SHAPE — so the single removal it
+		// asserted was not actually caused by the truncation it attributed it to.
 		var deep = new StringBuilder("""{ "name": "DeepFoo", "type": "usr.Foo" }""");
-		for (int i = 0; i < 40; i++) {
-			deep.Insert(0, "{ \"n\": ").Append(" }");
+		for (int i = 0; i < 20; i++) {
+			deep.Insert(0, "{ \"n\": [ ").Append(" ] }");
 		}
 		PageBundleInfo bundle = Bundle($$$"""
 			[ { "name": "CustomHost", "type": "usr.Bar",
@@ -7141,12 +7187,11 @@ public sealed class WebToMobileConversionServiceTests {
 
 		// Assert
 		(Element(guide, "CustomHost").MobileValues! as JsonObject)!.ContainsKey("widgets").Should().BeFalse(
-			because: "the guard abandons the offending branch only — a sibling at sane depth still strips");
-		guide.ElementMap.Where(e => e.Operation == "drop" && e.WebType == "usr.Foo").Should().ContainSingle(
-			because: "the pathological branch was abandoned, so only the sane sibling produced a removal");
-		guide.Diagnostics.Should().ContainSingle(d => d.Code == "exclusion-search-truncated")
-			.Which.Impact.Should().Be("conversion",
-				because: "an abandoned branch leaves a banned component ON the page with NO drop entry — the one exclusion outcome nothing else in the response can reveal, so the caller has to re-check the deepest branches");
+			because: "the sane sibling strips as it always did");
+		guide.ElementMap.Where(e => e.Operation == "drop" && e.WebType == "usr.Foo").Should().HaveCount(2,
+			because: "the deep branch is reached now too, so the banned component is REMOVED rather than left on the page with no drop entry — at the old budget this produced one removal and a silent survivor");
+		guide.Diagnostics.Should().BeNull(
+			because: "there is nothing left to report: the search completed, so no diagnostic is needed and none exists — the cause was removed rather than the report");
 	}
 
 	[Test]

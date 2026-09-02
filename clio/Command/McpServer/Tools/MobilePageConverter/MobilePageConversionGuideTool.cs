@@ -164,7 +164,11 @@ public sealed class MobilePageConversionGuideTool {
 		// replacing schema over a same-named base (parentSchemaName == schemaName). Feeds template-rule
 		// resolution, chrome subtraction, and the reported sourceTemplate — all from one value.
 		string effectiveTemplate = ResolveEffectiveTemplateName(pageResponse.Page, pageResponse.Bundle, rules);
-		TemplateMappingRule templateRule = ResolveTemplateRule(rules, effectiveTemplate);
+		// The default is applied HERE and deliberately not inside ResolveTemplateRule: that method is also the
+		// predicate ResolveEffectiveTemplateName uses to find the first ancestor that MATCHES a rule, and a
+		// never-null result would make every ancestor match and collapse that climb.
+		TemplateMappingRule templateRule =
+			ResolveTemplateRule(rules, effectiveTemplate) ?? DefaultTemplateRule(rules);
 		IReadOnlyDictionary<string, string> containerNameMap = BuildContainerNameMap(templateRule);
 		IReadOnlyDictionary<string, ComponentMappingRule> componentNameMap = BuildComponentNameMap(templateRule);
 		IReadOnlyList<WebToMobileAnalysisService.PositionalPlacement> positionalPlacements = BuildPositionalPlacements(templateRule);
@@ -363,6 +367,29 @@ public sealed class MobilePageConversionGuideTool {
 	/// <paramref name="webParentTemplate"/>. When several rules share the same web template, the
 	/// first one wins (the rules file lists the preferred mobile target first). Null when no rule matches.
 	/// </summary>
+	/// <summary>
+	/// The fallback rule for a web template no <see cref="WebToMobilePageConversionRules.Templates"/> entry
+	/// matches: a generic mobile base from <see cref="WebToMobilePageConversionRules.DefaultMobileTemplate"/>,
+	/// with NO container or component correspondence. Null when the rules declare no default.
+	/// </summary>
+	/// <remarks>
+	/// It carries only the mobile schema name on purpose. A recommendation lets the caller create the page and
+	/// gives clio a template bundle to diff the data sections against — without one, both diffs degrade to a
+	/// root merge (ENG-95827). Name twins, by contrast, cannot be guessed for an unrecognised web template:
+	/// asserting them would relocate elements, which is worse than leaving them where the tree walk puts them.
+	/// The note says the recommendation is generic so the caller does not read it as a matched pair.
+	/// </remarks>
+	internal static TemplateMappingRule DefaultTemplateRule(WebToMobilePageConversionRules rules) =>
+		string.IsNullOrWhiteSpace(rules?.DefaultMobileTemplate)
+			? null
+			: new TemplateMappingRule {
+				Mobile = rules.DefaultMobileTemplate,
+				Note = "No conversion rule matches this page's web template, so this is the generic mobile base "
+					+ "rather than a matched counterpart: no container or component name correspondence is known, "
+					+ "and every element is placed where the source tree puts it. Review the result in the "
+					+ "designer, and consider adding a templates entry for this web template."
+			};
+
 	internal static TemplateMappingRule ResolveTemplateRule(WebToMobilePageConversionRules rules, string webParentTemplate) {
 		if (rules?.Templates is null || string.IsNullOrWhiteSpace(webParentTemplate)) {
 			return null;
@@ -497,8 +524,14 @@ public sealed class MobilePageConversionGuideTool {
 		var emptyTypes = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
 		var emptyPlacements = new Dictionary<string, JsonObject>(StringComparer.OrdinalIgnoreCase);
 		if (string.IsNullOrWhiteSpace(mobileSchemaName)) {
+			// Unavailable, not "fine": there is no template to read, so there is no base to diff the data
+			// sections against and both diffs degrade to a root merge. Reporting this as available made that
+			// degradation indistinguishable from the benign case where a template WAS read and simply carries
+			// no such config section — the one case that must NOT be reported, because a root merge over a
+			// base that owns nothing loses nothing (ENG-95827). Reachable only when the rules declare no
+			// defaultMobileTemplate either.
 			return new MobileTemplateProbe(emptyParents, emptyPlacements, ViewModelConfig: null, ModelConfig: null,
-				Unavailable: false, TypesByName: emptyTypes);
+				Unavailable: true, TypesByName: emptyTypes);
 		}
 		try {
 			PageGetOptions options = new() {

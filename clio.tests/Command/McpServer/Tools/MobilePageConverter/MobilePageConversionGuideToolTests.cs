@@ -93,6 +93,46 @@ public sealed class MobilePageConversionGuideToolTests {
 		MobilePageConversionGuideTool.WorseResolvedFrom(a, b);
 
 	[Test]
+	[Description("ENG-95827: a web template no templates entry matches falls back to the rules' defaultMobileTemplate, so the page still gets a mobile target AND clio still gets a template bundle to diff the data sections against — without one both diffs degrade to a root merge. The fallback deliberately carries NO container or component correspondence: for an unrecognised web template no name twins are known, and asserting them would relocate elements.")]
+	public void DefaultTemplateRule_FallsBackToTheRulesDefault_WithNoNameCorrespondence() {
+		// Arrange
+		var rules = new WebToMobilePageConversionRules {
+			DefaultMobileTemplate = "BaseMobilePageTemplate",
+			Templates = [new TemplateMappingRule { Web = "ListPageV3Template", Mobile = "BaseMobileListTemplate" }]
+		};
+
+		// Act
+		TemplateMappingRule unmatched = MobilePageConversionGuideTool.ResolveTemplateRule(rules, "UsrCustomTemplate");
+		TemplateMappingRule fallback = MobilePageConversionGuideTool.DefaultTemplateRule(rules);
+
+		// Assert
+		unmatched.Should().BeNull(
+			because: "ResolveTemplateRule must keep answering 'no match' — it is also the predicate that finds the first ANCESTOR matching a rule, and a never-null result would make every ancestor match");
+		fallback!.Mobile.Should().Be("BaseMobilePageTemplate",
+			because: "a generic mobile base is a far better answer than none: it gives create-page a target and the differ a real base");
+		fallback.Containers.Should().BeNullOrEmpty(
+			because: "no container name twins are known for an unrecognised web template, and inventing them would misplace elements rather than leave them where the tree walk puts them");
+		fallback.Components.Should().BeNullOrEmpty(
+			because: "same reasoning as the containers — a guessed component twin is worse than none");
+		fallback.Note.Should().Contain("generic mobile base",
+			because: "the caller must not read the recommendation as a matched counterpart");
+	}
+
+	[Test]
+	[Description("ENG-95827: with no defaultMobileTemplate declared, the fallback stays null rather than inventing a schema name — a partner rules file that omits it must not send create-page at a template that may not exist.")]
+	public void DefaultTemplateRule_WithoutADeclaredDefault_ReturnsNull() {
+		// Arrange
+		var rules = new WebToMobilePageConversionRules { Templates = [] };
+
+		// Act
+		TemplateMappingRule fallback = MobilePageConversionGuideTool.DefaultTemplateRule(rules);
+
+		// Assert
+		fallback.Should().BeNull(
+			because: "the default is rules-file data, not a hardcoded name — and when it is absent the root-merge degradation is reported with cause no-template-base instead");
+	}
+
+	[Test]
 	[Description("The detection and the gate compose: a 'web' schema-type detects as freedom-web and passes the gate (no rejection).")]
 	public void DetectThenReject_AcceptsWebSchemaType() {
 		// Act

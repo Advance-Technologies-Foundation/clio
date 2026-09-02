@@ -47,17 +47,16 @@ public sealed record ConversionDiagnostic {
 	/// <summary>
 	/// What could not be done, from a closed set:
 	/// <list type="bullet">
-	/// <item><description><c>"data-section-root-merge-fallback"</c> — no usable mobile-template base for a
-	/// config, so its diff degraded to a single ROOT MERGE. A root merge replaces arrays wholesale, so any
-	/// array the template also owns may lose its baseline entries. Carries <see cref="Sections"/> and
-	/// <see cref="Cause"/>.</description></item>
+	/// <item><description><c>"data-section-root-merge-fallback"</c> — the mobile template was UNOBTAINABLE, so
+	/// the config's diff degraded to a single ROOT MERGE. A root merge replaces arrays wholesale, so any array
+	/// the template also owns may lose its baseline entries. Carries <see cref="Sections"/> and
+	/// <see cref="Cause"/>. Deliberately NOT raised when a template was read and simply carries no such config
+	/// section: the diff is still a root merge, but a base that owns nothing there has nothing to lose, so
+	/// reporting it was a false positive.</description></item>
 	/// <item><description><c>"component-twin-not-prebuilt"</c> — a same-component twin could not be diffed
 	/// against the web-template baseline, so it degraded to an ADVISORY merge with no prebuilt
 	/// <c>mobileValues</c> and has to be configured by hand. Carries <see cref="Elements"/> and
 	/// <see cref="Cause"/>.</description></item>
-	/// <item><description><c>"exclusion-search-truncated"</c> — an excludedComponents search hit its depth
-	/// budget and abandoned a branch, so a banned component nested deeper is STILL on the page and has no
-	/// <c>drop</c> entry naming it.</description></item>
 	/// <item><description><c>"exclusion-filters-discarded"</c> — filters in the published rules file declare
 	/// no <c>type</c>/<c>parentType</c>, so those exclusions did not run. Carries <see cref="Count"/>.</description></item>
 	/// <item><description><c>"normalization-rules-skipped"</c> — componentPropertyOverrides rules in the
@@ -99,10 +98,11 @@ public sealed record ConversionDiagnostic {
 	public IReadOnlyList<string> Elements { get; init; }
 
 	/// <summary>
-	/// Why the base was missing, when it is known — <c>"mobile-template-unreadable"</c>,
-	/// <c>"web-template-unreadable"</c> (both re-runnable with <c>environment-name</c>/<c>uri</c> set) or
-	/// <c>"no-template-base"</c> / <c>"no-baseline-node"</c> (nothing to re-run; the base does not exist). It is
-	/// reported only when actually known, so the re-run remedy is never suggested on a guess.
+	/// Why the base was missing — <c>"mobile-template-unreadable"</c> / <c>"web-template-unreadable"</c> (a
+	/// template WAS named, so a re-run with <c>environment-name</c>/<c>uri</c> set can fix it) versus
+	/// <c>"no-template-base"</c> / <c>"no-baseline-node"</c> (nothing to re-run — no template was named at all,
+	/// or the element has no baseline node). The distinction IS the remedy, which is why it is reported rather
+	/// than assumed: suggesting a re-run against a template that does not exist is advice that cannot work.
 	/// </summary>
 	[JsonPropertyName("cause")]
 	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]

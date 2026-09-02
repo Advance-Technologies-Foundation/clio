@@ -63,12 +63,23 @@ internal static class ExcludedComponentsPass {
 
 	/// <summary>
 	/// How deep the host search / strip / ancestor climb may recurse before abandoning the branch. The rules
-	/// file and the page both arrive from OUTSIDE this binary (CDN / environment), so this is the same
-	/// defence in depth <c>WebToMobileAnalysisService.MaxTemplateDepth</c> takes, at the same budget — the
-	/// JSON readers already refuse to parse deeper than their own limits, and no real page nests anywhere
-	/// near this.
+	/// file and the page both arrive from OUTSIDE this binary (CDN / environment), so the guard stays — this
+	/// is the same defence in depth <c>WebToMobileAnalysisService.MaxTemplateDepth</c> takes.
 	/// </summary>
-	private const int MaxSearchDepth = 32;
+	/// <remarks>
+	/// Set to the JSON readers' OWN ceiling (64 for both <c>System.Text.Json</c> and Newtonsoft 13), which
+	/// makes abandoning a branch unreachable rather than merely unlikely: a document deep enough to exhaust
+	/// this budget cannot be parsed in the first place. That matters because <c>depth</c> counts JSON NODES,
+	/// not components — the recursion descends into both the array and the object at every level, so a
+	/// component nested N levels in <c>items</c> costs ~2N. At the previous budget of 32 the cut-off landed
+	/// around component depth 16, which a genuinely deep page can reach, and the outcome was silent: a banned
+	/// component below the cut-off stays on the page and produces no <c>drop</c> entry. It used to be reported
+	/// as an <c>exclusion-search-truncated</c> diagnostic; the cause was removed instead (ENG-95827), because
+	/// the caller could not act on it anyway. Do NOT raise this past the readers' ceiling — the value's whole
+	/// point is that the parser refuses before the budget does. Deliberately NOT unified with
+	/// <c>MaxTemplateDepth</c>, which bounds a different walk and carries no such reporting.
+	/// </remarks>
+	private const int MaxSearchDepth = 64;
 
 	/// <summary>The slot a child entry occupies when its <c>PropertyName</c> names none — the element-map default.</summary>
 	private const string DefaultSlotName = "items";
@@ -114,51 +125,45 @@ internal static class ExcludedComponentsPass {
 		List<ExcludedComponentFilterRule> filters = CollectFilters(groups, out int discardedFilters);
 		var budget = new SearchBudget();
 		if (filters.Count == 0) {
-			diagnostics = new ExcludedComponentsDiagnostics(false, discardedFilters);
+			diagnostics = new ExcludedComponentsDiagnostics(discardedFilters);
 			return removedWebNames;
 		}
 		RemoveExcludedEntries(elementMap, filters, removedWebNames, removedMobileNames, budget);
 		DropOrphanedSubtrees(elementMap, removedWebNames, removedMobileNames, budget);
 		StripVerbatimCarriedComponents(elementMap, BuildFiltersByParentType(filters), removedWebNames, budget);
-		diagnostics = new ExcludedComponentsDiagnostics(budget.Truncated, discardedFilters);
+		diagnostics = new ExcludedComponentsDiagnostics(discardedFilters);
 		return removedWebNames;
 	}
 
 	/// <summary>
-	/// What the pass could NOT do, for the caller to surface as a constraint. Both fields describe a
-	/// SILENT outcome — the pass keeps a banned component instead of removing it — which is the one
-	/// direction the <c>drop</c> entries cannot report, because a component that was never removed
-	/// produces no entry at all.
+	/// What the pass could NOT do, for the caller to surface as a diagnostic. It describes a SILENT
+	/// outcome — the pass keeps a banned component instead of removing it — which is the one direction the
+	/// <c>drop</c> entries cannot report, because a component that was never removed produces no entry at all.
 	/// </summary>
-	/// <param name="DepthBudgetTruncated">
-	/// A search abandoned a branch at <see cref="MaxSearchDepth"/>. Anything banned below that point is
-	/// still on the page, with no drop entry naming it.
-	/// </param>
 	/// <param name="DiscardedFilterCount">
 	/// Filters skipped for missing <c>type</c>/<c>parentType</c>. The rules file can be fetched from the
 	/// CDN at runtime, so a typo in a published rule (<c>parenttype</c>) turns an exclusion off; without
 	/// this count nothing anywhere in the report says the rule did not run.
 	/// </param>
-	internal sealed record ExcludedComponentsDiagnostics(bool DepthBudgetTruncated, int DiscardedFilterCount) {
-		internal static ExcludedComponentsDiagnostics None { get; } = new(false, 0);
+	/// <remarks>
+	/// A <c>DepthBudgetTruncated</c> flag used to sit beside the count and reached the caller as an
+	/// <c>exclusion-search-truncated</c> diagnostic. It is gone because the condition is gone:
+	/// <see cref="MaxSearchDepth"/> now equals the JSON readers' own ceiling, so a document deep enough to
+	/// abandon a branch cannot be parsed at all (ENG-95827). Tracking a state that cannot occur is a
+	/// reporting path nothing can exercise.
+	/// </remarks>
+	internal sealed record ExcludedComponentsDiagnostics(int DiscardedFilterCount) {
+		internal static ExcludedComponentsDiagnostics None { get; } = new(0);
 	}
 
 	/// <summary>
-	/// One truncation flag shared by every search in a single pass run. A depth cut-off is a property of
-	/// the RUN, not of the branch that hit it: the caller only needs to know that something was left
-	/// unsearched, and threading a bool back through four recursive layers would obscure each of them.
+	/// The recursion bound shared by every search in a single pass run. It no longer records whether it
+	/// fired: at <see cref="MaxSearchDepth"/> the parser refuses before this does, so the guard is defence in
+	/// depth against malformed input rather than a condition a real page reaches.
 	/// </summary>
 	private sealed class SearchBudget {
-		internal bool Truncated { get; private set; }
-
-		/// <summary>True when <paramref name="depth"/> is past the budget; records the truncation as it answers.</summary>
-		internal bool Exceeded(int depth) {
-			if (depth <= MaxSearchDepth) {
-				return false;
-			}
-			Truncated = true;
-			return true;
-		}
+		/// <summary>True when <paramref name="depth"/> is past the budget.</summary>
+		internal bool Exceeded(int depth) => depth > MaxSearchDepth;
 	}
 
 	/// <summary>

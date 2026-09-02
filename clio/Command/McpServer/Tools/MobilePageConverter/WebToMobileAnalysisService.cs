@@ -399,9 +399,9 @@ public static class WebToMobileAnalysisService {
 				mobileTemplateUnavailable: mobileTemplateUnavailable,
 				webTemplateUnavailable: webTemplateUnavailable,
 				advisoryTwins: advisoryTwins,
-				exclusionSearchTruncated: excludedDiagnostics.DepthBudgetTruncated,
 				discardedExclusionFilters: excludedDiagnostics.DiscardedFilterCount,
-				skippedOverrideRules: componentPropertyOverrides.SkippedRulesWithoutFilters)),
+				skippedOverrideRules: componentPropertyOverrides.SkippedRulesWithoutFilters,
+				recommendedMobileTemplate: templateRule?.Mobile)),
 			NextSteps = BuildNextSteps(
 				hasDataSections: modelConfig is not null || viewModelConfig is not null,
 				hasResourceStrings: resourceStrings.Count > 0),
@@ -1774,10 +1774,16 @@ public static class WebToMobileAnalysisService {
 	private static List<ConversionDiagnostic> BuildDiagnostics(
 		bool viewModelConfigRootMerge = false, bool modelConfigRootMerge = false, bool mobileTemplateUnavailable = false,
 		bool webTemplateUnavailable = false, IReadOnlyList<string> advisoryTwins = null,
-		bool exclusionSearchTruncated = false, int discardedExclusionFilters = 0,
-		int skippedOverrideRules = 0) {
+		int discardedExclusionFilters = 0, int skippedOverrideRules = 0,
+		string recommendedMobileTemplate = null) {
 		var diagnostics = new List<ConversionDiagnostic>();
-		if (viewModelConfigRootMerge || modelConfigRootMerge) {
+		// Gated on the template being UNOBTAINABLE, not merely on the fallback firing. The fallback also fires
+		// when a template WAS read and simply carries no such config section, and that case is not a loss: the
+		// warning is "a root merge replaces arrays wholesale, so an array the template also owns may lose its
+		// baseline entries", and a base that owns nothing there has nothing to lose. Reporting it was a false
+		// positive (ENG-95827). The two remaining causes differ in whether a remedy exists at all, so the
+		// cause is reported rather than assumed.
+		if ((viewModelConfigRootMerge || modelConfigRootMerge) && mobileTemplateUnavailable) {
 			var sections = new List<string>();
 			if (modelConfigRootMerge) {
 				sections.Add("modelConfigDiff");
@@ -1785,14 +1791,13 @@ public static class WebToMobileAnalysisService {
 			if (viewModelConfigRootMerge) {
 				sections.Add("viewModelConfigDiff");
 			}
-			// mobileTemplateUnavailable is NOT implied by the fallback: a template carrying only the other
-			// section, or a page with no known template, degrades with the bundle read perfectly fine. Naming
-			// the cause only when it is known is what keeps the re-run remedy from being suggested on a guess.
 			diagnostics.Add(new ConversionDiagnostic {
 				Code = RootMergeFallbackDiagnostic,
 				Impact = ConversionImpact,
 				Sections = sections,
-				Cause = mobileTemplateUnavailable ? MobileTemplateUnreadableCause : NoTemplateBaseCause
+				Cause = string.IsNullOrWhiteSpace(recommendedMobileTemplate)
+					? NoTemplateBaseCause
+					: MobileTemplateUnreadableCause
 			});
 		}
 		if (advisoryTwins is { Count: > 0 }) {
@@ -1803,14 +1808,12 @@ public static class WebToMobileAnalysisService {
 				Cause = webTemplateUnavailable ? WebTemplateUnreadableCause : NoBaselineNodeCause
 			});
 		}
-		if (exclusionSearchTruncated) {
-			// The one outcome the drop entries cannot report: a component that was never removed produces no
-			// entry, so without this a banned component past the depth budget is indistinguishable from one no
-			// rule targets.
-			diagnostics.Add(new ConversionDiagnostic {
-				Code = ExclusionSearchTruncatedDiagnostic, Impact = ConversionImpact
-			});
-		}
+		// A truncated excludedComponents search is no longer reported, because it can no longer happen: the
+		// pass's depth budget was raised to the JSON readers' own ceiling, so a document deep enough to
+		// truncate the search cannot be parsed in the first place (see ExcludedComponentsPass.MaxSearchDepth).
+		// The cause was removed rather than the report — a system-log line would have been worse than either,
+		// since ConsoleLogger suppresses console output under IsMcpServerMode and this flow starts no log file,
+		// so it would have gone nowhere at all.
 		if (discardedExclusionFilters > 0) {
 			// The rules file is fetched at run time, so a typo in a PUBLISHED rule silently switches an
 			// exclusion off. The count is the only thing anywhere that says the rule did not run.
@@ -1843,7 +1846,7 @@ public static class WebToMobileAnalysisService {
 
 	private const string RootMergeFallbackDiagnostic = "data-section-root-merge-fallback";
 	private const string TwinNotPrebuiltDiagnostic = "component-twin-not-prebuilt";
-	private const string ExclusionSearchTruncatedDiagnostic = "exclusion-search-truncated";
+
 	private const string ExclusionFiltersDiscardedDiagnostic = "exclusion-filters-discarded";
 	private const string NormalizationRulesSkippedDiagnostic = "normalization-rules-skipped";
 
