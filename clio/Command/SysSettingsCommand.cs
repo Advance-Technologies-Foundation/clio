@@ -1,11 +1,13 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Net;
 using System.Net.Http;
 using System.Net.Sockets;
+using System.Reflection;
 using System.Security.Authentication;
+using System.Text.RegularExpressions;
 using Clio.Common;
 using CommandLine;
 using CreatioModel;
@@ -513,17 +515,75 @@ namespace Clio.Command
 		}
 
 		internal static string CategorizeError(Exception ex, string operationLabel) {
-			return ex switch {
+			//The Creatio client reaches transport faults through Task.Result, which wraps them in an
+			//AggregateException. Switching on the outer type alone therefore saw the wrapper, not the
+			//fault, and an aggregate carrying an AuthenticationException or a typed 401 fell through to
+			//the generic "Failed ..." - losing exactly the credential diagnosis this command exists to
+			//report.
+			Exception fault = UnwrapTransportFault(ex);
+			return fault switch {
+				HttpRequestException httpEx when IsAuthenticationFailure(httpEx)
+					=> $"Authentication error {operationLabel}.",
 				HttpRequestException => $"Network error {operationLabel}.",
+				WebException webEx when IsAuthenticationFailure(webEx)
+					=> $"Authentication error {operationLabel}.",
 				WebException => $"Network error {operationLabel}.",
 				SocketException => $"Network error {operationLabel}.",
 				UnauthorizedAccessException => $"Authentication error {operationLabel}.",
-				AuthenticationException => $"Authentication error {operationLabel}.",
+				//A bare AuthenticationException is asked the same question as the wrapped ones: the framework
+				//raises this type for a TLS handshake too, and a bad server certificate reported as rejected
+				//credentials hides the only diagnosis that leads to the fix.
+				AuthenticationException authEx when IsAuthenticationFailure(authEx)
+					=> $"Authentication error {operationLabel}.",
+				AuthenticationException => $"Network error {operationLabel}.",
+				//An aggregate that carries several distinct faults is not unwrapped, because no single
+				//inner represents it - but a credential failure among them still has to be reported as one.
+				AggregateException aggregate when IsAuthenticationFailure(aggregate)
+					=> $"Authentication error {operationLabel}.",
 				ArgumentException argEx => argEx.Message,
 				InvalidOperationException invEx => invEx.Message,
 				_ => $"Failed {operationLabel}."
 			};
 		}
+
+		// Bounds every walk over an exception chain. A chain this deep is not something a transport
+		// produces, and the bound is what keeps a hand-built or self-referencing chain from looping.
+		private const int MaxExceptionUnwrapDepth = 16;
+
+		/// <summary>
+		/// Returns the exception that should be classified: a wrapper carrying exactly one fault unwraps
+		/// to that fault, and everything else is returned unchanged.
+		/// </summary>
+		/// <remarks>
+		/// A multi-fault <see cref="AggregateException"/> is deliberately NOT unwrapped - picking its first
+		/// inner would report one of several failures as if it were the whole story. Those are handled by
+		/// the aggregate arm in <see cref="CategorizeError"/> instead.
+		/// </remarks>
+		private static Exception UnwrapTransportFault(Exception exception) {
+			Exception current = exception;
+			for (int depth = 0; depth < MaxExceptionUnwrapDepth; depth++) {
+				Exception inner = current switch {
+					AggregateException aggregate when aggregate.InnerExceptions.Count == 1
+						=> aggregate.InnerExceptions[0],
+					TargetInvocationException { InnerException: { } target } => target,
+					var _ => null
+				};
+				if (inner is null) {
+					return current;
+				}
+				current = inner;
+			}
+			return current;
+		}
+
+		// A bounded 401 token, not any occurrence of the digits. "Connection refused at
+		// http://localhost:40124" is a network error, and reporting it as rejected credentials sends the
+		// operator off to fix a working login. The token must also stand alone, so a port or an id containing
+		// 401 does not qualify.
+		// Delegates to the one shared classifier so this layer and SysSettingsManager cannot answer the
+		// same question differently. See AuthenticationFailureClassifier for why that mattered.
+		private static bool IsAuthenticationFailure(Exception exception) =>
+			AuthenticationFailureClassifier.IsAuthenticationFailure(exception);
 
 		private static string DescribeUnreadableBinaryTarget(string code) {
 			return $"Sys-setting '{code}' was not found or is not readable by the current user. Uploading a " +
