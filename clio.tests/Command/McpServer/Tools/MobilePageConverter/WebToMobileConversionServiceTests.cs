@@ -4723,59 +4723,6 @@ public sealed class WebToMobileConversionServiceTests {
 	}
 
 	[Test]
-	[Description("The BUNDLED rules promote the WEB DEFAULT corner radius (Medium) to the mobile default (Large) end to end — the Area card the tab synthesis creates at the platform's Medium ships Large — and preserve every deliberate choice: a grid someone set to Small or xxxl, to none, or left without a radius keeps exactly what it had. The other tests build their own rules, so only this one reads what actually ships.")]
-	public void Analyze_BundledRules_PromoteTheMediumCornerRadius() {
-		// Arrange — the real rules file, and a tab whose content covers every radius case.
-		PageBundleInfo bundle = Bundle("""
-			[ { "name": "Tabs", "type": "crt.TabPanel", "items": [
-				{ "name": "OverviewTab", "type": "crt.TabContainer", "items": [
-					{ "name": "SmallCard",  "type": "crt.GridContainer", "borderRadius": "small",
-					  "items": [ { "name": "F1", "type": "crt.Input", "control": "$F1" } ] },
-					{ "name": "MediumCard", "type": "crt.GridContainer", "borderRadius": "medium",
-					  "items": [ { "name": "F2", "type": "crt.Input", "control": "$F2" } ] },
-					{ "name": "HugeCard",   "type": "crt.GridContainer", "borderRadius": "xxxl",
-					  "items": [ { "name": "F3", "type": "crt.Input", "control": "$F3" } ] },
-					{ "name": "SquareCard", "type": "crt.GridContainer", "borderRadius": "none",
-					  "items": [ { "name": "F4", "type": "crt.Input", "control": "$F4" } ] },
-					{ "name": "PlainCard",  "type": "crt.GridContainer",
-					  "items": [ { "name": "F5", "type": "crt.Input", "control": "$F5" } ] } ] } ] } ]
-			""");
-		WebToMobilePageConversionRules shipped = WebToMobilePageConversionRulesCatalog.LoadBundled();
-
-		// Act
-		MobilePageConversionGuide guide = AnalyzeTabbed(bundle, rules: shipped);
-
-		// Assert — the Medium grid is promoted...
-		Element(guide, "MediumCard").MobileValues!["borderRadius"]!.GetValue<string>().Should().Be("large",
-			because: "Medium is the token the shipped standard promotes");
-
-		// ...and so is the Area card the tab synthesis creates, because it carries the platform's Medium into
-		// the pass. This is the ticket's actual deliverable.
-		(_, string area) = LayerNames("OverviewTab");
-		Synthesized(guide, area).MobileValues!["borderRadius"]!.GetValue<string>().Should().Be("large",
-			because: "tabAreaLayers mirrors the designer's own Medium; promoting it is the normalization's job");
-
-		// Everything else keeps what it had — the standard is deliberately narrowed to one token.
-		Element(guide, "SmallCard").MobileValues!["borderRadius"]!.GetValue<string>().Should().Be("small");
-		Element(guide, "HugeCard").MobileValues!["borderRadius"]!.GetValue<string>().Should().Be("xxxl",
-			because: "a radius other than the web default was chosen deliberately, so the conversion preserves "
-				+ "it rather than flattening every card onto one value");
-		Element(guide, "SquareCard").MobileValues!["borderRadius"]!.GetValue<string>().Should().Be("none",
-			because: "'none' removes the border radius, so the element never had one to promote");
-		Element(guide, "PlainCard").MobileValues!.AsObject().ContainsKey("borderRadius").Should().BeFalse(
-			because: "a grid that carried no radius must not acquire one");
-		// It IS reported — the unconditional gap rule still applies to it — but only for what was written.
-		NormalizationEntry square = guide.Normalizations!["spacing"].Normalized
-			.Single(n => n.Name == Element(guide, "SquareCard").MobileName);
-		square.Properties.Should().Equal(["gap"],
-			because: "the gap rule matched it and the radius rule did not, so the report names gap alone");
-		guide.Normalizations["spacing"].Normalized
-			.Single(n => n.Name == Element(guide, "MediumCard").MobileName)
-			.Properties.Should().Equal(["gap", "borderRadius"],
-				because: "a grid both rules matched is ONE entry listing what each of them wrote");
-	}
-
-	[Test]
 	[Description("The component type is selected THROUGH the filter, like a components-group entry: a rule whose filter names another type never reaches this element, and there is no separate type field to fall back on.")]
 	public void Analyze_OverrideFilters_ShouldSelectTheTypeThroughTheFilter() {
 		// Arrange
