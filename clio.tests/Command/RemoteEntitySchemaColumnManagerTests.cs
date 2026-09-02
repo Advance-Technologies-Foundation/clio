@@ -4,6 +4,7 @@ using System.Globalization;
 using System.Linq;
 using System.Net.Http;
 using System.Reflection;
+using System.Text.Json;
 using Clio.Command;
 using Clio.Command.EntitySchemaDesigner;
 using Clio.Common;
@@ -1567,7 +1568,14 @@ internal class RemoteEntitySchemaColumnManagerTests
 				new Clio.Common.EntitySchema.RuntimeEntitySchemaColumnResult(
 					MergedNameColumnUId, "Name", "Name", null, 1, true, false, null, IsIndexed: true),
 				new Clio.Common.EntitySchema.RuntimeEntitySchemaColumnResult(
-					MergedContractColumnUId, "UsrColumn40", "Contract", null, 10, false, false, "Contract", IsIndexed: false),
+					MergedContractColumnUId, "UsrColumn40", "Contract", "Contract lookup", 10, false, false,
+					"Contract", IsIndexed: false, IsValueCloneable: true,
+					DefaultValue: new Clio.Common.EntitySchema.RuntimeEntitySchemaDefaultValueResult(
+						(int)EntitySchemaColumnDefSource.Const,
+						JsonSerializer.SerializeToElement("d1a6ea58-6a88-4cb7-bfea-7a41caa0ae50"),
+						null, null, 0),
+					IsSimpleLookup: true, IsCascade: true, IsAccentInsensitive: true,
+					IsMasked: true, IsFormatValidated: true, UseSeconds: true, UsageType: 2),
 				new Clio.Common.EntitySchema.RuntimeEntitySchemaColumnResult(
 					MergedCreatedOnColumnUId, "CreatedOn", "Created on", null, 7, false, true, null, IsIndexed: false)
 			]);
@@ -1873,6 +1881,61 @@ internal class RemoteEntitySchemaColumnManagerTests
 		result.DefaultValueConfig.Value.Should().Be("Vehicle",
 			because: "the structured default value config should preserve the constant payload");
 		result.MultilineText.Should().BeTrue(because: "text-specific flags should be projected");
+		_runtimeEntitySchemaReader.DidNotReceiveWithAnyArgs().GetByName(default);
+	}
+
+	[Test]
+	[Description("Returns rich merged runtime column metadata and explicit unknowns when package is omitted.")]
+	public void GetColumnProperties_ReturnsMergedRuntimeColumn_WhenPackageIsOmitted() {
+		// Arrange
+		_runtimeEntitySchemaReader.GetByName("Account").Returns(CreateMergedRuntimeSchema());
+		_lookupDefaultDisplayValueResolver
+			.Resolve("Contract", Arg.Any<Guid>(), Arg.Any<RemoteCommandOptions>())
+			.Returns(new LookupDefaultResolution("Annual contract", null));
+
+		// Act
+		EntitySchemaColumnPropertiesInfo result = _manager.GetColumnProperties(
+			new GetEntitySchemaColumnPropertiesOptions {
+				SchemaName = "Account",
+				ColumnName = "usrcolumn40"
+			});
+
+		// Assert
+		result.PackageName.Should().Be(RemoteEntitySchemaColumnManager.MergedSchemaPackageName,
+			because: "an omitted package must be visibly identified as the merged all-packages view");
+		result.ColumnName.Should().Be("UsrColumn40",
+			because: "merged discovery should match column names case-insensitively and return the canonical name");
+		result.Type.Should().Be("Lookup", because: "the runtime data-value type must use the shared friendly mapping");
+		result.Cloneable.Should().BeTrue(because: "runtime-exposed rich flags should be preserved");
+		result.SimpleLookup.Should().BeTrue(because: "runtime lookup metadata should be projected");
+		result.Cascade.Should().BeTrue(because: "runtime cascade metadata should be projected");
+		result.DefaultValueConfig!.DisplayValue.Should().Be("Annual contract",
+			because: "merged lookup defaults should retain the existing display-value enrichment");
+		result.TrackChanges.Should().BeNull(
+			because: "RuntimeEntitySchemaRequest does not expose column track-changes and unknown must not become false");
+		result.LocalizableText.Should().BeNull(
+			because: "RuntimeEntitySchemaRequest does not expose localizable-text and unknown must not become false");
+		result.DoNotControlIntegrity.Should().BeNull(
+			because: "RuntimeEntitySchemaRequest does not expose integrity control and unknown must not become false");
+		_designerClient.DidNotReceiveWithAnyArgs().GetSchemaDesignItem(default, default);
+	}
+
+	[Test]
+	[Description("Reports a clear merged-schema failure when an omitted-package read cannot find the requested column.")]
+	public void GetColumnProperties_Throws_WhenMergedColumnIsMissing() {
+		// Arrange
+		_runtimeEntitySchemaReader.GetByName("Account").Returns(CreateMergedRuntimeSchema());
+
+		// Act
+		Action act = () => _manager.GetColumnProperties(new GetEntitySchemaColumnPropertiesOptions {
+			SchemaName = "Account",
+			ColumnName = "MissingColumn"
+		});
+
+		// Assert
+		act.Should().Throw<EntitySchemaDesignerException>(
+				because: "merged discovery must fail clearly instead of returning an empty or partial projection")
+			.WithMessage("*MissingColumn*merged schema 'Account'*");
 	}
 
 	[Test]

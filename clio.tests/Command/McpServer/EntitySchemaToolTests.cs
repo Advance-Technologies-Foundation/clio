@@ -294,7 +294,7 @@ public sealed class EntitySchemaToolTests {
 
 		// Act
 		EntitySchemaColumnPropertiesInfo result = tool.GetEntitySchemaColumnProperties(
-			new GetEntitySchemaColumnPropertiesArgs("dev", "UsrPkg", "UsrVehicle", "Name"));
+			new GetEntitySchemaColumnPropertiesArgs("dev", "UsrVehicle", "Name", "UsrPkg"));
 
 		// Assert
 		result.Should().BeEquivalentTo(expectedResult,
@@ -305,6 +305,42 @@ public sealed class EntitySchemaToolTests {
 				&& options.Package == "UsrPkg"
 				&& options.SchemaName == "UsrVehicle"
 				&& options.ColumnName == "Name"));
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Maps an omitted package to merged column discovery on the resolved environment-specific command.")]
+	public void GetEntitySchemaColumnProperties_Should_Allow_Omitted_Package() {
+		// Arrange
+		IRemoteEntitySchemaColumnManager columnManager = Substitute.For<IRemoteEntitySchemaColumnManager>();
+		columnManager.GetColumnProperties(Arg.Any<GetEntitySchemaColumnPropertiesOptions>()).Returns(
+			new EntitySchemaColumnPropertiesInfo(
+				"Contact", "(merged: all packages)", "UsrStatus", "own", "Status", null, "Lookup",
+				false, false, true, null, null, null, "UsrStatus", true, false, null, false, null,
+				false, false, false, false));
+		GetEntitySchemaColumnPropertiesCommand resolvedCommand = new(columnManager, Substitute.For<ILogger>());
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		commandResolver.Resolve<GetEntitySchemaColumnPropertiesCommand>(Arg.Any<GetEntitySchemaColumnPropertiesOptions>())
+			.Returns(resolvedCommand);
+		GetEntitySchemaColumnPropertiesTool tool = new(
+			new GetEntitySchemaColumnPropertiesCommand(
+				Substitute.For<IRemoteEntitySchemaColumnManager>(), Substitute.For<ILogger>()),
+			ConsoleLogger.Instance,
+			commandResolver);
+
+		// Act
+		EntitySchemaColumnPropertiesInfo result = tool.GetEntitySchemaColumnProperties(
+			new GetEntitySchemaColumnPropertiesArgs("dev", "Contact", "UsrStatus"));
+
+		// Assert
+		result.PackageName.Should().Be("(merged: all packages)",
+			because: "the MCP result should make the merged discovery scope explicit");
+		commandResolver.Received(1).Resolve<GetEntitySchemaColumnPropertiesCommand>(
+			Arg.Is<GetEntitySchemaColumnPropertiesOptions>(options =>
+				options.Environment == "dev"
+				&& options.Package == null
+				&& options.SchemaName == "Contact"
+				&& options.ColumnName == "UsrStatus"));
 	}
 
 	[Test]

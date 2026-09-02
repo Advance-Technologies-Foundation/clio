@@ -41,9 +41,24 @@ public sealed class RuntimeEntitySchemaReaderTests {
 				          "name": "Name",
 				          "caption": { "en-US": "Full name" },
 				          "description": { "en-US": "Primary display name" },
-				          "dataValueType": 1,
-				          "isRequired": true,
-				          "isInherited": false
+					          "dataValueType": 1,
+					          "isRequired": true,
+					          "isInherited": false,
+					          "isIndexed": true,
+					          "isValueCloneable": true,
+					          "isMultilineText": true,
+					          "isAccentInsensitive": true,
+					          "isValueMasked": true,
+					          "isFormatValidated": true,
+					          "useSeconds": true,
+					          "usageType": 2,
+					          "defValue": {
+					            "valueSourceType": 1,
+					            "value": "Default name",
+					            "valueSource": null,
+					            "sequencePrefix": null,
+					            "sequenceNumberOfChars": 0
+					          }
 				        },
 				        "2": {
 				          "uId": "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb",
@@ -77,6 +92,15 @@ public sealed class RuntimeEntitySchemaReaderTests {
 			because: "the reader should resolve localized captions into a consumable string value");
 		result.Columns.Single(column => column.Name == "Name").Description.Should().Be("Primary display name",
 			because: "the reader should resolve localized descriptions into a consumable string value");
+		RuntimeEntitySchemaColumnResult nameColumn = result.Columns.Single(column => column.Name == "Name");
+		nameColumn.IsIndexed.Should().BeTrue(because: "the runtime indexed flag must remain available to column readers");
+		nameColumn.IsValueCloneable.Should().BeTrue(because: "runtime column flags must not be truncated by the shared reader");
+		nameColumn.IsMultilineText.Should().BeTrue(because: "runtime text metadata must be preserved");
+		nameColumn.IsMasked.Should().BeTrue(because: "either runtime masking flag must project as masked");
+		nameColumn.UsageType.Should().Be(2, because: "runtime usage type must remain available to rich column inspection");
+		nameColumn.DefaultValue.Should().NotBeNull(because: "runtime default metadata must be retained");
+		nameColumn.DefaultValue!.Value.GetString().Should().Be("Default name",
+			because: "runtime scalar defaults must reach the shared result without string re-parsing");
 	}
 
 	[Test]

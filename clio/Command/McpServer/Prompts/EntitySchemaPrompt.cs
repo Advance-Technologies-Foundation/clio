@@ -70,7 +70,12 @@ public static class EntitySchemaPrompt {
 		 For a lookup column, a `Const` default is the GUID of a record in the referenced schema — obtain it
 		 by inserting/reading that record first (e.g. `odata-create` returns the new record `id`), then set
 		 `default-value-config` `source=Const`, `value=<that GUID>`. clio validates the record exists before
-		 save and rejects an unknown GUID. On readback, `get-entity-schema-column-properties` enriches the
+		 save and rejects an unknown GUID. On readback, omit `package-name` from
+		 `get-entity-schema-column-properties` to discover the column in the merged runtime schema across all
+		 packages; supply `package-name` only when package-layer metadata is required. Merged mode reports
+		 `track-changes`, `localizable-text`, and `do-not-control-integrity` as null because the runtime endpoint
+		 does not expose them, and its `source` means parent-schema inheritance rather than package ownership.
+		 The column readback enriches the
 		 lookup `Const` default-value-config with `display-value` (and a `record-resolution` marker when it
 		 cannot be resolved) so you can verify which record the default points to without a second query.
 		 Current parent request: `{parentSchemaName ?? "<not provided>"}`. Current replacement request:
