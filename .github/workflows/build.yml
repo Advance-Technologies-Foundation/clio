@@ -78,6 +78,36 @@ jobs:
           "unit-matrix=$unit" >> $env:GITHUB_OUTPUT
           "integration-matrix=$integration" >> $env:GITHUB_OUTPUT
 
+  # ── .NET 8 product compatibility (one hosted runner, concurrent with tests) ──
+  net8-compatibility:
+    name: .NET 8 Product Compatibility
+    needs: changes
+    permissions:
+      contents: read
+    if: >-
+      needs.changes.outputs.clio-src == 'true' ||
+      needs.changes.outputs.tests   == 'true' ||
+      github.ref == 'refs/heads/master'
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 1
+          persist-credentials: false
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.x
+
+      - name: Build NET8 product compatibility
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Stop'
+          Set-Location $env:GITHUB_WORKSPACE
+          dotnet build .\clio\clio.csproj `
+            --framework net8.0 `
+            -p:RunAnalyzers=false
+
   # ── Unit tests (four hosted runners; fast gate runs on every push) ────
   unit-test-shards:
     name: Unit Test Shard (${{ matrix.name }})
@@ -101,21 +131,6 @@ jobs:
       - uses: actions/setup-dotnet@v4
         with:
           dotnet-version: 10.0.x
-
-      - uses: actions/setup-dotnet@v4
-        if: matrix.runNet8Compatibility
-        with:
-          dotnet-version: 8.0.x
-
-      - name: Build NET8 product compatibility
-        if: matrix.runNet8Compatibility
-        shell: powershell
-        run: |
-          $ErrorActionPreference = 'Stop'
-          Set-Location $env:GITHUB_WORKSPACE
-          dotnet build .\clio\clio.csproj `
-            --framework net8.0 `
-            -p:RunAnalyzers=false
 
       # Anchor the working directory: `shell: powershell` loads the user profile (there is no -NoProfile) and
       # every project path in these steps is relative, so the step should not depend on the cwd it inherits.
@@ -173,7 +188,7 @@ jobs:
 
   unit-tests:
     name: Unit Tests
-    needs: [changes, unit-test-shards]
+    needs: [changes, unit-test-shards, net8-compatibility]
     if: always()
     runs-on: ubuntu-latest
     permissions: {}
@@ -184,7 +199,8 @@ jobs:
           ((needs.changes.outputs.clio-src == 'true' ||
             needs.changes.outputs.tests   == 'true' ||
             github.ref == 'refs/heads/master') &&
-           needs.unit-test-shards.result != 'success')
+           (needs.unit-test-shards.result != 'success' ||
+            needs.net8-compatibility.result != 'success'))
         run: exit 1
 
   # ── ClioGate tests (only when the bundled service changes) ──────────

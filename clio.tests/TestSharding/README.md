@@ -3,11 +3,12 @@
 GitHub Actions runs the existing predicates across four unit workers and three integration
 workers. Each worker uses the same `dotnet test clio.tests.csproj` path as the unsharded workflow.
 TeamCity does not read this manifest or these scripts, so its unit, integration, and MCP end-to-end
-configuration is unchanged.
+configuration is unchanged. A separate hosted job builds the product for NET8 once, concurrently
+with all test workers.
 
-The first unit worker preserves the existing NET8 compatibility build, while the second runs
-`Creatio.ConflictResolver.Tests` so their fixed costs can be balanced independently. In unsharded
-mode, the single unit worker runs both.
+The second unit worker runs `Creatio.ConflictResolver.Tests` so its fixed cost can be balanced
+independently. In unsharded mode, the single unit worker still runs those tests, while the NET8
+compatibility job remains separate and concurrent.
 
 The first shards select their listed fixtures. The final shard is a catch-all: it runs the base
 predicate and excludes fixtures assigned to earlier shards. A newly added fixture therefore runs
@@ -33,18 +34,19 @@ TRX files from a representative GitHub run, then run:
 ./.github/scripts/Rebalance-TestShards.ps1 `
   -UnitTrx ./timings/unit-[1-4].trx `
   -IntegrationTrx ./timings/integration-[1-3].trx `
-  -UnitFixedSeconds 82,12,0,0
+  -UnitFixedSeconds 0,12,0,0
 ```
 
 The script aggregates elapsed time by NUnit fixture and applies deterministic longest-processing-
 time-first balancing. It uses the TRX run's wall time as well as individual result durations, so
 test-run overhead is represented even when NUnit executes fixtures in parallel. `UnitFixedSeconds`
-accounts for work outside `clio.tests`: in the example, unit-1 spent 82 seconds on NET8
-compatibility and unit-2 spent 12 seconds on ConflictResolver.
+accounts for work outside `clio.tests`: in the example, unit-2 spent 12 seconds on ConflictResolver.
+NET8 compatibility is not part of any unit shard and must not be included in these values.
 Replace those values with timings from the same representative run as the TRX files. Review and
 commit the updated `test-shards.json` so the manifest represents one coherent test inventory.
-The manifest uses the seven successful hosted TRX artifacts and fixed step timings from GitHub run
-`33317199418`.
+The unit distribution uses local TRX timings captured for issue #1343 on 2026-09-02, with the
+12-second ConflictResolver fixed cost retained from hosted timing. The integration distribution
+still uses the successful hosted TRX artifacts from GitHub run `33317199418`.
 
 When changing the filter mechanism, run the unsharded switch once and compare its TRX with the
 sharded TRX files:
