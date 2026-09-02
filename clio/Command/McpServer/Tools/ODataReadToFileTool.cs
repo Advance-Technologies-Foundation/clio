@@ -169,7 +169,10 @@ public sealed class ODataReadToFileTool(IToolCommandResolver commandResolver, IO
 			// The transport's deadline elapsed - a distinct outcome from caller cancellation, which stays an
 			// exception. Reported as a tool error so the caller learns the request timed out instead of seeing
 			// an exception escape the tool boundary; retrying the buffered path would just stall again.
-			error = timeout.Message;
+			// Redacted like every other message this tool surfaces: the adapter puts the absolute environment
+			// URL and the encoded filter into the timeout text, and an MCP result is copied verbatim into the
+			// transcript, so a stalled read would otherwise publish the host, port and query.
+			error = SensitiveErrorTextRedactor.Redact(timeout.Message);
 			return false;
 		} catch (NotSupportedException notSupported) {
 			// The streamed GET declining is now a hard failure rather than a hand-off: the buffered path it

@@ -362,6 +362,43 @@ public sealed class ODataReadToFileToolTests {
 
 	[Test]
 	[Category("Unit")]
+	[Description("Redacts the environment URL out of a transport timeout, so a stalled read does not publish the host, port and encoded filter into the MCP transcript.")]
+	public void ReadToFile_Should_Redact_The_Environment_Url_From_A_Timeout() {
+		// Arrange
+		MockFileSystem fileSystem = new();
+		string outputFile = fileSystem.Path.Combine(fileSystem.Path.GetTempPath(), $"odata-timeout-{Guid.NewGuid():N}.json");
+		ICreatioApplicationClient client = Substitute.For<ICreatioApplicationClient>();
+		IServiceUrlBuilder urlBuilder = Substitute.For<IServiceUrlBuilder>();
+		IToolCommandResolver resolver = Substitute.For<IToolCommandResolver>();
+		resolver.Resolve<IApplicationClient>(Arg.Any<EnvironmentOptions>()).Returns(client);
+		resolver.Resolve<IServiceUrlBuilder>(Arg.Any<EnvironmentOptions>()).Returns(urlBuilder);
+		urlBuilder.Build(Arg.Any<string>()).Returns("https://prod.creatio.com:8443/0/odata/Contact?$top=25");
+		//The adapter's timeout message carries the full absolute request URI. It is the tool's job to scrub it:
+		//an MCP result is copied verbatim into the model transcript and is routinely logged and forwarded.
+		client.ExecuteGetRequestBoundedAsync(Arg.Any<string>(), Arg.Any<long>(), Arg.Any<int>(), Arg.Any<CancellationToken>())
+			.Returns<Task<byte[]>>(_ => throw new TimeoutException(
+				"The bounded GET of https://prod.creatio.com:8443/0/odata/Contact?$top=25 did not complete within 500 ms."));
+		ODataReadToFileTool tool = new(resolver, new ODataFileContract(fileSystem, new MockConfinedFileAccess(fileSystem)));
+
+		// Act
+		ODataReadResponse result = tool.ReadToFile(new ODataReadToFileArgs {
+			EnvironmentName = "dev", Entity = "Contact", OutputFile = outputFile
+		});
+
+		// Assert
+		result.Success.Should().BeFalse(because: "a transport timeout is a failed read");
+		result.Error.Should().NotContain("prod.creatio.com",
+			because: "the environment host must not reach the transcript through a timeout message");
+		result.Error.Should().NotContain("$top=25",
+			because: "the encoded filter is part of the same leak and is redacted with the URI");
+		result.Error.Should().Contain("did not complete within 500 ms",
+			because: "redaction is surgical - the caller still has to learn that the request timed out");
+		fileSystem.File.Exists(outputFile).Should().BeFalse(
+			because: "nothing may be published for a read that never returned a body");
+	}
+
+	[Test]
+	[Category("Unit")]
 	[Description("Writes nothing and reports the cancellation when the caller abandons the call before the response arrives.")]
 	public void ReadToFile_Should_Write_Nothing_When_The_Caller_Cancels() {
 		// Arrange
