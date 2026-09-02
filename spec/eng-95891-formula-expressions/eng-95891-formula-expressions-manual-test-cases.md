@@ -3,11 +3,14 @@
 Written as **business assignments given to an AI agent** — the way the feature is actually used — rather
 than as tool calls. The tester gives the agent the assignment verbatim, then checks the process in the
 designer and, where applicable, runs it. Behaviour below was verified on a stand carrying
-`CrtProcessBuilder 1.4.0.3` or newer.
+`CrtProcessBuilder 1.4.0.18` and then 1.4.0.37 - the versions the run manifests beside this file
+record. It is NOT verified at 1.4.0.3: several of the refusals below first ship in .32 and .35.
 
-**Conditions.** A Creatio environment registered in clio with `CrtProcessBuilder 1.4.0.3` or newer
+**Conditions.** A Creatio environment registered in clio with `CrtProcessBuilder 1.4.0.35` or newer
 installed (`install-process-builder`), an agent with the clio MCP server connected, and a writable
-`Custom` package. Unless a case says otherwise, the agent is given **only the sentence in quotes** — no
+`Custom` package. .35 is not a preference: it is the enforced `[RequiresPackage]` floor, so create and
+modify are refused below it before any case here can run.
+Unless a case says otherwise, the agent is given **only the sentence in quotes** — no
 tool names, no JSON. That is the point: these cases test whether the shipped guidance is enough for an
 agent to get it right unaided.
 
@@ -193,7 +196,9 @@ it.
 
 ### `TC-09` An environment with an older package is told to update, not left half-working
 
-**Preconditions:** An environment carrying a `CrtProcessBuilder` older than 1.4.0.3.
+**Preconditions:** An environment carrying a `CrtProcessBuilder` older than 1.4.0.35 - the enforced floor.
+Note the floor moved after the runs recorded below: at .3 this case needed a downgrade, while anything under
+.35 now triggers it, so the "not run" result further down is no longer a statement about what is reachable.
 
 **Steps:**
 1. Give the agent: *"Set a branch condition in process `<name>` on that environment."*

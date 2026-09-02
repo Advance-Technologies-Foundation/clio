@@ -37,7 +37,10 @@ names the feature threshold, while convergence tracks every rebundle; both are n
 (`spec/adr/adr-bundled-package-version-source-of-truth.md`) permits a hand-typed literal added in
 the commit that creates the need - it forbids only deriving the literal from the archive.
 
-**Updated by ENG-95891.** The Create/Modify floor moved from 1.3.1.1 to 1.4.0.3. For a while the floor EQUALLED
+**Updated by ENG-95891.** The Create/Modify floor moved up from 1.3.1.1; the literal itself lives in the
+`[RequiresPackage]` attributes on `CreateBusinessProcessOptions` / `ModifyBusinessProcessOptions` and is
+deliberately not restated here - this paragraph named 1.4.0.3 and went stale the same day, which is the very
+failure the closing sentence below warns about. For a while the floor EQUALLED
 the bundled version, and while that holds the two refusals stop being nested: `installed >= floor` already implies
 `installed >= bundled`, so `TryGetConvergenceRefusal` cannot fire on that command at all, and the sentence above
 about the floor's refusal set being a subset of convergence's is true only in the degenerate sense that the sets are

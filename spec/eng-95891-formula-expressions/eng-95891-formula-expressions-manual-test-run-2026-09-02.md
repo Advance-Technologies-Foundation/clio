@@ -7,7 +7,7 @@ element segment. Evidence from .18 did not cover the shipped package, so the sta
 the stored-level cases re-run.
 
 **What this run covers, and what moved after it.** It ran at **1.4.0.37**. The branch then merged
-`origin/main` and rebundled as **1.4.0.38**, so this record is one version behind the shipped
+`origin/main` and rebundled as **1.4.0.38**, so this record is behind the shipped
 archive. That is stated rather than glossed, and the delta was measured rather than assumed:
 `git diff` over `Formulas/`, `Graph/` and `Mappings/` between the two cut commits touches ONE file,
 `ProcessElementDependencyScanner.cs` — the element-retarget guard, which none of these six cases

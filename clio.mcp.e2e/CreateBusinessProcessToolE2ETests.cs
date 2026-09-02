@@ -166,7 +166,7 @@ public sealed class CreateBusinessProcessToolE2ETests {
 	}
 
 	[Test]
-	[Description("Over the real MCP path, a build descriptor's mappings[] may carry an 'expression' source, and it is validated, stored and read back as a Script. This is the reason the create tool's [RequiresPackage] floor was raised to 1.4.0.3: an older server stores such a mapping with NO check and fails at run time. The modify path had this coverage and create did not, while the floor was raised on both.")]
+	[Description("Over the real MCP path, a build descriptor's mappings[] may carry an 'expression' source, and it is validated, stored and read back as a Script. This is the reason the create tool's [RequiresPackage] floor was raised to 1.4.0.35: an older server stores such a mapping with NO check and fails at run time. The modify path had this coverage and create did not, while the floor was raised on both.")]
 	[AllureTag(ToolName)]
 	[AllureName("create-business-process stores a formula mapping that reads back")]
 	public async Task CreateBusinessProcess_Should_StoreAndReadBackAFormulaMapping() {

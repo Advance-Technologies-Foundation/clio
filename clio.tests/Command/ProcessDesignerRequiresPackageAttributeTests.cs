@@ -67,7 +67,7 @@ namespace Clio.Tests
         [TestCase(typeof(CreateBusinessProcessOptions))]
         [TestCase(typeof(ModifyBusinessProcessOptions))]
         [Test]
-        [Description("Create and Modify declare a VERSIONED requirement naming the newest operation they send that an older server does not have: today `setFlowCondition` and the formula validator behind an `expression` mapping. Both SHIP in 1.4.0.0; the floor is past .0 because .0 and .1 disagree with the platform's own pre-save gate on declared types and .2 is the first archive that agrees — a tightened VALIDATOR, not a new operation, is what moves this number. It is .3 rather than .2 because .3 carries a further round of review fixes over that agreement. An older server does not carry `setFlowCondition` at all, and it stores an `expression` mapping with NO validation, so the same call that is refused on a current environment silently persists a broken formula on an older one; presence alone cannot express either (the performer 1.3.1.1 floor and the 1.2.0.1 email floor set the precedent and are subsumed). This is the doc's rule applied ('add a literal in the commit where a command starts calling an operation an older server does not have'), and the bundled-archive guard asserts the shipped archive satisfies the literal, so it can never demand a version clio does not carry.")]
+        [Description("Create and Modify declare a VERSIONED requirement naming the newest operation they send that an older server does not have: today `setFlowCondition` and the formula validator behind an `expression` mapping. Both SHIP in 1.4.0.0, and the floor sits well past .0 for a reason that was MEASURED rather than inferred — an earlier revision of this description reasoned from the pre-save-gate disagreement to a floor of .3, which is a number that argument does not reach. Each archive cut on the branch was decompressed and grepped for the marker of each of the three refusals enumerated here: .0 and .1 disagree with the platform's own pre-save gate on declared types, .2 is the first archive that agrees, then the individual refusals arrive later — the activity-result guard and the unrecognised-family refusal on a NEW condition in .32, the platform-grammar element segment in .35. An older server does not carry `setFlowCondition` at all, and it stores an `expression` mapping with NO validation, so the same call that is refused on a current environment silently persists a broken formula on an older one; presence alone cannot express either (the performer 1.3.1.1 floor and the 1.2.0.1 email floor set the precedent and are subsumed). This is the doc's rule applied ('add a literal in the commit where a command starts calling an operation an older server does not have'), and the bundled-archive guard asserts the shipped archive satisfies the literal, so it can never demand a version clio does not carry.")]
         public void OptionsType_ShouldDeclareVersionedProcessBuilderRequirement_WhenTheCommandShipsVersionedOperations(
             Type optionsType)
         {
@@ -83,10 +83,20 @@ namespace Clio.Tests
                     + "validator ship from 1.4.0.0. setFlowCondition is an operation an older server does not carry "
                     + "AT ALL — its dispatch registry rejects the token, which reads to a caller as a clio bug "
                     + "rather than a stale environment. The formula validator is a TIGHTENED VALIDATOR, and that is "
-                    + "what moves the number past .0: 1.4.0.0 and .1 disagree with the platform's own pre-save gate "
-                    + "on declared types, .2 is the first archive that agrees, and .3 carries a further round of "
-                    + "fixes. An older server stores an 'expression' mapping unchecked, so the same call refused on "
-                    + "a current environment silently persists a broken formula on an older one. Convergence only WARNS; the literal is what fails CLOSED. This subsumes the earlier "
+                    + "what moves the number past .0. How far past is MEASURED, one archive at a time: .0 and .1 "
+                    + "disagree with the platform's own pre-save gate on declared types, .2 is the first that "
+                    + "agrees, the activity-result guard and the unrecognised-family refusal on a new condition "
+                    + "first ship in .32, and the platform-grammar element segment in .35 — so .35 is the lowest "
+                    + "version at which THOSE THREE happen. Not a sufficiency claim about every refusal the "
+                    + "descriptions promise, and deliberately not: the element-retarget refusal they also promise "
+                    + "had two holes still open at .35 and .36, closed in .37 (a dependency scan that failed OPEN "
+                    + "on a sub-process reference, and an element UId matched in D-form only), so the floor is "
+                    + "arguably .37 and that is tracked separately. The "
+                    + "pre-save-gate argument alone reaches only .2; if this assertion is failing because someone "
+                    + "lowered the attribute on that argument, the attribute is what is wrong. An older server "
+                    + "stores an 'expression' mapping unchecked, so the same call refused on a current environment "
+                    + "silently persists a broken formula on an older one. Convergence only WARNS; the literal is "
+                    + "what fails CLOSED. This subsumes the earlier "
                     + "1.3.1.1 performer floor and the 1.2.0.1 email floor. When the next versioned operation "
                     + "ships, move this pin WITH the rebundle in the same commit");
         }
