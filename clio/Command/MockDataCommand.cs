@@ -37,6 +37,9 @@ internal class MockDataCommand : RemoteCommand<MockDataCommandOptions>
 
 	private readonly IFileSystem _fileSystem;
 	private readonly IAbstractionsFileSystem _abstractionsFileSystem;
+	// sourceCode can be the full content of any file matched by a recursive *.* glob (e.g. minified
+	// bundles, generated code), so 5s (larger-content convention) rather than the usual 1s for short-string matches.
+	private static readonly TimeSpan RegexTimeout = TimeSpan.FromSeconds(5);
 
 	#endregion
 
@@ -106,7 +109,7 @@ internal class MockDataCommand : RemoteCommand<MockDataCommandOptions>
 	public static List<string> ExtractSchemaNames(string sourceCode){
 		List<string> schemaNames = new();
 		string pattern = @"\[Schema\(""([^""]+)""\)\]";
-		MatchCollection matches = Regex.Matches(sourceCode, pattern);
+		MatchCollection matches = Regex.Matches(sourceCode, pattern, RegexOptions.None, RegexTimeout);
 
 		foreach (Match match in matches) {
 			if (match.Groups.Count > 1) {

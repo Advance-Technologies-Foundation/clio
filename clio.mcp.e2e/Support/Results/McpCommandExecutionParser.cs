@@ -1,3 +1,4 @@
+using System;
 using System.Text.Json;
 using System.Text.RegularExpressions;
 using Clio.Command.McpServer.Tools;
@@ -7,6 +8,10 @@ using ModelContextProtocol.Protocol;
 namespace Clio.Mcp.E2E.Support.Results;
 
 internal static class McpCommandExecutionParser {
+	// textPayload can be a full clio-run command's stdout/stderr, so 5s (larger-content convention)
+	// rather than the usual 1s for short-string matches.
+	private static readonly TimeSpan RegexTimeout = TimeSpan.FromSeconds(5);
+
 	/// <summary>
 	/// Parses the <see cref="BusinessRuleBatchResponse"/> JSON envelope returned by the
 	/// create-entity/page-business-rules MCP tools. The tools deliver the structured
@@ -280,12 +285,12 @@ internal static class McpCommandExecutionParser {
 	}
 
 	private static bool TryExtractExitCode(string value, out int exitCode) {
-		Match jsonExitCode = Regex.Match(value, "\"exit-code\"\\s*:\\s*(\\d+)", RegexOptions.IgnoreCase);
+		Match jsonExitCode = Regex.Match(value, "\"exit-code\"\\s*:\\s*(\\d+)", RegexOptions.IgnoreCase, RegexTimeout);
 		if (jsonExitCode.Success && int.TryParse(jsonExitCode.Groups[1].Value, out exitCode)) {
 			return true;
 		}
 
-		Match textExitCode = Regex.Match(value, "ExitCode\\s*[=:]\\s*(\\d+)", RegexOptions.IgnoreCase);
+		Match textExitCode = Regex.Match(value, "ExitCode\\s*[=:]\\s*(\\d+)", RegexOptions.IgnoreCase, RegexTimeout);
 		if (textExitCode.Success && int.TryParse(textExitCode.Groups[1].Value, out exitCode)) {
 			return true;
 		}
