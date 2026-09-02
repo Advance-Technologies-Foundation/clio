@@ -44,8 +44,9 @@ public interface ICreatioApplicationClient : IApplicationClient {
 	/// <para>
 	/// Defaulted rather than abstract, for the same reason as <see cref="IApplicationClient.ExecutePutRequest"/>:
 	/// this contract has implementations outside this repository, and an abstract member breaks every one of
-	/// them at compile time. A transport that cannot stream says so at the call site, and the caller falls
-	/// back to the buffered path.
+	/// them at compile time. A transport that cannot stream says so at the call site, and the caller FAILS -
+	/// there is no buffered fallback, because reading an unbounded body into memory is the outcome the
+	/// ceiling exists to prevent.
 	/// </para>
 	/// </remarks>
 	Task<byte[]> ExecuteGetRequestBoundedAsync(string url, long maxBytes, int requestTimeout = 100_000,

@@ -28,14 +28,15 @@ public sealed class ODataReadToFileToolTests {
 		// Arrange
 		MockFileSystem fileSystem = new();
 		string outputFile = fileSystem.Path.Combine(fileSystem.Path.GetTempPath(), $"odata-read-{Guid.NewGuid():N}.json");
-		IApplicationClient client = Substitute.For<IApplicationClient>();
+		ICreatioApplicationClient client = Substitute.For<ICreatioApplicationClient>();
 		IServiceUrlBuilder urlBuilder = Substitute.For<IServiceUrlBuilder>();
 		IToolCommandResolver resolver = Substitute.For<IToolCommandResolver>();
 		resolver.Resolve<IApplicationClient>(Arg.Any<EnvironmentOptions>()).Returns(client);
 		resolver.Resolve<IServiceUrlBuilder>(Arg.Any<EnvironmentOptions>()).Returns(urlBuilder);
 		urlBuilder.Build(Arg.Any<string>()).Returns("http://creatio/odata/Contact?$top=25");
-		client.ExecuteGetRequest(Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
-			.Returns("{\"value\":[{\"Id\":\"1\",\"Name\":\"John\"},{\"Id\":\"2\",\"Name\":\"Jane\"}]}");
+		client.ExecuteGetRequestBoundedAsync(
+				Arg.Any<string>(), Arg.Any<long>(), Arg.Any<int>(), Arg.Any<CancellationToken>())
+			.Returns(Task.FromResult(Encoding.UTF8.GetBytes("{\"value\":[{\"Id\":\"1\",\"Name\":\"John\"},{\"Id\":\"2\",\"Name\":\"Jane\"}]}")));
 		ODataReadToFileTool tool = new(resolver, new ODataFileContract(fileSystem, new MockConfinedFileAccess(fileSystem)));
 
 		// Act
@@ -60,7 +61,7 @@ public sealed class ODataReadToFileToolTests {
 		MockFileSystem fileSystem = new();
 		string outputFile = fileSystem.Path.Combine(fileSystem.Path.GetTempPath(), $"odata-read-existing-{Guid.NewGuid():N}.json");
 		fileSystem.AddFile(outputFile, new MockFileData("{}", Encoding.UTF8));
-		IApplicationClient client = Substitute.For<IApplicationClient>();
+		ICreatioApplicationClient client = Substitute.For<ICreatioApplicationClient>();
 		IServiceUrlBuilder urlBuilder = Substitute.For<IServiceUrlBuilder>();
 		IToolCommandResolver resolver = Substitute.For<IToolCommandResolver>();
 		resolver.Resolve<IApplicationClient>(Arg.Any<EnvironmentOptions>()).Returns(client);
@@ -78,8 +79,8 @@ public sealed class ODataReadToFileToolTests {
 			because: "an explicit output-file is additive and must never overwrite an existing file");
 		response.Error.Should().Contain("already exists",
 			because: "the caller has to know to choose a different path");
-		client.DidNotReceive().ExecuteGetRequest(
-			Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>());
+		client.DidNotReceiveWithAnyArgs().ExecuteGetRequestBoundedAsync(default, default, default, default);
+		// because: a path that was already refused must not cost a full fetch first
 	}
 
 	[Test]
@@ -173,14 +174,15 @@ public sealed class ODataReadToFileToolTests {
 		// Arrange
 		MockFileSystem fileSystem = new();
 		string outputFile = fileSystem.Path.Combine(fileSystem.Path.GetTempPath(), $"odata-scalar-{Guid.NewGuid():N}.json");
-		IApplicationClient client = Substitute.For<IApplicationClient>();
+		ICreatioApplicationClient client = Substitute.For<ICreatioApplicationClient>();
 		IServiceUrlBuilder urlBuilder = Substitute.For<IServiceUrlBuilder>();
 		IToolCommandResolver resolver = Substitute.For<IToolCommandResolver>();
 		resolver.Resolve<IApplicationClient>(Arg.Any<EnvironmentOptions>()).Returns(client);
 		resolver.Resolve<IServiceUrlBuilder>(Arg.Any<EnvironmentOptions>()).Returns(urlBuilder);
 		urlBuilder.Build(Arg.Any<string>()).Returns("http://creatio/odata/Contact?$top=25");
-		client.ExecuteGetRequest(Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
-			.Returns(scalarBody);
+		client.ExecuteGetRequestBoundedAsync(
+				Arg.Any<string>(), Arg.Any<long>(), Arg.Any<int>(), Arg.Any<CancellationToken>())
+			.Returns(Task.FromResult(Encoding.UTF8.GetBytes(scalarBody)));
 		ODataReadToFileTool tool = new(resolver, new ODataFileContract(fileSystem, new MockConfinedFileAccess(fileSystem)));
 
 		// Act
@@ -204,14 +206,15 @@ public sealed class ODataReadToFileToolTests {
 		// Arrange
 		MockFileSystem fileSystem = new();
 		string outputFile = fileSystem.Path.Combine(fileSystem.Path.GetTempPath(), $"odata-paged-{Guid.NewGuid():N}.json");
-		IApplicationClient client = Substitute.For<IApplicationClient>();
+		ICreatioApplicationClient client = Substitute.For<ICreatioApplicationClient>();
 		IServiceUrlBuilder urlBuilder = Substitute.For<IServiceUrlBuilder>();
 		IToolCommandResolver resolver = Substitute.For<IToolCommandResolver>();
 		resolver.Resolve<IApplicationClient>(Arg.Any<EnvironmentOptions>()).Returns(client);
 		resolver.Resolve<IServiceUrlBuilder>(Arg.Any<EnvironmentOptions>()).Returns(urlBuilder);
 		urlBuilder.Build(Arg.Any<string>()).Returns("http://creatio/odata/Contact?$top=25");
-		client.ExecuteGetRequest(Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
-			.Returns("{\"@odata.count\":7,\"@odata.nextLink\":\"http://creatio/next\",\"value\":[{\"Id\":\"1\"}]}");
+		client.ExecuteGetRequestBoundedAsync(
+				Arg.Any<string>(), Arg.Any<long>(), Arg.Any<int>(), Arg.Any<CancellationToken>())
+			.Returns(Task.FromResult(Encoding.UTF8.GetBytes("{\"@odata.count\":7,\"@odata.nextLink\":\"http://creatio/next\",\"value\":[{\"Id\":\"1\"}]}")));
 		ODataReadToFileTool tool = new(resolver, new ODataFileContract(fileSystem, new MockConfinedFileAccess(fileSystem)));
 
 		// Act
@@ -234,14 +237,15 @@ public sealed class ODataReadToFileToolTests {
 		// Arrange
 		MockFileSystem fileSystem = new();
 		string outputFile = fileSystem.Path.Combine(fileSystem.Path.GetTempPath(), $"odata-nocount-{Guid.NewGuid():N}.json");
-		IApplicationClient client = Substitute.For<IApplicationClient>();
+		ICreatioApplicationClient client = Substitute.For<ICreatioApplicationClient>();
 		IServiceUrlBuilder urlBuilder = Substitute.For<IServiceUrlBuilder>();
 		IToolCommandResolver resolver = Substitute.For<IToolCommandResolver>();
 		resolver.Resolve<IApplicationClient>(Arg.Any<EnvironmentOptions>()).Returns(client);
 		resolver.Resolve<IServiceUrlBuilder>(Arg.Any<EnvironmentOptions>()).Returns(urlBuilder);
 		urlBuilder.Build(Arg.Any<string>()).Returns("http://creatio/odata/Contact?$top=25");
-		client.ExecuteGetRequest(Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
-			.Returns("{\"value\":[{\"Id\":\"1\"}]}");
+		client.ExecuteGetRequestBoundedAsync(
+				Arg.Any<string>(), Arg.Any<long>(), Arg.Any<int>(), Arg.Any<CancellationToken>())
+			.Returns(Task.FromResult(Encoding.UTF8.GetBytes("{\"value\":[{\"Id\":\"1\"}]}")));
 		ODataReadToFileTool tool = new(resolver, new ODataFileContract(fileSystem, new MockConfinedFileAccess(fileSystem)));
 
 		// Act
@@ -262,14 +266,15 @@ public sealed class ODataReadToFileToolTests {
 		// Arrange
 		MockFileSystem fileSystem = new();
 		string outputFile = fileSystem.Path.Combine(fileSystem.Path.GetTempPath(), $"odata-error-{Guid.NewGuid():N}.json");
-		IApplicationClient client = Substitute.For<IApplicationClient>();
+		ICreatioApplicationClient client = Substitute.For<ICreatioApplicationClient>();
 		IServiceUrlBuilder urlBuilder = Substitute.For<IServiceUrlBuilder>();
 		IToolCommandResolver resolver = Substitute.For<IToolCommandResolver>();
 		resolver.Resolve<IApplicationClient>(Arg.Any<EnvironmentOptions>()).Returns(client);
 		resolver.Resolve<IServiceUrlBuilder>(Arg.Any<EnvironmentOptions>()).Returns(urlBuilder);
 		urlBuilder.Build(Arg.Any<string>()).Returns("http://creatio/odata/Contact?$top=25");
-		client.ExecuteGetRequest(Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
-			.Returns("{\"error\":{\"code\":\"500\",\"message\":\"boom\"}}");
+		client.ExecuteGetRequestBoundedAsync(
+				Arg.Any<string>(), Arg.Any<long>(), Arg.Any<int>(), Arg.Any<CancellationToken>())
+			.Returns(Task.FromResult(Encoding.UTF8.GetBytes("{\"error\":{\"code\":\"500\",\"message\":\"boom\"}}")));
 		ODataReadToFileTool tool = new(resolver, new ODataFileContract(fileSystem, new MockConfinedFileAccess(fileSystem)));
 
 		// Act
@@ -358,14 +363,15 @@ public sealed class ODataReadToFileToolTests {
 		// Arrange
 		MockFileSystem fileSystem = new();
 		string outputFile = fileSystem.Path.Combine(fileSystem.Path.GetTempPath(), $"odata-query-{Guid.NewGuid():N}.json");
-		IApplicationClient client = Substitute.For<IApplicationClient>();
+		ICreatioApplicationClient client = Substitute.For<ICreatioApplicationClient>();
 		IServiceUrlBuilder urlBuilder = Substitute.For<IServiceUrlBuilder>();
 		IToolCommandResolver resolver = Substitute.For<IToolCommandResolver>();
 		resolver.Resolve<IApplicationClient>(Arg.Any<EnvironmentOptions>()).Returns(client);
 		resolver.Resolve<IServiceUrlBuilder>(Arg.Any<EnvironmentOptions>()).Returns(urlBuilder);
 		urlBuilder.Build(Arg.Any<string>()).Returns(call => $"http://creatio/{call.Arg<string>()}");
-		client.ExecuteGetRequest(Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
-			.Returns("{\"value\":[]}");
+		client.ExecuteGetRequestBoundedAsync(
+				Arg.Any<string>(), Arg.Any<long>(), Arg.Any<int>(), Arg.Any<CancellationToken>())
+			.Returns(Task.FromResult(Encoding.UTF8.GetBytes("{\"value\":[]}")));
 		ODataReadToFileTool tool = new(resolver, new ODataFileContract(fileSystem, new MockConfinedFileAccess(fileSystem)));
 		JsonElement nameValue = JsonDocument.Parse("\"John\"").RootElement.Clone();
 

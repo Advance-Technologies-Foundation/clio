@@ -31,7 +31,7 @@ internal sealed class WindowsConfinedFileAccess : IConfinedFileAccess {
 
 	/// <inheritdoc/>
 	public Stream OpenRead(string canonicalPath, long maxBytes) {
-		using PinnedPath pinned = PinnedPath.Descend(canonicalPath);
+		using PinnedPath pinned = PinnedPath.Descend(canonicalPath, createMissing: false);
 		// The final component is opened NO-FOLLOW and then judged on that very handle. Checking the pathname
 		// and reopening it by name is a different operation on a different object: a writable parent can
 		// replace the final component between the two, and the ordinary FileStream then follows the
@@ -155,11 +155,12 @@ internal sealed class WindowsConfinedFileAccess : IConfinedFileAccess {
 
 	/// <inheritdoc/>
 	public void WriteNew(string canonicalPath, byte[] content) {
-		string directory = Path.GetDirectoryName(canonicalPath);
-		if (!string.IsNullOrEmpty(directory) && !Directory.Exists(directory)) {
-			Directory.CreateDirectory(directory);
-		}
-		using PinnedPath pinned = PinnedPath.Descend(canonicalPath);
+		// Missing parents are created BY the descent, one level at a time, each after the level above it is
+		// already pinned. Directory.CreateDirectory used to run first, on the mutable absolute path: with two
+		// missing segments a local racer could replace the outer one with a reparse point and have the inner
+		// one created outside the allowed roots. The later descent refused the response file, but the
+		// out-of-root directory was already there and could not be taken back.
+		using PinnedPath pinned = PinnedPath.Descend(canonicalPath, createMissing: true);
 		string temporaryPath = $"{canonicalPath}.{Guid.NewGuid():N}.tmp";
 		try {
 			FileStreamOptions options = new() {
@@ -182,26 +183,6 @@ internal sealed class WindowsConfinedFileAccess : IConfinedFileAccess {
 		catch {
 			DeleteQuietly(temporaryPath);
 			throw;
-		}
-	}
-
-	private static void RejectReparsePoint(string path) {
-		if (IsReparsePoint(path)) {
-			throw new IOException(
-				$"'{path}' is a reparse point; the path changed after it was approved, refusing to continue.");
-		}
-	}
-
-	private static bool IsReparsePoint(string path) {
-		try {
-			FileAttributes attributes = File.GetAttributes(path);
-			return (attributes & FileAttributes.ReparsePoint) != 0;
-		}
-		catch (FileNotFoundException) {
-			return false;
-		}
-		catch (DirectoryNotFoundException) {
-			return false;
 		}
 	}
 
@@ -239,13 +220,47 @@ internal sealed class WindowsConfinedFileAccess : IConfinedFileAccess {
 			_components = components;
 		}
 
+		// Lives here rather than on the outer type: the pathname reparse-point check is only ever a step of
+		// the descent, and only the descent knows which components it has pinned.
+		private static void RejectReparsePoint(string path) {
+			if (IsReparsePoint(path)) {
+				throw new IOException(
+					$"'{path}' is a reparse point; the path changed after it was approved, refusing to continue.");
+			}
+		}
+
+		private static bool IsReparsePoint(string path) {
+			try {
+				FileAttributes attributes = File.GetAttributes(path);
+				return (attributes & FileAttributes.ReparsePoint) != 0;
+			}
+			catch (FileNotFoundException) {
+				return false;
+			}
+			catch (DirectoryNotFoundException) {
+				return false;
+			}
+		}
+
 		/// <summary>Checks and pins every directory component of <paramref name="canonicalPath"/>.</summary>
 		/// <param name="canonicalPath">Absolute canonical path.</param>
-		internal static PinnedPath Descend(string canonicalPath) {
+		/// <param name="createMissing">
+		/// Whether a component that does not exist is created here, after its own parent has been pinned,
+		/// instead of failing the descent. Only a write asks for this; a read refuses a missing parent.
+		/// </param>
+		internal static PinnedPath Descend(string canonicalPath, bool createMissing) {
 			List<string> components = AncestorsOf(canonicalPath);
 			List<SafeFileHandle> handles = [];
 			try {
 				foreach (string component in components) {
+					// Creating happens INSIDE the loop, so the parent of every new directory is already
+					// held by a handle taken without FILE_SHARE_DELETE - it cannot be renamed or replaced,
+					// which is what would otherwise redirect where the child lands. The reparse-point check
+					// below still runs on the result, so a component that was created by someone else in
+					// the meantime is judged exactly like a pre-existing one.
+					if (createMissing && !Directory.Exists(component)) {
+						CreateDirectoryComponent(component);
+					}
 					// Runs for EVERY component and is never skipped: this is the check that catches a link
 					// planted before the operation began.
 					RejectReparsePoint(component);
@@ -271,6 +286,19 @@ internal sealed class WindowsConfinedFileAccess : IConfinedFileAccess {
 		public void Dispose() {
 			foreach (SafeFileHandle handle in _handles) {
 				handle.Dispose();
+			}
+		}
+
+		// One level only, never a recursive create: the levels above are pinned by the time this runs, and a
+		// recursive create would build them from the pathname instead. An already-existing directory is not
+		// a failure - a concurrent writer may have created the same component first - and the reparse-point
+		// check on the caller's side is what decides whether the result is acceptable.
+		private static void CreateDirectoryComponent(string component) {
+			try {
+				Directory.CreateDirectory(component);
+			}
+			catch (IOException) when (Directory.Exists(component)) {
+				// Lost the race to create it; the check that follows judges what is actually there.
 			}
 		}
 

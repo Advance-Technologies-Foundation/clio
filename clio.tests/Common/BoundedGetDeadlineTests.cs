@@ -28,6 +28,12 @@ internal sealed class BoundedGetDeadlineTests {
 	private const int DeadlineMs = 500;
 	private const long Ceiling = 64L * 1024 * 1024;
 
+	// A safety net on the CALLER side, an order of magnitude above the production deadline. Without the
+	// linked deadline the stalled body would never return, and the regression would be a CI job hang rather
+	// than a failure; with this token it surfaces as caller cancellation and the TimeoutException assertion
+	// fails promptly. It must never be the thing that ends a passing run - hence the wide margin.
+	private const int CallerSafetyMs = 10_000;
+
 	private HttpListener _listener;
 	private string _prefix;
 	private CancellationTokenSource _stall;
@@ -61,11 +67,12 @@ internal sealed class BoundedGetDeadlineTests {
 		// Arrange
 		Task serve = ServeHeadersThenStallAsync();
 		using CreatioClientAdapter adapter = CookieAuthenticatedAdapter();
+		using CancellationTokenSource callerSafety = new(CallerSafetyMs);
 		Stopwatch elapsed = Stopwatch.StartNew();
 
 		// Act
 		Func<Task> read = () => adapter.ExecuteGetRequestBoundedAsync(
-			_prefix + "odata/Contact", Ceiling, DeadlineMs, CancellationToken.None);
+			_prefix + "odata/Contact", Ceiling, DeadlineMs, callerSafety.Token);
 
 		// Assert
 		read.Should().ThrowAsync<TimeoutException>(
@@ -105,25 +112,31 @@ internal sealed class BoundedGetDeadlineTests {
 
 	[Test]
 	[Category("Integration")]
-	[Description("A client with no session cookies is declined instead of being sent through a form login, which is what broke OAuth/bearer environments before the OData GET was ever issued.")]
-	public void BoundedGet_ShouldDecline_WhenTheClientHasNoSessionCookies() {
-		// Arrange
-		// No listener handler is started on purpose: the assertion is that nothing is sent at all.
+	[Description("A client with no exported session cookies still issues the request through the configured transport, instead of being declined and pushed onto an unbounded buffered fallback.")]
+	public void BoundedGet_ShouldUseTheConfiguredTransport_WhenTheClientHasNoSessionCookies() {
+		// Arrange - no cookies are imported, which is the permanent state of an OAuth/bearer client. The
+		// listener answers the headers and then stalls, so the only way the assertion below can be reached
+		// is if the request was actually sent.
+		Task serve = ServeHeadersThenStallAsync();
 		CreatioClient client = new(_prefix.TrimEnd('/'), "user", "password", true, true);
 		using CreatioClientAdapter adapter = new(client);
+		using CancellationTokenSource callerSafety = new(CallerSafetyMs);
 
 		// Act
 		Func<Task> read = () => adapter.ExecuteGetRequestBoundedAsync(
-			_prefix + "odata/Contact", Ceiling, DeadlineMs, CancellationToken.None);
+			_prefix + "odata/Contact", Ceiling, DeadlineMs, callerSafety.Token);
 
 		// Assert
-		// NotSupportedException specifically, because that is the value the caller's fallback is written
-		// against: ODataReadToFileTool catches it and reissues the request through the buffered, fully
-		// configured transport. Any other exception type would surface as a failed tool call instead.
-		read.Should().ThrowAsync<NotSupportedException>(
-				because: "authenticating here would be a second authentication path, and on a bearer client the "
-					+ "only login it could reach is the form login, which fails")
+		// The earlier implementation threw NotSupportedException here without sending anything, and
+		// ODataReadToFileTool caught it and reissued the request through the fully buffered path - which
+		// defeats the byte ceiling on exactly the environments that cannot use cookies. Reaching the
+		// deadline instead proves the request went out on the configured, authenticated client.
+		read.Should().ThrowAsync<TimeoutException>(
+				because: "file mode has no buffered fallback any more, so a cookie-less client must be able to "
+					+ "stream through the transport it is configured with")
 			.GetAwaiter().GetResult();
+		_stall.Cancel();
+		WaitQuietly(serve);
 	}
 
 	// Cookies are imported rather than obtained by logging in: the deadline is a property of the streamed GET,

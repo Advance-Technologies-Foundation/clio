@@ -2,7 +2,6 @@ using System;
 using System.Collections.Generic;
 using System.ComponentModel;
 using System.ComponentModel.DataAnnotations;
-using System.Text;
 using System.Text.Json.Serialization;
 using System.Threading;
 using Clio.Common;
@@ -136,10 +135,11 @@ public sealed class ODataReadToFileTool(IToolCommandResolver commandResolver, IO
 	/// <param name="responseUtf8">Response body when the method returns <see langword="true"/>.</param>
 	/// <param name="error">Caller-facing error when the method returns <see langword="false"/>.</param>
 	/// <remarks>
-	/// The streaming path needs the transport-level client, which pulls the body incrementally and abandons
-	/// the transfer at the ceiling. A client that does not offer it still works through the buffered call -
-	/// the ceiling is then applied to a body already in memory, which is strictly weaker, and is why the
-	/// streamed path is preferred whenever it exists.
+	/// The ceiling is only a ceiling while the body is still arriving, so file mode REQUIRES the transport
+	/// level client that pulls the body incrementally and abandons the transfer once the limit is passed.
+	/// There is deliberately no buffered fallback: applying the limit to a body already fully in memory
+	/// measures an allocation the long-lived MCP process has already made, which is the failure the limit
+	/// exists to prevent. A client without the streamed call fails explicitly instead.
 	/// </remarks>
 	private static bool TryFetch(
 		IApplicationClient client,
@@ -149,15 +149,19 @@ public sealed class ODataReadToFileTool(IToolCommandResolver commandResolver, IO
 		out string error) {
 		responseUtf8 = null;
 		error = null;
+		if (client is not ICreatioApplicationClient streamingClient) {
+			error = "This environment's client cannot stream a bounded response, and file mode will not read "
+				+ "an unbounded one into memory. Use odata-read without output-file, narrowed with select and "
+				+ "top.";
+			return false;
+		}
 		try {
-			if (client is ICreatioApplicationClient streamingClient) {
-				responseUtf8 = streamingClient
-					.ExecuteGetRequestBoundedAsync(
-						url, ODataFileContract.MaxResponseBytes, RequestTimeoutMs, cancellationToken)
-					.GetAwaiter()
-					.GetResult();
-				return true;
-			}
+			responseUtf8 = streamingClient
+				.ExecuteGetRequestBoundedAsync(
+					url, ODataFileContract.MaxResponseBytes, RequestTimeoutMs, cancellationToken)
+				.GetAwaiter()
+				.GetResult();
+			return true;
 		} catch (ResponseTooLargeException tooLarge) {
 			error = DescribeTooLarge(tooLarge.ObservedBytes);
 			return false;
@@ -167,17 +171,13 @@ public sealed class ODataReadToFileTool(IToolCommandResolver commandResolver, IO
 			// an exception escape the tool boundary; retrying the buffered path would just stall again.
 			error = timeout.Message;
 			return false;
-		} catch (NotSupportedException) {
-			// The transport cannot stream; fall through to the buffered path below.
-		}
-		cancellationToken.ThrowIfCancellationRequested();
-		string buffered = client.ExecuteGetRequest(url, RequestTimeoutMs);
-		if (buffered is not null && (long)buffered.Length * sizeof(char) > ODataFileContract.MaxResponseBytes) {
-			error = DescribeTooLarge((long)buffered.Length * sizeof(char));
+		} catch (NotSupportedException notSupported) {
+			// The streamed GET declining is now a hard failure rather than a hand-off: the buffered path it
+			// used to fall through to defeats the ceiling, so the caller is told the request cannot be
+			// bounded instead of having it silently read into memory.
+			error = notSupported.Message;
 			return false;
 		}
-		responseUtf8 = Encoding.UTF8.GetBytes(buffered ?? string.Empty);
-		return true;
 	}
 
 	private static string DescribeTooLarge(long observedBytes) =>

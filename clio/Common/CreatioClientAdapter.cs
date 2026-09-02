@@ -214,36 +214,14 @@ public class CreatioClientAdapter : IOwnedApplicationClient {
 	/// <inheritdoc />
 	public async Task<byte[]> ExecuteGetRequestBoundedAsync(string url, long maxBytes,
 		int requestTimeout = 100_000, CancellationToken cancellationToken = default) {
-		// This path borrows an EXISTING cookie session and never authenticates on its own. Logging in here
-		// would be a second authentication path: on an OAuth/bearer client there are no cookies to export, so
-		// the login it reached for was the FORM login, which fails with CreatioLoginFailedException before the
-		// OData GET is ever sent. Declining instead sends the caller to the buffered path, which goes through
-		// the configured transport and therefore supports every authentication mode.
-		IReadOnlyList<CreatioSessionCookie> cookies = ExportSessionCookies();
-		if (cookies.Count == 0) {
-			throw new NotSupportedException(
-				"the streamed GET needs an established cookie session and does not authenticate on its own; "
-				+ "this client has no session cookies (an OAuth/bearer client never will). Use the buffered "
-				+ "request path for this environment.");
-		}
-		CookieContainer jar = new();
-		foreach (CreatioSessionCookie cookie in cookies) {
-			jar.Add(new Cookie(
-				cookie.Name,
-				cookie.Value,
-				string.IsNullOrEmpty(cookie.Path) ? "/" : cookie.Path,
-				cookie.Domain) {
-				Secure = cookie.Secure,
-				HttpOnly = cookie.HttpOnly
-			});
-		}
-		using HttpClientHandler handler = new() { CookieContainer = jar, UseCookies = true };
-		using HttpClient http = new(handler, disposeHandler: false) {
-			// HttpClient.Timeout governs the operation only up to the point ResponseHeadersRead returns, so it
-			// cannot be the deadline here; the linked token below is. It stays set so a stall BEFORE headers is
-			// still cut off by the transport itself.
-			Timeout = requestTimeout > 0 ? TimeSpan.FromMilliseconds(requestTimeout) : System.Threading.Timeout.InfiniteTimeSpan
-		};
+		// The transfer runs through the ONE configured, authenticated client. CreatioClient.DownloadFileByGetAsync
+		// issues its request with HttpCompletionOption.ResponseHeadersRead and copies the body incrementally to
+		// disk, so it streams exactly like a hand-built transport would - while keeping everything a parallel
+		// stack loses: the OAuth/bearer token, the configured certificate-validation policy (useUntrustedSsl is
+		// held by the client, never by this adapter) and the session-recovery retry. The earlier version
+		// borrowed cookies into a fresh HttpClientHandler, which dropped all three and worked for cookie
+		// sessions only.
+		string scratch = Path.Combine(Path.GetTempPath(), $"clio-bounded-{Guid.NewGuid():N}.tmp");
 		// One deadline across send, stream acquisition and EVERY body read. With ResponseHeadersRead a server
 		// can answer the headers in milliseconds and then withhold the body forever: the reads would then be
 		// governed by the caller token alone, and MCP host cancellation is not guaranteed to arrive, so the
@@ -252,35 +230,28 @@ public class CreatioClientAdapter : IOwnedApplicationClient {
 		if (requestTimeout > 0) {
 			deadline.CancelAfter(requestTimeout);
 		}
-		CancellationToken bounded = deadline.Token;
+		// The ceiling is enforced WHILE the body arrives. The download exposes no per-chunk hook, so the growing
+		// scratch file is watched and the transfer is cancelled the moment it passes the limit: the body is never
+		// held in memory, and the file cannot outgrow the ceiling by more than one poll interval.
+		long observedBytes = 0;
+		using CancellationTokenSource watchStop = new();
+		Task watcher = WatchScratchSizeAsync(scratch, maxBytes, deadline, watchStop.Token,
+			observed => Interlocked.Exchange(ref observedBytes, observed));
 		try {
-			using HttpRequestMessage request = new(HttpMethod.Get, url);
-			// ResponseHeadersRead is the whole point: the default completes only after the entire body has been
-			// buffered, so a ceiling checked afterwards has already lost. Here the body is pulled incrementally
-			// and the response is disposed as soon as the limit is passed, which drops the connection and stops
-			// the server sending the rest.
-			using HttpResponseMessage response = await http
-				.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, bounded)
-				.ConfigureAwait(false);
-			if (response.Content.Headers.ContentLength is { } declared && declared > maxBytes) {
-				throw new ResponseTooLargeException(declared, maxBytes);
+			await Client.DownloadFileByGetAsync(url, scratch, requestTimeout, deadline.Token).ConfigureAwait(false);
+			watchStop.Cancel();
+			await watcher.ConfigureAwait(false);
+			long finalLength = File.Exists(scratch) ? new FileInfo(scratch).Length : 0;
+			long observed = Math.Max(Interlocked.Read(ref observedBytes), finalLength);
+			if (observed > maxBytes) {
+				throw new ResponseTooLargeException(observed, maxBytes);
 			}
-			using Stream body = await response.Content.ReadAsStreamAsync(bounded).ConfigureAwait(false);
-			using MemoryStream buffer = new();
-			byte[] chunk = new byte[StreamChunkBytes];
-			long total = 0;
-			while (true) {
-				int read = await body.ReadAsync(chunk.AsMemory(0, chunk.Length), bounded).ConfigureAwait(false);
-				if (read == 0) {
-					break;
-				}
-				total += read;
-				if (total > maxBytes) {
-					throw new ResponseTooLargeException(total, maxBytes);
-				}
-				await buffer.WriteAsync(chunk.AsMemory(0, read), bounded).ConfigureAwait(false);
-			}
-			return buffer.ToArray();
+			return await File.ReadAllBytesAsync(scratch, cancellationToken).ConfigureAwait(false);
+		}
+		// The ceiling trips the same source the deadline does, so the oversize case is separated FIRST -
+		// otherwise an abandoned oversized transfer would be reported as a timeout.
+		catch (OperationCanceledException) when (Interlocked.Read(ref observedBytes) > maxBytes) {
+			throw new ResponseTooLargeException(Interlocked.Read(ref observedBytes), maxBytes);
 		}
 		// Deadline expiry and caller cancellation arrive as the SAME exception type from the linked source, and
 		// they mean different things to the caller: one is the server failing to deliver in time (retryable,
@@ -293,9 +264,56 @@ public class CreatioClientAdapter : IOwnedApplicationClient {
 				+ "have arrived while the body stalled; narrow the query with 'select' or 'top', or raise the "
 				+ "request timeout.");
 		}
+		finally {
+			watchStop.Cancel();
+			DeleteScratchQuietly(scratch);
+		}
 	}
 
-	private const int StreamChunkBytes = 64 * 1024;
+	// Polls the partially written scratch file and trips the shared deadline source once it passes the ceiling,
+	// so an oversized body is abandoned mid-transfer instead of being measured after it has all arrived.
+	private static async Task WatchScratchSizeAsync(string path, long maxBytes, CancellationTokenSource abort,
+		CancellationToken stop, Action<long> report) {
+		try {
+			while (!stop.IsCancellationRequested) {
+				await Task.Delay(ScratchPollInterval, stop).ConfigureAwait(false);
+				long length;
+				try {
+					if (!File.Exists(path)) {
+						continue;
+					}
+					length = new FileInfo(path).Length;
+				}
+				catch (IOException) {
+					continue;
+				}
+				if (length > maxBytes) {
+					report(length);
+					abort.Cancel();
+					return;
+				}
+			}
+		}
+		catch (OperationCanceledException) {
+			// The ordinary end of the watch: the download finished, or the caller went away.
+		}
+	}
+
+	private static void DeleteScratchQuietly(string path) {
+		try {
+			if (File.Exists(path)) {
+				File.Delete(path);
+			}
+		}
+		catch (IOException) {
+			// A leftover scratch file is not worth replacing the real failure with a second exception.
+		}
+		catch (UnauthorizedAccessException) {
+			// Same reasoning as above.
+		}
+	}
+
+	private static readonly TimeSpan ScratchPollInterval = TimeSpan.FromMilliseconds(25);
 
 	public string ExecutePostRequest(string url, string requestData, int requestTimeout = Timeout.Infinite,
 		int maxAttempts = 1, int delaySec = 1) {

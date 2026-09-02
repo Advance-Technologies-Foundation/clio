@@ -21,7 +21,7 @@ internal sealed class UnixConfinedFileAccess : IConfinedFileAccess {
 
 	/// <inheritdoc/>
 	public Stream OpenRead(string canonicalPath, long maxBytes) {
-		using DirectoryDescriptor directory = OpenParent(canonicalPath, out string fileName);
+		using DirectoryDescriptor directory = OpenParent(canonicalPath, out string fileName, createMissing: false);
 		int fd = Interop.OpenAt(directory.Value, fileName, Flags.ReadOnly | Flags.NoFollow | Flags.CloseOnExec);
 		if (fd < 0) {
 			throw LastError(canonicalPath, "open");
@@ -39,11 +39,12 @@ internal sealed class UnixConfinedFileAccess : IConfinedFileAccess {
 
 	/// <inheritdoc/>
 	public void WriteNew(string canonicalPath, byte[] content) {
-		string directoryPath = Path.GetDirectoryName(canonicalPath);
-		if (!string.IsNullOrEmpty(directoryPath) && !Directory.Exists(directoryPath)) {
-			Directory.CreateDirectory(directoryPath);
-		}
-		using DirectoryDescriptor directory = OpenParent(canonicalPath, out string fileName);
+		// Missing parents are created BY the descent, each one relative to the descriptor of the directory
+		// above it. Directory.CreateDirectory used to run first, on the mutable absolute path: with two
+		// missing segments a local racer could replace the outer one with a symlink and have the inner one
+		// created outside the allowed roots. The later descent refused the response file, but the
+		// out-of-root directory was already there and could not be taken back.
+		using DirectoryDescriptor directory = OpenParent(canonicalPath, out string fileName, createMissing: true);
 		// The content is completed in a sibling temporary file and only then given its final name, both
 		// created and renamed RELATIVE TO THE SAME directory descriptor. Writing straight into the final
 		// path left a truncated file behind whenever the write failed part-way, with the call reported as
@@ -98,8 +99,12 @@ internal sealed class UnixConfinedFileAccess : IConfinedFileAccess {
 	/// <summary>Opens the parent directory of <paramref name="canonicalPath"/> component by component.</summary>
 	/// <param name="canonicalPath">Absolute canonical path.</param>
 	/// <param name="fileName">The final path component.</param>
+	/// <param name="createMissing">
+	/// Whether a component that does not exist is created relative to the descriptor already held, instead
+	/// of failing the descent. Only a write asks for this; a read refuses a missing parent.
+	/// </param>
 	/// <returns>A descriptor on the parent directory, owned by the caller.</returns>
-	private static DirectoryDescriptor OpenParent(string canonicalPath, out string fileName) {
+	private static DirectoryDescriptor OpenParent(string canonicalPath, out string fileName, bool createMissing) {
 		fileName = Path.GetFileName(canonicalPath);
 		if (string.IsNullOrEmpty(fileName)) {
 			throw new IOException($"'{canonicalPath}' does not name a file.");
@@ -111,8 +116,18 @@ internal sealed class UnixConfinedFileAccess : IConfinedFileAccess {
 		DirectoryDescriptor current = new(rootFd);
 		try {
 			foreach (string component in DirectoryComponents(canonicalPath)) {
-				int next = Interop.OpenAt(
-					current.Value, component, Flags.ReadOnly | Flags.Directory | Flags.NoFollow | Flags.CloseOnExec);
+				int next = OpenComponent(current.Value, component);
+				if (next < 0 && createMissing && Marshal.GetLastWin32Error() == NoSuchEntry) {
+					// mkdirat, so the new directory lands inside the directory whose identity is already
+					// fixed by the descriptor - there is no name for a racer to redirect. EEXIST means
+					// another writer created the same component first, which is fine: the reopen below
+					// still has to prove it is a real directory and not a symbolic link.
+					if (Interop.MkdirAt(current.Value, component, OwnerAll) != 0
+							&& Marshal.GetLastWin32Error() != FileAlreadyExists) {
+						throw LastError(canonicalPath, $"create '{component}' in");
+					}
+					next = OpenComponent(current.Value, component);
+				}
 				if (next < 0) {
 					// ELOOP is the interesting one: the component IS a symbolic link, which on an already
 					// canonical path means it was replaced after the path was approved.
@@ -128,6 +143,9 @@ internal sealed class UnixConfinedFileAccess : IConfinedFileAccess {
 			current.Dispose();
 		}
 	}
+
+	private static int OpenComponent(int directoryFd, string component) => Interop.OpenAt(
+		directoryFd, component, Flags.ReadOnly | Flags.Directory | Flags.NoFollow | Flags.CloseOnExec);
 
 	/// <summary>The directory components of an absolute path, outermost first.</summary>
 	/// <param name="canonicalPath">Absolute canonical path.</param>
@@ -157,6 +175,13 @@ internal sealed class UnixConfinedFileAccess : IConfinedFileAccess {
 	private const int NotDirectory = 20;
 
 	private const int OwnerReadWrite = 0x180; // 0600
+
+	// 0700 for a directory clio creates itself: it has to be traversable to reach the file inside it, and
+	// the file is already owner-only, so widening the directory would only widen who can list the name.
+	private const int OwnerAll = 0x1C0;
+
+	// ENOENT - the component does not exist yet; the only errno a write is allowed to create through.
+	private const int NoSuchEntry = 2;
 
 	/// <summary>
 	/// An open directory file descriptor. Kept as a raw descriptor rather than a <c>SafeFileHandle</c>
@@ -231,6 +256,12 @@ internal sealed class UnixConfinedFileAccess : IConfinedFileAccess {
 
 		[DllImport("libc", EntryPoint = "openat", SetLastError = true)]
 		internal static extern int OpenAt(int dirFd, string path, int flags);
+
+		// mkdirat is NOT variadic - `int mkdirat(int, const char *, mode_t)` - so the mode is an ordinary
+		// third parameter here, unlike openat above. mode_t is 16-bit on Darwin and 32-bit on Linux; 0700
+		// fits either, and the callee reads only the low bits it declares.
+		[DllImport("libc", EntryPoint = "mkdirat", SetLastError = true)]
+		internal static extern int MkdirAt(int dirFd, string path, int mode);
 
 		[DllImport("libc", EntryPoint = "fchmod", SetLastError = true)]
 		internal static extern int FChmod(int fd, int mode);

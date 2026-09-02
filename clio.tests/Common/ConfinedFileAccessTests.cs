@@ -257,6 +257,35 @@ public sealed class ConfinedFileAccessTests {
 
 	[Test]
 	[Category("Integration")]
+	[Description("Creates missing parents relative to the pinned descent, so a symbolic link at the OUTER missing segment cannot make the inner one land outside the allowed roots.")]
+	public void WriteNew_ShouldNotCreateADirectory_OutsideTheRoots_WhenAnOuterMissingSegmentIsALink() {
+		// Arrange - two missing segments, the outer one a symbolic link pointing elsewhere. This is the case
+		// a single pre-descent Directory.CreateDirectory got wrong: it ran on the mutable absolute path and
+		// followed the link, creating the inner directory at the target. The later descent then refused the
+		// response file, but the out-of-root directory was already there.
+		string outsideDirectory = Path.Combine(_sandbox, "outside");
+		Directory.CreateDirectory(outsideDirectory);
+		string linked = Path.Combine(_sandbox, "linked");
+		try {
+			Directory.CreateSymbolicLink(linked, "outside");
+		}
+		catch (Exception ex) when (ex is UnauthorizedAccessException or IOException or PlatformNotSupportedException) {
+			Assert.Ignore("Symbolic-link creation is unavailable in this environment.");
+		}
+
+		// Act
+		Action write = () => _access.WriteNew(
+			Path.Combine(linked, "inner", "out.json"), Encoding.UTF8.GetBytes("{}"));
+
+		// Assert
+		write.Should().Throw<IOException>(
+			because: "a symbolic link in the path is refused whether the components past it exist or not");
+		Directory.Exists(Path.Combine(outsideDirectory, "inner")).Should().BeFalse(
+			because: "a refused write must not leave a directory it created outside the allowed roots, and a directory created through a link cannot be taken back");
+	}
+
+	[Test]
+	[Category("Integration")]
 	[Description("Leaves no file and no temporary sibling when the content cannot be written, so a failed write is retryable rather than blocked by its own wreckage.")]
 	public void WriteNew_ShouldLeaveNothing_WhenTheTargetDirectoryDisappears() {
 		// Arrange
