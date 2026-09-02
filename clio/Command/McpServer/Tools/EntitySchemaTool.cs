@@ -1225,47 +1225,27 @@ public sealed record SetEntitySchemaPropertiesArgs(
 /// This record intentionally does not extend <see cref="EntitySchemaTargetArgsBase"/> because that base marks
 /// <c>package-name</c> as required.
 /// </remarks>
-public sealed record GetEntitySchemaColumnPropertiesArgs {
-	/// <summary>Creatio environment name.</summary>
-	[JsonPropertyName("environment-name")]
-	[Description(McpToolDescriptions.EnvironmentName)]
-	[Required]
-	public string EnvironmentName { get; init; } = string.Empty;
+public sealed record GetEntitySchemaColumnPropertiesArgs(
+	[property: JsonPropertyName("environment-name")]
+	[property: Description(McpToolDescriptions.EnvironmentName)]
+	[property: Required]
+	string EnvironmentName,
 
-	/// <summary>Optional package scope; <c>null</c> selects merged runtime discovery.</summary>
-	[JsonPropertyName("package-name")]
-	[Description("Optional target package name. Omit for merged runtime discovery across all packages; "
+	[property: JsonPropertyName("package-name")]
+	[property: Description("Optional target package name. Omit for merged runtime discovery across all packages; "
 		+ "supply it for authoritative package-layer metadata.")]
-	public string? PackageName { get; init; }
+	string? PackageName = null,
 
-	/// <summary>Entity schema name.</summary>
-	[JsonPropertyName("schema-name")]
-	[Description("Entity schema name")]
-	[Required]
-	public string SchemaName { get; init; } = string.Empty;
+	[property: JsonPropertyName("schema-name")]
+	[property: Description("Entity schema name")]
+	[property: Required]
+	string SchemaName = "",
 
-	/// <summary>Column name.</summary>
-	[JsonPropertyName("column-name")]
-	[Description("Column name")]
-	[Required]
-	public string ColumnName { get; init; } = string.Empty;
-
-	/// <summary>Creates an empty argument object for serializers.</summary>
-	public GetEntitySchemaColumnPropertiesArgs() { }
-
-	/// <summary>Creates arguments while preserving the legacy public positional order.</summary>
-	/// <param name="environmentName">Creatio environment name.</param>
-	/// <param name="packageName">Optional package name.</param>
-	/// <param name="schemaName">Entity schema name.</param>
-	/// <param name="columnName">Column name.</param>
-	public GetEntitySchemaColumnPropertiesArgs(
-		string environmentName, string? packageName, string schemaName, string columnName) {
-		EnvironmentName = environmentName;
-		PackageName = packageName;
-		SchemaName = schemaName;
-		ColumnName = columnName;
-	}
-}
+	[property: JsonPropertyName("column-name")]
+	[property: Description("Column name")]
+	[property: Required]
+	string ColumnName = ""
+);
 
 /// <summary>
 /// Arguments for the <c>modify-entity-schema-column</c> MCP tool.
