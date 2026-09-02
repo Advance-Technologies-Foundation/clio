@@ -1,4 +1,4 @@
-using System.Linq;
+﻿using System.Linq;
 using System.Net.Http;
 using System.Text.Json;
 using Clio.Command.McpServer.Tools;
@@ -204,7 +204,7 @@ public sealed class ODataCreateToolTests {
 		response.Created.Should().Be(0, because: "no record was created against an unregistered entity set");
 		response.Results.Single().Success.Should().BeFalse(because: "a {Message, MessageDetail} routing body must never be reported as a successful create");
 		response.Results.Single().Error.Should().Contain("controller named 'UsrCustomerStatus'", because: "the MessageDetail identifies the unregistered controller");
-		response.Results.Single().Error.Should().Contain(ODataResponseError.UnregisteredEntityHint, because: "the create path funnels through the same shared TryDetect and must surface the identical hint (asserted via the constant to avoid drift)");
+		response.Results.Single().Error.Should().Contain(CreatioResponseError.UnregisteredEntityHint, because: "the create path funnels through the same shared TryDetect and must surface the identical hint (asserted via the constant to avoid drift)");
 		response.Results.Single().Id.Should().BeNull(because: "no record was created against an unregistered entity set");
 	}
 
@@ -232,7 +232,7 @@ public sealed class ODataCreateToolTests {
 		response.Failed.Should().Be(1, because: "a bare {Message} body is an error, not a created record");
 		response.Results.Single().Success.Should().BeFalse(because: "a bare {Message} body with no entity members is not a successful create");
 		response.Results.Single().Error.Should().Contain("Authorization has been denied", because: "the Message text is surfaced verbatim");
-		response.Results.Single().Error.Should().NotContain(ODataResponseError.UnregisteredEntityHint, because: "without MessageDetail the failure is not identifiable as a routing error, so the registration hint must not be appended");
+		response.Results.Single().Error.Should().NotContain(CreatioResponseError.UnregisteredEntityHint, because: "without MessageDetail the failure is not identifiable as a routing error, so the registration hint must not be appended");
 	}
 
 	[Test]
@@ -259,6 +259,89 @@ public sealed class ODataCreateToolTests {
 		response.Created.Should().Be(1, because: "a create echo carrying @odata.context + Id is a real created record, even with a Message column");
 		response.Results.Single().Success.Should().BeTrue(because: "the routing-error detection must not swallow a genuine created-record echo");
 		response.Results.Single().Id.Should().Be("22222222-2222-2222-2222-222222222222", because: "the created record's Id must be surfaced");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("A created-record echo carrying a business Success=false column is still a successful create: the BaseResponse detector belongs to Creatio's service envelopes and must not run against an OData body, where Success is an ordinary entity column and the write has already happened.")]
+	public void Create_Should_Not_Misclassify_Created_Entity_With_Success_Column() {
+		// Arrange
+		IApplicationClient client = Substitute.For<IApplicationClient>();
+		IServiceUrlBuilder urlBuilder = Substitute.For<IServiceUrlBuilder>();
+		IToolCommandResolver resolver = Substitute.For<IToolCommandResolver>();
+		resolver.Resolve<IApplicationClient>(Arg.Any<EnvironmentOptions>()).Returns(client);
+		resolver.Resolve<IServiceUrlBuilder>(Arg.Any<EnvironmentOptions>()).Returns(urlBuilder);
+		urlBuilder.Build(Arg.Any<string>()).Returns("http://creatio/odata/UsrIntegrationLog");
+		client.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+			.Returns("{\"@odata.context\":\"http://creatio/odata/$metadata#UsrIntegrationLog/$entity\","
+				+ "\"Id\":\"33333333-3333-3333-3333-333333333333\",\"Success\":false,"
+				+ "\"errorInfo\":null}");
+		ODataCreateTool tool = new(resolver);
+
+		// Act
+		ODataCreateBatchResponse response = tool.Create(new ODataCreateArgs {
+			EnvironmentName = "dev", Entity = "UsrIntegrationLog", Rows = Arr("[{\"Success\":false}]")
+		});
+
+		// Assert
+		response.Created.Should().Be(1, because: "the record was created; Success here is a column of the entity, not a service envelope flag");
+		response.Failed.Should().Be(0, because: "reporting this write as failed invites a duplicate retry of a record that already exists");
+		response.Results.Single().Success.Should().BeTrue(because: "the BaseResponse envelope detector must not run against an OData payload");
+		response.Results.Single().Id.Should().Be("33333333-3333-3333-3333-333333333333", because: "the created record's Id must be surfaced");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("An explicit error envelope that also carries an Id is a failure: Id is not proof of a payload, so a non-zero Code with an Exception must win and the row must not be reported as created.")]
+	public void Create_Should_Surface_Id_Bearing_Error_Envelope_As_Failure() {
+		// Arrange
+		IApplicationClient client = Substitute.For<IApplicationClient>();
+		IServiceUrlBuilder urlBuilder = Substitute.For<IServiceUrlBuilder>();
+		IToolCommandResolver resolver = Substitute.For<IToolCommandResolver>();
+		resolver.Resolve<IApplicationClient>(Arg.Any<EnvironmentOptions>()).Returns(client);
+		resolver.Resolve<IServiceUrlBuilder>(Arg.Any<EnvironmentOptions>()).Returns(urlBuilder);
+		urlBuilder.Build(Arg.Any<string>()).Returns("http://creatio/odata/Account");
+		client.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+			.Returns("{\"Code\":-1,\"Exception\":\"Access to the entity is denied.\","
+				+ "\"Id\":\"44444444-4444-4444-4444-444444444444\"}");
+		ODataCreateTool tool = new(resolver);
+
+		// Act
+		ODataCreateBatchResponse response = tool.Create(new ODataCreateArgs {
+			EnvironmentName = "dev", Entity = "Account", Rows = Arr("[{\"Name\":\"Office\"}]")
+		});
+
+		// Assert
+		response.Failed.Should().Be(1, because: "an explicit non-zero Code with an Exception is an error even when the body carries an Id");
+		response.Created.Should().Be(0, because: "no record was created, so nothing may be counted as created");
+		response.Results.Single().Success.Should().BeFalse(because: "an Id member is carried by any envelope and is not structural proof of an OData payload");
+		response.Results.Single().Error.Should().Contain("Access to the entity is denied", because: "the rejection reason must reach the caller");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("A created-record echo carrying a numeric Code plus a Message is still a successful create: the DataService/AuthService envelope detector must not claim a body that also holds OData payload members, because the write has already happened and a reported failure invites a duplicate retry.")]
+	public void Create_Should_Not_Misclassify_Created_Entity_With_Code_And_Message_Columns() {
+		// Arrange
+		IApplicationClient client = Substitute.For<IApplicationClient>();
+		IServiceUrlBuilder urlBuilder = Substitute.For<IServiceUrlBuilder>();
+		IToolCommandResolver resolver = Substitute.For<IToolCommandResolver>();
+		resolver.Resolve<IApplicationClient>(Arg.Any<EnvironmentOptions>()).Returns(client);
+		resolver.Resolve<IServiceUrlBuilder>(Arg.Any<EnvironmentOptions>()).Returns(urlBuilder);
+		urlBuilder.Build(Arg.Any<string>()).Returns("http://creatio/odata/UsrThing");
+		client.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+			.Returns("{\"@odata.context\":\"http://creatio/odata/$metadata#UsrThing/$entity\",\"Id\":\"33333333-3333-3333-3333-333333333333\",\"Code\":200,\"Message\":\"Created\"}");
+		ODataCreateTool tool = new(resolver);
+
+		// Act
+		ODataCreateBatchResponse response = tool.Create(new ODataCreateArgs {
+			EnvironmentName = "dev", Entity = "UsrThing", Rows = Arr("[{\"Code\":200}]")
+		});
+
+		// Assert
+		response.Created.Should().Be(1, because: "a non-zero Code column on a body that also carries @odata.context and Id is data, not a DataService error envelope");
+		response.Results.Single().Success.Should().BeTrue(because: "reporting a completed create as a failure invites a duplicate retry");
+		response.Results.Single().Id.Should().Be("33333333-3333-3333-3333-333333333333", because: "the created record's Id must be surfaced");
 	}
 
 	[Test]
@@ -309,7 +392,7 @@ public sealed class ODataCreateToolTests {
 		// Assert
 		response.Results.Single().Success.Should().BeFalse(because: "a body whose only members are empty Message/MessageDetail is an error, not a created record");
 		response.Results.Single().Error.Should().Be("Creatio returned an empty error response.", because: "an empty error body must degrade to an explicit contentless message rather than an empty or leading-space string");
-		response.Results.Single().Error.Should().NotContain(ODataResponseError.UnregisteredEntityHint, because: "an empty body carries no MessageDetail, so it is not identifiable as a routing error and must not get the registration hint");
+		response.Results.Single().Error.Should().NotContain(CreatioResponseError.UnregisteredEntityHint, because: "an empty body carries no MessageDetail, so it is not identifiable as a routing error and must not get the registration hint");
 	}
 
 	[Test]
