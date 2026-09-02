@@ -203,6 +203,9 @@ jobs:
   # from the Linux ones, ELOOP is 62 there against 40 on Linux, and a Linux-only leg shipped that whole set
   # unexercised on a product that supports macOS. The legs are a MATRIX rather than separate jobs so the
   # `Unit Tests` aggregation below keeps covering all of them through one `needs` entry.
+  # BoundedGetDeadlineTests is in the same filter for the same reason: its owner-only staging-directory
+  # regression is Platform(Exclude = "Win"), so the Windows unit job skips it and only this leg gates the
+  # 0700-at-creation guarantee for the raw response staged under the shared OS temp root.
   unix-file-mode-tests:
     name: Unix File Mode Tests (${{ matrix.os }})
     needs: changes
@@ -226,13 +229,13 @@ jobs:
             8.0.x
             10.0.x
 
-      - name: Run output-path confinement tests
+      - name: Run Unix file-mode confidentiality tests
         shell: bash
         run: |
           set -euo pipefail
           dotnet test ./clio.tests/clio.tests.csproj \
             --framework net10.0 \
-            --filter "(FullyQualifiedName~OutputPathConfinementTests|FullyQualifiedName~ConfinedFileAccessTests)&Category=Integration" \
+            --filter "(FullyQualifiedName~OutputPathConfinementTests|FullyQualifiedName~ConfinedFileAccessTests|FullyQualifiedName~BoundedGetDeadlineTests)&Category=Integration" \
             -p:RunAnalyzers=false
 
   # ── ClioGate tests (only when the bundled service changes) ──────────
