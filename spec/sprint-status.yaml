@@ -2845,7 +2845,7 @@ stories:
     feature: "eng-95891-formula-expressions"
     repo: "clio-knowledge"
     size: S
-    status: in-progress
+    status: review
     jira: ENG-95891
     file: spec/eng-95891-formula-expressions/eng-95891-formula-expressions-plan.md
     note: >-

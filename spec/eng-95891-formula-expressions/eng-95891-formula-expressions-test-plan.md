@@ -150,7 +150,7 @@ end-to-end evidence rather than assertions against a substitute.
 | V8 | unknown macro family (`[#Wat.Something#]`) | **accepted** + one warning on `IProcessDesignNotices` — D1 |
 | V9 | legacy `[#SysSettings.Code#]` (no type suffix) | accepted — trap T-10 |
 | V10 | legacy bare `false` boolean constant | accepted — trap T-10 |
-| V11 | raw generated-member C# (`SelectedActivity`) | accepted + warning — must not break the 54 shipped conditions |
+| V11 | raw generated-member C# (`SelectedActivity`) | accepted + warning — must not break shipped conditions. (An earlier revision said "the 54 shipped conditions"; a recount put the number of conditions in unrecognised dialects at ZERO. The tolerance is precautionary, not load-bearing — see the note on `KnownMacroFamilies`.) |
 | V12 | condition validated with `typeof(bool)`, expression returns `int` | refused — trap T-8 |
 
 ### 3.3 Macro families — one positive per supported family (AC2)
@@ -170,7 +170,7 @@ end-to-end evidence rather than assertions against a substitute.
 | M6 | lookup value |
 | M7 | date / time constant |
 
-### 3.4 Condition shapes (AC2 + AC3) — `ProcessConditionTests` (new)
+### 3.4 Condition shapes (AC2 + AC3) — `ProcessConditionalFlowTests` (new)
 
 One test per corpus-top shape, ordered by real-world frequency
 ([supported-vocabulary §3](eng-95891-formula-expressions-supported-vocabulary.md)).
@@ -184,7 +184,7 @@ One test per corpus-top shape, ordered by real-world frequency
 | C5 | numeric comparison | 93 |
 | C6 | bare boolean parameter | 91 |
 | C7 | lookup-record equality | 75 |
-| C8 | parameter-to-parameter comparison | 69 |
+| C8 | parameter-to-parameter comparison (its own test: needs two real parameters, not a literal) | 69 |
 | C9 | `!string.IsNullOrEmpty(…)` | 64 |
 | C10 | compound `\|\|` | 63 |
 | C11 | `.Count() > 0` / `.Contains("x")` | 40 |
