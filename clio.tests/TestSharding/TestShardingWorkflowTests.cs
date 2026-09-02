@@ -126,6 +126,24 @@ internal sealed class TestShardingWorkflowTests {
 	}
 
 	[Test]
+	[Description("Shard predicates use the NUnit-recognized category property so large filters are not discarded.")]
+	public void ShardManifest_ShouldUseTestCategory_WhenSeparatingUnitAndIntegrationTests() {
+		// Arrange
+		using JsonDocument manifest = JsonDocument.Parse(File.ReadAllText(ManifestPath));
+		JsonElement suites = manifest.RootElement.GetProperty("suites");
+
+		// Act
+		string? unitFilter = suites.GetProperty("unit").GetProperty("baseFilter").GetString();
+		string? integrationFilter = suites.GetProperty("integration").GetProperty("baseFilter").GetString();
+
+		// Assert
+		unitFilter.Should().Be("TestCategory!=Integration",
+			because: "NUnit must recognize and preserve the category exclusion when a shard selects over 2,000 tests");
+		integrationFilter.Should().Be("TestCategory=Integration",
+			because: "both suites should use the same NUnit-recognized category property");
+	}
+
+	[Test]
 	[Description("Repository workflow tests find the checkout even when the test output is outside the repository.")]
 	public void FindRepositoryRoot_ShouldUseValidCandidate_WhenOutputDirectoryIsExternal() {
 		// Arrange

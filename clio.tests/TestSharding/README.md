@@ -19,8 +19,13 @@ exactly once even before the manifest is rebalanced.
 Set the GitHub repository variable `TEST_SHARDING_DISABLED` to `true`. Each matrix then collapses
 to one worker using the original predicate verbatim:
 
-- Unit: `Category!=Integration`
-- Integration: `Category=Integration`
+- Unit: `TestCategory!=Integration`
+- Integration: `TestCategory=Integration`
+
+Use `TestCategory`, not the `Category` alias, in the committed base filters. The NUnit adapter
+recognizes `TestCategory` as a category filter and preserves it when a shard selects more than its
+2,000-test assembly selection limit; a generic mixed property/name filter can otherwise degrade to
+an empty filter and run the whole assembly.
 
 Delete the variable, clear its value, or set it to any value other than `true` to turn sharding
 back on. The required checks remain named `Unit Tests` and `Integration Tests` in either mode.

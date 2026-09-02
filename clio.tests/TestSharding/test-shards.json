@@ -2,7 +2,7 @@
   "version": 1,
   "suites": {
     "unit": {
-      "baseFilter": "Category!=Integration",
+      "baseFilter": "TestCategory!=Integration",
       "shards": [
         {
           "name": "unit-1",
@@ -840,7 +840,7 @@
       ]
     },
     "integration": {
-      "baseFilter": "Category=Integration",
+      "baseFilter": "TestCategory=Integration",
       "shards": [
         {
           "name": "integration-1",

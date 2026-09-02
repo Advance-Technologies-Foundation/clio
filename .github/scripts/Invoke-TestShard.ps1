@@ -27,7 +27,7 @@ function ConvertTo-FilterTerm {
     "FullyQualifiedName~$Fixture."
 }
 
-$expectedBaseFilter = if ($Suite -eq "unit") { "Category!=Integration" } else { "Category=Integration" }
+$expectedBaseFilter = if ($Suite -eq "unit") { "TestCategory!=Integration" } else { "TestCategory=Integration" }
 $filter = $expectedBaseFilter
 if ($DisableSharding) {
     if ($ShardName -ne "$Suite-unsharded") {
