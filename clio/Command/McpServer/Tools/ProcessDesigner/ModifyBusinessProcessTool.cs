@@ -26,7 +26,8 @@ public class ModifyBusinessProcessTool(
 	/// <returns>The command execution result with the edited schema identity in the log output.</returns>
 	[McpServerTool(Name = ModifyBusinessProcessToolName, ReadOnly = false, Destructive = true, Idempotent = false,
 		 OpenWorld = false),
-	 Description("Edit an EXISTING business process on a Creatio environment by applying an ordered JSON array of "
+	 Description("BEFORE CALLING with an accessRights block: that block changes who can read, edit or delete LIVE records. Show the user the target object, the element record filter that decides WHICH records are affected, and every grantee with its operations and level - calling out level:delegate as onward re-sharing, level:restrict as an explicit DENY that blocks the operation and outranks any existing grant, a remove entry as a revoke, and a supplied add/remove as a REPLACEMENT that drops every entry it does not restate - and get an explicit yes. The element has no output parameters, so nothing at run time will report what it did. "
+		 + "Edit an EXISTING business process on a Creatio environment by applying an ordered JSON array of "
 		 + "operations. Identify the process by name (schema code) or uid. Each operation is an object with an "
 		 + "'op': addElement (with an 'element' descriptor: name (the element handle/local code), type, caption, "
 		 + "userTaskName?, useBackgroundMode? (element-level, supported by every element kind), "

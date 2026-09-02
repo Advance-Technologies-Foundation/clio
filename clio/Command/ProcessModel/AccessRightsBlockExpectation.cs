@@ -196,6 +196,64 @@ public static class AccessRightsBlockExpectation {
 	}
 
 	/// <summary>
+	/// Of the elements the caller asked to configure, those the read-back shows with NO record filter.
+	/// <para>This is the first of the configurations that build green and then do nothing: the element's
+	/// record filter decides WHICH records it acts on, and without one the runtime matches nothing, grants
+	/// and revokes nothing, and has no output parameter to say so. Nobody refuses it — and the modify surface
+	/// makes it easy to reach by accident, because changing the target object clears a filter that pointed at
+	/// the old one.</para>
+	/// <para>A warning, not a refusal: whether the SERVER should reject this state is open decision D9 in the
+	/// package repository, and reporting it here does not pre-empt that.</para>
+	/// </summary>
+	public static IReadOnlyList<string> WithoutRecordFilter(
+			DescribeProcessResult described, IReadOnlyList<string> expected) {
+		if (expected.Count == 0 || described?.Elements is null) {
+			return Array.Empty<string>();
+		}
+
+		List<string> unfiltered = [];
+		foreach (string name in expected) {
+			DescribedElement? element = described.Elements.FirstOrDefault(e =>
+				string.Equals(e?.Name, name, StringComparison.OrdinalIgnoreCase)
+				|| string.Equals(e?.Uid, name, StringComparison.OrdinalIgnoreCase));
+
+			// Only an element the read-back actually returned can be judged; an absent one is reported by
+			// Unresolved() instead, so it is not accused twice.
+			if (element is not null && ReportsAccessRights(element) && !HasRecordFilter(element)) {
+				unfiltered.Add(name);
+			}
+		}
+
+		return unfiltered;
+	}
+
+	/// <summary>
+	/// The caller-facing warning for an element saved without a record filter. Returns null when there is
+	/// nothing to report.
+	/// </summary>
+	public static string? BuildNoFilterWarning(IReadOnlyList<string> unfiltered) {
+		if (unfiltered.Count == 0) {
+			return null;
+		}
+
+		string elements = string.Join("', '", unfiltered);
+		string subject = unfiltered.Count == 1 ? "element" : "elements";
+		return $"The 'accessRights' configuration for the {subject} '{elements}' was saved, but the "
+			+ $"{(unfiltered.Count == 1 ? "element has" : "elements have")} NO record filter. The filter is what "
+			+ "decides WHICH records the element acts on, so at run time it will match no records and change no "
+			+ "permissions — silently, because the element has no output parameters. Nothing refuses this state. "
+			+ "Add a filter with the setFilter operation (to act on one record, filter Id against a process "
+			+ "parameter or a trigger output), and do not report a grant or revoke as applied until you have.";
+	}
+
+	// A filter counts as present only if it actually narrows something: the server reports an element with no
+	// DataSourceFilters as a null filter, and a filter object carrying neither conditions nor groups selects
+	// every record, which is the same run-time outcome as none at all.
+	private static bool HasRecordFilter(DescribedElement element) =>
+		element.Filter is not null
+		&& ((element.Filter.Conditions?.Count ?? 0) > 0 || (element.Filter.Groups?.Count ?? 0) > 0);
+
+	/// <summary>
 	/// The caller-facing warning for dropped blocks: what happened, why, and the one action that fixes it.
 	/// Returns null when nothing was dropped, so a caller can treat null as "no warning to emit".
 	/// </summary>

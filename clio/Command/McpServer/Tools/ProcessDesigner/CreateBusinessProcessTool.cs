@@ -25,7 +25,8 @@ public class CreateBusinessProcessTool(
 	/// <returns>The command execution result with the created schema identity in the log output.</returns>
 	[McpServerTool(Name = CreateBusinessProcessToolName, ReadOnly = false, Destructive = false, Idempotent = false,
 		 OpenWorld = false),
-	 Description("Build a business process on a Creatio environment from a declarative JSON descriptor. The "
+	 Description("BEFORE CALLING with an accessRights block: that block changes who can read, edit or delete LIVE records. Show the user the target object, the element record filter that decides WHICH records are affected, and every grantee with its operations and level - calling out level:delegate as onward re-sharing, level:restrict as an explicit DENY that blocks the operation and outranks any existing grant, a remove entry as a revoke, and a supplied add/remove as a REPLACEMENT that drops every entry it does not restate - and get an explicit yes. The element has no output parameters, so nothing at run time will report what it did. "
+		 + "Build a business process on a Creatio environment from a declarative JSON descriptor. The "
 		 + "descriptor is an object with: name (schema code), caption, packageName, elements[] "
 		 + "({name (the element handle/local code), type:startEvent|signalStart|endEvent|userTask|sendEmail "
 		 + "(aliases readData/changeData/changeAccessRights/performTask), caption, userTaskName?, "

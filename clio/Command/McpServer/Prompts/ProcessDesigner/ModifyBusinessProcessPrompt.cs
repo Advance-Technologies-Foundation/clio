@@ -57,7 +57,9 @@ public static class ModifyBusinessProcessPrompt {
 		 Confirm access-rights changes the same way: a `setElement` whose `accessRights` carries a `remove` entry
 		 or clears a collection with `[]` revokes or drops record permissions, and the element has NO output to
 		 report what it did at run time — show the user the object, the record `filter` that decides WHICH
-		 records are affected, and the grantees, and get an explicit yes before applying it.
+		 records are affected, and every grantee with its operations and level — calling out `restrict` as an
+		 explicit DENY that blocks the operation and outranks any existing grant, and a supplied `add`/`remove`
+		 as a REPLACEMENT that drops every entry it does not restate — and get an explicit yes before applying it.
 		 A SUCCESSFUL edit can still report caveats, and they arrive as `message-type: "Warning"` entries in
 		 `execution-log-messages` — there is no separate `warnings` field on the response, so looking for one and
 		 finding nothing is not evidence there were none. Read them: a connection bound to a column with no

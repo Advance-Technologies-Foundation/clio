@@ -272,6 +272,12 @@ public class ModifyBusinessProcessCommand(
 			logger.WriteWarning(unresolvedRights);
 		}
 
+		string? noFilter = AccessRightsBlockExpectation.BuildNoFilterWarning(
+			AccessRightsBlockExpectation.WithoutRecordFilter(described.Value, expectedRights));
+		if (noFilter is not null) {
+			logger.WriteWarning(noFilter);
+		}
+
 		string? rightsWarning = AccessRightsBlockExpectation.BuildWarning(
 			AccessRightsBlockExpectation.Missing(described.Value, expectedRights));
 		if (rightsWarning is not null) {
