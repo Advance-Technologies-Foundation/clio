@@ -2840,8 +2840,13 @@ stories:
       inferred the rest, while this branch went on to produce some thirty versions. Measured by
       decompressing every archive commit on the branch and grepping for each refusal the shipped tool
       descriptions promise - the activity-result guard and the unrecognised-family refusal on a NEW
-      condition first ship in 1.4.0.32, the platform-grammar element segment in 1.4.0.35. The floor is
-      now 1.4.0.35: below it those refusals do not happen and a dead condition is stored in silence,
+      condition first ship in 1.4.0.32, the platform-grammar element segment in 1.4.0.35, and the
+      element-retarget refusal the same descriptions promise kept a fail-open hole until
+      1.4.0.37. The floor is 1.4.0.37: it is the first version where EVERY refusal those
+      descriptions promise actually happens. Below it a dead condition is stored in silence,
+      which is what they promise protection from. It refuses more environments, and that is
+      the floor doing its job; the bundled archive is 1.4.0.40, so every environment this
+      distribution can install satisfies it.
       which is what the descriptions promise protection from. It refuses more environments, and that is
       the floor doing its job rather than a cost to avoid.
       ClioRing compatibility reviewed, no Ring-consumed contract changed - restated against the FULL

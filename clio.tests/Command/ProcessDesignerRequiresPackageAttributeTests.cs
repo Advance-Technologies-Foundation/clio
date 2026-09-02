@@ -77,7 +77,7 @@ namespace Clio.Tests
             // Assert
             requirement.Should().NotBeNull(
                 because: $"{optionsType.Name} must carry the declarative {BundledPackages.ProcessBuilderPackageName} requirement so the MCP gate fires");
-            requirement!.Version.Should().Be("1.4.0.35",
+            requirement!.Version.Should().Be("1.4.0.37",
                 because: "the floor is set by the two distinct reasons the bundled-packages article names, and it "
                     + "is NOT the version the behaviours first shipped in — both setFlowCondition and the formula "
                     + "validator ship from 1.4.0.0. setFlowCondition is an operation an older server does not carry "

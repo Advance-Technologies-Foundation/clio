@@ -95,7 +95,7 @@ public class CreateBusinessProcessTool(
 		 + "elementParameter} (an element input) or {targetProcessParameter} (a process parameter, e.g. expose an "
 		 + "element output as a process output); source is exactly one of {sourceElement, sourceElementParameter} "
 		 + "(another element's output), processParameter, value, or expression. An 'expression' is a FORMULA, "
-		 + "validated server-side from CrtProcessBuilder 1.4.0.0, and this clio requires 1.4.0.35 because the "
+		 + "validated server-side from CrtProcessBuilder 1.4.0.0, and this clio requires 1.4.0.37 because the "
 		 + "checks it relies on arrived later than the feature: .0-.1 disagreed with the platform's own pre-save "
 		 + "gate, .2 was the first to agree, and the platform-grammar element segment - which a mapping reference "
 		 + "goes through - lands in .35. (The floor is shared with modify-business-process, whose conditional-branch "

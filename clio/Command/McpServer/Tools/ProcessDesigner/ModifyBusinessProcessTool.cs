@@ -68,7 +68,7 @@ public class ModifyBusinessProcessTool(
 		 + "meta-path, [#SysVariable.Name#], [#SysSettings.Code#], [#Lookup.{schemaUId}.{recordId}#], "
 		 + "[#DateValue.dd.MM.yyyy#] / [#DateTimeValue.dd.MM.yyyy HH:mm#] / [#TimeValue.HH:mm#], "
 		 + "[#BooleanValue.True#]. From CrtProcessBuilder 1.4.0.0 an expression is VALIDATED before it is stored "
-		 + "(this clio requires 1.4.0.35: .0-.1 disagreed with the platform's own pre-save gate and .2 was the first to agree, but the refusals THIS description promises arrived later - the activity-result guard and the unrecognised-family refusal on a new condition in .32, the platform-grammar element segment in .35 - so the thresholds are per-refusal rather than one cliff, and below .32 a condition on a result-driven branch is stored silently instead of refused) "
+		 + "(this clio requires 1.4.0.37, measured one archive at a time: .0-.1 disagreed with the platform's own pre-save gate and .2 was the first to agree, the activity-result guard and the unrecognised-family refusal on a new condition arrived in .32, the platform-grammar element segment in .35, and the element-retarget refusal below still had a fail-open hole until .37 - so .37 is the first version where every refusal named here actually happens) "
 		 + "(older packages stored it unchecked): it must parse, every parameter reference must resolve in THIS "
 		 + "process, and its result must fit the target — a refusal names the offending identifier or token. "
 		 + "The result is checked against the target parameter's DECLARED type, the same check the platform's own "
