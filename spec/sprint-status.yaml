@@ -2732,3 +2732,66 @@ stories:
     depends_on:
       - story-process-element-connections-3
     blocks: []
+
+  - id: story-export-component-registry-1
+    title: "MCP tool + CLI verb for bulk component registry export"
+    feature: "export-component-registry"
+    repo: "clio"
+    size: M
+    status: review
+    jira: ENG-95543
+    file: spec/stories/story-export-component-registry-1.md
+    prd: spec/prd/spec-export-component-registry.md
+    adr: spec/adr/adr-export-component-registry.md
+    status_note: "New export-component-registry MCP tool + CLI verb (not a new argument on get-component-info, which is ReadOnly=true) writes the resolved version's FULL Freedom UI component registry to a file as a byte passthrough of IComponentRegistryClient's raw response — confirmed via ComponentRegistry.live-snapshot.json that deprecated/deprecationReason exist only as raw JSON, not in the typed ComponentCatalogState model, so re-serializing would silently drop fields the ENG-95543 migration-engine consumer needs. Shape revised during implementation: mirrors ComponentInfoCommand/ComponentInfoTool (flat classes, no Command<TOptions>/BaseTool<T>), NOT GetClassicPageSourcesCommand/Tool — BaseTool.ResolveCommand eagerly builds a per-environment container, which breaks the explicit-version-only and no-flags paths (ADR D4). Two distinct output-path contracts: explicit --output-file goes through OutputPathConfinement (refuses existing target), the default <workspace-root>/.clio-migration/component-registry/<version>.json is tool-owned and overwritten on rerun. Never calls IComponentRegistryDocsClient.GetDocAsync. Long-tail MCP registration (DI + attributes only, not added to McpCoreToolProfile.CoreToolTypes or ToolContractGetTool), since the primary consumer is CI via the CLI verb, not an MCP agent. Consumed downstream by creatio-ai-app-development-toolkit branch feature/ENG-95543-registry-backed-mapping, which needs a clio release after merge."
+    depends_on: []
+    blocks: []
+
+  # --- localization-ready-packages (clio#1178) ---
+  - id: story-localization-ready-packages-1
+    title: "Publish the Creatio localization lab"
+    feature: "localization-ready-packages"
+    repo: "creatio-localization-lab"
+    size: M
+    status: done
+    issue: 1178
+    file: spec/stories/story-localization-ready-packages-1.md
+    prd: spec/prd/prd-localization-ready-packages.md
+    adr: spec/adr/adr-localization-ready-packages.md
+    test_plan: spec/test-plans/tp-localization-ready-packages.md
+    depends_on: []
+    blocks:
+      - story-localization-ready-packages-2
+      - story-localization-ready-packages-3
+
+  - id: story-localization-ready-packages-2
+    title: "Generate a package-level localization schema for application packages"
+    feature: "localization-ready-packages"
+    repo: "clio"
+    size: M
+    status: in-progress
+    issue: 1178
+    file: spec/stories/story-localization-ready-packages-2.md
+    prd: spec/prd/prd-localization-ready-packages.md
+    adr: spec/adr/adr-localization-ready-packages.md
+    test_plan: spec/test-plans/tp-localization-ready-packages.md
+    depends_on:
+      - story-localization-ready-packages-1
+    blocks:
+      - story-localization-ready-packages-3
+
+  - id: story-localization-ready-packages-3
+    title: "Publish localization guidance through clio-knowledge"
+    feature: "localization-ready-packages"
+    repo: "clio-knowledge"
+    size: M
+    status: in-progress
+    issue: 1178
+    file: spec/stories/story-localization-ready-packages-3.md
+    prd: spec/prd/prd-localization-ready-packages.md
+    adr: spec/adr/adr-localization-ready-packages.md
+    test_plan: spec/test-plans/tp-localization-ready-packages.md
+    depends_on:
+      - story-localization-ready-packages-1
+      - story-localization-ready-packages-2
+    blocks: []

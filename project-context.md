@@ -26,16 +26,24 @@
   take their dependencies via **constructor injection**, and call collaborating
   **services** directly. Existing command families such as the skill commands
   (`clio/Command/SkillCommands.cs`) are the reference pattern.
+  - **Narrow exception — a command whose contract allows a call with no environment at
+    all.** `Command<TOptions>`'s MCP counterpart `BaseTool<T>` resolves the command out of a
+    per-environment container before the arguments are seen, so a command that must also work
+    from an explicit `--version` or from no arguments cannot use that pair. Those are written
+    as flat classes resolving `EnvironmentSettings` lazily themselves —
+    `ComponentInfoCommand`/`ComponentInfoTool` and
+    `ExportComponentRegistryCommand`/`ExportComponentRegistryTool` are the two members. See
+    `docs/knowledge/McpServer/basetool-resolvecommand-forces-an-environment-resolution.md`;
+    do not widen this exception for convenience.
 - Commands are registered via DI in `clio/BindingsModule.cs` and wired as verbs in
   `clio/Program.cs` — never forget to register.
-- `IApplicationClient` / `CreatioClient` is the ONLY way to talk to Creatio HTTP API — never use raw `HttpClient`
-  - **Narrow sanctioned exception — binary uploads/reads the JSON surface cannot carry.**
-    `IApplicationClient` only sends/receives string bodies, and `Creatio.Client.UploadFile`
-    cannot set a caller-chosen `fileId` (it appends its own query string). Flows that need a raw
-    binary body with `Content-Range`/`Content-Disposition`/CSRF headers or a byte-exact binary
-    read may use a named `IHttpClientFactory` client with cookies from `ICreatioAuthClient`.
-    `Clio.Common.SysImageUploader` is the sanctioned reference example; any new deviation must
-    justify itself against this bullet and follow the same pattern.
+- Authenticated Creatio HTTP API calls use `IApplicationClient` / `CreatioClient`. This includes
+  forms login and session-cookie import/export, bearer
+  DataService calls, Image API binary uploads, and byte-exact verification reads. Extend the shared
+  client contract when a new authenticated Creatio transport shape is required. Raw named
+  `IHttpClientFactory` clients remain appropriate for non-Creatio hosts such as IdentityService and
+  for documented anonymous/bootstrap probes whose redirect, timeout, or no-login semantics differ
+  (`HealthCheckCommand`, `ClassicEnumVocabularyResolver`, and `EnvironmentRuntimeDetectionService`).
 
 ### CLI flag naming — HARD RULE
 - **All CLI option names must be kebab-case**: `--package-name`, not `--packageName` or `--PackageName`

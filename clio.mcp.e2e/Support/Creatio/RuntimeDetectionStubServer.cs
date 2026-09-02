@@ -1,4 +1,4 @@
-using System.Diagnostics;
+﻿using System.Diagnostics;
 using System.Globalization;
 using System.Net;
 using System.Net.Sockets;
@@ -63,12 +63,107 @@ internal sealed class RuntimeDetectionStubServer : IAsyncDisposable {
 	/// </summary>
 	public const string SelectQueryHtmlBodyMarker = "select-query-secret-marker";
 
+	/// <summary>
+	/// Marker embedded in the HTML body the stub returns for any odata request (GET/POST/PATCH/DELETE)
+	/// against <see cref="RuntimeDetectionStubServerConfiguration.ODataNonJsonEntity"/>. Mirrors the
+	/// IIS-served 404/401 pages observed in ENG-95971: the request reaches the stub but never reaches a
+	/// real OData controller, so the body is plain HTML instead of any recognized JSON shape.
+	/// </summary>
+	public const string ODataNonJsonBodyMarker = "odata-nonjson-secret-marker";
+
+	/// <summary>
+	/// Plain-text marker in the non-JSON body the stub returns for the pre-write <c>$metadata</c> and
+	/// <c>$select</c> probes when <see cref="RuntimeDetectionStubServerConfiguration.ODataPreWriteMode"/>
+	/// is <see cref="ODataPreWriteUnverified"/>. A prefix of the body IS deliberately surfaced as
+	/// diagnostics - the same contract as <c>ODataKeyedWrite.ValidateWriteResponse</c> - so tests assert
+	/// this marker is PRESENT and that only the sensitive parts below are scrubbed.
+	/// </summary>
+	public const string ODataPreWriteUnverifiedBodyMarker = "odata-prewrite-body-marker";
+
+	/// <summary>
+	/// Credential embedded in the URI inside the <see cref="ODataPreWriteUnverified"/> body. Tests assert it
+	/// is absent from the surfaced error: a proxy/IIS or SSO page is the realistic carrier of credentials and
+	/// redirect tokens, so the redactor must scrub it before the text reaches the MCP transcript.
+	/// </summary>
+	public const string ODataPreWriteUnverifiedSecret = "Sup3rS3cretPreWrite";
+
+	/// <summary>
+	/// Internal host embedded in the URI inside the <see cref="ODataPreWriteUnverified"/> body. Tests assert
+	/// it is absent from the surfaced error for the same reason as <see cref="ODataPreWriteUnverifiedSecret"/>.
+	/// </summary>
+	public const string ODataPreWriteUnverifiedHost = "prewrite-stub.internal";
+
+	/// <summary>
+	/// <see cref="RuntimeDetectionStubServerConfiguration.ODataPreWriteMode"/> value that serves a CSDL 4.0
+	/// document at the SERVICE-ROOT <c>odata/$metadata</c> declaring
+	/// <see cref="RuntimeDetectionStubServerConfiguration.ODataEntity"/> with <c>Id</c> and <c>Name</c>,
+	/// answers a keyed <c>$select</c> probe with the addressed record, and acks a PATCH with an empty 204.
+	/// </summary>
+	public const string ODataPreWriteMetadata = "metadata";
+
+	/// <summary>
+	/// <see cref="RuntimeDetectionStubServerConfiguration.ODataPreWriteMode"/> value that answers BOTH
+	/// pre-write reads (<c>$metadata</c> and the keyed <c>$select</c> probe) with a non-JSON body, so the
+	/// payload can be neither confirmed nor refuted. A PATCH is still acked, so a tool that wrote anyway
+	/// is caught by the recorded-request assertions rather than by a transport failure.
+	/// </summary>
+	public const string ODataPreWriteUnverified = "unverified";
+
+	/// <summary>
+	/// <see cref="RuntimeDetectionStubServerConfiguration.ODataPreWriteMode"/> value that answers
+	/// <c>$metadata</c> with an HTML page - so validation degrades to the keyed <c>$select</c> probe -
+	/// and answers that probe with a bare <c>{}</c>: valid JSON, no recognized error shape, and no proof
+	/// that any field exists. A PATCH is still acked, so a tool that treated "no error" as verification
+	/// is caught by the recorded-request assertions. This is the fail-open shape behind issue #1212.
+	/// </summary>
+	public const string ODataPreWriteEmptyRecord = "emptyrecord";
+
+	/// <summary>
+	/// Path of the stub's own introspection endpoint. A GET returns a JSON array of
+	/// <c>{ "method": ..., "url": ... }</c> for every request the stub has served, letting a test prove
+	/// which URL the pre-write validation actually requested and that no PATCH was issued.
+	/// </summary>
+	public const string RecordedRequestsPath = "/__stub/requests";
+
+	/// <summary>Absolute URL of <see cref="RecordedRequestsPath"/> on this stub instance.</summary>
+	public string RecordedRequestsUrl => BaseUrl + RecordedRequestsPath;
+
+	/// <summary>
+	/// Reads the requests the stub has served so far, in arrival order.
+	/// </summary>
+	/// <param name="cancellationToken">Token that cancels the introspection call.</param>
+	/// <returns>Every request the stub served, oldest first.</returns>
+	public async Task<IReadOnlyList<RecordedStubRequest>> GetRecordedRequestsAsync(
+		CancellationToken cancellationToken = default) {
+		using HttpClient client = new();
+		string json = await client.GetStringAsync(RecordedRequestsUrl, cancellationToken);
+		return JsonSerializer.Deserialize<List<RecordedStubRequest>>(json,
+			new JsonSerializerOptions { PropertyNameCaseInsensitive = true }) ?? [];
+	}
+
 	private static string BuildScript(RuntimeDetectionStubServerConfiguration configuration, int port) {
 		string configJson = JsonSerializer.Serialize(configuration);
 		return $$"""
 const http = require("http");
 const config = {{configJson}};
 const port = {{port.ToString(CultureInfo.InvariantCulture)}};
+const recordedRequests = [];
+
+// CSDL 4.0 served at the SERVICE-ROOT odata/$metadata. Declares only Id and Name, so any other
+// field name in an odata-update payload must be rejected before the PATCH.
+function metadataCsdl(entity) {
+  return '<?xml version="1.0" encoding="utf-8" standalone="no"?>'
+    + '<edmx:Edmx Version="4.0" xmlns:edmx="http://docs.oasis-open.org/odata/ns/edmx">'
+    + '<edmx:DataServices>'
+    + '<Schema Namespace="Terrasoft.Configuration.OData" xmlns="http://docs.oasis-open.org/odata/ns/edm">'
+    + '<EntityType Name="' + entity + '">'
+    + '<Key><PropertyRef Name="Id" /></Key>'
+    + '<Property Name="Id" Type="Edm.Guid" Nullable="false" />'
+    + '<Property Name="Name" Type="Edm.String" />'
+    + '</EntityType>'
+    + '</Schema>'
+    + '</edmx:DataServices></edmx:Edmx>';
+}
 
 function sendJson(response, statusCode, body, headers = {}) {
   response.writeHead(statusCode, { "Content-Type": "application/json", ...headers });
@@ -85,6 +180,13 @@ http.createServer((request, response) => {
   request.on("data", chunk => { body += chunk; });
   request.on("end", () => {
     const url = request.url || "";
+    if (request.method === "GET" && url === "{{RecordedRequestsPath}}") {
+      // The stub's own introspection endpoint: deliberately NOT recorded, so reading it does not
+      // perturb what the test is asserting about.
+      sendJson(response, 200, recordedRequests);
+      return;
+    }
+    recordedRequests.push({ method: request.method, url: url });
     if (request.method === "POST" && url === "/ServiceModel/AuthService.svc/Login") {
       sendJson(
         response,
@@ -120,6 +222,22 @@ http.createServer((request, response) => {
     }
     if (request.method === "POST"
       && (url === "/DataService/json/SyncReply/SelectQuery" || url === "/0/DataService/json/SyncReply/SelectQuery")
+      && config.AuthRejectedSelectQuerySchemaName
+      && body.includes('"' + config.AuthRejectedSelectQuerySchemaName + '"')) {
+      // Issue #1222: an expired password makes Creatio answer the authenticated SelectQuery with a
+      // DataService fault envelope (ErrorCode 5) under HTTP 200. The repository provider collapses that
+      // to an empty successful collection, which is the false-success this PR removes. Keyed on the
+      // queried schema so the runtime-detection probe (SysAdminUnit) still gets valid JSON and
+      // environment registration is unaffected.
+      sendJson(response, 200, {
+        responseStatus: { ErrorCode: "5", Message: "Your password has expired.", Errors: [] },
+        rows: [],
+        success: false
+      });
+      return;
+    }
+    if (request.method === "POST"
+      && (url === "/DataService/json/SyncReply/SelectQuery" || url === "/0/DataService/json/SyncReply/SelectQuery")
       && config.HtmlSelectQuerySchemaName
       && body.includes('"' + config.HtmlSelectQuerySchemaName + '"')) {
       // ENG-93365: the stand answered a specific SelectQuery with an HTML error page instead of JSON.
@@ -143,6 +261,69 @@ http.createServer((request, response) => {
         return;
       }
       sendText(response, 404, "Not Found");
+      return;
+    }
+    if (config.ODataPreWriteMode && config.ODataEntity) {
+      const isMetadata = request.method === "GET" && url.endsWith("/odata/$metadata");
+      const isKeyedProbe = request.method === "GET"
+        && url.includes("/odata/" + config.ODataEntity + "(")
+        && url.includes("$select=");
+      const isPatch = request.method === "PATCH" && url.includes("/odata/" + config.ODataEntity + "(");
+      if (isMetadata && config.ODataPreWriteMode === "{{ODataPreWriteMetadata}}") {
+        response.writeHead(200, { "Content-Type": "application/xml" });
+        response.end(metadataCsdl(config.ODataEntity));
+        return;
+      }
+      if (isMetadata && config.ODataPreWriteMode === "{{ODataPreWriteEmptyRecord}}") {
+        // Not a CSDL document, so the CSDL validator cannot answer and the tool degrades to the probe.
+        response.writeHead(200, { "Content-Type": "text/html" });
+        response.end("<!DOCTYPE html><html><head><title>404 - File or directory not found.</title></head></html>");
+        return;
+      }
+      if (isKeyedProbe && config.ODataPreWriteMode === "{{ODataPreWriteEmptyRecord}}") {
+        // Valid JSON that proves nothing: no Id, no selected column, no error shape.
+        sendJson(response, 200, {});
+        return;
+      }
+      if ((isMetadata || isKeyedProbe) && config.ODataPreWriteMode === "{{ODataPreWriteUnverified}}") {
+        // Neither a CSDL document nor any recognized JSON error shape: the pre-write validation can
+        // neither confirm nor refute the payload, which is the "unverified" envelope under test.
+        sendText(response, 200,
+          "IIS: the request could not be mapped to an application. {{ODataPreWriteUnverifiedBodyMarker}}"
+            + " See http://admin:{{ODataPreWriteUnverifiedSecret}}@{{ODataPreWriteUnverifiedHost}}:80/trace for details.");
+        return;
+      }
+      if (isKeyedProbe) {
+        // The record the $select probe addressed, echoed back with the OData context annotation and
+        // EVERY column the probe selected - what a conforming service answers, and what the probe now
+        // requires as proof that those fields exist.
+        const selected = decodeURIComponent(url.split("$select=")[1].split("&")[0]).split(",");
+        const record = {
+          "@odata.context": "http://127.0.0.1/odata/$metadata#" + config.ODataEntity,
+          Id: "00000000-0000-0000-0000-000000000001"
+        };
+        for (const column of selected) {
+          if (column && column !== "Id") {
+            record[column] = "probe";
+          }
+        }
+        sendJson(response, 200, record);
+        return;
+      }
+      if (isPatch) {
+        // Empty 204 ack, the shape Creatio returns for a successful PATCH.
+        response.writeHead(204);
+        response.end();
+        return;
+      }
+    }
+    if (config.ODataNonJsonEntity && url.includes("/odata/" + config.ODataNonJsonEntity)) {
+      // ENG-95971: the stand answered an odata request (read or write) with an IIS-style HTML error
+      // page instead of JSON or a recognized error shape - the request reached the stub but never
+      // reached a real OData controller. Any HTTP method is matched: the same failure was observed on
+      // GET, PATCH, and DELETE alike.
+      response.writeHead(200, { "Content-Type": "text/html" });
+      response.end("<!DOCTYPE html><html><head><title>404 - File or directory not found.</title></head><body>{{ODataNonJsonBodyMarker}}</body></html>");
       return;
     }
     if ((request.method === "GET" || request.method === "POST") && config.ODataRoutingErrorEntity && (url.includes("/odata/" + config.ODataRoutingErrorEntity + "?") || url.endsWith("/odata/" + config.ODataRoutingErrorEntity))) {
@@ -177,4 +358,16 @@ internal sealed record RuntimeDetectionStubServerConfiguration(
 	bool NetCoreUiMarkerEnabled = false,
 	bool NetFrameworkUiMarkerEnabled = false,
 	string? ODataRoutingErrorEntity = null,
-	string? HtmlSelectQuerySchemaName = null);
+	string? HtmlSelectQuerySchemaName = null,
+	string? ODataNonJsonEntity = null,
+	string? ODataEntity = null,
+	string? ODataPreWriteMode = null,
+	string? AuthRejectedSelectQuerySchemaName = null);
+
+/// <summary>
+/// One request served by <see cref="RuntimeDetectionStubServer"/>, as reported by
+/// <see cref="RuntimeDetectionStubServer.RecordedRequestsPath"/>.
+/// </summary>
+/// <param name="Method">HTTP method of the request.</param>
+/// <param name="Url">Request URL, path and query, as the stub received it.</param>
+internal sealed record RecordedStubRequest(string Method, string Url);

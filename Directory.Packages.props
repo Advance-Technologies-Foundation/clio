@@ -65,6 +65,8 @@ See docs: https://devblogs.microsoft.com/dotnet/introducing-central-package-mana
          pin it directly too (see clio.tests / clio.mcp.e2e) so the transitive 10.0.6 pulled via
          PowerShell.SDK is also lifted to the patched version. -->
     <PackageVersion Include="System.Security.Cryptography.Xml" Version="$(MsPackageVersion)" />
+    <!-- Kept on the resolver's proven netstandard2.0 compatibility line. -->
+    <PackageVersion Include="System.Text.Json" Version="8.0.5" />
     <PackageVersion Include="System.IO.Abstractions" Version="$(SIOVersion)" />
     <PackageVersion Include="Microsoft.CodeAnalysis.CSharp" Version="5.6.0" />
     <!-- IdentityModel requires every library in its recursive runtime family to use the same version. -->
@@ -76,7 +78,7 @@ See docs: https://devblogs.microsoft.com/dotnet/introducing-central-package-mana
     <PackageVersion Include="Microsoft.IdentityModel.Tokens" Version="$(IdentityModelVersion)" />
     <PackageVersion Include="System.IdentityModel.Tokens.Jwt" Version="$(IdentityModelVersion)" />
     <PackageVersion Include="Microsoft.Data.SqlClient" Version="7.0.2" />
-    <PackageVersion Include="creatio.client" Version="1.0.38" />
+    <PackageVersion Include="creatio.client" Version="2.0.2" />
     <PackageVersion Include="CommandLineSDK" Version="1.0.11" />
     <PackageVersion Include="ATF.Repository" Version="2.0.3.5" />
     <PackageVersion Include="ErrorOr" Version="2.1.1" />

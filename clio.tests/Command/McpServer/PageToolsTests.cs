@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.IO;
 using System.IO.Abstractions.TestingHelpers;
@@ -36,6 +36,154 @@ public class PageToolsTests
 	[Description("Verifies that PageUpdateTool has the correct MCP tool name")]
 	public void PageUpdateTool_HasCorrectName() {
 		PageUpdateTool.ToolName.Should().Be("update-page", "because the MCP tool name must match the protocol contract");
+	}
+
+	[Test]
+	[Description("The update-page MCP contract documents validate=false as a guarded escape hatch while retaining the syntax and AST loadability floor.")]
+	public void PageUpdateTool_Description_Should_Document_ValidationEscapeHatch() {
+		// Arrange
+		var method = typeof(PageUpdateTool).GetMethod(nameof(PageUpdateTool.UpdatePage))!;
+		string description = method.GetCustomAttributes(typeof(System.ComponentModel.DescriptionAttribute), false)
+			.Cast<System.ComponentModel.DescriptionAttribute>().Single().Description;
+
+		// Act
+		bool mentionsEscapeHatch = description.Contains("validate=false", StringComparison.Ordinal);
+
+		// Assert
+		mentionsEscapeHatch.Should().BeTrue(
+			because: "callers need to know that validation can be bypassed only explicitly for pre-existing defects");
+		description.Should().Contain("JavaScript syntax",
+			because: "the contract must make clear that validate=false does not bypass the mandatory syntax floor");
+	}
+
+	[Test]
+	[Description("Serializes the update-page validation escape hatch using the kebab-case MCP argument name.")]
+	public void PageUpdateArgs_ShouldSerializeValidateUsingKebabCase() {
+		// Arrange
+		PageUpdateArgs args = new("UsrValidationEscape_FormPage", "define(...)", null, null, null, null, null, null,
+			Validate: false);
+
+		// Act
+		string json = System.Text.Json.JsonSerializer.Serialize(args);
+
+		// Assert
+		json.Should().Contain("\"validate\":false",
+			because: "the MCP contract must expose the explicit validation escape hatch");
+		json.Should().NotContain("\"validation\":",
+			because: "the argument is named validate in the MCP contract");
+	}
+
+	[Test]
+	[Description("update-page validate=false bypasses pre-existing content and run-process validation while still allowing the command save path to run.")]
+	public async System.Threading.Tasks.Task PageUpdateTool_Should_BypassContentValidation_WhenValidateIsFalse() {
+		// Arrange
+		IApplicationClient applicationClient = Substitute.For<IApplicationClient>();
+		applicationClient.ExecutePostRequest(
+				Arg.Is<string>(url => url.Contains("GetSchema")), Arg.Any<string>())
+			.Returns(new JObject {
+				["success"] = true,
+				["schema"] = new JObject {
+					["body"] = CreatePageBody(),
+					["localizableStrings"] = new JArray()
+				}
+			}.ToString());
+		applicationClient.ExecutePostRequest(
+				Arg.Is<string>(url => url.Contains("SaveSchema")), Arg.Any<string>())
+			.Returns(new JObject { ["success"] = true }.ToString());
+		PageUpdateTool tool = BuildAppendGuardTool(applicationClient);
+		string body = CreatePageBody(
+			viewConfigDiff: """[{"operation":"insert","name":"Playbook_g0bz14m","values":{"type":"crt.Playbook","_designOptions":{"templateValuesMapping":{"caption":"Playbook_KnowledgeBaseDS_Name"}}}},{"operation":"insert","name":"RunBpButton","values":{"type":"crt.Button","clicked":{"request":"crt.RunBusinessProcessRequest","params":{"processRunType":"RegardlessOfThePage"}}}}]""");
+		PageUpdateArgs args = new("UsrValidationEscape_FormPage", body, null, false, null, null, null, null,
+			SkipSampling: true, TargetSchemaUId: "validation-schema-uid", Validate: false);
+
+		// Act
+		PageUpdateResponse response = await tool.UpdatePage(args, null);
+
+		// Assert
+		(response.Error ?? string.Empty).Should().NotContain("processName",
+			because: "validate=false must bypass the pre-existing run-process structural false positive");
+		(response.Error ?? string.Empty).Should().NotContain("user-visible text",
+			because: "validate=false must bypass the pre-existing designer metadata false positive");
+		response.Success.Should().BeTrue(
+			because: "validation disabled must allow the syntactically valid replacement to be persisted");
+		applicationClient.Received(1).ExecutePostRequest(
+			Arg.Is<string>(url => url.Contains("SaveSchema")), Arg.Any<string>());
+	}
+
+	[Test]
+	[Description("The MCP adapter words the escape-hatch hint for a command-layer content failure, so discoverability survives moving the hint off the CLI-reachable command.")]
+	public async System.Threading.Tasks.Task PageUpdateTool_Should_NameTheEscapeHatch_WhenCommandContentValidationFails() {
+		// Arrange
+		IApplicationClient applicationClient = Substitute.For<IApplicationClient>();
+		applicationClient.ExecutePostRequest(
+				Arg.Is<string>(url => url.Contains("GetSchema")), Arg.Any<string>())
+			.Returns(new JObject {
+				["success"] = true,
+				["schema"] = new JObject {
+					["body"] = CreatePageBody(),
+					["localizableStrings"] = new JArray()
+				}
+			}.ToString());
+		PageUpdateTool tool = BuildAppendGuardTool(applicationClient);
+		// A mobile body carrying an AMD-only 'handlers' section - a CONTENT rule, the half validate=false skips.
+		PageUpdateArgs args = new("UsrMobile_FormPage",
+			"""
+			{
+			  "viewConfigDiff": [],
+			  "handlers": []
+			}
+			""",
+			null, true, null, null, null, null,
+			SkipSampling: true, TargetSchemaUId: "validation-schema-uid");
+
+		// Act
+		PageUpdateResponse response = await tool.UpdatePage(args, null);
+
+		// Assert
+		response.Success.Should().BeFalse(
+			because: "the content rule applies with validation on");
+		response.Error.Should().Contain("validate=false",
+			because: "discoverability was the original complaint - an MCP caller must learn about the flag at "
+				+ "the point of failure, even though the command layer no longer words the hint itself");
+	}
+
+	[Test]
+	[Description("update-page allows validate=false together with force=true - the flags are orthogonal - but warns that both guards are down, instead of dead-ending a caller who must overwrite an external change on a page carrying a pre-existing defect.")]
+	public async System.Threading.Tasks.Task PageUpdateTool_Should_WarnRatherThanReject_WhenValidationBypassMeetsForce() {
+		// Arrange
+		PageUpdateTool tool = BuildAppendGuardTool();
+		PageUpdateArgs args = new("UsrValidationEscape_FormPage", CreatePageBody(), null, true, null, null, null, null,
+			SkipSampling: true, Force: true, Validate: false);
+
+		// Act
+		PageUpdateResponse response = await tool.UpdatePage(args, null);
+
+		// Assert
+		(response.Error ?? string.Empty).Should().NotContain("cannot be combined",
+			because: "sync-pages already supports this pair through its per-page force flag, so update-page must not "
+				+ "refuse it and leave the caller with no way through");
+		response.Warnings.Should().Contain(warning => warning.Contains("baseline/conflict guard"),
+			because: "relaxing both guards at once must be visible in the response rather than silent");
+	}
+
+	[Test]
+	[Description("update-page validate=false does not bypass the mandatory JavaScript syntax gate.")]
+	public async System.Threading.Tasks.Task PageUpdateTool_Should_RetainSyntaxGate_WhenValidateIsFalse() {
+		// Arrange
+		PageUpdateTool tool = BuildSyntaxFailureTool(out IApplicationClient applicationClient);
+		PageUpdateArgs args = new("UsrValidationEscapeSyntax_FormPage", SyntaxBrokenMarkerBody, null, true, null, null, null, null,
+			SkipSampling: true, Validate: false);
+
+		// Act
+		PageUpdateResponse response = await tool.UpdatePage(args, null);
+
+		// Assert
+		response.Success.Should().BeFalse(
+			because: "validation=false must not permit a JavaScript body that cannot load");
+		response.Error.Should().Contain("JavaScript syntax error",
+			because: "the mandatory syntax gate must remain the reported failure when content validation is disabled");
+		applicationClient.ReceivedCalls().Should().BeEmpty(
+			because: "a syntax-invalid body must never reach the remote save path");
 	}
 
 	[Test]
@@ -637,7 +785,9 @@ public class PageToolsTests
 		serviceUrlBuilder.Build("/DataService/json/SyncReply/SelectQuery").Returns("http://test/url");
 		var dataServiceResponse = new JObject {
 			["success"] = true,
-			["rows"] = new JArray()
+			["rows"] = new JArray {
+				new JObject { ["Name"] = "MyPage", ["UId"] = "page-uid", ["PackageName"] = "MyPackage" }
+			}
 		};
 		applicationClient.ExecutePostRequest(
 			Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
@@ -645,12 +795,128 @@ public class PageToolsTests
 		var command = new PageListCommand(applicationClient, serviceUrlBuilder, logger);
 		var options = new PageListOptions { PackageName = "MyPackage", Limit = 50 };
 		command.TryListPages(options, out PageListResponse response);
-		// The data query returns zero rows (count 0 < limit 50), so the page is provably complete and
+		// The data query returns one row (count 1 < limit 50), so the page is provably complete and
 		// the supplementary count round-trip is skipped — only the single data query carries the filter.
 		applicationClient.Received(1).ExecutePostRequest(
 			Arg.Any<string>(),
 			Arg.Is<string>(body => body.Contains("SysPackage.Name") && body.Contains("MyPackage")),
 			Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>());
+	}
+
+	[Test]
+	[Description("TryListPages cross-checks an empty package filter with a broader query and filters package names case-insensitively")]
+	public void TryListPages_ShouldCrossCheckBroaderQuery_WhenPackageFilterReturnsEmpty() {
+		// Arrange
+		var applicationClient = Substitute.For<IApplicationClient>();
+		var serviceUrlBuilder = Substitute.For<IServiceUrlBuilder>();
+		var logger = Substitute.For<ILogger>();
+		serviceUrlBuilder.Build("/DataService/json/SyncReply/SelectQuery").Returns("http://test/url");
+		var filteredResponse = new JObject {
+			["success"] = true,
+			["rows"] = new JArray()
+		};
+		var broaderResponse = new JObject {
+			["success"] = true,
+			["rows"] = new JArray {
+				new JObject { ["Name"] = "labReservation_FormPage", ["UId"] = "page-1", ["PackageName"] = "labFORENOM" },
+				new JObject { ["Name"] = "Other_FormPage", ["UId"] = "page-2", ["PackageName"] = "OtherPackage" }
+			}
+		};
+		List<string> requests = [];
+		applicationClient.ExecutePostRequest(
+			Arg.Any<string>(),
+			Arg.Do<string>(body => requests.Add(body)),
+			Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+			.Returns(filteredResponse.ToString(), broaderResponse.ToString());
+		var command = new PageListCommand(applicationClient, serviceUrlBuilder, logger);
+		var options = new PageListOptions { PackageName = "labforenom", Limit = 50 };
+
+		// Act
+		bool result = command.TryListPages(options, out PageListResponse response);
+
+		// Assert
+		result.Should().BeTrue(
+			because: "the broader cross-check returned a page from the requested package");
+		response.Pages.Should().ContainSingle(
+			page => page.SchemaName == "labReservation_FormPage",
+			because: "package-name comparison should be ordinal-ignore-case and exclude other packages");
+		response.Total.Should().Be(1,
+			because: "the fallback total should count all locally matched package rows");
+		response.Truncated.Should().BeFalse(
+			because: "one matching page fits within the requested limit");
+		requests.Should().HaveCount(2,
+			because: "the broader query should run only after the filtered query returns no rows");
+		JObject.Parse(requests[0])["filters"]!["items"]!["PackageName"].Should().NotBeNull(
+			because: "the fast path should retain the server-side package filter");
+		JObject.Parse(requests[1])["filters"]!["items"]!["PackageName"].Should().BeNull(
+			because: "the fallback must remove the unreliable package filter before filtering locally");
+	}
+
+	[TestCase("{\"success\":false}")]
+	[TestCase("not-json")]
+	[TestCase("{\"success\":true}")]
+	[Description("TryListPages refuses to confirm an empty package when its broader verification response is unsuccessful or malformed")]
+	public void TryListPages_ShouldFail_WhenBroaderVerificationCannotBeRead(string fallbackResponse) {
+		// Arrange
+		var applicationClient = Substitute.For<IApplicationClient>();
+		var serviceUrlBuilder = Substitute.For<IServiceUrlBuilder>();
+		var logger = Substitute.For<ILogger>();
+		serviceUrlBuilder.Build("/DataService/json/SyncReply/SelectQuery").Returns("http://test/url");
+		string filteredResponse = new JObject {
+			["success"] = true,
+			["rows"] = new JArray()
+		}.ToString();
+		applicationClient.ExecutePostRequest(
+			Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+			.Returns(filteredResponse, fallbackResponse);
+		var command = new PageListCommand(applicationClient, serviceUrlBuilder, logger);
+		var options = new PageListOptions { PackageName = "labFORENOM", Limit = 50 };
+
+		// Act
+		bool result = command.TryListPages(options, out PageListResponse response);
+
+		// Assert
+		result.Should().BeFalse(
+			because: "absence cannot be confirmed when the broader verification response is unusable");
+		response.Success.Should().BeFalse(
+			because: "the response must not encode an unverified empty package as success");
+		response.Error.Should().Be(
+			"The package-filtered query returned no rows, and the broader verification query failed.",
+			because: "the caller needs an actionable but non-sensitive verification failure");
+	}
+
+	[Test]
+	[Description("TryListPages redacts fallback transport failures by returning a stable verification error")]
+	public void TryListPages_ShouldReturnStableError_WhenBroaderVerificationThrows() {
+		// Arrange
+		var applicationClient = Substitute.For<IApplicationClient>();
+		var serviceUrlBuilder = Substitute.For<IServiceUrlBuilder>();
+		var logger = Substitute.For<ILogger>();
+		serviceUrlBuilder.Build("/DataService/json/SyncReply/SelectQuery").Returns("http://test/url");
+		string filteredResponse = new JObject {
+			["success"] = true,
+			["rows"] = new JArray()
+		}.ToString();
+		int requestCount = 0;
+		applicationClient.ExecutePostRequest(
+			Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+			.Returns(_ => ++requestCount == 1
+				? filteredResponse
+				: throw new System.Net.WebException("https://user:secret@example.test?token=sensitive"));
+		var command = new PageListCommand(applicationClient, serviceUrlBuilder, logger);
+		var options = new PageListOptions { PackageName = "labFORENOM", Limit = 50 };
+
+		// Act
+		bool result = command.TryListPages(options, out PageListResponse response);
+
+		// Assert
+		result.Should().BeFalse(
+			because: "a fallback transport exception prevents absence from being verified");
+		response.Error.Should().Be(
+			"The package-filtered query returned no rows, and the broader verification query failed.",
+			because: "connection details from the transport exception must not cross the command or MCP boundary");
+		response.Error.Should().NotContain("secret",
+			because: "credential material must not be exposed in the structured error");
 	}
 
 	[Test]
@@ -1102,7 +1368,7 @@ public class PageToolsTests
 					    operation: 'insert',
 					    name: 'NameField',
 					    parentName: 'MainContainer',
-					    path: ['items'],
+					    propertyName: 'items',
 					    values: {
 					      type: 'crt.Input'
 					    }
@@ -1124,7 +1390,8 @@ public class PageToolsTests
 					    operation: 'insert',
 					    name: 'MainContainer',
 					    values: {
-					      type: 'crt.FlexContainer'
+					      type: 'crt.FlexContainer',
+					      items: []
 					    }
 					  }
 					]
@@ -1206,7 +1473,7 @@ public class PageToolsTests
 			    operation: 'insert',
 			    name: 'NameField',
 			    parentName: 'MainContainer',
-			    path: ['items'],
+			    propertyName: 'items',
 			    values: {
 			      type: 'crt.Input'
 			    }
@@ -1375,6 +1642,146 @@ public class PageToolsTests
 			because: "the MCP-facing response should serialize the raw payload block");
 		serializedResponse.Should().Contain("\"packageUId\":\"99999999-2222-3333-4444-555555555555\"",
 			because: "the MCP-facing response should keep the package identifier stable");
+	}
+
+	[Test]
+	[Description("TryGetPage surfaces a named, actionable success:false failure (not a raw applier error) when the strict client-faithful applier rejects the merged inherited chain.")]
+	public void TryGetPage_WhenStrictApplierRejectsChain_ReturnsActionableFailure() {
+		// Arrange - the current page contributes a view-config op the platform itself rejects (parentName == name
+		// is a cyclic dependency), so the strict applier throws while resolving the merged bundle.
+		IApplicationClient applicationClient = Substitute.For<IApplicationClient>();
+		IServiceUrlBuilder serviceUrlBuilder = Substitute.For<IServiceUrlBuilder>();
+		ILogger logger = Substitute.For<ILogger>();
+		serviceUrlBuilder.Build(Arg.Any<string>()).Returns(callInfo => $"http://test{callInfo.Arg<string>()}");
+		JObject metadataResponse = CreateMetadataResponse(
+			"UsrBad_FormPage",
+			"bad-schema-uid",
+			"bad-package-uid",
+			"UsrBad",
+			"PageWithTabsFreedomTemplate");
+		JObject hierarchyResponse = CreateHierarchyResponse(
+			new JObject {
+				["uId"] = "bad-schema-uid",
+				["name"] = "UsrBad_FormPage",
+				["package"] = new JObject { ["uId"] = "bad-package-uid", ["name"] = "UsrBad" },
+				["schemaVersion"] = 1,
+				["body"] = CreatePageBody("""
+					[
+					  {
+					    operation: 'insert',
+					    name: 'Loop',
+					    parentName: 'Loop',
+					    values: { type: 'crt.Input' }
+					  }
+					]
+					""")
+			},
+			new JObject {
+				["uId"] = "base-uid",
+				["name"] = "PageWithTabsFreedomTemplate",
+				["package"] = new JObject { ["uId"] = "base-pkg-uid", ["name"] = "CrtBase" },
+				["schemaVersion"] = 1,
+				["body"] = CreatePageBody("""
+					[
+					  {
+					    operation: 'insert',
+					    name: 'MainContainer',
+					    values: { type: 'crt.FlexContainer', items: [] }
+					  }
+					]
+					""")
+			});
+		int callIndex = 0;
+		applicationClient.ExecutePostRequest(
+				Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+			.Returns(_ => ++callIndex == 1 ? metadataResponse.ToString() : hierarchyResponse.ToString());
+		PageGetCommand command = CreatePageGetCommand(applicationClient, serviceUrlBuilder, logger);
+		PageGetOptions options = new() { SchemaName = "UsrBad_FormPage" };
+
+		// Act
+		bool result = command.TryGetPage(options, out PageGetResponse response);
+
+		// Assert
+		result.Should().BeFalse(
+			because: "a schema chain the platform would reject must not resolve to a silent wrong bundle");
+		response.Success.Should().BeFalse(
+			because: "the strict-applier rejection should be reported as an explicit failure envelope");
+		response.Error.Should().Contain("Failed to resolve page bundle for 'UsrBad_FormPage'",
+			because: "the failure should name the page instead of surfacing a bare applier error");
+		response.Error.Should().Contain("the platform itself would reject",
+			because: "the message should explain the chain is rejected by the same engine the platform uses");
+		response.Error.Should().Contain("Cyclic dependency",
+			because: "the original applier diagnostic should be preserved so the offending operation is identifiable");
+	}
+
+	[Test]
+	[Description("TryGetPage returns success:false with the actionable message when a child is inserted into a container whose collection was never seeded - the strict applier rejects it (client parity) instead of silently auto-creating the collection.")]
+	public void TryGetPage_WhenContainerCollectionNotSeeded_ReturnsActionableFailure() {
+		// Arrange - the base template inserts MainContainer WITHOUT an items collection; the current page then
+		// inserts a child into MainContainer.items. The faithful applier throws "not a container" (the client does
+		// the same), where the retired tolerant applier would have auto-created the missing items array.
+		IApplicationClient applicationClient = Substitute.For<IApplicationClient>();
+		IServiceUrlBuilder serviceUrlBuilder = Substitute.For<IServiceUrlBuilder>();
+		ILogger logger = Substitute.For<ILogger>();
+		serviceUrlBuilder.Build(Arg.Any<string>()).Returns(callInfo => $"http://test{callInfo.Arg<string>()}");
+		JObject metadataResponse = CreateMetadataResponse(
+			"UsrUnseeded_FormPage",
+			"unseeded-schema-uid",
+			"unseeded-package-uid",
+			"UsrUnseeded",
+			"PageWithTabsFreedomTemplate");
+		JObject hierarchyResponse = CreateHierarchyResponse(
+			new JObject {
+				["uId"] = "unseeded-schema-uid",
+				["name"] = "UsrUnseeded_FormPage",
+				["package"] = new JObject { ["uId"] = "unseeded-package-uid", ["name"] = "UsrUnseeded" },
+				["schemaVersion"] = 1,
+				["body"] = CreatePageBody("""
+					[
+					  {
+					    operation: 'insert',
+					    name: 'NameField',
+					    parentName: 'MainContainer',
+					    propertyName: 'items',
+					    values: { type: 'crt.Input' }
+					  }
+					]
+					""")
+			},
+			new JObject {
+				["uId"] = "base-uid",
+				["name"] = "PageWithTabsFreedomTemplate",
+				["package"] = new JObject { ["uId"] = "base-pkg-uid", ["name"] = "CrtBase" },
+				["schemaVersion"] = 1,
+				["body"] = CreatePageBody("""
+					[
+					  {
+					    operation: 'insert',
+					    name: 'MainContainer',
+					    values: { type: 'crt.FlexContainer' }
+					  }
+					]
+					""")
+			});
+		int callIndex = 0;
+		applicationClient.ExecutePostRequest(
+				Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+			.Returns(_ => ++callIndex == 1 ? metadataResponse.ToString() : hierarchyResponse.ToString());
+		PageGetCommand command = CreatePageGetCommand(applicationClient, serviceUrlBuilder, logger);
+		PageGetOptions options = new() { SchemaName = "UsrUnseeded_FormPage" };
+
+		// Act
+		bool result = command.TryGetPage(options, out PageGetResponse response);
+
+		// Assert
+		result.Should().BeFalse(
+			because: "a child insert into an unseeded container collection is rejected, not silently repaired");
+		response.Success.Should().BeFalse(
+			because: "the strict-applier rejection surfaces as an explicit failure envelope");
+		response.Error.Should().Contain("Failed to resolve page bundle for 'UsrUnseeded_FormPage'",
+			because: "the failure names the page instead of surfacing a bare applier error");
+		response.Error.Should().Contain("not a container",
+			because: "the preserved applier diagnostic identifies the unseeded container as the offending target");
 	}
 
 	[Test]
@@ -1953,6 +2360,164 @@ public class PageToolsTests
 			because: "the tool's full content-ok composition must accept the reproduction body once the tooltip false-positive is removed");
 		response.Validation.Errors.Should().BeNullOrEmpty(
 			because: "no content validator should report an error for the reproduction body");
+	}
+
+	[Test]
+	[Description("validate=false does NOT disable the mobile structural floor: a body that is not valid JSON is still rejected, so a malformed mobile body can never be persisted.")]
+	[Category("Unit")]
+	public void TryUpdatePage_WhenMobileBodyIsMalformedJson_AndValidateIsFalse_StillRejects() {
+		// Arrange
+		IApplicationClient applicationClient = Substitute.For<IApplicationClient>();
+		IServiceUrlBuilder serviceUrlBuilder = Substitute.For<IServiceUrlBuilder>();
+		ILogger logger = Substitute.For<ILogger>();
+		SetupSchemaMetadata(applicationClient, serviceUrlBuilder, "UsrMobile_FormPage");
+		PageUpdateCommand command = new(applicationClient, serviceUrlBuilder, logger, Substitute.For<IPageBaselineGuard>());
+		PageUpdateOptions options = new() {
+			SchemaName = "UsrMobile_FormPage",
+			// Unterminated array - valid enough to be recognised as a mobile body, not valid JSON.
+			Body = "{ \"viewConfigDiff\": [ }",
+			Validate = false,
+			DryRun = true
+		};
+
+		// Act
+		bool result = command.TryUpdatePage(options, out PageUpdateResponse response);
+
+		// Assert
+		result.Should().BeFalse(
+			because: "the structural floor is the mobile counterpart of the web syntax gate and is not bypassable; "
+				+ "nothing downstream re-checks it (CollectMobileViewModelPaths is fail-soft)");
+		response.Error.Should().Contain("not valid JSON",
+			because: "the caller must be told the body is structurally broken, not silently get a saved page");
+	}
+
+	[Test]
+	[Description("validate=false skips the mobile CONTENT rules: an AMD-only 'handlers' section no longer blocks the save once the escape hatch is on.")]
+	[Category("Unit")]
+	public void TryUpdatePage_WhenMobileBodyHasHandlers_AndValidateIsFalse_SkipsContentRules() {
+		// Arrange
+		IApplicationClient applicationClient = Substitute.For<IApplicationClient>();
+		IServiceUrlBuilder serviceUrlBuilder = Substitute.For<IServiceUrlBuilder>();
+		ILogger logger = Substitute.For<ILogger>();
+		SetupSchemaMetadata(applicationClient, serviceUrlBuilder, "UsrMobile_FormPage");
+		PageUpdateCommand command = new(applicationClient, serviceUrlBuilder, logger, Substitute.For<IPageBaselineGuard>());
+		PageUpdateOptions options = new() {
+			SchemaName = "UsrMobile_FormPage",
+			Body = """
+				{
+				  "viewConfigDiff": [],
+				  "handlers": []
+				}
+				""",
+			Validate = false,
+			DryRun = true
+		};
+
+		// Act
+		bool result = command.TryUpdatePage(options, out PageUpdateResponse response);
+
+		// Assert
+		result.Should().BeTrue(
+			because: "the disallowed 'handlers' section is a CONTENT rule, which is the half the escape hatch skips");
+		(response.Error ?? string.Empty).Should().NotContain("handlers",
+			because: "the content rule must not fire once validation is explicitly disabled");
+	}
+
+	[Test]
+	[Description("validate=false does NOT drop replace-mode marker integrity on a web page - a markerless body would produce a page the tool could no longer read back.")]
+	[Category("Unit")]
+	public void TryUpdatePage_WhenWebReplaceBodyMissesMarkers_AndValidateIsFalse_StillRejects() {
+		// Arrange
+		IApplicationClient applicationClient = Substitute.For<IApplicationClient>();
+		IServiceUrlBuilder serviceUrlBuilder = Substitute.For<IServiceUrlBuilder>();
+		ILogger logger = Substitute.For<ILogger>();
+		serviceUrlBuilder.Build(Arg.Any<string>())
+			.Returns(callInfo => "http://test" + callInfo.Arg<string>());
+		applicationClient.ExecutePostRequest(
+				Arg.Is<string>(url => url.Contains("SelectQuery")),
+				Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+			.Returns(new JObject {
+				["success"] = true,
+				["rows"] = new JArray { new JObject { ["UId"] = "web-schema-uid", ["SchemaType"] = 9 } }
+			}.ToString());
+		PageUpdateCommand command = new(applicationClient, serviceUrlBuilder, logger,
+			Substitute.For<IPageBaselineGuard>(), CreateHierarchyClientFor("web-schema-uid"));
+		PageUpdateOptions options = new() {
+			SchemaName = "UsrWeb_FormPage",
+			// Parses as JavaScript, so the syntax gate alone would let it through.
+			Body = "define('UsrWeb_FormPage', [], function() { return { viewConfigDiff: [] }; });",
+			Validate = false,
+			DryRun = true
+		};
+
+		// Act
+		bool result = command.TryUpdatePage(options, out PageUpdateResponse response);
+
+		// Assert
+		result.Should().BeFalse(
+			because: "markers are the 'is this still a recognizable page' test - without them PageSchemaSectionReader "
+				+ "cannot extract sections and append-merge is dead on that page");
+		response.Error.Should().Contain("marker",
+			because: "the marker floor, not a downstream failure, must be the reported reason");
+	}
+
+	[Test]
+	[Description("A content-validation failure is MARKED as skippable but does not name validate=false in the command layer: PageUpdateCommand is CLI-reachable and Validate carries no [Option], so a CLI user must not be pointed at a flag their parser rejects. The MCP adapter words the hint off this marker.")]
+	[Category("Unit")]
+	public void TryUpdatePage_WhenContentValidationFails_MarksTheFailureWithoutNamingTheMcpOnlyFlag() {
+		// Arrange
+		IApplicationClient applicationClient = Substitute.For<IApplicationClient>();
+		IServiceUrlBuilder serviceUrlBuilder = Substitute.For<IServiceUrlBuilder>();
+		ILogger logger = Substitute.For<ILogger>();
+		SetupSchemaMetadata(applicationClient, serviceUrlBuilder, "UsrMobile_FormPage");
+		PageUpdateCommand command = new(applicationClient, serviceUrlBuilder, logger, Substitute.For<IPageBaselineGuard>());
+		PageUpdateOptions options = new() {
+			SchemaName = "UsrMobile_FormPage",
+			Body = """
+				{
+				  "viewConfigDiff": [],
+				  "handlers": []
+				}
+				""",
+			DryRun = true
+		};
+
+		// Act
+		bool result = command.TryUpdatePage(options, out PageUpdateResponse response);
+
+		// Assert
+		result.Should().BeFalse(
+			because: "the content rule still applies with validation on");
+		response.ContentValidationFailure.Should().BeTrue(
+			because: "the MCP adapter needs to know this failure came from the half validate=false skips");
+		response.Error.Should().NotContain("validate=false",
+			because: "a CLI user cannot set validate, so the command layer must not advertise it");
+	}
+
+	[Test]
+	[Description("A structural-floor failure is NOT marked as skippable, so the escape hatch is never advertised for a rule validate=false cannot bypass.")]
+	[Category("Unit")]
+	public void TryUpdatePage_WhenStructuralFloorFails_DoesNotMarkTheFailureAsSkippable() {
+		// Arrange
+		IApplicationClient applicationClient = Substitute.For<IApplicationClient>();
+		IServiceUrlBuilder serviceUrlBuilder = Substitute.For<IServiceUrlBuilder>();
+		ILogger logger = Substitute.For<ILogger>();
+		SetupSchemaMetadata(applicationClient, serviceUrlBuilder, "UsrMobile_FormPage");
+		PageUpdateCommand command = new(applicationClient, serviceUrlBuilder, logger, Substitute.For<IPageBaselineGuard>());
+		PageUpdateOptions options = new() {
+			SchemaName = "UsrMobile_FormPage",
+			Body = "{ this is not valid json",
+			DryRun = true
+		};
+
+		// Act
+		bool result = command.TryUpdatePage(options, out PageUpdateResponse response);
+
+		// Assert
+		result.Should().BeFalse(
+			because: "the mobile structural floor rejects a body that is not a JSON object");
+		response.ContentValidationFailure.Should().BeFalse(
+			because: "the structural floor is not bypassable, so the escape hatch must never be advertised for it");
 	}
 
 	[Test]
@@ -2970,7 +3535,7 @@ public class PageToolsTests
 			logger,
 			hierarchyClient ?? new PageDesignerHierarchyClient(applicationClient, serviceUrlBuilder),
 			new PageSchemaBodyParser(),
-			new PageBundleBuilder(new PageJsonDiffApplier(), new PageJsonPathDiffApplier()),
+			new PageBundleBuilder(() => new JsonDiffApplier(), () => new JsonPathDiffApplier()),
 			CreatePassthroughPageFileWriter());
 	}
 
@@ -3668,33 +4233,8 @@ public class PageToolsTests
 				}
 			}
 		});
-		var jsonDiff = Substitute.For<IPageJsonDiffApplier>();
-		jsonDiff.ApplyDiff(Arg.Any<Newtonsoft.Json.Linq.JArray>(), Arg.Any<IReadOnlyList<Newtonsoft.Json.Linq.JArray>>(), Arg.Any<IReadOnlyList<PageJsonDiffApplyOptions>>())
-			.Returns(ci => {
-				var array = new Newtonsoft.Json.Linq.JArray {
-					new Newtonsoft.Json.Linq.JObject {
-						["name"] = "RootContainer",
-						["type"] = "crt.FlexContainer",
-						["items"] = new Newtonsoft.Json.Linq.JArray {
-							new Newtonsoft.Json.Linq.JObject {
-								["name"] = "NestedContainer",
-								["type"] = "crt.Grid",
-								["items"] = new Newtonsoft.Json.Linq.JArray {
-									new Newtonsoft.Json.Linq.JObject {
-										["name"] = "LeafButton",
-										["type"] = "crt.Button"
-									}
-								}
-							}
-						}
-					}
-				};
-				return array;
-			});
-		var pathDiff = Substitute.For<IPageJsonPathDiffApplier>();
-		pathDiff.Apply(Arg.Any<Newtonsoft.Json.Linq.JObject>(), Arg.Any<Newtonsoft.Json.Linq.JArray>())
-			.Returns(ci => new Newtonsoft.Json.Linq.JObject());
-		var builder = new PageBundleBuilder(jsonDiff, pathDiff);
+		// The real client-faithful applier resolves the parser's ViewConfigDiff into the container tree under test.
+		var builder = new PageBundleBuilder(() => new JsonDiffApplier(), () => new JsonPathDiffApplier());
 		var parts = new List<PageSchemaBundlePart> {
 			new(
 				new PageDesignerHierarchySchema { UId = "u", Name = "TestPage", PackageUId = "p", Body = "x" },
@@ -5364,6 +5904,8 @@ public class PageToolsTests
 	private static PageUpdateTool BuildAppendGuardTool(IApplicationClient applicationClient = null) {
 		applicationClient ??= Substitute.For<IApplicationClient>();
 		IServiceUrlBuilder serviceUrlBuilder = Substitute.For<IServiceUrlBuilder>();
+		serviceUrlBuilder.Build(Arg.Any<string>())
+			.Returns(callInfo => "http://test" + callInfo.Arg<string>());
 		ILogger logger = Substitute.For<ILogger>();
 		PageUpdateCommand command = new(applicationClient, serviceUrlBuilder, logger, Substitute.For<IPageBaselineGuard>());
 		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();

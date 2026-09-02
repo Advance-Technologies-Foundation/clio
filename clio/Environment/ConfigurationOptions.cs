@@ -296,6 +296,12 @@ namespace Clio
 	/// </remarks>
 	public class DeployCreatioDefaults
 	{
+		/// <summary>Built-in inclusive start of the automatic IIS site-port range.</summary>
+		public const int DefaultSitePortRangeStart = 40100;
+
+		/// <summary>Built-in inclusive end of the automatic IIS site-port range.</summary>
+		public const int DefaultSitePortRangeEnd = 40199;
+
 		/// <summary>
 		/// Gets or sets the default local database server name (a key in the <c>db</c> settings block)
 		/// used when <c>--db-server-name</c> is omitted.
@@ -325,6 +331,13 @@ namespace Clio
 		public int? SitePort { get; set; }
 
 		/// <summary>
+		/// Gets or sets the inclusive IIS site-port range used when neither an explicit nor configured fixed
+		/// site port is available. The array must contain exactly the start and end ports.
+		/// </summary>
+		[JsonProperty("site-port-range")]
+		public int[] SitePortRange { get; set; }
+
+		/// <summary>
 		/// Gets or sets the default deployment method (<c>auto</c>, <c>iis</c>, or <c>dotnet</c>) used when
 		/// <c>--deployment</c> is omitted or left at its <c>auto</c> default.
 		/// </summary>
@@ -341,7 +354,14 @@ namespace Clio
 			&& string.IsNullOrWhiteSpace(RedisServerName)
 			&& string.IsNullOrWhiteSpace(SiteName)
 			&& !SitePort.HasValue
+			&& SitePortRange is not { Length: > 0 }
 			&& string.IsNullOrWhiteSpace(DeploymentMethod);
+
+		/// <summary>Creates deployment defaults containing Clio's built-in automatic IIS port range.</summary>
+		/// <returns>A new defaults object with an independent two-element range array.</returns>
+		public static DeployCreatioDefaults CreateWithDefaultSitePortRange() => new() {
+			SitePortRange = [DefaultSitePortRangeStart, DefaultSitePortRangeEnd]
+		};
 	}
 
 	/// <summary>
@@ -1230,6 +1250,95 @@ namespace Clio
 					settings.ActiveEnvironmentKey = settings.Environments.Keys.FirstOrDefault();
 				}
 			});
+		}
+
+		public bool RemoveEnvironmentIfPathMatches(string environment, string expectedEnvironmentPath) {
+			bool removed = false;
+			UpdateSettingsIfChanged(settings => {
+				string actualKey = settings.Environments.Keys.FirstOrDefault(key =>
+					string.Equals(key, environment, StringComparison.OrdinalIgnoreCase));
+				if (actualKey is null
+					|| !EnvironmentPathsMatch(settings.Environments[actualKey].EnvironmentPath,
+						expectedEnvironmentPath)) {
+					return false;
+				}
+				removed = settings.Environments.Remove(actualKey);
+				if (removed && string.Equals(settings.ActiveEnvironmentKey, actualKey,
+					StringComparison.OrdinalIgnoreCase)) {
+					settings.ActiveEnvironmentKey = settings.Environments.Keys.FirstOrDefault();
+				}
+				return removed;
+			});
+			return removed;
+		}
+
+		public bool EnvironmentPathMatches(string environment, string expectedEnvironmentPath) {
+			bool matches = false;
+			UpdateSettingsIfChanged(settings => {
+				string actualKey = settings.Environments.Keys.FirstOrDefault(key =>
+					string.Equals(key, environment, StringComparison.OrdinalIgnoreCase));
+				matches = actualKey is not null
+					&& EnvironmentPathsMatch(settings.Environments[actualKey].EnvironmentPath,
+						expectedEnvironmentPath);
+				return false;
+			});
+			return matches;
+		}
+
+		public EnvironmentSettings FindCurrentEnvironment(string environment) {
+			EnvironmentSettings result = null;
+			UpdateSettingsIfChanged(settings => {
+				string actualKey = settings.Environments.Keys.FirstOrDefault(key =>
+					string.Equals(key, environment, StringComparison.OrdinalIgnoreCase));
+				result = actualKey is null ? null : settings.Environments[actualKey];
+				return false;
+			});
+			return result;
+		}
+
+		private static bool TryNormalizeAbsolutePath(string path, out string normalizedPath) {
+			normalizedPath = null;
+			try {
+				if (string.IsNullOrWhiteSpace(path) || !Path.IsPathFullyQualified(path)) {
+					return false;
+				}
+				normalizedPath = DirectoryPathIdentity.Normalize(path);
+				return true;
+			}
+			catch (Exception exception) when (exception is ArgumentException or NotSupportedException
+				or PathTooLongException or InvalidOperationException) {
+				return false;
+			}
+		}
+
+		private static bool EnvironmentPathsMatch(string firstPath, string secondPath) {
+			StringComparison comparison = OperatingSystem.IsWindows()
+				? StringComparison.OrdinalIgnoreCase
+				: StringComparison.Ordinal;
+			if (TryNormalizeLexicalAbsolutePath(firstPath, out string firstLexical)
+				&& TryNormalizeLexicalAbsolutePath(secondPath, out string secondLexical)
+				&& string.Equals(firstLexical, secondLexical, comparison)) {
+				return true;
+			}
+			return TryNormalizeAbsolutePath(firstPath, out string firstPhysical)
+				&& TryNormalizeAbsolutePath(secondPath, out string secondPhysical)
+				&& string.Equals(firstPhysical, secondPhysical, comparison);
+		}
+
+		private static bool TryNormalizeLexicalAbsolutePath(string path, out string normalizedPath) {
+			normalizedPath = null;
+			try {
+				if (string.IsNullOrWhiteSpace(path) || !Path.IsPathFullyQualified(path)) {
+					return false;
+				}
+				normalizedPath = Path.GetFullPath(path).TrimEnd(Path.DirectorySeparatorChar,
+					Path.AltDirectorySeparatorChar);
+				return true;
+			}
+			catch (Exception exception) when (exception is ArgumentException or NotSupportedException
+				or PathTooLongException) {
+				return false;
+			}
 		}
 
 		public static void OpenSettingsFile() {

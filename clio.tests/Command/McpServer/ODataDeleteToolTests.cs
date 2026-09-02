@@ -9,6 +9,7 @@ using NUnit.Framework;
 namespace Clio.Tests.Command.McpServer;
 
 [TestFixture]
+[Property("Module", "McpServer")]
 public sealed class ODataDeleteToolTests {
 	private const string Guid = "8ecab4a1-0ca3-4515-9399-efe0a19390bd";
 
@@ -101,5 +102,79 @@ public sealed class ODataDeleteToolTests {
 		response.Success.Should().BeFalse();
 		response.Error.Should().Be("entity is required.");
 		resolver.DidNotReceive().Resolve<IApplicationClient>(Arg.Any<EnvironmentOptions>());
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("A non-JSON response body (an IIS/proxy error page instead of Creatio's OData pipeline) must never be reported as a successful delete — the write's transport layer never throws on a non-2xx status, so the body is the only signal available.")]
+	public void Delete_Should_Fail_When_Response_Is_Not_Json() {
+		// Arrange
+		IApplicationClient client = Substitute.For<IApplicationClient>();
+		IServiceUrlBuilder urlBuilder = Substitute.For<IServiceUrlBuilder>();
+		IToolCommandResolver resolver = Substitute.For<IToolCommandResolver>();
+		resolver.Resolve<IApplicationClient>(Arg.Any<EnvironmentOptions>()).Returns(client);
+		resolver.Resolve<IServiceUrlBuilder>(Arg.Any<EnvironmentOptions>()).Returns(urlBuilder);
+		urlBuilder.Build(Arg.Any<string>()).Returns("http://creatio/odata/Contact(8ecab4a1-0ca3-4515-9399-efe0a19390bd)");
+		client.ExecuteDeleteRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+			.Returns("<html><head><title>401 - Unauthorized: Access is denied due to invalid credentials.</title></head></html>");
+		ODataDeleteTool tool = new(resolver);
+
+		// Act
+		ODataWriteResponse response = tool.Delete(new ODataDeleteArgs {
+			EnvironmentName = "dev", Entity = "Contact", Id = Guid, Confirm = true
+		});
+
+		// Assert
+		response.Success.Should().BeFalse(because: "an HTML error page proves the request never reached Creatio's OData pipeline");
+		response.Error.Should().Contain("was not JSON", because: "the diagnostic must point at the transport layer, not the request's OData/ESQ shape");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("An empty DELETE response body (Creatio's normal 204 No Content on success) is reported as success.")]
+	public void Delete_Should_Succeed_On_Empty_Response_Body() {
+		// Arrange
+		IApplicationClient client = Substitute.For<IApplicationClient>();
+		IServiceUrlBuilder urlBuilder = Substitute.For<IServiceUrlBuilder>();
+		IToolCommandResolver resolver = Substitute.For<IToolCommandResolver>();
+		resolver.Resolve<IApplicationClient>(Arg.Any<EnvironmentOptions>()).Returns(client);
+		resolver.Resolve<IServiceUrlBuilder>(Arg.Any<EnvironmentOptions>()).Returns(urlBuilder);
+		urlBuilder.Build(Arg.Any<string>()).Returns("http://creatio/odata/Contact(8ecab4a1-0ca3-4515-9399-efe0a19390bd)");
+		client.ExecuteDeleteRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+			.Returns(string.Empty);
+		ODataDeleteTool tool = new(resolver);
+
+		// Act
+		ODataWriteResponse response = tool.Delete(new ODataDeleteArgs {
+			EnvironmentName = "dev", Entity = "Contact", Id = Guid, Confirm = true
+		});
+
+		// Assert
+		response.Success.Should().BeTrue(because: "an empty body is Creatio's normal successful DELETE response");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("A recognized Creatio OData error body returned with a non-failing HTTP status is reported as a failure, not swallowed as a successful delete — a before-delete business rule or an FK constraint rejection is the most likely non-empty DELETE body.")]
+	public void Delete_Should_Fail_When_Response_Is_ODataError() {
+		// Arrange
+		IApplicationClient client = Substitute.For<IApplicationClient>();
+		IServiceUrlBuilder urlBuilder = Substitute.For<IServiceUrlBuilder>();
+		IToolCommandResolver resolver = Substitute.For<IToolCommandResolver>();
+		resolver.Resolve<IApplicationClient>(Arg.Any<EnvironmentOptions>()).Returns(client);
+		resolver.Resolve<IServiceUrlBuilder>(Arg.Any<EnvironmentOptions>()).Returns(urlBuilder);
+		urlBuilder.Build(Arg.Any<string>()).Returns("http://creatio/odata/Contact(8ecab4a1-0ca3-4515-9399-efe0a19390bd)");
+		client.ExecuteDeleteRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+			.Returns("{\"error\":{\"code\":\"\",\"message\":\"The DELETE request violates a foreign key constraint\"}}");
+		ODataDeleteTool tool = new(resolver);
+
+		// Act
+		ODataWriteResponse response = tool.Delete(new ODataDeleteArgs {
+			EnvironmentName = "dev", Entity = "Contact", Id = Guid, Confirm = true
+		});
+
+		// Assert
+		response.Success.Should().BeFalse(because: "an OData error envelope must not be reported as a successful delete");
+		response.Error.Should().Be("The DELETE request violates a foreign key constraint");
 	}
 }

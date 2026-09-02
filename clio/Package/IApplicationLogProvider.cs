@@ -23,12 +23,12 @@ namespace Clio.Package
         private IApplicationClientFactory _applicationClientFactory;
 		private IServiceUrlBuilder _serviceUrlBuilder;
 
-		private IApplicationClient CreateApplicationClient(EnvironmentSettings environmentSettings) =>
-	_applicationClientFactory.CreateClient(environmentSettings);
+		private IOwnedApplicationClient CreateApplicationClient(EnvironmentSettings environmentSettings) =>
+	_applicationClientFactory.CreateOwnedClient(environmentSettings);
 
 		public string GetInstallationLog(EnvironmentSettings environmentSetting) {
 			try {
-				IApplicationClient applicationClientForLog = CreateApplicationClient(environmentSetting);
+				using IOwnedApplicationClient applicationClientForLog = CreateApplicationClient(environmentSetting);
 				return applicationClientForLog.ExecuteGetRequest(GetCompleteUrl(InstallLogUrl, environmentSetting));
 			} catch (Exception) { }
 			return String.Empty;

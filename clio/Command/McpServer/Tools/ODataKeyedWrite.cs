@@ -1,3 +1,4 @@
+﻿using System.Text.Json;
 using Clio.Common;
 
 namespace Clio.Command.McpServer.Tools;
@@ -48,14 +49,54 @@ internal static class ODataKeyedWrite {
 	}
 
 	/// <summary>
-	/// Resolves the environment-scoped application client and builds the key-addressed OData URL.
+	/// Resolves the environment-scoped application client and URL builder once, and builds the
+	/// key-addressed OData URL from that same pair.
 	/// </summary>
-	internal static (IApplicationClient client, string url) ResolveTarget(
+	/// <remarks>
+	/// The URL builder is returned rather than left inside, because everything a keyed write does
+	/// before the write - the pre-write field validation in particular - has to run against the same
+	/// environment snapshot as the write itself. Resolving a second builder reloads the settings, so a
+	/// repointed environment could have validation read the type from environment B while the PATCH
+	/// still went to A: a field that exists only on B would pass and then be silently discarded by A,
+	/// with the tool reporting success.
+	/// </remarks>
+	internal static (IApplicationClient client, IServiceUrlBuilder urlBuilder, string url) ResolveTarget(
 		IToolCommandResolver commandResolver, string environmentName, string entity, string id) {
 		EnvironmentOptions options = new() { Environment = environmentName };
 		IApplicationClient client = commandResolver.Resolve<IApplicationClient>(options);
 		IServiceUrlBuilder urlBuilder = commandResolver.Resolve<IServiceUrlBuilder>(options);
 		string url = urlBuilder.Build(ODataKeyFormatter.KeyPath(entity, id));
-		return (client, url);
+		return (client, urlBuilder, url);
+	}
+
+	/// <summary>
+	/// Validates the response body of a keyed PATCH/DELETE write. Creatio normally answers a
+	/// successful update or delete with <c>204 No Content</c> (empty body), so an empty response is
+	/// success. The transport layer (<see cref="IApplicationClient"/>) returns whatever body came
+	/// back regardless of HTTP status - it never throws for a non-2xx response - so a body that IS
+	/// present must be inspected: a recognized Creatio error shape, or a body that fails to parse as
+	/// JSON at all (an IIS/proxy error page, a stale-session redirect), both mean the write must not
+	/// be reported as successful.
+	/// </summary>
+	/// <param name="response">The raw response body returned by the PATCH/DELETE request.</param>
+	/// <returns>A redacted failure message, or <c>null</c> when the response is consistent with success.</returns>
+	internal static string ValidateWriteResponse(string response) {
+		// Whitespace counts as "no body", not as an unparsable body: a proxy that pads an otherwise
+		// empty 204 with a newline is the realistic source of a whitespace-only response, and Creatio
+		// itself always answers a genuine failure with one of the recognized JSON error shapes. Treating
+		// whitespace as a failure would therefore turn successful writes into false negatives, which is
+		// the worse outcome here - the caller would re-send an update that already landed.
+		if (string.IsNullOrWhiteSpace(response)) {
+			return null;
+		}
+		try {
+			using JsonDocument doc = JsonDocument.Parse(response);
+			return CreatioResponseError.TryDetect(doc.RootElement, CreatioResponseContext.ODataPayload,
+				out string serverError)
+				? SensitiveErrorTextRedactor.Redact(serverError)
+				: null;
+		} catch (JsonException) {
+			return SensitiveErrorTextRedactor.Redact(CreatioResponseError.DescribeNonJsonResponse(response));
+		}
 	}
 }

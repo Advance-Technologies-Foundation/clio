@@ -24,7 +24,7 @@ public static class WorkspacePackagePrompt {
 		string workspacePath,
 		[Description("Creatio environment name used for follow-up download when needed")]
 		string environmentName = null,
-		[Description("Whether to create an application descriptor for the package")]
+		[Description("Whether to create an application descriptor, backend localization schema, and injectable LocalizableString adapter")]
 		bool asApp = false,
 		[Description("Path to a Creatio zip file or extracted directory to get configuration from")]
 		string buildZipPath = null) =>
@@ -32,6 +32,10 @@ public static class WorkspacePackagePrompt {
 		 Use clio mcp server `add-package` tool to create package `{name}` in the workspace at
 		 `{workspacePath}`.
 		 Pass `workspace-path` exactly as provided and set `as-app` to `{asApp}`.
+		 When `as-app` is true, use the generated `ILocalizableStringResolver` abstraction instead of
+		 constructing Creatio `LocalizableString` in consumers. Keep the generated localization schema for
+		 package-level backend values without a natural owner; keep page and other schema-specific resources
+		 with their owning schema.
 		 Use `build-zip-path` value `{buildZipPath ?? "<not provided>"}` when configuration should come
 		 from a local build archive or extracted directory.
 		 When `build-zip-path` is not provided, the follow-up flow may need environment access to
@@ -81,16 +85,24 @@ public static class WorkspacePackagePrompt {
 		[Description("Creatio environment name")]
 		string environmentName,
 		[Description("Optional package-name filter")]
-		string? filter = null) =>
+		string? filter = null,
+		[Description("Optional page size; omit to use the default of 50")]
+		int? limit = null,
+		[Description("Optional zero-based package offset")]
+		int offset = 0) =>
 		string.IsNullOrWhiteSpace(filter)
 			? $"""
 			   Use clio mcp server `{GetPkgListTool.GetPkgListToolName}` tool to list packages installed in
 			   Creatio environment `{environmentName}`.
-			   Pass `environment-name` exactly as provided and omit `filter` when you need the full package list.
+			   Pass `environment-name` exactly as provided, `offset` `{offset}`, and
+			   `limit` `{limit?.ToString() ?? "<default 50>"}`. Omit `filter` to page through all packages.
+			   Continue with offset + count while the response reports `truncated: true`.
 			   """
 			: $"""
 			   Use clio mcp server `{GetPkgListTool.GetPkgListToolName}` tool to list packages installed in
 			   Creatio environment `{environmentName}`.
-			   Pass `environment-name` exactly as provided and use `filter` `{filter}` to narrow the result.
+			   Pass `environment-name` exactly as provided, use `filter` `{filter}`, `offset` `{offset}`, and
+			   `limit` `{limit?.ToString() ?? "<default 50>"}`. Continue with offset + count while the response
+			   reports `truncated: true`.
 			   """;
 }

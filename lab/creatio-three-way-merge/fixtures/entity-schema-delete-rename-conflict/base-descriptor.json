@@ -1,0 +1,14 @@
+{
+  "Descriptor": {
+    "UId": "a2aba7b4-2289-4731-942a-7c5dcb4fd684",
+    "Name": "UsrMergeProofEntity",
+    "ModifiedOnUtc": "\/Date(1787439140000)\/",
+    "Parent": {
+      "UId": "1bab9dcf-17d5-49f8-9536-8e0064f1dce0",
+      "Name": "BaseEntity"
+    },
+    "ManagerName": "EntitySchemaManager",
+    "Caption": "Merge Proof Entity"
+  }
+}
+

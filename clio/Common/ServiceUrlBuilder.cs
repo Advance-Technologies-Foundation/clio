@@ -229,7 +229,28 @@ public class ServiceUrlBuilder : IServiceUrlBuilder
 		///     identity: it cannot report WHICH build answered. UNGATED on the package side, deliberately,
 		///     because it answers a question about the installation, not about process design.
 		/// </summary>
-		ProcessBuilderPing = 62
+		ProcessBuilderPing = 62,
+
+		/// <summary>
+		///     ClioGate route that lists every package layer carrying a schema of a given name. Read-only; it exists
+		///     so schema transfer can report an ambiguous name instead of resolving it to an arbitrary layer.
+		/// </summary>
+		FindSchemaLayers = 63,
+
+		/// <summary>
+		///     ClioGate route that exports one schema through the platform schema exporter.
+		/// </summary>
+		ExportSchema = 64,
+
+		/// <summary>
+		///     ClioGate route that imports a previously exported schema payload into a package.
+		/// </summary>
+		ImportSchema = 65,
+
+		/// <summary>
+		///     Uploads a binary image through the native Image API.
+		/// </summary>
+		ImageApiUpload = 66
 
 	}
 
@@ -294,6 +315,9 @@ public class ServiceUrlBuilder : IServiceUrlBuilder
 		{KnownRoute.BuildProcess, "/rest/ProcessDesignService/BuildProcess"},
 		{KnownRoute.ListUserTasks, "/rest/ProcessDesignService/ListUserTasks"},
 		{KnownRoute.ProcessBuilderPing, "/rest/ProcessDesignService/Ping"},
+		{KnownRoute.FindSchemaLayers, "/rest/CreatioApiGateway/FindSchemaLayers"},
+		{KnownRoute.ExportSchema, "/rest/CreatioApiGateway/ExportSchema"},
+		{KnownRoute.ImportSchema, "/rest/CreatioApiGateway/ImportSchema"},
 		{KnownRoute.DescribeProcess, "/rest/ProcessDesignService/DescribeProcess"},
 		{KnownRoute.ModifyProcess, "/rest/ProcessDesignService/ModifyProcess"},
 		{KnownRoute.GetAvailableThemes, "ServiceModel/ThemeService.svc/GetAvailableThemes"},
@@ -305,6 +329,7 @@ public class ServiceUrlBuilder : IServiceUrlBuilder
 		{KnownRoute.LicenseGetLicOperationStatuses, "ServiceModel/LicenseService.svc/GetLicOperationStatuses"},
 		{KnownRoute.RightsGetRecordRights, "/rest/RightsService/GetRecordRights"},
 		{KnownRoute.RightsApplyChanges, "/rest/RightsService/ApplyChanges"},
+		{KnownRoute.ImageApiUpload, "/ImageAPIService/upload"},
 	};
 
 	private EnvironmentSettings _environmentSettings;

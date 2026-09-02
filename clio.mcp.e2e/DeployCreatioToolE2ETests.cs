@@ -56,11 +56,15 @@ public sealed class DeployCreatioToolE2ETests : McpContractFixtureBase
 			because: "the deploy-creatio contract description should tell the agent to review full infrastructure first");
 		contract.Description.Should().Contain("show-passing-infrastructure",
 			because: "the deploy-creatio contract description should tell the agent to fetch deployable recommendations second");
+		contract.Description.Should().Contain("deploy-creatio-defaults.site-port-range",
+			because: "the real discovery contract should disclose automatic IIS port allocation");
 		contract.Description.Should().Contain("existing forced-password-change state",
 			because: "the real MCP contract should disclose the preserved database behavior used by Ring");
 		contract.InputSchema.Properties.Select(property => property.Name).Should().BeEquivalentTo(
 			["siteName", "zipFile", "sitePort", "dbServerName", "redisServerName", "useHttps"],
 			because: "the full deploy-creatio contract should only expose the six approved arguments");
+		contract.InputSchema.Required.Should().Equal(new[] { "siteName", "zipFile" },
+			because: "sitePort must be optional so the real MCP server can use the configured IIS range");
 		contract.InputSchema.Properties.Single(property => property.Name == "useHttps").Description.Should()
 			.Contain("falls back to HTTP",
 				because: "agents need the non-failing HTTPS fallback contract before invoking deployment");

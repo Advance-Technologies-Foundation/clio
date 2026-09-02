@@ -4,8 +4,6 @@ using System.IO;
 using System.IO.Abstractions;
 using System.Linq;
 using System.Management.Automation;
-using System.Net;
-using System.Net.NetworkInformation;
 using System.Runtime.InteropServices;
 using System.Threading;
 using System.Threading.Tasks;
@@ -15,6 +13,7 @@ using Clio.Common.Database;
 using Clio.Common.db;
 using Clio.Common.DeploymentStrategies;
 using Clio.Common.DbHub;
+using Clio.Common.IIS;
 using Clio.Common.K8;
 using Clio.Common.ScenarioHandlers;
 using Clio.UserEnvironment;
@@ -137,6 +136,9 @@ public class CreatioInstallerService : Command<PfInstallerOptions>, ICreatioInst
 	private readonly ISettingsRepository _settingsRepository;
 	private readonly IStageEventEmitter _stageEventEmitter;
 	private readonly IDbHubSynchronizationService _dbHubSynchronizationService;
+	private readonly ITcpPortReservationReader _tcpPortReservationReader;
+	private readonly IIisDeploymentPortReservation _iisDeploymentPortReservation;
+	private readonly IDeploymentTargetReservation _deploymentTargetReservation;
 
 	#endregion
 
@@ -164,6 +166,9 @@ public class CreatioInstallerService : Command<PfInstallerOptions>, ICreatioInst
 	/// <param name="creatioPackageVersionParser">Parser for version extraction from package filename.</param>
 	/// <param name="passwordResetScriptExecutor">Executor for post-restore password reset script.</param>
 	/// <param name="stageEventEmitter">Emitter that raises typed stage-progress events for the deploy run.</param>
+	/// <param name="tcpPortReservationReader">Reads active TCP reservations for DotNet port validation.</param>
+	/// <param name="iisDeploymentPortReservation">Machine-wide IIS port reservation held across deployment mutation.</param>
+	/// <param name="deploymentTargetReservation">Cross-process target-directory reservation held across deployment mutation.</param>
 	/// <param name="dbOperationLogContextAccessor">Accessor for the active database operation log session.</param>
 	/// <param name="dbHubSynchronizationService">Best-effort dbHub source synchronization service.</param>
 	public CreatioInstallerService(IPackageArchiver packageArchiver, k8Commands k8,
@@ -179,6 +184,9 @@ public class CreatioInstallerService : Command<PfInstallerOptions>, ICreatioInst
 		ICreatioPackageVersionParser creatioPackageVersionParser,
 		IPasswordResetScriptExecutor passwordResetScriptExecutor,
 		IStageEventEmitter stageEventEmitter,
+		ITcpPortReservationReader tcpPortReservationReader,
+		IIisDeploymentPortReservation iisDeploymentPortReservation,
+		IDeploymentTargetReservation deploymentTargetReservation,
 		IDbOperationLogContextAccessor dbOperationLogContextAccessor = null,
 		IDbHubSynchronizationService dbHubSynchronizationService = null) {
 		_packageArchiver = packageArchiver;
@@ -205,6 +213,9 @@ public class CreatioInstallerService : Command<PfInstallerOptions>, ICreatioInst
 		_creatioPackageVersionParser = creatioPackageVersionParser;
 		_passwordResetScriptExecutor = passwordResetScriptExecutor;
 		_stageEventEmitter = stageEventEmitter;
+		_tcpPortReservationReader = tcpPortReservationReader;
+		_iisDeploymentPortReservation = iisDeploymentPortReservation;
+		_deploymentTargetReservation = deploymentTargetReservation;
 		_dbHubSynchronizationService = dbHubSynchronizationService;
 		_dbOperationLogContextAccessor = dbOperationLogContextAccessor ?? NullDbOperationLogContextAccessor.Instance;
 	}
@@ -448,15 +459,49 @@ public class CreatioInstallerService : Command<PfInstallerOptions>, ICreatioInst
 				throw new InvalidOperationException("IIS root folder must be configured for IIS deployment");
 			}
 
-			return _msFileSystem.Path.Combine(_iisRootFolder, options.SiteName);
+			if (!IisSiteName.IsSafeLeaf(options.SiteName)) {
+				throw new InvalidOperationException(
+					"IIS site name must be a single safe name without path separators, dot segments, quotes, or control characters.");
+			}
+			return ResolveStrictChildPath(_iisRootFolder, options.SiteName, "IIS");
 		}
 
 		// DotNet deployment uses the current directory or specified AppPath
 		if (!string.IsNullOrEmpty(options.AppPath)) {
-			return options.AppPath;
+			if (!Path.IsPathFullyQualified(options.AppPath)) {
+				throw new InvalidOperationException("Application installation path must be absolute.");
+			}
+			string targetPath = DirectoryPathIdentity.Normalize(options.AppPath);
+			string root = Path.GetPathRoot(targetPath);
+			if (string.Equals(targetPath, root, OperatingSystem.IsWindows()
+				? StringComparison.OrdinalIgnoreCase
+				: StringComparison.Ordinal)) {
+				throw new InvalidOperationException("Application installation path must not be a filesystem root.");
+			}
+			return targetPath;
 		}
 
-		return _msFileSystem.Path.Combine(_msFileSystem.Directory.GetCurrentDirectory(), options.SiteName);
+		if (!IisSiteName.IsSafeLeaf(options.SiteName)) {
+			throw new InvalidOperationException(
+				"Site name must be a single safe name when application path is not specified.");
+		}
+		return ResolveStrictChildPath(_msFileSystem.Directory.GetCurrentDirectory(), options.SiteName, ".NET");
+	}
+
+	private string ResolveStrictChildPath(string rootPath, string siteName, string deploymentKind) {
+		string canonicalRoot = DirectoryPathIdentity.Normalize(rootPath);
+		string targetPath = DirectoryPathIdentity.Normalize(
+			_msFileSystem.Path.Combine(canonicalRoot, siteName));
+		string rootPrefix = canonicalRoot.TrimEnd(Path.DirectorySeparatorChar,
+			Path.AltDirectorySeparatorChar) + Path.DirectorySeparatorChar;
+		StringComparison comparison = OperatingSystem.IsWindows()
+			? StringComparison.OrdinalIgnoreCase
+			: StringComparison.Ordinal;
+		if (!targetPath.StartsWith(rootPrefix, comparison)) {
+			throw new InvalidOperationException(
+				$"{deploymentKind} deployment target must remain inside its configured root.");
+		}
+		return targetPath;
 	}
 
 	private int DoMsWork(string unzippedDirectoryPath, string siteName) {
@@ -643,22 +688,9 @@ public class CreatioInstallerService : Command<PfInstallerOptions>, ICreatioInst
 
 	private bool IsPortAvailable(int port) {
 		try {
-			IPGlobalProperties ipGlobalProperties = IPGlobalProperties.GetIPGlobalProperties();
-			TcpConnectionInformation[] tcpConnections = ipGlobalProperties.GetActiveTcpConnections();
-
-			foreach (TcpConnectionInformation tcpConnection in tcpConnections) {
-				if (tcpConnection.LocalEndPoint.Port == port) {
-					_logger.WriteWarning($"Port {port} is in use (active connection)");
-					return false;
-				}
-			}
-
-			IPEndPoint[] listeners = ipGlobalProperties.GetActiveTcpListeners();
-			foreach (IPEndPoint listener in listeners) {
-				if (listener.Port == port) {
-					_logger.WriteWarning($"Port {port} is in use (listening port)");
-					return false;
-				}
+			if (_tcpPortReservationReader.GetReservedPorts(port, port).Contains(port)) {
+				_logger.WriteWarning($"Port {port} is in use");
+				return false;
 			}
 
 			_logger.WriteInfo($"Port {port} is available");
@@ -1334,14 +1366,15 @@ public class CreatioInstallerService : Command<PfInstallerOptions>, ICreatioInst
 		}
 
 		// Determine deployment strategy to know whether to use IIS or DotNet
+		if (options.SitePortWasSpecified && options.SitePort is <= 0 or > 65535) {
+			throw new InvalidOperationException(
+				$"Invalid explicit site port '{options.SitePort}'. Specify a value between 1 and 65535.");
+		}
 		IDeploymentStrategy strategy = SelectDeploymentStrategy(options);
 		bool isIisDeployment = strategy is IISDeploymentStrategy;
-
-		// Only use IIS root folder validation for IIS deployments
-		if (isIisDeployment) {
-			if (!_msFileSystem.Directory.Exists(_iisRootFolder)) {
-				_msFileSystem.Directory.CreateDirectory(_iisRootFolder);
-			}
+		if (isIisDeployment && (options.SitePort is <= 0 or > 65535)
+			&& options.SitePortRange is not null) {
+			ValidateSitePortRange(options.SitePortRange);
 		}
 
 		// STEP 1: Get a site name from a user
@@ -1371,14 +1404,20 @@ public class CreatioInstallerService : Command<PfInstallerOptions>, ICreatioInst
 		// Only prompt for port on Windows IIS deployments
 		// DotNet deployments on macOS/Linux use default port or user-specified port
 		if (isIisDeployment) {
-			while (options.SitePort is <= 0 or > 65536) {
-				_logger.WriteLine(
-					$"Please enter site port, Max value - 65535:{Environment.NewLine}(recommended range between 40000 and 40100)");
-				if (int.TryParse(Console.ReadLine(), out int value)) {
-					options.SitePort = value;
+			if (options.SitePortRange is null) {
+				if (options.IsSilent && options.SitePort is <= 0 or > 65535) {
+					throw new InvalidOperationException(
+						"IIS deployment requires --site-port or deploy-creatio-defaults.site-port-range in silent mode.");
 				}
-				else {
-					_logger.WriteLine("Site port must be an in value");
+				while (options.SitePort is <= 0 or > 65535) {
+					_logger.WriteLine(
+						$"Please enter site port, Max value - 65535:{Environment.NewLine}(recommended range between 40000 and 40100)");
+					if (int.TryParse(Console.ReadLine(), out int value)) {
+						options.SitePort = value;
+					}
+					else {
+						_logger.WriteLine("Site port must be an in value");
+					}
 				}
 			}
 		}
@@ -1389,6 +1428,14 @@ public class CreatioInstallerService : Command<PfInstallerOptions>, ICreatioInst
 			// If the port was already specified via command line, use it
 			if (options.SitePort is > 0 and <= 65535) {
 				// Port already set, skip prompting
+			}
+			else if (options.IsSilent) {
+				const int defaultDotNetPort = 8080;
+				if (!IsPortAvailable(defaultDotNetPort)) {
+					throw new InvalidOperationException(
+						$"Default DotNet deployment port {defaultDotNetPort} is not available. Specify --site-port explicitly.");
+				}
+				options.ApplyConfiguredSitePort(defaultDotNetPort);
 			}
 			else {
 				bool portSelected = false;
@@ -1447,16 +1494,36 @@ public class CreatioInstallerService : Command<PfInstallerOptions>, ICreatioInst
 			$"[OS Platform] - {(RuntimeInformation.IsOSPlatform(OSPlatform.OSX) ? "macOS" : RuntimeInformation.IsOSPlatform(OSPlatform.Linux) ? "Linux" : "Windows")}");
 		_logger.WriteInfo($"[Is IIS Deployment] - {isIisDeployment}");
 		_logger.WriteInfo($"[Site Name] - {options.SiteName}");
-		_logger.WriteInfo($"[Site Port] - {options.SitePort}");
+		if (options.SitePort is > 0 and <= 65535) {
+			_logger.WriteInfo($"[Site Port] - {options.SitePort}");
+		}
+		else if (isIisDeployment) {
+			_logger.WriteInfo($"[Site Port Range] - [{string.Join(", ", options.SitePortRange)}]");
+		}
 
 		// Emit the up-front manifest (built from the resolved execution path) before any stage runs, then
 		// wrap each real stage boundary with the emitter. Emission is observational only: with no
 		// subscriber attached the raising is a no-op and deploy behavior is unchanged.
 		bool isNetworkSource = IsNetworkDriveSource(options.ZipFile);
 		bool synchronizeDbHub = _dbHubSynchronizationService?.IsAutomaticSynchronizationEnabled() == true;
+		string deploymentFolder = DirectoryPathIdentity.Normalize(DetermineFolderPath(options));
 		_stageEventEmitter.Begin(ClioStageEventContract.Operations.Deploy,
 			BuildDeployManifest(synchronizeDbHub), OnStageChanged);
 		try {
+		using IDisposable environmentReservation = _deploymentTargetReservation.AcquireEnvironment(options.SiteName);
+		using IDisposable targetReservation = _deploymentTargetReservation.Acquire(deploymentFolder);
+		if (strategy is IISDeploymentStrategy iisDeploymentStrategy) {
+			// A clean host may not expose IIS inventory until clio installs the required Windows
+			// features. Hold the name and target leases while preparing it, then validate the port.
+			iisDeploymentStrategy.PrepareHost();
+		}
+		using IDisposable portReservation = isIisDeployment ? ReserveIisPort(options) : null;
+
+		// Target and IIS-port reservations are held before the first deployment mutation and remain held
+		// through registration. Deployments to independent target paths and ports can still run in parallel.
+		if (isIisDeployment && !_msFileSystem.Directory.Exists(_iisRootFolder)) {
+			_msFileSystem.Directory.CreateDirectory(_iisRootFolder);
+		}
 
 		// stage-build: copying from a network drive to the local products folder is the only work this
 		// stage performs; for a non-network source it is inert (skipped, not-applicable).
@@ -1468,8 +1535,6 @@ public class CreatioInstallerService : Command<PfInstallerOptions>, ICreatioInst
 			options.ZipFile = CopyLocalWhenNetworkDrive(options.ZipFile);
 			_stageEventEmitter.SkipStage(StageIds.StageBuild, ClioStageEventContract.SkipReasons.NotApplicable);
 		}
-
-		string deploymentFolder = DetermineFolderPath(options);
 
 		string unzippedDirectoryPath = null;
 		_stageEventEmitter.RunStage(StageIds.Unzip,
@@ -1614,6 +1679,32 @@ public class CreatioInstallerService : Command<PfInstallerOptions>, ICreatioInst
 		}
 
 		return 0;
+	}
+
+	private IDisposable ReserveIisPort(PfInstallerOptions options) {
+		if (options.SitePort is > 0 and <= 65535) {
+			return _iisDeploymentPortReservation.Acquire(options.SitePort);
+		}
+
+		ValidateSitePortRange(options.SitePortRange);
+		IisDeploymentPortLease lease = _iisDeploymentPortReservation.AcquireFirstAvailable(
+			options.SitePortRange[0], options.SitePortRange[1]);
+		options.ApplyConfiguredSitePort(lease.Port);
+		_logger.WriteInfo(
+			$"[Site Port] - {lease.Port} (first available in configured range "
+			+ $"[{options.SitePortRange[0]}, {options.SitePortRange[1]}])");
+		return lease;
+	}
+
+	private static void ValidateSitePortRange(int[] range) {
+		if (range is not { Length: 2 }
+			|| range[0] is <= 0 or > 65535
+			|| range[1] is <= 0 or > 65535
+			|| range[0] > range[1]) {
+			throw new InvalidOperationException(
+				"Invalid deploy-creatio-defaults.site-port-range. Specify exactly two ports satisfying "
+				+ "1 <= start <= end <= 65535.");
+		}
 	}
 
 	internal static void ThrowIfServerNotReady(bool isReady) {

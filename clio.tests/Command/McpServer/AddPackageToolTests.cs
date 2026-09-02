@@ -1,7 +1,9 @@
+using System.Reflection;
 using Clio.Command;
 using Clio.Command.McpServer.Tools;
 using Clio.Common;
 using FluentAssertions;
+using ModelContextProtocol.Server;
 using NSubstitute;
 using NUnit.Framework;
 
@@ -14,7 +16,7 @@ public class AddPackageToolTests {
 	[Test]
 	[Description("Resolves the add-package command for the requested environment and maps structured MCP arguments into command options.")]
 	[Category("Unit")]
-	public void AddPackage_Should_Resolve_Command_For_Requested_Environment() {
+	public void AddPackage_ShouldResolveCommand_WhenEnvironmentIsRequested() {
 		// Arrange
 		ConsoleLogger.Instance.ClearMessages();
 		FakeAddPackageCommand defaultCommand = new();
@@ -48,7 +50,7 @@ public class AddPackageToolTests {
 	[Test]
 	[Description("Maps optional add-package MCP arguments to defaults when they are omitted.")]
 	[Category("Unit")]
-	public void AddPackage_Should_Map_Optional_Arguments_When_Omitted() {
+	public void AddPackage_ShouldMapOptionalArguments_WhenOmitted() {
 		// Arrange
 		ConsoleLogger.Instance.ClearMessages();
 		FakeAddPackageCommand defaultCommand = new();
@@ -69,6 +71,24 @@ public class AddPackageToolTests {
 		resolvedCommand.CapturedOptions.AsApp.Should().BeFalse("because as-app should default to false when omitted");
 		resolvedCommand.CapturedOptions.BuildZipPath.Should().BeNull("because build-zip-path is optional");
 		ConsoleLogger.Instance.ClearMessages();
+	}
+
+	[Test]
+	[Description("Keeps the production add-package tool name stable and shared with external-process tests.")]
+	[Category("Unit")]
+	public void AddPackage_ShouldExposeStableToolName_WhenDiscovered() {
+		// Arrange
+		MethodInfo method = typeof(WorkspacePackageTool).GetMethod(nameof(WorkspacePackageTool.AddPackage));
+
+		// Act
+		McpServerToolAttribute attribute = method.GetCustomAttribute<McpServerToolAttribute>();
+
+		// Assert
+		attribute.Should().NotBeNull(because: "the add-package method must remain discoverable as an MCP tool");
+		WorkspacePackageTool.AddPackageToolName.Should().Be("add-package",
+			because: "renaming a public MCP tool is a breaking contract change");
+		attribute!.Name.Should().Be(WorkspacePackageTool.AddPackageToolName,
+			because: "unit and E2E tests must consume the production tool-name constant");
 	}
 
 	private sealed class FakeAddPackageCommand : AddPackageCommand {

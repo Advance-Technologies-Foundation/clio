@@ -67,8 +67,9 @@ public sealed class PageListResponse {
 	public int Count { get; set; }
 
 	/// <summary>
-	/// Gets or sets the total number of pages matching the query before the result cap is applied.
-	/// Callers should compare this to <see cref="Count"/> to detect when the result is incomplete.
+	/// Gets or sets the known number of pages matching the query before the requested result limit
+	/// is applied. When a bounded fallback reaches its safety cap, this is the number observed and
+	/// <see cref="Truncated"/> is <c>true</c> because the complete total cannot be proved.
 	/// </summary>
 	[DataMember(Name = "total")]
 	[JsonProperty("total")]
@@ -76,9 +77,9 @@ public sealed class PageListResponse {
 	public int Total { get; set; }
 
 	/// <summary>
-	/// Gets or sets a value indicating whether the result was truncated by the limit
-	/// (<see cref="Total"/> is greater than <see cref="Count"/>). When <c>true</c>, raise the
-	/// limit or add a filter to retrieve the remaining pages.
+	/// Gets or sets a value indicating whether the result was truncated by the requested limit or
+	/// a bounded fallback reached its safety cap. When <c>true</c>, raise the limit or add a filter
+	/// to retrieve the remaining pages.
 	/// </summary>
 	[DataMember(Name = "truncated")]
 	[JsonProperty("truncated")]
@@ -770,6 +771,17 @@ public sealed class PageUpdateResponse {
 	[JsonPropertyName("warnings")]
 	[System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
 	public IReadOnlyList<string> Warnings { get; set; }
+
+	/// <summary>
+	/// Gets or sets a value indicating whether this failure came from the SKIPPABLE half of the
+	/// validation chain (content rules), as opposed to the structural floor. It is transport-only: the
+	/// MCP adapter reads it to decide whether to advertise <c>validate=false</c>, which is an MCP-only
+	/// flag the CLI parser does not expose. Never serialized — a CLI user must not be told about a flag
+	/// they cannot set.
+	/// </summary>
+	[Newtonsoft.Json.JsonIgnore]
+	[System.Text.Json.Serialization.JsonIgnore]
+	public bool ContentValidationFailure { get; set; }
 
 	[JsonProperty("page", NullValueHandling = NullValueHandling.Ignore)]
 	[JsonPropertyName("page")]

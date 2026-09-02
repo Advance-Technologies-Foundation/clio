@@ -48,6 +48,18 @@ public sealed record ProcessExecutionOptions {
 	public string Arguments { get; init; }
 
 	/// <summary>
+	/// Gets the argument tokens passed verbatim to the child process, bypassing command-line quoting.
+	/// </summary>
+	/// <remarks>
+	/// When this is non-empty it replaces <see cref="Arguments"/> entirely. Use it whenever any part of the
+	/// command line comes from a file, a project, or user input: <c>UseShellExecute = false</c> stops a shell
+	/// from interpreting the string, but the child still splits it itself, so a value such as
+	/// <c>Foo --source https://attacker.example/v3/index.json</c> interpolated into <see cref="Arguments"/>
+	/// arrives as an extra option rather than as one operand.
+	/// </remarks>
+	public IReadOnlyList<string> ArgumentList { get; init; } = Array.Empty<string>();
+
+	/// <summary>
 	/// Gets the optional working directory. Current directory is used when null.
 	/// </summary>
 	public string WorkingDirectory { get; init; }
@@ -305,6 +317,13 @@ public class ProcessExecutor(ILogger logger) : IProcessExecutor{
 			process.StartInfo = CreateStartInfo(options, redirectOutput: false);
 
 			bool started = process.Start();
+			if (started) {
+				// Closed explicitly rather than left to Process.Dispose, which only closes an unread
+				// StandardInput as an undocumented side effect of Close(). A detached child must reach EOF the
+				// moment it is launched: it outlives this method, and until the write end is closed it is
+				// holding a handle to whatever stdin this process has - the MCP server's JSON-RPC pipe included.
+				TryCloseStandardInput(process);
+			}
 			return Task.FromResult(new ProcessLaunchResult {
 				Started = started,
 				ProcessId = started ? process.Id : null,
@@ -334,20 +353,39 @@ public class ProcessExecutor(ILogger logger) : IProcessExecutor{
 
 	#region Methods: Private
 
-	private static ProcessStartInfo CreateStartInfo(ProcessExecutionOptions options, bool redirectOutput) {
+	// internal so the redirection invariants below can be pinned directly. Behavioural tests cannot pin them:
+	// whether an inherited stdin blocks depends on what the TEST HOST's own stdin happens to be, which is a
+	// live pipe under an interactive console and already at EOF under most CI runners.
+	internal static ProcessStartInfo CreateStartInfo(ProcessExecutionOptions options, bool redirectOutput) {
 		string program = options.ResolveProgramPath
 			? ResolveExecutablePath(options.Program)
 			: options.Program;
+		// ArgumentList and Arguments are mutually exclusive in ProcessStartInfo: setting both throws at
+		// launch. Tokens win when supplied, and Arguments is then left unset rather than merged.
+		IReadOnlyList<string> argumentTokens = options.ArgumentList ?? Array.Empty<string>();
+		bool usesTokens = argumentTokens.Count > 0;
 		ProcessStartInfo startInfo = new() {
 			FileName = program,
-			Arguments = options.Arguments,
+			Arguments = usesTokens ? string.Empty : options.Arguments,
 			CreateNoWindow = true,
 			UseShellExecute = false,
 			WorkingDirectory = options.WorkingDirectory ?? Environment.CurrentDirectory,
-			RedirectStandardInput = !string.IsNullOrEmpty(options.StandardInput),
+			// ALWAYS redirected, and NOT only when there is input to write. No child clio launches is
+			// interactive on stdin, so none has any business inheriting ours - and when the parent is the MCP
+			// server, "ours" is the JSON-RPC pipe: a child holding it can block on it and could in principle
+			// consume protocol bytes. A detached fire-and-forget child is the worse case of the two, because it
+			// holds the handle for the rest of the session rather than for one command. The stream is closed
+			// immediately after start when no input was supplied, so the child sees EOF rather than a handle
+			// that never closes. Note this redirects INPUT only: stdout/stderr still follow redirectOutput, so
+			// a detached child can never block on an output pipe nobody drains.
+			RedirectStandardInput = true,
 			RedirectStandardOutput = redirectOutput,
 			RedirectStandardError = redirectOutput
 		};
+
+		foreach (string argumentToken in argumentTokens) {
+			startInfo.ArgumentList.Add(argumentToken);
+		}
 
 		if (options.ClearInheritedEnvironment) {
 			startInfo.Environment.Clear();
@@ -506,11 +544,7 @@ public class ProcessExecutor(ILogger logger) : IProcessExecutor{
 			Task monitorTask = MonitorDirectoryAsync(operationContext, monitorCts.Token);
 
 			try {
-				if (!string.IsNullOrEmpty(options.StandardInput)) {
-					await process.StandardInput.WriteAsync(options.StandardInput.AsMemory(), linkedCts.Token);
-					await process.StandardInput.FlushAsync(linkedCts.Token);
-					process.StandardInput.Close();
-				}
+				await CompleteStandardInputAsync(process, options.StandardInput, linkedCts.Token);
 				await process.WaitForExitAsync(linkedCts.Token);
 			}
 			catch (OperationCanceledException) when (linkedCts.IsCancellationRequested) {
@@ -568,6 +602,23 @@ public class ProcessExecutor(ILogger logger) : IProcessExecutor{
 				StartedAtUtc = startedAt,
 				FinishedAtUtc = DateTimeOffset.UtcNow
 			};
+		}
+	}
+
+	private static async Task CompleteStandardInputAsync(
+		Process process,
+		string? standardInput,
+		CancellationToken cancellationToken) {
+		try {
+			if (!string.IsNullOrEmpty(standardInput)) {
+				await process.StandardInput.WriteAsync(standardInput.AsMemory(), cancellationToken);
+				await process.StandardInput.FlushAsync(cancellationToken);
+			}
+		} catch (IOException) {
+			// The child read what it wanted and closed its end. Its exit code remains the operation result.
+		} finally {
+			// Close even when there is no input so the child sees EOF instead of inheriting the MCP stdin pipe.
+			TryCloseStandardInput(process);
 		}
 	}
 
@@ -877,7 +928,21 @@ public class ProcessExecutor(ILogger logger) : IProcessExecutor{
 		}
 
 		options.Program.CheckArgumentNullOrWhiteSpace(nameof(options.Program));
-		options.Arguments.CheckArgumentNullOrWhiteSpace(nameof(options.Arguments));
+		// Arguments and ArgumentList are mutually exclusive at launch - ProcessStartInfo throws when both
+		// are set - so exactly one of them has to carry the command line. Validating Arguments on its own
+		// rejected every tokenized call, which deliberately leaves the raw string empty.
+		bool hasRawArguments = !string.IsNullOrWhiteSpace(options.Arguments);
+		bool hasArgumentTokens = options.ArgumentList is {Count: > 0};
+		if (hasRawArguments && hasArgumentTokens) {
+			throw new ArgumentException(
+				$"Only one of {nameof(options.Arguments)} and {nameof(options.ArgumentList)} can be supplied.",
+				nameof(options));
+		}
+		if (!hasRawArguments && !hasArgumentTokens) {
+			throw new ArgumentException(
+				$"Either {nameof(options.Arguments)} or {nameof(options.ArgumentList)} must be supplied.",
+				nameof(options));
+		}
 		if (options.MaximumCapturedOutputCharacters is <= 0) {
 			throw new ArgumentOutOfRangeException(nameof(options), options.MaximumCapturedOutputCharacters,
 				$"{nameof(options.MaximumCapturedOutputCharacters)} must be greater than zero when configured.");

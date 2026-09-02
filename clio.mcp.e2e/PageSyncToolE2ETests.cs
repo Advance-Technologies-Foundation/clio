@@ -183,6 +183,100 @@ public sealed class PageSyncToolE2ETests : McpContractFixtureBase {
 	}
 
 	[Test]
+	[Description("sync-pages validate=false propagates into the command: a body whose ONLY defect is a content-rule violation gets past client-side validation and fails on schema resolution instead. Uses a schema name that does not exist, so nothing is ever saved.")]
+	[AllureTag(ToolName)]
+	[AllureName("sync-pages validate=false reaches the command path")]
+	[AllureDescription("Sends a marker-valid body carrying an inline placeholder literal - a content-rule violation - through sync-pages with validate=false against a non-existent schema, and verifies the call fails past client-side validation rather than on the skipped content rule.")]
+	public async Task PageSyncTool_Should_Bypass_Content_Validation_When_Explicitly_Disabled() {
+		// Arrange
+		McpE2ESettings settings = TestConfiguration.Load();
+		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
+		string environmentName = await ResolveReachableEnvironmentAsync(settings);
+		string missingSchemaName = $"UsrSyncValidationBypass_{Guid.NewGuid():N}";
+		string inlinePlaceholderBody = "define(\"Test_FormPage\", /**SCHEMA_DEPS*/[]/**SCHEMA_DEPS*/, function/**SCHEMA_ARGS*/()/**SCHEMA_ARGS*/ { return { "
+			+ "viewConfigDiff: /**SCHEMA_VIEW_CONFIG_DIFF*/[{\"operation\":\"insert\",\"name\":\"UsrInput\",\"values\":{\"type\":\"crt.Input\",\"placeholder\":\"Type a value\"}}]/**SCHEMA_VIEW_CONFIG_DIFF*/, "
+			+ "viewModelConfigDiff: /**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/{}/**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/, "
+			+ "modelConfigDiff: /**SCHEMA_MODEL_CONFIG_DIFF*/{}/**SCHEMA_MODEL_CONFIG_DIFF*/, "
+			+ "handlers: /**SCHEMA_HANDLERS*/[]/**SCHEMA_HANDLERS*/, "
+			+ "converters: /**SCHEMA_CONVERTERS*/{}/**SCHEMA_CONVERTERS*/, "
+			+ "validators: /**SCHEMA_VALIDATORS*/{}/**SCHEMA_VALIDATORS*/ }; });";
+		await using ArrangeContext context = await ArrangeAsync();
+
+		// Act
+		CallToolResult callResult = await context.Session.CallToolAsync(
+			ToolName,
+			new Dictionary<string, object?> {
+				["args"] = new Dictionary<string, object?> {
+					["environment-name"] = environmentName,
+					["pages"] = new[] {
+						new Dictionary<string, object?> {
+							["schema-name"] = missingSchemaName,
+							["body"] = inlinePlaceholderBody
+						}
+					},
+					["validate"] = false,
+					["skip-sampling"] = true
+				}
+			},
+			context.CancellationTokenSource.Token);
+		PageSyncResponse response = EntitySchemaStructuredResultParser.Extract<PageSyncResponse>(callResult);
+
+		// Assert
+		callResult.IsError.Should().NotBeTrue(
+			because: "the bypass result must still be a structured sync-pages response");
+		response.Pages.Should().ContainSingle(
+			because: "one page was submitted");
+		(response.Pages[0].Error ?? string.Empty).Should().NotContain("placeholder",
+			because: "validate=false must skip the content rule on BOTH the tool-level chain and the command-level chain");
+		response.Pages[0].Success.Should().BeFalse(
+			because: "the schema does not exist, so the call must fail after the skipped validation - never save");
+	}
+
+	[Test]
+	[Description("sync-pages accepts a per-page force=true alongside validate=false: the flags are orthogonal, so the pair must not be refused. Uses a schema name that does not exist, so nothing is saved.")]
+	[AllureTag(ToolName)]
+	[AllureName("sync-pages accepts force=true together with validate=false")]
+	[AllureDescription("Sends a valid page body carrying force=true through sync-pages with validate=false against a non-existent schema and verifies the call is not refused on the flag combination itself - the remaining failure comes from schema resolution.")]
+	public async Task PageSyncTool_Should_Accept_Forced_Page_When_Validation_Is_Disabled() {
+		// Arrange
+		McpE2ESettings settings = TestConfiguration.Load();
+		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
+		string environmentName = await ResolveReachableEnvironmentAsync(settings);
+		string forcedSchemaName = $"UsrSyncForcedBypass_{Guid.NewGuid():N}";
+		await using ArrangeContext context = await ArrangeAsync();
+
+		// Act
+		CallToolResult callResult = await context.Session.CallToolAsync(
+			ToolName,
+			new Dictionary<string, object?> {
+				["args"] = new Dictionary<string, object?> {
+					["environment-name"] = environmentName,
+					["pages"] = new[] {
+						new Dictionary<string, object?> {
+							["schema-name"] = forcedSchemaName,
+							["body"] = ValidPageBody,
+							["force"] = true
+						}
+					},
+					["validate"] = false,
+					["skip-sampling"] = true
+				}
+			},
+			context.CancellationTokenSource.Token);
+		PageSyncResponse response = EntitySchemaStructuredResultParser.Extract<PageSyncResponse>(callResult);
+
+		// Assert
+		callResult.IsError.Should().NotBeTrue(
+			because: "the rejection must be reported as a structured sync-pages response");
+		response.Pages.Should().ContainSingle(
+			because: "one page was submitted");
+		(response.Pages[0].Error ?? string.Empty).Should().NotContain("cannot be combined",
+			because: "the flag pair itself must not be refused - one gates content checks, the other the baseline guard");
+		response.Pages[0].Success.Should().BeFalse(
+			because: "the schema does not exist, so the call still fails - on schema resolution, never on the flag pair");
+	}
+
+	[Test]
 	[Description("Rejects a marker-valid page body that sets a user-visible text property (placeholder) to an inline string literal instead of a localizable-string binding, before any remote save is attempted.")]
 	[AllureTag(ToolName)]
 	[AllureName("sync-pages rejects inline placeholder literal during client-side validation")]
@@ -1248,6 +1342,7 @@ public sealed class PageSyncToolE2ETests : McpContractFixtureBase {
 	public async Task PageSyncTool_Should_Reject_Mobile_Body_With_Converters_When_Validate_Is_True() {
 		// Arrange
 		await using ArrangeContext context = await ArrangeAsync();
+		string environmentName = TestConfiguration.Load().Sandbox.EnvironmentName ?? "dev";
 		string mobileBodyWithConverters = """
 			{
 			  "viewConfigDiff": [],
@@ -1260,7 +1355,7 @@ public sealed class PageSyncToolE2ETests : McpContractFixtureBase {
 			ToolName,
 			new Dictionary<string, object?> {
 				["args"] = new Dictionary<string, object?> {
-					["environment-name"] = "dev",
+					["environment-name"] = environmentName,
 					["pages"] = new[] {
 						new Dictionary<string, object?> {
 							["schema-name"] = "UsrMobile_FormPage",
@@ -1277,13 +1372,19 @@ public sealed class PageSyncToolE2ETests : McpContractFixtureBase {
 		callResult.IsError.Should().NotBeTrue(
 			because: "sync-pages mobile validation failures should be surfaced as structured tool results");
 
-		if (TryExtractFailure(callResult, out PageSyncResponse? response) && response is not null) {
-			response.Pages.Should().ContainSingle(
-				because: "one page was submitted");
-			PageSyncPageResult page = response.Pages[0];
-			page.Validation!.ContentOk.Should().BeFalse(
-				because: "a mobile body containing 'converters' must fail mobile content validation");
-		}
+		TryExtractFailure(callResult, out PageSyncResponse? response).Should().BeTrue(
+			because: "a mobile validation rejection must use the structured sync-pages response contract");
+		response.Should().NotBeNull(
+			because: "the structured sync-pages response must be available for validation assertions");
+		response!.Pages.Should().ContainSingle(
+			because: "one page was submitted");
+		PageSyncPageResult page = response.Pages[0];
+		page.Validation.Should().NotBeNull(
+			because: $"a validation rejection must include its structured validation details. Error: {page.Error}");
+		page.Validation!.ContentOk.Should().BeFalse(
+			because: "a mobile body containing 'converters' must fail mobile content validation");
+		page.Validation.Errors.Should().Contain(error => error.Contains("converters", StringComparison.Ordinal),
+			because: "the rejection must identify the unsupported converters property rather than an unrelated validation failure");
 	}
 
 	[Test]
@@ -1294,6 +1395,7 @@ public sealed class PageSyncToolE2ETests : McpContractFixtureBase {
 	public async Task PageSyncTool_Should_Accept_Valid_Mobile_Body_Without_AMD_Marker_Errors() {
 		// Arrange
 		await using ArrangeContext context = await ArrangeAsync();
+		string environmentName = TestConfiguration.Load().Sandbox.EnvironmentName ?? "dev";
 		string mobileBody = """
 			{
 			  "viewConfigDiff": [],
@@ -1307,7 +1409,7 @@ public sealed class PageSyncToolE2ETests : McpContractFixtureBase {
 			ToolName,
 			new Dictionary<string, object?> {
 				["args"] = new Dictionary<string, object?> {
-					["environment-name"] = "dev",
+					["environment-name"] = environmentName,
 					["pages"] = new[] {
 						new Dictionary<string, object?> {
 							["schema-name"] = "UsrMobile_FormPage",
@@ -1324,14 +1426,19 @@ public sealed class PageSyncToolE2ETests : McpContractFixtureBase {
 		callResult.IsError.Should().NotBeTrue(
 			because: "a valid mobile body must not raise a protocol-level error");
 
-		if (TryExtractFailure(callResult, out PageSyncResponse? response) && response is not null) {
-			foreach (PageSyncPageResult page in response.Pages) {
-				if (page.Validation is not null) {
-					page.Validation.Errors.Should().NotContain(e => e.Contains("SCHEMA_"),
-						because: "AMD marker errors must not appear when the body is a mobile JSON object");
-				}
-			}
-		}
+		TryExtractFailure(callResult, out PageSyncResponse? response).Should().BeTrue(
+			because: "valid mobile validation must use the structured sync-pages response contract");
+		response.Should().NotBeNull(
+			because: "the structured sync-pages response must be available for validation assertions");
+		response!.Pages.Should().ContainSingle(
+			because: "one page was submitted");
+		PageSyncPageResult page = response.Pages[0];
+		page.Validation.Should().NotBeNull(
+			because: $"validation details must be returned for the submitted mobile body. Error: {page.Error}");
+		page.Validation!.ContentOk.Should().BeTrue(
+			because: "the plain mobile JSON object contains no unsupported properties");
+		page.Validation.Errors.Should().NotContain(e => e.Contains("SCHEMA_", StringComparison.Ordinal),
+			because: "AMD marker errors must not appear when the body is a mobile JSON object");
 	}
 
 		[Test]

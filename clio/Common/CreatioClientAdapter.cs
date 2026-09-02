@@ -1,13 +1,16 @@
 using System;
+using System.Collections.Generic;
+using System.Net.Http;
 using System.Net.WebSockets;
 using System.Threading;
+using System.Threading.Tasks;
 using Clio.Common.Responses;
 using Creatio.Client;
 using Creatio.Client.Dto;
 
 namespace Clio.Common;
 
-public class CreatioClientAdapter : IApplicationClient{
+public class CreatioClientAdapter : IOwnedApplicationClient {
 	#region Fields: Private
 
 	private readonly Lazy<CreatioClient> _lazyClient;
@@ -15,8 +18,19 @@ public class CreatioClientAdapter : IApplicationClient{
 	private readonly JsonConverter _jsonConverter;
 	private readonly IReauthExecutor _reauthExecutor;
 	private readonly ILoginDiagnostics _loginDiagnostics;
+	private readonly bool _ownsClient;
+	private readonly object _lifetimeSync = new();
+	private bool _disposed;
+	private bool _listenerStarted;
 
-	private CreatioClient Client => _lazyClient.Value;
+	private CreatioClient Client {
+		get {
+			lock (_lifetimeSync) {
+				ObjectDisposedException.ThrowIf(_disposed, this);
+				return _lazyClient.Value;
+			}
+		}
+	}
 
 	#endregion
 
@@ -28,8 +42,9 @@ public class CreatioClientAdapter : IApplicationClient{
 	// constructor below to exercise the adapter in isolation from CreatioClient.
 	private CreatioClientAdapter(Lazy<CreatioClient> lazyClient, IServiceUrlBuilder serviceUrlBuilder,
 		JsonConverter jsonConverter, IReauthExecutor reauthExecutor,
-		ILoginDiagnostics loginDiagnostics = null) {
+		ILoginDiagnostics loginDiagnostics = null, bool ownsClient = false) {
 		_lazyClient = lazyClient;
+		_ownsClient = ownsClient;
 		_serviceUrlBuilder = serviceUrlBuilder;
 		_jsonConverter = jsonConverter ?? new JsonConverter();
 		// Recover transparently from server-side session expiration: a singleton CreatioClient
@@ -51,20 +66,32 @@ public class CreatioClientAdapter : IApplicationClient{
 
 	public CreatioClientAdapter(string appUrl, string userName, string userPassword, bool isNetCore = false,
 		IServiceUrlBuilder serviceUrlBuilder = null)
-		: this(new Lazy<CreatioClient>(() => new CreatioClient(appUrl, userName, userPassword, true, isNetCore)),
-			serviceUrlBuilder, null, null) { }
+		: this(appUrl, userName, userPassword, true, isNetCore, serviceUrlBuilder) { }
+
+	/// <summary>Creates a forms-auth adapter with explicit server-certificate validation behavior.</summary>
+	/// <param name="appUrl">Creatio application URL.</param>
+	/// <param name="userName">Forms-auth user name.</param>
+	/// <param name="userPassword">Forms-auth password.</param>
+	/// <param name="useUntrustedSsl">Whether invalid server certificates are accepted.</param>
+	/// <param name="isNetCore">Whether the target Creatio application uses the .NET runtime.</param>
+	/// <param name="serviceUrlBuilder">Optional environment-relative URL builder.</param>
+	internal CreatioClientAdapter(string appUrl, string userName, string userPassword,
+		bool useUntrustedSsl, bool isNetCore, IServiceUrlBuilder serviceUrlBuilder = null)
+		: this(new Lazy<CreatioClient>(() => new CreatioClient(appUrl, userName, userPassword,
+			useUntrustedSsl, isNetCore)),
+			serviceUrlBuilder, null, null, ownsClient: true) { }
 
 	public CreatioClientAdapter(string appUrl, string clientId, string clientSecret, string authAppUrl,
 		bool isNetCore = false, IServiceUrlBuilder serviceUrlBuilder = null)
 		: this(new Lazy<CreatioClient>(() =>
 			CreatioClient.CreateOAuth20Client(appUrl, authAppUrl, clientId, clientSecret, isNetCore)),
-			serviceUrlBuilder, null, null) { }
+			serviceUrlBuilder, null, null, ownsClient: true) { }
 
 	public CreatioClientAdapter(CreatioClient creatioClient)
 		: this(new Lazy<CreatioClient>(() => creatioClient), null, null, null) { }
 
 	public CreatioClientAdapter(Lazy<CreatioClient> lazyClient)
-		: this(lazyClient, null, null, null) { }
+		: this(lazyClient, null, null, null, ownsClient: false) { }
 
 	#endregion
 
@@ -76,7 +103,12 @@ public class CreatioClientAdapter : IApplicationClient{
 	// reauthExecutor is required so tests cannot silently fall back to the default executor.
 	internal CreatioClientAdapter(Lazy<CreatioClient> lazyClient, IReauthExecutor reauthExecutor)
 		: this(lazyClient, null, null,
-			reauthExecutor ?? throw new ArgumentNullException(nameof(reauthExecutor))) { }
+			reauthExecutor ?? throw new ArgumentNullException(nameof(reauthExecutor)), ownsClient: true) { }
+
+	// DI composition constructor: unlike the public Lazy overload (which preserves borrowed-client
+	// compatibility), this adapter is the sole owner of the lazily-created environment client.
+	internal CreatioClientAdapter(Lazy<CreatioClient> lazyClient, bool ownsClient)
+		: this(lazyClient, null, null, null, ownsClient: ownsClient) { }
 
 	// Test-only constructor for the diagnostics seam. Unlike the two constructors around it, the
 	// reauth executor MAY be null here: leaving it to the default is the only way to reach the
@@ -86,7 +118,7 @@ public class CreatioClientAdapter : IApplicationClient{
 	internal CreatioClientAdapter(Lazy<CreatioClient> lazyClient, IReauthExecutor reauthExecutor,
 		ILoginDiagnostics loginDiagnostics)
 		: this(lazyClient, null, null, reauthExecutor,
-			loginDiagnostics ?? throw new ArgumentNullException(nameof(loginDiagnostics))) { }
+			loginDiagnostics ?? throw new ArgumentNullException(nameof(loginDiagnostics)), ownsClient: true) { }
 
 	// Credential-passthrough constructor: lets ApplicationClientFactory.CreateEnvironmentClient
 	// wire BOTH a service-url builder (for environment-relative routes) and an explicit
@@ -94,7 +126,15 @@ public class CreatioClientAdapter : IApplicationClient{
 	internal CreatioClientAdapter(Lazy<CreatioClient> lazyClient, IServiceUrlBuilder serviceUrlBuilder,
 		IReauthExecutor reauthExecutor)
 		: this(lazyClient, serviceUrlBuilder, null,
-			reauthExecutor ?? throw new ArgumentNullException(nameof(reauthExecutor))) { }
+			reauthExecutor ?? throw new ArgumentNullException(nameof(reauthExecutor)), ownsClient: true) { }
+
+	// Factory-created bearer clients are short-lived and owned by the returned adapter. The DI path
+	// intentionally uses the three-argument overload above because its client can back a SignalR
+	// listener whose cancellation completes asynchronously after the service provider is disposed.
+	internal CreatioClientAdapter(Lazy<CreatioClient> lazyClient, IServiceUrlBuilder serviceUrlBuilder,
+		IReauthExecutor reauthExecutor, bool ownsClient)
+		: this(lazyClient, serviceUrlBuilder, null,
+			reauthExecutor ?? throw new ArgumentNullException(nameof(reauthExecutor)), ownsClient: ownsClient) { }
 
 	#endregion
 
@@ -163,6 +203,12 @@ public class CreatioClientAdapter : IApplicationClient{
 		return ExecuteRequest(() => Client.ExecuteGetRequest(url, requestTimeout, maxAttempts, delaySec));
 	}
 
+	/// <inheritdoc />
+	public Task<HttpResponseMessage> ExecuteGetRequestAsync(string url, int requestTimeout = 100_000,
+		int maxAttempts = 1, int delaySec = 1, CancellationToken cancellationToken = default) =>
+		_loginDiagnostics.TrackRequestAsync(() =>
+			Client.ExecuteGetRequestAsync(url, requestTimeout, maxAttempts, delaySec, cancellationToken));
+
 	public string ExecutePostRequest(string url, string requestData, int requestTimeout = Timeout.Infinite,
 		int maxAttempts = 1, int delaySec = 1) {
 		return ExecuteRequest(
@@ -188,24 +234,82 @@ public class CreatioClientAdapter : IApplicationClient{
 		return _jsonConverter.DeserializeObject<T>(response);
 	}
 
+	/// <inheritdoc />
+	public Task<HttpResponseMessage> ExecutePostRequestAsync(string url, string requestData,
+		int requestTimeout = 100_000, int maxAttempts = 1, int delaySec = 1,
+		CancellationToken cancellationToken = default) =>
+		_loginDiagnostics.TrackRequestAsync(() =>
+			Client.ExecutePostRequestAsync(url, requestData, requestTimeout, maxAttempts, delaySec,
+				cancellationToken));
+
 	public string ExecutePatchRequest(string url, string requestData, int requestTimeout = Timeout.Infinite,
 		int maxAttempts = 1, int delaySec = 1) {
 		return ExecuteRequest(
 			() => Client.ExecutePatchRequest(url, requestData, requestTimeout, maxAttempts, delaySec));
 	}
 
+	public string ExecutePutRequest(string url, string requestData, int requestTimeout = Timeout.Infinite,
+		int maxAttempts = 1, int delaySec = 1) {
+		return ExecuteRequest(
+			() => Client.ExecutePutRequest(url, requestData, requestTimeout, maxAttempts, delaySec));
+	}
+
 	public void Listen(CancellationToken cancellationToken) {
-		Client.ConnectionStateChanged += (sender, state) => { ConnectionStateChanged?.Invoke(sender, state); };
+		CreatioClient client;
+		lock (_lifetimeSync) {
+			ObjectDisposedException.ThrowIf(_disposed, this);
+			client = _lazyClient.Value;
+			_listenerStarted = true;
+		}
+		client.ConnectionStateChanged += (sender, state) => { ConnectionStateChanged?.Invoke(sender, state); };
 
-		Client.MessageReceived += (sender, message) => { MessageReceived?.Invoke(sender, message); };
+		client.MessageReceived += (sender, message) => { MessageReceived?.Invoke(sender, message); };
 
-		Client.StartListening(cancellationToken);
+		client.StartListening(cancellationToken);
 	}
 
 	public void Login() {
 		// Recorded the same way as the automatic re-login above so a rejected login is diagnosable
 		// from CI output alone, and so the two attempt kinds are distinguishable (GitHub #1106).
 		_loginDiagnostics.Track(() => Client.Login(), LoginAttemptKind.Initial);
+	}
+
+	/// <inheritdoc />
+	public Task<HttpResponseMessage> LoginAsync(int requestTimeout = 100_000,
+		CancellationToken cancellationToken = default) =>
+		_loginDiagnostics.TrackAsync(() => Client.LoginAsync(requestTimeout, cancellationToken),
+			LoginAttemptKind.Initial);
+
+	/// <inheritdoc />
+	public IReadOnlyList<CreatioSessionCookie> ExportSessionCookies() => Client.ExportSessionCookies();
+
+	/// <inheritdoc />
+	public void ImportSessionCookies(IEnumerable<CreatioSessionCookie> cookies) => Client.ImportSessionCookies(cookies);
+
+	/// <inheritdoc />
+	public void Dispose() {
+		Dispose(true);
+		GC.SuppressFinalize(this);
+	}
+
+	/// <summary>Releases the owned Creatio transport when disposal was requested.</summary>
+	/// <param name="disposing">Whether managed resources should be released.</param>
+	protected virtual void Dispose(bool disposing) {
+		if (!disposing) {
+			return;
+		}
+		lock (_lifetimeSync) {
+			if (_disposed) {
+				return;
+			}
+			_disposed = true;
+			// CreatioClient's SignalR listener can still re-enter Login while its cancellation is
+			// draining. Disposing the pooled HTTP transport here races that reconnect and crashes the
+			// process; listener clients therefore live until process/GC teardown after cancellation.
+			if (_ownsClient && !_listenerStarted && _lazyClient.IsValueCreated) {
+				_lazyClient.Value?.Dispose();
+			}
+		}
 	}
 
 	public string UploadAlmFile(string url, string filePath) {
@@ -219,6 +323,13 @@ public class CreatioClientAdapter : IApplicationClient{
 	public string UploadFile(string url, string filePath) {
 		return ExecuteRequest(() => Client.UploadFile(url, filePath));
 	}
+
+	/// <inheritdoc />
+	public Task<HttpResponseMessage> UploadImageAsync(string url, byte[] data, string fileName,
+		string mimeType, int requestTimeout = 100_000,
+		CancellationToken cancellationToken = default) =>
+		_loginDiagnostics.TrackRequestAsync(() =>
+			Client.UploadImageAsync(url, data, fileName, mimeType, requestTimeout, cancellationToken));
 
 	#endregion
 }

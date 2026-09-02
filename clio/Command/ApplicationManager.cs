@@ -49,7 +49,7 @@ namespace Clio.Command
 
 		internal void Download(string name, string sourceEnvironmentCode, string filePath) {
 			var sourceEnvironment = _settingsRepository.GetEnvironment(sourceEnvironmentCode);
-			var sourceClient = _applicationClientFactory.CreateEnvironmentClient(sourceEnvironment);
+			using IOwnedApplicationClient sourceClient = _applicationClientFactory.CreateOwnedEnvironmentClient(sourceEnvironment);
 			var appInfo = GetAppFromAppName(name);
 			var data = new {
 				appId = appInfo.Id

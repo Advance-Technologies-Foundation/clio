@@ -22,10 +22,28 @@ A few Sandbox fixtures run a **real destructive lifecycle** (a full uninstall, o
 would tear down the shared stand mid-suite. They stay `McpE2E.Sandbox` (additive-only) but are marked
 developer-local so they never run automatically: `[Category("LocalOnly")]` + `[Explicit]` +
 `[Category("McpE2E.Manual")]` + a `TeamCityRunGuard.IsRunningUnderTeamCity()` `Assert.Ignore` guard.
-Members today: `UninstallCreatioWarningE2ETests`, `DbHubLifecycleWarningE2ETests`. Their deterministic
-contract is covered off-stand by unit tests (`CreatioUninstallerTestFixture`, `AppPoolProfileCleanerTests`);
-`McpFixturePolicyTests` enforces the attribute invariant and `TeamCityRunGuardTests` covers the guard's
-runtime behavior. When adding another destructive lifecycle fixture, follow the same marking.
+Members today: `UninstallCreatioWarningE2ETests`, `DbHubLifecycleWarningE2ETests`,
+`DataBindingDbColorSchemaE2ETests`. Their deterministic contract is covered off-stand by unit tests
+(`CreatioUninstallerTestFixture`, `AppPoolProfileCleanerTests`, and `SchemaTestFixture` +
+`DataBindingDbCommandTests` for the Color mapping); `McpFixturePolicyTests` enforces the attribute
+invariant and `TeamCityRunGuardTests` covers the guard's runtime behavior. When adding another
+destructive lifecycle fixture, follow the same marking.
+
+Publishing configuration counts as a destructive lifecycle even when nothing is uninstalled.
+`create-entity-schema` returns as soon as it has started the **asynchronous, global OData rebuild**, and
+every test running against that stand meanwhile - in this suite or in another PR's run - fails with
+"Creatio is currently rebuilding the OData library". `[NonParallelizable]` and per-fixture package
+cleanup do not bound a rebuild that outlives the command, so a schema-publishing fixture belongs in this
+sub-tier rather than in an automatic lane. `DataBindingDbColorSchemaE2ETests` is the worked example.
+
+### Developer-local merge lab
+
+`CreatioArtifactMergeToolE2ETests` and `CreatioArtifactMergeGitLabE2ETests` exercise the incomplete
+Creatio artifact merge support. Keep both fixtures `[Explicit]` and
+`[Category("McpE2E.Manual")]`, retain their `McpE2E.NoEnvironment` infrastructure classification,
+and call `TeamCityRunGuard.IgnoreIfRunningUnderTeamCityOrGitHubActions` before starting the MCP
+server. They use a fixture-owned temporary `CLIO_HOME`. Do not add these fixtures to a GitHub or
+TeamCity automatic lane.
 
 ## Default rule
 

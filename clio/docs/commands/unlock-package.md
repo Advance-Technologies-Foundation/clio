@@ -66,7 +66,7 @@ clio unlock-package MyPackage --uri https://myapp.creatio.com -l admin -p pass
 
 ## Requirements
 
-- **cliogate >= 2.0.0.42** must be installed on the target Creatio environment.
+- **cliogate >= 2.0.0.48** must be installed on the target Creatio environment.
 - The authenticated user must have the **CanManageSolution** system operation permission.
 
 ```bash
@@ -81,7 +81,9 @@ clio get-info -e <ENVIRONMENT_NAME>
 
 - Package names are case-sensitive and must match exactly as stored in Creatio.
 - After unlock the package `Maintainer` is set to the environment's `Maintainer` sys setting;
-  the original maintainer is preserved in the `Description` field.
+  the original maintainer is preserved in the `Description` field. When the combined value would
+  exceed 250 characters, ClioGate truncates only the human-readable description prefix and preserves
+  the complete maintainer marker used by `lock-package`.
 - Lock packages again with `lock-package` after completing changes to protect them.
 - This command replaced a DataService-based implementation that silently failed with a
   `SecurityException` on `SysPackage` for some permission configurations (see issue #585).

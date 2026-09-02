@@ -55,7 +55,7 @@ public sealed class FsmModeStatusService : IFsmModeStatusService
 			?? throw new InvalidOperationException(
 				$"Environment with key '{environmentName}' not found. Check your clio configuration.");
 
-		IApplicationClient client = _applicationClientFactory.CreateEnvironmentClient(environmentSettings);
+		using IOwnedApplicationClient client = _applicationClientFactory.CreateOwnedEnvironmentClient(environmentSettings);
 		string requestUrl = _serviceUrlBuilderFactory.Create(environmentSettings)
 			.Build(ServiceUrlBuilder.KnownRoute.GetApplicationInfo);
 		string response = client.ExecutePostRequest(requestUrl, string.Empty);

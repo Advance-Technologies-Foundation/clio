@@ -4,6 +4,7 @@ using System.Globalization;
 using System.Net;
 using System.Text;
 using System.Threading;
+using System.Threading.Tasks;
 
 namespace Clio.Common;
 
@@ -13,7 +14,7 @@ internal sealed class LoginDiagnostics : ILoginDiagnostics {
 
 	/// <summary>
 	/// Prefix of the message <c>Creatio.Client.CreatioClient.Login()</c> throws when the login response
-	/// body contains <c>"Code":1</c> (verified against creatio.client 1.0.38, which builds it as
+	/// body contains <c>"Code":1</c> (verified against creatio.client 1.0.40, which builds it as
 	/// <c>"Unauthorized " + userName + " for " + AppUrl</c>). Matching it is how an implicit login
 	/// rejection is told apart from an ordinary request failure — the NuGet client offers no typed
 	/// signal for it. A future client that reworded the message would simply stop the implicit-login
@@ -77,6 +78,20 @@ internal sealed class LoginDiagnostics : ILoginDiagnostics {
 	}
 
 	/// <inheritdoc />
+	public async Task<T> TrackAsync<T>(Func<Task<T>> login, LoginAttemptKind kind) {
+		ArgumentNullException.ThrowIfNull(login);
+		AttemptRecord record = BeginAttempt(kind);
+		try {
+			return await login().ConfigureAwait(false);
+		} catch (Exception exception)
+			when (TryFindLoginRejection(exception, out UnauthorizedAccessException rejection)) {
+			throw Decorate(exception, rejection, record);
+		} finally {
+			EndAttempt(record);
+		}
+	}
+
+	/// <inheritdoc />
 	public T TrackRequest<T>(Func<T> request) {
 		ArgumentNullException.ThrowIfNull(request);
 		AttemptRecord record = BeginAttempt(LoginAttemptKind.Implicit);
@@ -97,6 +112,20 @@ internal sealed class LoginDiagnostics : ILoginDiagnostics {
 			request();
 			return null;
 		});
+	}
+
+	/// <inheritdoc />
+	public async Task<T> TrackRequestAsync<T>(Func<Task<T>> request) {
+		ArgumentNullException.ThrowIfNull(request);
+		AttemptRecord record = BeginAttempt(LoginAttemptKind.Implicit);
+		try {
+			return await request().ConfigureAwait(false);
+		} catch (Exception exception)
+			when (TryFindLoginRejection(exception, out UnauthorizedAccessException rejection)) {
+			throw Decorate(exception, rejection, record);
+		} finally {
+			EndAttempt(record);
+		}
 	}
 
 	/// <summary>

@@ -18,6 +18,34 @@ Deploys Creatio application from a zip file. On Windows, deploys to Internet Inf
 Services (IIS) by default. On macOS and Linux, uses dotnet runtime. Supports cross-platform
 deployment with optional HTTPS configuration and automatic service management.
 
+For IIS deployments, an explicit `--site-port` wins. Otherwise a configured fixed
+`deploy-creatio-defaults.site-port` wins, followed by the first available port in
+`deploy-creatio-defaults.site-port-range`. Fresh and upgraded Clio settings persist
+the built-in inclusive range `[40100, 40199]` when no range was configured.
+
+Clio reserves the chosen port across concurrent processes before extracting files,
+restoring the database, or creating IIS objects. The command also checks existing
+IIS bindings and active listeners. An explicit used or reserved port fails; automatic
+selection continues to the next range candidate. Clio also serializes deploy and
+uninstall operations that use the same environment name or resolve to the same
+physical target directory. Deployments using different names, ports, and target
+directories can still run in parallel.
+
+The default persisted settings fragment is:
+
+```json
+{
+  "deploy-creatio-defaults": {
+    "site-port-range": [40100, 40199]
+  }
+}
+```
+
+On a clean Windows host, clio prepares required IIS features while holding the
+name and target reservations, then performs the IIS/TCP port validation.
+Site names must be safe single directory names. An explicit `--app-path` must be an
+absolute non-root path; Win32-ambiguous path components are rejected.
+
 When `--site-name` and the configured `deploy-site-name` default are both
 omitted, interactive deployment prompts for the site name. The Windows Explorer
 "clio: deploy Creatio" action uses this prompt instead of deriving a name from
@@ -80,8 +108,10 @@ for this value. Silent deployment fails with a clear error instead of waiting
 for console input.
 
 --site-port PORT
-HTTP port number for the application
-Default: 80 (HTTP), 443 (HTTPS)
+Optional explicit application port. For IIS this overrides the configured fixed
+site port and automatic range. When omitted, Clio uses the fixed default when
+present or reserves the first available configured-range port. Dotnet deployment
+retains its existing interactive/default port behavior.
 
 --zip-file FILE_PATH
 Required. Path to Creatio zip file or directory
@@ -201,8 +231,8 @@ Default: false
 ## Examples
 
 ```bash
-1. Basic deployment with default settings (PostgreSQL, port 40001, auto-run):
-clio deploy-creatio --site-name "Default" --zip-file "C:\creatio-app.zip" --site-port 40001 --silent
+1. Basic IIS deployment using the configured automatic port range:
+clio deploy-creatio --site-name "Default" --zip-file "C:\creatio-app.zip" --silent
 
 2. Deploy with MS SQL and custom port:
 clio deploy-creatio --site-name "Production" --db mssql --site-port 8080 \\
@@ -304,8 +334,10 @@ Password Reset Script (Creatio >= 8.3.3):
 - Script errors do not block deployment (warning only)
 
 Windows (Default - IIS):
+- Reserves and validates the explicit, fixed-default, or automatically selected port before deployment changes begin
 - Creates IIS Application Pool
 - Creates IIS Website with exactly one HTTP or HTTPS binding
+- Treats required IIS creation failures as deployment failures
 - HTTPS selects the pinned usable host certificate or the matching certificate
 with the latest expiration; missing certificates warn and fall back to HTTP
 - .NET Framework HTTPS switches ServiceModel config sources to `https` and sets

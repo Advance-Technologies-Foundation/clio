@@ -25,7 +25,7 @@ public sealed class PackageDownloaderTests : BaseClioModuleTests {
 	private IPackageDownloader _packageDownloader;
 
 	protected override void AdditionalRegistrations(IServiceCollection containerBuilder) {
-		IApplicationClient applicationClient = Substitute.For<IApplicationClient>();
+		IOwnedApplicationClient applicationClient = Substitute.For<IOwnedApplicationClient>();
 		IApplicationClientFactory applicationClientFactory = Substitute.For<IApplicationClientFactory>();
 		applicationClientFactory.CreateClient(EnvironmentSettings).Returns(applicationClient);
 		_packageArchiver = Substitute.For<IPackageArchiver>();
