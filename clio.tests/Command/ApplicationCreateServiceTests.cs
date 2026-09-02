@@ -137,7 +137,7 @@ public sealed class ApplicationCreateServiceTests {
 		_sut.CreateApplication("sandbox", _fullRequest);
 
 		// Assert
-		_oDataBuildGate.Received(1).WaitUntilIdle(
+		_oDataBuildGate.Received(2).WaitUntilIdle(
 			_applicationClient,
 			_environment,
 			"UsrCodexApp");

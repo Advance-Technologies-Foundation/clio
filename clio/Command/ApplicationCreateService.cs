@@ -202,7 +202,13 @@ public sealed class ApplicationCreateService(
 
 		logger.EndSpinner(true);
 		reportStage?.Invoke("loading application metadata");
-		return LoadCreatedApplication(loadApplicationInfo, resolvedRequest.Code, response.Value, schemaNamePrefix);
+		ApplicationInfoResult result = LoadCreatedApplication(
+			loadApplicationInfo, resolvedRequest.Code, response.Value, schemaNamePrefix);
+		// CreateApp can queue an asynchronous OData rebuild after returning its application id. Keep the
+		// environment barrier held until that background work has settled, so the next Clio mutation does
+		// not inherit a rebuild started by this operation.
+		oDataBuildGate.WaitUntilIdle(client, environmentSettings, resolvedRequest.Code);
+		return result;
 	}
 
 	private static void ValidateRequest(ApplicationCreateRequest request)
