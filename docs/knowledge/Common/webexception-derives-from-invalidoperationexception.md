@@ -3,7 +3,7 @@ description: System.Net.WebException derives from InvalidOperationException, so 
 applies-to:
   - clio/Command/EntitySchemaDesigner/RemoteEntitySchemaColumnManager.cs
   - clio/Command/EntitySchemaDesigner/EntitySchemaPublishHelper.cs
-date: 2026-08-19
+date: 2026-09-03
 ---
 
 **What is true** — `System.Net.WebException` inherits from `InvalidOperationException`. Any catch
@@ -14,6 +14,9 @@ equality — `exception.GetType() == typeof(InvalidOperationException)` — whic
 `RemoteEntitySchemaColumnManager` does for its "no runtime schema came back" branch. An allow-list
 that genuinely wants transport faults included (`EntitySchemaPublishHelper.IsExpectedODataBuildFault`)
 enumerates `WebException` explicitly instead of relying on the inheritance.
+Merged schema and merged column discovery intentionally share `ReadMergedRuntimeSchema`, whose purpose is
+to normalize all supported reader and transport failures; it does not treat `InvalidOperationException`
+as a not-found discriminator.
 
 **Why it is this way** — the .NET type hierarchy, nothing clio chose. Compounding it, Creatio's
 client is driven through `Task.Result`, so faults arrive wrapped in `AggregateException`; both
