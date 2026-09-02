@@ -239,7 +239,7 @@ public class CreatioClientAdapter : IOwnedApplicationClient {
 			observed => Interlocked.Exchange(ref observedBytes, observed));
 		try {
 			await Client.DownloadFileByGetAsync(url, scratch, requestTimeout, deadline.Token).ConfigureAwait(false);
-			watchStop.Cancel();
+			await watchStop.CancelAsync().ConfigureAwait(false);
 			await watcher.ConfigureAwait(false);
 			long finalLength = File.Exists(scratch) ? new FileInfo(scratch).Length : 0;
 			long observed = Math.Max(Interlocked.Read(ref observedBytes), finalLength);
@@ -265,7 +265,9 @@ public class CreatioClientAdapter : IOwnedApplicationClient {
 				+ "request timeout.");
 		}
 		finally {
-			watchStop.Cancel();
+			// Awaited rather than fired: the synchronous Cancel runs the watcher's continuations inline on
+			// this thread, which is the one unwinding the failure path.
+			await watchStop.CancelAsync().ConfigureAwait(false);
 			DeleteScratchQuietly(scratch);
 		}
 	}
@@ -289,7 +291,7 @@ public class CreatioClientAdapter : IOwnedApplicationClient {
 				}
 				if (length > maxBytes) {
 					report(length);
-					abort.Cancel();
+					await abort.CancelAsync().ConfigureAwait(false);
 					return;
 				}
 			}
