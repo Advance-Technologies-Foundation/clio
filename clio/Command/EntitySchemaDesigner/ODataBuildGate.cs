@@ -1,5 +1,4 @@
 using System;
-using System.Collections.Concurrent;
 using Clio.Common;
 
 namespace Clio.Command.EntitySchemaDesigner;
@@ -51,9 +50,13 @@ internal sealed class ODataBuildGate : IODataBuildGate
 	private readonly IRetryDelay _retryDelay;
 	private readonly ILogger _logger;
 
-	// Whether an environment exposes the status method at all. Asked once per environment rather than once
-	// per publish: the answer is a property of the deployed platform and cannot change while a command runs.
-	private readonly ConcurrentDictionary<string, bool> _statusMethodSupport = new(StringComparer.OrdinalIgnoreCase);
+	// Whether the target environment exposes the status method at all: null until the first probe answers.
+	// Scoped to this gate instance and nothing wider on purpose. IODataBuildGate is registered AddTransient,
+	// so a fresh gate is resolved per command and WaitUntilIdle runs once on it - a process-wide cache keyed
+	// by environment would never record a second hit, and keying it by `options.Uri ?? ""` would collapse
+	// every null-URI environment into one entry the moment the lifetime changed. The flag is still worth
+	// holding because WaitUntilIdle probes repeatedly within the one call.
+	private bool? _statusMethodSupported;
 
 	public ODataBuildGate(IRemoteEntitySchemaDesignerClient client, IRetryDelay retryDelay, ILogger logger) {
 		_client = client;
@@ -64,8 +67,7 @@ internal sealed class ODataBuildGate : IODataBuildGate
 	/// <inheritdoc />
 	public void WaitUntilIdle(RemoteCommandOptions options, string schemaName) {
 		ArgumentNullException.ThrowIfNull(options);
-		string environmentKey = options.Uri ?? string.Empty;
-		if (_statusMethodSupport.TryGetValue(environmentKey, out bool isSupported) && !isSupported) {
+		if (_statusMethodSupported == false) {
 			return;
 		}
 		bool? isRunning = Probe(options, out bool probeFaulted);
@@ -73,12 +75,12 @@ internal sealed class ODataBuildGate : IODataBuildGate
 			return;
 		}
 		if (isRunning is null) {
-			// Unknown, not idle: the server has no such method. Record it so the remaining publishes in this
-			// process do not pay for the probe again.
-			_statusMethodSupport[environmentKey] = false;
+			// Unknown, not idle: the server has no such method. Recorded so a second WaitUntilIdle on this
+			// gate returns without re-probing an environment that has already said it cannot answer.
+			_statusMethodSupported = false;
 			return;
 		}
-		_statusMethodSupport[environmentKey] = true;
+		_statusMethodSupported = true;
 		if (isRunning == false) {
 			return;
 		}
@@ -101,18 +103,27 @@ internal sealed class ODataBuildGate : IODataBuildGate
 	}
 
 	// The gate runs AFTER the schema has already been saved and BEFORE the publisher's own try block, so
-	// anything this probe throws would abort a mutation that is already persisted and leave it unpublished.
-	// The probe only decides whether to wait, so every environment or transport fault is absorbed: the caller
-	// stops waiting and publishes, exactly as it does when the wait budget is spent. The support flag is left
-	// untouched on a fault - a dropped connection says nothing about whether the platform exposes the method.
+	// anything this probe throws would abort a mutation that is already persisted and leave it unpublished -
+	// the user would get a raw exception instead of the publisher's actionable "stays invisible to lookup
+	// pickers ... and OData" message. The probe only decides whether to wait, so EVERY fault is absorbed, not
+	// just the ODataBuildFaults allow-list: a TimeoutException, a re-auth failure or a programming error here
+	// must not be the thing that strands a saved schema. The caller stops waiting and publishes, exactly as
+	// it does when the wait budget is spent. The support flag is left untouched on a fault - a dropped
+	// connection says nothing about whether the platform exposes the method.
 	private bool? Probe(RemoteCommandOptions options, out bool faulted) {
 		faulted = false;
 		try {
 			return _client.TryGetIsODataBuildRunning(options);
-		} catch (Exception exception) when (ODataBuildFaults.IsExpected(exception)) {
+		} catch (Exception exception) {
 			faulted = true;
+			// The allow-list still earns its keep as a DIAGNOSTIC: an expected environment fault is ordinary
+			// and reads as such, while anything outside it says so, so a real defect is not silently reduced
+			// to "the environment was busy".
+			string cause = ODataBuildFaults.IsExpected(exception)
+				? exception.Message
+				: $"unexpected {exception.GetType().Name}: {exception.Message}";
 			_logger.WriteWarning(
-				$"Could not read the OData entities build status: {exception.Message} Publishing without waiting; " +
+				$"Could not read the OData entities build status: {cause} Publishing without waiting; " +
 				"if the publish fails on a locked configuration file, retry the command once the build has finished.");
 			return null;
 		}

@@ -164,6 +164,45 @@ public sealed class ODataBuildGateTests
 		// because: a dropped connection says nothing about whether the deployed platform exposes the status method, unlike an HTML answer
 	}
 
+	[TestCaseSource(nameof(UnexpectedProbeFaults))]
+	[Description("Absorbs a fault OUTSIDE the ODataBuildFaults allow-list too: the gate runs before the publisher's try block, so anything it lets escape strands a schema that is already saved.")]
+	public void WaitUntilIdle_ShouldWarnAndReturn_WhenTheProbeFaultIsNotAnExpectedEnvironmentFault(Exception fault) {
+		// Arrange
+		_client.TryGetIsODataBuildRunning(_options).Returns(_ => throw fault);
+
+		// Act
+		Action act = () => _gate.WaitUntilIdle(_options, "UsrVehicle");
+
+		// Assert
+		act.Should().NotThrow(
+			because: "a TimeoutException, a re-auth failure or a programming error in the probe must not be the thing that leaves a persisted schema unpublished with a raw exception instead of the publisher's actionable message");
+		_logger.Received(1).WriteWarning(Arg.Is<string>(message =>
+			message.Contains("Could not read the OData entities build status", StringComparison.Ordinal)
+			&& message.Contains("unexpected " + fault.GetType().Name, StringComparison.Ordinal)));
+		// because: absorbing a fault outside the allow-list must not disguise a real defect as an ordinary busy environment
+	}
+
+	[Test]
+	[Description("A second WaitUntilIdle on the same gate does not re-probe an environment that already answered that it has no status method.")]
+	public void WaitUntilIdle_ShouldNotProbeAgain_WhenTheSameGateAlreadyLearnedTheMethodIsMissing() {
+		// Arrange - null is the 'no such method' answer, the one result the gate is allowed to remember.
+		_client.TryGetIsODataBuildRunning(_options).Returns((bool?)null);
+
+		// Act
+		_gate.WaitUntilIdle(_options, "UsrVehicle");
+		_gate.WaitUntilIdle(_options, "UsrVehicle2");
+
+		// Assert
+		_client.Received(1).TryGetIsODataBuildRunning(_options);
+		// because: the flag is per-gate state, and the gate is resolved per command, so this is the only reuse it can actually see
+	}
+
+	private static readonly object[] UnexpectedProbeFaults = [
+		new object[] { new TimeoutException("the status request did not complete in time") },
+		new object[] { new UnauthorizedAccessException("re-authentication failed") },
+		new object[] { new NullReferenceException("object reference not set") }
+	];
+
 	private static readonly object[] ProbeFaults = [
 		new object[] { new HttpRequestException("connection reset") },
 		new object[] { new NonJsonServiceResponseException("<html>404</html>") },
