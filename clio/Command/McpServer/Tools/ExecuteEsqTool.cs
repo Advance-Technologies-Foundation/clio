@@ -44,6 +44,9 @@ public sealed class ExecuteEsqTool(IToolCommandResolver commandResolver) {
 			if (!TryNormalizeQuery(args.Query, out JsonElement query, out string queryError)) {
 				return ExecuteEsqResponse.Failure(queryError);
 			}
+			if (!TryValidateTemporalParameterValues(query, "$", out string temporalParameterError)) {
+				return ExecuteEsqResponse.Failure(temporalParameterError);
+			}
 			if (!query.TryGetProperty("rootSchemaName", out JsonElement rootSchema)
 				|| rootSchema.ValueKind != JsonValueKind.String
 				|| string.IsNullOrWhiteSpace(rootSchema.GetString())) {
@@ -81,6 +84,66 @@ public sealed class ExecuteEsqTool(IToolCommandResolver commandResolver) {
 		} catch (Exception ex) {
 			return ExecuteEsqResponse.Failure(SensitiveErrorTextRedactor.Redact(ex.Message));
 		}
+	}
+
+	private static bool TryValidateTemporalParameterValues(
+		JsonElement element, string path, out string error) {
+		error = string.Empty;
+		switch (element.ValueKind) {
+			case JsonValueKind.Object:
+				foreach (JsonProperty property in element.EnumerateObject()) {
+					string propertyPath = $"{path}.{property.Name}";
+					if (property.NameEquals("parameter")
+						&& property.Value.ValueKind == JsonValueKind.Object
+						&& !TryValidateTemporalParameter(property.Value, propertyPath, out error)) {
+						return false;
+					}
+					if (!TryValidateTemporalParameterValues(property.Value, propertyPath, out error)) {
+						return false;
+					}
+				}
+				return true;
+			case JsonValueKind.Array:
+				int index = 0;
+				foreach (JsonElement item in element.EnumerateArray()) {
+					if (!TryValidateTemporalParameterValues(item, $"{path}[{index}]", out error)) {
+						return false;
+					}
+					index++;
+				}
+				return true;
+			default:
+				return true;
+		}
+	}
+
+	private static bool TryValidateTemporalParameter(JsonElement parameter, string path, out string error) {
+		error = string.Empty;
+		if (!parameter.TryGetProperty("dataValueType", out JsonElement dataValueType)
+			|| !dataValueType.TryGetInt32(out int dataValueTypeCode)
+			|| dataValueTypeCode is not (7 or 8 or 9)
+			|| !parameter.TryGetProperty("value", out JsonElement value)) {
+			return true;
+		}
+
+		bool isJsonEncodedString = false;
+		if (value.ValueKind == JsonValueKind.String) {
+			try {
+				using JsonDocument decoded = JsonDocument.Parse(value.GetString() ?? string.Empty);
+				isJsonEncodedString = decoded.RootElement.ValueKind == JsonValueKind.String;
+			} catch (JsonException) {
+				// The server accepts temporal values only when the outer JSON string contains another JSON string.
+			}
+		}
+		if (isJsonEncodedString) {
+			return true;
+		}
+
+		error = $"query temporal parameter at '{path}.value' has an invalid value for dataValueType "
+			+ $"{dataValueTypeCode}. Date, DateTime, and Time values must be JSON-encoded strings, for example "
+			+ "\"value\": \"\\\"2026-01-01T00:00:00.000Z\\\"\". A plain ISO string is not accepted. "
+			+ "See the 'esq' and 'esq-filters-frontend' guidance.";
+		return false;
 	}
 
 	private static bool TryNormalizeQuery(JsonElement query, out JsonElement normalized, out string error) {

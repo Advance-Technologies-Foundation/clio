@@ -244,6 +244,91 @@ public sealed class ExecuteEsqToolTests {
 			Arg.Any<int>());
 	}
 
+	[TestCase(7)]
+	[TestCase(8)]
+	[TestCase(9)]
+	[Category("Unit")]
+	[Description("Rejects plain DateTime, Date, and Time parameter strings with the exact query path before resolving an environment or sending a request.")]
+	public void Execute_ShouldRejectPlainTemporalParameterValue_WhenDataValueTypeIsTemporal(int dataValueType) {
+		// Arrange
+		(ExecuteEsqTool tool, IApplicationClient client, _) = BuildTool("{\"success\":true,\"rows\":[]}");
+		JsonElement query = Json($$"""
+			{
+			  "rootSchemaName": "SysSchema",
+			  "filters": {
+			    "items": {
+			      "ModifiedAfter": {
+			        "rightExpressions": [
+			          {
+			            "expressionType": 2,
+			            "parameter": {
+			              "dataValueType": {{dataValueType}},
+			              "value": "2026-08-10T00:00:00Z"
+			            }
+			          }
+			        ]
+			      }
+			    }
+			  }
+			}
+			""");
+
+		// Act
+		ExecuteEsqResponse response = tool.Execute(new ExecuteEsqArgs {
+			EnvironmentName = "missing-environment",
+			Query = query
+		});
+
+		// Assert
+		response.Success.Should().BeFalse(
+			because: "a plain temporal string cannot be deserialized by the Creatio SelectQuery endpoint");
+		response.Error.Should().Contain("$.filters.items.ModifiedAfter.rightExpressions[0].parameter.value",
+			because: "the validation error should identify the exact malformed parameter");
+		response.Error.Should().Contain("JSON-encoded strings",
+			because: "the caller should be told which temporal value encoding the endpoint accepts");
+		response.Error.Should().Contain("\"value\": \"\\\"2026-01-01T00:00:00.000Z\\\"\"",
+			because: "the diagnostic should include a directly reusable valid value example");
+		client.DidNotReceiveWithAnyArgs().ExecutePostRequest(default!, default!, default, default, default);
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Passes a JSON-encoded DateTime parameter through to Creatio without rewriting its value or timezone.")]
+	public void Execute_ShouldPreserveJsonEncodedDateTimeParameter_WhenValueHasAcceptedShape() {
+		// Arrange
+		(ExecuteEsqTool tool, IApplicationClient client, _) = BuildTool("{\"success\":true,\"rows\":[]}");
+		JsonElement query = Json("""
+			{
+			  "rootSchemaName": "SysSchema",
+			  "filters": {
+			    "items": {
+			      "ModifiedAfter": {
+			        "rightExpression": {
+			          "expressionType": 2,
+			          "parameter": {
+			            "dataValueType": 7,
+			            "value": "\"2026-08-10T00:00:00.000Z\""
+			          }
+			        }
+			      }
+			    }
+			  }
+			}
+			""");
+
+		// Act
+		ExecuteEsqResponse response = tool.Execute(new ExecuteEsqArgs {
+			EnvironmentName = "dev",
+			Query = query
+		});
+
+		// Assert
+		response.Success.Should().BeTrue(
+			because: "the documented JSON-encoded DateTime value is accepted by the SelectQuery endpoint");
+		client.Received(1).ExecutePostRequest(
+			Arg.Any<string>(), query.GetRawText(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>());
+	}
+
 	[Test]
 	[Category("Unit")]
 	[Description("Surfaces a DataService failure envelope as a failure with the server message.")]
