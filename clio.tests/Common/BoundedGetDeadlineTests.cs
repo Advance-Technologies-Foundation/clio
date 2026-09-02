@@ -3,6 +3,7 @@ namespace Clio.Tests.Common;
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
+using System.IO;
 using System.Net;
 using System.Threading;
 using System.Threading.Tasks;
@@ -137,6 +138,64 @@ internal sealed class BoundedGetDeadlineTests {
 			.GetAwaiter().GetResult();
 		_stall.Cancel();
 		WaitQuietly(serve);
+	}
+
+	[Test]
+	[Category("Integration")]
+	[Platform(Exclude = "Win", Reason = "The assertion is on Unix permission bits; the Windows staging root is the per-user profile temp.")]
+	[Description("The raw response is staged inside a directory that is owner-only from the moment it is created, so no other local account can read business data mid-transfer.")]
+	public void BoundedGet_ShouldStageTheRawResponse_InAnOwnerOnlyDirectory() {
+		// Arrange - the listener stalls, so the staging directory is observable while the transfer is still
+		// running, which is exactly the window the finding is about. Anything created before the request went
+		// out would be indistinguishable from a directory tightened after the fact.
+		Task serve = ServeHeadersThenStallAsync();
+		using CreatioClientAdapter adapter = CookieAuthenticatedAdapter();
+		using CancellationTokenSource callerSafety = new(CallerSafetyMs);
+		HashSet<string> preexisting = [.. Directory.EnumerateDirectories(Path.GetTempPath(), StagingPattern)];
+
+		// Act
+		Task<byte[]> read = adapter.ExecuteGetRequestBoundedAsync(
+			_prefix + "odata/Contact", Ceiling, requestTimeout: 60_000, cancellationToken: callerSafety.Token);
+		string staging = WaitForStagingDirectory(preexisting);
+
+		// Assert
+		staging.Should().NotBeNull(
+			because: "the response has to be staged somewhere, and the test cannot judge the mode of a "
+				+ "directory it never saw");
+		File.GetUnixFileMode(staging).Should().Be(
+			UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute,
+			because: "an ambient 0755 staging directory lets any local account read the OData response while "
+				+ "it downloads, whatever mode the file inside ends up with");
+
+		// Cleanup
+		_stall.Cancel();
+		SwallowFailure(read);
+		WaitQuietly(serve);
+	}
+
+	private const string StagingPattern = "clio-bounded-*";
+
+	// The directory exists only for the length of the transfer, so it is polled for rather than computed:
+	// the name carries a GUID the caller never sees.
+	private string WaitForStagingDirectory(HashSet<string> preexisting) {
+		for (int attempt = 0; attempt < 100; attempt++) {
+			foreach (string candidate in Directory.EnumerateDirectories(Path.GetTempPath(), StagingPattern)) {
+				if (!preexisting.Contains(candidate)) {
+					return candidate;
+				}
+			}
+			Thread.Sleep(50);
+		}
+		return null;
+	}
+
+	private static void SwallowFailure(Task task) {
+		try {
+			task.Wait(TimeSpan.FromSeconds(5));
+		}
+		catch (AggregateException) {
+			// The request is abandoned on purpose once the staging directory has been inspected.
+		}
 	}
 
 	// Cookies are imported rather than obtained by logging in: the deadline is a property of the streamed GET,

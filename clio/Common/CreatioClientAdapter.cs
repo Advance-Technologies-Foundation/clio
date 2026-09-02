@@ -221,7 +221,13 @@ public class CreatioClientAdapter : IOwnedApplicationClient {
 		// held by the client, never by this adapter) and the session-recovery retry. The earlier version
 		// borrowed cookies into a fresh HttpClientHandler, which dropped all three and worked for cookie
 		// sessions only.
-		string scratch = Path.Combine(Path.GetTempPath(), $"clio-bounded-{Guid.NewGuid():N}.tmp");
+		// The raw OData response is staged on disk before it is handed back, and the downstream download opens
+		// that path with an ordinary FileMode.Create - which under the usual umask 022 leaves an ambient 0644
+		// file that any other local account can read while the transfer runs. The staging file therefore lives
+		// inside a directory created owner-only IN THE SAME CALL that creates it, so there is no window in which
+		// the business data underneath is reachable by anyone else, whatever mode the file itself ends up with.
+		string scratchDirectory = CreateOwnerOnlyScratchDirectory();
+		string scratch = Path.Combine(scratchDirectory, "response.tmp");
 		// One deadline across send, stream acquisition and EVERY body read. With ResponseHeadersRead a server
 		// can answer the headers in milliseconds and then withhold the body forever: the reads would then be
 		// governed by the caller token alone, and MCP host cancellation is not guaranteed to arrive, so the
@@ -269,6 +275,7 @@ public class CreatioClientAdapter : IOwnedApplicationClient {
 			// this thread, which is the one unwinding the failure path.
 			await watchStop.CancelAsync().ConfigureAwait(false);
 			DeleteScratchQuietly(scratch);
+			DeleteScratchDirectoryQuietly(scratchDirectory);
 		}
 	}
 
@@ -298,6 +305,39 @@ public class CreatioClientAdapter : IOwnedApplicationClient {
 		}
 		catch (OperationCanceledException) {
 			// The ordinary end of the watch: the download finished, or the caller went away.
+		}
+	}
+
+	// Owner-only AT CREATION rather than tightened afterwards: File/Directory.SetUnixFileMode runs after the
+	// directory already exists, and everything staged during that gap is world-readable. The mode argument is
+	// applied by the mkdir syscall itself, so the directory is never briefly open.
+	private static string CreateOwnerOnlyScratchDirectory() {
+		string path = Path.Combine(Path.GetTempPath(), $"clio-bounded-{Guid.NewGuid():N}");
+		if (OperatingSystem.IsWindows()) {
+			// %TEMP% on Windows is per-user (under the profile) and inherits its owner-only ACL, so the
+			// directory is not shared the way the Unix temp root is. Explicit DACL tightening is the same
+			// tracked follow-up FileSecurityHardening records rather than shipping unverified ACL code.
+			Directory.CreateDirectory(path);
+			return path;
+		}
+		Directory.CreateDirectory(path, OwnerOnlyDirectory);
+		return path;
+	}
+
+	private const UnixFileMode OwnerOnlyDirectory =
+		UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute;
+
+	private static void DeleteScratchDirectoryQuietly(string path) {
+		try {
+			if (Directory.Exists(path)) {
+				Directory.Delete(path, true);
+			}
+		}
+		catch (IOException) {
+			// A leftover staging directory is not worth replacing the real failure with a second exception.
+		}
+		catch (UnauthorizedAccessException) {
+			// Same reasoning as above.
 		}
 	}
 
