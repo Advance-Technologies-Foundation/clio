@@ -34,7 +34,7 @@ public sealed class ServerProcessDescriberTests {
 
 	[Test]
 	[Category("Unit")]
-	[Description("branchesOnActivityResult round-trips by its WIRE NAME, in both directions. Two independent string literals have to agree - [DataMember(Name = \"branchesOnActivityResult\")] on the server contract and [JsonPropertyName] here - and nothing tested either. The field is a bool, so a mismatch or a dropped attribute yields false for EVERY flow, silently and in the reassuring direction: a branch whose condition the platform ignores reads back as one it evaluates, which is the exact failure the flag was added to report. DescribedFlow has no extension-data bag, so the outbound half needs its own assertion.")]
+	[Description("branchesOnActivityResult round-trips by its WIRE NAME, and the OUTBOUND assertion is the one that pins it. Two independent string literals have to agree - [DataMember(Name = \"branchesOnActivityResult\")] on the server contract and [JsonPropertyName] here. The inbound half does NOT depend on the attribute: ServerProcessDescriber.JsonOptions sets PropertyNameCaseInsensitive, and the JSON key differs from the C# property only in its first letter, so deserialization binds them with the attribute deleted outright. Serialization has no such fallback, which is why the third assertion - reading the key back out of the re-serialized JSON - is what reddens. Worth pinning at all because the field is a bool: a mismatched or dropped attribute yields false for EVERY flow, silently and in the reassuring direction, so a branch whose condition the platform ignores reads back as one it evaluates. A mis-SPELLED attribute value, as opposed to a missing one, would also escape the inbound assertion.")]
 	public void Describe_ShouldRoundTripBranchesOnActivityResult() {
 		// Arrange
 		IApplicationClient client = ClientReturning(
@@ -697,7 +697,8 @@ public sealed class ServerProcessDescriberTests {
 		IApplicationClient client = ClientReturning(
 			"{\"DescribeProcessResult\":{\"success\":true,\"name\":\"UsrProc\","
 			+ "\"elements\":[],"
-			+ "\"flows\":[{\"source\":\"s\",\"target\":\"e\",\"kind\":\"sequence\"}],"
+			+ "\"flows\":[{\"source\":\"s\",\"target\":\"e\",\"kind\":\"sequence\","
+			+ "\"condition\":null}],"
 			+ "\"parameters\":[]}}");
 		ServerProcessDescriber describer = CreateDescriber(client);
 
@@ -710,7 +711,11 @@ public sealed class ServerProcessDescriberTests {
 
 		// Assert
 		result.Value.Flows[0].Condition.Should().BeNull(
-			because: "the server already maps its stored literal \"null\" to a real null and omits the key (ProcessDescriber.ReadFlowCondition), so an ABSENT condition is what clio receives for a plain flow - this pins that clio does not invent one");
+			because: "the server maps its stored literal \"null\" to a real null (ProcessDescriber.ReadFlowCondition) "
+				+ "but does NOT omit the key: DescribeProcessFlow.Condition carries [DataMember(Name = "
+				+ "\"condition\")] with no EmitDefaultValue = false, so the wire carries an explicit "
+				+ "\"condition\": null - which is what this payload now sends, rather than the absent key an "
+				+ "earlier version of it guessed at");
 		JsonNode.Parse(reserialized)["flows"]![0]!.AsObject().ContainsKey("condition").Should().BeFalse(
 			because: "an absent condition is omitted under WhenWritingNull, so a caller never has to tell a null "
 				+ "condition from a missing one");
