@@ -534,6 +534,32 @@ public sealed class PageValidateToolE2ETests : McpContractFixtureBase {
 	}
 
 	[Test]
+	[Description("validate-page rejects a syntactically valid handler that calls an undeclared module-scope helper, reproducing the Page Designer loss that leaves a page unopenable at runtime.")]
+	[AllureTag(ToolName)]
+	[AllureName("validate-page rejects an undefined module-scope helper call")]
+	[AllureDescription("Sends an AMD body whose init handler calls missingModuleHelper without declaring it in the factory and verifies that the AST validation error reaches the real MCP transport.")]
+	public async Task PageValidateTool_Should_Reject_Undeclared_Handler_Helper() {
+		// Arrange
+		await using var context = Arrange(TimeSpan.FromMinutes(3));
+		string body = ValidPageBody.Replace(
+			"handlers: /**SCHEMA_HANDLERS*/[]/**SCHEMA_HANDLERS*/",
+			"handlers: /**SCHEMA_HANDLERS*/[{ request: 'crt.HandleViewModelInitRequest', handler: async (request, next) => { await missingModuleHelper(request); return next?.handle(request); } }]/**SCHEMA_HANDLERS*/");
+
+		// Act
+		PageValidateResponse response = await CallAsync(
+			context.Session,
+			context.CancellationTokenSource.Token,
+			body);
+
+		// Assert
+		response.Valid.Should().BeFalse(
+			because: "a missing helper produces a runtime ReferenceError even when the page body passes JavaScript syntax parsing");
+		response.Validation.Errors.Should().Contain(
+			e => e.Contains("undefined-section-call", StringComparison.OrdinalIgnoreCase) && e.Contains("missingModuleHelper", StringComparison.Ordinal),
+			because: "the real MCP response must expose the stable lint rule and the missing helper name before a write is attempted");
+	}
+
+	[Test]
 	[Description("validate-page rejects a body whose custom converter uses the reserved `crt.*` namespace — proves the new AST lint pass surfaces through the pre-flight tool end-to-end. The regex layer treats `crt.*` as a valid vendor prefix, so this body is the canonical proof that the lint pass adds detection beyond regex under default validation.")]
 	[AllureTag(ToolName)]
 	[AllureName("validate-page rejects converter using reserved crt.* prefix")]
