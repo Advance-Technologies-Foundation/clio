@@ -583,6 +583,36 @@ public sealed class ModifyBusinessProcessToolE2ETests {
 	}
 
 	[Test]
+	[Description("Over the real MCP path, a formula the server could not fully check reports a WARNING and the edit still succeeds. This is the one channel the shipped tool description names for an agent to read - entries with message-type Warning in execution-log-messages - and nothing asserted it end to end, so the whole degraded-path contract rested on unit tests of the notice collector. An unrecognised macro family is the cheapest way in: the server stores the mapping, skips the engine layer, and says so.")]
+	[AllureTag(ToolName)]
+	[AllureName("modify-business-process reports a server warning on a partially-checked formula")]
+	public async Task ModifyBusinessProcess_Should_ReportWarning_WhenAFormulaCannotBeFullyChecked() {
+		// Arrange
+		await using ArrangeContext context = await ArrangeAsync(requireReachableEnvironment: true);
+		string processName = $"UsrClioBpWarnE2e{Guid.NewGuid():N}";
+		await CallToolAsync(context, CreateToolName, new Dictionary<string, object?> {
+			["environment-name"] = context.EnvironmentName,
+			["descriptor"] = BuildDescriptor(processName)
+		});
+
+		// Act - a macro family this package does not recognise, on a MAPPING. The condition path refuses one
+		// outright; a mapping is accepted with a notice, which is exactly the channel under test.
+		CallToolResult callResult = await CallToolAsync(context, ToolName, new Dictionary<string, object?> {
+			["environment-name"] = context.EnvironmentName,
+			["process-name"] = processName,
+			["operations"] = BuildFormulaMappingOperations("[#UsrUnknownDialect.Something#]")
+		});
+
+		// Assert
+		string callResultJson = JsonSerializer.Serialize(callResult);
+		callResultJson.Should().Contain("Warning",
+			because: "the tool description promises this channel by name, and an agent that cannot see the caveat "
+				+ "reports a clean success for a formula whose result type was never checked");
+		callResultJson.Should().Contain("NOT checked",
+			because: "the warning has to say WHAT was skipped, or it is noise the caller learns to ignore");
+	}
+
+	[Test]
 	[Description("Over the real MCP path, an invalid condition is refused BY THE SERVER and nothing is written. This is the check that proves validation is server-side rather than a client-side convenience an agent could route around.")]
 	[AllureTag(ToolName)]
 	[AllureName("modify-business-process refuses an invalid flow condition")]
