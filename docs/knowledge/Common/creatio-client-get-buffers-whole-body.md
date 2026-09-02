@@ -17,21 +17,36 @@ abandoning the transfer once the ceiling is passed.
 **Why it is this way** — the streamed path cannot reuse `Creatio.Client`'s GET, because that method's
 completion option is not a parameter. In `Creatio.Client` 2.0.2 (the newest published version) the private
 `SendAsync` DOES take an `HttpCompletionOption`, and the configured `HttpClient` is a private property, so
-neither is reachable from here. The streamed path therefore borrows the session instead: the cookies come
-from `ExportSessionCookies()` on the already-authenticated client, so no second authentication path exists.
+neither is reachable from here. What IS reachable is `CreatioClient.DownloadFileByGetAsync`, which issues
+its own request with `ResponseHeadersRead` and copies the body incrementally to a path on disk. The bounded
+GET therefore runs through the ONE configured, authenticated client and stages the response in a scratch
+file, rather than rebuilding a transport beside it.
 
-**What it consequently does NOT cover** — borrowing cookies only works for a cookie session. A client with
-no cookies to export (an OAuth/bearer client never has any) is DECLINED with `NotSupportedException`, and
-the caller falls back to the buffered path; it is not logged in here, because the only login reachable is
-the form login and it fails on a bearer client. The fresh handler also does not carry the configured client's
-TLS or proxy policy, so an environment that needs `useUntrustedSsl` is served by the buffered path as well.
-Closing that gap properly means exposing a bounded GET on `Creatio.Client` itself
-(`Advance-Technologies-Foundation/creatioclient`) rather than rebuilding its transport here.
+An earlier design borrowed `ExportSessionCookies()` into a fresh `HttpClientHandler`. Do not go back to it:
+a parallel handler drops the OAuth/bearer token, the configured certificate-validation policy
+(`useUntrustedSsl` is held by the client, never by this adapter) and the session-recovery retry — so it
+worked for cookie sessions only, and everything else fell back to the buffered path that defeats the
+ceiling.
+
+**What it consequently does NOT cover** — two limitations are still open, both of them in
+`DownloadFileByGetAsync` rather than here:
+
+- It does not distinguish response statuses: a non-2xx body is staged like a successful one, so the tool
+  classifies the staged content afterwards instead of being told by the transport.
+- It enforces no byte bound of its own. The ceiling is applied on this side by watching the scratch file
+  grow and abandoning the transfer, so the overshoot is whatever was already in flight when the watcher
+  tripped — not a hard limit the transport honours.
+
+Closing either properly means a bounded GET on `Creatio.Client` itself
+(`Advance-Technologies-Foundation/creatioclient`) that reports status and enforces the ceiling in the
+transport. Until then `ODataReadToFileTool` has **no buffered fallback at all**: a client that cannot
+stream is a hard failure (`NotSupportedException`, surfaced redacted), because falling back would silently
+read the whole body into the long-lived MCP process.
 
 **What breaks if you ignore it** — a ceiling checked on the result of `ExecuteGetRequestAsync` is
 decorative. The long-lived MCP process has already allocated the whole body by the time the check runs, so
 one call against a large OData projection can exhaust it and the error message arrives too late to matter.
 Measured with a 512 MiB response against a 64 MiB ceiling: the streamed path lets the server push about
 72 MiB before the connection drops (the overshoot is bytes already in flight), while the buffered path
-drains all 512 MiB first. `ODataReadToFileTool` prefers the streamed path and falls back to the buffered
-one only for a transport that does not implement it.
+drains all 512 MiB first. `ODataReadToFileTool` uses the streamed path only; a transport that
+does not implement it fails the call instead of falling back.

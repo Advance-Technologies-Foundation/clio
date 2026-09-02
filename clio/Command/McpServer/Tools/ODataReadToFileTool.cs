@@ -178,7 +178,10 @@ public sealed class ODataReadToFileTool(IToolCommandResolver commandResolver, IO
 			// The streamed GET declining is now a hard failure rather than a hand-off: the buffered path it
 			// used to fall through to defeats the ceiling, so the caller is told the request cannot be
 			// bounded instead of having it silently read into memory.
-			error = notSupported.Message;
+			// Redacted like the timeout branch above, and for the same reason: the adapter puts the absolute
+			// environment URL and the encoded filter into the decline text, and an MCP result is copied
+			// verbatim into the transcript, so an unbounded read would otherwise publish host, port and query.
+			error = SensitiveErrorTextRedactor.Redact(notSupported.Message);
 			return false;
 		}
 	}

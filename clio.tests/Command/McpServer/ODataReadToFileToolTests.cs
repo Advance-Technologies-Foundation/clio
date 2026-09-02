@@ -328,6 +328,41 @@ public sealed class ODataReadToFileToolTests {
 
 	[Test]
 	[Category("Unit")]
+	[Description("Bounds the diagnostic for a large server error body instead of redacting and returning the whole server message into the MCP transcript.")]
+	public void ReadToFile_Should_Bound_The_Diagnostic_For_A_Large_Server_Error() {
+		// Arrange — an OData error body is allowed the whole response ceiling, so its message can be megabytes.
+		MockFileSystem fileSystem = new();
+		string outputFile = fileSystem.Path.Combine(fileSystem.Path.GetTempPath(), $"odata-bigerror-{Guid.NewGuid():N}.json");
+		string hugeMessage = new('x', 512 * 1024);
+		ICreatioApplicationClient client = Substitute.For<ICreatioApplicationClient>();
+		IServiceUrlBuilder urlBuilder = Substitute.For<IServiceUrlBuilder>();
+		IToolCommandResolver resolver = Substitute.For<IToolCommandResolver>();
+		resolver.Resolve<IApplicationClient>(Arg.Any<EnvironmentOptions>()).Returns(client);
+		resolver.Resolve<IServiceUrlBuilder>(Arg.Any<EnvironmentOptions>()).Returns(urlBuilder);
+		urlBuilder.Build(Arg.Any<string>()).Returns("http://creatio/odata/Contact?$top=25");
+		client.ExecuteGetRequestBoundedAsync(
+				Arg.Any<string>(), Arg.Any<long>(), Arg.Any<int>(), Arg.Any<CancellationToken>())
+			.Returns(Task.FromResult(Encoding.UTF8.GetBytes(
+				$"{{\"error\":{{\"code\":\"500\",\"message\":\"{hugeMessage}\"}}}}")));
+		ODataReadToFileTool tool = new(resolver, new ODataFileContract(fileSystem, new MockConfinedFileAccess(fileSystem)));
+
+		// Act
+		ODataReadResponse response = tool.ReadToFile(new ODataReadToFileArgs {
+			EnvironmentName = "dev", Entity = "Contact", OutputFile = outputFile
+		});
+
+		// Assert
+		response.Success.Should().BeFalse(because: "an OData error body is a failed read");
+		response.Error.Should().NotContain("xxxxxxxxxx",
+			because: "the server's own message is classified, not quoted - copying it back is the context pressure file mode exists to avoid");
+		response.Error.Length.Should().BeLessThan(1024,
+			because: "the diagnostic has to be bounded by construction, not by however long the server made its message");
+		fileSystem.File.Exists(outputFile).Should().BeFalse(
+			because: "an error payload must not be persisted under a name that suggests a successful read");
+	}
+
+	[Test]
+	[Category("Unit")]
 	[Description("Stops reading and writes nothing when the response passes the byte ceiling, so one call cannot exhaust the server's memory behind a small top.")]
 	public void ReadToFile_Should_Reject_A_Response_Past_The_Byte_Ceiling() {
 		// Arrange
@@ -393,6 +428,43 @@ public sealed class ODataReadToFileToolTests {
 			because: "the encoded filter is part of the same leak and is redacted with the URI");
 		result.Error.Should().Contain("did not complete within 500 ms",
 			because: "redaction is surgical - the caller still has to learn that the request timed out");
+		fileSystem.File.Exists(outputFile).Should().BeFalse(
+			because: "nothing may be published for a read that never returned a body");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Redacts the environment URL out of a streamed-GET decline, the parallel leak to the timeout branch.")]
+	public void ReadToFile_Should_Redact_The_Environment_Url_From_A_Decline() {
+		// Arrange
+		MockFileSystem fileSystem = new();
+		string outputFile = fileSystem.Path.Combine(fileSystem.Path.GetTempPath(), $"odata-decline-{Guid.NewGuid():N}.json");
+		ICreatioApplicationClient client = Substitute.For<ICreatioApplicationClient>();
+		IServiceUrlBuilder urlBuilder = Substitute.For<IServiceUrlBuilder>();
+		IToolCommandResolver resolver = Substitute.For<IToolCommandResolver>();
+		resolver.Resolve<IApplicationClient>(Arg.Any<EnvironmentOptions>()).Returns(client);
+		resolver.Resolve<IServiceUrlBuilder>(Arg.Any<EnvironmentOptions>()).Returns(urlBuilder);
+		urlBuilder.Build(Arg.Any<string>()).Returns("https://prod.creatio.com:8443/0/odata/Contact?$filter=Secret eq 1");
+		//A client that cannot stream declines with the absolute request URI in the message, exactly like the
+		//timeout above. Returning it verbatim published host, port and the encoded filter.
+		client.ExecuteGetRequestBoundedAsync(Arg.Any<string>(), Arg.Any<long>(), Arg.Any<int>(), Arg.Any<CancellationToken>())
+			.Returns<Task<byte[]>>(_ => throw new NotSupportedException(
+				"streaming https://prod.creatio.com:8443/0/odata/Contact?$filter=Secret eq 1 is not supported"));
+		ODataReadToFileTool tool = new(resolver, new ODataFileContract(fileSystem, new MockConfinedFileAccess(fileSystem)));
+
+		// Act
+		ODataReadResponse result = tool.ReadToFile(new ODataReadToFileArgs {
+			EnvironmentName = "dev", Entity = "Contact", OutputFile = outputFile
+		});
+
+		// Assert
+		result.Success.Should().BeFalse(because: "a client that cannot bound the read is a failed read, not a hand-off");
+		result.Error.Should().NotContain("prod.creatio.com",
+			because: "the environment host must not reach the transcript through a decline message either");
+		result.Error.Should().NotContain("Secret eq 1",
+			because: "the encoded filter is part of the same leak and is redacted with the URI");
+		result.Error.Should().Contain("is not supported",
+			because: "redaction is surgical - the caller still has to learn the read could not be bounded");
 		fileSystem.File.Exists(outputFile).Should().BeFalse(
 			because: "nothing may be published for a read that never returned a body");
 	}

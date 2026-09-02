@@ -240,10 +240,16 @@ public sealed class ODataFileContract(IFileSystem fileSystem, IConfinedFileAcces
 	/// <param name="root">Parsed response root.</param>
 	/// <returns><c>null</c> when the body may be summarized, otherwise the caller-facing error.</returns>
 	private static string RejectNonODataContent(JsonElement root) {
-		if (CreatioResponseError.TryDetect(root, CreatioResponseContext.ODataPayload, out string serverError)) {
+		// Classified, not quoted. TryDetect hands back the server's own message, and an OData error body is
+		// allowed the whole 64 MiB response ceiling: running the redactor over a multi-megabyte message
+		// allocated several times its size and then copied all of it into the MCP transcript - the exact
+		// context pressure file mode exists to avoid. The fixed diagnostic is bounded by construction, and it
+		// carries no server-controlled prose, tokens or line breaks into content a model reads as trusted.
+		if (CreatioResponseError.TryClassify(root, CreatioResponseContext.ODataPayload,
+				out bool isUnregisteredEntity)) {
 			// Nothing is written for an error body: a file named after a successful read that holds a
 			// server error is worse than no file at all.
-			return SensitiveErrorTextRedactor.Redact(serverError);
+			return CreatioResponseError.DescribeServerReportedReadError(isUnregisteredEntity);
 		}
 		// Only an object or an array is OData content. A scalar body - null, true, 42, "Unauthorized" -
 		// is what a proxy, an auth redirect or a misrouted request returns; persisting one as the raw
