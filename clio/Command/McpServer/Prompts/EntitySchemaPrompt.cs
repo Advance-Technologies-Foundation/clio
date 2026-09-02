@@ -205,11 +205,26 @@ public static class EntitySchemaPrompt {
 		 """;
 
 	/// <summary>
+	/// Builds a package-scoped prompt using the legacy public positional argument order.
+	/// </summary>
+	/// <param name="packageName">Target package name.</param>
+	/// <param name="schemaName">Entity schema name.</param>
+	/// <param name="columnName">Column name.</param>
+	/// <param name="environmentName">Creatio environment name.</param>
+	/// <returns>Agent-facing MCP prompt text.</returns>
+	public static string GetEntitySchemaColumnProperties(
+		string packageName,
+		string schemaName,
+		string columnName,
+		string environmentName) =>
+		GetEntitySchemaColumnPropertiesPrompt(schemaName, columnName, environmentName, packageName);
+
+	/// <summary>
 	/// Builds a prompt that directs the agent to read structured column properties through MCP.
 	/// </summary>
 	[McpServerPrompt(Name = GetEntitySchemaColumnPropertiesTool.GetEntitySchemaColumnPropertiesToolName),
 		Description("Prompt to read structured remote entity schema column properties")]
-	public static string GetEntitySchemaColumnProperties(
+	public static string GetEntitySchemaColumnPropertiesPrompt(
 		[Required]
 		[Description("Entity schema name")]
 		string schemaName,

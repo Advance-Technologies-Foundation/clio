@@ -330,7 +330,7 @@ public sealed class EntitySchemaToolTests {
 
 		// Act
 		EntitySchemaColumnPropertiesInfo result = tool.GetEntitySchemaColumnProperties(
-			new GetEntitySchemaColumnPropertiesArgs("dev", "Contact", "UsrStatus"));
+			new GetEntitySchemaColumnPropertiesArgs("dev", null, "Contact", "UsrStatus"));
 
 		// Assert
 		result.PackageName.Should().Be("(merged: all packages)",
@@ -1013,7 +1013,7 @@ public sealed class EntitySchemaToolTests {
 		string lookupPrompt = EntitySchemaPrompt.CreateLookup("UsrPkg", "UsrOrderStatus", "Order status", "dev");
 		string updatePrompt = EntitySchemaPrompt.UpdateEntitySchema("UsrPkg", "UsrVehicle", "dev");
 		string schemaPrompt = EntitySchemaPrompt.GetEntitySchemaProperties("UsrVehicle", "dev", "UsrPkg");
-		string columnPrompt = EntitySchemaPrompt.GetEntitySchemaColumnProperties("UsrVehicle", "Name", "dev", "UsrPkg");
+		string columnPrompt = EntitySchemaPrompt.GetEntitySchemaColumnProperties("UsrPkg", "UsrVehicle", "Name", "dev");
 		string modifyPrompt = EntitySchemaPrompt.ModifyEntitySchemaColumn("UsrPkg", "UsrVehicle", "modify", "Name", "dev");
 
 		// Assert
@@ -1085,7 +1085,7 @@ public sealed class EntitySchemaToolTests {
 	public void ColumnPropertiesPrompt_Should_Keep_PackageName_Optional() {
 		// Arrange
 		System.Reflection.ParameterInfo packageParameter = typeof(EntitySchemaPrompt)
-			.GetMethod(nameof(EntitySchemaPrompt.GetEntitySchemaColumnProperties))!
+			.GetMethod(nameof(EntitySchemaPrompt.GetEntitySchemaColumnPropertiesPrompt))!
 			.GetParameters()
 			.Single(parameter => parameter.Name == "packageName");
 
@@ -1098,6 +1098,28 @@ public sealed class EntitySchemaToolTests {
 			because: "omitting packageName is the supported merged entity-schema discovery contract");
 		defaultValue.Should().BeNull(
 			because: "the prompt should naturally select merged discovery when packageName is omitted");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Deserializes package-free column-property arguments after adding the merged convenience constructor.")]
+	public void ColumnPropertiesArgs_Should_Deserialize_Without_PackageName() {
+		// Arrange
+		const string json = """
+			{"environment-name":"dev","schema-name":"Contact","column-name":"Name"}
+			""";
+
+		// Act
+		GetEntitySchemaColumnPropertiesArgs? args = System.Text.Json.JsonSerializer
+			.Deserialize<GetEntitySchemaColumnPropertiesArgs>(json);
+
+		// Assert
+		args.Should().NotBeNull(
+			because: "MCP dispatch must deserialize the package-free merged-discovery payload");
+		args!.PackageName.Should().BeNull(
+			because: "an omitted package-name must remain null and select merged discovery");
+		args.SchemaName.Should().Be("Contact",
+			because: "JSON constructor selection must preserve named MCP arguments");
 	}
 
 	[Test]
