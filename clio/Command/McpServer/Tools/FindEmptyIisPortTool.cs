@@ -46,7 +46,8 @@ public sealed class FindEmptyIisPortTool
 	[Description("""
 				 Finds the first free IIS deployment port between 40000 and 42000.
 
-				 Use this before `deploy-creatio` when you need a safe local IIS `sitePort`. Run
+				 Use this when you want to inspect or explicitly choose a safe local IIS `sitePort` for
+				 `deploy-creatio`; deployment can otherwise use its configured automatic range. Run
 				 `assert-infrastructure` for full visibility, run `show-passing-infrastructure` to choose
 				 database and Redis targets, and then run `find-empty-iis-port` to choose the local IIS port.
 				 """)]

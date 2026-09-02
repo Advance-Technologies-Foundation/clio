@@ -271,6 +271,15 @@ public static class SchemaValidationService
 	};
 
 	/// <summary>
+	/// Name of the Freedom UI designer-metadata property. Its subtree is designer bookkeeping, not runtime
+	/// page content: it mirrors captions and filters that already live on the real component, so scanning it
+	/// double-reports and produces false positives. Both localizable-text scanners and
+	/// <c>PageBodyAstLinter</c> skip it, all three with an ordinal (case-sensitive) comparison - the
+	/// property name is emitted verbatim by the designer.
+	/// </summary>
+	private const string DesignOptionsPropertyName = "_designOptions";
+
+	/// <summary>
 	/// Canonical clause describing the widget-caption rule, authored here and embedded verbatim in the
 	/// per-occurrence diagnostic (<see cref="BuildUnresolvedCaptionError"/>)
 	/// </summary>
@@ -361,15 +370,14 @@ public static class SchemaValidationService
 	}
 
 	/// <summary>
-	/// Validates a mobile page body and reports errors for any AMD-only constructs
-	/// (<c>validators</c>, <c>handlers</c>, custom <c>converters</c> sections) that are
-	/// not supported in mobile JSON bodies.
+	/// Validates the STRUCTURAL floor of a mobile page body: it is non-empty, parses as JSON, and its root
+	/// is an object. This is the mobile equivalent of the web syntax + loadability gate and therefore runs
+	/// even when the caller disabled content validation (<c>update-page validate=false</c>); a body that
+	/// fails here is not a page at all and must never be persisted.
 	/// </summary>
 	/// <param name="body">Plain-JSON mobile page body to validate.</param>
-	/// <returns>
-	/// A <see cref="SchemaValidationResult"/> that is invalid when disallowed top-level keys are found.
-	/// </returns>
-	public static SchemaValidationResult ValidateMobileBody(string body) {
+	/// <returns>A <see cref="SchemaValidationResult"/> that is invalid when the body is not a JSON object.</returns>
+	public static SchemaValidationResult ValidateMobileBodyStructure(string body) {
 		var result = new SchemaValidationResult { IsValid = true };
 		if (string.IsNullOrWhiteSpace(body)) {
 			result.IsValid = false;
@@ -388,8 +396,32 @@ public static class SchemaValidationService
 			if (document.RootElement.ValueKind != JsonValueKind.Object) {
 				result.IsValid = false;
 				result.Errors.Add("Mobile page body must be a JSON object.");
-				return result;
 			}
+		}
+		return result;
+	}
+
+	/// <summary>
+	/// Validates a mobile page body: first the structural floor
+	/// (<see cref="ValidateMobileBodyStructure"/>), then the CONTENT rules - AMD-only constructs
+	/// (<c>validators</c>, <c>handlers</c>, custom <c>converters</c> sections) that are not supported in
+	/// mobile JSON bodies, plus the diff-array / config-object / unknown-root-property shape rules.
+	/// The content half is what <c>update-page validate=false</c> skips.
+	/// </summary>
+	/// <param name="body">Plain-JSON mobile page body to validate.</param>
+	/// <returns>
+	/// A <see cref="SchemaValidationResult"/> that is invalid when the body is structurally broken or
+	/// disallowed top-level keys are found.
+	/// </returns>
+	public static SchemaValidationResult ValidateMobileBody(string body) {
+		SchemaValidationResult structureResult = ValidateMobileBodyStructure(body);
+		if (!structureResult.IsValid) {
+			return structureResult;
+		}
+		var result = new SchemaValidationResult { IsValid = true };
+		// ValidateMobileBodyStructure already proved the body parses and its root is an object, so this
+		// second parse cannot throw; it is the cost of keeping the structural floor callable on its own.
+		using (JsonDocument document = JsonDocument.Parse(body)) {
 			if (document.RootElement.TryGetProperty("validators", out _)) {
 				result.IsValid = false;
 				result.Errors.Add("Mobile pages do not support validators. Remove the 'validators' section.");
@@ -2442,6 +2474,11 @@ public static class SchemaValidationService
 			case JsonValueKind.Object:
 				string currentName = TryGetNodeName(node, out string nodeName) ? nodeName : ownerName;
 				foreach (JsonProperty property in node.EnumerateObject()) {
+					// Designer metadata mirrors the real component's captions; scanning it reports the same
+					// caption twice and flags designer-only copies that no runtime binding reads.
+					if (string.Equals(property.Name, DesignOptionsPropertyName, StringComparison.Ordinal)) {
+						continue;
+					}
 					if (property.Value.ValueKind == JsonValueKind.String &&
 					    InsertedWidgetCaptionProperties.Contains(property.Name)) {
 						CheckCaptionBinding(currentName, property.Name, property.Value.GetString()!, resolves, result);
@@ -2612,6 +2649,9 @@ public static class SchemaValidationService
 				// for the entry root — see the entryRootType note above).
 				string currentType = TryGetComponentType(node, out string nodeType) ? nodeType : entryRootType;
 				foreach (JsonProperty property in node.EnumerateObject()) {
+					if (string.Equals(property.Name, DesignOptionsPropertyName, StringComparison.Ordinal)) {
+						continue;
+					}
 					ScanTextPropertyForLiterals(currentName, currentType, property, result);
 					ScanNodeForTextLiterals(property.Value, currentName, string.Empty, result);
 				}
