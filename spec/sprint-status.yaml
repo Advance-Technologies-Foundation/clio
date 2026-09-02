@@ -2803,6 +2803,7 @@ stories:
     size: M
     status: review
     jira: ENG-95891
+    pr: https://creatio.ghe.com/engineering/crt-process-builder/pull/42
     file: spec/eng-95891-formula-expressions/eng-95891-formula-expressions-plan.md
     test_plan: spec/eng-95891-formula-expressions/eng-95891-formula-expressions-test-plan.md
     note: >-
@@ -2824,6 +2825,7 @@ stories:
     size: M
     status: review
     jira: ENG-95891
+    pr: https://github.com/Advance-Technologies-Foundation/clio/pull/1340
     file: spec/eng-95891-formula-expressions/eng-95891-formula-expressions-plan.md
     test_plan: spec/eng-95891-formula-expressions/eng-95891-formula-expressions-test-plan.md
     note: >-
@@ -2857,6 +2859,7 @@ stories:
     size: S
     status: review
     jira: ENG-95891
+    pr: https://github.com/Advance-Technologies-Foundation/clio-knowledge/pull/122
     file: spec/eng-95891-formula-expressions/eng-95891-formula-expressions-plan.md
     note: >-
       S8. The process-modeling article currently tells agents an 'expression' is passed through
