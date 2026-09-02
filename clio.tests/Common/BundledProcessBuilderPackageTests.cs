@@ -38,6 +38,7 @@ namespace Clio.Tests.Common;
 [Category("Unit")]
 [Property("Module", "Common")]
 public class BundledProcessBuilderPackageTests {
+	private static readonly TimeSpan RegexTimeout = TimeSpan.FromSeconds(1);
 
 	#region Constants: Private
 
@@ -893,9 +894,15 @@ public class BundledProcessBuilderPackageTests {
 				Clio.Command.McpServer.Prompts.ProcessDesigner.ModifyBusinessProcessPrompt.PromptByProcess(
 					"env-placeholder", "process-placeholder")
 		};
-		var literalPattern = new System.Text.RegularExpressions.Regex(@"CrtProcessBuilder (\d+\.\d+\.\d+\.\d+)");
+		var literalPattern = new System.Text.RegularExpressions.Regex(
+			@"CrtProcessBuilder (\d+\.\d+\.\d+\.\d+)",
+			System.Text.RegularExpressions.RegexOptions.None,
+			RegexTimeout);
 
-		var anyVersionPattern = new System.Text.RegularExpressions.Regex(@"\d+\.\d+\.\d+\.\d+");
+		var anyVersionPattern = new System.Text.RegularExpressions.Regex(
+			@"\d+\.\d+\.\d+\.\d+",
+			System.Text.RegularExpressions.RegexOptions.None,
+			RegexTimeout);
 
 		// Act & Assert
 		foreach (KeyValuePair<string, string> surface in surfaces) {

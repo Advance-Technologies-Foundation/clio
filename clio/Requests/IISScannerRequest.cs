@@ -957,10 +957,6 @@ public record WebApp {
 
 	#region Fields: Private
 
-	// matchTimeout guards against ReDoS; a runaway match here is caught by the generic
-	// `catch (Exception ex)` wrapping every caller of IisScannerHandler.GetSites (RegAppCommand.Execute
-	// and ExternalLinkCommand.Execute), so a RegexMatchTimeoutException surfaces as a normal command
-	// failure rather than an unhandled crash.
 	private static readonly TimeSpan RegexTimeout = TimeSpan.FromSeconds(1);
 
 	private static readonly Func<PSObject, WebApp> AsWebApp = psObject => {

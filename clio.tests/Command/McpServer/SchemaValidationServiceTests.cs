@@ -14,6 +14,7 @@ namespace Clio.Tests.Command.McpServer;
 [Property("Module", "McpServer")]
 public sealed class SchemaValidationServiceTests
 {
+	private static readonly TimeSpan RegexTimeout = TimeSpan.FromSeconds(1);
 
 	private const string ValidListPageBody =
 		"""
@@ -114,7 +115,8 @@ public sealed class SchemaValidationServiceTests
 	[Description("BuildMarkerPattern generates correct regex for matching /**MARKER*/ pairs")]
 	public void BuildMarkerPattern_GeneratesCorrectRegex() {
 		string pattern = SchemaValidationService.BuildMarkerPattern("SCHEMA_DEPS");
-		var regex = new System.Text.RegularExpressions.Regex(pattern, System.Text.RegularExpressions.RegexOptions.Singleline);
+		var regex = new System.Text.RegularExpressions.Regex(
+			pattern, System.Text.RegularExpressions.RegexOptions.Singleline, RegexTimeout);
 		regex.IsMatch("/**SCHEMA_DEPS*/[]/**SCHEMA_DEPS*/").Should()
 			.BeTrue("because the pattern should match the standard marker pair format");
 		regex.IsMatch("/* Start:SCHEMA_DEPS */").Should()
