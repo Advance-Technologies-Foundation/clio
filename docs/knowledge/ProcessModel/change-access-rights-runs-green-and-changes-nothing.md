@@ -1,5 +1,5 @@
 ---
-description: a Change access rights element with NO record filter, or with add and remove both empty, builds green and then changes no permissions at run time - it has no output parameters, so nothing reports it; a filter that IS present but has no conditions is the opposite hazard and matches every record
+description: a Change access rights element with NO record filter, or with add and remove both empty, builds green and then changes no permissions at run time - it has no output parameters, so nothing reports it; a filter that IS present but has no conditions is the opposite hazard - it matches every record - and is refused at build
 applies-to:
   - clio/Command/McpServer/Tools/ProcessDesigner/CreateBusinessProcessTool.cs
   - clio/Command/McpServer/Tools/ProcessDesigner/ModifyBusinessProcessTool.cs
@@ -26,8 +26,10 @@ REVOKE: a revocation that silently does nothing leaves privileges in place while
 caller can see reports success.
 
 The opposite state is NOT in that table and must not be confused with it: a record `filter` that IS
-present but carries no conditions narrows nothing, so expect it to match EVERY record of the target
-object. It is not refused either. "Empty filter" is therefore an ambiguous phrase for this element and
+present but carries no conditions narrows nothing, so it would match EVERY record of the target
+object. That one IS refused at build (ENG-92717 round 2 review): the same recursive emptiness predicate now
+guards the signal filter, the grantee filter and this record filter, scoped to this element type so
+readData / changeData semantics are unchanged. "Empty filter" is therefore an ambiguous phrase and
 is deliberately avoided in the shipped text — the two states have opposite blast radius.
 
 **Why it is not enforced** — the server's `EnsureConfiguresSomething`

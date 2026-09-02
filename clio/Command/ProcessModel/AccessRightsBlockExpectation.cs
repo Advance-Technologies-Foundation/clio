@@ -226,7 +226,9 @@ public static class AccessRightsBlockExpectation {
 		return "The 'accessRights' configuration was saved, but " + string.Join("; and ", parts)
 			+ ". This happens silently, because the element has no output parameters"
 			+ (missingAFilter
-				? ", and nothing refuses these states. Set the filter you actually mean with the setFilter "
+				? ". A conditionless filter is refused at build by a current CrtProcessBuilder, so an element "
+					+ "carrying one was configured by an older package or in the designer. Set the filter you "
+					+ "actually mean with the setFilter "
 					+ "operation (to act on one record, filter Id against a process parameter or a trigger "
 					+ "output), and do not report a grant or revoke as applied until you have."
 				: ". Confirm the filter in the designer before reporting a grant or revoke as applied.");
