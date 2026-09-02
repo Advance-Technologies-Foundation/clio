@@ -274,9 +274,12 @@ public sealed class EmailTemplateContentService(IToolCommandResolver commandReso
 				return EmailTemplateUpdateResponse.Failure(
 					$"Email content changed after it was read. Expected checksum '{args.ExpectedChecksum}', current checksum '{currentChecksum}'. Read again and reapply the edit.");
 			}
-			return format == BeefreeFormat
+			EmailTemplateUpdateResponse written = format == BeefreeFormat
 				? UpdateBeefree(client, urls, emailId, args, variant)
 				: UpdateLegacy(client, urls, current.HostType, emailId, args, variant);
+			return written.Success
+				? WithPersistedChecksum(client, urls, emailId, args, format, written)
+				: written;
 		} catch (Exception ex) {
 			return EmailTemplateUpdateResponse.Failure(SensitiveErrorTextRedactor.Redact(ex.Message));
 		}
@@ -385,6 +388,31 @@ public sealed class EmailTemplateContentService(IToolCommandResolver commandReso
 			&& string.Equals(NormalizeGuid(v.LanguageId), languageId, StringComparison.OrdinalIgnoreCase));
 	}
 
+	/// <summary>
+	/// Replaces the receipt with a digest of the row Creatio actually stored, read back through the same
+	/// path the next <c>get-email-template</c> uses. Hashing the request values instead cannot be
+	/// reproduced by that read: a create leaves every column the caller omitted at the platform default
+	/// (<c>''</c> for text, <c>false</c> for boolean) rather than null, and a PATCH may coerce what it
+	/// persisted, so the very next guarded update would be refused as a concurrent change.
+	/// </summary>
+	private static EmailTemplateUpdateResponse WithPersistedChecksum(
+		IApplicationClient client, IServiceUrlBuilder urls, Guid emailId, EmailTemplateUpdateArgs args,
+		string format, EmailTemplateUpdateResponse written) {
+		EmailTemplateContentResponse persisted = Load(client, urls, emailId, args.Language, args.LanguageId);
+		EmailTemplateContentVariant variant = persisted.Success ? FindVariant(persisted, args, format) : null;
+		if (variant is null || !variant.Exists) {
+			// The write itself succeeded, so reporting it as unwritten would invite a duplicate. Withholding
+			// the receipt is the honest answer: the caller must read again before the next guarded update.
+			return written with {
+				Success = false,
+				Error = "Email content was written, but its checksum could not be confirmed by reading the row "
+					+ "back. Call get-email-template again before the next guarded update.",
+				Checksum = null
+			};
+		}
+		return written with { Checksum = variant.Checksum };
+	}
+
 	private static EmailTemplateUpdateResponse UpdateBeefree(
 		IApplicationClient client, IServiceUrlBuilder urls, Guid emailId, EmailTemplateUpdateArgs args,
 		EmailTemplateContentVariant current) {
@@ -409,9 +437,9 @@ public sealed class EmailTemplateContentService(IToolCommandResolver commandReso
 			data["IsDefault"] = string.IsNullOrEmpty(language);
 		}
 		Write(client, urls, "BfEmailTemplate", created ? null : current.RecordId, data);
-		string checksum = Hash(BeefreeFormat, language, current?.LanguageId, args.PageJson, args.PageHtml,
-			data["AmpHtml"]?.ToString(), data["TemplateVersion"]?.ToString());
-		return new(true, null, emailId.ToString("D"), BeefreeFormat, created, checksum);
+		// The receipt is filled in by WithPersistedChecksum from a re-read; hashing the request values here
+		// could not be reproduced by the next read.
+		return new(true, null, emailId.ToString("D"), BeefreeFormat, created, null);
 	}
 
 	private static EmailTemplateUpdateResponse UpdateLegacy(
@@ -441,15 +469,9 @@ public sealed class EmailTemplateContentService(IToolCommandResolver commandReso
 			Write(client, urls, LegacyEntityName(hostType, translated),
 				translated ? current.RecordId : emailId.ToString("D"), data);
 		}
-		// NormalizeGuid on both sides: LegacyVariant hashes the same normalized slot, so an omitted
-		// language-id ("") no longer produces a digest the next read cannot reproduce (it hashed null there,
-		// and Hash maps null to "<null>" but "" to ""), which broke every primary-variant write.
-		string checksum = Hash(LegacyFormat, null, NormalizeGuid(args.LanguageId),
-			args.Subject ?? current?.Subject, args.Body ?? current?.Body,
-			args.TemplateConfig ?? current?.TemplateConfig,
-			(args.ConfigType ?? current?.ConfigType)?.ToString(),
-			(args.IsHtmlBody ?? current?.IsHtmlBody)?.ToString());
-		return new(true, null, emailId.ToString("D"), LegacyFormat, created, checksum);
+		// The receipt is filled in by WithPersistedChecksum from a re-read; hashing the request values here
+		// could not be reproduced by the next read.
+		return new(true, null, emailId.ToString("D"), LegacyFormat, created, null);
 	}
 
 	/// <summary>

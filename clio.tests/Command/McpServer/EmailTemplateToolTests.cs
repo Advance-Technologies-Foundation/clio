@@ -17,6 +17,7 @@ public sealed class EmailTemplateToolTests {
 	private static readonly Guid EmailId = Guid.Parse("04c470db-65b6-4316-ae32-97a3e7286c94");
 	private static readonly Guid LanguageId = Guid.Parse("a5420246-0a8e-e111-84a3-00155d054c03");
 	private static readonly Guid BeefreeRecordId = Guid.Parse("5e1f0c58-9d1f-4a4b-9a2c-0b3f6d5e7a10");
+	private static readonly Guid TranslationRecordId = Guid.Parse("c7a1d3b2-4e56-4f78-9a0b-1c2d3e4f5a6b");
 
 	[Test]
 	[Category("Unit")]
@@ -133,15 +134,23 @@ public sealed class EmailTemplateToolTests {
 	[Category("Unit")]
 	[Description("Creates BfEmailTemplate content only when the absent checksum still matches.")]
 	public void Update_ShouldCreateBeefreeRow_WhenAbsentChecksumMatches() {
-		// Arrange
+		// Arrange - the stub persists the POST, so the receipt is checked against a real round trip.
+		bool rowExists = false;
 		(IApplicationClient client, EmailTemplateTool tool) = BuildTool(url => url switch {
 			var value when value.Contains("odata/BulkEmail?") => Rows(new {
 				Id = EmailId, Name = "Target", TemplateSubject = "", TemplateBody = "", TemplateConfig = ""
 			}),
 			var value when value.Contains("odata/EmailTemplate?") => Rows(),
-			var value when value.Contains("odata/BfEmailTemplate?") => Rows(),
+			var value when value.Contains("odata/BfEmailTemplate?") => rowExists
+				? Rows(new {
+					Id = BeefreeRecordId, EmailId, Language = "", PageJson = "{new:true}",
+					PageHtml = "<html>New</html>", AmpHtml = "", TemplateVersion = 0, IsDefault = true
+				})
+				: Rows(),
 			_ => throw new InvalidOperationException($"Unexpected URL: {url}")
 		});
+		client.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>(), 30_000)
+			.Returns(_ => { rowExists = true; return string.Empty; });
 		EmailTemplateContentVariant absent = tool.Get(new EmailTemplateGetArgs {
 			EmailId = EmailId.ToString("D"), EnvironmentName = "dev"
 		}).Variants.Single(variant => variant.Format == "beefree");
@@ -157,6 +166,10 @@ public sealed class EmailTemplateToolTests {
 		// Assert
 		response.Success.Should().BeTrue(because: "the target was unchanged after the guarded read");
 		response.Created.Should().BeTrue(because: "no BfEmailTemplate row existed before the update");
+		response.Checksum.Should().Be(
+			tool.Get(new EmailTemplateGetArgs { EmailId = EmailId.ToString("D"), EnvironmentName = "dev" })
+				.Variants.Single(variant => variant.Format == "beefree").Checksum,
+			because: "the create receipt must describe the row Creatio stored, not the request values");
 		client.Received(1).ExecutePostRequest(
 			Arg.Is<string>(url => url.EndsWith("odata/BfEmailTemplate", StringComparison.Ordinal)),
 			Arg.Is<string>(payload => payload.Contains("\"PageJson\":\"{new:true}\"")), 30_000);
@@ -231,7 +244,9 @@ public sealed class EmailTemplateToolTests {
 	[Category("Unit")]
 	[Description("Creates a missing EmailTemplateLang row using the language-specific absent checksum returned by get.")]
 	public void Update_ShouldCreateLegacyTranslation_WhenRequestedLanguageIsAbsent() {
-		// Arrange
+		// Arrange - the stub persists the POST and answers with Creatio's own defaults for the columns the
+		// caller never supplied: non-nullable text as "" and non-nullable boolean as false, not null.
+		bool rowExists = false;
 		(IApplicationClient client, EmailTemplateTool tool) = BuildTool(url => url switch {
 			var value when value.Contains("odata/BulkEmail?") => Rows(),
 			var value when value.Contains("odata/EmailTemplate?") => Rows(new {
@@ -239,9 +254,17 @@ public sealed class EmailTemplateToolTests {
 				TemplateConfig = "{}", ConfigType = 1, IsHtmlBody = false
 			}),
 			var value when value.Contains("odata/BfEmailTemplate?") => Rows(),
-			var value when value.Contains("odata/EmailTemplateLang?") => Rows(),
+			var value when value.Contains("odata/EmailTemplateLang?") => rowExists
+				? Rows(new {
+					Id = TranslationRecordId, EmailTemplateId = EmailId, LanguageId,
+					Subject = "Translated", Body = "<p>Translated</p>", TemplateConfig = "",
+					IsHtmlBody = true
+				})
+				: Rows(),
 			_ => throw new InvalidOperationException($"Unexpected URL: {url}")
 		});
+		client.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>(), 30_000)
+			.Returns(_ => { rowExists = true; return string.Empty; });
 		EmailTemplateContentVariant absent = tool.Get(new EmailTemplateGetArgs {
 			EmailId = EmailId.ToString("D"), EnvironmentName = "dev", LanguageId = LanguageId.ToString("D")
 		}).Variants.Single(variant => variant.Format == "legacy" && !variant.Exists);
@@ -320,6 +343,60 @@ public sealed class EmailTemplateToolTests {
 
 	[Test]
 	[Category("Unit")]
+	[Description("Returns a checksum a re-read reproduces after a legacy translation is created, so the chained guarded update is accepted instead of refused as a concurrent change.")]
+	public void Update_ShouldReturnChecksumMatchingAReRead_WhenLegacyTranslationIsCreated() {
+		// Arrange - only the body is supplied. Creatio stores the columns the caller omitted at their
+		// platform defaults ("" for non-nullable text, false for non-nullable boolean), so a receipt hashed
+		// from the request values would carry null in those slots and no read could reproduce it.
+		bool rowExists = false;
+		(IApplicationClient client, EmailTemplateTool tool) = BuildTool(url => url switch {
+			var value when value.Contains("odata/BulkEmail?") => Rows(),
+			var value when value.Contains("odata/EmailTemplate?") => Rows(new {
+				Id = EmailId, Name = "Message", Subject = "Primary", Body = "<p>Primary</p>",
+				TemplateConfig = "{}", ConfigType = 1, IsHtmlBody = false
+			}),
+			var value when value.Contains("odata/BfEmailTemplate?") => Rows(),
+			var value when value.Contains("odata/EmailTemplateLang?") => rowExists
+				? Rows(new {
+					Id = TranslationRecordId, EmailTemplateId = EmailId, LanguageId, Subject = "",
+					Body = "<p>new</p>", TemplateConfig = "", IsHtmlBody = false
+				})
+				: Rows(),
+			_ => throw new InvalidOperationException($"Unexpected URL: {url}")
+		});
+		client.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>(), 30_000)
+			.Returns(_ => { rowExists = true; return string.Empty; });
+		EmailTemplateContentVariant absent = tool.Get(new EmailTemplateGetArgs {
+			EmailId = EmailId.ToString("D"), EnvironmentName = "dev", LanguageId = LanguageId.ToString("D")
+		}).Variants.Single(variant => variant.Format == "legacy" && !variant.Exists);
+
+		// Act
+		EmailTemplateUpdateResponse create = tool.Update(new EmailTemplateUpdateArgs {
+			EmailId = EmailId.ToString("D"), EnvironmentName = "dev", Format = "legacy",
+			LanguageId = LanguageId.ToString("D"), ExpectedChecksum = absent.Checksum, Confirm = true,
+			Body = "<p>new</p>"
+		});
+		EmailTemplateContentVariant after = tool.Get(new EmailTemplateGetArgs {
+			EmailId = EmailId.ToString("D"), EnvironmentName = "dev", LanguageId = LanguageId.ToString("D")
+		}).Variants.Single(variant => variant.Format == "legacy" && variant.Exists
+			&& !string.IsNullOrEmpty(variant.LanguageId));
+		EmailTemplateUpdateResponse chained = tool.Update(new EmailTemplateUpdateArgs {
+			EmailId = EmailId.ToString("D"), EnvironmentName = "dev", Format = "legacy",
+			LanguageId = LanguageId.ToString("D"), ExpectedChecksum = create.Checksum, Confirm = true,
+			Body = "<p>newer</p>"
+		});
+
+		// Assert
+		create.Success.Should().BeTrue(because: "the requested translation was still absent when the guard ran");
+		create.Created.Should().BeTrue(because: "no EmailTemplateLang row carried the requested language");
+		create.Checksum.Should().Be(after.Checksum,
+			because: "the create receipt must describe the content subsequently read from Creatio, or the very next guarded update is refused");
+		chained.Success.Should().BeTrue(
+			because: "get-source then update-target on a host with no translation yet must be able to keep editing the row it just created");
+	}
+
+	[Test]
+	[Category("Unit")]
 	[Description("Refuses a legacy write that carries only fields a bulk-email host cannot store, instead of dropping them and reporting success.")]
 	public void Update_ShouldRejectLegacyWrite_WhenBulkEmailHostCannotCarryTheRequestedFields() {
 		// Arrange
@@ -384,7 +461,8 @@ public sealed class EmailTemplateToolTests {
 		beefree.Exists.Should().BeTrue(
 			because: "an omitted language means the row the email sends by default, which is the IsDefault row rather than the one whose Language is empty");
 		beefree.IsDefault.Should().BeTrue(because: "the read must expose the flag it would otherwise overwrite unseen");
-		response.Success.Should().BeTrue();
+		response.Success.Should().BeTrue(
+			because: "the resolved default row still matches the checksum the read returned");
 		response.Created.Should().BeFalse(because: "the default row already exists and must be edited in place");
 		client.DidNotReceiveWithAnyArgs().ExecutePostRequest(default, default, default);
 		// because: posting here would leave the email with two default beefree rows
