@@ -138,10 +138,16 @@ public sealed class ElementMapEntry {
 	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
 	public string ParentName { get; set; }
 
-	/// <summary>Parent property to insert into (insert); defaults to <c>items</c>.</summary>
+	/// <summary>
+	/// Parent property to insert into (insert); defaults to <c>items</c>. Settable (like
+	/// <see cref="ParentName"/>) for the same reason: the tab-area pass retargets a tab's top-level content onto
+	/// the synthesized Area container, and the slot travels with the parent — a child the web page kept in the
+	/// tab's <c>tools</c> strip lands in the Area's <c>items</c>, the only child collection a
+	/// <c>crt.GridContainer</c> declares.
+	/// </summary>
 	[JsonPropertyName("propertyName")]
 	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-	public string PropertyName { get; init; }
+	public string PropertyName { get; set; }
 
 	/// <summary>
 	/// True when this <c>insert</c> RETARGETS the element into a <see cref="ParentName"/> that ALREADY EXISTS on
@@ -208,6 +214,16 @@ public sealed class ElementMapEntry {
 	/// </summary>
 	[JsonIgnore]
 	internal string PositionalAnchor { get; set; }
+
+	/// <summary>
+	/// Converter bookkeeping, never serialized: for a container TWIN (<c>merge</c>) the mobile container it
+	/// sits inside. A merge carries no <c>parentName</c> on purpose — the caller reuses the element the
+	/// template already provides and inserts nothing — but the adaptive-layout pass still needs to know the
+	/// twin is a SIBLING of the inserts it places: a mobile <c>crt.GridContainer</c> positions children by
+	/// <c>layoutConfig</c> only, so a twin left unplaced beside placed siblings is not rendered at all.
+	/// </summary>
+	[JsonIgnore]
+	internal string MergeParentName { get; set; }
 }
 
 /// <summary>

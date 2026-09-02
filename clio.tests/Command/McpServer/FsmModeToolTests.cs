@@ -73,7 +73,7 @@ public sealed class FsmModeToolTests
 		// Arrange
 		ISettingsRepository settingsRepository = Substitute.For<ISettingsRepository>();
 		IApplicationClientFactory applicationClientFactory = Substitute.For<IApplicationClientFactory>();
-		IApplicationClient applicationClient = Substitute.For<IApplicationClient>();
+		IOwnedApplicationClient applicationClient = Substitute.For<IOwnedApplicationClient>();
 		EnvironmentSettings environmentSettings = new()
 		{
 			Uri = "http://sandbox",
@@ -342,7 +342,7 @@ public sealed class FsmModeToolTests
 	{
 		ISettingsRepository settingsRepository = Substitute.For<ISettingsRepository>();
 		IApplicationClientFactory applicationClientFactory = Substitute.For<IApplicationClientFactory>();
-		IApplicationClient applicationClient = Substitute.For<IApplicationClient>();
+		IOwnedApplicationClient applicationClient = Substitute.For<IOwnedApplicationClient>();
 		settingsRepository.FindEnvironment("sandbox").Returns(new EnvironmentSettings
 		{
 			Uri = "http://sandbox",

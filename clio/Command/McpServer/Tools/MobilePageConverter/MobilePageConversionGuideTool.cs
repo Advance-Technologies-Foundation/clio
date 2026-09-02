@@ -168,7 +168,9 @@ public sealed class MobilePageConversionGuideTool {
 		IReadOnlyList<WebToMobileAnalysisService.PositionalPlacement> positionalPlacements = BuildPositionalPlacements(templateRule);
 
 		// Best-effort read of the mobile template's own bundle. Used for three independent probes: the
-		// positional-insert container-parent map (only needed when the rule declares positional entries),
+		// positional-insert container-parent map (read UNCONDITIONALLY: it also tells the adaptive pass where
+		// the mobile template nests a container twin, and only PageWithTabsFreedomTemplate declares positional
+		// entries — gating on them left twin placement dead for every other template family),
 		// every array anywhere in the template's own merged viewModelConfig (filterAttributes, sortingConfig,
 		// or any other array — generic), and the template's own list-collection keys — all fetched
 		// unconditionally whenever a mobile template is known, so the page's own arrays can be UNIONED with
@@ -176,9 +178,7 @@ public sealed class MobilePageConversionGuideTool {
 		// instead of the mobile diff engine's array-replace root merge silently dropping one side (see
 		// WebToMobileAnalysisService.SplitRootMergeIntoTargetedMerges).
 		MobileTemplateProbe mobileTemplateProbe = LoadMobileTemplateProbe(templateRule?.Mobile, args);
-		IReadOnlyDictionary<string, string> mobileContainerParents = positionalPlacements is { Count: > 0 }
-			? mobileTemplateProbe.ContainerParents
-			: null;
+		IReadOnlyDictionary<string, string> mobileContainerParents = mobileTemplateProbe.ContainerParents;
 
 		// Read the source page's web template (its parent schema) so its inherited chrome can be
 		// filtered out of the conversion: the merged page tree carries the template's header/scaffold
@@ -249,10 +249,10 @@ public sealed class MobilePageConversionGuideTool {
 	/// <c>environment-name</c>/<c>uri</c> is probed for its platform version; neither degrades to <c>latest</c>
 	/// on the fallback tier (surfaced as <c>latest-fallback</c> so the caller confirms with the user).
 	/// </summary>
-	private Task<PlatformVersionResolution> ResolveVersionAsync(
+	private async Task<PlatformVersionResolution> ResolveVersionAsync(
 		MobilePageConversionGuideArgs args, CancellationToken cancellationToken) {
 		if (!string.IsNullOrWhiteSpace(args.Version)) {
-			return Task.FromResult(new PlatformVersionResolution(args.Version.Trim(), VersionResolutionSource.Environment));
+			return new PlatformVersionResolution(args.Version.Trim(), VersionResolutionSource.Environment);
 		}
 		if (!string.IsNullOrWhiteSpace(args.EnvironmentName) || !string.IsNullOrWhiteSpace(args.Uri)) {
 			EnvironmentSettings settings = _settingsRepository.GetEnvironment(new EnvironmentOptions {
@@ -261,9 +261,10 @@ public sealed class MobilePageConversionGuideTool {
 				Login = args.Login,
 				Password = args.Password
 			});
-			return _versionResolverFactory.Create(settings).ResolveAsync(cancellationToken);
+			using IOwnedPlatformVersionResolver resolver = _versionResolverFactory.CreateOwned(settings);
+			return await resolver.ResolveAsync(cancellationToken).ConfigureAwait(false);
 		}
-		return Task.FromResult(ComponentInfoResolution.CreateNoActiveEnvironmentFallback());
+		return ComponentInfoResolution.CreateNoActiveEnvironmentFallback();
 	}
 
 	/// <summary>

@@ -1233,6 +1233,7 @@ public sealed class EntitySchemaToolE2ETests : McpContractFixtureBase {
 		await CreateEmptyWorkspaceAsync(settings, rootDirectory, workspaceName, cancellationToken);
 		await AddPackageAsync(settings, workspacePath, packageName, cancellationToken);
 		await PushWorkspaceAsync(settings, workspacePath, environmentName, packageName, cancellationToken);
+		await ClioCliCommandRunner.WaitForEnvironmentRecoveryAsync(settings, environmentName, cancellationToken);
 		await EnsureTextSysSettingAsync(
 			settings,
 			environmentName,

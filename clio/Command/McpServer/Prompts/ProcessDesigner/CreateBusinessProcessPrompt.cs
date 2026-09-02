@@ -8,7 +8,6 @@ namespace Clio.Command.McpServer.Prompts.ProcessDesigner;
 /// Prompt helpers for building a business process on a Creatio environment through MCP.
 /// </summary>
 [McpServerPromptType, Description("Prompts to build a business process from a declarative descriptor")]
-[FeatureToggle("process-designer")]
 public static class CreateBusinessProcessPrompt {
 
 	/// <summary>

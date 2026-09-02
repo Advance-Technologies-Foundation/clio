@@ -139,7 +139,7 @@ public class RegAppCommand : Command<RegAppOptions> {
 			if (options.CheckLogin) {
 				_logger.WriteInfo(
 					$"Try login to {environment.Uri} with {environment.Login ?? environment.ClientId} credentials ...");
-				IApplicationClient creatioClient = _applicationClientFactory.CreateClient(environment);
+				using IOwnedApplicationClient creatioClient = _applicationClientFactory.CreateOwnedClient(environment);
 				creatioClient.Login();
 				_logger.WriteInfo("Login successful");
 			}
