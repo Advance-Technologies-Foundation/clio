@@ -306,9 +306,9 @@ public sealed class ODataReadTool(IToolCommandResolver commandResolver) {
 		// string, so a null would raise an NRE that escapes the body-suppression invariant and reaches
 		// Read()'s outer catch as an opaque message. An empty body already resolved to this same failure.
 		if (string.IsNullOrWhiteSpace(json)) {
-			return ODataReadResponse.Failure(ODataResponseError.DescribeNonJsonReadResponse());
+			return ODataReadResponse.Failure(CreatioResponseError.DescribeNonJsonReadResponse());
 		}
-		if (ODataResponseError.TryDescribeMissingEntitySet(json, entityName, out string missingEntitySetError)) {
+		if (CreatioResponseError.TryDescribeMissingEntitySet(json, entityName, out string missingEntitySetError)) {
 			return ODataReadResponse.Failure(missingEntitySetError);
 		}
 
@@ -326,9 +326,10 @@ public sealed class ODataReadTool(IToolCommandResolver commandResolver) {
 			//The detected text is server-controlled prose and is dropped, not redacted: the redactor
 			//removes known secret shapes, but arbitrary instructions, opaque tokens, tenant data and
 			//line breaks survive it, and this transcript is read as trusted content by a model.
-			if (!hasMatchingIdentity && ODataResponseError.TryClassify(root, out bool isUnregisteredEntity)) {
+			if (!hasMatchingIdentity && CreatioResponseError.TryClassify(root,
+					CreatioResponseContext.ODataPayload, out bool isUnregisteredEntity)) {
 				return ODataReadResponse.Failure(
-					ODataResponseError.DescribeServerReportedReadError(isUnregisteredEntity));
+					CreatioResponseError.DescribeServerReportedReadError(isUnregisteredEntity));
 			}
 
 			//A collection response carries `value` as an ARRAY. Accepting any `value` meant a proxy or
@@ -338,7 +339,7 @@ public sealed class ODataReadTool(IToolCommandResolver commandResolver) {
 				return valueEl.ValueKind == JsonValueKind.Array
 					&& IsCollectionResponse(root, entityName)
 					? ParseCollectionResponse(root, valueEl, countRequested)
-					: ODataReadResponse.Failure(ODataResponseError.DescribeNonJsonReadResponse());
+					: ODataReadResponse.Failure(CreatioResponseError.DescribeNonJsonReadResponse());
 			}
 
 			//Single-entity response (no value wrapper). Only OData identifies itself as one: the
@@ -346,7 +347,7 @@ public sealed class ODataReadTool(IToolCommandResolver commandResolver) {
 			//was a successful record - {"detail":"private response marker"} included.
 			return IsSingleEntityResponse(root, entityName)
 				? new ODataReadResponse(true, null, 1, root.Clone(), null)
-				: ODataReadResponse.Failure(ODataResponseError.DescribeNonJsonReadResponse());
+				: ODataReadResponse.Failure(CreatioResponseError.DescribeNonJsonReadResponse());
 		} catch (Exception) {
 			// EVERY parse failure gets the same fixed diagnostic, carrying no fragment of the body. Testing
 			// the first character was not enough: a malformed body that still starts with '{' or '[' — a
@@ -354,7 +355,7 @@ public sealed class ODataReadTool(IToolCommandResolver commandResolver) {
 			// proxy content into the MCP transcript. The redactor strips known secret shapes, not tenant
 			// data it has never seen, so the body cannot be quoted at all. The exception message is
 			// dropped with it: a parse position is of no use to a caller who cannot see the body anyway.
-			return ODataReadResponse.Failure(ODataResponseError.DescribeNonJsonReadResponse());
+			return ODataReadResponse.Failure(CreatioResponseError.DescribeNonJsonReadResponse());
 		}
 	}
 

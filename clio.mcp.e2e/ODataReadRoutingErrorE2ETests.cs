@@ -1,6 +1,7 @@
 ﻿using Allure.NUnit;
 using Allure.NUnit.Attributes;
 using Clio.Command.McpServer.Tools;
+using Clio.Common;
 using Clio.Mcp.E2E.Support.Configuration;
 using Clio.Mcp.E2E.Support.Creatio;
 using Clio.Mcp.E2E.Support.Mcp;
@@ -14,7 +15,7 @@ namespace Clio.Mcp.E2E;
 /// End-to-end coverage for ENG-93088: the odata-* tools must report a Web API routing error
 /// (<c>{Message, MessageDetail}</c>, e.g. a 404 for an unregistered/uncompiled OData controller
 /// returned with HTTP 200) as a structured failure instead of wrapping the error body as data.
-/// Both the read and the create path funnel through the shared <see cref="ODataResponseError"/>
+/// Both the read and the create path funnel through the shared <see cref="Clio.Common.CreatioResponseError"/>
 /// detection, so both are exercised here against the stubbed masked response.
 /// </summary>
 [TestFixture]
@@ -54,11 +55,11 @@ public sealed class ODataReadRoutingErrorE2ETests {
 			response.Success.Should().BeFalse(
 				because: "a {Message, MessageDetail} routing body must be surfaced as a failure, not wrapped as a single-entity success");
 			response.Error.Should().Be(
-				ODataResponseError.DescribeServerReportedReadError(includeUnregisteredEntityHint: true),
+				CreatioResponseError.DescribeServerReportedReadError(includeUnregisteredEntityHint: true),
 				because: "the read path reports the locally authored classification plus the hint, asserted via the shared builder to avoid literal drift");
 			response.Error.Should().NotContain($"controller named '{UnregisteredEntity}'",
 				because: "the server's own MessageDetail must not be copied into an MCP transcript, which a model reads as trusted content");
-			response.Error.Should().Contain(ODataResponseError.UnregisteredEntityHint,
+			response.Error.Should().Contain(CreatioResponseError.UnregisteredEntityHint,
 				because: "the unregistered-entity hint is locally authored, so it is the one piece of detail that still steers the agent to wait-and-retry rather than read this as a data gap");
 		});
 	}
@@ -92,7 +93,7 @@ public sealed class ODataReadRoutingErrorE2ETests {
 				because: "the one-row batch should report exactly one per-row result").Subject;
 			row.Success.Should().BeFalse(
 				because: "a {Message, MessageDetail} routing body on POST must not be reported as a successful create");
-			row.Error.Should().Contain(ODataResponseError.UnregisteredEntityHint,
+			row.Error.Should().Contain(Clio.Common.CreatioResponseError.UnregisteredEntityHint,
 				because: "the create path funnels through the same shared detection and must surface the identical unregistered-entity hint");
 		});
 	}

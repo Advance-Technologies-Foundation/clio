@@ -1096,7 +1096,7 @@ public sealed class ODataReadToolTests {
 			because: "an ASP.NET server error body must not be reported as a successful single-entity read");
 		response.Error.Should().NotContain("Object reference",
 			because: "the ExceptionMessage is server-controlled prose and must not reach the MCP transcript");
-		response.Error.Should().Be(ODataResponseError.DescribeServerReportedReadError(),
+		response.Error.Should().Be(CreatioResponseError.DescribeServerReportedReadError(),
 			because: "the caller gets the fixed local classification instead, asserted via the shared helper to avoid literal drift");
 	}
 
@@ -1123,7 +1123,7 @@ public sealed class ODataReadToolTests {
 			because: "a {Message, MessageDetail} 404 routing body must not be reported as a successful single-entity read");
 		response.Error.Should().NotContain("controller named 'UsrCustomerStatus'",
 			because: "the MessageDetail is server-controlled prose and is not copied into the transcript");
-		response.Error.Should().Contain(ODataResponseError.UnregisteredEntityHint,
+		response.Error.Should().Contain(CreatioResponseError.UnregisteredEntityHint,
 			because: "the unregistered-entity hint (asserted via the shared constant to avoid literal drift) should steer the agent to wait-and-retry, not read this as a data gap");
 	}
 
@@ -1150,9 +1150,9 @@ public sealed class ODataReadToolTests {
 			because: "a bare {Message} body with no entity members is an error, not a single-entity record");
 		response.Error.Should().NotContain("Authorization has been denied",
 			because: "the Message text is server-controlled and must not be surfaced verbatim into the transcript");
-		response.Error.Should().Be(ODataResponseError.DescribeServerReportedReadError(),
+		response.Error.Should().Be(CreatioResponseError.DescribeServerReportedReadError(),
 			because: "the caller gets the fixed local classification, with no routing hint for a non-routing failure");
-		response.Error.Should().NotContain(ODataResponseError.UnregisteredEntityHint,
+		response.Error.Should().NotContain(CreatioResponseError.UnregisteredEntityHint,
 			because: "without MessageDetail the failure is not identifiable as a routing error, so the registration hint must not be appended");
 	}
 
@@ -1233,7 +1233,7 @@ public sealed class ODataReadToolTests {
 			because: "a {Message, MessageDetail} body is still an error, not a single-entity record");
 		response.Error.Should().NotContain("not valid for property Name",
 			because: "the MessageDetail is server-controlled prose and is not copied into the transcript");
-		response.Error.Should().NotContain(ODataResponseError.UnregisteredEntityHint,
+		response.Error.Should().NotContain(CreatioResponseError.UnregisteredEntityHint,
 			because: "the content is not a routing miss, so the wait-and-retry registration hint must NOT be appended to an unrelated failure");
 	}
 
@@ -1258,9 +1258,9 @@ public sealed class ODataReadToolTests {
 		// Assert
 		response.Success.Should().BeFalse(
 			because: "a body whose only member is an empty Message is an error, not data");
-		response.Error.Should().Be(ODataResponseError.DescribeServerReportedReadError(),
+		response.Error.Should().Be(CreatioResponseError.DescribeServerReportedReadError(),
 			because: "an empty error body degrades to the same fixed local classification rather than an empty string");
-		response.Error.Should().NotContain(ODataResponseError.UnregisteredEntityHint,
+		response.Error.Should().NotContain(CreatioResponseError.UnregisteredEntityHint,
 			because: "an empty body is not identifiable as a routing miss, so the registration hint must not be appended");
 	}
 
