@@ -845,39 +845,35 @@
         {
           "name": "integration-1",
           "fixedSeconds": 0.0,
-          "estimatedSeconds": 10.954,
+          "estimatedSeconds": 304.746,
           "fixtures": [
-            "Clio.Tests.Common.BrowserSession.BrowserSessionCacheTests",
-            "Clio.Tests.Common.FileSecurityHardeningTests",
-            "Clio.Tests.Common.ProcessExecutorIntegrationTests",
-            "Clio.Tests.Requests.IISScannerHandlerTests",
-            "Clio.Tests.Theming.GoogleFontsCatalogEndpointCanaryTests"
+            "Clio.Tests.Command.SettingsRepositoryProcessConcurrencyTests",
+            "Clio.Tests.Common.ConsoleLoggerCaptureIsolationTests"
           ]
         },
         {
           "name": "integration-2",
           "fixedSeconds": 0.0,
-          "estimatedSeconds": 10.918,
+          "estimatedSeconds": 14.015,
           "fixtures": [
             "Clio.Tests.Command.McpServer.KnowledgeManagedTreeDeleterFileSystemTests",
-            "Clio.Tests.Command.NewPkgCommandFileSystemTestCase",
-            "Clio.Tests.Common.IIS.IisDeploymentPortReservationTests",
-            "Clio.Tests.CreatioPkgTests",
-            "Clio.Tests.Project.VSProjectTests",
-            "Clio.Tests.Utilities.WebBrowserTests"
+            "Clio.Tests.Command.McpServer.TenantLockConcurrencyTests",
+            "Clio.Tests.Common.FileSecurityHardeningTests",
+            "Clio.Tests.Common.ProcessExecutorIntegrationTests",
+            "Clio.Tests.Package.UiProjectCreatorIntegrationTests"
           ]
         },
         {
           "name": "integration-3",
           "fixedSeconds": 0.0,
-          "estimatedSeconds": 11.06,
+          "estimatedSeconds": 14.055,
           "fixtures": [
-            "Clio.Tests.Command.McpServer.ODataWriteToolsLiveIntegrationTests",
-            "Clio.Tests.Command.McpServer.TenantLockConcurrencyTests",
-            "Clio.Tests.Command.SettingsRepositoryProcessConcurrencyTests",
-            "Clio.Tests.Common.ConsoleLoggerCaptureIsolationTests",
+            "Clio.Tests.Command.NewPkgCommandTestCase",
+            "Clio.Tests.Common.BrowserSession.BrowserSessionCacheTests",
             "Clio.Tests.Common.IIS.DeploymentTargetReservationTests",
-            "Clio.Tests.Package.UiProjectCreatorIntegrationTests"
+            "Clio.Tests.Common.IIS.IisDeploymentPortReservationTests",
+            "Clio.Tests.CreatioPkgTests",
+            "Clio.Tests.Requests.IISScannerHandlerTests"
           ]
         }
       ]

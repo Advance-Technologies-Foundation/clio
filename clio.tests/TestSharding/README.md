@@ -48,8 +48,8 @@ accounts for work outside `clio.tests`. NET8 compatibility and ConflictResolver 
 own jobs, so neither belongs in these values.
 Replace those values with timings from the same representative run as the TRX files. Review and
 commit the updated `test-shards.json` so the manifest represents one coherent test inventory.
-The unit and integration distributions use successful hosted TRX artifacts from GitHub run
-`33689464318`.
+The unit distribution uses successful hosted TRX artifacts from GitHub run `33689464318`. The
+integration distribution remains calibrated from successful hosted run `33317199418`.
 
 When changing the filter mechanism, run the unsharded switch once and compare its TRX with the
 sharded TRX files:
