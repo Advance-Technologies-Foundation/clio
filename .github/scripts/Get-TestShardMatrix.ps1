@@ -20,7 +20,7 @@ if ($DisableSharding) {
             }
         )
     } | ConvertTo-Json -Compress -Depth 4
-    exit 0
+    return
 }
 
 $manifest = Get-Content -LiteralPath $ManifestPath -Raw | ConvertFrom-Json

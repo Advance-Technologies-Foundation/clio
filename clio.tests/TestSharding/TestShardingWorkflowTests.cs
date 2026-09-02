@@ -2,7 +2,9 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Management.Automation;
 using System.Runtime.CompilerServices;
+using System.Text.Json;
 using FluentAssertions;
 using NUnit.Framework;
 using YamlDotNet.Serialization;
@@ -19,6 +21,8 @@ internal sealed class TestShardingWorkflowTests {
 		Path.Combine(RepositoryRoot, ".github", "workflows", "build.yml");
 	private static readonly string MatrixScriptPath =
 		Path.Combine(RepositoryRoot, ".github", "scripts", "Get-TestShardMatrix.ps1");
+	private static readonly string ManifestPath =
+		Path.Combine(RepositoryRoot, "clio.tests", "TestSharding", "test-shards.json");
 
 	[Test]
 	[Description("The NET8 compatibility build has one standalone job with the same change conditions as the unit shards.")]
@@ -66,32 +70,59 @@ internal sealed class TestShardingWorkflowTests {
 		Dictionary<object, object> guardStep = GetSteps(aggregateJob).Single();
 
 		// Act
+		string aggregateCondition = aggregateJob["if"].ToString()!;
 		string failureCondition = guardStep["if"].ToString()!;
+		string normalizedFailureCondition = string.Concat(failureCondition.Where(character => !char.IsWhiteSpace(character)));
 
 		// Assert
 		aggregateJob["name"].Should().Be("Unit Tests",
 			because: "repository rules depend on this stable required-check name");
+		aggregateCondition.Should().Be("always()",
+			because: "the aggregate must still run and report failure when one of its dependencies fails or is skipped");
 		dependencies.Select(value => value.ToString()).Should().BeEquivalentTo(
 			new[] { "changes", "unit-test-shards", "net8-compatibility" },
 			because: "the aggregate must wait for planning, every shard, and product compatibility");
-		failureCondition.Should().Contain("needs.unit-test-shards.result != 'success'",
-			because: "a failed unit shard must fail the aggregate check");
-		failureCondition.Should().Contain("needs.net8-compatibility.result != 'success'",
-			because: "failed NET8 compatibility must fail the aggregate check");
+		normalizedFailureCondition.Should().Be(
+			"needs.changes.result!='success'||((needs.changes.outputs.clio-src=='true'||" +
+			"needs.changes.outputs.tests=='true'||github.ref=='refs/heads/master')&&" +
+			"(needs.unit-test-shards.result!='success'||needs.net8-compatibility.result!='success'))",
+			because: "the stable gate must fail for change detection or either relevant prerequisite without failing irrelevant changes");
 	}
 
 	[Test]
-	[Description("Unit shard matrices no longer carry the NET8 compatibility switch in sharded or unsharded mode.")]
-	public void MatrixScript_ShouldNotAssignNet8Compatibility_WhenBuildingUnitMatrix() {
+	[Description("Unit shard matrices preserve their sharded and unsharded contracts without assigning NET8 compatibility.")]
+	public void MatrixScript_ShouldPreserveUnitModes_WithoutAssigningNet8Compatibility() {
 		// Arrange
-		string matrixScript = File.ReadAllText(MatrixScriptPath);
+		JsonElement shardedMatrix = RunUnitMatrix(disableSharding: false);
+		JsonElement unshardedMatrix = RunUnitMatrix(disableSharding: true);
 
 		// Act
-		bool containsCompatibilityFlag = matrixScript.Contains("runNet8Compatibility", StringComparison.Ordinal);
+		JsonElement[] shardedEntries = shardedMatrix.GetProperty("include").EnumerateArray().ToArray();
+		JsonElement[] unshardedEntries = unshardedMatrix.GetProperty("include").EnumerateArray().ToArray();
 
 		// Assert
-		containsCompatibilityFlag.Should().BeFalse(
-			because: "NET8 compatibility now belongs exclusively to its standalone workflow job");
+		shardedEntries.Select(entry => entry.GetProperty("name").GetString()).Should().BeEquivalentTo(
+			new[] { "unit-1", "unit-2", "unit-3", "unit-4" },
+			because: "normal unit execution must retain all four named shards");
+		shardedEntries.Should().OnlyContain(entry => !entry.GetProperty("shardingDisabled").GetBoolean(),
+			because: "normal matrix entries must continue to apply fixture filters");
+		shardedEntries.Count(entry => entry.GetProperty("runConflictResolverTests").GetBoolean()).Should().Be(1,
+			because: "ConflictResolver compatibility must run exactly once in sharded mode");
+		shardedEntries.Single(entry => entry.GetProperty("runConflictResolverTests").GetBoolean())
+			.GetProperty("name").GetString().Should().Be("unit-2",
+				because: "the fixed ConflictResolver cost is assigned to unit-2 in the committed balance");
+		shardedEntries.Should().OnlyContain(entry => !HasProperty(entry, "runNet8Compatibility"),
+			because: "NET8 compatibility belongs exclusively to its standalone workflow job");
+		unshardedEntries.Should().ContainSingle(
+			because: "disabled sharding must collapse unit execution to exactly one worker");
+		unshardedEntries[0].GetProperty("name").GetString().Should().Be("unit-unsharded",
+			because: "the fallback worker has a stable diagnostic name");
+		unshardedEntries[0].GetProperty("shardingDisabled").GetBoolean().Should().BeTrue(
+			because: "the fallback worker must bypass fixture filtering");
+		unshardedEntries[0].GetProperty("runConflictResolverTests").GetBoolean().Should().BeTrue(
+			because: "ConflictResolver compatibility must still run exactly once when sharding is disabled");
+		unshardedEntries[0].TryGetProperty("runNet8Compatibility", out _).Should().BeFalse(
+			because: "disabled sharding must not move NET8 compatibility back into the unit worker");
 	}
 
 	[Test]
@@ -121,6 +152,25 @@ internal sealed class TestShardingWorkflowTests {
 
 	private static List<Dictionary<object, object>> GetSteps(Dictionary<object, object> job) =>
 		((List<object>)job["steps"]).Cast<Dictionary<object, object>>().ToList();
+
+	private static bool HasProperty(JsonElement element, string propertyName) =>
+		element.TryGetProperty(propertyName, out _);
+
+	private static JsonElement RunUnitMatrix(bool disableSharding) {
+		using PowerShell powerShell = PowerShell.Create();
+		powerShell.AddScript(File.ReadAllText(MatrixScriptPath))
+			.AddParameter("Suite", "unit")
+			.AddParameter("ManifestPath", ManifestPath);
+		if (disableSharding) {
+			powerShell.AddParameter("DisableSharding");
+		}
+		string output = string.Join(Environment.NewLine, powerShell.Invoke().Select(value => value.ToString()));
+		if (powerShell.HadErrors) {
+			string errors = string.Join(Environment.NewLine, powerShell.Streams.Error.Select(error => error.ToString()));
+			throw new InvalidOperationException($"The unit shard matrix script failed: {errors}");
+		}
+		return JsonDocument.Parse(output).RootElement.Clone();
+	}
 
 	private static string GetSourceDirectory([CallerFilePath] string sourcePath = "") =>
 		Path.GetDirectoryName(sourcePath)!;
