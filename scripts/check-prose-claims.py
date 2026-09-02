@@ -126,24 +126,32 @@ def check_archive_pins():
     return version
 
 
-def check_superseded_versions(current):
-    """A version number in prose that this branch has already moved past is a stale claim, or history."""
-    if not current:
-        return
+def version_family(current):
+    """(family prefix, last component) for a four-part version, or (None, None) when it is not one."""
     try:
         family, tail = current.rsplit(".", 1)
-        ceiling = int(tail)
+        return family, int(tail)
     except ValueError:
+        return None, None
+
+
+def is_superseded(value, family, ceiling):
+    """Whether `value` sits in the same family as the shipped version and BELOW it."""
+    if not value.startswith(family + "."):
+        return False
+    _, tail = version_family(value)
+    return tail is not None and tail < ceiling
+
+
+def check_superseded_versions(current):
+    """A version number in prose that this branch has already moved past is a stale claim, or history."""
+    family, ceiling = version_family(current or "")
+    if family is None:
         return
     for path, text in walk_sources():
         for match in VERSION.finditer(text):
             value = match.group(1)
-            if value == current or not value.startswith(family + "."):
-                continue
-            try:
-                if int(value.rsplit(".", 1)[1]) >= ceiling:
-                    continue
-            except ValueError:
+            if value == current or not is_superseded(value, family, ceiling):
                 continue
             if not in_prose(text, match.start()):
                 continue
@@ -203,22 +211,33 @@ def check_counted_claims():
                        match.group(0).strip())
 
 
+def cs_files(root):
+    """Every hand-written .cs path under `root`, skipping the directories nothing should be read from."""
+    for base, dirs, files in os.walk(root):
+        dirs[:] = [d for d in dirs if d not in SKIP_DIRS]
+        for name in files:
+            if name.endswith(".cs") and not name.endswith(".designer.cs"):
+                yield os.path.join(base, name)
+
+
+def read_text(path):
+    """The file's text, or None when it cannot be read - an unreadable file is skipped, never fatal."""
+    try:
+        return io.open(path, encoding="utf-8-sig", errors="replace").read()
+    except OSError:
+        return None
+
+
 def walk_cs(roots):
     """Every .cs file under each root, as (label, absolute path, text)."""
     for label, root in roots:
         if not root or not os.path.isdir(root):
             continue
-        for base, dirs, files in os.walk(root):
-            dirs[:] = [d for d in dirs if d not in SKIP_DIRS]
-            for name in files:
-                if not name.endswith(".cs") or name.endswith(".designer.cs"):
-                    continue
-                full = os.path.join(base, name)
-                where = "{}{}".format(label, os.path.relpath(full, root).replace("\\", "/"))
-                try:
-                    yield where, io.open(full, encoding="utf-8-sig", errors="replace").read()
-                except OSError:
-                    continue
+        for full in cs_files(root):
+            text = read_text(full)
+            if text is None:
+                continue
+            yield "{}{}".format(label, os.path.relpath(full, root).replace("\\", "/")), text
 
 
 def check_stranded_docblocks(roots):
