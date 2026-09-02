@@ -11,7 +11,7 @@ The document is source-driven. It is based on the current assembly registration 
 - `clio/Command/McpServer/Prompts`
 - `clio/Command/McpServer/Resources`
 
-Snapshot date: `2026-08-30`
+Snapshot date: `2026-09-01`
 
 ## One-sentence summary
 
@@ -332,7 +332,7 @@ This is one of the strongest and most AI-friendly parts of the MCP surface.
 - `get-page`
   Read a page as a merged bundle plus raw editable JavaScript body.
 - `update-page`
-  Write a full page body back to Creatio, optionally in `dry-run` mode.
+  Write a full page body back to Creatio, optionally in `dry-run` mode; its MCP surface also has an explicit `validate=false` escape hatch for pre-existing content defects while retaining syntax/loadability checks.
 - `sync-pages`
   Save many pages in one call with optional validation and optional read-back verification.
 - `component-info`
@@ -729,8 +729,9 @@ These tools help an external AI design Creatio business processes (BPMN). clio m
 an MCP prompt/guidance teaches the agent the intent→BPMN translation; deterministic tools execute.
 All tools in this section ship enabled by default (the `process-designer` feature toggle was removed
 at go-live, ENG-96132) and require the `CrtProcessBuilder` (ProcessDesignService) package on the
-target environment — **with two exceptions, both listed below**: `get-process-signature`, which reads
-the built-in DataService and does not need the package; and `install-process-builder`, which is not a
+target environment — **with three exceptions, all listed below**: `get-process-signature`, which reads
+the built-in DataService and does not need the package; `run-process`, which calls the built-in
+ProcessEngineService and does not need it either; and `install-process-builder`, which is not a
 consumer of the package, because it is the remedy that INSTALLS it. Implying the remedy needs what it
 provides would hide it exactly when the other tools tell a caller to run it.
 
@@ -742,11 +743,14 @@ provides would hide it exactly when the other tools tell a caller to run it.
 - `validate-process-graph` (`ReadOnly=true`, `Destructive=false`, `Idempotent=true`, `OpenWorld=false`, **environment-sensitive**) — validates a planned process graph (`nodes` by `data-id`, `edges` by `flow-kind` = sequence|conditional|default) against the BPMN connection rules R1–R17 (enforced subset: R1–R3, R7, R9–R15, R17). The graph is validated **in-memory**, but the tool first resolves the target environment (named by `environment-name`) and queries its installed packages to require the `CrtProcessBuilder` package. Returns structured findings (`severity` error/warning, `rule-id`, `message`, `node-name`/`source`/`target`). A validation pass does NOT imply buildability — the rules cover the full BPMN catalog while the builder covers only the slice above.
 - `describe-business-process` (`ReadOnly=true`, `Destructive=false`, `Idempotent=true`, `OpenWorld=false`, **environment-sensitive**) — reads an existing process and returns a STRUCTURED graph (`elements` `[{name,uid,caption,type,buildType,userTaskName,useBackgroundMode,parameters,signal?,filter?,connections?,deprecated?,writesConnectionsAtRuntime?}]` — where `connections` lists the element's BOUND "Connected to" links with both the raw persisted macro and a decoded source, and `writesConnectionsAtRuntime` is the verdict to read before trusting a binding (`false` and `null` both mean `setConnections` is refused there) — where `signal` carries `entity`/`on` plus `changedColumns` for a column-restricted `modified` trigger — `flows` `[{source,target,kind,condition}]` — `condition` is the boolean expression on a conditional flow, exactly as stored, and null on every other kind — process `parameters`) instead of raw escaped metadata, so the agent can explain what a process does ("read & explain", the inverse of generation). Identify the process by exactly one of `process-name` / `process-uid` / `process-caption` (+ `environment-name`, optional `culture`). A readData element returns its `readData` block (`source`, `mode`, `columns` as top-level names, `sort`); `mode:'first'` round-trips into create/modify, `collection`/`function` report a designer-made mode, and `sort` is the EFFECTIVE PRIMARY entry (the one the runtime's ORDER BY ranks first) — a designer-made element's active secondary sort entries and linked-object columns are not expressible here, so a described block is not a lossless copy of such an element. A changeData element returns its `changeData` block (`source`, `values` — constants in `value`, parameter and element-output bindings decoded back to `processParameter` / `sourceElement` + `sourceElementParameter` (a decoded `sourceElement` still obeys the create-time earlier-in-`elements[]` rule); a CONSTANT always reads back in `value` — including one the write path would refuse (non-text or empty), so feeding that row back is refused naming the column; a recognized binding that fails the assignment type check reads back as its raw `[#…#]` expression; and a stored source this API cannot re-apply (a disabled row, a legacy or entity mapping, a system value/setting, a missing packed value) reads back as its COLUMN ALONE and is refused if fed back). A Perform task additionally returns a top-level `performer` block read back from its performer-assignment options (`type` user/manager/role + the stored contact or role formula + `roleDisplay`), re-appliable through create/modify `performer`; a Send email element reports its manual-mode performer inside its `email` block instead. Each parameter carries `direction` and `isResult` (detect outputs by `isResult`); parameter values carry their `source` (ConstValue/Mapping/Script) and their raw `value` — a FORMULA's text arrives in `value` and there is no separate `expression` field on a described parameter; values are returned verbatim, not decoded into semantics. Unbound element inputs are omitted. Also carries the sendEmail element's `email` block (custom message, recipients, mode, options, performer) — same contract as the tool description.
 - `get-process-signature` (`ReadOnly=true`, `Destructive=false`, `Idempotent=true`, `OpenWorld=false`, **environment-sensitive**) — reads a process's parameter signature (codes, captions, CLR types, direction, lookup reference schema). Shipped and NOT feature-gated: it reads the built-in DataService, not ProcessDesignService, so it works without the `CrtProcessBuilder` package. Primary workflow: authoring crt.RunBusinessProcessRequest via the request catalog (get-request-info).
+- `run-process` (`ReadOnly=false`, `Destructive=true`, `Idempotent=false`, `OpenWorld=false`, **environment-sensitive**) — LAUNCHES a business process through the built-in `ServiceModel/ProcessEngineService.svc/RunProcess`. MCP-only. Not the *run-process button* (`crt.RunBusinessProcessRequest`), which `update-page` authors.
+  `process-name` is the schema CODE, `parameters` are keyed by parameter CODE, the outcome is `status` and the failure signal is `error`. `status` is a platform status lowercased (`completed`/`error`/`cancelled`/`cancelling`/`running`/`inactive`, or `unknown-status-<n>`), or `not-started` (nothing ran), `queued-background` or `still-running` (started, no verdict — do not re-run, a second launch duplicates the work). A `String` parameter is passed VERBATIM: double-encoding a serialized ESQ filter yields an EMPTY selection reported as success. See `docs/knowledge/platform/runprocess-*`.
 
 What an external AI can practically do here:
 
 - pre-check a planned process graph for invalid connections (start with an incoming flow, default without a sibling conditional, orphan/unreachable nodes, etc.) before building anything
 - build or edit the supported slice declaratively and verify the result with a describe read-back
+- launch a process and read its verdict (`run-process`), after resolving its parameter codes with `get-process-signature`
 - pair with the `process-modeling` guidance (`get-guidance name=process-modeling`) for the element catalog + rules
 
 Companion surfaces (see the `process-modeling` guidance):

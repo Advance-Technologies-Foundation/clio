@@ -1234,6 +1234,48 @@ internal sealed class CliOptionNamingBackwardCompatibilityTests {
 		PfInstallerOptions? opts = null;
 		result.WithParsed(o => opts = o);
 		opts!.SitePort.Should().Be(8080, because: "new --site-port must map to the SitePort property");
+		opts.SitePortWasSpecified.Should().BeTrue(
+			because: "the parser must preserve that a valid exact-port override was explicitly supplied");
+	}
+
+	[Test]
+	[Description("Omitting --site-port remains distinguishable from explicitly passing zero.")]
+	public void PfInstallerOptions_SitePort_Omission_DoesNotMarkPortAsSpecified() {
+		// Arrange
+		string[] arguments = ["--site-name", "mysite"];
+
+		// Act
+		ParserResult<PfInstallerOptions> result = Parser.Default.ParseArguments<PfInstallerOptions>(arguments);
+		PfInstallerOptions? options = null;
+		result.WithParsed(parsed => options = parsed);
+
+		// Assert
+		result.Tag.Should().Be(ParserResultType.Parsed,
+			because: "site-port is optional for automatic configured-range selection");
+		options!.SitePort.Should().Be(0,
+			because: "the existing unset sentinel remains zero for downstream defaults resolution");
+		options.SitePortWasSpecified.Should().BeFalse(
+			because: "omission must select defaults rather than trigger exact-port validation");
+	}
+
+	[Test]
+	[Description("Explicitly passing --site-port 0 marks it as supplied so deployment can reject the invalid exact override.")]
+	public void PfInstallerOptions_SitePort_ExplicitZeroMarksPortAsSpecified() {
+		// Arrange
+		string[] arguments = ["--site-port", "0"];
+
+		// Act
+		ParserResult<PfInstallerOptions> result = Parser.Default.ParseArguments<PfInstallerOptions>(arguments);
+		PfInstallerOptions? options = null;
+		result.WithParsed(parsed => options = parsed);
+
+		// Assert
+		result.Tag.Should().Be(ParserResultType.Parsed,
+			because: "range validation belongs to deployment rather than the generic parser");
+		options!.SitePort.Should().Be(0,
+			because: "the exact invalid value must reach deployment validation unchanged");
+		options.SitePortWasSpecified.Should().BeTrue(
+			because: "explicit zero must not fall back to automatic port selection");
 	}
 
 	[Test]

@@ -48,6 +48,18 @@ public sealed record ProcessExecutionOptions {
 	public string Arguments { get; init; }
 
 	/// <summary>
+	/// Gets the argument tokens passed verbatim to the child process, bypassing command-line quoting.
+	/// </summary>
+	/// <remarks>
+	/// When this is non-empty it replaces <see cref="Arguments"/> entirely. Use it whenever any part of the
+	/// command line comes from a file, a project, or user input: <c>UseShellExecute = false</c> stops a shell
+	/// from interpreting the string, but the child still splits it itself, so a value such as
+	/// <c>Foo --source https://attacker.example/v3/index.json</c> interpolated into <see cref="Arguments"/>
+	/// arrives as an extra option rather than as one operand.
+	/// </remarks>
+	public IReadOnlyList<string> ArgumentList { get; init; } = Array.Empty<string>();
+
+	/// <summary>
 	/// Gets the optional working directory. Current directory is used when null.
 	/// </summary>
 	public string WorkingDirectory { get; init; }
@@ -348,9 +360,13 @@ public class ProcessExecutor(ILogger logger) : IProcessExecutor{
 		string program = options.ResolveProgramPath
 			? ResolveExecutablePath(options.Program)
 			: options.Program;
+		// ArgumentList and Arguments are mutually exclusive in ProcessStartInfo: setting both throws at
+		// launch. Tokens win when supplied, and Arguments is then left unset rather than merged.
+		IReadOnlyList<string> argumentTokens = options.ArgumentList ?? Array.Empty<string>();
+		bool usesTokens = argumentTokens.Count > 0;
 		ProcessStartInfo startInfo = new() {
 			FileName = program,
-			Arguments = options.Arguments,
+			Arguments = usesTokens ? string.Empty : options.Arguments,
 			CreateNoWindow = true,
 			UseShellExecute = false,
 			WorkingDirectory = options.WorkingDirectory ?? Environment.CurrentDirectory,
@@ -366,6 +382,10 @@ public class ProcessExecutor(ILogger logger) : IProcessExecutor{
 			RedirectStandardOutput = redirectOutput,
 			RedirectStandardError = redirectOutput
 		};
+
+		foreach (string argumentToken in argumentTokens) {
+			startInfo.ArgumentList.Add(argumentToken);
+		}
 
 		if (options.ClearInheritedEnvironment) {
 			startInfo.Environment.Clear();
@@ -908,7 +928,21 @@ public class ProcessExecutor(ILogger logger) : IProcessExecutor{
 		}
 
 		options.Program.CheckArgumentNullOrWhiteSpace(nameof(options.Program));
-		options.Arguments.CheckArgumentNullOrWhiteSpace(nameof(options.Arguments));
+		// Arguments and ArgumentList are mutually exclusive at launch - ProcessStartInfo throws when both
+		// are set - so exactly one of them has to carry the command line. Validating Arguments on its own
+		// rejected every tokenized call, which deliberately leaves the raw string empty.
+		bool hasRawArguments = !string.IsNullOrWhiteSpace(options.Arguments);
+		bool hasArgumentTokens = options.ArgumentList is {Count: > 0};
+		if (hasRawArguments && hasArgumentTokens) {
+			throw new ArgumentException(
+				$"Only one of {nameof(options.Arguments)} and {nameof(options.ArgumentList)} can be supplied.",
+				nameof(options));
+		}
+		if (!hasRawArguments && !hasArgumentTokens) {
+			throw new ArgumentException(
+				$"Either {nameof(options.Arguments)} or {nameof(options.ArgumentList)} must be supplied.",
+				nameof(options));
+		}
 		if (options.MaximumCapturedOutputCharacters is <= 0) {
 			throw new ArgumentOutOfRangeException(nameof(options), options.MaximumCapturedOutputCharacters,
 				$"{nameof(options.MaximumCapturedOutputCharacters)} must be greater than zero when configured.");
