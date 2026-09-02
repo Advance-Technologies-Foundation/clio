@@ -3,7 +3,9 @@ using Clio.Command.McpServer.Tools;
 using Clio.Command.McpServer.Tools.ProcessDesigner;
 using Clio.Command.ProcessModel;
 using Clio.Common;
+using System.Linq;
 using FluentAssertions;
+using ModelContextProtocol.Server;
 using NSubstitute;
 using NUnit.Framework;
 
@@ -14,6 +16,24 @@ namespace Clio.Tests.Command.McpServer;
 public class ModifyBusinessProcessToolTests {
 	private const string SampleOperations =
 		"[{\"op\":\"removeElement\",\"elementName\":\"StartEvent1\"}]";
+
+	[Test]
+	[Category("Unit")]
+	[Description("Pins the destructive classification of modify-business-process. This annotation - not the description prose - is what an MCP host reads to decide whether a call needs human approval, so a silent flip back to false would let a host auto-run it.")]
+	public void ModifyBusinessProcess_Should_Be_Marked_As_Destructive() {
+		// Arrange
+		System.Reflection.MethodInfo method = typeof(ModifyBusinessProcessTool).GetMethod(nameof(ModifyBusinessProcessTool.ModifyBusinessProcess))!;
+		McpServerToolAttribute attribute = method
+			.GetCustomAttributes(typeof(McpServerToolAttribute), inherit: false)
+			.Cast<McpServerToolAttribute>()
+			.Single();
+
+		// Act
+		bool destructive = attribute.Destructive;
+
+		// Assert
+		destructive.Should().BeTrue(because: "modify-business-process edits an existing process in place and can revoke record permissions through an accessRights block");
+	}
 
 	[Test]
 	[Description("Resolves the modify-business-process MCP tool for the requested environment and forwards the identity and operations into command options.")]

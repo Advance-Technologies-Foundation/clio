@@ -60,6 +60,9 @@ public static class ModifyBusinessProcessPrompt {
 		 records are affected, and every grantee with its operations and level — calling out `restrict` as an
 		 explicit DENY that blocks the operation and outranks any existing grant, and a supplied `add`/`remove`
 		 as a REPLACEMENT that drops every entry it does not restate — and get an explicit yes before applying it.
+		 If the element's `accessRights` read back with an EMPTY `add` or `remove`, say so plainly when you ask:
+		 describe cannot tell an empty collection from one it could not decode, so the before-state you are
+		 showing may be incomplete and the replacement may drop entries neither of you can see.
 		 A SUCCESSFUL edit can still report caveats, and they arrive as `message-type: "Warning"` entries in
 		 `execution-log-messages` — there is no separate `warnings` field on the response, so looking for one and
 		 finding nothing is not evidence there were none. Read them: a connection bound to a column with no

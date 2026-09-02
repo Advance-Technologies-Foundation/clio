@@ -65,6 +65,23 @@ public sealed class AccessRightsBlockExpectationTests {
 	}
 
 	[Test]
+	[Description("Names an element once when several operations configure it, so the warning's subject and plural stay correct.")]
+	public void FromOperations_ShouldNameAnElementOnce_WhenSeveralOperationsConfigureIt() {
+		// Arrange - the multi-step flow the tool descriptions prescribe: set the object, then the entries.
+		const string operations =
+			"[{\"op\":\"setElement\",\"elementName\":\"Grant\",\"elementUpdate\":{\"accessRights\":{\"object\":\"Order\"}}},"
+			+ "{\"op\":\"setElement\",\"elementName\":\"Grant\",\"elementUpdate\":{\"accessRights\":{\"add\":[]}}}]";
+
+		// Act
+		IReadOnlyList<string> expected = AccessRightsBlockExpectation.FromOperations(operations);
+
+		// Assert
+		expected.Should().Equal(new[] { "Grant" },
+			because: "a warning that renders \"the elements 'Grant', 'Grant'\" cannot count its own subjects, "
+				+ "and this is the only machine-readable signal a caller gets for a grant or revoke");
+	}
+
+	[Test]
 	[Description("Reports an element whose read-back carries no accessRights block as dropped.")]
 	public void Missing_ShouldReportAnElementWithoutTheBlock() {
 		// Act

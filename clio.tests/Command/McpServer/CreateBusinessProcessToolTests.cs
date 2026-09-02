@@ -3,7 +3,9 @@ using Clio.Command.McpServer.Tools;
 using Clio.Command.McpServer.Tools.ProcessDesigner;
 using Clio.Command.ProcessModel;
 using Clio.Common;
+using System.Linq;
 using FluentAssertions;
+using ModelContextProtocol.Server;
 using NSubstitute;
 using NUnit.Framework;
 
@@ -14,6 +16,24 @@ namespace Clio.Tests.Command.McpServer;
 public class CreateBusinessProcessToolTests {
 	private const string SampleDescriptor =
 		"{\"name\":\"UsrSampleProcess\",\"packageName\":\"Custom\",\"elements\":[],\"flows\":[]}";
+
+	[Test]
+	[Category("Unit")]
+	[Description("Pins the destructive classification of create-business-process. This annotation - not the description prose - is what an MCP host reads to decide whether a call needs human approval, so a silent flip back to false would let a host auto-run it.")]
+	public void CreateBusinessProcess_Should_Be_Marked_As_Destructive() {
+		// Arrange
+		System.Reflection.MethodInfo method = typeof(CreateBusinessProcessTool).GetMethod(nameof(CreateBusinessProcessTool.CreateBusinessProcess))!;
+		McpServerToolAttribute attribute = method
+			.GetCustomAttributes(typeof(McpServerToolAttribute), inherit: false)
+			.Cast<McpServerToolAttribute>()
+			.Single();
+
+		// Act
+		bool destructive = attribute.Destructive;
+
+		// Assert
+		destructive.Should().BeTrue(because: "create-business-process can author a changeAccessRights element with remove entries or a level:restrict DENY on a signalStart process, so a host set to auto-run non-destructive tools would otherwise install an autonomous permission revoke unattended");
+	}
 
 	[Test]
 	[Description("Resolves the create-business-process MCP tool for the requested environment and forwards the inline descriptor and package override into command options.")]

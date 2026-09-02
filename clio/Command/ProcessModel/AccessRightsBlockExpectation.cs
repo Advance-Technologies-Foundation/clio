@@ -57,7 +57,7 @@ public static class AccessRightsBlockExpectation {
 			}
 		}
 
-		return names;
+		return Distinct(names);
 	}
 
 	/// <summary>
@@ -86,7 +86,7 @@ public static class AccessRightsBlockExpectation {
 			}
 		}
 
-		return names;
+		return Distinct(names);
 	}
 
 	/// <summary>
@@ -298,6 +298,13 @@ public static class AccessRightsBlockExpectation {
 
 		return false;
 	}
+
+	// One element, named once. The multi-step flow the tool descriptions prescribe — a setElement carrying
+	// the object, then another supplying the entries, in ONE operations array — otherwise renders as
+	// "the elements 'Grant', 'Grant'", and a warning that cannot count its own subjects invites the reader
+	// to discount it. This is the only machine-readable signal a caller gets for a grant or revoke.
+	private static IReadOnlyList<string> Distinct(List<string> names) =>
+		[.. names.Distinct(StringComparer.OrdinalIgnoreCase)];
 
 	// Parsed defensively: an unparseable payload is the command's problem to report through the normal error
 	// path, not this check's. Returning null here just skips the verification rather than masking the real
