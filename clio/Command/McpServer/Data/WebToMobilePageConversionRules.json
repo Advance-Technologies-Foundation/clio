@@ -7,9 +7,9 @@
       "note": "Section / list page.",
       "containers": [
         { "web": "MainContainer", "mobile": "MainContainer" },
-        { "web": "LeftFilterContainer", "mobile": "HeaderContainer", "note": "filters area." },
-        { "web": "RightFilterContainer", "mobile": "HeaderContainer", "note": "filters area." },
-        { "web": "ListContainer", "mobile": "ListContainer", "note": "List area; web crt.DataTable maps to mobile crt.List." }
+        { "web": "LeftFilterContainer", "mobile": "HeaderContainer" },
+        { "web": "RightFilterContainer", "mobile": "HeaderContainer" },
+        { "web": "ListContainer", "mobile": "ListContainer" }
       ],
       "components": [
         { "web": "DataTable", "mobile": "List", "note": "Primary list component." },
@@ -27,14 +27,16 @@
       "mobile": "MobilePageWithTabsFreedomTemplate",
       "note": "Tabbed record page (Tabs + Feed + Attachments). Preferred target for web tabbed record pages.",
       "containers": [
-        { "web": "Tabs", "mobile": "Tabs", "note": "The mobile template provides the Feed and Attachments tabs (FeedTab, AttachmentsTab) — they stay LAST. Converted web tabs already arrive with explicit indexes right after the general tab, so applying the element map verbatim yields: general tab, converted web tabs, Feed, Attachments." },
-        { "web": "FeedTabContainer", "mobile": "FeedContainer", "note": "Feed tab content; the FeedTab stays the second-to-last tab (before Attachments)." },
-        { "web": "AttachmentsTabContainer", "mobile": "AttachmentsContainer", "note": "Attachments tab content; the AttachmentsTab stays the LAST tab." },
-        { "web": "CardToggleTabPanel", "mobile": "Tabs", "note": "All tabs except Feed and Attachments should be moved to Tabs"},
-        { "web": "CardContentWrapper", "mobile": "GeneralTabContainer", "note": "Web card-content wrapper; its non-tab content (side/profile) fills the mobile general tab's grid. The profile island itself is the exception — see the SideAreaProfileContainer entry: it merges into AreaProfileContainer, not into the general tab's grid." },
-        { "web": "SideAreaProfileContainer", "mobile": "AreaProfileContainer", "note": "Web profile island (the styled side-area grid with color/borderRadius). Merge twin — do NOT recreate it: the mobile template already provides AreaProfileContainer inside GeneralTabContainer as the profile card, so this wrapper's children are placed INSIDE AreaProfileContainer (never directly into GeneralTabContainer, and never leave AreaProfileContainer empty). Sibling side-area blocks (e.g. a second card like CaseInfoContainer) are NOT the island — they stay ordinary inserts into GeneralTabContainer. The island's own styling is template-provided and is not carried; if the web wrapper carries a BOUND visible or is targeted by business rules, move that logic onto AreaProfileContainer or each promoted child — it is not carried automatically." },
-        { "web": "CardContentWrapper:top", "mobile": "Tabs:top", "note": "Content ABOVE the web card-content wrapper (e.g. a progress bar) is placed above the mobile Tabs (in the Tabs' parent container)." },
-        { "web": "CardContentWrapper:bottom", "mobile": "Tabs:bottom", "note": "Content BELOW the web card-content wrapper is placed below the mobile Tabs." }
+        { "web": "Tabs", "mobile": "Tabs" },
+        { "web": "GeneralInfoTab", "mobile": "GeneralInfoTab" },
+        { "web": "GeneralInfoTabContainer", "mobile": "GeneralTabContainer" },
+        { "web": "FeedTabContainer", "mobile": "FeedContainer" },
+        { "web": "AttachmentsTabContainer", "mobile": "AttachmentsContainer" },
+        { "web": "CardToggleTabPanel", "mobile": "Tabs" },
+        { "web": "CardContentWrapper", "mobile": "GeneralTabContainer" },
+        { "web": "SideAreaProfileContainer", "mobile": "AreaProfileContainer" },
+        { "web": "CardContentWrapper:top", "mobile": "Tabs:top" },
+        { "web": "CardContentWrapper:bottom", "mobile": "Tabs:bottom" }
       ],
       "components": [
         { "web": "AttachmentList", "mobile": "AttachmentFileList", "note": "Attachments detail. Same component on both sides (crt.FileList) under a different template name, so the page's delta over the web-template baseline — the object-specific link column recordColumnName included — merges onto the template-provided AttachmentFileList; an unchanged property is omitted so the mobile default (e.g. RecordId) stands." }
@@ -174,6 +176,12 @@
         }
       }
     }
+  ],
+  "contentContainerTypes": [
+    "crt.FlexContainer",
+    "crt.GridContainer",
+    "crt.TabContainer",
+    "crt.ExpansionPanel"
   ],
   "emptyContainerRemoval": {
     "removableTypes": [

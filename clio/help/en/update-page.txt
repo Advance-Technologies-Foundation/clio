@@ -1,4 +1,4 @@
-COMMAND TYPE
+﻿COMMAND TYPE
     Development commands
 
 NAME
@@ -11,6 +11,15 @@ DESCRIPTION
     The update-page command validates and saves the raw JavaScript body of a
     Freedom UI page schema. Pass the full body string directly, typically
     after reading raw.body from get-page.
+
+    The MCP update-page tool also accepts validate=false as an explicit escape
+    hatch when a full replacement body contains a pre-existing defect unrelated
+    to the requested edit. This skips client-side content and run-process
+    validation. It does NOT skip the structural floor: JavaScript syntax, AST
+    loadability, replace-mode marker integrity, the mobile JSON-object structure
+    check, and the page baseline/conflict guard all still run. It can be combined
+    with force=true - the flags are orthogonal - and the response then warns that
+    both guards are down. The CLI command has no equivalent flag.
 
     After a successful non-dry-run save, update-page also attempts a
     best-effort live Designer Presence notification so active Creatio
@@ -41,6 +50,13 @@ DESCRIPTION
       crt.HandleViewModelInitRequest, usr.HandleSomeRequest).
     - SCHEMA_VALIDATORS keys (object form) must follow VendorPrefix.Name
       format (e.g., usr.RequiredValidator).
+    - Direct calls from handlers, converters, and validators must resolve to
+      a declaration in the page factory scope, a callback parameter, or a known
+      JavaScript/Creatio global (MCP update-page / sync-pages / validate-page
+      only -- the CLI verb below does NOT run this check). Undefined helper
+      calls are rejected before the body is sent to Creatio because Page
+      Designer can remove module-scope declarations while preserving handler
+      entries, causing ReferenceError.
     MOBILE RULES (MCP update-page / sync-pages / validate-page only --
     the CLI verb below does NOT run them; it checks a mobile body only
     for disallowed sections):
