@@ -480,14 +480,39 @@ public sealed class WebToMobileConversionServiceTests {
 		Components = [new ComponentEquivalenceRule { Web = ["crt.DataGrid"], Mobile = ["crt.List"], Category = "AlternativeAvailable" }]
 	};
 
+	/// <summary>
+	/// A deliberately MINIMAL stand-in for the shipped tabbed rule's container map: these tests drive synthetic
+	/// bundles, so they name only the containers those bundles contain. It must stay a SUBSET of the shipped
+	/// rule — an entry the rules file does not carry makes every test here assert against a rules file that does
+	/// not exist, which is exactly how ENG-94951 survived (this map used to carry
+	/// GeneralInfoTabContainer -&gt; GeneralTabContainer while the shipped rules had no general-tab entry at all).
+	/// <see cref="TabbedContainerMap_ShouldStayASubsetOfTheShippedRules"/> enforces that.
+	/// </summary>
 	private static readonly IReadOnlyDictionary<string, string> TabbedContainerMap =
 		new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase) {
 			["Tabs"] = "Tabs",
 			["FeedTabContainer"] = "FeedContainer",
 			["AttachmentsTabContainer"] = "AttachmentsContainer",
-			["GeneralInfoTabContainer"] = "GeneralTabContainer",
 			["SideAreaProfileContainer"] = "AreaProfileContainer"
 		};
+
+	[Test]
+	[Description("ENG-94951 drift guard: the hand-written container map these tests drive must be a SUBSET of the shipped tabbed rule. An entry the rules file does not ship makes every test using this map assert against a rules file that does not exist — the blind spot that let the missing general-tab mapping survive.")]
+	public void TabbedContainerMap_ShouldStayASubsetOfTheShippedRules() {
+		// Arrange
+		TemplateMappingRule tabbed = WebToMobilePageConversionRulesCatalog.LoadBundled().Templates
+			.Single(t => string.Equals(t.Web, "PageWithTabsFreedomTemplate", StringComparison.OrdinalIgnoreCase));
+
+		// Act
+		IReadOnlyDictionary<string, string> shipped = MobilePageConversionGuideTool.BuildContainerNameMap(tabbed);
+
+		// Assert
+		TabbedContainerMap.Should().OnlyContain(
+			pair => shipped.ContainsKey(pair.Key) && shipped[pair.Key] == pair.Value,
+			because: "a hand-written mapping absent from (or different in) the shipped rules is a green test "
+				+ "asserting behaviour the product does not have; shipped map: "
+				+ string.Join(", ", shipped.Select(kv => $"{kv.Key}->{kv.Value}")));
+	}
 
 	private static MobilePageConversionGuide AnalyzeTabbed(
 		PageBundleInfo bundle,
@@ -2373,6 +2398,76 @@ public sealed class WebToMobileConversionServiceTests {
 			.Select(n => n!.GetValue<string>()).Should().Equal("Feed");
 	}
 
+	/// <summary>
+	/// A <c>containers</c> twin that pairs a web TAB with the mobile tab's CONTENT container, as the shipped
+	/// tabbed rule still does for <c>FeedTabContainer</c> and <c>AttachmentsTabContainer</c>. The web side is a
+	/// <c>crt.TabContainer</c>; the mobile side is the grid inside that tab.
+	/// </summary>
+	private static ElementMapEntry TabToContentTwin(string web, string mobile) =>
+		new() { WebName = web, WebType = "crt.TabContainer", Operation = "merge", MobileName = mobile };
+
+	[Test]
+	[Description("A containers twin pairing a web TAB with the mobile tab's CONTENT container retargets a page business rule onto that content container. This is the long-standing behaviour and it is IMPRECISE for a cross-type pair -- on mobile the tab and its body are different elements, so 'hide FeedTabContainer' blanks the body while leaving the header in the strip. Pinned as-is because the general tab, the pair ENG-94951 was about, is now a type-aligned twin and no longer goes through this; narrowing it for Feed/Attachments is a behaviour change beyond that ticket.")]
+	public void ConvertPageBusinessRules_CrossTypeTabTwin_RetargetsOntoTheTabBody() {
+		// Arrange
+		PageBusinessRuleProbeResult probe = ProbeOf(
+			SourceRule("Hide the feed tab", ElementAction("hide-element", "FeedTabContainer")));
+		var elementMap = new List<ElementMapEntry> { TabToContentTwin("FeedTabContainer", "FeedContainer") };
+
+		// Act
+		PageBusinessRuleConversionInfo result = WebToMobileAnalysisService.ConvertPageBusinessRules(probe, elementMap);
+
+		// Assert
+		result.ConvertedRules.Should().ContainSingle()
+			.Which.Rule.ToJsonString().Should().Contain("FeedContainer",
+				because: "the survivor map is keyed by web name and carries the twin's mobile name, so the action "
+					+ "follows the containers entry; this pins the imprecision rather than hiding it");
+	}
+
+	[Test]
+	[Description("Characterization: a container twin that keeps its name identifies one element, so a page business rule targeting it converts and keeps that name. Pins current behaviour — ConvertPageBusinessRules applies no tab-specific exclusion.")]
+	public void ConvertPageBusinessRules_SameNameTabTwin_StillConverts() {
+		// Arrange
+		PageBusinessRuleProbeResult probe = ProbeOf(
+			SourceRule("Hide the tab", ElementAction("hide-element", "UsrTab")));
+		var elementMap = new List<ElementMapEntry> { TabToContentTwin("UsrTab", "UsrTab") };
+
+		// Act
+		PageBusinessRuleConversionInfo result = WebToMobileAnalysisService.ConvertPageBusinessRules(probe, elementMap);
+
+		// Assert
+		result.DroppedRules.Should().BeEmpty(
+			because: "a twin that keeps the name pairs the element with ITSELF — there is no second mobile "
+				+ "element the action could be silently redirected to");
+		result.ConvertedRules.Should().ContainSingle(
+			because: "the tab survives on mobile under the same name, so the rule survives with it");
+	}
+
+	[Test]
+	[Description("Characterization: a renaming container twin (SideAreaProfileContainer -> AreaProfileContainer, a crt.GridContainer pair) converts with the action retargeted onto its mobile name. Pins current behaviour — ConvertPageBusinessRules applies no tab-specific exclusion.")]
+	public void ConvertPageBusinessRules_NonTabRenamingTwin_StillConverts() {
+		// Arrange
+		PageBusinessRuleProbeResult probe = ProbeOf(
+			SourceRule("Hide the profile", ElementAction("hide-element", "SideAreaProfileContainer")));
+		var elementMap = new List<ElementMapEntry> {
+			new() {
+				WebName = "SideAreaProfileContainer", WebType = "crt.GridContainer",
+				Operation = "merge", MobileName = "AreaProfileContainer"
+			}
+		};
+
+		// Act
+		PageBusinessRuleConversionInfo result = WebToMobileAnalysisService.ConvertPageBusinessRules(probe, elementMap);
+
+		// Assert
+		result.DroppedRules.Should().BeEmpty(
+			because: "the profile island is ONE element that the mobile template merely names differently — "
+				+ "nothing about it is a tab-header/tab-body split");
+		result.ConvertedRules[0].Rule!["actions"]!.AsArray()[0]!["items"]!.AsArray()
+			.Select(n => n!.GetValue<string>()).Should().Equal(["AreaProfileContainer"],
+				because: "an identity twin is exactly what the survivor map exists to remap");
+	}
+
 	[Test]
 	[Description("A rule whose condition mixes AND and OR across nested groups is dropped (the flat single-operator condition input cannot represent it), even when its actions would otherwise survive.")]
 	public void ConvertPageBusinessRules_MixedAndOrCondition_DropsRule() {
@@ -3458,16 +3553,16 @@ public sealed class WebToMobileConversionServiceTests {
 	}
 
 	[Test]
-	[Description("A multi-column grid container renamed by the template map (merge twin, e.g. GeneralInfoTabContainer -> GeneralTabContainer) still gets the phone one-column collapse: the column count captured under the WEB name is matched to children that carry the MOBILE parent name.")]
+	[Description("A multi-column grid container renamed by the template map (merge twin, e.g. CardContentWrapper -> GeneralTabContainer) still gets the phone one-column collapse: the column count captured under the WEB name is matched to children that carry the MOBILE parent name.")]
 	public void Analyze_MultiColumnGrid_RenamedTwin_ConvertsSmallToOneColumn() {
 		PageBundleInfo bundle = Bundle("""
-			[ { "name": "GeneralInfoTabContainer", "type": "crt.GridContainer",
+			[ { "name": "CardContentWrapper", "type": "crt.GridContainer",
 			    "columns": [ "minmax(32px, 1fr)", "minmax(32px, 1fr)" ], "items": [
 				{ "name": "Name", "type": "crt.Input", "layoutConfig": { "column": 1, "row": 1, "colSpan": 1, "rowSpan": 1 } },
 				{ "name": "CreatedOn", "type": "crt.Input", "layoutConfig": { "column": 2, "row": 1, "colSpan": 1, "rowSpan": 1 } } ] } ]
 			""");
 		var map = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase) {
-			["GeneralInfoTabContainer"] = "GeneralTabContainer"
+			["CardContentWrapper"] = "GeneralTabContainer"
 		};
 
 		MobilePageConversionGuide guide = Analyze(bundle,
