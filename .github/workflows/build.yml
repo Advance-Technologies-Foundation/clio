@@ -160,6 +160,7 @@ jobs:
             Suite = 'unit'
             ShardName = $env:SHARD_NAME
             ResultsDirectory = "TestResults/$($env:SHARD_NAME)"
+            EnableHangDiagnostics = $true
           }
           if ($env:SHARDING_DISABLED -eq 'true') {
             $arguments.DisableSharding = $true
@@ -182,7 +183,7 @@ jobs:
         with:
           name: test-results-${{ matrix.name }}
           overwrite: true
-          path: TestResults/${{ matrix.name }}/*.trx
+          path: TestResults/${{ matrix.name }}/**
           if-no-files-found: warn
           retention-days: 14
 
