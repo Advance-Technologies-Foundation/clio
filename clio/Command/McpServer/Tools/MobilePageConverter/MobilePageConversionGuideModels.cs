@@ -33,6 +33,59 @@ public sealed class SourceComponentInfo {
 }
 
 /// <summary>
+/// One change to a TEMPLATE-OWNED data-section value that no mobile diff operation can express, so the
+/// converted page cannot carry it. Reported per occurrence rather than described in prose because the three
+/// <see cref="Kind"/>s have DIFFERENT outcomes and two different remedies.
+/// </summary>
+/// <remarks>
+/// No diff operation in the mobile vocabulary edits an existing array element in place: the path applier
+/// identifies elements by <c>_id</c> while these config elements are keyed by <c>name</c>, so a
+/// name-addressed merge has no <c>_id</c> to resolve and an insert would duplicate the name. The converter
+/// therefore lets the template's native value win and reports the loss here instead of shipping a silently
+/// lossy body.
+/// </remarks>
+public sealed record DataSectionConflict {
+	/// <summary>
+	/// Which data section the conflict is in — <c>"modelConfig"</c> or <c>"viewModelConfig"</c>. It names the
+	/// diff the caller has to hand-edit if the page's value must win.
+	/// </summary>
+	[JsonPropertyName("section")]
+	public string Section { get; init; }
+
+	/// <summary>
+	/// Path to what changed, as segments (same shape as a diff operation's <c>path</c>) — e.g.
+	/// <c>["attributes","Items","modelConfig","filterAttributes"]</c>.
+	/// </summary>
+	[JsonPropertyName("path")]
+	public IReadOnlyList<string> Path { get; init; } = [];
+
+	/// <summary>
+	/// The <c>name</c> of the array element that changed. Present only for
+	/// <c>"changed-named-element"</c> — the other two kinds have nothing to name.
+	/// </summary>
+	[JsonPropertyName("entry")]
+	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+	public string Entry { get; init; }
+
+	/// <summary>
+	/// What kind of change it is, which determines the outcome AND the remedy:
+	/// <list type="bullet">
+	/// <item><description><c>"changed-named-element"</c> — the array element exists in the template under the
+	/// same <c>name</c> but the page changed its content. NOT re-applied: the template keeps its own value.
+	/// Remedy: if the page's value must win, edit that entry in the diff by hand before pasting.</description></item>
+	/// <item><description><c>"changed-scalar"</c> — a scalar inside a template-owned collection config changed
+	/// (e.g. a collection's <c>modelConfig.path</c>). DROPPED from the emitted diff so the mobile-correct value
+	/// is not clobbered. Same remedy as above.</description></item>
+	/// <item><description><c>"nameless-changed-in-place"</c> — the page edited an array element that carries no
+	/// <c>name</c>, so it cannot be matched. NOTHING is dropped — the page's element IS inserted — but it will
+	/// DUPLICATE the template's own at runtime. Remedy: remove one of the two.</description></item>
+	/// </list>
+	/// </summary>
+	[JsonPropertyName("kind")]
+	public string Kind { get; init; }
+}
+
+/// <summary>
 /// A web→mobile container-name correspondence from the matched template pair. The model uses it
 /// to set each component's <c>parentName</c> to the correct mobile container.
 /// </summary>
@@ -454,6 +507,16 @@ public sealed class MobilePageConversionGuide {
 	[JsonPropertyName("viewModelConfigDiff")]
 	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
 	public JsonNode ViewModelConfigDiff { get; init; }
+
+	/// <summary>
+	/// Every change to a template-owned data-section value that neither diff can express, one entry per
+	/// occurrence. Null when there are none, which is the normal case. See <see cref="DataSectionConflict"/>
+	/// for what each <c>kind</c> costs and how to fix it — the three do not share one outcome, and two of them
+	/// need opposite remedies, so read them individually rather than as one warning.
+	/// </summary>
+	[JsonPropertyName("dataSectionConflicts")]
+	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+	public IReadOnlyList<DataSectionConflict> DataSectionConflicts { get; init; }
 
 	// ── Template recommendation ───────────────────────────────────────
 	[JsonPropertyName("recommendedMobileTemplate")]

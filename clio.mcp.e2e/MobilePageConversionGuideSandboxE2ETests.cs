@@ -89,6 +89,35 @@ public sealed class MobilePageConversionGuideSandboxE2ETests : McpContractFixtur
 				+ "because emptiness cascades, their wrapper containers with them");
 		AssertConvertedListsCarryTheirRow(response.Guide!);
 		AssertHeaderActionsConvertToFab(response.Guide!);
+		AssertDataSectionConflictsAreStructured(response.Guide!);
+	}
+
+	/// <summary>
+	/// ENG-95827: a template-owned value neither diff can express is reported as STRUCTURED data, not as a
+	/// sentence. Whether a seeded page produces one is environment-dependent, so this asserts the CONTRACT and
+	/// not the occurrence: the field deserializes over the real transport, every entry names a section and a
+	/// kind from the closed set, and the constraint that used to flatten all of it into one label is gone.
+	/// The kinds matter individually because two of the three need opposite remedies.
+	/// </summary>
+	private static void AssertDataSectionConflictsAreStructured(MobilePageConversionGuide guide) {
+		guide.Constraints.Should().NotContain(c => c.Contains("template-owned array"),
+			because: "the finding moved to dataSectionConflicts; a constraint sentence would flatten the section, "
+				+ "the path and three different outcomes back into one label the caller has to parse");
+		if (guide.DataSectionConflicts is null) {
+			return;
+		}
+		foreach (DataSectionConflict conflict in guide.DataSectionConflicts) {
+			conflict.Section.Should().BeOneOf(["modelConfig", "viewModelConfig"],
+				because: "the section is what tells the caller WHICH diff to hand-edit, so it must be one of the two");
+			conflict.Kind.Should().BeOneOf(["changed-named-element", "changed-scalar", "nameless-changed-in-place"],
+				because: "the kind carries the outcome and the remedy, so it must come from the closed set the contract documents");
+			conflict.Path.Should().NotBeNullOrEmpty(
+				because: "a conflict the caller cannot locate is not actionable");
+			if (conflict.Kind == "changed-named-element") {
+				conflict.Entry.Should().NotBeNullOrWhiteSpace(
+					because: "this kind is defined by the element being addressable by name, so the name must be reported");
+			}
+		}
 	}
 
 	[Test]

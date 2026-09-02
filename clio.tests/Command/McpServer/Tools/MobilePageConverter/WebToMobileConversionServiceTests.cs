@@ -1006,12 +1006,18 @@ public sealed class WebToMobileConversionServiceTests {
 		JsonNode page = JsonNode.Parse("""{ "attributes": { "Items": { "isCollection": true, "modelConfig": { "path": "WebDS" } } } }""");
 		JsonNode baseCfg = JsonNode.Parse("""{ "attributes": { "Items": { "isCollection": true, "modelConfig": { "path": "MobileDS" } } } }""");
 		// Act
-		JsonArray diff = WebToMobileAnalysisService.BuildTargetedDiff(page, baseCfg, out IReadOnlyList<string> conflicts)!.AsArray();
+		JsonArray diff = WebToMobileAnalysisService.BuildTargetedDiff(page, baseCfg, "viewModelConfig", out IReadOnlyList<DataSectionConflict> conflicts)!.AsArray();
 		// Assert
 		diff.ToJsonString().Should().NotContain("WebDS",
 			because: "the changed template-owned collection scalar is still dropped from the emitted diff");
-		conflicts.Should().Contain(c => c.Contains("path") && c.Contains("changed scalar dropped"),
-			because: "the drop is surfaced as a conflict instead of silently doing nothing (the array case already does this)");
+		DataSectionConflict scalar = conflicts.Should().ContainSingle().Subject;
+		scalar.Kind.Should().Be("changed-scalar",
+			because: "the outcome of this kind (the page value is DROPPED) differs from the nameless kind, which drops nothing, so the two must be distinguishable without parsing prose");
+		scalar.Path.Should().Equal(["attributes", "Items", "modelConfig", "path"],
+			because: "the caller needs the path as segments to find the value, not a dotted label to parse");
+		scalar.Section.Should().Be("viewModelConfig",
+			because: "the section names WHICH diff has to be hand-edited if the page value must win");
+		scalar.Entry.Should().BeNull(because: "a scalar is not a named array element, so there is nothing to name");
 	}
 
 	[Test]
@@ -1021,12 +1027,12 @@ public sealed class WebToMobileConversionServiceTests {
 		JsonNode page = JsonNode.Parse("""{ "attributes": { "Items": { "isCollection": true, "modelConfig": { "path": "WebDS" } } } }""");
 		JsonNode baseCfg = JsonNode.Parse("""{ "attributes": { "Items": { "modelConfig": { "path": "MobileDS" } } } }""");
 		// Act
-		JsonArray diff = WebToMobileAnalysisService.BuildTargetedDiff(page, baseCfg, out IReadOnlyList<string> conflicts)!.AsArray();
+		JsonArray diff = WebToMobileAnalysisService.BuildTargetedDiff(page, baseCfg, "viewModelConfig", out IReadOnlyList<DataSectionConflict> conflicts)!.AsArray();
 		// Assert
 		diff.ToJsonString().Should().NotContain("WebDS",
 			because: "the page-side isCollection marker must trigger the collection-scalar drop even when the base node is unmarked, so the mobile-correct value is not clobbered");
-		conflicts.Should().Contain(c => c.Contains("path"),
-			because: "the dropped page-marked collection scalar is surfaced as a conflict");
+		conflicts.Should().ContainSingle(c => c.Kind == "changed-scalar" && c.Path.Contains("path"),
+			because: "the dropped page-marked collection scalar is surfaced as a conflict of the kind that loses the page value");
 	}
 
 	[Test]
@@ -1036,11 +1042,16 @@ public sealed class WebToMobileConversionServiceTests {
 		JsonNode page = JsonNode.Parse("""{ "attributes": { "Items": { "modelConfig": { "filterAttributes": [ { "name": "QuickFilterGroup_Filters", "loadOnChange": false } ] } } } }""");
 		JsonNode baseCfg = JsonNode.Parse("""{ "attributes": { "Items": { "modelConfig": { "filterAttributes": [ { "name": "QuickFilterGroup_Filters", "loadOnChange": true } ] } } } }""");
 		// Act
-		JsonArray diff = WebToMobileAnalysisService.BuildTargetedDiff(page, baseCfg, out IReadOnlyList<string> conflicts)!.AsArray();
+		JsonArray diff = WebToMobileAnalysisService.BuildTargetedDiff(page, baseCfg, "viewModelConfig", out IReadOnlyList<DataSectionConflict> conflicts)!.AsArray();
 		// Assert
 		diff.Should().BeEmpty(because: "no insert is emitted -- the name already exists, and no op can edit an existing array element");
-		conflicts.Should().ContainSingle().Which.Should().Contain("QuickFilterGroup_Filters",
+		DataSectionConflict named = conflicts.Should().ContainSingle().Subject;
+		named.Kind.Should().Be("changed-named-element",
 			because: "the changed named entry is surfaced as a conflict rather than being lost silently");
+		named.Entry.Should().Be("QuickFilterGroup_Filters",
+			because: "the element is addressable by name, so the report names it as data instead of embedding it in a label");
+		named.Path.Should().Equal(["attributes", "Items", "modelConfig", "filterAttributes"],
+			because: "the path locates the array the entry lives in");
 	}
 
 	[Test]
@@ -1050,13 +1061,18 @@ public sealed class WebToMobileConversionServiceTests {
 		JsonNode page = JsonNode.Parse("""{ "attributes": { "Items": { "modelConfig": { "sortColumns": [ { "columnName": "CreatedOn", "direction": "asc" } ] } } } }""");
 		JsonNode baseCfg = JsonNode.Parse("""{ "attributes": { "Items": { "modelConfig": { "sortColumns": [ { "columnName": "CreatedOn", "direction": "desc" } ] } } } }""");
 		// Act
-		JsonArray diff = WebToMobileAnalysisService.BuildTargetedDiff(page, baseCfg, out IReadOnlyList<string> conflicts)!.AsArray();
+		JsonArray diff = WebToMobileAnalysisService.BuildTargetedDiff(page, baseCfg, "modelConfig", out IReadOnlyList<DataSectionConflict> conflicts)!.AsArray();
 		// Assert
 		JsonObject insert = diff.Single(n => n!.AsObject()["operation"]!.GetValue<string>() == "insert")!.AsObject();
 		insert["values"]!["direction"]!.GetValue<string>().Should().Be("asc",
 			because: "the page's element is still inserted so its config is not dropped");
-		conflicts.Should().ContainSingle().Which.Should().Contain("sortColumns",
-			because: "an in-place change to a nameless element would duplicate at runtime, so it is flagged");
+		DataSectionConflict nameless = conflicts.Should().ContainSingle().Subject;
+		nameless.Kind.Should().Be("nameless-changed-in-place",
+			because: "this kind drops NOTHING and instead duplicates at runtime, so its remedy is the opposite of the other two and it must not read as the same warning");
+		nameless.Path.Should().Equal(["attributes", "Items", "modelConfig", "sortColumns"],
+			because: "the path locates the array that will hold the duplicate");
+		nameless.Section.Should().Be("modelConfig",
+			because: "the section tells the caller which diff holds the duplicate to remove");
 	}
 
 	[Test]
@@ -1151,8 +1167,8 @@ public sealed class WebToMobileConversionServiceTests {
 	}
 
 	[Test]
-	[Description("Through Analyze: when the page changes an EXISTING named entry of a template-owned array, the guide surfaces a constraint naming it (rather than silently dropping the change).")]
-	public void Analyze_ChangedTemplateArrayEntry_SurfacesConflictConstraint() {
+	[Description("Through Analyze: when the page changes an EXISTING named entry of a template-owned array, the guide surfaces it in dataSectionConflicts with its section, kind and entry name (rather than silently dropping the change, or flattening it into a constraint sentence the caller has to parse).")]
+	public void Analyze_ChangedTemplateArrayEntry_SurfacesStructuredConflict() {
 		// Arrange: filterAttributes has QuickFilterGroup_Filters in both, but the page toggled loadOnChange.
 		PageBundleInfo bundle = Bundle(
 			viewConfigJson: """[ { "name": "Main", "type": "crt.FlexContainer", "items": [ { "name": "List", "type": "crt.List", "items": "$Items" } ] } ]""",
@@ -1163,8 +1179,14 @@ public sealed class WebToMobileConversionServiceTests {
 			bundle, webByType: Reg(("crt.FlexContainer", true), ("crt.List", false)),
 			mobileTemplateViewModelConfig: templateVmc);
 		// Assert
-		guide.Constraints.Should().Contain(c => c.Contains("changes an EXISTING element of a template-owned array") && c.Contains("QuickFilterGroup_Filters"),
-			because: "a change no diff op can express must be surfaced, not shipped as a silently lossy body");
+		DataSectionConflict conflict = guide.DataSectionConflicts.Should().ContainSingle().Subject;
+		conflict.Section.Should().Be("viewModelConfig",
+			because: "a change no diff op can express must be surfaced, not shipped as a silently lossy body — and the caller has to know which of the two diffs to hand-edit");
+		conflict.Kind.Should().Be("changed-named-element",
+			because: "this kind loses the page's value while the nameless kind loses nothing and duplicates instead; one warning for both would send the caller to the wrong remedy");
+		conflict.Entry.Should().Be("QuickFilterGroup_Filters");
+		guide.Constraints.Should().NotContain(c => c.Contains("template-owned array"),
+			because: "the finding is now structured per occurrence, so a constraint sentence would only flatten it back into a label the caller has to parse");
 	}
 
 	[Test]

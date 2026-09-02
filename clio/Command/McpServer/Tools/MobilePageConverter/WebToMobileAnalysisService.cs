@@ -1,4 +1,4 @@
-namespace Clio.Command.McpServer.Tools.MobilePageConverter;
+﻿namespace Clio.Command.McpServer.Tools.MobilePageConverter;
 
 using System;
 using System.Collections.Generic;
@@ -322,17 +322,21 @@ public static class WebToMobileAnalysisService {
 		// is NEVER merged (a merge REPLACES arrays wholesale, dropping one side) -- each of the page's new
 		// entries is appended via an insert at the array's own path, preserving the template's natives. When
 		// the template base could not be read, this degrades to a single root merge and a constraint warns.
-		JsonNode viewModelConfigDiff = BuildTargetedDiff(viewModelConfig, mobileTemplateViewModelConfig, out IReadOnlyList<string> vmcArrayConflicts);
-		JsonNode modelConfigDiff = BuildTargetedDiff(modelConfig, mobileTemplateModelConfig, out IReadOnlyList<string> mcArrayConflicts);
+		JsonNode viewModelConfigDiff = BuildTargetedDiff(
+			viewModelConfig, mobileTemplateViewModelConfig, "viewModelConfig",
+			out IReadOnlyList<DataSectionConflict> vmcArrayConflicts);
+		JsonNode modelConfigDiff = BuildTargetedDiff(
+			modelConfig, mobileTemplateModelConfig, "modelConfig",
+			out IReadOnlyList<DataSectionConflict> mcArrayConflicts);
 		// The root-merge fallback fires per config whenever a page config exists but no usable JsonObject base was
 		// supplied for it -- NOT only when the probe reported the template unavailable. A template that carries only
 		// the other section (one config null) or a page created with no known template both hit the fallback with
 		// mobileTemplateUnavailable == false, so gate the constraint on the fallback actually firing, per config.
 		bool viewModelConfigRootMerge = viewModelConfig is JsonObject && mobileTemplateViewModelConfig is not JsonObject;
 		bool modelConfigRootMerge = modelConfig is JsonObject && mobileTemplateModelConfig is not JsonObject;
-		var dataSectionArrayConflicts = new List<string>();
-		dataSectionArrayConflicts.AddRange(vmcArrayConflicts);
-		dataSectionArrayConflicts.AddRange(mcArrayConflicts);
+		var dataSectionConflicts = new List<DataSectionConflict>();
+		dataSectionConflicts.AddRange(vmcArrayConflicts);
+		dataSectionConflicts.AddRange(mcArrayConflicts);
 
 		// 7. Page-level business rules: carry each rule's condition (operand paths remapped from the source
 		//    DS column path to the mobile viewModel attribute name) and only the actions that survive on
@@ -355,6 +359,7 @@ public static class WebToMobileAnalysisService {
 			ViewModelConfig = viewModelConfig,
 			ModelConfigDiff = modelConfigDiff,
 			ViewModelConfigDiff = viewModelConfigDiff,
+			DataSectionConflicts = dataSectionConflicts.Count > 0 ? dataSectionConflicts : null,
 			RecommendedMobileTemplate = templateRule?.Mobile,
 			TemplateNote = templateRule?.Note,
 			ContainerMap = BuildContainerMap(templateRule),
@@ -392,7 +397,6 @@ public static class WebToMobileAnalysisService {
 				viewModelConfigRootMerge: viewModelConfigRootMerge,
 				modelConfigRootMerge: modelConfigRootMerge,
 				mobileTemplateUnavailable: mobileTemplateUnavailable,
-				dataSectionArrayConflicts: dataSectionArrayConflicts,
 				hasTabAreaLayers: tabAreaLayers.Count > 0,
 				webTemplateUnavailable: webTemplateUnavailable,
 				hasComponentTwin: componentMap.Count > 0,
@@ -1323,16 +1327,24 @@ public static class WebToMobileAnalysisService {
 	/// <paramref name="pageConfig"/> is null.
 	/// </summary>
 	internal static JsonNode BuildTargetedDiff(JsonNode pageConfig, JsonNode templateBase) =>
-		BuildTargetedDiff(pageConfig, templateBase, out _);
+		BuildTargetedDiff(pageConfig, templateBase, section: null, out _);
 
 	/// <summary>
 	/// Overload of <see cref="BuildTargetedDiff(JsonNode, JsonNode)"/> that also reports, in
-	/// <paramref name="arrayConflicts"/>, every template-owned array element the page changed that no diff
+	/// <paramref name="arrayConflicts"/>, every template-owned data-section value the page changed that no diff
 	/// operation can express -- a named entry present in the base but with different content (which would be
-	/// silently lost), or a nameless entry the page modified in place (which would silently duplicate). The
-	/// caller surfaces these as a guide constraint so a lossy body is never shipped silently.
+	/// silently lost), a nameless entry the page modified in place (which would silently duplicate), or a
+	/// changed scalar inside a template-owned collection (which is dropped). Each is reported as a
+	/// <see cref="DataSectionConflict"/> carrying its own kind, so a lossy body is never shipped silently and
+	/// the caller can tell the outcomes apart -- they need opposite remedies.
 	/// </summary>
-	internal static JsonNode BuildTargetedDiff(JsonNode pageConfig, JsonNode templateBase, out IReadOnlyList<string> arrayConflicts) {
+	/// <param name="section">
+	/// The data section being diffed (<c>"modelConfig"</c> / <c>"viewModelConfig"</c>), stamped onto every
+	/// conflict so the caller knows WHICH diff to hand-edit. Null when the caller discards the conflicts.
+	/// </param>
+	internal static JsonNode BuildTargetedDiff(
+		JsonNode pageConfig, JsonNode templateBase, string section,
+		out IReadOnlyList<DataSectionConflict> arrayConflicts) {
 		arrayConflicts = [];
 		if (pageConfig is not JsonObject pageObj) {
 			return null;
@@ -1342,11 +1354,22 @@ public static class WebToMobileAnalysisService {
 			return BuildRootMergeDiff(pageConfig);
 		}
 		var ops = new JsonArray();
-		var conflicts = new List<string>();
+		var conflicts = new List<DataSectionConflict>();
 		DiffObject(pageObj, baseObj, new List<string>(), ops, conflicts, insideCollection: false);
-		arrayConflicts = conflicts;
+		// The recursion does not know which section it is diffing — it is handed the same shape either way —
+		// so the section is stamped once here rather than threaded through every recursive call.
+		arrayConflicts = conflicts.Select(conflict => conflict with { Section = section }).ToList();
 		return ops;
 	}
+
+	/// <summary>A template-owned array element the page changed under the same <c>name</c>: not re-applied.</summary>
+	private const string ChangedNamedElementConflict = "changed-named-element";
+
+	/// <summary>A scalar inside a template-owned collection config that the page changed: dropped.</summary>
+	private const string ChangedScalarConflict = "changed-scalar";
+
+	/// <summary>A nameless array element the page edited in place: inserted, so it duplicates at runtime.</summary>
+	private const string NamelessChangedInPlaceConflict = "nameless-changed-in-place";
 
 	/// <summary>
 	/// Recursive worker for <see cref="BuildTargetedDiff(JsonNode, JsonNode, out IReadOnlyList{string})"/>. At
@@ -1378,7 +1401,7 @@ public static class WebToMobileAnalysisService {
 	/// </summary>
 	private static void DiffObject(
 		JsonObject page, JsonObject baseObj, List<string> path, JsonArray ops,
-		List<string> arrayConflicts, bool insideCollection) {
+		List<DataSectionConflict> arrayConflicts, bool insideCollection) {
 		var mergeValues = new JsonObject();
 		var recurse = new List<(JsonObject Page, JsonObject Base, string Key, bool InCollection)>();
 		var arrayInserts = new List<(string Key, List<JsonNode> Elements)>();
@@ -1410,10 +1433,12 @@ public static class WebToMobileAnalysisService {
 						mergeValues[kv.Key] = kv.Value?.DeepClone();
 					} else if (insideCollection && changedScalar) {
 						// The change is dropped (template config wins) — but surface it as a conflict rather than
-						// silently, so it flows through dataSectionArrayConflicts -> guide.Constraints exactly like
+						// silently, so it flows through guide.dataSectionConflicts exactly like
 						// DiffArray's named-element conflict. The code cannot tell template plumbing from authored
 						// content at this position, so the caller/developer is told the drop happened.
-						arrayConflicts.Add(ArrayConflictLabel(path, kv.Key, "changed scalar dropped: template-owned collection config"));
+						arrayConflicts.Add(new DataSectionConflict {
+							Path = [..path, kv.Key], Kind = ChangedScalarConflict
+						});
 					}
 					break;
 			}
@@ -1465,7 +1490,7 @@ public static class WebToMobileAnalysisService {
 	/// </summary>
 	private static void DiffArray(
 		JsonArray pageArr, JsonArray baseArr, IReadOnlyList<string> path, string key,
-		List<(string Key, List<JsonNode> Elements)> arrayInserts, List<string> arrayConflicts) {
+		List<(string Key, List<JsonNode> Elements)> arrayInserts, List<DataSectionConflict> arrayConflicts) {
 		var baseByName = new Dictionary<string, JsonNode>(StringComparer.Ordinal);
 		var baseJson = new HashSet<string>(StringComparer.Ordinal);
 		foreach (JsonNode baseElem in baseArr) {
@@ -1485,7 +1510,9 @@ public static class WebToMobileAnalysisService {
 					if (!JsonNode.DeepEquals(baseMatch, elem)) {
 						// Present in the base by name but changed -- a merge would REPLACE the whole array and an
 						// insert would duplicate the name; neither edits it. Flag rather than drop silently.
-						arrayConflicts.Add(ArrayConflictLabel(path, key, named));
+						arrayConflicts.Add(new DataSectionConflict {
+							Path = [..path, key], Entry = NamedValue(elem), Kind = ChangedNamedElementConflict
+						});
 					}
 					// else deep-equal -> already present, no-op.
 				} else {
@@ -1500,7 +1527,9 @@ public static class WebToMobileAnalysisService {
 		// reproduces signals an in-place edit that will now DUPLICATE at runtime -- flag it (the insert is still
 		// emitted so nothing is dropped, but the caller is told it is not clean).
 		if (namelessInserted && HasUnreproducedNameless(baseArr, pageArr)) {
-			arrayConflicts.Add(ArrayConflictLabel(path, key, "(nameless element changed in place)"));
+			arrayConflicts.Add(new DataSectionConflict {
+				Path = [..path, key], Kind = NamelessChangedInPlaceConflict
+			});
 		}
 		if (newElements.Count > 0) {
 			arrayInserts.Add((key, newElements));
@@ -1528,20 +1557,19 @@ public static class WebToMobileAnalysisService {
 		return false;
 	}
 
-	/// <summary>Human-readable label for a conflicting array element: <c>path.key[identity]</c>.</summary>
-	private static string ArrayConflictLabel(IReadOnlyList<string> path, string key, string identity) {
-		string full = path.Count > 0 ? $"{string.Join(".", path)}.{key}" : key;
-		return $"{full}[{identity}]";
-	}
-
-	/// <summary>The Freedom UI <c>name</c> identity of an array element (<c>name:&lt;value&gt;</c>), or null when the
-	/// element carries no non-empty string <c>name</c>.</summary>
-	private static string NamedIdentity(JsonNode node) =>
+	/// <summary>The Freedom UI <c>name</c> of an array element, or null when it carries no non-empty string
+	/// <c>name</c>. Reported as <see cref="DataSectionConflict.Entry"/>.</summary>
+	private static string NamedValue(JsonNode node) =>
 		(node as JsonObject)?["name"] is JsonValue nameValue
 			&& nameValue.TryGetValue(out string nameStr)
 			&& !string.IsNullOrWhiteSpace(nameStr)
-			? $"name:{nameStr}"
+			? nameStr
 			: null;
+
+	/// <summary>The identity used to match array elements across page and base: the <c>name</c> under a fixed
+	/// prefix, so a name can never collide with the nameless bucket's serialized-JSON keys.</summary>
+	private static string NamedIdentity(JsonNode node) =>
+		NamedValue(node) is { } nameStr ? $"name:{nameStr}" : null;
 
 	/// <summary>True when a base attribute node declares itself a collection (<c>isCollection: true</c>).</summary>
 	private static bool IsCollectionNode(JsonObject node) =>
@@ -1714,7 +1742,7 @@ public static class WebToMobileAnalysisService {
 	private static List<string> BuildConstraints(
 		bool hasAdaptiveLayout,
 		bool viewModelConfigRootMerge = false, bool modelConfigRootMerge = false, bool mobileTemplateUnavailable = false,
-		IReadOnlyList<string> dataSectionArrayConflicts = null, bool hasTabAreaLayers = false,
+		bool hasTabAreaLayers = false,
 		bool webTemplateUnavailable = false, bool hasComponentTwin = false,
 		bool exclusionSearchTruncated = false, int discardedExclusionFilters = 0,
 		int skippedOverrideRules = 0) {
@@ -1807,14 +1835,15 @@ public static class WebToMobileAnalysisService {
 		// An unreadable mobile-template bundle no longer gets its own line: it is a CAUSE of the root-merge
 		// fallback, never an independent finding (its own condition required the fallback to have fired), and
 		// the consolidated fallback line above names it as the cause when it is the one that applies.
-		if (dataSectionArrayConflicts is { Count: > 0 }) {
-			constraints.Add(
-				"The converted page changes an EXISTING element of a template-owned array that no mobile diff " +
-				"operation can edit in place: " + string.Join(", ", dataSectionArrayConflicts) + ". A changed " +
-				"named entry is NOT re-applied (the mobile template keeps its own value), and a changed nameless " +
-				"entry would DUPLICATE at runtime. Review each listed array; if the page's value must win, adjust " +
-				"that data-section entry manually before pasting.");
-		}
+		// A template-owned value the diffs cannot express is NOT reported here. It moved to
+		// guide.dataSectionConflicts, one entry per occurrence, because this line was lossy in three ways: it
+		// flattened the location into a `path.key[identity]` label the caller had to parse; it dropped which
+		// SECTION the conflict is in, so the caller could not tell which diff to hand-edit; and it lumped three
+		// outcomes that need two OPPOSITE remedies — a changed named element and a changed collection scalar
+		// lose the page's value (edit the diff if it must win), while a nameless element edited in place loses
+		// nothing and DUPLICATES at runtime (remove one of the two). The sentence described only two of the
+		// three kinds at all: the changed scalar reached this list too, and its outcome was stated nowhere but
+		// inside the label text.
 		if (hasAdaptiveLayout) {
 			constraints.Add(
 				"adaptiveLayout covers every multi-column crt.GridContainer: on the phone (small) it collapses to a " +
