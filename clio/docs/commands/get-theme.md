@@ -1,0 +1,88 @@
+# get-theme
+
+## Command Type
+
+    Theming commands
+
+## Name
+
+get-theme - read the content (theme.css) and metadata of a custom Creatio theme
+
+## Description
+
+`get-theme` reads a custom theme from the target environment by its id and
+prints a JSON envelope with the theme's `id`, `caption`, `cssClassName`,
+`cssFilePath`, and `cssContent` (the `theme.css` text). The content always
+reflects the theme's current state, including right after an
+[`update-theme`](update-theme.md).
+
+The `caption`, `cssClassName`, and `cssContent` fields are usable verbatim as
+`update-theme` arguments, closing the read → edit → update-theme loop: read the
+current CSS, change what you need, and apply it back without losing manual
+tweaks.
+
+With `--output-file` the CSS is written to the given path instead of being
+printed (`cssContent` is omitted from the envelope; `cssContentLength` is still
+reported). The path must stay inside the workspace or the OS temp directory and
+must not already exist.
+
+The command requires Creatio 10.0.0 or later on the target environment and the
+`CanCustomizeBranding` license; a caller without the license sees an empty
+theme catalog and therefore a not-found result. An unknown theme id is reported
+as a clear error together with a hint to run [`list-themes`](list-themes.md).
+
+## Synopsis
+
+```bash
+clio get-theme --id <theme-id> [--output-file <path>] [options]
+```
+
+## Options
+
+```bash
+--id                            Id (a GUID) of the theme to read (see list-themes)
+
+--output-file                   Path to write the theme CSS to; when set,
+                                cssContent is omitted from the response
+
+--uri               -u          Application uri
+
+--Password          -p          User password
+
+--Login             -l          User login (administrator permission required)
+
+--Environment       -e          Environment name
+
+--Maintainer        -m          Maintainer name
+```
+
+## Example
+
+```bash
+clio get-theme --id 4ecdda0a-3f24-4d5c-9647-46b6d4fe0a51
+print the theme's metadata and CSS content as JSON
+
+clio get-theme --id 4ecdda0a-3f24-4d5c-9647-46b6d4fe0a51 -e myapp --output-file theme.css
+write the theme's CSS to theme.css
+```
+
+A full modify-an-existing-theme round-trip:
+
+```bash
+clio get-theme --id <id> -e myapp --output-file theme.css
+# edit theme.css
+clio update-theme --id <id> --caption "<caption from get-theme>" --css-class-name "<cssClassName from get-theme>" --css-content-file theme.css -e myapp
+clio get-theme --id <id> -e myapp   # confirm the change is reflected
+```
+
+## Notes
+
+- Find a theme's id with [`list-themes`](list-themes.md).
+- The read enforces the same 1 MiB content cap as `create-theme`/`update-theme`; a served file larger than that is refused (it cannot be a clio-managed theme CSS).
+- A markup response (for example a login or error page) is reported as an error rather than returned as content. The check refuses any body whose first non-whitespace character is `<` — valid CSS never starts with `<`, so this also catches an error page that leads with `<!-- -->`, `<HEAD`, or `<?xml`. Consequently a theme whose CSS deliberately starts with `<` cannot be read back.
+
+## Reporting Bugs
+
+    https://github.com/Advance-Technologies-Foundation/clio
+
+- [Clio Command Reference](../../Commands.md#get-theme)

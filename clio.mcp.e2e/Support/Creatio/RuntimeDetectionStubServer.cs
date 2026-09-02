@@ -153,6 +153,30 @@ http.createServer((request, response) => {
       sendText(response, 404, "Not Found");
       return;
     }
+    if (request.method === "POST" && url === "/ServiceModel/ApplicationInfoService.svc/GetApplicationInfo") {
+      // PRIMARY source of the [RequiresCreatioVersion] dispatch gate: applicationInfo.sysValues.coreVersion.
+      if (config.CoreVersion) {
+        sendJson(response, 200, { applicationInfo: { sysValues: { coreVersion: config.CoreVersion } } });
+        return;
+      }
+      sendText(response, 404, "Not Found");
+      return;
+    }
+    if (request.method === "POST" && url === "/ServiceModel/ThemeService.svc/GetAvailableThemes") {
+      // Already the catalog JSON, so it is written verbatim rather than re-encoded.
+      if (config.ThemeCatalogJson) {
+        response.writeHead(200, { "Content-Type": "application/json" });
+        response.end(config.ThemeCatalogJson);
+        return;
+      }
+      sendText(response, 404, "Not Found");
+      return;
+    }
+    if (request.method === "GET" && config.ThemeCssPath && url === config.ThemeCssPath) {
+      response.writeHead(200, { "Content-Type": "text/css" });
+      response.end(config.ThemeCssContent || "");
+      return;
+    }
     if (config.ODataNonJsonEntity && url.includes("/odata/" + config.ODataNonJsonEntity)) {
       // ENG-95971: the stand answered an odata request (read or write) with an IIS-style HTML error
       // page instead of JSON or a recognized error shape - the request reached the stub but never
@@ -186,6 +210,24 @@ http.createServer((request, response) => {
 	}
 }
 
+/// <param name="CoreVersion">
+/// When set, <c>ApplicationInfoService.svc/GetApplicationInfo</c> answers with this
+/// <c>applicationInfo.sysValues.coreVersion</c> — the PRIMARY source the <c>[RequiresCreatioVersion]</c>
+/// dispatch gate probes. Required by any test whose tool declares a version floor; leave it null to keep
+/// the endpoint a 404 for tests that do not.
+/// </param>
+/// <param name="ThemeCatalogJson">
+/// When set, <c>ThemeService.svc/GetAvailableThemes</c> answers with this raw JSON body verbatim (the
+/// <c>{ success, values: [...] }</c> catalog shape), so a theme-reading tool can resolve a theme by id with
+/// no live branded environment.
+/// </param>
+/// <param name="ThemeCssPath">
+/// When set, a GET whose full request target (path AND query, e.g.
+/// <c>/Terrasoft.Configuration/.../theme.css?hash=abc</c>) equals this value is answered with
+/// <paramref name="ThemeCssContent"/> as <c>text/css</c>. Must equal the <c>cssFilePath</c> published by
+/// <paramref name="ThemeCatalogJson"/>, prefixed with '/', because that is the value the tool builds the URL from.
+/// </param>
+/// <param name="ThemeCssContent">The body served at <paramref name="ThemeCssPath"/>; null or empty serves an empty file.</param>
 internal sealed record RuntimeDetectionStubServerConfiguration(
 	bool NetCoreHealthEnabled,
 	bool NetFrameworkHealthEnabled,
@@ -194,5 +236,9 @@ internal sealed record RuntimeDetectionStubServerConfiguration(
 	bool NetCoreUiMarkerEnabled = false,
 	bool NetFrameworkUiMarkerEnabled = false,
 	string? ODataRoutingErrorEntity = null,
+	string? CoreVersion = null,
+	string? ThemeCatalogJson = null,
+	string? ThemeCssPath = null,
+	string? ThemeCssContent = null,
 	string? HtmlSelectQuerySchemaName = null,
 	string? ODataNonJsonEntity = null);

@@ -694,6 +694,7 @@ public class BindingsModule {
 		services.AddTransient<AdviseThemePaletteTool>();
 		services.AddTransient<ClearThemesCacheTool>();
 		services.AddTransient<ListThemesTool>();
+		services.AddTransient<GetThemeTool>();
 		services.AddTransient<CreateThemeTool>();
 		services.AddTransient<UpdateThemeTool>();
 		services.AddTransient<DeleteThemeTool>();
@@ -882,6 +883,7 @@ public class BindingsModule {
 		services.AddTransient<ClearThemesCacheCommand>();
 		services.AddTransient<ListThemesCommand>();
 		services.AddTransient<IThemeCatalog, ListThemesCommand>();
+		services.AddTransient<GetThemeCommand>();
 		services.AddTransient<CreateThemeCommand>();
 		services.AddTransient<UpdateThemeCommand>();
 		services.AddTransient<DeleteThemeCommand>();

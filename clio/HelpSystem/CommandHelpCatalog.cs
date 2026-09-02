@@ -245,6 +245,7 @@ internal sealed class CommandHelpCatalog {
 			"clear-themes-cache",
 			"create-theme",
 			"delete-theme",
+			"get-theme",
 			"list-themes",
 			"update-theme"
 		];

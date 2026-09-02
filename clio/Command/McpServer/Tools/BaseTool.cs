@@ -30,12 +30,20 @@ public abstract class BaseTool<T>(
 	/// </returns>
 	private protected CommandExecutionResult RejectIfPassthroughUnsupported(string toolName,
 		string alternativeGuidance) {
-		if (passthroughGuard is null || !passthroughGuard.IsPassthroughActive) {
+		if (!IsPassthroughActive) {
 			return null;
 		}
 		return CommandExecutionResult.FromValidationError(
 			passthroughGuard.BuildUnsupportedMessage(toolName, alternativeGuidance));
 	}
+
+	/// <summary>
+	/// True when a credential-passthrough context is active for the current request, meaning the target
+	/// environment comes from the accepted <c>X-Integration-Credentials</c> header and an explicit
+	/// <c>environment</c> argument is refused. <see langword="false"/> on stdio, on an HTTP request carrying
+	/// no credential header, and when no guard is wired.
+	/// </summary>
+	private protected bool IsPassthroughActive => passthroughGuard?.IsPassthroughActive == true;
 
 	// FR-05 (ENG-93208): resolves the per-tenant execution-lock key for the given options. Runs the
 	// SAME identity branch the command resolves under (credential passthrough / registry / URI) so the

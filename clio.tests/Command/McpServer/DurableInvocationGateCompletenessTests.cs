@@ -234,7 +234,7 @@ public sealed class DurableInvocationGateCompletenessTests {
 
 	[Test]
 	[Category("Unit")]
-	[Description("set-background-image is classified destructive, so the durable gate never silently runs it — it replaces the environment-wide background for all users and must be host-confirmed. This is why the tool is intentionally absent from the silently-executable ReviewedSilentWriteCapableTools baseline (that list holds Destructive=false write tools only; upload-image is there because it is additive-only).")]
+	[Description("set-background-image is classified destructive, so the durable gate never silently runs it — it replaces the environment-wide background for all users and must be host-confirmed, which is also why it is absent from the ReviewedSilentlyExecutableTools baseline (PR #984 flipped that baseline to hold ReadOnly=true tools only, so ANY write-capable tool — ReadOnly=false, destructive or not, e.g. get-page / get-schema / get-theme / upload-image — is correctly absent from it and needs no entry).")]
 	public void SetBackgroundImage_ShouldBeDestructive_SoTheGateNeverSilentlyRunsIt() {
 		// Arrange
 		McpToolInvokerRegistry registry = BuildRegistryOverFullCatalog();

@@ -31,6 +31,7 @@ public sealed class ThemingVersionFloorContractE2ETests : McpContractFixtureBase
 		UpdateThemeTool.ToolName,
 		DeleteThemeTool.ToolName,
 		ListThemesTool.ToolName,
+		GetThemeTool.ToolName,
 		ClearThemesCacheTool.ToolName,
 		CheckThemingAccessTool.ToolName
 	];
@@ -38,7 +39,7 @@ public sealed class ThemingVersionFloorContractE2ETests : McpContractFixtureBase
 	[Test]
 	[AllureTag("theming")]
 	[AllureName("every ThemeService-backed tool contract advertises the Creatio version floor")]
-	[Description("Starts the real clio MCP server, expands the full contracts of all six ThemeService-backed tools via get-tool-contract, and verifies each description advertises the Creatio version floor pinned by ThemeServiceRequirement.MinVersion.")]
+	[Description("Starts the real clio MCP server, expands the full contracts of every ThemeService-backed tool via get-tool-contract, and verifies each description advertises the Creatio version floor pinned by ThemeServiceRequirement.MinVersion.")]
 	public async Task ThemingToolContracts_Should_Advertise_CreatioVersionFloor() {
 		// Arrange
 		await using ArrangeContext context = Arrange(TimeSpan.FromMinutes(3));
