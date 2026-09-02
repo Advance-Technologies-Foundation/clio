@@ -244,6 +244,11 @@ public sealed class ClioRunExecutor(
 		callContext.Params = childParams;
 		callContext.MatchedPrimitive = tool;
 		try {
+			if (McpToolErrorFilter.TryCreateArgumentDeserializationError(
+				callContext,
+				out CallToolResult? argumentErrorResult)) {
+				return argumentErrorResult;
+			}
 			return await tool.InvokeAsync(callContext, cancellationToken).ConfigureAwait(false);
 		}
 		catch (OperationCanceledException) {

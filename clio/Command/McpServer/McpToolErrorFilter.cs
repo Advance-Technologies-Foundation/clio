@@ -1,4 +1,5 @@
-using System;
+﻿using System;
+using System.ComponentModel.DataAnnotations;
 using System.Collections.Generic;
 using System.Diagnostics.CodeAnalysis;
 using System.Linq;
@@ -78,7 +79,7 @@ public static class McpToolErrorFilter
 	private static string GetSurfacedMessage(Exception exception) =>
 		Clio.Common.SurfacedExceptionMessage.Resolve(exception);
 
-	private static bool TryCreateArgumentDeserializationError(
+	internal static bool TryCreateArgumentDeserializationError(
 		RequestContext<CallToolRequestParams> context,
 		out CallToolResult? result) {
 		result = null;
@@ -95,17 +96,54 @@ public static class McpToolErrorFilter
 			if (!arguments.TryGetValue(argumentName, out JsonElement argumentValue)) {
 				continue;
 			}
+			//JsonElement.Deserialize happily returns null for a reference type, so {"args":null} never
+			//threw and the tool ran with a null composite argument - odata-read answered with a typed
+			//NRE-derived success:false while the same call through clio-run reported a missing required
+			//argument. A required, non-nullable parameter rejects an explicit JSON null here so both
+			//paths return the same invalid-parameter-type contract. Optional and nullable parameters
+			//are untouched: null is a legitimate value for them.
+			if (argumentValue.ValueKind == JsonValueKind.Null && IsRequiredNonNullable(parameter)) {
+				result = CreateJsonErrorResult(BuildNullArgumentErrorMessage(
+					context.Params.Name, parameter.ParameterType, argumentName));
+				return true;
+			}
 			try {
 				argumentValue.Deserialize(parameter.ParameterType, SerializerOptions);
 			}
 			catch (Exception ex) when (IsDeserializationException(ex)) {
-				result = CreateJsonErrorResult(BuildDeserializationErrorMessage(context.Params.Name, argumentName, ex));
+				result = CreateJsonErrorResult(BuildDeserializationErrorMessage(
+					context.Params.Name,
+					parameter.ParameterType,
+					argumentName,
+					ex));
 				return true;
 			}
 		}
 
 		return false;
 	}
+
+	/// <summary>
+	/// True when the parameter must carry a value: it is marked <see cref="RequiredAttribute"/>, has no
+	/// default, and its type is not a nullable one. A nullable or defaulted parameter accepts null.
+	/// </summary>
+	private static bool IsRequiredNonNullable(ParameterInfo parameter) {
+		if (parameter.GetCustomAttribute<RequiredAttribute>() is null || parameter.HasDefaultValue) {
+			return false;
+		}
+		Type type = parameter.ParameterType;
+		if (Nullable.GetUnderlyingType(type) is not null) {
+			return false;
+		}
+		//A reference type declared as nullable (`Args?`) is annotated rather than a distinct CLR type,
+		//so the nullable context of the declaration is what tells them apart.
+		return new NullabilityInfoContext().Create(parameter).WriteState != NullabilityState.Nullable;
+	}
+
+	private static string BuildNullArgumentErrorMessage(string toolName, Type parameterType, string argumentName) =>
+		$"invalid-parameter-type: argument '{argumentName}' for MCP tool '{toolName}' must be "
+		+ $"{GetExpectedJsonType(parameterType, argumentName)}. Received a JSON null, and the argument "
+		+ "is required.";
 
 	private static CallToolResult CreateJsonErrorResult(string message) {
 		return new CallToolResult {
@@ -123,14 +161,107 @@ public static class McpToolErrorFilter
 		?? parameter.Name
 		?? string.Empty;
 
-	private static string BuildDeserializationErrorMessage(string? toolName, string? argumentName, Exception exception) {
-		// The serializer message can echo back the offending argument value, so redact it too.
-		string detail = SensitiveErrorTextRedactor.Redact(exception.Message);
-		string message = string.IsNullOrWhiteSpace(argumentName)
-			? $"Failed to deserialize arguments for MCP tool '{toolName ?? UnknownToolName}': {detail}"
-			: $"Failed to deserialize argument '{argumentName}' for MCP tool '{toolName ?? UnknownToolName}': {detail}";
-		return message;
+	private static string BuildDeserializationErrorMessage(
+		string? toolName,
+		Type parameterType,
+		string? argumentName,
+		Exception exception) {
+		string preciseArgumentName = GetPreciseArgumentName(parameterType, argumentName, exception);
+		string toolLabel = toolName ?? UnknownToolName;
+		string message;
+		if (string.IsNullOrWhiteSpace(argumentName)) {
+			message = $"invalid-parameter-type: arguments for MCP tool '{toolLabel}' must match the documented shape "
+				+ $"(expected {GetExpectedJsonType(parameterType, preciseArgumentName)}).";
+		} else if (IsNestedBindingFailure(parameterType, exception)) {
+			// The named property's OWN value is not what failed: the caller did send the array or object
+			// the contract asks for, and the incompatible value sits somewhere inside it. Reporting the
+			// CLR type of the outer property here ("must be an array") names a correction the caller has
+			// already made, so the message says where to look instead.
+			message = $"invalid-parameter-type: argument '{preciseArgumentName}' for MCP tool '{toolLabel}' "
+				+ "contains a value that does not match the documented shape.";
+		} else {
+			message = $"invalid-parameter-type: argument '{preciseArgumentName}' for MCP tool '{toolLabel}' "
+				+ $"must be {GetExpectedJsonType(parameterType, preciseArgumentName)}.";
+		}
+		return $"{message} Received an incompatible JSON value.";
 	}
+
+	/// <summary>
+	/// True when the failing JSON path continues BELOW the named property, so the incompatible value is
+	/// nested inside it rather than being that property's own value.
+	/// </summary>
+	/// <remarks>
+	/// <see cref="GetPreciseArgumentName"/> reports only the first path segment, so
+	/// <c>$.rules[0].actions[0].type</c> is reported as <c>rules</c>. Without this distinction the message
+	/// then describes the CLR type of <c>rules</c>, which the caller already supplied correctly.
+	/// </remarks>
+	private static bool IsNestedBindingFailure(Type parameterType, Exception exception) {
+		if (!parameterType.IsClass || parameterType == typeof(string)
+			|| exception is not JsonException { Path: { } path }
+			|| !path.StartsWith("$.", StringComparison.Ordinal)) {
+			return false;
+		}
+		string remainder = path[2..];
+		int boundary = remainder.IndexOfAny(['.', '[']);
+		if (boundary < 0) {
+			return false;
+		}
+		// Only when the first segment actually resolved to a documented property. Otherwise the reported
+		// name is the outer argument itself and "must be <type>" remains the accurate advice.
+		return GetJsonPropertyNames(parameterType)
+			.Contains(remainder[..boundary], StringComparer.OrdinalIgnoreCase);
+	}
+
+	private static string GetPreciseArgumentName(Type parameterType, string? argumentName, Exception exception) {
+		if (parameterType.IsClass && parameterType != typeof(string)
+			&& exception is JsonException { Path: { } path }
+			&& path.StartsWith("$.", StringComparison.Ordinal)) {
+			string propertyName = path[2..].Split(['.', '['], 2)[0];
+			if (GetJsonPropertyNames(parameterType).Contains(propertyName, StringComparer.OrdinalIgnoreCase)) {
+				return propertyName;
+			}
+		}
+		return argumentName ?? string.Empty;
+	}
+
+	private static string GetExpectedJsonType(Type parameterType, string argumentName) {
+		PropertyInfo? property = parameterType.GetProperties(BindingFlags.Public | BindingFlags.Instance)
+			.FirstOrDefault(candidate =>
+				(GetJsonPropertyName(candidate) ?? candidate.Name).Equals(argumentName, StringComparison.OrdinalIgnoreCase));
+		Type type = property?.PropertyType ?? parameterType;
+		if (Nullable.GetUnderlyingType(type) is { } underlyingType) {
+			type = underlyingType;
+		}
+		if (type == typeof(string)) return "a string";
+		if (type == typeof(bool)) return "a boolean";
+		// A dictionary IS an IEnumerable, so it has to be recognized BEFORE the enumerable branch below.
+		// Without this, a contract taking Dictionary<string, JsonElement> — clio-run's own `args` — was
+		// reported as "an array", telling the caller to resend the very shape that had just failed.
+		if (IsJsonObjectContract(type)) return "an object";
+		if (type.IsArray || typeof(System.Collections.IEnumerable).IsAssignableFrom(type) && type != typeof(string)) return "an array";
+		if (type.IsPrimitive || type == typeof(decimal)) return "a number";
+		return "an object";
+	}
+
+	/// <summary>
+	/// True when the CLR type is carried on the wire as a JSON object rather than a JSON array.
+	/// </summary>
+	private static bool IsJsonObjectContract(Type type) =>
+		typeof(System.Collections.IDictionary).IsAssignableFrom(type)
+		//Type.GetInterfaces() lists the interfaces a type implements, never the type itself, so a
+		//property declared AS IReadOnlyDictionary<string,string> - ApplicationCreateArgs'
+		//title-localizations, for one - fell through to the IEnumerable branch and was reported as
+		//"an array". The declared type has to be tested on its own before the implemented ones.
+		|| IsDictionaryDefinition(type)
+		|| type.GetInterfaces().Any(IsDictionaryDefinition);
+
+	private static bool IsDictionaryDefinition(Type candidate) =>
+		candidate.IsGenericType
+		&& (candidate.GetGenericTypeDefinition() == typeof(IDictionary<,>)
+			|| candidate.GetGenericTypeDefinition() == typeof(IReadOnlyDictionary<,>));
+
+	private static string? GetJsonPropertyName(PropertyInfo property) =>
+		property.GetCustomAttribute<JsonPropertyNameAttribute>()?.Name;
 
 	private static bool IsDeserializationException(Exception exception) =>
 		exception is JsonException or NotSupportedException;
