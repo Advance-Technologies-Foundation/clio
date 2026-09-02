@@ -1,4 +1,5 @@
 using System;
+using System.Threading.Tasks;
 
 namespace Clio.Common;
 
@@ -37,6 +38,12 @@ internal interface ILoginDiagnostics {
 	void Track(Action login, LoginAttemptKind kind);
 
 	/// <summary>
+	/// Asynchronously invokes <paramref name="login"/> under the same login-attempt recording as
+	/// <see cref="Track"/>.
+	/// </summary>
+	Task<T> TrackAsync<T>(Func<Task<T>> login, LoginAttemptKind kind);
+
+	/// <summary>
 	/// Invokes <paramref name="request"/> and returns its result unchanged. Only a failure that carries
 	/// the NuGet client's login-rejection signature is decorated (as
 	/// <see cref="LoginAttemptKind.Implicit"/>); every other exception propagates untouched, so this
@@ -61,4 +68,10 @@ internal interface ILoginDiagnostics {
 	/// <paramref name="request"/> failed because its implicit login was rejected.
 	/// </exception>
 	void TrackRequest(Action request);
+
+	/// <summary>
+	/// Asynchronously invokes <paramref name="request"/> under the same implicit-request recording as
+	/// <see cref="TrackRequest{T}"/>.
+	/// </summary>
+	Task<T> TrackRequestAsync<T>(Func<Task<T>> request);
 }

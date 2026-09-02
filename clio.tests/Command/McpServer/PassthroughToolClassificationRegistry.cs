@@ -370,6 +370,7 @@ internal static class PassthroughToolClassificationRegistry {
 			["restore-db-by-environment"] = PassthroughClassification.NotApplicable,
 			["restore-db-to-local-server"] = PassthroughClassification.NotApplicable,
 			["restore-workspace"] = PassthroughClassification.NotApplicable,
+			["run-process"] = PassthroughClassification.NotApplicable,
 			["set-background-image"] = PassthroughClassification.NotApplicable,
 			["set-fsm-mode"] = PassthroughClassification.NotApplicable,
 			["set-logo"] = PassthroughClassification.NotApplicable,

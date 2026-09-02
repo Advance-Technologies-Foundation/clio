@@ -36,7 +36,7 @@ namespace Clio.Tests.Command.McpServer;
 /// <item><description>CLI stdout — the <c>ShowSettingsTo</c> serializer configuration used to dump the
 /// settings file.</description></item>
 /// </list>
-/// Mirrors the <c>Common/BrowserSession/CreatioAuthClient</c> "names only, never values" discipline.
+/// Mirrors the browser-session "names only, never values" discipline.
 /// Console-log / file-log absence and the no-write-to-disk contract are authoritatively covered by
 /// <c>ToolCommandResolverNoWriteTests</c> and <c>Common/EnvironmentSettingsTests</c> respectively.
 /// </summary>

@@ -1214,6 +1214,10 @@ public sealed class ToolContractGetToolTests {
 				field.Name == "resources" &&
 				field.Description.Contains("JSON object string"),
 			because: "update-page should clarify the concrete resources payload shape");
+		pageUpdateContract.InputSchema.Properties.Should().Contain(field =>
+				field.Name == "validate" &&
+				field.Description.Contains("pre-existing"),
+			because: "update-page should expose the guarded validation escape hatch in its curated contract");
 		ToolContractDefinition modifyColumnContract = contracts.Single(contract => contract.Name == ModifyEntitySchemaColumnTool.ModifyEntitySchemaColumnToolName);
 		modifyColumnContract.PreferredFlow.Tools.Should().Equal(
 				new[] {
@@ -2154,8 +2158,8 @@ public sealed class ToolContractGetToolTests {
 
 		// Assert
 		result.Success.Should().BeTrue(
-			because: "the five process-designer tools are feature-gated and may be absent, so their remediation "
-				+ "tool must be discoverable through get-tool-contract to be reachable at all");
+			because: "install-process-builder is non-resident, so this curated contract is the only "
+				+ "description of the remediation an agent ever receives");
 		ToolContractDefinition contract = result.Tools!.Single();
 		// The CURATED string, which is what an agent actually reads: install-process-builder is deliberately
 		// non-resident, so it is never in tools/list and this contract is its only description. The tool's
@@ -2208,8 +2212,8 @@ public sealed class ToolContractGetToolTests {
 			because: "the package ships inside clio, so the target environment is the only thing to supply");
 		contract.PreferredFlow.Tools.Should().Equal(
 			new[] { InstallProcessBuilderTool.InstallProcessBuilderToolName },
-			because: "the flow must stop at this tool: naming a process-designer tool as the follow-up would "
-				+ "point at one this server may not expose while the feature is off");
+			because: "the flow must stop at this tool: any of the five process-designer tools may have sent "
+				+ "the caller here, so the contract cannot name which call to retry");
 		// A CLAIM-shaped guard, not a phrase ban — and note what CANNOT work here. The previous form banned
 		// the literal "which build is serving", and a reworded copy walked past it: the shipped note went
 		// back to "the NEW build is serving: it compares the version the serving build reports against the
@@ -2256,18 +2260,17 @@ public sealed class ToolContractGetToolTests {
 
 		ToolContractDefinition deploy = result.Tools!.Single(contract =>
 			contract.Name == InstallerCommandTool.DeployCreatioToolName);
-		deploy.InputSchema.Required.Should().Contain(["siteName", "zipFile", "sitePort"],
-			because: "deploy-creatio requires the site name, build archive, and port");
+		deploy.InputSchema.Required.Should().Equal(["siteName", "zipFile"],
+			because: "deploy-creatio can select a local IIS port from the configured range when sitePort is omitted");
 		deploy.OutputContract.Kind.Should().Be("command-execution-result",
 			because: "deploy-creatio returns the standard command execution result payload");
 		deploy.PreferredFlow.Tools.Should().Equal(
 			new[] {
 				AssertInfrastructureTool.AssertInfrastructureToolName,
 				ShowPassingInfrastructureTool.ShowPassingInfrastructureToolName,
-				FindEmptyIisPortTool.FindEmptyIisPortToolName,
 				InstallerCommandTool.DeployCreatioToolName
 			},
-			because: "deploy-creatio should advertise the canonical deploy preflight order");
+			because: "deploy-creatio should advertise the required preflight without making optional port inspection mandatory");
 		deploy.Preconditions.Should().NotBeNullOrEmpty(
 			because: "the most consequential tool must spell out its preconditions");
 

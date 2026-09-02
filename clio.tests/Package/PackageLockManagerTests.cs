@@ -13,11 +13,13 @@ namespace Clio.Tests.Package;
 [Property("Module", "Package")]
 public class PackageLockManagerTests : BaseClioModuleTests {
 
-	private IApplicationClient _applicationClient;
+	[System.Diagnostics.CodeAnalysis.SuppressMessage("Structure", "NUnit1032:An IDisposable field/property should be Disposed in a TearDown method",
+		Justification = "The system under test owns and disposes the factory-returned substitute.")]
+	private IOwnedApplicationClient _applicationClient;
 	private IPackageLockManager _manager;
 
 	protected override void AdditionalRegistrations(IServiceCollection containerBuilder) {
-		_applicationClient = Substitute.For<IApplicationClient>();
+		_applicationClient = Substitute.For<IOwnedApplicationClient>();
 		IApplicationClientFactory applicationClientFactory = Substitute.For<IApplicationClientFactory>();
 		applicationClientFactory.CreateClient(Arg.Any<EnvironmentSettings>()).Returns(_applicationClient);
 		containerBuilder.AddSingleton(applicationClientFactory);

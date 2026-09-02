@@ -560,6 +560,7 @@ internal static class ToolContractCatalog {
 	private const string ExampleLeftExpressionUId = "e277d35c-4c0f-4bd4-9e9e-58b0d5a1c101";
 	private const string ExampleRightExpressionUId = "81b8b8ea-6ad4-4f0e-9d6b-2f70b9a2c202";
 	private const string ExampleActionUId = "c334b501-8a53-46fa-9b7e-7d41c3d4c303";
+	private const string ValidateFieldName = "validate";
 	private const string ValueFieldName = "value";
 	private const string ValuesFieldName = "values";
 	private const string VerifyFieldName = "verify";
@@ -3931,7 +3932,7 @@ internal static class ToolContractCatalog {
 				[
 					Field(EnvironmentNameFieldName, StringType, RegisteredEnvironmentNameDescription),
 					Field(PagesFieldName, ArrayType, "Page update requests built from `get-page.raw.body`. Each page item requires `schema-name` and full `body`; optional `resources` is a JSON object string of localizable string key-value pairs the platform does NOT auto-provide (custom tab/group titles, button captions, validator messages, explicit caption overrides). Only include keys with NO matching DS-bound view model attribute on the page; matching keys are auto-provided by the platform \u2014 see `page-schema-resources` guidance. Each page item also accepts `optional-properties` (JSON array of {key, value} merged into schema optionalProperties)."),
-					Field("validate", BooleanType, "Run client-side validation before save."),
+					Field(ValidateFieldName, BooleanType, "Run client-side content validation before save. Set false only as an escape hatch for pre-existing page defects; the structural floor still runs. This flag and `force` are orthogonal — one gates content checks, the other the baseline/conflict guard — so they can be combined; the per-page result then carries a warning that both guards are relaxed."),
 					Field(VerifyFieldName, BooleanType, "Read the page back after save.")
 				]),
 			EnvelopeOutput(
@@ -3945,7 +3946,7 @@ internal static class ToolContractCatalog {
 			CommonErrorContract,
 			[],
 			[
-				Default("validate", "true", "Client-side validation is enabled by default."),
+				Default(ValidateFieldName, "true", "Client-side validation is enabled by default."),
 				Default(VerifyFieldName, BooleanFalseLiteral, "Read-back verification is optional and disabled by default.")
 			],
 			[
@@ -3958,7 +3959,7 @@ internal static class ToolContractCatalog {
 							[ResourcesFieldName] = "{\"UsrDetailsTab_caption\":\"Details\"}"
 						}
 					},
-					["validate"] = true
+					[ValidateFieldName] = true
 				})
 			],
 			Flow(
@@ -4917,7 +4918,7 @@ internal static class ToolContractCatalog {
 	private static ToolContractDefinition BuildPageUpdate() {
 		return new ToolContractDefinition(
 			PageUpdateTool.ToolName,
-			"Fallback single-page save path for a full Freedom UI page body copied from `get-page.raw.body` when the workflow explicitly requires dry-run or legacy save behavior. " +
+			"Fallback single-page save path for a full Freedom UI page body copied from `get-page.raw.body` when the workflow explicitly requires dry-run or legacy save behavior. Set `validate=false` only for a pre-existing page defect; client-side content and run-process validation are skipped, but JavaScript syntax, AST loadability, replace-mode marker integrity, the mobile JSON-object structure check, and the page baseline/conflict guard remain mandatory. `validate=false` stays combinable with `force=true`; the two flags are orthogonal and the response warns when both guards are down. " +
 			SchemaValidationService.CustomCssPolicySummary,
 			new ToolInputSchemaContract(
 				[SchemaNameFieldName],
@@ -4926,6 +4927,7 @@ internal static class ToolContractCatalog {
 					Field("body", StringType, "Full page body with all marker pairs. Reuse `get-page.raw.body` rather than `bundle` or `bundle.viewConfig`. Either `body` or `body-file` must be provided."),
 					Field("body-file", StringType, "Absolute path to a file containing the page body. Used when `body` is empty. Enables passing large bodies without inline JSON escaping."),
 					Field(DryRunFieldName, BooleanType, "Validate without saving."),
+					Field(ValidateFieldName, BooleanType, "Run client-side content and run-process validation before saving. Set false only as an explicit escape hatch for a pre-existing page defect; JavaScript syntax, AST loadability, replace-mode marker integrity, the mobile JSON-object structure check, and the page baseline/conflict guard remain mandatory. It stays combinable with force=true - the two flags are orthogonal (one gates content checks, the other the baseline/conflict guard) - and the response then warns that both are relaxed."),
 					Field(ResourcesFieldName, StringType, "Optional JSON object string of localizable strings the platform does NOT auto-provide (custom tab/group titles, button captions, validator messages, explicit overrides). Only include keys with NO matching DS-bound view model attribute on the page \u2014 see `page-schema-resources` guidance."),
 					Field("optional-properties", StringType, "JSON array of {key, value} objects merged into schema optionalProperties (e.g. '[{\"key\":\"entitySchemaName\",\"value\":\"UsrMyEntity\"}]')."),
 					Field(VerifyFieldName, BooleanType, "If true, read the page back after saving and return its metadata. Best-effort \u2014 verify failure does not fail the update."),
@@ -4953,6 +4955,7 @@ internal static class ToolContractCatalog {
 			],
 			[
 				Default(DryRunFieldName, BooleanFalseLiteral, "Saves by default; pass true to validate without writing."),
+				Default(ValidateFieldName, "true", "Runs client-side content validation by default; set false only for a pre-existing defect."),
 				Default(VerifyFieldName, BooleanFalseLiteral, "Read-back verification is optional and disabled by default."),
 				Default("mode", "replace", "Body is written verbatim by default; pass 'append' to merge with the existing body.")
 			],
@@ -5489,12 +5492,12 @@ internal static class ToolContractCatalog {
 				[
 					InstallProcessBuilderTool.InstallProcessBuilderToolName
 				],
-				"Install the package, then retry whichever process-designer tool sent you here - that retry IS the confirmation, because its package gate re-checks the environment and refuses again if the install did not take. The flow cannot name the follow-up tool: the five process-designer tools are [FeatureToggle(\"process-designer\")]-gated and are NOT advertised while that feature is off, so naming one would point at a tool this server may not expose. The install's own success proves the package is COMPILED and serving - it asks the package's ungated Ping and fails unless it answers, which is the one question no database read can answer. It does NOT prove WHICH build is serving: on an upgrade a stale assembly that still answers passes, so treat a new version as verified only once the functionality works."),
+				"Install the package, then retry whichever process-designer tool sent you here - that retry IS the confirmation, because its package gate re-checks the environment and refuses again if the install did not take. The flow cannot name the follow-up tool: any of the five process-designer tools (create-business-process, modify-business-process, describe-business-process, list-user-tasks, validate-process-graph) may have sent the caller here, and only the caller knows which call to retry. The install's own success proves the package is COMPILED and serving - it asks the package's ungated Ping and fails unless it answers, which is the one question no database read can answer. It does NOT prove WHICH build is serving: on an upgrade a stale assembly that still answers passes, so treat a new version as verified only once the functionality works."),
 			[],
 			[],
 			Preconditions: [
 				"The target environment is registered (see list-environments / reg-web-app).",
-				"A process-designer tool reported that the CrtProcessBuilder package is missing or older than required. Those tools (create-business-process, modify-business-process, describe-business-process, list-user-tasks, validate-process-graph) are feature-gated and may be absent from this server's tool list; this one never is, so it stays reachable as the remedy.",
+				"A process-designer tool reported that the CrtProcessBuilder package is missing or older than required. Those tools (create-business-process, modify-business-process, describe-business-process, list-user-tasks, validate-process-graph) are long-tail like this one: absent from tools/list, discoverable through the get-tool-contract index, reachable through clio-run / clio-run-destructive.",
 				"The caller can install a package on the target environment, With DataService read access to SysPackage the downgrade check runs; WITHOUT it the install proceeds and says so, so a missing read permission is not a reason to decline this call.",
 				"NOTE for the follow-up call, not for this one: the process-designer tools additionally need the CanManageProcessDesign operation and a General (non-portal) user, which is the gate ProcessDesignService enforces. cliogate's broader CanManageSolution does NOT grant it."
 			]);
@@ -5650,10 +5653,9 @@ internal static class ToolContractCatalog {
 				[
 					AssertInfrastructureTool.AssertInfrastructureToolName,
 					ShowPassingInfrastructureTool.ShowPassingInfrastructureToolName,
-					FindEmptyIisPortTool.FindEmptyIisPortToolName,
 					InstallerCommandTool.DeployCreatioToolName
 				],
-				"Canonical deploy preflight: assert full infrastructure, narrow to passing choices, pick a safe local IIS port, then deploy. See the deploy-lifecycle guidance topic via get-guidance."),
+				"Canonical deploy preflight: assert full infrastructure, narrow to passing choices, then deploy. Clio can select a local IIS port from its configured range. See the deploy-lifecycle guidance topic via get-guidance."),
 			[],
 			[]);
 	}
@@ -5691,7 +5693,7 @@ internal static class ToolContractCatalog {
 	private static ToolContractDefinition BuildFindEmptyIisPort() {
 		return new ToolContractDefinition(
 			FindEmptyIisPortTool.FindEmptyIisPortToolName,
-			"Finds the first free IIS deployment port between 40000 and 42000. Use this before deploy-creatio when you need a safe local IIS sitePort.",
+			"Finds the first free IIS deployment port between 40000 and 42000. Use this when you want to inspect or explicitly choose deploy-creatio sitePort; deploy-creatio can otherwise use its configured automatic range.",
 			new ToolInputSchemaContract([], []),
 			StructuredResultOutput(
 				Field("status", StringType, "Availability status for the requested range."),
@@ -5712,7 +5714,7 @@ internal static class ToolContractCatalog {
 					FindEmptyIisPortTool.FindEmptyIisPortToolName,
 					InstallerCommandTool.DeployCreatioToolName
 				],
-				"Pass firstAvailablePort as the deploy-creatio sitePort for a local IIS deployment."),
+				"Optionally pass firstAvailablePort as deploy-creatio sitePort to override its configured automatic range."),
 			[],
 			[]);
 	}
@@ -5720,13 +5722,13 @@ internal static class ToolContractCatalog {
 	private static ToolContractDefinition BuildDeployCreatio() {
 		return new ToolContractDefinition(
 			InstallerCommandTool.DeployCreatioToolName,
-			"Deploys Creatio from a zip archive using the real deploy-creatio command path. This is the most consequential, hardest-to-reverse lifecycle tool: it drops and recreates the target site. Run the deploy preflight first (assert-infrastructure -> show-passing-infrastructure -> find-empty-iis-port) and prefer the recommended bundle from show-passing-infrastructure. IIS deployment reserves and revalidates sitePort across concurrent clio processes before target mutation, and deploy/uninstall serialize by environment name and physical target directory. Deployment preserves the build database's existing forced-password-change state and does not clear it automatically.",
+			"Deploys Creatio from a zip archive using the real deploy-creatio command path. This is the most consequential, hardest-to-reverse lifecycle tool: it drops and recreates the target site. Run assert-infrastructure then show-passing-infrastructure and prefer the recommended bundle. For local IIS, omit sitePort to reserve the first available port from deploy-creatio-defaults.site-port-range, or pass an explicit override. IIS deployment reserves and revalidates the chosen port across concurrent clio processes before target mutation, and deploy/uninstall serialize by environment name and physical target directory. Deployment preserves the build database's existing forced-password-change state and does not clear it automatically.",
 			new ToolInputSchemaContract(
-				[SiteNameFieldName, ZipFileFieldName, SitePortFieldName],
+				[SiteNameFieldName, ZipFileFieldName],
 				[
 					Field(SiteNameFieldName, StringType, "Creatio instance name."),
 					Field(ZipFileFieldName, StringType, "Absolute path to the Creatio build archive (.zip). Pick a build from the configured creatio-products folder when the path is unknown."),
-					Field(SitePortFieldName, NumberType, "Port where Creatio will be deployed. Use find-empty-iis-port to choose a safe local IIS port."),
+					Field(SitePortFieldName, NumberType, "Optional explicit port. Omit for local IIS to reserve the first available port from deploy-creatio-defaults.site-port-range."),
 					Field(DbServerNameFieldName, StringType, "Optional local database server configuration name; omit to keep the default Kubernetes deployment path."),
 					Field(RedisServerNameFieldName, StringType, "Optional local Redis server configuration name."),
 					Field(UseHttpsFieldName, BooleanType, "Prefer HTTPS for local IIS deployment. Uses a matching usable LocalMachine/My certificate and falls back to HTTP with a warning when none is available.")
@@ -5739,7 +5741,6 @@ internal static class ToolContractCatalog {
 				Example("Deploy a local IIS instance after the deploy preflight", new Dictionary<string, object?> {
 					[SiteNameFieldName] = "creatio-app",
 					[ZipFileFieldName] = @"F:\CreatioBuilds\8.1.5.2176_StudioNet8_Softkey_PostgreSQL_ENU.zip",
-					[SitePortFieldName] = 40001,
 					[DbServerNameFieldName] = "postgres-local",
 					[RedisServerNameFieldName] = "redis-local",
 					[UseHttpsFieldName] = true
@@ -5749,7 +5750,6 @@ internal static class ToolContractCatalog {
 				[
 					AssertInfrastructureTool.AssertInfrastructureToolName,
 					ShowPassingInfrastructureTool.ShowPassingInfrastructureToolName,
-					FindEmptyIisPortTool.FindEmptyIisPortToolName,
 					InstallerCommandTool.DeployCreatioToolName
 				],
 				"Always run the full deploy preflight before deploy-creatio. After deployment, register the instance with reg-web-app and install cliogate with install-gate before using workspace tools."),
@@ -5757,7 +5757,7 @@ internal static class ToolContractCatalog {
 			[],
 			Preconditions: [
 				"assert-infrastructure was run and the targeted database/Redis sections pass (or were chosen from show-passing-infrastructure).",
-				"For a local IIS deployment, sitePort is a free port (use find-empty-iis-port).",
+				"For a local IIS deployment, omit sitePort to use the configured automatic range or pass a free explicit port (find-empty-iis-port can inspect one).",
 				"zipFile points at an existing Creatio build archive (pick one from the configured creatio-products folder)."
 			]);
 	}
