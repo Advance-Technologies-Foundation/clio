@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
+using System.Globalization;
 using System.IO;
 using System.Linq;
 using System.Net;
@@ -924,15 +925,25 @@ public class DotNetDeploymentStrategy : IDeploymentStrategy
 		string endpointName,
 		string scheme)
 	{
+		// Kestrel endpoint NAMES are arbitrary - `{ "Http": { "Url": "https://localhost:5002", ... } }` is a
+		// supported configuration. The URL scheme is what decides the protocol, so the conventional name is
+		// honoured only when it does not contradict the URL. Trusting the name first returned that HTTPS
+		// endpoint as the HTTP target, and the caller then rewrote its Url to plaintext - the stripped-HTTPS
+		// redeploy defect this change exists to remove.
 		string? namedProperty = FindPropertyName(endpoints, endpointName);
 		if (namedProperty is not null)
 		{
-			if (endpoints[namedProperty] is JsonObject namedEndpoint)
+			if (endpoints[namedProperty] is not JsonObject namedEndpoint)
+			{
+				throw new JsonException($"Configuration property '{namedProperty}' must be a JSON object.");
+			}
+
+			string? namedScheme = GetUriScheme(GetStringProperty(namedEndpoint, "Url"));
+			// No URL at all is compatible with either scheme: the caller is about to write one.
+			if (namedScheme is null || string.Equals(namedScheme, scheme, StringComparison.OrdinalIgnoreCase))
 			{
 				return (namedProperty, namedEndpoint);
 			}
-
-			throw new JsonException($"Configuration property '{namedProperty}' must be a JSON object.");
 		}
 
 		foreach (KeyValuePair<string, JsonNode?> property in endpoints)
@@ -944,9 +955,29 @@ public class DotNetDeploymentStrategy : IDeploymentStrategy
 			}
 		}
 
+		// The conventional name may be taken by an endpoint of the OTHER scheme (the case above). Writing over it
+		// would delete a supported endpoint, so a free name is allocated instead.
+		string createdName = AllocateEndpointName(endpoints, endpointName);
 		JsonObject createdEndpoint = new();
-		endpoints[endpointName] = createdEndpoint;
-		return (endpointName, createdEndpoint);
+		endpoints[createdName] = createdEndpoint;
+		return (createdName, createdEndpoint);
+	}
+
+	private static string AllocateEndpointName(JsonObject endpoints, string endpointName)
+	{
+		if (FindPropertyName(endpoints, endpointName) is null)
+		{
+			return endpointName;
+		}
+
+		for (int suffix = 2; ; suffix++)
+		{
+			string candidate = $"{endpointName}{suffix.ToString(CultureInfo.InvariantCulture)}";
+			if (FindPropertyName(endpoints, candidate) is null)
+			{
+				return candidate;
+			}
+		}
 	}
 
 	private static Dictionary<string, string> ExtractCertificateEnvironmentVariables(
@@ -1064,9 +1095,17 @@ public class DotNetDeploymentStrategy : IDeploymentStrategy
 		List<string> namesToRemove = new();
 		foreach (KeyValuePair<string, JsonNode?> property in endpoints)
 		{
-			if (string.Equals(property.Key, endpointName, StringComparison.OrdinalIgnoreCase)
-				|| property.Value is JsonObject endpoint
-					&& string.Equals(GetUriScheme(GetStringProperty(endpoint, "Url")), scheme, StringComparison.OrdinalIgnoreCase))
+			// Same rule as FindOrCreateEndpoint: an endpoint that carries a URL is classified by its SCHEME, and
+			// the conventional name decides only for a URL-less entry. Removing by name alone deleted an
+			// `https://` endpoint that merely happened to be called "Http" - and with it the certificate the
+			// HTTPS path was about to reuse, which is how a redeploy lost its HTTPS configuration.
+			string? endpointScheme = property.Value is JsonObject endpoint
+				? GetUriScheme(GetStringProperty(endpoint, "Url"))
+				: null;
+			bool matches = endpointScheme is not null
+				? string.Equals(endpointScheme, scheme, StringComparison.OrdinalIgnoreCase)
+				: string.Equals(property.Key, endpointName, StringComparison.OrdinalIgnoreCase);
+			if (matches)
 			{
 				namesToRemove.Add(property.Key);
 			}

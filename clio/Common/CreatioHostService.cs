@@ -1,4 +1,5 @@
 using System;
+using System.Collections;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
@@ -49,34 +50,23 @@ public interface ICreatioHostService
 /// </summary>
 public class CreatioHostService : ICreatioHostService
 {
-	private static readonly string[] HostEnvironmentAllowlist = [
-		"PATH",
-		"HOME",
-		"USERPROFILE",
-		"TMP",
-		"TEMP",
-		"TMPDIR",
-		"DOTNET_ROOT",
-		"DOTNET_ROOT(x86)",
-		"DOTNET_CLI_HOME",
-		"DOTNET_SYSTEM_GLOBALIZATION_INVARIANT",
-		"LD_LIBRARY_PATH",
-		"DISPLAY",
-		"WAYLAND_DISPLAY",
-		"XDG_RUNTIME_DIR",
-		"DBUS_SESSION_BUS_ADDRESS",
-		"XAUTHORITY",
-		"LANG",
-		"LC_ALL",
-		"LC_CTYPE",
-		"LC_MESSAGES",
-		"TERM",
-		"COLORTERM",
-		"ASPNETCORE_ENVIRONMENT",
-		"DOTNET_ENVIRONMENT",
-		"SystemRoot",
-		"WINDIR",
-		"PATHEXT"
+	/// <summary>
+	/// Ambient variables that must NOT reach the host process. Everything else is inherited as it was before
+	/// the hardening change: an ASP.NET Core / Creatio deployment relies on ordinary host configuration
+	/// (<c>ConnectionStrings__*</c>, forwarded-header and proxy settings, telemetry, extension-specific values),
+	/// and a fixed allowlist silently dropped all of it - the same deployment then started with defaults or
+	/// failed outright. Only the two genuinely unsafe groups are stripped:
+	/// the binding overrides below, which would put the listener back on a wildcard address and defeat the
+	/// loopback default, and (see <see cref="IsCertificatePasswordVariable"/>) any ambient Kestrel certificate
+	/// password, which must come from the protected store rather than from whatever the shell happened to carry.
+	/// </summary>
+	private static readonly string[] HostEnvironmentBindingOverrides = [
+		"ASPNETCORE_URLS",
+		"ASPNETCORE_HTTP_PORTS",
+		"ASPNETCORE_HTTPS_PORTS",
+		"ASPNETCORE_HTTP_PORT",
+		"ASPNETCORE_HTTPS_PORT",
+		"DOTNET_URLS"
 	];
 
 	private readonly ILogger _logger;
@@ -120,8 +110,7 @@ public class CreatioHostService : ICreatioHostService
 			ProcessExecutionOptions options = new("dotnet", "Terrasoft.WebHost.dll") {
 				WorkingDirectory = workingDirectory,
 				EnvironmentVariables = environmentVariables,
-				ClearInheritedEnvironment = true,
-				InheritedEnvironmentVariableAllowlist = HostEnvironmentAllowlist
+				RemovedInheritedEnvironmentVariables = UnsafeInheritedEnvironmentVariables()
 			};
 			ProcessLaunchResult result = _processExecutor.FireAndForgetAsync(options).GetAwaiter().GetResult();
 			if (result.Started && result.ProcessId.HasValue)
@@ -140,6 +129,47 @@ public class CreatioHostService : ICreatioHostService
 		}
 	}
 
+	/// <summary>
+	/// The ambient variable names the host process must not inherit, read from the current environment at
+	/// launch time: the fixed binding overrides plus every Kestrel certificate-password variable that happens
+	/// to be set. The password map produced by deployment is applied after this removal, so a value the
+	/// protected store owns still reaches the child - only an ambient one is dropped.
+	/// </summary>
+	internal static IReadOnlyCollection<string> UnsafeInheritedEnvironmentVariables()
+	{
+		List<string> names = new(HostEnvironmentBindingOverrides);
+		foreach (DictionaryEntry entry in Environment.GetEnvironmentVariables())
+		{
+			if (entry.Key is string name && IsCertificatePasswordVariable(name))
+			{
+				names.Add(name);
+			}
+		}
+
+		return names;
+	}
+
+	/// <summary>
+	/// Whether a variable name addresses a Kestrel certificate password - either
+	/// <c>Kestrel__Endpoints__&lt;name&gt;__Certificate__Password</c> or
+	/// <c>Kestrel__Certificates__&lt;name&gt;__Password</c>. Mirrors the shape the protected store accepts.
+	/// </summary>
+	internal static bool IsCertificatePasswordVariable(string name)
+	{
+		string[] segments = name.Split("__", StringSplitOptions.None);
+		return (segments.Length == 5
+				&& string.Equals(segments[0], "Kestrel", StringComparison.OrdinalIgnoreCase)
+				&& string.Equals(segments[1], "Endpoints", StringComparison.OrdinalIgnoreCase)
+				&& segments[2].Length > 0
+				&& string.Equals(segments[3], "Certificate", StringComparison.OrdinalIgnoreCase)
+				&& string.Equals(segments[4], "Password", StringComparison.OrdinalIgnoreCase))
+			|| (segments.Length == 4
+				&& string.Equals(segments[0], "Kestrel", StringComparison.OrdinalIgnoreCase)
+				&& string.Equals(segments[1], "Certificates", StringComparison.OrdinalIgnoreCase)
+				&& segments[2].Length > 0
+				&& string.Equals(segments[3], "Password", StringComparison.OrdinalIgnoreCase));
+	}
+
 	/// <inheritdoc />
 	public void PersistEnvironmentVariables(string workingDirectory,
 		IReadOnlyDictionary<string, string> environmentVariables)
@@ -156,8 +186,7 @@ public class CreatioHostService : ICreatioHostService
 			ProcessExecutionOptions options = new("dotnet", "Terrasoft.WebHost.dll") {
 				WorkingDirectory = workingDirectory,
 				EnvironmentVariables = environmentVariables,
-				ClearInheritedEnvironment = true,
-				InheritedEnvironmentVariableAllowlist = HostEnvironmentAllowlist,
+				RemovedInheritedEnvironmentVariables = UnsafeInheritedEnvironmentVariables(),
 				MirrorOutputToLogger = true
 			};
 			ProcessExecutionResult result = _processExecutor.ExecuteWithRealtimeOutputAsync(options)
@@ -379,8 +408,7 @@ public class CreatioHostService : ICreatioHostService
 		ProcessExecutionOptions options = new(program, arguments) {
 			WorkingDirectory = workingDirectory,
 			EnvironmentVariables = environmentVariables,
-			ClearInheritedEnvironment = true,
-			InheritedEnvironmentVariableAllowlist = HostEnvironmentAllowlist
+			RemovedInheritedEnvironmentVariables = UnsafeInheritedEnvironmentVariables()
 		};
 		return _processExecutor.FireAndForgetAsync(options).GetAwaiter().GetResult();
 	}

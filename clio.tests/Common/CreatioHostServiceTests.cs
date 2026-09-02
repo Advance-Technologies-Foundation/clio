@@ -56,16 +56,12 @@ public sealed class CreatioHostServiceTests : BaseClioModuleTests {
 			options.Arguments == "Terrasoft.WebHost.dll"
 			&& options.EnvironmentVariables["Kestrel__Endpoints__Https__Certificate__Password"] == "secret"
 			&& !options.Arguments.Contains("secret")
-			&& options.ClearInheritedEnvironment
-			&& options.InheritedEnvironmentVariableAllowlist.Contains("PATH")
-			&& options.InheritedEnvironmentVariableAllowlist.Contains("DOTNET_SYSTEM_GLOBALIZATION_INVARIANT")
-			&& options.InheritedEnvironmentVariableAllowlist.Contains("LD_LIBRARY_PATH")
-			&& options.InheritedEnvironmentVariableAllowlist.Contains("DISPLAY")
-			&& options.InheritedEnvironmentVariableAllowlist.Contains("XDG_RUNTIME_DIR")
-			&& options.InheritedEnvironmentVariableAllowlist.Contains("DBUS_SESSION_BUS_ADDRESS")
-			&& options.InheritedEnvironmentVariableAllowlist.Contains("ASPNETCORE_ENVIRONMENT")
-			&& options.InheritedEnvironmentVariableAllowlist.Contains("DOTNET_ENVIRONMENT")
-			&& !options.InheritedEnvironmentVariableAllowlist.Contains("Kestrel__Endpoints__Https__Certificate__Password")));
+			// Ordinary host configuration is INHERITED: an allowlist dropped ConnectionStrings__*,
+			// forwarded-header, proxy and telemetry settings the previous launcher passed through.
+			&& !options.ClearInheritedEnvironment
+			&& options.RemovedInheritedEnvironmentVariables.Contains("ASPNETCORE_URLS")
+			&& options.RemovedInheritedEnvironmentVariables.Contains("ASPNETCORE_HTTP_PORTS")
+			&& options.RemovedInheritedEnvironmentVariables.Contains("DOTNET_URLS")));
 	}
 
 	[Test]
@@ -109,8 +105,34 @@ public sealed class CreatioHostServiceTests : BaseClioModuleTests {
 		await _processExecutor.Received(1).ExecuteWithRealtimeOutputAsync(Arg.Is<ProcessExecutionOptions>(options =>
 			options.Arguments == "Terrasoft.WebHost.dll"
 			&& options.EnvironmentVariables["Kestrel__Endpoints__Https__Certificate__Password"] == "persisted-secret"
-			&& options.ClearInheritedEnvironment
+			&& !options.ClearInheritedEnvironment
+			&& options.RemovedInheritedEnvironmentVariables.Contains("ASPNETCORE_URLS")
 			&& options.MirrorOutputToLogger));
+	}
+
+	[Test]
+	[Description("Strips only the listener overrides and ambient certificate passwords; ordinary host configuration is left to be inherited.")]
+	public void UnsafeInheritedEnvironmentVariables_ShouldRemoveOnlyBindingOverridesAndAmbientPasswords() {
+		// Arrange
+		Environment.SetEnvironmentVariable("Kestrel__Endpoints__Ambient__Certificate__Password", "ambient-secret");
+		Environment.SetEnvironmentVariable("ConnectionStrings__db", "Server=.;");
+		try {
+			// Act
+			IReadOnlyCollection<string> removed = CreatioHostService.UnsafeInheritedEnvironmentVariables();
+
+			// Assert
+			removed.Should().Contain("ASPNETCORE_URLS",
+				because: "an ambient listener override would put the host back on a wildcard address");
+			removed.Should().Contain("Kestrel__Endpoints__Ambient__Certificate__Password",
+				because: "a certificate password must come from the protected store, not from the shell");
+			removed.Should().NotContain("ConnectionStrings__db",
+				because: "ordinary ASP.NET Core configuration keeps being inherited as it was before the hardening");
+			removed.Should().NotContain("PATH",
+				because: "nothing outside the two unsafe groups is removed");
+		} finally {
+			Environment.SetEnvironmentVariable("Kestrel__Endpoints__Ambient__Certificate__Password", null);
+			Environment.SetEnvironmentVariable("ConnectionStrings__db", null);
+		}
 	}
 
 	[Test]

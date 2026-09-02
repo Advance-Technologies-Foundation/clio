@@ -724,6 +724,29 @@ namespace Clio.Tests.Command {
 	}
 
 	[Test]
+	[Description("Clears a stale certificate password on the target when the new source environment has none, so the next start cannot load the previous environment's secret.")]
+	public void MigrateHostEnvironment_ShouldClearTargetStoreWhenSourceHasNoValues() {
+		// Arrange - the core checkout was previously linked to a password-protected HTTPS environment.
+		_environmentStoreMock.Load(Path.GetFullPath("/tmp/creatio-app")).Returns(
+			new Dictionary<string, string>());
+		_environmentStoreMock.Load(Path.GetFullPath("/tmp/creatio-core")).Returns(
+			new Dictionary<string, string> {
+				["Kestrel__Endpoints__Https__Certificate__Password"] = "stale-secret"
+			});
+
+		// Act
+		_command.MigrateHostEnvironment("/tmp/creatio-app", "/tmp/creatio-core");
+
+		// Assert
+		_environmentStoreMock.Received(1).Save(
+			Path.GetFullPath("/tmp/creatio-core"),
+			Arg.Is<IReadOnlyDictionary<string, string>>(variables => variables.Count == 0));
+		_environmentStoreMock.DidNotReceive().Save(
+			Path.GetFullPath("/tmp/creatio-app"),
+			Arg.Any<IReadOnlyDictionary<string, string>>());
+	}
+
+	[Test]
 	[Description("Restores the previous IIS physical path when link-core-src must roll back an environment update")]
 	public void RestoreIISPhysicalPath_ShouldApplyPreviousEnvironmentPath() {
 		// Arrange

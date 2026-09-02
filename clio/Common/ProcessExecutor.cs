@@ -101,6 +101,15 @@ public sealed record ProcessExecutionOptions {
 		Array.Empty<string>();
 
 	/// <summary>
+	/// Gets the names of variables removed from the child environment after inheritance and before
+	/// <see cref="EnvironmentVariables"/> is applied. Use this instead of
+	/// <see cref="ClearInheritedEnvironment"/> when only a few known-unsafe values must not reach the child and
+	/// ordinary host configuration has to keep being inherited.
+	/// </summary>
+	public IReadOnlyCollection<string> RemovedInheritedEnvironmentVariables { get; init; } =
+		Array.Empty<string>();
+
+	/// <summary>
 	/// Gets a value indicating whether a bare executable name must be resolved to an absolute file
 	/// from rooted <c>PATH</c> entries before process launch.
 	/// </summary>
@@ -376,6 +385,11 @@ public class ProcessExecutor(ILogger logger) : IProcessExecutor{
 					startInfo.Environment[variableName] = value;
 				}
 			}
+		}
+
+		foreach (string variableName in options.RemovedInheritedEnvironmentVariables
+				?? Array.Empty<string>()) {
+			startInfo.Environment.Remove(variableName);
 		}
 
 		if (options.EnvironmentVariables is not null) {

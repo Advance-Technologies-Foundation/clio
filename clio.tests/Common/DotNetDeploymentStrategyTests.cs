@@ -362,6 +362,70 @@ public sealed class DotNetDeploymentStrategyTests : BaseClioModuleTests {
 	}
 
 	[Test]
+	[Description("Classifies an endpoint by its URL scheme, not its name: a secure endpoint named \"Http\" is not downgraded to plaintext when HTTP is the selected protocol.")]
+	public void BuildApplicationConfiguration_ShouldNotDowngradeSecureEndpointNamedHttp() {
+		// Arrange - Kestrel endpoint names are arbitrary, so "Http" holding an https:// URL is supported.
+		const string existingJson = """
+			{
+			  "Kestrel": {
+			    "Endpoints": {
+			      "Http": {
+			        "Url": "https://localhost:5002",
+			        "Certificate": { "Path": "existing.pfx", "Password": "existing-secret" }
+			      }
+			    }
+			  }
+			}
+			""";
+		PfInstallerOptions options = new() { SitePort = 40123 };
+
+		// Act
+		DotNetApplicationConfiguration configuration = DotNetDeploymentStrategy.BuildApplicationConfigurationWithEnvironment(existingJson, options);
+		string result = configuration.Json;
+
+		// Assert
+		GetJsonString(result, "Kestrel", "Endpoints", "Http", "Url").Should().Be("https://localhost:5002",
+			because: "the endpoint carries an https:// URL, so its conventional name must not rewrite it to plaintext");
+		GetJsonString(result, "Kestrel", "Endpoints", "Http", "Certificate", "Path").Should().Be("existing.pfx",
+			because: "the preserved secure endpoint keeps its operator certificate");
+		configuration.EnvironmentVariables["Kestrel__Endpoints__Http__Certificate__Password"].Should().Be("existing-secret",
+			because: "its password moves to the controlled host environment like any other certificate password");
+		GetJsonString(result, "Kestrel", "Endpoints", "Http2", "Url").Should().Be("http://localhost:40123",
+			because: "the selected HTTP listener is added under a free name rather than overwriting the secure endpoint");
+	}
+
+	[Test]
+	[Description("Reuses a secure endpoint named \"Http\" when HTTPS is selected instead of deleting it by name and reporting no certificate.")]
+	public void BuildApplicationConfiguration_ShouldReuseSecureEndpointNamedHttpWhenHttpsSelected() {
+		// Arrange
+		const string existingJson = """
+			{
+			  "Kestrel": {
+			    "Endpoints": {
+			      "Http": {
+			        "Url": "https://localhost:5002",
+			        "Certificate": { "Path": "existing.pfx", "Password": "existing-secret" }
+			      }
+			    }
+			  }
+			}
+			""";
+		PfInstallerOptions options = new() { SitePort = 40123, UseHttps = true };
+
+		// Act
+		DotNetApplicationConfiguration configuration = DotNetDeploymentStrategy.BuildApplicationConfigurationWithEnvironment(existingJson, options);
+		string result = configuration.Json;
+
+		// Assert
+		GetJsonString(result, "Kestrel", "Endpoints", "Http", "Url").Should().Be("https://localhost:40123",
+			because: "the secure endpoint is reused for the HTTPS listener rather than removed because of its name");
+		GetJsonString(result, "Kestrel", "Endpoints", "Http", "Certificate", "Path").Should().Be("existing.pfx",
+			because: "removing the endpoint by name would have discarded the certificate available for reuse");
+		configuration.EnvironmentVariables["Kestrel__Endpoints__Http__Certificate__Password"].Should().Be("existing-secret",
+			because: "the existing password is carried through the controlled host environment");
+	}
+
+	[Test]
 	[Description("Rewrites an unbracketed IPv6 endpoint without mistaking the final address segment for a port.")]
 	public void BuildApplicationConfiguration_ShouldPreserveUnbracketedIpv6AddressWithoutPort() {
 		// Arrange

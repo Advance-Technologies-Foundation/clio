@@ -1226,15 +1226,21 @@ public class LinkCoreSrcCommand : Command<LinkCoreSrcOptions>
 		IReadOnlyDictionary<string, string> previousEnvironmentVariables =
 			_environmentStore.Load(normalizedPreviousPath)
 			?? new Dictionary<string, string>();
-		if (previousEnvironmentVariables.Count == 0)
-		{
-			return;
-		}
 
 		IReadOnlyDictionary<string, string> existingNewEnvironmentVariables =
 			_environmentStore.Load(normalizedNewPath)
 			?? new Dictionary<string, string>();
+		// The target store is REPLACED, not merged, and an empty source is a replacement too: relinking a core
+		// checkout from a password-protected HTTPS environment to an HTTP / passwordless one must clear the old
+		// secret. Returning early on an empty source left it in place, so the next `clio start` loaded the previous
+		// environment's certificate password - a Kestrel failure at best, cross-environment secret reuse at worst.
 		_environmentStore.Save(normalizedNewPath, previousEnvironmentVariables);
+		if (previousEnvironmentVariables.Count == 0)
+		{
+			// Nothing to clear at the source, so there is no second write to roll back.
+			return;
+		}
+
 		try
 		{
 			_environmentStore.Save(normalizedPreviousPath, new Dictionary<string, string>());
