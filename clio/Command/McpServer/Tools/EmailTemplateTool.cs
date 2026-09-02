@@ -81,9 +81,9 @@ public sealed record EmailTemplateGetArgs {
 	[Required]
 	public required string EnvironmentName { get; init; }
 
-	/// <summary>Optional Beefree language whose absence should receive a guarded placeholder.</summary>
+	/// <summary>Optional Beefree language whose absence should receive a guarded placeholder; empty selects the default variant.</summary>
 	[JsonPropertyName("language")]
-	[Description("Optional Beefree language code. When that variant is absent, returns an exists=false variant with a creation checksum.")]
+	[Description("Optional Beefree language code. Omit or pass an empty string for the default variant. When that variant is absent, returns an exists=false variant with a creation checksum.")]
 	public string Language { get; init; }
 
 	/// <summary>Optional translated legacy language whose absence should receive a guarded placeholder.</summary>
@@ -235,7 +235,7 @@ public sealed class EmailTemplateContentService(IToolCommandResolver commandReso
 	public EmailTemplateContentResponse Get(string environmentName, Guid emailId, string language, string languageId) {
 		try {
 			(IApplicationClient client, IServiceUrlBuilder urls) = Resolve(environmentName);
-			return Load(client, urls, emailId, language, languageId);
+			return Load(client, urls, emailId, NormalizeLanguage(language), languageId);
 		} catch (Exception ex) {
 			return EmailTemplateContentResponse.Failure(SensitiveErrorTextRedactor.Redact(ex.Message));
 		}
@@ -243,6 +243,10 @@ public sealed class EmailTemplateContentService(IToolCommandResolver commandReso
 
 	/// <inheritdoc />
 	public EmailTemplateUpdateResponse Update(EmailTemplateUpdateArgs args) {
+		// An explicitly empty language means the same thing as an omitted one - "the variant this email sends
+		// by default" - so it has to reach the resolution sites as absent. Left as "", the null-coalescing
+		// there would keep it verbatim, match no row, and make the write insert a second IsDefault row.
+		args = args with { Language = NormalizeLanguage(args.Language) };
 		if (!Guid.TryParse(args.EmailId, out Guid emailId)) {
 			return EmailTemplateUpdateResponse.Failure("email-id must be a GUID.");
 		}
@@ -347,11 +351,26 @@ public sealed class EmailTemplateContentService(IToolCommandResolver commandReso
 
 	/// <summary>
 	/// Language of the beefree variant the email sends when the caller names none: the row flagged
-	/// <c>IsDefault</c>, falling back to the empty language when no row claims the flag.
+	/// <c>IsDefault</c>, then the only existing row when no row claims the flag, then the empty language.
 	/// </summary>
-	private static string DefaultBeefreeLanguage(IEnumerable<EmailTemplateContentVariant> variants) =>
-		variants.FirstOrDefault(variant => variant.Format == BeefreeFormat && variant.IsDefault == true)
-			?.Language ?? string.Empty;
+	private static string DefaultBeefreeLanguage(IEnumerable<EmailTemplateContentVariant> variants) {
+		List<EmailTemplateContentVariant> stored = variants
+			.Where(variant => variant.Format == BeefreeFormat && variant.Exists)
+			.ToList();
+		EmailTemplateContentVariant flagged = stored.FirstOrDefault(variant => variant.IsDefault == true);
+		if (flagged is not null) {
+			return flagged.Language ?? string.Empty;
+		}
+		// No row claims the flag. One stored row is unambiguously the content the email sends, so resolving to
+		// it keeps a read from reporting exists=false for an email that plainly has content - and keeps the
+		// update that follows from inserting a second row next to it. With several unflagged rows there is no
+		// way to tell which one wins, so the empty language stays the fallback.
+		return stored.Count == 1 ? stored[0].Language ?? string.Empty : string.Empty;
+	}
+
+	/// <summary>Treats an empty or whitespace language code as an omitted one.</summary>
+	private static string NormalizeLanguage(string language) =>
+		string.IsNullOrWhiteSpace(language) ? null : language;
 
 	/// <summary>
 	/// Appends the primary legacy variant and every EmailTemplateLang translation of a message-template

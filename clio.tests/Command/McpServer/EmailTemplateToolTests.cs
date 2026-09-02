@@ -474,6 +474,79 @@ public sealed class EmailTemplateToolTests {
 		// because: IsDefault belongs to the create only - rewriting it on every update changes a column the caller never named
 	}
 
+	[Test]
+	[Category("Unit")]
+	[Description("Treats an explicitly empty language the same as an omitted one, so the documented empty-string form edits the default beefree row instead of inserting a second one.")]
+	public void Update_ShouldEditTheDefaultBeefreeRow_WhenAnEmptyLanguageIsRequested() {
+		// Arrange — the only row is the default one and its Language is not empty.
+		(IApplicationClient client, EmailTemplateTool tool) = BuildTool(url => url switch {
+			var value when value.Contains("odata/BulkEmail?") => Rows(),
+			var value when value.Contains("odata/EmailTemplate?") => Rows(new {
+				Id = EmailId, Name = "Message", Subject = "Primary", Body = "<p>Primary</p>",
+				TemplateConfig = "{}", ConfigType = 1, IsHtmlBody = false
+			}),
+			var value when value.Contains("odata/BfEmailTemplate?") => Rows(new {
+				Id = BeefreeRecordId, EmailId, Language = "en-US", PageJson = "{a:1}", PageHtml = "<h1/>",
+				AmpHtml = "", TemplateVersion = 3, IsDefault = true
+			}),
+			var value when value.Contains("odata/EmailTemplateLang?") => Rows(),
+			_ => throw new InvalidOperationException($"Unexpected URL: {url}")
+		});
+		EmailTemplateContentVariant beefree = tool.Get(new EmailTemplateGetArgs {
+			EmailId = EmailId.ToString("D"), EnvironmentName = "dev", Language = string.Empty
+		}).Variants.Single(variant => variant.Format == "beefree");
+		client.ClearReceivedCalls();
+
+		// Act
+		EmailTemplateUpdateResponse response = tool.Update(new EmailTemplateUpdateArgs {
+			EmailId = EmailId.ToString("D"), EnvironmentName = "dev", Format = "beefree",
+			ExpectedChecksum = beefree.Checksum, Confirm = true, Language = string.Empty,
+			PageJson = "{a:2}", PageHtml = "<h2/>"
+		});
+
+		// Assert
+		beefree.Exists.Should().BeTrue(
+			because: "both tools document an empty language as the default variant, so the read must resolve it to the IsDefault row rather than to the literal empty language");
+		response.Success.Should().BeTrue(because: "the resolved default row still matches the checksum the read returned");
+		response.Created.Should().BeFalse(because: "the default row already exists and must be edited in place");
+		client.DidNotReceiveWithAnyArgs().ExecutePostRequest(default, default, default);
+		// because: posting here would leave the email with two rows flagged IsDefault, and IsDefault decides which content the email sends
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Resolves an omitted language to the only stored beefree row when no row carries the IsDefault flag, instead of reporting content that exists as absent.")]
+	public void Get_ShouldResolveTheOnlyBeefreeRow_WhenNoRowIsFlaggedDefault() {
+		// Arrange — one row, non-empty language, IsDefault never set.
+		(_, EmailTemplateTool tool) = BuildTool(url => url switch {
+			var value when value.Contains("odata/BulkEmail?") => Rows(),
+			var value when value.Contains("odata/EmailTemplate?") => Rows(new {
+				Id = EmailId, Name = "Message", Subject = "Primary", Body = "<p>Primary</p>",
+				TemplateConfig = "{}", ConfigType = 1, IsHtmlBody = false
+			}),
+			var value when value.Contains("odata/BfEmailTemplate?") => Rows(new {
+				Id = BeefreeRecordId, EmailId, Language = "en-US", PageJson = "{a:1}", PageHtml = "<h1/>",
+				AmpHtml = "", TemplateVersion = 3, IsDefault = false
+			}),
+			var value when value.Contains("odata/EmailTemplateLang?") => Rows(),
+			_ => throw new InvalidOperationException($"Unexpected URL: {url}")
+		});
+
+		// Act
+		EmailTemplateContentResponse response = tool.Get(new EmailTemplateGetArgs {
+			EmailId = EmailId.ToString("D"), EnvironmentName = "dev"
+		});
+
+		// Assert
+		List<EmailTemplateContentVariant> beefree = response.Variants
+			.Where(variant => variant.Format == "beefree").ToList();
+		beefree.Should().HaveCount(1, because: "no absent placeholder is needed once the stored row is what the omitted language resolves to");
+		beefree[0].Exists.Should().BeTrue(
+			because: "an email with exactly one beefree row plainly has content, whether or not the platform flagged that row IsDefault");
+		beefree[0].Language.Should().Be("en-US");
+		// because: resolving to the empty language here reported exists=false, and the update that followed inserted a spurious second default row
+	}
+
 	private static (IApplicationClient Client, EmailTemplateTool Tool) BuildTool(Func<string, string> response) {
 		IApplicationClient client = Substitute.For<IApplicationClient>();
 		IServiceUrlBuilder urlBuilder = Substitute.For<IServiceUrlBuilder>();
