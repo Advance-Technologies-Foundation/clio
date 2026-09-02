@@ -36,12 +36,10 @@ using Newtonsoft.Json.Linq;
 /// empty, so a mis-cased <c>"Merge"</c> lands in no group and is discarded whole. Treating it as a live
 /// <c>merge</c> here would report a pair that does not exist.
 /// <para>
-/// Validated against the platform differ's own source
-/// (<c>Terrasoft.WebApp/Resources/ui/Terrasoft/utils/common/json-applier.js</c>): the group order, the
-/// verb switch, the <c>remove</c> split, <c>filterMoveOperation</c>, <c>set</c> and <c>merge</c> all
-/// match this clone. Note the platform <c>console.log</c>s "Element X was not moved." when a move
-/// fails to resolve — so a browser console shows something for that one path, while the caller, the
-/// CLI and the MCP result see nothing. Everything else drops with no diagnostic at all.
+/// The mechanism, the validation against the platform differ's own source, and what breaks if this is
+/// ignored are recorded in
+/// <c>docs/knowledge/Command/a-transform-beside-an-insert-for-one-name-is-inert.md</c>. Kept there
+/// rather than restated here, so the differ's behaviour has one owner instead of three.
 /// </para>
 /// <para>
 /// The detector needs no knowledge of which mode produced the body — it inspects the resolved final
@@ -221,12 +219,21 @@ internal static class PageInertOperationDetector {
 	/// The <c>remove</c> split on a <c>properties</c> ARRAY is the differ's own discriminator: a
 	/// <c>properties</c> value that is not an array is an element removal, not a property removal.
 	/// </summary>
+	/// <remarks>
+	/// Only <c>remove</c> splits here, and that is NOT the same rule as <c>PageBodyMerger</c>'s identity
+	/// discriminator, which covers <c>remove</c> AND <c>set</c>. The two encode different facts about the
+	/// differ: GROUPING routes every <c>set</c> into one group whatever its <c>properties</c>, while APPLY
+	/// makes a <c>set</c> carrying <c>properties</c> behave differently from a bare one. Sharing one
+	/// predicate between them would reintroduce exactly the <c>set</c> identity collision the merger's
+	/// discriminator exists to prevent. The verb NAMES are shared
+	/// (<see cref="PageViewConfigDiffVerbs"/>); the split rules are deliberately not.
+	/// </remarks>
 	private static ApplyGroup Classify(string verb, JToken properties) => verb switch {
-		"merge" => ApplyGroup.Merge,
-		"set" => ApplyGroup.Set,
-		"insert" => ApplyGroup.Insert,
-		"move" => ApplyGroup.Move,
-		"remove" => properties is JArray ? ApplyGroup.PropertyRemove : ApplyGroup.ElementRemove,
+		PageViewConfigDiffVerbs.Merge => ApplyGroup.Merge,
+		PageViewConfigDiffVerbs.Set => ApplyGroup.Set,
+		PageViewConfigDiffVerbs.Insert => ApplyGroup.Insert,
+		PageViewConfigDiffVerbs.Move => ApplyGroup.Move,
+		PageViewConfigDiffVerbs.Remove => properties is JArray ? ApplyGroup.PropertyRemove : ApplyGroup.ElementRemove,
 		_ => ApplyGroup.Dropped
 	};
 

@@ -418,6 +418,12 @@
 		/// This exists because the success path has more than one warning producer: assigning
 		/// <c>response.Warnings</c> per source would let the last one silently discard the others.
 		/// <see cref="AppendDesignerPresenceWarning"/> appends afterwards and is unaffected.
+		/// <para>
+		/// Returns <c>null</c> rather than an empty list on purpose: <c>PageUpdateResponse.Warnings</c> is
+		/// serialized with null-omission, so an empty list would emit <c>"warnings":[]</c> on a clean save.
+		/// The detectors feeding this return empty-never-null, which is the opposite convention — the
+		/// conversion happens here, once, and a consumer of the response must null-guard.
+		/// </para>
 		/// </remarks>
 		private static IReadOnlyList<string> CombineWarnings(params IReadOnlyList<string>[] sources) {
 			List<string> combined = null;
@@ -581,13 +587,6 @@
 			return registered.Count > 0 ? registered : null;
 		}
 
-		/// <summary>
-		/// Authoritative widget-caption resolvability gate. After <see cref="UpdateSchemaBody"/>
-		/// has produced the final <c>localizableStrings</c>, this rejects the save when a freshly inserted
-		/// widget/container caption binds a localizable key that is neither
-		/// present in that final set nor auto-provided by a DS-bound attribute
-		/// </summary>
-		/// <returns>A failure response when a saved inserted widget caption would render raw; otherwise <c>null</c>.</returns>
 		/// <summary>
 		/// Validates widget caption resource resolutions during dry-run (web pages only) and returns
 		/// advisory warnings to surface potential issues that a real save might reject.

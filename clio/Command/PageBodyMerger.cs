@@ -1,4 +1,4 @@
-﻿namespace Clio.Command;
+namespace Clio.Command;
 
 using System;
 using System.Collections.Generic;
@@ -33,10 +33,10 @@ internal static class PageBodyMerger {
 	/// </para>
 	/// Both compared Ordinal, matching the differ's own exact-case switch.
 	/// </remarks>
-	private const string RemoveOperationName = "remove";
+	private const string RemoveOperationName = PageViewConfigDiffVerbs.Remove;
 
 	/// <inheritdoc cref="RemoveOperationName"/>
-	private const string SetOperationName = "set";
+	private const string SetOperationName = PageViewConfigDiffVerbs.Set;
 
 	/// <summary>
 	/// Which side of the append merge a body belongs to, so the full-config rejection message can name the

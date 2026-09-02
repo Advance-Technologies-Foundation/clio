@@ -4497,6 +4497,85 @@ public class PageToolsTests
 	}
 
 	[Test]
+	[Description("update-page append: the #1132 AC4 superseded-drop warning reaches response.Warnings through the real save path, for web and mobile")]
+	public void TryUpdatePage_AppendMode_Should_SurfaceSupersededDropWarning_WhenCurrentBodyCarriesOneIdentityTwice(
+		[Values(PageSchemaType.Web, PageSchemaType.Mobile)] PageSchemaType kind) {
+		// Arrange - the current body carries `merge UsrDup` TWICE with DISJOINT keys, and the incoming
+		// fragment supersedes that identity. The merger replaces the first occurrence and must DROP the
+		// later one, taking its `b` key with it - the one loss #1132 AC4 requires be reported rather than
+		// applied silently. Without this test, removing mergeWarnings from the CombineWarnings call in
+		// TryUpdatePage would leave every other test green.
+		var applicationClient = Substitute.For<IApplicationClient>();
+		var serviceUrlBuilder = Substitute.For<IServiceUrlBuilder>();
+		var logger = Substitute.For<ILogger>();
+		var hierarchyClient = Substitute.For<IPageDesignerHierarchyClient>();
+		const string originalUId = "86416224-550a-4087-87d9-d4ebc9aa69c8";
+		const string designPkg = "520a3697-4d73-c598-38d4-a7501f8c8e9b";
+		const string schemaName = "UsrSupersededDrop_FormPage";
+		serviceUrlBuilder.Build(Arg.Any<string>()).Returns(ci => "http://test" + ci.ArgAt<string>(0));
+		hierarchyClient.GetDesignPackageUId(originalUId).Returns(designPkg);
+		hierarchyClient.GetParentSchemas(originalUId, designPkg).Returns(new List<PageDesignerHierarchySchema> {
+			new() { UId = originalUId, Name = schemaName, PackageUId = designPkg, PackageName = "UsrSupersededDropPackage" }
+		});
+		const string duplicatedDiff =
+			"[{\"operation\":\"merge\",\"name\":\"UsrDup\",\"values\":{\"a\":1}}," +
+			"{\"operation\":\"merge\",\"name\":\"UsrDup\",\"values\":{\"b\":2}}]";
+		const string supersedingDiff =
+			"[{\"operation\":\"merge\",\"name\":\"UsrDup\",\"values\":{\"a\":99}}]";
+		string currentBody = kind == PageSchemaType.Mobile
+			? "{ \"viewConfigDiff\": " + duplicatedDiff + ", \"viewModelConfigDiff\": [], \"modelConfigDiff\": [] }"
+			: "define(\"" + schemaName + "\", /**SCHEMA_DEPS*/[]/**SCHEMA_DEPS*/, function/**SCHEMA_ARGS*/()/**SCHEMA_ARGS*/ { return { " +
+			  "viewConfigDiff: /**SCHEMA_VIEW_CONFIG_DIFF*/" + duplicatedDiff + "/**SCHEMA_VIEW_CONFIG_DIFF*/, " +
+			  "viewModelConfigDiff: /**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/[]/**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/, " +
+			  "modelConfigDiff: /**SCHEMA_MODEL_CONFIG_DIFF*/[]/**SCHEMA_MODEL_CONFIG_DIFF*/, " +
+			  "handlers: /**SCHEMA_HANDLERS*/[]/**SCHEMA_HANDLERS*/, " +
+			  "converters: /**SCHEMA_CONVERTERS*/{}/**SCHEMA_CONVERTERS*/, " +
+			  "validators: /**SCHEMA_VALIDATORS*/{}/**SCHEMA_VALIDATORS*/ }; });";
+		string incomingFragment = kind == PageSchemaType.Mobile
+			? "{ \"viewConfigDiff\": " + supersedingDiff + " }"
+			: "/**SCHEMA_VIEW_CONFIG_DIFF*/" + supersedingDiff + "/**SCHEMA_VIEW_CONFIG_DIFF*/";
+		var metadataResponse = new JObject {
+			["success"] = true,
+			["rows"] = new JArray { new JObject { ["UId"] = originalUId } }
+		};
+		var getSchemaResponse = new JObject {
+			["success"] = true,
+			["schema"] = new JObject { ["uId"] = originalUId, ["name"] = schemaName, ["body"] = currentBody, ["package"] = new JObject { ["uId"] = designPkg } }
+		};
+		var saveResponse = new JObject { ["success"] = true };
+		int callIndex = 0;
+		applicationClient.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+			.Returns(ci => {
+				callIndex++;
+				return callIndex switch {
+					1 => metadataResponse.ToString(),
+					2 => getSchemaResponse.ToString(),
+					_ => saveResponse.ToString()
+				};
+			});
+		var command = new PageUpdateCommand(applicationClient, serviceUrlBuilder, logger, Substitute.For<IPageBaselineGuard>(), hierarchyClient);
+
+		// Act
+		bool ok = command.TryUpdatePage(new PageUpdateOptions {
+			SchemaName = schemaName,
+			Body = incomingFragment,
+			Mode = "append",
+			DryRun = false
+		}, out PageUpdateResponse response);
+
+		// Assert
+		ok.Should().BeTrue(
+			because: $"the drop is advisory and must not block the save - refusing the write would leave the caller with no way to append at all ({kind})");
+		response.Success.Should().BeTrue(because: $"the schema was saved ({kind}). Error: {response.Error}");
+		response.Warnings.Should().NotBeNull(
+			because: $"the merger reported a drop, so CombineWarnings must have materialized a list rather than leaving it null ({kind})");
+		response.Warnings.Should().ContainSingle(w => w.Contains("UsrDup") && w.Contains("carried more than one"),
+			because: $"the later 'merge UsrDup' entry was dropped and its disjoint 'b' key went with it - #1132 AC4 requires that be reported through the save response, once per identity ({kind})");
+		response.Warnings.Should().Contain(w => w.Contains("get-page"),
+			because: $"the caller cannot see the body they just overwrote, so the warning has to tell them how to recover it ({kind})");
+	}
+
+	[Test]
 	[Description("update-page append mode permits bodies that omit sections — missing markers are not treated as validation failures because the current schema body supplies those sections")]
 	public void TryUpdatePage_AppendMode_Should_Allow_Body_With_Missing_Markers() {
 		var applicationClient = Substitute.For<IApplicationClient>();
