@@ -842,9 +842,10 @@ public sealed class ComponentInfoCommandTests {
 			return new StubResolver(result);
 		}
 
-		private sealed class StubResolver(PlatformVersionResolution result) : IPlatformVersionResolver {
+		private sealed class StubResolver(PlatformVersionResolution result) : IOwnedPlatformVersionResolver {
 			public Task<PlatformVersionResolution> ResolveAsync(CancellationToken cancellationToken = default) =>
 				Task.FromResult(result);
+			public void Dispose() { }
 		}
 	}
 }

@@ -51,7 +51,7 @@ public sealed class ListUserTasksService(
 		EnvironmentSettings environmentSettings = settingsRepository.FindEnvironment(environmentName)
 			?? throw new InvalidOperationException(
 				EnvironmentNotFoundError.Build(environmentName, settingsRepository));
-		IApplicationClient client = applicationClientFactory.CreateEnvironmentClient(environmentSettings);
+		using IOwnedApplicationClient client = applicationClientFactory.CreateOwnedEnvironmentClient(environmentSettings);
 		string url = serviceUrlBuilder.Build(ServiceUrlBuilder.KnownRoute.ListUserTasks, environmentSettings);
 		logger.WriteInfo($"Reading user task catalog from '{environmentName}'...");
 
