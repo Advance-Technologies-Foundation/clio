@@ -126,7 +126,7 @@ public class CreateBusinessProcessTool(
 		 + "element output as a process output); source is exactly one of {sourceElement, sourceElementParameter} "
 		 + "(another element's output), processParameter, value, or expression; parameter-to-parameter mappings "
 		 + "require compatible types; a Lookup target's 'value' takes a bare non-empty record Guid, stored as the "
-		 + "ConstValue the runtime actually reads (the route needs CrtProcessBuilder 1.4.5.0, the version this clio bundles; THIS clio "
+		 + "ConstValue the runtime actually reads (the route needs CrtProcessBuilder 1.4.6.0, the version this clio bundles; THIS clio "
 		 + "additionally refuses any environment older than the version it BUNDLES — up front, via the "
 		 + "package-convergence message naming both versions — while an older clio surfaces the old package's "
 		 + "[#Lookup…#]-macro rejection; either refusal means the environment is behind, not that the parameter "
