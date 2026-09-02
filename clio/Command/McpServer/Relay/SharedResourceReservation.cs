@@ -52,11 +52,22 @@ public sealed record SharedResourceReservationToken(string ExclusionKey, long To
 /// direction or the other.
 /// </para>
 /// <para>
-/// <b>The 30-minute reclaim ceiling is the maximum hold time, not an incidental number.</b> Keyed by
+/// <b>The reclaim ceiling is the maximum hold time, not an incidental number.</b> Keyed by
 /// target alone, one stuck holder denies the whole environment to every other principal, so the ceiling
 /// IS the bound on that denial. It is not a timeout on the work: nothing is cancelled, and a build still
 /// running past it keeps running. It only stops a reservation nobody will ever release from outliving the
 /// work it was protecting.
+/// </para>
+/// <para>
+/// <b>The ceiling must sit ABOVE the longest operation it protects, or it becomes a kill.</b>
+/// <see cref="Relay.StickyWorkerLifetimeBound.ExplicitMaximum"/> is derived from it so a sticky worker can
+/// never outlive its own reservation; that derivation makes the ceiling the effective lifetime of every
+/// sticky worker. The longest operation a sticky worker serves declares 60 minutes
+/// (<c>compile-configuration</c> in <c>RemoteCommand.GetTimeOut</c>, and <c>restart --wait-ready</c> at
+/// <c>RestartOptions.MaxReadyTimeoutSeconds</c> = 3600), so a ceiling at or below 60 minutes would kill a
+/// legitimate 45-minute compile — the very failure the worker boundary exists to remove. It is therefore
+/// set from that declared maximum plus a spawn/handshake margin. The price is paid on the rare path: a
+/// reservation orphaned by process death now denies configuration builds for the longer window.
 /// </para>
 /// <para>
 /// <b>Scope, stated so it is not overclaimed.</b> This excludes every worker of ONE parent, and the
@@ -116,17 +127,32 @@ public interface ISharedResourceReservation {
 public sealed class SharedResourceReservation : ISharedResourceReservation {
 
 	/// <summary>
+	/// The longest timeout any operation a sticky worker serves declares for itself.
+	/// </summary>
+	/// <remarks>
+	/// <c>compile-configuration</c> declares 60 minutes in <c>RemoteCommand.GetTimeOut</c>, and
+	/// <c>restart --wait-ready</c> allows up to <c>RestartOptions.MaxReadyTimeoutSeconds</c> = 3600 seconds.
+	/// Named here because <see cref="DefaultReclaimCeiling"/> — and through it every sticky worker's
+	/// lifetime — has to sit above it, and a bare number would not say why.
+	/// </remarks>
+	public static readonly TimeSpan LongestProtectedOperation = TimeSpan.FromMinutes(60);
+
+	/// <summary>
 	/// How long a reservation may be held before another caller may reclaim it.
 	/// </summary>
 	/// <remarks>
-	/// Carried over UNCHANGED from <c>McpToolExecutionLock</c>, where it was designed for exactly the
-	/// "holder may never release" case this move preserves: past the MCP response deadline the work runs
+	/// Designed for the "holder may never release" case: past the MCP response deadline the work runs
 	/// detached, and the install POST it wraps goes out with <c>Timeout.Infinite</c>. A target that accepts
 	/// the request and then never answers would otherwise leave the entry in place for the life of the MCP
 	/// server process. It is also the bound <see cref="StickyWorkerLifetimeBound.ExplicitMaximum"/> is
-	/// derived from, so a sticky worker can never outlive the reservation it holds.
+	/// derived from, so a sticky worker can never outlive the reservation it holds — which is why it is
+	/// <see cref="LongestProtectedOperation"/> plus a margin rather than a round number: at or below that
+	/// operation's own declared timeout the derived lifetime turns into a kill of legitimate work.
+	/// The margin covers the child spawn and the <c>initialize</c> handshake, which happen inside the
+	/// worker's life but before its operation starts.
 	/// </remarks>
-	public static readonly TimeSpan DefaultReclaimCeiling = TimeSpan.FromMinutes(30);
+	public static readonly TimeSpan DefaultReclaimCeiling =
+		LongestProtectedOperation + TimeSpan.FromMinutes(5);
 
 	private readonly ConcurrentDictionary<string, SharedResourceReservationToken> _held =
 		new(StringComparer.Ordinal);

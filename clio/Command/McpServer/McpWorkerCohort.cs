@@ -62,8 +62,8 @@ public sealed class McpWorkerCohort : IMcpWorkerCohort {
 	/// terminal-stage bounding is story 8 (<see cref="StageEightNames"/>).
 	/// </para>
 	/// <para>
-	/// <b>A SECOND membership requirement, learned the hard way on 2026-08-19 and not derivable from the
-	/// metadata: what the read goes through on the SERVER.</b> A worker authenticates on its own — the
+	/// <b>A SECOND membership requirement, not derivable from the metadata: what the read goes through on
+	/// the SERVER.</b> A worker authenticates on its own — the
 	/// cookie container is per-process — so a read moved into a child speaks on a different Creatio
 	/// session from the host-resident tools that WRITE the same object. Reads served out of Creatio's
 	/// in-memory schema manager are not guaranteed to reflect a write made moments earlier on another
@@ -105,7 +105,7 @@ public sealed class McpWorkerCohort : IMcpWorkerCohort {
 	];
 
 	/// <summary>
-	/// The schema-designer reads that Stage 6 shipped and 2026-08-19 WITHDREW: worker-routing them breaks
+	/// The schema-designer reads deliberately EXCLUDED from the cohort: worker-routing them breaks
 	/// read-after-write for the host-resident tools that write the same schema.
 	/// </summary>
 	/// <remarks>

@@ -128,14 +128,11 @@ public sealed class WorkerMcpRelay(ILogger logger) : IWorkerMcpRelay {
 /// only after a bounded <see cref="ProbeLivenessAsync"/> — the worker was told through
 /// <c>notifications/cancelled</c>, and a worker that ignores that is still busy.</description></item>
 /// </list>
-/// <b>Corrected 2026-08-19: the pool exists.</b> This paragraph used to say "there is no worker pool
-/// yet: today every call gets its own worker and the supervisor's kill is the bound", and described the
-/// rules above as what a pool WOULD have to obey. Story 7's sticky supervision is that pool, and
-/// <see cref="StickyWorkerPoll"/> now enforces the retirement rule rather than anticipating it — a
-/// cancelled poll retires a session whose send did not complete, and proves liveness with a bounded
-/// probe before reusing one that was cleanly abandoned. The correction matters because a reader who
-/// trusted the old sentence would conclude these rules were still hypothetical and that reusing a
-/// session needed no check. Still not an invitation to build a second pool here: the state lives in
+/// <b>The pool exists, so the rules above are enforced rather than hypothetical.</b> Story 7's sticky
+/// supervision IS that pool: <see cref="StickyWorkerPoll"/> retires a session whose send did not
+/// complete, and proves liveness with a bounded probe before reusing one that was cleanly abandoned.
+/// Read them as binding — a reader who takes them for anticipated design would conclude that reusing a
+/// session needs no check. Still not an invitation to build a second pool here: the state lives in
 /// the registry, not in the relay.
 /// </para>
 /// <para>

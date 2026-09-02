@@ -753,6 +753,9 @@ public sealed partial class McpWorkerCallDispatcher : IMcpWorkerCallDispatcher {
 			["retry-guidance"] = "The host is busy, not broken: nothing was spawned and no request reached "
 				+ "Creatio. Retry shortly, or raise CLIO_MCP_WORKER_CONCURRENCY if this host should run more "
 				+ "workers at once.",
+			// The consumer distinguishes a refusal from a genuine unknown outcome by the presence of a
+			// non-empty `error` alongside success:false; a message-only envelope reads as indeterminate.
+			["error"] = text,
 			["message"] = text
 		};
 		return new CallToolResult {

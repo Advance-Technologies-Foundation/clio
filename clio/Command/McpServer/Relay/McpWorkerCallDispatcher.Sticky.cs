@@ -43,7 +43,7 @@ public sealed partial class McpWorkerCallDispatcher {
 	/// UNRESOLVED sticky key — while <c>restart-status</c>, whose args record does use the kebab spelling,
 	/// looked under the real one. A poll for a running restart answered "not found", and two restarts
 	/// against different environments shared the one unresolved key and could refuse each other.
-	/// Swept 2026-08-19: restart-by-environment-name is the only tool with this shape, but both spellings
+	/// restart-by-environment-name is the only tool with this shape, but both spellings
 	/// are accepted rather than the one being "corrected", because changing a shipped tool's argument name
 	/// is a contract break for every existing caller.
 	/// </remarks>
@@ -254,7 +254,7 @@ public sealed partial class McpWorkerCallDispatcher {
 		// would spend minutes of the caller's patience to arrive at the same refusal with less
 		// information.
 		// THE RESERVATION IS TAKEN FIRST — before the per-key start gate below, not after it. The order is
-		// load-bearing and was corrected on 2026-08-19 after a review pointed at the race it decides.
+		// load-bearing: it decides which of two racing same-target starters answers.
 		//
 		// The reservation is keyed by TARGET, so it excludes across principals AND across families (a
 		// compile excludes an install-process-builder); the start gate is keyed by the sticky key, which is
@@ -868,6 +868,9 @@ public sealed partial class McpWorkerCallDispatcher {
 			["tool"] = toolName,
 			["error-class"] = SharedResourceBusyErrorClass,
 			["configuration-build-in-progress"] = true,
+			// The consumer distinguishes a refusal from a genuine unknown outcome by the presence of a
+			// non-empty `error` alongside success:false; a message-only envelope reads as indeterminate.
+			["error"] = text,
 			["message"] = text
 		};
 		return new CallToolResult {
@@ -899,6 +902,9 @@ public sealed partial class McpWorkerCallDispatcher {
 			["error-class"] = LongOperationInProgressErrorClass,
 			["long-operation-in-progress"] = true,
 			["operation-family"] = family.ToString(),
+			// The consumer distinguishes a refusal from a genuine unknown outcome by the presence of a
+			// non-empty `error` alongside success:false; a message-only envelope reads as indeterminate.
+			["error"] = text,
 			["message"] = text
 		};
 		return new CallToolResult {
@@ -950,6 +956,9 @@ public sealed partial class McpWorkerCallDispatcher {
 			["error-class"] = StickyCapacityErrorClass,
 			["long-operation-capacity"] = exception.StickyConcurrencyCap,
 			["worker-concurrency"] = exception.TotalConcurrencyCap,
+			// The consumer distinguishes a refusal from a genuine unknown outcome by the presence of a
+			// non-empty `error` alongside success:false; a message-only envelope reads as indeterminate.
+			["error"] = text,
 			["message"] = text
 		};
 		return new CallToolResult {

@@ -234,9 +234,15 @@ public sealed class McpDurableCallToolHandler(
 		if (string.Equals(original.Name, canonicalName, StringComparison.Ordinal)) {
 			return original;
 		}
+		// Carries every settable property across, for the same reason
+		// McpWorkerCallDispatcher.WithoutParentSessionMetadata does: rebuilding only Name/Arguments/Meta
+		// drops the retry payload, so an elicitation or retry resume that reaches a cohort tool through a
+		// deprecated alias would silently lose its state.
 		return new CallToolRequestParams {
 			Name = canonicalName,
 			Arguments = original.Arguments,
+			InputResponses = original.InputResponses,
+			RequestState = original.RequestState,
 			Meta = original.Meta
 		};
 	}

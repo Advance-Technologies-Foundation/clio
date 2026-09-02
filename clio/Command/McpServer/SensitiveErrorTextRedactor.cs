@@ -45,8 +45,12 @@ internal static partial class SensitiveErrorTextRedactor {
 	// key is kept (so the message still reads sensibly) and only the value is redacted. Includes
 	// HTTP auth headers/cookies so a bearer token or session cookie surfaced under its header name
 	// is scrubbed.
+	//
+	// The value alternation takes the QUOTED forms first: the bare class excludes a quote character, so
+	// without them a quoted secret (password="s3cr3t") matches nothing at all and reaches the reader
+	// verbatim — the pattern has to fail closed on the whole pair, not on the quote.
 	[GeneratedRegex(
-		@"\b(password|pwd|pass|secret|token|api[_-]?key|client[_-]?secret|access[_-]?key|connection ?string|data ?source|server|host|hostname|initial ?catalog|database|uid|user ?id|authorization|auth|bearer|cookie)\b\s*[=:]\s*[^\s,;""']+",
+		@"\b(password|pwd|pass|secret|token|api[_-]?key|client[_-]?secret|access[_-]?key|connection ?string|data ?source|server|host|hostname|initial ?catalog|database|uid|user ?id|authorization|auth|bearer|cookie)\b\s*[=:]\s*(?:""[^""]*""|'[^']*'|[^\s,;""']+)",
 		RegexOptions.CultureInvariant | RegexOptions.IgnoreCase)]
 	private static partial Regex CredentialPairRegex();
 

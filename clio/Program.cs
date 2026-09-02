@@ -1308,7 +1308,9 @@ internal class Program {
 			throw new ArgumentException("--log requires a value.", nameof(args));
 		}
 		string logTarget = args[logIndex + 1];
-		args = args.Where(x => x != "--log" && x != logTarget).ToArray();
+		// Remove by POSITION, not by value: a positional argument that happens to equal the log target
+		// (`clio <verb> --log <verb>`) would otherwise be stripped along with it and the verb would be lost.
+		args = args.Where((_, index) => index != logIndex && index != logIndex + 1).ToArray();
 		return logTarget;
 	}
 

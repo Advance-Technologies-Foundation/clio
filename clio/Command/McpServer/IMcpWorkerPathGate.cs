@@ -53,8 +53,8 @@ public enum McpWorkerPathAvailability {
 /// </summary>
 /// <remarks>
 /// <para>
-/// <b>The stdio-only rule is a correctness requirement, not a preference</b> (ADR §5, Stage 5 deferred
-/// 2026-08-18). On stdio no secret crosses the parent/child boundary: the child reads
+/// <b>The stdio-only rule is a correctness requirement, not a preference</b> (ADR §5; Stage 5, which
+/// would build the credential channel, is deferred). On stdio no secret crosses the parent/child boundary: the child reads
 /// <c>appsettings.json</c> itself and is given only the environment NAME. On <c>mcp-http</c> the caller's
 /// credentials live in the parent's <c>HttpContext</c>, and the channel that would hand them down is
 /// exactly the thing Stage 5 was going to build and did not. A cohort tool relayed over <c>mcp-http</c>

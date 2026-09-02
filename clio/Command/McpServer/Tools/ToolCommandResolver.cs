@@ -62,7 +62,7 @@ public interface IToolCommandResolver {
 	/// </para>
 	/// <para>
 	/// The converse cost is stated rather than hidden: keyed by target alone, one principal's stuck build
-	/// denies every other principal on that environment — which is why the reservation's 30-minute reclaim
+	/// denies every other principal on that environment — which is why the reservation's reclaim
 	/// ceiling is its MAXIMUM HOLD TIME rather than an incidental number.
 	/// </para>
 	/// </remarks>

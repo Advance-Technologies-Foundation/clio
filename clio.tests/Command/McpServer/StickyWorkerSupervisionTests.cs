@@ -511,6 +511,23 @@ public sealed class StickyWorkerSupervisionTests {
 
 	[Test]
 	[Category("Unit")]
+	[Description("The sticky lifetime bound sits at or above the longest operation a sticky worker serves, so the containment bound never becomes a kill of legitimate work.")]
+	public void ExplicitMaximum_ShouldNotTruncateTheLongestOperationItServes() {
+		// Arrange
+		TimeSpan longestOperation = SharedResourceReservation.LongestProtectedOperation;
+
+		// Act
+		TimeSpan lifetimeBound = StickyWorkerLifetimeBound.ExplicitMaximum;
+
+		// Assert
+		longestOperation.Should().BeGreaterThanOrEqualTo(TimeSpan.FromMinutes(60),
+			because: "compile-configuration declares 60 minutes in RemoteCommand.GetTimeOut and restart --wait-ready allows RestartOptions.MaxReadyTimeoutSeconds = 3600, so a smaller value here would make the whole invariant vacuous");
+		lifetimeBound.Should().BeGreaterThan(longestOperation,
+			because: "the bound is the effective lifetime of every sticky worker, so a bound at or below the longest operation it serves would reap a legitimate compile mid-build — the 'long operation killed before completion' failure the worker boundary exists to remove");
+	}
+
+	[Test]
+	[Category("Unit")]
 	[Description("A sticky worker past its lifetime bound is neither reachable nor retained: it is reaped, while a worker still inside its bound survives the same sweep — so the bound is a lifetime rather than a periodic cull.")]
 	public async Task ReapExpiredAsync_ShouldRetireAStickyWorkerPastItsLifetimeBound() {
 		// Arrange — two workers, each with its OWN process: the expired entry is built over the SECOND

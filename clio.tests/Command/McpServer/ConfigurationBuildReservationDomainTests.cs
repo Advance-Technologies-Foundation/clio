@@ -178,8 +178,8 @@ public sealed class ConfigurationBuildReservationDomainTests {
 		TimeSpan bridged = McpToolExecutionLock.ConfigurationBuildReservationCeilingForTests;
 
 		// Assert
-		unbridged.Should().Be(TimeSpan.FromMinutes(30),
-			because: "with no bridge the facade's own 30-minute ceiling is the one in effect, unchanged");
+		unbridged.Should().Be(SharedResourceReservation.DefaultReclaimCeiling,
+			because: "with no bridge the facade's own ceiling is the one in effect, and it is the shipped default rather than a number restated here — the default is derived from the longest operation it protects, so a literal would pin this test to a value the derivation is free to move");
 		bridged.Should().Be(bridgeCeiling,
 			because: "once bridged the facade's dictionary is not consulted at all, so its ceiling governs "
 				+ "nothing and reporting it would be reporting a number that cannot fire");

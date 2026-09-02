@@ -172,7 +172,7 @@ public sealed class ExecuteEsqTool(IToolCommandResolver commandResolver) {
 	/// here hand the caller a DataService error body — which routinely carries the request URI and
 	/// host, and can carry a connection string — and that method already redacts the same
 	/// <paramref name="json"/> in its own catch block. The asymmetry was not a decision: found
-	/// 2026-08-18 by story 21's R-7 sweep, which asked whether any other untrusted text reaches a
+	/// by story 21's R-7 requirement, which asks whether any other untrusted text reaches a
 	/// caller past the redactor.
 	/// </remarks>
 	private static ExecuteEsqResponse? TryDataServiceFailure(

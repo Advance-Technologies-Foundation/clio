@@ -57,6 +57,15 @@ public sealed record StickyWorkerKey(McpToolOperationFamily Family, string Tenan
 /// less: the dispatcher sweeps expired workers BEFORE it reserves, so a worker at exactly the bound is
 /// reaped on the same call that would otherwise reclaim its reservation.
 /// </para>
+/// <para>
+/// <b>The derivation constrains the ceiling from below, not the lifetime from above.</b> The bound is the
+/// effective lifetime of every sticky worker, so it must also sit ABOVE the longest operation such a
+/// worker serves — <see cref="SharedResourceReservation.LongestProtectedOperation"/>, 60 minutes. Below
+/// that, the containment bound kills legitimate work: a 45-minute <c>compile-creatio</c> reaped at
+/// 30 minutes is exactly the "long operation killed before completion" failure the worker boundary exists
+/// to remove, so the ceiling is set from the declared operation timeout rather than the lifetime lowered
+/// to meet a round ceiling.
+/// </para>
 /// </remarks>
 public static class StickyWorkerLifetimeBound {
 

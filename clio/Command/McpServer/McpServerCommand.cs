@@ -231,10 +231,10 @@ public class McpServerCommand(ModelContextProtocol.Server.McpServer server,
 	/// indefinitely.
 	/// </para>
 	/// <para>
-	/// <b>The registry has had an identity-checked reaper since stage 2 and nothing called it.</b> Found
-	/// 2026-08-19 by an external review; the method, its interface declaration and its tests all existed,
-	/// so the gap was invisible to everything except a search for callers. It runs on the HOST only — a
-	/// worker spawns no workers, and a worker reaping the registry would kill its siblings.
+	/// <b>The identity-checked reaper has to be CALLED from here.</b> The method, its interface
+	/// declaration and its tests can all exist while nothing invokes it, and that gap is invisible to
+	/// everything except a search for callers. It runs on the HOST only — a worker spawns no workers, and
+	/// a worker reaping the registry would kill its siblings.
 	/// </para>
 	/// <para>
 	/// Non-fatal by construction: a startup that cannot reap must still serve. The reaper itself compares
