@@ -1,5 +1,5 @@
 ---
-description: a Change access rights element with an empty record filter, or with add and remove both empty, builds green and then changes no permissions at run time - it has no output parameters, so nothing reports it
+description: a Change access rights element with NO record filter, or with add and remove both empty, builds green and then changes no permissions at run time - it has no output parameters, so nothing reports it; a filter that IS present but has no conditions is the opposite hazard and matches every record
 applies-to:
   - clio/Command/McpServer/Tools/ProcessDesigner/CreateBusinessProcessTool.cs
   - clio/Command/McpServer/Tools/ProcessDesigner/ModifyBusinessProcessTool.cs
@@ -18,12 +18,17 @@ silently does nothing in three cases, and only ONE of them is refused when the p
 | Configuration | Refused at build? |
 |---|---|
 | target object does not use record permissions (`AdministratedByRecords` off) | **yes** |
-| the element's record `filter` is empty | no |
+| the element has NO record `filter` at all | no |
 | `add` and `remove` are both empty (a block carrying only `object` is one) | no |
 
 So a successful build is **not** evidence the element will do anything. The dangerous direction is a
 REVOKE: a revocation that silently does nothing leaves privileges in place while every signal the
 caller can see reports success.
+
+The opposite state is NOT in that table and must not be confused with it: a record `filter` that IS
+present but carries no conditions narrows nothing, so expect it to match EVERY record of the target
+object. It is not refused either. "Empty filter" is therefore an ambiguous phrase for this element and
+is deliberately avoided in the shipped text — the two states have opposite blast radius.
 
 **Why it is not enforced** — the server's `EnsureConfiguresSomething`
 (`packages/CrtProcessBuilder/Files/src/cs/AccessRights/ChangeAccessRightsApplier.cs` in

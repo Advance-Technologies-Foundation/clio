@@ -39,26 +39,9 @@ public static class AccessRightsBlockExpectation {
 	/// no such block, which is the common case and skips the verification entirely.
 	/// </summary>
 	/// <param name="descriptorJson">The build descriptor JSON exactly as the caller supplied it.</param>
-	public static IReadOnlyList<string> FromDescriptor(string descriptorJson) {
-		JsonObject? descriptor = TryParse(descriptorJson) as JsonObject;
-		if (descriptor?[ElementsKey] is not JsonArray elements) {
-			return Array.Empty<string>();
-		}
-
-		List<string> names = [];
-		foreach (JsonNode? element in elements) {
-			if (element is not JsonObject candidate || candidate[AccessRightsKey] is not JsonObject) {
-				continue;
-			}
-
-			string? name = candidate["name"]?.GetValue<string>();
-			if (!string.IsNullOrWhiteSpace(name)) {
-				names.Add(name);
-			}
-		}
-
-		return Distinct(names);
-	}
+	public static IReadOnlyList<string> FromDescriptor(string descriptorJson) =>
+		BlockExpectationJson.Distinct(
+			BlockExpectationJson.ElementsCarrying(descriptorJson, AccessRightsKey));
 
 	/// <summary>
 	/// Element names that a modify operations array asks to configure with access rights. Only <c>setElement</c>
@@ -67,27 +50,9 @@ public static class AccessRightsBlockExpectation {
 	/// as a silent drop would be a false alarm.
 	/// </summary>
 	/// <param name="operationsJson">The operations array JSON exactly as the caller supplied it.</param>
-	public static IReadOnlyList<string> FromOperations(string operationsJson) {
-		if (TryParse(operationsJson) is not JsonArray operations) {
-			return Array.Empty<string>();
-		}
-
-		List<string> names = [];
-		foreach (JsonNode? operation in operations) {
-			if (operation is not JsonObject op) {
-				continue;
-			}
-
-			if (op["elementUpdate"] is JsonObject update && update[AccessRightsKey] is JsonObject) {
-				string? name = op["elementName"]?.GetValue<string>();
-				if (!string.IsNullOrWhiteSpace(name)) {
-					names.Add(name);
-				}
-			}
-		}
-
-		return Distinct(names);
-	}
+	public static IReadOnlyList<string> FromOperations(string operationsJson) =>
+		BlockExpectationJson.Distinct(
+			BlockExpectationJson.SetElementTargets(operationsJson, AccessRightsKey));
 
 	/// <summary>
 	/// Of the elements the caller asked to configure, those the server does NOT report an <c>accessRights</c>
@@ -106,9 +71,7 @@ public static class AccessRightsBlockExpectation {
 			// Matched on NAME OR UID on purpose: setElement identifies an element by either (the server's
 			// ResolveFlowElement canonicalizes both), so a caller who passed a UId would otherwise match nothing
 			// and be told its configuration had been discarded when the edit in fact applied cleanly.
-			DescribedElement? element = described.Elements.FirstOrDefault(e =>
-				string.Equals(e?.Name, name, StringComparison.OrdinalIgnoreCase)
-				|| string.Equals(e?.Uid, name, StringComparison.OrdinalIgnoreCase));
+			DescribedElement? element = BlockExpectationJson.ResolveElement(described, name);
 
 			// An element that is not in the read-back at all is NOT reported, matching the email guard: the
 			// read-back is the only evidence this check has, and "I cannot find the element I asked about" is a
@@ -139,10 +102,7 @@ public static class AccessRightsBlockExpectation {
 
 		List<string> unresolved = [];
 		foreach (string name in expected) {
-			bool found = described.Elements.Any(e =>
-				string.Equals(e?.Name, name, StringComparison.OrdinalIgnoreCase)
-				|| string.Equals(e?.Uid, name, StringComparison.OrdinalIgnoreCase));
-			if (!found) {
+			if (BlockExpectationJson.ResolveElement(described, name) is null) {
 				unresolved.Add(name);
 			}
 		}
@@ -156,27 +116,9 @@ public static class AccessRightsBlockExpectation {
 	/// caller's outcome is identical to the silent drop this class exists to catch, which is why it is
 	/// reported rather than quietly excluded from <see cref="FromOperations"/>.
 	/// </summary>
-	public static IReadOnlyList<string> IgnoredOnAddElement(string operationsJson) {
-		if (TryParse(operationsJson) is not JsonArray operations) {
-			return Array.Empty<string>();
-		}
-
-		List<string> names = [];
-		foreach (JsonNode? operation in operations) {
-			if (operation is not JsonObject op
-				|| op["element"] is not JsonObject added
-				|| added[AccessRightsKey] is not JsonObject) {
-				continue;
-			}
-
-			string? name = added["name"]?.GetValue<string>();
-			if (!string.IsNullOrWhiteSpace(name)) {
-				names.Add(name);
-			}
-		}
-
-		return names;
-	}
+	public static IReadOnlyList<string> IgnoredOnAddElement(string operationsJson) =>
+		BlockExpectationJson.Distinct(
+			BlockExpectationJson.AddElementTargets(operationsJson, AccessRightsKey));
 
 	/// <summary>
 	/// The caller-facing warning for an <c>accessRights</c> block sent with <c>addElement</c>, which the
@@ -188,7 +130,7 @@ public static class AccessRightsBlockExpectation {
 		}
 
 		string elements = string.Join("', '", ignored);
-		string subject = ignored.Count == 1 ? "element" : "elements";
+		string subject = BlockExpectationJson.ElementNoun(ignored.Count);
 		return $"The 'accessRights' block sent with addElement for the {subject} '{elements}' was NOT applied: "
 			+ "addElement applies only the email and performer blocks, so the element was created without any "
 			+ "permission configuration and will grant and revoke nothing when it runs. Configure it with a "
@@ -222,9 +164,7 @@ public static class AccessRightsBlockExpectation {
 
 		List<KeyValuePair<string, bool>> unfiltered = [];
 		foreach (string name in expected) {
-			DescribedElement? element = described.Elements.FirstOrDefault(e =>
-				string.Equals(e?.Name, name, StringComparison.OrdinalIgnoreCase)
-				|| string.Equals(e?.Uid, name, StringComparison.OrdinalIgnoreCase));
+			DescribedElement? element = BlockExpectationJson.ResolveElement(described, name);
 
 			// Only an element the read-back actually returned can be judged; an absent one is reported by
 			// Unresolved() instead, so it is not accused twice.
@@ -291,7 +231,7 @@ public static class AccessRightsBlockExpectation {
 		}
 
 		string elements = string.Join("', '", missing);
-		string subject = missing.Count == 1 ? "element" : "elements";
+		string subject = BlockExpectationJson.ElementNoun(missing.Count);
 		// States the OBSERVATION as fact and the CAUSE as the likely one — all this check saw is that the block
 		// is absent from the read-back.
 		return $"The operation reported success, but the saved process does NOT carry the 'accessRights' "
@@ -327,25 +267,7 @@ public static class AccessRightsBlockExpectation {
 		return false;
 	}
 
-	// One element, named once. The multi-step flow the tool descriptions prescribe — a setElement carrying
-	// the object, then another supplying the entries, in ONE operations array — otherwise renders as
-	// "the elements 'Grant', 'Grant'", and a warning that cannot count its own subjects invites the reader
-	// to discount it. This is the only machine-readable signal a caller gets for a grant or revoke.
-	private static IReadOnlyList<string> Distinct(List<string> names) =>
-		[.. names.Distinct(StringComparer.OrdinalIgnoreCase)];
-
 	// Parsed defensively: an unparseable payload is the command's problem to report through the normal error
 	// path, not this check's. Returning null here just skips the verification rather than masking the real
 	// failure with a second, less useful message.
-	private static JsonNode? TryParse(string json) {
-		if (string.IsNullOrWhiteSpace(json)) {
-			return null;
-		}
-
-		try {
-			return JsonNode.Parse(json);
-		} catch (JsonException) {
-			return null;
-		}
-	}
 }
