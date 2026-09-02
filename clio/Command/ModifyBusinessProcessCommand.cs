@@ -291,7 +291,7 @@ public class ModifyBusinessProcessCommand(
 		}
 
 		string? noFilter = AccessRightsBlockExpectation.BuildNoFilterWarning(
-			AccessRightsBlockExpectation.WithoutRecordFilter(described.Value, expectedRights));
+			described.Value, expectedRights);
 		if (noFilter is not null) {
 			logger.WriteWarning(noFilter);
 		}

@@ -206,12 +206,21 @@ public static class AccessRightsBlockExpectation {
 	/// package repository, and reporting it here does not pre-empt that.</para>
 	/// </summary>
 	public static IReadOnlyList<string> WithoutRecordFilter(
+			DescribeProcessResult described, IReadOnlyList<string> expected) =>
+		[.. FilterlessElements(described, expected).Select(entry => entry.Key)];
+
+	/// <summary>
+	/// The same elements, paired with WHICH filter state they are in. The two have opposite blast radius
+	/// and must never be reported with the same words: an element with no filter at all matches nothing,
+	/// while one whose filter carries a root but no conditions narrows nothing and acts on every record.
+	/// </summary>
+	private static IReadOnlyList<KeyValuePair<string, bool>> FilterlessElements(
 			DescribeProcessResult described, IReadOnlyList<string> expected) {
 		if (expected.Count == 0 || described?.Elements is null) {
-			return Array.Empty<string>();
+			return Array.Empty<KeyValuePair<string, bool>>();
 		}
 
-		List<string> unfiltered = [];
+		List<KeyValuePair<string, bool>> unfiltered = [];
 		foreach (string name in expected) {
 			DescribedElement? element = described.Elements.FirstOrDefault(e =>
 				string.Equals(e?.Name, name, StringComparison.OrdinalIgnoreCase)
@@ -219,9 +228,12 @@ public static class AccessRightsBlockExpectation {
 
 			// Only an element the read-back actually returned can be judged; an absent one is reported by
 			// Unresolved() instead, so it is not accused twice.
-			if (element is not null && ReportsAccessRights(element) && !HasRecordFilter(element)) {
-				unfiltered.Add(name);
+			if (element is null || !ReportsAccessRights(element) || HasRecordFilter(element)) {
+				continue;
 			}
+
+			// true = a filter object is present but narrows nothing; false = no filter at all.
+			unfiltered.Add(new KeyValuePair<string, bool>(name, element.Filter is not null));
 		}
 
 		return unfiltered;
@@ -231,24 +243,40 @@ public static class AccessRightsBlockExpectation {
 	/// The caller-facing warning for an element saved without a record filter. Returns null when there is
 	/// nothing to report.
 	/// </summary>
-	public static string? BuildNoFilterWarning(IReadOnlyList<string> unfiltered) {
+	public static string? BuildNoFilterWarning(
+			DescribeProcessResult described, IReadOnlyList<string> expected) {
+		IReadOnlyList<KeyValuePair<string, bool>> unfiltered = FilterlessElements(described, expected);
 		if (unfiltered.Count == 0) {
 			return null;
 		}
 
-		string elements = string.Join("', '", unfiltered);
-		string subject = unfiltered.Count == 1 ? "element" : "elements";
-		return $"The 'accessRights' configuration for the {subject} '{elements}' was saved, but the "
-			+ $"{(unfiltered.Count == 1 ? "element has" : "elements have")} NO record filter. The filter is what "
-			+ "decides WHICH records the element acts on, so at run time it will match no records and change no "
-			+ "permissions — silently, because the element has no output parameters. Nothing refuses this state. "
-			+ "Add a filter with the setFilter operation (to act on one record, filter Id against a process "
-			+ "parameter or a trigger output), and do not report a grant or revoke as applied until you have.";
+		// Two states, opposite consequences. Reporting them with one wording is how a caller who just built
+		// the WIDEST possible configuration gets told the element is inert and stops looking.
+		string absent = string.Join("', '", unfiltered.Where(e => !e.Value).Select(e => e.Key));
+		string conditionless = string.Join("', '", unfiltered.Where(e => e.Value).Select(e => e.Key));
+
+		List<string> parts = [];
+		if (absent.Length > 0) {
+			parts.Add($"'{absent}' has NO record filter at all, so at run time it will match no records and "
+				+ "change no permissions");
+		}
+
+		if (conditionless.Length > 0) {
+			parts.Add($"'{conditionless}' has a record filter with NO conditions, which narrows nothing — "
+				+ "expect it to match EVERY record of the target object and change permissions on all of them");
+		}
+
+		return "The 'accessRights' configuration was saved, but " + string.Join("; and ", parts)
+			+ ". Either way it happens silently, because the element has no output parameters, and nothing "
+			+ "refuses these states. Set the filter you actually mean with the setFilter operation (to act on "
+			+ "one record, filter Id against a process parameter or a trigger output), and do not report a "
+			+ "grant or revoke as applied until you have.";
 	}
 
-	// A filter counts as present only if it actually narrows something: the server reports an element with no
-	// DataSourceFilters as a null filter, and a filter object carrying neither conditions nor groups selects
-	// every record, which is the same run-time outcome as none at all.
+	// A filter counts as present only if it actually NARROWS something. The two states that fail this test
+	// are not equivalent: a null filter (no DataSourceFilters) makes the element match nothing, while a filter
+	// object carrying neither conditions nor groups matches everything. Both need reporting; they need
+	// DIFFERENT words, which is why the caller pairs each element with which state it is in.
 	private static bool HasRecordFilter(DescribedElement element) =>
 		element.Filter is not null
 		&& ((element.Filter.Conditions?.Count ?? 0) > 0 || (element.Filter.Groups?.Count ?? 0) > 0);

@@ -44,8 +44,9 @@ public static class CreateBusinessProcessPrompt {
 		 `filter` — WHICH records get them; without one the runtime silently does nothing. When the descriptor contains a `changeAccessRights` element, confirm it the way a
 		 destructive edit is confirmed: show the user the target object, the element record `filter` that decides
 		 WHICH records are affected, every grantee, and each entry's operations and level (call out `delegate` as
-		 onward re-sharing, `restrict` as an explicit DENY that blocks the operation and outranks any existing
-		 grant, and a `remove` entry as a revoke), and get an explicit yes before calling
+		 onward re-sharing, `restrict` as the platform Deny level, which is UNVERIFIED (the same value is
+		 captioned "NotSet" elsewhere and no captured specimen uses it) and which lands in the `add`
+		 GRANT collection, so if it does not deny it has added an entry for that grantee instead, and a `remove` entry as a revoke), and get an explicit yes before calling
 		 `create-business-process` — the element reports nothing at run time about what it granted or revoked.
 		 Confirm the target package with the
 		 user before building.

@@ -32,7 +32,7 @@ public class CreateBusinessProcessToolTests {
 		bool destructive = attribute.Destructive;
 
 		// Assert
-		destructive.Should().BeTrue(because: "create-business-process can author a changeAccessRights element with remove entries or a level:restrict DENY on a signalStart process, so a host set to auto-run non-destructive tools would otherwise install an autonomous permission revoke unattended");
+		destructive.Should().BeTrue(because: "create-business-process can author a changeAccessRights element with remove entries or a restrict-level entry on a signalStart process, so a host set to auto-run non-destructive tools would otherwise install an autonomous permission revoke unattended");
 	}
 
 	[Test]
