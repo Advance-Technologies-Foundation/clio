@@ -14,6 +14,7 @@ namespace Clio.Tests.Command.ProcessModel;
 /// </summary>
 [TestFixture]
 [Category("Unit")]
+[Property("Module", "ProcessModel")]
 public class ApprovalBlockExpectationTests {
 
 	#region Methods: FromDescriptor
@@ -86,6 +87,26 @@ public class ApprovalBlockExpectationTests {
 		// Assert
 		expected.Select(e => e.ElementName).Should().BeEquivalentTo(["Approve1", "Approve2"],
 			because: "an approval block reaches the server through either route and is discarded the same way in both");
+	}
+
+	[Test]
+	[Description("Entries in the operations array that are not objects are skipped without throwing, and a valid operation alongside them is still detected — the array is caller-supplied JSON, so a non-object entry is a payload the server would reject, not a reason for this check to fail first.")]
+	public void FromOperations_ShouldSkipNonObjectEntries_AndStillDetectTheValidOne() {
+		// Arrange
+		const string operations = """
+			[null,
+			 42,
+			 "addElement",
+			 {"op":"setElement","elementName":"Approve1","elementUpdate":{"approval":{"approver":{"type":"user"}}}}]
+			""";
+
+		// Act
+		IReadOnlyList<ApprovalBlockExpectation.ApprovalExpectation> expected = ApprovalBlockExpectation.FromOperations(operations);
+
+		// Assert
+		expected.Should().ContainSingle(because: "only the one well-formed operation asks for an approval block")
+			.Which.Should().Be(new ApprovalBlockExpectation.ApprovalExpectation("Approve1", ExpectsApprover: true),
+				because: "a malformed neighbour must not cost the valid operation its verification");
 	}
 
 	#endregion

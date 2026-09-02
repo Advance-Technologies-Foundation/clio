@@ -46,14 +46,8 @@ public static class ApprovalBlockExpectation {
 
 		List<ApprovalExpectation> expectations = [];
 		foreach (JsonNode? element in elements) {
-			if (element is not JsonObject candidate || candidate[ApprovalKey] is not JsonObject approval) {
-				continue;
-			}
-
-			string? name = ReadName(candidate[NameKey]);
-			if (!string.IsNullOrWhiteSpace(name)) {
-				expectations.Add(new ApprovalExpectation(name, approval[ApproverKey] is JsonObject));
-			}
+			JsonObject? candidate = element as JsonObject;
+			AddIfConfigured(expectations, candidate?[ApprovalKey], candidate?[NameKey]);
 		}
 
 		return expectations;
@@ -72,28 +66,37 @@ public static class ApprovalBlockExpectation {
 
 		List<ApprovalExpectation> expectations = [];
 		foreach (JsonNode? operation in operations) {
-			if (operation is not JsonObject op) {
-				continue;
-			}
+			JsonObject? op = operation as JsonObject;
 
 			// addElement: the descriptor (and therefore the name) is nested under "element".
-			if (op[ElementKey] is JsonObject added && added[ApprovalKey] is JsonObject addedApproval) {
-				string? name = ReadName(added[NameKey]);
-				if (!string.IsNullOrWhiteSpace(name)) {
-					expectations.Add(new ApprovalExpectation(name, addedApproval[ApproverKey] is JsonObject));
-				}
-			}
+			JsonObject? added = op?[ElementKey] as JsonObject;
+			AddIfConfigured(expectations, added?[ApprovalKey], added?[NameKey]);
 
 			// setElement: the name is on the operation, the block is under "elementUpdate".
-			if (op[ElementUpdateKey] is JsonObject update && update[ApprovalKey] is JsonObject updatedApproval) {
-				string? name = ReadName(op[ElementNameKey]);
-				if (!string.IsNullOrWhiteSpace(name)) {
-					expectations.Add(new ApprovalExpectation(name, updatedApproval[ApproverKey] is JsonObject));
-				}
-			}
+			JsonObject? update = op?[ElementUpdateKey] as JsonObject;
+			AddIfConfigured(expectations, update?[ApprovalKey], op?[ElementNameKey]);
 		}
 
 		return expectations;
+	}
+
+	/// <summary>
+	/// Records one expectation when BOTH halves are present: an <c>approval</c> object, and a name usable to find
+	/// the element in the read-back. Every route that can carry the block — a build descriptor entry,
+	/// <c>addElement</c>, <c>setElement</c> — differs only in WHERE those two nodes sit, so the rule itself lives
+	/// here once. A missing half is skipped rather than recorded: an expectation with no name could never be
+	/// matched against the described process, so it could only ever produce a false accusation.
+	/// </summary>
+	private static void AddIfConfigured(List<ApprovalExpectation> expectations, JsonNode? approvalNode,
+			JsonNode? nameNode) {
+		if (approvalNode is not JsonObject approval) {
+			return;
+		}
+
+		string? name = ReadName(nameNode);
+		if (!string.IsNullOrWhiteSpace(name)) {
+			expectations.Add(new ApprovalExpectation(name, approval[ApproverKey] is JsonObject));
+		}
 	}
 
 	/// <summary>
