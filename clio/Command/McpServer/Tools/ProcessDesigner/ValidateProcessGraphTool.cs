@@ -37,7 +37,7 @@ public sealed class ValidateProcessGraphTool {
 	/// <param name="args">The planned graph (nodes by <c>data-id</c>, edges by flow kind).</param>
 	/// <returns>The validation response (success flag, has-errors, findings).</returns>
 	[McpServerTool(Name = ToolName, ReadOnly = true, Destructive = false, Idempotent = true, OpenWorld = false)]
-	[Description("Validates a planned Creatio business-process graph (nodes by data-id, e.g. startEvent/readDataUserTask/exclusiveGateway/endEvent; edges by flow-kind sequence|conditional|default) against the BPMN connection rules R1-R17. The graph is validated in-memory, but the tool requires the 'CrtProcessBuilder' package to be installed on the target environment (install it with install-process-builder) (named by environment-name). Returns structured findings (error/warning + ruleId). Call this BEFORE driving the designer. IMPORTANT: a passing graph is NOT necessarily buildable — the rules cover the full BPMN catalog (gateways, conditional/default flows, timers, sub-processes), while create-business-process / modify-business-process build only startEvent/signalStart/endEvent/userTask/sendEmail elements. Flows start plain, and modify turns one into a conditional branch with setFlowCondition - so a conditional branch IS buildable even though a gateway ELEMENT is not; check the buildable slice in get-guidance name=process-modeling before promising a build; get-guidance name=process-formulas for an `expression` mapping source or a conditional-flow condition.")]
+	[Description("Validates a planned Creatio business-process graph (nodes by data-id, e.g. startEvent/readDataUserTask/exclusiveGateway/endEvent; edges by flow-kind sequence|conditional|default - an omitted flow-kind is a plain sequence flow, an UNKNOWN one is refused rather than treated as plain) against the BPMN connection rules R1-R17. The graph is validated in-memory, but the tool requires the 'CrtProcessBuilder' package to be installed on the target environment (install it with install-process-builder) (named by environment-name). Returns structured findings (error/warning + ruleId). Call this BEFORE driving the designer. IMPORTANT: a passing graph is NOT necessarily buildable — the rules cover the full BPMN catalog (gateways, conditional/default flows, timers, sub-processes), while create-business-process / modify-business-process build only startEvent/signalStart/endEvent/userTask/sendEmail elements. Flows start plain, and modify turns one into a conditional branch with setFlowCondition - so a conditional branch IS buildable even though a gateway ELEMENT is not; check the buildable slice in get-guidance name=process-modeling before promising a build; get-guidance name=process-formulas for an `expression` mapping source or a conditional-flow condition.")]
 	public ValidateProcessGraphResponse Validate([Required] ValidateProcessGraphArgs args) {
 		try {
 			IRequiredPackageChecker checker = _commandResolver.Resolve<IRequiredPackageChecker>(
@@ -89,11 +89,32 @@ public sealed class ValidateProcessGraphTool {
 		}
 	}
 
-	private static ProcessFlowKind ParseFlowKind(string flowKind) => flowKind?.Trim().ToLowerInvariant() switch {
-		"conditional" => ProcessFlowKind.Conditional,
-		"default" => ProcessFlowKind.Default,
-		_ => ProcessFlowKind.Sequence
-	};
+	/// <summary>
+	/// Parses an edge's <c>flow-kind</c>, refusing a value that is not one of the three.
+	/// <para>An omitted kind is a plain sequence flow - that is the documented default and the common case.
+	/// An unknown one is an ERROR rather than a plain flow: this tool exists to catch a mistake before the
+	/// designer is driven, and silently reclassifying <c>"conditionnal"</c> as a plain flow makes exactly the
+	/// rules that care about the difference (R7 exclusive-diverge, R13, R14) answer about a different graph -
+	/// in the reassuring direction, since a plain flow violates fewer rules than a conditional one.</para>
+	/// </summary>
+	private static ProcessFlowKind ParseFlowKind(string flowKind) {
+		string kind = flowKind?.Trim().ToLowerInvariant();
+		switch (kind) {
+			case null:
+			case "":
+			case "sequence":
+				return ProcessFlowKind.Sequence;
+			case "conditional":
+				return ProcessFlowKind.Conditional;
+			case "default":
+				return ProcessFlowKind.Default;
+			default:
+				throw new InvalidOperationException(
+					$"Unknown 'flow-kind' value '{flowKind}'. Use 'sequence' (or omit it), 'conditional' or "
+					+ "'default'. It is refused rather than treated as a plain flow, because the rules that "
+					+ "care about the difference would then answer about a graph you did not describe.");
+		}
+	}
 }
 
 /// <summary>Request arguments for <c>validate-process-graph</c>.</summary>
