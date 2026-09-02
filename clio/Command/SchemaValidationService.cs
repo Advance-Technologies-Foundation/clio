@@ -45,6 +45,7 @@ public static class SchemaValidationService
 	private const string ParentNamePropertyName = "parentName";
 	private const string PropertyNamePropertyName = "propertyName";
 	private const string ScaffoldElementName = "Scaffold";
+	private const string ScaffoldComponentType = "crt.Scaffold";
 	private const string ScaffoldActionsSlot = "actions";
 	private const string ScaffoldLeadingSlot = "leading";
 	private const string ScaffoldItemsSlot = "items";
@@ -340,6 +341,9 @@ public static class SchemaValidationService
 		if (!typePlacementResult.IsValid) errors.AddRange(typePlacementResult.Errors);
 		warnings.AddRange(typePlacementResult.Warnings);
 
+		SchemaValidationResult secondScaffoldResult = ValidateMobileSingleScaffoldRoot(body);
+		if (!secondScaffoldResult.IsValid) errors.AddRange(secondScaffoldResult.Errors);
+
 		SchemaValidationResult buttonSlotResult = ValidateMobileButtonSlotPlacement(body);
 		warnings.AddRange(buttonSlotResult.Warnings);
 
@@ -614,6 +618,16 @@ public static class SchemaValidationService
 						"Do NOT use web-only or unknown components on a mobile page without explicit approval from the user. " +
 						"If this is a custom mobile component with the same type name, ignore this warning; " +
 						"otherwise use get-component-info to find a supported mobile alternative.");
+				} else {
+					// The previously SILENT case: a type in NEITHER registry produced no diagnostic at all, so a
+					// misspelled or invented component type reached the save indistinguishable from a legitimate
+					// custom one (ENG-95827). It stays a warning rather than an error because a genuinely custom
+					// mobile component is also absent from both registries — but it is no longer unreported.
+					result.Warnings.Add(
+						$"Component type '{type}' is in NEITHER the mobile nor the web registry. " +
+						"If it is a custom mobile component registered in your package, ignore this warning; " +
+						"otherwise it is a misspelled or invented type and will not render — " +
+						"use get-component-info with schema-type \"mobile\" to find the supported type.");
 				}
 			}
 		}
@@ -704,6 +718,62 @@ public static class SchemaValidationService
 	/// </returns>
 	public static SchemaValidationResult ValidateMobileInsertTypePlacement(string body) =>
 		ScanMobileViewConfigDiffEntries(body, ValidateMobileInsertTypePlacementEntry);
+
+	/// <summary>
+	/// Validates that a mobile page body does not author a SECOND <c>crt.Scaffold</c>. Every mobile template
+	/// already provides the Scaffold root, and it is the page's only permitted one: authoring another shadows
+	/// the native element, so the top navigation bar and the page body silently come from the wrong element.
+	/// </summary>
+	/// <remarks>
+	/// <para>
+	/// Two shapes are rejected, both decidable from the body alone: an <c>insert</c> / <c>set</c> whose resolved
+	/// component type is <c>crt.Scaffold</c>, and an <c>insert</c> of an element NAMED <c>Scaffold</c> whatever
+	/// its declared type — the template already owns that element name, so the insert collides regardless.
+	/// </para>
+	/// <para>
+	/// A <c>merge</c> onto <c>Scaffold</c> is the SUPPORTED way to patch the template's own root and is left
+	/// alone here; <see cref="ValidateMobileMergeSlotAuthoring"/> owns the rule for merging into its slots.
+	/// </para>
+	/// <para>
+	/// This exists because the invariant previously travelled only as prose — the mobile registry's own
+	/// <c>crt.Scaffold</c> description and the conversion guide's <c>constraints</c> both stated it, and nothing
+	/// enforced it (ENG-95827).
+	/// </para>
+	/// </remarks>
+	/// <param name="body">Plain-JSON mobile page body.</param>
+	/// <returns>
+	/// A <see cref="SchemaValidationResult"/> carrying one error per entry that authors a second Scaffold.
+	/// </returns>
+	public static SchemaValidationResult ValidateMobileSingleScaffoldRoot(string body) =>
+		ScanMobileViewConfigDiffEntries(body, ValidateMobileSingleScaffoldRootEntry);
+
+	/// <summary>
+	/// Applies the single-Scaffold rule to one <c>viewConfigDiff</c> entry. See
+	/// <see cref="ValidateMobileSingleScaffoldRoot"/> for the two rejected shapes and why a merge is exempt.
+	/// </summary>
+	private static void ValidateMobileSingleScaffoldRootEntry(
+		JsonElement entry, int index, SchemaValidationResult result) {
+		if (entry.ValueKind != JsonValueKind.Object
+			|| !TryGetStringProperty(entry, OperationPropertyName, out string operation)) {
+			return;
+		}
+		bool isInsert = string.Equals(operation, InsertOperationName, StringComparison.Ordinal);
+		if (!isInsert && !string.Equals(operation, SetOperationName, StringComparison.Ordinal)) {
+			return;
+		}
+		bool typeIsScaffold = string.Equals(GetMobileEntryType(entry), ScaffoldComponentType, StringComparison.Ordinal);
+		bool nameIsScaffold = isInsert
+			&& TryGetStringProperty(entry, "name", out string name)
+			&& string.Equals(name, ScaffoldElementName, StringComparison.Ordinal);
+		if (!typeIsScaffold && !nameIsScaffold) {
+			return;
+		}
+		result.IsValid = false;
+		result.Errors.Add(
+			$"viewConfigDiff[{index}] authors a second '{ScaffoldComponentType}'. The mobile template already "
+			+ "provides the Scaffold root and a page may not add another — it would shadow the native element. "
+			+ $"Use operation 'merge' on '{ScaffoldElementName}' to patch the template's own root instead.");
+	}
 
 	/// <summary>
 	/// Shared scaffolding for the per-entry <c>viewConfigDiff</c> rules: parse the body, locate the array, and hand

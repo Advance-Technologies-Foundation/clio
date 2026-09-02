@@ -1728,12 +1728,22 @@ public static class WebToMobileAnalysisService {
 		bool exclusionSearchTruncated = false, int discardedExclusionFilters = 0,
 		int skippedOverrideRules = 0, bool hasExcludedComponents = false,
 		IReadOnlyList<string> retargetParentsOnTemplate = null) {
-		var constraints = new List<string> {
-			"Mobile body is plain JSON with only viewConfigDiff / viewModelConfigDiff / modelConfigDiff — no AMD, no markers, no define() wrapper.",
-			"The mobile template provides the Scaffold root — do NOT add a second Scaffold.",
-			"No handlers, no validators, no custom converters in a mobile body. Re-implement conditional visibility / required / read-only / set-value logic as entity-level business rules (create-entity-business-rule). Reference only OOTB converters inline in binding expressions.",
-			"Use only mobile-registered component types (get-component-info schema-type \"mobile\")."
-		};
+		// UNCONDITIONAL platform invariants do NOT belong here. A line that fires for every page carries no
+		// fact about THIS conversion, so it cannot inform a decision the caller has to make — it only competes
+		// for attention with the data beside it, which is the ENG-95827 failure mode. Each of the four that used
+		// to open this list is now carried by the surface that can actually hold the caller to it:
+		//   - plain-JSON body / no AMD / no unknown root section -> SchemaValidationService.ValidateMobileBody
+		//     (hard ERROR: root-kind floor + ValidateMobileNoUnknownRootProperties)
+		//   - no second Scaffold -> SchemaValidationService.ValidateMobileSingleScaffoldRoot (hard ERROR)
+		//   - no handlers / validators / custom converters -> ValidateMobileBody's disallowed root properties
+		//     plus ValidateMobileNoValidatorReferences (hard ERROR); the "re-implement as business rules"
+		//     half is page-specific and already carried by WebOnlySections + PageBusinessRules
+		//   - mobile-registered component types only -> ValidateMobileComponentTypes, which now also reports a
+		//     type absent from BOTH registries; the converter itself never emits a non-registry type (it drops
+		//     with reason "type 'X' not in mobile registry")
+		// The prose explanation of each lives in the freedom-page-web-to-mobile-conversion guidance article.
+		// Only CONDITIONAL entries — a fact about this page the caller cannot derive — may be added below.
+		var constraints = new List<string>();
 		if (retargetParentsOnTemplate is { Count: > 0 }) {
 			constraints.Add(
 				"elementMap RETARGETS elements into container(s) the mobile template ALREADY provides: "

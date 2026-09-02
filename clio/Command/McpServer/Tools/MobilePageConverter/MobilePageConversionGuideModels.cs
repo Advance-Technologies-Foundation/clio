@@ -577,6 +577,20 @@ public sealed class MobilePageConversionGuide {
 	public IReadOnlyDictionary<string, string> ResourceStrings { get; init; }
 
 	// ── Guidance ──────────────────────────────────────────────────────
+	/// <summary>
+	/// Findings SPECIFIC TO THIS CONVERSION — each entry is present because a condition the converter
+	/// evaluated actually fired for this page (a degraded diff, a dropped section, a template-owned array
+	/// it could not edit, a normalization it applied). Empty is a valid and common result.
+	/// </summary>
+	/// <remarks>
+	/// Deliberately carries NO unconditional platform invariant. A line that fires for every page states no
+	/// fact about this conversion, so it cannot inform a decision the caller has to make — it only competes
+	/// with the page data for attention, which is the ENG-95827 failure mode on smaller models. Such an
+	/// invariant belongs on the surface that can hold the caller to it: a validator in
+	/// <see cref="SchemaValidationService"/> (which <c>validate-page</c> and <c>update-page</c> cannot be
+	/// talked out of) plus its explanation in the <c>freedom-page-web-to-mobile-conversion</c> guidance
+	/// article. Do not re-add an unconditional entry here.
+	/// </remarks>
 	[JsonPropertyName("constraints")]
 	public IReadOnlyList<string> Constraints { get; init; } = [];
 

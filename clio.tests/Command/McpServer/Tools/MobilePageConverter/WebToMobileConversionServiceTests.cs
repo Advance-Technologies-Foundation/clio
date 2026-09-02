@@ -318,12 +318,13 @@ public sealed class WebToMobileConversionServiceTests {
 		guide.DataSources.Should().BeEquivalentTo("PDS", "SecondDS");
 		guide.Constraints.Should().NotContain(c => c.Contains("MULTIPLE data sources") || c.Contains("SINGLE data source"),
 			because: "mobile supports the same data-source structure as web — no multi-DS limitation is imposed");
-		guide.Constraints.Should().Contain(c => c.Contains("business rules"));
+		guide.Constraints.Should().Contain(c => c.Contains("web-only section(s)") && c.Contains("business rules"),
+			because: "which sections this page loses is a fact about THIS conversion, so it stays a constraint — unlike the unconditional 'no handlers/validators' invariant, which moved to the mobile body validators");
 	}
 
 	[Test]
-	[Description("The guide always carries the detected source type, guidance article name, ordered nextSteps, and the hard mobile constraints.")]
-	public void Analyze_GuideCarriesSourceTypeGuidanceNextStepsAndConstraints() {
+	[Description("The guide always carries the detected source type, guidance article name and ordered nextSteps — and carries NO constraint for a page with no conditional finding, because an unconditional platform invariant is enforced by the mobile body validators and explained by the guidance article rather than repeated per conversion.")]
+	public void Analyze_GuideCarriesSourceTypeGuidanceAndNextSteps_WithoutUnconditionalConstraints() {
 		PageBundleInfo bundle = Bundle("""
 			[ { "name": "Main", "type": "crt.FlexContainer", "items": [
 				{ "name": "UsrName", "type": "crt.Input" } ] } ]
@@ -336,7 +337,10 @@ public sealed class WebToMobileConversionServiceTests {
 		guide.SuggestedTargetSchemaName.Should().Be("UsrApp_MobileFormPage");
 		guide.NextSteps.Should().NotBeEmpty();
 		guide.NextSteps.Should().Contain(s => s.Contains("create-page"));
-		guide.Constraints.Should().Contain(c => c.Contains("Scaffold"));
+		guide.Constraints.Should().NotContain(c => c.Contains("Scaffold"),
+			because: "the single-Scaffold rule is enforced by SchemaValidationService.ValidateMobileSingleScaffoldRoot as a blocking error, so repeating it as advisory prose only competes with the page data");
+		guide.Constraints.Should().NotContain(c => c.Contains("plain JSON") || c.Contains("mobile-registered"),
+			because: "the body-format and registered-type invariants are likewise enforced by the mobile body validators and documented in the guidance article");
 	}
 
 	[Test]
