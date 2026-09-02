@@ -23,12 +23,7 @@ namespace Clio.Mcp.E2E;
 [AllureNUnit]
 [AllureFeature("data-binding-db")]
 [NonParallelizable]
-public sealed class DataBindingDbToolE2ETests : McpContractFixtureBase {
-	private const string CreateDbToolName = CreateDataBindingDbTool.CreateDataBindingDbToolName;
-	private const string UpsertRowDbToolName = UpsertDataBindingRowDbTool.UpsertDataBindingRowDbToolName;
-	private const string RemoveRowDbToolName = RemoveDataBindingRowDbTool.RemoveDataBindingRowDbToolName;
-	private const string ReadDbToolName = ReadDataBindingDbTool.ReadDataBindingDbToolName;
-	private const string ODataCreateToolName = ODataCreateTool.ToolName;
+public sealed class DataBindingDbToolE2ETests : DataBindingDbFixtureBase {
 
 	[Test]
 	[Description("Exposes every DB-first data-binding MCP tool via the get-tool-contract compact index so callers can discover and invoke them on the lazy surface.")]
@@ -384,112 +379,6 @@ public sealed class DataBindingDbToolE2ETests : McpContractFixtureBase {
 			"upsert must UPDATE a row that exists in the table but is unbound in the target binding, not attempt an insert that fails on required columns");
 	}
 
-	private async Task<DataBindingDbArrangeContext> ArrangeAsync(bool requireEnvironment) {
-		McpE2ESettings settings = TestConfiguration.Load();
-		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
-		string? environmentName = requireEnvironment
-			? await ResolveReachableEnvironmentAsync(settings)
-			: null;
-
-		string rootDirectory = Path.Combine(Path.GetTempPath(), $"clio-db-binding-e2e-{System.Guid.NewGuid():N}");
-		Directory.CreateDirectory(rootDirectory);
-		string workspaceName = $"workspace-{System.Guid.NewGuid():N}";
-		string workspacePath = Path.Combine(rootDirectory, workspaceName);
-		string packageName = $"Pkg{System.Guid.NewGuid():N}".Substring(0, 18);
-		CancellationTokenSource cancellationTokenSource = new(System.TimeSpan.FromMinutes(8));
-
-		await ClioCliCommandRunner.RunAndAssertSuccessAsync(
-			settings,
-			["create-workspace", workspaceName, "--empty", "--directory", rootDirectory],
-			cancellationToken: cancellationTokenSource.Token);
-		await ClioCliCommandRunner.RunAndAssertSuccessAsync(
-			settings,
-			["add-package", packageName],
-			workingDirectory: workspacePath,
-			cancellationToken: cancellationTokenSource.Token);
-		if (requireEnvironment && !string.IsNullOrWhiteSpace(environmentName)) {
-			await ClioCliCommandRunner.RunAndAssertSuccessAsync(
-				settings,
-				["push-workspace", "-e", environmentName],
-				workingDirectory: workspacePath,
-				cancellationToken: cancellationTokenSource.Token);
-			await ClioCliCommandRunner.WaitForEnvironmentRecoveryAsync(
-				settings,
-				environmentName,
-				cancellationTokenSource.Token);
-			await ClioCliCommandRunner.RunAndAssertSuccessAsync(
-				settings,
-				["pkg-hotfix", packageName, "true", "-e", environmentName],
-				workingDirectory: workspacePath,
-				cancellationToken: cancellationTokenSource.Token);
-			await ClioCliCommandRunner.WaitForEnvironmentRecoveryAsync(
-				settings,
-				environmentName,
-				cancellationTokenSource.Token);
-		}
-
-		McpServerSession session = Session;
-		return new DataBindingDbArrangeContext(
-			rootDirectory,
-			workspacePath,
-			packageName,
-			environmentName,
-			session,
-			cancellationTokenSource);
-	}
-
-	private static async Task<string> ResolveReachableEnvironmentAsync(McpE2ESettings settings) {
-		string? configuredEnvironmentName = settings.Sandbox.EnvironmentName;
-		if (!string.IsNullOrWhiteSpace(configuredEnvironmentName) &&
-			await CanReachEnvironmentAsync(settings, configuredEnvironmentName)) {
-			return configuredEnvironmentName;
-		}
-
-		const string fallbackEnvironmentName = "d2";
-		if (await CanReachEnvironmentAsync(settings, fallbackEnvironmentName)) {
-			return fallbackEnvironmentName;
-		}
-
-		Assert.Ignore(
-			$"DB-first data-binding MCP E2E requires a reachable environment. " +
-			$"Configured sandbox environment '{configuredEnvironmentName}' was not reachable, " +
-			$"and fallback environment '{fallbackEnvironmentName}' was also unavailable.");
-		return string.Empty;
-	}
-
-	private static async Task<bool> CanReachEnvironmentAsync(McpE2ESettings settings, string environmentName) {
-		ClioCliCommandResult result = await ClioCliCommandRunner.RunAsync(
-			settings,
-			["ping-app", "-e", environmentName]);
-		return result.ExitCode == 0;
-	}
-
-	private static async Task<CommandExecutionActResult> ActCommandAsync(
-		DataBindingDbArrangeContext arrangeContext,
-		string toolName,
-		Dictionary<string, object?> args) {
-		IReadOnlyCollection<string> toolNames =
-			await arrangeContext.Session.ListReachableToolNamesAsync(arrangeContext.CancellationTokenSource.Token);
-		toolNames.Should().Contain(toolName,
-			because: "the requested DB-first data-binding MCP tool must be discoverable via the get-tool-contract compact index before the end-to-end call");
-
-		ModelContextProtocol.Protocol.CallToolResult callResult = await arrangeContext.Session.CallToolAsync(
-			toolName,
-			new Dictionary<string, object?> { ["args"] = args },
-			arrangeContext.CancellationTokenSource.Token);
-		CommandExecutionEnvelope execution = McpCommandExecutionParser.Extract(callResult);
-		return new CommandExecutionActResult(callResult, execution);
-	}
-
-	private static void AssertToolCallSucceeded(CommandExecutionActResult actResult) {
-		actResult.CallResult.IsError.Should().NotBeTrue(
-			because: $"the MCP tool call should not return an error envelope. Content: {DescribeCallResult(actResult.CallResult)}");
-	}
-
-	private static void AssertCommandExitCode(CommandExecutionActResult actResult, int expectedExitCode, string because) {
-		actResult.Execution.ExitCode.Should().Be(expectedExitCode, because: because);
-	}
-
 	private static void AssertIncludesInfoMessage(CommandExecutionActResult actResult, string because) {
 		actResult.Execution.Output.Should().NotBeNullOrEmpty(
 			because: "command execution should emit human-readable diagnostics");
@@ -521,31 +410,4 @@ public sealed class DataBindingDbToolE2ETests : McpContractFixtureBase {
 			because: "the diagnostic should describe a binding-layer failure whether it is raised natively or wrapped by the clio-run executor");
 	}
 
-	private static string DescribeCallResult(ModelContextProtocol.Protocol.CallToolResult callResult) {
-		if (callResult.Content is null || callResult.Content.Count == 0) {
-			return "<no content>";
-		}
-
-		return string.Join(" | ", callResult.Content.Select(c => c?.ToString() ?? "<null>"));
-	}
-
-	private sealed record DataBindingDbArrangeContext(
-		string RootDirectory,
-		string WorkspacePath,
-		string PackageName,
-		string? EnvironmentName,
-		McpServerSession Session,
-		CancellationTokenSource CancellationTokenSource) : System.IAsyncDisposable {
-		public System.Threading.Tasks.ValueTask DisposeAsync() {
-			CancellationTokenSource.Dispose();
-			if (Directory.Exists(RootDirectory)) {
-				Directory.Delete(RootDirectory, recursive: true);
-			}
-			return System.Threading.Tasks.ValueTask.CompletedTask;
-		}
-	}
-
-	private sealed record CommandExecutionActResult(
-		ModelContextProtocol.Protocol.CallToolResult CallResult,
-		CommandExecutionEnvelope Execution);
 }
