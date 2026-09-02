@@ -55,8 +55,8 @@ namespace Clio.Command
 					if (referenceResult != 0) {
 						//An unsupported reference type reports the failure and returns nonzero without
 						//rebasing anything. Reporting "Done" and exiting 0 here told the caller the package
-						//was ready, and removing packages.config on top of that left it with neither
-						//reference form.
+						//was ready, and removing packages.config on top of that left it with a package that
+						//neither restores its assemblies nor points at local ones.
 						_logger.WriteError(
 							$"Failed to set '{options.Rebase}' references for package '{options.Name}'.");
 						return referenceResult;
