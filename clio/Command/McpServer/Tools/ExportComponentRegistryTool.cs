@@ -183,7 +183,8 @@ public sealed class ExportComponentRegistryTool(
 		using CancellationTokenSource budgetCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
 		budgetCts.CancelAfter(VersionResolutionBudget);
 		try {
-			return await resolverFactory.Create(settings)
+			using IOwnedPlatformVersionResolver resolver = resolverFactory.CreateOwned(settings);
+			return await resolver
 				.ResolveAsync(budgetCts.Token)
 				.WaitAsync(VersionResolutionBudget, cancellationToken)
 				.ConfigureAwait(false);

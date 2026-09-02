@@ -1,5 +1,5 @@
 ---
-description: KnowledgeManagedTreeDeleter clears read-only with manual TopDirectoryOnly recursion and skips reparse points, because SearchOption.AllDirectories descends through symlinks and junctions that Directory.Delete only unlinks
+description: KnowledgeManagedTreeDeleter clears read-only with manual TopDirectoryOnly recursion and UNLINKS directory reparse points rather than skipping them, because SearchOption.AllDirectories descends through links and because a recursive Directory.Delete cannot remove a tree containing a junction
 applies-to:
   - clio/Command/McpServer/Knowledge/KnowledgeManagedTreeDeleter.cs
   - clio/Command/McpServer/Knowledge/KnowledgeSourceInstallationStore.cs
@@ -10,13 +10,21 @@ date: 2026-08-30
 
 **What is true** — deleting a knowledge tree has to clear the read-only attribute first (Git creates
 `*.pack` / `*.idx` read-only and Windows refuses to delete a read-only file), and that walk must use manual
-recursion with `SearchOption.TopDirectoryOnly`, skipping any directory whose `ReparsePoint` bit is set.
-`Directory.EnumerateFiles(root, "*", SearchOption.AllDirectories)` is the wrong tool for this and looks
+recursion with `SearchOption.TopDirectoryOnly`, never descending into a directory whose `ReparsePoint` bit is
+set. `Directory.EnumerateFiles(root, "*", SearchOption.AllDirectories)` is the wrong tool for this and looks
 right: it binds `EnumerationOptions.CompatibleRecursive` (`AttributesToSkip = 0`,
 `IgnoreInaccessible = false`), so it **descends into directory symlinks and junctions** — verified on
-Windows: a file behind a symlinked subdirectory is enumerated. `Directory.Delete(path, recursive: true)`
-does the opposite and unlinks the reparse point. The walk therefore reaches strictly further than the
-delete it prepares for.
+Windows: a file behind a symlinked subdirectory is enumerated. Nothing behind a link is ever deleted, so
+clearing read-only bits there mutates state outside the managed root.
+
+A directory reparse point the walk meets is **unlinked**, not merely skipped — with a non-recursive delete,
+which removes the link and leaves its target alone. This record used to say the opposite ("`Directory.Delete`
+does the opposite and unlinks the reparse point, so the walk reaches strictly further than the delete"), and
+that sentence was wrong in the one direction that costs money: a recursive delete meeting a **junction**
+removes the link and then throws, leaving the tree undeletable. That false premise shipped and blocked a
+release. See
+[recursive-directory-delete-throws-on-a-junction-child.md](../platform/recursive-directory-delete-throws-on-a-junction-child.md)
+for the measured matrix.
 
 **Why it is this way** — the two consumers (`KnowledgeSourceInstallationStore`,
 `KnowledgeSourceManagementService`) share one `IKnowledgeManagedTreeDeleter` rather than a copied private

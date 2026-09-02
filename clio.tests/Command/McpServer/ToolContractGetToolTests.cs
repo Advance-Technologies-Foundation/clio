@@ -1214,6 +1214,10 @@ public sealed class ToolContractGetToolTests {
 				field.Name == "resources" &&
 				field.Description.Contains("JSON object string"),
 			because: "update-page should clarify the concrete resources payload shape");
+		pageUpdateContract.InputSchema.Properties.Should().Contain(field =>
+				field.Name == "validate" &&
+				field.Description.Contains("pre-existing"),
+			because: "update-page should expose the guarded validation escape hatch in its curated contract");
 		ToolContractDefinition modifyColumnContract = contracts.Single(contract => contract.Name == ModifyEntitySchemaColumnTool.ModifyEntitySchemaColumnToolName);
 		modifyColumnContract.PreferredFlow.Tools.Should().Equal(
 				new[] {
@@ -2256,18 +2260,17 @@ public sealed class ToolContractGetToolTests {
 
 		ToolContractDefinition deploy = result.Tools!.Single(contract =>
 			contract.Name == InstallerCommandTool.DeployCreatioToolName);
-		deploy.InputSchema.Required.Should().Contain(["siteName", "zipFile", "sitePort"],
-			because: "deploy-creatio requires the site name, build archive, and port");
+		deploy.InputSchema.Required.Should().Equal(["siteName", "zipFile"],
+			because: "deploy-creatio can select a local IIS port from the configured range when sitePort is omitted");
 		deploy.OutputContract.Kind.Should().Be("command-execution-result",
 			because: "deploy-creatio returns the standard command execution result payload");
 		deploy.PreferredFlow.Tools.Should().Equal(
 			new[] {
 				AssertInfrastructureTool.AssertInfrastructureToolName,
 				ShowPassingInfrastructureTool.ShowPassingInfrastructureToolName,
-				FindEmptyIisPortTool.FindEmptyIisPortToolName,
 				InstallerCommandTool.DeployCreatioToolName
 			},
-			because: "deploy-creatio should advertise the canonical deploy preflight order");
+			because: "deploy-creatio should advertise the required preflight without making optional port inspection mandatory");
 		deploy.Preconditions.Should().NotBeNullOrEmpty(
 			because: "the most consequential tool must spell out its preconditions");
 

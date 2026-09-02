@@ -81,6 +81,47 @@ public sealed class ProcessModelWriterTests {
 			Arg.Is<string>(content => content.Contains("UsrDottedFolderProcess")));
 	}
 
+	[Test]
+	[Description("Emits nested collection item types fully qualified so a Color property inside a composite-object-list parameter compiles without a System.Drawing import.")]
+	public void WriteFileFromModel_Should_Emit_Nested_Color_Item_Fully_Qualified() {
+		// Arrange
+		IFileSystem fileSystem = Substitute.For<IFileSystem>();
+		ProcessModelWriter writer = new(fileSystem);
+		Clio.Command.ProcessModel.ProcessModel processModel = CreateProcessModel("UsrNestedColorProcess");
+		processModel.Parameters = [
+			new ProcessParameter {
+				Name = "Palette",
+				Direction = ProcessParameterDirection.Input,
+				DataValueType = CompositeObjectListDataValueTypeUId,
+				ItemProperties = [
+					new ProcessParameter {
+						Name = "Shade",
+						DataValueType = ColorDataValueTypeUId
+					}
+				]
+			}
+		];
+		string explicitFilePath = Path.Combine("generated", "nested-color-model.cs");
+		fileSystem.ExistsFile(explicitFilePath).Returns(true);
+
+		// Act
+		writer.WriteFileFromModel(processModel, "Contoso.ProcessModels", explicitFilePath, "en-US");
+
+		// Assert
+		fileSystem.Received(1).WriteAllTextToFile(
+			explicitFilePath,
+			Arg.Is<string>(content =>
+				content.Contains("public System.Drawing.Color Shade {get; set;}") &&
+				!content.Contains("public Color Shade")));
+	}
+
+	private static readonly Guid CompositeObjectListDataValueTypeUId =
+		DataValueTypeMap.CompositeObjectListDataValueTypeUId;
+
+	//ColorDataValueTypeUId is private on DataValueTypeMap, so the fixture repeats the literal.
+	private static readonly Guid ColorDataValueTypeUId =
+		new("DAFB71F9-EE9F-4e0b-A4D7-37AA15987155");
+
 	private static Clio.Command.ProcessModel.ProcessModel CreateProcessModel(string code) =>
 		new(Guid.NewGuid(), code) {
 			Name = code,

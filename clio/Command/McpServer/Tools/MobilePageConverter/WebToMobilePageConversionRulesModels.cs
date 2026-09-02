@@ -52,8 +52,10 @@ public sealed class WebToMobilePageConversionRules {
 	public TabAreaLayersRule TabAreaLayers { get; init; }
 
 	/// <summary>
-	/// Group: per-mobile-type property overrides stamped onto EVERY element the converter INSERTS
-	/// (spacing normalization). Mobile pages follow the mobile spacing standard, so a listed
+	/// Group: property overrides stamped onto every element the converter INSERTS that a rule's
+	/// <see cref="ComponentPropertyOverrideRule.Filters"/> match — a whole component type, or a narrowed
+	/// subset of one (spacing normalization, corner-radius standard). Mobile pages follow the mobile
+	/// standards, so a listed
 	/// property is SET to the rule's value — replacing whatever the web page carried (any shape: token,
 	/// px number, CSS string, per-axis object) and added even when the web page carried none, so the
 	/// converted body is self-describing instead of leaning on client defaults. Applies to converted AND
@@ -62,6 +64,37 @@ public sealed class WebToMobilePageConversionRules {
 	/// </summary>
 	[JsonPropertyName("componentPropertyOverrides")]
 	public IReadOnlyList<ComponentPropertyOverrideRule> ComponentPropertyOverrides { get; init; } = [];
+
+	/// <summary>
+	/// Mobile component types that CAN host arbitrary children. The element-map walk carries, alongside the
+	/// nearest mapped mobile ancestor, the nearest ancestor whose mobile type is listed here; a receiver of any
+	/// other type — a <c>crt.TabPanel</c> renders only its tabs — does not become that carried value, so a
+	/// non-tab child of a tab strip is placed one level up instead of vanishing. Stated as an ACCEPT-list so the
+	/// converter names no component type at all: a type that cannot host children is handled by being ABSENT,
+	/// not by a branch.
+	/// <para>
+	/// The polarity is safe for PLACEMENT specifically. An under-inclusive list is harmless — an unlisted
+	/// legitimate host is skipped and the child lands one level higher, visible, with the move explained in the
+	/// entry's <c>reason</c>. The same list drove a REPORT in an earlier revision of this pass, and there the
+	/// identical under-inclusiveness produced a confident false STOP on every host it happened not to name.
+	/// Same data, opposite consequence: the mechanism is what makes the polarity safe, not the list.
+	/// </para>
+	/// <para>
+	/// Deliberately NOT <see cref="EmptyContainerRemoval"/>'s <c>removableTypes</c>, which is this list plus
+	/// <c>crt.TabPanel</c> and is correct for ITS purpose (an emptied tab strip must go). Sharing one list would
+	/// make an addition to one meaning silently change the other. The mobile registry cannot decide it either:
+	/// <c>crt.TabPanel</c> declares an <c>items</c> slot exactly as <c>crt.Gallery</c> does, and what differs —
+	/// that a strip's items must be tabs — is in prose, not in a field.
+	/// </para>
+	/// <para>
+	/// Empty or absent does NOT switch the behavior off the way <see cref="NonConvertingScopeContainers"/> does.
+	/// The rules file is CDN-fetched, so the file most likely to lack this key is an OLD one — exactly the file
+	/// whose <c>containers</c> list is also behind and which therefore needs the fallback most. The bundled list
+	/// is used instead; see the walk's resolution helper.
+	/// </para>
+	/// </summary>
+	[JsonPropertyName("contentContainerTypes")]
+	public IReadOnlyList<string> ContentContainerTypes { get; init; } = [];
 
 	/// <summary>
 	/// Group: deterministic removal of converter-created layout containers that end up EMPTY after all
@@ -259,14 +292,53 @@ public sealed class SynthesizedContainerRule {
 }
 
 /// <summary>
-/// One per-mobile-type value override applied to every INSERTED element of that type.
-/// The element identity keys (<c>name</c>/<c>type</c>) can never be overridden — a rules file listing
-/// them is ignored for those keys.
+/// One value override applied to every INSERTED element its <see cref="Filters"/> match — a whole component
+/// type, or a narrowed subset of one. The element identity keys (<c>name</c>/<c>type</c>) can never be
+/// overridden — a rules file listing them in <see cref="Values"/> is ignored for those keys.
 /// </summary>
 public sealed class ComponentPropertyOverrideRule {
-	/// <summary>Mobile component type the override applies to (e.g. "crt.GridContainer").</summary>
-	[JsonPropertyName("type")]
-	public string Type { get; init; }
+	/// <summary>
+	/// Which inserted elements the rule applies to, matched against the element's MOBILE values. This is the
+	/// rule's ONLY selector — the component type is a filter constraint like any other
+	/// (<c>[{ "type": "crt.GridContainer" }]</c>), so a standard that targets a type outright and one narrowed
+	/// to a subset of it are the same construct, not two.
+	/// <para>
+	/// Same shape and the same match rule as <see cref="ComponentEquivalenceRule.Filters"/>, evaluated by the
+	/// same code: the entries are OR-ed, each one AND-s every constraint it declares, a value matches only on
+	/// DEEP equality (so an ABSENT property never matches), and an entry that declares nothing matches nothing.
+	/// A list is what makes a union expressible —
+	/// <c>[{ "type": "crt.GridContainer", "values": { "borderRadius": "small" } },
+	/// { "type": "crt.GridContainer", "values": { "borderRadius": "medium" } }]</c> reads as "either radius".
+	/// Note the nesting: writing the constraint flat beside <c>type</c> leaves it inert, and each entry
+	/// collapses to type-only — the union then WIDENS to every element of the type instead of narrowing.
+	/// </para>
+	/// <para>
+	/// ABSENT and EMPTY are deliberately different here, because forgetting the key and meaning "everything"
+	/// must not look alike. An absent list (no <c>filters</c> key, or null) SKIPS the rule entirely: the
+	/// filters are the whole of what an override rule targets, so a rule without them is incomplete rather
+	/// than universal, and a typo must not silently stamp values onto every component on the page. An EMPTY
+	/// list is the explicit opt-in to "every insert of every type" — it can only be written on purpose.
+	/// <c>LoadBundled_OverridesCarryDataOnly</c> additionally holds the bundled file to at least one filter
+	/// naming a type, so even the explicit form cannot ship here by accident.
+	/// </para>
+	/// <para>
+	/// This is the ONE place the two groups diverge, and only at the rule level:
+	/// <see cref="ComponentEquivalenceRule.Filters"/> still reads an absent list as "match everything". That
+	/// is that group's PRE-EXISTING behavior, left alone because changing it is out of scope here — NOT a
+	/// safer case. Do not read it as one: <c>WebToMobileAnalysisService.RuleAppliesTo</c> never looks at
+	/// <c>web</c> (and no bundled template entry declares it), and the template's own <c>value.type</c> gate
+	/// is self-satisfying, because the converter derives the element's mobile type FROM the entry that
+	/// matched. So a template entry's filters are its only selector too, and an unfiltered one reaches every
+	/// source node. The matcher itself stays shared and identical.
+	/// </para>
+	/// <para>
+	/// Every rule's filters are evaluated against the element as it ENTERED the pass, before the first value
+	/// is stamped, so no rule can be enabled or disabled by what an earlier rule wrote. What DOES follow the
+	/// declaration order is the writing: see <c>WebToMobileAnalysisService.ApplyComponentPropertyOverrides</c>.
+	/// </para>
+	/// </summary>
+	[JsonPropertyName("filters")]
+	public IReadOnlyList<ElementFilterRule> Filters { get; init; }
 
 	/// <summary>Property name → value stamped onto the inserted element's mobile values.</summary>
 	[JsonPropertyName("values")]
@@ -519,12 +591,42 @@ public sealed class ComponentEquivalenceRule {
 }
 
 
-/// <summary>Matches a source element. Only the component type is matched today.</summary>
+/// <summary>
+/// Matches an element by component type and, optionally, by the value of any other property. Used by BOTH
+/// filter groups: <see cref="ComponentEquivalenceRule.Filters"/> matches it against the SOURCE web node,
+/// <see cref="ComponentPropertyOverrideRule.Filters"/> against the element's TARGET mobile values. Every
+/// constraint the filter declares is AND-ed; a list of filters is OR-ed.
+/// </summary>
 public sealed class ElementFilterRule {
 
-	/// <summary>Web component type the filter matches (e.g. <c>"crt.DataGrid"</c>).</summary>
+	/// <summary>
+	/// Component type the filter matches (e.g. <c>"crt.DataGrid"</c>). On an override rule this is the PRIMARY
+	/// selector and omitting it makes the filter cross-type — the rule then applies to every component whose
+	/// values satisfy <see cref="Values"/>, which is almost never intended.
+	/// </summary>
 	[JsonPropertyName("type")]
 	public string Type { get; init; }
+
+	/// <summary>
+	/// Further properties the filter requires, name → expected value
+	/// (<c>"values": { "borderRadius": "medium" }</c>). AND-ed with <see cref="Type"/> and with each other; a
+	/// value matches only on DEEP equality, so an ABSENT property never matches and neither does a value that
+	/// merely has the right shape.
+	/// <para>
+	/// Deliberately a NESTED object rather than extension data on the filter itself. Extension data would turn
+	/// every unrecognised key into a silent AND-ed constraint — and the rules file demonstrably carries such a
+	/// key: <c>excludedComponents[].filters[]</c> annotates entries with <c>note</c>. An author copying that
+	/// shape into this filter would produce a constraint on a property no element has, and the rule would stop
+	/// firing with no exception, no report entry and no diagnostic. Nesting the constraints keeps an unknown
+	/// key inert, which is what it was before this became a shared type.
+	/// </para>
+	/// <para>
+	/// A filter that declares NOTHING — no type, no values — matches nothing. It is a rules-file mistake, and
+	/// reading it as "matches everything" would silently widen the rule it was written to narrow.
+	/// </para>
+	/// </summary>
+	[JsonPropertyName("values")]
+	public IReadOnlyDictionary<string, JsonElement> Values { get; init; }
 }
 
 /// <summary>

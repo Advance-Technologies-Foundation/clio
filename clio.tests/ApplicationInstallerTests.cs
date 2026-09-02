@@ -197,7 +197,7 @@ internal class ApplicationInstallerTests : BaseClioModuleTests
 		FileSystem.AddFile(packagePath, new System.IO.Abstractions.TestingHelpers.MockFileData(new byte[0]));
 		EnvironmentSettings environmentSettings = new EnvironmentSettings();
 		var applicationClientFactory = Substitute.For<IApplicationClientFactory>();
-		var applicationClient = Substitute.For<IApplicationClient>();
+		var applicationClient = Substitute.For<IOwnedApplicationClient>();
 		applicationClientFactory.CreateClient(Arg.Any<EnvironmentSettings>()).Returns(applicationClient);
 		string capturedRequestData = null;
 		applicationClient.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>())
@@ -239,7 +239,7 @@ internal class ApplicationInstallerTests : BaseClioModuleTests
 		FileSystem.AddFile(packagePath, new System.IO.Abstractions.TestingHelpers.MockFileData(new byte[0]));
 		EnvironmentSettings environmentSettings = new EnvironmentSettings();
 		var applicationClientFactory = Substitute.For<IApplicationClientFactory>();
-		var applicationClient = Substitute.For<IApplicationClient>();
+		var applicationClient = Substitute.For<IOwnedApplicationClient>();
 		applicationClientFactory.CreateClient(Arg.Any<EnvironmentSettings>()).Returns(applicationClient);
 		string capturedRequestData = null;
 		applicationClient.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>())
@@ -281,7 +281,7 @@ internal class ApplicationInstallerTests : BaseClioModuleTests
 		FileSystem.AddFile(packagePath, new System.IO.Abstractions.TestingHelpers.MockFileData(new byte[0]));
 		EnvironmentSettings environmentSettings = new EnvironmentSettings();
 		var applicationClientFactory = Substitute.For<IApplicationClientFactory>();
-		var applicationClient = Substitute.For<IApplicationClient>();
+		var applicationClient = Substitute.For<IOwnedApplicationClient>();
 		applicationClientFactory.CreateClient(Arg.Any<EnvironmentSettings>()).Returns(applicationClient);
 		string capturedRequestData = null;
 		applicationClient.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>())
@@ -324,7 +324,7 @@ internal class ApplicationInstallerTests : BaseClioModuleTests
 		FileSystem.AddFile(packagePath, new System.IO.Abstractions.TestingHelpers.MockFileData(new byte[0]));
 		EnvironmentSettings environmentSettings = new EnvironmentSettings();
 		var applicationClientFactory = Substitute.For<IApplicationClientFactory>();
-		var applicationClient = Substitute.For<IApplicationClient>();
+		var applicationClient = Substitute.For<IOwnedApplicationClient>();
 		applicationClientFactory.CreateClient(Arg.Any<EnvironmentSettings>()).Returns(applicationClient);
 		applicationClient.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>())
 			.Returns("{\"success\":false,\"errorInfo\":{\"errorCode\":\"Terrasoft.Common.InvalidGZipArchiveException\",\"message\":\"Unable to open \\\"Partner.gz\\\". The file is invalid or corrupted.\"}}");
@@ -369,7 +369,7 @@ internal class ApplicationInstallerTests : BaseClioModuleTests
 		FileSystem.AddFile(packagePath, new System.IO.Abstractions.TestingHelpers.MockFileData(new byte[0]));
 		EnvironmentSettings environmentSettings = new EnvironmentSettings();
 		var applicationClientFactory = Substitute.For<IApplicationClientFactory>();
-		var applicationClient = Substitute.For<IApplicationClient>();
+		var applicationClient = Substitute.For<IOwnedApplicationClient>();
 		applicationClientFactory.CreateClient(Arg.Any<EnvironmentSettings>()).Returns(applicationClient);
 		applicationClient.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>())
 			.Returns("{\"success\":false}");
@@ -415,7 +415,7 @@ internal class ApplicationInstallerTests : BaseClioModuleTests
 		FileSystem.AddFile(packagePath, new System.IO.Abstractions.TestingHelpers.MockFileData(new byte[0]));
 		EnvironmentSettings environmentSettings = new EnvironmentSettings();
 		var applicationClientFactory = Substitute.For<IApplicationClientFactory>();
-		var applicationClient = Substitute.For<IApplicationClient>();
+		var applicationClient = Substitute.For<IOwnedApplicationClient>();
 		applicationClientFactory.CreateClient(Arg.Any<EnvironmentSettings>()).Returns(applicationClient);
 		applicationClient.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>())
 			.Returns("{\"success\":false}");

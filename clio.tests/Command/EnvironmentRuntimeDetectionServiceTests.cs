@@ -29,8 +29,8 @@ public sealed class EnvironmentRuntimeDetectionServiceTests {
 			[BuildUiMarkerUrl(true)] = HttpStatusCode.OK,
 			[BuildUiMarkerUrl(false)] = HttpStatusCode.NotFound
 		});
-		IApplicationClient netCoreClient = Substitute.For<IApplicationClient>();
-		IApplicationClient netFrameworkClient = Substitute.For<IApplicationClient>();
+		IOwnedApplicationClient netCoreClient = Substitute.For<IOwnedApplicationClient>();
+		IOwnedApplicationClient netFrameworkClient = Substitute.For<IOwnedApplicationClient>();
 		ConfigureFactory(applicationClientFactory, netCoreClient, netFrameworkClient);
 		ConfigureClientWarmup(netCoreClient, true);
 		ConfigureClientWarmup(netFrameworkClient, false);
@@ -54,8 +54,8 @@ public sealed class EnvironmentRuntimeDetectionServiceTests {
 			[BuildUiMarkerUrl(true)] = HttpStatusCode.NotFound,
 			[BuildUiMarkerUrl(false)] = HttpStatusCode.OK
 		});
-		IApplicationClient netCoreClient = Substitute.For<IApplicationClient>();
-		IApplicationClient netFrameworkClient = Substitute.For<IApplicationClient>();
+		IOwnedApplicationClient netCoreClient = Substitute.For<IOwnedApplicationClient>();
+		IOwnedApplicationClient netFrameworkClient = Substitute.For<IOwnedApplicationClient>();
 		ConfigureFactory(applicationClientFactory, netCoreClient, netFrameworkClient);
 		ConfigureClientWarmup(netCoreClient, true);
 		ConfigureClientWarmup(netFrameworkClient, false);
@@ -79,8 +79,8 @@ public sealed class EnvironmentRuntimeDetectionServiceTests {
 			[BuildUiMarkerUrl(true)] = HttpStatusCode.OK,
 			[BuildUiMarkerUrl(false)] = HttpStatusCode.OK
 		});
-		IApplicationClient netCoreClient = Substitute.For<IApplicationClient>();
-		IApplicationClient netFrameworkClient = Substitute.For<IApplicationClient>();
+		IOwnedApplicationClient netCoreClient = Substitute.For<IOwnedApplicationClient>();
+		IOwnedApplicationClient netFrameworkClient = Substitute.For<IOwnedApplicationClient>();
 		ConfigureFactory(applicationClientFactory, netCoreClient, netFrameworkClient);
 		ConfigureClientWarmup(netCoreClient, true);
 		ConfigureClientWarmup(netFrameworkClient, false);
@@ -110,8 +110,8 @@ public sealed class EnvironmentRuntimeDetectionServiceTests {
 			[BuildUiMarkerUrl(true)] = HttpStatusCode.NotFound,
 			[BuildUiMarkerUrl(false)] = HttpStatusCode.OK
 		});
-		IApplicationClient netCoreClient = Substitute.For<IApplicationClient>();
-		IApplicationClient netFrameworkClient = Substitute.For<IApplicationClient>();
+		IOwnedApplicationClient netCoreClient = Substitute.For<IOwnedApplicationClient>();
+		IOwnedApplicationClient netFrameworkClient = Substitute.For<IOwnedApplicationClient>();
 		ConfigureFactory(applicationClientFactory, netCoreClient, netFrameworkClient);
 		ConfigureClientWarmup(netCoreClient, true);
 		ConfigureClientWarmup(netFrameworkClient, false);
@@ -134,8 +134,8 @@ public sealed class EnvironmentRuntimeDetectionServiceTests {
 			[BuildUiMarkerUrl(true)] = HttpStatusCode.OK,
 			[BuildUiMarkerUrl(false)] = HttpStatusCode.NotFound
 		});
-		IApplicationClient netCoreClient = Substitute.For<IApplicationClient>();
-		IApplicationClient netFrameworkClient = Substitute.For<IApplicationClient>();
+		IOwnedApplicationClient netCoreClient = Substitute.For<IOwnedApplicationClient>();
+		IOwnedApplicationClient netFrameworkClient = Substitute.For<IOwnedApplicationClient>();
 		ConfigureFactory(applicationClientFactory, netCoreClient, netFrameworkClient);
 		ConfigureClientWarmup(netCoreClient, true);
 		ConfigureClientWarmup(netFrameworkClient, false);
@@ -158,8 +158,8 @@ public sealed class EnvironmentRuntimeDetectionServiceTests {
 			[BuildUiMarkerUrl(true)] = HttpStatusCode.OK,
 			[BuildUiMarkerUrl(false)] = HttpStatusCode.NotFound
 		});
-		IApplicationClient netCoreClient = Substitute.For<IApplicationClient>();
-		IApplicationClient netFrameworkClient = Substitute.For<IApplicationClient>();
+		IOwnedApplicationClient netCoreClient = Substitute.For<IOwnedApplicationClient>();
+		IOwnedApplicationClient netFrameworkClient = Substitute.For<IOwnedApplicationClient>();
 		ConfigureFactory(applicationClientFactory, netCoreClient, netFrameworkClient);
 		ConfigureClientWarmup(netCoreClient, true);
 		ConfigureClientWarmup(netFrameworkClient, false);
@@ -183,8 +183,8 @@ public sealed class EnvironmentRuntimeDetectionServiceTests {
 			[BuildUiMarkerUrl(true)] = HttpStatusCode.NotFound,
 			[BuildUiMarkerUrl(false)] = HttpStatusCode.OK
 		});
-		IApplicationClient netCoreClient = Substitute.For<IApplicationClient>();
-		IApplicationClient netFrameworkClient = Substitute.For<IApplicationClient>();
+		IOwnedApplicationClient netCoreClient = Substitute.For<IOwnedApplicationClient>();
+		IOwnedApplicationClient netFrameworkClient = Substitute.For<IOwnedApplicationClient>();
 		ConfigureFactory(applicationClientFactory, netCoreClient, netFrameworkClient);
 		ConfigureClientWarmup(netCoreClient, true);
 		ConfigureClientWarmup(netFrameworkClient, false);
@@ -208,8 +208,8 @@ public sealed class EnvironmentRuntimeDetectionServiceTests {
 			[BuildUiMarkerUrl(true)] = HttpStatusCode.OK,
 			[BuildUiMarkerUrl(false)] = HttpStatusCode.OK
 		});
-		IApplicationClient netCoreClient = Substitute.For<IApplicationClient>();
-		IApplicationClient netFrameworkClient = Substitute.For<IApplicationClient>();
+		IOwnedApplicationClient netCoreClient = Substitute.For<IOwnedApplicationClient>();
+		IOwnedApplicationClient netFrameworkClient = Substitute.For<IOwnedApplicationClient>();
 		ConfigureFactory(applicationClientFactory, netCoreClient, netFrameworkClient);
 		ConfigureClientWarmup(netCoreClient, true);
 		ConfigureClientWarmup(netFrameworkClient, false);
@@ -268,8 +268,8 @@ public sealed class EnvironmentRuntimeDetectionServiceTests {
 
 	private static void ConfigureFactory(
 		IApplicationClientFactory applicationClientFactory,
-		IApplicationClient netCoreClient,
-		IApplicationClient netFrameworkClient) {
+		IOwnedApplicationClient netCoreClient,
+		IOwnedApplicationClient netFrameworkClient) {
 		applicationClientFactory.CreateEnvironmentClient(Arg.Is<EnvironmentSettings>(settings => settings.IsNetCore))
 			.Returns(netCoreClient);
 		applicationClientFactory.CreateEnvironmentClient(Arg.Is<EnvironmentSettings>(settings => !settings.IsNetCore))

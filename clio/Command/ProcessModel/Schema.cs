@@ -451,6 +451,11 @@ public static class DataValueTypeMap{
 		{} when dataValueTypeUId == PhoneTextDataValueTypeUId => typeof(string),
 		{} when dataValueTypeUId == WebTextDataValueTypeUId => typeof(string),
 		{} when dataValueTypeUId == EmailTextDataValueTypeUId => typeof(string),
+		//Native, per the trunk: ColorDataValueType.ValueType is System.Drawing.Color. This map also feeds
+		//process-model and signature generation, so string here would emit Color parameters as
+		//System.String. The "#RRGGBB" wire literal the data-binding path needs is asked for through
+		//IsColor instead.
+		{} when dataValueTypeUId == ColorDataValueTypeUId => typeof(System.Drawing.Color),
 		{} when dataValueTypeUId == ImageReferenceDataValueTypeUId => typeof(string),
 		{} when dataValueTypeUId == ImageContentDataValueTypeUId => typeof(string),
 		{} when dataValueTypeUId == RichTextDataValueTypeUId => typeof(string),
@@ -490,6 +495,7 @@ public static class DataValueTypeMap{
 		9 => TimeDataValueTypeUId,
 		10 => LookupDataValueTypeUId,
 		12 => BooleanDataValueTypeUId,
+		18 => ColorDataValueTypeUId,
 		13 => ImageContentDataValueTypeUId,
 		14 => ImageReferenceDataValueTypeUId,
 		26 => LongTextDataValueTypeUId,
@@ -514,6 +520,15 @@ public static class DataValueTypeMap{
 	};
 
 	internal static bool IsImageContent(Guid dataValueTypeUId) => dataValueTypeUId == ImageContentDataValueTypeUId;
+
+	/// <summary>
+	/// True for the native Creatio Color data type. Kept separate from <see cref="Resolve"/> on purpose:
+	/// the trunk defines Color's value type as <see cref="System.Drawing.Color"/> and marks it
+	/// non-localizable, so mapping the UId to <see cref="string"/> would emit Color process parameters as
+	/// System.String and let a Color column into localization rows. Only the data-binding WIRE format is
+	/// a string - a "#RRGGBB" hex literal - and only that path asks this question.
+	/// </summary>
+	internal static bool IsColor(Guid dataValueTypeUId) => dataValueTypeUId == ColorDataValueTypeUId;
 
 	internal static bool IsImageReference(Guid dataValueTypeUId) => dataValueTypeUId == ImageReferenceDataValueTypeUId;
 
