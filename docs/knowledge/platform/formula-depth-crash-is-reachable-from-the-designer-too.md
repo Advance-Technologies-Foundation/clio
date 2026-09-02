@@ -12,8 +12,8 @@ process. The formula engine (DynamicExpresso 2.16.1, pinned at
 `Terrasoft.Core.ScriptEngine.csproj:23`) parses by recursive descent — its symbol table carries the
 full precedence ladder, `ParseAssignment` down to `ParseParenExpression`, roughly 15–17 stack frames
 per bracket level — and nothing guards the stack: `EnsureSufficientExecutionStack` appears nowhere in
-`Src/Lib`, and `DynamicExpressoEngine.Validate` (`DynamicExpressoEngine.cs:334-339`) goes straight
-into `_interpreter.Parse`. The resulting `StackOverflowException` cannot be caught in .NET. The
+`Src/Lib`, and `DynamicExpressoEngine.Validate` (`DynamicExpressoEngine.cs:334-339`) reaches `_interpreter.Parse` through `CreateDelegate` and `GetLambda`, with no stack guard
+anywhere on the path.Parse`. The resulting `StackOverflowException` cannot be caught in .NET. The
 worker serving every user of the application dies, `finally` blocks do not run, so the design session
 is never released, and nothing reaches the APPLICATION log — only the host records a worker crash.
 The threshold measured on one stand is around 1200 levels; treat that as one measurement, not a
@@ -41,7 +41,7 @@ The platform bounds none of this. No platform assembly caps the length of formul
 `Terrasoft.Configuration/Pkg/`, so do not cite a bare grep as evidence. The only check the platform
 applies to expression text is a newline check
 (`Terrasoft.Core/Process/ProcessParameterValueProvider.cs:608-611`). There is no database cap either:
-the body is `ProcessSchemaScriptTask.Body`, typed `MetaDataText`, and `MetaDataDataValueType`
+the body is `ProcessSchemaScriptTask.Body`, typed `MetaDataText`, and `MetaDataTextDataValueType`
 (`Terrasoft.Core/DataValueType.cs:2874`) has no `TextSize` — it is gzipped into the
 `SysSchema.MetaData` stream. Nor is depth bounded. The platform's NEAREST depth limit,
 `ArithmeticExpression.Validate` (`Terrasoft.Core/ExpressionEngine/ArithmeticExpression.cs:95`,

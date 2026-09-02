@@ -11,8 +11,7 @@ date: 2026-08-29
 flow into a conditional one.
 
 1. **The kind is the CLR type, not the enum.** `ProcessSchemaConditionalFlow` overrides
-   `CreateSequenceFlowElement` to copy `ConditionExpression`; the base `ProcessSchemaSequenceFlow` never
-   does. Setting `FlowType = Conditional` on the base class gives a flow that *describes* as conditional
+   `CreateSequenceFlowElement` to copy `ConditionExpression`; the base `ProcessSchemaSequenceFlow` overrides that method too, and its override never copies the condition. Setting `FlowType = Conditional` on the base class gives a flow that *describes* as conditional
    and *serializes* as conditional (`CI4 = 2`, a populated `CI3`) but loses its condition during
    flow-schema generation — and makes `ProcessSchemaFlowNode.GetOutgoingsConditionalFlowsInternal` guard
    on the enum and then cast to the type, throwing `InvalidCastException` at a human opening a properties
