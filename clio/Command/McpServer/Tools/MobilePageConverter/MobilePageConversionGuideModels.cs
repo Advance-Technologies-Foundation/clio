@@ -33,6 +33,88 @@ public sealed class SourceComponentInfo {
 }
 
 /// <summary>
+/// One thing the conversion could NOT do. Every diagnostic describes an ABSENCE — work that did not happen —
+/// which is why none of them can be attached to an <see cref="ElementMapEntry"/>: a component that was never
+/// removed produces no <c>drop</c>, and a standard that never ran produces no normalization entry.
+/// </summary>
+/// <remarks>
+/// Read <see cref="Impact"/> first: it answers the only question that changes what the caller does — is this
+/// mine to act on? The remedy for each <see cref="Code"/> is a standing rule and lives in the
+/// <c>freedom-page-web-to-mobile-conversion</c> guidance article, deliberately not in this payload; a
+/// sentence repeated per conversion is what ENG-95827 removed.
+/// </remarks>
+public sealed record ConversionDiagnostic {
+	/// <summary>
+	/// What could not be done, from a closed set:
+	/// <list type="bullet">
+	/// <item><description><c>"data-section-root-merge-fallback"</c> — no usable mobile-template base for a
+	/// config, so its diff degraded to a single ROOT MERGE. A root merge replaces arrays wholesale, so any
+	/// array the template also owns may lose its baseline entries. Carries <see cref="Sections"/> and
+	/// <see cref="Cause"/>.</description></item>
+	/// <item><description><c>"component-twin-not-prebuilt"</c> — a same-component twin could not be diffed
+	/// against the web-template baseline, so it degraded to an ADVISORY merge with no prebuilt
+	/// <c>mobileValues</c> and has to be configured by hand. Carries <see cref="Elements"/> and
+	/// <see cref="Cause"/>.</description></item>
+	/// <item><description><c>"exclusion-search-truncated"</c> — an excludedComponents search hit its depth
+	/// budget and abandoned a branch, so a banned component nested deeper is STILL on the page and has no
+	/// <c>drop</c> entry naming it.</description></item>
+	/// <item><description><c>"exclusion-filters-discarded"</c> — filters in the published rules file declare
+	/// no <c>type</c>/<c>parentType</c>, so those exclusions did not run. Carries <see cref="Count"/>.</description></item>
+	/// <item><description><c>"normalization-rules-skipped"</c> — componentPropertyOverrides rules in the
+	/// published rules file declare no <c>filters</c>, so those standards did not run and the elements they
+	/// target keep their WEB values. Carries <see cref="Count"/>.</description></item>
+	/// </list>
+	/// </summary>
+	[JsonPropertyName("code")]
+	public string Code { get; init; }
+
+	/// <summary>
+	/// Whose problem this is — the branch that decides what the caller does:
+	/// <list type="bullet">
+	/// <item><description><c>"conversion"</c> — the output or the report of THIS conversion is affected, and
+	/// the code's remedy is the caller's to apply before treating the page as done.</description></item>
+	/// <item><description><c>"converter-config"</c> — a rule in the PUBLISHED rules file is malformed, so the
+	/// behaviour it declares did not run. The caller cannot fix it from here: report it and carry on. The rules
+	/// file is fetched at run time, so a typo in a published rule silently switches a rule off — which is the
+	/// whole reason these are reported at all.</description></item>
+	/// </list>
+	/// </summary>
+	[JsonPropertyName("impact")]
+	public string Impact { get; init; }
+
+	/// <summary>
+	/// Which data-section diffs degraded (<c>"modelConfigDiff"</c> / <c>"viewModelConfigDiff"</c>) — it names
+	/// the diff to hand-edit. Only on <c>"data-section-root-merge-fallback"</c>.
+	/// </summary>
+	[JsonPropertyName("sections")]
+	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+	public IReadOnlyList<string> Sections { get; init; }
+
+	/// <summary>
+	/// The source element names that degraded. Only on <c>"component-twin-not-prebuilt"</c>, where the caller
+	/// has to know WHICH elements it now configures by hand.
+	/// </summary>
+	[JsonPropertyName("elements")]
+	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+	public IReadOnlyList<string> Elements { get; init; }
+
+	/// <summary>
+	/// Why the base was missing, when it is known — <c>"mobile-template-unreadable"</c>,
+	/// <c>"web-template-unreadable"</c> (both re-runnable with <c>environment-name</c>/<c>uri</c> set) or
+	/// <c>"no-template-base"</c> / <c>"no-baseline-node"</c> (nothing to re-run; the base does not exist). It is
+	/// reported only when actually known, so the re-run remedy is never suggested on a guess.
+	/// </summary>
+	[JsonPropertyName("cause")]
+	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+	public string Cause { get; init; }
+
+	/// <summary>How many rules were refused. Only on the two <c>"converter-config"</c> codes.</summary>
+	[JsonPropertyName("count")]
+	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+	public int? Count { get; init; }
+}
+
+/// <summary>
 /// One change to a TEMPLATE-OWNED data-section value that no mobile diff operation can express, so the
 /// converted page cannot carry it. Reported per occurrence rather than described in prose because the three
 /// <see cref="Kind"/>s have DIFFERENT outcomes and two different remedies.
@@ -663,21 +745,22 @@ public sealed class MobilePageConversionGuide {
 
 	// ── Guidance ──────────────────────────────────────────────────────
 	/// <summary>
-	/// Findings SPECIFIC TO THIS CONVERSION — each entry is present because a condition the converter
-	/// evaluated actually fired for this page (a degraded diff, a dropped section, a template-owned array
-	/// it could not edit, a normalization it applied). Empty is a valid and common result.
+	/// Everything the conversion could NOT do, one structured entry per occurrence. Null when there is
+	/// nothing, which is the normal case — a clean conversion reports no diagnostics at all.
 	/// </summary>
 	/// <remarks>
-	/// Deliberately carries NO unconditional platform invariant. A line that fires for every page states no
-	/// fact about this conversion, so it cannot inform a decision the caller has to make — it only competes
-	/// with the page data for attention, which is the ENG-95827 failure mode on smaller models. Such an
-	/// invariant belongs on the surface that can hold the caller to it: a validator in
-	/// <see cref="SchemaValidationService"/> (which <c>validate-page</c> and <c>update-page</c> cannot be
-	/// talked out of) plus its explanation in the <c>freedom-page-web-to-mobile-conversion</c> guidance
-	/// article. Do not re-add an unconditional entry here.
+	/// This replaced a <c>constraints</c> array of English sentences (ENG-95827). Every line in it was either
+	/// an unconditional platform invariant, which states no fact about the conversion in front of the caller
+	/// and belongs on the surface that can hold them to it (a validator in
+	/// <see cref="SchemaValidationService"/> plus the guidance article), or a restatement of data the payload
+	/// already carried. What survived is exactly this: the absences, which nothing else in the response can
+	/// express because they leave no entry behind. Do not re-add a prose array here, and do not put a remedy
+	/// sentence on a diagnostic — the remedy per <see cref="ConversionDiagnostic.Code"/> is a standing rule
+	/// and lives in the article.
 	/// </remarks>
-	[JsonPropertyName("constraints")]
-	public IReadOnlyList<string> Constraints { get; init; } = [];
+	[JsonPropertyName("diagnostics")]
+	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+	public IReadOnlyList<ConversionDiagnostic> Diagnostics { get; init; }
 
 	[JsonPropertyName("nextSteps")]
 	public IReadOnlyList<string> NextSteps { get; init; } = [];

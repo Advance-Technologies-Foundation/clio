@@ -100,9 +100,6 @@ public sealed class MobilePageConversionGuideSandboxE2ETests : McpContractFixtur
 	/// The kinds matter individually because two of the three need opposite remedies.
 	/// </summary>
 	private static void AssertDataSectionConflictsAreStructured(MobilePageConversionGuide guide) {
-		guide.Constraints.Should().NotContain(c => c.Contains("template-owned array"),
-			because: "the finding moved to dataSectionConflicts; a constraint sentence would flatten the section, "
-				+ "the path and three different outcomes back into one label the caller has to parse");
 		if (guide.DataSectionConflicts is null) {
 			return;
 		}
@@ -507,10 +504,10 @@ public sealed class MobilePageConversionGuideSandboxE2ETests : McpContractFixtur
 		// inserts already reparented onto each tab's own Area), not by prose. How to apply it is FLOW step 5c
 		// in the guidance article, and stating it as a fact rather than a question is the conversion skill's
 		// gate rule. What must remain impossible over the real transport is the guide offering it as a choice.
-		guide.Constraints.Concat(guide.NextSteps).Should().NotContain(t => t.Contains("tabAreaLayers"),
+		guide.NextSteps.Should().NotContain(t => t.Contains("tabAreaLayers"),
 			because: "restating how to apply a section already in the payload fires on every tabbed page and "
 				+ "says nothing about this conversion");
-		guide.Constraints.Concat(guide.NextSteps)
+		guide.NextSteps
 			.Should().NotContain(t => (t.Contains("tab body") || t.Contains("Area")) && (t.Contains("decline") || t.Contains("may adjust")),
 				because: "offering to skip or alter the two-layer body is exactly what must never reach the caller");
 	}

@@ -64,9 +64,10 @@ public sealed class MobilePageConversionGuideTool {
 		+ "Freedom UI WEB (sourceType \"freedom-web\"); any other source type is detected and reported as not yet "
 		+ "supported. ADVISORY-ONLY: this tool builds NO page body and writes NOTHING to Creatio or disk — YOU build "
 		+ "the mobile body from the guide, persist it with create-page (mobile template) + update-page, then "
-		+ "validate-page. Its `constraints` carry ONLY findings specific to THIS conversion (a degraded diff, a "
-		+ "dropped section, an applied normalization) and are often empty; the platform invariants are enforced by "
-		+ "validate-page / update-page and explained in the guidance article, not repeated per conversion. "
+		+ "validate-page. Its `diagnostics` report ONLY what the conversion could NOT do, each with an `impact` "
+		+ "saying whether it is yours to act on (`conversion`) or a malformed published rule you can only report "
+		+ "(`converter-config`); the section is ABSENT on a clean conversion. The platform invariants are enforced "
+		+ "by validate-page / update-page and explained in the guidance article, not repeated per conversion. "
 		+ "MANDATORY before acting on the guide: get-guidance name `freedom-page-web-to-mobile-conversion`.")]
 	public async Task<MobilePageConversionGuideResponse> GetMobilePageConversionGuide(
 		[Description("Parameters: schema-name (required, the source page); target-schema-name (optional suggested mobile page name); version (optional registry/Creatio version); environment-name preferred; uri/login/password emergency fallback only.")]

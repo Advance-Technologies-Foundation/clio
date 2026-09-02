@@ -393,7 +393,7 @@ public static class WebToMobileAnalysisService {
 			ResourceStrings = resourceStrings.Count > 0 ? resourceStrings : null,
 			// Named arguments deliberately: the tail is a run of defaulted bools, so a positional call silently
 			// mis-wires the moment a parameter is inserted rather than appended.
-			Constraints = BuildConstraints(
+			Diagnostics = DiagnosticsOrNull(BuildDiagnostics(
 				viewModelConfigRootMerge: viewModelConfigRootMerge,
 				modelConfigRootMerge: modelConfigRootMerge,
 				mobileTemplateUnavailable: mobileTemplateUnavailable,
@@ -401,7 +401,7 @@ public static class WebToMobileAnalysisService {
 				advisoryTwins: advisoryTwins,
 				exclusionSearchTruncated: excludedDiagnostics.DepthBudgetTruncated,
 				discardedExclusionFilters: excludedDiagnostics.DiscardedFilterCount,
-				skippedOverrideRules: componentPropertyOverrides.SkippedRulesWithoutFilters),
+				skippedOverrideRules: componentPropertyOverrides.SkippedRulesWithoutFilters)),
 			NextSteps = BuildNextSteps(
 				hasDataSections: modelConfig is not null || viewModelConfig is not null,
 				hasResourceStrings: resourceStrings.Count > 0),
@@ -1480,7 +1480,7 @@ public static class WebToMobileAnalysisService {
 	/// name-addressed <c>merge</c> has no <c>_id</c> to resolve, and an <c>insert</c> of the changed element would
 	/// DUPLICATE the name rather than replace it. The safeguard is therefore the same as the collection-scalar case:
 	/// the template's native value wins (the differing web value is a template-owned-config override, not authored
-	/// content) and the change is SURFACED as a conflict the caller raises in <c>guide.Constraints</c> -- not
+	/// content) and the change is SURFACED in <c>guide.dataSectionConflicts</c> -- not
 	/// silently dropped. For a nameless in-place edit the page's element is still inserted (nothing dropped) AND the
 	/// duplicate-at-runtime risk is flagged. Base identities are hoisted once (O(N+M), no per-candidate re-serialization).
 	/// </para>
@@ -1736,175 +1736,127 @@ public static class WebToMobileAnalysisService {
 		return referenced;
 	}
 
-	private static List<string> BuildConstraints(
+	/// <summary>
+	/// Everything the conversion could NOT do, as typed diagnostics. Empty when nothing went wrong, which is
+	/// the normal case.
+	/// </summary>
+	/// <remarks>
+	/// <para>
+	/// This replaced a <c>constraints</c> array of English sentences (ENG-95827). Only ABSENCES survived the
+	/// migration, because an absence is the one thing nothing else in the response can express: a component
+	/// that was never removed produces no <c>drop</c> entry, and a standard that never ran produces no
+	/// normalization entry. Everything else that used to be here was either an unconditional platform
+	/// invariant or a restatement of data the payload already carried, and each went to the surface that owns
+	/// it:
+	/// </para>
+	/// <list type="bullet">
+	/// <item><description>plain-JSON body, no <c>handlers</c>/<c>validators</c>/converters, no second
+	/// <c>crt.Scaffold</c>, mobile-registered types only -&gt; validators in
+	/// <see cref="SchemaValidationService"/> that <c>validate-page</c>/<c>update-page</c> cannot be talked out
+	/// of, explained once in the guidance article.</description></item>
+	/// <item><description>retarget into a template-provided parent -&gt;
+	/// <see cref="ElementMapEntry.ParentSource"/>, stamped on every insert.</description></item>
+	/// <item><description>paste the data-section diffs verbatim -&gt; the article's DATA SECTIONS rule, with
+	/// the failure it warns about enforced by
+	/// <see cref="SchemaValidationService.ValidateMobileDataSourceAttributeTypes"/>.</description></item>
+	/// <item><description>a template-owned value no diff can express -&gt;
+	/// <see cref="MobilePageConversionGuide.DataSectionConflicts"/>.</description></item>
+	/// <item><description>web-only sections -&gt; <see cref="MobilePageConversionGuide.WebOnlySections"/>;
+	/// normalization -&gt; each group's own note; an excludedComponents or empty-container removal -&gt; the
+	/// <c>drop</c> entry's reason; adaptive layout and the tab body -&gt; the article's FLOW steps and the
+	/// conversion skill's gate rules.</description></item>
+	/// </list>
+	/// <para>
+	/// Do not add a prose entry here, and do not put a remedy sentence on a diagnostic: the remedy per code is
+	/// a standing rule and lives in the article.
+	/// </para>
+	/// </remarks>
+	private static List<ConversionDiagnostic> BuildDiagnostics(
 		bool viewModelConfigRootMerge = false, bool modelConfigRootMerge = false, bool mobileTemplateUnavailable = false,
 		bool webTemplateUnavailable = false, IReadOnlyList<string> advisoryTwins = null,
 		bool exclusionSearchTruncated = false, int discardedExclusionFilters = 0,
 		int skippedOverrideRules = 0) {
-		// UNCONDITIONAL platform invariants do NOT belong here. A line that fires for every page carries no
-		// fact about THIS conversion, so it cannot inform a decision the caller has to make — it only competes
-		// for attention with the data beside it, which is the ENG-95827 failure mode. Each of the four that used
-		// to open this list is now carried by the surface that can actually hold the caller to it:
-		//   - plain-JSON body / no AMD / no unknown root section -> SchemaValidationService.ValidateMobileBody
-		//     (hard ERROR: root-kind floor + ValidateMobileNoUnknownRootProperties)
-		//   - no second Scaffold -> SchemaValidationService.ValidateMobileSingleScaffoldRoot (hard ERROR)
-		//   - no handlers / validators / custom converters -> ValidateMobileBody's disallowed root properties
-		//     plus ValidateMobileNoValidatorReferences (hard ERROR); the "re-implement as business rules"
-		//     half is page-specific and already carried by WebOnlySections + PageBusinessRules
-		//   - mobile-registered component types only -> ValidateMobileComponentTypes, which now also reports a
-		//     type absent from BOTH registries; the converter itself never emits a non-registry type (it drops
-		//     with reason "type 'X' not in mobile registry")
-		// The prose explanation of each lives in the freedom-page-web-to-mobile-conversion guidance article.
-		// Only CONDITIONAL entries — a fact about this page the caller cannot derive — may be added below.
-		var constraints = new List<string>();
-
-		// Retargeting into a template-provided container is NOT reported here. This line existed because the
-		// fact was only half in the data: `parentExistsOnTemplate` was set by three retarget code paths and so
-		// was missing from an ordinary insert into a template-provided parent, which left the constraint as the
-		// only place naming those containers. The fact is now TOTAL on the entries themselves —
-		// elementMap[].parentSource is stamped on every insert (see StampParentSource) — so the caller reads it
-		// per entry instead of matching a sentence against a list of names. What to DO about a "template"
-		// parent (insert only the child, never author the parent or its slot) is on the field's own contract
-		// and in the guidance article's RETARGET rule.
-		// The HAPPY path of the data sections is NOT reported. "Paste modelConfigDiff / viewModelConfigDiff
-		// verbatim, they are targeted operations, do not collapse them into one root merge, never source the
-		// data-source section from a pre-existing body, keep every attribute's type and path" is a standing
-		// rule, and the guidance article's DATA SECTIONS section carries it verbatim and more completely (a
-		// HARD RULE paragraph, per-section detail, and a checklist that names the enforcement). The exact
-		// failure those sentences warn about — a related/lookup attribute losing its "type", so the binding
-		// resolves to nothing in Mobile Designer ("Item with the path … not found") — is a hard ERROR from
-		// SchemaValidationService.ValidateMobileDataSourceAttributeTypes, so update-page refuses such a body
-		// instead of trusting the caller to have read a sentence. Restating it per page bought nothing and
-		// fired on EVERY page that has data sections, which is nearly all of them.
-		//
-		// Only the DEGRADED path is a finding about this conversion, and it is now ONE line. It used to be up
-		// to THREE for the same event: one per config saying "no template base was available", plus a third
-		// naming the cause. The line also states WHICH diff degraded — previously the caller had to infer that
-		// from which of the two near-identical sentences appeared.
+		var diagnostics = new List<ConversionDiagnostic>();
 		if (viewModelConfigRootMerge || modelConfigRootMerge) {
-			var degraded = new List<string>();
+			var sections = new List<string>();
 			if (modelConfigRootMerge) {
-				degraded.Add("modelConfigDiff");
+				sections.Add("modelConfigDiff");
 			}
 			if (viewModelConfigRootMerge) {
-				degraded.Add("viewModelConfigDiff");
+				sections.Add("viewModelConfigDiff");
 			}
-			// mobileTemplateUnavailable is NOT implied by the fallback: a template that carries only the other
+			// mobileTemplateUnavailable is NOT implied by the fallback: a template carrying only the other
 			// section, or a page with no known template, degrades with the bundle read perfectly fine. Naming
-			// the cause only when it is actually known keeps the remedy honest.
-			string cause = mobileTemplateUnavailable
-				? "the mobile template's bundle could not be read (no active environment, or the read failed)"
-				: "no mobile template base was available for it";
-			constraints.Add(
-				$"{string.Join(" and ", degraded)}: SINGLE ROOT MERGE, not targeted operations — {cause}. A root "
-				+ "merge REPLACES arrays wholesale, so any array the mobile template also owns (a data source's "
-				+ "own sort/filter array, or Items.modelConfig.filterAttributes' built-in QuickFilterGroup_Filters "
-				+ "on BaseMobileListTemplate) may lose its baseline entries. Verify those arrays before pasting, or "
-				+ "re-run with environment-name/uri set so clio can diff against the real base and emit inserts.");
+			// the cause only when it is known is what keeps the re-run remedy from being suggested on a guess.
+			diagnostics.Add(new ConversionDiagnostic {
+				Code = RootMergeFallbackDiagnostic,
+				Impact = ConversionImpact,
+				Sections = sections,
+				Cause = mobileTemplateUnavailable ? MobileTemplateUnreadableCause : NoTemplateBaseCause
+			});
 		}
-		// Web-template chrome pruning is NOT reported here. It happens whenever a web-template baseline could
-		// be resolved at all — i.e. on every ordinary page — so it describes the normal path rather than a
-		// finding about this conversion. Its complement is what is actually notable, and that IS reported
-		// (webTemplateUnavailable, below). The behaviour and the "do not re-add the web header" rule are
-		// documented in the guidance article (TOOL / sourceStructure and the RETARGET rule).
-		// NOTE for a future metadata pass: a pruned component leaves NO trace in the response — it is removed
-		// from the tree before the structure walk, so it appears in neither sourceStructure nor elementMap
-		// (verified: TitleContainer / BackButton / PageTitle are absent from a real Leads_FormPage guide). If
-		// the caller ever needs to know WHAT was pruned, that is a new structured field, not a sentence here.
-		// Only when a NAME-MAPPED twin exists (the rule declares one, e.g. AttachmentList -> AttachmentFileList):
-		// an automatic same-name twin cannot fire without a baseline, so an unreadable web template affects only
-		// the rule-declared twin, which then degrades to an advisory merge (no prebuilt delta).
-		// Gated on twins that ACTUALLY degraded on this page, named. The previous condition was
-		// `webTemplateUnavailable && componentMap.Count > 0`, and the second half is a property of the RULES
-		// FILE, not of the page — the bundled rules always declare a twin, so an unreadable web template
-		// reported a degraded twin on EVERY page, including pages carrying no twin element at all.
 		if (advisoryTwins is { Count: > 0 }) {
-			string cause = webTemplateUnavailable
-				? "the source page's WEB template bundle could not be read (no active environment, or the read failed)"
-				: "no web-template baseline node exists for it";
-			constraints.Add(
-				$"Same-component twin(s) degraded to an ADVISORY merge with NO prebuilt mobileValues: "
-				+ string.Join(", ", advisoryTwins)
-				+ $". {cause}, so the page's delta over the template could not be computed — configure each mobile "
-				+ "element by merge-by-name per componentSuggestions"
-				+ (webTemplateUnavailable
-					? ", or re-run with environment-name/uri set so clio can diff against the real web template and prebuild the delta."
-					: "."));
+			diagnostics.Add(new ConversionDiagnostic {
+				Code = TwinNotPrebuiltDiagnostic,
+				Impact = ConversionImpact,
+				Elements = advisoryTwins,
+				Cause = webTemplateUnavailable ? WebTemplateUnreadableCause : NoBaselineNodeCause
+			});
 		}
-		// The web-only sections are NOT restated here: the SAME list already ships as guide.webOnlySections,
-		// so a constraint line is a second copy of one field, and "re-implement as entity-level business
-		// rules" is the article's rule (Page `handlers` are NEVER transferred), not a per-page finding. The
-		// page-specific half of that advice — which rules actually survive — is guide.pageBusinessRules.
-		// An unreadable mobile-template bundle no longer gets its own line: it is a CAUSE of the root-merge
-		// fallback, never an independent finding (its own condition required the fallback to have fired), and
-		// the consolidated fallback line above names it as the cause when it is the one that applies.
-		// A template-owned value the diffs cannot express is NOT reported here. It moved to
-		// guide.dataSectionConflicts, one entry per occurrence, because this line was lossy in three ways: it
-		// flattened the location into a `path.key[identity]` label the caller had to parse; it dropped which
-		// SECTION the conflict is in, so the caller could not tell which diff to hand-edit; and it lumped three
-		// outcomes that need two OPPOSITE remedies — a changed named element and a changed collection scalar
-		// lose the page's value (edit the diff if it must win), while a nameless element edited in place loses
-		// nothing and DUPLICATES at runtime (remove one of the two). The sentence described only two of the
-		// three kinds at all: the changed scalar reached this list too, and its outcome was stated nowhere but
-		// inside the label text.
-		// Adaptive layout and the two-layer tab body are NOT reported here. Neither line was a finding: each
-		// fired merely because the corresponding guide section is non-null, and each then restated how to APPLY
-		// that section — which is a standing rule, not a fact about this conversion. The presence of the data
-		// is already the signal, and it travels as guide.adaptiveLayout / guide.tabAreaLayers.
-		//
-		// Both are documented in THREE places already, each more completely than these lines were. The
-		// guidance article's FLOW steps 5b and 5c carry every clause verbatim and add ones these lacked (5b:
-		// never emit a separate merge for the container's adaptive, which would duplicate the operation; 5c:
-		// a parent always precedes its children in element-map order). Its HARD MOBILE RULES carry the
-		// proposal-vs-mandatory distinction. And the gate behaviour — present adaptive as a proposal the user
-		// may decline, state the tab body as a fact and never offer to skip it — is owned by the
-		// creatio-mobile-page-conversion skill, which is where flow belongs.
-
-		// Normalization is NOT reported here. The identical sentence used to be emitted THREE times per group:
-		// into constraints, into nextSteps, and as normalizations[group].note — all from the same SummaryFor.
-		// Only the last one survives, because that is where the data it describes lives: the group's note sits
-		// on the section carrying its normalized[] / skipped[] entries, so the caller reads the count and the
-		// elements in one place instead of correlating a sentence here with a section there.
 		if (exclusionSearchTruncated) {
 			// The one outcome the drop entries cannot report: a component that was never removed produces no
-			// entry, so without this line a banned component past the depth budget is indistinguishable from
-			// one no rule targets.
-			constraints.Add(
-				"An excludedComponents search hit its depth budget and abandoned a branch: a banned component nested "
-				+ "deeper than the budget is still on the page and has NO drop entry. Re-check the deepest branches "
-				+ "of the converted page against the rules before treating the exclusion report as complete.");
+			// entry, so without this a banned component past the depth budget is indistinguishable from one no
+			// rule targets.
+			diagnostics.Add(new ConversionDiagnostic {
+				Code = ExclusionSearchTruncatedDiagnostic, Impact = ConversionImpact
+			});
 		}
 		if (discardedExclusionFilters > 0) {
-			// The rules file can be fetched from the CDN at runtime, so a typo in a published rule silently
-			// switches an exclusion off. Naming the count makes that debuggable from the report alone.
-			constraints.Add(
-				$"{discardedExclusionFilters} excludedComponents filter(s) were ignored because they declare no "
-				+ "\"type\" or no \"parentType\". Those exclusions did NOT run — check the rules file for a "
-				+ "misspelled property name.");
+			// The rules file is fetched at run time, so a typo in a PUBLISHED rule silently switches an
+			// exclusion off. The count is the only thing anywhere that says the rule did not run.
+			diagnostics.Add(new ConversionDiagnostic {
+				Code = ExclusionFiltersDiscardedDiagnostic,
+				Impact = ConverterConfigImpact,
+				Count = discardedExclusionFilters
+			});
 		}
 		if (skippedOverrideRules > 0) {
-			// Same reasoning as the exclusion-filter count above, and a likelier trigger: an entry authored
-			// against the removed `type` field, or a mistyped "filter", parses with no filters at all and is
-			// refused. Without this line the page just ships un-normalized, which the report cannot tell apart
-			// from "nothing needed normalizing".
-			constraints.Add(
-				$"{skippedOverrideRules} componentPropertyOverrides rule(s) were ignored because they declare "
-				+ "no \"filters\" — those standards did NOT run, so the elements they target keep their WEB "
-				+ "values. Check the rules file for a misspelled property name or an entry still written with "
-				+ "a top-level \"type\".");
+			// Same reasoning, likelier trigger: an entry authored against the removed `type` field, or a
+			// mistyped "filter", parses with no filters at all and is refused. The page then ships
+			// un-normalized, which the report cannot otherwise tell apart from "nothing needed normalizing".
+			diagnostics.Add(new ConversionDiagnostic {
+				Code = NormalizationRulesSkippedDiagnostic,
+				Impact = ConverterConfigImpact,
+				Count = skippedOverrideRules
+			});
 		}
-		// An excludedComponents removal and an empty-container removal are NOT restated here. Both already
-		// arrive as elementMap drop entries whose reason names the cause ("excludedComponents rule matched: …",
-		// "empty container — no mobile content survived conversion"), so a constraint line adds no fact — only
-		// a repetition of what the entries carry. What the caller must DO about each (a positional exclusion is
-		// not conversion loss, never re-insert, never make it a gate question) is a standing rule and is
-		// documented in the guidance article's drop section, which covers it more completely than these lines
-		// did: it also teaches the SECOND reason shape a positional exclusion emits for the removed component's
-		// descendants ("parent removed by an excludedComponents rule: …"), which was never in constraints.
-		// The exclusion DIAGNOSTICS above are a different matter and stay: a truncated search or a discarded
-		// rule produces NO drop entry, so nothing else in the response could reveal it.
-		return constraints;
+		return diagnostics;
 	}
+
+	/// <summary>
+	/// Omits the section entirely when the conversion was clean, rather than shipping an empty array. A
+	/// caller that sees no <c>diagnostics</c> key has nothing to weigh; an empty array would read as a section
+	/// to go and check.
+	/// </summary>
+	private static IReadOnlyList<ConversionDiagnostic> DiagnosticsOrNull(List<ConversionDiagnostic> diagnostics) =>
+		diagnostics.Count > 0 ? diagnostics : null;
+
+	private const string RootMergeFallbackDiagnostic = "data-section-root-merge-fallback";
+	private const string TwinNotPrebuiltDiagnostic = "component-twin-not-prebuilt";
+	private const string ExclusionSearchTruncatedDiagnostic = "exclusion-search-truncated";
+	private const string ExclusionFiltersDiscardedDiagnostic = "exclusion-filters-discarded";
+	private const string NormalizationRulesSkippedDiagnostic = "normalization-rules-skipped";
+
+	/// <summary>This conversion's output or report is affected; the code's remedy is the caller's to apply.</summary>
+	private const string ConversionImpact = "conversion";
+
+	/// <summary>A published rule is malformed so its behaviour did not run; the caller cannot fix it here.</summary>
+	private const string ConverterConfigImpact = "converter-config";
+
+	private const string MobileTemplateUnreadableCause = "mobile-template-unreadable";
+	private const string WebTemplateUnreadableCause = "web-template-unreadable";
+	private const string NoTemplateBaseCause = "no-template-base";
+	private const string NoBaselineNodeCause = "no-baseline-node";
 
 	private static List<string> BuildNextSteps(bool hasDataSections, bool hasResourceStrings = false) {
 		var steps = new List<string> {
@@ -1916,7 +1868,7 @@ public static class WebToMobileAnalysisService {
 		if (hasDataSections) {
 			steps.Add("Paste the provided modelConfigDiff and viewModelConfigDiff VERBATIM as the page's modelConfigDiff / viewModelConfigDiff (each is diffed against the mobile template's own base: a targeted merge for changed/new values and an insert per new element of an array the template already carries, so the template's native array entries are preserved — unless a constraint reports no template base was available, in which case it degrades to a single root merge). Do NOT rebuild them by hand or collapse targeted operations into one root merge — that lets the mobile diff engine replace arrays and drop the page's own entries; and never copy the data-source section from an existing body — keep every attribute's type and path.");
 		}
-		// Adaptive layout and the tab body are not restated as steps either — see the note in BuildConstraints.
+		// Adaptive layout and the tab body are not restated as steps either — see the remarks on BuildDiagnostics.
 		// Both are FLOW, which the creatio-mobile-page-conversion skill owns (steps 5b / 5c in the guidance
 		// article carry the mechanics), and the presence of guide.adaptiveLayout / guide.tabAreaLayers is
 		// already the signal that the step applies.
