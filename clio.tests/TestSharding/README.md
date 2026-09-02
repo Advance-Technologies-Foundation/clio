@@ -34,19 +34,19 @@ TRX files from a representative GitHub run, then run:
 ./.github/scripts/Rebalance-TestShards.ps1 `
   -UnitTrx ./timings/unit-[1-4].trx `
   -IntegrationTrx ./timings/integration-[1-3].trx `
-  -UnitFixedSeconds 0,12,0,0
+  -UnitFixedSeconds 0,25,0,0
 ```
 
 The script aggregates elapsed time by NUnit fixture and applies deterministic longest-processing-
 time-first balancing. It uses the TRX run's wall time as well as individual result durations, so
 test-run overhead is represented even when NUnit executes fixtures in parallel. `UnitFixedSeconds`
-accounts for work outside `clio.tests`: in the example, unit-2 spent 12 seconds on ConflictResolver.
+accounts for work outside `clio.tests`: in the example, unit-2 spent 25 seconds on ConflictResolver.
 NET8 compatibility is not part of any unit shard and must not be included in these values.
 Replace those values with timings from the same representative run as the TRX files. Review and
 commit the updated `test-shards.json` so the manifest represents one coherent test inventory.
-The unit distribution uses local TRX timings captured for issue #1343 on 2026-09-02, with the
-12-second ConflictResolver fixed cost retained from hosted timing. The integration distribution
-still uses the successful hosted TRX artifacts from GitHub run `33317199418`.
+The unit distribution uses successful hosted TRX artifacts from GitHub run `33683188450`, with the
+25-second ConflictResolver fixed cost observed in that run. The integration distribution still uses
+the successful hosted TRX artifacts from GitHub run `33317199418`.
 
 When changing the filter mechanism, run the unsharded switch once and compare its TRX with the
 sharded TRX files:
