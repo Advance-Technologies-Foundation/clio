@@ -189,7 +189,7 @@ public sealed class ExecuteEsqTool(IToolCommandResolver commandResolver) {
 						or UnicodeCategory.LineSeparator
 						or UnicodeCategory.ParagraphSeparator
 						or UnicodeCategory.SpaceSeparator
-						|| rune.Value is '\\' or '\'' or '"' or '/' or ':' or '=' or '<' or '>' or '|';
+						|| rune.Value is '\\' or '\'' or '"' or '[' or ']' or '/' or ':' or '=' or '<' or '>' or '|';
 					string encodedCharacter = requiresToken ? $"[U+{rune.Value:X4}]" : rune.ToString();
 					if (!TryAppendPath(builder, encodedCharacter)) {
 						truncated = true;

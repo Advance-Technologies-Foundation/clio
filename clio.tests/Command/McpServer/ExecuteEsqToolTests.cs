@@ -383,7 +383,7 @@ public sealed class ExecuteEsqToolTests {
 		// Arrange
 		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
 		ExecuteEsqTool tool = new(commandResolver);
-		string unsafeFilterName = $"Modified😀.After[0]\n{new string('x', 2_000)}";
+		string unsafeFilterName = $"Modified😀.After[0]\n[U+000A]{new string('x', 2_000)}";
 		JsonElement query = Json($$"""
 			{
 			  "rootSchemaName": "SysSchema",
@@ -406,8 +406,9 @@ public sealed class ExecuteEsqToolTests {
 		});
 
 		// Assert
-		response.Error.Should().Contain("['Modified😀.After[0][U+000A]",
-			because: "unsafe property names should use escaped bracket notation in the diagnostic path");
+		response.Error.Should().Contain(
+			"['Modified😀.After[U+005B]0[U+005D][U+000A][U+005B]U+000A[U+005D]",
+			because: "unsafe property names should distinguish control tokens from identical literal token text");
 		response.Error.Should().NotContain("Modified😀.After[0]\n",
 			because: "control characters from untrusted property names must not create transcript lines");
 		response.Error.Should().Contain("...",

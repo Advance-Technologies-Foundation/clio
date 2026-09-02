@@ -134,7 +134,7 @@ public sealed class ExecuteEsqToolE2ETests : McpContractFixtureBase {
 		ExecuteEsqResponse response = EntitySchemaStructuredResultParser.Extract<ExecuteEsqResponse>(callResult);
 		string expectedPath = filterName == "ModifiedAfter"
 			? "$.filters.items.ModifiedAfter.rightExpression.parameter.value"
-			: "$.filters.items['Modified😀.After[0][U+000A]'].rightExpression.parameter.value";
+			: "$.filters.items['Modified😀.After[U+005B]0[U+005D][U+000A]'].rightExpression.parameter.value";
 
 		// Assert
 		await AllureApi.Step("Assert validation uses the structured tool response", () => {
