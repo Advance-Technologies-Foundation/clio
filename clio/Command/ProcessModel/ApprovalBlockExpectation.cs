@@ -50,7 +50,7 @@ public static class ApprovalBlockExpectation {
 				continue;
 			}
 
-			string? name = candidate[NameKey]?.GetValue<string>();
+			string? name = ReadName(candidate[NameKey]);
 			if (!string.IsNullOrWhiteSpace(name)) {
 				expectations.Add(new ApprovalExpectation(name, approval[ApproverKey] is JsonObject));
 			}
@@ -78,7 +78,7 @@ public static class ApprovalBlockExpectation {
 
 			// addElement: the descriptor (and therefore the name) is nested under "element".
 			if (op[ElementKey] is JsonObject added && added[ApprovalKey] is JsonObject addedApproval) {
-				string? name = added[NameKey]?.GetValue<string>();
+				string? name = ReadName(added[NameKey]);
 				if (!string.IsNullOrWhiteSpace(name)) {
 					expectations.Add(new ApprovalExpectation(name, addedApproval[ApproverKey] is JsonObject));
 				}
@@ -86,7 +86,7 @@ public static class ApprovalBlockExpectation {
 
 			// setElement: the name is on the operation, the block is under "elementUpdate".
 			if (op[ElementUpdateKey] is JsonObject update && update[ApprovalKey] is JsonObject updatedApproval) {
-				string? name = op[ElementNameKey]?.GetValue<string>();
+				string? name = ReadName(op[ElementNameKey]);
 				if (!string.IsNullOrWhiteSpace(name)) {
 					expectations.Add(new ApprovalExpectation(name, updatedApproval[ApproverKey] is JsonObject));
 				}
@@ -206,6 +206,16 @@ public static class ApprovalBlockExpectation {
 
 	/// <summary>Singular/plural noun for the warning, so one dropped element does not read as "elements".</summary>
 	private static string ElementNoun(int count) => count == 1 ? "element" : "elements";
+
+	/// <summary>
+	/// Reads an element name, tolerating a node that is not a string.
+	/// <para><c>GetValue&lt;string&gt;()</c> THROWS on <c>"name": 123</c>, and this check runs AFTER a successful
+	/// operation, inside the command's try — so a payload the server happily accepted would be reported to the
+	/// caller as a failed build. The check exists to warn about a dropped block; it must never be the thing that
+	/// fails. Same idiom <see cref="EmailBlockExpectation"/> uses for the email body.</para>
+	/// </summary>
+	private static string? ReadName(JsonNode? node) =>
+		node is JsonValue value && value.TryGetValue(out string? text) ? text : null;
 
 	/// <summary>
 	/// Parses caller-supplied JSON, returning null on anything malformed. A payload this cannot parse is not this
