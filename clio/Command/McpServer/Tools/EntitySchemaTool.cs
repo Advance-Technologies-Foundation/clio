@@ -1232,8 +1232,7 @@ public sealed record GetEntitySchemaColumnPropertiesArgs(
 	string EnvironmentName,
 
 	[property: JsonPropertyName("package-name")]
-	[property: Description("Optional target package name. Omit for merged runtime discovery across all packages; "
-		+ "supply it for authoritative package-layer metadata.")]
+	[property: Description("Optional package. Omit for merged runtime discovery; supply for authoritative package-layer metadata.")]
 	string? PackageName = null,
 
 	[property: JsonPropertyName("schema-name")]
