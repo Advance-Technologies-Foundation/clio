@@ -393,11 +393,9 @@ public static class WebToMobileAnalysisService {
 			// Named arguments deliberately: the tail is a run of defaulted bools, so a positional call silently
 			// mis-wires the moment a parameter is inserted rather than appended.
 			Constraints = BuildConstraints(
-				hasAdaptiveLayout: adaptiveLayout.Count > 0,
 				viewModelConfigRootMerge: viewModelConfigRootMerge,
 				modelConfigRootMerge: modelConfigRootMerge,
 				mobileTemplateUnavailable: mobileTemplateUnavailable,
-				hasTabAreaLayers: tabAreaLayers.Count > 0,
 				webTemplateUnavailable: webTemplateUnavailable,
 				hasComponentTwin: componentMap.Count > 0,
 				exclusionSearchTruncated: excludedDiagnostics.DepthBudgetTruncated,
@@ -405,8 +403,6 @@ public static class WebToMobileAnalysisService {
 				skippedOverrideRules: componentPropertyOverrides.SkippedRulesWithoutFilters),
 			NextSteps = BuildNextSteps(
 				hasDataSections: modelConfig is not null || viewModelConfig is not null,
-				hasAdaptiveLayout: adaptiveLayout.Count > 0,
-				hasTabAreaLayers: tabAreaLayers.Count > 0,
 				hasResourceStrings: resourceStrings.Count > 0),
 			GuidanceArticle = GuidanceArticleName,
 			SuggestedTargetSchemaName = suggestedTarget
@@ -1740,9 +1736,7 @@ public static class WebToMobileAnalysisService {
 	}
 
 	private static List<string> BuildConstraints(
-		bool hasAdaptiveLayout,
 		bool viewModelConfigRootMerge = false, bool modelConfigRootMerge = false, bool mobileTemplateUnavailable = false,
-		bool hasTabAreaLayers = false,
 		bool webTemplateUnavailable = false, bool hasComponentTwin = false,
 		bool exclusionSearchTruncated = false, int discardedExclusionFilters = 0,
 		int skippedOverrideRules = 0) {
@@ -1844,27 +1838,18 @@ public static class WebToMobileAnalysisService {
 		// nothing and DUPLICATES at runtime (remove one of the two). The sentence described only two of the
 		// three kinds at all: the changed scalar reached this list too, and its outcome was stated nowhere but
 		// inside the label text.
-		if (hasAdaptiveLayout) {
-			constraints.Add(
-				"adaptiveLayout covers every multi-column crt.GridContainer: on the phone (small) it collapses to a " +
-				"single column and stacks the children; on tablet/desktop (medium/large) it keeps the web columns and " +
-				"per-child placement. A single-column grid gets no adaptive. Both sides are ALREADY baked into " +
-				"mobileValues (the container's adaptive columns and each child's layoutConfig.adaptive) — paste " +
-				"mobileValues verbatim. Present the layout to the user; they may adjust or decline it.");
-		}
-		if (hasTabAreaLayers) {
-			constraints.Add(
-				"tabAreaLayers is MANDATORY, not a proposal: the two-layer tab body is this team's required mobile " +
-				"structure, so never ask whether to apply it, never offer to skip it, and never build a converted " +
-				"tab any other way. It is ALREADY baked into the element map: every converter-created tab carries " +
-				"synthesized containers (the tab body grid, then its Area card) as ordinary inserts placed right " +
-				"after the tab's own entry; every one of that tab's top-level children (expansion panels included) " +
-				"already points at the Area with a sequential single-column layoutConfig (a child the adaptive pass " +
-				"placed per breakpoint keeps that adaptive placement instead). Apply the inserts in element-map order and " +
-				"paste mobileValues verbatim — do NOT reparent, reorder or re-place anything yourself, and do NOT " +
-				"add an Area of your own. The synthesized containers have no web counterpart, so they carry no " +
-				"webName; tabs provided by the mobile template (merge) get no layers and must stay untouched.");
-		}
+		// Adaptive layout and the two-layer tab body are NOT reported here. Neither line was a finding: each
+		// fired merely because the corresponding guide section is non-null, and each then restated how to APPLY
+		// that section — which is a standing rule, not a fact about this conversion. The presence of the data
+		// is already the signal, and it travels as guide.adaptiveLayout / guide.tabAreaLayers.
+		//
+		// Both are documented in THREE places already, each more completely than these lines were. The
+		// guidance article's FLOW steps 5b and 5c carry every clause verbatim and add ones these lacked (5b:
+		// never emit a separate merge for the container's adaptive, which would duplicate the operation; 5c:
+		// a parent always precedes its children in element-map order). Its HARD MOBILE RULES carry the
+		// proposal-vs-mandatory distinction. And the gate behaviour — present adaptive as a proposal the user
+		// may decline, state the tab body as a fact and never offer to skip it — is owned by the
+		// creatio-mobile-page-conversion skill, which is where flow belongs.
 
 		// Normalization is NOT reported here. The identical sentence used to be emitted THREE times per group:
 		// into constraints, into nextSteps, and as normalizations[group].note — all from the same SummaryFor.
@@ -1912,8 +1897,7 @@ public static class WebToMobileAnalysisService {
 		return constraints;
 	}
 
-	private static List<string> BuildNextSteps(bool hasDataSections, bool hasAdaptiveLayout,
-		bool hasTabAreaLayers = false, bool hasResourceStrings = false) {
+	private static List<string> BuildNextSteps(bool hasDataSections, bool hasResourceStrings = false) {
 		var steps = new List<string> {
 			"Read get-guidance with name \"freedom-page-web-to-mobile-conversion\".",
 			"Create the target mobile page from recommendedMobileTemplate with create-page (it provides the Scaffold root).",
@@ -1923,14 +1907,12 @@ public static class WebToMobileAnalysisService {
 		if (hasDataSections) {
 			steps.Add("Paste the provided modelConfigDiff and viewModelConfigDiff VERBATIM as the page's modelConfigDiff / viewModelConfigDiff (each is diffed against the mobile template's own base: a targeted merge for changed/new values and an insert per new element of an array the template already carries, so the template's native array entries are preserved — unless a constraint reports no template base was available, in which case it degrades to a single root merge). Do NOT rebuild them by hand or collapse targeted operations into one root merge — that lets the mobile diff engine replace arrays and drop the page's own entries; and never copy the data-source section from an existing body — keep every attribute's type and path.");
 		}
-		if (hasAdaptiveLayout) {
-			steps.Add("Adaptive layout for multi-column grid containers is already baked into mobileValues (container adaptive columns + each child's layoutConfig.adaptive: phone collapses to 1 column, tablet/desktop keep the web columns). Present guide.adaptiveLayout to the user for review; they may adjust or decline it.");
-		}
-		if (hasTabAreaLayers) {
-			steps.Add("The mobile designer's two-layer tab body (tab body grid + Area card) is already baked into the element map for every converter-created tab: the tab's top-level content (expansion panels included) is retargeted into the Area and stacked in web order. Apply the element map as it is. This structure is MANDATORY — do NOT ask the user whether to apply it and do NOT offer an alternative; just STATE what it does when you present the plan (guide.tabAreaLayers: tab -> synthesized layer names -> movedChildren in row order).");
-		}
-		// Normalization is not restated as a step either — see the note in BuildConstraints. The group's
-		// note lives on guide.normalizations[group], beside the entries it counts.
+		// Adaptive layout and the tab body are not restated as steps either — see the note in BuildConstraints.
+		// Both are FLOW, which the creatio-mobile-page-conversion skill owns (steps 5b / 5c in the guidance
+		// article carry the mechanics), and the presence of guide.adaptiveLayout / guide.tabAreaLayers is
+		// already the signal that the step applies.
+		// Normalization: same — the group's note lives on guide.normalizations[group], beside the entries it
+		// counts.
 		if (hasResourceStrings) {
 			steps.Add("Register guide.resourceStrings as a WHOLE with one update-page resources call: it is the "
 				+ "{key: en-US text} map for EVERY #ResourceString token the pasted mobileValues carry, including the "

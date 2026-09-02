@@ -4178,8 +4178,8 @@ public sealed class WebToMobileConversionServiceTests {
 	}
 
 	[Test]
-	[Description("I4: when layers were synthesized the guide TELLS the caller they are already baked — a constraint (do not reparent/reorder/add an Area) and a next step (state guide.tabAreaLayers when presenting the plan).")]
-	public void Analyze_ShouldCarryMandatoryConstraintAndNextStep_WhenTabAreaLayersAreSynthesized() {
+	[Description("I4: when layers were synthesized the guide reports them as DATA (guide.tabAreaLayers plus the synthesized inserts) and says nothing about them in prose. The mechanics of applying them (element-map order, do not reparent/reorder, do not add an Area) are a standing rule the guidance article's FLOW step 5c owns, and the gate behaviour — state it as a fact, never offer to skip it — belongs to the conversion skill. What must still be impossible is the guide framing the mandatory structure as a choice.")]
+	public void Analyze_ShouldReportTabAreaLayersAsDataAndNeverAsAChoice() {
 		PageBundleInfo bundle = Bundle("""
 			[ { "name": "Tabs", "type": "crt.TabPanel", "items": [
 				{ "name": "OverviewTab", "type": "crt.TabContainer", "items": [
@@ -4188,15 +4188,16 @@ public sealed class WebToMobileConversionServiceTests {
 
 		MobilePageConversionGuide guide = AnalyzeTabbed(bundle, rules: RulesWithTabAreaLayers());
 
-		guide.Constraints.Should().ContainSingle(c => c.Contains("tabAreaLayers is MANDATORY"))
-			.Which.Should().Contain("do NOT reparent", because: "the caller must apply the map as it is");
-		guide.NextSteps.Should().ContainSingle(s => s.Contains("guide.tabAreaLayers"))
-			.Which.Should().Contain("MANDATORY",
-				because: "the mobile tab body is the team's required structure — the caller must not turn it into a question");
-		// Lock-in: the tab body is NOT put up for approval the way adaptiveLayout is.
-		guide.Constraints.Concat(guide.NextSteps).Where(t => t.Contains("tabAreaLayers"))
-			.Should().OnlyContain(t => !t.Contains("decline") && !t.Contains("may adjust"),
-				because: "offering to skip or alter the mandatory tab structure is exactly what must not leak into the guide");
+		guide.TabAreaLayers.Should().NotBeNullOrEmpty(
+			because: "the synthesized layers ARE the report — their presence is what tells the caller the structure was built");
+		guide.ElementMap.Should().Contain(e => e.Operation == "insert" && e.WebName == null,
+			because: "the layers arrive as ordinary synthesized inserts, so applying the map applies them; nothing separate has to be described");
+		guide.Constraints.Concat(guide.NextSteps).Should().NotContain(t => t.Contains("tabAreaLayers"),
+			because: "restating how to apply a section that is already in the payload fires on every tabbed page and says nothing about THIS conversion — the mechanics are FLOW step 5c in the guidance article and the gate behaviour is the skill's");
+		// The lock-in that still matters: the mandatory structure must never be framed as a choice anywhere.
+		guide.Constraints.Concat(guide.NextSteps)
+			.Should().NotContain(t => (t.Contains("tab body") || t.Contains("Area")) && (t.Contains("decline") || t.Contains("may adjust")),
+				because: "offering to skip or alter the mandatory tab structure is exactly what must not leak into the guide, whatever wording it is offered in");
 	}
 
 	[Test]
