@@ -2832,7 +2832,7 @@ stories:
       S4 (clio half), S7 and S9 on branch feature/ENG-95891-formula-expressions. DescribedFlow.condition
       (mandatory - no JsonExtensionData bag), setFlowCondition documented on the modify tool/prompt/capability
       map, the phantom described-parameter 'expression' field corrected on both surfaces, CrtProcessBuilder
-      rebundled (1.4.0.36 at the time of writing; the archive version is the source of truth, not this note)
+      rebundled (1.4.0.38 at the time of writing; the archive version is the source of truth, not this note)
       with pins refreshed, and the create/modify [RequiresPackage] literals raised to
       1.4.0.3 for a new operation plus a tightened validator. e2e added (not in CI, needs a stand).
       1.4.0.4 through 1.4.0.8 exist on stands from the ENG-96176 branch that forks off this one; none of
