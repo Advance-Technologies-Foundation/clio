@@ -284,7 +284,7 @@ internal sealed class RemoteEntitySchemaColumnManager : IRemoteEntitySchemaColum
 			runtimeColumn.IsIndexed,
 			runtimeColumn.IsValueCloneable,
 			TrackChanges: null,
-			EntitySchemaDesignerSupport.GetFriendlyDefaultValueSource(defaultValue),
+			defaultValueConfig?.Source,
 			EntitySchemaDesignerSupport.GetFriendlyDefaultValue(defaultValue),
 			runtimeColumn.ReferenceSchemaName,
 			runtimeColumn.IsSimpleLookup,

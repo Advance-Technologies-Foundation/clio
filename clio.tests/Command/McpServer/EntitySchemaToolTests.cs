@@ -294,7 +294,7 @@ public sealed class EntitySchemaToolTests {
 
 		// Act
 		EntitySchemaColumnPropertiesInfo result = tool.GetEntitySchemaColumnProperties(
-			new GetEntitySchemaColumnPropertiesArgs("dev", "UsrVehicle", "Name", "UsrPkg"));
+			new GetEntitySchemaColumnPropertiesArgs("dev", "UsrPkg", "UsrVehicle", "Name"));
 
 		// Assert
 		result.Should().BeEquivalentTo(expectedResult,
@@ -1013,7 +1013,7 @@ public sealed class EntitySchemaToolTests {
 		string lookupPrompt = EntitySchemaPrompt.CreateLookup("UsrPkg", "UsrOrderStatus", "Order status", "dev");
 		string updatePrompt = EntitySchemaPrompt.UpdateEntitySchema("UsrPkg", "UsrVehicle", "dev");
 		string schemaPrompt = EntitySchemaPrompt.GetEntitySchemaProperties("UsrVehicle", "dev", "UsrPkg");
-		string columnPrompt = EntitySchemaPrompt.GetEntitySchemaColumnProperties("UsrPkg", "UsrVehicle", "Name", "dev");
+		string columnPrompt = EntitySchemaPrompt.GetEntitySchemaColumnProperties("UsrVehicle", "Name", "dev", "UsrPkg");
 		string modifyPrompt = EntitySchemaPrompt.ModifyEntitySchemaColumn("UsrPkg", "UsrVehicle", "modify", "Name", "dev");
 
 		// Assert
@@ -1059,6 +1059,10 @@ public sealed class EntitySchemaToolTests {
 			because: "schema-read prompt guidance must warn that an empty single-package read is not proof a column is absent");
 		columnPrompt.Should().Contain(GetEntitySchemaColumnPropertiesTool.GetEntitySchemaColumnPropertiesToolName,
 			because: "column-read prompt guidance should reference the exact production tool name");
+		columnPrompt.Should().Contain("MERGED/EFFECTIVE",
+			because: "column-read prompt guidance should explain the package-free discovery mode");
+		columnPrompt.Should().Contain("null rather than false",
+			because: "column-read prompt guidance should preserve unknown metadata in merged mode");
 		columnPrompt.Should().Contain(GuidanceGetTool.ToolName,
 			because: "column-read prompt guidance should point callers to the existing-app maintenance guide through the guidance tool");
 		columnPrompt.Should().Contain("before and after `modify-entity-schema-column`",
@@ -1073,6 +1077,27 @@ public sealed class EntitySchemaToolTests {
 			because: "modify prompt guidance should point callers to the existing-app maintenance guide through the guidance tool");
 		modifyPrompt.Should().Contain(GetEntitySchemaColumnPropertiesTool.GetEntitySchemaColumnPropertiesToolName,
 			because: "modify prompt guidance should tell callers to inspect current column metadata before mutating it");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("The column-properties MCP prompt keeps packageName optional so callers can request merged discovery.")]
+	public void ColumnPropertiesPrompt_Should_Keep_PackageName_Optional() {
+		// Arrange
+		System.Reflection.ParameterInfo packageParameter = typeof(EntitySchemaPrompt)
+			.GetMethod(nameof(EntitySchemaPrompt.GetEntitySchemaColumnProperties))!
+			.GetParameters()
+			.Single(parameter => parameter.Name == "packageName");
+
+		// Act
+		bool isRequired = packageParameter.GetCustomAttributes(typeof(RequiredAttribute), inherit: false).Any();
+		object? defaultValue = packageParameter.DefaultValue;
+
+		// Assert
+		isRequired.Should().BeFalse(
+			because: "omitting packageName is the supported merged entity-schema discovery contract");
+		defaultValue.Should().BeNull(
+			because: "the prompt should naturally select merged discovery when packageName is omitted");
 	}
 
 	[Test]

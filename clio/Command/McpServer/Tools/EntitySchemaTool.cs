@@ -1231,6 +1231,11 @@ public sealed record GetEntitySchemaColumnPropertiesArgs(
 	[property: Required]
 	string EnvironmentName,
 
+	[property: JsonPropertyName("package-name")]
+	[property: Description("Optional target package name. Omit for merged runtime discovery across all packages; "
+		+ "supply it for authoritative package-layer metadata.")]
+	string? PackageName,
+
 	[property: JsonPropertyName("schema-name")]
 	[property: Description("Entity schema name")]
 	[property: Required]
@@ -1239,13 +1244,17 @@ public sealed record GetEntitySchemaColumnPropertiesArgs(
 	[property: JsonPropertyName("column-name")]
 	[property: Description("Column name")]
 	[property: Required]
-	string ColumnName,
-
-	[property: JsonPropertyName("package-name")]
-	[property: Description("Optional target package name. Omit for merged runtime discovery across all packages; "
-		+ "supply it for authoritative package-layer metadata.")]
-	string? PackageName = null
-);
+	string ColumnName
+) {
+	/// <summary>
+	/// Creates arguments for merged runtime discovery without a package scope.
+	/// </summary>
+	/// <param name="environmentName">Creatio environment name.</param>
+	/// <param name="schemaName">Entity schema name.</param>
+	/// <param name="columnName">Column name.</param>
+	public GetEntitySchemaColumnPropertiesArgs(string environmentName, string schemaName, string columnName)
+		: this(environmentName, null, schemaName, columnName) { }
+}
 
 /// <summary>
 /// Arguments for the <c>modify-entity-schema-column</c> MCP tool.

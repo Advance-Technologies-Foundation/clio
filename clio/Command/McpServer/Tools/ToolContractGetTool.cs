@@ -4526,8 +4526,8 @@ internal static class ToolContractCatalog {
 					Field(ColumnNameFieldName, StringType, "Column name.")
 				]),
 			StructuredResultOutput(
-				Field("name", StringType, "Column name."),
-				Field("data-value-type", StringType, "Column type."),
+				Field("column-name", StringType, "Column name."),
+				Field("type", StringType, "Column type."),
 				Field("source", StringType, "Column source."),
 				Field("usage-type", StringType, "Column usage type as a friendly name (General/Advanced/None), re-usable verbatim as a usage-type write input.")),
 			CommonErrorContract,

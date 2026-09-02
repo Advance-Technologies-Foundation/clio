@@ -1921,6 +1921,30 @@ internal class RemoteEntitySchemaColumnManagerTests
 	}
 
 	[Test]
+	[Description("Normalizes a merged runtime None default to null, matching package-scoped column read semantics.")]
+	public void GetColumnProperties_ReturnsNullDefaultSource_WhenMergedRuntimeDefaultIsNone() {
+		// Arrange
+		_runtimeEntitySchemaReader.GetByName("Account").Returns(new Clio.Common.EntitySchema.RuntimeEntitySchemaResult(
+			AccountSchemaUId, "Account", PrimaryColumnUId: MergedNameColumnUId,
+			PrimaryDisplayColumnName: null, PrimaryDisplayColumnUId: null, Columns: [
+				new Clio.Common.EntitySchema.RuntimeEntitySchemaColumnResult(
+					MergedNameColumnUId, "Name", "Name", null, 1, true, false, null,
+					DefaultValue: new Clio.Common.EntitySchema.RuntimeEntitySchemaDefaultValueResult(
+						(int)EntitySchemaColumnDefSource.None, default, null, null, 0))
+			]));
+
+		// Act
+		EntitySchemaColumnPropertiesInfo result = _manager.GetColumnProperties(
+			new GetEntitySchemaColumnPropertiesOptions { SchemaName = "Account", ColumnName = "Name" });
+
+		// Assert
+		result.DefaultValueSource.Should().BeNull(
+			because: "None means that the column has no configured default, not a named default source");
+		result.DefaultValueConfig.Should().BeNull(
+			because: "merged and package-scoped reads should represent an absent default consistently");
+	}
+
+	[Test]
 	[Description("Reports a clear merged-schema failure when an omitted-package read cannot find the requested column.")]
 	public void GetColumnProperties_Throws_WhenMergedColumnIsMissing() {
 		// Arrange

@@ -211,9 +211,6 @@ public static class EntitySchemaPrompt {
 		Description("Prompt to read structured remote entity schema column properties")]
 	public static string GetEntitySchemaColumnProperties(
 		[Required]
-		[Description("Target package name")]
-		string packageName,
-		[Required]
 		[Description("Entity schema name")]
 		string schemaName,
 		[Required]
@@ -221,12 +218,17 @@ public static class EntitySchemaPrompt {
 		string columnName,
 		[Required]
 		[Description("Creatio environment name")]
-		string environmentName) =>
+		string environmentName,
+		[Description("Optional target package name; omit for the merged effective schema")]
+		string? packageName = null) =>
 		$"""
 		 Use clio mcp server `{GetEntitySchemaColumnPropertiesTool.GetEntitySchemaColumnPropertiesToolName}` to read
-		 structured properties for column `{columnName}` in entity schema `{schemaName}` from package
-		 `{packageName}` on environment `{environmentName}`.
-		 Pass `package-name`, `schema-name`, `column-name`, and `environment-name` exactly as provided.
+		 structured properties for column `{columnName}` in entity schema `{schemaName}` on environment `{environmentName}`.
+		 Pass `schema-name`, `column-name`, and `environment-name` exactly as provided. Leave `package-name` empty to
+		 inspect the MERGED/EFFECTIVE schema across all packages; set it only for an authoritative single-package read.
+		 Current package request: `{packageName ?? "<merged: all packages>"}`.
+		 In merged mode, `track-changes`, `localizable-text`, and `do-not-control-integrity` are unavailable and return
+		 null rather than false. Merged `source` reports runtime inheritance, not the package that owns the column.
 		 The result includes `usage-type` as a friendly name (General/Advanced/None) that can be sent back verbatim as a `usage-type` write input.
 		 For the canonical discover -> inspect -> mutate flow, call `{GuidanceGetTool.ToolName}` with `name` set to `existing-app-maintenance`.
 		 Use this read step before and after `modify-entity-schema-column` when the requested change is scoped to one column.

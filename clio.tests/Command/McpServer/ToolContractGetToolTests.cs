@@ -91,6 +91,10 @@ public sealed class ToolContractGetToolTests {
 			because: "callers must be warned which merged-mode properties are unknown rather than false");
 		contract.Description.Should().Contain("parent-schema inheritance",
 			because: "merged source semantics must not be mistaken for package ownership");
+		contract.OutputContract.Fields.Select(field => field.Name).Should().Contain(["column-name", "type"],
+			because: "the curated output contract must use the DTO's serialized property names");
+		contract.OutputContract.Fields.Select(field => field.Name).Should().NotContain(["name", "data-value-type"],
+			because: "clients must not be directed to output fields the tool never serializes");
 		contract.Examples.Should().Contain(example => !example.Arguments.ContainsKey("package-name"),
 			because: "at least one canonical example must demonstrate package-free discovery");
 	}
