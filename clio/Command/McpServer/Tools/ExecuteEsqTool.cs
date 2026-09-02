@@ -24,7 +24,6 @@ public sealed class ExecuteEsqTool(IToolCommandResolver commandResolver) {
 	private const int DefaultTimeoutMs = 30_000;
 	private const int MinTimeoutMs = 1_000;
 	private const int MaxTimeoutMs = 120_000;
-	private const int MaxDiagnosticPathLength = 500;
 	internal const int MaxResponseSizeBytes = 200_000;
 	internal const string ResultTooLargeErrorClass = "result-too-large";
 
@@ -139,21 +138,22 @@ public sealed class ExecuteEsqTool(IToolCommandResolver commandResolver) {
 		string renderedPath = RenderJsonPath(path);
 		error = $"query temporal parameter at '{renderedPath}.value' has an invalid or missing value for "
 			+ $"dataValueType {dataValueTypeCode}. Date, DateTime, and Time values must be JSON-encoded strings, "
-			+ "for example \"value\": \"\\\"2026-01-01T00:00:00.000Z\\\"\". A plain ISO string is not accepted. "
+			+ "for example value text '2026-01-01T00:00:00.000Z' including the two single quote characters. "
+			+ "A plain ISO string is not accepted. "
 			+ "See the 'esq' and 'esq-filters-frontend' guidance.";
 		return false;
 	}
 
 	private static bool IsJsonEncodedString(JsonElement value) {
 		if (value.ValueKind == JsonValueKind.String) {
-			string raw = value.GetString() ?? string.Empty;
-			if (raw.Length < 2
-				|| raw[0] is not ('"' or '\'')
-				|| raw[^1] != raw[0]) {
+			string encodedValue = (value.GetString() ?? string.Empty).Trim();
+			if (encodedValue.Length < 2
+				|| encodedValue[0] is not ('"' or '\'')
+				|| encodedValue[^1] != encodedValue[0]) {
 				return false;
 			}
 			try {
-				return Newtonsoft.Json.JsonConvert.DeserializeObject<string>(raw) is not null;
+				return Newtonsoft.Json.JsonConvert.DeserializeObject<string>(encodedValue) is not null;
 			} catch (Newtonsoft.Json.JsonException) {
 				return false;
 			}
@@ -166,60 +166,20 @@ public sealed class ExecuteEsqTool(IToolCommandResolver commandResolver) {
 		StringBuilder builder = new("$");
 		foreach ((string? propertyName, int? arrayIndex) in segments) {
 			if (arrayIndex is not null) {
-				if (!TryAppendBounded(builder, $"[{arrayIndex.Value}]")) {
-					break;
-				}
+				builder.Append('[').Append(arrayIndex.Value).Append(']');
 				continue;
 			}
-			if (!TryAppendPropertyName(builder, propertyName ?? string.Empty)) {
-				break;
+			string name = propertyName ?? string.Empty;
+			bool isIdentifier = name.Length > 0
+				&& (char.IsLetter(name[0]) || name[0] == '_')
+				&& name.Skip(1).All(character => char.IsLetterOrDigit(character) || character == '_');
+			if (isIdentifier) {
+				builder.Append('.').Append(name);
+			} else {
+				builder.Append('[').Append(JsonSerializer.Serialize(name)).Append(']');
 			}
 		}
-		return builder.ToString();
-	}
-
-	private static bool TryAppendPropertyName(StringBuilder builder, string propertyName) {
-		bool isIdentifier = propertyName.Length > 0
-			&& (char.IsLetter(propertyName[0]) || propertyName[0] == '_')
-			&& propertyName.Skip(1).All(character => char.IsLetterOrDigit(character) || character == '_');
-		if (isIdentifier) {
-			return TryAppendBounded(builder, ".") && TryAppendBounded(builder, propertyName);
-		}
-
-		if (!TryAppendBounded(builder, "['")) {
-			return false;
-		}
-		foreach (char character in propertyName) {
-			string escaped = character switch {
-				'\\' => "\\\\",
-				'\'' => "\\'",
-				'\n' => "\\n",
-				'\r' => "\\r",
-				'\t' => "\\t",
-				_ when char.IsControl(character) => $"\\u{(int)character:x4}",
-				_ => character.ToString()
-			};
-			if (!TryAppendBounded(builder, escaped)) {
-				return false;
-			}
-		}
-		return TryAppendBounded(builder, "']");
-	}
-
-	private static bool TryAppendBounded(StringBuilder builder, string value) {
-		int remaining = MaxDiagnosticPathLength - builder.Length;
-		if (value.Length <= remaining) {
-			builder.Append(value);
-			return true;
-		}
-		const string truncationMarker = "...";
-		if (remaining < truncationMarker.Length) {
-			builder.Length = MaxDiagnosticPathLength - truncationMarker.Length;
-		} else {
-			builder.Append(value, 0, remaining - truncationMarker.Length);
-		}
-		builder.Append(truncationMarker);
-		return false;
+		return Truncate(builder.ToString());
 	}
 
 	private static bool TryNormalizeQuery(JsonElement query, out JsonElement normalized, out string error) {

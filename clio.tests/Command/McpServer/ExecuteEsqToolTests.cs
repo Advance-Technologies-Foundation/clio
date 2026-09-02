@@ -287,16 +287,17 @@ public sealed class ExecuteEsqToolTests {
 			because: "the validation error should identify the exact malformed parameter");
 		response.Error.Should().Contain("JSON-encoded strings",
 			because: "the caller should be told which temporal value encoding the endpoint accepts");
-		response.Error.Should().Contain("\"value\": \"\\\"2026-01-01T00:00:00.000Z\\\"\"",
+		response.Error.Should().Contain("value text '2026-01-01T00:00:00.000Z' including the two single quote characters",
 			because: "the diagnostic should include a directly reusable valid value example");
-		commandResolver.DidNotReceiveWithAnyArgs().Resolve<IApplicationClient>(default!);
-		commandResolver.DidNotReceiveWithAnyArgs().Resolve<IServiceUrlBuilder>(default!);
+		commandResolver.ReceivedCalls().Should().BeEmpty(
+			because: "temporal validation must finish before resolving an environment or constructing a request");
 	}
 
 	[TestCase(7, "\"2026-08-10T00:00:00.000Z\"")]
 	[TestCase(8, "\"2026-08-10\"")]
 	[TestCase(9, "\"2026-08-10T11:06:00.000Z\"")]
 	[TestCase(7, "'2026-08-10T00:00:00.000Z'")]
+	[TestCase(7, "  \"2026-08-10T00:00:00.000Z\"  ")]
 	[Category("Unit")]
 	[Description("Passes accepted double-quoted DateTime, Date, and Time values and the compatible single-quoted form through to Creatio without rewriting.")]
 	public void Execute_ShouldPreserveJsonEncodedTemporalParameter_WhenValueHasAcceptedShape(
@@ -369,8 +370,8 @@ public sealed class ExecuteEsqToolTests {
 			because: "a temporal parameter without value would reach Creatio as null");
 		response.Error.Should().Contain("invalid or missing value",
 			because: "the failure should distinguish a missing temporal value from environment resolution");
-		commandResolver.DidNotReceiveWithAnyArgs().Resolve<IApplicationClient>(default!);
-		commandResolver.DidNotReceiveWithAnyArgs().Resolve<IServiceUrlBuilder>(default!);
+		commandResolver.ReceivedCalls().Should().BeEmpty(
+			because: "a missing temporal value must be rejected before resolving any environment-bound service");
 	}
 
 	[Test]
@@ -403,7 +404,7 @@ public sealed class ExecuteEsqToolTests {
 		});
 
 		// Assert
-		response.Error.Should().Contain("['Modified.After[0]\\n",
+		response.Error.Should().Contain("[\"Modified.After[0]\\n",
 			because: "unsafe property names should use escaped bracket notation in the diagnostic path");
 		response.Error.Should().NotContain("Modified.After[0]\n",
 			because: "control characters from untrusted property names must not create transcript lines");

@@ -135,6 +135,9 @@ public sealed class ExecuteEsqToolE2ETests : McpContractFixtureBase {
 		await AllureApi.Step("Assert validation uses the structured tool response", () => {
 			callResult.IsError.Should().NotBeTrue(
 				because: "query validation failures should use the structured execute-esq response contract");
+			return Task.CompletedTask;
+		});
+		await AllureApi.Step("Assert the structured response reports failure", () => {
 			response.Success.Should().BeFalse(
 				because: "a plain or missing DateTime parameter is not a valid SelectQuery temporal value");
 			return Task.CompletedTask;
@@ -147,6 +150,9 @@ public sealed class ExecuteEsqToolE2ETests : McpContractFixtureBase {
 		await AllureApi.Step("Assert the accepted temporal format is explained", () => {
 			response.Error.Should().Contain("JSON-encoded strings",
 				because: "the stdio caller should receive the accepted temporal value format");
+			response.Error.Should().Contain(
+				"value text '2026-01-01T00:00:00.000Z' including the two single quote characters",
+				because: "the complete reusable value example must survive MCP passthrough redaction");
 			return Task.CompletedTask;
 		});
 		await AllureApi.Step("Assert validation precedes environment access", () => {
