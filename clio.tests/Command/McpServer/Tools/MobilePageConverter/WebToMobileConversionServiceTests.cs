@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.IO;
@@ -1605,8 +1605,8 @@ public sealed class WebToMobileConversionServiceTests {
 	}
 
 	[Test]
-	[Description("A header action retargeted into a FloatingActionButton that EXISTS on the mobile template is flagged parentExistsOnTemplate:true, so the caller inserts only the child and never recreates the FAB container.")]
-	public void Analyze_Fab_RetargetParentOnTemplate_FlagsParentExistsOnTemplate() {
+	[Description("A header action retargeted into a FloatingActionButton the mobile template provides carries parentSource \"template\", so the caller inserts only the child and never recreates the FAB container.")]
+	public void Analyze_Fab_RetargetParentOnTemplate_MarksParentSourceTemplate() {
 		// Arrange
 		PageBundleInfo bundle = Bundle("""
 			[ { "name": "MainHeader", "type": "crt.FlexContainer", "items": [
@@ -1622,8 +1622,8 @@ public sealed class WebToMobileConversionServiceTests {
 		// Assert
 		ElementMapEntry order = Element(guide, "OrderBtn");
 		order.ParentName.Should().Be("FloatingActionButton", because: "the template retargets it into the FAB");
-		order.ParentExistsOnTemplate.Should().BeTrue(
-			because: "the FAB already exists on the mobile template, so only the child is inserted and the parent is never recreated");
+		order.ParentSource.Should().Be("template",
+			because: "no entry in the map inserts a FloatingActionButton, so the target page must already provide it — only the child is inserted and the parent is never recreated");
 	}
 
 	[Test]
@@ -1661,8 +1661,8 @@ public sealed class WebToMobileConversionServiceTests {
 	}
 
 	[Test]
-	[Description("When elementMap retargets into a FloatingActionButton the mobile template already provides, guide.constraints carries an explicit instruction to insert only the children and NOT recreate the parent container.")]
-	public void Analyze_Fab_RetargetParentOnTemplate_ConstraintWarnsAgainstRecreatingParent() {
+	[Description("Retargeting into a template-provided FloatingActionButton is reported ON THE ENTRY (parentSource) and NOT restated in guide.constraints. The constraint existed only because the fact was half in the data — the old parentExistsOnTemplate boolean was retarget-only, so the sentence was the only place naming those containers. Now that parentSource is stamped on every insert, a constraint line would be a second copy the caller has to match against a list of names.")]
+	public void Analyze_Fab_RetargetParentOnTemplate_ReportsOnEntryNotInConstraints() {
 		// Arrange
 		PageBundleInfo bundle = Bundle("""
 			[ { "name": "MainHeader", "type": "crt.FlexContainer", "items": [
@@ -1676,8 +1676,12 @@ public sealed class WebToMobileConversionServiceTests {
 			mobileTemplateTypesByName: MobileTypesByName(("FloatingActionButton", "crt.FloatingActionButton")));
 
 		// Assert
-		guide.Constraints.Should().Contain(c => c.Contains("FloatingActionButton") && c.Contains("parentExistsOnTemplate"),
-			because: "the caller must be told the retarget parent already exists and only its children should be inserted");
+		Element(guide, "OrderBtn").ParentSource.Should().Be("template",
+			because: "the entry itself must carry where its parent comes from, so the caller reads it per entry instead of matching a sentence against a list of container names");
+		guide.Constraints.Should().NotContain(c => c.Contains("FloatingActionButton"),
+			because: "the fact is now total on the entries, so naming the retarget containers in a constraint would only duplicate it");
+		guide.Constraints.Should().NotContain(c => c.Contains("parentExistsOnTemplate") || c.Contains("parentSource"),
+			because: "a constraint that tells the caller how to read a field belongs on the field's own contract and in the guidance article, not in every response");
 	}
 
 	[Test]
@@ -2219,8 +2223,8 @@ public sealed class WebToMobileConversionServiceTests {
 		};
 
 	[Test]
-	[Description("A crt.Button matched by a conversion rule with a positive `path` but NOT listed in nonConvertingScopeContainers is retargeted through the LEAF path into a FloatingActionButton the mobile template provides; the entry is flagged parentExistsOnTemplate:true so the caller inserts only the child.")]
-	public void Analyze_Fab_LeafRetargetParentOnTemplate_FlagsParentExistsOnTemplate() {
+	[Description("A crt.Button matched by a conversion rule with a positive `path` but NOT listed in nonConvertingScopeContainers is retargeted through the LEAF path into a FloatingActionButton the mobile template provides; the entry carries parentSource \"template\" so the caller inserts only the child.")]
+	public void Analyze_Fab_LeafRetargetParentOnTemplate_MarksParentSourceTemplate() {
 		// Arrange
 		PageBundleInfo bundle = Bundle("""
 			[ { "name": "Body", "type": "crt.FlexContainer", "items": [
@@ -2237,8 +2241,8 @@ public sealed class WebToMobileConversionServiceTests {
 		ElementMapEntry order = Element(guide, "OrderBtn");
 		order.Operation.Should().Be("insert", because: "a rule-matched leaf button converts");
 		order.ParentName.Should().Be("FloatingActionButton", because: "the rule retargets the leaf into the FAB");
-		order.ParentExistsOnTemplate.Should().BeTrue(
-			because: "the leaf retarget path must flag a template-provided parent so the caller inserts only the child");
+		order.ParentSource.Should().Be("template",
+			because: "the parent is not inserted anywhere in this map, so the caller must address the template's own element and insert only the child");
 	}
 
 	[Test]
@@ -2271,8 +2275,8 @@ public sealed class WebToMobileConversionServiceTests {
 	}
 
 	[Test]
-	[Description("A crt.FlexContainer matched by a conversion rule is retargeted through the CONTAINER path into a parent the mobile template provides; the container entry is flagged parentExistsOnTemplate:true.")]
-	public void Analyze_Fab_ContainerRetargetParentOnTemplate_FlagsParentExistsOnTemplate() {
+	[Description("A crt.FlexContainer matched by a conversion rule is retargeted through the CONTAINER path into a parent the mobile template provides; the container entry carries parentSource \"template\".")]
+	public void Analyze_Fab_ContainerRetargetParentOnTemplate_MarksParentSourceTemplate() {
 		// Arrange
 		PageBundleInfo bundle = Bundle("""
 			[ { "name": "Root", "type": "crt.FlexContainer", "items": [
@@ -2290,8 +2294,33 @@ public sealed class WebToMobileConversionServiceTests {
 		ElementMapEntry toolbar = Element(guide, "Toolbar");
 		toolbar.Operation.Should().Be("insert", because: "a rule-matched container converts");
 		toolbar.ParentName.Should().Be("AreaContainer", because: "the rule retargets the container into AreaContainer");
-		toolbar.ParentExistsOnTemplate.Should().BeTrue(
-			because: "the container retarget path must flag a template-provided parent so the caller inserts only the children");
+		toolbar.ParentSource.Should().Be("template",
+			because: "the parent is not inserted anywhere in this map, so the caller must address the template's own element and insert only the children");
+	}
+
+	[Test]
+	[Description("parentSource is TOTAL, not retarget-only: an ORDINARY insert whose parent this map never creates is marked \"template\" just like a retargeted one, and a child of a container the map DOES insert is marked \"page\". This is the ENG-95827 defect the field replaced — the old parentExistsOnTemplate boolean was set by the three retarget code paths alone, so an ordinary insert into a template-provided parent carried nothing and a caller applying its rule literally handled two identical situations differently.")]
+	public void Analyze_ParentSource_IsStampedOnOrdinaryInsertsToo() {
+		// Arrange — Root is NOT in this page's tree, so the walk parents Box on it: an ordinary (non-retarget)
+		// insert whose parent only the target page can provide. Fld's parent Box IS inserted by the map.
+		PageBundleInfo bundle = Bundle("""
+			[ { "name": "Box", "type": "crt.FlexContainer", "items": [
+				{ "name": "Fld", "type": "crt.Input" } ] } ]
+			""");
+
+		// Act
+		MobilePageConversionGuide guide = Analyze(bundle,
+			mobileTypes: new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "crt.FlexContainer", "crt.Input" },
+			webByType: Reg(("crt.FlexContainer", true), ("crt.Input", false)));
+
+		// Assert
+		ElementMapEntry box = Element(guide, "Box");
+		ElementMapEntry field = Element(guide, "Fld");
+		box.Operation.Should().Be("insert", because: "the page's own container converts");
+		box.ParentSource.Should().Be("template",
+			because: "nothing in this map inserts Box's parent, so the target page must already provide it — the very case the old retarget-only boolean left unmarked");
+		field.ParentSource.Should().Be("page",
+			because: "Box IS inserted by this map and came from the source page, so its own entry says how to create it and the caller must not treat it as pre-existing");
 	}
 
 	[Test]

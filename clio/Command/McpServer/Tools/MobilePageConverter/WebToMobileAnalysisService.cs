@@ -293,6 +293,13 @@ public static class WebToMobileAnalysisService {
 		// this ran. No bundled rule declares one today, which is exactly why the order — not the data — has to
 		// be what guarantees it.
 		NormalizePlacements(elementMap);
+
+		// Answer "where does this insert's parent come from?" ONCE, over the finished map. Deliberately a
+		// post-pass rather than a decision taken while each entry is built: the parent set is only complete
+		// after BuildTabAreaLayers (which adds the synthesized layers AND re-points a tab's children at them),
+		// so any per-entry answer computed earlier is answering a different question than the caller asks.
+		StampParentSource(elementMap);
+
 		IReadOnlyList<NormalizationEntry> spacingNormalization =
 			componentPropertyOverrides.EntriesOf(SpacingGroup);
 
@@ -391,12 +398,7 @@ public static class WebToMobileAnalysisService {
 				hasComponentTwin: componentMap.Count > 0,
 				exclusionSearchTruncated: excludedDiagnostics.DepthBudgetTruncated,
 				discardedExclusionFilters: excludedDiagnostics.DiscardedFilterCount,
-				skippedOverrideRules: componentPropertyOverrides.SkippedRulesWithoutFilters,
-				retargetParentsOnTemplate: elementMap
-					.Where(e => e.ParentExistsOnTemplate == true && !string.IsNullOrEmpty(e.ParentName))
-					.Select(e => e.ParentName)
-					.Distinct(StringComparer.OrdinalIgnoreCase)
-					.ToList()),
+				skippedOverrideRules: componentPropertyOverrides.SkippedRulesWithoutFilters),
 			NextSteps = BuildNextSteps(
 				hasDataSections: modelConfig is not null || viewModelConfig is not null,
 				hasAdaptiveLayout: adaptiveLayout.Count > 0,
@@ -1715,8 +1717,7 @@ public static class WebToMobileAnalysisService {
 		IReadOnlyList<string> dataSectionArrayConflicts = null, bool hasTabAreaLayers = false,
 		bool webTemplateUnavailable = false, bool hasComponentTwin = false,
 		bool exclusionSearchTruncated = false, int discardedExclusionFilters = 0,
-		int skippedOverrideRules = 0,
-		IReadOnlyList<string> retargetParentsOnTemplate = null) {
+		int skippedOverrideRules = 0) {
 		// UNCONDITIONAL platform invariants do NOT belong here. A line that fires for every page carries no
 		// fact about THIS conversion, so it cannot inform a decision the caller has to make — it only competes
 		// for attention with the data beside it, which is the ENG-95827 failure mode. Each of the four that used
@@ -1733,15 +1734,15 @@ public static class WebToMobileAnalysisService {
 		// The prose explanation of each lives in the freedom-page-web-to-mobile-conversion guidance article.
 		// Only CONDITIONAL entries — a fact about this page the caller cannot derive — may be added below.
 		var constraints = new List<string>();
-		if (retargetParentsOnTemplate is { Count: > 0 }) {
-			constraints.Add(
-				"elementMap RETARGETS elements into container(s) the mobile template ALREADY provides: "
-				+ string.Join(", ", retargetParentsOnTemplate)
-				+ ". For every elementMap entry marked parentExistsOnTemplate:true, insert ONLY that child into the named "
-				+ "parent; do NOT insert, recreate, or re-declare the parent container or its slot — the template already "
-				+ "supplies it. Adding your own copy (e.g. a second FloatingActionButton on Scaffold.floatAction) overrides "
-				+ "the native one and is wrong.");
-		}
+
+		// Retargeting into a template-provided container is NOT reported here. This line existed because the
+		// fact was only half in the data: `parentExistsOnTemplate` was set by three retarget code paths and so
+		// was missing from an ordinary insert into a template-provided parent, which left the constraint as the
+		// only place naming those containers. The fact is now TOTAL on the entries themselves —
+		// elementMap[].parentSource is stamped on every insert (see StampParentSource) — so the caller reads it
+		// per entry instead of matching a sentence against a list of names. What to DO about a "template"
+		// parent (insert only the child, never author the parent or its slot) is on the field's own contract
+		// and in the guidance article's RETARGET rule.
 		// The HAPPY path of the data sections is NOT reported. "Paste modelConfigDiff / viewModelConfigDiff
 		// verbatim, they are targeted operations, do not collapse them into one root merge, never source the
 		// data-source section from a pre-existing body, keep every attribute's type and path" is a standing
@@ -2086,7 +2087,6 @@ public static class WebToMobileAnalysisService {
 						WebName = name, WebType = Nz(type), Operation = "insert", MobileName = name, MobileType = scopedType,
 						ParentName = target.Parent, PropertyName = target.Property, Index = null,
 						CaptionResource = scopedCaption, MobileValues = scopedValues,
-						ParentExistsOnTemplate = ParentProvidedByTemplate(ctx, target.Parent) ? true : (bool?)null,
 						Reason = $"action under non-converting scope '{scopeContainer}'; converted into {target.Parent}.{target.Property}"
 					});
 				} else {
@@ -2309,8 +2309,6 @@ public static class WebToMobileAnalysisService {
 					Index = containerIndex,
 					CaptionResource = containerCaption,
 					MobileValues = containerValues,
-					ParentExistsOnTemplate = containerRetargeted && ParentProvidedByTemplate(ctx, containerParent)
-						? true : (bool?)null,
 					PositionalAnchor = isPositional && !containerRetargeted ? place.Anchor : null,
 					Reason = containerRetargeted
 						? $"container; retargeted by a conversion template into {containerParent}.{containerProperty}"
@@ -2414,8 +2412,6 @@ public static class WebToMobileAnalysisService {
 				Index = leafIndex,
 				CaptionResource = leafCaption,
 				MobileValues = leafValues,
-				ParentExistsOnTemplate = leafRetargeted && ParentProvidedByTemplate(ctx, leafParent)
-					? true : (bool?)null,
 				PositionalAnchor = isPositional && !leafRetargeted ? place.Anchor : null,
 				Reason = leafReason
 			});
@@ -2508,16 +2504,52 @@ public static class WebToMobileAnalysisService {
 		&& !ctx.MobileTypesByName.ContainsKey(parentName);
 
 	/// <summary>
-	/// True when the mobile template PROVIDES the retarget parent (its name is in the probed template's resolved
-	/// tree) — the exact inverse of <see cref="RetargetTargetMissing"/> over the same probed-names condition, so the
-	/// two never drift. Drives <c>elementMap[].parentExistsOnTemplate</c>: when true the caller inserts ONLY the
-	/// children and never re-declares the template-provided parent. Like its inverse it decides membership ONLY when
-	/// template names were probed; with none probed (template unavailable/unknown) it returns false and the flag is
-	/// omitted rather than asserted on missing information.
+	/// Stamps <see cref="ElementMapEntry.ParentSource"/> on every <c>insert</c> that names a parent, from the
+	/// FINISHED map: the parent is authored here exactly when some entry inserts an element of that name, and
+	/// otherwise the target page must already provide it.
 	/// </summary>
-	private static bool ParentProvidedByTemplate(ElementMapContext ctx, string parentName) =>
-		ctx.MobileTypesByName is { Count: > 0 } && !string.IsNullOrEmpty(parentName)
-		&& !RetargetTargetMissing(ctx, parentName);
+	/// <remarks>
+	/// <para>
+	/// This is decided from the MAP, not from the mobile template's node list, and that is the point. The
+	/// previous <c>parentExistsOnTemplate</c> boolean was set independently by three retarget code paths and
+	/// gated on the template having been probed, which made it wrong in two directions: absent from an ORDINARY
+	/// insert into a template-provided parent (a real guide flagged <c>FloatingActionButton</c> but not
+	/// <c>MainContainer</c>), and absent whenever the template could not be read at all. "Not created by this
+	/// map" needs neither the template nor a per-path decision, and it is the question a caller building the
+	/// body actually has.
+	/// </para>
+	/// <para>
+	/// Only <c>insert</c> is stamped. On every other operation <c>parentName</c> means something else — for
+	/// <c>relocate-children</c> it names where the element's CHILDREN go, not where the element itself is
+	/// inserted — so stamping it would assert the wrong thing.
+	/// </para>
+	/// <para>
+	/// Claiming <c>"template"</c> for an unknown parent is safe because a retarget whose target is absent from
+	/// the probed template is DROPPED upstream (see <see cref="RetargetTargetMissing"/>), so no surviving insert
+	/// names a parent that neither this map nor the template provides.
+	/// </para>
+	/// </remarks>
+	private static void StampParentSource(List<ElementMapEntry> elementMap) {
+		var authoredHere = new Dictionary<string, bool>(StringComparer.OrdinalIgnoreCase);
+		foreach (ElementMapEntry entry in elementMap) {
+			if (string.Equals(entry.Operation, "insert", StringComparison.OrdinalIgnoreCase)
+				&& !string.IsNullOrEmpty(entry.MobileName)) {
+				// The value records whether the parent came from the source page (it has a webName) or was
+				// synthesized by the converter (it has none) — the two "authored here" answers.
+				authoredHere[entry.MobileName] = !string.IsNullOrEmpty(entry.WebName);
+			}
+		}
+		foreach (ElementMapEntry entry in elementMap) {
+			if (!string.Equals(entry.Operation, "insert", StringComparison.OrdinalIgnoreCase)
+				|| string.IsNullOrEmpty(entry.ParentName)) {
+				entry.ParentSource = null;
+				continue;
+			}
+			entry.ParentSource = authoredHere.TryGetValue(entry.ParentName, out bool fromPage)
+				? fromPage ? "page" : "converter"
+				: "template";
+		}
+	}
 
 	/// <summary>
 	/// True when a source element a conversion template would RETARGET is INHERITED FROM THE WEB TEMPLATE baseline

@@ -307,11 +307,11 @@ public sealed class MobilePageConversionGuideSandboxE2ETests : McpContractFixtur
 			entry.MobileType.Should().Be("crt.MenuItem",
 				because: $"a header action retargeted into the FAB ('{entry.WebName}') becomes a mobile menu item");
 			// ENG-93152: the recommended mobile record template provides the FloatingActionButton natively (in the
-			// Scaffold's floatAction slot). Reaching this retarget therefore means the probe found the FAB, so the entry
-			// MUST be flagged parentExistsOnTemplate:true — the caller inserts only the child and never re-declares the FAB.
-			entry.ParentExistsOnTemplate.Should().BeTrue(
-				because: $"the mobile template provides the FloatingActionButton natively, so the retargeted action "
-					+ $"('{entry.WebName}') must be flagged parentExistsOnTemplate:true over the real MCP transport");
+			// Scaffold's floatAction slot), and no entry in the map ever inserts one. The entry MUST therefore carry
+			// parentSource "template" — the caller inserts only the child and never re-declares the FAB.
+			entry.ParentSource.Should().Be("template",
+				because: $"the mobile template provides the FloatingActionButton natively and no map entry inserts it, "
+					+ $"so the retargeted action ('{entry.WebName}') must carry parentSource \"template\" over the real MCP transport");
 			if (entry.MobileValues is JsonObject values) {
 				values.ContainsKey("style").Should().BeFalse(
 					because: $"visual properties are denylisted on a converted FAB menu item ('{entry.WebName}')");
@@ -328,8 +328,10 @@ public sealed class MobilePageConversionGuideSandboxE2ETests : McpContractFixtur
 			guide.ElementMap.Should().NotContain(
 				e => e.WebName == "MainHeader" && (e.Operation == "insert" || e.Operation == "merge"),
 				because: "a non-converting scope container (MainHeader) is never emitted as a mobile element (AC 4.5)");
-			// ENG-93152 parentExistsOnTemplate contract: the FAB is template-provided, so the guide must NEVER emit an
-			// insert/merge that re-declares it — authoring a second FloatingActionButton would override the native one.
+			// ENG-93152 contract, and the other half of what parentSource asserts above: the FAB is template-provided,
+			// so the guide must NEVER emit an insert/merge that re-declares it — authoring a second
+			// FloatingActionButton would override the native one. This is also what makes parentSource "template"
+			// self-consistent here: it is derived from the absence of such an insert.
 			guide.ElementMap.Should().NotContain(
 				e => (e.Operation == "insert" || e.Operation == "merge")
 					&& (e.MobileName == "FloatingActionButton" || e.MobileType == "crt.FloatingActionButton"),

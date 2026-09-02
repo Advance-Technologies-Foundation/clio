@@ -150,14 +150,36 @@ public sealed class ElementMapEntry {
 	public string PropertyName { get; set; }
 
 	/// <summary>
-	/// True when this <c>insert</c> RETARGETS the element into a <see cref="ParentName"/> that ALREADY EXISTS on
-	/// the mobile template (e.g. <c>FloatingActionButton</c> via the Scaffold's <c>floatAction</c> slot). Apply it
-	/// as an insert of THIS child into that existing parent ONLY — do NOT insert or recreate the parent itself, and
-	/// do NOT declare its slot: the template already provides both. Omitted (null) for every other operation.
+	/// Where this entry's <see cref="ParentName"/> comes from. Set on EVERY <c>insert</c> that names a parent,
+	/// and only on those — the other operations do not insert anything into a parent. One of:
+	/// <list type="bullet">
+	/// <item><description><c>"template"</c> — the parent is NOT created by this element map, so the target page
+	/// must already provide it (from the mobile template, e.g. <c>MainContainer</c>, or
+	/// <c>FloatingActionButton</c> via the Scaffold's <c>floatAction</c> slot). Insert THIS child into it and
+	/// nothing more: do NOT insert, recreate or re-declare the parent, and do NOT declare its slot — authoring
+	/// your own copy OVERRIDES the native one.</description></item>
+	/// <item><description><c>"page"</c> — the parent is inserted by this map and came from the source page; its
+	/// own entry says how to create it.</description></item>
+	/// <item><description><c>"converter"</c> — the parent is inserted by this map and was synthesized by the
+	/// converter (a tab-body grid or its Area card); it carries no <c>webName</c>, and its own entry says how to
+	/// create it.</description></item>
+	/// </list>
 	/// </summary>
-	[JsonPropertyName("parentExistsOnTemplate")]
+	/// <remarks>
+	/// Derived in ONE pass over the finished map (see <c>WebToMobileAnalysisService.StampParentSource</c>): the
+	/// parent is "authored here" exactly when some entry inserts an element of that name. It replaced a
+	/// <c>parentExistsOnTemplate</c> boolean that three separate retarget code paths each set for themselves, so
+	/// it was absent from an ORDINARY insert into a template-provided parent — verified on a real
+	/// <c>Leads_FormPage</c> guide, where <c>FloatingActionButton</c> carried the flag and <c>MainContainer</c>,
+	/// equally template-provided, did not. A caller applying the flag's rule literally therefore handled two
+	/// identical situations differently (ENG-95827). The name changed with the computation because the old one
+	/// over-claimed: the boolean was gated on the mobile template's node list, so it silently vanished when that
+	/// template could not be read, whereas "not created by this map" is decidable from the map alone and is the
+	/// question the caller actually has.
+	/// </remarks>
+	[JsonPropertyName("parentSource")]
 	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-	public bool? ParentExistsOnTemplate { get; init; }
+	public string ParentSource { get; set; }
 
 	/// <summary>
 	/// Optional 0-based insert position within the parent's <c>items</c>. Set for a positional insert — a
