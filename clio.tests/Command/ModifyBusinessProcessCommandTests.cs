@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Text.Json;
 using System.Linq;
 using Clio.Command;
 using Clio.Command.ProcessModel;
@@ -41,6 +42,80 @@ public sealed class ModifyBusinessProcessCommandTests {
 
 	private static ModifyBusinessProcessResult BuildResult() =>
 		new("UsrSampleProcess", "5c58c4c4-134b-4744-9c67-96d9c69c9d55", 1);
+
+	[Test]
+	[Category("Unit")]
+	[Description("Does NOT claim an addElement accessRights block was dropped when a setElement in the same array configures that element - the payload the warning itself recommends.")]
+	public void Execute_ShouldNotWarnAboutAddElement_WhenASetElementConfiguresTheSameElement() {
+		// Arrange
+		ModifyBusinessProcessOptions options = new() {
+			Environment = "sandbox",
+			ProcessName = "UsrSampleProcess",
+			OperationsJson =
+				"[{\"op\":\"addElement\",\"element\":{\"name\":\"Grant\",\"type\":\"changeAccessRights\","
+				+ "\"accessRights\":{\"object\":\"Order\"}}},"
+				+ "{\"op\":\"setElement\",\"elementName\":\"Grant\",\"elementUpdate\":{\"accessRights\":{\"add\":[]}}}]"
+		};
+		_modifyBusinessProcessService.ModifyProcess("sandbox", Arg.Any<ModifyBusinessProcessRequest>())
+			.Returns(BuildResult());
+		DescribedElement element = new() {
+			Name = "Grant",
+			Filter = new DescribedFilter {
+				Object = "Order",
+				Conditions = [new DescribedFilterCondition { Column = "Id" }]
+			},
+			AdditionalData = new Dictionary<string, JsonElement> {
+				["accessRights"] = JsonDocument.Parse("{\"object\":\"Order\"}").RootElement.Clone()
+			}
+		};
+		_processDescriber.Describe(Arg.Any<ProcessIdentity>(), null)
+			.Returns(new DescribeProcessResult { Elements = [element] });
+		List<string> warnings = [];
+		_logger.When(logger => logger.WriteWarning(Arg.Any<string>()))
+			.Do(call => warnings.Add(call.Arg<string>()));
+
+		// Act
+		_command.Execute(options);
+
+		// Assert
+		warnings.Should().NotContain(message => message.Contains("sent with addElement"),
+			because: "the setElement configured the element, so claiming it was created without permission "
+				+ "configuration would be false - and a warning that is wrong in the workflow this code "
+				+ "recommends teaches callers to ignore the true ones too");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Warns when the saved element has no record filter: it will match no records and change no permissions, silently, and nothing refuses that state.")]
+	public void Execute_ShouldWarn_WhenTheElementHasNoRecordFilter() {
+		// Arrange
+		ModifyBusinessProcessOptions options = new() {
+			Environment = "sandbox",
+			ProcessName = "UsrSampleProcess",
+			OperationsJson = "[{\"op\":\"setElement\",\"elementName\":\"Grant\",\"elementUpdate\":{\"accessRights\":{\"add\":[]}}}]"
+		};
+		_modifyBusinessProcessService.ModifyProcess("sandbox", Arg.Any<ModifyBusinessProcessRequest>())
+			.Returns(BuildResult());
+		DescribedElement element = new() {
+			Name = "Grant",
+			AdditionalData = new Dictionary<string, JsonElement> {
+				["accessRights"] = JsonDocument.Parse("{\"object\":\"Order\"}").RootElement.Clone()
+			}
+		};
+		_processDescriber.Describe(Arg.Any<ProcessIdentity>(), null)
+			.Returns(new DescribeProcessResult { Elements = [element] });
+		List<string> warnings = [];
+		_logger.When(logger => logger.WriteWarning(Arg.Any<string>()))
+			.Do(call => warnings.Add(call.Arg<string>()));
+
+		// Act
+		_command.Execute(options);
+
+		// Assert
+		warnings.Should().ContainSingle(message => message.Contains("NO record filter"),
+			because: "the block landed but the element cannot act, which is indistinguishable from success "
+				+ "on an element that reports nothing at run time");
+	}
 
 	[Test]
 	[Description("Warns when the edited process carries no accessRights block: a CrtProcessBuilder that predates the Change access rights element discards the block and still answers success, so the edit reports an applied operation whose permission change never landed.")]

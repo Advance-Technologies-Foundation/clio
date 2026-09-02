@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using System.Text.Json.Serialization;
@@ -242,8 +243,13 @@ public class ModifyBusinessProcessCommand(
 		// An accessRights block on addElement is dropped by the server (it applies only email/performer).
 		// That is by design, but the outcome the caller lives with is the same unconfigured element as a
 		// silent drop, so say so rather than leaving them to discover it at run time.
+		// EXCEPT when a setElement in the same array configures that element - which is precisely what the
+		// warning tells the caller to do. Warning about it there would assert something false about a payload
+		// this code recommends, and a warning that is wrong in the recommended workflow teaches callers to
+		// ignore the whole family, including the true ones below.
 		string? ignoredOnAdd = AccessRightsBlockExpectation.BuildAddElementWarning(
-			AccessRightsBlockExpectation.IgnoredOnAddElement(options.OperationsJson));
+			[.. AccessRightsBlockExpectation.IgnoredOnAddElement(options.OperationsJson)
+				.Except(expectedRights, StringComparer.OrdinalIgnoreCase)]);
 		if (ignoredOnAdd is not null) {
 			logger.WriteWarning(ignoredOnAdd);
 		}

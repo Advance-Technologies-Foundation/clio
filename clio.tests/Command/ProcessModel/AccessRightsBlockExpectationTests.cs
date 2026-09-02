@@ -144,6 +144,85 @@ public sealed class AccessRightsBlockExpectationTests {
 	}
 
 	[Test]
+	[Description("Reports an element saved with no record filter: it matches no records and changes nothing, which is the first configuration the docs list as building green and doing nothing.")]
+	public void WithoutRecordFilter_ShouldReportAnElementWithNoFilter() {
+		// Arrange
+		DescribedElement element = Element("Grant", "{\"object\":\"Order\"}");
+
+		// Act
+		IReadOnlyList<string> unfiltered = AccessRightsBlockExpectation.WithoutRecordFilter(
+			Described(element), ["Grant"]);
+
+		// Assert
+		unfiltered.Should().Equal(new[] { "Grant" },
+			because: "the record filter decides WHICH records the element acts on, so without one the run "
+				+ "changes no permissions and the element has no output parameter to say so");
+	}
+
+	[Test]
+	[Description("Treats a filter that narrows nothing as no filter: an empty condition and group set selects every record, which has the same runtime outcome as none.")]
+	public void WithoutRecordFilter_ShouldTreatAnEmptyFilterAsAbsent() {
+		// Arrange
+		DescribedElement element = Element("Grant", "{\"object\":\"Order\"}");
+		element.Filter = new DescribedFilter { Object = "Order" };
+
+		// Act
+		IReadOnlyList<string> unfiltered = AccessRightsBlockExpectation.WithoutRecordFilter(
+			Described(element), ["Grant"]);
+
+		// Assert
+		unfiltered.Should().Equal(new[] { "Grant" },
+			because: "a filter object carrying neither conditions nor groups narrows nothing, so reporting it "
+				+ "as present would let the very state this check exists to catch pass as configured");
+	}
+
+	[Test]
+	[Description("Stays silent when the element carries a real filter condition.")]
+	public void WithoutRecordFilter_ShouldStaySilent_WhenAConditionIsPresent() {
+		// Arrange
+		DescribedElement element = Element("Grant", "{\"object\":\"Order\"}");
+		element.Filter = new DescribedFilter {
+			Object = "Order",
+			Conditions = [new DescribedFilterCondition { Column = "Id" }]
+		};
+
+		// Act
+		IReadOnlyList<string> unfiltered = AccessRightsBlockExpectation.WithoutRecordFilter(
+			Described(element), ["Grant"]);
+
+		// Assert
+		unfiltered.Should().BeEmpty(
+			because: "a configured element must not be warned about, or the warning stops being read");
+	}
+
+	[Test]
+	[Description("Does not accuse an element the read-back never returned: Unresolved reports that case, so reporting it here too would warn twice about one element.")]
+	public void WithoutRecordFilter_ShouldIgnoreAnElementAbsentFromTheReadBack() {
+		// Act
+		IReadOnlyList<string> unfiltered = AccessRightsBlockExpectation.WithoutRecordFilter(
+			Described(Element("SomethingElse", "{\"object\":\"Order\"}")), ["Grant"]);
+
+		// Assert
+		unfiltered.Should().BeEmpty(
+			because: "an element that is not in the read-back is reported by Unresolved, and one finding per "
+				+ "problem is what keeps the warnings actionable");
+	}
+
+	[Test]
+	[Description("The no-filter warning names the element and says the run will change nothing.")]
+	public void BuildNoFilterWarning_ShouldNameTheElementAndTheConsequence() {
+		// Act
+		string warning = AccessRightsBlockExpectation.BuildNoFilterWarning(["Grant"]);
+
+		// Assert
+		warning.Should().Contain("'Grant'", because: "the caller needs to know which element is affected");
+		warning.Should().Contain("no records",
+			because: "the consequence, not just the omission, is what tells the caller the run is a no-op");
+		warning.Should().Contain("setFilter",
+			because: "the warning must carry the operation that fixes it");
+	}
+
+	[Test]
 	[Description("The warning names the elements and tells the caller not to treat a revoke as applied.")]
 	public void BuildWarning_ShouldNameTheElementsAndTheRevokeConsequence() {
 		// Act

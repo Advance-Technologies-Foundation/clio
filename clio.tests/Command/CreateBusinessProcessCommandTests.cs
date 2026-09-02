@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Text.Json;
 using Clio.Command;
 using Clio.Command.ProcessModel;
 using Clio.Common;
@@ -40,6 +41,66 @@ public sealed class CreateBusinessProcessCommandTests {
 
 	private static CreateBusinessProcessResult BuildResult() =>
 		new("UsrSampleProcess", "5c58c4c4-134b-4744-9c67-96d9c69c9d55");
+
+	[Test]
+	[Category("Unit")]
+	[Description("Warns when the saved element has no record filter: it matches no records and changes no permissions, silently, and nothing refuses that state.")]
+	public void Execute_ShouldWarn_WhenTheElementHasNoRecordFilter() {
+		// Arrange
+		CreateBusinessProcessOptions options = new() {
+			Environment = "sandbox",
+			DescriptorJson = "{\"name\":\"UsrSampleProcess\",\"packageName\":\"Custom\",\"elements\":[{\"name\":\"Grant\","
+			+ "\"type\":\"changeAccessRights\",\"accessRights\":{\"object\":\"Order\"}}],\"flows\":[]}"
+		};
+		_createBusinessProcessService.BuildProcess("sandbox", Arg.Any<CreateBusinessProcessRequest>())
+			.Returns(BuildResult());
+		DescribedElement element = new() {
+			Name = "Grant",
+			AdditionalData = new Dictionary<string, JsonElement> {
+				["accessRights"] = JsonDocument.Parse("{\"object\":\"Order\"}").RootElement.Clone()
+			}
+		};
+		_processDescriber.Describe(Arg.Any<ProcessIdentity>(), null)
+			.Returns(new DescribeProcessResult { Elements = [element] });
+		List<string> warnings = [];
+		_logger.When(logger => logger.WriteWarning(Arg.Any<string>()))
+			.Do(call => warnings.Add(call.Arg<string>()));
+
+		// Act
+		_command.Execute(options);
+
+		// Assert
+		warnings.Should().ContainSingle(message => message.Contains("NO record filter"),
+			because: "the block landed but the element cannot act, and on an element with no output "
+				+ "parameters that is indistinguishable from success");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Says so when the read-back does not contain the element at all: the check did not happen, which is not the same as the configuration having landed.")]
+	public void Execute_ShouldWarn_WhenTheElementIsAbsentFromTheReadBack() {
+		// Arrange
+		CreateBusinessProcessOptions options = new() {
+			Environment = "sandbox",
+			DescriptorJson = "{\"name\":\"UsrSampleProcess\",\"packageName\":\"Custom\",\"elements\":[{\"name\":\"Grant\","
+			+ "\"type\":\"changeAccessRights\",\"accessRights\":{\"object\":\"Order\"}}],\"flows\":[]}"
+		};
+		_createBusinessProcessService.BuildProcess("sandbox", Arg.Any<CreateBusinessProcessRequest>())
+			.Returns(BuildResult());
+		_processDescriber.Describe(Arg.Any<ProcessIdentity>(), null).Returns(
+			new DescribeProcessResult { Elements = [new DescribedElement { Name = "SomethingElse" }] });
+		List<string> warnings = [];
+		_logger.When(logger => logger.WriteWarning(Arg.Any<string>()))
+			.Do(call => warnings.Add(call.Arg<string>()));
+
+		// Act
+		_command.Execute(options);
+
+		// Assert
+		warnings.Should().ContainSingle(message => message.Contains("Could not verify"),
+			because: "an element the read-back never returned cannot prove a drop, but it cannot prove a "
+				+ "success either, and this guard must never let the second read as the first");
+	}
 
 	[Test]
 	[Category("Unit")]
