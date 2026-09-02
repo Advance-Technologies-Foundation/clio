@@ -79,20 +79,24 @@ public sealed class ProcessPageFactsToolE2ETests : McpContractFixtureBase {
 		response.DataSources.Should().NotBeNull(
 			because: "an empty list and a missing list mean different things to the process element — absent facts "
 				+ "leave its data-source parameters alone");
-		// A Freedom UI page inherits Save/Close/Cancel from its template chain, which is the whole reason these
-		// facts cannot be read server-side: they are not in the page's own body.
-		response.CompletingButtonCandidates.Should().NotBeEmpty(
-			because: "the template chain contributes page-completing buttons even to a blank page");
-		response.CompletingButtonCandidates.Should().OnlyContain(
-			button => !string.IsNullOrWhiteSpace(button.Name)
-				&& button.Caption.EndsWith($" | {button.Name}", StringComparison.Ordinal)
-				&& button.Event == "clicked",
-			because: "the element stores the designer's '<caption> | <name>' composition and the clicked event");
-		// The one assertion in the repo that exercises the name-dedup against REAL stand data: a live page carries
-		// the same ActionButtonsContainer in two places, so without the collapse this reported 7 entries for 4
-		// buttons — and the process element identifies a button by name.
+		// MEASURED on the stand, and the correction of an assumption this test used to encode. It asserted that
+		// "the template chain contributes page-completing buttons even to a blank page" — it does not. The seeded
+		// fixture is a BLANK page: it has no record to save, so nothing above it in the chain contributes a
+		// Save/Close/Cancel button, and the honest answer is an empty list. A form page is the opposite case
+		// (Accounts_FormPage reports four), which is why the empty result here is about THIS page and not about
+		// the projection.
+		response.CompletingButtonCandidates.Should().BeEmpty(
+			because: "a blank page carries no completing button — the assumption that every page inherits one "
+				+ "was wrong, and this fixture is what disproved it");
+		// The half that matters more: an empty list must NOT read as a clean answer. An element built on this
+		// page could never finish at run time, so the tool flags it — and nothing else in the suite exercises
+		// that warning end to end.
+		response.Warnings.Should().NotBeNullOrEmpty(
+				because: "an empty candidate list is ambiguous between 'no buttons' and 'shape not recognised'")
+			.And.Contain(warning => warning.Contains("can never finish at run time", StringComparison.Ordinal),
+				because: "the warning has to name the run-time consequence, not merely report a count");
 		response.CompletingButtonCandidates.Select(button => button.Name).Should().OnlyHaveUniqueItems(
-			because: "duplicated containers on a real page must collapse to one entry per button name");
+			because: "one entry per button name, whatever the page carries");
 	}
 
 	#region Methods: Private
