@@ -63,6 +63,10 @@ internal sealed class ApplicationClientLease(IApplicationClient client) : IOwned
 		int maxAttempts = 1, int delaySec = 1) =>
 		_client.ExecutePatchRequest(url, requestData, requestTimeout, maxAttempts, delaySec);
 
+	public string ExecutePutRequest(string url, string requestData, int requestTimeout = Timeout.Infinite,
+		int maxAttempts = 1, int delaySec = 1) =>
+		_client.ExecutePutRequest(url, requestData, requestTimeout, maxAttempts, delaySec);
+
 	public void Listen(CancellationToken cancellationToken) => _client.Listen(cancellationToken);
 	public void Login() => _client.Login();
 	public Task<HttpResponseMessage> LoginAsync(int requestTimeout = 100_000,
