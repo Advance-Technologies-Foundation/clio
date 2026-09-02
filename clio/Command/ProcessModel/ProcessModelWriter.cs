@@ -221,7 +221,9 @@ public class ProcessModelWriter(IFileSystem fileSystem) : IProcessModelWriter{
 			}
 			
 			string attr = $"[JsonProperty(\"{p.Name}\")]";
-			string prop = $"public {p.DataValueTypeResolved.Name} {p.Name} {{get; set;}}";
+			//Fully qualified, like the top-level property above: the generated file imports neither
+			//System.Drawing nor an alias, so an unqualified Color item would not compile (CS0246).
+			string prop = $"public {p.DataValueTypeResolved} {p.Name} {{get; set;}}";
 
 			if (!string.IsNullOrWhiteSpace(p.Name) && !string.IsNullOrWhiteSpace(p.DataValueTypeResolved.Name)) {
 				sb.AppendLine(IndentWithTab(attr,2))
