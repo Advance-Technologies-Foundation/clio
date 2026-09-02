@@ -45,6 +45,95 @@ public sealed class ModifyBusinessProcessCommandTests {
 
 	[Test]
 	[Category("Unit")]
+	[Description("Reads the process back by UId when the edit was addressed by uid and the server omitted the schema name, instead of reporting the permissions check as unperformable.")]
+	public void Execute_ShouldVerifyByUid_WhenTheResultCarriesNoSchemaName() {
+		// Arrange
+		ModifyBusinessProcessOptions options = new() {
+			Environment = "sandbox",
+			ProcessUid = "5c58c4c4-134b-4744-9c67-96d9c69c9d55",
+			OperationsJson = "[{\"op\":\"setElement\",\"elementName\":\"Grant\",\"elementUpdate\":{\"accessRights\":{\"add\":[]}}}]"
+		};
+		_modifyBusinessProcessService.ModifyProcess("sandbox", Arg.Any<ModifyBusinessProcessRequest>())
+			.Returns(new ModifyBusinessProcessResult(null, "5c58c4c4-134b-4744-9c67-96d9c69c9d55", 1));
+		DescribedElement element = new() {
+			Name = "Grant",
+			Filter = new DescribedFilter {
+				Object = "Order",
+				Conditions = [new DescribedFilterCondition { Column = "Id" }]
+			},
+			AdditionalData = new Dictionary<string, JsonElement> {
+				["accessRights"] = JsonDocument.Parse("{\"object\":\"Order\"}").RootElement.Clone()
+			}
+		};
+		_processDescriber.Describe(Arg.Any<ProcessIdentity>(), null)
+			.Returns(new DescribeProcessResult { Elements = [element] });
+		List<string> warnings = [];
+		_logger.When(logger => logger.WriteWarning(Arg.Any<string>()))
+			.Do(call => warnings.Add(call.Arg<string>()));
+
+		// Act
+		_command.Execute(options);
+
+		// Assert
+		_processDescriber.Received(1).Describe(Arg.Any<ProcessIdentity>(), null);
+		warnings.Should().NotContain(message => message.Contains("Could not verify"),
+			because: "the UId was in hand the whole time, so declaring the check unperformable would be a "
+				+ "wrong warning in a workflow the tool supports");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Keeps the exit code at 0 when verification itself throws: the edit already landed, and reporting it as failed would invite a retry that re-applies replace semantics.")]
+	public void Execute_ShouldStillSucceed_WhenVerificationThrows() {
+		// Arrange
+		ModifyBusinessProcessOptions options = new() {
+			Environment = "sandbox",
+			ProcessName = "UsrSampleProcess",
+			OperationsJson = "[{\"op\":\"setElement\",\"elementName\":\"Grant\",\"elementUpdate\":{\"accessRights\":{\"add\":[]}}}]"
+		};
+		_modifyBusinessProcessService.ModifyProcess("sandbox", Arg.Any<ModifyBusinessProcessRequest>())
+			.Returns(BuildResult());
+		_processDescriber.Describe(Arg.Any<ProcessIdentity>(), null)
+			.Returns(_ => throw new InvalidOperationException("read-back exploded"));
+
+		// Act
+		int exitCode = _command.Execute(options);
+
+		// Assert
+		exitCode.Should().Be(0,
+			because: "the permissions were already changed; exit 1 would tell the caller to retry a "
+				+ "replace-semantics write that had in fact applied");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("The email half of the merged guard still reaches the logger, so folding the two block checks into one read-back did not silently drop it.")]
+	public void Execute_ShouldStillWarn_WhenTheEmailBlockWasDiscarded() {
+		// Arrange
+		ModifyBusinessProcessOptions options = new() {
+			Environment = "sandbox",
+			ProcessName = "UsrSampleProcess",
+			OperationsJson = "[{\"op\":\"setElement\",\"elementName\":\"Mail\",\"elementUpdate\":{\"email\":{\"mode\":\"auto\"}}}]"
+		};
+		_modifyBusinessProcessService.ModifyProcess("sandbox", Arg.Any<ModifyBusinessProcessRequest>())
+			.Returns(BuildResult());
+		_processDescriber.Describe(Arg.Any<ProcessIdentity>(), null).Returns(
+			new DescribeProcessResult { Elements = [new DescribedElement { Name = "Mail", Email = null }] });
+		List<string> warnings = [];
+		_logger.When(logger => logger.WriteWarning(Arg.Any<string>()))
+			.Do(call => warnings.Add(call.Arg<string>()));
+
+		// Act
+		_command.Execute(options);
+
+		// Assert
+		warnings.Should().ContainSingle(message => message.Contains("'email'"),
+			because: "the merged guard changed the email check's call site and early-return condition, so "
+				+ "nothing else proves that half still fires");
+	}
+
+	[Test]
+	[Category("Unit")]
 	[Description("Does NOT claim an addElement accessRights block was dropped when a setElement in the same array configures that element - the payload the warning itself recommends.")]
 	public void Execute_ShouldNotWarnAboutAddElement_WhenASetElementConfiguresTheSameElement() {
 		// Arrange

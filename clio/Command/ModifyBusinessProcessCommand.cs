@@ -199,7 +199,16 @@ public class ModifyBusinessProcessCommand(
 			foreach (string warning in result.Warnings ?? []) {
 				logger.WriteWarning(warning);
 			}
-			WarnOnDiscardedBlocks(options, result.SchemaName);
+			// Verification runs AFTER the write landed, so it must never change the outcome the caller sees.
+			// Inside Execute's blanket catch a throw here would report a succeeded operation as failed, and on a
+			// tool that grants and revokes live permissions that invites a retry: a duplicate schema on create, a
+			// re-applied replace on modify.
+			try {
+				WarnOnDiscardedBlocks(options, result.SchemaName);
+			} catch (Exception verification) {
+				logger.WriteWarning(
+					$"The edit was applied, but verifying its configuration failed: {verification.Message}. Re-read the process with describe-business-process before reporting a grant or revoke as applied.");
+			}
 			return 0;
 		} catch (Exception exception) {
 			logger.WriteError(exception.Message);
@@ -257,15 +266,18 @@ public class ModifyBusinessProcessCommand(
 			return;
 		}
 
-		string identity = string.IsNullOrWhiteSpace(schemaName) ? options.ProcessName : schemaName;
-		if (string.IsNullOrWhiteSpace(identity)) {
+		// The caller identifies the process by name OR uid, and an older CrtProcessBuilder may omit SchemaName
+		// from the result, so falling back to the name alone would report "could not verify" for a modify-by-uid
+		// that was fully verifiable - the UId was in hand the whole time.
+		string code = string.IsNullOrWhiteSpace(schemaName) ? options.ProcessName : schemaName;
+		if (string.IsNullOrWhiteSpace(code) && string.IsNullOrWhiteSpace(options.ProcessUid)) {
 			// Nothing to read back against; silence would be indistinguishable from a verified success.
 			WarnAccessRightsUnverified(expectedRights, "the edit returned no process identity to read back");
 			return;
 		}
 
-		ErrorOr<DescribeProcessResult> described =
-			processDescriber.Describe(new ProcessIdentity(identity, null, null), null);
+		ErrorOr<DescribeProcessResult> described = processDescriber.Describe(
+			new ProcessIdentity(string.IsNullOrWhiteSpace(code) ? null : code, options.ProcessUid, null), null);
 		if (described.IsError) {
 			WarnAccessRightsUnverified(expectedRights, described.FirstError.Description);
 			return;
