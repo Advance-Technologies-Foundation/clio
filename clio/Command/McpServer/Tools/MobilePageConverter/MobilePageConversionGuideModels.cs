@@ -214,6 +214,16 @@ public sealed class ElementMapEntry {
 	/// </summary>
 	[JsonIgnore]
 	internal string PositionalAnchor { get; set; }
+
+	/// <summary>
+	/// Converter bookkeeping, never serialized: for a container TWIN (<c>merge</c>) the mobile container it
+	/// sits inside. A merge carries no <c>parentName</c> on purpose — the caller reuses the element the
+	/// template already provides and inserts nothing — but the adaptive-layout pass still needs to know the
+	/// twin is a SIBLING of the inserts it places: a mobile <c>crt.GridContainer</c> positions children by
+	/// <c>layoutConfig</c> only, so a twin left unplaced beside placed siblings is not rendered at all.
+	/// </summary>
+	[JsonIgnore]
+	internal string MergeParentName { get; set; }
 }
 
 /// <summary>
