@@ -1,8 +1,10 @@
 using System;
+using System.Collections.Generic;
 using System.Linq;
 using Clio.Command;
 using Clio.Command.ProcessModel;
 using Clio.Common;
+using ErrorOr;
 using FluentAssertions;
 using NSubstitute;
 using NUnit.Framework;
@@ -39,6 +41,106 @@ public sealed class ModifyBusinessProcessCommandTests {
 
 	private static ModifyBusinessProcessResult BuildResult() =>
 		new("UsrSampleProcess", "5c58c4c4-134b-4744-9c67-96d9c69c9d55", 1);
+
+	[Test]
+	[Description("Warns when the edited process carries no accessRights block: a CrtProcessBuilder that predates the Change access rights element discards the block and still answers success, so the edit reports an applied operation whose permission change never landed.")]
+	public void Execute_ShouldWarn_WhenTheAccessRightsBlockWasDiscarded() {
+		// Arrange
+		ModifyBusinessProcessOptions options = new() {
+			Environment = "sandbox", ProcessName = "UsrSampleProcess", OperationsJson = "[{\"op\":\"setElement\",\"elementName\":\"Grant\",\"elementUpdate\":{\"accessRights\":{\"add\":[]}}}]"
+		};
+		_modifyBusinessProcessService.ModifyProcess("sandbox", Arg.Any<ModifyBusinessProcessRequest>())
+			.Returns(BuildResult());
+		_processDescriber.Describe(Arg.Any<ProcessIdentity>(), null).Returns(
+			new DescribeProcessResult { Elements = [new DescribedElement { Name = "Grant" }] });
+		List<string> warnings = [];
+		_logger.When(logger => logger.WriteWarning(Arg.Any<string>()))
+			.Do(call => warnings.Add(call.Arg<string>()));
+
+		// Act
+		int exitCode = _command.Execute(options);
+
+		// Assert
+		exitCode.Should().Be(0,
+			because: "the edit itself applied; a discarded block is reported as a warning, not a failure");
+		warnings.Should().ContainSingle(message =>
+			message.Contains("'Grant'") && message.Contains("accessRights"),
+			because: "on a revoke this is the only signal that the permissions are still in place");
+	}
+
+	[Test]
+	[Description("Says the verification could not be performed when the read-back fails, rather than reporting the same silence as a verified success.")]
+	public void Execute_ShouldWarn_WhenTheAccessRightsReadBackCannotBeObtained() {
+		// Arrange
+		ModifyBusinessProcessOptions options = new() {
+			Environment = "sandbox", ProcessName = "UsrSampleProcess", OperationsJson = "[{\"op\":\"setElement\",\"elementName\":\"Grant\",\"elementUpdate\":{\"accessRights\":{\"add\":[]}}}]"
+		};
+		_modifyBusinessProcessService.ModifyProcess("sandbox", Arg.Any<ModifyBusinessProcessRequest>())
+			.Returns(BuildResult());
+		_processDescriber.Describe(Arg.Any<ProcessIdentity>(), null)
+			.Returns(Error.Failure("Describe.Failed", "the environment did not answer"));
+		List<string> warnings = [];
+		_logger.When(logger => logger.WriteWarning(Arg.Any<string>()))
+			.Do(call => warnings.Add(call.Arg<string>()));
+
+		// Act
+		int exitCode = _command.Execute(options);
+
+		// Assert
+		exitCode.Should().Be(0,
+			because: "an unreadable description is not evidence of a drop, so it must not fail the edit");
+		warnings.Should().ContainSingle(message => message.Contains("Could not verify"),
+			because: "'verified' and 'could not check' must not reach the caller as the same empty output");
+	}
+
+	[Test]
+	[Description("Says so when the read-back does not contain the element at all: the check did not happen, which is not the same as the configuration having landed.")]
+	public void Execute_ShouldWarn_WhenTheElementIsAbsentFromTheReadBack() {
+		// Arrange
+		ModifyBusinessProcessOptions options = new() {
+			Environment = "sandbox", ProcessName = "UsrSampleProcess", OperationsJson = "[{\"op\":\"setElement\",\"elementName\":\"Grant\",\"elementUpdate\":{\"accessRights\":{\"add\":[]}}}]"
+		};
+		_modifyBusinessProcessService.ModifyProcess("sandbox", Arg.Any<ModifyBusinessProcessRequest>())
+			.Returns(BuildResult());
+		_processDescriber.Describe(Arg.Any<ProcessIdentity>(), null).Returns(
+			new DescribeProcessResult { Elements = [new DescribedElement { Name = "SomethingElse" }] });
+		List<string> warnings = [];
+		_logger.When(logger => logger.WriteWarning(Arg.Any<string>()))
+			.Do(call => warnings.Add(call.Arg<string>()));
+
+		// Act
+		_command.Execute(options);
+
+		// Assert
+		warnings.Should().ContainSingle(message => message.Contains("Could not verify"),
+			because: "an element the read-back never returned cannot prove a drop, but it cannot prove a "
+				+ "success either, and this guard must never let the second read as the first");
+	}
+
+	[Test]
+	[Description("Warns that an accessRights block sent with addElement was not applied: the server applies only the email and performer blocks there, so the element is created unconfigured.")]
+	public void Execute_ShouldWarn_WhenAccessRightsIsSentWithAddElement() {
+		// Arrange
+		ModifyBusinessProcessOptions options = new() {
+			Environment = "sandbox",
+			ProcessName = "UsrSampleProcess",
+			OperationsJson = "[{\"op\":\"addElement\",\"element\":{\"name\":\"Grant\",\"type\":\"changeAccessRights\",\"accessRights\":{\"object\":\"Order\"}}}]"
+		};
+		_modifyBusinessProcessService.ModifyProcess("sandbox", Arg.Any<ModifyBusinessProcessRequest>())
+			.Returns(BuildResult());
+		List<string> warnings = [];
+		_logger.When(logger => logger.WriteWarning(Arg.Any<string>()))
+			.Do(call => warnings.Add(call.Arg<string>()));
+
+		// Act
+		_command.Execute(options);
+
+		// Assert
+		warnings.Should().ContainSingle(message =>
+			message.Contains("addElement") && message.Contains("setElement"),
+			because: "the block is dropped by design, but the caller is left with the same unconfigured "
+				+ "element as a silent drop and needs to be told how to configure it");
+	}
 
 	[Test]
 	[Description("Writes every server warning out as a WARNING, not merely parsing it: the two outcomes it carries (a connection on an unregistered column, a cleared binding) are invisible in describe afterwards, so a warning that is deserialized and then dropped is the same defect as one never sent.")]

@@ -126,6 +126,10 @@ public sealed class ManagerMapResolveDataIdTests {
 		[TestCase("StartEvent", ManagerMap.EventType.StartEvent)]         // case-insensitive vs the canvas data-id
 	[TestCase("ENDEVENT", ManagerMap.EventType.EndEvent)]             // case-insensitive
 	[TestCase("ReadDataUserTask", ManagerMap.EventType.UserTask)]     // *UserTask suffix, mixed case
+	[TestCase("readData", ManagerMap.EventType.UserTask)]            // build token: the data-id ends in UserTask, the token does not
+	[TestCase("changeData", ManagerMap.EventType.UserTask)]          // build token for the Modify data element
+	[TestCase("changeAccessRights", ManagerMap.EventType.UserTask)]  // build token for Change access rights (ENG-92717)
+	[TestCase("changeaccessrights", ManagerMap.EventType.UserTask)]  // lowercase build/describe spelling
 	public void ResolveDataId_ShouldAcceptBuildAndDescribeTokensCaseInsensitively_WhenVocabularyOrCaseDrifts(
 			string token, ManagerMap.EventType expected) {
 		// Act

@@ -141,6 +141,44 @@ public sealed class ValidateProcessGraphToolE2ETests {
 	}
 
 	[Test]
+	[Description("Over the real MCP path, the build tokens create-business-process accepts for the data and access-rights elements classify as user tasks rather than unknown types: ManagerMap.ResolveDataId maps 'readData', 'changeData' and 'changeAccessRights', so the graph validates with no UNKNOWN finding. These spellings do not end in 'usertask', so before ENG-92717 each produced a hard validator error on a graph that builds fine. Purely client-side classification \u2014 it needs no Change access rights support in the deployed CrtProcessBuilder package.")]
+	[AllureTag(ToolName)]
+	[AllureName("validate-process-graph classifies the data and access-rights build tokens as known types")]
+	[TestCase("readData")]
+	[TestCase("changeData")]
+	[TestCase("changeAccessRights")]
+	public async Task ValidateProcessGraph_Should_ClassifyBuildTokens_AsKnownTypes(string elementType) {
+		// Arrange
+		await using ArrangeContext arrangeContext = await ArrangeAsync();
+		string environmentName = await ResolveEnvironmentOrIgnoreAsync();
+		Dictionary<string, object?> graph = new() {
+			["environment-name"] = environmentName,
+			["nodes"] = new[] {
+				Node("s", "startEvent"), Node("m", elementType), Node("e", "endEvent")
+			},
+			["edges"] = new[] {
+				Edge("s", "m", "sequence"), Edge("m", "e", "sequence")
+			}
+		};
+
+		// Act
+		CallToolResult callResult = await CallToolAsync(arrangeContext, graph);
+		ValidateProcessGraphResponse response = EntitySchemaStructuredResultParser.Extract<ValidateProcessGraphResponse>(callResult);
+
+		// Assert
+		callResult.IsError.Should().NotBeTrue(because: $"validating a graph with a {elementType} node returns a structured payload");
+		response.Success.Should().BeTrue(because: "the graph is well formed");
+		(response.Findings ?? new List<ValidateProcessGraphFinding>())
+			.Where(finding => finding.RuleId == "UNKNOWN")
+			.Should().BeEmpty(
+				because: $"'{elementType}' is a known build type advertised by create-business-process, so it must "
+					+ "not be reported as an unrecognized element type the way it was before the token was mapped");
+		response.HasErrors.Should().BeFalse(
+			because: $"Start -> {elementType} -> End violates no connection rule once the node type is recognized");
+	}
+
+	[Test]
+
 	[Description("Over the real MCP path against a reachable environment with CrtProcessBuilder, a start event with an incoming flow surfaces an R1 error finding.")]
 	[AllureTag(ToolName)]
 	[AllureName("validate-process-graph surfaces an R1 error for a start with an incoming flow")]

@@ -247,6 +247,43 @@ public class ModifyBusinessProcessToolTests {
 		ConsoleLogger.Instance.ClearMessages();
 	}
 
+	[Test]
+	[Description("Forwards a setElement operation carrying an accessRights block verbatim — the tool is an opaque pass-through, so a replaced add collection, a remove collection cleared with an empty array, and the object retarget that clears the stored record filter all ride through unchanged, together with the setFilter re-issued in the same array.")]
+	[Category("Unit")]
+	public void ModifyBusinessProcess_Should_Forward_AccessRights_SetElement_Verbatim() {
+		// Arrange
+		ConsoleLogger.Instance.ClearMessages();
+		const string accessRightsOps =
+			"[{\"op\":\"setElement\",\"elementName\":\"GrantRights\",\"elementUpdate\":{\"accessRights\":{"
+			+ "\"object\":\"Contact\",\"considerTimeInFilter\":false,"
+			+ "\"add\":[{\"operations\":[\"read\"],\"level\":\"permit\","
+			+ "\"grantee\":{\"type\":\"role\",\"role\":\"System administrators\"}}],"
+			+ "\"remove\":[]}}},"
+			+ "{\"op\":\"setFilter\",\"elementName\":\"GrantRights\",\"filter\":{\"object\":\"Contact\","
+			+ "\"conditions\":[{\"column\":\"Id\",\"comparison\":\"equal\",\"processParameter\":\"ContactId\"}]}}]";
+		FakeModifyBusinessProcessCommand defaultCommand = new();
+		FakeModifyBusinessProcessCommand resolvedCommand = new();
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		commandResolver.Resolve<ModifyBusinessProcessCommand>(Arg.Any<ModifyBusinessProcessOptions>())
+			.Returns(resolvedCommand);
+		ModifyBusinessProcessTool tool = new(defaultCommand, ConsoleLogger.Instance, commandResolver);
+
+		// Act
+		CommandExecutionResult result = tool.ModifyBusinessProcess(
+			new ModifyBusinessProcessArgs("docker_fix2", accessRightsOps, "UsrSampleProcess", null));
+
+		// Assert
+		result.ExitCode.Should().Be(0,
+			because: "a valid accessRights setElement operation must be forwarded for the requested environment");
+		resolvedCommand.CapturedOptions.Should().NotBeNull(
+			because: "the resolved command should receive the forwarded operations");
+		resolvedCommand.CapturedOptions!.OperationsJson.Should().Be(accessRightsOps,
+			because: "replace-and-clear semantics live in the exact arrays the caller sent — an empty "
+				+ "remove array means CLEAR, so dropping or rewriting it here would silently keep permissions "
+				+ "the caller asked to stop revoking, and the paired setFilter must survive in the same order");
+		ConsoleLogger.Instance.ClearMessages();
+	}
+
 	private sealed class FakeModifyBusinessProcessCommand : ModifyBusinessProcessCommand {
 		private readonly int _exitCode;
 

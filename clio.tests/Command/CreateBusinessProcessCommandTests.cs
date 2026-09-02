@@ -1,7 +1,9 @@
 using System;
+using System.Collections.Generic;
 using Clio.Command;
 using Clio.Command.ProcessModel;
 using Clio.Common;
+using ErrorOr;
 using FluentAssertions;
 using NSubstitute;
 using NUnit.Framework;
@@ -38,6 +40,84 @@ public sealed class CreateBusinessProcessCommandTests {
 
 	private static CreateBusinessProcessResult BuildResult() =>
 		new("UsrSampleProcess", "5c58c4c4-134b-4744-9c67-96d9c69c9d55");
+
+	[Test]
+	[Category("Unit")]
+	[Description("Warns when the saved process carries no accessRights block: a CrtProcessBuilder that predates the Change access rights element discards the block and still answers success, and the element has no output parameters, so this read-back is the only signal that a grant or revoke did not land.")]
+	public void Execute_ShouldWarn_WhenTheAccessRightsBlockWasDiscarded() {
+		// Arrange
+		const string descriptor =
+			"{\"name\":\"UsrSampleProcess\",\"packageName\":\"Custom\",\"elements\":[{\"name\":\"Grant\","
+			+ "\"type\":\"changeAccessRights\",\"accessRights\":{\"object\":\"Order\"}}],\"flows\":[]}";
+		CreateBusinessProcessOptions options = new() { Environment = "sandbox", DescriptorJson = descriptor };
+		_createBusinessProcessService.BuildProcess("sandbox", Arg.Any<CreateBusinessProcessRequest>())
+			.Returns(BuildResult());
+		_processDescriber.Describe(Arg.Any<ProcessIdentity>(), null).Returns(
+			new DescribeProcessResult { Elements = [new DescribedElement { Name = "Grant" }] });
+		List<string> warnings = [];
+		_logger.When(logger => logger.WriteWarning(Arg.Any<string>()))
+			.Do(call => warnings.Add(call.Arg<string>()));
+
+		// Act
+		int exitCode = _command.Execute(options);
+
+		// Assert
+		exitCode.Should().Be(0,
+			because: "the build itself succeeded; a discarded block is reported as a warning, not a failure");
+		warnings.Should().ContainSingle(message =>
+			message.Contains("'Grant'") && message.Contains("accessRights"),
+			because: "the caller must be told the element is unconfigured, or an unapplied revoke passes as applied");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Warns that the verification could not be performed when the read-back fails, instead of reporting the same silence as a verified success.")]
+	public void Execute_ShouldWarn_WhenTheAccessRightsReadBackCannotBeObtained() {
+		// Arrange
+		const string descriptor =
+			"{\"name\":\"UsrSampleProcess\",\"packageName\":\"Custom\",\"elements\":[{\"name\":\"Grant\","
+			+ "\"type\":\"changeAccessRights\",\"accessRights\":{\"object\":\"Order\"}}],\"flows\":[]}";
+		CreateBusinessProcessOptions options = new() { Environment = "sandbox", DescriptorJson = descriptor };
+		_createBusinessProcessService.BuildProcess("sandbox", Arg.Any<CreateBusinessProcessRequest>())
+			.Returns(BuildResult());
+		_processDescriber.Describe(Arg.Any<ProcessIdentity>(), null)
+			.Returns(Error.Failure("Describe.Failed", "the environment did not answer"));
+		List<string> warnings = [];
+		_logger.When(logger => logger.WriteWarning(Arg.Any<string>()))
+			.Do(call => warnings.Add(call.Arg<string>()));
+
+		// Act
+		int exitCode = _command.Execute(options);
+
+		// Assert
+		exitCode.Should().Be(0,
+			because: "an unreadable description is not evidence of a drop, so it must not fail the command");
+		warnings.Should().ContainSingle(message => message.Contains("Could not verify"),
+			because: "reporting 'verified' and 'could not check' identically would let an unapplied revoke pass "
+				+ "as applied on an element that reports nothing at run time");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Reads the saved process back at most once even when the payload carries both an email and an accessRights block, so the success path does not pay two identical round trips.")]
+	public void Execute_ShouldDescribeOnce_WhenThePayloadCarriesBothBlocks() {
+		// Arrange
+		const string descriptor =
+			"{\"name\":\"UsrSampleProcess\",\"packageName\":\"Custom\",\"elements\":["
+			+ "{\"name\":\"Grant\",\"type\":\"changeAccessRights\",\"accessRights\":{\"object\":\"Order\"}},"
+			+ "{\"name\":\"Mail\",\"type\":\"sendEmail\",\"email\":{\"mode\":\"auto\"}}],\"flows\":[]}";
+		CreateBusinessProcessOptions options = new() { Environment = "sandbox", DescriptorJson = descriptor };
+		_createBusinessProcessService.BuildProcess("sandbox", Arg.Any<CreateBusinessProcessRequest>())
+			.Returns(BuildResult());
+		_processDescriber.Describe(Arg.Any<ProcessIdentity>(), null).Returns(
+			new DescribeProcessResult { Elements = [] });
+
+		// Act
+		_command.Execute(options);
+
+		// Assert
+		_processDescriber.Received(1).Describe(Arg.Any<ProcessIdentity>(), null);
+	}
 
 	[Test]
 	[Category("Unit")]

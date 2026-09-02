@@ -158,7 +158,7 @@ public class CreateBusinessProcessCommand(
 				options.Environment,
 				new CreateBusinessProcessRequest(options.DescriptorJson, options.PackageName));
 			logger.WriteInfo($"Process '{result.SchemaName}' created (UId: {result.SchemaUId}).");
-			WarnOnDiscardedEmailBlocks(options, result.SchemaName);
+			WarnOnDiscardedBlocks(options, result.SchemaName);
 			return 0;
 		} catch (Exception exception) {
 			logger.WriteError(exception.Message);
@@ -166,25 +166,76 @@ public class CreateBusinessProcessCommand(
 		}
 	}
 
-	// A server that predates sendEmail DISCARDS an email block and still answers success:true, so a build can
-	// report a configured email element that is in fact empty. Read the saved process back and say so when the
-	// block did not land. Only runs when the descriptor actually carried a block, so the ordinary path pays
-	// nothing; a failure to verify is never escalated, because an unreadable description is not evidence of a
-	// dropped block. See EmailBlockExpectation for why this is behavioural rather than version-based.
-	private void WarnOnDiscardedEmailBlocks(CreateBusinessProcessOptions options, string? schemaName) {
-		IReadOnlyList<string> expected = EmailBlockExpectation.FromDescriptor(options.DescriptorJson);
-		if (expected.Count == 0 || string.IsNullOrWhiteSpace(schemaName)) {
+	// The access-rights guard must not report "could not check" the same way it reports "verified": it is the
+	// only automated evidence that a grant or revoke landed, on an element with no output parameters. The
+	// command still succeeds — an unreadable description is not evidence of a drop — but the caller is told the
+	// verification did not happen, so an unapplied revoke cannot pass as an applied one.
+	private void WarnAccessRightsUnverified(IReadOnlyList<string> expectedRights, string reason) {
+		string? warning = BuildUnverifiedWarning(expectedRights, reason);
+		if (warning is not null) {
+			logger.WriteWarning(warning);
+		}
+	}
+
+	// One wording for every "the check did not happen" outcome, so they cannot drift apart.
+	private static string? BuildUnverifiedWarning(IReadOnlyList<string> expectedRights, string reason) {
+		if (expectedRights.Count == 0) {
+			return null;
+		}
+
+		string elements = string.Join("', '", expectedRights);
+		string subject = expectedRights.Count == 1 ? "element" : "elements";
+		return $"Could not verify that the 'accessRights' configuration for the {subject} '{elements}' landed: "
+			+ $"{reason}. The operation itself succeeded, but this check is the only signal that the permissions "
+			+ "were actually written — the element has no output parameters. Re-read the process with "
+			+ "describe-business-process before reporting a grant or revoke as applied.";
+	}
+
+	// A server that predates a block DISCARDS it and still answers success:true, so a build can report a
+	// configured element that is in fact empty. Read the saved process back ONCE and check every block the
+	// payload carried: two guards issuing byte-identical describes would double the latency and the retry
+	// budget of the success path for a payload that configures both. Only runs when the descriptor actually
+	// carried a block, so the ordinary path pays nothing. See EmailBlockExpectation / AccessRightsBlockExpectation
+	// for why this is behavioural rather than version-based.
+	private void WarnOnDiscardedBlocks(CreateBusinessProcessOptions options, string? schemaName) {
+		IReadOnlyList<string> expectedEmail = EmailBlockExpectation.FromDescriptor(options.DescriptorJson);
+		IReadOnlyList<string> expectedRights = AccessRightsBlockExpectation.FromDescriptor(options.DescriptorJson);
+		if (expectedEmail.Count == 0 && expectedRights.Count == 0) {
+			return;
+		}
+
+		if (string.IsNullOrWhiteSpace(schemaName)) {
+			// Nothing to read back against. Silence here would be indistinguishable from a verified success.
+			WarnAccessRightsUnverified(expectedRights, "the operation returned no process name to read back");
 			return;
 		}
 
 		ErrorOr<DescribeProcessResult> described =
 			processDescriber.Describe(new ProcessIdentity(schemaName, null, null), null);
 		if (described.IsError) {
+			// An unreadable description is not evidence of a drop, so this never fails the command. It is not
+			// silence either when access rights were requested: that guard is the only automated check that a
+			// grant or revoke actually landed, and reporting "verified" and "could not check" identically would
+			// let an unapplied revoke pass as applied.
+			WarnAccessRightsUnverified(expectedRights, described.FirstError.Description);
 			return;
 		}
 
+		string? unresolvedRights = BuildUnverifiedWarning(
+			AccessRightsBlockExpectation.Unresolved(described.Value, expectedRights),
+			"the saved process does not report an element with that name or UId");
+		if (unresolvedRights is not null) {
+			logger.WriteWarning(unresolvedRights);
+		}
+
+		string? droppedRights = AccessRightsBlockExpectation.BuildWarning(
+			AccessRightsBlockExpectation.Missing(described.Value, expectedRights));
+		if (droppedRights is not null) {
+			logger.WriteWarning(droppedRights);
+		}
+
 		string? dropped = EmailBlockExpectation.BuildWarning(
-			EmailBlockExpectation.Missing(described.Value, expected));
+			EmailBlockExpectation.Missing(described.Value, expectedEmail));
 		if (dropped is not null) {
 			logger.WriteWarning(dropped);
 		}

@@ -174,6 +174,48 @@ public class CreateBusinessProcessToolTests {
 		ConsoleLogger.Instance.ClearMessages();
 	}
 
+	[Test]
+	[Description("Forwards a descriptor that contains a changeAccessRights element with its full accessRights block verbatim — the tool is an opaque pass-through, so the target object, considerTimeInFilter, both permission collections and every grantee kind (role by name, employee by contact formula, and selectedEmployees with its Contact-rooted filter), plus the element record filter that decides WHICH records are affected, ride through to the command byte-for-byte. Guards the one thing this repo CAN assert about the accessRights contract: that clio does not reshape it on the way to the server.")]
+	[Category("Unit")]
+	public void CreateBusinessProcess_Should_Forward_AccessRights_Descriptor_Verbatim() {
+		// Arrange
+		ConsoleLogger.Instance.ClearMessages();
+		const string accessRightsDescriptor =
+			"{\"name\":\"UsrGrantRightsProc\",\"packageName\":\"Custom\",\"elements\":[{\"name\":\"GrantRights\","
+			+ "\"type\":\"changeAccessRights\",\"caption\":\"Grant rights\",\"accessRights\":{\"object\":\"Order\","
+			+ "\"considerTimeInFilter\":true,"
+			+ "\"add\":[{\"operations\":[\"read\",\"edit\"],\"level\":\"delegate\","
+			+ "\"grantee\":{\"type\":\"role\",\"role\":\"All employees\"}},"
+			+ "{\"operations\":[\"delete\"],\"grantee\":{\"type\":\"selectedEmployees\","
+			+ "\"filter\":{\"conditions\":[{\"column\":\"Name\",\"comparison\":\"contain\",\"value\":\"Supervisor\"}]}}}],"
+			+ "\"remove\":[{\"operations\":[\"delete\"],"
+			+ "\"grantee\":{\"type\":\"employee\",\"contact\":\"[#SysVariable.CurrentUserContact#]\"}}]},"
+			+ "\"filter\":{\"object\":\"Order\",\"conditions\":[{\"column\":\"Id\",\"comparison\":\"equal\","
+			+ "\"processParameter\":\"OrderId\"}]}}],"
+			+ "\"parameters\":[{\"name\":\"OrderId\",\"type\":\"Guid\",\"direction\":\"In\"}]}";
+		FakeCreateBusinessProcessCommand defaultCommand = new();
+		FakeCreateBusinessProcessCommand resolvedCommand = new();
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		commandResolver.Resolve<CreateBusinessProcessCommand>(Arg.Any<CreateBusinessProcessOptions>())
+			.Returns(resolvedCommand);
+		CreateBusinessProcessTool tool = new(defaultCommand, ConsoleLogger.Instance, commandResolver);
+
+		// Act
+		CommandExecutionResult result = tool.CreateBusinessProcess(
+			new CreateBusinessProcessArgs("docker_fix2", accessRightsDescriptor, null));
+
+		// Assert
+		result.ExitCode.Should().Be(0,
+			because: "a valid changeAccessRights descriptor must be forwarded for the requested environment");
+		resolvedCommand.CapturedOptions.Should().NotBeNull(
+			because: "the resolved command should receive the forwarded accessRights descriptor");
+		resolvedCommand.CapturedOptions!.DescriptorJson.Should().Be(accessRightsDescriptor,
+			because: "the accessRights block, every grantee kind and the element record filter must pass "
+				+ "through byte-for-byte — the server owns the semantics, and this element has no output "
+				+ "parameters, so a reshaping here would change what rights are written with nothing to report it");
+		ConsoleLogger.Instance.ClearMessages();
+	}
+
 	private sealed class FakeCreateBusinessProcessCommand : CreateBusinessProcessCommand {
 		private readonly int _exitCode;
 

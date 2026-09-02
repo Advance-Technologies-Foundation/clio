@@ -198,7 +198,7 @@ public class ModifyBusinessProcessCommand(
 			foreach (string warning in result.Warnings ?? []) {
 				logger.WriteWarning(warning);
 			}
-			WarnOnDiscardedEmailBlocks(options, result.SchemaName);
+			WarnOnDiscardedBlocks(options, result.SchemaName);
 			return 0;
 		} catch (Exception exception) {
 			logger.WriteError(exception.Message);
@@ -206,29 +206,80 @@ public class ModifyBusinessProcessCommand(
 		}
 	}
 
-	// Same silent-drop guard as the build path: a server predating sendEmail discards an email block and still
-	// answers success, so an edit can report an applied operation whose email configuration never landed. Read the
-	// process back and say so. Only runs when the operations actually carried a block; a failed read-back is never
-	// escalated, since it is not evidence of a drop. See EmailBlockExpectation for why this is not version-based.
-	private void WarnOnDiscardedEmailBlocks(ModifyBusinessProcessOptions options, string? schemaName) {
-		IReadOnlyList<string> expected = EmailBlockExpectation.FromOperations(options.OperationsJson);
-		if (expected.Count == 0) {
+	// The access-rights guard must not report "could not check" the same way it reports "verified": it is the
+	// only automated evidence that a grant or revoke landed, on an element with no output parameters. The
+	// command still succeeds — an unreadable description is not evidence of a drop — but the caller is told the
+	// verification did not happen, so an unapplied revoke cannot pass as an applied one.
+	private void WarnAccessRightsUnverified(IReadOnlyList<string> expectedRights, string reason) {
+		string? warning = BuildUnverifiedWarning(expectedRights, reason);
+		if (warning is not null) {
+			logger.WriteWarning(warning);
+		}
+	}
+
+	// One wording for every "the check did not happen" outcome, so they cannot drift apart.
+	private static string? BuildUnverifiedWarning(IReadOnlyList<string> expectedRights, string reason) {
+		if (expectedRights.Count == 0) {
+			return null;
+		}
+
+		string elements = string.Join("', '", expectedRights);
+		string subject = expectedRights.Count == 1 ? "element" : "elements";
+		return $"Could not verify that the 'accessRights' configuration for the {subject} '{elements}' landed: "
+			+ $"{reason}. The operation itself succeeded, but this check is the only signal that the permissions "
+			+ "were actually written — the element has no output parameters. Re-read the process with "
+			+ "describe-business-process before reporting a grant or revoke as applied.";
+	}
+
+	// Same silent-drop guard as the build path, for every block an edit can carry: a server predating a
+	// feature discards its block and still answers success, so an edit can report an applied operation whose
+	// configuration never landed. Read the process back ONCE and check both. Only runs when the operations
+	// actually carried a block. See EmailBlockExpectation / AccessRightsBlockExpectation.
+	private void WarnOnDiscardedBlocks(ModifyBusinessProcessOptions options, string? schemaName) {
+		IReadOnlyList<string> expectedEmail = EmailBlockExpectation.FromOperations(options.OperationsJson);
+		IReadOnlyList<string> expectedRights = AccessRightsBlockExpectation.FromOperations(options.OperationsJson);
+
+		// An accessRights block on addElement is dropped by the server (it applies only email/performer).
+		// That is by design, but the outcome the caller lives with is the same unconfigured element as a
+		// silent drop, so say so rather than leaving them to discover it at run time.
+		string? ignoredOnAdd = AccessRightsBlockExpectation.BuildAddElementWarning(
+			AccessRightsBlockExpectation.IgnoredOnAddElement(options.OperationsJson));
+		if (ignoredOnAdd is not null) {
+			logger.WriteWarning(ignoredOnAdd);
+		}
+		if (expectedEmail.Count == 0 && expectedRights.Count == 0) {
 			return;
 		}
 
 		string identity = string.IsNullOrWhiteSpace(schemaName) ? options.ProcessName : schemaName;
 		if (string.IsNullOrWhiteSpace(identity)) {
+			// Nothing to read back against; silence would be indistinguishable from a verified success.
+			WarnAccessRightsUnverified(expectedRights, "the edit returned no process identity to read back");
 			return;
 		}
 
 		ErrorOr<DescribeProcessResult> described =
 			processDescriber.Describe(new ProcessIdentity(identity, null, null), null);
 		if (described.IsError) {
+			WarnAccessRightsUnverified(expectedRights, described.FirstError.Description);
 			return;
 		}
 
+		string? unresolvedRights = BuildUnverifiedWarning(
+			AccessRightsBlockExpectation.Unresolved(described.Value, expectedRights),
+			"the saved process does not report an element with that name or UId");
+		if (unresolvedRights is not null) {
+			logger.WriteWarning(unresolvedRights);
+		}
+
+		string? rightsWarning = AccessRightsBlockExpectation.BuildWarning(
+			AccessRightsBlockExpectation.Missing(described.Value, expectedRights));
+		if (rightsWarning is not null) {
+			logger.WriteWarning(rightsWarning);
+		}
+
 		string? warning = EmailBlockExpectation.BuildWarning(
-			EmailBlockExpectation.Missing(described.Value, expected));
+			EmailBlockExpectation.Missing(described.Value, expectedEmail));
 		if (warning is not null) {
 			logger.WriteWarning(warning);
 		}
