@@ -456,15 +456,14 @@ public sealed class SensitiveErrorTextRedactorTests {
 	[Test]
 	[Category("Unit")]
 	[Description("Fails closed with a fixed sentinel when any redaction regex exhausts its budget.")]
-	public void TryExecuteRegex_ShouldFailClosed_WhenRegexTimesOut() {
+	public void ExecuteRegex_ShouldFailClosed_WhenRegexTimesOut() {
 		// Arrange
 		Func<string> timedOut = () => throw new System.Text.RegularExpressions.RegexMatchTimeoutException();
 
 		// Act
-		bool success = SensitiveErrorTextRedactor.TryExecuteRegex(timedOut, out string result);
+		string result = SensitiveErrorTextRedactor.ExecuteRegex(timedOut);
 
 		// Assert
-		success.Should().BeFalse(because: "the caller must know that the regex operation did not complete");
 		result.Should().Be("[redacted]",
 			because: "a timeout must reveal none of the attacker-controlled source text");
 	}

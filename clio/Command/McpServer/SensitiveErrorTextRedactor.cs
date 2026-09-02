@@ -163,11 +163,8 @@ internal static partial class SensitiveErrorTextRedactor {
 		// Case-INSENSITIVE and shape-based: an ordinal match on the exact lowercase token lets
 		// "[UNTRUSTED-SOURCE-TEXT END]" through verbatim, and a reader that treats the delimiter
 		// case-insensitively would then read everything after it as server-authored.
-		if (!TryExecuteRegex(
-				() => FenceTokenRegex().Replace(flattened, "(fence removed)"),
-				out flattened)) {
-			return UntrustedDiagnosticPrefix + flattened + UntrustedDiagnosticSuffix;
-		}
+		flattened = ExecuteRegex(
+			() => FenceTokenRegex().Replace(flattened, "(fence removed)"));
 		if (flattened.Length > UntrustedDiagnosticLimit) {
 			flattened = string.Concat(flattened.AsSpan(0, UntrustedDiagnosticLimit), "…");
 		}
@@ -185,7 +182,7 @@ internal static partial class SensitiveErrorTextRedactor {
 		if (string.IsNullOrEmpty(text)) {
 			return string.Empty;
 		}
-		TryExecuteRegex(() => {
+		return ExecuteRegex(() => {
 			// URIs first: a scheme://user:pass@host authority must be removed whole before the narrower
 			// path/credential passes run, so its embedded host/credentials never survive.
 			string result = UriRegex().Replace(text, RedactedUri);
@@ -200,18 +197,15 @@ internal static partial class SensitiveErrorTextRedactor {
 			result = PosixPathRegex().Replace(result, RedactedPath);
 			result = CredentialPairRegex().Replace(result, match => $"{match.Groups[1].Value}={RedactedValue}");
 			return result;
-		}, out string result);
-		return result;
+		});
 	}
 
-	internal static bool TryExecuteRegex(Func<string> operation, out string result) {
+	internal static string ExecuteRegex(Func<string> operation) {
 		try {
-			result = operation();
-			return true;
+			return operation();
 		}
 		catch (RegexMatchTimeoutException) {
-			result = RedactedValue;
-			return false;
+			return RedactedValue;
 		}
 	}
 }
