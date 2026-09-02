@@ -2179,7 +2179,7 @@ internal static class ToolContractCatalog {
 					"Alternative discovery path: use find-entity-schema to locate the schema by name, then get-entity-schema-properties to inspect its columns, then query.")
 			],
 			[],
-			OdataUnregisteredEntityAntiPatterns());
+			OdataUnregisteredEntityAntiPatterns(includeEsqEscapeRoute: true));
 	}
 
 	private static ToolContractDefinition BuildODataReadToFile() {
@@ -2248,7 +2248,7 @@ internal static class ToolContractCatalog {
 					"Query normally first; switch to the file destination only when the inline response is too large.")
 			],
 			[],
-			OdataUnregisteredEntityAntiPatterns(),
+			OdataUnregisteredEntityAntiPatterns(includeEsqEscapeRoute: true),
 			Preconditions: [
 				$"The response body is capped at {ODataFileContract.MaxResponseBytes} bytes for one call; a larger response is rejected without writing anything. Narrow it with select, or page it with top and skip.",
 				"output-file must not already exist and must resolve inside the workspace or the OS temp directory."
@@ -2258,10 +2258,11 @@ internal static class ToolContractCatalog {
 	// Shared by odata-read and odata-create: both funnel through CreatioResponseError.TryDetect and
 	// surface the identical routing-error hint, so the anti-pattern text is derived from the single
 	// UnregisteredEntityHint constant to keep the two contracts from drifting apart.
-	private static ToolAntiPattern[] OdataUnregisteredEntityAntiPatterns() => [
+	private static ToolAntiPattern[] OdataUnregisteredEntityAntiPatterns(bool includeEsqEscapeRoute) => [
 		new ToolAntiPattern(
 			"Reading or writing a freshly-created custom object or lookup by entity name immediately after creating it and treating the routing error as a data gap.",
-			$"{CreatioResponseError.UnregisteredEntityHint} Until it is queryable the odata-* tool returns success:false with a routing error (No type was found that matches the controller).")
+			$"{CreatioResponseError.UnregisteredEntityHint} Until it is queryable the odata-* tool returns success:false with a routing error (No type was found that matches the controller) or an IIS 404 HTML page."
+			+ (includeEsqEscapeRoute ? " For schemas that are not exposed over OData, use execute-esq instead." : string.Empty))
 	];
 
 	private static ToolContractDefinition BuildODataCreate() {
@@ -2298,7 +2299,7 @@ internal static class ToolContractCatalog {
 					"Create the record, then read it back by the returned id to confirm persisted values.")
 			],
 			[],
-			OdataUnregisteredEntityAntiPatterns(),
+			OdataUnregisteredEntityAntiPatterns(includeEsqEscapeRoute: false),
 			Preconditions: [
 				ODataCreateTool.RowCountLimitDescription,
 				"The batch is bounded in wall-clock time as well as row count: rows are POSTed sequentially, and once the batch budget is spent the first row that was not attempted is reported with record-created=false and the reason, and no further row is sent."

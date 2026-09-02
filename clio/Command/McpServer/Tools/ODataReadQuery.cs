@@ -288,46 +288,192 @@ internal static class ODataReadQuery {
 		$"odata/{args.Entity.Trim()}{BuildQueryString(args)}";
 
 	/// <summary>Parses a raw OData response body into the inline read response.</summary>
-	internal static ODataReadResponse ParseODataResponse(string json, bool countRequested) {
+	internal static ODataReadResponse ParseODataResponse(string json, string entityName, bool countRequested) {
+		// ExecuteGetRequest may return null (the interface permits it; reauth and proxy failures do produce
+		// it). The absence of a body has to be classified HERE: the IIS-404 probe below dereferences the
+		// string, so a null would raise an NRE that escapes the body-suppression invariant and reaches
+		// Read()'s outer catch as an opaque message. An empty body already resolved to this same failure.
+		if (string.IsNullOrWhiteSpace(json)) {
+			return ODataReadResponse.Failure(CreatioResponseError.DescribeNonJsonReadResponse());
+		}
+		if (CreatioResponseError.TryDescribeMissingEntitySet(json, entityName, out string missingEntitySetError)) {
+			return ODataReadResponse.Failure(missingEntitySetError);
+		}
+
 		try {
 			using JsonDocument doc = JsonDocument.Parse(json);
 			JsonElement root = doc.RootElement;
 
-			if (CreatioResponseError.TryDetect(root, CreatioResponseContext.ODataPayload, out string serverError)) {
-				// Redact like the sibling error paths: a routing Message can embed the absolute request
-				// URI (host/port/app path), which must not leak into the MCP transcript or logs.
-				return ODataReadResponse.Failure(SensitiveErrorTextRedactor.Redact(serverError));
+			//A response whose @odata.context proves it IS the requested top-level entity is that entity,
+			//whatever its columns happen to be called. Running the error-member heuristics first rejected
+			//a genuine record with a legal persisted column named ExceptionMessage, ExceptionType or
+			//StackTrace as a server error. A real OData error envelope carries no matching context, so it
+			//loses nothing by being classified second.
+			bool hasMatchingIdentity = HasMatchingODataIdentity(root, entityName);
+
+			//The detected text is server-controlled prose and is dropped, not redacted: the redactor
+			//removes known secret shapes, but arbitrary instructions, opaque tokens, tenant data and
+			//line breaks survive it, and this transcript is read as trusted content by a model.
+			if (!hasMatchingIdentity && CreatioResponseError.TryClassify(root,
+					CreatioResponseContext.ODataPayload, out bool isUnregisteredEntity)) {
+				return ODataReadResponse.Failure(
+					CreatioResponseError.DescribeServerReportedReadError(isUnregisteredEntity));
 			}
 
-			// A bare top-level array — some endpoints and $expand projections return one — is a COLLECTION,
-			// not a single entity. Counting it as 1 reported a page of n rows as one record. The kind is also
-			// checked before TryGetProperty, which throws on anything that is not an object.
-			if (root.ValueKind == JsonValueKind.Array) {
-				return ParseCollectionResponse(root, root, countRequested);
-			}
-
-			// Anything that is NOT a JSON object is rejected here rather than reported as one entity.
-			// A scalar body — null, true, 42, "Unauthorized" — is what a proxy, an auth redirect or a
-			// misrouted request returns; falling through to the single-entity branch reported those as
-			// success with count=1, and with a file destination the scalar was persisted as OData output.
-			if (root.ValueKind != JsonValueKind.Object) {
-				return ODataReadResponse.Failure(DescribeNonODataContent(root.ValueKind));
-			}
-
+			//A collection response carries `value` as an ARRAY. Accepting any `value` meant a proxy or
+			//auth body such as {"value":"private response marker"} came back as success:true with the
+			//marker as the payload, and clio-run then forwarded it without failure redaction.
 			if (root.TryGetProperty("value", out JsonElement valueEl)) {
-				return ParseCollectionResponse(root, valueEl, countRequested);
+				return valueEl.ValueKind == JsonValueKind.Array
+					&& IsCollectionResponse(root, entityName)
+					? ParseCollectionResponse(root, valueEl, countRequested)
+					: ODataReadResponse.Failure(CreatioResponseError.DescribeNonJsonReadResponse());
 			}
 
-			// Single-entity response (no value wrapper)
-			return new ODataReadResponse(true, null, 1, root.Clone(), null);
-		} catch (JsonException ex) {
-			string preview = string.IsNullOrWhiteSpace(json) ? "<empty>" : json;
-			if (preview.Length > 500) {
-				preview = preview[..500] + "...";
-			}
-			return ODataReadResponse.Failure(SensitiveErrorTextRedactor.Redact($"Failed to parse OData response: {ex.Message} | Response: {preview}"));
+			//Single-entity response (no value wrapper). Only OData identifies itself as one: the
+			//@odata.context annotation ends with "/$entity". Without that check ANY parsed JSON object
+			//was a successful record - {"detail":"private response marker"} included.
+			return IsSingleEntityResponse(root, entityName)
+				? new ODataReadResponse(true, null, 1, root.Clone(), null)
+				: ODataReadResponse.Failure(CreatioResponseError.DescribeNonJsonReadResponse());
+		} catch (Exception) {
+			// EVERY parse failure gets the same fixed diagnostic, carrying no fragment of the body. Testing
+			// the first character was not enough: a malformed body that still starts with '{' or '[' — a
+			// truncated proxy response, say — fell through to a preview that copied arbitrary server or
+			// proxy content into the MCP transcript. The redactor strips known secret shapes, not tenant
+			// data it has never seen, so the body cannot be quoted at all. The exception message is
+			// dropped with it: a parse position is of no use to a caller who cannot see the body anyway.
+			return ODataReadResponse.Failure(CreatioResponseError.DescribeNonJsonReadResponse());
 		}
 	}
+
+	/// <summary>
+	/// True when the body identifies itself as an OData single-entity response. Creatio serves reads
+	/// under the default metadata level, so a genuine entity always carries an @odata.context whose
+	/// value ends with "/$entity"; nothing else may be treated as a record.
+	/// </summary>
+	/// <summary>
+	/// True when the body identifies itself as an OData COLLECTION response for the entity that was
+	/// requested: the <c>@odata.context</c> annotation names that entity set, optionally followed by a
+	/// projection such as <c>(Id,Name)</c> from $select/$expand.
+	/// </summary>
+	/// <remarks>
+	/// An array-valued <c>value</c> alone was not enough. A proxy or auth body shaped as
+	/// <c>{"value":[{"detail":"private response marker"}]}</c> satisfied it, came back as
+	/// <c>success:true</c>, and clio-run forwarded the marker as a read result. Creatio's
+	/// default-metadata responses always carry the context, which is what the single-entity path
+	/// already requires.
+	/// </remarks>
+	internal static bool IsCollectionResponse(JsonElement root, string entityName) =>
+		MatchesTopLevelContext(root, entityName, singleEntity: false);
+
+	/// <summary>
+	/// Reads the entity-set name out of the <c>@odata.context</c> annotation: the fragment after
+	/// <c>#</c>, cut at a projection such as <c>(Id,Name)</c> or at a trailing segment such as
+	/// <c>/$entity</c>.
+	/// </summary>
+	internal static bool MatchesTopLevelContext(JsonElement root, string entityName, bool singleEntity) {
+		if (!TryGetContextFragment(root, out string fragment)) {
+			return false;
+		}
+		if (singleEntity) {
+			if (!fragment.EndsWith(SingleEntitySuffix, StringComparison.Ordinal)) {
+				return false;
+			}
+			fragment = fragment[..^SingleEntitySuffix.Length];
+		} else if (fragment.EndsWith(SingleEntitySuffix, StringComparison.Ordinal)) {
+			//A collection response never terminates in /$entity.
+			return false;
+		}
+		//What may remain is the entity set plus at most one parenthesised projection. Anything after the
+		//closing parenthesis - a navigation segment, a second predicate - is not a top-level read of this
+		//set.
+		int projectionStart = fragment.IndexOf('(', StringComparison.Ordinal);
+		string entitySet = projectionStart < 0 ? fragment : fragment[..projectionStart];
+		if (projectionStart >= 0 && !IsBalancedTrailingProjection(fragment, projectionStart)) {
+			return false;
+		}
+		//A containment or navigation suffix leaves a '/' behind once the projection is accounted for.
+		return entitySet.Length > 0
+			&& entitySet.IndexOf('/', StringComparison.Ordinal) < 0
+			&& string.Equals(entitySet, entityName, StringComparison.OrdinalIgnoreCase);
+	}
+
+	/// <summary>
+	/// True when the projection that starts at <paramref name="projectionStart"/> is balanced and closes
+	/// on the last character of <paramref name="fragment"/>.
+	/// </summary>
+	/// <remarks>
+	/// The projection's own grammar is deliberately left opaque. $expand makes Creatio answer with a
+	/// nested list - <c>#Contact(Id,Name,AccountId,Account())</c> for <c>$expand=Account</c> - and OData
+	/// also allows nested select lists and navigation paths in there, so rejecting a parenthesis or a
+	/// slash anywhere inside discarded genuine rows. What still has to be rejected is everything the
+	/// projection is not: an unbalanced fragment, and any suffix after it such as a navigation segment
+	/// or a second predicate, which is what the "closes on the last character" requirement covers.
+	/// </remarks>
+	internal static bool IsBalancedTrailingProjection(string fragment, int projectionStart) {
+		int depth = 0;
+		for (int index = projectionStart; index < fragment.Length; index++) {
+			switch (fragment[index]) {
+				case '(':
+					depth++;
+					break;
+				case ')':
+					depth--;
+					if (depth < 0) {
+						return false;
+					}
+					if (depth == 0) {
+						//An empty projection names nothing, and anything past the closing parenthesis
+						//puts this fragment outside a top-level read of the set.
+						return index > projectionStart + 1 && index == fragment.Length - 1;
+					}
+					break;
+			}
+		}
+		return false;
+	}
+
+	internal const string SingleEntitySuffix = "/$entity";
+
+	/// <summary>True when the body is a top-level read of the requested set, in either shape.</summary>
+	internal static bool HasMatchingODataIdentity(JsonElement root, string entityName) =>
+		root.ValueKind == JsonValueKind.Object
+		&& (MatchesTopLevelContext(root, entityName, singleEntity: true)
+			|| MatchesTopLevelContext(root, entityName, singleEntity: false));
+
+	/// <summary>
+	/// Reads the whole <c>@odata.context</c> fragment - everything after the last <c>#</c> - without
+	/// cutting it at the first separator.
+	/// </summary>
+	internal static bool TryGetContextFragment(JsonElement root, out string fragment) {
+		fragment = string.Empty;
+		if (!root.TryGetProperty("@odata.context", out JsonElement context)
+			|| context.ValueKind != JsonValueKind.String
+			|| context.GetString() is not { } contextValue) {
+			return false;
+		}
+		//$metadata itself sits behind a '#' ("...$metadata#Contact"), so the LAST '#' opens the fragment
+		//that names the set.
+		int fragmentStart = contextValue.LastIndexOf('#');
+		if (fragmentStart < 0) {
+			return false;
+		}
+		fragment = contextValue[(fragmentStart + 1)..];
+		return fragment.Length > 0;
+	}
+
+	/// <summary>
+	/// True when the body identifies itself as an OData single-entity response for the entity that
+	/// was REQUESTED. The <c>/$entity</c> suffix alone was not enough: a body answering
+	/// <c>...#$metadata#Account/$entity</c> to a read of <c>Contact</c> came back as
+	/// <c>success:true</c>, which forwards an unrelated - possibly proxy-controlled - record into the
+	/// MCP transcript as the requested data. The collection branch already checks the entity set; so
+	/// does this one now.
+	/// </summary>
+	internal static bool IsSingleEntityResponse(JsonElement root, string entityName) =>
+		root.ValueKind == JsonValueKind.Object
+		&& MatchesTopLevelContext(root, entityName, singleEntity: true);
 
 	/// <summary>
 	/// The rejection for a body that is not OData content. Owned here, and used verbatim by the file-mode

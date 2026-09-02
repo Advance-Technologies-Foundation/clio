@@ -63,7 +63,7 @@ public sealed class ODataReadTool(IToolCommandResolver commandResolver) {
 
 			string url = urlBuilder.Build(ODataReadQuery.BuildRequestPath(args));
 			string responseJson = client.ExecuteGetRequest(url, 30_000);
-			return ODataReadQuery.ParseODataResponse(responseJson, args.Count);
+			return ODataReadQuery.ParseODataResponse(responseJson, args.Entity.Trim(), args.Count);
 		} catch (Exception ex) {
 			return ODataReadResponse.Failure(SensitiveErrorTextRedactor.Redact(ex.Message));
 		}
