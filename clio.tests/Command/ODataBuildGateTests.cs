@@ -1,4 +1,5 @@
 using System;
+using System.Linq;
 using System.Net.Http;
 using System.Net.Sockets;
 using Clio.Command;
@@ -7,6 +8,7 @@ using Clio.Common;
 using Clio.Package;
 using FluentAssertions;
 using NSubstitute;
+using NSubstitute.Core;
 using NUnit.Framework;
 
 namespace Clio.Tests.Command;
@@ -160,8 +162,8 @@ public sealed class ODataBuildGateTests
 		_gate.WaitUntilIdle(_options, "UsrVehicle2");
 
 		// Assert
-		_client.Received(2).TryGetIsODataBuildRunning(_options);
-		// because: a dropped connection says nothing about whether the deployed platform exposes the status method, unlike an HTML answer
+		ProbeCallCount().Should().Be(2,
+			because: "a dropped connection says nothing about whether the deployed platform exposes the status method, unlike an HTML answer");
 	}
 
 	[TestCaseSource(nameof(UnexpectedProbeFaults))]
@@ -193,9 +195,15 @@ public sealed class ODataBuildGateTests
 		_gate.WaitUntilIdle(_options, "UsrVehicle2");
 
 		// Assert
-		_client.Received(1).TryGetIsODataBuildRunning(_options);
-		// because: the flag is per-gate state, and the gate is resolved per command, so this is the only reuse it can actually see
+		ProbeCallCount().Should().Be(1,
+			because: "the flag is per-gate state, and the gate is resolved per command, so this is the only reuse it can actually see");
 	}
+
+	// Counts the probe calls through the recorded-calls API rather than NSubstitute's Received(),
+	// so the expectation reads as a plain assertion on an observed number.
+	private int ProbeCallCount() => _client.ReceivedCalls()
+		.Count(call => call.GetMethodInfo().Name
+			== nameof(IRemoteEntitySchemaDesignerClient.TryGetIsODataBuildRunning));
 
 	private static readonly object[] UnexpectedProbeFaults = [
 		new object[] { new TimeoutException("the status request did not complete in time") },

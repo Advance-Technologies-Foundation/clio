@@ -11,6 +11,7 @@ using Clio.Common.Responses;
 using Clio.Package;
 using FluentAssertions;
 using NSubstitute;
+using NSubstitute.Core;
 using NUnit.Framework;
 using Terrasoft.Core.Entities;
 
@@ -39,6 +40,17 @@ internal class RemoteEntitySchemaColumnManagerTests
 	private RemoteEntitySchemaColumnManager _manager;
 	private EntityDesignSchemaDto _loadedSchema;
 	private EntityDesignSchemaDto _savedSchema;
+
+	// Reads the publisher's recorded PublishSavedChanges calls so each expectation below reads as a
+	// plain assertion on observed values instead of an NSubstitute Received() verification.
+	private IReadOnlyList<(string SchemaName, string SavedContext, ODataContractImpact Impact)> PublishedChanges() =>
+		_entitySchemaPublisher.ReceivedCalls()
+			.Where(call => call.GetMethodInfo().Name == nameof(IEntitySchemaPublisher.PublishSavedChanges))
+			.Select(call => {
+				object[] arguments = call.GetArguments();
+				return ((string)arguments[1], (string)arguments[2], (ODataContractImpact)arguments[3]);
+			})
+			.ToList();
 
 	[SetUp]
 	public void Setup() {
@@ -161,9 +173,9 @@ internal class RemoteEntitySchemaColumnManagerTests
 		_savedSchema.PrimaryDisplayColumn.Name.Should().Be("Name",
 			because: "the first text column should become primary display when none exists");
 		_designerClient.Received(1).SaveSchemaDbStructure(_savedSchema.UId, Arg.Any<Clio.Command.RemoteCommandOptions>());
-		_entitySchemaPublisher.Received(1).PublishSavedChanges(
-			Arg.Any<Clio.Command.RemoteCommandOptions>(), "UsrVehicle", "columns were saved", ODataContractImpact.Changed);
-		// because: adding a column changes the OData property list, so the publisher must be asked to rebuild
+		PublishedChanges().Should().Equal(
+			[("UsrVehicle", "columns were saved", ODataContractImpact.Changed)],
+			because: "adding a column changes the OData property list, so the publisher must be asked to rebuild");
 		_designerClient.DidNotReceive().GetRuntimeEntitySchema(Arg.Any<Guid>(), Arg.Any<Clio.Command.RemoteCommandOptions>());
 		// because: publishing already refreshes the schema manager; a separate runtime-availability probe is not taken on the normal path
 	}
@@ -460,9 +472,9 @@ internal class RemoteEntitySchemaColumnManagerTests
 		_manager.ModifyColumns(batch);
 
 		// Assert
-		_entitySchemaPublisher.Received(1).PublishSavedChanges(
-			Arg.Any<Clio.Command.RemoteCommandOptions>(), "UsrVehicle", "columns were saved", ODataContractImpact.Changed);
-		// because: a multi-column batch must publish exactly once, not once per operation, and the add in the batch changes the OData contract
+		PublishedChanges().Should().Equal(
+			[("UsrVehicle", "columns were saved", ODataContractImpact.Changed)],
+			because: "a multi-column batch must publish exactly once, not once per operation, and the add in the batch changes the OData contract");
 	}
 
 	[Test]
@@ -479,9 +491,9 @@ internal class RemoteEntitySchemaColumnManagerTests
 		_manager.ModifyColumn(options);
 
 		// Assert
-		_entitySchemaPublisher.Received(1).PublishSavedChanges(
-			Arg.Any<Clio.Command.RemoteCommandOptions>(), "UsrVehicle", "columns were saved", ODataContractImpact.Changed);
-		// because: adding a column changes the OData property list
+		PublishedChanges().Should().Equal(
+			[("UsrVehicle", "columns were saved", ODataContractImpact.Changed)],
+			because: "adding a column changes the OData property list");
 	}
 
 	[Test]
@@ -502,9 +514,9 @@ internal class RemoteEntitySchemaColumnManagerTests
 		_manager.ModifyColumn(options);
 
 		// Assert
-		_entitySchemaPublisher.Received(1).PublishSavedChanges(
-			Arg.Any<Clio.Command.RemoteCommandOptions>(), "UsrVehicle", "columns were saved", ODataContractImpact.Changed);
-		// because: removing a column changes the OData property list
+		PublishedChanges().Should().Equal(
+			[("UsrVehicle", "columns were saved", ODataContractImpact.Changed)],
+			because: "removing a column changes the OData property list");
 	}
 
 	[Test]
@@ -522,9 +534,9 @@ internal class RemoteEntitySchemaColumnManagerTests
 		_manager.ModifyColumn(options);
 
 		// Assert
-		_entitySchemaPublisher.Received(1).PublishSavedChanges(
-			Arg.Any<Clio.Command.RemoteCommandOptions>(), "UsrVehicle", "columns were saved", ODataContractImpact.Changed);
-		// because: changing a column's type changes its EDM type in the OData contract
+		PublishedChanges().Should().Equal(
+			[("UsrVehicle", "columns were saved", ODataContractImpact.Changed)],
+			because: "changing a column's type changes its EDM type in the OData contract");
 	}
 
 	[Test]
@@ -542,9 +554,9 @@ internal class RemoteEntitySchemaColumnManagerTests
 		_manager.ModifyColumn(options);
 
 		// Assert
-		_entitySchemaPublisher.Received(1).PublishSavedChanges(
-			Arg.Any<Clio.Command.RemoteCommandOptions>(), "UsrVehicle", "columns were saved", ODataContractImpact.Changed);
-		// because: changing a lookup's reference schema changes a navigation property in the OData contract
+		PublishedChanges().Should().Equal(
+			[("UsrVehicle", "columns were saved", ODataContractImpact.Changed)],
+			because: "changing a lookup's reference schema changes a navigation property in the OData contract");
 	}
 
 	[Test]
@@ -562,9 +574,9 @@ internal class RemoteEntitySchemaColumnManagerTests
 		_manager.ModifyColumn(options);
 
 		// Assert
-		_entitySchemaPublisher.Received(1).PublishSavedChanges(
-			Arg.Any<Clio.Command.RemoteCommandOptions>(), "UsrVehicle", "columns were saved", ODataContractImpact.Changed);
-		// because: the property name is the first thing the OData contract carries, so a rename leaves the old name published until the entities assembly is rebuilt
+		PublishedChanges().Should().Equal(
+			[("UsrVehicle", "columns were saved", ODataContractImpact.Changed)],
+			because: "the property name is the first thing the OData contract carries, so a rename leaves the old name published until the entities assembly is rebuilt");
 	}
 
 	[TestCase(nameof(ModifyEntitySchemaColumnOptions.Title), "Vehicle status")]
@@ -588,9 +600,9 @@ internal class RemoteEntitySchemaColumnManagerTests
 		_manager.ModifyColumn(options);
 
 		// Assert
-		_entitySchemaPublisher.Received(1).PublishSavedChanges(
-			Arg.Any<Clio.Command.RemoteCommandOptions>(), "UsrVehicle", "columns were saved", ODataContractImpact.Unchanged);
-		// because: a caption, description, default value, mask, usage type, or required flag is absent from the published OData contract
+		PublishedChanges().Should().Equal(
+			[("UsrVehicle", "columns were saved", ODataContractImpact.Unchanged)],
+			because: "a caption, description, default value, mask, usage type, or required flag is absent from the published OData contract");
 	}
 
 	[Test]
@@ -683,9 +695,9 @@ internal class RemoteEntitySchemaColumnManagerTests
 		savedColumn.RequirementType.Should().Be((int)EntitySchemaColumnRequirementType.ApplicationLevel,
 			because: "unspecified required settings must be preserved");
 		_designerClient.Received(1).SaveSchemaDbStructure(_savedSchema.UId, Arg.Any<Clio.Command.RemoteCommandOptions>());
-		_entitySchemaPublisher.Received(1).PublishSavedChanges(
-			Arg.Any<Clio.Command.RemoteCommandOptions>(), "UsrVehicle", "columns were saved", ODataContractImpact.Changed);
-		// because: changing a column's reference schema changes a navigation property in the OData contract
+		PublishedChanges().Should().Equal(
+			[("UsrVehicle", "columns were saved", ODataContractImpact.Changed)],
+			because: "changing a column's reference schema changes a navigation property in the OData contract");
 		_designerClient.DidNotReceive().GetRuntimeEntitySchema(Arg.Any<Guid>(), Arg.Any<Clio.Command.RemoteCommandOptions>());
 		// because: publishing already refreshes the schema manager; a separate runtime-availability probe is not taken on the normal path
 	}
@@ -2866,9 +2878,9 @@ internal class RemoteEntitySchemaColumnManagerTests
 			because: "the primary-display column should be the column named in the request");
 		_savedSchema.PrimaryDisplayColumn.UId.Should().Be(NameColumnUId,
 			because: "the modern designer contract matches the primary-display column by its uId");
-		_entitySchemaPublisher.Received(1).PublishSavedChanges(
-			Arg.Any<Clio.Command.RemoteCommandOptions>(), "UsrVehicle", "schema properties were saved", ODataContractImpact.Unchanged);
-		// because: the primary-display column is a designer-level property absent from the OData contract, so no rebuild is needed
+		PublishedChanges().Should().Equal(
+			[("UsrVehicle", "schema properties were saved", ODataContractImpact.Unchanged)],
+			because: "the primary-display column is a designer-level property absent from the OData contract, so no rebuild is needed");
 	}
 
 	[Test]

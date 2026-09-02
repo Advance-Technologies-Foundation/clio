@@ -80,15 +80,17 @@ public sealed class EntitySchemaPublisherTests
 	[Test]
 	[Description("Publishes the configuration but never requests an OData rebuild when the mutation left the OData contract unchanged, since a rebuild would only reproduce the document already on disk.")]
 	public void PublishSavedChanges_ShouldPublishAndNotRebuild_WhenImpactIsUnchanged() {
-		// Arrange
+		// Arrange - capture the order the client is called in.
+		List<string> calls = [];
+		_client.When(c => c.PublishConfigurationChanges(_options)).Do(_ => calls.Add("publish"));
+		_client.When(c => c.RunODataBuild(Arg.Any<RemoteCommandOptions>())).Do(_ => calls.Add("rebuild"));
+
 		// Act
 		_publisher.PublishSavedChanges(_options, "UsrVehicle", "schema properties were saved", ODataContractImpact.Unchanged);
 
 		// Assert
-		_client.Received(1).PublishConfigurationChanges(_options);
-		// because: the configuration must still be published so the saved change compiles into it
-		_client.DidNotReceive().RunODataBuild(Arg.Any<RemoteCommandOptions>());
-		// because: an unchanged OData contract makes the 90-120s rebuild pointless and must not be requested
+		calls.Should().Equal(["publish"],
+			because: "the configuration must still be published so the saved change compiles into it, while an unchanged OData contract makes the 90-120s rebuild pointless and must not be requested");
 	}
 
 	[Test]
