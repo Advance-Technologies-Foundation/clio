@@ -381,8 +381,6 @@ public static class WebToMobileAnalysisService {
 			// Named arguments deliberately: the tail is a run of defaulted bools, so a positional call silently
 			// mis-wires the moment a parameter is inserted rather than appended.
 			Constraints = BuildConstraints(
-				hasModelConfig: modelConfig is not null,
-				hasViewModelConfig: viewModelConfig is not null,
 				hasAdaptiveLayout: adaptiveLayout.Count > 0,
 				viewModelConfigRootMerge: viewModelConfigRootMerge,
 				modelConfigRootMerge: modelConfigRootMerge,
@@ -1712,7 +1710,7 @@ public static class WebToMobileAnalysisService {
 	}
 
 	private static List<string> BuildConstraints(
-		bool hasModelConfig, bool hasViewModelConfig, bool hasAdaptiveLayout,
+		bool hasAdaptiveLayout,
 		bool viewModelConfigRootMerge = false, bool modelConfigRootMerge = false, bool mobileTemplateUnavailable = false,
 		IReadOnlyList<string> dataSectionArrayConflicts = null, bool hasTabAreaLayers = false,
 		bool webTemplateUnavailable = false, bool hasComponentTwin = false,
@@ -1744,37 +1742,41 @@ public static class WebToMobileAnalysisService {
 				+ "supplies it. Adding your own copy (e.g. a second FloatingActionButton on Scaffold.floatAction) overrides "
 				+ "the native one and is wrong.");
 		}
-		if (hasModelConfig) {
-			// The "targeted, not a root merge" claim only holds when a real base was diffed against; when the
-			// modelConfig fell back to a single root merge (no template base), say so instead of the opposite.
-			constraints.Add(modelConfigRootMerge
-				? "Use the provided modelConfigDiff VERBATIM as the page's modelConfigDiff. NOTE: no mobile template " +
-				  "base was available, so it is a SINGLE ROOT MERGE carrying the whole modelConfig, not a set of " +
-				  "targeted operations. A root merge REPLACES arrays wholesale, so if any array here (e.g. a data " +
-				  "source's own sort/filter array) is also owned by the mobile template, its baseline entries may be " +
-				  "dropped -- verify manually, or re-run with environment-name/uri set so clio can diff against the " +
-				  "real base and emit inserts. Do NOT hand-build the data-source section, and keep every attribute's " +
-				  "type and path exactly as provided."
-				: "Use the provided modelConfigDiff VERBATIM as the page's modelConfigDiff (it is a set of targeted " +
-				  "merge + insert operations diffed against the mobile template's own base: a merge for changed or " +
-				  "new values, and an insert for each new element of an array the template already carries -- so a " +
-				  "data source's native sort/filter entries are not replaced; it is NOT a single root merge). Do NOT " +
-				  "collapse it into one root merge, do NOT hand-build the data-source section, and NEVER source it " +
-				  "from a pre-existing or reference mobile body -- that is how an attribute's \"type\" gets dropped, " +
-				  "which makes its binding unresolvable in Mobile Designer (\"Item with the path not found\"). Keep " +
-				  "every attribute and all of its properties exactly as provided.");
-		}
-		if (hasViewModelConfig) {
-			constraints.Add(viewModelConfigRootMerge
-				? "viewModelConfig is structurally supported on mobile; the provided block already removed attributes " +
-				  "used only by unsupported components. Apply it via viewModelConfigDiff and reference only OOTB mobile " +
-				  "converters. NOTE: no mobile template base was available, so viewModelConfigDiff is a SINGLE ROOT " +
-				  "MERGE carrying the whole viewModelConfig, not targeted operations -- a root merge REPLACES arrays " +
-				  "wholesale, so any array the mobile template also owns may lose its baseline entries; verify " +
-				  "manually, or re-run with environment-name/uri set so clio can diff against the real base."
-				: "viewModelConfig is structurally supported on mobile; the provided block already removed attributes " +
-				  "used only by unsupported components. Apply it via viewModelConfigDiff and reference only OOTB mobile " +
-				  "converters — a definitive mobile converter list is forthcoming; flag any custom converter for manual review.");
+		// The HAPPY path of the data sections is NOT reported. "Paste modelConfigDiff / viewModelConfigDiff
+		// verbatim, they are targeted operations, do not collapse them into one root merge, never source the
+		// data-source section from a pre-existing body, keep every attribute's type and path" is a standing
+		// rule, and the guidance article's DATA SECTIONS section carries it verbatim and more completely (a
+		// HARD RULE paragraph, per-section detail, and a checklist that names the enforcement). The exact
+		// failure those sentences warn about — a related/lookup attribute losing its "type", so the binding
+		// resolves to nothing in Mobile Designer ("Item with the path … not found") — is a hard ERROR from
+		// SchemaValidationService.ValidateMobileDataSourceAttributeTypes, so update-page refuses such a body
+		// instead of trusting the caller to have read a sentence. Restating it per page bought nothing and
+		// fired on EVERY page that has data sections, which is nearly all of them.
+		//
+		// Only the DEGRADED path is a finding about this conversion, and it is now ONE line. It used to be up
+		// to THREE for the same event: one per config saying "no template base was available", plus a third
+		// naming the cause. The line also states WHICH diff degraded — previously the caller had to infer that
+		// from which of the two near-identical sentences appeared.
+		if (viewModelConfigRootMerge || modelConfigRootMerge) {
+			var degraded = new List<string>();
+			if (modelConfigRootMerge) {
+				degraded.Add("modelConfigDiff");
+			}
+			if (viewModelConfigRootMerge) {
+				degraded.Add("viewModelConfigDiff");
+			}
+			// mobileTemplateUnavailable is NOT implied by the fallback: a template that carries only the other
+			// section, or a page with no known template, degrades with the bundle read perfectly fine. Naming
+			// the cause only when it is actually known keeps the remedy honest.
+			string cause = mobileTemplateUnavailable
+				? "the mobile template's bundle could not be read (no active environment, or the read failed)"
+				: "no mobile template base was available for it";
+			constraints.Add(
+				$"{string.Join(" and ", degraded)}: SINGLE ROOT MERGE, not targeted operations — {cause}. A root "
+				+ "merge REPLACES arrays wholesale, so any array the mobile template also owns (a data source's "
+				+ "own sort/filter array, or Items.modelConfig.filterAttributes' built-in QuickFilterGroup_Filters "
+				+ "on BaseMobileListTemplate) may lose its baseline entries. Verify those arrays before pasting, or "
+				+ "re-run with environment-name/uri set so clio can diff against the real base and emit inserts.");
 		}
 		// Web-template chrome pruning is NOT reported here. It happens whenever a web-template baseline could
 		// be resolved at all — i.e. on every ordinary page — so it describes the normal path rather than a
@@ -1801,17 +1803,9 @@ public static class WebToMobileAnalysisService {
 		// so a constraint line is a second copy of one field, and "re-implement as entity-level business
 		// rules" is the article's rule (Page `handlers` are NEVER transferred), not a per-page finding. The
 		// page-specific half of that advice — which rules actually survive — is guide.pageBusinessRules.
-		if ((viewModelConfigRootMerge || modelConfigRootMerge) && mobileTemplateUnavailable) {
-			constraints.Add(
-				"Could not read the mobile template's bundle (no active environment, or the template read failed) -- " +
-				"the data-section diffs fell back to a single root merge instead of being diffed against the " +
-				"template's own base. If any array in this page's viewModelConfig or modelConfig is also owned by " +
-				"the mobile template (e.g. Items.modelConfig.filterAttributes's built-in QuickFilterGroup_Filters " +
-				"for BaseMobileListTemplate, or a data source's own sort/filter array in modelConfig), a root merge " +
-				"REPLACES it wholesale and the template's baseline entries may be dropped -- verify manually before " +
-				"pasting, or re-run this tool with environment-name/uri set so clio can diff against the real base " +
-				"and emit inserts.");
-		}
+		// An unreadable mobile-template bundle no longer gets its own line: it is a CAUSE of the root-merge
+		// fallback, never an independent finding (its own condition required the fallback to have fired), and
+		// the consolidated fallback line above names it as the cause when it is the one that applies.
 		if (dataSectionArrayConflicts is { Count: > 0 }) {
 			constraints.Add(
 				"The converted page changes an EXISTING element of a template-owned array that no mobile diff " +

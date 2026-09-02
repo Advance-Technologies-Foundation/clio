@@ -778,7 +778,8 @@ public sealed class WebToMobileConversionServiceTests {
 		string type = guide.ModelConfig!.AsObject()["dataSources"]!["PDS"]!["config"]!["attributes"]!
 			["QualifiedContactJobTitle"]!["type"]!.GetValue<string>();
 		type.Should().Be("ForwardReference", because: "modelConfig is passed through verbatim — attribute properties are preserved as-is");
-		guide.Constraints.Should().Contain(c => c.Contains("VERBATIM") && c.Contains("modelConfig"));
+		guide.Constraints.Should().NotContain(c => c.Contains("VERBATIM") && c.Contains("modelConfig"),
+			because: "the paste-verbatim rule fires on every page that has data sections, so it is a standing rule the guidance article owns; the failure it warns about — a dotted-path attribute losing its type — is a hard error from ValidateMobileDataSourceAttributeTypes");
 		guide.NextSteps.Should().Contain(s => s.Contains("modelConfigDiff"));
 	}
 
@@ -1102,7 +1103,7 @@ public sealed class WebToMobileConversionServiceTests {
 	}
 
 	[Test]
-	[Description("When no mobile template base is available for the modelConfig (template unavailable), modelConfigDiff degrades to a single root merge AND the constraints say so (a root-merge constraint plus the template-unavailable warning) -- they do NOT falsely claim it is targeted.")]
+	[Description("When no mobile template base is available for the modelConfig (template unavailable), modelConfigDiff degrades to a single root merge and ONE constraint says so -- naming which diff degraded, the unreadable-bundle cause, and the arrays at risk. It used to take up to three lines for the same event: one per config plus a third for the cause.")]
 	public void Analyze_ModelConfigWithoutTemplateBase_EmitsRootMergeAndWarns() {
 		// Arrange: a modelConfig with a data source; no mobile template modelConfig base; template reported unavailable.
 		PageBundleInfo bundle = Bundle(
@@ -1116,14 +1117,19 @@ public sealed class WebToMobileConversionServiceTests {
 		JsonObject op = guide.ModelConfigDiff!.AsArray().Single()!.AsObject();
 		op["operation"]!.GetValue<string>().Should().Be("merge", because: "with no base to diff against it degrades to one root merge");
 		op["path"]!.AsArray().Should().BeEmpty(because: "a root merge targets the config root (path [])");
-		guide.Constraints.Should().Contain(c => c.Contains("SINGLE ROOT MERGE"),
-			because: "the modelConfig constraint must state it is a root merge, not claim it is targeted");
-		guide.Constraints.Should().Contain(c => c.Contains("fell back to a single root merge"),
-			because: "the template-unavailable warning must be surfaced so the caller verifies template-owned arrays");
+		guide.Constraints.Should().ContainSingle(c => c.Contains("SINGLE ROOT MERGE"),
+			because: "the degradation is ONE finding and must be reported once, not once per config plus once for the cause");
+		string fallback = guide.Constraints.Single(c => c.Contains("SINGLE ROOT MERGE"));
+		fallback.Should().Contain("modelConfigDiff",
+			because: "the caller must be told WHICH diff degraded rather than having to infer it from which sentence appeared");
+		fallback.Should().Contain("could not be read",
+			because: "an unreadable template bundle is the cause, and naming it is what makes the re-run remedy actionable");
+		fallback.Should().Contain("QuickFilterGroup_Filters",
+			because: "the caller has to know which template-owned arrays a root merge can silently strip");
 	}
 
 	[Test]
-	[Description("When a mobile template modelConfig base IS available, modelConfigDiff is targeted and the constraint says 'it is NOT a single root merge' -- the root-merge warning is absent (negative twin of the unavailable case).")]
+	[Description("When a mobile template modelConfig base IS available, modelConfigDiff is targeted and NO data-section constraint is emitted at all -- the happy path is not a finding, so it says nothing (negative twin of the unavailable case).")]
 	public void Analyze_ModelConfigWithTemplateBase_EmitsTargetedAndNoRootMergeWarning() {
 		// Arrange: same page config, but a mobile template modelConfig base is supplied.
 		PageBundleInfo bundle = Bundle(
@@ -1135,12 +1141,13 @@ public sealed class WebToMobileConversionServiceTests {
 			bundle, webByType: Reg(("crt.FlexContainer", true)),
 			mobileTemplateModelConfig: templateModelConfig, mobileTemplateUnavailable: false);
 		// Assert
-		guide.Constraints.Should().Contain(c => c.Contains("it is NOT a single root merge"),
-			because: "a diff built against a real base is targeted, and the constraint must say so");
+		JsonObject targeted = guide.ModelConfigDiff!.AsArray().First()!.AsObject();
+		targeted["path"]!.AsArray().Should().NotBeEmpty(
+			because: "a base was available, so the diff addresses a key rather than degrading to a root merge");
 		guide.Constraints.Should().NotContain(c => c.Contains("SINGLE ROOT MERGE"),
-			because: "no root-merge fallback fired, so no root-merge warning must appear");
-		guide.Constraints.Should().NotContain(c => c.Contains("fell back to a single root merge"),
-			because: "the template base was available, so the unavailable warning must not be raised");
+			because: "no root-merge fallback fired, so no degradation is reported");
+		guide.Constraints.Should().NotContain(c => c.Contains("modelConfigDiff") || c.Contains("viewModelConfigDiff"),
+			because: "a diff built against a real base needs no constraint at all — restating the paste-verbatim rule would fire on nearly every page and tell the caller nothing about THIS conversion");
 	}
 
 	[Test]
