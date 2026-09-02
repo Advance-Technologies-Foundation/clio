@@ -583,6 +583,47 @@ public sealed class ModifyBusinessProcessToolE2ETests {
 	}
 
 	[Test]
+	[Description("Over the real MCP path, a conditional flow reads back with branchesOnActivityResult present and FALSE. The field's whole purpose is to tell a caller that a branch's condition text will be ignored at run time, and DescribedFlow has no extension-data bag - so a property lost in clio's re-serialize does not surface as an error, it surfaces as a flow that silently claims its condition is live. The TRUE case cannot be arranged here: only the designer populates a flow's activity-result map, and setFlowCondition refuses to write a condition onto one, so it stays a manual case against a hand-authored process.")]
+	[AllureTag(ToolName)]
+	[AllureTag(DescribeToolName)]
+	[AllureName("describe reports branchesOnActivityResult on a conditional flow")]
+	public async Task ModifyBusinessProcess_Should_ReportBranchesOnActivityResult_OnAConditionalFlow() {
+		// Arrange - the same linear process the condition round-trip uses, so the only new thing under test
+		// is the field itself.
+		await using ArrangeContext context = await ArrangeAsync(requireReachableEnvironment: true);
+		string processName = $"UsrClioBpBranchFlagE2e{Guid.NewGuid():N}";
+		await CallToolAsync(context, CreateToolName, new Dictionary<string, object?> {
+			["environment-name"] = context.EnvironmentName,
+			["descriptor"] = BuildDescriptor(processName)
+		});
+		await CallToolAsync(context, ToolName, new Dictionary<string, object?> {
+			["environment-name"] = context.EnvironmentName,
+			["process-name"] = processName,
+			["operations"] = BuildSetFlowConditionOperations("1 == 1")
+		});
+
+		// Act
+		CallToolResult describeResult = await CallToolAsync(context, DescribeProcessTool.ToolName,
+			new Dictionary<string, object?> {
+				["environment-name"] = context.EnvironmentName,
+				["process-name"] = processName
+			});
+
+		// Assert
+		string describeJson = JsonSerializer.Serialize(describeResult);
+		describeJson.Should().Contain("branchesOnActivityResult",
+			because: "the property has to reach the caller - a flow whose condition the platform ignores is "
+				+ "indistinguishable from one it evaluates unless describe says so");
+		DescribedFlow branch = await ReadFlowAsync(context, processName, "task1", "EndEvent1");
+		branch.BranchesOnActivityResult.Should().BeFalse(
+			because: "a condition written through setFlowCondition is a FORMULA branch; reporting it as "
+				+ "result-driven would tell the caller its own condition will never be evaluated");
+		branch.Condition.Should().Be("1 == 1",
+			because: "the two fields are read from the same flow and both have to survive the round trip - "
+				+ "asserting the flag alone would pass on a describe that dropped the condition");
+	}
+
+	[Test]
 	[Description("Over the real MCP path, a formula the server could not fully check reports a WARNING and the edit still succeeds. This is the one channel the shipped tool description names for an agent to read - entries with message-type Warning in execution-log-messages - and nothing asserted it end to end, so the whole degraded-path contract rested on unit tests of the notice collector. An unrecognised macro family is the cheapest way in: the server stores the mapping, skips the engine layer, and says so.")]
 	[AllureTag(ToolName)]
 	[AllureName("modify-business-process reports a server warning on a partially-checked formula")]

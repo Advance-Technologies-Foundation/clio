@@ -2830,12 +2830,22 @@ stories:
       S4 (clio half), S7 and S9 on branch feature/ENG-95891-formula-expressions. DescribedFlow.condition
       (mandatory - no JsonExtensionData bag), setFlowCondition documented on the modify tool/prompt/capability
       map, the phantom described-parameter 'expression' field corrected on both surfaces, CrtProcessBuilder
-      rebundled at 1.4.0.3 with pins refreshed, and the create/modify [RequiresPackage] literals raised to
+      rebundled (1.4.0.36 at the time of writing; the archive version is the source of truth, not this note)
+      with pins refreshed, and the create/modify [RequiresPackage] literals raised to
       1.4.0.3 for a new operation plus a tightened validator. e2e added (not in CI, needs a stand).
       1.4.0.4 through 1.4.0.8 exist on stands from the ENG-96176 branch that forks off this one; none of
       them changes formula behaviour (the only edit to the validator in that range is a doc comment and one
       message reworded), so the 1.4.0.3 floor is the version the tightened validator actually ships in.
-      ClioRing compatibility reviewed, no Ring-consumed contract changed.
+      ClioRing compatibility reviewed, no Ring-consumed contract changed - restated against the FULL
+      branch diff, not the one commit that first said it. Ring names none of the four process tools;
+      it can reach them generically through clio-run from the get-tool-contract index
+      (clio-ring/ClioRing/ViewModels/ClioIpcViewModel.cs RunEntryAsync,
+      clio-ring/ClioRing.Ipc/ClioIpcClient.cs GetCatalogAsync/ParseCatalog), and ParseCatalog reads only
+      name / purpose / contract-available / resident / destructive. Recomputed BuildPurpose (first
+      sentence, 120 chars) for validate/modify/describe: byte-identical base vs HEAD, tool names
+      unchanged, safety flags unchanged, refusals still travel as {success:false, error} through the
+      same catch chain. Also inspected clio-ring/ClioRing.Desktop/actions.json and
+      clio-ring/ClioRing/ViewModels/ClioWorkflowViewModel.cs. ClioRing.Tests: 157 passed, 0 failed.
     depends_on:
       - story-eng-95891-formula-expressions-1
     blocks: []
