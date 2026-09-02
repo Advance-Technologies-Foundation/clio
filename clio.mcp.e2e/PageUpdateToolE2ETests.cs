@@ -1,4 +1,4 @@
-using System.Text.Json;
+﻿using System.Text.Json;
 using System.Text.RegularExpressions;
 using Allure.NUnit;
 using Allure.NUnit.Attributes;
@@ -84,6 +84,13 @@ public sealed class PageUpdateToolE2ETests : McpContractFixtureBase {
 			because: "AC1/AC8: extraStyles must be named as custom CSS on the served contract description");
 		contract.Description.Should().Contain("page-modification-components",
 			because: "RC-3: the served contract must route the CSS policy to the sub-guide that carries the STOP block");
+		contract.Description.Should().Contain("validate=false",
+			because: "the served update-page contract must expose the explicit escape hatch for pre-existing page defects");
+		contract.Description.Should().Contain("JavaScript syntax",
+			because: "the served contract must state that disabling content validation does not bypass syntax validation");
+		contract.InputSchema.Properties.Should().Contain(field =>
+			field.Name == "validate" && field.Description.Contains("pre-existing"),
+			because: "the served input schema must expose the guarded validation escape hatch, not only the prose tool description");
 	}
 
 	[Test]
@@ -339,6 +346,54 @@ public sealed class PageUpdateToolE2ETests : McpContractFixtureBase {
 			because: "the failure must point at the missing processName");
 		response.Error.Should().Contain("RunBpButton",
 			because: "the failure should name the offending button");
+	}
+
+	[Test]
+	[Description("Allows an explicitly disabled client-side validation chain to pass a pre-existing run-process defect to the update-page command while retaining the syntax gate.")]
+	[AllureTag(ToolName)]
+	[AllureName("update-page allows explicit validation bypass for pre-existing defects")]
+	[AllureDescription("Starts the real clio MCP server, invokes update-page with a syntactically valid body whose pre-existing run-process button omits processName, and sets validate=false. An invalid environment makes the command fail after pre-execution; the response must contain the environment failure rather than the skipped processName validation error.")]
+	public async Task PageUpdateTool_Should_Bypass_Content_Validation_When_Explicitly_Disabled() {
+		// Arrange
+		string invalidEnvironmentName = $"missing-validation-bypass-env-{Guid.NewGuid():N}";
+		// The syntax gate stays mandatory when validate=false, so this body must be VALID
+		// JavaScript: every SCHEMA_* marker block needs its property name. The defect under
+		// test is semantic - a run-process button without processName - not a parse error.
+		string runProcessBody = "define(\"UsrValidationBypass_FormPage\", /**SCHEMA_DEPS*/[]/**SCHEMA_DEPS*/, "
+			+ "function/**SCHEMA_ARGS*/()/**SCHEMA_ARGS*/ { return { "
+			+ "viewConfigDiff: /**SCHEMA_VIEW_CONFIG_DIFF*/[{\"operation\":\"insert\",\"name\":\"RunBpButton\",\"values\":{\"type\":\"crt.Button\",\"clicked\":{\"request\":\"crt.RunBusinessProcessRequest\",\"params\":{\"processRunType\":\"RegardlessOfThePage\"}}}}]/**SCHEMA_VIEW_CONFIG_DIFF*/, "
+			+ "viewModelConfigDiff: /**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/{}/**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/, "
+			+ "modelConfigDiff: /**SCHEMA_MODEL_CONFIG_DIFF*/{}/**SCHEMA_MODEL_CONFIG_DIFF*/, "
+			+ "handlers: /**SCHEMA_HANDLERS*/[]/**SCHEMA_HANDLERS*/, "
+			+ "converters: /**SCHEMA_CONVERTERS*/{}/**SCHEMA_CONVERTERS*/, "
+			+ "validators: /**SCHEMA_VALIDATORS*/{}/**SCHEMA_VALIDATORS*/ }; });";
+		await using var arrangeContext = Arrange(TimeSpan.FromMinutes(3));
+
+		// Act
+		CallToolResult callResult = await arrangeContext.Session.CallToolAsync(
+			ToolName,
+			new Dictionary<string, object?> {
+				["args"] = new Dictionary<string, object?> {
+					["schema-name"] = "UsrValidationBypass_FormPage",
+					["body"] = runProcessBody,
+					["dry-run"] = true,
+					["validate"] = false,
+					["environment-name"] = invalidEnvironmentName
+				}
+			},
+			arrangeContext.CancellationTokenSource.Token);
+		PageUpdateResponse response = EntitySchemaStructuredResultParser.Extract<PageUpdateResponse>(callResult);
+
+		// Assert
+		callResult.IsError.Should().NotBeTrue(
+			because: "the validation bypass result should remain a structured update-page response");
+		response.Success.Should().BeFalse(
+			because: "the deliberately invalid environment must fail after the body passes pre-execution validation");
+		response.Error.Should().NotContain("processName",
+			because: "validate=false must suppress the pre-existing run-process structural error");
+		response.Error.Should().MatchRegex(
+			$"(?is)({Regex.Escape(invalidEnvironmentName)}|environment.*not.*found|not found)",
+			because: "the remaining failure must come from environment resolution, proving the body reached the command path");
 	}
 
 	[Test]
