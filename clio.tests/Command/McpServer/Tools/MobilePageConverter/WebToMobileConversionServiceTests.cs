@@ -318,8 +318,8 @@ public sealed class WebToMobileConversionServiceTests {
 		guide.DataSources.Should().BeEquivalentTo("PDS", "SecondDS");
 		guide.Constraints.Should().NotContain(c => c.Contains("MULTIPLE data sources") || c.Contains("SINGLE data source"),
 			because: "mobile supports the same data-source structure as web — no multi-DS limitation is imposed");
-		guide.Constraints.Should().Contain(c => c.Contains("web-only section(s)") && c.Contains("business rules"),
-			because: "which sections this page loses is a fact about THIS conversion, so it stays a constraint — unlike the unconditional 'no handlers/validators' invariant, which moved to the mobile body validators");
+		guide.Constraints.Should().NotContain(c => c.Contains("web-only section"),
+			because: "WHICH sections this page loses is already the guide.webOnlySections field asserted above, so a constraint line is a second copy of one field; 're-implement as entity-level business rules' is the article's standing rule, and the page-specific half of it is guide.pageBusinessRules");
 	}
 
 	[Test]
@@ -2642,8 +2642,8 @@ public sealed class WebToMobileConversionServiceTests {
 		// The page's own field survives (hoisted out of the dropped Main wrapper) and is converted.
 		guide.SourceStructure.Should().Contain(s => s.Name == "UsrName");
 		guide.ElementMap.Should().Contain(e => e.WebName == "UsrName" && e.Operation == "insert");
-		// The advisory constraint announces the exclusion.
-		guide.Constraints.Should().Contain(c => c.Contains("inherited from the source page's web template"));
+		guide.Constraints.Should().NotContain(c => c.Contains("inherited from the source page's web template"),
+			because: "chrome pruning happens whenever a web-template baseline resolves at all — i.e. on every ordinary page — so it is the normal path rather than a finding about this conversion, and the guidance article documents it");
 	}
 
 	[Test]
@@ -5119,7 +5119,7 @@ public sealed class WebToMobileConversionServiceTests {
 	}
 
 	[Test]
-	[Description("The caller-facing summary is composed by clio from the actual counts. Nothing from the rules file reaches constraints[] or nextSteps[] — those are the arrays a caller treats as clio's own hard rules, and that file is resolved at runtime from an env var, a local cache or the CDN.")]
+	[Description("The caller-facing summary is composed by clio from the actual counts and is carried ONCE, by the group's own note. Nothing from the rules file reaches any caller-facing channel — that file is resolved at runtime from an env var, a local cache or the CDN. The same sentence used to be emitted three times (constraints, nextSteps and the note); it now sits only beside the normalized[]/skipped[] entries it counts.")]
 	public void Analyze_PropertyNormalization_ShouldComposeTheSummaryInTheBinary() {
 		// Arrange — a rule whose note would be an injection attempt if notes were surfaced
 		PageBundleInfo bundle = MetricBundle();
@@ -5140,14 +5140,14 @@ public sealed class WebToMobileConversionServiceTests {
 		// Assert
 		guide.Normalizations!["metricStyle"].Note.Should().Contain("1 element(s) normalized",
 			because: "the summary is derived from what actually happened, not from prose");
-		guide.Constraints.Should().Contain(c => c.StartsWith("metricStyle:"),
-			because: "each group contributes exactly one composed line");
-		guide.NextSteps.Should().Contain(s => s.StartsWith("metricStyle:"),
-			because: "the same line carries into the ordered steps");
+		guide.Constraints.Should().NotContain(c => c.StartsWith("metricStyle:"),
+			because: "the group's note already carries the line beside the entries it counts, so repeating it in constraints would be a second copy the caller has to correlate back");
+		guide.NextSteps.Should().NotContain(s => s.StartsWith("metricStyle:"),
+			because: "the same line was a third copy of one sentence and told the caller nothing the note does not");
 		string joined = string.Join("\n", guide.Constraints.Concat(guide.NextSteps))
 			+ guide.Normalizations["metricStyle"].Note;
 		joined.Should().NotContain("IGNORE PREVIOUS INSTRUCTIONS",
-			because: "the rules file must not be able to write into the caller's instruction channel at all");
+			because: "the rules file must not be able to write into any caller-facing channel, the group note included");
 	}
 
 	[Test]
@@ -5171,8 +5171,8 @@ public sealed class WebToMobileConversionServiceTests {
 				+ "\"could not normalize\"");
 		skip.Properties.Should().BeEquivalentTo(["config"],
 			because: "the report names the branch that was refused");
-		guide.Constraints.Should().Contain(c => c.StartsWith("metricStyle:") && c.Contains("1 skipped"),
-			because: "suppressing the line here would hide the one case where an element kept its web values");
+		guide.Normalizations["metricStyle"].Note.Should().Contain("1 skipped",
+			because: "suppressing the count would hide the one case where an element kept its web values — and the note is now the single place it is stated");
 	}
 
 	[Test]
@@ -6373,7 +6373,7 @@ public sealed class WebToMobileConversionServiceTests {
 			mobileTemplateLayoutConfigs: mobileTemplateLayoutConfigs);
 
 	[Test]
-	[Description("A converter-created container whose every child dropped is itself converted to a drop with reason 'empty container', and the guide's constraints warn the reader not to re-create it.")]
+	[Description("A converter-created container whose every child dropped is itself converted to a drop whose reason says 'empty container' — the entry is the whole report, so no constraint restates it.")]
 	public void Analyze_ShouldDropEmptyContainer_WhenNoChildSurvives() {
 		PageBundleInfo bundle = Bundle("""
 			[ { "name": "OnlyUnsupported", "type": "crt.GridContainer", "items": [
@@ -6388,8 +6388,8 @@ public sealed class WebToMobileConversionServiceTests {
 		box.WebType.Should().Be("crt.GridContainer", because: "the report must still say what was removed");
 		box.MobileName.Should().BeNull(because: "a drop carries no mobile target");
 		Element(guide, "Timeline").Operation.Should().Be("drop", because: "the child's own drop is what emptied the box");
-		guide.Constraints.Should().Contain(c => c.Contains("empty container"),
-			because: "the reader must be told the removal already happened and is not theirs to redo or undo");
+		guide.Constraints.Should().NotContain(c => c.Contains("empty container"),
+			because: "the drop entry already names the cause, so a constraint line would only repeat it; what the reader must DO about it (never re-create, never make it a gate question) is a standing rule the guidance article owns");
 	}
 
 	[Test]

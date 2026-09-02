@@ -137,7 +137,6 @@ public static class WebToMobileAnalysisService {
 		//    converted. Container twins listed in the containerMap are kept (they are merge targets).
 		JArray tree = bundle.ViewConfig is null ? new JArray() : JArray.Parse(bundle.ViewConfig.ToJsonString());
 		int sourceNamedCount = bundle.ViewConfig is null ? 0 : CollectComponentNames(bundle.ViewConfig).Count;
-		bool templatePruned = false;
 		if (templateComponentNames is { Count: > 0 }) {
 			// A container declared in `nonConvertingScopeContainers` (e.g. MainHeader) must NOT be pruned as chrome:
 			// its descendants need it in the tree as an ancestor for `path` matching, and the walk then treats it as
@@ -145,7 +144,6 @@ public static class WebToMobileAnalysisService {
 			// `path` on purpose (see CollectScopeContainerNames).
 			IReadOnlySet<string> scopeContainerNames = CollectScopeContainerNames(rules);
 			tree = PruneTemplateComponents(tree, map, componentMap, templateComponentNames, mobileTypesByName, mobileByType, webBaselineNodes, scopeContainerNames);
-			templatePruned = true;
 		}
 
 		// 1. Walk the merged tree into a flat structure (names, types, parents, container flags) and
@@ -382,21 +380,17 @@ public static class WebToMobileAnalysisService {
 			ResourceStrings = resourceStrings.Count > 0 ? resourceStrings : null,
 			// Named arguments deliberately: the tail is a run of defaulted bools, so a positional call silently
 			// mis-wires the moment a parameter is inserted rather than appended.
-			Constraints = BuildConstraints(webOnly,
+			Constraints = BuildConstraints(
 				hasModelConfig: modelConfig is not null,
 				hasViewModelConfig: viewModelConfig is not null,
 				hasAdaptiveLayout: adaptiveLayout.Count > 0,
-				templatePruned: templatePruned,
 				viewModelConfigRootMerge: viewModelConfigRootMerge,
 				modelConfigRootMerge: modelConfigRootMerge,
 				mobileTemplateUnavailable: mobileTemplateUnavailable,
 				dataSectionArrayConflicts: dataSectionArrayConflicts,
 				hasTabAreaLayers: tabAreaLayers.Count > 0,
-				hasEmptyContainerRemovals: emptyRemovedNames.Count > 0,
-				normalization: componentPropertyOverrides,
 				webTemplateUnavailable: webTemplateUnavailable,
 				hasComponentTwin: componentMap.Count > 0,
-				hasExcludedComponents: excludedRemovedNames.Count > 0,
 				exclusionSearchTruncated: excludedDiagnostics.DepthBudgetTruncated,
 				discardedExclusionFilters: excludedDiagnostics.DiscardedFilterCount,
 				skippedOverrideRules: componentPropertyOverrides.SkippedRulesWithoutFilters,
@@ -409,8 +403,7 @@ public static class WebToMobileAnalysisService {
 				hasDataSections: modelConfig is not null || viewModelConfig is not null,
 				hasAdaptiveLayout: adaptiveLayout.Count > 0,
 				hasTabAreaLayers: tabAreaLayers.Count > 0,
-				normalization: componentPropertyOverrides,
-			hasResourceStrings: resourceStrings.Count > 0),
+				hasResourceStrings: resourceStrings.Count > 0),
 			GuidanceArticle = GuidanceArticleName,
 			SuggestedTargetSchemaName = suggestedTarget
 		};
@@ -1719,14 +1712,12 @@ public static class WebToMobileAnalysisService {
 	}
 
 	private static List<string> BuildConstraints(
-		IReadOnlyList<string> webOnlySections,
-		bool hasModelConfig, bool hasViewModelConfig, bool hasAdaptiveLayout, bool templatePruned = false,
+		bool hasModelConfig, bool hasViewModelConfig, bool hasAdaptiveLayout,
 		bool viewModelConfigRootMerge = false, bool modelConfigRootMerge = false, bool mobileTemplateUnavailable = false,
 		IReadOnlyList<string> dataSectionArrayConflicts = null, bool hasTabAreaLayers = false,
-		bool hasEmptyContainerRemovals = false, ComponentPropertyOverrideResult normalization = null,
 		bool webTemplateUnavailable = false, bool hasComponentTwin = false,
 		bool exclusionSearchTruncated = false, int discardedExclusionFilters = 0,
-		int skippedOverrideRules = 0, bool hasExcludedComponents = false,
+		int skippedOverrideRules = 0,
 		IReadOnlyList<string> retargetParentsOnTemplate = null) {
 		// UNCONDITIONAL platform invariants do NOT belong here. A line that fires for every page carries no
 		// fact about THIS conversion, so it cannot inform a decision the caller has to make — it only competes
@@ -1785,12 +1776,15 @@ public static class WebToMobileAnalysisService {
 				  "used only by unsupported components. Apply it via viewModelConfigDiff and reference only OOTB mobile " +
 				  "converters — a definitive mobile converter list is forthcoming; flag any custom converter for manual review.");
 		}
-		if (templatePruned) {
-			constraints.Add(
-				"Components inherited from the source page's web template (and its base templates) are excluded " +
-				"from this guide — the mobile template already provides the equivalent header/scaffold chrome. " +
-				"Only the page's delta over its web template is converted; do NOT re-add the web header containers.");
-		}
+		// Web-template chrome pruning is NOT reported here. It happens whenever a web-template baseline could
+		// be resolved at all — i.e. on every ordinary page — so it describes the normal path rather than a
+		// finding about this conversion. Its complement is what is actually notable, and that IS reported
+		// (webTemplateUnavailable, below). The behaviour and the "do not re-add the web header" rule are
+		// documented in the guidance article (TOOL / sourceStructure and the RETARGET rule).
+		// NOTE for a future metadata pass: a pruned component leaves NO trace in the response — it is removed
+		// from the tree before the structure walk, so it appears in neither sourceStructure nor elementMap
+		// (verified: TitleContainer / BackButton / PageTitle are absent from a real Leads_FormPage guide). If
+		// the caller ever needs to know WHAT was pruned, that is a new structured field, not a sentence here.
 		// Only when a NAME-MAPPED twin exists (the rule declares one, e.g. AttachmentList -> AttachmentFileList):
 		// an automatic same-name twin cannot fire without a baseline, so an unreadable web template affects only
 		// the rule-declared twin, which then degrades to an advisory merge (no prebuilt delta).
@@ -1803,9 +1797,10 @@ public static class WebToMobileAnalysisService {
 				"componentSuggestions, or re-run with environment-name/uri set so clio can diff against the real web " +
 				"template and prebuild the delta.");
 		}
-		if (webOnlySections is { Count: > 0 }) {
-			constraints.Add($"The source page carries web-only section(s): {string.Join(", ", webOnlySections)}. They cannot be transferred to a mobile body — re-implement the supported behavior as entity-level business rules.");
-		}
+		// The web-only sections are NOT restated here: the SAME list already ships as guide.webOnlySections,
+		// so a constraint line is a second copy of one field, and "re-implement as entity-level business
+		// rules" is the article's rule (Page `handlers` are NEVER transferred), not a per-page finding. The
+		// page-specific half of that advice — which rules actually survive — is guide.pageBusinessRules.
 		if ((viewModelConfigRootMerge || modelConfigRootMerge) && mobileTemplateUnavailable) {
 			constraints.Add(
 				"Could not read the mobile template's bundle (no active environment, or the template read failed) -- " +
@@ -1847,10 +1842,11 @@ public static class WebToMobileAnalysisService {
 				"webName; tabs provided by the mobile template (merge) get no layers and must stay untouched.");
 		}
 
-		// One constraint per report group the rules declared, in the wording the RULE carries — so a new
-		// standard is a rules-file entry and never another branch here. The legacy spacing group keeps a
-		// built-in text for a rules file that predates reportConstraint.
-		AppendNormalizationLines(constraints, normalization);
+		// Normalization is NOT reported here. The identical sentence used to be emitted THREE times per group:
+		// into constraints, into nextSteps, and as normalizations[group].note — all from the same SummaryFor.
+		// Only the last one survives, because that is where the data it describes lives: the group's note sits
+		// on the section carrying its normalized[] / skipped[] entries, so the caller reads the count and the
+		// elements in one place instead of correlating a sentence here with a section there.
 		if (exclusionSearchTruncated) {
 			// The one outcome the drop entries cannot report: a component that was never removed produces no
 			// entry, so without this line a banned component past the depth budget is indistinguishable from
@@ -1879,27 +1875,21 @@ public static class WebToMobileAnalysisService {
 				+ "values. Check the rules file for a misspelled property name or an entry still written with "
 				+ "a top-level \"type\".");
 		}
-		if (hasExcludedComponents) {
-			constraints.Add(
-				"One or more components were removed by an excludedComponents rule — they appear in elementMap as "
-				+ "drop entries whose reason names the rule, the type, the host and the slot. That removal is "
-				+ "POSITIONAL, not conversion loss: the same type converts normally OUTSIDE that position. Do NOT "
-				+ "re-insert such a component anywhere, do NOT look for a substitute, and do NOT raise it as a gate "
-				+ "question — just report it like any other drop. Which types are banned from which hosts is converter "
-				+ "configuration resolved at run time, so read the drop reasons rather than assuming a fixed list.");
-		}
-		if (hasEmptyContainerRemovals) {
-			constraints.Add(
-				"One or more converted containers ended up EMPTY (no child survived conversion) and were already " +
-				"REMOVED deterministically — they appear in elementMap as drop entries with reason \"empty " +
-				"container\". Do NOT re-create them, do NOT re-parent anything into them, and do NOT ask the user " +
-				"whether to remove them (it is done); just include them in the conversion report like any other drop.");
-		}
+		// An excludedComponents removal and an empty-container removal are NOT restated here. Both already
+		// arrive as elementMap drop entries whose reason names the cause ("excludedComponents rule matched: …",
+		// "empty container — no mobile content survived conversion"), so a constraint line adds no fact — only
+		// a repetition of what the entries carry. What the caller must DO about each (a positional exclusion is
+		// not conversion loss, never re-insert, never make it a gate question) is a standing rule and is
+		// documented in the guidance article's drop section, which covers it more completely than these lines
+		// did: it also teaches the SECOND reason shape a positional exclusion emits for the removed component's
+		// descendants ("parent removed by an excludedComponents rule: …"), which was never in constraints.
+		// The exclusion DIAGNOSTICS above are a different matter and stay: a truncated search or a discarded
+		// rule produces NO drop entry, so nothing else in the response could reveal it.
 		return constraints;
 	}
 
-	private static List<string> BuildNextSteps(bool hasDataSections, bool hasAdaptiveLayout, bool hasTabAreaLayers = false,
-		ComponentPropertyOverrideResult normalization = null, bool hasResourceStrings = false) {
+	private static List<string> BuildNextSteps(bool hasDataSections, bool hasAdaptiveLayout,
+		bool hasTabAreaLayers = false, bool hasResourceStrings = false) {
 		var steps = new List<string> {
 			"Read get-guidance with name \"freedom-page-web-to-mobile-conversion\".",
 			"Create the target mobile page from recommendedMobileTemplate with create-page (it provides the Scaffold root).",
@@ -1915,7 +1905,8 @@ public static class WebToMobileAnalysisService {
 		if (hasTabAreaLayers) {
 			steps.Add("The mobile designer's two-layer tab body (tab body grid + Area card) is already baked into the element map for every converter-created tab: the tab's top-level content (expansion panels included) is retargeted into the Area and stacked in web order. Apply the element map as it is. This structure is MANDATORY — do NOT ask the user whether to apply it and do NOT offer an alternative; just STATE what it does when you present the plan (guide.tabAreaLayers: tab -> synthesized layer names -> movedChildren in row order).");
 		}
-		AppendNormalizationLines(steps, normalization);
+		// Normalization is not restated as a step either — see the note in BuildConstraints. The group's
+		// note lives on guide.normalizations[group], beside the entries it counts.
 		if (hasResourceStrings) {
 			steps.Add("Register guide.resourceStrings as a WHOLE with one update-page resources call: it is the "
 				+ "{key: en-US text} map for EVERY #ResourceString token the pasted mobileValues carry, including the "
@@ -5349,30 +5340,23 @@ public static class WebToMobileAnalysisService {
 			: mobileType;
 
 	/// <summary>
-	/// Appends ONE line per report group that recorded something, composed from the actual counts.
-	/// Deliberately built here rather than taken from the rules file: that file is resolved at runtime
-	/// (env var → local cache → CDN), and <c>constraints</c>/<c>nextSteps</c> are the arrays the calling
-	/// agent treats as clio's own hard rules — nothing outside this binary may write into them. It is also
-	/// deterministic, and one line instead of the several hundred tokens per page that per-rule prose cost,
-	/// while still saying the one thing the caller cannot derive from the data: do not undo it.
+	/// The single caller-facing sentence describing one group's outcome, carried by that group's
+	/// <c>normalizations[group].note</c>.
 	/// </summary>
-	private static void AppendNormalizationLines(
-		List<string> lines, ComponentPropertyOverrideResult normalization) {
-		if (normalization is null) {
-			return;
-		}
-		foreach ((string group, ComponentPropertyOverrideResult.GroupAccumulator accumulator) in normalization.Groups) {
-			lines.Add(SummaryFor(group, accumulator));
-		}
-	}
-
-	/// <summary>The single caller-facing sentence describing one group's outcome.</summary>
+	/// <remarks>
+	/// Deliberately composed here rather than taken from the rules file: that file is resolved at runtime
+	/// (env var → local cache → CDN), so nothing outside this binary may write a sentence the calling agent
+	/// reads as clio's own rule. It used to be emitted THREE times per group — into <c>constraints</c>, into
+	/// <c>nextSteps</c>, and here — from this one method; only this one remains, because it belongs beside
+	/// the <c>normalized[]</c> / <c>skipped[]</c> entries it counts rather than in an array the caller has to
+	/// correlate back to them (ENG-95827). It therefore no longer points AT its own section.
+	/// </remarks>
 	private static string SummaryFor(string group, ComponentPropertyOverrideResult.GroupAccumulator accumulator) {
 		string skipped = accumulator.Skipped.Count > 0
-			? $", {accumulator.Skipped.Count} skipped (kept their web values — worth calling out)"
+			? $", {accumulator.Skipped.Count} skipped (kept their web values — worth calling out, see skipped[])"
 			: string.Empty;
-		return $"{group}: {accumulator.Normalized.Count} element(s) normalized{skipped} — see "
-			+ $"guide.normalizations.{group}. The values are already in elementMap[].mobileValues; the web "
+		return $"{group}: {accumulator.Normalized.Count} element(s) normalized{skipped} — one entry per element "
+			+ "in normalized[] below. The values are already in elementMap[].mobileValues; the web "
 			+ "page's own values for those properties were IGNORED by design. Do NOT restore them, do NOT "
 			+ "treat the difference as a defect, and never raise it as a gate question.";
 	}
