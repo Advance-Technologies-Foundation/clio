@@ -240,7 +240,7 @@ public sealed class ODataFileContract(IFileSystem fileSystem, IConfinedFileAcces
 	/// <param name="root">Parsed response root.</param>
 	/// <returns><c>null</c> when the body may be summarized, otherwise the caller-facing error.</returns>
 	private static string RejectNonODataContent(JsonElement root) {
-		if (ODataResponseError.TryDetect(root, out string serverError)) {
+		if (CreatioResponseError.TryDetect(root, CreatioResponseContext.ODataPayload, out string serverError)) {
 			// Nothing is written for an error body: a file named after a successful read that holds a
 			// server error is worse than no file at all.
 			return SensitiveErrorTextRedactor.Redact(serverError);

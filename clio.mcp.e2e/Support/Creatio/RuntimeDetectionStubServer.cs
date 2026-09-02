@@ -156,6 +156,22 @@ http.createServer((request, response) => {
     }
     if (request.method === "POST"
       && (url === "/DataService/json/SyncReply/SelectQuery" || url === "/0/DataService/json/SyncReply/SelectQuery")
+      && config.AuthRejectedSelectQuerySchemaName
+      && body.includes('"' + config.AuthRejectedSelectQuerySchemaName + '"')) {
+      // Issue #1222: an expired password makes Creatio answer the authenticated SelectQuery with a
+      // DataService fault envelope (ErrorCode 5) under HTTP 200. The repository provider collapses that
+      // to an empty successful collection, which is the false-success this PR removes. Keyed on the
+      // queried schema so the runtime-detection probe (SysAdminUnit) still gets valid JSON and
+      // environment registration is unaffected.
+      sendJson(response, 200, {
+        responseStatus: { ErrorCode: "5", Message: "Your password has expired.", Errors: [] },
+        rows: [],
+        success: false
+      });
+      return;
+    }
+    if (request.method === "POST"
+      && (url === "/DataService/json/SyncReply/SelectQuery" || url === "/0/DataService/json/SyncReply/SelectQuery")
       && config.HtmlSelectQuerySchemaName
       && body.includes('"' + config.HtmlSelectQuerySchemaName + '"')) {
       // ENG-93365: the stand answered a specific SelectQuery with an HTML error page instead of JSON.
@@ -286,4 +302,5 @@ internal sealed record RuntimeDetectionStubServerConfiguration(
 	string? ODataNonJsonEntity = null,
 	string? ODataEchoEntity = null,
 	string? ODataWriteRequiredMarker = null,
-	int ODataOversizedBytes = 0);
+	int ODataOversizedBytes = 0,
+	string? AuthRejectedSelectQuerySchemaName = null);

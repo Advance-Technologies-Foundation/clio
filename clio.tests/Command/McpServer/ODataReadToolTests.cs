@@ -956,7 +956,7 @@ public sealed class ODataReadToolTests {
 			because: "a {Message, MessageDetail} 404 routing body must not be reported as a successful single-entity read");
 		response.Error.Should().Contain("controller named 'UsrCustomerStatus'",
 			because: "the MessageDetail should be surfaced so the caller sees the unregistered-controller cause");
-		response.Error.Should().Contain(ODataResponseError.UnregisteredEntityHint,
+		response.Error.Should().Contain(CreatioResponseError.UnregisteredEntityHint,
 			because: "the unregistered-entity hint (asserted via the shared constant to avoid literal drift) should steer the agent to wait-and-retry, not read this as a data gap");
 	}
 
@@ -983,7 +983,7 @@ public sealed class ODataReadToolTests {
 			because: "a bare {Message} body with no entity members is an error, not a single-entity record");
 		response.Error.Should().Contain("Authorization has been denied",
 			because: "the Message text should be surfaced verbatim to the caller");
-		response.Error.Should().NotContain(ODataResponseError.UnregisteredEntityHint,
+		response.Error.Should().NotContain(CreatioResponseError.UnregisteredEntityHint,
 			because: "without MessageDetail the failure is not identifiable as a routing error, so the registration hint must not be appended");
 	}
 
@@ -1064,7 +1064,7 @@ public sealed class ODataReadToolTests {
 			because: "a {Message, MessageDetail} body is still an error, not a single-entity record");
 		response.Error.Should().Contain("not valid for property Name",
 			because: "the MessageDetail should be surfaced so the caller sees the actual cause");
-		response.Error.Should().NotContain(ODataResponseError.UnregisteredEntityHint,
+		response.Error.Should().NotContain(CreatioResponseError.UnregisteredEntityHint,
 			because: "the content is not a routing miss, so the wait-and-retry registration hint must NOT be appended to an unrelated failure");
 	}
 
@@ -1091,7 +1091,7 @@ public sealed class ODataReadToolTests {
 			because: "a body whose only member is an empty Message is an error, not data");
 		response.Error.Should().Be("Creatio returned an empty error response.",
 			because: "an empty error body must degrade to an explicit contentless message rather than an empty string");
-		response.Error.Should().NotContain(ODataResponseError.UnregisteredEntityHint,
+		response.Error.Should().NotContain(CreatioResponseError.UnregisteredEntityHint,
 			because: "an empty body is not identifiable as a routing miss, so the registration hint must not be appended");
 	}
 }

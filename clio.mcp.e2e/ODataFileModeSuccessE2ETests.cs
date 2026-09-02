@@ -30,6 +30,13 @@ public sealed class ODataFileModeSuccessE2ETests {
 	private const string PatchMarker = "e2e-patch-marker";
 	private const string RecordId = "8ecab4a1-0ca3-4515-9399-efe0a19390bd";
 
+	/// <summary>
+	/// Body size the stub is told to stream for the oversized-response test: far past
+	/// <see cref="ODataFileContract.MaxResponseBytes"/>, so "cut off near the limit" and "drained the whole
+	/// body" are separated by hundreds of megabytes rather than by a margin socket buffering can cross.
+	/// </summary>
+	private const int OversizedResponseBytes = 512 * 1024 * 1024;
+
 	[Test]
 	[AllureTag(ODataReadToFileTool.ToolName)]
 	[AllureName("odata-read-to-file writes the exact response bytes and summarizes them")]
@@ -197,7 +204,7 @@ public sealed class ODataFileModeSuccessE2ETests {
 				"clio-odata-oversized-e2e",
 				// Far more than the ceiling, so "the server was cut off near the limit" and "the client drained
 				// everything" are numerically unmistakable.
-				EchoStubConfiguration(oversizedBytes: 512 * 1024 * 1024),
+				EchoStubConfiguration(oversizedBytes: OversizedResponseBytes),
 				async (session, environmentName, stubServer, cancellationToken) => {
 					// Act
 					CallToolResult callResult = await session.CallToolAsync(
@@ -224,10 +231,14 @@ public sealed class ODataFileModeSuccessE2ETests {
 					// This is what separates a real streaming bound from one applied to an already-buffered
 					// response: with the latter the server drains all 512 MiB before anything is rejected.
 					long sent = await stubServer.GetODataSentBytesAsync(cancellationToken);
-					// Measured: the server gets ~72 MiB out against a 67 MiB ceiling - the overshoot is bytes
-					// already in flight in the socket buffers. Twice the ceiling leaves room for that while
-					// staying nowhere near the 512 MiB a client that buffered the whole body would have drained.
-					sent.Should().BeLessThan(2L * ODataFileContract.MaxResponseBytes,
+					// The overshoot past the ceiling is bytes already in flight in the socket buffers, and how
+					// many those are is a property of the MACHINE, not of the limit: locally the server gets
+					// ~72 MiB out against the 64 MiB ceiling, on the CI agent it reached 140 MiB, which failed
+					// a 2x bound while still proving the point. What this assertion exists to separate is
+					// "abandoned mid-stream" from "drained the whole body", so it is pinned to HALF the body
+					// the stub was told to send: any client that buffered the response would show the full
+					// 512 MiB, and no amount of socket buffering reaches 256 MiB.
+					sent.Should().BeLessThan(OversizedResponseBytes / 2,
 						because: "the transfer must be abandoned close to the ceiling; draining the whole "
 							+ $"512 MiB body would mean the limit ran too late (server sent {sent} bytes)");
 
