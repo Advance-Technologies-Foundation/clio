@@ -539,7 +539,7 @@ public sealed class EmailTemplateContentService(IToolCommandResolver commandReso
 			: client.ExecutePatchRequest(urls.Build(ODataKeyFormatter.KeyPath(entity, recordId)), payload, RequestTimeout);
 		if (!string.IsNullOrWhiteSpace(response)) {
 			using JsonDocument document = JsonDocument.Parse(response);
-			if (ODataResponseError.TryDetect(document.RootElement, out string error)) {
+			if (CreatioResponseError.TryDetect(document.RootElement, CreatioResponseContext.ODataPayload, out string error)) {
 				throw new InvalidOperationException(error);
 			}
 		}
@@ -553,7 +553,7 @@ public sealed class EmailTemplateContentService(IToolCommandResolver commandReso
 			throw new InvalidOperationException($"Creatio OData {entity} response was empty.");
 		}
 		using JsonDocument document = JsonDocument.Parse(json);
-		if (ODataResponseError.TryDetect(document.RootElement, out string error)) {
+		if (CreatioResponseError.TryDetect(document.RootElement, CreatioResponseContext.ODataPayload, out string error)) {
 			throw new InvalidOperationException(error);
 		}
 		if (!document.RootElement.TryGetProperty("value", out JsonElement value)
