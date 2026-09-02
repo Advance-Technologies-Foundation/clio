@@ -1,0 +1,31 @@
+{
+  "run": "2026-09-02",
+  "scope": "stored level only",
+  "stand": {
+    "name": "krestov-test",
+    "core": "10.0.731.0",
+    "crtProcessBuilder": "1.4.0.37"
+  },
+  "archiveSha256": "68761A221CCFBB961E5A9FF975931741D1C1674E0C1D9382CD33E5F0E4E20F4D",
+  "commits": {
+    "clio": "b37a80e1acc6d80f1729c162ce9e8f62df8a7c91",
+    "crtProcessBuilder": "88e1f52ea4f3badb3b540a78973472cc1d89afe5"
+  },
+  "driver": "mcp-server over stdio JSON-RPC, sequential; writes via clio-run / clio-run-destructive",
+  "verdicts": {
+    "TC-A1": "PASS",
+    "TC-A2": "PASS",
+    "TC-A3": "PASS",
+    "TC-B1": "PASS",
+    "TC-B2": "PASS",
+    "TC-B3": "PASS"
+  },
+  "notCovered": [
+    "designer rendering",
+    "runtime execution",
+    "AC4 mapping describe-projection"
+  ],
+  "caveats": [
+    "TC-B1 pre-state carried 1 + 1 from the first pass, not an unset parameter"
+  ]
+}
