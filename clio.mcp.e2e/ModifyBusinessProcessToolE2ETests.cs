@@ -1140,10 +1140,7 @@ public sealed class ModifyBusinessProcessToolE2ETests {
 			because: "a bare record Guid on a Lookup parameter must persist as the ConstValue the runtime's allowed-results derivation reads — the whole point of the ENG-91846 relaxation");
 		category.Value.Should().BeEquivalentTo(ToDoActivityCategoryId,
 			because: "the record id is stored verbatim, so the runtime resolves exactly the requested category");
-		category.ValueDisplay.Should().Be(ToDoActivityCategoryName,
-			because: "the referenced record's NAME is resolved into the parameter's display value — that is what the "
-				+ "designer renders in the \"Task category\" field, and writing the id there is what showed a raw "
-				+ "Guid to the user (the design-time half of ENG-96325)");
+		AssertResolvedDisplayName(category.ValueDisplay);
 		category.ValueDisplay.Should().NotBe(category.Value,
 			because: "a display value equal to the id is the defect itself, not a fix — the two must differ");
 		DescribedParameter owner = task.Parameters.Single(parameter => parameter.Name == "OwnerId");
@@ -1261,6 +1258,58 @@ public sealed class ModifyBusinessProcessToolE2ETests {
 	}
 
 	[Test]
+	[Description("Over the real MCP path: a MALFORMED lookup macro - the [#Lookup...#] wrapper around something that is not a record id - on a Lookup parameter is REJECTED with the same instructive message as any other non-Guid value, not decoded to garbage and not stored. The decode recognises exactly the stored shape; anything else falls through to the existing refusal.")]
+	[AllureTag(ToolName)]
+	[AllureName("modify-business-process rejects a malformed fixed-lookup macro on a Lookup parameter")]
+	public async Task ModifyBusinessProcess_Should_RejectMalformedLookupMacro_OnLookupParameter() {
+		// Arrange
+		await using ArrangeContext context = await ArrangeAsync(requireReachableEnvironment: true);
+		string processName = $"UsrClioBpBadMacroE2e{Guid.NewGuid():N}";
+		await CreateProcessAsync(context, processName, BuildPerformTaskDescriptor(processName));
+
+		// Act - the wrapper is right, the record segment is a word: nothing here is a record id.
+		CallToolResult callResult = await CallToolAsync(context, ToolName, new Dictionary<string, object?> {
+			["environment-name"] = context.EnvironmentName,
+			["process-name"] = processName,
+			["operations"] = """[ { "op": "addMapping", "mapping": { "elementName": "Task1", "elementParameter": "ActivityCategory", "value": "[#Lookup.ActivityCategory.To do#]" } } ]"""
+		});
+
+		// Assert - refused the way a bare display name is, and nothing was saved.
+		string text = SerializeToolText(callResult);
+		text.Should().Contain("expression",
+			because: "an unrecognised macro shape must fall through to the standard non-Guid refusal, which names the route");
+		DescribedElement task = await ReadTaskAsync(context, processName);
+		task.Parameters.Should().NotContain(parameter => parameter.Name == "ActivityCategory",
+			because: "a rejected mapping aborts the edit, so nothing is stored - a malformed macro must never land as a value");
+	}
+
+	[Test]
+	[Description("Over the real MCP path: a well-formed lookup macro whose record id resolves to NO record of the parameter's reference object is REJECTED naming that object, exactly as the bare id would be - the decode hands the id to the same existence guard, so the macro form cannot smuggle a dangling reference past it.")]
+	[AllureTag(ToolName)]
+	[AllureName("modify-business-process rejects a fixed-lookup macro whose record does not exist")]
+	public async Task ModifyBusinessProcess_Should_RejectLookupMacro_WhenRecordDoesNotExist() {
+		// Arrange
+		await using ArrangeContext context = await ArrangeAsync(requireReachableEnvironment: true);
+		string processName = $"UsrClioBpGhostMacroE2e{Guid.NewGuid():N}";
+		await CreateProcessAsync(context, processName, BuildPerformTaskDescriptor(processName));
+
+		// Act - shape-perfect, but no ActivityCategory row carries this id on any stand.
+		CallToolResult callResult = await CallToolAsync(context, ToolName, new Dictionary<string, object?> {
+			["environment-name"] = context.EnvironmentName,
+			["process-name"] = processName,
+			["operations"] = $$"""[ { "op": "addMapping", "mapping": { "elementName": "Task1", "elementParameter": "ActivityCategory", "value": "[#Lookup.{{ActivityCategoryObjectUId}}.11111111-2222-3333-4444-555555555555#]" } } ]"""
+		});
+
+		// Assert - the existence guard answered, naming the reference object, and nothing was saved.
+		string text = SerializeToolText(callResult);
+		text.Should().Contain("no ActivityCategory record has this id",
+			because: "a decoded macro is checked against the reference object like a bare id; a dangling id must be refused naming that object");
+		DescribedElement task = await ReadTaskAsync(context, processName);
+		task.Parameters.Should().NotContain(parameter => parameter.Name == "ActivityCategory",
+			because: "a rejected mapping aborts the edit, so a reference to nothing is never stored");
+	}
+
+	[Test]
 	[Description("Over the real MCP path: an already-composed [#Lookup.{objectUId}.{recordId}#] passed as a Lookup 'value' is decoded to the bare record id and stored as a ConstValue with the record's NAME as its display value — the round trip clio, its tests and the guide rely on, proven by feeding describe's own output straight back and reading an identical result.")]
 	[AllureTag(ToolName)]
 	[AllureName("modify-business-process decodes a fixed-lookup macro value and round-trips describe's output")]
@@ -1284,8 +1333,7 @@ public sealed class ModifyBusinessProcessToolE2ETests {
 				+ "degrades the Perform task's result list to the default");
 		category.Value.Should().BeEquivalentTo(ToDoActivityCategoryId,
 			because: "describe must return a bare Guid whatever form the caller wrote, or the round trip breaks");
-		category.ValueDisplay.Should().Be(ToDoActivityCategoryName,
-			because: "a decoded macro is a lookup constant like any other and gets the same resolved record name");
+		AssertResolvedDisplayName(category.ValueDisplay);
 
 		// And feeding describe's OWN output back is a no-op — the round trip the contract advertises.
 		await ModifyExpectingSuccessAsync(context, processName, $$"""
@@ -1572,14 +1620,31 @@ public sealed class ModifyBusinessProcessToolE2ETests {
 	private const string ToDoActivityCategoryId = "f51c4643-58e6-df11-971b-001d60e938c6";
 
 	/// <summary>
-	/// The display name of <see cref="ToDoActivityCategoryId"/> — what the designer must show in place of the id.
-	/// Asserted literally for the same reason the id is: the row is base seed on every stand this suite runs on.
-	/// <para>NOT a profile-culture value, and do not debug it as one: the server reads the name with an
-	/// uncultured <c>Select</c> against the base table, so what lands here is the stand's PRIMARY data language,
-	/// whatever culture the caller's profile is set to. A stand seeded in another language is what would move
-	/// this literal.</para>
+	/// The en-US display name of <see cref="ToDoActivityCategoryId"/> — what the designer shows in place of the id
+	/// for an English-culture caller. The row is base seed on every stand this suite runs on.
+	/// <para>A PROFILE-CULTURE value, and debug it as one: the server reads the name through the platform's entity
+	/// read (<c>Entity.FetchFromDB</c> → <c>EntitySchemaQuery</c>), which localizes to the CALLER's culture with a
+	/// fallback to the stand's primary language. So this literal holds only while the MCP user's profile culture
+	/// is en-US; under ru-RU the same call yields "Выполнить". The assertions therefore check the SHAPE of the
+	/// value (present, and not a Guid) rather than this literal — see
+	/// <see cref="AssertResolvedDisplayName"/>. The literal is kept for the writes that need the name.</para>
 	/// </summary>
 	private const string ToDoActivityCategoryName = "To do";
+
+	/// <summary>
+	/// The culture-independent half of the display-name contract: a resolved name is PRESENT and is NOT the record
+	/// id. The exact word depends on the MCP user's profile culture on the stand (the server localizes it), so
+	/// asserting <see cref="ToDoActivityCategoryName"/> literally would make the suite fail on any non-English
+	/// profile while proving nothing more than this does: the defect was the Guid, and the Guid is what is ruled out.
+	/// </summary>
+	private static void AssertResolvedDisplayName(string valueDisplay) {
+		valueDisplay.Should().NotBeNullOrWhiteSpace(
+			because: "the server resolves the referenced record's name into the display value; an absent one means the "
+				+ "stand could not name the record, which this suite's base-seed category must never be");
+		Guid.TryParse(valueDisplay, out _).Should().BeFalse(
+			because: "the display value must be a NAME - the raw record id in that slot is exactly the designer defect "
+				+ "ENG-96325 removed");
+	}
 
 	/// <summary>
 	/// The ActivityCategory OBJECT's schema UId — the first segment of a fixed-lookup macro naming a category

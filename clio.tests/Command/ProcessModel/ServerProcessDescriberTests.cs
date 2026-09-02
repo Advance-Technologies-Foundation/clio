@@ -112,7 +112,7 @@ public sealed class ServerProcessDescriberTests {
 	[Test]
 	[Description("Leaves valueDisplay unset (null) when the server omits it - an older package, or a record whose name did not resolve - so the absent field serializes away instead of becoming an empty string.")]
 	public void Describe_ShouldLeaveValueDisplayNull_WhenServerOmitsIt() {
-		// Arrange - a pre-1.3.2.4 package: the Lookup constant is reported without a display name
+		// Arrange - a pre-1.4.0.40 package: the Lookup constant is reported without a display name
 		IApplicationClient client = ClientReturning(
 			"{\"DescribeProcessResult\":{\"success\":true,\"name\":\"UsrProc\","
 			+ "\"elements\":[{\"uid\":\"a1b2c3d4-0000-0000-0000-000000000001\",\"name\":\"task1\",\"type\":\"ProcessSchemaUserTask\",\"buildType\":\"usertask\","

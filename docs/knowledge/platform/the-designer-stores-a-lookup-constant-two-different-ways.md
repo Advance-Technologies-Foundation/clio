@@ -14,8 +14,17 @@ the value sits, not on its type. Measured over 1658 designer-authored process sc
 
 | Location | Source | Value | DisplayValue |
 |---|---|---|---|
-| Element parameter (`ActivityCategory`, `ActivityPriority`, …) | `ConstValue` | bare record Guid | the record's NAME (`To do`) |
+| Element parameter (`ActivityCategory`, `ActivityPriority`, …) | `ConstValue` | bare record Guid | the record's NAME (`To do`), or absent |
 | Change-data column mapping (`RecordColumnValues`) | `Script` | `[#Lookup.{objectUId}.{recordId}#]` | `[#Lookup.{object caption}.{record name}.{recordId}#]` |
+
+The `Source` / `Value` columns are near-universal; the `DisplayValue` column is NOT, and the record must not
+be read as saying it is. Among Lookup-typed `ConstValue` + bare-Guid element parameters whose resource key
+matches unambiguously, DisplayValue is absent in 135, holds the raw Guid in 70 and a readable name in 66;
+for process parameters 11 absent, 3 the raw Guid, 0 a name. The platform itself ships
+`GActivitySynchronizationModuleProcess.Parameters.DefActivityCategory.DisplayValue = 2365ae4f-…`, this
+ticket's symptom in a first-party schema. Name-or-nothing is therefore the CORRECT convention (the
+designer renders a non-empty DisplayValue verbatim, so the raw id is the one wrong state), not the most
+common one - an agent that "verifies" the rule against a random designer schema will find counter-examples.
 
 For the three elements where a human actually picks a category, it is overwhelmingly `ConstValue`:
 `ActivityUserTask` 272 of 287 (5 `Script`, 10 with no value), `OpenEditPageUserTask` 120/120,

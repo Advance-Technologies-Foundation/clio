@@ -29,6 +29,13 @@ So for a lookup constant there are exactly two correct states — the record's N
 all. Writing the record id there is the one state that is wrong, and writing *nothing* is strictly
 safer than guessing.
 
+But "nothing" is safe, not good — and this is the argument for resolving the name server-side rather
+than leaving the field empty. Only the Perform task's category field re-resolves an empty display
+value (`initActivityCategory` above). Every other designer surface reads the parameter through
+`getMappingValue()` in `process-schema-parameter.js`, which returns `displayValue || value`: with an
+empty display value the raw Guid renders again there. "Stop writing the id and write nothing" is the
+cheaper WRONG fix, and the next reader of the paragraph above will reach for it unless told why not.
+
 **Why it is this way** — the display value is what a human reads, so the platform made it
 localizable, and localizable members are extracted from the schema into per-culture resources at
 save time. Nothing in the metadata hints that the field exists.

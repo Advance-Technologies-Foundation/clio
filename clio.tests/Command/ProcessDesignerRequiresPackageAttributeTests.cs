@@ -67,7 +67,7 @@ namespace Clio.Tests
         [TestCase(typeof(CreateBusinessProcessOptions))]
         [TestCase(typeof(ModifyBusinessProcessOptions))]
         [Test]
-        [Description("Create and Modify declare a VERSIONED requirement naming the newest operation they send that an older server does not have: today the element-level performer block and the reference-existence guard behind it, shipped in the 1.3.1.1 archive — an older server has no performer member and silently discards the block while answering success, and a pre-guard server stores a dead id instead of refusing it; presence alone cannot express either (the 1.2.0.1 email floor set the precedent and is subsumed). This is the doc's rule applied ('add a literal in the commit where a command starts calling an operation an older server does not have'), and the bundled-archive guard asserts the shipped archive satisfies the literal, so it can never demand a version clio does not carry.")]
+        [Description("Create and Modify declare a VERSIONED requirement naming the newest input form they send that an older server refuses or mishandles: today the lookup-constant contract of the 1.4.0.40 archive (ENG-96325) — a mapping 'value' on a Lookup target may carry an already-composed [#Lookup.{objectUId}.{recordId}#] that the server decodes to the bare record id, which every earlier server rejects as 'not a bare Guid'. The same shape produced the previous 1.3.1.1 literal (the element-level performer block and the reference-existence guard, both still covered by this floor), and the 1.2.0.1 email floor before it. NOT a security floor: the raw-Select display-name read that 1.4.0.40 replaced with a rights-aware entity read never shipped in a released archive. This is the doc's rule applied ('add a literal in the commit where a command starts calling an operation an older server does not have'), and the bundled-archive guard asserts the shipped archive satisfies the literal, so it can never demand a version clio does not carry.")]
         public void OptionsType_ShouldDeclareVersionedProcessBuilderRequirement_WhenTheCommandShipsVersionedOperations(
             Type optionsType)
         {
@@ -77,12 +77,16 @@ namespace Clio.Tests
             // Assert
             requirement.Should().NotBeNull(
                 because: $"{optionsType.Name} must carry the declarative {BundledPackages.ProcessBuilderPackageName} requirement so the MCP gate fires");
-            requirement!.Version.Should().Be("1.3.1.1",
-                because: "the performer block and the reference-existence guard these commands send were "
-                    + "introduced in the 1.3.1.1 archive — an older server ignores the block or stores a dead id "
-                    + "and still answers success, so the literal is what fails CLOSED (the convergence rule only "
-                    + "WARNS when it cannot read the archive or the version carries a pre-release suffix); "
-                    + "when the next versioned operation ships, move this pin WITH the rebundle in the same commit");
+            requirement!.Version.Should().Be("1.4.0.40",
+                because: "the lookup-constant contract these commands send — a mapping 'value' on a Lookup target "
+                    + "may carry an already-composed [#Lookup.{objectUId}.{recordId}#], decoded server-side to the "
+                    + "bare record id — shipped in the 1.4.0.40 archive (ENG-96325): every earlier server refuses "
+                    + "that input as 'not a bare Guid', the same accepts-what-an-older-one-refuses shape that "
+                    + "produced the previous 1.3.1.1 literal (the performer block and reference-existence guard, "
+                    + "still covered). Not a security floor — the raw-Select name read 1.4.0.40 replaced never "
+                    + "shipped. The literal is what fails CLOSED (the convergence rule only WARNS when it cannot "
+                    + "read the archive or the version carries a pre-release suffix); when the next versioned "
+                    + "input form ships, move this pin WITH the rebundle in the same commit");
         }
 
         [Test]
