@@ -8,6 +8,7 @@ using System.Text.Json.Serialization;
 using Clio.Command;
 using Clio.Command.McpServer;
 using Clio.Command.McpServer.Tools;
+using Clio.Common;
 using FluentAssertions;
 using ModelContextProtocol.Protocol;
 using ModelContextProtocol.Server;
@@ -593,8 +594,15 @@ public sealed class ToolContractGetToolTests {
 		ToolContractDefinition contract = result.Tools!.Single();
 		contract.AntiPatterns.Should().NotBeNullOrEmpty(
 			because: $"'{toolName}' funnels through the shared TryDetect routing-error path and must advertise the unregistered-entity anti-pattern");
-		contract.AntiPatterns!.Should().Contain(pattern => pattern.Why.Contains(ODataResponseError.UnregisteredEntityHint, StringComparison.Ordinal),
+		contract.AntiPatterns!.Should().Contain(pattern => pattern.Why.Contains(CreatioResponseError.UnregisteredEntityHint, StringComparison.Ordinal),
 			because: "the anti-pattern rationale must be derived from the shared UnregisteredEntityHint constant so the two contracts cannot drift from the runtime hint");
+		if (toolName == "odata-read") {
+			contract.AntiPatterns.Should().Contain(pattern => pattern.Why.Contains("execute-esq", StringComparison.Ordinal),
+				because: "odata-read needs the ESQ escape route when the requested schema is not exposed over OData");
+		} else {
+			contract.AntiPatterns.Should().NotContain(pattern => pattern.Why.Contains("execute-esq", StringComparison.Ordinal),
+				because: "odata-create cannot replace a failed create with a read-only ESQ operation");
+		}
 	}
 
 	[Test]
