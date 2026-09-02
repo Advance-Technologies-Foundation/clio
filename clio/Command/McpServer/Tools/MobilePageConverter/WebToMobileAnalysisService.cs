@@ -197,7 +197,8 @@ public static class WebToMobileAnalysisService {
 			tree, map, componentMap, mobileTypes, mobileByType, webByType, rules, attrToColumn, resources,
 			requestMap, convertedRequests, droppedRequests, flaggedRequests, sourceLayouts, gridContainerColumns,
 			positionalParentByAnchor, positionalAnchorByWebAnchor,
-			mobileTypesByName, webBaselineNodes, webTemplateResources);
+			mobileTypesByName, webBaselineNodes, webTemplateResources,
+			out IReadOnlyList<string> advisoryTwins);
 
 		// Removes components an excludedComponents rule bans from a host (type-agnostic — which
 		// type/host/property is banned comes entirely from the rules), in the two shapes a banned component
@@ -397,7 +398,7 @@ public static class WebToMobileAnalysisService {
 				modelConfigRootMerge: modelConfigRootMerge,
 				mobileTemplateUnavailable: mobileTemplateUnavailable,
 				webTemplateUnavailable: webTemplateUnavailable,
-				hasComponentTwin: componentMap.Count > 0,
+				advisoryTwins: advisoryTwins,
 				exclusionSearchTruncated: excludedDiagnostics.DepthBudgetTruncated,
 				discardedExclusionFilters: excludedDiagnostics.DiscardedFilterCount,
 				skippedOverrideRules: componentPropertyOverrides.SkippedRulesWithoutFilters),
@@ -1737,7 +1738,7 @@ public static class WebToMobileAnalysisService {
 
 	private static List<string> BuildConstraints(
 		bool viewModelConfigRootMerge = false, bool modelConfigRootMerge = false, bool mobileTemplateUnavailable = false,
-		bool webTemplateUnavailable = false, bool hasComponentTwin = false,
+		bool webTemplateUnavailable = false, IReadOnlyList<string> advisoryTwins = null,
 		bool exclusionSearchTruncated = false, int discardedExclusionFilters = 0,
 		int skippedOverrideRules = 0) {
 		// UNCONDITIONAL platform invariants do NOT belong here. A line that fires for every page carries no
@@ -1813,14 +1814,22 @@ public static class WebToMobileAnalysisService {
 		// Only when a NAME-MAPPED twin exists (the rule declares one, e.g. AttachmentList -> AttachmentFileList):
 		// an automatic same-name twin cannot fire without a baseline, so an unreadable web template affects only
 		// the rule-declared twin, which then degrades to an advisory merge (no prebuilt delta).
-		if (webTemplateUnavailable && hasComponentTwin) {
+		// Gated on twins that ACTUALLY degraded on this page, named. The previous condition was
+		// `webTemplateUnavailable && componentMap.Count > 0`, and the second half is a property of the RULES
+		// FILE, not of the page — the bundled rules always declare a twin, so an unreadable web template
+		// reported a degraded twin on EVERY page, including pages carrying no twin element at all.
+		if (advisoryTwins is { Count: > 0 }) {
+			string cause = webTemplateUnavailable
+				? "the source page's WEB template bundle could not be read (no active environment, or the read failed)"
+				: "no web-template baseline node exists for it";
 			constraints.Add(
-				"Could not read the source page's WEB template bundle (no active environment, or the read failed), " +
-				"so its baseline is unknown. A rule-declared same-component twin (e.g. the attachments detail " +
-				"AttachmentList -> AttachmentFileList) cannot be diffed against the template, so it degrades to an " +
-				"ADVISORY merge with NO prebuilt mobileValues -- configure the mobile element by merge-by-name per " +
-				"componentSuggestions, or re-run with environment-name/uri set so clio can diff against the real web " +
-				"template and prebuild the delta.");
+				$"Same-component twin(s) degraded to an ADVISORY merge with NO prebuilt mobileValues: "
+				+ string.Join(", ", advisoryTwins)
+				+ $". {cause}, so the page's delta over the template could not be computed — configure each mobile "
+				+ "element by merge-by-name per componentSuggestions"
+				+ (webTemplateUnavailable
+					? ", or re-run with environment-name/uri set so clio can diff against the real web template and prebuild the delta."
+					: "."));
 		}
 		// The web-only sections are NOT restated here: the SAME list already ships as guide.webOnlySections,
 		// so a constraint line is a second copy of one field, and "re-implement as entity-level business
@@ -1955,7 +1964,11 @@ public static class WebToMobileAnalysisService {
 		IReadOnlyDictionary<string, JObject> WebBaselineNodes,
 		JObject WebBaselineResources,
 		IReadOnlySet<string> ScopeContainerNames,
-		IReadOnlySet<string> ContentContainerTypes);
+		IReadOnlySet<string> ContentContainerTypes,
+		// Appended rather than grouped with the other output collections on purpose: this record is
+		// constructed positionally in one place, and inserting a parameter mid-list is the mistake that
+		// silently mis-wires every argument after it.
+		List<string> AdvisoryTwins);
 
 	/// <summary>
 	/// The set of NON-CONVERTING scope container names — declared EXPLICITLY by the rules'
@@ -1996,7 +2009,8 @@ public static class WebToMobileAnalysisService {
 		IReadOnlyDictionary<string, string> positionalAnchorByWebAnchor,
 		IReadOnlyDictionary<string, string> mobileTypesByName,
 		IReadOnlyDictionary<string, JObject> webBaselineNodes,
-		JObject webBaselineResources) {
+		JObject webBaselineResources,
+		out IReadOnlyList<string> advisoryTwins) {
 		var ctx = new ElementMapContext(map,
 			componentMap ?? new Dictionary<string, ComponentMappingRule>(StringComparer.OrdinalIgnoreCase),
 			mobileTypes, mobileByType ?? new Dictionary<string, ComponentRegistryEntry>(),
@@ -2009,8 +2023,10 @@ public static class WebToMobileAnalysisService {
 			webBaselineNodes ?? new Dictionary<string, JObject>(StringComparer.OrdinalIgnoreCase),
 			webBaselineResources,
 			CollectScopeContainerNames(rules),
-			ContentContainerTypesOf(rules));
+			ContentContainerTypesOf(rules),
+			[]);
 		WalkElements(ctx, tree, mobileParentName: null);
+		advisoryTwins = ctx.AdvisoryTwins;
 		return ctx.Out;
 	}
 
@@ -2204,6 +2220,25 @@ public static class WebToMobileAnalysisService {
 				// owns) nor placement (layoutConfig — owned by the template). The page's caption IS carried (it
 				// overrides the template label; CollectResourceStrings adds its resource to the schema).
 				JsonNode twinValues = BuildTwinMergeValues(ctx, node, compRule, twinMobileType, type);
+				// Record the DEGRADED twin here, where the cause is known. A null payload has three causes and
+				// only one of them is a degradation the caller must act on:
+				//   • a structural twin (crt.DataGrid -> crt.List) has no payload BY DESIGN — the how-to is
+				//     type-driven and lives in componentSuggestions;
+				//   • a carryProperties twin reads the page node only (BuildCarriedTwinValues never touches the
+				//     baseline), so it is unaffected by an unreadable web template;
+				//   • a SAME-component twin with no baseline node could not be diffed at all — THIS one degrades
+				//     to an advisory merge and has to be configured by hand.
+				// Post-hoc inspection cannot tell them apart: a same-component twin the page simply did not
+				// change also yields null, which is the correct outcome and not a degradation. The trigger this
+				// replaced was worse still — it fired on `componentMap.Count > 0`, a property of the RULES FILE,
+				// so an unreadable web template reported a degraded twin on every page, including pages carrying
+				// no twin element at all (ENG-95827).
+				bool sameComponentTwin = compRule.CarryProperties is not { Count: > 0 }
+					&& !string.IsNullOrEmpty(type)
+					&& string.Equals(twinMobileType, type, StringComparison.OrdinalIgnoreCase);
+				if (sameComponentTwin && !ctx.WebBaselineNodes.ContainsKey(name)) {
+					ctx.AdvisoryTwins.Add(name);
+				}
 				ctx.Out.Add(new ElementMapEntry {
 					WebName = name, WebType = Nz(type), Operation = "merge", MobileName = compRule.Mobile,
 					MobileType = twinMobileType,

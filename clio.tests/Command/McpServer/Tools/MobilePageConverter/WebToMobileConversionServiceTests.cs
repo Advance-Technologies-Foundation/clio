@@ -3398,7 +3398,7 @@ public sealed class WebToMobileConversionServiceTests {
 	}
 
 	[Test]
-	[Description("When the WEB template is unavailable AND the rules declare a name-mapped twin, the guide warns the twin degraded to an advisory merge (it cannot diff against the missing baseline).")]
+	[Description("When the WEB template is unavailable and the page CARRIES a rule-declared same-component twin, the guide reports that twin by name as degraded to an advisory merge (it cannot diff against the missing baseline).")]
 	public void Analyze_WebTemplateUnavailable_WithComponentTwin_EmitsAdvisoryConstraint() {
 		PageBundleInfo bundle = Bundle("""
 			[ { "name": "AttachmentsTabContainer", "type": "crt.TabContainer", "items": [
@@ -3416,8 +3416,52 @@ public sealed class WebToMobileConversionServiceTests {
 			bundle, webByType: web, containerNameMap: containerNameMap,
 			componentNameMap: componentNameMap, webTemplateUnavailable: true);
 
-		guide.Constraints.Should().Contain(c => c.Contains("degrades to an ADVISORY merge"),
-			because: "a rule-declared same-component twin cannot diff against an unreadable web template");
+		guide.Constraints.Should().ContainSingle(c => c.Contains("ADVISORY merge")).Which
+			.Should().Contain("AttachmentList",
+				because: "a rule-declared same-component twin cannot diff against an unreadable web template, and the caller has to be told WHICH element it now has to configure by hand");
+	}
+
+	[Test]
+	[Description("ENG-95827: the rules declaring a twin is NOT enough — when the page carries no twin element, an unreadable web template degrades nothing and no advisory constraint is emitted. The previous trigger tested componentMap.Count > 0, a property of the RULES FILE, so it fired on every page whenever the web template could not be read; the bundled rules always declare a twin, which made it a false positive on most pages.")]
+	public void Analyze_WebTemplateUnavailable_TwinDeclaredButAbsentFromPage_OmitsAdvisoryConstraint() {
+		// Arrange — the rules declare the attachments twin, but this page has no AttachmentList at all.
+		PageBundleInfo bundle = Bundle("""
+			[ { "name": "Main", "type": "crt.FlexContainer", "items": [ { "name": "UsrName", "type": "crt.Input" } ] } ]
+			""");
+		var web = Reg(("crt.FlexContainer", true), ("crt.Input", false));
+		var componentNameMap = new Dictionary<string, ComponentMappingRule>(StringComparer.OrdinalIgnoreCase) {
+			["AttachmentList"] = new ComponentMappingRule { Web = "AttachmentList", Mobile = "AttachmentFileList" }
+		};
+
+		// Act
+		MobilePageConversionGuide guide = Analyze(
+			bundle, webByType: web, componentNameMap: componentNameMap, webTemplateUnavailable: true);
+
+		// Assert
+		guide.Constraints.Should().NotContain(c => c.Contains("ADVISORY merge"),
+			because: "nothing on THIS page degraded, so reporting a degradation would send the caller looking for an element that is not in the guide");
+	}
+
+	[Test]
+	[Description("ENG-95827: a STRUCTURAL twin (a different mobile type, e.g. crt.DataGrid -> crt.List) carries no prebuilt payload BY DESIGN — its how-to is type-driven and lives in componentSuggestions — so it must not be reported as a degradation even when the web template is unreadable.")]
+	public void Analyze_WebTemplateUnavailable_StructuralTwin_OmitsAdvisoryConstraint() {
+		// Arrange — the rule maps to a DIFFERENT mobile type, so no delta was ever going to be computed.
+		PageBundleInfo bundle = Bundle("""
+			[ { "name": "Main", "type": "crt.FlexContainer", "items": [
+				{ "name": "Grid", "type": "crt.DataGrid" } ] } ]
+			""");
+		var web = Reg(("crt.FlexContainer", true), ("crt.DataGrid", false));
+		var componentNameMap = new Dictionary<string, ComponentMappingRule>(StringComparer.OrdinalIgnoreCase) {
+			["Grid"] = new ComponentMappingRule { Web = "Grid", Mobile = "GridList", MobileType = "crt.List" }
+		};
+
+		// Act
+		MobilePageConversionGuide guide = Analyze(
+			bundle, webByType: web, componentNameMap: componentNameMap, webTemplateUnavailable: true);
+
+		// Assert
+		guide.Constraints.Should().NotContain(c => c.Contains("ADVISORY merge"),
+			because: "a structural twin's null payload is the designed outcome, not a loss the unreadable template caused — reporting it would make the caller chase a non-problem");
 	}
 
 	[Test]
