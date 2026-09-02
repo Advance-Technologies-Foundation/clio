@@ -15,8 +15,18 @@ the body must be bounded: it issues the request with `ResponseHeadersRead` and p
 abandoning the transfer once the ceiling is passed.
 
 **Why it is this way** — the streamed path cannot reuse `Creatio.Client`'s GET, because that method's
-completion option is not a parameter. It borrows the session instead: the cookies come from
-`ExportSessionCookies()` on the already-authenticated client, so no second authentication path exists.
+completion option is not a parameter. In `Creatio.Client` 2.0.2 (the newest published version) the private
+`SendAsync` DOES take an `HttpCompletionOption`, and the configured `HttpClient` is a private property, so
+neither is reachable from here. The streamed path therefore borrows the session instead: the cookies come
+from `ExportSessionCookies()` on the already-authenticated client, so no second authentication path exists.
+
+**What it consequently does NOT cover** — borrowing cookies only works for a cookie session. A client with
+no cookies to export (an OAuth/bearer client never has any) is DECLINED with `NotSupportedException`, and
+the caller falls back to the buffered path; it is not logged in here, because the only login reachable is
+the form login and it fails on a bearer client. The fresh handler also does not carry the configured client's
+TLS or proxy policy, so an environment that needs `useUntrustedSsl` is served by the buffered path as well.
+Closing that gap properly means exposing a bounded GET on `Creatio.Client` itself
+(`Advance-Technologies-Foundation/creatioclient`) rather than rebuilding its transport here.
 
 **What breaks if you ignore it** — a ceiling checked on the result of `ExecuteGetRequestAsync` is
 decorative. The long-lived MCP process has already allocated the whole body by the time the check runs, so

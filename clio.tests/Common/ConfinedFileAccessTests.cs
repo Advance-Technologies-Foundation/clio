@@ -274,6 +274,87 @@ public sealed class ConfinedFileAccessTests {
 			because: "the sibling temporary file must never survive a completed write");
 	}
 
+	[Test]
+	[Category("Integration")]
+	[Description("Swaps the FINAL component for a link to other content while reads run against it, and requires that no read ever returns that other content - the property a pathname check followed by a reopen cannot provide.")]
+	public void OpenRead_ShouldNeverReturnSwappedContent_WhenTheFinalComponentIsReplacedDuringTheRead() {
+		// Arrange
+		const string approvedContent = "{\"approved\":true}";
+		const string secretContent = "{\"secret\":true}";
+		string approved = Path.Combine(_sandbox, "approved.json");
+		string secret = Path.Combine(_sandbox, "secret.json");
+		File.WriteAllText(secret, secretContent);
+		File.WriteAllText(approved, approvedContent);
+		if (!SymbolicLinksAvailable(Path.Combine(_sandbox, "probe.json"))) {
+			Assert.Ignore("Symbolic-link creation is unavailable in this environment.");
+		}
+		using CancellationTokenSource stop = new(TimeSpan.FromSeconds(3));
+		string swappedContentSeen = null;
+		int successfulReads = 0;
+
+		// Act
+		// The swap is what makes this a regression rather than a restatement of the pre-planted-link case: the
+		// pathname is a REAL FILE when it is checked and a LINK when it is opened. Only a handle that both the
+		// check and the read share can rule that out, so a version that checks the name and reopens it by name
+		// fails here while passing every static case.
+		Task swapper = Task.Run(() => {
+			while (!stop.IsCancellationRequested) {
+				TryQuietly(() => File.Delete(approved));
+				TryQuietly(() => File.CreateSymbolicLink(approved, "secret.json"));
+				TryQuietly(() => File.Delete(approved));
+				TryQuietly(() => File.WriteAllText(approved, approvedContent));
+			}
+		});
+		while (!stop.IsCancellationRequested) {
+			try {
+				using Stream stream = _access.OpenRead(approved, TestCeiling);
+				using StreamReader reader = new(stream, Encoding.UTF8);
+				string content = reader.ReadToEnd();
+				successfulReads++;
+				if (content.Contains("secret", StringComparison.Ordinal)) {
+					swappedContentSeen = content;
+					break;
+				}
+			}
+			catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) {
+				// Refusing the read is the correct outcome for a swapped component, and an ordinary sharing
+				// conflict against the swapper is equally uninteresting - only returning the OTHER file's
+				// content is a defect.
+			}
+		}
+		stop.Cancel();
+		swapper.Wait(TimeSpan.FromSeconds(5));
+
+		// Assert
+		swappedContentSeen.Should().BeNull(
+			because: "a read approved for one file must never deliver the content of another, whatever the "
+				+ "final component was replaced with in between");
+		successfulReads.Should().BeGreaterThan(0,
+			because: "a run in which every single read failed would prove nothing about what a successful one "
+				+ "returns");
+	}
+
+	private static bool SymbolicLinksAvailable(string probePath) {
+		try {
+			File.CreateSymbolicLink(probePath, "secret.json");
+			File.Delete(probePath);
+			return true;
+		}
+		catch (Exception ex) when (ex is UnauthorizedAccessException or IOException or PlatformNotSupportedException) {
+			return false;
+		}
+	}
+
+	private static void TryQuietly(Action action) {
+		try {
+			action();
+		}
+		catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) {
+			// The reader holds the entry for part of every iteration; a failed swap attempt simply means the
+			// next iteration tries again.
+		}
+	}
+
 	// Resolves a directory to its real location by following a link at EVERY component, parent first - the
 	// same shape the confinement layer uses, so the tests address paths the way production hands them over.
 	private static string CanonicalDirectory(string directory) {

@@ -32,18 +32,24 @@ internal sealed class WindowsConfinedFileAccess : IConfinedFileAccess {
 	/// <inheritdoc/>
 	public Stream OpenRead(string canonicalPath, long maxBytes) {
 		using PinnedPath pinned = PinnedPath.Descend(canonicalPath);
-		RejectReparsePoint(canonicalPath);
-		FileStreamOptions options = new() {
-			Mode = FileMode.Open,
-			Access = FileAccess.Read,
-			Share = FileShare.Read
-		};
+		// The final component is opened NO-FOLLOW and then judged on that very handle. Checking the pathname
+		// and reopening it by name is a different operation on a different object: a writable parent can
+		// replace the final component between the two, and the ordinary FileStream then follows the
+		// replacement. Nothing about a pinned ANCESTOR prevents that - the ancestors are unchanged.
+		SafeFileHandle handle = OpenFileNoFollow(canonicalPath);
+		MemoryStream buffer = new();
+		try {
+			RejectReparsePointHandle(handle, canonicalPath);
+		}
+		catch {
+			handle.Dispose();
+			throw;
+		}
 		// The content is copied out while the path is still pinned, so the stream handed back never outlives
 		// the checks that approved it. The ceiling is applied to the copy ITSELF, not to the result: copying
 		// first and measuring afterwards means a huge (or sparse) file inside an allowed root has already
 		// been pulled into memory by the time anything could reject it.
-		MemoryStream buffer = new();
-		using (FileStream source = new(canonicalPath, options)) {
+		using (FileStream source = new(handle, FileAccess.Read)) {
 			if (source.Length > maxBytes) {
 				throw new IOException(ConfinedFileAccess.DescribeTooLarge(source.Length, maxBytes));
 			}
@@ -53,6 +59,81 @@ internal sealed class WindowsConfinedFileAccess : IConfinedFileAccess {
 		buffer.Position = 0;
 		return buffer;
 	}
+
+	// FILE_FLAG_OPEN_REPARSE_POINT is what makes this no-follow: with it the handle refers to the named entry
+	// itself, so a symbolic link or junction planted as the final component yields a handle ON THE LINK - which
+	// RejectReparsePointHandle then refuses - instead of silently opening the target. The share mask omits
+	// DELETE on purpose, so the entry cannot be renamed out from under the handle while it is read.
+	private static SafeFileHandle OpenFileNoFollow(string canonicalPath) {
+		SafeFileHandle handle = PinnedPath.CreateFileW(
+			canonicalPath, PinnedPath.GenericRead, PinnedPath.FileShareRead, IntPtr.Zero,
+			PinnedPath.OpenExisting, PinnedPath.OpenReparsePoint, IntPtr.Zero);
+		if (!handle.IsInvalid) {
+			return handle;
+		}
+		int error = Marshal.GetLastWin32Error();
+		handle.Dispose();
+		throw error switch {
+			ErrorFileNotFound => new FileNotFoundException($"'{canonicalPath}' does not exist.", canonicalPath),
+			ErrorPathNotFound => new DirectoryNotFoundException(
+				$"the directory of '{canonicalPath}' does not exist."),
+			_ => new IOException(
+				$"could not open '{canonicalPath}' without following links (error {error}); refusing to "
+				+ "continue, because reopening it by name would follow a component swapped in the meantime.")
+		};
+	}
+
+	// Judges the OPEN HANDLE, not the pathname: this is the difference between proving the object being read
+	// is not a link and proving that some object of that name was not a link at some earlier moment.
+	private static void RejectReparsePointHandle(SafeFileHandle handle, string path) {
+		if (!GetFileInformationByHandle(handle, out ByHandleFileInformation information)) {
+			int error = Marshal.GetLastWin32Error();
+			throw new IOException(
+				$"could not inspect the opened handle for '{path}' (error {error}); refusing to continue, "
+				+ "because an uninspected handle may be a reparse point.");
+		}
+		if ((information.FileAttributes & FileAttributeReparsePoint) != 0) {
+			throw new IOException(
+				$"'{path}' is a reparse point; the path changed after it was approved, refusing to continue.");
+		}
+		if ((information.FileAttributes & FileAttributeDirectory) != 0) {
+			throw new IOException($"'{path}' is a directory, not a file.");
+		}
+	}
+
+	private const uint FileAttributeDirectory = 0x00000010;
+	private const uint FileAttributeReparsePoint = 0x00000400;
+	private const int ErrorFileNotFound = 2;
+	private const int ErrorPathNotFound = 3;
+
+	[StructLayout(LayoutKind.Sequential)]
+	private struct ByHandleFileInformation {
+
+		public uint FileAttributes;
+		public FileTimeStruct CreationTime;
+		public FileTimeStruct LastAccessTime;
+		public FileTimeStruct LastWriteTime;
+		public uint VolumeSerialNumber;
+		public uint FileSizeHigh;
+		public uint FileSizeLow;
+		public uint NumberOfLinks;
+		public uint FileIndexHigh;
+		public uint FileIndexLow;
+
+	}
+
+	[StructLayout(LayoutKind.Sequential)]
+	private struct FileTimeStruct {
+
+		public uint LowDateTime;
+		public uint HighDateTime;
+
+	}
+
+	[DllImport("kernel32.dll", SetLastError = true)]
+	[return: MarshalAs(UnmanagedType.Bool)]
+	private static extern bool GetFileInformationByHandle(SafeFileHandle file,
+		out ByHandleFileInformation fileInformation);
 
 	// Stops at maxBytes + 1 bytes, so a file whose reported length lies (a sparse or concurrently grown
 	// file) cannot make the copy unbounded either.
@@ -138,14 +219,17 @@ internal sealed class WindowsConfinedFileAccess : IConfinedFileAccess {
 	/// <summary>Directory handles held open for the lifetime of one confined read or write.</summary>
 	private sealed class PinnedPath : IDisposable {
 
-		private const uint GenericRead = 0x80000000;
+		internal const uint GenericRead = 0x80000000;
 		// READ | WRITE only. FILE_SHARE_DELETE would let the directory be RENAMED while the handle is open,
 		// which is precisely the swap the handle is held to prevent - a probe with delete sharing renamed a
 		// pinned directory successfully.
 		private const uint FileShareReadWrite = 0x00000003;
-		private const uint OpenExisting = 3;
+		// READ only, for the final component: the entry must not be renamed or deleted while it is read, and
+		// nothing needs to write it at the same time.
+		internal const uint FileShareRead = 0x00000001;
+		internal const uint OpenExisting = 3;
 		private const uint BackupSemantics = 0x02000000;
-		private const uint OpenReparsePoint = 0x00200000;
+		internal const uint OpenReparsePoint = 0x00200000;
 
 		private readonly List<SafeFileHandle> _handles;
 		private readonly IReadOnlyList<string> _components;
@@ -211,7 +295,7 @@ internal sealed class WindowsConfinedFileAccess : IConfinedFileAccess {
 		}
 
 		[DllImport("kernel32.dll", EntryPoint = "CreateFileW", CharSet = CharSet.Unicode, SetLastError = true)]
-		private static extern SafeFileHandle CreateFileW(
+		internal static extern SafeFileHandle CreateFileW(
 			string fileName, uint desiredAccess, uint shareMode, IntPtr securityAttributes,
 			uint creationDisposition, uint flagsAndAttributes, IntPtr templateFile);
 

@@ -214,14 +214,17 @@ public class CreatioClientAdapter : IOwnedApplicationClient {
 	/// <inheritdoc />
 	public async Task<byte[]> ExecuteGetRequestBoundedAsync(string url, long maxBytes,
 		int requestTimeout = 100_000, CancellationToken cancellationToken = default) {
-		// The session is established through the ordinary client so this path never invents its own
-		// authentication; it only borrows the cookies that session already holds.
+		// This path borrows an EXISTING cookie session and never authenticates on its own. Logging in here
+		// would be a second authentication path: on an OAuth/bearer client there are no cookies to export, so
+		// the login it reached for was the FORM login, which fails with CreatioLoginFailedException before the
+		// OData GET is ever sent. Declining instead sends the caller to the buffered path, which goes through
+		// the configured transport and therefore supports every authentication mode.
 		IReadOnlyList<CreatioSessionCookie> cookies = ExportSessionCookies();
 		if (cookies.Count == 0) {
-			using (HttpResponseMessage login = await LoginAsync(requestTimeout, cancellationToken).ConfigureAwait(false)) {
-				login.EnsureSuccessStatusCode();
-			}
-			cookies = ExportSessionCookies();
+			throw new NotSupportedException(
+				"the streamed GET needs an established cookie session and does not authenticate on its own; "
+				+ "this client has no session cookies (an OAuth/bearer client never will). Use the buffered "
+				+ "request path for this environment.");
 		}
 		CookieContainer jar = new();
 		foreach (CreatioSessionCookie cookie in cookies) {
@@ -236,35 +239,60 @@ public class CreatioClientAdapter : IOwnedApplicationClient {
 		}
 		using HttpClientHandler handler = new() { CookieContainer = jar, UseCookies = true };
 		using HttpClient http = new(handler, disposeHandler: false) {
+			// HttpClient.Timeout governs the operation only up to the point ResponseHeadersRead returns, so it
+			// cannot be the deadline here; the linked token below is. It stays set so a stall BEFORE headers is
+			// still cut off by the transport itself.
 			Timeout = requestTimeout > 0 ? TimeSpan.FromMilliseconds(requestTimeout) : System.Threading.Timeout.InfiniteTimeSpan
 		};
-		using HttpRequestMessage request = new(HttpMethod.Get, url);
-		// ResponseHeadersRead is the whole point: the default completes only after the entire body has been
-		// buffered, so a ceiling checked afterwards has already lost. Here the body is pulled incrementally
-		// and the response is disposed as soon as the limit is passed, which drops the connection and stops
-		// the server sending the rest.
-		using HttpResponseMessage response = await http
-			.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken)
-			.ConfigureAwait(false);
-		if (response.Content.Headers.ContentLength is { } declared && declared > maxBytes) {
-			throw new ResponseTooLargeException(declared, maxBytes);
+		// One deadline across send, stream acquisition and EVERY body read. With ResponseHeadersRead a server
+		// can answer the headers in milliseconds and then withhold the body forever: the reads would then be
+		// governed by the caller token alone, and MCP host cancellation is not guaranteed to arrive, so the
+		// invocation would hang with no bound at all.
+		using CancellationTokenSource deadline = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+		if (requestTimeout > 0) {
+			deadline.CancelAfter(requestTimeout);
 		}
-		using Stream body = await response.Content.ReadAsStreamAsync(cancellationToken).ConfigureAwait(false);
-		using MemoryStream buffer = new();
-		byte[] chunk = new byte[StreamChunkBytes];
-		long total = 0;
-		while (true) {
-			int read = await body.ReadAsync(chunk.AsMemory(0, chunk.Length), cancellationToken).ConfigureAwait(false);
-			if (read == 0) {
-				break;
+		CancellationToken bounded = deadline.Token;
+		try {
+			using HttpRequestMessage request = new(HttpMethod.Get, url);
+			// ResponseHeadersRead is the whole point: the default completes only after the entire body has been
+			// buffered, so a ceiling checked afterwards has already lost. Here the body is pulled incrementally
+			// and the response is disposed as soon as the limit is passed, which drops the connection and stops
+			// the server sending the rest.
+			using HttpResponseMessage response = await http
+				.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, bounded)
+				.ConfigureAwait(false);
+			if (response.Content.Headers.ContentLength is { } declared && declared > maxBytes) {
+				throw new ResponseTooLargeException(declared, maxBytes);
 			}
-			total += read;
-			if (total > maxBytes) {
-				throw new ResponseTooLargeException(total, maxBytes);
+			using Stream body = await response.Content.ReadAsStreamAsync(bounded).ConfigureAwait(false);
+			using MemoryStream buffer = new();
+			byte[] chunk = new byte[StreamChunkBytes];
+			long total = 0;
+			while (true) {
+				int read = await body.ReadAsync(chunk.AsMemory(0, chunk.Length), bounded).ConfigureAwait(false);
+				if (read == 0) {
+					break;
+				}
+				total += read;
+				if (total > maxBytes) {
+					throw new ResponseTooLargeException(total, maxBytes);
+				}
+				await buffer.WriteAsync(chunk.AsMemory(0, read), bounded).ConfigureAwait(false);
 			}
-			await buffer.WriteAsync(chunk.AsMemory(0, read), cancellationToken).ConfigureAwait(false);
+			return buffer.ToArray();
 		}
-		return buffer.ToArray();
+		// Deadline expiry and caller cancellation arrive as the SAME exception type from the linked source, and
+		// they mean different things to the caller: one is the server failing to deliver in time (retryable,
+		// and the message has to say so), the other is the caller withdrawing the request (nothing to report).
+		// Distinguishing them is only possible here, where both tokens are still in scope.
+		catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested
+			&& deadline.IsCancellationRequested) {
+			throw new TimeoutException(
+				$"the request to '{url}' did not complete within {requestTimeout} ms. The response headers may "
+				+ "have arrived while the body stalled; narrow the query with 'select' or 'top', or raise the "
+				+ "request timeout.");
+		}
 	}
 
 	private const int StreamChunkBytes = 64 * 1024;

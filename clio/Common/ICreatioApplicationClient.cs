@@ -24,11 +24,23 @@ public interface ICreatioApplicationClient : IApplicationClient {
 	/// <param name="cancellationToken">Token that abandons the transfer.</param>
 	/// <returns>The response body as UTF-8 bytes.</returns>
 	/// <exception cref="ResponseTooLargeException">The body reached the ceiling; the transfer is abandoned.</exception>
+	/// <exception cref="TimeoutException">
+	/// <paramref name="requestTimeout"/> elapsed before the body finished arriving. This is distinct from
+	/// <paramref name="cancellationToken"/> firing, which surfaces as <see cref="OperationCanceledException"/>:
+	/// the deadline means the server did not deliver in time, cancellation means the caller withdrew.
+	/// </exception>
 	/// <remarks>
 	/// <see cref="ExecuteGetRequestAsync"/> completes only once the WHOLE body has been buffered, so a
 	/// ceiling applied to its result cannot prevent the allocation it exists to prevent - a large response
 	/// is already in memory by the time it can be rejected. This overload reads response headers first and
 	/// then pulls the body incrementally, so the transfer is abandoned near the limit instead of after it.
+	/// <para>
+	/// <paramref name="requestTimeout"/> bounds the WHOLE transfer, not just the headers. Once headers are
+	/// read the transport's own timeout no longer applies, so the deadline is carried by a linked token across
+	/// the send, the stream acquisition and every body read - otherwise a server that answers the headers and
+	/// then withholds the body leaves the call bounded only by caller cancellation, which an MCP host is not
+	/// guaranteed to deliver.
+	/// </para>
 	/// <para>
 	/// Defaulted rather than abstract, for the same reason as <see cref="IApplicationClient.ExecutePutRequest"/>:
 	/// this contract has implementations outside this repository, and an abstract member breaks every one of

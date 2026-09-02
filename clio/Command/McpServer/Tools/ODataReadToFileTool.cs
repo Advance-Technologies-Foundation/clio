@@ -161,6 +161,12 @@ public sealed class ODataReadToFileTool(IToolCommandResolver commandResolver, IO
 		} catch (ResponseTooLargeException tooLarge) {
 			error = DescribeTooLarge(tooLarge.ObservedBytes);
 			return false;
+		} catch (TimeoutException timeout) {
+			// The transport's deadline elapsed - a distinct outcome from caller cancellation, which stays an
+			// exception. Reported as a tool error so the caller learns the request timed out instead of seeing
+			// an exception escape the tool boundary; retrying the buffered path would just stall again.
+			error = timeout.Message;
+			return false;
 		} catch (NotSupportedException) {
 			// The transport cannot stream; fall through to the buffered path below.
 		}
