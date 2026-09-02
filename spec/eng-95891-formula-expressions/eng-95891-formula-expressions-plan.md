@@ -556,20 +556,20 @@ Raise this with the reporter before starting — it is a scope decision, not an 
 
 ## 10. Definition of Done
 
-- [ ] **AC1** — capture document exists and covers both use sites *(done — serialization-capture)*
-- [ ] **AC2** — all seven supported macro families author, validate and round-trip, at both use sites
-- [ ] **AC3** — type handling defined and tested; mismatch behaviour documented, including the compiled-vs-interpreted divergence (T-8)
-- [ ] **AC4** — `describe-process` returns the expression text for a mapping **and** the condition text for a flow; both asserted in tests
-- [ ] **AC5** — validator refuses an unparseable expression and a dangling reference, naming the offending identifier
-- [ ] **AC6** — `removeParameter` detects a reference from a mapping **and** from a conditional-flow condition; both doc comments corrected
-- [ ] **AC7** — unit tests, `clio.mcp.e2e` coverage, guidance section merged in clio-knowledge, MCP artifacts reviewed, architecture doc updated
-- [ ] Probes P1–P6 run; P5/P6 verified on a stand by a human
-- [ ] `dotnet test … -c dev-nf --filter "Category=UnitTests"` green
-- [ ] clio targeted regression green; ClioRing gate stated
-- [ ] Package rebundled with a **raised** version; SHA-256 and `ModifiedOnUtc` pins updated
-- [ ] Pre-PR agentic review passed with no Blocker/High outstanding
-- [ ] Knowledge record added under `docs/knowledge/ProcessModel/`
-- [ ] `spec/sprint-status.yaml` updated
+- [x] **AC1** — capture document exists and covers both use sites *(done — serialization-capture)*
+- [x] **AC2** — all seven supported macro families author, validate and round-trip, at both use sites
+- [x] **AC3** — type handling defined and tested; mismatch behaviour documented, including the compiled-vs-interpreted divergence (T-8)
+- [ ] **AC4** — `describe-process` returns the expression text for a mapping **and** the condition text for a flow; both asserted in tests. *Condition: done both directions in unit tests plus an MCP E2E. Mapping: the stored value is asserted in unit tests, but the describe PROJECTION of a process parameter needs a populated `DataValueTypeManager` the bare harness does not provide, so that half rests on the Level-2 API E2E against a stand — see the manual-run item below.*
+- [x] **AC5** — validator refuses an unparseable expression and a dangling reference, naming the offending identifier
+- [x] **AC6** — `removeParameter` detects a reference from a mapping **and** from a conditional-flow condition; both doc comments corrected
+- [ ] **AC7** — unit tests, `clio.mcp.e2e` coverage, guidance section merged in clio-knowledge, MCP artifacts reviewed, architecture doc updated. *All done except "merged": the guidance lives on this branch of clio-knowledge and merges with it. `docs/McpCapabilityMap.md` is the architecture doc and is updated.*
+- [ ] Probes P1–P6 run; P5/P6 verified on a stand by a human. *P1–P4 are automated. The human runs happened at CrtProcessBuilder **1.4.0.18**; the branch now ships 1.4.0.37, and the intervening versions changed refusal behaviour (activity-result branches, unrecognised macro families on a NEW condition, the platform-grammar element segment). The evidence does not cover the shipped package.*
+- [x] `dotnet test … -c dev-nf --filter "Category=UnitTests"` green — 1041 passed, 0 failed
+- [x] clio targeted regression green (5267 passed over Common|McpServer|ProcessModel); ClioRing gate stated with cited paths in `spec/sprint-status.yaml` and ClioRing.Tests 157 passed
+- [x] Package rebundled with a **raised** version (1.4.0.37); SHA-256 and `ModifiedOnUtc` pins updated, and the shipped bytes verified by unpacking rather than by version number
+- [x] Pre-PR agentic review passed with no Blocker/High outstanding — four rounds, seven lenses. The two HIGHs of the final round (the retarget guard failing open; the gate restoring nothing on an untracked path) are fixed and pinned.
+- [x] Knowledge record added under `docs/knowledge/ProcessModel/` (`flow-palette-item-is-set-on-every-shipped-flow.md`)
+- [x] `spec/sprint-status.yaml` updated
 
 ---
 
