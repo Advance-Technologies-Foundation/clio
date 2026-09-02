@@ -970,7 +970,10 @@ public class DotNetDeploymentStrategy : IDeploymentStrategy
 			return endpointName;
 		}
 
-		for (int suffix = 2; ; suffix++)
+		// One more candidate than there are endpoints guarantees at least one of them is free,
+		// which also gives the loop a stop condition instead of relying on the return alone.
+		int lastSuffix = endpoints.Count + 2;
+		for (int suffix = 2; suffix <= lastSuffix; suffix++)
 		{
 			string candidate = $"{endpointName}{suffix.ToString(CultureInfo.InvariantCulture)}";
 			if (FindPropertyName(endpoints, candidate) is null)
@@ -978,6 +981,9 @@ public class DotNetDeploymentStrategy : IDeploymentStrategy
 				return candidate;
 			}
 		}
+
+		throw new InvalidOperationException(
+			$"Could not allocate a free name for endpoint '{endpointName}'.");
 	}
 
 	private static Dictionary<string, string> ExtractCertificateEnvironmentVariables(
