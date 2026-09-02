@@ -31,6 +31,38 @@ public sealed class ServerProcessDescriberTests {
 			Substitute.For<IDataProvider>(), urlBuilder);
 	}
 
+
+	[Test]
+	[Category("Unit")]
+	[Description("branchesOnActivityResult round-trips by its WIRE NAME, in both directions. Two independent string literals have to agree - [DataMember(Name = \"branchesOnActivityResult\")] on the server contract and [JsonPropertyName] here - and nothing tested either. The field is a bool, so a mismatch or a dropped attribute yields false for EVERY flow, silently and in the reassuring direction: a branch whose condition the platform ignores reads back as one it evaluates, which is the exact failure the flag was added to report. DescribedFlow has no extension-data bag, so the outbound half needs its own assertion.")]
+	public void Describe_ShouldRoundTripBranchesOnActivityResult() {
+		// Arrange
+		IApplicationClient client = ClientReturning(
+			"{\"DescribeProcessResult\":{\"success\":true,\"name\":\"UsrProc\","
+			+ "\"elements\":[],"
+			+ "\"flows\":[{\"source\":\"task1\",\"target\":\"end1\",\"kind\":\"conditional\","
+			+ "\"condition\":\"[#Amount#] > 100\",\"branchesOnActivityResult\":true}],"
+			+ "\"parameters\":[]}}");
+		ServerProcessDescriber describer = CreateDescriber(client);
+
+		// Act
+		ErrorOr<DescribeProcessResult> result = describer.Describe(new ProcessIdentity("UsrProc", null, null), null);
+		string reserialized = JsonSerializer.Serialize(result.Value, DescribeProcessCommand.OutputOptions);
+
+		// Assert
+		result.Value.Flows[0].BranchesOnActivityResult.Should().BeTrue(
+			because: "the server said this branch is decided by the activity's RESULT, so the condition text "
+				+ "below it will never be evaluated - a caller that does not learn this reasons about a branch "
+				+ "that cannot run");
+		result.Value.Flows[0].Condition.Should().Be("[#Amount#] > 100",
+			because: "both fields come off the same flow, so asserting the flag alone would pass on a describe "
+				+ "that dropped the condition");
+		JsonNode output = JsonNode.Parse(reserialized);
+		output["flows"]![0]!["branchesOnActivityResult"]!.GetValue<bool>().Should().BeTrue(
+			because: "the outbound half is separate: without the property the field vanishes on the way OUT, "
+				+ "and a bool that vanishes reads as false rather than as missing");
+	}
+
 	private static IApplicationClient ClientReturning(string response) {
 		IApplicationClient client = Substitute.For<IApplicationClient>();
 		client.ExecutePostRequest(DescribeUrl, Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())

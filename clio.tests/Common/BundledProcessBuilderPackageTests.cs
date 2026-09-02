@@ -957,6 +957,44 @@ public class BundledProcessBuilderPackageTests {
 		}
 	}
 
+	[Test]
+	[Description("The ENFORCED floor sentence must equal the literal the command actually gates on. These surfaces carry two kinds of version sentence and only one may lag: a CAPABILITY floor ('the route ships from CrtProcessBuilder 1.3.1.1') records when something first shipped and freezes there, while 'this clio requires X' states what [RequiresPackage] refuses below. The sibling pin was relaxed from equality to <= for the capability floors, which was right, and that relaxation left this sentence checked by nothing: rewriting it to 1.2.0.1 keeps the whole suite green while telling every agent to update to a version the gate does not enforce.")]
+	public void EnforcedFloorSentences_ShouldEqualTheRequiresPackageLiteral() {
+		// Arrange — the enforced floor as the ATTRIBUTE states it, by reflection rather than retyped here.
+		var surfaces = new Dictionary<string, (string Text, Type OptionsType)> {
+			["create-business-process description"] = (
+				GetToolDescription(typeof(Clio.Command.McpServer.Tools.ProcessDesigner.CreateBusinessProcessTool)),
+				typeof(Clio.Command.CreateBusinessProcessOptions)),
+			["modify-business-process description"] = (
+				GetToolDescription(typeof(Clio.Command.McpServer.Tools.ProcessDesigner.ModifyBusinessProcessTool)),
+				typeof(Clio.Command.ModifyBusinessProcessOptions))
+		};
+		var sentencePattern = new System.Text.RegularExpressions.Regex(
+			@"this clio requires (\d+\.\d+\.\d+\.\d+)");
+
+		// Act & Assert
+		foreach (KeyValuePair<string, (string Text, Type OptionsType)> surface in surfaces) {
+			string enforced = surface.Value.OptionsType
+				.GetCustomAttributes(typeof(Clio.Common.RequiresPackageAttribute), inherit: false)
+				.Cast<Clio.Common.RequiresPackageAttribute>()
+				.Select(attribute => attribute.Version)
+				.FirstOrDefault(version => !string.IsNullOrWhiteSpace(version));
+			enforced.Should().NotBeNullOrWhiteSpace(
+				because: $"the {surface.Key} names an enforced floor, so its options type must carry a versioned "
+					+ "[RequiresPackage] - otherwise the sentence promises a gate that does not exist");
+			System.Text.RegularExpressions.MatchCollection matches = sentencePattern.Matches(surface.Value.Text);
+			matches.Should().NotBeEmpty(
+				because: $"the {surface.Key} is expected to state the enforced floor; if that sentence was "
+					+ "removed on purpose, remove the surface from this test in the same commit");
+			foreach (System.Text.RegularExpressions.Match match in matches) {
+				match.Groups[1].Value.Should().Be(enforced,
+					because: $"the {surface.Key} tells the agent this clio requires {match.Groups[1].Value} while "
+						+ $"[RequiresPackage] refuses below {enforced} - reading the wrong one, a caller either "
+						+ "updates to a version that changes nothing or skips an update it needs");
+			}
+		}
+	}
+
 	/// <summary>
 	/// A version literal shipped on an agent-facing surface must be satisfiable by the archive this distribution
 	/// carries. It may LAG it — a capability floor records when something first shipped and freezes there — but it
