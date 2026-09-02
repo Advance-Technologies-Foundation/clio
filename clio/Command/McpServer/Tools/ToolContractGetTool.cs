@@ -2227,13 +2227,20 @@ internal static class ToolContractCatalog {
 	private static ToolContractDefinition BuildODataUpdate() {
 		return new ToolContractDefinition(
 			ODataUpdateTool.ToolName,
-			"Updates a single Creatio record through OData v4 (PATCH). Requires the record GUID and confirm=true; only supplied fields change. Never performs a keyless mass update.",
+			"Updates a single Creatio record through OData v4 (PATCH). Requires the record GUID and confirm=true; only supplied fields change. " +
+			"Data field NAMES are verified against the entity's OData type ($metadata) before the write: an unknown field fails the call and nothing is written. " +
+			"Field VALUES are not validated - note that the platform silently drops the empty GUID on a lookup field, so send null to clear a reference. " +
+			"success:true means the service accepted the PATCH after this pre-validation; platform builds that silently discard unsupported values can still leave " +
+			"some fields unwritten, so re-read important values with odata-read after a critical write. Never performs a keyless mass update.",
 			new ToolInputSchemaContract(
 				[EntityFieldName, "id", "data", ConfirmFieldName, EnvironmentNameFieldName],
 				[
 					Field(EntityFieldName, StringType, "Creatio OData entity set name such as Contact or Account."),
 					Field("id", StringType, "GUID of the record to update. Required; a keyless mass update is rejected."),
-					Field("data", ObjectType, "Object of field/value pairs to change. Only supplied fields are updated."),
+					Field("data", ObjectType, "Object of field/value pairs to change. Only supplied fields are updated. " +
+						"Every field must exist on the entity's OData type; an unknown field fails the whole call before anything is written. " +
+						"Columns absent from $metadata (for example Color) cannot be written via this tool - verify them with execute-esq instead. " +
+						"Set lookups via their <Field>Id column with a real GUID; to CLEAR a lookup send null (the platform silently drops an empty GUID)."),
 					Field(ConfirmFieldName, BooleanType, "Must be true to authorize this destructive update. When false or omitted the tool refuses without any remote call."),
 					Field(EnvironmentNameFieldName, StringType, RegisteredEnvironmentNameDescription)
 				]),
@@ -2253,6 +2260,13 @@ internal static class ToolContractCatalog {
 					[EntityFieldName] = ExampleContactSchemaName,
 					["id"] = ExampleLookupValueId,
 					["data"] = new Dictionary<string, object?> { ["Name"] = "Jane Smith" },
+					[ConfirmFieldName] = true
+				}),
+				Example("Clear a lookup reference", new Dictionary<string, object?> {
+					[EnvironmentNameFieldName] = ExampleEnvironmentName,
+					[EntityFieldName] = ExampleContactSchemaName,
+					["id"] = ExampleLookupValueId,
+					["data"] = new Dictionary<string, object?> { ["AccountId"] = null },
 					[ConfirmFieldName] = true
 				})
 			],

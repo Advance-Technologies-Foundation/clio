@@ -411,6 +411,14 @@ internal static class CreatioResponseError {
 		if (!isAspNetError) {
 			return false;
 		}
+		// NOTE: deliberately no "does the body carry other members?" guard here. ASP.NET Web API's
+		// HttpError populates InnerException whenever error detail is enabled, so such a guard would
+		// classify a genuine unhandled server exception as NOT an error - and every caller
+		// (ODataKeyedWrite.ValidateWriteResponse, ODataReadTool, ODataCreateTool,
+		// Branding/SetBackgroundImageCommand) would then report success on it. The false positive it
+		// would have prevented - a probed record whose own columns are named ExceptionMessage /
+		// ExceptionType / StackTrace - is already handled upstream by
+		// ODataFieldValidation.IsSelectedRecord, which returns before TryDetect is ever reached.
 		message = First(root, "ExceptionMessage", MessagePropertyName) ?? "Creatio returned a server error.";
 		return true;
 	}
@@ -421,11 +429,14 @@ internal static class CreatioResponseError {
 	// a genuine OData response always carries another member — an @odata.context annotation
 	// (present under the default OData metadata level this tool relies on), a value collection
 	// wrapper, or the created record's Id — so a body whose only members are Message (+
-	// MessageDetail) is an error, not data. NOTE: this safety rests on default OData metadata; a
-	// single-entity read served with odata.metadata=none that selected only a Message-named column
-	// would lose its distinguishing member and be misclassified. No current call site does that
-	// (odata-read hits the collection endpoint; odata-create echoes an Id), so the precondition is
-	// safe today — revisit this branch before adding a by-key/metadata=none read path.
+	// MessageDetail) is an error, not data. NOTE: this safety rests on default OData metadata. A
+	// by-key read path now exists (the odata-update pre-write field probe: $select=Id,<fields> on
+	// one record); under default metadata that keyed read always carries @odata.context, a
+	// non-routing member, so this guard holds. A keyed read served with odata.metadata=none that
+	// selected only a Message-named column would still lose its distinguishing member and be
+	// misclassified — no current call site does that (the probe relies on default metadata); if a
+	// metadata=none by-key read is ever added, revisit this branch. The ASP.NET-exception branch
+	// deliberately carries NO such guard - see the note in TryDetectAspNetException.
 	private static bool TryDetectRoutingError(JsonElement root, CreatioResponseContext context,
 		out string message) {
 		message = string.Empty;
