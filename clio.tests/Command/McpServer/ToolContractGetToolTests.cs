@@ -1274,6 +1274,10 @@ public sealed class ToolContractGetToolTests {
 				field.Name == "resources" &&
 				field.Description.Contains("JSON object string"),
 			because: "update-page should clarify the concrete resources payload shape");
+		pageUpdateContract.InputSchema.Properties.Should().Contain(field =>
+				field.Name == "validate" &&
+				field.Description.Contains("pre-existing"),
+			because: "update-page should expose the guarded validation escape hatch in its curated contract");
 		ToolContractDefinition modifyColumnContract = contracts.Single(contract => contract.Name == ModifyEntitySchemaColumnTool.ModifyEntitySchemaColumnToolName);
 		modifyColumnContract.PreferredFlow.Tools.Should().Equal(
 				new[] {
