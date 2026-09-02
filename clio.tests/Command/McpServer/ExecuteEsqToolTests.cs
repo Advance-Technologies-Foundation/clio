@@ -383,7 +383,7 @@ public sealed class ExecuteEsqToolTests {
 		// Arrange
 		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
 		ExecuteEsqTool tool = new(commandResolver);
-		string unsafeFilterName = $"Modified.After[0]\n{new string('x', 2_000)}";
+		string unsafeFilterName = $"Modified😀.After[0]\n{new string('x', 2_000)}";
 		JsonElement query = Json($$"""
 			{
 			  "rootSchemaName": "SysSchema",
@@ -406,46 +406,14 @@ public sealed class ExecuteEsqToolTests {
 		});
 
 		// Assert
-		response.Error.Should().Contain("[\"Modified.After[0]\\n",
+		response.Error.Should().Contain("[\"Modified\\uD83D\\uDE00.After[0]\\n",
 			because: "unsafe property names should use escaped bracket notation in the diagnostic path");
-		response.Error.Should().NotContain("Modified.After[0]\n",
+		response.Error.Should().NotContain("Modified😀.After[0]\n",
 			because: "control characters from untrusted property names must not create transcript lines");
 		response.Error.Should().Contain("...",
 			because: "an oversized property name should be visibly truncated");
 		response.Error.Length.Should().BeLessThan(1_000,
 			because: "an adversarial property name must not amplify the MCP diagnostic without bound");
-	}
-
-	[Test]
-	[Category("Unit")]
-	[Description("Rejects an oversized query before traversing attacker-controlled property names or resolving an environment.")]
-	public void Execute_ShouldRejectOversizedQuery_BeforeTemporalTraversal() {
-		// Arrange
-		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
-		ExecuteEsqTool tool = new(commandResolver);
-		string oversizedName = $"Modified.After[0]\n{new string('x', ExecuteEsqTool.MaxQuerySizeBytes)}";
-		JsonElement query = Json($$"""
-			{
-			  "rootSchemaName": "SysSchema",
-			  "filters": { "items": { {{JsonSerializer.Serialize(oversizedName)}}: {} } }
-			}
-			""");
-
-		// Act
-		long allocatedBefore = GC.GetAllocatedBytesForCurrentThread();
-		ExecuteEsqResponse response = tool.Execute(new ExecuteEsqArgs {
-			EnvironmentName = "missing-environment",
-			Query = query
-		});
-		long allocatedBytes = GC.GetAllocatedBytesForCurrentThread() - allocatedBefore;
-
-		// Assert
-		response.Error.Should().Contain("200000-byte MCP safety limit",
-			because: "oversized untrusted queries must fail before recursive validation allocates diagnostic paths");
-		allocatedBytes.Should().BeLessThan(1_000_000,
-			because: "the size gate should make at most one bounded linear copy of the already parsed query");
-		commandResolver.ReceivedCalls().Should().BeEmpty(
-			because: "an oversized query must not resolve environment-bound services");
 	}
 
 	[Test]

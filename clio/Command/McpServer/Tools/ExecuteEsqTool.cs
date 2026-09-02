@@ -25,7 +25,6 @@ public sealed class ExecuteEsqTool(IToolCommandResolver commandResolver) {
 	private const int MinTimeoutMs = 1_000;
 	private const int MaxTimeoutMs = 120_000;
 	private const int MaxDiagnosticPathLength = 500;
-	internal const int MaxQuerySizeBytes = 200_000;
 	internal const int MaxResponseSizeBytes = 200_000;
 	internal const string ResultTooLargeErrorClass = "result-too-large";
 
@@ -45,11 +44,6 @@ public sealed class ExecuteEsqTool(IToolCommandResolver commandResolver) {
 		try {
 			if (!TryNormalizeQuery(args.Query, out JsonElement query, out string queryError)) {
 				return ExecuteEsqResponse.Failure(queryError);
-			}
-			string queryJson = query.GetRawText();
-			if (Encoding.UTF8.GetByteCount(queryJson) > MaxQuerySizeBytes) {
-				return ExecuteEsqResponse.Failure(
-					$"query exceeds the {MaxQuerySizeBytes}-byte MCP safety limit; reduce selected columns or filters.");
 			}
 			if (!TryValidateTemporalParameterValues(query, [], out string temporalParameterError)) {
 				return ExecuteEsqResponse.Failure(temporalParameterError);
@@ -73,7 +67,7 @@ public sealed class ExecuteEsqTool(IToolCommandResolver commandResolver) {
 			IServiceUrlBuilder urlBuilder = commandResolver.Resolve<IServiceUrlBuilder>(options);
 
 			string url = urlBuilder.Build(ServiceUrlBuilder.KnownRoute.Select);
-			string responseJson = client.ExecutePostRequest(url, queryJson, timeout);
+			string responseJson = client.ExecutePostRequest(url, query.GetRawText(), timeout);
 			bool responseIsTooLarge = responseJson.Length > MaxResponseSizeBytes
 				|| Encoding.UTF8.GetByteCount(responseJson) > MaxResponseSizeBytes;
 			if (responseIsTooLarge) {
@@ -187,8 +181,8 @@ public sealed class ExecuteEsqTool(IToolCommandResolver commandResolver) {
 			if (isIdentifier) {
 				truncated = !TryAppendPath(builder, ".") || !TryAppendPath(builder, name);
 			} else if (TryAppendPath(builder, "[\"")) {
-				foreach (char character in name) {
-					string encodedCharacter = JsonEncodedText.Encode(character.ToString()).ToString();
+				foreach (Rune rune in name.EnumerateRunes()) {
+					string encodedCharacter = JsonEncodedText.Encode(rune.ToString()).ToString();
 					if (!TryAppendPath(builder, encodedCharacter)) {
 						truncated = true;
 						break;
@@ -403,7 +397,6 @@ public sealed record ExecuteEsqArgs {
 	[JsonPropertyName("query")]
 	[Description(
 		"Raw ESQ SelectQuery object (the same shape stored in page bodies and accepted by the DataService). " +
-		"Maximum serialized size: 200000 UTF-8 bytes. " +
 		"Must include 'rootSchemaName' and usually 'columns' (with an 'items' map) and/or 'filters'. " +
 		"For a quick filter check, select a single COUNT(Id) aggregation column. See the 'esq' guidance for the envelope.")]
 	[Required]
