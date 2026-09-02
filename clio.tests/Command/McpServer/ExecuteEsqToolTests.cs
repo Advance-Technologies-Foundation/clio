@@ -406,7 +406,7 @@ public sealed class ExecuteEsqToolTests {
 		});
 
 		// Assert
-		response.Error.Should().Contain("[\"Modified\\uD83D\\uDE00.After[0]\\n",
+		response.Error.Should().Contain("['Modified😀.After[0][U+000A]",
 			because: "unsafe property names should use escaped bracket notation in the diagnostic path");
 		response.Error.Should().NotContain("Modified😀.After[0]\n",
 			because: "control characters from untrusted property names must not create transcript lines");

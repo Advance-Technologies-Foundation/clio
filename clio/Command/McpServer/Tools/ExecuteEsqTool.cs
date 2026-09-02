@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.ComponentModel;
 using System.ComponentModel.DataAnnotations;
+using System.Globalization;
 using System.Linq;
 using System.Text;
 using System.Text.Json;
@@ -180,15 +181,22 @@ public sealed class ExecuteEsqTool(IToolCommandResolver commandResolver) {
 				&& name.Skip(1).All(character => char.IsLetterOrDigit(character) || character == '_');
 			if (isIdentifier) {
 				truncated = !TryAppendPath(builder, ".") || !TryAppendPath(builder, name);
-			} else if (TryAppendPath(builder, "[\"")) {
+			} else if (TryAppendPath(builder, "['")) {
 				foreach (Rune rune in name.EnumerateRunes()) {
-					string encodedCharacter = JsonEncodedText.Encode(rune.ToString()).ToString();
+					UnicodeCategory category = Rune.GetUnicodeCategory(rune);
+					bool requiresToken = category is UnicodeCategory.Control
+						or UnicodeCategory.Format
+						or UnicodeCategory.LineSeparator
+						or UnicodeCategory.ParagraphSeparator
+						or UnicodeCategory.SpaceSeparator
+						|| rune.Value is '\\' or '\'' or '"' or '/' or ':' or '=' or '<' or '>' or '|';
+					string encodedCharacter = requiresToken ? $"[U+{rune.Value:X4}]" : rune.ToString();
 					if (!TryAppendPath(builder, encodedCharacter)) {
 						truncated = true;
 						break;
 					}
 				}
-				truncated = truncated || !TryAppendPath(builder, "\"]");
+				truncated = truncated || !TryAppendPath(builder, "']");
 			} else {
 				truncated = true;
 			}

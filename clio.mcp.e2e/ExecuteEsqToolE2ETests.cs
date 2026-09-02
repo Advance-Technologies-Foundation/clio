@@ -87,13 +87,15 @@ public sealed class ExecuteEsqToolE2ETests : McpContractFixtureBase {
 			because: "the structured failure should identify the missing environment name");
 	}
 
-	[TestCase(true)]
-	[TestCase(false)]
+	[TestCase(true, "ModifiedAfter")]
+	[TestCase(false, "ModifiedAfter")]
+	[TestCase(true, "Modified😀.After[0]\n")]
 	[Description("Rejects a malformed or missing DateTime parameter through the real stdio MCP server with a path-specific accepted-format diagnostic before environment resolution.")]
 	[AllureTag(ExecuteEsqTool.ToolName)]
 	[AllureName("execute-esq explains the required DateTime parameter encoding")]
 	[AllureDescription("Invokes execute-esq through the real stdio MCP server with a nested malformed or missing DateTime value and verifies the structured response names the exact query path and required JSON-encoded shape without contacting an environment.")]
-	public async Task ExecuteEsq_ShouldRejectMalformedDateTimeParameter_WhenCalledOverStdio(bool includePlainValue) {
+	public async Task ExecuteEsq_ShouldRejectMalformedDateTimeParameter_WhenCalledOverStdio(
+		bool includePlainValue, string filterName) {
 		// Arrange
 		await using var arrangeContext = await AllureApi.Step(
 			"Arrange a real stdio MCP session",
@@ -117,7 +119,7 @@ public sealed class ExecuteEsqToolE2ETests : McpContractFixtureBase {
 						["rootSchemaName"] = "SysSchema",
 						["filters"] = new Dictionary<string, object?> {
 							["items"] = new Dictionary<string, object?> {
-								["ModifiedAfter"] = new Dictionary<string, object?> {
+								[filterName] = new Dictionary<string, object?> {
 									["rightExpression"] = new Dictionary<string, object?> {
 										["expressionType"] = 2,
 										["parameter"] = parameter
@@ -130,6 +132,9 @@ public sealed class ExecuteEsqToolE2ETests : McpContractFixtureBase {
 			},
 			arrangeContext.CancellationTokenSource.Token));
 		ExecuteEsqResponse response = EntitySchemaStructuredResultParser.Extract<ExecuteEsqResponse>(callResult);
+		string expectedPath = filterName == "ModifiedAfter"
+			? "$.filters.items.ModifiedAfter.rightExpression.parameter.value"
+			: "$.filters.items['Modified😀.After[0][U+000A]'].rightExpression.parameter.value";
 
 		// Assert
 		await AllureApi.Step("Assert validation uses the structured tool response", () => {
@@ -143,7 +148,7 @@ public sealed class ExecuteEsqToolE2ETests : McpContractFixtureBase {
 			return Task.CompletedTask;
 		});
 		await AllureApi.Step("Assert the exact query path is reported", () => {
-			response.Error.Should().Contain("$.filters.items.ModifiedAfter.rightExpression.parameter.value",
+			response.Error.Should().Contain(expectedPath,
 				because: "the stdio response should identify the exact malformed query location");
 			return Task.CompletedTask;
 		});
