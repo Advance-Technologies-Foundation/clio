@@ -2,6 +2,7 @@ using System.Text.Json;
 using System.Text.Json.Nodes;
 using System.Text.Json.Serialization;
 using ATF.Repository.Providers;
+using Clio.Command;
 using Clio.Command.ProcessModel;
 using Clio.Common;
 using ErrorOr;
@@ -597,12 +598,10 @@ public sealed class ServerProcessDescriberTests {
 			+ "\"flows\":[],\"parameters\":[]}}");
 		ServerProcessDescriber describer = CreateDescriber(client);
 
-		// Act — re-serialize with the SAME options DescribeProcessCommand uses for its output (WriteIndented +
-		// WhenWritingNull), so this asserts what a caller actually reads rather than a default-options shape.
-		JsonSerializerOptions commandOutputOptions = new() {
-			WriteIndented = true,
-			DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull
-		};
+		// Act — re-serialize with the command's OWN options object, not a copy of it. A hand copy made this
+		// assertion insensitive to the thing it names: deleting DefaultIgnoreCondition from
+		// DescribeProcessCommand left this test green while the caller started receiving explicit nulls.
+		JsonSerializerOptions commandOutputOptions = DescribeProcessCommand.OutputOptions;
 		ErrorOr<DescribeProcessResult> result = describer.Describe(new ProcessIdentity("UsrProc", null, null), null);
 		string reserialized = JsonSerializer.Serialize(result.Value, commandOutputOptions);
 
@@ -643,8 +642,10 @@ public sealed class ServerProcessDescriberTests {
 
 		// Act
 		ErrorOr<DescribeProcessResult> result = describer.Describe(new ProcessIdentity("UsrProc", null, null), null);
-		string reserialized = JsonSerializer.Serialize(result.Value,
-			new JsonSerializerOptions { DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull });
+		// The command's OWN options object. Built by hand this assertion was insensitive to the setting it
+		// names: removing DefaultIgnoreCondition from DescribeProcessCommand left it green while every plain
+		// flow began shipping an explicit "condition": null to the caller.
+		string reserialized = JsonSerializer.Serialize(result.Value, DescribeProcessCommand.OutputOptions);
 
 		// Assert
 		result.Value.Flows[0].Kind.Should().Be("conditional",
@@ -670,12 +671,14 @@ public sealed class ServerProcessDescriberTests {
 
 		// Act
 		ErrorOr<DescribeProcessResult> result = describer.Describe(new ProcessIdentity("UsrProc", null, null), null);
-		string reserialized = JsonSerializer.Serialize(result.Value,
-			new JsonSerializerOptions { DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull });
+		// The command's OWN options object, not a copy: built by hand this assertion was insensitive to the
+		// very setting it names - deleting DefaultIgnoreCondition from DescribeProcessCommand left it green
+		// while every plain flow began shipping an explicit "condition": null to the caller.
+		string reserialized = JsonSerializer.Serialize(result.Value, DescribeProcessCommand.OutputOptions);
 
 		// Assert
 		result.Value.Flows[0].Condition.Should().BeNull(
-			because: "a plain sequence flow has no condition; the server maps its stored literal \"null\" to a real null");
+			because: "the server already maps its stored literal \"null\" to a real null and omits the key (ProcessDescriber.ReadFlowCondition), so an ABSENT condition is what clio receives for a plain flow - this pins that clio does not invent one");
 		JsonNode.Parse(reserialized)["flows"]![0]!.AsObject().ContainsKey("condition").Should().BeFalse(
 			because: "an absent condition is omitted under WhenWritingNull, so a caller never has to tell a null "
 				+ "condition from a missing one");
