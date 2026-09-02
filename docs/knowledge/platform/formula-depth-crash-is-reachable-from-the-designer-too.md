@@ -75,6 +75,27 @@ absence is meaningful rather than a failed search. Saving a schema needs only `U
 `CanManageProcessDesign` (`ProcessSchemaManager.cs:310-322`) — designer access, no
 `CanManageSolution`.
 
+**Why clio's own cap is not lowered to compensate** — reviewed explicitly, and decided against with the
+corpus measured. clio bounds a formula at 2048 characters, and that admits the fatal case with room to
+spare: division and bracket each cost about two characters per level, so 2048 characters reach roughly 2044
+levels against the ~1200 measured fatal. Lowering the cap to about 1200 would bound both routes with a
+one-constant change. It was rejected because:
+
+- it refuses real content. Of 978 flow conditions in the shipped 7.8.0 corpus the longest is **1495**
+  characters (`ChangeFundAfterChangingMktgActivity`), so `modify-business-process` could no longer
+  round-trip that process;
+- it buys nothing. The author refused by clio opens the designer and types the same text — all three doors
+  are unbounded — so the price is a false refusal on existing content in exchange for protection that does
+  not exist;
+- length is the wrong instrument anyway. It refuses the long-but-FLAT formula while the dangerous one is
+  short and dense: median condition length is 147, p95 is 440, and the most division-heavy shipped
+  condition carries **zero** divisions.
+
+A single additive count of `(` + `[` + `/` would be precise where length is blind — the worst real formula
+scores 4 — and that too was rejected: a `[` inside a macro token body is not parser nesting, so the counter
+needs token collapsing first, and that apparatus is what produced ten rounds of defects before it was
+deleted along with the guard. Do not re-derive either option from scratch; the measurements are here.
+
 **What breaks if you ignore it** — you re-add a shape guard to `CrtProcessBuilder`, as ENG-95891 did
 and then removed. It cannot work, for a reason no amount of care fixes: a guard in one client of a
 shared engine leaves the other doors open, so it buys no safety at all. What it does buy is a false
