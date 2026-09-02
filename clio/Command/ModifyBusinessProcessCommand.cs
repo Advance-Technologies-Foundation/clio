@@ -30,7 +30,7 @@ namespace Clio.Command;
 // This subsumes the previous 1.3.1.1 floor (the element-level performer block and its reference-existence
 // guard), which subsumed the email block's 1.2.0.1 floor before it. The guard fixture asserts the shipped
 // archive satisfies the literal, so clio can never demand a version it does not itself carry.
-[RequiresPackage(BundledPackages.ProcessBuilderPackageName, "1.4.0.3",
+[RequiresPackage(BundledPackages.ProcessBuilderPackageName, "1.4.0.35",
 	Hint = BundledPackages.ProcessBuilderInstallHint)]
 public sealed class ModifyBusinessProcessOptions : EnvironmentOptions {
 	/// <summary>Process code (schema Name) to edit. Provide exactly one of <see cref="ProcessName"/> or <see cref="ProcessUid"/>.</summary>

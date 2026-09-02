@@ -624,20 +624,25 @@ public sealed class ModifyBusinessProcessToolE2ETests {
 	}
 
 	[Test]
-	[Description("Over the real MCP path, a formula the server could not fully check reports a WARNING and the edit still succeeds. This is the one channel the shipped tool description names for an agent to read - entries with message-type Warning in execution-log-messages - and nothing asserted it end to end, so the whole degraded-path contract rested on unit tests of the notice collector. An unrecognised macro family is the cheapest way in: the server stores the mapping, skips the engine layer, and says so.")]
+	[Description("Over the real MCP path, an unrecognised macro family is REFUSED by the platform's own pre-save validation - it does not arrive as a warning. This test asserted the opposite until it was first run against a stand, and the correction is the point: our validator does raise an accept-with-a-notice for a family it does not model, and then EnsureValidForSave runs the platform's validation over the whole schema and refuses, because no converter resolves such a macro in the context of a mapping onto a plain process parameter. Measured at 1.4.0.38 over three families - a fictional one and the two REAL ones this package deliberately does not allow-list, [#ColumnValue...#] and [#SamplingColumnValue...#] - all three refused, all three with 'Process validation failed'. So the notice is raised and then dropped, and the caller sees an Error. The Warning channel is real on other paths (see BuildProcessResponse.Warnings) but a macro family cannot demonstrate it on this shape.")]
 	[AllureTag(ToolName)]
 	[AllureName("modify-business-process reports a server warning on a partially-checked formula")]
-	public async Task ModifyBusinessProcess_Should_ReportWarning_WhenAFormulaCannotBeFullyChecked() {
+	public async Task ModifyBusinessProcess_Should_RefuseAnUnrecognisedMacroFamily_AtThePlatformGate() {
 		// Arrange
 		await using ArrangeContext context = await ArrangeAsync(requireReachableEnvironment: true);
 		string processName = $"UsrClioBpWarnE2e{Guid.NewGuid():N}";
 		await CallToolAsync(context, CreateToolName, new Dictionary<string, object?> {
 			["environment-name"] = context.EnvironmentName,
-			["descriptor"] = BuildDescriptor(processName)
+			// The FORMULA-TARGET descriptor, which declares the Sum parameter the mapping below targets.
+			// With the plain one this test arranged a mapping onto a parameter that does not exist, so the
+			// operation was refused with "Process parameter 'Sum' was not found." before the macro-family
+			// notice could be raised - a test that never reached the guard it names. It had never been run
+			// against a stand, because this tier is not in CI.
+			["descriptor"] = BuildFormulaTargetDescriptor(processName)
 		});
 
-		// Act - a macro family this package does not recognise, on a MAPPING. The condition path refuses one
-		// outright; a mapping is accepted with a notice, which is exactly the channel under test.
+		// Act - a macro family this package does not recognise, on a MAPPING. Our validator accepts it with
+		// a notice; the platform's pre-save validation is what refuses, which is what this asserts.
 		CallToolResult callResult = await CallToolAsync(context, ToolName, new Dictionary<string, object?> {
 			["environment-name"] = context.EnvironmentName,
 			["process-name"] = processName,
@@ -646,11 +651,13 @@ public sealed class ModifyBusinessProcessToolE2ETests {
 
 		// Assert
 		string callResultJson = JsonSerializer.Serialize(callResult);
-		callResultJson.Should().Contain("Warning",
-			because: "the tool description promises this channel by name, and an agent that cannot see the caveat "
-				+ "reports a clean success for a formula whose result type was never checked");
-		callResultJson.Should().Contain("NOT checked",
-			because: "the warning has to say WHAT was skipped, or it is noise the caller learns to ignore");
+		callResultJson.Should().Contain("Process validation failed",
+			because: "the refusal comes from the PLATFORM's pre-save validation, not from this package's "
+				+ "validator - naming the phrase is what distinguishes the two, and an earlier version of this "
+				+ "test asserted a Warning that no stand ever produced");
+		callResultJson.Should().Contain("UsrUnknownDialect",
+			because: "the refusal has to quote the expression as the caller wrote it, or the caller cannot see "
+				+ "which macro the platform could not convert");
 	}
 
 	[Test]

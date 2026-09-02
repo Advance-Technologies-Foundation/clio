@@ -59,10 +59,16 @@ def const(text, name):
 
 
 def walk_sources():
+    """Every file whose PROSE this script checks: C#, Markdown and YAML.
+
+    YAML was added because the tracker (`spec/sprint-status.yaml`) carries version claims and was not
+    in the corpus at all - a review found a stale number there that this script structurally could not
+    see, so it could only ever be fixed by hand and would drift again unwatched.
+    """
     for base, dirs, files in os.walk(ROOT):
         dirs[:] = [d for d in dirs if d not in SKIP_DIRS]
         for name in files:
-            if not name.endswith((".cs", ".md")):
+            if not name.endswith((".cs", ".md", ".yaml", ".yml")):
                 continue
             path = os.path.relpath(os.path.join(base, name), ROOT).replace("\\", "/")
             try:
@@ -71,8 +77,16 @@ def walk_sources():
                 continue
 
 
-def in_prose(text, position):
-    """True when the offset sits in a comment, a docblock, or an attribute string."""
+def in_prose(text, position, path=None):
+    """True when the offset sits in prose rather than in code.
+
+    In a MARKDOWN or YAML file everything is prose, and that is not a shortcut: the original rule
+    matched only lines opening with //, /*, * or #, so a version claim in a Markdown bullet or a YAML
+    value was invisible. A review found four such claims this script had walked straight past - three
+    of them the same stale version number it exists to catch.
+    """
+    if path and path.endswith((".md", ".yaml", ".yml")):
+        return True
     start = text.rfind("\n", 0, position) + 1
     end = text.find("\n", position)
     line = text[start:end if end > 0 else len(text)]
@@ -127,7 +141,13 @@ def check_archive_pins():
 
 
 def version_family(current):
-    """(family prefix, last component) for a four-part version, or (None, None) when it is not one."""
+    """(everything before the last dot, the last component as an int), or (None, None).
+
+    NOT "for a four-part version" - it splits on the LAST dot whatever the component count, so
+    "1.4" gives ("1", 4). Both call sites pass either the pin constant or a value the VERSION regex
+    has already guaranteed to be four-part, so the looseness costs nothing; it is described
+    accurately because this is the file that exists to catch prose disagreeing with code.
+    """
     try:
         family, tail = current.rsplit(".", 1)
         return family, int(tail)
@@ -153,7 +173,7 @@ def check_superseded_versions(current):
             value = match.group(1)
             if value == current or not is_superseded(value, family, ceiling):
                 continue
-            if not in_prose(text, match.start()):
+            if not in_prose(text, match.start(), path):
                 continue
             line = text[:match.start()].count("\n") + 1
             report("CHECK", "{}:{}".format(path, line),
@@ -229,7 +249,7 @@ def read_text(path):
 
 
 def walk_cs(roots):
-    """Every .cs file under each root, as (label, absolute path, text)."""
+    """Every .cs file under each root, as (label + repository-relative path, text) - a 2-tuple."""
     for label, root in roots:
         if not root or not os.path.isdir(root):
             continue

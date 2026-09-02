@@ -28,7 +28,7 @@ namespace Clio.Command;
 // broken formula on an older one, to fail at run time. The article is explicit that a tightened validator
 // takes a literal rather than being left to convergence, because convergence only warns. The guard fixture asserts the shipped archive satisfies the literal, so clio can never
 // demand a version it does not itself carry.
-[RequiresPackage(BundledPackages.ProcessBuilderPackageName, "1.4.0.3",
+[RequiresPackage(BundledPackages.ProcessBuilderPackageName, "1.4.0.35",
 	Hint = BundledPackages.ProcessBuilderInstallHint)]
 public sealed class CreateBusinessProcessOptions : EnvironmentOptions {
 	/// <summary>Inline JSON process descriptor (name, caption, packageName, elements[], flows[], parameters[], mappings[]).</summary>

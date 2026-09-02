@@ -1,10 +1,19 @@
 # ENG-95891 — manual run, 2026-09-02, at the SHIPPED package version
 
 **Why this run exists.** The earlier runs (2026-09-01, R1 and R2) were made against
-`CrtProcessBuilder 1.4.0.18`. The branch ships **1.4.0.37**, and the intervening versions changed
-refusal behaviour — the activity-result branch guard, unrecognised macro families on a *new*
-condition, the platform-grammar element segment. Evidence from .18 does not cover the shipped
-package, so the stand was updated and the stored-level cases re-run.
+`CrtProcessBuilder 1.4.0.18`, and the intervening versions changed refusal behaviour — the
+activity-result branch guard, unrecognised macro families on a *new* condition, the platform-grammar
+element segment. Evidence from .18 did not cover the shipped package, so the stand was updated and
+the stored-level cases re-run.
+
+**What this run covers, and what moved after it.** It ran at **1.4.0.37**. The branch then merged
+`origin/main` and rebundled as **1.4.0.38**, so this record is one version behind the shipped
+archive. That is stated rather than glossed, and the delta was measured rather than assumed:
+`git diff` over `Formulas/`, `Graph/` and `Mappings/` between the two cut commits touches ONE file,
+`ProcessElementDependencyScanner.cs` — the element-retarget guard, which none of these six cases
+exercises. The formula validator, the mapping service and the condition path are byte-identical
+between .37 and .38, so the verdicts below still describe the shipped behaviour. The stand itself was
+subsequently moved to 1.4.0.38 for the MCP E2E tier, which passes 69/69 there.
 
 ## Setup
 

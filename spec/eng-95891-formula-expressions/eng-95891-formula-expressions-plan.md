@@ -566,7 +566,7 @@ Raise this with the reporter before starting — it is a scope decision, not an 
 - [ ] Probes P1–P6 run; P5/P6 verified on a stand by a human. *P1–P4 are automated. The stand was updated to the shipped 1.4.0.37 and the stored-level cases re-run on 2026-09-02 — 6 of 6 pass, recorded in `…-manual-test-run-2026-09-02.md` with a manifest. What remains is the BROWSER pass the prompt defers: designer rendering (conditional connectors drawn, no gateway element added) and runtime execution. That needs a human at a screen.*
 - [x] `dotnet test … -c dev-nf --filter "Category=UnitTests"` green — 1041 passed, 0 failed
 - [x] clio targeted regression green (5267 passed over Common|McpServer|ProcessModel); ClioRing gate stated with cited paths in `spec/sprint-status.yaml` and ClioRing.Tests 157 passed
-- [x] Package rebundled with a **raised** version (1.4.0.37); SHA-256 and `ModifiedOnUtc` pins updated, and the shipped bytes verified by unpacking rather than by version number
+- [x] Package rebundled with a **raised** version (1.4.0.38); SHA-256 and `ModifiedOnUtc` pins updated, and the shipped bytes verified by unpacking rather than by version number
 - [x] Pre-PR agentic review passed with no Blocker/High outstanding — four rounds, seven lenses. The two HIGHs of the final round (the retarget guard failing open; the gate restoring nothing on an untracked path) are fixed and pinned.
 - [x] Knowledge record added under `docs/knowledge/ProcessModel/` (`flow-palette-item-is-set-on-every-shipped-flow.md`)
 - [x] `spec/sprint-status.yaml` updated
