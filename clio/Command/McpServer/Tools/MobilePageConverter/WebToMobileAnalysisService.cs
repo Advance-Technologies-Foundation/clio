@@ -248,7 +248,8 @@ public static class WebToMobileAnalysisService {
 		// to a single column and stack; on tablet/desktop (medium/large) keep the web columns and per-child
 		// placement. A 1-column grid gets no adaptive. Both the container columns and each child's
 		// layoutConfig.adaptive are baked into mobileValues deterministically.
-		List<AdaptiveLayoutGroup> adaptiveLayout = BuildAdaptiveLayout(elementMap, sourceLayouts, gridContainerColumns);
+		List<AdaptiveLayoutGroup> adaptiveLayout =
+			BuildAdaptiveLayout(elementMap, sourceLayouts, gridContainerColumns, mobileContainerParents);
 
 		// Explicit grid placement for a positional (<anchor>:top / :bottom) group. The insert index orders the
 		// parent's items, which a grid parent does not read, so the siblings and the anchor are placed by row:
@@ -275,14 +276,25 @@ public static class WebToMobileAnalysisService {
 		// declares (itemLayout) is never declared as an array.
 		InitializeContainerChildSlots(elementMap, mobileByType);
 
+
 		// Property normalization: every mobile standard the RULES declare is stamped onto the elements the
 		// converter INSERTS, and the web page's own value for those properties is deliberately IGNORED
 		// (discarded, never translated). Which component, which properties and which values all come from
 		// the rules file — this pass knows none of them. Runs AFTER the tab-area pass so one pass covers
 		// converted and synthesized elements alike (the invariant is per-element-map, not per-origin);
-		// merge twins the mobile template provides are never touched. Each rule also declares the report
-		// group it feeds, so two standards never bleed into each other's summary.
+		// merge twins the mobile template provides are never touched. The report group is derived from the
+		// component TYPE, not declared by the rule, so two standards targeting the SAME type (the
+		// unconditional gap rule and the narrowed corner-radius one both target crt.GridContainer) share one
+		// summary section — read each entry's own properties rather than the section name.
 		ComponentPropertyOverrideResult componentPropertyOverrides = ApplyComponentPropertyOverrides(elementMap, rules);
+
+		// Complete every layoutConfig the map carries, whoever wrote it — the placement passes above, the
+		// per-breakpoint adaptive pass, and the verbatim carry of the web page's own placement. Placed AFTER
+		// ApplyComponentPropertyOverrides deliberately: that pass stamps rule-declared properties onto inserted
+		// elements, so a rules file that ever declares a layoutConfig would otherwise write a partial one after
+		// this ran. No bundled rule declares one today, which is exactly why the order — not the data — has to
+		// be what guarantees it.
+		NormalizePlacements(elementMap);
 		IReadOnlyList<NormalizationEntry> spacingNormalization =
 			componentPropertyOverrides.EntriesOf(SpacingGroup);
 
@@ -353,11 +365,14 @@ public static class WebToMobileAnalysisService {
 			// preserved verbatim. Every standard — spacing included — is also reported under normalizations.
 			SpacingNormalization = spacingNormalization.Count > 0
 				? new SpacingNormalizationInfo {
-					Note = "Mobile follows the mobile spacing standard: the web page's container spacing was "
-						+ "IGNORED (not translated) and every inserted crt.GridContainer / crt.FlexContainer "
-						+ "carries gap Medium, already baked into elementMap[].mobileValues — nothing separate "
-						+ "to apply. Silent normalization, not a gate decision: report it as ONE aggregated "
-						+ "line and never restore the web spacing.",
+					Note = "Mobile follows the mobile container standards: the web page's own value for every "
+						+ "property listed below was IGNORED (not translated), and the mobile value is already "
+						+ "baked into elementMap[].mobileValues — nothing separate to apply. Read each entry's "
+						+ "`properties` for what was actually written on that element: this section carries "
+						+ "EVERY standard that targets a container type (gap, and any other such as the corner "
+						+ "radius), not the spacing alone, so do not assume it from the section name. Silent "
+						+ "normalization, not a gate decision: report it as ONE aggregated line and never "
+						+ "restore the web values.",
 					Normalized = [.. spacingNormalization.Select(n => new SpacingNormalizationEntry {
 						Name = n.Name, Type = n.Type, Properties = n.Properties
 					})]
@@ -382,8 +397,9 @@ public static class WebToMobileAnalysisService {
 				webTemplateUnavailable: webTemplateUnavailable,
 				hasComponentTwin: componentMap.Count > 0,
 				hasExcludedComponents: excludedRemovedNames.Count > 0,
-			exclusionSearchTruncated: excludedDiagnostics.DepthBudgetTruncated,
+				exclusionSearchTruncated: excludedDiagnostics.DepthBudgetTruncated,
 				discardedExclusionFilters: excludedDiagnostics.DiscardedFilterCount,
+				skippedOverrideRules: componentPropertyOverrides.SkippedRulesWithoutFilters,
 				retargetParentsOnTemplate: elementMap
 					.Where(e => e.ParentExistsOnTemplate == true && !string.IsNullOrEmpty(e.ParentName))
 					.Select(e => e.ParentName)
@@ -1710,7 +1726,7 @@ public static class WebToMobileAnalysisService {
 		bool hasEmptyContainerRemovals = false, ComponentPropertyOverrideResult normalization = null,
 		bool webTemplateUnavailable = false, bool hasComponentTwin = false,
 		bool exclusionSearchTruncated = false, int discardedExclusionFilters = 0,
-		bool hasExcludedComponents = false,
+		int skippedOverrideRules = 0, bool hasExcludedComponents = false,
 		IReadOnlyList<string> retargetParentsOnTemplate = null) {
 		var constraints = new List<string> {
 			"Mobile body is plain JSON with only viewConfigDiff / viewModelConfigDiff / modelConfigDiff — no AMD, no markers, no define() wrapper.",
@@ -1820,6 +1836,7 @@ public static class WebToMobileAnalysisService {
 				"add an Area of your own. The synthesized containers have no web counterpart, so they carry no " +
 				"webName; tabs provided by the mobile template (merge) get no layers and must stay untouched.");
 		}
+
 		// One constraint per report group the rules declared, in the wording the RULE carries — so a new
 		// standard is a rules-file entry and never another branch here. The legacy spacing group keeps a
 		// built-in text for a rules file that predates reportConstraint.
@@ -1840,6 +1857,17 @@ public static class WebToMobileAnalysisService {
 				$"{discardedExclusionFilters} excludedComponents filter(s) were ignored because they declare no "
 				+ "\"type\" or no \"parentType\". Those exclusions did NOT run — check the rules file for a "
 				+ "misspelled property name.");
+		}
+		if (skippedOverrideRules > 0) {
+			// Same reasoning as the exclusion-filter count above, and a likelier trigger: an entry authored
+			// against the removed `type` field, or a mistyped "filter", parses with no filters at all and is
+			// refused. Without this line the page just ships un-normalized, which the report cannot tell apart
+			// from "nothing needed normalizing".
+			constraints.Add(
+				$"{skippedOverrideRules} componentPropertyOverrides rule(s) were ignored because they declare "
+				+ "no \"filters\" — those standards did NOT run, so the elements they target keep their WEB "
+				+ "values. Check the rules file for a misspelled property name or an entry still written with "
+				+ "a top-level \"type\".");
 		}
 		if (hasExcludedComponents) {
 			constraints.Add(
@@ -1919,7 +1947,8 @@ public static class WebToMobileAnalysisService {
 		IReadOnlyDictionary<string, string> MobileTypesByName,
 		IReadOnlyDictionary<string, JObject> WebBaselineNodes,
 		JObject WebBaselineResources,
-		IReadOnlySet<string> ScopeContainerNames);
+		IReadOnlySet<string> ScopeContainerNames,
+		IReadOnlySet<string> ContentContainerTypes);
 
 	/// <summary>
 	/// The set of NON-CONVERTING scope container names — declared EXPLICITLY by the rules'
@@ -1972,14 +2001,15 @@ public static class WebToMobileAnalysisService {
 			mobileTypesByName ?? new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase),
 			webBaselineNodes ?? new Dictionary<string, JObject>(StringComparer.OrdinalIgnoreCase),
 			webBaselineResources,
-			CollectScopeContainerNames(rules));
+			CollectScopeContainerNames(rules),
+			ContentContainerTypesOf(rules));
 		WalkElements(ctx, tree, mobileParentName: null);
 		return ctx.Out;
 	}
 
 	private static void WalkElements(ElementMapContext ctx, JArray nodes, string mobileParentName,
 		string parentPropertyName = ItemsPropertyName, IReadOnlyList<string> sourceAncestors = null,
-		bool inNonConvertingScope = false) {
+		bool inNonConvertingScope = false, string hostableParentName = null) {
 		// Positional siblings: when this array holds a positional anchor container (e.g. CardContentWrapper),
 		// each sibling ABOVE it is placed above the mobile anchor (Tabs) — inserted into the anchor's parent
 		// (MainContainer) with an ascending index from 0 — and each sibling BELOW it is appended after.
@@ -1997,6 +2027,7 @@ public static class WebToMobileAnalysisService {
 			if (string.IsNullOrEmpty(name)) {
 				if (items is not null) {
 					WalkElements(ctx, items, mobileParentName, sourceAncestors: sourceAncestors,
+						hostableParentName: hostableParentName,
 						inNonConvertingScope: inNonConvertingScope);
 				}
 				continue;
@@ -2009,7 +2040,8 @@ public static class WebToMobileAnalysisService {
 			if (!inNonConvertingScope && ctx.ScopeContainerNames.Contains(name)) {
 				IReadOnlyList<string> scopeAncestors = Append(sourceAncestors, name);
 				if (items is not null) {
-					WalkElements(ctx, items, mobileParentName, ItemsPropertyName, scopeAncestors, inNonConvertingScope: true);
+					WalkElements(ctx, items, mobileParentName, ItemsPropertyName, scopeAncestors, inNonConvertingScope: true,
+						hostableParentName: hostableParentName);
 				}
 				RecurseChildArrays(ctx, node, name, type, scopeAncestors, inNonConvertingScope: true);
 				continue;
@@ -2076,7 +2108,8 @@ public static class WebToMobileAnalysisService {
 				}
 				IReadOnlyList<string> childScopeAncestors = Append(sourceAncestors, name);
 				if (items is not null) {
-					WalkElements(ctx, items, mobileParentName, ItemsPropertyName, childScopeAncestors, inNonConvertingScope: true);
+					WalkElements(ctx, items, mobileParentName, ItemsPropertyName, childScopeAncestors, inNonConvertingScope: true,
+						hostableParentName: hostableParentName);
 				}
 				RecurseChildArrays(ctx, node, name, scopedType ?? type, childScopeAncestors, inNonConvertingScope: true);
 				continue;
@@ -2105,13 +2138,38 @@ public static class WebToMobileAnalysisService {
 			// 1. merge — element is a template twin (provided by the mobile template). Recurse so its
 			//    children get their own entries (parent = the template element).
 			if (ctx.Map.TryGetValue(name, out string twinMobileName)) {
-				ctx.Out.Add(new ElementMapEntry {
+				// The twin's type is the MOBILE element's type when the mobile template is readable: a containers
+				// entry may pair elements of different types (GeneralInfoTab, a crt.TabContainer, merges onto
+				// GeneralTabContainer, a crt.GridContainer), and reporting the web type there would name a type
+				// the mobile element does not have — both to the model reading the guide and to
+				// ExcludedComponentsPass, which matches a filter's parentType against this field. Falls back to
+				// the web type (the pair is same-type for every other shipped entry) when the template is unknown.
+				var twinEntry = new ElementMapEntry {
 					WebName = name, WebType = Nz(type), Operation = "merge", MobileName = twinMobileName,
-					MobileType = ctx.MobileTypes.Contains(type ?? "") ? type : null,
+					MobileType = ctx.MobileTypesByName.TryGetValue(twinMobileName, out string twinType)
+							&& !string.IsNullOrEmpty(twinType)
+						? twinType
+						: (ctx.MobileTypes.Contains(type ?? "") ? type : null),
+					MergeParentName = ResolveParent(ctx, mobileParentName),
 					Reason = TwinReason(name)
-				});
+				};
+				ctx.Out.Add(twinEntry);
+				// A rules file published to the CDN that LOSES a containers entry no longer reproduces ENG-94951:
+				// the walk carries the nearest ancestor that can hold arbitrary children beside the ordinary parent,
+				// so a child of a receiver that cannot is re-homed rather than made invisible. That default needs no
+				// rules entry at all.
+				// Children go into the twin ITSELF, and a containers entry deliberately says nothing more than
+				// that. A web element the page did not remove is walked into its own entry, so a page that KEPT
+				// the template's content grid resolves its children through that grid's own pair
+				// (GeneralInfoTabContainer -> GeneralTabContainer); a page that REMOVED it has no such node, that
+				// pair never matches, and the children belong where the page put them — in the tab itself, which
+				// is a crt.TabContainer and hosts items. The two shapes DIFFER on web (the removed grid was a
+				// two-column layout with its own gap), so carrying the difference is the faithful conversion;
+				// redirecting the tab's children into a grid the page deleted would override a layout decision
+				// the developer made deliberately.
 				if (items is not null) {
-					WalkElements(ctx, items, twinMobileName, sourceAncestors: Append(sourceAncestors, name));
+					WalkElements(ctx, items, twinMobileName, sourceAncestors: Append(sourceAncestors, name),
+						hostableParentName: NearestHostable(ctx, twinMobileName, hostableParentName));
 				}
 				continue;
 			}
@@ -2193,7 +2251,8 @@ public static class WebToMobileAnalysisService {
 						Reason = $"container type '{type}' has no mobile equivalent — its children are placed in {target}"
 					});
 					if (items is not null) {
-						WalkElements(ctx, items, target, sourceAncestors: Append(sourceAncestors, name));
+						WalkElements(ctx, items, target, sourceAncestors: Append(sourceAncestors, name),
+							hostableParentName: NearestHostable(ctx, target, hostableParentName));
 					}
 					continue;
 				}
@@ -2207,7 +2266,10 @@ public static class WebToMobileAnalysisService {
 				CaptionResource containerCaption = ResolveCaptionResource(ctx, node, name);
 				// Resolved BEFORE the values are built: a view-config template may ECHO the placement so the
 				// shape it declares can be read in place, and echoing needs the value the entry will carry.
-				string containerParent = isPositional ? place.Parent : ResolveParent(ctx, mobileParentName);
+				(string containerParent, string containerHostingNote) = isPositional
+					? (place.Parent, null)
+					: ResolveHostingParent(ctx, ResolveParent(ctx, mobileParentName), hostableParentName, type,
+						parentPropertyName);
 				string containerProperty = parentPropertyName;
 				int? containerIndex = isPositional ? place.Index : null;
 				bool containerRetargeted = false;
@@ -2221,7 +2283,8 @@ public static class WebToMobileAnalysisService {
 							$"'{name}' is inherited from the web template (chrome the mobile template provides natively) — not retargeted into "
 							+ $"'{containerTarget.Parent}.{containerTarget.Property}' (the mobile equivalent already exists; retargeting would duplicate it)"));
 						if (items is not null) {
-							WalkElements(ctx, items, ResolveParent(ctx, mobileParentName), sourceAncestors: Append(sourceAncestors, name));
+							WalkElements(ctx, items, ResolveParent(ctx, mobileParentName), sourceAncestors: Append(sourceAncestors, name),
+								hostableParentName: hostableParentName);
 						}
 						continue;
 					}
@@ -2233,7 +2296,8 @@ public static class WebToMobileAnalysisService {
 							$"a conversion template retargets container '{name}' into '{containerTarget.Parent}', which is not "
 							+ "present on the mobile template — add it to the target template or adjust the rule"));
 						if (items is not null) {
-							WalkElements(ctx, items, ResolveParent(ctx, mobileParentName), sourceAncestors: Append(sourceAncestors, name));
+							WalkElements(ctx, items, ResolveParent(ctx, mobileParentName), sourceAncestors: Append(sourceAncestors, name),
+								hostableParentName: hostableParentName);
 						}
 						continue;
 					}
@@ -2257,11 +2321,14 @@ public static class WebToMobileAnalysisService {
 						? $"container; retargeted by a conversion template into {containerParent}.{containerProperty}"
 						: isPositional
 							? $"container; placed {(place.Index.HasValue ? "above" : "below")} the mobile {place.Anchor} (in {place.Parent})"
-							: "container; mobile-supported"
+							: containerHostingNote is { Length: > 0 }
+								? $"container; mobile-supported; {containerHostingNote}"
+								: "container; mobile-supported"
 				});
 				IReadOnlyList<string> containerChildAncestors = Append(sourceAncestors, name);
 				if (items is not null) {
-					WalkElements(ctx, items, name, sourceAncestors: containerChildAncestors);
+					WalkElements(ctx, items, name, sourceAncestors: containerChildAncestors,
+						hostableParentName: CanHostChildrenOfType(ctx, type) ? name : hostableParentName);
 				}
 				RecurseChildArrays(ctx, node, name, type, containerChildAncestors);
 				continue;
@@ -2284,7 +2351,10 @@ public static class WebToMobileAnalysisService {
 				continue;
 			}
 			CaptionResource leafCaption = ResolveCaptionResource(ctx, node, name);
-			string leafParent = isPositional ? place.Parent : ResolveParent(ctx, mobileParentName);
+			(string leafParent, string leafHostingNote) = isPositional
+				? (place.Parent, null)
+				: ResolveHostingParent(ctx, ResolveParent(ctx, mobileParentName), hostableParentName, leafMobileType,
+					parentPropertyName);
 			string leafProperty = parentPropertyName;
 			int? leafIndex = isPositional ? place.Index : null;
 			// A conversion template may DRIVE placement: retarget the element into a declared container/property
@@ -2340,7 +2410,9 @@ public static class WebToMobileAnalysisService {
 				? $"field/leaf; retargeted by a conversion template into {leafParent}.{leafProperty}"
 				: isPositional
 					? $"field/leaf; placed {(place.Index.HasValue ? "above" : "below")} the mobile {place.Anchor} (in {place.Parent})"
-					: "field/leaf; mobile-supported";
+					: leafHostingNote is { Length: > 0 }
+						? $"field/leaf; mobile-supported; {leafHostingNote}"
+						: "field/leaf; mobile-supported";
 			ctx.Out.Add(new ElementMapEntry {
 				WebName = name, WebType = Nz(type), Operation = "insert", MobileName = name, MobileType = leafMobileType,
 				ParentName = leafParent, PropertyName = leafProperty,
@@ -3215,6 +3287,16 @@ public static class WebToMobileAnalysisService {
 	/// regrouped elsewhere on mobile (e.g. a header button → <c>FloatingActionButton.menuItems</c>). A template that
 	/// declares neither field, or only echoes, returns null. When several matching templates disagree, the first
 	/// declaring a retarget wins.
+	/// <para>
+	/// A declared <c>propertyName</c> is taken on trust and is NOT checked against the target's mobile component
+	/// contract. This is the SECOND path that sets an element's (parent, slot) address — <see cref="BuildTabAreaLayers"/>
+	/// is the other — and it carries the same obligation: the pair must name a slot the target type actually
+	/// declares. Nothing downstream catches a mistake, because <see cref="InitializeContainerChildSlots"/>
+	/// deliberately declares whatever slot a child names rather than validating it, and the differ then inserts
+	/// happily into an array the component never renders. A rules file that retargets into, say, a
+	/// <c>crt.GridContainer</c> with <c>propertyName: "tools"</c> therefore reproduces ENG-96153 exactly:
+	/// a container that silently renders empty in the designer and at runtime, with no error anywhere.
+	/// </para>
 	/// </summary>
 	private static (string Parent, string Property)? ResolveTemplatePlacement(
 		ElementMapContext ctx, JObject node, string mobileType, string mobileName,
@@ -3260,15 +3342,62 @@ public static class WebToMobileAnalysisService {
 		}
 	}
 
-	/// <summary>True when any filter matches the node, or the mapping declares none (match everything).</summary>
+	/// <summary>
+	/// True when any filter matches the SOURCE web node, or the mapping declares none — which this group reads
+	/// as "match everything". Note that the sibling caller does NOT: an override rule with no filters is
+	/// skipped, because there the filters are the rule's only selector (see
+	/// <see cref="ComponentPropertyOverrideRule.Filters"/>). The permissive reading here is pre-existing
+	/// behavior, not a safer case — nothing else anchors a template entry either.
+	/// Shares <see cref="ElementFilterRule"/> and its match rule with the override pass (see
+	/// <see cref="MatchesFilters"/>): the filters are OR-ed, and each one AND-s every constraint it declares —
+	/// its <c>type</c> and any value constraint. A value constraint is compared through the same
+	/// <see cref="JsonValueEquals"/> the override pass uses, so the two sides can never drift apart on what
+	/// "equal" means; the Newtonsoft node is adapted lazily, so a type-only filter (all of them today) costs
+	/// nothing extra.
+	/// </summary>
 	private static bool MatchesAnyFilter(IReadOnlyList<ElementFilterRule> filters, JObject node) {
 		if (filters is not { Count: > 0 }) {
 			return true;
 		}
 		string type = node["type"]?.ToString();
-		return filters.Any(f => !string.IsNullOrWhiteSpace(f?.Type)
-			&& string.Equals(f.Type, type, StringComparison.OrdinalIgnoreCase));
+		return filters.Any(f => Declares(f)
+			&& (string.IsNullOrWhiteSpace(f.Type) || string.Equals(f.Type, type, StringComparison.OrdinalIgnoreCase))
+			&& MatchesValueConstraints(f, key => ToJsonNode(node[key])));
 	}
+
+	/// <summary>
+	/// True when the filter constrains anything at all. A filter that declares neither a type nor a value is a
+	/// rules-file mistake, and reading it as "matches everything" would silently widen the rule it was written
+	/// to narrow — so it matches nothing instead, on both sides.
+	/// </summary>
+	private static bool Declares(ElementFilterRule filter) =>
+		filter is not null && (!string.IsNullOrWhiteSpace(filter.Type) || filter.Values is { Count: > 0 });
+
+	/// <summary>
+	/// True when every value constraint the filter declares is DEEP-equal to what <paramref name="resolve"/>
+	/// returns for that property name. An absent property resolves to null and therefore never matches.
+	/// </summary>
+	private static bool MatchesValueConstraints(ElementFilterRule filter, Func<string, JsonNode> resolve) {
+		if (filter.Values is not { Count: > 0 }) {
+			return true;
+		}
+		foreach (KeyValuePair<string, JsonElement> constraint in filter.Values) {
+			if (!JsonValueEquals(resolve(constraint.Key), constraint.Value)) {
+				return false;
+			}
+		}
+		return true;
+	}
+
+	/// <summary>
+	/// Adapts a Newtonsoft token to a <see cref="JsonNode"/> so one comparer serves both JSON stacks. Called
+	/// only for a filter that actually declares a value constraint, so the common type-only filter never pays
+	/// for the round-trip.
+	/// </summary>
+	private static JsonNode ToJsonNode(JToken token) =>
+		token is null || token.Type == JTokenType.Null
+			? null
+			: JsonNode.Parse(token.ToString(Newtonsoft.Json.Formatting.None));
 
 	/// <summary>
 	/// True when a rule's <c>path</c> scope is satisfied for a node. Empty (or null) path = no scoping (matches
@@ -3775,12 +3904,16 @@ public static class WebToMobileAnalysisService {
 	private static List<AdaptiveLayoutGroup> BuildAdaptiveLayout(
 		List<ElementMapEntry> elementMap,
 		IReadOnlyDictionary<string, JObject> sourceLayouts,
-		IReadOnlyDictionary<string, int> gridContainerColumns) {
+		IReadOnlyDictionary<string, int> gridContainerColumns,
+		IReadOnlyDictionary<string, string> mobileContainerParents = null) {
 		// Grid-container column counts are captured under the WEB container name, but children carry the MOBILE
 		// parent name in their element-map entries — a merge twin or relocated wrapper renames the container
-		// (e.g. GeneralInfoTabContainer -> GeneralTabContainer, SideAreaProfileContainer -> AreaProfileContainer).
+		// (e.g. CardContentWrapper -> GeneralTabContainer, SideAreaProfileContainer -> AreaProfileContainer).
 		// Translate each count to the container's mobile name via its element-map entry so the lookup below
 		// matches renamed pairs; keep the web name as a fallback for containers that are not renamed.
+		// LAST WINS on a duplicate mobile name, which `containers` allows by design. Harmless as shipped: only
+		// a GRID container has a captured count, so a tab twin (GeneralInfoTab, a crt.TabContainer) never
+		// competes here — but a future many-to-one pair of two GRIDS would need an explicit tie-break.
 		var colsByMobileParent = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
 		foreach (ElementMapEntry e in elementMap) {
 			if (e.WebName is { Length: > 0 } && gridContainerColumns.TryGetValue(e.WebName, out int cols)) {
@@ -3795,9 +3928,47 @@ public static class WebToMobileAnalysisService {
 		var byContainer = new Dictionary<string, List<ElementMapEntry>>(StringComparer.OrdinalIgnoreCase);
 		var order = new List<string>();
 		foreach (ElementMapEntry e in elementMap) {
-			if (!string.Equals(e.Operation, "insert", StringComparison.Ordinal) ||
-				string.IsNullOrEmpty(e.ParentName) || e.MobileValues is not JsonObject ||
-				!colsByMobileParent.ContainsKey(e.ParentName)) {
+			// A container TWIN the mobile template provides is a SIBLING of the inserts placed here, and a
+			// mobile crt.GridContainer positions its children by layoutConfig ALONE (docs/knowledge/McpServer/
+			// grid-containers-position-by-layoutconfig-not-item-order.md: an unpositioned child is NOT auto-placed
+			// into a free cell). Leaving the twin out therefore does not "keep the template's own layout" — it
+			// makes the twin the one unplaced child of a grid whose every other child got a cell, and it stops
+			// rendering. It carries no parentName by design, so its parent comes from converter bookkeeping, and
+			// it may carry no mobileValues yet — a layoutConfig-only merge delta is created for it below.
+			// A twin is placed ONLY where the MOBILE TEMPLATE itself holds it. The recorded parent comes from the
+			// WEB tree, and the two nestings can be inverted: web Tabs sits inside CardContentWrapper (which maps
+			// to GeneralTabContainer), while on mobile GeneralTabContainer sits inside Tabs. Trusting the web
+			// nesting there would place the tab strip inside its own descendant -- and twice, since two web twins
+			// (Tabs and CardToggleTabPanel) share the mobile name. Without the mobile parent map the pass places
+			// no twin at all: an unplaced twin renders exactly as it does today, a wrongly placed one does not.
+			bool isPlaceableTwin = string.Equals(e.Operation, "merge", StringComparison.Ordinal)
+				&& e.MergeParentName is { Length: > 0 }
+				&& e.MobileName is { Length: > 0 }
+				&& mobileContainerParents is not null
+				&& mobileContainerParents.TryGetValue(e.MobileName, out string mobileParent)
+				&& string.Equals(mobileParent, e.MergeParentName, StringComparison.OrdinalIgnoreCase)
+				&& colsByMobileParent.ContainsKey(e.MergeParentName);
+			// Two kinds of child reach this group, and each has its own admission rule. Kept as two blocks
+			// rather than one composite: the twin flag used to appear at both polarities inside a negated
+			// disjunction, which no reader could evaluate without a table.
+			string parent;
+			if (isPlaceableTwin) {
+				// A twin's mobileValues stays NULL here on purpose. The group loop below skips a single-column
+				// grid, and a merge that reached the guide carrying an empty object would be pasted onto the
+				// template element as `values: {}` — noise the model still has to interpret. The object is
+				// created only where a layoutConfig is actually written.
+				if (e.MobileValues is not (null or JsonObject)) {
+					continue;
+				}
+				parent = e.MergeParentName;
+			} else {
+				if (!string.Equals(e.Operation, "insert", StringComparison.Ordinal)
+					|| e.MobileValues is not JsonObject) {
+					continue;
+				}
+				parent = e.ParentName;
+			}
+			if (string.IsNullOrEmpty(parent) || !colsByMobileParent.ContainsKey(parent)) {
 				continue;
 			}
 			// A positional sibling was rerouted OUT of the web grid it was declared in and into the anchor's
@@ -3808,10 +3979,10 @@ public static class WebToMobileAnalysisService {
 			if (e.PositionalAnchor is { Length: > 0 }) {
 				continue;
 			}
-			if (!byContainer.TryGetValue(e.ParentName, out List<ElementMapEntry> list)) {
+			if (!byContainer.TryGetValue(parent, out List<ElementMapEntry> list)) {
 				list = [];
-				byContainer[e.ParentName] = list;
-				order.Add(e.ParentName);
+				byContainer[parent] = list;
+				order.Add(parent);
 			}
 			list.Add(e);
 		}
@@ -3834,6 +4005,9 @@ public static class WebToMobileAnalysisService {
 					["large"] = Cell(col, row, colSpan, rowSpan)
 				};
 				// Replace layoutConfig with the adaptive form (the web placement is folded into medium/large).
+				// A container twin reaches here with no values of its own: the layoutConfig IS its whole merge
+				// delta, so the object is created at the one point where it is guaranteed to carry something.
+				child.MobileValues ??= new JsonObject();
 				((JsonObject)child.MobileValues)["layoutConfig"] = new JsonObject { ["adaptive"] = adaptive.DeepClone() };
 				items.Add(new AdaptiveLayoutItem { Name = child.MobileName, LayoutConfigAdaptive = adaptive });
 			}
@@ -3910,6 +4084,87 @@ public static class WebToMobileAnalysisService {
 
 	private static string ResolveParent(ElementMapContext ctx, string mobileParentName) =>
 		!string.IsNullOrEmpty(mobileParentName) ? mobileParentName : ctx.RelocateTarget;
+
+	/// <summary>
+	/// Mobile component types that can hold arbitrary children, from the rules' <c>contentContainerTypes</c>.
+	/// </summary>
+	/// <remarks>
+	/// Falls back to the BUNDLED list when the loaded rules declare none, which is the opposite of how the
+	/// other data-driven sections behave and is deliberate. The rules file is fetched from the CDN at runtime,
+	/// so the file most likely to be missing this key is an OLD one — and an old file is also the one whose
+	/// <c>containers</c> list is behind, which is precisely when a child needs re-homing. Treating "no key" as
+	/// "no re-homing" would switch the protection off in the only situation that requires it.
+	/// </remarks>
+	/// <remarks>Resolved ONCE per conversion into the element-map context: the bundled fallback parses the whole
+	/// rules document, which must not happen per element.</remarks>
+	private static IReadOnlySet<string> ContentContainerTypesOf(WebToMobilePageConversionRules rules) {
+		IReadOnlyList<string> declared = rules?.ContentContainerTypes is { Count: > 0 } fromRules
+			? fromRules
+			: WebToMobilePageConversionRulesCatalog.LoadBundled()?.ContentContainerTypes ?? [];
+		return new HashSet<string>(declared.Where(t => !string.IsNullOrWhiteSpace(t)),
+			StringComparer.OrdinalIgnoreCase);
+	}
+
+	/// <summary>Whether a MOBILE TEMPLATE element of this name can hold arbitrary children.</summary>
+	private static bool CanHostChildren(ElementMapContext ctx, string mobileName) =>
+		!string.IsNullOrEmpty(mobileName)
+		&& ctx.MobileTypesByName.TryGetValue(mobileName, out string mobileType)
+		&& CanHostChildrenOfType(ctx, mobileType);
+
+	/// <summary>Whether a receiver of this MOBILE TYPE can hold arbitrary children.</summary>
+	private static bool CanHostChildrenOfType(ElementMapContext ctx, string mobileType) =>
+		!string.IsNullOrWhiteSpace(mobileType) && ctx.ContentContainerTypes.Contains(mobileType);
+
+	/// <summary>
+	/// The nearest ancestor able to hold arbitrary children, carried DOWN the walk beside the ordinary mobile
+	/// parent: <paramref name="candidate"/> when it can host, otherwise whatever was carried in.
+	/// </summary>
+	private static string NearestHostable(ElementMapContext ctx, string candidate, string inherited) =>
+		CanHostChildren(ctx, candidate) ? candidate : inherited;
+
+	/// <summary>
+	/// Where a child actually goes. Normally the walk parent; when that receiver cannot hold arbitrary children
+	/// — a crt.TabPanel renders only its tabs, so anything else placed there is invisible and its whole subtree
+	/// is lost — the nearest ancestor that can is used instead, and the move is explained in the entry's reason.
+	/// </summary>
+	/// <remarks>
+	/// This is the DEFAULT and the only rule: it applies to every container nobody mapped, in any template
+	/// family. A <c>containers</c> entry says which mobile element a web one IS; it never redirects that
+	/// element's children elsewhere, so the two answers can never disagree.
+	/// <para>
+	/// Three things are deliberately out of scope. A NAMED slot (<c>menuItems</c>, <c>tools</c>) does not
+	/// bubble: its child is hosted by the slot, not by the element's generic content. A POSITIONAL sibling has
+	/// its receiver decided by the anchor rules. And a child whose own type is the rules'
+	/// <c>tabAreaLayers.tabComponentType</c> is exempt — a tab belongs to a strip, which is the one case where
+	/// a receiver outside the accept-list is the correct one.
+	/// </para>
+	/// </remarks>
+	private static (string Parent, string Note) ResolveHostingParent(ElementMapContext ctx, string walkParent,
+		string hostableParentName, string childMobileType, string parentPropertyName) {
+		if (!string.Equals(parentPropertyName, ItemsPropertyName, StringComparison.OrdinalIgnoreCase)
+			|| string.IsNullOrEmpty(walkParent)
+			|| string.IsNullOrEmpty(hostableParentName)
+			|| string.Equals(walkParent, hostableParentName, StringComparison.OrdinalIgnoreCase)) {
+			return (walkParent, null);
+		}
+		// Re-home only a receiver KNOWN to be non-hosting: its type resolves off the mobile template AND the
+		// rules do not list it. An unresolvable type is left alone rather than treated as non-hosting, so the
+		// accept-list's under-inclusiveness costs nothing here either — the walk falls back to today's
+		// behaviour instead of yanking children out of a container it simply could not classify.
+		if (!ctx.MobileTypesByName.TryGetValue(walkParent, out string walkParentType)
+			|| string.IsNullOrWhiteSpace(walkParentType)
+			|| CanHostChildrenOfType(ctx, walkParentType)) {
+			return (walkParent, null);
+		}
+		string tabType = ctx.Rules?.TabAreaLayers?.TabComponentType;
+		if (!string.IsNullOrWhiteSpace(tabType)
+			&& string.Equals(childMobileType, tabType, StringComparison.OrdinalIgnoreCase)) {
+			return (walkParent, null);
+		}
+		return (hostableParentName,
+			$"re-homed out of '{walkParent}' ({walkParentType}), which cannot hold arbitrary children, into the "
+			+ "nearest ancestor that can");
+	}
 
 	/// <summary>
 	/// If <paramref name="nodes"/> contains a positional anchor container (a name in
@@ -4111,9 +4366,10 @@ public static class WebToMobileAnalysisService {
 	/// The anchor's own template placement is the ORIGIN, so nothing here is assumed: its row is the first row the
 	/// group occupies, and its shape decides the shape written onto the siblings. A template that positions the
 	/// anchor per breakpoint (<c>layoutConfig.adaptive</c>) gets every breakpoint's row shifted and the siblings
-	/// placed per breakpoint too; a flat placement gets a flat one. <c>colSpan</c> / <c>rowSpan</c> are not written
-	/// onto a sibling — the mobile runtime does not support them — while the anchor keeps whatever its template
-	/// declared, minus the shifted row.
+	/// placed per breakpoint too; a flat placement gets a flat one. Only <c>row</c> and <c>column</c> are computed;
+	/// the anchor keeps whatever its template declared, minus the shifted row. Every placement is completed to all
+	/// four keys by <see cref="NormalizePlacements"/> — the runtime renders without <c>colSpan</c> / <c>rowSpan</c>,
+	/// but the Freedom UI Mobile DESIGNER refuses to open a page whose <c>layoutConfig</c> omits them.
 	/// </para>
 	/// <para>
 	/// An anchor whose template declares no row at all is left alone together with its group: that parent
@@ -4236,7 +4492,8 @@ public static class WebToMobileAnalysisService {
 	/// reports whether it wrote one, so the caller shifts the anchor by what was really placed. The shape follows
 	/// WHERE THE ANCHOR'S ROWS ACTUALLY ARE rather than merely whether an <c>adaptive</c> key exists, so an anchor
 	/// with a flat row beside a row-less adaptive block places its siblings flat. Only <c>row</c> and
-	/// <c>column</c> are written — <c>colSpan</c> / <c>rowSpan</c> are not supported by the mobile runtime.
+	/// <c>column</c> are computed; <c>colSpan</c> / <c>rowSpan</c> are always written as 1, because the mobile
+	/// designer refuses to open a page whose <c>layoutConfig</c> omits them.
 	/// <para>
 	/// A placement the sibling already carries is REPLACED: positional placement is authoritative for an element
 	/// the rule rerouted out of its web container, and the one pass that could otherwise have written one
@@ -4264,8 +4521,109 @@ public static class WebToMobileAnalysisService {
 		return true;
 	}
 
-	/// <summary>One sibling cell: the computed row of column 1, and nothing the mobile runtime ignores.</summary>
-	private static JsonObject SiblingSlot(int row) => new() { [LayoutRowKey] = row, ["column"] = 1 };
+	/// <summary>
+	/// Completes every <c>layoutConfig</c> the element map carries so none reaches the page partial.
+	/// <para>
+	/// The Freedom UI Mobile DESIGNER fails to open a page whose <c>layoutConfig</c> omits <c>colSpan</c> /
+	/// <c>rowSpan</c>. The runtime renders fine without them, so the failure surfaces only when somebody opens the
+	/// converted page to edit it — nothing in the conversion, the validator or a read-back reports it.
+	/// </para>
+	/// <para>
+	/// Normalizing here rather than at each writer is deliberate: the converter authors a placement from several
+	/// places — this pass's own <see cref="SiblingSlot"/>, the anchor clone in <see cref="ShiftRows"/>, the
+	/// per-breakpoint adaptive pass, the tab-area stacking, and the VERBATIM carry of the web page's own
+	/// <c>layoutConfig</c> in <see cref="BuildMobileValues"/>. That last one is the reason a per-writer fix is not
+	/// enough: a child of a single-column web grid is touched by none of the placement passes and keeps the web
+	/// object exactly as authored, spans and all — and a web page may legitimately declare only
+	/// <c>row</c>/<c>column</c>.
+	/// </para>
+	/// <para>
+	/// Applied to the WHOLE <c>mobileValues</c> tree, not just its root, so a placement nested inside a pasted
+	/// value (a list row's <c>itemLayout</c>, a menu item) is completed too — the designer reads those the same way.
+	/// An <c>adaptive</c> block is completed per breakpoint and its wrapper is left alone unless it also carries
+	/// flat keys of its own; a <c>layoutConfig</c> that is not an object at all cannot be honoured as a placement
+	/// and is replaced outright.
+	/// </para>
+	/// </summary>
+	private static void NormalizePlacements(List<ElementMapEntry> elementMap) {
+		foreach (ElementMapEntry entry in elementMap) {
+			if (entry.MobileValues is JsonNode values) {
+				NormalizePlacementsIn(values);
+			}
+		}
+	}
+
+	/// <summary>Recurses a value tree, completing every <c>layoutConfig</c> property it finds.</summary>
+	private static void NormalizePlacementsIn(JsonNode node) {
+		switch (node) {
+			case JsonObject obj:
+				if (obj.TryGetPropertyValue("layoutConfig", out JsonNode placement)) {
+					obj["layoutConfig"] = CompletePlacement(placement);
+				}
+				foreach (KeyValuePair<string, JsonNode> property in obj.ToList()) {
+					if (!string.Equals(property.Key, "layoutConfig", StringComparison.Ordinal) && property.Value is not null) {
+						NormalizePlacementsIn(property.Value);
+					}
+				}
+				break;
+			case JsonArray array:
+				foreach (JsonNode item in array.ToList()) {
+					if (item is not null) {
+						NormalizePlacementsIn(item);
+					}
+				}
+				break;
+		}
+	}
+
+	/// <summary>
+	/// One placement with every key the designer requires. A non-object is replaced by the default cell: it cannot
+	/// be honoured as a placement, and leaving it would keep the page unopenable. An <c>adaptive</c> block is
+	/// completed breakpoint by breakpoint; its wrapper gains flat keys only when it already carries some, so a
+	/// purely per-breakpoint placement is never given a competing flat one.
+	/// </summary>
+	private static JsonNode CompletePlacement(JsonNode placement) {
+		if (placement is not JsonObject cell) {
+			return SiblingSlot(1);
+		}
+		if (cell["adaptive"] is JsonObject adaptive) {
+			foreach (KeyValuePair<string, JsonNode> breakpoint in adaptive.ToList()) {
+				if (breakpoint.Value is JsonObject slot) {
+					FillPlacementKeys(slot);
+				}
+			}
+			if (PlacementKeys.Any(key => cell[key] is not null)) {
+				FillPlacementKeys(cell);
+			}
+			return cell;
+		}
+		FillPlacementKeys(cell);
+		return cell;
+	}
+
+	/// <summary>The keys a placement must carry for the mobile designer to open the page.</summary>
+	private static readonly string[] PlacementKeys = [LayoutRowKey, "column", "colSpan", "rowSpan"];
+
+	/// <summary>Adds each missing placement key as 1, leaving every value the caller already set untouched.</summary>
+	private static void FillPlacementKeys(JsonObject cell) {
+		foreach (string key in PlacementKeys) {
+			if (cell[key] is null) {
+				cell[key] = 1;
+			}
+		}
+	}
+
+	/// <summary>
+	/// A single-column cell: the computed row of column 1, spanning one cell. The one placement literal in this
+	/// file — the positional pass and the tab-area stacking both stack into a single column, so they want the
+	/// same object. All four keys are always written —
+	/// the Freedom UI Mobile DESIGNER fails to open a page whose element carries a <c>layoutConfig</c> without
+	/// <c>colSpan</c> / <c>rowSpan</c>, even though the runtime itself renders fine without them. A partial
+	/// placement is therefore not a smaller placement, it is a broken page at design time.
+	/// </summary>
+	private static JsonObject SiblingSlot(int row) => new() {
+		[LayoutRowKey] = row, ["column"] = 1, ["colSpan"] = 1, ["rowSpan"] = 1
+	};
 
 	/// <summary>
 	/// Carries the shifted placement onto the anchor: patches the <c>merge</c> entry the conversion already
@@ -4373,7 +4731,11 @@ public static class WebToMobileAnalysisService {
 	/// The tab's top-level content (expansion panels included — a panel is an ordinary component here) is
 	/// then RETARGETED into the Area, and every retargeted component gets a sequential single-column
 	/// <c>layoutConfig</c> so the mobile order matches the web order. The element map is walked in tree
-	/// order, so the row numbers follow the source page's own ordering.
+	/// order, so the row numbers follow the source page's own ordering — EXCEPT for a child that sat in the
+	/// tab's <c>tools</c> strip, which is hoisted back above the <c>items</c> content
+	/// (<see cref="IsHeaderSlot"/>): the strip is the tab's header and renders above the body on web, but
+	/// the walk always emits a container's <c>items</c> children before its <c>tools</c> children, so
+	/// element-map order alone would stack the header last.
 	/// </para>
 	/// <para>
 	/// The whole pass is switched by DATA: with no usable <c>tabAreaLayers</c> section in the rules file it
@@ -4452,15 +4814,33 @@ public static class WebToMobileAnalysisService {
 
 			// Move the tab's top-level content into the Area and stack it in source order. The Area is a
 			// single-column grid, so each component gets row N of column 1 — element-map order IS the web
-			// order.
+			// order, with ONE correction: element-map order does not preserve where a tools-strip child
+			// renders. A web tab's tools strip is its HEADER (title + the add/settings buttons) drawn ABOVE
+			// the tab body, but the walk reaches a container's items children (WalkElements) before it
+			// reaches its tools children (RecurseChildArrays), unconditionally — so replaying element-map
+			// order verbatim would stack the header LAST. Hoisting is stable, so the relative order inside
+			// each group is still the source order, and it MUST read the slot before the loop below
+			// overwrites PropertyName.
+			List<ElementMapEntry> ordered = content
+				.OrderBy(c => IsHeaderSlot(c.PropertyName) ? 0 : 1)
+				.ToList();
 			var moved = new List<string>();
 			int row = 1;
-			foreach (ElementMapEntry child in content) {
+			foreach (ElementMapEntry child in ordered) {
 				// Without an Area only routing hints can remain here; they point at the tab body.
 				child.ParentName = areaName ?? mainName;
 				if (!string.Equals(child.Operation, "insert", StringComparison.Ordinal)) {
 					continue; // a relocate-children entry is a routing hint, not an element — nothing to place
 				}
+				// The slot travels with the parent. A web crt.TabContainer declares BOTH items and tools (its
+				// header strip — e.g. the Next steps tab's title + "add step" button), and RecurseChildArrays
+				// emits such a child with propertyName "tools". The Area it is retargeted into is a
+				// crt.GridContainer, whose only child collection is items, so carrying the source slot across
+				// the retarget would make InitializeContainerChildSlots declare a "tools" array on the Area and
+				// have the differ insert into a slot the component never renders: the tab shows nothing but an
+				// empty Area, in the designer and at runtime alike (ENG-96153). The hoist above has already
+				// read the source slot, which is why it cannot be folded into this loop.
+				child.PropertyName = ItemsPropertyName;
 				moved.Add(child.MobileName);
 				PlaceInSingleColumn(child, row);
 				row++;
@@ -4521,13 +4901,15 @@ public static class WebToMobileAnalysisService {
 	/// </summary>
 	private static void InitializeContainerChildSlots(List<ElementMapEntry> elementMap,
 		IReadOnlyDictionary<string, ComponentRegistryEntry> mobileByType) {
-		// occupiedSlots keys purely on MobileName, not on entry identity: a collision would silently seed both
-		// same-named entries. This is safe only because MobileName is guaranteed unique here by construction, not
-		// checked defensively — Freedom UI itself requires unique component names on a page (the web source this
-		// walk consumes), and the only NAME-GENERATING path, StableSuffix in BuildTabAreaLayers, actively avoids
-		// every name already in the map (its own `taken` set, seeded from every WebName AND MobileName) before
-		// picking a suffix. No test constructs a collision because producing one would require bypassing that
-		// same guarantee, which no caller of this method does.
+		// occupiedSlots keys purely on MobileName, not on entry identity. MobileName is NOT unique across the
+		// element map: `containers` is a MANY-TO-ONE map by design (CardContentWrapper and GeneralInfoTab both
+		// merge onto GeneralTabContainer), so two entries can share one mobile name. This stays safe because the
+		// loop below is gated on Operation == "insert" and every duplicate produced by that map is a MERGE — the
+		// insert side keeps its own uniqueness: Freedom UI requires unique component names on a page (the web
+		// source this walk consumes), and the only NAME-GENERATING path, StableSuffix in BuildTabAreaLayers,
+		// actively avoids every name already in the map (its own `taken` set, seeded from every WebName AND
+		// MobileName) before picking a suffix. Any future pass that indexes this map by MobileName WITHOUT the
+		// insert gate must state its own tie-break rather than assume uniqueness.
 		var occupiedSlots = new Dictionary<string, HashSet<string>>(StringComparer.OrdinalIgnoreCase);
 		foreach (ElementMapEntry entry in elementMap) {
 			if (!string.Equals(entry.Operation, "insert", StringComparison.Ordinal)
@@ -4589,11 +4971,6 @@ public static class WebToMobileAnalysisService {
 		&& entry is not null
 		&& ResolveExpectedShape(entry, slot) == JsonValueKind.Object;
 
-	/// <summary>A single-column grid cell: column 1 of the given row, spanning nothing.</summary>
-	private static JsonObject SingleColumnPlacement(int row) => new() {
-		["column"] = 1, ["colSpan"] = 1, ["row"] = row, ["rowSpan"] = 1
-	};
-
 	/// <summary>
 	/// Stacks one retargeted element into its single-column parent at the given row. An element the
 	/// adaptive pass already placed per breakpoint keeps that placement: mobile resolves layoutConfig from
@@ -4602,11 +4979,26 @@ public static class WebToMobileAnalysisService {
 	/// (scalar, array) cannot hold <c>adaptive</c> and is replaceable — string-indexing it directly would
 	/// throw InvalidOperationException.
 	/// </summary>
+	/// <summary>
+	/// True when a child sat in a slot OTHER than <c>items</c> on its web parent — for a tab that means the
+	/// <c>tools</c> header strip. A null or empty <c>propertyName</c> is the generic <c>items</c> slot (the
+	/// same default the differ body assembly uses), so it is NOT a header slot.
+	/// <para>
+	/// Deliberately phrased as "not items" rather than "is tools": the question being asked is whether the
+	/// child is tab CHROME, and a slot list would have to be kept in sync with whatever slots the web
+	/// registry declares on a tab-hosting container. Every non-items slot a tab child can occupy is header
+	/// chrome, so the negative test needs no maintenance.
+	/// </para>
+	/// </summary>
+	private static bool IsHeaderSlot(string propertyName) =>
+		propertyName is { Length: > 0 }
+		&& !string.Equals(propertyName, ItemsPropertyName, StringComparison.OrdinalIgnoreCase);
+
 	private static void PlaceInSingleColumn(ElementMapEntry child, int row) {
 		if (child.MobileValues is JsonObject childValues
 			&& (childValues["layoutConfig"] is not JsonObject layoutConfig
 				|| layoutConfig["adaptive"] is null)) {
-			childValues["layoutConfig"] = SingleColumnPlacement(row);
+			childValues["layoutConfig"] = SiblingSlot(row);
 		}
 	}
 
@@ -4641,7 +5033,7 @@ public static class WebToMobileAnalysisService {
 			// Guaranteed a non-empty string by IsUsableLayer, which gates every call to this method.
 			MobileType = values["type"].GetValue<string>(),
 			ParentName = parentName,
-			PropertyName = "items",
+			PropertyName = ItemsPropertyName,
 			MobileValues = values,
 			Reason = reason
 		};
@@ -4649,8 +5041,10 @@ public static class WebToMobileAnalysisService {
 
 	/// <summary>
 	/// Applies the rules' <c>componentPropertyOverrides</c> to every element-map INSERT, stamping each mobile
-	/// standard the rules file declares (container spacing, metric style). For each entry whose
-	/// <c>mobileType</c> matches an override rule, the listed properties are SET on the prebuilt
+	/// standard the rules file declares (container spacing, metric style). A rule is selected purely by its
+	/// <c>filters</c> — the component type is one constraint among them, evaluated by the same matcher the
+	/// components group uses (see <see cref="MatchesFilters"/>) — and EVERY matching rule is applied, in the
+	/// order the rules file declares them. For each match the listed properties are SET on the prebuilt
 	/// <c>mobileValues</c> — by default REPLACING whatever the web page carried (any shape: token, px
 	/// number, CSS string, per-axis object; the web value is discarded, never translated) and ADDED when
 	/// the web page carried none, so the converted body is self-describing instead of leaning on the
@@ -4660,8 +5054,10 @@ public static class WebToMobileAnalysisService {
 	/// overwritten, and for why an ABSENT branch is created. Covers converted and synthesized inserts alike (run it after the tab-area pass);
 	/// merge twins, drops and relocate hints are never touched, and the element identity keys
 	/// (<c>name</c>/<c>type</c>) can never be overridden. Switched by DATA: an absent/empty group is a
-	/// no-op. Returns one advisory entry per normalized element, bucketed into the report section its rule
-	/// declared via <c>reportGroup</c>.
+	/// no-op. Returns one advisory entry per normalized element — ONE per element, whatever the number of
+	/// rules that wrote it — bucketed into the report section <see cref="ResolveReportGroup"/> derives from
+	/// the component TYPE. The section is therefore per-type, not per-rule: two standards targeting the same
+	/// type report into the same section.
 	/// </summary>
 	private static ComponentPropertyOverrideResult ApplyComponentPropertyOverrides(
 		List<ElementMapEntry> elementMap, WebToMobilePageConversionRules rules) {
@@ -4670,42 +5066,143 @@ public static class WebToMobileAnalysisService {
 		if (overrides is not { Count: > 0 }) {
 			return result;
 		}
-		// One rule per mobile type: a duplicate `type` in the rules file LAST-WINS, silently. That also means
-		// a type cannot carry two rules (e.g. replace one key, merge another) — a limit to lift here, in the
-		// pass, if a standard ever needs it, rather than by loosening the per-rule merge flag.
-		var byType = new Dictionary<string, ComponentPropertyOverrideRule>(StringComparer.OrdinalIgnoreCase);
-		foreach (ComponentPropertyOverrideRule rule in overrides) {
-			if (!string.IsNullOrWhiteSpace(rule?.Type) && rule.Values is { Count: > 0 }) {
-				byType[rule.Type] = rule;
-			}
-		}
-		if (byType.Count == 0) {
+		// No index by type: the component type is one FILTER constraint among others, so a rule is selected
+		// exactly the way a components-group entry is — by running its filters. Every rule that matches is
+		// applied, in DECLARATION order, and two matching rules that write the same key resolve
+		// last-declared-wins per KEY. That is also how one type mixes replace and merge semantics without
+		// loosening the per-rule merge flag.
+		//
+		// Dropped up front: a rule that stamps nothing, and a rule with NO `filters` key at all. The second is
+		// the important one — the filters are the whole of what an override rule targets, so a rule missing
+		// them is incomplete, not universal, and treating it as "matches everything" would let one forgotten
+		// key stamp values onto every component on the page, silently. An EMPTY list still means "everything":
+		// that form can only be written deliberately, so it stays available.
+		List<ComponentPropertyOverrideRule> stampers = [.. overrides.Where(r => r?.Values is { Count: > 0 })];
+		result.SkippedRulesWithoutFilters = stampers.Count(r => r.Filters is null);
+		List<ComponentPropertyOverrideRule> declared = [.. stampers.Where(r => r.Filters is not null)];
+		if (declared.Count == 0) {
 			return result;
 		}
 		foreach (ElementMapEntry entry in elementMap) {
 			if (!string.Equals(entry.Operation, "insert", StringComparison.Ordinal)
 				|| entry.MobileType is not { Length: > 0 }
-				|| entry.MobileValues is not JsonObject values
-				|| !byType.TryGetValue(entry.MobileType, out ComponentPropertyOverrideRule rule)) {
+				|| entry.MobileValues is not JsonObject values) {
 				continue;
 			}
+			// Which rules apply is decided against the element as it ENTERED the pass — every filter is
+			// evaluated BEFORE the first value is stamped. Evaluating them lazily would let an earlier rule
+			// silently enable or disable a later one (a rule stamping borderRadius Large would stop a rule
+			// filtered on borderRadius Medium from ever matching), making the outcome depend on the order the
+			// file happens to list them in. Only the WRITING follows declaration order.
+			List<ComponentPropertyOverrideRule> matched =
+				[.. declared.Where(rule => MatchesFilters(values, rule.Filters))];
 			var properties = new List<string>();
 			var skippedPaths = new List<string>();
-			foreach (KeyValuePair<string, JsonElement> pair in rule.Values) {
-				if (string.Equals(pair.Key, "name", StringComparison.OrdinalIgnoreCase)
-					|| string.Equals(pair.Key, "type", StringComparison.OrdinalIgnoreCase)) {
-					continue; // element identity is never overridable, whatever the rules file says
+			foreach (ComponentPropertyOverrideRule rule in matched) {
+				foreach (KeyValuePair<string, JsonElement> pair in rule.Values) {
+					if (string.Equals(pair.Key, "name", StringComparison.OrdinalIgnoreCase)
+						|| string.Equals(pair.Key, "type", StringComparison.OrdinalIgnoreCase)) {
+						continue; // element identity is never overridable, whatever the rules file says
+					}
+					StampOverrideValue(values, pair.Key, pair.Value, rule.MergeNestedObjects, properties, skippedPaths);
 				}
-				StampOverrideValue(values, pair.Key, pair.Value, rule.MergeNestedObjects, properties, skippedPaths);
 			}
 			// An element that was only partly normalized (or not at all) is still reported — as a skip entry —
-			// so a caller can tell "nothing to normalize" from "could not normalize".
+			// so a caller can tell "nothing to normalize" from "could not normalize". The paths are
+			// de-duplicated: an element two rules both wrote is ONE normalized element, not two, and a key
+			// they both touched is one property.
 			if (properties.Count > 0 || skippedPaths.Count > 0) {
 				result.Add(ResolveReportGroup(entry.MobileType), entry.MobileName, entry.MobileType,
-					properties, skippedPaths);
+					[.. properties.Distinct(StringComparer.Ordinal)],
+					[.. skippedPaths.Distinct(StringComparer.Ordinal)]);
 			}
 		}
 		return result;
+	}
+
+	/// <summary>
+	/// Whether an override rule applies to the element carrying <paramref name="values"/>. A rule with no
+	/// filters (an EMPTY list; an absent one never gets here) applies to every insert. Otherwise the same rule as
+	/// <see cref="MatchesAnyFilter"/> on the source side: the filters are OR-ed, each one AND-s every
+	/// constraint it declares, a value matches only on DEEP equality (so an ABSENT property never matches),
+	/// and a filter that declares nothing matches nothing. The element's values are only READ here — see the
+	/// caller for why every rule of a type is matched before any of them writes.
+	/// </summary>
+	private static bool MatchesFilters(JsonObject values, IReadOnlyList<ElementFilterRule> filters) {
+		if (filters is not { Count: > 0 }) {
+			// Only the EMPTY list reaches this — the caller has already dropped a rule whose `filters` key is
+			// absent — and an empty list is the deliberate "every insert of every type".
+			return true;
+		}
+		string type = values["type"] is JsonValue node && node.TryGetValue(out string declared) ? declared : null;
+		return filters.Any(f => Declares(f)
+			&& (string.IsNullOrWhiteSpace(f.Type) || string.Equals(f.Type, type, StringComparison.OrdinalIgnoreCase))
+			&& MatchesValueConstraints(f, key => values[key]));
+	}
+
+	/// <summary>
+	/// Deep JSON equality between an element's live value (<see cref="JsonNode"/>) and a rule's filter value
+	/// (<see cref="JsonElement"/>).
+	/// <para>
+	/// Hand-written for two reasons, neither of which is framework availability —
+	/// <c>JsonNode.DeepEquals</c> IS available here and this file calls it elsewhere. First, the operands are
+	/// of different types, so any library comparer would need a conversion on every call anyway. Second, and
+	/// decisive, this comparison needs semantics a general JSON comparer does not give: a number matches by
+	/// PARSED VALUE, so a filter writing <c>4</c> matches an element carrying <c>4.0</c> —
+	/// <c>JToken.DeepEquals</c> treats those as unequal because it compares by JSON number type, which would
+	/// make a filter silently miss. Objects still match key-for-key (a filter object is an exact description,
+	/// not a subset) and arrays element-for-element in order.
+	/// </para>
+	/// </summary>
+	private static bool JsonValueEquals(JsonNode actual, JsonElement expected) {
+		switch (expected.ValueKind) {
+			case JsonValueKind.Object: {
+				if (actual is not JsonObject actualObject) {
+					return false;
+				}
+				int declared = 0;
+				foreach (JsonProperty property in expected.EnumerateObject()) {
+					declared++;
+					if (!actualObject.TryGetPropertyValue(property.Name, out JsonNode child)
+						|| !JsonValueEquals(child, property.Value)) {
+						return false;
+					}
+				}
+				return actualObject.Count == declared;
+			}
+			case JsonValueKind.Array: {
+				if (actual is not JsonArray actualArray) {
+					return false;
+				}
+				int index = 0;
+				foreach (JsonElement item in expected.EnumerateArray()) {
+					if (index >= actualArray.Count || !JsonValueEquals(actualArray[index], item)) {
+						return false;
+					}
+					index++;
+				}
+				return actualArray.Count == index;
+			}
+			case JsonValueKind.String:
+				return actual is JsonValue text && text.TryGetValue(out string actualText)
+					&& string.Equals(actualText, expected.GetString(), StringComparison.Ordinal);
+			case JsonValueKind.Number:
+				// Exact equality is correct here, and the usual "never compare floats exactly" caution does not
+				// apply: BOTH operands are JSON literals parsed into double — the element's value and the rules
+				// file's — never the result of arithmetic, so there is no accumulated error for a tolerance to
+				// absorb. Equal literals parse to bit-identical doubles, which is exactly what makes 4 and 4.0
+				// match. A tolerance here would guard nothing while implying the values are computed.
+				return actual is JsonValue number && number.TryGetValue(out double actualNumber)
+					&& expected.TryGetDouble(out double expectedNumber)
+					&& actualNumber.Equals(expectedNumber);
+			case JsonValueKind.True:
+			case JsonValueKind.False:
+				return actual is JsonValue flag && flag.TryGetValue(out bool actualFlag)
+					&& actualFlag == (expected.ValueKind == JsonValueKind.True);
+			default:
+				// Null / Undefined: an explicit JSON null in the element map is a null node.
+				return actual is null;
+		}
 	}
 
 	/// <summary>
@@ -4898,6 +5395,15 @@ public static class WebToMobileAnalysisService {
 	private sealed class ComponentPropertyOverrideResult {
 		private readonly Dictionary<string, GroupAccumulator> _groups = new(StringComparer.OrdinalIgnoreCase);
 		private readonly List<string> _order = [];
+
+		/// <summary>
+		/// Rules the pass REFUSED to run because they declare no <c>filters</c> — the whole of what an override
+		/// rule targets. Counted rather than ignored: the rules file can be fetched from the CDN at runtime, so
+		/// a mistyped <c>"filter"</c> or an entry authored against the removed <c>type</c> field silently drops
+		/// its standard, and the page then ships un-normalized in a way the report cannot otherwise distinguish
+		/// from "nothing needed normalizing".
+		/// </summary>
+		public int SkippedRulesWithoutFilters { get; set; }
 
 		/// <summary>Report groups that recorded something, in first-seen (element-map) order.</summary>
 		public IEnumerable<KeyValuePair<string, GroupAccumulator>> Groups =>

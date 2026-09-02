@@ -1,4 +1,5 @@
-using System;
+﻿using System;
+using System.Collections.Generic;
 using System.IO.Abstractions.TestingHelpers;
 using System.Linq;
 using System.Threading;
@@ -58,6 +59,139 @@ public sealed class PageSyncToolTests {
 
 	[Test]
 	[Category("Unit")]
+	[Description("sync-pages validate=false propagates onto PageUpdateOptions: the command-level mobile CONTENT chain is skipped, so a mobile body carrying a 'handlers' section still saves.")]
+	public async Task SyncPages_ShouldPropagateValidateFalse_ToPageUpdateOptions() {
+		// Arrange
+		PageUpdateCommand updateCommand = CreateSuccessfulPageUpdateCommandWithClient(
+			out IApplicationClient applicationClient, schemaType: 10);
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		commandResolver.Resolve<PageUpdateCommand>(Arg.Any<PageUpdateOptions>()).Returns(updateCommand);
+		PageSyncTool tool = new(commandResolver, new MockFileSystem(), Substitute.For<IMobileComponentInfoCatalog>(),
+			Substitute.For<IComponentInfoCatalog>(), Substitute.For<IPageBodySamplingService>(),
+			new PageBaselineGuard(new MockFileSystem()));
+		PageSyncArgs args = new(
+			"dev",
+			[new PageSyncPageInput("UsrMobile_FormPage", MobileBodyWithHandlers)],
+			Validate: false,
+			SkipSampling: true);
+
+		// Act
+		PageSyncResponse response = await tool.SyncPages(args, null);
+
+		// Assert
+		response.Pages[0].Success.Should().BeTrue(
+			because: "validate=false must reach PageUpdateOptions, otherwise the command-level mobile content chain "
+				+ "would still reject the 'handlers' section that the tool-level chain already skipped");
+		applicationClient.Received().ExecutePostRequest(
+			Arg.Is<string>(url => url.Contains("SaveSchema")),
+			Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>());
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("sync-pages validate=true keeps the mobile content chain: the same body is rejected, which is what makes the validate=false test above a real propagation proof.")]
+	public async Task SyncPages_ShouldRejectMobileHandlers_WhenValidateIsTrue() {
+		// Arrange
+		PageUpdateCommand updateCommand = CreateSuccessfulPageUpdateCommand(schemaType: 10);
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		commandResolver.Resolve<PageUpdateCommand>(Arg.Any<PageUpdateOptions>()).Returns(updateCommand);
+		PageSyncTool tool = new(commandResolver, new MockFileSystem(), Substitute.For<IMobileComponentInfoCatalog>(),
+			Substitute.For<IComponentInfoCatalog>(), Substitute.For<IPageBodySamplingService>(),
+			new PageBaselineGuard(new MockFileSystem()));
+		PageSyncArgs args = new(
+			"dev",
+			[new PageSyncPageInput("UsrMobile_FormPage", MobileBodyWithHandlers)],
+			Validate: true,
+			SkipSampling: true);
+
+		// Act
+		PageSyncResponse response = await tool.SyncPages(args, null);
+
+		// Assert
+		response.Pages[0].Success.Should().BeFalse(
+			because: "mobile pages do not support a 'handlers' section when validation is on");
+		response.Pages[0].Error.Should().Contain("handlers",
+			because: "the caller needs to know which disallowed section was rejected");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("sync-pages validate=false does NOT drop the structural floor: a markerless web replace body is still rejected, so the tool cannot write a page it can no longer read back.")]
+	public async Task SyncPages_ShouldKeepMarkerIntegrityFloor_WhenValidateIsFalse() {
+		// Arrange
+		PageUpdateCommand updateCommand = CreateSuccessfulPageUpdateCommandWithClient(
+			out IApplicationClient applicationClient);
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		commandResolver.Resolve<PageUpdateCommand>(Arg.Any<PageUpdateOptions>()).Returns(updateCommand);
+		PageSyncTool tool = new(commandResolver, new MockFileSystem(), Substitute.For<IMobileComponentInfoCatalog>(),
+			Substitute.For<IComponentInfoCatalog>(), Substitute.For<IPageBodySamplingService>(),
+			new PageBaselineGuard(new MockFileSystem()));
+		PageSyncArgs args = new(
+			"dev",
+			[new PageSyncPageInput("UsrTodo_FormPage", MarkerlessWebBody)],
+			Validate: false,
+			SkipSampling: true);
+
+		// Act
+		PageSyncResponse response = await tool.SyncPages(args, null);
+
+		// Assert
+		response.Pages[0].Success.Should().BeFalse(
+			because: "a markerless body is valid JavaScript, so only the marker floor stands between it and a page "
+				+ "PageSchemaSectionReader can no longer parse");
+		response.Pages[0].Error.Should().Contain("marker",
+			because: "the reported failure must be the marker floor, not a generic save error");
+		applicationClient.DidNotReceive().ExecutePostRequest(
+			Arg.Is<string>(url => url.Contains("SaveSchema")),
+			Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>());
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("sync-pages accepts a per-page force=true alongside validate=false - the flags are orthogonal, and master's per-page force contract must keep working with the escape hatch on.")]
+	public async Task SyncPages_ShouldAcceptForcedPage_WhenValidateIsFalse() {
+		// Arrange
+		PageUpdateCommand updateCommand = CreateSuccessfulPageUpdateCommandWithClient(
+			out IApplicationClient applicationClient);
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		commandResolver.Resolve<PageUpdateCommand>(Arg.Any<PageUpdateOptions>()).Returns(updateCommand);
+		PageSyncTool tool = new(commandResolver, new MockFileSystem(), Substitute.For<IMobileComponentInfoCatalog>(),
+			Substitute.For<IComponentInfoCatalog>(), Substitute.For<IPageBodySamplingService>(),
+			new PageBaselineGuard(new MockFileSystem()));
+		PageSyncArgs args = new(
+			"dev",
+			[
+				new PageSyncPageInput("UsrForced_FormPage", ValidPageBody, Force: true),
+				new PageSyncPageInput("UsrTodo_FormPage", ValidPageBody)
+			],
+			Validate: false,
+			SkipSampling: true);
+
+		// Act
+		PageSyncResponse response = await tool.SyncPages(args, null);
+
+		// Assert
+		response.Pages.Single(page => page.SchemaName == "UsrForced_FormPage").Success.Should().BeTrue(
+			because: "content validation and the baseline guard are independent concerns - forbidding the pair would "
+				+ "dead-end the caller who must overwrite an external change on a page with a pre-existing defect");
+		response.Pages.Single(page => page.SchemaName == "UsrTodo_FormPage").Success.Should().BeTrue(
+			because: "the sibling page without force must be unaffected either way");
+		PageSyncValidationResult forcedValidation =
+			response.Pages.Single(page => page.SchemaName == "UsrForced_FormPage").Validation;
+		forcedValidation.Should().NotBeNull(
+			because: "the advisory has to travel somewhere, and Validation is the per-page warning envelope");
+		forcedValidation.Warnings.Should().Contain(warning => warning.Contains("baseline/conflict guard"),
+			because: "the validate contract promises a warning when both guards are relaxed, and sync-pages "
+				+ "calls TryUpdatePage directly so it never passes through update-page's advisory");
+		IReadOnlyList<string> siblingWarnings =
+			response.Pages.Single(page => page.SchemaName == "UsrTodo_FormPage").Validation?.Warnings
+			?? [];
+		siblingWarnings.Should().NotContain(warning => warning.Contains("baseline/conflict guard"),
+			because: "the page that did not ask for force still has its baseline guard armed");
+	}
+
+	[Test]
+	[Category("Unit")]
 	[Description("Successfully updates a single page when Creatio responds with success")]
 	public async Task SyncPages_Should_Succeed_For_Valid_Page() {
 		// Arrange
@@ -102,7 +236,7 @@ public sealed class PageSyncToolTests {
 		// IToolCommandResolver the tool uses for command resolution (Pattern-A) — no
 		// direct ISettingsRepository dependency anymore.
 		commandResolver.Resolve<EnvironmentSettings>(Arg.Any<EnvironmentOptions>()).Returns(new EnvironmentSettings());
-		IPlatformVersionResolver resolver = Substitute.For<IPlatformVersionResolver>();
+		IOwnedPlatformVersionResolver resolver = Substitute.For<IOwnedPlatformVersionResolver>();
 		resolver.ResolveAsync(Arg.Any<CancellationToken>())
 			.Returns(new PlatformVersionResolution("8.2.1", VersionResolutionSource.Environment));
 		IPlatformVersionResolverFactory resolverFactory = Substitute.For<IPlatformVersionResolverFactory>();
@@ -873,6 +1007,14 @@ public sealed class PageSyncToolTests {
 		return new PageUpdateCommand(applicationClient, serviceUrlBuilder, Substitute.For<ILogger>(), Substitute.For<IPageBaselineGuard>(), CreateHierarchyClientFor("test-uid"));
 	}
 
+	// Mobile body (plain JSON) carrying a section mobile pages do not support. The offending section is
+	// caught by the CONTENT half of the validation chain, which is exactly the half validate=false skips.
+	private const string MobileBodyWithHandlers = """{"viewConfigDiff":[],"handlers":[]}""";
+
+	// Syntactically valid JavaScript with NO marker pairs - it parses, so only the structural marker floor
+	// stops it from being saved as a page the tool could never read back.
+	private const string MarkerlessWebBody = "define('TestPage', [], function() { return { viewConfigDiff: [] }; });";
+
 	private const string ValidPageBody = "define('TestPage', /**SCHEMA_DEPS*/[]/**SCHEMA_DEPS*/, " +
 		"function(/**SCHEMA_ARGS*//**SCHEMA_ARGS*/) { return { " +
 		"viewConfigDiff: /**SCHEMA_VIEW_CONFIG_DIFF*/[]/**SCHEMA_VIEW_CONFIG_DIFF*/, " +
@@ -1257,7 +1399,7 @@ public sealed class PageSyncToolTests {
 		// resolver resolves ephemeral settings from the header's credential context.
 		commandResolver.Resolve<EnvironmentSettings>(Arg.Any<EnvironmentOptions>())
 			.Returns(new EnvironmentSettings());
-		IPlatformVersionResolver resolver = Substitute.For<IPlatformVersionResolver>();
+		IOwnedPlatformVersionResolver resolver = Substitute.For<IOwnedPlatformVersionResolver>();
 		resolver.ResolveAsync(Arg.Any<CancellationToken>())
 			.Returns(new PlatformVersionResolution("8.2.1", VersionResolutionSource.Environment));
 		IPlatformVersionResolverFactory resolverFactory = Substitute.For<IPlatformVersionResolverFactory>();

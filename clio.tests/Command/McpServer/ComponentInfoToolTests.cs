@@ -1555,7 +1555,7 @@ public sealed class ComponentInfoToolTests {
 		IMobileComponentInfoCatalog mobileCatalog,
 		IComponentRegistryDocsClient? docsClient = null,
 		string? environmentVersion = null,
-		IPlatformVersionResolver? resolver = null,
+		IOwnedPlatformVersionResolver? resolver = null,
 		IToolCommandResolver? commandResolver = null) {
 		IPlatformVersionResolverFactory factory = Substitute.For<IPlatformVersionResolverFactory>();
 		if (resolver is not null) {
@@ -1981,7 +1981,7 @@ public sealed class ComponentInfoToolTests {
 	}
 
 	/// <summary>Test double that returns a pre-configured platform version resolution.</summary>
-	private sealed class StubPlatformVersionResolver(PlatformVersionResolution resolution) : IPlatformVersionResolver {
+	private sealed class StubPlatformVersionResolver(PlatformVersionResolution resolution) : IOwnedPlatformVersionResolver {
 		public static StubPlatformVersionResolver LatestFallback() =>
 			new(new PlatformVersionResolution("latest", VersionResolutionSource.LatestFallback));
 
@@ -1993,6 +1993,8 @@ public sealed class ComponentInfoToolTests {
 
 		public Task<PlatformVersionResolution> ResolveAsync(CancellationToken cancellationToken = default) =>
 			Task.FromResult(resolution);
+
+		public void Dispose() { }
 	}
 
 	/// <summary>Test double that always reports a different resolved version than was requested.</summary>
