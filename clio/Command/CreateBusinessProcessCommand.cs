@@ -26,7 +26,7 @@ namespace Clio.Command;
 // persists a broken formula on an older one, to fail at run time. The article is explicit that a tightened
 // validator takes a literal rather than being left to convergence, because convergence only warns.
 //
-// Raised again to 1.4.0.42, and this time the reason runs the other way. 1.4.0.41 is the version that STOPPED
+// Raised again to 1.4.0.44, and this time the reason runs the other way. 1.4.0.41 is the version that STOPPED
 // validating formulas in the package, because the platform's own pre-save gate was already doing it — for a
 // mapped expression AND for a flow condition, measured with both package guards built out and installed
 // (spec/eng-95891-formula-expressions/eng-95891-formula-expressions-save-gate-probe.md). What the floor buys
@@ -35,9 +35,14 @@ namespace Clio.Command;
 // serialised-error rewrite (PlatformValidationMessage) is not there — so an unresolvable parameter reference
 // comes back as `{ErrorType:2,ErrorData:{ParameterUId:"…"}}`.
 //
-// The floor is .42 rather than .41 because .42 is the archive this clio bundles, and because the review round
-// after .41 corrected the rewrite these descriptions promise: every serialised error in one message rather
-// than the first, and an element-scoped reference named as such rather than called a process parameter.
+// The floor is above .41 because the review round after .41 corrected the rewrite these descriptions
+// promise: every serialised error in one message rather than the first, and an element-scoped reference named
+// as such rather than called a process parameter. It is .44 specifically because .44 is the first archive
+// carrying BOTH that and the lookup-constant contract the ENG-96325 merge brought in (see below), so it is
+// the lowest version that satisfies everything these descriptions say. Do not re-derive it from whatever
+// this clio happens to bundle: the bundled archive moves on every rebundle, the fixture only asserts the
+// floor is SATISFIABLE by it, and a floor that tracks the bundle demands an upgrade of environments that
+// already work.
 //
 // The floor is NOT lowered back to .37 on the grounds that .37 also refuses. It does, with different text, and
 // a description that names what a refusal says is only true from .41. Nor is it a tightened validator any

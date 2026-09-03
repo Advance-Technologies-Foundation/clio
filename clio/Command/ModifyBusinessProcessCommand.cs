@@ -22,15 +22,18 @@ namespace Clio.Command;
 // registry with a "supported operations are …" message, which reads as a clio bug rather than a stale
 // environment.
 //
-// The literal is 1.4.0.42, and two versions are in play. 1.4.0.41 stopped validating formulas IN THE
+// The literal is 1.4.0.44, and three versions are in play. 1.4.0.41 stopped validating formulas IN THE
 // PACKAGE, because the
 // platform's own pre-save gate was already validating them — a mapped expression and a flow condition alike,
 // measured with both package guards built out and installed
 // (spec/eng-95891-formula-expressions/eng-95891-formula-expressions-save-gate-probe.md). So the formula half
 // of this floor is no longer a tightened validator; .41 checks strictly LESS than .37 did, and an environment
-// between them refuses at least as much. The literal is .42 rather than .41 because .42 is what this clio
-// bundles, and because .42 corrected the rewrite this description promises — every serialised error in one
-// message, and an element-scoped reference named as such. What the floor buys is the MESSAGE contract this tool's description
+// between them refuses at least as much. It is above .41 because .42 corrected the rewrite this description
+// promises — every serialised error in one message, and an element-scoped reference named as such — and .44
+// specifically because .44 is the first archive carrying both that and the lookup-constant contract the
+// ENG-96325 merge brought in (see below). Not because .44 is what this clio bundles: the bundle moves on
+// every rebundle and the fixture only asserts the floor is satisfiable by it, so a floor that tracks the
+// bundle would demand an upgrade of environments that already work. What the floor buys is the MESSAGE contract this tool's description
 // promises: below .41 a bad formula is refused in the package's own wording, with its own reference
 // pre-check, and without the serialised-error rewrite — so an unresolvable parameter reference comes back as
 // `{ErrorType:2,ErrorData:{ParameterUId:"…"}}` rather than as a sentence.
