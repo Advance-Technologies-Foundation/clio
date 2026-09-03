@@ -6,19 +6,28 @@ designer and, where applicable, runs it. Behaviour below was verified on a stand
 `CrtProcessBuilder 1.4.0.18` and then 1.4.0.37 - the versions the run manifests beside this file
 record. It is NOT verified at 1.4.0.3: several of the refusals below first ship in .32 and .35.
 
-**RE-RUN REQUIRED AT 1.4.0.42.** 1.4.0.41 removed the package's own formula validator, and .42 corrected
-the message rewrite that replaced it, so .42 is the version to run against. The validator went because the
-platform's pre-save gate was already refusing every class of bad formula — a flow condition included
-(`eng-95891-formula-expressions-save-gate-probe.md`). No case below changes its VERDICT, but every
-formula refusal now arrives in the platform's words instead of the package's, and the expectations that
-quote a message are marked. One change is easy to misread as a defect and is not: the platform quotes the
-expression as its own converter left it, so `1.5` comes back as `1.5m` and a `[#[Parameter:{uid}]#]`
-reference comes back as the parameter's NAME.
+**RE-RUN: DONE AT THE STORED LEVEL, STILL OPEN IN THE DESIGNER.** 1.4.0.41 removed the package's own
+formula validator, because the platform's pre-save gate was already refusing every class of bad formula
+— a flow condition included (`eng-95891-formula-expressions-save-gate-probe.md`). No case below changes
+its VERDICT, but every formula refusal now arrives in the platform's words instead of the package's, and
+the expectations that quote a message are marked.
 
-**Conditions.** A Creatio environment registered in clio with `CrtProcessBuilder 1.4.0.42` or newer
+What has been re-measured: the six stored-level cases of the run prompt, at **1.4.0.45**, in
+`eng-95891-formula-expressions-manual-test-run-2026-09-03.md` — 6/6, with the three changed message
+classes evidenced verbatim. The verbatim condition refusals are in the save-gate probe at that same
+archive. What is still open is what only a browser can answer for the cases below: designer rendering
+and runtime execution. Nothing at the stored level is waiting.
+
+One change is easy to misread as a defect and is not: the platform quotes the expression as its own
+converter left it, so `1.5` comes back as `1.5m` and a `[#[Parameter:{uid}]#]` reference comes back as
+the parameter's NAME. Measured, not inferred.
+
+**Conditions.** A Creatio environment registered in clio with `CrtProcessBuilder 1.4.0.44` or newer
 installed (`install-process-builder`), an agent with the clio MCP server connected, and a writable
-`Custom` package. .41 is not a preference: it is the enforced `[RequiresPackage]` floor, so create and
-modify are refused below it before any case here can run.
+`Custom` package. .44 is not a preference: it is the enforced `[RequiresPackage]` floor, so create and
+modify are refused below it before any case here can run. A stand may carry a HIGHER version than the
+floor — the 2026-09-03 run was at .45 — and that is normal: the floor is the lowest version whose
+message contract these expectations describe, not whatever clio currently bundles.
 Unless a case says otherwise, the agent is given **only the sentence in quotes** — no
 tool names, no JSON. That is the point: these cases test whether the shipped guidance is enough for an
 agent to get it right unaided.
