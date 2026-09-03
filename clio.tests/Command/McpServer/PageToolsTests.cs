@@ -4438,6 +4438,64 @@ public class PageToolsTests
 	}
 
 	[Test]
+	[Description("update-page append dry-run rejects a custom validator binding that remains unresolved after merging, before any save request")]
+	public void TryUpdatePage_AppendDryRun_Should_Reject_Unresolved_CustomValidator_Before_Save() {
+		// Arrange
+		var applicationClient = Substitute.For<IApplicationClient>();
+		var serviceUrlBuilder = Substitute.For<IServiceUrlBuilder>();
+		var logger = Substitute.For<ILogger>();
+		var hierarchyClient = Substitute.For<IPageDesignerHierarchyClient>();
+		const string originalUId = "86416224-550a-4087-87d9-d4ebc9aa69c8";
+		const string designPkg = "520a3697-4d73-c598-38d4-a7501f8c8e9b";
+		serviceUrlBuilder.Build(Arg.Any<string>()).Returns(call => "http://test" + call.ArgAt<string>(0));
+		hierarchyClient.GetDesignPackageUId(originalUId).Returns(designPkg);
+		hierarchyClient.GetParentSchemas(originalUId, designPkg).Returns(new List<PageDesignerHierarchySchema> {
+			new() { UId = originalUId, Name = "UsrValidator_FormPage", PackageUId = designPkg, PackageName = "UsrValidator" }
+		});
+		string currentBody = "define(\"UsrValidator_FormPage\", /**SCHEMA_DEPS*/[]/**SCHEMA_DEPS*/, function/**SCHEMA_ARGS*/()/**SCHEMA_ARGS*/ { return { " +
+			"viewConfigDiff: /**SCHEMA_VIEW_CONFIG_DIFF*/[]/**SCHEMA_VIEW_CONFIG_DIFF*/, " +
+			"viewModelConfigDiff: /**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/[]/**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/, " +
+			"modelConfigDiff: /**SCHEMA_MODEL_CONFIG_DIFF*/[]/**SCHEMA_MODEL_CONFIG_DIFF*/, " +
+			"handlers: /**SCHEMA_HANDLERS*/[]/**SCHEMA_HANDLERS*/, " +
+			"converters: /**SCHEMA_CONVERTERS*/{}/**SCHEMA_CONVERTERS*/, " +
+			"validators: /**SCHEMA_VALIDATORS*/{}/**SCHEMA_VALIDATORS*/ }; });";
+		var metadataResponse = new JObject {
+			["success"] = true,
+			["rows"] = new JArray { new JObject { ["UId"] = originalUId } }
+		};
+		var getSchemaResponse = new JObject {
+			["success"] = true,
+			["schema"] = new JObject { ["uId"] = originalUId, ["name"] = "UsrValidator_FormPage", ["body"] = currentBody, ["package"] = new JObject { ["uId"] = designPkg } }
+		};
+		bool saveAttempted = false;
+		int callIndex = 0;
+		applicationClient.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+			.Returns(_ => {
+				callIndex++;
+				if (callIndex == 1) return metadataResponse.ToString();
+				if (callIndex == 2) return getSchemaResponse.ToString();
+				saveAttempted = true;
+				return new JObject { ["success"] = true }.ToString();
+			});
+		string incomingBody = "/**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/[{\"operation\":\"merge\",\"path\":[\"attributes\"],\"values\":{\"UsrName\":{\"validators\":{\"Probe\":{\"type\":\"usr.Missing\"}}}}}]/**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/";
+		var command = new PageUpdateCommand(applicationClient, serviceUrlBuilder, logger, Substitute.For<IPageBaselineGuard>(), hierarchyClient);
+
+		// Act
+		bool ok = command.TryUpdatePage(new PageUpdateOptions {
+			SchemaName = "UsrValidator_FormPage",
+			Body = incomingBody,
+			Mode = "append",
+			DryRun = true
+		}, out PageUpdateResponse response);
+
+		// Assert
+		ok.Should().BeFalse(because: "dry-run must validate the same final merged body that a real append would save");
+		response.ContentValidationFailure.Should().BeTrue(because: "an unresolved custom validator is a skippable content-rule failure");
+		response.Error.Should().Contain("usr.Missing", because: "the failure must identify the unresolved validator type");
+		saveAttempted.Should().BeFalse(because: "dry-run must never send a SaveSchema request");
+	}
+
+	[Test]
 	[Description("update-page append: a valid diff-form incoming fragment against a full-config CURRENT server body fails through the public TryUpdatePage path with the server-side message, without the misdirecting 'Append merge failed'/'marker pairs' wrapper text (ENG-94422)")]
 	public void TryUpdatePage_AppendMode_Should_ReportServerSideMessage_WhenCurrentBodyIsFullConfig() {
 		// Arrange
@@ -4946,6 +5004,111 @@ public class PageToolsTests
 
 		merged.Should().Contain("/**SCHEMA_CONVERTERS*/{}/**SCHEMA_CONVERTERS*/",
 			because: "merging two empty converter sections must produce an empty converter section");
+	}
+
+	[Test]
+	[Description("PageBodyMerger validators merge: incoming validator keys are added while existing validator factories remain intact")]
+	public void PageBodyMerger_Should_Merge_Validators_By_Key() {
+		// Arrange
+		string currentBody = "/**SCHEMA_DEPS*/[]/**SCHEMA_DEPS*/ /**SCHEMA_ARGS*/()/**SCHEMA_ARGS*/ " +
+			"/**SCHEMA_VIEW_CONFIG_DIFF*/[]/**SCHEMA_VIEW_CONFIG_DIFF*/ " +
+			"/**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/[]/**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/ " +
+			"/**SCHEMA_MODEL_CONFIG_DIFF*/[]/**SCHEMA_MODEL_CONFIG_DIFF*/ " +
+			"/**SCHEMA_HANDLERS*/[]/**SCHEMA_HANDLERS*/ " +
+			"/**SCHEMA_CONVERTERS*/{}/**SCHEMA_CONVERTERS*/ " +
+			"/**SCHEMA_VALIDATORS*/{\"usr.Existing\":{validator:function(){return function(){return null;};},params:[],async:false}}/**SCHEMA_VALIDATORS*/";
+		string incomingBody = "/**SCHEMA_VIEW_CONFIG_DIFF*/[]/**SCHEMA_VIEW_CONFIG_DIFF*/ " +
+			"/**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/[]/**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/ " +
+			"/**SCHEMA_MODEL_CONFIG_DIFF*/[]/**SCHEMA_MODEL_CONFIG_DIFF*/ " +
+			"/**SCHEMA_HANDLERS*/[]/**SCHEMA_HANDLERS*/ " +
+			"/**SCHEMA_VALIDATORS*/{\"usr.Added\":{validator:function(config){return function(control){return control.value?null:{\"usr.Added\":{message:config.message}};};},params:[{name:\"message\"}],async:false}}/**SCHEMA_VALIDATORS*/";
+
+		// Act
+		string merged = PageBodyMerger.Merge(currentBody, incomingBody);
+
+		// Assert
+		merged.Should().Contain("usr.Existing", because: "the existing validator must survive an append");
+		merged.Should().Contain("usr.Added", because: "the incoming validator must be added to the saved body");
+		merged.Should().Contain("control.value?null", because: "the incoming JavaScript factory must be preserved verbatim");
+	}
+
+	[Test]
+	[Description("PageBodyMerger validators dedupe: an incoming validator factory replaces the current entry with the same type key")]
+	public void PageBodyMerger_Should_Replace_Validator_When_Key_Matches() {
+		// Arrange
+		string currentBody = "/**SCHEMA_DEPS*/[]/**SCHEMA_DEPS*/ /**SCHEMA_ARGS*/()/**SCHEMA_ARGS*/ " +
+			"/**SCHEMA_VIEW_CONFIG_DIFF*/[]/**SCHEMA_VIEW_CONFIG_DIFF*/ " +
+			"/**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/[]/**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/ " +
+			"/**SCHEMA_MODEL_CONFIG_DIFF*/[]/**SCHEMA_MODEL_CONFIG_DIFF*/ " +
+			"/**SCHEMA_HANDLERS*/[]/**SCHEMA_HANDLERS*/ " +
+			"/**SCHEMA_CONVERTERS*/{}/**SCHEMA_CONVERTERS*/ " +
+			"/**SCHEMA_VALIDATORS*/{\"usr.Unique\":{validator:function(){return function(){return \"old\";};},params:[],async:false},\"usr.Keep\":{validator:function(){return function(){return null;};},params:[],async:false}}/**SCHEMA_VALIDATORS*/";
+		string incomingBody = "/**SCHEMA_VIEW_CONFIG_DIFF*/[]/**SCHEMA_VIEW_CONFIG_DIFF*/ " +
+			"/**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/[]/**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/ " +
+			"/**SCHEMA_MODEL_CONFIG_DIFF*/[]/**SCHEMA_MODEL_CONFIG_DIFF*/ " +
+			"/**SCHEMA_HANDLERS*/[]/**SCHEMA_HANDLERS*/ " +
+			"/**SCHEMA_VALIDATORS*/{\"usr.Unique\":{validator:function(){return function(){return \"new\";};},params:[],async:false}}/**SCHEMA_VALIDATORS*/";
+
+		// Act
+		string merged = PageBodyMerger.Merge(currentBody, incomingBody);
+
+		// Assert
+		merged.Should().Contain("return \"new\"", because: "the incoming validator must win when its type key matches");
+		merged.Should().NotContain("return \"old\"", because: "the replaced validator factory must not remain in the saved body");
+		merged.Should().Contain("usr.Keep", because: "non-colliding existing validators must be preserved");
+	}
+
+	[Test]
+	[Description("PageBodyMerger validators: an empty incoming validator section preserves current validator factories")]
+	public void PageBodyMerger_Should_Preserve_Validators_When_Incoming_Is_Empty() {
+		// Arrange
+		string currentBody = "/**SCHEMA_DEPS*/[]/**SCHEMA_DEPS*/ /**SCHEMA_ARGS*/()/**SCHEMA_ARGS*/ " +
+			"/**SCHEMA_VIEW_CONFIG_DIFF*/[]/**SCHEMA_VIEW_CONFIG_DIFF*/ " +
+			"/**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/[]/**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/ " +
+			"/**SCHEMA_MODEL_CONFIG_DIFF*/[]/**SCHEMA_MODEL_CONFIG_DIFF*/ " +
+			"/**SCHEMA_HANDLERS*/[]/**SCHEMA_HANDLERS*/ " +
+			"/**SCHEMA_CONVERTERS*/{}/**SCHEMA_CONVERTERS*/ " +
+			"/**SCHEMA_VALIDATORS*/{\"usr.Keep\":{validator:function(){return function(){return null;};},params:[],async:false}}/**SCHEMA_VALIDATORS*/";
+		string incomingBody = "/**SCHEMA_VIEW_CONFIG_DIFF*/[]/**SCHEMA_VIEW_CONFIG_DIFF*/ " +
+			"/**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/[]/**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/ " +
+			"/**SCHEMA_MODEL_CONFIG_DIFF*/[]/**SCHEMA_MODEL_CONFIG_DIFF*/ " +
+			"/**SCHEMA_HANDLERS*/[]/**SCHEMA_HANDLERS*/ " +
+			"/**SCHEMA_VALIDATORS*/{}/**SCHEMA_VALIDATORS*/";
+
+		// Act
+		string merged = PageBodyMerger.Merge(currentBody, incomingBody);
+
+		// Assert
+		merged.Should().Contain("usr.Keep", because: "an empty incoming validator object must not erase current validators");
+	}
+
+	[Test]
+	[Description("PageBodyMerger validators: regex literals and comments remain intact and do not consume sibling validator entries")]
+	public void PageBodyMerger_Should_Preserve_Regex_Comment_And_Sibling_Validators() {
+		// Arrange
+		string currentBody = "define(\"X\", /**SCHEMA_DEPS*/[]/**SCHEMA_DEPS*/, function/**SCHEMA_ARGS*/()/**SCHEMA_ARGS*/ { return { " +
+			"viewConfigDiff: /**SCHEMA_VIEW_CONFIG_DIFF*/[]/**SCHEMA_VIEW_CONFIG_DIFF*/, " +
+			"viewModelConfigDiff: /**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/[]/**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/, " +
+			"modelConfigDiff: /**SCHEMA_MODEL_CONFIG_DIFF*/[]/**SCHEMA_MODEL_CONFIG_DIFF*/, " +
+			"handlers: /**SCHEMA_HANDLERS*/[]/**SCHEMA_HANDLERS*/, " +
+			"converters: /**SCHEMA_CONVERTERS*/{}/**SCHEMA_CONVERTERS*/, " +
+			"validators: /**SCHEMA_VALIDATORS*/{\"usr.Regex\":{validator:function(){return function(control){/* keep }, comment */ return /[},]/.test(control.value)?null:{};};},params:[],async:false},\"usr.Keep\":{validator:function(){return function(){return null;};},params:[],async:false}}/**SCHEMA_VALIDATORS*/ }; });";
+		string incomingBody = "/**SCHEMA_VIEW_CONFIG_DIFF*/[]/**SCHEMA_VIEW_CONFIG_DIFF*/ " +
+			"/**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/[]/**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/ " +
+			"/**SCHEMA_MODEL_CONFIG_DIFF*/[]/**SCHEMA_MODEL_CONFIG_DIFF*/ " +
+			"/**SCHEMA_HANDLERS*/[]/**SCHEMA_HANDLERS*/ " +
+			"/**SCHEMA_VALIDATORS*/{\"usr.Added\":{validator:function(){return function(){return null;};},params:[],async:false}}/**SCHEMA_VALIDATORS*/";
+
+		// Act
+		string merged = PageBodyMerger.Merge(currentBody, incomingBody);
+		PageBodySyntaxValidationResult syntax = PageBodySyntaxValidator.Validate(merged);
+
+		// Assert
+		merged.Should().Contain("/[},]/", because: "braces and commas inside a regex literal must remain raw JavaScript");
+		merged.Should().Contain("keep }, comment", because: "comment text must not alter object-entry boundaries");
+		merged.Should().Contain("usr.Keep", because: "a complex validator must not consume its following sibling");
+		merged.Should().Contain("usr.Added", because: "the incoming validator must still be appended");
+		syntax.IsValid.Should().BeTrue("because the keyed-object merge must produce syntactically valid JavaScript");
 	}
 
 	[Test]
