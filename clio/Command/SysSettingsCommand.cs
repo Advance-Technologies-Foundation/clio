@@ -7,6 +7,7 @@ using System.Net.Http;
 using System.Net.Sockets;
 using System.Reflection;
 using System.Security.Authentication;
+using System.Text.Json;
 using System.Text.RegularExpressions;
 using Clio.Common;
 using CommandLine;
@@ -546,10 +547,36 @@ namespace Clio.Command
 				//inner represents it - but a credential failure among them still has to be reported as one.
 				AggregateException aggregate when IsAuthenticationFailure(aggregate)
 					=> $"Authentication error {operationLabel}.",
-				ArgumentException argEx => argEx.Message,
-				InvalidOperationException invEx => invEx.Message,
+				//A gateway/WAF page reaching JsonSerializer.Deserialize raises JsonException, which had no arm:
+				//the operator was told "Failed creating sys-setting." with no cause, on the very half of the
+				//write path the removed preflight probe used to diagnose. ThrowIfSessionRejected only fires
+				//when the body PROVES a rejected session, so every other non-JSON answer lands here.
+				JsonException => $"Creatio returned a non-JSON response {operationLabel} - the URL may not reach "
+					+ "Creatio, or a proxy/gateway answered instead of it.",
+				//BOUNDED and REDACTED, the same treatment DataProviderFailureException gets. These two arms
+				//return the message of ANY exception of those types raised anywhere below, and such messages are
+				//unbounded and can carry paths, URLs or response fragments.
+				ArgumentException argEx => SafeDetail(argEx.Message),
+				InvalidOperationException invEx => SafeDetail(invEx.Message),
 				_ => $"Failed {operationLabel}."
 			};
+		}
+
+		// Cap on a message promoted into a user-visible field. 300 is what DataProviderFailureException's
+		// detail already uses, so the two paths expose the same amount.
+		private const int MaxPromotedMessageLength = 300;
+
+		// Redaction runs BEFORE the cap, deliberately: SensitiveErrorTextRedactor matches a token as a whole
+		// unit, so capping first can split one in half and leave the visible fragment unredacted. This is the
+		// same order ServiceResponseJsonGuard.BuildPreview uses.
+		private static string SafeDetail(string message) {
+			if (string.IsNullOrEmpty(message)) {
+				return message;
+			}
+			string redacted = McpServer.SensitiveErrorTextRedactor.Redact(message);
+			return redacted.Length <= MaxPromotedMessageLength
+				? redacted
+				: redacted[..MaxPromotedMessageLength] + "...";
 		}
 
 		// Bounds every walk over an exception chain. A chain this deep is not something a transport

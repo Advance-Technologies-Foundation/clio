@@ -128,7 +128,19 @@ namespace Clio.Common
 				return text;
 			}
 			var sb = new StringBuilder(text.Length);
-			foreach (char character in text) {
+			// Iterated by INDEX, not foreach, so a well-formed surrogate PAIR can be recognized and kept.
+			// char.IsSurrogate cannot tell a lone surrogate from half of a valid pair, so neutralizing on it
+			// alone replaced every astral character - emoji, CJK extensions, several whole scripts - with two
+			// spaces, for every caller of this shared utility (theme captions and CSS paths, package and
+			// environment names, service error messages), none of which had anything to do with the lone
+			// surrogate that breaks System.Text.Json. Only ORPHANS are neutralized.
+			for (int index = 0; index < text.Length; index++) {
+				char character = text[index];
+				if (char.IsHighSurrogate(character) && index + 1 < text.Length && char.IsLowSurrogate(text[index + 1])) {
+					sb.Append(character).Append(text[index + 1]);
+					index++;
+					continue;
+				}
 				sb.Append(IsDisplayHostile(character) ? ' ' : character);
 			}
 			return sb.ToString();
@@ -140,6 +152,11 @@ namespace Clio.Common
 		/// category is included.
 		/// </summary>
 		/// <param name="character">The character to test.</param>
+		/// <remarks>
+		/// Judges ONE char in isolation, so it answers <see langword="true"/> for either half of a valid
+		/// surrogate pair. <see cref="NeutralizeDisplayHostileCharacters"/> pairs up first and only asks about
+		/// orphans; a caller that scans char by char without doing the same will destroy every astral character.
+		/// </remarks>
 		public static bool IsDisplayHostile(char character) =>
 			char.IsControl(character)
 			|| char.IsSeparator(character)

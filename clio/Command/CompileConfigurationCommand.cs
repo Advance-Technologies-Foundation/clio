@@ -97,8 +97,19 @@ public class CompileConfigurationCommand : RemoteCommand<CompileConfigurationOpt
 		_logger.WriteLine();
 
 		using CancellationTokenSource cts = new();
+		// The poll fault is CAPTURED, never allowed to escape this lambda - the same guard PackageBuilder.
+		// CompileWithPolling applies. Poll gives up and THROWS after MaxConsecutiveFailures rounds, and an
+		// unhandled exception on a dedicated thread terminates the whole process: a short app-tier outage
+		// during `clio cc` would have killed clio mid-compile with no error line and no exit code, skipping
+		// cts.Cancel / thread.Join and the result reporting below. Published through a one-element holder with
+		// Volatile.Write/Read so the write on the poll thread is guaranteed to be visible on the main thread.
+		Exception[] pollFaultBox = new Exception[1];
 		Thread thread = new(() => {
-			_compilationHistoryPoller.Poll(baseline?.CreatedOn ?? DateTime.MinValue, cts.Token, LogRecord);
+			try {
+				_compilationHistoryPoller.Poll(baseline?.CreatedOn ?? DateTime.MinValue, cts.Token, LogRecord);
+			} catch (Exception exception) {
+				Volatile.Write(ref pollFaultBox[0], exception);
+			}
 		});
 		thread.Start();
 
@@ -107,6 +118,14 @@ public class CompileConfigurationCommand : RemoteCommand<CompileConfigurationOpt
 		sw.Stop();
 		cts.Cancel();
 		thread.Join(); // Wait for background thread to complete before disposing CancellationTokenSource
+
+		// Monitoring stopping is NOT a compile failure: the server keeps compiling, and base.Execute above has
+		// already returned its own verdict. So the fault is REPORTED rather than thrown - it explains why the
+		// progress lines stopped, and it leaves the command's exit code to the compile itself.
+		Exception pollFault = Volatile.Read(ref pollFaultBox[0]);
+		if (pollFault is not null) {
+			_logger.WriteWarning($"Compilation progress could not be monitored: {pollFault.Message}");
+		}
 		if (CommandSuccess) {
 			_logger.WriteLine();
 			_logger.WriteInfo($"Compilation finished in {TimeOnly.FromTimeSpan(sw.Elapsed):HH:mm:ss}");

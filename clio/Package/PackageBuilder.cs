@@ -118,7 +118,13 @@ namespace Clio.Package
 			// clio mid-compile and skipped every cleanup below (cts.Cancel / Join / ObserveCancelledRequest).
 			// Poll itself already tolerates individual failed rounds; this catches the case where it gives
 			// up, and hands the fault to the loop below to report on the main thread.
-			Exception pollFault = null;
+			// Published through a ONE-ELEMENT HOLDER with Volatile.Write/Read, not a plain captured local: the
+			// write happens on the poll thread and the read on the main thread's spin loop below, so without an
+			// explicit barrier there is no happens-before edge and the JIT may hoist the read out of the loop.
+			// An unobserved fault is strictly worse than no guard at all - the poll thread has exited, nothing is
+			// watching the compilation history, and the loop runs to the full CompilationTimeoutMinutes with an
+			// open HTTP request before reporting a timeout instead of the real fault.
+			Exception[] pollFaultBox = new Exception[1];
 			Thread pollThread = new(() => {
 				try {
 					_compilationHistoryPoller.Poll(baselineCreatedOn, cts.Token, record => {
@@ -129,7 +135,7 @@ namespace Clio.Package
 						}
 					});
 				} catch (Exception exception) {
-					pollFault = exception;
+					Volatile.Write(ref pollFaultBox[0], exception);
 				}
 			});
 			pollThread.Start();
@@ -137,6 +143,7 @@ namespace Clio.Package
 			while (DateTime.UtcNow < timeoutAt) {
 				//Observed on the MAIN thread, so the fault is reported rather than silently ending the
 				//poll and letting the loop run to its full timeout with nothing watching the compile.
+				Exception pollFault = Volatile.Read(ref pollFaultBox[0]);
 				if (pollFault is not null) {
 					cts.Cancel();
 					pollThread.Join();

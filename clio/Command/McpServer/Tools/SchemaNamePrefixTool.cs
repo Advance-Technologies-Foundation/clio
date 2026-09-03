@@ -52,7 +52,13 @@ public sealed class SchemaNamePrefixTool(IToolCommandResolver commandResolver) {
 			//answer that names both possible causes (rejected session, or a URL that does not reach
 			//Creatio). A plain InvalidOperationException keeps the generic label below: an unregistered
 			//environment name must not have its resolver text promoted into this field.
-			return new SchemaNamePrefixResult(false, string.Empty, ex.Message);
+			//
+			//REDACTED before it is returned. This tool RETURNS a result record instead of throwing, so
+			//McpToolErrorFilter - which is where SensitiveErrorTextRedactor.Redact normally runs - never sees
+			//this text, and it goes straight into the MCP client transcript. The message is composed by
+			//ClassifyingDataProvider and embeds up to 300 characters of server-controlled provider text, which
+			//is exactly where environment URLs, host:port pairs and file paths surface.
+			return new SchemaNamePrefixResult(false, string.Empty, SensitiveErrorTextRedactor.Redact(ex.Message));
 		} catch (Exception) {
 			return new SchemaNamePrefixResult(false, string.Empty, "Failed to read SchemaNamePrefix.");
 		}
