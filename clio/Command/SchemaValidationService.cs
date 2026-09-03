@@ -280,6 +280,21 @@ public static class SchemaValidationService
 	private const string DesignOptionsPropertyName = "_designOptions";
 
 	/// <summary>
+	/// Name of a component's data-descriptor property. On a view node that declares a component
+	/// <c>type</c>, the <c>data</c> subtree is that component's own descriptor - metadata the component
+	/// carries about itself (its uId, schemaType, typeName and the caption the platform stamped on it),
+	/// not user-visible text authored on the page. The Freedom UI designer writes it and round-trips it
+	/// unchanged: <c>crt.EmailComposer</c> and <c>crt.FeedComposer</c> ship <c>data.caption</c> as the
+	/// plain literals "Email" / "Feed", so scanning it refused every page carrying a Timeline composer
+	/// (issue #1298). Deleting the key is NOT a repair - the platform never restores it, and a read-back
+	/// shows the descriptor permanently without a caption. Both localizable-text scanners and the
+	/// inserted-widget-caption scanner therefore skip this subtree, with an ordinal (case-sensitive)
+	/// comparison and only when the owning node resolves a component type, so an ordinary page object
+	/// that happens to be named "data" stays fully validated.
+	/// </summary>
+	private const string ComponentDataPropertyName = "data";
+
+	/// <summary>
 	/// Canonical clause describing the widget-caption rule, authored here and embedded verbatim in the
 	/// per-occurrence diagnostic (<see cref="BuildUnresolvedCaptionError"/>)
 	/// </summary>
@@ -2473,10 +2488,19 @@ public static class SchemaValidationService
 		switch (node.ValueKind) {
 			case JsonValueKind.Object:
 				string currentName = TryGetNodeName(node, out string nodeName) ? nodeName : ownerName;
+				// No entryRootType fallback is needed here (unlike ScanNodeForTextLiterals): ScanInsertedWidgetCaptions
+				// only walks operation:"insert" entries, and an insert always declares its own "type". Removing
+				// that filter would reopen the issue #1298 false positive for bare merges.
+				string currentType = TryGetComponentType(node, out string nodeType) ? nodeType : string.Empty;
 				foreach (JsonProperty property in node.EnumerateObject()) {
 					// Designer metadata mirrors the real component's captions; scanning it reports the same
-					// caption twice and flags designer-only copies that no runtime binding reads.
-					if (string.Equals(property.Name, DesignOptionsPropertyName, StringComparison.Ordinal)) {
+					// caption twice and flags designer-only copies that no runtime binding reads. A
+					// component's own data descriptor is skipped for the same reason the literal scanner
+					// skips it: it is component metadata, not page-authored text (issue #1298). Skipping it
+					// here too keeps the documented "#ResourceString(...)#" workaround from tripping the
+					// resolvability check instead.
+					if (string.Equals(property.Name, DesignOptionsPropertyName, StringComparison.Ordinal) ||
+					    IsComponentDescriptorProperty(currentType, property)) {
 						continue;
 					}
 					if (property.Value.ValueKind == JsonValueKind.String &&
@@ -2649,7 +2673,8 @@ public static class SchemaValidationService
 				// for the entry root — see the entryRootType note above).
 				string currentType = TryGetComponentType(node, out string nodeType) ? nodeType : entryRootType;
 				foreach (JsonProperty property in node.EnumerateObject()) {
-					if (string.Equals(property.Name, DesignOptionsPropertyName, StringComparison.Ordinal)) {
+					if (string.Equals(property.Name, DesignOptionsPropertyName, StringComparison.Ordinal) ||
+					    IsComponentDescriptorProperty(currentType, property)) {
 						continue;
 					}
 					ScanTextPropertyForLiterals(currentName, currentType, property, result);
@@ -2711,6 +2736,15 @@ public static class SchemaValidationService
 		}
 		return false;
 	}
+
+	// True when the property is the data descriptor of a node that declares a component type (see
+	// ComponentDataPropertyName). Callers skip the subtree entirely: it is component metadata, never
+	// page-authored user-visible text. The value must be an object — the descriptor shape the platform
+	// writes — so a "data" array or string, which could carry authored content, stays validated.
+	private static bool IsComponentDescriptorProperty(string componentType, JsonProperty property) =>
+		!string.IsNullOrEmpty(componentType) &&
+		property.Value.ValueKind == JsonValueKind.Object &&
+		string.Equals(property.Name, ComponentDataPropertyName, StringComparison.Ordinal);
 
 	// True when an inline literal is legitimately allowed for (componentType, property) — the component
 	// does not consume a localizable resource for that property (see LiteralAllowedTextProperties).

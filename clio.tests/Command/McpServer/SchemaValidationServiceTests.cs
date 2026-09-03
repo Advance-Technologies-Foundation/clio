@@ -2686,6 +2686,114 @@ public sealed class SchemaValidationServiceTests
 	}
 
 	[Test]
+	[Description("A Timeline composer's platform-authored data.caption literal is accepted — a component's data descriptor is metadata, not page-authored user-visible text (issue #1298).")]
+	public void ValidateLocalizableTextLiterals_ComposerDataCaptionLiteral_ReturnsValid() {
+		// Arrange
+		string body = BuildDiffBackedPageBody(
+			"""[{"operation":"insert","name":"EmailComposer","parentName":"MessageComposer","propertyName":"items","values":{"type":"crt.EmailComposer","classes":["view-element"],"data":{"uId":"f80b7f5b-ad11-09ed-189a-6190abb76340","schemaType":"Email","typeName":"crt.EmailComposer","caption":"Email"},"recordId":"$Id","visible":true}}]""",
+			"[]");
+
+		// Act
+		SchemaValidationResult result = SchemaValidationService.ValidateLocalizableTextLiterals(body);
+
+		// Assert
+		result.IsValid.Should().BeTrue(
+			because: "values.data is the component's own descriptor, written and round-tripped by the platform, so its caption must not be forced into a localizable binding");
+		result.Errors.Should().BeEmpty(
+			because: "a platform-authored composer descriptor must not make an otherwise valid page unsaveable");
+	}
+
+	[Test]
+	[Description("The data-descriptor exemption does not leak to a node's own caption: a sibling caption literal on the same composer node is still rejected (issue #1298).")]
+	public void ValidateLocalizableTextLiterals_ComposerOwnCaptionLiteral_ReturnsInvalid() {
+		// Arrange
+		string body = BuildDiffBackedPageBody(
+			"""[{"operation":"insert","name":"EmailComposer","values":{"type":"crt.EmailComposer","caption":"Email","data":{"typeName":"crt.EmailComposer","caption":"Email"}}}]""",
+			"[]");
+
+		// Act
+		SchemaValidationResult result = SchemaValidationService.ValidateLocalizableTextLiterals(body);
+
+		// Assert
+		result.IsValid.Should().BeFalse(
+			because: "only the data subtree is exempt; a caption authored directly on the view node is still user-visible page text");
+		result.Errors.Should().ContainSingle(error => error.Contains("EmailComposer") && error.Contains("caption"),
+			because: "exactly one error must be reported — for the node's own caption, not for the descriptor copy");
+	}
+
+	[Test]
+	[Description("A 'data' object on a node that declares no component type is still scanned, so the exemption cannot be obtained by dropping the type (issue #1298).")]
+	public void ValidateLocalizableTextLiterals_DataObjectWithoutComponentType_ReturnsInvalid() {
+		// Arrange
+		string body = BuildDiffBackedPageBody(
+			"""[{"operation":"merge","name":"SomeNode","values":{"data":{"caption":"Plain text"}}}]""",
+			"[]");
+
+		// Act
+		SchemaValidationResult result = SchemaValidationService.ValidateLocalizableTextLiterals(body);
+
+		// Assert
+		result.IsValid.Should().BeFalse(
+			because: "the exemption is scoped to the data descriptor of a node that resolves a component type");
+		result.Errors.Should().ContainSingle(error => error.Contains("caption") && error.Contains("Plain text"),
+			because: "an untyped node's data caption literal must still be reported");
+	}
+
+	[Test]
+	[Description("A 'data' ARRAY under a typed component is still scanned — the descriptor exemption is object-shaped only, so a collection named 'data' cannot smuggle authored text past the rule (issue #1298).")]
+	public void ValidateLocalizableTextLiterals_DataArrayUnderTypedNode_ReturnsInvalid() {
+		// Arrange
+		string body = BuildDiffBackedPageBody(
+			"""[{"operation":"insert","name":"SomeWidget","values":{"type":"crt.SomeWidget","data":[{"name":"Row","caption":"Authored text"}]}}]""",
+			"[]");
+
+		// Act
+		SchemaValidationResult result = SchemaValidationService.ValidateLocalizableTextLiterals(body);
+
+		// Assert
+		result.IsValid.Should().BeFalse(
+			because: "only an object-shaped data descriptor is exempt; an array named 'data' can carry page-authored content");
+		result.Errors.Should().ContainSingle(error => error.Contains("Row") && error.Contains("caption"),
+			because: "the literal inside the data array must still be reported against its nearest named node");
+	}
+
+	[Test]
+	[Description("A non-'data' nested object under a typed component is still scanned, so the exemption is not a blanket nested-object skip (issue #1298).")]
+	public void ValidateLocalizableTextLiterals_NonDataNestedObjectUnderTypedNode_ReturnsInvalid() {
+		// Arrange
+		string body = BuildDiffBackedPageBody(
+			"""[{"operation":"insert","name":"EmailComposer","values":{"type":"crt.EmailComposer","config":{"caption":"Email"}}}]""",
+			"[]");
+
+		// Act
+		SchemaValidationResult result = SchemaValidationService.ValidateLocalizableTextLiterals(body);
+
+		// Assert
+		result.IsValid.Should().BeFalse(
+			because: "only the 'data' descriptor is exempt; every other nested object under the node stays subject to the literal rule");
+		result.Errors.Should().ContainSingle(error => error.Contains("caption") && error.Contains("Email"),
+			because: "a literal in a non-descriptor nested object must still be reported");
+	}
+
+	[Test]
+	[Description("The documented #ResourceString workaround inside a composer data descriptor no longer trips the widget-caption resolvability check (issue #1298).")]
+	public void ValidateInsertedWidgetCaptionResources_ComposerDataCaptionMacro_ReturnsValid() {
+		// Arrange
+		string body = BuildDiffBackedPageBody(
+			"""[{"operation":"insert","name":"EmailComposer","values":{"type":"crt.EmailComposer","data":{"typeName":"crt.EmailComposer","caption":"#ResourceString(EmailComposerCaption)#"}}}]""",
+			"[]");
+
+		// Act
+		SchemaValidationResult result = SchemaValidationService.ValidateInsertedWidgetCaptionResources(body);
+
+		// Assert
+		result.IsValid.Should().BeTrue(
+			because: "the data descriptor is skipped by the caption-resolvability scan too, so pages already carrying the documented workaround keep validating");
+		result.Errors.Should().BeEmpty(
+			because: "an exempt descriptor subtree must produce no unresolved-caption error");
+	}
+
+	[Test]
 	[Description("A panel/tab title set as an inline literal is rejected — titles are user-visible text and must be localizable.")]
 	public void ValidateLocalizableTextLiterals_TitleInlineLiteral_ReturnsInvalid() {
 		// Arrange
