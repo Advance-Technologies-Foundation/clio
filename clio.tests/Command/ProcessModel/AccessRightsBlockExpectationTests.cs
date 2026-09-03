@@ -31,6 +31,64 @@ public sealed class AccessRightsBlockExpectationTests {
 		new() { Elements = [.. elements] };
 
 	[Test]
+	[Description("The lossy-read warning fires on the server's addUnreadable/removeUnreadable counts. A supplied collection REPLACES the stored one, so building a replacement from a read that omitted entries deletes permissions nobody can see - this is the only signal that the read was incomplete.")]
+	public void BuildLossyReadWarning_ShouldFire_WhenTheServerReportsUnreportedEntries() {
+		// Arrange — 2 entries dropped from add, collection itself undecodable for remove.
+		DescribedElement element = Element("Grant",
+			"{\"object\":\"Order\",\"addUnreadable\":2,\"removeUnreadable\":-1}");
+
+		// Act
+		string warning = AccessRightsBlockExpectation.BuildLossyReadWarning(Described(element), ["Grant"]);
+
+		// Assert
+		warning.Should().NotBeNull(
+			because: "a non-zero count means the read-back omitted stored entries, and a replacement built from "
+				+ "it would delete them");
+		warning.Should().Contain("'Grant'", because: "the caller needs to know which element is affected");
+		warning.Should().Contain("REPLACES",
+			because: "the danger is not the incomplete read itself but feeding it back as a collection");
+	}
+
+	[Test]
+	[Description("No lossy-read warning when both counts are zero, and none when the server predates the field and omits it entirely - an older environment must behave exactly as before rather than warning on every write.")]
+	public void BuildLossyReadWarning_ShouldStaySilent_WhenNothingWasDropped() {
+		// Arrange
+		DescribedElement complete = Element("Complete",
+			"{\"object\":\"Order\",\"addUnreadable\":0,\"removeUnreadable\":0}");
+		DescribedElement olderServer = Element("Older", "{\"object\":\"Order\"}");
+
+		// Act + Assert
+		AccessRightsBlockExpectation.BuildLossyReadWarning(Described(complete), ["Complete"])
+			.Should().BeNull(because: "zero means the collections reported in full");
+		AccessRightsBlockExpectation.BuildLossyReadWarning(Described(olderServer), ["Older"])
+			.Should().BeNull(
+				because: "a server predating the counts omits the fields, which must read as 0 - warning there "
+					+ "would fire on every write against an older environment");
+	}
+
+	[Test]
+	[Description("A filter that describe could NOT decode is reported as undecodable, not as absent: describe returns no filter block for the legacy FilterEdit format, and every shipped designer-built specimen uses it. Calling that 'no filter' would tell the caller a live element is inert and invite a setFilter that overwrites a working filter.")]
+	public void BuildNoFilterWarning_ShouldReportUndecodable_WhenTheParameterStillCarriesAValue() {
+		// Arrange — no decoded Filter, but DataSourceFilters holds a stored value.
+		DescribedElement element = Element("Grant", "{\"object\":\"Order\"}");
+		element.Parameters = [new DescribedParameter {
+			Name = "DataSourceFilters", Source = "ConstValue", Value = "a legacy FilterEdit payload"
+		}];
+
+		// Act
+		string warning = AccessRightsBlockExpectation.BuildNoFilterWarning(Described(element), ["Grant"]);
+
+		// Assert
+		warning.Should().Contain("could not decode",
+			because: "the stored parameter proves a filter EXISTS, so absence must not be claimed");
+		warning.Should().NotContain("EVERY record of the target object",
+			because: "that is the ABSENT filter's consequence; an undecodable one may be narrowing correctly");
+		warning.Should().NotContain("setFilter",
+			because: "prescribing setFilter here would overwrite a working legacy filter on a live permission "
+				+ "change - the failure this guard exists to prevent, pointed the other way");
+	}
+
+	[Test]
 	[Description("Collects the element names a build descriptor asks to configure with access rights.")]
 	public void FromDescriptor_ShouldCollectElementsCarryingTheBlock() {
 		// Arrange
