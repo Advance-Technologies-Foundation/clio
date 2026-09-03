@@ -2,6 +2,8 @@ using System;
 using System.Collections.Generic;
 using System.ComponentModel;
 using System.ComponentModel.DataAnnotations;
+using System.IO;
+using System.IO.Abstractions;
 using System.Linq;
 using System.Text.Json.Serialization;
 using System.Threading;
@@ -14,34 +16,39 @@ namespace Clio.Command.McpServer.Tools;
 [McpServerToolType]
 public sealed class PageValidateTool(
 	IMobileComponentInfoCatalog mobileComponentCatalog,
-	IComponentInfoCatalog webComponentCatalog) {
+	IComponentInfoCatalog webComponentCatalog,
+	IFileSystem fileSystem) {
 
 	internal const string ToolName = "validate-page";
 
 	[McpServerTool(Name = ToolName, ReadOnly = true, Destructive = false,
 		Idempotent = true, OpenWorld = false)]
-	[Description("Validates a Freedom UI page body client-side without saving to Creatio (markers, JS syntax, field/column bindings, handler/converter/validator structure for web; disallowed constructs, diff-apply, and placement checks for mobile — `type` must sit inside `values`, a `merge` must not author child elements in a Scaffold slot the template already fills, and a button in the Scaffold `actions` slot is flagged). " +
-		"Run before update-page. See get-guidance `page-schema-converters` / `page-schema-handlers` / `page-schema-validators` / `mobile-page-modification` for the contracts it enforces.")]
+	[Description("Validates a Freedom UI page body without saving. Pass body inline or body-file from get-page. Checks web syntax and schema sections or mobile structure and diffs. Run before update-page; use the relevant page-schema or mobile-page-modification guidance for authoring rules.")]
 	public async Task<PageValidateResponse> ValidatePage(
-		[Description("Parameters: body (required); resources (optional)")]
+		[Description("Parameters: one of body or body-file (required); resources and version (optional)")]
 		[Required] PageValidateArgs args,
 		CancellationToken cancellationToken = default) {
+		(string? resolvedBody, PageValidateResponse? inputFailure) = ResolveBody(args);
+		if (inputFailure is not null) {
+			return inputFailure;
+		}
+		string body = resolvedBody!;
 		// Mobile path: MobilePageValidation.RunAsync applies the diff sections through the faithful client-engine
 		// clones (JsonDiffApplier / JsonPathDiffApplier) and returns any differ exception (e.g. a not-a-container
 		// insert) to the caller for analysis — no heuristic body normalization.
-		if (PageSchemaTypeExtensions.FromBody(args.Body) == PageSchemaType.Mobile) {
+		if (PageSchemaTypeExtensions.FromBody(body) == PageSchemaType.Mobile) {
 			SchemaValidationService.TryParseResources(args.Resources, out Dictionary<string, string>? mobileResources, out _);
 			// No templateBaseContext: validate-page has no schema/environment identity, so the apply-oracle seeds
 			// its own base. cancellationToken is now named (it moved past templateBaseContext, CA1068).
 			PageSyncValidationResult mobileResult = await MobilePageValidation.RunAsync(
-				args.Body, mobileComponentCatalog, webComponentCatalog, mobileResources,
+				body, mobileComponentCatalog, webComponentCatalog, mobileResources,
 				cancellationToken: cancellationToken).ConfigureAwait(false);
 			// Run-process button structure is a purely offline check (no environment), and validate-page is the
 			// pre-flight the agent runs before update-page — so it must reach the same structural gate update-page
 			// applies, otherwise a green validate-page misreads as "the button is wired" (ENG-95822). The mobile
 			// apply-oracle does not cover it, so fold it in here for the mobile body too.
 			SchemaValidationResult mobileRunProcessResult =
-				SchemaValidationService.ValidateRunProcessButtonStructure(args.Body);
+				SchemaValidationService.ValidateRunProcessButtonStructure(body);
 			if (!mobileRunProcessResult.IsValid) {
 				mobileResult = FoldInContentErrors(mobileResult, mobileRunProcessResult);
 			}
@@ -50,17 +57,17 @@ public sealed class PageValidateTool(
 				Validation = mobileResult
 			};
 		}
-		PageSyncValidationResult result = Validate(args.Body, args.Resources);
+		PageSyncValidationResult result = Validate(body, args.Resources);
 		// Registry-driven chart-widget validation needs the (async, version-scoped) component catalog,
 		// so it runs here rather than in the static content-validation pipeline. Fail-open inside.
 		SchemaValidationResult chartResult =
-			await ChartWidgetValidation.ValidateAsync(args.Body, webComponentCatalog, args.Version, cancellationToken).ConfigureAwait(false);
+			await ChartWidgetValidation.ValidateAsync(body, webComponentCatalog, args.Version, cancellationToken).ConfigureAwait(false);
 		if (!chartResult.IsValid) {
 			result = FoldInContentErrors(result, chartResult);
 		}
 		// Same offline run-process structural gate on the web body — validate-page mirrors update-page (ENG-95822).
 		SchemaValidationResult runProcessResult =
-			SchemaValidationService.ValidateRunProcessButtonStructure(args.Body);
+			SchemaValidationService.ValidateRunProcessButtonStructure(body);
 		if (!runProcessResult.IsValid) {
 			result = FoldInContentErrors(result, runProcessResult);
 		}
@@ -69,6 +76,37 @@ public sealed class PageValidateTool(
 			Validation = result
 		};
 	}
+
+	private (string? Body, PageValidateResponse? Failure) ResolveBody(PageValidateArgs args) {
+		if (!string.IsNullOrWhiteSpace(args.Body)) {
+			return (args.Body, null);
+		}
+		if (string.IsNullOrWhiteSpace(args.BodyFile)) {
+			return (null, InvalidBodySource("Either 'body' or 'body-file' must provide page body content."));
+		}
+		try {
+			if (!fileSystem.File.Exists(args.BodyFile)) {
+				return (null, InvalidBodySource($"body-file not found: '{args.BodyFile}'"));
+			}
+			string body = fileSystem.File.ReadAllText(args.BodyFile);
+			return string.IsNullOrWhiteSpace(body)
+				? (null, InvalidBodySource($"body-file is empty: '{args.BodyFile}'"))
+				: (body, null);
+		} catch (Exception exception) when (exception is IOException
+				or UnauthorizedAccessException or ArgumentException or NotSupportedException) {
+			return (null, InvalidBodySource($"Unable to read body-file '{args.BodyFile}': {exception.Message}"));
+		}
+	}
+
+	private static PageValidateResponse InvalidBodySource(string error) => new() {
+		Valid = false,
+		Validation = new PageSyncValidationResult {
+			MarkersOk = false,
+			JsSyntaxOk = false,
+			ContentOk = false,
+			Errors = [error]
+		}
+	};
 
 	// Folds an extra content-validation result's errors into the envelope and forces ContentOk=false; shared by the
 	// async chart-widget and run-process structural checks that run outside the static content-validation pipeline.
@@ -258,11 +296,13 @@ public sealed class PageValidateTool(
 		SchemaValidationResult ContextAwait);
 }
 
+/// <summary>
+/// Inputs for client-side Freedom UI page validation.
+/// </summary>
 public sealed record PageValidateArgs(
 	[property: JsonPropertyName("body")]
-	[property: Description("Full JavaScript page body with markers")]
-	[property: Required]
-	string Body,
+	[property: Description("Optional inline page body. Takes precedence when body-file is also provided.")]
+	string? Body = null,
 
 	[property: JsonPropertyName("resources")]
 	[property: Description(McpToolDescriptions.PageResources)]
@@ -270,7 +310,11 @@ public sealed record PageValidateArgs(
 
 	[property: JsonPropertyName("version")]
 	[property: Description("Optional explicit platform version (3-part semver, e.g. '8.3.3') that scopes the registry-driven chart-widget (crt.ChartWidget) validation to the target environment's component set. PREFER passing the resolvedTargetVersion you already got from get-component-info for the same environment, so this pre-flight check matches what update-page / sync-pages will enforce on save. When omitted, validation uses the 'latest' catalog (a superset of all GA versions). If no registry is published for the given version, the catalog automatically falls back to 'latest'.")]
-	string? Version = null
+	string? Version = null,
+
+	[property: JsonPropertyName("body-file")]
+	[property: Description("Optional path to a page body file, normally files.bodyFile returned by get-page. Used when body is empty.")]
+	string? BodyFile = null
 );
 
 public sealed class PageValidateResponse {
