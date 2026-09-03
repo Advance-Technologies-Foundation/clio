@@ -38,6 +38,7 @@ namespace Clio.Tests.Common;
 [Category("Unit")]
 [Property("Module", "Common")]
 public class BundledProcessBuilderPackageTests {
+	private static readonly TimeSpan RegexTimeout = TimeSpan.FromSeconds(1);
 
 	#region Constants: Private
 
@@ -71,33 +72,41 @@ public class BundledProcessBuilderPackageTests {
 	];
 
 	/// <summary>
-	/// SHA-256 of the committed archive. Produced by <c>rebundle-process-builder.ps1 -Version 1.3.1.1</c> from
+	/// SHA-256 of the committed archive. Produced by <c>rebundle-process-builder.ps1 -Version 1.4.0.40</c> from
 	/// the <c>ProcessBuilder</c> repository (<c>packages/CrtProcessBuilder</c>, branch
-	/// <c>feature/ENG-91846-perform-task-lookup-constants</c>, at commit
-	/// <c>2ce4ae34fdb95d70e3757560e41df7e174d1aa3a</c> — the tip on top of <c>948cae8f</c> that closes the re-review's Medium: both
-	/// performer routes resolve the parameter's reference by NAME as well as by UId and compose the lookup
-	/// macro from the RESOLVED object, so under name-only typing the contact existence check no longer skips
-	/// and the stored value is a valid macro rather than the bare Guid the platform refuses; the role macro's
-	/// object segment additionally gains the contract-known <c>SysAdminUnit</c> backstop.
-	/// 1.3.1.1 is a PATCH over 1.3.1.0 — the ENG-91846 version whose MINOR digit says the delivery adds a
-	/// capability (assigning a task to a team): this cut widens that capability's reach to the name-typed
-	/// parameter population, it does not add another. The whole route: the Lookup bare-Guid ConstValue
-	/// relaxation with the reference-existence guard, the Guid.Empty refusal, the bare-Guid-first rejection
-	/// message, and the element-level <c>performer</c> block (user/manager/role, the role landing in the
-	/// Activity's own <c>OwnerRole</c> column), with both performer fields taking an id or a name and refusing
-	/// what identifies no single record. Every stamp from 1.3.0.2 through 1.3.1.0 was branch-internal and
-	/// never released; each raise exists so a stand or checkout still carrying an older one is DETECTABLY
-	/// behind — same-version re-cuts make equal version numbers mean nothing, which the convergence check
-	/// cannot see through. There is no build step in the release path that could regenerate it here.
+	/// <c>feature/ENG-96325-lookup-constant-macro-form</c>, rebased onto <c>main</c> at 1.4.0.0, at commit
+	/// <c>67c49628ccc0c453cd1f8b77d4048e253e98b0e0</c>; that branch was SQUASH-merged into <c>main</c> as
+	/// <c>86b186d</c> (PR #41), whose <c>packages/CrtProcessBuilder</c> tree is the identical
+	/// <c>f77936135f16b146bfaa2a48c4374f11c2541fb5</c> — follow either hash) — the ENG-96325
+	/// design-time fix: a Lookup CONSTANT
+	/// keeps <c>Source = ConstValue</c> and its bare record Guid, and gains the referenced record's NAME in
+	/// <c>DisplayValue</c>, which is what the designer renders. The defect it closes was the raw id written
+	/// there, so "Task category" read as a Guid while the runtime had been correct all along. Keeping
+	/// <c>ConstValue</c> is load-bearing rather than conservative: <c>ActivityUserTask</c> derives its
+	/// allowed-results list from that source alone, client-side and server-side, so the macro form the original
+	/// brief proposed would have degraded the result dropdown to its default. Also in the cut: a
+	/// <c>[#Lookup…#]</c> passed as a <c>value</c> is decoded to the bare id, the change-data expression branch
+	/// renders the display macro, and describe gained <c>valueDisplay</c>. The record NAME is read through an
+	/// <c>EntitySchemaQuery</c> (localized, rights-checked) while the EXISTENCE guard stays a raw
+	/// <c>Select</c> — swapping them would refuse a valid id whose record the writer cannot read.
+	/// 1.4.0.40 is a PATCH over main's 1.4.0.0 — no capability is added, an existing one stops lying to the
+	/// designer — stamped above every 1.4.0.x in flight on the package repository's origin at cut time (the
+	/// highest, ENG-95891, sat at 1.4.0.39), because the convergence check treats <c>installed >= bundled</c> as
+	/// "nothing to do" and a number below an archive an environment may have recorded would never reach it. It
+	/// deliberately stays BELOW the 1.4.6.0 a feature branch (ENG-92713) carries: that stamp lives on its author's
+	/// stands and will be restamped above whatever main holds when that branch rebases, exactly as this one was —
+	/// borrowing its minor number would say "a new capability" about a patch. The 1.3.2.x and 1.4.6.1 stamps this
+	/// branch carried earlier were cut and withdrawn before release, so no shared environment can carry one; each
+	/// raise exists so a stand or checkout still holding an older archive is DETECTABLY behind.
 	/// <para>
-	/// BOTH prescribed cross-checks were RUN against that commit, not assumed: the <c>ModifiedOnUtc</c> pinned
-	/// below equals its descriptor, and all 114 archive entries equal that commit's CHECKOUT rendering byte for
-	/// byte — the only committed file absent from the archive being the <c>.DotSettings</c> that
-	/// <c>clioignore</c> excludes. The byte check earned its
-	/// keep on the previous cut: freshly written files carried LF where a checkout on a
-	/// <c>core.autocrlf=true</c> host produces CRLF — the third failure mode the remarks below describe, an
-	/// archive corresponding to no commit at all — and the tree was renormalised before cutting. Re-run the
-	/// line-ending audit whenever the archive is cut from a tree with just-written files.
+	/// BOTH prescribed cross-checks were RUN against that commit, not assumed — and re-run against the squash
+	/// commit on <c>main</c> after the merge. The <c>ModifiedOnUtc</c> pinned below equals the descriptor at
+	/// <c>67c49628</c> and at <c>86b186d</c> (<c>/Date(1788362204000)/</c>, read from the commits rather than
+	/// from a working tree), as does <see cref="ExpectedArchiveVersion"/>. All 122 archive entries equal the
+	/// merged tree's blobs: the two DLLs byte for byte, the 120 text files after the CRLF rendering a
+	/// <c>core.autocrlf=true</c> checkout applies to LF blobs, so these bytes are reproducible from <c>main</c>.
+	/// The only committed file absent from the archive is the <c>.DotSettings</c> that <c>clioignore</c>
+	/// excludes.
 	/// </para>
 	/// Provenance rules live in <c>docs/agent-instructions/bundled-packages.md</c>.
 	/// </summary>
@@ -133,7 +142,7 @@ public class BundledProcessBuilderPackageTests {
 	/// </para>
 	/// </remarks>
 	private const string ExpectedArchiveSha256 =
-		"6183686FB173D9DCB22BD4A85451452A9DD7378431146C30843391854ACF8A19";
+		"1614C1A9BAE005DFA426C83FA6EE27B4D0515E05B21832141A5AC0D05F214690";
 
 	/// <summary>
 	/// The <c>PackageVersion</c> the shipped descriptor carries.
@@ -161,7 +170,7 @@ public class BundledProcessBuilderPackageTests {
 	/// </para>
 	/// </para>
 	/// </remarks>
-	private const string ExpectedArchiveVersion = "1.4.8.0";
+	private const string ExpectedArchiveVersion = "1.4.9.0";
 
 	/// <summary>
 	/// The <c>ModifiedOnUtc</c> the shipped descriptor carries.
@@ -187,7 +196,7 @@ public class BundledProcessBuilderPackageTests {
 	/// command — the previous pin ended in <c>431</c>, which is how the hand edit was eventually noticed.
 	/// </para>
 	/// </remarks>
-	private const string ExpectedDescriptorModifiedOnUtc = "/Date(1788423941000)/";
+	private const string ExpectedDescriptorModifiedOnUtc = "/Date(1788428090000)/";
 
 	/// <summary>
 	/// The <c>ModifiedOnUtc</c> the shipped COMPILE-MARKER SCHEMA descriptor carries.
@@ -893,9 +902,15 @@ public class BundledProcessBuilderPackageTests {
 				Clio.Command.McpServer.Prompts.ProcessDesigner.ModifyBusinessProcessPrompt.PromptByProcess(
 					"env-placeholder", "process-placeholder")
 		};
-		var literalPattern = new System.Text.RegularExpressions.Regex(@"CrtProcessBuilder (\d+\.\d+\.\d+\.\d+)");
+		var literalPattern = new System.Text.RegularExpressions.Regex(
+			@"CrtProcessBuilder (\d+\.\d+\.\d+\.\d+)",
+			System.Text.RegularExpressions.RegexOptions.None,
+			RegexTimeout);
 
-		var anyVersionPattern = new System.Text.RegularExpressions.Regex(@"\d+\.\d+\.\d+\.\d+");
+		var anyVersionPattern = new System.Text.RegularExpressions.Regex(
+			@"\d+\.\d+\.\d+\.\d+",
+			System.Text.RegularExpressions.RegexOptions.None,
+			RegexTimeout);
 
 		// Act & Assert
 		foreach (KeyValuePair<string, string> surface in surfaces) {

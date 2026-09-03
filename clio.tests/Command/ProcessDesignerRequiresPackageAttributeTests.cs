@@ -67,7 +67,7 @@ namespace Clio.Tests
         [TestCase(typeof(CreateBusinessProcessOptions))]
         [TestCase(typeof(ModifyBusinessProcessOptions))]
         [Test]
-        [Description("Create and Modify declare a VERSIONED requirement naming the newest server behaviour they depend on that an older one does not have: 1.4.7.0, covering four shapes of one silent failure — the approval APPROVER added in 1.4.2.0, which an older server discards while answering success; the 1.4.3.0 refusal of a notification switched on with no email template; the 1.4.4.0 refusal of the AUTHOR notification with no recipient; and 1.4.7.0 PRESERVING the stored employee across a user<->manager approver switch, which is what makes the floor move past 1.4.4.0 — clio's guidance now tells agents that a type-only switch is how to say 'their manager approves instead', and on an older server that request reroutes the approval to whoever ran the modify. An older server accepts each and produces an element that looks configured, so presence alone cannot express any of them. The approval block itself (1.4.1.0), the performer block (1.3.1.1) and the email floor (1.2.0.1) set the precedent and are subsumed, as are 1.4.5.0 and 1.4.6.0 which no released clio bundled. The bundled-archive guard asserts the shipped archive satisfies the literal, so it can never demand a version clio does not carry.")]
+        [Description("Create and Modify declare a VERSIONED requirement naming the newest server behaviour they depend on that an older one does not have. TWO independent lines of that requirement met in the merge with master and no released version carries both, so the literal is the version this clio bundles. From ENG-96325 (first in 1.4.0.40): the lookup-constant input contract — a mapping 'value' on a Lookup target may carry an already-composed [#Lookup.{objectUId}.{recordId}#], decoded server-side to the bare record id, which every earlier server refuses as 'not a bare Guid'. Not a security floor: the raw-Select name read it replaced never shipped. From ENG-92713: four shapes of one SILENT failure — the approver an older server discards while answering success; a notification switched on with no email template; the author notification with no recipient; and the preservation of the stored employee across a user<->manager approver switch, without which the route clio's own guidance advertises reroutes a real approval to whoever ran the modify. 1.4.0.40 predates every ENG-92713 behaviour and 1.4.7.0 predates the merge, so the first archive carrying both is the one cut from the merged package source. The approval block (1.4.1.0), the performer block (1.3.1.1) and the email floor (1.2.0.1) set the precedent and are subsumed; presence alone cannot express any of them. The bundled-archive guard asserts the shipped archive SATISFIES the literal, so it can never demand a version clio does not carry.")]
         public void OptionsType_ShouldDeclareVersionedProcessBuilderRequirement_WhenTheCommandShipsVersionedOperations(
             Type optionsType)
         {
@@ -77,11 +77,16 @@ namespace Clio.Tests
             // Assert
             requirement.Should().NotBeNull(
                 because: $"{optionsType.Name} must carry the declarative {BundledPackages.ProcessBuilderPackageName} requirement so the MCP gate fires");
-            requirement!.Version.Should().Be("1.4.7.0",
-                because: "all three behaviours behind this floor fail SILENTLY on an older server — the approver is "
-                    + "discarded, and a template-less or recipient-less notification is accepted — so the literal fails CLOSED (the convergence rule only "
-                    + "WARNS when it cannot read the archive or the version carries a pre-release suffix); "
-                    + "when the next versioned operation ships, move this pin WITH the rebundle in the same commit");
+            requirement!.Version.Should().Be("1.4.9.0",
+                because: "two independent requirement lines met here and no released archive carries both — "
+                    + "1.4.0.40 brought the lookup-constant input contract but predates every ENG-92713 "
+                    + "behaviour, and 1.4.7.0 brought the approver preservation but predates the merge that "
+                    + "carried ENG-96325 in. The ENG-92713 half fails SILENTLY on an older server (the approver "
+                    + "is discarded, a template-less or recipient-less notification is accepted, a type-only "
+                    + "approver switch reroutes the approval), and the literal is what fails CLOSED — the "
+                    + "convergence rule only WARNS when it cannot read the archive or the version carries a "
+                    + "pre-release suffix. When the next versioned behaviour ships, move this pin WITH the "
+                    + "rebundle in the same commit");
         }
 
         [Test]

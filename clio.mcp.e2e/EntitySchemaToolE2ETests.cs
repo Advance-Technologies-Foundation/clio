@@ -1095,6 +1095,42 @@ public sealed class EntitySchemaToolE2ETests : McpContractFixtureBase {
 
 	[Category("McpE2E.Sandbox")]
 	[Test]
+	[Description("Discovers Contact.Name through the merged runtime schema when package-name is omitted and reports unavailable designer-only flags as null.")]
+	[AllureTag(ReadColumnToolName)]
+	[AllureName("Get entity schema column properties supports merged package-free discovery")]
+	[AllureDescription("Uses the real MCP server and configured sandbox to verify package-free RuntimeEntitySchemaRequest discovery without replacing the package-scoped designer route.")]
+	public async Task GetEntitySchemaColumnProperties_Should_Return_Merged_ContactName_Metadata() {
+		// Arrange
+		await using SandboxFindEntitySchemaArrangeContext arrangeContext = await ArrangeSandboxFindEntitySchemaAsync();
+
+		// Act
+		CallToolResult callResult = await CallGetColumnPropertiesAsync(
+			arrangeContext.Session,
+			arrangeContext.EnvironmentName,
+			null,
+			"Contact",
+			"Name",
+			arrangeContext.CancellationTokenSource.Token);
+		EntitySchemaColumnPropertiesInfo properties =
+			EntitySchemaStructuredResultParser.Extract<EntitySchemaColumnPropertiesInfo>(callResult);
+
+		// Assert
+		callResult.IsError.Should().NotBeTrue(
+			because: "omitting package-name must select merged runtime discovery on the real MCP path");
+		properties.PackageName.Should().Be("(merged: all packages)",
+			because: "the response must identify that it is not authoritative for one package layer");
+		properties.ColumnName.Should().Be("Name",
+			because: "the compiled Contact schema must expose its standard Name column");
+		properties.TrackChanges.Should().BeNull(
+			because: "the runtime route does not expose column track-changes and must not invent false");
+		properties.LocalizableText.Should().BeNull(
+			because: "the runtime route does not expose localizable-text and must not invent false");
+		properties.DoNotControlIntegrity.Should().BeNull(
+			because: "the runtime route does not expose integrity control and must not invent false");
+	}
+
+	[Category("McpE2E.Sandbox")]
+	[Test]
 	[Description("Returns structured schema search results that already include package-name for follow-up MCP calls.")]
 	[AllureTag(FindEntitySchemaTool.FindEntitySchemaToolName)]
 	[AllureName("Find entity schema returns structured package ownership")]
@@ -1773,7 +1809,7 @@ public sealed class EntitySchemaToolE2ETests : McpContractFixtureBase {
 	private static async Task<CallToolResult> CallGetColumnPropertiesAsync(
 		McpServerSession session,
 		string environmentName,
-		string packageName,
+		string? packageName,
 		string schemaName,
 		string columnName,
 		CancellationToken cancellationToken) {
@@ -1781,15 +1817,19 @@ public sealed class EntitySchemaToolE2ETests : McpContractFixtureBase {
 		tools.Select(tool => tool.Name).Should().Contain(ReadColumnToolName,
 			because: "the get-entity-schema-column-properties MCP tool must be advertised before the end-to-end call can be executed");
 
+		Dictionary<string, object?> args = new() {
+			["environment-name"] = environmentName,
+			["schema-name"] = schemaName,
+			["column-name"] = columnName
+		};
+		if (packageName is not null) {
+			args["package-name"] = packageName;
+		}
+
 		return await session.CallToolAsync(
 			ReadColumnToolName,
 			new Dictionary<string, object?> {
-				["args"] = new Dictionary<string, object?> {
-					["environment-name"] = environmentName,
-					["package-name"] = packageName,
-					["schema-name"] = schemaName,
-					["column-name"] = columnName
-				}
+				["args"] = args
 			},
 			cancellationToken);
 	}

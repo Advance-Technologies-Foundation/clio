@@ -15,28 +15,36 @@ namespace Clio.Command;
 /// Consumed by the MCP <c>create-business-process</c> tool, which sets these properties directly.
 /// </summary>
 // The version literal states what THIS command needs — the newest server behaviour it depends on that an
-// older one does not have. Today that is 1.4.7.0, and it covers FOUR shapes of one silent failure, none of
-// them visible in the response, which is what a version literal is for.
-// 1.4.2.0 added the approval APPROVER: an older server has no approver member and discards it while
-// answering success, leaving an element that saves and runs with nobody assigned. 1.4.3.0 added the
-// refusal of a notification switched on with no email template, and 1.4.4.0 the refusal of the AUTHOR
-// notification with no recipient: an older server ACCEPTS either and produces an element which reports the
-// notification as configured and never sends, because the runtime checks neither before sending, ignores
-// email errors by default, and — despite the caption — never resolves an author, reading only the address
-// the recipient field writes. 1.4.7.0 is the fourth and the reason the floor moved past 1.4.4.0: it PRESERVES
-// the stored employee across a user<->manager approver switch. clio's own guidance now tells agents that
-// {"approver":{"type":"manager"}} is how to say "their manager approves instead", and on an older server
-// that request overwrites the named employee with the current user — rerouting a real approval to whoever
-// ran the modify, self-consistently on read-back. Advertising a route the deployed server turns
-// destructive is precisely what the floor exists to stop. That release also refuses an email-template id
-// resolving to no record, the same silent never-sends as a missing template.
-// The approval block itself (1.4.1.0), the performer block (1.3.1.1) and the email block (1.2.0.1) set this
-// precedent and are subsumed; so do 1.4.5.0 and 1.4.6.0, which no released clio ever bundled. The guard
-// fixture asserts the shipped archive satisfies the literal, so clio can never demand a version it does
-// not itself carry — SATISFIES, not equals: the bundle is 1.4.8.0 and this floor is 1.4.7.0, because
-// 1.4.8.0 changed only contract documentation. A floor tracks BEHAVIOUR clio depends on; demanding a
-// version of every environment because a doc comment moved would be a floor bought for nothing.
-[RequiresPackage(BundledPackages.ProcessBuilderPackageName, "1.4.7.0",
+// older one does not have. Two independent lines of that requirement met in this merge, and NO released
+// version carries both, which is why the floor is the version this clio bundles rather than either of them.
+//
+// From ENG-96325 (master, first in 1.4.0.40): the lookup-constant input contract. A mappings[] 'value' on a
+// Lookup target may carry an already-composed [#Lookup.{objectUId}.{recordId}#], which that server decodes
+// to the bare record id while every earlier server rejects it outright as "not a bare Guid". It is NOT a
+// security floor: the raw-Select display-name read it replaced with a rights-aware entity read never
+// shipped in a released archive.
+//
+// From ENG-92713 (this branch): four shapes of one silent failure, none visible in the response. 1.4.2.0
+// added the approval APPROVER, which an older server discards while answering success, leaving an element
+// that saves and runs with nobody assigned. 1.4.3.0 added the refusal of a notification switched on with no
+// email template, and 1.4.4.0 the refusal of the AUTHOR notification with no recipient: an older server
+// ACCEPTS either and produces an element that reports the notification as configured and never sends,
+// because the runtime checks neither before sending, ignores email errors by default, and — despite the
+// caption — never resolves an author, reading only the address the recipient field writes. 1.4.7.0
+// PRESERVES the stored employee across a user<->manager approver switch; clio's guidance now tells agents
+// that {"approver":{"type":"manager"}} is how to say "their manager approves instead", and on an older
+// server that request overwrites the named employee with the current user, rerouting a real approval to
+// whoever ran the modify, self-consistently on read-back. Advertising a route the deployed server turns
+// destructive is precisely what a floor exists to stop.
+//
+// 1.4.0.40 predates every ENG-92713 behaviour and 1.4.7.0 predates the merge that brought ENG-96325 in, so
+// the first archive carrying both is the one cut from the merged package source — this literal. Presence
+// alone cannot express any of it. The approval block (1.4.1.0), the performer block (1.3.1.1) and the email
+// block (1.2.0.1) set the precedent and are subsumed, as do 1.4.5.0, 1.4.6.0 and 1.4.8.0, which no released
+// clio ever bundled. The guard fixture asserts the shipped archive SATISFIES the literal — not that it
+// equals it: a rebundle that changes only documentation moves the bundle and must not move the floor, since
+// a floor tracks behaviour clio depends on rather than the version it happens to ship.
+[RequiresPackage(BundledPackages.ProcessBuilderPackageName, "1.4.9.0",
 	Hint = BundledPackages.ProcessBuilderInstallHint)]
 public sealed class CreateBusinessProcessOptions : EnvironmentOptions {
 	/// <summary>Inline JSON process descriptor (name, caption, packageName, elements[], flows[], parameters[], mappings[]).</summary>

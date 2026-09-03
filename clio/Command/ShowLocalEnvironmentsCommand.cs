@@ -230,6 +230,7 @@ namespace Clio.Command
 			public const string Reset = "\u001b[0m";
 		}
 
-		private static readonly Regex AnsiRegex = new("\u001B\\[[0-?]*[ -/]*[@-~]", RegexOptions.Compiled);
+		private static readonly TimeSpan RegexTimeout = TimeSpan.FromSeconds(1);
+		private static readonly Regex AnsiRegex = new("\u001B\\[[0-?]*[ -/]*[@-~]", RegexOptions.Compiled, RegexTimeout);
 	}
 }

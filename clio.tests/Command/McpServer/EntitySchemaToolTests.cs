@@ -309,6 +309,42 @@ public sealed class EntitySchemaToolTests {
 
 	[Test]
 	[Category("Unit")]
+	[Description("Maps an omitted package to merged column discovery on the resolved environment-specific command.")]
+	public void GetEntitySchemaColumnProperties_Should_Allow_Omitted_Package() {
+		// Arrange
+		IRemoteEntitySchemaColumnManager columnManager = Substitute.For<IRemoteEntitySchemaColumnManager>();
+		columnManager.GetColumnProperties(Arg.Any<GetEntitySchemaColumnPropertiesOptions>()).Returns(
+			new EntitySchemaColumnPropertiesInfo(
+				"Contact", "(merged: all packages)", "UsrStatus", "own", "Status", null, "Lookup",
+				false, false, true, null, null, null, "UsrStatus", true, false, null, false, null,
+				false, false, false, false));
+		GetEntitySchemaColumnPropertiesCommand resolvedCommand = new(columnManager, Substitute.For<ILogger>());
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		commandResolver.Resolve<GetEntitySchemaColumnPropertiesCommand>(Arg.Any<GetEntitySchemaColumnPropertiesOptions>())
+			.Returns(resolvedCommand);
+		GetEntitySchemaColumnPropertiesTool tool = new(
+			new GetEntitySchemaColumnPropertiesCommand(
+				Substitute.For<IRemoteEntitySchemaColumnManager>(), Substitute.For<ILogger>()),
+			ConsoleLogger.Instance,
+			commandResolver);
+
+		// Act
+		EntitySchemaColumnPropertiesInfo result = tool.GetEntitySchemaColumnProperties(
+			new GetEntitySchemaColumnPropertiesArgs("dev", null, "Contact", "UsrStatus"));
+
+		// Assert
+		result.PackageName.Should().Be("(merged: all packages)",
+			because: "the MCP result should make the merged discovery scope explicit");
+		commandResolver.Received(1).Resolve<GetEntitySchemaColumnPropertiesCommand>(
+			Arg.Is<GetEntitySchemaColumnPropertiesOptions>(options =>
+				options.Environment == "dev"
+				&& options.Package == null
+				&& options.SchemaName == "Contact"
+				&& options.ColumnName == "UsrStatus"));
+	}
+
+	[Test]
+	[Category("Unit")]
 	[Description("Maps create-lookup arguments into BaseLookup create options and registers the lookup after successful creation.")]
 	public async Task CreateLookup_Should_Map_Arguments_And_Register_Lookup_On_Success() {
 		// Arrange
@@ -1023,6 +1059,10 @@ public sealed class EntitySchemaToolTests {
 			because: "schema-read prompt guidance must warn that an empty single-package read is not proof a column is absent");
 		columnPrompt.Should().Contain(GetEntitySchemaColumnPropertiesTool.GetEntitySchemaColumnPropertiesToolName,
 			because: "column-read prompt guidance should reference the exact production tool name");
+		columnPrompt.Should().Contain("MERGED/EFFECTIVE",
+			because: "column-read prompt guidance should explain the package-free discovery mode");
+		columnPrompt.Should().Contain("null rather than false",
+			because: "column-read prompt guidance should preserve unknown metadata in merged mode");
 		columnPrompt.Should().Contain(GuidanceGetTool.ToolName,
 			because: "column-read prompt guidance should point callers to the existing-app maintenance guide through the guidance tool");
 		columnPrompt.Should().Contain("before and after `modify-entity-schema-column`",
@@ -1037,6 +1077,49 @@ public sealed class EntitySchemaToolTests {
 			because: "modify prompt guidance should point callers to the existing-app maintenance guide through the guidance tool");
 		modifyPrompt.Should().Contain(GetEntitySchemaColumnPropertiesTool.GetEntitySchemaColumnPropertiesToolName,
 			because: "modify prompt guidance should tell callers to inspect current column metadata before mutating it");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("The column-properties MCP prompt keeps packageName optional so callers can request merged discovery.")]
+	public void ColumnPropertiesPrompt_Should_Keep_PackageName_Optional() {
+		// Arrange
+		System.Reflection.ParameterInfo packageParameter = typeof(EntitySchemaPrompt)
+			.GetMethod(nameof(EntitySchemaPrompt.GetEntitySchemaColumnPropertiesPrompt))!
+			.GetParameters()
+			.Single(parameter => parameter.Name == "packageName");
+
+		// Act
+		bool isRequired = packageParameter.GetCustomAttributes(typeof(RequiredAttribute), inherit: false).Any();
+		object? defaultValue = packageParameter.DefaultValue;
+
+		// Assert
+		isRequired.Should().BeFalse(
+			because: "omitting packageName is the supported merged entity-schema discovery contract");
+		defaultValue.Should().BeNull(
+			because: "the prompt should naturally select merged discovery when packageName is omitted");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Deserializes package-free column-property arguments after adding the merged convenience constructor.")]
+	public void ColumnPropertiesArgs_Should_Deserialize_Without_PackageName() {
+		// Arrange
+		const string json = """
+			{"environment-name":"dev","schema-name":"Contact","column-name":"Name"}
+			""";
+
+		// Act
+		GetEntitySchemaColumnPropertiesArgs? args = System.Text.Json.JsonSerializer
+			.Deserialize<GetEntitySchemaColumnPropertiesArgs>(json);
+
+		// Assert
+		args.Should().NotBeNull(
+			because: "MCP dispatch must deserialize the package-free merged-discovery payload");
+		args!.PackageName.Should().BeNull(
+			because: "an omitted package-name must remain null and select merged discovery");
+		args.SchemaName.Should().Be("Contact",
+			because: "JSON constructor selection must preserve named MCP arguments");
 	}
 
 	[Test]
