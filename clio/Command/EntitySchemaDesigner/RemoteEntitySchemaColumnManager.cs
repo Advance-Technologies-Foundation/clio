@@ -233,8 +233,17 @@ internal sealed class RemoteEntitySchemaColumnManager : IRemoteEntitySchemaColum
 		IReadOnlyDictionary<string, string> localizations =
 			options.ParsedTitleLocalizations is { Count: > 0 } ? options.ParsedTitleLocalizations : null;
 		if (localizations is null && !string.IsNullOrWhiteSpace(options.Title)) {
+			string effectiveCulture = effectiveCultureNameProvider();
+			// ENG-91044: the scalar --title is stored under the EFFECTIVE culture, exactly like the map
+			// entries, so it needs the same script guard. ValidateOptions normalizes only
+			// TitleLocalizations / ParsedTitleLocalizations, so without this line
+			// `--title "Мова згадки"` against an en-US profile wrote Cyrillic under en-US on a published,
+			// destructive write, while the equivalent `--title-localizations {"en-US":"Мова згадки"}` was
+			// correctly rejected. Same guard ClientUnitSchemaCreate, PageCreateOptions, SchemaDesignerHelper
+			// and the application-section commands apply to their scalar captions.
+			CaptionCultureScriptGuard.EnsureCaptionMatchesCulture(effectiveCulture, options.Title.Trim(), "title");
 			localizations = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase) {
-				[effectiveCultureNameProvider()] = options.Title.Trim()
+				[effectiveCulture] = options.Title.Trim()
 			};
 		}
 		if (localizations is null || localizations.Count == 0) {

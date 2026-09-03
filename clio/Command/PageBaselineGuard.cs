@@ -133,6 +133,22 @@ public sealed class PageBaselineGuard : IPageBaselineGuard {
 			// baseline must still move forward after the save: report armed so RefreshOrDrop persists the
 			// post-save checksum. Otherwise the next unpinned save auto-arms from a now-superseded
 			// checksum and raises a false conflict.
+			//
+			// A MACHINE-READABLE TRACE when the pin disagrees with the baseline. The bypass this guards
+			// against is: a save is refused, the caller copies actualChecksum out of conflictDetails,
+			// resubmits the SAME body with the new pin, and the guard passes - the other author's edit is
+			// gone, the response says success:true / conflict:false, and RefreshOrDrop then rewrites
+			// meta.json to the post-save checksum, erasing the only local record that the pin ever
+			// diverged. Without this, a caller that took the bypass and a caller that made a legitimate
+			// up-to-date save are byte-identical on the wire. Guidance prose is not enough for something
+			// only a machine reads.
+			if (!string.IsNullOrWhiteSpace(baseline.Checksum)
+				&& !string.Equals(baseline.Checksum, options.ExpectedChecksum, StringComparison.Ordinal)) {
+				warning ??= $"The checksum pinned for '{options.SchemaName}' differs from the baseline clio last "
+					+ "recorded for this page. If it was copied out of a conflict response rather than from a fresh "
+					+ "get-page, this save overwrites the change that caused the conflict - re-read the page and "
+					+ "merge before saving.";
+			}
 			return (metaFilePath, true, warning);
 		}
 		options.ExpectedChecksum = baseline.Checksum;

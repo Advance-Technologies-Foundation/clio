@@ -3039,6 +3039,29 @@ internal class RemoteEntitySchemaColumnManagerTests
 	}
 
 	[Test]
+	[Description("ENG-91044 on the SCALAR path: --title is stored under the effective culture just like a map entry, so Cyrillic text against an en-US profile must be rejected before the published, destructive write — not only when it arrives as --title-localizations (PR #1356 gate-3 review).")]
+	public void SetSchemaProperties_ShouldThrow_WhenTheScalarTitleScriptDoesNotMatchTheEffectiveCulture() {
+		// Arrange
+		_loadedSchema = CreateSchema(columns: [CreateGuidColumn("Id", IdColumnUId)]);
+		SetupLoadedSchema();
+		var options = new SetEntitySchemaPropertiesOptions {
+			Package = "UsrPkg",
+			SchemaName = "UsrVehicle",
+			Title = "Мова згадки"
+		};
+
+		// Act
+		Action act = () => _manager.SetSchemaProperties(options);
+
+		// Assert
+		act.Should().Throw<EntitySchemaDesignerException>()
+			.WithMessage("*title*",
+				because: "the equivalent --title-localizations {\"en-US\":\"Мова згадки\"} is already rejected, and the two spellings must not disagree");
+		_designerClient.DidNotReceive().SaveSchema(Arg.Any<EntityDesignSchemaDto>(),
+			Arg.Any<Clio.Command.RemoteCommandOptions>());
+	}
+
+	[Test]
 	[Description("Turns a silent server no-op into a clear error when the primary-display column is not persisted on readback.")]
 	public void SetSchemaProperties_ShouldThrow_WhenReadbackDoesNotReflectPrimaryDisplayColumn() {
 		// Arrange
