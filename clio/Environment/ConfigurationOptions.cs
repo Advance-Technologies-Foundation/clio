@@ -413,6 +413,7 @@ namespace Clio
 			Features = new Dictionary<string, bool>();
 			Knowledge = new KnowledgeConfiguration();
 			KnowledgeFeedback = new KnowledgeFeedbackSettings();
+			Autoupdate = new AutoUpdateSettings();
 		}
 
 		//TODO: This wont work for Mac and Linux
@@ -531,7 +532,8 @@ namespace Clio
 			}
 		}
 
-		public bool? Autoupdate {
+		[JsonProperty("autoupdate")]
+		public AutoUpdateSettings Autoupdate {
 			get; set;
 		}
 
@@ -1002,6 +1004,13 @@ namespace Clio
 			result.Features ??= new Dictionary<string, bool>();
 			result.Knowledge ??= new KnowledgeConfiguration();
 			result.KnowledgeFeedback ??= new KnowledgeFeedbackSettings();
+			result.Autoupdate ??= new AutoUpdateSettings();
+			result.Autoupdate.Clio ??= new AutoUpdatePolicy { FrequencyMinutes = 480 };
+			result.Autoupdate.Knowledge ??= new AutoUpdatePolicy { FrequencyMinutes = 60 };
+			result.Autoupdate.Toolkit ??= new AutoUpdatePolicy { FrequencyMinutes = 60 };
+			if (result.Autoupdate.Clio.FrequencyMinutes <= 0) result.Autoupdate.Clio.FrequencyMinutes = 480;
+			if (result.Autoupdate.Knowledge.FrequencyMinutes <= 0) result.Autoupdate.Knowledge.FrequencyMinutes = 60;
+			if (result.Autoupdate.Toolkit.FrequencyMinutes <= 0) result.Autoupdate.Toolkit.FrequencyMinutes = 60;
 			result.Knowledge.Sources ??= new Dictionary<string, KnowledgeSourceConfiguration>(
 				StringComparer.OrdinalIgnoreCase);
 			result.Knowledge.TopicPins ??= new Dictionary<string, string>(StringComparer.Ordinal);
@@ -1317,12 +1326,36 @@ namespace Clio
 		}
 
 		public bool GetAutoupdate() {
-			return _settings.Autoupdate ?? true;
+			return _settings.Autoupdate.Clio.Enabled;
 		}
 
 		public void SetAutoupdate(bool value) {
-			UpdateSettings(settings => settings.Autoupdate = value);
+			UpdateSettings(settings => settings.Autoupdate.Clio.Enabled = value);
 		}
+
+		public bool TryScheduleAutoupdate(AutoUpdateTarget target, DateTimeOffset now) {
+			bool due = false;
+			UpdateSettingsIfChanged(settings => {
+				if ((settings.SettingsVersion ?? 0) < 1
+					&& settings.Autoupdate is { WasLegacyScalar: true, Clio.Enabled: false }) {
+					settings.Autoupdate.Clio.Enabled = true;
+				}
+				AutoUpdatePolicy policy = GetPolicy(settings.Autoupdate, target);
+				due = policy.Enabled && now > policy.NextRun;
+				if (due) {
+					policy.NextRun = now.AddMinutes(Math.Max(1, policy.FrequencyMinutes));
+				}
+				return due;
+			});
+			return due;
+		}
+
+		private static AutoUpdatePolicy GetPolicy(AutoUpdateSettings settings, AutoUpdateTarget target) => target switch {
+			AutoUpdateTarget.Clio => settings.Clio,
+			AutoUpdateTarget.Knowledge => settings.Knowledge,
+			AutoUpdateTarget.Toolkit => settings.Toolkit,
+			_ => throw new ArgumentOutOfRangeException(nameof(target))
+		};
 
 		public bool IsFeatureEnabled(string featureName) {
 			if (string.IsNullOrWhiteSpace(featureName)) {
