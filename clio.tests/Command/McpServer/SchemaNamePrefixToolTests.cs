@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Net.Http;
 using ATF.Repository.Providers;
+using Clio.Command;
 using Clio.Command.McpServer.Tools;
 using Clio.Common;
 using FluentAssertions;
@@ -67,7 +68,7 @@ public sealed class SchemaNamePrefixToolTests {
 		SysSettingsManager manager = BuildSysSettingsManager(dataProvider);
 		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
 		commandResolver.Resolve<SysSettingsManager>(Arg.Any<EnvironmentOptions>()).Returns(manager);
-		SchemaNamePrefixTool tool = new(commandResolver);
+		SchemaNamePrefixTool tool = new(commandResolver, new OperationCorrelationIdProvider());
 
 		// Act
 		SchemaNamePrefixResult result = tool.GetSchemaNamePrefix(new GetSchemaNamePrefixArgs("sandbox"));
@@ -91,7 +92,7 @@ public sealed class SchemaNamePrefixToolTests {
 		SysSettingsManager manager = BuildSysSettingsManager(dataProvider);
 		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
 		commandResolver.Resolve<SysSettingsManager>(Arg.Any<EnvironmentOptions>()).Returns(manager);
-		SchemaNamePrefixTool tool = new(commandResolver);
+		SchemaNamePrefixTool tool = new(commandResolver, new OperationCorrelationIdProvider());
 
 		// Act
 		SchemaNamePrefixResult result = tool.GetSchemaNamePrefix(new GetSchemaNamePrefixArgs("sandbox"));
@@ -113,7 +114,7 @@ public sealed class SchemaNamePrefixToolTests {
 		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
 		commandResolver.Resolve<SysSettingsManager>(Arg.Any<EnvironmentOptions>())
 			.Returns(_ => throw new HttpRequestException("Connection refused."));
-		SchemaNamePrefixTool tool = new(commandResolver);
+		SchemaNamePrefixTool tool = new(commandResolver, new OperationCorrelationIdProvider());
 
 		// Act
 		SchemaNamePrefixResult result = tool.GetSchemaNamePrefix(new GetSchemaNamePrefixArgs("offline-env"));
@@ -135,7 +136,7 @@ public sealed class SchemaNamePrefixToolTests {
 		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
 		commandResolver.Resolve<SysSettingsManager>(Arg.Any<EnvironmentOptions>())
 			.Returns(_ => throw new InvalidOperationException("Environment 'unknown' is not registered."));
-		SchemaNamePrefixTool tool = new(commandResolver);
+		SchemaNamePrefixTool tool = new(commandResolver, new OperationCorrelationIdProvider());
 
 		// Act
 		SchemaNamePrefixResult result = tool.GetSchemaNamePrefix(new GetSchemaNamePrefixArgs("unknown"));
@@ -159,7 +160,7 @@ public sealed class SchemaNamePrefixToolTests {
 		SysSettingsManager manager = BuildSysSettingsManager(dataProvider);
 		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
 		commandResolver.Resolve<SysSettingsManager>(Arg.Any<EnvironmentOptions>()).Returns(manager);
-		SchemaNamePrefixTool tool = new(commandResolver);
+		SchemaNamePrefixTool tool = new(commandResolver, new OperationCorrelationIdProvider());
 
 		// Act
 		SchemaNamePrefixResult result = tool.GetSchemaNamePrefix(new GetSchemaNamePrefixArgs("sandbox"));
@@ -168,5 +169,31 @@ public sealed class SchemaNamePrefixToolTests {
 		result.Success.Should().BeTrue();
 		result.SchemaNamePrefix.Should().Be("Usr",
 			because: "surrounding double-quotes in the raw setting value must be stripped before returning the prefix");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("get-schema-name-prefix carries the classified category, cause, recovery action and correlation ID beside its unchanged legacy error text (issue #1329).")]
+	public void GetSchemaNamePrefix_Should_Carry_The_Classified_Failure_Parts() {
+		// Arrange
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		commandResolver.Resolve<SysSettingsManager>(Arg.Any<EnvironmentOptions>())
+			.Returns(_ => throw new HttpRequestException("Connection refused."));
+		SchemaNamePrefixTool tool = new(commandResolver, new OperationCorrelationIdProvider());
+
+		// Act
+		SchemaNamePrefixResult result = tool.GetSchemaNamePrefix(new GetSchemaNamePrefixArgs("offline-env"));
+
+		// Assert
+		result.Error.Should().Be("Network error reading SchemaNamePrefix.",
+			because: "the legacy error text stays byte-identical");
+		result.ErrorCategory.Should().Be(SysSettingErrorCategories.Network,
+			because: "the category is what an agent branches on");
+		result.Cause.Should().Be("The environment could not be reached.",
+			because: "the cause is a fixed local diagnostic");
+		result.RecoveryAction.Should().NotBeNullOrWhiteSpace(
+			because: "the envelope must name the operator's next step");
+		result.CorrelationId.Should().NotBeNullOrWhiteSpace(
+			because: "#1222 requires a correlation ID on a failure envelope");
 	}
 }

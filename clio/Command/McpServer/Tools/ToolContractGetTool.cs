@@ -490,6 +490,18 @@ internal static class ToolContractCatalog {
 	private const string ExamplePackageName = "UsrTaskApp";
 	private const string ExampleTaskStatusSchemaName = "UsrTaskStatus";
 	private const string FailureMessageDescription = "Human-readable failure message.";
+
+	// Issue #1329: a sys-setting failure envelope carries the classified cause, the recovery action and
+	// the correlation ID beside the legacy message, so an agent has something to act on and an operator
+	// can find the matching log line.
+	private const string SysSettingErrorCategoryDescription =
+		"Failure class an agent can branch on: Authentication, Network, ProviderFailure, Validation or Unknown. Null on success.";
+	private const string SysSettingCauseDescription =
+		"What failed, as a fixed local diagnostic. Never composed from server prose. Null on success.";
+	private const string SysSettingRecoveryActionDescription =
+		"The next step to take, as a fixed local diagnostic. Null on success.";
+	private const string SysSettingCorrelationIdDescription =
+		"Correlation ID shared with the log line written for this failure; quote it when reporting the problem. Null on success.";
 	private const string FieldFieldName = "field";
 	private const string FiltersFieldName = "filters";
 	private const string LogicalOperationFieldName = "logicalOperation";
@@ -5316,7 +5328,11 @@ internal static class ToolContractCatalog {
 				],
 				Field(SuccessFieldName, BooleanType, ToolSucceededDescription),
 				Field("schema-name-prefix", StringType, "Active SchemaNamePrefix system setting. Empty string means no prefix is configured."),
-				Field(ErrorFieldName, StringType, FailureMessageDescription)
+				Field(ErrorFieldName, StringType, FailureMessageDescription),
+				Field("error-category", StringType, SysSettingErrorCategoryDescription),
+				Field("cause", StringType, SysSettingCauseDescription),
+				Field("recovery-action", StringType, SysSettingRecoveryActionDescription),
+				Field("correlation-id", StringType, SysSettingCorrelationIdDescription)
 			),
 			CommonErrorContract,
 			[],
@@ -5948,7 +5964,11 @@ internal static class ToolContractCatalog {
 				Field(SuccessFieldName, BooleanType, ToolSucceededDescription),
 				Field(SysSettingCodeFieldName, StringType, "Sys-setting code echoed from the request."),
 				Field(SysSettingValueFieldName, StringType, "Raw string value of the sys-setting. Empty string when not configured."),
-				Field(ErrorFieldName, StringType, FailureMessageDescription)
+				Field(ErrorFieldName, StringType, FailureMessageDescription),
+				Field("error-category", StringType, SysSettingErrorCategoryDescription),
+				Field("cause", StringType, SysSettingCauseDescription),
+				Field("recovery-action", StringType, SysSettingRecoveryActionDescription),
+				Field("correlation-id", StringType, SysSettingCorrelationIdDescription)
 			),
 			CommonErrorContract,
 			[],
@@ -5985,7 +6005,11 @@ internal static class ToolContractCatalog {
 				],
 				Field(SuccessFieldName, BooleanType, ToolSucceededDescription),
 				Field("settings", ArrayType, "Sys-settings with code, name, value-type-name, value, is-cacheable, is-personal."),
-				Field(ErrorFieldName, StringType, FailureMessageDescription)
+				Field(ErrorFieldName, StringType, FailureMessageDescription),
+				Field("error-category", StringType, SysSettingErrorCategoryDescription),
+				Field("cause", StringType, SysSettingCauseDescription),
+				Field("recovery-action", StringType, SysSettingRecoveryActionDescription),
+				Field("correlation-id", StringType, SysSettingCorrelationIdDescription)
 			),
 			CommonErrorContract,
 			[],
@@ -6036,7 +6060,11 @@ internal static class ToolContractCatalog {
 				Field(SysSettingValueTypeFieldName, StringType, "Value-type-name applied to the created sys-setting."),
 				Field(SysSettingValueFieldName, StringType, "Applied initial value (null when no value was provided or assignment failed)."),
 				Field(ErrorFieldName, StringType, FailureMessageDescription),
-				Field("warning", StringType, "Optional partial-success warning. Populated when the row was created but the initial value could not be applied; null on a fully successful or fully failed create.")
+				Field("warning", StringType, "Optional partial-success warning. Populated when the row was created but the initial value could not be applied; null on a fully successful or fully failed create."),
+				Field("error-category", StringType, SysSettingErrorCategoryDescription),
+				Field("cause", StringType, SysSettingCauseDescription),
+				Field("recovery-action", StringType, SysSettingRecoveryActionDescription),
+				Field("correlation-id", StringType, SysSettingCorrelationIdDescription)
 			),
 			CommonErrorContract,
 			[],
@@ -6081,7 +6109,11 @@ internal static class ToolContractCatalog {
 				Field(SuccessFieldName, BooleanType, ToolSucceededDescription),
 				Field(SysSettingCodeFieldName, StringType, "Sys-setting code echoed from the request."),
 				Field(SysSettingValueFieldName, StringType, "Value read back from the environment after the update."),
-				Field(ErrorFieldName, StringType, FailureMessageDescription)
+				Field(ErrorFieldName, StringType, FailureMessageDescription),
+				Field("error-category", StringType, SysSettingErrorCategoryDescription),
+				Field("cause", StringType, SysSettingCauseDescription),
+				Field("recovery-action", StringType, SysSettingRecoveryActionDescription),
+				Field("correlation-id", StringType, SysSettingCorrelationIdDescription)
 			),
 			CommonErrorContract,
 			[],

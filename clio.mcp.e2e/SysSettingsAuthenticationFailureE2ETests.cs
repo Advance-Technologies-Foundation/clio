@@ -67,6 +67,16 @@ public sealed class SysSettingsAuthenticationFailureE2ETests {
 				+ "page and a gateway error page are indistinguishable - the envelope must not claim one");
 			response.Value.Should().BeNullOrEmpty(
 				because: "no value was read, so none may be advertised alongside the failure");
+			//Issue #1329: the envelope has to carry the classified parts, not only the one-line message.
+			response.ErrorCategory.Should().Be(SysSettingErrorCategories.ProviderFailure,
+				because: "the read path cannot prove which of the two causes it was, so it reports the "
+				+ "provider verdict rather than claiming a credential rejection");
+			response.Cause.Should().NotBeNullOrWhiteSpace(
+				because: "the actionable cause used to be discarded (issue #1329)");
+			response.RecoveryAction.Should().NotBeNullOrWhiteSpace(
+				because: "the envelope must name the caller's next step");
+			response.CorrelationId.Should().NotBeNullOrWhiteSpace(
+				because: "#1222 requires a correlation ID so the failure can be matched to the log line");
 		});
 	}
 
@@ -98,6 +108,10 @@ public sealed class SysSettingsAuthenticationFailureE2ETests {
 				+ "page and a gateway error page are indistinguishable - the envelope must not claim one");
 			response.Settings.Should().BeNullOrEmpty(
 				because: "nothing was read, so no catalog may be advertised alongside the failure");
+			response.ErrorCategory.Should().Be(SysSettingErrorCategories.ProviderFailure,
+				because: "a list failure declares its category so an agent branches on it (issue #1329)");
+			response.CorrelationId.Should().NotBeNullOrWhiteSpace(
+				because: "#1222 names list failures specifically as needing a correlation ID");
 		});
 	}
 
@@ -131,6 +145,14 @@ public sealed class SysSettingsAuthenticationFailureE2ETests {
 				+ "session was rejected - it is not the ambiguous non-JSON answer the read path has to report");
 			response.Warning.Should().BeNull(
 				because: "a fail-closed refusal is not a partial success and must not be softened into a warning");
+			response.ErrorCategory.Should().Be(SysSettingErrorCategories.Authentication,
+				because: "the write path proves the session was rejected, so the category is definite (issue #1329)");
+			response.Cause.Should().NotBeNullOrWhiteSpace(
+				because: "#1222 names create failures specifically as needing an actionable cause");
+			response.RecoveryAction.Should().NotBeNullOrWhiteSpace(
+				because: "the envelope must name the caller's next step");
+			response.CorrelationId.Should().NotBeNullOrWhiteSpace(
+				because: "#1222 names create failures specifically as needing a correlation ID");
 		});
 	}
 

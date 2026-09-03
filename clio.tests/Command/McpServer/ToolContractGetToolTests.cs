@@ -3124,4 +3124,37 @@ public sealed class ToolContractGetToolTests {
 		contract.Description.Should().Contain("authentication error",
 			because: "the contract must name the diagnosis the caller will actually receive");
 	}
+
+	[Test]
+	[Category("Unit")]
+	[TestCase(SchemaNamePrefixTool.GetSchemaNamePrefixToolName,
+		TestName = "GetSchemaNamePrefixContractDeclaresTheFailureEnvelopeFields")]
+	[TestCase(SysSettingGetTool.GetSysSettingToolName,
+		TestName = "GetSysSettingContractDeclaresTheFailureEnvelopeFields")]
+	[TestCase(SysSettingsListTool.ListSysSettingsToolName,
+		TestName = "ListSysSettingsContractDeclaresTheFailureEnvelopeFields")]
+	[TestCase(SysSettingCreateTool.CreateSysSettingToolName,
+		TestName = "CreateSysSettingContractDeclaresTheFailureEnvelopeFields")]
+	[TestCase(SysSettingUpdateTool.UpdateSysSettingToolName,
+		TestName = "UpdateSysSettingContractDeclaresTheFailureEnvelopeFields")]
+	[Description("Issue #1329 added error-category, cause, recovery-action and correlation-id to every sys-setting failure envelope; get-tool-contract restates the output shape in its own literal, so a field the tool returns and the contract omits is a field no agent knows to read.")]
+	public void ToolContract_Should_Declare_The_Sys_Setting_Failure_Envelope_Fields(string toolName) {
+		// Arrange
+		ToolContractGetTool tool = BuildToolWithRegistry();
+
+		// Act
+		ToolContractDefinition contract =
+			tool.GetToolContracts(new ToolContractGetArgs([toolName])).Tools!.Single();
+
+		// Assert
+		string[] fieldNames = [.. contract.OutputContract.Fields.Select(field => field.Name)];
+		fieldNames.Should().Contain("error-category",
+			because: "an agent branches on the failure class rather than parsing the message");
+		fieldNames.Should().Contain("cause",
+			because: "the actionable cause used to be discarded by CategorizeError (issue #1329)");
+		fieldNames.Should().Contain("recovery-action",
+			because: "the envelope has to name the next step, not only the failure");
+		fieldNames.Should().Contain("correlation-id",
+			because: "#1222 requires a correlation ID so the caller can point an operator at the log line");
+	}
 }

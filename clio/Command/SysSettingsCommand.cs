@@ -62,11 +62,14 @@ namespace Clio.Command
 		private readonly ISysSettingsManager _sysSettingsManager;
 		private readonly ILogger _logger;
 		private readonly IFileSystem _fileSystem;
+		private readonly IOperationCorrelationIdProvider _correlationIds;
 
-		public SysSettingsCommand(ISysSettingsManager sysSettingsManager, ILogger logger, IFileSystem fileSystem){
+		public SysSettingsCommand(ISysSettingsManager sysSettingsManager, ILogger logger, IFileSystem fileSystem,
+			IOperationCorrelationIdProvider correlationIds){
 			_sysSettingsManager = sysSettingsManager;
 			_logger = logger;
 			_fileSystem = fileSystem;
+			_correlationIds = correlationIds;
 		}
 
 		/// <summary>
@@ -238,9 +241,11 @@ namespace Clio.Command
 				//bare catch used to swallow the credential and network diagnoses that the typed
 				//TryUpdateSysSetting(UpdateSysSettingArgs) overload reports, so the CLI path told the
 				//operator nothing about WHY the write did not land.
+				SysSettingFailure failure = CategorizeFailure(ex, "updating sys-setting",
+					_correlationIds.New());
 				_logger.WriteError(
 					$"SysSettings with code: {opts.Code} is not updated. "
-					+ CategorizeError(ex, "updating sys-setting"));
+					+ DescribeFailureForLog(failure));
 			}
 		}
 
@@ -260,7 +265,9 @@ namespace Clio.Command
 				(string readback, string readbackType) = _sysSettingsManager.GetAllUsersDefaultWithType(args.Code);
 				return new SysSettingUpdateResult(true, args.Code, ApplySecureTextMask(readbackType, readback));
 			} catch (Exception ex) {
-				return new SysSettingUpdateResult(false, args.Code, null, CategorizeError(ex, "updating sys-setting"));
+				SysSettingFailure failure = ReportFailure(ex, "updating sys-setting");
+				return new SysSettingUpdateResult(false, args.Code, null, failure.Error,
+					failure.Category, failure.Cause, failure.RecoveryAction, failure.CorrelationId);
 			}
 		}
 
@@ -371,8 +378,9 @@ namespace Clio.Command
 				string maskedValue = ApplySecureTextMask(typeName, value ?? string.Empty);
 				return new SysSettingGetResult(true, args.Code, maskedValue);
 			} catch (Exception ex) {
-				string message = CategorizeError(ex, "reading sys-setting");
-				return new SysSettingGetResult(false, args.Code, string.Empty, message);
+				SysSettingFailure failure = ReportFailure(ex, "reading sys-setting");
+				return new SysSettingGetResult(false, args.Code, string.Empty, failure.Error,
+					failure.Category, failure.Cause, failure.RecoveryAction, failure.CorrelationId);
 			}
 		}
 
@@ -425,8 +433,9 @@ namespace Clio.Command
 					.ToArray();
 				return new SysSettingsListResult(true, items);
 			} catch (Exception ex) {
-				string message = CategorizeError(ex, "listing sys-settings");
-				return new SysSettingsListResult(false, Array.Empty<SysSettingItem>(), message);
+				SysSettingFailure failure = ReportFailure(ex, "listing sys-settings");
+				return new SysSettingsListResult(false, Array.Empty<SysSettingItem>(), failure.Error,
+					failure.Category, failure.Cause, failure.RecoveryAction, failure.CorrelationId);
 			}
 		}
 
@@ -465,8 +474,10 @@ namespace Clio.Command
 				}
 				return ApplyInitialValue(args);
 			} catch (Exception ex) {
-				string message = CategorizeError(ex, "creating sys-setting");
-				return new SysSettingCreateResult(false, args.Code, args.ValueTypeName, null, message);
+				SysSettingFailure failure = ReportFailure(ex, "creating sys-setting");
+				return new SysSettingCreateResult(false, args.Code, args.ValueTypeName, null, failure.Error,
+					Warning: null, failure.Category, failure.Cause, failure.RecoveryAction,
+					failure.CorrelationId);
 			}
 		}
 
@@ -520,7 +531,27 @@ namespace Clio.Command
 			return new SysSettingCreateResult(true, args.Code, args.ValueTypeName, maskedAssignedValue);
 		}
 
-		internal static string CategorizeError(Exception ex, string operationLabel) {
+		/// <summary>
+		/// The legacy single-line categorization, kept for callers that surface only the message.
+		/// </summary>
+		/// <remarks>
+		/// Delegates to <see cref="CategorizeFailure"/> so there is one classification, not two. Prefer
+		/// <see cref="CategorizeFailure"/>: this overload drops the actionable cause, the recovery action
+		/// and the correlation ID, which is what issue #1329 was about.
+		/// </remarks>
+		internal static string CategorizeError(Exception ex, string operationLabel) =>
+			CategorizeFailure(ex, operationLabel, correlationId: null).Error;
+
+		/// <summary>
+		/// Classifies a failure into the structured envelope the sys-setting results carry: the legacy
+		/// message, the category an agent branches on, a cause, a recovery action, and the correlation ID
+		/// that finds the log line written for the same failure.
+		/// </summary>
+		/// <param name="ex">The failure to classify.</param>
+		/// <param name="operationLabel">The operation, as it reads inside the legacy message.</param>
+		/// <param name="correlationId">The ID issued for this operation, or <see langword="null"/>.</param>
+		internal static SysSettingFailure CategorizeFailure(Exception ex, string operationLabel,
+			string correlationId) {
 			//The Creatio client reaches transport faults through Task.Result, which wraps them in an
 			//AggregateException. Switching on the outer type alone therefore saw the wrapper, not the
 			//fault, and an aggregate carrying an AuthenticationException or a typed 401 fell through to
@@ -529,28 +560,70 @@ namespace Clio.Command
 			Exception fault = UnwrapTransportFault(ex);
 			return fault switch {
 				HttpRequestException httpEx when IsAuthenticationFailure(httpEx)
-					=> $"Authentication error {operationLabel}.",
-				HttpRequestException => $"Network error {operationLabel}.",
+					=> Authentication(operationLabel, correlationId),
+				HttpRequestException => Network(operationLabel, correlationId),
 				WebException webEx when IsAuthenticationFailure(webEx)
-					=> $"Authentication error {operationLabel}.",
-				WebException => $"Network error {operationLabel}.",
-				SocketException => $"Network error {operationLabel}.",
-				UnauthorizedAccessException => $"Authentication error {operationLabel}.",
+					=> Authentication(operationLabel, correlationId),
+				WebException => Network(operationLabel, correlationId),
+				SocketException => Network(operationLabel, correlationId),
+				UnauthorizedAccessException => Authentication(operationLabel, correlationId),
 				//A bare AuthenticationException is asked the same question as the wrapped ones: the framework
 				//raises this type for a TLS handshake too, and a bad server certificate reported as rejected
 				//credentials hides the only diagnosis that leads to the fix.
 				AuthenticationException authEx when IsAuthenticationFailure(authEx)
-					=> $"Authentication error {operationLabel}.",
-				AuthenticationException => $"Network error {operationLabel}.",
+					=> Authentication(operationLabel, correlationId),
+				AuthenticationException => Network(operationLabel, correlationId),
 				//An aggregate that carries several distinct faults is not unwrapped, because no single
 				//inner represents it - but a credential failure among them still has to be reported as one.
 				AggregateException aggregate when IsAuthenticationFailure(aggregate)
-					=> $"Authentication error {operationLabel}.",
-				ArgumentException argEx => argEx.Message,
-				InvalidOperationException invEx => invEx.Message,
-				_ => $"Failed {operationLabel}."
+					=> Authentication(operationLabel, correlationId),
+				ArgumentException argEx => new SysSettingFailure(argEx.Message,
+					SysSettingErrorCategories.Validation, argEx.Message,
+					SysSettingFailureTexts.ValidationRecovery, correlationId),
+				//DataProviderFailureException is the one InvalidOperationException whose message IS the
+				//diagnosis - it is composed locally by ClassifyingDataProvider from a response that carries
+				//no exception of its own. An ordinary InvalidOperationException keeps its message too (that
+				//is the pre-existing behaviour) but is not claimed to be a provider verdict.
+				DataProviderFailureException providerEx => new SysSettingFailure(providerEx.Message,
+					SysSettingErrorCategories.ProviderFailure, providerEx.Message,
+					SysSettingFailureTexts.ProviderFailureRecovery, correlationId),
+				InvalidOperationException invEx => new SysSettingFailure(invEx.Message,
+					SysSettingErrorCategories.Unknown, invEx.Message,
+					SysSettingFailureTexts.UnknownRecovery, correlationId),
+				var _ => new SysSettingFailure($"Failed {operationLabel}.",
+					SysSettingErrorCategories.Unknown, SysSettingFailureTexts.UnknownCause,
+					SysSettingFailureTexts.UnknownRecovery, correlationId)
 			};
 		}
+
+		private static SysSettingFailure Authentication(string operationLabel, string correlationId) =>
+			new($"Authentication error {operationLabel}.", SysSettingErrorCategories.Authentication,
+				SysSettingFailureTexts.AuthenticationCause,
+				SysSettingFailureTexts.AuthenticationRecovery, correlationId);
+
+		private static SysSettingFailure Network(string operationLabel, string correlationId) =>
+			new($"Network error {operationLabel}.", SysSettingErrorCategories.Network,
+				SysSettingFailureTexts.NetworkCause, SysSettingFailureTexts.NetworkRecovery,
+				correlationId);
+
+		/// <summary>
+		/// Writes the failure to the log with its correlation ID and returns it, so the envelope the caller
+		/// builds and the line an operator greps carry the SAME ID.
+		/// </summary>
+		/// <remarks>
+		/// Safe on the MCP path: <see cref="ConsoleLogger"/> suppresses every console write in MCP server
+		/// mode, because stdout there frames JSON-RPC.
+		/// </remarks>
+		private SysSettingFailure ReportFailure(Exception ex, string operationLabel) {
+			SysSettingFailure failure = CategorizeFailure(ex, operationLabel, _correlationIds.New());
+			_logger.WriteError(DescribeFailureForLog(failure));
+			return failure;
+		}
+
+		/// <summary>Renders a classified failure as one log line, correlation ID last.</summary>
+		internal static string DescribeFailureForLog(SysSettingFailure failure) =>
+			$"{failure.Error} Cause: {failure.Cause} Action: {failure.RecoveryAction} "
+			+ $"(correlation-id: {failure.CorrelationId})";
 
 		// Bounds every walk over an exception chain. A chain this deep is not something a transport
 		// produces, and the bound is what keeps a hand-built or self-referencing chain from looping.

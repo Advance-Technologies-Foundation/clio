@@ -11,7 +11,8 @@ namespace Clio.Command.McpServer.Tools;
 /// MCP tool surface for reading the active SchemaNamePrefix system setting.
 /// </summary>
 [McpServerToolType]
-public sealed class SchemaNamePrefixTool(IToolCommandResolver commandResolver) {
+public sealed class SchemaNamePrefixTool(IToolCommandResolver commandResolver,
+	IOperationCorrelationIdProvider correlationIds) {
 
 	internal const string GetSchemaNamePrefixToolName = "get-schema-name-prefix";
 
@@ -42,9 +43,12 @@ public sealed class SchemaNamePrefixTool(IToolCommandResolver commandResolver) {
 			string prefix = SysSettingCodes.ReadSchemaNamePrefix(sysSettings);
 			return new SchemaNamePrefixResult(true, prefix);
 		} catch (Exception ex) when (ex is System.Net.Http.HttpRequestException or System.Net.WebException or System.Net.Sockets.SocketException) {
-			return new SchemaNamePrefixResult(false, string.Empty, "Network error reading SchemaNamePrefix.");
+			return Failure("Network error reading SchemaNamePrefix.", SysSettingErrorCategories.Network,
+				SysSettingFailureTexts.NetworkCause, SysSettingFailureTexts.NetworkRecovery);
 		} catch (Exception ex) when (ex is UnauthorizedAccessException or System.Security.Authentication.AuthenticationException) {
-			return new SchemaNamePrefixResult(false, string.Empty, "Authentication error reading SchemaNamePrefix.");
+			return Failure("Authentication error reading SchemaNamePrefix.",
+				SysSettingErrorCategories.Authentication, SysSettingFailureTexts.AuthenticationCause,
+				SysSettingFailureTexts.AuthenticationRecovery);
 		} catch (DataProviderFailureException ex) {
 			//Surfaces the message rather than collapsing to "Failed to read SchemaNamePrefix.", which is the
 			//same rule SysSettingsCommand.CategorizeError applies. This type - and ONLY this type - means
@@ -52,11 +56,21 @@ public sealed class SchemaNamePrefixTool(IToolCommandResolver commandResolver) {
 			//answer that names both possible causes (rejected session, or a URL that does not reach
 			//Creatio). A plain InvalidOperationException keeps the generic label below: an unregistered
 			//environment name must not have its resolver text promoted into this field.
-			return new SchemaNamePrefixResult(false, string.Empty, ex.Message);
+			return Failure(ex.Message, SysSettingErrorCategories.ProviderFailure, ex.Message,
+				SysSettingFailureTexts.ProviderFailureRecovery);
 		} catch (Exception) {
-			return new SchemaNamePrefixResult(false, string.Empty, "Failed to read SchemaNamePrefix.");
+			return Failure("Failed to read SchemaNamePrefix.", SysSettingErrorCategories.Unknown,
+				SysSettingFailureTexts.UnknownCause, SysSettingFailureTexts.UnknownRecovery);
 		}
 	}
+
+	/// <summary>
+	/// Builds the failure envelope: the legacy <c>error</c> text unchanged, plus the classified cause,
+	/// the recovery action, and the correlation ID that ties the envelope to the log line (issue #1329).
+	/// </summary>
+	private SchemaNamePrefixResult Failure(string error, string category, string cause,
+		string recoveryAction) =>
+		new(false, string.Empty, error, category, cause, recoveryAction, correlationIds.New());
 }
 
 /// <summary>
@@ -70,8 +84,14 @@ public sealed record GetSchemaNamePrefixArgs(
 
 /// <summary>
 /// MCP response for the <c>get-schema-name-prefix</c> tool.
+/// On failure the envelope also carries <c>error-category</c>, <c>cause</c>, <c>recovery-action</c>
+/// and <c>correlation-id</c> (issue #1329); <c>error</c> keeps its historic single-line text.
 /// </summary>
 public sealed record SchemaNamePrefixResult(
 	[property: JsonPropertyName("success")] bool Success,
 	[property: JsonPropertyName("schema-name-prefix")] string SchemaNamePrefix,
-	[property: JsonPropertyName("error")] string? Error = null);
+	[property: JsonPropertyName("error")] string? Error = null,
+	[property: JsonPropertyName("error-category")] string? ErrorCategory = null,
+	[property: JsonPropertyName("cause")] string? Cause = null,
+	[property: JsonPropertyName("recovery-action")] string? RecoveryAction = null,
+	[property: JsonPropertyName("correlation-id")] string? CorrelationId = null);
