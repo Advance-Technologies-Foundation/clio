@@ -25,12 +25,18 @@ internal static class BlockExpectationReporter {
 	/// </summary>
 	internal static void ReportDescribed(ILogger logger, DescribeProcessResult described,
 			IReadOnlyList<string> expectedRights, IReadOnlyList<string> expectedEmail,
-			IReadOnlyList<string>? filterTouched = null, IReadOnlyList<string>? unverifiable = null) {
-		// Unresolved covers the union too: an element the batch only RE-FILTERED is just as unverifiable when the
-		// read-back cannot find it, and reporting only the configured ones left that case silent.
+			IReadOnlyList<string>? filterTouched = null) {
+		// An element the batch only RE-FILTERED is just as unverifiable when the read-back cannot find it, so it
+		// must be reported - but in its OWN words. It sent no block, and an element the read-back could not
+		// resolve is precisely one whose type is unknown, so the accessRights wording would be a false
+		// accusation for the readData/changeData elements that share the clearFilter operation.
+		IReadOnlyList<string> filterOnly =
+			[.. (filterTouched ?? []).Except(expectedRights, StringComparer.OrdinalIgnoreCase)];
+		const string unresolved = "the saved process does not report an element with that name or UId";
 		Warn(logger, BuildUnverifiedWarning(
-			AccessRightsBlockExpectation.Unresolved(described, unverifiable ?? expectedRights),
-			"the saved process does not report an element with that name or UId"));
+			AccessRightsBlockExpectation.Unresolved(described, expectedRights), unresolved));
+		Warn(logger, BuildUnverifiedFilterWarning(
+			AccessRightsBlockExpectation.Unresolved(described, filterOnly), unresolved));
 		// A re-filtered element reaches no other check here: it is deliberately excluded from Missing() and from
 		// the lossy-read check, both of which speak for blocks the caller SENT. So when the read-back resolves it
 		// but reports no accessRights block at all - which is every environment whose CrtProcessBuilder predates

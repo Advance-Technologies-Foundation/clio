@@ -62,9 +62,11 @@ public static class ModifyBusinessProcessPrompt {
 		 records are affected, and every grantee with its operations and level — calling out `restrict` as the
 		 platform Deny level, DESTRUCTIVE rather than inert and landing in the `add` GRANT collection: UseDenyRecordRights gates only record positioning, never whether a right row is written. Against a grantee who already holds Allow it DOWNGRADES that row to Deny, and a fresh insert writes one row per operation - the one you named at your level and the OTHER TWO at Deny - so operations:['read'] denies edit and delete as well. Prefer a remove entry to take access away, and a supplied `add`/`remove`
 		 as a REPLACEMENT that drops every entry it does not restate — and get an explicit yes before applying it.
-		 If the element's `accessRights` read back with an EMPTY `add` or `remove`, say so plainly when you ask:
-		 describe cannot tell an empty collection from one it could not decode, so the before-state you are
-		 showing may be incomplete and the replacement may drop entries neither of you can see.
+		 If the element's `accessRights` read back with an EMPTY `add` or `remove`, check the collection's
+		 `addUnreadable`/`removeUnreadable` count before you ask. Zero means it is genuinely empty; anything
+		 else (or -1, the collection itself did not decode) means the before-state you are showing is
+		 INCOMPLETE and a replacement would drop entries neither of you can see — say that plainly, and prefer
+		 omitting the field to restating it.
 		 A SUCCESSFUL edit can still report caveats, and they arrive as `message-type: "Warning"` entries in
 		 `execution-log-messages` — there is no separate `warnings` field on the response, so looking for one and
 		 finding nothing is not evidence there were none. Read them: a connection bound to a column with no

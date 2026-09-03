@@ -202,7 +202,8 @@ public sealed class ModifyBusinessProcessCommandTests {
 
 		// Assert
 		warnings.Should().ContainSingle(message => message.Contains("NO record filter"),
-			because: "the block landed but the element cannot act, which is indistinguishable from success "
+			because: "the block landed but the element is now unbounded - it will act on EVERY record of the "
+				+ "object - which is indistinguishable from a correct success "
 				+ "on an element that reports nothing at run time");
 	}
 
@@ -239,6 +240,37 @@ public sealed class ModifyBusinessProcessCommandTests {
 		warnings.Should().ContainSingle(message => message.Contains("EVERY record of the target object"),
 			because: "the element is left acting on every row of its object and carries no output parameter to "
 				+ "say so, so this warning is the only signal the caller gets");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("When the read-back itself fails after a filter-only batch, the caller must still be told - but in the filter's words, not the block's. The command cannot know the element type at that point (the read-back it needed is the thing that failed), so claiming the 'accessRights' configuration could not be verified would be false for the readData and changeData elements that share the clearFilter operation.")]
+	public void Execute_ShouldReportTheFilter_NotAccessRights_WhenTheReadBackFails() {
+		// Arrange
+		ModifyBusinessProcessOptions options = new() {
+			Environment = "sandbox",
+			ProcessName = "UsrSampleProcess",
+			OperationsJson = "[{\"op\":\"clearFilter\",\"elementName\":\"Grant\"}]"
+		};
+		_modifyBusinessProcessService.ModifyProcess("sandbox", Arg.Any<ModifyBusinessProcessRequest>())
+			.Returns(BuildResult());
+		_processDescriber.Describe(Arg.Any<ProcessIdentity>(), null)
+			.Returns(Error.Failure(description: "the environment refused the read"));
+		List<string> warnings = [];
+		_logger.When(logger => logger.WriteWarning(Arg.Any<string>()))
+			.Do(call => warnings.Add(call.Arg<string>()));
+
+		// Act
+		int exitCode = _command.Execute(options);
+
+		// Assert
+		exitCode.Should().Be(0, because: "the edit applied; an unreadable read-back is not evidence it did not");
+		warnings.Should().ContainSingle(message => message.Contains("record filter this edit changed"),
+			because: "silence here would be indistinguishable from a verified success on the single most "
+				+ "dangerous edit this surface offers");
+		warnings.Should().NotContain(message => message.Contains("'accessRights' configuration"),
+			because: "this batch sent no accessRights block at all, and the element whose type would justify "
+				+ "that wording is exactly what the failed read-back could not tell us");
 	}
 
 	[Test]

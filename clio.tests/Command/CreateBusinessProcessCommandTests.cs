@@ -71,7 +71,8 @@ public sealed class CreateBusinessProcessCommandTests {
 
 		// Assert
 		warnings.Should().ContainSingle(message => message.Contains("NO record filter"),
-			because: "the block landed but the element cannot act, and on an element with no output "
+			because: "the block landed but the element is now unbounded - it will act on EVERY record of the "
+				+ "object - and on an element with no output "
 				+ "parameters that is indistinguishable from success");
 	}
 

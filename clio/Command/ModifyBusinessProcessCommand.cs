@@ -249,13 +249,6 @@ public class ModifyBusinessProcessCommand(
 			return;
 		}
 
-		// Everything the read-back is supposed to speak for, for the checks that are element-type agnostic:
-		// "the saved process does not report an element with that name" is equally true of a re-filtered element
-		// and a configured one. The failure exits above do NOT take this union - they report the two groups
-		// separately, because a filter-only target sent no block and its element type is not yet known there.
-		IReadOnlyList<string> unverifiable =
-			[.. expectedRights.Concat(filterTouched).Distinct(StringComparer.OrdinalIgnoreCase)];
-
 		// The caller identifies the process by name OR uid, and an older CrtProcessBuilder may omit SchemaName
 		// from the result, so falling back to the name alone would report "could not verify" for a modify-by-uid
 		// that was fully verifiable - the UId was in hand the whole time.
@@ -276,7 +269,7 @@ public class ModifyBusinessProcessCommand(
 		}
 
 		BlockExpectationReporter.ReportDescribed(logger, described.Value, expectedRights, expectedEmail,
-			filterTouched, unverifiable);
+			filterTouched);
 	}
 }
 

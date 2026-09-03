@@ -305,8 +305,9 @@ public sealed class AccessRightsBlockExpectationTests {
 
 		// Assert
 		unfiltered.Should().Equal(new[] { "Grant" },
-			because: "the record filter decides WHICH records the element acts on, so without one the run "
-				+ "changes no permissions and the element has no output parameter to say so");
+			because: "the record filter decides WHICH records the element acts on, so without one the runtime "
+				+ "never enters its filter branch and the run applies the change to EVERY record of the object, "
+				+ "with no output parameter to say so");
 	}
 
 	[Test]
@@ -322,8 +323,9 @@ public sealed class AccessRightsBlockExpectationTests {
 
 		// Assert
 		unfiltered.Should().Equal(new[] { "Grant" },
-			because: "a filter object carrying neither conditions nor groups narrows nothing, so reporting it "
-				+ "as present would let the widest possible configuration pass as configured");
+			because: "a filter object carrying neither conditions nor groups narrows nothing, so the runtime takes "
+				+ "its \"filters empty\" exit and the element is INERT - reporting it as present would let a "
+				+ "grant or revoke that can never happen pass as configured");
 	}
 
 	[Test]
