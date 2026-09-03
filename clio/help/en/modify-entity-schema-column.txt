@@ -16,10 +16,15 @@ DESCRIPTION
     explicit single-column edits. Use sync-schemas when the work spans
     multiple ordered schema operations.
 
-    After saving, the configuration is published and the OData entities are
-    rebuilt, so the changed column becomes visible to lookup pickers and reachable
-    over OData (/0/odata/<Entity>) without a manual compile. The rebuild runs in
-    the background (~1-2 min); a 404 from OData right after the change is the
+    After saving, the configuration is always published, so the changed column
+    becomes visible to lookup pickers without a manual compile. The OData
+    entities are rebuilt only when the mutation changes the published OData
+    contract - adding or removing a column, renaming one (--new-name), or
+    changing its type or reference schema. Changing a column's caption,
+    description, default value, mask, usage type, or required flag leaves the
+    OData contract unchanged and does
+    not trigger a rebuild. When a rebuild is requested, it runs in the
+    background (~1-2 min); a 404 from OData right after the change is the
     expected async gap, so wait and retry rather than compiling. Each call
     publishes once - to change several columns at once, batch them through
     update-entity-schema.

@@ -78,6 +78,7 @@ internal sealed class RemoteEntitySchemaColumnManager : IRemoteEntitySchemaColum
 	private readonly ILookupDefaultDisplayValueResolver _lookupDefaultDisplayValueResolver;
 	private readonly IEntitySchemaCaptionCultureResolver _captionCultureResolver;
 	private readonly IEntitySchemaDependencyResolver _dependencyResolver;
+	private readonly IEntitySchemaPublisher _entitySchemaPublisher;
 	private readonly ILogger _logger;
 
 	public RemoteEntitySchemaColumnManager(IApplicationPackageListProvider applicationPackageListProvider,
@@ -85,6 +86,7 @@ internal sealed class RemoteEntitySchemaColumnManager : IRemoteEntitySchemaColum
 		IRemoteEntitySchemaDesignerClient entitySchemaDesignerClient,
 		IRuntimeEntitySchemaReader runtimeEntitySchemaReader,
 		IEntitySchemaDependencyResolver dependencyResolver,
+		IEntitySchemaPublisher entitySchemaPublisher,
 		ILogger logger) {
 		_applicationPackageListProvider = applicationPackageListProvider;
 		_defaultValueSourceResolver = columnResolvers.DefaultValueSourceResolver;
@@ -93,6 +95,7 @@ internal sealed class RemoteEntitySchemaColumnManager : IRemoteEntitySchemaColum
 		_lookupDefaultDisplayValueResolver = columnResolvers.LookupDisplayValueResolver;
 		_captionCultureResolver = columnResolvers.CaptionCultureResolver;
 		_dependencyResolver = dependencyResolver;
+		_entitySchemaPublisher = entitySchemaPublisher;
 		_logger = logger;
 	}
 
@@ -131,7 +134,7 @@ internal sealed class RemoteEntitySchemaColumnManager : IRemoteEntitySchemaColum
 		}
 
 		EntityDesignSchemaDto reloadedSchema = SaveAndReloadSchema(
-			schema, package, rootOperation, "columns were saved");
+			schema, package, rootOperation, "columns were saved", ResolveODataContractImpact(operations));
 		VerifyColumnMutations(reloadedSchema, operations, effectiveCultureName);
 		foreach (ModifyEntitySchemaColumnOptions operation in operations) {
 			_logger.WriteInfo(
@@ -152,7 +155,7 @@ internal sealed class RemoteEntitySchemaColumnManager : IRemoteEntitySchemaColum
 	/// <param name="publishReason">Human-readable reason appended to publish progress messages.</param>
 	/// <returns>The design schema reloaded after a successful save and publish.</returns>
 	private EntityDesignSchemaDto SaveAndReloadSchema(EntityDesignSchemaDto schema, PackageInfo package,
-		RemoteCommandOptions options, string publishReason) {
+		RemoteCommandOptions options, string publishReason, ODataContractImpact impact) {
 		SaveDesignItemDesignerResponse saveResponse = _entitySchemaDesignerClient.SaveSchema(schema, options);
 		Guid schemaUId = saveResponse.SchemaUId != Guid.Empty ? saveResponse.SchemaUId : schema.UId;
 		if (schemaUId == Guid.Empty) {
@@ -160,14 +163,13 @@ internal sealed class RemoteEntitySchemaColumnManager : IRemoteEntitySchemaColum
 				$"Schema '{schema.Name}' was saved but schema UId is unavailable.");
 		}
 		_entitySchemaDesignerClient.SaveSchemaDbStructure(schemaUId, options);
-		EntitySchemaPublishHelper.PublishAndRebuildOData(
-			_entitySchemaDesignerClient, _logger, options, schema.Name, publishReason);
-		RuntimeEntitySchemaResponse runtimeResponse = _entitySchemaDesignerClient.GetRuntimeEntitySchema(schemaUId,
-			options);
-		if (!runtimeResponse.Success || runtimeResponse.Schema == null) {
-			throw new EntitySchemaDesignerException(
-				$"Schema '{schema.Name}' was saved but is not available in runtime.");
-		}
+		_entitySchemaPublisher.PublishSavedChanges(options, schema.Name, publishReason, impact);
+		// No separate runtime-availability probe here. Publishing refreshes the schema manager through
+		// SchemaManager.RefreshItems, which clears the changed items and re-initialises them as two steps; a
+		// separate request that lands between them is told the schema does not exist even though the save and
+		// the publish both succeeded. Measured on a stand: only the item being changed is missing, for about
+		// nine seconds, while every other schema keeps answering. A probe that can fail that way cannot prove
+		// availability, and the reload below already proves the save round-trips.
 		return LoadSchema(schema.Name, package.Descriptor.UId, package.Descriptor.Name, options,
 			allowDependencyResolution: true);
 	}
@@ -195,8 +197,10 @@ internal sealed class RemoteEntitySchemaColumnManager : IRemoteEntitySchemaColum
 		IReadOnlyDictionary<string, string> requestedTitles = ApplySchemaCaption(schema, options,
 			() => _captionCultureResolver.ResolveEffectiveCulture(options, options.CaptionCulture));
 
+		// The primary-display column is a designer-level property; it appears nowhere in the OData contract,
+		// so setting it never needs the entities assembly rebuilt.
 		EntityDesignSchemaDto reloadedSchema = SaveAndReloadSchema(
-			schema, package, options, "schema properties were saved");
+			schema, package, options, "schema properties were saved", ODataContractImpact.Unchanged);
 		// The server performs no validation and silently no-ops if a target version expects the legacy
 		// primaryDisplayColumnUId; verify the readback so that silent no-op becomes a clear failure.
 		if (requestedColumnName != null && !string.Equals(reloadedSchema.PrimaryDisplayColumn?.Name,
@@ -1379,6 +1383,35 @@ internal sealed class RemoteEntitySchemaColumnManager : IRemoteEntitySchemaColum
 			default:
 				throw new EntitySchemaDesignerException($"Unsupported action '{options.Action}'.");
 		}
+	}
+
+	/// <summary>
+	/// Decides whether a batch of column mutations changes the published OData contract, and therefore
+	/// whether the OData entities assembly has to be rebuilt after the publish.
+	/// </summary>
+	/// <remarks>
+	/// Adding or removing a column changes the property list; renaming one changes the property name;
+	/// changing a column's type changes its EDM type; changing its reference schema changes a navigation
+	/// property. Everything else a modify can touch -
+	/// caption, description, default value, mask, usage type, required - is absent from the contract, verified
+	/// against a live stand by publishing those mutations with the rebuild suppressed and diffing the
+	/// <c>$metadata</c> document, which came back byte-for-byte identical. A type or reference supplied with
+	/// the same value it already had still counts as changed: re-reading the column to prove the value is
+	/// unchanged would cost a request to save a rebuild that is already the rare case.
+	/// </remarks>
+	private static ODataContractImpact ResolveODataContractImpact(
+		IEnumerable<ModifyEntitySchemaColumnOptions> operations) {
+		bool changesContract = operations.Any(operation => {
+			EntitySchemaColumnAction action = NormalizeAction(operation.Action);
+			return action switch {
+				EntitySchemaColumnAction.Add => true,
+				EntitySchemaColumnAction.Remove => true,
+				_ => !string.IsNullOrWhiteSpace(operation.NewName)
+					|| !string.IsNullOrWhiteSpace(operation.Type)
+					|| !string.IsNullOrWhiteSpace(operation.ReferenceSchemaName)
+			};
+		});
+		return changesContract ? ODataContractImpact.Changed : ODataContractImpact.Unchanged;
 	}
 
 	private static void EnsureBatchTargetsSingleSchema(

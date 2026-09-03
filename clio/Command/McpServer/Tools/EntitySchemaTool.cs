@@ -322,7 +322,7 @@ public sealed class UpdateEntitySchemaTool(
 	[McpServerTool(Name = UpdateEntitySchemaToolName, ReadOnly = false, Destructive = true, Idempotent = false,
 		OpenWorld = false)]
 	[Description("Applies a batch of add, modify, and remove column operations to a remote Creatio entity schema. " +
-		"The batch is published and the OData entities are rebuilt automatically, so changed columns become reachable over OData (/0/odata/<Entity>) without a compile. That rebuild is asynchronous (~1-2 min): a 404 (or \"The request is invalid\") from an odata-* tool right after a change is the expected async gap — wait briefly and retry, do not compile. " +
+		"The batch is always published. An OData entities rebuild is requested only if at least one operation in the batch changes the published OData contract — adding or removing a column, renaming one (newName), or changing its type or reference schema; caption, description, default value, mask, usage type, and required changes leave the contract unchanged and do not trigger a rebuild. When a rebuild is requested, changed columns become reachable over OData (/0/odata/<Entity>) asynchronously (~1-2 min): a 404 (or \"The request is invalid\") from an odata-* tool right after a change is the expected async gap — wait briefly and retry, do not compile. " +
 		"An INHERITED column can have only its caption/description overridden (title-localizations / description-localizations); its name, type, and flags stay read-only. " +
 		"Entity business rules (conditional editability/required/values) are separate artifacts — call get-guidance with name business-rules to learn more. For the schema-design workflow call get-guidance with name app-modeling.")]
 	public async Task<CommandExecutionResult> UpdateEntitySchema(
@@ -495,7 +495,9 @@ public sealed class SetEntitySchemaPropertiesTool(
 		+ "inherited column, resolved by name, shown as the record's display value in lookups and links) and "
 		+ "title-localizations (the SCHEMA caption, per culture). The ONLY way to rename an existing schema's caption "
 		+ "— update-entity-schema is per-COLUMN — which is what fixes a duplicate caption breaking a "
-		+ "[#Lookup.<Caption>.<Value>#] process macro. Saved, published (OData rebuilt) and verified by readback. "
+		+ "[#Lookup.<Caption>.<Value>#] process macro. Saved and published; neither property appears in the OData "
+		+ "contract, so setting them never triggers an OData entities rebuild. The write is verified by readback — a "
+		+ "target that does not persist the value is reported as an error rather than a silent no-op. "
 		+ "Read the values back with get-entity-schema-properties.")]
 	public CommandExecutionResult SetEntitySchemaProperties(
 		[Description("Parameters: environment-name, package-name, schema-name (all required); primary-display-column and title-localizations optional, one required")] [Required]
@@ -608,11 +610,15 @@ public sealed class ModifyEntitySchemaColumnTool(ModifyEntitySchemaColumnCommand
 	[McpServerTool(Name = ModifyEntitySchemaColumnToolName, ReadOnly = false, Destructive = true, Idempotent = false,
 		OpenWorld = false)]
 	[Description("Adds, modifies, or removes a column in a remote Creatio entity schema. "
-		+ "The change is published and the OData entities are rebuilt automatically, so the column becomes reachable "
-		+ "over OData (/0/odata/<Entity>) without a compile. That rebuild is asynchronous (~1-2 min): a 404 (or "
-		+ "\"The request is invalid\") from an odata-* tool right after the change is the expected async gap — wait "
-		+ "briefly and retry, do not compile. Each call publishes once, so to change several columns at once batch "
-		+ "them through update-entity-schema rather than one call per column. "
+		+ "The change is always published. An OData entities rebuild is requested only when the mutation changes "
+		+ "the published OData contract — adding or removing a column, renaming one (newName), or changing its "
+		+ "type or reference schema; "
+		+ "changing a column's caption, description, default value, mask, usage type, or required flag leaves the "
+		+ "contract unchanged and does not trigger a rebuild. When a rebuild is requested, the column becomes "
+		+ "reachable over OData (/0/odata/<Entity>) asynchronously (~1-2 min): a 404 (or \"The request is invalid\") "
+		+ "from an odata-* tool right after the change is the expected async gap — wait briefly and retry, do not "
+		+ "compile. Each call publishes once, so to change several columns at once batch them through "
+		+ "update-entity-schema rather than one call per column. "
 		+ "When setting a Const default on a lookup column, the referenced record's existence is validated "
 		+ "before save: a GUID that does not exist in the referenced schema is rejected with a non-zero exit "
 		+ "and the schema is not saved. The check is point-in-time (TOCTOU) and is skipped when the referenced "

@@ -9,8 +9,9 @@ SYNOPSIS
 
 DESCRIPTION
     Sets schema-level properties on an existing remote Creatio entity schema through the
-    Entity Schema Designer service, then publishes the change (and rebuilds the OData
-    entities) exactly like the other entity-schema commands.
+    Entity Schema Designer service, then publishes the change like the other entity-schema
+    commands. The primary-display column is a designer-level property; it does not appear
+    in the OData contract, so setting it never triggers an OData entities rebuild.
 
     Supported properties:
     --primary-display-column   The column shown as the record's display value in lookups
@@ -64,7 +65,9 @@ EXAMPLES
 
 NOTES
     - read the set values back with get-entity-schema-properties
-    - the change is published and the OData entities are rebuilt automatically; no compile needed
+    - the change is published automatically; no compile needed. Neither the primary-display column
+      nor the schema caption changes the OData contract, so setting them does not trigger an
+      OData entities rebuild
     - at least one settable property must be supplied, otherwise the command reports an error
     - a caption change is merged per culture; captions for cultures you do not list are preserved
     - naming a column that does not exist on the schema fails with a clear error
