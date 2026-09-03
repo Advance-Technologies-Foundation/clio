@@ -175,31 +175,6 @@ public class CreateBusinessProcessCommand(
 		}
 	}
 
-	// The access-rights guard must not report "could not check" the same way it reports "verified": it is the
-	// only automated evidence that a grant or revoke landed, on an element with no output parameters. The
-	// command still succeeds — an unreadable description is not evidence of a drop — but the caller is told the
-	// verification did not happen, so an unapplied revoke cannot pass as an applied one.
-	private void WarnAccessRightsUnverified(IReadOnlyList<string> expectedRights, string reason) {
-		string? warning = BuildUnverifiedWarning(expectedRights, reason);
-		if (warning is not null) {
-			logger.WriteWarning(warning);
-		}
-	}
-
-	// One wording for every "the check did not happen" outcome, so they cannot drift apart.
-	private static string? BuildUnverifiedWarning(IReadOnlyList<string> expectedRights, string reason) {
-		if (expectedRights.Count == 0) {
-			return null;
-		}
-
-		string elements = string.Join("', '", expectedRights);
-		string subject = expectedRights.Count == 1 ? "element" : "elements";
-		return $"Could not verify that the 'accessRights' configuration for the {subject} '{elements}' landed: "
-			+ $"{reason}. The operation itself succeeded, but this check is the only signal that the permissions "
-			+ "were actually written — the element has no output parameters. Re-read the process with "
-			+ "describe-business-process before reporting a grant or revoke as applied.";
-	}
-
 	// A server that predates a block DISCARDS it and still answers success:true, so a build can report a
 	// configured element that is in fact empty. Read the saved process back ONCE and check every block the
 	// payload carried: two guards issuing byte-identical describes would double the latency and the retry
@@ -215,7 +190,7 @@ public class CreateBusinessProcessCommand(
 
 		if (string.IsNullOrWhiteSpace(schemaName)) {
 			// Nothing to read back against. Silence here would be indistinguishable from a verified success.
-			WarnAccessRightsUnverified(expectedRights, "the operation returned no process name to read back");
+			BlockExpectationReporter.WarnAccessRightsUnverified(logger, expectedRights, "the operation returned no process name to read back");
 			return;
 		}
 
@@ -226,34 +201,11 @@ public class CreateBusinessProcessCommand(
 			// silence either when access rights were requested: that guard is the only automated check that a
 			// grant or revoke actually landed, and reporting "verified" and "could not check" identically would
 			// let an unapplied revoke pass as applied.
-			WarnAccessRightsUnverified(expectedRights, described.FirstError.Description);
+			BlockExpectationReporter.WarnAccessRightsUnverified(logger, expectedRights, described.FirstError.Description);
 			return;
 		}
 
-		string? unresolvedRights = BuildUnverifiedWarning(
-			AccessRightsBlockExpectation.Unresolved(described.Value, expectedRights),
-			"the saved process does not report an element with that name or UId");
-		if (unresolvedRights is not null) {
-			logger.WriteWarning(unresolvedRights);
-		}
-
-		string? noFilter = AccessRightsBlockExpectation.BuildNoFilterWarning(
-			described.Value, expectedRights);
-		if (noFilter is not null) {
-			logger.WriteWarning(noFilter);
-		}
-
-		string? droppedRights = AccessRightsBlockExpectation.BuildWarning(
-			AccessRightsBlockExpectation.Missing(described.Value, expectedRights));
-		if (droppedRights is not null) {
-			logger.WriteWarning(droppedRights);
-		}
-
-		string? dropped = EmailBlockExpectation.BuildWarning(
-			EmailBlockExpectation.Missing(described.Value, expectedEmail));
-		if (dropped is not null) {
-			logger.WriteWarning(dropped);
-		}
+		BlockExpectationReporter.ReportDescribed(logger, described.Value, expectedRights, expectedEmail);
 
 		// A package that predates the body-macro feature stores the [[…]] placeholders verbatim and still answers
 		// success, so the read-back is the only place the un-resolved body surfaces — the element reports a body but
