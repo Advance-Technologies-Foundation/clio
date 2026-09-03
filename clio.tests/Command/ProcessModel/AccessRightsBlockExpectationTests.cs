@@ -247,6 +247,27 @@ public sealed class AccessRightsBlockExpectationTests {
 	}
 
 	[Test]
+	[Description("A filter whose only content is an EMPTY nested group narrows nothing, so it classifies as conditionless like a bare one. Counting Groups was enough to call it narrowing, which let the shape escape the guard entirely.")]
+	public void BuildNoFilterWarning_ShouldTreatANestedEmptyGroup_AsConditionless() {
+		// Arrange — groups:[{conditions:[]}]: non-empty Groups, but nothing that narrows.
+		DescribedElement element = Element("Grant", "{\"object\":\"Order\"}");
+		element.Filter = new DescribedFilter {
+			Object = "Order",
+			Groups = [new DescribedFilterGroup { Conditions = [] }]
+		};
+
+		// Act
+		string warning = AccessRightsBlockExpectation.BuildNoFilterWarning(Described(element), ["Grant"]);
+
+		// Assert
+		warning.Should().NotBeNull(
+			because: "an empty sub-group narrows nothing, so this element is in the conditionless state and must "
+				+ "be reported - a Groups.Count check alone silently classified it as narrowing");
+		warning.Should().Contain("changes nothing",
+			because: "it is the no-op state, reported with the conditionless wording");
+	}
+
+	[Test]
 	[Description("An element whose filter carries no conditions is reported as INERT - the runtime takes its 'filters empty' exit. The opposite blast radius from an absent filter, and the reason the two states cannot share one wording.")]
 	public void BuildNoFilterWarning_ShouldSayItChangesNothing_WhenTheFilterHasNoConditions() {
 		// Arrange

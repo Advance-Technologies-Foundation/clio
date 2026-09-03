@@ -30,7 +30,6 @@ public static class AccessRightsBlockExpectation {
 
 	// Descriptor/operation JSON keys, named once so the parsing shape reads consistently and to keep the
 	// repeated string literals out of the analyzer's duplicate-literal radar.
-	private const string ElementsKey = "elements";
 	private const string AccessRightsKey = "accessRights";
 
 	/// <summary>
@@ -100,14 +99,7 @@ public static class AccessRightsBlockExpectation {
 			return expected;
 		}
 
-		List<string> unresolved = [];
-		foreach (string name in expected) {
-			if (BlockExpectationJson.ResolveElement(described, name) is null) {
-				unresolved.Add(name);
-			}
-		}
-
-		return unresolved;
+		return [.. expected.Where(name => BlockExpectationJson.ResolveElement(described, name) is null)];
 	}
 
 	/// <summary>
@@ -273,9 +265,7 @@ public static class AccessRightsBlockExpectation {
 	// claimed, and the three states get three different words.
 	private static RecordFilterState ClassifyRecordFilter(DescribedElement element) {
 		if (element.Filter is not null) {
-			return (element.Filter.Conditions?.Count ?? 0) > 0 || (element.Filter.Groups?.Count ?? 0) > 0
-				? RecordFilterState.Narrowing
-				: RecordFilterState.Conditionless;
+			return NarrowsSomething(element.Filter) ? RecordFilterState.Narrowing : RecordFilterState.Conditionless;
 		}
 
 		DescribedParameter? stored = element.Parameters?.FirstOrDefault(parameter =>
@@ -364,6 +354,14 @@ public static class AccessRightsBlockExpectation {
 		&& value.TryGetInt32(out int count)
 			? count
 			: 0;
+
+	// Recursive on purpose: counting Groups was enough to call a filter "narrowing", so groups:[{conditions:[]}]
+	// classified as Narrowing and escaped the guard while narrowing nothing. The described filter IS the root
+	// group (DescribedFilter derives from DescribedFilterGroup), so the walk starts at it.
+	private static bool NarrowsSomething(DescribedFilterGroup? group) =>
+		group is not null
+		&& ((group.Conditions?.Count ?? 0) > 0
+			|| (group.Groups?.Any(NarrowsSomething) ?? false));
 
 	private static bool TryGetAccessRights(DescribedElement element, out JsonElement block) {
 		block = default;
