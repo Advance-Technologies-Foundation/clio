@@ -28,11 +28,11 @@ the create handler is written against measured behaviour instead of inferred beh
 
 ## Acceptance Criteria
 
-- [ ] **AC-01** *(half measured, half blocked)* — Given a draft create implementation run twice against a toolkit-created root, when `SysSchemaProperty` is read, then the findings note records the observed `Version` values and `IsActiveVersion` values verbatim
+- [ ] **AC-01** *(formula and inputs measured; the two-run confirmation deliberately not performed)* — Given a draft create implementation run twice against a toolkit-created root, when `SysSchemaProperty` is read, then the findings note records the observed `Version` values and `IsActiveVersion` values verbatim
 - [x] **AC-02** — Given a created version, when `SysSchema` is read, then the note records whether its `ParentId` equals the root's `SysSchema.Id`
-- [ ] **AC-03** — Given one version exists, when `GetMaxProcessVersionInPackage(uc, root.Id, packageUId)` is called, then the note records the returned number for the same package and for a different package
+- [x] **AC-03** — Given one version exists, when `GetMaxProcessVersionInPackage(uc, root.Id, packageUId)` is called, then the note records the returned number for the same package and for a different package
 - [x] **AC-04** *(closed by observation, not experiment)* — Given a source process in a non-editable package, when the version is created, then the note names the package it landed in and closes OQ-01
-- [ ] **AC-05** — Given a root whose name carries no `Usr` prefix, when the version is saved, then the note records whether `validateNamePrefixes` rejected it
+- [x] **AC-05** *(answered: no rejection — the prefix is prepended)* — Given a root whose name carries no `Usr` prefix, when the version is saved, then the note records whether `validateNamePrefixes` rejected it
 - [x] **AC-06** — Given a version was saved, when the ROOT's `SysSchemaProperty` rows are read, then the note records whether they survived
 - [x] **AC-07** — Given the stand, when `UseNewSchemaHierarchyFolding` is read, then the note records its state and closes OQ-02
 - [x] **AC-ERR** — Given any measurement contradicts this feature's ADR, when the spike ends, then the ADR is amended in the same PR and the contradiction is named in its Notes section
@@ -99,6 +99,48 @@ Test naming: `MethodName_ShouldBehavior_WhenCondition`
     `*BaseSubprocess` families the ROOT is invisible too, so describe correctly answers "no row for
     schema". Every visible family holds exactly one version, numbered 1 and active - so the
     multi-version and two-flagged-active paths stay defensive rather than observed.
+  - **Second pass, after the writes were authorised: the mechanics were measured WITHOUT creating a
+    version.** The composer ships in the client, so it can be read: `Terrasoft.BaseProcessSchemaManager`
+    carries `createNewSchemaVersion`, `getNewSchemaVersion`, `setNewSchemaVersionName` and
+    `_getPackageForNewSchemaVersion`, and reading them answered three criteria outright.
+  - **AC-03 measured directly and read-only.** The number is `maxVersionInPackage + 1`, and the max comes
+    from `GetSchemaVersionInfo {parentSchemaUId, packageUId}` on `ProcessSchemaManagerService.svc` — POST
+    with the CSRF header, since a GET answers 405 and a bare POST 403. Results: `InvoiceVisaProcess` +
+    its own package → 1; the same root + `UsrAntonTest` → 0; a fresh root + its own package → 0. The max
+    is scoped to (root, PACKAGE), so a version created in another package restarts at 1. No server-side
+    C# was needed after all.
+  - **AC-05 answered, and not with a rejection.** `setNewSchemaVersionName` builds
+    `parentSchemaName + packageName.replace(/\W/g,"") + version` and PREPENDS the schema-name prefix when
+    the PARENT lacks it. A version of the unprefixed `InvoiceVisaProcess` on this stand would be named
+    `UsrInvoiceVisaProcessInvoice1`. Nothing validates it. Written up as
+    `docs/knowledge/platform/process-version-name-gets-the-schema-prefix-prepended.md`, and it is why the
+    guidance article's V4 was demoted from a law to a default.
+  - **AC-04 / OQ-01 refined to the real mechanism.** The source's own package is used when it is editable;
+    otherwise the feature `SaveProcessVersionInApplicationPackage` decides (ON here → the design package).
+    Trap for the create handler: the non-editable branch leaves the NAME builder on
+    `CUSTOM_PACKAGE_NAME`, so a version can be named `...Custom1` while living elsewhere.
+  - Two facts that change how stories 9-13 should be written: a new version is composed with
+    `isActiveVersion = false` (so create and activate are separate at the PLATFORM level, not just in our
+    design), and the family is set flat at composition time — a version of a version still points at the
+    root. Both now read from code rather than inferred.
+  - The BASE manager's `getCanUseProcessVersions()` is a hard `return false`, and on that branch
+    `setIsActualVersion` invokes its callback with `{success: true}` WITHOUT issuing a request. Our write
+    half is server-side and avoids it, but anyone reusing the client machinery inherits a silent no-op
+    that reports success.
+  - **AC-01 left open on purpose.** The formula, its server input and the initial flags are all measured,
+    so a second run would confirm only 0+1 then 1+1 — while costing two permanently undeletable schemas
+    (V6) and a hand-composed schema instance, because the designer page is unreachable by URL on this
+    build (`ProcessDesigner.aspx` → 500, the Shell route falls back to the desktop). The evidence gained
+    is smaller than the residue left, so the write was declined even though it was authorised.
+  - One write WAS made and it earned its keep: `UsrSpike_VersionProbe` in `UsrAntonTest`, created through
+    `clio-run create-business-process`. A freshly created process reports `Version = 0`,
+    `IsActiveVersion = True`, `CreatedInVersion = 10.1.448.0` (stock content ships `0.0.0.0`),
+    `IsInterpretable = True` and an extra `StudioFreeProcessUrl` property. That last one corrects the
+    earlier note: `IsInterpretable` differing across the stock family is an authoring difference, not a
+    versioning artefact. The process has no versions and can still be deleted if the fixture is not wanted.
+  - Worth recording about clio itself: `create-business-process` REFUSED a direct MCP call with
+    `confirmation-required`, because a write-capable tool absent from `tools/list` cannot show the host's
+    prompt, and told the caller to route through `clio-run`. The gate works as designed.
   - **BLOCKED on a decision.** AC-01's second half, AC-03 (`GetMaxProcessVersionInPackage`, needs
     server-side C#), AC-04's non-editable-package case and AC-05 (`validateNamePrefixes`) each require
     writing to the stand. Two costs make it a decision: creating a version is IRREVERSIBLE by this
