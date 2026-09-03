@@ -20,6 +20,13 @@ public sealed class CreateRelatedPageAddonTool(
 	internal const string ToolName = "create-related-page-addon";
 
 	[McpServerTool(Name = ToolName, ReadOnly = false, Destructive = true, Idempotent = false, OpenWorld = false)]
+	[McpToolExecution(
+		Location = McpToolExecutionLocation.Worker,
+		Lifetime = McpToolExecutionLifetime.PerCall,
+		OperationFamily = McpToolOperationFamily.None,
+		BudgetPolicy = McpToolBudgetPolicy.ParentKillDefault,
+		RequiresClientRequests = McpToolClientRequests.None,
+		SharedFileResource = McpToolSharedFileResource.None)]
 	[Description("Configure the RelatedPage add-on for an object (entity schema): which Freedom UI pages open by default and for adding records, optionally per audience and per type. " +
 		"Per-page role-name 'All external users' binds the PORTAL (self-service) audience and 'All employees' the internal one. " +
 		"Writes the RelatedPage add-on via AddonSchemaDesignerService and rebuilds static content. " +
@@ -66,7 +73,10 @@ public sealed class CreateRelatedPageAddonTool(
 			Password = args.Password
 		};
 
-		return ExecuteWithCleanLog(() => {
+		// Story 19 (ENG-95262), AC-04: the OPTIONS-AWARE overload — same defect as the sibling read tool.
+		// The environment-less overload keys on McpToolExecutionLock.SharedFallbackKey, which this write's
+		// Creatio round-trip would hold against every other tenant.
+		return ExecuteWithCleanLog(options, () => {
 			CreateRelatedPageAddonCommand resolvedCommand;
 			try {
 				resolvedCommand = ResolveCommand<CreateRelatedPageAddonCommand>(options);

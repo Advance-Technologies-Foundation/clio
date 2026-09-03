@@ -19,6 +19,13 @@ public sealed class AddCustomLoggingTool(
 
 	/// <summary>Adds an idempotent logger rule and file target to a registered local Creatio installation.</summary>
 	[McpServerTool(Name = ToolName, ReadOnly = false, Destructive = true, Idempotent = false, OpenWorld = false)]
+	[McpToolExecution(
+		Location = McpToolExecutionLocation.Worker,
+		Lifetime = McpToolExecutionLifetime.PerCall,
+		OperationFamily = McpToolOperationFamily.None,
+		BudgetPolicy = McpToolBudgetPolicy.ParentKillDefault,
+		RequiresClientRequests = McpToolClientRequests.None,
+		SharedFileResource = McpToolSharedFileResource.None)]
 	[Description("Adds package-specific NLog routing to a registered local Creatio installation. "
 		+ "The environment must have EnvironmentPath configured. The command reads the package's generated "
 		+ "Constants.LoggerName, validates both NLog files, preserves their encoding and unrelated content, "

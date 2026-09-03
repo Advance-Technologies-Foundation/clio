@@ -30,6 +30,13 @@ public sealed class DataForgeTool(
 	private const string PlatformRequirementDescription =
 		"Requires Creatio 10.0.0+ (CrtDataForge).";
 
+	[McpToolExecution(
+		Location = McpToolExecutionLocation.Worker,
+		Lifetime = McpToolExecutionLifetime.PerCall,
+		OperationFamily = McpToolOperationFamily.None,
+		BudgetPolicy = McpToolBudgetPolicy.ParentKillDefault,
+		RequiresClientRequests = McpToolClientRequests.None,
+		SharedFileResource = McpToolSharedFileResource.None)]
 	[McpServerTool(Name = DataForgeStatusToolName, ReadOnly = true, Destructive = false, Idempotent = true,
 		OpenWorld = false)]
 	[Description("Checks whether Data Forge is ready to provide schema, lookup, relation, and maintenance context for a Creatio environment. " + PlatformRequirementDescription)]
@@ -55,6 +62,13 @@ public sealed class DataForgeTool(
 		}
 	}
 
+	[McpToolExecution(
+		Location = McpToolExecutionLocation.Worker,
+		Lifetime = McpToolExecutionLifetime.PerCall,
+		OperationFamily = McpToolOperationFamily.None,
+		BudgetPolicy = McpToolBudgetPolicy.ParentKillDefault,
+		RequiresClientRequests = McpToolClientRequests.None,
+		SharedFileResource = McpToolSharedFileResource.None)]
 	[McpServerTool(Name = DataForgeFindTablesToolName, ReadOnly = true, Destructive = false, Idempotent = true,
 		OpenWorld = false)]
 	[Description("Finds existing Creatio tables that semantically match a business concept, so callers can reuse or compare schemas before creating new ones. " + PlatformRequirementDescription)]
@@ -80,6 +94,13 @@ public sealed class DataForgeTool(
 		}
 	}
 
+	[McpToolExecution(
+		Location = McpToolExecutionLocation.Worker,
+		Lifetime = McpToolExecutionLifetime.PerCall,
+		OperationFamily = McpToolOperationFamily.None,
+		BudgetPolicy = McpToolBudgetPolicy.ParentKillDefault,
+		RequiresClientRequests = McpToolClientRequests.None,
+		SharedFileResource = McpToolSharedFileResource.None)]
 	[McpServerTool(Name = DataForgeFindLookupsToolName, ReadOnly = true, Destructive = false, Idempotent = true,
 		OpenWorld = false)]
 	[Description("Finds lookup values and lookup schemas that match a requested business value, useful for resolving lookup references before writing data bindings. " + PlatformRequirementDescription)]
@@ -105,6 +126,13 @@ public sealed class DataForgeTool(
 		}
 	}
 
+	[McpToolExecution(
+		Location = McpToolExecutionLocation.Worker,
+		Lifetime = McpToolExecutionLifetime.PerCall,
+		OperationFamily = McpToolOperationFamily.None,
+		BudgetPolicy = McpToolBudgetPolicy.ParentKillDefault,
+		RequiresClientRequests = McpToolClientRequests.None,
+		SharedFileResource = McpToolSharedFileResource.None)]
 	[McpServerTool(Name = DataForgeGetRelationsToolName, ReadOnly = true, Destructive = false, Idempotent = true,
 		OpenWorld = false)]
 	[Description("Finds known relationship paths between two Creatio tables to help model references or understand existing entity links. " + PlatformRequirementDescription)]
@@ -131,6 +159,13 @@ public sealed class DataForgeTool(
 		}
 	}
 
+	[McpToolExecution(
+		Location = McpToolExecutionLocation.Worker,
+		Lifetime = McpToolExecutionLifetime.PerCall,
+		OperationFamily = McpToolOperationFamily.None,
+		BudgetPolicy = McpToolBudgetPolicy.ParentKillDefault,
+		RequiresClientRequests = McpToolClientRequests.None,
+		SharedFileResource = McpToolSharedFileResource.None)]
 	[McpServerTool(Name = DataForgeGetTableColumnsToolName, ReadOnly = true, Destructive = false, Idempotent = true,
 		OpenWorld = false)]
 	[Description("Returns the logical columns of a Creatio table, including captions, data types, required flags, and lookup targets. " + PlatformRequirementDescription)]
@@ -157,6 +192,13 @@ public sealed class DataForgeTool(
 		}
 	}
 
+	[McpToolExecution(
+		Location = McpToolExecutionLocation.Worker,
+		Lifetime = McpToolExecutionLifetime.PerCall,
+		OperationFamily = McpToolOperationFamily.None,
+		BudgetPolicy = McpToolBudgetPolicy.ParentKillDefault,
+		RequiresClientRequests = McpToolClientRequests.None,
+		SharedFileResource = McpToolSharedFileResource.None)]
 	[McpServerTool(Name = DataForgeContextToolName, ReadOnly = true, Destructive = false, Idempotent = true,
 		OpenWorld = false)]
 	[Description("Builds a compact Data Forge context package for planning schema work: similar tables, lookup matches, relation paths, table columns, and readiness status. " + PlatformRequirementDescription)]
@@ -204,6 +246,13 @@ public sealed class DataForgeTool(
 		}
 	}
 
+	[McpToolExecution(
+		Location = McpToolExecutionLocation.Worker,
+		Lifetime = McpToolExecutionLifetime.PerCall,
+		OperationFamily = McpToolOperationFamily.None,
+		BudgetPolicy = McpToolBudgetPolicy.ParentKillDefault,
+		RequiresClientRequests = McpToolClientRequests.None,
+		SharedFileResource = McpToolSharedFileResource.None)]
 	[McpServerTool(Name = DataForgeInitializeToolName, ReadOnly = false, Destructive = true, Idempotent = false,
 		OpenWorld = false)]
 	[Description("Schedules a full Data Forge initialization when the index is missing, stale, or not ready. " + PlatformRequirementDescription)]
@@ -228,6 +277,13 @@ public sealed class DataForgeTool(
 		}
 	}
 
+	[McpToolExecution(
+		Location = McpToolExecutionLocation.Worker,
+		Lifetime = McpToolExecutionLifetime.PerCall,
+		OperationFamily = McpToolOperationFamily.None,
+		BudgetPolicy = McpToolBudgetPolicy.ParentKillDefault,
+		RequiresClientRequests = McpToolClientRequests.None,
+		SharedFileResource = McpToolSharedFileResource.None)]
 	[McpServerTool(Name = DataForgeUpdateToolName, ReadOnly = false, Destructive = true, Idempotent = false,
 		OpenWorld = false)]
 	[Description("Schedules a Data Forge index refresh after schema changes or when discovery results appear stale. " + PlatformRequirementDescription)]

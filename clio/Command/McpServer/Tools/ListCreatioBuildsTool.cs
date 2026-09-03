@@ -42,6 +42,13 @@ public sealed class ListCreatioBuildsTool {
 	/// </summary>
 	[McpServerTool(Name = ListCreatioBuildsToolName, ReadOnly = true, Destructive = false, Idempotent = true,
 		OpenWorld = false)]
+	[McpToolExecution(
+		Location = McpToolExecutionLocation.InProcess,
+		Lifetime = McpToolExecutionLifetime.NotApplicable,
+		OperationFamily = McpToolOperationFamily.None,
+		BudgetPolicy = McpToolBudgetPolicy.None,
+		RequiresClientRequests = McpToolClientRequests.None,
+		SharedFileResource = McpToolSharedFileResource.None)]
 	[Description("""
 				 Lists the Creatio build archives (.zip) available under the configured `creatio-products` folder.
 

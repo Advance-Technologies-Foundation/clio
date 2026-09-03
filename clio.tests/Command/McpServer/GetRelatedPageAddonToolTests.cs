@@ -1,5 +1,7 @@
 using System;
+using System.Collections.Generic;
 using Clio.Command;
+using Clio.Command.McpServer;
 using Clio.Command.McpServer.Tools;
 using Clio.Command.RelatedPages;
 using Clio.Common;
@@ -9,11 +11,17 @@ using NUnit.Framework;
 
 namespace Clio.Tests.Command.McpServer;
 
+// NonParallelizable: the lock-key test swaps substitutes into McpToolExecutionLock's PROCESS-GLOBAL static
+// facade via Configure() and TearDown restores the production wiring. Under the assembly-level
+// [Parallelizable(ParallelScope.Fixtures)] that window would otherwise be visible to every other MCP tool
+// test — see the MobilePageConversionGuideToolLockTests header for the same reasoning.
 [TestFixture]
 [NonParallelizable]
 [Category("Unit")]
 [Property("Module", "McpServer")]
 public sealed class GetRelatedPageAddonToolTests {
+	private const string TenantKey = "https://tenant-under-test.creatio.com|addon-reader";
+
 	private IRelatedPageAddonService _service = null!;
 	private GetRelatedPageAddonOptions _resolverOptions;
 	private RelatedPageAddonReadRequest _capturedRead;
@@ -41,6 +49,9 @@ public sealed class GetRelatedPageAddonToolTests {
 		GetRelatedPageAddonCommand resolvedCommand = new(_service, ConsoleLogger.Instance);
 
 		_commandResolver = Substitute.For<IToolCommandResolver>();
+		// MUST be stubbed: an unstubbed NSubstitute string returns "", which McpToolExecutionLock.Normalize
+		// turns into SharedFallbackKey — so the fixed and the broken tool would look identical.
+		_commandResolver.GetTenantKey(Arg.Any<EnvironmentOptions>()).Returns(TenantKey);
 		_commandResolver.Resolve<GetRelatedPageAddonCommand>(Arg.Any<GetRelatedPageAddonOptions>())
 			.Returns(call => {
 				_resolverOptions = call.Arg<GetRelatedPageAddonOptions>();
@@ -56,7 +67,15 @@ public sealed class GetRelatedPageAddonToolTests {
 	}
 
 	[TearDown]
-	public void TearDown() => ConsoleLogger.Instance.ClearMessages();
+	public void TearDown() {
+		ConsoleLogger.Instance.ClearMessages();
+		// Unconditional: a substitute left behind in the process-global facade would leak into every
+		// following fixture, so the production wiring is restored even for tests that never swapped it.
+		McpToolExecutionLock.Configure(
+			TenantExecutionLockProvider.Shared,
+			new SessionContainerCache(SessionContainerCacheDefaults.IdleTtl, SessionContainerCacheDefaults.MaxSessions));
+		_commandResolver.ClearReceivedCalls();
+	}
 
 	private static GetRelatedPageAddonArgs Args(
 		string entitySchemaName = "UsrDeliveryItem",
@@ -137,5 +156,65 @@ public sealed class GetRelatedPageAddonToolTests {
 		response.Error.Should().Contain("package-name",
 			because: "the error should name the missing field");
 		_commandResolver.DidNotReceiveWithAnyArgs().Resolve<GetRelatedPageAddonCommand>(default!);
+	}
+
+	[Test]
+	[Description("Story 19 (ENG-95262) AC-02: the read takes the RESOLVED tenant's execution lock, never McpToolExecutionLock.SharedFallbackKey — that shared key is what every environment-less tool falls back to, so holding it across this Creatio round-trip would serialize every other environment behind one tenant's read.")]
+	public void GetRelatedPageAddon_ShouldLockOnResolvedTenantKey_WhenEnvironmentResolves() {
+		// Arrange
+		LockKeyRecorder recorder = ConfigureLockDoubles();
+
+		// Act
+		_tool.GetRelatedPageAddon(Args());
+
+		// Assert
+		recorder.LockKeys.Should().Equal([TenantKey],
+			because: "the tool must key its execution lock on the tenant the command resolved for, so tenants do not serialize against each other");
+		recorder.LockKeys.Should().NotContain(McpToolExecutionLock.SharedFallbackKey,
+			because: "the shared fallback key is reserved for calls that carry no per-tenant identity; taking it here blocks every other environment");
+		recorder.MarkInUseKeys.Should().Equal([TenantKey],
+			because: "MarkInUse is skipped entirely for a fallback key, so seeing the tenant key proves a real tenant session was pinned rather than the fallback");
+	}
+
+	[Test]
+	[Description("Story 19 (ENG-95262) AC-02: every GetLock the read takes is balanced by exactly one MarkAvailable for the same key, so the lock-provider mapping is not left pinned in-use after the call.")]
+	public void GetRelatedPageAddon_ShouldBalanceGetLockWithMarkAvailable_WhenCallCompletes() {
+		// Arrange
+		LockKeyRecorder recorder = ConfigureLockDoubles();
+
+		// Act
+		_tool.GetRelatedPageAddon(Args());
+
+		// Assert
+		recorder.MarkAvailableKeys.Should().Equal(recorder.LockKeys,
+			because: "GetLock pins the lock-provider mapping in-use at hand-out and only MarkAvailable releases it");
+		recorder.MarkAvailableKeys.Should().NotContain(McpToolExecutionLock.SharedFallbackKey,
+			because: "releasing the shared fallback key would mean the call had taken it in the first place");
+	}
+
+	// Swaps recording doubles into the PROCESS-GLOBAL McpToolExecutionLock facade; TearDown restores the
+	// production wiring. GetLock is object-typed, so an unstubbed substitute hands back null and the
+	// production `lock (...)` would die at Monitor.ReliableEnter — return one stable object for every key,
+	// mirroring the real provider's same-key-same-lock contract.
+	private static LockKeyRecorder ConfigureLockDoubles() {
+		LockKeyRecorder recorder = new();
+		object sharedLock = new();
+		ITenantExecutionLockProvider lockProvider = Substitute.For<ITenantExecutionLockProvider>();
+		lockProvider.GetLock(Arg.Do<string>(recorder.LockKeys.Add)).Returns(sharedLock);
+		lockProvider.When(provider => provider.MarkAvailable(Arg.Any<string>()))
+			.Do(call => recorder.MarkAvailableKeys.Add(call.Arg<string>()));
+		ISessionContainerCache sessionCache = Substitute.For<ISessionContainerCache>();
+		sessionCache.When(cache => cache.MarkInUse(Arg.Any<string>()))
+			.Do(call => recorder.MarkInUseKeys.Add(call.Arg<string>()));
+		McpToolExecutionLock.Configure(lockProvider, sessionCache);
+		return recorder;
+	}
+
+	// Data-only carrier for the keys the facade was driven with, so assertions can name the key rather than
+	// merely counting that some lock was taken.
+	private sealed record LockKeyRecorder {
+		public List<string> LockKeys { get; } = [];
+		public List<string> MarkInUseKeys { get; } = [];
+		public List<string> MarkAvailableKeys { get; } = [];
 	}
 }
