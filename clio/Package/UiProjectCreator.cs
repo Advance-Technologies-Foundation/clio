@@ -89,6 +89,8 @@ namespace Clio.Package
 		private static readonly JsonSerializerOptions _descriptorJsonOptions = new() {
 			PropertyNameCaseInsensitive = true
 		};
+		private static readonly TimeSpan RegexTimeout = TimeSpan.FromSeconds(1);
+		private static readonly Regex ProjectNamePattern = new("^([0-9a-z_]+)$", RegexOptions.Compiled, RegexTimeout);
 
 		private readonly EnvironmentSettings _environmentSettings;
 		private readonly IWorkspace _workspace;
@@ -349,8 +351,7 @@ namespace Clio.Package
 		}
 
 		private void CheckCorrectProjectName(string projectName) {
-			var namePattern = new Regex("^([0-9a-z_]+)$");
-			if (namePattern.IsMatch(projectName)) {
+			if (ProjectNamePattern.IsMatch(projectName)) {
 				return;
 			}
 			throw new ArgumentException("Not correct project name. Use only 'snake_case' format");

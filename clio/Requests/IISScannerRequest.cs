@@ -957,9 +957,12 @@ public record WebApp {
 
 	#region Fields: Private
 
+	private static readonly TimeSpan RegexTimeout = TimeSpan.FromSeconds(1);
+
 	private static readonly Func<PSObject, WebApp> AsWebApp = psObject => {
 		string itemXPath = psObject.Properties["ItemXPath"]?.Value as string ?? string.Empty;
-		GroupCollection groups = System.Text.RegularExpressions.Regex.Match(itemXPath, Regex).Groups;
+		GroupCollection groups = System.Text.RegularExpressions.Regex.Match(
+			itemXPath, Regex, System.Text.RegularExpressions.RegexOptions.None, RegexTimeout).Groups;
 
 		return new WebApp {
 			ElementTagName = psObject.Properties["ElementTagName"]?.Value as string ?? string.Empty,

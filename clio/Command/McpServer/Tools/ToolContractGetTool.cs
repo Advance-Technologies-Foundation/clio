@@ -5,6 +5,7 @@ using System.Diagnostics.CodeAnalysis;
 using System.Linq;
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using Clio.Common;
 using Clio.Command.BusinessRules;
 using Clio.Command.McpServer;
 using ModelContextProtocol.Protocol;
@@ -2174,16 +2175,17 @@ internal static class ToolContractCatalog {
 					"Alternative discovery path: use find-entity-schema to locate the schema by name, then get-entity-schema-properties to inspect its columns, then query.")
 			],
 			[],
-			OdataUnregisteredEntityAntiPatterns());
+			OdataUnregisteredEntityAntiPatterns(includeEsqEscapeRoute: true));
 	}
 
-	// Shared by odata-read and odata-create: both funnel through ODataResponseError.TryDetect and
+	// Shared by odata-read and odata-create: both funnel through CreatioResponseError.TryDetect and
 	// surface the identical routing-error hint, so the anti-pattern text is derived from the single
 	// UnregisteredEntityHint constant to keep the two contracts from drifting apart.
-	private static ToolAntiPattern[] OdataUnregisteredEntityAntiPatterns() => [
+	private static ToolAntiPattern[] OdataUnregisteredEntityAntiPatterns(bool includeEsqEscapeRoute) => [
 		new ToolAntiPattern(
 			"Reading or writing a freshly-created custom object or lookup by entity name immediately after creating it and treating the routing error as a data gap.",
-			$"{ODataResponseError.UnregisteredEntityHint} Until it is queryable the odata-* tool returns success:false with a routing error (No type was found that matches the controller).")
+			$"{CreatioResponseError.UnregisteredEntityHint} Until it is queryable the odata-* tool returns success:false with a routing error (No type was found that matches the controller) or an IIS 404 HTML page."
+			+ (includeEsqEscapeRoute ? " For schemas that are not exposed over OData, use execute-esq instead." : string.Empty))
 	];
 
 	private static ToolContractDefinition BuildODataCreate() {
@@ -2219,19 +2221,26 @@ internal static class ToolContractCatalog {
 					"Create the record, then read it back by the returned id to confirm persisted values.")
 			],
 			[],
-			OdataUnregisteredEntityAntiPatterns());
+			OdataUnregisteredEntityAntiPatterns(includeEsqEscapeRoute: false));
 	}
 
 	private static ToolContractDefinition BuildODataUpdate() {
 		return new ToolContractDefinition(
 			ODataUpdateTool.ToolName,
-			"Updates a single Creatio record through OData v4 (PATCH). Requires the record GUID and confirm=true; only supplied fields change. Never performs a keyless mass update.",
+			"Updates a single Creatio record through OData v4 (PATCH). Requires the record GUID and confirm=true; only supplied fields change. " +
+			"Data field NAMES are verified against the entity's OData type ($metadata) before the write: an unknown field fails the call and nothing is written. " +
+			"Field VALUES are not validated - note that the platform silently drops the empty GUID on a lookup field, so send null to clear a reference. " +
+			"success:true means the service accepted the PATCH after this pre-validation; platform builds that silently discard unsupported values can still leave " +
+			"some fields unwritten, so re-read important values with odata-read after a critical write. Never performs a keyless mass update.",
 			new ToolInputSchemaContract(
 				[EntityFieldName, "id", "data", ConfirmFieldName, EnvironmentNameFieldName],
 				[
 					Field(EntityFieldName, StringType, "Creatio OData entity set name such as Contact or Account."),
 					Field("id", StringType, "GUID of the record to update. Required; a keyless mass update is rejected."),
-					Field("data", ObjectType, "Object of field/value pairs to change. Only supplied fields are updated."),
+					Field("data", ObjectType, "Object of field/value pairs to change. Only supplied fields are updated. " +
+						"Every field must exist on the entity's OData type; an unknown field fails the whole call before anything is written. " +
+						"Columns absent from $metadata (for example Color) cannot be written via this tool - verify them with execute-esq instead. " +
+						"Set lookups via their <Field>Id column with a real GUID; to CLEAR a lookup send null (the platform silently drops an empty GUID)."),
 					Field(ConfirmFieldName, BooleanType, "Must be true to authorize this destructive update. When false or omitted the tool refuses without any remote call."),
 					Field(EnvironmentNameFieldName, StringType, RegisteredEnvironmentNameDescription)
 				]),
@@ -2251,6 +2260,13 @@ internal static class ToolContractCatalog {
 					[EntityFieldName] = ExampleContactSchemaName,
 					["id"] = ExampleLookupValueId,
 					["data"] = new Dictionary<string, object?> { ["Name"] = "Jane Smith" },
+					[ConfirmFieldName] = true
+				}),
+				Example("Clear a lookup reference", new Dictionary<string, object?> {
+					[EnvironmentNameFieldName] = ExampleEnvironmentName,
+					[EntityFieldName] = ExampleContactSchemaName,
+					["id"] = ExampleLookupValueId,
+					["data"] = new Dictionary<string, object?> { ["AccountId"] = null },
 					[ConfirmFieldName] = true
 				})
 			],
@@ -4499,15 +4515,19 @@ internal static class ToolContractCatalog {
 	private static ToolContractDefinition BuildGetEntitySchemaColumnProperties() {
 		return new ToolContractDefinition(
 			GetEntitySchemaColumnPropertiesTool.GetEntitySchemaColumnPropertiesToolName,
-			"Returns detailed metadata for one deployed entity schema column for read-before-write inspection and read-back verification. For a lookup column with a Const default, default-value-config is enriched with display-value (the referenced record's display value) or a record-resolution marker (no-access, not-found-or-no-access, display-column-unavailable) when it cannot be resolved.",
+			"Returns detailed metadata for one deployed entity schema column. Omit package-name for merged runtime discovery across all packages; supply it for the original package-scoped designer read. Merged mode cannot expose track-changes, localizable-text, or do-not-control-integrity (returned as null), and source then describes parent-schema inheritance rather than package ownership. For a lookup column with a Const default, default-value-config is enriched with display-value (the referenced record's display value) or a record-resolution marker (no-access, not-found-or-no-access, display-column-unavailable) when it cannot be resolved.",
 			new ToolInputSchemaContract(
-				[EnvironmentNameFieldName, PackageNameFieldName, SchemaNameFieldName, ColumnNameFieldName],
-				EnvironmentPackageSchemaFields(
-					EntitySchemaNameDescription,
-					Field(ColumnNameFieldName, StringType, "Column name."))),
+				[EnvironmentNameFieldName, SchemaNameFieldName, ColumnNameFieldName],
+				[
+					Field(EnvironmentNameFieldName, StringType, RegisteredEnvironmentNameDescription),
+					Field(PackageNameFieldName, StringType,
+						"Optional target package. Omit for merged runtime discovery across all packages; supply for authoritative package-layer metadata."),
+					Field(SchemaNameFieldName, StringType, EntitySchemaNameDescription),
+					Field(ColumnNameFieldName, StringType, "Column name.")
+				]),
 			StructuredResultOutput(
-				Field("name", StringType, "Column name."),
-				Field("data-value-type", StringType, "Column type."),
+				Field("column-name", StringType, "Column name."),
+				Field("type", StringType, "Column type."),
 				Field("source", StringType, "Column source."),
 				Field("usage-type", StringType, "Column usage type as a friendly name (General/Advanced/None), re-usable verbatim as a usage-type write input.")),
 			CommonErrorContract,
@@ -4515,7 +4535,12 @@ internal static class ToolContractCatalog {
 				ColumnNameParameterAlias()),
 			[],
 			[
-				Example("Read one deployed column", new Dictionary<string, object?> {
+				Example("Discover one deployed column across all packages", new Dictionary<string, object?> {
+					[EnvironmentNameFieldName] = ExampleEnvironmentName,
+					[SchemaNameFieldName] = ExamplePackageName,
+					[ColumnNameFieldName] = "UsrStatus"
+				}),
+				Example("Read authoritative package-layer metadata", new Dictionary<string, object?> {
 					[EnvironmentNameFieldName] = ExampleEnvironmentName,
 					[PackageNameFieldName] = ExamplePackageName,
 					[SchemaNameFieldName] = ExamplePackageName,
@@ -4840,7 +4865,7 @@ internal static class ToolContractCatalog {
 					Field(ResourcesFieldName, StringType, "Optional JSON object string of localizable strings the platform does NOT auto-provide (custom tab/group titles, button captions, validator messages, explicit overrides). Only include keys with NO matching DS-bound view model attribute on the page \u2014 see `page-schema-resources` guidance."),
 					Field("optional-properties", StringType, "JSON array of {key, value} objects merged into schema optionalProperties (e.g. '[{\"key\":\"entitySchemaName\",\"value\":\"UsrMyEntity\"}]')."),
 					Field(VerifyFieldName, BooleanType, "If true, read the page back after saving and return its metadata. Best-effort \u2014 verify failure does not fail the update."),
-					Field("mode", StringType, "Write mode. 'replace' (default) saves the body verbatim. 'append' merges the incoming fragment with the schema's current body \u2014 viewConfigDiff entries dedupe by `name` (incoming wins), handlers dedupe by `request`."),
+					Field("mode", StringType, "Write mode. 'replace' (default) saves the body verbatim. 'append' merges the incoming fragment with the schema's current body \u2014 viewConfigDiff entries dedupe by `name`, handlers by `request`, and SCHEMA_CONVERTERS / SCHEMA_VALIDATORS entries by type key (incoming wins). The final merged web body rejects unresolved custom validator references."),
 					Field("target-package-uid", StringType, "Explicit target package UId for the replacing schema. Overrides automatic design-package resolution."),
 					Field("target-schema-uid", StringType, "Explicit schema UId to save into directly. Bypasses hierarchy resolution entirely.")),
 				AnyOf: EnvironmentOrExplicitConnectionRequirements()),

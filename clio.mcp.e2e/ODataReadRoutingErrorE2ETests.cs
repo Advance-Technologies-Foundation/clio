@@ -1,6 +1,7 @@
-using Allure.NUnit;
+﻿using Allure.NUnit;
 using Allure.NUnit.Attributes;
 using Clio.Command.McpServer.Tools;
+using Clio.Common;
 using Clio.Mcp.E2E.Support.Configuration;
 using Clio.Mcp.E2E.Support.Creatio;
 using Clio.Mcp.E2E.Support.Mcp;
@@ -14,7 +15,7 @@ namespace Clio.Mcp.E2E;
 /// End-to-end coverage for ENG-93088: the odata-* tools must report a Web API routing error
 /// (<c>{Message, MessageDetail}</c>, e.g. a 404 for an unregistered/uncompiled OData controller
 /// returned with HTTP 200) as a structured failure instead of wrapping the error body as data.
-/// Both the read and the create path funnel through the shared <see cref="ODataResponseError"/>
+/// Both the read and the create path funnel through the shared <see cref="Clio.Common.CreatioResponseError"/>
 /// detection, so both are exercised here against the stubbed masked response.
 /// </summary>
 [TestFixture]
@@ -25,6 +26,7 @@ namespace Clio.Mcp.E2E;
 public sealed class ODataReadRoutingErrorE2ETests {
 	private const string RegisterToolName = "reg-web-app";
 	private const string UnregisteredEntity = "UsrCustomerStatus";
+	private const string NonODataEntity = "MessageType";
 
 	[Test]
 	[AllureTag(ODataReadTool.ToolName)]
@@ -52,10 +54,13 @@ public sealed class ODataReadRoutingErrorE2ETests {
 				because: "a bindable odata-read payload should return a structured tool response, not a protocol error");
 			response.Success.Should().BeFalse(
 				because: "a {Message, MessageDetail} routing body must be surfaced as a failure, not wrapped as a single-entity success");
-			response.Error.Should().Contain($"controller named '{UnregisteredEntity}'",
-				because: "the MessageDetail should be surfaced so the caller sees the unregistered-controller cause");
-			response.Error.Should().Contain(ODataResponseError.UnregisteredEntityHint,
-				because: "the unregistered-entity hint (asserted via the shared constant to avoid literal drift) should steer the agent to wait-and-retry, not read this as a data gap");
+			response.Error.Should().Be(
+				CreatioResponseError.DescribeServerReportedReadError(includeUnregisteredEntityHint: true),
+				because: "the read path reports the locally authored classification plus the hint, asserted via the shared builder to avoid literal drift");
+			response.Error.Should().NotContain($"controller named '{UnregisteredEntity}'",
+				because: "the server's own MessageDetail must not be copied into an MCP transcript, which a model reads as trusted content");
+			response.Error.Should().Contain(CreatioResponseError.UnregisteredEntityHint,
+				because: "the unregistered-entity hint is locally authored, so it is the one piece of detail that still steers the agent to wait-and-retry rather than read this as a data gap");
 		});
 	}
 
@@ -88,9 +93,46 @@ public sealed class ODataReadRoutingErrorE2ETests {
 				because: "the one-row batch should report exactly one per-row result").Subject;
 			row.Success.Should().BeFalse(
 				because: "a {Message, MessageDetail} routing body on POST must not be reported as a successful create");
-			row.Error.Should().Contain(ODataResponseError.UnregisteredEntityHint,
+			row.Error.Should().Contain(Clio.Common.CreatioResponseError.UnregisteredEntityHint,
 				because: "the create path funnels through the same shared detection and must surface the identical unregistered-entity hint");
 		});
+	}
+
+	[Test]
+	[AllureTag(ODataReadTool.ToolName)]
+	[AllureName("odata-read classifies a 404-style HTML body as an unavailable entity set")]
+	[AllureDescription("Registers an environment against a stub that returns a 404-style IIS HTML body with HTTP 200, then verifies odata-read explains the ESQ escape route without exposing the HTML parser failure.")]
+	[Description("odata-read against a 404-style HTML body returns success:false naming the unavailable entity and the execute-esq escape route, not a raw JSON parser error or IIS page.")]
+	public async Task ODataRead_Should_Classify_Iis_Html_404_As_Missing_Entity_Set() {
+		await RunAgainstRoutingErrorStubAsync(async (session, environmentName, cancellationToken) => {
+			// Act
+			CallToolResult callResult = await session.CallToolAsync(
+				ODataReadTool.ToolName,
+				new Dictionary<string, object?> {
+					["args"] = new Dictionary<string, object?> {
+						["environment-name"] = environmentName,
+						["entity"] = NonODataEntity,
+						["select"] = new[] { "Id", "Name" },
+						["top"] = 10
+					}
+				},
+				cancellationToken);
+			ODataReadResponse response = EntitySchemaStructuredResultParser.Extract<ODataReadResponse>(callResult);
+
+			// Assert
+			callResult.IsError.Should().NotBeTrue(
+				because: "a bindable odata-read payload should return a structured tool response, not a protocol error");
+			response.Success.Should().BeFalse(
+				because: "an IIS 404 means the entity set is unavailable, not that the OData JSON is malformed");
+			response.Error.Should().Contain(NonODataEntity,
+				because: "the failure must identify the requested entity set");
+			response.Error.Should().Contain("execute-esq",
+				because: "schemas without an OData entity set must have an actionable read alternative");
+			response.Error.Should().NotContain("Failed to parse OData response",
+				because: "the caller should not be sent down a serialization-debugging path");
+			response.Error.Should().NotContain("404 - File or directory not found",
+				because: "the IIS boilerplate is not an actionable diagnostic");
+		}, NonODataEntity);
 	}
 
 	/// <summary>
@@ -99,7 +141,8 @@ public sealed class ODataReadRoutingErrorE2ETests {
 	/// Centralizes the arrange so the read and create tests do not each re-implement it.
 	/// </summary>
 	private static async Task RunAgainstRoutingErrorStubAsync(
-		Func<McpServerSession, string, CancellationToken, Task> act) {
+		Func<McpServerSession, string, CancellationToken, Task> act,
+		string? nonJsonEntity = null) {
 		string tempHome = Path.Combine(Path.GetTempPath(), $"clio-odata-routing-e2e-{Guid.NewGuid():N}");
 		Directory.CreateDirectory(tempHome);
 		try {
@@ -124,7 +167,8 @@ public sealed class ODataReadRoutingErrorE2ETests {
 					NetFrameworkServiceEnabled: true,
 					NetCoreUiMarkerEnabled: false,
 					NetFrameworkUiMarkerEnabled: true,
-					ODataRoutingErrorEntity: UnregisteredEntity));
+					ODataRoutingErrorEntity: UnregisteredEntity,
+					ODataNonJsonEntity: nonJsonEntity));
 			using CancellationTokenSource cancellationTokenSource = new(TimeSpan.FromMinutes(3));
 			await using McpServerSession session = await McpServerSession.StartAsync(settings, cancellationTokenSource.Token);
 			string environmentName = $"odata-routing-{Guid.NewGuid():N}";

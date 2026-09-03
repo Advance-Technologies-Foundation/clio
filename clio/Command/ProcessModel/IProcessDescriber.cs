@@ -659,6 +659,17 @@ public sealed class DescribedParameter {
 	/// <summary>The source value/expression (for a formula source this is the <c>[#...#]</c> expression).</summary>
 	[JsonPropertyName("value")]
 	public string Value { get; set; }
+
+	/// <summary>
+	/// What the designer SHOWS for <see cref="Value"/> — for a Lookup constant the referenced record's name (for
+	/// example <c>Call</c> beside the bare id in <see cref="Value"/>), for a mapping the source parameter's caption.
+	/// Read-only: <see cref="Value"/> alone is what round-trips back into <c>addMapping</c> / <c>setParameter</c>,
+	/// and the display name is re-derived on every write. Null when the parameter carries no display value — for a
+	/// Lookup that means the environment could not name the record, NOT that the value is wrong (the designer then
+	/// resolves the name itself). Omitted when the server (an older <c>CrtProcessBuilder</c>) does not report it.
+	/// </summary>
+	[JsonPropertyName("valueDisplay")]
+	public string ValueDisplay { get; set; }
 }
 
 #endregion

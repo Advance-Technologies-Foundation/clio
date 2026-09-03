@@ -8,6 +8,7 @@ using System.Text.Json.Serialization;
 using Clio.Command;
 using Clio.Command.McpServer;
 using Clio.Command.McpServer.Tools;
+using Clio.Common;
 using FluentAssertions;
 using ModelContextProtocol.Protocol;
 using ModelContextProtocol.Server;
@@ -19,6 +20,8 @@ namespace Clio.Tests.Command.McpServer;
 [TestFixture]
 [Property("Module", "McpServer")]
 public sealed class ToolContractGetToolTests {
+	private static readonly TimeSpan RegexTimeout = TimeSpan.FromSeconds(1);
+
 	// Builds the same REAL invoker registry BuildToolWithRegistry wraps in a tool, so contracts for
 	// uncurated tools derive from the same MCP tool input schema clio-run dispatches against (Codex
 	// review #1, story-6). Exposed separately so ENG-93885 tests can call ToolContractCatalog.GetContracts
@@ -65,6 +68,35 @@ public sealed class ToolContractGetToolTests {
 		// Assert
 		attribute.Name.Should().Be(ToolContractGetTool.ToolName,
 			because: "the MCP tool name must stay stable for clients that bootstrap from the contract tool");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Publishes package-name as optional and explains the merged column discovery limitations.")]
+	public void ToolContractGet_Should_Describe_Merged_Column_Discovery() {
+		// Arrange
+		ToolContractGetTool tool = BuildToolWithRegistry();
+
+		// Act
+		ToolContractDefinition contract = tool.GetToolContracts(new ToolContractGetArgs([
+			GetEntitySchemaColumnPropertiesTool.GetEntitySchemaColumnPropertiesToolName
+		])).Tools!.Single();
+
+		// Assert
+		contract.InputSchema.Required.Should().NotContain("package-name",
+			because: "the curated contract must agree with the emitted schema's merged-discovery option");
+		contract.InputSchema.Required.Should().Contain(["environment-name", "schema-name", "column-name"],
+			because: "only package scope is optional");
+		contract.Description.Should().Contain("track-changes",
+			because: "callers must be warned which merged-mode properties are unknown rather than false");
+		contract.Description.Should().Contain("parent-schema inheritance",
+			because: "merged source semantics must not be mistaken for package ownership");
+		contract.OutputContract.Fields.Select(field => field.Name).Should().Contain(["column-name", "type"],
+			because: "the curated output contract must use the DTO's serialized property names");
+		contract.OutputContract.Fields.Select(field => field.Name).Should().NotContain(["name", "data-value-type"],
+			because: "clients must not be directed to output fields the tool never serializes");
+		contract.Examples.Should().Contain(example => !example.Arguments.ContainsKey("package-name"),
+			because: "at least one canonical example must demonstrate package-free discovery");
 	}
 
 	[Test]
@@ -593,8 +625,15 @@ public sealed class ToolContractGetToolTests {
 		ToolContractDefinition contract = result.Tools!.Single();
 		contract.AntiPatterns.Should().NotBeNullOrEmpty(
 			because: $"'{toolName}' funnels through the shared TryDetect routing-error path and must advertise the unregistered-entity anti-pattern");
-		contract.AntiPatterns!.Should().Contain(pattern => pattern.Why.Contains(ODataResponseError.UnregisteredEntityHint, StringComparison.Ordinal),
+		contract.AntiPatterns!.Should().Contain(pattern => pattern.Why.Contains(CreatioResponseError.UnregisteredEntityHint, StringComparison.Ordinal),
 			because: "the anti-pattern rationale must be derived from the shared UnregisteredEntityHint constant so the two contracts cannot drift from the runtime hint");
+		if (toolName == "odata-read") {
+			contract.AntiPatterns.Should().Contain(pattern => pattern.Why.Contains("execute-esq", StringComparison.Ordinal),
+				because: "odata-read needs the ESQ escape route when the requested schema is not exposed over OData");
+		} else {
+			contract.AntiPatterns.Should().NotContain(pattern => pattern.Why.Contains("execute-esq", StringComparison.Ordinal),
+				because: "odata-create cannot replace a failed create with a read-only ESQ operation");
+		}
 	}
 
 	[Test]
@@ -1218,6 +1257,11 @@ public sealed class ToolContractGetToolTests {
 				field.Name == "validate" &&
 				field.Description.Contains("pre-existing"),
 			because: "update-page should expose the guarded validation escape hatch in its curated contract");
+		pageUpdateContract.InputSchema.Properties.Should().Contain(field =>
+				field.Name == "mode" &&
+				field.Description.Contains("SCHEMA_VALIDATORS", StringComparison.Ordinal) &&
+				field.Description.Contains("incoming wins", StringComparison.Ordinal),
+			because: "append callers must know that validator declarations merge by type key instead of being discarded");
 		ToolContractDefinition modifyColumnContract = contracts.Single(contract => contract.Name == ModifyEntitySchemaColumnTool.ModifyEntitySchemaColumnToolName);
 		modifyColumnContract.PreferredFlow.Tools.Should().Equal(
 				new[] {
@@ -2166,7 +2210,7 @@ public sealed class ToolContractGetToolTests {
 		// [Description] attribute is NOT merged in - a change made there alone ships invisible, which is what
 		// happened when the downgrade refusal was added and this contract kept saying the tool always installs.
 		// The E2E pins the same claims, but E2E is advisory and cannot fail a merge.
-		string curatedDescription = Regex.Replace(contract.Description, @"\s+", " ");
+		string curatedDescription = Regex.Replace(contract.Description, @"\s+", " ", RegexOptions.None, RegexTimeout);
 		curatedDescription.Should().MatchRegex(@"(?i)\brefuses\b[^.]*\bnewer\b",
 			because: "a case where the tool does NOT install must be discoverable, or an agent meets the refusal "
 				+ "as a surprise. There are TWO — an environment already ahead, and a malformed bundled version "

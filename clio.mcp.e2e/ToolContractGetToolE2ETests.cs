@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using Allure.Net.Commons;
 using Allure.NUnit;
 using Allure.NUnit.Attributes;
@@ -1229,7 +1229,10 @@ public sealed class ToolContractGetToolE2ETests : McpContractFixtureBase {
 		// required args wrapper) or as clio's more specific argument-deserialization diagnostic (e.g. an
 		// args payload whose type cannot bind to the tool's argument record). Both correctly identify a
 		// pre-execution binding failure for this tool, so accept either (ENG-91828 contract drift).
-		(diagnostics.Contains("An error occurred invoking 'get-tool-contract'.", StringComparison.Ordinal)
+		// "invalid-parameter-type" is the contracted diagnostic the pre-method binder now emits; the two
+		// older SDK shapes stay accepted because they carry the same binding-layer contract.
+		(diagnostics.Contains("invalid-parameter-type", StringComparison.Ordinal)
+			|| diagnostics.Contains("An error occurred invoking 'get-tool-contract'.", StringComparison.Ordinal)
 			|| diagnostics.Contains("Failed to deserialize argument 'args' for MCP tool 'get-tool-contract'", StringComparison.Ordinal))
 			.Should().BeTrue(
 				because: "the transport-level failure should surface as a binding-layer invocation/deserialization error for the tool");
