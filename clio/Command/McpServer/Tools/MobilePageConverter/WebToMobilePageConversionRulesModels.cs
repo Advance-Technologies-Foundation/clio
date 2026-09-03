@@ -134,9 +134,210 @@ public sealed class WebToMobilePageConversionRules {
 	[JsonPropertyName("nonConvertingScopeContainers")]
 	public IReadOnlyList<string> NonConvertingScopeContainers { get; init; } = [];
 
+	/// <summary>
+	/// Group: the shipped mobile templates a LEGACY Mobile-wizard settings source is converted onto, and the
+	/// names of the template-provided elements the converted page merges onto (ENG-95733). Unlike
+	/// <see cref="Templates"/> these are not keyed by a web template — a legacy source has no web counterpart,
+	/// only a <c>settingsType</c>. Absent from the rules file means the bundled defaults on
+	/// <see cref="MobileLegacyTemplateRule"/> apply, so an older CDN-served file never breaks the legacy branch.
+	/// </summary>
+	[JsonPropertyName("mobileLegacyTemplates")]
+	public MobileLegacyTemplatesRule MobileLegacyTemplates { get; init; }
+
+	/// <summary>
+	/// Group: the element names the MOBILE RUNTIME generates when it converts a classic wizard settings schema on
+	/// the device (ENG-95733). Embedded <c>viewConfigDiff</c> / <c>viewModelConfigDiff</c> / <c>modelConfigDiff</c>
+	/// operations address THESE names, not the designer names in <see cref="MobileLegacyTemplates"/>; the table
+	/// here is what lets an override be re-pointed by lookup instead of by branching code. Absent switches the
+	/// override pass off — every embedded section is then reported rather than converted (data-driven, like
+	/// <see cref="TabAreaLayers"/>).
+	/// </summary>
+	[JsonPropertyName("mobileLegacyRuntimeNames")]
+	public MobileLegacyRuntimeNamesRule MobileLegacyRuntimeNames { get; init; }
+
 	/// <summary>Any future producer field not yet mapped to a typed group.</summary>
 	[JsonExtensionData]
 	public IDictionary<string, JsonElement> Extensions { get; init; }
+}
+
+/// <summary>
+/// Per-<c>settingsType</c> mobile template configuration for the legacy Mobile-wizard converter.
+/// </summary>
+public sealed class MobileLegacyTemplatesRule {
+	/// <summary>Target template for a classic <c>GridPage</c> settings schema (the mobile list page).</summary>
+	[JsonPropertyName("gridPage")]
+	public MobileLegacyTemplateRule GridPage { get; init; }
+}
+
+/// <summary>
+/// One shipped mobile template plus the names and types of the template-provided elements the converted
+/// legacy page merges onto. Every member carries the bundled value as its default, so a rules file that
+/// predates this group leaves the legacy branch behaving exactly as before.
+/// </summary>
+/// <remarks>
+/// These are DESIGNER-dialect names (what the Mobile Freedom UI designer writes for a generated page), not
+/// the runtime converter's generated names (<c>&lt;Entity&gt;_ListItem</c>, …). Re-pointing an embedded
+/// override from the runtime dialect onto these is what ENG-95733 does; keeping the target side in data
+/// rather than in constants is what lets that mapping be a table instead of a branch.
+/// </remarks>
+public sealed class MobileLegacyTemplateRule {
+	/// <summary>Mobile base page template schema name the converted page inherits.</summary>
+	[JsonPropertyName("templateName")]
+	public string TemplateName { get; init; } = "BaseMobileListTemplate";
+
+	/// <summary>The template's list component (bound to the primary collection attribute).</summary>
+	[JsonPropertyName("listName")]
+	public string ListName { get; init; } = "List";
+
+	/// <summary>The template's container that hosts the list component.</summary>
+	[JsonPropertyName("listContainerName")]
+	public string ListContainerName { get; init; } = "ListContainer";
+
+	/// <summary>The template's row element every converted column merges onto.</summary>
+	[JsonPropertyName("listItemName")]
+	public string ListItemName { get; init; } = "ListItem";
+
+	/// <summary>Component type of the row element.</summary>
+	[JsonPropertyName("listItemType")]
+	public string ListItemType { get; init; } = "crt.ListItem";
+
+	/// <summary>The template's folder-tree action element the converted page binds to the section entity.</summary>
+	[JsonPropertyName("folderTreeActionsName")]
+	public string FolderTreeActionsName { get; init; } = "FolderTreeActions";
+
+	/// <summary>Component type of the folder-tree action element.</summary>
+	[JsonPropertyName("folderTreeActionsType")]
+	public string FolderTreeActionsType { get; init; } = "crt.FolderTreeActions";
+
+	/// <summary>The folder schema name the shipped template and the designer both put on the folder-tree element.</summary>
+	[JsonPropertyName("folderSourceSchemaName")]
+	public string FolderSourceSchemaName { get; init; } = "FolderTree";
+
+	/// <summary>The template's primary collection attribute the list is bound to.</summary>
+	[JsonPropertyName("itemsAttributeName")]
+	public string ItemsAttributeName { get; init; } = "Items";
+
+	/// <summary>The template's screen root. The runtime's own screen root is <c>ViewConfig</c>.</summary>
+	[JsonPropertyName("scaffoldName")]
+	public string ScaffoldName { get; init; } = "Scaffold";
+
+	/// <summary>The template's outer content container.</summary>
+	[JsonPropertyName("mainContainerName")]
+	public string MainContainerName { get; init; } = "MainContainer";
+
+	/// <summary>The template's header strip, host of the filter, sort and folder tools.</summary>
+	[JsonPropertyName("headerContainerName")]
+	public string HeaderContainerName { get; init; } = "HeaderContainer";
+
+	/// <summary>The template's search action. Runtime counterpart: <c>&lt;Entity&gt;_Action_StartSearch_Button</c>.</summary>
+	[JsonPropertyName("searchButtonName")]
+	public string SearchButtonName { get; init; } = "SearchButton";
+
+	/// <summary>Runtime counterpart: <c>&lt;Entity&gt;_ListScreen_Tools_FilterGroupButton</c>.</summary>
+	[JsonPropertyName("filterGroupButtonName")]
+	public string FilterGroupButtonName { get; init; } = "FilterGroupButton";
+
+	/// <summary>Runtime counterpart: <c>&lt;Entity&gt;_ListScreen_Tools_ListSortToolItem</c>.</summary>
+	[JsonPropertyName("sortButtonName")]
+	public string SortButtonName { get; init; } = "SortButton";
+
+	/// <summary>Quick-filter panel; the runtime happens to use the same name.</summary>
+	[JsonPropertyName("quickFilterGroupName")]
+	public string QuickFilterGroupName { get; init; } = "QuickFilterGroup";
+
+	/// <summary>
+	/// The template's floating "add record" action, a NAMED element under the scaffold's <c>floatAction</c>.
+	/// The runtime instead carries the float action as a PROPERTY of its screen root, so
+	/// <c>remove ViewConfig properties:["floatAction"]</c> re-points to <c>remove &lt;this element&gt;</c>.
+	/// </summary>
+	[JsonPropertyName("createRecordButtonName")]
+	public string CreateRecordButtonName { get; init; } = "CreateRecordButton";
+
+	[JsonPropertyName("note")]
+	public string Note { get; init; }
+}
+
+/// <summary>
+/// Per-<c>settingsType</c> table of the names the mobile runtime's own converter generates.
+/// </summary>
+public sealed class MobileLegacyRuntimeNamesRule {
+	/// <summary>Runtime names generated for a classic <c>GridPage</c> settings schema.</summary>
+	[JsonPropertyName("gridPage")]
+	public MobileLegacyRuntimeNameSet GridPage { get; init; }
+}
+
+/// <summary>One source type's runtime-name table.</summary>
+public sealed class MobileLegacyRuntimeNameSet {
+	/// <summary>
+	/// The name templates, in resolution order. A template with no placeholder is matched first so a literal
+	/// marker (<c>&lt;Entity&gt;_ListItem_Body_Column</c>) is never mistaken for a column named "Column".
+	/// </summary>
+	[JsonPropertyName("anchors")]
+	public IReadOnlyList<MobileLegacyRuntimeAnchorRule> Anchors { get; init; } = [];
+
+	[JsonPropertyName("note")]
+	public string Note { get; init; }
+}
+
+/// <summary>
+/// One runtime-generated name template and the meaning it carries. The meaning — not the name — is what an
+/// embedded override operation is re-pointed through, so a new runtime element is added here as DATA rather
+/// than as a branch in the rebaser.
+/// </summary>
+public sealed class MobileLegacyRuntimeAnchorRule {
+	/// <summary>
+	/// What the element IS (e.g. <c>listRow</c>, <c>bodyField</c>, <c>addButton</c>). A role the converter does
+	/// not recognise is reported rather than applied — never guessed.
+	/// </summary>
+	[JsonPropertyName("role")]
+	public string Role { get; init; }
+
+	/// <summary>
+	/// The generated name, with <c>{entity}</c> for the settings' <c>entitySchemaName</c> and <c>{column}</c>
+	/// for a wizard column path (dots kept, exactly as the runtime writes the NAME).
+	/// </summary>
+	[JsonPropertyName("pattern")]
+	public string Pattern { get; init; }
+
+	/// <summary>
+	/// Wizard bucket that supplies <c>{column}</c> (<c>items</c> / <c>subtitleItems</c> / <c>groupItems</c>).
+	/// Absent on a template whose columns cannot be enumerated from the settings alone (search expressions come
+	/// from the entity schema): such a template still resolves by pattern, it just contributes no inventory.
+	/// </summary>
+	[JsonPropertyName("bucket")]
+	public string Bucket { get; init; }
+
+	/// <summary>The runtime slot the element is inserted into (<c>subtitles</c>, <c>body</c>), when it has one.</summary>
+	[JsonPropertyName("slot")]
+	public string Slot { get; init; }
+
+	/// <summary>
+	/// The DESIGNER element this runtime element corresponds to, for a <c>viewConfigDiff</c> target. Absent means
+	/// there is no element-level equivalent, and an operation addressing it is reported rather than re-pointed.
+	/// </summary>
+	[JsonPropertyName("designerName")]
+	public string DesignerName { get; init; }
+
+	/// <summary>
+	/// The DESIGNER path this runtime element corresponds to, for a <c>viewModelConfigDiff</c> /
+	/// <c>modelConfigDiff</c> target — the target dialect addresses those by path, not by name. Supports
+	/// <c>{items}</c> (the template's collection attribute) and <c>{pds}</c> (the primary data-source alias).
+	/// Absent means there is no path-level equivalent.
+	/// </summary>
+	[JsonPropertyName("designerPath")]
+	public IReadOnlyList<string> DesignerPath { get; init; }
+
+	/// <summary>
+	/// Runtime PROPERTY of this element → the designer ELEMENT that carries the same thing. The runtime keeps the
+	/// floating action as a property of its screen root, the designer keeps it as a named element, so
+	/// <c>remove ViewConfig properties:["floatAction"]</c> becomes a removal of that element. A property absent
+	/// from this map has no equivalent and is reported.
+	/// </summary>
+	[JsonPropertyName("propertyTargets")]
+	public IReadOnlyDictionary<string, string> PropertyTargets { get; init; }
+
+	[JsonPropertyName("note")]
+	public string Note { get; init; }
 }
 
 /// <summary>

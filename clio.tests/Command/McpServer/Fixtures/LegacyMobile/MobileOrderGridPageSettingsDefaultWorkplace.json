@@ -1,0 +1,57 @@
+[
+	{
+		"operation": "insert",
+		"name": "settings",
+		"values": {
+			"entitySchemaName": "Order",
+			"items": [],
+			"subtitleItems": [],
+			"groupItems": [],
+			"settingsType": "GridPage",
+			"operation": "insert",
+			"localizableStrings": {}
+		}
+	},
+	{
+		"operation": "insert",
+		"name": "cbe553ba-01d9-46ea-b240-ca53053ff011",
+		"values": {
+			"row": 0,
+			"content": "Number",
+			"columnName": "Number",
+			"dataValueType": 1,
+			"operation": "insert"
+		},
+		"parentName": "settings",
+		"propertyName": "items",
+		"index": 0
+	},
+	{
+		"operation": "insert",
+		"name": "feee752c-0f41-4a9a-ad81-2826e6da2885",
+		"values": {
+			"row": 0,
+			"content": "Account",
+			"columnName": "Account",
+			"dataValueType": 10,
+			"operation": "insert"
+		},
+		"parentName": "settings",
+		"propertyName": "subtitleItems",
+		"index": 0
+	},
+	{
+		"operation": "insert",
+		"name": "30c0c117-648a-48e4-96e9-a7bde3a279e5",
+		"values": {
+			"row": 0,
+			"content": "Payment amount",
+			"columnName": "PaymentAmount",
+			"dataValueType": 6,
+			"operation": "insert"
+		},
+		"parentName": "settings",
+		"propertyName": "groupItems",
+		"index": 0
+	}
+]

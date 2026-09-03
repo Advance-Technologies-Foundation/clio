@@ -73,56 +73,7 @@ public static class MobileSectionRegistrationProbe {
 				};
 			}
 
-			JsonElement module = modules[0];
-			string sysModuleId = Str(module, "Id");
-			string mobileUId = Str(module, "MobileSectionSchemaUId");
-			bool mobileRegistered = !string.IsNullOrWhiteSpace(mobileUId)
-				&& !string.Equals(mobileUId, EmptyGuid, StringComparison.OrdinalIgnoreCase);
-
-			// 2. Which workplaces is this section already in?
-			var currentWorkplaceIds = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-			foreach (JsonElement link in Query(client, urlBuilder,
-				"SysModuleInWorkplace",
-				$"$select=SysWorkplaceId&$filter=SysModuleId eq {sysModuleId}")) {
-				string wpId = Str(link, "SysWorkplaceId");
-				if (!string.IsNullOrWhiteSpace(wpId)) {
-					currentWorkplaceIds.Add(wpId);
-				}
-			}
-
-			// 3. Resolve the Mobile client type and list workplaces.
-			string mobileClientTypeId = ResolveMobileClientTypeId(client, urlBuilder);
-			var current = new List<WorkplaceInfo>();
-			var availableMobile = new List<WorkplaceInfo>();
-			foreach (JsonElement wp in Query(client, urlBuilder,
-				"SysWorkplace", "$select=Id,Name,SysApplicationClientTypeId&$top=100")) {
-				string id = Str(wp, "Id");
-				string clientTypeId = Str(wp, "SysApplicationClientTypeId");
-				bool isMobile = mobileClientTypeId is not null
-					&& string.Equals(clientTypeId, mobileClientTypeId, StringComparison.OrdinalIgnoreCase);
-				bool contains = currentWorkplaceIds.Contains(id);
-				var info = new WorkplaceInfo { Id = id, Name = Str(wp, "Name"), IsMobile = isMobile, ContainsSection = contains };
-				if (contains) {
-					current.Add(info);
-				}
-				if (isMobile) {
-					availableMobile.Add(info);
-				}
-			}
-
-			return new SectionRegistrationInfo {
-				SourcePageIsSection = true,
-				SysModuleId = sysModuleId,
-				SectionCode = Str(module, "Code"),
-				SectionCaption = Str(module, "Caption"),
-				MobileSectionSchemaUId = mobileRegistered ? mobileUId : null,
-				MobileSectionRegistered = mobileRegistered,
-				IsFormPage = isFormPage,
-				CurrentWorkplaces = current,
-				AvailableMobileWorkplaces = availableMobile,
-				ProbeOk = true,
-				RegistrationActions = BuildActions(sysModuleId, Str(module, "Code"), mobileRegistered, availableMobile, isFormPage)
-			};
+			return ProbeModule(client, urlBuilder, modules[0], isFormPage, entitySchemaName: null, note: null);
 		} catch (Exception ex) {
 			return new SectionRegistrationInfo {
 				IsFormPage = isFormPage,
@@ -131,6 +82,166 @@ public static class MobileSectionRegistrationProbe {
 				RegistrationActions = [ManualEditPageActionOrSkip(isFormPage)]
 			};
 		}
+	}
+
+	/// <summary>
+	/// Probes section / workplace registration for the ENTITY a page is bound to (ENG-95730): a legacy
+	/// Mobile-wizard settings schema is not itself a SysModule page, so the section is found through
+	/// <c>SysModuleEntity.SysEntitySchemaUId</c> → <c>SysModule.SysModuleEntityId</c>. Read-only, never throws;
+	/// when the entity has several sections the first is probed and the rest are named in the note so the user
+	/// decides.
+	/// </summary>
+	public static SectionRegistrationInfo ProbeByEntity(
+		IToolCommandResolver commandResolver,
+		string environment, string uri, string login, string password,
+		string entitySchemaName) {
+		if (commandResolver is null || string.IsNullOrWhiteSpace(entitySchemaName)) {
+			return new SectionRegistrationInfo {
+				IsFormPage = false,
+				EntitySchemaName = entitySchemaName,
+				ProbeOk = false,
+				Note = "Section registration was not probed (missing environment client or entity schema name).",
+				RegistrationActions = [ManualEditPageActionOrSkip(false)]
+			};
+		}
+		try {
+			var options = new EnvironmentOptions {
+				Environment = environment, Uri = uri, Login = login, Password = password
+			};
+			IApplicationClient client = commandResolver.Resolve<IApplicationClient>(options);
+			IServiceUrlBuilder urlBuilder = commandResolver.Resolve<IServiceUrlBuilder>(options);
+
+			// The entity name is interpolated into an OData string literal: accept identifiers only, so a stray
+			// quote can never reach the filter. A malformed name degrades to "not probed".
+			if (!PageSchemaMetadataHelper.IsValidSchemaName(entitySchemaName)) {
+				return new SectionRegistrationInfo {
+					IsFormPage = false,
+					EntitySchemaName = entitySchemaName,
+					ProbeOk = false,
+					Note = $"Section registration was not probed: '{entitySchemaName}' is not a valid entity schema name.",
+					RegistrationActions = [ManualEditPageActionOrSkip(false)]
+				};
+			}
+			// SysModuleEntity references the entity's ROOT schema UId. An entity replaced in many packages has one
+			// SysSchema row per package with a DIFFERENT UId each, so the lookup must pick the root row
+			// (ExtendParent = false) — a Name-only first-row lookup returns an arbitrary replacing layer.
+			var entityGuids = new List<Guid>();
+			foreach (JsonElement schema in Query(client, urlBuilder,
+				"SysSchema",
+				$"$select=UId&$filter=Name eq '{entitySchemaName}' and ManagerName eq 'EntitySchemaManager' and ExtendParent eq false")) {
+				if (Guid.TryParse(Str(schema, "UId"), out Guid uid)) {
+					entityGuids.Add(uid);
+				}
+			}
+			if (entityGuids.Count == 0) {
+				return new SectionRegistrationInfo {
+					IsFormPage = false,
+					EntitySchemaName = entitySchemaName,
+					ProbeOk = false,
+					Note = $"Section registration was not probed: no root entity schema named '{entitySchemaName}' was found.",
+					RegistrationActions = [ManualEditPageActionOrSkip(false)]
+				};
+			}
+			var moduleEntities = new List<JsonElement>();
+			foreach (Guid entityGuid in entityGuids) {
+				moduleEntities.AddRange(Query(client, urlBuilder,
+					"SysModuleEntity", $"$select=Id&$filter=SysEntitySchemaUId eq {entityGuid}"));
+			}
+			var modules = new List<JsonElement>();
+			foreach (JsonElement moduleEntity in moduleEntities) {
+				string moduleEntityId = Str(moduleEntity, "Id");
+				if (!Guid.TryParse(moduleEntityId, out Guid moduleEntityGuid)) {
+					continue;
+				}
+				modules.AddRange(Query(client, urlBuilder,
+					"SysModule",
+					"$select=Id,Code,Caption,SectionSchemaUId,SysPageSchemaUId,MobileSectionSchemaUId&$filter=" +
+					$"SysModuleEntity/Id eq {moduleEntityGuid}"));
+			}
+			if (modules.Count == 0) {
+				return new SectionRegistrationInfo {
+					SourcePageIsSection = false,
+					IsFormPage = false,
+					EntitySchemaName = entitySchemaName,
+					ProbeOk = true,
+					Note = $"No section (SysModule) is registered for entity '{entitySchemaName}'.",
+					RegistrationActions = [
+						$"No section exists for '{entitySchemaName}' — register one manually (or with create-app-section) before adding the mobile list page to a mobile workplace."
+					]
+				};
+			}
+			string note = modules.Count > 1
+				? $"Entity '{entitySchemaName}' has {modules.Count} sections ({string.Join(", ", modules.Select(m => Str(m, "Code")).Where(c => !string.IsNullOrWhiteSpace(c)))}); the first one is reported — the user decides which section receives the mobile list page."
+				: null;
+			return ProbeModule(client, urlBuilder, modules[0], isFormPage: false, entitySchemaName, note);
+		} catch (Exception ex) {
+			return new SectionRegistrationInfo {
+				IsFormPage = false,
+				EntitySchemaName = entitySchemaName,
+				ProbeOk = false,
+				Note = $"Could not query the environment for section registration ({ex.Message}). Verify section / workplace registration manually.",
+				RegistrationActions = [ManualEditPageActionOrSkip(false)]
+			};
+		}
+	}
+
+	/// <summary>Shared tail of both probes: workplace membership, the Mobile client type and the registration actions for one SysModule row.</summary>
+	private static SectionRegistrationInfo ProbeModule(
+		IApplicationClient client, IServiceUrlBuilder urlBuilder, JsonElement module, bool isFormPage,
+		string entitySchemaName, string note) {
+		string sysModuleId = Str(module, "Id");
+		string mobileUId = Str(module, "MobileSectionSchemaUId");
+		bool mobileRegistered = !string.IsNullOrWhiteSpace(mobileUId)
+			&& !string.Equals(mobileUId, EmptyGuid, StringComparison.OrdinalIgnoreCase);
+
+		// 2. Which workplaces is this section already in? A lookup is filtered through its NAVIGATION path
+		//    (SysModule/Id): the Id-suffixed column works in $select but "Column by path SysModuleId not found"
+		//    in $filter, which Query() would swallow as an empty result — silently reporting no workplaces.
+		var currentWorkplaceIds = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+		foreach (JsonElement link in Query(client, urlBuilder,
+			"SysModuleInWorkplace",
+			$"$select=SysWorkplaceId&$filter=SysModule/Id eq {sysModuleId}")) {
+			string wpId = Str(link, "SysWorkplaceId");
+			if (!string.IsNullOrWhiteSpace(wpId)) {
+				currentWorkplaceIds.Add(wpId);
+			}
+		}
+
+		// 3. Resolve the Mobile client type and list workplaces.
+		string mobileClientTypeId = ResolveMobileClientTypeId(client, urlBuilder);
+		var current = new List<WorkplaceInfo>();
+		var availableMobile = new List<WorkplaceInfo>();
+		foreach (JsonElement wp in Query(client, urlBuilder,
+			"SysWorkplace", "$select=Id,Name,SysApplicationClientTypeId&$top=100")) {
+			string id = Str(wp, "Id");
+			string clientTypeId = Str(wp, "SysApplicationClientTypeId");
+			bool isMobile = mobileClientTypeId is not null
+				&& string.Equals(clientTypeId, mobileClientTypeId, StringComparison.OrdinalIgnoreCase);
+			bool contains = currentWorkplaceIds.Contains(id);
+			var info = new WorkplaceInfo { Id = id, Name = Str(wp, "Name"), IsMobile = isMobile, ContainsSection = contains };
+			if (contains) {
+				current.Add(info);
+			}
+			if (isMobile) {
+				availableMobile.Add(info);
+			}
+		}
+
+		return new SectionRegistrationInfo {
+			SourcePageIsSection = true,
+			SysModuleId = sysModuleId,
+			SectionCode = Str(module, "Code"),
+			SectionCaption = Str(module, "Caption"),
+			EntitySchemaName = entitySchemaName,
+			MobileSectionSchemaUId = mobileRegistered ? mobileUId : null,
+			MobileSectionRegistered = mobileRegistered,
+			IsFormPage = isFormPage,
+			CurrentWorkplaces = current,
+			AvailableMobileWorkplaces = availableMobile,
+			ProbeOk = true,
+			Note = note,
+			RegistrationActions = BuildActions(sysModuleId, Str(module, "Code"), mobileRegistered, availableMobile, isFormPage)
+		};
 	}
 
 	private static List<string> BuildActions(

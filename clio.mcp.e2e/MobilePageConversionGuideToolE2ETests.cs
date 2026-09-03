@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Threading.Tasks;
 using Allure.NUnit;
 using Allure.NUnit.Attributes;
@@ -64,6 +65,42 @@ public sealed class MobilePageConversionGuideToolE2ETests : McpContractFixtureBa
 		// Assert
 		toolNames.Should().Contain(ToolName,
 			because: "get-mobile-page-conversion-guide must be advertised so MCP callers can discover the conversion-guide tool");
+	}
+
+	[Test]
+	[Description("Advertises BOTH supported source types in the tool description — Freedom UI web and legacy Mobile-wizard list settings (ENG-95730) — so a caller discovers the legacy mechanism from the contract alone.")]
+	[AllureTag(ToolName)]
+	[AllureName("get-mobile-page-conversion-guide advertises the legacy mobile source type")]
+	[AllureDescription("Lists tools on the real clio MCP server and verifies the get-mobile-page-conversion-guide description names sourceType legacy-mobile-grid-page and the legacy-mobile-settings-converter mechanism next to freedom-web.")]
+	public async Task MobilePageConversionGuideTool_Should_Advertise_Legacy_Source_Type() {
+		// Arrange
+		await using ArrangeContext context = Arrange(TimeSpan.FromMinutes(3));
+
+		// Act — the tool is not resident in tools/list on the lazy surface, so its description comes from the
+		// get-tool-contract full contract (the same place an agent discovers it).
+		CallToolResult contractResult = await context.Session.CallToolAsync(
+			ToolContractGetTool.ToolName,
+			new Dictionary<string, object?> {
+				["args"] = new Dictionary<string, object?> {
+					["tool-names"] = new[] { ToolName }
+				}
+			},
+			context.CancellationTokenSource.Token);
+		ToolContractGetResponse contracts =
+			EntitySchemaStructuredResultParser.Extract<ToolContractGetResponse>(contractResult);
+		ToolContractDefinition contract = contracts.Tools!.Single(definition => definition.Name == ToolName);
+
+		// Assert
+		contract.Description.Should().Contain("legacy-mobile-grid-page",
+			because: "the contract must name the legacy Mobile-wizard list source type the tool now converts");
+		contract.Description.Should().Contain("legacy-mobile-settings-converter",
+			because: "the mechanism label must be discoverable so a wrong dispatch is visible in the result");
+		contract.Description.Should().Contain("freedom-web",
+			because: "the Freedom UI web source type must still be advertised — no regression of the existing path");
+		contract.Description.Should().Contain("overrideOutcomes",
+			because: "a caller must know where the per-operation verdict of every embedded override is reported");
+		contract.Description.Should().Contain("NO fixed",
+			because: "elementMap grows by one entry per carried override, so a caller must not assume two merges");
 	}
 
 	// The freedom-page-web-to-mobile-conversion article itself is no longer Clio-owned: since

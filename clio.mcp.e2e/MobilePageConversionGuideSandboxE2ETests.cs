@@ -10,6 +10,7 @@ using Allure.NUnit.Attributes;
 using Clio.Command;
 using Clio.Command.McpServer.Tools;
 using Clio.Command.McpServer.Tools.MobilePageConverter;
+using Clio.Command.McpServer.Tools.MobilePageConverter.Legacy;
 using Clio.Mcp.E2E.Support.Configuration;
 using Clio.Mcp.E2E.Support.Mcp;
 using Clio.Mcp.E2E.Support.Results;
@@ -896,6 +897,100 @@ public sealed class MobilePageConversionGuideSandboxE2ETests : McpContractFixtur
 			}
 		}
 		return -1;
+	}
+
+	/// <summary>
+	/// OOTB legacy Mobile-wizard list settings schemas that ship with most Creatio products. The legacy sandbox test
+	/// tries them in order and IGNORES (never passes vacuously) when none exists on the environment.
+	/// </summary>
+	private static readonly string[] LegacyGridPageSettingsCandidates = [
+		"MobileActivityGridPageSettingsDefaultWorkplace",
+		"MobileContactGridPageSettingsDefaultWorkplace",
+		"MobileAccountGridPageSettingsDefaultWorkplace",
+		"MobileCaseGridPageSettingsDefaultWorkplace",
+		"MobileOrderGridPageSettingsDefaultWorkplace",
+		"MobileLeadGridPageSettingsDefaultWorkplace",
+		"MobileOpportunityGridPageSettingsDefaultWorkplace"
+	];
+
+	[Test]
+	[Description("Legacy source (ENG-95730): converts a real classic Mobile-wizard GridPageSettings schema through the real clio MCP server and verifies the legacy mechanism ran (sourceType legacy-mobile-grid-page, conversionMechanism legacy-mobile-settings-converter), the guide recommends BaseMobileListTemplate, carries exactly ONE merge onto ListItem with a string title, declares PDS_Id, exposes no raw body in legacySource.layers, and is idempotent across two calls. Ignores when no OOTB legacy settings schema exists on the environment; a runtime failure on an existing schema fails the test.")]
+	[AllureTag(ToolName)]
+	[AllureName("get-mobile-page-conversion-guide converts a legacy mobile wizard list settings schema")]
+	[AllureDescription("Tries the OOTB Mobile<Entity>GridPageSettingsDefaultWorkplace schemas against the sandbox; on the first one that exists asserts the legacy mechanism contract end to end, and calls the tool twice to prove the guide is deterministic.")]
+	public async Task MobilePageConversionGuideTool_Should_Convert_Legacy_GridPageSettings_Schema() {
+		// Arrange
+		McpE2ESettings settings = TestConfiguration.Load();
+		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
+		await using ArrangeContext context = Arrange(TimeSpan.FromMinutes(5));
+		await RequireConverterFeatureOrIgnoreAsync(context);
+		string environmentName = await ResolveReachableEnvironmentAsync(settings);
+
+		// Act — the first existing legacy schema decides; a missing schema is a seed gap, any other failure a regression.
+		MobilePageConversionGuideResponse? response = null;
+		string convertedSchemaName = string.Empty;
+		List<string> missing = [];
+		foreach (string schemaName in LegacyGridPageSettingsCandidates) {
+			MobilePageConversionGuideResponse candidate = await ConvertAsync(context, schemaName, environmentName);
+			if (!candidate.Success && candidate.Error?.Contains("not found", StringComparison.OrdinalIgnoreCase) == true) {
+				missing.Add(schemaName);
+				continue;
+			}
+			response = candidate;
+			convertedSchemaName = schemaName;
+			break;
+		}
+		if (response is null) {
+			Assert.Ignore(
+				$"None of the OOTB legacy Mobile-wizard list settings schemas exist on environment '{environmentName}' "
+				+ $"({string.Join(", ", missing)}). Seed one with the classic Mobile application wizard to guard the legacy path.");
+		}
+
+		// Assert
+		response!.ConversionMechanism.Should().Be(LegacyMobileListAnalysisService.MechanismLegacySettingsConverter,
+			because: "a GridPageSettings schema must be routed to the legacy mechanism, and the result must say so");
+		response.SourceType.Should().Be(LegacyMobileListAnalysisService.SourceTypeLegacyGridPage,
+			because: "the detected source type is reported on the response");
+		response.Success.Should().BeTrue(
+			because: $"an existing legacy list settings schema '{convertedSchemaName}' must convert (a custom-viewConfig refusal would name it). Error: {response.Error}");
+		MobilePageConversionGuide guide = response.Guide!;
+		guide.RecommendedMobileTemplate.Should().Be(LegacyMobileListAnalysisService.DefaultGridPageTemplate.TemplateName,
+			because: "every converted legacy list page inherits the shipped mobile list template");
+		guide.ElementMap.Should().HaveCount(2, because: "the legacy guide carries exactly the two merges the designer writes: FolderTreeActions and ListItem");
+		guide.ElementMap.Should().OnlyContain(e => e.Operation == "merge", because: "every target element is template-provided");
+		ElementMapEntry folder = guide.ElementMap.Single(e => e.MobileName == LegacyMobileListAnalysisService.DefaultGridPageTemplate.FolderTreeActionsName);
+		folder.MobileValues!["rootSchemaName"]!.GetValue<string>().Should().Be(guide.LegacySource!.EntitySchemaName,
+			because: "folder filtering is bound to the entity the wizard page was bound to");
+		ElementMapEntry merge = guide.ElementMap.Single(e => e.MobileName == LegacyMobileListAnalysisService.DefaultGridPageTemplate.ListItemName);
+		merge.MobileValues!["title"]!.GetValueKind().Should().Be(JsonValueKind.String,
+			because: "a wizard list page always has a title column bound as a string attribute reference");
+		guide.ViewModelConfigDiff!.AsArray()[0]!["values"]!.AsObject().ContainsKey("PDS_Id").Should().BeTrue(
+			because: "PDS_Id is always declared so the row can open its record");
+		guide.LegacySource.Should().NotBeNull(because: "the legacy facts are the per-element report");
+		guide.LegacySource!.Layers.Should().NotBeEmpty(because: "at least one package layer contributed");
+		JsonSerializer.Serialize(guide.LegacySource.Layers).Should().NotContain("\"operation\"",
+			because: "no raw schema body may leak into the guide — layers carry package names and counts only");
+
+		MobilePageConversionGuideResponse second = await ConvertAsync(context, convertedSchemaName, environmentName);
+		second.Success.Should().BeTrue(because: "the second run must succeed exactly like the first");
+		JsonSerializer.Serialize(second.Guide!.ElementMap.Single(e => e.MobileName == LegacyMobileListAnalysisService.DefaultGridPageTemplate.ListItemName).MobileValues).Should().Be(JsonSerializer.Serialize(merge.MobileValues),
+			because: "the conversion is deterministic — running twice yields the same row values");
+		JsonSerializer.Serialize(second.Guide.ViewModelConfigDiff).Should().Be(JsonSerializer.Serialize(guide.ViewModelConfigDiff),
+			because: "the conversion is deterministic — running twice yields the same attribute declaration");
+	}
+
+	private static async Task<MobilePageConversionGuideResponse> ConvertAsync(ArrangeContext context, string schemaName, string environmentName) {
+		CallToolResult callResult = await context.Session.CallToolAsync(
+			ToolName,
+			new Dictionary<string, object?> {
+				["args"] = new Dictionary<string, object?> {
+					["schema-name"] = schemaName,
+					["environment-name"] = environmentName
+				}
+			},
+			context.CancellationTokenSource.Token);
+		callResult.IsError.Should().NotBeTrue(because: $"converting '{schemaName}' must return a structured envelope, not a transport-level error");
+		return EntitySchemaStructuredResultParser.Extract<MobilePageConversionGuideResponse>(callResult);
 	}
 
 	/// <summary>

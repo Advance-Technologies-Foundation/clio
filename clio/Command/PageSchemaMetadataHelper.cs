@@ -265,11 +265,44 @@ namespace Clio.Command {
 			return (rows[0], null);
 		}
 
+		/// <summary>
+		/// Queries EVERY <c>SysSchema</c> row (client unit schemas) that carries <paramref name="schemaName"/> —
+		/// one per package that holds the schema or a replacing schema of it. Used to cross-check a resolved
+		/// hierarchy against the packages that actually store the schema.
+		/// </summary>
+		/// <returns>The matching rows (possibly empty), or <c>null</c> with a non-empty error when the query fails.</returns>
+		internal static (JArray rows, string error) QuerySysSchemaRowsByName(
+			IApplicationClient applicationClient,
+			IServiceUrlBuilder serviceUrlBuilder,
+			string schemaName,
+			params (string alias, string path)[] columns) {
+			JObject query = BuildSysSchemaByNameQuery(schemaName, columns, rowCount: -1);
+			var (rows, success) = ExecuteSelectQuery(applicationClient, serviceUrlBuilder, query);
+			return success ? (rows, null) : (null, "Failed to query schema metadata");
+		}
+
 		internal static (JToken row, string error) QuerySysSchemaRow(
 			IApplicationClient applicationClient,
 			IServiceUrlBuilder serviceUrlBuilder,
 			string schemaName,
 			params (string alias, string path)[] columns) {
+			JObject query = BuildSysSchemaByNameQuery(schemaName, columns, rowCount: 1);
+			// Route through the shared, guarded ExecuteSelectQuery (like QuerySysSchemaRowByUId and every other
+			// lookup in this helper) instead of a raw ExecutePostRequest + JObject.Parse: an expired session that
+			// returns an HTML/redirect body then surfaces as a clean lookup failure rather than a raw
+			// "Unexpected character '<'" JSON parse exception.
+			var (rows, success) = ExecuteSelectQuery(applicationClient, serviceUrlBuilder, query);
+			if (!success)
+				return (null, "Failed to query schema metadata");
+			if (rows.Count == 0)
+				return (null, $"Schema '{schemaName}' not found");
+			return (rows[0], null);
+		}
+
+		private static JObject BuildSysSchemaByNameQuery(
+			string schemaName,
+			(string alias, string path)[] columns,
+			int rowCount) {
 			var columnsItems = new JObject();
 			foreach ((string alias, string path) in columns) {
 				columnsItems[alias] = new JObject {
@@ -299,18 +332,9 @@ namespace Clio.Command {
 					}
 				},
 				[ColumnsKey] = new JObject { [ItemsKey] = columnsItems },
-				[RowCountKey] = 1
+				[RowCountKey] = rowCount
 			};
-			// Route through the shared, guarded ExecuteSelectQuery (like QuerySysSchemaRowByUId and every other
-			// lookup in this helper) instead of a raw ExecutePostRequest + JObject.Parse: an expired session that
-			// returns an HTML/redirect body then surfaces as a clean lookup failure rather than a raw
-			// "Unexpected character '<'" JSON parse exception.
-			var (rows, success) = ExecuteSelectQuery(applicationClient, serviceUrlBuilder, query);
-			if (!success)
-				return (null, "Failed to query schema metadata");
-			if (rows.Count == 0)
-				return (null, $"Schema '{schemaName}' not found");
-			return (rows[0], null);
+			return query;
 		}
 	}
 }

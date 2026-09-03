@@ -8,6 +8,7 @@ using System.Text.Json.Nodes;
 using System.Text.Json.Serialization;
 using System.Threading;
 using System.Threading.Tasks;
+using Clio.Command.McpServer.Tools.MobilePageConverter.Legacy;
 using Clio.Common;
 using Clio.UserEnvironment;
 using ModelContextProtocol.Server;
@@ -23,14 +24,18 @@ namespace Clio.Command.McpServer.Tools.MobilePageConverter;
 /// comparison, and inline mobile component contracts). It builds NO page body and writes NOTHING to
 /// Creatio or disk — the caller (LLM) builds the mobile page body itself using create-page +
 /// update-page + validate-page.
-/// Supported source type today: Freedom UI web (<c>freedom-web</c>). Other source types (e.g. Classic
-/// UI) are detected and reported as not yet supported.
+/// Supported source types: Freedom UI web (<c>freedom-web</c>, analysed by
+/// <see cref="WebToMobileAnalysisService"/>) and legacy classic Mobile-wizard LIST settings
+/// (<c>legacy-mobile-grid-page</c>, schemas named <c>Mobile&lt;Entity&gt;GridPageSettings&lt;Workplace&gt;</c>,
+/// analysed by <see cref="LegacyMobileListAnalysisService"/> — ENG-95730). The tool dispatches on the detected
+/// source type and reports the mechanism it ran; a legacy RECORD settings schema (ENG-95731) and any other source
+/// type (e.g. Classic UI) are detected and reported as not yet supported.
 /// </summary>
 [McpServerToolType]
 [FeatureToggle("mobile-page-converter")]
 [SuppressMessage("Major Code Smell", "S1168:Empty arrays and collections should be returned instead of null", Justification = "The best-effort probe helpers return null to signal 'not read' (distinct from 'read, empty'); the caller treats null as skip.")]
 [SuppressMessage("Minor Code Smell", "S3267:Loops should be simplified with LINQ", Justification = "Explicit loops that build registry maps with side effects read more clearly than a LINQ rewrite here.")]
-public sealed class MobilePageConversionGuideTool {
+public sealed partial class MobilePageConversionGuideTool {
 	private readonly IToolCommandResolver _commandResolver;
 	private readonly ILogger _logger;
 	private readonly IMobileComponentInfoCatalog _mobileCatalog;
@@ -60,9 +65,19 @@ public sealed class MobilePageConversionGuideTool {
 
 	[McpServerTool(Name = ToolName, ReadOnly = true, Destructive = false, Idempotent = true, OpenWorld = false)]
 	[Description(
-		"Detect a page's source type and return an advisory mobile-conversion GUIDE. Supported source type today: "
-		+ "Freedom UI WEB (sourceType \"freedom-web\"); any other source type is detected and reported as not yet "
-		+ "supported. ADVISORY-ONLY: this tool builds NO page body and writes NOTHING to Creatio or disk — YOU build "
+		"Detect a page's source type and return an advisory mobile-conversion GUIDE. Supported source types: "
+		+ "Freedom UI WEB (sourceType \"freedom-web\", conversionMechanism freedom-web-analysis) and LEGACY classic "
+		+ "Mobile-wizard LIST settings (sourceType \"legacy-mobile-grid-page\", schemas named "
+		+ "Mobile<Entity>GridPageSettings<Workplace>, conversionMechanism legacy-mobile-settings-converter: the guide "
+		+ "carries the two elementMap merges onto the BaseMobileListTemplate FolderTreeActions and ListItem plus the data-section diffs, and "
+		+ "guide.legacySource reports the column mapping, contributing packages and dropped properties). Freedom UI "
+		+ "overrides embedded in legacy settings (viewConfigDiff / viewModelConfigDiff / modelConfigDiff) are "
+		+ "re-pointed from the mobile runtime's generated names onto the converted page, one operation at a time, and "
+		+ "guide.legacySource.overrideOutcomes states per operation whether it was carried over or why it could not "
+		+ "be; diffV2 and a hand-authored viewConfig are NOT converted and say so. elementMap therefore has NO fixed "
+		+ "length: emit every entry with ITS OWN operation, in order. A legacy "
+		+ "RECORD settings schema and any other source type are detected and reported as not yet supported. "
+		+ "ADVISORY-ONLY: this tool builds NO page body and writes NOTHING to Creatio or disk — YOU build "
 		+ "the mobile body from the guide, persist it with create-page (mobile template) + update-page, then "
 		+ "validate-page. The guide is self-describing: its own `constraints` and ordered `nextSteps` carry the rules "
 		+ "for applying THIS conversion, composed from what the converter actually did. "
@@ -100,10 +115,13 @@ public sealed class MobilePageConversionGuideTool {
 				"If the page is a Classic UI page, migrate it to a Freedom UI web page first.");
 		}
 
-		// Detect the source page type and gate on it. Only Freedom UI web is supported today; a
-		// non-Freedom-web source (e.g. Classic UI) or an already-mobile page short-circuits with a
-		// failure and never starts conversion (hard acceptance criterion).
+		// Detect the source page type and gate on it. Freedom UI web and legacy Mobile-wizard LIST settings are
+		// supported; any other source (Classic UI, a legacy RECORD settings schema) or an already-mobile page
+		// short-circuits with a failure and never starts conversion (hard acceptance criterion). A legacy schema
+		// reads as schema-type "unknown" (its ClientUnitSchemaType is neither 9 nor 10), so the name-based legacy
+		// detection refines that label; the body is confirmed by the legacy reader before anything converts.
 		string sourceType = DetectSourceType(pageResponse.Page?.SchemaType);
+		sourceType = DetectLegacySourceType(args.SchemaName, sourceType) ?? sourceType;
 		MobilePageConversionGuideResponse sourceTypeRejection = RejectUnsupportedSourceType(args, sourceType);
 		if (sourceTypeRejection is not null) {
 			return sourceTypeRejection;
@@ -118,6 +136,17 @@ public sealed class MobilePageConversionGuideTool {
 			&& !PlatformVersionResolver.TryNormaliseToThreePartSemver(args.Version, out _)) {
 			return Fail(args, sourceType,
 				$"'version' value '{args.Version}' is not a valid platform version. Use a 3-part semver, for example '8.3.3', or 'latest'.");
+		}
+
+		if (string.Equals(sourceType, LegacyMobileListAnalysisService.SourceTypeLegacyGridPage, StringComparison.Ordinal)) {
+			// Legacy branch (ENG-95730): no component registries and no template probe are needed — the target
+			// elements are known up front. The conversion RULES are still loaded, because the target template and
+			// its element names live there rather than in constants (ENG-95733). Only the version tier the response
+			// contract already carries is resolved — best-effort, so a CDN or cache miss never throws out of the tool.
+			(string legacyVersion, string legacyResolvedFrom, PlatformVersionResolution legacyResolution) =
+				await ResolveVersionTierBestEffortAsync(args, cancellationToken).ConfigureAwait(false);
+			return await BuildLegacyGridPageGuide(args, getOptions, sourceType, legacyVersion, legacyResolvedFrom,
+				legacyResolution, cancellationToken).ConfigureAwait(false);
 		}
 
 		// Resolve the component-registry version against the TARGET environment (mirrors get-component-info):
@@ -192,7 +221,7 @@ public sealed class MobilePageConversionGuideTool {
 
 		// Read-only probe: is this page a section, and what would registering it for mobile take?
 		// Best-effort — never blocks the guide if the environment can't be queried.
-		bool isFormPage = IsFormPage(args.SchemaName, pageResponse.Page?.ParentSchemaName);
+		bool isFormPage = IsFormPage(args.SchemaName, effectiveTemplate);
 		SectionRegistrationInfo sectionRegistration = MobileSectionRegistrationProbe.Probe(
 			_commandResolver, args.EnvironmentName, args.Uri, args.Login, args.Password,
 			pageResponse.Page?.SchemaUId, isFormPage);
@@ -234,6 +263,7 @@ public sealed class MobilePageConversionGuideTool {
 			Success = true,
 			SourceSchemaName = args.SchemaName,
 			SourceType = sourceType,
+			ConversionMechanism = LegacyMobileListAnalysisService.MechanismFreedomWebAnalysis,
 			Guide = guide,
 			ResolvedTargetVersion = version,
 			ResolvedFrom = resolvedFrom,
@@ -602,9 +632,9 @@ public sealed class MobilePageConversionGuideTool {
 
 	/// <summary>
 	/// Gates a detected source type against what the converter supports today. Returns a failure
-	/// response to short-circuit with — an already-mobile page, or a not-yet-supported source such as
-	/// Classic UI — or <c>null</c> when the source is a supported Freedom UI web page and conversion may
-	/// proceed. Extracted as an internal static gate so the safety-critical "never convert an
+	/// response to short-circuit with — an already-mobile page, a legacy RECORD settings schema, or a
+	/// not-yet-supported source such as Classic UI — or <c>null</c> when the source is a supported Freedom UI
+	/// web page or a legacy Mobile-wizard LIST settings schema and conversion may proceed. Extracted as an internal static gate so the safety-critical "never convert an
 	/// unsupported source" rule is unit-testable without a live page read.
 	/// </summary>
 	internal static MobilePageConversionGuideResponse RejectUnsupportedSourceType(
@@ -612,14 +642,44 @@ public sealed class MobilePageConversionGuideTool {
 		if (string.Equals(sourceType, "mobile", StringComparison.OrdinalIgnoreCase)) {
 			return Fail(args, sourceType, $"Source page '{args?.SchemaName}' is already a mobile page. Nothing to convert.");
 		}
+		if (string.Equals(sourceType, LegacyMobileListAnalysisService.SourceTypeLegacyGridPage, StringComparison.OrdinalIgnoreCase)) {
+			return null;
+		}
+		if (string.Equals(sourceType, LegacyMobileListAnalysisService.SourceTypeLegacyRecordPage, StringComparison.OrdinalIgnoreCase)) {
+			return Fail(args, sourceType,
+				$"Source page '{args?.SchemaName}' is a legacy Mobile-wizard RECORD page settings schema, which is not yet supported by " +
+				"get-mobile-page-conversion-guide (ENG-95731). " +
+				$"Supported today: '{WebToMobileAnalysisService.SourceTypeFreedomWeb}', '{LegacyMobileListAnalysisService.SourceTypeLegacyGridPage}'.");
+		}
 		if (!string.Equals(sourceType, WebToMobileAnalysisService.SourceTypeFreedomWeb, StringComparison.OrdinalIgnoreCase)) {
 			return Fail(args, sourceType,
 				$"Source page '{args?.SchemaName}' has source type '{sourceType}', which is not yet supported by get-mobile-page-conversion-guide " +
-				$"(supported today: '{WebToMobileAnalysisService.SourceTypeFreedomWeb}'). " +
+				$"(supported today: '{WebToMobileAnalysisService.SourceTypeFreedomWeb}', '{LegacyMobileListAnalysisService.SourceTypeLegacyGridPage}'). " +
 				"A Classic UI page must first be converted to a Freedom UI web page (use the dedicated classic-web -> freedom-web converter), " +
 				"then run get-mobile-page-conversion-guide.");
 		}
 		return null;
+	}
+
+	/// <summary>
+	/// Refines the platform schema-type label with the legacy Mobile-wizard detection: a schema whose type is
+	/// neither web nor mobile (<c>unknown</c>) and whose name follows the wizard pattern
+	/// <c>Mobile&lt;Entity&gt;GridPageSettings&lt;Workplace&gt;</c> / <c>Mobile&lt;Entity&gt;RecordPageSettings&lt;Workplace&gt;</c>
+	/// is a classic wizard LIST / RECORD settings schema. Returns <c>null</c> when the
+	/// label should stay as detected. The body is confirmed later by the legacy reader (settingsType GridPage).
+	/// </summary>
+	internal static string DetectLegacySourceType(string schemaName, string sourceTypeLabel) {
+		if (string.IsNullOrWhiteSpace(schemaName)
+			|| !string.Equals(sourceTypeLabel, "unknown", StringComparison.OrdinalIgnoreCase)) {
+			return null;
+		}
+		LegacyMobileListAnalysisService.LegacySchemaNameParts parts = LegacyMobileListAnalysisService.TryParseSchemaName(schemaName);
+		if (parts is null) {
+			return null;
+		}
+		return parts.IsRecordPage
+			? LegacyMobileListAnalysisService.SourceTypeLegacyRecordPage
+			: LegacyMobileListAnalysisService.SourceTypeLegacyGridPage;
 	}
 }
 
@@ -628,12 +688,12 @@ public sealed class MobilePageConversionGuideTool {
 /// </summary>
 public sealed record MobilePageConversionGuideArgs(
 	[property: JsonPropertyName("schema-name")]
-	[property: Description("Source page schema name, e.g. 'UsrMyApp_FormPage'. Today only Freedom UI web pages are supported.")]
+	[property: Description("Source page schema name: a Freedom UI web page (e.g. 'UsrMyApp_FormPage') or a legacy classic Mobile-wizard list settings schema (e.g. 'MobileOrderGridPageSettingsDefaultWorkplace').")]
 	[property: Required]
 	string SchemaName,
 
 	[property: JsonPropertyName("target-schema-name")]
-	[property: Description("Optional suggested target mobile page schema name. Defaults to the source name with a mobile suffix (e.g. UsrMyApp_FormPage -> UsrMyApp_MobileFormPage).")]
+	[property: Description("Optional suggested target mobile page schema name. Defaults to the source name with a mobile suffix (e.g. UsrMyApp_FormPage -> UsrMyApp_MobileFormPage); for a legacy settings schema to <SchemaNamePrefix><Entity>_MobileListPage.")]
 	string TargetSchemaName,
 
 	[property: JsonPropertyName("version")]

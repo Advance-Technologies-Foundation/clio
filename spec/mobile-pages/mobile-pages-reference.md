@@ -259,3 +259,33 @@ Facts derived from source verification (not prescriptive rules — see `MobilePa
 - The mobile component registry is separate from web; not all `crt.*` web components are available.
 - A mobile page must be linked through an app section to be visible in the mobile app.
 
+---
+
+## 13. Legacy Mobile-wizard list settings → `BaseMobileListTemplate` (ENG-95730)
+
+Pages built by the classic Mobile application wizard are stored as `Mobile<Entity>GridPageSettings<Workplace>`
+client schemas: a JSON operation array rooted at a `settings` node (`settingsType: "GridPage"`) with three column
+buckets — `items` (exactly one title column), `subtitleItems`, `groupItems`. The schema may be layered across several
+packages (replacing schemas); the effective settings are the ROOT → HEAD application of every layer.
+
+`get-mobile-page-conversion-guide` converts such a schema into a page inheriting `BaseMobileListTemplate` by
+MERGING onto the template's own `ListItem` (never inserting a second one):
+
+| Wizard | Mobile page |
+|---|---|
+| `entitySchemaName = Order` | `merge FolderTreeActions { sourceSchemaName: "FolderTree", rootSchemaName: "Order" }` (folder filtering; the designer writes the same merge) |
+| `items[0].columnName = Number` | `ListItem.title = "$PDS_Number"` |
+| `subtitleItems` then `groupItems`, by `row` | `ListItem.body = [ { "value": "$PDS_<Column>" }, … ]` |
+| every bound column + `Id` | `viewModelConfigDiff` merge at `["attributes","Items","viewModelConfig","attributes"]`: `PDS_<Column>: { modelConfig: { path: "PDS.<Column>" } }` |
+| every bound column + `entitySchemaName` | `modelConfigDiff` merge at `["dataSources","PDS","config"]`: `attributes.<Column>: { path: "<Column>" }` (+ `type: ForwardReference` for a dotted path) |
+
+A dotted column `Account.Type` binds as `PDS_Account_Type` / `PDS.Account_Type` with data-source attribute
+`{ "path": "Account.Type", "type": "ForwardReference" }`. The template already carries the header
+(`QuickFilterGroup`, search, sort, folder tree) and the `List` bound to `$Items`, so nothing else is emitted.
+Column captions and per-column view types (phone / email / url / map / preview) have no counterpart on a
+`ListItem` row and are reported in `guide.legacySource.columnPropertyCoverage`.
+
+Recorded divergences from the mobile runtime's own converter (design-time target, not runtime vocabulary): subtitle
+columns go to `ListItem.body`, not to the template's `subtitles` slot (the designer generates `body`); no search-column
+list is emitted (the template searches `$Items` through `crt.OpenSearchListRequest`); the QuickFilterGroup filter
+options are template-provided and not re-emitted.
