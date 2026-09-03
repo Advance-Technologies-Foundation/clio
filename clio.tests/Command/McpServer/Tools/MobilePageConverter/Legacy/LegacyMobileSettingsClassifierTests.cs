@@ -1,3 +1,4 @@
+using System.Linq;
 using Clio.Command.McpServer.Tools.MobilePageConverter.Legacy;
 using FluentAssertions;
 using Newtonsoft.Json.Linq;
@@ -44,13 +45,40 @@ public sealed class LegacyMobileSettingsClassifierTests {
 		// Assert
 		result.Kind.Should().Be(LegacySettingsKind.FreedomUiOverrides, because: "override sections are present");
 		result.Label.Should().Be("freedom-ui-overrides", because: "the caller-facing label mirrors the kind");
-		result.OverrideSections.Should().Contain(s => s.Section == "viewConfigDiff" && s.OperationCount == 2 && s.Ticket == "ENG-95733",
-			because: "a string-encoded section is parsed before counting");
+		result.OverrideSections.Should().Contain(s => s.Section == "viewConfigDiff" && s.OperationCount == 2 && s.Supported,
+			because: "a string-encoded section is parsed before counting, and this format is processed");
 		result.OverrideSections.Should().Contain(s => s.Section == "viewModelConfigDiff" && s.OperationCount == 1,
 			because: "an array section is counted directly");
 		result.OverrideSections.Should().Contain(s => s.Section == "diffV2" && s.OperationCount == -1,
 			because: "a section that cannot be parsed is still reported, with an unknown count");
 		result.Notes.Should().Contain(n => n.Contains("diffV2"), because: "the uncountable section is explained");
+	}
+
+	[Test]
+	[Description("The three *ConfigDiff sections and diffV2 get DIFFERENT verdicts: the former are processed operation by operation, diffV2 is permanently unsupported and carries a reason instead — collapsing the two would tell the user to wait for something that is not coming.")]
+	public void Classify_ShouldSeparateProcessedSectionsFromPermanentlyUnsupportedOnes() {
+		// Arrange
+		JObject settings = Settings(
+			", \"viewConfigDiff\": [ { \"operation\": \"remove\", \"name\": \"ViewConfig\", \"properties\": [\"floatAction\"] } ]" +
+			", \"diffV2\": [ { \"operation\": \"insert\", \"name\": \"Root\", \"values\": {} } ]");
+
+		// Act
+		LegacySettingsClassification result = LegacyMobileSettingsClassifier.Classify(settings);
+
+		// Assert
+		LegacyOverrideSection pending = result.OverrideSections.Single(s => s.Section == "viewConfigDiff");
+		LegacyOverrideSection refused = result.OverrideSections.Single(s => s.Section == "diffV2");
+		pending.Supported.Should().BeTrue(because: "this override format is processed operation by operation");
+		pending.Ticket.Should().BeNull(
+			because: "the format is carried across here, so naming a story would tell the user to wait for work that is already done");
+		pending.Reason.Should().BeNull(because: "there is no permanent reason it cannot be carried");
+		pending.Operations.Should().NotBeNull(because: "the parsed operations are retained for the rebase step");
+		pending.Operations!.Count.Should().Be(1, because: "the retained payload is the section's own operations");
+		refused.Ticket.Should().BeNull(because: "no story will carry diffV2 across; a ticket would promise otherwise");
+		refused.Reason.Should().NotBeNullOrWhiteSpace(because: "an unsupported verdict must say why");
+		refused.Reason.Should().Contain("verbatim",
+			because: "the reason is that the mobile runtime passes diffV2 through rather than translating it");
+		refused.Operations.Should().BeNull(because: "operations are only retained for sections that will be processed");
 	}
 
 	[TestCase("viewConfig")]

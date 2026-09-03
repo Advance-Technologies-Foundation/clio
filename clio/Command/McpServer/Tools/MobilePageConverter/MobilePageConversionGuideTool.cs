@@ -70,7 +70,12 @@ public sealed partial class MobilePageConversionGuideTool {
 		+ "Mobile-wizard LIST settings (sourceType \"legacy-mobile-grid-page\", schemas named "
 		+ "Mobile<Entity>GridPageSettings<Workplace>, conversionMechanism legacy-mobile-settings-converter: the guide "
 		+ "carries the two elementMap merges onto the BaseMobileListTemplate FolderTreeActions and ListItem plus the data-section diffs, and "
-		+ "guide.legacySource reports the column mapping, contributing packages and dropped properties). A legacy "
+		+ "guide.legacySource reports the column mapping, contributing packages and dropped properties). Freedom UI "
+		+ "overrides embedded in legacy settings (viewConfigDiff / viewModelConfigDiff / modelConfigDiff) are "
+		+ "re-pointed from the mobile runtime's generated names onto the converted page, one operation at a time, and "
+		+ "guide.legacySource.overrideOutcomes states per operation whether it was carried over or why it could not "
+		+ "be; diffV2 and a hand-authored viewConfig are NOT converted and say so. elementMap therefore has NO fixed "
+		+ "length: emit every entry with ITS OWN operation, in order. A legacy "
 		+ "RECORD settings schema and any other source type are detected and reported as not yet supported. "
 		+ "ADVISORY-ONLY: this tool builds NO page body and writes NOTHING to Creatio or disk — YOU build "
 		+ "the mobile body from the guide, persist it with create-page (mobile template) + update-page, then "
@@ -134,12 +139,14 @@ public sealed partial class MobilePageConversionGuideTool {
 		}
 
 		if (string.Equals(sourceType, LegacyMobileListAnalysisService.SourceTypeLegacyGridPage, StringComparison.Ordinal)) {
-			// Legacy branch (ENG-95730): the target elements are known up front (BaseMobileListTemplate + its
-			// ListItem), so no registries / rules / template probes are needed. Only the version tier the response
+			// Legacy branch (ENG-95730): no component registries and no template probe are needed — the target
+			// elements are known up front. The conversion RULES are still loaded, because the target template and
+			// its element names live there rather than in constants (ENG-95733). Only the version tier the response
 			// contract already carries is resolved — best-effort, so a CDN or cache miss never throws out of the tool.
 			(string legacyVersion, string legacyResolvedFrom, PlatformVersionResolution legacyResolution) =
 				await ResolveVersionTierBestEffortAsync(args, cancellationToken).ConfigureAwait(false);
-			return BuildLegacyGridPageGuide(args, getOptions, sourceType, legacyVersion, legacyResolvedFrom, legacyResolution);
+			return await BuildLegacyGridPageGuide(args, getOptions, sourceType, legacyVersion, legacyResolvedFrom,
+				legacyResolution, cancellationToken).ConfigureAwait(false);
 		}
 
 		// Resolve the component-registry version against the TARGET environment (mirrors get-component-info):

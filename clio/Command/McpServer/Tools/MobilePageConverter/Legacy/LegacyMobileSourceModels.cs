@@ -37,6 +37,15 @@ public sealed class LegacyMobileSourceInfo {
 	public IReadOnlyList<LegacyOverrideSectionInfo> OverrideSections { get; init; }
 
 	/// <summary>
+	/// What happened to EVERY operation inside those sections, one entry each, in source order (ENG-95733). An
+	/// operation is either carried across (as a wizard-source edit or as an extra operation on the converted page)
+	/// or reported with the reason it could not be — never partially applied.
+	/// </summary>
+	[JsonPropertyName("overrideOutcomes")]
+	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+	public IReadOnlyList<LegacyOverrideOutcomeInfo> OverrideOutcomes { get; init; }
+
+	/// <summary>
 	/// Every schema layer that contributed to the effective settings, ROOT → HEAD in package-hierarchy order.
 	/// Package names and operation counts only — no bodies.
 	/// </summary>
@@ -92,9 +101,59 @@ public sealed class LegacyOverrideSectionInfo {
 	[JsonPropertyName("operationCount")]
 	public int OperationCount { get; init; }
 
-	/// <summary>The story that owns converting this section.</summary>
+	/// <summary>
+	/// Whether the converter processes this section at all. The three <c>*ConfigDiff</c> sections are converted
+	/// (ENG-95733); <c>diffV2</c> is not — the mobile runtime passes it through verbatim rather than translating
+	/// it, so there is no reference behaviour to port, and it does not occur in the shipped corpus.
+	/// </summary>
+	[JsonPropertyName("supported")]
+	public bool Supported { get; init; }
+
+	/// <summary>Why the section is not processed; null when it is.</summary>
+	[JsonPropertyName("reason")]
+	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+	public string Reason { get; init; }
+
+	/// <summary>The story that owns converting this section, when one does; null once it is converted here.</summary>
 	[JsonPropertyName("ticket")]
+	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
 	public string Ticket { get; init; }
+}
+
+/// <summary>What happened to one embedded override operation.</summary>
+public sealed class LegacyOverrideOutcomeInfo {
+	/// <summary>The settings key the operation came from.</summary>
+	[JsonPropertyName("section")]
+	public string Section { get; init; }
+
+	/// <summary>Its position inside that section, so the user can find it in the source schema.</summary>
+	[JsonPropertyName("index")]
+	public int Index { get; init; }
+
+	/// <summary>The diff operation (<c>merge</c> / <c>remove</c> / <c>insert</c> / …).</summary>
+	[JsonPropertyName("operation")]
+	public string Operation { get; init; }
+
+	/// <summary>The runtime-generated name the operation addressed.</summary>
+	[JsonPropertyName("target")]
+	public string Target { get; init; }
+
+	/// <summary>
+	/// <c>source-edit</c> (expressed as a change to the wizard source), <c>target-delta</c> (an extra operation on
+	/// the converted page), or <c>reported</c> (not carried over).
+	/// </summary>
+	[JsonPropertyName("lane")]
+	public string Lane { get; init; }
+
+	/// <summary>What it did on the converted page; absent when it was only reported.</summary>
+	[JsonPropertyName("effect")]
+	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+	public string Effect { get; init; }
+
+	/// <summary>Why it could not be carried; absent when it was.</summary>
+	[JsonPropertyName("reason")]
+	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+	public string Reason { get; init; }
 }
 
 /// <summary>How one wizard column maps onto the mobile list row.</summary>

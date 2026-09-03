@@ -514,8 +514,79 @@ A legacy RECORD settings schema (`RecordPageSettings`, ENG-95731) and any other 
 `RejectUnsupportedSourceType`. The legacy guide is deliberately lean: the two `elementMap` merges the Mobile designer
 itself writes for a generated list page (`FolderTreeActions` bound to the entity, `ListItem` row), the two data-section
 diffs, and `guide.legacySource` (column mapping, contributing package layers, coverage table, decisions, recorded
-divergences from the mobile runtime converter). Embedded Freedom UI override sections are only classified and reported
-(ENG-95733). Both paths share the same response contract, feature flag, guidance article and skill.
+divergences from the mobile runtime converter). Both paths share the same response contract, feature flag, guidance
+article and skill.
+
+The target template and the names of the template-provided elements the converted page merges onto are DATA, not
+constants: `mobileLegacyTemplates.gridPage` in `Data/WebToMobilePageConversionRules.json`. Its sibling group
+`mobileLegacyRuntimeNames.gridPage` is the other half of the mapping — the names the MOBILE RUNTIME generates for the
+same wizard metadata (`<Entity>_ListItem`, `<Entity>_ListItem_Subtitle_<Column>`, `Attribute_Items_ModelConfig`, …),
+ported from the runtime's own `GridPageConverter`/`BaseScreenConverter`. Embedded override operations address the
+RUNTIME names; the designer understands only the template names, so carrying an override across means re-pointing it
+through those two tables. `Legacy/LegacyRuntimeNameOracle` builds the runtime name inventory for one parsed source and
+inverts a name back into its meaning (role, wizard bucket, slot, column). Both groups carry bundled defaults, so an
+older CDN-served rules file never breaks the legacy branch.
+
+Embedded override sections get two different verdicts, and they must stay apart: `viewConfigDiff` /
+`viewModelConfigDiff` / `modelConfigDiff` are CONVERTED operation by operation, while `diffV2` is reported with
+`supported: false` plus a reason and is never translated — the mobile runtime does not translate it either
+(`PageSettingsMetadataDiffV2Converter.addDiffV2` registers the inserted names and passes the array through verbatim),
+so there is no reference behaviour to port. A hand-authored `viewConfig` / `modelViewConfig` is refused outright.
+
+`Legacy/LegacyOverrideRebaser` resolves each operation into exactly one of three lanes, reported per operation in
+`guide.legacySource.overrideOutcomes`:
+
+| Lane | Meaning | Example |
+|---|---|---|
+| `source-edit` | expressible in the wizard model, so the SOURCE is edited and the pure analyzer re-derives the page — one emit path, bindings recomputed rather than copied | `remove <Entity>_ListItem_Body_<Column>` → drop the column from its bucket |
+| `target-delta` | expressible only in the target dialect, so it becomes an extra `elementMap` entry or path diff | `remove ViewConfig properties:["floatAction"]` → `remove CreateRecordButton` |
+| `reported` | everything else, with the reason | a target this source never generates |
+
+Four rules that are load-bearing and easy to undo by accident.
+
+**Operations are grouped by SUBJECT (the column they touch, else the element they address) and a group resolves
+entirely or not at all** — a move arrives as a remove + insert pair, and applying only the resolvable half would
+DELETE the column instead of moving it.
+
+**The override WINS on every key it names.** A merge on an element the converter also writes (the list row, the
+folder tree) is folded over the converted values rather than added as a rival entry with the same name; it is the
+later, more specific customisation of the same element.
+
+**A row binding is re-derived, never copied.** Inside the list row `$X` addresses a column of the record, and the
+converted page names those `PDS_<Column>` — a hand-written `{"icon": "$Photo"}` carried verbatim would resolve to
+nothing. The binding is rewritten and the column it references is declared in BOTH data sections exactly like a
+wizard column (before `PDS_Id`, which stays last), because a carried binding whose attribute is missing is dead.
+A binding already written as `$PDS_…` is left alone: the source column cannot be recovered from an underscored name.
+
+**Both `merge` and `insert` are re-pointed onto a data-section path**, because the runtime's
+`insert <X> into <parent>.<property>` and its `merge <X>` both say "this is what X holds", and X's own
+`designerPath` already encodes where that is — this is what carries the shipped default-sort override
+(`insert Attribute_Items_SortingConfig`) onto `attributes/Items/modelConfig/sortingConfig`. A `remove` or `set`
+there names runtime elements the converted page never declares, and is reported.
+
+**Warnings go to `guide.constraints` and NOWHERE else.** An override whose outcome on the converted page differs
+from what it asked for, or that was skipped, must not be discoverable only by reading a report section;
+`constraints` is the block a caller cannot skip. `legacySource.overrideOutcomes` still records the per-operation
+verdict, but it is the record, not the alert.
+
+Row-slot rules, all three warning-carrying (a converted row has ONE slot where the runtime has `subtitles` and
+`body`):
+
+| Source shape | Outcome |
+|---|---|
+| `insert <E>_ListItem_Subtitle_<C>`, column NOT on the page | the column is added to the wizard model, so the row shows it |
+| the same, column already on the page | nothing changes — never duplicated |
+| `remove <E>_ListItem_Body_<C>` + `insert <E>_ListItem_Subtitle_<C>` (a move) | nothing changes; the removal is deliberately NOT applied alone, or "move" becomes "delete" |
+| `merge <E>_ListItem_Body_<C> {label:…}` | reported: the designer does not support controlling a list-row label yet |
+
+`<E>_SortOptions_<C>` (the runtime's sort-tool option) becomes an entry of `SortButton.sortItems`, shaped
+`{attributeName, caption}` with the **raw** column name — no `PDS_` prefix, verified against a designer-authored
+page. Several such inserts accumulate into ONE merge: a resolution can declare that its array values append
+rather than replace, so the rule stays about operation semantics instead of hard-coding the property name. The
+caption comes from the wizard column when the page carries it, else the column name plus a warning.
+
+`elementMap` therefore no longer has a fixed length: it starts with the two designer merges and grows by one entry
+per carried view override. Callers must emit each entry with its own `operation`, not assume `merge`.
 
 ## Workspace-scoped tools
 

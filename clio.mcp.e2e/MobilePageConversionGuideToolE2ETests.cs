@@ -97,6 +97,10 @@ public sealed class MobilePageConversionGuideToolE2ETests : McpContractFixtureBa
 			because: "the mechanism label must be discoverable so a wrong dispatch is visible in the result");
 		contract.Description.Should().Contain("freedom-web",
 			because: "the Freedom UI web source type must still be advertised — no regression of the existing path");
+		contract.Description.Should().Contain("overrideOutcomes",
+			because: "a caller must know where the per-operation verdict of every embedded override is reported");
+		contract.Description.Should().Contain("NO fixed",
+			because: "elementMap grows by one entry per carried override, so a caller must not assume two merges");
 	}
 
 	// The freedom-page-web-to-mobile-conversion article itself is no longer Clio-owned: since

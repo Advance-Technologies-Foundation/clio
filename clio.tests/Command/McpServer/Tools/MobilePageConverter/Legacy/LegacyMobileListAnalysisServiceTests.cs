@@ -43,9 +43,18 @@ public sealed class LegacyMobileListAnalysisServiceTests {
 			LegacyBodyShape.OperationArray, []);
 	}
 
-	private static MobilePageConversionGuide Analyze(LegacyMobileSettingsReadResult read, SectionRegistrationInfo section = null) =>
+	/// <summary>The bundled target-template configuration the analyzer falls back to when the rules file has none.</summary>
+	private static readonly MobileLegacyTemplateRule Template = LegacyMobileListAnalysisService.DefaultGridPageTemplate;
+
+	/// <summary>The shipped runtime-name table, so the tests exercise the same data the tool loads.</summary>
+	private static readonly MobileLegacyRuntimeNameSet RuntimeNames =
+		WebToMobilePageConversionRulesCatalog.LoadBundled().MobileLegacyRuntimeNames?.GridPage;
+
+	private static MobilePageConversionGuide Analyze(LegacyMobileSettingsReadResult read, SectionRegistrationInfo section = null,
+		MobileLegacyTemplateRule template = null) =>
 		LegacyMobileListAnalysisService.Analyze(
-			read, LegacyMobileSettingsClassifier.Classify(read.EffectiveSettings), SourceSchema, Target, section);
+			read, LegacyMobileSettingsClassifier.Classify(read.EffectiveSettings), SourceSchema, Target, section,
+			template ?? Template, RuntimeNames);
 
 	private static string Settings(string entity, string items, string subtitles, string groups, string extraSettings = "") => $$"""
 		[
@@ -61,7 +70,7 @@ public sealed class LegacyMobileListAnalysisServiceTests {
 
 	/// <summary>The ListItem merge of a legacy guide (the second of its two elementMap operations).</summary>
 	private static ElementMapEntry ListItem(MobilePageConversionGuide guide) =>
-		guide.ElementMap.Single(e => e.MobileName == LegacyMobileListAnalysisService.ListItemName);
+		guide.ElementMap.Single(e => e.MobileName == Template.ListItemName);
 
 	[Test]
 	[Description("GOLDEN: the sample Order wizard settings produce exactly the expected ListItem merge values, viewModelConfigDiff and modelConfigDiff (title from items, body from subtitleItems then groupItems, PDS_Id appended, entitySchemaName Order).")]
@@ -128,11 +137,14 @@ public sealed class LegacyMobileListAnalysisServiceTests {
 		guide.LegacySource.BodyColumns.Select(c => c.Bucket).Should().Equal(new[] { "subtitle", "group" }, because: "each body row records the wizard bucket it came from");
 		guide.LegacySource.Layers.Should().ContainSingle(l => l.OperationCount == 4, because: "one package layer with four operations contributed");
 		guide.LegacySource.Decisions.Should().BeEmpty(because: "the sample needs no user decision");
-		guide.Constraints.Should().Contain(c => c.Contains("exactly TWO operations"), because: "the caller must emit both merges and nothing else");
+		guide.Constraints.Should().Contain(c => c.Contains("starts with TWO merges"), because: "a source with no overrides yields exactly the two designer merges");
 		guide.Constraints.Should().Contain(c => c.Contains("left untouched"), because: "idempotence and non-mutation of the classic schema are promised");
-		guide.NextSteps.Should().Contain(s => s.Contains("create-page") && s.Contains("BaseMobileListTemplate") && s.Contains("entity-schema-name=Order"),
+		guide.NextSteps.Should().BeEmpty(
+			because: "the legacy guide states rules in constraints; the conversion FLOW is the skill's, not the guide's");
+		guide.Constraints.Should().Contain(c => c.Contains("BaseMobileListTemplate"),
 			because: "the next steps carry the exact create-page invocation");
-		guide.NextSteps.Should().Contain(s => s.Contains("Gate M"), because: "nothing is written before the approval gate");
+		guide.Constraints.Should().Contain(c => c.Contains("left untouched") && c.Contains("idempotent"),
+			because: "the guide states what it does NOT do to the source; the approval gate itself belongs to the skill");
 	}
 
 	[Test]
@@ -293,15 +305,17 @@ public sealed class LegacyMobileListAnalysisServiceTests {
 
 		// Assert
 		guide.LegacySource.Classification.Should().Be("freedom-ui-overrides", because: "override sections were present");
-		guide.LegacySource.OverrideSections.Should().Contain(s => s.Section == "viewConfigDiff" && s.OperationCount == 1 && s.Ticket == "ENG-95733",
-			because: "a string-encoded section is parsed to count its operations");
+		guide.LegacySource.OverrideSections.Should().Contain(s => s.Section == "viewConfigDiff" && s.OperationCount == 1 && s.Supported && s.Ticket == null,
+			because: "a string-encoded section is parsed, and this format is processed operation by operation rather than deferred to a ticket");
 		guide.LegacySource.OverrideSections.Should().NotContain(s => s.Section == "modelConfigDiff",
 			because: "an EMPTY placeholder section carries nothing to convert and must not be reported as a dropped override");
 		guide.LegacySource.Notes.Should().Contain(n => n.Contains("'modelConfigDiff'") && n.Contains("empty"),
 			because: "the empty placeholder is still mentioned for transparency");
-		guide.Constraints.Should().Contain(c => c.Contains("RECOGNISED but NOT converted") && c.Contains("ENG-95733"),
-			because: "the caller must tell the user the overrides were not carried");
-		guide.ModelConfigDiff!.AsArray().Should().HaveCount(1, because: "the override modelConfigDiff is not merged into the guide's diff");
+		guide.Constraints.Should().Contain(c => c.Contains("re-pointed individually") && c.Contains("overrideOutcomes"),
+			because: "the caller must present the per-operation outcome of every override");
+		guide.LegacySource.OverrideOutcomes.Should().ContainSingle(o => o.Target == "X" && o.Lane == LegacyOverrideLanes.Reported,
+			because: "'X' is not a name the runtime would generate for this source, so it is reported instead of guessed at");
+		guide.ModelConfigDiff!.AsArray().Should().HaveCount(1, because: "an empty override section contributes no operation");
 		ListItem(guide).MobileValues["title"]!.GetValue<string>().Should().Be("$PDS_Number", because: "the wizard buckets still convert");
 	}
 
@@ -445,7 +459,7 @@ public sealed class LegacyMobileListAnalysisServiceTests {
 		var classification = new LegacySettingsClassification(LegacySettingsKind.Plain, [], []);
 
 		// Act
-		Action act = () => LegacyMobileListAnalysisService.Analyze(failed, classification, SourceSchema, Target, null);
+		Action act = () => LegacyMobileListAnalysisService.Analyze(failed, classification, SourceSchema, Target, null, Template);
 
 		// Assert
 		act.Should().Throw<InvalidOperationException>(because: "a guide must never be built from nothing");
@@ -462,5 +476,185 @@ public sealed class LegacyMobileListAnalysisServiceTests {
 
 		// Assert
 		act.Should().Throw<InvalidOperationException>().WithMessage("*entitySchemaName*", because: "the missing binding is named");
+	}
+
+	[Test]
+	[Description("END TO END over the real shipped override `remove ViewConfig properties:[floatAction]`: the guide gains a third elementMap entry removing the template's CreateRecordButton, the outcome is recorded as a target delta, and the wizard buckets convert unchanged alongside it.")]
+	public void Analyze_ShouldCarryAShippedOverride_IntoTheElementMap() {
+		// Arrange
+		string source = Settings("Order",
+			Column("items", 0, "Number", "Number"), string.Empty, Column("groupItems", 0, "Account", "Account"),
+			", \"viewConfigDiff\": \"[{\\\"operation\\\":\\\"remove\\\",\\\"name\\\":\\\"ViewConfig\\\",\\\"properties\\\":[\\\"floatAction\\\"]}]\"");
+
+		// Act
+		MobilePageConversionGuide guide = Analyze(Read(source));
+
+		// Assert
+		guide.ElementMap.Should().HaveCount(3, because: "the two designer merges are joined by the override's own operation");
+		ElementMapEntry carried = guide.ElementMap[2];
+		carried.Operation.Should().Be("remove", because: "the override switches the floating action off");
+		carried.MobileName.Should().Be("CreateRecordButton", because: "that is what the shipped template calls the floating action");
+		carried.MobileValues.Should().BeNull(because: "a removal carries no values");
+		carried.Reason.Should().Contain("viewConfigDiff[0]", because: "the reason points back at the exact source operation");
+		guide.LegacySource.OverrideOutcomes.Should().ContainSingle(o => o.Lane == LegacyOverrideLanes.TargetDelta,
+			because: "the operation was carried onto the converted page rather than reported");
+		ListItem(guide).MobileValues["title"]!.GetValue<string>().Should().Be("$PDS_Number",
+			because: "the wizard buckets convert exactly as they do without an override");
+		Json(ListItem(guide).MobileValues["body"]).Should().Be("""[{"value":"$PDS_Account"}]""",
+			because: "a chrome-level override must not disturb the converted columns");
+	}
+
+	[Test]
+	[Description("END TO END over the two shipped OOTB overrides (row icon + default sort): the icon lands on the elementMap's ListItem entry with its binding re-derived, the column it needs is declared in BOTH data sections before PDS_Id, and the sort default becomes a targeted merge on the Items sortingConfig path.")]
+	public void Analyze_ShouldCarryIconAndSort_IntoTheElementMapAndBothDiffs() {
+		// Arrange — the shape MobileFUIContactGridPageSettingsDefaultWorkplace ships.
+		string source = Settings("Contact",
+			Column("items", 0, "Name", "Name"), string.Empty, string.Empty,
+			", \"viewConfigDiff\": \"[{\\\"operation\\\":\\\"merge\\\",\\\"name\\\":\\\"Contact_ListItem\\\",\\\"values\\\":{\\\"icon\\\":\\\"$Photo\\\"}}]\""
+			+ ", \"viewModelConfigDiff\": \"[{\\\"operation\\\":\\\"insert\\\",\\\"name\\\":\\\"Attribute_Items_SortingConfig\\\",\\\"parentName\\\":\\\"Attribute_Items_ModelConfig\\\",\\\"propertyName\\\":\\\"sortingConfig\\\",\\\"values\\\":{\\\"default\\\":[{\\\"columnName\\\":\\\"Name\\\",\\\"direction\\\":\\\"asc\\\"}]}}]\"");
+
+		// Act
+		MobilePageConversionGuide guide = Analyze(Read(source));
+
+		// Assert — the icon is folded into the converter's own ListItem merge, not added as a rival entry.
+		guide.ElementMap.Should().HaveCount(2, because: "the override refines the row the converter already writes");
+		ListItem(guide).MobileValues["icon"]!.GetValue<string>().Should().Be("$PDS_Photo",
+			because: "$Photo would resolve to nothing; the converted page declares PDS_Photo");
+
+		// …and everything the carried binding needs is declared, with PDS_Id still last.
+		JsonObject attributes = guide.ViewModelConfigDiff![0]!["values"]!.AsObject();
+		attributes.Select(pair => pair.Key).Should().Equal(["PDS_Name", "PDS_Photo", "PDS_Id"],
+			because: "the icon column is declared like a wizard column, and PDS_Id stays the last attribute");
+		guide.ModelConfigDiff![0]!["values"]!["attributes"]!["Photo"]!["path"]!.GetValue<string>().Should().Be("Photo",
+			because: "the data source must load the column the icon binds to");
+
+		// …and the sort default is a targeted merge on the path the shipped designer page really carries.
+		Json(guide.ViewModelConfigDiff!.AsArray()[1]).Should().Be(
+			"""{"operation":"merge","path":["attributes","Items","modelConfig","sortingConfig"],"values":{"default":[{"columnName":"Name","direction":"asc"}]}}""",
+			because: "the template already supplies attributeName on that node, so only 'default' is set");
+		guide.LegacySource.OverrideOutcomes.Should().OnlyContain(o => o.Lane == LegacyOverrideLanes.TargetDelta,
+			because: "both shipped overrides are carried, neither is reported");
+	}
+
+	[Test]
+	[Description("Warnings about embedded overrides reach guide.constraints — the block a caller cannot skip — and nowhere else: an override whose outcome differs from what it asked for must not be discoverable only by reading a report section.")]
+	public void Analyze_ShouldSurfaceOverrideWarnings_InTheConstraints() {
+		// Arrange — the shipped Contact move plus an operation whose target this source never generates.
+		string source = Settings("Contact",
+			Column("items", 0, "Name", "Name"), string.Empty, Column("groupItems", 0, "Account", "Account"),
+			", \"viewConfigDiff\": \"[{\\\"operation\\\":\\\"remove\\\",\\\"name\\\":\\\"Contact_ListItem_Body_Account\\\"},{\\\"operation\\\":\\\"insert\\\",\\\"name\\\":\\\"Contact_ListItem_Subtitle_Account\\\",\\\"parentName\\\":\\\"Contact_ListItem\\\",\\\"propertyName\\\":\\\"subtitles\\\",\\\"index\\\":0,\\\"values\\\":{\\\"value\\\":\\\"$Account\\\"}}]\""
+			+ ", \"viewModelConfigDiff\": \"[{\\\"operation\\\":\\\"remove\\\",\\\"name\\\":\\\"GlbContactStatusActiveFilter\\\"}]\"");
+
+		// Act
+		MobilePageConversionGuide guide = Analyze(Read(source));
+
+		// Assert
+		guide.Constraints.Should().Contain(c => c.Contains("moves column 'Account'") && c.Contains("nothing was changed"),
+			because: "a move between row slots is a no-op on the converted page and the caller must be told");
+		guide.Constraints.Should().Contain(c => c.Contains("GlbContactStatusActiveFilter") && c.Contains("SKIPPED"),
+			because: "an operation whose target this source never generates is skipped, and the caller must be told");
+		ListItem(guide).MobileValues["body"]!.AsArray().Should().ContainSingle(
+			because: "the column survives the attempted move exactly where it was");
+	}
+
+	[Test]
+	[Description("The shipped conversion rules file carries a mobileLegacyTemplates.gridPage group, and it agrees with the bundled defaults so the two cannot drift apart silently.")]
+	public void ShippedRules_ShouldCarryGridPageTemplate_MatchingTheBundledDefaults() {
+		// Arrange
+		// The rules file ships as an embedded resource, so the bundled loader is what the tool actually reads.
+		WebToMobilePageConversionRules rules = WebToMobilePageConversionRulesCatalog.LoadBundled();
+
+		// Act
+		MobileLegacyTemplateRule resolved = LegacyMobileListAnalysisService.ResolveGridPageTemplate(rules);
+
+		// Assert
+		rules!.MobileLegacyTemplates?.GridPage.Should().NotBeNull(
+			because: "the legacy branch picks its target template from the rules file, not from a constant");
+		resolved.TemplateName.Should().Be(Template.TemplateName, because: "the shipped group and the bundled fallback must agree");
+		resolved.ListItemName.Should().Be(Template.ListItemName, because: "the shipped group and the bundled fallback must agree");
+		resolved.ListName.Should().Be(Template.ListName, because: "the shipped group and the bundled fallback must agree");
+		resolved.ListContainerName.Should().Be(Template.ListContainerName, because: "the shipped group and the bundled fallback must agree");
+		resolved.FolderTreeActionsName.Should().Be(Template.FolderTreeActionsName, because: "the shipped group and the bundled fallback must agree");
+		resolved.FolderSourceSchemaName.Should().Be(Template.FolderSourceSchemaName, because: "the shipped group and the bundled fallback must agree");
+		resolved.ItemsAttributeName.Should().Be(Template.ItemsAttributeName, because: "the shipped group and the bundled fallback must agree");
+	}
+
+	[Test]
+	[Description("The shipped grid-page group names the BaseMobileListTemplate elements exactly as the live template declares them (verified against DevMK) — CreateRecordButton in particular, because the runtime carries the floating action as a ViewConfig PROPERTY while the designer carries it as a NAMED element, so an invented name would add a second button instead of removing one.")]
+	public void ShippedRules_ShouldNameTheTemplateElements_AsTheLiveTemplateDeclaresThem() {
+		// Arrange
+		MobileLegacyTemplateRule resolved =
+			LegacyMobileListAnalysisService.ResolveGridPageTemplate(WebToMobilePageConversionRulesCatalog.LoadBundled());
+
+		// Act
+		(string Actual, string Expected)[] pairs = [
+			(resolved.TemplateName, "BaseMobileListTemplate"),
+			(resolved.ScaffoldName, "Scaffold"),
+			(resolved.MainContainerName, "MainContainer"),
+			(resolved.HeaderContainerName, "HeaderContainer"),
+			(resolved.SearchButtonName, "SearchButton"),
+			(resolved.FilterGroupButtonName, "FilterGroupButton"),
+			(resolved.SortButtonName, "SortButton"),
+			(resolved.FolderTreeActionsName, "FolderTreeActions"),
+			(resolved.QuickFilterGroupName, "QuickFilterGroup"),
+			(resolved.ListContainerName, "ListContainer"),
+			(resolved.ListName, "List"),
+			(resolved.ListItemName, "ListItem"),
+			(resolved.CreateRecordButtonName, "CreateRecordButton")
+		];
+
+		// Assert
+		pairs.Should().OnlyContain(p => p.Actual == p.Expected,
+			because: "these are the twelve elements BaseMobileListTemplate declares; see the knowledge record base-mobile-list-template-element-inventory");
+	}
+
+	[Test]
+	[Description("Rules without the mobileLegacyTemplates group degrade to the bundled defaults instead of failing, so an older CDN-served rules file keeps the legacy branch working.")]
+	public void ResolveGridPageTemplate_ShouldFallBackToDefaults_WhenRulesCarryNoGroup() {
+		// Arrange
+		var empty = new WebToMobilePageConversionRules();
+
+		// Act
+		MobileLegacyTemplateRule fromEmpty = LegacyMobileListAnalysisService.ResolveGridPageTemplate(empty);
+		MobileLegacyTemplateRule fromNull = LegacyMobileListAnalysisService.ResolveGridPageTemplate(null);
+
+		// Assert
+		fromEmpty.Should().BeSameAs(LegacyMobileListAnalysisService.DefaultGridPageTemplate,
+			because: "a rules file that predates the group must not break the legacy branch");
+		fromNull.Should().BeSameAs(LegacyMobileListAnalysisService.DefaultGridPageTemplate,
+			because: "an unreachable rules file must not break the legacy branch either");
+	}
+
+	[Test]
+	[Description("The target template and its element names come from the rules data, not from constants: a different mobileLegacyTemplates.gridPage group changes the recommended template, both elementMap targets and the next steps.")]
+	public void Analyze_ShouldTakeTargetTemplateFromRules_WhenGroupOverridesTheDefaults() {
+		// Arrange
+		LegacyMobileSettingsReadResult read = Read(Settings("Order", Column("items", 0, "Number", "Number"), "", ""));
+		var custom = new MobileLegacyTemplateRule {
+			TemplateName = "UsrCustomMobileListTemplate",
+			ListName = "UsrList",
+			ListContainerName = "UsrListContainer",
+			ListItemName = "UsrRow",
+			ListItemType = "crt.ListItem",
+			FolderTreeActionsName = "UsrFolders",
+			FolderTreeActionsType = "crt.FolderTreeActions",
+			FolderSourceSchemaName = "UsrFolderTree",
+			ItemsAttributeName = "Records"
+		};
+
+		// Act
+		MobilePageConversionGuide guide = Analyze(read, template: custom);
+
+		// Assert
+		guide.RecommendedMobileTemplate.Should().Be("UsrCustomMobileListTemplate",
+			because: "the recommended template is read from the rules group, not hardcoded");
+		guide.ElementMap.Select(e => e.MobileName).Should().Equal(["UsrFolders", "UsrRow"],
+			because: "both merge targets are the template element names the rules group declares, in the designer's order");
+		guide.ElementMap[0].MobileValues!["sourceSchemaName"]!.GetValue<string>().Should().Be("UsrFolderTree",
+			because: "the folder schema binding comes from the rules group too");
+		Json(guide.ViewModelConfigDiff![0]!["path"]!).Should().Contain("Records",
+			because: "the collection attribute the list is bound to is named by the rules group");
+		guide.Constraints.Should().Contain(c => c.Contains("UsrCustomMobileListTemplate"),
+			because: "the constraints must name the template the rules group selected");
 	}
 }

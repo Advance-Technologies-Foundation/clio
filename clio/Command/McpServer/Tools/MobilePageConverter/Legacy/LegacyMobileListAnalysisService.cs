@@ -32,26 +32,27 @@ public static class LegacyMobileListAnalysisService {
 	/// <summary>Mechanism label reported for a legacy Mobile-wizard settings source.</summary>
 	public const string MechanismLegacySettingsConverter = "legacy-mobile-settings-converter";
 
-	/// <summary>The shipped mobile list template every converted legacy list page inherits.</summary>
-	public const string RecommendedTemplate = "BaseMobileListTemplate";
-
-	/// <summary>The template's row element the guide merges onto.</summary>
-	public const string ListItemName = "ListItem";
-
-	/// <summary>The template's folder-tree action element the guide binds to the entity (folder filtering).</summary>
-	public const string FolderTreeActionsName = "FolderTreeActions";
-
-	/// <summary>The folder schema name the shipped template and the designer both put on FolderTreeActions.</summary>
-	public const string FolderTreeSourceSchemaName = "FolderTree";
-
 	/// <summary>Default fallback when the environment's SchemaNamePrefix cannot be read.</summary>
 	public const string DefaultSchemaNamePrefix = "Usr";
 
+	/// <summary>
+	/// Bundled fallback used when the rules file carries no <c>mobileLegacyTemplates.gridPage</c> group. The rules
+	/// file is CDN-fetchable, so the file most likely to lack the group is an OLD one; degrading to the bundled
+	/// defaults keeps the legacy branch behaving exactly as it did before the group existed.
+	/// </summary>
+	public static readonly MobileLegacyTemplateRule DefaultGridPageTemplate = new();
+
+	/// <summary>
+	/// Resolves the shipped mobile list template and the names of the template-provided elements a converted
+	/// legacy list page merges onto, from the conversion rules; never null.
+	/// </summary>
+	/// <param name="rules">The loaded conversion rules, or null when they could not be fetched.</param>
+	/// <returns>The grid-page template configuration, or <see cref="DefaultGridPageTemplate"/>.</returns>
+	public static MobileLegacyTemplateRule ResolveGridPageTemplate(WebToMobilePageConversionRules rules) =>
+		rules?.MobileLegacyTemplates?.GridPage ?? DefaultGridPageTemplate;
+
 	private const string GuidanceArticleName = "freedom-page-web-to-mobile-conversion";
 	private const string PrimaryDataSourceAlias = "PDS";
-	private const string ItemsAttribute = "Items";
-	private const string ListItemType = "crt.ListItem";
-	private const string FolderTreeActionsType = "crt.FolderTreeActions";
 	private const string BucketTitle = "title";
 	private const string BucketSubtitle = "subtitle";
 	private const string BucketGroup = "group";
@@ -111,19 +112,41 @@ public static class LegacyMobileListAnalysisService {
 	/// <param name="sourcePage">The source schema name.</param>
 	/// <param name="suggestedTarget">The target mobile page name.</param>
 	/// <param name="sectionRegistration">Read-only section registration facts, or null when not probed.</param>
+	/// <param name="template">
+	/// Target template configuration from the conversion rules (<see cref="ResolveGridPageTemplate"/>); null
+	/// degrades to <see cref="DefaultGridPageTemplate"/>.
+	/// </param>
+	/// <param name="columnCaptions">
+	/// Entity column name → caption, read best-effort from the object. Used only where an override references a
+	/// column the wizard never placed, so a carried sort option can show a real label instead of a machine name.
+	/// </param>
+	/// <param name="runtimeNames">
+	/// The runtime-name table used to re-point embedded overrides (ENG-95733); null switches the override pass off
+	/// and every embedded operation is reported instead.
+	/// </param>
 	/// <returns>The advisory guide.</returns>
 	public static MobilePageConversionGuide Analyze(
 		LegacyMobileSettingsReadResult read,
 		LegacySettingsClassification classification,
 		string sourcePage,
 		string suggestedTarget,
-		SectionRegistrationInfo sectionRegistration) {
+		SectionRegistrationInfo sectionRegistration,
+		MobileLegacyTemplateRule template,
+		MobileLegacyRuntimeNameSet runtimeNames = null,
+		IReadOnlyDictionary<string, string> columnCaptions = null) {
 		ArgumentNullException.ThrowIfNull(read);
 		ArgumentNullException.ThrowIfNull(classification);
 		if (!read.Success || read.EffectiveSettings is null) {
 			throw new InvalidOperationException("Analyze requires a successful legacy settings read.");
 		}
-		LegacyGridPageSettings settings = LegacyGridPageSettingsParser.Parse(read.EffectiveSettings);
+		template ??= DefaultGridPageTemplate;
+		LegacyGridPageSettings parsed = LegacyGridPageSettingsParser.Parse(read.EffectiveSettings);
+
+		// Embedded overrides are re-pointed BEFORE conversion, so anything expressible in the wizard's own language
+		// flows through the single emit path below and the page stays a pure function of one model.
+		LegacyOverrideRebaseResult rebase = LegacyOverrideRebaser.Rebase(parsed, classification.OverrideSections,
+			LegacyRuntimeNameOracle.Build(parsed, runtimeNames), template, runtimeNames, columnCaptions);
+		LegacyGridPageSettings settings = rebase.Settings;
 		var decisions = new List<string>();
 		var notes = new List<string>(read.Notes ?? []);
 		notes.AddRange(classification.Notes ?? []);
@@ -157,15 +180,20 @@ public static class LegacyMobileListAnalysisService {
 		foreach ((LegacyGridColumn column, string bucket) in bodySource) {
 			string attribute = AttributeName(column.ColumnName);
 			bodyRows.Add(new JsonObject { ["value"] = $"${attribute}" });
-			bodyMappings.Add(Mapping(column, bucket, attribute, $"{ListItemName}.body[{bodyIndex}]"));
+			bodyMappings.Add(Mapping(column, bucket, attribute, $"{template.ListItemName}.body[{bodyIndex}]"));
 			Register(attributeOrder, attributeColumn, attribute, column.ColumnName, notes);
 			bodyIndex++;
 		}
 		LegacyColumnMappingInfo titleMapping = null;
 		if (titleColumn is not null) {
 			string attribute = AttributeName(titleColumn.ColumnName);
-			titleMapping = Mapping(titleColumn, BucketTitle, attribute, $"{ListItemName}.title");
+			titleMapping = Mapping(titleColumn, BucketTitle, attribute, $"{template.ListItemName}.title");
 			Register(attributeOrder, attributeColumn, attribute, titleColumn.ColumnName, notes);
+		}
+		// A carried override can bind a column the wizard never placed (a row icon, for example). Its attribute is
+		// declared exactly like a wizard column — before PDS_Id, which stays last — or the binding would be dead.
+		foreach (string column in rebase.RequiredColumns) {
+			Register(attributeOrder, attributeColumn, AttributeName(column), column, notes);
 		}
 
 		// The template's ListItem merge (key order mirrors the designer's own output: body, title, icon).
@@ -174,6 +202,12 @@ public static class LegacyMobileListAnalysisService {
 			mobileValues["title"] = $"${titleMapping.Attribute}";
 		}
 		mobileValues["icon"] = null;
+		// The override wins on every key it names: it is the later, more specific customisation of the same row.
+		if (rebase.ElementValueOverrides.TryGetValue(template.ListItemName, out JsonObject rowOverrides)) {
+			foreach (KeyValuePair<string, JsonNode> pair in rowOverrides) {
+				mobileValues[pair.Key] = pair.Value?.DeepClone();
+			}
+		}
 
 		var viewModelAttributes = new JsonObject();
 		var dataSourceAttributes = new JsonObject();
@@ -195,7 +229,7 @@ public static class LegacyMobileListAnalysisService {
 		var viewModelConfigDiff = new JsonArray {
 			new JsonObject {
 				["operation"] = "merge",
-				["path"] = new JsonArray("attributes", ItemsAttribute, "viewModelConfig", "attributes"),
+				["path"] = new JsonArray("attributes", template.ItemsAttributeName, "viewModelConfig", "attributes"),
 				["values"] = viewModelAttributes
 			}
 		};
@@ -209,12 +243,20 @@ public static class LegacyMobileListAnalysisService {
 				}
 			}
 		};
+		// Rebased overrides land AFTER the converted sections, so an override refines what the wizard produced
+		// rather than being overwritten by it.
+		foreach (JsonObject operation in rebase.ViewModelConfigOperations) {
+			viewModelConfigDiff.Add(operation.DeepClone());
+		}
+		foreach (JsonObject operation in rebase.ModelConfigOperations) {
+			modelConfigDiff.Add(operation.DeepClone());
+		}
 
 		// Recorded divergences from the mobile runtime's own converter (see the knowledge record
 		// legacy-list-conversion-divergences-from-the-mobile-runtime): the target is the designer's vocabulary.
 		notes.Add("Subtitle columns land in ListItem.body (together with group columns), not in ListItem.subtitles — this is what the Mobile Freedom UI designer itself generates for a list page; the runtime converter's separate subtitle slot is not reproduced.");
-		notes.Add("Search: BaseMobileListTemplate opens search through crt.OpenSearchListRequest over $Items; this vocabulary has no per-page search-column list, the runtime searches the bound Items attributes (the converted columns), so no searchFilter columns are emitted.");
-		List<LegacyPropertyCoverageInfo> coverage = BuildCoverage(settings, decisions);
+		notes.Add($"Search: {template.TemplateName} opens search through crt.OpenSearchListRequest over ${template.ItemsAttributeName}; this vocabulary has no per-page search-column list, the runtime searches the bound {template.ItemsAttributeName} attributes (the converted columns), so no searchFilter columns are emitted.");
+		List<LegacyPropertyCoverageInfo> coverage = BuildCoverage(settings, decisions, template);
 		if (!string.IsNullOrWhiteSpace(settings.GridType)) {
 			notes.Add($"Classic grid layout settings (gridType '{settings.GridType}', rows, columns) describe the classic list only and have no mobile counterpart; the mobile ListItem row has one layout.");
 		}
@@ -230,7 +272,8 @@ public static class LegacyMobileListAnalysisService {
 			Classification = classification.Label,
 			OverrideSections = classification.OverrideSections.Count > 0
 				? classification.OverrideSections.Select(s => new LegacyOverrideSectionInfo {
-					Section = s.Section, OperationCount = s.OperationCount, Ticket = s.Ticket
+					Section = s.Section, OperationCount = s.OperationCount, Ticket = s.Ticket,
+					Supported = s.Supported, Reason = s.Reason
 				}).ToList()
 				: null,
 			Layers = read.Layers.Select(l => new LegacyMobileSettingsLayerInfo {
@@ -239,6 +282,12 @@ public static class LegacyMobileListAnalysisService {
 			TitleColumn = titleMapping,
 			BodyColumns = bodyMappings,
 			ColumnPropertyCoverage = coverage,
+			OverrideOutcomes = rebase.Outcomes.Count > 0
+				? rebase.Outcomes.Select(o => new LegacyOverrideOutcomeInfo {
+					Section = o.Section, Index = o.Index, Operation = o.Operation, Target = o.Target,
+					Lane = o.Lane, Effect = o.Effect, Reason = o.Reason
+				}).ToList()
+				: null,
 			Decisions = decisions,
 			Notes = notes.Count > 0 ? notes : null
 		};
@@ -255,40 +304,15 @@ public static class LegacyMobileListAnalysisService {
 			DataSources = [PrimaryDataSourceAlias],
 			ModelConfigDiff = modelConfigDiff,
 			ViewModelConfigDiff = viewModelConfigDiff,
-			RecommendedMobileTemplate = RecommendedTemplate,
-			TemplateNote = "Shipped mobile list template: Scaffold + header (search, sort, folder tree, QuickFilterGroup) + ListContainer with crt.List bound to $Items and a ListItem row. The converter MERGES onto the template's ListItem — it never re-declares any of these elements.",
+			RecommendedMobileTemplate = template.TemplateName,
+			TemplateNote = $"Shipped mobile list template '{template.TemplateName}': Scaffold + header (search, sort, folder tree, QuickFilterGroup) + '{template.ListContainerName}' with '{template.ListName}' bound to ${template.ItemsAttributeName} and a '{template.ListItemName}' row. The converter MERGES onto the template's {template.ListItemName} — it never re-declares any of these elements.",
 			ContainerMap = [],
 			ComponentSuggestions = [],
-			ElementMap = [
-				// Same two merges the Mobile Freedom UI designer writes for a generated list page, in its order:
-				// the folder tree bound to the entity (folder filtering keeps working), then the row.
-				new ElementMapEntry {
-					WebName = LegacyGridPageSettingsParser.SettingsNodeName,
-					WebType = "GridPageSettings",
-					Operation = "merge",
-					MobileName = FolderTreeActionsName,
-					MobileType = FolderTreeActionsType,
-					MobileValues = new JsonObject {
-						["sourceSchemaName"] = FolderTreeSourceSchemaName,
-						["rootSchemaName"] = settings.EntitySchemaName
-					},
-					Reason = $"Folder filtering: the template-provided FolderTreeActions is bound to entity '{settings.EntitySchemaName}' (rootSchemaName) exactly as the Mobile designer does for a generated list page — merge by name, do not insert a duplicate."
-				},
-				new ElementMapEntry {
-					WebName = LegacyGridPageSettingsParser.SettingsNodeName,
-					WebType = "GridPageSettings",
-					Operation = "merge",
-					MobileName = ListItemName,
-					MobileType = ListItemType,
-					MobileValues = mobileValues,
-					Reason = elementReason
-				}
-			],
+			ElementMap = BuildElementMap(settings, template, mobileValues, elementReason, rebase),
 			MobileContracts = [],
 			SectionRegistration = sectionRegistration,
 			LegacySource = legacySource,
-			Constraints = BuildConstraints(sourcePage, classification, dropped, titleMapping is null, notes),
-			NextSteps = BuildNextSteps(suggestedTarget, settings.EntitySchemaName),
+			Constraints = BuildConstraints(sourcePage, classification, dropped, titleMapping is null, notes, template, rebase),
 			GuidanceArticle = GuidanceArticleName,
 			SuggestedTargetSchemaName = suggestedTarget
 		};
@@ -327,13 +351,13 @@ public static class LegacyMobileListAnalysisService {
 	/// phone/email/url/map/preview, formats) has no counterpart on a template ListItem row and is dropped — each
 	/// such property adds a decision for the user.
 	/// </summary>
-	private static List<LegacyPropertyCoverageInfo> BuildCoverage(LegacyGridPageSettings settings, List<string> decisions) {
+	private static List<LegacyPropertyCoverageInfo> BuildCoverage(LegacyGridPageSettings settings, List<string> decisions, MobileLegacyTemplateRule template) {
 		List<LegacyGridColumn> all = settings.Items.Concat(settings.SubtitleItems).Concat(settings.GroupItems).ToList();
 		List<string> allNames = all.Select(c => c.ColumnName).ToList();
 		var coverage = new List<LegacyPropertyCoverageInfo> {
 			new() { Property = "columnName", Status = "transferred", Note = "Bound as $PDS_<column> on the ListItem row; a dotted path becomes a ForwardReference attribute.", Columns = allNames },
 			new() { Property = "row", Status = "transferred", Note = "Wizard row order is kept: title first, then subtitle rows, then group rows.", Columns = allNames },
-			new() { Property = "content", Status = "informational", Note = "Column caption. A mobile list row shows values only; captions are not rendered on ListItem rows.", Columns = all.Where(c => !string.IsNullOrWhiteSpace(c.Caption)).Select(c => c.ColumnName).ToList() },
+			new() { Property = "content", Status = "informational", Note = "Column caption. A converted list row shows the column's LABEL from the object, not this wizard caption, and the label cannot be switched off per column.", Columns = all.Where(c => !string.IsNullOrWhiteSpace(c.Caption)).Select(c => c.ColumnName).ToList() },
 			new() { Property = "dataValueType", Status = "informational", Note = "The mobile runtime formats the value from the entity column type; lookups display their primary display value.", Columns = all.Where(c => c.DataValueType is not null).Select(c => c.ColumnName).ToList() }
 		};
 		var extras = new SortedDictionary<string, List<string>>(StringComparer.Ordinal);
@@ -350,27 +374,119 @@ public static class LegacyMobileListAnalysisService {
 			coverage.Add(new LegacyPropertyCoverageInfo {
 				Property = extra.Key,
 				Status = "dropped",
-				Note = "A BaseMobileListTemplate ListItem body row carries only a value binding; this wizard column property has no counterpart and was not transferred.",
+				Note = $"A {template.TemplateName} {template.ListItemName} body row carries only a value binding; this wizard column property has no counterpart and was not transferred.",
 				Columns = extra.Value
 			});
-			decisions.Add($"Column property '{extra.Key}' (on {string.Join(", ", extra.Value)}) is not supported on a mobile ListItem row and was dropped — confirm with the user or configure an alternative manually.");
+			decisions.Add($"Column property '{extra.Key}' (on {string.Join(", ", extra.Value)}) is not supported on a mobile {template.ListItemName} row and was dropped — confirm with the user or configure an alternative manually.");
 		}
 		return coverage;
 	}
 
+	/// <summary>
+	/// The page's element map: the two merges the Mobile Freedom UI designer writes for a generated list page,
+	/// followed by whatever an embedded override contributed that only the target dialect can express (ENG-95733).
+	/// Built rather than literal, because the number of operations now depends on the source.
+	/// </summary>
+	private static List<ElementMapEntry> BuildElementMap(
+		LegacyGridPageSettings settings, MobileLegacyTemplateRule template, JsonObject mobileValues,
+		string elementReason, LegacyOverrideRebaseResult rebase) {
+		var map = new List<ElementMapEntry> {
+			// The folder tree bound to the entity (folder filtering keeps working), then the row.
+			new() {
+				WebName = LegacyGridPageSettingsParser.SettingsNodeName,
+				WebType = "GridPageSettings",
+				Operation = "merge",
+				MobileName = template.FolderTreeActionsName,
+				MobileType = template.FolderTreeActionsType,
+				MobileValues = Fold(new JsonObject {
+					["sourceSchemaName"] = template.FolderSourceSchemaName,
+					["rootSchemaName"] = settings.EntitySchemaName
+				}, rebase, template.FolderTreeActionsName),
+				Reason = $"Folder filtering: the template-provided {template.FolderTreeActionsName} is bound to entity '{settings.EntitySchemaName}' (rootSchemaName) exactly as the Mobile designer does for a generated list page — merge by name, do not insert a duplicate."
+			},
+			new() {
+				WebName = LegacyGridPageSettingsParser.SettingsNodeName,
+				WebType = "GridPageSettings",
+				Operation = "merge",
+				MobileName = template.ListItemName,
+				MobileType = template.ListItemType,
+				MobileValues = mobileValues,
+				Reason = elementReason
+			}
+		};
+		// A template element the converter does not otherwise write, carrying override values, becomes its own merge.
+		foreach (KeyValuePair<string, JsonObject> pair in rebase.ElementValueOverrides) {
+			if (string.Equals(pair.Key, template.ListItemName, StringComparison.Ordinal)
+				|| string.Equals(pair.Key, template.FolderTreeActionsName, StringComparison.Ordinal)) {
+				continue;
+			}
+			LegacyOverrideOutcome source = rebase.Outcomes.FirstOrDefault(
+				o => o.Effect is not null && o.Effect.Contains($"'{pair.Key}'", StringComparison.Ordinal));
+			map.Add(new ElementMapEntry {
+				WebName = source?.Target ?? LegacyGridPageSettingsParser.SettingsNodeName,
+				WebType = "GridPageSettings",
+				Operation = "merge",
+				MobileName = pair.Key,
+				MobileValues = pair.Value,
+				Reason = source is null
+					? $"Carried over from an embedded Freedom UI override in the source settings."
+					: $"Embedded Freedom UI override ({source.Section}[{source.Index}] {source.Operation} '{source.Target}'): {source.Effect}"
+			});
+		}
+		foreach (JsonObject operation in rebase.ViewConfigOperations) {
+			string name = operation["name"]?.GetValue<string>();
+			LegacyOverrideOutcome outcome = rebase.Outcomes.FirstOrDefault(
+				o => o.Lane == LegacyOverrideLanes.TargetDelta && o.Effect is not null && o.Effect.Contains($"'{name}'", StringComparison.Ordinal));
+			map.Add(new ElementMapEntry {
+				WebName = outcome?.Target ?? LegacyGridPageSettingsParser.SettingsNodeName,
+				WebType = "GridPageSettings",
+				Operation = operation["operation"]?.GetValue<string>() ?? "remove",
+				MobileName = name,
+				MobileValues = operation["values"]?.DeepClone() as JsonObject,
+				Reason = outcome?.Effect is null
+					? $"Carried over from an embedded Freedom UI override in the source settings."
+					: $"Embedded Freedom UI override ({outcome.Section}[{outcome.Index}] {outcome.Operation} '{outcome.Target}'): {outcome.Effect}"
+			});
+		}
+		return map;
+	}
+
+	/// <summary>Folds an element's override values over the converter's own; the override wins on every key it names.</summary>
+	private static JsonObject Fold(JsonObject own, LegacyOverrideRebaseResult rebase, string elementName) {
+		if (!rebase.ElementValueOverrides.TryGetValue(elementName, out JsonObject overrides)) {
+			return own;
+		}
+		foreach (KeyValuePair<string, JsonNode> pair in overrides) {
+			own[pair.Key] = pair.Value?.DeepClone();
+		}
+		return own;
+	}
+
 	private static List<string> BuildConstraints(
 		string sourcePage, LegacySettingsClassification classification, IReadOnlyList<string> droppedProperties,
-		bool titleMissing, IReadOnlyList<string> notes) {
+		bool titleMissing, IReadOnlyList<string> notes, MobileLegacyTemplateRule template,
+		LegacyOverrideRebaseResult rebase) {
 		var constraints = new List<string> {
 			"Mobile body is plain JSON with only viewConfigDiff / viewModelConfigDiff / modelConfigDiff — no AMD, no markers, no define() wrapper.",
-			"The mobile template (BaseMobileListTemplate) already provides the Scaffold root, the header (search, sort, folder tree, QuickFilterGroup), the crt.List bound to $Items and its ListItem row — do NOT add a second Scaffold, List, ListItem or QuickFilterGroup. The page only MERGES onto the template's ListItem.",
-			"elementMap carries exactly TWO operations, both merges onto template-provided elements, in order: 'FolderTreeActions' (sourceSchemaName + rootSchemaName, so folder filtering resolves the entity) and 'ListItem' (title / body / icon). Emit each VERBATIM as { \"operation\": \"merge\", \"name\": <mobileName>, \"values\": <mobileValues> } — do not rename attributes (PDS_<Column>), reorder or drop body rows, add properties, or move subtitle columns into a 'subtitles' slot.",
+			$"The mobile template ({template.TemplateName}) already provides the Scaffold root, the header (search, sort, folder tree, QuickFilterGroup), the '{template.ListName}' bound to ${template.ItemsAttributeName} inside '{template.ListContainerName}', and its '{template.ListItemName}' row — do NOT add a second Scaffold, {template.ListName}, {template.ListItemName} or QuickFilterGroup. The page only MERGES onto the template's {template.ListItemName}.",
+			$"elementMap starts with TWO merges onto template-provided elements, in order: '{template.FolderTreeActionsName}' (sourceSchemaName + rootSchemaName, so folder filtering resolves the entity) and '{template.ListItemName}' (title / body / icon). Any FURTHER entry comes from an embedded Freedom UI override and carries its own operation. Emit every entry VERBATIM as {{ \"operation\": <operation>, \"name\": <mobileName>, \"values\": <mobileValues> }} in the given order, omitting \"values\" when the entry has none — do not rename attributes (PDS_<Column>), reorder or drop body rows, add properties, or move subtitle columns into a 'subtitles' slot.",
 			"Paste the provided viewModelConfigDiff and modelConfigDiff VERBATIM as the page's viewModelConfigDiff / modelConfigDiff. Keep PDS_Id and every attribute path exactly as provided (a dotted column carries type ForwardReference); do NOT collapse them into a root merge, hand-build the data-source section, or copy it from another mobile body.",
 			"Source is a legacy Mobile-wizard LIST settings schema (settingsType GridPage). Only the wizard buckets were converted: items -> ListItem.title, subtitleItems then groupItems (row order) -> ListItem.body. Read guide.legacySource for the column mapping, the contributing package layers and the columnPropertyCoverage table, and present them at the plan gate."
 		};
 		if (classification.Kind == LegacySettingsKind.FreedomUiOverrides) {
-			string sections = string.Join(", ", classification.OverrideSections.Select(s => s.Section));
-			constraints.Add($"The settings schema ALSO carries Freedom UI override sections ({sections}) — they were RECOGNISED but NOT converted ({LegacyMobileSettingsClassifier.OverridesTicket}). Tell the user; do not merge them by hand.");
+			// Two different verdicts, kept apart on purpose: a section this converter processes operation by
+			// operation, versus one it will never process. Collapsing them would tell the user to wait for
+			// something that is not coming.
+			List<LegacyOverrideSection> processed = classification.OverrideSections.Where(s => s.Supported).ToList();
+			List<LegacyOverrideSection> refused = classification.OverrideSections.Where(s => !s.Supported).ToList();
+			if (processed.Count > 0) {
+				int carried = rebase.Outcomes.Count(o => o.Lane != LegacyOverrideLanes.Reported);
+				int reported = rebase.Outcomes.Count - carried;
+				constraints.Add($"The settings schema ALSO carries Freedom UI override sections ({string.Join(", ", processed.Select(s => s.Section))}). Each operation was re-pointed individually: {carried} carried over, {reported} could not be. Read guide.legacySource.overrideOutcomes and present EVERY reported one at the plan gate — each names its source operation and the reason. Never carry a reported operation by hand — each was held back for the reason it states, and a partial re-application is worse than none.");
+			}
+			foreach (LegacyOverrideSection section in refused) {
+				constraints.Add($"Override section '{section.Section}' ({section.OperationCount} operation(s)) is NOT supported by this converter and was not carried over. {section.Reason} Tell the user; never translate it by hand into the converted page.");
+			}
 		}
 		if (droppedProperties.Count > 0) {
 			constraints.Add($"Dropped column properties need a user decision before you build: {string.Join(", ", droppedProperties)}. Present them at the plan gate (Gate M); never invent a mobile equivalent.");
@@ -378,6 +494,10 @@ public static class LegacyMobileListAnalysisService {
 		if (titleMissing) {
 			constraints.Add("No title column was found in the wizard settings: ask the user which column becomes ListItem.title, then add \"title\": \"$PDS_<Column>\" to the ListItem merge and the matching PDS_<Column> attribute to both diffs.");
 		}
+		// Warnings about embedded overrides live HERE and nowhere else: constraints is the block the caller cannot
+		// skip, and an override whose outcome differs from what it asked for must not be discoverable only by
+		// reading a report section.
+		constraints.AddRange(rebase.Warnings);
 		foreach (string note in notes.Where(n => n.Contains("NOT part of the resolved hierarchy", StringComparison.Ordinal))) {
 			constraints.Add(note);
 		}
@@ -385,13 +505,4 @@ public static class LegacyMobileListAnalysisService {
 		return constraints;
 	}
 
-	private static List<string> BuildNextSteps(string suggestedTarget, string entitySchemaName) => [
-		$"Read get-guidance with name \"{GuidanceArticleName}\".",
-		"Present the plan from guide.legacySource: which page will be created, the title column and body rows that transfer, what was adapted, the dropped column properties and why, the open decisions, and the packages that contributed. Wait for explicit approval (Gate M) — nothing is written before it.",
-		$"Create the target mobile page with create-page: schema-name={suggestedTarget}, template={RecommendedTemplate}, entity-schema-name={entitySchemaName}, in the user's target package.",
-		"Build the body: viewConfigDiff = [ the elementMap merges in order — 'FolderTreeActions' then 'ListItem' — each with its mobileValues verbatim ]; viewModelConfigDiff and modelConfigDiff = the provided diffs pasted verbatim.",
-		"Validate the body with validate-page; resolve findings only by asking the user — never by silently editing the pasted values.",
-		"Persist with update-page (mode replace), then read the page back with get-page and confirm ListItem.title / body and the PDS_* attributes match guide.legacySource before reporting success.",
-		"Register the section for mobile per guide.sectionRegistration after approval (Gate S), then open the result in Freedom UI Mobile Designer for final review."
-	];
 }

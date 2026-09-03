@@ -250,6 +250,43 @@ public sealed class LegacyMobileSettingsReaderTests {
 	}
 
 	[Test]
+	[Description("A stored body carrying JavaScript comments still parses: real partner schemas annotate operations (\"// Migration Id\") and comment whole operations out, and two of the shipped Vetoquinol grid schemas would otherwise fail to read.")]
+	public void Read_ShouldTolerateJavaScriptComments_InAStoredBody() {
+		// Arrange
+		string body = RootBody.Replace("\"columnName\": \"Number\"", "\"columnName\": \"Number\" // Migration Id\n")
+			+ "\n// { \"operation\": \"remove\", \"name\": \"disabled-op\" }";
+		ArrangeSysSchema(RootUId, "CrtBase-uid", "CrtBase");
+		_hierarchy.GetParentSchemas(RootUId, DesignPackageUId).Returns(new List<PageDesignerHierarchySchema> { Layer(RootUId, "CrtBase", body) });
+
+		// Act
+		LegacyMobileSettingsReadResult result = Reader().Read(SchemaName);
+
+		// Assert
+		result.Success.Should().BeTrue(because: $"comments are annotations, not content: {result.Error}");
+		result.EffectiveSettings["items"]![0]!["columnName"]!.ToString().Should().Be("Number",
+			because: "the commented operation is ignored and the real one survives intact");
+	}
+
+	[Test]
+	[Description("An EMPTY layer body is skipped instead of failing the read: one shipped Vetoquinol grid schema file is zero bytes, and a package that contributes nothing must not sink the layers that do.")]
+	public void Read_ShouldSkipAnEmptyLayer_AndStillMergeTheRest() {
+		// Arrange
+		ArrangeSysSchema(RootUId, "CrtBase-uid", "CrtBase");
+		_hierarchy.GetParentSchemas(RootUId, DesignPackageUId).Returns(new List<PageDesignerHierarchySchema> {
+			Layer(RootUId, "CrtBase", RootBody),
+			Layer("empty-uid", "UsrEmpty", string.Empty)
+		});
+
+		// Act
+		LegacyMobileSettingsReadResult result = Reader().Read(SchemaName);
+
+		// Assert
+		result.Success.Should().BeTrue(because: $"an empty layer contributes nothing but breaks nothing: {result.Error}");
+		result.EffectiveSettings["entitySchemaName"]!.ToString().Should().Be("Case",
+			because: "the contributing layer is still merged");
+	}
+
+	[Test]
 	[Description("Unescape resolves \\$ to $, trims whitespace and drops a single trailing semicolon; an empty body yields an empty string.")]
 	public void Unescape_ShouldNormalizeBodyText() {
 		LegacyMobileSettingsReader.Unescape("  [\"\\$a\"] ;  ").Should().Be("[\"$a\"]", because: "escape, whitespace and terminator are normalized");

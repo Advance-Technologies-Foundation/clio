@@ -1,6 +1,8 @@
 using System;
 using System.Threading;
 using System.Threading.Tasks;
+using System.Collections.Generic;
+using Clio.Command.EntitySchemaDesigner;
 using Clio.Command.McpServer.Tools.MobilePageConverter.Legacy;
 using Clio.Common;
 
@@ -18,14 +20,33 @@ public sealed partial class MobilePageConversionGuideTool {
 	/// settings through <see cref="ILegacyMobileSettingsReader"/>, confirms the body really is a GridPage settings
 	/// array, refuses a custom viewConfig, and otherwise returns the analysis with the mechanism recorded.
 	/// </summary>
-	private MobilePageConversionGuideResponse BuildLegacyGridPageGuide(
+	private async Task<MobilePageConversionGuideResponse> BuildLegacyGridPageGuide(
 		MobilePageConversionGuideArgs args,
 		PageGetOptions getOptions,
 		string sourceType,
 		string version,
 		string resolvedFrom,
-		PlatformVersionResolution versionResolution) {
+		PlatformVersionResolution versionResolution,
+		CancellationToken cancellationToken) {
 		const string mechanism = LegacyMobileListAnalysisService.MechanismLegacySettingsConverter;
+
+		// The target template and the names of the template-provided elements the converted page merges onto are
+		// DATA, not constants (ENG-95733) — so the runtime-name → designer-name correspondence an embedded override
+		// is re-pointed through stays a table. The rules file is CDN-fetchable, so a fetch failure degrades to the
+		// bundled defaults rather than sinking an otherwise deterministic conversion.
+		MobileLegacyTemplateRule template;
+		MobileLegacyRuntimeNameSet runtimeNames;
+		try {
+			WebToMobilePageConversionRules rules =
+				await _rulesCatalog.GetRulesAsync(version, cancellationToken).ConfigureAwait(false);
+			template = LegacyMobileListAnalysisService.ResolveGridPageTemplate(rules);
+			runtimeNames = rules?.MobileLegacyRuntimeNames?.GridPage;
+		} catch (Exception) {
+			template = LegacyMobileListAnalysisService.DefaultGridPageTemplate;
+			runtimeNames = null;
+		} finally {
+			_logger.ClearMessages();
+		}
 
 		LegacyMobileSettingsReadResult read;
 		try {
@@ -62,7 +83,7 @@ public sealed partial class MobilePageConversionGuideTool {
 		}
 		if (classification.Kind == LegacySettingsKind.CustomViewConfig) {
 			return FailLegacy(args, sourceType, mechanism,
-				$"Source schema '{args.SchemaName}' carries a custom viewConfig in its legacy mobile settings. It cannot be converted automatically — even the classic Mobile application wizard cannot open such a page. Rebuild the mobile list page by hand from {LegacyMobileListAnalysisService.RecommendedTemplate} (create-page) or remove the custom viewConfig from the settings schema first.");
+				$"Source schema '{args.SchemaName}' carries a custom viewConfig in its legacy mobile settings. It cannot be converted automatically — even the classic Mobile application wizard cannot open such a page. Rebuild the mobile list page by hand from {template.TemplateName} (create-page) or remove the custom viewConfig from the settings schema first.");
 		}
 
 		string entitySchemaName = ScalarString(read.EffectiveSettings, "entitySchemaName")?.Trim();
@@ -81,7 +102,8 @@ public sealed partial class MobilePageConversionGuideTool {
 
 		MobilePageConversionGuide guide;
 		try {
-			guide = LegacyMobileListAnalysisService.Analyze(read, classification, args.SchemaName, targetName, sectionRegistration);
+			guide = LegacyMobileListAnalysisService.Analyze(read, classification, args.SchemaName, targetName,
+				sectionRegistration, template, runtimeNames, ReadColumnCaptions(getOptions, entitySchemaName));
 		} catch (Exception ex) {
 			return FailLegacy(args, sourceType, mechanism, $"Failed to analyze legacy mobile settings '{args.SchemaName}': {ex.Message}");
 		}
@@ -98,6 +120,39 @@ public sealed partial class MobilePageConversionGuideTool {
 			RequiresVersionConfirmation = ComponentInfoResolution.RequiresVersionConfirmation(resolvedFrom),
 			ResolvedFromReason = ComponentInfoResolution.GetFallbackReason(resolvedFrom, versionResolution.Reason)
 		};
+	}
+
+	/// <summary>
+	/// Best-effort read of the object's column captions, so an override that references a column the wizard never
+	/// placed (a sort option, for example) can carry a real label instead of a machine name. Never blocks the
+	/// guide: an unreadable schema simply yields no captions and the affected operation reports that.
+	/// </summary>
+	/// <param name="getOptions">Connection options for the current call.</param>
+	/// <param name="entitySchemaName">The object the converted page binds to.</param>
+	/// <returns>Column name → caption; empty when the schema could not be read.</returns>
+	private IReadOnlyDictionary<string, string> ReadColumnCaptions(PageGetOptions getOptions, string entitySchemaName) {
+		var captions = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+		try {
+			GetEntitySchemaPropertiesOptions options = new() {
+				SchemaName = entitySchemaName,
+				Environment = getOptions.Environment,
+				Uri = getOptions.Uri,
+				Login = getOptions.Login,
+				Password = getOptions.Password
+			};
+			IRemoteEntitySchemaColumnManager manager = _commandResolver.Resolve<IRemoteEntitySchemaColumnManager>(getOptions);
+			EntitySchemaPropertiesInfo properties = manager.GetSchemaProperties(options);
+			foreach (EntitySchemaPropertyColumnInfo column in properties?.Columns ?? []) {
+				if (!string.IsNullOrWhiteSpace(column.Name) && !string.IsNullOrWhiteSpace(column.Title)) {
+					captions[column.Name] = column.Title;
+				}
+			}
+		} catch (Exception) {
+			// An object we cannot read is not a conversion failure — the caption is simply reported as unresolved.
+		} finally {
+			_logger.ClearMessages();
+		}
+		return captions;
 	}
 
 	/// <summary>

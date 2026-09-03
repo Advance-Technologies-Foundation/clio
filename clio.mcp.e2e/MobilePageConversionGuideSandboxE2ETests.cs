@@ -954,14 +954,14 @@ public sealed class MobilePageConversionGuideSandboxE2ETests : McpContractFixtur
 		response.Success.Should().BeTrue(
 			because: $"an existing legacy list settings schema '{convertedSchemaName}' must convert (a custom-viewConfig refusal would name it). Error: {response.Error}");
 		MobilePageConversionGuide guide = response.Guide!;
-		guide.RecommendedMobileTemplate.Should().Be(LegacyMobileListAnalysisService.RecommendedTemplate,
+		guide.RecommendedMobileTemplate.Should().Be(LegacyMobileListAnalysisService.DefaultGridPageTemplate.TemplateName,
 			because: "every converted legacy list page inherits the shipped mobile list template");
 		guide.ElementMap.Should().HaveCount(2, because: "the legacy guide carries exactly the two merges the designer writes: FolderTreeActions and ListItem");
 		guide.ElementMap.Should().OnlyContain(e => e.Operation == "merge", because: "every target element is template-provided");
-		ElementMapEntry folder = guide.ElementMap.Single(e => e.MobileName == LegacyMobileListAnalysisService.FolderTreeActionsName);
+		ElementMapEntry folder = guide.ElementMap.Single(e => e.MobileName == LegacyMobileListAnalysisService.DefaultGridPageTemplate.FolderTreeActionsName);
 		folder.MobileValues!["rootSchemaName"]!.GetValue<string>().Should().Be(guide.LegacySource!.EntitySchemaName,
 			because: "folder filtering is bound to the entity the wizard page was bound to");
-		ElementMapEntry merge = guide.ElementMap.Single(e => e.MobileName == LegacyMobileListAnalysisService.ListItemName);
+		ElementMapEntry merge = guide.ElementMap.Single(e => e.MobileName == LegacyMobileListAnalysisService.DefaultGridPageTemplate.ListItemName);
 		merge.MobileValues!["title"]!.GetValueKind().Should().Be(JsonValueKind.String,
 			because: "a wizard list page always has a title column bound as a string attribute reference");
 		guide.ViewModelConfigDiff!.AsArray()[0]!["values"]!.AsObject().ContainsKey("PDS_Id").Should().BeTrue(
@@ -973,7 +973,7 @@ public sealed class MobilePageConversionGuideSandboxE2ETests : McpContractFixtur
 
 		MobilePageConversionGuideResponse second = await ConvertAsync(context, convertedSchemaName, environmentName);
 		second.Success.Should().BeTrue(because: "the second run must succeed exactly like the first");
-		JsonSerializer.Serialize(second.Guide!.ElementMap.Single(e => e.MobileName == LegacyMobileListAnalysisService.ListItemName).MobileValues).Should().Be(JsonSerializer.Serialize(merge.MobileValues),
+		JsonSerializer.Serialize(second.Guide!.ElementMap.Single(e => e.MobileName == LegacyMobileListAnalysisService.DefaultGridPageTemplate.ListItemName).MobileValues).Should().Be(JsonSerializer.Serialize(merge.MobileValues),
 			because: "the conversion is deterministic — running twice yields the same row values");
 		JsonSerializer.Serialize(second.Guide.ViewModelConfigDiff).Should().Be(JsonSerializer.Serialize(guide.ViewModelConfigDiff),
 			because: "the conversion is deterministic — running twice yields the same attribute declaration");

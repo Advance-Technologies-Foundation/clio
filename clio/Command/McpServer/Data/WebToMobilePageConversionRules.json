@@ -205,6 +205,66 @@
     }
   ],
   "nonConvertingScopeContainers": ["MainHeader"],
+  "mobileLegacyTemplates": {
+    "gridPage": {
+      "templateName": "BaseMobileListTemplate",
+      "listName": "List",
+      "listContainerName": "ListContainer",
+      "listItemName": "ListItem",
+      "listItemType": "crt.ListItem",
+      "folderTreeActionsName": "FolderTreeActions",
+      "folderTreeActionsType": "crt.FolderTreeActions",
+      "folderSourceSchemaName": "FolderTree",
+      "itemsAttributeName": "Items",
+      "scaffoldName": "Scaffold",
+      "mainContainerName": "MainContainer",
+      "headerContainerName": "HeaderContainer",
+      "searchButtonName": "SearchButton",
+      "filterGroupButtonName": "FilterGroupButton",
+      "sortButtonName": "SortButton",
+      "quickFilterGroupName": "QuickFilterGroup",
+      "createRecordButtonName": "CreateRecordButton",
+      "note": "Target of the legacy Mobile-wizard GridPageSettings converter. These are DESIGNER-dialect names taken from the shipped template; the mobile runtime's own converter generates a different set (<Entity>_ListItem, <Entity>_ListItem_Body_<Column>, …) which is what embedded viewConfigDiff operations address. Re-pointing those onto the names here is ENG-95733."
+    }
+  },
+  "mobileLegacyRuntimeNames": {
+    "gridPage": {
+      "note": "The element names the MOBILE RUNTIME generates when it converts a classic GridPageSettings on the device — the dialect embedded viewConfigDiff / viewModelConfigDiff / modelConfigDiff operations are written against. Ported from the runtime's own GridPageConverter/BaseScreenConverter (names are built by joining with '_'; the row name is <Entity>_List + 'Item' with NO separator). {entity} is settings.entitySchemaName, {column} is the wizard values.columnName verbatim (dots kept in the NAME; the binding replaces them with '_').",
+      "anchors": [
+        { "role": "screenRoot", "pattern": "ViewConfig", "designerName": "Scaffold", "propertyTargets": {"floatAction": "CreateRecordButton"} },
+        { "role": "list", "pattern": "{entity}_List", "designerName": "List" },
+        { "role": "listRow", "pattern": "{entity}_ListItem", "designerName": "ListItem" },
+        { "role": "bodyColumnMarker", "pattern": "{entity}_ListItem_Body_Column" },
+        { "role": "subtitleField", "pattern": "{entity}_ListItem_Subtitle_{column}", "bucket": "subtitleItems", "slot": "subtitles" },
+        { "role": "bodyField", "pattern": "{entity}_ListItem_Body_{column}", "bucket": "groupItems", "slot": "body" },
+        { "role": "sortOption", "pattern": "{entity}_SortOptions_{column}", "slot": "sortOptions", "designerName": "SortButton", "note": "One column offered in the sort tool. The runtime inserts it into ListSortToolItem.sortOptions as {property}; the designer carries the same thing as an entry of SortButton.sortItems, shaped {attributeName, caption} with the RAW column name (no PDS_ prefix)." },
+        { "role": "searchActionButton", "pattern": "{entity}_Action_StartSearch_Button", "designerName": "SearchButton" },
+        { "role": "searchFilter", "pattern": "PDS_SearchFilter" },
+        { "role": "searchExpression", "pattern": "PDS_SearchExpression_{column}" },
+        { "role": "addButton", "pattern": "{entity}_FloatActionButton", "designerName": "CreateRecordButton" },
+        { "role": "quickFilterButton", "pattern": "{entity}_ListScreen_Tools_FilterGroupButton", "designerName": "FilterGroupButton" },
+        { "role": "sortTool", "pattern": "{entity}_ListScreen_Tools_ListSortToolItem", "designerName": "SortButton" },
+        { "role": "folderFilter", "pattern": "{entity}_ListScreen_Tools_ListFolderFilter", "designerName": "FolderTreeActions" },
+        { "role": "folderFilterAttribute", "pattern": "{entity}_ListScreen_Tools_ListFolderFilter_active_folder_filter_data" },
+        { "role": "quickFilterGroup", "pattern": "QuickFilterGroup", "designerName": "QuickFilterGroup" },
+        { "role": "quickFilterAttribute", "pattern": "QuickFilterGroup_Filters" },
+        { "role": "viewModelConfigRoot", "pattern": "ViewModelConfig", "designerPath": [] },
+        { "role": "attributes", "pattern": "Attributes", "designerPath": ["attributes"] },
+        { "role": "itemsAttribute", "pattern": "Attribute_Items", "designerPath": ["attributes", "{items}"] },
+        { "role": "itemsModelConfig", "pattern": "Attribute_Items_ModelConfig", "designerPath": ["attributes", "{items}", "modelConfig"] },
+        { "role": "itemsCacheConfig", "pattern": "Attribute_Items_CacheConfig", "designerPath": ["attributes", "{items}", "modelConfig", "cacheConfig"] },
+        { "role": "itemsSortingConfig", "pattern": "Attribute_Items_SortingConfig", "designerPath": ["attributes", "{items}", "modelConfig", "sortingConfig"] },
+        { "role": "itemsViewModelConfig", "pattern": "Attribute_Items_ViewModelConfig", "designerPath": ["attributes", "{items}", "viewModelConfig"] },
+        { "role": "itemsViewModelAttributes", "pattern": "Attribute_Items_ViewModelConfig_Attributes", "designerPath": ["attributes", "{items}", "viewModelConfig", "attributes"] },
+        { "role": "sortingAttribute", "pattern": "Attribute_ItemsSorting", "designerPath": ["attributes", "ItemsSorting"] },
+        { "role": "modelConfigRoot", "pattern": "ModelConfig", "designerPath": [] },
+        { "role": "dataSources", "pattern": "DataSources", "designerPath": ["dataSources"] },
+        { "role": "primaryDataSource", "pattern": "PDS", "designerPath": ["dataSources", "{pds}"] },
+        { "role": "primaryDataSourceConfig", "pattern": "PDS_Config", "designerPath": ["dataSources", "{pds}", "config"] },
+        { "role": "primaryDataSourceAttributes", "pattern": "PDS_Attributes", "designerPath": ["dataSources", "{pds}", "config", "attributes"] }
+      ]
+    }
+  },
   "requests": [
     { "web": "crt.SaveRecordRequest", "mobile": "crt.SaveRecordRequest", "category": "DirectMapping" },
     { "web": "crt.CreateRecordRequest", "mobile": "crt.CreateRecordRequest", "category": "DirectMapping" },
