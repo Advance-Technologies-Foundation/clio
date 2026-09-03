@@ -256,6 +256,17 @@ public sealed class DescribedElement {
 	public DescribedEmail Email { get; set; }
 
 	/// <summary>
+	/// For a Pre-configured page element (<c>PreconfiguredPageUserTask</c>): the referenced page and the element's
+	/// configuration, decoded back into the descriptor vocabulary. <c>null</c> for other element kinds, when the
+	/// element references no page yet, and when the server (an older <c>CrtProcessBuilder</c>) does not report it.
+	/// <para>The block MUST be declared here even though nothing in clio reads its fields: the describe output is
+	/// re-serialized from this model, so a member the model does not declare is dropped on the way to the caller.
+	/// That is how the block reached nobody before this property existed.</para>
+	/// </summary>
+	[JsonPropertyName("preconfiguredPage")]
+	public DescribedPreconfiguredPage PreconfiguredPage { get; set; }
+
+	/// <summary>
 	/// The element's BOUND host-entity connections ("Connected to") — which records the Activity it creates is
 	/// attached to. <c>null</c> when the element has none, and also when the server is an older
 	/// <c>CrtProcessBuilder</c> that does not report them.
@@ -383,6 +394,173 @@ public sealed class DescribedEmail {
 	[JsonExtensionData]
 	public Dictionary<string, JsonElement> AdditionalData { get; set; }
 }
+
+/// <summary>
+/// The configuration of a Pre-configured page element, read back from its parameters. Mirrors the server's
+/// <c>DescribePreconfiguredPageInfo</c> field for field.
+/// </summary>
+public sealed class DescribedPreconfiguredPage {
+	/// <summary>
+	/// The referenced page's client-unit schema name, or the raw UId when the page no longer resolves — describe
+	/// never fails over a dangling reference, it reports what the element actually stores.
+	/// </summary>
+	[JsonPropertyName("page")]
+	public string Page { get; set; }
+
+	/// <summary>
+	/// The page's UI generation: <c>freedom</c> or <c>classic</c>; null when the page could not be read at all.
+	/// It decides which fields the element can carry — completing buttons are Freedom-only, the connected-object
+	/// pair is Classic-only.
+	/// </summary>
+	[JsonPropertyName("pageUiType")]
+	public string PageUiType { get; set; }
+
+	/// <summary>"Who performs the task?"; null when the element carries no performer.</summary>
+	[JsonPropertyName("performer")]
+	public DescribedPreconfiguredPagePerformer Performer { get; set; }
+
+	/// <summary>
+	/// The completing buttons, in stored order. Read it together with <see cref="PageUiType"/>: on
+	/// <c>freedom</c> an EMPTY list means none are selected — an element that can never finish at run time; on
+	/// <c>classic</c> the member is <c>null</c> (NOT APPLICABLE — such a page completes through its own
+	/// page-designer buttons, whose model this contract does not carry, so do not report it as broken); on a null
+	/// page type an empty list means nothing, because the page could not be read.
+	/// </summary>
+	[JsonPropertyName("buttons")]
+	public List<DescribedPreconfiguredPageButton> Buttons { get; set; }
+
+	/// <summary>"Recommendations for filling in the page" — a single line; null when unset.</summary>
+	[JsonPropertyName("recommendation")]
+	public string Recommendation { get; set; }
+
+	/// <summary>
+	/// The page's data sources, each with the ELEMENT PARAMETER holding the id of the record the page saved.
+	/// Empty when the element has none; null from a server that does not report them yet.
+	/// <para>The parameter named here is the handle a mapping uses to pass the saved record to a later element —
+	/// and it does NOT appear in the element's own parameter list, because the server reports element parameters
+	/// only when they are a result, an output, or carry a stored value, and a data-source parameter is none of
+	/// those until run time. This is the only place it surfaces.</para>
+	/// </summary>
+	[JsonPropertyName("dataSources")]
+	public List<DescribedPreconfiguredPageDataSource> DataSources { get; set; }
+
+	/// <summary>
+	/// CLASSIC UI pages only: the "Connected object" entity schema name. Null for a Freedom UI page, which carries
+	/// its object in its own data sources instead.
+	/// </summary>
+	[JsonPropertyName("connectedObject")]
+	public string ConnectedObject { get; set; }
+
+	/// <summary>CLASSIC UI pages only: the "Record of connected object" value. Null for a Freedom UI page.</summary>
+	[JsonPropertyName("connectedObjectRecord")]
+	public string ConnectedObjectRecord { get; set; }
+
+	/// <summary>
+	/// Whether the element's page parameters still match the referenced page. <c>null</c> means the page could not
+	/// be read, which is deliberately NOT the same as <c>false</c>. Read-only: describe reports drift and never
+	/// fixes it — any <c>setElement</c> touching the element re-synchronizes it.
+	/// </summary>
+	[JsonPropertyName("inSync")]
+	public bool? InSync { get; set; }
+
+	/// <summary>
+	/// Page parameters that are NOT on the element and never will be under that name — the name is already taken
+	/// by a parameter the element itself owns. Empty in the ordinary case. <c>null</c> means UNKNOWN, from either
+	/// of two causes: the page's parameters could not be read (in which case <see cref="InSync"/> is null too —
+	/// they are always null together), or the server is an older CrtProcessBuilder that does not report them.
+	/// <para>Read it alongside <see cref="InSync"/>, never instead of it. A shadowed parameter is a stable end
+	/// state rather than drift, so <c>inSync</c> stays <c>true</c> — it means "nothing left to synchronize", NOT
+	/// "the element carries every page parameter". Mapping to one of these names silently targets the element's
+	/// own parameter instead of the page's.</para>
+	/// </summary>
+	[JsonPropertyName("shadowedPageParameters")]
+	public List<string> ShadowedPageParameters { get; set; }
+
+	/// <summary>
+	/// Captures every field a newer server reports that this build does not declare, so it reaches the printed
+	/// JSON instead of being dropped — the failure mode that silenced this whole block twice before it existed.
+	/// </summary>
+	[JsonExtensionData]
+	public Dictionary<string, JsonElement> AdditionalData { get; set; }}
+
+/// <summary>The performer of a Pre-configured page element ("Who performs the task?").</summary>
+public sealed class DescribedPreconfiguredPagePerformer {
+	/// <summary>Performer kind: <c>user</c>, <c>manager</c>, or <c>role</c>.</summary>
+	[JsonPropertyName("type")]
+	public string Type { get; set; }
+
+	/// <summary>For user/manager: the contact formula on the <c>OwnerId</c> parameter; null when unset.</summary>
+	[JsonPropertyName("contact")]
+	public string Contact { get; set; }
+
+	/// <summary>For role: the role lookup value on the <c>RoleId</c> parameter; null when unset.</summary>
+	[JsonPropertyName("role")]
+	public string Role { get; set; }
+
+	/// <summary>
+	/// "Show page automatically" — reported ONLY for a <c>user</c> performer, because the runtime ignores it when
+	/// the task runs for anyone else. Null on a role/manager performer means "not applicable". Null on a
+	/// <c>user</c> performer means ENABLED — the task schema's default applies, and a designer-built element
+	/// stores no value of its own — so do NOT write <c>showPage: true</c> back to "fix" it.
+	/// </summary>
+	[JsonPropertyName("showPage")]
+	public bool? ShowPage { get; set; }
+
+	/// <summary>
+	/// Captures every field a newer server reports that this build does not declare, so it reaches the printed
+	/// JSON instead of being dropped — the failure mode that silenced this whole block twice before it existed.
+	/// </summary>
+	[JsonExtensionData]
+	public Dictionary<string, JsonElement> AdditionalData { get; set; }}
+
+/// <summary>One page data source of a Pre-configured page element, with the parameter carrying its record id.</summary>
+public sealed class DescribedPreconfiguredPageDataSource {
+	/// <summary>The data source's name on the page (for example <c>PDS</c>).</summary>
+	[JsonPropertyName("name")]
+	public string Name { get; set; }
+
+	/// <summary>The entity the data source reads and writes; the raw UId when the schema no longer resolves.</summary>
+	[JsonPropertyName("entitySchemaName")]
+	public string EntitySchemaName { get; set; }
+
+	/// <summary>
+	/// The element parameter holding the record id — <c>DataSource_&lt;name&gt;_&lt;primary column&gt;</c>. Use it
+	/// as a mapping source to pass the saved record downstream, or set it to pre-open the page on an existing one.
+	/// </summary>
+	[JsonPropertyName("parameter")]
+	public string Parameter { get; set; }
+
+	/// <summary>
+	/// Captures every field a newer server reports that this build does not declare, so it reaches the printed
+	/// JSON instead of being dropped — the failure mode that silenced this whole block twice before it existed.
+	/// </summary>
+	[JsonExtensionData]
+	public Dictionary<string, JsonElement> AdditionalData { get; set; }}
+
+/// <summary>One completing button of a Pre-configured page element.</summary>
+public sealed class DescribedPreconfiguredPageButton {
+	/// <summary>The button's view-element name on the page.</summary>
+	[JsonPropertyName("name")]
+	public string Name { get; set; }
+
+	/// <summary>The button's caption as stored on the element.</summary>
+	[JsonPropertyName("caption")]
+	public string Caption { get; set; }
+
+	/// <summary>The page event that completes the step — <c>clicked</c>.</summary>
+	[JsonPropertyName("event")]
+	public string Event { get; set; }
+
+	/// <summary>Whether pressing it validates the page first. Absent on the element reads as the card default (true).</summary>
+	[JsonPropertyName("validate")]
+	public bool? Validate { get; set; }
+
+	/// <summary>
+	/// Captures every field a newer server reports that this build does not declare, so it reaches the printed
+	/// JSON instead of being dropped — the failure mode that silenced this whole block twice before it existed.
+	/// </summary>
+	[JsonExtensionData]
+	public Dictionary<string, JsonElement> AdditionalData { get; set; }}
 
 /// <summary>
 /// The performer of a user-task element ("Who performs the task?"), read back from its performer-assignment

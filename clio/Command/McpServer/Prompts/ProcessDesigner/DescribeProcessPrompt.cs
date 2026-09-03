@@ -32,6 +32,11 @@ public static class DescribeProcessPrompt {
 		   `process-uid` / `process-caption`. It returns a STRUCTURED graph: `elements`
 		   (name, uid, caption, type, buildType, userTaskName, parameters; `signal` for a signal start),
 		   `flows` (source, target, kind), and process `parameters` — not raw metadata.
+		   A `preconfiguredPage` element also carries its `preconfiguredPage` block: the page it shows, its
+		   completing `buttons`, and `dataSources[]` — where `parameter` names the element parameter that
+		   receives the id of the record the page saved, the handle later steps map from and the only place it
+		   is reported. Read `inSync` and `shadowedPageParameters` there too: `inSync: true` means "nothing
+		   left to synchronize", not "the element carries every page parameter".
 		2. Call `get-guidance` name `process-modeling` for the element catalog + connection-rule vocabulary.
 		3. Narrate, in plain language, the trigger (start event), the ordered steps (follow the flows by
 		   source/target), each activity's purpose, and any branches (gateways / conditional flows).

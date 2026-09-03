@@ -38,7 +38,18 @@ public static class CreateBusinessProcessPrompt {
 		 `performer`; email TEMPLATES are not supported (custom message only). To put PROCESS DATA in the body use the
 		 by-name macros the server resolves for you — `[[param:Name]]`, `[[element:Element.Output]]`, or
 		 `[[element:Element.Output.Column]]`; the exact parameter/element names come from the `parameters[]` / `elements[]` you declare in THIS same descriptor
-		 — there is no process to `describe-business-process` yet (that is the modify path); an unknown name is rejected, and column names are case-sensitive. Confirm the target package with the
+		 — there is no process to `describe-business-process` yet (that is the modify path); an unknown name is rejected, and column names are case-sensitive.
+		 To hand a user a purpose-built page and resume when they press a completing button, add a
+		 `preconfiguredPage` element with a `preconfiguredPage` block. Its `page` must already exist as a
+		 **Freedom UI** page — the server never creates one, and it refuses both an unknown page and a Classic
+		 UI page — so when nothing suitable exists, propose a page to the user and create it through the normal
+		 `create-page` flow FIRST. At least one completing `button` is REQUIRED and is not defaulted for you:
+		 an element without one saves green and then hangs forever at run time. The page's buttons and data
+		 sources are FACTS you must read with `get-process-page-facts` and pass through unchanged — a page
+		 inherits its buttons from its template chain, so the server cannot see them.
+		 A SUCCESSFUL build can still report caveats, and they arrive as `message-type: "Warning"` entries in
+		 `execution-log-messages` — there is no separate `warnings` field on the response, so looking for one
+		 and finding nothing is not evidence there were none. Confirm the target package with the
 		 user before building.
 		 """;
 }

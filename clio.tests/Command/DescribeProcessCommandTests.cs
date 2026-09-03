@@ -59,6 +59,101 @@ public sealed class DescribeProcessCommandTests {
 
 	[Test]
 	[Category("Unit")]
+	[Description("Writes the Pre-configured page block through to the caller. The describe output is RE-SERIALIZED from clio's own model, so a server member the model does not declare is dropped in silence — which is what happened to this whole block before it was declared. The assertion is on the printed JSON, not the model, because printing is where the loss occurred.")]
+	public void Execute_ShouldWriteThePreconfiguredPageBlock_WhenTheServerReportsIt() {
+		// Arrange
+		_describer.Describe(Arg.Any<ProcessIdentity>(), Arg.Any<string>())
+			.Returns(new DescribeProcessResult {
+				Name = "UsrRequest_Approve",
+				Caption = "Approve the request",
+				SchemaUId = "uid",
+				Elements = [
+					new DescribedElement {
+						Name = "ApproveRequest",
+						PreconfiguredPage = new DescribedPreconfiguredPage {
+							Page = "UsrRequestReview_FormPage",
+							PageUiType = "freedom",
+							Recommendation = "Check the amount before approving",
+							InSync = false,
+							Performer = new DescribedPreconfiguredPagePerformer {
+								Type = "user", ShowPage = true
+							},
+							Buttons = [
+								new DescribedPreconfiguredPageButton {
+									Name = "SaveButton", Caption = "Save | SaveButton", Event = "clicked",
+									Validate = true
+								}
+							],
+							DataSources = [
+								new DescribedPreconfiguredPageDataSource {
+									Name = "PDS", EntitySchemaName = "Account", Parameter = "DataSource_PDS_Id"
+								}
+							],
+							ShadowedPageParameters = ["Title"]
+						}
+					}
+				],
+				Flows = [],
+				Parameters = []
+			});
+		DescribeProcessOptions options = new() { Environment = "dev", ProcessName = "UsrRequest_Approve" };
+
+		// Act
+		int result = _command.Execute(options);
+
+		// Assert
+		result.Should().Be(0);
+		_logger.Received(1).WriteInfo(Arg.Is<string>(json =>
+			json.Contains("preconfiguredPage")
+			&& json.Contains("UsrRequestReview_FormPage")
+			&& json.Contains("SaveButton")
+			&& json.Contains("inSync")
+			// The data-source parameter surfaces ONLY here — the element's own parameter list omits it — so a
+			// model that drops this member takes the saved-record handle with it.
+			&& json.Contains("DataSource_PDS_Id")
+			// Shadowed parameters are the ONLY signal that the page declares something the element does not
+			// carry — inSync deliberately stays true for it — so a model that drops this member drops the
+			// warning entirely.
+			&& json.Contains("shadowedPageParameters")));
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Carries the Classic-only connected-object pair through as well — the acceptance criterion for a Classic UI page is that describe reports it, and it travels the same re-serialization path that dropped the block.")]
+	public void Execute_ShouldWriteTheClassicConnectedObjectPair_WhenTheServerReportsIt() {
+		// Arrange
+		_describer.Describe(Arg.Any<ProcessIdentity>(), Arg.Any<string>())
+			.Returns(new DescribeProcessResult {
+				Name = "UsrLegacy_Review",
+				Caption = "Review",
+				SchemaUId = "uid",
+				Elements = [
+					new DescribedElement {
+						Name = "LegacyReview",
+						PreconfiguredPage = new DescribedPreconfiguredPage {
+							Page = "UsrLegacyEditPage",
+							PageUiType = "classic",
+							ConnectedObject = "UsrRequest",
+							ConnectedObjectRecord = "11d68189-0000-0000-0000-000000000000"
+						}
+					}
+				],
+				Flows = [],
+				Parameters = []
+			});
+		DescribeProcessOptions options = new() { Environment = "dev", ProcessName = "UsrLegacy_Review" };
+
+		// Act
+		int result = _command.Execute(options);
+
+		// Assert
+		result.Should().Be(0);
+		_logger.Received(1).WriteInfo(Arg.Is<string>(json =>
+			json.Contains("connectedObject") && json.Contains("UsrRequest") && json.Contains("classic")));
+	}
+
+	[Test]
+	[Category("Unit")]
 	[Description("Forwards the requested culture to the server describer.")]
 	public void Execute_ShouldForwardCulture_WhenProvided() {
 		// Arrange

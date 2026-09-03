@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text.Json;
@@ -88,6 +88,7 @@ public sealed class DurableInvocationGateCompletenessTests {
 		// Reads an exact package-relative file and its generated project; never writes package content.
 		"get-package-file",
 		"get-page-hierarchy",
+		"get-process-page-facts",
 		"get-process-signature",
 		"get-record-rights",
 		"get-related-page-addon",

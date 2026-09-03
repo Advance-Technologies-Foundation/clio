@@ -1,4 +1,5 @@
 using System;
+using System.Linq;
 using Clio.Command;
 using Clio.Command.ProcessModel;
 using Clio.Common;
@@ -38,6 +39,52 @@ public sealed class CreateBusinessProcessCommandTests {
 
 	private static CreateBusinessProcessResult BuildResult() =>
 		new("UsrSampleProcess", "5c58c4c4-134b-4744-9c67-96d9c69c9d55");
+
+	[Test]
+	[Category("Unit")]
+	[Description("Writes every server warning out as a WARNING. A build that reports nothing is what a caller reads as \"everything landed\", so a warning deserialized and then dropped is the same defect as one never sent — and worse than silence, because an agent that checks and finds nothing concludes there was nothing to find.")]
+	public void Execute_ShouldWriteWarnings_WhenTheServerReportsThem() {
+		// Arrange
+		CreateBusinessProcessOptions options = new() {
+			Environment = "sandbox",
+			DescriptorJson = SampleDescriptor,
+			PackageName = "MyApp"
+		};
+		_createBusinessProcessService.BuildProcess("sandbox", Arg.Any<CreateBusinessProcessRequest>())
+			.Returns(new CreateBusinessProcessResult("UsrSampleProcess", "5c58c4c4-134b-4744-9c67-96d9c69c9d55",
+				new[] { "Element 'ApproveRequest': the referenced page could not be read" }));
+
+		// Act
+		int result = _command.Execute(options);
+
+		// Assert
+		result.Should().Be(0, because: "a warning is a caveat on a SUCCESSFUL build, not a failure");
+		_logger.Received(1).WriteWarning(Arg.Is<string>(text => text.Contains("ApproveRequest")));
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Writes no warning when the server reported none — including against a package that predates the field, where the member is simply absent rather than empty.")]
+	public void Execute_ShouldNotWriteAnyWarning_WhenTheServerReportsNone() {
+		// Arrange
+		CreateBusinessProcessOptions options = new() {
+			Environment = "sandbox",
+			DescriptorJson = SampleDescriptor,
+			PackageName = "MyApp"
+		};
+		_createBusinessProcessService.BuildProcess("sandbox", Arg.Any<CreateBusinessProcessRequest>())
+			.Returns(BuildResult());
+
+		// Act
+		int result = _command.Execute(options);
+
+		// Assert
+		_logger.ReceivedCalls()
+			.Count(call => call.GetMethodInfo().Name == nameof(ILogger.WriteWarning))
+			.Should().Be(0,
+				because: "a warning invented from an absent member would train a reader to ignore the channel");
+		result.Should().Be(0, because: "no warnings is the ordinary successful build");
+	}
 
 	[Test]
 	[Category("Unit")]

@@ -72,33 +72,30 @@ public class BundledProcessBuilderPackageTests {
 	];
 
 	/// <summary>
-	/// SHA-256 of the committed archive. Produced by <c>rebundle-process-builder.ps1 -Version 1.3.1.1</c> from
-	/// the <c>ProcessBuilder</c> repository (<c>packages/CrtProcessBuilder</c>, branch
-	/// <c>feature/ENG-91846-perform-task-lookup-constants</c>, at commit
-	/// <c>2ce4ae34fdb95d70e3757560e41df7e174d1aa3a</c> — the tip on top of <c>948cae8f</c> that closes the re-review's Medium: both
-	/// performer routes resolve the parameter's reference by NAME as well as by UId and compose the lookup
-	/// macro from the RESOLVED object, so under name-only typing the contact existence check no longer skips
-	/// and the stored value is a valid macro rather than the bare Guid the platform refuses; the role macro's
-	/// object segment additionally gains the contract-known <c>SysAdminUnit</c> backstop.
-	/// 1.3.1.1 is a PATCH over 1.3.1.0 — the ENG-91846 version whose MINOR digit says the delivery adds a
-	/// capability (assigning a task to a team): this cut widens that capability's reach to the name-typed
-	/// parameter population, it does not add another. The whole route: the Lookup bare-Guid ConstValue
-	/// relaxation with the reference-existence guard, the Guid.Empty refusal, the bare-Guid-first rejection
-	/// message, and the element-level <c>performer</c> block (user/manager/role, the role landing in the
-	/// Activity's own <c>OwnerRole</c> column), with both performer fields taking an id or a name and refusing
-	/// what identifies no single record. Every stamp from 1.3.0.2 through 1.3.1.0 was branch-internal and
-	/// never released; each raise exists so a stand or checkout still carrying an older one is DETECTABLY
-	/// behind — same-version re-cuts make equal version numbers mean nothing, which the convergence check
-	/// cannot see through. There is no build step in the release path that could regenerate it here.
+	/// SHA-256 of the committed archive. Produced by <c>rebundle-process-builder.ps1 -Version 1.4.0.0</c> from
+	/// the <c>ProcessBuilder</c> repository (<c>packages/CrtProcessBuilder</c>, commit <c>2a9e136</c> — the
+	/// descriptor restamp on top of the <c>8c40849</c> merge that landed ENG-92705, the Pre-configured page
+	/// element). That commit is ON <c>main</c>, reachable through the <c>ea194f7</c> merge of PR #39, so the
+	/// reference survives the branch being deleted: named the commit rather than the branch deliberately,
+	/// because a branch reference is exactly what stops being verifiable once the PR is done with.
+	/// 1.4.0.0 is a MINOR delivery, the digit this package moves for a new ELEMENT: readData took 1.2.0.0 and
+	/// changeData 1.3.0.0, and this cut adds the element that shows a Freedom UI page to a person mid-process
+	/// and resumes when they press a completing button — page reference, completing buttons, page-scoped
+	/// data-source parameters, performer, recommendation, plus the parameter synchronization that keeps the
+	/// element's copy of the page's parameters in step.
+	/// The raise is the load-bearing part of this cut, not bookkeeping: the element merged under 1.3.1.1, the
+	/// SAME version and ModifiedOnUtc as the released archive that does NOT contain it. Two payloads under one
+	/// identity is precisely what the convergence check cannot see through — an install onto an environment
+	/// already carrying 1.3.1.1 takes the equal-version short-circuit, Creatio keys its own descriptor-changed
+	/// test on ModifiedOnUtc and leaves SysPackage alone, and a descriptor carrying a preconfiguredPage element
+	/// then passes the floor and reaches a package with no such element.
 	/// <para>
-	/// BOTH prescribed cross-checks were RUN against that commit, not assumed: the <c>ModifiedOnUtc</c> pinned
-	/// below equals its descriptor, and all 114 archive entries equal that commit's CHECKOUT rendering byte for
-	/// byte — the only committed file absent from the archive being the <c>.DotSettings</c> that
-	/// <c>clioignore</c> excludes. The byte check earned its
-	/// keep on the previous cut: freshly written files carried LF where a checkout on a
-	/// <c>core.autocrlf=true</c> host produces CRLF — the third failure mode the remarks below describe, an
-	/// archive corresponding to no commit at all — and the tree was renormalised before cutting. Re-run the
-	/// line-ending audit whenever the archive is cut from a tree with just-written files.
+	/// BOTH prescribed cross-checks were RUN against that commit, not assumed. The <c>ModifiedOnUtc</c> pinned
+	/// below equals its descriptor. And the line-ending trap the remarks describe was closed by repacking from
+	/// the COMMITTED tree after the restamp landed: that second pack produced this hash byte for byte, which is
+	/// what makes the reference above reproducible rather than merely plausible. The archive was also read for
+	/// content rather than trusted — the previous cut carried zero occurrences of
+	/// <c>PreconfiguredPageApplier</c>, this one carries the element's classes and the 1.4.0.0 descriptor.
 	/// </para>
 	/// Provenance rules live in <c>docs/agent-instructions/bundled-packages.md</c>.
 	/// </summary>
@@ -134,7 +131,7 @@ public class BundledProcessBuilderPackageTests {
 	/// </para>
 	/// </remarks>
 	private const string ExpectedArchiveSha256 =
-		"16FAB3958065EB7130D150926493F63B72E33A8CE5DEF0A6611F19FE62A5FCAF";
+		"EEDF0A09028A5B09C641DB3DB0BD094051EADB435D265C34C013528BD1949C62";
 
 	/// <summary>
 	/// The <c>PackageVersion</c> the shipped descriptor carries.
@@ -162,7 +159,7 @@ public class BundledProcessBuilderPackageTests {
 	/// </para>
 	/// </para>
 	/// </remarks>
-	private const string ExpectedArchiveVersion = "1.3.1.1";
+	private const string ExpectedArchiveVersion = "1.4.0.0";
 
 	/// <summary>
 	/// The <c>ModifiedOnUtc</c> the shipped descriptor carries.
@@ -188,7 +185,7 @@ public class BundledProcessBuilderPackageTests {
 	/// command — the previous pin ended in <c>431</c>, which is how the hand edit was eventually noticed.
 	/// </para>
 	/// </remarks>
-	private const string ExpectedDescriptorModifiedOnUtc = "/Date(1787902471000)/";
+	private const string ExpectedDescriptorModifiedOnUtc = "/Date(1788258484000)/";
 
 	/// <summary>
 	/// The <c>ModifiedOnUtc</c> the shipped COMPILE-MARKER SCHEMA descriptor carries.

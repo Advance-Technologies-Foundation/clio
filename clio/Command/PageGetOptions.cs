@@ -40,7 +40,7 @@ public class PageGetOptions : EnvironmentOptions {
 /// <summary>
 /// Reads Freedom UI pages as merged bundle-first envelopes.
 /// </summary>
-public class PageGetCommand : Command<PageGetOptions> {
+public class PageGetCommand : Command<PageGetOptions>, IProcessPageReader {
 	private readonly IApplicationClient _applicationClient;
 	private readonly IServiceUrlBuilder _serviceUrlBuilder;
 	private readonly ILogger _logger;
@@ -182,7 +182,8 @@ public class PageGetCommand : Command<PageGetOptions> {
 					DesignPackageName = designPackageName,
 					RootSchemaUId = rootSchemaUId,
 					WillCreateReplacingInDesignPackage = willCreateReplacing,
-					SchemaType = pageSchemaType.ToLabel()
+					SchemaType = pageSchemaType.ToLabel(),
+					SchemaTypeValue = currentSchema.SchemaType
 				},
 				Bundle = new PageBundleInfo {
 					Name = bundle.Name,
