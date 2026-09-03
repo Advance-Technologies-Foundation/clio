@@ -60,6 +60,7 @@ Test naming: `MethodName_ShouldBehavior_WhenCondition`
 - [x] Knowledge records whose `applies-to` names a file this story touches are updated or deleted **in this PR** (`AGENTS.md:456-457`)
 - [x] Docs verdict stated explicitly in the PR body, including "no update required" where that is the verdict
 - [x] MCP verdict stated in the PR body ("MCP reviewed, no update required" where that applies)
+- [ ] **BLOCKS THE PR**: replace `<CLIO-READBACK-VERSION-TBD>` in `guidance/mcp/guides/processes/versions.md` with the clio release that first CONTAINS the version read-back. Fetch and merge master first, then read the real tag — do NOT assume the next number. 8.1.0.118 is already released WITHOUT the fields, so it is the one answer that is certainly wrong. While the placeholder stands, `Guide_ShouldDeclareItsClioBoundaryAndTheModifyPrecondition` is reported as SKIPPED carrying this instruction; once a version is written in it becomes a strict assertion.
 - [ ] PR description references this story file
 
 ## Dev Agent Record
