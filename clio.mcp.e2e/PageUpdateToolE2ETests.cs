@@ -1029,7 +1029,7 @@ public sealed class PageUpdateToolE2ETests : McpContractFixtureBase {
 
 			// Act
 			PageUpdateResponse saveResponse = await UpdatePageAsync(
-				arrangeContext, savePage, appendBody, environmentName, outputDirectory, mode: "append", verify: true);
+				arrangeContext, savePage, appendBody, environmentName, outputDirectory, mode: "append");
 			PageGetResponse readBack = await GetPageAsync(arrangeContext, savePage, environmentName, outputDirectory);
 
 			// Assert
@@ -1038,11 +1038,17 @@ public sealed class PageUpdateToolE2ETests : McpContractFixtureBase {
 			readBack.Success.Should().BeTrue(
 				because: $"get-page must read the saved page back from Creatio. Error: {readBack.Error}");
 			string readBackBody = await File.ReadAllTextAsync(readBack.Files.BodyFile);
+			Match validatorsSection = Regex.Match(
+				readBackBody,
+				@"/\*\*SCHEMA_VALIDATORS\*/(?<content>[\s\S]*?)/\*\*SCHEMA_VALIDATORS\*/",
+				RegexOptions.CultureInvariant);
 			readBackBody.Should().Contain("UsrIssue1249Probe",
 				because: "the view-model validator binding must survive the append and server save");
-			readBackBody.Should().Contain(validatorType,
-				because: "the matching SCHEMA_VALIDATORS type key must survive the append and server save");
-			readBackBody.Should().Contain("function(config){return function(control)",
+			validatorsSection.Success.Should().BeTrue(
+				because: "the read-back body must contain a SCHEMA_VALIDATORS marker pair");
+			validatorsSection.Groups["content"].Value.Should().Contain($"\"{validatorType}\"",
+				because: "the matching validator type key must survive inside SCHEMA_VALIDATORS, not only in the binding");
+			validatorsSection.Groups["content"].Value.Should().Contain("function(config){return function(control)",
 				because: "the raw JavaScript validator factory must remain intact after keyed-object merging");
 		} finally {
 			if (!string.IsNullOrWhiteSpace(originalBody)) {
@@ -1253,8 +1259,7 @@ public sealed class PageUpdateToolE2ETests : McpContractFixtureBase {
 		string environmentName,
 		string outputDirectory,
 		bool? force = null,
-		string? mode = null,
-		bool? verify = null) {
+		string? mode = null) {
 		Dictionary<string, object?> args = new() {
 			["schema-name"] = schemaName,
 			["body"] = body,
@@ -1267,9 +1272,6 @@ public sealed class PageUpdateToolE2ETests : McpContractFixtureBase {
 		}
 		if (!string.IsNullOrWhiteSpace(mode)) {
 			args["mode"] = mode;
-		}
-		if (verify == true) {
-			args["verify"] = true;
 		}
 		CallToolResult result = await arrangeContext.Session.CallToolAsync(
 			ToolName,

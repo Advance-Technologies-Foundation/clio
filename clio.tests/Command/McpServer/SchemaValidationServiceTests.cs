@@ -6849,6 +6849,24 @@ public sealed class SchemaValidationServiceTests
 		result.Errors.Should().BeEmpty("because built-in validator types do not need page-local factories");
 	}
 
+	[Test]
+	[Description("A custom validator reference on a diff targeting one attribute directly is rejected when its type key is undeclared")]
+	public void ValidateCustomValidatorReferences_WhenTargetedAttributeTypeIsMissing_ReturnsError() {
+		// Arrange
+		string body = """
+			/**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/[{"operation":"merge","path":["attributes","UsrName"],"values":{"validators":{"Probe":{"type":"usr.Missing"}}}}]/**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/
+			/**SCHEMA_VALIDATORS*/{}/**SCHEMA_VALIDATORS*/
+			""";
+
+		// Act
+		SchemaValidationResult result = SchemaValidationService.ValidateCustomValidatorReferences(body);
+
+		// Assert
+		result.IsValid.Should().BeFalse("because a targeted attribute diff still introduces a custom validator reference");
+		result.Errors.Should().ContainSingle(error => error.Contains("UsrName") && error.Contains("usr.Missing"),
+			because: "the diagnostic must preserve the attribute name from the diff path");
+	}
+
 	#endregion
 
 	#region ValidateMobileNoValidatorReferences

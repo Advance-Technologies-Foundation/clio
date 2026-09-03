@@ -192,6 +192,10 @@
 				PageUpdateResponse validationError = ValidateInput(options, context.SchemaType, explicitResources);
 				if (validationError != null) { response = validationError; return false; }
 				if (options.DryRun) {
+					if (string.Equals(options.Mode, "append", StringComparison.OrdinalIgnoreCase)) {
+						if (!TryLoadSchemaForSave(options.SchemaName, context, out JObject currentSchema, out response)) return false;
+						if (!TryResolveBodyToWrite(currentSchema, options, out _, out response)) return false;
+					}
 					response = CreateSuccessResponse(options, dryRun: true, registeredKeys: null);
 					response.Warnings = BuildDryRunWidgetCaptionWarnings(options.Body, context.SchemaType, explicitResources);
 					return true;
@@ -384,7 +388,10 @@
 				}
 			}
 			if (!string.Equals(options.Mode, "append", StringComparison.OrdinalIgnoreCase) ||
-				!options.Validate || PageSchemaTypeExtensions.FromBody(bodyToWrite) == PageSchemaType.Mobile) {
+				PageSchemaTypeExtensions.FromBody(bodyToWrite) == PageSchemaType.Mobile) {
+				return true;
+			}
+			if (!options.Validate) {
 				return true;
 			}
 			SchemaValidationResult validatorReferences =

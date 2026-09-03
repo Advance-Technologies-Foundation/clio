@@ -3498,6 +3498,9 @@ public static class SchemaValidationService
 			attributes => CollectMissingCustomValidatorReferences(attributes, declaredTypes, reportedReferences, result));
 		ForEachMarkerAttributesContainer(jsBody, SchemaViewModelConfigDiff, true,
 			attributes => CollectMissingCustomValidatorReferences(attributes, declaredTypes, reportedReferences, result));
+		ForEachTargetedDiffAttribute(jsBody,
+			(attributeName, attributeBody) => CollectMissingCustomValidatorReferences(
+				attributeName, attributeBody, declaredTypes, reportedReferences, result));
 		result.IsValid = result.Errors.Count == 0;
 		return result;
 	}
@@ -3508,7 +3511,22 @@ public static class SchemaValidationService
 		ISet<string> reportedReferences,
 		SchemaValidationResult result) {
 		foreach (JsonProperty attribute in EnumerateAttributesWithValidatorObjects(attributesElement)) {
-			foreach (JsonProperty validator in EnumerateValidatorObjects(attribute)) {
+			CollectMissingCustomValidatorReferences(
+				attribute.Name, attribute.Value, declaredTypes, reportedReferences, result);
+		}
+	}
+
+	private static void CollectMissingCustomValidatorReferences(
+		string attributeName,
+		JsonElement attributeBody,
+		IReadOnlySet<string> declaredTypes,
+		ISet<string> reportedReferences,
+		SchemaValidationResult result) {
+		if (!attributeBody.TryGetProperty(ValidatorsPropertyName, out JsonElement validators) ||
+			validators.ValueKind != JsonValueKind.Object) {
+			return;
+		}
+		foreach (JsonProperty validator in validators.EnumerateObject()) {
 				if (!validator.Value.TryGetProperty(TypePropertyName, out JsonElement typeElement) ||
 					typeElement.ValueKind != JsonValueKind.String) {
 					continue;
@@ -3519,13 +3537,45 @@ public static class SchemaValidationService
 					declaredTypes.Contains(validatorType)) {
 					continue;
 				}
-				string referenceKey = $"{attribute.Name}\u0000{validatorType}";
+				string referenceKey = $"{attributeName}\u0000{validatorType}";
 				if (!reportedReferences.Add(referenceKey)) {
 					continue;
 				}
 				result.Errors.Add(
-					$"Attribute '{attribute.Name}' references custom validator type '{validatorType}', " +
+					$"Attribute '{attributeName}' references custom validator type '{validatorType}', " +
 					"but the final page body does not declare that key in SCHEMA_VALIDATORS.");
+		}
+	}
+
+	private static void ForEachTargetedDiffAttribute(
+		string jsBody,
+		Action<string, JsonElement> action) {
+		if (!TryReadMarkerRootElement(jsBody, SchemaViewModelConfigDiff, out JsonDocument? document)) {
+			return;
+		}
+		using (document) {
+			if (document.RootElement.ValueKind != JsonValueKind.Array) {
+				return;
+			}
+			foreach (JsonElement operation in document.RootElement.EnumerateArray()) {
+				if (operation.ValueKind != JsonValueKind.Object) {
+					continue;
+				}
+				if (operation.TryGetProperty(OperationPropertyName, out JsonElement operationKind) &&
+					operationKind.ValueKind == JsonValueKind.String &&
+					string.Equals(operationKind.GetString(), "remove", StringComparison.OrdinalIgnoreCase)) {
+					continue;
+				}
+				if (!operation.TryGetProperty("path", out JsonElement path) ||
+					path.ValueKind != JsonValueKind.Array || path.GetArrayLength() != 2 ||
+					path[0].ValueKind != JsonValueKind.String ||
+					!string.Equals(path[0].GetString(), AttributesPropertyName, StringComparison.OrdinalIgnoreCase) ||
+					path[1].ValueKind != JsonValueKind.String ||
+					!operation.TryGetProperty(ValuesPropertyName, out JsonElement attributeBody) ||
+					attributeBody.ValueKind != JsonValueKind.Object) {
+					continue;
+				}
+				action(path[1].GetString()!, attributeBody);
 			}
 		}
 	}
