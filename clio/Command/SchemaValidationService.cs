@@ -3477,6 +3477,60 @@ public static class SchemaValidationService
 	}
 
 	/// <summary>
+	/// Validates that every custom validator type referenced by a view-model attribute is declared
+	/// in the page body's <c>SCHEMA_VALIDATORS</c> section. Built-in <c>crt.*</c> validators do not
+	/// require page-local declarations.
+	/// </summary>
+	/// <param name="jsBody">Freedom UI web page body.</param>
+	/// <returns>A validation result containing every unresolved custom validator reference.</returns>
+	public static SchemaValidationResult ValidateCustomValidatorReferences(string jsBody) {
+		var result = new SchemaValidationResult { IsValid = true };
+		if (string.IsNullOrWhiteSpace(jsBody)) {
+			return result;
+		}
+
+		var declaredTypes = new HashSet<string>(StringComparer.Ordinal);
+		if (PageSchemaSectionReader.TryRead(jsBody, out string validatorsContent, SchemaValidatorsMarker)) {
+			declaredTypes.UnionWith(EnumerateTopLevelDeclarationKeys(validatorsContent));
+		}
+		var reportedReferences = new HashSet<string>(StringComparer.Ordinal);
+		ForEachMarkerAttributesContainer(jsBody, SchemaViewModelConfig, false,
+			attributes => CollectMissingCustomValidatorReferences(attributes, declaredTypes, reportedReferences, result));
+		ForEachMarkerAttributesContainer(jsBody, SchemaViewModelConfigDiff, true,
+			attributes => CollectMissingCustomValidatorReferences(attributes, declaredTypes, reportedReferences, result));
+		result.IsValid = result.Errors.Count == 0;
+		return result;
+	}
+
+	private static void CollectMissingCustomValidatorReferences(
+		JsonElement attributesElement,
+		IReadOnlySet<string> declaredTypes,
+		ISet<string> reportedReferences,
+		SchemaValidationResult result) {
+		foreach (JsonProperty attribute in EnumerateAttributesWithValidatorObjects(attributesElement)) {
+			foreach (JsonProperty validator in EnumerateValidatorObjects(attribute)) {
+				if (!validator.Value.TryGetProperty(TypePropertyName, out JsonElement typeElement) ||
+					typeElement.ValueKind != JsonValueKind.String) {
+					continue;
+				}
+				string validatorType = typeElement.GetString();
+				if (string.IsNullOrWhiteSpace(validatorType) ||
+					validatorType.StartsWith("crt.", StringComparison.OrdinalIgnoreCase) ||
+					declaredTypes.Contains(validatorType)) {
+					continue;
+				}
+				string referenceKey = $"{attribute.Name}\u0000{validatorType}";
+				if (!reportedReferences.Add(referenceKey)) {
+					continue;
+				}
+				result.Errors.Add(
+					$"Attribute '{attribute.Name}' references custom validator type '{validatorType}', " +
+					"but the final page body does not declare that key in SCHEMA_VALIDATORS.");
+			}
+		}
+	}
+
+	/// <summary>
 	/// Validates that validator <c>params</c> values do not use the reactive binding syntax
 	/// <c>$Resources.Strings.KeyName</c>. Validator params are evaluated as plain JavaScript values
 	/// and are not processed by the reactive binding engine — the correct format is

@@ -61,9 +61,10 @@
 
 		/// <summary>
 		/// Gets or sets the write mode. <c>replace</c> (default) saves the provided body verbatim.
-		/// <c>append</c> merges the provided body fragment with the current schema body on the server.
+		/// <c>append</c> merges the provided body fragment with the current schema body on the server,
+		/// including converters and validators by type key with incoming entries winning.
 		/// </summary>
-		[Option("mode", Required = false, HelpText = "Write mode: 'replace' (default) or 'append' (merge with existing body)")]
+		[Option("mode", Required = false, HelpText = "Write mode: 'replace' (default) or 'append' (merge diffs, handlers, converters, and validators with the existing body)")]
 		public string? Mode { get; set; }
 
 		/// <summary>
@@ -361,26 +362,39 @@
 		private static bool TryResolveBodyToWrite(JObject schemaToSave, PageUpdateOptions options, out string bodyToWrite, out PageUpdateResponse response) {
 			bodyToWrite = options.Body;
 			response = null;
-			if (!string.Equals(options.Mode, "append", StringComparison.OrdinalIgnoreCase)) return true;
-			string currentBody = schemaToSave["body"]?.ToString();
-			if (string.IsNullOrWhiteSpace(currentBody)) return true;
-			try {
-				bodyToWrite = PageBodyMerger.Merge(currentBody, options.Body);
-				return true;
-			} catch (Exception ex) {
-				// A full-config rejection (identified by its dedicated exception type, not by re-parsing the
-				// message) is already a complete, self-contained sentence — it names the offending body
-				// (incoming vs the server's) and points at replace mode — so it needs neither the "Append merge
-				// failed:" prefix (which double-states the verb) nor the generic marker-pairs hint (a full-config
-				// body HAS valid markers, it is just the wrong form). Keep both only for genuine marker-shape
-				// merge failures, and phrase the hint role-agnostically so it never blames the incoming body for
-				// a server-side blocker (ENG-94422).
-				string error = ex is PageBodyMerger.FullConfigAppendNotSupportedException
-					? $"{ex.Message} [hint: see docs://mcp/guides/page-modification for the append diff-form contract.]"
-					: $"Append merge failed: {ex.Message} [hint: the body must contain valid marker pairs with new viewConfigDiff/handlers operations. See docs://mcp/guides/page-modification.]";
-				response = new PageUpdateResponse { Success = false, Error = error };
-				return false;
+			if (string.Equals(options.Mode, "append", StringComparison.OrdinalIgnoreCase)) {
+				string currentBody = schemaToSave["body"]?.ToString();
+				if (!string.IsNullOrWhiteSpace(currentBody)) {
+					try {
+						bodyToWrite = PageBodyMerger.Merge(currentBody, options.Body);
+					} catch (Exception ex) {
+						// A full-config rejection (identified by its dedicated exception type, not by re-parsing the
+						// message) is already a complete, self-contained sentence — it names the offending body
+						// (incoming vs the server's) and points at replace mode — so it needs neither the "Append merge
+						// failed:" prefix (which double-states the verb) nor the generic marker-pairs hint (a full-config
+						// body HAS valid markers, it is just the wrong form). Keep both only for genuine marker-shape
+						// merge failures, and phrase the hint role-agnostically so it never blames the incoming body for
+						// a server-side blocker (ENG-94422).
+						string error = ex is PageBodyMerger.FullConfigAppendNotSupportedException
+							? $"{ex.Message} [hint: see docs://mcp/guides/page-modification for the append diff-form contract.]"
+							: $"Append merge failed: {ex.Message} [hint: the body must contain valid marker pairs with new viewConfigDiff/handlers operations. See docs://mcp/guides/page-modification.]";
+						response = new PageUpdateResponse { Success = false, Error = error };
+						return false;
+					}
+				}
 			}
+			if (!string.Equals(options.Mode, "append", StringComparison.OrdinalIgnoreCase) ||
+				!options.Validate || PageSchemaTypeExtensions.FromBody(bodyToWrite) == PageSchemaType.Mobile) {
+				return true;
+			}
+			SchemaValidationResult validatorReferences =
+				SchemaValidationService.ValidateCustomValidatorReferences(bodyToWrite);
+			if (validatorReferences.IsValid) {
+				return true;
+			}
+			response = ContentValidationFailure(
+				$"Body contains unresolved custom validator references: {string.Join("; ", validatorReferences.Errors)}");
+			return false;
 		}
 
 		/// <summary>

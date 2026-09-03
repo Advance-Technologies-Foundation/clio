@@ -54,10 +54,10 @@ public sealed class PageUpdateToolE2ETests : McpContractFixtureBase {
 	}
 
 	[Test]
-	[Description("The update-page get-tool-contract description carries the ENG-92541 custom-CSS policy (native-first + upgrade-risk + explicit confirmation) and routes to page-modification-components, over the real MCP contract surface (AGENTS.md mandates e2e for a changed tool [Description], not only unit-level reflection).")]
+	[Description("The update-page get-tool-contract response carries the custom-CSS policy and the append-mode validator merge contract over the real MCP surface.")]
 	[AllureTag(ToolName)]
 	[AllureName("update-page contract description carries the custom-CSS policy")]
-	[AllureDescription("Fetches the update-page contract via get-tool-contract over the real clio MCP server and asserts the served description carries the native-first custom-CSS policy and routes to page-modification-components.")]
+	[AllureDescription("Fetches the update-page contract via get-tool-contract over the real clio MCP server and asserts the served description carries both the native-first custom-CSS policy and append-mode SCHEMA_VALIDATORS merge behavior.")]
 	public async Task PageUpdateTool_Contract_Should_Carry_CustomCssPolicy() {
 		// Arrange
 		await using var arrangeContext = Arrange(TimeSpan.FromMinutes(3));
@@ -91,6 +91,10 @@ public sealed class PageUpdateToolE2ETests : McpContractFixtureBase {
 		contract.InputSchema.Properties.Should().Contain(field =>
 			field.Name == "validate" && field.Description.Contains("pre-existing"),
 			because: "the served input schema must expose the guarded validation escape hatch, not only the prose tool description");
+		contract.InputSchema.Properties.Should().Contain(field =>
+			field.Name == "mode" && field.Description.Contains("SCHEMA_VALIDATORS") &&
+			field.Description.Contains("incoming wins"),
+			because: "the served append contract must tell MCP callers that custom validator declarations merge by type key");
 	}
 
 	[Test]
@@ -992,6 +996,66 @@ public sealed class PageUpdateToolE2ETests : McpContractFixtureBase {
 	}
 
 	[Test]
+	[Description("Issue 1249: append persists both a view-model custom-validator binding and its SCHEMA_VALIDATORS factory through the real MCP server and Creatio save path.")]
+	[AllureTag(ToolName)]
+	[AllureName("update-page append preserves custom validator declaration")]
+	[AllureDescription("Uses the real clio MCP server and a dedicated Creatio sandbox to append a custom validator binding plus its matching SCHEMA_VALIDATORS factory, then reads the page back and proves both survived the server save. The original page body is restored in cleanup.")]
+	public async Task PageUpdateTool_Should_Persist_CustomValidator_Through_Append() {
+		// Arrange
+		McpE2ESettings settings = TestConfiguration.Load();
+		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
+		if (!settings.AllowDestructiveMcpTests) {
+			Assert.Ignore("AllowDestructiveMcpTests is false — skipping destructive issue-1249 append regression test.");
+		}
+		string environmentName = await ResolveReachableEnvironmentAsync(settings);
+		await using var arrangeContext = Arrange(TimeSpan.FromMinutes(5));
+		const string savePage = "McpServer_FormPage";
+		const string validatorType = "usr.Issue1249Validator";
+		string outputDirectory = Directory.CreateTempSubdirectory("clio-e2e-validator-append-").FullName;
+		string? originalBody = null;
+		try {
+			PageGetResponse original = await GetPageAsync(arrangeContext, savePage, environmentName, outputDirectory);
+			original.Success.Should().BeTrue(
+				because: $"get-page must load the seeded page before the append regression. Error: {original.Error}");
+			originalBody = await File.ReadAllTextAsync(original.Files.BodyFile);
+			string appendBody = "define('Issue1249', /**SCHEMA_DEPS*/[]/**SCHEMA_DEPS*/, " +
+				"function(/**SCHEMA_ARGS*//**SCHEMA_ARGS*/) { return { " +
+				"viewConfigDiff: /**SCHEMA_VIEW_CONFIG_DIFF*/[]/**SCHEMA_VIEW_CONFIG_DIFF*/, " +
+				"viewModelConfigDiff: /**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/[{\"operation\":\"merge\",\"path\":[\"attributes\"],\"values\":{\"UsrIssue1249Probe\":{\"validators\":{\"Probe\":{\"type\":\"usr.Issue1249Validator\",\"params\":{\"message\":\"#ResourceString(DefaultHeaderCaption)#\"}}}}}}]/**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/, " +
+				"modelConfigDiff: /**SCHEMA_MODEL_CONFIG_DIFF*/[]/**SCHEMA_MODEL_CONFIG_DIFF*/, " +
+				"handlers: /**SCHEMA_HANDLERS*/[]/**SCHEMA_HANDLERS*/, " +
+				"converters: /**SCHEMA_CONVERTERS*/{}/**SCHEMA_CONVERTERS*/, " +
+				"validators: /**SCHEMA_VALIDATORS*/{\"usr.Issue1249Validator\":{\"validator\":function(config){return function(control){return control.value?null:{\"usr.Issue1249Validator\":{\"message\":config.message}};};},\"params\":[{\"name\":\"message\"}],\"async\":false}}/**SCHEMA_VALIDATORS*/ }; });";
+
+			// Act
+			PageUpdateResponse saveResponse = await UpdatePageAsync(
+				arrangeContext, savePage, appendBody, environmentName, outputDirectory, mode: "append", verify: true);
+			PageGetResponse readBack = await GetPageAsync(arrangeContext, savePage, environmentName, outputDirectory);
+
+			// Assert
+			saveResponse.Success.Should().BeTrue(
+				because: $"append must save the self-contained custom validator change. Error: {saveResponse.Error}");
+			readBack.Success.Should().BeTrue(
+				because: $"get-page must read the saved page back from Creatio. Error: {readBack.Error}");
+			string readBackBody = await File.ReadAllTextAsync(readBack.Files.BodyFile);
+			readBackBody.Should().Contain("UsrIssue1249Probe",
+				because: "the view-model validator binding must survive the append and server save");
+			readBackBody.Should().Contain(validatorType,
+				because: "the matching SCHEMA_VALIDATORS type key must survive the append and server save");
+			readBackBody.Should().Contain("function(config){return function(control)",
+				because: "the raw JavaScript validator factory must remain intact after keyed-object merging");
+		} finally {
+			if (!string.IsNullOrWhiteSpace(originalBody)) {
+				PageUpdateResponse restore = await UpdatePageAsync(
+					arrangeContext, savePage, originalBody, environmentName, outputDirectory, force: true);
+				restore.Success.Should().BeTrue(
+					because: $"the E2E test must restore the seeded page body. Error: {restore.Error}");
+			}
+			TryDeleteDirectory(outputDirectory);
+		}
+	}
+
+	[Test]
 	[Description("ENG-91317 ticket scenario: get-page captures a checksum baseline, an out-of-band save changes the schema, update-page detects the conflict (verifying SysSchema.Checksum is bumped on save — risk A-01), recovery via get-page + retry succeeds, and force=true overwrites deliberately.")]
 	[AllureTag(ToolName)]
 	[AllureName("update-page detects out-of-band schema modification via checksum baseline and recovers")]
@@ -1188,7 +1252,9 @@ public sealed class PageUpdateToolE2ETests : McpContractFixtureBase {
 		string body,
 		string environmentName,
 		string outputDirectory,
-		bool? force = null) {
+		bool? force = null,
+		string? mode = null,
+		bool? verify = null) {
 		Dictionary<string, object?> args = new() {
 			["schema-name"] = schemaName,
 			["body"] = body,
@@ -1198,6 +1264,12 @@ public sealed class PageUpdateToolE2ETests : McpContractFixtureBase {
 		};
 		if (force == true) {
 			args["force"] = true;
+		}
+		if (!string.IsNullOrWhiteSpace(mode)) {
+			args["mode"] = mode;
+		}
+		if (verify == true) {
+			args["verify"] = true;
 		}
 		CallToolResult result = await arrangeContext.Session.CallToolAsync(
 			ToolName,

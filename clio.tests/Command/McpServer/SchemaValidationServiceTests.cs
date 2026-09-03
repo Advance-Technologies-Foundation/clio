@@ -6795,6 +6795,62 @@ public sealed class SchemaValidationServiceTests
 
         #endregion
 
+	#region ValidateCustomValidatorReferences
+
+	[Test]
+	[Description("A custom validator reference is valid when the final SCHEMA_VALIDATORS object declares the same type key")]
+	public void ValidateCustomValidatorReferences_WhenTypeIsDeclared_ReturnsValid() {
+		// Arrange
+		string body = """
+			/**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/[{"operation":"merge","path":["attributes"],"values":{"UsrName":{"validators":{"Probe":{"type":"usr.Probe"}}}}}]/**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/
+			/**SCHEMA_VALIDATORS*/{"usr.Probe":{"validator":function(){return function(){return null;};},"params":[],"async":false}}/**SCHEMA_VALIDATORS*/
+			""";
+
+		// Act
+		SchemaValidationResult result = SchemaValidationService.ValidateCustomValidatorReferences(body);
+
+		// Assert
+		result.IsValid.Should().BeTrue("because the final page body declares the referenced custom validator type");
+		result.Errors.Should().BeEmpty("because every custom validator reference is resolved locally");
+	}
+
+	[Test]
+	[Description("A custom validator reference is rejected when the final SCHEMA_VALIDATORS object omits its type key")]
+	public void ValidateCustomValidatorReferences_WhenTypeIsMissing_ReturnsError() {
+		// Arrange
+		string body = """
+			/**SCHEMA_VIEW_MODEL_CONFIG*/{"attributes":{"UsrName":{"validators":{"Probe":{"type":"usr.Missing"}}}}}/**SCHEMA_VIEW_MODEL_CONFIG*/
+			/**SCHEMA_VALIDATORS*/{}/**SCHEMA_VALIDATORS*/
+			""";
+
+		// Act
+		SchemaValidationResult result = SchemaValidationService.ValidateCustomValidatorReferences(body);
+
+		// Assert
+		result.IsValid.Should().BeFalse("because the final page body does not declare the referenced custom validator type");
+		result.Errors.Should().ContainSingle(error => error.Contains("UsrName") && error.Contains("usr.Missing"),
+			because: "the validation error must identify both the attribute and unresolved validator type");
+	}
+
+	[Test]
+	[Description("A built-in crt validator reference does not require a page-local SCHEMA_VALIDATORS declaration")]
+	public void ValidateCustomValidatorReferences_WhenTypeIsBuiltIn_ReturnsValid() {
+		// Arrange
+		string body = """
+			/**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/[{"operation":"merge","path":["attributes"],"values":{"UsrName":{"validators":{"Required":{"type":"crt.Required"}}}}}]/**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/
+			/**SCHEMA_VALIDATORS*/{}/**SCHEMA_VALIDATORS*/
+			""";
+
+		// Act
+		SchemaValidationResult result = SchemaValidationService.ValidateCustomValidatorReferences(body);
+
+		// Assert
+		result.IsValid.Should().BeTrue("because built-in crt validators are resolved by the platform");
+		result.Errors.Should().BeEmpty("because built-in validator types do not need page-local factories");
+	}
+
+	#endregion
+
 	#region ValidateMobileNoValidatorReferences
 
 	[Test]

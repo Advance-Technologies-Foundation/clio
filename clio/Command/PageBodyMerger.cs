@@ -233,9 +233,12 @@ internal static class PageBodyMerger {
 		string mergedHandlers = MergeHandlersRaw(
 			ReadRawSection(currentBody, "SCHEMA_HANDLERS") ?? "[]",
 			ReadRawSection(incomingBody, "SCHEMA_HANDLERS") ?? "[]");
-		string mergedConverters = MergeConvertersRaw(
+		string mergedConverters = MergeKeyedObjectRaw(
 			ReadRawSection(currentBody, "SCHEMA_CONVERTERS") ?? "{}",
 			ReadRawSection(incomingBody, "SCHEMA_CONVERTERS") ?? "{}");
+		string mergedValidators = MergeKeyedObjectRaw(
+			ReadRawSection(currentBody, "SCHEMA_VALIDATORS") ?? "{}",
+			ReadRawSection(incomingBody, "SCHEMA_VALIDATORS") ?? "{}");
 
 		string result = currentBody;
 		result = ReplaceSection(result, "SCHEMA_VIEW_CONFIG_DIFF", mergedViewConfigDiff.ToString(Newtonsoft.Json.Formatting.Indented));
@@ -243,6 +246,7 @@ internal static class PageBodyMerger {
 		result = ReplaceSection(result, "SCHEMA_MODEL_CONFIG_DIFF", mergedModelConfigDiff.ToString(Newtonsoft.Json.Formatting.Indented));
 		result = ReplaceSection(result, "SCHEMA_HANDLERS", mergedHandlers);
 		result = ReplaceSection(result, "SCHEMA_CONVERTERS", mergedConverters);
+		result = ReplaceSection(result, "SCHEMA_VALIDATORS", mergedValidators);
 		return result;
 	}
 
@@ -287,11 +291,11 @@ internal static class PageBodyMerger {
 	}
 
 	/// <summary>
-	/// Merges two JavaScript converter object strings by key — incoming keys win over current keys
+	/// Merges two JavaScript object strings by key — incoming keys win over current keys
 	/// with the same name. Preserves non-JSON function bodies by using raw text extraction rather
 	/// than JSON parsing.
 	/// </summary>
-	private static string MergeConvertersRaw(string current, string incoming) {
+	private static string MergeKeyedObjectRaw(string current, string incoming) {
 		string currentTrim = current.Trim();
 		string incomingTrim = incoming.Trim();
 		if (currentTrim == "{}" || string.IsNullOrEmpty(currentTrim)) {
@@ -302,8 +306,8 @@ internal static class PageBodyMerger {
 		}
 		string currentInner = StripObjectBraces(currentTrim);
 		string incomingInner = StripObjectBraces(incomingTrim);
-		List<(string Key, string Entry)> currentEntries = ParseConverterEntries(currentInner);
-		List<(string Key, string Entry)> incomingEntries = ParseConverterEntries(incomingInner);
+		List<(string Key, string Entry)> currentEntries = ParseObjectEntries(currentInner);
+		List<(string Key, string Entry)> incomingEntries = ParseObjectEntries(incomingInner);
 		var incomingKeys = new HashSet<string>(incomingEntries.Select(e => e.Key), StringComparer.Ordinal);
 		var kept = currentEntries
 			.Where(e => !incomingKeys.Contains(e.Key))
@@ -321,10 +325,10 @@ internal static class PageBodyMerger {
 	/// <remarks>
 	/// Limitation: JavaScript regex literals (<c>/pattern/flags</c>) are not tracked as string
 	/// delimiters. A regex body containing an unbalanced <c>{</c>, <c>[</c>, or a bare <c>,</c>
-	/// at depth 0 could cause a premature entry split. In practice, converter functions are simple
-	/// formatters that do not use regex literals, so this edge case is not expected to occur.
+	/// at depth 0 could cause a premature entry split. In practice, converter and validator functions
+	/// do not use unbalanced regex literals, so this edge case is not expected to occur.
 	/// </remarks>
-	private static List<(string Key, string Entry)> ParseConverterEntries(string inner) {
+	private static List<(string Key, string Entry)> ParseObjectEntries(string inner) {
 		var entries = new List<(string Key, string Entry)>();
 		int i = 0;
 		while (i < inner.Length) {
@@ -422,7 +426,7 @@ internal static class PageBodyMerger {
 	}
 
 	/// <summary>
-	/// Advances <paramref name="i"/> past the current converter value, stopping at a top-level
+	/// Advances <paramref name="i"/> past the current object-entry value, stopping at a top-level
 	/// comma or end-of-string. Tracks string literals and bracket depth to avoid false splits.
 	/// </summary>
 	/// <remarks>
@@ -430,7 +434,7 @@ internal static class PageBodyMerger {
 	/// <list type="bullet">
 	/// <item>JavaScript regex literals (<c>/pattern/flags</c>) are not tracked as string delimiters.
 	/// A regex body containing an unbalanced bracket or a bare comma at depth 0 could cause a
-	/// premature entry split. Converter functions in practice do not use unbalanced regex literals.</item>
+	/// premature entry split. Converter and validator functions in practice do not use unbalanced regex literals.</item>
 	/// <item>Template literal interpolations (<c>`outer ${inner}`</c>) are not depth-tracked.
 	/// <see cref="AdvanceInString"/> uses a single <c>strChar</c> so a <c>}</c> that closes a
 	/// <c>${…}</c> interpolation is treated as the end of the template string, potentially causing

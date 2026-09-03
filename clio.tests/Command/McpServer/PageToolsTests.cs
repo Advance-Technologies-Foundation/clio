@@ -4946,6 +4946,82 @@ public class PageToolsTests
 	}
 
 	[Test]
+	[Description("PageBodyMerger validators merge: incoming validator keys are added while existing validator factories remain intact")]
+	public void PageBodyMerger_Should_Merge_Validators_By_Key() {
+		// Arrange
+		string currentBody = "/**SCHEMA_DEPS*/[]/**SCHEMA_DEPS*/ /**SCHEMA_ARGS*/()/**SCHEMA_ARGS*/ " +
+			"/**SCHEMA_VIEW_CONFIG_DIFF*/[]/**SCHEMA_VIEW_CONFIG_DIFF*/ " +
+			"/**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/[]/**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/ " +
+			"/**SCHEMA_MODEL_CONFIG_DIFF*/[]/**SCHEMA_MODEL_CONFIG_DIFF*/ " +
+			"/**SCHEMA_HANDLERS*/[]/**SCHEMA_HANDLERS*/ " +
+			"/**SCHEMA_CONVERTERS*/{}/**SCHEMA_CONVERTERS*/ " +
+			"/**SCHEMA_VALIDATORS*/{\"usr.Existing\":{validator:function(){return function(){return null;};},params:[],async:false}}/**SCHEMA_VALIDATORS*/";
+		string incomingBody = "/**SCHEMA_VIEW_CONFIG_DIFF*/[]/**SCHEMA_VIEW_CONFIG_DIFF*/ " +
+			"/**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/[]/**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/ " +
+			"/**SCHEMA_MODEL_CONFIG_DIFF*/[]/**SCHEMA_MODEL_CONFIG_DIFF*/ " +
+			"/**SCHEMA_HANDLERS*/[]/**SCHEMA_HANDLERS*/ " +
+			"/**SCHEMA_VALIDATORS*/{\"usr.Added\":{validator:function(config){return function(control){return control.value?null:{\"usr.Added\":{message:config.message}};};},params:[{name:\"message\"}],async:false}}/**SCHEMA_VALIDATORS*/";
+
+		// Act
+		string merged = PageBodyMerger.Merge(currentBody, incomingBody);
+
+		// Assert
+		merged.Should().Contain("usr.Existing", because: "the existing validator must survive an append");
+		merged.Should().Contain("usr.Added", because: "the incoming validator must be added to the saved body");
+		merged.Should().Contain("control.value?null", because: "the incoming JavaScript factory must be preserved verbatim");
+	}
+
+	[Test]
+	[Description("PageBodyMerger validators dedupe: an incoming validator factory replaces the current entry with the same type key")]
+	public void PageBodyMerger_Should_Replace_Validator_When_Key_Matches() {
+		// Arrange
+		string currentBody = "/**SCHEMA_DEPS*/[]/**SCHEMA_DEPS*/ /**SCHEMA_ARGS*/()/**SCHEMA_ARGS*/ " +
+			"/**SCHEMA_VIEW_CONFIG_DIFF*/[]/**SCHEMA_VIEW_CONFIG_DIFF*/ " +
+			"/**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/[]/**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/ " +
+			"/**SCHEMA_MODEL_CONFIG_DIFF*/[]/**SCHEMA_MODEL_CONFIG_DIFF*/ " +
+			"/**SCHEMA_HANDLERS*/[]/**SCHEMA_HANDLERS*/ " +
+			"/**SCHEMA_CONVERTERS*/{}/**SCHEMA_CONVERTERS*/ " +
+			"/**SCHEMA_VALIDATORS*/{\"usr.Unique\":{validator:function(){return function(){return \"old\";};},params:[],async:false},\"usr.Keep\":{validator:function(){return function(){return null;};},params:[],async:false}}/**SCHEMA_VALIDATORS*/";
+		string incomingBody = "/**SCHEMA_VIEW_CONFIG_DIFF*/[]/**SCHEMA_VIEW_CONFIG_DIFF*/ " +
+			"/**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/[]/**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/ " +
+			"/**SCHEMA_MODEL_CONFIG_DIFF*/[]/**SCHEMA_MODEL_CONFIG_DIFF*/ " +
+			"/**SCHEMA_HANDLERS*/[]/**SCHEMA_HANDLERS*/ " +
+			"/**SCHEMA_VALIDATORS*/{\"usr.Unique\":{validator:function(){return function(){return \"new\";};},params:[],async:false}}/**SCHEMA_VALIDATORS*/";
+
+		// Act
+		string merged = PageBodyMerger.Merge(currentBody, incomingBody);
+
+		// Assert
+		merged.Should().Contain("return \"new\"", because: "the incoming validator must win when its type key matches");
+		merged.Should().NotContain("return \"old\"", because: "the replaced validator factory must not remain in the saved body");
+		merged.Should().Contain("usr.Keep", because: "non-colliding existing validators must be preserved");
+	}
+
+	[Test]
+	[Description("PageBodyMerger validators: an empty incoming validator section preserves current validator factories")]
+	public void PageBodyMerger_Should_Preserve_Validators_When_Incoming_Is_Empty() {
+		// Arrange
+		string currentBody = "/**SCHEMA_DEPS*/[]/**SCHEMA_DEPS*/ /**SCHEMA_ARGS*/()/**SCHEMA_ARGS*/ " +
+			"/**SCHEMA_VIEW_CONFIG_DIFF*/[]/**SCHEMA_VIEW_CONFIG_DIFF*/ " +
+			"/**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/[]/**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/ " +
+			"/**SCHEMA_MODEL_CONFIG_DIFF*/[]/**SCHEMA_MODEL_CONFIG_DIFF*/ " +
+			"/**SCHEMA_HANDLERS*/[]/**SCHEMA_HANDLERS*/ " +
+			"/**SCHEMA_CONVERTERS*/{}/**SCHEMA_CONVERTERS*/ " +
+			"/**SCHEMA_VALIDATORS*/{\"usr.Keep\":{validator:function(){return function(){return null;};},params:[],async:false}}/**SCHEMA_VALIDATORS*/";
+		string incomingBody = "/**SCHEMA_VIEW_CONFIG_DIFF*/[]/**SCHEMA_VIEW_CONFIG_DIFF*/ " +
+			"/**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/[]/**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/ " +
+			"/**SCHEMA_MODEL_CONFIG_DIFF*/[]/**SCHEMA_MODEL_CONFIG_DIFF*/ " +
+			"/**SCHEMA_HANDLERS*/[]/**SCHEMA_HANDLERS*/ " +
+			"/**SCHEMA_VALIDATORS*/{}/**SCHEMA_VALIDATORS*/";
+
+		// Act
+		string merged = PageBodyMerger.Merge(currentBody, incomingBody);
+
+		// Assert
+		merged.Should().Contain("usr.Keep", because: "an empty incoming validator object must not erase current validators");
+	}
+
+	[Test]
 	[Description("ParseSamplingResponse parses a valid JSON response with ok=true")]
 	public void ParseSamplingResponse_Should_Parse_Ok_Response() {
 		string text = "{\"ok\":true,\"issues\":[],\"warnings\":[]}";
