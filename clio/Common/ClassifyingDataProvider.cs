@@ -4,6 +4,7 @@ using System.Linq;
 using System.Security.Authentication;
 using ATF.Repository;
 using ATF.Repository.Providers;
+using Clio.Command.McpServer;
 
 namespace Clio.Common;
 
@@ -133,7 +134,8 @@ public sealed class ClassifyingDataProvider : IDataProvider {
 		} catch (Exception exception) {
 			string detail = Sanitize(exception.Message);
 			if (AuthenticationFailureClassifier.IsAuthenticationFailure(exception)) {
-				throw new AuthenticationException(AuthenticationMessage(operation, detail), exception);
+				throw new SessionRejectedException(AuthenticationMessage(operation, detail), detail,
+					exception);
 			}
 			//Prose is consulted ONLY when there is no typed status to read. A typed status is
 			//authoritative in both directions, so a typed 404 whose body happens to mention a standalone
@@ -141,7 +143,7 @@ public sealed class ClassifyingDataProvider : IDataProvider {
 			if (!AuthenticationFailureClassifier.HasTypedStatus(exception)
 				&& AuthenticationFailureClassifier.ClassifyProviderErrorMessage(detail)
 					== AuthenticationFailureClassifier.ProviderFailureVerdict.NonJsonPage) {
-				throw new DataProviderFailureException(NonJsonPageMessage(operation, detail), exception);
+				throw new DataProviderFailureException(NonJsonPageMessage(operation), exception, detail);
 			}
 			throw;
 		}
@@ -176,15 +178,23 @@ public sealed class ClassifyingDataProvider : IDataProvider {
 		string detail = Sanitize(readErrorMessage(response));
 		throw AuthenticationFailureClassifier.ClassifyProviderErrorMessage(detail) switch {
 			AuthenticationFailureClassifier.ProviderFailureVerdict.Authentication
-				=> new AuthenticationException(AuthenticationMessage(operation, detail)),
+				=> new SessionRejectedException(AuthenticationMessage(operation, detail), detail),
 			AuthenticationFailureClassifier.ProviderFailureVerdict.NonJsonPage
-				=> new DataProviderFailureException(NonJsonPageMessage(operation, detail)),
-			var _ => new DataProviderFailureException(GenericMessage(operation, detail))
+				=> new DataProviderFailureException(NonJsonPageMessage(operation), serverDetail: detail),
+			var _ => new DataProviderFailureException(GenericMessage(operation, detail),
+				serverDetail: detail)
 		};
 	}
 
+	/// <summary>
+	/// The authentication diagnostic. <paramref name="detail"/> only CHOOSES one of the fixed local
+	/// sentences in <see cref="AuthenticationFailureClassifier.FixedAuthenticationDiagnostics"/>; none of
+	/// its own text is copied into the message (issue #1333). The excerpt travels on
+	/// <see cref="SessionRejectedException.ServerDetail"/> instead, for debug verbosity.
+	/// </summary>
 	private static string AuthenticationMessage(string operation, string detail) =>
-		$"Authentication failed while {operation}: {detail} "
+		$"Authentication failed while {operation}: "
+		+ $"{AuthenticationFailureClassifier.DescribeAuthenticationCause(detail)} "
 		+ "Verify the environment credentials (for an expired password, repair the registered profile) "
 		+ "and retry.";
 
@@ -193,13 +203,33 @@ public sealed class ClassifyingDataProvider : IDataProvider {
 	/// message the provider preserved cannot tell them apart. Claiming one would send the operator to
 	/// repair working credentials whenever the real problem was a proxy, a gateway or a wrong path.
 	/// </summary>
-	private static string NonJsonPageMessage(string operation, string detail) =>
+	private static string NonJsonPageMessage(string operation) =>
 		$"Failed {operation}: the environment answered with a non-JSON page where a DataService response "
 		+ "was expected - either the session was rejected (expired password / login redirect) or the URL "
-		+ $"does not reach Creatio (proxy, gateway, wrong path). Detail: {detail}";
+		+ "does not reach Creatio (proxy, gateway, wrong path).";
 
-	private static string GenericMessage(string operation, string detail) =>
-		$"Failed {operation}: {detail}";
+	/// <summary>
+	/// The one message that must still carry server text: a plain <c>Success == false</c> whose
+	/// <c>ErrorMessage</c> is the platform's own validation prose ("Column 'Name' is required"), which no
+	/// fixed sentence can replace without destroying the diagnosis.
+	/// </summary>
+	/// <remarks>
+	/// So the text is fenced rather than dropped: <see cref="SensitiveErrorTextRedactor.RedactUntrustedOrNull"/>
+	/// scrubs URIs, paths, tokens and credential pairs, collapses line breaks, clamps the length, and wraps
+	/// the remainder in the marker that names it as observed data rather than as an instruction - which is
+	/// what issue #1333 needs, because this string reaches an AI agent's context through the MCP envelope.
+	/// A detail the fence reduces to nothing leaves the message naming only the operation.
+	/// </remarks>
+	private static string GenericMessage(string operation, string detail) {
+		//UnreportedFailureDetail is clio's OWN sentence, substituted when the provider reported no text at
+		//all. Fencing it would present clio's words as observed server data, which is misleading, so only
+		//text the server actually supplied goes through the fence.
+		if (string.Equals(detail, UnreportedFailureDetail, StringComparison.Ordinal)) {
+			return $"Failed {operation}: {detail}";
+		}
+		string fenced = SensitiveErrorTextRedactor.RedactUntrustedOrNull(detail);
+		return fenced is null ? $"Failed {operation}." : $"Failed {operation}: {fenced}";
+	}
 
 	/// <summary>
 	/// Normalizes a server-controlled detail before it is embedded in an exception message, and before it

@@ -153,6 +153,79 @@ public static class AuthenticationFailureClassifier {
 	}
 
 	/// <summary>
+	/// The fixed local diagnostics a recognized authentication rejection maps to. Server prose never
+	/// reaches a caller-visible field, so these are the only sentences an operator or an agent reads.
+	/// </summary>
+	/// <remarks>
+	/// Issue #1333. A DataService <c>ErrorCode:5</c> envelope, a login page and a proxy page are all
+	/// server-authored text: they can carry a bearer token, a user's e-mail, bidi controls that reorder the
+	/// line, or a sentence shaped like an instruction to an agent. Stripping control characters does not
+	/// change any of that - the text still lands in the CLI output, in the log and in an MCP envelope that
+	/// an AI agent reads as part of its own context. So the recognized causes are mapped to fixed
+	/// sentences here, and the raw excerpt survives only on a debug-verbosity log line, found through the
+	/// correlation ID.
+	/// </remarks>
+	public static class FixedAuthenticationDiagnostics {
+
+		/// <summary>The platform said the registered user's password is expired.</summary>
+		public const string PasswordExpired = "The password for the registered user has expired.";
+
+		/// <summary>The environment served its login page where a DataService response was expected.</summary>
+		public const string LoginRedirect = "The environment redirected to its login page.";
+
+		/// <summary>A DataService fault envelope with the authentication rejection code.</summary>
+		public const string CredentialsRejected = "Creatio rejected the credentials.";
+
+		/// <summary>The rejection is proven but its specific cause is not recognized.</summary>
+		public const string UnknownAuthenticationCause =
+			"Creatio rejected the credentials and did not name a recognized cause.";
+	}
+
+	/// <summary>
+	/// Password-expired prose, in the renderings Creatio uses for it.
+	/// </summary>
+	private static readonly Regex PasswordExpiredCause =
+		new(@"password\s+has\s+expired|password\s+is\s+expired|expired\s+password|PasswordExpired",
+			RegexOptions.Compiled | RegexOptions.CultureInvariant | RegexOptions.IgnoreCase,
+			TimeSpan.FromSeconds(1));
+
+	/// <summary>
+	/// Login-page markers: the auth-routing paths Creatio redirects to, and the parser's own prose for
+	/// "the body was HTML, not JSON".
+	/// </summary>
+	private static readonly Regex LoginRedirectMarker =
+		new(@"/Login/|NuiLogin|SimpleLogin|ClientUnauthorizedRequest|<\s*html",
+			RegexOptions.Compiled | RegexOptions.CultureInvariant | RegexOptions.IgnoreCase,
+			TimeSpan.FromSeconds(1));
+
+	/// <summary>
+	/// Maps recognized server text to ONE of the fixed local diagnostics in
+	/// <see cref="FixedAuthenticationDiagnostics"/>. The argument is used only to CHOOSE a sentence -
+	/// nothing from it is ever copied into the returned text (issue #1333).
+	/// </summary>
+	/// <param name="serverText">The server-authored message or response body.</param>
+	/// <returns>A fixed local diagnostic naming the cause.</returns>
+	public static string DescribeAuthenticationCause(string serverText) {
+		if (string.IsNullOrWhiteSpace(serverText)) {
+			return FixedAuthenticationDiagnostics.UnknownAuthenticationCause;
+		}
+		if (PasswordExpiredCause.IsMatch(serverText)) {
+			return FixedAuthenticationDiagnostics.PasswordExpired;
+		}
+		if (LoginRedirectMarker.IsMatch(serverText)) {
+			return FixedAuthenticationDiagnostics.LoginRedirect;
+		}
+		if (DataServiceAuthenticationErrorCode.IsMatch(serverText)
+			|| serverText.Contains("unauthorized", StringComparison.OrdinalIgnoreCase)
+			|| UnauthorizedStatusToken.IsMatch(serverText)
+			|| serverText.Contains("authentication failed", StringComparison.OrdinalIgnoreCase)
+			|| serverText.Contains("authentication error", StringComparison.OrdinalIgnoreCase)) {
+			return FixedAuthenticationDiagnostics.CredentialsRejected;
+		}
+		return FixedAuthenticationDiagnostics.UnknownAuthenticationCause;
+	}
+
+	/// <summary>
 	/// <see langword="true"/> when a RAW Creatio response body proves the session was rejected.
 	/// </summary>
 	/// <remarks>

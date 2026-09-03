@@ -6,6 +6,7 @@ using System.Text.Json;
 using System.Security.Authentication;
 using System.Text.Json.Serialization;
 using ATF.Repository;
+using Clio.Command.McpServer;
 using ATF.Repository.Providers;
 using CreatioModel;
 using DocumentFormat.OpenXml.Office2010.Excel;
@@ -380,11 +381,17 @@ public class SysSettingsManager : ISysSettingsManager
 		if (!AuthenticationFailureClassifier.IsAuthenticationFailureResponse(rawResponse)) {
 			return;
 		}
-		throw new AuthenticationException(
+		//Issue #1333: the body is a login page or an ErrorCode:5 envelope - server-authored text that can
+		//carry a token, a user's e-mail, bidi controls, or a sentence shaped like an instruction to an
+		//agent. It used to be embedded here and therefore reached the CLI output, the log and the MCP
+		//envelope. Only a FIXED local sentence goes into the message now; the excerpt rides along on
+		//ServerDetail, which a handler writes at debug verbosity beside the correlation ID.
+		throw new SessionRejectedException(
 			$"Authentication failed while {operationLabel}: "
-			+ $"{TextUtilities.SanitizeForDisplay(rawResponse, MaxRejectedResponseDetailLength)} "
+			+ $"{AuthenticationFailureClassifier.DescribeAuthenticationCause(rawResponse)} "
 			+ "Verify the environment credentials (for an expired password, repair the registered profile) "
-			+ "and retry.");
+			+ "and retry.",
+			TextUtilities.SanitizeForDisplay(rawResponse, MaxRejectedResponseDetailLength));
 	}
 
 	#region Methods: Public
@@ -602,10 +609,15 @@ public class SysSettingsManager : ISysSettingsManager
 				&& perCodeOk) {
 				return true;
 			}
-			string errMsg = response?.ResponseStatus?.Message;
+			//Issue #1333: ResponseStatus.Message is server-authored prose. It is the platform's own
+			//validation text ("Column 'Name' is required"), so it cannot be replaced by a fixed sentence
+			//without destroying the diagnosis - but it is fenced and scrubbed before it is printed, so a
+			//token, an address or an instruction-shaped sentence cannot ride out on this line.
+			string errMsg = SensitiveErrorTextRedactor.RedactUntrustedOrNull(
+				response?.ResponseStatus?.Message);
 			_logger.WriteError(
 				$"SysSettings with code: {code} is not updated. " +
-				(string.IsNullOrWhiteSpace(errMsg) ? "Platform reported a failed update." : errMsg));
+				(errMsg is null ? "Platform reported a failed update." : errMsg));
 			return false;
 		} catch (JsonException) {
 			_logger.WriteError($"SysSettings with code: {code} is not updated. Invalid response format.");

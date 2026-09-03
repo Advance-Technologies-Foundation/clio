@@ -8,6 +8,7 @@ using System.Net.Sockets;
 using System.Reflection;
 using System.Security.Authentication;
 using System.Text.RegularExpressions;
+using Clio.Command.McpServer;
 using Clio.Command.McpServer.Tools;
 using Clio.Common;
 using CommandLine;
@@ -262,8 +263,18 @@ namespace Clio.Command
 				string value = PrepareUpdateValue(args, hasFilePath, out string valueTypeName);
 				bool updated = _sysSettingsManager.UpdateSysSetting(args.Code, value, valueTypeName);
 				if (!updated) {
-					return new SysSettingUpdateResult(false, args.Code, null,
-						"Failed to update sys-setting. The setting may not exist, or the value did not match the expected type.");
+					//Also a non-exception failure: the manager already logged the specific reason, so the
+					//message is clio's own. It still gets the classified parts and the correlation ID, so a
+					//caller does not have to tell two shapes of failure envelope apart (issue #1329).
+					SysSettingFailure failure = new(
+						"Failed to update sys-setting. The setting may not exist, or the value did not match the expected type.",
+						SysSettingErrorCategories.ProviderFailure,
+						"The environment did not apply the value.",
+						SysSettingFailureTexts.ProviderFailureRecovery,
+						_correlationIds.New());
+					_logger.WriteError(DescribeFailureForLog(failure));
+					return new SysSettingUpdateResult(false, args.Code, null, failure.Error,
+						failure.Category, failure.Cause, failure.RecoveryAction, failure.CorrelationId);
 				}
 				(string readback, string readbackType) = _sysSettingsManager.GetAllUsersDefaultWithType(args.Code);
 				return new SysSettingUpdateResult(true, args.Code, ApplySecureTextMask(readbackType, readback));
@@ -471,9 +482,15 @@ namespace Clio.Command
 					args.IsPersonal ?? false,
 					referenceSchemaUId);
 				if (!response.Success) {
-					string message = response.ResponseStatus?.Message;
+					//A create can fail WITHOUT an exception: the platform answers with success:false and its
+					//own prose. That prose used to become `error` verbatim - server-authored text on the one
+					//field an agent reads (issue #1333) - and the envelope carried none of the classified
+					//parts issue #1329 requires. Both are composed here instead.
+					SysSettingFailure failure = ReportProviderFailure(
+						response.ResponseStatus?.Message, "creating sys-setting");
 					return new SysSettingCreateResult(false, args.Code, args.ValueTypeName, null,
-						string.IsNullOrWhiteSpace(message) ? "Failed creating sys-setting." : message);
+						failure.Error, Warning: null, failure.Category, failure.Cause,
+						failure.RecoveryAction, failure.CorrelationId);
 				}
 				return ApplyInitialValue(args);
 			} catch (Exception ex) {
@@ -525,9 +542,12 @@ namespace Clio.Command
 			}
 			bool updated = _sysSettingsManager.UpdateSysSetting(args.Code, args.Value, args.ValueTypeName);
 			if (!updated) {
+				//Partial success, so there is no Error - but the correlation ID still belongs on it: the
+				//manager logged WHY the value did not land, and the ID is how the caller points at that line.
 				return new SysSettingCreateResult(true, args.Code, args.ValueTypeName, null,
 					Error: null,
-					Warning: "Sys-setting was created, but the initial value could not be applied.");
+					Warning: "Sys-setting was created, but the initial value could not be applied.",
+					CorrelationId: _correlationIds.New());
 			}
 			string assignedValue = _sysSettingsManager.GetAllUsersDefaultByCode(args.Code);
 			string maskedAssignedValue = ApplySecureTextMask(args.ValueTypeName, assignedValue);
@@ -626,8 +646,11 @@ namespace Clio.Command
 		/// Safe on the MCP path: <see cref="ConsoleLogger"/> suppresses every console write in MCP server
 		/// mode, because stdout there frames JSON-RPC.
 		/// </remarks>
-		private SysSettingFailure ReportFailure(Exception ex, string operationLabel) =>
-			CategorizeAndLog(ex, operationLabel, _logger, _correlationIds);
+		private SysSettingFailure ReportFailure(Exception ex, string operationLabel) {
+			SysSettingFailure failure = CategorizeAndLog(ex, operationLabel, _logger, _correlationIds);
+			WriteServerDetailAtDebugVerbosity(ex, failure.CorrelationId);
+			return failure;
+		}
 
 		/// <summary>
 		/// Classifies a failure AND writes the one log line that carries its correlation ID, for callers
@@ -642,6 +665,55 @@ namespace Clio.Command
 			ILogger logger, IOperationCorrelationIdProvider correlationIds) {
 			SysSettingFailure failure = CategorizeFailure(ex, operationLabel, correlationIds.New());
 			logger.WriteError(DescribeFailureForLog(failure));
+			return failure;
+		}
+
+		/// <summary>
+		/// Writes the neutralized server excerpt on the DEBUG channel only, tagged with the same
+		/// correlation ID the failure envelope carries.
+		/// </summary>
+		/// <remarks>
+		/// Issue #1333. The excerpt is server-authored text, so it may never appear in <c>error</c>,
+		/// <c>cause</c>, the MCP envelope or the default log line - the fixed local diagnostic goes there
+		/// instead. It still has to be recoverable, because an operator who cannot see what Creatio
+		/// actually said cannot tell an expired password from a misconfigured proxy. This is the one sink
+		/// that is both debug-gated (<c>ConsoleLogger.WriteDebug</c> returns early unless
+		/// <c>--debug</c> was passed) and silent under MCP server mode, and the correlation ID is the
+		/// bridge from the reported failure to the line.
+		/// </remarks>
+		private void WriteServerDetailAtDebugVerbosity(Exception ex, string correlationId) {
+			string detail = UnwrapTransportFault(ex) is IServerDetailCarrier carrier
+				? carrier.ServerDetail
+				: null;
+			//Scrubbed and fenced even here. The excerpt reaching this line is only control-character
+			//normalized and length-capped, so a bearer token, a target URI or a credential pair inside it
+			//is still intact - and ConsoleLogger.WriteDebug CAPTURES into the per-flow buffer that
+			//BaseTool harvests into CommandExecutionResult.Messages, so "console-suppressed under MCP" is
+			//not the same as "cannot reach an envelope".
+			string safeDetail = SensitiveErrorTextRedactor.RedactUntrustedOrNull(detail);
+			if (safeDetail is null) {
+				return;
+			}
+			_logger.WriteDebug($"(correlation-id: {correlationId}) server detail: {safeDetail}");
+		}
+
+		/// <summary>
+		/// Composes the failure envelope for a provider failure reported WITHOUT an exception - a
+		/// <c>success:false</c> response whose only diagnosis is the platform's own prose.
+		/// </summary>
+		/// <remarks>
+		/// The prose is fenced and scrubbed rather than dropped (issue #1333): it is the platform's own
+		/// validation text, so no fixed sentence can replace it, but it reaches an agent's context through
+		/// the MCP envelope and must therefore be marked as observed data.
+		/// </remarks>
+		private SysSettingFailure ReportProviderFailure(string serverMessage, string operationLabel) {
+			string fenced = SensitiveErrorTextRedactor.RedactUntrustedOrNull(serverMessage);
+			string cause = fenced ?? "The environment reported an unsuccessful response without a message.";
+			SysSettingFailure failure = new(
+				fenced is null ? $"Failed {operationLabel}." : cause,
+				SysSettingErrorCategories.ProviderFailure, cause,
+				SysSettingFailureTexts.ProviderFailureRecovery, _correlationIds.New());
+			_logger.WriteError(DescribeFailureForLog(failure));
 			return failure;
 		}
 

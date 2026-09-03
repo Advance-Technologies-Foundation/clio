@@ -19,15 +19,25 @@ namespace Clio.Common;
 /// promoted into the tool's error field).
 /// </para>
 /// </remarks>
-public sealed class DataProviderFailureException : InvalidOperationException {
+public sealed class DataProviderFailureException : InvalidOperationException, IServerDetailCarrier {
 
 	/// <summary>Creates the failure with a composed diagnostic.</summary>
 	/// <param name="message">The diagnostic to surface to the caller.</param>
-	public DataProviderFailureException(string message) : base(message) { }
+	/// <param name="serverDetail">
+	/// The neutralized excerpt of the server text the diagnostic was derived from. Kept OUT of
+	/// <see cref="Exception.Message"/> by issue #1333, and surfaced only at debug verbosity.
+	/// </param>
+	public DataProviderFailureException(string message, string serverDetail = null) : base(message) =>
+		ServerDetail = serverDetail;
 
 	/// <summary>Creates the failure with a composed diagnostic and the underlying fault.</summary>
 	/// <param name="message">The diagnostic to surface to the caller.</param>
 	/// <param name="innerException">The failure the provider reported.</param>
-	public DataProviderFailureException(string message, Exception innerException)
-		: base(message, innerException) { }
+	/// <param name="serverDetail">The neutralized server excerpt, for debug verbosity only.</param>
+	public DataProviderFailureException(string message, Exception innerException,
+		string serverDetail = null)
+		: base(message, innerException) => ServerDetail = serverDetail;
+
+	/// <inheritdoc/>
+	public string ServerDetail { get; }
 }
