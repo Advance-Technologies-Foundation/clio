@@ -66,7 +66,8 @@ public sealed class ApplicationCreateService(
 	Func<EnvironmentSettings, ISysSettingsManager> sysSettingsManagerFactory,
 	ILogger logger,
 	ICaptionCultureResolver captionCultureResolver,
-	IRetryDelay retryDelay)
+	IRetryDelay retryDelay,
+	IODataBuildGate oDataBuildGate)
 	: IApplicationCreateService
 {
 	private const string CreateApplicationRoute = "ServiceModel/AppInstallerService.svc/CreateApp";
@@ -162,6 +163,9 @@ public sealed class ApplicationCreateService(
 		ResolvedApplicationCreateRequest resolvedRequest = ResolveRequest(request, client, environmentSettings, serviceUrlBuilder, logger, schemaNamePrefix);
 		string requestUrl = serviceUrlBuilder.Build(CreateApplicationRoute, environmentSettings);
 		string requestBody = JsonSerializer.Serialize(CreateRequestDto.From(resolvedRequest), JsonOptions);
+		// CreateApp may trigger an asynchronous OData rebuild. Do not start another application mutation
+		// while that build still owns the platform configuration metadata file.
+		oDataBuildGate.WaitUntilIdle(client, environmentSettings, resolvedRequest.Code);
 
 		logger.BeginSpinner($"Creating application '{resolvedRequest.Name}' ({resolvedRequest.Code})...");
 		string responseBody;
@@ -198,7 +202,13 @@ public sealed class ApplicationCreateService(
 
 		logger.EndSpinner(true);
 		reportStage?.Invoke("loading application metadata");
-		return LoadCreatedApplication(loadApplicationInfo, resolvedRequest.Code, response.Value, schemaNamePrefix);
+		ApplicationInfoResult result = LoadCreatedApplication(
+			loadApplicationInfo, resolvedRequest.Code, response.Value, schemaNamePrefix);
+		// CreateApp can queue an asynchronous OData rebuild after returning its application id. Keep the
+		// environment barrier held until that background work has settled, so the next Clio mutation does
+		// not inherit a rebuild started by this operation.
+		oDataBuildGate.WaitUntilIdle(client, environmentSettings, resolvedRequest.Code);
+		return result;
 	}
 
 	private static void ValidateRequest(ApplicationCreateRequest request)
