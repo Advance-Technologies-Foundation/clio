@@ -1,6 +1,8 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Net;
+using System.Net.Http;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using System.Text.Json.Serialization;
@@ -136,18 +138,58 @@ public sealed class ServerProcessDescriber(
 			return new JsonObject { ["name"] = identity.Code.Trim() };
 		}
 		if (!string.IsNullOrWhiteSpace(identity.Caption)) {
-			try {
-				IAppDataContext ctx = AppDataContextFactory.GetAppDataContext(dataProvider);
-				VwProcessLib row = ctx.Models<VwProcessLib>().FirstOrDefault(p => p.Caption == identity.Caption);
-				if (row is null) {
-					return Error.Failure("ResolveId", $"process not found (caption '{identity.Caption}')");
-				}
-				return new JsonObject { ["name"] = row.Name };
-			} catch (Exception e) {
-				return Error.Failure("ResolveId", e.Message);
-			}
+			return ResolveCaption(identity.Caption);
 		}
 		return Error.Failure("ResolveId", "no process identity provided (code, uid, or caption)");
+	}
+
+	/// <summary>
+	/// Resolves a display caption to a process code through the shared <see cref="ProcessLibResolver"/>.
+	/// </summary>
+	/// <remarks>
+	/// <para>
+	/// Describe and <c>generate-process-model</c> deliberately share one selection policy: a caption belongs
+	/// to a whole version family, because every version is a separate schema with its own name but the SAME
+	/// caption. This path previously took the first row the query returned, which on a versioned process is
+	/// an arbitrary family member — frequently version 0, which is exactly the graph nobody runs.
+	/// </para>
+	/// <para>
+	/// The resolver's error vocabulary is translated into this surface's own <c>ResolveId</c> code rather than
+	/// forwarded, so the not-found message stays what it has always been. The ambiguity error IS new here and
+	/// is the deliberate price of no longer answering for an arbitrary member: two processes that genuinely
+	/// share a caption now ask the caller for a code instead of silently picking one.
+	/// </para>
+	/// </remarks>
+	private ErrorOr<JsonObject> ResolveCaption(string caption) {
+		try {
+			IAppDataContext ctx = AppDataContextFactory.GetAppDataContext(dataProvider);
+			// All matches, not the first: the policy needs the candidate set to tell one family from two
+			// processes. Cheap because the model no longer declares the metadata blob (ENG-94374 story 1).
+			List<VwProcessLib> byCaption = ctx.Models<VwProcessLib>()
+				.Where(p => p.Caption == caption)
+				.ToList();
+			ErrorOr<VwProcessLib> resolved = ProcessLibResolver.Resolve(caption, byName: null, byCaption);
+			if (resolved.IsError) {
+				return resolved.FirstError.Type == ErrorType.NotFound
+					? Error.Failure("ResolveId", $"process not found (caption '{caption}')")
+					: Error.Failure("ResolveId", resolved.FirstError.Description);
+			}
+			return new JsonObject { ["name"] = resolved.Value.Name };
+		}
+		// Narrowed from a bare catch (Exception): a DataService read fails as transport, payload or timeout,
+		// and ATF's own expression exceptions mean the query above is wrong — a defect that must surface
+		// rather than be reported to the user as an unresolvable caption.
+		catch (WebException e) {
+			return Error.Failure("ResolveId", e.Message);
+		} catch (HttpRequestException e) {
+			return Error.Failure("ResolveId", e.Message);
+		} catch (JsonException e) {
+			return Error.Failure("ResolveId", e.Message);
+		} catch (TimeoutException e) {
+			return Error.Failure("ResolveId", e.Message);
+		} catch (InvalidOperationException e) {
+			return Error.Failure("ResolveId", e.Message);
+		}
 	}
 
 	/// <summary>WCF <c>BodyStyle=Wrapped</c> response envelope (wire-only).</summary>

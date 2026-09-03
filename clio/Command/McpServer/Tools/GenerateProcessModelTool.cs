@@ -27,7 +27,7 @@ public sealed class GenerateProcessModelTool(
 	/// </summary>
 	[McpServerTool(Name = GenerateProcessModelToolName, ReadOnly = false, Destructive = true, Idempotent = false,
 		OpenWorld = false)]
-	[Description("Generates a C# process model file for a process from the specified Creatio environment.")]
+	[Description("Generates a C# process model file for a process from the specified Creatio environment. The process is identified by its code (schema Name) or its display caption. A caption is shared by every version of a process, so it resolves to the ACTIVE version — the one the runtime executes — while a caption matching several distinct processes, or one whose active version cannot be established, is refused with the candidate codes.")]
 	public CommandExecutionResult GenerateProcessModel(
 		[Description("generate-process-model parameters")]
 		[Required]
@@ -53,7 +53,7 @@ public sealed class GenerateProcessModelTool(
 /// </summary>
 public sealed record GenerateProcessModelArgs(
 	[property: JsonPropertyName("code")]
-	[property: Description("Process code as it appears in the Creatio process designer")]
+	[property: Description("Process code (schema Name) or display caption as it appears in the Creatio process designer")]
 	[property: Required]
 	string Code,
 

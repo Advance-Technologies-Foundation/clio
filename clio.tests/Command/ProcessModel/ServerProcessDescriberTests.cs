@@ -1,8 +1,10 @@
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using System.Text.Json.Serialization;
+using ATF.Repository.Mock;
 using ATF.Repository.Providers;
 using Clio.Command.ProcessModel;
 using Clio.Common;
@@ -34,12 +36,30 @@ public sealed class ServerProcessDescriberTests {
 	/// keeps running against the shape a failed version read is required not to disturb.
 	/// </summary>
 	private static ServerProcessDescriber CreateDescriber(IApplicationClient client,
-		IProcessVersionLibReader versionLibReader = null) {
+		IProcessVersionLibReader versionLibReader = null, IDataProvider dataProvider = null) {
 		IServiceUrlBuilder urlBuilder = Substitute.For<IServiceUrlBuilder>();
 		urlBuilder.Build(ServiceUrlBuilder.KnownRoute.DescribeProcess).Returns(DescribeUrl);
 		return new ServerProcessDescriber(client,
-			Substitute.For<IDataProvider>(), urlBuilder,
+			dataProvider ?? Substitute.For<IDataProvider>(), urlBuilder,
 			versionLibReader ?? ReaderReturning(new ProcessVersionFacts { Warning = "not read in this test" }));
+	}
+
+	/// <summary>Caption-resolution candidates, keyed by the view's column names as ATF replays them.</summary>
+	private static IDataProvider CaptionCandidates(params (string Name, string Caption, bool? IsActive)[] rows) {
+		DataProviderMock provider = new();
+		provider.MockItems("VwProcessLib").Returns(rows
+			.Select(row => new Dictionary<string, object> {
+				["Id"] = Guid.NewGuid(),
+				["UId"] = Guid.NewGuid(),
+				["Name"] = row.Name,
+				["Caption"] = row.Caption,
+				["IsActiveVersion"] = row.IsActive,
+				["VersionParentUId"] = Guid.Parse(RootUId),
+				["PackageUId"] = Guid.Parse(PackageUId),
+				["Enabled"] = true
+			})
+			.ToList());
+		return provider;
 	}
 
 	private static IProcessVersionLibReader ReaderReturning(ProcessVersionFacts facts) {
@@ -898,6 +918,66 @@ public sealed class ServerProcessDescriberTests {
 		result.FirstError.Description.Should().StartWith("could not parse server response",
 			because: "the existing error text is a contract callers and tests already match on");
 		reader.DidNotReceive().Read(Arg.Any<string>());
+	}
+
+	[Test]
+	[Description("Describing by caption resolves a version family to the active version and asks the server for THAT schema name.")]
+	public void Describe_ShouldPostTheActiveVersionName_WhenTheCaptionMatchesAVersionFamily() {
+		// Arrange — one process, three schemas: a caption belongs to the whole family.
+		IApplicationClient client = ClientReturning(GraphResponse(ChildUId));
+		ServerProcessDescriber describer = CreateDescriber(client, dataProvider: CaptionCandidates(
+			("InvoiceVisaProcess", "Invoice approval", false),
+			("InvoiceVisaProcessInvoice1", "Invoice approval", true),
+			("InvoiceVisaProcessInvoice2", "Invoice approval", false)));
+
+		// Act
+		ErrorOr<DescribeProcessResult> result = describer.Describe(
+			new ProcessIdentity(null, null, "Invoice approval"), null);
+
+		// Assert
+		result.IsError.Should().BeFalse(
+			because: "a caption matching one family is resolvable — exactly one of its members runs");
+		client.Received(1).ExecutePostRequest(DescribeUrl,
+			Arg.Is<string>(body => Wrapped(body)["name"].GetValue<string>() == "InvoiceVisaProcessInvoice1"),
+			Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>());
+	}
+
+	[Test]
+	[Description("Describing by a caption two different processes share is refused with the candidate codes instead of answering for one of them.")]
+	public void Describe_ShouldRefuseWithCandidates_WhenTwoProcessesShareTheCaption() {
+		// Arrange
+		IApplicationClient client = ClientReturning(GraphResponse(RootUId));
+		ServerProcessDescriber describer = CreateDescriber(client, dataProvider: CaptionCandidates(
+			("UsrProcess_first", "Business process 1", true),
+			("UsrProcess_second", "Business process 1", true)));
+
+		// Act
+		ErrorOr<DescribeProcessResult> result = describer.Describe(
+			new ProcessIdentity(null, null, "Business process 1"), null);
+
+		// Assert
+		result.IsError.Should().BeTrue(
+			because: "two processes that each run are genuinely ambiguous, and picking one silently is the defect this replaces");
+		result.FirstError.Description.Should().Contain("UsrProcess_second",
+			because: "the caller resolves the ambiguity by code, so every candidate is named");
+		client.DidNotReceiveWithAnyArgs().ExecutePostRequest(default, default, default, default, default);
+	}
+
+	[Test]
+	[Description("A caption that matches nothing keeps the not-found message describe has always returned.")]
+	public void Describe_ShouldKeepTheNotFoundMessage_WhenNoProcessHasTheCaption() {
+		// Arrange
+		ServerProcessDescriber describer = CreateDescriber(ClientReturning(GraphResponse(RootUId)),
+			dataProvider: CaptionCandidates());
+
+		// Act
+		ErrorOr<DescribeProcessResult> result = describer.Describe(
+			new ProcessIdentity(null, null, "Nothing has this caption"), null);
+
+		// Assert
+		result.IsError.Should().BeTrue(because: "an unresolvable caption is still a failure");
+		result.FirstError.Description.Should().Be("process not found (caption 'Nothing has this caption')",
+			because: "routing through the shared resolver must not restate an error message callers already match on");
 	}
 
 }

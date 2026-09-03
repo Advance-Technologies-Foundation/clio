@@ -19,6 +19,13 @@ public sealed class ProcessLibResolverTests {
 	private static VwProcessLib Row(string name, string caption) =>
 		new() { Name = name, Caption = caption };
 
+	/// <summary>
+	/// A caption candidate carrying the active-version flag. Left NULL by <see cref="Row"/> on purpose, so
+	/// the pre-existing ambiguity tests keep exercising the unestablished-flag path.
+	/// </summary>
+	private static VwProcessLib VersionRow(string name, string caption, int version, bool? isActiveVersion) =>
+		new() { Name = name, Caption = caption, Version = version, IsActiveVersion = isActiveVersion };
+
 	[Test]
 	[Description("Resolves the process by exact system Name (code) when a Name match is present.")]
 	public void Resolve_Should_Return_NameMatch_When_Present() {
@@ -114,4 +121,79 @@ public sealed class ProcessLibResolverTests {
 		result.IsError.Should().BeTrue(because: "no match is available when both inputs are empty/null");
 		result.FirstError.Type.Should().Be(ErrorType.NotFound, because: "a null caption list means nothing matched");
 	}
+	[Test]
+	[Description("Resolves a caption shared by a whole version family to the version the runtime executes.")]
+	public void Resolve_Should_Return_TheActiveVersion_When_TheCaptionMatchesAVersionFamily() {
+		// Arrange — every version of a process carries the same caption, so this is ONE process, not three.
+		List<VwProcessLib> byCaption = [
+			VersionRow("InvoiceVisaProcess", "Invoice approval", 0, isActiveVersion: false),
+			VersionRow("InvoiceVisaProcessInvoice1", "Invoice approval", 1, isActiveVersion: true),
+			VersionRow("InvoiceVisaProcessInvoice2", "Invoice approval", 2, isActiveVersion: false)
+		];
+
+		// Act
+		ErrorOr<VwProcessLib> result = ProcessLibResolver.Resolve("Invoice approval", null, byCaption);
+
+		// Assert
+		result.IsError.Should().BeFalse(
+			because: "a caption matching one family is not ambiguous — exactly one of its members runs");
+		result.Value.Name.Should().Be("InvoiceVisaProcessInvoice1",
+			because: "the active version is the schema the runtime executes, and answering for another member answers for a graph nobody runs");
+	}
+
+	[Test]
+	[Description("Keeps the ambiguity error when several DIFFERENT processes share a caption, each active in its own family.")]
+	public void Resolve_Should_Return_Conflict_When_SeveralActiveProcessesShareTheCaption() {
+		// Arrange
+		List<VwProcessLib> byCaption = [
+			VersionRow("UsrProcess_first", "Business process 1", 0, isActiveVersion: true),
+			VersionRow("UsrProcess_second", "Business process 1", 0, isActiveVersion: true)
+		];
+
+		// Act
+		ErrorOr<VwProcessLib> result = ProcessLibResolver.Resolve("Business process 1", null, byCaption);
+
+		// Assert
+		result.IsError.Should().BeTrue(
+			because: "two processes that each run are genuinely ambiguous, and the active-version filter must not disguise that");
+		result.FirstError.Type.Should().Be(ErrorType.Conflict,
+			because: "the pre-existing ambiguity classification is unchanged for real ambiguity");
+		result.FirstError.Description.Should().Contain("UsrProcess_second",
+			because: "the caller picks a code out of the candidate list, so every match is named");
+	}
+
+	[Test]
+	[Description("Falls back to the ambiguity error rather than an arbitrary pick when no candidate's active-version flag is established.")]
+	public void Resolve_Should_Return_Conflict_When_NoCandidateIsFlaggedActive() {
+		// Arrange — IsActiveVersion is nullable because the view returns NULL when the package does not resolve.
+		List<VwProcessLib> byCaption = [
+			VersionRow("UsrProcess_first", "Business process 1", 0, isActiveVersion: null),
+			VersionRow("UsrProcess_second", "Business process 1", 1, isActiveVersion: null)
+		];
+
+		// Act
+		ErrorOr<VwProcessLib> result = ProcessLibResolver.Resolve("Business process 1", null, byCaption);
+
+		// Assert
+		result.IsError.Should().BeTrue(
+			because: "an unestablished flag is not permission to choose — the caller is asked for a code instead");
+		result.FirstError.Type.Should().Be(ErrorType.Conflict,
+			because: "the fallback is the error that already existed, not a new failure mode");
+	}
+
+	[Test]
+	[Description("Resolves a single caption match even when its active-version flag was never established.")]
+	public void Resolve_Should_Return_TheSingleMatch_When_ItsActiveFlagIsUnestablished() {
+		// Arrange
+		List<VwProcessLib> byCaption = [VersionRow("UsrProcess_only", "Business process 1", 0, isActiveVersion: null)];
+
+		// Act
+		ErrorOr<VwProcessLib> result = ProcessLibResolver.Resolve("Business process 1", null, byCaption);
+
+		// Assert
+		result.IsError.Should().BeFalse(
+			because: "one candidate needs no narrowing, so an unestablished flag must not turn a working resolution into an error");
+		result.Value.Name.Should().Be("UsrProcess_only", because: "the only match is the answer");
+	}
+
 }

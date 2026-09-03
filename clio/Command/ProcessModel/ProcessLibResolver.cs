@@ -7,9 +7,15 @@ using ErrorOr;
 
 /// <summary>
 /// Pure selection logic for resolving a process from <see cref="VwProcessLib"/> rows by system
-/// <c>Name</c> (process code) with a fallback to display <c>Caption</c>. Kept free of data
-/// access so it is unit-testable with plain in-memory rows.
+/// <c>Name</c> (process code) with a fallback to display <c>Caption</c>, and — because a version family
+/// shares one caption — to the ACTIVE version within that caption. Kept free of data access so it is
+/// unit-testable with plain in-memory rows.
 /// </summary>
+/// <remarks>
+/// This is the single seam both caption call sites go through (<c>ServerProcessDescriber</c> and
+/// <c>ProcessModelGenerator</c>), so the active-version policy exists once. Each call site keeps its own
+/// error vocabulary; only the selection lives here.
+/// </remarks>
 internal static class ProcessLibResolver {
 
 	/// <summary>
@@ -33,8 +39,20 @@ internal static class ProcessLibResolver {
 			return Error.NotFound("ResolveProcessByNameOrCaption",
 				$"Could not find process with name or caption:{nameOrCaption}");
 		}
-		// Caption is not unique — a multi-match is reported as an ambiguity to resolve by code.
+		// Caption is not unique, and a version family shares one: every version of a process is a separate
+		// schema with its own Name but the SAME Caption, so a caption matching several rows is usually ONE
+		// process rather than several. Narrow to the version the runtime executes before calling it ambiguous.
 		if (captionMatches.Count > 1) {
+			IReadOnlyList<VwProcessLib> activeVersions = captionMatches
+				.Where(p => p.IsActiveVersion == true)
+				.ToList();
+			if (activeVersions.Count == 1) {
+				return activeVersions[0];
+			}
+			// Everything else is genuine ambiguity, reported over ALL matches so the caller can pick a code.
+			// Several active rows are several distinct processes. NONE active means the process library could
+			// not establish the flag — it is nullable for exactly that reason — and an unestablished flag is
+			// no licence to pick a row.
 			string candidates = string.Join("; ",
 				captionMatches.Select(p => $"'{p.Caption}' (code: {p.Name})"));
 			return Error.Conflict("ResolveProcessByNameOrCaption",

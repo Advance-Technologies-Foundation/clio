@@ -1,5 +1,5 @@
 ---
-description: describe-business-process resolves a process by schema Name, and every saved process version is a SEPARATE schema with its own name, so on a versioned process it describes version 0 while the runtime executes the active version - the response now reports version/isActiveVersion/activeVersionName, but the resolution itself is unchanged and a caller that ignores those fields still explains the wrong graph
+description: describe-business-process resolves a process by schema Name, and every saved process version is a SEPARATE schema with its own name, so on a versioned process it describes version 0 while the runtime executes the active version - the response now reports version/isActiveVersion/activeVersionName, the BY-NAME resolution is still unchanged (a caption now resolves to the active version instead), and a caller that ignores those fields still explains the wrong graph
 applies-to:
   - clio/Command/DescribeProcessCommand.cs
   - clio/Command/McpServer/Tools/ProcessDesigner/DescribeProcessTool.cs
@@ -16,8 +16,11 @@ schema instance, so asking for `UsrProcess_0370312` on a process that has versio
 of version 0 — while the runtime redirects execution to whichever schema is flagged as the active
 version. The response now carries `version`, `isActiveVersion`, `activeVersionName`,
 `activeVersionSchemaUId`, `versionRootSchemaUId` and the `versions[]` family, so the graph's standing
-is stated; the resolution is unchanged, and a caller that does not read those fields is in exactly
-the position this record described before they existed.
+is stated. A caller that does not read those fields is in exactly the position this record described
+before they existed. The trap is now specific to the identity used: `--process-name` and
+`--process-uid` address ONE schema and are unchanged, while `--process-caption` resolves to the active
+version, because a caption belongs to the whole family — so on a versioned process the two identities
+answer for different graphs by design.
 
 **Why it is this way** — versioning was added on the platform side as a family of sibling schemas
 (the family is flat: every version points at the ROOT as its parent, not at the previous version).
