@@ -4939,15 +4939,21 @@ internal static class ToolContractCatalog {
 	private static ToolContractDefinition BuildPageValidate() {
 		return new ToolContractDefinition(
 			PageValidateTool.ToolName,
-			"Client-side Freedom UI page body validation without saving to Creatio. " +
+			"Client-side Freedom UI page body validation without saving to Creatio. Pass body inline or pass body-file using files.bodyFile returned by get-page. " +
 			"For web pages (body starts with `define(`): checks marker integrity, JS syntax, JSON content, field bindings, column bindings, " +
 			"handler structure, and VendorPrefix.Name format for converters, validators, and handler request values. " +
 			"For mobile pages (plain JSON body starting with `{`): validates that disallowed constructs (validators, handlers, custom converters sections) are absent.",
 			new ToolInputSchemaContract(
-				["body"],
+				[],
 				[
-					Field("body", StringType, "Full JavaScript page body with markers (web) or plain JSON body (mobile). Auto-detected by leading character."),
-					Field(ResourcesFieldName, StringType, "Optional JSON object string of localizable strings the platform does NOT auto-provide (custom titles, button captions, validator messages, explicit overrides). Applicable to web pages only. Only include keys with NO matching DS-bound view model attribute on the page \u2014 see `page-schema-resources` guidance.")
+					Field("body", StringType, "Optional inline JavaScript page body with markers (web) or plain JSON body (mobile). Auto-detected by leading character. Takes precedence when body-file is also provided."),
+					Field("body-file", StringType, $"Optional local path to the page body, normally files.bodyFile returned by get-page. Used when body is empty; one of body or body-file is required. Files larger than {PageValidateTool.MaxBodyFileBytes} bytes are rejected."),
+					Field(ResourcesFieldName, StringType, "Optional JSON object string of localizable strings the platform does NOT auto-provide (custom titles, button captions, validator messages, explicit overrides). Applicable to web pages only. Only include keys with NO matching DS-bound view model attribute on the page \u2014 see `page-schema-resources` guidance."),
+					Field("version", StringType, "Optional target platform version used to scope registry-driven chart-widget validation. Uses the latest catalog when omitted.")
+				],
+				AnyOf: [
+					new[] { "body" },
+					["body-file"]
 				]),
 			EnvelopeOutput(
 				"valid",
@@ -4963,6 +4969,9 @@ internal static class ToolContractCatalog {
 			[
 				Example("Validate a web page body before saving", new Dictionary<string, object?> {
 					["body"] = "define(\"MyApp/MyPage\", /** ... */)"
+				}),
+				Example("Validate the body file returned by get-page", new Dictionary<string, object?> {
+					["body-file"] = "C:\\workspace\\.clio-pages\\MyPage\\body.js"
 				}),
 				Example("Validate a web page body with resources", new Dictionary<string, object?> {
 					["body"] = "define(\"MyApp/MyPage\", /** ... */)",

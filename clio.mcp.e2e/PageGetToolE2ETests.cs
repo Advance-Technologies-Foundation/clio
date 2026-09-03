@@ -108,6 +108,64 @@ public sealed class PageGetToolE2ETests : McpContractFixtureBase {
 	}
 
 	[Test]
+	[Description("Fetches a real page to a custom output directory and validates the returned bodyFile without inlining its contents.")]
+	[AllureTag(ToolName)]
+	[AllureTag(PageValidateTool.ToolName)]
+	[AllureName("get-page bodyFile round-trips through validate-page")]
+	[AllureDescription("Uses a reachable Creatio environment to fetch the seeded page beneath an explicit output-directory, then passes the exact returned files.bodyFile path to validate-page over stdio MCP.")]
+	public async Task PageGetTool_ShouldSupportValidatePage_WhenCustomOutputDirectoryReturnsBodyFile() {
+		// Arrange
+		const string schemaName = "ContactPageV2";
+		McpE2ESettings settings = TestConfiguration.Load();
+		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
+		await using ArrangeContext arrangeContext = await ArrangeAsync(settings, TimeSpan.FromMinutes(3));
+		string outputDirectory = CreateFixtureDirectory("get-page-validate-page-round-trip");
+
+		// Act
+		CallToolResult getResult = await arrangeContext.Session.Client.CallToolAsync(
+			ClioRunTool.ToolName,
+			new Dictionary<string, object?> {
+				["command"] = ToolName,
+				["args"] = new Dictionary<string, object?> {
+					["schema-name"] = schemaName,
+					["environment-name"] = arrangeContext.EnvironmentName,
+					["output-directory"] = outputDirectory
+				}
+			},
+			cancellationToken: arrangeContext.CancellationTokenSource.Token);
+		PageGetResponse getResponse = EntitySchemaStructuredResultParser.Extract<PageGetResponse>(getResult);
+		CallToolResult validateResult = await arrangeContext.Session.Client.CallToolAsync(
+			ClioRunTool.ToolName,
+			new Dictionary<string, object?> {
+				["command"] = PageValidateTool.ToolName,
+				["args"] = new Dictionary<string, object?> {
+					["body-file"] = getResponse.Files?.BodyFile
+				}
+			},
+			cancellationToken: arrangeContext.CancellationTokenSource.Token);
+		PageValidateResponse validateResponse =
+			EntitySchemaStructuredResultParser.Extract<PageValidateResponse>(validateResult);
+
+		// Assert
+		getResult.IsError.Should().NotBeTrue(
+			because: "the real page read must complete before validating its materialized body");
+		getResponse.Success.Should().BeTrue(
+			because: $"get-page must fetch the seeded page from '{arrangeContext.EnvironmentName}'. Error: {getResponse.Error}");
+		getResponse.Files.Should().NotBeNull(
+			because: "the file-based validation handoff needs get-page file metadata");
+		getResponse.Files!.BodyFile.Should().StartWith(outputDirectory,
+			because: "get-page must honor the explicit output-directory used by the reported workflow");
+		File.Exists(getResponse.Files.BodyFile).Should().BeTrue(
+			because: "validate-page must receive a real file created by get-page");
+		validateResult.IsError.Should().NotBeTrue(
+			because: "the returned bodyFile should bind through the real MCP transport");
+		validateResponse.Valid.Should().BeTrue(
+			because: "validate-page must read and validate the exact body file get-page returned");
+		validateResponse.Validation.Errors.Should().BeNullOrEmpty(
+			because: "the seeded page body fetched from Creatio should pass client-side validation");
+	}
+
+	[Test]
 	[Description("Starts the real clio MCP server, resolves the seeded installed application AutoTestClioMcp and one of its pages, and verifies the structured get-page metadata contract for that page.")]
 	[AllureTag(ToolName)]
 	[AllureName("get-page returns stable metadata contract for a real page")]

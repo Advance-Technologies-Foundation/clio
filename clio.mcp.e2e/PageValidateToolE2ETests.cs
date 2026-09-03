@@ -83,6 +83,72 @@ public sealed class PageValidateToolE2ETests : McpContractFixtureBase {
 	}
 
 	[Test]
+	[Description("Reads and validates a well-formed page body from body-file through the real MCP server.")]
+	[AllureTag(ToolName)]
+	[AllureName("validate-page accepts body-file")]
+	[AllureDescription("Writes a valid page body to a temporary file, calls validate-page with body-file only, and verifies the file-based handoff succeeds over stdio MCP.")]
+	public async Task PageValidateTool_ShouldAcceptBodyFile_WhenFileContainsValidBody() {
+		// Arrange
+		string bodyFile = Path.Combine(CreateFixtureDirectory("validate-page-body-file"), "body.js");
+		await File.WriteAllTextAsync(bodyFile, ValidPageBody);
+		await using var context = Arrange(TimeSpan.FromMinutes(3));
+
+		// Act
+		CallToolResult callResult = await context.Session.CallToolAsync(
+			ToolName,
+			new Dictionary<string, object?> {
+				["args"] = new Dictionary<string, object?> { ["body-file"] = bodyFile }
+			},
+			context.CancellationTokenSource.Token);
+		PageValidateResponse response = EntitySchemaStructuredResultParser.Extract<PageValidateResponse>(callResult);
+
+		// Assert
+		callResult.IsError.Should().NotBeTrue(
+			because: "a readable body-file should return a structured validation result, not a protocol error");
+		response.Valid.Should().BeTrue(
+			because: "the same well-formed body must validate whether supplied inline or by file path");
+		response.Validation.Errors.Should().BeNullOrEmpty(
+			because: "the file-based input contains a valid page body");
+	}
+
+	[Test]
+	[Description("Returns an actionable structured failure when body-file does not exist.")]
+	[AllureTag(ToolName)]
+	[AllureName("validate-page reports a missing body-file")]
+	[AllureDescription("Dispatches validate-page through clio-run with a nonexistent body-file and verifies the MCP response classifies the failure while all validation flags remain false.")]
+	public async Task PageValidateTool_ShouldReportMissingPath_WhenBodyFileDoesNotExist() {
+		// Arrange
+		string bodyFile = Path.Combine(CreateFixtureDirectory("validate-page-missing-file"), "missing-body.js");
+		await using var context = Arrange(TimeSpan.FromMinutes(3));
+
+		// Act
+		CallToolResult callResult = await context.Session.CallToolAsync(
+			ClioRunTool.ToolName,
+			new Dictionary<string, object?> {
+				["command"] = ToolName,
+				["args"] = new Dictionary<string, object?> { ["body-file"] = bodyFile }
+			},
+			context.CancellationTokenSource.Token);
+		PageValidateResponse response = EntitySchemaStructuredResultParser.Extract<PageValidateResponse>(callResult);
+
+		// Assert
+		callResult.IsError.Should().NotBeTrue(
+			because: "an input failure should remain a structured validation result");
+		response.Valid.Should().BeFalse(
+			because: "a missing file cannot provide a page body");
+		response.Validation.MarkersOk.Should().BeFalse(
+			because: "markers were not checked without file content");
+		response.Validation.JsSyntaxOk.Should().BeFalse(
+			because: "missing content must not be reported as syntactically valid");
+		response.Validation.ContentOk.Should().BeFalse(
+			because: "missing content must not be reported as valid content");
+		response.Validation.Errors.Should().ContainSingle(error => error.Contains("not found"),
+			because: "the response must classify the missing input without exposing the host path");
+		response.Validation.Errors.Should().NotContain(error => error.Contains(bodyFile),
+			because: "structured MCP failures must not disclose host filesystem paths");
+	}
+
+	[Test]
 	[Description("Accepts an explicit version argument and still validates a well-formed body — proves the version arg flows end-to-end through the real MCP transport into the registry-driven chart-widget validation path.")]
 	[AllureTag(ToolName)]
 	[AllureName("validate-page accepts an explicit version argument")]

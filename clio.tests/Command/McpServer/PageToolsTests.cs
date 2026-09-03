@@ -2318,7 +2318,7 @@ public class PageToolsTests
 		// Arrange
 		IMobileComponentInfoCatalog mobileCatalog = Substitute.For<IMobileComponentInfoCatalog>();
 		IComponentInfoCatalog webCatalog = Substitute.For<IComponentInfoCatalog>();
-		PageValidateTool tool = new(mobileCatalog, webCatalog);
+		PageValidateTool tool = new(mobileCatalog, webCatalog, Substitute.For<System.IO.Abstractions.IFileSystem>());
 		string body = CreatePageBody(
 			handlers: """[{ request: "crt.HandleViewModelInitRequest", handler: async (request, next) => { const x = $context["UsrMode"]; return next?.handle(request); } }]""");
 		PageValidateArgs args = new(body);
@@ -2339,7 +2339,7 @@ public class PageToolsTests
 		// Arrange
 		IMobileComponentInfoCatalog mobileCatalog = Substitute.For<IMobileComponentInfoCatalog>();
 		IComponentInfoCatalog webCatalog = Substitute.For<IComponentInfoCatalog>();
-		PageValidateTool tool = new(mobileCatalog, webCatalog);
+		PageValidateTool tool = new(mobileCatalog, webCatalog, Substitute.For<System.IO.Abstractions.IFileSystem>());
 		string body = CreatePageBody(
 			viewConfigDiff: """
 				[

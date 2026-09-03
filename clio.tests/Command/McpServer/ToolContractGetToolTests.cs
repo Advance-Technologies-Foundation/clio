@@ -3072,6 +3072,33 @@ public sealed class ToolContractGetToolTests {
 
 	[Test]
 	[Category("Unit")]
+	[Description("Advertises body-file as the stateless handoff from get-page without incorrectly requiring inline body.")]
+	public void ToolContractGet_ShouldAdvertiseBodyFile_WhenValidatePageContractIsRequested() {
+		// Arrange
+		ToolContractGetTool tool = new();
+
+		// Act
+		ToolContractGetResponse result = tool.GetToolContracts(
+			new ToolContractGetArgs([PageValidateTool.ToolName]));
+		ToolContractDefinition contract = result.Tools!.Single();
+
+		// Assert
+		contract.InputSchema.Required.Should().BeEmpty(
+			because: "body and body-file are alternatives that the runtime validates as a one-of requirement");
+		contract.InputSchema.AnyOf.Should().BeEquivalentTo(
+			[new[] { "body" }, new[] { "body-file" }],
+			because: "the served schema must express the same alternative-input rule that runtime validation enforces");
+		contract.InputSchema.Properties.Should().Contain(field =>
+				field.Name == "body-file" && field.Description.Contains("files.bodyFile"),
+			because: "callers must be able to pass the exact path returned by get-page without guessing an output directory");
+		contract.InputSchema.Properties.Should().Contain(field => field.Name == "version",
+			because: "the curated contract must expose the version argument accepted by validate-page");
+		contract.Examples.Should().Contain(example => example.Arguments.ContainsKey("body-file"),
+			because: "the served contract should demonstrate the file-based handoff for large page bodies");
+	}
+
+	[Test]
+	[Category("Unit")]
 	[Description("GetToolContracts derives legacyNoNamesFullShape end-to-end from a live RequestContext whose ClientInfo matches the legacy CAADT 1.4.0 stdio identity, dispatching a no-names call to full tool contracts instead of the compact index.")]
 	public void ToolContractGet_Should_ReturnFullShape_ForLegacyClientInfo_EndToEnd() {
 		// Arrange
