@@ -22,6 +22,33 @@ One change is easy to misread as a defect and is not: the platform quotes the ex
 converter left it, so `1.5` comes back as `1.5m` and a `[#[Parameter:{uid}]#]` reference comes back as
 the parameter's NAME. Measured, not inferred.
 
+**WHERE THE SHIPPED GUIDANCE DISAGREES WITH THESE CASES, AND WHY.** A review found four criteria
+contradicting the published articles and objected that no adjudication was recorded. It is recorded here.
+Three of the four are not disagreements about behaviour; one is a real requirement change.
+
+- **TC-10 / TC-17 — a real change, accepted.** They require an unfamiliar macro family to be STORED WITH A
+  WARNING. After the collapse the only reachable outcomes are silent acceptance and a hard refusal: the
+  platform's pre-save gate has no notice channel, and the package's own one went with its validator.
+  Accepted by the project owner: validation IS called, and if the platform does not object the artifact is
+  acceptable — our recognition list may simply be behind the engine. Recorded in
+  `spec/adr/adr-collapse-formula-validation-onto-platform-rule.md` under *Accepted risks*. The expectations
+  in both cases are rewritten and mark BOTH a warning and a refusal as defects.
+- **`ColumnValue` / `SamplingColumnValue` "must round-trip" — refuted by measurement.** The ticket lists
+  them as accepted-but-unadvertised families. Measured over a mapping onto a plain process parameter, they
+  are refused, exactly as an invented family is: they are real platform families used in a context no
+  converter covers. `BooleanValue` being advertised alongside is not an inconsistency — it is a different
+  family with converter support, measured the same way.
+- **TC-11 / TC-12 — not a disagreement.** They name `RoundUp` / `RoundDown` / `Module` / `Maximum` /
+  `Minimum` / `Average` as the guided set. Those are the DESIGNER's displayed labels, not engine
+  identifiers: you author `Math.Ceiling(...)` and the designer renders `RoundUp(...)`, resolving the UId
+  back to the parameter name at the same time. Both directions of that conversion are the platform's, and
+  `process-formulas` documents the pair. So an "accepted C# spelling" is not a guidance defect — it is the
+  spelling the engine takes.
+- **TC-08 — not a disagreement either.** It requires a condition on a result-driven connector to SURVIVE.
+  It does: the text is stored and `describe` reports it, together with `branchesOnActivityResult: true` to
+  say the platform will ignore it. What is refused is WRITING a new condition onto such a flow. Different
+  operations, both documented.
+
 **Conditions.** A Creatio environment registered in clio with `CrtProcessBuilder 1.4.0.44` or newer
 installed (`install-process-builder`), an agent with the clio MCP server connected, and a writable
 `Custom` package. .44 is not a preference: it is the enforced `[RequiresPackage]` floor, so create and
