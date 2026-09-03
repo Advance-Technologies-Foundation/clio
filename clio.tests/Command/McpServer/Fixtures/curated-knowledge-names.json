@@ -1,7 +1,7 @@
 {
   "library": "com.creatio.clio",
-  "libraryVersion": "1.13.86",
-  "sequence": 1013086000,
+  "libraryVersion": "1.13.87",
+  "sequence": 1013087000,
   "availableNames": [
     "agent-execution",
     "app-modeling",
@@ -93,6 +93,7 @@
     "creatio.process-perform-task",
     "creatio.process-script-task",
     "creatio.process-send-email",
+    "creatio.product-telemetry",
     "creatio.record-rights",
     "creatio.related-list",
     "creatio.related-page-binding",
@@ -159,6 +160,7 @@
     "process-perform-task",
     "process-script-task",
     "process-send-email",
+    "product-telemetry",
     "record-rights",
     "related-list",
     "related-page-binding",
