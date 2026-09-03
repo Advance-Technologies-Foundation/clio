@@ -123,10 +123,11 @@ Test naming: `MethodName_ShouldBehavior_WhenCondition`
     `isActiveVersion = false` (so create and activate are separate at the PLATFORM level, not just in our
     design), and the family is set flat at composition time — a version of a version still points at the
     root. Both now read from code rather than inferred.
-  - The BASE manager's `getCanUseProcessVersions()` is a hard `return false`, and on that branch
-    `setIsActualVersion` invokes its callback with `{success: true}` WITHOUT issuing a request. Our write
-    half is server-side and avoids it, but anyone reusing the client machinery inherits a silent no-op
-    that reports success.
+  - ~~The BASE manager `getCanUseProcessVersions()` is a hard `return false`~~ — **CORRECTED in the
+    fourth pass.** That is the base/Embedded DEFAULT. The manager business processes actually use,
+    `Terrasoft.manager.ProcessSchemaManager`, overrides it to `return true`. The silent-no-op branch is
+    real but narrow: embedded (case/DCM) managers and anything inheriting the base, NOT business
+    processes. I recorded it too broadly and the network trace caught it.
   - **AC-01, third pass: run properly, and it cannot be executed here — dead ends named.** Five routes
     to an implementation that creates a version were tried. The Shell hash `#ProcessSchemaDesigner/<uid>`
     falls back to the app list; `ViewModule.aspx` REDIRECTS to the Shell; `ProcessDesigner.aspx` and
@@ -156,7 +157,32 @@ Test naming: `MethodName_ShouldBehavior_WhenCondition`
     `IsInterpretable = True` and an extra `StudioFreeProcessUrl` property. That last one corrects the
     earlier note: `IsInterpretable` differing across the stock family is an authoring difference, not a
     versioning artefact. The process has no versions and can still be deleted if the fixture is not wanted.
-  - Worth recording about clio itself: `create-business-process` REFUSED a direct MCP call with
+  - **Fourth pass, second stand (studio edition, core 10.2.3.0) — the classic designer IS served here,
+    at the URL guessing never found: `/0/Nui/ViewModule.aspx?vm=SchemaDesigner#process/<schemaUId>`.** On
+    the first stand `ViewModule.aspx` redirects to the Freedom shell, so the designer is absent THERE,
+    not in the product. Answering the original question: yes, that stand is classic.
+  - Measured there first-hand: a designer-created process gets the auto-generated code
+    `UsrProcess_f817a44` (prefix + hex tail — the shape V7 warns about), lands in `Custom` with
+    `Version = 0`, `IsActiveVersion = true`, own UId as the family key.
+  - **Editing an ACTIVE process and saving OVERWRITES it in place — no version offered, none created.**
+    Observed: "Successfully saved", row still `Version = 0`. The guidance article asserts exactly this
+    about irreversible in-place edits; now it has evidence.
+  - Activation reads before it writes: "Set as actual version" issued `GetActualVersionUId` and
+    `GetRunningProcessesCount`, then sent NO `SetIsActualVersion`. The platform gates activation on the
+    running-instance count, and the refusal is silent unless the caller inspects the result — input for
+    story 13.
+  - **The version parent must be COMPUTED, not copied.** An instance `parentSchemaUId` is the INHERITANCE
+    parent: mine was `bb4d6607-...`, equal to the manager `defSchemaUId`.
+    `getIsSetParentSchemaUId = e && !isEmptyGUID(e) && e !== defSchemaUId`, so the composer ignores it and
+    roots the family at the source. A server-side copy of `parentSchemaUId` would root the family at the
+    BASE process schema. Verified both ways on the live manager.
+  - AC-01 still unrun, obstacle now precise: the designer offers no "save as new version" for a process
+    with no running instances (ACTIONS holds only "Set as actual version"), and `getNewSchemaVersion`
+    needs the designer view-model context (`sourceSchema`, `sysPackage`, `canEditPackageSchema`) which the
+    manager item does not carry and which is not reachable from page scope. Untried lever, named rather
+    than dismissed: give the process a genuinely live instance (a waiting user task, not
+    start-to-terminate) and save again — `GetRunningProcessesCount` in the validation path is good reason
+    to think that is what surfaces the prompt.  - Worth recording about clio itself: `create-business-process` REFUSED a direct MCP call with
     `confirmation-required`, because a write-capable tool absent from `tools/list` cannot show the host's
     prompt, and told the caller to route through `clio-run`. The gate works as designed.
   - **BLOCKED on a decision.** AC-01's second half, AC-03 (`GetMaxProcessVersionInPackage`, needs
