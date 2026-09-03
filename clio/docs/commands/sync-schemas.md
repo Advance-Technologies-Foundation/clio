@@ -45,6 +45,13 @@ fails the call before any server request, so nothing at all is applied. An unbin
 but operations earlier in the batch have already run and remain `completed` in `results`. A missing or
 blank `schema-name` is rejected the same way, up front.
 
+**Two levels are validated, the levels below them are not.** The guarantee above covers the top-level
+arguments and each `operations[i]` object. Keys nested INSIDE `columns[*]`, `update-operations[*]` and
+`seed-rows[*]` are deliberately bound loosely and an unknown one there is dropped silently under
+`success: true`. That is on purpose: the `get-app-info` column round-trip (see
+[get-app-info](get-app-info.md)) sends a column back exactly as it was read, and a strict bind at that
+level would reject it. Send only the documented keys inside those three collections.
+
 #### `create-lookup`
 
 Creates a lookup schema inheriting from `BaseLookup` and automatically registers it in the standard `Lookups` section.

@@ -470,13 +470,18 @@ the identical batch after an ambiguous failure is safe. Details an external AI r
 
 **Per-operation `status`, transient retry, and resume-plan.** Each entry in `results` carries a
 machine-readable `status` (`completed` | `failed`), an `operation-index` (zero-based index into the
-request `operations`), and — only when the operation was retried for a transient network fault — an
+request `operations`, or the sentinel `-1` on a whole-call rejection where no operation was
+examined), and — only when the operation was retried for a transient network fault — an
 `attempts` count. Transient network failures (DNS/reset/timeout/gateway) are retried per operation
 (up to 3 attempts with short backoff) before the op fails. On a mid-batch abort the response carries
 a `resume-plan` (the failed op plus the not-run ops, in re-submittable shape). Because the schema ops
 are convergent, re-submitting the whole batch verbatim is safe; resubmitting only
 `resume-plan.operations` is the efficient path and is required for `seed-data` (NOT replay-safe),
-which the plan converts to a standalone op instead of recreating the schema.
+which the plan converts to a standalone op instead of recreating the schema. A WHOLE-CALL rejection
+is different from a mid-batch abort: arguments that fail the top-level field-shape check (or an
+omitted/empty `operations` array) put ONE entry in `results` — `type: "sync-schemas"`,
+`operation-index: -1` — and emit NO `resume-plan`, because nothing ran and the whole call is
+resubmitted after the fix.
 
 
 ### 4. User Task Engineering

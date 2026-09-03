@@ -3883,7 +3883,7 @@ public sealed class SchemaSyncToolTests {
 
 	[Test]
 	[Category("Unit")]
-	[Description("An omitted 'operations' array is rejected with the caller-fixable message, never the ArgumentNullException the ToList() used to throw — this pins the ORDERING of the null guard above the materialization (PR #1354 review).")]
+	[Description("A MIS-KEYED operations array ('ops') is rejected by the alias branch with the exact rename, never the ArgumentNullException the ToList() used to throw. The null guard itself is pinned separately, by SchemaSync_ShouldRejectNullOperations_WithNoExtensionData (PR #1354 review round 2).")]
 	public async Task SchemaSync_ShouldRejectOmittedOperations_WithoutThrowingArgumentNullException() {
 		// Arrange
 		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
@@ -3911,7 +3911,38 @@ public sealed class SchemaSyncToolTests {
 			because: "the caller must know the batch had no server-side effect");
 		response.Results[0].Error.Should().NotContain("Value cannot be null",
 			because: "an opaque ArgumentNullException from Enumerable.ToList(null) is the unactionable answer this validation exists to remove — "
-				+ "the null guard must stay ABOVE the materialization");
+				+ "the alias branch returns before the materialization is reached");
+		response.ResumePlan.Should().BeNull(
+			because: "no operation ran, so there is nothing to resume");
+		convergence.DidNotReceive().Classify(Arg.Any<SchemaConvergenceTarget>());
+		commandResolver.DidNotReceive().Resolve<CreateEntitySchemaCommand>(Arg.Any<CreateEntitySchemaOptions>());
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("The payload #1303 describes: 'operations' simply OMITTED, with no unknown key at all. Nothing short-circuits, so the null guard is the only thing between the caller and Enumerable.ToList(null) — this is what pins that guard ABOVE the materialization (PR #1354 review round 2).")]
+	public async Task SchemaSync_ShouldRejectNullOperations_WithNoExtensionData() {
+		// Arrange
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		ISchemaConvergenceService convergence = Convergence();
+		SchemaSyncTool tool = new(commandResolver, ConsoleLogger.Instance, convergence);
+		SchemaSyncArgs args = new("dev", "UsrPkg", null!);
+
+		// Act
+		SchemaSyncResponse response = await tool.SchemaSync(args);
+
+		// Assert
+		response.Success.Should().BeFalse(
+			because: "an omitted operations array cannot be applied and must not be reported as success");
+		response.Results.Should().HaveCount(1,
+			because: "the top-level rejection replaces the whole batch with one targeted validation result");
+		response.Results[0].Error.Should().Contain("'operations' is required and must be a non-empty array",
+			because: "this is the caller-fixable text the guard exists to produce, and nothing else asserts it");
+		response.Results[0].Error.Should().NotContain("Value cannot be null",
+			because: "Enumerable.ToList(null) is the unactionable answer this validation exists to remove — "
+				+ "moving the guard below the materialization must turn this test red");
+		response.Results[0].OperationIndex.Should().Be(SchemaSyncTool.NoOperationIndex,
+			because: "no operation was even examined, so index 0 would point a recovering agent at operations[0]");
 		response.ResumePlan.Should().BeNull(
 			because: "no operation ran, so there is nothing to resume");
 		convergence.DidNotReceive().Classify(Arg.Any<SchemaConvergenceTarget>());
