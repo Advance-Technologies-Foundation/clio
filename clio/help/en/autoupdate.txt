@@ -9,7 +9,8 @@ SYNOPSIS
 
 DESCRIPTION
     Controls the clio policy in appsettings.json. Knowledge and toolkit have
-    independent enabled, frequency-minutes, and next-run settings.
+    independent enabled, frequency-minutes, and next-run settings. Due policies
+    reuse the existing update behavior on a best-effort basis.
 
 OPTIONS
     --enable     Enable automatic clio updates (default behavior)

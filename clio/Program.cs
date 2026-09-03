@@ -21,6 +21,7 @@ using Clio.Command.TIDE;
 using Clio.Command.Update;
 using Clio.Common;
 using Clio.Common.McpWorker;
+using Clio.Common.Skills;
 using Clio.Help;
 using Clio.Package;
 using Clio.Query;
@@ -1582,9 +1583,19 @@ internal class Program {
 		string first = args[0];
 		if (string.Equals(first, "update-cli", StringComparison.OrdinalIgnoreCase)
 			|| string.Equals(first, "update", StringComparison.OrdinalIgnoreCase)
+			|| string.Equals(first, "install-knowledge", StringComparison.OrdinalIgnoreCase)
 			|| string.Equals(first, "update-knowledge", StringComparison.OrdinalIgnoreCase)
+			|| string.Equals(first, "delete-knowledge", StringComparison.OrdinalIgnoreCase)
+			|| string.Equals(first, "add-knowledge-source", StringComparison.OrdinalIgnoreCase)
+			|| string.Equals(first, "remove-knowledge-source", StringComparison.OrdinalIgnoreCase)
+			|| string.Equals(first, "enable-knowledge-source", StringComparison.OrdinalIgnoreCase)
+			|| string.Equals(first, "disable-knowledge-source", StringComparison.OrdinalIgnoreCase)
+			|| string.Equals(first, "install-toolkit", StringComparison.OrdinalIgnoreCase)
+			|| string.Equals(first, "install-skills", StringComparison.OrdinalIgnoreCase)
 			|| string.Equals(first, "update-toolkit", StringComparison.OrdinalIgnoreCase)
 			|| string.Equals(first, "update-skill", StringComparison.OrdinalIgnoreCase)
+			|| string.Equals(first, "delete-toolkit", StringComparison.OrdinalIgnoreCase)
+			|| string.Equals(first, "delete-skill", StringComparison.OrdinalIgnoreCase)
 			|| string.Equals(first, "autoupdate", StringComparison.OrdinalIgnoreCase)
 			|| string.Equals(first, "mcp-http", StringComparison.OrdinalIgnoreCase)) {
 			return true;
@@ -1606,29 +1617,12 @@ internal class Program {
 		}
 		RunIfDue(settingsRepository, AutoUpdateTarget.Clio, () => {
 			IAppUpdater appUpdater = serviceProvider.GetRequiredService<IAppUpdater>();
-			(bool available, string latestVersion) = appUpdater
-				.CheckForUpdateWithCacheAsync(SettingsRepository.AppSettingsFolderPath)
-				.GetAwaiter().GetResult();
-
-			if (!available || string.IsNullOrEmpty(latestVersion)) return;
-
-			string currentVersion = appUpdater.GetCurrentVersion();
-			ConsoleLogger.Instance.WriteInfo(
-				$"Updating clio {currentVersion} -> {latestVersion} in background...");
 			appUpdater.UpdateInBackgroundAsync().GetAwaiter().GetResult();
 		});
 		RunIfDue(settingsRepository, AutoUpdateTarget.Knowledge,
-			() => StartUpdateCommand(serviceProvider, "update-knowledge"));
+			() => serviceProvider.GetRequiredService<IKnowledgeSourceManagementService>().Update(sourceAlias: null));
 		RunIfDue(settingsRepository, AutoUpdateTarget.Toolkit,
-			() => StartUpdateCommand(serviceProvider, "update-toolkit"));
-	}
-
-	private static void StartUpdateCommand(IServiceProvider serviceProvider, string command) {
-		string clioAssembly = Assembly.GetExecutingAssembly().Location;
-		ProcessExecutionOptions options = new("dotnet", string.Empty) {
-			ArgumentList = [clioAssembly, command]
-		};
-		serviceProvider.GetRequiredService<IProcessExecutor>().FireAndForgetAsync(options).GetAwaiter().GetResult();
+			() => serviceProvider.GetRequiredService<ISkillInstallService>().Update(target: null, repo: null));
 	}
 
 	private static void RunIfDue(ISettingsRepository settingsRepository, AutoUpdateTarget target, Action update) {

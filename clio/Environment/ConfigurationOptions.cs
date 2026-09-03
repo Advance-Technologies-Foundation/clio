@@ -1008,6 +1008,9 @@ namespace Clio
 			result.Autoupdate.Clio ??= new AutoUpdatePolicy { FrequencyMinutes = 480 };
 			result.Autoupdate.Knowledge ??= new AutoUpdatePolicy { FrequencyMinutes = 60 };
 			result.Autoupdate.Toolkit ??= new AutoUpdatePolicy { FrequencyMinutes = 60 };
+			if (result.Autoupdate.Clio.FrequencyMinutes <= 0) result.Autoupdate.Clio.FrequencyMinutes = 480;
+			if (result.Autoupdate.Knowledge.FrequencyMinutes <= 0) result.Autoupdate.Knowledge.FrequencyMinutes = 60;
+			if (result.Autoupdate.Toolkit.FrequencyMinutes <= 0) result.Autoupdate.Toolkit.FrequencyMinutes = 60;
 			result.Knowledge.Sources ??= new Dictionary<string, KnowledgeSourceConfiguration>(
 				StringComparer.OrdinalIgnoreCase);
 			result.Knowledge.TopicPins ??= new Dictionary<string, string>(StringComparer.Ordinal);

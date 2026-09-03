@@ -21,7 +21,7 @@ command without arguments displays whether automatic clio updates are enabled.
 
 Clio also has independent knowledge and toolkit policies. On an eligible
 command startup, each due enabled policy advances its `next-run` timestamp and
-starts the existing updater on a best-effort basis.
+calls the existing updater on a best-effort basis.
 
 ```json
 "autoupdate": {
@@ -60,7 +60,7 @@ autoupdate --enable
 - With no flags: prints whether auto-update is currently enabled or disabled
 - --enable and --disable control only `autoupdate.clio.enabled`
 - Default frequencies are 480 minutes for clio and 60 minutes for knowledge and toolkit
-- Due knowledge and toolkit updates run as detached `update-knowledge` and `update-toolkit` commands
+- Due policies reuse the existing clio, knowledge, and toolkit update services
 - Manual update commands remain available and bypass the schedule
 
 ## Exit Codes

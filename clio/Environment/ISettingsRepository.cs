@@ -381,7 +381,7 @@ namespace Clio.UserEnvironment
 		/// <param name="target">Component whose schedule is checked.</param>
 		/// <param name="now">Current time.</param>
 		/// <returns><c>true</c> when the component should be updated.</returns>
-		bool TryScheduleAutoupdate(global::Clio.Common.AutoUpdateTarget target, DateTimeOffset now);
+		bool TryScheduleAutoupdate(global::Clio.Common.AutoUpdateTarget target, DateTimeOffset now) => false;
 
 		/// <summary>
 		/// Determines whether the named feature flag is enabled.

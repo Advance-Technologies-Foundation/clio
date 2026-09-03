@@ -383,7 +383,6 @@ public sealed class SettingsRepositoryFeatureTests {
 			  "autoupdate": {
 			    "knowledge": {
 			      "enabled": false,
-			      "frequency-minutes": 15,
 			      "next-run": "2026-09-03T10:00:00+00:00"
 			    }
 			  },
@@ -393,6 +392,7 @@ public sealed class SettingsRepositoryFeatureTests {
 		_fileSystem.File.WriteAllText(SettingsRepository.AppSettingsFile, json);
 		SettingsRepository sut = new(_fileSystem);
 		string beforeSchedule = _fileSystem.File.ReadAllText(SettingsRepository.AppSettingsFile);
+		Settings normalized = JsonConvert.DeserializeObject<Settings>(beforeSchedule);
 
 		// Act
 		bool result = sut.TryScheduleAutoupdate(AutoUpdateTarget.Knowledge,
@@ -400,6 +400,8 @@ public sealed class SettingsRepositoryFeatureTests {
 
 		// Assert
 		result.Should().BeFalse(because: "disabled policies do not run automatically");
+		normalized.Autoupdate.Knowledge.FrequencyMinutes.Should().Be(60,
+			because: "omitted frequencies use the component default");
 		_fileSystem.File.ReadAllText(SettingsRepository.AppSettingsFile).Should().Be(beforeSchedule,
 			because: "a skipped check must not rewrite appsettings.json");
 	}
