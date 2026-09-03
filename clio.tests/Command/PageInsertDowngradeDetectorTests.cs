@@ -186,9 +186,12 @@ public class PageInsertDowngradeDetectorTests {
 	}
 
 	[Test]
-	[Description("Detect does not warn when the final body keeps the insert alongside a merge (web and mobile)")]
+	[Description("Detect does not warn when the final body keeps the insert alongside a merge — orphaning is the only thing this detector reports (web and mobile)")]
 	public void Detect_ShouldNotWarn_WhenInsertIsKeptWithMerge([Values(PageSchemaType.Web, PageSchemaType.Mobile)] PageSchemaType kind) {
-		// Arrange — both ops present in order compose fine at runtime.
+		// Arrange — the insert survives, so nothing is ORPHANED. The two ops do NOT compose at runtime:
+		// the differ applies whole groups in a fixed order, merges before inserts, never in array order,
+		// so the sibling merge is inert. That is PageInertOperationDetector's finding (GH-1240), not this
+		// detector's, and the cross-link is asserted in PageInertOperationDetectorTests.
 		string prior = Body(kind, InsertName);
 		string final = Body(kind, InsertAndMergeName);
 
@@ -197,7 +200,7 @@ public class PageInsertDowngradeDetectorTests {
 
 		// Assert
 		warnings.Should().BeEmpty(
-			$"because an insert that remains present is not orphaned even when a sibling merge exists ({kind})");
+			$"because an insert that remains present cannot be orphaned; the sibling merge's inertness is reported by PageInertOperationDetector, not here ({kind})");
 	}
 
 	[Test]
@@ -260,9 +263,11 @@ public class PageInsertDowngradeDetectorTests {
 	}
 
 	[Test]
-	[Description("Detect warns on an append-merged web body where dedupe left only a merge for an inserted name")]
-	public void Detect_ShouldWarn_WhenAppendMergeResultDropsInsert() {
-		// Arrange — the append merge result keeps only the incoming merge (insert deduped away by name).
+	[Description("Detect warns on a final web body that replaced an inserted name's insert with a merge, leaving it orphaned")]
+	public void Detect_ShouldWarn_WhenFinalBodyReplacesAnInsertWithAMerge() {
+		// Arrange — a hand-authored replace body that swaps the prior insert for a merge. Since GitHub
+		// #1132 an append can no longer produce this shape (identity is (operation, name), so the merge
+		// is kept ALONGSIDE the insert), but a replace body still can, which is why the detector stays.
 		string prior = WebBody(InsertName);
 		string mergedFinal = WebBody(MergeName);
 
@@ -271,7 +276,7 @@ public class PageInsertDowngradeDetectorTests {
 
 		// Assert
 		warnings.Should().HaveCount(1,
-			"because append dedupe by name drops the prior insert, leaving an orphaned merge");
+			"because dropping the prior insert in favour of a merge leaves an orphaned merge, whatever authored the final body");
 	}
 
 	[Test]

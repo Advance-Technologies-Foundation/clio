@@ -138,14 +138,35 @@ DESCRIPTION
 
     WRITE MODES:
     --mode replace (default) saves the body verbatim. --mode append loads the
-    current schema body from the server and merges your incoming fragment into
-    it (viewConfigDiff dedupes by name, handlers by request). Append requires the
-    diff form: a full-config body (the SCHEMA_VIEW_MODEL_CONFIG / SCHEMA_MODEL_CONFIG
-    markers, instead of the *_DIFF markers) cannot be merged and is rejected with
-    an actionable hint — use --mode replace for such a body. The message names which
-    body is full-config: convert your own incoming body to the diff form, but if the
-    current page on the server is full-config (every create-app-section page is), append
-    is not supported against it — use --mode replace.
+    current schema body from the server and merges your incoming fragment into it.
+    A viewConfigDiff entry is replaced only when both operation and name match one
+    of yours - and, for a remove, whether it targets properties. Incoming wins and
+    keeps the existing entry's position; every other existing operation is preserved
+    verbatim, including a second operation on a component you already target. One
+    exception: if your fragment supersedes an identity the page carries TWICE, only
+    the first is replaced and the later one is dropped, since keeping it would
+    re-apply stale values after your replacement. Handlers dedupe by request.
+    Preserved is not the same as applied, and this is not specific to append - it
+    is how the platform differ resolves any final body, so a hand-authored
+    --mode replace body produces it too. Operations run in whole GROUPS in a fixed
+    order (merges, then removes/inserts/moves, set last), never in array order.
+    - Warned: a merge, move or element remove sitting beside an insert for the
+      same name. It resolves against a base that lacks the component and is
+      dropped. Same for a move whose name the body also element-removes; a
+      merge whose name the body also element-removes or sets; and a property
+      remove whose name the body also sets, or also element-removes unless an
+      insert re-creates the element. Fold the values into the insert, or use set,
+      which runs after it. Reordering the array changes nothing. The save
+      still succeeds; --dry-run reports it too.
+      Advisory only: a parent schema inserting the same name can make the
+      transform apply after all, and clio cannot see the replacing chain.
+    Append requires the diff form: a full-config body (the SCHEMA_VIEW_MODEL_CONFIG
+    / SCHEMA_MODEL_CONFIG markers, instead of the *_DIFF markers) cannot be merged
+    and is rejected with an actionable hint — use --mode replace for such a body.
+    The message names which body is full-config: convert your own incoming body to
+    the diff form, but if the current page on the server is full-config (every
+    create-app-section page is), append is not supported against it — use
+    --mode replace.
 
 SYNOPSIS
     clio update-page [options]

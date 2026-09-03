@@ -192,18 +192,26 @@
 				if (validationError != null) { response = validationError; return false; }
 				if (options.DryRun) {
 					response = CreateSuccessResponse(options, dryRun: true, registeredKeys: null);
-					response.Warnings = BuildDryRunWidgetCaptionWarnings(options.Body, context.SchemaType, explicitResources);
+					// A dry run is exactly the call that asks "is this body right before I write it?", and the
+					// inert-operation check is a pure function of one body, so it belongs here too. Note the honest
+					// limit: in append mode this sees only the INCOMING fragment, because the merge happens below.
+					// A pair formed by the server's insert plus your merge is therefore reported on the real save,
+					// not here. That is not worth its own warning — it would fire on every append dry run.
+					response.Warnings = CombineWarnings(
+						BuildDryRunWidgetCaptionWarnings(options.Body, context.SchemaType, explicitResources),
+						PageInertOperationDetector.Detect(options.Body));
 					return true;
 				}
 				if (!TryLoadSchemaForSave(options.SchemaName, context, out JObject schemaToSave, out response)) return false;
-				if (!TryResolveBodyToWrite(schemaToSave, options, out string bodyToWrite, out response)) return false;
+				if (!TryResolveBodyToWrite(schemaToSave, options, out string bodyToWrite, out IReadOnlyList<string> mergeWarnings, out response)) return false;
 				IReadOnlyList<string> downgradeWarnings = PageInsertDowngradeDetector.Detect(schemaToSave["body"]?.ToString(), bodyToWrite);
+				IReadOnlyList<string> inertWarnings = PageInertOperationDetector.Detect(bodyToWrite);
 				List<string> registeredKeys = UpdateSchemaBody(schemaToSave, bodyToWrite, context.SchemaType, explicitResources, parsedOptionalProperties);
 				PageUpdateResponse captionError = ValidateInsertedWidgetCaptionsResolve(options, schemaToSave, bodyToWrite, context.SchemaType);
 				if (captionError != null) { response = captionError; return false; }
 				if (!TrySaveSchema(schemaToSave, out response)) return false;
 				response = CreateSuccessResponse(options, dryRun: false, registeredKeys);
-				response.Warnings = downgradeWarnings is { Count: > 0 } ? downgradeWarnings : null;
+				response.Warnings = CombineWarnings(mergeWarnings, downgradeWarnings, inertWarnings);
 				PopulatePostSaveChecksum(options, context, response);
 				AppendDesignerPresenceWarning(options, response);
 				return true;
@@ -358,14 +366,15 @@
 			return true;
 		}
 
-		private static bool TryResolveBodyToWrite(JObject schemaToSave, PageUpdateOptions options, out string bodyToWrite, out PageUpdateResponse response) {
+		private static bool TryResolveBodyToWrite(JObject schemaToSave, PageUpdateOptions options, out string bodyToWrite, out IReadOnlyList<string> mergeWarnings, out PageUpdateResponse response) {
 			bodyToWrite = options.Body;
+			mergeWarnings = null;
 			response = null;
 			if (!string.Equals(options.Mode, "append", StringComparison.OrdinalIgnoreCase)) return true;
 			string currentBody = schemaToSave["body"]?.ToString();
 			if (string.IsNullOrWhiteSpace(currentBody)) return true;
 			try {
-				bodyToWrite = PageBodyMerger.Merge(currentBody, options.Body);
+				bodyToWrite = PageBodyMerger.Merge(currentBody, options.Body, out mergeWarnings);
 				return true;
 			} catch (Exception ex) {
 				// A full-config rejection (identified by its dedicated exception type, not by re-parsing the
@@ -400,6 +409,32 @@
 			}
 			_logger.WriteInfo(JsonConvert.SerializeObject(response));
 			return success ? 0 : 1;
+		}
+
+		/// <summary>
+		/// Folds several advisory warning sources into one list, or <c>null</c> when every source is empty.
+		/// </summary>
+		/// <remarks>
+		/// This exists because the success path has more than one warning producer: assigning
+		/// <c>response.Warnings</c> per source would let the last one silently discard the others.
+		/// <see cref="AppendDesignerPresenceWarning"/> appends afterwards and is unaffected.
+		/// <para>
+		/// Returns <c>null</c> rather than an empty list on purpose: <c>PageUpdateResponse.Warnings</c> is
+		/// serialized with null-omission, so an empty list would emit <c>"warnings":[]</c> on a clean save.
+		/// The detectors feeding this return empty-never-null, which is the opposite convention — the
+		/// conversion happens here, once, and a consumer of the response must null-guard.
+		/// </para>
+		/// </remarks>
+		private static IReadOnlyList<string> CombineWarnings(params IReadOnlyList<string>[] sources) {
+			List<string> combined = null;
+			foreach (IReadOnlyList<string> source in sources) {
+				if (source is not { Count: > 0 }) {
+					continue;
+				}
+				combined ??= [];
+				combined.AddRange(source);
+			}
+			return combined;
 		}
 
 		private void AppendDesignerPresenceWarning(PageUpdateOptions options, PageUpdateResponse response) {
@@ -552,13 +587,6 @@
 			return registered.Count > 0 ? registered : null;
 		}
 
-		/// <summary>
-		/// Authoritative widget-caption resolvability gate. After <see cref="UpdateSchemaBody"/>
-		/// has produced the final <c>localizableStrings</c>, this rejects the save when a freshly inserted
-		/// widget/container caption binds a localizable key that is neither
-		/// present in that final set nor auto-provided by a DS-bound attribute
-		/// </summary>
-		/// <returns>A failure response when a saved inserted widget caption would render raw; otherwise <c>null</c>.</returns>
 		/// <summary>
 		/// Validates widget caption resource resolutions during dry-run (web pages only) and returns
 		/// advisory warnings to surface potential issues that a real save might reject.

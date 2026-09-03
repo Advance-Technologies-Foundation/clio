@@ -17,6 +17,28 @@ internal static class PageBodyMerger {
 	private static readonly TimeSpan RegexTimeout = TimeSpan.FromSeconds(5);
 
 	/// <summary>
+	/// The two operation verbs whose APPLY BEHAVIOUR depends on whether the entry carries a
+	/// <c>properties</c> array, so for them that array is part of the merge identity.
+	/// </summary>
+	/// <remarks>
+	/// <c>remove</c> splits at grouping time: <see cref="JsonDiffApplier"/> routes a property removal and
+	/// an element removal into different groups, applied in different passes.
+	/// <para>
+	/// <c>set</c> splits INSIDE its own pass, which is easy to miss and was missed once: <c>Set</c> calls
+	/// <c>Remove</c>, and <c>Remove</c> either strips the named keys in place (properties form) or detaches
+	/// the element and returns its position so the following <c>Insert</c> can restore it (element form).
+	/// The two do materially different things, so two <c>set</c> entries for one name that differ only by
+	/// <c>properties</c> must not collide — conflating them destroys one, which is the defect class #1132
+	/// exists to eliminate.
+	/// </para>
+	/// Both compared Ordinal, matching the differ's own exact-case switch.
+	/// </remarks>
+	private const string RemoveOperationName = PageViewConfigDiffVerbs.Remove;
+
+	/// <inheritdoc cref="RemoveOperationName"/>
+	private const string SetOperationName = PageViewConfigDiffVerbs.Set;
+
+	/// <summary>
 	/// Which side of the append merge a body belongs to, so the full-config rejection message can name the
 	/// correct actor. The corrective advice differs by role: the caller can convert an <see cref="Incoming"/>
 	/// body they authored, but a <see cref="Current"/> (server-side) body is not theirs to convert — for that
@@ -187,7 +209,40 @@ internal static class PageBodyMerger {
 	/// section to an older page, first manually insert the empty marker pair into the body, then call
 	/// <c>Merge</c> with the desired content.
 	/// </remarks>
-	public static string Merge(string currentBody, string incomingBody) {
+	/// <remarks>
+	/// Discards the merge's warnings. A production caller that SAVES the result should use
+	/// <see cref="Merge(string, string, out IReadOnlyList{string})"/> instead and surface them — silently
+	/// dropping an operation the caller did not send is the defect #1132 filed. This overload exists for
+	/// call sites that only need the merged text (tests, previews).
+	/// </remarks>
+	public static string Merge(string currentBody, string incomingBody) =>
+		Merge(currentBody, incomingBody, out _);
+
+	/// <summary>
+	/// Reporting overload of <see cref="Merge(string, string)"/>. Identical merge; additionally reports the
+	/// one loss the merge cannot avoid, so the caller can surface it instead of the page silently changing.
+	/// </summary>
+	/// <param name="currentBody">The schema's existing body on the server.</param>
+	/// <param name="incomingBody">The fragment the caller wants to add.</param>
+	/// <param name="supersededDropWarnings">
+	/// One actionable warning per IDENTITY whose further current entries were dropped because the incoming
+	/// fragment superseded it. Empty — never <see langword="null"/> — in the normal case.
+	/// <para>
+	/// Deliberately covers the CURRENT body only. If the incoming fragment itself repeats one identity, last
+	/// spelling wins and the earlier one is discarded without a warning: that body is the caller's own, they
+	/// can read it, and warning about their own input would be noise. The current body is different — the
+	/// caller cannot see what the server held.
+	/// </para>
+	/// </param>
+	/// <remarks>
+	/// #1132 asks that where the merge cannot preserve an operation it "fail before saving with an actionable
+	/// conflict or warning". This is that channel. It is a WARNING and not a rejection because the merge
+	/// result is still strictly better than the alternatives — refusing the write would strand the caller with
+	/// no way to append at all, and dropping silently is the defect being fixed.
+	/// </remarks>
+	public static string Merge(string currentBody, string incomingBody, out IReadOnlyList<string> supersededDropWarnings) {
+		var drops = new List<string>();
+		supersededDropWarnings = drops;
 		if (string.IsNullOrWhiteSpace(currentBody)) {
 			throw new InvalidOperationException("Current body is empty — cannot perform append merge.");
 		}
@@ -211,19 +266,20 @@ internal static class PageBodyMerger {
 			throw new FullConfigAppendNotSupportedException(currentFullConfigMessage);
 		}
 		return PageSchemaTypeExtensions.FromBody(currentBody) == PageSchemaType.Mobile
-			? MergeMobile(currentBody, incomingBody)
-			: MergeWeb(currentBody, incomingBody);
+			? MergeMobile(currentBody, incomingBody, drops)
+			: MergeWeb(currentBody, incomingBody, drops);
 	}
 
 	/// <summary>
 	/// Merges two web (AMD) page bodies using marker-based section replacement.
 	/// </summary>
-	private static string MergeWeb(string currentBody, string incomingBody) {
+	private static string MergeWeb(string currentBody, string incomingBody, List<string> drops) {
 		// Precondition: Merge() has already rejected a full-config current or incoming body via the shared
 		// UsesUnsupportedFullConfigForm predicate, so this method only ever sees diff-form bodies.
-		JArray mergedViewConfigDiff = MergeArrayByName(
+		JArray mergedViewConfigDiff = MergeViewConfigDiffOperations(
 			ReadJsonArray(currentBody, "SCHEMA_VIEW_CONFIG_DIFF"),
-			ReadJsonArray(incomingBody, "SCHEMA_VIEW_CONFIG_DIFF"));
+			ReadJsonArray(incomingBody, "SCHEMA_VIEW_CONFIG_DIFF"),
+			drops);
 		JArray mergedViewModelConfigDiff = MergeArrayAppend(
 			ReadJsonArray(currentBody, "SCHEMA_VIEW_MODEL_CONFIG_DIFF"),
 			ReadJsonArray(incomingBody, "SCHEMA_VIEW_MODEL_CONFIG_DIFF"));
@@ -250,7 +306,7 @@ internal static class PageBodyMerger {
 	/// Merges two mobile page bodies (plain JSON with top-level <c>viewConfigDiff</c>,
 	/// <c>viewModelConfigDiff</c>, and <c>modelConfigDiff</c> arrays).
 	/// </summary>
-	private static string MergeMobile(string currentBody, string incomingBody) {
+	private static string MergeMobile(string currentBody, string incomingBody, List<string> drops) {
 		JObject current;
 		JObject incoming;
 		try {
@@ -269,9 +325,10 @@ internal static class PageBodyMerger {
 		// Precondition: Merge() has already rejected a full-config current or incoming body via the shared
 		// UsesUnsupportedFullConfigForm predicate — including a present-but-non-object viewModelConfig /
 		// modelConfig on the current body (ENG-93090 RC-9) — so this method only ever sees diff-form bodies.
-		JArray mergedViewConfigDiff = MergeArrayByName(
+		JArray mergedViewConfigDiff = MergeViewConfigDiffOperations(
 			current["viewConfigDiff"] as JArray ?? new JArray(),
-			incoming["viewConfigDiff"] as JArray ?? new JArray());
+			incoming["viewConfigDiff"] as JArray ?? new JArray(),
+			drops);
 		JArray mergedViewModelConfigDiff = MergeArrayAppend(
 			current["viewModelConfigDiff"] as JArray ?? new JArray(),
 			incoming["viewModelConfigDiff"] as JArray ?? new JArray());
@@ -470,29 +527,164 @@ internal static class PageBodyMerger {
 	private static bool IsOpenBracket(char ch) => ch is '(' or '{' or '[';
 	private static bool IsCloseBracket(char ch) => ch is ')' or '}' or ']';
 
-	private static JArray MergeArrayByName(JArray current, JArray incoming) {
-		var byName = new Dictionary<string, JToken>(StringComparer.Ordinal);
-		var order = new List<string>();
-		var unnamed = new List<JToken>();
-		foreach (JToken item in current.Concat(incoming)) {
-			string name = (item as JObject)?["name"]?.ToString();
-			if (string.IsNullOrEmpty(name)) {
-				unnamed.Add(item);
+	/// <summary>
+	/// Merges two <c>viewConfigDiff</c> operation arrays. What collides is an
+	/// <see cref="OperationIdentity"/>, not a <c>name</c> alone: every current entry survives at its
+	/// original position unless the incoming fragment carries the same identity, which replaces the first
+	/// occurrence in place and supersedes any later one. Unmatched incoming entries are appended in the
+	/// caller's own order.
+	/// </summary>
+	/// <remarks>
+	/// GitHub #1132: the previous version keyed <c>current.Concat(incoming)</c> by <c>name</c> alone, so a
+	/// page carrying both a <c>move</c> and a <c>merge</c> for one component silently lost the <c>move</c>
+	/// on any append. Why several operations per name are legitimate, why the identity is shaped the way it
+	/// is, and why a transform kept beside an <c>insert</c> is inert (GH-1240), are recorded in
+	/// <c>docs/knowledge/Command/viewconfigdiff-carries-multiple-operations-per-component-name.md</c>.
+	/// </remarks>
+	private static JArray MergeViewConfigDiffOperations(JArray current, JArray incoming, List<string> drops) {
+		Dictionary<OperationIdentity, JToken> incomingByIdentity = IndexIncomingByIdentity(incoming);
+		var replaced = new HashSet<OperationIdentity>();
+		var merged = new JArray();
+		AppendCurrentEntries(current, incomingByIdentity, replaced, merged, drops);
+		AppendUnmatchedIncomingEntries(incoming, incomingByIdentity, replaced, merged);
+		return merged;
+	}
+
+	/// <summary>
+	/// Indexes the incoming fragment by operation identity. Last spelling wins within one fragment; the
+	/// emit pass still places it at the first occurrence's position.
+	/// </summary>
+	private static Dictionary<OperationIdentity, JToken> IndexIncomingByIdentity(JArray incoming) {
+		var incomingByIdentity = new Dictionary<OperationIdentity, JToken>();
+		foreach (JToken item in incoming) {
+			if (TryGetOperationIdentity(item, out OperationIdentity identity)) {
+				incomingByIdentity[identity] = item;
+			}
+		}
+		return incomingByIdentity;
+	}
+
+	/// <summary>
+	/// Emits the current body in place, substituting the incoming entry wherever an identity collides,
+	/// and reporting the one entry the merge cannot preserve.
+	/// </summary>
+	private static void AppendCurrentEntries(JArray current,
+		Dictionary<OperationIdentity, JToken> incomingByIdentity, HashSet<OperationIdentity> replaced,
+		JArray merged, List<string> drops) {
+		var warned = new HashSet<OperationIdentity>();
+		foreach (JToken item in current) {
+			if (!TryGetOperationIdentity(item, out OperationIdentity identity) ||
+				!incomingByIdentity.TryGetValue(identity, out JToken replacement)) {
+				// The #1132 fix: with no incoming counterpart, a current entry is kept even when an
+				// earlier one shares its identity.
+				merged.Add(item);
 				continue;
 			}
-			if (!byName.ContainsKey(name)) {
-				order.Add(name);
+			// Only the first occurrence is replaced. A later current entry of the same identity is
+			// dropped, because keeping it would re-apply stale values after the replacement — at the cost
+			// of losing its keys when the two set disjoint ones.
+			if (replaced.Add(identity)) {
+				merged.Add(replacement);
+				continue;
 			}
-			byName[name] = item;
+			// The one loss the merge cannot avoid, so it is REPORTED rather than silent (#1132 AC4).
+			// One warning per IDENTITY, not per dropped entry: three carried occurrences would otherwise
+			// emit two byte-identical sentences, and CombineWarnings does not dedupe.
+			if (warned.Add(identity)) {
+				drops.Add(BuildSupersededDropMessage(identity));
+			}
 		}
-		var merged = new JArray();
-		foreach (string name in order) {
-			merged.Add(byName[name]);
+	}
+
+	/// <summary>
+	/// Appends the incoming entries that did not replace anything, in the order the caller gave them, so
+	/// an unidentified entry keeps its position.
+	/// </summary>
+	private static void AppendUnmatchedIncomingEntries(JArray incoming,
+		Dictionary<OperationIdentity, JToken> incomingByIdentity, HashSet<OperationIdentity> replaced,
+		JArray merged) {
+		var emitted = new HashSet<OperationIdentity>();
+		foreach (JToken item in incoming) {
+			if (!TryGetOperationIdentity(item, out OperationIdentity identity)) {
+				merged.Add(item);
+				continue;
+			}
+			if (!replaced.Contains(identity) && emitted.Add(identity)) {
+				merged.Add(incomingByIdentity[identity]);
+			}
 		}
-		foreach (JToken item in unnamed) {
-			merged.Add(item);
+	}
+
+	/// <summary>
+	/// Identity of one <c>viewConfigDiff</c> operation, mirroring the distinctions the differ itself
+	/// makes. A record struct rather than a composed string key: any separator can be smuggled inside a
+	/// value — <c>U+0000</c> included, it is a legal JSON escape — which would forge a collision.
+	/// </summary>
+	/// <param name="Operation">The operation verb, or the empty string when the entry carries none.</param>
+	/// <param name="Name">The target component name.</param>
+	/// <param name="TargetsProperties">
+	/// A <c>remove</c> or <c>set</c> carrying a <c>properties</c> array — the two verbs whose apply
+	/// behaviour that array changes (see <see cref="RemoveOperationName"/>). Without this component the
+	/// property form and the element form of one verb would share an identity and one would be destroyed.
+	/// </param>
+	private readonly record struct OperationIdentity(string Operation, string Name, bool TargetsProperties);
+
+	/// <summary>
+	/// Actionable warning for a current entry dropped because the incoming fragment superseded an identity
+	/// the current body carried more than once.
+	/// </summary>
+	/// <remarks>
+	/// Only the FIRST occurrence is replaced; a later one cannot also be kept, because the differ applies a
+	/// group in array order and the stale values would then re-apply after the caller's replacement. The
+	/// message names what to do about it, since the caller cannot see the server body they just overwrote.
+	/// </remarks>
+	private static string BuildSupersededDropMessage(OperationIdentity identity) {
+		string verb = string.IsNullOrEmpty(identity.Operation) ? "(no operation)" : identity.Operation;
+		return $"Component '{identity.Name}' carried more than one '{verb}' operation in the page's own body, " +
+			"and the appended fragment supersedes that operation. Only the first occurrence was replaced; every " +
+			"later one was dropped, because keeping it would re-apply its values AFTER your replacement. If they " +
+			"set different keys, the dropped entries' keys are gone from the saved page. Re-read the page with " +
+			"get-page and re-apply anything missing. See docs://mcp/guides/page-modification.";
+	}
+
+	/// <summary>
+	/// Whether a <c>properties</c> array changes how the differ applies this verb — true for
+	/// <c>remove</c> and <c>set</c>, false for every other verb, where <c>properties</c> is inert and must
+	/// therefore not split the identity.
+	/// </summary>
+	private static bool SplitsOnProperties(string operation) =>
+		string.Equals(operation, RemoveOperationName, StringComparison.Ordinal)
+		|| string.Equals(operation, SetOperationName, StringComparison.Ordinal);
+
+	/// <summary>
+	/// Computes an entry's <see cref="OperationIdentity"/>. Returns <see langword="false"/> for a
+	/// non-object element, or one whose <c>name</c> is not a non-empty JSON string — such an entry is
+	/// never merged and never reordered, which is the safe direction.
+	/// </summary>
+	/// <remarks>
+	/// <c>operation</c> is ordinal and never case-folded: <see cref="JsonDiffApplier"/> switches on the raw
+	/// string with no default case, so a mis-cased <c>"Merge"</c> is discarded at apply time and must not
+	/// be allowed to replace a working <c>"merge"</c>. A missing <c>operation</c> is not defaulted either —
+	/// guessing one would replace an operation the caller never named.
+	/// </remarks>
+	private static bool TryGetOperationIdentity(JToken item, out OperationIdentity identity) {
+		identity = default;
+		if (item is not JObject operationItem) {
+			return false;
 		}
-		return merged;
+		if (operationItem["name"] is not JValue { Type: JTokenType.String } nameValue) {
+			return false;
+		}
+		string name = nameValue.Value<string>();
+		if (string.IsNullOrEmpty(name)) {
+			return false;
+		}
+		string operation = operationItem["operation"] is JValue { Type: JTokenType.String } operationValue
+			? operationValue.Value<string>()
+			: string.Empty;
+		bool targetsProperties = SplitsOnProperties(operation) && operationItem["properties"] is JArray;
+		identity = new OperationIdentity(operation, name, targetsProperties);
+		return true;
 	}
 
 	private static JArray MergeArrayAppend(JArray current, JArray incoming) {

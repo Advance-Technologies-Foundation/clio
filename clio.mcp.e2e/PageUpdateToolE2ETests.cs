@@ -186,6 +186,79 @@ public sealed class PageUpdateToolE2ETests : McpContractFixtureBase {
 	}
 
 	[Test]
+	[Description("GitHub #1132: the update-page contract served over the real MCP transport describes the append merge identity as (operation, name) and promises existing operations are preserved. update-page is non-resident, so this curated string is the ENTIRE description an agent receives — the tool's [Description] attribute is never merged in.")]
+	[AllureTag(ToolName)]
+	[AllureName("update-page contract states the (operation, name) append merge identity")]
+	[AllureDescription("Starts the real clio MCP server, fetches the update-page contract through get-tool-contract, and verifies the served 'mode' field description states that a viewConfigDiff entry is replaced only on an (operation, name) match and that every other existing operation is preserved. Guards against the contract rotting back to the pre-#1132 'dedupe by name' claim, which described behaviour that silently dropped an existing move operation. No environment-name is supplied: contract resolution must not touch an environment.")]
+	public async Task PageUpdateTool_Contract_Should_State_Operation_And_Name_Merge_Identity() {
+		// Arrange
+		await using var arrangeContext = Arrange(TimeSpan.FromMinutes(3));
+
+		// Act
+		CallToolResult contractResult = await arrangeContext.Session.CallToolAsync(
+			ToolContractGetTool.ToolName,
+			new Dictionary<string, object?> {
+				["args"] = new Dictionary<string, object?> {
+					["tool-names"] = new[] { ToolName }
+				}
+			},
+			arrangeContext.CancellationTokenSource.Token);
+		ToolContractGetResponse contracts =
+			EntitySchemaStructuredResultParser.Extract<ToolContractGetResponse>(contractResult);
+
+		// Assert
+		contractResult.IsError.Should().NotBeTrue(
+			because: "resolving a tool contract is a structured read, not an MCP transport error");
+		ToolContractField modeField = contracts.Tools!.Single(definition => definition.Name == ToolName)
+			.InputSchema.Properties.Single(field => field.Name == "mode");
+		modeField.Description.Should().Contain("`operation` and `name`",
+			because: "the append merge identity an agent plans against must reach it end-to-end through the real MCP transport, per the AGENTS.md MCP e2e rule");
+		modeField.Description.Should().Contain("does not collide with is preserved",
+			because: "the safety guarantee the issue disputed — an unrelated append never drops an existing operation — must be stated on the wire");
+		modeField.Description.Should().Contain("The one exception",
+			because: "the caller must also learn the one case where an existing entry IS dropped, or the contract repeats #1132 by promising more than the code delivers");
+		modeField.Description.Should().NotContain("dedupe by `name`",
+			because: "the pre-#1132 claim describes behaviour the merger no longer has, and shipping it would keep steering agents into the data-loss assumption");
+	}
+
+	[Test]
+	[Description("GitHub #1240: the update-page contract served over the real MCP transport discloses that the differ applies whole operation GROUPS in a fixed order, so an operation preserved beside another for one component name can be silently dropped — and declares the `warnings` array that reports it. update-page is non-resident, so this curated string is the ENTIRE description an agent receives.")]
+	[AllureTag(ToolName)]
+	[AllureName("update-page contract discloses that a transform beside an insert never applies")]
+	[AllureDescription("Starts the real clio MCP server, fetches the update-page contract through get-tool-contract, and verifies the served 'mode' field states that the differ applies whole operation groups in a fixed order — never in viewConfigDiff array order — so a transform beside an insert for one name is silently dropped, that this is not append-specific, and that the output envelope declares the advisory 'warnings' array carrying the finding. #1132 shipped a merger that PRESERVES both operations, which reads as 'both take effect'; it does not, and the contract has to say so on the wire. No environment-name is supplied: contract resolution must not touch an environment.")]
+	public async Task PageUpdateTool_Contract_Should_Disclose_ApplyOrder_Inertness_And_Warnings_Envelope() {
+		// Arrange
+		await using var arrangeContext = Arrange(TimeSpan.FromMinutes(3));
+
+		// Act
+		CallToolResult contractResult = await arrangeContext.Session.CallToolAsync(
+			ToolContractGetTool.ToolName,
+			new Dictionary<string, object?> {
+				["args"] = new Dictionary<string, object?> {
+					["tool-names"] = new[] { ToolName }
+				}
+			},
+			arrangeContext.CancellationTokenSource.Token);
+		ToolContractGetResponse contracts =
+			EntitySchemaStructuredResultParser.Extract<ToolContractGetResponse>(contractResult);
+
+		// Assert
+		contractResult.IsError.Should().NotBeTrue(
+			because: "resolving a tool contract is a structured read, not an MCP transport error");
+		ToolContractDefinition pageUpdate = contracts.Tools!.Single(definition => definition.Name == ToolName);
+		ToolContractField modeField = pageUpdate.InputSchema.Properties.Single(field => field.Name == "mode");
+		modeField.Description.Should().Contain("whole operation GROUPS in a fixed order",
+			because: "an agent that believes the viewConfigDiff array is applied in order will keep authoring a transform beside an insert and keep wondering why nothing happened");
+		modeField.Description.Should().Contain("silently dropped",
+			because: "preserved-but-inert is exactly the confusion #1240 filed, and naming the outcome on the wire is what makes the warning actionable");
+		modeField.Description.Should().Contain("not append-specific",
+			because: "the inertness comes from the differ rather than the merger, so a hand-authored 'replace' body produces it too — scoping the caveat to append would mislead");
+		ToolContractField warningsField = pageUpdate.OutputContract.Fields.Single(field => field.Name == "warnings");
+		warningsField.Description.Should().Contain("never retry on a warning",
+			because: "the save already succeeded; an agent that reads an advisory finding as a failure will re-save and can trip conflict detection");
+	}
+
+	[Test]
 	[Description("update-page fails fast at the AST lint gate when a custom converter uses the reserved `crt.*` prefix — the lint rule `converter-crt-prefix-reserved` is unique to the AST pass (the regex layer treats `crt.*` as a valid vendor prefix), so this body is what proves the lint pass surfaces through the real MCP transport.")]
 	[AllureTag(ToolName)]
 	[AllureName("update-page fails fast on converter-crt-prefix-reserved lint error before any remote call")]

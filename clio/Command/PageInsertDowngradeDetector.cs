@@ -25,9 +25,19 @@ using Newtonsoft.Json.Linq;
 /// </list>
 /// All findings are WARNINGS, not errors: the detector inspects only this schema's own prior body, so
 /// it cannot tell an orphaning downgrade from a legitimate one where a parent schema inserts the same
-/// name (full-hierarchy resolution is out of scope). It therefore advises rather than blocks. This is
-/// the failure that append-mode dedupe (<see cref="PageBodyMerger.MergeArrayByName"/>, incoming wins by
-/// <c>name</c>) and a hand-authored replace body both produce; the detector compares the resolved final
+/// name (full-hierarchy resolution is out of scope). It therefore advises rather than blocks.
+/// <para>
+/// Since GitHub #1132 the append merger identifies an operation by
+/// <c>(operation, name, targets-properties)</c>, so an incoming <c>merge</c> no longer REPLACES a
+/// current <c>insert</c> — both are kept, and this detector
+/// stays quiet because nothing was orphaned. Keeping both does NOT make both take effect: the differ
+/// runs whole groups in a fixed order (merges first, then removes/inserts/moves) rather than in array
+/// order, so a transform beside an <c>insert</c> for the same name is inert. That is a different
+/// question from orphaning — it is about ONE body, not prior-versus-final — and it is reported by
+/// <see cref="PageInertOperationDetector"/> (GH-1240), which this detector deliberately does not
+/// duplicate.
+/// </para>
+/// The detector needs no knowledge of which mode produced the body — it compares the resolved final
 /// body against the prior body, so it covers <c>replace</c> and <c>append</c> identically.
 /// </remarks>
 internal static class PageInsertDowngradeDetector {
@@ -70,6 +80,9 @@ internal static class PageInsertDowngradeDetector {
 			}
 			if (finalNameOps.Contains(InsertOperation)) {
 				// The insert is preserved (e.g. updated, or kept alongside a sibling op) — not a downgrade.
+				// NOTE a sibling merge/move/remove kept beside the insert is INERT at apply time (the differ
+				// runs the merge group before the insert group and discards what fails). That is
+				// PageInertOperationDetector's finding, not this one's — see the class remarks and GH-1240.
 				continue;
 			}
 			string transform = FirstTransformOperation(finalNameOps);
@@ -104,8 +117,13 @@ internal static class PageInsertDowngradeDetector {
 		"remove. See docs://mcp/guides/page-modification.";
 
 	private static bool TryExtractOperationsByName(string body, out Dictionary<string, HashSet<string>> operationsByName) {
-		// Names use Ordinal to mirror PageBodyMerger.MergeArrayByName's real dedupe semantics; the
-		// operation sets use OrdinalIgnoreCase because the op vocabulary is a small case-insensitive set.
+		// Names use Ordinal to mirror both the platform differ (JsonDiffApplier groups names with
+		// StringComparer.Ordinal) and the name half of PageBodyMerger's merge identity. The operation sets
+		// use OrdinalIgnoreCase deliberately, and ONLY because of the question this detector asks: a
+		// mis-cased "Merge" left behind where an insert used to be still orphans the component, so it must
+		// count as a transform here. Do not carry that comparer to a detector asking whether an operation
+		// TAKES EFFECT — the differ's verb switch has no default branch, so a mis-cased verb is discarded
+		// whole. See PageInertOperationDetector, which uses Ordinal for exactly that reason.
 		operationsByName = new Dictionary<string, HashSet<string>>(StringComparer.Ordinal);
 		try {
 			JArray viewConfigDiff = ReadViewConfigDiff(body);
