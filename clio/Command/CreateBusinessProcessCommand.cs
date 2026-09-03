@@ -14,19 +14,38 @@ namespace Clio.Command;
 /// Options for building a business process from a declarative descriptor via the ProcessDesignService package.
 /// Consumed by the MCP <c>create-business-process</c> tool, which sets these properties directly.
 /// </summary>
-// The version literal states what THIS command's code needs — the newest input form it sends that an
-// older server refuses or mishandles. Today that is the lookup-constant contract shipped in the 1.4.0.40
-// archive (ENG-96325): a mappings[] 'value' on a Lookup target may carry an already-composed
-// [#Lookup.{objectUId}.{recordId}#], which that server decodes to the bare record id, while every earlier
-// server rejects it outright as "not a bare Guid" — the same "server starts accepting an input an older one
-// refuses" shape that produced the previous 1.3.1.1 literal (the element-level performer block and the
-// reference-existence guard behind it, both still covered by this floor). It is NOT a security floor: the
-// raw-Select display-name read that 1.4.0.40 replaced with a rights-aware entity read never shipped in any
-// released archive, so no released server carries the wider read. Presence alone cannot express an
-// input-contract difference — the email block's 1.2.0.1 floor set this precedent and is subsumed here.
-// The guard fixture asserts the shipped archive satisfies the literal, so clio can never demand a version
-// it does not itself carry.
-[RequiresPackage(BundledPackages.ProcessBuilderPackageName, "1.4.0.40",
+// The version literal states what THIS command needs — the newest server behaviour it depends on that an
+// older one does not have. Two independent lines of that requirement met in this merge, and NO released
+// version carries both, which is why the floor is the version this clio bundles rather than either of them.
+//
+// From ENG-96325 (master, first in 1.4.0.40): the lookup-constant input contract. A mappings[] 'value' on a
+// Lookup target may carry an already-composed [#Lookup.{objectUId}.{recordId}#], which that server decodes
+// to the bare record id while every earlier server rejects it outright as "not a bare Guid". It is NOT a
+// security floor: the raw-Select display-name read it replaced with a rights-aware entity read never
+// shipped in a released archive.
+//
+// From ENG-92713 (this branch): four shapes of one silent failure, none visible in the response. 1.4.2.0
+// added the approval APPROVER, which an older server discards while answering success, leaving an element
+// that saves and runs with nobody assigned. 1.4.3.0 added the refusal of a notification switched on with no
+// email template, and 1.4.4.0 the refusal of the AUTHOR notification with no recipient: an older server
+// ACCEPTS either and produces an element that reports the notification as configured and never sends,
+// because the runtime checks neither before sending, ignores email errors by default, and — despite the
+// caption — never resolves an author, reading only the address the recipient field writes. 1.4.7.0
+// PRESERVES the stored employee across a user<->manager approver switch; clio's guidance now tells agents
+// that {"approver":{"type":"manager"}} is how to say "their manager approves instead", and on an older
+// server that request overwrites the named employee with the current user, rerouting a real approval to
+// whoever ran the modify, self-consistently on read-back. Advertising a route the deployed server turns
+// destructive is precisely what a floor exists to stop.
+//
+// 1.4.0.40 predates every ENG-92713 behaviour and 1.4.7.0 predates the merge that brought ENG-96325 in, so
+// the first archive carrying both is the one cut from the merged package source — this literal. Presence
+// alone cannot express any of it. The approval block (1.4.1.0), the performer block (1.3.1.1) and the email
+// block (1.2.0.1) set the precedent and are subsumed, as do 1.4.5.0, 1.4.6.0 and 1.4.8.0, which no released
+// clio ever bundled. The guard fixture asserts the shipped archive SATISFIES the literal — not that it
+// equals it: a rebundle that changes only documentation moves the bundle and must not move the floor, since
+// a floor tracks behaviour clio depends on rather than the version it happens to ship. The bundle is 1.4.10.0
+// against this 1.4.9.0 floor for exactly that reason — 1.4.10.0 corrected two contract doc comments.
+[RequiresPackage(BundledPackages.ProcessBuilderPackageName, "1.4.9.0",
 	Hint = BundledPackages.ProcessBuilderInstallHint)]
 public sealed class CreateBusinessProcessOptions : EnvironmentOptions {
 	/// <summary>Inline JSON process descriptor (name, caption, packageName, elements[], flows[], parameters[], mappings[]).</summary>
@@ -162,7 +181,7 @@ public class CreateBusinessProcessCommand(
 				options.Environment,
 				new CreateBusinessProcessRequest(options.DescriptorJson, options.PackageName));
 			logger.WriteInfo($"Process '{result.SchemaName}' created (UId: {result.SchemaUId}).");
-			WarnOnDiscardedEmailBlocks(options, result.SchemaName);
+			WarnOnDiscardedConfigurationBlocks(options, result.SchemaName);
 			return 0;
 		} catch (Exception exception) {
 			logger.WriteError(exception.Message);
@@ -175,9 +194,16 @@ public class CreateBusinessProcessCommand(
 	// block did not land. Only runs when the descriptor actually carried a block, so the ordinary path pays
 	// nothing; a failure to verify is never escalated, because an unreadable description is not evidence of a
 	// dropped block. See EmailBlockExpectation for why this is behavioural rather than version-based.
-	private void WarnOnDiscardedEmailBlocks(CreateBusinessProcessOptions options, string? schemaName) {
+	private void WarnOnDiscardedConfigurationBlocks(CreateBusinessProcessOptions options, string? schemaName) {
 		IReadOnlyList<string> expected = EmailBlockExpectation.FromDescriptor(options.DescriptorJson);
-		if (expected.Count == 0 || string.IsNullOrWhiteSpace(schemaName)) {
+		// The Approval element has exactly the same silent-drop failure, so it is verified from the SAME read-back
+		// rather than a second one — the describe below is the expensive part, and one of the two blocks being
+		// absent is no reason to skip the other's check.
+		IReadOnlyList<ApprovalBlockExpectation.ApprovalExpectation> expectedApproval = ApprovalBlockExpectation.FromDescriptor(options.DescriptorJson);
+		// BOTH must be empty to skip. An || here would stop verifying approval on every payload without an email
+		// block, which is most of them, and nothing downstream would notice — pinned by
+		// Execute_ShouldStillVerifyApproval_WhenTheDescriptorCarriesNoEmailBlock.
+		if ((expected.Count == 0 && expectedApproval.Count == 0) || string.IsNullOrWhiteSpace(schemaName)) {
 			return;
 		}
 
@@ -191,6 +217,12 @@ public class CreateBusinessProcessCommand(
 			EmailBlockExpectation.Missing(described.Value, expected));
 		if (dropped is not null) {
 			logger.WriteWarning(dropped);
+		}
+
+		string? droppedApproval = ApprovalBlockExpectation.BuildWarning(
+			ApprovalBlockExpectation.Missing(described.Value, expectedApproval));
+		if (droppedApproval is not null) {
+			logger.WriteWarning(droppedApproval);
 		}
 
 		// A package that predates the body-macro feature stores the [[…]] placeholders verbatim and still answers

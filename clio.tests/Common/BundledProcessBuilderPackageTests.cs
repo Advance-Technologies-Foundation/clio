@@ -142,7 +142,7 @@ public class BundledProcessBuilderPackageTests {
 	/// </para>
 	/// </remarks>
 	private const string ExpectedArchiveSha256 =
-		"DBF93BF606903C0557D8ECE2E0555FF4116BA8AA9B2C643A8084AE4C3634E39B";
+		"FDB35258586E04B49A5411D5A9FFDE2B6FFFA3858C3A7EA0BAFD3D0FAC0BFA4D";
 
 	/// <summary>
 	/// The <c>PackageVersion</c> the shipped descriptor carries.
@@ -170,7 +170,7 @@ public class BundledProcessBuilderPackageTests {
 	/// </para>
 	/// </para>
 	/// </remarks>
-	private const string ExpectedArchiveVersion = "1.4.0.40";
+	private const string ExpectedArchiveVersion = "1.4.10.0";
 
 	/// <summary>
 	/// The <c>ModifiedOnUtc</c> the shipped descriptor carries.
@@ -196,7 +196,7 @@ public class BundledProcessBuilderPackageTests {
 	/// command — the previous pin ended in <c>431</c>, which is how the hand edit was eventually noticed.
 	/// </para>
 	/// </remarks>
-	private const string ExpectedDescriptorModifiedOnUtc = "/Date(1788362204000)/";
+	private const string ExpectedDescriptorModifiedOnUtc = "/Date(1788429198000)/";
 
 	/// <summary>
 	/// The <c>ModifiedOnUtc</c> the shipped COMPILE-MARKER SCHEMA descriptor carries.
@@ -916,8 +916,14 @@ public class BundledProcessBuilderPackageTests {
 		foreach (KeyValuePair<string, string> surface in surfaces) {
 			System.Text.RegularExpressions.MatchCollection matches = literalPattern.Matches(surface.Value);
 			matches.Should().NotBeEmpty(
-				because: $"the {surface.Key} documents the version the lookup/performer route ships from — if the "
-					+ "sentence was removed on purpose, remove the surface from this test in the same commit");
+				because: $"the {surface.Key} names the CrtProcessBuilder version this clio BUNDLES. That is NOT "
+					+ "the same number as the [RequiresPackage] floor, and the two are allowed to differ — the "
+					+ "floor names the oldest server that can honour what clio sends, the bundle is what clio "
+					+ "ships and what install-process-builder would put there. This test pins the shipped "
+					+ "literals to the BUNDLE, because that is the version a caller ends up on after taking "
+					+ "clio's own advice. It is deliberately not the version a given route was introduced in: a "
+					+ "provenance claim would go stale on every rebundle. If the sentence was removed on "
+					+ "purpose, remove the surface from this test in the same commit");
 			foreach (System.Text.RegularExpressions.Match match in matches) {
 				match.Groups[1].Value.Should().Be(ExpectedArchiveVersion,
 					because: $"the {surface.Key} names a package version an agent will trust; a literal that "

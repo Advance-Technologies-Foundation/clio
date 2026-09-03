@@ -23,7 +23,8 @@ public static class ModifyBusinessProcessPrompt {
 		$"""
 		 Edit the existing business process `{process}` on Creatio environment `{environmentName}` with the
 		 `modify-business-process` tool. Steps: (1) call `describe-business-process` to inspect the current elements
-		 and their names; (2) read `get-guidance name=process-modeling` for the operation and field contract;
+		 and their names; (2) read `get-guidance name=process-modeling` for the operation and field contract, plus
+		 `get-guidance name=process-parameters` for parameters, mappings and type compatibility;
 		 (3) supply a JSON `operations` array (applied in order) — each item has an `op`: `addElement`,
 		 `removeElement`, `addFlow`, `removeFlow`, `addParameter`, `addMapping`, `setParameter`, `removeParameter`,
 		 `setFilter`, `clearFilter`, `setSignal`, `setElement`, `setConnections`, or `clearConnections`
@@ -41,7 +42,7 @@ public static class ModifyBusinessProcessPrompt {
 		 the assignment); `setConnections` binds the "Connected to" links of the
 		 Activity an element creates and is an UPSERT keyed on `column`, so columns you do not list are left alone,
 		 and `clearConnections` unbinds them). An `addMapping` with a `value` on a Lookup parameter takes a bare
-		 non-empty record Guid (this clio bundles CrtProcessBuilder 1.4.0.40 and
+		 non-empty record Guid (the route needs CrtProcessBuilder 1.4.10.0, the version this clio bundles, and this clio additionally
 		 refuses any environment older than the version it bundles — up front, via the package-convergence
 		 message — while an older clio surfaces the old package's `[#Lookup…#]`-macro rejection; either refusal
 		 means the environment's package is behind, so update it rather than concluding the parameter is

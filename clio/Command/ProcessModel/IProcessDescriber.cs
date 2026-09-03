@@ -296,10 +296,134 @@ public sealed class DescribedElement {
 	public bool? WritesConnectionsAtRuntime { get; set; }
 
 	/// <summary>
+	/// For an Approval element (<c>ApprovalUserTask</c>): its configuration decoded back into the descriptor
+	/// vocabulary. <c>null</c> for other element kinds and when the server (an older <c>CrtProcessBuilder</c>) does
+	/// not report it.
+	/// <para>Unlike <see cref="Email"/> this reports what is WRITTEN, not the effective value, so an unconfigured
+	/// Approval reports no block at all. Two consequences follow. <c>ignoreEmailErrors</c> is the one field with a
+	/// schema-level default (<c>true</c>): an element nobody saved through the designer USES that value while
+	/// reporting nothing here, so absence means "not written", never "off". And clearing a notification resets its
+	/// template to no source, which makes a CLEARED template indistinguishable from one that was never set.</para>
+	/// <para>Every VALUE reported here is one a write accepts — an employee macro, a template's lookup macro, a
+	/// record id — but the SHAPE is not the write shape and the block does NOT re-apply verbatim. This reports flat
+	/// (<c>approverType</c> + <c>approverEmployee</c>; a boolean <c>notifyApprover</c> with
+	/// <c>approverEmailTemplate</c> beside it; <c>recordId</c> as a string), while <c>create</c>/<c>modify</c> take
+	/// nested (<c>approver: {type, employee}</c>, <c>notifyApprover: {emailTemplate}</c>, <c>recordId</c> as an
+	/// object). Flat-with-<c>Display</c>-companions is the house convention every element follows — <c>sender</c> /
+	/// <c>senderDisplay</c> on email is the same — so the shape is right; it just has to be TRANSLATED before it is
+	/// sent back. Feeding a described block in unchanged binds nothing:
+	/// <c>DataContractJsonSerializer</c> drops the flat members and the operation still answers success, which is
+	/// why <c>ApprovalBlockExpectation</c> raises a warning of its own for a describe-shaped request.</para>
+	/// <para>The APPROVER is reported as <see cref="DescribedApproval.ApproverType"/> plus only the companion field
+	/// that type uses. A stored value belonging to the OTHER branch — which an element the designer never re-saved
+	/// can still carry — is deliberately not reported, and an unrecognized type code reports no approver at all
+	/// rather than a token a write would refuse. The element's outcome stays in <see cref="Parameters"/> as the
+	/// <c>ResultParameter</c> output.</para>
+	/// </summary>
+	[JsonPropertyName("approval")]
+	public DescribedApproval Approval { get; set; }
+
+	/// <summary>
 	/// Captures every other field the server reports on an element so the description round-trips losslessly:
 	/// a newer <c>CrtProcessBuilder</c> reporting a block this build does not declare reaches the command output
 	/// verbatim instead of being discarded without a trace.
 	/// </summary>
+	[JsonExtensionData]
+	public Dictionary<string, JsonElement> AdditionalData { get; set; }
+}
+
+/// <summary>
+/// The configuration of an Approval element, read back from its parameters in the same vocabulary the
+/// <c>approval</c> block accepts.
+/// </summary>
+public sealed class DescribedApproval {
+	/// <summary>"Approval purpose" — the text shown to the approver.</summary>
+	[JsonPropertyName("purpose")]
+	public string Purpose { get; set; }
+
+	/// <summary>"Approval object" — the resolved object NAME, the field to resubmit as <c>object</c>.</summary>
+	[JsonPropertyName("object")]
+	public string Object { get; set; }
+
+	/// <summary>The approval object's entity schema UId as stored. Reported for traceability only.</summary>
+	[JsonPropertyName("objectUId")]
+	public string ObjectUId { get; set; }
+
+	/// <summary>
+	/// "Record Id" — the stored value. A fixed record comes back as its <c>[#Lookup…#]</c> macro and is
+	/// resubmittable verbatim; other sources come back as their raw macro.
+	/// </summary>
+	[JsonPropertyName("recordId")]
+	public string RecordId { get; set; }
+
+	/// <summary>The fixed record's display value, when the platform stored one. Read-only.</summary>
+	[JsonPropertyName("recordIdDisplay")]
+	public string RecordIdDisplay { get; set; }
+
+	/// <summary>"Approver" — <c>user</c>, <c>manager</c> or <c>role</c>; null when the element has no approver.</summary>
+	[JsonPropertyName("approverType")]
+	public string ApproverType { get; set; }
+
+	/// <summary>The employee, as stored. Reported for the <c>user</c> and <c>manager</c> types only.</summary>
+	[JsonPropertyName("approverEmployee")]
+	public string ApproverEmployee { get; set; }
+
+	/// <summary>The employee's display value, when the platform stored one. Read-only.</summary>
+	[JsonPropertyName("approverEmployeeDisplay")]
+	public string ApproverEmployeeDisplay { get; set; }
+
+	/// <summary>The approving role, as stored. Reported for the <c>role</c> type only.</summary>
+	[JsonPropertyName("approverRole")]
+	public string ApproverRole { get; set; }
+
+	/// <summary>The role's display value, when the platform stored one. Read-only.</summary>
+	[JsonPropertyName("approverRoleDisplay")]
+	public string ApproverRoleDisplay { get; set; }
+
+	/// <summary>"Approval may be delegated".</summary>
+	[JsonPropertyName("allowDelegation")]
+	public bool? AllowDelegation { get; set; }
+
+	/// <summary>"Notify that approval is required".</summary>
+	[JsonPropertyName("notifyApprover")]
+	public bool? NotifyApprover { get; set; }
+
+	/// <summary>The approver notification's "Email template" — the stored lookup macro.</summary>
+	[JsonPropertyName("approverEmailTemplate")]
+	public string ApproverEmailTemplate { get; set; }
+
+	/// <summary>The approver template's display value, when the platform stored one. Read-only.</summary>
+	[JsonPropertyName("approverEmailTemplateDisplay")]
+	public string ApproverEmailTemplateDisplay { get; set; }
+
+	/// <summary>"Notify about the approval result".</summary>
+	[JsonPropertyName("notifyAuthor")]
+	public bool? NotifyAuthor { get; set; }
+
+	/// <summary>The author notification's "Email template" — the stored lookup macro.</summary>
+	[JsonPropertyName("authorEmailTemplate")]
+	public string AuthorEmailTemplate { get; set; }
+
+	/// <summary>The author template's display value, when the platform stored one. Read-only.</summary>
+	[JsonPropertyName("authorEmailTemplateDisplay")]
+	public string AuthorEmailTemplateDisplay { get; set; }
+
+	/// <summary>"Recipient" — the result notification's address.</summary>
+	[JsonPropertyName("recipient")]
+	public string Recipient { get; set; }
+
+	/// <summary>"Ignore errors on sending" — reported only when the element actually carries the value.</summary>
+	[JsonPropertyName("ignoreEmailErrors")]
+	public bool? IgnoreEmailErrors { get; set; }
+
+	/// <summary>
+	/// The visa schema DERIVED for the approval object. Reported for traceability; it is never accepted as input.
+	/// The platform's <c>SysApproval</c> fallback appears here when the object has no registered visa.
+	/// </summary>
+	[JsonPropertyName("approvalSchemaUId")]
+	public string ApprovalSchemaUId { get; set; }
+
+	/// <summary>Captures any field a newer server reports that this build does not declare.</summary>
 	[JsonExtensionData]
 	public Dictionary<string, JsonElement> AdditionalData { get; set; }
 }
