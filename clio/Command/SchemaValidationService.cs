@@ -3596,7 +3596,7 @@ public static class SchemaValidationService
 					attributeBody.ValueKind != JsonValueKind.Object) {
 					continue;
 				}
-				string attributeName = path[1].GetString()!;
+				string attributeName = path[1].GetString();
 				switch (path.GetArrayLength()) {
 					case 2:
 						CollectMissingCustomValidatorReferences(
