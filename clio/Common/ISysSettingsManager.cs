@@ -380,9 +380,18 @@ public class SysSettingsManager : ISysSettingsManager
 		if (!AuthenticationFailureClassifier.IsAuthenticationFailureResponse(rawResponse)) {
 			return;
 		}
+		// REDACTED BEFORE THE CAP, and only then sanitized for display. SanitizeForDisplay performs no
+		// redaction at all - it neutralizes display-hostile characters and caps length - so the quoted body was
+		// carrying the first 300 bytes of a Creatio login page (anti-forgery/bootstrap markers, internal
+		// hostnames, absolute URLs) into the operator console, CI logs and every sink that records the
+		// exception. Redaction has to run first because the redactor matches a token as a whole unit: capping
+		// first can split one and leave the visible half in the clear. Same order as
+		// ServiceResponseJsonGuard.BuildPreview.
+		string detail = TextUtilities.SanitizeForDisplay(
+			Clio.Command.McpServer.SensitiveErrorTextRedactor.Redact(rawResponse), MaxRejectedResponseDetailLength);
 		throw new AuthenticationException(
 			$"Authentication failed while {operationLabel}: "
-			+ $"{TextUtilities.SanitizeForDisplay(rawResponse, MaxRejectedResponseDetailLength)} "
+			+ $"{detail} "
 			+ "Verify the environment credentials (for an expired password, repair the registered profile) "
 			+ "and retry.");
 	}
