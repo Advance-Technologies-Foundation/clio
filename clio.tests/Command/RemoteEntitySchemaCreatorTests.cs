@@ -60,7 +60,6 @@ internal class RemoteEntitySchemaCreatorTests : BaseClioModuleTests
 	{
 		string saveBody = null;
 		bool saveDbStructureCalled = false;
-		bool runtimeVerifyCalled = false;
 		SetupApplicationClient((url, body) => {
 			if (url.Contains("CreateNewSchema", StringComparison.Ordinal)) {
 				return "{\"success\":true,\"schema\":{\"uId\":\"22222222-2222-2222-2222-222222222222\",\"package\":{\"uId\":\"11111111-1111-1111-1111-111111111111\",\"name\":\"UsrPkg\"},\"columns\":[],\"inheritedColumns\":[],\"indexes\":[],\"administratedByOperations\":true,\"administratedByColumns\":true,\"administratedByRecords\":true,\"useDenyRecordRights\":true,\"rightSchemaName\":\"UsrBrokenRights\"}}";
@@ -77,8 +76,10 @@ internal class RemoteEntitySchemaCreatorTests : BaseClioModuleTests
 				return "{\"success\":true}";
 			}
 			if (url.Contains("RuntimeEntitySchemaRequest", StringComparison.Ordinal)) {
-				runtimeVerifyCalled = true;
 				return "{\"success\":true,\"schema\":{\"uId\":\"22222222-2222-2222-2222-222222222222\",\"name\":\"UsrVehicle\"}}";
+			}
+			if (url.Contains("IsODataBuildRunning", StringComparison.Ordinal)) {
+				return "{\"success\":true,\"value\":false}";
 			}
 			throw new InvalidOperationException($"Unexpected url {url}");
 		});
@@ -110,7 +111,13 @@ internal class RemoteEntitySchemaCreatorTests : BaseClioModuleTests
 			Arg.Any<int>(),
 			Arg.Any<int>());
 		saveDbStructureCalled.Should().BeTrue(because: "entity creation must materialize DB structure after saving schema metadata");
-		runtimeVerifyCalled.Should().BeTrue(because: "entity creation must verify runtime availability after DB structure materialization");
+		_applicationClient.Received().ExecutePostRequest(
+			Arg.Is<string>(url => url.Contains("GetSchemaDesignItem", StringComparison.Ordinal)),
+			Arg.Any<string>(),
+			Arg.Any<int>(),
+			Arg.Any<int>(),
+			Arg.Any<int>());
+		// because: entity creation must verify the schema is reloadable through the design-item read after DB structure materialization
 
 		var json = JObject.Parse(saveBody);
 		json["name"]!.Value<string>().Should().Be("UsrVehicle");
@@ -161,6 +168,9 @@ internal class RemoteEntitySchemaCreatorTests : BaseClioModuleTests
 			if (url.Contains("RuntimeEntitySchemaRequest", StringComparison.Ordinal)) {
 				return "{\"success\":true,\"schema\":{\"uId\":\"22222222-2222-2222-2222-222222222222\",\"name\":\"UsrVehicle\"}}";
 			}
+			if (url.Contains("IsODataBuildRunning", StringComparison.Ordinal)) {
+				return "{\"success\":true,\"value\":false}";
+			}
 			throw new InvalidOperationException($"Unexpected url {url}");
 		});
 
@@ -194,6 +204,9 @@ internal class RemoteEntitySchemaCreatorTests : BaseClioModuleTests
 		SetupApplicationClient((url, body) => {
 			if (url.Contains("CheckUniqueSchemaName", StringComparison.Ordinal)) {
 				return "{\"success\":true,\"value\":true}";
+			}
+			if (url.Contains("IsODataBuildRunning", StringComparison.Ordinal)) {
+				return "{\"success\":true,\"value\":false}";
 			}
 			throw new InvalidOperationException($"Unexpected url {url}");
 		});
@@ -235,6 +248,9 @@ internal class RemoteEntitySchemaCreatorTests : BaseClioModuleTests
 			if (url.Contains("RuntimeEntitySchemaRequest", StringComparison.Ordinal)) {
 				return "{\"success\":true,\"schema\":{\"uId\":\"22222222-2222-2222-2222-222222222222\",\"name\":\"UsrVehicle\"}}";
 			}
+			if (url.Contains("IsODataBuildRunning", StringComparison.Ordinal)) {
+				return "{\"success\":true,\"value\":false}";
+			}
 			throw new InvalidOperationException($"Unexpected url {url}");
 		});
 
@@ -263,7 +279,6 @@ internal class RemoteEntitySchemaCreatorTests : BaseClioModuleTests
 		// Arrange
 		string saveBody = null;
 		bool saveDbStructureCalled = false;
-		bool runtimeVerifyCalled = false;
 		_sysSettingsManager.GetSysSettingValueByCode("SchemaNamePrefix").Returns(string.Empty);
 		SetupApplicationClient((url, body) => {
 			if (url.Contains("CreateNewSchema", StringComparison.Ordinal)) {
@@ -281,8 +296,10 @@ internal class RemoteEntitySchemaCreatorTests : BaseClioModuleTests
 				return "{\"success\":true}";
 			}
 			if (url.Contains("RuntimeEntitySchemaRequest", StringComparison.Ordinal)) {
-				runtimeVerifyCalled = true;
 				return "{\"success\":true,\"schema\":{\"uId\":\"22222222-2222-2222-2222-222222222222\",\"name\":\"UsrVehicle\"}}";
+			}
+			if (url.Contains("IsODataBuildRunning", StringComparison.Ordinal)) {
+				return "{\"success\":true,\"value\":false}";
 			}
 			throw new InvalidOperationException($"Unexpected url {url}");
 		});
@@ -303,8 +320,13 @@ internal class RemoteEntitySchemaCreatorTests : BaseClioModuleTests
 			because: "the generated schema should keep the legacy primary column name when no prefix is configured");
 		saveDbStructureCalled.Should().BeTrue(
 			because: "entity creation must still materialize DB structure when the prefix is empty");
-		runtimeVerifyCalled.Should().BeTrue(
-			because: "entity creation must still verify runtime availability when the prefix is empty");
+		_applicationClient.Received().ExecutePostRequest(
+			Arg.Is<string>(url => url.Contains("GetSchemaDesignItem", StringComparison.Ordinal)),
+			Arg.Any<string>(),
+			Arg.Any<int>(),
+			Arg.Any<int>(),
+			Arg.Any<int>());
+		// because: entity creation must still verify the schema is reloadable when the prefix is empty
 	}
 
 	[Test]
@@ -313,7 +335,6 @@ internal class RemoteEntitySchemaCreatorTests : BaseClioModuleTests
 	{
 		string saveBody = null;
 		bool saveDbStructureCalled = false;
-		bool runtimeVerifyCalled = false;
 		SetupApplicationClient((url, body) => {
 			if (url.Contains("CreateNewSchema", StringComparison.Ordinal)) {
 				return "{\"success\":true,\"schema\":{\"uId\":\"22222222-2222-2222-2222-222222222222\",\"package\":{\"uId\":\"11111111-1111-1111-1111-111111111111\",\"name\":\"UsrPkg\"},\"columns\":[],\"inheritedColumns\":[],\"indexes\":[]}}";
@@ -336,8 +357,10 @@ internal class RemoteEntitySchemaCreatorTests : BaseClioModuleTests
 				return "{\"success\":true}";
 			}
 			if (url.Contains("RuntimeEntitySchemaRequest", StringComparison.Ordinal)) {
-				runtimeVerifyCalled = true;
 				return "{\"success\":true,\"schema\":{\"uId\":\"22222222-2222-2222-2222-222222222222\",\"name\":\"UsrAccount\"}}";
+			}
+			if (url.Contains("IsODataBuildRunning", StringComparison.Ordinal)) {
+				return "{\"success\":true,\"value\":false}";
 			}
 			throw new InvalidOperationException($"Unexpected url {url}");
 		});
@@ -366,8 +389,13 @@ internal class RemoteEntitySchemaCreatorTests : BaseClioModuleTests
 			because: "an omitted positive-only option must not erase virtual state inherited by a replacement schema");
 		saveDbStructureCalled.Should().BeTrue(
 			because: "the normal designer actualization lifecycle remains required for virtual replacement schemas");
-		runtimeVerifyCalled.Should().BeTrue(
-			because: "the replacement schema must still be verified through the runtime readback path");
+		_applicationClient.Received().ExecutePostRequest(
+			Arg.Is<string>(url => url.Contains("GetSchemaDesignItem", StringComparison.Ordinal)),
+			Arg.Any<string>(),
+			Arg.Any<int>(),
+			Arg.Any<int>(),
+			Arg.Any<int>());
+		// because: the replacement schema must still be verified through the design-item readback path
 	}
 
 	[Test]
@@ -377,7 +405,6 @@ internal class RemoteEntitySchemaCreatorTests : BaseClioModuleTests
 		// Arrange
 		string? saveBody = null;
 		bool saveDbStructureCalled = false;
-		bool runtimeVerifyCalled = false;
 		SetupApplicationClient((url, body) => {
 			if (url.Contains("CreateNewSchema", StringComparison.Ordinal)) {
 				return "{\"success\":true,\"schema\":{\"uId\":\"22222222-2222-2222-2222-222222222222\",\"package\":{\"uId\":\"11111111-1111-1111-1111-111111111111\",\"name\":\"UsrPkg\"},\"columns\":[],\"inheritedColumns\":[],\"indexes\":[]}}";
@@ -400,8 +427,10 @@ internal class RemoteEntitySchemaCreatorTests : BaseClioModuleTests
 				return "{\"success\":true}";
 			}
 			if (url.Contains("RuntimeEntitySchemaRequest", StringComparison.Ordinal)) {
-				runtimeVerifyCalled = true;
 				return "{\"success\":true,\"schema\":{\"uId\":\"22222222-2222-2222-2222-222222222222\",\"name\":\"UsrAccount\"}}";
+			}
+			if (url.Contains("IsODataBuildRunning", StringComparison.Ordinal)) {
+				return "{\"success\":true,\"value\":false}";
 			}
 			throw new InvalidOperationException($"Unexpected url {url}");
 		});
@@ -437,8 +466,13 @@ internal class RemoteEntitySchemaCreatorTests : BaseClioModuleTests
 			because: "the requested custom Guid must remain an ordinary own column in the saved schema");
 		saveDbStructureCalled.Should().BeTrue(
 			because: "derived entity creation must materialize the saved schema structure");
-		runtimeVerifyCalled.Should().BeTrue(
-			because: "derived entity creation must verify that the saved schema is available at runtime");
+		_applicationClient.Received().ExecutePostRequest(
+			Arg.Is<string>(url => url.Contains("GetSchemaDesignItem", StringComparison.Ordinal)),
+			Arg.Any<string>(),
+			Arg.Any<int>(),
+			Arg.Any<int>(),
+			Arg.Any<int>());
+		// because: derived entity creation must verify that the saved schema is reloadable through the design-item read
 	}
 
 	[Test]
@@ -450,6 +484,9 @@ internal class RemoteEntitySchemaCreatorTests : BaseClioModuleTests
 				return "{\"success\":true,\"schema\":{\"uId\":\"22222222-2222-2222-2222-222222222222\",\"package\":{\"uId\":\"11111111-1111-1111-1111-111111111111\",\"name\":\"UsrPkg\"},\"columns\":[],\"inheritedColumns\":[],\"indexes\":[]}}";
 			}
 			if (url.Contains("CheckUniqueSchemaName", StringComparison.Ordinal)) {
+				return "{\"success\":true,\"value\":false}";
+			}
+			if (url.Contains("IsODataBuildRunning", StringComparison.Ordinal)) {
 				return "{\"success\":true,\"value\":false}";
 			}
 			throw new InvalidOperationException($"Unexpected url {url}");
@@ -484,6 +521,9 @@ internal class RemoteEntitySchemaCreatorTests : BaseClioModuleTests
 			if (url.Contains("GetAvailableReferenceSchemas", StringComparison.Ordinal)) {
 				return "{\"success\":true,\"items\":[]}";
 			}
+			if (url.Contains("IsODataBuildRunning", StringComparison.Ordinal)) {
+				return "{\"success\":true,\"value\":false}";
+			}
 			throw new InvalidOperationException($"Unexpected url {url}");
 		});
 
@@ -514,6 +554,9 @@ internal class RemoteEntitySchemaCreatorTests : BaseClioModuleTests
 			}
 			if (url.Contains("CheckUniqueSchemaName", StringComparison.Ordinal)) {
 				return "{\"success\":true,\"value\":true}";
+			}
+			if (url.Contains("IsODataBuildRunning", StringComparison.Ordinal)) {
+				return "{\"success\":true,\"value\":false}";
 			}
 			throw new InvalidOperationException($"Unexpected url {url}");
 		});
@@ -546,7 +589,6 @@ internal class RemoteEntitySchemaCreatorTests : BaseClioModuleTests
 		// Arrange
 		string saveBody = null;
 		bool saveDbStructureCalled = false;
-		bool runtimeVerifyCalled = false;
 		SetupApplicationClient((url, body) => {
 			if (url.Contains("CreateNewSchema", StringComparison.Ordinal)) {
 				return "{\"success\":true,\"schema\":{\"uId\":\"22222222-2222-2222-2222-222222222222\",\"package\":{\"uId\":\"11111111-1111-1111-1111-111111111111\",\"name\":\"UsrPkg\"},\"columns\":[],\"inheritedColumns\":[],\"indexes\":[]}}";
@@ -563,8 +605,10 @@ internal class RemoteEntitySchemaCreatorTests : BaseClioModuleTests
 				return "{\"success\":true}";
 			}
 			if (url.Contains("RuntimeEntitySchemaRequest", StringComparison.Ordinal)) {
-				runtimeVerifyCalled = true;
 				return "{\"success\":true,\"schema\":{\"uId\":\"22222222-2222-2222-2222-222222222222\",\"name\":\"UsrVehicle\"}}";
+			}
+			if (url.Contains("IsODataBuildRunning", StringComparison.Ordinal)) {
+				return "{\"success\":true,\"value\":false}";
 			}
 			throw new InvalidOperationException($"Unexpected url {url}");
 		});
@@ -608,7 +652,13 @@ internal class RemoteEntitySchemaCreatorTests : BaseClioModuleTests
 		savedColumn["valueMaskingSettings"]!["adminOperationCode"]!.Value<string>().Should().Be("UsrVehicle_Status_UnmaskedValue",
 			because: "masked create-column specs should synthesize the conventional unmask admin operation code");
 		saveDbStructureCalled.Should().BeTrue();
-		runtimeVerifyCalled.Should().BeTrue();
+		_applicationClient.Received().ExecutePostRequest(
+			Arg.Is<string>(url => url.Contains("GetSchemaDesignItem", StringComparison.Ordinal)),
+			Arg.Any<string>(),
+			Arg.Any<int>(),
+			Arg.Any<int>(),
+			Arg.Any<int>());
+		// because: entity creation must verify the schema is reloadable through the design-item read
 	}
 
 	[Test]
@@ -635,6 +685,9 @@ internal class RemoteEntitySchemaCreatorTests : BaseClioModuleTests
 			}
 			if (url.Contains("RuntimeEntitySchemaRequest", StringComparison.Ordinal)) {
 				return "{\"success\":true,\"schema\":{\"uId\":\"22222222-2222-2222-2222-222222222222\",\"name\":\"UsrVehicle\"}}";
+			}
+			if (url.Contains("IsODataBuildRunning", StringComparison.Ordinal)) {
+				return "{\"success\":true,\"value\":false}";
 			}
 			throw new InvalidOperationException($"Unexpected url {url}");
 		});
@@ -685,6 +738,9 @@ internal class RemoteEntitySchemaCreatorTests : BaseClioModuleTests
 			}
 			if (url.Contains("RuntimeEntitySchemaRequest", StringComparison.Ordinal)) {
 				return "{\"success\":true,\"schema\":{\"uId\":\"22222222-2222-2222-2222-222222222222\",\"name\":\"UsrVehicle\"}}";
+			}
+			if (url.Contains("IsODataBuildRunning", StringComparison.Ordinal)) {
+				return "{\"success\":true,\"value\":false}";
 			}
 			throw new InvalidOperationException($"Unexpected url {url}");
 		});
@@ -749,6 +805,9 @@ internal class RemoteEntitySchemaCreatorTests : BaseClioModuleTests
 			if (url.Contains("RuntimeEntitySchemaRequest", StringComparison.Ordinal)) {
 				return "{\"success\":true,\"schema\":{\"uId\":\"22222222-2222-2222-2222-222222222222\",\"name\":\"UsrVehicle\"}}";
 			}
+			if (url.Contains("IsODataBuildRunning", StringComparison.Ordinal)) {
+				return "{\"success\":true,\"value\":false}";
+			}
 			throw new InvalidOperationException($"Unexpected url {url}");
 		});
 		string structuredColumn = JsonSerializer.Serialize(new {
@@ -798,6 +857,9 @@ internal class RemoteEntitySchemaCreatorTests : BaseClioModuleTests
 			}
 			if (url.Contains("RuntimeEntitySchemaRequest", StringComparison.Ordinal)) {
 				return "{\"success\":true,\"schema\":{\"uId\":\"22222222-2222-2222-2222-222222222222\",\"name\":\"UsrVehicle\"}}";
+			}
+			if (url.Contains("IsODataBuildRunning", StringComparison.Ordinal)) {
+				return "{\"success\":true,\"value\":false}";
 			}
 			throw new InvalidOperationException($"Unexpected url {url}");
 		});
@@ -854,6 +916,9 @@ internal class RemoteEntitySchemaCreatorTests : BaseClioModuleTests
 			if (url.Contains("RuntimeEntitySchemaRequest", StringComparison.Ordinal)) {
 				return "{\"success\":true,\"schema\":{\"uId\":\"22222222-2222-2222-2222-222222222222\",\"name\":\"UsrVehicle\"}}";
 			}
+			if (url.Contains("IsODataBuildRunning", StringComparison.Ordinal)) {
+				return "{\"success\":true,\"value\":false}";
+			}
 			throw new InvalidOperationException($"Unexpected url {url}");
 		});
 		string structuredColumn = JsonSerializer.Serialize(new {
@@ -888,6 +953,9 @@ internal class RemoteEntitySchemaCreatorTests : BaseClioModuleTests
 			}
 			if (url.Contains("CheckUniqueSchemaName", StringComparison.Ordinal)) {
 				return "{\"success\":true,\"value\":true}";
+			}
+			if (url.Contains("IsODataBuildRunning", StringComparison.Ordinal)) {
+				return "{\"success\":true,\"value\":false}";
 			}
 			throw new InvalidOperationException($"Unexpected url {url}");
 		});
@@ -943,6 +1011,9 @@ internal class RemoteEntitySchemaCreatorTests : BaseClioModuleTests
 			if (url.Contains("RuntimeEntitySchemaRequest", StringComparison.Ordinal)) {
 				return "{\"success\":true,\"schema\":{\"uId\":\"22222222-2222-2222-2222-222222222222\",\"name\":\"UsrVehicle\"}}";
 			}
+			if (url.Contains("IsODataBuildRunning", StringComparison.Ordinal)) {
+				return "{\"success\":true,\"value\":false}";
+			}
 			throw new InvalidOperationException($"Unexpected url {url}");
 		});
 
@@ -972,6 +1043,9 @@ internal class RemoteEntitySchemaCreatorTests : BaseClioModuleTests
 			}
 			if (url.Contains("CheckUniqueSchemaName", StringComparison.Ordinal)) {
 				return "{\"success\":true,\"value\":true}";
+			}
+			if (url.Contains("IsODataBuildRunning", StringComparison.Ordinal)) {
+				return "{\"success\":true,\"value\":false}";
 			}
 			throw new InvalidOperationException($"Unexpected url {url}");
 		});
@@ -1036,6 +1110,9 @@ internal class RemoteEntitySchemaCreatorTests : BaseClioModuleTests
 					designItemCalled = true;
 					return "<?xml version=\"1.0\" encoding=\"utf-8\"?>\r\n<!DOCTYPE html PUBLIC \"-//W3C//DTD XHTML 1.0 Transitional//EN\" \"http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd\">\r\n<html xmlns=\"http://www.w3.org/1999/xhtml\"><head><title>Request Error</title></head><body>Service Unavailable</body></html>";
 				}
+				if (url.Contains("IsODataBuildRunning", StringComparison.Ordinal)) {
+					return "{\"success\":true,\"value\":false}";
+				}
 				throw new InvalidOperationException($"Unexpected url {url}");
 			});
 
@@ -1083,6 +1160,9 @@ internal class RemoteEntitySchemaCreatorTests : BaseClioModuleTests
 				if (url.Contains("GetSchemaDesignItem", StringComparison.Ordinal)) {
 					return "<?xml version=\"1.0\" encoding=\"utf-8\"?>\r\n<!DOCTYPE html PUBLIC \"-//W3C//DTD XHTML 1.0 Transitional//EN\" \"http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd\">\r\n<html xmlns=\"http://www.w3.org/1999/xhtml\"><head><title>Request Error</title></head><body>Service Unavailable</body></html>";
 				}
+				if (url.Contains("IsODataBuildRunning", StringComparison.Ordinal)) {
+					return "{\"success\":true,\"value\":false}";
+				}
 				throw new InvalidOperationException($"Unexpected url {url}");
 			});
 
@@ -1119,6 +1199,9 @@ internal class RemoteEntitySchemaCreatorTests : BaseClioModuleTests
 			}
 			if (url.Contains("RuntimeEntitySchemaRequest", StringComparison.Ordinal)) {
 				return "{\"success\":true,\"schema\":{\"uId\":\"22222222-2222-2222-2222-222222222222\",\"name\":\"UsrVehicle\"}}";
+			}
+			if (url.Contains("IsODataBuildRunning", StringComparison.Ordinal)) {
+				return "{\"success\":true,\"value\":false}";
 			}
 			throw new InvalidOperationException($"Unexpected url {url}");
 		});
@@ -1167,6 +1250,9 @@ internal class RemoteEntitySchemaCreatorTests : BaseClioModuleTests
 					? "{\"success\":false,\"errorInfo\":{\"message\":\"Compilation failed.\"}}"
 					: "{\"success\":true}";
 			}
+			if (url.Contains("IsODataBuildRunning", StringComparison.Ordinal)) {
+				return "{\"success\":true,\"value\":false}";
+			}
 			throw new InvalidOperationException($"Unexpected url {url}");
 		});
 
@@ -1211,6 +1297,9 @@ internal class RemoteEntitySchemaCreatorTests : BaseClioModuleTests
 			}
 			if (url.Contains("RuntimeEntitySchemaRequest", StringComparison.Ordinal)) {
 				return "{\"success\":true,\"schema\":{\"uId\":\"22222222-2222-2222-2222-222222222222\",\"name\":\"UsrVehicle\"}}";
+			}
+			if (url.Contains("IsODataBuildRunning", StringComparison.Ordinal)) {
+				return "{\"success\":true,\"value\":false}";
 			}
 			throw new InvalidOperationException($"Unexpected url {url}");
 		});
@@ -1261,6 +1350,9 @@ internal class RemoteEntitySchemaCreatorTests : BaseClioModuleTests
 			if (url.Contains("RuntimeEntitySchemaRequest", StringComparison.Ordinal)) {
 				return "{\"success\":true,\"schema\":{\"uId\":\"22222222-2222-2222-2222-222222222222\",\"name\":\"UsrVehicle\"}}";
 			}
+			if (url.Contains("IsODataBuildRunning", StringComparison.Ordinal)) {
+				return "{\"success\":true,\"value\":false}";
+			}
 			throw new InvalidOperationException($"Unexpected url {url}");
 		});
 
@@ -1306,6 +1398,9 @@ internal class RemoteEntitySchemaCreatorTests : BaseClioModuleTests
 			}
 			if (url.Contains("RuntimeEntitySchemaRequest", StringComparison.Ordinal)) {
 				return "{\"success\":true,\"schema\":{\"uId\":\"22222222-2222-2222-2222-222222222222\",\"name\":\"UsrVehicle\"}}";
+			}
+			if (url.Contains("IsODataBuildRunning", StringComparison.Ordinal)) {
+				return "{\"success\":true,\"value\":false}";
 			}
 			throw new InvalidOperationException($"Unexpected url {url}");
 		});
@@ -1359,6 +1454,9 @@ internal class RemoteEntitySchemaCreatorTests : BaseClioModuleTests
 			}
 			if (url.Contains("RuntimeEntitySchemaRequest", StringComparison.Ordinal)) {
 				return "{\"success\":true,\"schema\":{\"uId\":\"22222222-2222-2222-2222-222222222222\",\"name\":\"UsrVehicle\"}}";
+			}
+			if (url.Contains("IsODataBuildRunning", StringComparison.Ordinal)) {
+				return "{\"success\":true,\"value\":false}";
 			}
 			throw new InvalidOperationException($"Unexpected url {url}");
 		});
@@ -1475,6 +1573,9 @@ internal class RemoteEntitySchemaCreatorTests : BaseClioModuleTests
 			if (url.Contains("RuntimeEntitySchemaRequest", StringComparison.Ordinal)) {
 				return "{\"success\":true,\"schema\":{\"uId\":\"22222222-2222-2222-2222-222222222222\",\"name\":\"UsrVehicle\"}}";
 			}
+			if (url.Contains("IsODataBuildRunning", StringComparison.Ordinal)) {
+				return "{\"success\":true,\"value\":false}";
+			}
 			throw new InvalidOperationException($"Unexpected url {url}");
 		});
 	}
@@ -1579,6 +1680,11 @@ internal class RemoteEntitySchemaCreatorTests : BaseClioModuleTests
 							indexes = Array.Empty<object>()
 						}
 					});
+				}
+				if (url.Contains("IsODataBuildRunning", StringComparison.Ordinal)) {
+					// The OData build gate probes this before every publish; report idle so the gate returns
+					// immediately and the wrapped test scenarios keep exercising only what they intend to.
+					return "{\"success\":true,\"value\":false}";
 				}
 
 				return handler(url, body);

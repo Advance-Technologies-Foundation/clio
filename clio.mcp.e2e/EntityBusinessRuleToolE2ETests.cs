@@ -1,4 +1,4 @@
-using Allure.NUnit;
+﻿using Allure.NUnit;
 using Allure.NUnit.Attributes;
 using Clio.Command.BusinessRules;
 using Clio.Command.McpServer.Tools;
@@ -297,10 +297,10 @@ public sealed class EntityBusinessRuleToolE2ETests : McpContractFixtureBase {
 
 	[Category("McpE2E.NoEnvironment")]
 	[Test]
-	[Description("Returns readable MCP diagnostics when business-rule action payload deserialization fails before command execution.")]
+	[Description("Returns the contracted invalid-parameter-type diagnostic, without echoing the payload, when business-rule action binding fails before command execution.")]
 	[AllureTag(ToolName)]
 	[AllureName("Entity business-rule MCP tool surfaces action deserialization errors")]
-	[AllureDescription("Starts the real clio MCP server, calls create-entity-business-rule with an invalid polymorphic action payload, and verifies the client receives a readable deserialization error instead of a generic invocation failure.")]
+	[AllureDescription("Starts the real clio MCP server, calls create-entity-business-rule with an invalid polymorphic action payload, and verifies the client receives the contracted invalid-parameter-type diagnostic naming the nested rules parameter, with the caller-supplied discriminator value not echoed back.")]
 	public async Task BusinessRuleCreate_Should_Surface_Action_Deserialization_Error() {
 		// Arrange
 		await using var arrangeContext = Arrange(TimeSpan.FromMinutes(3));
@@ -320,19 +320,28 @@ public sealed class EntityBusinessRuleToolE2ETests : McpContractFixtureBase {
 			arrangeContext.CancellationTokenSource.Token);
 
 		// Assert
-		// Lazy-surface routing: create-entity-business-rules is not resident, so the session dispatches
-		// the call through clio-run. The target's args record still fails binding inside the dispatch,
-		// but the executor wraps the diagnostic as "Error: tool '<name>' failed: …" instead of the
-		// native "Failed to deserialize argument 'args' for MCP tool '<name>'" text — accept either.
+		// The pre-method binder rejects the payload before the command runs and emits the contracted
+		// diagnostic: "invalid-parameter-type: argument 'rules' for MCP tool '<name>' contains a value
+		// that does not match the documented shape." The binding failed BELOW 'rules', so the message
+		// reports containment rather than the CLR type of 'rules', which the caller already sent right.
+		// It names the NESTED wire parameter rather than the composite `args` wrapper, and deliberately
+		// does NOT echo the raw System.Text.Json text — that message repeats the caller-supplied `type`
+		// discriminator ("unsupported-action") back to the client, which is what the sanitization removes.
 		callResult.IsError.Should().BeTrue(
 			because: "argument binding failures occur before command execution and should be returned as MCP error results");
 		callResult.Content.Should().NotBeNullOrEmpty(
 			because: "the MCP error result should include human-readable diagnostics");
-		callResult.Content!.Select(content => content.ToString()).Should().Contain(message =>
-				(message.Contains($"Failed to deserialize argument 'args' for MCP tool '{ToolName}'", StringComparison.Ordinal)
-					|| message.Contains($"tool '{ToolName}' failed", StringComparison.OrdinalIgnoreCase))
-				&& message.Contains("unsupported-action", StringComparison.Ordinal),
-			because: "the caller should see the underlying System.Text.Json action binding error, natively or wrapped by the clio-run executor");
+		string diagnostics = string.Join(
+			Environment.NewLine,
+			callResult.Content!.Select(content => content.ToString()));
+		diagnostics.Should().Contain("invalid-parameter-type",
+			because: "the failure must use the error code advertised by get-tool-contract");
+		diagnostics.Should().Contain("rules",
+			because: "the nested wire parameter must be named instead of exposing only the composite args wrapper");
+		diagnostics.Should().Contain(ToolName,
+			because: "the diagnostic should identify the tool whose argument failed to bind");
+		diagnostics.Should().NotContain("unsupported-action",
+			because: "the caller-supplied discriminator value must not be echoed back in the diagnostic");
 	}
 
 	[Category("McpE2E.Sandbox")]

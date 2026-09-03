@@ -38,6 +38,7 @@ public sealed partial class CreatioArtifactMergeService(Resolver.IConflictResolv
 
 	private const int MaxConcurrentMerges = 4;
 	private const int MaxArtifactPathBytes = 4096;
+	private const int RegexTimeoutMilliseconds = 5_000;
 	private const string UnknownArtifactKind = "unknown-artifact";
 	private static readonly SemaphoreSlim Capacity = new(MaxConcurrentMerges, MaxConcurrentMerges);
 	private static readonly string ResolverVersion = ResolveVersion();
@@ -541,15 +542,15 @@ public sealed partial class CreatioArtifactMergeService(Resolver.IConflictResolv
 
 	[GeneratedRegex(
 		"^\\s*[=+~]\\s+MetaData\\.Schema\\.(?<property>UId|A2|ManagerName|AD3)\\s+\"(?<value>[^\"]+)\"\\s*$",
-		RegexOptions.CultureInvariant | RegexOptions.Multiline)]
+		RegexOptions.CultureInvariant | RegexOptions.Multiline, RegexTimeoutMilliseconds)]
 	private static partial Regex FlatIdentityRegex();
 
 	[GeneratedRegex(
 		"\\+\\s+MetaData\\.Schema\\.D2\\s+\\{[^}]*\"A2\"\\s*:\\s*\"(?<column>[A-Za-z_][A-Za-z0-9_]{0,127})\"[^}]*<<<<<<< Local\\s*\"S2\"\\s*:\\s*\"(?<local>[0-9a-fA-F-]{36})\",\\s*=======\\s*\"S2\"\\s*:\\s*\"(?<remote>[0-9a-fA-F-]{36})\",\\s*>>>>>>> Remote",
-		RegexOptions.CultureInvariant)]
+		RegexOptions.CultureInvariant, RegexTimeoutMilliseconds)]
 	private static partial Regex EntityColumnTypeConflictRegex();
 
-	[GeneratedRegex("^[A-Za-z_][A-Za-z0-9_]{0,127}$", RegexOptions.CultureInvariant)]
+	[GeneratedRegex("^[A-Za-z_][A-Za-z0-9_]{0,127}$", RegexOptions.CultureInvariant, RegexTimeoutMilliseconds)]
 	private static partial Regex SafeColumnNameRegex();
 
 	private readonly record struct DescriptorIdentity(string? UId, string? Name, string? ManagerName);

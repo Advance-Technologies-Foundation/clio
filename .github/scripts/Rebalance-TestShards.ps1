@@ -158,11 +158,11 @@ $manifest = [ordered]@{
     version = 1
     suites = [ordered]@{
         unit = [ordered]@{
-            baseFilter = "Category!=Integration"
+            baseFilter = "TestCategory!=Integration"
             shards = New-BalancedShards -Fixtures (Get-FixtureDurations $resolvedUnitTrx) -Count 4 -Prefix "unit" -FixedSeconds $UnitFixedSeconds
         }
         integration = [ordered]@{
-            baseFilter = "Category=Integration"
+            baseFilter = "TestCategory=Integration"
             shards = New-BalancedShards -Fixtures (Get-FixtureDurations $resolvedIntegrationTrx) -Count 3 -Prefix "integration" -FixedSeconds @(0, 0, 0)
         }
     }

@@ -771,6 +771,8 @@ public class BindingsModule {
 		services.AddTransient<IDataForgeReadClient, DataForgeReadClient>();
 		services.AddTransient<IDataForgeMaintenanceClient, DataForgeMaintenanceClient>();
 		services.AddTransient<IRuntimeEntitySchemaReader, RuntimeEntitySchemaReader>();
+		services.AddTransient<IODataBuildGate, ODataBuildGate>();
+		services.AddTransient<IEntitySchemaPublisher, EntitySchemaPublisher>();
 		services.AddTransient<IDataForgeContextService, DataForgeContextService>();
 		services.AddTransient<ODataReadTool>();
 		services.AddTransient<ODataCreateTool>();
@@ -1089,8 +1091,12 @@ public class BindingsModule {
 		services.AddTransient<LocalHelpViewer>();
 		services.AddTransient<WikiHelpViewer>();
 		
-		services.AddTransient<Func<EnvironmentSettings, ISysSettingsManager>>(_ =>
-			envSettings => new SysSettingsManager(BuildRemoteDataProvider(envSettings)));
+		// The per-environment manager gets the SAME dependency set as the DI-resolved one. A provider-only
+		// manager would silently skip the authenticated DataService probe, so every command reached through
+		// this factory would keep reporting a rejected read as an empty success (the defect issue #1222 fixes).
+		// The client stays lazy, so building the factory result costs no HTTP call on its own.
+		services.AddTransient<Func<EnvironmentSettings, ISysSettingsManager>>(sp =>
+			envSettings => BuildEnvironmentScopedSysSettingsManager(sp, envSettings));
 
 		RegisterFluentValidators(services);
 		return settingsRepository;
@@ -1119,6 +1125,45 @@ public class BindingsModule {
 	// Builds an ATF RemoteDataProvider for the environment. Bearer-first: an AccessToken is
 	// consumed via the dedicated bearer ctor and must never reach the login/password path
 	// (multi-tenant safety, ENG-93208 B1). Login/password are passed as-is (no Supervisor default).
+	/// <summary>
+	/// Builds a <see cref="SysSettingsManager"/> for one environment with the same dependency set the
+	/// DI-resolved manager gets, so a read rejected by authentication is reported as a failure rather
+	/// than as an empty success.
+	/// </summary>
+	private static ISysSettingsManager BuildEnvironmentScopedSysSettingsManager(
+		IServiceProvider sp, EnvironmentSettings envSettings) {
+		Lazy<CreatioClient> lazyCreatioClient = new(() => BuildCreatioClient(envSettings));
+		// Same token rule as RegisterActiveEnvironmentServices: with an access token OR an OAuth client
+		// the adapter must never fall back to CreatioClient.Login() when it receives a login page -
+		// that crosses the bearer credential boundary (multi-tenant safety, ENG-93208 B1), and an OAuth
+		// profile has no username/password to log in with at all.
+		IApplicationClient applicationClient = UsesTokenAuthentication(envSettings)
+			? new CreatioClientAdapter(lazyCreatioClient, sp.GetRequiredService<IReauthExecutor>())
+			: new CreatioClientAdapter(lazyCreatioClient);
+		return new SysSettingsManager(
+			applicationClient,
+			new ServiceUrlBuilder(envSettings),
+			BuildRemoteDataProvider(envSettings),
+			sp.GetRequiredService<IWorkingDirectoriesProvider>(),
+			sp.GetRequiredService<Clio.Common.IFileSystem>(),
+			sp.GetRequiredService<IFileSystem>(),
+			sp.GetRequiredService<ILogger>());
+	}
+
+	/// <summary>
+	/// True when the environment authenticates with a token rather than with a login and password: an
+	/// <c>AccessToken</c>, or an OAuth client-credentials pair.
+	/// </summary>
+	/// <remarks>
+	/// Neither shape carries a username/password, so neither may reach the adapter's forms-login
+	/// reauthentication path: an OAuth client that receives a login page would otherwise attempt
+	/// <c>CreatioClient.Login()</c> with no credentials to log in with and turn a valid environment into
+	/// an <c>UnauthorizedAccessException</c>. The bearer rule (multi-tenant safety, ENG-93208 B1) applies
+	/// to both bearer shapes for the same reason.
+	/// </remarks>
+	private static bool UsesTokenAuthentication(EnvironmentSettings settings) =>
+		!string.IsNullOrEmpty(settings.AccessToken) || !string.IsNullOrEmpty(settings.ClientId);
+
 	private static RemoteDataProvider BuildRemoteDataProvider(EnvironmentSettings settings) {
 		if (!string.IsNullOrEmpty(settings.AccessToken)) {
 			return new RemoteDataProvider(settings.Uri, settings.AccessToken, settings.IsNetCore);
@@ -1165,7 +1210,9 @@ public class BindingsModule {
 			// internal closure-based ReauthExecutor byte-for-byte. The adapter is the sole
 			// lifetime owner; registering the raw disposable client would bypass its listener
 			// teardown guard when the child provider is disposed.
-			return !string.IsNullOrEmpty(activeSettings.AccessToken)
+			// An OAuth client (ClientId) is a token shape too and has no username/password, so it takes
+			// the same no-login executor; only a login/password profile keeps the login-capable one.
+			return UsesTokenAuthentication(activeSettings)
 				? new CreatioClientAdapter(adapterClient, sp.GetRequiredService<IReauthExecutor>())
 				: new CreatioClientAdapter(adapterClient, ownsClient: true);
 		});

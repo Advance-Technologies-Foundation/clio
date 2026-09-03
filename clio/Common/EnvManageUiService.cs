@@ -45,7 +45,8 @@ public class EnvManageUiService : IEnvManageUiService
 	#region Fields: Private
 
 	private static readonly string[] SensitiveFields = { "Password", "ClientSecret", "DBPassword", "Secret" };
-	private static readonly Regex NamePattern = new(@"^[a-zA-Z0-9_-]+$", RegexOptions.Compiled);
+	private static readonly TimeSpan RegexTimeout = TimeSpan.FromSeconds(1);
+	private static readonly Regex NamePattern = new(@"^[a-zA-Z0-9_-]+$", RegexOptions.Compiled, RegexTimeout);
 
 	#endregion
 
