@@ -211,6 +211,55 @@ public sealed class ModifyBusinessProcessToolE2ETests {
 	}
 
 	[Test]
+	[Description("Over the real MCP path: a Lookup PROCESS PARAMETER default set through addParameter's 'value' gets the referenced record's NAME resolved into valueDisplay exactly like a mapping does - and, on that same route, an already-composed [#Lookup...#] macro is REFUSED rather than decoded. Pins the documented distinction between the two paths: name resolution is shared (ProcessParameterService and ProcessMappingService both call the validator), the macro decode is the mapping route only (NormalizeConstantValue has no counterpart in ProcessParameterService). A refactor collapsing either path fails here.")]
+	[AllureTag(ToolName)]
+	[AllureName("modify-business-process resolves a Lookup default's display name on addParameter and refuses the macro there")]
+	public async Task ModifyBusinessProcess_Should_ResolveLookupDefaultName_OnAddParameter_AndRefuseTheMacroThere() {
+		// Arrange
+		await using ArrangeContext context = await ArrangeAsync(requireReachableEnvironment: true);
+		string processName = $"UsrClioBpLookupDefaultE2e{Guid.NewGuid():N}";
+		await CreateProcessAsync(context, processName, BuildPerformTaskDescriptor(processName));
+
+		// Act 1 - a Lookup process parameter whose default is a bare record Guid
+		await ModifyExpectingSuccessAsync(context, processName, $$"""
+			[ { "op": "addParameter", "parameter": { "name": "DefaultCategory", "referenceSchema": "ActivityCategory",
+			    "direction": "In", "value": "{{ToDoActivityCategoryId}}" } } ]
+			""");
+		DescribeProcessResult described = ParseDescribeResult(await CallToolAsync(context, DescribeProcessTool.ToolName,
+			new Dictionary<string, object?> {
+				["environment-name"] = context.EnvironmentName,
+				["process-name"] = processName
+			}));
+		DescribedParameter category = described.Parameters.Single(parameter => parameter.Name == "DefaultCategory");
+
+		// Assert 1 - the default is the ConstValue the runtime reads, and it is NAMED, on this route too
+		category.Source.Should().Be("ConstValue",
+			because: "a process parameter's lookup default is stored in the same encoding as an element-parameter constant");
+		category.Value.Should().BeEquivalentTo(ToDoActivityCategoryId,
+			because: "the stored value stays the bare record id - the name is added beside it, never in its place");
+		AssertResolvedDisplayName(category.ValueDisplay, category.Value);
+
+		// Act 2 - the macro form on THIS route: setParameter has no decode, so it must be refused, not stored
+		CallToolResult refusal = await CallToolAsync(context, ToolName, new Dictionary<string, object?> {
+			["environment-name"] = context.EnvironmentName,
+			["process-name"] = processName,
+			["operations"] = $$"""[ { "op": "setParameter", "parameterName": "DefaultCategory", "parameterUpdate": { "value": "[#Lookup.{{ActivityCategoryObjectUId}}.{{ToDoActivityCategoryId}}#]" } } ]"""
+		});
+
+		// Assert 2 - refused with the bare-Guid route named, and the earlier default untouched
+		SerializeToolText(refusal).Should().Contain("expression",
+			because: "addParameter/setParameter take a bare Guid only; the macro decode is the MAPPING route, so here the "
+				+ "macro must fall through to the standard non-Guid refusal that names the routes");
+		DescribedParameter after = ParseDescribeResult(await CallToolAsync(context, DescribeProcessTool.ToolName,
+			new Dictionary<string, object?> {
+				["environment-name"] = context.EnvironmentName,
+				["process-name"] = processName
+			})).Parameters.Single(parameter => parameter.Name == "DefaultCategory");
+		after.Value.Should().BeEquivalentTo(ToDoActivityCategoryId,
+			because: "a refused setParameter leaves the parameter exactly as it was - the macro was neither decoded nor stored");
+	}
+
+	[Test]
 	[Description("Over the real MCP path, builds a signal-start process then sets a data source filter via modify-business-process setFilter (describe confirms the distinctive value round-trips), then removes it via clearFilter (describe confirms it is gone). Covers the setFilter/clearFilter modify ops end-to-end (mandatory MCP e2e gate).")]
 	[AllureTag(ToolName)]
 	[AllureName("modify-business-process setFilter then clearFilter round-trips through describe")]
@@ -1140,7 +1189,7 @@ public sealed class ModifyBusinessProcessToolE2ETests {
 			because: "a bare record Guid on a Lookup parameter must persist as the ConstValue the runtime's allowed-results derivation reads — the whole point of the ENG-91846 relaxation");
 		category.Value.Should().BeEquivalentTo(ToDoActivityCategoryId,
 			because: "the record id is stored verbatim, so the runtime resolves exactly the requested category");
-		AssertResolvedDisplayName(category.ValueDisplay);
+		AssertResolvedDisplayName(category.ValueDisplay, category.Value);
 		category.ValueDisplay.Should().NotBe(category.Value,
 			because: "a display value equal to the id is the defect itself, not a fix — the two must differ");
 		DescribedParameter owner = task.Parameters.Single(parameter => parameter.Name == "OwnerId");
@@ -1333,7 +1382,7 @@ public sealed class ModifyBusinessProcessToolE2ETests {
 				+ "degrades the Perform task's result list to the default");
 		category.Value.Should().BeEquivalentTo(ToDoActivityCategoryId,
 			because: "describe must return a bare Guid whatever form the caller wrote, or the round trip breaks");
-		AssertResolvedDisplayName(category.ValueDisplay);
+		AssertResolvedDisplayName(category.ValueDisplay, category.Value);
 
 		// And feeding describe's OWN output back is a no-op — the round trip the contract advertises.
 		await ModifyExpectingSuccessAsync(context, processName, $$"""
@@ -1637,13 +1686,21 @@ public sealed class ModifyBusinessProcessToolE2ETests {
 	/// asserting <see cref="ToDoActivityCategoryName"/> literally would make the suite fail on any non-English
 	/// profile while proving nothing more than this does: the defect was the Guid, and the Guid is what is ruled out.
 	/// </summary>
-	private static void AssertResolvedDisplayName(string valueDisplay) {
+	private static void AssertResolvedDisplayName(string valueDisplay, string rawValue) {
 		valueDisplay.Should().NotBeNullOrWhiteSpace(
 			because: "the server resolves the referenced record's name into the display value; an absent one means the "
 				+ "stand could not name the record, which this suite's base-seed category must never be");
 		Guid.TryParse(valueDisplay, out _).Should().BeFalse(
 			because: "the display value must be a NAME - the raw record id in that slot is exactly the designer defect "
 				+ "ENG-96325 removed");
+		valueDisplay.Should().NotBeEquivalentTo(rawValue,
+			because: "the display value must differ from the stored value it labels - equality would mean the id was "
+				+ "echoed back in a shape the Guid check did not recognise");
+		valueDisplay.Should().NotContainEquivalentOf("error",
+			because: "a message leaking through the name read would be non-empty and non-Guid and still be wrong");
+		valueDisplay.Should().NotContain("[#",
+			because: "on an element parameter the display value is the record's plain name, never a macro - a macro "
+				+ "here means the change-data rendering path was applied to the wrong slot");
 	}
 
 	/// <summary>
