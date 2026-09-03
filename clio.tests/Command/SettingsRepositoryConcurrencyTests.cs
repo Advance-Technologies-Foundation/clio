@@ -519,6 +519,7 @@ public sealed class SettingsRepositoryProcessConcurrencyTests {
 					CreateNoWindow = true
 				};
 				startInfo.Environment["CLIO_HOME"] = clioHome;
+				startInfo.Environment["CLIO_NO_UPDATE_CHECK"] = "true";
 				startInfo.ArgumentList.Add(clioAssemblyPath);
 				startInfo.ArgumentList.Add("reg-web-app");
 				startInfo.ArgumentList.Add($"env-{index}");
