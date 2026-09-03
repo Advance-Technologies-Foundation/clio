@@ -3616,6 +3616,340 @@ public sealed class SchemaSyncToolTests {
 
 	#endregion
 
+	#region Field-shape rejection (issue #1303)
+
+	[Test]
+	[Category("Unit")]
+	[Description("Rejects an operation that carries the rows under the 'seed-data' PROPERTY key, naming both the rename to 'seed-rows' and the fact that seed-data is an operation TYPE, and applies nothing (issue #1303 A1).")]
+	public async Task SchemaSync_ShouldRejectSeedDataProperty_WhenRowsAreSentUnderTheWrongKey() {
+		// Arrange
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		ISchemaConvergenceService convergence = Convergence();
+		SchemaSyncTool tool = new(commandResolver, ConsoleLogger.Instance, convergence);
+		SchemaSyncArgs args = new(
+			"dev", "UsrPkg",
+			[
+				new SchemaSyncOperation("create-lookup", "UsrTodoStatus",
+					TitleLocalizations: Localizations("Todo Status")) {
+					ExtensionData = new Dictionary<string, System.Text.Json.JsonElement> {
+						["seed-data"] = ToJsonElement("New")
+					}
+				}
+			]);
+
+		// Act
+		SchemaSyncResponse response = await tool.SchemaSync(args);
+
+		// Assert
+		response.Success.Should().BeFalse(
+			because: "rows sent under an unbindable key must fail loudly instead of reporting a created schema with no rows");
+		response.Results[0].Status.Should().Be("failed",
+			because: "a field-shape rejection is a failed operation");
+		response.Results[0].Error.Should().Contain("'seed-data' -> 'seed-rows'",
+			because: "the caller must be told the exact rename to apply");
+		response.Results[0].Error.Should().Contain("is an operation TYPE",
+			because: "'seed-data' is a legitimate value of 'type', so the hint must say which of the two the caller got wrong");
+		convergence.DidNotReceive().Classify(Arg.Any<SchemaConvergenceTarget>());
+		commandResolver.DidNotReceive().Resolve<CreateEntitySchemaCommand>(Arg.Any<CreateEntitySchemaOptions>());
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Rejects an operation that carries 'name' instead of 'schema-name' with the rename hint, and never leaks the find-entity-schema CLI switches into the MCP answer (issue #1303 C2).")]
+	public async Task SchemaSync_ShouldRejectNameProperty_WithoutLeakingCliSwitches() {
+		// Arrange
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		ISchemaConvergenceService convergence = Convergence();
+		SchemaSyncTool tool = new(commandResolver, ConsoleLogger.Instance, convergence);
+		SchemaSyncArgs args = new(
+			"dev", "UsrPkg",
+			[
+				new SchemaSyncOperation("create-lookup", null!,
+					TitleLocalizations: Localizations("Todo Status")) {
+					ExtensionData = new Dictionary<string, System.Text.Json.JsonElement> {
+						["name"] = ToJsonElement("UsrTodoStatus")
+					}
+				}
+			]);
+
+		// Act
+		SchemaSyncResponse response = await tool.SchemaSync(args);
+
+		// Assert
+		response.Success.Should().BeFalse(
+			because: "an operation whose schema name did not bind must be rejected before any server call");
+		response.Results[0].Error.Should().Contain("'name' -> 'schema-name'",
+			because: "the caller must be told the exact rename to apply");
+		response.Results[0].Error.Should().NotContain("--schema-name",
+			because: "an MCP caller never used a CLI switch, so find-entity-schema's CLI message must not leak into the answer");
+		response.Results[0].Error.Should().NotContain("--search-pattern",
+			because: "an MCP caller never used a CLI switch, so find-entity-schema's CLI message must not leak into the answer");
+		response.Results[0].Error.Should().NotContain("--uid",
+			because: "an MCP caller never used a CLI switch, so find-entity-schema's CLI message must not leak into the answer");
+		convergence.DidNotReceive().Classify(Arg.Any<SchemaConvergenceTarget>());
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Reports a genuinely unknown operation property under 'Unknown args' together with the valid-field hint (issue #1303).")]
+	public async Task SchemaSync_ShouldReportUnknownOperationField_WithValidFieldHint() {
+		// Arrange
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		ISchemaConvergenceService convergence = Convergence();
+		SchemaSyncTool tool = new(commandResolver, ConsoleLogger.Instance, convergence);
+		SchemaSyncArgs args = new(
+			"dev", "UsrPkg",
+			[
+				new SchemaSyncOperation("create-lookup", "UsrTodoStatus",
+					TitleLocalizations: Localizations("Todo Status")) {
+					ExtensionData = new Dictionary<string, System.Text.Json.JsonElement> {
+						["bogus-field"] = ToJsonElement("whatever")
+					}
+				}
+			]);
+
+		// Act
+		SchemaSyncResponse response = await tool.SchemaSync(args);
+
+		// Assert
+		response.Success.Should().BeFalse(
+			because: "an unbindable operation property must fail loudly instead of being dropped by the JSON binder");
+		response.Results[0].Error.Should().Contain("Unknown args: 'bogus-field'",
+			because: "the unknown property must be named back to the caller");
+		response.Results[0].Error.Should().Contain("Valid operation fields: type, schema-name",
+			because: "the rejection must list the accepted operation fields so the caller can correct the call in one round-trip");
+		convergence.DidNotReceive().Classify(Arg.Any<SchemaConvergenceTarget>());
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("REGRESSION: the legacy 'operation' key stays consumed by the tool itself, so the field-shape validator must not report it as an unknown or renameable field (issue #1303).")]
+	public async Task SchemaSync_ShouldNotReportLegacyOperationKeyAsUnknownField_WhenTypeIsMissing() {
+		// Arrange
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		SchemaSyncTool tool = new(commandResolver, ConsoleLogger.Instance, Convergence());
+		SchemaSyncArgs args = new(
+			"dev", "UsrPkg",
+			[
+				new SchemaSyncOperation(null!, "UsrTodoStatus",
+					TitleLocalizations: Localizations("Todo Status")) {
+					ExtensionData = new Dictionary<string, System.Text.Json.JsonElement> {
+						["operation"] = ToJsonElement("create-lookup")
+					}
+				}
+			]);
+
+		// Act
+		SchemaSyncResponse response = await tool.SchemaSync(args);
+
+		// Assert
+		response.Results[0].Error.Should().NotContain("Unknown args",
+			because: "'operation' is consumed by GetReportedOperationType/BuildUnknownOperationError and must never be reported as unbound");
+		response.Results[0].Error.Should().NotContain("Rename:",
+			because: "'operation' has its own dedicated legacy-field message and must not be routed through the alias-rename hint");
+		response.Results[0].Error.Should().Contain("unsupported request field 'operation'",
+			because: "the dedicated legacy-field message must still be the one the caller sees");
+		response.Results[0].Type.Should().Be("create-lookup",
+			because: "the legacy operation name must still bind for reporting purposes");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Rejects an operation with a blank schema-name by naming the field, not the find-entity-schema CLI switches (issue #1303 C2).")]
+	public async Task SchemaSync_ShouldRejectBlankSchemaName_WithFieldNameNotCliSwitches() {
+		// Arrange
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		ISchemaConvergenceService convergence = Convergence();
+		SchemaSyncTool tool = new(commandResolver, ConsoleLogger.Instance, convergence);
+		SchemaSyncArgs args = new(
+			"dev", "UsrPkg",
+			[new SchemaSyncOperation("create-lookup", "   ", TitleLocalizations: Localizations("Todo Status"))]);
+
+		// Act
+		SchemaSyncResponse response = await tool.SchemaSync(args);
+
+		// Assert
+		response.Success.Should().BeFalse(
+			because: "an operation with no target schema name cannot be applied");
+		response.Results[0].Error.Should().Contain("'schema-name' is required",
+			because: "the rejection must name the MCP field the caller has to fill in");
+		response.Results[0].Error.Should().NotContain("--schema-name",
+			because: "the CLI switch vocabulary of FindEntitySchemaCommand must not reach an MCP caller");
+		convergence.DidNotReceive().Classify(Arg.Any<SchemaConvergenceTarget>());
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("A field-shape rejection excludes the failed operation from resume-plan.operations and tells the caller to correct the field names first (issue #1303).")]
+	public async Task SchemaSync_ResumePlan_ShouldExcludeFailedOperation_WhenRejectedForFieldShape() {
+		// Arrange
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		SchemaSyncTool tool = new(commandResolver, ConsoleLogger.Instance, Convergence());
+		SchemaSyncArgs args = new(
+			"dev", "UsrPkg",
+			[
+				new SchemaSyncOperation("create-lookup", "UsrTodoStatus",
+					TitleLocalizations: Localizations("Todo Status")) {
+					ExtensionData = new Dictionary<string, System.Text.Json.JsonElement> {
+						["seed-data"] = ToJsonElement("New")
+					}
+				},
+				new SchemaSyncOperation("create-lookup", "UsrGenre", TitleLocalizations: Localizations("Genre"))
+			]);
+
+		// Act
+		SchemaSyncResponse response = await tool.SchemaSync(args);
+
+		// Assert
+		response.ResumePlan.Should().NotBeNull(
+			because: "a mid-batch abort must carry a resume plan");
+		response.ResumePlan!.Operations.Should().HaveCount(1,
+			because: "only the not-run operation may be echoed; the shape-rejected operation must not be replayed verbatim");
+		response.ResumePlan.Operations[0].SchemaName.Should().Be("UsrGenre",
+			because: "the single echoed operation must be the one that never ran");
+		response.ResumePlan.NotRunOperationIndexes.Should().Equal([1],
+			because: "operation index 1 never ran after the abort at index 0");
+		response.ResumePlan.Instruction.Should().Contain("correct the field names",
+			because: "the caller must be told to fix the field names before resubmitting the rejected operation");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("A seed-row validation failure (unlike a field-shape rejection) still echoes the failed operation in resume-plan.operations because it is resubmittable once the rows are corrected.")]
+	public async Task SchemaSync_ResumePlan_ShouldEchoFailedOperation_WhenSeedRowValidationFails() {
+		// Arrange
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		SchemaSyncTool tool = new(commandResolver, ConsoleLogger.Instance, Convergence());
+		SchemaSyncArgs args = new(
+			"dev", "UsrPkg",
+			[
+				new SchemaSyncOperation("seed-data", "UsrTodoStatus"),
+				new SchemaSyncOperation("create-lookup", "UsrGenre", TitleLocalizations: Localizations("Genre"))
+			]);
+
+		// Act
+		SchemaSyncResponse response = await tool.SchemaSync(args);
+
+		// Assert
+		response.Success.Should().BeFalse(
+			because: "a seed-data operation without rows is invalid");
+		response.ResumePlan.Should().NotBeNull(
+			because: "a mid-batch abort must carry a resume plan");
+		response.ResumePlan!.Operations.Should().HaveCount(2,
+			because: "a seed-row failure is resubmittable verbatim, so the failed op is echoed alongside the not-run op");
+		response.ResumePlan.Operations[0].SchemaName.Should().Be("UsrTodoStatus",
+			because: "the failed seed-data operation itself must lead the resume plan");
+		response.ResumePlan.Instruction.Should().Contain("Resubmit ONLY the operations in resume-plan.operations",
+			because: "a resubmittable failure keeps the verbatim-resubmit instruction");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Rejects a camelCase top-level packageName with a rename hint and runs no operation at all (issue #1303).")]
+	public async Task SchemaSync_ShouldRejectCamelCaseTopLevelArgs_WithRenameHint() {
+		// Arrange
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		ISchemaConvergenceService convergence = Convergence();
+		SchemaSyncTool tool = new(commandResolver, ConsoleLogger.Instance, convergence);
+		SchemaSyncArgs args = new(
+			"dev", null!,
+			[new SchemaSyncOperation("create-lookup", "UsrTodoStatus", TitleLocalizations: Localizations("Todo Status"))]) {
+			ExtensionData = new Dictionary<string, System.Text.Json.JsonElement> {
+				["packageName"] = ToJsonElement("UsrPkg")
+			}
+		};
+
+		// Act
+		SchemaSyncResponse response = await tool.SchemaSync(args);
+
+		// Assert
+		response.Success.Should().BeFalse(
+			because: "a mis-keyed top-level field would otherwise run the whole batch against a null target");
+		response.Results.Should().HaveCount(1,
+			because: "the top-level rejection replaces the whole batch with one targeted validation result");
+		response.Results[0].Type.Should().Be("sync-schemas",
+			because: "the failure belongs to the call as a whole, not to a single operation");
+		response.Results[0].Error.Should().Contain("'packageName' -> 'package-name'",
+			because: "the caller must be told the exact rename to apply");
+		response.Results[0].Error.Should().Contain("Nothing was applied",
+			because: "the caller must know the batch had no server-side effect");
+		response.ResumePlan.Should().BeNull(
+			because: "no operation ran, so there is nothing to resume — the whole call is resubmitted after the rename");
+		convergence.DidNotReceive().Classify(Arg.Any<SchemaConvergenceTarget>());
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Rejects a camelCase top-level environmentName with a rename hint and runs no operation at all (issue #1303).")]
+	public async Task SchemaSync_ShouldRejectCamelCaseEnvironmentName_WithRenameHint() {
+		// Arrange
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		ISchemaConvergenceService convergence = Convergence();
+		SchemaSyncTool tool = new(commandResolver, ConsoleLogger.Instance, convergence);
+		SchemaSyncArgs args = new(
+			null!, "UsrPkg",
+			[new SchemaSyncOperation("create-lookup", "UsrTodoStatus", TitleLocalizations: Localizations("Todo Status"))]) {
+			ExtensionData = new Dictionary<string, System.Text.Json.JsonElement> {
+				["environmentName"] = ToJsonElement("dev")
+			}
+		};
+
+		// Act
+		SchemaSyncResponse response = await tool.SchemaSync(args);
+
+		// Assert
+		response.Success.Should().BeFalse(
+			because: "a mis-keyed environment name would otherwise run the batch against a null environment");
+		response.Results[0].Error.Should().Contain("'environmentName' -> 'environment-name'",
+			because: "the caller must be told the exact rename to apply");
+		convergence.DidNotReceive().Classify(Arg.Any<SchemaConvergenceTarget>());
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("HAPPY PATH REGRESSION: a well-formed operation using the canonical 'seed-rows' key is not rejected by the field-shape validator and still creates and seeds the schema.")]
+	public async Task SchemaSync_ShouldNotRejectWellFormedOperation_WhenSeedRowsUsesTheCanonicalKey() {
+		// Arrange
+		var fakeCreateCommand = new FakeCreateEntitySchemaCommand();
+		var fakeSeedCommand = new FakeCreateDataBindingDbCommand();
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		commandResolver.Resolve<CreateEntitySchemaCommand>(Arg.Any<CreateEntitySchemaOptions>())
+			.Returns(fakeCreateCommand);
+		commandResolver.Resolve<CreateDataBindingDbCommand>(Arg.Any<CreateDataBindingDbOptions>())
+			.Returns(fakeSeedCommand);
+		commandResolver.Resolve<ILookupRegistrationService>(Arg.Any<EnvironmentOptions>())
+			.Returns(Substitute.For<ILookupRegistrationService>());
+		SchemaSyncTool tool = new(commandResolver, ConsoleLogger.Instance, Convergence(SchemaConvergenceOutcome.Create));
+		SchemaSyncArgs args = new(
+			"dev", "UsrPkg",
+			[
+				new SchemaSyncOperation("create-lookup", "UsrTodoStatus",
+					TitleLocalizations: Localizations("Todo Status"),
+					SeedRows: [
+						new SchemaSyncSeedRow(new Dictionary<string, System.Text.Json.JsonElement> {
+							["Name"] = ToJsonElement("New")
+						})
+					])
+			]);
+
+		// Act
+		SchemaSyncResponse response = await tool.SchemaSync(args);
+
+		// Assert
+		response.Success.Should().BeTrue(
+			because: "a well-formed operation must pass the new field-shape validator untouched");
+		response.Results.Should().HaveCount(2,
+			because: "the create step and its inline seed step each report a result");
+		fakeCreateCommand.CapturedOptions.Should().NotBeNull(
+			because: "the create must still reach CreateEntitySchemaCommand");
+		fakeSeedCommand.CapturedOptions.Should().NotBeNull(
+			because: "rows under the canonical 'seed-rows' key must still reach the seeding command");
+		fakeSeedCommand.CapturedOptions.SchemaName.Should().Be("UsrTodoStatus",
+			because: "the seed step must target the schema just created");
+	}
+
+	#endregion
+
 	private static ISchemaConvergenceService Convergence(
 		SchemaConvergenceOutcome outcome = SchemaConvergenceOutcome.Create,
 		IReadOnlyList<CreateEntitySchemaColumnArgs>? columnsToAdd = null,

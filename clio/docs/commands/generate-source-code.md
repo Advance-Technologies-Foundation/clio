@@ -39,7 +39,7 @@ Default: false
 Default: false
 
 --timeout                           Request timeout in milliseconds
-Default: 100000
+Default: 3600000 (60 minutes)
 
 --uri                   -u          Application uri
 

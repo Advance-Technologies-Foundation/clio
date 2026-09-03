@@ -1,6 +1,9 @@
 using System;
+using System.Collections.Generic;
+using System.Linq;
 using System.ComponentModel;
 using System.ComponentModel.DataAnnotations;
+using System.Text.Json;
 using System.Text.Json.Serialization;
 using Clio.Common;
 using ModelContextProtocol.Server;
@@ -24,6 +27,20 @@ public sealed class GenerateSourceCodeTool(
 	internal const string GenerateSourceCodeToolName = "generate-source-code";
 
 	/// <summary>
+	/// Mis-spellings of this tool's own fields, mapped to their canonical kebab-case names. <c>timeOut</c> is
+	/// the likeliest one because it matches the C# property (<c>RemoteCommandOptions.TimeOut</c>), so it earns a
+	/// rename hint rather than being lumped into the generic unknown-argument list.
+	/// </summary>
+	private static readonly IReadOnlyDictionary<string, string> ArgsFieldAliases =
+		new Dictionary<string, string>(StringComparer.Ordinal) {
+			["timeOut"] = "timeout",
+			["time_out"] = "timeout",
+			["timeoutMs"] = "timeout",
+			["timeout-ms"] = "timeout"
+		}.Concat(McpToolArgumentSupport.EnvironmentNameAliases)
+		.ToDictionary(pair => pair.Key, pair => pair.Value, StringComparer.Ordinal);
+
+	/// <summary>
 	/// Triggers source code generation for schemas in a registered Creatio environment.
 	/// </summary>
 	[McpServerTool(Name = GenerateSourceCodeToolName, ReadOnly = false, Destructive = false, Idempotent = true,
@@ -38,12 +55,28 @@ public sealed class GenerateSourceCodeTool(
 		[Description("generate-source-code parameters")]
 		[Required]
 		GenerateSourceCodeArgs args) {
+		string? argsError = McpToolArgumentSupport.BuildLegacyAliasError(
+			args.ExtensionData,
+			ArgsFieldAliases,
+			".",
+			"Valid fields: environment-name, modified, required, background, timeout.");
+		if (argsError is not null) {
+			return CommandExecutionResult.FromValidationError(
+				$"generate-source-code arguments are invalid: {argsError} Nothing was generated.");
+		}
 		GenerateSourceCodeOptions options = new() {
 			Environment = args.EnvironmentName,
 			Modified = args.Modified ?? false,
 			Required = args.Required ?? false,
 			Background = args.Background ?? false
 		};
+		if (args.Timeout is { } requestedTimeout) {
+			if (requestedTimeout <= 0) {
+				return CommandExecutionResult.FromValidationError(
+					"generate-source-code 'timeout' must be a positive number of milliseconds.");
+			}
+			options.TimeOut = requestedTimeout;
+		}
 		try {
 			return InternalExecute<GenerateSourceCodeCommand>(options);
 		}
@@ -73,5 +106,17 @@ public sealed record GenerateSourceCodeArgs(
 
 	[property: JsonPropertyName("background")]
 	[property: Description("When true, runs generation in background and returns immediately — matches the UI 'Generate all' behaviour (GenerateAllSchemasSourcesInBackground)")]
-	bool? Background
-);
+	bool? Background,
+
+	[property: JsonPropertyName("timeout")]
+	[property: Description("Request timeout in milliseconds. Defaults to 60 minutes, matching the CLI --timeout option. " +
+		"A cancelled or timed-out generation returns exit-code 1, never 0.")]
+	int? Timeout = null
+) {
+	/// <summary>
+	/// Overflow bag for fields that did not bind, so a mis-keyed argument is reported instead of being dropped
+	/// by System.Text.Json (issue #1303).
+	/// </summary>
+	[JsonExtensionData]
+	public Dictionary<string, JsonElement>? ExtensionData { get; init; }
+}
