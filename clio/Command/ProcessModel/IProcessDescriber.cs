@@ -215,8 +215,12 @@ public class DescribeProcessResult {
 	/// This schema's own version number, or absent when the version facts could not be established.
 	/// </summary>
 	/// <remarks>
-	/// 0 is a real answer: a process with no versions is version 0. Absence means NOT ESTABLISHED, and
-	/// <see cref="VersionReadWarning"/> then says why. The two must never be conflated by a caller.
+	/// 0 is a real answer, and the implication runs ONE way only: 0 means the schema is a family root,
+	/// while a root is NOT obliged to be 0. Measured on core 10.1.448.0 (ENG-94374 story 8, 2026-09-03):
+	/// two parentless process schemas carry 2 and 1, and no parented schema carries 0 — the number is a
+	/// stamped property, not one derived from family membership. So this field never settles whether a
+	/// process HAS versions; the length of <see cref="Versions"/> does. Absence is a third answer entirely:
+	/// NOT ESTABLISHED, with <see cref="VersionReadWarning"/> naming the fact that was missing.
 	/// </remarks>
 	[JsonPropertyName("version")]
 	public int? Version { get; set; }

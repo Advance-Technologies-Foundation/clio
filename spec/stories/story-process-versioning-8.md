@@ -7,7 +7,7 @@
 **ADR**: [adr-process-versioning.md](../adr/adr-process-versioning.md)
 **Test plan**: [tp-process-versioning.md](../test-plans/tp-process-versioning.md)
 **Repository**: clio
-**Status**: ready-for-dev
+**Status**: in-progress
 **Size**: L
 
 ---
@@ -28,14 +28,14 @@ the create handler is written against measured behaviour instead of inferred beh
 
 ## Acceptance Criteria
 
-- [ ] **AC-01** — Given a draft create implementation run twice against a toolkit-created root, when `SysSchemaProperty` is read, then the findings note records the observed `Version` values and `IsActiveVersion` values verbatim
-- [ ] **AC-02** — Given a created version, when `SysSchema` is read, then the note records whether its `ParentId` equals the root's `SysSchema.Id`
+- [ ] **AC-01** *(half measured, half blocked)* — Given a draft create implementation run twice against a toolkit-created root, when `SysSchemaProperty` is read, then the findings note records the observed `Version` values and `IsActiveVersion` values verbatim
+- [x] **AC-02** — Given a created version, when `SysSchema` is read, then the note records whether its `ParentId` equals the root's `SysSchema.Id`
 - [ ] **AC-03** — Given one version exists, when `GetMaxProcessVersionInPackage(uc, root.Id, packageUId)` is called, then the note records the returned number for the same package and for a different package
-- [ ] **AC-04** — Given a source process in a non-editable package, when the version is created, then the note names the package it landed in and closes OQ-01
+- [x] **AC-04** *(closed by observation, not experiment)* — Given a source process in a non-editable package, when the version is created, then the note names the package it landed in and closes OQ-01
 - [ ] **AC-05** — Given a root whose name carries no `Usr` prefix, when the version is saved, then the note records whether `validateNamePrefixes` rejected it
-- [ ] **AC-06** — Given a version was saved, when the ROOT's `SysSchemaProperty` rows are read, then the note records whether they survived
-- [ ] **AC-07** — Given the stand, when `UseNewSchemaHierarchyFolding` is read, then the note records its state and closes OQ-02
-- [ ] **AC-ERR** — Given any measurement contradicts this feature's ADR, when the spike ends, then the ADR is amended in the same PR and the contradiction is named in its Notes section
+- [x] **AC-06** — Given a version was saved, when the ROOT's `SysSchemaProperty` rows are read, then the note records whether they survived
+- [x] **AC-07** — Given the stand, when `UseNewSchemaHierarchyFolding` is read, then the note records its state and closes OQ-02
+- [x] **AC-ERR** — Given any measurement contradicts this feature's ADR, when the spike ends, then the ADR is amended in the same PR and the contradiction is named in its Notes section
 
 ## Implementation Notes
 
@@ -56,21 +56,54 @@ Test naming: `MethodName_ShouldBehavior_WhenCondition`
 
 ## Definition of Done
 
-- [ ] Findings recorded in the ADR Notes and, where silent, as knowledge records
-- [ ] OQ-01 and OQ-02 closed in the PRD, or restated with what is still unknown
-- [ ] Code compiles without Roslyn analyzer warnings
-- [ ] All new tool names and flags are kebab-case
-- [ ] Unit tests use `[Category("Unit")]` — never `[Category("UnitTests")]`
-- [ ] No `catch (Exception)` added to clio code paths
-- [ ] Knowledge records whose `applies-to` names a file this story touches are updated or deleted **in this PR** (`AGENTS.md:456-457`)
-- [ ] Docs verdict stated explicitly in the PR body, including "no update required" where that is the verdict
-- [ ] MCP verdict stated in the PR body ("MCP reviewed, no update required" where that applies)
+- [x] Findings recorded in the ADR Notes and, where silent, as knowledge records
+- [x] OQ-01 and OQ-02 closed in the PRD, or restated with what is still unknown
+- [x] Code compiles without Roslyn analyzer warnings
+- [x] All new tool names and flags are kebab-case
+- [x] Unit tests use `[Category("Unit")]` — never `[Category("UnitTests")]`
+- [x] No `catch (Exception)` added to clio code paths
+- [x] Knowledge records whose `applies-to` names a file this story touches are updated or deleted **in this PR** (`AGENTS.md:456-457`)
+- [x] Docs verdict stated explicitly in the PR body, including "no update required" where that is the verdict
+- [x] MCP verdict stated in the PR body ("MCP reviewed, no update required" where that applies)
 - [ ] PR description references this story file
 
 ## Dev Agent Record
 
-{Left blank — filled by dev agent during implementation}
-- Implementation started: 
-- Implementation completed: 
-- Tests passing: 
-- Notes: 
+- Implementation started: 2026-09-03
+- Implementation completed: PARTIAL. The read-only half is done; four criteria need stand writes and
+  are blocked on a decision, not on effort.
+- Tests passing: not a suite - the evidence is SQL against the reference stand (core 10.1.448.0). The
+  regression suites had to stay green while the shipped text was corrected: clio 8300 passed / 0 failed,
+  clio-knowledge 125 passed / 0 failed.
+- Notes:
+  - **AC-ERR fired.** V2 ("the root is version 0") is measurably false as a two-way rule:
+    `BulkDuplicatesSearchProcess` carries Version 2 and `OrderApprovalBaseSubprocess` Version 1 with
+    `SysSchema.ParentId` NULL, while no parented schema carries 0. The number is stamped, not derived.
+    Amended in the ADR Notes, corrected in the guidance article (clio-knowledge `34acdd8`), corrected in
+    `DescribeProcessResult.Version`, and recorded as
+    `docs/knowledge/platform/process-version-number-is-stamped-not-derived.md`. The discriminator the
+    guidance review settled on in round one survives: it was family SIZE, never the number.
+  - AC-02: a version's `SysSchema.ParentId` equals the ROOT's `SysSchema.Id`, `ExtendParent` 0 on both,
+    so the parent-name rename path is not taken.
+  - AC-06: the root's eight `SysSchemaProperty` rows survive intact. Two differ in VALUE -
+    `IsActiveVersion` and, unexpectedly, `IsInterpretable` (root False, version True). `Tag` is copied
+    verbatim, `CreatedInVersion` is 0.0.0.0 on both.
+  - AC-07, **OQ-02 closed**: `UseNewSchemaHierarchyFolding` `DefaultState = 1`, no override. The feature
+    tables here are `Feature` / `AdminUnitFeatureState`, not the `SysFeature` pair the name suggests.
+  - AC-04 closed by OBSERVATION rather than experiment, and it closes **OQ-01**: 3 of 14 visible
+    families are cross-package, so a version does not inherit the root's package and the create handler
+    must take the target package as an input.
+  - AC-01 half measured: the verbatim values of an already-created version are recorded (root 0/False,
+    version 1/True, stored as strings). Running a draft create implementation TWICE needs the writes.
+  - Side finding: `VwProcessLib` is not a census. 18 version schemas exist, 14 are visible; for three
+    `*BaseSubprocess` families the ROOT is invisible too, so describe correctly answers "no row for
+    schema". Every visible family holds exactly one version, numbered 1 and active - so the
+    multi-version and two-flagged-active paths stay defensive rather than observed.
+  - **BLOCKED on a decision.** AC-01's second half, AC-03 (`GetMaxProcessVersionInPackage`, needs
+    server-side C#), AC-04's non-editable-package case and AC-05 (`validateNamePrefixes`) each require
+    writing to the stand. Two costs make it a decision: creating a version is IRREVERSIBLE by this
+    feature's own V6, so every experiment leaves a permanent schema; and reaching
+    `GetMaxProcessVersionInPackage` needs a ScriptTask, hence a configuration compile that reloads the
+    runtime for every connected user, which AGENTS.md requires asking about each time. Mitigation if
+    approved: throwaway `UsrSpike_*` roots, never a stock family, and strictly sequential writes because
+    a parallel burst trips IIS rapid-fail on this .NET Framework stand.
