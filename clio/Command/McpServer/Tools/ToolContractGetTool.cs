@@ -2309,13 +2309,21 @@ internal static class ToolContractCatalog {
 	private static ToolContractDefinition BuildODataUpdate() {
 		return new ToolContractDefinition(
 			ODataUpdateTool.ToolName,
-			"Updates a single Creatio record through OData v4 (PATCH). Requires the record GUID and confirm=true; provide the fields inline in data or place the JSON object in rows-file for a large payload. Only supplied fields change. Never performs a keyless mass update.",
+			"Updates a single Creatio record through OData v4 (PATCH). Requires the record GUID and confirm=true; provide the fields inline in data " +
+			"or place the JSON object in rows-file for a large payload. Only supplied fields change. " +
+			"Data field NAMES are verified against the entity's OData type ($metadata) before the write: an unknown field fails the call and nothing is written. " +
+			"Field VALUES are not validated - note that the platform silently drops the empty GUID on a lookup field, so send null to clear a reference. " +
+			"success:true means the service accepted the PATCH after this pre-validation; platform builds that silently discard unsupported values can still leave " +
+			"some fields unwritten, so re-read important values with odata-read after a critical write. Never performs a keyless mass update.",
 			new ToolInputSchemaContract(
 				[EntityFieldName, "id", ConfirmFieldName, EnvironmentNameFieldName],
 				[
 					Field(EntityFieldName, StringType, "Creatio OData entity set name such as Contact or Account."),
 					Field("id", StringType, "GUID of the record to update. Required; a keyless mass update is rejected."),
-					Field("data", ObjectType, "Object of field/value pairs to change. Only supplied fields are updated."),
+					Field("data", ObjectType, "Object of field/value pairs to change. Only supplied fields are updated. " +
+						"Every field must exist on the entity's OData type; an unknown field fails the whole call before anything is written. " +
+						"Columns absent from $metadata (for example Color) cannot be written via this tool - verify them with execute-esq instead. " +
+						"Set lookups via their <Field>Id column with a real GUID; to CLEAR a lookup send null (the platform silently drops an empty GUID)."),
 					Field("rows-file", StringType, "Optional path to a JSON object of field/value pairs, confined to the workspace or the OS temp directory and capped at 10 MB. Exactly one of data or rows-file is required; supplying both is rejected. Read only after the confirm gate passes."),
 					Field(ConfirmFieldName, BooleanType, "Must be true to authorize this destructive update. When false or omitted the tool refuses without any remote call."),
 					Field(EnvironmentNameFieldName, StringType, RegisteredEnvironmentNameDescription)
@@ -2336,6 +2344,13 @@ internal static class ToolContractCatalog {
 					[EntityFieldName] = ExampleContactSchemaName,
 					["id"] = ExampleLookupValueId,
 					["data"] = new Dictionary<string, object?> { ["Name"] = "Jane Smith" },
+					[ConfirmFieldName] = true
+				}),
+				Example("Clear a lookup reference", new Dictionary<string, object?> {
+					[EnvironmentNameFieldName] = ExampleEnvironmentName,
+					[EntityFieldName] = ExampleContactSchemaName,
+					["id"] = ExampleLookupValueId,
+					["data"] = new Dictionary<string, object?> { ["AccountId"] = null },
 					[ConfirmFieldName] = true
 				})
 			],
@@ -4584,15 +4599,19 @@ internal static class ToolContractCatalog {
 	private static ToolContractDefinition BuildGetEntitySchemaColumnProperties() {
 		return new ToolContractDefinition(
 			GetEntitySchemaColumnPropertiesTool.GetEntitySchemaColumnPropertiesToolName,
-			"Returns detailed metadata for one deployed entity schema column for read-before-write inspection and read-back verification. For a lookup column with a Const default, default-value-config is enriched with display-value (the referenced record's display value) or a record-resolution marker (no-access, not-found-or-no-access, display-column-unavailable) when it cannot be resolved.",
+			"Returns detailed metadata for one deployed entity schema column. Omit package-name for merged runtime discovery across all packages; supply it for the original package-scoped designer read. Merged mode cannot expose track-changes, localizable-text, or do-not-control-integrity (returned as null), and source then describes parent-schema inheritance rather than package ownership. For a lookup column with a Const default, default-value-config is enriched with display-value (the referenced record's display value) or a record-resolution marker (no-access, not-found-or-no-access, display-column-unavailable) when it cannot be resolved.",
 			new ToolInputSchemaContract(
-				[EnvironmentNameFieldName, PackageNameFieldName, SchemaNameFieldName, ColumnNameFieldName],
-				EnvironmentPackageSchemaFields(
-					EntitySchemaNameDescription,
-					Field(ColumnNameFieldName, StringType, "Column name."))),
+				[EnvironmentNameFieldName, SchemaNameFieldName, ColumnNameFieldName],
+				[
+					Field(EnvironmentNameFieldName, StringType, RegisteredEnvironmentNameDescription),
+					Field(PackageNameFieldName, StringType,
+						"Optional target package. Omit for merged runtime discovery across all packages; supply for authoritative package-layer metadata."),
+					Field(SchemaNameFieldName, StringType, EntitySchemaNameDescription),
+					Field(ColumnNameFieldName, StringType, "Column name.")
+				]),
 			StructuredResultOutput(
-				Field("name", StringType, "Column name."),
-				Field("data-value-type", StringType, "Column type."),
+				Field("column-name", StringType, "Column name."),
+				Field("type", StringType, "Column type."),
 				Field("source", StringType, "Column source."),
 				Field("usage-type", StringType, "Column usage type as a friendly name (General/Advanced/None), re-usable verbatim as a usage-type write input.")),
 			CommonErrorContract,
@@ -4600,7 +4619,12 @@ internal static class ToolContractCatalog {
 				ColumnNameParameterAlias()),
 			[],
 			[
-				Example("Read one deployed column", new Dictionary<string, object?> {
+				Example("Discover one deployed column across all packages", new Dictionary<string, object?> {
+					[EnvironmentNameFieldName] = ExampleEnvironmentName,
+					[SchemaNameFieldName] = ExamplePackageName,
+					[ColumnNameFieldName] = "UsrStatus"
+				}),
+				Example("Read authoritative package-layer metadata", new Dictionary<string, object?> {
 					[EnvironmentNameFieldName] = ExampleEnvironmentName,
 					[PackageNameFieldName] = ExamplePackageName,
 					[SchemaNameFieldName] = ExamplePackageName,
