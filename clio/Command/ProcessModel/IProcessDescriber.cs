@@ -38,7 +38,8 @@ public interface IProcessDescriber {
 public sealed class ServerProcessDescriber(
 	IApplicationClient applicationClient,
 	IDataProvider dataProvider,
-	IServiceUrlBuilder serviceUrlBuilder) : IProcessDescriber {
+	IServiceUrlBuilder serviceUrlBuilder,
+	IProcessVersionLibReader versionLibReader) : IProcessDescriber {
 
 	private const string DescribeErrorCode = "DescribeProcess";
 
@@ -83,8 +84,49 @@ public sealed class ServerProcessDescriber(
 		if (!result.Success) {
 			return Error.Failure(DescribeErrorCode, result.ErrorMessage ?? "describe-business-process failed on the server");
 		}
+		// Version facts are overlaid only here, after every refusal path: a described graph without them is
+		// still a correct answer, but a version warning attached to an error would be noise.
+		ApplyVersionFacts(result, versionLibReader.Read(result.SchemaUId));
 		return result;
 	}
+
+	/// <summary>
+	/// Overlays the process library's version facts onto a described graph.
+	/// </summary>
+	/// <remarks>
+	/// Every member is assigned, the failure path included. The wire result deserializes into this same type,
+	/// so a newer <c>CrtProcessBuilder</c> that already returns a <c>version</c> key would otherwise bind it
+	/// to the property and leave a server-supplied value standing next to a warning that says the facts were
+	/// NOT established. The process library is the authority for now (ADR choice 5), and <c>activeVersionSource</c>
+	/// says so in the output. The day the server becomes the authority, this method is what has to change —
+	/// and <see cref="DescribedProcessVersion"/> then needs an overflow bag, which it does not need while
+	/// clio is the only thing that builds those entries.
+	/// </remarks>
+	private static void ApplyVersionFacts(DescribeProcessResult result, ProcessVersionFacts facts) {
+		result.Version = facts.Version;
+		result.IsActiveVersion = facts.IsActiveVersion;
+		result.ActiveVersionSchemaUId = facts.ActiveVersionSchemaUId;
+		result.ActiveVersionName = facts.ActiveVersionName;
+		result.VersionRootSchemaUId = facts.VersionRootSchemaUId;
+		result.ActiveVersionSource = facts.ActiveVersionSource;
+		result.VersionReadWarning = facts.Warning;
+		result.Versions = facts.Versions?.Select(ToDescribedVersion).ToList();
+		// Reported as the length actually published rather than as the reader's cap, so the number can never
+		// disagree with the list it describes.
+		result.VersionsTruncatedAt = facts.FamilyTruncated ? result.Versions?.Count : null;
+	}
+
+	private static DescribedProcessVersion ToDescribedVersion(ProcessVersionFamilyMember member) =>
+		new() {
+			SchemaUId = member.SchemaUId,
+			Name = member.Name,
+			Caption = member.Caption,
+			Version = member.Version,
+			IsActiveVersion = member.IsActiveVersion,
+			IsRoot = member.IsRoot,
+			PackageUId = member.PackageUId,
+			Enabled = member.Enabled
+		};
 
 	private ErrorOr<JsonObject> BuildIdentityPayload(ProcessIdentity identity) {
 		if (!string.IsNullOrWhiteSpace(identity.UId)) {
@@ -144,6 +186,60 @@ public class DescribeProcessResult {
 	[JsonPropertyName("schemaUId")]
 	public string SchemaUId { get; set; }
 
+	/// <summary>
+	/// This schema's own version number, or absent when the version facts could not be established.
+	/// </summary>
+	/// <remarks>
+	/// 0 is a real answer: a process with no versions is version 0. Absence means NOT ESTABLISHED, and
+	/// <see cref="VersionReadWarning"/> then says why. The two must never be conflated by a caller.
+	/// </remarks>
+	[JsonPropertyName("version")]
+	public int? Version { get; set; }
+
+	/// <summary>Whether this schema is the version the process library reports as active.</summary>
+	[JsonPropertyName("isActiveVersion")]
+	public bool? IsActiveVersion { get; set; }
+
+	/// <summary>Schema UId of the version the process library reports as active.</summary>
+	[JsonPropertyName("activeVersionSchemaUId")]
+	public string ActiveVersionSchemaUId { get; set; }
+
+	/// <summary>Schema name of the active version, so it can be re-described without a second lookup.</summary>
+	[JsonPropertyName("activeVersionName")]
+	public string ActiveVersionName { get; set; }
+
+	/// <summary>Schema UId of the version-family root, which is the identity the family is keyed on.</summary>
+	[JsonPropertyName("versionRootSchemaUId")]
+	public string VersionRootSchemaUId { get; set; }
+
+	/// <summary>
+	/// Which authority established the active version. Stated rather than implied, because the runtime
+	/// consults the schema manager instead of this view and the two can rank a tied family differently.
+	/// </summary>
+	[JsonPropertyName("activeVersionSource")]
+	public string ActiveVersionSource { get; set; }
+
+	/// <summary>
+	/// The version family, ascending by version. Absent, never empty, when it could not be established:
+	/// an empty list reads as "checked, and there are no versions", which is a different claim.
+	/// </summary>
+	[JsonPropertyName("versions")]
+	public List<DescribedProcessVersion> Versions { get; set; }
+
+	/// <summary>
+	/// How many members <see cref="Versions"/> was cut to, when the family was longer than the reader's
+	/// cap. Absent for a complete family, so its presence is what tells a caller the list is partial.
+	/// </summary>
+	[JsonPropertyName("versionsTruncatedAt")]
+	public int? VersionsTruncatedAt { get; set; }
+
+	/// <summary>
+	/// Why the version facts are absent. Present only on failure: a successful read of an unversioned
+	/// process carries version 0 and no warning.
+	/// </summary>
+	[JsonPropertyName("versionReadWarning")]
+	public string VersionReadWarning { get; set; }
+
 	/// <summary>Process nodes (events, tasks, gateways) — everything except sequence flows.</summary>
 	[JsonPropertyName("elements")]
 	public List<DescribedElement> Elements { get; set; }
@@ -163,6 +259,50 @@ public class DescribeProcessResult {
 	/// </summary>
 	[JsonExtensionData]
 	public Dictionary<string, JsonElement> AdditionalData { get; set; }
+}
+
+/// <summary>One member of the described process's version family.</summary>
+/// <remarks>
+/// Carries no <c>[JsonExtensionData]</c> bag, unlike the graph types around it, because clio builds every
+/// entry itself from the process library — there is no server field here that could be dropped. That stops
+/// being true the day the server reports the family: see <c>ApplyVersionFacts</c>.
+/// </remarks>
+public sealed class DescribedProcessVersion {
+
+	/// <summary>Schema UId of this version.</summary>
+	[JsonPropertyName("schemaUId")]
+	public string SchemaUId { get; set; }
+
+	/// <summary>Schema name. Every version of a process has a different one.</summary>
+	[JsonPropertyName("name")]
+	public string Name { get; set; }
+
+	/// <summary>Display caption. Every version of a process usually has the SAME one.</summary>
+	[JsonPropertyName("caption")]
+	public string Caption { get; set; }
+
+	/// <summary>Version number, or absent when the process library could not establish it.</summary>
+	[JsonPropertyName("version")]
+	public int? Version { get; set; }
+
+	/// <summary>Whether this member is the version the process library reports as active.</summary>
+	[JsonPropertyName("isActiveVersion")]
+	public bool? IsActiveVersion { get; set; }
+
+	/// <summary>Whether this member is the family root, i.e. version 0.</summary>
+	[JsonPropertyName("isRoot")]
+	public bool IsRoot { get; set; }
+
+	/// <summary>UId of the package this version lives in.</summary>
+	[JsonPropertyName("packageUId")]
+	public string PackageUId { get; set; }
+
+	/// <summary>
+	/// Whether the process is enabled. This is FAMILY state, not per-version state: the platform keys
+	/// enable/disable on the root schema, so every member of a family reports the same value.
+	/// </summary>
+	[JsonPropertyName("enabled")]
+	public bool Enabled { get; set; }
 }
 
 /// <summary>A process node read back from the schema.</summary>

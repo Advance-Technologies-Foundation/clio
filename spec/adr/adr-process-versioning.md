@@ -151,7 +151,7 @@ public sealed class ProcessVersionFacts {
 [JsonPropertyName("activeVersionName")]      public string ActiveVersionName { get; set; }
 [JsonPropertyName("versionRootSchemaUId")]   public string VersionRootSchemaUId { get; set; }
 [JsonPropertyName("activeVersionSource")]    public string ActiveVersionSource { get; set; } // "process-library-view"
-[JsonPropertyName("versionsTruncatedAt")]    public int?   VersionsTruncatedAt { get; set; } // 50, when applied
+[JsonPropertyName("versionsTruncatedAt")]    public int?   VersionsTruncatedAt { get; set; } // length of the published list, when the cap applied
 [JsonPropertyName("versionReadWarning")]     public string VersionReadWarning { get; set; }
 [JsonPropertyName("versions")]               public List<DescribedProcessVersion> Versions { get; set; }
 
@@ -165,7 +165,7 @@ public sealed class DescribedProcessVersion {
     [JsonPropertyName("isRoot")]          public bool   IsRoot { get; set; }
     [JsonPropertyName("packageUId")]      public string PackageUId { get; set; }
     /// <summary>FAMILY state, not per-version — EnableProcess keys on the ROOT SysSchema Id.</summary>
-    [JsonPropertyName("enabled")]         public bool?  Enabled { get; set; }
+    [JsonPropertyName("enabled")]         public bool   Enabled { get; set; }
 }
 ```
 
@@ -259,3 +259,7 @@ MCP E2E is an **advisory, non-blocking** CI check, path-filtered, and its build 
 This ADR was revised after a five-agent adversarial review (three lenses per artifact plus a pipeline-mechanics pass) that returned BLOCK on its first revision. The review's own record belongs in `spec/reviews/`. Corrections it forced, kept here so they are not re-litigated: the missing `KnownRoute` values; the false "BindingsModule is untouched" claim; the wrong `ProcessLibResolverTests` path; the nullability list (`ParentId`, not `VersionParentUId`); the unprojected `MetaData` column invalidating the latency figure; and the version floor's dependency on the rebundle.
 
 A third review round (2026-09-02) then reversed the write half from a bare create plus a compensating delete to the single `ModifyProcessAsNewVersion` operation recorded above (alternatives B, C and C′), and found the two aliasing defects that forced choice 17. That round's finding is the one most worth re-reading before touching the clone: the object-graph clone shares mutable state with a **live, app-cached** source instance, and both headline safety properties fail in memory while the source's database row stays byte-for-byte identical — the exact thing the acceptance criteria assert.
+
+Three details were settled while implementing story 2 and are recorded so they are not re-decided. `versionsTruncatedAt` reports the length of the list actually published rather than the reader's cap constant: the two are equal whenever the cap applies, and deriving it from the list means the number can never disagree with the list it describes. `DescribedProcessVersion.Enabled` is `bool`, not `bool?` — story 1 established that only `Version`, `IsActiveVersion` and `ParentId` can arrive NULL from the view, and `Enabled` is not one of them. And `DescribedProcessVersion` deliberately carries NO `[JsonExtensionData]` bag, unlike the graph types around it: at this stage clio builds every entry itself from the process library, so there is no server field a bag could catch. That inverts the day the server reports the family — the overlay in `ServerProcessDescriber.ApplyVersionFacts` is where both facts are documented, and adding the bag is part of that change, not of this one.
+
+One consequence of the overlay is load-bearing and has its own regression test: every version member is assigned on the failure path too. The wire result deserializes into the same public type, so a newer `CrtProcessBuilder` that already returns a `version` key would otherwise bind it to the property and leave a server-supplied value standing next to a warning saying the facts were not established.

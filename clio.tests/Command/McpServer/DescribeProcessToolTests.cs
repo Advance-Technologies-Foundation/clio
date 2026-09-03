@@ -1,3 +1,4 @@
+using System.Linq;
 using System.Reflection;
 using Clio.Command;
 using Clio.Command.McpServer.Prompts;
@@ -95,6 +96,57 @@ public sealed class DescribeProcessToolTests {
 		prompt.Should().Contain(DescribeProcessTool.ToolName, because: "the prompt references the production tool name");
 		prompt.Should().Contain("process-name", because: "the prompt keeps the identity arguments visible");
 		prompt.Should().Contain("process-modeling", because: "the prompt points callers at the narration guidance");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("The describe-business-process description states the version contract: which field reaches the running version, and that absent version fields mean unknown rather than unversioned.")]
+	public void DescribeProcess_ShouldStateTheVersionContract_WhenItsDescriptionIsRead() {
+		// Arrange
+		MethodInfo method = typeof(DescribeProcessTool).GetMethod(nameof(DescribeProcessTool.DescribeProcess))!;
+
+		// Act
+		System.ComponentModel.DescriptionAttribute description = (System.ComponentModel.DescriptionAttribute)method
+			.GetCustomAttributes(typeof(System.ComponentModel.DescriptionAttribute), false).Single();
+		McpServerToolAttribute toolAttribute = (McpServerToolAttribute)method
+			.GetCustomAttributes(typeof(McpServerToolAttribute), false).Single();
+
+		// Assert
+		description.Description.Should().Contain("activeVersionSchemaUId",
+			because: "an agent told the graph is not the running one needs the field that addresses the one that is");
+		description.Description.Should().Contain("versionReadWarning",
+			because: "the description must name where the reason for absent version facts is reported");
+		description.Description.Should().Contain("never 'unversioned'",
+			because: "reading absent version fields as 'this process has no versions' reproduces the ENG-94374 defect with the fields in place");
+		description.Description.Should().Contain("FAMILY state",
+			because: "a family entry's enabled flag is per-family, and an agent that reads it per-version reports the wrong thing");
+		toolAttribute.ReadOnly.Should().BeTrue(
+			because: "the version read is an additional read on the describe path; it must not change the tool's classification");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Cross-channel drift guard: the active-version invariant must appear in BOTH clio-owned describe channels — the tool [Description] and the describe prompt — so dropping it from either fails the build.")]
+	public void ActiveVersionInvariant_Should_Appear_In_All_Clio_Channels() {
+		// Arrange
+		string toolDescription = ((System.ComponentModel.DescriptionAttribute)typeof(DescribeProcessTool)
+			.GetMethod(nameof(DescribeProcessTool.DescribeProcess))!
+			.GetCustomAttributes(typeof(System.ComponentModel.DescriptionAttribute), false).Single()).Description;
+
+		// Act
+		string prompt = DescribeProcessPrompt.DescribeProcessGuidance("UsrProcess_493d4c9", "dev");
+
+		// Assert — the guidance article that repeats this lives in clio-knowledge and is guarded there, not here.
+		toolDescription.Should().Contain("isActiveVersion",
+			because: "the tool contract has to name the flag that decides whether the returned graph can be trusted");
+		prompt.Should().Contain("isActiveVersion",
+			because: "an agent following the prompt instead of the tool description must reach the same check");
+		toolDescription.Should().Contain("activeVersionSchemaUId",
+			because: "both channels have to point at the same field for reaching the running version");
+		prompt.Should().Contain("activeVersionSchemaUId",
+			because: "a prompt that says to check the flag but not how to act on it leaves the agent stuck");
+		prompt.Should().Contain("BEFORE narrating",
+			because: "the check is worthless after the answer is written, so the prompt has to order it first");
 	}
 
 	private sealed class FakeDescribeProcessCommand : DescribeProcessCommand {

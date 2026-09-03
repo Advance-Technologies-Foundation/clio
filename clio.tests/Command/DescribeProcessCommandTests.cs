@@ -1,4 +1,5 @@
 using System;
+using System.Text.Json.Nodes;
 using Clio.Command;
 using Clio.Command.ProcessModel;
 using Clio.Common;
@@ -200,4 +201,120 @@ public sealed class DescribeProcessCommandTests {
 		result.Should().Be(1, because: "providing two identities is ambiguous");
 		_describer.DidNotReceive().Describe(Arg.Any<ProcessIdentity>(), Arg.Any<string>());
 	}
+	[Test]
+	[Category("Unit")]
+	[Description("Writes every field of each version-family entry into the graph JSON, so a caller can pick a version to describe without a second call.")]
+	public void Execute_ShouldWriteEveryFamilyEntryField_WhenTheProcessHasVersions() {
+		// Arrange
+		_describer.Describe(Arg.Any<ProcessIdentity>(), Arg.Any<string>())
+			.Returns(new DescribeProcessResult {
+				Name = "InvoiceVisaProcess",
+				SchemaUId = "332eac25-1443-4e4e-a972-6c0e66cb9243",
+				Elements = [], Flows = [], Parameters = [],
+				Version = 0,
+				IsActiveVersion = false,
+				ActiveVersionName = "InvoiceVisaProcessInvoice1",
+				ActiveVersionSchemaUId = "b5e5162a-254a-430f-8978-4738c6ebf76b",
+				VersionRootSchemaUId = "332eac25-1443-4e4e-a972-6c0e66cb9243",
+				ActiveVersionSource = "process-library-view",
+				Versions = [
+					new DescribedProcessVersion {
+						SchemaUId = "b5e5162a-254a-430f-8978-4738c6ebf76b",
+						Name = "InvoiceVisaProcessInvoice1",
+						Caption = "Invoice approval",
+						Version = 1,
+						IsActiveVersion = true,
+						IsRoot = false,
+						PackageUId = "864d1545-a641-46c3-b866-e57bd6d39579",
+						Enabled = true
+					}
+				]
+			});
+		DescribeProcessOptions options = new() { Environment = "dev", ProcessName = "InvoiceVisaProcess" };
+		string written = null;
+		_logger.WriteInfo(Arg.Do<string>(value => written = value));
+
+		// Act
+		int result = _command.Execute(options);
+
+		// Assert
+		result.Should().Be(0, because: "a described versioned process is still a successful describe");
+		JsonObject entry = JsonNode.Parse(written)!["versions"]!.AsArray()[0]!.AsObject();
+		entry.Should().ContainKeys(new[] {
+				"schemaUId", "name", "caption", "version", "isActiveVersion", "isRoot", "packageUId", "enabled"
+			}, "a family entry has to be complete enough to choose and address a version from it alone");
+		entry["isActiveVersion"]!.GetValue<bool>().Should().BeTrue(
+			because: "the entry that runs must be identifiable inside the list, not only at the graph root");
+		JsonObject root = JsonNode.Parse(written)!.AsObject();
+		root.Should().ContainKeys(new[] {
+				"version", "isActiveVersion", "activeVersionSchemaUId", "activeVersionName",
+				"versionRootSchemaUId", "activeVersionSource", "versions"
+			}, "the command serializes by the static type, so a member declared on the private wire subclass "
+			 + "instead of the public result would vanish here without an error");
+		root["activeVersionName"]!.GetValue<string>().Should().Be("InvoiceVisaProcessInvoice1",
+			because: "the root-level pointer to the running version must survive the command's re-serialization");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Omits every version key and writes only the warning when the version facts could not be established, so absence is never read as version 0.")]
+	public void Execute_ShouldOmitVersionKeysAndWriteOnlyTheWarning_WhenFactsWereNotEstablished() {
+		// Arrange
+		_describer.Describe(Arg.Any<ProcessIdentity>(), Arg.Any<string>())
+			.Returns(new DescribeProcessResult {
+				Name = "UsrProcess_493d4c9",
+				SchemaUId = "uid",
+				Elements = [], Flows = [], Parameters = [],
+				VersionReadWarning = "reading the process library failed: timeout, so the version facts were not established"
+			});
+		DescribeProcessOptions options = new() { Environment = "dev", ProcessName = "UsrProcess_493d4c9" };
+		string written = null;
+		_logger.WriteInfo(Arg.Do<string>(value => written = value));
+
+		// Act
+		int result = _command.Execute(options);
+
+		// Assert
+		result.Should().Be(0, because: "an unestablished version read does not fail the describe");
+		JsonObject output = JsonNode.Parse(written)!.AsObject();
+		// Parsed keys, not substrings: DescribeProcessResult carries a [JsonExtensionData] bag, so a server
+		// that already returns a "version" key would defeat a substring scan.
+		output.Should().NotContainKeys(new[] {
+				"version", "isActiveVersion", "activeVersionName", "activeVersionSchemaUId",
+				"versionRootSchemaUId", "activeVersionSource", "versions", "versionsTruncatedAt"
+			}, "a null version value is omitted rather than published, so absence cannot be read as zero");
+		output.Should().ContainKey("versionReadWarning",
+			because: "the caller is told the graph's version standing is unknown instead of being left to assume");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Writes versionsTruncatedAt into the graph JSON when the family was capped, so a caller can tell a partial history from a complete one.")]
+	public void Execute_ShouldWriteWhereTheFamilyWasCut_WhenTheFamilyWasTruncated() {
+		// Arrange
+		_describer.Describe(Arg.Any<ProcessIdentity>(), Arg.Any<string>())
+			.Returns(new DescribeProcessResult {
+				Name = "UsrProcess_0370312",
+				SchemaUId = "332eac25-1443-4e4e-a972-6c0e66cb9243",
+				Elements = [], Flows = [], Parameters = [],
+				Version = 0,
+				IsActiveVersion = false,
+				Versions = [
+					new DescribedProcessVersion { SchemaUId = "u", Name = "UsrProcess_0370312", Version = 0, IsRoot = true }
+				],
+				VersionsTruncatedAt = 50
+			});
+		DescribeProcessOptions options = new() { Environment = "dev", ProcessName = "UsrProcess_0370312" };
+		string written = null;
+		_logger.WriteInfo(Arg.Do<string>(value => written = value));
+
+		// Act
+		int result = _command.Execute(options);
+
+		// Assert
+		result.Should().Be(0, because: "a capped family is still a successful describe");
+		JsonNode.Parse(written)!["versionsTruncatedAt"]!.GetValue<int>().Should().Be(50,
+			because: "a partial version history has to announce itself, or it reads as the whole history");
+	}
+
 }

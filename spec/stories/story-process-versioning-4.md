@@ -28,13 +28,26 @@ an agent stops silently conflating a named version with the running one
 
 ## Acceptance Criteria
 
-- [ ] **AC-01** — Given `describe-business-process`, when its description is read, then it names the version members, states that `process-name` targets one specific version rather than the running one, and states that the active-version answer comes from the process library
+- [x] **AC-01** *(delivered by story 2)* — Given `describe-business-process`, when its description is read, then it names the version members, states that `process-name` targets one specific version rather than the running one, and states that the active-version answer comes from the process library
 - [ ] **AC-02** — Given `run-process`, when its description is read, then it states that it starts the ACTIVE version, not the named one
-- [ ] **AC-03** — Given the describe prompt, when it is read, then it instructs reading `isActiveVersion` first and re-describing `activeVersionName` when it is false
+- [x] **AC-03** *(delivered by story 2)* — Given the describe prompt, when it is read, then it instructs reading `isActiveVersion` first and re-describing `activeVersionName` when it is false
 - [ ] **AC-04** — Given `docs/McpCapabilityMap.md`, when the describe row is read, then it lists the version members and the by-name caveat
 - [ ] **AC-ERR** — Given the description names a guidance article, when `WorkspaceTemplateGuidanceDriftTests` runs, then the named article is present in `curated-knowledge-names.json` and is not feature-gated
 
 ## Implementation Notes
+
+**Scope reduced on 2026-09-03 — AC-01 and AC-03 were delivered by story 2, not skipped.** Story 2 changed the
+describe output, and `AGENTS.md` makes an MCP review mandatory for exactly that trigger ("Command output"), so
+the tool `[Description]` and the prompt had to be aligned in the same change rather than one story later. What
+landed there: the version paragraph inserted before "Identify the process by exactly one of…" as this story
+specifies, and a new prompt **step 2** that has to be read before narrating (existing steps renumbered 3 and 4).
+Story 2 also pinned both channels — `DescribeProcessToolTests.ActiveVersionInvariant_Should_Appear_In_All_Clio_Channels`
+plus a per-token test — so the "new description tokens asserted" row below is satisfied for the describe channel.
+
+**What is left for this story**: AC-02 (`RunProcessTool` must state that it starts the ACTIVE version, not the
+named one), AC-04 (`docs/McpCapabilityMap.md:744`), AC-ERR (the `WorkspaceTemplateGuidanceDriftTests` gate), and
+the RunProcess half of the token assertions. The DoD items below still apply in full — the read-deadline check
+and the capability-map edit have NOT been done.
 
 Files: `DescribeProcessTool.cs` (`[Description]` is one 7437-character line at `:28`), `RunProcessTool.cs`, `DescribeProcessPrompt.cs` (`:31-37`), `docs/McpCapabilityMap.md:744`.
 Insert the version paragraph BEFORE the sentence "Identify the process by exactly one of process-name / process-uid / process-caption." — it qualifies exactly that sentence.

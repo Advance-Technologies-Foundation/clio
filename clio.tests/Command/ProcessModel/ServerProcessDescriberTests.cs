@@ -1,3 +1,5 @@
+using System.Collections.Generic;
+using System.Linq;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using System.Text.Json.Serialization;
@@ -23,12 +25,46 @@ public sealed class ServerProcessDescriberTests {
 
 	private const string DescribeUrl = "http://sandbox/0/rest/ProcessDesignService/DescribeProcess";
 
-	private static ServerProcessDescriber CreateDescriber(IApplicationClient client) {
+	private const string RootUId = "332eac25-1443-4e4e-a972-6c0e66cb9243";
+	private const string ChildUId = "b5e5162a-254a-430f-8978-4738c6ebf76b";
+	private const string PackageUId = "864d1545-a641-46c3-b866-e57bd6d39579";
+
+	/// <summary>
+	/// The version reader defaults to one that establishes nothing, so every pre-existing describe assertion
+	/// keeps running against the shape a failed version read is required not to disturb.
+	/// </summary>
+	private static ServerProcessDescriber CreateDescriber(IApplicationClient client,
+		IProcessVersionLibReader versionLibReader = null) {
 		IServiceUrlBuilder urlBuilder = Substitute.For<IServiceUrlBuilder>();
 		urlBuilder.Build(ServiceUrlBuilder.KnownRoute.DescribeProcess).Returns(DescribeUrl);
 		return new ServerProcessDescriber(client,
-			Substitute.For<IDataProvider>(), urlBuilder);
+			Substitute.For<IDataProvider>(), urlBuilder,
+			versionLibReader ?? ReaderReturning(new ProcessVersionFacts { Warning = "not read in this test" }));
 	}
+
+	private static IProcessVersionLibReader ReaderReturning(ProcessVersionFacts facts) {
+		IProcessVersionLibReader reader = Substitute.For<IProcessVersionLibReader>();
+		reader.Read(Arg.Any<string>()).Returns(facts);
+		return reader;
+	}
+
+	private static ProcessVersionFamilyMember Member(string uid, string name, int version, bool isActive,
+		bool isRoot) =>
+		new() {
+			SchemaUId = uid,
+			Name = name,
+			Caption = "Invoice approval",
+			Version = version,
+			IsActiveVersion = isActive,
+			IsRoot = isRoot,
+			PackageUId = PackageUId,
+			Enabled = true
+		};
+
+	/// <summary>A minimal successful graph, so a version assertion is not buried in element JSON.</summary>
+	private static string GraphResponse(string schemaUId, string extraRootFields = "") =>
+		"{\"DescribeProcessResult\":{\"success\":true,\"name\":\"UsrProc\",\"schemaUId\":\"" + schemaUId
+		+ "\"" + extraRootFields + ",\"elements\":[],\"flows\":[],\"parameters\":[]}}";
 
 	private static IApplicationClient ClientReturning(string response) {
 		IApplicationClient client = Substitute.For<IApplicationClient>();
@@ -678,4 +714,190 @@ public sealed class ServerProcessDescriberTests {
 
 	// The describer wraps the identity under a "request" property (ProcessDesignService BodyStyle=Wrapped).
 	private static JsonNode Wrapped(string body) => JsonNode.Parse(body)["request"];
+	[Test]
+	[Description("Describes an unversioned process as version 0, active, with a one-member root family and no warning.")]
+	public void Describe_ShouldReportVersionZeroAndRootOnlyFamily_WhenProcessHasNoVersions() {
+		// Arrange
+		IProcessVersionLibReader reader = ReaderReturning(new ProcessVersionFacts {
+			Version = 0,
+			IsActiveVersion = true,
+			ActiveVersionSchemaUId = RootUId,
+			ActiveVersionName = "UsrProc",
+			VersionRootSchemaUId = RootUId,
+			Versions = [Member(RootUId, "UsrProc", 0, isActive: true, isRoot: true)],
+			ActiveVersionSource = "process-library-view"
+		});
+		ServerProcessDescriber describer = CreateDescriber(ClientReturning(GraphResponse(RootUId)), reader);
+
+		// Act
+		ErrorOr<DescribeProcessResult> result = describer.Describe(new ProcessIdentity("UsrProc", null, null), null);
+
+		// Assert
+		result.Value.Version.Should().Be(0,
+			because: "a process with no versions is version 0 — a fact the caller can act on, not an absence");
+		result.Value.IsActiveVersion.Should().BeTrue(
+			because: "the only member of a family is the version the runtime executes");
+		result.Value.Versions.Should().ContainSingle(v => v.IsRoot,
+			because: "the family of an unversioned process is its root alone");
+		result.Value.VersionReadWarning.Should().BeNull(
+			because: "nothing failed, and the warning is what distinguishes this from an unestablished read");
+		result.Value.VersionsTruncatedAt.Should().BeNull(because: "a one-member family was not cut");
+		result.Value.VersionRootSchemaUId.Should().Be(RootUId,
+			because: "an unversioned process is its own family root, which is the identity a version would hang off");
+		result.Value.ActiveVersionSource.Should().Be("process-library-view",
+			because: "even the trivial answer says which authority produced it, since the runtime consults another");
+	}
+
+	[Test]
+	[Description("Reports the described family root as inactive and names the version the runtime actually runs.")]
+	public void Describe_ShouldNameTheActiveVersion_WhenDescribingTheFamilyRoot() {
+		// Arrange
+		IProcessVersionLibReader reader = ReaderReturning(new ProcessVersionFacts {
+			Version = 0,
+			IsActiveVersion = false,
+			ActiveVersionSchemaUId = ChildUId,
+			ActiveVersionName = "InvoiceVisaProcessInvoice1",
+			VersionRootSchemaUId = RootUId,
+			Versions = [
+				Member(RootUId, "InvoiceVisaProcess", 0, isActive: false, isRoot: true),
+				Member(ChildUId, "InvoiceVisaProcessInvoice1", 1, isActive: true, isRoot: false)
+			],
+			ActiveVersionSource = "process-library-view"
+		});
+		ServerProcessDescriber describer = CreateDescriber(ClientReturning(GraphResponse(RootUId)), reader);
+
+		// Act
+		ErrorOr<DescribeProcessResult> result = describer.Describe(
+			new ProcessIdentity("InvoiceVisaProcess", null, null), null);
+
+		// Assert
+		result.Value.IsActiveVersion.Should().BeFalse(
+			because: "resolving a versioned process by name returns the root, which is not what runs");
+		result.Value.ActiveVersionName.Should().Be("InvoiceVisaProcessInvoice1",
+			because: "the caller needs the name of the running version to re-describe it without a second lookup");
+		result.Value.ActiveVersionSchemaUId.Should().Be(ChildUId,
+			because: "the version's UId identifies it unambiguously, unlike the caption the family shares");
+		result.Value.ActiveVersionSource.Should().Be("process-library-view",
+			because: "the output states which authority ranked the family, since the runtime consults another");
+		reader.Received(1).Read(RootUId);
+		reader.DidNotReceive().Read("InvoiceVisaProcess");
+	}
+
+	[Test]
+	[Description("Reports the described version as the active one when a family's active version is addressed by its UId.")]
+	public void Describe_ShouldReportActiveVersion_WhenDescribingItByUId() {
+		// Arrange
+		IProcessVersionLibReader reader = ReaderReturning(new ProcessVersionFacts {
+			Version = 1,
+			IsActiveVersion = true,
+			ActiveVersionSchemaUId = ChildUId,
+			ActiveVersionName = "InvoiceVisaProcessInvoice1",
+			VersionRootSchemaUId = RootUId,
+			Versions = [
+				Member(RootUId, "InvoiceVisaProcess", 0, isActive: false, isRoot: true),
+				Member(ChildUId, "InvoiceVisaProcessInvoice1", 1, isActive: true, isRoot: false)
+			],
+			ActiveVersionSource = "process-library-view"
+		});
+		ServerProcessDescriber describer = CreateDescriber(ClientReturning(GraphResponse(ChildUId)), reader);
+
+		// Act
+		ErrorOr<DescribeProcessResult> result = describer.Describe(new ProcessIdentity(null, ChildUId, null), null);
+
+		// Assert
+		result.Value.IsActiveVersion.Should().BeTrue(
+			because: "addressing a version by its own UId reads that version, and this one is the family's active member");
+		result.Value.Version.Should().Be(1,
+			because: "the version read must describe the addressed schema, not the family root it descends from");
+		result.Value.VersionRootSchemaUId.Should().Be(RootUId,
+			because: "a version still reports its family root, which is how a caller reaches the rest of the family");
+		reader.Received(1).Read(ChildUId);
+	}
+
+	[Test]
+	[Description("Returns the graph with the warning alone when the version read failed, establishing no version values.")]
+	public void Describe_ShouldReturnGraphWithWarningOnly_WhenTheVersionReadFailed() {
+		// Arrange
+		IProcessVersionLibReader reader = ReaderReturning(new ProcessVersionFacts {
+			Warning = "reading the process library failed: simulated transport failure, so the version facts were not established"
+		});
+		ServerProcessDescriber describer = CreateDescriber(ClientReturning(GraphResponse(RootUId)), reader);
+
+		// Act
+		ErrorOr<DescribeProcessResult> result = describer.Describe(new ProcessIdentity("UsrProc", null, null), null);
+
+		// Assert
+		result.IsError.Should().BeFalse(
+			because: "a failed version read must never turn a successful describe into an error");
+		result.Value.Name.Should().Be("UsrProc", because: "the graph the caller asked for is still returned");
+		result.Value.VersionReadWarning.Should().Contain("simulated transport failure",
+			because: "the caller is told why the facts are absent, not merely that they are");
+		result.Value.Version.Should().BeNull(because: "a failed read establishes nothing — least of all version 0");
+		result.Value.IsActiveVersion.Should().BeNull(
+			because: "reporting an unknown flag as false would name the wrong schema as the one that runs");
+		result.Value.Versions.Should().BeNull(
+			because: "an empty list would read as 'checked, no versions', which is a different claim");
+	}
+
+	[Test]
+	[Description("Discards a server-supplied version value when the version read failed: the process library is the authority (ADR choice 5).")]
+	public void Describe_ShouldDiscardServerVersionValues_WhenTheVersionReadFailed() {
+		// Arrange — a newer CrtProcessBuilder already reporting version fields; the wire result binds them to
+		// the same properties the overlay owns, so an unassigned failure path would leave them standing.
+		IProcessVersionLibReader reader = ReaderReturning(new ProcessVersionFacts { Warning = "not established" });
+		ServerProcessDescriber describer = CreateDescriber(
+			ClientReturning(GraphResponse(RootUId, ",\"version\":7,\"isActiveVersion\":true")), reader);
+
+		// Act
+		ErrorOr<DescribeProcessResult> result = describer.Describe(new ProcessIdentity("UsrProc", null, null), null);
+
+		// Assert
+		result.Value.Version.Should().BeNull(
+			because: "a version the process library did not confirm may not be published beside a warning saying nothing was established");
+		result.Value.IsActiveVersion.Should().BeNull(
+			because: "the same applies to the flag that decides whether the caller trusts this graph");
+	}
+
+	[Test]
+	[Description("Reports where the published family list was cut when the reader truncated a long family.")]
+	public void Describe_ShouldReportWhereTheFamilyWasCut_WhenTheReaderTruncatedIt() {
+		// Arrange
+		IProcessVersionLibReader reader = ReaderReturning(new ProcessVersionFacts {
+			Version = 0,
+			IsActiveVersion = false,
+			VersionRootSchemaUId = RootUId,
+			Versions = Enumerable.Range(0, 50)
+				.Select(i => Member(RootUId, $"UsrProc{i}", i, isActive: false, isRoot: i == 0))
+				.ToList(),
+			FamilyTruncated = true
+		});
+		ServerProcessDescriber describer = CreateDescriber(ClientReturning(GraphResponse(RootUId)), reader);
+
+		// Act
+		ErrorOr<DescribeProcessResult> result = describer.Describe(new ProcessIdentity("UsrProc", null, null), null);
+
+		// Assert
+		result.Value.VersionsTruncatedAt.Should().Be(50,
+			because: "a partial list must say so, and it says so with the length it actually published");
+		result.Value.Versions.Should().HaveCount(result.Value.VersionsTruncatedAt.Value,
+			because: "the reported cut point can never disagree with the list it describes");
+	}
+
+	[Test]
+	[Description("Leaves the unparsable-response failure exactly as it was and attempts no version read.")]
+	public void Describe_ShouldFailUnchangedAndSkipTheVersionRead_WhenTheResponseCannotBeParsed() {
+		// Arrange
+		IProcessVersionLibReader reader = ReaderReturning(new ProcessVersionFacts { Version = 3 });
+		ServerProcessDescriber describer = CreateDescriber(ClientReturning("not json at all"), reader);
+
+		// Act
+		ErrorOr<DescribeProcessResult> result = describer.Describe(new ProcessIdentity("UsrProc", null, null), null);
+
+		// Assert
+		result.IsError.Should().BeTrue(because: "an unparsable response was and remains a describe failure");
+		result.FirstError.Description.Should().StartWith("could not parse server response",
+			because: "the existing error text is a contract callers and tests already match on");
+		reader.DidNotReceive().Read(Arg.Any<string>());
+	}
+
 }
