@@ -1,25 +1,25 @@
 ---
-description: IApplicationClient.Login() is only usable on a forms-auth CreatioClient - the OAuth (CreateOAuth20Client) and bearer-passthrough constructors carry no username/password, so an explicit Login() throws UnauthorizedAccessException
+description: IApplicationClient.Login() and LoginAsync() are only usable on a forms-auth CreatioClient - the OAuth and bearer-passthrough constructors carry no username/password, so an explicit login throws UnauthorizedAccessException
 applies-to:
   - clio/Common/IApplicationClient.cs
   - clio/Common/CreatioClientAdapter.cs
   - clio/Common/ApplicationClientFactory.cs
   - clio/Common/ServerReadinessWaiter.cs
 ticket: ENG-94417
-date: 2026-08-30
+date: 2026-08-31
 ---
 
 **What is true** — clio builds a `CreatioClient` in three shapes: forms auth
 (`new CreatioClient(uri, login, password, ...)`), OAuth (`CreatioClient.CreateOAuth20Client(...)`)
 and bearer passthrough (`new CreatioClient(uri, accessToken, isNetCore)`). Only the first holds a
-username and a password. `CreatioClient.Login()` posts those credentials plus `TimeZoneOffset`, so on
-the other two shapes the credentials are null and the call throws `UnauthorizedAccessException`. `Login()` also sets no request
-timeout, inheriting the library's ~100 s connect default plus a separate response-read timeout, and
-`IApplicationClient` exposes no overload that bounds it.
+username and a password. `CreatioClient.Login()` and `LoginAsync()` post those credentials plus
+`TimeZoneOffset`, so on the other two shapes the credentials are null and the call throws
+`UnauthorizedAccessException`. The synchronous `Login()` retains the library's own timeout behavior;
+the asynchronous `IApplicationClient.LoginAsync()` overload accepts an explicit request timeout.
 
-**Why it is this way** — the interface hides the difference: `Login()` is one method on
-`IApplicationClient` and nothing in its signature says it is credential-shaped. The fact is only
-visible in the `creatio.client` source.
+**Why it is this way** — the interface hides the difference: both login methods are available on
+`IApplicationClient` and nothing in their signatures says they require the forms-auth client shape.
+The fact is only visible in the `creatio.client` source.
 
 **What breaks if you ignore it** — any "authenticate first to prove the server is up" step fails on
 every OAuth and token-registered environment while the instance is perfectly healthy, and the caller

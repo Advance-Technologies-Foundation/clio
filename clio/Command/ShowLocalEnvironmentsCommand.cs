@@ -145,7 +145,7 @@ namespace Clio.Command
 
 		private OperationResult TryPing(EnvironmentSettings environment) {
 			try {
-				IApplicationClient client = _applicationClientFactory.CreateEnvironmentClient(environment);
+				using IOwnedApplicationClient client = _applicationClientFactory.CreateOwnedEnvironmentClient(environment);
 				string baseUri = (environment.Uri ?? string.Empty).TrimEnd('/');
 				string root = environment.IsNetCore ? baseUri : $"{baseUri}/0";
 				string url = $"{root}/ping";
@@ -164,7 +164,7 @@ namespace Clio.Command
 
 		private OperationResult TryLogin(EnvironmentSettings environment) {
 			try {
-				IApplicationClient client = _applicationClientFactory.CreateClient(environment);
+				using IOwnedApplicationClient client = _applicationClientFactory.CreateOwnedClient(environment);
 				client.Login();
 				return OperationResult.CreateSuccess();
 			} catch (Exception ex) {
@@ -230,6 +230,7 @@ namespace Clio.Command
 			public const string Reset = "\u001b[0m";
 		}
 
-		private static readonly Regex AnsiRegex = new("\u001B\\[[0-?]*[ -/]*[@-~]", RegexOptions.Compiled);
+		private static readonly TimeSpan RegexTimeout = TimeSpan.FromSeconds(1);
+		private static readonly Regex AnsiRegex = new("\u001B\\[[0-?]*[ -/]*[@-~]", RegexOptions.Compiled, RegexTimeout);
 	}
 }

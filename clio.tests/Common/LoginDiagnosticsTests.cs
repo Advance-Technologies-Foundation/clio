@@ -2,6 +2,7 @@ using System;
 using System.Net;
 using System.Text.RegularExpressions;
 using System.Threading;
+using System.Threading.Tasks;
 using Clio.Common;
 using FluentAssertions;
 using NUnit.Framework;
@@ -19,6 +20,8 @@ internal class LoginDiagnosticsTests {
 	// GitHub #1106 tracks.
 	private const string LoginRejectionMessage = "Unauthorized svc_user for https://host";
 
+	private static readonly TimeSpan RegexTimeout = TimeSpan.FromSeconds(1);
+
 	#endregion
 
 	#region Methods: Private
@@ -29,7 +32,7 @@ internal class LoginDiagnosticsTests {
 		new(scoreboard);
 
 	private static string FieldValue(string message, string fieldName) {
-		Match match = Regex.Match(message, $@"\b{Regex.Escape(fieldName)}=([^\s\]]+)");
+		Match match = Regex.Match(message, $@"\b{Regex.Escape(fieldName)}=([^\s\]]+)", RegexOptions.None, RegexTimeout);
 		match.Success.Should().BeTrue(
 			because: $"the diagnostic context must carry a '{fieldName}' field. Actual message: {message}");
 		return match.Groups[1].Value;
@@ -185,6 +188,45 @@ internal class LoginDiagnosticsTests {
 
 	#endregion
 
+	#region Tests: TrackAsync
+
+	[Test]
+	[Description("TrackAsync returns the login result unchanged and releases the login gauge")]
+	public async Task TrackAsync_ShouldReturnResultAndReleaseGauge_WhenLoginSucceeds() {
+		// Arrange
+		LoginDiagnostics.LoginAttemptScoreboard scoreboard = CreateScoreboard();
+		LoginDiagnostics sut = CreateSut(scoreboard);
+
+		// Act
+		string result = await sut.TrackAsync(() => Task.FromResult("ok"), LoginAttemptKind.Initial);
+
+		// Assert
+		result.Should().Be("ok", because: "async login recording must be transparent on success");
+		scoreboard.LoginsInFlight.Should().Be(0,
+			because: "a completed asynchronous login must release its gauge slot");
+	}
+
+	[Test]
+	[Description("TrackAsync decorates a rejected asynchronous login and releases the login gauge")]
+	public async Task TrackAsync_ShouldDecorateAndReleaseGauge_WhenLoginIsRejected() {
+		// Arrange
+		LoginDiagnostics.LoginAttemptScoreboard scoreboard = CreateScoreboard();
+		LoginDiagnostics sut = CreateSut(scoreboard);
+
+		// Act
+		Func<Task> act = async () => await sut.TrackAsync<string>(
+			() => Task.FromException<string>(new UnauthorizedAccessException(LoginRejectionMessage)),
+			LoginAttemptKind.Initial);
+
+		// Assert
+		await act.Should().ThrowAsync<CreatioLoginFailedException>(
+			because: "async login rejection must carry the same diagnostic context as synchronous login");
+		scoreboard.LoginsInFlight.Should().Be(0,
+			because: "a rejected asynchronous login must release its gauge slot");
+	}
+
+	#endregion
+
 	#region Tests: TrackRequest
 
 	[Test]
@@ -330,6 +372,47 @@ internal class LoginDiagnosticsTests {
 			because: "the void overload exists for DownloadFile and must record exactly like the generic one");
 		scoreboard.RequestsInFlight.Should().Be(0,
 			because: "the void overload must release the gauge on the failure path too");
+	}
+
+	#endregion
+
+	#region Tests: TrackRequestAsync
+
+	[Test]
+	[Description("TrackRequestAsync returns the request result unchanged and releases the request gauge")]
+	public async Task TrackRequestAsync_ShouldReturnResultAndReleaseGauge_WhenRequestSucceeds() {
+		// Arrange
+		LoginDiagnostics.LoginAttemptScoreboard scoreboard = CreateScoreboard();
+		LoginDiagnostics sut = CreateSut(scoreboard);
+
+		// Act
+		string result = await sut.TrackRequestAsync(() => Task.FromResult("ok"));
+
+		// Assert
+		result.Should().Be("ok", because: "async request recording must be transparent on success");
+		scoreboard.RequestsInFlight.Should().Be(0,
+			because: "a completed asynchronous request must release its gauge slot");
+	}
+
+	[Test]
+	[Description("TrackRequestAsync decorates an implicit asynchronous login rejection and releases the request gauge")]
+	public async Task TrackRequestAsync_ShouldDecorateAndReleaseGauge_WhenImplicitLoginIsRejected() {
+		// Arrange
+		LoginDiagnostics.LoginAttemptScoreboard scoreboard = CreateScoreboard();
+		LoginDiagnostics sut = CreateSut(scoreboard);
+
+		// Act
+		Func<Task> act = async () => await sut.TrackRequestAsync(
+			() => Task.FromException<string>(new UnauthorizedAccessException(LoginRejectionMessage)));
+
+		// Assert
+		CreatioLoginFailedException failure = (await act.Should().ThrowAsync<CreatioLoginFailedException>(
+			because: "the NuGet client's asynchronous implicit login needs the same diagnostics as sync requests"))
+			.Which;
+		FieldValue(failure.Message, "kind").Should().Be("implicit",
+			because: "a login raised inside an application request is an implicit attempt");
+		scoreboard.RequestsInFlight.Should().Be(0,
+			because: "a rejected asynchronous request must release its gauge slot");
 	}
 
 	#endregion

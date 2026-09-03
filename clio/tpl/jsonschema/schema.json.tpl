@@ -73,6 +73,10 @@
 			"type": "string",
 			"description": "Default local Redis server key from redis section when multiple servers are enabled"
 		},
+		"deploy-creatio-defaults": {
+			"$ref": "#/definitions/deploycreatiodefaults",
+			"description": "Defaults used when deploy-creatio command-line options are omitted"
+		},
 		"telemetry": {
 			"$ref": "#/definitions/telemetrysettings",
 			"description": "Product telemetry upload configuration for the MCP server"
@@ -101,7 +105,7 @@
 			},
 			"examples": [
 				{
-					"process-designer": true
+					"watch-compilation": true
 				}
 			]
 		}
@@ -113,6 +117,47 @@
 		"Environments"
 	],
 	"definitions": {
+		"deploycreatiodefaults": {
+			"type": "object",
+			"additionalProperties": false,
+			"properties": {
+				"db-server-name": {
+					"type": "string",
+					"description": "Default local database server key from the db section"
+				},
+				"redis-server-name": {
+					"type": "string",
+					"description": "Default local Redis server key from the redis section"
+				},
+				"site-name": {
+					"type": "string",
+					"description": "Default deployed IIS site and registered environment name"
+				},
+				"site-port": {
+					"type": "integer",
+					"minimum": 1,
+					"maximum": 65535,
+					"description": "Fixed IIS site port; takes precedence over site-port-range"
+				},
+				"site-port-range": {
+					"type": "array",
+					"minItems": 2,
+					"maxItems": 2,
+					"items": {
+						"type": "integer",
+						"minimum": 1,
+						"maximum": 65535
+					},
+					"description": "Inclusive start and end ports scanned when no explicit or fixed site port is set",
+					"default": [40100, 40199]
+				},
+				"deployment": {
+					"type": "string",
+					"enum": ["auto", "iis", "dotnet"],
+					"description": "Default deployment method"
+				}
+			}
+		},
 		"knowledgefeedbacksettings": {
 			"type": "object",
 			"additionalProperties": false,

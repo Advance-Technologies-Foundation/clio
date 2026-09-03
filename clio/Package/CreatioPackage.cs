@@ -20,6 +20,7 @@ namespace Clio
 		public const string AssemblyInfoName = "AssemblyInfo.cs";
 		public const string PlaceholderFileName = "placeholder.txt";
 		public const string IgnoreFileName = "clioignore";
+		public const string FilesDirName = "Files";
 
 
 		public static string EditProjTpl => $"tpl{Path.DirectorySeparatorChar}EditProj.{CsprojExtension}.tpl";
@@ -27,11 +28,19 @@ namespace Clio
 		public static string AssemblyInfoTpl => $"tpl{Path.DirectorySeparatorChar}{AssemblyInfoName}.tpl";
 		public static string IgnoreFileTpl => $"tpl{Path.DirectorySeparatorChar}package{Path.DirectorySeparatorChar}{IgnoreFileName}";
 
-		private readonly string[] _pkgDirectories = { "Assemblies", "Data", "Schemas", "SqlScripts", "Resources", "Files", "Files\\cs" };
+		private readonly string[] _pkgDirectories = {
+			"Assemblies", "Data", "Schemas", "SqlScripts", "Resources", FilesDirName, Path.Combine(FilesDirName, "cs")
+		};
 
 		private static string DescriptorTpl => $"tpl{Path.DirectorySeparatorChar}{DescriptorName}.tpl";
 		private static string ProjTpl => $"tpl{Path.DirectorySeparatorChar}Proj.{CsprojExtension}.tpl";
 		private string ProjectFileName => $"{PackageName}.{CsprojExtension}";
+
+		/// <summary>
+		/// Full path of the package project file. Callers that need to load the project
+		/// must use this, not <see cref="FullPath"/>, which is the package directory.
+		/// </summary>
+		public string ProjectFilePath => Path.Combine(FullPath, ProjectFileName);
 		private string SolutionName => PackageName;
 		private string SolutionFileName => $"{SolutionName}.{SlnExtension}";
 
@@ -144,9 +153,9 @@ namespace Clio
 		}
 
 		protected CreatioPackage CreateEmptyClass() {
-			var csDirPath = Path.Combine(FullPath, "Files","cs");
+			var csDirPath = Path.Combine(FullPath, FilesDirName, "cs");
 			Directory.CreateDirectory(csDirPath);
-			var filePath = Path.Combine(FullPath, "Files","cs", "EmptyClass.cs");
+			var filePath = Path.Combine(FullPath, FilesDirName, "cs", "EmptyClass.cs");
 			File.Create(filePath).Dispose();
 			return this;
 		}

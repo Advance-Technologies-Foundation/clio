@@ -57,6 +57,18 @@ public sealed class EntitySchemaToolE2ETests : McpContractFixtureBase {
 	private string? _sharedPackageName;
 	private string? _sharedRootDirectory;
 
+	// Extends Option A one level further: a single shared entity schema, lazily created once by
+	// ArrangeSharedSchemaAsync, that every column-mutation test (add/modify/remove a column, structured
+	// defaults, usage-type, masks, primary-display-column, ...) operates on instead of paying for its own
+	// create-entity-schema round trip. Each such test still gets per-test isolation the same way the
+	// shared package does: a column name unique to that test, so concurrent mutations inside the shared
+	// schema never collide. No locking is needed for the lazy init because the fixture is
+	// [NonParallelizable]. Tests whose subject IS schema creation itself — create-entity-schema behaviour,
+	// create-lookup, the virtual-schema flag, the inherited-column-override case, and every
+	// invalid-environment case — keep calling ArrangeSandboxPackageAsync directly so they still exercise
+	// their own create-entity-schema call and are not diluted by the shared schema's accumulated state.
+	private string? _sharedSchemaName;
+
 	[OneTimeTearDown]
 	public void CleanupSharedSandboxPackage() {
 		if (_sharedRootDirectory is not null && Directory.Exists(_sharedRootDirectory)) {
@@ -132,11 +144,10 @@ public sealed class EntitySchemaToolE2ETests : McpContractFixtureBase {
 	[AllureDescription("Creates a sandbox schema, adds a Color (dataValueType 18) column through modify-entity-schema-column, and verifies get-entity-schema-column-properties reports the type as the named Color token.")]
 	public async Task EntitySchemaTools_Should_Create_Color_Column_And_Read_It_Back_As_Named_Type() {
 		// Arrange
-		await using EntitySchemaArrangeContext arrangeContext = await ArrangeSandboxPackageAsync();
+		await using EntitySchemaArrangeContext arrangeContext = await ArrangeSharedSchemaAsync();
 		const string colorColumnName = "UsrHighlight";
 
 		// Act
-		CommandExecutionEnvelope createResult = await ActCreateEntitySchemaAsync(arrangeContext);
 		CommandExecutionEnvelope addColorResult = McpCommandExecutionParser.Extract(
 			await CallModifyEntitySchemaColumnAsync(
 				arrangeContext.Session,
@@ -152,7 +163,6 @@ public sealed class EntitySchemaToolE2ETests : McpContractFixtureBase {
 			await ActGetColumnPropertiesAsync(arrangeContext, colorColumnName);
 
 		// Assert
-		AssertCommandSucceeded(createResult, "create-entity-schema should succeed before adding a Color column");
 		AssertCommandSucceeded(addColorResult, "modify-entity-schema-column should accept the named Color type token");
 		colorColumnProperties.Type.Should().Be("Color",
 			because: "a dataValueType-18 column must read back as the named Color token, not the raw number 18");
@@ -168,11 +178,10 @@ public sealed class EntitySchemaToolE2ETests : McpContractFixtureBase {
 	[AllureDescription("Creates a sandbox schema, adds a second text column, sets it as the primary-display column through set-entity-schema-properties, and verifies get-entity-schema-properties reports it as primary-display-column-name.")]
 	public async Task SetEntitySchemaProperties_Should_Set_Primary_Display_Column_And_Read_It_Back() {
 		// Arrange
-		await using EntitySchemaArrangeContext arrangeContext = await ArrangeSandboxPackageAsync();
+		await using EntitySchemaArrangeContext arrangeContext = await ArrangeSharedSchemaAsync();
 		const string displayColumnName = "UsrDisplayLabel";
 
 		// Act
-		CommandExecutionEnvelope createResult = await ActCreateEntitySchemaAsync(arrangeContext);
 		CommandExecutionEnvelope addColumnResult = McpCommandExecutionParser.Extract(
 			await CallModifyEntitySchemaColumnAsync(
 				arrangeContext.Session,
@@ -195,7 +204,6 @@ public sealed class EntitySchemaToolE2ETests : McpContractFixtureBase {
 		EntitySchemaPropertiesInfo schemaProperties = await ActGetSchemaPropertiesAsync(arrangeContext);
 
 		// Assert
-		AssertCommandSucceeded(createResult, "create-entity-schema should succeed before setting the primary-display column");
 		AssertCommandSucceeded(addColumnResult, "the display-target text column should be added successfully");
 		AssertCommandSucceeded(setResult, "set-entity-schema-properties should persist the primary-display column");
 		schemaProperties.PrimaryDisplayColumnName.Should().Be(displayColumnName,
@@ -211,11 +219,10 @@ public sealed class EntitySchemaToolE2ETests : McpContractFixtureBase {
 	[AllureDescription("Creates a sandbox schema, adds a column with type 'Money' (the name Creatio displays and clio's own sys-setting surface uses) and verifies through get-entity-schema-properties that the column was created, proving Money resolves to the Currency2 command value rather than being rejected.")]
 	public async Task ModifyEntitySchemaColumn_Should_Accept_Money_Alias_For_Currency2_Column() {
 		// Arrange
-		await using EntitySchemaArrangeContext arrangeContext = await ArrangeSandboxPackageAsync();
+		await using EntitySchemaArrangeContext arrangeContext = await ArrangeSharedSchemaAsync();
 		string moneyColumnName = $"{arrangeContext.AddedColumnName}Amount";
 
 		// Act
-		CommandExecutionEnvelope createResult = await ActCreateEntitySchemaAsync(arrangeContext);
 		CommandExecutionEnvelope addMoneyResult = McpCommandExecutionParser.Extract(
 			await CallModifyEntitySchemaColumnAsync(
 				arrangeContext.Session,
@@ -230,7 +237,6 @@ public sealed class EntitySchemaToolE2ETests : McpContractFixtureBase {
 		EntitySchemaPropertiesInfo schemaProperties = await ActGetSchemaPropertiesAsync(arrangeContext);
 
 		// Assert
-		AssertCommandSucceeded(createResult, "create-entity-schema should succeed before adding the money column");
 		AssertCommandSucceeded(addMoneyResult,
 			"'Money' is the Creatio display name for a two-decimal currency column and must be accepted as an " +
 				"alias of Currency2 instead of being rejected as an unsupported type");
@@ -431,13 +437,12 @@ public sealed class EntitySchemaToolE2ETests : McpContractFixtureBase {
 	[AllureDescription("Creates a sandbox entity schema, applies a batch update that adds Binary, Image, and File columns through the real MCP server, and verifies both schema and column readback use normalized friendly type names.")]
 	public async Task UpdateEntitySchema_Should_Add_BinaryLike_Columns_And_Read_Back_Friendly_Types() {
 		// Arrange
-		await using EntitySchemaArrangeContext arrangeContext = await ArrangeSandboxPackageAsync();
+		await using EntitySchemaArrangeContext arrangeContext = await ArrangeSharedSchemaAsync();
 		const string binaryColumnName = "UsrPayload";
 		const string imageColumnName = "UsrPreview";
 		const string fileColumnName = "UsrDocument";
 
 		// Act
-		CommandExecutionEnvelope createResult = await ActCreateEntitySchemaAsync(arrangeContext);
 		CommandExecutionEnvelope updateResult = await ActBatchAddBinaryLikeColumnsAsync(arrangeContext, binaryColumnName, imageColumnName, fileColumnName);
 		EntitySchemaPropertiesInfo schemaProperties = await ActGetSchemaPropertiesAsync(arrangeContext);
 		EntitySchemaColumnPropertiesInfo binaryColumnProperties = await ActGetColumnPropertiesAsync(arrangeContext, binaryColumnName);
@@ -445,10 +450,6 @@ public sealed class EntitySchemaToolE2ETests : McpContractFixtureBase {
 		EntitySchemaColumnPropertiesInfo fileColumnProperties = await ActGetColumnPropertiesAsync(arrangeContext, fileColumnName);
 
 		// Assert
-		AssertCommandSucceeded(createResult,
-			"the schema must exist before the batch update can add binary-like columns");
-		AssertIncludesInfoMessage(createResult,
-			"successful schema creation should emit progress output before the batch update");
 		AssertCommandSucceeded(updateResult,
 			"update-entity-schema should succeed when adding supported binary-like column types");
 		AssertIncludesInfoMessage(updateResult,
@@ -470,20 +471,15 @@ public sealed class EntitySchemaToolE2ETests : McpContractFixtureBase {
 	[AllureDescription("Creates a sandbox entity schema, adds an ImageLookup column through the real MCP server, and verifies the structured readback reports type ImageLookup and the implicit SysImage reference schema for crt.ImageInput compatibility.")]
 	public async Task UpdateEntitySchema_Should_Add_ImageLookup_Column_Referencing_SysImage() {
 		// Arrange
-		await using EntitySchemaArrangeContext arrangeContext = await ArrangeSandboxPackageAsync();
+		await using EntitySchemaArrangeContext arrangeContext = await ArrangeSharedSchemaAsync();
 		const string imageLookupColumnName = "UsrPhoto";
 
 		// Act
-		CommandExecutionEnvelope createResult = await ActCreateEntitySchemaAsync(arrangeContext);
 		CommandExecutionEnvelope updateResult = await ActBatchAddImageLookupColumnAsync(arrangeContext, imageLookupColumnName);
 		EntitySchemaPropertiesInfo schemaProperties = await ActGetSchemaPropertiesAsync(arrangeContext);
 		EntitySchemaColumnPropertiesInfo imageLookupColumnProperties = await ActGetColumnPropertiesAsync(arrangeContext, imageLookupColumnName);
 
 		// Assert
-		AssertCommandSucceeded(createResult,
-			"the schema must exist before the batch update can add the ImageLookup column");
-		AssertIncludesInfoMessage(createResult,
-			"successful schema creation should emit progress output before the batch update");
 		AssertCommandSucceeded(updateResult,
 			"update-entity-schema should succeed when adding an ImageLookup column");
 		AssertIncludesInfoMessage(updateResult,
@@ -506,11 +502,10 @@ public sealed class EntitySchemaToolE2ETests : McpContractFixtureBase {
 	[AllureDescription("Creates a sandbox entity schema through the real MCP server, adds a Text column through update-entity-schema using only title-localizations, then modifies that column through modify-entity-schema-column with default-value-config and verifies the follow-up mutation plus structured readback both succeed.")]
 	public async Task UpdateEntitySchema_Should_Keep_Localized_Column_Valid_For_Later_DefaultValueConfig_Modify() {
 		// Arrange
-		await using EntitySchemaArrangeContext arrangeContext = await ArrangeSandboxPackageAsync();
+		await using EntitySchemaArrangeContext arrangeContext = await ArrangeSharedSchemaAsync();
 		const string localizedColumnName = "UsrStatus";
 
 		// Act
-		CommandExecutionEnvelope createResult = await ActCreateEntitySchemaAsync(arrangeContext);
 		CommandExecutionEnvelope addResult = await ActBatchAddLocalizedTextColumnAsync(arrangeContext, localizedColumnName);
 		CommandExecutionEnvelope modifyResult =
 			await ActModifyLocalizedTextColumnWithStructuredSettingsDefaultAsync(arrangeContext, localizedColumnName);
@@ -518,10 +513,6 @@ public sealed class EntitySchemaToolE2ETests : McpContractFixtureBase {
 			await ActGetColumnPropertiesAsync(arrangeContext, localizedColumnName);
 
 		// Assert
-		AssertCommandSucceeded(createResult,
-			"the schema must exist before update-entity-schema can add the localized column");
-		AssertIncludesInfoMessage(createResult,
-			"successful schema creation should emit progress output before the localized add");
 		AssertCommandSucceeded(addResult,
 			"update-entity-schema should succeed when adding a column that only provides title-localizations");
 		AssertIncludesInfoMessage(addResult,
@@ -548,19 +539,14 @@ public sealed class EntitySchemaToolE2ETests : McpContractFixtureBase {
 	[AllureDescription("Creates a sandbox entity schema through the real MCP server, adds a DateTime column with default-value-config source SystemValue, and verifies the real remote side effect plus structured readback metadata.")]
 	public async Task ModifyEntitySchemaColumn_Should_Apply_Structured_DefaultValueConfig_And_Read_Back_Metadata() {
 		// Arrange
-		await using EntitySchemaArrangeContext arrangeContext = await ArrangeSandboxPackageAsync();
+		await using EntitySchemaArrangeContext arrangeContext = await ArrangeSharedSchemaAsync();
 		const string startDateColumnName = "UsrStartDate";
 
 		// Act
-		CommandExecutionEnvelope createResult = await ActCreateEntitySchemaAsync(arrangeContext);
 		CommandExecutionEnvelope addResult = await ActAddDateTimeColumnWithStructuredDefaultAsync(arrangeContext, startDateColumnName);
 		EntitySchemaColumnPropertiesInfo columnProperties = await ActGetColumnPropertiesAsync(arrangeContext, startDateColumnName);
 
 		// Assert
-		AssertCommandSucceeded(createResult,
-			"the schema must exist before structured default-value-config mutations can add the new DateTime column");
-		AssertIncludesInfoMessage(createResult,
-			"successful schema creation should emit progress output before the structured default mutation");
 		AssertCommandSucceeded(addResult,
 			"modify-entity-schema-column should succeed when adding a DateTime column with a system-value default");
 		AssertIncludesInfoMessage(addResult,
@@ -578,19 +564,14 @@ public sealed class EntitySchemaToolE2ETests : McpContractFixtureBase {
 	[AllureDescription("Creates a sandbox entity schema through the real MCP server, adds a Text column with default-value-config source Settings, and verifies structured readback exposes canonical setting-code metadata.")]
 	public async Task ModifyEntitySchemaColumn_Should_Apply_Structured_Settings_Default_And_Read_Back_Canonical_Code() {
 		// Arrange
-		await using EntitySchemaArrangeContext arrangeContext = await ArrangeSandboxPackageAsync();
+		await using EntitySchemaArrangeContext arrangeContext = await ArrangeSharedSchemaAsync();
 		const string titleColumnName = "UsrTitle";
 
 		// Act
-		CommandExecutionEnvelope createResult = await ActCreateEntitySchemaAsync(arrangeContext);
 		CommandExecutionEnvelope addResult = await ActAddTextColumnWithStructuredSettingsDefaultAsync(arrangeContext, titleColumnName);
 		EntitySchemaColumnPropertiesInfo columnProperties = await ActGetColumnPropertiesAsync(arrangeContext, titleColumnName);
 
 		// Assert
-		AssertCommandSucceeded(createResult,
-			"the schema must exist before structured settings default mutations can add the new Text column");
-		AssertIncludesInfoMessage(createResult,
-			"successful schema creation should emit progress output before the structured settings mutation");
 		AssertCommandSucceeded(addResult,
 			"modify-entity-schema-column should succeed when adding a Text column with a settings default");
 		AssertIncludesInfoMessage(addResult,
@@ -613,19 +594,14 @@ public sealed class EntitySchemaToolE2ETests : McpContractFixtureBase {
 	[AllureDescription("Creates a sandbox entity schema through the real MCP server, adds a Text column with default-value-config source Sequence and value mask 'LN-{0}', and verifies the structured readback exposes the extracted sequence prefix and width so a created record would be numbered LN-00001 rather than 00001.")]
 	public async Task ModifyEntitySchemaColumn_Should_Apply_Sequence_Mask_Prefix_And_Read_Back() {
 		// Arrange
-		await using EntitySchemaArrangeContext arrangeContext = await ArrangeSandboxPackageAsync();
+		await using EntitySchemaArrangeContext arrangeContext = await ArrangeSharedSchemaAsync();
 		const string sequenceColumnName = "UsrLoanNumber";
 
 		// Act
-		CommandExecutionEnvelope createResult = await ActCreateEntitySchemaAsync(arrangeContext);
 		CommandExecutionEnvelope addResult = await ActAddTextColumnWithSequenceMaskDefaultAsync(arrangeContext, sequenceColumnName);
 		EntitySchemaColumnPropertiesInfo columnProperties = await ActGetColumnPropertiesAsync(arrangeContext, sequenceColumnName);
 
 		// Assert
-		AssertCommandSucceeded(createResult,
-			"the schema must exist before the Sequence default mutation can add the new Text column");
-		AssertIncludesInfoMessage(createResult,
-			"successful schema creation should emit progress output before the Sequence default mutation");
 		AssertCommandSucceeded(addResult,
 			"modify-entity-schema-column should succeed when adding a Text column with a Sequence default expressed as a masked value");
 		AssertIncludesInfoMessage(addResult,
@@ -648,17 +624,14 @@ public sealed class EntitySchemaToolE2ETests : McpContractFixtureBase {
 	[AllureDescription("Creates a sandbox entity schema, then adds a Text column with a Sequence default whose value mask has static text after '{0}', and verifies the real MCP server rejects it before save instead of silently dropping the unsupported part.")]
 	public async Task ModifyEntitySchemaColumn_Should_Reject_Unsupported_Sequence_Mask() {
 		// Arrange
-		await using EntitySchemaArrangeContext arrangeContext = await ArrangeSandboxPackageAsync();
+		await using EntitySchemaArrangeContext arrangeContext = await ArrangeSharedSchemaAsync();
 		const string sequenceColumnName = "UsrBadSequence";
 
 		// Act
-		CommandExecutionEnvelope createResult = await ActCreateEntitySchemaAsync(arrangeContext);
 		CommandExecutionEnvelope addResult =
 			await ActAddTextColumnWithSequenceMaskDefaultAsync(arrangeContext, sequenceColumnName, mask: "LN-{0}-END");
 
 		// Assert
-		AssertCommandSucceeded(createResult,
-			"the schema must exist before the unsupported Sequence mask mutation is attempted");
 		addResult.ExitCode.Should().Be(1,
 			because: "a Sequence mask with static text after '{0}' is not supported and must be rejected before save (ENG-93375)");
 		addResult.Output.Should().Contain(message =>
@@ -676,18 +649,15 @@ public sealed class EntitySchemaToolE2ETests : McpContractFixtureBase {
 	[AllureDescription("Creates a sandbox entity schema, then adds a lookup column referencing Contact with a Const default whose GUID does not exist, and verifies the real MCP server rejects the write before save with a not-found error.")]
 	public async Task ModifyEntitySchemaColumn_Should_Reject_LookupConstDefault_When_RecordMissing() {
 		// Arrange
-		await using EntitySchemaArrangeContext arrangeContext = await ArrangeSandboxPackageAsync();
+		await using EntitySchemaArrangeContext arrangeContext = await ArrangeSharedSchemaAsync();
 		const string lookupColumnName = "UsrOwner";
 		const string missingRecordId = "00000000-0000-0000-0000-0000000000aa";
 
 		// Act
-		CommandExecutionEnvelope createResult = await ActCreateEntitySchemaAsync(arrangeContext);
 		CommandExecutionEnvelope addResult =
 			await ActAddLookupColumnWithMissingConstDefaultAsync(arrangeContext, lookupColumnName, missingRecordId);
 
 		// Assert
-		AssertCommandSucceeded(createResult,
-			"the schema must exist before the lookup-column mutation can be attempted");
 		addResult.ExitCode.Should().Be(1,
 			because: "a Const lookup default pointing at a nonexistent record must be rejected before save (DRAFT-AC-06)");
 		addResult.Output.Should().Contain(message =>
@@ -729,19 +699,16 @@ public sealed class EntitySchemaToolE2ETests : McpContractFixtureBase {
 	[AllureDescription("Uses the real MCP server to add a column with usage-type=None, reads it back as None, then modifies only the column title and verifies the structured readback still reports None — proving the value is written, loaded, and preserved across an unrelated modify.")]
 	public async Task ModifyEntitySchemaColumn_Should_Persist_And_Preserve_UsageType_Through_Mcp() {
 		// Arrange
-		await using EntitySchemaArrangeContext arrangeContext = await ArrangeSandboxPackageAsync();
+		await using EntitySchemaArrangeContext arrangeContext = await ArrangeSharedSchemaAsync();
 		const string usageColumnName = "UsrUsage";
 
 		// Act
-		CommandExecutionEnvelope createResult = await ActCreateEntitySchemaAsync(arrangeContext);
 		CommandExecutionEnvelope addResult = await ActAddColumnWithUsageTypeAsync(arrangeContext, usageColumnName, "None");
 		EntitySchemaColumnPropertiesInfo afterAdd = await ActGetColumnPropertiesAsync(arrangeContext, usageColumnName);
 		CommandExecutionEnvelope modifyTitleResult = await ActModifyColumnTitleOnlyAsync(arrangeContext, usageColumnName, "Usage renamed");
 		EntitySchemaColumnPropertiesInfo afterUnrelatedModify = await ActGetColumnPropertiesAsync(arrangeContext, usageColumnName);
 
 		// Assert
-		AssertCommandSucceeded(createResult,
-			"create-entity-schema should succeed for a valid sandbox environment and prepared package");
 		AssertCommandSucceeded(addResult,
 			"modify-entity-schema-column should succeed when adding a column with usage-type=None");
 		afterAdd.UsageType.Should().Be("None",
@@ -761,17 +728,14 @@ public sealed class EntitySchemaToolE2ETests : McpContractFixtureBase {
 	[AllureDescription("Uses the real MCP server to add a column via update-entity-schema with usage-type=Advanced, then verifies the structured get-entity-schema-column-properties response reports Advanced.")]
 	public async Task UpdateEntitySchema_Should_Apply_UsageType_Through_Mcp() {
 		// Arrange
-		await using EntitySchemaArrangeContext arrangeContext = await ArrangeSandboxPackageAsync();
+		await using EntitySchemaArrangeContext arrangeContext = await ArrangeSharedSchemaAsync();
 		const string batchUsageColumnName = "UsrBatchUsage";
 
 		// Act
-		CommandExecutionEnvelope createResult = await ActCreateEntitySchemaAsync(arrangeContext);
 		CommandExecutionEnvelope batchResult = await ActBatchAddColumnWithUsageTypeAsync(arrangeContext, batchUsageColumnName, "Advanced");
 		EntitySchemaColumnPropertiesInfo columnProperties = await ActGetColumnPropertiesAsync(arrangeContext, batchUsageColumnName);
 
 		// Assert
-		AssertCommandSucceeded(createResult,
-			"create-entity-schema should succeed for a valid sandbox environment and prepared package");
 		AssertCommandSucceeded(batchResult,
 			"update-entity-schema should succeed when a batch operation carries usage-type");
 		columnProperties.UsageType.Should().Be("Advanced",
@@ -1095,6 +1059,42 @@ public sealed class EntitySchemaToolE2ETests : McpContractFixtureBase {
 
 	[Category("McpE2E.Sandbox")]
 	[Test]
+	[Description("Discovers Contact.Name through the merged runtime schema when package-name is omitted and reports unavailable designer-only flags as null.")]
+	[AllureTag(ReadColumnToolName)]
+	[AllureName("Get entity schema column properties supports merged package-free discovery")]
+	[AllureDescription("Uses the real MCP server and configured sandbox to verify package-free RuntimeEntitySchemaRequest discovery without replacing the package-scoped designer route.")]
+	public async Task GetEntitySchemaColumnProperties_Should_Return_Merged_ContactName_Metadata() {
+		// Arrange
+		await using SandboxFindEntitySchemaArrangeContext arrangeContext = await ArrangeSandboxFindEntitySchemaAsync();
+
+		// Act
+		CallToolResult callResult = await CallGetColumnPropertiesAsync(
+			arrangeContext.Session,
+			arrangeContext.EnvironmentName,
+			null,
+			"Contact",
+			"Name",
+			arrangeContext.CancellationTokenSource.Token);
+		EntitySchemaColumnPropertiesInfo properties =
+			EntitySchemaStructuredResultParser.Extract<EntitySchemaColumnPropertiesInfo>(callResult);
+
+		// Assert
+		callResult.IsError.Should().NotBeTrue(
+			because: "omitting package-name must select merged runtime discovery on the real MCP path");
+		properties.PackageName.Should().Be("(merged: all packages)",
+			because: "the response must identify that it is not authoritative for one package layer");
+		properties.ColumnName.Should().Be("Name",
+			because: "the compiled Contact schema must expose its standard Name column");
+		properties.TrackChanges.Should().BeNull(
+			because: "the runtime route does not expose column track-changes and must not invent false");
+		properties.LocalizableText.Should().BeNull(
+			because: "the runtime route does not expose localizable-text and must not invent false");
+		properties.DoNotControlIntegrity.Should().BeNull(
+			because: "the runtime route does not expose integrity control and must not invent false");
+	}
+
+	[Category("McpE2E.Sandbox")]
+	[Test]
 	[Description("Returns structured schema search results that already include package-name for follow-up MCP calls.")]
 	[AllureTag(FindEntitySchemaTool.FindEntitySchemaToolName)]
 	[AllureName("Find entity schema returns structured package ownership")]
@@ -1215,6 +1215,27 @@ public sealed class EntitySchemaToolE2ETests : McpContractFixtureBase {
 				session,
 				cancellationTokenSource);
 		});
+	}
+
+	/// <summary>
+	/// Lazily creates one entity schema inside the shared sandbox package (created once, on the first
+	/// call) that every column-mutation test operates on, instead of each test paying for its own
+	/// create-entity-schema round trip. Subsequent calls return a context pointed at the same cached
+	/// schema name — with a fresh CancellationTokenSource per test, so per-test timeouts stay isolated
+	/// even though the schema is shared. Relies on the fixture being [NonParallelizable], the same as the
+	/// shared package it builds on. Callers must still use a column name unique to that test: mutations
+	/// land on the one shared schema, so a name collision would corrupt an unrelated test's fixture state.
+	/// </summary>
+	private async Task<EntitySchemaArrangeContext> ArrangeSharedSchemaAsync() {
+		EntitySchemaArrangeContext packageContext = await ArrangeSandboxPackageAsync();
+		if (_sharedSchemaName is null) {
+			CommandExecutionEnvelope createResult = await ActCreateEntitySchemaAsync(packageContext);
+			AssertCommandSucceeded(createResult,
+				"create-entity-schema should succeed while provisioning the fixture's shared entity schema");
+			_sharedSchemaName = packageContext.SchemaName;
+		}
+
+		return packageContext with { SchemaName = _sharedSchemaName };
 	}
 
 	/// <summary>
@@ -1773,7 +1794,7 @@ public sealed class EntitySchemaToolE2ETests : McpContractFixtureBase {
 	private static async Task<CallToolResult> CallGetColumnPropertiesAsync(
 		McpServerSession session,
 		string environmentName,
-		string packageName,
+		string? packageName,
 		string schemaName,
 		string columnName,
 		CancellationToken cancellationToken) {
@@ -1781,15 +1802,19 @@ public sealed class EntitySchemaToolE2ETests : McpContractFixtureBase {
 		tools.Select(tool => tool.Name).Should().Contain(ReadColumnToolName,
 			because: "the get-entity-schema-column-properties MCP tool must be advertised before the end-to-end call can be executed");
 
+		Dictionary<string, object?> args = new() {
+			["environment-name"] = environmentName,
+			["schema-name"] = schemaName,
+			["column-name"] = columnName
+		};
+		if (packageName is not null) {
+			args["package-name"] = packageName;
+		}
+
 		return await session.CallToolAsync(
 			ReadColumnToolName,
 			new Dictionary<string, object?> {
-				["args"] = new Dictionary<string, object?> {
-					["environment-name"] = environmentName,
-					["package-name"] = packageName,
-					["schema-name"] = schemaName,
-					["column-name"] = columnName
-				}
+				["args"] = args
 			},
 			cancellationToken);
 	}

@@ -262,25 +262,6 @@ public class BindingsModule {
 		// mutable property — see code-review #1 on PR #599).
 		services.AddHttpClient(ComponentRegistryClient.HttpClientName)
 			.ConfigureHttpClient(client => client.Timeout = ComponentRegistryClient.CdnFetchTimeout);
-		// Dedicated forms-auth client for browser-session harvesting. UseCookies=false keeps the
-		// Set-Cookie response headers readable (the cookie jar would otherwise consume them), and
-		// AllowAutoRedirect=false ensures the direct AuthService.svc/Login response is observed
-		// rather than a followed login-page redirect.
-		services.AddHttpClient(Clio.Common.BrowserSession.CreatioAuthClient.HttpClientName)
-			.ConfigureHttpClient(c => c.Timeout = TimeSpan.FromSeconds(30))
-			.ConfigurePrimaryHttpMessageHandler(() => new System.Net.Http.HttpClientHandler {
-				UseCookies = false,
-				AllowAutoRedirect = false
-			});
-		// Dedicated client for the SysImage upload + verification read (upload-image). Same handler
-		// shape as the auth client (manual Cookie header, raw 3xx on expired session), but with a
-		// 100-second budget: a cold IIS site routinely exceeds the auth client's 30 seconds.
-		services.AddHttpClient(Clio.Common.SysImageUploader.HttpClientName)
-			.ConfigureHttpClient(c => c.Timeout = TimeSpan.FromSeconds(100))
-			.ConfigurePrimaryHttpMessageHandler(() => new System.Net.Http.HttpClientHandler {
-				UseCookies = false,
-				AllowAutoRedirect = false
-			});
 		// Named HttpClient for background telemetry uploads — same registration-time-only
 		// timeout rule as the component-registry client above.
 		services.AddHttpClient(TelemetryFlushService.HttpClientName)
@@ -374,8 +355,11 @@ public class BindingsModule {
 		services.AddTransient<Clio.Common.IFileSystem, Clio.Common.FileSystem>();
 		services.AddTransient<IFileSecurityHardening, FileSecurityHardening>();
 		services.AddTransient<Clio.Common.BrowserSession.IBrowserSessionCache, Clio.Common.BrowserSession.BrowserSessionCache>();
-		services.AddTransient<Clio.Common.BrowserSession.ICreatioAuthClient, Clio.Common.BrowserSession.CreatioAuthClient>();
-		services.AddTransient<Clio.Common.BrowserSession.IBrowserSessionService, Clio.Common.BrowserSession.BrowserSessionService>();
+		services.AddTransient<Clio.Common.BrowserSession.IBrowserSessionService>(sp =>
+			new Clio.Common.BrowserSession.BrowserSessionService(
+				sp.GetRequiredService<IApplicationClientFactory>(),
+				sp.GetRequiredService<Clio.Common.BrowserSession.IBrowserSessionCache>(),
+				sp.GetRequiredService<Clio.Common.IFileSystem>()));
 		services.AddTransient<Clio.Common.BrowserSession.IChromiumLocator, Clio.Common.BrowserSession.ChromiumLocator>();
 		services.AddTransient<Clio.Common.BrowserSession.IAuthenticatedBrowserLauncher, Clio.Common.BrowserSession.AuthenticatedBrowserLauncher>();
 		IDeserializer deserializer = new DeserializerBuilder()
@@ -620,6 +604,7 @@ public class BindingsModule {
 		services.AddTransient<SchemaUpdateTool>();
 		services.AddTransient<GetSchemaTool>();
 		services.AddTransient<GetProcessSignatureTool>();
+		services.AddTransient<RunProcessTool>();
 		services.AddTransient<ListPrintablesTool>();
 		services.AddTransient<ClientUnitSchemaCreateTool>();
 		services.AddTransient<ClientUnitSchemaUpdateTool>();
@@ -786,6 +771,8 @@ public class BindingsModule {
 		services.AddTransient<IDataForgeReadClient, DataForgeReadClient>();
 		services.AddTransient<IDataForgeMaintenanceClient, DataForgeMaintenanceClient>();
 		services.AddTransient<IRuntimeEntitySchemaReader, RuntimeEntitySchemaReader>();
+		services.AddTransient<IODataBuildGate, ODataBuildGate>();
+		services.AddTransient<IEntitySchemaPublisher, EntitySchemaPublisher>();
 		services.AddTransient<IDataForgeContextService, DataForgeContextService>();
 		services.AddTransient<ODataReadTool>();
 		services.AddTransient<ODataCreateTool>();
@@ -902,7 +889,11 @@ public class BindingsModule {
 		services.AddTransient<DeleteThemeCommand>();
 		services.AddTransient<IUserThemeApplier, UserThemeApplier>();
 		services.AddTransient<SetUserThemeCommand>();
-		services.AddTransient<ISysImageUploader, SysImageUploader>();
+		services.AddTransient<ISysImageUploader>(sp => new SysImageUploader(
+			sp.GetRequiredService<EnvironmentSettings>(),
+			sp.GetRequiredService<IApplicationClientFactory>(),
+			sp.GetRequiredService<IServiceUrlBuilder>(),
+			sp.GetRequiredService<Clio.Common.IFileSystem>()));
 		services.AddTransient<UploadImageCommand>();
 		services.AddTransient<SetBackgroundImageCommand>();
 		services.AddTransient<SetLogoCommand>();
@@ -1041,6 +1032,7 @@ public class BindingsModule {
 		services.AddTransient<GenerateProcessModelCommand>();
 		services.AddTransient<DescribeProcessCommand>();
 		services.AddTransient<GetProcessSignatureCommand>();
+		services.AddTransient<RunProcessCommand>();
 		services.AddTransient<ListPrintablesCommand>();
 		services.AddTransient<AddItemCommand>();
 		services.AddTransient<IZipFile, ZipFileWrapper>();
@@ -1099,8 +1091,12 @@ public class BindingsModule {
 		services.AddTransient<LocalHelpViewer>();
 		services.AddTransient<WikiHelpViewer>();
 		
-		services.AddTransient<Func<EnvironmentSettings, ISysSettingsManager>>(_ =>
-			envSettings => new SysSettingsManager(BuildRemoteDataProvider(envSettings)));
+		// The per-environment manager gets the SAME dependency set as the DI-resolved one. A provider-only
+		// manager would silently skip the authenticated DataService probe, so every command reached through
+		// this factory would keep reporting a rejected read as an empty success (the defect issue #1222 fixes).
+		// The client stays lazy, so building the factory result costs no HTTP call on its own.
+		services.AddTransient<Func<EnvironmentSettings, ISysSettingsManager>>(sp =>
+			envSettings => BuildEnvironmentScopedSysSettingsManager(sp, envSettings));
 
 		RegisterFluentValidators(services);
 		return settingsRepository;
@@ -1129,6 +1125,45 @@ public class BindingsModule {
 	// Builds an ATF RemoteDataProvider for the environment. Bearer-first: an AccessToken is
 	// consumed via the dedicated bearer ctor and must never reach the login/password path
 	// (multi-tenant safety, ENG-93208 B1). Login/password are passed as-is (no Supervisor default).
+	/// <summary>
+	/// Builds a <see cref="SysSettingsManager"/> for one environment with the same dependency set the
+	/// DI-resolved manager gets, so a read rejected by authentication is reported as a failure rather
+	/// than as an empty success.
+	/// </summary>
+	private static ISysSettingsManager BuildEnvironmentScopedSysSettingsManager(
+		IServiceProvider sp, EnvironmentSettings envSettings) {
+		Lazy<CreatioClient> lazyCreatioClient = new(() => BuildCreatioClient(envSettings));
+		// Same token rule as RegisterActiveEnvironmentServices: with an access token OR an OAuth client
+		// the adapter must never fall back to CreatioClient.Login() when it receives a login page -
+		// that crosses the bearer credential boundary (multi-tenant safety, ENG-93208 B1), and an OAuth
+		// profile has no username/password to log in with at all.
+		IApplicationClient applicationClient = UsesTokenAuthentication(envSettings)
+			? new CreatioClientAdapter(lazyCreatioClient, sp.GetRequiredService<IReauthExecutor>())
+			: new CreatioClientAdapter(lazyCreatioClient);
+		return new SysSettingsManager(
+			applicationClient,
+			new ServiceUrlBuilder(envSettings),
+			BuildRemoteDataProvider(envSettings),
+			sp.GetRequiredService<IWorkingDirectoriesProvider>(),
+			sp.GetRequiredService<Clio.Common.IFileSystem>(),
+			sp.GetRequiredService<IFileSystem>(),
+			sp.GetRequiredService<ILogger>());
+	}
+
+	/// <summary>
+	/// True when the environment authenticates with a token rather than with a login and password: an
+	/// <c>AccessToken</c>, or an OAuth client-credentials pair.
+	/// </summary>
+	/// <remarks>
+	/// Neither shape carries a username/password, so neither may reach the adapter's forms-login
+	/// reauthentication path: an OAuth client that receives a login page would otherwise attempt
+	/// <c>CreatioClient.Login()</c> with no credentials to log in with and turn a valid environment into
+	/// an <c>UnauthorizedAccessException</c>. The bearer rule (multi-tenant safety, ENG-93208 B1) applies
+	/// to both bearer shapes for the same reason.
+	/// </remarks>
+	private static bool UsesTokenAuthentication(EnvironmentSettings settings) =>
+		!string.IsNullOrEmpty(settings.AccessToken) || !string.IsNullOrEmpty(settings.ClientId);
+
 	private static RemoteDataProvider BuildRemoteDataProvider(EnvironmentSettings settings) {
 		if (!string.IsNullOrEmpty(settings.AccessToken)) {
 			return new RemoteDataProvider(settings.Uri, settings.AccessToken, settings.IsNetCore);
@@ -1161,16 +1196,26 @@ public class BindingsModule {
 		services.AddTransient<IDataProvider>(_ => new LazyDataProvider(() => BuildRemoteDataProvider(activeSettings)));
 		// Bearer-first; AccessToken must never reach the "Supervisor" fallback below
 		// (multi-tenant safety, ENG-93208 B1).
-		Lazy<CreatioClient> lazyCreatioClient = new(() => BuildCreatioClient(activeSettings));
-		services.AddSingleton<CreatioClient>(_ => lazyCreatioClient.Value);
-		services.AddSingleton<IApplicationClient>(sp =>
+		// Keep the directly resolvable compatibility service separate from the adapter's transport.
+		// Microsoft DI owns/disposes factory-returned IDisposable services, so sharing that instance
+		// would bypass the adapter's SignalR listener guard during provider teardown. Both remain lazy,
+		// which is required because constructing an OAuth client fetches its token over the network.
+		Lazy<CreatioClient> compatibilityClient = new(() => BuildCreatioClient(activeSettings));
+		Lazy<CreatioClient> adapterClient = new(() => BuildCreatioClient(activeSettings));
+		services.AddSingleton<CreatioClient>(_ => compatibilityClient.Value);
+		services.AddSingleton<IApplicationClient>(sp => {
 			// Bearer path must never re-login: wire NoReauthExecutor (the DI'd IReauthExecutor)
 			// so an ephemeral bearer client cannot fall back to a login/password re-auth
 			// (multi-tenant safety, ENG-93208 B1). Non-bearer keeps the adapter's default
-			// internal closure-based ReauthExecutor byte-for-byte.
-			!string.IsNullOrEmpty(activeSettings.AccessToken)
-				? new CreatioClientAdapter(lazyCreatioClient, sp.GetRequiredService<IReauthExecutor>())
-				: new CreatioClientAdapter(lazyCreatioClient));
+			// internal closure-based ReauthExecutor byte-for-byte. The adapter is the sole
+			// lifetime owner; registering the raw disposable client would bypass its listener
+			// teardown guard when the child provider is disposed.
+			// An OAuth client (ClientId) is a token shape too and has no username/password, so it takes
+			// the same no-login executor; only a login/password profile keeps the login-capable one.
+			return UsesTokenAuthentication(activeSettings)
+				? new CreatioClientAdapter(adapterClient, sp.GetRequiredService<IReauthExecutor>())
+				: new CreatioClientAdapter(adapterClient, ownsClient: true);
+		});
 		services.AddTransient<SysSettingsManager>();
 	}
 
@@ -1309,6 +1354,16 @@ public class BindingsModule {
 					// LoginDiagnostics holds per-adapter state (client correlation token, attempt
 					// counter); it is created by CreatioClientAdapter, not resolved from DI.
 					|| implementedInterface == typeof(ILoginDiagnostics)
+					// Application-client implementations have ownership-sensitive constructors and
+					// are registered explicitly for the active environment. Auto-registration would
+					// either create an unbound adapter or introduce a circular ownership lease.
+					|| implementedInterface == typeof(IApplicationClient)
+					|| implementedInterface == typeof(ICreatioApplicationClient)
+					|| implementedInterface == typeof(IOwnedApplicationClient)
+					// These services retain obsolete public constructors for binary compatibility;
+					// their modern constructors are selected by explicit factory registrations.
+					|| implementedInterface == typeof(Clio.Common.BrowserSession.IBrowserSessionService)
+					|| implementedInterface == typeof(ISysImageUploader)
 					// CliogateHttpReadinessProbe takes runtime-only ctor args (an HttpClient, the
 					// attempt budget, and inter-attempt delays); it is constructed by the e2e
 					// readiness wait, not resolved from DI.

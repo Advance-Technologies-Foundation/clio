@@ -173,7 +173,7 @@ public sealed class ApplicationInfoService(
 
 	private ApplicationInfoResult GetApplicationInfoCore(EnvironmentSettings environmentSettings, string? id, string? code)
 	{
-		IApplicationClient client = applicationClientFactory.CreateEnvironmentClient(environmentSettings);
+		using IOwnedApplicationClient client = applicationClientFactory.CreateOwnedEnvironmentClient(environmentSettings);
 		IServiceUrlBuilder serviceUrlBuilder = serviceUrlBuilderFactory.Create(environmentSettings);
 
 		InstalledApplicationDto application = ResolveApplication(client, serviceUrlBuilder, id, code);
@@ -241,7 +241,7 @@ public sealed class ApplicationInfoService(
 
 	private InstalledAppSummary FindApplicationIdCore(EnvironmentSettings environmentSettings, string code)
 	{
-		IApplicationClient client = applicationClientFactory.CreateEnvironmentClient(environmentSettings);
+		using IOwnedApplicationClient client = applicationClientFactory.CreateOwnedEnvironmentClient(environmentSettings);
 		IServiceUrlBuilder serviceUrlBuilder = serviceUrlBuilderFactory.Create(environmentSettings);
 		InstalledApplicationDto application = ResolveApplication(client, serviceUrlBuilder, null, code);
 		return new InstalledAppSummary(
@@ -581,7 +581,7 @@ public sealed class ApplicationInfoService(
 		try
 		{
 			string responseJson = client.ExecutePostRequest(
-				serviceUrlBuilder.Build("ServiceModel/EntitySchemaDesignerService.svc/GetSchemaDesignItem"),
+				serviceUrlBuilder.Build(ServiceUrlBuilder.KnownRoute.GetEntitySchemaDesignItem),
 				JsonSerializer.Serialize(new
 				{
 					name = entityName,

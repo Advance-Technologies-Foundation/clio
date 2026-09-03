@@ -1,4 +1,4 @@
-namespace Clio.Command {
+﻿namespace Clio.Command {
 	using System;
 	using System.Collections.Generic;
 	using System.IO;
@@ -39,6 +39,15 @@ namespace Clio.Command {
 		public bool DryRun { get; set; }
 
 		/// <summary>
+		/// Gets or sets a value indicating whether the MCP page-body validation chain should run.
+		/// </summary>
+		/// <remarks>
+		/// The MCP adapter owns this escape hatch; the CLI command does not expose it as an option.
+		/// JavaScript syntax and AST loadability checks remain mandatory when validation is disabled.
+		/// </remarks>
+		public bool Validate { get; set; } = true;
+
+		/// <summary>
 		/// Gets or sets the explicit resource captions used for <c>#ResourceString(key)#</c> macros.
 		/// </summary>
 		[Option("resources", Required = false, HelpText = "JSON object of resource key-value pairs for #ResourceString(key)# macros")]
@@ -52,9 +61,10 @@ namespace Clio.Command {
 
 		/// <summary>
 		/// Gets or sets the write mode. <c>replace</c> (default) saves the provided body verbatim.
-		/// <c>append</c> merges the provided body fragment with the current schema body on the server.
+		/// <c>append</c> merges the provided body fragment with the current schema body on the server,
+		/// including converters and validators by type key with incoming entries winning.
 		/// </summary>
-		[Option("mode", Required = false, HelpText = "Write mode: 'replace' (default) or 'append' (merge with existing body)")]
+		[Option("mode", Required = false, HelpText = "Write mode: 'replace' (default) or 'append' (merge diffs, handlers, converters, and validators with the existing body)")]
 		public string? Mode { get; set; }
 
 		/// <summary>
@@ -121,6 +131,7 @@ namespace Clio.Command {
 		private const string LocalizableStringsKey = "localizableStrings";
 		private const string ChecksumColumnName = "Checksum";
 		private const string ModifiedOnColumnName = "ModifiedOn";
+		private const string AppendMode = "append";
 
 		private readonly IApplicationClient _applicationClient;
 		private readonly IServiceUrlBuilder _serviceUrlBuilder;
@@ -181,27 +192,47 @@ namespace Clio.Command {
 				if (!TryCheckForExternalModification(options, context, out response)) return false;
 				PageUpdateResponse validationError = ValidateInput(options, context.SchemaType, explicitResources);
 				if (validationError != null) { response = validationError; return false; }
-				if (options.DryRun) {
-					response = CreateSuccessResponse(options, dryRun: true, registeredKeys: null);
-					response.Warnings = BuildDryRunWidgetCaptionWarnings(options.Body, context.SchemaType, explicitResources);
-					return true;
-				}
-				if (!TryLoadSchemaForSave(options.SchemaName, context, out JObject schemaToSave, out response)) return false;
-				if (!TryResolveBodyToWrite(schemaToSave, options, out string bodyToWrite, out response)) return false;
-				IReadOnlyList<string> downgradeWarnings = PageInsertDowngradeDetector.Detect(schemaToSave["body"]?.ToString(), bodyToWrite);
-				List<string> registeredKeys = UpdateSchemaBody(schemaToSave, bodyToWrite, context.SchemaType, explicitResources, parsedOptionalProperties);
-				PageUpdateResponse captionError = ValidateInsertedWidgetCaptionsResolve(schemaToSave, bodyToWrite, context.SchemaType);
-				if (captionError != null) { response = captionError; return false; }
-				if (!TrySaveSchema(schemaToSave, out response)) return false;
-				response = CreateSuccessResponse(options, dryRun: false, registeredKeys);
-				response.Warnings = downgradeWarnings is { Count: > 0 } ? downgradeWarnings : null;
-				PopulatePostSaveChecksum(options, context, response);
-				AppendDesignerPresenceWarning(options, response);
-				return true;
+				return options.DryRun
+					? TryCompleteDryRun(options, context, explicitResources, out response)
+					: TrySaveValidatedPage(options, context, explicitResources, parsedOptionalProperties, out response);
 			} catch (Exception ex) {
 				response = new PageUpdateResponse { Success = false, Error = ex.Message };
 				return false;
 			}
+		}
+
+		private bool TryCompleteDryRun(
+			PageUpdateOptions options,
+			EditableSchemaContext context,
+			Dictionary<string, string> explicitResources,
+			out PageUpdateResponse response) {
+			if (string.Equals(options.Mode, AppendMode, StringComparison.OrdinalIgnoreCase)) {
+				if (!TryLoadSchemaForSave(options.SchemaName, context, out JObject currentSchema, out response)) return false;
+				if (!TryResolveBodyToWrite(currentSchema, options, out _, out response)) return false;
+			}
+			response = CreateSuccessResponse(options, dryRun: true, registeredKeys: null);
+			response.Warnings = BuildDryRunWidgetCaptionWarnings(options.Body, context.SchemaType, explicitResources);
+			return true;
+		}
+
+		private bool TrySaveValidatedPage(
+			PageUpdateOptions options,
+			EditableSchemaContext context,
+			Dictionary<string, string> explicitResources,
+			JArray parsedOptionalProperties,
+			out PageUpdateResponse response) {
+			if (!TryLoadSchemaForSave(options.SchemaName, context, out JObject schemaToSave, out response)) return false;
+			if (!TryResolveBodyToWrite(schemaToSave, options, out string bodyToWrite, out response)) return false;
+			IReadOnlyList<string> downgradeWarnings = PageInsertDowngradeDetector.Detect(schemaToSave["body"]?.ToString(), bodyToWrite);
+			List<string> registeredKeys = UpdateSchemaBody(schemaToSave, bodyToWrite, context.SchemaType, explicitResources, parsedOptionalProperties);
+			PageUpdateResponse captionError = ValidateInsertedWidgetCaptionsResolve(options, schemaToSave, bodyToWrite, context.SchemaType);
+			if (captionError != null) { response = captionError; return false; }
+			if (!TrySaveSchema(schemaToSave, out response)) return false;
+			response = CreateSuccessResponse(options, dryRun: false, registeredKeys);
+			response.Warnings = downgradeWarnings is { Count: > 0 } ? downgradeWarnings : null;
+			PopulatePostSaveChecksum(options, context, response);
+			AppendDesignerPresenceWarning(options, response);
+			return true;
 		}
 
 		/// <summary>
@@ -352,26 +383,42 @@ namespace Clio.Command {
 		private static bool TryResolveBodyToWrite(JObject schemaToSave, PageUpdateOptions options, out string bodyToWrite, out PageUpdateResponse response) {
 			bodyToWrite = options.Body;
 			response = null;
-			if (!string.Equals(options.Mode, "append", StringComparison.OrdinalIgnoreCase)) return true;
-			string currentBody = schemaToSave["body"]?.ToString();
-			if (string.IsNullOrWhiteSpace(currentBody)) return true;
-			try {
-				bodyToWrite = PageBodyMerger.Merge(currentBody, options.Body);
-				return true;
-			} catch (Exception ex) {
-				// A full-config rejection (identified by its dedicated exception type, not by re-parsing the
-				// message) is already a complete, self-contained sentence — it names the offending body
-				// (incoming vs the server's) and points at replace mode — so it needs neither the "Append merge
-				// failed:" prefix (which double-states the verb) nor the generic marker-pairs hint (a full-config
-				// body HAS valid markers, it is just the wrong form). Keep both only for genuine marker-shape
-				// merge failures, and phrase the hint role-agnostically so it never blames the incoming body for
-				// a server-side blocker (ENG-94422).
-				string error = ex is PageBodyMerger.FullConfigAppendNotSupportedException
-					? $"{ex.Message} [hint: see docs://mcp/guides/page-modification for the append diff-form contract.]"
-					: $"Append merge failed: {ex.Message} [hint: the body must contain valid marker pairs with new viewConfigDiff/handlers operations. See docs://mcp/guides/page-modification.]";
-				response = new PageUpdateResponse { Success = false, Error = error };
-				return false;
+			if (string.Equals(options.Mode, AppendMode, StringComparison.OrdinalIgnoreCase)) {
+				string currentBody = schemaToSave["body"]?.ToString();
+				if (!string.IsNullOrWhiteSpace(currentBody)) {
+					try {
+						bodyToWrite = PageBodyMerger.Merge(currentBody, options.Body);
+					} catch (Exception ex) {
+						// A full-config rejection (identified by its dedicated exception type, not by re-parsing the
+						// message) is already a complete, self-contained sentence — it names the offending body
+						// (incoming vs the server's) and points at replace mode — so it needs neither the "Append merge
+						// failed:" prefix (which double-states the verb) nor the generic marker-pairs hint (a full-config
+						// body HAS valid markers, it is just the wrong form). Keep both only for genuine marker-shape
+						// merge failures, and phrase the hint role-agnostically so it never blames the incoming body for
+						// a server-side blocker (ENG-94422).
+						string error = ex is PageBodyMerger.FullConfigAppendNotSupportedException
+							? $"{ex.Message} [hint: see docs://mcp/guides/page-modification for the append diff-form contract.]"
+							: $"Append merge failed: {ex.Message} [hint: the body must contain valid marker pairs with new viewConfigDiff/handlers operations. See docs://mcp/guides/page-modification.]";
+						response = new PageUpdateResponse { Success = false, Error = error };
+						return false;
+					}
+				}
 			}
+			if (!string.Equals(options.Mode, AppendMode, StringComparison.OrdinalIgnoreCase) ||
+				PageSchemaTypeExtensions.FromBody(bodyToWrite) == PageSchemaType.Mobile) {
+				return true;
+			}
+			if (!options.Validate) {
+				return true;
+			}
+			SchemaValidationResult validatorReferences =
+				SchemaValidationService.ValidateCustomValidatorReferences(bodyToWrite);
+			if (validatorReferences.IsValid) {
+				return true;
+			}
+			response = ContentValidationFailure(
+				$"Body contains unresolved custom validator references: {string.Join("; ", validatorReferences.Errors)}");
+			return false;
 		}
 
 		/// <summary>
@@ -565,7 +612,12 @@ namespace Clio.Command {
 		}
 
 		private static PageUpdateResponse ValidateInsertedWidgetCaptionsResolve(
-				JObject schemaToSave, string body, PageSchemaType schemaType) {
+				PageUpdateOptions options, JObject schemaToSave, string body, PageSchemaType schemaType) {
+			// validate=false is the explicit escape hatch for a pre-existing page defect: skip the
+			// client-side content checks here rather than at the call site, so TryUpdatePage stays flat.
+			if (!options.Validate) {
+				return null;
+			}
 			if (schemaType == PageSchemaType.Mobile) {
 				return null;
 			}
@@ -789,6 +841,28 @@ namespace Clio.Command {
 
 		/// <summary>The canonical error for a malformed <c>resources</c> payload.</summary>
 		internal const string InvalidResourcesError = "resources must be a valid JSON object string";
+		internal const string MobileValidationFailedPrefix = "Mobile page validation failed: ";
+
+		/// <summary>
+		/// Text appended to every CONTENT-validation failure so the caller learns about the escape hatch at
+		/// the point of failure rather than only from the tool description or the curated contract. Only the
+		/// skippable half of the chain carries it - a structural-floor failure is not bypassable and must not
+		/// advertise a flag that will not help.
+		/// </summary>
+		internal const string ValidationEscapeHatchHint =
+			" If this defect pre-exists on the page and is unrelated to your edit, re-run with validate=false.";
+
+		/// <summary>
+		/// Builds a failure for a rule in the SKIPPABLE half of the chain. The hint itself is NOT appended
+		/// here: <see cref="PageUpdateCommand"/> is the CLI-reachable command and <c>Validate</c> carries no
+		/// <c>[Option]</c>, so a CLI user would be told to re-run with a flag their parser does not accept.
+		/// The response is only MARKED, and the MCP adapter appends the hint for the callers that can act on it.
+		/// </summary>
+		private static PageUpdateResponse ContentValidationFailure(string error) => new() {
+			Success = false,
+			Error = error,
+			ContentValidationFailure = true
+		};
 
 		/// <summary>
 		/// Validates the <c>resources</c> and <c>optional-properties</c> argument payloads WITHOUT
@@ -812,6 +886,17 @@ namespace Clio.Command {
 			return null;
 		}
 
+		/// <summary>
+		/// Runs the input validation chain. The chain has two halves and <c>validate=false</c> only skips
+		/// the second one:
+		/// <list type="bullet">
+		/// <item>the STRUCTURAL floor - marker integrity (replace mode) and JavaScript syntax on web,
+		/// JSON-parses-to-an-object on mobile - always runs, because a body that fails it produces a page
+		/// the tool itself can no longer read back;</item>
+		/// <item>the CONTENT rules - handler structure, field bindings, insert self-consistency, validator
+		/// placement, mobile AMD/shape rules - run only when <see cref="Validate"/> is true.</item>
+		/// </list>
+		/// </summary>
 		private static PageUpdateResponse ValidateInput(
 			PageUpdateOptions options,
 			PageSchemaType schemaType,
@@ -822,12 +907,23 @@ namespace Clio.Command {
 		}
 
 		private static PageUpdateResponse ValidateMobileInput(PageUpdateOptions options) {
-			SchemaValidationResult mobileResult = SchemaValidationService.ValidateMobileBody(options.Body);
-			if (!mobileResult.IsValid) {
+			// Structural floor - runs even behind validate=false. It is the mobile counterpart of the web
+			// syntax gate: a body that is not a JSON object is not a page, and nothing downstream re-checks
+			// it (UpdateSchemaBody's only parse, CollectMobileViewModelPaths, is fail-soft).
+			SchemaValidationResult structureResult = SchemaValidationService.ValidateMobileBodyStructure(options.Body);
+			if (!structureResult.IsValid) {
 				return new PageUpdateResponse {
 					Success = false,
-					Error = "Mobile page validation failed: " + string.Join("; ", mobileResult.Errors)
+					Error = MobileValidationFailedPrefix + string.Join("; ", structureResult.Errors)
 				};
+			}
+			if (!options.Validate) {
+				return null;
+			}
+			SchemaValidationResult mobileResult = SchemaValidationService.ValidateMobileBody(options.Body);
+			if (!mobileResult.IsValid) {
+				return ContentValidationFailure(
+					MobileValidationFailedPrefix + string.Join("; ", mobileResult.Errors));
 			}
 			return null;
 		}
@@ -835,7 +931,11 @@ namespace Clio.Command {
 		private static PageUpdateResponse ValidateWebInput(
 			PageUpdateOptions options,
 			Dictionary<string, string> explicitResources) {
-			bool isAppendMode = string.Equals(options.Mode, "append", StringComparison.OrdinalIgnoreCase);
+			// Structural floor - marker integrity and JS syntax run even behind validate=false. A markerless
+			// body is valid JavaScript, so it would save, after which PageSchemaSectionReader can no longer
+			// extract sections and append-merge is dead on that page. ResolveSyntaxFailure already treats
+			// markers as the "is this still a recognizable page" test for the same reason.
+			bool isAppendMode = string.Equals(options.Mode, AppendMode, StringComparison.OrdinalIgnoreCase);
 			if (!isAppendMode) {
 				SchemaValidationResult integrityResult = SchemaValidationService.ValidateMarkerIntegrity(options.Body);
 				if (!integrityResult.IsValid) {
@@ -852,33 +952,25 @@ namespace Clio.Command {
 					Error = $"Body contains invalid JavaScript syntax: {string.Join("; ", syntaxResult.Errors)}"
 				};
 			}
+			// Content rules - the half the escape hatch skips.
+			if (!options.Validate) {
+				return null;
+			}
 			SchemaValidationResult handlerResult = SchemaValidationService.ValidateHandlerStructure(options.Body);
 			if (!handlerResult.IsValid) {
-				return new PageUpdateResponse {
-					Success = false,
-					Error = $"Body contains invalid handlers: {string.Join("; ", handlerResult.Errors)}"
-				};
+				return ContentValidationFailure($"Body contains invalid handlers: {string.Join("; ", handlerResult.Errors)}");
 			}
 			SchemaValidationResult semanticResult = SchemaValidationService.ValidateStandardFieldBindings(options.Body, explicitResources);
 			if (!semanticResult.IsValid) {
-				return new PageUpdateResponse {
-					Success = false,
-					Error = $"Body contains invalid form field bindings: {string.Join("; ", semanticResult.Errors)}"
-				};
+				return ContentValidationFailure($"Body contains invalid form field bindings: {string.Join("; ", semanticResult.Errors)}");
 			}
 			SchemaValidationResult insertSelfConsistencyResult = SchemaValidationService.ValidateInsertedFieldSelfConsistency(options.Body, explicitResources);
 			if (!insertSelfConsistencyResult.IsValid) {
-				return new PageUpdateResponse {
-					Success = false,
-					Error = $"Body contains inserted field controls without required bindings or resources: {string.Join("; ", insertSelfConsistencyResult.Errors)}"
-				};
+				return ContentValidationFailure($"Body contains inserted field controls without required bindings or resources: {string.Join("; ", insertSelfConsistencyResult.Errors)}");
 			}
 			SchemaValidationResult validatorPlacementResult = SchemaValidationService.ValidateValidatorBindingPlacement(options.Body);
 			if (!validatorPlacementResult.IsValid) {
-				return new PageUpdateResponse {
-					Success = false,
-					Error = $"Body contains invalid validator bindings: {string.Join("; ", validatorPlacementResult.Errors)}"
-				};
+				return ContentValidationFailure($"Body contains invalid validator bindings: {string.Join("; ", validatorPlacementResult.Errors)}");
 			}
 			return null;
 		}

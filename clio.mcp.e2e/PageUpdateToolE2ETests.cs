@@ -1,4 +1,4 @@
-using System.Text.Json;
+﻿using System.Text.Json;
 using System.Text.RegularExpressions;
 using Allure.NUnit;
 using Allure.NUnit.Attributes;
@@ -54,10 +54,10 @@ public sealed class PageUpdateToolE2ETests : McpContractFixtureBase {
 	}
 
 	[Test]
-	[Description("The update-page get-tool-contract description carries the ENG-92541 custom-CSS policy (native-first + upgrade-risk + explicit confirmation) and routes to page-modification-components, over the real MCP contract surface (AGENTS.md mandates e2e for a changed tool [Description], not only unit-level reflection).")]
+	[Description("The update-page get-tool-contract response carries the custom-CSS policy and the append-mode validator merge contract over the real MCP surface.")]
 	[AllureTag(ToolName)]
 	[AllureName("update-page contract description carries the custom-CSS policy")]
-	[AllureDescription("Fetches the update-page contract via get-tool-contract over the real clio MCP server and asserts the served description carries the native-first custom-CSS policy and routes to page-modification-components.")]
+	[AllureDescription("Fetches the update-page contract via get-tool-contract over the real clio MCP server and asserts the served description carries both the native-first custom-CSS policy and append-mode SCHEMA_VALIDATORS merge behavior.")]
 	public async Task PageUpdateTool_Contract_Should_Carry_CustomCssPolicy() {
 		// Arrange
 		await using var arrangeContext = Arrange(TimeSpan.FromMinutes(3));
@@ -84,6 +84,17 @@ public sealed class PageUpdateToolE2ETests : McpContractFixtureBase {
 			because: "AC1/AC8: extraStyles must be named as custom CSS on the served contract description");
 		contract.Description.Should().Contain("page-modification-components",
 			because: "RC-3: the served contract must route the CSS policy to the sub-guide that carries the STOP block");
+		contract.Description.Should().Contain("validate=false",
+			because: "the served update-page contract must expose the explicit escape hatch for pre-existing page defects");
+		contract.Description.Should().Contain("JavaScript syntax",
+			because: "the served contract must state that disabling content validation does not bypass syntax validation");
+		contract.InputSchema.Properties.Should().Contain(field =>
+			field.Name == "validate" && field.Description.Contains("pre-existing"),
+			because: "the served input schema must expose the guarded validation escape hatch, not only the prose tool description");
+		contract.InputSchema.Properties.Should().Contain(field =>
+			field.Name == "mode" && field.Description.Contains("SCHEMA_VALIDATORS") &&
+			field.Description.Contains("incoming wins"),
+			because: "the served append contract must tell MCP callers that custom validator declarations merge by type key");
 	}
 
 	[Test]
@@ -337,6 +348,101 @@ public sealed class PageUpdateToolE2ETests : McpContractFixtureBase {
 			because: "update-page must reject a run-process button without processName before any remote call");
 		response.Error.Should().Contain("processName",
 			because: "the failure must point at the missing processName");
+		response.Error.Should().Contain("RunBpButton",
+			because: "the failure should name the offending button");
+	}
+
+	[Test]
+	[Description("Allows an explicitly disabled client-side validation chain to pass a pre-existing run-process defect to the update-page command while retaining the syntax gate.")]
+	[AllureTag(ToolName)]
+	[AllureName("update-page allows explicit validation bypass for pre-existing defects")]
+	[AllureDescription("Starts the real clio MCP server, invokes update-page with a syntactically valid body whose pre-existing run-process button omits processName, and sets validate=false. An invalid environment makes the command fail after pre-execution; the response must contain the environment failure rather than the skipped processName validation error.")]
+	public async Task PageUpdateTool_Should_Bypass_Content_Validation_When_Explicitly_Disabled() {
+		// Arrange
+		string invalidEnvironmentName = $"missing-validation-bypass-env-{Guid.NewGuid():N}";
+		// The syntax gate stays mandatory when validate=false, so this body must be VALID
+		// JavaScript: every SCHEMA_* marker block needs its property name. The defect under
+		// test is semantic - a run-process button without processName - not a parse error.
+		string runProcessBody = "define(\"UsrValidationBypass_FormPage\", /**SCHEMA_DEPS*/[]/**SCHEMA_DEPS*/, "
+			+ "function/**SCHEMA_ARGS*/()/**SCHEMA_ARGS*/ { return { "
+			+ "viewConfigDiff: /**SCHEMA_VIEW_CONFIG_DIFF*/[{\"operation\":\"insert\",\"name\":\"RunBpButton\",\"values\":{\"type\":\"crt.Button\",\"clicked\":{\"request\":\"crt.RunBusinessProcessRequest\",\"params\":{\"processRunType\":\"RegardlessOfThePage\"}}}}]/**SCHEMA_VIEW_CONFIG_DIFF*/, "
+			+ "viewModelConfigDiff: /**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/{}/**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/, "
+			+ "modelConfigDiff: /**SCHEMA_MODEL_CONFIG_DIFF*/{}/**SCHEMA_MODEL_CONFIG_DIFF*/, "
+			+ "handlers: /**SCHEMA_HANDLERS*/[]/**SCHEMA_HANDLERS*/, "
+			+ "converters: /**SCHEMA_CONVERTERS*/{}/**SCHEMA_CONVERTERS*/, "
+			+ "validators: /**SCHEMA_VALIDATORS*/{}/**SCHEMA_VALIDATORS*/ }; });";
+		await using var arrangeContext = Arrange(TimeSpan.FromMinutes(3));
+
+		// Act
+		CallToolResult callResult = await arrangeContext.Session.CallToolAsync(
+			ToolName,
+			new Dictionary<string, object?> {
+				["args"] = new Dictionary<string, object?> {
+					["schema-name"] = "UsrValidationBypass_FormPage",
+					["body"] = runProcessBody,
+					["dry-run"] = true,
+					["validate"] = false,
+					["environment-name"] = invalidEnvironmentName
+				}
+			},
+			arrangeContext.CancellationTokenSource.Token);
+		PageUpdateResponse response = EntitySchemaStructuredResultParser.Extract<PageUpdateResponse>(callResult);
+
+		// Assert
+		callResult.IsError.Should().NotBeTrue(
+			because: "the validation bypass result should remain a structured update-page response");
+		response.Success.Should().BeFalse(
+			because: "the deliberately invalid environment must fail after the body passes pre-execution validation");
+		response.Error.Should().NotContain("processName",
+			because: "validate=false must suppress the pre-existing run-process structural error");
+		response.Error.Should().MatchRegex(
+			$"(?is)({Regex.Escape(invalidEnvironmentName)}|environment.*not.*found|not found)",
+			because: "the remaining failure must come from environment resolution, proving the body reached the command path");
+	}
+
+	[Test]
+	[Description("Rejects a ForTheSelectedPage run-process button that omits recordIdProcessParameterName through update-page before any remote calls (ENG-95822) — the record is never handed to the process, and update-page must catch it up front.")]
+	[AllureTag(ToolName)]
+	[AllureName("update-page rejects a ForTheSelectedPage run-process button without recordIdProcessParameterName")]
+	[AllureDescription("Starts the real clio MCP server, invokes update-page in dry-run mode with a crt.RunBusinessProcessRequest button that sets processName + processRunType=ForTheSelectedPage but omits recordIdProcessParameterName, and verifies a structured validation failure that names the button and the missing key.")]
+	public async Task PageUpdateTool_Should_Reject_ForTheSelectedPage_RunProcess_Button_Without_RecordIdProcessParameterName() {
+		// Arrange — the incident shape: processName + ForTheSelectedPage set, record binding omitted, so the
+		// process runs with NO record. processName is present, isolating the missing record-binding as the fault.
+		string invalidEnvironmentName = $"missing-runproc-env-{Guid.NewGuid():N}";
+		string runProcessBody = "define('TestPage', /**SCHEMA_DEPS*/[]/**SCHEMA_DEPS*/, function() { return { "
+			+ "/**SCHEMA_VIEW_CONFIG_DIFF*/[{\"operation\":\"insert\",\"name\":\"RunBpButton\",\"values\":{"
+			+ "\"type\":\"crt.Button\",\"clicked\":{\"request\":\"crt.RunBusinessProcessRequest\","
+			+ "\"params\":{\"processName\":\"UsrProcess_e629820\",\"processRunType\":\"ForTheSelectedPage\"}}},"
+			+ "\"parentName\":\"MainHeaderTop\","
+			+ "\"propertyName\":\"items\",\"index\":0}]/**SCHEMA_VIEW_CONFIG_DIFF*/, "
+			+ "/**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/{}/**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/, "
+			+ "/**SCHEMA_MODEL_CONFIG_DIFF*/{}/**SCHEMA_MODEL_CONFIG_DIFF*/, "
+			+ "/**SCHEMA_HANDLERS*/[]/**SCHEMA_HANDLERS*/, "
+			+ "/**SCHEMA_CONVERTERS*/{}/**SCHEMA_CONVERTERS*/, "
+			+ "/**SCHEMA_VALIDATORS*/{}/**SCHEMA_VALIDATORS*/ }; });";
+		await using var arrangeContext = Arrange(TimeSpan.FromMinutes(3));
+
+		// Act
+		CallToolResult callResult = await arrangeContext.Session.CallToolAsync(
+			ToolName,
+			new Dictionary<string, object?> {
+				["args"] = new Dictionary<string, object?> {
+					["schema-name"] = "UsrRunProcessValidation_FormPage",
+					["body"] = runProcessBody,
+					["dry-run"] = true,
+					["environment-name"] = invalidEnvironmentName
+				}
+			},
+			arrangeContext.CancellationTokenSource.Token);
+		PageUpdateResponse response = EntitySchemaStructuredResultParser.Extract<PageUpdateResponse>(callResult);
+
+		// Assert
+		callResult.IsError.Should().NotBeTrue(
+			because: "a ForTheSelectedPage button missing its record binding should surface as a structured validation failure");
+		response.Success.Should().BeFalse(
+			because: "update-page must reject a ForTheSelectedPage run-process button that hands no record to the process, before any remote call (ENG-95822)");
+		response.Error.Should().Contain("recordIdProcessParameterName",
+			because: "the failure must point at the missing record-binding key");
 		response.Error.Should().Contain("RunBpButton",
 			because: "the failure should name the offending button");
 	}
@@ -890,6 +996,72 @@ public sealed class PageUpdateToolE2ETests : McpContractFixtureBase {
 	}
 
 	[Test]
+	[Description("Issue 1249: append persists both a view-model custom-validator binding and its SCHEMA_VALIDATORS factory through the real MCP server and Creatio save path.")]
+	[AllureTag(ToolName)]
+	[AllureName("update-page append preserves custom validator declaration")]
+	[AllureDescription("Uses the real clio MCP server and a dedicated Creatio sandbox to append a custom validator binding plus its matching SCHEMA_VALIDATORS factory, then reads the page back and proves both survived the server save. The original page body is restored in cleanup.")]
+	public async Task PageUpdateTool_Should_Persist_CustomValidator_Through_Append() {
+		// Arrange
+		McpE2ESettings settings = TestConfiguration.Load();
+		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
+		if (!settings.AllowDestructiveMcpTests) {
+			Assert.Ignore("AllowDestructiveMcpTests is false — skipping destructive issue-1249 append regression test.");
+		}
+		string environmentName = await ResolveReachableEnvironmentAsync(settings);
+		await using var arrangeContext = Arrange(TimeSpan.FromMinutes(5));
+		const string savePage = "McpServer_FormPage";
+		const string validatorType = "usr.Issue1249Validator";
+		string outputDirectory = Directory.CreateTempSubdirectory("clio-e2e-validator-append-").FullName;
+		string? originalBody = null;
+		try {
+			PageGetResponse original = await GetPageAsync(arrangeContext, savePage, environmentName, outputDirectory);
+			original.Success.Should().BeTrue(
+				because: $"get-page must load the seeded page before the append regression. Error: {original.Error}");
+			originalBody = await File.ReadAllTextAsync(original.Files.BodyFile);
+			string appendBody = "define('Issue1249', /**SCHEMA_DEPS*/[]/**SCHEMA_DEPS*/, " +
+				"function(/**SCHEMA_ARGS*//**SCHEMA_ARGS*/) { return { " +
+				"viewConfigDiff: /**SCHEMA_VIEW_CONFIG_DIFF*/[]/**SCHEMA_VIEW_CONFIG_DIFF*/, " +
+				"viewModelConfigDiff: /**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/[{\"operation\":\"merge\",\"path\":[\"attributes\"],\"values\":{\"UsrIssue1249Probe\":{\"validators\":{\"Probe\":{\"type\":\"usr.Issue1249Validator\",\"params\":{\"message\":\"#ResourceString(DefaultHeaderCaption)#\"}}}}}}]/**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/, " +
+				"modelConfigDiff: /**SCHEMA_MODEL_CONFIG_DIFF*/[]/**SCHEMA_MODEL_CONFIG_DIFF*/, " +
+				"handlers: /**SCHEMA_HANDLERS*/[]/**SCHEMA_HANDLERS*/, " +
+				"converters: /**SCHEMA_CONVERTERS*/{}/**SCHEMA_CONVERTERS*/, " +
+				"validators: /**SCHEMA_VALIDATORS*/{\"usr.Issue1249Validator\":{\"validator\":function(config){return function(control){return control.value?null:{\"usr.Issue1249Validator\":{\"message\":config.message}};};},\"params\":[{\"name\":\"message\"}],\"async\":false}}/**SCHEMA_VALIDATORS*/ }; });";
+
+			// Act
+			PageUpdateResponse saveResponse = await UpdatePageAsync(
+				arrangeContext, savePage, appendBody, environmentName, outputDirectory, mode: "append");
+			PageGetResponse readBack = await GetPageAsync(arrangeContext, savePage, environmentName, outputDirectory);
+
+			// Assert
+			saveResponse.Success.Should().BeTrue(
+				because: $"append must save the self-contained custom validator change. Error: {saveResponse.Error}");
+			readBack.Success.Should().BeTrue(
+				because: $"get-page must read the saved page back from Creatio. Error: {readBack.Error}");
+			string readBackBody = await File.ReadAllTextAsync(readBack.Files.BodyFile);
+			Match validatorsSection = Regex.Match(
+				readBackBody,
+				@"/\*\*SCHEMA_VALIDATORS\*/(?<content>[\s\S]*?)/\*\*SCHEMA_VALIDATORS\*/",
+				RegexOptions.CultureInvariant);
+			readBackBody.Should().Contain("UsrIssue1249Probe",
+				because: "the view-model validator binding must survive the append and server save");
+			validatorsSection.Success.Should().BeTrue(
+				because: "the read-back body must contain a SCHEMA_VALIDATORS marker pair");
+			validatorsSection.Groups["content"].Value.Should().Contain($"\"{validatorType}\"",
+				because: "the matching validator type key must survive inside SCHEMA_VALIDATORS, not only in the binding");
+			validatorsSection.Groups["content"].Value.Should().Contain("function(config){return function(control)",
+				because: "the raw JavaScript validator factory must remain intact after keyed-object merging");
+		} finally {
+			if (!string.IsNullOrWhiteSpace(originalBody)) {
+				PageUpdateResponse restore = await UpdatePageAsync(
+					arrangeContext, savePage, originalBody, environmentName, outputDirectory, force: true);
+				restore.Success.Should().BeTrue(
+					because: $"the E2E test must restore the seeded page body. Error: {restore.Error}");
+			}
+			TryDeleteDirectory(outputDirectory);
+		}
+	}
+
+	[Test]
 	[Description("ENG-91317 ticket scenario: get-page captures a checksum baseline, an out-of-band save changes the schema, update-page detects the conflict (verifying SysSchema.Checksum is bumped on save — risk A-01), recovery via get-page + retry succeeds, and force=true overwrites deliberately.")]
 	[AllureTag(ToolName)]
 	[AllureName("update-page detects out-of-band schema modification via checksum baseline and recovers")]
@@ -1086,7 +1258,8 @@ public sealed class PageUpdateToolE2ETests : McpContractFixtureBase {
 		string body,
 		string environmentName,
 		string outputDirectory,
-		bool? force = null) {
+		bool? force = null,
+		string? mode = null) {
 		Dictionary<string, object?> args = new() {
 			["schema-name"] = schemaName,
 			["body"] = body,
@@ -1096,6 +1269,9 @@ public sealed class PageUpdateToolE2ETests : McpContractFixtureBase {
 		};
 		if (force == true) {
 			args["force"] = true;
+		}
+		if (!string.IsNullOrWhiteSpace(mode)) {
+			args["mode"] = mode;
 		}
 		CallToolResult result = await arrangeContext.Session.CallToolAsync(
 			ToolName,
