@@ -43,7 +43,8 @@ namespace Clio.Command;
 // block (1.2.0.1) set the precedent and are subsumed, as do 1.4.5.0, 1.4.6.0 and 1.4.8.0, which no released
 // clio ever bundled. The guard fixture asserts the shipped archive SATISFIES the literal — not that it
 // equals it: a rebundle that changes only documentation moves the bundle and must not move the floor, since
-// a floor tracks behaviour clio depends on rather than the version it happens to ship.
+// a floor tracks behaviour clio depends on rather than the version it happens to ship. The bundle is 1.4.10.0
+// against this 1.4.9.0 floor for exactly that reason — 1.4.10.0 corrected two contract doc comments.
 [RequiresPackage(BundledPackages.ProcessBuilderPackageName, "1.4.9.0",
 	Hint = BundledPackages.ProcessBuilderInstallHint)]
 public sealed class CreateBusinessProcessOptions : EnvironmentOptions {
