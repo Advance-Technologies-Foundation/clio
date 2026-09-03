@@ -43,16 +43,27 @@ internal static class ProcessLibResolver {
 		// schema with its own Name but the SAME Caption, so a caption matching several rows is usually ONE
 		// process rather than several. Narrow to the version the runtime executes before calling it ambiguous.
 		if (captionMatches.Count > 1) {
+			// The family key decides, not the active-flag count. Counting flags looks equivalent and is not:
+			// a set of one family's active version PLUS a row from a different process carries exactly one
+			// flagged row, and narrowing on the count alone would answer for the first process while silently
+			// dropping the second. That reachable set is not exotic — the other row is flagged false whenever it
+			// is a family root whose active member was renamed away from this caption, and null whenever its
+			// package does not resolve, which is why the column is nullable at all. VersionParentUId is
+			// COALESCE(parent.UId, own.UId) and never null (ADR choice 6), so a single distinct value across the
+			// candidates is what actually establishes "these rows are one process".
+			bool oneFamily = captionMatches
+				.Select(p => p.VersionParentUId)
+				.Distinct()
+				.Count() == 1;
 			IReadOnlyList<VwProcessLib> activeVersions = captionMatches
 				.Where(p => p.IsActiveVersion == true)
 				.ToList();
-			if (activeVersions.Count == 1) {
+			if (oneFamily && activeVersions.Count == 1) {
 				return activeVersions[0];
 			}
-			// Everything else is genuine ambiguity, reported over ALL matches so the caller can pick a code.
-			// Several active rows are several distinct processes. NONE active means the process library could
-			// not establish the flag — it is nullable for exactly that reason — and an unestablished flag is
-			// no licence to pick a row.
+			// Everything else is genuine ambiguity, reported over ALL matches so the caller can pick a code:
+			// candidates from more than one family are more than one process; several active rows are too; and
+			// NONE active means the process library could not establish the flag, which is no licence to pick.
 			string candidates = string.Join("; ",
 				captionMatches.Select(p => $"'{p.Caption}' (code: {p.Name})"));
 			return Error.Conflict("ResolveProcessByNameOrCaption",

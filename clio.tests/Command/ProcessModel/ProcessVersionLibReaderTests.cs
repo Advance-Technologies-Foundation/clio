@@ -203,6 +203,12 @@ public sealed class ProcessVersionLibReaderTests {
 			.Which.Version.Should().BeNull(because: "the family member carries the same unknown, not a zero");
 		facts.ActiveVersionName.Should().BeNull(
 			because: "no member is flagged active, so none may be presented as the one that runs");
+		facts.Warning.Should().NotBeNull(
+			because: "absent values without a warning is the one combination the contract forbids - it is exactly what a caller reads as 'unversioned'");
+		facts.Warning.Should().Contain("version number",
+			because: "the warning names WHICH fact could not be established, not merely that something could not");
+		facts.Warning.Should().Contain("active-version flag",
+			because: "both NULL columns are unestablished here, and reporting one hides the other");
 	}
 
 	[Test]
@@ -223,4 +229,26 @@ public sealed class ProcessVersionLibReaderTests {
 			because: "the warning names the value that could not be parsed");
 		facts.Version.Should().BeNull(because: "nothing was read, so nothing was established");
 	}
+	[Test]
+	[Description("A family with no member flagged active reports the values it did establish AND a warning naming the gap, instead of a silent absence.")]
+	public void Read_Should_WarnAboutTheMissingActiveMember_When_NoMemberIsFlagged() {
+		// Arrange - reachable whenever the view resolves the rows but flags none of them, which is not the
+		// same failure as a read that did not happen.
+		ProcessVersionLibReader sut = ReaderOver(
+			Row(RootUId, "InvoiceVisaProcess", version: 0, isActive: false, rootUId: RootUId),
+			Row(ChildUId, "InvoiceVisaProcessInvoice1", version: 1, isActive: false, rootUId: RootUId));
+
+		// Act
+		ProcessVersionFacts facts = sut.Read(RootUId.ToString());
+
+		// Assert
+		facts.Version.Should().Be(0,
+			because: "this schema's own version WAS established, and a partial answer keeps what it knows");
+		facts.ActiveVersionName.Should().BeNull(because: "no member was flagged, so none can be named");
+		facts.Warning.Should().Contain("flagged no active version",
+			because: "the prompt tells an agent to read isActiveVersion before narrating, so an unanswerable check has to say so");
+		facts.Versions.Should().HaveCount(2,
+			because: "the family was read successfully; only the active-version fact was missing from it");
+	}
+
 }

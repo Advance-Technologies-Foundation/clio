@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using Clio.Command.ProcessModel;
 using Clio.CreatioModel;
@@ -16,15 +17,31 @@ namespace Clio.Tests.Command;
 [Property("Module", "ProcessModel")]
 public sealed class ProcessLibResolverTests {
 
-	private static VwProcessLib Row(string name, string caption) =>
-		new() { Name = name, Caption = caption };
+	private static readonly Guid FamilyA = Guid.Parse("332eac25-1443-4e4e-a972-6c0e66cb9243");
+	private static readonly Guid FamilyB = Guid.Parse("7c1d4f6e-9b02-4a55-8d31-1f0a5e2c7b48");
 
 	/// <summary>
-	/// A caption candidate carrying the active-version flag. Left NULL by <see cref="Row"/> on purpose, so
-	/// the pre-existing ambiguity tests keep exercising the unestablished-flag path.
+	/// A candidate that is its own family, which is what an unversioned process is: VersionParentUId is
+	/// COALESCE(parent.UId, own.UId), so it can never be left unset without making distinct processes look
+	/// like one family to the resolver.
 	/// </summary>
-	private static VwProcessLib VersionRow(string name, string caption, int version, bool? isActiveVersion) =>
-		new() { Name = name, Caption = caption, Version = version, IsActiveVersion = isActiveVersion };
+	private static VwProcessLib Row(string name, string caption) =>
+		new() { Name = name, Caption = caption, VersionParentUId = Guid.NewGuid() };
+
+	/// <summary>
+	/// A caption candidate carrying the active-version flag and an EXPLICIT family key. The flag is left
+	/// NULL by <see cref="Row"/> on purpose, so the pre-existing ambiguity tests keep exercising the
+	/// unestablished-flag path.
+	/// </summary>
+	private static VwProcessLib VersionRow(string name, string caption, int version, bool? isActiveVersion,
+		Guid? family = null) =>
+		new() {
+			Name = name,
+			Caption = caption,
+			Version = version,
+			IsActiveVersion = isActiveVersion,
+			VersionParentUId = family ?? FamilyA
+		};
 
 	[Test]
 	[Description("Resolves the process by exact system Name (code) when a Name match is present.")]
@@ -146,8 +163,9 @@ public sealed class ProcessLibResolverTests {
 	public void Resolve_Should_Return_Conflict_When_SeveralActiveProcessesShareTheCaption() {
 		// Arrange
 		List<VwProcessLib> byCaption = [
-			VersionRow("UsrProcess_first", "Business process 1", 0, isActiveVersion: true),
-			VersionRow("UsrProcess_second", "Business process 1", 0, isActiveVersion: true)
+			VersionRow("UsrProcess_first", "Business process 1", 0, isActiveVersion: true, family: FamilyA),
+			VersionRow("UsrProcess_second", "Business process 1", 0, isActiveVersion: true,
+				family: FamilyB)
 		];
 
 		// Act
@@ -167,8 +185,9 @@ public sealed class ProcessLibResolverTests {
 	public void Resolve_Should_Return_Conflict_When_NoCandidateIsFlaggedActive() {
 		// Arrange — IsActiveVersion is nullable because the view returns NULL when the package does not resolve.
 		List<VwProcessLib> byCaption = [
-			VersionRow("UsrProcess_first", "Business process 1", 0, isActiveVersion: null),
-			VersionRow("UsrProcess_second", "Business process 1", 1, isActiveVersion: null)
+			VersionRow("UsrProcess_first", "Business process 1", 0, isActiveVersion: null, family: FamilyA),
+			VersionRow("UsrProcess_second", "Business process 1", 1, isActiveVersion: null,
+				family: FamilyB)
 		];
 
 		// Act
@@ -194,6 +213,29 @@ public sealed class ProcessLibResolverTests {
 		result.IsError.Should().BeFalse(
 			because: "one candidate needs no narrowing, so an unestablished flag must not turn a working resolution into an error");
 		result.Value.Name.Should().Be("UsrProcess_only", because: "the only match is the answer");
+	}
+
+	[Test]
+	[Description("Refuses a caption shared by two DIFFERENT processes even when only one of them is flagged active, because a single flagged row does not make the candidates one family.")]
+	public void Resolve_Should_Return_Conflict_When_OnlyOneOfTwoFamiliesIsFlaggedActive() {
+		// Arrange — family B's row is unflagged, which the view really does return: its own active member
+		// was renamed away from this caption, or its package does not resolve and the flag comes back NULL.
+		List<VwProcessLib> byCaption = [
+			VersionRow("UsrOrder_Approve", "Approval", 0, isActiveVersion: false, family: FamilyA),
+			VersionRow("UsrOrder_ApproveCustom1", "Approval", 1, isActiveVersion: true, family: FamilyA),
+			VersionRow("UsrInvoice_Approve", "Approval", 0, isActiveVersion: null, family: FamilyB)
+		];
+
+		// Act
+		ErrorOr<VwProcessLib> result = ProcessLibResolver.Resolve("Approval", null, byCaption);
+
+		// Assert
+		result.IsError.Should().BeTrue(
+			because: "the candidates span two families, so exactly one active row proves nothing about which process was meant");
+		result.FirstError.Type.Should().Be(ErrorType.Conflict,
+			because: "answering for family A here would silently drop a distinct process carrying the same caption");
+		result.FirstError.Description.Should().Contain("UsrInvoice_Approve",
+			because: "the dropped candidate is exactly the one the caller has to see to pick a code");
 	}
 
 }

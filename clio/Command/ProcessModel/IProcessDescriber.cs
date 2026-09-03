@@ -160,8 +160,8 @@ public sealed class ServerProcessDescriber(
 	/// share a caption now ask the caller for a code instead of silently picking one.
 	/// </para>
 	/// </remarks>
-	private ErrorOr<JsonObject> ResolveCaption(string caption) {
-		try {
+	private ErrorOr<JsonObject> ResolveCaption(string caption) =>
+		ProcessLibRead.Guarded<ErrorOr<JsonObject>>(() => {
 			IAppDataContext ctx = AppDataContextFactory.GetAppDataContext(dataProvider);
 			// All matches, not the first: the policy needs the candidate set to tell one family from two
 			// processes. Cheap because the model no longer declares the metadata blob (ENG-94374 story 1).
@@ -175,22 +175,7 @@ public sealed class ServerProcessDescriber(
 					: Error.Failure("ResolveId", resolved.FirstError.Description);
 			}
 			return new JsonObject { ["name"] = resolved.Value.Name };
-		}
-		// Narrowed from a bare catch (Exception): a DataService read fails as transport, payload or timeout,
-		// and ATF's own expression exceptions mean the query above is wrong — a defect that must surface
-		// rather than be reported to the user as an unresolvable caption.
-		catch (WebException e) {
-			return Error.Failure("ResolveId", e.Message);
-		} catch (HttpRequestException e) {
-			return Error.Failure("ResolveId", e.Message);
-		} catch (JsonException e) {
-			return Error.Failure("ResolveId", e.Message);
-		} catch (TimeoutException e) {
-			return Error.Failure("ResolveId", e.Message);
-		} catch (InvalidOperationException e) {
-			return Error.Failure("ResolveId", e.Message);
-		}
-	}
+		}, e => Error.Failure("ResolveId", e.Message));
 
 	/// <summary>WCF <c>BodyStyle=Wrapped</c> response envelope (wire-only).</summary>
 	private sealed class DescribeProcessResultEnvelope {

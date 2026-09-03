@@ -29,6 +29,9 @@ public sealed class ServerProcessDescriberTests {
 
 	private const string RootUId = "332eac25-1443-4e4e-a972-6c0e66cb9243";
 	private const string ChildUId = "b5e5162a-254a-430f-8978-4738c6ebf76b";
+	/// <summary>A second family, so a caption shared by two DISTINCT processes can be expressed.</summary>
+	private const string OtherFamilyUId = "7c1d4f6e-9b02-4a55-8d31-1f0a5e2c7b48";
+
 	private const string PackageUId = "864d1545-a641-46c3-b866-e57bd6d39579";
 
 	/// <summary>
@@ -44,8 +47,13 @@ public sealed class ServerProcessDescriberTests {
 			versionLibReader ?? ReaderReturning(new ProcessVersionFacts { Warning = "not read in this test" }));
 	}
 
-	/// <summary>Caption-resolution candidates, keyed by the view's column names as ATF replays them.</summary>
-	private static IDataProvider CaptionCandidates(params (string Name, string Caption, bool? IsActive)[] rows) {
+	/// <summary>
+	/// Caption-resolution candidates, keyed by the view's column names as ATF replays them. The family key
+	/// is per-row and REQUIRED: sharing one across every row makes distinct processes look like one family,
+	/// which is what let the ambiguity test pass while feeding two members of the same family.
+	/// </summary>
+	private static IDataProvider CaptionCandidates(
+		params (string Name, string Caption, bool? IsActive, string Family)[] rows) {
 		DataProviderMock provider = new();
 		provider.MockItems("VwProcessLib").Returns(rows
 			.Select(row => new Dictionary<string, object> {
@@ -54,7 +62,7 @@ public sealed class ServerProcessDescriberTests {
 				["Name"] = row.Name,
 				["Caption"] = row.Caption,
 				["IsActiveVersion"] = row.IsActive,
-				["VersionParentUId"] = Guid.Parse(RootUId),
+				["VersionParentUId"] = Guid.Parse(row.Family),
 				["PackageUId"] = Guid.Parse(PackageUId),
 				["Enabled"] = true
 			})
@@ -926,9 +934,9 @@ public sealed class ServerProcessDescriberTests {
 		// Arrange — one process, three schemas: a caption belongs to the whole family.
 		IApplicationClient client = ClientReturning(GraphResponse(ChildUId));
 		ServerProcessDescriber describer = CreateDescriber(client, dataProvider: CaptionCandidates(
-			("InvoiceVisaProcess", "Invoice approval", false),
-			("InvoiceVisaProcessInvoice1", "Invoice approval", true),
-			("InvoiceVisaProcessInvoice2", "Invoice approval", false)));
+			("InvoiceVisaProcess", "Invoice approval", false, RootUId),
+			("InvoiceVisaProcessInvoice1", "Invoice approval", true, RootUId),
+			("InvoiceVisaProcessInvoice2", "Invoice approval", false, RootUId)));
 
 		// Act
 		ErrorOr<DescribeProcessResult> result = describer.Describe(
@@ -948,8 +956,8 @@ public sealed class ServerProcessDescriberTests {
 		// Arrange
 		IApplicationClient client = ClientReturning(GraphResponse(RootUId));
 		ServerProcessDescriber describer = CreateDescriber(client, dataProvider: CaptionCandidates(
-			("UsrProcess_first", "Business process 1", true),
-			("UsrProcess_second", "Business process 1", true)));
+			("UsrProcess_first", "Business process 1", true, RootUId),
+			("UsrProcess_second", "Business process 1", true, OtherFamilyUId)));
 
 		// Act
 		ErrorOr<DescribeProcessResult> result = describer.Describe(

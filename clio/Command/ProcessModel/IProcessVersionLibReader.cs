@@ -52,9 +52,12 @@ public sealed record ProcessVersionFamilyMember {
 /// </summary>
 /// <remarks>
 /// Every value member is nullable and means NOT ESTABLISHED when absent — never "version 0" and never
-/// "unversioned". <see cref="Warning"/> is what separates the two: a process that genuinely has no
-/// versions reports <see cref="Version"/> 0 with no warning, while a read that could not be performed
-/// reports no values and a warning saying why.
+/// "unversioned". <see cref="Warning"/> is what separates the two, and the invariant is one-directional:
+/// an absent value ALWAYS comes with a warning naming the fact that could not be established, while a
+/// process that genuinely has no versions reports <see cref="Version"/> 0 with no warning. The warning is
+/// not limited to a read that failed outright — a read can succeed and still establish less than
+/// everything (the view returns NULL for a schema whose package does not resolve; a family can come back
+/// with no member flagged active), and those answers carry the values they did establish alongside it.
 /// </remarks>
 public sealed record ProcessVersionFacts {
 
@@ -128,24 +131,13 @@ public sealed class ProcessVersionLibReader(IDataProvider dataProvider) : IProce
 		if (!Guid.TryParse(schemaUId, out Guid uid)) {
 			return NotEstablished($"'{schemaUId}' is not a schema UId");
 		}
-		try {
+		return ProcessLibRead.Guarded(() => {
 			IAppDataContext ctx = AppDataContextFactory.GetAppDataContext(dataProvider);
 			VwProcessLib row = ctx.Models<VwProcessLib>().FirstOrDefault(p => p.UId == uid);
-			if (row is null) {
-				return NotEstablished($"the process library has no row for schema '{uid}'");
-			}
-			return BuildFacts(row, ReadFamily(ctx, row.VersionParentUId));
-		} catch (WebException e) {
-			return ReadFailed(e);
-		} catch (HttpRequestException e) {
-			return ReadFailed(e);
-		} catch (JsonException e) {
-			return ReadFailed(e);
-		} catch (TimeoutException e) {
-			return ReadFailed(e);
-		} catch (InvalidOperationException e) {
-			return ReadFailed(e);
-		}
+			return row is null
+				? NotEstablished($"the process library has no row for schema '{uid}'")
+				: BuildFacts(row, ReadFamily(ctx, row.VersionParentUId));
+		}, ReadFailed);
 	}
 
 	private List<VwProcessLib> ReadFamily(IAppDataContext ctx, Guid rootUId) =>
@@ -158,6 +150,13 @@ public sealed class ProcessVersionLibReader(IDataProvider dataProvider) : IProce
 			.ToList();
 
 	private static ProcessVersionFacts BuildFacts(VwProcessLib row, List<VwProcessLib> fetched) {
+		if (fetched.Count == 0) {
+			// The schema's own row came back but its family did not, so nothing about the family is
+			// established. Publishing an empty list here would read as "checked, and there are no versions",
+			// which is the one thing this reader must never say without having checked.
+			return NotEstablished(
+				$"the process library returned no version family for root '{row.VersionParentUId}'");
+		}
 		// Ordered here rather than in the query: Version is nullable, and ordering a nullable column
 		// through ATF is unproven, while the set is bounded at FamilyCap + 1 rows.
 		List<VwProcessLib> family = fetched
@@ -165,8 +164,10 @@ public sealed class ProcessVersionLibReader(IDataProvider dataProvider) : IProce
 			.ThenBy(p => p.Name)
 			.Take(FamilyCap)
 			.ToList();
-		// Looked up in the fetched set rather than the capped one, so the active member is still named
-		// when it sorts past the cap.
+		// Looked up in the fetched set rather than the capped one, so the active member survives the cap
+		// applied below. That is a bound, not a guarantee: the query takes FamilyCap + 1 rows in no defined
+		// order, so on a family LARGER than that the active member can be missing from the set entirely —
+		// which is why its absence is reported as an unestablished fact instead of passing silently.
 		VwProcessLib active = fetched.FirstOrDefault(p => p.IsActiveVersion == true);
 		return new ProcessVersionFacts {
 			Version = row.Version,
@@ -176,8 +177,32 @@ public sealed class ProcessVersionLibReader(IDataProvider dataProvider) : IProce
 			VersionRootSchemaUId = row.VersionParentUId.ToString(),
 			Versions = family.Select(ToMember).ToList(),
 			FamilyTruncated = fetched.Count > FamilyCap,
-			ActiveVersionSource = ProcessLibraryViewSource
+			ActiveVersionSource = ProcessLibraryViewSource,
+			Warning = Unestablished(row, active)
 		};
+	}
+
+	/// <summary>
+	/// Why a fact is missing from an otherwise successful read, or <c>null</c> when none is.
+	/// </summary>
+	/// <remarks>
+	/// A read can succeed and still establish less than everything: the view returns NULL for a schema
+	/// whose package does not resolve, and a family can come back with no member flagged active. Without
+	/// this, those answers carried absent values and NO warning — the one combination the contract on
+	/// <see cref="ProcessVersionFacts"/> says cannot occur, and the one a caller reads as "unversioned".
+	/// </remarks>
+	private static string Unestablished(VwProcessLib row, VwProcessLib active) {
+		List<string> gaps = [];
+		if (row.Version is null) {
+			gaps.Add("the view established no version number for this schema");
+		}
+		if (row.IsActiveVersion is null) {
+			gaps.Add("the view established no active-version flag for this schema");
+		}
+		if (active is null) {
+			gaps.Add($"the process library flagged no active version in family '{row.VersionParentUId}'");
+		}
+		return gaps.Count == 0 ? null : $"{string.Join("; ", gaps)}, so those facts were not established";
 	}
 
 	private static ProcessVersionFamilyMember ToMember(VwProcessLib p) =>

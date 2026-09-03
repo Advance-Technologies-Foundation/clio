@@ -317,4 +317,41 @@ public sealed class DescribeProcessCommandTests {
 			because: "a partial version history has to announce itself, or it reads as the whole history");
 	}
 
+	[Test]
+	[Category("Unit")]
+	[Description("Writes the version facts that WERE established together with the warning naming the one that was not, so a partial answer is never published as a silent absence.")]
+	public void Execute_ShouldWriteEstablishedFactsBesideTheWarning_WhenEstablishmentIsPartial() {
+		// Arrange - the reader read the family but no member carried the active flag.
+		_describer.Describe(Arg.Any<ProcessIdentity>(), Arg.Any<string>())
+			.Returns(new DescribeProcessResult {
+				Name = "InvoiceVisaProcess",
+				SchemaUId = "332eac25-1443-4e4e-a972-6c0e66cb9243",
+				Elements = [], Flows = [], Parameters = [],
+				Version = 0,
+				IsActiveVersion = false,
+				VersionRootSchemaUId = "332eac25-1443-4e4e-a972-6c0e66cb9243",
+				ActiveVersionSource = "process-library-view",
+				VersionReadWarning = "the process library flagged no active version in family '332eac25', so those facts were not established",
+				Versions = [
+					new DescribedProcessVersion { SchemaUId = "u", Name = "InvoiceVisaProcess", Version = 0, IsRoot = true }
+				]
+			});
+		DescribeProcessOptions options = new() { Environment = "dev", ProcessName = "InvoiceVisaProcess" };
+		string written = null;
+		_logger.WriteInfo(Arg.Do<string>(value => written = value));
+
+		// Act
+		int result = _command.Execute(options);
+
+		// Assert
+		result.Should().Be(0, because: "a partial version answer does not fail the describe");
+		JsonObject output = JsonNode.Parse(written)!.AsObject();
+		output.Should().ContainKey("versionReadWarning",
+			because: "WhenWritingNull omits the fact that is missing, so the only thing left to explain the gap is the warning");
+		output["version"]!.GetValue<int>().Should().Be(0,
+			because: "a partial answer keeps the facts it did establish rather than collapsing to nothing");
+		output.Should().NotContainKey("activeVersionName",
+			because: "no member was flagged active, so naming one would be an invention");
+	}
+
 }

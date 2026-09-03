@@ -4,6 +4,8 @@ applies-to:
   - clio/Command/DescribeProcessCommand.cs
   - clio/Command/McpServer/Tools/ProcessDesigner/DescribeProcessTool.cs
   - clio/Command/ProcessModel/IProcessDescriber.cs
+  - clio/Command/ProcessModel/IProcessVersionLibReader.cs
+  - clio/Command/ProcessModel/ProcessLibResolver.cs
 ticket: ENG-94374
 date: 2026-09-03
 ---
