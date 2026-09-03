@@ -21,24 +21,25 @@ namespace Clio.Command.McpServer;
 /// </para>
 /// </summary>
 internal static partial class SensitiveErrorTextRedactor {
+	private const int RegexTimeoutMilliseconds = 1_000;
 
 	private const string RedactedUri = "[redacted-uri]";
 	private const string RedactedPath = "[redacted-path]";
 	private const string RedactedValue = "[redacted]";
 
 	// scheme://[user[:pass]@]host[:port][/path…] — also catches credentials embedded in the authority.
-	[GeneratedRegex(@"\b[a-zA-Z][a-zA-Z0-9+.\-]*://[^\s""'<>]+", RegexOptions.CultureInvariant)]
+	[GeneratedRegex(@"\b[a-zA-Z][a-zA-Z0-9+.\-]*://[^\s""'<>]+", RegexOptions.CultureInvariant, RegexTimeoutMilliseconds)]
 	private static partial Regex UriRegex();
 
 	// Windows drive-rooted (C:\…) and UNC (\\host\share\…) absolute paths.
-	[GeneratedRegex(@"(?:[A-Za-z]:\\|\\\\)[^\s""'<>|]*", RegexOptions.CultureInvariant)]
+	[GeneratedRegex(@"(?:[A-Za-z]:\\|\\\\)[^\s""'<>|]*", RegexOptions.CultureInvariant, RegexTimeoutMilliseconds)]
 	private static partial Regex WindowsPathRegex();
 
 	// POSIX absolute paths under well-known home/system roots and common container/app roots, so
 	// generic URL fragments (e.g. "/rest/CreatioApiGateway/…", "/DataService/…") and prose are left
 	// intact. The root token must be followed by a path separator + at least one segment so a bare
 	// "/app" word boundary in prose is not mistaken for a path.
-	[GeneratedRegex(@"/(?:Users|home|root|var|etc|opt|usr|tmp|private|mnt|srv|Library|Applications|System|app|data|config)(?:/[^\s""'<>:]*)+", RegexOptions.CultureInvariant)]
+	[GeneratedRegex(@"/(?:Users|home|root|var|etc|opt|usr|tmp|private|mnt|srv|Library|Applications|System|app|data|config)(?:/[^\s""'<>:]*)+", RegexOptions.CultureInvariant, RegexTimeoutMilliseconds)]
 	private static partial Regex PosixPathRegex();
 
 	// key=value / key: value pairs whose key denotes a secret or a connection-string host/db; the
@@ -51,17 +52,17 @@ internal static partial class SensitiveErrorTextRedactor {
 	// verbatim — the pattern has to fail closed on the whole pair, not on the quote.
 	[GeneratedRegex(
 		@"\b(password|pwd|pass|secret|token|api[_-]?key|client[_-]?secret|access[_-]?key|connection ?string|data ?source|server|host|hostname|initial ?catalog|database|uid|user ?id|authorization|auth|bearer|cookie)\b\s*[=:]\s*(?:""[^""]*""|'[^']*'|[^\s,;""']+)",
-		RegexOptions.CultureInvariant | RegexOptions.IgnoreCase)]
+		RegexOptions.CultureInvariant | RegexOptions.IgnoreCase, RegexTimeoutMilliseconds)]
 	private static partial Regex CredentialPairRegex();
 
 	// "Bearer <token>" as it appears in an Authorization header value (not necessarily behind a
 	// key=value pair). The token segment is replaced wholesale.
-	[GeneratedRegex(@"\bBearer\s+[^\s,;""']+", RegexOptions.CultureInvariant | RegexOptions.IgnoreCase)]
+	[GeneratedRegex(@"\bBearer\s+[^\s,;""']+", RegexOptions.CultureInvariant | RegexOptions.IgnoreCase, RegexTimeoutMilliseconds)]
 	private static partial Regex BearerTokenRegex();
 
 	// JWT-shaped value: three base64url segments joined by dots, starting with the conventional
 	// "eyJ" header prefix. Catches a raw token even when it is not preceded by a key or "Bearer ".
-	[GeneratedRegex(@"\beyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+", RegexOptions.CultureInvariant)]
+	[GeneratedRegex(@"\beyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+", RegexOptions.CultureInvariant, RegexTimeoutMilliseconds)]
 	private static partial Regex JwtRegex();
 
 	// scheme-less host:port — a DNS host or bracketed/raw IP literal followed by a numeric port, e.g.
@@ -71,7 +72,7 @@ internal static partial class SensitiveErrorTextRedactor {
 	// scheme-less shape that UriRegex (which requires "scheme://") never catches.
 	[GeneratedRegex(
 		@"(?<![\w:./@-])(?:\[[0-9A-Fa-f:]+\]|(?:[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?\.)+[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?|\d{1,3}(?:\.\d{1,3}){3}):\d{1,5}\b",
-		RegexOptions.CultureInvariant)]
+		RegexOptions.CultureInvariant, RegexTimeoutMilliseconds)]
 	private static partial Regex HostPortRegex();
 
 	/// <summary>Redacts every entry of <paramref name="texts"/> under the same rules as <see cref="Redact"/>.</summary>
@@ -83,7 +84,7 @@ internal static partial class SensitiveErrorTextRedactor {
 
 	// Any bracketed token that starts with the fence name, whatever case or trailing words it carries.
 	[GeneratedRegex(@"\[\s*untrusted-source-text[^\]]*\]",
-		RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
+		RegexOptions.IgnoreCase | RegexOptions.CultureInvariant, RegexTimeoutMilliseconds)]
 	private static partial Regex FenceTokenRegex();
 
 	/// <summary>Maximum length of a diagnostic composed from repository-controlled text.</summary>
@@ -166,7 +167,8 @@ internal static partial class SensitiveErrorTextRedactor {
 		// Case-INSENSITIVE and shape-based: an ordinal match on the exact lowercase token lets
 		// "[UNTRUSTED-SOURCE-TEXT END]" through verbatim, and a reader that treats the delimiter
 		// case-insensitively would then read everything after it as server-authored.
-		flattened = FenceTokenRegex().Replace(flattened, "(fence removed)");
+		flattened = ExecuteRegex(
+			() => FenceTokenRegex().Replace(flattened, "(fence removed)"));
 		if (flattened.Length > UntrustedDiagnosticLimit) {
 			flattened = string.Concat(flattened.AsSpan(0, UntrustedDiagnosticLimit), "…");
 		}
@@ -184,19 +186,30 @@ internal static partial class SensitiveErrorTextRedactor {
 		if (string.IsNullOrEmpty(text)) {
 			return string.Empty;
 		}
-		// URIs first: a scheme://user:pass@host authority must be removed whole before the narrower
-		// path/credential passes run, so its embedded host/credentials never survive.
-		string result = UriRegex().Replace(text, RedactedUri);
-		// Tokens next, before host:port — a JWT/Bearer value can contain dots/segments that would
-		// otherwise be partially nibbled by later passes; scrub them whole first.
-		result = JwtRegex().Replace(result, RedactedValue);
-		result = BearerTokenRegex().Replace(result, RedactedValue);
-		// Scheme-less endpoints (host:port / ip:port) before the path pass so the host authority is
-		// gone before any trailing path on the same token is considered.
-		result = HostPortRegex().Replace(result, RedactedUri);
-		result = WindowsPathRegex().Replace(result, RedactedPath);
-		result = PosixPathRegex().Replace(result, RedactedPath);
-		result = CredentialPairRegex().Replace(result, match => $"{match.Groups[1].Value}={RedactedValue}");
-		return result;
+		return ExecuteRegex(() => {
+			// URIs first: a scheme://user:pass@host authority must be removed whole before the narrower
+			// path/credential passes run, so its embedded host/credentials never survive.
+			string result = UriRegex().Replace(text, RedactedUri);
+			// Tokens next, before host:port — a JWT/Bearer value can contain dots/segments that would
+			// otherwise be partially nibbled by later passes; scrub them whole first.
+			result = JwtRegex().Replace(result, RedactedValue);
+			result = BearerTokenRegex().Replace(result, RedactedValue);
+			// Scheme-less endpoints (host:port / ip:port) before the path pass so the host authority is
+			// gone before any trailing path on the same token is considered.
+			result = HostPortRegex().Replace(result, RedactedUri);
+			result = WindowsPathRegex().Replace(result, RedactedPath);
+			result = PosixPathRegex().Replace(result, RedactedPath);
+			result = CredentialPairRegex().Replace(result, match => $"{match.Groups[1].Value}={RedactedValue}");
+			return result;
+		});
+	}
+
+	internal static string ExecuteRegex(Func<string> operation) {
+		try {
+			return operation();
+		}
+		catch (RegexMatchTimeoutException) {
+			return RedactedValue;
+		}
 	}
 }

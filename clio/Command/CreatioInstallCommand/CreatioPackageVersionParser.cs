@@ -26,8 +26,10 @@ public interface ICreatioPackageVersionParser{
 public class CreatioPackageVersionParser : ICreatioPackageVersionParser{
 	#region Fields: Private
 
+	private static readonly TimeSpan RegexTimeout = TimeSpan.FromSeconds(1);
+
 	private static readonly Regex VersionPattern =
-		new(@"^(?<version>\d+\.\d+\.\d+(?:\.\d+)?)_", RegexOptions.Compiled | RegexOptions.CultureInvariant);
+		new(@"^(?<version>\d+\.\d+\.\d+(?:\.\d+)?)_", RegexOptions.Compiled | RegexOptions.CultureInvariant, RegexTimeout);
 
 	#endregion
 

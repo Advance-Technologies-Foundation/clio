@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.ComponentModel;
 using System.ComponentModel.DataAnnotations;
 using System.Text.Json.Serialization;
@@ -44,7 +44,8 @@ public sealed class ODataDeleteTool(IToolCommandResolver commandResolver) {
 				return notConfirmed;
 			}
 
-			(IApplicationClient client, string url) = ODataKeyedWrite.ResolveTarget(commandResolver, args.EnvironmentName, args.Entity, args.Id);
+			(IApplicationClient client, IServiceUrlBuilder _, string url) =
+				ODataKeyedWrite.ResolveTarget(commandResolver, args.EnvironmentName, args.Entity, args.Id);
 			string response = client.ExecuteDeleteRequest(url, string.Empty, 30_000);
 			string validationError = ODataKeyedWrite.ValidateWriteResponse(response);
 			if (validationError is not null) {

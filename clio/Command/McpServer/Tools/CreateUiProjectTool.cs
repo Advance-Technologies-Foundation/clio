@@ -1,3 +1,4 @@
+using System;
 using System.ComponentModel;
 using System.ComponentModel.DataAnnotations;
 using System.IO;
@@ -18,7 +19,8 @@ public class CreateUiProjectTool(
 
 	internal const string CreateUiProjectToolName = "new-ui-project";
 	private const string WorkspaceMarkerRelativePath = ".clio/workspaceSettings.json";
-	private static readonly Regex PackageNamePattern = new("^[A-Za-z0-9_]+$", RegexOptions.Compiled);
+	private static readonly TimeSpan RegexTimeout = TimeSpan.FromSeconds(1);
+	private static readonly Regex PackageNamePattern = new("^[A-Za-z0-9_]+$", RegexOptions.Compiled, RegexTimeout);
 
 	/// <summary>
 	/// Creates a new Angular (Freedom UI remote module) project inside the supplied clio workspace.

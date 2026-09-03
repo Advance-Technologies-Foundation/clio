@@ -70,6 +70,7 @@ public class ComposableApplicationManager : IComposableApplicationManager
 	private readonly IValidator<SetIconParameters> _validator;
 	private readonly IPackageArchiver _archiver;
 	private readonly IWorkingDirectoriesProvider _directoriesProvider;
+	private static readonly TimeSpan RegexTimeout = TimeSpan.FromSeconds(1);
 
 	#endregion
 
@@ -191,9 +192,11 @@ public class ComposableApplicationManager : IComposableApplicationManager
     
 		// Remove duplicate Version keys using regex
 		jsonContent = System.Text.RegularExpressions.Regex.Replace(
-			jsonContent, 
-			@"""Version""\s*:\s*""[^""]*""\s*,\s*(?=""Version"")", 
-			string.Empty);
+			jsonContent,
+			@"""Version""\s*:\s*""[^""]*""\s*,\s*(?=""Version"")",
+			string.Empty,
+			System.Text.RegularExpressions.RegexOptions.None,
+			RegexTimeout);
     
 		JsonNode objectJson = JsonNode.Parse(jsonContent);
 		if (objectJson != null)

@@ -12,6 +12,7 @@ namespace Clio.Command.McpServer.Tools;
 /// before touching the network or the filesystem.
 /// </summary>
 internal static partial class ComponentRegistryDocsPath {
+	private const int RegexTimeoutMilliseconds = 1_000;
 	/// <summary>
 	/// Permitted shape: starts with one of the four documentation namespaces the
 	/// static-files-mcp producer publishes —
@@ -23,7 +24,7 @@ internal static partial class ComponentRegistryDocsPath {
 	/// in <c>.md</c>. No <c>..</c>, no leading slash, no backslashes, no whitespace. All four flavors
 	/// share this single validator and the same docs CDN/cache pipeline.
 	/// </summary>
-	[GeneratedRegex(@"^(?:docs|mobile-docs|request-docs|mobile-request-docs)/[A-Za-z0-9._-]+(?:/[A-Za-z0-9._-]+)*\.md$", RegexOptions.CultureInvariant)]
+	[GeneratedRegex(@"^(?:docs|mobile-docs|request-docs|mobile-request-docs)/[A-Za-z0-9._-]+(?:/[A-Za-z0-9._-]+)*\.md$", RegexOptions.CultureInvariant, RegexTimeoutMilliseconds)]
 	private static partial Regex AllowedPathRegex();
 
 	/// <summary>

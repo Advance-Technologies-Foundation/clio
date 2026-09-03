@@ -512,11 +512,11 @@ public sealed class SettingsRepositoryProcessConcurrencyTests {
 		try {
 			// Act
 			for (int index = 1; index <= processCount; index++) {
+				// Output is intentionally inherited. Redirecting an unused pipe and then eagerly calling
+				// ReadToEnd in an assertion can wait forever when a descendant retains the writer handle.
 				ProcessStartInfo startInfo = new("dotnet") {
 					UseShellExecute = false,
-					CreateNoWindow = true,
-					RedirectStandardOutput = true,
-					RedirectStandardError = true
+					CreateNoWindow = true
 				};
 				startInfo.Environment["CLIO_HOME"] = clioHome;
 				startInfo.ArgumentList.Add(clioAssemblyPath);
@@ -535,7 +535,7 @@ public sealed class SettingsRepositoryProcessConcurrencyTests {
 				process.WaitForExit(30_000).Should().BeTrue(
 					because: "every concurrent registration process must finish without waiting indefinitely for the settings lock");
 				process.ExitCode.Should().Be(0,
-					because: $"each registration must succeed; stderr was: {process.StandardError.ReadToEnd()}");
+					because: "each registration must succeed; child output is inherited by the test host for diagnostics");
 			}
 
 			Settings persisted = JsonConvert.DeserializeObject<Settings>(

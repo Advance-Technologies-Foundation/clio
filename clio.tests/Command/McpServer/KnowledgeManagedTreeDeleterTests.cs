@@ -13,7 +13,7 @@ namespace Clio.Tests.Command.McpServer;
 
 /// <summary>
 /// Substituted-file-system coverage, and the ONLY tier that runs on every push: <c>build.yml</c> filters
-/// the push/PR job to <c>Category!=Integration</c> and gates the Integration job on <c>pull_request</c>, so
+/// the push/PR job to <c>TestCategory!=Integration</c> and gates the Integration job on <c>pull_request</c>, so
 /// an invariant pinned only in <see cref="KnowledgeManagedTreeDeleterFileSystemTests"/> first executes in
 /// the unfiltered release lane. Anything load-bearing belongs here as well as there — a junction cost a
 /// release exactly that way.
