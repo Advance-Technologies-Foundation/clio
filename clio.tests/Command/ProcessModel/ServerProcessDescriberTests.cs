@@ -63,6 +63,36 @@ public sealed class ServerProcessDescriberTests {
 				+ "and a bool that vanishes reads as false rather than as missing");
 	}
 
+	[Test]
+	[Category("Unit")]
+	[Description("A server that never SENDS branchesOnActivityResult must not have a false invented for it. describe is allowed on an environment whose package predates the field - its [RequiresPackage] is presence-only, with no version literal - so this is the ordinary case on an older stand, not an edge case. While the property was a non-nullable bool it deserialized to default(bool) and WhenWritingNull could not omit a value type, so the payload asserted 'this branch is decided by its condition' for every flow on a server that said nothing at all, in the reassuring direction. The sibling test above pins the value when the server DOES send it; this one pins the absence, and the two together are what make the field trustworthy.")]
+	public void Describe_ShouldNotInventBranchesOnActivityResult_WhenTheServerOmitsIt() {
+		// Arrange
+		IApplicationClient client = ClientReturning(
+			"{\"DescribeProcessResult\":{\"success\":true,\"name\":\"UsrProc\","
+			+ "\"elements\":[],"
+			+ "\"flows\":[{\"source\":\"task1\",\"target\":\"end1\",\"kind\":\"conditional\","
+			+ "\"condition\":\"[#Amount#] > 100\"}],"
+			+ "\"parameters\":[]}}");
+		ServerProcessDescriber describer = CreateDescriber(client);
+
+		// Act
+		ErrorOr<DescribeProcessResult> result = describer.Describe(new ProcessIdentity("UsrProc", null, null), null);
+		string reserialized = JsonSerializer.Serialize(result.Value, DescribeProcessCommand.OutputOptions);
+
+		// Assert
+		result.Value.Flows[0].BranchesOnActivityResult.Should().BeNull(
+			because: "the server said nothing about it, and 'nothing' is not 'false' - a caller must be able "
+				+ "to tell an old package from a branch whose condition really is evaluated");
+		result.Value.Flows[0].Condition.Should().Be("[#Amount#] > 100",
+			because: "the rest of the flow still round-trips; asserting the absence alone would pass on a "
+				+ "describe that dropped everything");
+		JsonNode output = JsonNode.Parse(reserialized);
+		output["flows"]![0]!.AsObject().ContainsKey("branchesOnActivityResult").Should().BeFalse(
+			because: "an absent value must be OMITTED rather than emitted as false; while the property was a "
+				+ "non-nullable bool, WhenWritingNull could not omit it and the payload fabricated an answer");
+	}
+
 	private static IApplicationClient ClientReturning(string response) {
 		IApplicationClient client = Substitute.For<IApplicationClient>();
 		client.ExecutePostRequest(DescribeUrl, Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())

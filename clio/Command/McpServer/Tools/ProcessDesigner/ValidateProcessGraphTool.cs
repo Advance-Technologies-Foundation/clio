@@ -155,8 +155,16 @@ public sealed class ValidateProcessGraphResponse {
 	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
 	public string Error { get; init; }
 
+	/// <summary>
+	/// Whether the graph violates a rule. NULL - and omitted - when the graph was never validated, which is
+	/// every failure path: a missing package, an unknown <c>flow-kind</c>, an unexpected fault. A non-nullable
+	/// <c>bool</c> emitted <c>"has-errors": false</c> there, and this tool's description advertises the field
+	/// while the shipped prompt tells the agent to resolve every error finding - so a graph that was never
+	/// looked at read as a graph with nothing wrong. Absent is the honest answer; branch on <c>success</c> first.
+	/// </summary>
 	[JsonPropertyName("has-errors")]
-	public bool HasErrors { get; init; }
+	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+	public bool? HasErrors { get; init; }
 
 	[JsonPropertyName("findings")]
 	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]

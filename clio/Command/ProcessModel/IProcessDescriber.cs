@@ -635,11 +635,27 @@ public sealed class DescribedFlow {
 	/// map FIRST and only falls back to the expression when it is empty, so on such a flow the condition text is
 	/// stored, reported, and never evaluated. <c>setFlowCondition</c> refuses to write one; before this field a
 	/// caller verifying their change read the OLD text and took it as proof the change landed.</para>
-	/// <para>Like <see cref="Condition"/>, this needs a property here or it is dropped on clio's re-serialize -
-	/// <see cref="DescribedFlow"/> has no <c>[JsonExtensionData]</c> overflow bag.</para>
+	/// <para>NULLABLE on purpose, and it is the same reassuring-direction argument the field itself exists
+	/// for. <c>describe</c> is allowed on an environment whose package predates this field - its
+	/// <c>[RequiresPackage]</c> is presence-only, with no version literal - and such a server simply never
+	/// sends it. A non-nullable <c>bool</c> would leave <c>default(bool)</c>, which
+	/// <c>WhenWritingNull</c> cannot omit, so the payload would assert <c>false</c> for every flow on a
+	/// server that said nothing: a caller reading it would conclude the condition IS evaluated. Absent
+	/// stays absent instead, and a caller that finds no key knows to check the package version.</para>
 	/// </summary>
 	[JsonPropertyName("branchesOnActivityResult")]
-	public bool BranchesOnActivityResult { get; set; }
+	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+	public bool? BranchesOnActivityResult { get; set; }
+
+	/// <summary>
+	/// Every other field the server returns on a flow, so a description round-trips losslessly - the same bag
+	/// the graph root, nodes and parameters already carry. Added with the nullability fix above: without it a
+	/// newer <c>CrtProcessBuilder</c> reporting a new flow field needs a matching clio property AND a clio
+	/// release before the caller can see it, and until then it is dropped with no trace. <c>condition</c> and
+	/// <c>branchesOnActivityResult</c> keep their typed properties because guards and callers read them by name.
+	/// </summary>
+	[JsonExtensionData]
+	public Dictionary<string, JsonElement> AdditionalData { get; set; }
 }
 
 /// <summary>A parameter read back from the schema, with its value source decoded.</summary>

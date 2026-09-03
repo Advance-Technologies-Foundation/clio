@@ -97,6 +97,11 @@ public sealed class ValidateProcessGraphToolTests {
 			because: "the caller cannot fix a rejected value it is not shown");
 		response.Error.Should().Contain("conditional",
 			because: "the refusal has to name the legal values, or the caller guesses again");
+		response.HasErrors.Should().BeNull(
+			because: "the graph was never validated, so there is no answer about its rules - and while this "
+				+ "was a non-nullable bool the payload said \"has-errors\": false, which this tool's own "
+				+ "description advertises and the shipped prompt tells the agent to branch on, so a graph "
+				+ "nobody looked at read as a graph with nothing wrong");
 	}
 
 	[Test]
