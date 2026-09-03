@@ -35,7 +35,14 @@ public static class CreateBusinessProcessPrompt {
 		 columns change, and/or a `filter` to fire only for matching records. To send an email, add a `sendEmail`
 		 element with an `email` block — `mode` (auto/manual), `sender`, `to`/`cc`/`bcc` recipients, `subject`, the
 		 HTML custom-message `body` (`bodyFormat` `html` only), `importance`, `ignoreErrors`, and a manual-mode
-		 `performer`; email TEMPLATES are not supported (custom message only). To put PROCESS DATA in the body use the
+		 `performer`; email TEMPLATES are not supported (custom message only). To route a record for sign-off, add an
+		 `approval` element with an `approval` block — the `object` and the `recordId` under approval, the `approver`
+		 (a nested object taking `type` user|manager|role plus that type's `employee` or `role`), `allowDelegation`,
+		 and the two notifications (`notifyApprover` / `notifyAuthor`, each a nested object taking `emailTemplate`,
+		 the author one also taking a nested `recipient`); use
+		 that dedicated type rather than a generic `userTask` named ApprovalUserTask, which cannot carry any of it.
+		 A notification switched on without a template, or `notifyAuthor` without a recipient, is refused — the
+		 runtime would report the element as configured and never send. To put PROCESS DATA in the body use the
 		 by-name macros the server resolves for you — `[[param:Name]]`, `[[element:Element.Output]]`, or
 		 `[[element:Element.Output.Column]]`; the exact parameter/element names come from the `parameters[]` / `elements[]` you declare in THIS same descriptor
 		 — there is no process to `describe-business-process` yet (that is the modify path); an unknown name is rejected, and column names are case-sensitive. Confirm the target package with the

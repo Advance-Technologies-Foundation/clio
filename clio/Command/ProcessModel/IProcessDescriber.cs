@@ -304,11 +304,21 @@ public sealed class DescribedElement {
 	/// schema-level default (<c>true</c>): an element nobody saved through the designer USES that value while
 	/// reporting nothing here, so absence means "not written", never "off". And clearing a notification resets its
 	/// template to no source, which makes a CLEARED template indistinguishable from one that was never set.</para>
+	/// <para>Every VALUE reported here is one a write accepts — an employee macro, a template's lookup macro, a
+	/// record id — but the SHAPE is not the write shape and the block does NOT re-apply verbatim. This reports flat
+	/// (<c>approverType</c> + <c>approverEmployee</c>; a boolean <c>notifyApprover</c> with
+	/// <c>approverEmailTemplate</c> beside it; <c>recordId</c> as a string), while <c>create</c>/<c>modify</c> take
+	/// nested (<c>approver: {type, employee}</c>, <c>notifyApprover: {emailTemplate}</c>, <c>recordId</c> as an
+	/// object). Flat-with-<c>Display</c>-companions is the house convention every element follows — <c>sender</c> /
+	/// <c>senderDisplay</c> on email is the same — so the shape is right; it just has to be TRANSLATED before it is
+	/// sent back. Feeding a described block in unchanged binds nothing:
+	/// <c>DataContractJsonSerializer</c> drops the flat members and the operation still answers success, which is
+	/// why <c>ApprovalBlockExpectation</c> raises a warning of its own for a describe-shaped request.</para>
 	/// <para>The APPROVER is reported as <see cref="DescribedApproval.ApproverType"/> plus only the companion field
-	/// that type uses, so the block re-applies as it reads. A stored value belonging to the OTHER branch — which an
-	/// element the designer never re-saved can still carry — is deliberately not reported, and an unrecognized
-	/// type code reports no approver at all rather than a token a write would refuse. The element's outcome stays
-	/// in <see cref="Parameters"/> as the <c>ResultParameter</c> output.</para>
+	/// that type uses. A stored value belonging to the OTHER branch — which an element the designer never re-saved
+	/// can still carry — is deliberately not reported, and an unrecognized type code reports no approver at all
+	/// rather than a token a write would refuse. The element's outcome stays in <see cref="Parameters"/> as the
+	/// <c>ResultParameter</c> output.</para>
 	/// </summary>
 	[JsonPropertyName("approval")]
 	public DescribedApproval Approval { get; set; }

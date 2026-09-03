@@ -43,7 +43,7 @@ public sealed class ApprovalElementToolE2ETests {
 	[AllureName("create-business-process builds an approval element and describe reads the block back")]
 	public async Task CreateBusinessProcess_Should_BuildApprovalElement_AndReadItBack() {
 		// Arrange
-		await using ArrangeContext context = await ArrangeAsync(requireReachableEnvironment: true);
+		await using ArrangeContext context = await ArrangeAsync();
 		string processName = $"UsrClioBpApprovalE2e{Guid.NewGuid():N}";
 
 		// Act
@@ -91,7 +91,7 @@ public sealed class ApprovalElementToolE2ETests {
 	[AllureName("create-business-process accepts an approval block on the generic userTask route")]
 	public async Task CreateBusinessProcess_Should_AcceptApprovalBlock_OnGenericUserTaskRoute() {
 		// Arrange
-		await using ArrangeContext context = await ArrangeAsync(requireReachableEnvironment: true);
+		await using ArrangeContext context = await ArrangeAsync();
 		string processName = $"UsrClioBpApprovalGenericE2e{Guid.NewGuid():N}";
 
 		// Act
@@ -109,7 +109,8 @@ public sealed class ApprovalElementToolE2ETests {
 		DescribedElement approval = graph.Elements.Single(element => element.Name == "Approval1");
 		approval.Approval.Should().NotBeNull(
 			because: "identity keys on the referenced task schema, so the block configures the element either way");
-		approval.Approval!.Object.Should().Be(ApprovalObjectName);
+		approval.Approval!.Object.Should().Be(ApprovalObjectName,
+			because: "the block has to have configured the object it named, not merely be present");
 	}
 
 	[Test]
@@ -118,7 +119,7 @@ public sealed class ApprovalElementToolE2ETests {
 	[AllureName("create-business-process refuses a misplaced approval block")]
 	public async Task CreateBusinessProcess_Should_RefuseApprovalBlock_OnAnotherElementKind() {
 		// Arrange
-		await using ArrangeContext context = await ArrangeAsync(requireReachableEnvironment: true);
+		await using ArrangeContext context = await ArrangeAsync();
 		string processName = $"UsrClioBpApprovalMisplacedE2e{Guid.NewGuid():N}";
 
 		// Act
@@ -141,7 +142,7 @@ public sealed class ApprovalElementToolE2ETests {
 	[AllureName("create-business-process writes an approver and describe reads it back")]
 	public async Task CreateBusinessProcess_Should_WriteApprover_AndReadItBack() {
 		// Arrange
-		await using ArrangeContext context = await ArrangeAsync(requireReachableEnvironment: true);
+		await using ArrangeContext context = await ArrangeAsync();
 		string processName = $"UsrClioBpApproverE2e{Guid.NewGuid():N}";
 
 		// Act
@@ -292,21 +293,24 @@ public sealed class ApprovalElementToolE2ETests {
 			ToolName, new Dictionary<string, object?> { ["args"] = args }, context.CancellationTokenSource.Token);
 	}
 
-	private static async Task<ArrangeContext> ArrangeAsync(bool requireReachableEnvironment) {
+	// No 'requireReachableEnvironment' switch: every fixture here calls the server, so the parameter was passed
+	// true at all four call sites and the false branch could never run. A dead branch in an arrange helper reads
+	// as coverage that exists; reinstate it only alongside a fixture that actually needs it.
+	private static async Task<ArrangeContext> ArrangeAsync() {
 		McpE2ESettings settings = TestConfiguration.Load();
 		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
 		string? environmentName = settings.Sandbox.EnvironmentName;
-		if (requireReachableEnvironment) {
-			if (string.IsNullOrWhiteSpace(environmentName)) {
-				Assert.Ignore(
-					"Configure McpE2E:Sandbox:EnvironmentName (with a CrtProcessBuilder that supports the approval "
-					+ "element) to run the Approval MCP E2E tests.");
-			}
-			if (!await ClioCliCommandRunner.IsEnvironmentReachableAsync(settings, environmentName!)) {
-				Assert.Ignore(
-					$"Approval MCP E2E requires a reachable configured sandbox environment. '{environmentName}' was not reachable.");
-			}
+		if (string.IsNullOrWhiteSpace(environmentName)) {
+			Assert.Ignore(
+				"Configure McpE2E:Sandbox:EnvironmentName (with a CrtProcessBuilder that supports the approval "
+				+ "element) to run the Approval MCP E2E tests.");
 		}
+
+		if (!await ClioCliCommandRunner.IsEnvironmentReachableAsync(settings, environmentName!)) {
+			Assert.Ignore(
+				$"Approval MCP E2E requires a reachable configured sandbox environment. '{environmentName}' was not reachable.");
+		}
+
 		CancellationTokenSource cancellationTokenSource = new(TimeSpan.FromMinutes(3));
 		McpServerSession session = await McpServerSession.StartAsync(settings, cancellationTokenSource.Token);
 		return new ArrangeContext(session, cancellationTokenSource, environmentName);

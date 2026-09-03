@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using Clio.Command.ProcessModel;
@@ -109,6 +110,131 @@ public class ApprovalBlockExpectationTests {
 				because: "a malformed neighbour must not cost the valid operation its verification");
 	}
 
+	[Test]
+	[Description("A block fed back in the shape describe REPORTS is flagged on its own, before any comparison: the flat members bind to nothing and are dropped while the operation still answers success, and without this the request also reads as 'carried no approver' so the approver check would never run.")]
+	public void FromOperations_ShouldFlagADescribeShapedBlock() {
+		// Arrange — exactly what describe returns, pasted back into setElement
+		const string operations = """
+			[{"op":"setElement","elementName":"Approve1","elementUpdate":{"approval":{
+			   "object":"Order","approverType":"user","approverEmployee":"[#Lookup.a.b#]",
+			   "notifyApprover":true,"approverEmailTemplate":"[#Lookup.c.d#]"}}}]
+			""";
+
+		// Act
+		IReadOnlyList<ApprovalBlockExpectation.ApprovalExpectation> expected = ApprovalBlockExpectation.FromOperations(operations);
+
+		// Assert
+		expected.Should().ContainSingle(because: "the element still asked for an approval configuration")
+			.Which.DescribeShaped.Should().BeTrue(
+				because: "approverType exists only on the read shape, so its presence in a REQUEST is proof the "
+					+ "caller pasted a describe result back without translating it");
+	}
+
+	[Test]
+	[Description("The describe-shaped warning names the two shapes and tells the caller to translate — and deliberately does NOT append the install-a-newer-package advice, which would send them to upgrade a server that is behaving correctly.")]
+	public void BuildWarning_ShouldTellADescribeShapedCallerToTranslate_WithoutBlamingThePackage() {
+		// Arrange
+		ApprovalBlockExpectation.DroppedApproval[] missing = [
+			new("Approve1", ApprovalBlockExpectation.ApprovalDropKind.DescribeShapedRequest)
+		];
+
+		// Act
+		string warning = ApprovalBlockExpectation.BuildWarning(missing);
+
+		// Assert
+		warning.Should().Contain("translate",
+			because: "the fix is on the caller's side and the message has to say what it is");
+		warning.Should().NotContain("install-process-builder",
+			because: "the server is not stale here — pointing at an upgrade would send the caller to fix "
+				+ "something that is not broken, and the real mistake would go unaddressed");
+	}
+
+	[Test]
+	[Description("A notification that comes back switched ON with no email template stored is reported: the runtime fails inside the send and ignores email errors by default, so the element reports the notification as configured and never sends. This is the second of the three drops the version floor names, and the read-back the command already fetched can see it.")]
+	public void Missing_ShouldReportANotificationThatLostItsTemplate() {
+		// Arrange
+		DescribeProcessResult described = new() {
+			Elements = [new DescribedElement {
+				Name = "Approve1",
+				Approval = new DescribedApproval {
+					ApproverType = "user", NotifyApprover = true, ApproverEmailTemplate = null
+				}
+			}]
+		};
+
+		// Act
+		IReadOnlyList<ApprovalBlockExpectation.DroppedApproval> missing = ApprovalBlockExpectation.Missing(
+			described,
+			[new ApprovalBlockExpectation.ApprovalExpectation("Approve1", ExpectsApprover: true,
+				ExpectsApproverTemplate: true)]);
+
+		// Assert
+		missing.Should().ContainSingle(because: "the approver survived, so only the template drop is reported")
+			.Which.Kind.Should().Be(ApprovalBlockExpectation.ApprovalDropKind.NotificationTemplate,
+				because: "a notification with no template has its own cause and its own message");
+	}
+
+	[Test]
+	[Description("The author notification that comes back with no recipient resolved is reported — the third drop the floor names. 'Author' resolves nobody on its own, so the notification is switched on and silently sends to no one.")]
+	public void Missing_ShouldReportAnAuthorNotificationThatLostItsRecipient() {
+		// Arrange
+		DescribeProcessResult described = new() {
+			Elements = [new DescribedElement {
+				Name = "Approve1",
+				Approval = new DescribedApproval {
+					ApproverType = "user", NotifyAuthor = true,
+					AuthorEmailTemplate = "[#Lookup.a.b#]", Recipient = null
+				}
+			}]
+		};
+
+		// Act
+		IReadOnlyList<ApprovalBlockExpectation.DroppedApproval> missing = ApprovalBlockExpectation.Missing(
+			described,
+			[new ApprovalBlockExpectation.ApprovalExpectation("Approve1", ExpectsApprover: true,
+				ExpectsAuthorTemplate: true, ExpectsAuthorRecipient: true)]);
+
+		// Assert
+		missing.Should().ContainSingle(because: "the template arrived, so only the recipient drop is reported")
+			.Which.Kind.Should().Be(ApprovalBlockExpectation.ApprovalDropKind.AuthorRecipient,
+				because: "a notification switched on with nobody to send to is its own failure");
+	}
+
+	[Test]
+	[Description("A non-string element name yields no expectation instead of throwing. This check runs AFTER a successful operation inside the command's try, so a payload the server happily accepted would otherwise be reported to the caller as a failed build — which is the whole reason ReadName exists rather than GetValue<string>().")]
+	public void FromDescriptor_ShouldSkipANonStringName_WithoutThrowing() {
+		// Arrange
+		const string descriptor = """
+			{"elements":[{"name":123,"type":"approval","approval":{"object":"Order"}}]}
+			""";
+
+		// Act
+		Action act = () => ApprovalBlockExpectation.FromDescriptor(descriptor);
+
+		// Assert
+		act.Should().NotThrow(
+			because: "a check that warns about a dropped block must never itself turn a successful operation "
+				+ "into a reported failure");
+		ApprovalBlockExpectation.FromDescriptor(descriptor).Should().BeEmpty(
+			because: "a name this check cannot read is a name it could never match in the read-back either");
+	}
+
+	[Test]
+	[Description("A read-back with no elements array reports nothing rather than accusing the server on missing evidence — the branch that decides between 'silently wrong' and 'silently loud' when the describe comes back empty.")]
+	public void Missing_ShouldReportNothing_WhenTheReadBackHasNoElements() {
+		// Arrange
+		DescribeProcessResult described = new() { Elements = null };
+
+		// Act
+		IReadOnlyList<ApprovalBlockExpectation.DroppedApproval> missing = ApprovalBlockExpectation.Missing(
+			described, [new ApprovalBlockExpectation.ApprovalExpectation("Approve1", ExpectsApprover: true)]);
+
+		// Assert
+		missing.Should().BeEmpty(
+			because: "the read-back is the only evidence this check has, and having none is a reason to stay "
+				+ "quiet rather than to tell the caller their configuration was discarded");
+	}
+
 	#endregion
 
 	#region Methods: Private
@@ -208,7 +334,7 @@ public class ApprovalBlockExpectationTests {
 
 		// Assert
 		missing.Should().ContainSingle(because: "the element has nobody assigned to approve it")
-			.Which.BlockPresent.Should().BeTrue(
+			.Which.Kind.Should().Be(ApprovalBlockExpectation.ApprovalDropKind.ApproverOnly,
 				because: "the block itself survived, so the warning must describe the approver drop rather than "
 					+ "claim the whole configuration is missing — different cause, different message");
 	}
@@ -240,8 +366,8 @@ public class ApprovalBlockExpectationTests {
 	[Test]
 	[Description("The warning names the affected elements, states the element is unconfigured, and gives the action that fixes it.")]
 	public void BuildWarning_ShouldNameElementsAndTheFix() {
-		// Act
-		string warning = ApprovalBlockExpectation.BuildWarning([new ApprovalBlockExpectation.DroppedApproval("Approve1", BlockPresent: false)]);
+		// Arrange & Act
+		string warning = ApprovalBlockExpectation.BuildWarning([new ApprovalBlockExpectation.DroppedApproval("Approve1", ApprovalBlockExpectation.ApprovalDropKind.WholeBlock)]);
 
 		// Assert
 		warning.Should().Contain("Approve1",
@@ -255,9 +381,9 @@ public class ApprovalBlockExpectationTests {
 	[Test]
 	[Description("The approver-drop warning says the block DID land and the approver did not, so the reader is not sent to look for a missing approval configuration that is in fact there.")]
 	public void BuildWarning_ShouldDescribeAnApproverDrop_SeparatelyFromAMissingBlock() {
-		// Act
+		// Arrange & Act
 		string warning = ApprovalBlockExpectation.BuildWarning(
-			[new ApprovalBlockExpectation.DroppedApproval("Approve1", BlockPresent: true)]);
+			[new ApprovalBlockExpectation.DroppedApproval("Approve1", ApprovalBlockExpectation.ApprovalDropKind.ApproverOnly)]);
 
 		// Assert
 		warning.Should().Contain("WITHOUT the approver",
@@ -273,7 +399,7 @@ public class ApprovalBlockExpectationTests {
 	[Test]
 	[Description("No dropped block produces no warning, so a caller can treat null as 'nothing to emit'.")]
 	public void BuildWarning_ShouldReturnNull_WhenNothingWasDropped() {
-		// Act
+		// Arrange & Act
 		string warning = ApprovalBlockExpectation.BuildWarning([]);
 
 		// Assert
