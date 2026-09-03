@@ -132,6 +132,187 @@ public sealed class ComponentSuggestion {
 }
 
 /// <summary>
+/// One coded classification on an <see cref="ElementMapEntry.Reason"/>. <see cref="Code"/> is drawn from the
+/// closed vocabulary in <see cref="ReasonCodes"/> and is the thing to branch on; <see cref="Params"/> carries
+/// the values that would otherwise have been interpolated into a sentence.
+/// </summary>
+/// <remarks>
+/// Everything a caller must DO about a code lives in the guidance article, keyed by the code — not here and
+/// not in the payload. That is the whole point: the same conversion decision reads identically on every run,
+/// so restating it in English per entry cost bytes and determinism without adding information (ENG-95827).
+/// </remarks>
+public sealed class ReasonCode {
+	/// <summary>The classification, from <see cref="ReasonCodes"/>.</summary>
+	[JsonPropertyName("code")]
+	public string Code { get; init; }
+
+	/// <summary>
+	/// Values specific to this occurrence — a target container name, a row count, the carried property
+	/// names. Omitted when the code needs none, which is the common case.
+	/// </summary>
+	[JsonPropertyName("params")]
+	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+	public IReadOnlyDictionary<string, JsonNode> Params { get; init; }
+}
+
+/// <summary>
+/// The closed vocabulary of <see cref="ElementMapEntry.Reason"/> codes. Grouped by what the caller does with
+/// them: a PRIMARY code classifies the element, a MODIFIER adds a fact a later pass discovered, and a DROP
+/// code says why an element did not convert.
+/// </summary>
+/// <remarks>
+/// Named constants rather than inline literals because these are asserted verbatim by the unit and E2E
+/// suites and documented one-for-one in the guidance article — the same reason the
+/// <c>dataSectionConflicts</c> kinds and the <see cref="ElementMapEntry.ParentSource"/> values are.
+/// </remarks>
+public static class ReasonCodes {
+	// ── Primary: the element converts ────────────────────────────────
+	/// <summary>A field/leaf whose type the mobile registry supports; inserted as-is.</summary>
+	public const string LeafSupported = "leaf-supported";
+
+	/// <summary>A container whose type the mobile registry supports; inserted as-is.</summary>
+	public const string ContainerSupported = "container-supported";
+
+	/// <summary>A leaf a conversion template retargeted. Params: <c>parent</c>, <c>property</c>.</summary>
+	public const string LeafRetargeted = "leaf-retargeted";
+
+	/// <summary>A container a conversion template retargeted. Params: <c>parent</c>, <c>property</c>.</summary>
+	public const string ContainerRetargeted = "container-retargeted";
+
+	/// <summary>
+	/// A leaf placed relative to a mobile anchor. Params: <c>placement</c> (<c>above</c>/<c>below</c>),
+	/// <c>anchor</c>, <c>parent</c>.
+	/// </summary>
+	public const string LeafPositioned = "leaf-positioned";
+
+	/// <summary>A container placed relative to a mobile anchor. Params as <see cref="LeafPositioned"/>.</summary>
+	public const string ContainerPositioned = "container-positioned";
+
+	/// <summary>
+	/// A container with no mobile equivalent: it is NOT inserted and its children are reparented.
+	/// Params: <c>webType</c>, <c>target</c>.
+	/// </summary>
+	public const string ContainerNoMobileEquivalent = "container-no-mobile-equivalent";
+
+	/// <summary>A container the converter invented, with no web counterpart. Params: <c>role</c>, <c>tab</c>.</summary>
+	public const string SynthesizedByConverter = "synthesized-by-converter";
+
+	// ── Primary: the mobile template already provides the element ────
+	/// <summary>
+	/// A container the mobile template provides under a mapped name; merge onto it. Params: <c>mobileName</c>.
+	/// </summary>
+	public const string TemplateTwin = "template-twin";
+
+	/// <summary>
+	/// As <see cref="TemplateTwin"/>, and the twin is the attachments list, whose data source must be
+	/// retargeted to the entity's file object. Params: <c>mobileName</c>.
+	/// </summary>
+	public const string TemplateTwinAttachments = "template-twin-attachments";
+
+	/// <summary>
+	/// A component twin with a prebuilt delta: merge <c>mobileValues</c> by name, insert nothing.
+	/// Params: <c>mobileName</c>, optional <c>carryProperties</c>.
+	/// </summary>
+	public const string ComponentTwinPrebuilt = "component-twin-prebuilt";
+
+	/// <summary>
+	/// A component twin of a DIFFERENT mobile type: no delta exists by design, the how-to is type-driven.
+	/// Params: <c>mobileName</c>, <c>webType</c>.
+	/// </summary>
+	public const string ComponentTwinStructural = "component-twin-structural";
+
+	/// <summary>
+	/// A component twin whose delta could NOT be computed — no web-template baseline. THE ONE TWIN CODE WITH
+	/// WORK TO DO: configure it by merge-by-name. Params: <c>mobileName</c>, <c>webType</c>.
+	/// </summary>
+	public const string ComponentTwinNoBaseline = "component-twin-no-baseline";
+
+	/// <summary>
+	/// A component twin the page changes NOTHING on: do nothing at all, and do not carry the web values
+	/// over. Params: <c>mobileName</c>.
+	/// </summary>
+	public const string ComponentTwinNothingToCarry = "component-twin-nothing-to-carry";
+
+	// ── Modifiers ────────────────────────────────────────────────────
+	/// <summary>
+	/// The walk changed this element's parent on the caller's behalf: its natural parent cannot hold
+	/// arbitrary children, so it was re-homed into the nearest ancestor that can. Params: <c>from</c>,
+	/// <c>fromType</c>. A placement the converter changed is exactly what a reason exists to record —
+	/// silently moving an element would be as opaque as silently losing it.
+	/// </summary>
+	public const string ReHomedToHostableAncestor = "re-homed-to-hostable-ancestor";
+
+	/// <summary>
+	/// An explicit index keeps a converted tab before the template's own trailing tabs.
+	/// </summary>
+	public const string TabIndexedBeforeTemplateTabs = "tab-indexed-before-template-tabs";
+
+	/// <summary>
+	/// The converter moved this anchor down to make room for content placed above it. Params: <c>rows</c>.
+	/// </summary>
+	public const string AnchorMovedDown = "anchor-moved-down";
+
+	// ── Drops ────────────────────────────────────────────────────────
+	/// <summary>A container left with no surviving mobile child.</summary>
+	public const string DropEmptyContainer = "drop-empty-container";
+
+	/// <summary>
+	/// An <c>excludedComponents</c> rule matched. Params: <c>webType</c>, <c>host</c>, <c>slot</c>.
+	/// </summary>
+	public const string DropExcludedByRule = "drop-excluded-by-rule";
+
+	/// <summary>An ancestor was removed by an <c>excludedComponents</c> rule. Params: <c>ancestor</c>.</summary>
+	public const string DropParentExcluded = "drop-parent-excluded";
+
+	/// <summary>
+	/// Chrome inherited from the WEB template, which the mobile template provides natively.
+	/// Params: <c>name</c>.
+	/// </summary>
+	public const string DropInheritedChrome = "drop-inherited-chrome";
+
+	/// <summary>
+	/// The conversion target is absent from the mobile template, so the element could not be placed.
+	/// Params: <c>target</c>.
+	/// </summary>
+	public const string DropTargetMissing = "drop-target-missing";
+
+	/// <summary>
+	/// An action under a non-converting scope, folded into a mobile action host instead.
+	/// Params: <c>scope</c>, <c>target</c>.
+	/// </summary>
+	public const string ActionRetargeted = "action-retargeted";
+
+	/// <summary>
+	/// A <c>crt.Button</c> whose request the Mobile app does not support. Params: <c>request</c>.
+	/// </summary>
+	public const string DropUnsupportedRequest = "drop-unsupported-request";
+
+	/// <summary>The web type has no mobile counterpart in the registry. Params: <c>webType</c>.</summary>
+	public const string DropTypeNotInMobileRegistry = "drop-type-not-in-mobile-registry";
+
+	/// <summary>
+	/// A request absent from the conversion map — CUSTOM or unknown, not known-unsupported. clio cannot
+	/// assert it is unavailable on mobile, only that it does not know it. Params: <c>request</c>,
+	/// <c>scope</c>.
+	/// </summary>
+	public const string DropUnknownRequest = "drop-unknown-request";
+
+	/// <summary>
+	/// No conversion rule matches this component inside a non-converting scope. Params: <c>scope</c>.
+	/// </summary>
+	public const string DropNoRuleInScope = "drop-no-rule-in-scope";
+
+	/// <summary>
+	/// Inside a non-converting scope and not itself a placeable action (no own convertible <c>clicked</c>).
+	/// Its nested actions are still flattened. Params: <c>scope</c>.
+	/// </summary>
+	public const string DropNotAnActionInScope = "drop-not-an-action-in-scope";
+
+	/// <summary>The element already carries a non-object value at the merge path. Params: <c>path</c>.</summary>
+	public const string PathBlockedByScalar = "path-blocked-by-scalar";
+}
+
+/// <summary>
 /// Caption/resource convention for a newly inserted named element. <see cref="Key"/> is UNIQUE to the
 /// element (<c>&lt;mobileName&gt;_caption</c>) — never the web element's inherited key — so it cannot collide
 /// with a caption key the mobile template already owns (a collision would be silently dropped by update-page,
@@ -303,13 +484,26 @@ public sealed class ElementMapEntry {
 	public JsonNode MobileValues { get; set; }
 
 	/// <summary>
-	/// Why this operation was chosen, for the conversion report. Settable (like
-	/// <see cref="ParentName"/>): the converted-tab placement pass appends the placement note after the
-	/// element map is built.
+	/// Why this operation was chosen: a CODED classification, first entry primary, each optionally carrying
+	/// <c>params</c>. Look each <c>code</c> up in the guidance article for what it means and what — if
+	/// anything — the caller must do about it. Settable (like <see cref="ParentName"/>): later passes append
+	/// a code once the element map is built.
 	/// </summary>
+	/// <remarks>
+	/// A list rather than one code because the classification genuinely composes: an element is
+	/// "a template twin" AND "its anchor moved down a row", and the two came from different passes. It was a
+	/// single English sentence that those passes concatenated with <c>"; "</c>, which had three costs. It was
+	/// the largest block of prose left in the response (8,424 characters on a real 155-element page) while
+	/// carrying only 31 distinct values — i.e. already an enum, just stringly typed. 119 of those 155 entries
+	/// said <c>"field/leaf; mobile-supported"</c> or <c>"container; mobile-supported"</c>, which restate
+	/// <see cref="Operation"/> plus the presence of <see cref="MobileType"/> and so told the caller nothing.
+	/// And the four component-twin states — whose remedies are opposite, one of them "do nothing at all" —
+	/// were distinguished only by WORDING, so any edit to a format string could silently merge two of them
+	/// (ENG-95827).
+	/// </remarks>
 	[JsonPropertyName("reason")]
 	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-	public string Reason { get; set; }
+	public IReadOnlyList<ReasonCode> Reason { get; set; }
 
 	/// <summary>
 	/// Converter bookkeeping, never serialized: the MOBILE anchor name (e.g. <c>Tabs</c>) when this
@@ -691,32 +885,11 @@ public sealed class MobilePageConversionGuide {
 	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
 	public IReadOnlyDictionary<string, string> ResourceStrings { get; init; }
 
-	// ── Guidance ──────────────────────────────────────────────────────
-	//
-	// There is deliberately NO advisory-prose section here, and re-adding one is a regression (ENG-95827).
-	// A `constraints` array of English sentences used to sit at this position. Every line in it turned out
-	// to be one of these, and each went to the surface that owns it:
-	//   • an unconditional platform invariant -> a validator in SchemaValidationService that
-	//     validate-page / update-page cannot be talked out of, explained once in the guidance article;
-	//   • a restatement of data the payload already carried -> deleted (webOnlySections, a drop entry's
-	//     reason, a normalization group's own note, ParentSource, DataSectionConflicts);
-	//   • a flow or gate rule -> the guidance article's FLOW and the creatio-mobile-page-conversion skill;
-	//   • a report of a state that should not exist -> the state was removed instead (a default mobile
-	//     template, a depth budget at the readers' ceiling, a top-level failure when the mobile template
-	//     cannot be read, a rules-file shape test that fails at authoring time).
-	// What briefly replaced it — a typed `diagnostics` list — is gone for the same reason: once each of
-	// those moves landed, every entry either could not occur or was readable from the data beside it.
-	// If a new finding appears, give it a structured field of its own; do not start another prose array.
-
-	// A `nextSteps` array of ordered prose stood here too, and it is gone for a sharper reason than the
-	// constraints array above: it was an INCOMPLETE copy of a procedure the guidance article's FLOW section
-	// and the creatio-mobile-page-conversion skill each own in full. Its persist step never mentioned
-	// threading create-page's schemaUId in as `target-schema-uid`, which the skill marks REQUIRED (without it
-	// an update-page against a non-design package writes to the wrong schema), and its read-the-guidance step
-	// omitted that the article is loaded once per run and reused. A caller who followed the short copy instead
-	// of the real flow therefore got it wrong — an incomplete duplicate of a procedure is worse than none.
-	// <see cref="GuidanceArticle"/> names where the flow actually lives; keep it that way.
-
+	/// <summary>
+	/// The guidance article that owns the conversion flow and every standing mobile rule. This response
+	/// carries NO advisory prose of its own: a finding gets a structured field, a rule gets a validator or
+	/// the article. Adding a prose array here is a regression (ENG-95827).
+	/// </summary>
 	[JsonPropertyName("guidanceArticle")]
 	public string GuidanceArticle { get; init; }
 

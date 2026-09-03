@@ -1,6 +1,7 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Reflection;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using System.Threading;
@@ -82,11 +83,7 @@ public sealed class MobilePageConversionGuideSandboxE2ETests : McpContractFixtur
 			because: "a successful conversion must carry the guide inline so the caller can paste its diffs");
 		AssertSplitShape(response.Guide!.ModelConfigDiff, "modelConfigDiff");
 		AssertSplitShape(response.Guide!.ViewModelConfigDiff, "viewModelConfigDiff");
-		response.Guide!.ElementMap.Should().NotContain(
-			e => e.Operation == "drop" && e.Reason != null && e.Reason.Contains("multi-data-source"),
-			because: "a mobile page carries the same multi-data-source structure as web, so an element bound to a "
-				+ "non-primary page data source must convert — the drop used to remove whole detail sections and, "
-				+ "because emptiness cascades, their wrapper containers with them");
+		AssertReasonCodesAreFromTheClosedVocabulary(response.Guide!);
 		AssertConvertedListsCarryTheirRow(response.Guide!);
 		AssertHeaderActionsConvertToFab(response.Guide!);
 		AssertDataSectionConflictsAreStructured(response.Guide!);
@@ -582,17 +579,55 @@ public sealed class MobilePageConversionGuideSandboxE2ETests : McpContractFixtur
 	/// reason the converter composed. Keyed on the reason because the anchor name is page/template data, not
 	/// something this test may assume.
 	/// </summary>
+	/// <summary>
+	/// Every <c>reason</c> code on every entry is a declared member of <see cref="ReasonCodes"/>, and no entry
+	/// is left without a reason.
+	/// </summary>
+	/// <remarks>
+	/// This replaced a narrower guard that asserted no drop entry mentioned "multi-data-source" — a page
+	/// element bound to a NON-PRIMARY page data source used to be dropped, taking whole detail sections and
+	/// (because emptiness cascades) their wrapper containers with them. That prose no longer exists in any
+	/// form, so matching on it could only pass. Asserting the closed vocabulary keeps the guard and widens it:
+	/// re-introducing a data-source drop — or any other unreviewed reason — fails here rather than shipping a
+	/// code no article documents (ENG-95827).
+	/// </remarks>
+	private static void AssertReasonCodesAreFromTheClosedVocabulary(MobilePageConversionGuide guide) {
+		HashSet<string> declared = [.. typeof(ReasonCodes)
+			.GetFields(BindingFlags.Public | BindingFlags.Static)
+			.Where(f => f.IsLiteral && f.FieldType == typeof(string))
+			.Select(f => (string)f.GetRawConstantValue()!)];
+		declared.Should().NotBeEmpty(
+			because: "reading the vocabulary by reflection must actually find it, or every assertion below passes vacuously");
+
+		List<ElementMapEntry> entries = [.. guide.ElementMap ?? []];
+		entries.Should().NotBeEmpty(because: "the seeded page converts, so there is something to check");
+		entries.Should().OnlyContain(e => e.Reason != null && e.Reason.Count > 0,
+			because: "every entry states WHY its operation was chosen — an entry with no reason tells the caller nothing");
+		string[] unknown = [.. entries
+			.SelectMany(e => e.Reason!)
+			.Select(r => r.Code)
+			.Where(code => !declared.Contains(code))
+			.Distinct()];
+		unknown.Should().BeEmpty(
+			because: "a reason code outside ReasonCodes is one the guidance article does not document, so the caller cannot act on it");
+	}
+
 	private static List<ElementMapEntry> PlacedAboveAnchor(MobilePageConversionGuide guide) =>
 		guide?.ElementMap is null
 			? []
 			: [.. guide.ElementMap.Where(e =>
 				e.Operation == "insert" && e.Index is not null
-				&& e.Reason is not null && e.Reason.Contains("placed above the mobile ", StringComparison.Ordinal))];
+				&& e.Reason is not null
+				&& e.Reason.Any(r =>
+					(r.Code == ReasonCodes.LeafPositioned || r.Code == ReasonCodes.ContainerPositioned)
+					&& r.Params is not null
+					&& r.Params.TryGetValue("placement", out JsonNode placement)
+					&& placement?.GetValue<string>() == "above"))];
 
 	/// <summary>
 	/// The MOBILE anchor the bundled tabbed-template rule places its positional content around, read from the
-	/// shipped rules file rather than parsed out of the converter's prose — a reason-wording change must not
-	/// break this test, and the rule is the authoritative source anyway. Mirrors
+	/// shipped rules file rather than inferred from the converter's own output — the rule is the
+	/// authoritative source. Mirrors
 	/// <see cref="ResolveBundledRemovableTypes"/>. Null when no rule declares a positional entry.
 	/// </summary>
 	private static string ResolveBundledPositionalAnchor() =>

@@ -1,4 +1,4 @@
-namespace Clio.Command.McpServer.Tools.MobilePageConverter;
+﻿namespace Clio.Command.McpServer.Tools.MobilePageConverter;
 
 using System;
 using System.Collections.Generic;
@@ -73,9 +73,8 @@ internal static class ExcludedComponentsPass {
 	/// not components — the recursion descends into both the array and the object at every level, so a
 	/// component nested N levels in <c>items</c> costs ~2N. At the previous budget of 32 the cut-off landed
 	/// around component depth 16, which a genuinely deep page can reach, and the outcome was silent: a banned
-	/// component below the cut-off stays on the page and produces no <c>drop</c> entry. It used to be reported
-	/// as an <c>exclusion-search-truncated</c> diagnostic; the cause was removed instead (ENG-95827), because
-	/// the caller could not act on it anyway. Do NOT raise this past the readers' ceiling — the value's whole
+	/// component below the cut-off stays on the page and produces no <c>drop</c> entry (ENG-95827). Do NOT
+	/// raise this past the readers' ceiling — the value's whole
 	/// point is that the parser refuses before the budget does. Deliberately NOT unified with
 	/// <c>MaxTemplateDepth</c>, which bounds a different walk and carries no such reporting.
 	/// </remarks>
@@ -114,20 +113,10 @@ internal static class ExcludedComponentsPass {
 	/// </para>
 	/// </summary>
 	/// <remarks>
-	/// Two things the pass could not do used to be counted here and returned to the caller as diagnostics.
-	/// Both counters are gone, for different reasons, and neither is a reporting gap (ENG-95827).
-	/// <para>
-	/// A <c>DepthBudgetTruncated</c> flag reported an abandoned search branch. The CONDITION is gone:
-	/// <see cref="MaxSearchDepth"/> now equals the JSON readers' own ceiling, so a document deep enough to
-	/// abandon a branch cannot be parsed at all.
-	/// </para>
-	/// <para>
-	/// A <c>DiscardedFilterCount</c> reported filters skipped for a missing <c>type</c>/<c>parentType</c> —
-	/// a typo in a published rule (<c>parenttype</c>) silently turns an exclusion off. That is a property of
-	/// the RULES FILE, identical on every conversion and unfixable by the caller it was reported to, so it is
-	/// caught at AUTHORING time instead: <c>WebToMobilePageConversionRulesCatalogTests</c> fails CI for the
-	/// person who wrote the typo.
-	/// </para>
+	/// The pass reports nothing back beyond the removed names, and neither of the two things it cannot do is
+	/// a reporting gap: a branch too deep to search cannot be parsed at all (see
+	/// <see cref="MaxSearchDepth"/>), and a filter skipped for a malformed rule is caught at authoring time
+	/// (see <see cref="CollectFilters"/>).
 	/// </remarks>
 	internal static HashSet<string> RemoveExcludedComponents(
 		List<ElementMapEntry> elementMap, WebToMobilePageConversionRules rules,
@@ -160,11 +149,10 @@ internal static class ExcludedComponentsPass {
 	/// is skipped — nothing to match, nowhere to look.
 	/// </summary>
 	/// <remarks>
-	/// The skipped ones used to be counted and handed to the caller, because a typo in a published rule
-	/// (<c>parenttype</c>) turns an exclusion off silently. They are no longer counted here: the typo is a
-	/// property of the rules file, so it is caught at AUTHORING time by
-	/// <c>WebToMobilePageConversionRulesCatalogTests</c>, which fails CI for the person who wrote it rather
-	/// than reporting it to every caller who cannot fix it (ENG-95827).
+	/// A skip is silent here on purpose, and the silence is covered elsewhere: a typo in a published rule
+	/// (<c>parenttype</c>) turns an exclusion off, which is a property of the RULES FILE rather than of the
+	/// page, so <c>WebToMobilePageConversionRulesCatalogTests</c> fails CI for whoever authored it instead of
+	/// reporting it to every caller who cannot fix it.
 	/// </remarks>
 	private static List<ExcludedComponentFilterRule> CollectFilters(
 		IReadOnlyList<ExcludedComponentGroup> groups) =>
@@ -288,8 +276,12 @@ internal static class ExcludedComponentsPass {
 				WebName = entry.WebName,
 				WebType = entry.WebType,
 				Operation = "drop",
-				Reason = $"parent removed by an excludedComponents rule: ancestor '{removedAncestor}' was "
-					+ "removed and this element has no mobile parent left"
+				Reason = [new ReasonCode {
+					Code = ReasonCodes.DropParentExcluded,
+					Params = new Dictionary<string, JsonNode>(StringComparer.Ordinal) {
+						["ancestor"] = removedAncestor
+					}
+				}]
 			};
 			RecordRemoved(entry, removedWebNames, removedMobileNames);
 		}
@@ -566,8 +558,16 @@ internal static class ExcludedComponentsPass {
 	/// takes ("no mobile content survived conversion", not a claim about why the container was deemed
 	/// disposable).
 	/// </summary>
-	private static string BuildDropReason(ExcludedComponentFilterRule filter, string hostMobileName) =>
-		$"excludedComponents rule matched: '{filter.Type}' is excluded from '{filter.ParentType}'" +
-		(filter.PropertiesContainerName is { Length: > 0 } p ? $"['{p}']" : "") +
-		$" ('{hostMobileName}') and was removed";
+	private static IReadOnlyList<ReasonCode> BuildDropReason(
+		ExcludedComponentFilterRule filter, string hostMobileName) {
+		var values = new Dictionary<string, JsonNode>(StringComparer.Ordinal) {
+			["webType"] = filter.Type,
+			["hostType"] = filter.ParentType,
+			["host"] = hostMobileName
+		};
+		if (filter.PropertiesContainerName is { Length: > 0 } slot) {
+			values["slot"] = slot;
+		}
+		return [new ReasonCode { Code = ReasonCodes.DropExcludedByRule, Params = values }];
+	}
 }

@@ -514,8 +514,7 @@ public sealed class MobilePageConversionGuideTool {
 	/// which the converted page's configs are diffed against recursively (a shared subtree emits only the real
 	/// delta; an array the base already carries is augmented via insert rather than replaced). <c>Unavailable</c>
 	/// is true when a template schema name was known but its bundle could not be read (no active
-	/// environment, read failure) — the caller surfaces that as an explicit guide constraint instead of
-	/// silently falling back to a single root merge that may replace the template's arrays wholesale.
+	/// environment, read failure), which REFUSES the conversion — see RejectUnobtainableMobileTemplate.
 	/// </summary>
 	private sealed record MobileTemplateProbe(
 		IReadOnlyDictionary<string, string> ContainerParents,
@@ -635,7 +634,7 @@ public sealed class MobilePageConversionGuideTool {
 	/// <remarks>
 	/// <para>
 	/// The guide's quality DEPENDS on reading that template, and the degradation is not confined to one
-	/// section, which is why this is a top-level failure rather than a diagnostic on an otherwise-normal
+	/// section, which is why this is a top-level failure rather than a footnote on an otherwise-normal
 	/// guide. With no template bundle, <c>MobileTypesByName</c> is empty, and that breaks two things
 	/// silently:
 	/// </para>
@@ -648,11 +647,9 @@ public sealed class MobilePageConversionGuideTool {
 	/// container the template does not actually have is no longer caught.</description></item>
 	/// </list>
 	/// <para>
-	/// The data-section diffs also degrade to a root merge that can strip the template's own arrays. That one
-	/// used to be reported as a <c>data-section-root-merge-fallback</c> diagnostic and nothing reported the
-	/// other two — so the guide shipped with silent correctness defects and a footnote about the least of
-	/// them (ENG-95827). A guide that cannot be trusted is worse than no guide: refusing names the cause and
-	/// the fix, which a diagnostic buried beside 155 element entries did not.
+	/// The data-section diffs also degrade to a root merge that can strip the template's own arrays. A guide
+	/// that cannot be trusted is worse than no guide, and refusing names the cause and the fix where a note
+	/// buried beside 155 element entries would not (ENG-95827).
 	/// </para>
 	/// </remarks>
 	internal static MobilePageConversionGuideResponse RejectUnobtainableMobileTemplate(

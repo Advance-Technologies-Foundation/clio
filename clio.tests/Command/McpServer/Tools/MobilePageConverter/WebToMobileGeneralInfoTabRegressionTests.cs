@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
@@ -306,7 +306,8 @@ public sealed class WebToMobileGeneralInfoTabRegressionTests {
 		MobilePageConversionGuide guide = Convert(fixture, RulesWithoutTheGeneralTabEntries());
 
 		// Assert
-		Element(guide, GeneralTabContent[0]).Reason.Should().Contain("re-homed",
+		Element(guide, GeneralTabContent[0]).Reason!.Select(r => r.Code).Should()
+			.Contain(ReasonCodes.ReHomedToHostableAncestor,
 			because: "a placement the walk changed on the reader's behalf is exactly what reason exists to "
 				+ "record; silently moving an element would be as opaque as silently losing it");
 	}

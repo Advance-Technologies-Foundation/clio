@@ -79,11 +79,17 @@ public sealed class WebToMobileRealPageRegressionTests {
 			because: "each of the page's five search filters must be accounted for in the element map");
 		searchFilters.Should().OnlyContain(e => e.Operation == "drop",
 			because: "every one of them is in the position the shipped rule bans, so none may reach the mobile page");
-		searchFilters.Should().OnlyContain(e => e.Reason!.Contains("excludedComponents"),
+		searchFilters.Should().OnlyContain(
+			e => e.Reason!.Any(r => r.Code == ReasonCodes.DropExcludedByRule),
 			because: "the removal must be attributed to the RULE — an unsupported-type drop would satisfy the "
 				+ "acceptance criterion by accident and hide the rule regressing");
-		searchFilters.Should().OnlyContain(e => e.Reason!.Contains("crt.ExpansionPanel") && e.Reason.Contains("tools"),
-			because: "the reason names the host and the slot so a reader can trace the drop back to the rules file");
+		searchFilters.Should().OnlyContain(
+			e => e.Reason!.Any(r => r.Code == ReasonCodes.DropExcludedByRule
+				&& r.Params != null
+				&& r.Params["hostType"]!.GetValue<string>() == "crt.ExpansionPanel"
+				&& r.Params["slot"]!.GetValue<string>() == "tools"),
+			because: "the reason names the host and the slot as PARAMS so a reader can trace the drop back to "
+				+ "the rules file without parsing a sentence");
 		VerbatimCarriersOfSearchFilter(guide).Should().BeEmpty(
 			because: "the acceptance criterion is about the CANVAS, not the report: a drop entry plus a verbatim "
 				+ "copy still inside a surviving host's mobileValues is exactly the shape that kept rendering the "

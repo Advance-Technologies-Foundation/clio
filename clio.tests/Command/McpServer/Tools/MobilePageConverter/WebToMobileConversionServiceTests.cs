@@ -101,6 +101,26 @@ public sealed class WebToMobileConversionServiceTests {
 	private static ElementMapEntry Element(MobilePageConversionGuide guide, string webName) =>
 		guide.ElementMap.Single(e => e.WebName == webName);
 
+	/// <summary>The reason codes on an entry, in emission order.</summary>
+	private static string[] Codes(ElementMapEntry entry) =>
+		[.. (entry?.Reason ?? []).Select(r => r.Code)];
+
+	/// <summary>
+	/// One reason param as a string — null when the entry has no such code, or that code no such param. Used
+	/// instead of substring-matching a sentence, so a test states WHICH value it pins and where it lives.
+	/// </summary>
+	private static string ReasonParam(ElementMapEntry entry, string code, string key) =>
+		(entry?.Reason ?? [])
+			.Where(r => r.Code == code && r.Params is not null && r.Params.ContainsKey(key))
+			.Select(r => r.Params[key]?.ToString())
+			.FirstOrDefault();
+
+	/// <summary>The values of a list-valued reason param (e.g. <c>carryProperties</c>).</summary>
+	private static string[] ReasonParamList(ElementMapEntry entry, string code, string key) =>
+		[.. (entry?.Reason ?? [])
+			.Where(r => r.Code == code && r.Params is not null && r.Params.ContainsKey(key))
+			.SelectMany(r => r.Params[key]!.AsArray().Select(v => v!.GetValue<string>()))];
+
 	private static MobilePageConversionGuide Analyze(
 		PageBundleInfo bundle,
 		IReadOnlyDictionary<string, ComponentRegistryEntry> webByType = null,
@@ -580,8 +600,8 @@ public sealed class WebToMobileConversionServiceTests {
 				+ "is bound to is not a transferability criterion");
 		Element(guide, "SimilarLeadList").MobileType.Should().Be("crt.List",
 			because: "the kept grid must still be mapped onto its mobile equivalent by the components rule");
-		Element(guide, "SimilarLeadList").Reason.Should().NotContain("multi-data-source",
-			because: "the multi-data-source drop reason must no longer be emitted for a detail list");
+		Element(guide, "SimilarLeadList").Operation.Should().Be("insert",
+			because: "a detail list bound to a non-primary page data source must CONVERT — the old guard matched a drop-reason sentence that no longer exists in any form, so it could only pass");
 
 		// Page-specific tab → insert with caption; its non-primary-DS grid converts with it.
 		ElementMapEntry sales = Element(guide, "SalesTab");
@@ -1651,7 +1671,7 @@ public sealed class WebToMobileConversionServiceTests {
 		ElementMapEntry save = Element(guide, "SaveButton");
 		save.Operation.Should().Be("drop",
 			because: "SaveButton is inherited from the web template (chrome the mobile template provides natively), so retargeting it into the FAB would duplicate it");
-		save.Reason.Should().Contain("inherited from the web template",
+		Codes(save).Should().Contain(ReasonCodes.DropInheritedChrome,
 			because: "the drop reason must state why the inherited-chrome header button was not retargeted");
 		ElementMapEntry send = Element(guide, "SendForApprovalButton");
 		send.Operation.Should().Be("insert", because: "a page-authored header action (absent from the web baseline) still converts");
@@ -1924,7 +1944,7 @@ public sealed class WebToMobileConversionServiceTests {
 		ElementMapEntry custom = Element(guide, "CustomBtn");
 		custom.Operation.Should().Be("drop",
 			because: "a clicked request the mobile app does not support (a custom usr.* request) must not become a live FAB menu item");
-		custom.Reason.Should().Contain("usr.MyCustomRequest",
+		ReasonParam(custom, ReasonCodes.DropUnknownRequest, "request").Should().Be("usr.MyCustomRequest",
 			because: "the drop reason names the unsupported request");
 		guide.RequestConversions!.DroppedRequests.Should().ContainSingle(r =>
 			r.ElementName == "CustomBtn" && r.WebRequest == "usr.MyCustomRequest",
@@ -1949,8 +1969,8 @@ public sealed class WebToMobileConversionServiceTests {
 		ElementMapEntry print = Element(guide, "PrintBtn");
 		print.Operation.Should().Be("drop",
 			because: "an unsupported clicked request must not be retargeted into the FAB, matching how the leaf path drops the same button");
-		print.Reason.Should().Contain("crt.PrintablesRequest",
-			because: "the drop reason names the unsupported request");
+		ReasonParam(print, ReasonCodes.DropUnknownRequest, "request").Should().Be("crt.PrintablesRequest",
+			because: "this request is in NEITHER the versioned map nor the bundled set, so clio can only say it does not know it — the separate known-unsupported code would be a claim it cannot make");
 		guide.RequestConversions!.DroppedRequests.Should().ContainSingle(r =>
 			r.ElementName == "PrintBtn" && r.WebRequest == "crt.PrintablesRequest",
 			because: "the lost header action must surface in requestConversions, not be moved into the FAB");
@@ -2020,7 +2040,7 @@ public sealed class WebToMobileConversionServiceTests {
 		// Assert
 		ElementMapEntry print = Element(guide, "PrintBtn");
 		print.Operation.Should().Be("drop", because: "an explicitly-unsupported clicked cannot become a live action");
-		print.Reason.Should().Contain("crt.PrintablesRequest",
+		ReasonParam(print, ReasonCodes.DropUnsupportedRequest, "request").Should().Be("crt.PrintablesRequest",
 			because: "the drop reason names the offending request instead of a generic message");
 		guide.RequestConversions!.DroppedRequests.Should().ContainSingle(r =>
 			r.ElementName == "PrintBtn" && r.WebRequest == "crt.PrintablesRequest",
@@ -2043,10 +2063,10 @@ public sealed class WebToMobileConversionServiceTests {
 		// Assert
 		ElementMapEntry label = Element(guide, "HeaderLabel");
 		label.Operation.Should().Be("drop", because: "a non-action component under a non-converting scope is dropped");
-		label.Reason.Should().Contain("MainHeader",
+		ReasonParam(label, ReasonCodes.DropNoRuleInScope, "scope").Should().Be("MainHeader",
 			because: "the reason names the scope container it fell under, built from data");
-		label.Reason.Should().Contain("scope",
-			because: "the wording is scope-agnostic (\"scope\"), not header-specific");
+		Codes(label).Should().Contain(ReasonCodes.DropNoRuleInScope,
+			because: "the code is scope-agnostic — no rule matched this component in scope — rather than header-specific");
 	}
 
 	[Test]
@@ -2128,8 +2148,8 @@ public sealed class WebToMobileConversionServiceTests {
 		ElementMapEntry order = Element(guide, "OrderBtn");
 		order.Operation.Should().Be("drop",
 			because: "the FAB target is absent on the mobile template, so an unresolvable insert must not be emitted");
-		order.Reason.Should().Contain("FloatingActionButton",
-			because: "the diagnostic names the missing conversion target");
+		ReasonParam(order, ReasonCodes.DropTargetMissing, "target").Should().Be("FloatingActionButton",
+			because: "the drop names the conversion target the mobile template lacks, so the fix is traceable to the rule");
 		guide.RequestConversions!.DroppedRequests.Should().ContainSingle(r => r.ElementName == "OrderBtn",
 			because: "the action lost to a missing target is recorded");
 	}
@@ -2244,7 +2264,7 @@ public sealed class WebToMobileConversionServiceTests {
 		ElementMapEntry save = Element(guide, "SaveButton");
 		save.Operation.Should().Be("drop",
 			because: "SaveButton is inherited from the web template baseline, so the leaf retarget is suppressed to avoid duplication");
-		save.Reason.Should().Contain("inherited from the web template",
+		Codes(save).Should().Contain(ReasonCodes.DropInheritedChrome,
 			because: "the drop reason must state why the inherited-chrome leaf was not retargeted");
 		guide.RequestConversions!.DroppedRequests.Should().Contain(
 			r => r.ElementName == "SaveButton" && r.WebRequest == "crt.SaveRecordRequest",
@@ -2379,7 +2399,7 @@ public sealed class WebToMobileConversionServiceTests {
 		ElementMapEntry toolbar = Element(guide, "Toolbar");
 		toolbar.Operation.Should().Be("drop",
 			because: "Toolbar is inherited from the web template baseline, so the container retarget is suppressed to avoid duplication");
-		toolbar.Reason.Should().Contain("inherited from the web template",
+		Codes(toolbar).Should().Contain(ReasonCodes.DropInheritedChrome,
 			because: "the drop reason must state why the inherited-chrome container was not retargeted");
 		ElementMapEntry fld = Element(guide, "Fld");
 		fld.Operation.Should().Be("insert",
@@ -2887,7 +2907,8 @@ public sealed class WebToMobileConversionServiceTests {
 		twin.MobileName.Should().Be("List");
 		// No component-specific values are prebuilt by clio; the how-to is delegated to componentSuggestions.
 		twin.MobileValues.Should().BeNull();
-		twin.Reason.Should().Contain("Primary list component.").And.Contain("componentSuggestions");
+		Codes(twin).Should().Equal([ReasonCodes.ComponentTwinStructural],
+			because: "a twin of a DIFFERENT mobile type carries no delta by design; the how-to is type-driven and the rule's own note now lives only in componentSuggestions");
 		// No duplicate insert for the grid; the conversion detail lives in the general components rule.
 		guide.ElementMap.Should().NotContain(e => e.WebName == "DataTable" && e.Operation == "insert");
 		guide.ComponentSuggestions.Should().Contain(s => s.SourceType == "crt.DataGrid");
@@ -2926,7 +2947,8 @@ public sealed class WebToMobileConversionServiceTests {
 		vals["rootSchemaName"]!.GetValue<string>().Should().Be("UsrMouse");
 		vals["sourceSchemaName"]!.GetValue<string>().Should().Be("FolderTree");
 		// The reason tells the caller to merge the prebuilt values (not hand-configure).
-		twin.Reason.Should().Contain("rootSchemaName");
+		ReasonParamList(twin, ReasonCodes.ComponentTwinPrebuilt, "carryProperties").Should().Contain("rootSchemaName",
+			because: "the entry names the whitelisted properties it carried, so the caller can check them off");
 		// No duplicate insert for the folder element.
 		guide.ElementMap.Should().NotContain(e => e.WebName == "FolderTree" && e.Operation == "insert");
 	}
@@ -2960,11 +2982,11 @@ public sealed class WebToMobileConversionServiceTests {
 			because: "the element still exists on mobile, so it stays a valid page-business-rule target");
 		twin.MobileValues.Should().BeNull(
 			because: "the page carries none of the whitelisted properties, so there is no payload to prebuild");
-		twin.Reason.Should().Contain("NOTHING to apply",
+		Codes(twin).Should().Contain(ReasonCodes.ComponentTwinNothingToCarry,
 			because: "the entry must say the payload is absent because there was nothing to carry — the one null-payload state whose correct action is to do nothing at all");
-		twin.Reason.Should().NotContain("merge-by-name",
+		Codes(twin).Should().NotContain(ReasonCodes.ComponentTwinNoBaseline,
 			because: "this is exactly the mislabel the four-state split fixed: instructing the caller to configure it by hand would have them overwrite what the mobile template already sets");
-		twin.Reason.Should().NotContain("NO delta could be prebuilt",
+		Codes(twin).Should().NotContain(ReasonCodes.ComponentTwinNoBaseline,
 			because: "nothing failed here, so the wording reserved for a real degradation must not appear");
 	}
 
@@ -2995,7 +3017,7 @@ public sealed class WebToMobileConversionServiceTests {
 		twin.Operation.Should().Be("merge", because: "the mobile template provides AttachmentFileList — configured by merge-by-name, not inserted");
 		twin.MobileName.Should().Be("AttachmentFileList");
 		twin.MobileValues.Should().BeNull(because: "without the web-template baseline the twin cannot tell the page's change from the template default, so it carries nothing rather than the whole web node (no primaryColumnName leakage)");
-		twin.Reason.Should().Contain("configure", because: "an advisory merge tells the caller to configure by merge-by-name per componentSuggestions, not to paste prebuilt values");
+		Codes(twin).Should().Contain(ReasonCodes.ComponentTwinNoBaseline, because: "an advisory merge tells the caller to configure by merge-by-name per componentSuggestions, not to paste prebuilt values");
 		guide.ElementMap.Should().NotContain(e => e.WebName == "AttachmentList" && e.Operation == "insert", because: "the twin merges onto the template element rather than inserting a duplicate list");
 	}
 
@@ -3067,7 +3089,7 @@ public sealed class WebToMobileConversionServiceTests {
 		vals["dataSourceName"]!.GetValue<string>().Should().Be("LeadDS", because: "the page changed dataSourceName from the web-template baseline - the change carries");
 		vals.ContainsKey("entitySchemaName").Should().BeFalse(because: "entitySchemaName equals the web-template baseline - an unchanged property is omitted so the mobile template's default stands");
 		vals.ContainsKey("type").Should().BeFalse(because: "a merge targets an element the template already owns - no type is re-declared");
-		twin.Reason.Should().Contain("provided by the mobile template under the same name", because: "the reason tells the caller this is an auto merge-by-name twin");
+		Codes(twin).Should().Contain(ReasonCodes.ComponentTwinPrebuilt, because: "the page DID change a property, so the auto twin carries a prebuilt delta to merge — not the do-nothing code");
 		guide.ElementMap.Should().NotContain(e => e.WebName == "Feed" && e.Operation == "insert", because: "an auto twin merges onto the template element, never inserts a duplicate");
 	}
 
@@ -3097,7 +3119,7 @@ public sealed class WebToMobileConversionServiceTests {
 		ElementMapEntry twin = guide.ElementMap.Single(e => e.WebName == "Feed");
 		twin.Operation.Should().Be("merge", because: "the element is kept as a merge-by-name twin (a valid business-rule target), never inserted as a duplicate");
 		twin.MobileValues.Should().BeNull(because: "the page changed nothing over the baseline, so there is nothing to merge — the mobile template already provides Feed");
-		twin.Reason.Should().Contain("unchanged", because: "the reason states it is an unchanged advisory twin, nothing to merge");
+		Codes(twin).Should().Contain(ReasonCodes.ComponentTwinNothingToCarry, because: "the reason states it is an unchanged advisory twin, nothing to merge");
 		// And it is KEPT (surfaced in sourceStructure), not pruned — the test cannot pass with the mechanism deleted.
 		guide.SourceStructure.Should().Contain(s => s.Name == "Feed",
 			because: "an unchanged auto-twin is kept (surfaced in sourceStructure), not pruned away");
@@ -3464,9 +3486,9 @@ public sealed class WebToMobileConversionServiceTests {
 		ElementMapEntry twin = Element(guide, "AttachmentList");
 		twin.MobileValues.Should().BeNull(
 			because: "with no baseline the page's own changes cannot be told from the template's values, so no delta can be prebuilt");
-		twin.Reason.Should().Contain("NO delta could be prebuilt",
+		Codes(twin).Should().Contain(ReasonCodes.ComponentTwinNoBaseline,
 			because: "the entry itself must say the payload is missing because it could not be COMPUTED — this is the one null-payload case that leaves work to do, and it is reported here rather than in an aggregate because the caller acts per entry");
-		twin.Reason.Should().Contain("configure 'AttachmentFileList' by merge-by-name",
+		ReasonParam(twin, ReasonCodes.ComponentTwinNoBaseline, "mobileName").Should().Be("AttachmentFileList",
 			because: "the instruction has to name the mobile element the caller now configures by hand");
 	}
 
@@ -3491,7 +3513,7 @@ public sealed class WebToMobileConversionServiceTests {
 		// the guide. The old trigger was keyed on the rules file declaring a twin, so it fired on pages that
 		// carry none; re-introducing any page-level aggregate keyed that way fails here.
 		guide.ElementMap.Should().OnlyContain(
-			e => e.Reason == null || !e.Reason.Contains("merge-by-name", StringComparison.Ordinal),
+			e => e.Reason == null || e.Reason.All(r => r.Code != ReasonCodes.ComponentTwinNoBaseline),
 			because: "no entry may carry the configure-by-hand twin instruction when the page carries no twin element at all — nothing degraded, so there is nothing to report");
 		guide.ElementMap.Should().NotBeEmpty(
 			because: "the page's own elements must still convert — an empty map would make the assertion above vacuous");
@@ -3518,9 +3540,9 @@ public sealed class WebToMobileConversionServiceTests {
 		ElementMapEntry structural = Element(guide, "Grid");
 		structural.MobileValues.Should().BeNull(
 			because: "a structural twin never gets a prebuilt delta — the conversion is type-driven");
-		structural.Reason.Should().Contain("DIFFERENT mobile type",
+		Codes(structural).Should().Contain(ReasonCodes.ComponentTwinStructural,
 			because: "the entry must say the payload is absent BY DESIGN rather than because something could not be computed — the two cases used to share one sentence, which sent the caller chasing a non-problem");
-		structural.Reason.Should().NotContain("NO delta could be prebuilt",
+		Codes(structural).Should().NotContain(ReasonCodes.ComponentTwinNoBaseline,
 			because: "nothing failed here, so the wording reserved for a real degradation must not appear");
 	}
 
@@ -3541,7 +3563,7 @@ public sealed class WebToMobileConversionServiceTests {
 			e => string.Equals(e.Operation, "merge", StringComparison.Ordinal),
 			because: "with no baseline and no declared twin, neither twin route can fire, so nothing may be reported as merging onto a template-provided element");
 		guide.ElementMap.Should().OnlyContain(
-			e => e.Reason == null || !e.Reason.Contains("merge-by-name", StringComparison.Ordinal),
+			e => e.Reason == null || e.Reason.All(r => r.Code != ReasonCodes.ComponentTwinNoBaseline),
 			because: "no entry may carry the configure-by-hand twin instruction when no twin could have fired");
 		guide.ElementMap.Should().HaveCount(2,
 			because: "the container and its field both produce an entry — pinning the count keeps the assertions above from passing on an empty map");
@@ -3608,7 +3630,8 @@ public sealed class WebToMobileConversionServiceTests {
 
 		ElementMapEntry entry = Element(guide, "PrintButton");
 		entry.Operation.Should().Be("drop");
-		entry.Reason.Should().Contain("crt.PrintablesRequest");
+		ReasonParam(entry, ReasonCodes.DropUnsupportedRequest, "request").Should().Be("crt.PrintablesRequest",
+			because: "the entry names the request the Mobile app does not support, so the caller knows what was lost");
 	}
 
 	[Test]
@@ -4031,7 +4054,10 @@ public sealed class WebToMobileConversionServiceTests {
 		mainEntry.MobileValues!["alignItems"]!.GetValue<string>().Should().Be("stretch");
 		mainEntry.MobileValues!["padding"]!["bottom"]!.GetValue<string>().Should().Be("medium");
 		mainEntry.MobileValues!["items"]!.AsArray().Should().BeEmpty(because: "children need an initialized slot to land in");
-		mainEntry.Reason.Should().Contain("synthesized by the converter");
+		Codes(mainEntry).Should().Contain(ReasonCodes.SynthesizedByConverter,
+			because: "a synthesized container must say it has no web counterpart, or the caller hunts for a source element that does not exist");
+		ReasonParam(mainEntry, ReasonCodes.SynthesizedByConverter, "role").Should().Be("tab-body",
+			because: "the role distinguishes the tab body from the Area card it holds");
 
 		ElementMapEntry areaEntry = Synthesized(guide, area);
 		areaEntry.ParentName.Should().Be(main, because: "the Area card sits inside the tab body, not in the tab");
@@ -6127,9 +6153,6 @@ public sealed class WebToMobileConversionServiceTests {
 		twin.MobileValues?["itemLayout"].Should().BeNull(
 			because: "rendering the skeleton here would replace the ListItem the mobile template supplies, and the "
 				+ "guidance tells the caller to configure that one by merge-by-name instead");
-		twin.Reason.Should().NotContain("no title").And.NotContain("NO ROW",
-			because: "nothing was synthesized for a merge, so neither row note may fire and send the caller "
-				+ "looking for a row the converter never claimed to build");
 	}
 
 	[Test]
@@ -6268,8 +6291,6 @@ public sealed class WebToMobileConversionServiceTests {
 		ElementMapEntry grid = Element(guide, "ProductsList");
 		grid.MobileValues["itemLayout"].Should().BeNull(
 			because: "the filter did not match, so this mapping's template must not apply to the element");
-		grid.Reason.Should().NotContain("no title").And.NotContain("NO ROW",
-			because: "nothing was synthesized here, so neither row note may fire");
 	}
 
 	/// <summary>A mobile registry whose crt.ListItem declares each named input with the given raw descriptor.</summary>
@@ -6440,9 +6461,6 @@ public sealed class WebToMobileConversionServiceTests {
 		// Assert
 		ElementMapEntry grid = Element(guide, "Authored");
 		grid.MobileValues["itemLayout"]["title"].Should().BeNull(because: "the fixture authored a row with no title, which is what makes this case distinguishable from a synthesized one");
-		grid.Reason.Should().NotContain("no title",
-			because: "the note explains that the SOURCE had no acceptable column; here the row was not "
-				+ "synthesized at all, so claiming that would be wrong");
 	}
 
 	[Test]
@@ -6538,7 +6556,8 @@ public sealed class WebToMobileConversionServiceTests {
 
 		ElementMapEntry box = Element(guide, "OnlyUnsupported");
 		box.Operation.Should().Be("drop");
-		box.Reason.Should().Contain("empty container");
+		Codes(box).Should().Contain(ReasonCodes.DropEmptyContainer,
+			because: "the drop must say the container was emptied by conversion rather than banned or unsupported");
 		box.WebType.Should().Be("crt.GridContainer", because: "the report must still say what was removed");
 		box.MobileName.Should().BeNull(because: "a drop carries no mobile target");
 		Element(guide, "Timeline").Operation.Should().Be("drop", because: "the child's own drop is what emptied the box");
@@ -6612,10 +6631,12 @@ public sealed class WebToMobileConversionServiceTests {
 		MobilePageConversionGuide guide = AnalyzeWithEmptyRemoval(bundle);
 
 		Element(guide, "InnerGrid").Operation.Should().Be("drop");
-		Element(guide, "InnerGrid").Reason.Should().Contain("empty container");
+		Codes(Element(guide, "InnerGrid")).Should().Contain(ReasonCodes.DropEmptyContainer,
+			because: "the inner container lost every child, so it is dropped as emptied");
 		Element(guide, "Wrapper").Operation.Should().Be("drop",
 			because: "after the inner grid left, the wrapper holds nothing — the removal must cascade");
-		Element(guide, "Wrapper").Reason.Should().Contain("empty container");
+		Codes(Element(guide, "Wrapper")).Should().Contain(ReasonCodes.DropEmptyContainer,
+			because: "emptiness cascades, so the wrapper is dropped for the same reason as its child");
 	}
 
 	[Test]
@@ -6662,7 +6683,8 @@ public sealed class WebToMobileConversionServiceTests {
 		MobilePageConversionGuide guide = AnalyzeWithEmptyRemoval(bundle);
 
 		Element(guide, "EmptyPanel").Operation.Should().Be("drop");
-		Element(guide, "EmptyPanel").Reason.Should().Contain("empty container");
+		Codes(Element(guide, "EmptyPanel")).Should().Contain(ReasonCodes.DropEmptyContainer,
+			because: "a panel with no surviving mobile content is dropped as emptied");
 		Element(guide, "OverviewTab").Operation.Should().Be("drop",
 			because: "the panel was the tab's only content, so the tab empties and cascades away");
 		Element(guide, "Tabs").Operation.Should().Be("merge",
@@ -6713,7 +6735,7 @@ public sealed class WebToMobileConversionServiceTests {
 		ElementMapEntry panel = Element(guide, "ToolsOnlyPanel");
 		panel.Operation.Should().Be("drop",
 			because: "with its only tool dropped and no items, the panel has no surviving child in any slot and is removed as empty");
-		panel.Reason.Should().Contain("empty container",
+		Codes(panel).Should().Contain(ReasonCodes.DropEmptyContainer,
 			because: "the removal reason names the empty-container decision");
 	}
 
@@ -6973,7 +6995,9 @@ public sealed class WebToMobileConversionServiceTests {
 		dropped.Operation.Should().Be("drop",
 			because: "a stripped component is reported as a drop entry, never removed silently");
 		dropped.WebType.Should().Be("crt.SearchFilter", because: "the report must still say what was removed");
-		dropped.Reason.Should().Contain("excludedComponents").And.Contain("crt.ExpansionPanel").And.Contain("tools",
+		Codes(dropped).Should().Contain(ReasonCodes.DropExcludedByRule);
+		ReasonParam(dropped, ReasonCodes.DropExcludedByRule, "hostType").Should().Be("crt.ExpansionPanel");
+		ReasonParam(dropped, ReasonCodes.DropExcludedByRule, "slot").Should().Be("tools",
 			because: "the reason must name the rule, the host type and the slot so the reader can trace it back to the rules file");
 	}
 
@@ -7378,7 +7402,9 @@ public sealed class WebToMobileConversionServiceTests {
 		ElementMapEntry dropped = Element(guide, "ProductsSearchFilter");
 		dropped.Operation.Should().Be("drop",
 			because: "the entry's ancestor chain enters the crt.ExpansionPanel host through its 'tools' edge");
-		dropped.Reason.Should().Contain("excludedComponents").And.Contain("crt.ExpansionPanel").And.Contain("tools",
+		Codes(dropped).Should().Contain(ReasonCodes.DropExcludedByRule);
+		ReasonParam(dropped, ReasonCodes.DropExcludedByRule, "hostType").Should().Be("crt.ExpansionPanel");
+		ReasonParam(dropped, ReasonCodes.DropExcludedByRule, "slot").Should().Be("tools",
 			because: "the entry-graph phase must report the same traceable reason the verbatim phase reports");
 		Element(guide, "ProductsRefreshButton").Operation.Should().Be("insert",
 			because: "siblings of the banned component are untouched");
@@ -7475,13 +7501,13 @@ public sealed class WebToMobileConversionServiceTests {
 		// Assert
 		Element(guide, "ProductsToolsFlexContainer").Operation.Should().Be("drop",
 			because: "the container itself is the banned type reached through the host's tools edge");
-		Element(guide, "ProductsToolsFlexContainer").Reason.Should().Contain("excludedComponents",
+		Codes(Element(guide, "ProductsToolsFlexContainer")).Should().Contain(ReasonCodes.DropExcludedByRule,
 			because: "the container was removed BY the rule, so its reason names the rule — unlike its orphaned children below");
 		foreach (string orphan in new[] { "ProductsRefreshButton", "ProductsSearchFilter", "ProductsSettingsButton" }) {
 			ElementMapEntry entry = Element(guide, orphan);
 			entry.Operation.Should().Be("drop",
 				because: $"'{orphan}' lost its mobile parent — leaving it an insert would orphan it");
-			entry.Reason.Should().Contain("parent removed",
+			Codes(entry).Should().Contain(ReasonCodes.DropParentExcluded,
 				because: "an orphan drop must say it fell with its ancestor, not claim its own rule match");
 		}
 		Element(guide, "QuickFilter_vitfc9y").Operation.Should().Be("insert",
@@ -7723,7 +7749,7 @@ public sealed class WebToMobileConversionServiceTests {
 		ElementMapEntry sales = Element(guide, "SalesTab");
 		sales.ParentName.Should().Be("Tabs");
 		sales.Index.Should().Be(1, because: "position 0 belongs to the template's general tab");
-		sales.Reason.Should().Contain("Feed/Attachments",
+		Codes(sales).Should().Contain(ReasonCodes.TabIndexedBeforeTemplateTabs,
 			because: "the report must explain why a non-positional insert suddenly carries an index");
 		Element(guide, "HistoryTab").Index.Should().Be(2, because: "converted tabs keep the web page's own tab order");
 		Element(guide, "Tabs").Operation.Should().Be("merge",
@@ -8201,7 +8227,7 @@ public sealed class WebToMobileConversionServiceTests {
 			because: "the template pins the anchor to row 1, so the row has to be freed for the content above it");
 		LayoutConfigOf(anchor)!["row"]!.GetValue<int>().Should().Be(2,
 			because: "one element above the anchor moves it one row down");
-		anchor.Reason.Should().Contain("moved down",
+		Codes(anchor).Should().Contain(ReasonCodes.AnchorMovedDown,
 			because: "re-placing a template-owned element must be explained in the report");
 	}
 
@@ -8400,7 +8426,7 @@ public sealed class WebToMobileConversionServiceTests {
 			because: "two merges for one element would apply twice and hide which one positions it");
 		ElementMapEntry anchor = AnchorMerge(guide, "Tabs");
 		anchor.WebName.Should().Be("Tabs", because: "the existing twin entry was patched, not replaced");
-		anchor.Reason.Should().Contain("provided by the mobile template",
+		Codes(anchor).Should().Contain(ReasonCodes.TemplateTwin,
 			because: "the twin's own explanation must survive alongside the placement note");
 	}
 
