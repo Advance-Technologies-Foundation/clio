@@ -90,7 +90,7 @@ internal class GetEntitySchemaColumnPropertiesCommandTests : BaseCommandTests<Ge
 		// Assert
 		result.Should().Be(1, because: "column identity is required for a column read");
 		_columnManager.DidNotReceiveWithAnyArgs().GetColumnProperties(default);
-		_logger.Received(1).WriteError(Arg.Is<string>(message => message.Contains("Column name is required.")));
+		_logger.Received(1).WriteError(Arg.Is<string>(message => message.Contains("column-name is required.")));
 	}
 
 	[Test]

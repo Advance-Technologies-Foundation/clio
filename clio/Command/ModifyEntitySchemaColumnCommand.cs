@@ -141,22 +141,22 @@ public class ModifyEntitySchemaColumnCommand : Command<ModifyEntitySchemaColumnO
 	internal static void ValidateOptions(ModifyEntitySchemaColumnOptions options) {
 		ArgumentNullException.ThrowIfNull(options);
 		if (string.IsNullOrWhiteSpace(options.Package)) {
-			throw new ArgumentException("Package is required.", nameof(options.Package));
+			throw new ArgumentException("package-name is required.", "package-name");
 		}
 		if (string.IsNullOrWhiteSpace(options.SchemaName)) {
-			throw new ArgumentException("Schema name is required.", nameof(options.SchemaName));
+			throw new ArgumentException("schema-name is required.", "schema-name");
 		}
 		if (string.IsNullOrWhiteSpace(options.Action)) {
-			throw new ArgumentException("Action is required.", nameof(options.Action));
+			throw new ArgumentException("action is required.", "action");
 		}
 		if (!Enum.TryParse(options.Action, true, out EntitySchemaColumnAction action)) {
-			throw new ArgumentException("Action must be one of: add, modify, remove.", nameof(options.Action));
+			throw new ArgumentException("action must be one of: add, modify, remove.", "action");
 		}
 		if (string.IsNullOrWhiteSpace(options.ColumnName)) {
-			throw new ArgumentException("Column name is required.", nameof(options.ColumnName));
+			throw new ArgumentException("column-name is required.", "column-name");
 		}
 		if (action == EntitySchemaColumnAction.Add && string.IsNullOrWhiteSpace(options.Type)) {
-			throw new ArgumentException("--type is required for add action.", nameof(options.Type));
+			throw new ArgumentException("type is required for the add action.", "type");
 		}
 		if (action == EntitySchemaColumnAction.Remove && HasMutableOptions(options)) {
 			throw new ArgumentException("Remove action does not accept column property options.", nameof(options.Action));

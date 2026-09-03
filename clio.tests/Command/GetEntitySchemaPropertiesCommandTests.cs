@@ -184,6 +184,6 @@ internal class GetEntitySchemaPropertiesCommandTests : BaseCommandTests<GetEntit
 		// Assert
 		result.Should().Be(1, because: "schema identity is required for a schema read");
 		_columnManager.DidNotReceiveWithAnyArgs().GetSchemaProperties(default);
-		_logger.Received(1).WriteError(Arg.Is<string>(message => message.Contains("Schema name is required.")));
+		_logger.Received(1).WriteError(Arg.Is<string>(message => message.Contains("schema-name is required.")));
 	}
 }

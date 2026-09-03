@@ -23,12 +23,23 @@ internal static class BusinessRuleBatchValidation {
 		string schemaName,
 		string schemaFieldName,
 		IReadOnlyList<BusinessRule>? rules) {
+		// Every missing field is reported in ONE message: reporting them one at a time costs the caller a
+		// failed round trip per field (issue #1305, point 3).
+		List<string> missing = [];
 		if (string.IsNullOrWhiteSpace(packageName)) {
-			throw new ArgumentException("package-name is required.");
+			missing.Add("package-name");
 		}
 
 		if (string.IsNullOrWhiteSpace(schemaName)) {
-			throw new ArgumentException($"{schemaFieldName} is required.");
+			missing.Add(schemaFieldName);
+		}
+
+		if (missing.Count == 1) {
+			throw new ArgumentException($"{missing[0]} is required.");
+		}
+
+		if (missing.Count > 1) {
+			throw new ArgumentException($"{string.Join(", ", missing)} are required.");
 		}
 
 		if (rules is null || rules.Count == 0) {

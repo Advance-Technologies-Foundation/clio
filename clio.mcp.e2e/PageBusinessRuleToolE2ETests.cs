@@ -9,6 +9,7 @@ using Clio.Mcp.E2E.Support.Mcp;
 using Clio.Mcp.E2E.Support.Results;
 using FluentAssertions;
 using ModelContextProtocol.Protocol;
+using System.Linq;
 using System.Text.Json.Nodes;
 
 namespace Clio.Mcp.E2E;
@@ -340,6 +341,65 @@ public sealed class PageBusinessRuleToolE2ETests : McpContractFixtureBase {
 		execution.Output.Should().Contain(message =>
 				ContainsText(message.Value, invalidEnvironmentName),
 			because: "the failure should come from resolving the requested environment, not from binding the page read arguments");
+	}
+
+	[Category("McpE2E.NoEnvironment")]
+	[Test]
+	[Description("Binds a read-page-business-rules request that names the page through the 'schema-name' alias, so the alias survives the real MCP transport (issue #1305, point 3).")]
+	[AllureTag(ReadPageBusinessRuleTool.ToolName)]
+	[AllureName("Page business-rule read MCP tool accepts the schema-name alias")]
+	[AllureDescription("Starts the real clio MCP server and calls read-page-business-rules with 'schema-name' instead of 'page-schema-name', then verifies the request reaches command execution instead of being rejected for a missing page schema.")]
+	public async Task BusinessRulesRead_Should_Accept_SchemaName_Alias() {
+		// Arrange
+		await using var arrangeContext = Arrange(TimeSpan.FromMinutes(3));
+		string invalidEnvironmentName = $"missing-page-read-alias-env-{Guid.NewGuid():N}";
+
+		// Act
+		CallToolResult callResult = await arrangeContext.Session.CallToolAsync(
+			ReadPageBusinessRuleTool.ToolName,
+			new Dictionary<string, object?> {
+				["args"] = new Dictionary<string, object?> {
+					["environment-name"] = invalidEnvironmentName,
+					["package-name"] = "UsrPkg",
+					["schema-name"] = "UsrCase_FormPage"
+				}
+			},
+			arrangeContext.CancellationTokenSource.Token);
+
+		// Assert
+		callResult.IsError.Should().NotBeTrue(
+			because: "the alias must bind through the real transport, not fail as an MCP binding error");
+		callResult.Content!.Select(content => content.ToString()).Should().NotContain(message =>
+				ContainsText(message, "page-schema-name is required"),
+			because: "supplying the page through the accepted 'schema-name' alias must satisfy the page-schema requirement");
+	}
+
+	[Category("McpE2E.NoEnvironment")]
+	[Test]
+	[Description("Reports every missing identity field of read-page-business-rules in one message instead of one failed call per field (issue #1305, point 3).")]
+	[AllureTag(ReadPageBusinessRuleTool.ToolName)]
+	[AllureName("Page business-rule read MCP tool reports all missing parameters at once")]
+	[AllureDescription("Starts the real clio MCP server, calls read-page-business-rules with only the environment, and verifies both missing parameters are named in a single response.")]
+	public async Task BusinessRulesRead_Should_Report_All_Missing_Parameters_At_Once() {
+		// Arrange
+		await using var arrangeContext = Arrange(TimeSpan.FromMinutes(3));
+
+		// Act
+		CallToolResult callResult = await arrangeContext.Session.CallToolAsync(
+			ReadPageBusinessRuleTool.ToolName,
+			new Dictionary<string, object?> {
+				["args"] = new Dictionary<string, object?> {
+					["environment-name"] = $"missing-page-read-aggregate-env-{Guid.NewGuid():N}"
+				}
+			},
+			arrangeContext.CancellationTokenSource.Token);
+
+		// Assert
+		callResult.IsError.Should().NotBeTrue(
+			because: "a missing-parameter rejection is reported in the structured response, not as an MCP binding error");
+		callResult.Content!.Select(content => content.ToString()).Should().Contain(message =>
+				ContainsText(message, "package-name, page-schema-name are required"),
+			because: "one call must name every missing parameter so the caller does not need a failed call per field");
 	}
 
 	[Category("McpE2E.NoEnvironment")]

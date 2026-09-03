@@ -23,9 +23,21 @@ public sealed class PageValidateTool(
 	[Description("Validates a Freedom UI page body client-side without saving to Creatio (markers, JS syntax, field/column bindings, handler/converter/validator structure for web; disallowed constructs, diff-apply, and placement checks for mobile — `type` must sit inside `values`, a `merge` must not author child elements in a Scaffold slot the template already fills, and a button in the Scaffold `actions` slot is flagged). " +
 		"Run before update-page. See get-guidance `page-schema-converters` / `page-schema-handlers` / `page-schema-validators` / `mobile-page-modification` for the contracts it enforces.")]
 	public async Task<PageValidateResponse> ValidatePage(
-		[Description("Parameters: body (required); resources (optional)")]
+		[Description("Parameters: body or body-file (required); resources, version (optional)")]
 		[Required] PageValidateArgs args,
 		CancellationToken cancellationToken = default) {
+		// `body-file` is the documented escape hatch for large bodies. Resolve it through the SAME loader the
+		// save path uses (PageUpdateBodyLoader), so precedence and the file-not-found wording cannot drift
+		// between validate-page and update-page (issue #1297).
+		(bool bodyLoaded, string body, string bodyLoadError) =
+			PageUpdateBodyLoader.TryResolveBody(args.Body, args.BodyFile);
+		if (!bodyLoaded) {
+			return InvalidRequest(bodyLoadError);
+		}
+		if (string.IsNullOrWhiteSpace(body)) {
+			return InvalidRequest("Either 'body' or 'body-file' must provide page body content.");
+		}
+		args = args with { Body = body };
 		// Mobile path: MobilePageValidation.RunAsync applies the diff sections through the faithful client-engine
 		// clones (JsonDiffApplier / JsonPathDiffApplier) and returns any differ exception (e.g. a not-a-container
 		// insert) to the caller for analysis — no heuristic body normalization.
@@ -69,6 +81,19 @@ public sealed class PageValidateTool(
 			Validation = result
 		};
 	}
+
+	// Envelope for a request-shape rejection (no body supplied, or an unreadable body-file). Reported through
+	// the normal validation envelope so a caller parsing `validation.errors` needs no second error shape.
+	private static PageValidateResponse InvalidRequest(string error) =>
+		new() {
+			Valid = false,
+			Validation = new PageSyncValidationResult {
+				MarkersOk = false,
+				JsSyntaxOk = false,
+				ContentOk = false,
+				Errors = [error]
+			}
+		};
 
 	// Folds an extra content-validation result's errors into the envelope and forces ContentOk=false; shared by the
 	// async chart-widget and run-process structural checks that run outside the static content-validation pipeline.
@@ -260,17 +285,20 @@ public sealed class PageValidateTool(
 
 public sealed record PageValidateArgs(
 	[property: JsonPropertyName("body")]
-	[property: Description("Full JavaScript page body with markers")]
-	[property: Required]
-	string Body,
+	[property: Description("Full JavaScript page body with markers. Pass `body` or `body-file`.")]
+	string? Body,
 
 	[property: JsonPropertyName("resources")]
 	[property: Description(McpToolDescriptions.PageResources)]
 	string? Resources = null,
 
 	[property: JsonPropertyName("version")]
-	[property: Description("Optional explicit platform version (3-part semver, e.g. '8.3.3') that scopes the registry-driven chart-widget (crt.ChartWidget) validation to the target environment's component set. PREFER passing the resolvedTargetVersion you already got from get-component-info for the same environment, so this pre-flight check matches what update-page / sync-pages will enforce on save. When omitted, validation uses the 'latest' catalog (a superset of all GA versions). If no registry is published for the given version, the catalog automatically falls back to 'latest'.")]
-	string? Version = null
+	[property: Description("Optional platform version (3-part semver, e.g. '8.3.3') scoping the registry-driven chart-widget (crt.ChartWidget) check. PREFER the resolvedTargetVersion from get-component-info for the same environment, so this pre-flight matches what update-page / sync-pages enforce on save. Omitted, or with no registry for that version, it falls back to the 'latest' catalog.")]
+	string? Version = null,
+
+	[property: JsonPropertyName("body-file")]
+	[property: Description("Absolute path to a file holding the page body. Used when `body` is empty.")]
+	string? BodyFile = null
 );
 
 public sealed class PageValidateResponse {

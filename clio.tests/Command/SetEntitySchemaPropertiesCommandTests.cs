@@ -91,7 +91,7 @@ internal class SetEntitySchemaPropertiesCommandTests : BaseCommandTests<SetEntit
 		// Assert
 		result.Should().Be(1, because: "a write must target a concrete package layer");
 		_columnManager.DidNotReceiveWithAnyArgs().SetSchemaProperties(default);
-		_logger.Received(1).WriteError(Arg.Is<string>(message => message.Contains("Package is required.")));
+		_logger.Received(1).WriteError(Arg.Is<string>(message => message.Contains("package-name is required.")));
 	}
 
 	[Test]
@@ -110,7 +110,7 @@ internal class SetEntitySchemaPropertiesCommandTests : BaseCommandTests<SetEntit
 		// Assert
 		result.Should().Be(1, because: "schema identity is required for a schema-property write");
 		_columnManager.DidNotReceiveWithAnyArgs().SetSchemaProperties(default);
-		_logger.Received(1).WriteError(Arg.Is<string>(message => message.Contains("Schema name is required.")));
+		_logger.Received(1).WriteError(Arg.Is<string>(message => message.Contains("schema-name is required.")));
 	}
 
 	[Test]

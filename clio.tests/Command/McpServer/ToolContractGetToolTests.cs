@@ -964,8 +964,13 @@ public sealed class ToolContractGetToolTests {
 		result.Success.Should().BeTrue(
 			because: "tool-contract-get should expose the create-page-business-rule contract");
 		ToolContractDefinition contract = result.Tools!.Single();
-		contract.InputSchema.Required.Should().Contain(["environment-name", "package-name", "page-schema-name", "rules"],
-			because: "page-business-rule creation requires environment package page and rules payload");
+		contract.InputSchema.Required.Should().Contain(["environment-name", "package-name", "rules"],
+			because: "page-business-rule creation requires environment package and rules payload");
+		contract.InputSchema.Required.Should().NotContain("page-schema-name",
+			because: "the page schema may arrive under the accepted 'schema-name' alias, so a client validating against the advertised schema must not reject that call");
+		contract.Aliases.Should().Contain(alias =>
+				alias.CanonicalName == "page-schema-name" && alias.Alias == "schema-name" && alias.Status == "accepted",
+			because: "an alias the server honors must be discoverable in the contract agents read before calling");
 		contract.InputSchema.Validators.Should().Contain(validator =>
 				validator.Name == "enum" &&
 				validator.Field == "rules[*].actions[*].type" &&

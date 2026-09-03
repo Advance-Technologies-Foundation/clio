@@ -646,7 +646,7 @@ public sealed class CreatePageBusinessRuleTool(
 			args.EnvironmentName,
 			service => BusinessRuleBatchResponse.From(service.Create(new BusinessRulesBatchRequest(
 				args.PackageName,
-				args.PageSchemaName,
+				args.EffectivePageSchemaName,
 				// A null array element must not collapse the whole batch: keep it as a null entry so the
 				// service isolates it as a single failed item instead of throwing during the projection.
 				args.Rules.Select(rule => rule?.ToBusinessRule()!).ToList()))),
@@ -683,9 +683,19 @@ public sealed record CreatePageBusinessRulesArgs
 	/// Gets the target Freedom UI page schema name.
 	/// </summary>
 	[JsonPropertyName("page-schema-name")]
-	[Description("Target Freedom UI page schema name.")]
-	[Required]
-	public string PageSchemaName { get; init; } = null!;
+	[Description("Target Freedom UI page schema name. Alias: 'schema-name'.")]
+	public string? PageSchemaName { get; init; }
+
+	[JsonPropertyName("schema-name")]
+	[Description("Alias for page-schema-name; page-schema-name wins when both are supplied.")]
+	public string? SchemaNameAlias { get; init; }
+
+	/// <summary>
+	/// The page schema name to act on: the canonical <c>page-schema-name</c> when supplied,
+	/// otherwise the <c>schema-name</c> alias.
+	/// </summary>
+	internal string? EffectivePageSchemaName =>
+		string.IsNullOrWhiteSpace(PageSchemaName) ? SchemaNameAlias : PageSchemaName;
 
 	/// <summary>
 	/// Gets the structured page business-rule definitions to create in one batch.
@@ -797,7 +807,7 @@ public sealed class ReadPageBusinessRuleTool(
 			commandResolver,
 			args.EnvironmentName,
 			service => BusinessRulesReadResponse.From(service.Read(
-				new BusinessRulesReadRequest(args.PackageName, args.PageSchemaName))),
+				new BusinessRulesReadRequest(args.PackageName, args.EffectivePageSchemaName))),
 			BusinessRulesReadResponse.RequestError));
 }
 
@@ -814,9 +824,19 @@ public sealed record ReadPageBusinessRulesArgs {
 	public string PackageName { get; init; } = null!;
 
 	[JsonPropertyName("page-schema-name")]
-	[Description("Target Freedom UI page schema name.")]
-	[Required]
-	public string PageSchemaName { get; init; } = null!;
+	[Description("Target Freedom UI page schema name. Alias: 'schema-name'.")]
+	public string? PageSchemaName { get; init; }
+
+	[JsonPropertyName("schema-name")]
+	[Description("Alias for page-schema-name; page-schema-name wins when both are supplied.")]
+	public string? SchemaNameAlias { get; init; }
+
+	/// <summary>
+	/// The page schema name to act on: the canonical <c>page-schema-name</c> when supplied,
+	/// otherwise the <c>schema-name</c> alias.
+	/// </summary>
+	internal string? EffectivePageSchemaName =>
+		string.IsNullOrWhiteSpace(PageSchemaName) ? SchemaNameAlias : PageSchemaName;
 }
 
 [McpServerToolType]
@@ -910,7 +930,7 @@ public sealed class UpdatePageBusinessRuleTool(
 			args.EnvironmentName,
 			service => BusinessRuleBatchResponse.From(service.Update(new BusinessRulesBatchRequest(
 				args.PackageName,
-				args.PageSchemaName,
+				args.EffectivePageSchemaName,
 				args.Rules.Select(rule => rule?.ToBusinessRule()!).ToList()))),
 			BusinessRuleBatchResponse.RequestError);
 	}
@@ -929,9 +949,19 @@ public sealed record UpdatePageBusinessRulesArgs {
 	public string PackageName { get; init; } = null!;
 
 	[JsonPropertyName("page-schema-name")]
-	[Description("Target Freedom UI page schema name.")]
-	[Required]
-	public string PageSchemaName { get; init; } = null!;
+	[Description("Target Freedom UI page schema name. Alias: 'schema-name'.")]
+	public string? PageSchemaName { get; init; }
+
+	[JsonPropertyName("schema-name")]
+	[Description("Alias for page-schema-name; page-schema-name wins when both are supplied.")]
+	public string? SchemaNameAlias { get; init; }
+
+	/// <summary>
+	/// The page schema name to act on: the canonical <c>page-schema-name</c> when supplied,
+	/// otherwise the <c>schema-name</c> alias.
+	/// </summary>
+	internal string? EffectivePageSchemaName =>
+		string.IsNullOrWhiteSpace(PageSchemaName) ? SchemaNameAlias : PageSchemaName;
 
 	[JsonPropertyName("rules")]
 	[Description("Full replacement definitions for existing rules, matched by 'name'. Include block uIds from read-page-business-rules to preserve unchanged-block identity.")]
@@ -1030,7 +1060,7 @@ public sealed class DeletePageBusinessRuleTool(
 			args.EnvironmentName,
 			service => BusinessRuleBatchResponse.From(service.Delete(new BusinessRulesDeleteRequest(
 				args.PackageName,
-				args.PageSchemaName,
+				args.EffectivePageSchemaName,
 				args.RuleNames))),
 			BusinessRuleBatchResponse.RequestError);
 	}
@@ -1049,9 +1079,19 @@ public sealed record DeletePageBusinessRulesArgs {
 	public string PackageName { get; init; } = null!;
 
 	[JsonPropertyName("page-schema-name")]
-	[Description("Target Freedom UI page schema name.")]
-	[Required]
-	public string PageSchemaName { get; init; } = null!;
+	[Description("Target Freedom UI page schema name. Alias: 'schema-name'.")]
+	public string? PageSchemaName { get; init; }
+
+	[JsonPropertyName("schema-name")]
+	[Description("Alias for page-schema-name; page-schema-name wins when both are supplied.")]
+	public string? SchemaNameAlias { get; init; }
+
+	/// <summary>
+	/// The page schema name to act on: the canonical <c>page-schema-name</c> when supplied,
+	/// otherwise the <c>schema-name</c> alias.
+	/// </summary>
+	internal string? EffectivePageSchemaName =>
+		string.IsNullOrWhiteSpace(PageSchemaName) ? SchemaNameAlias : PageSchemaName;
 
 	[JsonPropertyName("rule-names")]
 	[Description("Internal rule names to delete (from read-page-business-rules), not captions.")]
