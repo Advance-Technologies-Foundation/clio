@@ -33,6 +33,16 @@ public sealed class SendTelemetryTool
 	/// Stores a single product telemetry event as a local event file.
 	/// </summary>
 	[McpServerTool(Name = ToolName, ReadOnly = false, Destructive = false, Idempotent = false, OpenWorld = true)]
+	// Process-local: the event is written as a local file and the flush is fire-and-forget against the
+	// telemetry endpoint, never a Creatio environment. Rule 11 additionally forbids a worker from running the
+	// host's telemetry flush/drain, so this surface stays in the host.
+	[McpToolExecution(
+		Location = McpToolExecutionLocation.InProcess,
+		Lifetime = McpToolExecutionLifetime.NotApplicable,
+		OperationFamily = McpToolOperationFamily.None,
+		BudgetPolicy = McpToolBudgetPolicy.None,
+		RequiresClientRequests = McpToolClientRequests.None,
+		SharedFileResource = McpToolSharedFileResource.None)]
 	[Description("""
 				 Stores a single product telemetry event as a local OpenTelemetry-shaped JSON file.
 

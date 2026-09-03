@@ -18,6 +18,13 @@ public sealed class SetRecordRightsTool(
 
 	internal const string ToolName = "set-record-rights";
 
+	[McpToolExecution(
+		Location = McpToolExecutionLocation.Worker,
+		Lifetime = McpToolExecutionLifetime.PerCall,
+		OperationFamily = McpToolOperationFamily.None,
+		BudgetPolicy = McpToolBudgetPolicy.ParentKillDefault,
+		RequiresClientRequests = McpToolClientRequests.None,
+		SharedFileResource = McpToolSharedFileResource.None)]
 	[McpServerTool(Name = ToolName, ReadOnly = false, Destructive = true, Idempotent = true, OpenWorld = false)]
 	[Description("Change who can access a record or dashboard — grant or revoke a record-level access right on a single Creatio record (DESTRUCTIVE — " +
 		"changes only the specified grant; other grants are untouched). " +

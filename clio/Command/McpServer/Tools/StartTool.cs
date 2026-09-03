@@ -15,6 +15,17 @@ public class StartTool(
 
 	private RequestContext<CallToolRequestParams> _requestContext;
 
+	// RequiresClientRequests = Progress, not None: OnStatusChanged below forwards StartCommand.StatusChanged
+	// as notifications/progress on the caller's progress token, so a half-duplex relay would drop them.
+	// (The Stage 0 inventory listed this tool as none; it counted the McpProgressHeartbeat callers and missed
+	// the tools that call server.SendNotificationAsync directly.)
+	[McpToolExecution(
+		Location = McpToolExecutionLocation.Worker,
+		Lifetime = McpToolExecutionLifetime.PerCall,
+		OperationFamily = McpToolOperationFamily.None,
+		BudgetPolicy = McpToolBudgetPolicy.ParentKillDefault,
+		RequiresClientRequests = McpToolClientRequests.Progress,
+		SharedFileResource = McpToolSharedFileResource.None)]
 	[McpServerTool(Name = "start-creatio", ReadOnly = false, Destructive = false, Idempotent = true, OpenWorld = false),
 	 Description("Starts Creatio instance by environment name")]
 	public CommandExecutionResult StartCreatioByName(
