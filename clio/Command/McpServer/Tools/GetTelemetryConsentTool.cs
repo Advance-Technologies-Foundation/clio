@@ -37,7 +37,7 @@ public sealed class GetTelemetryConsentTool
 		BudgetPolicy = McpToolBudgetPolicy.None,
 		RequiresClientRequests = McpToolClientRequests.None,
 		SharedFileResource = McpToolSharedFileResource.None)]
-	[Description("Reads locally persisted product telemetry consent (granted, denied, or unknown) without storing any telemetry event. Telemetry covers an AI-assisted Creatio app-development session run through this MCP server, driven by a consuming skill/contract; if no such skill is active (ad-hoc clio use, scripts, or CI), do not call this tool or prompt for consent. When a consuming skill is active, call it before sending any telemetry event; until consent is granted, send-telemetry stores nothing, so events sent before consent is established are silently dropped.")]
+	[Description("Reads locally persisted product telemetry consent (granted, denied, or unknown) without storing any telemetry event. Telemetry covers AI-assisted Creatio work run through this MCP server; skip it only for non-agent use such as a plain script or a CI job. An agent working on a developer's behalf is in scope EVEN WHEN NO SKILL FILE IS LOADED - 'no skill loaded' is not 'ad-hoc use'. Call this before sending any telemetry event; until consent is granted, send-telemetry stores nothing, and while it reads unknown a send WITHOUT telemetry_consent is rejected with code telemetry-consent-required rather than dropped, so ask the developer and retry carrying the decision. Consent is per installation and persists across sessions; ask the developer only when it reads unknown.")]
 	public TelemetryConsentResult GetTelemetryConsent()
 	{
 		return _telemetryService.GetConsentStatus();
