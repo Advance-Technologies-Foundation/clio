@@ -2740,6 +2740,24 @@ public sealed class SchemaValidationServiceTests
 	}
 
 	[Test]
+	[Description("The owner-has-a-type pre-filter is load-bearing: a 'data' object carrying the platform typeName marker on a node that resolves NO component type is still scanned (issue #1350 review follow-up).")]
+	public void ValidateLocalizableTextLiterals_TypeNameMarkerWithoutComponentType_ReturnsInvalid() {
+		// Arrange
+		string body = BuildDiffBackedPageBody(
+			"""[{"operation":"merge","name":"ContactPanel","values":{"data":{"typeName":"crt.EmailComposer","caption":"Plain text"}}}]""",
+			"[]");
+
+		// Act
+		SchemaValidationResult result = SchemaValidationService.ValidateLocalizableTextLiterals(body);
+
+		// Assert
+		result.IsValid.Should().BeFalse(
+			because: "both clauses gate the exemption - a marker alone, on a node that declares and inherits no component type, must not exempt the subtree");
+		result.Errors.Should().ContainSingle(error => error.Contains("caption") && error.Contains("Plain text"),
+			because: "dropping the !string.IsNullOrEmpty(componentType) clause has to turn this case green, so the clause stays pinned");
+	}
+
+	[Test]
 	[Description("A 'data' ARRAY under a typed component is still scanned — the descriptor exemption is object-shaped only, so a collection named 'data' cannot smuggle authored text past the rule (issue #1298).")]
 	public void ValidateLocalizableTextLiterals_DataArrayUnderTypedNode_ReturnsInvalid() {
 		// Arrange

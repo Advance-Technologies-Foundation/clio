@@ -2758,9 +2758,10 @@ public static class SchemaValidationService
 	// ComponentDataPropertyName). Callers skip the subtree entirely: it is component metadata, never
 	// page-authored user-visible text.
 	//
-	// The gate is the descriptor's own SHAPE, not the owner's type: a "typeName" string inside the object
-	// is the marker the platform writes on every ComposerViewConfig descriptor, and nothing else carries
-	// it. Keying on "the owner has some type" instead would be far broader than the rationale - it accepts
+	// Two conditions, both required. The owner-has-a-type clause is the pre-filter; the DISTINGUISHING
+	// gate layered on top is the descriptor's own shape - a "typeName" string inside the object is the
+	// marker the platform writes on every ComposerViewConfig descriptor, and nothing else carries it.
+	// Keying on the pre-filter ALONE would be far broader than the rationale - it accepts
 	// any non-blank string (a chart series' "doughnut" qualifies), and it would exempt
 	// crt.FilterBuilderSource / crt.FilterBuilderToggler, whose "data" IS an author-writable input whose
 	// elements[].caption is a required user-visible string. On the OOTB Leads form page the marker cuts
