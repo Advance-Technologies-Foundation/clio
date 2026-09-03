@@ -310,6 +310,19 @@ public static class AccessRightsBlockExpectation {
 	// flip this guard into a permanent false alarm telling callers their permissions were discarded when they
 	// were not.</para>
 	/// <summary>
+	/// Elements whose record FILTER this batch changed without sending an accessRights block — a
+	/// <c>setFilter</c> or <c>clearFilter</c> on its own.
+	/// <para>These reach no other check: the guard returns early when the payload carries no block, so a batch
+	/// whose only operation is <c>clearFilter</c> used to emit nothing at all. That is the most dangerous edit
+	/// the surface offers, because clearing the filter moves the element from narrowing to acting on EVERY
+	/// record. Naming them here lets the filter-state check cover them; they are NOT added to the
+	/// block-landed check, which would accuse a payload that never sent a block.</para>
+	/// </summary>
+	public static IReadOnlyList<string> FilterTouched(string operationsJson) =>
+		BlockExpectationJson.Distinct(
+			BlockExpectationJson.OperationTargets(operationsJson, "setFilter", "clearFilter"));
+
+	/// <summary>
 	/// The caller-facing warning for a read-back that could NOT report every stored permission entry. Null when
 	/// every described element reported its collections in full.
 	/// <para>This is the one warning that fires on a HEALTHY write. It exists because a supplied collection

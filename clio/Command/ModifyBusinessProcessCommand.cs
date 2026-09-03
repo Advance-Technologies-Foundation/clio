@@ -237,7 +237,11 @@ public class ModifyBusinessProcessCommand(
 		if (ignoredOnAdd is not null) {
 			logger.WriteWarning(ignoredOnAdd);
 		}
-		if (expectedEmail.Count == 0 && expectedRights.Count == 0) {
+		// A setFilter/clearFilter carries no block, so it used to return here - and clearing the filter on a
+		// Change access rights element is the single most dangerous edit this surface offers, because it moves
+		// the element from narrowing to acting on EVERY record of its object. Read back for those too.
+		IReadOnlyList<string> filterTouched = AccessRightsBlockExpectation.FilterTouched(options.OperationsJson);
+		if (expectedEmail.Count == 0 && expectedRights.Count == 0 && filterTouched.Count == 0) {
 			return;
 		}
 
@@ -258,7 +262,8 @@ public class ModifyBusinessProcessCommand(
 			return;
 		}
 
-		BlockExpectationReporter.ReportDescribed(logger, described.Value, expectedRights, expectedEmail);
+		BlockExpectationReporter.ReportDescribed(logger, described.Value, expectedRights, expectedEmail,
+			filterTouched);
 	}
 }
 

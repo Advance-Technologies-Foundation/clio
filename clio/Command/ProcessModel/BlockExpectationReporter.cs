@@ -1,4 +1,6 @@
+using System;
 using System.Collections.Generic;
+using System.Linq;
 using Clio.Common;
 
 namespace Clio.Command.ProcessModel;
@@ -22,12 +24,20 @@ internal static class BlockExpectationReporter {
 	/// not be checked, then what was configured too widely, then what was dropped outright.
 	/// </summary>
 	internal static void ReportDescribed(ILogger logger, DescribeProcessResult described,
-			IReadOnlyList<string> expectedRights, IReadOnlyList<string> expectedEmail) {
+			IReadOnlyList<string> expectedRights, IReadOnlyList<string> expectedEmail,
+			IReadOnlyList<string>? filterTouched = null) {
 		Warn(logger, BuildUnverifiedWarning(
 			AccessRightsBlockExpectation.Unresolved(described, expectedRights),
 			"the saved process does not report an element with that name or UId"));
 		Warn(logger, AccessRightsBlockExpectation.BuildLossyReadWarning(described, expectedRights));
-		Warn(logger, AccessRightsBlockExpectation.BuildNoFilterWarning(described, expectedRights));
+		// The filter-state check covers elements this batch RE-FILTERED as well as those it configured: a
+		// setFilter/clearFilter carries no block, so every other check here skips it, yet clearing a filter is
+		// what moves an element from narrowing to acting on every record. Only this check gets the wider list -
+		// the others would accuse a payload that never sent a block.
+		Warn(logger, AccessRightsBlockExpectation.BuildNoFilterWarning(described,
+			filterTouched is null or { Count: 0 }
+				? expectedRights
+				: [.. expectedRights.Concat(filterTouched).Distinct(StringComparer.OrdinalIgnoreCase)]));
 		Warn(logger, AccessRightsBlockExpectation.BuildWarning(
 			AccessRightsBlockExpectation.Missing(described, expectedRights)));
 		Warn(logger, EmailBlockExpectation.BuildWarning(

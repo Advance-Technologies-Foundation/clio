@@ -247,6 +247,36 @@ public sealed class AccessRightsBlockExpectationTests {
 	}
 
 	[Test]
+	[Description("A batch whose only operations are setFilter/clearFilter names the elements it re-filtered. Those carry no accessRights block, so every other check skips them - yet clearFilter is what moves an element from narrowing to acting on EVERY record, and the guard used to return before reading anything back.")]
+	public void FilterTouched_ShouldNameElementsReFilteredWithoutABlock() {
+		// Arrange
+		const string operations = """
+			[ { "op": "clearFilter", "elementName": "GrantRights" },
+			  { "op": "setFilter", "elementName": "Other", "filter": { "object": "Order" } },
+			  { "op": "setElement", "elementName": "Unrelated", "elementUpdate": { "caption": "x" } } ]
+			""";
+
+		// Act
+		IReadOnlyList<string> touched = AccessRightsBlockExpectation.FilterTouched(operations);
+
+		// Assert
+		touched.Should().BeEquivalentTo(["GrantRights", "Other"],
+			because: "both filter operations changed which records their element acts on, while the setElement "
+				+ "carrying no accessRights block is not this check's business");
+	}
+
+	[Test]
+	[Description("FilterTouched is empty for a batch that touches no filter, so the guard keeps its early return and an ordinary edit pays no extra describe.")]
+	public void FilterTouched_ShouldBeEmpty_WhenNoFilterOperationIsPresent() {
+		// Act
+		IReadOnlyList<string> touched = AccessRightsBlockExpectation.FilterTouched(
+			"""[ { "op": "setElement", "elementName": "GrantRights", "elementUpdate": { "caption": "x" } } ]""");
+
+		// Assert
+		touched.Should().BeEmpty(because: "no filter operation means nothing extra to read back");
+	}
+
+	[Test]
 	[Description("A filter whose only content is an EMPTY nested group narrows nothing, so it classifies as conditionless like a bare one. Counting Groups was enough to call it narrowing, which let the shape escape the guard entirely.")]
 	public void BuildNoFilterWarning_ShouldTreatANestedEmptyGroup_AsConditionless() {
 		// Arrange — groups:[{conditions:[]}]: non-empty Groups, but nothing that narrows.

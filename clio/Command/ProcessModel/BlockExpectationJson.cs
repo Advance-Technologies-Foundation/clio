@@ -93,6 +93,29 @@ internal static class BlockExpectationJson {
 			string.Equals(e?.Name, name, StringComparison.OrdinalIgnoreCase)
 			|| string.Equals(e?.Uid, name, StringComparison.OrdinalIgnoreCase));
 
+	/// <summary>
+	/// Element names the operations array targets with any of <paramref name="opTokens"/>, read from the
+	/// operation's own <c>elementName</c>. Used for operations that carry no block of their own but still change
+	/// state a guard has to check afterwards.
+	/// </summary>
+	internal static IReadOnlyList<string> OperationTargets(string operationsJson, params string[] opTokens) {
+		if (Parse(operationsJson) is not JsonArray operations) {
+			return Array.Empty<string>();
+		}
+
+		List<string> names = [];
+		foreach (JsonNode? operation in operations) {
+			if (operation is JsonObject op
+				&& op["op"] is JsonValue token
+				&& token.TryGetValue(out string? op_name)
+				&& opTokens.Any(t => string.Equals(t, op_name, StringComparison.OrdinalIgnoreCase))) {
+				AddName(names, op["elementName"]);
+			}
+		}
+
+		return names;
+	}
+
 	/// <summary>One element, named once, however many operations configured it.</summary>
 	internal static IReadOnlyList<string> Distinct(IReadOnlyList<string> names) =>
 		[.. names.Distinct(StringComparer.OrdinalIgnoreCase)];
