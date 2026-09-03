@@ -92,7 +92,7 @@ public class ModifyBusinessProcessTool(
 		 + "line break symbol'. Must be "
 		 + "one line; "
 		 + "a Lookup target's 'value' takes a bare non-empty record Guid, stored as the ConstValue the runtime "
-		 + "actually reads - and, from 1.4.0.40, the referenced record's NAME is resolved into the parameter's display value, which is what the designer renders, so 'Task category' shows Call rather than a Guid and describe reports it as valueDisplay beside the unchanged bare-Guid value (the route ships from CrtProcessBuilder 1.3.1.1; THIS clio additionally refuses, up "
+		 + "actually reads - and, from 1.4.0.40, the referenced record's NAME is resolved into the parameter's display value, which is what the designer renders, so 'Task category' shows Call rather than a Guid and describe reports it as valueDisplay beside the unchanged bare-Guid value. An already-composed [#Lookup.{objectUId}.{recordId}#] is ALSO accepted on a Lookup target and decoded to that bare id, so a value echoed back from describe re-submits unchanged; the same name resolution applies to a Lookup process parameter's DEFAULT set through addParameter / setParameter 'value', but the macro DECODE does NOT - that is the mapping route only, so a [#Lookup...#] written into a parameter default is stored as text and never resolved. (the route ships from CrtProcessBuilder 1.3.1.1; THIS clio additionally refuses, up "
 		 + "front, any environment below the version it NEEDS — the [RequiresPackage] floor, whose message names "
 		 + "that one version — and, when that floor is below what clio bundles, the package-convergence check "
 		 + "refuses the gap instead, naming both. An older clio surfaces the old package's [#Lookup…#]-macro rejection; either "

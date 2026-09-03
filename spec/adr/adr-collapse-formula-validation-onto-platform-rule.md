@@ -1,8 +1,12 @@
 # ADR — Collapse formula validation onto the platform's own rule
 
 - **Status**: Accepted 2026-09-03, after the one measurement it left open was run and reversed the
-  premise of Decision step 2. Implemented on the follow-up branch
-  `feature/ENG-95891-collapse-formula-validation` (see *Consequences* for why a follow-up).
+  premise of Decision step 2. **Implemented and SHIPPED on
+  `feature/ENG-95891-formula-expressions` itself** — PRs #42 / #1340 / #122 — not on a follow-up
+  branch. An earlier revision of this line said otherwise, and a review was right that the record and
+  the artifact then disagreed about when the boundary moved: the archive this PR bundles already
+  carries the collapse, both tool `[Description]` strings already promise the post-collapse message
+  contract, and the `[RequiresPackage]` floor already names a version above it.
 - **Supersedes in part**: the formula-validation design shipped on
   `feature/ENG-95891-formula-expressions` (PRs #42 / #1340 / #122).
 
@@ -231,6 +235,8 @@ alone, because each is a choice with a cost, and a reader asking "why is this op
   floor is .42 because that is the archive clio bundles, and because .42 is where the rewrite handles
   every serialised error in one message and names an element-scoped reference as such — both of which the
   shipped descriptions promise.)
-- This is why the refactor is a follow-up rather than an amendment to the open PRs: today's
+- The reasoning below is kept because it is why the refactor was SAFE to fold into the open PRs
+  rather than held back, but read it as history: it was written when the plan was a follow-up branch,
+  and the collapse shipped on the same branch instead. Today's
   behaviour is correct, merely redundant, so it does not block a merge, and folding a
   message-contract change into a validated branch would invalidate its manual evidence.

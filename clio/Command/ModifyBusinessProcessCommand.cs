@@ -57,6 +57,16 @@ namespace Clio.Command;
 // may carry an already-composed macro, and an older server rejects it outright as "not a bare Guid"
 // - the same "server starts accepting an input form an older one refuses" shape that produced the
 // 1.3.1.1 literal. The number below satisfies both that and the message contract described above.
+//
+// AND AN ACCESS-CONTROL PROPERTY, which a review caught me deleting along with it. Below 1.4.0.40 the
+// display-name resolution used a raw Select rather than a rights-aware entity read, and a raw Select
+// bypasses row-level permissions - so the referenced record's name was resolved and stored into the
+// parameter's display value whether or not the acting user may see that record. The old comment
+// called this "NOT a security floor" because no RELEASED archive carried the wider read. That premise
+// is weaker now, not stronger: this branch cut roughly thirty archives between .20 and .52, and its
+// own manual runs installed .18 and .37 - both below the rights-aware read. So do not lower this
+// floor below 1.4.0.40 on message-contract grounds alone; the floor is also what keeps a
+// pre-rights-aware read off an environment clio installs onto.
 [RequiresPackage(BundledPackages.ProcessBuilderPackageName, "1.4.0.44",
 	Hint = BundledPackages.ProcessBuilderInstallHint)]
 public sealed class ModifyBusinessProcessOptions : EnvironmentOptions {
