@@ -599,12 +599,16 @@ public sealed class MobilePageConversionGuideSandboxE2ETests : McpContractFixtur
 		declared.Should().NotBeEmpty(
 			because: "reading the vocabulary by reflection must actually find it, or every assertion below passes vacuously");
 
-		List<ElementMapEntry> entries = [.. guide.ElementMap ?? []];
-		entries.Should().NotBeEmpty(because: "the seeded page converts, so there is something to check");
-		entries.Should().OnlyContain(e => e.Reason != null && e.Reason.Count > 0,
-			because: "every entry states WHY its operation was chosen — an entry with no reason tells the caller nothing");
-		string[] unknown = [.. entries
-			.SelectMany(e => e.Reason!)
+		guide.ElementMap.Should().NotBeEmpty(because: "the seeded page converts, so there is something to apply");
+		guide.ElementMap.Should().OnlyContain(
+			e => e.Operation == "insert" || e.Operation == "merge" || e.Operation == "relocate-children",
+			because: "elementMap carries only operations to APPLY — a drop is not one, so it belongs in droppedElements");
+
+		List<DroppedElement> dropped = [.. guide.DroppedElements ?? []];
+		dropped.Should().OnlyContain(d => d.Reason != null && d.Reason.Count > 0,
+			because: "nothing was built for a dropped element, so its reason is the only thing that tells the caller what happened to it");
+		string[] unknown = [.. dropped
+			.SelectMany(d => d.Reason!)
 			.Select(r => r.Code)
 			.Where(code => !declared.Contains(code))
 			.Distinct()];
@@ -612,17 +616,26 @@ public sealed class MobilePageConversionGuideSandboxE2ETests : McpContractFixtur
 			because: "a reason code outside ReasonCodes is one the guidance article does not document, so the caller cannot act on it");
 	}
 
-	private static List<ElementMapEntry> PlacedAboveAnchor(MobilePageConversionGuide guide) =>
-		guide?.ElementMap is null
+	/// <summary>
+	/// The inserts the converter placed ABOVE the positional anchor, identified from the operation itself:
+	/// a positional <c>:top</c> insert carries an explicit <c>index</c> and sits beside the anchor rather
+	/// than inside it, while the other indexed inserts are the converted TABS, whose parent IS the anchor.
+	/// </summary>
+	/// <remarks>
+	/// This used to match a <c>reason</c> code carrying <c>placement: "above"</c>. That code is gone,
+	/// because it restated <c>index</c> + <c>parentName</c> — which the entry already carries and which the
+	/// caller has to read anyway to apply the insert (ENG-95827). Deriving it here is the same check the
+	/// caller makes.
+	/// </remarks>
+	private static List<ElementMapEntry> PlacedAboveAnchor(MobilePageConversionGuide guide) {
+		string anchorName = ResolveBundledPositionalAnchor();
+		return guide?.ElementMap is null || string.IsNullOrEmpty(anchorName)
 			? []
 			: [.. guide.ElementMap.Where(e =>
-				e.Operation == "insert" && e.Index is not null
-				&& e.Reason is not null
-				&& e.Reason.Any(r =>
-					(r.Code == ReasonCodes.LeafPositioned || r.Code == ReasonCodes.ContainerPositioned)
-					&& r.Params is not null
-					&& r.Params.TryGetValue("placement", out JsonNode placement)
-					&& placement?.GetValue<string>() == "above"))];
+				e.Operation == "insert"
+				&& e.Index is not null
+				&& !string.Equals(e.ParentName, anchorName, StringComparison.OrdinalIgnoreCase))];
+	}
 
 	/// <summary>
 	/// The MOBILE anchor the bundled tabbed-template rule places its positional content around, read from the

@@ -297,22 +297,6 @@ public sealed class WebToMobileGeneralInfoTabRegressionTests {
 	}
 
 	[Test]
-	[Description("A re-homed element explains itself in its own reason, so the move is visible to a reader of the guide without a second entry or a separate report. The reason is the field the guide already uses to say how an entry was placed.")]
-	public void Analyze_ShouldExplainTheReHoming_InTheElementsOwnReason() {
-		// Arrange
-		JsonObject fixture = LoadFixture();
-
-		// Act
-		MobilePageConversionGuide guide = Convert(fixture, RulesWithoutTheGeneralTabEntries());
-
-		// Assert
-		Element(guide, GeneralTabContent[0]).Reason!.Select(r => r.Code).Should()
-			.Contain(ReasonCodes.ReHomedToHostableAncestor,
-			because: "a placement the walk changed on the reader's behalf is exactly what reason exists to "
-				+ "record; silently moving an element would be as opaque as silently losing it");
-	}
-
-	[Test]
 	[Description("A tab keeps its strip even though a crt.TabPanel is absent from contentContainerTypes. The exemption is what stops the re-homing rule from dismantling every converted tab, and it is read from the rules' tabAreaLayers.tabComponentType rather than from a constant in the analyser.")]
 	public void Analyze_ShouldExemptTabs_FromTheReHomingRule() {
 		// Arrange

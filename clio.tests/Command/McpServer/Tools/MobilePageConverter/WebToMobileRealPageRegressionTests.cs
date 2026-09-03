@@ -1,4 +1,4 @@
-namespace Clio.Tests.Command.McpServer.Tools.MobilePageConverter;
+﻿namespace Clio.Tests.Command.McpServer.Tools.MobilePageConverter;
 
 using System;
 using System.Collections.Generic;
@@ -74,11 +74,11 @@ public sealed class WebToMobileRealPageRegressionTests {
 		MobilePageConversionGuide guide = Convert(fixture, mobileTypes, BundledRules());
 
 		// Assert
-		List<ElementMapEntry> searchFilters = SearchFilterEntries(guide);
+		List<DroppedElement> searchFilters = DroppedSearchFilters(guide);
 		searchFilters.Should().HaveCount(5,
-			because: "each of the page's five search filters must be accounted for in the element map");
-		searchFilters.Should().OnlyContain(e => e.Operation == "drop",
-			because: "every one of them is in the position the shipped rule bans, so none may reach the mobile page");
+			because: "each of the page's five search filters must be accounted for in droppedElements");
+		SurvivingSearchFilters(guide).Should().BeEmpty(
+			because: "every one of them is in the position the shipped rule bans, so none may reach the mobile page — an operation for one would put it on the canvas");
 		searchFilters.Should().OnlyContain(
 			e => e.Reason!.Any(r => r.Code == ReasonCodes.DropExcludedByRule),
 			because: "the removal must be attributed to the RULE — an unsupported-type drop would satisfy the "
@@ -110,10 +110,13 @@ public sealed class WebToMobileRealPageRegressionTests {
 		// Assert
 		IReadOnlyList<string> changed = OperationDifferences(without, withRule);
 		changed.Should().BeEquivalentTo(
-			SearchFilterEntries(withRule).Select(e => e.WebName),
+			DroppedSearchFilters(withRule).Select(e => e.WebName),
 			because: "the exclusion must touch the banned components and nothing else on the page");
-		withRule.ElementMap.Count.Should().Be(without.ElementMap.Count,
-			because: "a removal that cascaded into containers or orphans would change the entry count");
+		(withRule.ElementMap.Count + (withRule.DroppedElements?.Count ?? 0)).Should()
+			.Be(without.ElementMap.Count + (without.DroppedElements?.Count ?? 0),
+				because: "every source element is still accounted for, in one list or the other — a removal that "
+					+ "cascaded into containers or orphans would change the TOTAL, while the split alone only moves "
+					+ "the five banned filters from one list to the other");
 		AttributeCount(withRule).Should().Be(AttributeCount(without),
 			because: "the removal is layout cleanup, not attribute cleanup — no attribute may be pruned by it");
 		withRule.RequestConversions?.ConvertedRequests?.Count.Should()
@@ -137,8 +140,10 @@ public sealed class WebToMobileRealPageRegressionTests {
 		MobilePageConversionGuide guide = Convert(fixture, mobileTypes, BundledRules());
 
 		// Assert
-		SearchFilterEntries(guide).Should().OnlyContain(e => e.Operation == "drop",
+		DroppedSearchFilters(guide).Should().NotBeEmpty(
 			because: "an unsupported type is dropped by the converter regardless of any exclusion rule");
+		SurvivingSearchFilters(guide).Should().BeEmpty(
+			because: "a dropped component must produce no operation at all");
 		VerbatimCarriersOfSearchFilter(guide).Should().BeEmpty(
 			because: "a dropped component must not survive as a node carried verbatim inside a surviving "
 				+ "host's values — that is the shape that would still render it on the canvas");
@@ -365,11 +370,19 @@ public sealed class WebToMobileRealPageRegressionTests {
 			containerNameMap: new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase));
 	}
 
-	private static List<ElementMapEntry> SearchFilterEntries(MobilePageConversionGuide guide) =>
-		guide.ElementMap
+	/// <summary>Every search filter the converter DROPPED, with its reason.</summary>
+	private static List<DroppedElement> DroppedSearchFilters(MobilePageConversionGuide guide) =>
+		[.. (guide.DroppedElements ?? [])
+			.Where(e => string.Equals(e.WebType, "crt.SearchFilter", StringComparison.OrdinalIgnoreCase))];
+
+	/// <summary>
+	/// Every search filter that SURVIVED into an operation. Must always be empty on this page — the point of
+	/// the acceptance criterion is that none reaches the canvas.
+	/// </summary>
+	private static List<ElementMapEntry> SurvivingSearchFilters(MobilePageConversionGuide guide) =>
+		[.. guide.ElementMap
 			.Where(e => string.Equals(e.WebType, "crt.SearchFilter", StringComparison.OrdinalIgnoreCase)
-				|| string.Equals(e.MobileType, "crt.SearchFilter", StringComparison.OrdinalIgnoreCase))
-			.ToList();
+				|| string.Equals(e.MobileType, "crt.SearchFilter", StringComparison.OrdinalIgnoreCase))];
 
 	private static int AttributeCount(MobilePageConversionGuide guide) =>
 		guide.ViewModelConfig?["attributes"] is JsonObject attributes ? attributes.Count : -1;

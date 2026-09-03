@@ -352,7 +352,8 @@ public static class WebToMobileAnalysisService {
 			TemplateNote = templateRule?.Note,
 			ContainerMap = BuildContainerMap(templateRule),
 			ComponentSuggestions = suggestions,
-			ElementMap = elementMap,
+			ElementMap = [.. elementMap.Where(entry => !IsDrop(entry))],
+			DroppedElements = ProjectDroppedElements(elementMap),
 			MobileContracts = contracts,
 			SectionRegistration = sectionRegistration,
 			PageBusinessRules = pageBusinessRules,
@@ -1899,9 +1900,7 @@ public static class WebToMobileAnalysisService {
 					ctx.Out.Add(new ElementMapEntry {
 						WebName = name, WebType = Nz(type), Operation = "insert", MobileName = name, MobileType = scopedType,
 						ParentName = target.Parent, PropertyName = target.Property, Index = null,
-						CaptionResource = scopedCaption, MobileValues = scopedValues,
-						Reason = [Reason(ReasonCodes.ActionRetargeted,
-							("scope", Nz(scopeContainer)), ("target", $"{target.Parent}.{target.Property}"))]
+						CaptionResource = scopedCaption, MobileValues = scopedValues
 					});
 				} else {
 					(ReasonCode dropReason, string requestLossReason) = ScopeDropReason(
@@ -1960,8 +1959,7 @@ public static class WebToMobileAnalysisService {
 							&& !string.IsNullOrEmpty(twinType)
 						? twinType
 						: (ctx.MobileTypes.Contains(type ?? "") ? type : null),
-					MergeParentName = ResolveParent(ctx, mobileParentName),
-					Reason = TwinReason(name, twinMobileName)
+					MergeParentName = ResolveParent(ctx, mobileParentName)
 				};
 				ctx.Out.Add(twinEntry);
 				// A rules file published to the CDN that LOSES a containers entry no longer reproduces ENG-94951:
@@ -2011,9 +2009,7 @@ public static class WebToMobileAnalysisService {
 				ctx.Out.Add(new ElementMapEntry {
 					WebName = name, WebType = Nz(type), Operation = "merge", MobileName = compRule.Mobile,
 					MobileType = twinMobileType,
-					MobileValues = twinValues,
-					Reason = ComponentTwinReason(
-						name, type, compRule, ClassifyTwinPayload(ctx, name, type, compRule, twinMobileType, twinValues))
+					MobileValues = twinValues
 				});
 				if (items is not null) {
 					WalkElements(ctx, items, compRule.Mobile, sourceAncestors: Append(sourceAncestors, name));
@@ -2043,7 +2039,6 @@ public static class WebToMobileAnalysisService {
 				ctx.Out.Add(new ElementMapEntry {
 					WebName = name, WebType = Nz(type), Operation = "merge", MobileName = name, MobileType = type,
 					MobileValues = delta,
-					Reason = AutoComponentTwinReason(name, type, delta is not null)
 				});
 				continue;
 			}
@@ -2058,9 +2053,7 @@ public static class WebToMobileAnalysisService {
 				if (!typeSupported) {
 					string target = isPositional ? place.Parent : ResolveParent(ctx, mobileParentName);
 					ctx.Out.Add(new ElementMapEntry {
-						WebName = name, WebType = Nz(type), Operation = "relocate-children", ParentName = target,
-						Reason = [Reason(ReasonCodes.ContainerNoMobileEquivalent,
-							("webType", Nz(type)), ("target", Nz(target)))]
+						WebName = name, WebType = Nz(type), Operation = "relocate-children", ParentName = target
 					});
 					if (items is not null) {
 						WalkElements(ctx, items, target, sourceAncestors: Append(sourceAncestors, name),
@@ -2078,8 +2071,8 @@ public static class WebToMobileAnalysisService {
 				CaptionResource containerCaption = ResolveCaptionResource(ctx, node, name);
 				// Resolved BEFORE the values are built: a view-config template may ECHO the placement so the
 				// shape it declares can be read in place, and echoing needs the value the entry will carry.
-				(string containerParent, ReasonCode containerHostingNote) = isPositional
-					? (place.Parent, null)
+				string containerParent = isPositional
+					? place.Parent
 					: ResolveHostingParent(ctx, ResolveParent(ctx, mobileParentName), hostableParentName, type,
 						parentPropertyName);
 				string containerProperty = parentPropertyName;
@@ -2127,16 +2120,6 @@ public static class WebToMobileAnalysisService {
 					CaptionResource = containerCaption,
 					MobileValues = containerValues,
 					PositionalAnchor = isPositional && !containerRetargeted ? place.Anchor : null,
-					Reason = Reasons(
-						containerRetargeted
-							? Reason(ReasonCodes.ContainerRetargeted,
-								("parent", containerParent), ("property", containerProperty))
-							: isPositional
-								? Reason(ReasonCodes.ContainerPositioned,
-									("placement", place.Index.HasValue ? "above" : "below"),
-									("anchor", place.Anchor), ("parent", place.Parent))
-								: Reason(ReasonCodes.ContainerSupported),
-						!containerRetargeted && !isPositional ? containerHostingNote : null)
 				});
 				IReadOnlyList<string> containerChildAncestors = Append(sourceAncestors, name);
 				if (items is not null) {
@@ -2165,8 +2148,8 @@ public static class WebToMobileAnalysisService {
 				continue;
 			}
 			CaptionResource leafCaption = ResolveCaptionResource(ctx, node, name);
-			(string leafParent, ReasonCode leafHostingNote) = isPositional
-				? (place.Parent, null)
+			string leafParent = isPositional
+				? place.Parent
 				: ResolveHostingParent(ctx, ResolveParent(ctx, mobileParentName), hostableParentName, leafMobileType,
 					parentPropertyName);
 			string leafProperty = parentPropertyName;
@@ -2219,23 +2202,13 @@ public static class WebToMobileAnalysisService {
 			}
 			JsonNode leafValues = BuildMobileValues(ctx, node, name, leafMobileType, leafCaption,
 				leafParent, leafProperty, sourceAncestors);
-			List<ReasonCode> leafReason = Reasons(
-				leafRetargeted
-					? Reason(ReasonCodes.LeafRetargeted, ("parent", leafParent), ("property", leafProperty))
-					: isPositional
-						? Reason(ReasonCodes.LeafPositioned,
-							("placement", place.Index.HasValue ? "above" : "below"),
-							("anchor", place.Anchor), ("parent", place.Parent))
-						: Reason(ReasonCodes.LeafSupported),
-				!leafRetargeted && !isPositional ? leafHostingNote : null);
 			ctx.Out.Add(new ElementMapEntry {
 				WebName = name, WebType = Nz(type), Operation = "insert", MobileName = name, MobileType = leafMobileType,
 				ParentName = leafParent, PropertyName = leafProperty,
 				Index = leafIndex,
 				CaptionResource = leafCaption,
 				MobileValues = leafValues,
-				PositionalAnchor = isPositional && !leafRetargeted ? place.Anchor : null,
-				Reason = leafReason
+				PositionalAnchor = isPositional && !leafRetargeted ? place.Anchor : null
 			});
 			// A leaf can still own nested child-element arrays (e.g. a crt.Button's menuItems) — descend so their
 			// components are converted rather than carried verbatim inside the leaf's values. When the leaf itself
@@ -2525,75 +2498,7 @@ public static class WebToMobileAnalysisService {
 	private static bool ResolvesToMobileType(ElementMapContext ctx, JObject node, IReadOnlyList<string> sourceAncestors) =>
 		!string.IsNullOrEmpty(ResolveConvertedMobileType(ctx, node, sourceAncestors));
 
-	/// <summary>
-	/// The reason line for a template-mapped component twin: the rule's business <c>note</c> (what the
-	/// element is) plus a pointer to the type-driven conversion detail in <c>componentSuggestions</c>. clio
-	/// keeps no component-specific transform — the "how" (e.g. a grid's columns → the list row) is defined
-	/// by the general components rule and surfaced there for the model to apply.
-	/// </summary>
-	/// <summary>Why a component twin's merge carries no prebuilt payload — the four cases are NOT the same
-	/// instruction, and telling them apart is the entry's job.</summary>
-	private enum TwinPayload {
-		/// <summary>Values were produced: paste them.</summary>
-		Prebuilt,
 
-		/// <summary>Different mobile type (crt.DataGrid → crt.List): the how-to is type-driven.</summary>
-		StructuralNoDelta,
-
-		/// <summary>Nothing to carry — the page changed nothing the rule carries. Leave the element alone.</summary>
-		NothingToCarry,
-
-		/// <summary>No web-template baseline, so the delta could not be computed. Configure it by hand.</summary>
-		NoBaseline
-	}
-
-	/// <summary>
-	/// Classifies a twin's null payload into the four states that produce it, from the same conditions
-	/// <see cref="BuildTwinMergeValues"/> used to decide.
-	/// </summary>
-	/// <remarks>
-	/// A single "has payload" bool used to drive the reason, and it gave the SAME instruction — configure it
-	/// by merge-by-name — to all four. That is wrong for two of them: a twin the page never changed needs
-	/// NOTHING done (its entry exists only so the element is a valid rule target, and the template's own
-	/// defaults are already correct), and a whitelist twin with none of its properties present is the same. It
-	/// is the difference between work to do and no work to do, and it is per-entry — which is why it belongs
-	/// here, per entry, because the caller acts per entry (ENG-95827).
-	/// </remarks>
-	private static TwinPayload ClassifyTwinPayload(
-		ElementMapContext ctx, string name, string webType, ComponentMappingRule rule,
-		string twinMobileType, JsonNode twinValues) {
-		if (twinValues is not null) {
-			return TwinPayload.Prebuilt;
-		}
-		if (rule.CarryProperties is { Count: > 0 }) {
-			// The whitelist reads the page node only, never the baseline, so an empty result means the page
-			// carries none of those properties — not that anything could not be computed.
-			return TwinPayload.NothingToCarry;
-		}
-		bool sameComponent = !string.IsNullOrEmpty(webType)
-			&& string.Equals(twinMobileType, webType, StringComparison.OrdinalIgnoreCase);
-		if (!sameComponent) {
-			return TwinPayload.StructuralNoDelta;
-		}
-		return ctx.WebBaselineNodes.ContainsKey(name) ? TwinPayload.NothingToCarry : TwinPayload.NoBaseline;
-	}
-
-	private static List<ReasonCode> ComponentTwinReason(
-		string name, string type, ComponentMappingRule rule, TwinPayload payload) {
-		JsonNode carried = rule.CarryProperties is { Count: > 0 } names
-			? new JsonArray([.. names.Select(propertyName => JsonValue.Create(propertyName))])
-			: null;
-		return [payload switch {
-			TwinPayload.Prebuilt => Reason(ReasonCodes.ComponentTwinPrebuilt,
-				("mobileName", rule.Mobile), ("carryProperties", carried)),
-			TwinPayload.StructuralNoDelta => Reason(ReasonCodes.ComponentTwinStructural,
-				("mobileName", rule.Mobile), ("webType", Nz(type))),
-			TwinPayload.NoBaseline => Reason(ReasonCodes.ComponentTwinNoBaseline,
-				("mobileName", rule.Mobile), ("webType", Nz(type)), ("webName", Nz(name))),
-			// The case a single bool used to mislabel: nothing to apply, so nothing to do.
-			_ => Reason(ReasonCodes.ComponentTwinNothingToCarry, ("mobileName", rule.Mobile))
-		}];
-	}
 
 	/// <summary>
 	/// Builds the merge payload for a component twin. An explicit
@@ -2701,18 +2606,6 @@ public static class WebToMobileAnalysisService {
 		"layoutConfig"
 	};
 
-	/// <summary>
-	/// Reason line for an AUTOMATIC same-component twin (<see cref="ElementMapContext.MobileTypesByName"/>): the
-	/// mobile template provides an element with the same name and type. When the page CHANGED it, the caller
-	/// pastes the prebuilt mobileValues onto it by name; when it is UNCHANGED (<paramref name="hasPayload"/> is
-	/// false) the entry is advisory — the mobile template already provides the element, nothing to merge, and it
-	/// is emitted only so the element is a valid business-rule target. No <c>components</c> rule is involved.
-	/// </summary>
-	private static List<ReasonCode> AutoComponentTwinReason(string name, string type, bool hasPayload) => [
-		hasPayload
-			? Reason(ReasonCodes.ComponentTwinPrebuilt, ("mobileName", Nz(name)), ("webType", Nz(type)))
-			: Reason(ReasonCodes.ComponentTwinNothingToCarry, ("mobileName", Nz(name)), ("webType", Nz(type)))
-	];
 
 	/// <summary>
 	/// Builds the deterministic merge <c>values</c> for a component twin whose rule declares
@@ -4096,13 +3989,13 @@ public static class WebToMobileAnalysisService {
 	/// a receiver outside the accept-list is the correct one.
 	/// </para>
 	/// </remarks>
-	private static (string Parent, ReasonCode Note) ResolveHostingParent(ElementMapContext ctx, string walkParent,
+	private static string ResolveHostingParent(ElementMapContext ctx, string walkParent,
 		string hostableParentName, string childMobileType, string parentPropertyName) {
 		if (!string.Equals(parentPropertyName, ItemsPropertyName, StringComparison.OrdinalIgnoreCase)
 			|| string.IsNullOrEmpty(walkParent)
 			|| string.IsNullOrEmpty(hostableParentName)
 			|| string.Equals(walkParent, hostableParentName, StringComparison.OrdinalIgnoreCase)) {
-			return (walkParent, null);
+			return walkParent;
 		}
 		// Re-home only a receiver KNOWN to be non-hosting: its type resolves off the mobile template AND the
 		// rules do not list it. An unresolvable type is left alone rather than treated as non-hosting, so the
@@ -4111,16 +4004,14 @@ public static class WebToMobileAnalysisService {
 		if (!ctx.MobileTypesByName.TryGetValue(walkParent, out string walkParentType)
 			|| string.IsNullOrWhiteSpace(walkParentType)
 			|| CanHostChildrenOfType(ctx, walkParentType)) {
-			return (walkParent, null);
+			return walkParent;
 		}
 		string tabType = ctx.Rules?.TabAreaLayers?.TabComponentType;
 		if (!string.IsNullOrWhiteSpace(tabType)
 			&& string.Equals(childMobileType, tabType, StringComparison.OrdinalIgnoreCase)) {
-			return (walkParent, null);
+			return walkParent;
 		}
-		return (hostableParentName,
-			Reason(ReasonCodes.ReHomedToHostableAncestor,
-				("from", Nz(walkParent)), ("fromType", Nz(walkParentType))));
+		return hostableParentName;
 	}
 
 	/// <summary>
@@ -4589,7 +4480,6 @@ public static class WebToMobileAnalysisService {
 	/// </summary>
 	private static void SetAnchorPlacement(
 		List<ElementMapEntry> elementMap, string anchor, JsonObject placement, int above) {
-		ReasonCode movedDown = Reason(ReasonCodes.AnchorMovedDown, ("rows", above));
 		ElementMapEntry existing = elementMap.FirstOrDefault(e =>
 			string.Equals(e.Operation, "merge", StringComparison.Ordinal)
 			&& string.Equals(e.MobileName, anchor, StringComparison.OrdinalIgnoreCase));
@@ -4600,14 +4490,12 @@ public static class WebToMobileAnalysisService {
 				existing.MobileValues = values;
 			}
 			values["layoutConfig"] = placement;
-			AppendReason(existing, movedDown);
 			return;
 		}
 		elementMap.Add(new ElementMapEntry {
 			Operation = "merge",
 			MobileName = anchor,
-			MobileValues = new JsonObject { ["layoutConfig"] = placement },
-			Reason = [Reason(ReasonCodes.SynthesizedByConverter, ("role", "anchor-placement")), movedDown]
+			MobileValues = new JsonObject { ["layoutConfig"] = placement }
 		});
 	}
 
@@ -4656,16 +4544,10 @@ public static class WebToMobileAnalysisService {
 				&& string.Equals(entry.ParentName, MobileTabsElementName, StringComparison.OrdinalIgnoreCase)
 				&& string.Equals(entry.MobileType, MobileTabComponentType, StringComparison.OrdinalIgnoreCase)) {
 				entry.Index = next++;
-				AppendReason(entry, Reason(ReasonCodes.TabIndexedBeforeTemplateTabs));
 			}
 		}
 	}
 
-	private static List<ReasonCode> TwinReason(string name, string mobileName) => [
-		name.Contains("Attachment", StringComparison.OrdinalIgnoreCase)
-			? Reason(ReasonCodes.TemplateTwinAttachments, ("mobileName", Nz(mobileName)))
-			: Reason(ReasonCodes.TemplateTwin, ("mobileName", Nz(mobileName)))
-	];
 
 	private static string Nz(string value) => string.IsNullOrEmpty(value) ? null : value;
 
@@ -4686,19 +4568,34 @@ public static class WebToMobileAnalysisService {
 		return new ReasonCode { Code = code, Params = values };
 	}
 
-	/// <summary>The reason list for an entry, skipping nulls so a caller can pass a conditional code inline.</summary>
+	/// <summary>The reason list for a drop, skipping nulls so a caller can pass a conditional code inline.</summary>
 	private static List<ReasonCode> Reasons(params ReasonCode[] codes) =>
 		[.. (codes ?? []).Where(code => code is not null)];
 
+	/// <summary>True when this entry records an element that did NOT reach the mobile page.</summary>
+	private static bool IsDrop(ElementMapEntry entry) =>
+		string.Equals(entry?.Operation, "drop", StringComparison.Ordinal);
+
 	/// <summary>
-	/// Appends a code to an entry's reason list, creating it when absent. Used by the passes that run AFTER
-	/// the element map is built and discover an additional fact about an entry they did not create.
+	/// Splits the drops out of the finished element map into the guide's <c>droppedElements</c>. Null when
+	/// every source element converted, so the section is omitted rather than empty.
 	/// </summary>
-	private static void AppendReason(ElementMapEntry entry, ReasonCode code) {
-		if (entry is null || code is null) {
-			return;
-		}
-		entry.Reason = entry.Reason is { Count: > 0 } existing ? [.. existing, code] : [code];
+	/// <remarks>
+	/// A drop lives in the element map right up to this point because the passes need it there: one is
+	/// installed by REPLACING an entry in place (<c>elementMap[i] = Drop(...)</c>), which is what lets the
+	/// orphan cascade and the empty-container cascade see it while they walk. Only the RESPONSE separates
+	/// the two, because they are read for opposite purposes — the map is applied, the drops are reported
+	/// (ENG-95827).
+	/// </remarks>
+	private static IReadOnlyList<DroppedElement> ProjectDroppedElements(List<ElementMapEntry> elementMap) {
+		List<DroppedElement> dropped = [.. elementMap
+			.Where(IsDrop)
+			.Select(entry => new DroppedElement {
+				WebName = entry.WebName,
+				WebType = entry.WebType,
+				Reason = entry.Reason ?? []
+			})];
+		return dropped.Count > 0 ? dropped : null;
 	}
 
 	/// <summary>
@@ -4784,9 +4681,7 @@ public static class WebToMobileAnalysisService {
 			// insertAt walks forward so every synthesized layer lands right after the tab's entry, parent
 			// always before child (layer 2 → Area; the tab's children sit later in the map anyway).
 			int insertAt = elementMap.IndexOf(tab);
-			elementMap.Insert(++insertAt, SynthesizedLayerEntry(mainRule, mainName, tab.MobileName,
-				Reason(ReasonCodes.SynthesizedByConverter,
-					("role", "tab-body"), ("tab", Nz(tab.MobileName)))));
+			elementMap.Insert(++insertAt, SynthesizedLayerEntry(mainRule, mainName, tab.MobileName));
 
 			// The Area exists only when real content remains: a relocate-children routing hint never
 			// occupies a row, so a tab whose content is hints alone gets no Area (an Area that would hold
@@ -4795,9 +4690,7 @@ public static class WebToMobileAnalysisService {
 			if (content.Any(c => string.Equals(c.Operation, "insert", StringComparison.Ordinal))) {
 				areaName = areaRule.NamePrefix + suffix;
 				taken.Add(areaName);
-				elementMap.Insert(insertAt + 1, SynthesizedLayerEntry(areaRule, areaName, mainName,
-					Reason(ReasonCodes.SynthesizedByConverter,
-						("role", "tab-area"), ("tab", Nz(tab.MobileName)))));
+				elementMap.Insert(insertAt + 1, SynthesizedLayerEntry(areaRule, areaName, mainName));
 			}
 
 			// Move the tab's top-level content into the Area and stack it in source order. The Area is a
@@ -5010,7 +4903,7 @@ public static class WebToMobileAnalysisService {
 	/// lives in exactly one place regardless of which pass created the container.
 	/// </summary>
 	private static ElementMapEntry SynthesizedLayerEntry(
-		SynthesizedContainerRule container, string name, string parentName, ReasonCode reason) {
+		SynthesizedContainerRule container, string name, string parentName) {
 		var values = new JsonObject();
 		foreach (KeyValuePair<string, JsonElement> pair in container.Values) {
 			values[pair.Key] = JsonNode.Parse(pair.Value.GetRawText());
@@ -5022,8 +4915,7 @@ public static class WebToMobileAnalysisService {
 			MobileType = values["type"].GetValue<string>(),
 			ParentName = parentName,
 			PropertyName = ItemsPropertyName,
-			MobileValues = values,
-			Reason = [reason]
+			MobileValues = values
 		};
 	}
 
