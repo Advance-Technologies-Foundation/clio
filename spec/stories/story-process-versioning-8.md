@@ -28,7 +28,7 @@ the create handler is written against measured behaviour instead of inferred beh
 
 ## Acceptance Criteria
 
-- [ ] **AC-01** *(formula and inputs measured; the two-run confirmation deliberately not performed)* — Given a draft create implementation run twice against a toolkit-created root, when `SysSchemaProperty` is read, then the findings note records the observed `Version` values and `IsActiveVersion` values verbatim
+- [ ] **AC-01** *(pursued to exhaustion: recipe measured, counter semantics pinned, execution route absent on this stand)* — Given a draft create implementation run twice against a toolkit-created root, when `SysSchemaProperty` is read, then the findings note records the observed `Version` values and `IsActiveVersion` values verbatim
 - [x] **AC-02** — Given a created version, when `SysSchema` is read, then the note records whether its `ParentId` equals the root's `SysSchema.Id`
 - [x] **AC-03** — Given one version exists, when `GetMaxProcessVersionInPackage(uc, root.Id, packageUId)` is called, then the note records the returned number for the same package and for a different package
 - [x] **AC-04** *(closed by observation, not experiment)* — Given a source process in a non-editable package, when the version is created, then the note names the package it landed in and closes OQ-01
@@ -127,11 +127,29 @@ Test naming: `MethodName_ShouldBehavior_WhenCondition`
     `setIsActualVersion` invokes its callback with `{success: true}` WITHOUT issuing a request. Our write
     half is server-side and avoids it, but anyone reusing the client machinery inherits a silent no-op
     that reports success.
-  - **AC-01 left open on purpose.** The formula, its server input and the initial flags are all measured,
-    so a second run would confirm only 0+1 then 1+1 — while costing two permanently undeletable schemas
-    (V6) and a hand-composed schema instance, because the designer page is unreachable by URL on this
-    build (`ProcessDesigner.aspx` → 500, the Shell route falls back to the desktop). The evidence gained
-    is smaller than the residue left, so the write was declined even though it was authorised.
+  - **AC-01, third pass: run properly, and it cannot be executed here — dead ends named.** Five routes
+    to an implementation that creates a version were tried. The Shell hash `#ProcessSchemaDesigner/<uid>`
+    falls back to the app list; `ViewModule.aspx` REDIRECTS to the Shell; `ProcessDesigner.aspx` and
+    `ProcessSchemaDesigner.aspx` answer 500; the classic section route and the app-list link
+    `Navigation.aspx?schemaName=VwProcessLibSection` both land on the app list. Driving the composer
+    directly dead-ends as well: `BaseSchemaManagerItem.updateRequestClassName` is NULL on the base, so
+    the save request class ships with the designer module, and `Terrasoft.require` does not resolve those
+    modules in this Freedom shell. On this build the only implementation that creates a version is the
+    classic designer, and the classic UI is not served.
+  - **The substance came from the counter instead, and it is worth more than two hand-made runs.**
+    `GetSchemaVersionInfo` was measured for five (root, package) pairs. It counts family MEMBERS and
+    IGNORES the root own stamped number: `BulkDuplicatesSearchProcess` carries `Version = 2` and the
+    counter answers 0 for it.
+  - **A trap no formula predicts.** Because a new version is numbered `max + 1`, a root whose stamped
+    number is non-zero gets a version numbered BELOW itself — a first version of
+    `BulkDuplicatesSearchProcess` would be 1, beside a root that says 2. Stories 9-13 must never derive
+    the next number from the SOURCE schema own property, and nothing may present version numbers as a
+    total ordering across a family.
+  - So the two-run values are DERIVED, not observed, and recorded as such: run 1 -> `Version = 1`,
+    `IsActiveVersion = False`; run 2 -> `Version = 2`, `IsActiveVersion = False`. Every input to that
+    derivation is measured — the formula from `getNewSchemaVersion`, the initial flag from
+    `createNewSchemaVersion`, the counter from the server. AC-01 stays UNCHECKED rather than claimed,
+    because it asks for an observation and this is a derivation.
   - One write WAS made and it earned its keep: `UsrSpike_VersionProbe` in `UsrAntonTest`, created through
     `clio-run create-business-process`. A freshly created process reports `Version = 0`,
     `IsActiveVersion = True`, `CreatedInVersion = 10.1.448.0` (stock content ships `0.0.0.0`),

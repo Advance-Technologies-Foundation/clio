@@ -32,6 +32,19 @@ Two neighbouring facts from the same measurement, because they change what a fam
   (`CrtEmailMarketingApp` → `CrtEmailDesignerInEmailMarketing`, `OpportunityManagement` → `PRMPortal`,
   `CrtTouchPoint` → `CrtWebTrackingBase`).
 
+The server confirms the split from the other side. `GetSchemaVersionInfo {parentSchemaUId, packageUId}`
+on `ProcessSchemaManagerService.svc` returns `maxVersionInPackage` **0** for
+`BulkDuplicatesSearchProcess` in its own package — while that very schema carries `Version = 2`. So the
+counter counts family MEMBERS (rows whose `ParentId` is the root) and ignores the root's own stamped
+number entirely. Measured for four more pairs: a family with one version reports 1 in the package that
+holds it, and a cross-package family reports 1 in the version's package and 0 in the root's.
+
+That yields a trap worth stating on its own, because no formula predicts it: since a new version is
+numbered `maxVersionInPackage + 1`, **a root whose stamped number is non-zero gets a version numbered
+BELOW itself.** A first version of `BulkDuplicatesSearchProcess` would be numbered 1, next to a root
+that says 2. Any code that creates a version, or that presents version numbers as an ordering, has to
+treat the root's number as unrelated to the sequence.
+
 **Why it is this way** — versioning was retrofitted onto a schema table that already had a `Version`
 property, and package authors write schema metadata directly: a schema authored by copying a versioned
 original keeps the number it was copied with. Nothing validates the number against `ParentId`, because
