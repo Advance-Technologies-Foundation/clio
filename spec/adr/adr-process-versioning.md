@@ -305,3 +305,28 @@ Measured here, all first-hand:
 - **The version parent must be computed, not copied.** An instance's `parentSchemaUId` is the INHERITANCE parent: for my process it was `bb4d6607-026b-4b27-b640-8f5c77c1e89d`, which equals the manager's `defSchemaUId`. `getIsSetParentSchemaUId` is `e && !isEmptyGUID(e) && e !== defSchemaUId`, so `createNewSchemaVersion` correctly ignores it and roots the family at the source. A server-side implementation that copies `parentSchemaUId` blindly would build a family rooted at the BASE process schema. Verified both ways on the live manager: the base UId returns false, a real schema UId true.
 
 AC-01 is STILL not run, and the remaining obstacle is now precise rather than general. The designer offers no "save as new version" action for a process with no running instances — the ACTIONS menu holds only "Set as actual version" — and the create entry point `getNewSchemaVersion` needs the designer view-model context (`sourceSchema`, `sysPackage`, `canEditPackageSchema`), which the manager item does NOT carry and which is not reachable from page scope. The untried lever, named rather than dismissed: give the process a genuinely live instance (a waiting user task rather than start-to-terminate) and save again — `GetRunningProcessesCount` sitting in the validation path is good reason to think that is the gate that surfaces the version prompt.
+Story 8, fifth pass — **AC-01 was run and observed**, on the studio stand, after the user cleared it for free use. The draft create implementation is three lines against the shipped manager:
+
+```js
+const ctx = { sourceSchema: rootItem.instance, sysPackage: null, canEditPackageSchema: false };
+ProcessSchemaManager.getNewSchemaVersion(ctx, (newItem) => newItem.save({}, cb));
+```
+
+Run twice against one toolkit-created root, `SysSchemaProperty` read verbatim afterwards:
+
+| schema | `Version` | `IsActiveVersion` |
+| --- | --- | --- |
+| `UsrProcess_f817a44` (root) | 0 | **True** |
+| `UsrProcess_f817a44Custom1` | 1 | False |
+| `UsrProcess_f817a44Custom2` | 2 | False |
+
+Every prediction from the source reading held: the numbering is `maxVersionInPackage + 1` each time; both versions are created INACTIVE; the names are `<parentSchemaName><PackageName><version>`; the family is flat with both versions pointing at the root; the package is the root own. And the fact that matters most for stories 9-13: **the ROOT stayed active through both creations.** Creating a version changes nothing about which version runs, so `ModifyProcessAsNewVersion` and `SetActiveProcessVersion` are genuinely independent operations rather than a convenience split.
+
+Two implementation details the write half must replicate, neither visible from the client API alone:
+
+- **The save translates the identifier.** The client sets `parentSchemaUId` to the root UId; the persisted `SysSchema.ParentId` holds the root **Id** (`9afa4ab8-...` for a root whose UId is `152c809c-...`). `ExtendParent` stays false.
+- `CreatedInVersion` is stamped with the platform version (`10.2.3.0` here), not the `0.0.0.0` that stock content carries.
+
+**AC-05 answered from both sides, and the two halves differ.** Creating a ROOT whose name lacks the environment prefix is REFUSED, observed: `createSchemaInstance({name: "SpikeNoPrefix", ...})` throws `Item name must contain prefix 'Usr'`. Creating a VERSION of an already-unprefixed root is not refused, because that path never submits a name to validate — `setNewSchemaVersionName` CONSTRUCTS one and prepends the prefix when the parent lacks it. So the prefix rule guards names a caller supplies, and the version path is compliant by construction. A server-side implementation that supplies its own version name inherits the guard and must prepend the prefix itself.
+
+With that, story 8 has every criterion met: AC-01 and AC-05 observed here, AC-03 measured against the server counter, AC-02 and AC-06 measured on both stands, AC-04 by observation plus the branch mechanism, AC-07 from the feature tables, and AC-ERR fired twice — once against V2, once against my own third-pass claim about `getCanUseProcessVersions`.

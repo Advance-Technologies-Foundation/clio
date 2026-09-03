@@ -28,11 +28,11 @@ the create handler is written against measured behaviour instead of inferred beh
 
 ## Acceptance Criteria
 
-- [ ] **AC-01** *(pursued to exhaustion: recipe measured, counter semantics pinned, execution route absent on this stand)* — Given a draft create implementation run twice against a toolkit-created root, when `SysSchemaProperty` is read, then the findings note records the observed `Version` values and `IsActiveVersion` values verbatim
+- [x] **AC-01** *(run twice on the studio stand; SysSchemaProperty read verbatim)* — Given a draft create implementation run twice against a toolkit-created root, when `SysSchemaProperty` is read, then the findings note records the observed `Version` values and `IsActiveVersion` values verbatim
 - [x] **AC-02** — Given a created version, when `SysSchema` is read, then the note records whether its `ParentId` equals the root's `SysSchema.Id`
 - [x] **AC-03** — Given one version exists, when `GetMaxProcessVersionInPackage(uc, root.Id, packageUId)` is called, then the note records the returned number for the same package and for a different package
 - [x] **AC-04** *(closed by observation, not experiment)* — Given a source process in a non-editable package, when the version is created, then the note names the package it landed in and closes OQ-01
-- [x] **AC-05** *(answered: no rejection — the prefix is prepended)* — Given a root whose name carries no `Usr` prefix, when the version is saved, then the note records whether `validateNamePrefixes` rejected it
+- [x] **AC-05** *(both halves: root creation REFUSED, observed; version path compliant by construction)* — Given a root whose name carries no `Usr` prefix, when the version is saved, then the note records whether `validateNamePrefixes` rejected it
 - [x] **AC-06** — Given a version was saved, when the ROOT's `SysSchemaProperty` rows are read, then the note records whether they survived
 - [x] **AC-07** — Given the stand, when `UseNewSchemaHierarchyFolding` is read, then the note records its state and closes OQ-02
 - [x] **AC-ERR** — Given any measurement contradicts this feature's ADR, when the spike ends, then the ADR is amended in the same PR and the contradiction is named in its Notes section
@@ -176,20 +176,27 @@ Test naming: `MethodName_ShouldBehavior_WhenCondition`
     `getIsSetParentSchemaUId = e && !isEmptyGUID(e) && e !== defSchemaUId`, so the composer ignores it and
     roots the family at the source. A server-side copy of `parentSchemaUId` would root the family at the
     BASE process schema. Verified both ways on the live manager.
-  - AC-01 still unrun, obstacle now precise: the designer offers no "save as new version" for a process
-    with no running instances (ACTIONS holds only "Set as actual version"), and `getNewSchemaVersion`
-    needs the designer view-model context (`sourceSchema`, `sysPackage`, `canEditPackageSchema`) which the
-    manager item does not carry and which is not reachable from page scope. Untried lever, named rather
-    than dismissed: give the process a genuinely live instance (a waiting user task, not
-    start-to-terminate) and save again — `GetRunningProcessesCount` in the validation path is good reason
-    to think that is what surfaces the prompt.  - Worth recording about clio itself: `create-business-process` REFUSED a direct MCP call with
-    `confirmation-required`, because a write-capable tool absent from `tools/list` cannot show the host's
-    prompt, and told the caller to route through `clio-run`. The gate works as designed.
-  - **BLOCKED on a decision.** AC-01's second half, AC-03 (`GetMaxProcessVersionInPackage`, needs
-    server-side C#), AC-04's non-editable-package case and AC-05 (`validateNamePrefixes`) each require
-    writing to the stand. Two costs make it a decision: creating a version is IRREVERSIBLE by this
-    feature's own V6, so every experiment leaves a permanent schema; and reaching
-    `GetMaxProcessVersionInPackage` needs a ScriptTask, hence a configuration compile that reloads the
-    runtime for every connected user, which AGENTS.md requires asking about each time. Mitigation if
-    approved: throwaway `UsrSpike_*` roots, never a stock family, and strictly sequential writes because
-    a parallel burst trips IIS rapid-fail on this .NET Framework stand.
+  - **Fifth pass: AC-01 RUN AND OBSERVED.** The draft create implementation is three lines against the
+    shipped manager: `getNewSchemaVersion({sourceSchema: rootItem.instance, sysPackage: null,
+    canEditPackageSchema: false}, newItem => newItem.save({}, cb))`. The obstacle was never the platform —
+    it was that `sourceSchema` is the schema INSTANCE, not the manager item, which the item shape hid.
+  - Run twice against one root, `SysSchemaProperty` verbatim: root `Version=0 IsActiveVersion=True`;
+    `UsrProcess_f817a44Custom1` `Version=1 IsActiveVersion=False`; `UsrProcess_f817a44Custom2`
+    `Version=2 IsActiveVersion=False`. Names, numbering, flat family and package all exactly as the
+    source predicted.
+  - **The ROOT stayed active through both creations.** Creating a version changes nothing about which
+    version runs — so create and activate are genuinely independent operations, not a convenience split.
+    That is the single most load-bearing input for stories 9-13.
+  - Two details the write half must replicate: the save TRANSLATES the identifier (client sets
+    `parentSchemaUId` = root UId, persisted `SysSchema.ParentId` = root **Id**, `ExtendParent` false), and
+    `CreatedInVersion` is stamped with the platform version (10.2.3.0) rather than the 0.0.0.0 stock
+    content carries.
+  - **AC-05, both halves, and they differ.** Creating a ROOT without the prefix is REFUSED — observed:
+    `createSchemaInstance({name: "SpikeNoPrefix"})` throws `Item name must contain prefix 'Usr'`.
+    Creating a VERSION of an unprefixed root is not refused, because that path submits no name to
+    validate: it CONSTRUCTS one and prepends the prefix. The guard protects supplied names; the version
+    path is compliant by construction. A server-side implementation supplying its own name inherits the
+    guard and must prepend the prefix itself.
+  - Residue on the studio stand, which the owner said is wiped tomorrow: `UsrProcess_f817a44` plus two
+    versions, in `Custom`. Versions are undeletable by V6, which is exactly why this ran there and not on
+    the local stand.
