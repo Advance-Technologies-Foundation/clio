@@ -325,15 +325,24 @@ def main():
     parser.add_argument("--counted", action="store_true", help="also list counted claims, which need a human")
     parser.add_argument("--knowledge", action="store_true",
                         help="also compare the curated-name fixture against the sibling knowledge checkout")
-    parser.add_argument("--versions", action="store_true",
-                        help="also list versions named in prose below the shipped one (noisy: most are history)")
+    # ON by default. It was opt-in, and the drift it finds was live in the PR that added this script:
+    # the capability map said 1.4.0.37 against an enforced .44, and two more surfaces had stale literals.
+    # A check whose whole purpose is catching that must not need a flag nobody passes.
+    parser.add_argument("--no-versions", action="store_true",
+                        help="skip the scan for versions named in prose below the shipped one")
     parser.add_argument("--package-root",
-                        help="the CrtProcessBuilder checkout to include in the docblock/count checks "
-                             "(default: ../workspace/ProcessBuilder)")
+                        help="the CrtProcessBuilder checkout to include in the docblock/count checks. "
+                             "Defaults to $CLIO_PACKAGE_REPO; without it those two checks run on this "
+                             "repository alone rather than silently reading a path that exists on one machine")
     args = parser.parse_args()
 
-    package = args.package_root or os.path.join(os.path.dirname(ROOT), "workspace", "ProcessBuilder")
-    roots = [("", ROOT), ("CrtProcessBuilder:", package)]
+    package = args.package_root or os.environ.get("CLIO_PACKAGE_REPO")
+    roots = [("", ROOT)]
+    if package and os.path.isdir(package):
+        roots.append(("CrtProcessBuilder:", package))
+    elif package:
+        print("note: CLIO_PACKAGE_REPO is set to %s, which is not a directory - "
+              "skipping the package-repo half" % package)
 
     current = check_archive_pins()
     check_stranded_docblocks(roots)
@@ -345,7 +354,7 @@ def main():
     # is correct. A check with that signal-to-noise ratio is not a gate: it teaches the reader to skip
     # the output, which is the same failure as the stale list this script replaced. The exact
     # cross-checks above have no false positives and are the part worth running every time.
-    if args.versions:
+    if not args.no_versions:
         check_superseded_versions(current)
     if args.counted:
         check_counted_claims()

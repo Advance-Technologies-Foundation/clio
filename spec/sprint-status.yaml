@@ -2826,7 +2826,8 @@ stories:
       arrives as a serialised object, and decides nothing about validity. Three review lenses; both
       blockers were an absent test that let the change be reverted with a clean run. Two lens claims
       refuted on the stand (a ZWSP-poisoned reference does not save; the gate does refuse a newline).
-      1111 unit tests pass, six mutations each observed red. Rebundled at 1.4.0.43.
+      1111 unit tests pass, six mutations each observed red. Rebundled - see the archive for the
+      version, which is the source of truth rather than this note.
     depends_on: []
     blocks:
       - story-eng-95891-formula-expressions-2
@@ -2856,7 +2857,8 @@ stories:
       descriptions promise - the activity-result guard and the unrecognised-family refusal on a NEW
       condition first ship in 1.4.0.32, the platform-grammar element segment in 1.4.0.35, and the
       element-retarget refusal the same descriptions promise kept a fail-open hole until
-      1.4.0.37. The floor is 1.4.0.37: it is the first version where EVERY refusal those
+      1.4.0.37. The floor has since moved to 1.4.0.44 (see [RequiresPackage], which is
+      authoritative): .37 was the first version where every refusal those
       descriptions promise actually happens. Below it a dead condition is stored in silence,
       which is what they promise protection from. It refuses more environments, and that is
       the floor doing its job; the bundled archive is 1.4.0.40, so every environment this
@@ -2875,7 +2877,8 @@ stories:
       clio-ring/ClioRing/ViewModels/ClioWorkflowViewModel.cs. ClioRing.Tests: 157 passed, 0 failed.
       FOLLOW-UP ON THE SAME BRANCH AND PR (2026-09-03): with the package's validator deleted, the
       refusal MESSAGES become the platform's, so both tool [Description]s, both [RequiresPackage]
-      floors (-> 1.4.0.42; the bundle is .43 and a floor states what the descriptions NEED), the MCP
+      floors (a floor states what the descriptions NEED, so it is not the bundled version and does
+      not track it - read the literal off [RequiresPackage]), the MCP
       E2E assertions, two knowledge records and the manual tier all move. The E2E had pinned the
       PACKAGE's unknown-identifier wording, so it would have gone red on a stand rather than in
       review. Every message the guidance promises verbatim was re-measured, which is how the

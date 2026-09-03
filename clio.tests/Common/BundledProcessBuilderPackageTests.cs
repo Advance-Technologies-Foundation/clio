@@ -700,7 +700,7 @@ public class BundledProcessBuilderPackageTests {
 		declared.Should().HaveCountGreaterThanOrEqualTo(5,
 			because: "the five process-designer gates must be visible to this scan; if it finds fewer, the "
 				+ "reflection is broken and the version loop below is silently inspecting nothing");
-		// The loop EXECUTES today: two of the five carry a version literal (create/modify, 1.4.0.35). It was
+		// The loop EXECUTES today: two of the five carry a version literal (create/modify, 1.4.0.44). It was
 		// vacuous when written, deliberately — the invariant had to be in place before the first literal
 		// appeared, because the commit that adds one is exactly when it must already work. It replaces the old
 		// pin (descriptor version == a constant), which needed hand-synchronising on every rebundle and
@@ -720,6 +720,23 @@ public class BundledProcessBuilderPackageTests {
 					+ "gate would refuse an environment and then hand it an installer that cannot satisfy the "
 					+ "refusal - clio must never demand what it does not carry");
 		}
+	}
+
+	/// <summary>
+	/// Reads a repository file by walking up from the test assembly to the directory that holds the solution.
+	/// The fixture already resolves the bundled archive from the build output; a repository DOC is not copied
+	/// there, so it is read from the checkout instead. Fails loudly rather than skipping: a pin that silently
+	/// stops reading its surface is the failure this test exists to prevent.
+	/// </summary>
+	private static string ReadRepositoryText(string relativePath) {
+		var directory = new DirectoryInfo(TestContext.CurrentContext.TestDirectory);
+		while (directory != null && !File.Exists(Path.Combine(directory.FullName, relativePath))) {
+			directory = directory.Parent;
+		}
+		directory.Should().NotBeNull(
+			because: $"'{relativePath}' must be reachable from the test directory - without it this pin would "
+				+ "silently stop covering that surface, which is exactly how it drifted in the first place");
+		return File.ReadAllText(Path.Combine(directory.FullName, relativePath));
 	}
 
 	[Test]
@@ -967,6 +984,14 @@ public class BundledProcessBuilderPackageTests {
 				typeof(Clio.Command.CreateBusinessProcessOptions)),
 			["modify-business-process description"] = (
 				GetToolDescription(typeof(Clio.Command.McpServer.Tools.ProcessDesigner.ModifyBusinessProcessTool)),
+				typeof(Clio.Command.ModifyBusinessProcessOptions)),
+			// The capability map states the same sentence to the same audience and is NOT reflected over, so it
+			// drifted to 1.4.0.37 against an enforced .44 and shipped green - found in review, not here. It is a
+			// repository file, so the pin reads it: a prose surface that promises a gate belongs to the gate's
+			// test, not to a script nothing runs. Keyed on modify's options type because the sentence in it
+			// describes the modify path's mapped expression.
+			["McpCapabilityMap.md"] = (
+				ReadRepositoryText(Path.Combine("docs", "McpCapabilityMap.md")),
 				typeof(Clio.Command.ModifyBusinessProcessOptions))
 		};
 		var sentencePattern = new System.Text.RegularExpressions.Regex(
