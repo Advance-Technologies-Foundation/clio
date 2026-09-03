@@ -155,6 +155,54 @@ The open measurement was done first, and it collapsed step 2 into "delete": what
   solely to match `ProcessParameterValueProvider.ConvertToCodeExpressionText`, which strips U+200B
   before conversion. Matching platform behaviour by hand is the duplication, in miniature.
 
+### Accepted risks
+
+Three things this decision does not close. They are recorded here rather than in a knowledge record
+alone, because each is a choice with a cost, and a reader asking "why is this open?" comes to the ADR.
+
+- **A deep formula ends the Creatio worker process, and the collapse does not close it.** Measured:
+  the engine parses by recursive descent with no stack guard on any path, and around 1200 nesting
+  levels is fatal on one stand. `StackOverflowException` cannot be caught in .NET, so the worker
+  serving *every* user of the application dies, `finally` blocks do not run (the design session is
+  never released), and nothing reaches the application log — only the host records a crash. That is
+  the blast radius: process-wide on the customer's instance, now reachable from an automated agent
+  surface and not only from a human in the designer.
+
+  **Do not cite the surviving 2048-character cap as the mitigation.** It is not one: 2048 characters
+  reach roughly 2044 levels. Nor would restoring the deleted 32-level bracket guard have closed it —
+  the depth is created by the PLATFORM's converter, not by the author. `1/1/…/1` with 600 divisions
+  contains zero brackets as written, fits any sane length cap, and reaches the parser about 1200 deep
+  because `GeneratorUtilities.ConvertToDecimalsInCode` inflates depth to `max(2, 2n−2)`. The worst
+  formula in the whole shipped 7.8.0 corpus scores 4 against that limit of 32, so the guard never
+  fired on real content while the fatal case sails past it.
+
+  Accepted because a guard in one client of a shared engine closes nothing: three server doors reach
+  the same parser (schema save, the designer's live formula check, and run time), and the designer's
+  client bounds neither length nor depth. **Owner: the platform engine.** The fix belongs in
+  `ProcessParameterValueProvider.ValidateExpression`, which all three doors pass through, or in the
+  engine itself; the conversion half is already known platform-side (the platform's own test for the
+  correct sibling output is disabled under `CRM-49394`). The full measurement, the alternatives
+  weighed, and the executable reproduction of the depth curve are in
+  `docs/knowledge/platform/formula-depth-crash-is-reachable-from-the-designer-too.md` — read it
+  before re-deriving any of this.
+
+- **No aggregate per-request bound.** The deleted `MaxValidatedCharactersPerRequest` (256 KB) went as
+  collateral, and is not reinstated. What it would bound is honest to state: aggregate work handed to
+  the platform's macro converters, whose regexes carry no match timeout, across up to
+  `MaxRequestItems` items each capped at 2048 characters. What it would NOT bound is the crash above —
+  one formula of about 1200 characters is already fatal, which sits inside any budget worth setting.
+  So a budget is a throughput control, not an availability one, and it should be argued for on that
+  basis if it comes back.
+
+- **The pre-save gate is treated as always enabled.** `Feature-UseVerificationOfProcessParameterDirection`
+  defaults to true and is read from configuration; with it off, a bad formula is persisted unvalidated
+  and the caller is told nothing was written. clio cannot read that toggle's state. **Decided by the
+  project owner, 2026-09-03: treat the flag as always enabled.** The reasoning is the same one that
+  justifies the collapse — the platform's validation is the authority, and if it does not object, the
+  artifact is acceptable; our own recognition list may simply be behind the engine's. The failure mode
+  is recorded in `docs/knowledge/platform/the-platform-refuses-a-bad-flow-condition-at-save.md`
+  because it is silent, not because it is defended against.
+
 ### Negative / Trade-offs
 
 - **Refusal messages change** — from ours to the platform's. That is a user-visible contract change
