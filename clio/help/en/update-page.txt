@@ -103,11 +103,14 @@ DESCRIPTION
       viewConfigDiff must be a localizable-string binding, not an inline
       literal. Bind via #ResourceString(<Key>)# and register the key's
       default-language value with --resources. Inline literals are rejected.
-      A component's own data descriptor is exempt: on a node that declares a
-      component type, the values.data subtree is component metadata (uId,
-      schemaType, typeName and the caption the platform stamped on it), not
-      page-authored text, so a literal there is accepted. Do not delete such a
-      caption to satisfy the rule - the platform never restores it.
+      A component's own data descriptor is exempt: a "data" object carrying the
+      platform's "typeName" marker, on any node that declares a component type
+      and at any depth, is component metadata (uId, schemaType, typeName and
+      the caption the platform stamped on it), not page-authored text, so a
+      literal anywhere inside it is accepted. An input merely named "data"
+      (crt.FilterBuilderSource) has no typeName and stays validated. Do not
+      delete such a caption to satisfy the rule - the platform never restores
+      it.
     - Inserted widget/metric titles must resolve. A title/caption/tooltip/
       placeholder on a freshly inserted (operation:"insert") widget bound as
       $Resources.Strings.<Key> or #ResourceString(<Key>)# is rejected when <Key>
