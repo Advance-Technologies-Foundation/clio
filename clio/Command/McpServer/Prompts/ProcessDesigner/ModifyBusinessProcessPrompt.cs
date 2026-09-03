@@ -59,8 +59,7 @@ public static class ModifyBusinessProcessPrompt {
 		 collection cleared with `[]` revokes or drops record permissions, and the element has NO output to
 		 report what it did at run time — show the user the object, the record `filter` that decides WHICH
 		 records are affected, and every grantee with its operations and level — calling out `restrict` as the
-		 platform Deny level, UNVERIFIED and landing in the `add` GRANT collection, observed to write no right at
-		 all where UseDenyRecordRights is off - neither denying nor granting, with nothing reporting it, and a supplied `add`/`remove`
+		 platform Deny level, UNVERIFIED and landing in the `add` GRANT collection, restrict writes the platform Deny level and is DESTRUCTIVE, not inert: UseDenyRecordRights gates only record positioning, never whether a right row is written. Against a grantee who already holds Allow it DOWNGRADES that row to Deny, and a fresh insert writes one row per operation - the one you named at your level and the OTHER TWO at Deny - so operations:['read'] denies edit and delete as well. Prefer a remove entry to take access away, and a supplied `add`/`remove`
 		 as a REPLACEMENT that drops every entry it does not restate — and get an explicit yes before applying it.
 		 If the element's `accessRights` read back with an EMPTY `add` or `remove`, say so plainly when you ask:
 		 describe cannot tell an empty collection from one it could not decode, so the before-state you are

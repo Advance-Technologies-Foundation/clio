@@ -139,11 +139,12 @@ public static class AccessRightsBlockExpectation {
 
 	/// <summary>
 	/// Of the elements the caller asked to configure, those the read-back shows with NO record filter.
-	/// <para>This is the first of the configurations that build green and then do nothing: the element's
-	/// record filter decides WHICH records it acts on, and without one the runtime matches nothing, grants
-	/// and revokes nothing, and has no output parameter to say so. Nobody refuses it — and the modify surface
-	/// makes it easy to reach by accident, because changing the target object clears a filter that pointed at
-	/// the old one.</para>
+	/// <para>This is the element's WIDEST configuration, not one of its no-ops. The record filter decides
+	/// WHICH records it acts on, and without one the runtime never enters its filter block: the query runs
+	/// unfiltered and the grant or revoke lands on EVERY record of the target object, with record permissions
+	/// disabled so the radius is every row rather than the rows the caller can see. Nothing refuses it and it
+	/// has no output parameter to say so — and the modify surface makes it easy to reach by accident, because
+	/// changing the target object clears a filter that pointed at the old one.</para>
 	/// <para>A warning, not a refusal: whether the SERVER should reject this state is open decision D9 in the
 	/// package repository, and reporting it here does not pre-empt that.</para>
 	/// </summary>
@@ -152,9 +153,11 @@ public static class AccessRightsBlockExpectation {
 		[.. FilterlessElements(described, expected).Select(entry => entry.Key)];
 
 	/// <summary>
-	/// The same elements, paired with WHICH filter state they are in. The two have opposite blast radius
-	/// and must never be reported with the same words: an element with no filter at all matches nothing,
-	/// while one whose filter carries a root but no conditions narrows nothing and acts on every record.
+	/// The same elements, paired with WHICH filter state they are in. The states have opposite blast radius
+	/// and must never be reported with the same words: an element with NO filter at all acts on EVERY record,
+	/// while one whose filter carries a root but no conditions takes the runtime's "filters empty" exit and
+	/// changes nothing. Reasoning about either by analogy with the other gets it exactly backwards — which is
+	/// how this guard shipped with the two swapped.
 	/// </summary>
 	private static IReadOnlyList<KeyValuePair<string, RecordFilterState>> FilterlessElements(
 			DescribeProcessResult described, IReadOnlyList<string> expected) {
@@ -203,13 +206,17 @@ public static class AccessRightsBlockExpectation {
 
 		List<string> parts = [];
 		if (absent.Length > 0) {
-			parts.Add($"'{absent}' has NO record filter at all, so at run time it will match no records and "
-				+ "change no permissions");
+			// The LOUDEST of the three, because it is the only one where a successful build means a live,
+			// unbounded permission change. The runtime never enters its filter block, so the query runs
+			// unfiltered — and with record permissions disabled, so the radius is every row in the table.
+			parts.Add($"'{absent}' has NO record filter at all, so at run time it will apply the permission "
+				+ "change to EVERY record of the target object — not to none. The element's query runs with "
+				+ "record permissions DISABLED, so that is every row in the table, not the rows you can see");
 		}
 
 		if (conditionless.Length > 0) {
-			parts.Add($"'{conditionless}' has a record filter with NO conditions, which narrows nothing — "
-				+ "expect it to match EVERY record of the target object and change permissions on all of them");
+			parts.Add($"'{conditionless}' has a record filter with NO conditions, so the runtime takes its "
+				+ "\"filters empty\" exit and changes nothing — the element is inert rather than wide");
 		}
 
 		if (undecodable.Length > 0) {
@@ -222,16 +229,21 @@ public static class AccessRightsBlockExpectation {
 		// The setFilter remedy belongs only to the states that actually lack a usable filter. Prescribing it
 		// for an undecodable one would tell the caller to overwrite a working filter on a live permission
 		// change — the failure this whole guard exists to prevent, pointed the other way.
-		bool missingAFilter = absent.Length > 0 || conditionless.Length > 0;
+		// The remedy differs by direction, so it cannot be one sentence. An ABSENT filter is urgent — the
+		// element is about to touch every record — while a conditionless one is merely inert. Telling a
+		// caller with no filter that "nothing will happen" was the inversion this guard shipped with.
 		return "The 'accessRights' configuration was saved, but " + string.Join("; and ", parts)
 			+ ". This happens silently, because the element has no output parameters"
-			+ (missingAFilter
-				? ". A conditionless filter is refused at build by a current CrtProcessBuilder, so an element "
-					+ "carrying one was configured by an older package or in the designer. Set the filter you "
-					+ "actually mean with the setFilter "
-					+ "operation (to act on one record, filter Id against a process parameter or a trigger "
-					+ "output), and do not report a grant or revoke as applied until you have."
-				: ". Confirm the filter in the designer before reporting a grant or revoke as applied.");
+			+ (absent.Length > 0
+				? ". Set the filter you mean BEFORE this process runs, with the setFilter operation (to act on "
+					+ "one record, filter Id against a process parameter or a trigger output). Note that ANY "
+					+ "change to the element's object clears its record filter, so an ordinary retarget lands in "
+					+ "exactly this state."
+				: conditionless.Length > 0
+					? ". A conditionless filter is refused at build by a current CrtProcessBuilder, so an element "
+						+ "carrying one was configured by an older package or in the designer. Give it the "
+						+ "conditions you mean, and do not report a grant or revoke as applied until you have."
+					: ". Confirm the filter in the designer before reporting a grant or revoke as applied.");
 	}
 
 	/// <summary>Which of the three reportable record-filter states an element's read-back puts it in.</summary>

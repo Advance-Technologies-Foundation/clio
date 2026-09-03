@@ -237,16 +237,18 @@ public sealed class AccessRightsBlockExpectationTests {
 		// Assert
 		warning.Should().Contain("'Grant'", because: "the caller needs to know which element is affected");
 		warning.Should().Contain("NO record filter at all",
-			because: "this is the inert state, and naming it distinguishes it from the fail-open one");
-		warning.Should().Contain("match no records",
-			because: "the consequence, not just the omission, tells the caller the run is a no-op");
+			because: "naming the state distinguishes it from the conditionless one, which behaves oppositely");
+		warning.Should().Contain("EVERY record of the target object",
+			because: "an ABSENT filter never enters the runtime's filter block, so the query runs UNFILTERED. "
+				+ "This warning previously said the element would match NO records - telling a caller that the "
+				+ "widest configuration the feature can produce is harmless");
 		warning.Should().Contain("setFilter",
 			because: "the warning must carry the operation that fixes it");
 	}
 
 	[Test]
-	[Description("An element whose filter carries no conditions is reported as matching EVERY record - the opposite blast radius, and the reason the two states cannot share one wording.")]
-	public void BuildNoFilterWarning_ShouldSayEveryRecord_WhenTheFilterHasNoConditions() {
+	[Description("An element whose filter carries no conditions is reported as INERT - the runtime takes its 'filters empty' exit. The opposite blast radius from an absent filter, and the reason the two states cannot share one wording.")]
+	public void BuildNoFilterWarning_ShouldSayItChangesNothing_WhenTheFilterHasNoConditions() {
 		// Arrange
 		DescribedElement element = Element("Grant", "{\"object\":\"Order\"}");
 		element.Filter = new DescribedFilter { Object = "Order" };
@@ -255,11 +257,12 @@ public sealed class AccessRightsBlockExpectationTests {
 		string warning = AccessRightsBlockExpectation.BuildNoFilterWarning(Described(element), ["Grant"]);
 
 		// Assert
-		warning.Should().Contain("EVERY record",
-			because: "telling the caller this element is inert when it in fact acts on every record points "
-				+ "them away from the widest configuration the feature can produce");
-		warning.Should().NotContain("match no records",
-			because: "that is the OTHER state's consequence, and the two must never share a wording");
+		warning.Should().Contain("changes nothing",
+			because: "a filter that IS present but conditionless hits the runtime's \"filters empty\" exit; "
+				+ "this state is the no-op, not the wide one");
+		warning.Should().NotContain("EVERY record of the target object",
+			because: "that is the ABSENT filter's consequence, and the two must never share a wording - they "
+				+ "were swapped in the shipped text, which is how the inversion survived four surfaces");
 	}
 
 	[Test]
