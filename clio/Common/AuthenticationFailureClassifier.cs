@@ -12,12 +12,20 @@ namespace Clio.Common;
 /// </summary>
 /// <remarks>
 /// There used to be two classifiers - a typed-status-first one in <c>SysSettingsCommand</c> and a
-/// prose-only <c>Contains("401")</c> one in <see cref="SysSettingsManager"/> - and the manager's ran
-/// FIRST, on the real preflight path, so the corrected command-layer logic never saw the original
-/// exception. Everything the manager wrapped as an <see cref="AuthenticationException"/> reached the
-/// command already misclassified: <c>Connection refused at http://localhost:40124</c> and
-/// <c>Correlation id x401y</c> both told the operator to repair valid credentials. One classifier,
-/// used by both layers, is what keeps the two answers from diverging again.
+/// prose-only <c>Contains("401")</c> one in <c>SysSettingsManager</c>'s authentication preflight - and the
+/// preflight's ran FIRST, so the corrected command-layer logic never saw the original exception.
+/// Everything the preflight wrapped reached the command already misclassified:
+/// <c>Connection refused at http://localhost:40124</c> and <c>Correlation id x401y</c> both told the
+/// operator to repair valid credentials. The preflight is gone (issue #1371), and its three successors all
+/// come back here:
+/// <list type="bullet">
+/// <item><see cref="Clio.Common.ClassifyingDataProvider"/> - every ATF <c>IDataProvider</c> response and
+/// every exception those calls throw.</item>
+/// <item><c>SysSettingsManager</c>'s write-path check, which has the RAW response body and therefore uses
+/// <see cref="IsAuthenticationFailureResponse"/> rather than the message overload.</item>
+/// <item><c>SysSettingsCommand.CategorizeError</c> - the command/MCP envelope.</item>
+/// </list>
+/// One classifier, used by all of them, is what keeps the answers from diverging again.
 /// </remarks>
 public static class AuthenticationFailureClassifier {
 
@@ -52,6 +60,28 @@ public static class AuthenticationFailureClassifier {
 			TimeSpan.FromSeconds(1));
 
 	/// <summary>
+	/// Newtonsoft's prose for "the body is HTML, not JSON": <c>Unexpected character encountered while
+	/// parsing value: &lt;</c>. Anchored on that whole phrase rather than on the presence of a
+	/// <c>&lt;</c>, because a legitimate platform error message can contain an angle bracket
+	/// (<c>"Column &lt;Name&gt; is required"</c>) and must stay a generic failure.
+	/// </summary>
+	private static readonly Regex HtmlWhereJsonExpected =
+		new(@"Unexpected character encountered while parsing value:\s*<",
+			RegexOptions.Compiled | RegexOptions.CultureInvariant | RegexOptions.IgnoreCase,
+			TimeSpan.FromSeconds(1));
+
+	/// <summary>
+	/// Creatio's DataService <c>ErrorCode 5</c>, which is the platform's authentication-rejection code.
+	/// It reaches clio in two renderings: ATF's <c>ConvertBatchResponse</c> composes
+	/// <c>errorCode + ": " + message</c> so it arrives as a leading <c>5:</c>, and a raw fault envelope
+	/// carries it as a JSON property. Both are matched; a bare digit 5 is not.
+	/// </summary>
+	private static readonly Regex DataServiceAuthenticationErrorCode =
+		new(@"(?:^|[^0-9A-Za-z])5:\s|""[Ee]rror[Cc]ode""\s*:\s*""?5""?",
+			RegexOptions.Compiled | RegexOptions.CultureInvariant,
+			TimeSpan.FromSeconds(1));
+
+	/// <summary>
 	/// Returns <see langword="true"/> when the exception represents rejected credentials rather than a
 	/// routing, network or server failure.
 	/// </summary>
@@ -66,45 +96,96 @@ public static class AuthenticationFailureClassifier {
 		IsAuthenticationFailure(exception, depth: 0);
 
 	/// <summary>
-	/// Returns <see langword="true"/> when a provider-reported error <b>message</b> represents rejected
-	/// credentials. Used where no exception object survives: ATF.Repository's provider catches everything
-	/// and hands back only <c>ErrorMessage</c>.
+	/// What a provider-reported error <b>message</b> says about the cause of a failure.
 	/// </summary>
-	/// <remarks>
-	/// This overload carries one rule the exception-based one cannot: an HTML body where the DataService
-	/// contract requires JSON. Creatio answers a request with rejected or expired credentials by serving
-	/// the login page with HTTP 200, so the provider's Newtonsoft deserialization fails and the only trace
-	/// that reaches clio is the parser's own prose. <c>ReauthExecutor.IsSessionExpiredResponse</c> cannot
-	/// help here - it inspects the response body, and the body is never part of the message.
-	/// A proxy or gateway error page produces the same shape and is indistinguishable from it, which is why
-	/// the diagnostic names the credentials first and the gateway second rather than claiming certainty.
-	/// </remarks>
-	/// <param name="message">The provider-reported error text.</param>
-	public static bool IsAuthenticationFailure(string message) {
-		if (string.IsNullOrWhiteSpace(message)) {
-			return false;
-		}
-		if (TransportSecurityFailure.IsMatch(message)) {
-			return false;
-		}
-		return HtmlWhereJsonExpected.IsMatch(message)
-			|| message.Contains("unauthorized", StringComparison.OrdinalIgnoreCase)
-			|| UnauthorizedStatusToken.IsMatch(message)
-			|| message.Contains("password has expired", StringComparison.OrdinalIgnoreCase)
-			|| message.Contains("authentication failed", StringComparison.OrdinalIgnoreCase)
-			|| message.Contains("authentication error", StringComparison.OrdinalIgnoreCase);
+	public enum ProviderFailureVerdict {
+
+		/// <summary>Nothing in the message names a credential; report the failure as itself.</summary>
+		NotAuthentication,
+
+		/// <summary>The message names a rejected credential outright.</summary>
+		Authentication,
+
+		/// <summary>
+		/// The message says the body was a non-JSON page where a DataService response was required, and
+		/// says nothing more. That is a rejected session OR a proxy/gateway/404 page - the two are
+		/// indistinguishable from the message alone, so neither may be claimed.
+		/// </summary>
+		NonJsonPage
 	}
 
 	/// <summary>
-	/// Newtonsoft's prose for "the body is HTML, not JSON": <c>Unexpected character encountered while
-	/// parsing value: &lt;</c>. Anchored on that whole phrase rather than on the presence of a
-	/// <c>&lt;</c>, because a legitimate platform error message can contain an angle bracket
-	/// (<c>"Column &lt;Name&gt; is required"</c>) and must stay a generic failure.
+	/// Classifies a provider-reported error <b>message</b>. Used where no exception object survives:
+	/// ATF.Repository's provider catches everything and hands back only <c>ErrorMessage</c>.
 	/// </summary>
-	private static readonly Regex HtmlWhereJsonExpected =
-		new(@"Unexpected character encountered while parsing value:\s*<",
-			RegexOptions.Compiled | RegexOptions.CultureInvariant | RegexOptions.IgnoreCase,
-			TimeSpan.FromSeconds(1));
+	/// <remarks>
+	/// The <see cref="ProviderFailureVerdict.NonJsonPage"/> verdict exists because the HTML-where-JSON
+	/// signal is NOT sufficient evidence of an authentication failure. Creatio serves its login page with
+	/// HTTP 200 when it rejects a credential, so the provider's Newtonsoft deserialization fails and the
+	/// only trace reaching clio is the parser's own prose - but an IIS/nginx 404 page, a WAF block and a
+	/// gateway error page all produce the byte-identical message. <c>ReauthExecutor.IsSessionExpiredResponse</c>
+	/// cannot break the tie either: it inspects the response BODY, and the body is never part of the
+	/// message. Only a corroborating marker (a status, or prose naming the credential outcome) earns
+	/// <see cref="ProviderFailureVerdict.Authentication"/>; without one the caller must name both causes.
+	/// A caller that HAS the raw body should use <see cref="IsAuthenticationFailureResponse"/> instead.
+	/// </remarks>
+	/// <param name="message">The provider-reported error text. Cap it before calling: it is
+	/// server-controlled, and every rule below is a scan over it.</param>
+	public static ProviderFailureVerdict ClassifyProviderErrorMessage(string message) {
+		if (string.IsNullOrWhiteSpace(message)) {
+			return ProviderFailureVerdict.NotAuthentication;
+		}
+		if (TransportSecurityFailure.IsMatch(message)) {
+			return ProviderFailureVerdict.NotAuthentication;
+		}
+		bool namesACredential = message.Contains("unauthorized", StringComparison.OrdinalIgnoreCase)
+			|| UnauthorizedStatusToken.IsMatch(message)
+			|| message.Contains("password has expired", StringComparison.OrdinalIgnoreCase)
+			|| message.Contains("authentication failed", StringComparison.OrdinalIgnoreCase)
+			|| message.Contains("authentication error", StringComparison.OrdinalIgnoreCase)
+			|| DataServiceAuthenticationErrorCode.IsMatch(message);
+		if (namesACredential) {
+			return ProviderFailureVerdict.Authentication;
+		}
+		return HtmlWhereJsonExpected.IsMatch(message)
+			? ProviderFailureVerdict.NonJsonPage
+			: ProviderFailureVerdict.NotAuthentication;
+	}
+
+	/// <summary>
+	/// <see langword="true"/> when a RAW Creatio response body proves the session was rejected.
+	/// </summary>
+	/// <remarks>
+	/// This is the strong form of the question, and the only one that can distinguish a login page from a
+	/// gateway error page - it reads the body, which
+	/// <see cref="ClassifyProviderErrorMessage"/> never sees. Use it at every site that still holds the
+	/// response text: the sys-settings write path posts through <c>IApplicationClient</c> and gets the body
+	/// back, so an expired password there is a definite answer rather than an ambiguous one.
+	/// Matching is delegated to <see cref="ReauthExecutor.IsSessionExpiredResponse"/> for the login-page and
+	/// JSON-401-envelope shapes, plus the DataService fault envelope's <c>ErrorCode 5</c> /
+	/// password-expired prose, which the reauth predicate deliberately does not treat as retryable.
+	/// </remarks>
+	/// <param name="responseBody">The raw response body as the platform returned it.</param>
+	public static bool IsAuthenticationFailureResponse(string responseBody) {
+		if (string.IsNullOrWhiteSpace(responseBody)) {
+			return false;
+		}
+		if (ReauthExecutor.IsSessionExpiredResponse(responseBody)) {
+			return true;
+		}
+		return ClassifyProviderErrorMessage(responseBody) == ProviderFailureVerdict.Authentication;
+	}
+
+	/// <summary>
+	/// <see langword="true"/> when the failure carries an authoritative HTTP status. A typed status is
+	/// authoritative in BOTH directions, so a caller must not fall back to prose matching when one is
+	/// present: a typed 404 whose body happens to mention a standalone 401 is a routing failure, not a
+	/// credential one.
+	/// </summary>
+	/// <param name="exception">The failure to inspect.</param>
+	public static bool HasTypedStatus(Exception exception) =>
+		exception is HttpRequestException { StatusCode: not null }
+			or WebException { Response: HttpWebResponse };
 
 	private static bool IsAuthenticationFailure(Exception exception, int depth) {
 		if (exception is null || depth >= MaxExceptionUnwrapDepth) {

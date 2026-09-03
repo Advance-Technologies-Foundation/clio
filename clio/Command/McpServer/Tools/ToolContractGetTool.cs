@@ -5299,7 +5299,8 @@ internal static class ToolContractCatalog {
 		return new ToolContractDefinition(
 			SchemaNamePrefixTool.GetSchemaNamePrefixToolName,
 			"Returns the active SchemaNamePrefix system setting for the environment. " +
-			"Returns empty string when no prefix is configured (use no prefix in that case). " +
+			"Returns empty string when no prefix is configured (use no prefix in that case); an empty prefix always "
+			+ "arrives with success:true, while a rejected session is reported as success:false with an authentication error. " +
 			"Default Creatio environments return 'Usr'. " +
 			"Note: create-app and get-app-info both read this setting automatically and return schema-name-prefix " +
 			"in their responses — you only need this tool when you require the prefix before calling either of those.",
@@ -5932,7 +5933,7 @@ internal static class ToolContractCatalog {
 	private static ToolContractDefinition BuildGetSysSetting() {
 		return new ToolContractDefinition(
 			SysSettingGetTool.GetSysSettingToolName,
-			"Reads the All-Users default value of a Creatio system setting by code. Returns an empty value when the setting is not configured. Pair with list-sys-settings to discover codes.",
+			"Reads the All-Users default value of a Creatio system setting by code. Returns an empty value when the setting is not configured - an empty value always arrives with success:true; a rejected session is reported as success:false with an authentication error instead. Pair with list-sys-settings to discover codes.",
 			new ToolInputSchemaContract(
 				[EnvironmentNameFieldName, SysSettingCodeFieldName],
 				[

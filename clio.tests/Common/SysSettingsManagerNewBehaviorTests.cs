@@ -66,6 +66,14 @@ public class SysSettingsManagerNewBehaviorTests {
 	/// <summary>What ATF reports when the platform names the credential outcome in prose.</summary>
 	private const string ExpiredCredentialsError = "5: Your password has expired.";
 
+	/// <summary>
+	/// The login page Creatio serves under HTTP 200 for a rejected session. Unlike the read path, a write
+	/// keeps this body, so its auth-routing marker makes the rejection provable.
+	/// </summary>
+	private const string LoginPageBody =
+		"<!DOCTYPE html><html><head><title>Creatio</title></head>"
+		+ "<body><form action=\"/Login/NuiLogin.aspx\"></form></body></html>";
+
 	private static ISysSettingsManager BuildSut(IDataProvider dataProvider,
 		IApplicationClient applicationClient = null) {
 		BindingsModule bm = new(FileSystem);
@@ -313,8 +321,8 @@ public class SysSettingsManagerNewBehaviorTests {
 	}
 
 	[Test]
-	[Description("list-sys-settings fails closed on the shape a rejected session really produces: Creatio serves its login page with HTTP 200, so ATF reports only Newtonsoft's parser prose.")]
-	public void GetAllSysSettingsWithValues_ShouldThrowAuthenticationException_ForALoginPageResponse() {
+	[Description("list-sys-settings fails closed on the shape a rejected session really produces - Creatio's login page under HTTP 200 - but names BOTH causes, because ATF keeps only the parser message and a gateway page produces the identical text.")]
+	public void GetAllSysSettingsWithValues_ShouldNameBothCauses_ForALoginPageResponse() {
 		// Arrange
 		ISysSettingsManager sut = BuildSut(BuildRejectedProvider(LoginPageParserError));
 
@@ -322,8 +330,12 @@ public class SysSettingsManagerNewBehaviorTests {
 		Action act = () => sut.GetAllSysSettingsWithValues(includeBinary: true);
 
 		// Assert
-		act.Should().Throw<AuthenticationException>(
-			because: "an HTML body where the DataService contract requires JSON is the login page, and that is exactly how the defect reached the user");
+		Exception thrown = act.Should().Throw<InvalidOperationException>(
+			because: "an HTML body where the DataService contract requires JSON must stop the read - returning an empty catalog is the defect (issue #1222)").Which;
+		thrown.Message.Should().Contain("session was rejected",
+			because: "an expired password is the most likely cause and has to be offered");
+		thrown.Message.Should().Contain("proxy, gateway, wrong path",
+			because: "the read path cannot see the body, so it must not claim the credential cause outright");
 	}
 
 	[Test]
@@ -452,8 +464,8 @@ public class SysSettingsManagerNewBehaviorTests {
 		Action act = () => sut.GetAllSysSettingsWithValues();
 
 		// Assert
-		Exception thrown = act.Should().Throw<InvalidOperationException>(
-			because: "the transport failure must still stop the read, so it is never reported as an empty catalog").Which;
+		Exception thrown = act.Should().Throw<HttpRequestException>(
+			because: "the transport fault keeps its own type so CategorizeError can report 'Network error ...' rather than a composed generic message").Which;
 		thrown.Should().NotBeOfType<AuthenticationException>(
 			because: "a port is not a status code, and misclassifying it hides the real cause");
 	}
@@ -470,8 +482,8 @@ public class SysSettingsManagerNewBehaviorTests {
 		Action act = () => sut.GetAllSysSettingsWithValues();
 
 		// Assert
-		Exception thrown = act.Should().Throw<InvalidOperationException>(
-			because: "the upstream failure must stop the read").Which;
+		Exception thrown = act.Should().Throw<HttpRequestException>(
+			because: "the upstream failure must stop the read and keep its transport type").Which;
 		thrown.Should().NotBeOfType<AuthenticationException>(
 			because: "401 surrounded by letters is part of an identifier, not a status code");
 	}
@@ -1235,6 +1247,83 @@ public class SysSettingsManagerNewBehaviorTests {
 			because: "the MCP get-sys-setting flow advertises the All-Users default; falling back to a personal row would leak another user's value");
 	}
 
+	[Test]
+	[Description("A refused connection reaches the MCP envelope as 'Network error ...' rather than a composed generic message: the decorator rethrows the transport fault unchanged so CategorizeError can still switch on its type.")]
+	public void TryUpdateSysSetting_ShouldReportANetworkError_ForARefusedConnection() {
+		// Arrange
+		IDataProvider dataProvider = new ClassifyingDataProvider(new ThrowingDataProvider(
+			() => new HttpRequestException("Connection refused at http://localhost:40124")));
+		ISysSettingsManager manager = BuildSut(dataProvider);
+		SysSettingsCommand command = new(manager, Substitute.For<ILogger>(), Substitute.For<IFileSystem>());
+
+		// Act
+		SysSettingUpdateResult result = command.TryUpdateSysSetting(
+			new UpdateSysSettingArgs("local", "UsrNetworkFailure", "value"));
+
+		// Assert
+		result.Success.Should().BeFalse(
+			because: "a write that never reached the environment must not be reported as done");
+		result.Error.Should().Be("Network error updating sys-setting.",
+			because: "wrapping the transport fault into an InvalidOperationException erased its type and made this arm of CategorizeError unreachable");
+	}
+
+	[Test]
+	[Description("A rejected session on the create WRITE is provable, because that path still holds the raw response body: create-sys-setting must report the credential diagnosis rather than a generic create failure.")]
+	public void TryCreateSysSetting_ShouldReportAuthenticationFailure_WhenTheWritePostReturnsTheLoginPage() {
+		// Arrange - the read succeeds; only the write endpoint answers with the login page.
+		IApplicationClient applicationClient = Substitute.For<IApplicationClient>();
+		applicationClient.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>()).Returns(LoginPageBody);
+		ISysSettingsManager manager = BuildSut(new DataProviderMock(), applicationClient);
+		SysSettingsCommand command = new(manager, Substitute.For<ILogger>(), Substitute.For<IFileSystem>());
+
+		// Act
+		SysSettingCreateResult result = command.TryCreateSysSetting(
+			new CreateSysSettingArgs("local", "UsrWriteAuth", "UsrWriteAuth", "Text"));
+
+		// Assert
+		result.Success.Should().BeFalse(
+			because: "nothing was created, so the create must not be reported as done");
+		result.Error.Should().Be("Authentication error creating sys-setting.",
+			because: "the write path has the RAW body and can prove the session was rejected - it used to fall through to 'Failed creating sys-setting.' because the login page is not JSON");
+	}
+
+	[Test]
+	[Description("The same is true of the update write: PostSysSettingsValues answering with the login page is a credential failure, not the 'Invalid response format' the JSON path used to report.")]
+	public void UpdateSysSetting_ShouldThrowAuthenticationException_WhenTheWritePostReturnsTheLoginPage() {
+		// Arrange
+		DataProviderMock providerMock = SetupSysSettingsMock(Guid.NewGuid(), "UsrWriteAuth", "Text");
+		IApplicationClient applicationClient = Substitute.For<IApplicationClient>();
+		applicationClient.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>()).Returns(LoginPageBody);
+		ISysSettingsManager sut = BuildSut(providerMock, applicationClient);
+
+		// Act
+		Action act = () => sut.UpdateSysSetting("UsrWriteAuth", "value");
+
+		// Assert
+		act.Should().Throw<AuthenticationException>(
+			because: "the raw body carries Creatio's auth-routing markers, so this is a definite rejection rather than the ambiguous non-JSON answer the read path sees")
+			.Which.Message.Should().Contain("Verify the environment credentials",
+				because: "a definite credential verdict must carry the recovery action");
+	}
+
+	[Test]
+	[Description("A DataService ErrorCode 5 fault envelope on the write is also a credential failure, even though it is valid JSON that the deserializer would happily accept.")]
+	public void UpdateSysSetting_ShouldThrowAuthenticationException_ForAnErrorCodeFiveWriteResponse() {
+		// Arrange
+		DataProviderMock providerMock = SetupSysSettingsMock(Guid.NewGuid(), "UsrWriteAuth", "Text");
+		IApplicationClient applicationClient = Substitute.For<IApplicationClient>();
+		applicationClient.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>()).Returns(
+			"{\"responseStatus\":{\"ErrorCode\":\"5\",\"Message\":\"Your password has expired.\"},\"success\":false}");
+		ISysSettingsManager sut = BuildSut(providerMock, applicationClient);
+
+		// Act
+		Action act = () => sut.UpdateSysSetting("UsrWriteAuth", "value");
+
+		// Assert
+		act.Should().Throw<AuthenticationException>(
+			because: "valid JSON that carries ErrorCode 5 is the platform naming a rejected credential, and it would otherwise be reduced to a generic failed save");
+	}
+
 	#endregion
 
 	#region Legacy provider-only read
@@ -1289,8 +1378,8 @@ public class SysSettingsManagerNewBehaviorTests {
 	}
 
 	[Test]
-	[Description("get-schema-name-prefix also fails closed on the login-page shape, which reaches clio only as a JSON parser message with no status code in it.")]
-	public void GetSchemaNamePrefix_ShouldReportAuthenticationFailure_ForALoginPageResponse() {
+	[Description("get-schema-name-prefix fails closed on the login-page shape too, and reports both causes: the read path holds only the parser message, so it cannot prove the session was the problem.")]
+	public void GetSchemaNamePrefix_ShouldNameBothCauses_ForALoginPageResponse() {
 		// Arrange
 		SysSettingsManager manager = (SysSettingsManager)BuildSut(BuildRejectedProvider(LoginPageParserError));
 		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
@@ -1303,8 +1392,10 @@ public class SysSettingsManagerNewBehaviorTests {
 		// Assert
 		result.Success.Should().BeFalse(
 			because: "GetSysSettingValue has no Success flag and its provider does not catch, so without the decorator this arrived as a raw JsonReaderException and the tool reported an empty prefix");
-		result.Error.Should().Be("Authentication error reading SchemaNamePrefix.",
-			because: "the credential diagnosis has to reach the caller");
+		result.Error.Should().Contain("session was rejected",
+			because: "an expired password is one of the two causes and the caller needs to see it");
+		result.Error.Should().Contain("proxy, gateway, wrong path",
+			because: "the other cause is equally consistent with what the provider reported");
 	}
 
 	#endregion

@@ -1,4 +1,5 @@
 ﻿using System.Collections.Generic;
+using System.Globalization;
 using System.Linq;
 using System.Text;
 using Clio.Project.NuGet;
@@ -90,16 +91,60 @@ namespace Clio.Common
 			if (string.IsNullOrEmpty(text)) {
 				return text;
 			}
-			var sb = new StringBuilder(text.Length);
-			foreach (char character in text) {
-				sb.Append(char.IsControl(character) ? ' ' : character);
-			}
-			string sanitized = sb.ToString();
+			// Normalization runs BEFORE the cap on purpose: it maps every surrogate to a space, so a
+			// truncation at maxLength can no longer split a surrogate pair and leave a lone surrogate that
+			// System.Text.Json refuses to serialize - which would take down the whole MCP response rather
+			// than just garble one message.
+			string sanitized = NeutralizeDisplayHostileCharacters(text);
 			if (sanitized.Length > maxLength) {
 				return sanitized.Substring(0, maxLength) + "...";
 			}
 			return sanitized;
 		}
+
+		/// <summary>
+		/// Maps every character that can misrepresent text in a terminal, a log pipeline, or a JSON payload
+		/// to a plain space, leaving everything else untouched. Runs of spaces are NOT collapsed - a caller
+		/// that wants that does it as its own step.
+		/// </summary>
+		/// <remarks>
+		/// <c>char.IsControl</c> alone is not enough on any of three counts, and this method is the single
+		/// place that says so (<c>SensitiveErrorTextRedactor</c> builds on it rather than repeating it):
+		/// <list type="bullet">
+		/// <item>U+2028 LINE SEPARATOR and U+2029 PARAGRAPH SEPARATOR are category Zl/Zp, not control
+		/// characters, yet render as line breaks and survive JSON as themselves - so an untrusted
+		/// diagnostic could forge a rendered block without a single control byte.</item>
+		/// <item>A lone surrogate reaches <c>System.Text.Json</c>, which THROWS on invalid UTF-16.</item>
+		/// <item>Format characters (bidi overrides) can reverse the visible order of a marker and its
+		/// payload in a terminal.</item>
+		/// </list>
+		/// An ordinary space is itself a separator, so it maps to a space and is unchanged; U+00A0 and
+		/// friends become ordinary spaces, which is the intent.
+		/// </remarks>
+		/// <param name="text">The untrusted text to neutralize.</param>
+		/// <returns>The text with every display-hostile character replaced by a space.</returns>
+		public static string NeutralizeDisplayHostileCharacters(string text) {
+			if (string.IsNullOrEmpty(text)) {
+				return text;
+			}
+			var sb = new StringBuilder(text.Length);
+			foreach (char character in text) {
+				sb.Append(IsDisplayHostile(character) ? ' ' : character);
+			}
+			return sb.ToString();
+		}
+
+		/// <summary>
+		/// <see langword="true"/> when the character must not reach a terminal, a log sink, or a JSON
+		/// serializer as itself. See <see cref="NeutralizeDisplayHostileCharacters"/> for why each
+		/// category is included.
+		/// </summary>
+		/// <param name="character">The character to test.</param>
+		public static bool IsDisplayHostile(char character) =>
+			char.IsControl(character)
+			|| char.IsSeparator(character)
+			|| char.IsSurrogate(character)
+			|| CharUnicodeInfo.GetUnicodeCategory(character) == UnicodeCategory.Format;
 
 		/// <summary>
 		/// Renders a <see cref="PackageVersion"/> that came from OUTSIDE clio — a target environment's

@@ -233,8 +233,14 @@ namespace Clio.Command
 		public void TryUpdateSysSetting(SysSettingsOptions opts, EnvironmentSettings settings = null) {
 			try {
 				UpdateSysSetting(opts, settings);
-			} catch {
-				_logger.WriteError($"SysSettings with code: {opts.Code} is not updated.");
+			} catch (Exception ex) {
+				//Routed through the shared classifier rather than collapsed to "is not updated": this
+				//bare catch used to swallow the credential and network diagnoses that the typed
+				//TryUpdateSysSetting(UpdateSysSettingArgs) overload reports, so the CLI path told the
+				//operator nothing about WHY the write did not land.
+				_logger.WriteError(
+					$"SysSettings with code: {opts.Code} is not updated. "
+					+ CategorizeError(ex, "updating sys-setting"));
 			}
 		}
 

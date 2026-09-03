@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Globalization;
 using System.Linq;
 using System.Text.Json;
+using System.Security.Authentication;
 using System.Text.Json.Serialization;
 using ATF.Repository;
 using ATF.Repository.Providers;
@@ -132,6 +133,12 @@ public interface ISysSettingsManager
 
 public class SysSettingsManager : ISysSettingsManager
 {
+	/// <summary>
+	/// Cap on the raw response quoted back in an authentication diagnostic. A rejected session answers
+	/// with a whole HTML login page, so an uncapped quote would flood every log sink it reaches.
+	/// </summary>
+	private const int MaxRejectedResponseDetailLength = 300;
+
 	#region Fields: Private
 
 	private readonly IApplicationClient _creatioClient;
@@ -270,6 +277,7 @@ public class SysSettingsManager : ISysSettingsManager
 
 		string selectQueryUrl = _serviceUrlBuilder.Build("/DataService/json/SyncReply/SelectQuery");
 		string responseJson = _creatioClient.ExecutePostRequest(selectQueryUrl, requestBody.ToString(NewtonsoftJson.Formatting.None));
+		ThrowIfSessionRejected(responseJson, "resolving a lookup value");
 		JObject json = JObject.Parse(responseJson);
 		JArray rows = json["rows"] as JArray;
 		if (rows is null || rows.Count == 0) {
@@ -347,6 +355,37 @@ public class SysSettingsManager : ISysSettingsManager
 	}
 
 	#endregion
+
+	/// <summary>
+	/// Fails the operation when a RAW write/read response proves Creatio rejected the session.
+	/// </summary>
+	/// <remarks>
+	/// The write path posts through <see cref="IApplicationClient"/> and therefore still HOLDS the response
+	/// body - which is more evidence than <see cref="ClassifyingDataProvider"/> can ever have on the read
+	/// path, where ATF's provider keeps only the exception text. So a login page here is a DEFINITE
+	/// authentication failure (<c>ReauthExecutor.IsSessionExpiredResponse</c> matches the platform's
+	/// auth-routing markers in the body), not the ambiguous non-JSON page a message alone describes.
+	/// <para>
+	/// Without this check, a rejected session on a write reached the caller as
+	/// "Failed creating sys-setting." / "... is not updated. Invalid response format.": the login page is
+	/// not JSON, so the deserializer threw a <see cref="JsonException"/> that
+	/// <c>SysSettingsCommand.CategorizeError</c> has no arm for. The genuinely-malformed-JSON path below is
+	/// unaffected, because it is only reached once this check has passed.
+	/// </para>
+	/// </remarks>
+	/// <param name="rawResponse">The response body exactly as the platform returned it.</param>
+	/// <param name="operationLabel">The sys-settings operation, used in the diagnostic.</param>
+	/// <exception cref="AuthenticationException">Creatio rejected the credentials.</exception>
+	private static void ThrowIfSessionRejected(string rawResponse, string operationLabel) {
+		if (!AuthenticationFailureClassifier.IsAuthenticationFailureResponse(rawResponse)) {
+			return;
+		}
+		throw new AuthenticationException(
+			$"Authentication failed while {operationLabel}: "
+			+ $"{TextUtilities.SanitizeForDisplay(rawResponse, MaxRejectedResponseDetailLength)} "
+			+ "Verify the environment credentials (for an expired password, repair the registered profile) "
+			+ "and retry.");
+	}
 
 	#region Methods: Public
 
@@ -433,6 +472,7 @@ public class SysSettingsManager : ISysSettingsManager
 		const string endpoint = "DataService/json/SyncReply/InsertSysSettingRequest";
 		string url = _serviceUrlBuilder.Build(endpoint);
 		string response = _creatioClient.ExecutePostRequest(url, json);
+		ThrowIfSessionRejected(response, "creating sys-setting");
 		return JsonSerializer.Deserialize<InsertSysSettingResponse>(response, _jsonSerializerOptions);
 	}
 
@@ -550,6 +590,7 @@ public class SysSettingsManager : ISysSettingsManager
 		try {
 
 			string result = _creatioClient.ExecutePostRequest(postSysSettingsValuesUrl, requestData);
+			ThrowIfSessionRejected(result, "updating sys-setting");
 			if (string.IsNullOrWhiteSpace(result)) {
 				_logger.WriteError($"SysSettings with code: {code} is not updated. Empty response received.");
 				return false;

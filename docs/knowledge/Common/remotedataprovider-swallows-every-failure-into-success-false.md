@@ -3,7 +3,11 @@ description: ATF.Repository's RemoteDataProvider never throws - it returns Succe
 applies-to:
   - clio/Common/ClassifyingDataProvider.cs
   - clio/Common/AuthenticationFailureClassifier.cs
+  - clio/Common/CompilationHistoryPoller.cs
+  - clio/Common/ISysSettingsManager.cs
   - clio/BindingsModule.cs
+  - clio/Command/SysSettingsCommand.cs
+  - clio/Package/PackageBuilder.cs
 ticket: "#1371"
 date: 2026-09-03
 ---
@@ -36,7 +40,26 @@ cannot be changed from clio. An earlier attempt (PR #1233) put a second DataServ
 `SysSettingsManager` instead; that fixed one command, cost an extra round trip per operation, and left
 every other `IDataProvider` consumer exposed.
 
-Two consequences worth knowing before writing code against this:
+**What the two failure shapes are worth as evidence** — this is the part that keeps being got wrong.
+The HTML-where-JSON signal is NOT proof of an authentication failure: an IIS/nginx 404 page, a WAF
+block and a gateway error page all produce the byte-identical Newtonsoft message. So:
+
+- **Read path** (through `IDataProvider`): only `ErrorMessage` survives, so the login page and a
+  gateway page are indistinguishable. `ClassifyingDataProvider` raises an `InvalidOperationException`
+  naming BOTH causes. An `AuthenticationException` is raised only with a corroborating marker — a typed
+  401, a standalone `401` token, DataService `ErrorCode 5`, or prose naming the credential outcome.
+- **Write path** (`SysSettingsManager` posting through `IApplicationClient`): the raw body IS still
+  held, so `AuthenticationFailureClassifier.IsAuthenticationFailureResponse` matches Creatio's
+  auth-routing markers in it and the rejection is a DEFINITE `AuthenticationException`. Every
+  `ExecutePostRequest` result site checks this **before** deserializing; without it the login page was
+  simply not-JSON and the `JsonException` fell through to "Failed creating sys-setting."
+
+A corollary for anything running the provider on a background thread: a **thrown** transport fault is
+rethrown UNCHANGED (wrapping it erased the type and made the `"Network error …"` arms of
+`SysSettingsCommand.CategorizeError` and `SchemaNamePrefixTool` unreachable), and only the
+`Success == false` response — which has no original exception — is wrapped.
+
+Three consequences worth knowing before writing code against this:
 
 - A DataService **fault envelope** (`{"responseStatus":{"ErrorCode":"5",…},"rows":[],"success":false}`)
   is NOT a detectable failure here: the provider parses it without error, ignores its `success` field,
@@ -46,6 +69,13 @@ Two consequences worth knowing before writing code against this:
   production, because the decorator throws first. It is kept because the tests reach it directly
   through `RejectingSaveDataProvider` (see
   `docs/knowledge/Tests/dataprovidermock-cannot-report-a-rejected-save.md`).
+- **A polling loop must tolerate a failed round.** `CompilationHistoryPoller.Poll` runs on a bare
+  `new Thread(...)` from `PackageBuilder.CompileWithPolling`, and an unhandled exception on a dedicated
+  thread terminates the whole clio process — so before the tolerance was added, one timed-out OData read
+  would have killed clio mid-compile and skipped every cleanup step. `Poll` now retries and gives up
+  only after a run of consecutive failures; `PackageBuilder` additionally captures the fault inside the
+  thread lambda and observes it on the main thread. Any new background consumer of `IDataProvider` needs
+  the same two guards.
 
 **What breaks if you ignore it** — a command that reads through `IDataProvider` on a bypassed or raw
 provider reports **success with an empty result** on expired or rejected credentials: `get-syssetting`

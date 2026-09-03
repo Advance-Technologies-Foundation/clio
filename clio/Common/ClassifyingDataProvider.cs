@@ -54,38 +54,51 @@ public sealed class ClassifyingDataProvider : IDataProvider {
 	public ClassifyingDataProvider(IDataProvider inner) =>
 		_inner = inner ?? throw new ArgumentNullException(nameof(inner));
 
-	/// <inheritdoc />
+	/// <summary>Reads an entity schema's default values, failing instead of reporting an empty set.</summary>
+	/// <param name="schemaName">The entity schema whose defaults are read.</param>
+	/// <returns>The provider's successful response.</returns>
 	public IDefaultValuesResponse GetDefaultValues(string schemaName) {
 		string operation = $"reading default values for entity schema '{schemaName}'";
 		IDefaultValuesResponse response = Guard(() => _inner.GetDefaultValues(schemaName), operation);
 		return EnsureSuccess(response, r => r.Success, r => r.ErrorMessage, operation);
 	}
 
-	/// <inheritdoc />
+	/// <summary>Runs a select query, failing instead of reporting an empty row set.</summary>
+	/// <param name="selectQuery">The query to run.</param>
+	/// <returns>The provider's successful response.</returns>
 	public IItemsResponse GetItems(ISelectQuery selectQuery) {
 		string operation = $"reading records from entity schema '{selectQuery?.RootSchemaName ?? "unknown"}'";
 		IItemsResponse response = Guard(() => _inner.GetItems(selectQuery), operation);
 		return EnsureSuccess(response, r => r.Success, r => r.ErrorMessage, operation);
 	}
 
-	/// <inheritdoc />
+	/// <summary>Applies a batch of writes, failing instead of reporting an unsuccessful result.</summary>
+	/// <param name="queries">The writes to apply.</param>
+	/// <returns>The provider's successful response.</returns>
 	public IExecuteResponse BatchExecute(List<IBaseQuery> queries) {
 		string operation = $"saving records to entity schema(s) '{DescribeSchemas(queries)}'";
 		IExecuteResponse response = Guard(() => _inner.BatchExecute(queries), operation);
 		return EnsureSuccess(response, r => r.Success, r => r.ErrorMessage, operation);
 	}
 
-	/// <inheritdoc />
+	/// <summary>Reads a sys-setting value, classifying anything the provider throws.</summary>
+	/// <typeparam name="T">The value type to read.</typeparam>
+	/// <param name="sysSettingCode">The sys-setting code.</param>
+	/// <returns>The value the environment holds.</returns>
 	public T GetSysSettingValue<T>(string sysSettingCode) =>
 		Guard(() => _inner.GetSysSettingValue<T>(sysSettingCode),
 			$"reading sys-setting '{sysSettingCode}'");
 
-	/// <inheritdoc />
+	/// <summary>Reads a feature state, classifying anything the provider throws.</summary>
+	/// <param name="featureCode">The feature code.</param>
+	/// <returns><see langword="true"/> when the feature is on.</returns>
 	public bool GetFeatureEnabled(string featureCode) =>
 		Guard(() => _inner.GetFeatureEnabled(featureCode),
 			$"reading the state of feature '{featureCode}'");
 
-	/// <inheritdoc />
+	/// <summary>Runs a business process, failing instead of reporting an unsuccessful response.</summary>
+	/// <param name="request">The process and its parameters.</param>
+	/// <returns>The provider's successful response.</returns>
 	public IExecuteProcessResponse ExecuteProcess(IExecuteProcessRequest request) {
 		string operation = $"running process '{request?.ProcessSchemaName ?? "unknown"}'";
 		IExecuteProcessResponse response = Guard(() => _inner.ExecuteProcess(request), operation);
@@ -93,10 +106,19 @@ public sealed class ClassifyingDataProvider : IDataProvider {
 	}
 
 	/// <summary>
-	/// Runs an inner call and rewrites anything it throws into the same two diagnoses the
-	/// <c>Success == false</c> path produces, so the caller sees one contract regardless of which of the
-	/// provider's two failure shapes it hit.
+	/// Runs an inner call and gives a thrown failure the SAME diagnosis the <c>Success == false</c> path
+	/// produces - but only when it can improve on it.
 	/// </summary>
+	/// <remarks>
+	/// A transport fault is RETHROWN UNCHANGED, deliberately. An earlier revision wrapped everything
+	/// non-authentication into an <see cref="InvalidOperationException"/>, which erased the exception type
+	/// and made the <c>HttpRequestException</c> / <c>WebException</c> / <c>SocketException</c> arms of
+	/// <c>SysSettingsCommand.CategorizeError</c> and <c>SchemaNamePrefixTool</c> unreachable: a refused
+	/// connection reported "Failed reading records from entity schema 'X': Connection refused..." instead
+	/// of "Network error reading sys-setting.". Only two rewrites earn their place here - the
+	/// authentication verdict, and the ambiguous non-JSON page - because in both cases the composed
+	/// message says something the original exception does not.
+	/// </remarks>
 	private static TResult Guard<TResult>(Func<TResult> call, string operation) {
 		try {
 			return call();
@@ -104,14 +126,24 @@ public sealed class ClassifyingDataProvider : IDataProvider {
 			//Cancellation is the caller's own decision, not a provider failure; rewriting it would hide
 			//a co-operative shutdown behind a diagnosis about credentials.
 			throw;
+		} catch (AuthenticationException) {
+			//Already the strongest available diagnosis, whichever way CategorizeError later reads it
+			//(it asks the same classifier, so a TLS handshake keeps its own answer).
+			throw;
 		} catch (Exception exception) {
-			//The typed classifier reads status codes and exception types; the string one adds the shape a
-			//rejected DataService read actually arrives in - a JSON parser error over the login page's HTML,
-			//which carries no status and no exception type at all.
-			throw AuthenticationFailureClassifier.IsAuthenticationFailure(exception)
-				|| AuthenticationFailureClassifier.IsAuthenticationFailure(exception.Message)
-				? new AuthenticationException(AuthenticationMessage(operation, exception.Message), exception)
-				: new InvalidOperationException(GenericMessage(operation, exception.Message), exception);
+			string detail = Sanitize(exception.Message);
+			if (AuthenticationFailureClassifier.IsAuthenticationFailure(exception)) {
+				throw new AuthenticationException(AuthenticationMessage(operation, detail), exception);
+			}
+			//Prose is consulted ONLY when there is no typed status to read. A typed status is
+			//authoritative in both directions, so a typed 404 whose body happens to mention a standalone
+			//401 must stay a routing failure.
+			if (!AuthenticationFailureClassifier.HasTypedStatus(exception)
+				&& AuthenticationFailureClassifier.ClassifyProviderErrorMessage(detail)
+					== AuthenticationFailureClassifier.ProviderFailureVerdict.NonJsonPage) {
+				throw new DataProviderFailureException(NonJsonPageMessage(operation, detail), exception);
+			}
+			throw;
 		}
 	}
 
@@ -122,6 +154,10 @@ public sealed class ClassifyingDataProvider : IDataProvider {
 	/// guards with <c>items != null &amp;&amp; items.Success</c>, so a null response is reachable - and
 	/// evaluating <c>response.Success</c> at the call site would raise a bare
 	/// <see cref="NullReferenceException"/> instead of a named failure.
+	/// <para>
+	/// This is the one path that DOES wrap into an <see cref="InvalidOperationException"/>, because there
+	/// is no original exception to preserve: the provider caught it and kept only its text.
+	/// </para>
 	/// </remarks>
 	/// <exception cref="AuthenticationException">The provider's error names rejected credentials.</exception>
 	/// <exception cref="InvalidOperationException">
@@ -130,45 +166,53 @@ public sealed class ClassifyingDataProvider : IDataProvider {
 	private static TResponse EnsureSuccess<TResponse>(TResponse response, Func<TResponse, bool> readSuccess,
 		Func<TResponse, string> readErrorMessage, string operation) where TResponse : class {
 		if (response is null) {
-			throw new InvalidOperationException(
+			throw new DataProviderFailureException(
 				$"Failed {operation}: the data provider returned no response.");
 		}
 		if (readSuccess(response)) {
 			return response;
 		}
-		string errorMessage = readErrorMessage(response);
-		throw AuthenticationFailureClassifier.IsAuthenticationFailure(errorMessage)
-			? new AuthenticationException(AuthenticationMessage(operation, errorMessage))
-			: new InvalidOperationException(GenericMessage(operation, errorMessage));
+		//Capped BEFORE classification: the text is server-controlled and every rule is a scan over it.
+		string detail = Sanitize(readErrorMessage(response));
+		throw AuthenticationFailureClassifier.ClassifyProviderErrorMessage(detail) switch {
+			AuthenticationFailureClassifier.ProviderFailureVerdict.Authentication
+				=> new AuthenticationException(AuthenticationMessage(operation, detail)),
+			AuthenticationFailureClassifier.ProviderFailureVerdict.NonJsonPage
+				=> new DataProviderFailureException(NonJsonPageMessage(operation, detail)),
+			var _ => new DataProviderFailureException(GenericMessage(operation, detail))
+		};
 	}
 
 	private static string AuthenticationMessage(string operation, string detail) =>
-		$"Authentication failed while {operation}: {Sanitize(detail)} "
-		+ "Verify the environment credentials (for an expired password, repair the registered profile); "
-		+ "if the credentials are valid, confirm the environment URL points at Creatio rather than at a "
-		+ "proxy or gateway, and retry.";
-
-	private static string GenericMessage(string operation, string detail) =>
-		$"Failed {operation}: {Sanitize(detail)}";
+		$"Authentication failed while {operation}: {detail} "
+		+ "Verify the environment credentials (for an expired password, repair the registered profile) "
+		+ "and retry.";
 
 	/// <summary>
-	/// Normalizes a server-controlled detail before it is embedded in an exception message: every control
-	/// character is dropped (so NUL, TAB and escape sequences cannot corrupt terminal output or a log
-	/// pipeline) and the result is capped so a pathological payload cannot be amplified into every
-	/// downstream log sink. An absent detail becomes <see cref="UnreportedFailureDetail"/> rather than
-	/// leaving the message ending at a colon.
+	/// The honest message for the HTML-where-JSON signal on its own: it names BOTH causes, because the
+	/// message the provider preserved cannot tell them apart. Claiming one would send the operator to
+	/// repair working credentials whenever the real problem was a proxy, a gateway or a wrong path.
+	/// </summary>
+	private static string NonJsonPageMessage(string operation, string detail) =>
+		$"Failed {operation}: the environment answered with a non-JSON page where a DataService response "
+		+ "was expected - either the session was rejected (expired password / login redirect) or the URL "
+		+ $"does not reach Creatio (proxy, gateway, wrong path). Detail: {detail}";
+
+	private static string GenericMessage(string operation, string detail) =>
+		$"Failed {operation}: {detail}";
+
+	/// <summary>
+	/// Normalizes a server-controlled detail before it is embedded in an exception message, and before it
+	/// is classified. Delegates the character neutralization and the length cap to the shared
+	/// <see cref="TextUtilities.SanitizeForDisplay"/>; an absent detail becomes
+	/// <see cref="UnreportedFailureDetail"/> rather than leaving the message ending at a colon.
 	/// </summary>
 	private static string Sanitize(string detail) {
 		if (string.IsNullOrWhiteSpace(detail)) {
 			return UnreportedFailureDetail;
 		}
-		string cleaned = new string(detail.Where(character => !char.IsControl(character)).ToArray()).Trim();
-		if (cleaned.Length == 0) {
-			return UnreportedFailureDetail;
-		}
-		return cleaned.Length > MaxFailureDetailLength
-			? cleaned[..MaxFailureDetailLength] + "…"
-			: cleaned;
+		string cleaned = TextUtilities.SanitizeForDisplay(detail, MaxFailureDetailLength).Trim();
+		return cleaned.Length == 0 ? UnreportedFailureDetail : cleaned;
 	}
 
 	/// <summary>Names the schemas a batch touches, for the diagnostic.</summary>

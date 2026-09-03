@@ -45,6 +45,14 @@ public sealed class SchemaNamePrefixTool(IToolCommandResolver commandResolver) {
 			return new SchemaNamePrefixResult(false, string.Empty, "Network error reading SchemaNamePrefix.");
 		} catch (Exception ex) when (ex is UnauthorizedAccessException or System.Security.Authentication.AuthenticationException) {
 			return new SchemaNamePrefixResult(false, string.Empty, "Authentication error reading SchemaNamePrefix.");
+		} catch (DataProviderFailureException ex) {
+			//Surfaces the message rather than collapsing to "Failed to read SchemaNamePrefix.", which is the
+			//same rule SysSettingsCommand.CategorizeError applies. This type - and ONLY this type - means
+			//the message IS the diagnosis the caller cannot reconstruct, in particular the non-JSON-page
+			//answer that names both possible causes (rejected session, or a URL that does not reach
+			//Creatio). A plain InvalidOperationException keeps the generic label below: an unregistered
+			//environment name must not have its resolver text promoted into this field.
+			return new SchemaNamePrefixResult(false, string.Empty, ex.Message);
 		} catch (Exception) {
 			return new SchemaNamePrefixResult(false, string.Empty, "Failed to read SchemaNamePrefix.");
 		}

@@ -1,9 +1,9 @@
 using System;
 using System.Collections.Generic;
-using System.Globalization;
 using System.Linq;
 using System.Text;
 using System.Text.RegularExpressions;
+using Clio.Common;
 
 namespace Clio.Command.McpServer;
 
@@ -133,20 +133,12 @@ internal static partial class SensitiveErrorTextRedactor {
 		StringBuilder collapsed = new(redacted.Length);
 		bool lastWasSpace = false;
 		foreach (char character in redacted) {
-			// char.IsControl alone is NOT enough on any of the three counts:
-			//  - U+2028 LINE SEPARATOR and U+2029 PARAGRAPH SEPARATOR are category Zl/Zp, not control
-			//    characters, yet render as line breaks and survive JSON as U+2028/U+2029 - so the
-			//    separator handling is required to prevent a diagnostic from forging a rendered block;
-			//  - a lone surrogate would reach System.Text.Json, which THROWS on invalid UTF-16, taking
-			//    down the whole response of a tool that is mandatory on every operation;
-			//  - format characters (bidi overrides) can reverse the visible order of the marker and the
-			//    payload in a terminal.
-			char normalized = char.IsControl(character)
-				|| char.IsSeparator(character)
-				|| char.IsSurrogate(character)
-				|| CharUnicodeInfo.GetUnicodeCategory(character) == UnicodeCategory.Format
-					? ' '
-					: character;
+			// Which characters are hostile, and why each category is included, is stated once in
+			// TextUtilities.IsDisplayHostile - char.IsControl alone is not enough on three separate
+			// counts (forged line breaks via U+2028/U+2029, a lone surrogate that makes
+			// System.Text.Json throw, and bidi format overrides). The collapsing of the resulting
+			// runs below is this method's own step, because only the fenced rendering needs it.
+			char normalized = TextUtilities.IsDisplayHostile(character) ? ' ' : character;
 			if (normalized == ' ') {
 				if (lastWasSpace) {
 					continue;

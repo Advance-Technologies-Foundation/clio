@@ -3100,4 +3100,28 @@ public sealed class ToolContractGetToolTests {
 		result.Index.Should().BeNull(
 			because: "the legacy client's full-shape response must not also carry the compact index");
 	}
+
+	[Test]
+	[Category("Unit")]
+	[TestCase(SchemaNamePrefixTool.GetSchemaNamePrefixToolName,
+		TestName = "GetSchemaNamePrefixContractCarriesTheEmptyVersusFailureRule")]
+	[TestCase(SysSettingGetTool.GetSysSettingToolName,
+		TestName = "GetSysSettingContractCarriesTheEmptyVersusFailureRule")]
+	[Description("get-tool-contract restates each tool's description in its own literal, so the sys-settings reading rule - an empty value only ever arrives with success:true, a rejected session is success:false - must be present in BOTH places or an agent reading the contract is told something the tool no longer does.")]
+	public void ToolContract_Should_Carry_The_Empty_Versus_Failure_Rule(string toolName) {
+		// Arrange
+		ToolContractGetTool tool = BuildToolWithRegistry();
+
+		// Act
+		ToolContractDefinition contract =
+			tool.GetToolContracts(new ToolContractGetArgs([toolName])).Tools!.Single();
+
+		// Assert
+		contract.Description.Should().Contain("success:true",
+			because: "the contract has to say that an empty read is a SUCCESSFUL read, otherwise an agent reads emptiness as ambiguous");
+		contract.Description.Should().Contain("success:false",
+			because: "a rejected session is now a reported failure rather than an empty value (issue #1371), and the contract is where an agent learns that");
+		contract.Description.Should().Contain("authentication error",
+			because: "the contract must name the diagnosis the caller will actually receive");
+	}
 }

@@ -113,18 +113,38 @@ namespace Clio.Package
 
 			using CancellationTokenSource cts = new();
 			Task httpTask = SendCompilationRequestAsync(cts.Token);
+			// The poll fault is CAPTURED, never allowed to escape this lambda. An unhandled exception on a
+			// dedicated thread terminates the whole process, so a failed OData round would have killed
+			// clio mid-compile and skipped every cleanup below (cts.Cancel / Join / ObserveCancelledRequest).
+			// Poll itself already tolerates individual failed rounds; this catches the case where it gives
+			// up, and hands the fault to the loop below to report on the main thread.
+			Exception pollFault = null;
 			Thread pollThread = new(() => {
-				_compilationHistoryPoller.Poll(baselineCreatedOn, cts.Token, record => {
-					lastActivityAt = DateTime.UtcNow;
-					if (!record.Result && !string.IsNullOrEmpty(record.ErrorsWarnings) && record.ErrorsWarnings != "[]") {
-						hasErrors = true;
-						errorDetails = record.ErrorsWarnings;
-					}
-				});
+				try {
+					_compilationHistoryPoller.Poll(baselineCreatedOn, cts.Token, record => {
+						lastActivityAt = DateTime.UtcNow;
+						if (!record.Result && !string.IsNullOrEmpty(record.ErrorsWarnings) && record.ErrorsWarnings != "[]") {
+							hasErrors = true;
+							errorDetails = record.ErrorsWarnings;
+						}
+					});
+				} catch (Exception exception) {
+					pollFault = exception;
+				}
 			});
 			pollThread.Start();
 
 			while (DateTime.UtcNow < timeoutAt) {
+				//Observed on the MAIN thread, so the fault is reported rather than silently ending the
+				//poll and letting the loop run to its full timeout with nothing watching the compile.
+				if (pollFault is not null) {
+					cts.Cancel();
+					pollThread.Join();
+					ObserveCancelledRequest(httpTask, cts);
+					throw new InvalidOperationException(
+						$"Package compilation could not be monitored: {pollFault.Message}", pollFault);
+				}
+
 				if (httpTask.IsCompleted) {
 					cts.Cancel();
 					pollThread.Join();

@@ -27,6 +27,9 @@ public class ClassifyingDataProviderTests {
 
 	private const string GenericProviderError = "SqlException: deadlock victim";
 
+	/// <summary>Mirrors ClassifyingDataProvider.MaxFailureDetailLength, which is private to it.</summary>
+	private const int MaxFailureDetailLength = 300;
+
 	private static IDataProvider BuildFailing(string errorMessage) =>
 		new ClassifyingDataProvider(new UnsuccessfulDataProvider(errorMessage));
 
@@ -65,8 +68,8 @@ public class ClassifyingDataProviderTests {
 	}
 
 	[Test]
-	[Description("Creatio answers a rejected or expired credential by serving the login page with HTTP 200, so the only trace that reaches clio is Newtonsoft's 'unexpected character' prose; that shape must classify as authentication.")]
-	public void GetItems_ShouldThrowAuthenticationException_WhenTheErrorIsHtmlWhereJsonWasExpected() {
+	[Description("The HTML-where-JSON signal alone cannot prove a rejected session - a 404, a WAF block and a gateway page produce the same Newtonsoft message - so the read path must fail while naming BOTH causes rather than claiming one.")]
+	public void GetItems_ShouldNameBothCauses_WhenOnlyTheNonJsonPageSignalIsPresent() {
 		// Arrange
 		IDataProvider sut = BuildFailing(LoginPageParserFailure);
 
@@ -74,10 +77,31 @@ public class ClassifyingDataProviderTests {
 		Action act = () => sut.GetItems(BuildSelectQuery("SysSchema"));
 
 		// Assert
+		Exception thrown = act.Should().Throw<InvalidOperationException>(
+			because: "the read must still fail closed - an unsuccessful response may never become an empty collection (issue #1222)").Which;
+		thrown.Should().NotBeOfType<AuthenticationException>(
+			because: "ATF keeps only the parser's message, never the body, so no login-page marker is available to corroborate a credential verdict");
+		thrown.Message.Should().Contain("session was rejected",
+			because: "an expired password is one of the two real causes and the operator has to see it");
+		thrown.Message.Should().Contain("proxy, gateway, wrong path",
+			because: "the other cause is equally likely and naming only the first sends the operator to repair a working login");
+	}
+
+	[Test]
+	[Description("A parser failure that arrives WITH a corroborating credential marker is an authentication failure, so requiring corroboration did not switch the signal off.")]
+	public void GetItems_ShouldThrowAuthenticationException_WhenTheParserFailureIsCorroborated() {
+		// Arrange
+		IDataProvider sut = BuildFailing(
+			"Unexpected character encountered while parsing value: <. Your password has expired.");
+
+		// Act
+		Action act = () => sut.GetItems(BuildSelectQuery("SysSettings"));
+
+		// Assert
 		act.Should().Throw<AuthenticationException>(
-			because: "HTML where the DataService contract requires JSON is the login page, which is how issue #1222 reached the user as an empty list")
-			.Which.Message.Should().Contain("proxy or gateway",
-				because: "a gateway error page produces the same shape, so the diagnostic must name that alternative rather than claim certainty");
+			because: "prose naming the credential outcome beside the parser failure removes the ambiguity")
+			.Which.Message.Should().Contain("Verify the environment credentials",
+				because: "a definite credential verdict must carry the recovery action");
 	}
 
 	[Test]
@@ -92,6 +116,8 @@ public class ClassifyingDataProviderTests {
 		// Assert
 		InvalidOperationException exception = act.Should().Throw<InvalidOperationException>(
 			because: "the response was unsuccessful, so it must not reach the caller as an empty collection - but nothing in it names a credential").Which;
+		exception.Should().BeOfType<DataProviderFailureException>(
+			because: "the distinct type is what lets a consumer tell 'the provider failed and its message is the whole diagnosis' apart from clio's own argument/state InvalidOperationExceptions - SchemaNamePrefixTool surfaces this message but keeps its generic label for the rest");
 		exception.Should().NotBeOfType<AuthenticationException>(
 			because: "a database deadlock is not a rejected credential and must keep its own diagnosis");
 		exception.Message.Should().StartWith("Failed reading records from entity schema 'Contact'",
@@ -151,8 +177,8 @@ public class ClassifyingDataProviderTests {
 	}
 
 	[Test]
-	[Description("GetSysSettingValue has no Success flag and its provider does not catch, so a rejected read arrives as a raw parser exception; the decorator must classify it with the same rules as an unsuccessful response.")]
-	public void GetSysSettingValue_ShouldClassifyAThrownParserFailureAsAuthentication() {
+	[Description("GetSysSettingValue has no Success flag and its provider does not catch, so a rejected read arrives as a raw parser exception; the decorator must still turn it into a named failure that names both causes rather than letting it escape as a JsonReaderException.")]
+	public void GetSysSettingValue_ShouldClassifyAThrownParserFailure() {
 		// Arrange
 		IDataProvider sut = BuildFailing(LoginPageParserFailure);
 
@@ -160,10 +186,32 @@ public class ClassifyingDataProviderTests {
 		Action act = () => sut.GetSysSettingValue<string>("SchemaNamePrefix");
 
 		// Assert
+		InvalidOperationException exception = act.Should().Throw<InvalidOperationException>(
+			because: "get-schema-name-prefix reads this member first, and a raw JsonReaderException there is what made it report success:true with an empty prefix on expired credentials").Which;
+		exception.Message.Should().Contain("SchemaNamePrefix",
+			because: "the sys-setting being read has to be named");
+		exception.Message.Should().Contain("session was rejected",
+			because: "an expired password is one of the two causes and must be offered to the operator");
+		exception.Message.Should().Contain("proxy, gateway, wrong path",
+			because: "the message alone cannot distinguish a login page from a gateway page, so it must not claim one");
+	}
+
+	[Test]
+	[Description("A corroborated credential failure on the flagless member IS an authentication failure, so the prefix tool still reports the credential diagnosis when the platform names it.")]
+	public void GetSysSettingValue_ShouldThrowAuthenticationException_WhenTheFailureNamesACredential() {
+		// Arrange
+		IDataProvider sut = new ClassifyingDataProvider(new ThrowingDataProvider(
+			() => new HttpRequestException(
+				"Response status code does not indicate success: 401 (Unauthorized).",
+				null,
+				HttpStatusCode.Unauthorized)));
+
+		// Act
+		Action act = () => sut.GetSysSettingValue<string>("SchemaNamePrefix");
+
+		// Assert
 		act.Should().Throw<AuthenticationException>(
-			because: "get-schema-name-prefix reads this member first, and a raw JsonReaderException there is what made it report success:true with an empty prefix on expired credentials")
-			.Which.Message.Should().Contain("SchemaNamePrefix",
-				because: "the sys-setting being read has to be named");
+			because: "a typed 401 is a definite rejected credential, whichever provider member reported it");
 	}
 
 	[Test]
@@ -185,21 +233,38 @@ public class ClassifyingDataProviderTests {
 	}
 
 	[Test]
-	[Description("A refused connection whose port contains the digits 401 stays a transport failure: wrapping it as an authentication failure sends the operator to repair working credentials.")]
-	public void GetItems_ShouldNotTreatAPortContaining401AsRejectedCredentials() {
+	[Description("A thrown transport fault is rethrown UNCHANGED: wrapping it into an InvalidOperationException erased the type and made the 'Network error ...' arms of SysSettingsCommand.CategorizeError and SchemaNamePrefixTool unreachable.")]
+	public void GetItems_ShouldRethrowATransportFaultWithItsOriginalType() {
 		// Arrange
-		IDataProvider sut = new ClassifyingDataProvider(
-			new ThrowingDataProvider(() =>
-				new HttpRequestException("Connection refused at http://localhost:40124")));
+		HttpRequestException original = new("Connection refused at http://localhost:40124");
+		IDataProvider sut = new ClassifyingDataProvider(new ThrowingDataProvider(() => original));
 
 		// Act
 		Action act = () => sut.GetItems(BuildSelectQuery("Contact"));
 
 		// Assert
-		Exception thrown = act.Should().Throw<InvalidOperationException>(
-			because: "the failure must still stop the read, but as a transport failure rather than a credential one").Which;
+		Exception thrown = act.Should().Throw<HttpRequestException>(
+			because: "CategorizeError switches on the exception TYPE to say 'Network error ...', so the type is load-bearing and must survive the decorator").Which;
+		thrown.Should().BeSameAs(original,
+			because: "rethrowing the original preserves its stack and inner chain for the command-layer classifier");
+	}
+
+	[Test]
+	[Description("A typed 404 whose prose happens to carry a standalone 401 stays a routing failure: a typed status is authoritative in both directions and must not be overridden by the message.")]
+	public void GetItems_ShouldNotConsultProse_WhenATypedStatusIsPresent() {
+		// Arrange
+		IDataProvider sut = new ClassifyingDataProvider(new ThrowingDataProvider(
+			() => new HttpRequestException(
+				"Not found. The remote server returned an error: 401.", null, HttpStatusCode.NotFound)));
+
+		// Act
+		Action act = () => sut.GetItems(BuildSelectQuery("Contact"));
+
+		// Assert
+		Exception thrown = act.Should().Throw<HttpRequestException>(
+			because: "a routing failure keeps its own type and diagnosis").Which;
 		thrown.Should().NotBeOfType<AuthenticationException>(
-			because: "a port is not a status code");
+			because: "a typed 404 is authoritative; falling through to prose is what turned a wrong path into 'repair your credentials'");
 	}
 
 	[Test]
@@ -213,9 +278,24 @@ public class ClassifyingDataProviderTests {
 
 		// Assert
 		Exception thrown = act.Should().Throw<InvalidOperationException>(
-			because: "a certificate problem must stop the read and be reported as itself").Which;
+			because: "a Success=false response has no original exception to preserve, so it is wrapped - but it must still fail").Which;
 		thrown.Should().NotBeOfType<AuthenticationException>(
 			because: "AuthenticationException is the framework type for a TLS handshake too, and misreporting it hides the certificate");
+	}
+
+	[Test]
+	[Description("An AuthenticationException thrown by the provider itself is rethrown unchanged, so a TLS handshake keeps whatever diagnosis it arrived with.")]
+	public void GetItems_ShouldRethrowAnAuthenticationExceptionUnchanged() {
+		// Arrange
+		AuthenticationException original = new("The remote certificate is invalid.");
+		IDataProvider sut = new ClassifyingDataProvider(new ThrowingDataProvider(() => original));
+
+		// Act
+		Action act = () => sut.GetItems(BuildSelectQuery("Contact"));
+
+		// Assert
+		act.Should().Throw<AuthenticationException>().Which.Should().BeSameAs(original,
+			because: "it is already the strongest available diagnosis, and CategorizeError asks the same classifier about it");
 	}
 
 	[Test]
@@ -249,8 +329,8 @@ public class ClassifyingDataProviderTests {
 			because: "a control character in a server-controlled detail can corrupt a log pipeline");
 		message.Should().NotContain("\t",
 			because: "every control character is dropped, not only the line breaks");
-		message.Length.Should().BeLessThan(500,
-			because: "the detail is capped so a multi-megabyte payload cannot be amplified downstream");
+		message.Length.Should().BeLessThan(MaxFailureDetailLength * 2,
+			because: $"the detail is capped at {MaxFailureDetailLength} characters so a multi-megabyte payload cannot be amplified downstream, leaving room only for the fixed message text");
 	}
 
 	[Test]
