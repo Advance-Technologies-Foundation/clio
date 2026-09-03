@@ -92,4 +92,28 @@ internal class GetEntitySchemaColumnPropertiesCommandTests : BaseCommandTests<Ge
 		_columnManager.DidNotReceiveWithAnyArgs().GetColumnProperties(default);
 		_logger.Received(1).WriteError(Arg.Is<string>(message => message.Contains("Column name is required.")));
 	}
+
+	[Test]
+	[Description("Allows package omission for merged discovery and prints runtime-unavailable booleans as unknown.")]
+	public void Execute_AllowsMergedDiscovery_WhenPackageIsMissing() {
+		// Arrange
+		GetEntitySchemaColumnPropertiesOptions options = new() {
+			SchemaName = "Contact",
+			ColumnName = "UsrStatus"
+		};
+		_columnManager.GetColumnProperties(options).Returns(new EntitySchemaColumnPropertiesInfo(
+			"Contact", "(merged: all packages)", "UsrStatus", "own", "Status", null, "Lookup",
+			false, false, true, null, null, null, "UsrStatus", true, false, null, false, null,
+			false, false, false, false));
+
+		// Act
+		int result = _command.Execute(options);
+
+		// Assert
+		result.Should().Be(0, because: "an omitted package now selects merged discovery rather than failing validation");
+		_columnManager.Received(1).GetColumnProperties(options);
+		_logger.Received(1).WriteInfo("Track changes: <unknown>");
+		_logger.Received(1).WriteInfo("Do not control integrity: <unknown>");
+		_logger.Received(1).WriteInfo("Localizable text: <unknown>");
+	}
 }

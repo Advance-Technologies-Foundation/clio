@@ -72,6 +72,35 @@ public sealed class ToolContractGetToolTests {
 
 	[Test]
 	[Category("Unit")]
+	[Description("Publishes package-name as optional and explains the merged column discovery limitations.")]
+	public void ToolContractGet_Should_Describe_Merged_Column_Discovery() {
+		// Arrange
+		ToolContractGetTool tool = BuildToolWithRegistry();
+
+		// Act
+		ToolContractDefinition contract = tool.GetToolContracts(new ToolContractGetArgs([
+			GetEntitySchemaColumnPropertiesTool.GetEntitySchemaColumnPropertiesToolName
+		])).Tools!.Single();
+
+		// Assert
+		contract.InputSchema.Required.Should().NotContain("package-name",
+			because: "the curated contract must agree with the emitted schema's merged-discovery option");
+		contract.InputSchema.Required.Should().Contain(["environment-name", "schema-name", "column-name"],
+			because: "only package scope is optional");
+		contract.Description.Should().Contain("track-changes",
+			because: "callers must be warned which merged-mode properties are unknown rather than false");
+		contract.Description.Should().Contain("parent-schema inheritance",
+			because: "merged source semantics must not be mistaken for package ownership");
+		contract.OutputContract.Fields.Select(field => field.Name).Should().Contain(["column-name", "type"],
+			because: "the curated output contract must use the DTO's serialized property names");
+		contract.OutputContract.Fields.Select(field => field.Name).Should().NotContain(["name", "data-value-type"],
+			because: "clients must not be directed to output fields the tool never serializes");
+		contract.Examples.Should().Contain(example => !example.Arguments.ContainsKey("package-name"),
+			because: "at least one canonical example must demonstrate package-free discovery");
+	}
+
+	[Test]
+	[Category("Unit")]
 	[Description("Publishes the explicit supported and not-implemented Creatio merge surface through get-tool-contract.")]
 	public void ToolContractGet_Should_Return_Canonical_Creatio_Merge_Contract() {
 		// Arrange
