@@ -377,6 +377,12 @@ namespace Clio.UserEnvironment
 		/// </summary>
 		void SetAutoupdate(bool value);
 
+		/// <summary>Advances a due enabled update schedule and reports whether its update should run.</summary>
+		/// <param name="target">Component whose schedule is checked.</param>
+		/// <param name="now">Current time.</param>
+		/// <returns><c>true</c> when the component should be updated.</returns>
+		bool TryScheduleAutoupdate(global::Clio.Common.AutoUpdateTarget target, DateTimeOffset now);
+
 		/// <summary>
 		/// Determines whether the named feature flag is enabled.
 		/// </summary>

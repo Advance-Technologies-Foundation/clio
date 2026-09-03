@@ -4,7 +4,6 @@ using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using System.Reflection;
-using System.Runtime.InteropServices;
 using System.Text;
 using System.Threading;
 using Microsoft.Extensions.DependencyInjection;
@@ -1583,6 +1582,9 @@ internal class Program {
 		string first = args[0];
 		if (string.Equals(first, "update-cli", StringComparison.OrdinalIgnoreCase)
 			|| string.Equals(first, "update", StringComparison.OrdinalIgnoreCase)
+			|| string.Equals(first, "update-knowledge", StringComparison.OrdinalIgnoreCase)
+			|| string.Equals(first, "update-toolkit", StringComparison.OrdinalIgnoreCase)
+			|| string.Equals(first, "update-skill", StringComparison.OrdinalIgnoreCase)
 			|| string.Equals(first, "autoupdate", StringComparison.OrdinalIgnoreCase)
 			|| string.Equals(first, "mcp-http", StringComparison.OrdinalIgnoreCase)) {
 			return true;
@@ -1593,31 +1595,49 @@ internal class Program {
 			|| string.Equals(arg, "--version", StringComparison.OrdinalIgnoreCase));
 	}
 
-	private static void RunStartupUpdateCheck(string[] args, IServiceProvider serviceProvider) {
+	internal static void RunStartupUpdateCheck(string[] args, IServiceProvider serviceProvider) {
 		if (ShouldSkipUpdateCheck(args)) return;
+		ISettingsRepository settingsRepository;
 		try {
+			settingsRepository = serviceProvider.GetRequiredService<ISettingsRepository>();
+		}
+		catch {
+			return;
+		}
+		RunIfDue(settingsRepository, AutoUpdateTarget.Clio, () => {
 			IAppUpdater appUpdater = serviceProvider.GetRequiredService<IAppUpdater>();
-			ISettingsRepository settingsRepository = serviceProvider.GetRequiredService<ISettingsRepository>();
-			string cacheFolder = SettingsRepository.AppSettingsFolderPath;
 			(bool available, string latestVersion) = appUpdater
-				.CheckForUpdateWithCacheAsync(cacheFolder)
+				.CheckForUpdateWithCacheAsync(SettingsRepository.AppSettingsFolderPath)
 				.GetAwaiter().GetResult();
 
 			if (!available || string.IsNullOrEmpty(latestVersion)) return;
 
 			string currentVersion = appUpdater.GetCurrentVersion();
-			if (settingsRepository.GetAutoupdate()) {
-				ConsoleLogger.Instance.WriteInfo(
-					$"Updating clio {currentVersion} -> {latestVersion} in background...");
-				appUpdater.UpdateInBackgroundAsync().GetAwaiter().GetResult();
-			} else {
-				ConsoleLogger.Instance.WriteWarning(
-					RuntimeInformation.IsOSPlatform(OSPlatform.Windows) 
-						? $"clio {latestVersion} is available. Run 'dotnet tool update clio -g' to update." 
-						: $"clio {latestVersion} is available. Run 'clio update' to update.");
+			ConsoleLogger.Instance.WriteInfo(
+				$"Updating clio {currentVersion} -> {latestVersion} in background...");
+			appUpdater.UpdateInBackgroundAsync().GetAwaiter().GetResult();
+		});
+		RunIfDue(settingsRepository, AutoUpdateTarget.Knowledge,
+			() => StartUpdateCommand(serviceProvider, "update-knowledge"));
+		RunIfDue(settingsRepository, AutoUpdateTarget.Toolkit,
+			() => StartUpdateCommand(serviceProvider, "update-toolkit"));
+	}
+
+	private static void StartUpdateCommand(IServiceProvider serviceProvider, string command) {
+		string clioAssembly = Assembly.GetExecutingAssembly().Location;
+		ProcessExecutionOptions options = new("dotnet", string.Empty) {
+			ArgumentList = [clioAssembly, command]
+		};
+		serviceProvider.GetRequiredService<IProcessExecutor>().FireAndForgetAsync(options).GetAwaiter().GetResult();
+	}
+
+	private static void RunIfDue(ISettingsRepository settingsRepository, AutoUpdateTarget target, Action update) {
+		try {
+			if (settingsRepository.TryScheduleAutoupdate(target, DateTimeOffset.UtcNow)) {
+				update();
 			}
 		} catch {
-			// startup update check must never crash the tool
+			// automatic updates are best effort and must never fail the requested command
 		}
 	}
 

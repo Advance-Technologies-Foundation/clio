@@ -219,13 +219,7 @@ public class AppUpdater(ILogger logger, IProcessExecutor processExecutor) : IApp
 	/// <inheritdoc/>
 	public async Task<(bool Available, string LatestVersion)> CheckForUpdateWithCacheAsync(string cacheFolder) {
 		try {
-			UpdateCheckCache cache = UpdateCheckCache.Load(cacheFolder);
 			string currentVersion = GetCurrentVersion();
-
-			if (!cache.IsCheckDue() && !string.IsNullOrEmpty(cache.LatestVersion)) {
-				bool available = CompareVersions(currentVersion, cache.LatestVersion) < 0;
-				return (available, cache.LatestVersion);
-			}
 
 			using CancellationTokenSource cts = new(TimeSpan.FromSeconds(3));
 			string latestVersion = await GetLatestPackageVersionAsync("clio", cts.Token)
@@ -365,8 +359,7 @@ public interface IAppUpdater {
 	Task<string> GetReleaseNotesAsync(string version);
 
 	/// <summary>
-	/// Checks whether an update is available, using a local cache to avoid hitting NuGet more
-	/// than once every 8 hours.
+	/// Checks whether an update is available and caches the latest result locally.
 	/// </summary>
 	Task<(bool Available, string LatestVersion)> CheckForUpdateWithCacheAsync(string cacheFolder);
 

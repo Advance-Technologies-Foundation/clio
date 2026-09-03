@@ -6,7 +6,7 @@
 
 ## Name
 
-autoupdate - Enable or disable automatic updates on startup
+autoupdate - Enable or disable automatic clio updates on startup
 
 ## Synopsis
 
@@ -16,25 +16,30 @@ autoupdate [--enable | --disable]
 
 ## Description
 
-Controls whether clio automatically checks for and installs newer versions
-in the background each time it starts.
+Controls the `clio` policy in the automatic-update settings. Running the
+command without arguments displays whether automatic clio updates are enabled.
 
-When enabled (the default), clio queries NuGet at most once every 8 hours.
-If a newer version is found, it launches `dotnet tool update clio -g` as a
-background process and immediately continues with the requested command.
-The updated binary becomes active on the next invocation.
+Clio also has independent knowledge and toolkit policies. On an eligible
+command startup, each due enabled policy advances its `next-run` timestamp and
+starts the existing updater on a best-effort basis.
 
-When disabled, clio shows a one-line notice that a newer version is
-available and suggests running `clio update` manually.
+```json
+"autoupdate": {
+  "clio":      { "enabled": true, "frequency-minutes": 480, "next-run": "2026-09-04T08:00:00Z" },
+  "knowledge": { "enabled": true, "frequency-minutes": 60,  "next-run": "2026-09-04T01:00:00Z" },
+  "toolkit":   { "enabled": true, "frequency-minutes": 60,  "next-run": "2026-09-04T01:00:00Z" }
+}
+```
 
-Running `autoupdate` without arguments displays the current setting.
+The timestamps are maintained by clio. An existing scalar `Autoupdate` value
+is accepted and applied only to the clio policy.
 
 ## Options
 
 ```bash
---enable    Enable automatic updates on startup (default behavior)
+--enable    Enable automatic clio updates (default behavior)
 
---disable   Disable automatic updates on startup
+--disable   Disable automatic clio updates
 ```
 
 ## Examples
@@ -53,11 +58,10 @@ autoupdate --enable
 ## Behavior
 
 - With no flags: prints whether auto-update is currently enabled or disabled
-- --enable: sets Autoupdate = true in appsettings.json and confirms
-- --disable: sets Autoupdate = false in appsettings.json and confirms
-- The update check is cached for 8 hours to avoid hitting NuGet on every run
-- Background update never blocks or delays the current command
-- A network timeout of 3 seconds is applied to the version check
+- --enable and --disable control only `autoupdate.clio.enabled`
+- Default frequencies are 480 minutes for clio and 60 minutes for knowledge and toolkit
+- Due knowledge and toolkit updates run as detached `update-knowledge` and `update-toolkit` commands
+- Manual update commands remain available and bypass the schedule
 
 ## Exit Codes
 
