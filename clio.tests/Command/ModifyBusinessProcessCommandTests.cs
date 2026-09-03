@@ -175,7 +175,7 @@ public sealed class ModifyBusinessProcessCommandTests {
 
 	[Test]
 	[Category("Unit")]
-	[Description("Warns when the saved element has no record filter: it will match no records and change no permissions, silently, and nothing refuses that state.")]
+	[Description("Warns when the saved element has no record filter: it will apply the permission change to EVERY record of its object - silently, on an element with no output parameters, and nothing on the platform refuses that state.")]
 	public void Execute_ShouldWarn_WhenTheElementHasNoRecordFilter() {
 		// Arrange
 		ModifyBusinessProcessOptions options = new() {
@@ -204,6 +204,70 @@ public sealed class ModifyBusinessProcessCommandTests {
 		warnings.Should().ContainSingle(message => message.Contains("NO record filter"),
 			because: "the block landed but the element cannot act, which is indistinguishable from success "
 				+ "on an element that reports nothing at run time");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("A batch whose ONLY operation is clearFilter carries no accessRights block, so every block-shaped check skips it - yet clearing the filter is what moves a Change access rights element from narrowing to acting on EVERY record of its object. This path used to return before the read-back, so the most dangerous edit the surface offers was the one edit it never checked.")]
+	public void Execute_ShouldStillReadBack_WhenTheBatchOnlyClearsTheFilter() {
+		// Arrange
+		ModifyBusinessProcessOptions options = new() {
+			Environment = "sandbox",
+			ProcessName = "UsrSampleProcess",
+			OperationsJson = "[{\"op\":\"clearFilter\",\"elementName\":\"Grant\"}]"
+		};
+		_modifyBusinessProcessService.ModifyProcess("sandbox", Arg.Any<ModifyBusinessProcessRequest>())
+			.Returns(BuildResult());
+		DescribedElement element = new() {
+			Name = "Grant",
+			UserTaskName = "ChangeAdminRightsUserTask",
+			AdditionalData = new Dictionary<string, JsonElement> {
+				["accessRights"] = JsonDocument.Parse("{\"object\":\"Order\"}").RootElement.Clone()
+			}
+		};
+		_processDescriber.Describe(Arg.Any<ProcessIdentity>(), null)
+			.Returns(new DescribeProcessResult { Elements = [element] });
+		List<string> warnings = [];
+		_logger.When(logger => logger.WriteWarning(Arg.Any<string>()))
+			.Do(call => warnings.Add(call.Arg<string>()));
+
+		// Act
+		_command.Execute(options);
+
+		// Assert
+		_processDescriber.Received(1).Describe(Arg.Any<ProcessIdentity>(), null);
+		warnings.Should().ContainSingle(message => message.Contains("EVERY record of the target object"),
+			because: "the element is left acting on every row of its object and carries no output parameter to "
+				+ "say so, so this warning is the only signal the caller gets");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("A clearFilter on a readData element must not be reported as an access-rights problem. The operation is legal on readData/changeData/signalStart, none of which hold access-rights state, so accusing them trains callers to ignore the message on the one element type that can actually widen.")]
+	public void Execute_ShouldNotClaimAnAccessRightsProblem_WhenTheClearedElementIsNotOne() {
+		// Arrange
+		ModifyBusinessProcessOptions options = new() {
+			Environment = "sandbox",
+			ProcessName = "UsrSampleProcess",
+			OperationsJson = "[{\"op\":\"clearFilter\",\"elementName\":\"ReadOrders\"}]"
+		};
+		_modifyBusinessProcessService.ModifyProcess("sandbox", Arg.Any<ModifyBusinessProcessRequest>())
+			.Returns(BuildResult());
+		_processDescriber.Describe(Arg.Any<ProcessIdentity>(), null).Returns(new DescribeProcessResult {
+			Elements = [new DescribedElement { Name = "ReadOrders", UserTaskName = "ReadDataUserTask" }]
+		});
+		List<string> warnings = [];
+		_logger.When(logger => logger.WriteWarning(Arg.Any<string>()))
+			.Do(call => warnings.Add(call.Arg<string>()));
+
+		// Act
+		int exitCode = _command.Execute(options);
+
+		// Assert
+		exitCode.Should().Be(0, because: "clearing a readData filter is an ordinary, successful edit");
+		warnings.Should().BeEmpty(
+			because: "a readData element has no access-rights state, so there is nothing here that could not be "
+				+ "verified - a warning would be a false accusation about the commonest use of the operation");
 	}
 
 	[Test]

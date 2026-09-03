@@ -44,7 +44,7 @@ public sealed class CreateBusinessProcessCommandTests {
 
 	[Test]
 	[Category("Unit")]
-	[Description("Warns when the saved element has no record filter: it matches no records and changes no permissions, silently, and nothing refuses that state.")]
+	[Description("Warns when the saved element has no record filter: it applies the permission change to EVERY record of its object - silently, on an element with no output parameters, and nothing on the platform refuses that state.")]
 	public void Execute_ShouldWarn_WhenTheElementHasNoRecordFilter() {
 		// Arrange
 		CreateBusinessProcessOptions options = new() {

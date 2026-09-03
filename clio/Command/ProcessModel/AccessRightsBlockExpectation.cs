@@ -32,6 +32,13 @@ public static class AccessRightsBlockExpectation {
 	// repeated string literals out of the analyzer's duplicate-literal radar.
 	private const string AccessRightsKey = "accessRights";
 
+	// The user-task schema the "Change access rights" element references. It is the ONLY element type whose
+	// record filter selects rows for a permission change, so it is the only one whose filter warrants an
+	// access-rights warning. A package predating this element still reports userTaskName (it is emitted for
+	// every user task, independently of whether the accessRights block decodes), so gating on it does not
+	// blind the guard on exactly the environments it exists for.
+	private const string ChangeAccessRightsUserTask = "ChangeAdminRightsUserTask";
+
 	/// <summary>
 	/// Element names that a build descriptor asks to configure with access rights — every entry under
 	/// <c>elements[]</c> carrying a non-null <c>accessRights</c> object. Returns an empty list for a payload with
@@ -342,15 +349,6 @@ public static class AccessRightsBlockExpectation {
 			BlockExpectationJson.OperationTargets(operationsJson, "clearFilter"));
 
 	/// <summary>
-	/// The caller-facing warning for a read-back that could NOT report every stored permission entry. Null when
-	/// every described element reported its collections in full.
-	/// <para>This is the one warning that fires on a HEALTHY write. It exists because a supplied collection
-	/// REPLACES the stored one: describe, edit one entry, send it back, and every entry the read-back omitted is
-	/// deleted — permissions disappearing on a routine read-modify-write, with success:true and no output
-	/// parameter. The server now reports how many entries it could not show, so this can say so instead of the
-	/// contract relying on the caller having read a paragraph of prose.</para>
-	/// </summary>
-	/// <summary>
 	/// The warning for an element whose record FILTER this batch changed but whose read-back reports no
 	/// <c>accessRights</c> block at all. Null when there is nothing to report.
 	/// <para>Re-filtered elements are deliberately excluded from <see cref="Missing"/> and from the lossy-read
@@ -359,6 +357,10 @@ public static class AccessRightsBlockExpectation {
 	/// element, admitted today because the rebundle is deferred. Without this, changing the filter on a
 	/// designer-authored element on such an environment succeeds in silence, and clearing one moves it from
 	/// narrowing to acting on every record.</para>
+	/// <para>Restricted to elements the read-back identifies as <c>ChangeAdminRightsUserTask</c>. A
+	/// <c>clearFilter</c> is legal on readData/changeData/signalStart too, and those carry no access-rights
+	/// state to report — so without the gate this accused every one of them of a permission problem it cannot
+	/// have, which is worse than silence: it trains callers to ignore the message on the element that can.</para>
 	/// </summary>
 	public static string? BuildUnreportableFilterWarning(
 			DescribeProcessResult described, IReadOnlyList<string>? filterTouched) {
@@ -369,7 +371,7 @@ public static class AccessRightsBlockExpectation {
 		List<string> unreportable = [];
 		foreach (string name in filterTouched) {
 			DescribedElement? element = BlockExpectationJson.ResolveElement(described, name);
-			if (element is not null && !TryGetAccessRights(element, out _)) {
+			if (element is not null && IsChangeAccessRightsElement(element) && !TryGetAccessRights(element, out _)) {
 				unreportable.Add(name);
 			}
 		}
@@ -386,6 +388,15 @@ public static class AccessRightsBlockExpectation {
 			+ "the element act on EVERY record of its object.";
 	}
 
+	/// <summary>
+	/// The caller-facing warning for a read-back that could NOT report every stored permission entry. Null when
+	/// every described element reported its collections in full.
+	/// <para>This is the one warning that fires on a HEALTHY write. It exists because a supplied collection
+	/// REPLACES the stored one: describe, edit one entry, send it back, and every entry the read-back omitted is
+	/// deleted — permissions disappearing on a routine read-modify-write, with success:true and no output
+	/// parameter. The server now reports how many entries it could not show, so this can say so instead of the
+	/// contract relying on the caller having read a paragraph of prose.</para>
+	/// </summary>
 	public static string? BuildLossyReadWarning(
 			DescribeProcessResult described, IReadOnlyList<string> expected) {
 		if (expected.Count == 0 || described?.Elements is null) {
@@ -442,6 +453,12 @@ public static class AccessRightsBlockExpectation {
 	/// match rather than filtering, which is why the loop is not the "simplify with Where" shape a static analyser
 	/// suggests.</para>
 	/// </summary>
+	// Whether the described element is a "Change access rights" element. Checked against userTaskName rather
+	// than the presence of an accessRights block, because the one case this has to survive is a package that
+	// reports the element but NOT its block.
+	private static bool IsChangeAccessRightsElement(DescribedElement element) =>
+		string.Equals(element.UserTaskName, ChangeAccessRightsUserTask, StringComparison.OrdinalIgnoreCase);
+
 	private static bool TryGetAccessRights(DescribedElement element, out JsonElement block) {
 		block = default;
 		if (element.AdditionalData is null) {

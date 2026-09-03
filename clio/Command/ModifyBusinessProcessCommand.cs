@@ -249,10 +249,10 @@ public class ModifyBusinessProcessCommand(
 			return;
 		}
 
-		// Everything the read-back is supposed to speak for. The two failure exits below used to report only
-		// expectedRights, which is EMPTY for a filter-only batch - so a clearFilter whose read-back then failed
-		// produced total silence on the single most dangerous edit this surface offers. The success path already
-		// unioned these; the failure paths did not.
+		// Everything the read-back is supposed to speak for, for the checks that are element-type agnostic:
+		// "the saved process does not report an element with that name" is equally true of a re-filtered element
+		// and a configured one. The failure exits above do NOT take this union - they report the two groups
+		// separately, because a filter-only target sent no block and its element type is not yet known there.
 		IReadOnlyList<string> unverifiable =
 			[.. expectedRights.Concat(filterTouched).Distinct(StringComparer.OrdinalIgnoreCase)];
 
@@ -262,15 +262,16 @@ public class ModifyBusinessProcessCommand(
 		string code = string.IsNullOrWhiteSpace(schemaName) ? options.ProcessName : schemaName;
 		if (string.IsNullOrWhiteSpace(code) && string.IsNullOrWhiteSpace(options.ProcessUid)) {
 			// Nothing to read back against; silence would be indistinguishable from a verified success.
-			BlockExpectationReporter.WarnAccessRightsUnverified(logger, unverifiable,
-				"the edit returned no process identity to read back");
+			BlockExpectationReporter.WarnAccessRightsUnverified(logger, expectedRights,
+				"the edit returned no process identity to read back", filterTouched);
 			return;
 		}
 
 		ErrorOr<DescribeProcessResult> described = processDescriber.Describe(
 			new ProcessIdentity(string.IsNullOrWhiteSpace(code) ? null : code, options.ProcessUid, null), null);
 		if (described.IsError) {
-			BlockExpectationReporter.WarnAccessRightsUnverified(logger, unverifiable, described.FirstError.Description);
+			BlockExpectationReporter.WarnAccessRightsUnverified(logger, expectedRights,
+				described.FirstError.Description, filterTouched);
 			return;
 		}
 

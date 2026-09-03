@@ -58,8 +58,30 @@ internal static class BlockExpectationReporter {
 	/// verification did not happen, so an unapplied revoke cannot pass as an applied one.
 	/// </summary>
 	internal static void WarnAccessRightsUnverified(ILogger logger, IReadOnlyList<string> expectedRights,
-			string reason) =>
+			string reason, IReadOnlyList<string>? filterTouched = null) {
 		Warn(logger, BuildUnverifiedWarning(expectedRights, reason));
+		Warn(logger, BuildUnverifiedFilterWarning(
+			[.. (filterTouched ?? []).Except(expectedRights, StringComparer.OrdinalIgnoreCase)], reason));
+	}
+
+	// An element this batch only RE-FILTERED gets its own wording. It sent no block, and with the read-back
+	// unavailable the command cannot know its element type - clearFilter is equally legal on readData and
+	// changeData. Calling that "the 'accessRights' configuration" would assert something false about the
+	// commonest case; dropping it would lose the one case that matters. So: report the filter, and let the
+	// consequence be conditional on what the element turns out to be.
+	private static string? BuildUnverifiedFilterWarning(IReadOnlyList<string> names, string reason) {
+		if (names.Count == 0) {
+			return null;
+		}
+
+		string elements = string.Join("', '", names);
+		string subject = names.Count == 1 ? "element" : "elements";
+		return $"Could not read back the record filter this edit changed on the {subject} '{elements}': "
+			+ $"{reason}. The operation itself succeeded. If any of those is a Change access rights element, "
+			+ "note that CLEARING its record filter makes it apply the permission change to EVERY record of "
+			+ "its object — re-read the process with describe-business-process before reporting the change as "
+			+ "applied.";
+	}
 
 	// One wording for every "the check did not happen" outcome, so they cannot drift apart.
 	private static string? BuildUnverifiedWarning(IReadOnlyList<string> expectedRights, string reason) {

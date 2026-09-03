@@ -30,6 +30,81 @@ public sealed class AccessRightsBlockExpectationTests {
 	private static DescribeProcessResult Described(params DescribedElement[] elements) =>
 		new() { Elements = [.. elements] };
 
+	// A user-task element as the read-back returns one: the accessRights block is optional (a CrtProcessBuilder
+	// predating the element omits it) but userTaskName is not - it is emitted for every user task regardless.
+	private static DescribedElement UserTask(string name, string userTaskName, string accessRightsJson = null) {
+		DescribedElement element = Element(name, accessRightsJson);
+		element.UserTaskName = userTaskName;
+		return element;
+	}
+
+	[Test]
+	[Description("A re-filtered Change access rights element whose read-back reports NO accessRights block is warned about. This is the only check that speaks for it: it sent no block, so Missing() and the lossy-read check both skip it by design, and the environments that cannot report the block are exactly the ones running a CrtProcessBuilder that predates the element.")]
+	public void BuildUnreportableFilterWarning_ShouldFire_WhenTheBlockCannotBeReported() {
+		// Arrange
+		DescribedElement element = UserTask("Grant", "ChangeAdminRightsUserTask");
+
+		// Act
+		string warning = AccessRightsBlockExpectation.BuildUnreportableFilterWarning(Described(element), ["Grant"]);
+
+		// Assert
+		warning.Should().NotBeNull(
+			because: "the batch changed this element's record filter and nothing else here can check the result - "
+				+ "silence would be indistinguishable from a verified success on a live permission change");
+		warning.Should().Contain("EVERY record of its object",
+			because: "the consequence the caller has to act on is the widening one, and it must be stated in the "
+				+ "same direction as every other surface");
+	}
+
+	[Test]
+	[Description("A clearFilter is equally legal on readData/changeData/signalStart, and those elements hold no access-rights state at all. Warning about THEIR access-rights state is a false accusation, and the kind that teaches a caller to ignore the message on the one element type that can actually widen.")]
+	public void BuildUnreportableFilterWarning_ShouldStaySilent_ForAnElementThatIsNotChangeAccessRights() {
+		// Arrange
+		DescribedElement element = UserTask("ReadOrders", "ReadDataUserTask");
+
+		// Act
+		string warning = AccessRightsBlockExpectation.BuildUnreportableFilterWarning(
+			Described(element), ["ReadOrders"]);
+
+		// Assert
+		warning.Should().BeNull(
+			because: "a readData element has no access-rights state to be unreportable, so the absence of a block "
+				+ "on it is the normal case rather than a gap in verification");
+	}
+
+	[Test]
+	[Description("When the environment DOES report the block there is nothing unverified, so the warning must not fire - the other checks own that element from there on, and a second message about the same healthy write would be noise.")]
+	public void BuildUnreportableFilterWarning_ShouldStaySilent_WhenTheBlockIsReported() {
+		// Arrange
+		DescribedElement element = UserTask("Grant", "ChangeAdminRightsUserTask", "{\"object\":\"Order\"}");
+
+		// Act
+		string warning = AccessRightsBlockExpectation.BuildUnreportableFilterWarning(Described(element), ["Grant"]);
+
+		// Assert
+		warning.Should().BeNull(
+			because: "the read-back reported the block, so the filter state is checkable and BuildNoFilterWarning "
+				+ "is the check that speaks for it");
+	}
+
+	[Test]
+	[Description("FilterTouched names clearFilter targets only. A setFilter always carried an object and its conditions, so it can only leave the element narrowing - including it would put a whole-schema describe on the retarget-then-refilter batch the tool description itself prescribes, to check a state that cannot occur.")]
+	public void FilterTouched_ShouldNameClearFilterTargetsOnly() {
+		// Arrange
+		const string operations = """
+			[ { "op": "clearFilter", "elementName": "Grant" },
+			  { "op": "setFilter", "elementName": "Other", "filter": { "object": "Order" } } ]
+			""";
+
+		// Act
+		IReadOnlyList<string> touched = AccessRightsBlockExpectation.FilterTouched(operations);
+
+		// Assert
+		touched.Should().BeEquivalentTo(["Grant"],
+			because: "clearFilter is the operation that can widen an element to every record; setFilter cannot, "
+				+ "and the tool description promises a read-back for exactly the first of those");
+	}
+
 	[Test]
 	[Description("The lossy-read warning fires on the server's addUnreadable/removeUnreadable counts. A supplied collection REPLACES the stored one, so building a replacement from a read that omitted entries deletes permissions nobody can see - this is the only signal that the read was incomplete.")]
 	public void BuildLossyReadWarning_ShouldFire_WhenTheServerReportsUnreportedEntries() {
@@ -284,8 +359,8 @@ public sealed class AccessRightsBlockExpectationTests {
 	}
 
 	[Test]
-	[Description("An element with NO filter is reported as matching no records.")]
-	public void BuildNoFilterWarning_ShouldSayNoRecords_WhenTheFilterIsAbsent() {
+	[Description("An element with NO record filter is reported as acting on EVERY record of its object - the runtime gates on a non-empty filter, so an absent one never enters that branch and the query runs unfiltered, with record permissions disabled. The OPPOSITE state from a present-but-conditionless filter, and the direction the shipped text originally had backwards.")]
+	public void BuildNoFilterWarning_ShouldSayEveryRecord_WhenTheFilterIsAbsent() {
 		// Arrange
 		DescribedElement element = Element("Grant", "{\"object\":\"Order\"}");
 

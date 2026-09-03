@@ -1,5 +1,7 @@
 using Clio.Command;
+using System.Reflection;
 using Clio.Command.McpServer.Tools;
+using Clio.Command.McpServer.Prompts.ProcessDesigner;
 using Clio.Command.McpServer.Tools.ProcessDesigner;
 using Clio.Command.ProcessModel;
 using Clio.Common;
@@ -318,6 +320,30 @@ public class ModifyBusinessProcessToolTests {
 		public override int Execute(ModifyBusinessProcessOptions options) {
 			CapturedOptions = options;
 			return _exitCode;
+		}
+	}
+	[Test]
+	[Category("Unit")]
+	[Description("Pins the DIRECTION of the record-filter consequence in the always-loaded tool description and in the prompt. An ABSENT record filter is the WIDENING state - the runtime gates on a non-empty filter, so the query runs unfiltered with record permissions disabled - while a PRESENT-but-conditionless one is the inert state. The shipped text had these two swapped, on every surface at once, which told callers that the widest permission change the feature can produce was harmless. Prose is the whole contract here: the element has no output parameters, so nothing at run time contradicts a wrong description.")]
+	public void ModifyBusinessProcessTool_ShouldStateTheRecordFilterConsequence_InTheWideningDirection() {
+		// Arrange
+		string[] surfaces = [
+			typeof(ModifyBusinessProcessTool).GetMethod(nameof(ModifyBusinessProcessTool.ModifyBusinessProcess))!
+				.GetCustomAttribute<System.ComponentModel.DescriptionAttribute>()!.Description,
+			ModifyBusinessProcessPrompt.PromptByProcess("sandbox", "UsrSampleProcess")
+		];
+
+		// Act & Assert
+		foreach (string surface in surfaces) {
+			surface.Should().Contain("EVERY record",
+				because: "a Change access rights element with no record filter applies the change to every row of "
+					+ "its object, and this is the only place a caller is ever told so");
+			surface.Should().NotContain("matches no records",
+				because: "that is the inverted claim this feature shipped with - it describes the "
+					+ "present-but-conditionless state, and applying it to an absent filter presents the widest "
+					+ "possible configuration as a no-op");
+			surface.Should().NotContain("match no records",
+				because: "the same inversion in the future tense - both phrasings reached shipped text before");
 		}
 	}
 }

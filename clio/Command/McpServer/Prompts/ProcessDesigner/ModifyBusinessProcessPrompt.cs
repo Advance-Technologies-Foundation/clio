@@ -37,8 +37,9 @@ public static class ModifyBusinessProcessPrompt {
 		 element's `accessRights` block (a partial update: a supplied `add`/`remove` REPLACES that whole collection
 		 and `[]` clears it — clearing ONE is safe only while the other still holds an entry, since an element
 		 left with BOTH empty builds and runs green while changing nothing; and ANY object change, the first
-		 configuration included, clears the stored record filter unless it already targets the incoming object —
-		 re-issue `setFilter` in the same array), and a `performTask` element's `performer` block
+		 configuration included, clears the stored record filter unless it already targets the incoming object,
+		 which leaves the element applying the permission change to EVERY record of the new object rather than
+		 to none — re-issue `setFilter` in the same array), and a `performTask` element's `performer` block
 		 (`type:user|manager|role` plus `contact?`/`role?`/`showPage?` — WHO performs the task; `role` is the honest
 		 "assign to a team": the created Activity carries the role in its own OwnerRole column with an EMPTY
 		 owner, so never fake a team by writing a role id into the OwnerId parameter — that id is refused as
