@@ -193,9 +193,16 @@ public sealed class MobilePageConversionGuideTool {
 
 		// Read the source page's web template (its parent schema) so its inherited chrome can be
 		// filtered out of the conversion: the merged page tree carries the template's header/scaffold
-		// containers, which the mobile template already provides. Best-effort — never blocks the guide.
+		// containers, which the mobile template already provides. A page with NO parent template is fine and
+		// yields an empty baseline; a template that WAS named and could not be read is not — see
+		// RejectUnobtainableWebTemplate for the two silent defects that state produces.
 		WebTemplateBaseline webTemplateBaseline = LoadWebTemplateBaseline(
 			effectiveTemplate, pageResponse.Page?.SchemaName, args);
+		MobilePageConversionGuideResponse webTemplateRejection =
+			RejectUnobtainableWebTemplate(args, sourceType, effectiveTemplate, webTemplateBaseline.Unavailable);
+		if (webTemplateRejection is not null) {
+			return webTemplateRejection;
+		}
 
 		string targetName = string.IsNullOrWhiteSpace(args.TargetSchemaName)
 			? DeriveMobileSchemaName(args.SchemaName)
@@ -231,11 +238,9 @@ public sealed class MobilePageConversionGuideTool {
 				mobileContainerParents: mobileContainerParents,
 				mobileTemplateViewModelConfig: mobileTemplateProbe.ViewModelConfig,
 				mobileTemplateModelConfig: mobileTemplateProbe.ModelConfig,
-				mobileTemplateUnavailable: mobileTemplateProbe.Unavailable,
 				mobileTemplateTypesByName: mobileTemplateProbe.TypesByName,
 				mobileTemplateLayoutConfigs: mobileTemplateProbe.LayoutConfigsByName,
 				webTemplateBaselineNodes: webTemplateBaseline.Nodes,
-				webTemplateUnavailable: webTemplateBaseline.Unavailable,
 				webTemplateResources: webTemplateBaseline.Resources);
 		} catch (Exception ex) {
 			return Fail(args, sourceType, $"Failed to analyze source page '{args.SchemaName}': {ex.Message}");
@@ -368,11 +373,6 @@ public sealed class MobilePageConversionGuideTool {
 	}
 
 	/// <summary>
-	/// Returns the template mapping rule for a web page whose parent template is
-	/// <paramref name="webParentTemplate"/>. When several rules share the same web template, the
-	/// first one wins (the rules file lists the preferred mobile target first). Null when no rule matches.
-	/// </summary>
-	/// <summary>
 	/// The fallback rule for a web template no <see cref="WebToMobilePageConversionRules.Templates"/> entry
 	/// matches: a generic mobile base from <see cref="WebToMobilePageConversionRules.DefaultMobileTemplate"/>,
 	/// with NO container or component correspondence. Null when the rules declare no default.
@@ -395,6 +395,17 @@ public sealed class MobilePageConversionGuideTool {
 					+ "designer, and consider adding a templates entry for this web template."
 			};
 
+	/// <summary>
+	/// Returns the template mapping rule for a web page whose parent template is
+	/// <paramref name="webParentTemplate"/>. When several rules share the same web template, the
+	/// first one wins (the rules file lists the preferred mobile target first). Null when no rule matches.
+	/// </summary>
+	/// <remarks>
+	/// Deliberately returns null rather than falling back to <see cref="DefaultTemplateRule"/>: this method is
+	/// also the predicate <c>ResolveEffectiveTemplateName</c> uses to find the first ANCESTOR matching a rule,
+	/// and a never-null result would make every ancestor match and collapse that climb. The default is applied
+	/// at the call site instead (ENG-95827).
+	/// </remarks>
 	internal static TemplateMappingRule ResolveTemplateRule(WebToMobilePageConversionRules rules, string webParentTemplate) {
 		if (rules?.Templates is null || string.IsNullOrWhiteSpace(webParentTemplate)) {
 			return null;
@@ -665,6 +676,50 @@ public sealed class MobilePageConversionGuideTool {
 				+ "template's own arrays. Verify the mobile package is installed in the target environment and "
 				+ "that the schema name is reachable, then re-run.";
 		return Fail(args, sourceType, error);
+	}
+
+	/// <summary>
+	/// Refuses the conversion when the source page's WEB template was known but could not be read. Returns
+	/// null when there is nothing to refuse — including the ordinary case of a page with no parent template at
+	/// all, which yields an empty baseline legitimately.
+	/// </summary>
+	/// <remarks>
+	/// The mirror of <see cref="RejectUnobtainableMobileTemplate"/>, for the same reason and against the same
+	/// failure. An unreadable web template leaves <c>Names</c>/<c>Nodes</c> empty, and two things then go
+	/// wrong silently:
+	/// <list type="bullet">
+	/// <item><description><c>PruneTemplateComponents</c> is skipped entirely (it is gated on a non-empty name
+	/// set), so the page's whole INHERITED web chrome — <c>TitleContainer</c>, <c>BackButton</c>,
+	/// <c>PageTitle</c>, <c>SaveButton</c>, <c>CancelButton</c>, <c>CloseButton</c> — survives the tree walk
+	/// and is converted to <c>insert</c> entries.</description></item>
+	/// <item><description>The automatic same-name twin is gated on <c>WebBaselineNodes.ContainsKey</c>, so no
+	/// auto twin is detected at all and elements the mobile template already provides fall through to the
+	/// insert path.</description></item>
+	/// </list>
+	/// <para>
+	/// Both produce exactly the outcome the mobile-side refusal exists to prevent — a guide that instructs the
+	/// caller to insert duplicates of native elements — with <c>success: true</c> and nothing anywhere in the
+	/// payload saying so. The state was previously passed to <c>Analyze</c> as a
+	/// <c>webTemplateUnavailable</c> flag that NOTHING read, so the doc claiming the caller surfaces it was
+	/// false (ENG-95827).
+	/// </para>
+	/// </remarks>
+	internal static MobilePageConversionGuideResponse RejectUnobtainableWebTemplate(
+		MobilePageConversionGuideArgs args, string sourceType, string webTemplateName,
+		bool templateUnavailable) {
+		if (!templateUnavailable) {
+			return null;
+		}
+		string named = string.IsNullOrWhiteSpace(webTemplateName)
+			? "this page's web template"
+			: $"the web template '{webTemplateName}'";
+		return Fail(args, sourceType,
+			$"Could not read {named}, which this page inherits from. Without that baseline the guide cannot "
+			+ "tell an element the page AUTHORED from one it merely inherits, so it would convert the whole "
+			+ "inherited chrome (title container, back/save/cancel/close buttons) into inserts and would detect "
+			+ "no same-name twins — the mobile page would ship duplicates of elements its own template already "
+			+ "provides. Verify the source package is installed in the target environment and that the template "
+			+ "schema is reachable, then re-run.");
 	}
 
 	private static MobilePageConversionGuideResponse Fail(MobilePageConversionGuideArgs args, string sourceType, string error) =>

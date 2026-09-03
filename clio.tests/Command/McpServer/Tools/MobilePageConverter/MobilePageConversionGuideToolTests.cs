@@ -165,6 +165,38 @@ public sealed class MobilePageConversionGuideToolTests {
 	}
 
 	[Test]
+	[Description("ENG-95827: an unreadable WEB template fails the tool for the same reason the mobile one does. With no baseline, PruneTemplateComponents is skipped entirely (it is gated on a non-empty name set) so the whole inherited chrome converts to inserts, and the automatic same-name twin — gated on WebBaselineNodes — never fires. Both produce a guide instructing the caller to duplicate native elements, previously with success:true and nothing in the payload saying so.")]
+	public void RejectUnobtainableWebTemplate_WhenNamedTemplateIsUnreadable_FailsNamingTheBaselineLoss() {
+		// Act
+		MobilePageConversionGuideResponse rejection = MobilePageConversionGuideTool.RejectUnobtainableWebTemplate(
+			Args(), WebToMobileAnalysisService.SourceTypeFreedomWeb, "PageWithTabsFreedomTemplate",
+			templateUnavailable: true);
+
+		// Assert
+		rejection.Should().NotBeNull(
+			because: "the state was previously carried into Analyze as a flag that NOTHING read, so it was silently unguarded");
+		rejection!.Success.Should().BeFalse(
+			because: "the caller must be able to tell a refusal from a guide it can act on");
+		rejection.Error.Should().Contain("PageWithTabsFreedomTemplate",
+			because: "naming the schema is what makes the failure actionable — the caller checks that one thing");
+		rejection.Error.Should().Contain("duplicates",
+			because: "the duplicated-native-element consequence is the severe one and the reason this is a failure rather than a diagnostic");
+	}
+
+	[Test]
+	[Description("ENG-95827: a page with NO parent web template is the ordinary case and must NOT be refused — it yields an empty baseline legitimately, which is why the gate keys on unavailability rather than on the baseline being empty.")]
+	public void RejectUnobtainableWebTemplate_WhenNoTemplateWasNamed_ReturnsNull() {
+		// Act
+		MobilePageConversionGuideResponse rejection = MobilePageConversionGuideTool.RejectUnobtainableWebTemplate(
+			Args(), WebToMobileAnalysisService.SourceTypeFreedomWeb, webTemplateName: null,
+			templateUnavailable: false);
+
+		// Assert
+		rejection.Should().BeNull(
+			because: "a template-less page converts fine; refusing it would break every page that does not inherit from one");
+	}
+
+	[Test]
 	[Description("ENG-95827: with no defaultMobileTemplate declared, the fallback stays null rather than inventing a schema name — a partner rules file that omits it must not send create-page at a template that may not exist.")]
 	public void DefaultTemplateRule_WithoutADeclaredDefault_ReturnsNull() {
 		// Arrange

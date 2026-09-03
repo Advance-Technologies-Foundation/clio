@@ -113,74 +113,65 @@ internal static class ExcludedComponentsPass {
 	/// reclassify; its bindings were copied verbatim with the node and left the page with it.
 	/// </para>
 	/// </summary>
+	/// <remarks>
+	/// Two things the pass could not do used to be counted here and returned to the caller as diagnostics.
+	/// Both counters are gone, for different reasons, and neither is a reporting gap (ENG-95827).
+	/// <para>
+	/// A <c>DepthBudgetTruncated</c> flag reported an abandoned search branch. The CONDITION is gone:
+	/// <see cref="MaxSearchDepth"/> now equals the JSON readers' own ceiling, so a document deep enough to
+	/// abandon a branch cannot be parsed at all.
+	/// </para>
+	/// <para>
+	/// A <c>DiscardedFilterCount</c> reported filters skipped for a missing <c>type</c>/<c>parentType</c> —
+	/// a typo in a published rule (<c>parenttype</c>) silently turns an exclusion off. That is a property of
+	/// the RULES FILE, identical on every conversion and unfixable by the caller it was reported to, so it is
+	/// caught at AUTHORING time instead: <c>WebToMobilePageConversionRulesCatalogTests</c> fails CI for the
+	/// person who wrote the typo.
+	/// </para>
+	/// </remarks>
 	internal static HashSet<string> RemoveExcludedComponents(
 		List<ElementMapEntry> elementMap, WebToMobilePageConversionRules rules,
-		out HashSet<string> removedMobileNames, out ExcludedComponentsDiagnostics diagnostics) {
+		out HashSet<string> removedMobileNames) {
 		removedMobileNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 		var removedWebNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-		diagnostics = ExcludedComponentsDiagnostics.None;
 		if (rules?.ExcludedComponents is not { Count: > 0 } groups) {
 			return removedWebNames;
 		}
-		List<ExcludedComponentFilterRule> filters = CollectFilters(groups, out int discardedFilters);
-		var budget = new SearchBudget();
+		List<ExcludedComponentFilterRule> filters = CollectFilters(groups);
 		if (filters.Count == 0) {
-			diagnostics = new ExcludedComponentsDiagnostics(discardedFilters);
 			return removedWebNames;
 		}
-		RemoveExcludedEntries(elementMap, filters, removedWebNames, removedMobileNames, budget);
-		DropOrphanedSubtrees(elementMap, removedWebNames, removedMobileNames, budget);
-		StripVerbatimCarriedComponents(elementMap, BuildFiltersByParentType(filters), removedWebNames, budget);
-		diagnostics = new ExcludedComponentsDiagnostics(discardedFilters);
+		RemoveExcludedEntries(elementMap, filters, removedWebNames, removedMobileNames);
+		DropOrphanedSubtrees(elementMap, removedWebNames, removedMobileNames);
+		StripVerbatimCarriedComponents(elementMap, BuildFiltersByParentType(filters), removedWebNames);
 		return removedWebNames;
 	}
 
 	/// <summary>
-	/// What the pass could NOT do, for the caller to surface as a diagnostic. It describes a SILENT
-	/// outcome — the pass keeps a banned component instead of removing it — which is the one direction the
-	/// <c>drop</c> entries cannot report, because a component that was never removed produces no entry at all.
+	/// True when <paramref name="depth"/> is past the recursion bound every search in the pass shares. At
+	/// <see cref="MaxSearchDepth"/> the parser refuses before this does, so the guard is defence in depth
+	/// against malformed input rather than a condition a real page reaches — which is why it no longer
+	/// records whether it fired, and no longer needs an object to record it in.
 	/// </summary>
-	/// <param name="DiscardedFilterCount">
-	/// Filters skipped for missing <c>type</c>/<c>parentType</c>. The rules file can be fetched from the
-	/// CDN at runtime, so a typo in a published rule (<c>parenttype</c>) turns an exclusion off; without
-	/// this count nothing anywhere in the report says the rule did not run.
-	/// </param>
-	/// <remarks>
-	/// A <c>DepthBudgetTruncated</c> flag used to sit beside the count and reached the caller as an
-	/// <c>exclusion-search-truncated</c> diagnostic. It is gone because the condition is gone:
-	/// <see cref="MaxSearchDepth"/> now equals the JSON readers' own ceiling, so a document deep enough to
-	/// abandon a branch cannot be parsed at all (ENG-95827). Tracking a state that cannot occur is a
-	/// reporting path nothing can exercise.
-	/// </remarks>
-	internal sealed record ExcludedComponentsDiagnostics(int DiscardedFilterCount) {
-		internal static ExcludedComponentsDiagnostics None { get; } = new(0);
-	}
-
-	/// <summary>
-	/// The recursion bound shared by every search in a single pass run. It no longer records whether it
-	/// fired: at <see cref="MaxSearchDepth"/> the parser refuses before this does, so the guard is defence in
-	/// depth against malformed input rather than a condition a real page reaches.
-	/// </summary>
-	private sealed class SearchBudget {
-		/// <summary>True when <paramref name="depth"/> is past the budget.</summary>
-		internal bool Exceeded(int depth) => depth > MaxSearchDepth;
-	}
+	private static bool DepthExceeded(int depth) => depth > MaxSearchDepth;
 
 	/// <summary>
 	/// The usable filters of every group, in rules-file order. A filter missing <c>Type</c>/<c>ParentType</c>
-	/// is skipped (nothing to match, nowhere to look) and counted into
-	/// <paramref name="discardedFilters"/>, so a malformed published rule is reported instead of silently
-	/// disabling itself.
+	/// is skipped — nothing to match, nowhere to look.
 	/// </summary>
+	/// <remarks>
+	/// The skipped ones used to be counted and handed to the caller, because a typo in a published rule
+	/// (<c>parenttype</c>) turns an exclusion off silently. They are no longer counted here: the typo is a
+	/// property of the rules file, so it is caught at AUTHORING time by
+	/// <c>WebToMobilePageConversionRulesCatalogTests</c>, which fails CI for the person who wrote it rather
+	/// than reporting it to every caller who cannot fix it (ENG-95827).
+	/// </remarks>
 	private static List<ExcludedComponentFilterRule> CollectFilters(
-		IReadOnlyList<ExcludedComponentGroup> groups, out int discardedFilters) {
-		List<ExcludedComponentFilterRule> all = groups.SelectMany(g => g?.Filters ?? []).ToList();
-		List<ExcludedComponentFilterRule> usable = all
+		IReadOnlyList<ExcludedComponentGroup> groups) =>
+		groups
+			.SelectMany(g => g?.Filters ?? [])
 			.Where(f => !string.IsNullOrWhiteSpace(f?.Type) && !string.IsNullOrWhiteSpace(f.ParentType))
 			.ToList();
-		discardedFilters = all.Count - usable.Count;
-		return usable;
-	}
 
 	// ── PHASE A: entry-graph removal ─────────────────────────────────────────────────────────────
 
@@ -203,7 +194,7 @@ internal static class ExcludedComponentsPass {
 	/// </summary>
 	private static void RemoveExcludedEntries(
 		List<ElementMapEntry> elementMap, List<ExcludedComponentFilterRule> filters,
-		HashSet<string> removedWebNames, HashSet<string> removedMobileNames, SearchBudget budget) {
+		HashSet<string> removedWebNames, HashSet<string> removedMobileNames) {
 		Dictionary<string, ElementMapEntry> byMobileName = IndexByMobileName(elementMap);
 		for (int i = 0; i < elementMap.Count; i++) {
 			ElementMapEntry entry = elementMap[i];
@@ -214,7 +205,7 @@ internal static class ExcludedComponentsPass {
 				if (!string.Equals(entry.MobileType, filter.Type, StringComparison.OrdinalIgnoreCase)) {
 					continue;
 				}
-				string hostMobileName = FindHostOnAncestorPath(entry, filter, byMobileName, budget);
+				string hostMobileName = FindHostOnAncestorPath(entry, filter, byMobileName);
 				if (hostMobileName is null) {
 					continue;
 				}
@@ -241,10 +232,10 @@ internal static class ExcludedComponentsPass {
 	/// </summary>
 	private static string FindHostOnAncestorPath(
 		ElementMapEntry candidate, ExcludedComponentFilterRule filter,
-		Dictionary<string, ElementMapEntry> byMobileName, SearchBudget budget) {
+		Dictionary<string, ElementMapEntry> byMobileName) {
 		var visited = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 		ElementMapEntry current = candidate;
-		for (int depth = 0; !budget.Exceeded(depth); depth++) {
+		for (int depth = 0; !DepthExceeded(depth); depth++) {
 			string parentName = current.ParentName;
 			if (string.IsNullOrEmpty(parentName) || !visited.Add(parentName)
 				|| !byMobileName.TryGetValue(parentName, out ElementMapEntry parent)) {
@@ -279,8 +270,7 @@ internal static class ExcludedComponentsPass {
 	/// ancestor NAME in <paramref name="removedMobileNames"/> — not entry identity — decides orphanhood.
 	/// </summary>
 	private static void DropOrphanedSubtrees(
-		List<ElementMapEntry> elementMap, HashSet<string> removedWebNames, HashSet<string> removedMobileNames,
-		SearchBudget budget) {
+		List<ElementMapEntry> elementMap, HashSet<string> removedWebNames, HashSet<string> removedMobileNames) {
 		if (removedMobileNames.Count == 0) {
 			return;
 		}
@@ -290,7 +280,7 @@ internal static class ExcludedComponentsPass {
 			if (!IsInsert(entry)) {
 				continue;
 			}
-			string removedAncestor = FindRemovedAncestor(entry, removedMobileNames, byMobileName, budget);
+			string removedAncestor = FindRemovedAncestor(entry, removedMobileNames, byMobileName);
 			if (removedAncestor is null) {
 				continue;
 			}
@@ -311,10 +301,10 @@ internal static class ExcludedComponentsPass {
 	/// </summary>
 	private static string FindRemovedAncestor(
 		ElementMapEntry entry, HashSet<string> removedMobileNames,
-		Dictionary<string, ElementMapEntry> byMobileName, SearchBudget budget) {
+		Dictionary<string, ElementMapEntry> byMobileName) {
 		var visited = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 		ElementMapEntry current = entry;
-		for (int depth = 0; !budget.Exceeded(depth); depth++) {
+		for (int depth = 0; !DepthExceeded(depth); depth++) {
 			string parentName = current.ParentName;
 			if (string.IsNullOrEmpty(parentName) || !visited.Add(parentName)) {
 				return null;
@@ -372,7 +362,7 @@ internal static class ExcludedComponentsPass {
 	private static void StripVerbatimCarriedComponents(
 		List<ElementMapEntry> elementMap,
 		Dictionary<string, List<ExcludedComponentFilterRule>> filtersByParentType,
-		HashSet<string> removedWebNames, SearchBudget budget) {
+		HashSet<string> removedWebNames) {
 		if (filtersByParentType.Count == 0) {
 			return;
 		}
@@ -385,9 +375,9 @@ internal static class ExcludedComponentsPass {
 			// its values), so it is processed first — the outermost-first order the class remarks promise.
 			if (entry.MobileType is { Length: > 0 }
 				&& filtersByParentType.TryGetValue(entry.MobileType, out List<ExcludedComponentFilterRule> rootFilters)) {
-				ApplyFiltersToHost(hostValues, entry.MobileName, rootFilters, dropped, budget);
+				ApplyFiltersToHost(hostValues, entry.MobileName, rootFilters, dropped);
 			}
-			FindNestedHosts(hostValues, filtersByParentType, entry.MobileName, dropped, budget, depth: 0);
+			FindNestedHosts(hostValues, filtersByParentType, entry.MobileName, dropped, depth: 0);
 		}
 		removedWebNames.UnionWith(dropped
 			.Where(drop => drop.WebName is { Length: > 0 })
@@ -422,8 +412,8 @@ internal static class ExcludedComponentsPass {
 	/// </summary>
 	private static void FindNestedHosts(
 		JsonNode node, Dictionary<string, List<ExcludedComponentFilterRule>> filtersByParentType,
-		string fallbackHostName, List<ElementMapEntry> dropped, SearchBudget budget, int depth) {
-		if (budget.Exceeded(depth)) {
+		string fallbackHostName, List<ElementMapEntry> dropped, int depth) {
+		if (DepthExceeded(depth)) {
 			return;
 		}
 		switch (node) {
@@ -437,14 +427,14 @@ internal static class ExcludedComponentsPass {
 						string hostName = candidate["name"]?.ToString();
 						ApplyFiltersToHost(
 							candidate, string.IsNullOrEmpty(hostName) ? fallbackHostName : hostName,
-							filters, dropped, budget);
+							filters, dropped);
 					}
-					FindNestedHosts(array[i], filtersByParentType, fallbackHostName, dropped, budget, depth + 1);
+					FindNestedHosts(array[i], filtersByParentType, fallbackHostName, dropped, depth + 1);
 				}
 				break;
 			case JsonObject obj:
 				foreach (string key in obj.Select(p => p.Key).ToList()) {
-					FindNestedHosts(obj[key], filtersByParentType, fallbackHostName, dropped, budget, depth + 1);
+					FindNestedHosts(obj[key], filtersByParentType, fallbackHostName, dropped, depth + 1);
 				}
 				break;
 		}
@@ -458,7 +448,7 @@ internal static class ExcludedComponentsPass {
 	/// </summary>
 	private static void ApplyFiltersToHost(
 		JsonObject hostValues, string hostMobileName,
-		List<ExcludedComponentFilterRule> filters, List<ElementMapEntry> dropped, SearchBudget budget) {
+		List<ExcludedComponentFilterRule> filters, List<ElementMapEntry> dropped) {
 		foreach (ExcludedComponentFilterRule filter in filters) {
 			// "names no property" and "names a property this host lacks" are DIFFERENT answers: the first
 			// widens the search to the whole host, the second is a no-op, because an explicit scope is an
@@ -477,7 +467,7 @@ internal static class ExcludedComponentsPass {
 			// and the object walk below never visits it. An unnamed scope is hostValues itself, whose members
 			// StripComponentsOfType prunes as it unwinds.
 			bool wasOccupied = scope is JsonArray { Count: > 0 };
-			StripComponentsOfType(scope, filter, hostMobileName, dropped, budget, depth: 0);
+			StripComponentsOfType(scope, filter, hostMobileName, dropped, depth: 0);
 			if (scopeKey is not null && wasOccupied && scope is JsonArray { Count: 0 }) {
 				hostValues.Remove(scopeKey);
 			}
@@ -519,8 +509,8 @@ internal static class ExcludedComponentsPass {
 	/// </summary>
 	private static void StripComponentsOfType(
 		JsonNode scope, ExcludedComponentFilterRule filter, string hostMobileName,
-		List<ElementMapEntry> dropped, SearchBudget budget, int depth) {
-		if (budget.Exceeded(depth)) {
+		List<ElementMapEntry> dropped, int depth) {
+		if (DepthExceeded(depth)) {
 			return;
 		}
 		switch (scope) {
@@ -532,7 +522,7 @@ internal static class ExcludedComponentsPass {
 						array.RemoveAt(i);
 						continue; // do not recurse into a node that no longer exists
 					}
-					StripComponentsOfType(array[i], filter, hostMobileName, dropped, budget, depth + 1);
+					StripComponentsOfType(array[i], filter, hostMobileName, dropped, depth + 1);
 				}
 				break;
 			case JsonObject obj:
@@ -540,7 +530,7 @@ internal static class ExcludedComponentsPass {
 					// Only a collection this call EMPTIED is removed: an array that was already empty before the
 					// strip is the page's own shape, and rewriting it is not this pass's business.
 					bool wasOccupied = obj[key] is JsonArray { Count: > 0 };
-					StripComponentsOfType(obj[key], filter, hostMobileName, dropped, budget, depth + 1);
+					StripComponentsOfType(obj[key], filter, hostMobileName, dropped, depth + 1);
 					if (wasOccupied && obj[key] is JsonArray { Count: 0 }) {
 						obj.Remove(key);
 					}

@@ -85,9 +85,6 @@ public static class WebToMobileAnalysisService {
 	/// <param name="mobileTemplateModelConfig">The mobile template's OWN merged modelConfig, used the same way
 	/// as <paramref name="mobileTemplateViewModelConfig"/> to diff the page's modelConfig. Null when no
 	/// template rule matched or the template bundle could not be read.</param>
-	/// <param name="mobileTemplateUnavailable">True when a mobile template was known but its bundle could not
-	/// be read (no active environment, read failure) - the data-section diffs fall back to a single root merge
-	/// and an explicit constraint warns that template-owned arrays may be replaced wholesale.</param>
 		public static MobilePageConversionGuide Analyze(
 		PageBundleInfo bundle,
 		IReadOnlySet<string> mobileTypes,
@@ -108,11 +105,9 @@ public static class WebToMobileAnalysisService {
 		IReadOnlyDictionary<string, string> mobileContainerParents = null,
 		JsonNode mobileTemplateViewModelConfig = null,
 		JsonNode mobileTemplateModelConfig = null,
-		bool mobileTemplateUnavailable = false,
 		IReadOnlyDictionary<string, string> mobileTemplateTypesByName = null,
 		IReadOnlyDictionary<string, JsonObject> mobileTemplateLayoutConfigs = null,
 		IReadOnlyDictionary<string, JObject> webTemplateBaselineNodes = null,
-		bool webTemplateUnavailable = false,
 		JObject webTemplateResources = null) {
 		ArgumentNullException.ThrowIfNull(bundle);
 		ArgumentNullException.ThrowIfNull(mobileTypes);
@@ -211,8 +206,7 @@ public static class WebToMobileAnalysisService {
 		// BuildRequestConversionInfo (a removed element's binding is reported as discarded, not converted),
 		// web names → BuildMobileViewModelConfig (removal is layout cleanup — referenced attributes are KEPT).
 		HashSet<string> excludedRemovedNames = ExcludedComponentsPass.RemoveExcludedComponents(
-			elementMap, rules, out HashSet<string> excludedRemovedMobileNames,
-			out ExcludedComponentsPass.ExcludedComponentsDiagnostics excludedDiagnostics);
+			elementMap, rules, out HashSet<string> excludedRemovedMobileNames);
 
 		// Deterministic empty-container removal: a converter-created layout container whose items
 		// receive NO surviving child is converted to a drop, bottom-up so emptiness cascades. Deliberately
@@ -298,7 +292,7 @@ public static class WebToMobileAnalysisService {
 		// post-pass rather than a decision taken while each entry is built: the parent set is only complete
 		// after BuildTabAreaLayers (which adds the synthesized layers AND re-points a tab's children at them),
 		// so any per-entry answer computed earlier is answering a different question than the caller asks.
-		StampParentSource(elementMap);
+		StampParentSource(elementMap, mobileTemplateTypesByName);
 
 		IReadOnlyList<NormalizationEntry> spacingNormalization =
 			componentPropertyOverrides.EntriesOf(SpacingGroup);
@@ -328,12 +322,6 @@ public static class WebToMobileAnalysisService {
 		JsonNode modelConfigDiff = BuildTargetedDiff(
 			modelConfig, mobileTemplateModelConfig, "modelConfig",
 			out IReadOnlyList<DataSectionConflict> mcArrayConflicts);
-		// The root-merge fallback fires per config whenever a page config exists but no usable JsonObject base was
-		// supplied for it -- NOT only when the probe reported the template unavailable. A template that carries only
-		// the other section (one config null) or a page created with no known template both hit the fallback with
-		// mobileTemplateUnavailable == false, so gate the constraint on the fallback actually firing, per config.
-		bool viewModelConfigRootMerge = viewModelConfig is JsonObject && mobileTemplateViewModelConfig is not JsonObject;
-		bool modelConfigRootMerge = modelConfig is JsonObject && mobileTemplateModelConfig is not JsonObject;
 		var dataSectionConflicts = new List<DataSectionConflict>();
 		dataSectionConflicts.AddRange(vmcArrayConflicts);
 		dataSectionConflicts.AddRange(mcArrayConflicts);
@@ -1370,6 +1358,21 @@ public static class WebToMobileAnalysisService {
 	private const string NamelessChangedInPlaceConflict = "nameless-changed-in-place";
 
 	/// <summary>
+	/// The closed vocabulary of <see cref="ElementMapEntry.ParentSource"/>, which the contract documents and
+	/// both the unit and E2E suites assert verbatim — named for the same reason the conflict kinds above are.
+	/// </summary>
+	private const string ParentSourceTemplate = "template";
+
+	/// <inheritdoc cref="ParentSourceTemplate"/>
+	private const string ParentSourcePage = "page";
+
+	/// <inheritdoc cref="ParentSourceTemplate"/>
+	private const string ParentSourceConverter = "converter";
+
+	/// <inheritdoc cref="ParentSourceTemplate"/>
+	private const string ParentSourceUnknown = "unknown";
+
+	/// <summary>
 	/// Recursive worker for <see cref="BuildTargetedDiff(JsonNode, JsonNode, out IReadOnlyList{string})"/>. At
 	/// <paramref name="path"/> it emits one <c>merge</c> carrying every changed scalar and every new object/array
 	/// subtree, then recurses into shared object subtrees and appends an <c>insert</c> per new element of a shared
@@ -2350,12 +2353,26 @@ public static class WebToMobileAnalysisService {
 	/// inserted — so stamping it would assert the wrong thing.
 	/// </para>
 	/// <para>
-	/// Claiming <c>"template"</c> for an unknown parent is safe because a retarget whose target is absent from
-	/// the probed template is DROPPED upstream (see <see cref="RetargetTargetMissing"/>), so no surviving insert
-	/// names a parent that neither this map nor the template provides.
+	/// <c>"template"</c> is a CHECKED claim, not the default for anything this map does not insert, and the
+	/// difference is load-bearing. <see cref="RetargetTargetMissing"/> drops a retarget whose target is absent
+	/// from the probed template, but it is consulted only on the template-<c>path</c> retarget paths — a
+	/// container-map twin and <c>RelocateTargetFor</c>'s <c>MainContainer</c> fallback both produce a parent
+	/// without it. The shipped rules reach exactly that state (<c>BlankPageTemplate</c> maps
+	/// <c>MainContainer -&gt; MainContainer</c>, but <c>BlankMobilePageTemplate</c> is a bare Scaffold and has
+	/// no <c>MainContainer</c>), and telling the caller the page already provides that container makes the
+	/// insert fail in the applier. Such a parent is stamped <c>"unknown"</c> instead.
+	/// </para>
+	/// <para>
+	/// The template's node set is only usable as evidence when it was actually read.
+	/// <c>RejectUnobtainableMobileTemplate</c> fails the tool before this runs when a named template could not
+	/// be read, so a non-empty set here means "probed successfully". When it is EMPTY the probe reported no
+	/// template at all (no rule matched and the rules declare no default), and there is no template to own
+	/// anything — so an uninserted parent is <c>"unknown"</c> then too, which is the honest answer rather than
+	/// a fabricated one.
 	/// </para>
 	/// </remarks>
-	private static void StampParentSource(List<ElementMapEntry> elementMap) {
+	private static void StampParentSource(
+		List<ElementMapEntry> elementMap, IReadOnlyDictionary<string, string> mobileTemplateTypesByName) {
 		var authoredHere = new Dictionary<string, bool>(StringComparer.OrdinalIgnoreCase);
 		foreach (ElementMapEntry entry in elementMap) {
 			if (string.Equals(entry.Operation, "insert", StringComparison.OrdinalIgnoreCase)
@@ -2371,9 +2388,13 @@ public static class WebToMobileAnalysisService {
 				entry.ParentSource = null;
 				continue;
 			}
-			entry.ParentSource = authoredHere.TryGetValue(entry.ParentName, out bool fromPage)
-				? fromPage ? "page" : "converter"
-				: "template";
+			if (authoredHere.TryGetValue(entry.ParentName, out bool fromPage)) {
+				entry.ParentSource = fromPage ? ParentSourcePage : ParentSourceConverter;
+				continue;
+			}
+			bool templateOwnsIt = mobileTemplateTypesByName is { Count: > 0 }
+				&& mobileTemplateTypesByName.ContainsKey(entry.ParentName);
+			entry.ParentSource = templateOwnsIt ? ParentSourceTemplate : ParentSourceUnknown;
 		}
 	}
 
@@ -2780,7 +2801,18 @@ public static class WebToMobileAnalysisService {
 		// web caption's own text (resolved from the source key). When the source key already equals the
 		// element key, nothing changes and the caller keeps the source token verbatim.
 		string key = mobileName + "_caption";
-		return new CaptionResource { Key = key, SourceValue = ResolveResourceString(ctx.Resources, sourceKey) ?? sourceKey };
+		// Declaredness is carried SEPARATELY from the text, and the difference is the whole point. The source
+		// key may be declared with EMPTY text — the page's own deliberate "no visible label" — and that must be
+		// registered, because the re-key above means the carried token names a key the converter INVENTED, which
+		// no source declaration can back. Dropping it ships a #ResourceString token with no key behind it, and
+		// the device renders the RAW TOKEN. An ABSENT key must be skipped for the opposite reason: registering
+		// one would REPLACE the platform's own localized caption with a single hardcoded culture, and the old
+		// `?? sourceKey` fallback did something stranger still — it registered the KEY NAME as the caption text,
+		// so the element rendered as the literal string "GeneralInfoTab_caption" (ENG-95827).
+		if (!TryResolveDeclaredResourceString(ctx.Resources, sourceKey, out string sourceValue)) {
+			return new CaptionResource { Key = key, SourceValue = null, SourceDeclared = false };
+		}
+		return new CaptionResource { Key = key, SourceValue = sourceValue, SourceDeclared = true };
 	}
 
 	/// <summary>
@@ -2878,10 +2910,14 @@ public static class WebToMobileAnalysisService {
 			// (<mobileName>_caption, used to dodge a template key collision) does not exist under that name in
 			// the source strings, so a token scan alone would not resolve it — take the value from the
 			// CaptionResource, which carries the web caption's own text.
-			if (entry.CaptionResource is { } cap
-				&& !string.IsNullOrEmpty(cap.Key) && !string.IsNullOrEmpty(cap.SourceValue)
+			// Gated on SourceDeclared, NOT on the text being non-empty. The two differ exactly where it
+			// matters: a caption the page declares with EMPTY text is its own "no visible label" and must be
+			// registered, or the re-keyed token ships with no key behind it and the device renders the RAW
+			// TOKEN. A key the page never declared must be skipped. (ENG-95827)
+			if (entry.CaptionResource is { SourceDeclared: true } cap
+				&& !string.IsNullOrEmpty(cap.Key)
 				&& !result.ContainsKey(cap.Key)) {
-				result[cap.Key] = cap.SourceValue;
+				result[cap.Key] = cap.SourceValue ?? string.Empty;
 			}
 			if (entry.MobileValues is not null) {
 				Scan(entry.MobileValues.ToJsonString());
@@ -5015,7 +5051,6 @@ public static class WebToMobileAnalysisService {
 		// key stamp values onto every component on the page, silently. An EMPTY list still means "everything":
 		// that form can only be written deliberately, so it stays available.
 		List<ComponentPropertyOverrideRule> stampers = [.. overrides.Where(r => r?.Values is { Count: > 0 })];
-		result.SkippedRulesWithoutFilters = stampers.Count(r => r.Filters is null);
 		List<ComponentPropertyOverrideRule> declared = [.. stampers.Where(r => r.Filters is not null)];
 		if (declared.Count == 0) {
 			return result;
@@ -5325,15 +5360,6 @@ public static class WebToMobileAnalysisService {
 	private sealed class ComponentPropertyOverrideResult {
 		private readonly Dictionary<string, GroupAccumulator> _groups = new(StringComparer.OrdinalIgnoreCase);
 		private readonly List<string> _order = [];
-
-		/// <summary>
-		/// Rules the pass REFUSED to run because they declare no <c>filters</c> — the whole of what an override
-		/// rule targets. Counted rather than ignored: the rules file can be fetched from the CDN at runtime, so
-		/// a mistyped <c>"filter"</c> or an entry authored against the removed <c>type</c> field silently drops
-		/// its standard, and the page then ships un-normalized in a way the report cannot otherwise distinguish
-		/// from "nothing needed normalizing".
-		/// </summary>
-		public int SkippedRulesWithoutFilters { get; set; }
 
 		/// <summary>Report groups that recorded something, in first-seen (element-map) order.</summary>
 		public IEnumerable<KeyValuePair<string, GroupAccumulator>> Groups =>

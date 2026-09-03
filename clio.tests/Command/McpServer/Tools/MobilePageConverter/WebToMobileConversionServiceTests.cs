@@ -111,10 +111,8 @@ public sealed class WebToMobileConversionServiceTests {
 		IReadOnlyDictionary<string, ComponentMappingRule> componentNameMap = null,
 		JsonNode mobileTemplateViewModelConfig = null,
 		JsonNode mobileTemplateModelConfig = null,
-		bool mobileTemplateUnavailable = false,
 		IReadOnlyDictionary<string, string> mobileTemplateTypesByName = null,
 		IReadOnlyDictionary<string, JObject> webTemplateBaselineNodes = null,
-		bool webTemplateUnavailable = false,
 		JObject webTemplateResources = null,
 		IReadOnlySet<string> mobileTypes = null,
 		WebToMobilePageConversionRules rules = null) =>
@@ -129,10 +127,8 @@ public sealed class WebToMobileConversionServiceTests {
 			componentNameMap: componentNameMap,
 			mobileTemplateViewModelConfig: mobileTemplateViewModelConfig,
 			mobileTemplateModelConfig: mobileTemplateModelConfig,
-			mobileTemplateUnavailable: mobileTemplateUnavailable,
 			mobileTemplateTypesByName: mobileTemplateTypesByName,
 			webTemplateBaselineNodes: webTemplateBaselineNodes,
-			webTemplateUnavailable: webTemplateUnavailable,
 			webTemplateResources: webTemplateResources);
 
 	/// <summary>The web template's own resource strings (key → { culture: text }) — the delta baseline a
@@ -1110,29 +1106,6 @@ public sealed class WebToMobileConversionServiceTests {
 	}
 
 	[Test]
-	[Description("When no mobile template base is available for the modelConfig (template unavailable), modelConfigDiff degrades to a single root merge and ONE constraint says so -- naming which diff degraded, the unreadable-bundle cause, and the arrays at risk. It used to take up to three lines for the same event: one per config plus a third for the cause.")]
-	public void Analyze_ModelConfigWithoutTemplateBase_EmitsRootMergeAndWarns() {
-		// Arrange: a modelConfig with a data source; no mobile template modelConfig base; template reported unavailable.
-		PageBundleInfo bundle = Bundle(
-			viewConfigJson: """[ { "name": "Main", "type": "crt.FlexContainer", "items": [] } ]""",
-			modelConfigJson: """{ "dataSources": { "PDS": { "config": { "attributes": {}, "sortColumns": [ { "columnName": "CreatedOn" } ] } } } }""");
-		// Act — a mobile template IS named (so a re-run could fix it) but its bundle could not be read.
-		MobilePageConversionGuide guide = Analyze(
-			bundle, webByType: Reg(("crt.FlexContainer", true)),
-			templateRule: new TemplateMappingRule { Mobile = "BaseMobilePageTemplate" },
-			mobileTemplateModelConfig: null, mobileTemplateUnavailable: true);
-		// Assert
-		JsonObject op = guide.ModelConfigDiff!.AsArray().Single()!.AsObject();
-		op["operation"]!.GetValue<string>().Should().Be("merge", because: "with no base to diff against it degrades to one root merge");
-		op["path"]!.AsArray().Should().BeEmpty(because: "a root merge targets the config root (path [])");
-		// The DEGRADATION is no longer reported from here: an unobtainable mobile template now fails the
-		// tool outright (MobilePageConversionGuideTool.RejectUnobtainableMobileTemplate), because an empty
-		// MobileTypesByName also stops same-name twins from being detected and would ship duplicates of
-		// native elements. What this test still pins is the ENGINE behaviour: with no base, the diff is one
-		// root merge rather than silently claiming to be targeted.
-	}
-
-	[Test]
 	[Description("When a mobile template modelConfig base IS available, modelConfigDiff is targeted and NO data-section constraint is emitted at all -- the happy path is not a finding, so it says nothing (negative twin of the unavailable case).")]
 	public void Analyze_ModelConfigWithTemplateBase_EmitsTargetedAndNoRootMergeWarning() {
 		// Arrange: same page config, but a mobile template modelConfig base is supplied.
@@ -1143,7 +1116,7 @@ public sealed class WebToMobileConversionServiceTests {
 		// Act
 		MobilePageConversionGuide guide = Analyze(
 			bundle, webByType: Reg(("crt.FlexContainer", true)),
-			mobileTemplateModelConfig: templateModelConfig, mobileTemplateUnavailable: false);
+			mobileTemplateModelConfig: templateModelConfig);
 		// Assert
 		JsonObject targeted = guide.ModelConfigDiff!.AsArray().First()!.AsObject();
 		targeted["path"]!.AsArray().Should().NotBeEmpty(
@@ -1162,11 +1135,16 @@ public sealed class WebToMobileConversionServiceTests {
 		MobilePageConversionGuide guide = Analyze(
 			bundle, webByType: Reg(("crt.FlexContainer", true)),
 			templateRule: new TemplateMappingRule { Mobile = "BaseMobilePageTemplate" },
-			mobileTemplateModelConfig: null, mobileTemplateUnavailable: false);
+			mobileTemplateModelConfig: null);
 
 		// Assert
-		guide.ModelConfigDiff!.AsArray().Single()!.AsObject()["path"]!.AsArray().Should().BeEmpty(
-			because: "with no base object the diff is still a root merge — the behaviour is unchanged, only the reporting is");
+		JsonObject op = guide.ModelConfigDiff!.AsArray().Single()!.AsObject();
+		op["operation"]!.GetValue<string>().Should().Be("merge",
+			because: "with no base to diff against, the engine degrades to one root merge rather than silently claiming to be targeted");
+		op["path"]!.AsArray().Should().BeEmpty(
+			because: "a root merge targets the config root (path []) — the behaviour is unchanged, only the reporting is");
+		guide.DataSectionConflicts.Should().BeNullOrEmpty(
+			because: "the root merge is not reported when the base owns nothing at that path: the warning was that a root merge may STRIP arrays the template also owns, and there is nothing to strip. The unreadable-template cause is refused at the tool boundary instead, so it cannot reach here");
 	}
 
 	[Test]
@@ -1681,26 +1659,6 @@ public sealed class WebToMobileConversionServiceTests {
 		guide.RequestConversions!.DroppedRequests.Should().Contain(
 			r => r.ElementName == "SaveButton" && r.WebRequest == "crt.SaveRecordRequest",
 			because: "the native element carries its own action, but the dropped web request must still be reported so requestConversions does not silently under-count");
-	}
-
-	[Test]
-	[Description("Retargeting into a template-provided FloatingActionButton is reported ON THE ENTRY (parentSource) and NOT restated in guide.constraints. The constraint existed only because the fact was half in the data — the old parentExistsOnTemplate boolean was retarget-only, so the sentence was the only place naming those containers. Now that parentSource is stamped on every insert, a constraint line would be a second copy the caller has to match against a list of names.")]
-	public void Analyze_Fab_RetargetParentOnTemplate_ReportsOnEntryNotInConstraints() {
-		// Arrange
-		PageBundleInfo bundle = Bundle("""
-			[ { "name": "MainHeader", "type": "crt.FlexContainer", "items": [
-				{ "name": "OrderBtn", "type": "crt.Button", "caption": "#ResourceString(OrderBtn_caption)#",
-				  "clicked": { "request": "crt.SaveRecordRequest" } } ] } ]
-			""");
-
-		// Act
-		MobilePageConversionGuide guide = Analyze(bundle, mobileTypes: HeaderMobileTypes,
-			rules: FabRule(["MainHeader"], ["MainHeader"], "crt.Button"),
-			mobileTemplateTypesByName: MobileTypesByName(("FloatingActionButton", "crt.FloatingActionButton")));
-
-		// Assert
-		Element(guide, "OrderBtn").ParentSource.Should().Be("template",
-			because: "the entry itself must carry where its parent comes from, so the caller reads it per entry instead of matching a sentence against a list of container names");
 	}
 
 	[Test]
@@ -2327,19 +2285,75 @@ public sealed class WebToMobileConversionServiceTests {
 				{ "name": "Fld", "type": "crt.Input" } ] } ]
 			""");
 
-		// Act
+		// Act — the probed template DOES provide MainContainer, which is what licenses the "template" claim
+		// below. Supplying it is the point: parentSource only says "template" on evidence (ENG-95827).
 		MobilePageConversionGuide guide = Analyze(bundle,
 			mobileTypes: new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "crt.FlexContainer", "crt.Input" },
-			webByType: Reg(("crt.FlexContainer", true), ("crt.Input", false)));
+			webByType: Reg(("crt.FlexContainer", true), ("crt.Input", false)),
+			mobileTemplateTypesByName: MobileTypesByName(("MainContainer", "crt.GridContainer")));
 
 		// Assert
 		ElementMapEntry box = Element(guide, "Box");
 		ElementMapEntry field = Element(guide, "Fld");
 		box.Operation.Should().Be("insert", because: "the page's own container converts");
 		box.ParentSource.Should().Be("template",
-			because: "nothing in this map inserts Box's parent, so the target page must already provide it — the very case the old retarget-only boolean left unmarked");
+			because: "nothing in this map inserts Box's parent AND the probed template provides it, so the target page already has it — the very case the old retarget-only boolean left unmarked");
 		field.ParentSource.Should().Be("page",
 			because: "Box IS inserted by this map and came from the source page, so its own entry says how to create it and the caller must not treat it as pre-existing");
+	}
+
+	[Test]
+	[Description("ENG-95827: parentSource is 'unknown' — never 'template' — when the probed mobile template does NOT provide the parent. 'Not created by this map' is not the same question as 'the template owns it', and claiming template for an absent container makes the caller skip an insert it must perform, which then fails in the applier.")]
+	public void Analyze_ParentSource_IsUnknown_WhenTheProbedTemplateLacksTheParent() {
+		// Arrange — same shape as the ordinary-inserts case, but the probed template map is NON-EMPTY and
+		// deliberately does not contain Box's walk parent. This is the state the SHIPPED rules reach:
+		// BlankPageTemplate maps MainContainer -> MainContainer, while BlankMobilePageTemplate is a bare
+		// Scaffold that has no MainContainer at all.
+		PageBundleInfo bundle = Bundle("""
+			[ { "name": "Box", "type": "crt.FlexContainer", "items": [
+				{ "name": "Fld", "type": "crt.Input" } ] } ]
+			""");
+
+		// Act
+		MobilePageConversionGuide guide = Analyze(bundle,
+			mobileTypes: new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "crt.FlexContainer", "crt.Input" },
+			webByType: Reg(("crt.FlexContainer", true), ("crt.Input", false)),
+			mobileTemplateTypesByName: MobileTypesByName(("Scaffold", "crt.Scaffold")));
+
+		// Assert
+		ElementMapEntry box = Element(guide, "Box");
+		box.ParentName.Should().NotBeNullOrEmpty(
+			because: "the assertion below is only meaningful for an insert that names a parent");
+		box.ParentSource.Should().Be("unknown",
+			because: "the template was read and does not provide this parent, so neither this map nor the template creates it — the caller must be told that rather than being sent to insert into a container that does not exist");
+		Element(guide, "Fld").ParentSource.Should().Be("page",
+			because: "an authored-here parent is still answered from the map alone, so tightening the template claim must not disturb it");
+	}
+
+	[Test]
+	[Description("ENG-95827: parentSource is 'converter' for a child of a SYNTHESIZED container (a tab-body grid / Area card), which carries no webName. It must not collapse into 'page' — that would send the caller looking for a source element behind a parent the converter invented.")]
+	public void Analyze_ParentSource_IsConverter_ForAChildOfASynthesizedLayer() {
+		// Arrange — a converted tab with content, which synthesizes the tab-body grid and the Area card.
+		PageBundleInfo bundle = Bundle("""
+			[ { "name": "Tabs", "type": "crt.TabPanel", "items": [
+				{ "name": "OverviewTab", "type": "crt.TabContainer", "items": [
+					{ "name": "LeadName", "type": "crt.Input" } ] } ] } ]
+			""");
+
+		// Act
+		MobilePageConversionGuide guide = AnalyzeTabbed(bundle, rules: RulesWithTabAreaLayers());
+
+		// Assert
+		(string main, string area) = LayerNames("OverviewTab");
+		ElementMapEntry content = Element(guide, "LeadName");
+		content.ParentName.Should().Be(area,
+			because: "the tab's content is retargeted into the synthesized Area card");
+		content.ParentSource.Should().Be("converter",
+			because: "the Area card has no webName — it was invented by this converter — and the caller must create it from its own entry rather than hunt for a source element");
+		Synthesized(guide, area).ParentSource.Should().Be("converter",
+			because: "the Area's own parent is the synthesized tab-body grid, equally converter-authored");
+		Synthesized(guide, main).ParentSource.Should().Be("page",
+			because: "the tab-body grid hangs off the converted TAB, which does come from the source page");
 	}
 
 	[Test]
@@ -2918,6 +2932,43 @@ public sealed class WebToMobileConversionServiceTests {
 	}
 
 	[Test]
+	[Description("ENG-95827: a carryProperties twin the page carries NONE of the whitelisted properties for reports 'nothing to apply' — NOT the configure-by-hand instruction. This is the state a single hasPrebuiltPayload bool used to mislabel: the correct action is to do nothing and leave the element as the mobile template configures it, so telling the caller to merge-by-name sends them to do work that must not be done.")]
+	public void Analyze_TemplateComponentTwin_CarryProperties_NonePresent_SaysThereIsNothingToApply() {
+		// Arrange — the same FolderTree carry rule as above, but the page declares neither whitelisted property.
+		PageBundleInfo bundle = Bundle("""
+			[ { "name": "ContentContainer", "type": "crt.FlexContainer", "items": [
+				{ "name": "FolderTree", "type": "crt.FolderTree" } ] } ]
+			""");
+		var web = Reg(("crt.FlexContainer", true), ("crt.FolderTree", false));
+		var containerNameMap = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase) { ["ContentContainer"] = "HeaderContainer" };
+		var componentNameMap = new Dictionary<string, ComponentMappingRule>(StringComparer.OrdinalIgnoreCase) {
+			["FolderTree"] = new ComponentMappingRule {
+				Web = "FolderTree", Mobile = "FolderTreeActions", MobileType = "crt.FolderTreeActions",
+				CarryProperties = ["sourceSchemaName", "rootSchemaName"], Note = "Folder tree."
+			}
+		};
+		IReadOnlySet<string> templateNames = Names("ContentContainer", "FolderTree");
+
+		// Act
+		MobilePageConversionGuide guide = Analyze(
+			bundle, webByType: web, containerNameMap: containerNameMap,
+			templateComponentNames: templateNames, componentNameMap: componentNameMap);
+
+		// Assert
+		ElementMapEntry twin = guide.ElementMap.Single(e => e.WebName == "FolderTree");
+		twin.Operation.Should().Be("merge",
+			because: "the element still exists on mobile, so it stays a valid page-business-rule target");
+		twin.MobileValues.Should().BeNull(
+			because: "the page carries none of the whitelisted properties, so there is no payload to prebuild");
+		twin.Reason.Should().Contain("NOTHING to apply",
+			because: "the entry must say the payload is absent because there was nothing to carry — the one null-payload state whose correct action is to do nothing at all");
+		twin.Reason.Should().NotContain("merge-by-name",
+			because: "this is exactly the mislabel the four-state split fixed: instructing the caller to configure it by hand would have them overwrite what the mobile template already sets");
+		twin.Reason.Should().NotContain("NO delta could be prebuilt",
+			because: "nothing failed here, so the wording reserved for a real degradation must not appear");
+	}
+
+	[Test]
 	[Description("Fallback: when the WEB template baseline nodes are unavailable (failed read, or a page whose template does not declare the element), a name-mapped same-component twin CANNOT compute a delta, so it degrades to an ADVISORY merge (null mobileValues) — it does NOT carry the whole web node, which would paste web-only values like primaryColumnName onto the mobile element.")]
 	public void Analyze_TemplateComponentTwin_SameComponent_NoBaseline_IsAdvisoryMerge() {
 		// Arrange — AttachmentList present, mapped, and in the chrome name set, but NO webTemplateBaselineNodes.
@@ -3408,7 +3459,7 @@ public sealed class WebToMobileConversionServiceTests {
 
 		MobilePageConversionGuide guide = Analyze(
 			bundle, webByType: web, containerNameMap: containerNameMap,
-			componentNameMap: componentNameMap, webTemplateUnavailable: true);
+			componentNameMap: componentNameMap);
 
 		ElementMapEntry twin = Element(guide, "AttachmentList");
 		twin.MobileValues.Should().BeNull(
@@ -3433,11 +3484,17 @@ public sealed class WebToMobileConversionServiceTests {
 
 		// Act
 		MobilePageConversionGuide guide = Analyze(
-			bundle, webByType: web, componentNameMap: componentNameMap, webTemplateUnavailable: true);
+			bundle, webByType: web, componentNameMap: componentNameMap);
 
-		// Assert
-		guide.ElementMap.Should().NotContain(e => e.WebName == "AttachmentList",
-			because: "the page carries no twin element, so nothing degraded and there is nothing to report — the old trigger fired on the RULES FILE declaring a twin, which made it a false positive on most pages");
+		// Assert — the absence of an AttachmentList ENTRY is not the assertion: this page has no such node, so
+		// that would hold under any implementation. What must hold is that the twin advisory appears NOWHERE in
+		// the guide. The old trigger was keyed on the rules file declaring a twin, so it fired on pages that
+		// carry none; re-introducing any page-level aggregate keyed that way fails here.
+		guide.ElementMap.Should().OnlyContain(
+			e => e.Reason == null || !e.Reason.Contains("merge-by-name", StringComparison.Ordinal),
+			because: "no entry may carry the configure-by-hand twin instruction when the page carries no twin element at all — nothing degraded, so there is nothing to report");
+		guide.ElementMap.Should().NotBeEmpty(
+			because: "the page's own elements must still convert — an empty map would make the assertion above vacuous");
 	}
 
 	[Test]
@@ -3455,7 +3512,7 @@ public sealed class WebToMobileConversionServiceTests {
 
 		// Act
 		MobilePageConversionGuide guide = Analyze(
-			bundle, webByType: web, componentNameMap: componentNameMap, webTemplateUnavailable: true);
+			bundle, webByType: web, componentNameMap: componentNameMap);
 
 		// Assert
 		ElementMapEntry structural = Element(guide, "Grid");
@@ -3468,15 +3525,26 @@ public sealed class WebToMobileConversionServiceTests {
 	}
 
 	[Test]
-	[Description("When the WEB template is unavailable but the rules declare NO name-mapped twin, the advisory-degradation constraint is NOT emitted — an automatic twin cannot fire without a baseline, so nothing degraded.")]
-	public void Analyze_WebTemplateUnavailable_NoComponentTwin_OmitsAdvisoryDiagnostic() {
+	[Description("ENG-95827: with NO web-template baseline and NO name-mapped twin declared, no twin advisory is emitted anywhere — an automatic twin cannot fire without a baseline, so nothing degraded and there is nothing to configure by hand.")]
+	public void Analyze_NoWebBaselineAndNoComponentTwin_EmitsNoTwinAdvisory() {
+		// Arrange — no componentNameMap, and no webTemplateBaselineNodes, so neither twin route can fire.
 		PageBundleInfo bundle = Bundle("""
 			[ { "name": "Main", "type": "crt.FlexContainer", "items": [ { "name": "UsrName", "type": "crt.Input" } ] } ]
 			""");
 		var web = Reg(("crt.FlexContainer", true), ("crt.Input", false));
 
-		MobilePageConversionGuide guide = Analyze(bundle, webByType: web, webTemplateUnavailable: true);
+		// Act
+		MobilePageConversionGuide guide = Analyze(bundle, webByType: web);
 
+		// Assert
+		guide.ElementMap.Should().NotContain(
+			e => string.Equals(e.Operation, "merge", StringComparison.Ordinal),
+			because: "with no baseline and no declared twin, neither twin route can fire, so nothing may be reported as merging onto a template-provided element");
+		guide.ElementMap.Should().OnlyContain(
+			e => e.Reason == null || !e.Reason.Contains("merge-by-name", StringComparison.Ordinal),
+			because: "no entry may carry the configure-by-hand twin instruction when no twin could have fired");
+		guide.ElementMap.Should().HaveCount(2,
+			because: "the container and its field both produce an entry — pinning the count keeps the assertions above from passing on an empty map");
 	}
 
 	#endregion
@@ -7187,7 +7255,7 @@ public sealed class WebToMobileConversionServiceTests {
 		// Act
 		ExcludedComponentsPass.RemoveExcludedComponents(
 			elementMap, RulesWithExcludedComponents(SearchFilterInExpansionPanelToolsFilter),
-			out HashSet<string> _, out _);
+			out HashSet<string> _);
 
 		// Assert
 		var twin = (JsonObject)elementMap[0].MobileValues!;
@@ -7561,7 +7629,7 @@ public sealed class WebToMobileConversionServiceTests {
 		// Act
 		HashSet<string> removedWebNames = ExcludedComponentsPass.RemoveExcludedComponents(
 			elementMap, RulesWithExcludedComponents(SearchFilterInExpansionPanelToolsFilter),
-			out HashSet<string> _, out _);
+			out HashSet<string> _);
 
 		// Assert
 		elementMap.Single(e => e.WebName == "ConvertedSearchFilter").Operation.Should().Be("drop",
@@ -7595,7 +7663,7 @@ public sealed class WebToMobileConversionServiceTests {
 		// Act
 		HashSet<string> removedWebNames = ExcludedComponentsPass.RemoveExcludedComponents(
 			elementMap, RulesWithExcludedComponents(SearchFilterInExpansionPanelToolsFilter),
-			out HashSet<string> removedMobileNames, out _);
+			out HashSet<string> removedMobileNames);
 
 		// Assert
 		removedWebNames.Should().BeEquivalentTo(["WalkedSearchFilter", "CarriedSearchFilter"],
@@ -7628,7 +7696,7 @@ public sealed class WebToMobileConversionServiceTests {
 		// Act
 		HashSet<string> removedWebNames = ExcludedComponentsPass.RemoveExcludedComponents(
 			elementMap, RulesWithExcludedComponents(SearchFilterInExpansionPanelToolsFilter),
-			out HashSet<string> removedMobileNames, out _);
+			out HashSet<string> removedMobileNames);
 
 		// Assert
 		elementMap.Should().AllSatisfy(e => e.Operation.Should().Be("insert"),
@@ -8461,6 +8529,47 @@ public sealed class WebToMobileConversionServiceTests {
 			because: "the key EXISTS on the source page, so the mobile page must carry it too — otherwise its token has nothing to resolve against and renders raw");
 		guide.ResourceStrings!["LeadName_caption"].Should().BeEmpty(
 			because: "the empty text is the page's own intent (no visible label), and reproducing it is what makes the mobile page match the web one");
+	}
+
+	[Test]
+	[Description("ENG-95827: a declared-EMPTY caption is registered even when the converter RE-KEYS it. This is the path the token scan cannot rescue — the carried token names <mobileName>_caption, a key the converter invented, which no source declaration backs — so the caption collector must decide on the source key's PRESENCE. Deciding on its text being non-empty dropped it here and shipped a token with no key behind it.")]
+	public void Analyze_ShouldRegisterARekeyedDeclaredCaption_EvenWhenItsTextIsEmpty() {
+		// Arrange — the element carries an INHERITED caption key whose name does not match it (the shape that
+		// forces the re-key), and the page declares that key with empty text.
+		PageBundleInfo bundle = Bundle("""
+			[ { "name": "Box", "type": "crt.GridContainer", "items": [
+			    { "name": "LeadName", "type": "crt.Input", "caption": "$Resources.Strings.GeneralInfoTab_caption" } ] } ]
+			""",
+			resourcesJson: """{ "GeneralInfoTab_caption": { "en-US": "" } }""");
+
+		// Act
+		MobilePageConversionGuide guide = AnalyzeWithEmptyRemoval(bundle);
+
+		// Assert
+		guide.ResourceStrings.Should().ContainKey("LeadName_caption",
+			because: "the caption was re-keyed to the element's own name to dodge a template key collision, and that invented key must be registered or its token resolves against nothing and renders raw");
+		guide.ResourceStrings!["LeadName_caption"].Should().BeEmpty(
+			because: "the source key is declared with empty text, and that empty text is what the mobile page must reproduce");
+	}
+
+	[Test]
+	[Description("ENG-95827: when a re-keyed caption's SOURCE key is not declared at all, nothing is registered — and in particular the KEY NAME is never registered as the caption text. The old fallback resolved an absent key to the key string itself, so the element rendered the literal 'GeneralInfoTab_caption' on the device.")]
+	public void Analyze_ShouldNotRegisterTheKeyName_WhenARekeyedCaptionsSourceKeyIsUndeclared() {
+		// Arrange — same re-key shape, but the source page declares no resources at all.
+		PageBundleInfo bundle = Bundle("""
+			[ { "name": "Box", "type": "crt.GridContainer", "items": [
+			    { "name": "LeadName", "type": "crt.Input", "caption": "$Resources.Strings.GeneralInfoTab_caption" } ] } ]
+			""",
+			resourcesJson: """{ }""");
+
+		// Act
+		MobilePageConversionGuide guide = AnalyzeWithEmptyRemoval(bundle);
+
+		// Assert
+		(guide.ResourceStrings?.ContainsKey("LeadName_caption") ?? false).Should().BeFalse(
+			because: "the source page declares nothing for this caption, so there is no text to carry — registering the key with the KEY NAME as its value made the element render that identifier to the user");
+		(guide.ResourceStrings?.Values ?? []).Should().NotContain("GeneralInfoTab_caption",
+			because: "no entry anywhere may carry a resource KEY as its display text — written against a possibly-null map because registering nothing at all is the correct outcome here");
 	}
 
 	[Test]

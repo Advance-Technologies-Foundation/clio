@@ -145,6 +145,18 @@ public sealed class CaptionResource {
 
 	[JsonPropertyName("sourceValue")]
 	public string SourceValue { get; init; }
+
+	/// <summary>
+	/// True when the SOURCE page declares the key this caption came from. Not serialized — it exists so the
+	/// resource collector can tell a caption declared with EMPTY text (register it: the page's own deliberate
+	/// "no visible label") from one whose key the page never declared (skip it: the platform resolves the
+	/// caption itself, and registering a key would replace a localized title with one hardcoded culture).
+	/// A single "is the text non-empty" test conflates the two, and because the caption is RE-KEYED to
+	/// <c>&lt;mobileName&gt;_caption</c> the token scan cannot recover the first case — the carried token names
+	/// a key the converter invented, which no source declaration backs (ENG-95827).
+	/// </summary>
+	[JsonIgnore]
+	public bool SourceDeclared { get; init; }
 }
 
 /// <summary>
@@ -206,29 +218,47 @@ public sealed class ElementMapEntry {
 	/// Where this entry's <see cref="ParentName"/> comes from. Set on EVERY <c>insert</c> that names a parent,
 	/// and only on those — the other operations do not insert anything into a parent. One of:
 	/// <list type="bullet">
-	/// <item><description><c>"template"</c> — the parent is NOT created by this element map, so the target page
-	/// must already provide it (from the mobile template, e.g. <c>MainContainer</c>, or
-	/// <c>FloatingActionButton</c> via the Scaffold's <c>floatAction</c> slot). Insert THIS child into it and
-	/// nothing more: do NOT insert, recreate or re-declare the parent, and do NOT declare its slot — authoring
-	/// your own copy OVERRIDES the native one.</description></item>
+	/// <item><description><c>"template"</c> — this map does not create the parent AND the probed mobile template
+	/// provides it (e.g. <c>MainContainer</c>, or <c>FloatingActionButton</c> via the Scaffold's
+	/// <c>floatAction</c> slot). Insert THIS child into it; do not author, recreate or duplicate the parent
+	/// ELEMENT — your own copy would override the native one. This does NOT forbid the parent's own
+	/// <c>merge</c> entry, which is how per-breakpoint <c>columns</c> and a shifted <c>layoutConfig</c> reach
+	/// the page at all, nor the empty-slot <c>merge</c> that the two-step idiom requires when the
+	/// template-provided parent does not yet carry the slot being inserted into (an insert into a property the
+	/// element does not carry throws — <c>menuItems</c> on a <c>crt.FloatingActionButton</c> is the standard
+	/// case, and this converter emits exactly that).</description></item>
 	/// <item><description><c>"page"</c> — the parent is inserted by this map and came from the source page; its
 	/// own entry says how to create it.</description></item>
 	/// <item><description><c>"converter"</c> — the parent is inserted by this map and was synthesized by the
 	/// converter (a tab-body grid or its Area card); it carries no <c>webName</c>, and its own entry says how to
 	/// create it.</description></item>
+	/// <item><description><c>"unknown"</c> — NEITHER this map nor the probed mobile template provides the
+	/// parent. Do not guess: inserting into it throws, and authoring it may duplicate something the template
+	/// owns under another name. This is a CONVERSION-RULES defect, not a page defect — a
+	/// <c>containers</c> mapping names a mobile container the target template does not have — so report the
+	/// parent name and stop rather than working around it.</description></item>
 	/// </list>
 	/// </summary>
 	/// <remarks>
-	/// Derived in ONE pass over the finished map (see <c>WebToMobileAnalysisService.StampParentSource</c>): the
-	/// parent is "authored here" exactly when some entry inserts an element of that name. It replaced a
-	/// <c>parentExistsOnTemplate</c> boolean that three separate retarget code paths each set for themselves, so
-	/// it was absent from an ORDINARY insert into a template-provided parent — verified on a real
+	/// Derived in ONE pass over the finished map (see <c>WebToMobileAnalysisService.StampParentSource</c>).
+	/// It replaced a <c>parentExistsOnTemplate</c> boolean that three separate retarget code paths each set for
+	/// themselves, so it was absent from an ORDINARY insert into a template-provided parent — verified on a real
 	/// <c>Leads_FormPage</c> guide, where <c>FloatingActionButton</c> carried the flag and <c>MainContainer</c>,
 	/// equally template-provided, did not. A caller applying the flag's rule literally therefore handled two
-	/// identical situations differently (ENG-95827). The name changed with the computation because the old one
-	/// over-claimed: the boolean was gated on the mobile template's node list, so it silently vanished when that
-	/// template could not be read, whereas "not created by this map" is decidable from the map alone and is the
-	/// question the caller actually has.
+	/// identical situations differently (ENG-95827).
+	/// <para>
+	/// "Not created by this map" is decidable from the map alone, but it is NOT the same question as "the
+	/// template provides it", and conflating the two is why <c>"unknown"</c> exists. The shipped rules reach
+	/// that state: <c>BlankPageTemplate</c> maps to <c>BlankMobilePageTemplate</c> with a
+	/// <c>MainContainer -&gt; MainContainer</c> container pair, but mobile blank is a STANDALONE root — a bare
+	/// <c>crt.Scaffold</c> — and <c>MainContainer</c> comes from <c>BaseMobileTemplate</c>, a different root it
+	/// does not derive from. Stamping <c>"template"</c> there would tell the caller the page already provides a
+	/// container that does not exist, and the insert would fail in the applier ("is not a container for other
+	/// items"). The retarget paths' own <c>RetargetTargetMissing</c> check does not cover it: a container-map
+	/// twin and the <c>MainContainer</c> fallback in <c>RelocateTargetFor</c> both produce a parent without
+	/// consulting it. So the template's node set is consulted here, and <c>"template"</c> is only claimed when
+	/// that set actually contains the parent — the check the old boolean did have.
+	/// </para>
 	/// </remarks>
 	[JsonPropertyName("parentSource")]
 	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
