@@ -21,6 +21,7 @@ using Clio.Command.McpServer;
 using Clio.Command.McpServer.Knowledge;
 using Clio.Command.McpServer.Resources;
 using Clio.Command.McpServer.Tools.MobilePageConverter;
+using Clio.Command.McpServer.Tools.MobilePageConverter.Legacy;
 using Clio.Command.PackageCommand;
 using Clio.Command.ProcessModel;
 using Clio.Command.RelatedPages;
@@ -620,6 +621,7 @@ public class BindingsModule {
 		services.AddTransient<ImportSchemaTool>();
 		services.AddTransient<PageSyncTool>();
 		services.AddTransient<MobilePageConversionGuideTool>();
+		services.AddTransient<ILegacyMobileSettingsReader, LegacyMobileSettingsReader>();
 		services.AddSingleton<IPageBodySamplingService, PageBodySamplingServiceImpl>();
 		services.AddTransient<GuidanceGetTool>();
 		services.AddTransient<KnowledgeManagementTools>();

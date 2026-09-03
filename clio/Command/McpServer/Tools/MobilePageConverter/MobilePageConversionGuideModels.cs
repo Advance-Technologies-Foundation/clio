@@ -4,6 +4,7 @@ using System.Collections.Generic;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using System.Text.Json.Serialization;
+using Clio.Command.McpServer.Tools.MobilePageConverter.Legacy;
 
 // Advisory contract for the `get-mobile-page-conversion-guide` MCP tool (ENG-89620).
 // The tool is REPORT-ONLY: it never builds a mobile page body and never writes to Creatio.
@@ -352,7 +353,7 @@ public sealed class MobilePageConversionGuide {
 	[JsonPropertyName("sourcePage")]
 	public string SourcePage { get; init; }
 
-	/// <summary>Detected source page type, e.g. <c>freedom-web</c> (future: other source types).</summary>
+	/// <summary>Detected source page type: <c>freedom-web</c> or <c>legacy-mobile-grid-page</c>.</summary>
 	[JsonPropertyName("sourceType")]
 	public string SourceType { get; init; }
 
@@ -576,6 +577,18 @@ public sealed class MobilePageConversionGuide {
 	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
 	public IReadOnlyDictionary<string, string> ResourceStrings { get; init; }
 
+	// ── Legacy mobile wizard source (ENG-95730) ────────────────────────
+	/// <summary>
+	/// Present ONLY when <see cref="SourceType"/> is <c>legacy-mobile-grid-page</c>: the facts about the classic
+	/// Mobile-wizard settings schema the guide was built from — contributing package layers, the title/body column
+	/// mapping, the column-property coverage table and the open decisions. This is the per-element report for a
+	/// legacy source; <see cref="ElementMap"/> then carries exactly two <c>merge</c> operations onto the template's
+	/// <c>FolderTreeActions</c> and <c>ListItem</c>. Null for a Freedom UI web source.
+	/// </summary>
+	[JsonPropertyName("legacySource")]
+	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+	public LegacyMobileSourceInfo LegacySource { get; init; }
+
 	// ── Guidance ──────────────────────────────────────────────────────
 	[JsonPropertyName("constraints")]
 	public IReadOnlyList<string> Constraints { get; init; } = [];
@@ -606,6 +619,16 @@ public sealed class MobilePageConversionGuideResponse {
 	[JsonPropertyName("sourceType")]
 	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
 	public string SourceType { get; init; }
+
+	/// <summary>
+	/// Which conversion mechanism produced the result — <c>freedom-web-analysis</c> for a Freedom UI web source,
+	/// <c>legacy-mobile-settings-converter</c> for a classic Mobile-wizard settings source — so a wrong dispatch is
+	/// visible rather than silent. Set on success and on a legacy classification refusal; null when the source
+	/// could not be read or was rejected before any mechanism ran.
+	/// </summary>
+	[JsonPropertyName("conversionMechanism")]
+	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+	public string ConversionMechanism { get; init; }
 
 	[JsonPropertyName("guide")]
 	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]

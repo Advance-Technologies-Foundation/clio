@@ -500,6 +500,23 @@ When changing the catalog data source, refer to:
   creatio-ui team (URL pattern, JSON shape, GA-tag trigger, git push into
   `static-files-mcp`, `latest/ComponentRegistry.json` semver gate).
 
+## Mobile page conversion guide (`get-mobile-page-conversion-guide`)
+
+The tool (`Tools/MobilePageConverter/MobilePageConversionGuideTool.cs`, feature flag `mobile-page-converter`)
+dispatches on the detected source type and reports the mechanism it ran in `conversionMechanism`:
+
+| sourceType | Detection | Analysis | Mechanism label |
+|---|---|---|---|
+| `freedom-web` | schema-type `web` | `WebToMobileAnalysisService.Analyze` (elementMap built from the merged web bundle + rules) | `freedom-web-analysis` |
+| `legacy-mobile-grid-page` | schema-type `unknown` + name contains `GridPageSettings`, body confirmed `settingsType: GridPage` | `Legacy/LegacyMobileListAnalysisService.Analyze` over the package-merged settings read by `Legacy/LegacyMobileSettingsReader` | `legacy-mobile-settings-converter` |
+
+A legacy RECORD settings schema (`RecordPageSettings`, ENG-95731) and any other source are rejected in
+`RejectUnsupportedSourceType`. The legacy guide is deliberately lean: the two `elementMap` merges the Mobile designer
+itself writes for a generated list page (`FolderTreeActions` bound to the entity, `ListItem` row), the two data-section
+diffs, and `guide.legacySource` (column mapping, contributing package layers, coverage table, decisions, recorded
+divergences from the mobile runtime converter). Embedded Freedom UI override sections are only classified and reported
+(ENG-95733). Both paths share the same response contract, feature flag, guidance article and skill.
+
 ## Workspace-scoped tools
 
 For tools that operate on a local workspace:

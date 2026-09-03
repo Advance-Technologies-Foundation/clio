@@ -1,0 +1,36 @@
+{
+	"listItemValues": {
+		"body": [
+			{ "value": "$PDS_Account" },
+			{ "value": "$PDS_PaymentAmount" }
+		],
+		"title": "$PDS_Number",
+		"icon": null
+	},
+	"viewModelConfigDiff": [
+		{
+			"operation": "merge",
+			"path": [ "attributes", "Items", "viewModelConfig", "attributes" ],
+			"values": {
+				"PDS_Account": { "modelConfig": { "path": "PDS.Account" } },
+				"PDS_PaymentAmount": { "modelConfig": { "path": "PDS.PaymentAmount" } },
+				"PDS_Number": { "modelConfig": { "path": "PDS.Number" } },
+				"PDS_Id": { "modelConfig": { "path": "PDS.Id" } }
+			}
+		}
+	],
+	"modelConfigDiff": [
+		{
+			"operation": "merge",
+			"path": [ "dataSources", "PDS", "config" ],
+			"values": {
+				"attributes": {
+					"Account": { "path": "Account" },
+					"PaymentAmount": { "path": "PaymentAmount" },
+					"Number": { "path": "Number" }
+				},
+				"entitySchemaName": "Order"
+			}
+		}
+	]
+}

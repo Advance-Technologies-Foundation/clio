@@ -3,6 +3,7 @@ description: Creatio OData $filter must address a lookup column by its navigatio
 applies-to:
   - clio/Command/Branding/SetBackgroundImageCommand.cs
   - clio.tests/Command/SetBackgroundImageCommandTests.cs
+  - clio/Command/McpServer/Tools/MobilePageConverter/MobileSectionRegistrationProbe.cs
 ticket: ENG-92981
 date: 2026-08-19
 ---
@@ -23,3 +24,8 @@ permission problem rather than a syntax one and sends you looking for a missing 
 mistake (a navigation path in an insert body) is worse: the property is ignored, the row is created with
 a null lookup, and the request succeeds. `SetBackgroundImageCommandTests` pins the read form; nothing
 pins the write form, so re-check the payload spelling by hand when adding an OData insert.
+
+The same trap bit `MobileSectionRegistrationProbe` (ENG-95730): its `SysModuleInWorkplace?$filter=SysModuleId eq …`
+failed on the server, and because the probe's `Query()` returns an empty array for any non-`value` response, it
+silently reported "no workplaces" for every section. Both probes now filter through `SysModule/Id` and
+`SysModuleEntity/Id`.
