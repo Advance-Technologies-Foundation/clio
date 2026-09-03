@@ -196,16 +196,16 @@ public sealed class SettingsBootstrapServiceTests {
 		Settings persisted = JsonConvert.DeserializeObject<Settings>(persistedContent);
 
 		// Assert
-		result.Settings.Autoupdate.Should().BeNull(
-			because: "the legacy false must be cleared so GetAutoupdate() falls back to the enabled opt-out default");
+		result.Settings.Autoupdate.Clio.Enabled.Should().BeTrue(
+			because: "the legacy false must be cleared so the enabled opt-out default applies");
 		result.Report.RepairsApplied.Should().ContainSingle(repair => repair.Code == "autoupdate-legacy-default-reset",
 			because: "the migration must surface that auto-update was re-enabled so the user is informed");
-		persisted.Autoupdate.Should().BeNull(
-			because: "the cleared value must be persisted — NullValueHandling.Ignore drops the key entirely");
-		persisted.SettingsVersion.Should().Be(2,
+		persisted.Autoupdate.Clio.Enabled.Should().BeTrue(
+			because: "the repaired clio policy must be persisted as enabled");
+		persisted.SettingsVersion.Should().Be(3,
 			because: "the settings version must be stamped so the one-time migration never runs again");
-		persistedContent.Should().NotContain("Autoupdate",
-			because: "a null Autoupdate is omitted from the file, restoring the pristine default state");
+		persistedContent.Should().Contain("\"autoupdate\"",
+			because: "the scalar setting is replaced by the scheduled policy object");
 	}
 
 	[Test]
@@ -232,9 +232,9 @@ public sealed class SettingsBootstrapServiceTests {
 		Settings persisted = JsonConvert.DeserializeObject<Settings>(persistedContent);
 
 		// Assert
-		result.Settings.Autoupdate.Should().BeFalse(
+		result.Settings.Autoupdate.Clio.Enabled.Should().BeFalse(
 			because: "once the file is at the current settings version the migration must not touch a deliberate opt-out");
-		persisted.Autoupdate.Should().BeFalse(
+		persisted.Autoupdate.Clio.Enabled.Should().BeFalse(
 			because: "the deliberate --disable must survive bootstrap so 'clio autoupdate --disable' is not silently broken");
 		result.Report.RepairsApplied.Should().BeEmpty(
 			because: "no migration should run when the settings version is already current");
@@ -281,10 +281,10 @@ public sealed class SettingsBootstrapServiceTests {
 		JArray persistedRange = (JArray)JObject.Parse(persistedContent)["deploy-creatio-defaults"]!["site-port-range"]!;
 
 		// Assert
-		persisted.SettingsVersion.Should().Be(2,
+		persisted.SettingsVersion.Should().Be(3,
 			because: "new installs must be born at the current settings version so the legacy migration never runs for them");
-		result.Settings.Autoupdate.Should().BeNull(
-			because: "a fresh file has no Autoupdate key, so auto-update stays at the enabled opt-out default");
+		result.Settings.Autoupdate.Clio.Enabled.Should().BeTrue(
+			because: "a fresh file has no autoupdate key, so the enabled opt-out default applies");
 		persisted.DeployCreatioDefaults.Should().NotBeNull(
 			because: "fresh installations must visibly persist deploy-creatio-defaults in appsettings.json");
 		persisted.DeployCreatioDefaults.SitePortRange.Should().Equal(new[] { 40100, 40199 },
@@ -321,7 +321,7 @@ public sealed class SettingsBootstrapServiceTests {
 		result.Report.RepairsApplied.Should().ContainSingle(
 			repair => repair.Code == "deploy-creatio-site-port-range-added",
 			because: "the version-2 migration should report the newly materialized automatic range");
-		persisted.SettingsVersion.Should().Be(2,
+		persisted.SettingsVersion.Should().Be(3,
 			because: "the upgraded file must be stamped so the migration runs once");
 		persisted.DeployCreatioDefaults.DbServerName.Should().Be("postgres-local",
 			because: "upgrading the range must preserve the configured database default");
