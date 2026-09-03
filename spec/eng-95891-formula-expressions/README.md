@@ -4,7 +4,10 @@ Analysis and implementation plan for
 [ENG-95891](https://creatio.atlassian.net/browse/ENG-95891) (component *bpms tools*; split from ENG-91844;
 blocks ENG-91853 and ENG-95889; relates to ENG-92729).
 
-Eight documents, written to be attached to the ticket. Read them in this order.
+The eight ANALYSIS documents below are the ones written to be attached to the ticket; read them in
+this order. The folder also holds the manual-test tier (prompt, cases, four run records with their
+manifests, the summary and the verification note), the save-gate probe and the runbook - evidence rather
+than analysis, and not indexed here.
 
 | # | Document | What it settles |
 |---|---|---|
@@ -28,11 +31,19 @@ registry**: no lambdas, no generics, no namespace-qualified names, case-sensitiv
 library in scope is `FormulaUtilities` — **four functions** (`Mod`, `Min`, `Max`, `Avg`) — plus
 `DateTimeUtilities` (24 statics). `Terrasoft.Core/Formula/` is the *business-rules* engine and is a decoy.
 
-**2. We do not write a validator — we call one.**
-`ScriptEngine.CreateSession()` is public, and `IScriptSession.Validate(expression, resultType)` produces
-exactly the ticket's three outcomes, **naming the offending identifier** on a bad reference. For conditions,
-the seam is `FlowSchemaGenerator.Generate()` — *not* `GetProcessValidationResult`, which is blind to flows,
-and *not* `TryGenerate`, whose result object is `internal`.
+**2. We do not write a validator at all — the platform already runs one.**
+This point said something else and it was wrong, so it is replaced rather than hedged: it claimed the
+condition seam is `FlowSchemaGenerator.Generate()` and *not* `GetProcessValidationResult`, "which is blind
+to flows". Measured on a stand with the package's own guards built out: `ParameterValuesValidationRule`
+opens by running the flow-schema generator itself, and generation builds the synthetic Boolean
+`Source = Script` parameter for every flow carrying condition text — so `GetProcessValidationResult`
+refuses a bad condition at save, and the reasoning that concluded otherwise had read only the DESIGNER's
+adapter, which deliberately does not attach that parameter. That measurement is what let the package's
+827-line formula validator be deleted; see
+[save-gate-probe](eng-95891-formula-expressions-save-gate-probe.md) and
+`spec/adr/adr-collapse-formula-validation-onto-platform-rule.md`. `ScriptEngine.CreateSession()` and
+`IScriptSession.Validate` are still public and still the right call for a live check, but nothing in the
+shipped package validates a formula a second time.
 
 **3. `DisplayValue` is a render cache, so there is no display-text generator to build.**
 The designer re-derives it unconditionally on every properties-page open and discards what was persisted —

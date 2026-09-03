@@ -6,11 +6,13 @@
     "name": "krestov-test",
     "core": "10.0.731.0",
     "crtProcessBuilder": "1.4.0.45",
+    "crtProcessBuilderDeleteGuardReverifiedAt": "1.4.0.47",
     "compiled": true
   },
   "archiveSha256": "4571CDAFA5014BBF7324639432475ECA0C72B2704706CF908BF83D7A9FF6B3F4",
+  "archiveSha256AtReverification": "1A3D2EC082F7F7FF0C83EBA871356DDBC091C9CC787619327DCEB942E3200946",
   "commits": {
-    "clio": "f9a096155",
+    "clio": "a1307186108bd5210bca906f31c715880cc69f5a",
     "crtProcessBuilder": "b8f2d457f9b57c3f495b3156c35257a647e5f2d1"
   },
   "driver": "mcp-server over stdio JSON-RPC, sequential; writes via clio-run / clio-run-destructive",

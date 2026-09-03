@@ -1,4 +1,4 @@
-# ENG-95891 — manual run, 2026-09-03, at CrtProcessBuilder 1.4.0.45
+# ENG-95891 — manual run, 2026-09-03, at CrtProcessBuilder 1.4.0.45, re-verified at 1.4.0.47
 
 **Why this run exists.** The package stopped validating formulas itself, so what a refusal SAYS
 changed. Every earlier run (2026-09-01 R1/R2 at 1.4.0.18, 2026-09-02 at 1.4.0.37) recorded the
@@ -19,7 +19,7 @@ here substitutes for it.
 | | |
 |---|---|
 | Stand | `krestov-test`, core 10.0.731.0 |
-| Package installed | **CrtProcessBuilder 1.4.0.45**, via `install-process-builder`, confirmed with `list-packages` |
+| Package installed | **CrtProcessBuilder 1.4.0.45** for the six cases below, via `install-process-builder`, confirmed with `list-packages`. The archive then moved twice for review fixes; see "What moved after this run" |
 | Compiled | yes — the install log carries `Compiling configuration dll` → `Configuration build finished`, then the health probe answered. For a source-only package "installed" and "compiled" are different states, and no database read distinguishes them |
 | clio | `feature/ENG-95891-formula-expressions`, built Release/net10.0 |
 | Archive | SHA-256 `4571CDAFA5014BBF7324639432475ECA0C72B2704706CF908BF83D7A9FF6B3F4`, from package repo `b8f2d45` |
@@ -42,6 +42,24 @@ theirs. This is a deviation from the prompt's literal naming; recorded rather th
 | TC-B1 fractional into a whole number | **PASS** | refused: `Process validation failed: Amount [Error while executing expression "1.5m": Formula value error: Cannot convert type "Decimal" to "Int32"]`. `Amount` read back with **no source at all** — nothing half-applied. The same request as `1 + 1` then succeeded and stored `1 + 1` |
 | TC-B2 depends on something absent | **PASS** | two routes, both refused, `Result` untouched (`source=None`) after both. As a `processParameter` source: `Process parameter 'Total' was not found.` — clio's own pre-check, before anything is written. As an expression over a UId that is not in the process: `Process validation failed: Invalid value for the parameter "Result". It references the process parameter 11111111-1111-1111-1111-111111111111, which is not in this process. Add the parameter first, or correct the reference.` |
 | TC-B3 a function that does not exist | **PASS** | `1 + 2` stored. The verbatim `System.Math.Abs(-1)` refused: `Process validation failed: Sum [Error while executing expression "System.Math.Abs(-1)": Formula value error: Parameter "System" not found]` |
+
+## What moved after this run, and what was re-measured
+
+The archive went to **1.4.0.46** and then **1.4.0.47**, both for one review finding: the
+parameter-delete guard's token walk. Nothing else in the package changed, so the six cases below still
+describe the shipped behaviour — but that is an argument, and the guard itself is not covered by any of
+them, so it was measured directly at **1.4.0.47** rather than reasoned about:
+
+```
+setFlowCondition [#[Parameter:{59bd327d-…}]#] > 0   -> stored, kind=conditional
+removeParameter Guard   -> REFUSED: "Cannot remove process parameter 'Guard' because it is
+                           still used by condition on flow 'SequenceFlow_Task1_EndA'."
+removeParameter Other   -> applied
+read back               -> only Guard remains, condition intact
+```
+
+That is the direction the unit tests cannot cover: they pin that poisoned text is NOT counted as a
+usage, while this proves the rewritten walk still FINDS a genuine reference through the whole stack.
 
 ## What this run establishes that the earlier ones could not
 
