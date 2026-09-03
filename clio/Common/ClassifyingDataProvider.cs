@@ -39,15 +39,6 @@ public sealed class ClassifyingDataProvider : IDataProvider {
 	/// <summary>Cap on the server-controlled detail embedded in an exception message.</summary>
 	private const int MaxFailureDetailLength = 300;
 
-	/// <summary>
-	/// Stand-in detail for a failure the provider reported with no text at all. <c>ConvertBatchResponse</c>
-	/// sets <c>ErrorMessage</c> to <see cref="string.Empty"/> when the batch carries no
-	/// <c>ResponseStatus</c>, and <c>new ExecuteResponse()</c> leaves it <see langword="null"/>, so
-	/// without this the message would end at a bare colon and name no cause.
-	/// </summary>
-	private const string UnreportedFailureDetail =
-		"the environment reported an unsuccessful response without an error message.";
-
 	private readonly IDataProvider _inner;
 
 	/// <summary>Wraps <paramref name="inner"/> so its unsuccessful responses become exceptions.</summary>
@@ -220,29 +211,22 @@ public sealed class ClassifyingDataProvider : IDataProvider {
 	/// what issue #1333 needs, because this string reaches an AI agent's context through the MCP envelope.
 	/// A detail the fence reduces to nothing leaves the message naming only the operation.
 	/// </remarks>
-	private static string GenericMessage(string operation, string detail) {
-		//UnreportedFailureDetail is clio's OWN sentence, substituted when the provider reported no text at
-		//all. Fencing it would present clio's words as observed server data, which is misleading, so only
-		//text the server actually supplied goes through the fence.
-		if (string.Equals(detail, UnreportedFailureDetail, StringComparison.Ordinal)) {
-			return $"Failed {operation}: {detail}";
-		}
-		string fenced = SensitiveErrorTextRedactor.RedactUntrustedOrNull(detail);
-		return fenced is null ? $"Failed {operation}." : $"Failed {operation}: {fenced}";
-	}
+	private static string GenericMessage(string operation, string detail) =>
+		ServerReportedFailureText.Describe(detail).ComposeMessage(operation);
 
 	/// <summary>
-	/// Normalizes a server-controlled detail before it is embedded in an exception message, and before it
-	/// is classified. Delegates the character neutralization and the length cap to the shared
-	/// <see cref="TextUtilities.SanitizeForDisplay"/>; an absent detail becomes
-	/// <see cref="UnreportedFailureDetail"/> rather than leaving the message ending at a colon.
+	/// Normalizes a server-controlled detail before it is classified. Delegates the character
+	/// neutralization and the length cap to the shared <see cref="TextUtilities.SanitizeForDisplay"/>, and
+	/// returns <see langword="null"/> - never a stand-in sentence - when the provider reported no text, so
+	/// that "the server said nothing" stays distinguishable from "the server said this" all the way to
+	/// <see cref="ServerReportedFailureText"/>.
 	/// </summary>
 	private static string Sanitize(string detail) {
 		if (string.IsNullOrWhiteSpace(detail)) {
-			return UnreportedFailureDetail;
+			return null;
 		}
 		string cleaned = TextUtilities.SanitizeForDisplay(detail, MaxFailureDetailLength).Trim();
-		return cleaned.Length == 0 ? UnreportedFailureDetail : cleaned;
+		return cleaned.Length == 0 ? null : cleaned;
 	}
 
 	/// <summary>Names the schemas a batch touches, for the diagnostic.</summary>

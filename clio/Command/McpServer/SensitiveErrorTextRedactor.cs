@@ -8,8 +8,11 @@ using Clio.Common;
 namespace Clio.Command.McpServer;
 
 /// <summary>
-/// Scrubs sensitive tokens out of an exception-derived message before it is surfaced to the MCP
-/// client. The MCP tool result is copied verbatim into the model/host transcript and is frequently
+/// Scrubs sensitive tokens out of an exception-derived message before it is surfaced to a caller -
+/// the MCP client, and since issue #1333 the CLI output and the log as well (it is called from
+/// <c>Clio.Common.ClassifyingDataProvider</c>, <c>SysSettingsManager</c> and
+/// <c>ExceptionReadableMessageExtension</c>). The type still lives under <c>Command/McpServer</c>; moving
+/// it to <c>Clio.Common</c> is a 90-file mechanical change deliberately left out of this pull request. The MCP tool result is copied verbatim into the model/host transcript and is frequently
 /// logged or forwarded to a third-party LLM, so inner-most messages from the data/HTTP/DB layers —
 /// which routinely carry absolute file paths, full request URIs (including the target host for
 /// <c>*-by-credentials</c> flows), connection-string hosts, and credential values — must not leak.
@@ -75,6 +78,14 @@ internal static partial class SensitiveErrorTextRedactor {
 		RegexOptions.CultureInvariant, RegexTimeoutMilliseconds)]
 	private static partial Regex HostPortRegex();
 
+	// A bare e-mail address. Not covered by CredentialPairRegex (no key= prefix) nor by UriRegex (no
+	// scheme), so platform prose like "Validation failed for user john.doe@acme.com" carried a real
+	// person's address into an MCP envelope and into any log the operator pastes into a ticket. The local
+	// part deliberately excludes a leading dot so a sentence-ending "word.name@host" still matches whole.
+	[GeneratedRegex(@"[A-Za-z0-9._%+\-]+@[A-Za-z0-9](?:[A-Za-z0-9\-]*[A-Za-z0-9])?(?:\.[A-Za-z0-9](?:[A-Za-z0-9\-]*[A-Za-z0-9])?)+",
+		RegexOptions.CultureInvariant, RegexTimeoutMilliseconds)]
+	private static partial Regex EmailRegex();
+
 	/// <summary>Redacts every entry of <paramref name="texts"/> under the same rules as <see cref="Redact"/>.</summary>
 	/// <param name="texts">The raw, possibly-sensitive lines.</param>
 	/// <returns>The redacted lines in input order, safe to surface to the MCP client.</returns>
@@ -83,7 +94,10 @@ internal static partial class SensitiveErrorTextRedactor {
 	}
 
 	// Any bracketed token that starts with the fence name, whatever case or trailing words it carries.
-	[GeneratedRegex(@"\[\s*untrusted-source-text[^\]]*\]",
+	// The bracket is OPTIONAL: a payload writing the bare token (untrusted-source-text end) with no
+	// bracket left the delimiter word intact, and a reader - human or model - that treats the words as
+	// the delimiter is exactly who the fence is for.
+	[GeneratedRegex(@"\[?\s*untrusted-source-text(?:[^\]]*\]|\s*(?:begin|end))",
 		RegexOptions.IgnoreCase | RegexOptions.CultureInvariant, RegexTimeoutMilliseconds)]
 	private static partial Regex FenceTokenRegex();
 
@@ -188,6 +202,8 @@ internal static partial class SensitiveErrorTextRedactor {
 			result = BearerTokenRegex().Replace(result, RedactedValue);
 			// Scheme-less endpoints (host:port / ip:port) before the path pass so the host authority is
 			// gone before any trailing path on the same token is considered.
+			// Before host:port, whose domain pattern would otherwise nibble the address's own domain.
+			result = EmailRegex().Replace(result, RedactedValue);
 			result = HostPortRegex().Replace(result, RedactedUri);
 			result = WindowsPathRegex().Replace(result, RedactedPath);
 			result = PosixPathRegex().Replace(result, RedactedPath);

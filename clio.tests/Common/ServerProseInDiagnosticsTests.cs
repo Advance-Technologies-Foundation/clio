@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Security.Authentication;
 using ATF.Repository;
 using ATF.Repository.Providers;
+using Clio;
 using Clio.Command;
 using Clio.Common;
 using FluentAssertions;
@@ -214,5 +215,141 @@ public sealed class ServerProseInDiagnosticsTests {
 			because: "a failure that arrives without an exception must not leave the category unset");
 		result.CorrelationId.Should().NotBeNullOrWhiteSpace(
 			because: "every failure envelope carries the correlation ID, whatever shape the failure had");
+	}
+
+	[Test]
+	[Description("The readable-message rendering used by the CLI prints the carrier's OWN composed diagnostic, not its inner parser fault - the InvalidOperationException arm preferred the inner message, so an expired password printed parser prose instead of the both-causes diagnosis.")]
+	public void ReadableMessage_Should_Render_The_Carriers_Own_Message_Not_The_Inner() {
+		// Arrange
+		DataProviderFailureException exception = new(
+			"Failed reading sys-setting 'SchemaNamePrefix': the environment answered with a non-JSON page.",
+			new InvalidOperationException(
+				"Unexpected character encountered while parsing value: < token=eyJhbGciOiJIUzI1NiJ9.abcdefgh.ijklmnop"),
+			serverDetail: "<html>NuiLogin admin@example.com</html>");
+
+		// Act
+		string rendered = exception.GetReadableMessageException(debug: false);
+
+		// Assert
+		rendered.Should().Be(exception.Message,
+			because: "the composed diagnostic IS the answer; the inner parser fault names no cause the operator can act on");
+		foreach (string fragment in ForbiddenFragments) {
+			rendered.Should().NotContain(fragment,
+				because: "the non-debug CLI output must not carry server-influenced text");
+		}
+	}
+
+	[Test]
+	[Description("A proven credential rejection renders its fixed sentence on the CLI, with no server text, in non-debug mode.")]
+	public void ReadableMessage_Should_Render_The_Fixed_Sentence_For_A_Session_Rejection() {
+		// Arrange
+		SessionRejectedException exception = new(
+			"Authentication failed while reading sys-setting: The password for the registered user has expired.",
+			HostileAuthenticationError);
+
+		// Act
+		string rendered = exception.GetReadableMessageException(debug: false);
+
+		// Assert
+		rendered.Should().Contain("The password for the registered user has expired.",
+			because: "the fixed local sentence is the diagnosis");
+		foreach (string fragment in ForbiddenFragments) {
+			rendered.Should().NotContain(fragment,
+				because: "the excerpt is debug-only, and even there it is scrubbed and fenced");
+		}
+	}
+
+	[Test]
+	[Description("Debug rendering surfaces the excerpt an operator turned --debug on for, but scrubbed and fenced: the token, address, bidi override and instruction-shaped sentence never appear raw, and the inner chain is sanitized too.")]
+	public void ReadableMessage_Debug_Should_Fence_The_Excerpt_And_The_Inner_Chain() {
+		// Arrange
+		SessionRejectedException exception = new(
+			"Authentication failed while reading sys-setting: The password for the registered user has expired.",
+			HostileAuthenticationError,
+			new InvalidOperationException(HostileGenericError));
+
+		// Act
+		string rendered = exception.GetReadableMessageException(debug: true);
+
+		// Assert
+		rendered.Should().Contain("server detail:",
+			because: "exception.ToString() never showed ServerDetail at all - the one thing --debug is for");
+		rendered.Should().Contain("untrusted-source-text begin",
+			because: "the excerpt is marked as observed data, not as an instruction");
+		rendered.Should().Contain("InvalidOperationException",
+			because: "the inner chain is still visible for diagnosis, by type");
+		//At debug verbosity the CONTRACT is different from the non-debug one, and deliberately so: the
+		//operator asked to see what the server said. Secret VALUES are still removed outright; prose the
+		//attacker chose may appear, but only inside the fence that names it as observed data - a reader
+		//(human or model) is then told what it is, which is the most that can be done for text whose
+		//whole purpose is to be read.
+		foreach (string secret in (string[])["eyJhbGciOiJIUzI1NiJ9", "admin@example.com", "\u202E",
+				"\u2028", "https://internal.example.com/secret"]) {
+			rendered.Should().NotContain(secret,
+				because: "raw ToString() dumped every inner message unscrubbed, unfenced and uncapped");
+		}
+		rendered.Split("[untrusted-source-text begin]")[0].Should()
+			.NotContain("IGNORE PREVIOUS INSTRUCTIONS",
+				because: "attacker-chosen prose may only ever appear INSIDE the fence, never before it");
+		rendered.Should().Contain("[untrusted-source-text end]",
+			because: "an opened fence must be closed, or the marker proves nothing about where data stops");
+	}
+
+	[Test]
+	[Description("A proven session rejection whose operation label happens to contain a certificate-shaped operand stays an authentication failure: re-running the TLS-prose classifier over the composed message flipped it to Network.")]
+	public void SessionRejection_Should_Stay_Authentication_For_A_Certificate_Shaped_Operand() {
+		// Arrange
+		SessionRejectedException exception = new(
+			"Authentication failed while reading sys-setting 'SslCertificateThumbprint': "
+			+ "The password for the registered user has expired. Verify the environment credentials and retry.",
+			"5: Your password has expired.");
+
+		// Act
+		SysSettingFailure failure = SysSettingsCommand.CategorizeFailure(
+			exception, "reading sys-setting 'SslCertificateThumbprint'", "abc123def456");
+
+		// Assert
+		failure.Category.Should().Be(SysSettingErrorCategories.Authentication,
+			because: "the rejection was already PROVEN at the throw site; the operand name must not overturn it");
+		failure.Error.Should().StartWith("Authentication error",
+			because: "the caller-chosen operand leaked into the classifier through the composed message");
+	}
+
+	[Test]
+	[Description("An e-mail address in platform validation prose is redacted before the text is fenced, so a real person's address does not travel to an MCP envelope or a log.")]
+	public void Redaction_Should_Remove_An_Email_Address() {
+		// Arrange
+		IDataProvider sut = BuildFailing("Validation failed for user john.doe@acme.com on column 'Name'.");
+
+		// Act
+		Action act = () => sut.GetItems(BuildSelectQuery("SysSettings"));
+
+		// Assert
+		DataProviderFailureException exception =
+			act.Should().Throw<DataProviderFailureException>().Which;
+		exception.Message.Should().NotContain("john.doe@acme.com",
+			because: "an address is neither a key=value pair nor a URI, so no earlier rule caught it");
+		exception.Message.Should().Contain("Validation failed for user",
+			because: "redaction stays surgical - the reason an agent needs to self-correct survives");
+	}
+
+	[Test]
+	[Description("A provider failure that reported no text at all names the operation and says so, and clio's own sentence is not fenced as if the server had written it.")]
+	public void NoServerText_Should_Not_Be_Fenced_As_Observed_Data() {
+		// Arrange
+		IDataProvider sut = BuildFailing(string.Empty);
+
+		// Act
+		Action act = () => sut.GetItems(BuildSelectQuery("SysSettings"));
+
+		// Assert
+		DataProviderFailureException exception =
+			act.Should().Throw<DataProviderFailureException>().Which;
+		exception.Message.Should().Contain("without an error message",
+			because: "the absence of a cause is itself the report");
+		exception.Message.Should().NotContain("untrusted-source-text",
+			because: "presenting clio's own sentence as observed server data is misleading");
+		exception.Message.Should().Contain("SysSettings",
+			because: "naming the operation is what makes the failure attributable");
 	}
 }

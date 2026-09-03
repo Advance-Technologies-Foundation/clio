@@ -7,6 +7,9 @@ applies-to:
   - clio/Common/SessionRejectedException.cs
   - clio/Common/DataProviderFailureException.cs
   - clio/Command/SysSettingsCommand.cs
+  - clio/Command/McpServer/SensitiveErrorTextRedactor.cs
+  - clio/ExceptionReadableMessageExtension.cs
+  - clio/Common/ServerReportedFailureText.cs
 ticket: GH-1333
 date: 2026-09-03
 ---
@@ -15,10 +18,19 @@ date: 2026-09-03
 recognized authentication cause is named by one of the fixed sentences in
 `AuthenticationFailureClassifier.FixedAuthenticationDiagnostics`; the server text is used only to
 CHOOSE the sentence. The neutralized excerpt travels on `IServerDetailCarrier.ServerDetail`
-(`SessionRejectedException`, `DataProviderFailureException`) and has exactly one sink:
-`ILogger.WriteDebug`, which `ConsoleLogger` drops unless `--debug` was passed and which is silent in
-MCP server mode. The operation's correlation ID appears on both the failure envelope and that debug
-line, and is the only bridge between them.
+(`SessionRejectedException`, `DataProviderFailureException`) and reaches exactly one sink:
+`ILogger.WriteDebug`, which `ConsoleLogger` drops unless `--debug` was passed. The operation's
+correlation ID appears on both the failure envelope and that debug line, and is the only bridge
+between them.
+
+The scrub-and-fence applied at the `WriteDebug` call site is **load-bearing, not redundant**.
+`ConsoleLogger.WriteDebug` suppresses the console *drain* under MCP server mode, but it still
+`CaptureMessage`s into the per-flow buffer that `BaseTool` harvests into
+`CommandExecutionResult.Messages` — so "console-suppressed under MCP" does not mean "cannot reach an
+envelope". `ExceptionReadableMessageExtension` renders the same excerpt for the CLI and applies the
+same treatment, and it also renders a carrier's OWN message rather than an inner one: an
+`InvalidOperationException` arm that preferred `InnerException.Message` was printing the raw parser
+fault instead of the composed diagnosis.
 
 The single exception is a plain `Success == false` whose `ErrorMessage` is the platform's own
 validation prose ("Column 'Name' is required") — no fixed sentence can replace it without destroying

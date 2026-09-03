@@ -378,7 +378,13 @@ public class SysSettingsManager : ISysSettingsManager
 	/// <param name="operationLabel">The sys-settings operation, used in the diagnostic.</param>
 	/// <exception cref="AuthenticationException">Creatio rejected the credentials.</exception>
 	private static void ThrowIfSessionRejected(string rawResponse, string operationLabel) {
-		if (!AuthenticationFailureClassifier.IsAuthenticationFailureResponse(rawResponse)) {
+		//Capped BEFORE it is classified, which is what the classifier's own contract asks for: every rule
+		//in it is a regex scan, and a multi-megabyte login page (or a proxy page streaming an error) ran
+		//six of them over the whole body. The 1-second regex timeouts then fired and a
+		//RegexMatchTimeoutException escaped this method unhandled, so the operator was told "The Regex
+		//matching timed out" instead of being told the session was rejected.
+		string cappedResponse = TextUtilities.SanitizeForDisplay(rawResponse, MaxRejectedResponseDetailLength);
+		if (!AuthenticationFailureClassifier.IsAuthenticationFailureResponse(cappedResponse)) {
 			return;
 		}
 		//Issue #1333: the body is a login page or an ErrorCode:5 envelope - server-authored text that can
@@ -388,10 +394,10 @@ public class SysSettingsManager : ISysSettingsManager
 		//ServerDetail, which a handler writes at debug verbosity beside the correlation ID.
 		throw new SessionRejectedException(
 			$"Authentication failed while {operationLabel}: "
-			+ $"{AuthenticationFailureClassifier.DescribeAuthenticationCause(rawResponse)} "
+			+ $"{AuthenticationFailureClassifier.DescribeAuthenticationCause(cappedResponse)} "
 			+ "Verify the environment credentials (for an expired password, repair the registered profile) "
 			+ "and retry.",
-			TextUtilities.SanitizeForDisplay(rawResponse, MaxRejectedResponseDetailLength));
+			cappedResponse);
 	}
 
 	#region Methods: Public

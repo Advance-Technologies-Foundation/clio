@@ -206,6 +206,17 @@ public static class AuthenticationFailureClassifier {
 	/// <param name="serverText">The server-authored message or response body.</param>
 	/// <returns>A fixed local diagnostic naming the cause.</returns>
 	public static string DescribeAuthenticationCause(string serverText) {
+		try {
+			return DescribeAuthenticationCauseCore(serverText);
+		} catch (RegexMatchTimeoutException) {
+			//The input is server-controlled, so a pathological body can exhaust the 1-second budget. That
+			//is not a reason to replace the diagnosis with "The Regex matching timed out": the rejection
+			//itself is already proven by the caller, only its specific cause is unknown.
+			return FixedAuthenticationDiagnostics.UnknownAuthenticationCause;
+		}
+	}
+
+	private static string DescribeAuthenticationCauseCore(string serverText) {
 		if (string.IsNullOrWhiteSpace(serverText)) {
 			return FixedAuthenticationDiagnostics.UnknownAuthenticationCause;
 		}

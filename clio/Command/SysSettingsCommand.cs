@@ -369,7 +369,11 @@ namespace Clio.Command
 					return 1;
 				}
 			} catch (Exception ex) {
-				_logger.WriteError($"Error during set setting '{opts.Code}' value occured with message: {ex.Message}");
+				//Was `ex.Message` raw: on this path that message is composed by ClassifyingDataProvider or
+				//the write-path guard, so the raw form could carry server prose straight to the console
+				//(issue #1333) - and it named no cause and no recovery action either.
+				_logger.WriteError($"Error during set setting '{opts.Code}' value occured.");
+				ReportFailure(ex, "updating sys-setting");
 				return 1;
 			}
 			return 0;
@@ -590,6 +594,14 @@ namespace Clio.Command
 				WebException => Network(operationLabel, correlationId),
 				SocketException => Network(operationLabel, correlationId),
 				UnauthorizedAccessException => Authentication(operationLabel, correlationId),
+				//UNCONDITIONAL, and before the AuthenticationException arms. SessionRejectedException is
+				//only ever raised where the rejection was already PROVEN (a raw body carrying Creatio's
+				//auth-routing markers, or a corroborated provider verdict), so re-asking the question is
+				//not merely redundant - it is wrong. The classifier would run the TLS-prose regex over
+				//this exception's own message, and that message interpolates the operation label, which
+				//carries the caller's operand: reading sys-setting 'SslCertificateThumbprint' matches
+				///certificate/ and flipped a proven credential rejection to "Network error".
+				SessionRejectedException => Authentication(operationLabel, correlationId),
 				//A bare AuthenticationException is asked the same question as the wrapped ones: the framework
 				//raises this type for a TLS handshake too, and a bad server certificate reported as rejected
 				//credentials hides the only diagnosis that leads to the fix.
@@ -643,8 +655,12 @@ namespace Clio.Command
 		/// builds and the line an operator greps carry the SAME ID.
 		/// </summary>
 		/// <remarks>
-		/// Safe on the MCP path: <see cref="ConsoleLogger"/> suppresses every console write in MCP server
-		/// mode, because stdout there frames JSON-RPC.
+		/// The line cannot corrupt the stdio transport: <see cref="ConsoleLogger"/> suppresses the console
+		/// DRAIN in MCP server mode, because stdout there frames JSON-RPC. That is NOT the same as the
+		/// line being invisible to a caller - the logger still captures into the per-flow buffer
+		/// <c>BaseTool</c> harvests into <c>CommandExecutionResult.Messages</c> - which is why what goes
+		/// onto this channel is a fixed local diagnostic, and why the debug excerpt beside it is scrubbed
+		/// and fenced at the point of writing.
 		/// </remarks>
 		private SysSettingFailure ReportFailure(Exception ex, string operationLabel) {
 			SysSettingFailure failure = CategorizeAndLog(ex, operationLabel, _logger, _correlationIds);
@@ -676,20 +692,20 @@ namespace Clio.Command
 		/// Issue #1333. The excerpt is server-authored text, so it may never appear in <c>error</c>,
 		/// <c>cause</c>, the MCP envelope or the default log line - the fixed local diagnostic goes there
 		/// instead. It still has to be recoverable, because an operator who cannot see what Creatio
-		/// actually said cannot tell an expired password from a misconfigured proxy. This is the one sink
-		/// that is both debug-gated (<c>ConsoleLogger.WriteDebug</c> returns early unless
-		/// <c>--debug</c> was passed) and silent under MCP server mode, and the correlation ID is the
-		/// bridge from the reported failure to the line.
+		/// actually said cannot tell an expired password from a misconfigured proxy. The channel is
+		/// debug-gated (<c>ConsoleLogger.WriteDebug</c> returns early unless <c>--debug</c> was passed)
+		/// and its console drain is suppressed under MCP server mode, and the correlation ID is the bridge
+		/// from the reported failure to the line.
 		/// </remarks>
 		private void WriteServerDetailAtDebugVerbosity(Exception ex, string correlationId) {
 			string detail = UnwrapTransportFault(ex) is IServerDetailCarrier carrier
 				? carrier.ServerDetail
 				: null;
-			//Scrubbed and fenced even here. The excerpt reaching this line is only control-character
-			//normalized and length-capped, so a bearer token, a target URI or a credential pair inside it
-			//is still intact - and ConsoleLogger.WriteDebug CAPTURES into the per-flow buffer that
-			//BaseTool harvests into CommandExecutionResult.Messages, so "console-suppressed under MCP" is
-			//not the same as "cannot reach an envelope".
+			//Scrubbed and fenced even here, and that is load-bearing rather than belt-and-braces:
+			//ConsoleLogger.WriteDebug suppresses the console DRAIN under MCP server mode but still
+			//CAPTURES into the per-flow buffer BaseTool harvests into CommandExecutionResult.Messages. The
+			//excerpt reaching this line is only control-character normalized and length-capped, so a
+			//bearer token, a target URI or a credential pair inside it would otherwise be intact.
 			string safeDetail = SensitiveErrorTextRedactor.RedactUntrustedOrNull(detail);
 			if (safeDetail is null) {
 				return;
@@ -704,14 +720,15 @@ namespace Clio.Command
 		/// <remarks>
 		/// The prose is fenced and scrubbed rather than dropped (issue #1333): it is the platform's own
 		/// validation text, so no fixed sentence can replace it, but it reaches an agent's context through
-		/// the MCP envelope and must therefore be marked as observed data.
+		/// the MCP envelope and must therefore be marked as observed data. Composition is shared with
+		/// <see cref="ClassifyingDataProvider"/> through
+		/// <see cref="ServerReportedFailureText.Describe"/>, so the two cannot drift.
 		/// </remarks>
 		private SysSettingFailure ReportProviderFailure(string serverMessage, string operationLabel) {
-			string fenced = SensitiveErrorTextRedactor.RedactUntrustedOrNull(serverMessage);
-			string cause = fenced ?? "The environment reported an unsuccessful response without a message.";
+			ServerReportedFailureText described = ServerReportedFailureText.Describe(serverMessage);
 			SysSettingFailure failure = new(
-				fenced is null ? $"Failed {operationLabel}." : cause,
-				SysSettingErrorCategories.ProviderFailure, cause,
+				described.ComposeMessage(operationLabel),
+				SysSettingErrorCategories.ProviderFailure, described.Cause,
 				SysSettingFailureTexts.ProviderFailureRecovery, _correlationIds.New());
 			_logger.WriteError(DescribeFailureForLog(failure));
 			return failure;
