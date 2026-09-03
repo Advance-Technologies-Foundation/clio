@@ -15,7 +15,7 @@ date: 2026-09-01
 **What is true** — the Change access rights element (`changeAccessRights` /
 `ChangeAdminRightsUserTask`) has **no output parameters**. Nothing downstream can branch on whether
 permissions changed, and the runtime writes no error or log an agent can read back. Its runtime
-silently does nothing in three cases, and only ONE of them is refused when the process is built:
+silently does nothing in three cases, TWO of which are refused when the process is built:
 
 | Configuration | Refused at build? |
 |---|---|
@@ -30,8 +30,9 @@ caller can see reports success.
 The opposite state is NOT in that table and is far more dangerous: an element with **NO record filter
 at all** never enters the runtime's filter block, so its query runs UNFILTERED and the grant or revoke
 lands on EVERY record of the target object. That query also sets `UseAdminRights = false`, so the radius
-is every row in the table rather than the rows the caller can see. Nothing refuses it and nothing warns
-it. "Empty filter" is therefore an ambiguous phrase and is deliberately avoided in the shipped text —
+is every row in the table rather than the rows the caller can see. The PLATFORM neither refuses nor warns
+it — but clio's post-operation read-back does, loudly and specifically
+(`AccessRightsBlockExpectation.BuildNoFilterWarning`), which is the only signal a caller gets. "Empty filter" is therefore an ambiguous phrase and is deliberately avoided in the shipped text —
 the two states have opposite blast radius, and reading one by analogy with the other inverts both.
 
 **Why it is not enforced** — the server's `EnsureConfiguresSomething`

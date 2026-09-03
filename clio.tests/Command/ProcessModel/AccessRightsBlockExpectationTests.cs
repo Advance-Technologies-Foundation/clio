@@ -161,7 +161,7 @@ public sealed class AccessRightsBlockExpectationTests {
 	}
 
 	[Test]
-	[Description("Reports an element saved with no record filter: it matches no records and changes nothing, which is the first configuration the docs list as building green and doing nothing.")]
+	[Description("Reports an element saved with NO record filter: the runtime never enters its filter block, so the query runs unfiltered and the element acts on EVERY record of the object - the widest configuration it can be in, and one nothing refuses.")]
 	public void WithoutRecordFilter_ShouldReportAnElementWithNoFilter() {
 		// Arrange
 		DescribedElement element = Element("Grant", "{\"object\":\"Order\"}");
@@ -177,7 +177,7 @@ public sealed class AccessRightsBlockExpectationTests {
 	}
 
 	[Test]
-	[Description("Reports a filter that narrows nothing. It is NOT the same state as an absent filter - an absent filter matches no records, a conditionless one matches every record - but both need reporting, so both appear here and the WARNING is what distinguishes them.")]
+	[Description("Reports a filter that narrows nothing. It is NOT the same state as an absent filter - a conditionless filter takes the runtime's 'filters empty' exit and changes nothing, while an ABSENT one acts on every record - but both need reporting, so both appear here and the WARNING is what distinguishes them.")]
 	public void WithoutRecordFilter_ShouldAlsoReportAConditionlessFilter() {
 		// Arrange
 		DescribedElement element = Element("Grant", "{\"object\":\"Order\"}");
@@ -247,8 +247,8 @@ public sealed class AccessRightsBlockExpectationTests {
 	}
 
 	[Test]
-	[Description("A batch whose only operations are setFilter/clearFilter names the elements it re-filtered. Those carry no accessRights block, so every other check skips them - yet clearFilter is what moves an element from narrowing to acting on EVERY record, and the guard used to return before reading anything back.")]
-	public void FilterTouched_ShouldNameElementsReFilteredWithoutABlock() {
+	[Description("Only clearFilter is collected. It carries no accessRights block, so every other check skips it - yet it is what moves an element from narrowing to acting on EVERY record, and the guard used to return before reading anything back. setFilter is deliberately NOT collected: it always supplies an object, so it can only leave the element narrowing, or conditionless which the package refuses at build - checking it would put an extra whole-schema describe on the most common modify shape to look for a state that cannot occur.")]
+	public void FilterTouched_ShouldNameOnlyElementsWhoseFilterWasCleared() {
 		// Arrange
 		const string operations = """
 			[ { "op": "clearFilter", "elementName": "GrantRights" },
@@ -260,9 +260,10 @@ public sealed class AccessRightsBlockExpectationTests {
 		IReadOnlyList<string> touched = AccessRightsBlockExpectation.FilterTouched(operations);
 
 		// Assert
-		touched.Should().BeEquivalentTo(["GrantRights", "Other"],
-			because: "both filter operations changed which records their element acts on, while the setElement "
-				+ "carrying no accessRights block is not this check's business");
+		touched.Should().BeEquivalentTo(["GrantRights"],
+			because: "clearFilter is the only operation that can leave an element with NO record filter, which is "
+				+ "the state that acts on every record. The setFilter supplied an object so its element still "
+				+ "narrows, and the setElement carrying no accessRights block is not this check's business");
 	}
 
 	[Test]

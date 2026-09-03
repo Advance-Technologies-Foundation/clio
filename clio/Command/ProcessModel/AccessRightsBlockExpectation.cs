@@ -328,10 +328,15 @@ public static class AccessRightsBlockExpectation {
 	/// the surface offers, because clearing the filter moves the element from narrowing to acting on EVERY
 	/// record. Naming them here lets the filter-state check cover them; they are NOT added to the
 	/// block-landed check, which would accuse a payload that never sent a block.</para>
+	/// <para>Only <c>clearFilter</c> qualifies. A successful <c>setFilter</c> always supplied an <c>object</c>,
+	/// so it can only leave the element NARROWING — or conditionless, which the current package refuses at
+	/// build, so it never reaches a successful write. Including it would put an extra whole-schema describe
+	/// (10s timeout, up to 3 attempts) on the most common modify shape — the retarget-then-refilter batch the
+	/// tool description itself prescribes — in order to check a state that cannot occur.</para>
 	/// </summary>
 	public static IReadOnlyList<string> FilterTouched(string operationsJson) =>
 		BlockExpectationJson.Distinct(
-			BlockExpectationJson.OperationTargets(operationsJson, "setFilter", "clearFilter"));
+			BlockExpectationJson.OperationTargets(operationsJson, "clearFilter"));
 
 	/// <summary>
 	/// The caller-facing warning for a read-back that could NOT report every stored permission entry. Null when
@@ -342,6 +347,42 @@ public static class AccessRightsBlockExpectation {
 	/// parameter. The server now reports how many entries it could not show, so this can say so instead of the
 	/// contract relying on the caller having read a paragraph of prose.</para>
 	/// </summary>
+	/// <summary>
+	/// The warning for an element whose record FILTER this batch changed but whose read-back reports no
+	/// <c>accessRights</c> block at all. Null when there is nothing to report.
+	/// <para>Re-filtered elements are deliberately excluded from <see cref="Missing"/> and from the lossy-read
+	/// check, because those speak for blocks the caller SENT. That leaves them with no check of their own when
+	/// the environment's CrtProcessBuilder cannot report the block — which is every environment predating the
+	/// element, admitted today because the rebundle is deferred. Without this, changing the filter on a
+	/// designer-authored element on such an environment succeeds in silence, and clearing one moves it from
+	/// narrowing to acting on every record.</para>
+	/// </summary>
+	public static string? BuildUnreportableFilterWarning(
+			DescribeProcessResult described, IReadOnlyList<string>? filterTouched) {
+		if (filterTouched is null or { Count: 0 } || described?.Elements is null) {
+			return null;
+		}
+
+		List<string> unreportable = [];
+		foreach (string name in filterTouched) {
+			DescribedElement? element = BlockExpectationJson.ResolveElement(described, name);
+			if (element is not null && !TryGetAccessRights(element, out _)) {
+				unreportable.Add(name);
+			}
+		}
+
+		if (unreportable.Count == 0) {
+			return null;
+		}
+
+		string elements = string.Join("', '", unreportable);
+		return $"The record filter on the {BlockExpectationJson.ElementNoun(unreportable.Count)} '{elements}' was "
+			+ "changed, but this environment's CrtProcessBuilder does not report the element's access-rights "
+			+ "state, so the change could NOT be verified here. If that element grants or revokes permissions, "
+			+ "check it in the designer before reporting the change as applied — clearing a record filter makes "
+			+ "the element act on EVERY record of its object.";
+	}
+
 	public static string? BuildLossyReadWarning(
 			DescribeProcessResult described, IReadOnlyList<string> expected) {
 		if (expected.Count == 0 || described?.Elements is null) {

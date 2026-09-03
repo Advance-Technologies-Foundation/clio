@@ -25,10 +25,17 @@ internal static class BlockExpectationReporter {
 	/// </summary>
 	internal static void ReportDescribed(ILogger logger, DescribeProcessResult described,
 			IReadOnlyList<string> expectedRights, IReadOnlyList<string> expectedEmail,
-			IReadOnlyList<string>? filterTouched = null) {
+			IReadOnlyList<string>? filterTouched = null, IReadOnlyList<string>? unverifiable = null) {
+		// Unresolved covers the union too: an element the batch only RE-FILTERED is just as unverifiable when the
+		// read-back cannot find it, and reporting only the configured ones left that case silent.
 		Warn(logger, BuildUnverifiedWarning(
-			AccessRightsBlockExpectation.Unresolved(described, expectedRights),
+			AccessRightsBlockExpectation.Unresolved(described, unverifiable ?? expectedRights),
 			"the saved process does not report an element with that name or UId"));
+		// A re-filtered element reaches no other check here: it is deliberately excluded from Missing() and from
+		// the lossy-read check, both of which speak for blocks the caller SENT. So when the read-back resolves it
+		// but reports no accessRights block at all - which is every environment whose CrtProcessBuilder predates
+		// the element, admitted today because the rebundle is deferred - it would otherwise pass in silence.
+		Warn(logger, AccessRightsBlockExpectation.BuildUnreportableFilterWarning(described, filterTouched));
 		Warn(logger, AccessRightsBlockExpectation.BuildLossyReadWarning(described, expectedRights));
 		// The filter-state check covers elements this batch RE-FILTERED as well as those it configured: a
 		// setFilter/clearFilter carries no block, so every other check here skips it, yet clearing a filter is

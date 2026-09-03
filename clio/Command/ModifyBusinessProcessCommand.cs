@@ -249,25 +249,33 @@ public class ModifyBusinessProcessCommand(
 			return;
 		}
 
+		// Everything the read-back is supposed to speak for. The two failure exits below used to report only
+		// expectedRights, which is EMPTY for a filter-only batch - so a clearFilter whose read-back then failed
+		// produced total silence on the single most dangerous edit this surface offers. The success path already
+		// unioned these; the failure paths did not.
+		IReadOnlyList<string> unverifiable =
+			[.. expectedRights.Concat(filterTouched).Distinct(StringComparer.OrdinalIgnoreCase)];
+
 		// The caller identifies the process by name OR uid, and an older CrtProcessBuilder may omit SchemaName
 		// from the result, so falling back to the name alone would report "could not verify" for a modify-by-uid
 		// that was fully verifiable - the UId was in hand the whole time.
 		string code = string.IsNullOrWhiteSpace(schemaName) ? options.ProcessName : schemaName;
 		if (string.IsNullOrWhiteSpace(code) && string.IsNullOrWhiteSpace(options.ProcessUid)) {
 			// Nothing to read back against; silence would be indistinguishable from a verified success.
-			BlockExpectationReporter.WarnAccessRightsUnverified(logger, expectedRights, "the edit returned no process identity to read back");
+			BlockExpectationReporter.WarnAccessRightsUnverified(logger, unverifiable,
+				"the edit returned no process identity to read back");
 			return;
 		}
 
 		ErrorOr<DescribeProcessResult> described = processDescriber.Describe(
 			new ProcessIdentity(string.IsNullOrWhiteSpace(code) ? null : code, options.ProcessUid, null), null);
 		if (described.IsError) {
-			BlockExpectationReporter.WarnAccessRightsUnverified(logger, expectedRights, described.FirstError.Description);
+			BlockExpectationReporter.WarnAccessRightsUnverified(logger, unverifiable, described.FirstError.Description);
 			return;
 		}
 
 		BlockExpectationReporter.ReportDescribed(logger, described.Value, expectedRights, expectedEmail,
-			filterTouched);
+			filterTouched, unverifiable);
 	}
 }
 
