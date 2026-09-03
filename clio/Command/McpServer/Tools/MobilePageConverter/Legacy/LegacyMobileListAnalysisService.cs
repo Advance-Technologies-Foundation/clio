@@ -120,6 +120,10 @@ public static class LegacyMobileListAnalysisService {
 	/// Entity column name → caption, read best-effort from the object. Used only where an override references a
 	/// column the wizard never placed, so a carried sort option can show a real label instead of a machine name.
 	/// </param>
+	/// <param name="templateElements">
+	/// Every element the target template declares, read from the stand. Designer targets are verified against it,
+	/// so a name that does not exist is reported instead of authored. Null means the template could not be read.
+	/// </param>
 	/// <param name="runtimeNames">
 	/// The runtime-name table used to re-point embedded overrides (ENG-95733); null switches the override pass off
 	/// and every embedded operation is reported instead.
@@ -133,7 +137,8 @@ public static class LegacyMobileListAnalysisService {
 		SectionRegistrationInfo sectionRegistration,
 		MobileLegacyTemplateRule template,
 		MobileLegacyRuntimeNameSet runtimeNames = null,
-		IReadOnlyDictionary<string, string> columnCaptions = null) {
+		IReadOnlyDictionary<string, string> columnCaptions = null,
+		IReadOnlySet<string> templateElements = null) {
 		ArgumentNullException.ThrowIfNull(read);
 		ArgumentNullException.ThrowIfNull(classification);
 		if (!read.Success || read.EffectiveSettings is null) {
@@ -145,7 +150,8 @@ public static class LegacyMobileListAnalysisService {
 		// Embedded overrides are re-pointed BEFORE conversion, so anything expressible in the wizard's own language
 		// flows through the single emit path below and the page stays a pure function of one model.
 		LegacyOverrideRebaseResult rebase = LegacyOverrideRebaser.Rebase(parsed, classification.OverrideSections,
-			LegacyRuntimeNameOracle.Build(parsed, runtimeNames), template, runtimeNames, columnCaptions);
+			LegacyRuntimeNameOracle.Build(parsed, runtimeNames), template, runtimeNames, columnCaptions,
+			templateElements);
 		LegacyGridPageSettings settings = rebase.Settings;
 		var decisions = new List<string>();
 		var notes = new List<string>(read.Notes ?? []);
@@ -312,7 +318,8 @@ public static class LegacyMobileListAnalysisService {
 			MobileContracts = [],
 			SectionRegistration = sectionRegistration,
 			LegacySource = legacySource,
-			Constraints = BuildConstraints(sourcePage, classification, dropped, titleMapping is null, notes, template, rebase),
+			Constraints = BuildConstraints(sourcePage, classification, dropped, titleMapping is null, notes, template,
+				rebase, templateElements),
 			GuidanceArticle = GuidanceArticleName,
 			SuggestedTargetSchemaName = suggestedTarget
 		};
@@ -465,7 +472,7 @@ public static class LegacyMobileListAnalysisService {
 	private static List<string> BuildConstraints(
 		string sourcePage, LegacySettingsClassification classification, IReadOnlyList<string> droppedProperties,
 		bool titleMissing, IReadOnlyList<string> notes, MobileLegacyTemplateRule template,
-		LegacyOverrideRebaseResult rebase) {
+		LegacyOverrideRebaseResult rebase, IReadOnlySet<string> templateElements) {
 		var constraints = new List<string> {
 			"Mobile body is plain JSON with only viewConfigDiff / viewModelConfigDiff / modelConfigDiff — no AMD, no markers, no define() wrapper.",
 			$"The mobile template ({template.TemplateName}) already provides the Scaffold root, the header (search, sort, folder tree, QuickFilterGroup), the '{template.ListName}' bound to ${template.ItemsAttributeName} inside '{template.ListContainerName}', and its '{template.ListItemName}' row — do NOT add a second Scaffold, {template.ListName}, {template.ListItemName} or QuickFilterGroup. The page only MERGES onto the template's {template.ListItemName}.",
@@ -498,6 +505,16 @@ public static class LegacyMobileListAnalysisService {
 		// skip, and an override whose outcome differs from what it asked for must not be discoverable only by
 		// reading a report section.
 		constraints.AddRange(rebase.Warnings);
+		// The two merges the converter always writes address TEMPLATE elements. If the template does not declare
+		// them the page authors nothing and no validation catches it, so the mismatch is stated up front.
+		if (templateElements is null) {
+			constraints.Add($"The target template '{template.TemplateName}' could not be read, so the element names in elementMap are UNVERIFIED. Confirm the page renders before reporting success.");
+		} else {
+			foreach (string required in new[] { template.FolderTreeActionsName, template.ListItemName }
+				.Where(name => !templateElements.Contains(name))) {
+				constraints.Add($"The target template '{template.TemplateName}' does not declare '{required}', which this conversion merges onto. The merge would author nothing — check the template before writing the page.");
+			}
+		}
 		foreach (string note in notes.Where(n => n.Contains("NOT part of the resolved hierarchy", StringComparison.Ordinal))) {
 			constraints.Add(note);
 		}

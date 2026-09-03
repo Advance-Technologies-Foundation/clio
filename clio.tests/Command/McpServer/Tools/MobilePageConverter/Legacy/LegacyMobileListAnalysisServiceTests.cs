@@ -558,6 +558,34 @@ public sealed class LegacyMobileListAnalysisServiceTests {
 	}
 
 	[Test]
+	[Description("The two merges the converter always writes address TEMPLATE elements, so a template that does not declare them is called out — and an unreadable template says the names are unverified rather than pretending they were checked.")]
+	public void Analyze_ShouldStateWhetherTheTemplateElementsWereVerified() {
+		// Arrange
+		LegacyMobileSettingsReadResult read = Read(Settings("Order", Column("items", 0, "Number", "Number"), "", ""));
+
+		// Act
+		MobilePageConversionGuide unverified = LegacyMobileListAnalysisService.Analyze(
+			read, LegacyMobileSettingsClassifier.Classify(read.EffectiveSettings), SourceSchema, Target, null,
+			Template, RuntimeNames);
+		MobilePageConversionGuide missing = LegacyMobileListAnalysisService.Analyze(
+			read, LegacyMobileSettingsClassifier.Classify(read.EffectiveSettings), SourceSchema, Target, null,
+			Template, RuntimeNames, null, new HashSet<string>(["Scaffold", "List"]));
+		MobilePageConversionGuide verified = LegacyMobileListAnalysisService.Analyze(
+			read, LegacyMobileSettingsClassifier.Classify(read.EffectiveSettings), SourceSchema, Target, null,
+			Template, RuntimeNames, null, new HashSet<string>(["ListItem", "FolderTreeActions"]));
+
+		// Assert
+		unverified.Constraints.Should().Contain(c => c.Contains("UNVERIFIED"),
+			because: "an unreadable template must not be reported as if the names had been checked");
+		missing.Constraints.Should().Contain(c => c.Contains("does not declare 'ListItem'"),
+			because: "a template without the row element makes the whole conversion author nothing");
+		missing.Constraints.Should().Contain(c => c.Contains("does not declare 'FolderTreeActions'"),
+			because: "both of the converter's own targets are checked, not just the first");
+		verified.Constraints.Should().NotContain(c => c.Contains("UNVERIFIED") || c.Contains("does not declare"),
+			because: "a template that carries both targets produces no warning at all");
+	}
+
+	[Test]
 	[Description("The shipped conversion rules file carries a mobileLegacyTemplates.gridPage group, and it agrees with the bundled defaults so the two cannot drift apart silently.")]
 	public void ShippedRules_ShouldCarryGridPageTemplate_MatchingTheBundledDefaults() {
 		// Arrange

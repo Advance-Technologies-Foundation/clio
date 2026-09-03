@@ -322,6 +322,61 @@ public sealed class LegacyOverrideRebaserTests {
 	}
 
 	[Test]
+	[Description("A designer target the TARGET TEMPLATE does not declare is reported, not authored: a merge onto a name the template does not carry writes nothing and no metadata validation catches it.")]
+	public void Rebase_ShouldReportADesignerTarget_TheTemplateDoesNotDeclare() {
+		// Arrange — a template whose element inventory lacks the floating action.
+		LegacyGridPageSettings settings = Parse("Case", items: Column("Number"));
+		LegacyOverrideSection section = Section("viewConfigDiff",
+			"""[{"operation":"remove","name":"ViewConfig","properties":["floatAction"]}]""");
+		var withoutFloatAction = new HashSet<string>(["Scaffold", "List", "ListItem", "FolderTreeActions"]);
+
+		// Act
+		LegacyOverrideRebaseResult result = LegacyOverrideRebaser.Rebase(settings, [section],
+			LegacyRuntimeNameOracle.Build(settings, NameSet), Template, NameSet, null, withoutFloatAction);
+
+		// Assert
+		result.ViewConfigOperations.Should().BeEmpty(because: "authoring a removal of a name the template lacks does nothing");
+		result.Outcomes.Single().Lane.Should().Be(LegacyOverrideLanes.Reported, because: "the target does not exist");
+		result.Warnings.Should().ContainSingle(w => w.Contains("does not declare an element named 'CreateRecordButton'"),
+			because: "the report must name the element the template is missing");
+	}
+
+	[Test]
+	[Description("When the template DOES declare the target the operation is carried exactly as before, so the verification only ever removes wrong output — it never blocks correct output.")]
+	public void Rebase_ShouldCarryTheOperation_WhenTheTemplateDeclaresTheTarget() {
+		// Arrange
+		LegacyGridPageSettings settings = Parse("Case", items: Column("Number"));
+		LegacyOverrideSection section = Section("viewConfigDiff",
+			"""[{"operation":"remove","name":"ViewConfig","properties":["floatAction"]}]""");
+		var withFloatAction = new HashSet<string>(["Scaffold", "ListItem", "FolderTreeActions", "CreateRecordButton"]);
+
+		// Act
+		LegacyOverrideRebaseResult result = LegacyOverrideRebaser.Rebase(settings, [section],
+			LegacyRuntimeNameOracle.Build(settings, NameSet), Template, NameSet, null, withFloatAction);
+
+		// Assert
+		Json(result.ViewConfigOperations.Single()).Should().Be("""{"operation":"remove","name":"CreateRecordButton"}""",
+			because: "a verified target behaves exactly as it did before the check existed");
+		result.Warnings.Should().BeEmpty(because: "nothing was wrong, so nothing is warned about");
+	}
+
+	[Test]
+	[Description("With no template inventory (the stand could not be read) the names go UNVERIFIED and operations are still carried — an unreadable template must not silently strip a customisation.")]
+	public void Rebase_ShouldStillCarryOperations_WhenTheTemplateCouldNotBeRead() {
+		// Arrange
+		LegacyGridPageSettings settings = Parse("Case", items: Column("Number"));
+		LegacyOverrideSection section = Section("viewConfigDiff",
+			"""[{"operation":"remove","name":"ViewConfig","properties":["floatAction"]}]""");
+
+		// Act — templateElements omitted, exactly as when the probe fails.
+		LegacyOverrideRebaseResult result = Rebase(settings, section);
+
+		// Assert
+		result.ViewConfigOperations.Should().ContainSingle(
+			because: "an unreadable template degrades to trusting the table, it does not drop the override");
+	}
+
+	[Test]
 	[Description("With no supported sections nothing is rebased and the wizard settings come back untouched, so a plain source is unaffected by the override pass existing.")]
 	public void Rebase_ShouldBeANoOp_WhenThereAreNoSupportedSections() {
 		// Arrange

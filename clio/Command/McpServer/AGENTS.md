@@ -564,6 +564,14 @@ A binding already written as `$PDS_…` is left alone: the source column cannot 
 (`insert Attribute_Items_SortingConfig`) onto `attributes/Items/modelConfig/sortingConfig`. A `remove` or `set`
 there names runtime elements the converted page never declares, and is reported.
 
+**Every designer target is verified against the TEMPLATE, not trusted from the table.** The legacy branch reads
+the target template through the same `LoadMobileTemplateProbe` the web branch uses and checks each name it is about
+to author (`ListItem`, `FolderTreeActions`, and whatever an override retargets onto). A name the template does not
+declare is REPORTED, never authored — a merge onto a missing name writes nothing, `validate-page` cannot see it
+(`MobileDiffApplyValidator` applies `viewConfigDiff` against an empty base; see the ENG-95429 knowledge record), so
+it would be a silent no-op. An unreadable template degrades to authoring anyway plus an explicit `UNVERIFIED`
+constraint — a stand that is down must not quietly strip a customisation.
+
 **Warnings go to `guide.constraints` and NOWHERE else.** An override whose outcome on the converted page differs
 from what it asked for, or that was skipped, must not be discoverable only by reading a report section;
 `constraints` is the block a caller cannot skip. `legacySource.overrideOutcomes` still records the per-operation

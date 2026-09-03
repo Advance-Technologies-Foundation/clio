@@ -108,6 +108,12 @@ public static class LegacyOverrideRebaser {
 	/// <param name="inventory">The runtime name inventory for this source.</param>
 	/// <param name="template">The target template's element names.</param>
 	/// <param name="nameSet">The runtime-name table, which also carries the designer targets.</param>
+	/// <param name="columnCaptions">Entity column name → caption, for a carried option that needs a real label.</param>
+	/// <param name="templateElements">
+	/// Every element the TARGET TEMPLATE declares, read from the stand. An operation whose designer target is not
+	/// among them is reported instead of authored — a merge onto a name the template does not carry silently
+	/// authors nothing. Null means the template could not be read, and the names go unverified.
+	/// </param>
 	/// <returns>The rebase result; never null. With no usable table nothing is carried and everything is reported.</returns>
 	public static LegacyOverrideRebaseResult Rebase(
 		LegacyGridPageSettings settings,
@@ -115,7 +121,8 @@ public static class LegacyOverrideRebaser {
 		LegacyRuntimeNameInventory inventory,
 		MobileLegacyTemplateRule template,
 		MobileLegacyRuntimeNameSet nameSet,
-		IReadOnlyDictionary<string, string> columnCaptions = null) {
+		IReadOnlyDictionary<string, string> columnCaptions = null,
+		IReadOnlySet<string> templateElements = null) {
 		ArgumentNullException.ThrowIfNull(settings);
 		template ??= LegacyMobileListAnalysisService.DefaultGridPageTemplate;
 		var outcomes = new List<LegacyOverrideOutcome>();
@@ -140,7 +147,7 @@ public static class LegacyOverrideRebaser {
 			List<Operation> operations = Read(section);
 			if (string.Equals(section.Section, ViewConfigSection, StringComparison.Ordinal)) {
 				current = RebaseViewConfig(current, operations, inventory, byRole, viewOps, elementValues,
-					requiredColumns, warnings, outcomes, columnCaptions);
+					requiredColumns, warnings, outcomes, columnCaptions, templateElements);
 				continue;
 			}
 			List<JsonObject> target = string.Equals(section.Section, ModelConfigSection, StringComparison.Ordinal)
@@ -166,11 +173,12 @@ public static class LegacyOverrideRebaser {
 		List<string> requiredColumns,
 		List<string> warnings,
 		List<LegacyOverrideOutcome> outcomes,
-		IReadOnlyDictionary<string, string> columnCaptions) {
+		IReadOnlyDictionary<string, string> columnCaptions,
+		IReadOnlySet<string> templateElements) {
 		var resolutions = new List<(Operation Op, LegacyRuntimeAnchor Anchor, Resolution Resolution)>();
 		foreach (Operation op in operations) {
 			LegacyRuntimeAnchor anchor = inventory?.Resolve(op.Name);
-			resolutions.Add((op, anchor, ResolveView(op, anchor, byRole, settings, columnCaptions)));
+			resolutions.Add((op, anchor, ResolveView(op, anchor, byRole, settings, columnCaptions, templateElements)));
 		}
 
 		// Subject = the column an operation touches, else the runtime element it addresses. A move arrives as a
@@ -284,7 +292,8 @@ public static class LegacyOverrideRebaser {
 	/// <summary>Decides what one view operation becomes, without applying anything.</summary>
 	private static Resolution ResolveView(
 		Operation op, LegacyRuntimeAnchor anchor, Dictionary<string, MobileLegacyRuntimeAnchorRule> byRole,
-		LegacyGridPageSettings settings, IReadOnlyDictionary<string, string> columnCaptions) {
+		LegacyGridPageSettings settings, IReadOnlyDictionary<string, string> columnCaptions,
+		IReadOnlySet<string> templateElements) {
 		if (anchor is null) {
 			return Resolution.No(
 				$"No runtime element named '{op.Name}' is generated for this source, so there is nothing to re-point it onto. It most likely came from another schema in the hierarchy or was hand-written.");
@@ -292,6 +301,14 @@ public static class LegacyOverrideRebaser {
 		MobileLegacyRuntimeAnchorRule rule = Rule(byRole, anchor.Role);
 		bool isRemove = string.Equals(op.Kind, "remove", StringComparison.OrdinalIgnoreCase);
 		bool isMerge = string.Equals(op.Kind, "merge", StringComparison.OrdinalIgnoreCase);
+
+		// The designer target must EXIST in the template we are converting onto. A merge onto a name the template
+		// does not carry authors nothing at all, and no metadata validation catches it, so an unknown target is a
+		// report rather than an operation. Unverified (null) means the template could not be read; the guide says so.
+		foreach (string missing in DesignerTargets(rule, op).Where(t => templateElements?.Contains(t) == false)) {
+			return Resolution.No(
+				$"The target template does not declare an element named '{missing}'. Re-pointing '{op.Name}' onto it would author nothing, so the operation was not carried.");
+		}
 
 		// A property removal on an element the designer models as a separate element (the floating action).
 		if (isRemove && op.Properties.Count > 0) {
@@ -379,6 +396,23 @@ public static class LegacyOverrideRebaser {
 		}
 		return Resolution.No(
 			$"Only a removal or a property merge can be re-pointed onto the converted page's view; '{op.Kind}' on '{op.Name}' carries runtime-dialect content that the target template does not declare.");
+	}
+
+	/// <summary>Every designer element a rule could retarget an operation onto, so each can be verified.</summary>
+	private static IEnumerable<string> DesignerTargets(MobileLegacyRuntimeAnchorRule rule, Operation op) {
+		if (rule is null) {
+			yield break;
+		}
+		if (!string.IsNullOrWhiteSpace(rule.DesignerName)) {
+			yield return rule.DesignerName;
+		}
+		foreach (string property in op.Properties) {
+			if (rule.PropertyTargets is not null
+				&& rule.PropertyTargets.TryGetValue(property, out string target)
+				&& !string.IsNullOrWhiteSpace(target)) {
+				yield return target;
+			}
+		}
 	}
 
 	/// <summary>The wizard column with that path, from any bucket; null when the page does not carry it.</summary>

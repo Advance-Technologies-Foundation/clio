@@ -95,6 +95,11 @@ public sealed partial class MobilePageConversionGuideTool {
 			? LegacyMobileListAnalysisService.DeriveTargetSchemaName(entitySchemaName, ReadSchemaNamePrefix(getOptions))
 			: args.TargetSchemaName.Trim();
 
+		// The designer names this conversion merges onto come from a data table; the table is only as good as the
+		// template it describes. Reading the template turns a stale or mistyped name into an explicit constraint
+		// instead of a merge that authors nothing. Best-effort, exactly as the Freedom UI web branch does it.
+		IReadOnlySet<string> templateElements = ReadTemplateElements(template.TemplateName, args);
+
 		// Read-only probe: the legacy settings schema is not itself a SysModule page, so the section is found by
 		// the entity the wizard page was bound to. Best-effort — never blocks the guide.
 		SectionRegistrationInfo sectionRegistration = MobileSectionRegistrationProbe.ProbeByEntity(
@@ -103,7 +108,8 @@ public sealed partial class MobilePageConversionGuideTool {
 		MobilePageConversionGuide guide;
 		try {
 			guide = LegacyMobileListAnalysisService.Analyze(read, classification, args.SchemaName, targetName,
-				sectionRegistration, template, runtimeNames, ReadColumnCaptions(getOptions, entitySchemaName));
+				sectionRegistration, template, runtimeNames, ReadColumnCaptions(getOptions, entitySchemaName),
+				templateElements);
 		} catch (Exception ex) {
 			return FailLegacy(args, sourceType, mechanism, $"Failed to analyze legacy mobile settings '{args.SchemaName}': {ex.Message}");
 		}
@@ -120,6 +126,21 @@ public sealed partial class MobilePageConversionGuideTool {
 			RequiresVersionConfirmation = ComponentInfoResolution.RequiresVersionConfirmation(resolvedFrom),
 			ResolvedFromReason = ComponentInfoResolution.GetFallbackReason(resolvedFrom, versionResolution.Reason)
 		};
+	}
+
+	/// <summary>
+	/// Every element the target template declares, read from the stand through the same probe the Freedom UI web
+	/// branch uses. Null when the template could not be read — the caller then reports the names as unverified
+	/// rather than silently trusting the table.
+	/// </summary>
+	/// <param name="templateSchemaName">The mobile template the converted page inherits.</param>
+	/// <param name="args">The current call's connection arguments.</param>
+	/// <returns>The template's element names, or null when it could not be read.</returns>
+	private IReadOnlySet<string> ReadTemplateElements(string templateSchemaName, MobilePageConversionGuideArgs args) {
+		MobileTemplateProbe probe = LoadMobileTemplateProbe(templateSchemaName, args);
+		return probe.Unavailable || probe.TypesByName is not { Count: > 0 }
+			? null
+			: new HashSet<string>(probe.TypesByName.Keys, StringComparer.OrdinalIgnoreCase);
 	}
 
 	/// <summary>

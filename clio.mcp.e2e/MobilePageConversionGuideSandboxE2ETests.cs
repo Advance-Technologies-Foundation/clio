@@ -970,6 +970,13 @@ public sealed class MobilePageConversionGuideSandboxE2ETests : McpContractFixtur
 		guide.LegacySource!.Layers.Should().NotBeEmpty(because: "at least one package layer contributed");
 		JsonSerializer.Serialize(guide.LegacySource.Layers).Should().NotContain("\"operation\"",
 			because: "no raw schema body may leak into the guide — layers carry package names and counts only");
+		// ENG-95733: the designer names come from a data table, and the table is only as good as the template it
+		// describes. Against a real stand the template IS readable, so neither the "unverified" fallback nor a
+		// missing-element warning may appear — this is what proves the probe ran and the shipped names are right.
+		guide.Constraints.Should().NotContain(c => c.Contains("UNVERIFIED"),
+			because: "the template probe must have read the shipped template on a real environment");
+		guide.Constraints.Should().NotContain(c => c.Contains("does not declare"),
+			because: "every designer name the shipped rules table declares must exist in the real template");
 
 		MobilePageConversionGuideResponse second = await ConvertAsync(context, convertedSchemaName, environmentName);
 		second.Success.Should().BeTrue(because: "the second run must succeed exactly like the first");
