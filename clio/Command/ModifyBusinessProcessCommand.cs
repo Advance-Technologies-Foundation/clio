@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Text.Json;
 using System.Text.Json.Nodes;
@@ -22,26 +22,33 @@ namespace Clio.Command;
 // registry with a "supported operations are …" message, which reads as a clio bug rather than a stale
 // environment.
 //
-// The literal is 1.4.0.41: the version that stopped validating formulas IN THE PACKAGE, because the
+// The literal is 1.4.0.42, and two versions are in play. 1.4.0.41 stopped validating formulas IN THE
+// PACKAGE, because the
 // platform's own pre-save gate was already validating them — a mapped expression and a flow condition alike,
 // measured with both package guards built out and installed
 // (spec/eng-95891-formula-expressions/eng-95891-formula-expressions-save-gate-probe.md). So the formula half
 // of this floor is no longer a tightened validator; .41 checks strictly LESS than .37 did, and an environment
-// between them refuses at least as much. What the floor buys is the MESSAGE contract this tool's description
+// between them refuses at least as much. The literal is .42 rather than .41 because .42 is what this clio
+// bundles, and because .42 corrected the rewrite this description promises — every serialised error in one
+// message, and an element-scoped reference named as such. What the floor buys is the MESSAGE contract this tool's description
 // promises: below .41 a bad formula is refused in the package's own wording, with its own reference
 // pre-check, and without the serialised-error rewrite — so an unresolvable parameter reference comes back as
 // `{ErrorType:2,ErrorData:{ParameterUId:"…"}}` rather than as a sentence.
 //
 // Do not lower it to .37 on the grounds that .37 refuses too. It does, with different text. And do not lower
 // it below .37 on any grounds: the refusals that SURVIVE the collapse were themselves measured one archive
-// at a time — the activity-result guard in .32, the platform-grammar element segment in .35, the
-// element-retarget refusal in .37. Against an environment at .3, `setFlowCondition` on a result-driven
+// at a time — the activity-result guard in .32 and the element-retarget refusal in .37. (The
+// platform-grammar element segment, which .35 added and which earlier revisions of this comment counted
+// as a third, turns out not to have been load-bearing: the strict RegexParameterValue it mirrored is used
+// only for data-source filter map paths, while a parameter VALUE is parsed by the brace-optional
+// GeneratorUtilities patterns, so the element scoping survived the looser form anyway. Do not cite it as
+// one of the refusals this floor protects; the other two are.) Against an environment at .3, `setFlowCondition` on a result-driven
 // branch is NOT refused: the condition is stored and then ignored at run time, the exact silent failure the
 // description offers protection from.
 // This subsumes the previous 1.3.1.1 floor (the element-level performer block and its reference-existence
 // guard), which subsumed the email block's 1.2.0.1 floor before it. The guard fixture asserts the shipped
 // archive satisfies the literal, so clio can never demand a version it does not itself carry.
-[RequiresPackage(BundledPackages.ProcessBuilderPackageName, "1.4.0.41",
+[RequiresPackage(BundledPackages.ProcessBuilderPackageName, "1.4.0.42",
 	Hint = BundledPackages.ProcessBuilderInstallHint)]
 public sealed class ModifyBusinessProcessOptions : EnvironmentOptions {
 	/// <summary>Process code (schema Name) to edit. Provide exactly one of <see cref="ProcessName"/> or <see cref="ProcessUid"/>.</summary>

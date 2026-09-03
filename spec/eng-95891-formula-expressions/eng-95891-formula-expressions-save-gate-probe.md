@@ -1,4 +1,4 @@
-# ENG-95891 — Does the platform's pre-save gate refuse a bad flow CONDITION?
+﻿# ENG-95891 — Does the platform's pre-save gate refuse a bad flow CONDITION?
 
 **Measured 2026-09-03.** This is the one question
 [`adr-collapse-formula-validation-onto-platform-rule.md`](../adr/adr-collapse-formula-validation-onto-platform-rule.md)
@@ -97,3 +97,59 @@ Reverted both bypasses (`git checkout --`), rebuilt, `push-workspace`, `restart`
 and got our own message back, which is the only proof that the stand is no longer doctored. The
 fixture process is left in place with a valid condition on `Task1 → EndA`
 (`[#[Parameter:{24a73f8a-…}]#] > 100`) and a plain flow on `Task1 → EndB`.
+
+
+## Second pass, at 1.4.0.41 — the refactored build on the same stand
+
+Everything above was measured with the package's guards built OUT of an otherwise-1.4.0.40 build. This
+section is the same stand after the collapse actually shipped: `CrtProcessBuilder` 1.4.0.41 installed from
+the bundled source-only archive and the app restarted. It exists because a claim measured against a
+doctored build is not a claim about what users get, and because three of these answers contradicted what
+either the source or a reviewer predicted.
+
+### The rewrite, end to end
+
+`[#[Parameter:{1111…}]#] > 100` on a flow condition, which in the first pass returned the serialised
+`ProcessParameterErrorInfo`:
+
+```
+Process validation failed: The "SequenceFlow_Task1_EndB" element has an invalid value for the parameter
+"ConditionExpression". It references the process parameter 11111111-1111-1111-1111-111111111111, which is
+not in this process. Add the parameter first, or correct the reference.
+```
+
+### The messages the guidance article promises verbatim
+
+| input | measured message |
+|---|---|
+| `FormulaUtilities.Sum(1, 2) > 0` | `Formula value error: No applicable method 'Sum' exists in type 'FormulaUtilities' (at index 17).` |
+| `System.Math.Abs(-1) > 0` | `Formula value error: Parameter "System" not found` |
+| `math.Round(1.5) > 0` | quoted as `math.Round(1.5m) > 0`; `Formula value error: Parameter "math" not found` |
+| `DateTimeUtilities.GetStartOfMonth(DateTime.Now) > DateTime.MinValue` | `Formula value error: No applicable method 'GetStartOfMonth' exists in type 'DateTimeUtilities' (at index 18).` |
+| `1.5` mapped onto an Integer parameter | quoted as `1.5m`; `Formula value error: Cannot convert type "Decimal" to "Int32"` |
+| an Integer parameter as the whole condition | quoted as `Amount`; `Formula value error: Cannot convert type "Int32" to "Boolean"` |
+
+**The platform quotes the expression as its own CONVERTER left it, not as the caller wrote it.** That is
+the finding nobody predicted: a fractional literal comes back with an `m`, and a `[#[Parameter:{uid}]#]`
+reference comes back as the parameter's NAME. Two surfaces had already been written claiming the opposite
+("quotes the expression AS WRITTEN"), and both were corrected from these rows.
+
+### Three claims a review round disputed, settled here
+
+| claim under dispute | verdict |
+|---|---|
+| A newline is refused by the gate | **Refused.** `Formula value error: Expression contains invalid line break symbol. Use \n as new line character` — and note the quoted expression is EMPTY, a third class carrying neither an index nor the text. One reviewer read the source right; the other predicted the gate would accept it. |
+| A ZWSP-poisoned reference saves, resolves at run time, and is invisible to the delete guard — so `removeParameter` would drop a still-referenced parameter | **Refused, both forms.** `[#[Parameter:{uid<ZWSP>}]#]` and `[#[Parameter:{uid}<ZWSP>]#]` both give `Formula value error: Expression expected (at index 0).` The predicted chain breaks earlier than the reviewer's reading of it: `GetParameterMapData`'s pattern does not match the poisoned token at all, so nothing reaches the trimming in `FillMatchedData` and the raw macro text goes to the parser. Fails CLOSED; no data loss. |
+| `[Price]` is refused "naming the identifier", like the bare `Price` | **Not named.** `[Price] > 100` faults on the bracket: `Formula value error: Expression expected (at index 0).` Only the bare `Price` is named (`Parameter "Price" not found`). The guidance bullet lumping the two together was wrong. |
+
+### Restoration
+
+The fixture process `UsrProbeCondSaveGate` is left in place, in package `Custom`, with a valid condition on
+`Task1 -> EndA` and a plain flow on `Task1 -> EndB`, plus two Integer parameters (`Amount`, `Probe2`). The
+stand runs a real archive — no bypassed guard remains anywhere.
+
+The review round after this pass changed the rewrite (every serialised error in one message, not just the
+first; an element-scoped reference named as such), so the stand was moved to **1.4.0.42** and both MCP E2E
+tiers were re-run against it: `ModifyBusinessProcessToolE2ETests` + `CreateBusinessProcessToolE2ETests`,
+60 tests, 0 failures. The measurements above are 1.4.0.41's and were not re-taken — none of them touches
+a code path .42 changed.

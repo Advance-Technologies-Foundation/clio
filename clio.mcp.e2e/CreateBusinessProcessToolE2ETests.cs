@@ -206,6 +206,17 @@ public sealed class CreateBusinessProcessToolE2ETests {
 		});
 
 		// Assert
+		// NOT on callResult.IsError: measured null on this refusal, exactly as it is on success — every
+		// sibling assertion in this fixture is deliberately NotBeTrue for that reason, so the flag carries no
+		// signal here. What the description promises is that nothing was CREATED, so that is what is asserted.
+		string describeJson = JsonSerializer.Serialize(await DescribeAsync(context, processName));
+		describeJson.Should().Contain("was not found",
+			because: "the description promises the process is not created, and the refusal now comes from the "
+				+ "whole-schema save gate rather than from the operation - so atomicity is newly load-bearing "
+				+ "on this path and asserting only the message text would not notice a half-created schema. "
+				+ "Asserted POSITIVELY on the not-found answer rather than as NotContain(processName): the "
+				+ "not-found message quotes the name it looked for, so the negative form fails on a correct "
+				+ "result");
 		string callResultJson = JsonSerializer.Serialize(callResult);
 		callResultJson.Should().Contain("Int32",
 			because: "the refusal must name the type the result cannot become, so the caller can correct the formula instead of guessing");

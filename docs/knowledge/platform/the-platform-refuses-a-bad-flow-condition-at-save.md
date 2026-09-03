@@ -1,4 +1,4 @@
----
+﻿---
 description: Creatio's pre-save validation DOES cover a conditional flow's ConditionExpression — the flow-schema generator turns it into a synthetic Boolean Source=Script parameter and ParameterValuesValidationRule runs that generator first — so a package-side formula validator is duplication, and the source fact that says otherwise (the synthetic parameter is not attached to the schema) is about a different code path
 applies-to:
   - clio/Command/McpServer/Tools/ProcessDesigner/ModifyBusinessProcessTool.cs
@@ -49,6 +49,17 @@ implementation of a decision the platform has already made is a place for the tw
 cost a shipped false refusal (`ProcessGraphBuilder.SetFlowCondition` refused an unrecognised macro family
 on the grounds that "the platform's pre-save gate never walks it", naming `[#Price#] > 100` as the
 condition that would "save and never be taken" — row four above shows it does not save).
+
+**The one configuration that changes this.** `HandleNotFoundTargetParameter`
+(`BaseFlowSchemaGenerator.cs:609`) sets the error info only under
+`!UseSafeGenerationMode && GlobalAppSettings.FeatureUseVerificationOfProcessParameterDirection`. That
+feature defaults to `true` (`GlobalAppSettings.cs:371`) but is read from configuration (`:2738`), and with
+it OFF the unresolvable-reference arm sets nothing, `GetParameterPathMacrosMap` returns null, and
+`FillConditionallSequenceFlowExtraParameters` returns BEFORE registering the flow's synthetic parameter —
+so that condition escapes validation entirely and saves. The project treats the flag as always enabled
+(decided 2026-09-03), which is why the shipped descriptions state the refusal unconditionally and no
+package-side guard was kept for it. Recorded because the failure is silent: if a customer environment ever
+turns it off, a bad condition saves and reports success, and nothing in clio will say why.
 
 The one thing that does NOT belong to the platform is a **length bound**, and only because of ordering: the
 pre-save gate is what runs the platform's macro converters, whose regexes have no match timeout, so a bound

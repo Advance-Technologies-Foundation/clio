@@ -1,4 +1,4 @@
----
+﻿---
 description: Creatio's macro-to-code converter chain retypes a formula's numeric constants as decimal (a fractional literal is suffixed m, a divisor is wrapped ((decimal)…)), and decimal widens to nothing in the script engine's cast map — do NOT "fix" that by coercing numeric targets to decimal, because no Creatio parameter is CLR float/double (Integer is int, Float is decimal) and the coercion makes the package disagree with the platform's own pre-save gate
 applies-to:
   - clio/Command/McpServer/Tools/ProcessDesigner/ModifyBusinessProcessTool.cs
@@ -70,4 +70,5 @@ ProcessBuilder repository. The two tests that used to pin the conclusion
 (`Validate_ShouldCheckTheDeclaredTargetType`, `ParameterValueType_ShouldBeIntOrDecimal_NeverFloat`) went
 with the validator; the conclusion is now the platform's own, and what pins it is the create-path E2E
 `CreateBusinessProcess_Should_RefuseAFormulaTheTargetTypeCannotHold`, which asserts the refusal names
-`Int32` and quotes the expression as written.
+`Int32` and quotes the expression as the CONVERTER left it — `1.5m`, not `1.5`. An earlier revision of
+this paragraph said "as written", which the message quoted forty lines above disproves.

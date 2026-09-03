@@ -1,4 +1,4 @@
-# ENG-95891 — Manual test cases
+﻿# ENG-95891 — Manual test cases
 
 Written as **business assignments given to an AI agent** — the way the feature is actually used — rather
 than as tool calls. The tester gives the agent the assignment verbatim, then checks the process in the
@@ -6,7 +6,8 @@ designer and, where applicable, runs it. Behaviour below was verified on a stand
 `CrtProcessBuilder 1.4.0.18` and then 1.4.0.37 - the versions the run manifests beside this file
 record. It is NOT verified at 1.4.0.3: several of the refusals below first ship in .32 and .35.
 
-**RE-RUN REQUIRED AT 1.4.0.41.** That release removed the package's own formula validator, because the
+**RE-RUN REQUIRED AT 1.4.0.42.** 1.4.0.41 removed the package's own formula validator, and .42 corrected
+the message rewrite that replaced it, so .42 is the version to run against. The validator went because the
 platform's pre-save gate was already refusing every class of bad formula — a flow condition included
 (`eng-95891-formula-expressions-save-gate-probe.md`). No case below changes its VERDICT, but every
 formula refusal now arrives in the platform's words instead of the package's, and the expectations that
@@ -14,7 +15,7 @@ quote a message are marked. One change is easy to misread as a defect and is not
 expression as its own converter left it, so `1.5` comes back as `1.5m` and a `[#[Parameter:{uid}]#]`
 reference comes back as the parameter's NAME.
 
-**Conditions.** A Creatio environment registered in clio with `CrtProcessBuilder 1.4.0.41` or newer
+**Conditions.** A Creatio environment registered in clio with `CrtProcessBuilder 1.4.0.42` or newer
 installed (`install-process-builder`), an agent with the clio MCP server connected, and a writable
 `Custom` package. .41 is not a preference: it is the enforced `[RequiresPackage]` floor, so create and
 modify are refused below it before any case here can run.
@@ -95,7 +96,7 @@ priority.
 **Observed 2026-08-29 — the refusal half passes, the acceptance half exposes a guidance defect.**
 The `1.5` refusal is exactly as specified: the message names `Amount`, says
 `Cannot convert type "Decimal" to "Int32"`, and the designer shows the parameter still unset. (That run
-was at 1.4.0.37, where the package's own validator quoted `1.5` **as written**. At 1.4.0.41 the platform
+was at 1.4.0.37, where the package's own validator quoted `1.5` **as written**. From 1.4.0.41 the platform
 answers instead and quotes `1.5m` — measured, and the reason the expectation above was rewritten.) But on
 the `1 + 1` half, two agents reading the same guidance took **opposite routes**:
 
@@ -215,9 +216,10 @@ it.
 
 ### `TC-09` An environment with an older package is told to update, not left half-working
 
-**Preconditions:** An environment carrying a `CrtProcessBuilder` older than 1.4.0.35 - the enforced floor.
-Note the floor moved after the runs recorded below: at .3 this case needed a downgrade, while anything under
-.35 now triggers it, so the "not run" result further down is no longer a statement about what is reachable.
+**Preconditions:** An environment carrying a `CrtProcessBuilder` older than 1.4.0.42 - the enforced floor.
+Note the floor moved twice after the runs recorded below: at .3 this case needed a downgrade, then .35, and
+now anything under .41 triggers it - so the "not run" result further down is no longer a statement about
+what is reachable.
 
 **Steps:**
 1. Give the agent: *"Set a branch condition in process `<name>` on that environment."*
@@ -226,13 +228,16 @@ Note the floor moved after the runs recorded below: at .3 this case needed a dow
 **Expected result:**
 * The operation is **refused up front**, and the message names both versions and points at
   `install-process-builder`.
-* The formula is **not** stored unchecked. An older server has no validation, so silently accepting here
-  is the failure this gate exists to prevent.
+* The formula is **not** stored unchecked. What an older server lacks is the PACKAGE's validation and,
+  below .41, the readable wording of a refusal - not validation as such: the platform's own pre-save gate
+  refused a bad formula all along, which is the measurement that let .41 delete the package's copy. So the
+  failure this gate prevents is a refusal the caller cannot act on, not an unchecked save. (An earlier
+  version of this line said "an older server has no validation", which was never true.)
 * After running `install-process-builder`, the same assignment succeeds.
 
 ---
 
-### `TC-10` An unfamiliar macro is stored and reported, not rejected
+### `TC-10` An unfamiliar macro the platform CAN convert is stored, and no longer warns
 
 **Preconditions:** Any process with a branch.
 
@@ -241,20 +246,26 @@ Note the floor moved after the runs recorded below: at .3 this case needed a dow
    text."*
 2. Read the response, including any warnings.
 
-**Expected result:**
-* The operation **succeeds** — an unrecognised macro family must not be refused, or existing Creatio
-  processes could not be edited.
-* A **warning** is reported saying the macro was stored unchanged and was **not** checked.
-* Silence is a defect: the caller must not believe the formula was validated when it was not.
-* Many unknown macros in one expression produce a **short, grouped** warning list, not one warning per
-  macro.
+**Expected result (rewritten for 1.4.0.41):**
+* The operation **succeeds** — a macro family the package does not model must not be refused, or existing
+  Creatio processes could not be edited.
+* **No warning, and silence is now CORRECT.** Up to 1.4.0.40 the package answered with *"…uses the
+  unrecognised macro family … It is stored unchanged and was NOT checked."* That warning existed because
+  the package's own validator skipped its engine layer for a family it had no model of. There is no such
+  validator any more: the PLATFORM validated this formula, converted the macro (see the designer proof in
+  TC-17) and accepted it, so there is nothing unchecked to report. A warning here would now be false.
+* **Treat a warning as a defect, and treat a REFUSAL as a defect too.** Those are the two failures this
+  case still guards: the first would mean a notice channel survived where it should not, the second that
+  the package is refusing content Creatio itself ships.
 
 **Use a REAL family, not invented text.** `[#Wat.Something#]`, which earlier drafts of this case used, is
 not a macro family at all — the parser reads it as an expression beginning with `Wat` and the platform's
 own pre-save validation refuses it (*"Expression expected (at index 0)"*), which is correct behaviour and
-tests nothing. The families that must round-trip are the four real-but-unadvertised ones listed in the
-vocabulary spec; `[#[PropertyValue:Caption]#]` is the handiest, and Creatio itself ships it as the default
-"Process instance caption".
+tests nothing. The distinction is sharper than "advertised or not": what matters is whether a CONVERTER
+handles the family where you used it. `[#[PropertyValue:Caption]#]` is converted (Creatio ships it as the
+default "Process instance caption"), so it round-trips. `[#ColumnValue.Id#]` and
+`[#SamplingColumnValue.Id#]` are real families that no converter handles in a plain mapping, and they are
+REFUSED there — measured. Do not read them as interchangeable.
 
 ---
 
@@ -379,7 +390,7 @@ it (reverted in library 1.13.55).
 
 ---
 
-### `TC-17` An unfamiliar macro in a parameter is stored with a warning
+### `TC-17` An unfamiliar macro in a parameter is stored, and no longer warns
 
 **Preconditions:** A process with a Text parameter `Note`.
 
@@ -389,17 +400,20 @@ it (reverted in library 1.13.55).
 3. Open the process in the designer and look at the parameter.
 
 **Expected result:**
-* Same contract as TC-10 but at the **other use site**: the mapping **succeeds**, and a warning says the
-  macro was stored unchecked.
+* Same contract as TC-10 but at the **other use site**: the mapping **succeeds**, with **no warning**
+  (see TC-10 — the notice channel went with the package's validator, and the platform validated this
+  formula rather than skipping it).
 * The parameter's source reads back as `Script`, and its value is the expression **verbatim** — the
   platform, not the toolkit, decides what it means.
 * In the designer: the parameter shows the macro RESOLVED to its human-readable form — `[#Process name#]`
   for this one. That is the proof the round-trip is real and not merely tolerated.
 
-**Verified 2026-08-29.** The warning reads: *"The 'expression' mapping for target 'Note' uses the
-unrecognised macro family '[PropertyValue:Caption]'. It is stored unchanged and was NOT checked."* — and
-the designer renders `[#Process name#]`. See TC-10 on why the input must be a real family: an invented
-`[#Wat.Something#]` is refused by the platform's own validation, and that refusal is correct.
+**Verified 2026-08-29, at 1.4.0.37.** The warning read: *"The 'expression' mapping for target 'Note' uses
+the unrecognised macro family '[PropertyValue:Caption]'. It is stored unchanged and was NOT checked."* —
+and the designer rendered `[#Process name#]`. That designer rendering is the part worth keeping: it proves
+the PLATFORM converted the macro, which is why the warning claiming it was "NOT checked" was misleading
+even then, and why 1.4.0.41 dropped it rather than rewording it. **Re-run needed at 1.4.0.42**: expect the
+same success and the same designer rendering, with no warning line.
 
 ---
 
@@ -588,6 +602,8 @@ reading before every operation.
 * **Designer-only rendering** beyond what TC-08 states. Whether a formula field is editable in a given
   element's property panel is a platform behaviour that changes between releases.
 * **Gateways and default flows** — ENG-91853.
-* **The four accepted-but-not-advertised macro families** (`BooleanValue`, `PropertyValue`, `ColumnValue`,
-  `SamplingColumnValue`). They must round-trip, which unit and E2E tests already assert; an agent is not
-  expected to author them.
+* **The unadvertised macro families**, beyond what TC-10 and TC-17 cover with `PropertyValue`. They do
+  not behave alike and must not be treated as one group: `BooleanValue` and `PropertyValue` are converted
+  and round-trip, while `ColumnValue` and `SamplingColumnValue` are real families that no converter
+  handles in a plain mapping and are REFUSED there (measured; the MCP E2E asserts that refusal). An agent
+  is not expected to author any of them.

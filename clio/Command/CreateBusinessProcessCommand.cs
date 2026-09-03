@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Text.Json;
 using System.Text.Json.Nodes;
@@ -26,7 +26,7 @@ namespace Clio.Command;
 // persists a broken formula on an older one, to fail at run time. The article is explicit that a tightened
 // validator takes a literal rather than being left to convergence, because convergence only warns.
 //
-// Raised again to 1.4.0.41, and this time the reason runs the other way: .41 is the version that STOPPED
+// Raised again to 1.4.0.42, and this time the reason runs the other way. 1.4.0.41 is the version that STOPPED
 // validating formulas in the package, because the platform's own pre-save gate was already doing it — for a
 // mapped expression AND for a flow condition, measured with both package guards built out and installed
 // (spec/eng-95891-formula-expressions/eng-95891-formula-expressions-save-gate-probe.md). What the floor buys
@@ -34,6 +34,10 @@ namespace Clio.Command;
 // bad formula is still refused, but by the package's own wording and its own reference pre-check, and the
 // serialised-error rewrite (PlatformValidationMessage) is not there — so an unresolvable parameter reference
 // comes back as `{ErrorType:2,ErrorData:{ParameterUId:"…"}}`.
+//
+// The floor is .42 rather than .41 because .42 is the archive this clio bundles, and because the review round
+// after .41 corrected the rewrite these descriptions promise: every serialised error in one message rather
+// than the first, and an element-scoped reference named as such rather than called a process parameter.
 //
 // The floor is NOT lowered back to .37 on the grounds that .37 also refuses. It does, with different text, and
 // a description that names what a refusal says is only true from .41. Nor is it a tightened validator any
@@ -44,7 +48,7 @@ namespace Clio.Command;
 // segment in .35, the element-retarget refusal in .37.
 // The guard fixture asserts the shipped archive satisfies the literal, so clio can never
 // demand a version it does not itself carry.
-[RequiresPackage(BundledPackages.ProcessBuilderPackageName, "1.4.0.41",
+[RequiresPackage(BundledPackages.ProcessBuilderPackageName, "1.4.0.42",
 	Hint = BundledPackages.ProcessBuilderInstallHint)]
 public sealed class CreateBusinessProcessOptions : EnvironmentOptions {
 	/// <summary>Inline JSON process descriptor (name, caption, packageName, elements[], flows[], parameters[], mappings[]).</summary>

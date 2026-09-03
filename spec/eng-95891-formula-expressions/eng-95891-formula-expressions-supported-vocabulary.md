@@ -1,4 +1,4 @@
-# ENG-95891 — The supported formula vocabulary, and the evidence that defines it
+﻿# ENG-95891 — The supported formula vocabulary, and the evidence that defines it
 
 **Scoping rule (agreed):** the toolkit supports what is **(1) documented on Academy**, **(2) selectable in
 the process designer**, and **(3) actually used in real shipped processes**. Anything outside that set is
@@ -161,7 +161,21 @@ For each of the seven macro families in §1 and the two function sets in §2:
 
 ---
 
-## 5. The refusal set — the only things the validator says *no* to
+## 5. The refusal set — SUPERSEDED 2026-09-03
+
+**This section described a validator that no longer exists.** `CrtProcessBuilder` 1.4.0.41 deleted it: the
+platform's own pre-save gate already refused every class below, a flow CONDITION included, which is the
+half this document assumed was uncovered (see T-2 in `-traps.md`, reversed, and the measurements in
+`-save-gate-probe.md`). What ships now is the platform's refusal set, in the platform's words, and the
+authoritative list of them — measured, verbatim — is the refusal table in the `processes/formulas`
+guidance article. Two rows below are wrong about the OUTCOME, not just the wording: an unknown macro
+family is REFUSED rather than accepted with a warning, and there is no `warnings` channel on either
+formula use site at all.
+
+Kept as the record of what was designed, because three shipped surfaces were written from it. Do not use
+it as a specification.
+
+### What the refusal set was designed to be (historical)
 
 Deliberately small, because every refusal is a way to block a legitimate process.
 
@@ -177,6 +191,8 @@ Deliberately small, because every refusal is a way to block a legitimate process
 
 Everything else — an unknown macro family, an unusual BCL call, a raw generated-member reference — is
 **accepted with a warning on the `warnings` channel**, following the connections-binder precedent.
+*(Historical, and wrong on the first of the three: measured on a stand, an unknown macro family is refused
+by the platform on a mapping AND on a condition. The warning channel went with the validator.)*
 
 ---
 

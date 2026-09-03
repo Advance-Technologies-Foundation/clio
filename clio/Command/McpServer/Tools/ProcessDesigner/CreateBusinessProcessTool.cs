@@ -96,8 +96,8 @@ public class CreateBusinessProcessTool(
 		 + "element output as a process output); source is exactly one of {sourceElement, sourceElementParameter} "
 		 + "(another element's output), processParameter, value, or expression. An 'expression' is a FORMULA, "
 		 + "validated by the PLATFORM at the pre-save gate — so a bad one aborts the whole build with 'Process "
-		 + "validation failed' and nothing is created. On CrtProcessBuilder this clio requires 1.4.0.41, the version "
-		 + "where clio stopped validating formulas a second time itself; below it a refused formula still fails, "
+		 + "validation failed' and nothing is created. On CrtProcessBuilder this clio requires 1.4.0.42, the version "
+		 + "where the PACKAGE stopped validating formulas a second time itself; below it a refused formula still fails, "
 		 + "with the package's own wording. (The floor is shared with modify-business-process, whose "
 		 + "conditional-branch refusals carry the rest of it; a condition cannot be built here.) "
 		 + "The formula itself: ONE line, "
@@ -106,9 +106,12 @@ public class CreateBusinessProcessTool(
 		 + "resolve in THIS process, every macro family must be one a converter resolves where you used it, names "
 		 + "resolve through a flat case-sensitive registry (Math.Round yes, "
 		 + "System.Math.Round no), and a parameter is referenced by its UId meta-path, never by name. A refusal "
-		 + "names the parameter, the character index of the fault, and the expression as the platform's own "
-		 + "converter left it - a parameter reference by the parameter NAME, a fractional literal with an 'm' "
-		 + "appended - not as you wrote it. See "
+		 + "always names the parameter, and for the whole 'Formula value error:' family also the character index "
+		 + "of the fault and the expression as the platform's own converter left it - a parameter reference by "
+		 + "the parameter NAME, a fractional literal with an 'm' appended - not as you wrote it. An "
+		 + "unresolvable [#…#] parameter reference is the exception and carries neither: it names the reference "
+		 + "and the remedy instead ('which is not in this process. Add the parameter first, or correct the "
+		 + "reference.') - the sentence 1.4.0.42 introduced, and the reason this floor is what it is. See "
 		 + "modify-business-process for the full vocabulary; parameter-to-parameter mappings "
 		 + "require compatible types; a Lookup target's 'value' takes a bare non-empty record Guid, stored as the "
 		 + "ConstValue the runtime actually reads (the route ships from CrtProcessBuilder 1.3.1.1; THIS clio "
@@ -126,7 +129,7 @@ public class CreateBusinessProcessTool(
 		 + "changedColumns?:[<ColumnName>,...]} instead of a page save handler. changedColumns restricts an "
 		 + "on:modified trigger to fire ONLY when one of those column values changes (column names on the "
 		 + "trigger entity; valid only for on:modified; omit for any-change). To fire that trigger only for "
-		 + "matching records, add filter:{object, logicalOperation:and|or, conditions:[{column (entity column name, may be a lookup dot-path like Account.Code), comparison:equal|notEqual|greater|less|contains|isNull|..., one of value|macro (+macroArgument), optional datePart}], groups?} to the signalStart element. A signalStart filter's right side must be a constant/macro/datePart — NOT a process/element parameter (the signal is evaluated before the process instance exists; the server rejects a parameter reference here). The server serializes the platform filter; never hand-write filter JSON. Read get-guidance name=process-modeling FIRST — the full descriptor contract (buildable slice, filter condition + datePart/macro vocabulary, date/time DEFAULT-value macro rules and the Lookup bare-Guid default rule, mapping type-compatibility groups, formula policy, FSD caveat). For an `expression` mapping source or a conditional-flow condition read get-guidance name=process-formulas — it owns the accepted vocabulary, the reference syntax, what each refusal names, and the length bounds. Use list-user-tasks to discover valid userTaskName values. Requires the ProcessDesignService (CrtProcessBuilder) package on the target environment; install it with install-process-builder. After a successful create the process is INTERPRETED and runs as-is: do NOT run compile-creatio, and do NOT infer a compile from a raw process read (a `VwSysProcess` row's `NeedInstall`/`NeedUpdateSourceCode`/`NeedUpdateStructure` are dirty flags, not a compile trigger) — verify with describe-business-process. The response carries a compile-not-required note; a process needs a compile only if it has a Script Task (custom C#), which clio cannot author.")]
+		 + "matching records, add filter:{object, logicalOperation:and|or, conditions:[{column (entity column name, may be a lookup dot-path like Account.Code), comparison:equal|notEqual|greater|less|contains|isNull|..., one of value|macro (+macroArgument), optional datePart}], groups?} to the signalStart element. A signalStart filter's right side must be a constant/macro/datePart — NOT a process/element parameter (the signal is evaluated before the process instance exists; the server rejects a parameter reference here). The server serializes the platform filter; never hand-write filter JSON. Read get-guidance name=process-modeling FIRST — the full descriptor contract (buildable slice, filter condition + datePart/macro vocabulary, date/time DEFAULT-value macro rules and the Lookup bare-Guid default rule, mapping type-compatibility groups, formula policy, FSD caveat). For an `expression` mapping source or a conditional-flow condition read get-guidance name=process-formulas — it owns the accepted vocabulary, the reference syntax, what each refusal names, and the length bound. Use list-user-tasks to discover valid userTaskName values. Requires the ProcessDesignService (CrtProcessBuilder) package on the target environment; install it with install-process-builder. After a successful create the process is INTERPRETED and runs as-is: do NOT run compile-creatio, and do NOT infer a compile from a raw process read (a `VwSysProcess` row's `NeedInstall`/`NeedUpdateSourceCode`/`NeedUpdateStructure` are dirty flags, not a compile trigger) — verify with describe-business-process. The response carries a compile-not-required note; a process needs a compile only if it has a Script Task (custom C#), which clio cannot author.")]
 	public CommandExecutionResult CreateBusinessProcess(
 		[Description("create-business-process parameters")] [Required] CreateBusinessProcessArgs args
 	) {

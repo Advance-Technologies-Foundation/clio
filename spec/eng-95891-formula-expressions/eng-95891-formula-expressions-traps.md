@@ -1,4 +1,4 @@
-# ENG-95891 — Traps
+﻿# ENG-95891 — Traps
 
 Every entry here **fails silently**: the call succeeds, the schema saves, the process compiles, and the
 behaviour is wrong. They are ordered by how much damage they do if missed.
@@ -47,7 +47,7 @@ passes today and would keep passing while the feature is broken.
 
 ---
 
-## T-2 — `GetProcessValidationResult` is blind to flows and conditions
+## T-2 — REVERSED 2026-09-03: `GetProcessValidationResult` is NOT blind to conditions
 
 **The trap.** The pre-save gate is already wired (`ProcessBuildHandler.cs:81`, `ProcessModifyHandler.cs:88`)
 and fails closed, which makes it *look* like the validator for the whole schema. It is not.
@@ -56,11 +56,21 @@ and fails closed, which makes it *look* like the validator for the whole schema.
 `CreatedInVersionRule`, `SchemaElements`, `SchemaMethods`, `ChangedSchemaMethods`, `ParameterValues`,
 `ParameterConstValues`. **Not one rule inspects a sequence flow, a gateway, or `ConditionExpression`.**
 
-So a stand experiment of the form *"write a bad condition, call `GetProcessValidationResult`, see it pass"*
-proves nothing — it would pass regardless.
+The rule list is right and the conclusion drawn from it was wrong. `ParameterValuesValidationRule` does
+not need a rule that mentions a flow, because its `Validate()` opens by running the flow-schema GENERATOR
+(`ParameterValuesValidationRule.cs:526`), and generation builds a Boolean `Source = Script` parameter out
+of every non-empty `ConditionExpression` itself (`FlowSchemaGenerator.cs:132` →
+`BaseFlowSchemaGenerator.CreateExtraParameter:564`).
 
-**Do.** For use site (b), validate through the flow-schema generator seam (T-3). Keep
-`GetProcessValidationResult` as the schema-level gate it already is.
+So the stand experiment this section called worthless is exactly the one that settled it, and it did not
+pass: measured 2026-09-03 with the package's own condition guards built out and installed, six classes of
+bad condition were all refused and a valid one saved
+(`eng-95891-formula-expressions-save-gate-probe.md`).
+
+**Do.** Nothing here. `GetProcessValidationResult` IS the gate for a condition as well as for a mapping,
+which is why `CrtProcessBuilder` 1.4.0.41 deleted the package's own formula validator — see
+`spec/adr/adr-collapse-formula-validation-onto-platform-rule.md`. Do not re-add a validator on the
+strength of the paragraph above; it is kept only because two shipped surfaces were written from it.
 
 > **Corrected 2026-08-29.** "Not one rule inspects a sequence flow" is true of the rule LIST but
 > misleading about the outcome: `ParameterValuesValidationRule.Validate()` FIRST calls

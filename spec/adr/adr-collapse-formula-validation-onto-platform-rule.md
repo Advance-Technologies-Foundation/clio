@@ -1,4 +1,4 @@
-# ADR — Collapse formula validation onto the platform's own rule
+﻿# ADR — Collapse formula validation onto the platform's own rule
 
 - **Status**: Accepted 2026-09-03, after the one measurement it left open was run and reversed the
   premise of Decision step 2. Implemented on the follow-up branch
@@ -103,8 +103,15 @@ gate that refuses it anyway. So this guard goes too, and it is not covered by st
    in-memory schema, run `GetProcessValidationResult`, read the platform's message, detach before
    saving." The generator already does the attaching, on the `GetProcessValidationResult` call
    `EnsureValidForSave` already makes, so there is no adapter left to write — only a call to delete.
-3. Keep `EnsureStoredTextIsBounded` and its two limits. They must precede the platform's converter,
-   which is the component that crashes.
+3. Keep `EnsureStoredTextIsBounded` and its per-formula length limit. It must precede the platform's
+   converter, which is the component that crashes. **Amended in implementation**: the second limit, the
+   256 KB per-REQUEST budget, went with the validator rather than staying. It was incremented by
+   `Validate` alone, so the six paths that store caller text without validating it never touched it —
+   one request could already hand the gate `MaxRequestItems` x 2048 characters through those. It bounded
+   the work of a validator that no longer exists, not what the gate sees. An aggregate bound over all
+   eight paths would therefore be NEW protection, needing the scoped instance and the DI registration
+   back; it is left open rather than done, because nothing has measured the gate's converters to be a
+   real exposure at that volume.
 4. Delete `KnownMacroFamilies` / `FindUnrecognisedMacroFamily` / `IsInsideStringLiteral` /
    `MaxMacroNoticesPerFormula` and their tests (~60 lines). Measured dead — including the
    `SetFlowCondition:207` refusal that is `FindUnrecognisedMacroFamily`'s only other caller, on its
@@ -165,9 +172,17 @@ The open measurement was done first, and it collapsed step 2 into "delete": what
   which is not a parameter of this process. Add the parameter first, or correct the reference."* and
   the platform's reads *"Internal error: "{ErrorType:2,ErrorData:{ParameterUId:"1111…"}}""* — a
   serialised `ProcessParameterErrorInfo` with no remedy. Every other class is equivalent, because
-  ours mirrors the platform session and reproduces its `Formula value error:` text verbatim. Whether
-  that one class justifies keeping a reference pre-check is the reporter's call; this ADR does not
-  keep one, on the "one implementation, and it is the platform's" rule that motivated the refactor.
+  ours mirrors the platform session and reproduces its `Formula value error:` text verbatim.
+- **How that regression is answered — decided by the reporter, 2026-09-03.** Not by keeping a reference
+  pre-check: that is the second opinion this ADR exists to remove. By FORMATTING the platform's own
+  verdict instead. `PlatformValidationMessage` rewrites that one serialised object into a sentence naming
+  the reference and the remedy, and passes every other message through untouched. It decides nothing
+  about validity, so no rule in it can drift from the platform's, and an unknown error type or a changed
+  serialisation returns the platform's text unchanged. This is what the `[RequiresPackage]` floor of
+  1.4.0.42 actually buys, and both floor rationales say so. (The collapse itself shipped in 1.4.0.41; the
+  floor is .42 because that is the archive clio bundles, and because .42 is where the rewrite handles
+  every serialised error in one message and names an element-scoped reference as such — both of which the
+  shipped descriptions promise.)
 - This is why the refactor is a follow-up rather than an amendment to the open PRs: today's
   behaviour is correct, merely redundant, so it does not block a merge, and folding a
   message-contract change into a validated branch would invalidate its manual evidence.
