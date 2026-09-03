@@ -22,10 +22,25 @@ the parent-schema hierarchy to load the editable version. This ensures that
 raw.body is always read from the package where the schema can be modified.
 
 > **CLI vs MCP envelope.** The CLI verb returns `bundle` and `raw.body` inline. The MCP
-> `get-page` tool deliberately compacts its successful response to `page`, `files` and
-> `editable` — the body and the bundle live on disk instead, at the paths reported in
-> `files.bodyFile` / `files.bundleFile`. MCP callers read `files.bodyFile`; there is no
-> `raw` property in the MCP response.
+> `get-page` tool deliberately compacts its successful response to `page` and `files`,
+> plus `editable` **when the checksum probe succeeded** — the body and the bundle live on
+> disk instead, at the paths reported in `files.bodyFile` / `files.bundleFile`. MCP callers
+> read `files.bodyFile`; there is no `raw` property in the MCP response.
+>
+> **`editable` is optional.** The capture is best-effort: when the `SysSchema` checksum row
+> is missing or the query fails, the successful envelope carries no `editable` key at all.
+> Treat its absence as *baseline unavailable*, never as *no editable schema exists* — the
+> update still works, it just runs without the conflict-detection baseline.
+>
+> **The paths are on the MCP server host.** They are consumable only when the client shares
+> that filesystem — stdio, or `mcp-http` on loopback. A remote `mcp-http` client receives
+> absolute paths it cannot open; there is no API-native body-retrieval path today.
+>
+> **get-page REPLACES the schema directory on every call.** `.clio-pages/{schema-name}/` is
+> deleted recursively before the fresh `body.js` / `bundle.json` / `meta.json` are written,
+> so a second `get-page` of the same schema destroys an edit made in place (and anything
+> else kept in that directory). Send the edit through `update-page` / `sync-pages`, or copy
+> it out first.
 
 ## Conflict-Detection Baseline
 

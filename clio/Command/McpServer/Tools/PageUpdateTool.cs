@@ -710,7 +710,7 @@ public sealed record PageUpdateArgs(
 	string SchemaName,
 
 	[property: JsonPropertyName("body")]
-	[property: Description("Full JavaScript page body with markers, passed as a RAW STRING (not a JSON object/dict) — the schema source text with its /**MARKER*/ pairs. Pass either `body` (inline string) or `body-file` (path); one is required. WARNING: do NOT send the full get-page `raw.body` back verbatim — that re-applies existing merges and fails server-side with 'Object vs Array'. Send ONLY the new viewConfigDiff/handlers operations plus the required marker envelope. APPEND mode additionally requires the diff form (SCHEMA_VIEW_MODEL_CONFIG_DIFF / SCHEMA_MODEL_CONFIG_DIFF); a full-config body is rejected up-front — use mode='replace' for a full-config body.")]
+	[property: Description("Full JavaScript page body with markers, passed as a RAW STRING (not a JSON object/dict) — the schema source text with its /**MARKER*/ pairs. Pass either `body` (inline string) or `body-file` (path); one is required. WARNING: in `append` mode do NOT send the full body from `get-page.files.bodyFile` back verbatim — that re-applies existing merges and fails server-side with 'Object vs Array'. Send ONLY the new viewConfigDiff/handlers operations plus the required marker envelope. APPEND mode additionally requires the diff form (SCHEMA_VIEW_MODEL_CONFIG_DIFF / SCHEMA_MODEL_CONFIG_DIFF); a full-config body is rejected up-front — use mode='replace' for a full-config body.")]
 	string? Body,
 
 	[property: JsonPropertyName("resources")]

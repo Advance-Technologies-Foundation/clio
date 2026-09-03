@@ -4067,7 +4067,7 @@ internal static class ToolContractCatalog {
 	private static ToolContractDefinition BuildPageGet() {
 		return new ToolContractDefinition(
 			PageGetTool.ToolName,
-			"Reads a Freedom UI page and MATERIALIZES it on disk: writes `body.js` (the editable own-body), `bundle.json` (the full merged view) and `meta.json` under `.clio-pages/{schema-name}/`, then returns their paths in `files`. The successful envelope carries `page`, `files` and `editable` only \u2014 it does NOT inline the body or the bundle. Read the file at `files.bodyFile` to obtain the editable JavaScript source. Before editing that body, call get-guidance with name `page-modification` and use its checklist to choose specialized guidance.",
+			"Reads a Freedom UI page and MATERIALIZES it on disk: writes `body.js` (the editable own-body), `bundle.json` (the full merged view) and `meta.json` under `.clio-pages/{schema-name}/`, then returns their paths in `files`. REPLACES that directory on every call \u2014 an existing `.clio-pages/{schema-name}/` is deleted recursively before the fresh files are written, so an edit made in place is DESTROYED by the next get-page of the same schema: send it through update-page / sync-pages, or copy it out first. The successful envelope carries `page` and `files`; `editable` is present only when the editable-schema checksum probe succeeded \u2014 it does NOT inline the body or the bundle. The returned paths are on the MCP SERVER host and are consumable only when the client shares that filesystem (stdio, or mcp-http on loopback); a remote client cannot open them. Read the file at `files.bodyFile` to obtain the editable JavaScript source. Before editing that body, call get-guidance with name `page-modification` and use its checklist to choose specialized guidance.",
 			new ToolInputSchemaContract(
 				[SchemaNameFieldName],
 				EnvironmentOrExplicitConnectionFields(
@@ -4081,8 +4081,8 @@ internal static class ToolContractCatalog {
 				],
 				Field(SuccessFieldName, BooleanType, ToolSucceededDescription),
 				Field("page", ObjectType, "Page metadata carrying schema and package identity such as schemaName, schemaUId, packageName, packageUId, and parentSchemaName."),
-				Field("files", ObjectType, "Paths of the files written to disk: `bodyFile` (body.js \u2014 the editable JavaScript source to read, edit and send back), `bundleFile` (bundle.json \u2014 the full merged view; minified JSON, parse it with a JSON tool rather than grep), `metaFile` (meta.json) and `fetchedAt`. The body and the bundle are NOT inlined in this envelope."),
-				Field("editable", ObjectType, "Editable (own) schema state captured at fetch time: `editableSchemaExists` plus the identity and change signal used as the conflict-detection baseline for a later update-page / sync-pages call."),
+				Field("files", ObjectType, "Paths of the files written to disk: `bodyFile` (body.js \u2014 the editable JavaScript source to read, edit and send back), `bundleFile` (bundle.json \u2014 the full merged view; minified JSON, parse it with a JSON tool rather than grep), `metaFile` (meta.json) and `fetchedAt`. The body and the bundle are NOT inlined in this envelope. These are paths on the MCP SERVER host: a client that does not share that filesystem (a remote mcp-http caller) cannot read them. The whole `.clio-pages/{schema-name}/` directory is deleted and rewritten on every get-page of that schema, so do not keep in-progress edits there."),
+				Field("editable", ObjectType, "OPTIONAL \u2014 omitted when the best-effort SysSchema checksum query returned no row or failed; treat its ABSENCE as 'baseline unavailable', never as 'no editable schema'. When present: editable (own) schema state captured at fetch time \u2014 `editableSchemaExists` plus the identity and change signal used as the conflict-detection baseline for a later update-page / sync-pages call."),
 				Field(ErrorFieldName, StringType, FailureMessageDescription)
 			),
 			CommonErrorContract,
@@ -4884,7 +4884,7 @@ internal static class ToolContractCatalog {
 				[SchemaNameFieldName],
 				EnvironmentOrExplicitConnectionFields(
 					Field(SchemaNameFieldName, StringType, "Freedom UI page schema name."),
-					Field("body", StringType, "Full page body with all marker pairs. Reuse the CONTENTS of the file at `get-page.files.bodyFile` rather than the bundle written to `get-page.files.bundleFile`. Either `body` or `body-file` must be provided \u2014 the `get-page.files.bodyFile` path can be passed straight through as `body-file`."),
+					Field("body", StringType, "Full page body with all marker pairs. Reuse the CONTENTS of the file at `get-page.files.bodyFile` rather than the bundle written to `get-page.files.bundleFile`. Either `body` or `body-file` must be provided \u2014 in the default `mode='replace'` the `get-page.files.bodyFile` path can be passed straight through as `body-file`. In `append` mode it CANNOT: that mode takes only the new viewConfigDiff/handlers operations in the diff form, and a full-config body is rejected up-front."),
 					Field("body-file", StringType, "Absolute path to a file containing the page body. Used when `body` is empty. Enables passing large bodies without inline JSON escaping."),
 					Field(DryRunFieldName, BooleanType, "Validate without saving."),
 					Field(ValidateFieldName, BooleanType, "Run client-side content and run-process validation before saving. Set false only as an explicit escape hatch for a pre-existing page defect; JavaScript syntax, AST loadability, replace-mode marker integrity, the mobile JSON-object structure check, and the page baseline/conflict guard remain mandatory. It stays combinable with force=true - the two flags are orthogonal (one gates content checks, the other the baseline/conflict guard) - and the response then warns that both are relaxed."),
@@ -4972,7 +4972,7 @@ internal static class ToolContractCatalog {
 			new ToolInputSchemaContract(
 				["body"],
 				[
-					Field("body", StringType, "Full JavaScript page body with markers (web) or plain JSON body (mobile). Auto-detected by leading character."),
+					Field("body", StringType, "Full JavaScript page body with markers (web) or plain JSON body (mobile). Auto-detected by leading character. Over MCP, read the file at `get-page.files.bodyFile` and pass its CONTENTS \u2014 validate-page takes the body INLINE only, it has no `body-file` parameter."),
 					Field(ResourcesFieldName, StringType, "Optional JSON object string of localizable strings the platform does NOT auto-provide (custom titles, button captions, validator messages, explicit overrides). Applicable to web pages only. Only include keys with NO matching DS-bound view model attribute on the page \u2014 see `page-schema-resources` guidance.")
 				]),
 			EnvelopeOutput(

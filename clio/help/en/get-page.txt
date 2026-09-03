@@ -18,9 +18,22 @@ DESCRIPTION
     raw.body is always read from the package where the schema can be modified.
 
     CLI vs MCP: the CLI verb returns bundle and raw.body inline. The MCP
-    get-page tool compacts its successful response to page, files and
-    editable - read the body from the path in files.bodyFile; the MCP
-    response has no raw property.
+    get-page tool compacts its successful response to page and files, plus
+    editable when the checksum probe succeeded - read the body from the path
+    in files.bodyFile; the MCP response has no raw property. The editable
+    block is OPTIONAL: a failed or empty SysSchema checksum query omits the
+    key entirely, which means "baseline unavailable", not "no editable
+    schema".
+
+    The paths files reports are on the MCP SERVER host, so they are usable
+    only when the client shares that filesystem (stdio, or mcp-http on
+    loopback). A remote mcp-http client cannot open them.
+
+    get-page REPLACES .clio-pages/{schema-name}/ on every call: the existing
+    directory is deleted recursively before the fresh body.js, bundle.json
+    and meta.json are written. A second get-page of the same schema destroys
+    an edit made in place - send it through update-page / sync-pages, or copy
+    it out first.
 
     The response also carries an "editable" block with the editable schema's
     SysSchema checksum captured at fetch time (best-effort). get-page writes

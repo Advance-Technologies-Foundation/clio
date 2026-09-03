@@ -406,6 +406,12 @@ public class PageToolsTests
 			because: "get-page prompt guidance must require verifying a component type exists before inserting it, so the agent does not author an invented crt.* type that saves successfully but renders broken");
 		prompt.Should().Contain("ask the user whether to use one of the existing components or build a custom one",
 			because: "get-page prompt guidance must instruct the agent to ask the user when no existing component matches, instead of fabricating a type (ENG-90939)");
+		prompt.Should().Contain("files.bodyFile",
+			because: "the prompt must route the agent to the file get-page materializes, which is the only place the editable body exists (issue #1185)");
+		prompt.Should().NotContain("raw.body",
+			because: "the MCP get-page envelope has no raw property, so a prompt naming raw.body sends the agent after a value that never arrives (issue #1185)");
+		prompt.Should().Contain("REPLACES",
+			because: "the prompt routes edits to files.bodyFile, so it must also say that the next get-page of that schema deletes and rewrites the directory holding it (PR #1351 review)");
 		prompt.Should().Contain(GuidanceGetTool.ToolName,
 			because: "get-page prompt guidance should route guide lookups through the dedicated guidance tool");
 		prompt.Should().Contain("`existing-app-maintenance`",
