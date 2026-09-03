@@ -41,6 +41,16 @@ public sealed class GenerateSourceCodeTool(
 		.ToDictionary(pair => pair.Key, pair => pair.Value, StringComparer.Ordinal);
 
 	/// <summary>
+	/// The largest <c>timeout</c> a caller may set, in milliseconds (3 hours - three times the 60-minute
+	/// default). Before <c>timeout</c> became an MCP argument every call was capped by that default; without an
+	/// upper bound a mis-scaled or guessed value (<c>86400000</c>, <c>int.MaxValue</c>) would hold the HTTP
+	/// request and the MCP tool call open for weeks, and <c>generate-source-code</c> is a server write, so
+	/// <c>McpReadDeadlineGate.IsRetrySafe</c> excludes it from the pipeline read-response deadline - nothing
+	/// else would cut the call short (PR #1354 review).
+	/// </summary>
+	internal const int MaxTimeoutMilliseconds = 3 * 60 * 60 * 1000;
+
+	/// <summary>
 	/// Triggers source code generation for schemas in a registered Creatio environment.
 	/// </summary>
 	[McpServerTool(Name = GenerateSourceCodeToolName, ReadOnly = false, Destructive = false, Idempotent = true,
@@ -71,9 +81,10 @@ public sealed class GenerateSourceCodeTool(
 			Background = args.Background ?? false
 		};
 		if (args.Timeout is { } requestedTimeout) {
-			if (requestedTimeout <= 0) {
+			if (requestedTimeout <= 0 || requestedTimeout > MaxTimeoutMilliseconds) {
 				return CommandExecutionResult.FromValidationError(
-					"generate-source-code 'timeout' must be a positive number of milliseconds.");
+					$"generate-source-code 'timeout' must be between 1 and {MaxTimeoutMilliseconds} milliseconds "
+					+ $"({MaxTimeoutMilliseconds / 60_000} minutes).");
 			}
 			options.TimeOut = requestedTimeout;
 		}
@@ -109,8 +120,9 @@ public sealed record GenerateSourceCodeArgs(
 	bool? Background,
 
 	[property: JsonPropertyName("timeout")]
-	[property: Description("Request timeout in milliseconds. Defaults to 60 minutes, matching the CLI --timeout option. " +
-		"A cancelled or timed-out generation returns exit-code 1, never 0.")]
+	[property: Description("Request timeout in milliseconds. Defaults to 60 minutes, matching the CLI --timeout option; " +
+		"the maximum accepted value is 10800000 (3 hours). " +
+		"A cancelled or timed-out generation FAILS the call with a non-zero exit code (never 0) and an error naming the timeout — it is never reported as a successful generation.")]
 	int? Timeout = null
 ) {
 	/// <summary>

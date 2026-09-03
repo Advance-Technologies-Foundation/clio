@@ -31,6 +31,13 @@ public sealed class SchemaSyncTool(
 	TimeSpan? maxCumulativeRetryDelay = null) {
 
 	internal const string ToolName = "sync-schemas";
+
+	/// <summary>
+	/// The <c>operation-index</c> a result carries when it describes the CALL and not an operation: the whole-call
+	/// argument rejection, which happens before the <c>operations</c> array is materialized. A real index is
+	/// zero-based, so <c>-1</c> cannot collide with one.
+	/// </summary>
+	internal const int NoOperationIndex = -1;
 	private const string CreateLookupOperationName = "create-lookup";
 	private const string CreateEntityOperationName = "create-entity";
 	private const string UpdateEntityOperationName = "update-entity";
@@ -150,7 +157,7 @@ public sealed class SchemaSyncTool(
 			args.Operations as IReadOnlyList<SchemaSyncOperation> ?? args.Operations.ToList();
 		if (operations.Count == 0) {
 			return BuildTopLevelRejection(
-				"sync-schemas arguments are invalid: 'operations' is empty, so there is nothing to apply. Send at least one operation.");
+				$"sync-schemas arguments are invalid: 'operations' is empty, so there is nothing to apply. Send at least one operation. {ArgsFieldHint} Nothing was applied.");
 		}
 		// Data Forge enrichment is DIAGNOSTIC ONLY — it never gates the schema operations below. The
 		// builder already degrades gracefully (an unhealthy dataforge subsystem, e.g. 'baseUri: Value
@@ -253,7 +260,13 @@ public sealed class SchemaSyncTool(
 			Classify(ExecuteOperation(op, ctx.Args, index, ctx.TenantKey, ctx.RetryBudget), index);
 		ctx.State.Results.Add(result);
 		if (!result.Success) {
-			ctx.State.Abort(index, op);
+			// An operation whose `type` never bound to a dispatch arm (legacy `operation` key, missing or
+			// invalid `type`) fails HERE rather than in the Try* chain above, but it is the same class of
+			// failure: no edit to the rows or the environment can make that payload succeed. Echoing it back
+			// under "resubmit ONLY the operations in resume-plan.operations" would send an agent into an
+			// endless replay of a call that can never bind (PR #1354 review), so it is excluded from the plan
+			// exactly like the field-shape rejections.
+			ctx.State.Abort(index, op, resubmittableVerbatim: !IsUnbindableOperationType(op));
 			return false;
 		}
 		if (op.SeedRows?.Any() != true || IsSeedDataOperation(op)) {
@@ -355,6 +368,15 @@ public sealed class SchemaSyncTool(
 	private static bool IsSeedDataOperation(SchemaSyncOperation op) =>
 		string.Equals(op.Type, SeedDataOperationName, StringComparison.Ordinal);
 
+	/// <summary>
+	/// Whether this operation's <c>type</c> binds to a dispatch arm of <see cref="ExecuteOperation"/>. The
+	/// complement of the <c>_ =&gt;</c> default branch, kept beside it so the two cannot drift: a false here
+	/// means the operation reports <see cref="BuildUnknownOperationError"/> and is NOT resubmittable verbatim.
+	/// </summary>
+	private static bool IsUnbindableOperationType(SchemaSyncOperation op) =>
+		op.Type is not (CreateLookupOperationName or CreateEntityOperationName
+			or UpdateEntityOperationName or SeedDataOperationName);
+
 	private SchemaSyncOperationResult ExecuteOperation(SchemaSyncOperation op, SchemaSyncArgs args, int operationIndex, string tenantKey, RetryBudget retryBudget) {
 		return op.Type switch {
 			CreateLookupOperationName => ExecuteCreateSchema(op, args, "BaseLookup", false, CreateLookupOperationName, tenantKey, retryBudget),
@@ -400,6 +422,13 @@ public sealed class SchemaSyncTool(
 					Type = ToolName,
 					Success = false,
 					Status = "failed",
+					// NO operation ran, and none was even examined - the arguments were rejected before the
+					// `operations` array was materialized. Leaving the default 0 here serialized
+					// `operation-index: 0`, telling a caller that operations[0] is the culprit; an agent keying
+					// recovery off that field would resubmit from index 1 and skip a schema operation that was
+					// never applied (PR #1354 review). NoOperationIndex is the sentinel for "this result is
+					// about the call, not about an operation".
+					OperationIndex = NoOperationIndex,
 					Error = error
 				}
 			]
@@ -1202,13 +1231,13 @@ public sealed class SchemaSyncTool(
 		// Earlier operations in this batch may have skipped their inline seed (already-satisfied create) —
 		// carry those standalone seed-data ops along so an abort does not drop the deferred seeding.
 		resumeOperations.AddRange(state.DeferredSeedOperations.Select(deferred => deferred.Operation));
-		if (resumeOperations.Count == 0) {
-			// Nothing left to resubmit (a shape rejection on the last operation, with no deferred seeds). Emitting
-			// a plan whose `operations` is empty while its instruction says "resubmit the operations listed here"
-			// would advertise a recovery path that does not exist — the same wrong-signal class as issue #1303.
-			// The failure itself is already fully reported in `results`.
-			return null;
-		}
+		// An empty `operations` is a legitimate plan and is still EMITTED (PR #1354 review). This happens on a
+		// shape rejection of the last (or only) operation with no deferred seeds - the common single-operation
+		// LLM call. Suppressing the whole plan there made `resume-plan` absent on an abort, which contradicts
+		// the served contract and drops the structured `failed-operation` summary (operation-index / type /
+		// schema-name / error) consumers key off. The shape-rejection instruction below already tells the
+		// caller to correct the field names and resubmit the operation itself, so an empty `operations` array
+		// advertises no recovery path that does not exist - it says "nothing here is resubmittable AS SENT".
 		return new SchemaSyncResumePlan {
 			Instruction = state.FailedOperationIsResubmittableVerbatim
 				? "Batch aborted before completing. Resubmit ONLY the operations in resume-plan.operations "
@@ -1561,7 +1590,9 @@ public sealed class SchemaSyncOperationResult {
 	public string Status { get; set; }
 
 	/// <summary>
-	/// Zero-based index of the originating operation in the request <c>operations</c> array (ENG-93374).
+	/// Zero-based index of the originating operation in the request <c>operations</c> array (ENG-93374), or
+	/// <c>-1</c> when the result is about the CALL rather than about an operation (a whole-call argument
+	/// rejection, where no operation ran or was examined).
 	/// </summary>
 	[JsonPropertyName("operation-index")]
 	public int OperationIndex { get; set; }

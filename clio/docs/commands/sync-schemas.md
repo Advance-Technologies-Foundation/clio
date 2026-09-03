@@ -405,9 +405,22 @@ re-submittable input shape. Resubmit **only** `resume-plan.operations` as a new 
 do not resend the operations already marked `completed`.
 
 **Exception — field-shape rejection.** When the operation failed the field-shape check (an unbindable
-field name, or a missing `schema-name`), it is deliberately **omitted** from `resume-plan.operations`,
-and `instruction` says so: correct the field names reported in `failed-operation.error`, then resubmit
-that operation together with the operations the plan does list.
+field name, a missing `schema-name`, or a `type` that binds to no operation), it is deliberately
+**omitted** from `resume-plan.operations`, and `instruction` says so: correct the field names reported
+in `failed-operation.error`, then resubmit that operation together with the operations the plan does
+list. When that rejected operation was the last (or only) one and nothing was deferred,
+`resume-plan.operations` comes back as an **empty array** — the plan is still emitted, because
+`failed-operation` and `not-run-operation-indexes` are what a recovering caller reads. An empty
+`operations` means "nothing here is resubmittable as sent", not "the plan is missing".
+
+**Presence.** `resume-plan` is present whenever the batch aborted, and also on a fully successful batch
+that deferred an inline seed (the deferred `seed-data` operations are carried in `operations`). Its
+presence is therefore not a failure signal — read `success` and `results[*].status` for that.
+
+**`operation-index` on a whole-call rejection.** When the arguments are rejected before the
+`operations` array is even read (a mis-keyed or missing `operations`, an unbindable top-level field),
+the single result in `results` describes the CALL, not an operation, and carries
+`"operation-index": -1`. A real operation index is zero-based, so `-1` cannot be mistaken for one.
 
 When a create succeeded but its inline seeding failed, the resume operation for that step is a standalone `seed-data` operation (not another
 create), so resuming never recreates the already-created schema.

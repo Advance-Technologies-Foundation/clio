@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text.Json;
+using System.Threading.Tasks;
 using Clio.Command;
 using Clio.Command.McpServer.Tools;
 using Clio.Common;
@@ -212,8 +213,71 @@ public sealed class GenerateSourceCodeToolTests
 		result.ExitCode.Should().Be(1,
 			because: "a non-positive timeout is a caller mistake and must surface as a validation error");
 		result.Output.Should().Contain(message =>
-			message.Value != null && message.Value.ToString()!.Contains("'timeout' must be a positive"),
+			message.Value != null && message.Value.ToString()!.Contains("'timeout' must be between 1 and"),
 			because: "the error must name the offending argument so the caller can correct it");
+		commandResolver.DidNotReceive().Resolve<GenerateSourceCodeCommand>(Arg.Any<EnvironmentOptions>());
+	}
+
+	[Test]
+	[Category("Unit")]
+	[TestCaseSource(nameof(CancellationShapes))]
+	[Description("A cancelled or timed-out generation fails with a non-zero exit code and a message naming the timeout, never a success envelope — the guarantee the tool's own 'timeout' description publishes to callers (PR #1354 review).")]
+	public void GenerateSourceCode_ShouldReturnExitCodeOne_WhenTheGenerationIsCancelledOrTimesOut(Exception failure) {
+		// Arrange
+		ThrowingGenerateSourceCodeCommand resolvedCommand = new(failure);
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		commandResolver.Resolve<GenerateSourceCodeCommand>(Arg.Any<EnvironmentOptions>()).Returns(resolvedCommand);
+		GenerateSourceCodeTool tool = new(resolvedCommand, ConsoleLogger.Instance, commandResolver);
+
+		// Act
+		CommandExecutionResult result = tool.GenerateSourceCode(
+			new GenerateSourceCodeArgs("dev", null, null, null, Timeout: 120000));
+
+		// Assert
+		// The description used to promise exit code 1 specifically. It is not what happens: a cancellation
+		// surfaces through the generic execution catch as -1 ("clio itself failed"), and only the
+		// caller-actionable refusals (package / environment / version) are mapped to 1. Rather than reshape
+		// that mapping for every tool, the description now states the guarantee that actually holds — the run
+		// FAILS with a non-zero exit code and an error naming the timeout — and this test pins it (PR #1354 review).
+		result.ExitCode.Should().NotBe(0,
+			because: "reporting a cancelled or timed-out generation as a success is the original symptom issue #1303 B1 reports");
+		result.Output.Should().Contain(message =>
+			message.GetType() == typeof(ErrorMessage) &&
+			message.Value != null &&
+			message.Value.ToString()!.Contains("timed out", StringComparison.OrdinalIgnoreCase),
+			because: "the caller must be told the run was cut short by the timeout, not handed an opaque framework message");
+	}
+
+	private static IEnumerable<TestCaseData> CancellationShapes() {
+		yield return new TestCaseData(new OperationCanceledException("The operation timed out."))
+			.SetName("GenerateSourceCode_ShouldReturnExitCodeOne_OnOperationCanceledException");
+		yield return new TestCaseData(new TaskCanceledException("The request timed out."))
+			.SetName("GenerateSourceCode_ShouldReturnExitCodeOne_OnTaskCanceledException");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[TestCase(10_800_001)]
+	[TestCase(86_400_000)]
+	[TestCase(int.MaxValue)]
+	[Description("Rejects a 'timeout' above the documented 3-hour maximum: generate-source-code is a server write, so it is excluded from the pipeline read-response deadline and nothing else would cut a mis-scaled value short (PR #1354 review).")]
+	public void GenerateSourceCode_ShouldRejectTimeoutAboveTheMaximum(int timeout) {
+		// Arrange
+		FakeGenerateSourceCodeCommand resolvedCommand = new();
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		commandResolver.Resolve<GenerateSourceCodeCommand>(Arg.Any<EnvironmentOptions>()).Returns(resolvedCommand);
+		GenerateSourceCodeTool tool = new(resolvedCommand, ConsoleLogger.Instance, commandResolver);
+
+		// Act
+		CommandExecutionResult result = tool.GenerateSourceCode(
+			new GenerateSourceCodeArgs("dev", null, null, null, Timeout: timeout));
+
+		// Assert
+		result.ExitCode.Should().Be(1,
+			because: "an unbounded timeout would hold the HTTP request and the MCP tool call open for days");
+		result.Output.Should().Contain(message =>
+			message.Value != null && message.Value.ToString()!.Contains(GenerateSourceCodeTool.MaxTimeoutMilliseconds.ToString()),
+			because: "the rejection must name the accepted maximum so the caller can correct the call in one round-trip");
 		commandResolver.DidNotReceive().Resolve<GenerateSourceCodeCommand>(Arg.Any<EnvironmentOptions>());
 	}
 
@@ -310,6 +374,19 @@ public sealed class GenerateSourceCodeToolTests
 			.GetCustomAttributes(typeof(McpServerToolAttribute), inherit: false)
 			.Cast<McpServerToolAttribute>()
 			.Single();
+
+	/// <summary>
+	/// A command whose execution throws the shape an HTTP timeout / caller cancellation surfaces as, so the
+	/// contract claim "a cancelled or timed-out generation returns exit-code 1, never 0" is pinned by a test
+	/// rather than by one manual run on a live stand (PR #1354 review).
+	/// </summary>
+	private sealed class ThrowingGenerateSourceCodeCommand(Exception failure) : GenerateSourceCodeCommand(
+		Substitute.For<IApplicationClient>(),
+		new EnvironmentSettings(),
+		Substitute.For<IServiceUrlBuilder>())
+	{
+		public override int Execute(GenerateSourceCodeOptions options) => throw failure;
+	}
 
 	private sealed class FakeGenerateSourceCodeCommand : GenerateSourceCodeCommand
 	{

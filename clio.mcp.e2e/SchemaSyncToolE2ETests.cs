@@ -400,6 +400,17 @@ public sealed class SchemaSyncToolE2ETests : McpContractFixtureBase {
 			because: "the caller must receive actionable guidance before any remote mutation");
 		result.GetProperty("error").GetString().Should().NotContain(invalidEnvironmentName,
 			because: "local validation must happen before environment resolution");
+		// The shape rejection hit the ONLY operation, so nothing is resubmittable as sent. The plan is still
+		// emitted with an EMPTY operations array rather than suppressed: `failed-operation` is what a
+		// recovering caller reads, and an absent `resume-plan` on an abort contradicts the served contract
+		// (PR #1354 review).
+		JsonElement virtualResumePlan = response.GetProperty("resume-plan");
+		virtualResumePlan.GetProperty("operations").GetArrayLength().Should().Be(0,
+			because: "the rejected operation is not resubmittable verbatim and nothing followed it");
+		virtualResumePlan.GetProperty("failed-operation").GetProperty("operation-index").GetInt32().Should().Be(0,
+			because: "the plan must still name which operation failed even when it lists no resubmittable operations");
+		virtualResumePlan.GetProperty("instruction").GetString().Should().Contain("FIELD SHAPE",
+			because: "the caller must be told to correct the field shape before resubmitting the operation itself");
 	}
 
 	[Test]

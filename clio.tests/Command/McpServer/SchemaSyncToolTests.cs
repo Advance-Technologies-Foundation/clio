@@ -3873,9 +3873,192 @@ public sealed class SchemaSyncToolTests {
 			because: "the caller must be told the exact rename to apply");
 		response.Results[0].Error.Should().Contain("Nothing was applied",
 			because: "the caller must know the batch had no server-side effect");
+		response.Results[0].OperationIndex.Should().Be(SchemaSyncTool.NoOperationIndex,
+			because: "the arguments were rejected before the operations array was materialized, so no operation was even examined — "
+				+ "serializing operation-index 0 would tell a recovering agent that operations[0] is the culprit and invite it to resubmit from index 1");
 		response.ResumePlan.Should().BeNull(
 			because: "no operation ran, so there is nothing to resume — the whole call is resubmitted after the rename");
 		convergence.DidNotReceive().Classify(Arg.Any<SchemaConvergenceTarget>());
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("An omitted 'operations' array is rejected with the caller-fixable message, never the ArgumentNullException the ToList() used to throw — this pins the ORDERING of the null guard above the materialization (PR #1354 review).")]
+	public async Task SchemaSync_ShouldRejectOmittedOperations_WithoutThrowingArgumentNullException() {
+		// Arrange
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		ISchemaConvergenceService convergence = Convergence();
+		SchemaSyncTool tool = new(commandResolver, ConsoleLogger.Instance, convergence);
+		SchemaSyncArgs args = new("dev", "UsrPkg", null!) {
+			ExtensionData = new Dictionary<string, System.Text.Json.JsonElement> {
+				["ops"] = ToJsonElement("[]")
+			}
+		};
+
+		// Act
+		SchemaSyncResponse response = await tool.SchemaSync(args);
+
+		// Assert
+		response.Success.Should().BeFalse(
+			because: "a mis-keyed operations array must be reported, not dropped");
+		response.Results.Should().HaveCount(1,
+			because: "the top-level rejection replaces the whole batch with one targeted validation result");
+		response.Results[0].Type.Should().Be("sync-schemas",
+			because: "the failure belongs to the call as a whole, not to a single operation");
+		response.Results[0].Error.Should().Contain("'ops' -> 'operations'",
+			because: "the caller must be told the exact rename to apply");
+		response.Results[0].Error.Should().Contain("Nothing was applied",
+			because: "the caller must know the batch had no server-side effect");
+		response.Results[0].Error.Should().NotContain("Value cannot be null",
+			because: "an opaque ArgumentNullException from Enumerable.ToList(null) is the unactionable answer this validation exists to remove — "
+				+ "the null guard must stay ABOVE the materialization");
+		response.ResumePlan.Should().BeNull(
+			because: "no operation ran, so there is nothing to resume");
+		convergence.DidNotReceive().Classify(Arg.Any<SchemaConvergenceTarget>());
+		commandResolver.DidNotReceive().Resolve<CreateEntitySchemaCommand>(Arg.Any<CreateEntitySchemaOptions>());
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("An EMPTY 'operations' array is rejected with the same valid-field hint the null branch carries, and applies nothing (PR #1354 review).")]
+	public async Task SchemaSync_ShouldRejectEmptyOperations_WithTheValidFieldHint() {
+		// Arrange
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		ISchemaConvergenceService convergence = Convergence();
+		SchemaSyncTool tool = new(commandResolver, ConsoleLogger.Instance, convergence);
+		SchemaSyncArgs args = new("dev", "UsrPkg", []);
+
+		// Act
+		SchemaSyncResponse response = await tool.SchemaSync(args);
+
+		// Assert
+		response.Success.Should().BeFalse(
+			because: "an empty batch applies nothing, so reporting success would be the wrong signal");
+		response.Results.Should().HaveCount(1,
+			because: "the top-level rejection replaces the whole batch with one targeted validation result");
+		response.Results[0].Error.Should().Contain("'operations' is empty",
+			because: "the caller must be told which field is at fault");
+		response.Results[0].Error.Should().Contain("Valid fields: environment-name, package-name, operations.",
+			because: "the empty-array branch must carry the same field hint the null branch does");
+		response.Results[0].OperationIndex.Should().Be(SchemaSyncTool.NoOperationIndex,
+			because: "no operation was examined");
+		response.ResumePlan.Should().BeNull(
+			because: "no operation ran, so there is nothing to resume");
+		convergence.DidNotReceive().Classify(Arg.Any<SchemaConvergenceTarget>());
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("An operation sent with the legacy 'operation' key instead of 'type' is omitted from resume-plan.operations — replaying that payload verbatim can never bind, so echoing it back would send an agent into an endless retry (PR #1354 review).")]
+	public async Task SchemaSync_ShouldOmitUnbindableOperationType_FromResumePlan() {
+		// Arrange
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		ISchemaConvergenceService convergence = Convergence();
+		SchemaSyncTool tool = new(commandResolver, ConsoleLogger.Instance, convergence);
+		SchemaSyncArgs args = new(
+			"dev", "UsrPkg",
+			[
+				new SchemaSyncOperation(null!, "UsrTodoStatus", TitleLocalizations: Localizations("Todo Status")) {
+					ExtensionData = new Dictionary<string, System.Text.Json.JsonElement> {
+						["operation"] = ToJsonElement("create-lookup")
+					}
+				},
+				new SchemaSyncOperation("create-lookup", "UsrGenre", TitleLocalizations: Localizations("Genre"))
+			]);
+
+		// Act
+		SchemaSyncResponse response = await tool.SchemaSync(args);
+
+		// Assert
+		response.Success.Should().BeFalse(
+			because: "an operation whose type never bound applied nothing");
+		response.Results[0].Error.Should().Contain("unsupported request field 'operation'",
+			because: "the caller must be told to send 'type' instead");
+		response.ResumePlan.Should().NotBeNull(
+			because: "operation 1 never ran and must still be resumable");
+		response.ResumePlan!.Operations.Should().NotContain(op => op.SchemaName == "UsrTodoStatus",
+			because: "no edit to the rows or the environment can make an unbindable payload succeed, so echoing it back under "
+				+ "'resubmit ONLY the operations in resume-plan.operations' would be an infinite-retry trap");
+		response.ResumePlan.Operations.Should().ContainSingle(op => op.SchemaName == "UsrGenre",
+			because: "the not-run operation is still resubmittable as sent");
+		response.ResumePlan.Instruction.Should().Contain("FIELD SHAPE",
+			because: "the instruction must tell the caller to correct the payload before resubmitting it");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("A virtual create-entity carrying seed-rows is a SHAPE rejection: it never reaches the server, its error names the fix, and it is excluded from resume-plan.operations while the not-run operation stays in (PR #1354 review).")]
+	public async Task SchemaSync_ShouldRejectVirtualSeedRows_AsAShapeRejection() {
+		// Arrange
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		ISchemaConvergenceService convergence = Convergence();
+		SchemaSyncTool tool = new(commandResolver, ConsoleLogger.Instance, convergence);
+		SchemaSyncArgs args = new(
+			"dev", "UsrPkg",
+			[
+				new SchemaSyncOperation("create-entity", "UsrVirtual",
+					TitleLocalizations: Localizations("Virtual"),
+					SeedRows: [new SchemaSyncSeedRow(new Dictionary<string, System.Text.Json.JsonElement> {
+						["Name"] = ToJsonElement("New")
+					})]) { IsVirtual = true },
+				new SchemaSyncOperation("create-lookup", "UsrGenre", TitleLocalizations: Localizations("Genre"))
+			]);
+
+		// Act
+		SchemaSyncResponse response = await tool.SchemaSync(args);
+
+		// Assert
+		response.Success.Should().BeFalse(
+			because: "a virtual entity has no table to seed, so the operation cannot be applied");
+		response.Results[0].Error.Should().Contain("virtual create-entity operations cannot include seed-rows",
+			because: "the caller must be told which combination is impossible");
+		convergence.DidNotReceive().Classify(Arg.Any<SchemaConvergenceTarget>());
+		commandResolver.DidNotReceive().Resolve<CreateEntitySchemaCommand>(Arg.Any<CreateEntitySchemaOptions>());
+		response.ResumePlan.Should().NotBeNull(
+			because: "operation 1 never ran and must still be resumable");
+		response.ResumePlan!.Operations.Should().NotContain(op => op.SchemaName == "UsrVirtual",
+			because: "the guard moved from a CONTENT failure to a SHAPE rejection, so the payload is no longer resubmittable verbatim");
+		response.ResumePlan.Operations.Should().ContainSingle(op => op.SchemaName == "UsrGenre",
+			because: "the not-run operation is still resubmittable as sent");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("A shape rejection on the LAST operation still emits a resume plan — with an empty operations array — so failed-operation and the completed/not-run split survive; and the earlier operation stands as completed (PR #1354 review).")]
+	public async Task SchemaSync_ShouldStillEmitResumePlan_WhenTheLastOperationIsShapeRejected() {
+		// Arrange - operation 0 classifies AlreadySatisfied so it completes without a server call, leaving the
+		// shape rejection on the LAST operation as the only reason the batch aborts.
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		ISchemaConvergenceService convergence = Convergence(SchemaConvergenceOutcome.AlreadySatisfied);
+		SchemaSyncTool tool = new(commandResolver, ConsoleLogger.Instance, convergence);
+		SchemaSyncArgs args = new(
+			"dev", "UsrPkg",
+			[
+				new SchemaSyncOperation("create-lookup", "UsrTodoStatus", TitleLocalizations: Localizations("Todo Status")),
+				new SchemaSyncOperation("create-entity", "UsrVirtual",
+					TitleLocalizations: Localizations("Virtual"),
+					SeedRows: [new SchemaSyncSeedRow(new Dictionary<string, System.Text.Json.JsonElement> {
+						["Name"] = ToJsonElement("New")
+					})]) { IsVirtual = true }
+			]);
+
+		// Act
+		SchemaSyncResponse response = await tool.SchemaSync(args);
+
+		// Assert
+		response.Success.Should().BeFalse(
+			because: "the batch aborted on operation 1");
+		response.Results[0].Status.Should().Be("completed",
+			because: "operations earlier in the batch stand as completed and must not be resent");
+		response.ResumePlan.Should().NotBeNull(
+			because: "suppressing the plan makes resume-plan absent on an abort, which contradicts the served contract and drops "
+				+ "the structured failed-operation summary consumers key off");
+		response.ResumePlan!.Operations.Should().BeEmpty(
+			because: "the shape-rejected operation is not resubmittable as sent and nothing follows it — an empty array says exactly that");
+		response.ResumePlan.FailedOperation.OperationIndex.Should().Be(1,
+			because: "the failed-operation summary is what a recovering caller reads when operations is empty");
+		response.ResumePlan.Instruction.Should().Contain("FIELD SHAPE",
+			because: "the instruction must tell the caller to correct the field names and resubmit that operation itself");
 	}
 
 	[Test]
