@@ -122,81 +122,96 @@ public static class ApprovalBlockExpectation {
 		notification is JsonObject block && !string.IsNullOrWhiteSpace(ReadName(block[EmailTemplateKey]));
 
 	/// <summary>
-	/// Of the elements the caller asked to configure, those whose configuration did NOT survive: the server
-	/// reports no <c>approval</c> block at all, or it reports one without the <c>approver</c> that was sent.
+	/// Of the elements the caller asked to configure, those whose configuration did NOT survive: the request was
+	/// in the read shape and bound nothing, the server reports no <c>approval</c> block at all, or it reports one
+	/// missing the approver, an email template or the author's recipient that was sent.
 	/// </summary>
 	/// <param name="described">The description read back after the successful operation.</param>
 	/// <param name="expected">Expectations returned by <see cref="FromDescriptor"/> / <see cref="FromOperations"/>.</param>
 	public static IReadOnlyList<DroppedApproval> Missing(DescribeProcessResult described,
 			IReadOnlyList<ApprovalExpectation> expected) {
-		if (expected.Count == 0) {
-			return Array.Empty<DroppedApproval>();
-		}
-
-		if (described?.Elements is null) {
-			// Nothing to compare against: report nothing rather than accuse the server on missing evidence.
+		// Nothing expected, or nothing to compare against: report nothing rather than accuse the server on
+		// missing evidence.
+		if (expected.Count == 0 || described?.Elements is null) {
 			return Array.Empty<DroppedApproval>();
 		}
 
 		List<DroppedApproval> missing = [];
 		foreach (ApprovalExpectation expectation in expected) {
-			// Decidable from the REQUEST alone, and reported first because it explains every other symptom that
-			// follows from it. A described block fed back verbatim carries approverType / a boolean notifyApprover
-			// where the write contract expects approver:{…} / notifyApprover:{…}; the flat members bind to nothing
-			// and DataContractJsonSerializer drops them while the server answers success. Without this the request
-			// also reads as "carried no approver", so the approver check below would never even run.
-			if (expectation.DescribeShaped) {
-				missing.Add(new DroppedApproval(expectation.ElementName, ApprovalDropKind.DescribeShapedRequest));
-				continue;
-			}
-
-			// Matched on NAME OR UID on purpose: setElement identifies an element by either (the server's
-			// ResolveFlowElement canonicalizes both), so a caller who passed a UId would otherwise match nothing and
-			// be told its approval configuration had been discarded when the edit in fact applied cleanly.
-			DescribedElement? element = described.Elements.FirstOrDefault(e =>
-				string.Equals(e?.Name, expectation.ElementName, StringComparison.OrdinalIgnoreCase)
-				|| string.Equals(e?.Uid, expectation.ElementName, StringComparison.OrdinalIgnoreCase));
-
-			// An element absent from the read-back is NOT reported: the read-back is the only evidence this check
-			// has, and "I cannot find the element I asked about" is a reason to stay quiet rather than to accuse.
-			if (element is null) {
-				continue;
-			}
-
-			if (element.Approval is null) {
-				missing.Add(new DroppedApproval(expectation.ElementName, ApprovalDropKind.WholeBlock));
-				continue;
-			}
-
-			// A block that came back WITHOUT the approver it was sent. This is the newer half of the same silent
-			// drop: a server that has 'approval' but predates 'approver' returns the block and discards that one
-			// member, so a presence-only check sees a healthy element while nobody is assigned to approve it.
-			// Checked here rather than left to the versioned RequiresPackage precisely because this class exists
-			// for the case where the version signal is unavailable or untrustworthy.
-			if (expectation.ExpectsApprover && string.IsNullOrWhiteSpace(element.Approval.ApproverType)) {
-				missing.Add(new DroppedApproval(expectation.ElementName, ApprovalDropKind.ApproverOnly));
-			}
-
-			// The floor names THREE silent drops, and the read-back this command already fetched can see all three.
-			// A notification whose flag came back on with no template stored is the second: the runtime fails inside
-			// CreateEmailMessage and IgnoreEmailErrors swallows it, so the element reports the notification as
-			// configured and never sends. The third is the same on the author side with no recipient resolved.
-			if (expectation.ExpectsApproverTemplate
-					&& string.IsNullOrWhiteSpace(element.Approval.ApproverEmailTemplate)) {
-				missing.Add(new DroppedApproval(expectation.ElementName, ApprovalDropKind.NotificationTemplate));
-			}
-
-			if (expectation.ExpectsAuthorTemplate
-					&& string.IsNullOrWhiteSpace(element.Approval.AuthorEmailTemplate)) {
-				missing.Add(new DroppedApproval(expectation.ElementName, ApprovalDropKind.NotificationTemplate));
-			}
-
-			if (expectation.ExpectsAuthorRecipient && string.IsNullOrWhiteSpace(element.Approval.Recipient)) {
-				missing.Add(new DroppedApproval(expectation.ElementName, ApprovalDropKind.AuthorRecipient));
-			}
+			missing.AddRange(DropsFor(described.Elements, expectation));
 		}
 
 		return missing;
+	}
+
+	/// <summary>
+	/// What one expectation lost. Resolves the element it names, then asks <see cref="BlockDrops"/> which fields
+	/// of its block did not survive; an expectation can lose more than one, and each is reported on its own
+	/// because each has a different cause.
+	/// </summary>
+	private static IReadOnlyList<DroppedApproval> DropsFor(IReadOnlyList<DescribedElement> elements,
+			ApprovalExpectation expectation) {
+		// Decidable from the REQUEST alone, and reported first because it explains every other symptom that
+		// follows from it. A described block fed back verbatim carries approverType / a boolean notifyApprover
+		// where the write contract expects approver:{…} / notifyApprover:{…}; the flat members bind to nothing
+		// and DataContractJsonSerializer drops them while the server answers success. Without this the request
+		// also reads as "carried no approver", so the approver check would never even run.
+		if (expectation.DescribeShaped) {
+			return [new DroppedApproval(expectation.ElementName, ApprovalDropKind.DescribeShapedRequest)];
+		}
+
+		// Matched on NAME OR UID on purpose: setElement identifies an element by either (the server's
+		// ResolveFlowElement canonicalizes both), so a caller who passed a UId would otherwise match nothing and
+		// be told its approval configuration had been discarded when the edit in fact applied cleanly.
+		DescribedElement? element = elements.FirstOrDefault(e =>
+			string.Equals(e?.Name, expectation.ElementName, StringComparison.OrdinalIgnoreCase)
+			|| string.Equals(e?.Uid, expectation.ElementName, StringComparison.OrdinalIgnoreCase));
+
+		// An element absent from the read-back is NOT reported: the read-back is the only evidence this check
+		// has, and "I cannot find the element I asked about" is a reason to stay quiet rather than to accuse.
+		if (element is null) {
+			return Array.Empty<DroppedApproval>();
+		}
+
+		if (element.Approval is null) {
+			return [new DroppedApproval(expectation.ElementName, ApprovalDropKind.WholeBlock)];
+		}
+
+		return BlockDrops(element.Approval, expectation);
+	}
+
+	/// <summary>
+	/// Which members of a block that DID come back are missing the values that were sent — the three shapes the
+	/// version floor names, all visible in the read-back the command already fetched. Checked here rather than
+	/// left to the versioned <c>RequiresPackage</c> precisely because this class exists for the case where the
+	/// version signal is unavailable or untrustworthy.
+	/// </summary>
+	private static IReadOnlyList<DroppedApproval> BlockDrops(DescribedApproval approval,
+			ApprovalExpectation expectation) {
+		List<DroppedApproval> drops = [];
+		// A server that has 'approval' but predates 'approver' returns the block and discards that one member, so
+		// a presence-only check sees a healthy element while nobody is assigned to approve it.
+		if (expectation.ExpectsApprover && string.IsNullOrWhiteSpace(approval.ApproverType)) {
+			drops.Add(new DroppedApproval(expectation.ElementName, ApprovalDropKind.ApproverOnly));
+		}
+
+		// A notification whose flag came back on with no template stored: the runtime fails inside
+		// CreateEmailMessage and IgnoreEmailErrors swallows it, so the element reports the notification as
+		// configured and never sends. Both notifications fail the same way, so they report the same kind.
+		if (expectation.ExpectsApproverTemplate && string.IsNullOrWhiteSpace(approval.ApproverEmailTemplate)) {
+			drops.Add(new DroppedApproval(expectation.ElementName, ApprovalDropKind.NotificationTemplate));
+		}
+
+		if (expectation.ExpectsAuthorTemplate && string.IsNullOrWhiteSpace(approval.AuthorEmailTemplate)) {
+			drops.Add(new DroppedApproval(expectation.ElementName, ApprovalDropKind.NotificationTemplate));
+		}
+
+		// The same on the author side with nobody to send to — "Author" resolves no one on its own.
+		if (expectation.ExpectsAuthorRecipient && string.IsNullOrWhiteSpace(approval.Recipient)) {
+			drops.Add(new DroppedApproval(expectation.ElementName, ApprovalDropKind.AuthorRecipient));
+		}
+
+		return drops;
 	}
 
 	/// <summary>
