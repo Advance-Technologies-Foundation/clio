@@ -63,6 +63,7 @@ public sealed class AgentCliRunner(IProcessExecutor processExecutor, IFileSystem
 		string[] pathDirectories = pathVariable.Split(Path.PathSeparator,
 			StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
 		foreach (string directory in pathDirectories) {
+			if (!Path.IsPathFullyQualified(directory)) continue;
 			foreach (string candidate in CandidateFileNames(cliName)) {
 				string fullPath = _fileSystem.Combine(directory, candidate);
 				if (_fileSystem.ExistsFile(fullPath)) {
