@@ -307,9 +307,12 @@ public static class AccessRightsBlockExpectation {
 			+ "revoke NOTHING when it runs, silently — it has no output parameters to report that. If you asked for "
 			+ "a REVOKE, treat those permissions as still in place and do not report the change as applied. Install "
 			+ "a package that supports the element (clio install-process-builder) and re-apply the block, or "
-			+ "configure the element in the designer. If re-applying reproduces this same warning, the package "
-			+ "bundled with THIS clio also predates the element — updating clio itself, or deploying a newer "
-			+ "CrtProcessBuilder by other means, is then the only fix, and the block cannot be applied here.";
+			+ "configure the element in the designer. If re-applying reproduces this same warning, the archive "
+			+ "bundled with THIS clio does not carry the element either — and note that its VERSION cannot tell "
+			+ "you that: the bundled package satisfies this command's [RequiresPackage] floor while still "
+			+ "discarding the block, so the version precondition does not protect you here and this warning is "
+			+ "the only signal. Deploying a CrtProcessBuilder built from a source tree that contains the element "
+			+ "is then the only fix, and the block cannot be applied on this environment until you do.";
 	}
 
 	// A server that supports the element reports the block through the extension bag, because DescribedElement
