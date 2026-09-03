@@ -642,9 +642,9 @@ public sealed class CreateBusinessProcessToolE2ETests {
 		if (callResult.IsError is true && !payload.Contains("created (UId:")) {
 			Assert.Ignore(
 				"The sandbox's deployed CrtProcessBuilder does not accept a 'changeAccessRights' element type, so "
-				+ "the accessRights block never reaches the read-back guard. Re-run against an environment "
-				+ "carrying a package that supports the element (clio's bundled archive still predates it; the "
-				+ "rebundle is a follow-up).");
+				+ "the accessRights block never reaches the read-back guard. This is expected until the "
+				+ "CrtProcessBuilder rebundle lands and the [RequiresPackage] floors move off 1.3.1.1 - until "
+				+ "then this test is Ignored, NOT passing, and the create path is unverified end to end.");
 		}
 
 		callResult.IsError.Should().NotBeTrue(
