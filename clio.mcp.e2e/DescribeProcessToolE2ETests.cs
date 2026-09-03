@@ -2,8 +2,10 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using System.Threading;
 using System.Threading.Tasks;
+using Allure.Net.Commons;
 using Allure.NUnit;
 using Allure.NUnit.Attributes;
 using Clio.Command.McpServer.Tools;
@@ -29,10 +31,17 @@ public sealed class DescribeProcessToolE2ETests {
 
 	private const string ToolName = DescribeProcessTool.ToolName;
 
+	/// <summary>Root of a version family that ships with the product; nothing here seeds it.</summary>
+	private const string VersionedFamilyRootCode = "InvoiceVisaProcess";
+
+	/// <summary>The saved version of that family, which is the one the runtime executes.</summary>
+	private const string VersionedFamilyActiveCode = "InvoiceVisaProcessInvoice1";
+
 	[Test]
 	[Description("Starts the real clio MCP server and verifies describe-business-process is discoverable via the get-tool-contract compact index (hermetic).")]
 	[AllureTag(ToolName)]
 	[AllureName("describe-business-process is discoverable on the lazy surface")]
+	[AllureDescription("Starts the real clio MCP server and asserts the tool is reachable through the get-tool-contract compact index, without needing a stand.")]
 	public async Task DescribeProcess_Should_Be_Advertised_By_Mcp_Server() {
 		// Arrange
 		await using ArrangeContext context = await ArrangeAsync(requireReachableEnvironment: false);
@@ -50,6 +59,7 @@ public sealed class DescribeProcessToolE2ETests {
 	[Description("Over the real MCP path, describe-business-process returns a structured graph for a known process.")]
 	[AllureTag(ToolName)]
 	[AllureName("describe-business-process returns a structured graph for a known process")]
+	[AllureDescription("Calls the tool against the configured sandbox process and asserts the response is the structured element/flow graph rather than raw metadata.")]
 	public async Task DescribeProcess_Should_ReturnStructuredGraph_ForKnownProcess() {
 		// Arrange
 		await using ArrangeContext context = await ArrangeAsync(requireReachableEnvironment: true);
@@ -70,6 +80,178 @@ public sealed class DescribeProcessToolE2ETests {
 		callResultJson.Should().Contain("flows",
 			because: "the structured graph includes the sequence flows between elements");
 	}
+
+	[Test]
+	[Description("Over the real MCP path, describe-business-process reports version 0, an active flag and a one-member root family for a process that has no versions.")]
+	[AllureTag(ToolName)]
+	[AllureName("describe-business-process reports an unversioned process as version 0")]
+	[AllureDescription("Proves against a live stand that an unversioned process is reported as version 0 with a single root family member and NO warning, so absence of versions is a stated fact rather than an absent one.")]
+	public async Task DescribeProcess_Should_ReportVersionZeroAndRootOnlyFamily_ForUnversionedProcess() {
+		// Arrange
+		await using ArrangeContext context = await ArrangeAsync(requireReachableEnvironment: true);
+
+		// Act
+		CallToolResult callResult = await AllureApi.Step($"Describe {context.ProcessCode} through MCP", () =>
+			CallToolAsync(context, new Dictionary<string, object?> {
+				["environment-name"] = context.EnvironmentName,
+				["process-name"] = context.ProcessCode
+			}));
+
+		// Assert
+		callResult.IsError.Should().NotBeTrue(because: "a structured envelope should be returned, not a transport error");
+		JsonObject graph = ReadDescribedGraph(callResult);
+		AllureApi.Step("Assert the version standing is established, not absent", () => {
+			graph["version"]!.GetValue<int>().Should().Be(0,
+				because: $"McpE2E:Sandbox:ProcessCode must name a process with no versions, and '{context.ProcessCode}' is read as version 0 in the process library");
+			graph["isActiveVersion"]!.GetValue<bool>().Should().BeTrue(
+				because: "the only member of a family is the version the runtime executes");
+			graph.Should().NotContainKey("versionReadWarning",
+				because: "the read succeeded, and the warning is what separates this answer from an unestablished one");
+			graph["activeVersionSource"]!.GetValue<string>().Should().Be("process-library-view",
+				because: "the answer names the authority that produced it, because the runtime consults another");
+		});
+		AllureApi.Step("Assert the family is the root alone", () => {
+			JsonArray versions = graph["versions"]!.AsArray();
+			versions.Should().HaveCount(1, because: "a process with no versions is a one-member family");
+			versions[0]!["isRoot"]!.GetValue<bool>().Should().BeTrue(
+				because: "that single member is the family root, which is the identity a future version hangs off");
+			versions[0]!["name"]!.GetValue<string>().Should().Be(context.ProcessCode,
+				because: "the family member describes the very schema that was read");
+		});
+	}
+
+	[Test]
+	[Description("Over the real MCP path, describing the stock InvoiceVisaProcess family by name reports the root as NOT the active version and names the version that runs.")]
+	[AllureTag(ToolName)]
+	[AllureName("describe-business-process names the active version of a real family")]
+	[AllureDescription("Proves against a live stand that resolving a versioned process by name returns the family ROOT and says so: isActiveVersion is false, and the response names the version the runtime actually executes. Requires the stock Invoice package; the family ships with the product and is not seeded by this test.")]
+	public async Task DescribeProcess_Should_NameTheActiveVersion_WhenDescribingTheFamilyRootByName() {
+		// Arrange
+		await using ArrangeContext context = await ArrangeAsync(requireReachableEnvironment: true);
+
+		// Act
+		CallToolResult callResult = await AllureApi.Step($"Describe {VersionedFamilyRootCode} through MCP", () =>
+			CallToolAsync(context, new Dictionary<string, object?> {
+				["environment-name"] = context.EnvironmentName,
+				["process-name"] = VersionedFamilyRootCode
+			}));
+
+		// Assert
+		callResult.IsError.Should().NotBeTrue(because: "a structured envelope should be returned, not a transport error");
+		JsonObject graph = ReadDescribedGraph(callResult);
+		AllureApi.Step("Assert the read graph is not the one that runs", () => {
+			graph["isActiveVersion"]!.GetValue<bool>().Should().BeFalse(
+				because: $"'{VersionedFamilyRootCode}' resolves to the family root, and on this stock family the runtime executes version 1 instead");
+			graph["activeVersionName"]!.GetValue<string>().Should().Be(VersionedFamilyActiveCode,
+				because: "the caller has to be handed the name of the running version, or it cannot correct itself");
+			graph["versionRootSchemaUId"]!.GetValue<string>().Should().Be(graph["schemaUId"]!.GetValue<string>(),
+				because: "the root of a family is its own family key, which is how the members were found");
+		});
+		AllureApi.Step("Assert the family is reported with both members", () => {
+			graph["versions"]!.AsArray().Should().HaveCount(2,
+				because: "the stock family ships with a root and one saved version");
+			graph["activeVersionSchemaUId"]!.GetValue<string>().Should()
+				.NotBe(graph["schemaUId"]!.GetValue<string>(),
+					because: "a version is a SEPARATE schema, so the running one cannot be the schema just read");
+			graph.Should().NotContainKey("versionReadWarning",
+				because: "these facts were established, and a warning beside them would contradict that");
+		});
+	}
+
+	[Test]
+	[Description("Over the real MCP path, re-describing by the reported activeVersionSchemaUId reads the running version and reports it as active — the exact correction the tool description tells an agent to perform.")]
+	[AllureTag(ToolName)]
+	[AllureName("describe-business-process round-trips from the root to the active version by UId")]
+	[AllureDescription("Proves the whole agent-facing loop on a live stand: describe by name, discover the graph is not the running one, re-describe by the reported activeVersionSchemaUId, and get a graph that reports itself as the active version with the family listed ascending.")]
+	public async Task DescribeProcess_Should_ReportActiveVersion_WhenReDescribedByTheReportedUId() {
+		// Arrange
+		await using ArrangeContext context = await ArrangeAsync(requireReachableEnvironment: true);
+		JsonObject root = ReadDescribedGraph(await CallToolAsync(context, new Dictionary<string, object?> {
+			["environment-name"] = context.EnvironmentName,
+			["process-name"] = VersionedFamilyRootCode
+		}));
+		string activeVersionUId = root["activeVersionSchemaUId"]!.GetValue<string>();
+
+		// Act — the UId comes from the previous answer, never from a constant, so this holds on any stand
+		// carrying the family regardless of the schema UIds it was installed with.
+		CallToolResult callResult = await AllureApi.Step($"Re-describe {activeVersionUId} through MCP", () =>
+			CallToolAsync(context, new Dictionary<string, object?> {
+				["environment-name"] = context.EnvironmentName,
+				["process-uid"] = activeVersionUId
+			}));
+
+		// Assert
+		callResult.IsError.Should().NotBeTrue(because: "a structured envelope should be returned, not a transport error");
+		JsonObject active = ReadDescribedGraph(callResult);
+		AllureApi.Step("Assert the re-described graph is the running version", () => {
+			active["isActiveVersion"]!.GetValue<bool>().Should().BeTrue(
+				because: "following the reported pointer must land on the version the runtime executes");
+			active["name"]!.GetValue<string>().Should().Be(VersionedFamilyActiveCode,
+				because: "the pointer named this schema, and describing by its UId must return that same schema");
+			active["versionRootSchemaUId"]!.GetValue<string>().Should().Be(root["schemaUId"]!.GetValue<string>(),
+				because: "a version reports the root it descends from, which is how a caller reaches its siblings");
+		});
+		AllureApi.Step("Assert the family is listed ascending from the version too", () => {
+			VersionNumbers(active).Should().ContainInOrder(new int?[] { 0, 1 },
+				"the family is reported ascending by version from any member, not only from the root");
+		});
+	}
+
+	/// <summary>
+	/// Pulls the described graph out of the tool envelope.
+	/// </summary>
+	/// <remarks>
+	/// The graph is not a field of the envelope: describe writes it through <c>ILogger.WriteInfo</c>, so it
+	/// arrives as an escaped STRING inside one of the reported log messages. It is located by content rather
+	/// than by property path, so a rename inside the envelope shape cannot silently turn these assertions into
+	/// a scan of the wrong text — and parsed rather than substring-matched, because
+	/// <c>DescribeProcessResult</c> carries a <c>[JsonExtensionData]</c> bag that would let a server-sent key
+	/// satisfy a naive `Contain`.
+	/// </remarks>
+	private static JsonObject ReadDescribedGraph(CallToolResult callResult) {
+		string text = string.Concat(callResult.Content.OfType<TextContentBlock>().Select(block => block.Text));
+		JsonNode envelope = JsonNode.Parse(text);
+		envelope.Should().NotBeNull(because: "the MCP tool must answer with a parsable envelope");
+		JsonObject graph = EmbeddedStrings(envelope!)
+			.Select(TryParseObject)
+			.FirstOrDefault(candidate => candidate is not null && candidate.ContainsKey("schemaUId"));
+		graph.Should().NotBeNull(
+			because: $"describe-business-process must report a graph carrying schemaUId; the envelope was: {text}");
+		return graph!;
+	}
+
+	private static IEnumerable<string> EmbeddedStrings(JsonNode node) {
+		switch (node) {
+			case JsonObject jsonObject:
+				foreach (KeyValuePair<string, JsonNode?> property in jsonObject) {
+					if (property.Value is null) { continue; }
+					foreach (string nested in EmbeddedStrings(property.Value)) { yield return nested; }
+				}
+				break;
+			case JsonArray jsonArray:
+				foreach (JsonNode? item in jsonArray) {
+					if (item is null) { continue; }
+					foreach (string nested in EmbeddedStrings(item)) { yield return nested; }
+				}
+				break;
+			case JsonValue jsonValue when jsonValue.TryGetValue(out string? value) && value is not null:
+				yield return value;
+				break;
+		}
+	}
+
+	private static JsonObject TryParseObject(string candidate) {
+		if (!candidate.TrimStart().StartsWith('{')) { return null; }
+		try {
+			return JsonNode.Parse(candidate) as JsonObject;
+		} catch (JsonException) {
+			// A log message that merely opens with a brace is not the graph; keep looking.
+			return null;
+		}
+	}
+
+	private static IEnumerable<int?> VersionNumbers(JsonObject graph) =>
+		graph["versions"]!.AsArray().Select(member => (int?)member!["version"]?.GetValue<int>());
 
 	private static async Task<CallToolResult> CallToolAsync(ArrangeContext context, Dictionary<string, object?> args) {
 		IReadOnlyCollection<string> toolNames =
