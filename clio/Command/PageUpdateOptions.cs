@@ -61,9 +61,10 @@
 
 		/// <summary>
 		/// Gets or sets the write mode. <c>replace</c> (default) saves the provided body verbatim.
-		/// <c>append</c> merges the provided body fragment with the current schema body on the server.
+		/// <c>append</c> merges the provided body fragment with the current schema body on the server,
+		/// including converters and validators by type key with incoming entries winning.
 		/// </summary>
-		[Option("mode", Required = false, HelpText = "Write mode: 'replace' (default) or 'append' (merge with existing body)")]
+		[Option("mode", Required = false, HelpText = "Write mode: 'replace' (default) or 'append' (merge diffs, handlers, converters, and validators with the existing body)")]
 		public string? Mode { get; set; }
 
 		/// <summary>
@@ -130,6 +131,7 @@
 		private const string LocalizableStringsKey = "localizableStrings";
 		private const string ChecksumColumnName = "Checksum";
 		private const string ModifiedOnColumnName = "ModifiedOn";
+		private const string AppendMode = "append";
 
 		private readonly IApplicationClient _applicationClient;
 		private readonly IServiceUrlBuilder _serviceUrlBuilder;
@@ -190,27 +192,47 @@
 				if (!TryCheckForExternalModification(options, context, out response)) return false;
 				PageUpdateResponse validationError = ValidateInput(options, context.SchemaType, explicitResources);
 				if (validationError != null) { response = validationError; return false; }
-				if (options.DryRun) {
-					response = CreateSuccessResponse(options, dryRun: true, registeredKeys: null);
-					response.Warnings = BuildDryRunWidgetCaptionWarnings(options.Body, context.SchemaType, explicitResources);
-					return true;
-				}
-				if (!TryLoadSchemaForSave(options.SchemaName, context, out JObject schemaToSave, out response)) return false;
-				if (!TryResolveBodyToWrite(schemaToSave, options, out string bodyToWrite, out response)) return false;
-				IReadOnlyList<string> downgradeWarnings = PageInsertDowngradeDetector.Detect(schemaToSave["body"]?.ToString(), bodyToWrite);
-				List<string> registeredKeys = UpdateSchemaBody(schemaToSave, bodyToWrite, context.SchemaType, explicitResources, parsedOptionalProperties);
-				PageUpdateResponse captionError = ValidateInsertedWidgetCaptionsResolve(options, schemaToSave, bodyToWrite, context.SchemaType);
-				if (captionError != null) { response = captionError; return false; }
-				if (!TrySaveSchema(schemaToSave, out response)) return false;
-				response = CreateSuccessResponse(options, dryRun: false, registeredKeys);
-				response.Warnings = downgradeWarnings is { Count: > 0 } ? downgradeWarnings : null;
-				PopulatePostSaveChecksum(options, context, response);
-				AppendDesignerPresenceWarning(options, response);
-				return true;
+				return options.DryRun
+					? TryCompleteDryRun(options, context, explicitResources, out response)
+					: TrySaveValidatedPage(options, context, explicitResources, parsedOptionalProperties, out response);
 			} catch (Exception ex) {
 				response = new PageUpdateResponse { Success = false, Error = ex.Message };
 				return false;
 			}
+		}
+
+		private bool TryCompleteDryRun(
+			PageUpdateOptions options,
+			EditableSchemaContext context,
+			Dictionary<string, string> explicitResources,
+			out PageUpdateResponse response) {
+			if (string.Equals(options.Mode, AppendMode, StringComparison.OrdinalIgnoreCase)) {
+				if (!TryLoadSchemaForSave(options.SchemaName, context, out JObject currentSchema, out response)) return false;
+				if (!TryResolveBodyToWrite(currentSchema, options, out _, out response)) return false;
+			}
+			response = CreateSuccessResponse(options, dryRun: true, registeredKeys: null);
+			response.Warnings = BuildDryRunWidgetCaptionWarnings(options.Body, context.SchemaType, explicitResources);
+			return true;
+		}
+
+		private bool TrySaveValidatedPage(
+			PageUpdateOptions options,
+			EditableSchemaContext context,
+			Dictionary<string, string> explicitResources,
+			JArray parsedOptionalProperties,
+			out PageUpdateResponse response) {
+			if (!TryLoadSchemaForSave(options.SchemaName, context, out JObject schemaToSave, out response)) return false;
+			if (!TryResolveBodyToWrite(schemaToSave, options, out string bodyToWrite, out response)) return false;
+			IReadOnlyList<string> downgradeWarnings = PageInsertDowngradeDetector.Detect(schemaToSave["body"]?.ToString(), bodyToWrite);
+			List<string> registeredKeys = UpdateSchemaBody(schemaToSave, bodyToWrite, context.SchemaType, explicitResources, parsedOptionalProperties);
+			PageUpdateResponse captionError = ValidateInsertedWidgetCaptionsResolve(options, schemaToSave, bodyToWrite, context.SchemaType);
+			if (captionError != null) { response = captionError; return false; }
+			if (!TrySaveSchema(schemaToSave, out response)) return false;
+			response = CreateSuccessResponse(options, dryRun: false, registeredKeys);
+			response.Warnings = downgradeWarnings is { Count: > 0 } ? downgradeWarnings : null;
+			PopulatePostSaveChecksum(options, context, response);
+			AppendDesignerPresenceWarning(options, response);
+			return true;
 		}
 
 		/// <summary>
@@ -361,26 +383,42 @@
 		private static bool TryResolveBodyToWrite(JObject schemaToSave, PageUpdateOptions options, out string bodyToWrite, out PageUpdateResponse response) {
 			bodyToWrite = options.Body;
 			response = null;
-			if (!string.Equals(options.Mode, "append", StringComparison.OrdinalIgnoreCase)) return true;
-			string currentBody = schemaToSave["body"]?.ToString();
-			if (string.IsNullOrWhiteSpace(currentBody)) return true;
-			try {
-				bodyToWrite = PageBodyMerger.Merge(currentBody, options.Body);
-				return true;
-			} catch (Exception ex) {
-				// A full-config rejection (identified by its dedicated exception type, not by re-parsing the
-				// message) is already a complete, self-contained sentence — it names the offending body
-				// (incoming vs the server's) and points at replace mode — so it needs neither the "Append merge
-				// failed:" prefix (which double-states the verb) nor the generic marker-pairs hint (a full-config
-				// body HAS valid markers, it is just the wrong form). Keep both only for genuine marker-shape
-				// merge failures, and phrase the hint role-agnostically so it never blames the incoming body for
-				// a server-side blocker (ENG-94422).
-				string error = ex is PageBodyMerger.FullConfigAppendNotSupportedException
-					? $"{ex.Message} [hint: see docs://mcp/guides/page-modification for the append diff-form contract.]"
-					: $"Append merge failed: {ex.Message} [hint: the body must contain valid marker pairs with new viewConfigDiff/handlers operations. See docs://mcp/guides/page-modification.]";
-				response = new PageUpdateResponse { Success = false, Error = error };
-				return false;
+			if (string.Equals(options.Mode, AppendMode, StringComparison.OrdinalIgnoreCase)) {
+				string currentBody = schemaToSave["body"]?.ToString();
+				if (!string.IsNullOrWhiteSpace(currentBody)) {
+					try {
+						bodyToWrite = PageBodyMerger.Merge(currentBody, options.Body);
+					} catch (Exception ex) {
+						// A full-config rejection (identified by its dedicated exception type, not by re-parsing the
+						// message) is already a complete, self-contained sentence — it names the offending body
+						// (incoming vs the server's) and points at replace mode — so it needs neither the "Append merge
+						// failed:" prefix (which double-states the verb) nor the generic marker-pairs hint (a full-config
+						// body HAS valid markers, it is just the wrong form). Keep both only for genuine marker-shape
+						// merge failures, and phrase the hint role-agnostically so it never blames the incoming body for
+						// a server-side blocker (ENG-94422).
+						string error = ex is PageBodyMerger.FullConfigAppendNotSupportedException
+							? $"{ex.Message} [hint: see docs://mcp/guides/page-modification for the append diff-form contract.]"
+							: $"Append merge failed: {ex.Message} [hint: the body must contain valid marker pairs with new viewConfigDiff/handlers operations. See docs://mcp/guides/page-modification.]";
+						response = new PageUpdateResponse { Success = false, Error = error };
+						return false;
+					}
+				}
 			}
+			if (!string.Equals(options.Mode, AppendMode, StringComparison.OrdinalIgnoreCase) ||
+				PageSchemaTypeExtensions.FromBody(bodyToWrite) == PageSchemaType.Mobile) {
+				return true;
+			}
+			if (!options.Validate) {
+				return true;
+			}
+			SchemaValidationResult validatorReferences =
+				SchemaValidationService.ValidateCustomValidatorReferences(bodyToWrite);
+			if (validatorReferences.IsValid) {
+				return true;
+			}
+			response = ContentValidationFailure(
+				$"Body contains unresolved custom validator references: {string.Join("; ", validatorReferences.Errors)}");
+			return false;
 		}
 
 		/// <summary>
@@ -393,13 +431,30 @@
 			// Mirror the MCP tool: auto-discover the on-disk baseline so a CLI save (e.g. an AI agent
 			// running `clio update-page --body-file .clio-pages/<schema>/body.js`) is blocked when the
 			// schema was modified out-of-band, instead of silently overwriting the external edit.
-			(string metaFilePath, bool baselineArmed) = _pageBaselineGuard.TryArm(options, outputDirectory: null);
+			(string metaFilePath, bool baselineArmed, string baselineWarning) =
+				_pageBaselineGuard.TryArm(options, outputDirectory: null);
 			bool success = TryUpdatePage(options, out PageUpdateResponse response);
 			if (baselineArmed && success && !options.DryRun) {
-				_pageBaselineGuard.RefreshOrDrop(metaFilePath, options, response);
+				// A failed refresh cannot fail a save that already landed on the server, so it surfaces as a
+				// warning on the response instead (ENG-95262 AC-02).
+				AppendBaselineWarning(response, _pageBaselineGuard.RefreshOrDrop(metaFilePath, options, response));
 			}
+			AppendBaselineWarning(response, baselineWarning);
 			_logger.WriteInfo(JsonConvert.SerializeObject(response));
 			return success ? 0 : 1;
+		}
+
+		// Surfaces a baseline discovery/refresh diagnostic on the response envelope. The baseline path is
+		// best-effort by contract, so its failures are warnings, never errors — but they must be visible:
+		// a silently lost refresh leaves the stored checksum behind the server and the next save can then
+		// report a conflict that never happened.
+		private static void AppendBaselineWarning(PageUpdateResponse response, string warning) {
+			if (response is null || string.IsNullOrWhiteSpace(warning)) {
+				return;
+			}
+			List<string> warnings = response.Warnings?.ToList() ?? [];
+			warnings.Add(warning);
+			response.Warnings = warnings;
 		}
 
 		private void AppendDesignerPresenceWarning(PageUpdateOptions options, PageUpdateResponse response) {
@@ -897,7 +952,7 @@
 			// body is valid JavaScript, so it would save, after which PageSchemaSectionReader can no longer
 			// extract sections and append-merge is dead on that page. ResolveSyntaxFailure already treats
 			// markers as the "is this still a recognizable page" test for the same reason.
-			bool isAppendMode = string.Equals(options.Mode, "append", StringComparison.OrdinalIgnoreCase);
+			bool isAppendMode = string.Equals(options.Mode, AppendMode, StringComparison.OrdinalIgnoreCase);
 			if (!isAppendMode) {
 				SchemaValidationResult integrityResult = SchemaValidationService.ValidateMarkerIntegrity(options.Body);
 				if (!integrityResult.IsValid) {

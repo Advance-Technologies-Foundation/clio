@@ -34,6 +34,13 @@ public class SetBackgroundImageTool(
 		};
 
 	/// <summary>Sets the image as the shell background, binds it into the package, and returns a structured result.</summary>
+	[McpToolExecution(
+		Location = McpToolExecutionLocation.Worker,
+		Lifetime = McpToolExecutionLifetime.PerCall,
+		OperationFamily = McpToolOperationFamily.None,
+		BudgetPolicy = McpToolBudgetPolicy.ParentKillDefault,
+		RequiresClientRequests = McpToolClientRequests.None,
+		SharedFileResource = McpToolSharedFileResource.None)]
 	[McpServerTool(Name = ToolName, ReadOnly = false, Destructive = true, Idempotent = true, OpenWorld = false),
 	 Description("Set an image as a registered environment's shell background and bind it into a package " +
 		"as data bindings so it ships with the package. Pass exactly one of: file (a local image file — " +

@@ -29,9 +29,19 @@ public sealed class ClioRunNativeDispatchTests {
 
 	[SetUp]
 	public void SetUp() {
+		// The real execution router over the real declared metadata (ENG-95262 Stage 4b). NOTE the reader's
+		// public constructor scans the EXECUTING assembly — clio.dll — so this is the full PRODUCTION
+		// metadata map, not an empty one. What keeps the dispatch behaviour pinned here unchanged is the
+		// router's SHAPE: it is given an EMPTY Stage 6 cohort, so every name — real, synthetic, classified
+		// or not — resolves to an in-process disposition and no site takes its relay or refusal branch.
 		_sut = new ClioRunExecutor(
 			Substitute.For<IMcpToolInvokerRegistry>(),
-			Substitute.For<IMcpToolCompatibilityCatalog>());
+			Substitute.For<IMcpToolCompatibilityCatalog>(),
+			new McpExecutionRouter(
+				new McpToolExecutionMetadataReader(Substitute.For<IMcpToolCompatibilityCatalog>()),
+				new McpWorkerCohort([]),
+				new McpWorkerPathGate(() => McpHostTransportKind.Stdio, () => false),
+				workerPathWired: true));
 	}
 
 	private static RequestContext<CallToolRequestParams> CallContext(

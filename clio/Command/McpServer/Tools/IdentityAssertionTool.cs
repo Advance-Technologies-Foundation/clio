@@ -35,6 +35,13 @@ public class GetIdentityAssertionTool(
 
 	internal const string ToolName = "get-identity-assertion";
 
+	[McpToolExecution(
+		Location = McpToolExecutionLocation.Worker,
+		Lifetime = McpToolExecutionLifetime.PerCall,
+		OperationFamily = McpToolOperationFamily.None,
+		BudgetPolicy = McpToolBudgetPolicy.ParentKillDefault,
+		RequiresClientRequests = McpToolClientRequests.None,
+		SharedFileResource = McpToolSharedFileResource.None)]
 	[McpServerTool(Name = ToolName, ReadOnly = false, Destructive = false, Idempotent = false, OpenWorld = false),
 	 Description("Issue a short-lived signed identity assertion (JWT) for the current authorized user. " +
 		"This is the token the Creatio frontend passes to the AI chat to start the Identity Service V3 " +
@@ -72,6 +79,13 @@ public class GetIdentityPublicJwkTool(
 
 	internal const string ToolName = "get-identity-public-jwk";
 
+	[McpToolExecution(
+		Location = McpToolExecutionLocation.Worker,
+		Lifetime = McpToolExecutionLifetime.PerCall,
+		OperationFamily = McpToolOperationFamily.None,
+		BudgetPolicy = McpToolBudgetPolicy.ParentKillDefault,
+		RequiresClientRequests = McpToolClientRequests.None,
+		SharedFileResource = McpToolSharedFileResource.None)]
 	[McpServerTool(Name = ToolName, ReadOnly = true, Destructive = false, Idempotent = true, OpenWorld = false),
 	 Description("Get the instance public key (JWK) used to verify identity assertions in Identity Service V3. " +
 		"Register this key once with Identity Service V3 at onboarding. Requires the " +
@@ -109,6 +123,13 @@ public class RegenerateIdentitySigningKeyTool(
 
 	internal const string ToolName = "regenerate-identity-signing-key";
 
+	[McpToolExecution(
+		Location = McpToolExecutionLocation.Worker,
+		Lifetime = McpToolExecutionLifetime.PerCall,
+		OperationFamily = McpToolOperationFamily.None,
+		BudgetPolicy = McpToolBudgetPolicy.ParentKillDefault,
+		RequiresClientRequests = McpToolClientRequests.None,
+		SharedFileResource = McpToolSharedFileResource.None)]
 	[McpServerTool(Name = ToolName, ReadOnly = false, Destructive = true, Idempotent = false, OpenWorld = false),
 	 Description("Regenerate the instance identity-assertion signing key pair. DESTRUCTIVE: assertions signed " +
 		"with the previous key stop validating and the new public key must be re-registered with Identity " +
@@ -147,6 +168,13 @@ public class CheckAuthCodeFlowTool(
 
 	internal const string ToolName = "check-auth-code-flow";
 
+	[McpToolExecution(
+		Location = McpToolExecutionLocation.Worker,
+		Lifetime = McpToolExecutionLifetime.PerCall,
+		OperationFamily = McpToolOperationFamily.None,
+		BudgetPolicy = McpToolBudgetPolicy.ParentKillDefault,
+		RequiresClientRequests = McpToolClientRequests.None,
+		SharedFileResource = McpToolSharedFileResource.None)]
 	[McpServerTool(Name = ToolName, ReadOnly = true, Destructive = false, Idempotent = true, OpenWorld = false),
 	 Description("Check whether the environment can use the OAuth authorization code flow with the Identity " +
 		"Service. Useful as a quick diagnostic when setting up the AI chat identity flow.")]

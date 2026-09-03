@@ -1,0 +1,191 @@
+# Story 8: Long synchronous / streaming commands (deploy, uninstall)
+
+**Feature**: mcp-worker-execution-boundary
+**Jira**: [ENG-95262](https://creatio.atlassian.net/browse/ENG-95262)
+**ADR**: [adr-mcp-worker-execution-boundary.md](../adr/adr-mcp-worker-execution-boundary.md)
+**Test plan**: [tp-mcp-worker-execution-boundary.md](../test-plans/tp-mcp-worker-execution-boundary.md)
+**Stage**: 8
+**Status**: ready-for-dev
+**Size**: L
+
+## As a
+ClioRing user watching a deployment
+
+## I want
+deploy and uninstall bounded by their terminal stage rather than by a stopwatch
+
+## So that
+a budget expiry never leaves a half-installed environment
+
+## Design
+- **Process lifetime ≠ response budget** (rule 4). `deploy-creatio` and `uninstall-creatio` are synchronous, destructive and progress-streaming, and ClioRing waits for the authoritative terminal stage. A generic 45–60 s kill could leave the environment half-installed — the one place where killing the process is the wrong tool.
+- `BudgetPolicy = terminal-stage` for this family — and `Location = worker`, `OperationFamily = deploy` for both tools, which is what the Stage 1 invariant TC-U-108 enforces.
+- **The signalling protocol is ADR §3.3 and it is binding**, because without it `terminal-stage` is a label and TC-E-801 can only prove one implementation passes. In short: the signal rides the **existing stage-event stream** (`_meta.clioStageEvent`, terminal `status` on the root `runId`) — no second IPC path; the parent's bound is a **stage-event silence timer** (default 300 s), not an operation timer, so a healthy long deploy is never truncated; a **30 s post-terminal exit grace** covers a child that hangs after its terminal stage; and a child that exits or goes silent without a terminal stage produces an explicit **indeterminate** error naming the last stage reached, with **no automatic retry** — retry-on-ambiguity turns one half-installed environment into two.
+- Gated by ClioRing contract tests **and** the Windows x64 NativeAOT publish. Contract changes can alter source-generated DTO/serialization paths, so a JIT-only pass is not evidence.
+
+## Acceptance Criteria
+- [x] AC-01 — *(implemented; E2E unverified on this host — see the delivery note)* Bounded by terminal stage; a mid-deploy budget expiry never leaves a half-installed environment (TC-E-801).
+- [x] AC-02 — ClioRing contract suite green; byte/schema parity on the committed stage-event fixture; unknown-field tolerance and ordered replay preserved.
+- [x] AC-03 — **DONE 2026-08-17** (ADR §2.4): publish exits 0 in 53.3 s, zero IL2026/IL3050/IL2104/IL3053,
+      and the output is a real native image — `clio-ring.exe` 30.8 MB with no managed `clio-ring.dll` beside it.
+      Re-run this whenever the contract changes; it is cheap and it is the only check that sees source-generated
+      serialization paths. Note the host requirement: it needs the MSVC toolchain, which ts1-core-dev04 cannot
+      install (ESET TLS interception breaks the VS catalog download).
+- [x] AC-04 — No agent, test, probe, watcher, retry or startup path performs a real deploy/uninstall without an explicit user gesture and a disposable target.
+- [x] AC-05 — *(implemented; E2E unverified on this host)* **Lost child:** a child killed mid-deploy, and one silent past the stage-event timeout, each produce an explicit indeterminate error naming the last stage reached — never a success, never an automatic retry (TC-E-802).
+- [x] AC-06 — *(implemented; E2E unverified on this host)* **Post-terminal grace:** a child that emits its terminal stage then hangs is killed after the grace window and the tool result is the terminal stage, not an error (TC-E-803).
+
+## Tests
+E2E TC-E-801, TC-E-802, TC-E-803; ClioRing TC-C-801. **Full unit suite required** — the protocol touches the supervisor and relay under `clio/Common/**`.
+
+## Recon findings (2026-08-18) — read before implementing
+
+A read-only pass over the shipped code established the following. Two of them are perimeter conditions
+the ADR did not state, and one is an outright error in the ADR that would send an implementer down a
+path that can never match.
+
+### The tool set is exactly two
+
+`deploy-creatio` (`clio/Command/McpServer/Tools/InstallerCommandTool.cs`, attribute at `:43-49`) and
+`uninstall-creatio` (`clio/Command/McpServer/Tools/UninstallCreatioTool.cs`, attribute at `:32-38`) are
+the only tools declaring `BudgetPolicy = TerminalStage`, and the cross-field invariant at
+`McpToolExecutionMetadata.cs:284-294` (`Deploy ⇒ Worker + TerminalStage`) pins them there.
+
+Fifteen tools declare `RequiresClientRequests = Progress` and two declare `Sampling`, but the other
+thirteen carry a parent-kill budget and belong to stages 6 and 7. They matter to stage 8 only as the
+reason the relay must stay full-duplex. Derive that list from the declared metadata, not from
+`McpProgressHeartbeat` call sites: `stop-creatio` and `start-creatio` emit progress by calling
+`SendNotificationAsync` directly (`StopTool.cs:85`, `StartTool.cs:50`), so a call-site derivation misses
+them, and `list-apps` declares `None` with the reason in the comment at `ApplicationTool.cs:38` (it takes
+no server parameter).
+
+### Neither tool runs in a worker today
+
+`McpWorkerCohort.cs:63-71` ships seven names and neither of these is among them, so
+`McpExecutionRouter.Decide` returns `InProcessOutsideCohort` (`McpExecutionRouter.cs:125-127`). The
+declaration says `Worker`; the cohort says the machinery is not built. Adding the two names is step one —
+and it must not happen before the protocol below exists, because the dispatcher currently kills at the
+ordinary budget unconditionally (`McpWorkerCallDispatcher.cs:182-185`).
+
+Both are also non-resident, so the live caller reaches them through `clio-run`
+(`clio-ring/ClioRing/ViewModels/UninstallFormViewModel.cs:239`, `InstallFormViewModel.cs:264-265`). The
+live dispatch site is therefore `ClioRunTool.cs:181-194`; the matched and unmatched sites must behave
+identically for a raw-name call.
+
+### Correction to ADR §3.3 — the terminal vocabulary in the ADR does not exist
+
+§3.3 described a terminal stage as a stage event whose `status` is `Completed` / `Failed` / `Cancelled`.
+The shipped contract has no such tokens. `ClioStageEventContract.cs` declares
+`EventTypes = { "manifest", "stage", "run-completed" }` (`:32-42`) and
+`RunOutcomes = { "success", "failure", "success-with-warnings" }` (`:74-84`); `ClioStageDetail.Status`
+is `running`/`done`/`failed`/`skipped`/`warning` (`:54-71`) and is per-stage, never terminal.
+
+Terminal detection is: a progress notification whose `_meta.clioStageEvent.eventType` is
+`"run-completed"` and whose `runId` is the run's root `runId`; the outcome is `runCompleted.outcome`.
+An implementer coding the ADR's original wording gets a condition that never fires, so every deploy
+times out on silence and reports indeterminate — a defect that reads as an environment problem.
+
+**There is no `cancelled` outcome at all.** A cancelled deploy therefore emits no terminal event and
+must resolve through the indeterminate path, not a terminal one.
+
+### Perimeter condition: a caller who did not ask for progress produces no events
+
+`StageEventProgressForwarder.cs:57-63` returns a no-op subscription when the progress token is null. A
+client calling `deploy-creatio` without one emits zero stage events, so a silence-bounded protocol would
+declare that healthy deploy a lost child. A terminal-stage route with no caller token needs a synthetic
+token injected on the child leg, through the seam that already clones params
+(`McpWorkerCallDispatcher.cs:323-354`). Whether synthetic-token progress is forwarded upward or
+suppressed is a deliberate sub-decision — suppression is the one exception to rule 1 and must be
+documented as such if chosen.
+
+### The indeterminate result shape is constrained by the consumer, not free
+
+ClioRing classifies a no-terminal result itself, reading the payload rather than trusting `IsError`
+alone (`InstallFormViewModel.cs:290-340`, `DescribeUnstreamedFailure`). The indeterminate result must
+set `IsError = true` **and** structured content with `success: false` plus a non-empty `error` — the
+shape `BudgetExpiredResult` and `RelayFailureResult` already produce. Anything else lands in Ring's
+"outcome genuinely unknown" branch, which for a possibly half-installed environment is the wrong
+message. Do not reuse `BudgetExpiredErrorClass`: its shipped guidance says the call is safe to retry.
+
+### What must be asserted on counters, and the one counter that does not exist here
+
+`spec/test-plans/tp-mcp-worker-execution-boundary.md` makes counter assertions load-bearing, but
+deploy and uninstall are local-only commands with no `IApplicationClient` — deploy *creates* the
+instance (`StageEventProgressForwarder.cs:22-28`). **There is no Creatio backend counter to sample.**
+The substitutes are: spawn count exactly 1 (this is the discriminator for "never an automatic retry" —
+a retry loop is invisible to any timing or result assertion), kill count exactly 1 and its ordinal
+position relative to composing the result, and the fixture child's own emitted-event log stopping after
+the kill. State this in the pull request, because a reviewer applying the counter rule mechanically will
+ask for a backend delta that cannot exist for these two tools.
+
+### The supervisor needs no changes
+
+The post-terminal exit grace can be implemented entirely from the dispatcher using `lease.HasExited`
+(`IWorkerProcessSupervisor.cs:141`) and `KillContained` (`:231`). Do not repurpose
+`WaitWithinBudgetAsync` (`:226`) — its `BudgetExpired` semantics are the generic-kill model stage 8
+exists to replace. This materially reduces how much stage 8 collides with stage 7.
+
+### Sequencing
+
+Stage 8 must not run in a parallel wave with stories 14/15/16/18: its read-loop tap and story 18's send
+changes occupy the same region of `WorkerMcpRelay.RunReadLoopAsync`, and case (c) above *is* the
+composition of story 14's cancellation contract with this protocol — building it first means guessing.
+
+### The NativeAOT gate must be re-run
+
+`dotnet publish clio-ring/ClioRing.Desktop -c Release -r win-x64 --self-contained -p:PublishAot=true`
+passed on 2026-08-17 (ADR §2.4). It must be re-run whenever the contract changes, and it cannot run on
+ts1-core-dev04: an ESET TLS filter re-signs HTTPS with an untrusted certificate authority and the Visual
+Studio installer fails to download its catalogue. Check the published output has no managed
+`clio-ring.dll` beside the executable — a bare exit code does not distinguish real ahead-of-time
+compilation from an executable wrapping intermediate language.
+
+
+## DELIVERED 2026-08-18 — what is proven here and what is handed back
+
+**Built.** `TerminalStageWatch` (a per-call read-loop observer) plus the protocol in a partial
+dispatcher file: terminal detection on `eventType == "run-completed"` at the run's ROOT `runId`, a
+300 s stage-event silence bound restarted by every stage event
+(`CLIO_MCP_WORKER_STAGE_SILENCE_SECONDS`), a 30 s post-terminal exit grace via `lease.HasExited` +
+`KillContained`, synthetic-token injection with relay-side suppression, and the two result builders.
+`WaitWithinBudgetAsync` is deliberately not used — its `BudgetExpired` semantics are the generic-kill
+model this stage replaces. Bounds are `Stopwatch`-based so an NTP step cannot move them. The two names
+were added to the cohort LAST.
+
+**The pin tests were updated on purpose, not repaired.** `ShippedCohort_ShouldBeExactlyTheSevenNames…`
+became `…ShouldBeExactlyTheNamesStoriesSixAndEightPromise` with story 8's two literals as its new
+source, and the metadata pin's count moved 7→9 with `TerminalStage` constrained to
+`OperationFamily == Deploy`. That test was mutation-verified the same day as genuinely pinning literal
+names, so it going red here was expected and is the mechanism working.
+
+**Counters.** There is no Creatio backend delta to assert: both tools are local-only, have no
+`IApplicationClient`, and deploy *creates* the instance. The test plan's counter rule is met instead by
+**spawn == 1** — the only assertion that can observe an automatic retry — plus kill == 1, the kill's
+ordinal position after the warning naming the last stage, and the child's emit log stopping at the
+kill. State this in the pull request; a reviewer applying the rule mechanically will ask for a backend
+delta that cannot exist here.
+
+**Verified on this host:** 12 unit tests over a scripted stage-streaming child on a real pipe with the
+production dispatcher, relay and transport; four mutations each caught by exactly the intended test
+(kill-before-report, terminal branch disabled, tap always forwards, die-after-terminal). Full unit
+suite 9194 passed / 20 failed, the 20 matching the macOS baseline by name. ClioRing suite 155 passed /
+1 failed, that one the known macOS path-separator artifact.
+
+**Handed back, unverified here:** AC-01 / AC-05 / AC-06 are E2E — they install Creatio and need a
+Windows host with a disposable sandbox. All are `[Explicit]`, opt-in, TeamCity-guarded and fail-closed.
+TC-E-803's *hang* half is not producible against a real clio child without a fault-injection hook that
+was deliberately NOT added to a shipping binary; it is covered deterministically by the unit fixture
+and the E2E fixture records that.
+
+**AC-03 not re-run, and that is a conclusion rather than an omission:** `ClioStageEvent.cs`,
+`ClioStageEventContract.cs` (`SchemaVersion` still 1) and Ring's mirror are all unmodified, so no
+source-generated stage-event DTO or serialization path changed. The only new wire surface is additive
+fields on clio's own tool-result payload.
+
+**Two notes a reviewer should see.** The protocol is reachable only through `clio-run` — a raw-name
+`deploy-creatio` is stopped by the write-capability gate before routing — and the synthetic token
+survives that vector because `ClioRunTool.DispatchAsync` copies `Meta` to the child params; there is now
+a router test pinning the executor-unwrapped route, without which the live vector could silently fall
+back to the 120 s branch with every other test green. And a worker's own tool result is never
+second-guessed against the stage stream: if the child answers, that answer is relayed even when no
+`run-completed` was seen. The indeterminate path is only for "no result obtained".

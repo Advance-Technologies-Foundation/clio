@@ -198,7 +198,10 @@ can report a conflict against a page that has not actually changed. This edge fa
 
 `--mode replace` (default) saves the body verbatim. `--mode append` loads the current
 schema body from the server and merges your incoming fragment into it — `viewConfigDiff`
-entries dedupe by `name` (incoming wins), handlers dedupe by `request`.
+entries dedupe by `name`, handlers dedupe by `request`, and `SCHEMA_CONVERTERS` and
+`SCHEMA_VALIDATORS` entries dedupe by type key (incoming wins). After the append merge,
+the final web body is rejected if a custom validator reference has no matching
+`SCHEMA_VALIDATORS` declaration. Built-in `crt.*` validators need no local declaration.
 
 Append requires the **diff form**. A full-config body — the `SCHEMA_VIEW_MODEL_CONFIG` /
 `SCHEMA_MODEL_CONFIG` markers (mobile: top-level `viewModelConfig` / `modelConfig`) instead

@@ -752,6 +752,13 @@ public sealed class ApplicationSectionToolE2ETests {
 		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
 		string environmentName = await ResolveReachableEnvironmentAsync(settings);
 		// Force a tiny heartbeat interval so a single backend round-trip deterministically yields a beat.
+		// Set on the SERVER process, which is the only process this fixture starts — but list-app-sections
+		// is a Stage 6 worker-cohort tool (ENG-95262), so the beat is emitted by a CHILD, and the variable
+		// only reaches that child because it is on
+		// WorkerProcessSupervisor.DefaultInheritedEnvironmentVariableAllowlist. A worker's environment is
+		// CLEARED and rebuilt from that list, and the cadence is captured at type load, so an allowlist that
+		// drops this variable makes the child fall back to the 15 s default — a one-second read then finishes
+		// inside the interval and this test observes zero notifications while the relay is working perfectly.
 		settings.ProcessEnvironmentVariables[McpProgressHeartbeat.IntervalOverrideEnvVar] = "0.05";
 		using CancellationTokenSource cancellationTokenSource = new(TimeSpan.FromMinutes(3));
 		await using McpServerSession session = await McpServerSession.StartAsync(settings, cancellationTokenSource.Token);

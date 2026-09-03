@@ -99,9 +99,10 @@ public sealed class SkillManagementToolE2ETests : McpContractFixtureBase {
 	/// <inheritdoc />
 	private protected override void ConfigureMcpServerSettings(McpE2ESettings settings) {
 		string isolatedHome = CreateFixtureDirectory("skill-management-home");
-		// Redirect the child clio process's user home so no real agent is detected.
-		settings.ProcessEnvironmentVariables["USERPROFILE"] = isolatedHome;
-		settings.ProcessEnvironmentVariables["HOME"] = isolatedHome;
+		// Redirect the child clio process's user home so no real agent is detected. CLIO_HOME must be part
+		// of that redirect: the suite injects its own, and it outranks HOME/USERPROFILE outright, so
+		// setting only the latter two leaves this fixture writing the shared catalog. See IsolatedClioHome.
+		IsolatedClioHome.Redirect(settings, isolatedHome);
 	}
 
 	[AllureStep("Call a skill management tool")]

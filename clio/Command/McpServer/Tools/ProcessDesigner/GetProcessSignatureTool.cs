@@ -22,6 +22,13 @@ public sealed class GetProcessSignatureTool(
 	internal const string ToolName = "get-process-signature";
 
 	[McpServerTool(Name = ToolName, ReadOnly = true, Destructive = false, Idempotent = true, OpenWorld = false)]
+	[McpToolExecution(
+		Location = McpToolExecutionLocation.Worker,
+		Lifetime = McpToolExecutionLifetime.PerCall,
+		OperationFamily = McpToolOperationFamily.None,
+		BudgetPolicy = McpToolBudgetPolicy.ParentKillDefault,
+		RequiresClientRequests = McpToolClientRequests.None,
+		SharedFileResource = McpToolSharedFileResource.None)]
 	[Description(
 		"Resolve a Creatio business process by its code (schema Name) OR its display caption and return " +
 		"its parameter signature: per parameter " +
