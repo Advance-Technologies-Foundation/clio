@@ -64,10 +64,10 @@ public sealed class MobilePageConversionGuideTool {
 		+ "Freedom UI WEB (sourceType \"freedom-web\"); any other source type is detected and reported as not yet "
 		+ "supported. ADVISORY-ONLY: this tool builds NO page body and writes NOTHING to Creatio or disk — YOU build "
 		+ "the mobile body from the guide, persist it with create-page (mobile template) + update-page, then "
-		+ "validate-page. Its `diagnostics` report ONLY what the conversion could NOT do, each with an `impact` "
-		+ "saying whether it is yours to act on (`conversion`) or a malformed published rule you can only report "
-		+ "(`converter-config`); the section is ABSENT on a clean conversion. The platform invariants are enforced "
-		+ "by validate-page / update-page and explained in the guidance article, not repeated per conversion. "
+		+ "validate-page. The guide carries FACTS about this page and no prose: the rules are enforced by "
+		+ "validate-page / update-page, and the ordered flow plus every standing rule live in the guidance "
+		+ "article. It FAILS rather than degrading when the mobile template cannot be read, because without it "
+		+ "the guide would insert duplicates of elements that template already provides. "
 		+ "MANDATORY before acting on the guide: get-guidance name `freedom-page-web-to-mobile-conversion`.")]
 	public async Task<MobilePageConversionGuideResponse> GetMobilePageConversionGuide(
 		[Description("Parameters: schema-name (required, the source page); target-schema-name (optional suggested mobile page name); version (optional registry/Creatio version); environment-name preferred; uri/login/password emergency fallback only.")]
@@ -184,6 +184,11 @@ public sealed class MobilePageConversionGuideTool {
 		// instead of the mobile diff engine's array-replace root merge silently dropping one side (see
 		// WebToMobileAnalysisService.SplitRootMergeIntoTargetedMerges).
 		MobileTemplateProbe mobileTemplateProbe = LoadMobileTemplateProbe(templateRule?.Mobile, args);
+		MobilePageConversionGuideResponse templateRejection =
+			RejectUnobtainableMobileTemplate(args, sourceType, templateRule?.Mobile, mobileTemplateProbe.Unavailable);
+		if (templateRejection is not null) {
+			return templateRejection;
+		}
 		IReadOnlyDictionary<string, string> mobileContainerParents = mobileTemplateProbe.ContainerParents;
 
 		// Read the source page's web template (its parent schema) so its inherited chrome can be
@@ -611,6 +616,55 @@ public sealed class MobilePageConversionGuideTool {
 			return webSchemaName[..^"_ListPage".Length] + "_MobileListPage";
 		}
 		return webSchemaName + "_Mobile";
+	}
+
+	/// <summary>
+	/// Refuses the conversion when the mobile template could not be obtained. Null in the normal case.
+	/// </summary>
+	/// <remarks>
+	/// <para>
+	/// The guide's quality DEPENDS on reading that template, and the degradation is not confined to one
+	/// section, which is why this is a top-level failure rather than a diagnostic on an otherwise-normal
+	/// guide. With no template bundle, <c>MobileTypesByName</c> is empty, and that breaks two things
+	/// silently:
+	/// </para>
+	/// <list type="bullet">
+	/// <item><description>The automatic same-name twin is never detected (its gate is
+	/// <c>MobileTypesByName.TryGetValue(name, …)</c>), so an element the mobile template ALREADY provides
+	/// under the same name — <c>Feed</c>, <c>Tabs</c> — falls through to the insert path and the page ships a
+	/// DUPLICATE of a native element.</description></item>
+	/// <item><description><c>RetargetTargetMissing</c> fails open on an empty map, so a retarget into a
+	/// container the template does not actually have is no longer caught.</description></item>
+	/// </list>
+	/// <para>
+	/// The data-section diffs also degrade to a root merge that can strip the template's own arrays. That one
+	/// used to be reported as a <c>data-section-root-merge-fallback</c> diagnostic and nothing reported the
+	/// other two — so the guide shipped with silent correctness defects and a footnote about the least of
+	/// them (ENG-95827). A guide that cannot be trusted is worse than no guide: refusing names the cause and
+	/// the fix, which a diagnostic buried beside 155 element entries did not.
+	/// </para>
+	/// </remarks>
+	internal static MobilePageConversionGuideResponse RejectUnobtainableMobileTemplate(
+		MobilePageConversionGuideArgs args, string sourceType, string mobileTemplateName,
+		bool templateUnavailable) {
+		if (!templateUnavailable) {
+			return null;
+		}
+		// Two causes, two different fixes. Naming which one applies is the whole value of failing here.
+		string error = string.IsNullOrWhiteSpace(mobileTemplateName)
+			? "No mobile template could be determined for this page: its web template matches no conversion "
+				+ "rule and the conversion rules declare no defaultMobileTemplate. Without a mobile template "
+				+ "the guide cannot detect which elements the template already provides, so it would insert "
+				+ "duplicates of native elements, and both data-section diffs would degrade to a root merge "
+				+ "that can strip the template's own arrays. Add a templates entry for this web template, or a "
+				+ "defaultMobileTemplate, to the conversion rules."
+			: $"Could not read the mobile template '{mobileTemplateName}'. Without it the guide cannot detect "
+				+ "which elements that template already provides, so it would insert DUPLICATES of native "
+				+ "elements (e.g. Feed, Tabs) instead of merging onto them, retarget targets would not be "
+				+ "validated, and both data-section diffs would degrade to a root merge that can strip the "
+				+ "template's own arrays. Verify the mobile package is installed in the target environment and "
+				+ "that the schema name is reachable, then re-run.";
+		return Fail(args, sourceType, error);
 	}
 
 	private static MobilePageConversionGuideResponse Fail(MobilePageConversionGuideArgs args, string sourceType, string error) =>

@@ -119,6 +119,52 @@ public sealed class MobilePageConversionGuideToolTests {
 	}
 
 	[Test]
+	[Description("ENG-95827: an unreadable mobile template FAILS the tool instead of degrading the guide. Without that template MobileTypesByName is empty, which silently stops the automatic same-name twin from being detected — so an element the template already provides (Feed, Tabs) falls through to the insert path and the page ships a DUPLICATE of a native element — and RetargetTargetMissing fails open, so a retarget into a container the template lacks is no longer caught. Shipping that guide with a footnote about the least of it (a root-merge data-section diff) is what this replaces.")]
+	public void RejectUnobtainableMobileTemplate_WhenNamedTemplateIsUnreadable_FailsWithTheReRunRemedy() {
+		// Act
+		MobilePageConversionGuideResponse rejection = MobilePageConversionGuideTool.RejectUnobtainableMobileTemplate(
+			Args(), WebToMobileAnalysisService.SourceTypeFreedomWeb, "MobilePageWithTabsFreedomTemplate",
+			templateUnavailable: true);
+
+		// Assert
+		rejection.Should().NotBeNull(because: "a guide that cannot be trusted is worse than no guide");
+		rejection!.Success.Should().BeFalse();
+		rejection.Error.Should().Contain("MobilePageWithTabsFreedomTemplate",
+			because: "naming the schema is what makes the failure actionable — the caller checks that one thing");
+		rejection.Error.Should().Contain("DUPLICATES",
+			because: "the duplicate-native-element consequence is the severe one and the reason this is a failure rather than a diagnostic");
+		rejection.Error.Should().Contain("mobile package is installed",
+			because: "the usual cause is the mobile package missing from the target environment, so the fix is named");
+	}
+
+	[Test]
+	[Description("ENG-95827: the two unobtainable-template causes get DIFFERENT fixes, so the failure distinguishes them — a template that was never named cannot be re-read, and telling the caller to re-run would be advice that cannot work. The fix there is a rules-file entry.")]
+	public void RejectUnobtainableMobileTemplate_WhenNoTemplateWasNamed_PointsAtTheRulesFileInstead() {
+		// Act
+		MobilePageConversionGuideResponse rejection = MobilePageConversionGuideTool.RejectUnobtainableMobileTemplate(
+			Args(), WebToMobileAnalysisService.SourceTypeFreedomWeb, mobileTemplateName: null,
+			templateUnavailable: true);
+
+		// Assert
+		rejection!.Error.Should().Contain("defaultMobileTemplate",
+			because: "with nothing named there is no schema to re-read; the actionable fix is a rules-file entry");
+		rejection.Error.Should().NotContain("mobile package is installed",
+			because: "suggesting an environment check for a template that was never named sends the caller after the wrong thing");
+	}
+
+	[Test]
+	[Description("ENG-95827: a readable mobile template is the normal path and must not be rejected — the gate fires on unavailability alone, never on a template that simply lacks one config section.")]
+	public void RejectUnobtainableMobileTemplate_WhenTemplateIsReadable_ReturnsNull() {
+		// Act
+		MobilePageConversionGuideResponse rejection = MobilePageConversionGuideTool.RejectUnobtainableMobileTemplate(
+			Args(), WebToMobileAnalysisService.SourceTypeFreedomWeb, "BaseMobilePageTemplate",
+			templateUnavailable: false);
+
+		// Assert
+		rejection.Should().BeNull(because: "the guide is trustworthy whenever the template was read, so nothing blocks it");
+	}
+
+	[Test]
 	[Description("ENG-95827: with no defaultMobileTemplate declared, the fallback stays null rather than inventing a schema name — a partner rules file that omits it must not send create-page at a template that may not exist.")]
 	public void DefaultTemplateRule_WithoutADeclaredDefault_ReturnsNull() {
 		// Arrange

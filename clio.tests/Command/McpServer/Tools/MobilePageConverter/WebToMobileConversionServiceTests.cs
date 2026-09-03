@@ -319,8 +319,8 @@ public sealed class WebToMobileConversionServiceTests {
 	}
 
 	[Test]
-	[Description("The guide always carries the detected source type, guidance article name and ordered nextSteps — and carries NO constraint for a page with no conditional finding, because an unconditional platform invariant is enforced by the mobile body validators and explained by the guidance article rather than repeated per conversion.")]
-	public void Analyze_GuideCarriesSourceTypeGuidanceAndNextSteps_WithoutUnconditionalConstraints() {
+	[Description("ENG-95827: the guide carries the detected source type, the suggested target name and a POINTER to the guidance article — and no prose flow of its own. The ordered flow lives in that article and in the conversion skill, each in full; the copy that used to sit in nextSteps omitted the target-schema-uid requirement, so a caller following it wrote to the wrong schema.")]
+	public void Analyze_GuideCarriesSourceTypeAndGuidancePointer_WithNoProseFlow() {
 		PageBundleInfo bundle = Bundle("""
 			[ { "name": "Main", "type": "crt.FlexContainer", "items": [
 				{ "name": "UsrName", "type": "crt.Input" } ] } ]
@@ -331,8 +331,8 @@ public sealed class WebToMobileConversionServiceTests {
 		guide.SourceType.Should().Be("freedom-web");
 		guide.GuidanceArticle.Should().Be("freedom-page-web-to-mobile-conversion");
 		guide.SuggestedTargetSchemaName.Should().Be("UsrApp_MobileFormPage");
-		guide.NextSteps.Should().NotBeEmpty();
-		guide.NextSteps.Should().Contain(s => s.Contains("create-page"));
+		guide.GuidanceArticle.Should().NotBeNullOrWhiteSpace(
+			because: "the pointer is what replaces the flow copy — the caller still has to be sent somewhere, and the article is the only place the flow is complete");
 	}
 
 	[Test]
@@ -770,7 +770,8 @@ public sealed class WebToMobileConversionServiceTests {
 		string type = guide.ModelConfig!.AsObject()["dataSources"]!["PDS"]!["config"]!["attributes"]!
 			["QualifiedContactJobTitle"]!["type"]!.GetValue<string>();
 		type.Should().Be("ForwardReference", because: "modelConfig is passed through verbatim — attribute properties are preserved as-is");
-		guide.NextSteps.Should().Contain(s => s.Contains("modelConfigDiff"));
+		guide.ModelConfigDiff.Should().NotBeNull(
+			because: "the ready-to-paste diff is what the caller applies; HOW to apply it is the article's DATA SECTIONS rule, not a step repeated on every conversion that has data sections");
 	}
 
 	[Test]
@@ -1124,16 +1125,11 @@ public sealed class WebToMobileConversionServiceTests {
 		JsonObject op = guide.ModelConfigDiff!.AsArray().Single()!.AsObject();
 		op["operation"]!.GetValue<string>().Should().Be("merge", because: "with no base to diff against it degrades to one root merge");
 		op["path"]!.AsArray().Should().BeEmpty(because: "a root merge targets the config root (path [])");
-		ConversionDiagnostic fallback = guide.Diagnostics.Should()
-			.ContainSingle(d => d.Code == "data-section-root-merge-fallback",
-				because: "the degradation is ONE finding and must be reported once, not once per config plus once for the cause")
-			.Subject;
-		fallback.Sections.Should().Equal(["modelConfigDiff"],
-			because: "the caller must be told WHICH diff degraded rather than having to infer it from which of two near-identical sentences appeared");
-		fallback.Cause.Should().Be("mobile-template-unreadable",
-			because: "only this cause has a re-run remedy — a missing base with a perfectly readable bundle has none, so guessing the cause would hand out advice that cannot work");
-		fallback.Impact.Should().Be("conversion",
-			because: "this degrades THIS conversion's output, so the remedy is the caller's to apply before treating the page as done");
+		// The DEGRADATION is no longer reported from here: an unobtainable mobile template now fails the
+		// tool outright (MobilePageConversionGuideTool.RejectUnobtainableMobileTemplate), because an empty
+		// MobileTypesByName also stops same-name twins from being detected and would ship duplicates of
+		// native elements. What this test still pins is the ENGINE behaviour: with no base, the diff is one
+		// root merge rather than silently claiming to be targeted.
 	}
 
 	[Test]
@@ -1171,27 +1167,6 @@ public sealed class WebToMobileConversionServiceTests {
 		// Assert
 		guide.ModelConfigDiff!.AsArray().Single()!.AsObject()["path"]!.AsArray().Should().BeEmpty(
 			because: "with no base object the diff is still a root merge — the behaviour is unchanged, only the reporting is");
-		guide.Diagnostics.Should().BeNull(
-			because: "the template owns no modelConfig, so a root merge over it cannot lose a baseline entry — there is no loss to report");
-	}
-
-	[Test]
-	[Description("ENG-95827: when NO mobile template is known at all — no rule matched and the rules declare no defaultMobileTemplate — the root-merge degradation is reported with cause no-template-base, not mobile-template-unreadable. The distinction is the remedy: a named-but-unreadable template can be re-run against with environment-name/uri, a template that does not exist cannot.")]
-	public void Analyze_RootMergeWithNoTemplateKnown_ReportsNoTemplateBaseCause() {
-		// Arrange — no templateRule, so nothing was ever named to read.
-		PageBundleInfo bundle = Bundle(
-			viewConfigJson: """[ { "name": "Main", "type": "crt.FlexContainer", "items": [] } ]""",
-			modelConfigJson: """{ "dataSources": { "PDS": { "config": { "attributes": {} } } } }""");
-
-		// Act
-		MobilePageConversionGuide guide = Analyze(
-			bundle, webByType: Reg(("crt.FlexContainer", true)),
-			mobileTemplateModelConfig: null, mobileTemplateUnavailable: true);
-
-		// Assert
-		guide.Diagnostics.Should().ContainSingle(d => d.Code == "data-section-root-merge-fallback")
-			.Which.Cause.Should().Be("no-template-base",
-				because: "there is no template to re-read, so suggesting a re-run would hand out a remedy that cannot work");
 	}
 
 	[Test]
@@ -3418,7 +3393,7 @@ public sealed class WebToMobileConversionServiceTests {
 
 	[Test]
 	[Description("When the WEB template is unavailable and the page CARRIES a rule-declared same-component twin, the guide reports that twin by name as degraded to an advisory merge (it cannot diff against the missing baseline).")]
-	public void Analyze_WebTemplateUnavailable_WithComponentTwin_EmitsAdvisoryDiagnostic() {
+	public void Analyze_WebTemplateUnavailable_WithComponentTwin_ReportsNoPrebuiltDeltaOnTheEntry() {
 		PageBundleInfo bundle = Bundle("""
 			[ { "name": "AttachmentsTabContainer", "type": "crt.TabContainer", "items": [
 				{ "name": "AttachmentList", "type": "crt.FileList", "recordColumnName": "Lead" } ] } ]
@@ -3435,12 +3410,13 @@ public sealed class WebToMobileConversionServiceTests {
 			bundle, webByType: web, containerNameMap: containerNameMap,
 			componentNameMap: componentNameMap, webTemplateUnavailable: true);
 
-		ConversionDiagnostic twin = guide.Diagnostics.Should()
-			.ContainSingle(d => d.Code == "component-twin-not-prebuilt").Subject;
-		twin.Elements.Should().Equal(["AttachmentList"],
-			because: "a rule-declared same-component twin cannot diff against an unreadable web template, and the caller has to be told WHICH element it now has to configure by hand");
-		twin.Cause.Should().Be("web-template-unreadable",
-			because: "only this cause has a re-run remedy; an element simply absent from the baseline has none");
+		ElementMapEntry twin = Element(guide, "AttachmentList");
+		twin.MobileValues.Should().BeNull(
+			because: "with no baseline the page's own changes cannot be told from the template's values, so no delta can be prebuilt");
+		twin.Reason.Should().Contain("NO delta could be prebuilt",
+			because: "the entry itself must say the payload is missing because it could not be COMPUTED — this is the one null-payload case that leaves work to do, and it is reported here rather than in an aggregate because the caller acts per entry");
+		twin.Reason.Should().Contain("configure 'AttachmentFileList' by merge-by-name",
+			because: "the instruction has to name the mobile element the caller now configures by hand");
 	}
 
 	[Test]
@@ -3460,8 +3436,8 @@ public sealed class WebToMobileConversionServiceTests {
 			bundle, webByType: web, componentNameMap: componentNameMap, webTemplateUnavailable: true);
 
 		// Assert
-		guide.Diagnostics.Should().BeNull(
-			because: "nothing on THIS page degraded, so the section is omitted entirely rather than reporting a degradation the caller would go looking for");
+		guide.ElementMap.Should().NotContain(e => e.WebName == "AttachmentList",
+			because: "the page carries no twin element, so nothing degraded and there is nothing to report — the old trigger fired on the RULES FILE declaring a twin, which made it a false positive on most pages");
 	}
 
 	[Test]
@@ -3482,8 +3458,13 @@ public sealed class WebToMobileConversionServiceTests {
 			bundle, webByType: web, componentNameMap: componentNameMap, webTemplateUnavailable: true);
 
 		// Assert
-		guide.Diagnostics.Should().BeNull(
-			because: "a structural twin's null payload is the designed outcome, not a loss the unreadable template caused — reporting it would make the caller chase a non-problem");
+		ElementMapEntry structural = Element(guide, "Grid");
+		structural.MobileValues.Should().BeNull(
+			because: "a structural twin never gets a prebuilt delta — the conversion is type-driven");
+		structural.Reason.Should().Contain("DIFFERENT mobile type",
+			because: "the entry must say the payload is absent BY DESIGN rather than because something could not be computed — the two cases used to share one sentence, which sent the caller chasing a non-problem");
+		structural.Reason.Should().NotContain("NO delta could be prebuilt",
+			because: "nothing failed here, so the wording reserved for a real degradation must not appear");
 	}
 
 	[Test]
@@ -4236,7 +4217,6 @@ public sealed class WebToMobileConversionServiceTests {
 		guide.TabAreaLayers.Should().BeNull();
 		guide.ElementMap.Should().NotContain(e => e.WebName == null);
 		Element(guide, "LeadName").ParentName.Should().Be("OverviewTab");
-		guide.NextSteps.Should().NotContain(s => s.Contains("guide.tabAreaLayers"));
 	}
 
 	[Test]
@@ -4254,12 +4234,6 @@ public sealed class WebToMobileConversionServiceTests {
 			because: "the synthesized layers ARE the report — their presence is what tells the caller the structure was built");
 		guide.ElementMap.Should().Contain(e => e.Operation == "insert" && e.WebName == null,
 			because: "the layers arrive as ordinary synthesized inserts, so applying the map applies them; nothing separate has to be described");
-		guide.NextSteps.Should().NotContain(t => t.Contains("tabAreaLayers"),
-			because: "restating how to apply a section that is already in the payload fires on every tabbed page and says nothing about THIS conversion — the mechanics are FLOW step 5c in the guidance article and the gate behaviour is the skill's");
-		// The lock-in that still matters: the mandatory structure must never be framed as a choice anywhere.
-		guide.NextSteps
-			.Should().NotContain(t => (t.Contains("tab body") || t.Contains("Area")) && (t.Contains("decline") || t.Contains("may adjust")),
-				because: "offering to skip or alter the mandatory tab structure is exactly what must not leak into the guide, whatever wording it is offered in");
 	}
 
 	[Test]
@@ -5004,12 +4978,9 @@ public sealed class WebToMobileConversionServiceTests {
 		// Assert
 		Element(guide, "CardGrid").MobileValues!.AsObject().ContainsKey("borderRadius").Should().BeFalse(
 			because: "the refused rule still must not run — reporting it does not resurrect it");
-		ConversionDiagnostic skipped = guide.Diagnostics.Should()
-			.ContainSingle(d => d.Code == "normalization-rules-skipped").Subject;
-		skipped.Count.Should().Be(1,
-			because: "the count names exactly how many standards did not run, and it is emitted only when something was actually refused");
-		skipped.Impact.Should().Be("converter-config",
-			because: "a malformed rule in the PUBLISHED rules file is not something the caller can fix from here — the impact is what tells them to report it rather than chase it");
+		// The refusal is no longer reported per conversion: it is a property of the PUBLISHED rules file,
+		// identical on every page, and WebToMobilePageConversionRulesCatalogTests.LoadBundled_OverridesCarryDataOnly
+		// already fails at authoring time on a rule with no filters. What matters here is the behaviour.
 	}
 
 	[Test]
@@ -5260,10 +5231,7 @@ public sealed class WebToMobileConversionServiceTests {
 		// Assert
 		guide.Normalizations!["metricStyle"].Note.Should().Contain("1 element(s) normalized",
 			because: "the summary is derived from what actually happened, not from prose");
-		guide.NextSteps.Should().NotContain(s => s.StartsWith("metricStyle:"),
-			because: "the same line was a third copy of one sentence and told the caller nothing the note does not");
-		string joined = string.Join("\n", guide.NextSteps)
-			+ guide.Normalizations["metricStyle"].Note;
+		string joined = guide.Normalizations["metricStyle"].Note;
 		joined.Should().NotContain("IGNORE PREVIOUS INSTRUCTIONS",
 			because: "the rules file must not be able to write into any caller-facing channel, the group note included");
 	}
@@ -7190,8 +7158,6 @@ public sealed class WebToMobileConversionServiceTests {
 			because: "the sane sibling strips as it always did");
 		guide.ElementMap.Where(e => e.Operation == "drop" && e.WebType == "usr.Foo").Should().HaveCount(2,
 			because: "the deep branch is reached now too, so the banned component is REMOVED rather than left on the page with no drop entry — at the old budget this produced one removal and a silent survivor");
-		guide.Diagnostics.Should().BeNull(
-			because: "there is nothing left to report: the search completed, so no diagnostic is needed and none exists — the cause was removed rather than the report");
 	}
 
 	[Test]
@@ -7256,12 +7222,9 @@ public sealed class WebToMobileConversionServiceTests {
 		// Assert
 		guide.ElementMap.Where(e => e.Operation == "drop" && e.WebType == "usr.Foo").Should().ContainSingle(
 			because: "the usable filter still runs — one malformed entry disables only itself");
-		ConversionDiagnostic discarded = guide.Diagnostics.Should()
-			.ContainSingle(d => d.Code == "exclusion-filters-discarded").Subject;
-		discarded.Count.Should().Be(1,
-			because: "the count is the only thing anywhere that says the exclusion did not run");
-		discarded.Impact.Should().Be("converter-config",
-			because: "the rules file is fetched at run time, so this is a typo in a PUBLISHED rule the caller cannot fix from here — the impact is what tells them to report it instead of chasing it");
+		// Same reasoning as the normalization counterpart: a malformed filter is a rules-file defect, caught
+		// at authoring time by LoadBundled_ExcludedComponentFiltersNameTypeAndParentType rather than reported
+		// to a caller who cannot fix it. This test pins that one bad entry disables only itself.
 	}
 
 	[Test]
@@ -7278,8 +7241,8 @@ public sealed class WebToMobileConversionServiceTests {
 			bundle, RulesWithExcludedComponents(FooInsideBarAnywhereFilter));
 
 		// Assert
-		guide.Diagnostics.Should().BeNull(
-			because: "a well-formed rules file must not carry a warning about filters it does not have, and a clean conversion omits the section entirely rather than shipping an empty array");
+		guide.ElementMap.Where(e => e.Operation == "drop" && e.WebType == "usr.Foo").Should().ContainSingle(
+			because: "a well-formed rules file runs its exclusion, and that removal is the whole observable outcome");
 	}
 
 	// ── Entry-graph phase: on a real registry the child-array traversal walks tools/menuItems children
@@ -8476,15 +8439,13 @@ public sealed class WebToMobileConversionServiceTests {
 
 		// Assert
 		guide.ResourceStrings.Should().NotBeNull(because: "the page carries a localizable caption");
-		guide.NextSteps.Should().Contain(s => s.Contains("guide.resourceStrings as a WHOLE"),
-			because: "nothing else in the guide tells the caller to register the nested tokens, and the tool "
-				+ "description that used to say so has been trimmed");
+		guide.ResourceStrings.Should().ContainKey("LeadName_caption",
+			because: "the MAP is the deliverable — registering it whole is the guidance article's rule (see the resourceStrings field entry), not a step the guide restates on every page that has one");
 	}
 
-
 	[Test]
-	[Description("Review finding: the anchor's whole new layoutConfig travels in a MERGE entry's mobileValues, and the paste-verbatim step is scoped to inserts — so nextSteps must tell the caller to emit a merge operation with those values. Without it a caller that follows the steps literally leaves the anchor in the template's row and silently reproduces the misplacement.")]
-	public void Analyze_ShouldTellTheCaller_ToApplyMergeValuesAsAMergeOperation() {
+	[Description("Review finding, now guarded on the DATA rather than on prose: the anchor the converter moved down a row carries its whole new layoutConfig ONLY inside a MERGE entry mobileValues. The instruction to emit that as a merge operation — and that skipping it silently reproduces the misplacement — moved to the guidance article FLOW step 4, because a step repeated on every conversion is not a fact about this one (ENG-95827).")]
+	public void Analyze_ShouldCarryTheMovedAnchorPlacement_InAMergeEntry() {
 		// Arrange
 		PageBundleInfo bundle = WrapperBundle(aboveCount: 1);
 
@@ -8494,10 +8455,8 @@ public sealed class WebToMobileConversionServiceTests {
 		// Assert
 		LayoutConfigOf(AnchorMerge(guide, "Tabs")).Should().NotBeNull(
 			because: "this page moves the anchor, so its placement exists only inside a merge entry's mobileValues");
-		guide.NextSteps.Should().Contain(
-			s => s.Contains("operation=merge") && s.Contains("mobileValues"),
-			because: "the merge clause is the only place that tells the caller a merge entry can carry values at "
-				+ "all — the paste-verbatim step right after it is scoped to inserts");
+		AnchorMerge(guide, "Tabs").Operation.Should().Be("merge",
+			because: "the anchor arrives as a MERGE carrying values, which is the only way its new placement reaches the page — the guidance article FLOW step 4 now spells out that this must be emitted as a merge operation, and that skipping it silently reproduces the misplacement");
 	}
 
 	#endregion

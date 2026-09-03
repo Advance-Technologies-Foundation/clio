@@ -501,15 +501,10 @@ public sealed class MobilePageConversionGuideSandboxE2ETests : McpContractFixtur
 			}
 		}
 		// ENG-95827: the mandatory structure is conveyed by the DATA above (tabAreaLayers plus the synthesized
-		// inserts already reparented onto each tab's own Area), not by prose. How to apply it is FLOW step 5c
-		// in the guidance article, and stating it as a fact rather than a question is the conversion skill's
-		// gate rule. What must remain impossible over the real transport is the guide offering it as a choice.
-		guide.NextSteps.Should().NotContain(t => t.Contains("tabAreaLayers"),
-			because: "restating how to apply a section already in the payload fires on every tabbed page and "
-				+ "says nothing about this conversion");
-		guide.NextSteps
-			.Should().NotContain(t => (t.Contains("tab body") || t.Contains("Area")) && (t.Contains("decline") || t.Contains("may adjust")),
-				because: "offering to skip or alter the two-layer body is exactly what must never reach the caller");
+		// inserts already reparented onto each tab own Area), and by nothing else — the guide carries no prose
+		// arrays at all now. How to apply it is FLOW step 5c in the guidance article, and stating it as a fact
+		// rather than a question is the conversion skill gate rule. There is therefore nothing left to assert
+		// the guide does NOT say: the channel that could have said it is gone.
 	}
 
 	[Test]

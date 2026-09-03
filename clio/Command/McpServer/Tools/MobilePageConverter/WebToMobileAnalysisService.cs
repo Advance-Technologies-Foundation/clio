@@ -197,8 +197,7 @@ public static class WebToMobileAnalysisService {
 			tree, map, componentMap, mobileTypes, mobileByType, webByType, rules, attrToColumn, resources,
 			requestMap, convertedRequests, droppedRequests, flaggedRequests, sourceLayouts, gridContainerColumns,
 			positionalParentByAnchor, positionalAnchorByWebAnchor,
-			mobileTypesByName, webBaselineNodes, webTemplateResources,
-			out IReadOnlyList<string> advisoryTwins);
+			mobileTypesByName, webBaselineNodes, webTemplateResources);
 
 		// Removes components an excludedComponents rule bans from a host (type-agnostic — which
 		// type/host/property is banned comes entirely from the rules), in the two shapes a banned component
@@ -391,20 +390,22 @@ public static class WebToMobileAnalysisService {
 				: null,
 			Normalizations = BuildNormalizations(componentPropertyOverrides),
 			ResourceStrings = resourceStrings.Count > 0 ? resourceStrings : null,
-			// Named arguments deliberately: the tail is a run of defaulted bools, so a positional call silently
-			// mis-wires the moment a parameter is inserted rather than appended.
-			Diagnostics = DiagnosticsOrNull(BuildDiagnostics(
-				viewModelConfigRootMerge: viewModelConfigRootMerge,
-				modelConfigRootMerge: modelConfigRootMerge,
-				mobileTemplateUnavailable: mobileTemplateUnavailable,
-				webTemplateUnavailable: webTemplateUnavailable,
-				advisoryTwins: advisoryTwins,
-				discardedExclusionFilters: excludedDiagnostics.DiscardedFilterCount,
-				skippedOverrideRules: componentPropertyOverrides.SkippedRulesWithoutFilters,
-				recommendedMobileTemplate: templateRule?.Mobile)),
-			NextSteps = BuildNextSteps(
-				hasDataSections: modelConfig is not null || viewModelConfig is not null,
-				hasResourceStrings: resourceStrings.Count > 0),
+			// No diagnostics section. Every finding it briefly carried now has a better home: an unobtainable
+			// mobile template FAILS the tool outright (RejectUnobtainableMobileTemplate — the degradation is
+			// not confined to the data sections, so an otherwise-normal guide would ship duplicates of native
+			// elements with a footnote about the least of it); a twin with no prebuilt delta says so in its own
+			// entry's reason, which now distinguishes "configure it" from "nothing to do"; a malformed rule in
+			// the published rules file is caught at authoring time by WebToMobilePageConversionRulesCatalogTests
+			// rather than reported to a caller who cannot fix it; and the exclusion depth budget can no longer
+			// truncate. See git history for the seven passes that emptied constraints and then this (ENG-95827).
+			// No nextSteps either, for a sharper reason than duplication: it was an INCOMPLETE copy of a
+			// procedure two other surfaces own in full. Its "persist with update-page" step never mentioned
+			// threading create-page's schemaUId in as target-schema-uid, which the conversion skill marks
+			// REQUIRED — without it an update-page against a non-design package writes to the wrong schema.
+			// Its "read the guidance" step likewise omitted that the article is loaded ONCE per run and reused.
+			// A caller following the short copy instead of the real flow therefore got it wrong, which makes an
+			// incomplete duplicate worse than no duplicate. The flow lives in the guidance article's FLOW
+			// section and in creatio-mobile-page-conversion; the guide points at the former via GuidanceArticle.
 			GuidanceArticle = GuidanceArticleName,
 			SuggestedTargetSchemaName = suggestedTarget
 		};
@@ -1736,158 +1737,7 @@ public static class WebToMobileAnalysisService {
 		return referenced;
 	}
 
-	/// <summary>
-	/// Everything the conversion could NOT do, as typed diagnostics. Empty when nothing went wrong, which is
-	/// the normal case.
-	/// </summary>
-	/// <remarks>
-	/// <para>
-	/// This replaced a <c>constraints</c> array of English sentences (ENG-95827). Only ABSENCES survived the
-	/// migration, because an absence is the one thing nothing else in the response can express: a component
-	/// that was never removed produces no <c>drop</c> entry, and a standard that never ran produces no
-	/// normalization entry. Everything else that used to be here was either an unconditional platform
-	/// invariant or a restatement of data the payload already carried, and each went to the surface that owns
-	/// it:
-	/// </para>
-	/// <list type="bullet">
-	/// <item><description>plain-JSON body, no <c>handlers</c>/<c>validators</c>/converters, no second
-	/// <c>crt.Scaffold</c>, mobile-registered types only -&gt; validators in
-	/// <see cref="SchemaValidationService"/> that <c>validate-page</c>/<c>update-page</c> cannot be talked out
-	/// of, explained once in the guidance article.</description></item>
-	/// <item><description>retarget into a template-provided parent -&gt;
-	/// <see cref="ElementMapEntry.ParentSource"/>, stamped on every insert.</description></item>
-	/// <item><description>paste the data-section diffs verbatim -&gt; the article's DATA SECTIONS rule, with
-	/// the failure it warns about enforced by
-	/// <see cref="SchemaValidationService.ValidateMobileDataSourceAttributeTypes"/>.</description></item>
-	/// <item><description>a template-owned value no diff can express -&gt;
-	/// <see cref="MobilePageConversionGuide.DataSectionConflicts"/>.</description></item>
-	/// <item><description>web-only sections -&gt; <see cref="MobilePageConversionGuide.WebOnlySections"/>;
-	/// normalization -&gt; each group's own note; an excludedComponents or empty-container removal -&gt; the
-	/// <c>drop</c> entry's reason; adaptive layout and the tab body -&gt; the article's FLOW steps and the
-	/// conversion skill's gate rules.</description></item>
-	/// </list>
-	/// <para>
-	/// Do not add a prose entry here, and do not put a remedy sentence on a diagnostic: the remedy per code is
-	/// a standing rule and lives in the article.
-	/// </para>
-	/// </remarks>
-	private static List<ConversionDiagnostic> BuildDiagnostics(
-		bool viewModelConfigRootMerge = false, bool modelConfigRootMerge = false, bool mobileTemplateUnavailable = false,
-		bool webTemplateUnavailable = false, IReadOnlyList<string> advisoryTwins = null,
-		int discardedExclusionFilters = 0, int skippedOverrideRules = 0,
-		string recommendedMobileTemplate = null) {
-		var diagnostics = new List<ConversionDiagnostic>();
-		// Gated on the template being UNOBTAINABLE, not merely on the fallback firing. The fallback also fires
-		// when a template WAS read and simply carries no such config section, and that case is not a loss: the
-		// warning is "a root merge replaces arrays wholesale, so an array the template also owns may lose its
-		// baseline entries", and a base that owns nothing there has nothing to lose. Reporting it was a false
-		// positive (ENG-95827). The two remaining causes differ in whether a remedy exists at all, so the
-		// cause is reported rather than assumed.
-		if ((viewModelConfigRootMerge || modelConfigRootMerge) && mobileTemplateUnavailable) {
-			var sections = new List<string>();
-			if (modelConfigRootMerge) {
-				sections.Add("modelConfigDiff");
-			}
-			if (viewModelConfigRootMerge) {
-				sections.Add("viewModelConfigDiff");
-			}
-			diagnostics.Add(new ConversionDiagnostic {
-				Code = RootMergeFallbackDiagnostic,
-				Impact = ConversionImpact,
-				Sections = sections,
-				Cause = string.IsNullOrWhiteSpace(recommendedMobileTemplate)
-					? NoTemplateBaseCause
-					: MobileTemplateUnreadableCause
-			});
-		}
-		if (advisoryTwins is { Count: > 0 }) {
-			diagnostics.Add(new ConversionDiagnostic {
-				Code = TwinNotPrebuiltDiagnostic,
-				Impact = ConversionImpact,
-				Elements = advisoryTwins,
-				Cause = webTemplateUnavailable ? WebTemplateUnreadableCause : NoBaselineNodeCause
-			});
-		}
-		// A truncated excludedComponents search is no longer reported, because it can no longer happen: the
-		// pass's depth budget was raised to the JSON readers' own ceiling, so a document deep enough to
-		// truncate the search cannot be parsed in the first place (see ExcludedComponentsPass.MaxSearchDepth).
-		// The cause was removed rather than the report — a system-log line would have been worse than either,
-		// since ConsoleLogger suppresses console output under IsMcpServerMode and this flow starts no log file,
-		// so it would have gone nowhere at all.
-		if (discardedExclusionFilters > 0) {
-			// The rules file is fetched at run time, so a typo in a PUBLISHED rule silently switches an
-			// exclusion off. The count is the only thing anywhere that says the rule did not run.
-			diagnostics.Add(new ConversionDiagnostic {
-				Code = ExclusionFiltersDiscardedDiagnostic,
-				Impact = ConverterConfigImpact,
-				Count = discardedExclusionFilters
-			});
-		}
-		if (skippedOverrideRules > 0) {
-			// Same reasoning, likelier trigger: an entry authored against the removed `type` field, or a
-			// mistyped "filter", parses with no filters at all and is refused. The page then ships
-			// un-normalized, which the report cannot otherwise tell apart from "nothing needed normalizing".
-			diagnostics.Add(new ConversionDiagnostic {
-				Code = NormalizationRulesSkippedDiagnostic,
-				Impact = ConverterConfigImpact,
-				Count = skippedOverrideRules
-			});
-		}
-		return diagnostics;
-	}
 
-	/// <summary>
-	/// Omits the section entirely when the conversion was clean, rather than shipping an empty array. A
-	/// caller that sees no <c>diagnostics</c> key has nothing to weigh; an empty array would read as a section
-	/// to go and check.
-	/// </summary>
-	private static IReadOnlyList<ConversionDiagnostic> DiagnosticsOrNull(List<ConversionDiagnostic> diagnostics) =>
-		diagnostics.Count > 0 ? diagnostics : null;
-
-	private const string RootMergeFallbackDiagnostic = "data-section-root-merge-fallback";
-	private const string TwinNotPrebuiltDiagnostic = "component-twin-not-prebuilt";
-
-	private const string ExclusionFiltersDiscardedDiagnostic = "exclusion-filters-discarded";
-	private const string NormalizationRulesSkippedDiagnostic = "normalization-rules-skipped";
-
-	/// <summary>This conversion's output or report is affected; the code's remedy is the caller's to apply.</summary>
-	private const string ConversionImpact = "conversion";
-
-	/// <summary>A published rule is malformed so its behaviour did not run; the caller cannot fix it here.</summary>
-	private const string ConverterConfigImpact = "converter-config";
-
-	private const string MobileTemplateUnreadableCause = "mobile-template-unreadable";
-	private const string WebTemplateUnreadableCause = "web-template-unreadable";
-	private const string NoTemplateBaseCause = "no-template-base";
-	private const string NoBaselineNodeCause = "no-baseline-node";
-
-	private static List<string> BuildNextSteps(bool hasDataSections, bool hasResourceStrings = false) {
-		var steps = new List<string> {
-			"Read get-guidance with name \"freedom-page-web-to-mobile-conversion\".",
-			"Create the target mobile page from recommendedMobileTemplate with create-page (it provides the Scaffold root).",
-			"Build the mobile body by iterating elementMap (one entry per source element) — do NOT infer merge-vs-insert from containerMap: operation=merge → reuse the template element mobileName (no insert), and when the entry carries mobileValues emit a MERGE operation on that element with them verbatim — a merge is the only way some values reach the page at all (an anchor whose row had to move to make room for content placed above it arrives exactly this way, and skipping it silently reproduces the misplacement); operation=insert → insert mobileType into parentName/propertyName and, if captionResource is present, register key=sourceValue via update-page resources; operation=relocate-children → do not recreate the container; its children are placed in parentName (each child entry carries that parentName); operation=drop → skip it. Fill each component's values from the matching mobileContracts entry (call get-component-info schema-type \"mobile\" only when more detail is needed).",
-			"For every insert, paste elementMap[].mobileValues as the component's values VERBATIM — it already carries the type and EVERY source property the mobile component supports (including the field caption). Never drop a supported property. Then add ONLY the value binding (control, or value for lookups), which is left out on purpose. validate-page is the backstop: it rejects an insert that drops a required property (e.g. a field caption, or a lookup-path attribute's type) and update-page refuses to save."
-		};
-		if (hasDataSections) {
-			steps.Add("Paste the provided modelConfigDiff and viewModelConfigDiff VERBATIM as the page's modelConfigDiff / viewModelConfigDiff (each is diffed against the mobile template's own base: a targeted merge for changed/new values and an insert per new element of an array the template already carries, so the template's native array entries are preserved — unless a constraint reports no template base was available, in which case it degrades to a single root merge). Do NOT rebuild them by hand or collapse targeted operations into one root merge — that lets the mobile diff engine replace arrays and drop the page's own entries; and never copy the data-source section from an existing body — keep every attribute's type and path.");
-		}
-		// Adaptive layout and the tab body are not restated as steps either — see the remarks on BuildDiagnostics.
-		// Both are FLOW, which the creatio-mobile-page-conversion skill owns (steps 5b / 5c in the guidance
-		// article carry the mechanics), and the presence of guide.adaptiveLayout / guide.tabAreaLayers is
-		// already the signal that the step applies.
-		// Normalization: same — the group's note lives on guide.normalizations[group], beside the entries it
-		// counts.
-		if (hasResourceStrings) {
-			steps.Add("Register guide.resourceStrings as a WHOLE with one update-page resources call: it is the "
-				+ "{key: en-US text} map for EVERY #ResourceString token the pasted mobileValues carry, including the "
-				+ "ones nested inside a component value (config.title, text.template, a list row caption). Registering "
-				+ "only the per-element captionResource keys leaves the nested tokens unresolved and they render as "
-				+ "the raw token on the device.");
-		}
-		steps.Add("Validate the body with validate-page; resolve any findings.");
-		steps.Add("Persist with update-page, then open the result in Freedom UI Mobile Designer for final review.");
-		return steps;
-	}
 
 	private static bool HasContent(string section, string empty) =>
 		!string.IsNullOrWhiteSpace(section) &&
@@ -1919,11 +1769,7 @@ public static class WebToMobileAnalysisService {
 		IReadOnlyDictionary<string, JObject> WebBaselineNodes,
 		JObject WebBaselineResources,
 		IReadOnlySet<string> ScopeContainerNames,
-		IReadOnlySet<string> ContentContainerTypes,
-		// Appended rather than grouped with the other output collections on purpose: this record is
-		// constructed positionally in one place, and inserting a parameter mid-list is the mistake that
-		// silently mis-wires every argument after it.
-		List<string> AdvisoryTwins);
+		IReadOnlySet<string> ContentContainerTypes);
 
 	/// <summary>
 	/// The set of NON-CONVERTING scope container names — declared EXPLICITLY by the rules'
@@ -1964,8 +1810,7 @@ public static class WebToMobileAnalysisService {
 		IReadOnlyDictionary<string, string> positionalAnchorByWebAnchor,
 		IReadOnlyDictionary<string, string> mobileTypesByName,
 		IReadOnlyDictionary<string, JObject> webBaselineNodes,
-		JObject webBaselineResources,
-		out IReadOnlyList<string> advisoryTwins) {
+		JObject webBaselineResources) {
 		var ctx = new ElementMapContext(map,
 			componentMap ?? new Dictionary<string, ComponentMappingRule>(StringComparer.OrdinalIgnoreCase),
 			mobileTypes, mobileByType ?? new Dictionary<string, ComponentRegistryEntry>(),
@@ -1978,10 +1823,8 @@ public static class WebToMobileAnalysisService {
 			webBaselineNodes ?? new Dictionary<string, JObject>(StringComparer.OrdinalIgnoreCase),
 			webBaselineResources,
 			CollectScopeContainerNames(rules),
-			ContentContainerTypesOf(rules),
-			[]);
+			ContentContainerTypesOf(rules));
 		WalkElements(ctx, tree, mobileParentName: null);
-		advisoryTwins = ctx.AdvisoryTwins;
 		return ctx.Out;
 	}
 
@@ -2175,30 +2018,12 @@ public static class WebToMobileAnalysisService {
 				// owns) nor placement (layoutConfig — owned by the template). The page's caption IS carried (it
 				// overrides the template label; CollectResourceStrings adds its resource to the schema).
 				JsonNode twinValues = BuildTwinMergeValues(ctx, node, compRule, twinMobileType, type);
-				// Record the DEGRADED twin here, where the cause is known. A null payload has three causes and
-				// only one of them is a degradation the caller must act on:
-				//   • a structural twin (crt.DataGrid -> crt.List) has no payload BY DESIGN — the how-to is
-				//     type-driven and lives in componentSuggestions;
-				//   • a carryProperties twin reads the page node only (BuildCarriedTwinValues never touches the
-				//     baseline), so it is unaffected by an unreadable web template;
-				//   • a SAME-component twin with no baseline node could not be diffed at all — THIS one degrades
-				//     to an advisory merge and has to be configured by hand.
-				// Post-hoc inspection cannot tell them apart: a same-component twin the page simply did not
-				// change also yields null, which is the correct outcome and not a degradation. The trigger this
-				// replaced was worse still — it fired on `componentMap.Count > 0`, a property of the RULES FILE,
-				// so an unreadable web template reported a degraded twin on every page, including pages carrying
-				// no twin element at all (ENG-95827).
-				bool sameComponentTwin = compRule.CarryProperties is not { Count: > 0 }
-					&& !string.IsNullOrEmpty(type)
-					&& string.Equals(twinMobileType, type, StringComparison.OrdinalIgnoreCase);
-				if (sameComponentTwin && !ctx.WebBaselineNodes.ContainsKey(name)) {
-					ctx.AdvisoryTwins.Add(name);
-				}
 				ctx.Out.Add(new ElementMapEntry {
 					WebName = name, WebType = Nz(type), Operation = "merge", MobileName = compRule.Mobile,
 					MobileType = twinMobileType,
 					MobileValues = twinValues,
-					Reason = ComponentTwinReason(name, type, compRule, twinValues is not null)
+					Reason = ComponentTwinReason(
+						name, type, compRule, ClassifyTwinPayload(ctx, name, type, compRule, twinMobileType, twinValues))
 				});
 				if (items is not null) {
 					WalkElements(ctx, items, compRule.Mobile, sourceAncestors: Append(sourceAncestors, name));
@@ -2692,19 +2517,75 @@ public static class WebToMobileAnalysisService {
 	/// keeps no component-specific transform — the "how" (e.g. a grid's columns → the list row) is defined
 	/// by the general components rule and surfaced there for the model to apply.
 	/// </summary>
-	private static string ComponentTwinReason(string name, string type, ComponentMappingRule rule, bool hasPrebuiltPayload) {
-		string basis = !string.IsNullOrWhiteSpace(rule.Note) ? rule.Note : $"web '{name}' maps to mobile '{rule.Mobile}'";
-		// Whenever a prebuilt mobileValues payload was produced — a carryProperties whitelist OR a
-		// same-component carry-all — tell the caller to paste it (a merge is otherwise advisory). A structural
-		// twin with no payload keeps the advisory, type-driven wording (e.g. DataTable → List).
-		if (hasPrebuiltPayload) {
-			string what = rule.CarryProperties is { Count: > 0 } ? $" ({string.Join(", ", rule.CarryProperties)})" : "";
-			return $"{basis} — template-provided element — merge the prebuilt mobileValues{what} onto " +
-				$"'{rule.Mobile}' by name (do not insert a duplicate)";
+	/// <summary>Why a component twin's merge carries no prebuilt payload — the four cases are NOT the same
+	/// instruction, and telling them apart is the entry's job.</summary>
+	private enum TwinPayload {
+		/// <summary>Values were produced: paste them.</summary>
+		Prebuilt,
+
+		/// <summary>Different mobile type (crt.DataGrid → crt.List): the how-to is type-driven.</summary>
+		StructuralNoDelta,
+
+		/// <summary>Nothing to carry — the page changed nothing the rule carries. Leave the element alone.</summary>
+		NothingToCarry,
+
+		/// <summary>No web-template baseline, so the delta could not be computed. Configure it by hand.</summary>
+		NoBaseline
+	}
+
+	/// <summary>
+	/// Classifies a twin's null payload into the four states that produce it, from the same conditions
+	/// <see cref="BuildTwinMergeValues"/> used to decide.
+	/// </summary>
+	/// <remarks>
+	/// A single "has payload" bool used to drive the reason, and it gave the SAME instruction — configure it
+	/// by merge-by-name — to all four. That is wrong for two of them: a twin the page never changed needs
+	/// NOTHING done (its entry exists only so the element is a valid rule target, and the template's own
+	/// defaults are already correct), and a whitelist twin with none of its properties present is the same. It
+	/// is the difference between work to do and no work to do, and it is per-entry — which is why it belongs
+	/// here rather than in an aggregate diagnostic that only counted one of the four (ENG-95827).
+	/// </remarks>
+	private static TwinPayload ClassifyTwinPayload(
+		ElementMapContext ctx, string name, string webType, ComponentMappingRule rule,
+		string twinMobileType, JsonNode twinValues) {
+		if (twinValues is not null) {
+			return TwinPayload.Prebuilt;
 		}
-		string detail = string.IsNullOrEmpty(type)
-			? $"template-provided element — configure '{rule.Mobile}' by merge-by-name (do not insert a duplicate)"
-			: $"template-provided element — configure '{rule.Mobile}' by merge-by-name per componentSuggestions[\"{type}\"] (do not insert a duplicate)";
+		if (rule.CarryProperties is { Count: > 0 }) {
+			// The whitelist reads the page node only, never the baseline, so an empty result means the page
+			// carries none of those properties — not that anything could not be computed.
+			return TwinPayload.NothingToCarry;
+		}
+		bool sameComponent = !string.IsNullOrEmpty(webType)
+			&& string.Equals(twinMobileType, webType, StringComparison.OrdinalIgnoreCase);
+		if (!sameComponent) {
+			return TwinPayload.StructuralNoDelta;
+		}
+		return ctx.WebBaselineNodes.ContainsKey(name) ? TwinPayload.NothingToCarry : TwinPayload.NoBaseline;
+	}
+
+	private static string ComponentTwinReason(
+		string name, string type, ComponentMappingRule rule, TwinPayload payload) {
+		string basis = !string.IsNullOrWhiteSpace(rule.Note) ? rule.Note : $"web '{name}' maps to mobile '{rule.Mobile}'";
+		string suggestions = string.IsNullOrEmpty(type) ? "" : $" per componentSuggestions[\"{type}\"]";
+		string detail = payload switch {
+			TwinPayload.Prebuilt =>
+				"template-provided element — merge the prebuilt mobileValues"
+				+ (rule.CarryProperties is { Count: > 0 } ? $" ({string.Join(", ", rule.CarryProperties)})" : "")
+				+ $" onto '{rule.Mobile}' by name (do not insert a duplicate)",
+			TwinPayload.StructuralNoDelta =>
+				$"template-provided element of a DIFFERENT mobile type — configure '{rule.Mobile}' by "
+				+ $"merge-by-name{suggestions} (do not insert a duplicate); no delta is prebuilt for a "
+				+ "structural twin because the conversion is type-driven",
+			TwinPayload.NoBaseline =>
+				$"template-provided element — NO delta could be prebuilt: no web-template baseline for '{name}', "
+				+ "so the page's own changes cannot be told from the template's values — configure "
+				+ $"'{rule.Mobile}' by merge-by-name{suggestions} (do not insert a duplicate)",
+			// The case a single bool used to mislabel: nothing to apply, so nothing to do.
+			_ => $"template-provided element — the page changes nothing on it, so there is NOTHING to apply: "
+				+ $"leave '{rule.Mobile}' as the mobile template configures it (do not insert a duplicate, and "
+				+ "do not carry the web values over)"
+		};
 		return $"{basis} — {detail}";
 	}
 
