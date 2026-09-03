@@ -29,6 +29,13 @@ public sealed class ExecuteEsqTool(IToolCommandResolver commandResolver) {
 
 	/// <summary>Executes a raw ESQ SelectQuery and returns the resulting rows.</summary>
 	[McpServerTool(Name = ToolName, ReadOnly = true, Destructive = false, Idempotent = true, OpenWorld = false)]
+	[McpToolExecution(
+		Location = McpToolExecutionLocation.Worker,
+		Lifetime = McpToolExecutionLifetime.PerCall,
+		OperationFamily = McpToolOperationFamily.None,
+		BudgetPolicy = McpToolBudgetPolicy.ParentKillDefault,
+		RequiresClientRequests = McpToolClientRequests.None,
+		SharedFileResource = McpToolSharedFileResource.None)]
 	[Description(
 		"Run a raw EntitySchemaQuery (ESQ) SelectQuery against a Creatio environment and return the rows — to read " +
 		"Creatio data, or to validate a widget/page filter before saving it. ESQ is a proprietary format that is " +
@@ -124,27 +131,11 @@ public sealed class ExecuteEsqTool(IToolCommandResolver commandResolver) {
 
 			bool hasSuccess = root.TryGetProperty("success", out JsonElement successEl);
 			bool successIsTrue = hasSuccess && successEl.ValueKind == JsonValueKind.True;
-
-			// Explicit DataService failure envelope: 'success' is present but not true
-			// (false, or any non-true shape such as a string/number).
-			if (hasSuccess && !successIsTrue) {
-				return ExecuteEsqResponse.Failure(ExtractErrorMessage(root) ?? Truncate(json));
-			}
-
 			bool hasRowsArray = root.TryGetProperty("rows", out JsonElement rowsEl)
 				&& rowsEl.ValueKind == JsonValueKind.Array;
 
-			// Error bodies that were NOT explicitly marked successful and carry no rows array:
-			// DataService responseStatus / errorInfo, or an ASP.NET error body. A response that
-			// explicitly reported success:true is never reclassified as an error here, even if it
-			// also carries a top-level responseStatus/Message (e.g. a non-row projection envelope).
-			if (!successIsTrue
-				&& !hasRowsArray
-				&& (root.TryGetProperty("responseStatus", out _)
-					|| root.TryGetProperty("errorInfo", out _)
-					|| root.TryGetProperty("ExceptionMessage", out _)
-					|| root.TryGetProperty("Message", out _))) {
-				return ExecuteEsqResponse.Failure(ExtractErrorMessage(root) ?? Truncate(json));
+			if (TryDataServiceFailure(root, hasSuccess, successIsTrue, hasRowsArray, json) is { } failure) {
+				return failure;
 			}
 
 			if (hasRowsArray) {
@@ -163,8 +154,41 @@ public sealed class ExecuteEsqTool(IToolCommandResolver commandResolver) {
 			// Succeeded but no rows array (e.g. a non-standard projection): return the whole body.
 			return new ExecuteEsqResponse(true, null, null, root.Clone());
 		} catch (Exception ex) {
-			return ExecuteEsqResponse.Failure(SensitiveErrorTextRedactor.Redact($"Failed to parse SelectQuery response: {ex.Message} | Response: {Truncate(json)}"));
+			return ExecuteEsqResponse.Failure($"Failed to parse SelectQuery response: {SensitiveErrorTextRedactor.Redact(ex.Message)} | Response: {TruncateRedacted(json)}");
 		}
+	}
+
+	/// <summary>
+	/// Classifies a parsed SelectQuery body as a DataService failure envelope — either an explicit
+	/// 'success' present-but-not-true value, or an error body that was NOT explicitly marked
+	/// successful and carries no rows array (DataService <c>responseStatus</c>/<c>errorInfo</c>, or
+	/// an ASP.NET error body). A response that explicitly reported <c>success:true</c> is never
+	/// reclassified as an error here, even if it also carries a top-level responseStatus/Message
+	/// (e.g. a non-row projection envelope). Returns <see langword="null"/> when neither shape
+	/// applies.
+	/// </summary>
+	/// <remarks>
+	/// REDACTED, like the parse-failure path in <see cref="ParseSelectQueryResponse"/>. Both returns
+	/// here hand the caller a DataService error body — which routinely carries the request URI and
+	/// host, and can carry a connection string — and that method already redacts the same
+	/// <paramref name="json"/> in its own catch block. The asymmetry was not a decision: found
+	/// by story 21's R-7 requirement, which asks whether any other untrusted text reaches a
+	/// caller past the redactor.
+	/// </remarks>
+	private static ExecuteEsqResponse? TryDataServiceFailure(
+		JsonElement root, bool hasSuccess, bool successIsTrue, bool hasRowsArray, string json) {
+		bool explicitFailure = hasSuccess && !successIsTrue;
+		bool unmarkedErrorBody = !successIsTrue && !hasRowsArray
+			&& (root.TryGetProperty("responseStatus", out _)
+				|| root.TryGetProperty("errorInfo", out _)
+				|| root.TryGetProperty("ExceptionMessage", out _)
+				|| root.TryGetProperty("Message", out _));
+		if (!explicitFailure && !unmarkedErrorBody) {
+			return null;
+		}
+		return ExecuteEsqResponse.Failure(ExtractErrorMessage(root) is { } errorMessage
+			? SensitiveErrorTextRedactor.Redact(errorMessage)
+			: TruncateRedacted(json));
 	}
 
 	/// <summary>
@@ -256,6 +280,14 @@ public sealed class ExecuteEsqTool(IToolCommandResolver commandResolver) {
 		}
 		return null;
 	}
+
+	// REDACT FIRST, then truncate — the rule story 21 produced, applied where it is free to apply. Cutting
+	// first can strip the context a pattern needs: a head cut inside a JWT leaves fewer than three segments
+	// so JwtRegex stops matching, and a cut short of an authority slips past UriRegex, leaving the surviving
+	// prefix verbatim. Unlike the worker stderr drain there is no liveness reason to bound before redacting
+	// here — the body is already fully in memory — so the order is simply inverted and the class is closed
+	// rather than made positionally safe.
+	private static string TruncateRedacted(string value) => Truncate(SensitiveErrorTextRedactor.Redact(value));
 
 	private static string Truncate(string value) =>
 		value.Length > 500 ? value[..500] + "..." : value;

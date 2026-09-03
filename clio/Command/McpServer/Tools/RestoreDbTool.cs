@@ -39,6 +39,13 @@ public class RestoreDbTool(
 	/// </summary>
 	[McpServerTool(Name = RestoreDbByEnvironmentToolName, ReadOnly = false, Destructive = true, Idempotent = false,
 		OpenWorld = false)]
+	[McpToolExecution(
+		Location = McpToolExecutionLocation.Worker,
+		Lifetime = McpToolExecutionLifetime.PerCall,
+		OperationFamily = McpToolOperationFamily.None,
+		BudgetPolicy = McpToolBudgetPolicy.ParentKillDefault,
+		RequiresClientRequests = McpToolClientRequests.None,
+		SharedFileResource = McpToolSharedFileResource.None)]
 	[Description("Restores a database by using a configured clio environment and returns the temp database-operation log path.")]
 	public CommandExecutionResult RestoreByEnvironment(
 		[Description("Restore parameters")] [Required] RestoreDbByEnvironmentArgs args) {
@@ -58,6 +65,13 @@ public class RestoreDbTool(
 	/// </summary>
 	[McpServerTool(Name = RestoreDbByCredentialsToolName, ReadOnly = false, Destructive = true, Idempotent = false,
 		OpenWorld = false)]
+	[McpToolExecution(
+		Location = McpToolExecutionLocation.Worker,
+		Lifetime = McpToolExecutionLifetime.PerCall,
+		OperationFamily = McpToolOperationFamily.None,
+		BudgetPolicy = McpToolBudgetPolicy.ParentKillDefault,
+		RequiresClientRequests = McpToolClientRequests.None,
+		SharedFileResource = McpToolSharedFileResource.None)]
 	[Description("Restores a database by using an explicit database server URI, credentials, and backup path, and returns the temp database-operation log path.")]
 	public CommandExecutionResult RestoreByCredentials(
 		[Description("Restore parameters")] [Required] RestoreDbByCredentialsArgs args) {
@@ -80,6 +94,13 @@ public class RestoreDbTool(
 	/// </summary>
 	[McpServerTool(Name = RestoreDbToLocalServerToolName, ReadOnly = false, Destructive = true, Idempotent = false,
 		OpenWorld = false)]
+	[McpToolExecution(
+		Location = McpToolExecutionLocation.Worker,
+		Lifetime = McpToolExecutionLifetime.PerCall,
+		OperationFamily = McpToolOperationFamily.None,
+		BudgetPolicy = McpToolBudgetPolicy.ParentKillDefault,
+		RequiresClientRequests = McpToolClientRequests.None,
+		SharedFileResource = McpToolSharedFileResource.None)]
 	[Description("Restores a database to a configured local database server and returns the temp database-operation log path.")]
 	public CommandExecutionResult RestoreToLocalServer(
 		[Description("Restore parameters")] [Required] RestoreDbToLocalServerArgs args) {

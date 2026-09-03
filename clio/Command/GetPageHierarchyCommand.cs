@@ -6,6 +6,7 @@ using System.Linq;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using Clio.Common;
+using Clio.Package;
 using CommandLine;
 
 /// <summary>
@@ -210,7 +211,12 @@ public class GetPageHierarchyCommand : Command<GetPageHierarchyOptions> {
 			return false;
 		}
 		try {
-			IReadOnlyList<PageDesignerHierarchySchema> effectiveFirst = ResolveEffectiveFirstHierarchy(options.SchemaName);
+			(IReadOnlyList<PageDesignerHierarchySchema> effectiveFirst, string lookupError) =
+				ResolveEffectiveFirstHierarchy(options.SchemaName);
+			if (lookupError is not null) {
+				response = new GetPageHierarchyResponse { Success = false, Error = lookupError };
+				return false;
+			}
 			if (effectiveFirst.Count == 0) {
 				response = new GetPageHierarchyResponse {
 					Success = false,
@@ -302,8 +308,26 @@ public class GetPageHierarchyCommand : Command<GetPageHierarchyOptions> {
 	// NOTE (ENG-93249): mirrors PageGetCommand's chain resolution (metadata -> design package -> full
 	// hierarchy from the root). Kept as a focused copy rather than refactoring the working get-page
 	// path; unifying both onto one resolver is tracked as ENG-93249.
-	private IReadOnlyList<PageDesignerHierarchySchema> ResolveEffectiveFirstHierarchy(string schemaName) {
-		var (metadata, _) = PageSchemaMetadataHelper.QuerySysSchemaRow(
+	/// <summary>
+	/// Resolves the replacing-schema chain for <paramref name="schemaName"/>, classifying the outcome into three
+	/// states so that a call which never produced an answer is never reported as an answer about the page
+	/// (ENG-95262 story 13, following the classification story 11 established in
+	/// <see cref="PageSchemaMetadataHelper"/>):
+	/// <list type="bullet">
+	/// <item><description><c>(chain, null)</c> — the chain resolved.</description></item>
+	/// <item><description><c>(empty, null)</c> — the environment answered, and the chain is genuinely
+	/// empty; the caller reports the empty-hierarchy contract.</description></item>
+	/// <item><description><c>(empty, message)</c> — the schema metadata lookup did not answer, or answered that the
+	/// schema is absent. The message is the classified text the metadata helper produced (an HTML login page, a
+	/// timeout, a transport failure, or "Schema 'X' not found") and is surfaced verbatim, so a broken call and an
+	/// absent page stay two different outcomes.</description></item>
+	/// </list>
+	/// </summary>
+	/// <param name="schemaName">Requested page schema name.</param>
+	/// <returns>The designer-ordered chain (effective schema first), and the lookup failure when there is one.</returns>
+	private (IReadOnlyList<PageDesignerHierarchySchema> schemas, string lookupError) ResolveEffectiveFirstHierarchy(
+		string schemaName) {
+		var (metadata, metadataError) = PageSchemaMetadataHelper.QuerySysSchemaRow(
 			_applicationClient,
 			_serviceUrlBuilder,
 			schemaName,
@@ -312,21 +336,18 @@ public class GetPageHierarchyCommand : Command<GetPageHierarchyOptions> {
 		string schemaUId = metadata?["UId"]?.ToString();
 		string packageUId = metadata?["PackageUId"]?.ToString();
 		if (string.IsNullOrWhiteSpace(schemaUId) || string.IsNullOrWhiteSpace(packageUId)) {
-			return Array.Empty<PageDesignerHierarchySchema>();
+			// Collapsing this to an empty chain threw away the helper's classification: an expired session or an
+			// unreachable environment then read as "this page has no hierarchy", sending the caller to look at
+			// their schema name. A row that resolved but is missing one of the two columns is the only case here
+			// with no message of its own.
+			return (Array.Empty<PageDesignerHierarchySchema>(),
+				metadataError ?? $"Schema '{schemaName}' metadata is missing the schema or package UId");
 		}
-		string designPackageUId = null;
-		try {
-			designPackageUId = _hierarchyClient.GetDesignPackageUId(schemaUId);
-		} catch {
-			designPackageUId = null;
-		}
-		if (string.IsNullOrWhiteSpace(designPackageUId)) {
-			designPackageUId = packageUId;
-		}
+		string designPackageUId = ResolveDesignPackageUId(schemaUId, packageUId, schemaName);
 		IReadOnlyList<PageDesignerHierarchySchema> initialHierarchy =
 			_hierarchyClient.GetParentSchemas(schemaUId, designPackageUId);
 		if (initialHierarchy.Count == 0) {
-			return Array.Empty<PageDesignerHierarchySchema>();
+			return (Array.Empty<PageDesignerHierarchySchema>(), null);
 		}
 		// Normalize to the root-most variant of the requested name and re-fetch from it, exactly as
 		// get-page does: the name->UId metadata lookup can resolve to an arbitrary replacing variant
@@ -334,12 +355,55 @@ public class GetPageHierarchyCommand : Command<GetPageHierarchyOptions> {
 		// root variant yields the same complete, deterministic chain get-page merges.
 		string rootSchemaUId = FindRootSchemaUId(initialHierarchy, schemaName) ?? schemaUId;
 		if (string.Equals(rootSchemaUId, schemaUId, StringComparison.OrdinalIgnoreCase)) {
-			return initialHierarchy;
+			return (initialHierarchy, null);
 		}
 		IReadOnlyList<PageDesignerHierarchySchema> fullHierarchy =
 			_hierarchyClient.GetParentSchemas(rootSchemaUId, designPackageUId);
-		return fullHierarchy.Count > 0 ? fullHierarchy : initialHierarchy;
+		return (fullHierarchy.Count > 0 ? fullHierarchy : initialHierarchy, null);
 	}
+
+	/// <summary>
+	/// Resolves the design (editable) package UId the chain is anchored on, falling back to the schema's own
+	/// package ONLY when the service answered and had no design package to give.
+	/// </summary>
+	/// <param name="schemaUId">Schema identifier to resolve the design package for.</param>
+	/// <param name="ownPackageUId">The schema's own package, used as the fallback anchor.</param>
+	/// <param name="schemaName">Requested schema name, for the diagnostic line.</param>
+	/// <returns>The package UId to anchor the hierarchy read on.</returns>
+	/// <remarks>
+	/// The bare <c>catch</c> this replaces made every failure look like "no design package": a timeout, a 500 on
+	/// that endpoint alone, or an HTML login page all silently re-anchored the read on the schema's RUNTIME package,
+	/// and the designer service — a different endpoint, which may still be healthy — then answered with a chain that
+	/// looks like the answer while it can be missing replacing layers. That is an exit-0 wrong answer, so only the
+	/// answered-rejection family may license the fallback (ENG-95262 story 13); everything else propagates to
+	/// <see cref="TryGetHierarchy"/>, which reports it as a failed read.
+	/// </remarks>
+	private string ResolveDesignPackageUId(string schemaUId, string ownPackageUId, string schemaName) {
+		string designPackageUId = null;
+		try {
+			designPackageUId = _hierarchyClient.GetDesignPackageUId(schemaUId);
+		}
+		catch (Exception ex) when (IsAnsweredRejection(ex)) {
+			// The service answered and rejected the lookup, so the schema's own package IS the correct anchor.
+			// Logged at debug so the degradation stays diagnosable without adding noise to the common case, the
+			// same way get-classic-page-sources records its own fallback.
+			_logger.WriteDebug(
+				$"GetDesignPackageUId was rejected for '{schemaName}' ({ex.Message}); anchoring on the schema's own package.");
+		}
+		return string.IsNullOrWhiteSpace(designPackageUId) ? ownPackageUId : designPackageUId;
+	}
+
+	/// <summary>
+	/// Returns whether <paramref name="exception"/> means the design-package service ANSWERED and rejected the
+	/// lookup — the one family that licenses the own-package fallback, because it is a statement about the schema.
+	/// <see cref="NonJsonServiceResponseException"/> is excluded even though it derives from
+	/// <see cref="InvalidOperationException"/>: an HTML login/error page carries no statement about the design
+	/// package. Timeouts, transport failures and unparseable bodies are therefore not rejections and propagate.
+	/// </summary>
+	/// <param name="exception">Exception raised by the design-package lookup.</param>
+	/// <returns><see langword="true"/> when the service answered and rejected the lookup.</returns>
+	private static bool IsAnsweredRejection(Exception exception) =>
+		exception is InvalidOperationException and not NonJsonServiceResponseException;
 
 	private static string FindRootSchemaUId(IReadOnlyList<PageDesignerHierarchySchema> hierarchy, string schemaName) {
 		for (int i = hierarchy.Count - 1; i >= 0; i--) {

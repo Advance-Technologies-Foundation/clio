@@ -14,15 +14,19 @@ namespace Clio.Command;
 /// Options for editing an existing business process via the ProcessDesignService package.
 /// Consumed by the MCP <c>modify-business-process</c> tool, which sets these properties directly.
 /// </summary>
-// The version literal states what THIS command's code needs — the newest operation it sends that an
-// older server does not have. Today that is the element-level performer block and the
-// reference-existence guard behind it (bare-Guid Lookup values, performer contact/role), shipped in
-// the 1.3.1.1 archive: an older server has no performer member and silently discards the block while
-// answering success, and a pre-guard server stores a dead id instead of refusing it. Presence alone
-// cannot express either — the email block's 1.2.0.1 floor set this precedent and is subsumed by this
-// literal. The guard fixture asserts the shipped archive satisfies the literal, so clio can never
-// demand a version it does not itself carry.
-[RequiresPackage(BundledPackages.ProcessBuilderPackageName, "1.3.1.1",
+// The version literal states what THIS command's code needs — the newest input form it sends that an
+// older server refuses or mishandles. Today that is the lookup-constant contract shipped in the 1.4.0.40
+// archive (ENG-96325): a mapping 'value' on a Lookup target may carry an already-composed
+// [#Lookup.{objectUId}.{recordId}#], which that server decodes to the bare record id, while every earlier
+// server rejects it outright as "not a bare Guid" — the same "server starts accepting an input an older one
+// refuses" shape that produced the previous 1.3.1.1 literal (the element-level performer block and the
+// reference-existence guard behind it, both still covered by this floor). It is NOT a security floor: the
+// raw-Select display-name read that 1.4.0.40 replaced with a rights-aware entity read never shipped in any
+// released archive, so no released server carries the wider read. Presence alone cannot express an
+// input-contract difference — the email block's 1.2.0.1 floor set this precedent and is subsumed here.
+// The guard fixture asserts the shipped archive satisfies the literal, so clio can never demand a version
+// it does not itself carry.
+[RequiresPackage(BundledPackages.ProcessBuilderPackageName, "1.4.0.40",
 	Hint = BundledPackages.ProcessBuilderInstallHint)]
 public sealed class ModifyBusinessProcessOptions : EnvironmentOptions {
 	/// <summary>Process code (schema Name) to edit. Provide exactly one of <see cref="ProcessName"/> or <see cref="ProcessUid"/>.</summary>

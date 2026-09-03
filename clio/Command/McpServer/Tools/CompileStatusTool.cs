@@ -23,6 +23,13 @@ public sealed class CompileStatusTool(ICompileOperationRegistry registry, IToolC
 	/// Returns the tracked status of a compile-creatio operation.
 	/// </summary>
 	[McpServerTool(Name = CompileStatusToolName, ReadOnly = true, Destructive = false, Idempotent = true, OpenWorld = false)]
+	[McpToolExecution(
+		Location = McpToolExecutionLocation.Worker,
+		Lifetime = McpToolExecutionLifetime.Sticky,
+		OperationFamily = McpToolOperationFamily.ConfigurationBuild,
+		BudgetPolicy = McpToolBudgetPolicy.ParentKillExtended,
+		RequiresClientRequests = McpToolClientRequests.None,
+		SharedFileResource = McpToolSharedFileResource.ConfigurationBuild)]
 	[Description("Returns the status of the most recent compile-creatio operation tracked for an environment, or of a specific operation-id from a compile-creatio in-progress response. Use this after compile-creatio returns an in-progress note to check whether the compile finished; do not re-run compile-creatio just to check.")]
 	public CompileStatusResponse GetStatus(
 		[Description("Status query parameters")] [Required] CompileStatusArgs args) {
