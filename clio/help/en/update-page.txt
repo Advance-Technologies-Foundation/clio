@@ -139,7 +139,11 @@ DESCRIPTION
     WRITE MODES:
     --mode replace (default) saves the body verbatim. --mode append loads the
     current schema body from the server and merges your incoming fragment into
-    it (viewConfigDiff dedupes by name, handlers by request). Append requires the
+    it (viewConfigDiff dedupes by name, handlers by request, and
+    SCHEMA_CONVERTERS / SCHEMA_VALIDATORS by type key; incoming wins). The final
+    merged web body is rejected when a custom validator reference lacks a matching
+    SCHEMA_VALIDATORS declaration; built-in crt.* validators need no local entry.
+    Append requires the
     diff form: a full-config body (the SCHEMA_VIEW_MODEL_CONFIG / SCHEMA_MODEL_CONFIG
     markers, instead of the *_DIFF markers) cannot be merged and is rejected with
     an actionable hint — use --mode replace for such a body. The message names which
