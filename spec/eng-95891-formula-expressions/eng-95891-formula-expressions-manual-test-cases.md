@@ -6,9 +6,17 @@ designer and, where applicable, runs it. Behaviour below was verified on a stand
 `CrtProcessBuilder 1.4.0.18` and then 1.4.0.37 - the versions the run manifests beside this file
 record. It is NOT verified at 1.4.0.3: several of the refusals below first ship in .32 and .35.
 
-**Conditions.** A Creatio environment registered in clio with `CrtProcessBuilder 1.4.0.35` or newer
+**RE-RUN REQUIRED AT 1.4.0.41.** That release removed the package's own formula validator, because the
+platform's pre-save gate was already refusing every class of bad formula — a flow condition included
+(`eng-95891-formula-expressions-save-gate-probe.md`). No case below changes its VERDICT, but every
+formula refusal now arrives in the platform's words instead of the package's, and the expectations that
+quote a message are marked. One change is easy to misread as a defect and is not: the platform quotes the
+expression as its own converter left it, so `1.5` comes back as `1.5m` and a `[#[Parameter:{uid}]#]`
+reference comes back as the parameter's NAME.
+
+**Conditions.** A Creatio environment registered in clio with `CrtProcessBuilder 1.4.0.41` or newer
 installed (`install-process-builder`), an agent with the clio MCP server connected, and a writable
-`Custom` package. .35 is not a preference: it is the enforced `[RequiresPackage]` floor, so create and
+`Custom` package. .41 is not a preference: it is the enforced `[RequiresPackage]` floor, so create and
 modify are refused below it before any case here can run.
 Unless a case says otherwise, the agent is given **only the sentence in quotes** — no
 tool names, no JSON. That is the point: these cases test whether the shipped guidance is enough for an
@@ -74,8 +82,10 @@ priority.
 3. Open the process in the designer.
 
 **Expected result:**
-* The operation is **refused**. The message names the target (`Amount`) and the original expression
-  (`1.5`), and says the result cannot be used as `Int32`.
+* The operation is **refused**. The message names the target (`Amount`), quotes the expression as the
+  platform's converter left it — `1.5m`, NOT `1.5` — and says
+  `Cannot convert type "Decimal" to "Int32"`. Measured at 1.4.0.41; the `m` is the converter's, not a
+  typo, and treating it as one is the misreading this line exists to prevent.
 * In the designer: the parameter is **unchanged** — no half-applied value, no Script source.
 * The same assignment with `1 + 1` instead of `1.5` **succeeds** (integer arithmetic fits an Integer
   parameter).
@@ -83,9 +93,11 @@ priority.
   parameter's type is decimal.
 
 **Observed 2026-08-29 — the refusal half passes, the acceptance half exposes a guidance defect.**
-The `1.5` refusal is exactly as specified: the message names `Amount`, quotes `1.5` **as written** (not the
-converted `1.5m`), says `Cannot convert type "Decimal" to "Int32"`, and the designer shows the parameter
-still unset. But on the `1 + 1` half, two agents reading the same guidance took **opposite routes**:
+The `1.5` refusal is exactly as specified: the message names `Amount`, says
+`Cannot convert type "Decimal" to "Int32"`, and the designer shows the parameter still unset. (That run
+was at 1.4.0.37, where the package's own validator quoted `1.5` **as written**. At 1.4.0.41 the platform
+answers instead and quotes `1.5m` — measured, and the reason the expectation above was rewritten.) But on
+the `1 + 1` half, two agents reading the same guidance took **opposite routes**:
 
 * one sent `addMapping` with `targetProcessParameter` + `expression` — the route the server engages with,
   which is how the `1.5` refusal was obtained at all;
@@ -112,8 +124,14 @@ the two routes as the guidance defect to fix.
 2. Read the response.
 
 **Expected result:**
-* The operation is **refused before anything is written**.
-* The message **names the offending reference**, so the agent can correct it without guessing.
+* The operation is **refused** and nothing is written — the edit is atomic, so a refused condition
+  leaves the flow exactly as it was even though the refusal now comes from the save rather than from the
+  operation.
+* The message **names the offending reference**, so the agent can correct it without guessing. At
+  1.4.0.41 that sentence is `PlatformValidationMessage`'s rewrite of the platform's serialised error:
+  *"It references the process parameter <uid>, which is not in this process. Add the parameter first, or
+  correct the reference."* A raw `Internal error: "{ErrorType:2,ErrorData:{…}}"` reaching the agent is a
+  **defect** of that rewrite.
 * In the designer: the flow is unchanged — still a plain sequence flow with no condition.
 
 ---
@@ -162,7 +180,8 @@ leaves one).
 2. Read the response.
 
 **Expected result:**
-* The operation is **refused**, saying the result cannot be used as `Boolean`.
+* The operation is **refused**, saying `Cannot convert type "Int32" to "Boolean"` (the platform's
+  wording from 1.4.0.41; the package used to say "cannot be used as Boolean").
 * This must be refused even though older Creatio engines would have coerced a number to true/false — the
   interpreted engine does not.
 

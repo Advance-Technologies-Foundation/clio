@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text.Json;
@@ -166,7 +166,7 @@ public sealed class CreateBusinessProcessToolE2ETests {
 	}
 
 	[Test]
-	[Description("Over the real MCP path, a build descriptor's mappings[] may carry an 'expression' source, and it is validated, stored and read back as a Script. This is the reason the create tool's [RequiresPackage] floor was raised to 1.4.0.35: an older server stores such a mapping with NO check and fails at run time. The modify path had this coverage and create did not, while the floor was raised on both.")]
+	[Description("Over the real MCP path, a build descriptor's mappings[] may carry an 'expression' source, and it is validated, stored and read back as a Script. The formula is checked by the PLATFORM at the pre-save gate, not by clio's package - from CrtProcessBuilder 1.4.0.41 the package does not look at it at all - so what this proves is that a valid formula survives the gate, is stored as a Script and reads back. The modify path had this coverage and create did not, while the floor was raised on both.")]
 	[AllureTag(ToolName)]
 	[AllureName("create-business-process stores a formula mapping that reads back")]
 	public async Task CreateBusinessProcess_Should_StoreAndReadBackAFormulaMapping() {
@@ -210,7 +210,12 @@ public sealed class CreateBusinessProcessToolE2ETests {
 		callResultJson.Should().Contain("Int32",
 			because: "the refusal must name the type the result cannot become, so the caller can correct the formula instead of guessing");
 		callResultJson.Should().Contain("1.5",
-			because: "the refusal must quote the expression AS WRITTEN, not the converted form, or the caller cannot find it in a multi-mapping descriptor");
+			because: "the refusal must quote the expression, or the caller cannot find it in a multi-mapping "
+				+ "descriptor. Deliberately a SUBSTRING and not equality to \"1.5\": the platform quotes the "
+				+ "expression as its own converter left it, and the converter suffixes a fractional literal with m "
+				+ "- measured, the message reads 'Error while executing expression \"1.5m\"'. An earlier version of "
+				+ "this rationale claimed the text is quoted AS WRITTEN, which the same measurement disproves: a "
+				+ "parameter reference is shown by the parameter NAME, not by the metapath the caller sent");
 	}
 
 	private static string BuildFormulaMappingDescriptor(string processName, string expression) =>

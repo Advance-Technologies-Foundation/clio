@@ -20,26 +20,28 @@ namespace Clio.Command;
 // the literal for the two distinct reasons the bundled-packages article names. `setFlowCondition` is an
 // operation an older server does not carry at all: the token would be rejected by the server's own dispatch
 // registry with a "supported operations are …" message, which reads as a clio bug rather than a stale
-// environment. And the formula validator is a TIGHTENED VALIDATOR — a server older than 1.4.0.0 stores an
-// `expression` mapping with no check at all, so the same call that is refused on a current environment
-// silently persists a broken formula on an older one, to fail at run time. A tightened validator is exactly
-// the case the article says must never be left to convergence, because convergence warns and proceeds while
-// only the literal fails closed.
+// environment.
 //
-// The literal is 1.4.0.37 rather than the .0 those behaviours first shipped in, and the gap is MEASURED
-// rather than argued — the rationale that used to sit here inferred it over five versions and named the
-// wrong number. Every archive cut on this branch was decompressed and grepped for the marker of each
-// refusal these surfaces promise: .0 and .1 check the numeric rule against something the platform's own
-// pre-save gate disagrees with and .2 is the first to agree, but the individual refusals land later — the
-// activity-result guard and the unrecognised-family refusal on a NEW condition in .32, the platform-grammar
-// element segment in .35. Against an environment at .3, `setFlowCondition` on a result-driven branch is NOT
-// refused: the condition is stored and then ignored at run time, the exact silent failure the description
-// offers protection from. So the pre-save-gate argument justifies .2 and nothing beyond it — do not lower
-// the floor back on its strength.
+// The literal is 1.4.0.41: the version that stopped validating formulas IN THE PACKAGE, because the
+// platform's own pre-save gate was already validating them — a mapped expression and a flow condition alike,
+// measured with both package guards built out and installed
+// (spec/eng-95891-formula-expressions/eng-95891-formula-expressions-save-gate-probe.md). So the formula half
+// of this floor is no longer a tightened validator; .41 checks strictly LESS than .37 did, and an environment
+// between them refuses at least as much. What the floor buys is the MESSAGE contract this tool's description
+// promises: below .41 a bad formula is refused in the package's own wording, with its own reference
+// pre-check, and without the serialised-error rewrite — so an unresolvable parameter reference comes back as
+// `{ErrorType:2,ErrorData:{ParameterUId:"…"}}` rather than as a sentence.
+//
+// Do not lower it to .37 on the grounds that .37 refuses too. It does, with different text. And do not lower
+// it below .37 on any grounds: the refusals that SURVIVE the collapse were themselves measured one archive
+// at a time — the activity-result guard in .32, the platform-grammar element segment in .35, the
+// element-retarget refusal in .37. Against an environment at .3, `setFlowCondition` on a result-driven
+// branch is NOT refused: the condition is stored and then ignored at run time, the exact silent failure the
+// description offers protection from.
 // This subsumes the previous 1.3.1.1 floor (the element-level performer block and its reference-existence
 // guard), which subsumed the email block's 1.2.0.1 floor before it. The guard fixture asserts the shipped
 // archive satisfies the literal, so clio can never demand a version it does not itself carry.
-[RequiresPackage(BundledPackages.ProcessBuilderPackageName, "1.4.0.37",
+[RequiresPackage(BundledPackages.ProcessBuilderPackageName, "1.4.0.41",
 	Hint = BundledPackages.ProcessBuilderInstallHint)]
 public sealed class ModifyBusinessProcessOptions : EnvironmentOptions {
 	/// <summary>Process code (schema Name) to edit. Provide exactly one of <see cref="ProcessName"/> or <see cref="ProcessUid"/>.</summary>

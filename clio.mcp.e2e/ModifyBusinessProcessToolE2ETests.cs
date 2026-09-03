@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text.Json;
@@ -624,9 +624,9 @@ public sealed class ModifyBusinessProcessToolE2ETests {
 	}
 
 	[Test]
-	[Description("Over the real MCP path, an unrecognised macro family is REFUSED by the platform's own pre-save validation - it does not arrive as a warning. This test asserted the opposite until it was first run against a stand, and the correction is the point: our validator does raise an accept-with-a-notice for a family it does not model, and then EnsureValidForSave runs the platform's validation over the whole schema and refuses, because no converter resolves such a macro in the context of a mapping onto a plain process parameter. Measured at 1.4.0.38 over three families - a fictional one and the two REAL ones this package deliberately does not allow-list, [#ColumnValue...#] and [#SamplingColumnValue...#] - all three refused, all three with 'Process validation failed'. So the notice is raised and then dropped, and the caller sees an Error. The Warning channel is real on other paths (see BuildProcessResponse.Warnings) but a macro family cannot demonstrate it on this shape.")]
+	[Description("Over the real MCP path, an unrecognised macro family is REFUSED by the platform's own pre-save validation. This test asserted a WARNING until it was first run against a stand; the correction is the point, and it is also what removed the package's own accept-with-a-notice for such a family, since the notice was raised and then dropped on every shape anyone measured. Measured at 1.4.0.38 over three families - a fictional one and the two REAL ones the package deliberately did not allow-list, [#ColumnValue...#] and [#SamplingColumnValue...#] - all three refused with 'Process validation failed'; the same holds on a CONDITION, where [#Price#] > 100 is refused with 'Expression expected (at index 0)'. From 1.4.0.41 there is no package-side check on this path at all, so this test now asserts the only thing that ever refused. The Warning channel is real on other paths (see BuildProcessResponse.Warnings) but a macro family cannot demonstrate it on any shape.")]
 	[AllureTag(ToolName)]
-	[AllureName("modify-business-process reports a server warning on a partially-checked formula")]
+	[AllureName("modify-business-process refuses an unrecognised macro family at the platform gate")]
 	public async Task ModifyBusinessProcess_Should_RefuseAnUnrecognisedMacroFamily_AtThePlatformGate() {
 		// Arrange
 		await using ArrangeContext context = await ArrangeAsync(requireReachableEnvironment: true);
@@ -641,8 +641,8 @@ public sealed class ModifyBusinessProcessToolE2ETests {
 			["descriptor"] = BuildFormulaTargetDescriptor(processName)
 		});
 
-		// Act - a macro family this package does not recognise, on a MAPPING. Our validator accepts it with
-		// a notice; the platform's pre-save validation is what refuses, which is what this asserts.
+		// Act - a macro family no converter resolves, on a MAPPING. The platform's pre-save validation is what
+		// refuses it, and since 1.4.0.41 it is the only thing that looks at the expression at all.
 		CallToolResult callResult = await CallToolAsync(context, ToolName, new Dictionary<string, object?> {
 			["environment-name"] = context.EnvironmentName,
 			["process-name"] = processName,
@@ -656,8 +656,10 @@ public sealed class ModifyBusinessProcessToolE2ETests {
 				+ "validator - naming the phrase is what distinguishes the two, and an earlier version of this "
 				+ "test asserted a Warning that no stand ever produced");
 		callResultJson.Should().Contain("UsrUnknownDialect",
-			because: "the refusal has to quote the expression as the caller wrote it, or the caller cannot see "
-				+ "which macro the platform could not convert");
+			because: "the refusal has to quote the expression, or the caller cannot see which macro the platform "
+				+ "could not convert. It survives VERBATIM here for a reason worth knowing: the platform quotes "
+				+ "the CONVERTED text, and an unrecognised family is exactly the text no converter touches - a "
+				+ "fractional literal would come back as 1.5m and a parameter reference as the parameter name");
 	}
 
 	[Test]
@@ -684,19 +686,58 @@ public sealed class ModifyBusinessProcessToolE2ETests {
 		string callResultJson = JsonSerializer.Serialize(callResult);
 		callResultJson.Should().Contain("NoSuchThing",
 			because: "the refusal must NAME the offending identifier - that is what makes it actionable");
-		// Deliberately apostrophe-free: the server writes "references 'NoSuchThing', which does not exist", and
-		// JsonSerializer escapes an apostrophe to the six characters backslash-u-0-0-2-7, so an assertion carrying
-		// a literal apostrophe would never match.
-		callResultJson.Should().Contain("which does not exist",
-			because: "the ARM has to be pinned, not just the identifier. All three arms of DescribeEngineRefusal "
-				+ "append the expression text, so for an expression this test can reach, the identifier alone is "
-				+ "present whichever arm ran - and this wording belongs only to the unknown-identifier arm, whose "
-				+ "loss is the fall back to a generic \"invalid formula\" that this test exists to prevent");
+		callResultJson.Should().Contain("Formula value error",
+			because: "the refusal has to come from the PLATFORM's formula validation and be recognisable as such. "
+				+ "This assertion used to pin \"which does not exist\", the wording of the package's own "
+				+ "unknown-identifier arm; that validator is gone, the platform writes 'Formula value error: "
+				+ "Parameter \"NoSuchThing\" not found' instead, and pinning the platform's phrase is what keeps "
+				+ "this from passing on a generic failure that never reached formula validation at all");
+		callResultJson.Should().Contain("not found",
+			because: "the ARM has to be pinned, not just the identifier: every platform formula refusal carries "
+				+ "the expression text, so the identifier alone would be present whichever fault ran, and only the "
+				+ "unknown-identifier arm says 'not found'");
 		DescribedFlow branch = await ReadFlowAsync(context, processName, "task1", "EndEvent1");
 		branch.Kind.Should().Be("sequence",
 			because: "a refused edit is atomic: the flow must be left exactly as it was, not half-converted");
 		branch.Condition.Should().BeNull(
 			because: "nothing may be stored when validation refused the condition");
+	}
+
+	[Test]
+	[Description("Over the real MCP path, a condition whose parameter reference does not resolve is refused with a SENTENCE rather than with a serialised error object. This is the one class where the platform's own text is materially worse than the validator CrtProcessBuilder 1.4.0.41 deleted: the flow-schema generator throws ProcessParameterValidateException carrying ProcessParameterErrorInfo.ToString(), which is Json.Serialize, so the caller was handed 'Internal error: \"{ErrorType:2,ErrorData:{ParameterUId:\"…\"}}\"' and no remedy. PlatformValidationMessage rewrites that one blob server-side; the rewrite is FORMATTING of the platform's verdict, so nothing here decides validity. Only a real server can prove it: the blob is produced inside the platform's generator, which no unit test reaches.")]
+	[AllureTag(ToolName)]
+	[AllureName("modify-business-process explains an unresolvable parameter reference in a condition")]
+	public async Task ModifyBusinessProcess_Should_ExplainAnUnresolvableParameterReference_InACondition() {
+		// Arrange
+		await using ArrangeContext context = await ArrangeAsync(requireReachableEnvironment: true);
+		string processName = $"UsrClioBpRefBlobE2e{Guid.NewGuid():N}";
+		await CallToolAsync(context, CreateToolName, new Dictionary<string, object?> {
+			["environment-name"] = context.EnvironmentName,
+			["descriptor"] = BuildDescriptor(processName)
+		});
+
+		// Act - a well-formed parameter metapath whose UId is on no parameter of this process. The SHAPE has to
+		// be valid, or the fault is a parse error and the generator's error-info path is never reached.
+		const string missingParameterUId = "11111111-1111-1111-1111-111111111111";
+		CallToolResult callResult = await CallToolAsync(context, ToolName, new Dictionary<string, object?> {
+			["environment-name"] = context.EnvironmentName,
+			["process-name"] = processName,
+			["operations"] = BuildSetFlowConditionOperations(
+				$"[#[Parameter:{{{missingParameterUId}}}]#] > 0")
+		});
+
+		// Assert
+		string callResultJson = JsonSerializer.Serialize(callResult);
+		callResultJson.Should().Contain(missingParameterUId,
+			because: "the UId is the only thing that says WHICH reference is wrong, so the rewrite must keep it");
+		callResultJson.Should().Contain("is not in this process",
+			because: "the caller has to be told what is wrong; that is the whole reason the rewrite exists");
+		callResultJson.Should().NotContain("ErrorType",
+			because: "the serialised ProcessParameterErrorInfo must be REPLACED, not annotated - leaving it "
+				+ "beside the sentence would report the same fault twice and reads as a defect in clio");
+		DescribedFlow branch = await ReadFlowAsync(context, processName, "task1", "EndEvent1");
+		branch.Kind.Should().Be("sequence",
+			because: "a refused edit is atomic - a message change must not have made the refusal non-atomic");
 	}
 
 	// Reads the process back and returns one flow, so a condition assertion can be made against typed fields
@@ -726,7 +767,7 @@ public sealed class ModifyBusinessProcessToolE2ETests {
 		""";
 
 	[Test]
-	[Description("Over the real MCP path, an 'expression' mapping is validated, stored and read back. This is the OTHER use site of a formula and the one that justifies the [RequiresPackage] floor on BOTH tools - an older server stores such a mapping with no check at all. Unit tests cannot reach it: SaveSchema is non-virtual, so persisting a Script value and reading it back is only provable against a real server.")]
+	[Description("Over the real MCP path, an 'expression' mapping is validated, stored and read back. This is the OTHER use site of a formula. The check is the PLATFORM's, at the pre-save gate, on any parameter value whose Source is Script - which is every one of these. Unit tests cannot reach it: SaveSchema is non-virtual, so persisting a Script value and reading it back is only provable against a real server.")]
 	[AllureTag(ToolName)]
 	[AllureName("modify-business-process stores a formula mapping that reads back")]
 	public async Task ModifyBusinessProcess_Should_StoreAndReadBackAFormulaMapping() {

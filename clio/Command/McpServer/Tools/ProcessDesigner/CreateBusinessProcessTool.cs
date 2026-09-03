@@ -1,4 +1,4 @@
-using System.ComponentModel;
+﻿using System.ComponentModel;
 using System.ComponentModel.DataAnnotations;
 using System.Text.Json.Serialization;
 using Clio.Common;
@@ -95,15 +95,20 @@ public class CreateBusinessProcessTool(
 		 + "elementParameter} (an element input) or {targetProcessParameter} (a process parameter, e.g. expose an "
 		 + "element output as a process output); source is exactly one of {sourceElement, sourceElementParameter} "
 		 + "(another element's output), processParameter, value, or expression. An 'expression' is a FORMULA, "
-		 + "validated server-side from CrtProcessBuilder 1.4.0.0, and this clio requires 1.4.0.37 because the "
-		 + "checks it relies on arrived later than the feature: .0-.1 disagreed with the platform's own pre-save "
-		 + "gate, .2 was the first to agree, and the platform-grammar element segment - which a mapping reference "
-		 + "goes through - lands in .35. (The floor is shared with modify-business-process, whose conditional-branch "
-		 + "refusals are what carry the rest of it; a condition cannot be built here.) The formula itself: ONE line, "
+		 + "validated by the PLATFORM at the pre-save gate — so a bad one aborts the whole build with 'Process "
+		 + "validation failed' and nothing is created. On CrtProcessBuilder this clio requires 1.4.0.41, the version "
+		 + "where clio stopped validating formulas a second time itself; below it a refused formula still fails, "
+		 + "with the package's own wording. (The floor is shared with modify-business-process, whose "
+		 + "conditional-branch refusals carry the rest of it; a condition cannot be built here.) "
+		 + "The formula itself: ONE line, "
 		 + "its result must fit the target's "
 		 + "DECLARED type (an Integer target refuses a fractional result), every [#…#] parameter reference must "
-		 + "resolve in THIS process, names resolve through a flat case-sensitive registry (Math.Round yes, "
-		 + "System.Math.Round no), and a parameter is referenced by its UId meta-path, never by name. See "
+		 + "resolve in THIS process, every macro family must be one a converter resolves where you used it, names "
+		 + "resolve through a flat case-sensitive registry (Math.Round yes, "
+		 + "System.Math.Round no), and a parameter is referenced by its UId meta-path, never by name. A refusal "
+		 + "names the parameter, the character index of the fault, and the expression as the platform's own "
+		 + "converter left it - a parameter reference by the parameter NAME, a fractional literal with an 'm' "
+		 + "appended - not as you wrote it. See "
 		 + "modify-business-process for the full vocabulary; parameter-to-parameter mappings "
 		 + "require compatible types; a Lookup target's 'value' takes a bare non-empty record Guid, stored as the "
 		 + "ConstValue the runtime actually reads (the route ships from CrtProcessBuilder 1.3.1.1; THIS clio "

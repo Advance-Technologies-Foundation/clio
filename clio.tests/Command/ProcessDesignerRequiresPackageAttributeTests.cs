@@ -67,7 +67,7 @@ namespace Clio.Tests
         [TestCase(typeof(CreateBusinessProcessOptions))]
         [TestCase(typeof(ModifyBusinessProcessOptions))]
         [Test]
-        [Description("Create and Modify declare a VERSIONED requirement naming the newest operation they send that an older server does not have: today `setFlowCondition` and the formula validator behind an `expression` mapping. Both SHIP in 1.4.0.0, and the floor sits well past .0 for a reason that was MEASURED rather than inferred — an earlier revision of this description reasoned from the pre-save-gate disagreement to a floor of .3, which is a number that argument does not reach. Each archive cut on the branch was decompressed and grepped for the marker of each of the three refusals enumerated here: .0 and .1 disagree with the platform's own pre-save gate on declared types, .2 is the first archive that agrees, then the individual refusals arrive later — the activity-result guard and the unrecognised-family refusal on a NEW condition in .32, the platform-grammar element segment in .35. An older server does not carry `setFlowCondition` at all, and it stores an `expression` mapping with NO validation, so the same call that is refused on a current environment silently persists a broken formula on an older one; presence alone cannot express either (the performer 1.3.1.1 floor and the 1.2.0.1 email floor set the precedent and are subsumed). This is the doc's rule applied ('add a literal in the commit where a command starts calling an operation an older server does not have'), and the bundled-archive guard asserts the shipped archive satisfies the literal, so it can never demand a version clio does not carry.")]
+        [Description("Create and Modify declare a VERSIONED requirement naming the newest operation they send that an older server does not have: `setFlowCondition`, which an older dispatch registry rejects by token. The floor's NUMBER is now set by the message contract rather than by a tightened validator. Until 1.4.0.41 the package validated formulas itself, and the floor tracked when each of its refusals arrived, measured one archive at a time (.32, .35, .37). .41 DELETED that validator, because the platform's own pre-save gate already refuses every class of bad formula — a flow condition included, measured with the package's guards built out and installed. So the floor no longer says 'below this a bad formula is not refused'; it says 'below this a refusal reads differently', which is what the shipped tool descriptions promise. Do not lower it below .37 either: the refusals that survive the collapse (the activity-result guard, the platform-grammar element segment, the element-retarget scan) were measured there. The bundled-archive guard asserts the shipped archive satisfies the literal, so it can never demand a version clio does not carry.")]
         public void OptionsType_ShouldDeclareVersionedProcessBuilderRequirement_WhenTheCommandShipsVersionedOperations(
             Type optionsType)
         {
@@ -77,28 +77,27 @@ namespace Clio.Tests
             // Assert
             requirement.Should().NotBeNull(
                 because: $"{optionsType.Name} must carry the declarative {BundledPackages.ProcessBuilderPackageName} requirement so the MCP gate fires");
-            requirement!.Version.Should().Be("1.4.0.37",
-                because: "the floor is set by the two distinct reasons the bundled-packages article names, and it "
-                    + "is NOT the version the behaviours first shipped in — both setFlowCondition and the formula "
-                    + "validator ship from 1.4.0.0. setFlowCondition is an operation an older server does not carry "
-                    + "AT ALL — its dispatch registry rejects the token, which reads to a caller as a clio bug "
-                    + "rather than a stale environment. The formula validator is a TIGHTENED VALIDATOR, and that is "
-                    + "what moves the number past .0. How far past is MEASURED, one archive at a time: .0 and .1 "
-                    + "disagree with the platform's own pre-save gate on declared types, .2 is the first that "
-                    + "agrees, the activity-result guard and the unrecognised-family refusal on a new condition "
-                    + "first ship in .32, and the platform-grammar element segment in .35 — so .35 is the lowest "
-                    + "version at which THOSE THREE happen. Not a sufficiency claim about every refusal the "
-                    + "descriptions promise, and deliberately not: the element-retarget refusal they also promise "
-                    + "had two holes still open at .35 and .36, closed in .37 (a dependency scan that failed OPEN "
-                    + "on a sub-process reference, and an element UId matched in D-form only), so the floor is "
-                    + "arguably .37 and that is tracked separately. The "
-                    + "pre-save-gate argument alone reaches only .2; if this assertion is failing because someone "
-                    + "lowered the attribute on that argument, the attribute is what is wrong. An older server "
-                    + "stores an 'expression' mapping unchecked, so the same call refused on a current environment "
-                    + "silently persists a broken formula on an older one. Convergence only WARNS; the literal is "
-                    + "what fails CLOSED. This subsumes the earlier "
-                    + "1.3.1.1 performer floor and the 1.2.0.1 email floor. When the next versioned operation "
-                    + "ships, move this pin WITH the rebundle in the same commit");
+            requirement!.Version.Should().Be("1.4.0.41",
+                because: "setFlowCondition is an operation an older server does not carry AT ALL — its dispatch "
+                    + "registry rejects the token, which reads to a caller as a clio bug rather than a stale "
+                    + "environment — and that alone justifies a versioned floor. What sets the NUMBER changed with "
+                    + "the formula collapse. The formula half used to be a TIGHTENED VALIDATOR, measured one "
+                    + "archive at a time up to .37; .41 is the version that REMOVED that validator, on the "
+                    + "measurement that the platform's own pre-save gate already refuses every class of bad "
+                    + "formula, a flow condition included (spec/eng-95891-formula-expressions/"
+                    + "eng-95891-formula-expressions-save-gate-probe.md). So .41 checks strictly LESS than .37 "
+                    + "did, an environment between them refuses at least as much, and the floor now buys the "
+                    + "MESSAGE contract the tool descriptions promise rather than the existence of a refusal: "
+                    + "below .41 a bad formula is refused in the package's own wording, and an unresolvable "
+                    + "parameter reference comes back as the platform's serialised {ErrorType:2,ErrorData:{…}} "
+                    + "rather than as a sentence, because PlatformValidationMessage is not there. Do NOT lower it "
+                    + "to .37 on the grounds that .37 also refuses — it does, with different text — and do not "
+                    + "lower it below .37 on any grounds, because the refusals that SURVIVE the collapse were "
+                    + "measured there: the activity-result guard in .32, the platform-grammar element segment in "
+                    + ".35, and the element-retarget refusal's two fail-open holes (a dependency scan that failed "
+                    + "OPEN on a sub-process reference, and an element UId matched in D-form only) closed in .37. "
+                    + "This subsumes the earlier 1.3.1.1 performer floor and the 1.2.0.1 email floor. When the "
+                    + "next versioned operation ships, move this pin WITH the rebundle in the same commit");
         }
 
         [Test]

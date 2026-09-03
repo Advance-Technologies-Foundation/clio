@@ -54,10 +54,20 @@ Process validation failed: IntParam [Error while executing expression "1.5m":
 Formula value error: Cannot convert type "Decimal" to "Int32"]
 ```
 
-— so the only effect was to move the failure later and word it worse. `ProcessFormulaValidator` therefore
-passes the declared target type through unchanged, which is what
-`ProcessParameterValueProvider.ValidateExpression` does.
+— so the only effect was to move the failure later and word it worse.
 
-Pinned by probes P2.5/P2.6 in `ProcessFormulaEngineProbeTests` (the conversion behaviour) and by
-`ProcessFormulaValidatorTests.Validate_ShouldCheckTheDeclaredTargetType` plus
-`ParameterValueType_ShouldBeIntOrDecimal_NeverFloat` (the conclusion) in the ProcessBuilder repository.
+**Since CrtProcessBuilder 1.4.0.41 that quoted message is the ONLY one a caller ever sees.** The package
+stopped validating formulas at all — the platform's pre-save gate was already doing it, for a mapped
+expression and for a flow condition alike (see
+[the-platform-refuses-a-bad-flow-condition-at-save.md](../platform/the-platform-refuses-a-bad-flow-condition-at-save.md)).
+So the trap this record describes is no longer reachable from the package, and the record's value has
+shifted: it is now the explanation of a refusal the platform issues, and the reason not to "fix" it by
+re-adding a coercing pre-check. `1.5` onto an Integer parameter IS refused, correctly, and the remedy is
+a different formula or a different target — not a wider check.
+
+Pinned by probes P2.5/P2.6 in `ProcessFormulaEngineProbeTests` (the conversion behaviour) in the
+ProcessBuilder repository. The two tests that used to pin the conclusion
+(`Validate_ShouldCheckTheDeclaredTargetType`, `ParameterValueType_ShouldBeIntOrDecimal_NeverFloat`) went
+with the validator; the conclusion is now the platform's own, and what pins it is the create-path E2E
+`CreateBusinessProcess_Should_RefuseAFormulaTheTargetTypeCannotHold`, which asserts the refusal names
+`Int32` and quotes the expression as written.
