@@ -101,6 +101,26 @@ Cover what the diff supports: the happy path, the branch/negative case, and the 
 actually introduced. Do not pad with scenarios the code does not implement — a failing case that was
 never in scope wastes a stand run and reads as a defect.
 
+## Rule 5b — a case must ask for something only the feature can express
+
+A case is void as a test of the feature when the business requirement it states has a legitimate
+answer that does not touch the feature at all. It will still pass, and the pass will mean nothing.
+
+Measured: a case asked for a task "due three days after the process starts, computed rather than
+entered as a fixed date". The agent set the element's own `Duration = 3 days`, stored no formula and no
+date constant, and the platform computed the deadline at task-creation time. The requirement was met,
+the runtime result was correct, the agent explained its choice — and not one formula was exercised.
+
+So when drafting, ask of every case: *what is the cheapest correct way to satisfy this sentence, and
+does it go through the thing under test?* If a builder can honestly satisfy it another way, the case is
+measuring the platform's convenience features, not your change. Tighten the requirement until the
+feature is the only honest route — a computed value that no element setting produces, an expression
+over two parameters, a result that has to be recomputed rather than set once.
+
+This is not the same as leading the executor. Rule 1 forbids naming the mechanism; this rule requires
+choosing an OUTCOME the mechanism is the only way to reach. State the harder outcome, still in business
+terms, and let the agent find the route.
+
 ## Rule 6 — the suite has a shape, and states what it leaves out
 
 A flat list of cases cannot be reviewed: nobody can tell whether it is complete.
@@ -170,6 +190,7 @@ Runtime — what must happen when the process runs, and where it is visible:
       outcome that would be a regression
 - [ ] Cases are grouped by use site, and the suite states what it deliberately does not cover
 - [ ] Every expected result is falsifiable — a wrong-but-plausible outcome fails it
+- [ ] No case can be satisfied honestly without going through the feature under test
 - [ ] The executor could run this with no repository, no memory, no Jira access
 - [ ] Every scenario is supported by the committed diff
 - [ ] English, sequential `TC-0X`, one scenario per case
