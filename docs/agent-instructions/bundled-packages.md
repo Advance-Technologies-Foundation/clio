@@ -242,6 +242,28 @@ belongs to the MERGE, not to the cut — so until CI checks out both sides, it i
 - treat this as part of the pre-PR gate, not as tidiness. A stale archive ships a version number that
   promises a fix the bytes do not carry, which is worse than shipping neither.
 
+**Keep the pinned commit REACHABLE, or that one command stops working.** The check above is the only
+control on an archive that is otherwise opaque to review, and it depends entirely on
+`ExpectedProducingCommit` still resolving in the package repository. A squash or rebase merge creates a
+new commit and does not preserve the SHA on the base branch, and deleting the source branch on merge
+takes the original with it — at which point the sole prescribed provenance check for a binary installed
+onto customer environments is permanently unrunnable, while
+`ExpectedProducingCommit_ShouldBeAFullCommitId` keeps passing, because it only validates that the string
+is forty hex characters.
+
+So **tag the producing commit in the package repository before merging**, named for the version it
+produced, and push the tag:
+
+```bash
+git -C <package repo> tag -a crtprocessbuilder-<version> <ExpectedProducingCommit> -m "<why>"
+git -C <package repo> push origin crtprocessbuilder-<version>
+```
+
+A tag survives every merge mode and every branch deletion, needs no agreement about how the package PR
+is merged, and costs one command. The alternative — requiring a true merge commit and re-pinning to the
+resulting SHA on the default branch — also works, but it makes a review control depend on a merge-button
+choice someone else makes later.
+
 ### One call — `rebundle-process-builder.ps1`
 
 The whole procedure, from the repository root:
