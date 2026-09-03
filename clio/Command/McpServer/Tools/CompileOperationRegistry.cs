@@ -147,10 +147,20 @@ public sealed class CompileOperationRegistry : ICompileOperationRegistry {
 	/// <inheritdoc/>
 	public CompileOperationRecord GetById(string operationId) => _store.GetById(operationId);
 
+	// REDACTED, because this tail reaches an MCP caller verbatim through compile-status — and from there a
+	// model transcript and whatever the agent does next. Creatio compile output routinely carries absolute
+	// build paths, hosts and connection strings, which is precisely what the redactor's path, host-port and
+	// uri patterns exist for; nothing on this path was calling it. Found 2026-08-18 by story 21's R-7 sweep.
+	//
+	// Note this is the OTHER class from story 21: the cap is applied at MESSAGE granularity, so a cut can
+	// never land inside a string and orphan a value from its key. It was a plain missing-redaction gap, not
+	// a truncation one — and it is redacted BEFORE the tail is taken, following the rule story 21 produced:
+	// redact first, then transform.
 	private static IReadOnlyList<string> BuildMessageTail(IReadOnlyList<LogMessage> messages) {
 		return messages is null
 			? []
-			: messages.TakeLast(MessageTailCap).Select(message => message.Value?.ToString() ?? string.Empty).ToArray();
+			: SensitiveErrorTextRedactor.RedactAll(
+				messages.TakeLast(MessageTailCap).Select(message => message.Value?.ToString() ?? string.Empty));
 	}
 
 }

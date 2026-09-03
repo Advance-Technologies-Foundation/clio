@@ -109,6 +109,33 @@ public sealed class CompileCreatioToolE2ETests : McpContractFixtureBase
 		status.Status.Should().Be("not-found");
 	}
 
+	[Test]
+	[AllureTag(CompileStatusTool.CompileStatusToolName)]
+	[AllureDescription("ENG-95262 story 7 (AC-01/AC-02): compile-creatio and compile-status are the first STICKY cohort family, so the compile's worker outlives the response and both polls must be answered by the process that holds the operation record. Two consecutive polls are issued because one alone cannot separate a sticky worker from luck: under a per-call worker each poll gets a fresh process with an empty registry, and under a worker reaped the instant the compile ended the SECOND poll is the one that loses the record.")]
+	[AllureName("Compile Status keeps answering from the sticky worker across repeated polls")]
+	[Description("Two consecutive compile-status polls after a compile both find the same tracked operation, which only holds if the sticky worker that ran the compile served both and was not reaped out from under them.")]
+	public async Task CompileStatus_Should_AnswerRepeatedPolls_FromTheStickyWorkerThatRanTheCompile()
+	{
+		// Arrange
+		await using var arrangeContext = Arrange();
+		string invalidEnvironmentName = $"missing-sticky-compile-env-{Guid.NewGuid():N}";
+
+		// Act
+		await ActAsync(arrangeContext, invalidEnvironmentName);
+		CompileStatusResponse firstPoll = await ActStatusAsync(arrangeContext, invalidEnvironmentName);
+		CompileStatusResponse secondPoll = await ActStatusAsync(arrangeContext, invalidEnvironmentName);
+
+		// Assert
+		firstPoll.Status.Should().Be("failed",
+			because: "the first poll must reach the process that ran the compile; a poll answered from any other process finds an empty operation registry and reports not-found");
+		secondPoll.Status.Should().Be("failed",
+			because: "the SECOND poll is the discriminating one: it still has to reach that same worker, so a worker reaped the moment its operation ended would turn a completed compile into 'no such operation' between two adjacent polls");
+		secondPoll.EnvironmentName.Should().Be(invalidEnvironmentName,
+			because: "both polls must describe the environment they were asked about, not whichever operation the reached worker happened to hold");
+		secondPoll.Success.Should().BeTrue(
+			because: "looking up a tracked operation is a successful lookup whatever the compile's own outcome, so a false here would mean the poll itself failed rather than the compile");
+	}
+
 	private static async Task<CompileStatusResponse> ActStatusAsync(
 		ArrangeContext arrangeContext,
 		string environmentName)

@@ -23,6 +23,13 @@ public sealed class CheckThemingAccessTool(
 	internal const string ToolName = "check-theming-access";
 
 	/// <summary>Probes the <c>CanManageThemes</c> operation right and the <c>CanCustomizeBranding</c> license on the target environment and returns both verdicts.</summary>
+	[McpToolExecution(
+		Location = McpToolExecutionLocation.Worker,
+		Lifetime = McpToolExecutionLifetime.PerCall,
+		OperationFamily = McpToolOperationFamily.None,
+		BudgetPolicy = McpToolBudgetPolicy.ParentKillDefault,
+		RequiresClientRequests = McpToolClientRequests.None,
+		SharedFileResource = McpToolSharedFileResource.None)]
 	[McpServerTool(Name = ToolName, ReadOnly = true, Destructive = false, Idempotent = true, OpenWorld = false),
 	 Description("Check whether the caller can manage custom themes on a registered environment. " +
 		"Requires Creatio " + ThemeServiceRequirement.MinVersion + " or later on the target environment. " +

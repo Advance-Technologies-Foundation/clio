@@ -27,6 +27,13 @@ public sealed class RemovePackageDependencyTool(
 	/// <summary>
 	/// Removes one or more package dependencies from a package in a registered Creatio environment.
 	/// </summary>
+	[McpToolExecution(
+		Location = McpToolExecutionLocation.Worker,
+		Lifetime = McpToolExecutionLifetime.PerCall,
+		OperationFamily = McpToolOperationFamily.None,
+		BudgetPolicy = McpToolBudgetPolicy.ParentKillDefault,
+		RequiresClientRequests = McpToolClientRequests.None,
+		SharedFileResource = McpToolSharedFileResource.None)]
 	[McpServerTool(Name = RemovePackageDependencyToolName, ReadOnly = false, Destructive = true, Idempotent = true,
 		OpenWorld = false)]
 	[Description("""

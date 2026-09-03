@@ -21,6 +21,14 @@ public sealed class PageHierarchyGetTool(
 	internal const string ToolName = "get-page-hierarchy";
 
 	[McpServerTool(Name = ToolName, ReadOnly = true, Destructive = false, Idempotent = true, OpenWorld = false)]
+	// Reads schema bodies from Creatio and returns them; nothing is written to .clio-pages, unlike get-page.
+	[McpToolExecution(
+		Location = McpToolExecutionLocation.Worker,
+		Lifetime = McpToolExecutionLifetime.PerCall,
+		OperationFamily = McpToolOperationFamily.None,
+		BudgetPolicy = McpToolBudgetPolicy.ParentKillDefault,
+		RequiresClientRequests = McpToolClientRequests.None,
+		SharedFileResource = McpToolSharedFileResource.None)]
 	[Description(
 		"Return the FULL Freedom UI page replacing-schema chain (root first, ordered by hierarchy level) with each " +
 		"schema's raw body in ONE call. Use this instead of calling get-page / get-client-unit-schema once per schema " +
