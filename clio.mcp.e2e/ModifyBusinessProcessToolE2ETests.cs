@@ -628,11 +628,13 @@ public sealed class ModifyBusinessProcessToolE2ETests {
 			because: "the flow must be re-kinded to a real conditional flow, not merely carry the condition text");
 		branch.Condition.Should().Be("1 == 1",
 			because: "the condition has to survive the save AND clio's own re-serialize - DescribedFlow has no "
-				+ "extension-data bag, so a missing property would drop it silently on the way out");
+				+ "typed property, and a caller reads it by NAME - the extension-data bag added later carries an "
+				+ "undeclared field but does not make it addressable, so a missing property still costs the "
+				+ "caller the answer");
 	}
 
 	[Test]
-	[Description("Over the real MCP path, a conditional flow reads back with branchesOnActivityResult present and FALSE. The field's whole purpose is to tell a caller that a branch's condition text will be ignored at run time, and DescribedFlow has no extension-data bag - so a property lost in clio's re-serialize does not surface as an error, it surfaces as a flow that silently claims its condition is live. The TRUE case cannot be arranged here: only the designer populates a flow's activity-result map, and setFlowCondition refuses to write a condition onto one, so it stays a manual case against a hand-authored process.")]
+	[Description("Over the real MCP path, a conditional flow reads back with branchesOnActivityResult present and FALSE. The field's whole purpose is to tell a caller that a branch's condition text will be ignored at run time, and a property lost in clio's re-serialize does not surface as an error, it surfaces as a flow that silently claims its condition is live - DescribedFlow has an extension-data bag now, which keeps an UNDECLARED field alive but does not make it addressable by name. The TRUE case cannot be arranged here: only the designer populates a flow's activity-result map, and setFlowCondition refuses to write a condition onto one, so it stays a manual case against a hand-authored process.")]
 	[AllureTag(ToolName)]
 	[AllureTag(DescribeToolName)]
 	[AllureName("describe reports branchesOnActivityResult on a conditional flow")]

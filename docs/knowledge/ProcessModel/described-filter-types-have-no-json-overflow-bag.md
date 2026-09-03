@@ -1,5 +1,5 @@
 ---
-description: DescribedFilter / DescribedFilterGroup / DescribedFilterCondition / DescribedFlow in IProcessDescriber.cs carry no [JsonExtensionData], so a filter or flow field the ProcessBuilder package emits and clio does not declare is dropped on re-serialize with no error
+description: DescribedFilter / DescribedFilterGroup / DescribedFilterCondition in IProcessDescriber.cs carry no [JsonExtensionData], so a filter field the ProcessBuilder package emits and clio does not declare is dropped on re-serialize with no error (DescribedFlow was in this set and no longer is)
 applies-to:
   - clio/Command/ProcessModel/IProcessDescriber.cs
 ticket: ENG-91842
@@ -28,4 +28,6 @@ to persist it. This already happened live to macro read-back with green unit tes
 same property was added pre-emptively for `datePart`. A DTO change also needs clio rebuilt and the
 MCP server restarted, or a stale process keeps serving the old shape.
 
-**Widened by ENG-95891.** `DescribedFlow` joined the same shape when it gained `condition`: the package emits a flow's condition text, clio declares one property for it, and anything else the package starts emitting on a flow — a label, a precedence hint — vanishes the same silent way. The next field added to a flow needs a property here, not just a read on the server side.
+**`DescribedFlow` was in this set and is not any more.** It joined when it gained `condition`, and left in the same ticket: it now carries `[JsonExtensionData]`, added alongside the `branchesOnActivityResult` nullability fix, so an undeclared flow field reaches the caller instead of vanishing. Do not restate the old claim — the file says otherwise thirty lines from the bag.
+
+What did NOT change is that a field needing to be read BY NAME still needs a typed property: the bag preserves an undeclared field, it does not make it addressable, and both the parameter-delete and element-retarget guards read `condition` by name. The filter types above have neither, which is why this record still exists.

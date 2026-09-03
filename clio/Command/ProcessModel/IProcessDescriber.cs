@@ -423,8 +423,8 @@ public sealed class DescribedPerformer {
 /// <para>Every member is declared here on purpose, but that is NOT a substitute for an overflow bag: a field the
 /// server reports and this type does not declare is still discarded without a trace, which is the same silent-loss
 /// failure the connections feature exists to remove. Unlike <see cref="DescribeProcessResult"/>,
-/// <see cref="DescribedElement"/> and <see cref="DescribedEmail"/>, this type has no
-/// <c>[JsonExtensionData]</c> yet — an accepted gap on the connections ticket's own surface, not something these
+/// <see cref="DescribedElement"/>, <see cref="DescribedEmail"/> and <see cref="DescribedFlow"/>, this type
+/// has no <c>[JsonExtensionData]</c> yet — an accepted gap on the connections ticket's own surface, not something these
 /// remarks endorse. Add one here when that ticket is next touched.</para>
 /// </remarks>
 public sealed class DescribedConnection {
@@ -620,9 +620,14 @@ public sealed class DescribedFlow {
 	/// <c>branchesOnActivityResult</c> to learn that the flow ignores its expression entirely.</para>
 	/// </summary>
 	/// <remarks>
-	/// This field is NOT optional polish. <see cref="DescribedFlow"/> has no <c>[JsonExtensionData]</c> overflow
-	/// bag, so a server field with no property here is dropped silently on clio's re-serialize and the caller
-	/// never learns the condition exists. The same failure mode is recorded for described filter types in
+	/// This field is NOT optional polish, though the original reason for saying so is gone:
+	/// <see cref="DescribedFlow"/> had no <c>[JsonExtensionData]</c> overflow bag when this property was
+	/// added, so a server field with no property here was dropped silently on clio's re-serialize and the
+	/// caller never learned the condition existed. It has one now (added with the
+	/// <see cref="BranchesOnActivityResult"/> nullability fix), so an undeclared field survives - but a
+	/// TYPED property is still what this needs, because callers and the delete guard read it by name and a
+	/// <c>JsonElement</c> in a dictionary is not that. The bagless failure mode still applies to the
+	/// described FILTER types, and is recorded in
 	/// <c>docs/knowledge/ProcessModel/described-filter-types-have-no-json-overflow-bag.md</c>.
 	/// </remarks>
 	[JsonPropertyName("condition")]
