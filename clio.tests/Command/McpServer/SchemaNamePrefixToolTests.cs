@@ -68,7 +68,7 @@ public sealed class SchemaNamePrefixToolTests {
 		SysSettingsManager manager = BuildSysSettingsManager(dataProvider);
 		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
 		commandResolver.Resolve<SysSettingsManager>(Arg.Any<EnvironmentOptions>()).Returns(manager);
-		SchemaNamePrefixTool tool = new(commandResolver, new OperationCorrelationIdProvider());
+		SchemaNamePrefixTool tool = new(commandResolver, new OperationCorrelationIdProvider(), Substitute.For<ILogger>());
 
 		// Act
 		SchemaNamePrefixResult result = tool.GetSchemaNamePrefix(new GetSchemaNamePrefixArgs("sandbox"));
@@ -92,7 +92,7 @@ public sealed class SchemaNamePrefixToolTests {
 		SysSettingsManager manager = BuildSysSettingsManager(dataProvider);
 		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
 		commandResolver.Resolve<SysSettingsManager>(Arg.Any<EnvironmentOptions>()).Returns(manager);
-		SchemaNamePrefixTool tool = new(commandResolver, new OperationCorrelationIdProvider());
+		SchemaNamePrefixTool tool = new(commandResolver, new OperationCorrelationIdProvider(), Substitute.For<ILogger>());
 
 		// Act
 		SchemaNamePrefixResult result = tool.GetSchemaNamePrefix(new GetSchemaNamePrefixArgs("sandbox"));
@@ -114,7 +114,7 @@ public sealed class SchemaNamePrefixToolTests {
 		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
 		commandResolver.Resolve<SysSettingsManager>(Arg.Any<EnvironmentOptions>())
 			.Returns(_ => throw new HttpRequestException("Connection refused."));
-		SchemaNamePrefixTool tool = new(commandResolver, new OperationCorrelationIdProvider());
+		SchemaNamePrefixTool tool = new(commandResolver, new OperationCorrelationIdProvider(), Substitute.For<ILogger>());
 
 		// Act
 		SchemaNamePrefixResult result = tool.GetSchemaNamePrefix(new GetSchemaNamePrefixArgs("offline-env"));
@@ -136,7 +136,7 @@ public sealed class SchemaNamePrefixToolTests {
 		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
 		commandResolver.Resolve<SysSettingsManager>(Arg.Any<EnvironmentOptions>())
 			.Returns(_ => throw new InvalidOperationException("Environment 'unknown' is not registered."));
-		SchemaNamePrefixTool tool = new(commandResolver, new OperationCorrelationIdProvider());
+		SchemaNamePrefixTool tool = new(commandResolver, new OperationCorrelationIdProvider(), Substitute.For<ILogger>());
 
 		// Act
 		SchemaNamePrefixResult result = tool.GetSchemaNamePrefix(new GetSchemaNamePrefixArgs("unknown"));
@@ -160,7 +160,7 @@ public sealed class SchemaNamePrefixToolTests {
 		SysSettingsManager manager = BuildSysSettingsManager(dataProvider);
 		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
 		commandResolver.Resolve<SysSettingsManager>(Arg.Any<EnvironmentOptions>()).Returns(manager);
-		SchemaNamePrefixTool tool = new(commandResolver, new OperationCorrelationIdProvider());
+		SchemaNamePrefixTool tool = new(commandResolver, new OperationCorrelationIdProvider(), Substitute.For<ILogger>());
 
 		// Act
 		SchemaNamePrefixResult result = tool.GetSchemaNamePrefix(new GetSchemaNamePrefixArgs("sandbox"));
@@ -179,7 +179,7 @@ public sealed class SchemaNamePrefixToolTests {
 		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
 		commandResolver.Resolve<SysSettingsManager>(Arg.Any<EnvironmentOptions>())
 			.Returns(_ => throw new HttpRequestException("Connection refused."));
-		SchemaNamePrefixTool tool = new(commandResolver, new OperationCorrelationIdProvider());
+		SchemaNamePrefixTool tool = new(commandResolver, new OperationCorrelationIdProvider(), Substitute.For<ILogger>());
 
 		// Act
 		SchemaNamePrefixResult result = tool.GetSchemaNamePrefix(new GetSchemaNamePrefixArgs("offline-env"));
@@ -195,5 +195,75 @@ public sealed class SchemaNamePrefixToolTests {
 			because: "the envelope must name the operator's next step");
 		result.CorrelationId.Should().NotBeNullOrWhiteSpace(
 			because: "#1222 requires a correlation ID on a failure envelope");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("A TLS handshake failure arrives as an AuthenticationException; get-schema-name-prefix must agree with the shared classifier and call it a network failure, instead of sending the operator to repair a working login while the untrusted certificate stays untouched.")]
+	public void GetSchemaNamePrefix_Should_Report_Network_For_A_Certificate_Failure() {
+		// Arrange
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		commandResolver.Resolve<SysSettingsManager>(Arg.Any<EnvironmentOptions>())
+			.Returns(_ => throw new HttpRequestException(
+				"The SSL connection could not be established",
+				new System.Security.Authentication.AuthenticationException(
+					"The remote certificate is invalid according to the validation procedure.")));
+		SchemaNamePrefixTool tool = new(commandResolver, new OperationCorrelationIdProvider(),
+			Substitute.For<ILogger>());
+
+		// Act
+		SchemaNamePrefixResult result = tool.GetSchemaNamePrefix(new GetSchemaNamePrefixArgs("tls-env"));
+
+		// Assert
+		result.ErrorCategory.Should().Be(SysSettingErrorCategories.Network,
+			because: "the framework raises AuthenticationException for a TLS handshake too, and the tool's own catch arm used to call that a credential rejection");
+		result.Error.Should().Be("Network error reading SchemaNamePrefix.",
+			because: "the shared classifier's verdict is what reaches the caller now");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("An AggregateException - how the Creatio client surfaces a transport fault through Task.Result - is unwrapped, instead of matching no arm and falling to the generic label.")]
+	public void GetSchemaNamePrefix_Should_Unwrap_An_Aggregate_Transport_Fault() {
+		// Arrange
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		commandResolver.Resolve<SysSettingsManager>(Arg.Any<EnvironmentOptions>())
+			.Returns(_ => throw new AggregateException(new HttpRequestException("Connection refused.")));
+		SchemaNamePrefixTool tool = new(commandResolver, new OperationCorrelationIdProvider(),
+			Substitute.For<ILogger>());
+
+		// Act
+		SchemaNamePrefixResult result = tool.GetSchemaNamePrefix(new GetSchemaNamePrefixArgs("offline-env"));
+
+		// Assert
+		result.Error.Should().Be("Network error reading SchemaNamePrefix.",
+			because: "the wrapper is not the fault; the tool used to report the generic label for it");
+		result.ErrorCategory.Should().Be(SysSettingErrorCategories.Network,
+			because: "an unwrapped transport fault is a network failure");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("An unresolvable environment keeps the deliberately generic error label - resolver text is never promoted into the headline field - but its actionable text is surfaced as the cause with a Configuration category.")]
+	public void GetSchemaNamePrefix_Should_Not_Promote_Resolver_Text_But_Surface_It_As_The_Cause() {
+		// Arrange
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		commandResolver.Resolve<SysSettingsManager>(Arg.Any<EnvironmentOptions>())
+			.Returns(_ => throw new EnvironmentResolutionException("Environment 'ghost' is not registered."));
+		SchemaNamePrefixTool tool = new(commandResolver, new OperationCorrelationIdProvider(),
+			Substitute.For<ILogger>());
+
+		// Act
+		SchemaNamePrefixResult result = tool.GetSchemaNamePrefix(new GetSchemaNamePrefixArgs("ghost"));
+
+		// Assert
+		result.Error.Should().Be("Failed to read SchemaNamePrefix.",
+			because: "this tool deliberately refuses to promote a resolver message into its error field");
+		result.ErrorCategory.Should().Be(SysSettingErrorCategories.Configuration,
+			because: "an unregistered environment is a configuration failure, not an unknown one");
+		result.Cause.Should().Be("Environment 'ghost' is not registered.",
+			because: "the actionable text is not lost - it moves to the cause, beside a recovery action");
+		result.RecoveryAction.Should().Contain("list-environments",
+			because: "the caller needs the next step, not 'retry'");
 	}
 }

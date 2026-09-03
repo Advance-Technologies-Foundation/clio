@@ -1,9 +1,11 @@
 using System;
+using System.Collections.Generic;
 using System.Net;
 using System.Net.Http;
 using System.Net.Sockets;
 using System.Security.Authentication;
 using Clio.Command;
+using Clio.Command.McpServer.Tools;
 using Clio.Common;
 using FluentAssertions;
 using NSubstitute;
@@ -178,5 +180,45 @@ public sealed class SysSettingsFailureEnvelopeTests {
 			because: "the format matches the MCP generic path's correlation ID so one grep finds either");
 		second.Should().NotBe(first,
 			because: "an ID reused across operations cannot identify one of them");
+	}
+
+	[Test]
+	[Description("An unresolvable environment is reported as a Configuration failure whose cause is the resolver's own actionable text, not as Unknown with 'no cause could be determined' and 'retry' - advice that makes an agent loop.")]
+	public void CategorizeFailure_Should_Report_Configuration_For_An_Unresolvable_Environment() {
+		// Arrange
+		EnvironmentResolutionException exception = new("Environment 'ghost' is not registered.");
+
+		// Act
+		SysSettingFailure failure = SysSettingsCommand.CategorizeFailure(exception, Operation, CorrelationId);
+
+		// Assert
+		failure.Category.Should().Be(SysSettingErrorCategories.Configuration,
+			because: "nothing was sent anywhere - the environment could not be resolved from local config");
+		failure.Cause.Should().Be("Environment 'ghost' is not registered.",
+			because: "the resolver's message is clio-local and is the actionable cause");
+		failure.RecoveryAction.Should().Contain("list-environments",
+			because: "'retry the operation' on an unregistered name loops an agent forever");
+		failure.Error.Should().Be("Failed reading sys-setting.",
+			because: "the headline message keeps the generic label so resolver text is not promoted into it");
+	}
+
+	[Test]
+	[Description("CategorizeAndLog writes exactly one log line carrying the correlation ID it returns, so a caller-visible ID always finds something.")]
+	public void CategorizeAndLog_Should_Write_One_Line_Carrying_The_Returned_Id() {
+		// Arrange
+		ILogger logger = Substitute.For<ILogger>();
+		List<string> lines = [];
+		logger.When(l => l.WriteError(Arg.Any<string>())).Do(call => lines.Add(call.Arg<string>()));
+
+		// Act
+		SysSettingFailure failure = SysSettingsCommand.CategorizeAndLog(
+			new UnauthorizedAccessException("denied"), Operation, logger,
+			new OperationCorrelationIdProvider());
+
+		// Assert
+		lines.Should().ContainSingle(
+			because: "an ID on a result that no log line mentions invites the caller to quote a token that finds nothing")
+			.Which.Should().Contain(failure.CorrelationId,
+				because: "the log line and the envelope must carry the SAME ID");
 	}
 }

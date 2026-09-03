@@ -8,6 +8,7 @@ using System.Net.Sockets;
 using System.Reflection;
 using System.Security.Authentication;
 using System.Text.RegularExpressions;
+using Clio.Command.McpServer.Tools;
 using Clio.Common;
 using CommandLine;
 using CreatioModel;
@@ -241,11 +242,13 @@ namespace Clio.Command
 				//bare catch used to swallow the credential and network diagnoses that the typed
 				//TryUpdateSysSetting(UpdateSysSettingArgs) overload reports, so the CLI path told the
 				//operator nothing about WHY the write did not land.
-				SysSettingFailure failure = CategorizeFailure(ex, "updating sys-setting",
-					_correlationIds.New());
-				_logger.WriteError(
-					$"SysSettings with code: {opts.Code} is not updated. "
-					+ DescribeFailureForLog(failure));
+				//Goes through the same report path as every other failure: the CLI overload used to mint
+				//an ID and write its own line, which meant the debug-verbosity server excerpt was never
+				//written for the one path an operator actually runs interactively
+				//(apply-environment-manifest, Program.cs).
+				SysSettingFailure failure = CategorizeAndLog(ex, "updating sys-setting", _logger,
+					_correlationIds);
+				_logger.WriteError($"SysSettings with code: {opts.Code} is not updated.");
 			}
 		}
 
@@ -590,6 +593,15 @@ namespace Clio.Command
 				InvalidOperationException invEx => new SysSettingFailure(invEx.Message,
 					SysSettingErrorCategories.Unknown, invEx.Message,
 					SysSettingFailureTexts.UnknownRecovery, correlationId),
+				//An unresolvable environment is a CONFIGURATION failure, not an unknown one. It used to
+				//reach the fallback arm below and be reported as "no cause could be determined" with
+				//"retry the operation" - advice that makes an agent loop, when the resolver had already
+				//said exactly what to fix. The resolver's text is clio-local (EnvironmentNotFoundError,
+				//settings-file paths), so it is safe as the cause; Error keeps the generic label so an
+                //unregistered name is still not promoted into the headline message.
+				EnvironmentResolutionException resolutionEx => new SysSettingFailure(
+					$"Failed {operationLabel}.", SysSettingErrorCategories.Configuration,
+					resolutionEx.Message, SysSettingFailureTexts.ConfigurationRecovery, correlationId),
 				var _ => new SysSettingFailure($"Failed {operationLabel}.",
 					SysSettingErrorCategories.Unknown, SysSettingFailureTexts.UnknownCause,
 					SysSettingFailureTexts.UnknownRecovery, correlationId)
@@ -614,9 +626,22 @@ namespace Clio.Command
 		/// Safe on the MCP path: <see cref="ConsoleLogger"/> suppresses every console write in MCP server
 		/// mode, because stdout there frames JSON-RPC.
 		/// </remarks>
-		private SysSettingFailure ReportFailure(Exception ex, string operationLabel) {
-			SysSettingFailure failure = CategorizeFailure(ex, operationLabel, _correlationIds.New());
-			_logger.WriteError(DescribeFailureForLog(failure));
+		private SysSettingFailure ReportFailure(Exception ex, string operationLabel) =>
+			CategorizeAndLog(ex, operationLabel, _logger, _correlationIds);
+
+		/// <summary>
+		/// Classifies a failure AND writes the one log line that carries its correlation ID, for callers
+		/// that hold no command instance - the MCP tools' environment-resolution catch blocks.
+		/// </summary>
+		/// <remarks>
+		/// A correlation ID on a result that no log line mentions is worse than no ID at all: it invites
+		/// the caller to quote a token that finds nothing. So minting the ID and writing the line are one
+		/// operation, and every site that reports a failure goes through here.
+		/// </remarks>
+		internal static SysSettingFailure CategorizeAndLog(Exception ex, string operationLabel,
+			ILogger logger, IOperationCorrelationIdProvider correlationIds) {
+			SysSettingFailure failure = CategorizeFailure(ex, operationLabel, correlationIds.New());
+			logger.WriteError(DescribeFailureForLog(failure));
 			return failure;
 		}
 
@@ -636,7 +661,7 @@ namespace Clio.Command
 		/// <remarks>
 		/// A multi-fault <see cref="AggregateException"/> is deliberately NOT unwrapped - picking its first
 		/// inner would report one of several failures as if it were the whole story. Those are handled by
-		/// the aggregate arm in <see cref="CategorizeError"/> instead.
+		/// the aggregate arm in <see cref="CategorizeFailure"/> instead.
 		/// </remarks>
 		private static Exception UnwrapTransportFault(Exception exception) {
 			Exception current = exception;

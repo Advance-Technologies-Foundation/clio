@@ -1365,7 +1365,7 @@ public class SysSettingsManagerNewBehaviorTests {
 		SysSettingsManager manager = (SysSettingsManager)BuildSut(BuildRejectedProvider());
 		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
 		commandResolver.Resolve<SysSettingsManager>(Arg.Any<EnvironmentOptions>()).Returns(manager);
-		SchemaNamePrefixTool tool = new(commandResolver, new OperationCorrelationIdProvider());
+		SchemaNamePrefixTool tool = new(commandResolver, new OperationCorrelationIdProvider(), Substitute.For<ILogger>());
 
 		// Act
 		SchemaNamePrefixResult result = tool.GetSchemaNamePrefix(new GetSchemaNamePrefixArgs("local"));
@@ -1384,7 +1384,7 @@ public class SysSettingsManagerNewBehaviorTests {
 		SysSettingsManager manager = (SysSettingsManager)BuildSut(BuildRejectedProvider(LoginPageParserError));
 		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
 		commandResolver.Resolve<SysSettingsManager>(Arg.Any<EnvironmentOptions>()).Returns(manager);
-		SchemaNamePrefixTool tool = new(commandResolver, new OperationCorrelationIdProvider());
+		SchemaNamePrefixTool tool = new(commandResolver, new OperationCorrelationIdProvider(), Substitute.For<ILogger>());
 
 		// Act
 		SchemaNamePrefixResult result = tool.GetSchemaNamePrefix(new GetSchemaNamePrefixArgs("local"));

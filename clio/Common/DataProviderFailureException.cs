@@ -8,7 +8,7 @@ namespace Clio.Common;
 /// </summary>
 /// <remarks>
 /// Derives from <see cref="InvalidOperationException"/> so every existing handler keeps working unchanged
-/// - in particular <c>SysSettingsCommand.CategorizeError</c>'s <c>InvalidOperationException invEx =&gt;
+/// - in particular <c>SysSettingsCommand.CategorizeFailure</c>'s <c>InvalidOperationException invEx =&gt;
 /// invEx.Message</c> arm, which is what surfaces the composed diagnostic.
 /// <para>
 /// The distinct type exists so a consumer can tell "the data provider failed, and its message is the only

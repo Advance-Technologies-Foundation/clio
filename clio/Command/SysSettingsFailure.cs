@@ -41,6 +41,12 @@ public static class SysSettingErrorCategories {
 	/// <summary>The request was refused by clio before it reached the environment.</summary>
 	public const string Validation = "Validation";
 
+	/// <summary>
+	/// The environment could not be resolved from local clio configuration - it is not registered, or the
+	/// settings file is unusable. Nothing was sent anywhere.
+	/// </summary>
+	public const string Configuration = "Configuration";
+
 	/// <summary>The failure fits none of the above.</summary>
 	public const string Unknown = "Unknown";
 }
@@ -69,6 +75,9 @@ internal static class SysSettingFailureTexts {
 
 	internal const string ProviderFailureRecovery =
 		"Read the cause, correct the reported condition on the environment, and retry.";
+
+	internal const string ConfigurationRecovery =
+		"Register the environment with reg-web-app, or pick one from list-environments.";
 
 	internal const string ValidationRecovery =
 		"Correct the argument named in the cause and call the operation again.";

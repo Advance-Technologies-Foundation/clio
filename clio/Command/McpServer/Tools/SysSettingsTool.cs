@@ -11,7 +11,7 @@ namespace Clio.Command.McpServer.Tools;
 /// </summary>
 [McpServerToolType]
 public sealed class SysSettingGetTool(IToolCommandResolver commandResolver,
-	IOperationCorrelationIdProvider correlationIds) {
+	IOperationCorrelationIdProvider correlationIds, ILogger logger) {
 
 	internal const string GetSysSettingToolName = "get-sys-setting";
 
@@ -35,8 +35,7 @@ public sealed class SysSettingGetTool(IToolCommandResolver commandResolver,
 			command = commandResolver.Resolve<SysSettingsCommand>(
 				new EnvironmentOptions { Environment = args.EnvironmentName });
 		} catch (Exception ex) {
-			SysSettingFailure failure = SysSettingsCommand.CategorizeFailure(ex, "reading sys-setting",
-				correlationIds.New());
+			SysSettingFailure failure = SysSettingsCommand.CategorizeAndLog(ex, "reading sys-setting", logger, correlationIds);
 			return new SysSettingGetResult(false, args.Code ?? string.Empty, string.Empty, failure.Error,
 				failure.Category, failure.Cause, failure.RecoveryAction, failure.CorrelationId);
 		}
@@ -49,7 +48,7 @@ public sealed class SysSettingGetTool(IToolCommandResolver commandResolver,
 /// </summary>
 [McpServerToolType]
 public sealed class SysSettingsListTool(IToolCommandResolver commandResolver,
-	IOperationCorrelationIdProvider correlationIds) {
+	IOperationCorrelationIdProvider correlationIds, ILogger logger) {
 
 	internal const string ListSysSettingsToolName = "list-sys-settings";
 
@@ -74,8 +73,7 @@ public sealed class SysSettingsListTool(IToolCommandResolver commandResolver,
 			command = commandResolver.Resolve<SysSettingsCommand>(
 				new EnvironmentOptions { Environment = args.EnvironmentName });
 		} catch (Exception ex) {
-			SysSettingFailure failure = SysSettingsCommand.CategorizeFailure(ex, "listing sys-settings",
-				correlationIds.New());
+			SysSettingFailure failure = SysSettingsCommand.CategorizeAndLog(ex, "listing sys-settings", logger, correlationIds);
 			return new SysSettingsListResult(false, Array.Empty<SysSettingItem>(), failure.Error,
 				failure.Category, failure.Cause, failure.RecoveryAction, failure.CorrelationId);
 		}
@@ -88,7 +86,7 @@ public sealed class SysSettingsListTool(IToolCommandResolver commandResolver,
 /// </summary>
 [McpServerToolType]
 public sealed class SysSettingCreateTool(IToolCommandResolver commandResolver,
-	IOperationCorrelationIdProvider correlationIds) {
+	IOperationCorrelationIdProvider correlationIds, ILogger logger) {
 
 	internal const string CreateSysSettingToolName = "create-sys-setting";
 
@@ -117,8 +115,7 @@ public sealed class SysSettingCreateTool(IToolCommandResolver commandResolver,
 			command = commandResolver.Resolve<SysSettingsCommand>(
 				new EnvironmentOptions { Environment = args.EnvironmentName });
 		} catch (Exception ex) {
-			SysSettingFailure failure = SysSettingsCommand.CategorizeFailure(ex, "creating sys-setting",
-				correlationIds.New());
+			SysSettingFailure failure = SysSettingsCommand.CategorizeAndLog(ex, "creating sys-setting", logger, correlationIds);
 			return new SysSettingCreateResult(false, args.Code ?? string.Empty, args.ValueTypeName ?? string.Empty,
 				null, failure.Error, Warning: null, failure.Category, failure.Cause, failure.RecoveryAction,
 				failure.CorrelationId);
@@ -132,7 +129,7 @@ public sealed class SysSettingCreateTool(IToolCommandResolver commandResolver,
 /// </summary>
 [McpServerToolType]
 public sealed class SysSettingUpdateTool(IToolCommandResolver commandResolver,
-	IOperationCorrelationIdProvider correlationIds) {
+	IOperationCorrelationIdProvider correlationIds, ILogger logger) {
 
 	internal const string UpdateSysSettingToolName = "update-sys-setting";
 
@@ -157,8 +154,7 @@ public sealed class SysSettingUpdateTool(IToolCommandResolver commandResolver,
 			command = commandResolver.Resolve<SysSettingsCommand>(
 				new EnvironmentOptions { Environment = args.EnvironmentName });
 		} catch (Exception ex) {
-			SysSettingFailure failure = SysSettingsCommand.CategorizeFailure(ex, "updating sys-setting",
-				correlationIds.New());
+			SysSettingFailure failure = SysSettingsCommand.CategorizeAndLog(ex, "updating sys-setting", logger, correlationIds);
 			return new SysSettingUpdateResult(false, args.Code ?? string.Empty, null, failure.Error,
 				failure.Category, failure.Cause, failure.RecoveryAction, failure.CorrelationId);
 		}

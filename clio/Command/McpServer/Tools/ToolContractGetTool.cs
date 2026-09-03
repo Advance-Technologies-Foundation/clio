@@ -5262,6 +5262,27 @@ internal static class ToolContractCatalog {
 		return new ToolOutputContract("structured-envelope", successField, failureSignals, fields);
 	}
 
+	/// <summary>
+	/// <see cref="EnvelopeOutput"/> plus the four failure-envelope fields every sys-setting-family tool
+	/// carries (issue #1329).
+	/// </summary>
+	/// <remarks>
+	/// One definition, so a description edit cannot reach four of the five call sites and drift on the
+	/// fifth - and a sixth sys-setting tool cannot be added without them.
+	/// </remarks>
+	private static ToolOutputContract SysSettingEnvelopeOutput(
+		string successField,
+		IReadOnlyList<string> failureSignals,
+		params ToolContractField[] fields) {
+		return EnvelopeOutput(successField, failureSignals, [
+			.. fields,
+			Field("error-category", StringType, SysSettingErrorCategoryDescription),
+			Field("cause", StringType, SysSettingCauseDescription),
+			Field("recovery-action", StringType, SysSettingRecoveryActionDescription),
+			Field("correlation-id", StringType, SysSettingCorrelationIdDescription)
+		]);
+	}
+
 	private static ToolContractDefinition BuildFindEntitySchema() {
 		return new ToolContractDefinition(
 			FindEntitySchemaTool.FindEntitySchemaToolName,
@@ -5321,18 +5342,14 @@ internal static class ToolContractCatalog {
 				[
 					Field(EnvironmentNameFieldName, StringType, RegisteredEnvironmentNameDescription)
 				]),
-			EnvelopeOutput(
+			SysSettingEnvelopeOutput(
 				SuccessFieldName,
 				[
 					SuccessFalseSignal
 				],
 				Field(SuccessFieldName, BooleanType, ToolSucceededDescription),
 				Field("schema-name-prefix", StringType, "Active SchemaNamePrefix system setting. Empty string means no prefix is configured."),
-				Field(ErrorFieldName, StringType, FailureMessageDescription),
-				Field("error-category", StringType, SysSettingErrorCategoryDescription),
-				Field("cause", StringType, SysSettingCauseDescription),
-				Field("recovery-action", StringType, SysSettingRecoveryActionDescription),
-				Field("correlation-id", StringType, SysSettingCorrelationIdDescription)
+				Field(ErrorFieldName, StringType, FailureMessageDescription)
 			),
 			CommonErrorContract,
 			[],
@@ -5956,7 +5973,7 @@ internal static class ToolContractCatalog {
 					Field(EnvironmentNameFieldName, StringType, RegisteredEnvironmentNameDescription),
 					Field(SysSettingCodeFieldName, StringType, "Sys-setting code (e.g., 'SchemaNamePrefix').")
 				]),
-			EnvelopeOutput(
+			SysSettingEnvelopeOutput(
 				SuccessFieldName,
 				[
 					SuccessFalseSignal
@@ -5964,11 +5981,7 @@ internal static class ToolContractCatalog {
 				Field(SuccessFieldName, BooleanType, ToolSucceededDescription),
 				Field(SysSettingCodeFieldName, StringType, "Sys-setting code echoed from the request."),
 				Field(SysSettingValueFieldName, StringType, "Raw string value of the sys-setting. Empty string when not configured."),
-				Field(ErrorFieldName, StringType, FailureMessageDescription),
-				Field("error-category", StringType, SysSettingErrorCategoryDescription),
-				Field("cause", StringType, SysSettingCauseDescription),
-				Field("recovery-action", StringType, SysSettingRecoveryActionDescription),
-				Field("correlation-id", StringType, SysSettingCorrelationIdDescription)
+				Field(ErrorFieldName, StringType, FailureMessageDescription)
 			),
 			CommonErrorContract,
 			[],
@@ -5998,18 +6011,14 @@ internal static class ToolContractCatalog {
 				[
 					Field(EnvironmentNameFieldName, StringType, RegisteredEnvironmentNameDescription)
 				]),
-			EnvelopeOutput(
+			SysSettingEnvelopeOutput(
 				SuccessFieldName,
 				[
 					SuccessFalseSignal
 				],
 				Field(SuccessFieldName, BooleanType, ToolSucceededDescription),
 				Field("settings", ArrayType, "Sys-settings with code, name, value-type-name, value, is-cacheable, is-personal."),
-				Field(ErrorFieldName, StringType, FailureMessageDescription),
-				Field("error-category", StringType, SysSettingErrorCategoryDescription),
-				Field("cause", StringType, SysSettingCauseDescription),
-				Field("recovery-action", StringType, SysSettingRecoveryActionDescription),
-				Field("correlation-id", StringType, SysSettingCorrelationIdDescription)
+				Field(ErrorFieldName, StringType, FailureMessageDescription)
 			),
 			CommonErrorContract,
 			[],
@@ -6050,7 +6059,7 @@ internal static class ToolContractCatalog {
 					Field("is-personal", BooleanType, "Whether the setting stores per-user values. Defaults to false."),
 					Field(ReferenceSchemaNameFieldName, StringType, "Entity schema name for the lookup target. Required when value-type-name is 'Lookup' (e.g., 'Contact', 'UsrPhoneFormat').")
 				]),
-			EnvelopeOutput(
+			SysSettingEnvelopeOutput(
 				SuccessFieldName,
 				[
 					SuccessFalseSignal
@@ -6060,11 +6069,7 @@ internal static class ToolContractCatalog {
 				Field(SysSettingValueTypeFieldName, StringType, "Value-type-name applied to the created sys-setting."),
 				Field(SysSettingValueFieldName, StringType, "Applied initial value (null when no value was provided or assignment failed)."),
 				Field(ErrorFieldName, StringType, FailureMessageDescription),
-				Field("warning", StringType, "Optional partial-success warning. Populated when the row was created but the initial value could not be applied; null on a fully successful or fully failed create."),
-				Field("error-category", StringType, SysSettingErrorCategoryDescription),
-				Field("cause", StringType, SysSettingCauseDescription),
-				Field("recovery-action", StringType, SysSettingRecoveryActionDescription),
-				Field("correlation-id", StringType, SysSettingCorrelationIdDescription)
+				Field("warning", StringType, "Optional partial-success warning. Populated when the row was created but the initial value could not be applied; null on a fully successful or fully failed create.")
 			),
 			CommonErrorContract,
 			[],
@@ -6101,7 +6106,7 @@ internal static class ToolContractCatalog {
 					Field("value-file-path", StringType, "Local file path whose bytes clio reads and Base64-encodes into the value (provide this OR value). Use for Binary settings (blob data, e.g. the logo) so the blob stays out of the tool-call arguments."),
 					Field(SysSettingValueTypeFieldName, StringType, "Optional fallback value-type-name when the setting cannot be located on the target environment.")
 				]),
-			EnvelopeOutput(
+			SysSettingEnvelopeOutput(
 				SuccessFieldName,
 				[
 					SuccessFalseSignal
@@ -6109,11 +6114,7 @@ internal static class ToolContractCatalog {
 				Field(SuccessFieldName, BooleanType, ToolSucceededDescription),
 				Field(SysSettingCodeFieldName, StringType, "Sys-setting code echoed from the request."),
 				Field(SysSettingValueFieldName, StringType, "Value read back from the environment after the update."),
-				Field(ErrorFieldName, StringType, FailureMessageDescription),
-				Field("error-category", StringType, SysSettingErrorCategoryDescription),
-				Field("cause", StringType, SysSettingCauseDescription),
-				Field("recovery-action", StringType, SysSettingRecoveryActionDescription),
-				Field("correlation-id", StringType, SysSettingCorrelationIdDescription)
+				Field(ErrorFieldName, StringType, FailureMessageDescription)
 			),
 			CommonErrorContract,
 			[],

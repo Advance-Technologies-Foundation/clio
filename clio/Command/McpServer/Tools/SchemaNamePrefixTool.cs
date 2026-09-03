@@ -12,7 +12,7 @@ namespace Clio.Command.McpServer.Tools;
 /// </summary>
 [McpServerToolType]
 public sealed class SchemaNamePrefixTool(IToolCommandResolver commandResolver,
-	IOperationCorrelationIdProvider correlationIds) {
+	IOperationCorrelationIdProvider correlationIds, ILogger logger) {
 
 	internal const string GetSchemaNamePrefixToolName = "get-schema-name-prefix";
 
@@ -42,35 +42,51 @@ public sealed class SchemaNamePrefixTool(IToolCommandResolver commandResolver,
 				new EnvironmentOptions { Environment = args.EnvironmentName });
 			string prefix = SysSettingCodes.ReadSchemaNamePrefix(sysSettings);
 			return new SchemaNamePrefixResult(true, prefix);
-		} catch (Exception ex) when (ex is System.Net.Http.HttpRequestException or System.Net.WebException or System.Net.Sockets.SocketException) {
-			return Failure("Network error reading SchemaNamePrefix.", SysSettingErrorCategories.Network,
-				SysSettingFailureTexts.NetworkCause, SysSettingFailureTexts.NetworkRecovery);
-		} catch (Exception ex) when (ex is UnauthorizedAccessException or System.Security.Authentication.AuthenticationException) {
-			return Failure("Authentication error reading SchemaNamePrefix.",
-				SysSettingErrorCategories.Authentication, SysSettingFailureTexts.AuthenticationCause,
-				SysSettingFailureTexts.AuthenticationRecovery);
-		} catch (DataProviderFailureException ex) {
-			//Surfaces the message rather than collapsing to "Failed to read SchemaNamePrefix.", which is the
-			//same rule SysSettingsCommand.CategorizeError applies. This type - and ONLY this type - means
-			//the message IS the diagnosis the caller cannot reconstruct, in particular the non-JSON-page
-			//answer that names both possible causes (rejected session, or a URL that does not reach
-			//Creatio). A plain InvalidOperationException keeps the generic label below: an unregistered
-			//environment name must not have its resolver text promoted into this field.
-			return Failure(ex.Message, SysSettingErrorCategories.ProviderFailure, ex.Message,
-				SysSettingFailureTexts.ProviderFailureRecovery);
-		} catch (Exception) {
-			return Failure("Failed to read SchemaNamePrefix.", SysSettingErrorCategories.Unknown,
-				SysSettingFailureTexts.UnknownCause, SysSettingFailureTexts.UnknownRecovery);
+		} catch (Exception ex) {
+			//One classifier, not two. These five hand-written arms disagreed with
+			//SysSettingsCommand.CategorizeFailure on three counts: a TLS handshake failure arrives as an
+			//AuthenticationException and was reported as rejected credentials (sending the operator to
+			//repair a working login while the untrusted certificate stays untouched); an
+			//AggregateException - which is how the Creatio client surfaces a transport fault through
+			//Task.Result - matched nothing and fell to the generic label; and the correlation ID was
+			//minted with no log line to find it in.
+			return Failure(ex);
 		}
 	}
 
 	/// <summary>
-	/// Builds the failure envelope: the legacy <c>error</c> text unchanged, plus the classified cause,
-	/// the recovery action, and the correlation ID that ties the envelope to the log line (issue #1329).
+	/// Builds the failure envelope from the SHARED classifier, so this tool and the sys-setting tools
+	/// cannot answer "was this a credential failure?" differently (issue #1329).
 	/// </summary>
-	private SchemaNamePrefixResult Failure(string error, string category, string cause,
-		string recoveryAction) =>
-		new(false, string.Empty, error, category, cause, recoveryAction, correlationIds.New());
+	private SchemaNamePrefixResult Failure(Exception ex) {
+		SysSettingFailure failure = SysSettingsCommand.CategorizeAndLog(ex, ReadOperationLabel, logger,
+			correlationIds);
+		return new SchemaNamePrefixResult(false, string.Empty, DescribeError(failure), failure.Category,
+			failure.Cause, failure.RecoveryAction, failure.CorrelationId);
+	}
+
+	/// <summary>The operation label used in this tool's classified diagnostics.</summary>
+	private const string ReadOperationLabel = "reading SchemaNamePrefix";
+
+	/// <summary>This tool's historic generic label, kept for the cases that must not promote a message.</summary>
+	private const string GenericReadFailure = "Failed to read SchemaNamePrefix.";
+
+	/// <summary>
+	/// The <c>error</c> line: the shared classifier's message, EXCEPT where this tool deliberately refuses
+	/// to promote one.
+	/// </summary>
+	/// <remarks>
+	/// An unregistered environment name, or any other failure clio raised about its own state, must not
+	/// have its text promoted into the headline field - that rule predates the shared classifier and is
+	/// kept. The actionable text is not lost: it is the <c>cause</c>, next to a recovery action.
+	/// A <c>DataProviderFailureException</c> is the opposite case and keeps its message, because that
+	/// message IS the diagnosis (in particular the non-JSON-page answer naming both possible causes).
+	/// </remarks>
+	private static string DescribeError(SysSettingFailure failure) =>
+		failure.Category is SysSettingErrorCategories.Unknown or SysSettingErrorCategories.Configuration
+			or SysSettingErrorCategories.Validation
+			? GenericReadFailure
+			: failure.Error;
 }
 
 /// <summary>

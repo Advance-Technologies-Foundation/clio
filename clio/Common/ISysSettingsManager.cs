@@ -369,7 +369,7 @@ public class SysSettingsManager : ISysSettingsManager
 	/// Without this check, a rejected session on a write reached the caller as
 	/// "Failed creating sys-setting." / "... is not updated. Invalid response format.": the login page is
 	/// not JSON, so the deserializer threw a <see cref="JsonException"/> that
-	/// <c>SysSettingsCommand.CategorizeError</c> has no arm for. The genuinely-malformed-JSON path below is
+	/// <c>SysSettingsCommand.CategorizeFailure</c> has no arm for. The genuinely-malformed-JSON path below is
 	/// unaffected, because it is only reached once this check has passed.
 	/// </para>
 	/// </remarks>

@@ -23,7 +23,7 @@ namespace Clio.Common;
 /// every exception those calls throw.</item>
 /// <item><c>SysSettingsManager</c>'s write-path check, which has the RAW response body and therefore uses
 /// <see cref="IsAuthenticationFailureResponse"/> rather than the message overload.</item>
-/// <item><c>SysSettingsCommand.CategorizeError</c> - the command/MCP envelope.</item>
+/// <item><c>SysSettingsCommand.CategorizeFailure</c> - the command/MCP envelope.</item>
 /// </list>
 /// One classifier, used by all of them, is what keeps the answers from diverging again.
 /// </remarks>

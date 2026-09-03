@@ -113,7 +113,7 @@ public sealed class ClassifyingDataProvider : IDataProvider {
 	/// A transport fault is RETHROWN UNCHANGED, deliberately. An earlier revision wrapped everything
 	/// non-authentication into an <see cref="InvalidOperationException"/>, which erased the exception type
 	/// and made the <c>HttpRequestException</c> / <c>WebException</c> / <c>SocketException</c> arms of
-	/// <c>SysSettingsCommand.CategorizeError</c> and <c>SchemaNamePrefixTool</c> unreachable: a refused
+	/// <c>SysSettingsCommand.CategorizeFailure</c> and <c>SchemaNamePrefixTool</c> unreachable: a refused
 	/// connection reported "Failed reading records from entity schema 'X': Connection refused..." instead
 	/// of "Network error reading sys-setting.". Only two rewrites earn their place here - the
 	/// authentication verdict, and the ambiguous non-JSON page - because in both cases the composed
@@ -127,7 +127,7 @@ public sealed class ClassifyingDataProvider : IDataProvider {
 			//a co-operative shutdown behind a diagnosis about credentials.
 			throw;
 		} catch (AuthenticationException) {
-			//Already the strongest available diagnosis, whichever way CategorizeError later reads it
+			//Already the strongest available diagnosis, whichever way CategorizeFailure later reads it
 			//(it asks the same classifier, so a TLS handshake keeps its own answer).
 			throw;
 		} catch (Exception exception) {
