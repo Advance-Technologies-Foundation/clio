@@ -2804,7 +2804,7 @@ stories:
     jira: "ENG-94374"
     repo: "clio"
     size: M
-    status: ready-for-dev
+    status: in-progress
     file: spec/stories/story-process-versioning-1.md
     prd: spec/prd/prd-process-versioning.md
     adr: spec/adr/adr-process-versioning.md
