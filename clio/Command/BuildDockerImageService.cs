@@ -893,7 +893,12 @@ public sealed class BuildDockerImageService(
 	}
 
 	private string SanitizeTag(string sourceLeafName) {
-		string sanitized = Regex.Replace(sourceLeafName.ToLowerInvariant(), @"[^a-z0-9._-]+", "_");
+		string sanitized = Regex.Replace(
+			sourceLeafName.ToLowerInvariant(),
+			@"[^a-z0-9._-]+",
+			"_",
+			RegexOptions.None,
+			PathSanitizationRegexTimeout);
 		string trimmed = sanitized.Trim('_');
 		return string.IsNullOrWhiteSpace(trimmed) ? "latest" : trimmed;
 	}

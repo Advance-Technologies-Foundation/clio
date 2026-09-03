@@ -22,6 +22,7 @@ public sealed partial class DataForgePlatformVersionGuard(
 	IServiceUrlBuilder serviceUrlBuilder) : IDataForgePlatformVersionGuard {
 	internal const string MinimumCreatioPlatformVersion = "10.0.0";
 	internal const int VersionCheckTimeoutMs = 60_000;
+	private const int RegexTimeoutMilliseconds = 1_000;
 	private static readonly Version MinimumVersion = new(MinimumCreatioPlatformVersion);
 	private static readonly string[] PreferredVersionFields = [
 		"ProductVersion",
@@ -122,6 +123,6 @@ public sealed partial class DataForgePlatformVersionGuard(
 			$"{MinimumCreatioPlatformVersion} or later.");
 	}
 
-	[GeneratedRegex(@"\d+(?:\.\d+){1,3}", RegexOptions.CultureInvariant)]
+	[GeneratedRegex(@"\d+(?:\.\d+){1,3}", RegexOptions.CultureInvariant, RegexTimeoutMilliseconds)]
 	private static partial Regex VersionPattern();
 }

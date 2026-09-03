@@ -6,7 +6,7 @@ applies-to:
   - cliogate/Files/cs/ATFLogService.cs
   - cliogate/Files/cs/Feature/FeatureStateService.cs
   - clio/Common/ServiceUrlBuilder.cs
-date: 2026-08-19
+date: 2026-09-03
 ---
 
 **What is true** — the cliogate package exposes **four** `[ServiceContract]` classes, each served at
@@ -16,6 +16,8 @@ cliogate to be installed in the target environment. Live examples in clio:
 `ServiceUrlBuilder.KnownRoutes` maps `StartLogBroadcast`/`StopLogBroadcast` to `/rest/ATFLogService/…`,
 `FeatureCommand.ServicePath` is `/rest/FeatureStateService/SetFeatureState`, and `Program.cs` builds
 three `/rest/PackagesGateway/…` URLs.
+New fixed routes for any of these services belong in `ServiceUrlBuilder.KnownRoutes`; this inventory also
+prevents a non-`CreatioApiGateway` prefix from being mistaken for a native platform service.
 
 **Why it is this way** — `AGENTS.md` documents only the `CreatioApiGateway` prefix ("All ClioGate
 methods are served at `/rest/CreatioApiGateway/<MethodName>`"). That is the rule for *adding* an
