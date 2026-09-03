@@ -77,7 +77,7 @@ public sealed class GenerateSourceCodeToolE2ETests : McpContractFixtureBase {
 	[Test]
 	[AllureTag(ToolName)]
 	[AllureName("generate-source-code refuses a non-positive timeout")]
-	[AllureDescription("Calls generate-source-code with timeout 0 and verifies the structured failure names the timeout field and demands a positive number of milliseconds, before any environment work.")]
+	[AllureDescription("Calls generate-source-code with timeout 0 and verifies the structured failure names the timeout field and states the valid millisecond range, before any environment work.")]
 	[Description("A zero or negative timeout can never bound a request, so it must be refused as a caller-actionable validation error rather than silently overwriting the 60-minute default with an unusable value (issue #1303).")]
 	public async Task GenerateSourceCode_Should_Refuse_NonPositive_Timeout() {
 		// Arrange
@@ -99,7 +99,7 @@ public sealed class GenerateSourceCodeToolE2ETests : McpContractFixtureBase {
 		// Assert
 		callResult.IsError.Should().NotBeTrue(
 			because: "an invalid argument value is a caller-actionable structured failure, not an MCP protocol error");
-		callResultJson.Should().Contain("must be a positive number of milliseconds",
+		callResultJson.Should().Contain("must be between 1 and",
 			because: $"the failure must tell the caller what a valid timeout looks like. Payload: {callResultJson}");
 		callResultJson.Should().Contain("timeout",
 			because: "the failure must name the exact kebab-case field the caller has to correct");
