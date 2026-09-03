@@ -8444,6 +8444,44 @@ public sealed class WebToMobileConversionServiceTests {
 	}
 
 	[Test]
+	[Description("ENG-95827: a caption the source page DECLARES with empty text is registered with that empty text, not skipped. Skipping it shipped a #ResourceString token with no key behind it, which renders as the RAW TOKEN on the device — strictly worse than the web page, where a declared-empty caption renders as nothing. The collector used to drop it because a single IsNullOrEmpty check could not tell 'declared with no text' from 'not declared at all'.")]
+	public void Analyze_ShouldRegisterADeclaredCaption_EvenWhenItsTextIsEmpty() {
+		// Arrange — a deliberate "no visible label": the key exists, its en-US value is empty.
+		PageBundleInfo bundle = Bundle("""
+			[ { "name": "Box", "type": "crt.GridContainer", "items": [
+			    { "name": "LeadName", "type": "crt.Input", "caption": "$Resources.Strings.LeadName_caption" } ] } ]
+			""",
+			resourcesJson: """{ "LeadName_caption": { "en-US": "" } }""");
+
+		// Act
+		MobilePageConversionGuide guide = AnalyzeWithEmptyRemoval(bundle);
+
+		// Assert
+		guide.ResourceStrings.Should().ContainKey("LeadName_caption",
+			because: "the key EXISTS on the source page, so the mobile page must carry it too — otherwise its token has nothing to resolve against and renders raw");
+		guide.ResourceStrings!["LeadName_caption"].Should().BeEmpty(
+			because: "the empty text is the page's own intent (no visible label), and reproducing it is what makes the mobile page match the web one");
+	}
+
+	[Test]
+	[Description("ENG-95827: a token whose key the source page does NOT declare is left out, deliberately. The mobile platform resolves a list column's caption from the entity column itself — the platform's own MobilePageWithTabsFreedomTemplate references AttachmentListDS_Name and friends while declaring none of them — so inventing a key here would OVERRIDE that localized label with one hardcoded culture.")]
+	public void Analyze_ShouldNotInventAKey_ForATokenTheSourcePageDoesNotDeclare() {
+		// Arrange — the caption token has no matching resource anywhere in the source chain.
+		PageBundleInfo bundle = Bundle("""
+			[ { "name": "Box", "type": "crt.GridContainer", "items": [
+			    { "name": "LeadName", "type": "crt.Input", "caption": "$Resources.Strings.SomeListDS_Owner" } ] } ]
+			""",
+			resourcesJson: """{ "Unrelated_caption": { "en-US": "Unrelated" } }""");
+
+		// Act
+		MobilePageConversionGuide guide = AnalyzeWithEmptyRemoval(bundle);
+
+		// Assert
+		(guide.ResourceStrings ?? new Dictionary<string, string>()).Should().NotContainKey("SomeListDS_Owner",
+			because: "an absent key means the platform supplies the label, and registering one would replace a localized column title with a single hardcoded culture");
+	}
+
+	[Test]
 	[Description("Review finding, now guarded on the DATA rather than on prose: the anchor the converter moved down a row carries its whole new layoutConfig ONLY inside a MERGE entry mobileValues. The instruction to emit that as a merge operation — and that skipping it silently reproduces the misplacement — moved to the guidance article FLOW step 4, because a step repeated on every conversion is not a fact about this one (ENG-95827).")]
 	public void Analyze_ShouldCarryTheMovedAnchorPlacement_InAMergeEntry() {
 		// Arrange

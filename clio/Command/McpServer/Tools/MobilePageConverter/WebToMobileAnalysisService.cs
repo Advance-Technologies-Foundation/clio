@@ -2783,6 +2783,33 @@ public static class WebToMobileAnalysisService {
 		return new CaptionResource { Key = key, SourceValue = ResolveResourceString(ctx.Resources, sourceKey) ?? sourceKey };
 	}
 
+	/// <summary>
+	/// Resolves a resource key the source page DECLARES, distinguishing "not declared" from "declared with
+	/// no text". Returns false only when the key is absent from the bundle's merged strings.
+	/// </summary>
+	/// <remarks>
+	/// The distinction matters and <see cref="ResolveResourceString"/> cannot make it — that returns
+	/// <c>null</c> for an absent key and <c>""</c> for a declared-but-empty one, and the collector used to
+	/// drop both with a single <c>IsNullOrEmpty</c> check. A declared-empty caption is a deliberate "no
+	/// visible label", and dropping it ships a <c>#ResourceString</c> token with NO key behind it, which
+	/// renders as the RAW TOKEN on the device instead of as nothing — strictly worse than the web page it was
+	/// converted from (ENG-95827). An ABSENT key must still be skipped: the platform resolves a list column's
+	/// caption from the entity column itself, and every mobile template ships that way (the platform's own
+	/// MobilePageWithTabsFreedomTemplate references AttachmentListDS_Name / _CreatedOn / _CreatedBy / _Size
+	/// and declares none of them), so registering a key for it would OVERRIDE the platform's localized label
+	/// with one hardcoded culture.
+	/// </remarks>
+	private static bool TryResolveDeclaredResourceString(JObject resources, string key, out string text) {
+		text = null;
+		if (resources?[key] is not { } value) {
+			return false;
+		}
+		text = value is JObject cultures
+			? (cultures["en-US"] ?? cultures.Properties().FirstOrDefault()?.Value)?.ToString() ?? string.Empty
+			: value.ToString();
+		return true;
+	}
+
 	/// <summary>Resolves a page resource key into its en-US text (else the first culture) from the bundle's strings.</summary>
 	private static string ResolveResourceString(JObject resources, string key) {
 		if (resources?[key] is not { } value) {
@@ -2839,8 +2866,9 @@ public static class WebToMobileAnalysisService {
 				if (result.ContainsKey(key)) {
 					continue;
 				}
-				string text = ResolveResourceString(resources, key);
-				if (!string.IsNullOrEmpty(text)) {
+				// Keyed on DECLARED, not on non-empty: see TryResolveDeclaredResourceString for why a
+				// declared-empty caption must be registered while an absent key must not be invented.
+				if (TryResolveDeclaredResourceString(resources, key, out string text)) {
 					result[key] = text;
 				}
 			}
