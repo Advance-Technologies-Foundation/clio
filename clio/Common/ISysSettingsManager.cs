@@ -378,11 +378,18 @@ public class SysSettingsManager : ISysSettingsManager
 	/// <param name="operationLabel">The sys-settings operation, used in the diagnostic.</param>
 	/// <exception cref="AuthenticationException">Creatio rejected the credentials.</exception>
 	private static void ThrowIfSessionRejected(string rawResponse, string operationLabel) {
-		//Capped BEFORE it is classified, which is what the classifier's own contract asks for: every rule
-		//in it is a regex scan, and a multi-megabyte login page (or a proxy page streaming an error) ran
-		//six of them over the whole body. The 1-second regex timeouts then fired and a
-		//RegexMatchTimeoutException escaped this method unhandled, so the operator was told "The Regex
-		//matching timed out" instead of being told the session was rejected.
+		//CLASSIFIED on the RAW body, DISPLAYED from the capped one - two different budgets, deliberately.
+		//The runaway-regex concern is real but belongs inside the classifier, and that is where it now
+		//lives: IsAuthenticationFailureResponse / DescribeAuthenticationCause bound the text themselves at
+		//MaxClassifiedBodyLength before any scan. Pre-capping the input HERE at the DISPLAY cap (300 chars)
+		//used that number as a classification budget as well, and Creatio's auth-routing markers (/Login/,
+		//NuiLogin, SimpleLogin, ClientUnauthorizedRequest) and an ErrorCode:5 envelope routinely sit past a
+		//doctype/meta/script preamble or a proxy interstitial - so a marker beyond 300 bytes made this
+		//method return normally, the login page was then parsed as JSON, and the rejected session went
+		//undetected.
+		if (!AuthenticationFailureClassifier.IsAuthenticationFailureResponse(rawResponse)) {
+			return;
+		}
 		// REDACTED BEFORE THE CAP. SanitizeForDisplay performs no redaction at all - it neutralizes
 		// display-hostile characters and caps length - so the excerpt this builds still carried the first
 		// bytes of a Creatio login page (anti-forgery/bootstrap markers, internal hostnames, absolute URLs)
@@ -392,9 +399,6 @@ public class SysSettingsManager : ISysSettingsManager
 		string cappedResponse = TextUtilities.SanitizeForDisplay(
 			Clio.Command.McpServer.SensitiveErrorTextRedactor.Redact(rawResponse),
 			MaxRejectedResponseDetailLength);
-		if (!AuthenticationFailureClassifier.IsAuthenticationFailureResponse(cappedResponse)) {
-			return;
-		}
 		//Issue #1333: the body is a login page or an ErrorCode:5 envelope - server-authored text that can
 		//carry a token, a user's e-mail, bidi controls, or a sentence shaped like an instruction to an
 		//agent. It used to be embedded here and therefore reached the CLI output, the log and the MCP
@@ -402,7 +406,7 @@ public class SysSettingsManager : ISysSettingsManager
 		//ServerDetail, which a handler writes at debug verbosity beside the correlation ID.
 		throw new SessionRejectedException(
 			$"Authentication failed while {operationLabel}: "
-			+ $"{AuthenticationFailureClassifier.DescribeAuthenticationCause(cappedResponse)} "
+			+ $"{AuthenticationFailureClassifier.DescribeAuthenticationCause(rawResponse)} "
 			+ "Verify the environment credentials (for an expired password, repair the registered profile) "
 			+ "and retry.",
 			cappedResponse);

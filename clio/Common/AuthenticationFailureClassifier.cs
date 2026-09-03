@@ -232,10 +232,16 @@ public static class AuthenticationFailureClassifier {
 		}
 	}
 
-	private static string DescribeAuthenticationCauseCore(string serverText) {
-		if (string.IsNullOrWhiteSpace(serverText)) {
+	private static string DescribeAuthenticationCauseCore(string text) {
+		if (string.IsNullOrWhiteSpace(text)) {
 			return FixedAuthenticationDiagnostics.UnknownAuthenticationCause;
 		}
+		//CAPPED HERE, not by the caller. Callers hold the raw body and must be free to hand it over whole:
+		//Creatio's auth-routing markers sit past a doctype/meta/script preamble or a proxy interstitial, so
+		//a caller that pre-capped at its own DISPLAY budget hid the marker from this scan. The bound that
+		//keeps the 1-second regex timeouts from firing belongs on this side of the call, at the same
+		//MaxClassifiedBodyLength IsAuthenticationFailureResponse uses.
+		string serverText = text.Length <= MaxClassifiedBodyLength ? text : text[..MaxClassifiedBodyLength];
 		if (PasswordExpiredCause.IsMatch(serverText)) {
 			return FixedAuthenticationDiagnostics.PasswordExpired;
 		}
