@@ -1111,6 +1111,55 @@ public sealed class ModifyBusinessProcessToolE2ETests {
 	}
 
 	[Test]
+	[Description("Over the real MCP path: removeParameter is blocked when a conditional flow's CONDITION references the parameter, and the refusal names the flow. This is the arm a review found advertised and unverified - the sibling test above is scoped to the element-mapping arm in its own [Description], and no other test here touches the delete guard. It matters more than a routine coverage gap because the condition scan is load-bearing for a decision made in the same change: describe reports a condition on every flow that carries the text, INCLUDING one whose branch the platform decides from an activity result, precisely because the guards scan it - so hiding it would leave a caller refused over something no read API shows. The package pins the scan in unit tests; this pins that the whole path, through the MCP surface, still refuses.")]
+	[AllureTag(ToolName)]
+	[AllureName("modify-business-process blocks removeParameter referenced by a flow condition")]
+	public async Task ModifyBusinessProcess_Should_BlockRemoveParameter_WhenAFlowConditionReferencesIt() {
+		// Arrange - a process with a parameter, then a conditional flow whose condition references it by
+		// the meta-path form describe reports.
+		await using ArrangeContext context = await ArrangeAsync(requireReachableEnvironment: true);
+		string processName = $"UsrClioBpCondGuardE2e{Guid.NewGuid():N}";
+		await CallToolAsync(context, CreateToolName, new Dictionary<string, object?> {
+			["environment-name"] = context.EnvironmentName,
+			["descriptor"] = BuildDescriptorWithMappedParameter(processName)
+		});
+		CallToolResult describeResult = await CallToolAsync(context, DescribeToolName, new Dictionary<string, object?> {
+			["environment-name"] = context.EnvironmentName,
+			["process-name"] = processName
+		});
+		DescribeProcessResult described = ParseDescribeResult(describeResult);
+		string guardedUId = described.Parameters.Single(parameter => parameter.Name == "Linked").UId;
+
+		CallToolResult conditionResult = await CallToolAsync(context, ToolName, new Dictionary<string, object?> {
+			["environment-name"] = context.EnvironmentName,
+			["process-name"] = processName,
+			["operations"] = $$"""
+				[ { "op": "setFlowCondition", "source": "task1", "target": "EndEvent1",
+				    "condition": "[#[Parameter:{{{guardedUId}}}]#] > 0" } ]
+				"""
+		});
+		JsonSerializer.Serialize(conditionResult).Should().NotContain("\"isError\":true",
+			because: "the condition has to be STORED for the guard to have anything to find - a failure here "
+				+ "would make the assertion below pass for the wrong reason");
+
+		// Act - remove the parameter the condition references.
+		CallToolResult callResult = await CallToolAsync(context, ToolName, new Dictionary<string, object?> {
+			["environment-name"] = context.EnvironmentName,
+			["process-name"] = processName,
+			["operations"] = """[ { "op": "removeParameter", "parameterName": "Linked" } ]"""
+		});
+
+		// Assert
+		string callResultJson = JsonSerializer.Serialize(callResult);
+		callResultJson.Should().Contain("Cannot remove",
+			because: "a parameter a live condition references is hard-blocked, not applied - the alternative is "
+				+ "a dangling reference the platform reports later as a raw GUID");
+		callResultJson.Should().Contain("condition on flow",
+			because: "the refusal has to name the SITE, not just refuse: the caller cannot re-point a reference "
+				+ "it is not shown, and 'names each usage site' is what the contract promises");
+	}
+
+	[Test]
 	[Description("Over the real MCP path: setParameter rejects an actual data-type change with a clear error; the parameter is not migrated.")]
 	[AllureTag(ToolName)]
 	[AllureName("modify-business-process rejects a parameter data-type change")]
