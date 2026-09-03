@@ -637,8 +637,15 @@ public sealed class CreatePageBusinessRuleTool(
 		ExecuteWithCleanLog(new EnvironmentOptions { Environment = args.EnvironmentName }, () => CreateRules(args));
 
 	private object CreateRules(CreatePageBusinessRulesArgs args) {
-		if (args.Rules is not { Count: > 0 }) {
-			return BusinessRuleBatchResponse.RequestError("rules is required and must contain at least one rule.");
+		// The request-shape check runs BEFORE the environment is resolved and names EVERY missing field in one
+		// message (PR #1352 review): the executor resolves the environment first, so an unknown environment
+		// name would answer ahead of the identity fields and hide which ones the caller forgot — and checking
+		// only the collection field cost the caller one failed call per field (issue #1305, point 3).
+		string? requestShapeError = BusinessRuleBatchValidation.MissingRequestFieldsError(
+			args.EnvironmentName, args.PackageName, args.EffectivePageSchemaName, "page-schema-name",
+			"rules", args.Rules?.Count ?? 0);
+		if (requestShapeError is not null) {
+			return BusinessRuleBatchResponse.RequestError(requestShapeError);
 		}
 
 		return BusinessRuleToolExecutor.Execute<IPageBusinessRuleService>(
@@ -811,9 +818,11 @@ public sealed class ReadPageBusinessRuleTool(
 		ExecuteWithCleanLog(() => {
 			// The missing-field check runs BEFORE the environment is resolved: an unknown environment name
 			// would otherwise answer first and hide which identity fields the caller forgot, costing a
-			// round trip per field (issue #1305, point 3).
-			string? missingFieldsError = BusinessRuleBatchValidation.MissingSchemaFieldsError(
-				args.PackageName, args.EffectivePageSchemaName, "page-schema-name");
+			// round trip per field (issue #1305, point 3). The same aggregate the other three page tools use,
+			// so all four report one message and none of them omits `environment-name` (PR #1352 review).
+			string? missingFieldsError = BusinessRuleBatchValidation.MissingRequestFieldsError(
+				args.EnvironmentName, args.PackageName, args.EffectivePageSchemaName, "page-schema-name",
+				null, 0);
 			return missingFieldsError is not null
 				? BusinessRulesReadResponse.RequestError(missingFieldsError)
 				: BusinessRuleToolExecutor.Execute<IPageBusinessRuleService>(
@@ -921,8 +930,15 @@ public sealed class UpdatePageBusinessRuleTool(
 		ExecuteWithCleanLog(() => UpdateRules(args));
 
 	private object UpdateRules(UpdatePageBusinessRulesArgs args) {
-		if (args.Rules is not { Count: > 0 }) {
-			return BusinessRuleBatchResponse.RequestError("rules is required and must contain at least one rule.");
+		// The request-shape check runs BEFORE the environment is resolved and names EVERY missing field in one
+		// message (PR #1352 review): the executor resolves the environment first, so an unknown environment
+		// name would answer ahead of the identity fields and hide which ones the caller forgot — and checking
+		// only the collection field cost the caller one failed call per field (issue #1305, point 3).
+		string? requestShapeError = BusinessRuleBatchValidation.MissingRequestFieldsError(
+			args.EnvironmentName, args.PackageName, args.EffectivePageSchemaName, "page-schema-name",
+			"rules", args.Rules?.Count ?? 0);
+		if (requestShapeError is not null) {
+			return BusinessRuleBatchResponse.RequestError(requestShapeError);
 		}
 
 		return BusinessRuleToolExecutor.Execute<IPageBusinessRuleService>(
@@ -1035,9 +1051,15 @@ public sealed class DeletePageBusinessRuleTool(
 		ExecuteWithCleanLog(() => DeleteRules(args));
 
 	private object DeleteRules(DeletePageBusinessRulesArgs args) {
-		if (args.RuleNames is not { Count: > 0 }) {
-			return BusinessRuleBatchResponse.RequestError(
-				"rule-names is required and must contain at least one rule name.");
+		// The request-shape check runs BEFORE the environment is resolved and names EVERY missing field in one
+		// message (PR #1352 review): the executor resolves the environment first, so an unknown environment
+		// name would answer ahead of the identity fields and hide which ones the caller forgot — and checking
+		// only the collection field cost the caller one failed call per field (issue #1305, point 3).
+		string? requestShapeError = BusinessRuleBatchValidation.MissingRequestFieldsError(
+			args.EnvironmentName, args.PackageName, args.EffectivePageSchemaName, "page-schema-name",
+			"rule-names", args.RuleNames?.Count ?? 0);
+		if (requestShapeError is not null) {
+			return BusinessRuleBatchResponse.RequestError(requestShapeError);
 		}
 
 		return BusinessRuleToolExecutor.Execute<IPageBusinessRuleService>(

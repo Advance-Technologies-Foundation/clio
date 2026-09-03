@@ -2748,6 +2748,10 @@ internal static class ToolContractCatalog {
 					Field(SchemaNameFieldName, StringType, SchemaNameAliasDescription),
 					Field(RulesFieldName, ArrayType, "Array of one or more page business-rule definitions saved together in a single batch (one configuration rebuild for the whole array; prefer one call over many). A failed rule does not abort the others. Each item is a rule with caption, one top-level condition group, and one or more page actions. AttributeValue paths must be declared page attribute names from get-page bundle.viewModelConfig.attributes, not datasource paths like PDS.Priority. EITHER side of a condition may be a page attribute (type AttributeValue), a constant (type Const), a system variable (type SysValue with sysValueName such as CurrentDate, CurrentDateTime, CurrentTime, CurrentUser, CurrentUserContact, CurrentUserAccount, CurrentUserRoles), or a system setting (type SysSetting with sysSettingName set to the setting code, for example DisableEquipmentDelivery; the setting's value type is resolved from the environment, and Binary/SecureText settings are not supported). A common visibility pattern is hiding a control when a Boolean system setting is enabled: SysSetting equal a Const true. For role-based or current-user visibility (e.g. 'show field only for administrators / for the supervisor') put CurrentUserRoles (left) comparisonType contain/not-contain a Const SysAdminUnit role id, or compare CurrentUser/CurrentUserContact/CurrentUserAccount to a Const id — use this instead of a HandleViewModelInitRequest handler. Action items must be page element names from recursive get-page bundle.viewConfig. Lookup constants are supported when supplied as stable GUID strings.")
 				],
+				AnyOf: [
+					new[] { PageSchemaNameFieldName },
+					[SchemaNameFieldName]
+				],
 				Validators: [
 					.. BusinessRuleConditionValidators(),
 					.. PageBusinessRuleActionValidators()
@@ -2983,6 +2987,10 @@ internal static class ToolContractCatalog {
 					Field(PackageNameFieldName, StringType, PackageNameDescription),
 					Field(PageSchemaNameFieldName, StringType, PageSchemaNameWithAliasDescription),
 					Field(SchemaNameFieldName, StringType, SchemaNameAliasDescription)
+				],
+				AnyOf: [
+					new[] { PageSchemaNameFieldName },
+					[SchemaNameFieldName]
 				]),
 			BusinessRulesReadOutput(),
 			CommonErrorContract,
@@ -3163,6 +3171,10 @@ internal static class ToolContractCatalog {
 					Field(SchemaNameFieldName, StringType, SchemaNameAliasDescription),
 					Field(RulesFieldName, ArrayType, "Full replacement definitions for existing rules. Each item uses the same contract as create-page-business-rules plus: name (REQUIRED — case-insensitive match key from read), enabled (optional; omitted preserves the existing value), and optional block uIds on conditions/expressions/actions — pass the values from read to preserve unchanged-block identity so the platform stores a short diff; omitted blocks get fresh ids. An unknown name fails only that rule; the rest of the batch still saves.")
 				],
+				AnyOf: [
+					new[] { PageSchemaNameFieldName },
+					[SchemaNameFieldName]
+				],
 				Validators: [
 					.. BusinessRuleUpdateValidators(ReadPageBusinessRuleTool.ToolName),
 					.. BusinessRuleConditionValidators(),
@@ -3317,6 +3329,10 @@ internal static class ToolContractCatalog {
 					Field(PageSchemaNameFieldName, StringType, PageSchemaNameWithAliasDescription),
 					Field(SchemaNameFieldName, StringType, SchemaNameAliasDescription),
 					Field(RuleNamesFieldName, ArrayType, "Internal rule names to delete (from read-page-business-rules), NOT captions. An unknown name fails only that entry; the remaining names still delete.")
+				],
+				AnyOf: [
+					new[] { PageSchemaNameFieldName },
+					[SchemaNameFieldName]
 				]),
 			BusinessRuleBatchOutput(
 				"Per-name outcomes in input order; each item has name, success, and error."),
@@ -4975,6 +4991,10 @@ internal static class ToolContractCatalog {
 					Field("body-file", StringType, "Absolute path to a file holding the page body. Used when 'body' is empty; lets a large body be validated without inline JSON escaping."),
 					Field(VersionFieldName, StringType, "Optional platform version (3-part semver, e.g. '8.3.3') scoping the registry-driven chart-widget check. Falls back to the 'latest' catalog when omitted."),
 					Field(ResourcesFieldName, StringType, "Optional JSON object string of localizable strings the platform does NOT auto-provide (custom titles, button captions, validator messages, explicit overrides). Applicable to web pages only. Only include keys with NO matching DS-bound view model attribute on the page \u2014 see `page-schema-resources` guidance.")
+				],
+				AnyOf: [
+					new[] { "body" },
+					["body-file"]
 				]),
 			EnvelopeOutput(
 				"valid",

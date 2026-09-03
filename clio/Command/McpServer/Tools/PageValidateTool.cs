@@ -286,7 +286,11 @@ public sealed class PageValidateTool(
 public sealed record PageValidateArgs(
 	[property: JsonPropertyName("body")]
 	[property: Description("Full JavaScript page body with markers. Pass `body` or `body-file`.")]
-	string? Body,
+	// `= null` is what takes `body` out of the EMITTED schema's `required` array (#1352 review): the generator
+	// derives `required` from constructor parameters with no default, not from nullability, so a nullable
+	// parameter without a default still ships as required and a schema-validating client refuses the
+	// `body-file`-only call. See docs/knowledge/McpServer/emitted-schema-required-comes-from-the-record-stj-binds.md.
+	string? Body = null,
 
 	[property: JsonPropertyName("resources")]
 	[property: Description(McpToolDescriptions.PageResources)]
