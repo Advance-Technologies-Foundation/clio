@@ -261,9 +261,13 @@ public sealed record CreateBusinessProcessRequest(string DescriptorJson, string?
 /// <param name="SchemaName">Final schema name of the created process.</param>
 /// <param name="SchemaUId">UId of the created process schema.</param>
 /// <param name="Warnings">
-/// Caveats about a build that SUCCEEDED — an unrecognised macro family in a formula, or an expression whose
-/// macros could not be resolved on this environment so its result type went unchecked. <c>null</c> or empty
-/// when there are none, and always <c>null</c> against a server predating the member.
+/// Caveats about a build that SUCCEEDED. The two cases this used to name — an unrecognised macro family, and
+/// an expression whose macros could not be resolved so its result type went unchecked — are GONE: they were the
+/// package's own formula notices and went with its validator, and an unrecognised family is now REFUSED by the
+/// platform's pre-save gate rather than warned about. What still arrives here is the connection notices
+/// (a column that is not registered, one resolved from a system setting, one CLEARED by a retarget) and the
+/// pre-configured-page sync notices. <c>null</c> or empty when there are none, and always <c>null</c> against a
+/// server predating the member — which is why the two tests on this member assert the absent case separately.
 /// </param>
 public sealed record CreateBusinessProcessResult(string? SchemaName, string? SchemaUId,
 	IReadOnlyList<string>? Warnings = null);
