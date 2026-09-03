@@ -42,34 +42,61 @@ internal static class ProcessLibResolver {
 		// Caption is not unique, and a version family shares one: every version of a process is a separate
 		// schema with its own Name but the SAME Caption, so a caption matching several rows is usually ONE
 		// process rather than several. Narrow to the version the runtime executes before calling it ambiguous.
-		if (captionMatches.Count > 1) {
-			// The family key decides, not the active-flag count. Counting flags looks equivalent and is not:
-			// a set of one family's active version PLUS a row from a different process carries exactly one
-			// flagged row, and narrowing on the count alone would answer for the first process while silently
-			// dropping the second. That reachable set is not exotic — the other row is flagged false whenever it
-			// is a family root whose active member was renamed away from this caption, and null whenever its
-			// package does not resolve, which is why the column is nullable at all. VersionParentUId is
-			// COALESCE(parent.UId, own.UId) and never null (ADR choice 6), so a single distinct value across the
-			// candidates is what actually establishes "these rows are one process".
-			bool oneFamily = captionMatches
-				.Select(p => p.VersionParentUId)
-				.Distinct()
-				.Count() == 1;
-			IReadOnlyList<VwProcessLib> activeVersions = captionMatches
-				.Where(p => p.IsActiveVersion == true)
-				.ToList();
-			if (oneFamily && activeVersions.Count == 1) {
-				return activeVersions[0];
-			}
-			// Everything else is genuine ambiguity, reported over ALL matches so the caller can pick a code:
-			// candidates from more than one family are more than one process; several active rows are too; and
-			// NONE active means the process library could not establish the flag, which is no licence to pick.
-			string candidates = string.Join("; ",
-				captionMatches.Select(p => $"'{p.Caption}' (code: {p.Name})"));
-			return Error.Conflict("ResolveProcessByNameOrCaption",
-				$"Multiple processes match caption '{nameOrCaption}': {candidates}. "
-				+ "Re-run with the exact process code.");
+		//
+		// The family key decides, not the active-flag count. Counting flags looks equivalent and is not: a set
+		// of one family's active version PLUS a row from a different process carries exactly one flagged row,
+		// and narrowing on the count alone would answer for the first process while silently dropping the
+		// second. That set is not exotic — the other row is flagged false whenever it is a family root whose
+		// active member was renamed away from this caption, and null whenever its package does not resolve,
+		// which is why the column is nullable at all. VersionParentUId is COALESCE(parent.UId, own.UId) and
+		// never null (ADR choice 6), so a single distinct value across the candidates is what actually
+		// establishes "these rows are one process".
+		bool oneFamily = captionMatches
+			.Select(p => p.VersionParentUId)
+			.Distinct()
+			.Count() == 1;
+		IReadOnlyList<VwProcessLib> activeVersions = captionMatches
+			.Where(p => p.IsActiveVersion == true)
+			.ToList();
+		if (oneFamily && activeVersions.Count == 1) {
+			return activeVersions[0];
 		}
-		return captionMatches[0];
+		// A lone match is returned unless the view says outright that it is NOT the version that runs. An
+		// UNESTABLISHED flag is no statement about the row, so refusing on it would break resolution for a
+		// process whose package does not resolve; an explicit false IS a statement, and returning it would
+		// answer for a graph nobody runs on the three surfaces that carry no version fields to reveal it.
+		if (captionMatches.Count == 1 && captionMatches[0].IsActiveVersion != false) {
+			return captionMatches[0];
+		}
+		return Error.Conflict("ResolveProcessByNameOrCaption",
+			RefusalReason(nameOrCaption, captionMatches, oneFamily, activeVersions.Count)
+			+ " Re-run with the exact process code.");
+	}
+
+	/// <summary>
+	/// Why a caption could not be resolved, phrased for the shape that actually blocked it.
+	/// </summary>
+	/// <remarks>
+	/// One message for every refusal read "Multiple processes match caption" even when the candidates were
+	/// ONE family whose active version the library could not establish — which sends the reader to look for
+	/// a second process that does not exist.
+	/// </remarks>
+	private static string RefusalReason(string nameOrCaption, IReadOnlyList<VwProcessLib> captionMatches,
+		bool oneFamily, int activeCount) {
+		string candidates = string.Join("; ",
+			captionMatches.Select(p => $"'{p.Caption}' (code: {p.Name})"));
+		if (!oneFamily) {
+			return $"Multiple processes match caption '{nameOrCaption}': {candidates}.";
+		}
+		if (activeCount > 1) {
+			return $"Caption '{nameOrCaption}' belongs to one process family, but the process library flags "
+				+ $"{activeCount} of its versions as active: {candidates}.";
+		}
+		if (captionMatches.Count == 1) {
+			return $"Caption '{nameOrCaption}' matches only {candidates}, which the process library reports "
+				+ "is NOT the active version of its family.";
+		}
+		return $"Caption '{nameOrCaption}' belongs to one process family, but the process library established "
+			+ $"no active version for it: {candidates}.";
 	}
 }

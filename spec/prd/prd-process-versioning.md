@@ -69,7 +69,7 @@ The prior recorded decision for this ticket (workspace diary, 2026-08-13) was to
 | FR-15 | After the save, the save-as-new-version operation re-reads the family and returns `success:false` naming the observed number when another writer took it | Must |
 | FR-16 | A failed edit leaves **nothing** behind: the edits and the new version are one operation, so a rejected edit saves no schema at all | Must |
 | FR-17 | `versions[]` is capped at 50 members and the response states when the cap was applied | Must |
-| FR-18 | When the version read fails, the response carries a warning naming the failure; an unversioned process carries no such warning | Must |
+| FR-18 | Whenever a version fact is missing the response carries a warning naming THAT fact — not only when the read failed outright: a read that succeeds and establishes less than everything (no member flagged active, two flagged, a NULL column) carries the warning ALONGSIDE the values it did establish. An unversioned process carries no warning | Must |
 | FR-19 | The response states the provenance of the active-version answer (the process-library view) | Must |
 
 ## CLI Impact
@@ -90,7 +90,7 @@ All flags and tool names: **kebab-case only**. Tool contracts are indexed throug
 - [ ] AC-01: Given a process with no versions, when describe runs, then `version` is 0, `isActiveVersion` is true, `versions[]` holds one entry marked as the root, and no read-failure warning is present.
 - [ ] AC-02: Given a versioned family, when describe runs against the root **by name**, then `isActiveVersion` is false and `activeVersionName` names the version the runtime executes.
 - [ ] AC-03: Given a versioned family, when describe runs against the active version by UId, then `isActiveVersion` is true.
-- [ ] AC-04: Given the version read cannot be established, when describe runs, then the graph is returned, **none of the version value members** (`version`, `isActiveVersion`, `activeVersionSchemaUId`, `activeVersionName`, `versionRootSchemaUId`, `versions`, `activeVersionSource`) appears in the serialized output, and `versionReadWarning` — the one version member that is present in this case — names the failure.
+- [ ] AC-04: Given the version read establishes NOTHING, when describe runs, then the graph is returned, none of the version value members (`version`, `isActiveVersion`, `activeVersionSchemaUId`, `activeVersionName`, `versionRootSchemaUId`, `versions`, `activeVersionSource`) appears in the serialized output, and `versionReadWarning` — the one version member present in this case — names the failure. Given the read establishes SOME facts and not others, then the established members appear **together with** `versionReadWarning` naming what could not be established, and the members that could not be established stay absent.
 - [ ] AC-05a: Given an existing process with no versions, when the operation runs with a list of edits, then a new family member exists carrying those edits, with `isActiveVersion:false` and `version` equal to 1, and the source version is unchanged **both on disk and in memory** — see AC-05e.
 - [ ] AC-05b: Given that same root, when the operation runs a second time, then the new member's `version` is 2.
 - [ ] AC-05c: Given an edit list one of whose operations is rejected, when the operation runs, then it returns `success:false` and **no** new family member exists.

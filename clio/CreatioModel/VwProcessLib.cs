@@ -46,10 +46,12 @@ namespace Clio.CreatioModel
 		[SchemaProperty("IsLocked")]
 		public bool IsLocked { get; set; }
 
-		// MetaData / MetaDataModifiedOn are deliberately NOT mapped. ATF builds the select from this
-		// type's properties, so declaring the metadata blob makes every query over the process library
-		// carry the full serialized schema for every row — including a version-family read of up to 50
-		// members. No caller has ever read them. Re-adding either column re-adds that cost everywhere.
+		// MetaData / MetaDataModifiedOn are deliberately NOT mapped, and this note is about their ABSENCE —
+		// not about the column declared below it. ATF builds the select from this type's properties, so
+		// declaring the metadata blob makes every query over the process library carry the full serialized
+		// schema for every row, including a version-family read of up to 50 members. No caller has ever read
+		// them. Re-adding either column re-adds that cost everywhere.
+
 		[SchemaProperty("PackageUId")]
 		public Guid PackageUId { get; set; }
 		

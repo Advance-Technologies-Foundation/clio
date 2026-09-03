@@ -1,8 +1,6 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
-using System.Net;
-using System.Net.Http;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using System.Text.Json.Serialization;
@@ -261,9 +259,16 @@ public class DescribeProcessResult {
 	public int? VersionsTruncatedAt { get; set; }
 
 	/// <summary>
-	/// Why the version facts are absent. Present only on failure: a successful read of an unversioned
-	/// process carries version 0 and no warning.
+	/// Why a version fact is missing. The invariant is one-directional: a missing value ALWAYS comes with
+	/// this warning naming the fact that could not be established, while a successful read of an
+	/// unversioned process carries version 0 and no warning.
 	/// </summary>
+	/// <remarks>
+	/// It is NOT limited to a read that failed outright. A read can succeed and establish less than
+	/// everything — no member flagged active, two flagged, a NULL column — and then this warning arrives
+	/// ALONGSIDE the values that were established. A caller that treats its presence as "no version data"
+	/// discards facts it has.
+	/// </remarks>
 	[JsonPropertyName("versionReadWarning")]
 	public string VersionReadWarning { get; set; }
 

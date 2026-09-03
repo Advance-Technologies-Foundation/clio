@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Net;
+using System.Threading.Tasks;
 using ATF.Repository.Mock;
 using ATF.Repository.Providers;
 using Clio.Command.ProcessModel;
@@ -249,6 +250,51 @@ public sealed class ProcessVersionLibReaderTests {
 			because: "the prompt tells an agent to read isActiveVersion before narrating, so an unanswerable check has to say so");
 		facts.Versions.Should().HaveCount(2,
 			because: "the family was read successfully; only the active-version fact was missing from it");
+	}
+
+	[Test]
+	[Description("A family with TWO members flagged active names neither, and says how many are flagged, because which one runs is decided by a key this view does not expose.")]
+	public void Read_Should_NameNoActiveVersion_When_TwoMembersAreFlagged() {
+		// Arrange - reachable per ADR choice 4: the platform logs and swallows sibling deactivation failures,
+		// so a partial activation leaves two members flagged.
+		ProcessVersionLibReader sut = ReaderOver(
+			Row(RootUId, "InvoiceVisaProcess", version: 0, isActive: true, rootUId: RootUId),
+			Row(ChildUId, "InvoiceVisaProcessInvoice1", version: 1, isActive: true, rootUId: RootUId));
+
+		// Act
+		ProcessVersionFacts facts = sut.Read(RootUId.ToString());
+
+		// Assert
+		facts.ActiveVersionName.Should().BeNull(
+			because: "an unordered ATF result would name whichever row came first, differently between calls, and the prompt steers the agent onto exactly that graph");
+		facts.ActiveVersionSchemaUId.Should().BeNull(
+			because: "publishing a pointer here would hand the caller a specific wrong version to launch");
+		facts.Warning.Should().Contain("flags 2 active versions",
+			because: "the caller has to learn the library is inconsistent, not that no version is active");
+		facts.Versions.Should().HaveCount(2,
+			because: "the family itself was read fine; only the which-one-runs fact is unanswerable");
+	}
+
+	[Test]
+	[Description("A cancelled HTTP read degrades to a warning: TaskCanceledException is what the transport actually raises on timeout, and it is the reason the shared failure surface exists.")]
+	public void Read_Should_ReportNotEstablished_When_TheTransportRaisesTaskCanceled() {
+		// Arrange - Creatio.Client posts through HttpClient, whose timeout raises TaskCanceledException and
+		// NEVER TimeoutException. Before ProcessLibRead.Guarded listed OperationCanceledException, this
+		// escaped the reader and surfaced as an unhandled exception inside the MCP server.
+		IDataProvider provider = Substitute.For<IDataProvider>();
+		provider.GetItems(null).ThrowsForAnyArgs(new TaskCanceledException("simulated request timeout"));
+		ProcessVersionLibReader sut = new(provider);
+
+		// Act
+		Func<ProcessVersionFacts> act = () => sut.Read(RootUId.ToString());
+
+		// Assert
+		ProcessVersionFacts facts = act.Should().NotThrow(
+				because: "a version read that times out must never turn a successful describe into an error")
+			.Which;
+		facts.Warning.Should().Contain("simulated request timeout",
+			because: "the caller is told why the facts are absent, and a timeout is the most likely why");
+		facts.Version.Should().BeNull(because: "a read that did not complete establishes nothing");
 	}
 
 }

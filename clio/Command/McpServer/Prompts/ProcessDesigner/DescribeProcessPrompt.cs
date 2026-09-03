@@ -36,9 +36,12 @@ public static class DescribeProcessPrompt {
 		   the `versions[]` family.
 		2. CHECK `isActiveVersion` BEFORE narrating anything. Every saved version is a separate schema with
 		   its own name, so resolving by `process-name` returns the family ROOT — and on a versioned process
-		   that is NOT what the runtime executes. If it is false, describe again by `activeVersionSchemaUId`
-		   and narrate THAT graph. If the version fields are absent, `versionReadWarning` says why the read
-		   failed: say the version standing is unknown rather than assuming the process is unversioned.
+		   that is NOT what the runtime executes. Three outcomes: true, narrate this graph; false WITH an
+		   `activeVersionSchemaUId`, describe again by that UId and narrate THAT graph; false or absent
+		   WITHOUT one, there is nothing to redirect to — read `versionReadWarning`, say the version standing
+		   is unknown, and do NOT fall back to the graph you hold or assume the process is unversioned. The
+		   warning can also arrive beside fields that WERE established, so read it even when values are
+		   present.
 		3. Call `get-guidance` name `process-modeling` for the element catalog + connection-rule vocabulary.
 		4. Narrate, in plain language, the trigger (start event), the ordered steps (follow the flows by
 		   source/target), each activity's purpose, and any branches (gateways / conditional flows). State

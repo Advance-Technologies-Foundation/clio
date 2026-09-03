@@ -238,4 +238,61 @@ public sealed class ProcessLibResolverTests {
 			because: "the dropped candidate is exactly the one the caller has to see to pick a code");
 	}
 
+	[Test]
+	[Description("Refuses one family that flags MORE than one version active, naming how many, because the runtime picks between them by a key this resolver does not read.")]
+	public void Resolve_Should_Return_Conflict_When_OneFamilyFlagsTwoActiveVersions() {
+		// Arrange - reachable per ADR choice 4: sibling deactivation failures are logged and swallowed, so a
+		// partial activation leaves two members flagged.
+		List<VwProcessLib> byCaption = [
+			VersionRow("UsrOrder_Approve", "Approval", 0, isActiveVersion: true, family: FamilyA),
+			VersionRow("UsrOrder_ApproveCustom1", "Approval", 1, isActiveVersion: true, family: FamilyA)
+		];
+
+		// Act
+		ErrorOr<VwProcessLib> result = ProcessLibResolver.Resolve("Approval", null, byCaption);
+
+		// Assert
+		result.IsError.Should().BeTrue(
+			because: "two flagged members mean the library itself is inconsistent, and picking one would be a guess dressed as an answer");
+		result.FirstError.Description.Should().Contain("flags 2 of its versions as active",
+			because: "'Multiple processes match' would send the reader hunting for a second process that does not exist");
+	}
+
+	[Test]
+	[Description("Refuses one family where NO version is flagged active, and says that rather than reporting several processes.")]
+	public void Resolve_Should_Return_Conflict_When_OneFamilyHasNoActiveVersion() {
+		// Arrange
+		List<VwProcessLib> byCaption = [
+			VersionRow("UsrOrder_Approve", "Approval", 0, isActiveVersion: false, family: FamilyA),
+			VersionRow("UsrOrder_ApproveCustom1", "Approval", 1, isActiveVersion: null, family: FamilyA)
+		];
+
+		// Act
+		ErrorOr<VwProcessLib> result = ProcessLibResolver.Resolve("Approval", null, byCaption);
+
+		// Assert
+		result.IsError.Should().BeTrue(because: "there is no active version to narrow to, so the caller must pick a code");
+		result.FirstError.Description.Should().Contain("established no active version",
+			because: "the refusal names the shape that blocked it, which is what tells the caller what to do next");
+	}
+
+	[Test]
+	[Description("Refuses a caption whose ONLY match the library reports is not the active version, because the surfaces that resolve captions carry no version fields to reveal it.")]
+	public void Resolve_Should_Return_Conflict_When_TheOnlyMatchIsExplicitlyNotActive() {
+		// Arrange - the family's active member was renamed away from this caption, so only the inactive root
+		// still carries it.
+		List<VwProcessLib> byCaption = [
+			VersionRow("UsrOrder_Approve", "Approval", 0, isActiveVersion: false, family: FamilyA)
+		];
+
+		// Act
+		ErrorOr<VwProcessLib> result = ProcessLibResolver.Resolve("Approval", null, byCaption);
+
+		// Assert
+		result.IsError.Should().BeTrue(
+			because: "get-process-signature, generate-process-model and run-process would otherwise answer for a graph nobody runs, with nothing in their output to say so");
+		result.FirstError.Description.Should().Contain("is NOT the active version",
+			because: "the shipped help promises a caption resolves to the active version, so the refusal has to say why it could not");
+	}
+
 }

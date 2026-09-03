@@ -147,6 +147,10 @@ public sealed class DescribeProcessToolTests {
 			because: "a prompt that says to check the flag but not how to act on it leaves the agent stuck");
 		prompt.Should().Contain("BEFORE narrating",
 			because: "the check is worthless after the answer is written, so the prompt has to order it first");
+		toolDescription.Should().Contain("ALONGSIDE fields that WERE established",
+			because: "a read can succeed and still not settle everything, and an agent that reads the warning as 'no version data' throws away facts it has");
+		prompt.Should().Contain("nothing to redirect to",
+			because: "the branch with no activeVersionSchemaUId is reachable, and without it the prompt tells the agent to redirect by a field that is not there");
 	}
 
 	private sealed class FakeDescribeProcessCommand : DescribeProcessCommand {

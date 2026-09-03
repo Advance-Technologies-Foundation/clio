@@ -1,9 +1,6 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
-using System.Net;
-using System.Net.Http;
-using System.Text.Json;
 using ATF.Repository;
 using ATF.Repository.Providers;
 using Clio.CreatioModel;
@@ -134,9 +131,16 @@ public sealed class ProcessVersionLibReader(IDataProvider dataProvider) : IProce
 		return ProcessLibRead.Guarded(() => {
 			IAppDataContext ctx = AppDataContextFactory.GetAppDataContext(dataProvider);
 			VwProcessLib row = ctx.Models<VwProcessLib>().FirstOrDefault(p => p.UId == uid);
-			return row is null
-				? NotEstablished($"the process library has no row for schema '{uid}'")
-				: BuildFacts(row, ReadFamily(ctx, row.VersionParentUId));
+			if (row is null) {
+				return NotEstablished($"the process library has no row for schema '{uid}'");
+			}
+			// The family key is the one column this feature left non-nullable, and it is used as an IDENTITY.
+			// A defaulted value would not select a family: it would select every row that also defaulted, and
+			// publish an unrelated process as the version to launch.
+			if (row.VersionParentUId == Guid.Empty) {
+				return NotEstablished($"the process library reports no version family key for schema '{uid}'");
+			}
+			return BuildFacts(row, ReadFamily(ctx, row.VersionParentUId));
 		}, ReadFailed);
 	}
 
@@ -168,7 +172,12 @@ public sealed class ProcessVersionLibReader(IDataProvider dataProvider) : IProce
 		// applied below. That is a bound, not a guarantee: the query takes FamilyCap + 1 rows in no defined
 		// order, so on a family LARGER than that the active member can be missing from the set entirely —
 		// which is why its absence is reported as an unestablished fact instead of passing silently.
-		VwProcessLib active = fetched.FirstOrDefault(p => p.IsActiveVersion == true);
+		List<VwProcessLib> flagged = fetched.Where(p => p.IsActiveVersion == true).ToList();
+		// Exactly one, or none named. Sibling deactivation failures are logged and swallowed by the platform
+		// (ADR choice 4), so a partial activation really does leave two members flagged, and the runtime then
+		// picks between them by a key this view does not expose. FirstOrDefault over an unordered ATF result
+		// would name the loser, differently between calls, while publishing two isActiveVersion: true members.
+		VwProcessLib active = flagged.Count == 1 ? flagged[0] : null;
 		return new ProcessVersionFacts {
 			Version = row.Version,
 			IsActiveVersion = row.IsActiveVersion,
@@ -178,7 +187,7 @@ public sealed class ProcessVersionLibReader(IDataProvider dataProvider) : IProce
 			Versions = family.Select(ToMember).ToList(),
 			FamilyTruncated = fetched.Count > FamilyCap,
 			ActiveVersionSource = ProcessLibraryViewSource,
-			Warning = Unestablished(row, active)
+			Warning = Unestablished(row, flagged, family)
 		};
 	}
 
@@ -191,7 +200,8 @@ public sealed class ProcessVersionLibReader(IDataProvider dataProvider) : IProce
 	/// this, those answers carried absent values and NO warning — the one combination the contract on
 	/// <see cref="ProcessVersionFacts"/> says cannot occur, and the one a caller reads as "unversioned".
 	/// </remarks>
-	private static string Unestablished(VwProcessLib row, VwProcessLib active) {
+	private static string Unestablished(VwProcessLib row, List<VwProcessLib> flagged,
+		List<VwProcessLib> published) {
 		List<string> gaps = [];
 		if (row.Version is null) {
 			gaps.Add("the view established no version number for this schema");
@@ -199,8 +209,16 @@ public sealed class ProcessVersionLibReader(IDataProvider dataProvider) : IProce
 		if (row.IsActiveVersion is null) {
 			gaps.Add("the view established no active-version flag for this schema");
 		}
-		if (active is null) {
+		if (flagged.Count == 0) {
 			gaps.Add($"the process library flagged no active version in family '{row.VersionParentUId}'");
+		} else if (flagged.Count > 1) {
+			gaps.Add($"the process library flags {flagged.Count} active versions in family "
+				+ $"'{row.VersionParentUId}' ({string.Join(", ", flagged.Select(p => p.Name))}), and which one "
+				+ "the runtime executes is decided by a key this view does not expose");
+		} else if (published.TrueForAll(p => p.UId != flagged[0].UId)) {
+			// The cap is applied after the active member is resolved, so a long family can name an active
+			// version that is not among the members published beside it.
+			gaps.Add($"the active version '{flagged[0].Name}' fell outside the {FamilyCap} members reported");
 		}
 		return gaps.Count == 0 ? null : $"{string.Join("; ", gaps)}, so those facts were not established";
 	}
