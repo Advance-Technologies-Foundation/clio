@@ -2880,3 +2880,86 @@ stories:
     depends_on:
       - story-eng-95891-formula-expressions-1
     blocks: []
+
+  - id: story-eng-95891-collapse-formula-validation-1
+    title: "Delete the package's formula validator; the platform already refuses"
+    feature: "eng-95891-formula-expressions"
+    repo: "workspace/ProcessBuilder"
+    size: M
+    status: in-progress
+    jira: ENG-95891
+    file: spec/adr/adr-collapse-formula-validation-onto-platform-rule.md
+    test_plan: spec/eng-95891-formula-expressions/eng-95891-formula-expressions-save-gate-probe.md
+    note: >-
+      Branch feature/ENG-95891-collapse-formula-validation, off ENG-95891-formula-expressions rather than
+      amending PR #42 - today's behaviour is correct, merely redundant, so it does not block that merge,
+      and folding a refusal-message change into a manually evidenced branch would invalidate the
+      evidence. ProcessFormulaValidator 827 -> 118 lines (the length bound alone), IProcessFormulaValidator
+      deleted, and the second guard - SetFlowCondition's unrecognised-macro-family refusal - deleted with
+      it: 186 insertions against 2 158 deletions. What replaced them is PlatformValidationMessage, which
+      rewrites the ONE platform message that arrives as a serialised ProcessParameterErrorInfo rather than
+      a sentence; it decides nothing about validity, so nothing in it can drift from the platform.
+      Premise MEASURED before anything was deleted, and it reversed the ADR: the platform refuses a bad
+      flow CONDITION at save on every class we checked, because the flow-schema generator builds the
+      synthetic Boolean Source=Script parameter itself and ParameterValuesValidationRule runs that
+      generator first. Two reviewer claims refuted the same way - a ZWSP-poisoned reference does not save
+      (fails closed), and the gate does refuse a newline. 1111 unit tests pass (from 1091); six mutations
+      over the new guards each observed red. Rebundled at 1.4.0.42.
+    depends_on:
+      - story-eng-95891-formula-expressions-1
+    blocks:
+      - story-eng-95891-collapse-formula-validation-2
+      - story-eng-95891-collapse-formula-validation-3
+
+  - id: story-eng-95891-collapse-formula-validation-2
+    title: "Move the formula refusal contract onto the platform's messages in clio"
+    feature: "eng-95891-formula-expressions"
+    repo: "clio"
+    size: M
+    status: in-progress
+    jira: ENG-95891
+    file: spec/adr/adr-collapse-formula-validation-onto-platform-rule.md
+    test_plan: spec/eng-95891-formula-expressions/eng-95891-formula-expressions-save-gate-probe.md
+    note: >-
+      The refusal MESSAGES change, which is the user-visible half: both tool [Description]s, both
+      [RequiresPackage] floors (-> 1.4.0.42, the archive clio bundles; .41 collapsed the validator and .42
+      corrected the rewrite the descriptions promise), the MCP E2E assertions, two knowledge records and
+      the manual tier. The E2E had pinned the PACKAGE's unknown-identifier wording ("which does not
+      exist"), so it would have gone red on a stand rather than in review. Every message the guidance
+      promises verbatim was re-measured at .41 rather than carried over, which is how the
+      quotes-the-CONVERTED-expression finding surfaced (1.5 -> 1.5m, a parameter reference -> the
+      parameter NAME) - two surfaces had claimed the opposite. Floor rationale corrected twice: it is no
+      longer a tightened validator (.42 checks strictly LESS than .37), and the .35 platform-grammar
+      element segment it cited as load-bearing turns out not to have been.
+      9215 targeted unit tests pass; MCP E2E on krestov-test at 1.4.0.42, 60 pass.
+      ClioRing compatibility reviewed, no Ring-consumed contract changed - Ring names none of the process
+      tools and its catalog parser reads only name/purpose/contract-available/resident/destructive
+      (clio-ring/ClioRing.Ipc/ClioIpcClient.cs:550-566); BuildPurpose's whole input, the first sentence of
+      each description, is unchanged in the diff, as are the tool names and every safety flag.
+    depends_on:
+      - story-eng-95891-collapse-formula-validation-1
+    blocks: []
+
+  - id: story-eng-95891-collapse-formula-validation-3
+    title: "Rewrite the shipped formula guidance around who validates"
+    feature: "eng-95891-formula-expressions"
+    repo: "clio-knowledge"
+    size: S
+    status: in-progress
+    jira: ENG-95891
+    file: spec/adr/adr-collapse-formula-validation-onto-platform-rule.md
+    note: >-
+      processes/formulas WHAT IS CHECKED rewritten around who checks it, and the refusal table re-measured
+      row by row. Four false promises removed: "always names the character index and the expression" (true
+      of the parse family only), "does not check it at all" twelve lines above "still checks length", "one
+      thing: length" (it is two - a blank condition is refused up front, and that check is clio's own
+      because the gate would ACCEPT one), and "wording, not capability" for an older package, which
+      refuses MORE rather than less. processes/parameters.md - a shipped sibling in the same bundle - still
+      said an expression is "checked before it is stored"; a reviewer found it, my grep did not, because I
+      searched for the phrases I had written instead of for the claim.
+      libraryVersion 1.13.80 with clio's curated-name fixture re-pinned; 119 bundle tests pass. The
+      article now sits at ~99% of the single-response budget, so it is the FIRST to split when
+      ProcessGuideResponseSizeTests next goes red - prose was cut to fit rather than the budget raised.
+    depends_on:
+      - story-eng-95891-collapse-formula-validation-1
+    blocks: []
