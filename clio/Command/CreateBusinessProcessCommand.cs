@@ -33,7 +33,9 @@ namespace Clio.Command;
 // The approval block itself (1.4.1.0), the performer block (1.3.1.1) and the email block (1.2.0.1) set this
 // precedent and are subsumed; so do 1.4.5.0 and 1.4.6.0, which no released clio ever bundled. The guard
 // fixture asserts the shipped archive satisfies the literal, so clio can never demand a version it does
-// not itself carry.
+// not itself carry — SATISFIES, not equals: the bundle is 1.4.8.0 and this floor is 1.4.7.0, because
+// 1.4.8.0 changed only contract documentation. A floor tracks BEHAVIOUR clio depends on; demanding a
+// version of every environment because a doc comment moved would be a floor bought for nothing.
 [RequiresPackage(BundledPackages.ProcessBuilderPackageName, "1.4.7.0",
 	Hint = BundledPackages.ProcessBuilderInstallHint)]
 public sealed class CreateBusinessProcessOptions : EnvironmentOptions {
