@@ -45,4 +45,14 @@ internal static class McpToolDescriptions {
 		"(an unregistered inserted widget/metric title is REJECTED too), except for the rare controls whose " +
 		"property does not read a resource (e.g. crt.ImageInput.tooltip, which must stay a literal). " +
 		"See get-guidance `page-schema-resources` for the full rule.";
+
+	/// <summary>
+	/// Appended to <see cref="PageResources"/> on the SAVE tools only. It must not go on the shared
+	/// constant: that constant is also served by a resident tool, and the resident tools/list payload
+	/// is held under a hard byte budget by
+	/// <c>McpFeatureToggleFilterTests.RegisterEnabledPrimitives_ShouldKeepToolsSerializedSizeWithinBudget_WhenCalled</c>.
+	/// </summary>
+	internal const string PageResourcesAdditive =
+		" Additions/overrides only: a key already stored on the schema stays registered and does NOT have to " +
+		"be repeated on a later save of the same page.";
 }

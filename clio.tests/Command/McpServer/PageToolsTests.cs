@@ -2739,7 +2739,10 @@ public class PageToolsTests
 			.And.Contain("$UsrName")
 			.And.Contain("$context.set",
 				because: "the response should guide toward the correct declared attribute written by the handler");
-		serviceUrlBuilder.DidNotReceive().Build("/ServiceModel/ClientUnitSchemaDesignerService.svc/GetSchema");
+		// This body ALSO carries an unresolved label resource ($Resources.Strings.UsrName against binding
+		// attribute UsrNameField), which since issue #1320 triggers one READ-ONLY GetSchema to check the
+		// schema's persisted localizableStrings before the rejection stands. The invariant that matters is
+		// unchanged: nothing is written.
 		serviceUrlBuilder.DidNotReceive().Build("/ServiceModel/ClientUnitSchemaDesignerService.svc/SaveSchema");
 	}
 

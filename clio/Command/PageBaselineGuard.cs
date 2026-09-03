@@ -26,8 +26,9 @@ public interface IPageBaselineGuard {
 	/// <returns>
 	/// The resolved <c>meta.json</c> path (may be <c>null</c> when resolution itself failed) and whether
 	/// the check is armed. When a caller already pinned <see cref="PageUpdateOptions.ExpectedChecksum"/>
-	/// explicitly (CLI <c>--expected-checksum</c>), that manual checksum wins the comparison and is left
-	/// untouched — but if a matching on-disk baseline exists, the method still reports armed so the
+	/// explicitly (CLI <c>--expected-checksum</c> or MCP <c>checksum</c>), that manual checksum wins the
+	/// comparison and is left untouched, while the baseline's schema UId and schema-absent marker are still
+	/// armed — but if a matching on-disk baseline exists, the method still reports armed so the
 	/// post-save refresh moves that baseline forward to the new checksum, instead of leaving it pinned at
 	/// the overwritten value (which would raise a false conflict on the next unpinned save).
 	/// </returns>
@@ -59,9 +60,11 @@ public sealed class PageBaselineGuard : IPageBaselineGuard {
 
 	/// <inheritdoc />
 	public (string MetaFilePath, bool Armed) TryArm(PageUpdateOptions options, string outputDirectory) {
-		// A caller-pinned --expected-checksum (CLI) is honored verbatim: it wins the comparison and is
-		// never overwritten from disk. For MCP callers ExpectedChecksum is always null here, so the
-		// on-disk baseline drives the check exactly as before.
+		// A caller-pinned checksum (CLI --expected-checksum, MCP `checksum`) is honored verbatim: it wins
+		// the comparison and is never overwritten from disk. Everything ELSE the on-disk baseline knows -
+		// the schema UId and the schema-absent marker - is still armed from it, because pinning a checksum
+		// says nothing about schema identity, and dropping those two would silently disable the
+		// schema-uid-mismatch and schema-created-externally conflicts on the pinned path (issue #1320).
 		bool callerPinnedChecksum = !string.IsNullOrWhiteSpace(options.ExpectedChecksum);
 		string metaFilePath;
 		try {
@@ -86,16 +89,17 @@ public sealed class PageBaselineGuard : IPageBaselineGuard {
 		if (baseline is null || !PageBaselineStore.MatchesEnvironment(baseline, options.Environment, options.Uri)) {
 			return (metaFilePath, false);
 		}
+		// The schema-identity half of the baseline is armed on BOTH paths.
+		options.ExpectedSchemaUId = baseline.EditableSchemaUId;
+		options.ExpectedSchemaAbsent = !baseline.EditableSchemaExists;
 		if (callerPinnedChecksum) {
-			// Explicit checksum wins the comparison, so we do NOT arm the check from disk. But the matching
-			// on-disk baseline must still move forward after the save: report armed (without touching
-			// options.ExpectedChecksum) so RefreshOrDrop persists the post-save checksum. Otherwise the next
-			// unpinned save auto-arms from a now-superseded checksum and raises a false conflict.
+			// The explicit checksum wins the comparison, so it is left untouched. The matching on-disk
+			// baseline must still move forward after the save: report armed so RefreshOrDrop persists the
+			// post-save checksum. Otherwise the next unpinned save auto-arms from a now-superseded
+			// checksum and raises a false conflict.
 			return (metaFilePath, true);
 		}
 		options.ExpectedChecksum = baseline.Checksum;
-		options.ExpectedSchemaUId = baseline.EditableSchemaUId;
-		options.ExpectedSchemaAbsent = !baseline.EditableSchemaExists;
 		return (metaFilePath, true);
 	}
 

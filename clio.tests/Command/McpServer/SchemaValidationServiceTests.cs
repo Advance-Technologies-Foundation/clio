@@ -1553,6 +1553,230 @@ public sealed class SchemaValidationServiceTests
 	}
 
 	[Test]
+	[Description("ValidateFieldLabelResources_ShouldNotConsultThePersistedKeyProvider_WhenTheBodyIsClean — the persisted-key lookup costs a remote GetSchema round-trip, so it must stay on the failure path only (issue #1320).")]
+	public void ValidateFieldLabelResources_ShouldNotConsultThePersistedKeyProvider_WhenTheBodyIsClean() {
+		// Arrange
+		string body = BuildDiffBackedPageBody(
+			"""
+				[
+					{
+						"operation":"insert",
+						"name":"Input_zl5k81v",
+						"values":{"type":"crt.Input","label":"$Resources.Strings.AccountDS_Name_ud92nhf","control":"$AccountDS_Name_ud92nhf"}
+					}
+				]
+			""",
+			"""
+				[
+					{
+						"operation":"merge",
+						"path":[],
+						"values":{"attributes":{"AccountDS_Name_ud92nhf":{"modelConfig":{"path":"AccountDS.Name"}}}}
+					}
+				]
+			""");
+		int providerInvocations = 0;
+
+		// Act
+		(SchemaValidationResult standardFields, SchemaValidationResult insertedFields) =
+			SchemaValidationService.ValidateFieldLabelResources(body, null, () => {
+				providerInvocations++;
+				return new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+			});
+
+		// Assert
+		insertedFields.IsValid.Should().BeTrue(
+			"because the label key equals the DS-bound binding attribute, so the platform auto-provides the caption");
+		standardFields.IsValid.Should().BeTrue(
+			"because the clean body has nothing for the standard-field validator to reject either");
+		providerInvocations.Should().Be(0,
+			"because a body that validates cleanly must never pay the extra GetSchema round-trip the provider performs");
+	}
+
+	[Test]
+	[Description("ValidateFieldLabelResources_ShouldAcceptTheBody_WhenTheProviderSuppliesThePersistedKey — the rescue re-run is what makes a later save of the same page succeed without re-sending every previously registered key (issue #1320).")]
+	public void ValidateFieldLabelResources_ShouldAcceptTheBody_WhenTheProviderSuppliesThePersistedKey() {
+		// Arrange
+		string body = BuildPersistedResourcePageBody();
+		int providerInvocations = 0;
+
+		// Act
+		(_, SchemaValidationResult insertedFields) =
+			SchemaValidationService.ValidateFieldLabelResources(body, null, () => {
+				providerInvocations++;
+				return new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "CaseSLA_label" };
+			});
+
+		// Assert
+		providerInvocations.Should().Be(1,
+			"because the failing verdict must trigger exactly one persisted-key lookup, not one per validator");
+		insertedFields.IsValid.Should().BeTrue(
+			"because the key the provider reports is stored on the schema and resolves at runtime");
+	}
+
+	[Test]
+	[Description("ValidateFieldLabelResources_ShouldKeepTheRejection_WhenTheProviderYieldsNothing — a provider that cannot read the schema must leave the original, stricter verdict standing rather than letting an unvalidated body through (issue #1320).")]
+	public void ValidateFieldLabelResources_ShouldKeepTheRejection_WhenTheProviderYieldsNothing() {
+		// Arrange
+		string body = BuildPersistedResourcePageBody();
+
+		// Act
+		(_, SchemaValidationResult insertedFields) =
+			SchemaValidationService.ValidateFieldLabelResources(body, null, () => null);
+
+		// Assert
+		insertedFields.IsValid.Should().BeFalse(
+			"because an unreadable persisted-key set must not be treated as proof that the resource exists");
+		insertedFields.Errors.Should().Contain(error => error.Contains("CaseSLA_label"),
+			"because the original diagnostic must survive the failed rescue attempt");
+	}
+
+	[Test]
+	[Description("ValidateFieldLabelResources_ShouldKeepTheRejection_WhenNoProviderIsSupplied — the stateless callers (validate-page) pass no provider and must keep the pre-existing behaviour.")]
+	public void ValidateFieldLabelResources_ShouldKeepTheRejection_WhenNoProviderIsSupplied() {
+		// Arrange
+		string body = BuildPersistedResourcePageBody();
+
+		// Act
+		(_, SchemaValidationResult insertedFields) =
+			SchemaValidationService.ValidateFieldLabelResources(body, null, persistedResourceKeysProvider: null);
+
+		// Assert
+		insertedFields.IsValid.Should().BeFalse(
+			"because without a provider there is no evidence the resource key exists anywhere");
+	}
+
+	[Test]
+	[Description("ValidateFieldLabelResources_ShouldNotConsultThePersistedKeyProvider_WhenTheRejectionIsAboutBindings — a missing view-model attribute declaration is not something a persisted resource key can fix, so that rejection must not spend the remote round-trip either (issue #1320).")]
+	public void ValidateFieldLabelResources_ShouldNotConsultThePersistedKeyProvider_WhenTheRejectionIsAboutBindings() {
+		// Arrange
+		string body = BuildDiffBackedPageBody(
+			"""
+				[
+					{
+						"operation":"insert",
+						"name":"UsrEstimatedMinutes",
+						"values":{"type":"crt.NumberInput","control":"$PDS_UsrEstimatedMinutes"}
+					}
+				]
+			""",
+			"[]");
+		int providerInvocations = 0;
+
+		// Act
+		(_, SchemaValidationResult insertedFields) =
+			SchemaValidationService.ValidateFieldLabelResources(body, null, () => {
+				providerInvocations++;
+				return new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "anything" };
+			});
+
+		// Assert
+		insertedFields.IsValid.Should().BeFalse(
+			"because the inserted control binds to an attribute the body never declares");
+		providerInvocations.Should().Be(0,
+			"because a binding rejection carries no unresolved label resource, so the persisted-key lookup cannot change the verdict");
+	}
+
+	/// <summary>
+	/// A body whose inserted field carries a label resource key that is neither auto-provided nor supplied
+	/// in the call's own resources - the shape the persisted-key rescue exists for.
+	/// </summary>
+	private static string BuildPersistedResourcePageBody() =>
+		BuildDiffBackedPageBody(
+			"""
+				[
+					{
+						"operation":"insert",
+						"name":"CaseSLA",
+						"values":{"type":"crt.Input","label":"$Resources.Strings.CaseSLA_label","control":"$PDS_CaseSLA"}
+					}
+				]
+			""",
+			"""
+				[
+					{
+						"operation":"merge",
+						"path":[],
+						"values":{"attributes":{"PDS_CaseSLA":{"modelConfig":{"path":"PDS.UsrSLA"}}}}
+					}
+				]
+			""");
+
+	[Test]
+	[Description("Insert of a new field whose label resource key is already PERSISTED on the schema is accepted even when the current call does not repeat it in 'resources' — a stored key resolves at runtime, so later saves must not be forced to re-send every key ever registered (issue #1320).")]
+	public void ValidateInsertedFieldSelfConsistency_InsertWithPersistedLabelResource_ReturnsValid() {
+		// Arrange
+		string body = BuildDiffBackedPageBody(
+			"""
+				[
+					{
+						"operation":"insert",
+						"name":"CaseSLA",
+						"values":{"type":"crt.Input","label":"$Resources.Strings.CaseSLA_label","control":"$PDS_CaseSLA"}
+					}
+				]
+			""",
+			"""
+				[
+					{
+						"operation":"merge",
+						"path":[],
+						"values":{"attributes":{"PDS_CaseSLA":{"modelConfig":{"path":"PDS.UsrSLA"}}}}
+					}
+				]
+			""");
+		IReadOnlySet<string> persistedResourceKeys =
+			new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "CaseSLA_label" };
+
+		// Act
+		var result = SchemaValidationService.ValidateInsertedFieldSelfConsistency(
+			body, explicitResources: null, persistedResourceKeys: persistedResourceKeys);
+
+		// Assert
+		result.IsValid.Should().BeTrue(
+			"because the resource key is already stored in the schema's localizableStrings and resolves at runtime without being re-sent");
+		result.Errors.Should().BeEmpty(
+			"because a persisted resource key is not a missing resource");
+	}
+
+	[Test]
+	[Description("A persisted resource set that does NOT contain the label key still fails validation — the persisted-key allowance must not weaken detection of a genuinely unregistered resource (issue #1320).")]
+	public void ValidateInsertedFieldSelfConsistency_InsertWithUnrelatedPersistedResources_ReturnsInvalid() {
+		// Arrange
+		string body = BuildDiffBackedPageBody(
+			"""
+				[
+					{
+						"operation":"insert",
+						"name":"CaseSLA",
+						"values":{"type":"crt.Input","label":"$Resources.Strings.CaseSLA_label","control":"$PDS_CaseSLA"}
+					}
+				]
+			""",
+			"""
+				[
+					{
+						"operation":"merge",
+						"path":[],
+						"values":{"attributes":{"PDS_CaseSLA":{"modelConfig":{"path":"PDS.UsrSLA"}}}}
+					}
+				]
+			""");
+		IReadOnlySet<string> persistedResourceKeys =
+			new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "SomeOtherKey_label" };
+
+		// Act
+		var result = SchemaValidationService.ValidateInsertedFieldSelfConsistency(
+			body, explicitResources: null, persistedResourceKeys: persistedResourceKeys);
+
+		// Assert
+		result.IsValid.Should().BeFalse(
+			"because the schema stores a different key and this label still has nothing to resolve to");
+		result.Errors.Should().Contain(error => error.Contains("CaseSLA_label"),
+			"because the diagnostic must still name the unresolvable resource key");
+	}
+
+	[Test]
 	[Description("Insert of a new field using the Designer format (path:[], values.attributes nesting) with the label resource keyed by the BINDING ATTRIBUTE NAME is accepted — the platform auto-provides the caption from the DS-bound entity column. This is the form the Designer emits (label key == control attribute name).")]
 	public void ValidateInsertedFieldSelfConsistency_InsertWithAutoProvidedLabel_ReturnsValid() {
 		string body = BuildDiffBackedPageBody(

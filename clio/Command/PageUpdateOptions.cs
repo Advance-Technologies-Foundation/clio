@@ -188,7 +188,8 @@
 				if (commonValidationError != null) { response = commonValidationError; return false; }
 				if (!TryResolveContext(options, out EditableSchemaContext context, out response)) return false;
 				if (!TryCheckForExternalModification(options, context, out response)) return false;
-				PageUpdateResponse validationError = ValidateInput(options, context.SchemaType, explicitResources);
+				PageUpdateResponse validationError = ValidateInput(
+					options, context.SchemaType, explicitResources, () => LoadPersistedResourceKeys(context));
 				if (validationError != null) { response = validationError; return false; }
 				if (options.DryRun) {
 					response = CreateSuccessResponse(options, dryRun: true, registeredKeys: null);
@@ -210,6 +211,51 @@
 			} catch (Exception ex) {
 				response = new PageUpdateResponse { Success = false, Error = ex.Message };
 				return false;
+			}
+		}
+
+		/// <summary>
+		/// Resolves the target schema and returns the resource keys already persisted on it, for the
+		/// MCP pre-execution validation gate which has no resolved schema context of its own.
+		/// </summary>
+		/// <param name="options">The pending write request identifying the schema and environment.</param>
+		/// <returns>The persisted resource keys, or <c>null</c> when they could not be read.</returns>
+		/// <remarks>
+		/// Best-effort and intended for the FAILURE path only: it costs a hierarchy resolution plus a
+		/// <c>GetSchema</c> round-trip, and a <c>null</c> result simply restores the previous, stricter
+		/// behaviour rather than letting an unvalidated body through.
+		/// </remarks>
+		internal IReadOnlySet<string> TryGetPersistedResourceKeys(PageUpdateOptions options) {
+			try {
+				return TryResolveContext(options, out EditableSchemaContext context, out _)
+					? LoadPersistedResourceKeys(context)
+					: null;
+			} catch (Exception ex) when (ex is not OperationCanceledException) {
+				return null;
+			}
+		}
+
+		/// <summary>
+		/// Reads the resource keys already persisted on the schema's <c>localizableStrings</c>.
+		/// </summary>
+		/// <remarks>
+		/// Used ONLY on the failure path of the label-resource validators, so the extra <c>GetSchema</c>
+		/// round-trip is not paid by a body that validates cleanly, and a body that fails on structure
+		/// still reports its own error rather than a network error. A key already stored on the schema
+		/// resolves at runtime whether or not the current call repeats it in <c>resources</c>; without
+		/// this the second and every later save of the same page was rejected unless the caller re-sent
+		/// every key it had ever registered (issue #1320). Best-effort: any failure degrades to an empty
+		/// set, which restores the previous, stricter behaviour instead of letting the save through.
+		/// </remarks>
+		private IReadOnlySet<string> LoadPersistedResourceKeys(EditableSchemaContext context) {
+			try {
+				if (context.IsCreateReplacing ||
+					!TryGetSchema(context.TemplateSchemaUId, out JObject schema, out _)) {
+					return null;
+				}
+				return ResourceStringHelper.GetExistingKeys(schema[LocalizableStringsKey] as JArray);
+			} catch (Exception ex) when (ex is not OperationCanceledException) {
+				return null;
 			}
 		}
 
@@ -862,10 +908,11 @@
 		private static PageUpdateResponse ValidateInput(
 			PageUpdateOptions options,
 			PageSchemaType schemaType,
-			Dictionary<string, string> explicitResources) {
+			Dictionary<string, string> explicitResources,
+			Func<IReadOnlySet<string>> persistedResourceKeysProvider = null) {
 			return schemaType == PageSchemaType.Mobile
 				? ValidateMobileInput(options)
-				: ValidateWebInput(options, explicitResources);
+				: ValidateWebInput(options, explicitResources, persistedResourceKeysProvider);
 		}
 
 		private static PageUpdateResponse ValidateMobileInput(PageUpdateOptions options) {
@@ -892,7 +939,8 @@
 
 		private static PageUpdateResponse ValidateWebInput(
 			PageUpdateOptions options,
-			Dictionary<string, string> explicitResources) {
+			Dictionary<string, string> explicitResources,
+			Func<IReadOnlySet<string>> persistedResourceKeysProvider = null) {
 			// Structural floor - marker integrity and JS syntax run even behind validate=false. A markerless
 			// body is valid JavaScript, so it would save, after which PageSchemaSectionReader can no longer
 			// extract sections and append-merge is dead on that page. ResolveSyntaxFailure already treats
@@ -922,11 +970,12 @@
 			if (!handlerResult.IsValid) {
 				return ContentValidationFailure($"Body contains invalid handlers: {string.Join("; ", handlerResult.Errors)}");
 			}
-			SchemaValidationResult semanticResult = SchemaValidationService.ValidateStandardFieldBindings(options.Body, explicitResources);
+			(SchemaValidationResult semanticResult, SchemaValidationResult insertSelfConsistencyResult) =
+				SchemaValidationService.ValidateFieldLabelResources(
+					options.Body, explicitResources, persistedResourceKeysProvider);
 			if (!semanticResult.IsValid) {
 				return ContentValidationFailure($"Body contains invalid form field bindings: {string.Join("; ", semanticResult.Errors)}");
 			}
-			SchemaValidationResult insertSelfConsistencyResult = SchemaValidationService.ValidateInsertedFieldSelfConsistency(options.Body, explicitResources);
 			if (!insertSelfConsistencyResult.IsValid) {
 				return ContentValidationFailure($"Body contains inserted field controls without required bindings or resources: {string.Join("; ", insertSelfConsistencyResult.Errors)}");
 			}

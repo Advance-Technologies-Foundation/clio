@@ -216,4 +216,28 @@ public sealed class PageBaselineGuardTests {
 		meta.Baseline.Should().BeNull(
 			because: "a stale baseline must be removed when fresh metadata could not be obtained (fail toward no-check)");
 	}
+
+	[Test]
+	[Description("TryArm_ShouldKeepTheCallerChecksumButStillArmSchemaIdentity_WhenTheCallerPinnedAChecksum — pinning a checksum says nothing about schema identity, so dropping the baseline's schema UId and absent marker would silently disable the schema-uid-mismatch and schema-created-externally conflicts on the pinned path (issue #1320).")]
+	public void TryArm_ShouldKeepTheCallerChecksumButStillArmSchemaIdentity_WhenTheCallerPinnedAChecksum() {
+		// Arrange
+		AddMetaWithBaseline("dev", "on-disk-checksum");
+		PageUpdateOptions options = CreateOptions();
+		options.ExpectedChecksum = "caller-pinned-checksum";
+
+		// Act
+		(string metaFilePath, bool armed) = _guard.TryArm(options, OutputDirectory);
+
+		// Assert
+		armed.Should().BeTrue(
+			"because the matching on-disk baseline must still be refreshed after the save");
+		metaFilePath.Should().Be(_metaPath,
+			"because the guard must report the baseline it resolved");
+		options.ExpectedChecksum.Should().Be("caller-pinned-checksum",
+			"because the caller-supplied checksum is the authoritative conflict baseline and must not be overwritten from disk");
+		options.ExpectedSchemaUId.Should().Be(SchemaUId,
+			"because the schema-identity half of the baseline must stay armed so a schema-uid mismatch is still detected");
+		options.ExpectedSchemaAbsent.Should().BeFalse(
+			"because the baseline recorded an existing editable schema");
+	}
 }

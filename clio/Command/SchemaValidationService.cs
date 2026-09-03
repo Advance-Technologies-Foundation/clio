@@ -1410,6 +1410,7 @@ public static class SchemaValidationService
 				declaredAttributes,
 				modelPaths,
 				explicitResources,
+				null,
 				new HashSet<string>(StringComparer.OrdinalIgnoreCase),
 				result);
 			ValidateFieldComponents(viewConfigDiff, in ctx);
@@ -2279,7 +2280,8 @@ public static class SchemaValidationService
 
 	public static SchemaValidationResult ValidateStandardFieldBindings(
 		string jsBody,
-		IReadOnlyDictionary<string, string>? explicitResources = null) {
+		IReadOnlyDictionary<string, string>? explicitResources = null,
+		IReadOnlySet<string>? persistedResourceKeys = null) {
 		var result = new SchemaValidationResult { IsValid = true };
 		if (string.IsNullOrEmpty(jsBody)) {
 			return result;
@@ -2297,6 +2299,7 @@ public static class SchemaValidationService
 			declaredAttributes,
 			modelPaths,
 			explicitResources,
+			persistedResourceKeys,
 			attributesWrittenByHandlers,
 			result);
 		using (viewConfigDocument) {
@@ -2325,9 +2328,55 @@ public static class SchemaValidationService
 	/// newly-inserted control cannot legitimately inherit either piece from a parent schema —
 	/// if it did, the agent would use <c>merge</c>, not <c>insert</c>.
 	/// </remarks>
+	/// <summary>
+	/// Runs the two label-resource-aware field validators and, when the inserted-field one rejects the body
+	/// for an UNRESOLVED LABEL RESOURCE, re-runs both against the resource keys already persisted on the
+	/// target schema.
+	/// </summary>
+	/// <param name="jsBody">The page body being saved.</param>
+	/// <param name="explicitResources">The <c>resources</c> argument of the current call.</param>
+	/// <param name="persistedResourceKeysProvider">
+	/// Supplies the schema's persisted <c>localizableStrings</c> keys. Invoked ONLY for an unresolved
+	/// label-resource rejection, so no other body ever pays the round-trip, and a structurally broken body
+	/// reports its own error rather than a network error from an eager fetch.
+	/// Pass <c>null</c> from a caller that must stay offline.
+	/// A <c>null</c> provider, or one that yields nothing, leaves the first verdict standing.
+	/// </param>
+	/// <returns>The standard-field result (warnings) and the inserted-field result (errors).</returns>
+	/// <remarks>
+	/// Single definition shared by the command-level gate (<c>PageUpdateCommand</c>) and the MCP
+	/// pre-execution gate (<c>PageUpdateTool</c>). They validate the same body at two different points and
+	/// previously drifted: the command-level gate honoured persisted keys while the tool gate still
+	/// rejected the save before the command ever ran (issue #1320).
+	/// </remarks>
+	public static (SchemaValidationResult StandardFields, SchemaValidationResult InsertedFields)
+		ValidateFieldLabelResources(
+			string jsBody,
+			IReadOnlyDictionary<string, string>? explicitResources,
+			Func<IReadOnlySet<string>>? persistedResourceKeysProvider) {
+		SchemaValidationResult standardFields = ValidateStandardFieldBindings(jsBody, explicitResources);
+		SchemaValidationResult insertedFields = ValidateInsertedFieldSelfConsistency(jsBody, explicitResources);
+		// The rescue is gated on the UNRESOLVED-LABEL-RESOURCE rejection specifically - the only verdict a
+		// persisted resource key can change. Anything else must not spend a remote round-trip that cannot
+		// help it: a clean body, a body carrying only the standard-field label WARNING (noise, not a block
+		// - it can still name a key that is in fact persisted), or a rejection about attribute BINDINGS.
+		if (!insertedFields.Errors.Any(error => error.Contains(UnresolvedLabelResourceClause,
+				StringComparison.Ordinal))) {
+			return (standardFields, insertedFields);
+		}
+		IReadOnlySet<string>? persistedResourceKeys = persistedResourceKeysProvider?.Invoke();
+		if (persistedResourceKeys is not { Count: > 0 }) {
+			return (standardFields, insertedFields);
+		}
+		return (
+			ValidateStandardFieldBindings(jsBody, explicitResources, persistedResourceKeys),
+			ValidateInsertedFieldSelfConsistency(jsBody, explicitResources, persistedResourceKeys));
+	}
+
 	public static SchemaValidationResult ValidateInsertedFieldSelfConsistency(
 		string jsBody,
-		IReadOnlyDictionary<string, string>? explicitResources = null) {
+		IReadOnlyDictionary<string, string>? explicitResources = null,
+		IReadOnlySet<string>? persistedResourceKeys = null) {
 		var result = new SchemaValidationResult { IsValid = true };
 		if (string.IsNullOrEmpty(jsBody)) {
 			return result;
@@ -2346,7 +2395,8 @@ public static class SchemaValidationService
 				return result;
 			}
 			foreach (JsonElement entry in vcdDoc.RootElement.EnumerateArray()) {
-				ValidateInsertedFieldEntry(entry, declaredAttributes, properlyNestedAttributes, modelPaths, explicitResources, result);
+				ValidateInsertedFieldEntry(
+					entry, declaredAttributes, properlyNestedAttributes, modelPaths, explicitResources, persistedResourceKeys, result);
 			}
 		}
 		if (result.Errors.Count > 0) {
@@ -2779,12 +2829,13 @@ public static class SchemaValidationService
 		IReadOnlySet<string> properlyNestedAttributes,
 		IReadOnlyDictionary<string, string> modelPaths,
 		IReadOnlyDictionary<string, string>? explicitResources,
+		IReadOnlySet<string>? persistedResourceKeys,
 		SchemaValidationResult result) {
 		if (!TryGetInsertedFieldDescriptor(entry, out InsertedFieldDescriptor descriptor)) {
 			return;
 		}
 		AppendBindingDeclarationError(descriptor, declaredAttributes, properlyNestedAttributes, modelPaths, result);
-		AppendLabelResourceError(descriptor, modelPaths, explicitResources, result);
+		AppendLabelResourceError(descriptor, modelPaths, explicitResources, persistedResourceKeys, result);
 	}
 
 	private static bool TryGetInsertedFieldDescriptor(JsonElement entry, out InsertedFieldDescriptor descriptor) {
@@ -2871,24 +2922,38 @@ public static class SchemaValidationService
 			"Rule: " + InsertedFieldBindingClause + ".");
 	}
 
+	/// <summary>
+	/// The invariant clause of the unresolved-label-resource diagnostic. It is the marker that identifies
+	/// an inserted-field rejection a persisted resource key could still clear, which is what
+	/// <see cref="ValidateFieldLabelResources"/> gates its remote lookup on — so a rejection about
+	/// attribute BINDINGS never spends a round-trip that cannot help it.
+	/// </summary>
+	internal const string UnresolvedLabelResourceClause =
+		"is neither auto-provided by a DS-bound attribute nor registered in the 'resources' parameter.";
+
 	private static void AppendLabelResourceError(
 		InsertedFieldDescriptor descriptor,
 		IReadOnlyDictionary<string, string> modelPaths,
 		IReadOnlyDictionary<string, string>? explicitResources,
+		IReadOnlySet<string>? persistedResourceKeys,
 		SchemaValidationResult result) {
 		if (!TryGetStringProperty(descriptor.Values, LabelPropertyName, out string labelExpression) ||
 		    !TryGetReactiveResourceKey(labelExpression, out string resourceKey)) {
 			return;
 		}
 		bool hasExplicit = explicitResources != null && explicitResources.ContainsKey(resourceKey);
+		// A key already stored in the schema's localizableStrings resolves at runtime whether or not the
+		// current call repeats it in 'resources'. Without this the second and every later save of the same
+		// page is blocked unless the caller re-sends every key it ever registered. See issue #1320.
+		bool isPersisted = persistedResourceKeys != null && persistedResourceKeys.Contains(resourceKey);
 		bool isAutoProvided = IsAutoProvidedLabelResourceKey(resourceKey, descriptor.BindingAttribute, modelPaths);
-		if (hasExplicit || isAutoProvided) {
+		if (hasExplicit || isPersisted || isAutoProvided) {
 			return;
 		}
 		string suggestion = BuildAutoProvideSuggestion(descriptor.BindingAttribute, modelPaths);
 		result.Errors.Add(
 			$"Inserted field '{descriptor.DisplayName}' has label '$Resources.Strings.{resourceKey}' but resource '{resourceKey}' " +
-			$"is neither auto-provided by a DS-bound attribute nor registered in the 'resources' parameter. " +
+			UnresolvedLabelResourceClause + " " +
 			$"The label will render blank. {suggestion}; or register it by passing {{\"{resourceKey}\": \"<Display name>\"}} in 'resources'.");
 	}
 
@@ -3124,6 +3189,7 @@ public static class SchemaValidationService
 		IReadOnlySet<string> DeclaredAttributes,
 		IReadOnlyDictionary<string, string> ModelPaths,
 		IReadOnlyDictionary<string, string>? ExplicitResources,
+		IReadOnlySet<string>? PersistedResourceKeys,
 		IReadOnlySet<string> AttributesWrittenByHandlers,
 		SchemaValidationResult Result);
 
@@ -3222,6 +3288,7 @@ public static class SchemaValidationService
 		    TryGetReactiveResourceKey(labelExpression, out string resourceBindingKey) &&
 		    ctx.ExplicitResources != null &&
 		    !ctx.ExplicitResources.ContainsKey(resourceBindingKey) &&
+		    (ctx.PersistedResourceKeys == null || !ctx.PersistedResourceKeys.Contains(resourceBindingKey)) &&
 		    !IsAutoProvidedLabelResourceKey(resourceBindingKey, bindingAttribute, ctx.ModelPaths)) {
 			ctx.Result.Warnings.Add(
 				$"Standard field '{fieldDisplayName}' has label '{labelExpression}' but resource key '{resourceBindingKey}' is neither auto-provided by a DS-bound attribute nor in the provided resources — the label will render blank. " +

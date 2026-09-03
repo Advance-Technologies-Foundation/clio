@@ -282,6 +282,35 @@ internal static class EntitySchemaDesignerSupport
 		return value;
 	}
 
+	/// <summary>
+	/// Parses a CLI-supplied culture-to-value JSON object such as <c>{"en-US":"Mention language"}</c>
+	/// into a normalized localization map, raising a readable validation error instead of a raw JSON
+	/// exception when the argument is not a flat object of non-empty strings.
+	/// </summary>
+	/// <param name="json">Raw JSON text from the command line.</param>
+	/// <param name="fieldName">Argument name used in error messages.</param>
+	/// <returns>The normalized map, or <c>null</c> when <paramref name="json"/> is blank.</returns>
+	internal static IReadOnlyDictionary<string, string>? ParseLocalizationJson(string? json, string fieldName) {
+		if (string.IsNullOrWhiteSpace(json)) {
+			return null;
+		}
+		Dictionary<string, string>? parsed;
+		try {
+			parsed = JsonSerializer.Deserialize<Dictionary<string, string>>(json);
+		} catch (JsonException exception) {
+			throw new EntitySchemaDesignerException(
+				$"{fieldName} must be a JSON object mapping culture names to values, " +
+				$"for example {{\"en-US\":\"Mention language\"}}. {exception.Message}");
+		}
+		if (parsed is null || parsed.Count == 0) {
+			throw new EntitySchemaDesignerException($"{fieldName} must contain at least one localization.");
+		}
+		// requireDefaultCulture:false — this parses a per-culture MERGE of an EXISTING caption, so listing
+		// only uk-UA is legitimate: the en-US caption the schema already carries is preserved. Demanding
+		// en-US here would contradict the documented "unlisted cultures keep their caption" behaviour.
+		return NormalizeLocalizationMap(parsed, fieldName, requireDefaultCulture: false);
+	}
+
 	internal static string GetLocalizableValue(IEnumerable<LocalizableStringDto> values, string cultureName = null) {
 		List<LocalizableStringDto> localizableValues = values?.ToList() ?? [];
 		if (localizableValues.Count == 0) {

@@ -174,30 +174,99 @@ internal sealed class RemoteEntitySchemaColumnManager : IRemoteEntitySchemaColum
 
 	public void SetSchemaProperties(SetEntitySchemaPropertiesOptions options) {
 		ArgumentNullException.ThrowIfNull(options);
-		if (string.IsNullOrWhiteSpace(options.PrimaryDisplayColumn)) {
+		if (!options.HasAnyPropertyToSet) {
 			throw new EntitySchemaDesignerException(SetEntitySchemaPropertiesOptions.NoPropertyToSetError);
 		}
 		PackageInfo package = ResolvePackage(options.Package);
 		EntityDesignSchemaDto schema = LoadSchema(options.SchemaName, package.Descriptor.UId,
 			package.Descriptor.Name, options, allowDependencyResolution: true);
-		string requestedColumnName = options.PrimaryDisplayColumn.Trim();
-		// Resolve by name against own then inherited columns (modern server contract: the primary-display
-		// column is matched by the column's uId object, NOT a legacy flat primaryDisplayColumnUId).
-		(EntitySchemaColumnDto targetColumn, _) = FindColumnForRead(schema, requestedColumnName);
-		schema.PrimaryDisplayColumn = targetColumn;
+		string requestedColumnName = string.IsNullOrWhiteSpace(options.PrimaryDisplayColumn)
+			? null
+			: options.PrimaryDisplayColumn.Trim();
+		if (requestedColumnName != null) {
+			// Resolve by name against own then inherited columns (modern server contract: the primary-display
+			// column is matched by the column's uId object, NOT a legacy flat primaryDisplayColumnUId).
+			(EntitySchemaColumnDto targetColumn, _) = FindColumnForRead(schema, requestedColumnName);
+			schema.PrimaryDisplayColumn = targetColumn;
+		}
+		// The culture is resolved LAZILY: only a scalar --title needs a culture to anchor to, and resolving
+		// it eagerly would add a profile-culture lookup (a remote call) to the pre-existing
+		// primary-display-column-only invocation, which never made one.
+		IReadOnlyDictionary<string, string> requestedTitles = ApplySchemaCaption(schema, options,
+			() => _captionCultureResolver.ResolveEffectiveCulture(options, options.CaptionCulture));
 
 		EntityDesignSchemaDto reloadedSchema = SaveAndReloadSchema(
 			schema, package, options, "schema properties were saved");
 		// The server performs no validation and silently no-ops if a target version expects the legacy
 		// primaryDisplayColumnUId; verify the readback so that silent no-op becomes a clear failure.
-		if (!string.Equals(reloadedSchema.PrimaryDisplayColumn?.Name, requestedColumnName,
-			StringComparison.OrdinalIgnoreCase)) {
+		if (requestedColumnName != null && !string.Equals(reloadedSchema.PrimaryDisplayColumn?.Name,
+			requestedColumnName, StringComparison.OrdinalIgnoreCase)) {
 			throw new EntitySchemaDesignerException(
 				$"Primary-display column '{requestedColumnName}' was not persisted for schema '{schema.Name}'. " +
 				"The target environment may not support setting the primary-display column through this API.");
 		}
-		_logger.WriteInfo(
-			$"Primary-display column set to '{requestedColumnName}' for schema '{options.SchemaName}'.");
+		VerifySchemaCaption(reloadedSchema, requestedTitles, options.SchemaName);
+		if (requestedColumnName != null) {
+			_logger.WriteInfo(
+				$"Primary-display column set to '{requestedColumnName}' for schema '{options.SchemaName}'.");
+		}
+		foreach (KeyValuePair<string, string> localization in
+			requestedTitles ?? (IReadOnlyDictionary<string, string>)new Dictionary<string, string>()) {
+			_logger.WriteInfo(
+				$"Schema caption set to '{localization.Value}' ({localization.Key}) for schema '{options.SchemaName}'.");
+		}
+	}
+
+	/// <summary>
+	/// Merges the requested schema caption into the design schema's localizable caption, leaving cultures
+	/// the caller did not mention untouched. A scalar <c>--title</c> is anchored to the culture produced by
+	/// <paramref name="effectiveCultureNameProvider"/>, which is invoked only in that case.
+	/// </summary>
+	/// <returns>The culture-to-caption map that must be verified after the save, or <c>null</c> when
+	/// no caption change was requested.</returns>
+	private static IReadOnlyDictionary<string, string> ApplySchemaCaption(EntityDesignSchemaDto schema,
+		SetEntitySchemaPropertiesOptions options, Func<string> effectiveCultureNameProvider) {
+		IReadOnlyDictionary<string, string> localizations =
+			options.ParsedTitleLocalizations is { Count: > 0 } ? options.ParsedTitleLocalizations : null;
+		if (localizations is null && !string.IsNullOrWhiteSpace(options.Title)) {
+			localizations = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase) {
+				[effectiveCultureNameProvider()] = options.Title.Trim()
+			};
+		}
+		if (localizations is null || localizations.Count == 0) {
+			return null;
+		}
+		schema.Caption ??= [];
+		foreach (KeyValuePair<string, string> localization in localizations) {
+			// Per-culture merge (not ReplaceLocalizableValues): renaming the English caption must not
+			// silently drop the captions the schema already carries for other cultures.
+			EntitySchemaDesignerSupport.SetLocalizableValue(schema.Caption, localization.Value, localization.Key);
+		}
+		return localizations;
+	}
+
+	/// <summary>
+	/// Confirms the requested caption survived the round-trip, so an environment that silently ignores the
+	/// caption fails loudly instead of reporting success on an unchanged schema.
+	/// </summary>
+	private static void VerifySchemaCaption(EntityDesignSchemaDto reloadedSchema,
+		IReadOnlyDictionary<string, string> requestedTitles, string schemaName) {
+		if (requestedTitles is null) {
+			return;
+		}
+		foreach (KeyValuePair<string, string> localization in requestedTitles) {
+			// Exact culture match, NOT GetLocalizableValue: that helper falls back to en-US and then to the
+			// first entry, so a server that persisted only en-US would return the en-US value for a uk-UA
+			// lookup and this check would pass on the very per-culture no-op it exists to catch.
+			string persisted = reloadedSchema?.Caption?
+				.FirstOrDefault(value => string.Equals(
+					value.CultureName, localization.Key, StringComparison.OrdinalIgnoreCase))?.Value;
+			if (!string.Equals(persisted, localization.Value, StringComparison.Ordinal)) {
+				throw new EntitySchemaDesignerException(
+					$"Schema caption '{localization.Value}' ({localization.Key}) was not persisted for schema " +
+					$"'{schemaName}'. The server returned '{persisted ?? "<none>"}'.");
+			}
+		}
 	}
 
 	public EntitySchemaColumnPropertiesInfo GetColumnProperties(GetEntitySchemaColumnPropertiesOptions options) {

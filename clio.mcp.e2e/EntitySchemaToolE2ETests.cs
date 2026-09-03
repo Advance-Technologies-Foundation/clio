@@ -204,6 +204,38 @@ public sealed class EntitySchemaToolE2ETests : McpContractFixtureBase {
 
 	[Category("McpE2E.Sandbox")]
 	[Test]
+	[Description("Renames an existing entity schema's caption through set-entity-schema-properties and verifies get-entity-schema-properties reports the new title. Before issue #1320 no tool could change an existing schema's caption, which left a duplicate-caption process lookup macro unfixable from clio.")]
+	[AllureTag(CreateToolName)]
+	[AllureTag(SetSchemaToolName)]
+	[AllureTag(ReadSchemaToolName)]
+	[AllureName("Set entity schema properties renames the schema caption and reads it back")]
+	[AllureDescription("Creates a sandbox schema, changes its SCHEMA caption through set-entity-schema-properties title-localizations, and verifies get-entity-schema-properties reports the new title.")]
+	public async Task SetEntitySchemaProperties_Should_Rename_Schema_Caption_And_Read_It_Back() {
+		// Arrange
+		await using EntitySchemaArrangeContext arrangeContext = await ArrangeSandboxPackageAsync();
+		const string renamedCaption = "Mention language";
+
+		// Act
+		CommandExecutionEnvelope createResult = await ActCreateEntitySchemaAsync(arrangeContext);
+		CommandExecutionEnvelope renameResult = McpCommandExecutionParser.Extract(
+			await CallSetEntitySchemaPropertiesAsync(
+				arrangeContext.Session,
+				arrangeContext.EnvironmentName,
+				arrangeContext.PackageName,
+				arrangeContext.SchemaName,
+				arrangeContext.CancellationTokenSource.Token,
+				titleLocalizations: BuildLocalizations(renamedCaption)));
+		EntitySchemaPropertiesInfo schemaProperties = await ActGetSchemaPropertiesAsync(arrangeContext);
+
+		// Assert
+		AssertCommandSucceeded(createResult, "create-entity-schema should succeed before the caption is renamed");
+		AssertCommandSucceeded(renameResult, "set-entity-schema-properties should persist the new schema caption");
+		schemaProperties.Title.Should().Be(renamedCaption,
+			because: "get-entity-schema-properties must report the caption set via set-entity-schema-properties title-localizations");
+	}
+
+	[Category("McpE2E.Sandbox")]
+	[Test]
 	[Description("Adds a money column using the Creatio display name 'Money' — the alias of the command value Currency2 — and verifies it materializes, so a caller does not have to provoke a failed write to discover the vocabulary (issue #955).")]
 	[AllureTag(CreateToolName)]
 	[AllureTag(ModifyToolName)]
@@ -1840,7 +1872,8 @@ public sealed class EntitySchemaToolE2ETests : McpContractFixtureBase {
 		string packageName,
 		string schemaName,
 		CancellationToken cancellationToken,
-		string? primaryDisplayColumn = null) {
+		string? primaryDisplayColumn = null,
+		IReadOnlyDictionary<string, string>? titleLocalizations = null) {
 		IReadOnlyCollection<string> reachableToolNames = await session.ListReachableToolNamesAsync(cancellationToken);
 		reachableToolNames.Should().Contain(SetEntitySchemaPropertiesTool.SetEntitySchemaPropertiesToolName,
 			because: "the set-entity-schema-properties MCP tool must be discoverable via the get-tool-contract compact index before the end-to-end call can be executed");
@@ -1852,6 +1885,9 @@ public sealed class EntitySchemaToolE2ETests : McpContractFixtureBase {
 		};
 		if (!string.IsNullOrWhiteSpace(primaryDisplayColumn)) {
 			args["primary-display-column"] = primaryDisplayColumn;
+		}
+		if (titleLocalizations is { Count: > 0 }) {
+			args["title-localizations"] = titleLocalizations;
 		}
 
 		return await session.CallToolAsync(

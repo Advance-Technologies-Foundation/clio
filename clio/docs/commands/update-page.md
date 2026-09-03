@@ -176,7 +176,11 @@ automatically from the baseline that a previous `get-page` stores in
 `.clio-pages/{schema-name}/meta.json` (matching environment required) — so AI-agent CLI
 flows that read a page with `get-page` and then save it with `update-page` are protected
 without extra flags. `--expected-checksum` overrides the on-disk baseline when passed
-explicitly. After a successful save the on-disk baseline is refreshed automatically, so
+explicitly. Over MCP the same baseline is supplied as the `checksum` argument — pass the
+`editable.checksum` that `get-page` returned for the body you edited. Doing so makes the
+comparison run against what you actually fetched, instead of against a `.clio-pages`
+baseline that may be stale or anchored to a different directory and would then report a
+conflict that never happened. After a successful save the on-disk baseline is refreshed automatically, so
 consecutive updates in the same session do not false-conflict. A small race window
 between the check and the save remains (last write wins).
 

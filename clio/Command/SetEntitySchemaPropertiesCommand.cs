@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using Clio.Command.EntitySchemaDesigner;
 using Clio.Common;
 using CommandLine;
@@ -22,7 +23,8 @@ public class SetEntitySchemaPropertiesOptions : RemoteCommandOptions
 	/// re-check so the two layers cannot drift.
 	/// </summary>
 	internal const string NoPropertyToSetError =
-		"At least one schema property to set is required (for example --primary-display-column).";
+		"At least one schema property to set is required " +
+		"(for example --primary-display-column, --title or --title-localizations).";
 
 	// Required is enforced in ValidateOptions (not via CommandLineParser's Required=true) so the hidden
 	// --package-name / --name aliases work when used standalone — the parser enforces Required on the
@@ -48,6 +50,50 @@ public class SetEntitySchemaPropertiesOptions : RemoteCommandOptions
 	[Option("primary-display-column", Required = false,
 		HelpText = "Column name (own or inherited) to set as the primary-display column")]
 	public string? PrimaryDisplayColumn { get; set; }
+
+	/// <summary>
+	/// Gets or sets the new schema caption for a single culture. Ignored when
+	/// <see cref="TitleLocalizations"/> is supplied.
+	/// </summary>
+	[Option("title", Required = false,
+		HelpText = "New schema caption for the effective caption culture (see --caption-culture)")]
+	public string? Title { get; set; }
+
+	/// <summary>
+	/// Gets or sets the new schema caption per culture, as a JSON object such as
+	/// <c>{"en-US":"Mention language"}</c>. Cultures that are not listed are left untouched.
+	/// </summary>
+	[Option("title-localizations", Required = false,
+		HelpText = "New schema caption per culture as JSON, e.g. '{\"en-US\":\"Mention language\"}'")]
+	public string? TitleLocalizations { get; set; }
+
+	/// <summary>
+	/// Gets or sets the culture used when only the scalar <see cref="Title"/> is supplied.
+	/// Precedence: this override, then the connected user's profile culture, then <c>en-US</c>.
+	/// </summary>
+	[Option("caption-culture", Required = false,
+		HelpText = "Culture used for a scalar --title (e.g. en-US). Precedence: this override > profile culture > en-US")]
+	public string? CaptionCulture { get; set; }
+
+	/// <summary>
+	/// Gets the parsed <see cref="TitleLocalizations"/> map, or <c>null</c> when none was supplied.
+	/// Set by the MCP tool and by <see cref="SetEntitySchemaPropertiesCommand.ValidateOptions"/>.
+	/// </summary>
+	public IReadOnlyDictionary<string, string>? ParsedTitleLocalizations { get; set; }
+
+	/// <summary>
+	/// Gets a value indicating whether any settable schema-level property was supplied.
+	/// </summary>
+	/// <remarks>
+	/// Deliberately does NOT look at the raw <see cref="TitleLocalizations"/> JSON string: the write path
+	/// acts on <see cref="ParsedTitleLocalizations"/> and <see cref="Title"/> only, so counting the
+	/// unparsed string would let this guard pass on a request the manager then saves without any change.
+	/// <see cref="SetEntitySchemaPropertiesCommand.ValidateOptions"/> populates the map before checking.
+	/// </remarks>
+	internal bool HasAnyPropertyToSet =>
+		!string.IsNullOrWhiteSpace(PrimaryDisplayColumn)
+		|| !string.IsNullOrWhiteSpace(Title)
+		|| ParsedTitleLocalizations is { Count: > 0 };
 }
 
 /// <summary>
@@ -90,7 +136,17 @@ public class SetEntitySchemaPropertiesCommand : Command<SetEntitySchemaPropertie
 		if (string.IsNullOrWhiteSpace(options.SchemaName)) {
 			throw new ArgumentException("Schema name is required.", nameof(options));
 		}
-		if (string.IsNullOrWhiteSpace(options.PrimaryDisplayColumn)) {
+		if (!string.IsNullOrWhiteSpace(options.TitleLocalizations) && options.ParsedTitleLocalizations is null) {
+			options.ParsedTitleLocalizations =
+				EntitySchemaDesignerSupport.ParseLocalizationJson(options.TitleLocalizations, "title-localizations");
+		} else if (options.ParsedTitleLocalizations is not null) {
+			// The MCP tool hands the map over already deserialized. Normalize it through the SAME rules as
+			// the CLI's JSON string, so an empty culture name or a blank caption is rejected up front on
+			// both surfaces instead of reaching the designer save and failing only at the readback check.
+			options.ParsedTitleLocalizations = EntitySchemaDesignerSupport.NormalizeLocalizationMap(
+				options.ParsedTitleLocalizations, "title-localizations", requireDefaultCulture: false);
+		}
+		if (!options.HasAnyPropertyToSet) {
 			throw new ArgumentException(SetEntitySchemaPropertiesOptions.NoPropertyToSetError, nameof(options));
 		}
 	}
