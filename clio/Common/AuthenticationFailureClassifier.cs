@@ -65,6 +65,47 @@ public static class AuthenticationFailureClassifier {
 	public static bool IsAuthenticationFailure(Exception exception) =>
 		IsAuthenticationFailure(exception, depth: 0);
 
+	/// <summary>
+	/// Returns <see langword="true"/> when a provider-reported error <b>message</b> represents rejected
+	/// credentials. Used where no exception object survives: ATF.Repository's provider catches everything
+	/// and hands back only <c>ErrorMessage</c>.
+	/// </summary>
+	/// <remarks>
+	/// This overload carries one rule the exception-based one cannot: an HTML body where the DataService
+	/// contract requires JSON. Creatio answers a request with rejected or expired credentials by serving
+	/// the login page with HTTP 200, so the provider's Newtonsoft deserialization fails and the only trace
+	/// that reaches clio is the parser's own prose. <c>ReauthExecutor.IsSessionExpiredResponse</c> cannot
+	/// help here - it inspects the response body, and the body is never part of the message.
+	/// A proxy or gateway error page produces the same shape and is indistinguishable from it, which is why
+	/// the diagnostic names the credentials first and the gateway second rather than claiming certainty.
+	/// </remarks>
+	/// <param name="message">The provider-reported error text.</param>
+	public static bool IsAuthenticationFailure(string message) {
+		if (string.IsNullOrWhiteSpace(message)) {
+			return false;
+		}
+		if (TransportSecurityFailure.IsMatch(message)) {
+			return false;
+		}
+		return HtmlWhereJsonExpected.IsMatch(message)
+			|| message.Contains("unauthorized", StringComparison.OrdinalIgnoreCase)
+			|| UnauthorizedStatusToken.IsMatch(message)
+			|| message.Contains("password has expired", StringComparison.OrdinalIgnoreCase)
+			|| message.Contains("authentication failed", StringComparison.OrdinalIgnoreCase)
+			|| message.Contains("authentication error", StringComparison.OrdinalIgnoreCase);
+	}
+
+	/// <summary>
+	/// Newtonsoft's prose for "the body is HTML, not JSON": <c>Unexpected character encountered while
+	/// parsing value: &lt;</c>. Anchored on that whole phrase rather than on the presence of a
+	/// <c>&lt;</c>, because a legitimate platform error message can contain an angle bracket
+	/// (<c>"Column &lt;Name&gt; is required"</c>) and must stay a generic failure.
+	/// </summary>
+	private static readonly Regex HtmlWhereJsonExpected =
+		new(@"Unexpected character encountered while parsing value:\s*<",
+			RegexOptions.Compiled | RegexOptions.CultureInvariant | RegexOptions.IgnoreCase,
+			TimeSpan.FromSeconds(1));
+
 	private static bool IsAuthenticationFailure(Exception exception, int depth) {
 		if (exception is null || depth >= MaxExceptionUnwrapDepth) {
 			return false;

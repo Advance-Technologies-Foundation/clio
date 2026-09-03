@@ -96,4 +96,45 @@ internal sealed class AuthenticationFailureClassifierTests {
 		result.Should().BeFalse(
 			because: "401 counts only as a standalone token, never as a substring of a port or an identifier");
 	}
+
+	[Test]
+	[TestCase("Unexpected character encountered while parsing value: <. Path '', line 0, position 0.",
+		TestName = "LoginPageArrivesAsAParserError")]
+	[TestCase("5: Your password has expired.", TestName = "ExpiredPasswordProse")]
+	[TestCase("Authentication failed.", TestName = "AuthenticationFailedProse")]
+	[TestCase("The remote server returned an error: 401.", TestName = "StandaloneStatusToken")]
+	[Description("The message-only overload classifies the shapes ATF.Repository reports, which is all that survives when the provider swallows the exception into ErrorMessage.")]
+	public void IsAuthenticationFailure_ShouldReturnTrue_ForACredentialNamingMessage(string message) {
+		// Arrange
+		// (the message is the whole input)
+
+		// Act
+		bool result = AuthenticationFailureClassifier.IsAuthenticationFailure(message);
+
+		// Assert
+		result.Should().BeTrue(
+			because: "ATF's provider hands back only ErrorMessage, so the message alone has to carry the credential diagnosis");
+	}
+
+	[Test]
+	[TestCase(null, TestName = "NullMessage")]
+	[TestCase("", TestName = "EmptyMessage")]
+	[TestCase("SqlException: deadlock victim", TestName = "GenericPlatformFailure")]
+	[TestCase("Connection refused at http://localhost:40124", TestName = "PortContaining401")]
+	[TestCase("Correlation id x401y", TestName = "IdentifierContaining401")]
+	[TestCase("The remote certificate is invalid according to the validation procedure.",
+		TestName = "CertificateFailure")]
+	[TestCase("Column <Name> is required.", TestName = "AngleBracketInPlatformProse")]
+	[Description("The message-only overload stays narrow: an angle bracket, a port, an identifier and a certificate problem must not be reported as rejected credentials.")]
+	public void IsAuthenticationFailure_ShouldReturnFalse_ForANonCredentialMessage(string message) {
+		// Arrange
+		// (the message is the whole input)
+
+		// Act
+		bool result = AuthenticationFailureClassifier.IsAuthenticationFailure(message);
+
+		// Assert
+		result.Should().BeFalse(
+			because: "sending the operator to repair working credentials replaces the only diagnosis that leads to the fix");
+	}
 }

@@ -150,10 +150,14 @@ public class CredentialPassthroughClientIdentityTests {
 		// Arrange
 		IServiceProvider container = BuildBearerPassthroughContainer();
 
-		// Act — resolve the IDataProvider and force the LazyDataProvider to build the real
-		// RemoteDataProvider, then locate the underlying CreatioClient by type.
+		// Act — resolve the IDataProvider, unwrap the ClassifyingDataProvider decorator, force the
+		// LazyDataProvider to build the real RemoteDataProvider, then locate the underlying CreatioClient
+		// by type.
 		IDataProvider dataProvider = container.GetRequiredService<IDataProvider>();
-		object lazy = GetPrivateField<object>(dataProvider, "_lazy");
+		dataProvider.Should().BeOfType<ClassifyingDataProvider>(
+			because: "an ATF response whose Success is false must be classified into an exception before it reaches a command as an empty collection (issue #1371)");
+		object lazyProvider = GetPrivateField<object>(dataProvider, "_inner");
+		object lazy = GetPrivateField<object>(lazyProvider, "_lazy");
 		object realProvider = lazy.GetType()
 			.GetProperty("Value", BindingFlags.Instance | BindingFlags.Public)!
 			.GetValue(lazy);

@@ -28,7 +28,7 @@ public sealed class SchemaNamePrefixTool(IToolCommandResolver commandResolver) {
 		RequiresClientRequests = McpToolClientRequests.None,
 		SharedFileResource = McpToolSharedFileResource.None)]
 	[Description("Returns the active SchemaNamePrefix system setting for the environment. " +
-	             "Returns empty string when no prefix is configured (use no prefix in that case). " +
+	             "Returns empty string when no prefix is configured (use no prefix in that case); an empty prefix always arrives with success:true, while a rejected session is reported as success:false with an authentication error. " +
 	             "Default Creatio environments return 'Usr'. " +
 	             "Note: create-app and get-app-info both read this setting automatically and return schema-name-prefix " +
 	             "in their responses — you only need this tool when you require the prefix before calling either of those.")]

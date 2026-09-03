@@ -12,16 +12,18 @@ using ModelContextProtocol.Protocol;
 namespace Clio.Mcp.E2E;
 
 /// <summary>
-/// End-to-end coverage for issue #1222: when Creatio rejects the credentials, the authenticated
-/// SelectQuery answers with a DataService fault envelope (<c>ErrorCode 5</c>, "Your password has
-/// expired.") under HTTP 200, and the repository provider collapses that to an empty successful
+/// End-to-end coverage for issue #1222: when Creatio rejects the credentials it serves its login page
+/// - HTML, under HTTP 200 - in answer to the authenticated SelectQuery, and ATF.Repository's
+/// <c>RemoteDataProvider</c> swallows the resulting parser failure into
+/// <c>Success = false</c> + empty <c>Items</c>, which <c>AppDataContext</c> then drops to a plain empty
 /// collection. The sys-settings MCP tools must report that as a structured failure instead of a
 /// valid-looking empty read, and a write must not be attempted on unproven credentials.
 /// </summary>
 /// <remarks>
 /// The unit tests around <c>SysSettingsCommand</c> prove exception-to-envelope mapping only. This
 /// fixture drives the real clio MCP server process against a stub that reproduces the rejection on
-/// the wire, so the whole path - transport, preflight, classifier, envelope - is exercised.
+/// the wire, so the whole path - transport, provider, <c>ClassifyingDataProvider</c>, classifier,
+/// envelope - is exercised.
 /// </remarks>
 [TestFixture]
 [Category("McpE2E.Sandbox")]
@@ -36,7 +38,7 @@ public sealed class SysSettingsAuthenticationFailureE2ETests {
 	[Test]
 	[AllureTag(SysSettingGetTool.GetSysSettingToolName)]
 	[AllureName("get-sys-setting reports rejected credentials instead of an empty value")]
-	[AllureDescription("Registers an environment against a stub whose authenticated SelectQuery answers with the ErrorCode 5 fault envelope, then verifies get-sys-setting returns success:false with an authentication error rather than a successful empty read.")]
+	[AllureDescription("Registers an environment against a stub whose authenticated SelectQuery answers with the Creatio login page, then verifies get-sys-setting returns success:false with an authentication error rather than a successful empty read.")]
 	[Description("get-sys-setting against an environment whose credentials Creatio rejects returns success:false with an authentication error, not a valid-looking empty value.")]
 	public async Task GetSysSetting_Should_Report_Authentication_Failure() {
 		await RunAgainstCredentialRejectionStubAsync(async (session, environmentName, cancellationToken) => {
@@ -68,7 +70,7 @@ public sealed class SysSettingsAuthenticationFailureE2ETests {
 	[Test]
 	[AllureTag(SysSettingsListTool.ListSysSettingsToolName)]
 	[AllureName("list-sys-settings reports rejected credentials instead of an empty catalog")]
-	[AllureDescription("Registers an environment against a stub whose authenticated SelectQuery answers with the ErrorCode 5 fault envelope, then verifies list-sys-settings returns success:false rather than an empty catalog.")]
+	[AllureDescription("Registers an environment against a stub whose authenticated SelectQuery answers with the Creatio login page, then verifies list-sys-settings returns success:false rather than an empty catalog.")]
 	[Description("list-sys-settings against an environment whose credentials Creatio rejects returns success:false with an authentication error, not an empty catalog that reads as 'this environment has no settings'.")]
 	public async Task ListSysSettings_Should_Report_Authentication_Failure() {
 		await RunAgainstCredentialRejectionStubAsync(async (session, environmentName, cancellationToken) => {
@@ -96,7 +98,7 @@ public sealed class SysSettingsAuthenticationFailureE2ETests {
 	[Test]
 	[AllureTag(SysSettingCreateTool.CreateSysSettingToolName)]
 	[AllureName("create-sys-setting fails closed on rejected credentials")]
-	[AllureDescription("Registers an environment against a stub whose authenticated SelectQuery answers with the ErrorCode 5 fault envelope, then verifies create-sys-setting returns success:false and reports no created value.")]
+	[AllureDescription("Registers an environment against a stub whose authenticated SelectQuery answers with the Creatio login page, then verifies create-sys-setting returns success:false and reports no created value.")]
 	[Description("create-sys-setting against an environment whose credentials Creatio rejects fails closed: success:false with an authentication error and no reported creation.")]
 	public async Task CreateSysSetting_Should_Fail_Closed_On_Rejected_Credentials() {
 		await RunAgainstCredentialRejectionStubAsync(async (session, environmentName, cancellationToken) => {
@@ -117,7 +119,7 @@ public sealed class SysSettingsAuthenticationFailureE2ETests {
 
 			// Assert
 			response.Success.Should().BeFalse(
-				because: "a write must not proceed on credentials the preflight could not confirm");
+				because: "a write must not proceed on a session the environment rejected");
 			response.Error.Should().NotBeNullOrWhiteSpace(
 				because: "the caller needs to know the write was refused and why");
 			response.Warning.Should().BeNull(

@@ -23,7 +23,7 @@ public sealed class SysSettingGetTool(IToolCommandResolver commandResolver) {
 		RequiresClientRequests = McpToolClientRequests.None,
 		SharedFileResource = McpToolSharedFileResource.None)]
 	[Description("Reads the value of a Creatio system setting by code. Returns the raw string value for the All Users default. " +
-	             "Returns empty value when the setting is not configured. Use list-sys-settings to discover available codes.")]
+	             "Returns empty value when the setting is not configured - an empty value always arrives with success:true; a rejected session is reported as success:false with an authentication error instead. Use list-sys-settings to discover available codes.")]
 	public SysSettingGetResult GetSysSetting(
 		[Description("Parameters: environment-name (required), code (required)")]
 		[Required]

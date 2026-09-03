@@ -36,9 +36,8 @@ public class SysSettingsManagerNewBehaviorTests {
 		IsNetCore = false
 	};
 
-	// What an accepted DataService SelectQuery answers with. A substituted client returns null by
-	// default, and an empty body is no longer accepted as proof of authentication, so every test that
-	// reaches the probe needs a real envelope rather than silence.
+	// A neutral DataService envelope for the substituted client. Reads go through the data provider,
+	// so this only stands in for the write endpoints a test does not assert on.
 	private const string AcceptedDataServiceResponse = "{\"rows\":[],\"success\":true}";
 
 	/// <summary>The repository root, four levels above the test output directory.</summary>
@@ -49,21 +48,23 @@ public class SysSettingsManagerNewBehaviorTests {
 		IApplicationClient applicationClient = Substitute.For<IApplicationClient>();
 		applicationClient.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>())
 			.Returns(AcceptedDataServiceResponse);
-		//The probe uses the timeout-bearing overload. NSubstitute matches per overload, so without
-		//this twin the two-argument stub above leaves the probe returning null.
-		applicationClient.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
-			.Returns(AcceptedDataServiceResponse);
 		return applicationClient;
 	}
 
-	private static IApplicationClient BuildRejectingClient(string response) {
-		IApplicationClient applicationClient = Substitute.For<IApplicationClient>();
-		applicationClient.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>()).Returns(response);
-		//The probe uses the timeout-bearing overload. NSubstitute matches per overload, so without
-		//this twin the two-argument stub above leaves the probe returning null.
-		applicationClient.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>()).Returns(response);
-		return applicationClient;
-	}
+	/// <summary>
+	/// The data provider a rejected session actually produces: ATF's provider swallows the failure into
+	/// Success = false with an empty payload, and only ClassifyingDataProvider turns that into a failure
+	/// the caller cannot mistake for an empty result.
+	/// </summary>
+	private static IDataProvider BuildRejectedProvider(string errorMessage = ExpiredCredentialsError) =>
+		new ClassifyingDataProvider(new UnsuccessfulDataProvider(errorMessage));
+
+	/// <summary>What ATF reports when Creatio answers a rejected credential with its login page.</summary>
+	private const string LoginPageParserError =
+		"Unexpected character encountered while parsing value: <. Path \'\', line 0, position 0.";
+
+	/// <summary>What ATF reports when the platform names the credential outcome in prose.</summary>
+	private const string ExpiredCredentialsError = "5: Your password has expired.";
 
 	private static ISysSettingsManager BuildSut(IDataProvider dataProvider,
 		IApplicationClient applicationClient = null) {
@@ -294,49 +295,17 @@ public class SysSettingsManagerNewBehaviorTests {
 	#region Authentication failure handling
 
 	[Test]
-	[Description("The authentication preflight is issued with a finite timeout and a single attempt, so a half-open endpoint cannot hang the command before its real operation starts.")]
-	public void EnsureAuthenticatedDataServiceResponse_ShouldUseBoundedRequestOptions() {
-		// Arrange
-		IApplicationClient applicationClient = BuildAcceptedClient();
-		IDataProvider dataProvider = new DataProviderMock();
-		ISysSettingsManager sut = BuildSut(dataProvider, applicationClient);
-
-		// Act
-		sut.GetAllSysSettingsWithValues();
-
-		// Assert
-		applicationClient.Received(1).ExecutePostRequest(
-			Arg.Is<string>(url => url.Contains("SelectQuery")),
-			Arg.Any<string>(),
-			60_000,
-			1,
-			1);
-		applicationClient.DidNotReceive().ExecutePostRequest(
-			Arg.Is<string>(url => url.Contains("SelectQuery")),
-			Arg.Any<string>(),
-			System.Threading.Timeout.Infinite,
-			Arg.Any<int>(),
-			Arg.Any<int>());
-	}
-
-	[Test]
-	[Description("GetAllSysSettingsWithValues fails closed when the DataService returns Creatio's expired-password authentication error instead of allowing the repository provider to expose an empty list.")]
+	[Description("list-sys-settings fails closed when the data provider reports a rejected session, instead of exposing ATF's empty collection as a real (empty) catalog.")]
 	public void GetAllSysSettingsWithValues_ShouldThrowAuthenticationException_WhenCredentialsAreRejected() {
 		// Arrange
-		IApplicationClient applicationClient = Substitute.For<IApplicationClient>();
-		applicationClient.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>())
-			.Returns("{\"success\":false,\"errorInfo\":{\"errorCode\":\"5\",\"message\":\"Your password has expired\"}}");
-		//The probe uses the timeout-bearing overload. NSubstitute matches per overload, so without
-		//this twin the two-argument stub above leaves the probe returning null.
-		applicationClient.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
-			.Returns("{\"success\":false,\"errorInfo\":{\"errorCode\":\"5\",\"message\":\"Your password has expired\"}}");
-		ISysSettingsManager sut = BuildSut(new DataProviderMock(), applicationClient);
+		ISysSettingsManager sut = BuildSut(BuildRejectedProvider());
 
 		// Act
 		Action act = () => sut.GetAllSysSettingsWithValues(includeBinary: true);
 
 		// Assert
-		AuthenticationException exception = act.Should().Throw<AuthenticationException>().Which;
+		AuthenticationException exception = act.Should().Throw<AuthenticationException>(
+			because: "Models<T>() drops the response's Success flag, so without the classifying decorator a rejected read reaches the caller as an empty list (issue #1222)").Which;
 		exception.Message.Should().Contain("password has expired",
 			because: "the actionable platform cause must survive the fail-closed authentication mapping");
 		exception.Message.Should().Contain("Verify the environment credentials",
@@ -344,72 +313,124 @@ public class SysSettingsManagerNewBehaviorTests {
 	}
 
 	[Test]
-	[Description("UpdateSysSetting fails before posting when the authenticated DataService probe reports ErrorCode 5, so an expired password is not reduced to a generic write failure.")]
+	[Description("list-sys-settings fails closed on the shape a rejected session really produces: Creatio serves its login page with HTTP 200, so ATF reports only Newtonsoft's parser prose.")]
+	public void GetAllSysSettingsWithValues_ShouldThrowAuthenticationException_ForALoginPageResponse() {
+		// Arrange
+		ISysSettingsManager sut = BuildSut(BuildRejectedProvider(LoginPageParserError));
+
+		// Act
+		Action act = () => sut.GetAllSysSettingsWithValues(includeBinary: true);
+
+		// Assert
+		act.Should().Throw<AuthenticationException>(
+			because: "an HTML body where the DataService contract requires JSON is the login page, and that is exactly how the defect reached the user");
+	}
+
+	[Test]
+	[Description("update-sys-setting fails before it writes when the data provider reports a rejected session, so an expired password is not reduced to a generic write failure.")]
 	public void UpdateSysSetting_ShouldThrowAuthenticationException_WhenCredentialsAreRejected() {
 		// Arrange
-		DataProviderMock providerMock = SetupSysSettingsMock(Guid.NewGuid(), "UsrAuthFailure", "Text");
-		IApplicationClient applicationClient = Substitute.For<IApplicationClient>();
-		applicationClient.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>())
-			.Returns("{\"success\":false,\"responseStatus\":{\"ErrorCode\":\"5\",\"Message\":\"Your password has expired\"}}");
-		//The probe uses the timeout-bearing overload. NSubstitute matches per overload, so without
-		//this twin the two-argument stub above leaves the probe returning null.
-		applicationClient.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
-			.Returns("{\"success\":false,\"responseStatus\":{\"ErrorCode\":\"5\",\"Message\":\"Your password has expired\"}}");
-		ISysSettingsManager sut = BuildSut(providerMock, applicationClient);
+		IApplicationClient applicationClient = BuildAcceptedClient();
+		ISysSettingsManager sut = BuildSut(BuildRejectedProvider(), applicationClient);
 
 		// Act
 		Action act = () => sut.UpdateSysSetting("UsrAuthFailure", "value");
 
 		// Assert
 		AuthenticationException exception = act.Should().Throw<AuthenticationException>(
-			because: "a rejected authenticated probe must stop the write before the generic save-result path").Which;
+			because: "the update reads the setting's type first, and that read is where a rejected session is detectable").Which;
 		exception.Message.Should().Contain("password has expired",
 			because: "the actionable platform cause must be preserved so the operator knows what to fix");
 		exception.Message.Should().Contain("Verify the environment credentials",
 			because: "auth errors must carry a recovery action, not just a type marker");
-		applicationClient.ReceivedCalls().Should().ContainSingle(
-			because: "the rejected probe must stop the update before a second write request is sent");
+		applicationClient.ReceivedCalls().Should().BeEmpty(
+			because: "the rejected read must stop the update before any write request is sent");
 	}
 
 	[Test]
-	[Description("InsertSysSetting fails before posting the create request when the authenticated DataService probe reports ErrorCode 5, so an expired password is not reduced to a generic create failure.")]
-	public void InsertSysSetting_ShouldThrowAuthenticationException_WhenCredentialsAreRejected() {
+	[Description("update-sys-setting for a Lookup fails closed too: its reference-schema resolution is the same rejected read.")]
+	public void UpdateSysSetting_ShouldThrowAuthenticationException_ForALookupValue() {
 		// Arrange
-		IApplicationClient applicationClient = Substitute.For<IApplicationClient>();
-		applicationClient.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>())
-			.Returns("{\"success\":false,\"responseStatus\":{\"ErrorCode\":\"5\",\"Message\":\"Your password has expired\"}}");
-		//The probe uses the timeout-bearing overload. NSubstitute matches per overload, so without
-		//this twin the two-argument stub above leaves the probe returning null.
-		applicationClient.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
-			.Returns("{\"success\":false,\"responseStatus\":{\"ErrorCode\":\"5\",\"Message\":\"Your password has expired\"}}");
-		ISysSettingsManager sut = BuildSut(new DataProviderMock(), applicationClient);
+		IApplicationClient applicationClient = BuildAcceptedClient();
+		ISysSettingsManager sut = BuildSut(BuildRejectedProvider(), applicationClient);
 
 		// Act
-		Action act = () => sut.InsertSysSetting("UsrAuthFailure", "UsrAuthFailure", "Text");
+		Action act = () => sut.UpdateSysSetting("UsrAuthLookup", "Contact", "Lookup");
 
 		// Assert
-		AuthenticationException exception = act.Should().Throw<AuthenticationException>(
-			because: "a rejected authenticated probe must stop the create before the insert request is sent").Which;
-		exception.Message.Should().Contain("password has expired",
-			because: "the actionable platform cause must be preserved so the operator knows what to fix");
-		exception.Message.Should().Contain("Verify the environment credentials",
-			because: "auth errors must carry a recovery action, not just a type marker");
-		applicationClient.ReceivedCalls().Should().ContainSingle(
-			because: "the rejected probe must stop the create before a second write request is sent");
+		act.Should().Throw<AuthenticationException>(
+			because: "a Lookup write resolves the setting through the provider before posting, so it must fail closed on a rejected session as well");
+		applicationClient.ReceivedCalls().Should().BeEmpty(
+			because: "no lookup value may be written on an unproven session");
 	}
 
 	[Test]
-	[Description("GetAllSysSettingsWithValues maps an HTTP 401 thrown by the application client to an authentication failure instead of leaking a generic error to MCP callers.")]
-	public void GetAllSysSettingsWithValues_ShouldMapHttpUnauthorizedException() {
+	[Description("create-sys-setting fails closed for a Text setting when the initial value cannot be applied because the session was rejected.")]
+	public void TryCreateSysSetting_ShouldReportAuthenticationFailure_ForAText() {
 		// Arrange
 		IApplicationClient applicationClient = Substitute.For<IApplicationClient>();
-		applicationClient.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>())
-			.Returns(_ => throw new HttpRequestException("Response status code does not indicate success: 401 (Unauthorized)."));
-		//The probe uses the timeout-bearing overload. NSubstitute matches per overload, so without
-		//this twin the two-argument stub above leaves the probe returning null.
-		applicationClient.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
-			.Returns(_ => throw new HttpRequestException("Response status code does not indicate success: 401 (Unauthorized)."));
-		ISysSettingsManager sut = BuildSut(new DataProviderMock(), applicationClient);
+		applicationClient.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>()).Returns(InsertSuccessJson);
+		ISysSettingsManager manager = BuildSut(BuildRejectedProvider(), applicationClient);
+		SysSettingsCommand command = new(manager, Substitute.For<ILogger>(), Substitute.For<IFileSystem>());
+
+		// Act
+		SysSettingCreateResult result = command.TryCreateSysSetting(
+			new CreateSysSettingArgs("local", "UsrAuthCreate", "UsrAuthCreate", "Text", Value: "seed"));
+
+		// Assert
+		result.Success.Should().BeFalse(
+			because: "a create whose value could not be applied on a rejected session must not be reported as done");
+		result.Error.Should().Be("Authentication error creating sys-setting.",
+			because: "the caller has to be told the credentials are the problem rather than the payload");
+	}
+
+	[Test]
+	[Description("create-sys-setting fails closed for a Lookup setting: resolving the reference schema is a provider read, so a rejected session stops the create before anything is written.")]
+	public void TryCreateSysSetting_ShouldReportAuthenticationFailure_ForALookup() {
+		// Arrange
+		IApplicationClient applicationClient = BuildAcceptedClient();
+		ISysSettingsManager manager = BuildSut(BuildRejectedProvider(), applicationClient);
+		SysSettingsCommand command = new(manager, Substitute.For<ILogger>(), Substitute.For<IFileSystem>());
+
+		// Act
+		SysSettingCreateResult result = command.TryCreateSysSetting(
+			new CreateSysSettingArgs("local", "UsrAuthLookup", "UsrAuthLookup", "Lookup",
+				ReferenceSchemaName: "Contact"));
+
+		// Assert
+		result.Success.Should().BeFalse(
+			because: "a schema lookup that failed because the session was rejected must not be reported as 'schema not found' or as a success");
+		result.Error.Should().Be("Authentication error creating sys-setting.",
+			because: "the credential cause has to reach the caller");
+		applicationClient.ReceivedCalls().Should().BeEmpty(
+			because: "the rejected read must stop the create before the insert request is sent");
+	}
+
+	[Test]
+	[Description("update-sys-setting surfaces the credential cause through the MCP result envelope rather than a generic failure.")]
+	public void TryUpdateSysSetting_ShouldReportAuthenticationFailure_WhenCredentialsAreRejected() {
+		// Arrange
+		ISysSettingsManager manager = BuildSut(BuildRejectedProvider());
+		SysSettingsCommand command = new(manager, Substitute.For<ILogger>(), Substitute.For<IFileSystem>());
+
+		// Act
+		SysSettingUpdateResult result = command.TryUpdateSysSetting(
+			new UpdateSysSettingArgs("local", "UsrAuthFailure", "value"));
+
+		// Assert
+		result.Success.Should().BeFalse(
+			because: "a write on a rejected session did not happen and must not be reported as done");
+		result.Error.Should().Be("Authentication error updating sys-setting.",
+			because: "the MCP caller needs the credential diagnosis, not a generic write failure");
+	}
+
+	[Test]
+	[Description("An HTTP 401 thrown out of the provider maps to an authentication failure instead of leaking a generic error to MCP callers.")]
+	public void GetAllSysSettingsWithValues_ShouldMapHttpUnauthorizedException() {
+		// Arrange
+		IDataProvider dataProvider = new ClassifyingDataProvider(new ThrowingDataProvider(
+			() => new HttpRequestException("Response status code does not indicate success: 401 (Unauthorized).")));
+		ISysSettingsManager sut = BuildSut(dataProvider);
 
 		// Act
 		Action act = () => sut.GetAllSysSettingsWithValues();
@@ -420,44 +441,38 @@ public class SysSettingsManagerNewBehaviorTests {
 	}
 
 	[Test]
-	[Description("A refused connection whose message carries a port containing the digits 401 stays a network error: the manager must not wrap it as an authentication failure and send the operator off to repair working credentials.")]
+	[Description("A refused connection whose message carries a port containing the digits 401 stays a network error: the read must not be wrapped as an authentication failure and send the operator off to repair working credentials.")]
 	public void GetAllSysSettingsWithValues_ShouldNotTreatAPortContaining401AsRejectedCredentials() {
-		// Arrange - the manager used to classify with a bare Contains("401"), so :40124 read as a 401.
-		const string refused = "Connection refused at http://localhost:40124";
-		IApplicationClient applicationClient = Substitute.For<IApplicationClient>();
-		applicationClient.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>())
-			.Returns(_ => throw new HttpRequestException(refused));
-		applicationClient.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
-			.Returns(_ => throw new HttpRequestException(refused));
-		ISysSettingsManager sut = BuildSut(new DataProviderMock(), applicationClient);
+		// Arrange - a bare Contains("401") used to read :40124 as a 401.
+		IDataProvider dataProvider = new ClassifyingDataProvider(new ThrowingDataProvider(
+			() => new HttpRequestException("Connection refused at http://localhost:40124")));
+		ISysSettingsManager sut = BuildSut(dataProvider);
 
 		// Act
 		Action act = () => sut.GetAllSysSettingsWithValues();
 
 		// Assert
-		act.Should().NotThrow<AuthenticationException>(
-			because: "a port is not a status code; wrapping this as an authentication failure also hid the original exception from the command-layer classifier");
-		act.Should().Throw<HttpRequestException>(
-			because: "the transport failure must reach the caller unchanged so the real cause is diagnosable");
+		Exception thrown = act.Should().Throw<InvalidOperationException>(
+			because: "the transport failure must still stop the read, so it is never reported as an empty catalog").Which;
+		thrown.Should().NotBeOfType<AuthenticationException>(
+			because: "a port is not a status code, and misclassifying it hides the real cause");
 	}
 
 	[Test]
 	[Description("A correlation id that happens to contain 401 between letters stays a network error, for the same reason a port does.")]
 	public void GetAllSysSettingsWithValues_ShouldNotTreatACorrelationIdContaining401AsRejectedCredentials() {
 		// Arrange
-		const string correlated = "Upstream failure. Correlation id x401y";
-		IApplicationClient applicationClient = Substitute.For<IApplicationClient>();
-		applicationClient.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>())
-			.Returns(_ => throw new HttpRequestException(correlated));
-		applicationClient.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
-			.Returns(_ => throw new HttpRequestException(correlated));
-		ISysSettingsManager sut = BuildSut(new DataProviderMock(), applicationClient);
+		IDataProvider dataProvider = new ClassifyingDataProvider(new ThrowingDataProvider(
+			() => new HttpRequestException("Upstream failure. Correlation id x401y")));
+		ISysSettingsManager sut = BuildSut(dataProvider);
 
 		// Act
 		Action act = () => sut.GetAllSysSettingsWithValues();
 
 		// Assert
-		act.Should().NotThrow<AuthenticationException>(
+		Exception thrown = act.Should().Throw<InvalidOperationException>(
+			because: "the upstream failure must stop the read").Which;
+		thrown.Should().NotBeOfType<AuthenticationException>(
 			because: "401 surrounded by letters is part of an identifier, not a status code");
 	}
 
@@ -465,75 +480,34 @@ public class SysSettingsManagerNewBehaviorTests {
 	[Description("A standalone 401 in the transport prose is still rejected credentials, so tightening the token did not simply switch the signal off.")]
 	public void GetAllSysSettingsWithValues_ShouldStillTreatAStandalone401AsRejectedCredentials() {
 		// Arrange
-		const string unauthorized = "The remote server returned an error: 401.";
-		IApplicationClient applicationClient = Substitute.For<IApplicationClient>();
-		applicationClient.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>())
-			.Returns(_ => throw new HttpRequestException(unauthorized));
-		applicationClient.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
-			.Returns(_ => throw new HttpRequestException(unauthorized));
-		ISysSettingsManager sut = BuildSut(new DataProviderMock(), applicationClient);
+		IDataProvider dataProvider = new ClassifyingDataProvider(new ThrowingDataProvider(
+			() => new HttpRequestException("The remote server returned an error: 401.")));
+		ISysSettingsManager sut = BuildSut(dataProvider);
 
 		// Act
 		Action act = () => sut.GetAllSysSettingsWithValues();
 
 		// Assert
 		act.Should().Throw<AuthenticationException>(
-			because: "the manager path must keep reporting a genuine 401; the fix narrows the match, it does not remove it");
+			because: "a genuine 401 must keep its diagnosis; the narrowed match does not remove the signal");
 	}
 
 	[Test]
-	[TestCase("{}", TestName = "EmptyObject")]
-	[TestCase("[]", TestName = "EmptyArray")]
-	[TestCase("null", TestName = "JsonNull")]
-	[TestCase("{\"error\":\"502\"}", TestName = "GatewayError")]
-	[TestCase("{\"data\":{\"items\":[]}}", TestName = "UnknownEnvelope")]
-	//A single marker property is enough for the readiness poll but not for proof of authentication:
-	//a proxy that knows only the word "success" produced both of these, and each one used to be cached
-	//as permanent proof, so every later read and write skipped the probe.
-	[TestCase("{\"success\":true}", TestName = "BareSuccessFlag")]
-	[TestCase("{\"success\":false}", TestName = "BareFailureFlag")]
-	[Description("Parseable JSON that is not a DataService envelope does not confirm the credentials: the read fails instead of returning an authentication-collapsed empty result.")]
-	public void GetAllSysSettingsWithValues_ShouldNotAcceptArbitraryJson_AsProofOfAuthentication(string response) {
+	[Description("A provider failure that names no credential problem is reported as a failure - never as an empty list - but keeps its own diagnosis.")]
+	public void GetAllSysSettingsWithValues_ShouldReportAGenericProviderFailureAsAFailure() {
 		// Arrange
-		IApplicationClient applicationClient = BuildRejectingClient(response);
-		ISysSettingsManager sut = BuildSut(new DataProviderMock(), applicationClient);
+		ISysSettingsManager sut = BuildSut(BuildRejectedProvider("SqlException: deadlock victim"));
 
 		// Act
 		Action act = () => sut.GetAllSysSettingsWithValues();
 
 		// Assert
-		act.Should().Throw<InvalidOperationException>(
-			because: "only a DataService envelope proves the request was authenticated and executed; a proxy or half-initialized app tier can answer with any of these shapes")
-			.Which.Message.Should().Contain("not a DataService",
-				because: "the operator has to be told what the environment actually answered with");
-	}
-
-	[Test]
-	[Description("A non-envelope probe answer is not cached as proof: a second operation probes again rather than trusting the first indeterminate response, and no write is sent.")]
-	public void EnsureAuthenticatedDataServiceResponse_ShouldNotCacheSuccess_ForANonEnvelopeAnswer() {
-		// Arrange
-		IApplicationClient applicationClient = BuildRejectingClient("{}");
-		//An EMPTY provider is the shape that matters: a collapsed authentication read looks exactly like
-		//this, and it is the only shape that reaches the preflight on both operations.
-		ISysSettingsManager sut = BuildSut(new DataProviderMock(), applicationClient);
-
-		// Act
-		Action firstRead = () => sut.GetAllSysSettingsWithValues();
-		Action write = () => sut.UpdateSysSetting("UsrIndeterminate", "value");
-
-		// Assert
-		firstRead.Should().Throw<InvalidOperationException>();
-		write.Should().Throw<InvalidOperationException>(
-			because: "an indeterminate probe must never become permanent proof - that cached flag is what let later writes skip the preflight entirely");
-		applicationClient.Received(2).ExecutePostRequest(
-			Arg.Is<string>(url => url.Contains("SelectQuery")),
-			Arg.Any<string>(),
-			Arg.Any<int>(),
-			Arg.Any<int>(),
-			Arg.Any<int>());
-		applicationClient.DidNotReceive().ExecutePostRequest(
-			Arg.Is<string>(url => url.Contains("InsertSysSettingRequest") || url.Contains("UpdateSysSetting")),
-			Arg.Any<string>());
+		Exception thrown = act.Should().Throw<InvalidOperationException>(
+			because: "an unsuccessful response must never be handed back as a legitimate empty catalog").Which;
+		thrown.Should().NotBeOfType<AuthenticationException>(
+			because: "a deadlock is not a credential failure");
+		thrown.Message.Should().Contain("deadlock victim",
+			because: "the platform's own text is the only diagnosable detail available");
 	}
 
 	#endregion
@@ -551,8 +525,6 @@ public class SysSettingsManagerNewBehaviorTests {
 		applicationClient
 			.ExecutePostRequest(Arg.Any<string>(), Arg.Do<string>(b => capturedBody = b))
 			.Returns(InsertSuccessJson);
-		//The probe uses the timeout-bearing overload. NSubstitute matches per overload, so without
-		//this twin the two-argument stub above leaves the probe returning null.
 		applicationClient
 			.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
 			.Returns(InsertSuccessJson);
@@ -578,8 +550,6 @@ public class SysSettingsManagerNewBehaviorTests {
 		applicationClient
 			.ExecutePostRequest(Arg.Any<string>(), Arg.Do<string>(b => capturedBody = b))
 			.Returns(InsertSuccessJson);
-		//The probe uses the timeout-bearing overload. NSubstitute matches per overload, so without
-		//this twin the two-argument stub above leaves the probe returning null.
 		applicationClient
 			.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
 			.Returns(InsertSuccessJson);
@@ -603,8 +573,6 @@ public class SysSettingsManagerNewBehaviorTests {
 		applicationClient
 			.ExecutePostRequest(Arg.Any<string>(), Arg.Do<string>(b => capturedBody = b))
 			.Returns(InsertSuccessJson);
-		//The probe uses the timeout-bearing overload. NSubstitute matches per overload, so without
-		//this twin the two-argument stub above leaves the probe returning null.
 		applicationClient
 			.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
 			.Returns(InsertSuccessJson);
@@ -627,8 +595,6 @@ public class SysSettingsManagerNewBehaviorTests {
 		applicationClient.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>())
 			.Returns(
 				"""{"saveResult":{"UsrAny":true},"rowsAffected":-1,"nextPrcElReady":false,"success":false}""");
-		//The probe uses the timeout-bearing overload. NSubstitute matches per overload, so without
-		//this twin the two-argument stub above leaves the probe returning null.
 		applicationClient.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
 			.Returns(
 				"""{"saveResult":{"UsrAny":true},"rowsAffected":-1,"nextPrcElReady":false,"success":false}""");
@@ -645,8 +611,6 @@ public class SysSettingsManagerNewBehaviorTests {
 		applicationClient.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>())
 			.Returns(
 				"""{"saveResult":{"UsrAny":false},"rowsAffected":-1,"nextPrcElReady":false,"success":false,"responseStatus":{"ErrorCode":"","Message":"denied","Errors":[]}}""");
-		//The probe uses the timeout-bearing overload. NSubstitute matches per overload, so without
-		//this twin the two-argument stub above leaves the probe returning null.
 		applicationClient.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
 			.Returns(
 				"""{"saveResult":{"UsrAny":false},"rowsAffected":-1,"nextPrcElReady":false,"success":false,"responseStatus":{"ErrorCode":"","Message":"denied","Errors":[]}}""");
@@ -663,8 +627,6 @@ public class SysSettingsManagerNewBehaviorTests {
 		applicationClient.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>())
 			.Returns(
 				"""{"saveResult":{"OtherCode":true},"rowsAffected":-1,"nextPrcElReady":false,"success":false}""");
-		//The probe uses the timeout-bearing overload. NSubstitute matches per overload, so without
-		//this twin the two-argument stub above leaves the probe returning null.
 		applicationClient.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
 			.Returns(
 				"""{"saveResult":{"OtherCode":true},"rowsAffected":-1,"nextPrcElReady":false,"success":false}""");
@@ -680,8 +642,6 @@ public class SysSettingsManagerNewBehaviorTests {
 		IApplicationClient applicationClient = Substitute.For<IApplicationClient>();
 		applicationClient.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>())
 			.Returns(string.Empty);
-		//The probe uses the timeout-bearing overload. NSubstitute matches per overload, so without
-		//this twin the two-argument stub above leaves the probe returning null.
 		applicationClient.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
 			.Returns(string.Empty);
 		// The credentials are fine here; it is the WRITE acknowledgement that is missing, so the
@@ -689,8 +649,6 @@ public class SysSettingsManagerNewBehaviorTests {
 		applicationClient
 			.ExecutePostRequest(Arg.Is<string>(url => url.Contains("SelectQuery")), Arg.Any<string>())
 			.Returns(AcceptedDataServiceResponse);
-		//The probe uses the timeout-bearing overload. NSubstitute matches per overload, so without
-		//this twin the two-argument stub above leaves the probe returning null.
 		applicationClient
 			.ExecutePostRequest(Arg.Is<string>(url => url.Contains("SelectQuery")), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
 			.Returns(AcceptedDataServiceResponse);
@@ -728,8 +686,6 @@ public class SysSettingsManagerNewBehaviorTests {
 		result.Should().BeFalse(
 			because: "an agent-supplied code with a quote character could otherwise break the request JSON payload");
 		applicationClient.DidNotReceive().ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>());
-		//The probe uses the timeout-bearing overload. NSubstitute matches per overload, so without
-		//this twin the two-argument stub above leaves the probe returning null.
 		applicationClient.DidNotReceive().ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>());
 	}
 
@@ -741,8 +697,6 @@ public class SysSettingsManagerNewBehaviorTests {
 		string capturedBody = null;
 		applicationClient.ExecutePostRequest(Arg.Any<string>(), Arg.Do<string>(b => capturedBody = b))
 			.Returns("""{"saveResult":{"UsrEscapeCode":true},"success":false}""");
-		//The probe uses the timeout-bearing overload. NSubstitute matches per overload, so without
-		//this twin the two-argument stub above leaves the probe returning null.
 		applicationClient.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
 			.Returns("""{"saveResult":{"UsrEscapeCode":true},"success":false}""");
 		ISysSettingsManager sut = BuildSut(providerMock, applicationClient);
@@ -771,8 +725,6 @@ public class SysSettingsManagerNewBehaviorTests {
 		result.Should().BeFalse(
 			because: "there is no sys-setting to resolve a reference schema against, so the update must fail closed instead of throwing");
 		applicationClient.DidNotReceive().ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>());
-		//The probe uses the timeout-bearing overload. NSubstitute matches per overload, so without
-		//this twin the two-argument stub above leaves the probe returning null.
 		applicationClient.DidNotReceive().ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>());
 	}
 
@@ -932,8 +884,6 @@ public class SysSettingsManagerNewBehaviorTests {
 			.Returns(_ => capturedBodies.Count == 1
 				? $$"""{"rows":[{"Id":"{{resolvedId}}"}]}"""
 				: """{"saveResult":{"UsrLookupCode":true},"success":false}""");
-		//The probe uses the timeout-bearing overload. NSubstitute matches per overload, so without
-		//this twin the two-argument stub above leaves the probe returning null.
 		applicationClient.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
 			.Returns(_ => capturedBodies.Count == 1
 				? $$"""{"rows":[{"Id":"{{resolvedId}}"}]}"""
@@ -977,8 +927,6 @@ public class SysSettingsManagerNewBehaviorTests {
 		IApplicationClient applicationClient = Substitute.For<IApplicationClient>();
 		applicationClient.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>())
 			.Returns("""{"rows":[{"Id":"11111111-1111-1111-1111-111111111111"},{"Id":"22222222-2222-2222-2222-222222222222"}]}""");
-		//The probe uses the timeout-bearing overload. NSubstitute matches per overload, so without
-		//this twin the two-argument stub above leaves the probe returning null.
 		applicationClient.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
 			.Returns("""{"rows":[{"Id":"11111111-1111-1111-1111-111111111111"},{"Id":"22222222-2222-2222-2222-222222222222"}]}""");
 		SysSettingsManager sut = BuildSutWithStubbedTemplate(providerMock, applicationClient,
@@ -1105,8 +1053,6 @@ public class SysSettingsManagerNewBehaviorTests {
 		string capturedBody = null;
 		applicationClient.ExecutePostRequest(Arg.Any<string>(), Arg.Do<string>(b => capturedBody = b))
 			.Returns("""{"saveResult":{"UsrMoneyCode":true},"success":false}""");
-		//The probe uses the timeout-bearing overload. NSubstitute matches per overload, so without
-		//this twin the two-argument stub above leaves the probe returning null.
 		applicationClient.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
 			.Returns("""{"saveResult":{"UsrMoneyCode":true},"success":false}""");
 		ISysSettingsManager sut = BuildSut(providerMock, applicationClient);
@@ -1125,8 +1071,6 @@ public class SysSettingsManagerNewBehaviorTests {
 		string capturedBody = null;
 		applicationClient.ExecutePostRequest(Arg.Any<string>(), Arg.Do<string>(b => capturedBody = b))
 			.Returns("""{"saveResult":{"UsrFloatCode":true},"success":false}""");
-		//The probe uses the timeout-bearing overload. NSubstitute matches per overload, so without
-		//this twin the two-argument stub above leaves the probe returning null.
 		applicationClient.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
 			.Returns("""{"saveResult":{"UsrFloatCode":true},"success":false}""");
 		ISysSettingsManager sut = BuildSut(providerMock, applicationClient);
@@ -1147,8 +1091,6 @@ public class SysSettingsManagerNewBehaviorTests {
 		string capturedBody = null;
 		applicationClient.ExecutePostRequest(Arg.Any<string>(), Arg.Do<string>(b => capturedBody = b))
 			.Returns("""{"saveResult":{"LogoImage":true},"success":false}""");
-		//The probe uses the timeout-bearing overload. NSubstitute matches per overload, so without
-		//this twin the two-argument stub above leaves the probe returning null.
 		applicationClient.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
 			.Returns("""{"saveResult":{"LogoImage":true},"success":false}""");
 		ISysSettingsManager sut = BuildSut(providerMock, applicationClient);
@@ -1178,8 +1120,6 @@ public class SysSettingsManagerNewBehaviorTests {
 		updated.Should().BeFalse(
 			because: "a Binary value that is not valid Base64 must fail fast rather than post a bad payload");
 		applicationClient.DidNotReceive().ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>());
-		//The probe uses the timeout-bearing overload. NSubstitute matches per overload, so without
-		//this twin the two-argument stub above leaves the probe returning null.
 		applicationClient.DidNotReceive().ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>());
 	}
 
@@ -1200,8 +1140,6 @@ public class SysSettingsManagerNewBehaviorTests {
 		updated.Should().BeFalse(
 			because: "a Binary payload over the decoded-byte cap must be rejected regardless of input form");
 		applicationClient.DidNotReceive().ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>());
-		//The probe uses the timeout-bearing overload. NSubstitute matches per overload, so without
-		//this twin the two-argument stub above leaves the probe returning null.
 		applicationClient.DidNotReceive().ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>());
 	}
 
@@ -1299,90 +1237,20 @@ public class SysSettingsManagerNewBehaviorTests {
 
 	#endregion
 
-	#region Indeterminate probe responses fail closed
-
-	private const string ExpiredCredentialsResponse =
-		"{\"success\":false,\"responseStatus\":{\"ErrorCode\":\"5\",\"Message\":\"Your password has expired\"}}";
-
-	[TestCase(null, TestName = "null probe body")]
-	[TestCase("", TestName = "empty probe body")]
-	[TestCase("   ", TestName = "whitespace probe body")]
-	[Description("An empty DataService body is an indeterminate transport or session failure, not proof of authentication: listing must fail closed rather than report an empty catalog.")]
-	public void GetAllSysSettingsWithValues_ShouldFailClosed_WhenProbeBodyIsEmpty(string probeResponse) {
-		// Arrange
-		IApplicationClient applicationClient = BuildRejectingClient(probeResponse);
-		ISysSettingsManager sut = BuildSut(new DataProviderMock(), applicationClient);
-
-		// Act
-		Action act = () => sut.GetAllSysSettingsWithValues(includeBinary: true);
-
-		// Assert
-		act.Should().Throw<AuthenticationException>(
-			because: "an accepted SelectQuery always answers with a JSON envelope, so silence cannot stand in for it")
-			.WithMessage("*empty DataService response*");
-	}
-
-	[TestCase(null, TestName = "null probe body")]
-	[TestCase("", TestName = "empty probe body")]
-	[TestCase("   ", TestName = "whitespace probe body")]
-	[Description("An empty DataService body must stop an update before it writes, and must not be cached as a successful probe that later writes can ride on.")]
-	public void UpdateSysSetting_ShouldFailClosedAndNotCache_WhenProbeBodyIsEmpty(string probeResponse) {
-		// Arrange
-		DataProviderMock providerMock = SetupSysSettingsMock(Guid.NewGuid(), "UsrIndeterminate", "Text");
-		IApplicationClient applicationClient = BuildRejectingClient(probeResponse);
-		ISysSettingsManager sut = BuildSut(providerMock, applicationClient);
-
-		// Act
-		Action first = () => sut.UpdateSysSetting("UsrIndeterminate", "value");
-		Action second = () => sut.UpdateSysSetting("UsrIndeterminate", "value");
-
-		// Assert
-		first.Should().Throw<AuthenticationException>(
-			because: "the write must not proceed on an unproven session");
-		applicationClient.ReceivedCalls().Should().ContainSingle(
-			because: "only the probe may reach the wire; the update itself must never be sent");
-		second.Should().Throw<AuthenticationException>(
-			because: "an indeterminate probe must not be remembered as success, so the second attempt has to probe again");
-		applicationClient.ReceivedCalls().Should().HaveCount(2,
-			because: "the second attempt re-probes rather than riding on a cached success flag");
-	}
-
-	[TestCase(null, TestName = "null probe body")]
-	[TestCase("", TestName = "empty probe body")]
-	[TestCase("   ", TestName = "whitespace probe body")]
-	[Description("An empty DataService body must stop create-sys-setting before it writes.")]
-	public void InsertSysSetting_ShouldFailClosed_WhenProbeBodyIsEmpty(string probeResponse) {
-		// Arrange
-		IApplicationClient applicationClient = BuildRejectingClient(probeResponse);
-		ISysSettingsManager sut = BuildSut(new DataProviderMock(), applicationClient);
-
-		// Act
-		Action act = () => sut.InsertSysSetting("UsrIndeterminate", "UsrIndeterminate", "Text");
-
-		// Assert
-		act.Should().Throw<AuthenticationException>(
-			because: "creating a setting on an unproven session must fail rather than appear to succeed");
-		applicationClient.ReceivedCalls().Should().ContainSingle(
-			because: "only the probe may reach the wire; the insert itself must never be sent");
-	}
-
-	#endregion
-
 	#region Legacy provider-only read
 
 	[Test]
-	[Description("The legacy GetSysSettingValueByCode path probes before handing back an empty provider value, so expired credentials no longer read as a real empty setting.")]
+	[Description("The legacy GetSysSettingValueByCode path fails on a rejected session instead of handing back the provider's empty value as a real empty setting.")]
 	public void GetSysSettingValueByCode_ShouldThrowAuthenticationException_WhenCredentialsAreRejected() {
 		// Arrange
-		IApplicationClient applicationClient = BuildRejectingClient(ExpiredCredentialsResponse);
-		ISysSettingsManager sut = BuildSut(new DataProviderMock(), applicationClient);
+		ISysSettingsManager sut = BuildSut(BuildRejectedProvider());
 
 		// Act
 		Action act = () => sut.GetSysSettingValueByCode("SchemaNamePrefix");
 
 		// Assert
 		act.Should().Throw<AuthenticationException>(
-			because: "an empty provider value is indistinguishable from a rejected read, so the credentials have to be verified first")
+			because: "an empty provider value is indistinguishable from a rejected read, so the failure has to be raised where the response's Success flag is still visible")
 			.WithMessage("*password has expired*");
 	}
 
@@ -1390,8 +1258,7 @@ public class SysSettingsManagerNewBehaviorTests {
 	[Description("get-syssetting no longer exits 0 with an empty value on rejected credentials: the authentication failure reaches the caller.")]
 	public void SysSettingsCommand_Get_ShouldThrowAuthenticationException_WhenCredentialsAreRejected() {
 		// Arrange
-		IApplicationClient applicationClient = BuildRejectingClient(ExpiredCredentialsResponse);
-		ISysSettingsManager manager = BuildSut(new DataProviderMock(), applicationClient);
+		ISysSettingsManager manager = BuildSut(BuildRejectedProvider());
 		SysSettingsCommand command = new(manager, Substitute.For<ILogger>(), Substitute.For<IFileSystem>());
 
 		// Act
@@ -1406,8 +1273,7 @@ public class SysSettingsManagerNewBehaviorTests {
 	[Description("get-schema-name-prefix reports an authentication failure instead of success:true with an empty prefix when the credentials are rejected.")]
 	public void GetSchemaNamePrefix_ShouldReportAuthenticationFailure_WhenCredentialsAreRejected() {
 		// Arrange
-		IApplicationClient applicationClient = BuildRejectingClient(ExpiredCredentialsResponse);
-		SysSettingsManager manager = (SysSettingsManager)BuildSut(new DataProviderMock(), applicationClient);
+		SysSettingsManager manager = (SysSettingsManager)BuildSut(BuildRejectedProvider());
 		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
 		commandResolver.Resolve<SysSettingsManager>(Arg.Any<EnvironmentOptions>()).Returns(manager);
 		SchemaNamePrefixTool tool = new(commandResolver);
@@ -1420,6 +1286,25 @@ public class SysSettingsManagerNewBehaviorTests {
 			because: "an empty prefix caused by rejected credentials must not be reported as a successful read");
 		result.Error.Should().Be("Authentication error reading SchemaNamePrefix.",
 			because: "the caller needs to know the credentials are the problem, not that no prefix is configured");
+	}
+
+	[Test]
+	[Description("get-schema-name-prefix also fails closed on the login-page shape, which reaches clio only as a JSON parser message with no status code in it.")]
+	public void GetSchemaNamePrefix_ShouldReportAuthenticationFailure_ForALoginPageResponse() {
+		// Arrange
+		SysSettingsManager manager = (SysSettingsManager)BuildSut(BuildRejectedProvider(LoginPageParserError));
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		commandResolver.Resolve<SysSettingsManager>(Arg.Any<EnvironmentOptions>()).Returns(manager);
+		SchemaNamePrefixTool tool = new(commandResolver);
+
+		// Act
+		SchemaNamePrefixResult result = tool.GetSchemaNamePrefix(new GetSchemaNamePrefixArgs("local"));
+
+		// Assert
+		result.Success.Should().BeFalse(
+			because: "GetSysSettingValue has no Success flag and its provider does not catch, so without the decorator this arrived as a raw JsonReaderException and the tool reported an empty prefix");
+		result.Error.Should().Be("Authentication error reading SchemaNamePrefix.",
+			because: "the credential diagnosis has to reach the caller");
 	}
 
 	#endregion
