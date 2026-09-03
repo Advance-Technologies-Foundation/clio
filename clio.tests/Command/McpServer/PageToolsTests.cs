@@ -2629,7 +2629,7 @@ public class PageToolsTests
 			because: "an empty page body should fail before the command attempts remote validation or save");
 		response.Success.Should().BeFalse(
 			because: "the validation failure should be surfaced in the response envelope");
-		response.Error.Should().Contain("get-page raw.body",
+		response.Error.Should().Contain("files.bodyFile",
 			because: "the error should teach callers which page payload shape is required");
 		serviceUrlBuilder.ReceivedCalls().Should().BeEmpty(
 			because: "validation should fail before the command builds any service URLs");
@@ -4303,7 +4303,7 @@ public class PageToolsTests
 		ok.Should().BeFalse();
 		response.Error.Should().Contain("Object", "original server error must be preserved");
 		response.Error.Should().Contain("hint:", "hint annotation must be appended");
-		response.Error.Should().Contain("re-sending the full get-page raw.body",
+		response.Error.Should().Contain("re-sending the full get-page body verbatim",
 			"hint must explain the likely cause");
 		response.Error.Should().Contain("page-modification",
 			"hint must point back to the canonical guide resource");

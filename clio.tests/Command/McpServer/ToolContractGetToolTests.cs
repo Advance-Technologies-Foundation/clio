@@ -1145,6 +1145,52 @@ public sealed class ToolContractGetToolTests {
 
 	[Test]
 	[Category("Unit")]
+	[Description("The curated get-page output contract matches the property set PageGetResponse serializes for the compacted success envelope PageGetTool builds - page, files and editable, with no raw or bundle (issue #1185).")]
+	public void ToolContractGet_Should_Describe_GetPage_Success_Envelope_As_Serialized_By_The_Tool() {
+		// Arrange
+		ToolContractGetTool tool = new();
+		// The exact success envelope PageGetTool.GetPage builds after the file writer materializes the
+		// body/bundle/meta on disk (see PageGetTool.GetPage - it sets Success/Page/Editable/Files only).
+		// Serializing it is the oracle: the curated contract must describe THIS shape, not the
+		// pre-compaction inline bundle/raw shape. The assertion is anchored on the WhenWritingNull ignore
+		// conditions on PageGetResponse.Raw/Bundle, so removing either attribute - or re-adding raw/bundle
+		// to the contract - turns this test red.
+		PageGetResponse toolEnvelope = new() {
+			Success = true,
+			Page = new PageMetadataInfo { SchemaName = "UsrTaskApp_FormPage" },
+			Editable = new PageEditableSchemaInfo { EditableSchemaExists = true },
+			Files = new PageGetFilesInfo { BodyFile = "body.js", BundleFile = "bundle.json", MetaFile = "meta.json" }
+		};
+		HashSet<string> serializedProperties = JsonSerializer
+			.Deserialize<Dictionary<string, JsonElement>>(JsonSerializer.Serialize(toolEnvelope))!
+			.Keys
+			.ToHashSet(StringComparer.Ordinal);
+
+		// Act
+		ToolContractGetResponse result = tool.GetToolContracts(new ToolContractGetArgs([PageGetTool.ToolName]));
+
+		// Assert
+		result.Success.Should().BeTrue(
+			because: "get-page is a curated tool and its contract must resolve");
+		ToolContractDefinition pageGetContract = result.Tools!.Single();
+		HashSet<string> contractFields = pageGetContract.OutputContract.Fields
+			.Select(field => field.Name)
+			.ToHashSet(StringComparer.Ordinal);
+		contractFields.Should().BeEquivalentTo(serializedProperties,
+			because: "the published get-page contract must describe exactly the properties the tool serializes - the drift between them is the defect reported in issue #1185");
+		contractFields.Should().NotContain("raw",
+			because: "the successful MCP envelope materializes the editable body at files.bodyFile instead of returning raw.body");
+		contractFields.Should().NotContain("bundle",
+			because: "the successful MCP envelope materializes the merged bundle at files.bundleFile instead of inlining it");
+		pageGetContract.OutputContract.Fields.Should().Contain(field =>
+				field.Name == "files" && field.Description.Contains("bodyFile"),
+			because: "callers need the contract to name the property that carries the editable JavaScript source path");
+		pageGetContract.InputSchema.Properties.Should().Contain(field => field.Name == "output-directory",
+			because: "get-page writes files to disk, so the parameter that anchors that output must be part of the published input contract");
+	}
+
+	[Test]
+	[Category("Unit")]
 	[Description("Returns maintenance-oriented canonical flows for discovery inspection and canonical page mutation tools.")]
 	public void ToolContractGet_Should_Return_Maintenance_Oriented_Canonical_Flows() {
 		// Arrange
@@ -1242,13 +1288,17 @@ public sealed class ToolContractGetToolTests {
 			because: "update-page should point callers back to the canonical sync-pages workflow");
 		pageSyncContract.InputSchema.Properties.Should().Contain(field =>
 				field.Name == "pages" &&
-				field.Description.Contains("get-page.raw.body") &&
+				field.Description.Contains("get-page.files.bodyFile") &&
 				field.Description.Contains("localizable string"),
-			because: "sync-pages should advertise raw.body as the source of page write payloads and clarify resources as localizable strings");
+			because: "sync-pages should advertise the materialized body file as the source of page write payloads and clarify resources as localizable strings");
+		pageSyncContract.InputSchema.Properties.Should().NotContain(field =>
+				field.Name == "pages" &&
+				field.Description.Contains("raw.body"),
+			because: "get-page no longer returns raw.body over MCP, so sync-pages must not point callers at it");
 		pageUpdateContract.InputSchema.Properties.Should().Contain(field =>
 				field.Name == "body" &&
-				field.Description.Contains("get-page.raw.body"),
-			because: "update-page should advertise raw.body as the source of fallback single-page saves");
+				field.Description.Contains("get-page.files.bodyFile"),
+			because: "update-page should advertise the materialized body file as the source of fallback single-page saves");
 		pageUpdateContract.InputSchema.Properties.Should().Contain(field =>
 				field.Name == "resources" &&
 				field.Description.Contains("JSON object string"),

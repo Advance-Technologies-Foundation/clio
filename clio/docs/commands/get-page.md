@@ -21,6 +21,12 @@ The command resolves the design package for the schema and uses the top of
 the parent-schema hierarchy to load the editable version. This ensures that
 raw.body is always read from the package where the schema can be modified.
 
+> **CLI vs MCP envelope.** The CLI verb returns `bundle` and `raw.body` inline. The MCP
+> `get-page` tool deliberately compacts its successful response to `page`, `files` and
+> `editable` — the body and the bundle live on disk instead, at the paths reported in
+> `files.bodyFile` / `files.bundleFile`. MCP callers read `files.bodyFile`; there is no
+> `raw` property in the MCP response.
+
 ## Conflict-Detection Baseline
 
 The response carries an `editable` block with the editable schema state captured at

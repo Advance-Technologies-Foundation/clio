@@ -170,7 +170,7 @@ Use your MCP client to call get-tool-contract {"tool-names":["list-apps","get-ap
 Bootstrap an existing-app or page workflow from the authoritative contract before invoking discovery or mutation tools.
 
 Use your MCP client to call get-tool-contract {"tool-names":["get-page","get-component-info","sync-pages"]}.
-Bootstrap page inspection/editing and discover whether get-component-info is needed before mutating raw.body.
+Bootstrap page inspection/editing and discover whether get-component-info is needed before mutating the page body file get-page writes.
 
 Use your MCP client to call get-guidance with an unknown name, inspect `availableGuides`, then call
 get-guidance again with the selected name.
