@@ -14,6 +14,12 @@ with full knowledge of the implementation. It settles the stale-evidence problem
 blind instrument run at this generation is still worth having, and is a separate exercise — nothing
 here substitutes for it.
 
+**It has since been done**, and it found something this run could not: see
+`eng-95891-formula-expressions-manual-test-run-2026-09-03-runtime.md`. Three of three, formulas carried
+into RUNTIME for the first time, and one High defect straight out of the message contract — an agent
+that had read the guidance wrote `1.2m` and the platform's converter made it `1.2mm`. That is the class
+of finding an implementation-aware run cannot produce, because the author already knows not to.
+
 ## Setup
 
 | | |
