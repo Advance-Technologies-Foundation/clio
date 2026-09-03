@@ -115,7 +115,7 @@ public sealed class PageValidateToolE2ETests : McpContractFixtureBase {
 	[Description("Returns an actionable structured failure when body-file does not exist.")]
 	[AllureTag(ToolName)]
 	[AllureName("validate-page reports a missing body-file")]
-	[AllureDescription("Calls validate-page with a nonexistent body-file and verifies the MCP response identifies that path while all validation flags remain false.")]
+	[AllureDescription("Dispatches validate-page through clio-run with a nonexistent body-file and verifies the MCP response classifies the failure while all validation flags remain false.")]
 	public async Task PageValidateTool_ShouldReportMissingPath_WhenBodyFileDoesNotExist() {
 		// Arrange
 		string bodyFile = Path.Combine(CreateFixtureDirectory("validate-page-missing-file"), "missing-body.js");
@@ -123,8 +123,9 @@ public sealed class PageValidateToolE2ETests : McpContractFixtureBase {
 
 		// Act
 		CallToolResult callResult = await context.Session.CallToolAsync(
-			ToolName,
+			ClioRunTool.ToolName,
 			new Dictionary<string, object?> {
+				["command"] = ToolName,
 				["args"] = new Dictionary<string, object?> { ["body-file"] = bodyFile }
 			},
 			context.CancellationTokenSource.Token);
@@ -141,8 +142,10 @@ public sealed class PageValidateToolE2ETests : McpContractFixtureBase {
 			because: "missing content must not be reported as syntactically valid");
 		response.Validation.ContentOk.Should().BeFalse(
 			because: "missing content must not be reported as valid content");
-		response.Validation.Errors.Should().ContainSingle(error => error.Contains(bodyFile),
-			because: "the response must identify the missing path returned or supplied by the caller");
+		response.Validation.Errors.Should().ContainSingle(error => error.Contains("not found"),
+			because: "the response must classify the missing input without exposing the host path");
+		response.Validation.Errors.Should().NotContain(error => error.Contains(bodyFile),
+			because: "structured MCP failures must not disclose host filesystem paths");
 	}
 
 	[Test]

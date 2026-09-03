@@ -103,7 +103,7 @@ public sealed class ValidatePageToolTests {
 	}
 
 	[Test]
-	[Description("Reports the exact missing body-file path instead of treating the request as an empty JavaScript body.")]
+	[Description("Reports a stable missing-file classification instead of treating the request as an empty JavaScript body.")]
 	public async System.Threading.Tasks.Task ValidatePage_ShouldReportPath_WhenBodyFileDoesNotExist() {
 		// Arrange
 		const string bodyFile = "C:\\workspace\\missing-body.js";
@@ -118,8 +118,10 @@ public sealed class ValidatePageToolTests {
 			because: "a missing file cannot supply validation content");
 		response.Validation.JsSyntaxOk.Should().BeFalse(
 			because: "a file read failure is not a successful syntax check");
-		response.Validation.Errors.Should().ContainSingle(error => error.Contains(bodyFile),
-			because: "the caller needs the unresolved path to correct the handoff from get-page");
+		response.Validation.Errors.Should().ContainSingle(error => error.Contains("not found"),
+			because: "the caller needs a stable missing-file classification");
+		response.Validation.Errors.Should().NotContain(error => error.Contains(bodyFile),
+			because: "structured MCP failures must not disclose host filesystem paths");
 	}
 
 	[Test]
@@ -139,7 +141,7 @@ public sealed class ValidatePageToolTests {
 		// Assert
 		response.Valid.Should().BeFalse(
 			because: "whitespace-only file content cannot be validated as a page body");
-		response.Validation.Errors.Should().ContainSingle(error => error.Contains("empty") && error.Contains(bodyFile),
+		response.Validation.Errors.Should().ContainSingle(error => error.Contains("empty"),
 			because: "the diagnostic must distinguish an empty file from a missing one");
 	}
 
@@ -149,8 +151,8 @@ public sealed class ValidatePageToolTests {
 		// Arrange
 		const string bodyFile = "C:\\workspace\\protected-body.js";
 		IFileSystem fileSystem = Substitute.For<IFileSystem>();
-		fileSystem.File.Exists(bodyFile).Returns(true);
-		fileSystem.File.ReadAllText(bodyFile).Returns(_ => throw new System.UnauthorizedAccessException("access denied"));
+		fileSystem.File.Open(bodyFile, System.IO.FileMode.Open, System.IO.FileAccess.Read, System.IO.FileShare.Read)
+			.Returns(_ => throw new System.UnauthorizedAccessException("access denied at C:\\secret"));
 		PageValidateTool tool = CreateTool(fileSystem);
 		PageValidateArgs args = new(BodyFile: bodyFile);
 
@@ -160,9 +162,70 @@ public sealed class ValidatePageToolTests {
 		// Assert
 		response.Valid.Should().BeFalse(
 			because: "an unreadable file cannot supply validation content");
-		response.Validation.Errors.Should().ContainSingle(error =>
-				error.Contains("Unable to read body-file") && error.Contains(bodyFile),
-			because: "filesystem errors must remain actionable without escaping as protocol failures");
+		response.Validation.Errors.Should().ContainSingle(error => error == "body-file could not be read.",
+			because: "filesystem errors must remain actionable without leaking paths or provider exception text");
+	}
+
+	[Test]
+	[Description("Rejects network body-file paths before touching the filesystem.")]
+	public async System.Threading.Tasks.Task ValidatePage_ShouldRejectBodyFile_WhenPathIsNetworkLocation() {
+		// Arrange
+		IFileSystem fileSystem = Substitute.For<IFileSystem>();
+		PageValidateTool tool = CreateTool(fileSystem);
+		PageValidateArgs args = new(BodyFile: @"\\server\share\body.js");
+
+		// Act
+		PageValidateResponse response = await tool.ValidatePage(args);
+
+		// Assert
+		response.Valid.Should().BeFalse(
+			because: "an OpenWorld=false tool must not initiate network filesystem access");
+		response.Validation.Errors.Should().ContainSingle(error => error.Contains("local path"),
+			because: "the caller needs a stable explanation of the rejected path class");
+		fileSystem.File.DidNotReceiveWithAnyArgs().Open(default!, default, default, default);
+	}
+
+	[Test]
+	[Description("Rejects an oversized body-file before allocating or parsing its contents.")]
+	public async System.Threading.Tasks.Task ValidatePage_ShouldRejectBodyFile_WhenFileExceedsLimit() {
+		// Arrange
+		const string bodyFile = "C:\\workspace\\oversized-body.js";
+		var fileSystem = new MockFileSystem(new Dictionary<string, MockFileData> {
+			[bodyFile] = new(new byte[PageValidateTool.MaxBodyFileBytes + 1])
+		});
+		PageValidateTool tool = CreateTool(fileSystem);
+		PageValidateArgs args = new(BodyFile: bodyFile);
+
+		// Act
+		PageValidateResponse response = await tool.ValidatePage(args);
+
+		// Assert
+		response.Valid.Should().BeFalse(
+			because: "file input must not bypass the bounded MCP payload policy");
+		response.Validation.Errors.Should().ContainSingle(error => error.Contains("byte limit"),
+			because: "the caller needs an actionable size-limit diagnostic");
+	}
+
+	[Test]
+	[Description("Honors cancellation while reading a body-file before validation begins.")]
+	public async System.Threading.Tasks.Task ValidatePage_ShouldCancelBodyFileRead_WhenRequestIsCancelled() {
+		// Arrange
+		const string bodyFile = "C:\\workspace\\body.js";
+		var fileSystem = new MockFileSystem(new Dictionary<string, MockFileData> {
+			[bodyFile] = new(ValidWebBody)
+		});
+		PageValidateTool tool = CreateTool(fileSystem);
+		PageValidateArgs args = new(BodyFile: bodyFile);
+		using var cancellation = new System.Threading.CancellationTokenSource();
+		cancellation.Cancel();
+
+		// Act
+		System.Func<System.Threading.Tasks.Task> act = () =>
+			tool.ValidatePage(args, cancellation.Token);
+
+		// Assert
+		await act.Should().ThrowAsync<System.OperationCanceledException>(
+			because: "a cancelled MCP request must not continue reading and validating a file payload");
 	}
 
 	[Test]

@@ -5,6 +5,7 @@ using System.ComponentModel.DataAnnotations;
 using System.IO;
 using System.IO.Abstractions;
 using System.Linq;
+using System.Text;
 using System.Text.Json.Serialization;
 using System.Threading;
 using System.Threading.Tasks;
@@ -20,6 +21,12 @@ public sealed class PageValidateTool(
 	IFileSystem fileSystem) {
 
 	internal const string ToolName = "validate-page";
+	internal const int MaxBodyFileBytes = 4 * 1024 * 1024;
+	private const string MissingBodyMessage = "Either 'body' or 'body-file' must provide page body content.";
+	private const string MissingBodyFileMessage = "body-file was not found.";
+	private const string EmptyBodyFileMessage = "body-file is empty.";
+	private const string UnreadableBodyFileMessage = "body-file could not be read.";
+	private const string NonLocalBodyFileMessage = "body-file must reference a local path.";
 
 	[McpServerTool(Name = ToolName, ReadOnly = true, Destructive = false,
 		Idempotent = true, OpenWorld = false)]
@@ -28,7 +35,8 @@ public sealed class PageValidateTool(
 		[Description("Parameters: one of body or body-file (required); resources and version (optional)")]
 		[Required] PageValidateArgs args,
 		CancellationToken cancellationToken = default) {
-		(string? resolvedBody, PageValidateResponse? inputFailure) = ResolveBody(args);
+		(string? resolvedBody, PageValidateResponse? inputFailure) =
+			await ResolveBodyAsync(args, cancellationToken).ConfigureAwait(false);
 		if (inputFailure is not null) {
 			return inputFailure;
 		}
@@ -77,24 +85,42 @@ public sealed class PageValidateTool(
 		};
 	}
 
-	private (string? Body, PageValidateResponse? Failure) ResolveBody(PageValidateArgs args) {
+	private async Task<(string? Body, PageValidateResponse? Failure)> ResolveBodyAsync(
+		PageValidateArgs args,
+		CancellationToken cancellationToken) {
 		if (!string.IsNullOrWhiteSpace(args.Body)) {
 			return (args.Body, null);
 		}
 		if (string.IsNullOrWhiteSpace(args.BodyFile)) {
-			return (null, InvalidBodySource("Either 'body' or 'body-file' must provide page body content."));
+			return (null, InvalidBodySource(MissingBodyMessage));
+		}
+		if (args.BodyFile.StartsWith(@"\\", StringComparison.Ordinal)
+				|| args.BodyFile.StartsWith("//", StringComparison.Ordinal)) {
+			return (null, InvalidBodySource(NonLocalBodyFileMessage));
 		}
 		try {
-			if (!fileSystem.File.Exists(args.BodyFile)) {
-				return (null, InvalidBodySource($"body-file not found: '{args.BodyFile}'"));
+			await using FileSystemStream stream = fileSystem.File.Open(
+				args.BodyFile, FileMode.Open, FileAccess.Read, FileShare.Read);
+			if (stream.Length == 0) {
+				return (null, InvalidBodySource(EmptyBodyFileMessage));
 			}
-			string body = fileSystem.File.ReadAllText(args.BodyFile);
+			if (stream.Length > MaxBodyFileBytes) {
+				return (null, InvalidBodySource(
+					$"body-file exceeds the {MaxBodyFileBytes}-byte limit."));
+			}
+			byte[] bytes = new byte[checked((int)stream.Length)];
+			await stream.ReadExactlyAsync(bytes, cancellationToken).ConfigureAwait(false);
+			string body = Encoding.UTF8.GetString(bytes);
 			return string.IsNullOrWhiteSpace(body)
-				? (null, InvalidBodySource($"body-file is empty: '{args.BodyFile}'"))
+				? (null, InvalidBodySource(EmptyBodyFileMessage))
 				: (body, null);
+		} catch (FileNotFoundException) {
+			return (null, InvalidBodySource(MissingBodyFileMessage));
+		} catch (DirectoryNotFoundException) {
+			return (null, InvalidBodySource(MissingBodyFileMessage));
 		} catch (Exception exception) when (exception is IOException
 				or UnauthorizedAccessException or ArgumentException or NotSupportedException) {
-			return (null, InvalidBodySource($"Unable to read body-file '{args.BodyFile}': {exception.Message}"));
+			return (null, InvalidBodySource(UnreadableBodyFileMessage));
 		}
 	}
 
