@@ -1,5 +1,6 @@
 using System;
 using System.Net;
+using System.Net.Sockets;
 using System.Net.Http;
 using System.Security.Authentication;
 using Clio.Common;
@@ -224,5 +225,69 @@ internal sealed class AuthenticationFailureClassifierTests {
 		// Assert
 		result.Should().Be(typed,
 			because: "a typed 404 must not be overridden by its own prose, and a status-less transport fault has nothing but prose to go on");
+	}
+
+	[Test]
+	[TestCase("Msg 1205, Level 13, State 5: Transaction (Process ID 62) was deadlocked on lock resources",
+		TestName = "SqlDeadlockProse")]
+	[TestCase("Unexpected token at line 5: '<'", TestName = "ParserErrorProse")]
+	[Description("The composed ErrorCode-5 rendering is anchored at the start, so ordinary provider prose carrying a '5: ' mid-sentence is NOT promoted to an authentication diagnosis (PR #1372 review).")]
+	public void ClassifyProviderErrorMessage_ShouldNotReportAuthentication_ForProseCarryingAFloatingFive(string message) {
+		// Act
+		AuthenticationFailureClassifier.ProviderFailureVerdict verdict = AuthenticationFailureClassifier.ClassifyProviderErrorMessage(message);
+
+		// Assert
+		verdict.Should().NotBe(AuthenticationFailureClassifier.ProviderFailureVerdict.Authentication,
+			because: "a deadlock and a parser error are not rejected credentials, and the decorator puts this predicate on every command");
+	}
+
+	[Test]
+	[Description("ATF composes errorCode + \": \" + message, so the code leads the text and the anchored alternative still matches it (PR #1372 review).")]
+	public void ClassifyProviderErrorMessage_ShouldReportAuthentication_ForTheComposedLeadingCode() {
+		// Act
+		AuthenticationFailureClassifier.ProviderFailureVerdict verdict =
+			AuthenticationFailureClassifier.ClassifyProviderErrorMessage("5: Your password has expired.");
+
+		// Assert
+		verdict.Should().Be(AuthenticationFailureClassifier.ProviderFailureVerdict.Authentication,
+			because: "anchoring the alternative must not lose the rendering it exists for");
+	}
+
+	[Test]
+	[Description("A SUCCESSFUL DataService payload is never free-text scanned: a lookup row that happens to read 'Unauthorized' must not turn a write that landed into an authentication failure (PR #1372 review).")]
+	public void IsAuthenticationFailureResponse_ShouldReturnFalse_ForASuccessfulPayloadCarryingAuthWords() {
+		// Arrange
+		const string body =
+			"{\"rows\":[{\"Id\":\"e1\",\"Name\":\"Unauthorized users\",\"Note\":\"Authentication failed.\"}],\"success\":true}";
+
+		// Act
+		bool result = AuthenticationFailureClassifier.IsAuthenticationFailureResponse(body);
+
+		// Assert
+		result.Should().BeFalse(
+			because: "on a write the caller cannot tell whether it landed, so a false authentication verdict on a successful response is the worst answer available");
+	}
+
+	[Test]
+	[Description("HasTypedStatus unwraps the AggregateException the Creatio client's Task.Result wrapping produces, so it agrees with IsAuthenticationFailure about the same object (PR #1372 review).")]
+	public void HasTypedStatus_ShouldSeeThrough_AnAggregateWrapper() {
+		// Arrange
+		Exception wrapped = new AggregateException(
+			new HttpRequestException("not found", null, HttpStatusCode.NotFound));
+
+		// Act & Assert
+		AuthenticationFailureClassifier.HasTypedStatus(wrapped).Should().BeTrue(
+			because: "a shallow match made the guard fall back to prose matching on a status it had already been told was authoritative");
+	}
+
+	[Test]
+	[Description("The nested-inner walk is bounded and terminates on a plain chain that carries no typed status (PR #1372 review).")]
+	public void HasTypedStatus_ShouldReturnFalse_ForAChainWithoutATypedStatus() {
+		// Arrange
+		Exception chain = new InvalidOperationException("outer", new AggregateException(new SocketException(61)));
+
+		// Act & Assert
+		AuthenticationFailureClassifier.HasTypedStatus(chain).Should().BeFalse(
+			because: "unwrapping must not invent a status the chain does not carry");
 	}
 }

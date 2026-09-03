@@ -383,7 +383,15 @@ public class SysSettingsManager : ISysSettingsManager
 		//six of them over the whole body. The 1-second regex timeouts then fired and a
 		//RegexMatchTimeoutException escaped this method unhandled, so the operator was told "The Regex
 		//matching timed out" instead of being told the session was rejected.
-		string cappedResponse = TextUtilities.SanitizeForDisplay(rawResponse, MaxRejectedResponseDetailLength);
+		// REDACTED BEFORE THE CAP. SanitizeForDisplay performs no redaction at all - it neutralizes
+		// display-hostile characters and caps length - so the excerpt this builds still carried the first
+		// bytes of a Creatio login page (anti-forgery/bootstrap markers, internal hostnames, absolute URLs)
+		// into ServerDetail and every sink that records it. Redaction has to run FIRST because the redactor
+		// matches a token as a whole unit: capping first can split one and leave the visible half in the
+		// clear. Same order as ServiceResponseJsonGuard.BuildPreview.
+		string cappedResponse = TextUtilities.SanitizeForDisplay(
+			Clio.Command.McpServer.SensitiveErrorTextRedactor.Redact(rawResponse),
+			MaxRejectedResponseDetailLength);
 		if (!AuthenticationFailureClassifier.IsAuthenticationFailureResponse(cappedResponse)) {
 			return;
 		}

@@ -3,6 +3,7 @@ using System.Linq;
 using System.Net;
 using System.Net.Http;
 using System.Security.Authentication;
+using System.Text.Json;
 using System.Text.RegularExpressions;
 
 namespace Clio.Common;
@@ -30,6 +31,11 @@ namespace Clio.Common;
 public static class AuthenticationFailureClassifier {
 
 	private const int MaxExceptionUnwrapDepth = 16;
+
+	// Cap on a server-controlled body before it is scanned. Large enough that a login page's auth-routing
+	// markers and a fault envelope's ErrorCode are both well inside it, small enough that no scan here can
+	// hit the compiled regexes' 1 s MatchTimeout.
+	private const int MaxClassifiedBodyLength = 4096;
 
 	/// <summary>
 	/// Matches 401 only as a standalone token. A substring match turned the port in
@@ -76,8 +82,18 @@ public static class AuthenticationFailureClassifier {
 	/// <c>errorCode + ": " + message</c> so it arrives as a leading <c>5:</c>, and a raw fault envelope
 	/// carries it as a JSON property. Both are matched; a bare digit 5 is not.
 	/// </summary>
+	/// <remarks>
+	/// The composed rendering is ANCHORED at the start of the text, because ATF's
+	/// <c>ConvertBatchResponse</c> always places the code first. A floating <c>5:\s</c> preceded by any
+	/// non-alphanumeric character matched ordinary provider prose - <c>Msg 1205, Level 13, State 5:
+	/// Transaction ... was deadlocked</c>, <c>Unexpected token at line 5: '&lt;'</c> - and because this is
+	/// the strongest signal in <see cref="ClassifyProviderErrorMessage"/>, a deadlock or a parser error was
+	/// raised as an <see cref="System.Security.Authentication.AuthenticationException"/> telling the
+	/// operator to repair working credentials. That is the misdiagnosis class the removed preflight probe
+	/// was blamed for, and the decorator puts this predicate on every command rather than on one.
+	/// </remarks>
 	private static readonly Regex DataServiceAuthenticationErrorCode =
-		new(@"(?:^|[^0-9A-Za-z])5:\s|""[Ee]rror[Cc]ode""\s*:\s*""?5""?",
+		new(@"^\s*5:\s|""[Ee]rror[Cc]ode""\s*:\s*""?5""?",
 			RegexOptions.Compiled | RegexOptions.CultureInvariant,
 			TimeSpan.FromSeconds(1));
 
@@ -254,10 +270,51 @@ public static class AuthenticationFailureClassifier {
 		if (string.IsNullOrWhiteSpace(responseBody)) {
 			return false;
 		}
-		if (ReauthExecutor.IsSessionExpiredResponse(responseBody)) {
+		// A SUCCESSFUL DataService answer is never a rejected session, and it must not be free-text scanned.
+		// The write path reaches here holding whatever the platform returned, including at
+		// GetEntityIdByDisplayValue a successful SelectQuery payload full of row data: a lookup display value
+		// "Unauthorized users", or a sys-setting whose text mentions "Authentication failed", would otherwise
+		// turn a write that LANDED into a hard AuthenticationException telling the operator to repair working
+		// credentials - and on a write the caller cannot tell whether it landed.
+		if (IsSuccessfulDataServiceResponse(responseBody)) {
+			return false;
+		}
+		// CAPPED before every scan below, which is the precondition ClassifyProviderErrorMessage documents and
+		// this method used to break. The body is server-controlled and uncapped: on a full HTML login page or a
+		// large payload the compiled regexes' 1 s MatchTimeout turns into a RegexMatchTimeoutException on the
+		// write path. The markers all sit in the first bytes of any of these shapes.
+		string bounded = responseBody.Length <= MaxClassifiedBodyLength
+			? responseBody
+			: responseBody[..MaxClassifiedBodyLength];
+		if (ReauthExecutor.IsSessionExpiredResponse(bounded)) {
 			return true;
 		}
-		return ClassifyProviderErrorMessage(responseBody) == ProviderFailureVerdict.Authentication;
+		return ClassifyProviderErrorMessage(bounded) == ProviderFailureVerdict.Authentication;
+	}
+
+	/// <summary>
+	/// <see langword="true"/> ONLY when the body is a JSON object carrying an explicit <c>success: true</c> -
+	/// the platform's shape for "the operation went through". A flagless JSON object is not exempt: the
+	/// DataService fault envelopes take that shape too.
+	/// </summary>
+	private static bool IsSuccessfulDataServiceResponse(string responseBody) {
+		try {
+			using JsonDocument document = JsonDocument.Parse(responseBody);
+			if (document.RootElement.ValueKind != JsonValueKind.Object) {
+				return false;
+			}
+			foreach (JsonProperty property in document.RootElement.EnumerateObject()) {
+				if (string.Equals(property.Name, "success", StringComparison.OrdinalIgnoreCase)) {
+					return property.Value.ValueKind == JsonValueKind.True;
+				}
+			}
+			// NO success flag: NOT treated as successful. The platform's own fault envelopes take this shape
+			// ({"Message":"Authentication failed.","StackTrace":null}), so exempting a flagless object would
+			// silence the very case this predicate exists for. Only an explicit success:true is an exemption.
+			return false;
+		} catch (JsonException) {
+			return false;
+		}
 	}
 
 	/// <summary>
@@ -266,10 +323,32 @@ public static class AuthenticationFailureClassifier {
 	/// present: a typed 404 whose body happens to mention a standalone 401 is a routing failure, not a
 	/// credential one.
 	/// </summary>
+	/// <remarks>
+	/// UNWRAPS the same way <see cref="IsAuthenticationFailure(Exception)"/> does - through
+	/// <see cref="AggregateException.InnerExceptions"/> and <see cref="Exception.InnerException"/> up to
+	/// <c>MaxExceptionUnwrapDepth</c>. A shallow match made the two predicates disagree about the SAME
+	/// object on exactly the wrapping this repository documents as the norm (the Creatio client reaches
+	/// transport faults through <c>Task.Result</c>, which wraps them in an <see cref="AggregateException"/>):
+	/// <c>IsAuthenticationFailure</c> saw through the wrapper and read the typed status, while this returned
+	/// <see langword="false"/>, so the caller went on to prose-match a status it had already been told was
+	/// authoritative - which is the fallback the summary above says must not happen.
+	/// </remarks>
 	/// <param name="exception">The failure to inspect.</param>
 	public static bool HasTypedStatus(Exception exception) =>
-		exception is HttpRequestException { StatusCode: not null }
-			or WebException { Response: HttpWebResponse };
+		HasTypedStatus(exception, depth: 0);
+
+	private static bool HasTypedStatus(Exception exception, int depth) {
+		if (exception is null || depth >= MaxExceptionUnwrapDepth) {
+			return false;
+		}
+		if (exception is AggregateException aggregate) {
+			return aggregate.InnerExceptions.Any(inner => HasTypedStatus(inner, depth + 1));
+		}
+		if (exception is HttpRequestException { StatusCode: not null } or WebException { Response: HttpWebResponse }) {
+			return true;
+		}
+		return HasTypedStatus(exception.InnerException, depth + 1);
+	}
 
 	private static bool IsAuthenticationFailure(Exception exception, int depth) {
 		if (exception is null || depth >= MaxExceptionUnwrapDepth) {

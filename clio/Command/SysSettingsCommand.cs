@@ -7,6 +7,7 @@ using System.Net.Http;
 using System.Net.Sockets;
 using System.Reflection;
 using System.Security.Authentication;
+using System.Text.Json;
 using System.Text.RegularExpressions;
 using Clio.Command.McpServer;
 using Clio.Command.McpServer.Tools;
@@ -612,18 +613,29 @@ namespace Clio.Command
 				//inner represents it - but a credential failure among them still has to be reported as one.
 				AggregateException aggregate when IsAuthenticationFailure(aggregate)
 					=> Authentication(operationLabel, correlationId),
-				ArgumentException argEx => new SysSettingFailure(argEx.Message,
-					SysSettingErrorCategories.Validation, argEx.Message,
+				//A gateway/WAF page reaching JsonSerializer.Deserialize raises JsonException, which had no arm:
+				//the operator was told "Failed creating sys-setting." with no cause, on the very half of the
+				//write path the removed preflight probe used to diagnose. ThrowIfSessionRejected only fires
+				//when the body PROVES a rejected session, so every other non-JSON answer lands here.
+				JsonException => new SysSettingFailure(
+					$"Creatio returned a non-JSON response {operationLabel}.",
+					SysSettingErrorCategories.Network, SysSettingFailureTexts.NonJsonResponseCause,
+					SysSettingFailureTexts.NonJsonResponseRecovery, correlationId),
+				//BOUNDED and REDACTED wherever an exception MESSAGE is promoted into a caller-visible field.
+				//These arms return the message of ANY exception of those types raised anywhere below, and such
+				//messages are unbounded and can carry paths, URLs or response fragments.
+				ArgumentException argEx => new SysSettingFailure(SafeDetail(argEx.Message),
+					SysSettingErrorCategories.Validation, SafeDetail(argEx.Message),
 					SysSettingFailureTexts.ValidationRecovery, correlationId),
 				//DataProviderFailureException is the one InvalidOperationException whose message IS the
 				//diagnosis - it is composed locally by ClassifyingDataProvider from a response that carries
 				//no exception of its own. An ordinary InvalidOperationException keeps its message too (that
 				//is the pre-existing behaviour) but is not claimed to be a provider verdict.
-				DataProviderFailureException providerEx => new SysSettingFailure(providerEx.Message,
-					SysSettingErrorCategories.ProviderFailure, providerEx.Message,
+				DataProviderFailureException providerEx => new SysSettingFailure(SafeDetail(providerEx.Message),
+					SysSettingErrorCategories.ProviderFailure, SafeDetail(providerEx.Message),
 					SysSettingFailureTexts.ProviderFailureRecovery, correlationId),
-				InvalidOperationException invEx => new SysSettingFailure(invEx.Message,
-					SysSettingErrorCategories.Unknown, invEx.Message,
+				InvalidOperationException invEx => new SysSettingFailure(SafeDetail(invEx.Message),
+					SysSettingErrorCategories.Unknown, SafeDetail(invEx.Message),
 					SysSettingFailureTexts.UnknownRecovery, correlationId),
 				//An unresolvable environment is a CONFIGURATION failure, not an unknown one. It used to
 				//reach the fallback arm below and be reported as "no cause could be determined" with
@@ -637,6 +649,7 @@ namespace Clio.Command
 				var _ => new SysSettingFailure($"Failed {operationLabel}.",
 					SysSettingErrorCategories.Unknown, SysSettingFailureTexts.UnknownCause,
 					SysSettingFailureTexts.UnknownRecovery, correlationId)
+
 			};
 		}
 
@@ -739,6 +752,22 @@ namespace Clio.Command
 			$"{failure.Error} Cause: {failure.Cause} Action: {failure.RecoveryAction} "
 			+ $"(correlation-id: {failure.CorrelationId})";
 
+		// Cap on a message promoted into a user-visible field. 300 is what DataProviderFailureException's
+		// detail already uses, so the two paths expose the same amount.
+		private const int MaxPromotedMessageLength = 300;
+
+		// Redaction runs BEFORE the cap, deliberately: SensitiveErrorTextRedactor matches a token as a whole
+		// unit, so capping first can split one in half and leave the visible fragment unredacted. This is the
+		// same order ServiceResponseJsonGuard.BuildPreview uses.
+		private static string SafeDetail(string message) {
+			if (string.IsNullOrEmpty(message)) {
+				return message;
+			}
+			string redacted = McpServer.SensitiveErrorTextRedactor.Redact(message);
+			return redacted.Length <= MaxPromotedMessageLength
+				? redacted
+				: redacted[..MaxPromotedMessageLength] + "...";
+		}
 		// Bounds every walk over an exception chain. A chain this deep is not something a transport
 		// produces, and the bound is what keeps a hand-built or self-referencing chain from looping.
 		private const int MaxExceptionUnwrapDepth = 16;

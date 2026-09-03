@@ -73,6 +73,14 @@ internal static class SysSettingFailureTexts {
 	internal const string NetworkRecovery =
 		"Check the environment URL, network connectivity and the VPN, then retry.";
 
+	internal const string NonJsonResponseCause =
+		"Creatio answered with something that is not JSON - a proxy, gateway or WAF page, or a URL that does "
+		+ "not reach Creatio.";
+
+	internal const string NonJsonResponseRecovery =
+		"Check that the environment URL points at Creatio itself and that no gateway is intercepting the "
+		+ "request, then retry.";
+
 	internal const string ProviderFailureRecovery =
 		"Read the cause, correct the reported condition on the environment, and retry.";
 

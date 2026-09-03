@@ -207,4 +207,33 @@ public sealed class TextUtilitiesTests
 		// Assert
 		rendered.Should().BeEmpty(because: "an interpolated null must not become the word 'null' or an NRE");
 	}
+
+	[Test]
+	[Description("A well-formed surrogate PAIR survives: char.IsSurrogate cannot tell it from a lone surrogate, so neutralizing on that alone destroyed every astral character for every caller of this shared utility (PR #1372 review).")]
+	public void NeutralizeDisplayHostileCharacters_ShouldKeep_AWellFormedSurrogatePair() {
+		// Arrange - U+1F600 GRINNING FACE, and a CJK extension B character.
+		const string text = "Theme \U0001F600 and \U00020000 name";
+
+		// Act
+		string result = TextUtilities.NeutralizeDisplayHostileCharacters(text);
+
+		// Assert
+		result.Should().Be(text,
+			because: "theme captions, package and environment names carry legitimate astral characters and had nothing to do with the lone surrogate that breaks System.Text.Json");
+	}
+
+	[Test]
+	[Description("A LONE surrogate is still neutralized — that is the case the widening was written for (PR #1372 review).")]
+	public void NeutralizeDisplayHostileCharacters_ShouldNeutralize_AnOrphanSurrogate() {
+		// Arrange - a high surrogate with no low surrogate after it.
+		string text = "before " + (char)0xD83D + " after";
+
+		// Act
+		string result = TextUtilities.NeutralizeDisplayHostileCharacters(text);
+
+		// Assert
+		result.Should().Be("before   after",
+			because: "an unpaired surrogate is what System.Text.Json refuses to serialize");
+		result.Should().NotContain(((char)0xD83D).ToString());
+	}
 }

@@ -248,7 +248,11 @@ public class AppUpdater(ILogger logger, IProcessExecutor processExecutor) : IApp
 
 	/// <inheritdoc/>
 	public async Task UpdateInBackgroundAsync() {
-		ProcessExecutionOptions options = new("dotnet", "tool update clio -g");
+		ProcessExecutionOptions options = new("dotnet", string.Empty) {
+			ArgumentList = ["tool", "update", "clio", "-g"],
+			ResolveProgramPath = true,
+			WorkingDirectory = Path.GetFullPath(SettingsRepository.AppSettingsFolderPath)
+		};
 		await processExecutor.FireAndForgetAsync(options).ConfigureAwait(false);
 	}
 
