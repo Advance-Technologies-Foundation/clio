@@ -531,13 +531,30 @@
 			// Mirror the MCP tool: auto-discover the on-disk baseline so a CLI save (e.g. an AI agent
 			// running `clio update-page --body-file .clio-pages/<schema>/body.js`) is blocked when the
 			// schema was modified out-of-band, instead of silently overwriting the external edit.
-			(string metaFilePath, bool baselineArmed) = _pageBaselineGuard.TryArm(options, outputDirectory: null);
+			(string metaFilePath, bool baselineArmed, string baselineWarning) =
+				_pageBaselineGuard.TryArm(options, outputDirectory: null);
 			bool success = TryUpdatePage(options, out PageUpdateResponse response);
 			if (baselineArmed && success && !options.DryRun) {
-				_pageBaselineGuard.RefreshOrDrop(metaFilePath, options, response);
+				// A failed refresh cannot fail a save that already landed on the server, so it surfaces as a
+				// warning on the response instead (ENG-95262 AC-02).
+				AppendBaselineWarning(response, _pageBaselineGuard.RefreshOrDrop(metaFilePath, options, response));
 			}
+			AppendBaselineWarning(response, baselineWarning);
 			_logger.WriteInfo(JsonConvert.SerializeObject(response));
 			return success ? 0 : 1;
+		}
+
+		// Surfaces a baseline discovery/refresh diagnostic on the response envelope. The baseline path is
+		// best-effort by contract, so its failures are warnings, never errors — but they must be visible:
+		// a silently lost refresh leaves the stored checksum behind the server and the next save can then
+		// report a conflict that never happened.
+		private static void AppendBaselineWarning(PageUpdateResponse response, string warning) {
+			if (response is null || string.IsNullOrWhiteSpace(warning)) {
+				return;
+			}
+			List<string> warnings = response.Warnings?.ToList() ?? [];
+			warnings.Add(warning);
+			response.Warnings = warnings;
 		}
 
 		private void AppendDesignerPresenceWarning(PageUpdateOptions options, PageUpdateResponse response) {

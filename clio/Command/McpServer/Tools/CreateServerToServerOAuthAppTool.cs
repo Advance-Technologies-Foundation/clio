@@ -30,6 +30,13 @@ public sealed class CreateServerToServerOAuthAppTool(
 	/// </summary>
 	[McpServerTool(Name = CreateServerToServerOAuthAppToolName, ReadOnly = false, Destructive = true,
 		Idempotent = false, OpenWorld = false)]
+	[McpToolExecution(
+		Location = McpToolExecutionLocation.Worker,
+		Lifetime = McpToolExecutionLifetime.PerCall,
+		OperationFamily = McpToolOperationFamily.None,
+		BudgetPolicy = McpToolBudgetPolicy.ParentKillDefault,
+		RequiresClientRequests = McpToolClientRequests.None,
+		SharedFileResource = McpToolSharedFileResource.None)]
 	[Description("""
 				 Creates a server-to-server (client_credentials) OAuth app in Creatio via OAuthConfigService/AddClient over REST,
 				 binding it to a system user. Supply systemUserId (from resolve-oauth-system-user or create-oauth-technical-user)

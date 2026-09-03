@@ -4,6 +4,7 @@ using System.IO;
 using System.Linq;
 using System.Text.Json.Nodes;
 using System.IO.Abstractions.TestingHelpers;
+using Clio.Common.McpWorker;
 using Clio.Tests.Infrastructure;
 using FluentAssertions;
 using NUnit.Framework;
@@ -220,6 +221,30 @@ public sealed class SettingsRepositoryFeatureTests {
 		// Assert
 		nullAct.Should().Throw<ArgumentException>(because: "a null feature name cannot be persisted");
 		whitespaceAct.Should().Throw<ArgumentException>(because: "a whitespace feature name cannot be persisted");
+	}
+
+	[Test]
+	[Description("A feature key containing the MCP worker payload separators is accepted, persisted, and still survives the freeze the host hands to every worker child.")]
+	public void SetFeature_ShouldPersistAndStayWorkerSafe_WhenNameContainsPayloadSeparators() {
+		// Arrange — the write surface refuses only null/empty/whitespace, so this key is reachable through
+		// `clio experimental --name "a;b=c" --enable`, and a hand-edited appsettings.json can hold it no
+		// matter what the write surface allows.
+		const string separatorBearingKey = "a;b=c";
+		SettingsRepository sut = new(_fileSystem);
+
+		// Act
+		sut.SetFeature(separatorBearingKey, true);
+		SettingsRepository reloaded = new(_fileSystem);
+		IReadOnlyDictionary<string, bool> persisted = reloaded.GetFeatures();
+		string workerPayload = McpWorkerEnvironment.Format(persisted);
+
+		// Assert
+		persisted.Should().ContainKey(separatorBearingKey,
+			because: "the repository persists the key as supplied; nothing between the command and the file "
+				+ "narrows the accepted character set");
+		McpWorkerEnvironment.Parse(workerPayload).Should().ContainKey(separatorBearingKey,
+			because: "the host freezes this exact map into every worker before spawning it, so a key the "
+				+ "settings file can hold must never be the reason a worker fails to start");
 	}
 
 	[Test]

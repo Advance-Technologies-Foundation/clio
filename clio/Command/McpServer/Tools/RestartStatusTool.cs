@@ -25,6 +25,16 @@ public sealed class RestartStatusTool(IRestartOperationRegistry registry, IToolC
 	/// Returns the tracked status of a restart readiness wait.
 	/// </summary>
 	[McpServerTool(Name = RestartStatusToolName, ReadOnly = true, Destructive = false, Idempotent = true, OpenWorld = false)]
+	// The status poller of the restart family. It only reads IRestartOperationRegistry, but that registry is
+	// in-process state owned by whichever process ran the restart, so the poll MUST reach the same sticky
+	// worker — hence Worker + Sticky + Restart, matching restart-by-environment-name / restart-by-credentials.
+	[McpToolExecution(
+		Location = McpToolExecutionLocation.Worker,
+		Lifetime = McpToolExecutionLifetime.Sticky,
+		OperationFamily = McpToolOperationFamily.Restart,
+		BudgetPolicy = McpToolBudgetPolicy.ParentKillExtended,
+		RequiresClientRequests = McpToolClientRequests.None,
+		SharedFileResource = McpToolSharedFileResource.None)]
 	[Description("Returns the readiness status of the most recent restart tracked for an environment, or of a specific operation-id from a restart-by-environment-name in-progress response. Use this after that tool returns an in-progress note to check whether the instance finished warming up; do not re-run the restart just to check. Restarts started via restart-by-credentials are NOT reportable here: lookups are keyed by a registered environment name, which that path does not have.")]
 	public RestartStatusResponse GetStatus(
 		[Description("Status query parameters")] [Required] RestartStatusArgs args) {

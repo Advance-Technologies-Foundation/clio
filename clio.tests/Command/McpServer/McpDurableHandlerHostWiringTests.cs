@@ -1,4 +1,5 @@
 using System;
+using System.Linq;
 using System.Reflection;
 using System.Threading.Tasks;
 using Clio;
@@ -82,5 +83,81 @@ public sealed class McpDurableHandlerHostWiringTests {
 		callToolHandler.Should().NotBeNull(
 			because: "the stdio call-site's WithCallToolHandler wires the forgiving handler — " +
 				"this half of the invariant proves the null assertion above is a real guard, not a false positive");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("The sibling invariant (ENG-95262 Stage 4b): the MCP host pins ONE execution router for its whole lifetime, so the three dispatch sites can never be answered by different authorities.")]
+	public void Register_ShouldPinExecutionRouterAsSingleton_WhenMcpHostIsRegistered() {
+		// Arrange — the real host build, which is also what makes a mis-declared route abort startup: the
+		// router is eagerly resolved there rather than on the first dispatch.
+		BindingsModule module = new();
+		IServiceProvider provider = module.Register(
+			applyBootstrapRepairs: false,
+			registerMcpHost: true);
+
+		// Act
+		Clio.Command.McpServer.IMcpExecutionRouter first =
+			provider.GetRequiredService<Clio.Command.McpServer.IMcpExecutionRouter>();
+		Clio.Command.McpServer.IMcpExecutionRouter second =
+			provider.GetRequiredService<Clio.Command.McpServer.IMcpExecutionRouter>();
+
+		// Assert
+		second.Should().BeSameAs(first,
+			because: "two routers would be two copies of one routing rule — exactly the drift the single-authority " +
+				"design exists to prevent (ADR §9), and it would also rebuild the reflected metadata map per call");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("The same invariant on the OTHER transport: the mcp-http build (RegisterInto + RegisterMcpServer, no stdio call-site) also pins ONE execution router, so 'one authority per host' is not a stdio-only property.")]
+	public void RegisterInto_ShouldPinExecutionRouterAsSingleton_OnTheMcpHttpBuildPath() {
+		// Arrange — replicate McpHttpServerCommand.Run's graph: the shared registrations plus the
+		// transport-neutral MCP server builder, and deliberately NOT the registerMcpHost block, which that
+		// host never runs. Bootstrap repairs are off because this fixture must not write appsettings.json;
+		// nothing about that flag touches the router's lifetime.
+		IServiceCollection services = new ServiceCollection();
+		ISettingsRepository settingsRepository = new BindingsModule()
+			.RegisterInto(services, applyBootstrapRepairs: false);
+		BindingsModule.RegisterMcpServer(services, settingsRepository);
+		using ServiceProvider provider = services.BuildServiceProvider();
+
+		// Act
+		Clio.Command.McpServer.IMcpExecutionRouter first =
+			provider.GetRequiredService<Clio.Command.McpServer.IMcpExecutionRouter>();
+		Clio.Command.McpServer.IMcpExecutionRouter second =
+			provider.GetRequiredService<Clio.Command.McpServer.IMcpExecutionRouter>();
+
+		// Assert
+		second.Should().BeSameAs(first,
+			because: "mcp-http reached the router only through the assembly auto-scan, which registers it as a " +
+				"TRANSIENT — every resolution would build its own copy of the routing rule, so the single-authority " +
+				"property held on stdio and quietly did not hold on HTTP (ADR §9)");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Both constructor-injected dispatch sites declare the routing authority as a dependency, so removing it from either one fails the build rather than silently un-routing that seam.")]
+	public void DispatchSites_ShouldDeclareExecutionRouterDependency_ForBothConstructorInjectedSeams() {
+		// Arrange — the third site (the static matched filter) has no constructor and is covered
+		// behaviourally in McpExecutionRouterTests; these two are the ones a refactor could quietly drop.
+		Type[] durableHandlerDependencies = typeof(Clio.Command.McpServer.McpDurableCallToolHandler)
+			.GetConstructors()
+			.SelectMany(constructor => constructor.GetParameters())
+			.Select(parameter => parameter.ParameterType)
+			.ToArray();
+		Type[] clioRunDependencies = typeof(Clio.Command.McpServer.Tools.ClioRunExecutor)
+			.GetConstructors()
+			.SelectMany(constructor => constructor.GetParameters())
+			.Select(parameter => parameter.ParameterType)
+			.ToArray();
+
+		// Act & Assert
+		durableHandlerDependencies.Should().Contain(typeof(Clio.Command.McpServer.IMcpExecutionRouter),
+			because: "the unmatched seam routes after its confirmation gate — an unrouted copy of it would let a " +
+				"long-tail tool reached through a deprecated alias execute in a different place than its canonical sibling");
+		clioRunDependencies.Should().Contain(typeof(Clio.Command.McpServer.IMcpExecutionRouter),
+			because: "clio-run is the only place the UNWRAPPED inner name exists (ADR rule 7), so dropping the " +
+				"dependency there would run the entire long tail on the wrapper's own in-process row");
 	}
 }

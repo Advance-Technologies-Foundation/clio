@@ -28,6 +28,13 @@ public sealed class CreateOAuthTechnicalUserTool(
 	/// <summary>
 	/// Creates a Creatio technical user for a server-to-server OAuth app over REST.
 	/// </summary>
+	[McpToolExecution(
+		Location = McpToolExecutionLocation.Worker,
+		Lifetime = McpToolExecutionLifetime.PerCall,
+		OperationFamily = McpToolOperationFamily.None,
+		BudgetPolicy = McpToolBudgetPolicy.ParentKillDefault,
+		RequiresClientRequests = McpToolClientRequests.None,
+		SharedFileResource = McpToolSharedFileResource.None)]
 	[McpServerTool(Name = CreateOAuthTechnicalUserToolName, ReadOnly = false, Destructive = true,
 		Idempotent = false, OpenWorld = false)]
 	[Description("""

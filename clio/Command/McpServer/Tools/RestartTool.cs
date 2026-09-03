@@ -36,6 +36,16 @@ public class RestartTool(
 
 	[SuppressMessage("Major Code Smell", "S107:Methods should not have too many parameters",
 		Justification = "Parameters mirror the restart-by-environment-name MCP tool contract; the trailing server/requestContext/cancellationToken are framework-injected. Grouping them into a DTO would break the MCP-reflected JSON schema.")]
+	// Long-running starter of the restart family: the worker must outlive the response so restart-status
+	// (which shares OperationFamily = Restart and Lifetime = Sticky) reaches the same worker.
+	[McpToolExecution(
+		Location = McpToolExecutionLocation.Worker,
+		Lifetime = McpToolExecutionLifetime.Sticky,
+		OperationFamily = McpToolOperationFamily.Restart,
+		BudgetPolicy = McpToolBudgetPolicy.ParentKillExtended,
+		RequiresClientRequests = McpToolClientRequests.Progress,
+		SharedFileResource = McpToolSharedFileResource.None,
+		StartsOperation = true)]
 	[McpServerTool(Name = RestartByEnvironmentNameToolName, ReadOnly = false, Destructive = true, Idempotent = false, OpenWorld = false),
 	 Description("Restarts a Creatio instance by environment name. By default (waitReady=true) waits after the restart until the instance answers an authenticated application-layer round-trip — not merely the liveness health-check ping — and returns only once it is genuinely serving, or after waitTimeoutSeconds. Long-running: streams notifications/progress while waiting; if the MCP response deadline is reached first, returns exit-code 0 with an in-progress note carrying an operation-id — the restart itself already succeeded and the readiness wait continues server-side. Do NOT retry; poll restart-status with the same environment-name (or this operation-id) instead.")]
 	public async Task<CommandExecutionResult> RestartInstanceByName(
@@ -71,6 +81,17 @@ public class RestartTool(
 	// would now fail the registry's duplicate-name guard by design.
 	[SuppressMessage("Major Code Smell", "S107:Methods should not have too many parameters",
 		Justification = "Parameters mirror the restart-by-credentials MCP tool contract; the trailing server/requestContext/cancellationToken are framework-injected. Grouping them into a DTO would break the MCP-reflected JSON schema.")]
+	// Same restart family and the same sticky worker as restart-by-environment-name: the readiness wait
+	// outlives the response here too. That this path is deliberately unreportable by restart-status (its
+	// tenant key is URI-derived) changes the poll story, not how the call executes.
+	[McpToolExecution(
+		Location = McpToolExecutionLocation.Worker,
+		Lifetime = McpToolExecutionLifetime.Sticky,
+		OperationFamily = McpToolOperationFamily.Restart,
+		BudgetPolicy = McpToolBudgetPolicy.ParentKillExtended,
+		RequiresClientRequests = McpToolClientRequests.Progress,
+		SharedFileResource = McpToolSharedFileResource.None,
+		StartsOperation = true)]
 	[McpServerTool(Name = RestartByCredentialsToolName, ReadOnly = false, Destructive = true, Idempotent = false, OpenWorld = false),
 	 Description("Restarts a Creatio instance by credentials. By default (waitReady=true) waits after the restart until the instance answers an authenticated application-layer round-trip — not merely the liveness health-check ping — and returns only once it is genuinely serving, or after waitTimeoutSeconds. Long-running: streams notifications/progress while waiting; if the MCP response deadline is reached first, returns exit-code 0 with an in-progress note — the restart itself already succeeded and the readiness wait continues server-side. Do NOT retry. Note that restart-status CANNOT report a credentials-started restart (it is keyed by a registered environment name); re-check with healthcheck, or use restart-by-environment-name when you need a pollable restart.")]
 	public async Task<CommandExecutionResult> RestartInstanceByCredentials(
@@ -101,12 +122,16 @@ public class RestartTool(
 		};
 		return await ExecuteWithReadinessWait(
 			options, waitReady,
-			// No registered environment name on the credentials path. The wait is still TRACKED (so the
-			// registry's lifecycle/eviction invariants hold uniformly), but it is NOT pollable: the record
-			// lands under a URI-derived tenant key, while restart-status derives its key from a required
-			// environment name — BuildCacheKey uses `Environment ?? Uri`, so the two key spaces are
-			// disjoint and a lookup can never match. The in-progress notice says so rather than sending
-			// the agent to a poll target that always answers not-found.
+			// No registered environment name on the credentials path, so the wait is TRACKED (the
+			// registry's lifecycle/eviction invariants hold uniformly) but not ADVERTISED as pollable.
+			// Corrected 2026-08-18, story 7 AC-00: the old reasoning here said the two key spaces were
+			// structurally disjoint because BuildCacheKey used `Environment ?? Uri`. That is no longer
+			// true — the name branch and the URI branch now converge on one normalised target, so a
+			// credentials-path record and an environment-named lookup DO collide when they mean the same
+			// target with the same credentials. The behaviour is deliberately unchanged and is now merely
+			// conservative rather than structural: at this point we cannot tell whether these credentials
+			// correspond to a registered environment, so promising a poll target would be a guess. An
+			// honest notice beats sending the agent to a target that may answer not-found.
 			new RestartWaitContext(RestartByCredentialsToolName, $"'{url}'", waitTimeoutSeconds, null),
 			server, requestContext, cancellationToken).ConfigureAwait(false);
 	}
@@ -173,6 +198,7 @@ public class RestartTool(
 	private CommandExecutionResult RunReadinessWait(
 		RestartOptions options, CommandExecutionResult requestResult, RestartWaitContext waitContext,
 		string tenantKey, string operationId) {
+		int readinessExitCode = 1;
 		// Pin the session container in-use for the wait (FR-08) WITHOUT taking the per-tenant lock (GetLock) —
 		// the readiness poll is read-only and must not serialize other same-tenant calls. Because no GetLock was
 		// taken, the release must NOT go through MarkAvailable (which decrements the GetLock-owned in-use count and
@@ -181,7 +207,8 @@ public class RestartTool(
 		try {
 			RestartCommand readinessCommand = commandResolver.Resolve<RestartCommand>(options);
 			bool ready = readinessCommand.WaitForReadiness(options);
-			registry.Finish(operationId, ready ? 0 : 1);
+			readinessExitCode = ready ? 0 : 1;
+			registry.Finish(operationId, readinessExitCode);
 			return ready
 				? requestResult
 				: new CommandExecutionResult(1, [
@@ -195,6 +222,13 @@ public class RestartTool(
 				exception, redactSensitive: McpPassthroughRedaction.IsPassthroughKey(tenantKey));
 		} finally {
 			McpToolExecutionLock.MarkSessionContainerAvailable(tenantKey);
+			// No completion signal is sent from here. The private signal (ADR rule 5) matters most to this
+			// family — restart-by-credentials is deliberately unreportable through restart-status, so no
+			// terminal status exists for a parent to poll — but sending it HERE only covered the calls that
+			// reached the readiness wait. waitReady=false, a failed restart request, and both argument
+			// refusals return without ever getting here, and each stranded the sticky worker for its whole
+			// hard lifetime. WorkerOperationCompletionSignal's choke point now emits it around every exit,
+			// and the heartbeat helper leases THIS work so a past-deadline wait is not read as finished.
 		}
 	}
 
@@ -227,12 +261,15 @@ public class RestartTool(
 		+ BuildPollGuidance(operationId, environmentName)
 		+ $" Typical warm-up is 1-10 minutes; do NOT retry {toolName}.";
 
-	// restart-status resolves its tenant key from a REQUIRED environment-name, and
-	// ToolCommandResolver.BuildCacheKey builds that key from `options.Environment ?? settings.Uri`. The
-	// credentials path has no environment name, so its operation is recorded under a URI-derived key that
-	// an environment-named lookup can never equal — not "only when the instance is also registered", but
-	// never, for a structurally different key. Promising a poll target there would send the agent into a
-	// guaranteed not-found loop, so that path gets honest guidance instead.
+	// restart-status resolves its tenant key from a REQUIRED environment name; the credentials path has
+	// none. Corrected 2026-08-18, story 7 AC-00: this comment used to claim the two keys could NEVER be
+	// equal because BuildCacheKey derived them from `options.Environment ?? settings.Uri`. Convergence
+	// removed that guarantee — one resolved target now yields one key from either branch, so the two
+	// agree whenever the target AND the credentials agree. What survives is the reason that actually
+	// matters: from here we cannot tell whether these credentials belong to a registered environment, so
+	// any poll target we named would be a guess. Withholding it is now a conservative choice rather than
+	// a structural certainty, and it is still the right one — an agent sent into a not-found loop learns
+	// nothing.
 	private static string BuildPollGuidance(string operationId, string environmentName) =>
 		string.IsNullOrWhiteSpace(environmentName)
 			? "This restart was started by credentials, not by environment name, so restart-status "

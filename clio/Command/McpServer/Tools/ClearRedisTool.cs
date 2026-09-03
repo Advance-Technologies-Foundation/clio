@@ -15,6 +15,13 @@ public class ClearRedisTool(
 	
 	[McpServerTool(Name = ClearRedisByEnvironmentName, ReadOnly = false, Destructive = true, Idempotent = false, OpenWorld = false),
 	 Description("Empties redis database used by creatio instance")]
+	[McpToolExecution(
+		Location = McpToolExecutionLocation.Worker,
+		Lifetime = McpToolExecutionLifetime.PerCall,
+		OperationFamily = McpToolOperationFamily.None,
+		BudgetPolicy = McpToolBudgetPolicy.ParentKillDefault,
+		RequiresClientRequests = McpToolClientRequests.None,
+		SharedFileResource = McpToolSharedFileResource.None)]
 	public CommandExecutionResult ClearRedisByName(
 		[Description("Target Environment name")] [Required] string environmentName
 	) {
@@ -30,6 +37,13 @@ public class ClearRedisTool(
 
 	[McpServerTool(Name = ClearRedisByCredentialsToolName, ReadOnly = false, Destructive = true, Idempotent = false, OpenWorld = false),
 	 Description("Empties redis database used by creatio instance")]
+	[McpToolExecution(
+		Location = McpToolExecutionLocation.Worker,
+		Lifetime = McpToolExecutionLifetime.PerCall,
+		OperationFamily = McpToolOperationFamily.None,
+		BudgetPolicy = McpToolBudgetPolicy.ParentKillDefault,
+		RequiresClientRequests = McpToolClientRequests.None,
+		SharedFileResource = McpToolSharedFileResource.None)]
 	public CommandExecutionResult ClearRedisByCredentials(
 		[Description("Creatio instance url")] [Required] string url,
 		[Description("Creatio instance Username")] [Required] string userName,

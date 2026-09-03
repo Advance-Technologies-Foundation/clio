@@ -73,6 +73,16 @@ public sealed class PageUpdateTool(
 		" See docs://mcp/guides/page-modification for the append diff-form contract.";
 
 	[McpServerTool(Name = ToolName, ReadOnly = false, Destructive = true, Idempotent = false, OpenWorld = false)]
+	// One of the two sampling callers (PageBodySamplingService): a relay that is not full-duplex degrades the
+	// semantic review to skipped SILENTLY. SharedFileResource is .clio-pages — the IPageBaselineGuard
+	// conflict baseline under .clio-pages/{schema}/meta.json, which two clio processes could otherwise race.
+	[McpToolExecution(
+		Location = McpToolExecutionLocation.Worker,
+		Lifetime = McpToolExecutionLifetime.PerCall,
+		OperationFamily = McpToolOperationFamily.None,
+		BudgetPolicy = McpToolBudgetPolicy.ParentKillDefault,
+		RequiresClientRequests = McpToolClientRequests.Sampling,
+		SharedFileResource = McpToolSharedFileResource.ClioPages)]
 	[Description("Update a Freedom UI page schema body. environment-name preferred; uri/login/password fallback only. " +
 		"In append mode, SCHEMA_CONVERTERS and SCHEMA_VALIDATORS are merged by type key with incoming entries winning; the final merged body is rejected if it contains a custom validator reference without a matching SCHEMA_VALIDATORS declaration. " +
 		"Set validate=false only as an explicit escape hatch for a pre-existing page defect; it skips client-side content and run-process validation, while JavaScript syntax, AST loadability, replace-mode marker integrity, the mobile JSON-object structure check, and the page baseline/conflict guard remain mandatory. It stays combinable with force=true - the two flags are orthogonal (one gates content checks, the other the baseline/conflict guard) - and the response then warns that both are relaxed. " +
@@ -99,7 +109,8 @@ public sealed class PageUpdateTool(
 				cancellationToken);
 		if (earlyFailure != null)
 			return earlyFailure;
-		(string metaFilePath, bool baselineArmed) = pageBaselineGuard.TryArm(options, args.OutputDirectory);
+		(string metaFilePath, bool baselineArmed, string baselineWarning) =
+			pageBaselineGuard.TryArm(options, args.OutputDirectory);
 		PageUpdateResponse response = ExecuteWithCleanLog(options, () => {
 			PageUpdateCommand resolvedCommand;
 			try {
@@ -117,12 +128,19 @@ public sealed class PageUpdateTool(
 		// parser does not accept. This is the MCP side of that split.
 		if (response.ContentValidationFailure)
 			response = WithEscapeHatchHint(response);
-		if (baselineArmed && response.Success && !options.DryRun)
-			pageBaselineGuard.RefreshOrDrop(metaFilePath, options, response);
+		// A failed baseline refresh must never fail a save that already landed on the server, so both the
+		// discovery and the refresh diagnostics travel on the response's warning channel (ENG-95262 AC-02).
+		// Runs on the hinted response: the hint changes only the error wording, never Success, so it cannot
+		// alter whether the refresh is due.
+		string refreshWarning = baselineArmed && response.Success && !options.DryRun
+			? pageBaselineGuard.RefreshOrDrop(metaFilePath, options, response)
+			: null;
 		response.SamplingReview = samplingReview;
 		IReadOnlyList<string> mergedWarnings = MergeWarnings(
-			MergeWarnings(validationWarnings, response.Warnings),
-			lintWarnings);
+			MergeWarnings(
+				MergeWarnings(validationWarnings, response.Warnings),
+				lintWarnings),
+			BaselineWarnings(baselineWarning, refreshWarning));
 		response.Warnings = mergedWarnings.Count > 0 ? mergedWarnings : null;
 		return response;
 	}
@@ -328,6 +346,20 @@ public sealed class PageUpdateTool(
 			.Select(PageBodyAstLinter.FormatFinding)
 			.ToArray();
 		return (null, warnings);
+	}
+
+	// Collects the non-empty baseline diagnostics (discovery + post-save refresh) into the shape the
+	// warning merge expects. They are warnings and not errors on purpose: the Creatio save has already
+	// succeeded by the time either can fail, so failing the response would misreport a landed write.
+	private static IReadOnlyList<string> BaselineWarnings(string discoveryWarning, string refreshWarning) {
+		List<string> warnings = [];
+		if (!string.IsNullOrWhiteSpace(discoveryWarning)) {
+			warnings.Add(discoveryWarning);
+		}
+		if (!string.IsNullOrWhiteSpace(refreshWarning)) {
+			warnings.Add(refreshWarning);
+		}
+		return warnings;
 	}
 
 	private static IReadOnlyList<string> MergeWarnings(IReadOnlyList<string> first, IReadOnlyList<string> second) {

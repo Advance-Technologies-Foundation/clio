@@ -41,6 +41,15 @@ public class SetLogoTool(
 		};
 
 	/// <summary>Applies the requested images, binds them into the package, and returns a structured result.</summary>
+	// Reads local image files but writes them to the environment; SharedFileResource stays None because the
+	// caller-supplied image paths are not a clio-managed artifact two clio processes coordinate on.
+	[McpToolExecution(
+		Location = McpToolExecutionLocation.Worker,
+		Lifetime = McpToolExecutionLifetime.PerCall,
+		OperationFamily = McpToolOperationFamily.None,
+		BudgetPolicy = McpToolBudgetPolicy.ParentKillDefault,
+		RequiresClientRequests = McpToolClientRequests.None,
+		SharedFileResource = McpToolSharedFileResource.None)]
 	[McpServerTool(Name = ToolName, ReadOnly = false, Destructive = true, Idempotent = true, OpenWorld = false),
 	 Description("Apply the product logos and the browser-tab favicon on a registered environment from local " +
 		"image files and bind them into a package as data bindings. Pass at " +
