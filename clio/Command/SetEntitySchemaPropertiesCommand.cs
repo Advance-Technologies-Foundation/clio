@@ -85,10 +85,10 @@ public class SetEntitySchemaPropertiesCommand : Command<SetEntitySchemaPropertie
 	internal static void ValidateOptions(SetEntitySchemaPropertiesOptions options) {
 		ArgumentNullException.ThrowIfNull(options);
 		if (string.IsNullOrWhiteSpace(options.Package)) {
-			throw new ArgumentException("package-name is required.", "package-name");
+			throw new ArgumentException("package-name is required.", nameof(options.Package));
 		}
 		if (string.IsNullOrWhiteSpace(options.SchemaName)) {
-			throw new ArgumentException("schema-name is required.", "schema-name");
+			throw new ArgumentException("schema-name is required.", nameof(options.SchemaName));
 		}
 		if (string.IsNullOrWhiteSpace(options.PrimaryDisplayColumn)) {
 			throw new ArgumentException(SetEntitySchemaPropertiesOptions.NoPropertyToSetError, nameof(options));

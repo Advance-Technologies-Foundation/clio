@@ -68,7 +68,7 @@ public class GetEntitySchemaPropertiesCommand : Command<GetEntitySchemaPropertie
 	private static void Validate(GetEntitySchemaPropertiesOptions options) {
 		ArgumentNullException.ThrowIfNull(options);
 		if (string.IsNullOrWhiteSpace(options.SchemaName)) {
-			throw new ArgumentException("schema-name is required.", "schema-name");
+			throw new ArgumentException("schema-name is required.", nameof(options.SchemaName));
 		}
 	}
 

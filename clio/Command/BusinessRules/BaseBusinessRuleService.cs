@@ -150,21 +150,10 @@ internal abstract class BaseBusinessRuleService(
 	/// tool is the difference between one call and three (issue #1305, point 3).
 	/// </summary>
 	protected static void RequireSchemaFields(string packageName, string schemaName, string schemaFieldName) {
-		List<string> missing = [];
-		if (string.IsNullOrWhiteSpace(packageName)) {
-			missing.Add("package-name");
-		}
-
-		if (string.IsNullOrWhiteSpace(schemaName)) {
-			missing.Add(schemaFieldName);
-		}
-
-		if (missing.Count == 1) {
-			throw new ArgumentException($"{missing[0]} is required.");
-		}
-
-		if (missing.Count > 1) {
-			throw new ArgumentException($"{string.Join(", ", missing)} are required.");
+		string? missingFieldsError =
+			BusinessRuleBatchValidation.MissingSchemaFieldsError(packageName, schemaName, schemaFieldName);
+		if (missingFieldsError is not null) {
+			throw new ArgumentException(missingFieldsError);
 		}
 	}
 }
