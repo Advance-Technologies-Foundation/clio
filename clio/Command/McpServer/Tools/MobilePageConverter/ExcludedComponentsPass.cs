@@ -231,7 +231,7 @@ internal static class ExcludedComponentsPass {
 			}
 			if (string.Equals(parent.MobileType, filter.ParentType, StringComparison.OrdinalIgnoreCase)
 				&& SlotMatches(current, filter)) {
-				return parent.MobileName;
+				return parent.Name;
 			}
 			current = parent;
 		}
@@ -313,16 +313,16 @@ internal static class ExcludedComponentsPass {
 	}
 
 	/// <summary>
-	/// <c>MobileName</c> → entry over every insert AND merge entry — a merge twin (a template-provided
+	/// <c>Name</c> → entry over every insert AND merge entry — a merge twin (a template-provided
 	/// element the page parameterizes) can be an ancestor or a host exactly like an insert. First entry wins
 	/// on a duplicate name, keeping the climb deterministic.
 	/// </summary>
 	private static Dictionary<string, ElementMapEntry> IndexByMobileName(List<ElementMapEntry> elementMap) {
 		var byMobileName = new Dictionary<string, ElementMapEntry>(StringComparer.OrdinalIgnoreCase);
 		foreach (ElementMapEntry entry in elementMap) {
-			if (entry.MobileName is { Length: > 0 }
+			if (entry.Name is { Length: > 0 }
 				&& (IsInsert(entry) || string.Equals(entry.Operation, "merge", StringComparison.OrdinalIgnoreCase))) {
-				byMobileName.TryAdd(entry.MobileName, entry);
+				byMobileName.TryAdd(entry.Name, entry);
 			}
 		}
 		return byMobileName;
@@ -336,8 +336,8 @@ internal static class ExcludedComponentsPass {
 		if (removed.WebName is { Length: > 0 }) {
 			removedWebNames.Add(removed.WebName);
 		}
-		if (removed.MobileName is { Length: > 0 }) {
-			removedMobileNames.Add(removed.MobileName);
+		if (removed.Name is { Length: > 0 }) {
+			removedMobileNames.Add(removed.Name);
 		}
 	}
 
@@ -360,16 +360,16 @@ internal static class ExcludedComponentsPass {
 		}
 		var dropped = new List<ElementMapEntry>();
 		foreach (ElementMapEntry entry in elementMap) {
-			if (entry.MobileValues is not JsonObject hostValues) {
+			if (entry.Values is not JsonObject hostValues) {
 				continue;
 			}
 			// The entry itself is the outermost host candidate (its own type never appears as a node inside
 			// its values), so it is processed first — the outermost-first order the class remarks promise.
 			if (entry.MobileType is { Length: > 0 }
 				&& filtersByParentType.TryGetValue(entry.MobileType, out List<ExcludedComponentFilterRule> rootFilters)) {
-				ApplyFiltersToHost(hostValues, entry.MobileName, rootFilters, dropped);
+				ApplyFiltersToHost(hostValues, entry.Name, rootFilters, dropped);
 			}
-			FindNestedHosts(hostValues, filtersByParentType, entry.MobileName, dropped, depth: 0);
+			FindNestedHosts(hostValues, filtersByParentType, entry.Name, dropped, depth: 0);
 		}
 		removedWebNames.UnionWith(dropped
 			.Where(drop => drop.WebName is { Length: > 0 })

@@ -153,7 +153,7 @@ public sealed class MobilePageConversionGuideSandboxE2ETests : McpContractFixtur
 				failedCandidates.Add($"'{schemaName}': {response.Error}");
 				continue;
 			}
-			int fab = (response.Guide?.ElementMap ?? []).Count(e =>
+			int fab = (response.Guide?.ViewConfigDiff ?? []).Count(e =>
 				e.Operation == "insert" && e.ParentName == "FloatingActionButton" && e.PropertyName == "menuItems");
 			if (fab > 0) {
 				AssertHeaderActionsConvertToFab(response.Guide!);
@@ -231,9 +231,9 @@ public sealed class MobilePageConversionGuideSandboxE2ETests : McpContractFixtur
 			// the loop break on a page where the exclusion pass had nothing to decide, and
 			// AssertExcludedComponentsHonored would then pass by construction — reporting a vacuous run as a
 			// real one, which is the exact failure the Ignore branch below exists to prevent.
-			bool exercisesBannedType = guide.ElementMap.Any(e =>
+			bool exercisesBannedType = guide.ViewConfigDiff.Any(e =>
 				string.Equals(e.Operation, "insert", StringComparison.OrdinalIgnoreCase)
-				&& filters.Any(f => string.Equals(e.MobileType, f.Type, StringComparison.OrdinalIgnoreCase)));
+				&& filters.Any(f => string.Equals(TypeOf(e), f.Type, StringComparison.OrdinalIgnoreCase)));
 			if (exercisesBannedType) {
 				AssertExcludedComponentsHonored(guide, filters);
 				bannedTypeExercised = true;
@@ -267,21 +267,21 @@ public sealed class MobilePageConversionGuideSandboxE2ETests : McpContractFixtur
 	/// </summary>
 	private static void AssertExcludedComponentsHonored(
 		MobilePageConversionGuide guide, List<ExcludedComponentFilterRule> filters) {
-		Dictionary<string, ElementMapEntry> byMobileName = guide.ElementMap
-			.Where(e => (e.Operation == "insert" || e.Operation == "merge") && !string.IsNullOrEmpty(e.MobileName))
-			.GroupBy(e => e.MobileName!, StringComparer.OrdinalIgnoreCase)
+		Dictionary<string, ViewConfigDiffOperation> byMobileName = guide.ViewConfigDiff
+			.Where(e => (e.Operation == "insert" || e.Operation == "merge") && !string.IsNullOrEmpty(e.Name))
+			.GroupBy(e => e.Name!, StringComparer.OrdinalIgnoreCase)
 			.ToDictionary(g => g.Key, g => g.First(), StringComparer.OrdinalIgnoreCase);
-		foreach (ElementMapEntry entry in guide.ElementMap) {
-			if (entry.Operation != "insert" || string.IsNullOrEmpty(entry.MobileType)) {
+		foreach (ViewConfigDiffOperation entry in guide.ViewConfigDiff) {
+			if (entry.Operation != "insert" || string.IsNullOrEmpty(TypeOf(entry))) {
 				continue;
 			}
 			foreach (ExcludedComponentFilterRule filter in filters) {
-				if (!string.Equals(entry.MobileType, filter.Type, StringComparison.OrdinalIgnoreCase)) {
+				if (!string.Equals(TypeOf(entry), filter.Type, StringComparison.OrdinalIgnoreCase)) {
 					continue;
 				}
 				string? bannedHost = FindBannedHostOnAncestorPath(entry, filter, byMobileName);
 				bannedHost.Should().BeNull(
-					because: $"surviving insert '{entry.MobileName}' of banned type '{filter.Type}' reaches host "
+					because: $"surviving insert '{entry.Name}' of banned type '{filter.Type}' reaches host "
 						+ $"'{bannedHost}' of type '{filter.ParentType}'"
 						+ (string.IsNullOrWhiteSpace(filter.PropertiesContainerName)
 							? ""
@@ -295,22 +295,22 @@ public sealed class MobilePageConversionGuideSandboxE2ETests : McpContractFixtur
 	/// mobile name, or null when the entry's chain never reaches one in scope. Bounded and cycle-guarded —
 	/// the map arrives from a real environment.</summary>
 	private static string? FindBannedHostOnAncestorPath(
-		ElementMapEntry candidate, ExcludedComponentFilterRule filter,
-		Dictionary<string, ElementMapEntry> byMobileName) {
+		ViewConfigDiffOperation candidate, ExcludedComponentFilterRule filter,
+		Dictionary<string, ViewConfigDiffOperation> byMobileName) {
 		var visited = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-		ElementMapEntry current = candidate;
+		ViewConfigDiffOperation current = candidate;
 		for (int depth = 0; depth <= 32; depth++) {
 			string? parentName = current.ParentName;
 			if (string.IsNullOrEmpty(parentName) || !visited.Add(parentName)
-				|| !byMobileName.TryGetValue(parentName, out ElementMapEntry? parent)) {
+				|| !byMobileName.TryGetValue(parentName, out ViewConfigDiffOperation? parent)) {
 				return null;
 			}
 			bool slotMatches = string.IsNullOrWhiteSpace(filter.PropertiesContainerName)
 				|| string.Equals(
 					string.IsNullOrEmpty(current.PropertyName) ? "items" : current.PropertyName,
 					filter.PropertiesContainerName, StringComparison.OrdinalIgnoreCase);
-			if (string.Equals(parent.MobileType, filter.ParentType, StringComparison.OrdinalIgnoreCase) && slotMatches) {
-				return parent.MobileName;
+			if (string.Equals(TypeOf(parent), filter.ParentType, StringComparison.OrdinalIgnoreCase) && slotMatches) {
+				return parent.Name;
 			}
 			current = parent;
 		}
@@ -324,40 +324,43 @@ public sealed class MobilePageConversionGuideSandboxE2ETests : McpContractFixtur
 	/// guaranteed to carry a header button, so this asserts the contract only when one actually converted.
 	/// </summary>
 	private static void AssertHeaderActionsConvertToFab(MobilePageConversionGuide guide) {
-		List<ElementMapEntry> fabEntries = guide.ElementMap.Where(e =>
+		List<ViewConfigDiffOperation> fabEntries = guide.ViewConfigDiff.Where(e =>
 			e.Operation == "insert" && e.ParentName == "FloatingActionButton" && e.PropertyName == "menuItems").ToList();
-		foreach (ElementMapEntry entry in fabEntries) {
-			entry.MobileType.Should().Be("crt.MenuItem",
-				because: $"a header action retargeted into the FAB ('{entry.WebName}') becomes a mobile menu item");
+		foreach (ViewConfigDiffOperation entry in fabEntries) {
+			TypeOf(entry).Should().Be("crt.MenuItem",
+				because: $"a header action retargeted into the FAB ('{entry.Name}') becomes a mobile menu item");
 			// ENG-93152: the recommended mobile record template provides the FloatingActionButton natively (in the
 			// Scaffold's floatAction slot), and no entry in the map ever inserts one. The entry MUST therefore carry
 			// parentSource "template" — the caller inserts only the child and never re-declares the FAB.
-			entry.ParentSource.Should().Be("template",
-				because: $"the mobile template provides the FloatingActionButton natively and no map entry inserts it, "
-					+ $"so the retargeted action ('{entry.WebName}') must carry parentSource \"template\" over the real MCP transport");
-			if (entry.MobileValues is JsonObject values) {
+			guide.ViewConfigDiff.Should().NotContain(
+				o => o.Operation == "insert" && o.Name == "FloatingActionButton",
+				because: $"the mobile template provides the FloatingActionButton natively, so the diff must insert "
+					+ $"only the retargeted action ('{entry.Name}') into it and never re-declare the button itself");
+			(guide.UnresolvedParents ?? []).Should().NotContain(o => o.ParentName == "FloatingActionButton",
+				because: "the probed template does provide the FAB, so its parent resolves and nothing is reported");
+			if (entry.Values is JsonObject values) {
 				values.ContainsKey("style").Should().BeFalse(
-					because: $"visual properties are denylisted on a converted FAB menu item ('{entry.WebName}')");
+					because: $"visual properties are denylisted on a converted FAB menu item ('{entry.Name}')");
 				values.ContainsKey("icon").Should().BeFalse(
-					because: $"visual properties are denylisted on a converted FAB menu item ('{entry.WebName}')");
+					because: $"visual properties are denylisted on a converted FAB menu item ('{entry.Name}')");
 				values.ContainsKey("color").Should().BeFalse(
-					because: $"visual properties are denylisted on a converted FAB menu item ('{entry.WebName}')");
+					because: $"visual properties are denylisted on a converted FAB menu item ('{entry.Name}')");
 			}
 		}
 		// AC 4.5: once header actions convert, the MainHeader scope container itself produces NO mobile element —
 		// it is neither inserted nor merged (a non-converting scope emits nothing of its own). Asserted only when a
 		// FAB conversion actually happened, so a page without a header still passes vacuously.
 		if (fabEntries.Count > 0) {
-			guide.ElementMap.Should().NotContain(
-				e => e.WebName == "MainHeader" && (e.Operation == "insert" || e.Operation == "merge"),
+			guide.ViewConfigDiff.Should().NotContain(
+				e => e.Name == "MainHeader" && (e.Operation == "insert" || e.Operation == "merge"),
 				because: "a non-converting scope container (MainHeader) is never emitted as a mobile element (AC 4.5)");
 			// ENG-93152 contract, and the other half of what parentSource asserts above: the FAB is template-provided,
 			// so the guide must NEVER emit an insert/merge that re-declares it — authoring a second
 			// FloatingActionButton would override the native one. This is also what makes parentSource "template"
 			// self-consistent here: it is derived from the absence of such an insert.
-			guide.ElementMap.Should().NotContain(
+			guide.ViewConfigDiff.Should().NotContain(
 				e => (e.Operation == "insert" || e.Operation == "merge")
-					&& (e.MobileName == "FloatingActionButton" || e.MobileType == "crt.FloatingActionButton"),
+					&& (e.Name == "FloatingActionButton" || TypeOf(e) == "crt.FloatingActionButton"),
 				because: "the FloatingActionButton is provided by the mobile template, so the guide must never emit an "
 					+ "insert/merge that re-declares it (only the retargeted children are inserted)");
 		}
@@ -373,28 +376,28 @@ public sealed class MobilePageConversionGuideSandboxE2ETests : McpContractFixtur
 	/// A page with no converted list passes vacuously — the seeded page set is not guaranteed to carry one.
 	/// </summary>
 	private static void AssertConvertedListsCarryTheirRow(MobilePageConversionGuide guide) {
-		foreach (ElementMapEntry list in guide.ElementMap.Where(e =>
-			e.Operation == "insert" && e.MobileType == "crt.List" && e.MobileValues is not null)) {
-			JsonNode? row = list.MobileValues!["itemLayout"];
+		foreach (ViewConfigDiffOperation list in guide.ViewConfigDiff.Where(e =>
+			e.Operation == "insert" && TypeOf(e) == "crt.List" && e.Values is not null)) {
+			JsonNode? row = list.Values!["itemLayout"];
 			row.Should().NotBeNull(
-				because: $"'{list.WebName}' converts to a mobile list, whose row has no web counterpart to copy — "
+				because: $"'{list.Name}' converts to a mobile list, whose row has no web counterpart to copy — "
 					+ "the converter must build it from the grid's columns, and when that was left to the caller "
 					+ "the list arrived with no title and no body");
 			row!["type"]?.GetValue<string>().Should().Be("crt.ListItem",
-				because: $"'{list.WebName}' must carry the mobile row element the list renders each record with");
+				because: $"'{list.Name}' must carry the mobile row element the list renders each record with");
 			// The row leads with the FIRST column whatever its type (title-type selection was removed by
 			// decision), so a title is present whenever the grid has any column at all — a title is absent only
 			// for a column-less grid. The shape is asserted only when a title exists: asserting unconditionally
 			// is what made this fail against a seeded page whose grid had no columns.
 			if (row["title"] is { } title) {
 				title.GetValueKind().Should().Be(JsonValueKind.String,
-					because: $"the registry declares crt.ListItem.title as a string binding, and on '{list.WebName}' "
+					because: $"the registry declares crt.ListItem.title as a string binding, and on '{list.Name}' "
 						+ "an object wrapper would render an empty Title column while the body rows still looked fine");
 			}
 			// Deliberately NOT asserted non-empty: a single-column grid legitimately yields a title and no body
 			// rows, and this runs against whichever page the sandbox happens to seed.
 			row["body"].Should().NotBeNull(
-				because: $"the row on '{list.WebName}' must carry the body collection, even when the grid had only "
+				because: $"the row on '{list.Name}' must carry the body collection, even when the grid had only "
 					+ "the one display column and it is therefore empty");
 		}
 	}
@@ -468,22 +471,22 @@ public sealed class MobilePageConversionGuideSandboxE2ETests : McpContractFixtur
 			tabAt.Should().BeGreaterThanOrEqualTo(0,
 				because: $"the tab '{group.TabName}' the group describes must itself be in the element map of '{convertedSchemaName}'");
 
-			ElementMapEntry mainEntry = guide.ElementMap[tabAt + 1];
-			mainEntry.MobileName.Should().Be(group.MainTabContainerName,
+			ViewConfigDiffOperation mainEntry = guide.ViewConfigDiff[tabAt + 1];
+			mainEntry.Name.Should().Be(group.MainTabContainerName,
 				because: "the tab body grid must be the very next element-map entry after its tab, so applying inserts in order creates the parent first");
 			mainEntry.Operation.Should().Be("insert",
 				because: "a synthesized layer is applied exactly like any other insert");
-			mainEntry.WebName.Should().BeNull(
-				because: "a synthesized container has no web counterpart, so the serialized entry carries no webName");
+			SourceNamesOf(guide).Should().NotContain(mainEntry.Name,
+				because: "a synthesized container has no source counterpart, so its name appears in neither sourceStructure nor nameMap");
 			mainEntry.ParentName.Should().Be(group.TabName,
 				because: "the tab body grid is the tab's direct child");
 
 			if (group.AreaName is not null) {
-				ElementMapEntry areaEntry = guide.ElementMap[tabAt + 2];
-				areaEntry.MobileName.Should().Be(group.AreaName,
+				ViewConfigDiffOperation areaEntry = guide.ViewConfigDiff[tabAt + 2];
+				areaEntry.Name.Should().Be(group.AreaName,
 					because: "the Area card must directly follow the tab body it lives in");
-				areaEntry.WebName.Should().BeNull(
-					because: "a synthesized container has no web counterpart, so the serialized entry carries no webName");
+				SourceNamesOf(guide).Should().NotContain(areaEntry.Name,
+					because: "a synthesized container has no source counterpart, so its name appears in neither sourceStructure nor nameMap");
 				areaEntry.ParentName.Should().Be(group.MainTabContainerName,
 					because: "the Area card sits inside the tab body grid, not in the tab");
 			} else {
@@ -492,8 +495,8 @@ public sealed class MobilePageConversionGuideSandboxE2ETests : McpContractFixtur
 			}
 
 			foreach (string movedChild in group.MovedChildren) {
-				guide.ElementMap.Should().Contain(
-					e => e.MobileName == movedChild && e.ParentName == group.AreaName,
+				guide.ViewConfigDiff.Should().Contain(
+					e => e.Name == movedChild && e.ParentName == group.AreaName,
 					because: $"movedChildren are already reparented onto their own tab's Area ('{group.AreaName}'), never a sibling's");
 			}
 		}
@@ -549,17 +552,17 @@ public sealed class MobilePageConversionGuideSandboxE2ETests : McpContractFixtur
 
 		// Assert — the anchor made room. The exact arithmetic is unit-tested; what must hold end to end is that
 		// the anchor no longer sits in the row the template pinned it to, and that it is re-placed exactly once.
-		List<ElementMapEntry> above = PlacedAboveAnchor(guide);
+		List<ViewConfigDiffOperation> above = PlacedAboveAnchor(guide);
 		string anchorName = ResolveBundledPositionalAnchor();
 		anchorName.Should().NotBeNullOrEmpty(
 			because: "the bundled tabbed template rule must declare the mobile anchor its ':top' content is placed "
 				+ $"around, so '{convertedSchemaName}' has something to be positioned against");
 
-		List<ElementMapEntry> anchorMerges = [.. guide.ElementMap
-			.Where(e => e.Operation == "merge" && string.Equals(e.MobileName, anchorName, StringComparison.OrdinalIgnoreCase))];
+		List<ViewConfigDiffOperation> anchorMerges = [.. guide.ViewConfigDiff
+			.Where(e => e.Operation == "merge" && string.Equals(e.Name, anchorName, StringComparison.OrdinalIgnoreCase))];
 		anchorMerges.Should().ContainSingle(
 			because: "the anchor is re-placed exactly once, whether the page produced a template twin for it or not");
-		JsonNode row = anchorMerges[0].MobileValues?["layoutConfig"]?["row"];
+		JsonNode row = anchorMerges[0].Values?["layoutConfig"]?["row"];
 		row.Should().NotBeNull(
 			because: $"'{anchorName}' is positioned by layoutConfig, so the {above.Count} element(s) above it can "
 				+ "only be made room for by moving its row");
@@ -567,9 +570,9 @@ public sealed class MobilePageConversionGuideSandboxE2ETests : McpContractFixtur
 			because: "leaving the anchor in the template's first row is exactly the defect — the content above it "
 				+ "would render below it");
 
-		foreach (ElementMapEntry entry in above) {
-			entry.MobileValues?["layoutConfig"].Should().NotBeNull(
-				because: $"'{entry.MobileName}' must carry its own row too: freeing the anchor's row is not enough, "
+		foreach (ViewConfigDiffOperation entry in above) {
+			entry.Values?["layoutConfig"].Should().NotBeNull(
+				because: $"'{entry.Name}' must carry its own row too: freeing the anchor's row is not enough, "
 					+ "the mobile runtime does not auto-place an unpositioned child into the free cell");
 		}
 	}
@@ -599,8 +602,8 @@ public sealed class MobilePageConversionGuideSandboxE2ETests : McpContractFixtur
 		declared.Should().NotBeEmpty(
 			because: "reading the vocabulary by reflection must actually find it, or every assertion below passes vacuously");
 
-		guide.ElementMap.Should().NotBeEmpty(because: "the seeded page converts, so there is something to apply");
-		guide.ElementMap.Should().OnlyContain(
+		guide.ViewConfigDiff.Should().NotBeEmpty(because: "the seeded page converts, so there is something to apply");
+		guide.ViewConfigDiff.Should().OnlyContain(
 			e => e.Operation == "insert" || e.Operation == "merge" || e.Operation == "relocate-children",
 			because: "elementMap carries only operations to APPLY — a drop is not one, so it belongs in droppedElements");
 
@@ -627,11 +630,25 @@ public sealed class MobilePageConversionGuideSandboxE2ETests : McpContractFixtur
 	/// caller has to read anyway to apply the insert (ENG-95827). Deriving it here is the same check the
 	/// caller makes.
 	/// </remarks>
-	private static List<ElementMapEntry> PlacedAboveAnchor(MobilePageConversionGuide guide) {
+	/// <summary>
+	/// Every name the SOURCE page had, as the caller sees it: sourceStructure plus the nameMap's source
+	/// keys. A viewConfigDiff name in neither was synthesized by the converter, which is how a caller
+	/// recognises one now that no operation carries a source name.
+	/// </summary>
+	private static string[] SourceNamesOf(MobilePageConversionGuide guide) =>
+		[.. (guide.SourceStructure ?? []).Select(s => s.Name)
+			.Concat((guide.NameMap ?? new Dictionary<string, string>()).Keys)
+			.Where(name => !string.IsNullOrEmpty(name))];
+
+	/// <summary>The mobile component type an insert declares — it lives in <c>values.type</c>.</summary>
+	private static string TypeOf(ViewConfigDiffOperation operation) =>
+		operation?.Values?["type"]?.GetValue<string>();
+
+	private static List<ViewConfigDiffOperation> PlacedAboveAnchor(MobilePageConversionGuide guide) {
 		string anchorName = ResolveBundledPositionalAnchor();
-		return guide?.ElementMap is null || string.IsNullOrEmpty(anchorName)
+		return guide?.ViewConfigDiff is null || string.IsNullOrEmpty(anchorName)
 			? []
-			: [.. guide.ElementMap.Where(e =>
+			: [.. guide.ViewConfigDiff.Where(e =>
 				e.Operation == "insert"
 				&& e.Index is not null
 				&& !string.Equals(e.ParentName, anchorName, StringComparison.OrdinalIgnoreCase))];
@@ -682,20 +699,20 @@ public sealed class MobilePageConversionGuideSandboxE2ETests : McpContractFixtur
 				pagesWithTabAreaLayers++;
 			}
 			AssertNoUnhostablePlacement(guide, schemaName);
-			pagesWithAConvertedTab += guide.ElementMap.Any(e => e.Operation == "insert"
-				&& string.Equals(e.MobileType, MobileTabComponentType, StringComparison.OrdinalIgnoreCase))
+			pagesWithAConvertedTab += guide.ViewConfigDiff.Any(e => e.Operation == "insert"
+				&& string.Equals(TypeOf(e), MobileTabComponentType, StringComparison.OrdinalIgnoreCase))
 				? 1
 				: 0;
-			List<(ElementMapEntry Parent, string Slot)> targetedParents = ResolveTargetedParents(guide);
+			List<(ViewConfigDiffOperation Parent, string Slot)> targetedParents = ResolveTargetedParents(guide);
 			if (targetedParents.Count == 0) {
 				continue;
 			}
 			pagesWithTargetedParents++;
-			foreach ((ElementMapEntry parent, string slot) in targetedParents) {
-				(parent.MobileValues as JsonObject).Should().NotBeNull(
-					because: $"a container insert ('{parent.MobileName}' on '{schemaName}') always carries a mobileValues object built by the converter");
-				((JsonObject)parent.MobileValues!).ContainsKey(slot).Should().BeTrue(
-					because: $"'{parent.MobileName}' on '{schemaName}' is targeted as a parent through '{slot}', so the converter must have declared that slot — the Creatio differ resolves the parent collection generically as itemInfo.Item[propertyName] and refuses the child insert with 'is not a container for other items' for ANY slot it cannot find there");
+			foreach ((ViewConfigDiffOperation parent, string slot) in targetedParents) {
+				(parent.Values as JsonObject).Should().NotBeNull(
+					because: $"a container insert ('{parent.Name}' on '{schemaName}') always carries a mobileValues object built by the converter");
+				((JsonObject)parent.Values!).ContainsKey(slot).Should().BeTrue(
+					because: $"'{parent.Name}' on '{schemaName}' is targeted as a parent through '{slot}', so the converter must have declared that slot — the Creatio differ resolves the parent collection generically as itemInfo.Item[propertyName] and refuses the child insert with 'is not a container for other items' for ANY slot it cannot find there");
 			}
 			SchemaValidationResult applied = MobileDiffApplyValidator.Validate(AssembleViewConfigDiffBody(guide));
 			applied.IsValid.Should().BeTrue(
@@ -763,21 +780,21 @@ public sealed class MobilePageConversionGuideSandboxE2ETests : McpContractFixtur
 	/// </summary>
 	private static void AssertNoUnhostablePlacement(MobilePageConversionGuide guide, string schemaName) {
 		HashSet<string> strips = new(StringComparer.OrdinalIgnoreCase) { MobileTabsElementName };
-		strips.UnionWith(guide.ElementMap
+		strips.UnionWith(guide.ViewConfigDiff
 			.Where(e => e.Operation == "insert"
-				&& string.Equals(e.MobileType, MobileTabComponentType, StringComparison.OrdinalIgnoreCase)
+				&& string.Equals(TypeOf(e), MobileTabComponentType, StringComparison.OrdinalIgnoreCase)
 				&& e.ParentName is { Length: > 0 })
 			.Select(e => e.ParentName!));
-		List<ElementMapEntry> offenders = [
-			.. guide.ElementMap.Where(e => e.Operation == "insert"
+		List<ViewConfigDiffOperation> offenders = [
+			.. guide.ViewConfigDiff.Where(e => e.Operation == "insert"
 				&& e.ParentName is { Length: > 0 }
 				&& strips.Contains(e.ParentName!)
-				&& !string.Equals(e.MobileType, MobileTabComponentType, StringComparison.OrdinalIgnoreCase))
+				&& !string.Equals(TypeOf(e), MobileTabComponentType, StringComparison.OrdinalIgnoreCase))
 		];
 		offenders.Should().BeEmpty(
 			because: $"on '{schemaName}' a crt.TabPanel accepts only crt.TabContainer children, so each of these is "
 				+ "invisible in Mobile Designer and its whole subtree is lost from the converted page (ENG-94951): "
-				+ string.Join(", ", offenders.Select(e => $"{e.MobileName}({e.MobileType})->{e.ParentName}")));
+				+ string.Join(", ", offenders.Select(e => $"{e.Name}({TypeOf(e)})->{e.ParentName}")));
 	}
 
 	/// <summary>Mobile component type of a single tab; only this type may be a child of a crt.TabPanel.</summary>
@@ -806,7 +823,7 @@ public sealed class MobilePageConversionGuideSandboxE2ETests : McpContractFixtur
 		// never lists, through ANY child slot (a crt.Button targeted through menuItems qualifies exactly like
 		// a crt.Timeline targeted through items); a conversion failure is a runtime regression, never a seed gap.
 		MobilePageConversionGuide? matchedGuide = null;
-		ElementMapEntry? matchedParent = null;
+		ViewConfigDiffOperation? matchedParent = null;
 		string matchedSlot = string.Empty;
 		string convertedSchemaName = string.Empty;
 		List<string> failedCandidates = [];
@@ -816,8 +833,8 @@ public sealed class MobilePageConversionGuideSandboxE2ETests : McpContractFixtur
 			if (guide is null) {
 				continue;
 			}
-			(ElementMapEntry Parent, string Slot) match = ResolveTargetedParents(guide).FirstOrDefault(p =>
-				p.Parent.MobileType is { Length: > 0 } && !removableTypes.Contains(p.Parent.MobileType));
+			(ViewConfigDiffOperation Parent, string Slot) match = ResolveTargetedParents(guide).FirstOrDefault(p =>
+				TypeOf(p.Parent) is { Length: > 0 } && !removableTypes.Contains(TypeOf(p.Parent)));
 			if (match.Parent is not null) {
 				matchedGuide = guide;
 				matchedParent = match.Parent;
@@ -844,10 +861,10 @@ public sealed class MobilePageConversionGuideSandboxE2ETests : McpContractFixtur
 				+ "— a crt.Button with menuItems, a crt.Timeline, a crt.ButtonToggleGroup. Until then the type-list "
 				+ "independence stays pinned off-stand by the unit test named in this test's Description.");
 		}
-		(matchedParent!.MobileValues as JsonObject).Should().NotBeNull(
-			because: $"a container insert ('{matchedParent.MobileName}' on '{convertedSchemaName}') always carries a mobileValues object built by the converter");
-		((JsonObject)matchedParent.MobileValues!).ContainsKey(matchedSlot).Should().BeTrue(
-			because: $"'{matchedParent.MobileName}' ({matchedParent.MobileType}) on '{convertedSchemaName}' is outside the removable-type list and is targeted through '{matchedSlot}' — exactly the class of parent a type-list-keyed seeding would leave slotless for the differ to refuse");
+		(matchedParent!.Values as JsonObject).Should().NotBeNull(
+			because: $"a container insert ('{matchedParent.Name}' on '{convertedSchemaName}') always carries a mobileValues object built by the converter");
+		((JsonObject)matchedParent.Values!).ContainsKey(matchedSlot).Should().BeTrue(
+			because: $"'{matchedParent.Name}' ({TypeOf(matchedParent)}) on '{convertedSchemaName}' is outside the removable-type list and is targeted through '{matchedSlot}' — exactly the class of parent a type-list-keyed seeding would leave slotless for the differ to refuse");
 		SchemaValidationResult applied = MobileDiffApplyValidator.Validate(AssembleViewConfigDiffBody(matchedGuide!));
 		applied.IsValid.Should().BeTrue(
 			because: $"the viewConfigDiff assembled from the guide for '{convertedSchemaName}' must survive the Creatio differ clones. Errors: {string.Join("; ", applied.Errors)}");
@@ -894,12 +911,12 @@ public sealed class MobilePageConversionGuideSandboxE2ETests : McpContractFixtur
 	/// yields one pair per slot. Merge twins are excluded on both sides on purpose: a template-provided parent
 	/// carries no converter-owned mobileValues, so it is not this contract's subject.
 	/// </summary>
-	private static List<(ElementMapEntry Parent, string Slot)> ResolveTargetedParents(MobilePageConversionGuide guide) {
+	private static List<(ViewConfigDiffOperation Parent, string Slot)> ResolveTargetedParents(MobilePageConversionGuide guide) {
 		// (parentName, slot) pairs an insert actually targets. The slot is the child's own propertyName —
 		// 'items' only as the documented default — because the differ resolves the parent collection as
 		// itemInfo.Item[propertyName] and refuses ANY slot the parent does not declare, not just 'items'.
 		Dictionary<string, HashSet<string>> targetedSlots = new(StringComparer.OrdinalIgnoreCase);
-		foreach (ElementMapEntry entry in guide.ElementMap) {
+		foreach (ViewConfigDiffOperation entry in guide.ViewConfigDiff) {
 			if (entry.Operation != "insert" || entry.ParentName is not { Length: > 0 }) {
 				continue;
 			}
@@ -912,10 +929,10 @@ public sealed class MobilePageConversionGuideSandboxE2ETests : McpContractFixtur
 			}
 			slots.Add(slot);
 		}
-		List<(ElementMapEntry Parent, string Slot)> parents = [];
-		foreach (ElementMapEntry entry in guide.ElementMap) {
-			if (entry.Operation != "insert" || entry.MobileName is not { Length: > 0 }
-				|| !targetedSlots.TryGetValue(entry.MobileName, out HashSet<string>? slots)) {
+		List<(ViewConfigDiffOperation Parent, string Slot)> parents = [];
+		foreach (ViewConfigDiffOperation entry in guide.ViewConfigDiff) {
+			if (entry.Operation != "insert" || entry.Name is not { Length: > 0 }
+				|| !targetedSlots.TryGetValue(entry.Name, out HashSet<string>? slots)) {
 				continue;
 			}
 			parents.AddRange(slots.Select(slot => (entry, slot)));
@@ -932,16 +949,16 @@ public sealed class MobilePageConversionGuideSandboxE2ETests : McpContractFixtur
 	/// </summary>
 	private static string AssembleViewConfigDiffBody(MobilePageConversionGuide guide) {
 		var viewConfigDiff = new JsonArray();
-		foreach (ElementMapEntry entry in guide.ElementMap) {
-			if (entry.Operation != "insert" || entry.MobileName is not { Length: > 0 }) {
+		foreach (ViewConfigDiffOperation entry in guide.ViewConfigDiff) {
+			if (entry.Operation != "insert" || entry.Name is not { Length: > 0 }) {
 				continue;
 			}
 			var operation = new JsonObject {
 				["operation"] = "insert",
-				["name"] = entry.MobileName,
+				["name"] = entry.Name,
 				// A genuine converter insert always carries a JsonObject; the fallback only keeps a
 				// hypothetical value-less entry from crashing the assembly instead of the differ gate.
-				["values"] = entry.MobileValues?.DeepClone() ?? new JsonObject { ["type"] = entry.MobileType }
+				["values"] = entry.Values?.DeepClone() ?? new JsonObject { ["type"] = TypeOf(entry) }
 			};
 			if (entry.ParentName is { Length: > 0 }) {
 				operation["parentName"] = entry.ParentName;
@@ -967,8 +984,8 @@ public sealed class MobilePageConversionGuideSandboxE2ETests : McpContractFixtur
 
 	/// <summary>Position of an entry in the element map by its mobile name, -1 when absent.</summary>
 	private static int IndexOfMobile(MobilePageConversionGuide guide, string mobileName) {
-		for (int i = 0; i < guide.ElementMap.Count; i++) {
-			if (guide.ElementMap[i].MobileName == mobileName) {
+		for (int i = 0; i < guide.ViewConfigDiff.Count; i++) {
+			if (guide.ViewConfigDiff[i].Name == mobileName) {
 				return i;
 			}
 		}

@@ -98,8 +98,81 @@ public sealed class WebToMobileConversionServiceTests {
 			Converters = converters
 		};
 
-	private static ElementMapEntry Element(MobilePageConversionGuide guide, string webName) =>
-		guide.ElementMap.Single(e => e.WebName == webName);
+	/// <summary>
+	/// The viewConfigDiff operation for a SOURCE element name, resolved through the published
+	/// <c>nameMap</c> — which is exactly how a real caller finds it, so every test that looks an element
+	/// up by its source name also exercises that map.
+	/// </summary>
+	private static ViewConfigDiffOperation Element(MobilePageConversionGuide guide, string sourceName) {
+		string target = guide.NameMap is not null && guide.NameMap.TryGetValue(sourceName, out string renamed)
+			? renamed
+			: sourceName;
+		return guide.ViewConfigDiff.Single(operation => operation.Name == target);
+	}
+
+	/// <summary>
+	/// Where an operation's parent comes from, DERIVED the way a caller derives it: <c>unresolvedParents</c>
+	/// for one nothing provides, the diff itself for one it inserts (and whether that insert has a source
+	/// counterpart tells page from converter), else the target template.
+	/// </summary>
+	/// <remarks>
+	/// This used to be a <c>parentSource</c> field on every entry. Only the "unknown" case is not derivable,
+	/// so only that one survived as a field; asserting through this helper keeps the old coverage AND proves
+	/// the derivation a caller has to make actually works (ENG-95827).
+	/// </remarks>
+	private static string ParentOriginOf(MobilePageConversionGuide guide, ViewConfigDiffOperation operation) {
+		if (operation?.ParentName is null) {
+			return null;
+		}
+		if ((guide.UnresolvedParents ?? []).Any(unresolved => unresolved.Name == operation.Name)) {
+			return "unknown";
+		}
+		ViewConfigDiffOperation parent = guide.ViewConfigDiff.FirstOrDefault(
+			candidate => candidate.Operation == "insert" && candidate.Name == operation.ParentName);
+		return parent is null
+			? "template"
+			: SourceNames(guide).Contains(parent.Name) ? "page" : "converter";
+	}
+
+	/// <summary>The source element's own component type, from <c>sourceStructure</c>.</summary>
+	private static string SourceTypeOf(MobilePageConversionGuide guide, string sourceName) =>
+		(guide.SourceStructure ?? []).FirstOrDefault(entry => entry.Name == sourceName)?.Type;
+
+	/// <summary>
+	/// Every name the SOURCE page had: <c>sourceStructure</c> plus the <c>nameMap</c> source keys. A
+	/// viewConfigDiff name in neither was synthesized by the converter, which is how a caller recognises
+	/// one now that no operation carries a source name.
+	/// </summary>
+	private static string[] SourceNames(MobilePageConversionGuide guide) =>
+		[.. (guide.SourceStructure ?? []).Select(entry => entry.Name)
+			.Concat((guide.NameMap ?? new Dictionary<string, string>()).Keys)
+			.Where(name => !string.IsNullOrEmpty(name))];
+
+	/// <summary>
+	/// The SOURCE element name behind an operation, resolved by reversing the published <c>nameMap</c>.
+	/// Returns the operation's own name when nothing renamed it, which is the common case.
+	/// </summary>
+	/// <remarks>
+	/// Written as a reverse lookup rather than "compare the operation name to the source literal", because
+	/// for a RENAMED element those differ and the naive comparison would be trivially false — a
+	/// <c>NotContain</c> built on it would pass without testing anything.
+	/// </remarks>
+	private static string SourceNameOf(MobilePageConversionGuide guide, ViewConfigDiffOperation operation) {
+		if (guide?.NameMap is not null) {
+			foreach (KeyValuePair<string, string> rename in guide.NameMap) {
+				if (string.Equals(rename.Value, operation?.Name, StringComparison.Ordinal)) {
+					return rename.Key;
+				}
+			}
+		}
+		// Null for a converter-synthesized operation: its name is in no source list, and saying "the name
+		// is its own source name" would make a synthesized element indistinguishable from a converted one.
+		return SourceNames(guide).Contains(operation?.Name) ? operation?.Name : null;
+	}
+
+	/// <summary>The mobile component type an insert declares — it lives in <c>values.type</c>.</summary>
+	private static string TypeOf(ViewConfigDiffOperation operation) =>
+		operation?.Values?["type"]?.GetValue<string>();
 
 	/// <summary>A source element that did NOT convert, by its source name.</summary>
 	private static DroppedElement Dropped(MobilePageConversionGuide guide, string webName) =>
@@ -123,25 +196,8 @@ public sealed class WebToMobileConversionServiceTests {
 			.Select(r => r.Params[key]?.ToString())
 			.FirstOrDefault();
 
-	/// <summary>The reason codes on an entry, in emission order.</summary>
-	private static string[] Codes(ElementMapEntry entry) =>
-		[.. (entry?.Reason ?? []).Select(r => r.Code)];
 
-	/// <summary>
-	/// One reason param as a string — null when the entry has no such code, or that code no such param. Used
-	/// instead of substring-matching a sentence, so a test states WHICH value it pins and where it lives.
-	/// </summary>
-	private static string ReasonParam(ElementMapEntry entry, string code, string key) =>
-		(entry?.Reason ?? [])
-			.Where(r => r.Code == code && r.Params is not null && r.Params.ContainsKey(key))
-			.Select(r => r.Params[key]?.ToString())
-			.FirstOrDefault();
 
-	/// <summary>The values of a list-valued reason param (e.g. <c>carryProperties</c>).</summary>
-	private static string[] ReasonParamList(ElementMapEntry entry, string code, string key) =>
-		[.. (entry?.Reason ?? [])
-			.Where(r => r.Code == code && r.Params is not null && r.Params.ContainsKey(key))
-			.SelectMany(r => r.Params[key]!.AsArray().Select(v => v!.GetValue<string>()))];
 
 	private static MobilePageConversionGuide Analyze(
 		PageBundleInfo bundle,
@@ -269,7 +325,7 @@ public sealed class WebToMobileConversionServiceTests {
 		grid.Note.Should().Contain("itemLayout");
 		// Element map inserts the primary mobile type; the model adds the ListItem row into its itemLayout.
 		Element(guide, "DataTable").Operation.Should().Be("insert");
-		Element(guide, "DataTable").MobileType.Should().Be("crt.List");
+		TypeOf(Element(guide, "DataTable")).Should().Be("crt.List");
 	}
 
 	[Test]
@@ -597,7 +653,7 @@ public sealed class WebToMobileConversionServiceTests {
 
 		// Tabs and template twins → merge (no insert).
 		Element(guide, "Tabs").Operation.Should().Be("merge");
-		Element(guide, "Tabs").MobileName.Should().Be("Tabs");
+		Element(guide, "Tabs").Name.Should().Be("Tabs");
 		Element(guide, "FeedTabContainer").Operation.Should().Be("merge");
 		Element(guide, "AttachmentsTabContainer").Operation.Should().Be("merge");
 		Element(guide, "Feed").Operation.Should().Be("insert");
@@ -606,7 +662,7 @@ public sealed class WebToMobileConversionServiceTests {
 
 		// Every web tab (including the first) → insert as its OWN new mobile tab under Tabs; its children
 		// carry that tab's name (no general-tab collapse into AreaProfileContainer).
-		ElementMapEntry overview = Element(guide, "OverviewTab");
+		ViewConfigDiffOperation overview = Element(guide, "OverviewTab");
 		overview.Operation.Should().Be("insert");
 		overview.ParentName.Should().Be("Tabs");
 		overview.Index.Should().Be(1,
@@ -620,18 +676,20 @@ public sealed class WebToMobileConversionServiceTests {
 		Element(guide, "SimilarLeadList").Operation.Should().Be("insert",
 			because: "a mobile page carries the same multi-data-source structure as web, so the data source a grid "
 				+ "is bound to is not a transferability criterion");
-		Element(guide, "SimilarLeadList").MobileType.Should().Be("crt.List",
+		TypeOf(Element(guide, "SimilarLeadList")).Should().Be("crt.List",
 			because: "the kept grid must still be mapped onto its mobile equivalent by the components rule");
 		Element(guide, "SimilarLeadList").Operation.Should().Be("insert",
 			because: "a detail list bound to a non-primary page data source must CONVERT — the old guard matched a drop-reason sentence that no longer exists in any form, so it could only pass");
 
 		// Page-specific tab → insert with caption; its non-primary-DS grid converts with it.
-		ElementMapEntry sales = Element(guide, "SalesTab");
+		ViewConfigDiffOperation sales = Element(guide, "SalesTab");
 		sales.Operation.Should().Be("insert");
 		sales.ParentName.Should().Be("Tabs");
 		sales.PropertyName.Should().Be("items");
-		sales.CaptionResource.Key.Should().Be("SalesTab_caption");
-		sales.CaptionResource.SourceValue.Should().Be("Sales");
+		guide.ResourceStrings.Should().ContainKey("SalesTab_caption",
+			because: "an inserted element's caption is registered through resourceStrings, which is now its only home");
+		guide.ResourceStrings!["SalesTab_caption"].Should().Be("Sales",
+			because: "the registered text is the source page's own caption");
 		Element(guide, "Budget").Operation.Should().Be("insert");
 		Element(guide, "Budget").ParentName.Should().Be("SalesTab");
 		Element(guide, "ProductsList").Operation.Should().Be("insert",
@@ -681,7 +739,7 @@ public sealed class WebToMobileConversionServiceTests {
 
 		// Anchor wrapper merges into the general tab's grid; its non-tab content lands there.
 		Element(guide, "CardContentWrapper").Operation.Should().Be("merge");
-		Element(guide, "CardContentWrapper").MobileName.Should().Be("GeneralTabContainer");
+		Element(guide, "CardContentWrapper").Name.Should().Be("GeneralTabContainer");
 		Element(guide, "SideField").Operation.Should().Be("insert");
 		Element(guide, "SideField").ParentName.Should().Be("GeneralTabContainer");
 
@@ -691,14 +749,14 @@ public sealed class WebToMobileConversionServiceTests {
 		Element(guide, "LeadName").ParentName.Should().Be("OverviewTab");
 
 		// Sibling ABOVE the wrapper → inserted into the mobile Tabs' parent at index 0 (above Tabs).
-		ElementMapEntry progress = Element(guide, "ProgressBarContainer");
+		ViewConfigDiffOperation progress = Element(guide, "ProgressBarContainer");
 		progress.Operation.Should().Be("insert");
 		progress.ParentName.Should().Be("MainContainer");
 		progress.Index.Should().Be(0);
 		Element(guide, "ProgressBar").ParentName.Should().Be("ProgressBarContainer");
 
 		// Sibling BELOW the wrapper → appended (no index) into the same parent.
-		ElementMapEntry footer = Element(guide, "FooterField");
+		ViewConfigDiffOperation footer = Element(guide, "FooterField");
 		footer.Operation.Should().Be("insert");
 		footer.ParentName.Should().Be("MainContainer");
 		footer.Index.Should().BeNull();
@@ -730,7 +788,7 @@ public sealed class WebToMobileConversionServiceTests {
 			suggestedTarget: "UsrLeads_MobileFormPage", containerNameMap: map,
 			positionalPlacements: placements, mobileContainerParents: null);
 
-		ElementMapEntry progress = Element(guide, "ProgressBarContainer");
+		ViewConfigDiffOperation progress = Element(guide, "ProgressBarContainer");
 		progress.ParentName.Should().Be("MainContainer", because: "the anchor's mobile parent is unknown → default");
 		progress.Index.Should().Be(0);
 	}
@@ -780,10 +838,10 @@ public sealed class WebToMobileConversionServiceTests {
 
 		guide.ContainerMap.Should().NotBeEmpty(because: "containerMap is unchanged (backward compatible)");
 		guide.ComponentSuggestions.Should().Contain(s => s.SourceType == "crt.DataGrid");
-		guide.ElementMap.Should().NotBeNull();
+		guide.ViewConfigDiff.Should().NotBeNull();
 		Element(guide, "Main").Operation.Should().Be("merge");
 		Element(guide, "DataTable").Operation.Should().Be("insert");
-		Element(guide, "DataTable").MobileType.Should().Be("crt.List");
+		TypeOf(Element(guide, "DataTable")).Should().Be("crt.List");
 		Element(guide, "DataTable").ParentName.Should().Be("MainContainer");
 	}
 
@@ -1250,7 +1308,7 @@ public sealed class WebToMobileConversionServiceTests {
 
 		MobilePageConversionGuide guide = Analyze(bundle, webByType: webByType, mobileByType: mobileByType);
 
-		JsonObject leadVals = Element(guide, "LeadName").MobileValues!.AsObject();
+		JsonObject leadVals = Element(guide, "LeadName").Values!.AsObject();
 		leadVals["type"]!.GetValue<string>().Should().Be("crt.Input");
 		// Caption present → label references the registered <name>_caption resource.
 		leadVals["label"]!.GetValue<string>().Should().Be("$Resources.Strings.LeadName_caption");
@@ -1263,7 +1321,7 @@ public sealed class WebToMobileConversionServiceTests {
 		leadVals.ContainsKey("control").Should().BeFalse(because: "the value binding is added by the caller, not prebuilt");
 
 		// No caption but bound to PDS.JobTitle → auto-provided column-code label.
-		Element(guide, "JobTitle").MobileValues!.AsObject()["label"]!.GetValue<string>().Should().Be("$Resources.Strings.JobTitle");
+		Element(guide, "JobTitle").Values!.AsObject()["label"]!.GetValue<string>().Should().Be("$Resources.Strings.JobTitle");
 	}
 
 	[Test]
@@ -1300,7 +1358,7 @@ public sealed class WebToMobileConversionServiceTests {
 			sourcePage: "UsrApp_FormPage", sourceTemplate: "PageWithTabsFreedomTemplate",
 			suggestedTarget: "UsrApp_MobileFormPage", containerNameMap: null);
 
-		JsonObject vals = Element(guide, "ProgressBar").MobileValues!.AsObject();
+		JsonObject vals = Element(guide, "ProgressBar").Values!.AsObject();
 		vals["type"]!.GetValue<string>().Should().Be("crt.EntityStageProgressBar");
 		vals["entityName"]!.GetValue<string>().Should().Be("Lead", because: "an empty mobile contract must not drop any property");
 		vals["shape"]!.GetValue<string>().Should().Be("rounded");
@@ -1343,7 +1401,7 @@ public sealed class WebToMobileConversionServiceTests {
 			sourcePage: "UsrApp_FormPage", sourceTemplate: "PageWithTabsFreedomTemplate",
 			suggestedTarget: "UsrApp_MobileFormPage", containerNameMap: null);
 
-		JsonObject vals = Element(guide, "Feed").MobileValues!.AsObject();
+		JsonObject vals = Element(guide, "Feed").Values!.AsObject();
 		vals["type"]!.GetValue<string>().Should().Be("crt.Feed");
 		vals["dataSourceName"]!.GetValue<string>().Should().Be("PDS", because: "dataSourceName is required by crt.Feed and is no longer excluded");
 		vals["entitySchemaName"]!.GetValue<string>().Should().Be("Opportunity", because: "a registry-absent required prop must not be dropped");
@@ -1381,7 +1439,7 @@ public sealed class WebToMobileConversionServiceTests {
 
 		MobilePageConversionGuide guide = Analyze(bundle, webByType: webByType, mobileByType: mobileByType);
 
-		JsonObject vals = Element(guide, "SimilarLeadList").MobileValues!.AsObject();
+		JsonObject vals = Element(guide, "SimilarLeadList").Values!.AsObject();
 		vals["type"]!.GetValue<string>().Should().Be("crt.List");
 		// itemLayout is now a single object (the array wrapper was dropped), carrying the row config.
 		vals["itemLayout"]!.GetValueKind().Should().Be(JsonValueKind.Object);
@@ -1410,17 +1468,17 @@ public sealed class WebToMobileConversionServiceTests {
 		MobilePageConversionGuide guide = Analyze(bundle, mobileTypes: mobileTypes);
 
 		// Assert
-		ElementMapEntry menuItem = Element(guide, "PrintItem");
+		ViewConfigDiffOperation menuItem = Element(guide, "PrintItem");
 		menuItem.Operation.Should().Be("insert",
 			because: "a crt.MenuItem nested in the button's menuItems is a child view element the walk now descends into and converts");
 		menuItem.ParentName.Should().Be("OrderButton",
 			because: "the converted menu item stays under its button");
 		menuItem.PropertyName.Should().Be("menuItems",
 			because: "the walk records the slot it descended, so the item lands back in the button's menuItems array rather than its items");
-		menuItem.MobileType.Should().Be("crt.MenuItem",
+		TypeOf(menuItem).Should().Be("crt.MenuItem",
 			because: "the child is registry-supported on mobile and kept as its own type");
-		ElementMapEntry button = Element(guide, "OrderButton");
-		button.MobileValues!.AsObject()["menuItems"]!.AsArray().Should().BeEmpty(
+		ViewConfigDiffOperation button = Element(guide, "OrderButton");
+		button.Values!.AsObject()["menuItems"]!.AsArray().Should().BeEmpty(
 			because: "menuItems is emitted as its own child entries, never carried verbatim on the button — the "
 				+ "button keeps only the EMPTY slot InitializeContainerChildSlots declares, which is what lets the "
 				+ "differ append the item instead of refusing the insert");
@@ -1443,17 +1501,17 @@ public sealed class WebToMobileConversionServiceTests {
 		MobilePageConversionGuide guide = Analyze(bundle, mobileTypes: mobileTypes);
 
 		// Assert
-		ElementMapEntry amount = Element(guide, "Amount");
+		ViewConfigDiffOperation amount = Element(guide, "Amount");
 		amount.ParentName.Should().Be("Panel",
 			because: "the items child is descended and re-homed under the panel");
 		amount.PropertyName.Should().Be("items",
 			because: "an items child keeps the items slot");
-		ElementMapEntry addButton = Element(guide, "AddButton");
+		ViewConfigDiffOperation addButton = Element(guide, "AddButton");
 		addButton.ParentName.Should().Be("Panel",
 			because: "the tools child of the SAME component is descended too — a second container is not ignored");
 		addButton.PropertyName.Should().Be("tools",
 			because: "the second container is walked into its own slot, kept distinct from items");
-		JsonObject panelValues = Element(guide, "Panel").MobileValues!.AsObject();
+		JsonObject panelValues = Element(guide, "Panel").Values!.AsObject();
 		panelValues["items"]!.AsArray().Should().BeEmpty(
 			because: "Panel is occupied via an items child (Amount), so InitializeContainerChildSlots declares the "
 				+ "slot the differ requires — the array itself is never carried as a value, only the empty slot");
@@ -1478,10 +1536,10 @@ public sealed class WebToMobileConversionServiceTests {
 		MobilePageConversionGuide guide = Analyze(bundle);
 
 		// Assert
-		guide.ElementMap.Should().NotContain(e => e.ParentName == "Rating",
+		guide.ViewConfigDiff.Should().NotContain(e => e.ParentName == "Rating",
 			because: "a data array (no crt.* typed object) is not a child-element collection, so nothing is walked out of it");
-		ElementMapEntry field = Element(guide, "Rating");
-		field.MobileValues!.AsObject()["options"]!.AsArray().Count.Should().Be(2,
+		ViewConfigDiffOperation field = Element(guide, "Rating");
+		field.Values!.AsObject()["options"]!.AsArray().Count.Should().Be(2,
 			because: "the data array is carried verbatim as a value, exactly as before the traversal change");
 	}
 
@@ -1502,10 +1560,10 @@ public sealed class WebToMobileConversionServiceTests {
 		MobilePageConversionGuide guide = Analyze(bundle, mobileTypes: mobileTypes);
 
 		// Assert
-		guide.ElementMap.Should().NotContain(e => e.ParentName == "OrderButton",
+		guide.ViewConfigDiff.Should().NotContain(e => e.ParentName == "OrderButton",
 			because: "an empty menuItems array has no child element to emit");
-		ElementMapEntry button = Element(guide, "OrderButton");
-		JsonObject buttonValues = button.MobileValues!.AsObject();
+		ViewConfigDiffOperation button = Element(guide, "OrderButton");
+		JsonObject buttonValues = button.Values!.AsObject();
 		buttonValues.ContainsKey("menuItems").Should().BeTrue(
 			because: "an empty array is not a walked-out structural slot, so it is carried verbatim as a value");
 		buttonValues["menuItems"]!.AsArray().Count.Should().Be(0,
@@ -1525,7 +1583,7 @@ public sealed class WebToMobileConversionServiceTests {
 		MobilePageConversionGuide guide = Analyze(bundle);
 
 		// Assert
-		JsonObject fieldValues = Element(guide, "Rating").MobileValues!.AsObject();
+		JsonObject fieldValues = Element(guide, "Rating").Values!.AsObject();
 		fieldValues.ContainsKey("options").Should().BeTrue(
 			because: "an empty data array must not be silently dropped — it is carried verbatim");
 		fieldValues["options"]!.AsArray().Count.Should().Be(0,
@@ -1551,10 +1609,10 @@ public sealed class WebToMobileConversionServiceTests {
 		MobilePageConversionGuide guide = Analyze(bundle, mobileTypes: mobileTypes, rules: new WebToMobilePageConversionRules());
 
 		// Assert
-		guide.ElementMap.Should().NotContain(e => e.WebName == "PrintItem",
+		guide.ViewConfigDiff.Should().NotContain(e => SourceNameOf(guide, e) == "PrintItem",
 			because: "a nested crt.MenuItem with no mobile counterpart is not walked out into its own (dropped) entry");
-		ElementMapEntry button = Element(guide, "OrderButton");
-		JsonArray menu = button.MobileValues!.AsObject()["menuItems"]!.AsArray();
+		ViewConfigDiffOperation button = Element(guide, "OrderButton");
+		JsonArray menu = button.Values!.AsObject()["menuItems"]!.AsArray();
 		menu.Count.Should().Be(1,
 			because: "the menuItems array is carried verbatim as a value so the dropdown keeps its menu");
 		menu[0]!.AsObject()["type"]!.GetValue<string>().Should().Be("crt.MenuItem",
@@ -1579,9 +1637,9 @@ public sealed class WebToMobileConversionServiceTests {
 		MobilePageConversionGuide guide = Analyze(bundle, mobileTypes: mobileTypes);
 
 		// Assert
-		guide.ElementMap.Should().NotContain(e => e.PropertyName == "itemLayout",
+		guide.ViewConfigDiff.Should().NotContain(e => e.PropertyName == "itemLayout",
 			because: "with no registry and no rule to convert crt.ListItem, itemLayout is not walked out into a child entry");
-		JsonObject listValues = Element(guide, "SimilarLeadList").MobileValues!.AsObject();
+		JsonObject listValues = Element(guide, "SimilarLeadList").Values!.AsObject();
 		listValues.ContainsKey("itemLayout").Should().BeTrue(
 			because: "itemLayout is carried as a value on a degraded catalog, not stripped");
 	}
@@ -1635,15 +1693,15 @@ public sealed class WebToMobileConversionServiceTests {
 		MobilePageConversionGuide guide = Analyze(bundle, mobileTypes: HeaderMobileTypes, rules: FabRule(["MainHeader"], ["MainHeader"], "crt.Button"));
 
 		// Assert
-		ElementMapEntry order = Element(guide, "OrderBtn");
+		ViewConfigDiffOperation order = Element(guide, "OrderBtn");
 		order.Operation.Should().Be("insert", because: "a header action with a supported clicked converts");
-		order.MobileType.Should().Be("crt.MenuItem", because: "the FAB template retypes the header button to a menu item");
+		TypeOf(order).Should().Be("crt.MenuItem", because: "the FAB template retypes the header button to a menu item");
 		order.ParentName.Should().Be("FloatingActionButton", because: "the template retargets it into the FAB");
 		order.PropertyName.Should().Be("menuItems", because: "into the FAB's menuItems slot");
 		order.Index.Should().BeNull(because: "converted entries are appended after any existing static menuItems");
-		Element(guide, "OtherBtn").MobileType.Should().Be("crt.Button",
+		TypeOf(Element(guide, "OtherBtn")).Should().Be("crt.Button",
 			because: "Body is not a declared non-converting scope container, so the same button outside the header is untouched");
-		guide.ElementMap.Should().NotContain(e => e.WebName == "MainHeader",
+		guide.ViewConfigDiff.Should().NotContain(e => SourceNameOf(guide, e) == "MainHeader",
 			because: "a non-converting scope container produces no mobile element of its own");
 	}
 
@@ -1663,9 +1721,9 @@ public sealed class WebToMobileConversionServiceTests {
 			mobileTemplateTypesByName: MobileTypesByName(("FloatingActionButton", "crt.FloatingActionButton")));
 
 		// Assert
-		ElementMapEntry order = Element(guide, "OrderBtn");
+		ViewConfigDiffOperation order = Element(guide, "OrderBtn");
 		order.ParentName.Should().Be("FloatingActionButton", because: "the template retargets it into the FAB");
-		order.ParentSource.Should().Be("template",
+		ParentOriginOf(guide, order).Should().Be("template",
 			because: "no entry in the map inserts a FloatingActionButton, so the target page must already provide it — only the child is inserted and the parent is never recreated");
 	}
 
@@ -1695,7 +1753,7 @@ public sealed class WebToMobileConversionServiceTests {
 			because: "SaveButton is inherited from the web template (chrome the mobile template provides natively), so retargeting it into the FAB would duplicate it");
 		Codes(save).Should().Contain(ReasonCodes.DropInheritedChrome,
 			because: "the drop reason must state why the inherited-chrome header button was not retargeted");
-		ElementMapEntry send = Element(guide, "SendForApprovalButton");
+		ViewConfigDiffOperation send = Element(guide, "SendForApprovalButton");
 		send.Operation.Should().Be("insert", because: "a page-authored header action (absent from the web baseline) still converts");
 		send.ParentName.Should().Be("FloatingActionButton", because: "it is retargeted into the FAB");
 		guide.RequestConversions!.DroppedRequests.Should().Contain(
@@ -1722,9 +1780,9 @@ public sealed class WebToMobileConversionServiceTests {
 		// Assert
 		DroppedNames(guide).Should().Contain("MoreBtn",
 			because: "a container-only dropdown with no clicked of its own is not itself a FAB entry");
-		ElementMapEntry print = Element(guide, "PrintItem");
+		ViewConfigDiffOperation print = Element(guide, "PrintItem");
 		print.Operation.Should().Be("insert", because: "the nested menu item has a supported clicked and converts");
-		print.MobileType.Should().Be("crt.MenuItem", because: "a converted header action becomes a mobile menu item");
+		TypeOf(print).Should().Be("crt.MenuItem", because: "a converted header action becomes a mobile menu item");
 		print.ParentName.Should().Be("FloatingActionButton",
 			because: "the nested item is flattened directly into the FAB, a sibling of every other converted action");
 		print.PropertyName.Should().Be("menuItems", because: "flattened items land in the FAB menuItems slot");
@@ -1745,7 +1803,7 @@ public sealed class WebToMobileConversionServiceTests {
 		MobilePageConversionGuide ordered = Analyze(bundle, mobileTypes: HeaderMobileTypes,
 			rules: FabRule(["Outer", "Inner"], ["Outer"], "crt.Button"));
 		// Assert
-		Element(ordered, "Btn").MobileType.Should().Be("crt.MenuItem",
+		TypeOf(Element(ordered, "Btn")).Should().Be("crt.MenuItem",
 			because: "the ancestors [Outer, Inner] contain the path in order, so the rule matches and converts");
 
 		MobilePageConversionGuide reversed = Analyze(bundle, mobileTypes: HeaderMobileTypes,
@@ -1776,11 +1834,11 @@ public sealed class WebToMobileConversionServiceTests {
 			rules: FabRule(["MainHeader"], ["MainHeader"], "crt.Button", "crt.MenuItem"));
 
 		// Assert
-		ElementMapEntry save = Element(guide, "SaveBtn");
+		ViewConfigDiffOperation save = Element(guide, "SaveBtn");
 		save.Operation.Should().Be("insert", because: "a supported header action converts");
 		save.ParentName.Should().Be("FloatingActionButton", because: "the template retargets the header action into the FAB");
-		save.MobileType.Should().Be("crt.MenuItem", because: "the authoritative template retypes it to a menu item");
-		JsonObject saveValues = save.MobileValues!.AsObject();
+		TypeOf(save).Should().Be("crt.MenuItem", because: "the authoritative template retypes it to a menu item");
+		JsonObject saveValues = save.Values!.AsObject();
 		saveValues.ContainsKey("caption").Should().BeTrue(because: "caption is carried");
 		saveValues.ContainsKey("style").Should().BeFalse(because: "visual properties are denylisted by the authoritative template");
 		saveValues.ContainsKey("icon").Should().BeFalse(because: "visual properties are denylisted by the authoritative template");
@@ -1790,7 +1848,7 @@ public sealed class WebToMobileConversionServiceTests {
 			because: "the dropdown container has no clicked of its own");
 		DroppedNames(guide).Should().Contain("HeaderLabel",
 			because: "a non-action component under the header is not converted and must not be present on mobile");
-		guide.ElementMap.Should().NotContain(e => e.WebName == "MainHeader",
+		guide.ViewConfigDiff.Should().NotContain(e => SourceNameOf(guide, e) == "MainHeader",
 			because: "the header itself is a non-converting scope");
 		Element(guide, "NameField").Operation.Should().Be("insert",
 			because: "content outside the header is converted normally");
@@ -1813,11 +1871,11 @@ public sealed class WebToMobileConversionServiceTests {
 			templateComponentNames: new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "MainHeader" });
 
 		// Assert
-		ElementMapEntry order = Element(guide, "OrderBtn");
+		ViewConfigDiffOperation order = Element(guide, "OrderBtn");
 		order.Operation.Should().Be("insert",
 			because: "MainHeader is kept through chrome pruning because it is a declared non-converting scope container, so its button is still reachable and converts");
 		order.ParentName.Should().Be("FloatingActionButton", because: "the converted header button lands in the FAB");
-		guide.ElementMap.Should().NotContain(e => e.WebName == "MainHeader",
+		guide.ViewConfigDiff.Should().NotContain(e => SourceNameOf(guide, e) == "MainHeader",
 			because: "the preserved scope container is still non-converting");
 	}
 
@@ -1836,12 +1894,12 @@ public sealed class WebToMobileConversionServiceTests {
 		MobilePageConversionGuide guide = AnalyzeWithRules(bundle, shipped);
 
 		// Assert
-		ElementMapEntry order = Element(guide, "OrderBtn");
+		ViewConfigDiffOperation order = Element(guide, "OrderBtn");
 		order.Operation.Should().Be("insert", because: "the shipped FAB rule converts a supported header action");
-		order.MobileType.Should().Be("crt.MenuItem", because: "the shipped template retypes it to a menu item");
+		TypeOf(order).Should().Be("crt.MenuItem", because: "the shipped template retypes it to a menu item");
 		order.ParentName.Should().Be("FloatingActionButton", because: "the shipped rule retargets it into the FAB");
 		order.PropertyName.Should().Be("menuItems", because: "into the FAB menuItems slot");
-		guide.ElementMap.Should().NotContain(e => e.WebName == "MainHeader",
+		guide.ViewConfigDiff.Should().NotContain(e => SourceNameOf(guide, e) == "MainHeader",
 			because: "MainHeader is a non-converting scope in the shipped rules");
 	}
 
@@ -1880,9 +1938,9 @@ public sealed class WebToMobileConversionServiceTests {
 		MobilePageConversionGuide guide = Analyze(bundle, mobileTypes: HeaderMobileTypes);
 
 		// Assert
-		guide.ElementMap.Should().NotContain(e => e.ParentName == "Field",
+		guide.ViewConfigDiff.Should().NotContain(e => e.ParentName == "Field",
 			because: "neither array is a child-element collection (their objects are not all crt.*-typed), so nothing is walked out of Field");
-		JsonObject fieldValues = Element(guide, "Field").MobileValues!.AsObject();
+		JsonObject fieldValues = Element(guide, "Field").Values!.AsObject();
 		fieldValues["options"]!.AsArray().Count.Should().Be(2,
 			because: "a data array of non-component objects is carried verbatim as a value");
 		fieldValues["mixed"]!.AsArray().Count.Should().Be(2,
@@ -1928,10 +1986,10 @@ public sealed class WebToMobileConversionServiceTests {
 			rules: FabRule(["MainHeader"], ["MainHeader"], "crt.Button"));
 
 		// Assert
-		ElementMapEntry order = Element(guide, "OrderBtn");
+		ViewConfigDiffOperation order = Element(guide, "OrderBtn");
 		order.Operation.Should().Be("insert",
 			because: "the FAB gate looks only at the clicked request, which is supported, so a secondary unsupported binding does not disqualify the action");
-		order.MobileType.Should().Be("crt.MenuItem",
+		TypeOf(order).Should().Be("crt.MenuItem",
 			because: "the supported header action is retyped to a mobile menu item");
 		order.ParentName.Should().Be("FloatingActionButton",
 			because: "the supported header action retargets into the FAB rather than being dropped");
@@ -2013,7 +2071,7 @@ public sealed class WebToMobileConversionServiceTests {
 			rules: FabRule(["MainHeader"], ["MainHeader"], "crt.Button", "crt.MenuItem"));
 
 		// Assert
-		ElementMapEntry more = Element(guide, "MoreItem");
+		ViewConfigDiffOperation more = Element(guide, "MoreItem");
 		more.Operation.Should().Be("insert",
 			because: "a crt.MenuItem with an unsupported request is kept (flagged), not dropped — only a crt.Button is dropped");
 		more.ParentName.Should().Be("FloatingActionButton", because: "the menu item still retargets into the FAB");
@@ -2037,7 +2095,7 @@ public sealed class WebToMobileConversionServiceTests {
 			rules: FabRule(["MainHeader"], ["MainHeader"], "crt.Button"));
 
 		// Assert
-		ElementMapEntry nfc = Element(guide, "NfcBtn");
+		ViewConfigDiffOperation nfc = Element(guide, "NfcBtn");
 		nfc.Operation.Should().Be("insert",
 			because: "a request supported via the bundled set (not the versioned map) must still convert into the FAB");
 		nfc.ParentName.Should().Be("FloatingActionButton", because: "the supported header action retargets into the FAB");
@@ -2092,7 +2150,7 @@ public sealed class WebToMobileConversionServiceTests {
 	}
 
 	[Test]
-	[Description("A header button's visible binding is carried onto the converted FAB menu item, AND the viewModelConfig attribute it references is KEPT even though the source-tree consumer walk credited it to the dropped dropdown parent — because attributes referenced by a surviving element's MobileValues are always kept.")]
+	[Description("A header button's visible binding is carried onto the converted FAB menu item, AND the viewModelConfig attribute it references is KEPT even though the source-tree consumer walk credited it to the dropped dropdown parent — because attributes referenced by a surviving element's Values are always kept.")]
 	public void Analyze_Fab_FlattenedMenuItem_VisibleBindingCarried_AndAttributeKept() {
 		// Arrange — a dropdown (dropped) whose menu item (surviving, flattened into the FAB) is gated by $CanPrint.
 		PageBundleInfo bundle = Bundle(
@@ -2112,7 +2170,7 @@ public sealed class WebToMobileConversionServiceTests {
 			rules: FabRule(["MainHeader"], ["MainHeader"], "crt.Button", "crt.MenuItem"));
 
 		// Assert
-		JsonObject printValues = Element(guide, "PrintItem").MobileValues!.AsObject();
+		JsonObject printValues = Element(guide, "PrintItem").Values!.AsObject();
 		printValues["visible"]!.GetValue<string>().Should().Be("$CanPrint",
 			because: "the template carries source.visible onto the converted menu item");
 		JsonObject attrs = guide.ViewModelConfig!.AsObject()["attributes"]!.AsObject();
@@ -2140,7 +2198,7 @@ public sealed class WebToMobileConversionServiceTests {
 		MobilePageConversionGuide guide = Analyze(bundle, mobileTypes: HeaderMobileTypes, rules: rules);
 
 		// Assert
-		JsonObject open = Element(guide, "OpenBtn").MobileValues!.AsObject();
+		JsonObject open = Element(guide, "OpenBtn").Values!.AsObject();
 		JsonObject clicked = open["clicked"]!.AsObject();
 		clicked["request"]!.GetValue<string>().Should().Be("crt.OpenPageRequest",
 			because: "ProcessEventBindings overwrites the template-rendered clicked with the mapped MOBILE request");
@@ -2192,7 +2250,7 @@ public sealed class WebToMobileConversionServiceTests {
 			mobileTemplateTypesByName: MobileTypesByName(("FloatingActionButton", "crt.FloatingActionButton")));
 
 		// Assert
-		ElementMapEntry order = Element(guide, "OrderBtn");
+		ViewConfigDiffOperation order = Element(guide, "OrderBtn");
 		order.Operation.Should().Be("insert",
 			because: "the retarget target exists on the mobile template, so the conversion proceeds");
 		order.ParentName.Should().Be("FloatingActionButton", because: "the header action lands in the present FAB");
@@ -2257,10 +2315,10 @@ public sealed class WebToMobileConversionServiceTests {
 			mobileTemplateTypesByName: MobileTypesByName(("FloatingActionButton", "crt.FloatingActionButton")));
 
 		// Assert
-		ElementMapEntry order = Element(guide, "OrderBtn");
+		ViewConfigDiffOperation order = Element(guide, "OrderBtn");
 		order.Operation.Should().Be("insert", because: "a rule-matched leaf button converts");
 		order.ParentName.Should().Be("FloatingActionButton", because: "the rule retargets the leaf into the FAB");
-		order.ParentSource.Should().Be("template",
+		ParentOriginOf(guide, order).Should().Be("template",
 			because: "the parent is not inserted anywhere in this map, so the caller must address the template's own element and insert only the child");
 	}
 
@@ -2310,10 +2368,10 @@ public sealed class WebToMobileConversionServiceTests {
 			mobileTemplateTypesByName: MobileTypesByName(("AreaContainer", "crt.GridContainer")));
 
 		// Assert
-		ElementMapEntry toolbar = Element(guide, "Toolbar");
+		ViewConfigDiffOperation toolbar = Element(guide, "Toolbar");
 		toolbar.Operation.Should().Be("insert", because: "a rule-matched container converts");
 		toolbar.ParentName.Should().Be("AreaContainer", because: "the rule retargets the container into AreaContainer");
-		toolbar.ParentSource.Should().Be("template",
+		ParentOriginOf(guide, toolbar).Should().Be("template",
 			because: "the parent is not inserted anywhere in this map, so the caller must address the template's own element and insert only the children");
 	}
 
@@ -2335,12 +2393,12 @@ public sealed class WebToMobileConversionServiceTests {
 			mobileTemplateTypesByName: MobileTypesByName(("MainContainer", "crt.GridContainer")));
 
 		// Assert
-		ElementMapEntry box = Element(guide, "Box");
-		ElementMapEntry field = Element(guide, "Fld");
+		ViewConfigDiffOperation box = Element(guide, "Box");
+		ViewConfigDiffOperation field = Element(guide, "Fld");
 		box.Operation.Should().Be("insert", because: "the page's own container converts");
-		box.ParentSource.Should().Be("template",
+		ParentOriginOf(guide, box).Should().Be("template",
 			because: "nothing in this map inserts Box's parent AND the probed template provides it, so the target page already has it — the very case the old retarget-only boolean left unmarked");
-		field.ParentSource.Should().Be("page",
+		ParentOriginOf(guide, field).Should().Be("page",
 			because: "Box IS inserted by this map and came from the source page, so its own entry says how to create it and the caller must not treat it as pre-existing");
 	}
 
@@ -2363,12 +2421,12 @@ public sealed class WebToMobileConversionServiceTests {
 			mobileTemplateTypesByName: MobileTypesByName(("Scaffold", "crt.Scaffold")));
 
 		// Assert
-		ElementMapEntry box = Element(guide, "Box");
+		ViewConfigDiffOperation box = Element(guide, "Box");
 		box.ParentName.Should().NotBeNullOrEmpty(
 			because: "the assertion below is only meaningful for an insert that names a parent");
-		box.ParentSource.Should().Be("unknown",
+		ParentOriginOf(guide, box).Should().Be("unknown",
 			because: "the template was read and does not provide this parent, so neither this map nor the template creates it — the caller must be told that rather than being sent to insert into a container that does not exist");
-		Element(guide, "Fld").ParentSource.Should().Be("page",
+		ParentOriginOf(guide, Element(guide, "Fld")).Should().Be("page",
 			because: "an authored-here parent is still answered from the map alone, so tightening the template claim must not disturb it");
 	}
 
@@ -2387,14 +2445,14 @@ public sealed class WebToMobileConversionServiceTests {
 
 		// Assert
 		(string main, string area) = LayerNames("OverviewTab");
-		ElementMapEntry content = Element(guide, "LeadName");
+		ViewConfigDiffOperation content = Element(guide, "LeadName");
 		content.ParentName.Should().Be(area,
 			because: "the tab's content is retargeted into the synthesized Area card");
-		content.ParentSource.Should().Be("converter",
+		ParentOriginOf(guide, content).Should().Be("converter",
 			because: "the Area card has no webName — it was invented by this converter — and the caller must create it from its own entry rather than hunt for a source element");
-		Synthesized(guide, area).ParentSource.Should().Be("converter",
+		ParentOriginOf(guide, Synthesized(guide, area)).Should().Be("converter",
 			because: "the Area's own parent is the synthesized tab-body grid, equally converter-authored");
-		Synthesized(guide, main).ParentSource.Should().Be("page",
+		ParentOriginOf(guide, Synthesized(guide, main)).Should().Be("page",
 			because: "the tab-body grid hangs off the converted TAB, which does come from the source page");
 	}
 
@@ -2423,7 +2481,7 @@ public sealed class WebToMobileConversionServiceTests {
 			because: "Toolbar is inherited from the web template baseline, so the container retarget is suppressed to avoid duplication");
 		Codes(toolbar).Should().Contain(ReasonCodes.DropInheritedChrome,
 			because: "the drop reason must state why the inherited-chrome container was not retargeted");
-		ElementMapEntry fld = Element(guide, "Fld");
+		ViewConfigDiffOperation fld = Element(guide, "Fld");
 		fld.Operation.Should().Be("insert",
 			because: "the dropped container's children must be hoisted to the walk parent, not lost with the un-emitted container");
 		fld.ParentName.Should().Be("Root",
@@ -2435,7 +2493,7 @@ public sealed class WebToMobileConversionServiceTests {
 	#region ConvertPageBusinessRules
 
 	private static ElementMapEntry El(string web, string operation, string mobile = null) =>
-		new() { WebName = web, Operation = operation, MobileName = mobile };
+		new() { WebName = web, Operation = operation, Name = mobile };
 
 	private static SourcePageRuleAction ElementAction(string actionType, params string[] items) =>
 		new() { ActionType = actionType, ElementItems = items.ToList() };
@@ -2498,11 +2556,11 @@ public sealed class WebToMobileConversionServiceTests {
 	}
 
 	[Test]
-	[Description("A page business rule targeting an UNCHANGED auto-twin element converts, not drops: the unchanged twin is emitted as an advisory merge entry (MobileName == WebName), so the element stays in the survivors map and the rule is not wrongly dropped as 'every referenced element is unsupported'. Regression for the advisory-entry fix.")]
+	[Description("A page business rule targeting an UNCHANGED auto-twin element converts, not drops: the unchanged twin is emitted as an advisory merge entry (Name == WebName), so the element stays in the survivors map and the rule is not wrongly dropped as 'every referenced element is unsupported'. Regression for the advisory-entry fix.")]
 	public void ConvertPageBusinessRules_UnchangedAutoTwin_RuleConverts() {
 		PageBusinessRuleProbeResult probe = ProbeOf(
 			SourceRule("Hide feed", ElementAction("hide-element", "Feed")));
-		// An unchanged auto-twin ships as an advisory merge entry (null values, MobileName == WebName).
+		// An unchanged auto-twin ships as an advisory merge entry (null values, Name == WebName).
 		var elementMap = new List<ElementMapEntry> { El("Feed", "merge", "Feed") };
 
 		PageBusinessRuleConversionInfo result = WebToMobileAnalysisService.ConvertPageBusinessRules(probe, elementMap);
@@ -2519,7 +2577,7 @@ public sealed class WebToMobileConversionServiceTests {
 	/// <c>crt.TabContainer</c>; the mobile side is the grid inside that tab.
 	/// </summary>
 	private static ElementMapEntry TabToContentTwin(string web, string mobile) =>
-		new() { WebName = web, WebType = "crt.TabContainer", Operation = "merge", MobileName = mobile };
+		new() { WebName = web, WebType = "crt.TabContainer", Operation = "merge", Name = mobile };
 
 	[Test]
 	[Description("A containers twin pairing a web TAB with the mobile tab's CONTENT container retargets a page business rule onto that content container. This is the long-standing behaviour and it is IMPRECISE for a cross-type pair -- on mobile the tab and its body are different elements, so 'hide FeedTabContainer' blanks the body while leaving the header in the strip. Pinned as-is because the general tab, the pair ENG-94951 was about, is now a type-aligned twin and no longer goes through this; narrowing it for Feed/Attachments is a behaviour change beyond that ticket.")]
@@ -2567,7 +2625,7 @@ public sealed class WebToMobileConversionServiceTests {
 		var elementMap = new List<ElementMapEntry> {
 			new() {
 				WebName = "SideAreaProfileContainer", WebType = "crt.GridContainer",
-				Operation = "merge", MobileName = "AreaProfileContainer"
+				Operation = "merge", Name = "AreaProfileContainer"
 			}
 		};
 
@@ -2748,11 +2806,11 @@ public sealed class WebToMobileConversionServiceTests {
 
 		foreach (string chrome in new[] { "Main", "MainHeader", "TitleContainer", "BackButton", "PageTitle" }) {
 			guide.SourceStructure.Should().NotContain(s => s.Name == chrome, because: $"{chrome} is provided by the web template");
-			guide.ElementMap.Should().NotContain(e => e.WebName == chrome);
+			guide.ViewConfigDiff.Should().NotContain(e => SourceNameOf(guide, e) == chrome);
 		}
 		// The page's own field survives (hoisted out of the dropped Main wrapper) and is converted.
 		guide.SourceStructure.Should().Contain(s => s.Name == "UsrName");
-		guide.ElementMap.Should().Contain(e => e.WebName == "UsrName" && e.Operation == "insert");
+		guide.ViewConfigDiff.Should().Contain(e => SourceNameOf(guide, e) == "UsrName" && e.Operation == "insert");
 	}
 
 	[Test]
@@ -2770,8 +2828,8 @@ public sealed class WebToMobileConversionServiceTests {
 			templateComponentNames: Names("Tabs"));
 
 		guide.SourceStructure.Should().Contain(s => s.Name == "Tabs", because: "a containerMap twin is a merge target, not chrome");
-		guide.ElementMap.Should().Contain(e => e.WebName == "Tabs" && e.Operation == "merge");
-		guide.ElementMap.Should().Contain(e => e.WebName == "UsrName");
+		guide.ViewConfigDiff.Should().Contain(e => SourceNameOf(guide, e) == "Tabs" && e.Operation == "merge");
+		guide.ViewConfigDiff.Should().Contain(e => SourceNameOf(guide, e) == "UsrName");
 	}
 
 	[Test]
@@ -2924,15 +2982,15 @@ public sealed class WebToMobileConversionServiceTests {
 		// Kept (not pruned) and surfaced in the structure.
 		guide.SourceStructure.Should().Contain(s => s.Name == "DataTable");
 		// Recorded as a single merge-by-name twin into the template-provided mobile element.
-		ElementMapEntry twin = guide.ElementMap.Single(e => e.WebName == "DataTable");
+		ViewConfigDiffOperation twin = guide.ViewConfigDiff.Single(e => SourceNameOf(guide, e) == "DataTable");
 		twin.Operation.Should().Be("merge");
-		twin.MobileName.Should().Be("List");
+		twin.Name.Should().Be("List");
 		// No component-specific values are prebuilt by clio; the how-to is delegated to componentSuggestions.
-		twin.MobileValues.Should().BeNull();
-		twin.MobileType.Should().NotBe(twin.WebType,
-			because: "a DIFFERENT mobile type is what makes this a structural twin, and it is why no delta is prebuilt — the how-to is type-driven and lives in componentSuggestions");
+		twin.Values.Should().BeNull();
+		guide.NameMap.Should().Contain(new KeyValuePair<string, string>("DataTable", "List"),
+			because: "the rename is how a caller ties the operation back to its source element, now that the operation carries no source name");
 		// No duplicate insert for the grid; the conversion detail lives in the general components rule.
-		guide.ElementMap.Should().NotContain(e => e.WebName == "DataTable" && e.Operation == "insert");
+		guide.ViewConfigDiff.Should().NotContain(e => SourceNameOf(guide, e) == "DataTable" && e.Operation == "insert");
 		guide.ComponentSuggestions.Should().Contain(s => s.SourceType == "crt.DataGrid");
 	}
 
@@ -2960,16 +3018,17 @@ public sealed class WebToMobileConversionServiceTests {
 			templateComponentNames: templateNames, componentNameMap: componentNameMap);
 
 		// Kept (not pruned): recorded as a merge-by-name twin onto the mobile FolderTreeActions element.
-		ElementMapEntry twin = guide.ElementMap.Single(e => e.WebName == "FolderTree");
+		ViewConfigDiffOperation twin = guide.ViewConfigDiff.Single(e => SourceNameOf(guide, e) == "FolderTree");
 		twin.Operation.Should().Be("merge");
-		twin.MobileName.Should().Be("FolderTreeActions");
-		twin.MobileType.Should().Be("crt.FolderTreeActions");
+		twin.Name.Should().Be("FolderTreeActions");
+		TypeOf(twin).Should().BeNull(
+			because: "a merge re-declares no type; the mobile element it targets is named by the operation");
 		// Deterministic payload: the whitelisted web props are carried verbatim.
-		JsonObject vals = twin.MobileValues!.AsObject();
+		JsonObject vals = twin.Values!.AsObject();
 		vals["rootSchemaName"]!.GetValue<string>().Should().Be("UsrMouse");
 		vals["sourceSchemaName"]!.GetValue<string>().Should().Be("FolderTree");
 		// No duplicate insert for the folder element.
-		guide.ElementMap.Should().NotContain(e => e.WebName == "FolderTree" && e.Operation == "insert");
+		guide.ViewConfigDiff.Should().NotContain(e => SourceNameOf(guide, e) == "FolderTree" && e.Operation == "insert");
 	}
 
 	[Test]
@@ -2996,12 +3055,12 @@ public sealed class WebToMobileConversionServiceTests {
 			templateComponentNames: templateNames, componentNameMap: componentNameMap);
 
 		// Assert
-		ElementMapEntry twin = guide.ElementMap.Single(e => e.WebName == "FolderTree");
+		ViewConfigDiffOperation twin = guide.ViewConfigDiff.Single(e => SourceNameOf(guide, e) == "FolderTree");
 		twin.Operation.Should().Be("merge",
 			because: "the element still exists on mobile, so it stays a valid page-business-rule target");
-		twin.MobileValues.Should().BeNull(
+		twin.Values.Should().BeNull(
 			because: "the page carries none of the whitelisted properties, so there is no payload to prebuild");
-		guide.ElementMap.Should().NotContain(e => e.WebName == "FolderTree" && e.Operation == "insert",
+		guide.ViewConfigDiff.Should().NotContain(e => SourceNameOf(guide, e) == "FolderTree" && e.Operation == "insert",
 			because: "an empty carry-whitelist still keeps the element as a merge target — it must never fall through to an insert that duplicates the template's own element");
 	}
 
@@ -3028,11 +3087,11 @@ public sealed class WebToMobileConversionServiceTests {
 			templateComponentNames: templateNames, componentNameMap: componentNameMap);
 
 		// Assert — merge-by-name onto AttachmentFileList, but ADVISORY: no prebuilt payload, no web-only leakage.
-		ElementMapEntry twin = guide.ElementMap.Single(e => e.WebName == "AttachmentList");
+		ViewConfigDiffOperation twin = guide.ViewConfigDiff.Single(e => SourceNameOf(guide, e) == "AttachmentList");
 		twin.Operation.Should().Be("merge", because: "the mobile template provides AttachmentFileList — configured by merge-by-name, not inserted");
-		twin.MobileName.Should().Be("AttachmentFileList");
-		twin.MobileValues.Should().BeNull(because: "without the web-template baseline the twin cannot tell the page's change from the template default, so it carries nothing rather than the whole web node (no primaryColumnName leakage)");
-		guide.ElementMap.Should().NotContain(e => e.WebName == "AttachmentList" && e.Operation == "insert", because: "the twin merges onto the template element rather than inserting a duplicate list");
+		twin.Name.Should().Be("AttachmentFileList");
+		twin.Values.Should().BeNull(because: "without the web-template baseline the twin cannot tell the page's change from the template default, so it carries nothing rather than the whole web node (no primaryColumnName leakage)");
+		guide.ViewConfigDiff.Should().NotContain(e => SourceNameOf(guide, e) == "AttachmentList" && e.Operation == "insert", because: "the twin merges onto the template element rather than inserting a duplicate list");
 	}
 
 	[Test]
@@ -3062,9 +3121,9 @@ public sealed class WebToMobileConversionServiceTests {
 			webTemplateBaselineNodes: baseline);
 
 		// Assert
-		ElementMapEntry twin = guide.ElementMap.Single(e => e.WebName == "AttachmentList");
+		ViewConfigDiffOperation twin = guide.ViewConfigDiff.Single(e => SourceNameOf(guide, e) == "AttachmentList");
 		twin.Operation.Should().Be("merge", because: "still a merge-by-name onto the template-provided element");
-		JsonObject vals = twin.MobileValues!.AsObject();
+		JsonObject vals = twin.Values!.AsObject();
 		vals.ContainsKey("recordColumnName").Should().BeFalse(because: "recordColumnName equals the baseline — unchanged, so it is omitted and the mobile default RecordId stands");
 		vals["masterRecordColumnValue"]!.GetValue<string>().Should().Be("$Other", because: "only the changed property carries");
 	}
@@ -3095,15 +3154,16 @@ public sealed class WebToMobileConversionServiceTests {
 			mobileTemplateTypesByName: mobileTypes, webTemplateBaselineNodes: baseline);
 
 		// Assert
-		ElementMapEntry twin = guide.ElementMap.Single(e => e.WebName == "Feed");
+		ViewConfigDiffOperation twin = guide.ViewConfigDiff.Single(e => SourceNameOf(guide, e) == "Feed");
 		twin.Operation.Should().Be("merge", because: "the mobile template already provides a Feed element - merge-by-name, not insert");
-		twin.MobileName.Should().Be("Feed", because: "same name on both templates");
-		twin.MobileType.Should().Be("crt.Feed");
-		JsonObject vals = twin.MobileValues!.AsObject();
+		twin.Name.Should().Be("Feed", because: "same name on both templates");
+		TypeOf(twin).Should().BeNull(
+			because: "a merge addresses an element the mobile template already owns, so it re-declares no type — the applier resolves it by name");
+		JsonObject vals = twin.Values!.AsObject();
 		vals["dataSourceName"]!.GetValue<string>().Should().Be("LeadDS", because: "the page changed dataSourceName from the web-template baseline - the change carries");
 		vals.ContainsKey("entitySchemaName").Should().BeFalse(because: "entitySchemaName equals the web-template baseline - an unchanged property is omitted so the mobile template's default stands");
 		vals.ContainsKey("type").Should().BeFalse(because: "a merge targets an element the template already owns - no type is re-declared");
-		guide.ElementMap.Should().NotContain(e => e.WebName == "Feed" && e.Operation == "insert", because: "an auto twin merges onto the template element, never inserts a duplicate");
+		guide.ViewConfigDiff.Should().NotContain(e => SourceNameOf(guide, e) == "Feed" && e.Operation == "insert", because: "an auto twin merges onto the template element, never inserts a duplicate");
 	}
 
 	[Test]
@@ -3129,9 +3189,9 @@ public sealed class WebToMobileConversionServiceTests {
 			mobileTemplateTypesByName: mobileTypes, webTemplateBaselineNodes: baseline);
 
 		// An advisory merge entry (null values), NOT nothing and NOT an insert.
-		ElementMapEntry twin = guide.ElementMap.Single(e => e.WebName == "Feed");
+		ViewConfigDiffOperation twin = guide.ViewConfigDiff.Single(e => SourceNameOf(guide, e) == "Feed");
 		twin.Operation.Should().Be("merge", because: "the element is kept as a merge-by-name twin (a valid business-rule target), never inserted as a duplicate");
-		twin.MobileValues.Should().BeNull(because: "the page changed nothing over the baseline, so there is nothing to merge — the mobile template already provides Feed");
+		twin.Values.Should().BeNull(because: "the page changed nothing over the baseline, so there is nothing to merge — the mobile template already provides Feed");
 		// And it is KEPT (surfaced in sourceStructure), not pruned — the test cannot pass with the mechanism deleted.
 		guide.SourceStructure.Should().Contain(s => s.Name == "Feed",
 			because: "an unchanged auto-twin is kept (surfaced in sourceStructure), not pruned away");
@@ -3155,7 +3215,7 @@ public sealed class WebToMobileConversionServiceTests {
 			bundle, webByType: web, mobileTemplateTypesByName: mobileTypes);
 
 		// Assert - inserted (with its parent), NOT merged as a twin.
-		ElementMapEntry feed = guide.ElementMap.Single(e => e.WebName == "Feed");
+		ViewConfigDiffOperation feed = guide.ViewConfigDiff.Single(e => SourceNameOf(guide, e) == "Feed");
 		feed.Operation.Should().Be("insert", because: "a page-authored leaf is inserted, not merged onto a same-named mobile-template element it does not inherit from");
 		feed.ParentName.Should().Be("Wrapper", because: "an insert keeps its placement - the auto-twin path would have dropped it");
 	}
@@ -3179,7 +3239,7 @@ public sealed class WebToMobileConversionServiceTests {
 			bundle, webByType: web, containerNameMap: containerNameMap,
 			templateComponentNames: templateNames, mobileTemplateTypesByName: mobileTypes);
 
-		guide.ElementMap.Should().NotContain(e => e.WebName == "Feed", because: "name matches but type differs - it stays inherited chrome and is pruned, not merged onto the differently-typed mobile Feed");
+		guide.ViewConfigDiff.Should().NotContain(e => SourceNameOf(guide, e) == "Feed", because: "name matches but type differs - it stays inherited chrome and is pruned, not merged onto the differently-typed mobile Feed");
 	}
 
 	[Test]
@@ -3207,8 +3267,8 @@ public sealed class WebToMobileConversionServiceTests {
 			templateComponentNames: templateNames, componentNameMap: componentNameMap,
 			webTemplateBaselineNodes: baseline);
 
-		ElementMapEntry twin = guide.ElementMap.Single(e => e.WebName == "AttachmentList");
-		JsonObject vals = twin.MobileValues!.AsObject();
+		ViewConfigDiffOperation twin = guide.ViewConfigDiff.Single(e => SourceNameOf(guide, e) == "AttachmentList");
+		JsonObject vals = twin.Values!.AsObject();
 		vals["recordColumnName"]!.GetValue<string>().Should().Be("Lead", because: "the page added recordColumnName over the baseline - it carries");
 		vals.ContainsKey("viewType").Should().BeFalse(because: "viewType equals the web-template baseline - an unchanged property is omitted so the mobile default stands");
 	}
@@ -3241,9 +3301,9 @@ public sealed class WebToMobileConversionServiceTests {
 			mobileTemplateTypesByName: mobileTypes, webTemplateBaselineNodes: baseline);
 
 		// Assert - the deeply nested Feed is found, merged, and carries only the changed dataSourceName.
-		ElementMapEntry twin = guide.ElementMap.Single(e => e.WebName == "Feed");
+		ViewConfigDiffOperation twin = guide.ViewConfigDiff.Single(e => SourceNameOf(guide, e) == "Feed");
 		twin.Operation.Should().Be("merge");
-		JsonObject vals = twin.MobileValues!.AsObject();
+		JsonObject vals = twin.Values!.AsObject();
 		vals["dataSourceName"]!.GetValue<string>().Should().Be("LeadDS", because: "recursion reaches the nested Feed and carries the page's change");
 		vals.ContainsKey("entitySchemaName").Should().BeFalse(because: "entitySchemaName equals the nested baseline - omitted");
 	}
@@ -3305,8 +3365,8 @@ public sealed class WebToMobileConversionServiceTests {
 			mobileTemplateTypesByName: mobileTypes, webTemplateBaselineNodes: baseline);
 
 		// Assert
-		ElementMapEntry twin = guide.ElementMap.Single(e => e.WebName == "Feed");
-		JsonObject vals = twin.MobileValues!.AsObject();
+		ViewConfigDiffOperation twin = guide.ViewConfigDiff.Single(e => SourceNameOf(guide, e) == "Feed");
+		JsonObject vals = twin.Values!.AsObject();
 		vals["dataSourceName"]!.GetValue<string>().Should().Be("LeadDS", because: "the changed data property carries");
 		vals.ContainsKey("layoutConfig").Should().BeFalse(because: "the mobile template positions the element it owns — a page-changed layoutConfig must not override it, and no merge pass would normalize it");
 	}
@@ -3340,8 +3400,8 @@ public sealed class WebToMobileConversionServiceTests {
 			webTemplateBaselineNodes: baseline, webTemplateResources: templateResources);
 
 		// Assert
-		ElementMapEntry twin = guide.ElementMap.Single(e => e.WebName == "AttachmentList");
-		JsonObject vals = twin.MobileValues!.AsObject();
+		ViewConfigDiffOperation twin = guide.ViewConfigDiff.Single(e => SourceNameOf(guide, e) == "AttachmentList");
+		JsonObject vals = twin.Values!.AsObject();
 		vals["caption"]!.GetValue<string>().Should().Be("#ResourceString(AttachmentList_caption)#",
 			because: "the page renamed the label — its caption overrides the template's, carried verbatim");
 		guide.ResourceStrings.Should().ContainKey("AttachmentList_caption").WhoseValue.Should().Be("Files",
@@ -3377,8 +3437,8 @@ public sealed class WebToMobileConversionServiceTests {
 			webTemplateBaselineNodes: baseline, webTemplateResources: templateResources);
 
 		// Assert
-		ElementMapEntry twin = guide.ElementMap.Single(e => e.WebName == "AttachmentList");
-		JsonObject vals = twin.MobileValues!.AsObject();
+		ViewConfigDiffOperation twin = guide.ViewConfigDiff.Single(e => SourceNameOf(guide, e) == "AttachmentList");
+		JsonObject vals = twin.Values!.AsObject();
 		vals["recordColumnName"]!.GetValue<string>().Should().Be("Lead", because: "the real data change carries");
 		vals.ContainsKey("caption").Should().BeFalse(because: "the caption's resolved value equals the web template's — an unchanged inherited label is not pushed onto the mobile element");
 	}
@@ -3410,8 +3470,8 @@ public sealed class WebToMobileConversionServiceTests {
 			mobileTemplateTypesByName: mobileTypes, webTemplateBaselineNodes: baseline, webTemplateResources: templateResources);
 
 		// Assert
-		ElementMapEntry twin = guide.ElementMap.Single(e => e.WebName == "Feed");
-		JsonObject vals = twin.MobileValues!.AsObject();
+		ViewConfigDiffOperation twin = guide.ViewConfigDiff.Single(e => SourceNameOf(guide, e) == "Feed");
+		JsonObject vals = twin.Values!.AsObject();
 		vals["dataSourceName"]!.GetValue<string>().Should().Be("LeadDS", because: "the changed data property carries");
 		vals.ContainsKey("caption").Should().BeFalse(because: "an automatic same-name twin shares the template's caption key — update-page would not overwrite it, so emitting it is inert");
 	}
@@ -3441,8 +3501,8 @@ public sealed class WebToMobileConversionServiceTests {
 			mobileTemplateTypesByName: mobileTypes, webTemplateBaselineNodes: baseline);
 
 		// Assert
-		ElementMapEntry twin = guide.ElementMap.Single(e => e.WebName == "Feed");
-		twin.MobileValues!.AsObject().ContainsKey("clicked").Should().BeTrue(
+		ViewConfigDiffOperation twin = guide.ViewConfigDiff.Single(e => SourceNameOf(guide, e) == "Feed");
+		twin.Values!.AsObject().ContainsKey("clicked").Should().BeTrue(
 			because: "the page changed (added) the handler — the delta must carry it, not silently drop it from a twin merge");
 	}
 
@@ -3471,8 +3531,8 @@ public sealed class WebToMobileConversionServiceTests {
 			mobileTemplateTypesByName: mobileTypes, webTemplateBaselineNodes: baseline);
 
 		// Assert
-		ElementMapEntry twin = guide.ElementMap.Single(e => e.WebName == "Feed");
-		twin.MobileValues.Should().BeNull(
+		ViewConfigDiffOperation twin = guide.ViewConfigDiff.Single(e => SourceNameOf(guide, e) == "Feed");
+		twin.Values.Should().BeNull(
 			because: "the binding is unchanged from the baseline and nothing else changed — the inherited interaction stays on the template element, so the twin is advisory");
 	}
 
@@ -3495,10 +3555,10 @@ public sealed class WebToMobileConversionServiceTests {
 			bundle, webByType: web, containerNameMap: containerNameMap,
 			componentNameMap: componentNameMap);
 
-		ElementMapEntry twin = Element(guide, "AttachmentList");
-		twin.MobileValues.Should().BeNull(
+		ViewConfigDiffOperation twin = Element(guide, "AttachmentList");
+		twin.Values.Should().BeNull(
 			because: "with no baseline the page's own changes cannot be told from the template's values, so no delta can be prebuilt");
-		twin.MobileName.Should().Be("AttachmentFileList",
+		twin.Name.Should().Be("AttachmentFileList",
 			because: "the instruction has to name the mobile element the caller now configures by hand");
 	}
 
@@ -3522,10 +3582,10 @@ public sealed class WebToMobileConversionServiceTests {
 		// that would hold under any implementation. What must hold is that the twin advisory appears NOWHERE in
 		// the guide. The old trigger was keyed on the rules file declaring a twin, so it fired on pages that
 		// carry none; re-introducing any page-level aggregate keyed that way fails here.
-		guide.ElementMap.Should().NotContain(
+		guide.ViewConfigDiff.Should().NotContain(
 			e => string.Equals(e.Operation, "merge", StringComparison.Ordinal),
 			because: "the page carries no twin element at all, so no entry may claim to merge onto a template-provided one — the old trigger fired on the RULES FILE declaring a twin, which made it a false positive on most pages");
-		guide.ElementMap.Should().NotBeEmpty(
+		guide.ViewConfigDiff.Should().NotBeEmpty(
 			because: "the page's own elements must still convert — an empty map would make the assertion above vacuous");
 	}
 
@@ -3547,11 +3607,11 @@ public sealed class WebToMobileConversionServiceTests {
 			bundle, webByType: web, componentNameMap: componentNameMap);
 
 		// Assert
-		ElementMapEntry structural = Element(guide, "Grid");
-		structural.MobileValues.Should().BeNull(
+		ViewConfigDiffOperation structural = Element(guide, "Grid");
+		structural.Values.Should().BeNull(
 			because: "a structural twin never gets a prebuilt delta — the conversion is type-driven");
-		structural.MobileType.Should().NotBe(structural.WebType,
-			because: "the payload is absent BY DESIGN here, and the differing mobile type is the fact that says so — the caller reads componentSuggestions for the type-driven how-to");
+		structural.Values.Should().BeNull(
+			because: "a structural twin gets no prebuilt delta at all — the conversion is type-driven, and the absence of values is what says so");
 	}
 
 	[Test]
@@ -3567,11 +3627,14 @@ public sealed class WebToMobileConversionServiceTests {
 		MobilePageConversionGuide guide = Analyze(bundle, webByType: web);
 
 		// Assert
-		guide.ElementMap.Should().NotContain(
+		guide.ViewConfigDiff.Should().NotContain(
 			e => string.Equals(e.Operation, "merge", StringComparison.Ordinal),
 			because: "with no baseline and no declared twin, neither twin route can fire, so nothing may be reported as merging onto a template-provided element");
-		guide.ElementMap.Should().HaveCount(2,
-			because: "the container and its field both produce an entry — pinning the count keeps the assertions above from passing on an empty map");
+		guide.ViewConfigDiff.Should().HaveCount(1,
+			because: "only the field produces an operation — its container has no mobile equivalent, so it is not recreated and is reported in droppedElements instead");
+		(guide.DroppedElements ?? []).Should().ContainSingle(
+			dropped => dropped.Reason.Any(reason => reason.Code == ReasonCodes.DropContainerNoMobileEquivalent),
+			because: "the container that was not recreated is still accounted for, as a drop naming why");
 	}
 
 	#endregion
@@ -3608,7 +3671,7 @@ public sealed class WebToMobileConversionServiceTests {
 			""");
 
 	private static JsonObject ClickedOf(MobilePageConversionGuide guide, string buttonName) =>
-		Element(guide, buttonName).MobileValues!.AsObject();
+		Element(guide, buttonName).Values!.AsObject();
 
 	[Test]
 	[Description("A supported event-binding request is kept in mobileValues with the same request, params preserved, and recorded as converted.")]
@@ -3718,7 +3781,7 @@ public sealed class WebToMobileConversionServiceTests {
 	#region Adaptive (per-breakpoint) layout
 
 	private static JsonObject AdaptiveOf(MobilePageConversionGuide guide, string fieldName) =>
-		Element(guide, fieldName).MobileValues!.AsObject()["layoutConfig"]!.AsObject()["adaptive"]!.AsObject();
+		Element(guide, fieldName).Values!.AsObject()["layoutConfig"]!.AsObject()["adaptive"]!.AsObject();
 
 	[Test]
 	[Description("A multi-column crt.GridContainer converts ONLY the phone (small) breakpoint to a single column; medium/large keep the web column count and each child's web placement — baked into both the container's and the children's mobileValues.")]
@@ -3738,7 +3801,7 @@ public sealed class WebToMobileConversionServiceTests {
 		group.ColumnsByBreakpoint["medium"].Should().Equal("1fr", "1fr");
 
 		// Container-side adaptive is baked into the container's OWN mobileValues (deterministic).
-		JsonObject container = Element(guide, "OverviewFieldsContainer").MobileValues!.AsObject()["adaptive"]!.AsObject();
+		JsonObject container = Element(guide, "OverviewFieldsContainer").Values!.AsObject()["adaptive"]!.AsObject();
 		container["small"]!["columns"]!.AsArray().Should().HaveCount(1);
 		container["medium"]!["columns"]!.AsArray().Should().HaveCount(2);
 		container["large"]!["columns"]!.AsArray().Should().HaveCount(2);
@@ -3751,7 +3814,7 @@ public sealed class WebToMobileConversionServiceTests {
 		co["medium"]!["row"]!.GetValue<int>().Should().Be(1);
 		co["large"]!["column"]!.GetValue<int>().Should().Be(2);
 		// The child's layoutConfig is the adaptive form ONLY (base placement folded into medium/large).
-		Element(guide, "CreatedOn").MobileValues!.AsObject()["layoutConfig"]!.AsObject()
+		Element(guide, "CreatedOn").Values!.AsObject()["layoutConfig"]!.AsObject()
 			.Select(kv => kv.Key).Should().Equal("adaptive");
 	}
 
@@ -3797,7 +3860,7 @@ public sealed class WebToMobileConversionServiceTests {
 		MobilePageConversionGuide guide = Analyze(bundle, webByType: Reg(("crt.GridContainer", true), ("crt.Input", false)));
 
 		guide.AdaptiveLayout.Should().BeNull();
-		JsonObject lc = Element(guide, "FieldB").MobileValues!.AsObject()["layoutConfig"]!.AsObject();
+		JsonObject lc = Element(guide, "FieldB").Values!.AsObject()["layoutConfig"]!.AsObject();
 		lc.ContainsKey("adaptive").Should().BeFalse("a 1-column grid needs no adaptive");
 		lc["column"]!.GetValue<int>().Should().Be(1, "the carried base placement is kept as-is");
 		lc["row"]!.GetValue<int>().Should().Be(2, "the web page's own row is carried verbatim");
@@ -3836,7 +3899,7 @@ public sealed class WebToMobileConversionServiceTests {
 
 		MobilePageConversionGuide guide = Analyze(bundle, webByType: webByType, mobileByType: mobileByType);
 
-		JsonObject values = Element(guide, "Widget").MobileValues!.AsObject();
+		JsonObject values = Element(guide, "Widget").Values!.AsObject();
 		values.Should().ContainKey("layoutConfig", "layoutConfig is declared by neither registry — a system property");
 		values.Should().ContainKey("readonly", "the mobile registry declares it");
 		values.Should().ContainKey("webOnlyProp", "registry-absent props are no longer dropped while the mobile registry is incomplete");
@@ -3860,13 +3923,13 @@ public sealed class WebToMobileConversionServiceTests {
 
 		MobilePageConversionGuide guide = Analyze(bundle, webByType: Reg(("crt.FlexContainer", true), ("crt.Label", false)));
 
-		ElementMapEntry label = Element(guide, "ContactLabel");
+		ViewConfigDiffOperation label = Element(guide, "ContactLabel");
 		// caption carried verbatim (its original web token) — no hardcoded exclusion or normalization.
-		label.MobileValues!.AsObject()["caption"]!.GetValue<string>()
+		label.Values!.AsObject()["caption"]!.GetValue<string>()
 			.Should().Be("#MacrosTemplateString(#ResourceString(ContactLabel_caption)#)#");
 		// the referenced resource is resolved so the caller registers the SAME key the token uses.
-		label.CaptionResource!.Key.Should().Be("ContactLabel_caption");
-		label.CaptionResource.SourceValue.Should().Be("Contact person");
+		guide.ResourceStrings.Should().ContainKey("ContactLabel_caption");
+		guide.ResourceStrings!["ContactLabel_caption"].Should().Be("Contact person");
 	}
 
 	[Test]
@@ -3879,9 +3942,10 @@ public sealed class WebToMobileConversionServiceTests {
 
 		MobilePageConversionGuide guide = Analyze(bundle, webByType: Reg(("crt.FlexContainer", true), ("crt.Label", false)));
 
-		ElementMapEntry label = Element(guide, "TitleLabel");
-		label.CaptionResource.Should().BeNull();
-		label.MobileValues!.AsObject()["caption"]!.GetValue<string>().Should().Be("$HeaderCaption");
+		ViewConfigDiffOperation label = Element(guide, "TitleLabel");
+		(guide.ResourceStrings?.ContainsKey("ContactLabel_caption") ?? false).Should().BeFalse(
+			because: "no caption resource is registered when the source declares none");
+		label.Values!.AsObject()["caption"]!.GetValue<string>().Should().Be("$HeaderCaption");
 	}
 
 	[Test]
@@ -3909,7 +3973,7 @@ public sealed class WebToMobileConversionServiceTests {
 		guide.ResourceStrings["EmailsSentNewMetric_template"].Should().Be("{0} sent", "a deeply nested text.template token must be collected");
 		guide.ResourceStrings["EmailsSentNewMetric_caption"].Should().Be("Emails sent metric");
 		// tokens stay verbatim in the carried values.
-		Element(guide, "EmailsSentNewMetric").MobileValues!.ToJsonString()
+		Element(guide, "EmailsSentNewMetric").Values!.ToJsonString()
 			.Should().Contain("#ResourceString(EmailsSentNewMetric_title)#");
 	}
 
@@ -3928,12 +3992,12 @@ public sealed class WebToMobileConversionServiceTests {
 
 		MobilePageConversionGuide guide = AnalyzeTabbed(bundle);
 
-		ElementMapEntry overview = Element(guide, "OverviewTab");
+		ViewConfigDiffOperation overview = Element(guide, "OverviewTab");
 		overview.Operation.Should().Be("insert");
-		overview.CaptionResource!.Key.Should().Be("OverviewTab_caption",
+		guide.ResourceStrings.Should().ContainKey("OverviewTab_caption",
 			because: "re-keyed to the element, not the inherited GeneralInfoTab_caption");
-		overview.CaptionResource.SourceValue.Should().Be("Overview");
-		overview.MobileValues!.AsObject()["caption"]!.GetValue<string>()
+		guide.ResourceStrings!["OverviewTab_caption"].Should().Be("Overview");
+		overview.Values!.AsObject()["caption"]!.GetValue<string>()
 			.Should().Be("#ResourceString(OverviewTab_caption)#");
 		guide.ResourceStrings!["OverviewTab_caption"].Should().Be("Overview");
 		guide.ResourceStrings.Should().NotContainKey("GeneralInfoTab_caption",
@@ -3955,8 +4019,8 @@ public sealed class WebToMobileConversionServiceTests {
 
 		MobilePageConversionGuide guide = AnalyzeTabbed(bundle);
 
-		Element(guide, "SalesTab").CaptionResource!.Key.Should().Be("SalesTab_caption");
-		Element(guide, "SalesTab").MobileValues!.AsObject()["caption"]!.GetValue<string>()
+		guide.ResourceStrings.Should().ContainKey("SalesTab_caption");
+		Element(guide, "SalesTab").Values!.AsObject()["caption"]!.GetValue<string>()
 			.Should().Be("#MacrosTemplateString(#ResourceString(SalesTab_caption)#)#",
 				because: "the key already matches the element, so the source token (with its wrapper) is kept verbatim");
 		guide.ResourceStrings!["SalesTab_caption"].Should().Be("Sales");
@@ -3973,7 +4037,7 @@ public sealed class WebToMobileConversionServiceTests {
 
 		MobilePageConversionGuide guide = Analyze(bundle, webByType: Reg(("crt.FlexContainer", true), ("crt.CommunicationOptions", false)));
 
-		JsonObject vals = Element(guide, "ContactCommunicationOptions").MobileValues!.AsObject();
+		JsonObject vals = Element(guide, "ContactCommunicationOptions").Values!.AsObject();
 		vals["items"]!.GetValue<string>().Should().Be("$CommunicationOptions_f87c6ae", "a string items binding is a real collection property, not structural children");
 		vals.Should().ContainKey("columnsCount");
 		vals.Should().ContainKey("masterRecordColumnName");
@@ -3990,7 +4054,7 @@ public sealed class WebToMobileConversionServiceTests {
 
 		MobilePageConversionGuide guide = Analyze(bundle, webByType: Reg(("crt.FlexContainer", true), ("crt.Input", false)));
 
-		Element(guide, "QualifiedContact").MobileValues!.AsObject()["label"]!.GetValue<string>()
+		Element(guide, "QualifiedContact").Values!.AsObject()["label"]!.GetValue<string>()
 			.Should().Be("$Resources.Strings.Parameter_r8t9n2f", "the field's own web label must survive, not be replaced by a guessed key");
 	}
 
@@ -3998,15 +4062,15 @@ public sealed class WebToMobileConversionServiceTests {
 
 	#region Tab body / Area layers synthesized into a converted tab
 
-	/// <summary>A converter-SYNTHESIZED entry (no webName), addressed by the mobile name it creates.</summary>
-	private static ElementMapEntry Synthesized(MobilePageConversionGuide guide, string mobileName) =>
-		guide.ElementMap.Single(e => e.WebName is null && e.MobileName == mobileName);
+	/// <summary>A converter-SYNTHESIZED operation (no source counterpart), by the mobile name it creates.</summary>
+	private static ViewConfigDiffOperation Synthesized(MobilePageConversionGuide guide, string mobileName) =>
+		guide.ViewConfigDiff.Single(e => e.Name == mobileName && !SourceNames(guide).Contains(e.Name));
 
 	/// <summary>Position of an entry in the element map (a synthesized layer must precede what it holds).</summary>
 	private static int IndexOfMobile(MobilePageConversionGuide guide, string mobileName) {
-		var map = (IList<ElementMapEntry>)guide.ElementMap;
+		var map = (IList<ViewConfigDiffOperation>)guide.ViewConfigDiff;
 		for (int i = 0; i < map.Count; i++) {
-			if (map[i].MobileName == mobileName) {
+			if (map[i].Name == mobileName) {
 				return i;
 			}
 		}
@@ -4049,24 +4113,25 @@ public sealed class WebToMobileConversionServiceTests {
 		MobilePageConversionGuide guide = AnalyzeTabbed(bundle, rules: RulesWithTabAreaLayers());
 
 		(string main, string area) = LayerNames("OverviewTab");
-		ElementMapEntry mainEntry = Synthesized(guide, main);
+		ViewConfigDiffOperation mainEntry = Synthesized(guide, main);
 		mainEntry.Operation.Should().Be("insert");
-		mainEntry.WebName.Should().BeNull(because: "a synthesized container has no source element behind it");
-		mainEntry.WebType.Should().BeNull();
+		SourceNameOf(guide, mainEntry).Should().BeNull(because: "a synthesized container has no source element behind it");
+		SourceNames(guide).Should().NotContain(mainEntry.Name,
+			because: "a synthesized container has no source counterpart at all");
 		mainEntry.ParentName.Should().Be("OverviewTab");
 		mainEntry.PropertyName.Should().Be("items");
-		mainEntry.MobileType.Should().Be("crt.GridContainer");
-		mainEntry.MobileValues!["alignItems"]!.GetValue<string>().Should().Be("stretch");
-		mainEntry.MobileValues!["padding"]!["bottom"]!.GetValue<string>().Should().Be("medium");
-		mainEntry.MobileValues!["items"]!.AsArray().Should().BeEmpty(because: "children need an initialized slot to land in");
-		mainEntry.WebName.Should().BeNull(
+		TypeOf(mainEntry).Should().Be("crt.GridContainer");
+		mainEntry.Values!["alignItems"]!.GetValue<string>().Should().Be("stretch");
+		mainEntry.Values!["padding"]!["bottom"]!.GetValue<string>().Should().Be("medium");
+		mainEntry.Values!["items"]!.AsArray().Should().BeEmpty(because: "children need an initialized slot to land in");
+		SourceNameOf(guide, mainEntry).Should().BeNull(
 			because: "an absent webName is what tells the caller this container has no source counterpart to look for; tabAreaLayers names it as the tab body");
 
-		ElementMapEntry areaEntry = Synthesized(guide, area);
+		ViewConfigDiffOperation areaEntry = Synthesized(guide, area);
 		areaEntry.ParentName.Should().Be(main, because: "the Area card sits inside the tab body, not in the tab");
-		areaEntry.MobileValues!["color"]!.GetValue<string>().Should().Be("primary");
-		areaEntry.MobileValues!["borderRadius"]!.GetValue<string>().Should().Be("medium");
-		areaEntry.MobileValues!["items"]!.AsArray().Should().BeEmpty();
+		areaEntry.Values!["color"]!.GetValue<string>().Should().Be("primary");
+		areaEntry.Values!["borderRadius"]!.GetValue<string>().Should().Be("medium");
+		areaEntry.Values!["items"]!.AsArray().Should().BeEmpty();
 
 		// Order: parent before child, both immediately after the tab.
 		int tabAt = IndexOfMobile(guide, "OverviewTab");
@@ -4101,10 +4166,10 @@ public sealed class WebToMobileConversionServiceTests {
 			Element(guide, name).ParentName.Should().Be(area, because: "the tab body holds the Area, not the fields");
 		}
 		// Rows follow the source order, one per row of a single column.
-		Element(guide, "LeadName").MobileValues!["layoutConfig"]!["row"]!.GetValue<int>().Should().Be(1);
-		Element(guide, "Status").MobileValues!["layoutConfig"]!["row"]!.GetValue<int>().Should().Be(2);
-		Element(guide, "DecisionDate").MobileValues!["layoutConfig"]!["row"]!.GetValue<int>().Should().Be(3);
-		JsonNode first = Element(guide, "LeadName").MobileValues!["layoutConfig"]!;
+		Element(guide, "LeadName").Values!["layoutConfig"]!["row"]!.GetValue<int>().Should().Be(1);
+		Element(guide, "Status").Values!["layoutConfig"]!["row"]!.GetValue<int>().Should().Be(2);
+		Element(guide, "DecisionDate").Values!["layoutConfig"]!["row"]!.GetValue<int>().Should().Be(3);
+		JsonNode first = Element(guide, "LeadName").Values!["layoutConfig"]!;
 		first["column"]!.GetValue<int>().Should().Be(1);
 		first["colSpan"]!.GetValue<int>().Should().Be(1);
 		first["rowSpan"]!.GetValue<int>().Should().Be(1);
@@ -4164,7 +4229,7 @@ public sealed class WebToMobileConversionServiceTests {
 
 		MobilePageConversionGuide guide = AnalyzeTabbed(bundle, rules: RulesWithTabAreaLayers());
 
-		JsonNode layout = Element(guide, "LeadName").MobileValues!["layoutConfig"]!;
+		JsonNode layout = Element(guide, "LeadName").Values!["layoutConfig"]!;
 		layout["column"]!.GetValue<int>().Should().Be(1);
 		layout["row"]!.GetValue<int>().Should().Be(1);
 		layout["colSpan"]!.GetValue<int>().Should().Be(1);
@@ -4182,11 +4247,11 @@ public sealed class WebToMobileConversionServiceTests {
 
 		MobilePageConversionGuide guide = AnalyzeTabbed(bundle, rules: RulesWithTabAreaLayers());
 
-		JsonNode first = Element(guide, "LeadName").MobileValues!["layoutConfig"]!;
+		JsonNode first = Element(guide, "LeadName").Values!["layoutConfig"]!;
 		first.Should().BeOfType<JsonObject>(because: "a scalar layoutConfig carries no adaptive placement, so the stack pass replaces it");
 		first["column"]!.GetValue<int>().Should().Be(1);
 		first["row"]!.GetValue<int>().Should().Be(1);
-		JsonNode second = Element(guide, "Status").MobileValues!["layoutConfig"]!;
+		JsonNode second = Element(guide, "Status").Values!["layoutConfig"]!;
 		second.Should().BeOfType<JsonObject>(because: "an array layoutConfig carries no adaptive placement, so the stack pass replaces it");
 		second["row"]!.GetValue<int>().Should().Be(2);
 	}
@@ -4205,14 +4270,16 @@ public sealed class WebToMobileConversionServiceTests {
 		MobilePageConversionGuide guide = AnalyzeTabbed(bundle, rules: RulesWithTabAreaLayers());
 
 		(_, string area) = LayerNames("OverviewTab");
-		ElementMapEntry wrapper = Element(guide, "Wrapper");
-		wrapper.Operation.Should().Be("relocate-children");
-		wrapper.ParentName.Should().Be(area, because: "its children are now placed in the Area");
-		wrapper.MobileValues.Should().BeNull(because: "a dissolved wrapper is never created, so it carries no values");
+		(guide.DroppedElements ?? []).Should().Contain(dropped => dropped.WebName == "Wrapper",
+			because: "a wrapper with no mobile equivalent is not recreated, so it is reported as dropped rather than emitted as an operation the applier does not have");
+		(guide.DroppedElements ?? []).Single(dropped => dropped.WebName == "Wrapper")
+			.Reason.Should().Contain(reason => reason.Code == ReasonCodes.DropContainerNoMobileEquivalent
+				&& reason.Params!["target"]!.GetValue<string>() == area,
+			because: "the drop names where the children went, which is the only thing the caller could not read off their own operations");
 
 		Element(guide, "LeadName").ParentName.Should().Be(area);
-		Element(guide, "LeadName").MobileValues!["layoutConfig"]!["row"]!.GetValue<int>().Should().Be(1);
-		Element(guide, "Status").MobileValues!["layoutConfig"]!["row"]!.GetValue<int>().Should().Be(2);
+		Element(guide, "LeadName").Values!["layoutConfig"]!["row"]!.GetValue<int>().Should().Be(1);
+		Element(guide, "Status").Values!["layoutConfig"]!["row"]!.GetValue<int>().Should().Be(2);
 		guide.TabAreaLayers!.Single().MovedChildren.Should().Equal(new[] { "LeadName", "Status" },
 			"the wrapper is a routing hint, not a component that occupies a row");
 	}
@@ -4232,14 +4299,14 @@ public sealed class WebToMobileConversionServiceTests {
 
 		(_, string area) = LayerNames("OverviewTab");
 		// The grid moves into the Area and gets its stack placement…
-		ElementMapEntry grid = Element(guide, "FieldsContainer");
+		ViewConfigDiffOperation grid = Element(guide, "FieldsContainer");
 		grid.ParentName.Should().Be(area);
-		grid.MobileValues!["layoutConfig"]!["row"]!.GetValue<int>().Should().Be(1);
+		grid.Values!["layoutConfig"]!["row"]!.GetValue<int>().Should().Be(1);
 		// …while keeping the responsive columns the adaptive pass baked onto it.
-		grid.MobileValues!["adaptive"]!["medium"]!["columns"].Should().NotBeNull();
+		grid.Values!["adaptive"]!["medium"]!["columns"].Should().NotBeNull();
 		// Its children are NOT touched: they stay in the grid with their per-breakpoint cells.
 		Element(guide, "LeadName").ParentName.Should().Be("FieldsContainer");
-		Element(guide, "Status").MobileValues!["layoutConfig"]!["adaptive"]!["medium"]!["column"]!
+		Element(guide, "Status").Values!["layoutConfig"]!["adaptive"]!["medium"]!["column"]!
 			.GetValue<int>().Should().Be(2);
 		guide.AdaptiveLayout!.Single().ContainerName.Should().Be("FieldsContainer");
 	}
@@ -4260,7 +4327,7 @@ public sealed class WebToMobileConversionServiceTests {
 
 		(_, string area) = LayerNames("OverviewTab");
 		Element(guide, "Status").ParentName.Should().Be(area, because: "retargeting still happens");
-		JsonNode layout = Element(guide, "Status").MobileValues!["layoutConfig"]!;
+		JsonNode layout = Element(guide, "Status").Values!["layoutConfig"]!;
 		layout["adaptive"].Should().NotBeNull(because: "mobile resolves the placement from adaptive when present");
 		layout["adaptive"]!["medium"]!["column"]!.GetValue<int>().Should().Be(2);
 		layout["row"].Should().BeNull(because: "a flat base cell would silently drop the responsive placement");
@@ -4297,7 +4364,7 @@ public sealed class WebToMobileConversionServiceTests {
 
 		Element(guide, "FeedTabContainer").Operation.Should().Be("merge");
 		guide.TabAreaLayers.Should().BeNull();
-		guide.ElementMap.Should().NotContain(e => e.WebName == null);
+		guide.ViewConfigDiff.Should().NotContain(e => SourceNameOf(guide, e) == null);
 	}
 
 	[Test]
@@ -4312,7 +4379,7 @@ public sealed class WebToMobileConversionServiceTests {
 		MobilePageConversionGuide guide = AnalyzeTabbed(bundle);
 
 		guide.TabAreaLayers.Should().BeNull();
-		guide.ElementMap.Should().NotContain(e => e.WebName == null);
+		guide.ViewConfigDiff.Should().NotContain(e => SourceNameOf(guide, e) == null);
 		Element(guide, "LeadName").ParentName.Should().Be("OverviewTab");
 	}
 
@@ -4329,7 +4396,7 @@ public sealed class WebToMobileConversionServiceTests {
 
 		guide.TabAreaLayers.Should().NotBeNullOrEmpty(
 			because: "the synthesized layers ARE the report — their presence is what tells the caller the structure was built");
-		guide.ElementMap.Should().Contain(e => e.Operation == "insert" && e.WebName == null,
+		guide.ViewConfigDiff.Should().Contain(e => e.Operation == "insert" && SourceNameOf(guide, e) == null,
 			because: "the layers arrive as ordinary synthesized inserts, so applying the map applies them; nothing separate has to be described");
 	}
 
@@ -4366,7 +4433,7 @@ public sealed class WebToMobileConversionServiceTests {
 		MobilePageConversionGuide guide = AnalyzeTabbed(bundle, rules: RulesWithTabAreaLayers(tabComponentType: null));
 
 		guide.TabAreaLayers.Should().BeNull();
-		guide.ElementMap.Should().NotContain(e => e.WebName == null);
+		guide.ViewConfigDiff.Should().NotContain(e => SourceNameOf(guide, e) == null);
 	}
 
 	[Test]
@@ -4393,7 +4460,7 @@ public sealed class WebToMobileConversionServiceTests {
 
 		guide.TabAreaLayers.Should().BeNull(
 			because: "without the nested Area card rule there is no content receiver, so no layer may be synthesized");
-		guide.ElementMap.Should().NotContain(e => e.WebName == null,
+		guide.ViewConfigDiff.Should().NotContain(e => SourceNameOf(guide, e) == null,
 			because: "a switched-off pass must synthesize nothing at all, not a half-built body");
 		Element(guide, "LeadName").ParentName.Should().Be("OverviewTab",
 			because: "with the pass off the tab's content stays directly in the tab, as before the feature");
@@ -4411,7 +4478,8 @@ public sealed class WebToMobileConversionServiceTests {
 
 		MobilePageConversionGuide guide = AnalyzeTabbed(bundle, rules: RulesWithTabAreaLayers());
 
-		Element(guide, "Wrapper").Operation.Should().Be("relocate-children");
+		(guide.DroppedElements ?? []).Should().Contain(dropped => dropped.WebName == "Wrapper",
+			because: "the dissolved wrapper is reported as dropped; its children carry the reparented parentName in their own operations");
 		guide.TabAreaLayers!.Single().TabName.Should().Be("OverviewTab",
 			because: "a dissolved wrapper still puts content in the tab, so the tab is not empty");
 	}
@@ -4466,12 +4534,20 @@ public sealed class WebToMobileConversionServiceTests {
 
 		MobilePageConversionGuide guide = AnalyzeTabbed(bundle, rules: RulesWithTabAreaLayers());
 
+		// Every serialized operation carries ONLY keys the mobile diff applier reads. This is the whole
+		// point of viewConfigDiff: the caller pastes it, so a key the applier does not know is either
+		// ignored (dead weight) or rejected — and a key it DOES know but that clio never meant as an
+		// operation field would change what gets applied.
+		string[] applierKeys = ["operation", "name", "parentName", "propertyName", "index", "values"];
 		(string main, _) = LayerNames("OverviewTab");
-		JsonObject json = JsonSerializer.SerializeToNode(Synthesized(guide, main))!.AsObject();
-		json.ContainsKey("webName").Should().BeFalse();
-		json["operation"]!.GetValue<string>().Should().Be("insert");
-		JsonSerializer.SerializeToNode(Element(guide, "LeadName"))!.AsObject()
-			.ContainsKey("webName").Should().BeTrue();
+		foreach (ViewConfigDiffOperation operation in new[] { Synthesized(guide, main), Element(guide, "LeadName") }) {
+			JsonObject json = JsonSerializer.SerializeToNode(operation)!.AsObject();
+			json.Select(pair => pair.Key).Should().BeSubsetOf(applierKeys,
+				because: "viewConfigDiff is pasted verbatim, so an operation may carry no key beyond what the applier reads — conversion metadata belongs in nameMap / droppedElements / pendingBindings");
+			json["operation"]!.GetValue<string>().Should().Be("insert");
+			json["name"]!.GetValue<string>().Should().NotBeNullOrEmpty(
+				because: "an operation without a name addresses nothing");
+		}
 	}
 
 	[Test]
@@ -4492,17 +4568,17 @@ public sealed class WebToMobileConversionServiceTests {
 		// Fields and the panel alike stack in the ONE Area, web order = row order.
 		Element(guide, "LeadName").ParentName.Should().Be(area);
 		Element(guide, "Status").ParentName.Should().Be(area);
-		Element(guide, "Status").MobileValues!["layoutConfig"]!["row"]!.GetValue<int>().Should().Be(2);
+		Element(guide, "Status").Values!["layoutConfig"]!["row"]!.GetValue<int>().Should().Be(2);
 		Element(guide, "SimilarLead").ParentName.Should().Be(area,
 			because: "a panel is an ordinary component and joins the tab's Area like any other child");
-		Element(guide, "SimilarLead").MobileValues!["layoutConfig"]!["row"]!.GetValue<int>().Should().Be(3);
+		Element(guide, "SimilarLead").Values!["layoutConfig"]!["row"]!.GetValue<int>().Should().Be(3);
 		// The panel's inner content is none of this pass's business.
 		Element(guide, "SimilarLeadName").ParentName.Should().Be("SimilarLead");
 		// Exactly two layers right after the tab; the Area alone in the tab body carries no placement.
 		int tabAt = IndexOfMobile(guide, "OverviewTab");
 		IndexOfMobile(guide, main).Should().Be(tabAt + 1);
 		IndexOfMobile(guide, area).Should().Be(tabAt + 2);
-		Synthesized(guide, area).MobileValues!.AsObject().ContainsKey("layoutConfig").Should().BeFalse(
+		Synthesized(guide, area).Values!.AsObject().ContainsKey("layoutConfig").Should().BeFalse(
 			because: "an ABSENT placement is fine — measured on the stand, the mobile designer opens a page whose "
 				+ "grid child carries no layoutConfig; it is a PARTIAL one it refuses. See "
 				+ "Analyze_ShouldNotInventAPlacement_ForAnElementThatCarriesNone for that boundary");
@@ -4528,9 +4604,9 @@ public sealed class WebToMobileConversionServiceTests {
 		MobilePageConversionGuide guide = AnalyzeTabbed(bundle, rules: RulesWithTabAreaLayers());
 
 		(_, string area) = LayerNames("OverviewTab");
-		ElementMapEntry panelEntry = Element(guide, "SimilarLead");
+		ViewConfigDiffOperation panelEntry = Element(guide, "SimilarLead");
 		panelEntry.ParentName.Should().Be(area, because: "the panel stacks in the tab's Area like any other component");
-		JsonObject panel = panelEntry.MobileValues!.AsObject();
+		JsonObject panel = panelEntry.Values!.AsObject();
 		panel["toggleType"]!.GetValue<string>().Should().Be("arrow", because: "prop cleanup is deferred with the general de-skin");
 		panel["togglePosition"]!.GetValue<string>().Should().Be("right");
 		panel["labelColor"]!.GetValue<string>().Should().Be("#333333");
@@ -4557,7 +4633,7 @@ public sealed class WebToMobileConversionServiceTests {
 
 		Element(guide, "FeedTabContainer").Operation.Should().Be("merge");
 		guide.TabAreaLayers.Should().BeNull(because: "merge tabs get no synthesized layers at all");
-		guide.ElementMap.Should().NotContain(e => e.WebName == null,
+		guide.ViewConfigDiff.Should().NotContain(e => SourceNameOf(guide, e) == null,
 			because: "nothing may be synthesized for a template-provided tab, panels included");
 	}
 
@@ -4597,11 +4673,11 @@ public sealed class WebToMobileConversionServiceTests {
 		IndexOfMobile(guide, sales.AreaName).Should().Be(salesAt + 2);
 		Element(guide, "OpportunityPlanning").ParentName.Should().Be(sales.AreaName);
 		Element(guide, "Products").ParentName.Should().Be(sales.AreaName);
-		Element(guide, "Products").MobileValues!["layoutConfig"]!["row"]!.GetValue<int>().Should().Be(2);
+		Element(guide, "Products").Values!["layoutConfig"]!["row"]!.GetValue<int>().Should().Be(2);
 		int processingAt = IndexOfMobile(guide, "ProcessingTab");
 		IndexOfMobile(guide, processing.MainTabContainerName).Should().Be(processingAt + 1);
 		IndexOfMobile(guide, processing.AreaName).Should().Be(processingAt + 2);
-		Synthesized(guide, processing.AreaName).MobileValues!.AsObject().ContainsKey("layoutConfig").Should().BeFalse(
+		Synthesized(guide, processing.AreaName).Values!.AsObject().ContainsKey("layoutConfig").Should().BeFalse(
 			because: "the Area alone in the tab body carries no placement");
 	}
 
@@ -4724,7 +4800,7 @@ public sealed class WebToMobileConversionServiceTests {
 
 		MobilePageConversionGuide guide = AnalyzeSpacing(bundle, RulesWithSpacingOverrides());
 
-		JsonObject vals = Element(guide, "InfoGrid").MobileValues!.AsObject();
+		JsonObject vals = Element(guide, "InfoGrid").Values!.AsObject();
 		vals["gap"]!["rowGap"]!.GetValue<string>().Should().Be("medium");
 		vals["gap"]!["columnGap"]!.GetValue<string>().Should().Be("medium",
 			because: "the web spacing is ignored by design — mobile follows the mobile spacing standard");
@@ -4745,9 +4821,9 @@ public sealed class WebToMobileConversionServiceTests {
 
 		MobilePageConversionGuide guide = AnalyzeSpacing(bundle, RulesWithSpacingOverrides());
 
-		Element(guide, "TightRow").MobileValues!["gap"]!.GetValue<string>().Should().Be("medium",
+		Element(guide, "TightRow").Values!["gap"]!.GetValue<string>().Should().Be("medium",
 			because: "a web gap 0/none is deliberately overridden — the known trade-off of the normalization");
-		Element(guide, "PlainColumn").MobileValues!["gap"]!.GetValue<string>().Should().Be("medium",
+		Element(guide, "PlainColumn").Values!["gap"]!.GetValue<string>().Should().Be("medium",
 			because: "a container without a web gap gets the explicit default added");
 		guide.SpacingNormalization!.Normalized.Select(n => n.Name)
 			.Should().BeEquivalentTo("TightRow", "PlainColumn");
@@ -4772,7 +4848,7 @@ public sealed class WebToMobileConversionServiceTests {
 
 		(string main, string area) = LayerNames("OverviewTab");
 		foreach (string name in new[] { main, area }) {
-			JsonObject vals = Synthesized(guide, name).MobileValues!.AsObject();
+			JsonObject vals = Synthesized(guide, name).Values!.AsObject();
 			vals["gap"]!["rowGap"]!.GetValue<string>().Should().Be("medium", because: $"{name} is an inserted grid like any other");
 			vals["gap"]!["columnGap"]!.GetValue<string>().Should().Be("medium");
 		}
@@ -4796,9 +4872,9 @@ public sealed class WebToMobileConversionServiceTests {
 
 		MobilePageConversionGuide guide = AnalyzeTabbed(bundle, rules: rules);
 
-		ElementMapEntry tabs = Element(guide, "Tabs");
+		ViewConfigDiffOperation tabs = Element(guide, "Tabs");
 		tabs.Operation.Should().Be("merge", because: "the fixture maps Tabs onto the template's own Tabs");
-		tabs.MobileValues.Should().BeNull(because: "a merge twin gets nothing stamped onto it");
+		tabs.Values.Should().BeNull(because: "a merge twin gets nothing stamped onto it");
 		guide.SpacingNormalization!.Normalized.Select(n => n.Name).Should().NotContain("Tabs");
 	}
 
@@ -4813,7 +4889,7 @@ public sealed class WebToMobileConversionServiceTests {
 
 		MobilePageConversionGuide guide = AnalyzeSpacing(bundle, new WebToMobilePageConversionRules());
 
-		JsonObject vals = Element(guide, "InfoGrid").MobileValues!.AsObject();
+		JsonObject vals = Element(guide, "InfoGrid").Values!.AsObject();
 		vals["gap"]!["columnGap"]!.GetValue<string>().Should().Be("large",
 			because: "without the rules group the property-carry behavior is unchanged");
 		vals["gap"]!["rowGap"]!.GetValue<string>().Should().Be("none");
@@ -4839,7 +4915,7 @@ public sealed class WebToMobileConversionServiceTests {
 
 		MobilePageConversionGuide guide = AnalyzeSpacing(bundle, rules);
 
-		JsonObject vals = Element(guide, "InfoGrid").MobileValues!.AsObject();
+		JsonObject vals = Element(guide, "InfoGrid").Values!.AsObject();
 		vals["type"]!.GetValue<string>().Should().Be("crt.GridContainer", because: "identity keys are never overridable");
 		vals.ContainsKey("name").Should().BeFalse();
 		vals["gap"]!["rowGap"]!.GetValue<string>().Should().Be("medium");
@@ -4893,9 +4969,9 @@ public sealed class WebToMobileConversionServiceTests {
 		MobilePageConversionGuide guide = AnalyzeOverrides(bundle, rule);
 
 		// Assert
-		Element(guide, "CardGrid").MobileValues!["borderRadius"]!.GetValue<string>().Should().Be("large",
+		Element(guide, "CardGrid").Values!["borderRadius"]!.GetValue<string>().Should().Be("large",
 			because: "the element matches the filter, so the narrowed standard applies to it");
-		Element(guide, "PlainGrid").MobileValues!.AsObject().ContainsKey("borderRadius").Should().BeFalse(
+		Element(guide, "PlainGrid").Values!.AsObject().ContainsKey("borderRadius").Should().BeFalse(
 			because: "an ABSENT property never matches an exact-value filter, and a non-matching rule adds nothing");
 		guide.Normalizations!["spacing"].Normalized.Select(n => n.Name).Should().Equal(["CardGrid"],
 			because: "only the element a rule actually wrote is reported");
@@ -4916,7 +4992,7 @@ public sealed class WebToMobileConversionServiceTests {
 		MobilePageConversionGuide guide = AnalyzeOverrides(bundle, rule);
 
 		// Assert
-		Element(guide, "RoundGrid").MobileValues!["borderRadius"]!.GetValue<string>().Should().Be("large",
+		Element(guide, "RoundGrid").Values!["borderRadius"]!.GetValue<string>().Should().Be("large",
 			because: "the web value is carried through untouched — the rule did not match it");
 		guide.Normalizations.Should().BeNull(
 			because: "nothing was written, so the section is omitted rather than listing an untouched element");
@@ -4940,9 +5016,9 @@ public sealed class WebToMobileConversionServiceTests {
 		MobilePageConversionGuide guide = AnalyzeOverrides(bundle, rule);
 
 		// Assert
-		Element(guide, "SmallGrid").MobileValues!["borderRadius"]!.GetValue<string>().Should().Be("large",
+		Element(guide, "SmallGrid").Values!["borderRadius"]!.GetValue<string>().Should().Be("large",
 			because: "matching ANY bag is enough");
-		Element(guide, "PlainGrid").MobileValues!.AsObject().ContainsKey("borderRadius").Should().BeFalse(
+		Element(guide, "PlainGrid").Values!.AsObject().ContainsKey("borderRadius").Should().BeFalse(
 			because: "matching no bag at all still means the rule does not apply");
 	}
 
@@ -4962,7 +5038,7 @@ public sealed class WebToMobileConversionServiceTests {
 		MobilePageConversionGuide guide = AnalyzeOverrides(bundle, clobbers, narrowed);
 
 		// Assert
-		JsonObject values = Element(guide, "CardGrid").MobileValues!.AsObject();
+		JsonObject values = Element(guide, "CardGrid").Values!.AsObject();
 		values["color"]!.GetValue<string>().Should().Be("primary",
 			because: "the filter is decided before any rule writes, so the earlier rule cannot disable this one");
 		values["borderRadius"]!.GetValue<string>().Should().Be("small",
@@ -4983,14 +5059,14 @@ public sealed class WebToMobileConversionServiceTests {
 		MobilePageConversionGuide guide = AnalyzeOverrides(bundle, spacing, radius);
 
 		// Assert
-		JsonObject card = Element(guide, "CardGrid").MobileValues!.AsObject();
+		JsonObject card = Element(guide, "CardGrid").Values!.AsObject();
 		card["gap"]!["rowGap"]!.GetValue<string>().Should().Be("medium",
 			because: "the unconditional rule is no longer shadowed by the narrowed one declared after it");
 		card["borderRadius"]!.GetValue<string>().Should().Be("large");
 		NormalizationEntry entry = guide.Normalizations!["spacing"].Normalized.Single(n => n.Name == "CardGrid");
 		entry.Properties.Should().Equal(["gap", "borderRadius"],
 			because: "one element is one report entry, listing the properties in the order they were written");
-		Element(guide, "PlainGrid").MobileValues!["gap"]!["rowGap"]!.GetValue<string>().Should().Be("medium",
+		Element(guide, "PlainGrid").Values!["gap"]!["rowGap"]!.GetValue<string>().Should().Be("medium",
 			because: "the unconditional rule still covers the element the narrowed one skipped");
 	}
 
@@ -5008,7 +5084,7 @@ public sealed class WebToMobileConversionServiceTests {
 		MobilePageConversionGuide guide = AnalyzeOverrides(bundle, rule);
 
 		// Assert
-		Element(guide, "CardGrid").MobileValues!["borderRadius"]!.GetValue<string>().Should().Be("medium",
+		Element(guide, "CardGrid").Values!["borderRadius"]!.GetValue<string>().Should().Be("medium",
 			because: "an empty bag must not be read as an unconditional rule");
 		guide.Normalizations.Should().BeNull(because: "nothing matched, so nothing was written");
 	}
@@ -5024,7 +5100,7 @@ public sealed class WebToMobileConversionServiceTests {
 		MobilePageConversionGuide guide = AnalyzeOverrides(bundle, otherType);
 
 		// Assert
-		Element(guide, "CardGrid").MobileValues!["borderRadius"]!.GetValue<string>().Should().Be("medium",
+		Element(guide, "CardGrid").Values!["borderRadius"]!.GetValue<string>().Should().Be("medium",
 			because: "the filter names crt.FlexContainer, so a crt.GridContainer insert is never a match");
 		guide.Normalizations.Should().BeNull(because: "no element matched, so nothing was written");
 	}
@@ -5050,7 +5126,7 @@ public sealed class WebToMobileConversionServiceTests {
 
 		// Assert
 		foreach (string name in new[] { "CardGrid", "Row" }) {
-			Element(guide, name).MobileValues!.AsObject().ContainsKey("borderRadius").Should().BeFalse(
+			Element(guide, name).Values!.AsObject().ContainsKey("borderRadius").Should().BeFalse(
 				because: $"the rule is incomplete, so {name} must be left exactly as it arrived");
 		}
 		guide.Normalizations.Should().BeNull(because: "the rule never ran, so nothing was written or reported");
@@ -5073,7 +5149,7 @@ public sealed class WebToMobileConversionServiceTests {
 		MobilePageConversionGuide guide = AnalyzeOverrides(TwoContainerBundle(), usable, oldShape);
 
 		// Assert
-		Element(guide, "CardGrid").MobileValues!.AsObject().ContainsKey("borderRadius").Should().BeFalse(
+		Element(guide, "CardGrid").Values!.AsObject().ContainsKey("borderRadius").Should().BeFalse(
 			because: "the refused rule still must not run — reporting it does not resurrect it");
 		// The refusal is no longer reported per conversion: it is a property of the PUBLISHED rules file,
 		// identical on every page, and WebToMobilePageConversionRulesCatalogTests.LoadBundled_OverridesCarryDataOnly
@@ -5093,8 +5169,8 @@ public sealed class WebToMobileConversionServiceTests {
 		MobilePageConversionGuide guide = AnalyzeOverrides(TwoContainerBundle(), unbounded);
 
 		// Assert
-		Element(guide, "CardGrid").MobileValues!["borderRadius"]!.GetValue<string>().Should().Be("large");
-		Element(guide, "Row").MobileValues!["borderRadius"]!.GetValue<string>().Should().Be("large",
+		Element(guide, "CardGrid").Values!["borderRadius"]!.GetValue<string>().Should().Be("large");
+		Element(guide, "Row").Values!["borderRadius"]!.GetValue<string>().Should().Be("large",
 			because: "an empty list is unbounded on purpose — it reaches a different component type too");
 	}
 
@@ -5133,9 +5209,9 @@ public sealed class WebToMobileConversionServiceTests {
 		MobilePageConversionGuide guide = AnalyzeOverrides(bundle, rule);
 
 		// Assert
-		Element(guide, "EvenGrid").MobileValues!["borderRadius"]!.GetValue<string>().Should().Be("large",
+		Element(guide, "EvenGrid").Values!["borderRadius"]!.GetValue<string>().Should().Be("large",
 			because: "every key of the filter object matches the element's own, key for key");
-		Element(guide, "OddGrid").MobileValues!.AsObject().ContainsKey("borderRadius").Should().BeFalse(
+		Element(guide, "OddGrid").Values!.AsObject().ContainsKey("borderRadius").Should().BeFalse(
 			because: "one differing nested key is enough to fail an exact-value match");
 	}
 
@@ -5161,12 +5237,12 @@ public sealed class WebToMobileConversionServiceTests {
 		MobilePageConversionGuide guide = AnalyzeOverrides(bundle, intAgainstFloat, floatAgainstInt);
 
 		// Assert
-		Element(guide, "IntegerGrid").MobileValues!["borderRadius"]!.GetValue<string>().Should().Be("large",
+		Element(guide, "IntegerGrid").Values!["borderRadius"]!.GetValue<string>().Should().Be("large",
 			because: "the element's integer 4 and the filter's 4.0 parse to the same double — the literal "
 				+ "text differs, the value does not");
-		Element(guide, "FloatGrid").MobileValues!["borderRadius"]!.GetValue<string>().Should().Be("large",
+		Element(guide, "FloatGrid").Values!["borderRadius"]!.GetValue<string>().Should().Be("large",
 			because: "the mirror case must hold too: the element carries 8.0 and the filter writes 8");
-		Element(guide, "OtherGrid").MobileValues!.AsObject().ContainsKey("borderRadius").Should().BeFalse(
+		Element(guide, "OtherGrid").Values!.AsObject().ContainsKey("borderRadius").Should().BeFalse(
 			because: "5 is a different number from either filter's value");
 	}
 
@@ -5224,7 +5300,7 @@ public sealed class WebToMobileConversionServiceTests {
 		MobilePageConversionGuide guide = AnalyzeMetric(bundle, RulesWithMetricOverride());
 
 		// Assert
-		JsonObject config = Element(guide, "TotalIndicator").MobileValues!["config"]!.AsObject();
+		JsonObject config = Element(guide, "TotalIndicator").Values!["config"]!.AsObject();
 		config["text"]!["fontSizeMode"]!.GetValue<string>().Should().Be("extra-small",
 			because: "the web font size is ignored by design — mobile metrics follow the mobile standard");
 		config["layout"]!["border"]!["hidden"]!.GetValue<bool>().Should().BeTrue(
@@ -5247,7 +5323,7 @@ public sealed class WebToMobileConversionServiceTests {
 		MobilePageConversionGuide guide = AnalyzeMetric(bundle, RulesWithMetricOverride());
 
 		// Assert
-		JsonObject config = Element(guide, "TotalIndicator").MobileValues!["config"]!.AsObject();
+		JsonObject config = Element(guide, "TotalIndicator").Values!["config"]!.AsObject();
 		config["data"]!["providing"]!["schemaName"]!.GetValue<string>().Should().Be("Lead",
 			because: "a shallow assign would have replaced the whole config and destroyed the aggregation subtree");
 		config["data"]!["providing"]!["attribute"]!.GetValue<string>().Should().Be("TotalLeads",
@@ -5371,7 +5447,7 @@ public sealed class WebToMobileConversionServiceTests {
 		MobilePageConversionGuide guide = AnalyzeMetric(bundle, RulesWithMetricOverride());
 
 		// Assert
-		Element(guide, "BoundIndicator").MobileValues!["config"]!.GetValue<string>().Should().Be("$MetricConfig",
+		Element(guide, "BoundIndicator").Values!["config"]!.GetValue<string>().Should().Be("$MetricConfig",
 			because: "the binding must survive — replacing it with a partial object would break the widget");
 		guide.Normalizations!["metricStyle"].Normalized.Should().BeEmpty(
 			because: "an element the pass deliberately skipped must not be reported as normalized");
@@ -5393,7 +5469,7 @@ public sealed class WebToMobileConversionServiceTests {
 		MobilePageConversionGuide guide = AnalyzeMetric(bundle, RulesWithMetricOverride());
 
 		// Assert
-		JsonObject config = Element(guide, "TotalIndicator").MobileValues!["config"]!.AsObject();
+		JsonObject config = Element(guide, "TotalIndicator").Values!["config"]!.AsObject();
 		config["text"]!.GetValue<string>().Should().Be("$TextCfg",
 			because: "clobbering a nested binding is the same defect as clobbering the top-level one — "
 				+ "text.template would be destroyed and the widget would lose its label");
@@ -5422,7 +5498,7 @@ public sealed class WebToMobileConversionServiceTests {
 		MobilePageConversionGuide guide = AnalyzeMetric(bundle, RulesWithMetricOverride());
 
 		// Assert
-		JsonObject config = Element(guide, "TotalIndicator").MobileValues!["config"]!.AsObject();
+		JsonObject config = Element(guide, "TotalIndicator").Values!["config"]!.AsObject();
 		config["layout"]!["border"]!["hidden"]!.GetValue<bool>().Should().BeTrue(
 			because: "the standard must apply to a widget that simply had no border configured — the common case");
 		config["text"]!["fontSizeMode"]!.GetValue<string>().Should().Be("extra-small",
@@ -5453,7 +5529,7 @@ public sealed class WebToMobileConversionServiceTests {
 			["config.layout.border.hidden"],
 			because: "config.text.fontSizeMode was already extra-small, so claiming it was normalized would "
 				+ "tell the user a web value was ignored when nothing about it changed");
-		Element(guide, "AlreadyStyled").MobileValues!["config"]!["text"]!["fontSizeMode"]!.GetValue<string>()
+		Element(guide, "AlreadyStyled").Values!["config"]!["text"]!["fontSizeMode"]!.GetValue<string>()
 			.Should().Be("extra-small", because: "the value is still correct — it simply was not rewritten");
 	}
 
@@ -5480,7 +5556,7 @@ public sealed class WebToMobileConversionServiceTests {
 		MobilePageConversionGuide guide = AnalyzeMetric(bundle, rules);
 
 		// Assert
-		Element(guide, "BareIndicator").MobileValues!.AsObject().ContainsKey("config").Should().BeFalse(
+		Element(guide, "BareIndicator").Values!.AsObject().ContainsKey("config").Should().BeFalse(
 			because: "a leafless rule value must not inject an empty branch the report would never mention");
 		guide.Normalizations.Should().BeNull(
 			because: "nothing was written and nothing was refused, so there is nothing to report");
@@ -5506,7 +5582,7 @@ public sealed class WebToMobileConversionServiceTests {
 		MobilePageConversionGuide guide = AnalyzeMetric(bundle, rules);
 
 		// Assert
-		JsonObject values = Element(guide, "TotalIndicator").MobileValues!.AsObject();
+		JsonObject values = Element(guide, "TotalIndicator").Values!.AsObject();
 		values["shape"]!.GetValue<string>().Should().Be("rounded",
 			because: "a scalar rule value keeps replace semantics even inside a merging rule");
 		values["config"]!["data"]!["providing"]!["schemaName"]!.GetValue<string>().Should().Be("Lead",
@@ -5546,7 +5622,7 @@ public sealed class WebToMobileConversionServiceTests {
 		MobilePageConversionGuide guide = AnalyzeMetric(bundle, rules);
 
 		// Assert
-		JsonObject values = Element(guide, "TotalIndicator").MobileValues!.AsObject();
+		JsonObject values = Element(guide, "TotalIndicator").Values!.AsObject();
 		values["shape"]!.GetValue<string>().Should().Be("rounded",
 			because: "two rules wrote the same key, so the LAST declared one wins — per key, not per rule");
 		values["tabIndex"]!.GetValue<int>().Should().Be(3,
@@ -5567,7 +5643,7 @@ public sealed class WebToMobileConversionServiceTests {
 		MobilePageConversionGuide guide = AnalyzeMetric(bundle, RulesWithSpacingOverrides());
 
 		// Assert
-		JsonObject config = Element(guide, "TotalIndicator").MobileValues!["config"]!.AsObject();
+		JsonObject config = Element(guide, "TotalIndicator").Values!["config"]!.AsObject();
 		config["text"]!["fontSizeMode"]!.GetValue<string>().Should().Be("large",
 			because: "without a rule the property-carry behavior is unchanged");
 		config["layout"]!.AsObject().ContainsKey("border").Should().BeFalse(
@@ -5590,7 +5666,7 @@ public sealed class WebToMobileConversionServiceTests {
 		MobilePageConversionGuide guide = AnalyzeMetric(bundle, RulesWithMetricOverride());
 
 		// Assert
-		JsonObject gap = Element(guide, "InfoGrid").MobileValues!["gap"]!.AsObject();
+		JsonObject gap = Element(guide, "InfoGrid").Values!["gap"]!.AsObject();
 		gap.ContainsKey("legacyGap").Should().BeFalse(
 			because: "the spacing standard promises the web gap is IGNORED, not translated — merging would "
 				+ "have let the extra key through");
@@ -5644,7 +5720,7 @@ public sealed class WebToMobileConversionServiceTests {
 		MobilePageConversionGuide guide = AnalyzeMetric(bundle, rules);
 
 		// Assert
-		JsonObject vals = Element(guide, "InfoGrid").MobileValues!.AsObject();
+		JsonObject vals = Element(guide, "InfoGrid").Values!.AsObject();
 		vals["type"]!.GetValue<string>().Should().Be("crt.GridContainer",
 			because: "identity keys are never overridable");
 		vals.ContainsKey("name").Should().BeFalse(
@@ -5688,10 +5764,10 @@ public sealed class WebToMobileConversionServiceTests {
 		MobilePageConversionGuide guide = Analyze(GridWithColumns(), webByType: web);
 
 		// Assert
-		ElementMapEntry grid = Element(guide, "ProductsList");
-		grid.MobileType.Should().Be("crt.List", because: "the components rule maps a web grid onto the mobile list");
-		grid.MobileValues.Should().NotBeNull(because: "an insert must ship ready-to-paste values");
-		JsonNode values = grid.MobileValues;
+		ViewConfigDiffOperation grid = Element(guide, "ProductsList");
+		TypeOf(grid).Should().Be("crt.List", because: "the components rule maps a web grid onto the mobile list");
+		grid.Values.Should().NotBeNull(because: "an insert must ship ready-to-paste values");
+		JsonNode values = grid.Values;
 
 		JsonNode itemLayout = values["itemLayout"];
 		itemLayout.Should().NotBeNull(
@@ -5724,7 +5800,7 @@ public sealed class WebToMobileConversionServiceTests {
 		MobilePageConversionGuide guide = Analyze(GridWithColumns(), webByType: web);
 
 		// Assert
-		JsonNode values = Element(guide, "ProductsList").MobileValues;
+		JsonNode values = Element(guide, "ProductsList").Values;
 		values["itemLayout"]?["title"]?.GetValue<string>().Should().Be("$ProductsListDS_Product",
 			because: "the row is built from the column array, which is the only reason this mapping reads it");
 		values["columns"].Should().NotBeNull(
@@ -5786,9 +5862,9 @@ public sealed class WebToMobileConversionServiceTests {
 		MobilePageConversionGuide skipped = AnalyzeWithRules(GridWithColumns(), missing);
 
 		// Assert
-		Element(matched, "ProductsList").MobileValues!["itemLayout"].Should().NotBeNull(
+		Element(matched, "ProductsList").Values!["itemLayout"].Should().NotBeNull(
 			because: "the source grid carries fitContent true, so the filter matches and the template renders");
-		Element(skipped, "ProductsList").MobileValues!.AsObject().ContainsKey("itemLayout").Should().BeFalse(
+		Element(skipped, "ProductsList").Values!.AsObject().ContainsKey("itemLayout").Should().BeFalse(
 			because: "the value constraint is not satisfied, so the template must not apply — a silently "
 				+ "ignored constraint would render the row anyway");
 	}
@@ -5814,7 +5890,7 @@ public sealed class WebToMobileConversionServiceTests {
 		// Assert
 		rules.Components.Single().Filters.Single().Values.Should().BeNull(
 			because: "`note` is not a value constraint — it must not be collected as one");
-		Element(guide, "ProductsList").MobileValues!["itemLayout"].Should().NotBeNull(
+		Element(guide, "ProductsList").Values!["itemLayout"].Should().NotBeNull(
 			because: "the annotation must leave the rule firing; treating it as a constraint on a property no "
 				+ "element has would silently drop the list row from the converted page");
 	}
@@ -5829,7 +5905,7 @@ public sealed class WebToMobileConversionServiceTests {
 		MobilePageConversionGuide guide = AnalyzeWithRules(GridWithColumns(), rules);
 
 		// Assert
-		Element(guide, "ProductsList").MobileValues!.AsObject().ContainsKey("itemLayout").Should().BeFalse(
+		Element(guide, "ProductsList").Values!.AsObject().ContainsKey("itemLayout").Should().BeFalse(
 			because: "an empty filter constrains nothing and must not be read as an unconditional match");
 	}
 
@@ -5843,7 +5919,7 @@ public sealed class WebToMobileConversionServiceTests {
 		MobilePageConversionGuide guide = AnalyzeWithRules(GridWithColumns(), shipped);
 
 		// Assert
-		JsonNode row = Element(guide, "ProductsList").MobileValues["itemLayout"];
+		JsonNode row = Element(guide, "ProductsList").Values["itemLayout"];
 		row.Should().NotBeNull(because: "the shipped template must actually produce the row it declares");
 		row["type"]?.GetValue<string>().Should().Be("crt.ListItem");
 		row["name"]?.GetValue<string>().Should().Be("ProductsList_ListItem",
@@ -5876,9 +5952,9 @@ public sealed class WebToMobileConversionServiceTests {
 		MobilePageConversionGuide guide = AnalyzeWithRules(bundle, shipped);
 
 		// Assert
-		ElementMapEntry toggle = Element(guide, "IsActive");
-		toggle.MobileType.Should().Be("crt.Toggle", because: "the template's value.type wins the leaf resolution");
-		JsonObject vals = toggle.MobileValues!.AsObject();
+		ViewConfigDiffOperation toggle = Element(guide, "IsActive");
+		TypeOf(toggle).Should().Be("crt.Toggle", because: "the template's value.type wins the leaf resolution");
+		JsonObject vals = toggle.Values!.AsObject();
 		vals["type"]!.GetValue<string>().Should().Be("crt.Toggle",
 			because: "type is the one property the template names, so it is retyped rather than copied");
 		vals["control"]!.GetValue<string>().Should().Be("$IsActive",
@@ -5905,7 +5981,7 @@ public sealed class WebToMobileConversionServiceTests {
 		MobilePageConversionGuide guide = AnalyzeWithRules(GridWithColumns(), rules);
 
 		// Assert
-		string row = Element(guide, "ProductsList").MobileValues["itemLayout"]!.ToJsonString();
+		string row = Element(guide, "ProductsList").Values["itemLayout"]!.ToJsonString();
 		row.Should().NotContain("icon",
 			because: "an unresolved path must drop its key — a JSON null would travel to the page as a present "
 				+ "property of the wrong shape, and this is asserted on the RAW text because an indexer check "
@@ -5920,7 +5996,7 @@ public sealed class WebToMobileConversionServiceTests {
 		MobilePageConversionGuide guide = AnalyzeWithRules(GridWithColumns(), RulesWithTemplate(RowOnlyTemplate));
 
 		// Assert
-		JsonNode row = Element(guide, "ProductsList").MobileValues["itemLayout"];
+		JsonNode row = Element(guide, "ProductsList").Values["itemLayout"];
 		row["name"]?.GetValue<string>().Should().Be("ProductsList_ListItem",
 			because: "a token inside a longer string interpolates in place rather than replacing the whole value");
 		row["title"]?.GetValue<string>().Should().Be("$ProductsListDS_Product",
@@ -5944,7 +6020,7 @@ public sealed class WebToMobileConversionServiceTests {
 		MobilePageConversionGuide guide = AnalyzeWithRules(bundle, RulesWithTemplate(RowOnlyTemplate));
 
 		// Assert
-		JsonNode row = Element(guide, "OneCol").MobileValues["itemLayout"];
+		JsonNode row = Element(guide, "OneCol").Values["itemLayout"];
 		row["title"]?.GetValue<string>().Should().Be("$OneColDS_Name");
 		row["body"].Should().NotBeNull(because: "the collection key must survive an empty expansion");
 		row["body"]?.AsArray().Should().BeEmpty(because: "the only column became the title, leaving nothing below it");
@@ -5960,14 +6036,14 @@ public sealed class WebToMobileConversionServiceTests {
 		MobilePageConversionGuide guide = AnalyzeWithRules(GridWithColumns(), rules);
 
 		// Assert
-		ElementMapEntry grid = Element(guide, "ProductsList");
+		ViewConfigDiffOperation grid = Element(guide, "ProductsList");
 		grid.ParentName.Should().Be("SomeOtherContainer",
 			because: "a template naming a different parent now retargets the element there instead of being refused");
 		grid.PropertyName.Should().Be("items",
 			because: "the template echoed propertyName ({{ diff.propertyName }}), so the slot is unchanged");
 		grid.Index.Should().BeNull(
 			because: "a retargeted element is appended into the declared container, not positioned by the walk");
-		grid.MobileValues["itemLayout"].Should().NotBeNull(
+		grid.Values["itemLayout"].Should().NotBeNull(
 			because: "the template's value is applied together with the retarget, not skipped as before");
 	}
 
@@ -5998,8 +6074,8 @@ public sealed class WebToMobileConversionServiceTests {
 
 		MobilePageConversionGuide guide = Analyze(bundle, mobileTypes: mobileTypes, rules: rules);
 
-		ElementMapEntry btn = Element(guide, "AddBtn");
-		btn.MobileType.Should().Be("crt.MenuItem",
+		ViewConfigDiffOperation btn = Element(guide, "AddBtn");
+		TypeOf(btn).Should().Be("crt.MenuItem",
 			because: "the template's value.type sets the mobile type");
 		btn.ParentName.Should().Be("FloatingActionButton",
 			because: "the template drives the element into the declared container, not its walked parent");
@@ -6022,7 +6098,7 @@ public sealed class WebToMobileConversionServiceTests {
 		MobilePageConversionGuide guide = AnalyzeWithRules(GridWithColumns(), rules);
 
 		// Assert
-		string row = Element(guide, "ProductsList").MobileValues["itemLayout"]!.ToJsonString();
+		string row = Element(guide, "ProductsList").Values["itemLayout"]!.ToJsonString();
 		row.Should().NotContain("tittle").And.NotContain("{{",
 			because: "template syntax reaching the page as a value is worse than an absent property — it would "
 				+ "bind to nothing and read as configured");
@@ -6043,7 +6119,7 @@ public sealed class WebToMobileConversionServiceTests {
 		MobilePageConversionGuide guide = AnalyzeWithRules(GridWithColumns(), rules);
 
 		// Assert
-		JsonNode row = Element(guide, "ProductsList").MobileValues["itemLayout"];
+		JsonNode row = Element(guide, "ProductsList").Values["itemLayout"];
 		string rendered = row!.ToJsonString();
 		rendered.Should().NotContain("$each").And.NotContain("\"as\"",
 			because: "template syntax reaching the page as data binds to nothing and reads as configured — the "
@@ -6092,9 +6168,9 @@ public sealed class WebToMobileConversionServiceTests {
 		MobilePageConversionGuide guide = AnalyzeWithRules(bundle, rules);
 
 		// Assert
-		ElementMapEntry grid = Element(guide, "DataGrid_rcdtw3f");
-		JsonNode values = grid.MobileValues;
-		grid.MobileType.Should().Be("crt.List");
+		ViewConfigDiffOperation grid = Element(guide, "DataGrid_rcdtw3f");
+		JsonNode values = grid.Values;
+		TypeOf(grid).Should().Be("crt.List");
 		values["type"]?.GetValue<string>().Should().Be("crt.List");
 		values["items"]?.GetValue<string>().Should().Be("$DataGrid_rcdtw3f",
 			because: "{{ source.items }} reads the operation's own collection binding");
@@ -6151,9 +6227,9 @@ public sealed class WebToMobileConversionServiceTests {
 			templateComponentNames: Names("ListContainer", "DataTable"), componentNameMap: componentNameMap);
 
 		// Assert
-		ElementMapEntry twin = guide.ElementMap.Single(e => e.WebName == "DataTable");
+		ViewConfigDiffOperation twin = guide.ViewConfigDiff.Single(e => SourceNameOf(guide, e) == "DataTable");
 		twin.Operation.Should().Be("merge", because: "the mobile template already provides the element");
-		twin.MobileValues?["itemLayout"].Should().BeNull(
+		twin.Values?["itemLayout"].Should().BeNull(
 			because: "rendering the skeleton here would replace the ListItem the mobile template supplies, and the "
 				+ "guidance tells the caller to configure that one by merge-by-name instead");
 	}
@@ -6172,7 +6248,7 @@ public sealed class WebToMobileConversionServiceTests {
 		MobilePageConversionGuide guide = AnalyzeWithRules(GridWithColumns(), rules);
 
 		// Assert
-		JsonNode values = Element(guide, "ProductsList").MobileValues;
+		JsonNode values = Element(guide, "ProductsList").Values;
 		values["items"]?.GetValue<string>().Should().Be("$ProductsList",
 			because: "the STRING collection binding the page declared survives; the template's array form is the "
 				+ "structural child collection and must not overwrite it");
@@ -6199,7 +6275,7 @@ public sealed class WebToMobileConversionServiceTests {
 		MobilePageConversionGuide guide = AnalyzeWithRules(GridWithColumns(), rules);
 
 		// Assert
-		JsonNode row = Element(guide, "ProductsList").MobileValues["itemLayout"];
+		JsonNode row = Element(guide, "ProductsList").Values["itemLayout"];
 		row.Should().NotBeNull(
 			because: "everything within the budget still renders — the guard abandons the offending branch, it "
 				+ "does not discard the whole template");
@@ -6228,7 +6304,7 @@ public sealed class WebToMobileConversionServiceTests {
 		MobilePageConversionGuide guide = AnalyzeWithRules(bundle, rules);
 
 		// Assert
-		JsonNode row = Element(guide, "Nested").MobileValues["itemLayout"];
+		JsonNode row = Element(guide, "Nested").Values["itemLayout"];
 		row["flat"]?.GetValue<string>().Should().Be("$Nested",
 			because: "a single-segment source token keeps working");
 		row["nested"]?.GetValue<bool>().Should().BeTrue(
@@ -6260,8 +6336,8 @@ public sealed class WebToMobileConversionServiceTests {
 		MobilePageConversionGuide guide = AnalyzeWithRules(bundle, rules);
 
 		// Assert
-		ElementMapEntry grid = Element(guide, "ProductsList");
-		JsonNode values = grid.MobileValues;
+		ViewConfigDiffOperation grid = Element(guide, "ProductsList");
+		JsonNode values = grid.Values;
 		values["items"]?.GetValue<string>().Should().Be("$OverlaidBinding",
 			because: "a key the template NAMES wins — the shipped skeleton relies on that to declare the mobile "
 				+ "structure over what was carried");
@@ -6274,7 +6350,7 @@ public sealed class WebToMobileConversionServiceTests {
 		values["name"]?.GetValue<string>().Should().NotBe("WrongName",
 			because: "the copy rule refuses to carry the element identity on purpose, so a template filling that "
 				+ "gap would let the rules file rename an element and desynchronize every parentName referring to it");
-		grid.MobileName.Should().Be("ProductsList",
+		grid.Name.Should().Be("ProductsList",
 			because: "the converter's own identity for the element stands regardless of what a template asked for");
 		values["itemLayout"].Should().NotBeNull(
 			because: "the structure the web node had no counterpart for is what a template is actually for");
@@ -6291,8 +6367,8 @@ public sealed class WebToMobileConversionServiceTests {
 		MobilePageConversionGuide guide = AnalyzeWithRules(GridWithColumns(), rules);
 
 		// Assert
-		ElementMapEntry grid = Element(guide, "ProductsList");
-		grid.MobileValues["itemLayout"].Should().BeNull(
+		ViewConfigDiffOperation grid = Element(guide, "ProductsList");
+		grid.Values["itemLayout"].Should().BeNull(
 			because: "the filter did not match, so this mapping's template must not apply to the element");
 	}
 
@@ -6323,7 +6399,7 @@ public sealed class WebToMobileConversionServiceTests {
 		MobilePageConversionGuide guide = Analyze(GridWithColumns(), webByType: web, mobileByType: mobile);
 
 		// Assert
-		JsonNode row = Element(guide, "ProductsList").MobileValues["itemLayout"];
+		JsonNode row = Element(guide, "ProductsList").Values["itemLayout"];
 		row["body"].Should().BeNull(
 			because: "the synthesis builds body as an array, and shipping an array where the registry declares a "
 				+ "scalar is exactly the class of defect this guard exists to stop");
@@ -6344,8 +6420,8 @@ public sealed class WebToMobileConversionServiceTests {
 		MobilePageConversionGuide guide = Analyze(GridWithColumns(), webByType: web, mobileByType: mobile);
 
 		// Assert
-		ElementMapEntry grid = Element(guide, "ProductsList");
-		JsonNode row = grid.MobileValues["itemLayout"];
+		ViewConfigDiffOperation grid = Element(guide, "ProductsList");
+		JsonNode row = grid.Values["itemLayout"];
 		row["title"]?.GetValue<string>().Should().Be("$ProductsListDS_Product",
 			because: "a correctly shaped title must survive the guard untouched");
 		row["body"]?.AsArray().Should().HaveCount(2,
@@ -6365,7 +6441,7 @@ public sealed class WebToMobileConversionServiceTests {
 			mobileByType: Reg(("crt.List", false)));
 
 		// Assert
-		JsonNode row = Element(guide, "ProductsList").MobileValues["itemLayout"];
+		JsonNode row = Element(guide, "ProductsList").Values["itemLayout"];
 		row["title"]?.GetValue<string>().Should().Be("$ProductsListDS_Product",
 			because: "the converter must not withhold a row just because the registry cannot confirm its shape — "
 				+ "the mobile registry is still incomplete (ENG-91859)");
@@ -6388,7 +6464,7 @@ public sealed class WebToMobileConversionServiceTests {
 		MobilePageConversionGuide guide = Analyze(bundle, webByType: Reg(("crt.FlexContainer", true), ("crt.DataGrid", false)));
 
 		// Assert
-		JsonNode row = Element(guide, "OneCol").MobileValues["itemLayout"];
+		JsonNode row = Element(guide, "OneCol").Values["itemLayout"];
 		row.Should().NotBeNull(because: "one column is still enough to render a row");
 		row["title"]?.GetValue<string>().Should().Be("$OneColDS_Name",
 			because: "the single column is the display column, so it leads the row rather than sitting in the body");
@@ -6409,9 +6485,9 @@ public sealed class WebToMobileConversionServiceTests {
 		MobilePageConversionGuide guide = Analyze(bundle, webByType: Reg(("crt.FlexContainer", true), ("crt.DataGrid", false)));
 
 		// Assert
-		ElementMapEntry grid = Element(guide, "NoCols");
+		ViewConfigDiffOperation grid = Element(guide, "NoCols");
 		grid.Operation.Should().Be("insert", because: "a column-less grid still converts");
-		JsonNode row = grid.MobileValues["itemLayout"];
+		JsonNode row = grid.Values["itemLayout"];
 		row.Should().NotBeNull(because: "the template's itemLayout skeleton renders even when the source has no columns");
 		row["type"]?.GetValue<string>().Should().Be("crt.ListItem", because: "the row element type is a template constant");
 		row["title"].Should().BeNull(because: "source.columns[0].code resolves to nothing, so the title key is dropped");
@@ -6438,10 +6514,10 @@ public sealed class WebToMobileConversionServiceTests {
 			suggestedTarget: "UsrApp_MobileFormPage", containerNameMap: null);
 
 		// Assert
-		ElementMapEntry grid = Element(guide, "SelfMapped");
-		grid.MobileType.Should().Be("crt.List",
+		ViewConfigDiffOperation grid = Element(guide, "SelfMapped");
+		TypeOf(grid).Should().Be("crt.List",
 			because: "the matching template's value.type wins over keeping the registry-supported type as-is");
-		JsonNode row = grid.MobileValues["itemLayout"];
+		JsonNode row = grid.Values["itemLayout"];
 		row.Should().NotBeNull(because: "the template builds the row even though crt.DataGrid is registry-supported");
 		row["title"]?.GetValue<string>().Should().Be("$SelfMappedDS_Name",
 			because: "the single column leads the row via the template");
@@ -6462,8 +6538,8 @@ public sealed class WebToMobileConversionServiceTests {
 		MobilePageConversionGuide guide = Analyze(bundle, webByType: Reg(("crt.FlexContainer", true), ("crt.DataGrid", false)));
 
 		// Assert
-		ElementMapEntry grid = Element(guide, "Authored");
-		grid.MobileValues["itemLayout"]["title"].Should().BeNull(because: "the fixture authored a row with no title, which is what makes this case distinguishable from a synthesized one");
+		ViewConfigDiffOperation grid = Element(guide, "Authored");
+		grid.Values["itemLayout"]["title"].Should().BeNull(because: "the fixture authored a row with no title, which is what makes this case distinguishable from a synthesized one");
 	}
 
 	[Test]
@@ -6473,13 +6549,13 @@ public sealed class WebToMobileConversionServiceTests {
 		MobilePageConversionGuide guide = Analyze(GridWithColumns(), webByType: Reg(("crt.FlexContainer", true), ("crt.DataGrid", false)));
 
 		// Assert
-		guide.ElementMap.Should().NotContain(e => e.MobileType == "crt.ListItem",
+		guide.ViewConfigDiff.Should().NotContain(e => TypeOf(e) == "crt.ListItem",
 			because: "the row is a value on the list, not an element of its own — emitting it as an entry would "
 				+ "invite the caller to insert it with parentName/propertyName, which the client rejects");
-		guide.ElementMap.Should().NotContain(e => e.PropertyName == "itemLayout",
+		guide.ViewConfigDiff.Should().NotContain(e => e.PropertyName == "itemLayout",
 			because: "itemLayout is an input property, not a child slot; addressing it as one is what raises "
 				+ "\"is not a container for other items\" at schema build time");
-		Element(guide, "ProductsList").MobileValues["itemLayout"].Should().NotBeNull(
+		Element(guide, "ProductsList").Values["itemLayout"].Should().NotBeNull(
 			because: "the row travels nested inside the list's values, which is the shape the client engine accepts");
 	}
 
@@ -6498,7 +6574,7 @@ public sealed class WebToMobileConversionServiceTests {
 		MobilePageConversionGuide guide = Analyze(bundle, webByType: Reg(("crt.FlexContainer", true), ("crt.DataGrid", false)));
 
 		// Assert
-		JsonNode row = Element(guide, "Authored").MobileValues["itemLayout"];
+		JsonNode row = Element(guide, "Authored").Values["itemLayout"];
 		row["title"]?.GetValue<string>().Should().Be("$Hand_Written",
 			because: "synthesis fills a gap; it must not clobber a row the source page actually authored");
 	}
@@ -6592,11 +6668,11 @@ public sealed class WebToMobileConversionServiceTests {
 		MobilePageConversionGuide guide = AnalyzeWithEmptyRemoval(bundle);
 
 		// Assert
-		ElementMapEntry grid = Element(guide, "ProductsList");
+		ViewConfigDiffOperation grid = Element(guide, "ProductsList");
 		grid.Operation.Should().Be("insert",
 			because: "a mobile page carries the same multi-data-source structure as web, so the data source a "
 				+ "detail list is bound to is not a transferability criterion");
-		grid.MobileType.Should().Be("crt.List",
+		TypeOf(grid).Should().Be("crt.List",
 			because: "the kept grid must still be mapped onto its mobile equivalent by the components rule");
 		Element(guide, "ProductsListGridContainer").Operation.Should().Be("insert",
 			because: "a wrapper is removed only when EVERY child dropped — keeping the grid keeps the wrapper");
@@ -6652,9 +6728,9 @@ public sealed class WebToMobileConversionServiceTests {
 		MobilePageConversionGuide guide = AnalyzeWithEmptyRemoval(bundle);
 
 		Element(guide, "HiddenBox").Operation.Should().Be("insert");
-		ElementMapEntry field = Element(guide, "SecretField");
+		ViewConfigDiffOperation field = Element(guide, "SecretField");
 		field.Operation.Should().Be("insert");
-		field.MobileValues!["visible"]!.GetValue<bool>().Should().BeFalse(
+		field.Values!["visible"]!.GetValue<bool>().Should().BeFalse(
 			because: "the hidden child is carried, which is exactly why its container is not empty");
 	}
 
@@ -6667,9 +6743,9 @@ public sealed class WebToMobileConversionServiceTests {
 
 		MobilePageConversionGuide guide = AnalyzeWithEmptyRemoval(bundle);
 
-		ElementMapEntry repeater = Element(guide, "RepeaterContainer");
+		ViewConfigDiffOperation repeater = Element(guide, "RepeaterContainer");
 		repeater.Operation.Should().Be("insert");
-		repeater.MobileValues!["items"]!.GetValue<string>().Should().Be("$Payments",
+		repeater.Values!["items"]!.GetValue<string>().Should().Be("$Payments",
 			because: "the binding IS the container's content — deleting the shell would delete the repeater");
 	}
 
@@ -6703,17 +6779,17 @@ public sealed class WebToMobileConversionServiceTests {
 
 		MobilePageConversionGuide guide = AnalyzeWithEmptyRemoval(bundle);
 
-		ElementMapEntry addButton = Element(guide, "AddButton");
+		ViewConfigDiffOperation addButton = Element(guide, "AddButton");
 		addButton.Operation.Should().Be("insert",
 			because: "a crt.Button in the tools zone is a child view element the walk now descends into and converts, not header chrome to discard");
 		addButton.ParentName.Should().Be("ToolsOnlyPanel",
 			because: "the converted tool stays under its own panel");
 		addButton.PropertyName.Should().Be("tools",
 			because: "the walk records the slot it descended, so the button lands back in the panel's tools array rather than its items");
-		ElementMapEntry panel = Element(guide, "ToolsOnlyPanel");
+		ViewConfigDiffOperation panel = Element(guide, "ToolsOnlyPanel");
 		panel.Operation.Should().Be("insert",
 			because: "a surviving converted child (the tools button) occupies the panel, so it is no longer judged empty on items alone");
-		panel.MobileValues!.AsObject()["tools"]!.AsArray().Should().BeEmpty(
+		panel.Values!.AsObject()["tools"]!.AsArray().Should().BeEmpty(
 			because: "the tools array is emitted as its own child entries, never carried as a value on the parent — "
 				+ "only the empty slot itself is declared, which is exactly what the differ needs to append the button");
 	}
@@ -6985,10 +7061,10 @@ public sealed class WebToMobileConversionServiceTests {
 			bundle, RulesWithExcludedComponents(SearchFilterInExpansionPanelToolsFilter));
 
 		// Assert
-		ElementMapEntry panel = Element(guide, "ProductsExpansionPanel");
+		ViewConfigDiffOperation panel = Element(guide, "ProductsExpansionPanel");
 		panel.Operation.Should().Be("insert",
 			because: "the HOST is never a removal candidate — only the banned type inside it is");
-		JsonArray toolsFlexItems = panel.MobileValues!["tools"]![0]!["items"]![0]!["items"]!.AsArray();
+		JsonArray toolsFlexItems = panel.Values!["tools"]![0]!["items"]![0]!["items"]!.AsArray();
 		toolsFlexItems.Should().HaveCount(2, because: "the search filter was stripped, its two button siblings stay");
 		toolsFlexItems.Select(i => i!["name"]!.GetValue<string>()).Should().Equal(
 			["ProductsRefreshButton", "ProductsSettingsButton"],
@@ -7017,10 +7093,10 @@ public sealed class WebToMobileConversionServiceTests {
 			bundle, RulesWithExcludedComponents(SearchFilterInExpansionPanelToolsFilter));
 
 		// Assert
-		ElementMapEntry field = Element(guide, "ProfileSearchFilter");
+		ViewConfigDiffOperation field = Element(guide, "ProfileSearchFilter");
 		field.Operation.Should().Be("insert",
 			because: "the exclusion is scoped by parentType — nothing here has that parent, so it is not a candidate");
-		field.MobileType.Should().Be("crt.SearchFilter",
+		TypeOf(field).Should().Be("crt.SearchFilter",
 			because: "the surviving element is genuinely the banned TYPE — only its position spared it");
 	}
 
@@ -7038,7 +7114,7 @@ public sealed class WebToMobileConversionServiceTests {
 			bundle, RulesWithExcludedComponents(FooInsideBarAnywhereFilter));
 
 		// Assert
-		(Element(guide, "CustomHost").MobileValues! as JsonObject)!.ContainsKey("widgets").Should().BeFalse(
+		(Element(guide, "CustomHost").Values! as JsonObject)!.ContainsKey("widgets").Should().BeFalse(
 			because: "with no propertiesContainerName the search is not limited to a hardcoded property name");
 		DroppedNames(guide).Should().Contain("Buried",
 			because: "the nested component is still found and removed even though it sits under an arbitrary property");
@@ -7057,9 +7133,9 @@ public sealed class WebToMobileConversionServiceTests {
 
 		MobilePageConversionGuide guide = AnalyzeWithExcludedComponents(bundle, GridRule);
 
-		guide.ElementMap.Should().NotContain(e => e.WebName == "ProductsSearchFilter",
+		guide.ViewConfigDiff.Should().NotContain(e => SourceNameOf(guide, e) == "ProductsSearchFilter",
 			because: "with no excludedComponents section the pass never runs — nothing to report about a component it never touched");
-		Element(guide, "ProductsExpansionPanel").MobileValues!["tools"]![0]!["items"]![0]!["items"]!.AsArray()
+		Element(guide, "ProductsExpansionPanel").Values!["tools"]![0]!["items"]![0]!["items"]!.AsArray()
 			.Should().ContainSingle(i => i!["type"]!.GetValue<string>() == "crt.SearchFilter",
 				because: "the search filter is carried through verbatim, exactly as before the feature existed");
 	}
@@ -7085,10 +7161,10 @@ public sealed class WebToMobileConversionServiceTests {
 			because: "the first rule matches independently of the second");
 		DroppedNames(guide).Should().Contain("Buried",
 			because: "the second rule matches independently of the first — two rules do not interfere");
-		Element(guide, "ProductsExpansionPanel").MobileValues!["tools"]![0]!["items"]![0]!["items"]!.AsArray()
+		Element(guide, "ProductsExpansionPanel").Values!["tools"]![0]!["items"]![0]!["items"]!.AsArray()
 			.Should().ContainSingle(i => i!["name"]!.GetValue<string>() == "ProductsRefreshButton",
 				because: "the second, unrelated rule (usr.Foo inside usr.Bar) must not affect the ExpansionPanel host");
-		(Element(guide, "CustomHost").MobileValues! as JsonObject)!.ContainsKey("widgets").Should().BeFalse(
+		(Element(guide, "CustomHost").Values! as JsonObject)!.ContainsKey("widgets").Should().BeFalse(
 			because: "the first, unrelated rule (crt.SearchFilter inside crt.ExpansionPanel.tools) must not affect this host");
 	}
 
@@ -7110,7 +7186,7 @@ public sealed class WebToMobileConversionServiceTests {
 			bundle, RulesWithExcludedComponents(FooInsideBarAnywhereFilter));
 
 		// Assert
-		JsonNode innerBar = Element(guide, "OuterPanel").MobileValues!["tools"]![0]!["items"]![0]!;
+		JsonNode innerBar = Element(guide, "OuterPanel").Values!["tools"]![0]!["items"]![0]!;
 		innerBar["name"]!.GetValue<string>().Should().Be("InnerBar",
 			because: "the nested host itself must survive — only the banned component inside it is removed");
 		(innerBar as JsonObject)!.ContainsKey("widgets").Should().BeFalse(
@@ -7137,7 +7213,7 @@ public sealed class WebToMobileConversionServiceTests {
 			bundle, RulesWithExcludedComponents(scoped));
 
 		// Assert
-		JsonNode host = Element(guide, "CustomHost").MobileValues!;
+		JsonNode host = Element(guide, "CustomHost").Values!;
 		(host as JsonObject)!.ContainsKey("tools").Should().BeFalse(
 			because: "the named property is the scope, so its component is stripped");
 		host["widgets"]!.AsArray().Should().ContainSingle(i => i!["name"]!.GetValue<string>() == "WidgetsFoo",
@@ -7158,7 +7234,7 @@ public sealed class WebToMobileConversionServiceTests {
 		MobilePageConversionGuide guide = AnalyzeWithExcludedComponents(
 			bundle, RulesWithExcludedComponents(FooInsideBarAnywhereFilter));
 
-		JsonNode host = Element(guide, "CustomHost").MobileValues!;
+		JsonNode host = Element(guide, "CustomHost").Values!;
 		(host as JsonObject)!.ContainsKey("tools").Should().BeFalse(
 			because: "with no named property the tools branch of the host is in scope");
 		(host as JsonObject)!.ContainsKey("widgets").Should().BeFalse(
@@ -7186,9 +7262,9 @@ public sealed class WebToMobileConversionServiceTests {
 			bundle, RulesWithExcludedComponents(scoped));
 
 		// Assert
-		(Element(guide, "CasedHost").MobileValues! as JsonObject)!.ContainsKey("Tools").Should().BeFalse(
+		(Element(guide, "CasedHost").Values! as JsonObject)!.ContainsKey("Tools").Should().BeFalse(
 			because: "the scope-property lookup is case-insensitive like every other comparison here");
-		Element(guide, "ScopelessHost").MobileValues!["widgets"]!.AsArray().Should().ContainSingle(
+		Element(guide, "ScopelessHost").Values!["widgets"]!.AsArray().Should().ContainSingle(
 			because: "a host without the named property is a no-op — never a fallback to the whole subtree");
 		(guide.DroppedElements ?? []).Where(e => e.WebType == "usr.Foo").Should().ContainSingle(
 			because: "only the host that actually carries the scope property produces a removal");
@@ -7210,14 +7286,14 @@ public sealed class WebToMobileConversionServiceTests {
 			bundle, RulesWithExcludedComponents(selfRule));
 
 		// Assert
-		ElementMapEntry outer = Element(guide, "OuterBar");
+		ViewConfigDiffOperation outer = Element(guide, "OuterBar");
 		outer.Operation.Should().Be("insert",
 			because: "a host never removes itself — the strip searches only INSIDE its scope");
-		(outer.MobileValues! as JsonObject)!.ContainsKey("widgets").Should().BeFalse(
+		(outer.Values! as JsonObject)!.ContainsKey("widgets").Should().BeFalse(
 			because: "the nested same-type node is a legitimate match inside the outer host's scope");
 		(guide.DroppedElements ?? []).Where(e => e.WebName == "InnerBar").Should().ContainSingle(
 			because: "the removed nested host is reported once");
-		guide.ElementMap.Should().NotContain(e => e.WebName == "Buried",
+		guide.ViewConfigDiff.Should().NotContain(e => SourceNameOf(guide, e) == "Buried",
 			because: "a component inside the removed subtree left the page with its parent — reporting it "
 				+ "separately would claim a removal the pass never performed on the live tree");
 	}
@@ -7247,7 +7323,7 @@ public sealed class WebToMobileConversionServiceTests {
 			bundle, RulesWithExcludedComponents(FooInsideBarAnywhereFilter));
 
 		// Assert
-		(Element(guide, "CustomHost").MobileValues! as JsonObject)!.ContainsKey("widgets").Should().BeFalse(
+		(Element(guide, "CustomHost").Values! as JsonObject)!.ContainsKey("widgets").Should().BeFalse(
 			because: "the sane sibling strips as it always did");
 		(guide.DroppedElements ?? []).Where(e => e.WebType == "usr.Foo").Should().HaveCount(2,
 			because: "the deep branch is reached now too, so the banned component is REMOVED rather than left on the page with no drop entry — at the old budget this produced one removal and a silent survivor");
@@ -7260,17 +7336,17 @@ public sealed class WebToMobileConversionServiceTests {
 		// second host whose 'tools' keeps a survivor so the emptied-vs-thinned distinction is visible.
 		var elementMap = new List<ElementMapEntry> {
 			new() {
-				WebName = "TemplatePanel", MobileName = "TemplatePanel", MobileType = "crt.ExpansionPanel",
+				WebName = "TemplatePanel", Name = "TemplatePanel", MobileType = "crt.ExpansionPanel",
 				Operation = "merge",
-				MobileValues = JsonNode.Parse("""
+				Values = JsonNode.Parse("""
 					{ "caption": "Products",
 					  "tools": [ { "name": "CarriedSearchFilter", "type": "crt.SearchFilter" } ] }
 					""")!.AsObject()
 			},
 			new() {
-				WebName = "ConvertedPanel", MobileName = "ConvertedPanel", MobileType = "crt.ExpansionPanel",
+				WebName = "ConvertedPanel", Name = "ConvertedPanel", MobileType = "crt.ExpansionPanel",
 				Operation = "insert",
-				MobileValues = JsonNode.Parse("""
+				Values = JsonNode.Parse("""
 					{ "tools": [ { "name": "KeptSearchFilter", "type": "crt.SearchFilter" },
 					             { "name": "RefreshButton", "type": "crt.Button" } ] }
 					""")!.AsObject()
@@ -7283,7 +7359,7 @@ public sealed class WebToMobileConversionServiceTests {
 			out HashSet<string> _);
 
 		// Assert
-		var twin = (JsonObject)elementMap[0].MobileValues!;
+		var twin = (JsonObject)elementMap[0].Values!;
 		twin.ContainsKey("tools").Should().BeFalse(
 			because: "an emptied collection in a template delta would OVERWRITE the tools strip the template "
 				+ "ships — removing the banned component must not also erase the host's own content");
@@ -7292,7 +7368,7 @@ public sealed class WebToMobileConversionServiceTests {
 		elementMap[0].Operation.Should().Be("merge",
 			because: "the twin itself is still the template's element — the pass strips its delta, never drops it");
 
-		var converted = (JsonObject)elementMap[1].MobileValues!;
+		var converted = (JsonObject)elementMap[1].Values!;
 		converted["tools"]!.AsArray().Should().ContainSingle(
 			i => i!["name"]!.GetValue<string>() == "RefreshButton",
 			because: "a collection that merely THINNED keeps its surviving members and stays declared");
@@ -7394,7 +7470,7 @@ public sealed class WebToMobileConversionServiceTests {
 		// fallback, or this test silently regresses into re-testing the other phase.
 		Element(guide, "ProductsToolsContainer").PropertyName.Should().Be("tools",
 			because: "the traversal must have walked the tools subtree into entries — the shape this test exists to cover");
-		(Element(guide, "ProductsExpansionPanel").MobileValues as JsonObject)!["tools"]
+		(Element(guide, "ProductsExpansionPanel").Values as JsonObject)!["tools"]
 			.Should().BeOfType<JsonArray>(
 				because: "InitializeContainerChildSlots declares the slot the walked children insert into")
 			.Which.Should().BeEmpty(
@@ -7641,14 +7717,14 @@ public sealed class WebToMobileConversionServiceTests {
 		// an entry is what this test is about, and no page shape controls it directly.
 		var elementMap = new List<ElementMapEntry> {
 			new() {
-				WebName = "Panel", MobileName = "Panel", MobileType = "crt.ExpansionPanel", Operation = "insert"
+				WebName = "Panel", Name = "Panel", MobileType = "crt.ExpansionPanel", Operation = "insert"
 			},
 			new() {
-				WebName = "TemplateSearchFilter", MobileName = "TemplateSearchFilter",
+				WebName = "TemplateSearchFilter", Name = "TemplateSearchFilter",
 				MobileType = "crt.SearchFilter", Operation = "merge", ParentName = "Panel", PropertyName = "tools"
 			},
 			new() {
-				WebName = "ConvertedSearchFilter", MobileName = "ConvertedSearchFilter",
+				WebName = "ConvertedSearchFilter", Name = "ConvertedSearchFilter",
 				MobileType = "crt.SearchFilter", Operation = "insert", ParentName = "Panel", PropertyName = "tools"
 			}
 		};
@@ -7676,13 +7752,13 @@ public sealed class WebToMobileConversionServiceTests {
 		// left verbatim inside the host's own 'tools' value.
 		var elementMap = new List<ElementMapEntry> {
 			new() {
-				WebName = "Panel", MobileName = "Panel", MobileType = "crt.ExpansionPanel", Operation = "insert",
-				MobileValues = JsonNode.Parse("""
+				WebName = "Panel", Name = "Panel", MobileType = "crt.ExpansionPanel", Operation = "insert",
+				Values = JsonNode.Parse("""
 					{ "tools": [ { "name": "CarriedSearchFilter", "type": "crt.SearchFilter" } ] }
 					""")!.AsObject()
 			},
 			new() {
-				WebName = "WalkedSearchFilter", MobileName = "WalkedSearchFilter", MobileType = "crt.SearchFilter",
+				WebName = "WalkedSearchFilter", Name = "WalkedSearchFilter", MobileType = "crt.SearchFilter",
 				Operation = "insert", ParentName = "Panel", PropertyName = "tools"
 			}
 		};
@@ -7707,15 +7783,15 @@ public sealed class WebToMobileConversionServiceTests {
 		// Arrange — the cycle is built at the element-map level, the only place a parentName chain exists.
 		var elementMap = new List<ElementMapEntry> {
 			new() {
-				WebName = "A", MobileName = "A", MobileType = "crt.FlexContainer",
+				WebName = "A", Name = "A", MobileType = "crt.FlexContainer",
 				Operation = "insert", ParentName = "B", PropertyName = "items"
 			},
 			new() {
-				WebName = "B", MobileName = "B", MobileType = "crt.FlexContainer",
+				WebName = "B", Name = "B", MobileType = "crt.FlexContainer",
 				Operation = "insert", ParentName = "A", PropertyName = "items"
 			},
 			new() {
-				WebName = "CyclicSearchFilter", MobileName = "CyclicSearchFilter", MobileType = "crt.SearchFilter",
+				WebName = "CyclicSearchFilter", Name = "CyclicSearchFilter", MobileType = "crt.SearchFilter",
 				Operation = "insert", ParentName = "A", PropertyName = "items"
 			}
 		};
@@ -7747,7 +7823,7 @@ public sealed class WebToMobileConversionServiceTests {
 
 		MobilePageConversionGuide guide = AnalyzeWithEmptyRemoval(bundle);
 
-		ElementMapEntry sales = Element(guide, "SalesTab");
+		ViewConfigDiffOperation sales = Element(guide, "SalesTab");
 		sales.ParentName.Should().Be("Tabs");
 		sales.Index.Should().Be(1, because: "position 0 belongs to the template's general tab");
 		Element(guide, "HistoryTab").Index.Should().Be(2, because: "converted tabs keep the web page's own tab order");
@@ -7817,7 +7893,7 @@ public sealed class WebToMobileConversionServiceTests {
 		Element(guide, "TopBox").Index.Should().Be(0, because: ":top compaction still rebases the positional group to 0");
 		Element(guide, "TopField").Index.Should().Be(1,
 			because: "the dropped middle sibling leaves no positional hole, exactly as without tab placement");
-		ElementMapEntry sales = Element(guide, "SalesTab");
+		ViewConfigDiffOperation sales = Element(guide, "SalesTab");
 		sales.ParentName.Should().Be("Tabs");
 		sales.Index.Should().Be(1,
 			because: "the tab index is assigned AFTER the compaction — rebased to 0 it would land before the template's general tab");
@@ -7832,14 +7908,14 @@ public sealed class WebToMobileConversionServiceTests {
 	/// Merge/drop/relocate-children entries never carry a viewConfigDiff operation of their own.</summary>
 	private static string BuildViewConfigDiffBody(MobilePageConversionGuide guide) {
 		var operations = new JsonArray();
-		foreach (ElementMapEntry entry in guide.ElementMap) {
+		foreach (ViewConfigDiffOperation entry in guide.ViewConfigDiff) {
 			if (!string.Equals(entry.Operation, "insert", StringComparison.Ordinal)) {
 				continue;
 			}
 			var operation = new JsonObject {
 				["operation"] = "insert",
-				["name"] = entry.MobileName,
-				["values"] = entry.MobileValues?.DeepClone() ?? new JsonObject()
+				["name"] = entry.Name,
+				["values"] = entry.Values?.DeepClone() ?? new JsonObject()
 			};
 			if (entry.ParentName is { Length: > 0 }) {
 				operation["parentName"] = entry.ParentName;
@@ -7872,7 +7948,7 @@ public sealed class WebToMobileConversionServiceTests {
 
 		// Assert
 		foreach (string boxName in new[] { "FlexBox", "GridBox", "Panel", "OverviewTab" }) {
-			Element(guide, boxName).MobileValues!["items"]!.AsArray().Should().BeEmpty(
+			Element(guide, boxName).Values!["items"]!.AsArray().Should().BeEmpty(
 				because: $"{boxName} has a surviving items child, so the Creatio differ requires the slot to be physically declared — without it the child insert throws 'is not a container for other items'");
 		}
 	}
@@ -7896,7 +7972,7 @@ public sealed class WebToMobileConversionServiceTests {
 			suggestedTarget: "UsrLeads_MobileFormPage", containerNameMap: TabbedContainerMap);
 
 		// Assert
-		Element(guide, "Timeline").MobileValues!["items"]!.AsArray().Should().BeEmpty(
+		Element(guide, "Timeline").Values!["items"]!.AsArray().Should().BeEmpty(
 			because: "the pass keys on \"used as parent\", not a removableTypes list, so a type absent from that list still gets its slot");
 	}
 
@@ -7934,9 +8010,9 @@ public sealed class WebToMobileConversionServiceTests {
 		MobilePageConversionGuide guide = AnalyzeWithEmptyRemoval(bundle);
 
 		// Assert
-		ElementMapEntry tabs = Element(guide, "Tabs");
+		ViewConfigDiffOperation tabs = Element(guide, "Tabs");
 		tabs.Operation.Should().Be("merge", because: "Tabs is the mobile template's own twin, matched by name via the container map");
-		tabs.MobileValues.Should().BeNull(
+		tabs.Values.Should().BeNull(
 			because: "a merge twin carries no converter-owned mobileValues here — the pass only ever writes into an INSERT entry's own JsonObject, so SalesTab using Tabs as parentName must not fabricate one");
 	}
 
@@ -7955,9 +8031,9 @@ public sealed class WebToMobileConversionServiceTests {
 
 		// Assert
 		(string main, string area) = LayerNames("OverviewTab");
-		Synthesized(guide, main).MobileValues!["items"]!.AsArray().Should().BeEmpty(
+		Synthesized(guide, main).Values!["items"]!.AsArray().Should().BeEmpty(
 			because: "the tab body layer is occupied by the Area card, and must get its slot from InitializeContainerChildSlots, not from a now-removed inline compensation in SynthesizedLayerEntry");
-		Synthesized(guide, area).MobileValues!["items"]!.AsArray().Should().BeEmpty(
+		Synthesized(guide, area).Values!["items"]!.AsArray().Should().BeEmpty(
 			because: "the Area card is occupied by the tab's moved content (LeadName), for the same reason");
 	}
 
@@ -8000,7 +8076,7 @@ public sealed class WebToMobileConversionServiceTests {
 		// Assert
 		Element(guide, "AddButton").PropertyName.Should().Be("tools",
 			because: "the header button is emitted as its own entry in the panel's tools slot, which is the slot its insert resolves against");
-		JsonObject panelValues = Element(guide, "Panel").MobileValues!.AsObject();
+		JsonObject panelValues = Element(guide, "Panel").Values!.AsObject();
 		panelValues["tools"]!.AsArray().Should().BeEmpty(
 			because: "the panel must physically declare the tools collection its own child inserts into — an undeclared tools slot is refused by the differ exactly like an undeclared items slot");
 		panelValues["items"]!.AsArray().Should().BeEmpty(
@@ -8036,10 +8112,10 @@ public sealed class WebToMobileConversionServiceTests {
 		MobilePageConversionGuide guide = Analyze(bundle, mobileByType: mobileByType, mobileTypes: mobileTypes);
 
 		// Assert
-		ElementMapEntry field = Element(guide, "BoxField");
+		ViewConfigDiffOperation field = Element(guide, "BoxField");
 		field.ParentName.Should().Be("ObjectBox",
 			because: "the generic items walk descends without a registry shape check, so the child insert targeting this parent is what makes the guard reachable at all");
-		Element(guide, "ObjectBox").MobileValues!.AsObject().ContainsKey("items").Should().BeFalse(
+		Element(guide, "ObjectBox").Values!.AsObject().ContainsKey("items").Should().BeFalse(
 			because: "the registry declares this component's items as a single object, so the pass leaves the slot "
 				+ "untouched rather than hand the differ — and the mobile designer — an array the component does not "
 				+ "accept. The deliberate consequence: such a child insert is still refused by the differ, so a rule "
@@ -8066,7 +8142,7 @@ public sealed class WebToMobileConversionServiceTests {
 		// Assert
 		Element(guide, "PrintItem").PropertyName.Should().Be("menuItems",
 			because: "the nested menu item is emitted into the button's menuItems slot, so that is the slot its insert resolves against");
-		Element(guide, "OrderButton").MobileValues!.AsObject()["menuItems"]!.AsArray().Should().BeEmpty(
+		Element(guide, "OrderButton").Values!.AsObject()["menuItems"]!.AsArray().Should().BeEmpty(
 			because: "the button must declare the menuItems collection its own child inserts into, and only the empty slot — never the child itself — is carried as a value");
 		result.IsValid.Should().BeTrue(
 			because: $"a menuItems-parented child must apply through the differ clones like any other slot; validator errors: {string.Join("; ", result.Errors)}");
@@ -8096,14 +8172,14 @@ public sealed class WebToMobileConversionServiceTests {
 		// Assert
 		removableTypes.Should().NotContain("crt.ButtonToggleGroup",
 			because: "the test is only meaningful while this type stays outside the removable-type list the pass must not depend on");
-		Element(guide, "Toggles").MobileValues!["items"]!.AsArray().Should().BeEmpty(
+		Element(guide, "Toggles").Values!["items"]!.AsArray().Should().BeEmpty(
 			because: "the pass keys on 'targeted as a parent', so a registry container absent from every rules list still declares the slot its child needs");
-		Element(guide, "Mystery").MobileValues!["items"]!.AsArray().Should().BeEmpty(
+		Element(guide, "Mystery").Values!["items"]!.AsArray().Should().BeEmpty(
 			because: "even a type no list anywhere could know about gets its slot — that is what makes the seeding independent of any type list");
 	}
 
 	[Test]
-	[Description("Locks the invariant the pass's defensive 'MobileValues is JsonObject' guard depends on: by the time the pass runs, EVERY insert entry another surviving insert targets as parentName carries a materialized JsonObject mobileValues. The guard is therefore a no-op today; if a future insert-producing path ever breaks the invariant, the container would silently ship without its declared slot, so the breakage must fail here instead.")]
+	[Description("Locks the invariant the pass's defensive 'Values is JsonObject' guard depends on: by the time the pass runs, EVERY insert entry another surviving insert targets as parentName carries a materialized JsonObject mobileValues. The guard is therefore a no-op today; if a future insert-producing path ever breaks the invariant, the container would silently ship without its declared slot, so the breakage must fail here instead.")]
 	public void Analyze_EveryTargetedParentInsert_CarriesJsonObjectMobileValues() {
 		// Arrange
 		PageBundleInfo bundle = Bundle("""
@@ -8119,21 +8195,21 @@ public sealed class WebToMobileConversionServiceTests {
 		// Act
 		MobilePageConversionGuide guide = AnalyzeWithEmptyRemoval(bundle, rules: RulesWithEmptyRemovalAndTabLayers());
 		HashSet<string> targetedParents = new(
-			guide.ElementMap
+			guide.ViewConfigDiff
 				.Where(e => e.Operation == "insert" && e.ParentName is { Length: > 0 })
 				.Select(e => e.ParentName!),
 			StringComparer.OrdinalIgnoreCase);
-		List<ElementMapEntry> targetedParentInserts = guide.ElementMap
-			.Where(e => e.Operation == "insert" && e.MobileName is { Length: > 0 }
-				&& targetedParents.Contains(e.MobileName!))
+		List<ViewConfigDiffOperation> targetedParentInserts = guide.ViewConfigDiff
+			.Where(e => e.Operation == "insert" && e.Name is { Length: > 0 }
+				&& targetedParents.Contains(e.Name!))
 			.ToList();
 
 		// Assert
 		targetedParentInserts.Should().NotBeEmpty(
 			because: "the page nests containers inside tabs, so the invariant is exercised rather than asserted over an empty set");
-		foreach (ElementMapEntry parent in targetedParentInserts) {
-			parent.MobileValues.Should().BeOfType<JsonObject>(
-				because: $"'{parent.MobileName}' is targeted as a parent, so the pass must have a JsonObject to declare the slot on — anything else means the defensive guard silently skipped a container the differ then refuses");
+		foreach (ViewConfigDiffOperation parent in targetedParentInserts) {
+			parent.Values.Should().BeOfType<JsonObject>(
+				because: $"'{parent.Name}' is targeted as a parent, so the pass must have a JsonObject to declare the slot on — anything else means the defensive guard silently skipped a container the differ then refuses");
 		}
 	}
 
@@ -8160,10 +8236,10 @@ public sealed class WebToMobileConversionServiceTests {
 		new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase) { ["Tabs"] = "MainContainer" };
 
 	/// <summary>The single merge entry targeting the anchor — SingleOrDefault so a duplicate fails the test.</summary>
-	private static ElementMapEntry AnchorMerge(MobilePageConversionGuide guide, string mobileName) =>
-		guide.ElementMap.SingleOrDefault(e => e.Operation == "merge" && e.MobileName == mobileName);
+	private static ViewConfigDiffOperation AnchorMerge(MobilePageConversionGuide guide, string mobileName) =>
+		guide.ViewConfigDiff.SingleOrDefault(e => e.Operation == "merge" && e.Name == mobileName);
 
-	private static JsonNode LayoutConfigOf(ElementMapEntry entry) => entry?.MobileValues?["layoutConfig"];
+	private static JsonNode LayoutConfigOf(ViewConfigDiffOperation entry) => entry?.Values?["layoutConfig"];
 
 	/// <summary>
 	/// Asserts one placement cell without pinning key order: the row and column the converter computed, plus the
@@ -8214,12 +8290,12 @@ public sealed class WebToMobileConversionServiceTests {
 		MobilePageConversionGuide guide = AnalyzeAroundTabs(bundle);
 
 		// Assert
-		ElementMapEntry above = Element(guide, "Top1");
+		ViewConfigDiffOperation above = Element(guide, "Top1");
 		above.ParentName.Should().Be("MainContainer",
 			because: "a positional sibling is rerouted into the mobile anchor's parent container");
 		above.Index.Should().Be(0, because: "the sibling takes the first slot, which pushes the anchor to index 1");
 
-		ElementMapEntry anchor = AnchorMerge(guide, "Tabs");
+		ViewConfigDiffOperation anchor = AnchorMerge(guide, "Tabs");
 		anchor.Should().NotBeNull(
 			because: "the template pins the anchor to row 1, so the row has to be freed for the content above it");
 		LayoutConfigOf(anchor)!["row"]!.GetValue<int>().Should().Be(2,
@@ -8417,10 +8493,10 @@ public sealed class WebToMobileConversionServiceTests {
 		MobilePageConversionGuide guide = AnalyzeAroundTabs(bundle);
 
 		// Assert
-		guide.ElementMap.Count(e => e.Operation == "merge" && e.MobileName == "Tabs").Should().Be(1,
+		guide.ViewConfigDiff.Count(e => e.Operation == "merge" && e.Name == "Tabs").Should().Be(1,
 			because: "two merges for one element would apply twice and hide which one positions it");
-		ElementMapEntry anchor = AnchorMerge(guide, "Tabs");
-		anchor.WebName.Should().Be("Tabs", because: "the existing twin entry was patched, not replaced");
+		ViewConfigDiffOperation anchor = AnchorMerge(guide, "Tabs");
+		SourceNameOf(guide, anchor).Should().Be("Tabs", because: "the existing twin entry was patched, not replaced");
 		anchor.Operation.Should().Be("merge",
 			because: "the twin entry stays a merge onto the template-provided element — the placement was folded into it, not emitted as a second operation");
 	}
@@ -8656,9 +8732,9 @@ public sealed class WebToMobileConversionServiceTests {
 					break;
 			}
 		}
-		foreach (ElementMapEntry entry in guide.ElementMap) {
-			if (entry.MobileValues is not null) {
-				Walk(entry.MobileValues);
+		foreach (ViewConfigDiffOperation entry in guide.ViewConfigDiff) {
+			if (entry.Values is not null) {
+				Walk(entry.Values);
 			}
 		}
 		return found;
@@ -8710,7 +8786,7 @@ public sealed class WebToMobileConversionServiceTests {
 		MobilePageConversionGuide guide = AnalyzeWithEmptyRemoval(bundle);
 
 		// Assert
-		JsonNode placement = Element(guide, "FieldA").MobileValues!["layoutConfig"];
+		JsonNode placement = Element(guide, "FieldA").Values!["layoutConfig"];
 		placement.Should().NotBeNull(because: "the element still needs a placement the designer can read");
 		((JsonObject)placement!).Select(pair => pair.Key).Should()
 			.BeEquivalentTo(["row", "column", "colSpan", "rowSpan"],
@@ -8731,7 +8807,7 @@ public sealed class WebToMobileConversionServiceTests {
 		MobilePageConversionGuide guide = AnalyzeWithEmptyRemoval(bundle);
 
 		// Assert
-		var placement = (JsonObject)Element(guide, "FieldA").MobileValues!["layoutConfig"]!;
+		var placement = (JsonObject)Element(guide, "FieldA").Values!["layoutConfig"]!;
 		placement["adaptive"].Should().NotBeNull(because: "a multi-column grid gets a per-breakpoint placement");
 		placement.Select(pair => pair.Key).Should().BeEquivalentTo(["adaptive"],
 			because: "a flat placement beside an adaptive one would compete with it at every breakpoint");
@@ -8754,9 +8830,9 @@ public sealed class WebToMobileConversionServiceTests {
 		MobilePageConversionGuide guide = AnalyzeWithEmptyRemoval(bundle);
 
 		// Assert
-		Element(guide, "FieldA").MobileValues!.AsObject().ContainsKey("layoutConfig").Should().BeFalse(
+		Element(guide, "FieldA").Values!.AsObject().ContainsKey("layoutConfig").Should().BeFalse(
 			because: "the web page positioned nothing here, and an absent placement is one the designer accepts");
-		Element(guide, "Box").MobileValues!.AsObject().ContainsKey("layoutConfig").Should().BeFalse(
+		Element(guide, "Box").Values!.AsObject().ContainsKey("layoutConfig").Should().BeFalse(
 			because: "the container is in the same position — the pass completes placements, it does not create them");
 	}
 

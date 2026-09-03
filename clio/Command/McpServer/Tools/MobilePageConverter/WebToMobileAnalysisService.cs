@@ -192,7 +192,8 @@ public static class WebToMobileAnalysisService {
 			tree, map, componentMap, mobileTypes, mobileByType, webByType, rules, attrToColumn, resources,
 			requestMap, convertedRequests, droppedRequests, flaggedRequests, sourceLayouts, gridContainerColumns,
 			positionalParentByAnchor, positionalAnchorByWebAnchor,
-			mobileTypesByName, webBaselineNodes, webTemplateResources);
+			mobileTypesByName, webBaselineNodes, webTemplateResources,
+			out IReadOnlyDictionary<string, (string Property, JsonNode Value)> pendingBindings);
 
 		// Removes components an excludedComponents rule bans from a host (type-agnostic — which
 		// type/host/property is banned comes entirely from the rules), in the two shapes a banned component
@@ -352,7 +353,10 @@ public static class WebToMobileAnalysisService {
 			TemplateNote = templateRule?.Note,
 			ContainerMap = BuildContainerMap(templateRule),
 			ComponentSuggestions = suggestions,
-			ElementMap = [.. elementMap.Where(entry => !IsDrop(entry))],
+			ViewConfigDiff = ProjectViewConfigDiff(elementMap),
+			NameMap = ProjectNameMap(elementMap),
+			PendingBindings = ProjectPendingBindings(pendingBindings, elementMap),
+			UnresolvedParents = ProjectUnresolvedParents(elementMap),
 			DroppedElements = ProjectDroppedElements(elementMap),
 			MobileContracts = contracts,
 			SectionRegistration = sectionRegistration,
@@ -415,7 +419,7 @@ public static class WebToMobileAnalysisService {
 			}
 			if (string.Equals(entry.Operation, "merge", StringComparison.OrdinalIgnoreCase)
 				|| string.Equals(entry.Operation, "insert", StringComparison.OrdinalIgnoreCase)) {
-				survivors[entry.WebName] = string.IsNullOrWhiteSpace(entry.MobileName) ? entry.WebName : entry.MobileName;
+				survivors[entry.WebName] = string.IsNullOrWhiteSpace(entry.Name) ? entry.WebName : entry.Name;
 			}
 		}
 
@@ -1619,10 +1623,10 @@ public static class WebToMobileAnalysisService {
 				dropped.ExceptWith(layoutRemovedNames);
 			}
 			Dictionary<string, HashSet<string>> consumers = BuildAttrConsumers(tree);
-			// Attributes referenced by any SURVIVING element-map entry's prebuilt MobileValues are ALWAYS kept, even
+			// Attributes referenced by any SURVIVING element-map entry's prebuilt Values are ALWAYS kept, even
 			// when the source-tree consumer walk (which descends only `items`) attributed the reference to a DROPPED
 			// parent. This is the load-bearing case for the header→FAB path: a dropdown button drops while its menu
-			// item flattens into FloatingActionButton.menuItems as a surviving insert whose MobileValues still carries
+			// item flattens into FloatingActionButton.menuItems as a surviving insert whose Values still carries
 			// e.g. `visible: "$CanPrint"` — without this, $CanPrint would be pruned as "only referenced by a dropped
 			// element" and the converted action would lose its access gate. Keying off what actually SHIPS makes the
 			// decision independent of how the tree is traversed.
@@ -1700,7 +1704,7 @@ public static class WebToMobileAnalysisService {
 	}
 
 	/// <summary>
-	/// Every viewModelConfig attribute referenced by a SURVIVING element-map entry's prebuilt <c>MobileValues</c> —
+	/// Every viewModelConfig attribute referenced by a SURVIVING element-map entry's prebuilt <c>Values</c> —
 	/// both plain <c>$Attr</c> bindings and <c>$Resources.Strings.&lt;attr&gt;</c> references. A surviving entry is
 	/// an <c>insert</c> or <c>merge</c> (a <c>drop</c> ships nothing; <c>relocate-children</c> is a routing hint with
 	/// no values). Used to KEEP an attribute a converted element still binds to even when the source-tree consumer
@@ -1709,12 +1713,12 @@ public static class WebToMobileAnalysisService {
 	private static HashSet<string> CollectAttributesReferencedBySurvivors(List<ElementMapEntry> elementMap) {
 		var referenced = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 		foreach (ElementMapEntry entry in elementMap) {
-			if (entry.MobileValues is null
+			if (entry.Values is null
 				|| (!string.Equals(entry.Operation, "insert", StringComparison.OrdinalIgnoreCase)
 					&& !string.Equals(entry.Operation, "merge", StringComparison.OrdinalIgnoreCase))) {
 				continue;
 			}
-			string json = entry.MobileValues.ToJsonString();
+			string json = entry.Values.ToJsonString();
 			foreach (Match match in ResourceStringsRefPattern.Matches(json)) {
 				referenced.Add(match.Groups[1].Value);
 			}
@@ -1757,7 +1761,18 @@ public static class WebToMobileAnalysisService {
 		IReadOnlyDictionary<string, JObject> WebBaselineNodes,
 		JObject WebBaselineResources,
 		IReadOnlySet<string> ScopeContainerNames,
-		IReadOnlySet<string> ContentContainerTypes);
+		IReadOnlySet<string> ContentContainerTypes) {
+
+		/// <summary>
+		/// The value binding each inserted element still needs, keyed by MOBILE name, collected while its
+		/// values were built. The source property (<c>control</c>/<c>value</c>) is held out of the values
+		/// because the mobile binding property is a type-specific rename of it — see
+		/// <see cref="PendingBinding"/> — so the value is captured here instead of discarded, and reported
+		/// on the response so the caller does not have to go back to the source page to find it.
+		/// </summary>
+		public Dictionary<string, (string Property, JsonNode Value)> PendingBindings { get; }
+			= new(StringComparer.Ordinal);
+	}
 
 	/// <summary>
 	/// The set of NON-CONVERTING scope container names — declared EXPLICITLY by the rules'
@@ -1778,6 +1793,10 @@ public static class WebToMobileAnalysisService {
 	/// Produces one <see cref="ElementMapEntry"/> per named element of the resolved tree, deciding
 	/// merge / insert / drop / relocate-children. Pure: reads only the supplied bundle-derived data.
 	/// </summary>
+	/// <param name="pendingBindings">
+	/// The value binding each inserted element still needs, keyed by mobile name — captured while the
+	/// values were built rather than discarded. See <see cref="PendingBinding"/>.
+	/// </param>
 	private static List<ElementMapEntry> BuildElementMap(
 		JArray tree,
 		IReadOnlyDictionary<string, string> map,
@@ -1798,7 +1817,8 @@ public static class WebToMobileAnalysisService {
 		IReadOnlyDictionary<string, string> positionalAnchorByWebAnchor,
 		IReadOnlyDictionary<string, string> mobileTypesByName,
 		IReadOnlyDictionary<string, JObject> webBaselineNodes,
-		JObject webBaselineResources) {
+		JObject webBaselineResources,
+		out IReadOnlyDictionary<string, (string Property, JsonNode Value)> pendingBindings) {
 		var ctx = new ElementMapContext(map,
 			componentMap ?? new Dictionary<string, ComponentMappingRule>(StringComparer.OrdinalIgnoreCase),
 			mobileTypes, mobileByType ?? new Dictionary<string, ComponentRegistryEntry>(),
@@ -1813,6 +1833,7 @@ public static class WebToMobileAnalysisService {
 			CollectScopeContainerNames(rules),
 			ContentContainerTypesOf(rules));
 		WalkElements(ctx, tree, mobileParentName: null);
+		pendingBindings = ctx.PendingBindings;
 		return ctx.Out;
 	}
 
@@ -1898,9 +1919,9 @@ public static class WebToMobileAnalysisService {
 					JsonNode scopedValues = BuildMobileValues(ctx, node, name, scopedType, scopedCaption,
 						target.Parent, target.Property, sourceAncestors);
 					ctx.Out.Add(new ElementMapEntry {
-						WebName = name, WebType = Nz(type), Operation = "insert", MobileName = name, MobileType = scopedType,
+						WebName = name, WebType = Nz(type), Operation = "insert", Name = name, MobileType = scopedType,
 						ParentName = target.Parent, PropertyName = target.Property, Index = null,
-						CaptionResource = scopedCaption, MobileValues = scopedValues
+						CaptionResource = scopedCaption, Values = scopedValues
 					});
 				} else {
 					(ReasonCode dropReason, string requestLossReason) = ScopeDropReason(
@@ -1954,7 +1975,7 @@ public static class WebToMobileAnalysisService {
 				// ExcludedComponentsPass, which matches a filter's parentType against this field. Falls back to
 				// the web type (the pair is same-type for every other shipped entry) when the template is unknown.
 				var twinEntry = new ElementMapEntry {
-					WebName = name, WebType = Nz(type), Operation = "merge", MobileName = twinMobileName,
+					WebName = name, WebType = Nz(type), Operation = "merge", Name = twinMobileName,
 					MobileType = ctx.MobileTypesByName.TryGetValue(twinMobileName, out string twinType)
 							&& !string.IsNullOrEmpty(twinType)
 						? twinType
@@ -2007,9 +2028,9 @@ public static class WebToMobileAnalysisService {
 				// overrides the template label; CollectResourceStrings adds its resource to the schema).
 				JsonNode twinValues = BuildTwinMergeValues(ctx, node, compRule, twinMobileType, type);
 				ctx.Out.Add(new ElementMapEntry {
-					WebName = name, WebType = Nz(type), Operation = "merge", MobileName = compRule.Mobile,
+					WebName = name, WebType = Nz(type), Operation = "merge", Name = compRule.Mobile,
 					MobileType = twinMobileType,
-					MobileValues = twinValues
+					Values = twinValues
 				});
 				if (items is not null) {
 					WalkElements(ctx, items, compRule.Mobile, sourceAncestors: Append(sourceAncestors, name));
@@ -2037,8 +2058,8 @@ public static class WebToMobileAnalysisService {
 				// the survivors map — a page business rule targeting it converts instead of being dropped as
 				// "every referenced element is unsupported".
 				ctx.Out.Add(new ElementMapEntry {
-					WebName = name, WebType = Nz(type), Operation = "merge", MobileName = name, MobileType = type,
-					MobileValues = delta,
+					WebName = name, WebType = Nz(type), Operation = "merge", Name = name, MobileType = type,
+					Values = delta,
 				});
 				continue;
 			}
@@ -2114,11 +2135,11 @@ public static class WebToMobileAnalysisService {
 				JsonNode containerValues = BuildMobileValues(ctx, node, name, type, containerCaption,
 					containerParent, containerProperty, sourceAncestors);
 				ctx.Out.Add(new ElementMapEntry {
-					WebName = name, WebType = Nz(type), Operation = "insert", MobileName = name, MobileType = type,
+					WebName = name, WebType = Nz(type), Operation = "insert", Name = name, MobileType = type,
 					ParentName = containerParent, PropertyName = containerProperty,
 					Index = containerIndex,
 					CaptionResource = containerCaption,
-					MobileValues = containerValues,
+					Values = containerValues,
 					PositionalAnchor = isPositional && !containerRetargeted ? place.Anchor : null,
 				});
 				IReadOnlyList<string> containerChildAncestors = Append(sourceAncestors, name);
@@ -2203,11 +2224,11 @@ public static class WebToMobileAnalysisService {
 			JsonNode leafValues = BuildMobileValues(ctx, node, name, leafMobileType, leafCaption,
 				leafParent, leafProperty, sourceAncestors);
 			ctx.Out.Add(new ElementMapEntry {
-				WebName = name, WebType = Nz(type), Operation = "insert", MobileName = name, MobileType = leafMobileType,
+				WebName = name, WebType = Nz(type), Operation = "insert", Name = name, MobileType = leafMobileType,
 				ParentName = leafParent, PropertyName = leafProperty,
 				Index = leafIndex,
 				CaptionResource = leafCaption,
-				MobileValues = leafValues,
+				Values = leafValues,
 				PositionalAnchor = isPositional && !leafRetargeted ? place.Anchor : null
 			});
 			// A leaf can still own nested child-element arrays (e.g. a crt.Button's menuItems) — descend so their
@@ -2342,10 +2363,10 @@ public static class WebToMobileAnalysisService {
 		var authoredHere = new Dictionary<string, bool>(StringComparer.OrdinalIgnoreCase);
 		foreach (ElementMapEntry entry in elementMap) {
 			if (string.Equals(entry.Operation, "insert", StringComparison.OrdinalIgnoreCase)
-				&& !string.IsNullOrEmpty(entry.MobileName)) {
+				&& !string.IsNullOrEmpty(entry.Name)) {
 				// The value records whether the parent came from the source page (it has a webName) or was
 				// synthesized by the converter (it has none) — the two "authored here" answers.
-				authoredHere[entry.MobileName] = !string.IsNullOrEmpty(entry.WebName);
+				authoredHere[entry.Name] = !string.IsNullOrEmpty(entry.WebName);
 			}
 		}
 		foreach (ElementMapEntry entry in elementMap) {
@@ -2796,8 +2817,8 @@ public static class WebToMobileAnalysisService {
 				&& !result.ContainsKey(cap.Key)) {
 				result[cap.Key] = cap.SourceValue ?? string.Empty;
 			}
-			if (entry.MobileValues is not null) {
-				Scan(entry.MobileValues.ToJsonString());
+			if (entry.Values is not null) {
+				Scan(entry.Values.ToJsonString());
 			}
 		}
 		Scan(modelConfig?.ToJsonString());
@@ -2837,6 +2858,15 @@ public static class WebToMobileAnalysisService {
 	/// </summary>
 	private static readonly HashSet<string> ExcludedSourceProps = new(StringComparer.OrdinalIgnoreCase) {
 		"name", "type", "control", "value"
+	};
+
+	/// <summary>
+	/// The source properties that carry the element's VALUE BINDING. Held out of the prebuilt values (the
+	/// mobile binding property is a type-specific rename), and captured into
+	/// <c>ElementMapContext.PendingBindings</c> so the caller is told what to re-attach.
+	/// </summary>
+	private static readonly HashSet<string> ValueBindingProps = new(StringComparer.OrdinalIgnoreCase) {
+		"control", "value"
 	};
 
 	/// <summary>
@@ -2907,6 +2937,13 @@ public static class WebToMobileAnalysisService {
 					continue;
 				}
 				if (excluded.Contains(prop.Name)) {
+					// The value binding is held out of the values on purpose (the mobile property is a
+					// type-specific rename of it), but it is CAPTURED rather than discarded so the response can
+					// name what still has to be attached — see PendingBinding (ENG-95827).
+					if (ValueBindingProps.Contains(prop.Name) && !string.IsNullOrEmpty(mobileName)) {
+						ctx.PendingBindings[mobileName] =
+							(prop.Name, JsonNode.Parse(prop.Value.ToString(Newtonsoft.Json.Formatting.None)));
+					}
 					continue;
 				}
 				// Event bindings (clicked / valueChange / updated …) carry a request — they are converted
@@ -3767,7 +3804,7 @@ public static class WebToMobileAnalysisService {
 		var colsByMobileParent = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
 		foreach (ElementMapEntry e in elementMap) {
 			if (e.WebName is { Length: > 0 } && gridContainerColumns.TryGetValue(e.WebName, out int cols)) {
-				colsByMobileParent[string.IsNullOrEmpty(e.MobileName) ? e.WebName : e.MobileName] = cols;
+				colsByMobileParent[string.IsNullOrEmpty(e.Name) ? e.WebName : e.Name] = cols;
 			}
 		}
 		foreach (KeyValuePair<string, int> kv in gridContainerColumns) {
@@ -3793,9 +3830,9 @@ public static class WebToMobileAnalysisService {
 			// no twin at all: an unplaced twin renders exactly as it does today, a wrongly placed one does not.
 			bool isPlaceableTwin = string.Equals(e.Operation, "merge", StringComparison.Ordinal)
 				&& e.MergeParentName is { Length: > 0 }
-				&& e.MobileName is { Length: > 0 }
+				&& e.Name is { Length: > 0 }
 				&& mobileContainerParents is not null
-				&& mobileContainerParents.TryGetValue(e.MobileName, out string mobileParent)
+				&& mobileContainerParents.TryGetValue(e.Name, out string mobileParent)
 				&& string.Equals(mobileParent, e.MergeParentName, StringComparison.OrdinalIgnoreCase)
 				&& colsByMobileParent.ContainsKey(e.MergeParentName);
 			// Two kinds of child reach this group, and each has its own admission rule. Kept as two blocks
@@ -3807,13 +3844,13 @@ public static class WebToMobileAnalysisService {
 				// grid, and a merge that reached the guide carrying an empty object would be pasted onto the
 				// template element as `values: {}` — noise the model still has to interpret. The object is
 				// created only where a layoutConfig is actually written.
-				if (e.MobileValues is not (null or JsonObject)) {
+				if (e.Values is not (null or JsonObject)) {
 					continue;
 				}
 				parent = e.MergeParentName;
 			} else {
 				if (!string.Equals(e.Operation, "insert", StringComparison.Ordinal)
-					|| e.MobileValues is not JsonObject) {
+					|| e.Values is not JsonObject) {
 					continue;
 				}
 				parent = e.ParentName;
@@ -3857,9 +3894,9 @@ public static class WebToMobileAnalysisService {
 				// Replace layoutConfig with the adaptive form (the web placement is folded into medium/large).
 				// A container twin reaches here with no values of its own: the layoutConfig IS its whole merge
 				// delta, so the object is created at the one point where it is guaranteed to carry something.
-				child.MobileValues ??= new JsonObject();
-				((JsonObject)child.MobileValues)["layoutConfig"] = new JsonObject { ["adaptive"] = adaptive.DeepClone() };
-				items.Add(new AdaptiveLayoutItem { Name = child.MobileName, LayoutConfigAdaptive = adaptive });
+				child.Values ??= new JsonObject();
+				((JsonObject)child.Values)["layoutConfig"] = new JsonObject { ["adaptive"] = adaptive.DeepClone() };
+				items.Add(new AdaptiveLayoutItem { Name = child.Name, LayoutConfigAdaptive = adaptive });
 			}
 
 			// Container columns: small = 1, medium/large = the web column count. Fold INTO the container's own
@@ -3868,11 +3905,11 @@ public static class WebToMobileAnalysisService {
 			ElementMapEntry containerEntry = elementMap.FirstOrDefault(e =>
 				(string.Equals(e.Operation, "insert", StringComparison.Ordinal) ||
 				 string.Equals(e.Operation, "merge", StringComparison.Ordinal)) &&
-				string.Equals(e.MobileName, container, StringComparison.OrdinalIgnoreCase));
+				string.Equals(e.Name, container, StringComparison.OrdinalIgnoreCase));
 			if (containerEntry is not null) {
-				if (containerEntry.MobileValues is not JsonObject containerValues) {
+				if (containerEntry.Values is not JsonObject containerValues) {
 					containerValues = new JsonObject();
-					containerEntry.MobileValues = containerValues;
+					containerEntry.Values = containerValues;
 				}
 				containerValues["adaptive"] = new JsonObject {
 					["small"] = new JsonObject { ["columns"] = ColumnsNode(1) },
@@ -4138,12 +4175,12 @@ public static class WebToMobileAnalysisService {
 			}
 			for (int i = 0; i < elementMap.Count; i++) {
 				ElementMapEntry entry = elementMap[i];
-				if (!IsEmptyRemovalCandidate(entry, removable) || occupied.Contains(entry.MobileName)) {
+				if (!IsEmptyRemovalCandidate(entry, removable) || occupied.Contains(entry.Name)) {
 					continue;
 				}
 				elementMap[i] = Drop(entry.WebName, entry.WebType, EmptyContainerDropReason);
 				removed.Add(entry.WebName);
-				removedMobileNames.Add(entry.MobileName);
+				removedMobileNames.Add(entry.Name);
 				anyRemovedThisRound = true;
 			}
 		}
@@ -4158,10 +4195,10 @@ public static class WebToMobileAnalysisService {
 	private static bool IsEmptyRemovalCandidate(ElementMapEntry entry, HashSet<string> removableTypes) =>
 		string.Equals(entry.Operation, "insert", StringComparison.Ordinal)
 		&& entry.WebName is { Length: > 0 }
-		&& entry.MobileName is { Length: > 0 }
+		&& entry.Name is { Length: > 0 }
 		&& entry.MobileType is { Length: > 0 }
 		&& removableTypes.Contains(entry.MobileType)
-		&& (entry.MobileValues is not JsonObject values || values["items"] is null);
+		&& (entry.Values is not JsonObject values || values["items"] is null);
 
 	/// <summary>
 	/// The drop reason for a removed empty container. A container's <c>tools</c>/<c>menuItems</c> buttons are now
@@ -4349,7 +4386,7 @@ public static class WebToMobileAnalysisService {
 	/// </para>
 	/// </summary>
 	private static bool PlaceSibling(ElementMapEntry sibling, JsonObject anchorPlacement, int offset) {
-		if (sibling.MobileValues is not JsonObject values) {
+		if (sibling.Values is not JsonObject values) {
 			return false;
 		}
 		List<(string Key, JsonObject Slot)> breakpoints = [.. AdaptiveRowSlots(anchorPlacement)];
@@ -4395,7 +4432,7 @@ public static class WebToMobileAnalysisService {
 	/// </summary>
 	private static void NormalizePlacements(List<ElementMapEntry> elementMap) {
 		foreach (ElementMapEntry entry in elementMap) {
-			if (entry.MobileValues is JsonNode values) {
+			if (entry.Values is JsonNode values) {
 				NormalizePlacementsIn(values);
 			}
 		}
@@ -4482,20 +4519,20 @@ public static class WebToMobileAnalysisService {
 		List<ElementMapEntry> elementMap, string anchor, JsonObject placement, int above) {
 		ElementMapEntry existing = elementMap.FirstOrDefault(e =>
 			string.Equals(e.Operation, "merge", StringComparison.Ordinal)
-			&& string.Equals(e.MobileName, anchor, StringComparison.OrdinalIgnoreCase));
+			&& string.Equals(e.Name, anchor, StringComparison.OrdinalIgnoreCase));
 		if (existing is not null) {
 			// A merge payload is a JsonObject or null by construction (BuildTwinMergeValues / BuildDeltaTwinMergeValues).
-			if (existing.MobileValues is not JsonObject values) {
+			if (existing.Values is not JsonObject values) {
 				values = new JsonObject();
-				existing.MobileValues = values;
+				existing.Values = values;
 			}
 			values["layoutConfig"] = placement;
 			return;
 		}
 		elementMap.Add(new ElementMapEntry {
 			Operation = "merge",
-			MobileName = anchor,
-			MobileValues = new JsonObject { ["layoutConfig"] = placement }
+			Name = anchor,
+			Values = new JsonObject { ["layoutConfig"] = placement }
 		});
 	}
 
@@ -4589,13 +4626,102 @@ public static class WebToMobileAnalysisService {
 	/// </remarks>
 	private static IReadOnlyList<DroppedElement> ProjectDroppedElements(List<ElementMapEntry> elementMap) {
 		List<DroppedElement> dropped = [.. elementMap
-			.Where(IsDrop)
+			.Where(entry => IsDrop(entry) || IsRelocateChildren(entry))
 			.Select(entry => new DroppedElement {
 				WebName = entry.WebName,
 				WebType = entry.WebType,
-				Reason = entry.Reason ?? []
+				Reason = entry.Reason is { Count: > 0 } reason
+					? reason
+					// A relocate-children container is a drop from the PAGE's point of view: it is not
+					// recreated on mobile. It needs no reason of its own while it sits in the working map —
+					// the operation said it — so the code is minted here, where it becomes a report.
+					: [Reason(ReasonCodes.DropContainerNoMobileEquivalent,
+						("webType", Nz(entry.WebType)), ("target", Nz(entry.ParentName)))]
 			})];
 		return dropped.Count > 0 ? dropped : null;
+	}
+
+	/// <summary>True when this entry only reparents its children — the container itself is not created.</summary>
+	private static bool IsRelocateChildren(ElementMapEntry entry) =>
+		string.Equals(entry?.Operation, "relocate-children", StringComparison.Ordinal);
+
+	/// <summary>
+	/// Projects the working element map into the mobile page's <c>viewConfigDiff</c> — applier operations
+	/// and nothing else.
+	/// </summary>
+	/// <remarks>
+	/// <c>relocate-children</c> is deliberately NOT emitted: the applier has no such operation (its
+	/// vocabulary is insert / merge / set / move / remove), and it never needed to be applied anyway —
+	/// every child of such a container already carries the reparented <c>parentName</c> in its own
+	/// operation. It is reported as a dropped element instead, which is what it is.
+	/// </remarks>
+	private static IReadOnlyList<ViewConfigDiffOperation> ProjectViewConfigDiff(List<ElementMapEntry> elementMap) =>
+		[.. elementMap
+			.Where(entry => !IsDrop(entry) && !IsRelocateChildren(entry))
+			.Select(entry => new ViewConfigDiffOperation {
+				Operation = entry.Operation,
+				Name = entry.Name,
+				ParentName = entry.ParentName,
+				// Stated even when it is the default `items`, which the applier would have assumed anyway:
+				// this list is meant to be pasted, and an explicit slot is one less thing for a reader to
+				// know about the applier in order to trust what they are pasting.
+				PropertyName = entry.PropertyName,
+				Index = entry.Index,
+				Values = entry.Values
+			})];
+
+	/// <summary>
+	/// Source name → mobile name for the elements the converter RENAMED, and only those. Null when every
+	/// element kept its name, which is the common case.
+	/// </summary>
+	private static IReadOnlyDictionary<string, string> ProjectNameMap(List<ElementMapEntry> elementMap) {
+		var renames = new Dictionary<string, string>(StringComparer.Ordinal);
+		foreach (ElementMapEntry entry in elementMap) {
+			if (IsDrop(entry) || IsRelocateChildren(entry)
+				|| string.IsNullOrEmpty(entry.WebName) || string.IsNullOrEmpty(entry.Name)
+				|| string.Equals(entry.WebName, entry.Name, StringComparison.Ordinal)) {
+				continue;
+			}
+			renames[entry.WebName] = entry.Name;
+		}
+		return renames.Count > 0 ? renames : null;
+	}
+
+	/// <summary>
+	/// The value bindings the inserts still need. Collected while the values were built (the source
+	/// property is excluded from them by <see cref="ExcludedSourceProps"/>), and reported only for an
+	/// element that actually reached <c>viewConfigDiff</c> as an insert.
+	/// </summary>
+	private static IReadOnlyList<PendingBinding> ProjectPendingBindings(
+		IReadOnlyDictionary<string, (string Property, JsonNode Value)> captured,
+		List<ElementMapEntry> elementMap) {
+		if (captured is not { Count: > 0 }) {
+			return null;
+		}
+		HashSet<string> inserted = [.. elementMap
+			.Where(entry => string.Equals(entry.Operation, "insert", StringComparison.Ordinal)
+				&& !string.IsNullOrEmpty(entry.Name))
+			.Select(entry => entry.Name)];
+		List<PendingBinding> pending = [.. captured
+			.Where(binding => inserted.Contains(binding.Key))
+			.Select(binding => new PendingBinding {
+				Name = binding.Key,
+				SourceProperty = binding.Value.Property,
+				SourceValue = binding.Value.Value
+			})];
+		return pending.Count > 0 ? pending : null;
+	}
+
+	/// <summary>
+	/// The inserts whose parent neither the diff nor the probed mobile template provides. Null when every
+	/// parent resolves, which is the normal case.
+	/// </summary>
+	private static IReadOnlyList<UnresolvedParent> ProjectUnresolvedParents(List<ElementMapEntry> elementMap) {
+		List<UnresolvedParent> unresolved = [.. elementMap
+			.Where(entry => string.Equals(entry.ParentSource, ParentSourceUnknown, StringComparison.Ordinal)
+				&& !string.IsNullOrEmpty(entry.Name))
+			.Select(entry => new UnresolvedParent { Name = entry.Name, ParentName = entry.ParentName })];
+		return unresolved.Count > 0 ? unresolved : null;
 	}
 
 	/// <summary>
@@ -4646,7 +4772,7 @@ public static class WebToMobileAnalysisService {
 			if (entry.WebName is { Length: > 0 } webName) {
 				taken.Add(webName);
 			}
-			if (entry.MobileName is { Length: > 0 } mobileName) {
+			if (entry.Name is { Length: > 0 } mobileName) {
 				taken.Add(mobileName);
 			}
 		}
@@ -4655,7 +4781,7 @@ public static class WebToMobileAnalysisService {
 		List<ElementMapEntry> convertedTabs = elementMap
 			.Where(e => string.Equals(e.Operation, "insert", StringComparison.Ordinal)
 				&& string.Equals(e.MobileType, rule.TabComponentType, StringComparison.OrdinalIgnoreCase)
-				&& e.MobileName is { Length: > 0 })
+				&& e.Name is { Length: > 0 })
 			.ToList();
 		foreach (ElementMapEntry tab in convertedTabs) {
 			// Top-level content of the tab, in element-map order (= the source tree order): its own inserted
@@ -4664,14 +4790,14 @@ public static class WebToMobileAnalysisService {
 			// Anything nested deeper carries its own container as parentName and is none of this pass's
 			// business; a merge twin carries no parentName at all and stays wherever the template put it.
 			List<ElementMapEntry> content = elementMap
-				.Where(e => string.Equals(e.ParentName, tab.MobileName, StringComparison.OrdinalIgnoreCase)
+				.Where(e => string.Equals(e.ParentName, tab.Name, StringComparison.OrdinalIgnoreCase)
 					&& (string.Equals(e.Operation, "insert", StringComparison.Ordinal)
 						|| string.Equals(e.Operation, "relocate-children", StringComparison.Ordinal)))
 				.ToList();
 			if (content.Count == 0) {
 				continue;
 			}
-			string suffix = StableSuffix(sourcePage, tab.MobileName,
+			string suffix = StableSuffix(sourcePage, tab.Name,
 				candidate => taken.Contains(mainRule.NamePrefix + candidate)
 					|| taken.Contains(areaRule.NamePrefix + candidate));
 			string mainName = mainRule.NamePrefix + suffix;
@@ -4681,7 +4807,7 @@ public static class WebToMobileAnalysisService {
 			// insertAt walks forward so every synthesized layer lands right after the tab's entry, parent
 			// always before child (layer 2 → Area; the tab's children sit later in the map anyway).
 			int insertAt = elementMap.IndexOf(tab);
-			elementMap.Insert(++insertAt, SynthesizedLayerEntry(mainRule, mainName, tab.MobileName));
+			elementMap.Insert(++insertAt, SynthesizedLayerEntry(mainRule, mainName, tab.Name));
 
 			// The Area exists only when real content remains: a relocate-children routing hint never
 			// occupies a row, so a tab whose content is hints alone gets no Area (an Area that would hold
@@ -4722,13 +4848,13 @@ public static class WebToMobileAnalysisService {
 				// empty Area, in the designer and at runtime alike (ENG-96153). The hoist above has already
 				// read the source slot, which is why it cannot be folded into this loop.
 				child.PropertyName = ItemsPropertyName;
-				moved.Add(child.MobileName);
+				moved.Add(child.Name);
 				PlaceInSingleColumn(child, row);
 				row++;
 			}
 
 			groups.Add(new TabAreaLayerGroup {
-				TabName = tab.MobileName, MainTabContainerName = mainName, AreaName = areaName,
+				TabName = tab.Name, MainTabContainerName = mainName, AreaName = areaName,
 				MovedChildren = moved
 			});
 		}
@@ -4782,14 +4908,14 @@ public static class WebToMobileAnalysisService {
 	/// </summary>
 	private static void InitializeContainerChildSlots(List<ElementMapEntry> elementMap,
 		IReadOnlyDictionary<string, ComponentRegistryEntry> mobileByType) {
-		// occupiedSlots keys purely on MobileName, not on entry identity. MobileName is NOT unique across the
+		// occupiedSlots keys purely on Name, not on entry identity. Name is NOT unique across the
 		// element map: `containers` is a MANY-TO-ONE map by design (CardContentWrapper and GeneralInfoTab both
 		// merge onto GeneralTabContainer), so two entries can share one mobile name. This stays safe because the
 		// loop below is gated on Operation == "insert" and every duplicate produced by that map is a MERGE — the
 		// insert side keeps its own uniqueness: Freedom UI requires unique component names on a page (the web
 		// source this walk consumes), and the only NAME-GENERATING path, StableSuffix in BuildTabAreaLayers,
 		// actively avoids every name already in the map (its own `taken` set, seeded from every WebName AND
-		// MobileName) before picking a suffix. Any future pass that indexes this map by MobileName WITHOUT the
+		// Name) before picking a suffix. Any future pass that indexes this map by Name WITHOUT the
 		// insert gate must state its own tie-break rather than assume uniqueness.
 		var occupiedSlots = new Dictionary<string, HashSet<string>>(StringComparer.OrdinalIgnoreCase);
 		foreach (ElementMapEntry entry in elementMap) {
@@ -4818,9 +4944,9 @@ public static class WebToMobileAnalysisService {
 			// case BuildMobileValues returns null for. Kept anyway so a future insert-producing path that does NOT
 			// share that same guarantee degrades to a silent no-op here instead of an InvalidCastException.
 			if (!string.Equals(entry.Operation, "insert", StringComparison.Ordinal)
-				|| entry.MobileName is not { Length: > 0 }
-				|| entry.MobileValues is not JsonObject values
-				|| !occupiedSlots.TryGetValue(entry.MobileName, out HashSet<string> slots)) {
+				|| entry.Name is not { Length: > 0 }
+				|| entry.Values is not JsonObject values
+				|| !occupiedSlots.TryGetValue(entry.Name, out HashSet<string> slots)) {
 				continue;
 			}
 			// Ordered — items first, then alphabetically — so a container targeted through two slots emits its
@@ -4876,7 +5002,7 @@ public static class WebToMobileAnalysisService {
 		&& !string.Equals(propertyName, ItemsPropertyName, StringComparison.OrdinalIgnoreCase);
 
 	private static void PlaceInSingleColumn(ElementMapEntry child, int row) {
-		if (child.MobileValues is JsonObject childValues
+		if (child.Values is JsonObject childValues
 			&& (childValues["layoutConfig"] is not JsonObject layoutConfig
 				|| layoutConfig["adaptive"] is null)) {
 			childValues["layoutConfig"] = SiblingSlot(row);
@@ -4910,12 +5036,12 @@ public static class WebToMobileAnalysisService {
 		}
 		return new ElementMapEntry {
 			Operation = "insert",
-			MobileName = name,
+			Name = name,
 			// Guaranteed a non-empty string by IsUsableLayer, which gates every call to this method.
 			MobileType = values["type"].GetValue<string>(),
 			ParentName = parentName,
 			PropertyName = ItemsPropertyName,
-			MobileValues = values
+			Values = values
 		};
 	}
 
@@ -4965,7 +5091,7 @@ public static class WebToMobileAnalysisService {
 		foreach (ElementMapEntry entry in elementMap) {
 			if (!string.Equals(entry.Operation, "insert", StringComparison.Ordinal)
 				|| entry.MobileType is not { Length: > 0 }
-				|| entry.MobileValues is not JsonObject values) {
+				|| entry.Values is not JsonObject values) {
 				continue;
 			}
 			// Which rules apply is decided against the element as it ENTERED the pass — every filter is
@@ -4991,7 +5117,7 @@ public static class WebToMobileAnalysisService {
 			// de-duplicated: an element two rules both wrote is ONE normalized element, not two, and a key
 			// they both touched is one property.
 			if (properties.Count > 0 || skippedPaths.Count > 0) {
-				result.Add(ResolveReportGroup(entry.MobileType), entry.MobileName, entry.MobileType,
+				result.Add(ResolveReportGroup(entry.MobileType), entry.Name, entry.MobileType,
 					[.. properties.Distinct(StringComparer.Ordinal)],
 					[.. skippedPaths.Distinct(StringComparer.Ordinal)]);
 			}

@@ -53,6 +53,37 @@ public sealed class WebToMobileGeneralInfoTabRegressionTests {
 	private const string MobileTabsPanel = "Tabs";
 
 	/// <summary>Page-authored content the web page places directly inside the template-owned general tab.</summary>
+	/// <summary>The mobile component type an insert declares — it lives in <c>values.type</c>.</summary>
+	private static string TypeOf(ViewConfigDiffOperation operation) =>
+		operation?.Values?["type"]?.GetValue<string>();
+
+	/// <summary>
+	/// Every name the SOURCE page had: <c>sourceStructure</c> plus the <c>nameMap</c> source keys. A
+	/// viewConfigDiff name in neither was synthesized by the converter.
+	/// </summary>
+	private static string[] SourceNames(MobilePageConversionGuide guide) =>
+		[.. (guide.SourceStructure ?? []).Select(entry => entry.Name)
+			.Concat((guide.NameMap ?? new Dictionary<string, string>()).Keys)
+			.Where(name => !string.IsNullOrEmpty(name))];
+
+	/// <summary>
+	/// The SOURCE element name behind an operation, by reversing the published <c>nameMap</c>; the
+	/// operation's own name when nothing renamed it. Null for a converter-synthesized operation.
+	/// </summary>
+	private static string SourceNameOf(MobilePageConversionGuide guide, ViewConfigDiffOperation operation) {
+		if (guide?.NameMap is not null) {
+			foreach (KeyValuePair<string, string> rename in guide.NameMap) {
+				if (string.Equals(rename.Value, operation?.Name, StringComparison.Ordinal)) {
+					return rename.Key;
+				}
+			}
+		}
+		// This fixture never asserts on a synthesized element, so an un-renamed operation answers with its
+		// own name rather than being filtered against sourceStructure — the reverse nameMap above is the
+		// part that matters here, and it is what a caller uses to find a RENAMED element.
+		return operation?.Name;
+	}
+
 	private static readonly string[] GeneralTabContent = [
 		"ServiceTeamMemberExpansionPanel", "ServicePactExpansionPanel"
 	];
@@ -75,7 +106,7 @@ public sealed class WebToMobileGeneralInfoTabRegressionTests {
 		// Assert
 		RequireReproductionShape(fixture, guide);
 		foreach (string name in GeneralTabContent) {
-			ElementMapEntry entry = Element(guide, name);
+			ViewConfigDiffOperation entry = Element(guide, name);
 			entry.Operation.Should().Be("insert",
 				because: $"'{name}' is page-authored content and must reach the mobile page");
 			entry.ParentName.Should().Be(MobileGeneralTab,
@@ -101,12 +132,12 @@ public sealed class WebToMobileGeneralInfoTabRegressionTests {
 		MobilePageConversionGuide guide = Convert(fixture);
 
 		// Assert
-		IReadOnlyList<ElementMapEntry> offenders = NonTabChildrenOfTabStrips(guide);
+		IReadOnlyList<ViewConfigDiffOperation> offenders = NonTabChildrenOfTabStrips(guide);
 		offenders.Should().BeEmpty(
 			because: "a mobile tab strip is a crt.TabPanel: anything but a crt.TabContainer inserted into it is "
 				+ "invisible in the mobile designer and lost from the converted page, which is how the "
 				+ "General-information content disappeared. Offending entries: "
-				+ string.Join(", ", offenders.Select(e => $"{e.WebName}({e.MobileType})->{e.ParentName}")));
+				+ string.Join(", ", offenders.Select(e => $"{SourceNameOf(guide, e)}({TypeOf(e)})->{e.ParentName}")));
 	}
 
 	[Test]
@@ -119,10 +150,10 @@ public sealed class WebToMobileGeneralInfoTabRegressionTests {
 		MobilePageConversionGuide guide = Convert(fixture);
 
 		// Assert
-		ElementMapEntry tab = Element(guide, "CaseHistoryTab");
+		ViewConfigDiffOperation tab = Element(guide, "CaseHistoryTab");
 		tab.Operation.Should().Be("insert",
 			because: "a tab the page added has no mobile counterpart, so it is created rather than merged");
-		tab.MobileType.Should().Be("crt.TabContainer",
+		TypeOf(tab).Should().Be("crt.TabContainer",
 			because: "only a crt.TabContainer may be a child of the crt.TabPanel it is inserted into");
 		tab.ParentName.Should().Be(MobileTabsPanel,
 			because: "a converted web tab becomes a new tab of the mobile strip, beside the template's own tabs");
@@ -138,13 +169,13 @@ public sealed class WebToMobileGeneralInfoTabRegressionTests {
 		MobilePageConversionGuide guide = Convert(fixture);
 
 		// Assert
-		guide.ElementMap.Should().NotContain(
-			e => e.Operation == "insert" && string.Equals(e.MobileName, "GeneralInfoTab", StringComparison.OrdinalIgnoreCase),
+		guide.ViewConfigDiff.Should().NotContain(
+			e => e.Operation == "insert" && string.Equals(e.Name, "GeneralInfoTab", StringComparison.OrdinalIgnoreCase),
 			because: "the mobile template already provides the general tab; inserting a second one under Tabs "
 				+ "would duplicate it");
-		guide.ElementMap.Should().NotContain(
+		guide.ViewConfigDiff.Should().NotContain(
 			e => e.Operation == "insert"
-				&& string.Equals(e.MobileName, MobileGeneralTabContainer, StringComparison.OrdinalIgnoreCase),
+				&& string.Equals(e.Name, MobileGeneralTabContainer, StringComparison.OrdinalIgnoreCase),
 			because: "the mobile template already provides the general tab's content grid — it is a merge "
 				+ "target, never an insert");
 		guide.ResourceStrings.Should().NotContainKey("GeneralInfoTab_caption",
@@ -182,9 +213,15 @@ public sealed class WebToMobileGeneralInfoTabRegressionTests {
 		}
 		NonTabChildrenOfTabStrips(guide).Should().BeEmpty(
 			because: "the shape a page keeps by default must not reintroduce the loss the ticket is about");
-		Element(guide, "GeneralInfoTabContainer").Operation.Should().Be("merge",
-			because: "the web content grid and the mobile one are the same element under two names, so the page "
-				+ "reuses the template's grid instead of inserting a second one");
+		// Asserted on the TARGET name: the page's own content grid and the template's are the same element
+		// under two names, and viewConfigDiff addresses it by the mobile one. NOTE the count is not pinned
+		// here — this fixture produces TWO merges onto GeneralTabContainer (a container-map twin and the
+		// general-tab twin), which the old elementMap told apart by webName but a caller would have applied
+		// twice either way. That duplicate is pre-existing and out of scope here; it is reported separately.
+		guide.ViewConfigDiff.Should().Contain(o => o.Operation == "merge" && o.Name == MobileGeneralTabContainer,
+			because: "the page reuses the template's grid, so it merges onto it");
+		guide.ViewConfigDiff.Should().NotContain(o => o.Operation == "insert" && o.Name == MobileGeneralTabContainer,
+			because: "reusing the template's grid means never inserting a second one — that is the whole point");
 	}
 
 	[Test]
@@ -210,7 +247,7 @@ public sealed class WebToMobileGeneralInfoTabRegressionTests {
 			.Should().Equal([1, 2],
 				because: "rows must be contiguous — the mobile grid does not auto-place, so a skipped row is a "
 					+ "child that was counted but never rendered");
-		Element(guide, "SideAreaProfileContainer").MobileValues!.AsObject()
+		Element(guide, "SideAreaProfileContainer").Values!.AsObject()
 			.Should().ContainKey("layoutConfig",
 				because: "the twin is a merge, but without a layoutConfig it is the one unplaced child of a grid "
 					+ "whose every other child got a cell, and the mobile designer renders nothing for it");
@@ -244,7 +281,7 @@ public sealed class WebToMobileGeneralInfoTabRegressionTests {
 		MobilePageConversionGuide guide = Convert(fixture, withPositionalPlacements: false);
 
 		// Assert
-		Element(guide, "SideAreaProfileContainer").MobileValues!.AsObject().Should().ContainKey("layoutConfig",
+		Element(guide, "SideAreaProfileContainer").Values!.AsObject().Should().ContainKey("layoutConfig",
 			because: "the mobile-parent map the placement reads is a property of the mobile TEMPLATE, not of the "
 				+ "positional rules — gating one on the other is what made this dead for five of six families");
 	}
@@ -306,7 +343,7 @@ public sealed class WebToMobileGeneralInfoTabRegressionTests {
 		MobilePageConversionGuide guide = Convert(fixture, RulesWithoutTheGeneralTabEntries());
 
 		// Assert
-		guide.ElementMap.Where(e => e.Operation == "insert" && e.MobileType == "crt.TabContainer")
+		guide.ViewConfigDiff.Where(e => e.Operation == "insert" && TypeOf(e) == "crt.TabContainer")
 			.Should().OnlyContain(e => e.ParentName == MobileTabsPanel,
 				because: "a tab belongs to a strip -- the one receiver outside the accept-list that is correct");
 	}
@@ -334,7 +371,7 @@ public sealed class WebToMobileGeneralInfoTabRegressionTests {
 				because: $"'{name}' is the content whose loss this suite is about — a capture without it cannot "
 					+ "fail any of these tests for the right reason");
 		}
-		guide.ElementMap.Should().NotBeEmpty(because: "an empty element map would make every assertion vacuous");
+		guide.ViewConfigDiff.Should().NotBeEmpty(because: "an empty element map would make every assertion vacuous");
 	}
 
 	/// <summary>
@@ -360,7 +397,7 @@ public sealed class WebToMobileGeneralInfoTabRegressionTests {
 		MobileTemplateTypes(fixture).Should().Contain(
 			kv => kv.Key == MobileTabsPanel && kv.Value == "crt.TabPanel",
 			because: "the whole suite depends on the mobile template declaring Tabs as a tab strip");
-		guide.ElementMap.Should().NotBeEmpty(because: "an empty element map would make every assertion vacuous");
+		guide.ViewConfigDiff.Should().NotBeEmpty(because: "an empty element map would make every assertion vacuous");
 	}
 
 	/// <summary>
@@ -368,17 +405,17 @@ public sealed class WebToMobileGeneralInfoTabRegressionTests {
 	/// alone — any parent at least one <c>crt.TabContainer</c> insert targets IS a strip — deliberately NOT by
 	/// calling the converter's own pass, so this re-states the invariant instead of re-running the implementation.
 	/// </summary>
-	private static IReadOnlyList<ElementMapEntry> NonTabChildrenOfTabStrips(MobilePageConversionGuide guide) {
+	private static IReadOnlyList<ViewConfigDiffOperation> NonTabChildrenOfTabStrips(MobilePageConversionGuide guide) {
 		HashSet<string> strips = new(StringComparer.OrdinalIgnoreCase) { MobileTabsPanel };
-		strips.UnionWith(guide.ElementMap
+		strips.UnionWith(guide.ViewConfigDiff
 			.Where(e => e.Operation == "insert"
-				&& string.Equals(e.MobileType, "crt.TabContainer", StringComparison.OrdinalIgnoreCase)
+				&& string.Equals(TypeOf(e), "crt.TabContainer", StringComparison.OrdinalIgnoreCase)
 				&& !string.IsNullOrEmpty(e.ParentName))
 			.Select(e => e.ParentName));
-		return [.. guide.ElementMap.Where(e => e.Operation == "insert"
+		return [.. guide.ViewConfigDiff.Where(e => e.Operation == "insert"
 			&& !string.IsNullOrEmpty(e.ParentName)
 			&& strips.Contains(e.ParentName)
-			&& !string.Equals(e.MobileType, "crt.TabContainer", StringComparison.OrdinalIgnoreCase))];
+			&& !string.Equals(TypeOf(e), "crt.TabContainer", StringComparison.OrdinalIgnoreCase))];
 	}
 
 	/// <summary>
@@ -511,14 +548,19 @@ public sealed class WebToMobileGeneralInfoTabRegressionTests {
 		return types;
 	}
 
-	private static ElementMapEntry Element(MobilePageConversionGuide guide, string webName) {
-		IReadOnlyList<ElementMapEntry> matches = [.. guide.ElementMap
-			.Where(e => string.Equals(e.WebName, webName, StringComparison.OrdinalIgnoreCase))];
+	private static ViewConfigDiffOperation Element(MobilePageConversionGuide guide, string webName) {
+		IReadOnlyList<ViewConfigDiffOperation> matches = [.. guide.ViewConfigDiff
+			.Where(e => string.Equals(SourceNameOf(guide, e), webName, StringComparison.OrdinalIgnoreCase))];
 		matches.Should().ContainSingle(
-			because: $"'{webName}' must appear in the element map exactly once; found "
+			because: $"'{webName}' must appear in viewConfigDiff exactly once; found "
 				+ (matches.Count == 0
-					? "none"
-					: string.Join(", ", matches.Select(m => $"{m.Operation}->{m.MobileName}"))));
+					? "none. Operations: "
+						+ string.Join(", ", guide.ViewConfigDiff.Select(o => $"{o.Operation}->{o.Name}"))
+						+ ". nameMap: "
+						+ (guide.NameMap is null
+							? "(null)"
+							: string.Join(", ", guide.NameMap.Select(kv => $"{kv.Key}=>{kv.Value}")))
+					: string.Join(", ", matches.Select(m => $"{m.Operation}->{m.Name}"))));
 		return matches[0];
 	}
 
