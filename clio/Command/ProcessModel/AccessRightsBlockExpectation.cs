@@ -307,6 +307,68 @@ public static class AccessRightsBlockExpectation {
 	// casing-sensitive comparison on this path, and a server that ever spelled the property differently would
 	// flip this guard into a permanent false alarm telling callers their permissions were discarded when they
 	// were not.</para>
+	/// <summary>
+	/// The caller-facing warning for a read-back that could NOT report every stored permission entry. Null when
+	/// every described element reported its collections in full.
+	/// <para>This is the one warning that fires on a HEALTHY write. It exists because a supplied collection
+	/// REPLACES the stored one: describe, edit one entry, send it back, and every entry the read-back omitted is
+	/// deleted — permissions disappearing on a routine read-modify-write, with success:true and no output
+	/// parameter. The server now reports how many entries it could not show, so this can say so instead of the
+	/// contract relying on the caller having read a paragraph of prose.</para>
+	/// </summary>
+	public static string? BuildLossyReadWarning(
+			DescribeProcessResult described, IReadOnlyList<string> expected) {
+		if (expected.Count == 0 || described?.Elements is null) {
+			return null;
+		}
+
+		List<string> lossy = [];
+		foreach (string name in expected) {
+			DescribedElement? element = BlockExpectationJson.ResolveElement(described, name);
+			if (element is not null && TryGetAccessRights(element, out JsonElement block)
+					&& (Unreadable(block, "addUnreadable") != 0 || Unreadable(block, "removeUnreadable") != 0)) {
+				lossy.Add(name);
+			}
+		}
+
+		if (lossy.Count == 0) {
+			return null;
+		}
+
+		string elements = string.Join("', '", lossy);
+		return $"The read-back of the {BlockExpectationJson.ElementNoun(lossy.Count)} '{elements}' could NOT report "
+			+ "every stored permission entry. Do NOT build a replacement collection from this description: a "
+			+ "supplied 'add' or 'remove' REPLACES the stored one, so every entry the read-back omitted would be "
+			+ "deleted. Omit the collection to keep what is stored, or inspect the element in the designer.";
+	}
+
+	// Reads the stored count the server reports for a collection it could not fully describe: 0 = complete,
+	// a positive number = that many entries dropped, -1 = the collection did not decode so the count is unknown.
+	// Absent on a server that predates the field, which reads as 0 - the old behaviour, no false alarm.
+	private static int Unreadable(JsonElement block, string property) =>
+		block.ValueKind == JsonValueKind.Object
+		&& block.TryGetProperty(property, out JsonElement value)
+		&& value.ValueKind == JsonValueKind.Number
+		&& value.TryGetInt32(out int count)
+			? count
+			: 0;
+
+	private static bool TryGetAccessRights(DescribedElement element, out JsonElement block) {
+		block = default;
+		if (element.AdditionalData is null) {
+			return false;
+		}
+
+		foreach (KeyValuePair<string, JsonElement> entry in element.AdditionalData) {
+			if (string.Equals(entry.Key, AccessRightsKey, StringComparison.OrdinalIgnoreCase)) {
+				block = entry.Value;
+				return block.ValueKind is not (JsonValueKind.Undefined or JsonValueKind.Null);
+			}
+		}
+
+		return false;
+	}
+
 	private static bool ReportsAccessRights(DescribedElement element) {
 		if (element.AdditionalData is null) {
 			return false;

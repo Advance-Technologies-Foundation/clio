@@ -26,6 +26,7 @@ internal static class BlockExpectationReporter {
 		Warn(logger, BuildUnverifiedWarning(
 			AccessRightsBlockExpectation.Unresolved(described, expectedRights),
 			"the saved process does not report an element with that name or UId"));
+		Warn(logger, AccessRightsBlockExpectation.BuildLossyReadWarning(described, expectedRights));
 		Warn(logger, AccessRightsBlockExpectation.BuildNoFilterWarning(described, expectedRights));
 		Warn(logger, AccessRightsBlockExpectation.BuildWarning(
 			AccessRightsBlockExpectation.Missing(described, expectedRights)));
