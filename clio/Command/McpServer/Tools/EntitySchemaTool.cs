@@ -549,13 +549,17 @@ public sealed class GetEntitySchemaColumnPropertiesTool(
 	[McpServerTool(Name = GetEntitySchemaColumnPropertiesToolName, ReadOnly = true, Destructive = false,
 		Idempotent = true, OpenWorld = false)]
 	[Description("Returns structured properties for the specified remote Creatio entity schema column. "
+		+ "Omit package-name to discover the column in the merged runtime schema across all packages; supply "
+		+ "package-name to preserve the exact package-scoped designer read. In merged mode, track-changes, "
+		+ "localizable-text, and do-not-control-integrity are null because the runtime endpoint does not expose "
+		+ "them, and source describes parent-schema inheritance rather than package ownership. "
 		+ "For a lookup column with a Const default, the returned default-value-config is enriched with "
 		+ "display-value (the referenced record's display value, resolved in the connected user's culture) "
 		+ "so the GUID can be verified without a second query. When the display value cannot be resolved, "
 		+ "record-resolution carries an honest marker (no-access, not-found-or-no-access, or "
 		+ "display-column-unavailable) and display-value is null.")]
 	public EntitySchemaColumnPropertiesInfo GetEntitySchemaColumnProperties(
-		[Description("Parameters: environment-name, package-name, schema-name, column-name (all required)")] [Required]
+		[Description("Parameters: environment-name, schema-name, and column-name are required; package-name is optional for merged discovery")] [Required]
 		GetEntitySchemaColumnPropertiesArgs args) {
 		GetEntitySchemaColumnPropertiesOptions options = new() {
 			Environment = args.EnvironmentName,
@@ -1219,18 +1223,33 @@ public sealed record SetEntitySchemaPropertiesArgs(
 ) : EntitySchemaTargetArgsBase(EnvironmentName, PackageName, SchemaName);
 
 /// <summary>
-/// Arguments for the <c>get-entity-schema-column-properties</c> MCP tool.
+/// Arguments for the <c>get-entity-schema-column-properties</c> MCP tool. Omit <c>package-name</c> to inspect
+/// the merged runtime schema across all packages, or supply it to retain the package-scoped designer read.
 /// </summary>
+/// <remarks>
+/// This record intentionally does not extend <see cref="EntitySchemaTargetArgsBase"/> because that base marks
+/// <c>package-name</c> as required.
+/// </remarks>
 public sealed record GetEntitySchemaColumnPropertiesArgs(
+	[property: JsonPropertyName("environment-name")]
+	[property: Description(McpToolDescriptions.EnvironmentName)]
+	[property: Required]
 	string EnvironmentName,
-	string PackageName,
-	string SchemaName,
+
+	[property: JsonPropertyName("package-name")]
+	[property: Description("Optional package. Omit for merged runtime discovery; supply for authoritative package-layer metadata.")]
+	string? PackageName = null,
+
+	[property: JsonPropertyName("schema-name")]
+	[property: Description("Entity schema name")]
+	[property: Required]
+	string SchemaName = "",
 
 	[property: JsonPropertyName("column-name")]
 	[property: Description("Column name")]
 	[property: Required]
-	string ColumnName
-) : EntitySchemaTargetArgsBase(EnvironmentName, PackageName, SchemaName);
+	string ColumnName = ""
+);
 
 /// <summary>
 /// Arguments for the <c>modify-entity-schema-column</c> MCP tool.

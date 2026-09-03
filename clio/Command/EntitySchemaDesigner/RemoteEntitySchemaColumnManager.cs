@@ -69,6 +69,7 @@ internal sealed class RemoteEntitySchemaColumnManager : IRemoteEntitySchemaColum
 	/// Synthetic package label reported by the merged (all-packages) schema read when no package is supplied.
 	/// </summary>
 	internal const string MergedSchemaPackageName = "(merged: all packages)";
+	private const string InheritedColumnSource = "inherited";
 
 	private readonly IApplicationPackageListProvider _applicationPackageListProvider;
 	private readonly IEntitySchemaDefaultValueSourceResolver _defaultValueSourceResolver;
@@ -205,6 +206,9 @@ internal sealed class RemoteEntitySchemaColumnManager : IRemoteEntitySchemaColum
 
 	public EntitySchemaColumnPropertiesInfo GetColumnProperties(GetEntitySchemaColumnPropertiesOptions options) {
 		ArgumentNullException.ThrowIfNull(options);
+		if (string.IsNullOrWhiteSpace(options.Package)) {
+			return GetMergedColumnProperties(options);
+		}
 		PackageInfo package = ResolvePackage(options.Package);
 		EntityDesignSchemaDto schema = LoadSchema(options.SchemaName, package.Descriptor.UId, package.Descriptor.Name, options, allowDependencyResolution: false);
 		(EntitySchemaColumnDto column, string source) = FindColumnForRead(schema, options.ColumnName);
@@ -238,6 +242,80 @@ internal sealed class RemoteEntitySchemaColumnManager : IRemoteEntitySchemaColum
 			column.UseSeconds,
 			defaultValueConfig,
 			EntitySchemaDesignerSupport.GetFriendlyUsageType(column.UsageType));
+	}
+
+	/// <summary>
+	/// Reads one column from the merged runtime schema when no package is supplied. This path deliberately uses
+	/// <see cref="IRuntimeEntitySchemaReader"/> and leaves the existing package-scoped designer request untouched.
+	/// </summary>
+	private EntitySchemaColumnPropertiesInfo GetMergedColumnProperties(
+		GetEntitySchemaColumnPropertiesOptions options) {
+		if (string.IsNullOrWhiteSpace(options.SchemaName)) {
+			throw new EntitySchemaDesignerException("Schema name is required.");
+		}
+		if (string.IsNullOrWhiteSpace(options.ColumnName)) {
+			throw new EntitySchemaDesignerException("Column name is required.");
+		}
+
+		RuntimeEntitySchemaResult schema = ReadMergedRuntimeSchema(options.SchemaName.Trim());
+		RuntimeEntitySchemaColumnResult? runtimeColumn = schema.Columns.FirstOrDefault(column =>
+			string.Equals(column.Name, options.ColumnName.Trim(), StringComparison.OrdinalIgnoreCase));
+		if (runtimeColumn is null) {
+			throw new EntitySchemaDesignerException(
+				$"Column '{options.ColumnName}' was not found in merged schema '{schema.Name}'.");
+		}
+
+		EntitySchemaColumnDefValueDto? defaultValue = MapRuntimeDefaultValue(runtimeColumn.DefaultValue);
+		EntitySchemaColumnDto enrichmentColumn = new() {
+			Name = runtimeColumn.Name,
+			DefValue = defaultValue,
+			ReferenceSchema = string.IsNullOrWhiteSpace(runtimeColumn.ReferenceSchemaName)
+				? null
+				: new EntityDesignSchemaDto { Name = runtimeColumn.ReferenceSchemaName }
+		};
+		EntitySchemaDefaultValueConfig? defaultValueConfig =
+			EntitySchemaDesignerSupport.CreateDefaultValueConfig(defaultValue);
+		defaultValueConfig = EnrichLookupConstDefaultValue(defaultValueConfig, enrichmentColumn, options);
+
+		return new EntitySchemaColumnPropertiesInfo(
+			schema.Name,
+			MergedSchemaPackageName,
+			runtimeColumn.Name,
+			runtimeColumn.IsInherited ? InheritedColumnSource : "own",
+			runtimeColumn.Caption,
+			runtimeColumn.Description,
+			EntitySchemaDesignerSupport.GetFriendlyTypeName(runtimeColumn.DataValueType),
+			runtimeColumn.IsRequired,
+			runtimeColumn.IsIndexed,
+			runtimeColumn.IsValueCloneable,
+			TrackChanges: null,
+			defaultValueConfig?.Source,
+			EntitySchemaDesignerSupport.GetFriendlyDefaultValue(defaultValue),
+			runtimeColumn.ReferenceSchemaName,
+			runtimeColumn.IsSimpleLookup,
+			runtimeColumn.IsCascade,
+			DoNotControlIntegrity: null,
+			runtimeColumn.IsMultilineText,
+			LocalizableText: null,
+			runtimeColumn.IsAccentInsensitive,
+			runtimeColumn.IsMasked,
+			runtimeColumn.IsFormatValidated,
+			runtimeColumn.UseSeconds,
+			defaultValueConfig,
+			EntitySchemaDesignerSupport.GetFriendlyUsageType(runtimeColumn.UsageType));
+	}
+
+	private static EntitySchemaColumnDefValueDto? MapRuntimeDefaultValue(
+		RuntimeEntitySchemaDefaultValueResult? defaultValue) {
+		return defaultValue is null
+			? null
+			: new EntitySchemaColumnDefValueDto {
+				ValueSourceType = (EntitySchemaColumnDefSource)defaultValue.ValueSourceType,
+				Value = defaultValue.Value,
+				ValueSource = defaultValue.ValueSource,
+				SequencePrefix = defaultValue.SequencePrefix,
+				SequenceNumberOfChars = defaultValue.SequenceNumberOfChars
+			};
 	}
 
 	/// <summary>
@@ -312,7 +390,7 @@ internal sealed class RemoteEntitySchemaColumnManager : IRemoteEntitySchemaColum
 		List<EntitySchemaColumnDto> inheritedColumns = schema.InheritedColumns?.ToList() ?? [];
 		List<EntitySchemaPropertyColumnInfo> columns = ownColumns
 			.Select(column => MapSchemaPropertyColumn(column, "own", cultureName))
-			.Concat(inheritedColumns.Select(column => MapSchemaPropertyColumn(column, "inherited", cultureName)))
+			.Concat(inheritedColumns.Select(column => MapSchemaPropertyColumn(column, InheritedColumnSource, cultureName)))
 			.ToList();
 		return new EntitySchemaPropertiesInfo(
 			schema.Name,
@@ -424,7 +502,7 @@ internal sealed class RemoteEntitySchemaColumnManager : IRemoteEntitySchemaColum
 		return new EntitySchemaPropertyColumnInfo(
 			column.Name,
 			column.UId,
-			column.IsInherited ? "inherited" : "own",
+			column.IsInherited ? InheritedColumnSource : "own",
 			column.Caption,
 			column.Description,
 			EntitySchemaDesignerSupport.GetFriendlyTypeName(column.DataValueType),
@@ -927,7 +1005,7 @@ internal sealed class RemoteEntitySchemaColumnManager : IRemoteEntitySchemaColum
 		EntitySchemaColumnDto inheritedColumn = (schema.InheritedColumns?.ToList() ?? []).FirstOrDefault(column =>
 			string.Equals(column.Name, columnName, StringComparison.OrdinalIgnoreCase));
 		if (inheritedColumn != null) {
-			return (inheritedColumn, "inherited");
+			return (inheritedColumn, InheritedColumnSource);
 		}
 
 		throw new EntitySchemaDesignerException(
