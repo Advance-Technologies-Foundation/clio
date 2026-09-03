@@ -75,7 +75,7 @@ public static class AccessRightsBlockExpectation {
 			// An element that is not in the read-back at all is NOT reported, matching the email guard: the
 			// read-back is the only evidence this check has, and "I cannot find the element I asked about" is a
 			// reason to stay quiet rather than to accuse the server.
-			if (element is not null && !ReportsAccessRights(element)) {
+			if (element is not null && !TryGetAccessRights(element, out _)) {
 				missing.Add(name);
 			}
 		}
@@ -163,7 +163,7 @@ public static class AccessRightsBlockExpectation {
 
 			// Only an element the read-back actually returned can be judged; an absent one is reported by
 			// Unresolved() instead, so it is not accused twice.
-			if (element is null || !ReportsAccessRights(element)) {
+			if (element is null || !TryGetAccessRights(element, out _)) {
 				continue;
 			}
 
@@ -226,16 +226,27 @@ public static class AccessRightsBlockExpectation {
 		// caller with no filter that "nothing will happen" was the inversion this guard shipped with.
 		return "The 'accessRights' configuration was saved, but " + string.Join("; and ", parts)
 			+ ". This happens silently, because the element has no output parameters"
-			+ (absent.Length > 0
-				? ". Set the filter you mean BEFORE this process runs, with the setFilter operation (to act on "
-					+ "one record, filter Id against a process parameter or a trigger output). Note that ANY "
+			+ Remedy();
+
+		// The remedy differs by direction, so it cannot be one sentence: an ABSENT filter is urgent - the element
+		// is about to touch every record - while a conditionless one is merely inert. A local function rather than
+		// a nested ternary, so a fourth state stays a one-line addition.
+		string Remedy() {
+			if (absent.Length > 0) {
+				return ". Set the filter you mean BEFORE this process runs, with the setFilter operation (to act "
+					+ "on one record, filter Id against a process parameter or a trigger output). Note that ANY "
 					+ "change to the element's object clears its record filter, so an ordinary retarget lands in "
-					+ "exactly this state."
-				: conditionless.Length > 0
-					? ". A conditionless filter is refused at build by a current CrtProcessBuilder, so an element "
-						+ "carrying one was configured by an older package or in the designer. Give it the "
-						+ "conditions you mean, and do not report a grant or revoke as applied until you have."
-					: ". Confirm the filter in the designer before reporting a grant or revoke as applied.");
+					+ "exactly this state.";
+			}
+
+			if (conditionless.Length > 0) {
+				return ". A conditionless filter is refused at build by a current CrtProcessBuilder, so an element "
+					+ "carrying one was configured by an older package or in the designer. Give it the conditions "
+					+ "you mean, and do not report a grant or revoke as applied until you have.";
+			}
+
+			return ". Confirm the filter in the designer before reporting a grant or revoke as applied.";
+		}
 	}
 
 	/// <summary>Which of the three reportable record-filter states an element's read-back puts it in.</summary>
@@ -376,6 +387,17 @@ public static class AccessRightsBlockExpectation {
 		&& ((group.Conditions?.Count ?? 0) > 0
 			|| (group.Groups?.Any(NarrowsSomething) ?? false));
 
+	/// <summary>
+	/// The element's <c>accessRights</c> block from the extension bag, or false when it carries none. This is the
+	/// ONLY channel the block travels on: DescribedElement has no typed AccessRights member, so every check in this
+	/// class keys on the bag.
+	/// <para>Deliberately an explicit case-INSENSITIVE scan rather than a dictionary lookup or a LINQ filter. The
+	/// bag's default comparer is ordinal, so a server that spelled the property with different casing would make
+	/// this guard report that a caller's permissions had been discarded when they had not - a permanent false
+	/// alarm on the one signal that says whether a grant or revoke landed. It also returns a value from the FIRST
+	/// match rather than filtering, which is why the loop is not the "simplify with Where" shape a static analyser
+	/// suggests.</para>
+	/// </summary>
 	private static bool TryGetAccessRights(DescribedElement element, out JsonElement block) {
 		block = default;
 		if (element.AdditionalData is null) {
@@ -392,19 +414,6 @@ public static class AccessRightsBlockExpectation {
 		return false;
 	}
 
-	private static bool ReportsAccessRights(DescribedElement element) {
-		if (element.AdditionalData is null) {
-			return false;
-		}
-
-		foreach (KeyValuePair<string, JsonElement> entry in element.AdditionalData) {
-			if (string.Equals(entry.Key, AccessRightsKey, StringComparison.OrdinalIgnoreCase)) {
-				return entry.Value.ValueKind is not (JsonValueKind.Undefined or JsonValueKind.Null);
-			}
-		}
-
-		return false;
-	}
 
 	// Parsed defensively: an unparseable payload is the command's problem to report through the normal error
 	// path, not this check's. Returning null here just skips the verification rather than masking the real
