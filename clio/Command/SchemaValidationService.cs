@@ -3498,9 +3498,8 @@ public static class SchemaValidationService
 			attributes => CollectMissingCustomValidatorReferences(attributes, declaredTypes, reportedReferences, result));
 		ForEachMarkerAttributesContainer(jsBody, SchemaViewModelConfigDiff, true,
 			attributes => CollectMissingCustomValidatorReferences(attributes, declaredTypes, reportedReferences, result));
-		ForEachTargetedDiffAttribute(jsBody,
-			(attributeName, attributeBody) => CollectMissingCustomValidatorReferences(
-				attributeName, attributeBody, declaredTypes, reportedReferences, result));
+		CollectTargetedDiffMissingCustomValidatorReferences(
+			jsBody, declaredTypes, reportedReferences, result);
 		result.IsValid = result.Errors.Count == 0;
 		return result;
 	}
@@ -3526,30 +3525,52 @@ public static class SchemaValidationService
 			validators.ValueKind != JsonValueKind.Object) {
 			return;
 		}
+		CollectMissingCustomValidatorReferencesFromValidators(
+			attributeName, validators, declaredTypes, reportedReferences, result);
+	}
+
+	private static void CollectMissingCustomValidatorReferencesFromValidators(
+		string attributeName,
+		JsonElement validators,
+		IReadOnlySet<string> declaredTypes,
+		ISet<string> reportedReferences,
+		SchemaValidationResult result) {
 		foreach (JsonProperty validator in validators.EnumerateObject()) {
-				if (!validator.Value.TryGetProperty(TypePropertyName, out JsonElement typeElement) ||
-					typeElement.ValueKind != JsonValueKind.String) {
-					continue;
-				}
-				string validatorType = typeElement.GetString();
-				if (string.IsNullOrWhiteSpace(validatorType) ||
-					validatorType.StartsWith("crt.", StringComparison.OrdinalIgnoreCase) ||
-					declaredTypes.Contains(validatorType)) {
-					continue;
-				}
-				string referenceKey = $"{attributeName}\u0000{validatorType}";
-				if (!reportedReferences.Add(referenceKey)) {
-					continue;
-				}
-				result.Errors.Add(
-					$"Attribute '{attributeName}' references custom validator type '{validatorType}', " +
-					"but the final page body does not declare that key in SCHEMA_VALIDATORS.");
+			CollectMissingCustomValidatorReference(
+				attributeName, validator.Value, declaredTypes, reportedReferences, result);
 		}
 	}
 
-	private static void ForEachTargetedDiffAttribute(
+	private static void CollectMissingCustomValidatorReference(
+		string attributeName,
+		JsonElement validator,
+		IReadOnlySet<string> declaredTypes,
+		ISet<string> reportedReferences,
+		SchemaValidationResult result) {
+		if (!validator.TryGetProperty(TypePropertyName, out JsonElement typeElement) ||
+			typeElement.ValueKind != JsonValueKind.String) {
+			return;
+		}
+		string validatorType = typeElement.GetString();
+		if (string.IsNullOrWhiteSpace(validatorType) ||
+			validatorType.StartsWith("crt.", StringComparison.OrdinalIgnoreCase) ||
+			declaredTypes.Contains(validatorType)) {
+			return;
+		}
+		string referenceKey = $"{attributeName}\u0000{validatorType}";
+		if (!reportedReferences.Add(referenceKey)) {
+			return;
+		}
+		result.Errors.Add(
+			$"Attribute '{attributeName}' references custom validator type '{validatorType}', " +
+			"but the final page body does not declare that key in SCHEMA_VALIDATORS.");
+	}
+
+	private static void CollectTargetedDiffMissingCustomValidatorReferences(
 		string jsBody,
-		Action<string, JsonElement> action) {
+		IReadOnlySet<string> declaredTypes,
+		ISet<string> reportedReferences,
+		SchemaValidationResult result) {
 		if (!TryReadMarkerRootElement(jsBody, SchemaViewModelConfigDiff, out JsonDocument? document)) {
 			return;
 		}
@@ -3567,7 +3588,7 @@ public static class SchemaValidationService
 					continue;
 				}
 				if (!operation.TryGetProperty("path", out JsonElement path) ||
-					path.ValueKind != JsonValueKind.Array || path.GetArrayLength() != 2 ||
+					path.ValueKind != JsonValueKind.Array || path.GetArrayLength() is < 2 or > 4 ||
 					path[0].ValueKind != JsonValueKind.String ||
 					!string.Equals(path[0].GetString(), AttributesPropertyName, StringComparison.OrdinalIgnoreCase) ||
 					path[1].ValueKind != JsonValueKind.String ||
@@ -3575,10 +3596,28 @@ public static class SchemaValidationService
 					attributeBody.ValueKind != JsonValueKind.Object) {
 					continue;
 				}
-				action(path[1].GetString()!, attributeBody);
+				string attributeName = path[1].GetString()!;
+				switch (path.GetArrayLength()) {
+					case 2:
+						CollectMissingCustomValidatorReferences(
+							attributeName, attributeBody, declaredTypes, reportedReferences, result);
+						break;
+					case 3 when IsValidatorsPathSegment(path[2]):
+						CollectMissingCustomValidatorReferencesFromValidators(
+							attributeName, attributeBody, declaredTypes, reportedReferences, result);
+						break;
+					case 4 when IsValidatorsPathSegment(path[2]) && path[3].ValueKind == JsonValueKind.String:
+						CollectMissingCustomValidatorReference(
+							attributeName, attributeBody, declaredTypes, reportedReferences, result);
+						break;
+				}
 			}
 		}
 	}
+
+	private static bool IsValidatorsPathSegment(JsonElement segment) =>
+		segment.ValueKind == JsonValueKind.String &&
+		string.Equals(segment.GetString(), ValidatorsPropertyName, StringComparison.OrdinalIgnoreCase);
 
 	/// <summary>
 	/// Validates that validator <c>params</c> values do not use the reactive binding syntax

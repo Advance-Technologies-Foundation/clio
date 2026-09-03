@@ -6867,6 +6867,42 @@ public sealed class SchemaValidationServiceTests
 			because: "the diagnostic must preserve the attribute name from the diff path");
 	}
 
+	[Test]
+	[Description("A custom validator reference in a diff targeting an attribute validators map is rejected when its type key is undeclared")]
+	public void ValidateCustomValidatorReferences_WhenTargetedValidatorsMapTypeIsMissing_ReturnsError() {
+		// Arrange
+		string body = """
+			/**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/[{"operation":"merge","path":["attributes","UsrName","validators"],"values":{"Probe":{"type":"usr.Missing"}}}]/**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/
+			/**SCHEMA_VALIDATORS*/{}/**SCHEMA_VALIDATORS*/
+			""";
+
+		// Act
+		SchemaValidationResult result = SchemaValidationService.ValidateCustomValidatorReferences(body);
+
+		// Assert
+		result.IsValid.Should().BeFalse("because a validators-map diff still introduces a custom validator reference");
+		result.Errors.Should().ContainSingle(error => error.Contains("UsrName") && error.Contains("usr.Missing"),
+			because: "the diagnostic must preserve the owning attribute name from the diff path");
+	}
+
+	[Test]
+	[Description("A custom validator reference in a diff targeting one validator entry is rejected when its type key is undeclared")]
+	public void ValidateCustomValidatorReferences_WhenTargetedValidatorEntryTypeIsMissing_ReturnsError() {
+		// Arrange
+		string body = """
+			/**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/[{"operation":"merge","path":["attributes","UsrName","validators","Probe"],"values":{"type":"usr.Missing"}}]/**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/
+			/**SCHEMA_VALIDATORS*/{}/**SCHEMA_VALIDATORS*/
+			""";
+
+		// Act
+		SchemaValidationResult result = SchemaValidationService.ValidateCustomValidatorReferences(body);
+
+		// Assert
+		result.IsValid.Should().BeFalse("because a validator-entry diff still introduces a custom validator reference");
+		result.Errors.Should().ContainSingle(error => error.Contains("UsrName") && error.Contains("usr.Missing"),
+			because: "the diagnostic must preserve the owning attribute name from the diff path");
+	}
+
 	#endregion
 
 	#region ValidateMobileNoValidatorReferences
