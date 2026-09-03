@@ -17,9 +17,10 @@ clio set-entity-schema-properties [OPTIONS]
 ## Description
 
 Sets schema-level properties on an existing remote Creatio entity schema through the
-Entity Schema Designer service, then publishes the change (and rebuilds the OData
-entities) exactly like the other entity-schema commands, so the update is effective
-without a compile.
+Entity Schema Designer service, then publishes the change like the other entity-schema
+commands, so the update is effective without a compile. The primary-display column is
+a designer-level property; it does not appear in the OData contract, so setting it
+never triggers an OData entities rebuild.
 
 The command is an extensible property setter — each settable schema-level property is
 its own optional flag, and only the flags you supply are applied.
@@ -68,7 +69,8 @@ clio set-entity-schema-properties -e dev --package Custom --schema-name UsrTicke
 ## Notes
 
 - Read the set value back with `get-entity-schema-properties` (`primary-display-column-name`).
-- The change is published and the OData entities are rebuilt automatically; no compile needed.
+- The change is published automatically; no compile needed. Setting the primary-display
+  column does not change the OData contract, so it does not trigger an OData entities rebuild.
 - At least one settable property must be supplied, otherwise the command reports an error.
 - Naming a column that does not exist on the schema fails with a clear error.
 
