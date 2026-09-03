@@ -75,7 +75,9 @@ public class BundledProcessBuilderPackageTests {
 	/// SHA-256 of the committed archive. Produced by <c>rebundle-process-builder.ps1 -Version 1.4.0.40</c> from
 	/// the <c>ProcessBuilder</c> repository (<c>packages/CrtProcessBuilder</c>, branch
 	/// <c>feature/ENG-96325-lookup-constant-macro-form</c>, rebased onto <c>main</c> at 1.4.0.0, at commit
-	/// <c>67c49628ccc0c453cd1f8b77d4048e253e98b0e0</c>) — the ENG-96325
+	/// <c>67c49628ccc0c453cd1f8b77d4048e253e98b0e0</c>; that branch was SQUASH-merged into <c>main</c> as
+	/// <c>86b186d</c> (PR #41), whose <c>packages/CrtProcessBuilder</c> tree is the identical
+	/// <c>f77936135f16b146bfaa2a48c4374f11c2541fb5</c> — follow either hash) — the ENG-96325
 	/// design-time fix: a Lookup CONSTANT
 	/// keeps <c>Source = ConstValue</c> and its bare record Guid, and gains the referenced record's NAME in
 	/// <c>DisplayValue</c>, which is what the designer renders. The defect it closes was the raw id written
@@ -97,12 +99,14 @@ public class BundledProcessBuilderPackageTests {
 	/// branch carried earlier were cut and withdrawn before release, so no shared environment can carry one; each
 	/// raise exists so a stand or checkout still holding an older archive is DETECTABLY behind.
 	/// <para>
-	/// BOTH prescribed cross-checks were RUN against that commit, not assumed. The <c>ModifiedOnUtc</c> pinned
-	/// below equals the descriptor at <c>67c49628</c> (<c>/Date(1788362204000)/</c>, read from the commit rather
-	/// than from the working tree), as does <see cref="ExpectedArchiveVersion"/>. All 122 archive entries are
-	/// BYTE-identical to that commit's checkout — line endings included, so these bytes are reproducible from it
-	/// on a <c>core.autocrlf=true</c> host. The only committed file absent from the archive is the
-	/// <c>.DotSettings</c> that <c>clioignore</c> excludes.
+	/// BOTH prescribed cross-checks were RUN against that commit, not assumed — and re-run against the squash
+	/// commit on <c>main</c> after the merge. The <c>ModifiedOnUtc</c> pinned below equals the descriptor at
+	/// <c>67c49628</c> and at <c>86b186d</c> (<c>/Date(1788362204000)/</c>, read from the commits rather than
+	/// from a working tree), as does <see cref="ExpectedArchiveVersion"/>. All 122 archive entries equal the
+	/// merged tree's blobs: the two DLLs byte for byte, the 120 text files after the CRLF rendering a
+	/// <c>core.autocrlf=true</c> checkout applies to LF blobs, so these bytes are reproducible from <c>main</c>.
+	/// The only committed file absent from the archive is the <c>.DotSettings</c> that <c>clioignore</c>
+	/// excludes.
 	/// </para>
 	/// Provenance rules live in <c>docs/agent-instructions/bundled-packages.md</c>.
 	/// </summary>
