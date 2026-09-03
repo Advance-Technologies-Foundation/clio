@@ -1,4 +1,4 @@
-﻿# ENG-95891 — Does the platform's pre-save gate refuse a bad flow CONDITION?
+# ENG-95891 — Does the platform's pre-save gate refuse a bad flow CONDITION?
 
 **Measured 2026-09-03.** This is the one question
 [`adr-collapse-formula-validation-onto-platform-rule.md`](../adr/adr-collapse-formula-validation-onto-platform-rule.md)
@@ -153,3 +153,9 @@ first; an element-scoped reference named as such), so the stand was moved to **1
 tiers were re-run against it: `ModifyBusinessProcessToolE2ETests` + `CreateBusinessProcessToolE2ETests`,
 60 tests, 0 failures. The measurements above are 1.4.0.41's and were not re-taken — none of them touches
 a code path .42 changed.
+
+**1.4.0.43** is what this branch finally bundles and what the stand now runs. It differs from .42 in
+byte-order marks alone (patch scripts had added a BOM to nine files that had none), so the E2E tier was
+not re-run against it; the rewrite was re-probed once by hand and answers as above. A version bump was
+required anyway, because moving package bytes invalidates the archive an environment has already
+recorded.

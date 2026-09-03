@@ -1,4 +1,4 @@
-﻿# ADR — Collapse formula validation onto the platform's own rule
+# ADR — Collapse formula validation onto the platform's own rule
 
 - **Status**: Accepted 2026-09-03, after the one measurement it left open was run and reversed the
   premise of Decision step 2. Implemented on the follow-up branch

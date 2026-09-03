@@ -1,4 +1,4 @@
-﻿# ENG-95891 — The supported formula vocabulary, and the evidence that defines it
+# ENG-95891 — The supported formula vocabulary, and the evidence that defines it
 
 **Scoping rule (agreed):** the toolkit supports what is **(1) documented on Academy**, **(2) selectable in
 the process designer**, and **(3) actually used in real shipped processes**. Anything outside that set is

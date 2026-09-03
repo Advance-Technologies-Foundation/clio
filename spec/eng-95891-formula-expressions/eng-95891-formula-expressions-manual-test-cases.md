@@ -1,4 +1,4 @@
-﻿# ENG-95891 — Manual test cases
+# ENG-95891 — Manual test cases
 
 Written as **business assignments given to an AI agent** — the way the feature is actually used — rather
 than as tool calls. The tester gives the agent the assignment verbatim, then checks the process in the

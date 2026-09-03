@@ -1,4 +1,4 @@
-﻿# ENG-95891 — Traps
+# ENG-95891 — Traps
 
 Every entry here **fails silently**: the call succeeds, the schema saves, the process compiles, and the
 behaviour is wrong. They are ordered by how much damage they do if missed.
