@@ -2739,10 +2739,10 @@ public class PageToolsTests
 			.And.Contain("$UsrName")
 			.And.Contain("$context.set",
 				because: "the response should guide toward the correct declared attribute written by the handler");
-		// This body ALSO carries an unresolved label resource ($Resources.Strings.UsrName against binding
-		// attribute UsrNameField), which since issue #1320 triggers one READ-ONLY GetSchema to check the
-		// schema's persisted localizableStrings before the rejection stands. The invariant that matters is
-		// unchanged: nothing is written.
+		// The persisted-resource-key rescue (issue #1320) must NOT fire here: this body is blocked by a
+		// standard-field BINDING error, and a persisted key can never clear one. The "no Creatio I/O for a
+		// rejected body" cost contract therefore still holds - not one read, not one write.
+		serviceUrlBuilder.DidNotReceive().Build("/ServiceModel/ClientUnitSchemaDesignerService.svc/GetSchema");
 		serviceUrlBuilder.DidNotReceive().Build("/ServiceModel/ClientUnitSchemaDesignerService.svc/SaveSchema");
 	}
 

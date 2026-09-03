@@ -305,10 +305,50 @@ internal static class EntitySchemaDesignerSupport
 		if (parsed is null || parsed.Count == 0) {
 			throw new EntitySchemaDesignerException($"{fieldName} must contain at least one localization.");
 		}
-		// requireDefaultCulture:false — this parses a per-culture MERGE of an EXISTING caption, so listing
-		// only uk-UA is legitimate: the en-US caption the schema already carries is preserved. Demanding
-		// en-US here would contradict the documented "unlisted cultures keep their caption" behaviour.
-		return NormalizeLocalizationMap(parsed, fieldName, requireDefaultCulture: false);
+		return NormalizeSchemaCaptionLocalizations(parsed, fieldName);
+	}
+
+	/// <summary>
+	/// Normalizes a SCHEMA-CAPTION localization map and applies the two policies every other caption
+	/// surface enforces: each culture KEY must be a real culture, and each value's script must match its
+	/// culture (ENG-91044).
+	/// </summary>
+	/// <remarks>
+	/// This is the single entry point for <c>set-entity-schema-properties</c> on BOTH surfaces - the CLI's
+	/// <c>--title-localizations</c> JSON string and the MCP tool's already-deserialized map - so the two
+	/// cannot drift. It deliberately sits ABOVE <see cref="NormalizeLocalizationMap"/> rather than inside
+	/// it: that method is shared with the per-column <c>title-localizations</c> path, and tightening it
+	/// there would change behaviour well beyond the schema caption.
+	/// <para>
+	/// <c>requireDefaultCulture: false</c> — this is a per-culture MERGE of an EXISTING caption, so listing
+	/// only uk-UA is legitimate: the en-US caption the schema already carries is preserved. Demanding
+	/// en-US here would contradict the documented "unlisted cultures keep their caption" behaviour.
+	/// </para>
+	/// </remarks>
+	/// <param name="values">The raw culture-to-caption map.</param>
+	/// <param name="fieldName">Argument name used in error messages.</param>
+	/// <returns>The normalized map, or <c>null</c> when <paramref name="values"/> is <c>null</c>.</returns>
+	internal static IReadOnlyDictionary<string, string>? NormalizeSchemaCaptionLocalizations(
+		IReadOnlyDictionary<string, string>? values, string fieldName) {
+		IReadOnlyDictionary<string, string>? normalized =
+			NormalizeLocalizationMap(values, fieldName, requireDefaultCulture: false);
+		if (normalized is null) {
+			return null;
+		}
+		foreach (string cultureName in normalized.Keys) {
+			// The scalar --caption-culture is validated through CultureInfo before any write, so an
+			// unknown culture supplied as a KEY has to be rejected here too. Without it "xx-YY" reaches
+			// schema.Caption and the save, the publish and the OData rebuild all complete before the
+			// readback verification throws "was not persisted".
+			try {
+				CultureInfo.GetCultureInfo(cultureName);
+			} catch (CultureNotFoundException) {
+				throw new EntitySchemaDesignerException(
+					$"{fieldName} contains an unknown culture name '{cultureName}'.");
+			}
+		}
+		CaptionCultureScriptGuard.EnsureLocalizationMapMatchesCulture(normalized, fieldName);
+		return normalized;
 	}
 
 	internal static string GetLocalizableValue(IEnumerable<LocalizableStringDto> values, string cultureName = null) {

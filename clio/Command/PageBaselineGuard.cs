@@ -27,8 +27,9 @@ public interface IPageBaselineGuard {
 	/// The resolved <c>meta.json</c> path (may be <c>null</c> when resolution itself failed) and whether
 	/// the check is armed. When a caller already pinned <see cref="PageUpdateOptions.ExpectedChecksum"/>
 	/// explicitly (CLI <c>--expected-checksum</c> or MCP <c>checksum</c>), that manual checksum wins the
-	/// comparison and is left untouched, while the baseline's schema UId and schema-absent marker are still
-	/// armed — but if a matching on-disk baseline exists, the method still reports armed so the
+	/// comparison and is left untouched, and the baseline's schema UId is still armed while the
+	/// schema-absent marker is NOT (a pinned checksum asserts the schema existed, so a stale absent
+	/// marker must not veto it) — but if a matching on-disk baseline exists, the method still reports armed so the
 	/// post-save refresh moves that baseline forward to the new checksum, instead of leaving it pinned at
 	/// the overwritten value (which would raise a false conflict on the next unpinned save).
 	/// </returns>
@@ -89,9 +90,14 @@ public sealed class PageBaselineGuard : IPageBaselineGuard {
 		if (baseline is null || !PageBaselineStore.MatchesEnvironment(baseline, options.Environment, options.Uri)) {
 			return (metaFilePath, false);
 		}
-		// The schema-identity half of the baseline is armed on BOTH paths.
+		// The schema-identity half of the baseline is armed on BOTH paths, with ONE exception: the
+		// schema-absent marker is armed only on the unpinned path. A caller-pinned checksum asserts
+		// "an editable schema existed and had this checksum", so a stale on-disk `editableSchemaExists:
+		// false` must not veto it - arming it there produced a false schema-created-externally on a save
+		// whose pin matched the server, and, when the schema had since been deleted, skipped the checksum
+		// comparison altogether (IsCreateReplacing short-circuits before it).
 		options.ExpectedSchemaUId = baseline.EditableSchemaUId;
-		options.ExpectedSchemaAbsent = !baseline.EditableSchemaExists;
+		options.ExpectedSchemaAbsent = !baseline.EditableSchemaExists && !callerPinnedChecksum;
 		if (callerPinnedChecksum) {
 			// The explicit checksum wins the comparison, so it is left untouched. The matching on-disk
 			// baseline must still move forward after the save: report armed so RefreshOrDrop persists the

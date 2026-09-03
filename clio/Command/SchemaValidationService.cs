@@ -2312,23 +2312,6 @@ public static class SchemaValidationService
 	}
 
 	/// <summary>
-	/// Validates that every <c>operation: "insert"</c> entry in the page body's
-	/// <c>viewConfigDiff</c> that introduces a standard field component is self-consistent —
-	/// i.e. the same body either declares the control's binding attribute in
-	/// <c>viewModelConfigDiff</c> / <c>viewModelConfig</c>, and any label that uses
-	/// <c>$Resources.Strings.X</c> is either passed in <paramref name="explicitResources"/>
-	/// or is auto-provided by a DS-bound binding attribute.
-	/// </summary>
-	/// <remarks>
-	/// This guards the common bug where an AI agent adds a control insert for a freshly created
-	/// entity column without registering the matching view-model attribute and resource string.
-	/// The result is a control with no data source and a blank caption. Unlike
-	/// <see cref="ValidateStandardFieldBindings"/>, this validator does NOT tolerate
-	/// undeclared bindings or unregistered labels for <em>insert</em> operations, because a
-	/// newly-inserted control cannot legitimately inherit either piece from a parent schema —
-	/// if it did, the agent would use <c>merge</c>, not <c>insert</c>.
-	/// </remarks>
-	/// <summary>
 	/// Runs the two label-resource-aware field validators and, when the inserted-field one rejects the body
 	/// for an UNRESOLVED LABEL RESOURCE, re-runs both against the resource keys already persisted on the
 	/// target schema.
@@ -2360,6 +2343,13 @@ public static class SchemaValidationService
 		// persisted resource key can change. Anything else must not spend a remote round-trip that cannot
 		// help it: a clean body, a body carrying only the standard-field label WARNING (noise, not a block
 		// - it can still name a key that is in fact persisted), or a rejection about attribute BINDINGS.
+		// A standard-field ERROR is checked first and separately: persisted keys are threaded into
+		// ValidateStandardFieldBindings only inside its warning branch, so they can never clear one. A body
+		// that trips both validators at once (a binding error plus an incidental label-resource error) would
+		// otherwise open the gate and pay a full GetSchema round-trip for a response it cannot change.
+		if (!standardFields.IsValid) {
+			return (standardFields, insertedFields);
+		}
 		if (!insertedFields.Errors.Any(error => error.Contains(UnresolvedLabelResourceClause,
 				StringComparison.Ordinal))) {
 			return (standardFields, insertedFields);
@@ -2373,6 +2363,23 @@ public static class SchemaValidationService
 			ValidateInsertedFieldSelfConsistency(jsBody, explicitResources, persistedResourceKeys));
 	}
 
+	/// <summary>
+	/// Validates that every <c>operation: "insert"</c> entry in the page body's
+	/// <c>viewConfigDiff</c> that introduces a standard field component is self-consistent —
+	/// i.e. the same body either declares the control's binding attribute in
+	/// <c>viewModelConfigDiff</c> / <c>viewModelConfig</c>, and any label that uses
+	/// <c>$Resources.Strings.X</c> is either passed in <paramref name="explicitResources"/>
+	/// or is auto-provided by a DS-bound binding attribute.
+	/// </summary>
+	/// <remarks>
+	/// This guards the common bug where an AI agent adds a control insert for a freshly created
+	/// entity column without registering the matching view-model attribute and resource string.
+	/// The result is a control with no data source and a blank caption. Unlike
+	/// <see cref="ValidateStandardFieldBindings"/>, this validator does NOT tolerate
+	/// undeclared bindings or unregistered labels for <em>insert</em> operations, because a
+	/// newly-inserted control cannot legitimately inherit either piece from a parent schema —
+	/// if it did, the agent would use <c>merge</c>, not <c>insert</c>.
+	/// </remarks>
 	public static SchemaValidationResult ValidateInsertedFieldSelfConsistency(
 		string jsBody,
 		IReadOnlyDictionary<string, string>? explicitResources = null,

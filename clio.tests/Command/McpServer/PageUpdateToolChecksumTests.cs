@@ -1,3 +1,6 @@
+using System.Linq;
+using System.Reflection;
+using System.Text.Json.Serialization;
 using Clio.Command;
 using Clio.Command.McpServer.Tools;
 using FluentAssertions;
@@ -56,5 +59,43 @@ public sealed class PageUpdateToolChecksumTests {
 		// Assert
 		options.ExpectedChecksum.Should().BeNull(
 			"because without a caller checksum the on-disk baseline must remain the source of the conflict check");
+	}
+
+	[Test]
+	[Description("The checksum argument is exposed on the wire as \"checksum\": a wrong or missing JsonPropertyName would leave the argument unbound and the caller's checksum silently dropped - the exact failure mode of issue #1320 - while every mapping test still passed.")]
+	public void PageUpdateArgs_ShouldExposeTheChecksumAsChecksum_WhenInspected() {
+		// Arrange
+		PropertyInfo checksumProperty = typeof(PageUpdateArgs)
+			.GetProperty(nameof(PageUpdateArgs.Checksum))!;
+
+		// Act
+		string checksumJsonName = checksumProperty
+			.GetCustomAttributes(typeof(JsonPropertyNameAttribute), false)
+			.Cast<JsonPropertyNameAttribute>()
+			.Single()
+			.Name;
+
+		// Assert
+		checksumJsonName.Should().Be("checksum",
+			"because the MCP contract binds this argument by its wire name, and a mismatch drops the caller's baseline without any error");
+	}
+
+	[Test]
+	[Description("The set-entity-schema-properties title-localizations argument is exposed on the wire as \"title-localizations\", so the per-culture caption map actually binds.")]
+	public void SetEntitySchemaPropertiesArgs_ShouldExposeTheTitleLocalizationsAsKebabCase_WhenInspected() {
+		// Arrange
+		PropertyInfo titleLocalizationsProperty = typeof(SetEntitySchemaPropertiesArgs)
+			.GetProperty(nameof(SetEntitySchemaPropertiesArgs.TitleLocalizations))!;
+
+		// Act
+		string titleLocalizationsJsonName = titleLocalizationsProperty
+			.GetCustomAttributes(typeof(JsonPropertyNameAttribute), false)
+			.Cast<JsonPropertyNameAttribute>()
+			.Single()
+			.Name;
+
+		// Assert
+		titleLocalizationsJsonName.Should().Be("title-localizations",
+			"because an unbound map would leave the caption unchanged while the call still reported success");
 	}
 }

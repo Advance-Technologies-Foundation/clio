@@ -487,7 +487,11 @@ public sealed class PageUpdateTool(
 			Login = args.Login,
 			Password = args.Password,
 			Force = args.Force ?? false,
-			ExpectedChecksum = args.Checksum,
+			// Trimmed: the arming predicate in PageBaselineGuard is whitespace-tolerant
+			// (!string.IsNullOrWhiteSpace) while the comparison is a strict Ordinal one, so a padded
+			// "  4f3374af  " would arm the check and then fail it, reporting a checksum-mismatch that
+			// did not happen. Empty and whitespace-only stay equivalent to "not supplied".
+			ExpectedChecksum = args.Checksum?.Trim(),
 			NotifyDesignerPresence = true
 		};
 
@@ -635,6 +639,12 @@ public sealed class PageUpdateTool(
 		try {
 			return ResolveCommand<PageUpdateCommand>(options).TryGetPersistedResourceKeys(options);
 		} catch (Exception ex) when (ex is not OperationCanceledException) {
+			// Only command RESOLUTION can fail here - the read itself reports its own reason inside the
+			// command. Failing closed leaves the stricter verdict standing, but the reason must be
+			// observable rather than surfacing as a misleading "resource is not registered".
+			_logger?.WriteWarning(SensitiveErrorTextRedactor.Redact(
+				"Persisted resource keys could not be read; the stricter label-resource verdict stands. "
+				+ ex.Message));
 			return null;
 		}
 	}
@@ -758,7 +768,7 @@ public sealed record PageUpdateArgs(
 	[property: Description("Optional. Directory that anchors the .clio-pages baseline lookup — pass the same value that was passed to get-page when it differs from the auto-detected workspace root. Used only for conflict-baseline discovery; does not change where the page is saved.")]
 	string? OutputDirectory = null,
 	[property: JsonPropertyName("checksum")]
-	[property: Description("Optional. The `editable.checksum` value returned by the get-page call this edit is based on. When supplied it becomes the authoritative conflict baseline: the save proceeds when the server-side SysSchema checksum still equals it, and is rejected with a structured 'checksum-mismatch' conflict when the page was changed out of band since that read. Pass it on every save that follows a get-page - without it the check falls back to the .clio-pages baseline on disk, which can be stale or anchored to a different directory and then reports a conflict that did not happen.")]
+	[property: Description("Optional. The `editable.checksum` from the get-page this edit is based on. It becomes the authoritative conflict baseline; pass it on every save that follows a get-page. Re-sending a conflict response's `actualChecksum` here is NOT a resolution - it is equivalent to force=true and needs the same explicit user confirmation.")]
 	string? Checksum = null,
 	[property: JsonPropertyName("validate")]
 	[property: Description("Run client-side content and run-process validation before saving. Default: true. Set false only as an explicit escape hatch for a pre-existing page defect; JavaScript syntax, AST loadability, replace-mode marker integrity, the mobile JSON-object structure check, and the page baseline/conflict guard remain mandatory. It stays combinable with force=true - the two flags are orthogonal (one gates content checks, the other the baseline/conflict guard) - and the response then warns that both are relaxed.")]

@@ -44,7 +44,7 @@ public interface IRemoteEntitySchemaColumnManager
 	void ModifyColumn(ModifyEntitySchemaColumnOptions options);
 
 	/// <summary>
-	/// Sets schema-level properties (v1: the primary-display column) on a remote entity schema and persists
+	/// Sets schema-level properties (the primary-display column and the schema caption per culture) on a remote entity schema and persists
 	/// the result through the shared save/publish pipeline, verifying that the change was applied.
 	/// </summary>
 	/// <param name="options">Options identifying the package, schema, environment, and the properties to set.</param>

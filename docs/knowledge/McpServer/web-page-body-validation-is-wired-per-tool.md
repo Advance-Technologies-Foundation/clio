@@ -19,6 +19,15 @@ results as blocking errors and others as `response.Warnings`, sync-pages merges 
 content-validation aggregate, and validate-page reports them as named result groups. The set grew
 one validator at a time, and no refactor to a common pipeline has been done.
 
+**Worked example (GH-1320)** — the persisted-resource-key rescue was wired into
+`PageUpdateTool.ValidateWebPageBody` and `PageUpdateCommand` but NOT into `PageSyncTool.ValidateBody`,
+which still calls `ValidateStandardFieldBindings` / `ValidateInsertedFieldSelfConsistency` /
+`ValidateInsertedWidgetCaptionResources` with no provider. Because that gate hard-rejects before
+`TryUpdatePage` is reached, the shared command-level fix is unreachable from `sync-pages`: the
+additive-resources rule applies to `update-page` only. Recorded rather than fixed, so the two records
+agree instead of contradicting each other - see
+`docs/knowledge/Command/page-resource-keys-persist-on-schema.md`.
+
 **What breaks if you ignore it** — a validator wired into one or two tools looks fully delivered:
 its unit tests pass, and the tool you tested reports the finding. The unwired tool keeps accepting
 the exact body the check exists to reject, and because these checks are mostly warning-only the

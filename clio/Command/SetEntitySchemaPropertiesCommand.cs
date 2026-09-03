@@ -97,7 +97,7 @@ public class SetEntitySchemaPropertiesOptions : RemoteCommandOptions
 }
 
 /// <summary>
-/// Sets schema-level properties (v1: the primary-display column) on a remote entity schema through the
+/// Sets schema-level properties (the primary-display column and the schema caption per culture) on a remote entity schema through the
 /// Entity Schema Designer save pipeline, then verifies the change was persisted.
 /// </summary>
 public class SetEntitySchemaPropertiesCommand : Command<SetEntitySchemaPropertiesOptions>
@@ -140,11 +140,13 @@ public class SetEntitySchemaPropertiesCommand : Command<SetEntitySchemaPropertie
 			options.ParsedTitleLocalizations =
 				EntitySchemaDesignerSupport.ParseLocalizationJson(options.TitleLocalizations, "title-localizations");
 		} else if (options.ParsedTitleLocalizations is not null) {
-			// The MCP tool hands the map over already deserialized. Normalize it through the SAME rules as
-			// the CLI's JSON string, so an empty culture name or a blank caption is rejected up front on
-			// both surfaces instead of reaching the designer save and failing only at the readback check.
-			options.ParsedTitleLocalizations = EntitySchemaDesignerSupport.NormalizeLocalizationMap(
-				options.ParsedTitleLocalizations, "title-localizations", requireDefaultCulture: false);
+			// The MCP tool hands the map over already deserialized. Normalize it through the SAME entry
+			// point as the CLI's JSON string - including the culture-name check and the ENG-91044
+			// script/culture guard - so an empty culture name, an unknown culture or a caption in the
+			// wrong script is rejected up front on both surfaces instead of reaching the designer save
+			// and failing only at the readback check.
+			options.ParsedTitleLocalizations = EntitySchemaDesignerSupport.NormalizeSchemaCaptionLocalizations(
+				options.ParsedTitleLocalizations, "title-localizations");
 		}
 		if (!options.HasAnyPropertyToSet) {
 			throw new ArgumentException(SetEntitySchemaPropertiesOptions.NoPropertyToSetError, nameof(options));

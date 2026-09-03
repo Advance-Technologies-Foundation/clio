@@ -185,10 +185,20 @@ consecutive updates in the same session do not false-conflict. A small race wind
 between the check and the save remains (last write wins).
 
 If you pass `--expected-checksum` while an on-disk baseline is also present, the explicit
-value wins and the auto-armed baseline is ignored — so supplying a stale checksum by hand
-can report a conflict against a page that has not actually changed. This edge fails safe
-(it blocks the save rather than overwriting), but if you mix the two, keep
-`--expected-checksum` current or omit it and let the on-disk baseline drive the check.
+value wins the CHECKSUM comparison and the auto-armed baseline's checksum is ignored — so
+supplying a stale checksum by hand can report a conflict against a page that has not
+actually changed. This edge fails safe (it blocks the save rather than overwriting), but if
+you mix the two, keep `--expected-checksum` current or omit it and let the on-disk baseline
+drive the check. The baseline's *schema UId* is still armed from disk, because pinning a
+checksum says nothing about schema identity; its *schema-absent* marker is not, because a
+pinned checksum asserts that an editable schema existed, and a stale `editableSchemaExists:
+false` would otherwise veto a pin that matches the server exactly.
+
+A `checksum-mismatch` response returns the server's current value as
+`conflictDetails.actualChecksum`. Re-sending that value as `--expected-checksum` /
+`checksum` is **not** a resolution — it silently discards the out-of-band change exactly
+like `--force`, and needs the same explicit confirmation from the user. Re-run `get-page`
+and re-apply your edit on the fresh body instead.
 
 ## Write modes
 
