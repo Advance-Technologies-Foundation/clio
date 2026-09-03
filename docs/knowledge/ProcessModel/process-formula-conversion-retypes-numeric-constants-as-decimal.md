@@ -1,4 +1,4 @@
-﻿---
+---
 description: Creatio's macro-to-code converter chain retypes a formula's numeric constants as decimal (a fractional literal is suffixed m, a divisor is wrapped ((decimal)…)), and decimal widens to nothing in the script engine's cast map — do NOT "fix" that by coercing numeric targets to decimal, because no Creatio parameter is CLR float/double (Integer is int, Float is decimal) and the coercion makes the package disagree with the platform's own pre-save gate
 applies-to:
   - clio/Command/McpServer/Tools/ProcessDesigner/ModifyBusinessProcessTool.cs

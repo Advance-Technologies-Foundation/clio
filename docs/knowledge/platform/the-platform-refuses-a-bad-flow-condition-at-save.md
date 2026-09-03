@@ -1,4 +1,4 @@
-﻿---
+---
 description: Creatio's pre-save validation DOES cover a conditional flow's ConditionExpression — the flow-schema generator turns it into a synthetic Boolean Source=Script parameter and ParameterValuesValidationRule runs that generator first — so a package-side formula validator is duplication, and the source fact that says otherwise (the synthetic parameter is not attached to the schema) is about a different code path
 applies-to:
   - clio/Command/McpServer/Tools/ProcessDesigner/ModifyBusinessProcessTool.cs
