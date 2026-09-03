@@ -670,6 +670,26 @@ public sealed class DescribedParameter {
 	/// </summary>
 	[JsonPropertyName("valueDisplay")]
 	public string ValueDisplay { get; set; }
+
+	/// <summary>
+	/// Provenance stamp, when the parameter carries one: a collection parameter mirrored from an element output is
+	/// tagged <c>&lt;elementName&gt;.&lt;parameterName&gt;</c> — the designer's own "create parameter from element"
+	/// stamp — so a caller can re-issue the mirror later (<c>setParameter</c> with the same pair, the designer's
+	/// <i>Regenerate</i>). Null when untagged; omitted when the server (a <c>CrtProcessBuilder</c> before 1.4.0.41)
+	/// does not report it.
+	/// </summary>
+	[JsonPropertyName("tag")]
+	public string Tag { get; set; }
+
+	/// <summary>
+	/// The per-item shape of a collection parameter (<c>CompositeObjectList</c>): one entry per column the collection
+	/// carries, each a parameter in its own right (name, type, tag = the column UId). This is the DESIGN-TIME contract
+	/// a consumer binds against — a collection without it is an opaque list. Null for a scalar and for a bare,
+	/// shapeless collection; omitted when the server does not report it. Feed a described collection back through
+	/// <c>addParameter</c>'s <c>typeFromElement</c> naming its source, never by re-typing the shape.
+	/// </summary>
+	[JsonPropertyName("itemProperties")]
+	public List<DescribedParameter> ItemProperties { get; set; }
 }
 
 #endregion

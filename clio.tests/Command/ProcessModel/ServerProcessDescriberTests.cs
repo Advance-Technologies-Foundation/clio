@@ -85,6 +85,38 @@ public sealed class ServerProcessDescriberTests {
 	}
 
 	[Test]
+	[Description("Deserializes a collection parameter's provenance tag and its per-item shape (itemProperties, each a parameter with name/type/tag) into the DescribedParameter DTO - the design-time contract a consumer binds against - so the shape the server reports is not dropped by the client the way an untyped field would be (ENG-96230).")]
+	public void Describe_ShouldReadParameterTagAndItemProperties_WhenServerReportsThem() {
+		// Arrange — a process-level collection mirrored from a read element's shaped output, plus a scalar beside it
+		IApplicationClient client = ClientReturning(
+			"{\"DescribeProcessResult\":{\"success\":true,\"name\":\"UsrProc\",\"elements\":[],\"flows\":[],"
+			+ "\"parameters\":[{\"name\":\"Contacts\",\"uid\":\"c1\",\"type\":\"CompositeObjectList\",\"direction\":\"Out\",\"isResult\":false,"
+			+ "\"source\":\"Script\",\"value\":\"[#...#]\",\"tag\":\"ReadContacts.ResultCompositeObjectList\","
+			+ "\"itemProperties\":[{\"name\":\"Name\",\"uid\":\"i1\",\"type\":\"ShortText\",\"direction\":\"Out\",\"tag\":\"a5cca792-47dd-428a-83fb-5c92bdd97ff8\"},"
+			+ "{\"name\":\"Email\",\"uid\":\"i2\",\"type\":\"ShortText\",\"direction\":\"Out\",\"tag\":\"dbf202ec-c444-479b-bcf4-d8e5b1863201\"}]},"
+			+ "{\"name\":\"RowsRead\",\"uid\":\"r1\",\"type\":\"Integer\",\"direction\":\"Out\",\"source\":\"Script\",\"value\":\"[#...#]\",\"tag\":null,\"itemProperties\":null}]}}");
+		ServerProcessDescriber describer = CreateDescriber(client);
+
+		// Act
+		ErrorOr<DescribeProcessResult> result = describer.Describe(new ProcessIdentity("UsrProc", null, null), null);
+
+		// Assert
+		result.IsError.Should().BeFalse(because: "the response is a valid graph");
+		DescribedParameter collection = result.Value.Parameters[0];
+		collection.Tag.Should().Be("ReadContacts.ResultCompositeObjectList",
+			because: "the provenance stamp is what a caller re-mirrors from (the designer's Regenerate)");
+		collection.ItemProperties.Should().HaveCount(2, because: "the per-item shape is the contract a consumer binds to");
+		collection.ItemProperties[0].Name.Should().Be("Name");
+		collection.ItemProperties[0].Type.Should().Be("ShortText");
+		collection.ItemProperties[0].Tag.Should().Be("a5cca792-47dd-428a-83fb-5c92bdd97ff8",
+			because: "each item keeps the column UId the platform's collection sync parses");
+		collection.ItemProperties[1].Name.Should().Be("Email");
+		DescribedParameter scalar = result.Value.Parameters[1];
+		scalar.Tag.Should().BeNull(because: "a parameter without provenance reports no tag");
+		scalar.ItemProperties.Should().BeNull(because: "a scalar has no item shape, and absence must not read as an empty shape");
+	}
+
+	[Test]
 	[Description("Deserializes a Lookup ConstValue's valueDisplay - the referenced record's NAME - into the DescribedParameter DTO, beside the unchanged bare-Guid value, so a caller can show a word without a second read.")]
 	public void Describe_ShouldReadParameterValueDisplay_WhenServerReportsIt() {
 		// Arrange - a Lookup constant the server resolved a name for (ENG-96325); value stays the bare record id
