@@ -52,24 +52,26 @@ namespace Clio.Tests.Command.McpServer;
 [Property("Module", "McpServer")]
 public sealed class WorkspaceTemplateGuidanceDriftTests {
 
+	private static readonly TimeSpan RegexTimeout = TimeSpan.FromSeconds(1);
+
 	// Inline-backticked kebab-case token: lowercase start, at least one hyphen-separated segment.
 	private static readonly Regex BacktickedKebabToken = new(
 		@"`([a-z][a-z0-9]*(?:-[a-z0-9]+)+)`",
-		RegexOptions.Compiled);
+		RegexOptions.Compiled, RegexTimeout);
 
 	// Prose that tells a user to enable a feature flag: `clio experimental --name <key> --enable`.
 	private static readonly Regex ExperimentalFeatureKeyReference = new(
 		@"experimental\s+--name\s+([a-z][a-z0-9]*(?:-[a-z0-9]+)*)",
-		RegexOptions.Compiled | RegexOptions.IgnoreCase);
+		RegexOptions.Compiled | RegexOptions.IgnoreCase, RegexTimeout);
 
 	private static readonly Regex GuidanceNameReference = new(
 		@"name=([a-z][a-z0-9]*(?:-[a-z0-9]+)*)",
-		RegexOptions.Compiled | RegexOptions.IgnoreCase);
+		RegexOptions.Compiled | RegexOptions.IgnoreCase, RegexTimeout);
 
 	// `do\W{1,4}not` tolerates markdown emphasis between the words ("Do **NOT** use").
 	private static readonly Regex NegationMarker = new(
 		@"\bdo\W{1,4}not\b|\bdon't\b|\bnever\b",
-		RegexOptions.Compiled | RegexOptions.IgnoreCase);
+		RegexOptions.Compiled | RegexOptions.IgnoreCase, RegexTimeout);
 
 	// The discovery bridge: a long-tail MCP name on the same line as any of these is routed through the
 	// advertised surface and is therefore valid.
@@ -285,7 +287,8 @@ public sealed class WorkspaceTemplateGuidanceDriftTests {
 		bool hasValidVersionFormat = Regex.IsMatch(
 			libraryVersion,
 			"^[0-9]{1,7}(?:\\.[0-9]{1,3}){0,3}$",
-			RegexOptions.CultureInvariant);
+			RegexOptions.CultureInvariant,
+			RegexTimeout);
 		string[] versionComponents = libraryVersion.Split('.');
 		ulong sequence = document.RootElement.GetProperty("sequence").GetUInt64();
 		ulong expectedSequence = Enumerable.Range(0, 4).Aggregate(

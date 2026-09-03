@@ -44,6 +44,23 @@ You are an expert code quality reviewer focused on maintainability, readability,
 - **Simplicity**: Is there unnecessary complexity?
 - **Testability**: Can it be easily tested?
 
+## Clio Service Route Check
+
+When reviewing clio code that calls a fixed Creatio service endpoint:
+
+- Require the complete route to be declared in `ServiceUrlBuilder.KnownRoute` and
+  `ServiceUrlBuilder.KnownRoutes`.
+- Require callers to use `IServiceUrlBuilder.Build(KnownRoute)` rather than hardcoding the route or
+  concatenating a method name onto a string service base path.
+- Require route coverage for both .NET Framework (`0/` prefix) and .NET Core URL shapes.
+- Do not flag genuinely dynamic, user-supplied service paths; those cannot be represented by a fixed
+  `KnownRoute`.
+- Honor explicit documented prefix exceptions, such as `AuthService.svc/Login`, which is served at the
+  site root on both runtimes and therefore cannot use `ServiceUrlBuilder`'s framework prefix behavior.
+
+Report violations as maintainability and cross-runtime correctness findings because bypassing the
+central route catalog can omit the framework-specific application prefix and lets route definitions drift.
+
 ## Output Format
 
 ### Code Quality Issues

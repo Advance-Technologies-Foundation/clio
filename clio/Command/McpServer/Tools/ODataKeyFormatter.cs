@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Globalization;
 using System.Linq;
 using System.Text.Json;
@@ -34,6 +34,16 @@ internal static class ODataKeyFormatter {
 	/// </summary>
 	public static bool IsValidEntityName(string entity) =>
 		!string.IsNullOrWhiteSpace(entity) && EntityNamePattern.IsMatch(entity.Trim());
+
+	/// <summary>
+	/// True when <paramref name="name"/> is a single simple identifier - one segment, no <c>'/'</c>.
+	/// A PATCH body addresses top-level properties of the entity, so a navigation path such as
+	/// <c>Account/Id</c> is a read-only member path and never a writable key.
+	/// </summary>
+	public static bool IsSimpleIdentifier(string name) =>
+		!string.IsNullOrWhiteSpace(name)
+		&& string.Equals(name, name.Trim(), StringComparison.Ordinal)
+		&& EntityNamePattern.IsMatch(name);
 
 	/// <summary>
 	/// True when <paramref name="path"/> is an OData member path made only of simple

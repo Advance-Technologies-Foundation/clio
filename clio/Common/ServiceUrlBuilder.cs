@@ -250,7 +250,12 @@ public class ServiceUrlBuilder : IServiceUrlBuilder
 		/// <summary>
 		///     Uploads a binary image through the native Image API.
 		/// </summary>
-		ImageApiUpload = 66
+		ImageApiUpload = 66,
+
+		/// <summary>
+		///     Reads one package-scoped entity schema design item.
+		/// </summary>
+		GetEntitySchemaDesignItem = 67
 
 	}
 
@@ -330,6 +335,7 @@ public class ServiceUrlBuilder : IServiceUrlBuilder
 		{KnownRoute.RightsGetRecordRights, "/rest/RightsService/GetRecordRights"},
 		{KnownRoute.RightsApplyChanges, "/rest/RightsService/ApplyChanges"},
 		{KnownRoute.ImageApiUpload, "/ImageAPIService/upload"},
+		{KnownRoute.GetEntitySchemaDesignItem, "ServiceModel/EntitySchemaDesignerService.svc/GetSchemaDesignItem"},
 	};
 
 	private EnvironmentSettings _environmentSettings;

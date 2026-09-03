@@ -12,7 +12,7 @@ namespace Clio.Mcp.E2E;
 
 /// <summary>
 /// End-to-end coverage for ENG-95971: a session against an environment whose odata endpoint answers
-/// with an IIS-style HTML error page (never JSON, never one of the shapes <see cref="ODataResponseError"/>
+/// with an IIS-style HTML error page (never JSON, never one of the shapes <see cref="Clio.Common.CreatioResponseError"/>
 /// recognizes) showed odata-read correctly failing while odata-update reported success:true unconditionally
 /// — the write tools ignored the transport response entirely. odata-update, odata-delete, and odata-create
 /// must all report the same underlying failure instead of masking it as a successful write.
