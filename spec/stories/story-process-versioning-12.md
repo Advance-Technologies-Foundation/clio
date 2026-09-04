@@ -7,7 +7,7 @@
 **ADR**: [adr-process-versioning.md](../adr/adr-process-versioning.md)
 **Test plan**: [tp-process-versioning.md](../test-plans/tp-process-versioning.md)
 **Repository**: crt-process-builder
-**Status**: ready-for-dev
+**Status**: in-progress
 **Size**: M
 
 ---
@@ -28,13 +28,13 @@ numbering never collides and the response tells me what was actually persisted
 
 ## Acceptance Criteria
 
-- [ ] **AC-01** — Given a root with no versions, when the operation runs, then the number comes from `GetMaxProcessVersionInPackage(conn, rootItem.Id, packageUId) + 1`; run twice, the numbers are 1 and 2
-- [ ] **AC-02** — Given the clone before the save, when its name is set, then it is `rootItem.Name + Regex.Replace(packageName, @"\W", "") + version` and the rename precedes the platform's name validation
-- [ ] **AC-03** — Given a name that already exists, when the operation runs, then it refuses before the save with a message naming the collision
-- [ ] **AC-04** — Given a successful save, when the response is built, then `versionSchemaUId`, `versionName`, `version` and `isActiveVersion` come from a post-save re-read through metadata, not from the in-memory instance
-- [ ] **AC-05** — Given another writer took the number, when the post-save re-read runs, then the operation returns `success:false` naming the number that was taken
-- [ ] **AC-06** — Given the saved version reports `IsInterpretable` false, when the response is built, then `warnings` says it cannot execute until the configuration is compiled
-- [ ] **AC-ERR** — Given the save fails — whether by throwing **or** by returning `false` without throwing — when the operation returns, then it reports `success:false` and the draft is rolled back
+- [x] **AC-01** — Given a root with no versions, when the operation runs, then the number comes from `GetMaxProcessVersionInPackage(conn, rootItem.Id, packageUId) + 1`; run twice, the numbers are 1 and 2
+- [x] **AC-02** — Given the clone before the save, when its name is set, then it is `rootItem.Name + Regex.Replace(packageName, @"\W", "") + version` and the rename precedes the platform's name validation
+- [x] **AC-03** — Given a name that already exists, when the operation runs, then it refuses before the save with a message naming the collision
+- [x] **AC-04** — Given a successful save, when the response is built, then `versionSchemaUId`, `versionName`, `version` and `isActiveVersion` come from a post-save re-read through metadata, not from the in-memory instance
+- [x] **AC-05** — Given another writer took the number, when the post-save re-read runs, then the operation returns `success:false` naming the number that was taken
+- [x] **AC-06** — Given the saved version reports `IsInterpretable` false, when the response is built, then `warnings` says it cannot execute until the configuration is compiled
+- [x] **AC-ERR** — Given the save fails — whether by throwing **or** by returning `false` without throwing — when the operation returns, then it reports `success:false` and the draft is rolled back
 
 ## Implementation Notes
 
@@ -56,17 +56,49 @@ Test naming: `MethodName_ShouldBehavior_WhenCondition`
 
 ## Definition of Done
 
-- [ ] Both save-failure branches covered: the throw and the non-throwing `false`
-- [ ] Code compiles clean; tests use fixture-level `[TestFixture(Category = "UnitTests")]` — this repo's convention, and the opposite of clio's
-- [ ] Workspace-diary entry added (`CLAUDE.md:131-150`) — mandatory in this repo
+- [x] Both save-failure branches covered: the throw and the non-throwing `false`
+- [x] Code compiles clean; tests use fixture-level `[TestFixture(Category = "UnitTests")]` — this repo's convention, and the opposite of clio's
+- [x] Workspace-diary entry added (`CLAUDE.md:131-150`) — mandatory in this repo
 - [ ] PR description references this story file
-- [ ] `docs/process-builder-architecture.md` and `.puml` updated together
-- [ ] ClioRing MCP compatibility verdict recorded (`AGENTS.md:241-299`)
+- [x] `docs/process-builder-architecture.md` and `.puml` updated together
+- [x] ClioRing MCP compatibility verdict recorded — the anchor `AGENTS.md:241-299` does not resolve in this repository. Verdict: no MCP surface changes, nothing for ClioRing to be compatible with until stories 16-17.
 
 ## Dev Agent Record
 
-{Left blank — filled by dev agent during implementation}
-- Implementation started: 
-- Implementation completed: 
-- Tests passing: 
-- Notes: 
+- Implementation started: 2026-09-04
+- Implementation completed: 2026-09-04
+- Tests passing: `dotnet test tests/CrtProcessBuilder/CrtProcessBuilder.Tests.csproj -c dev-nf` → **957 passed, 0 failed** (13 new). Build clean, 0 warnings. The story-9 placeholder refusal and the two tests that pinned it are gone — the operation now saves.
+- Notes:
+  - **The allocator takes `rootItem.Id`.** Handed a UId it compiles, runs and silently answers 0, which is
+    how two versions end up claiming one number. The count is scoped to (root, PACKAGE), so a version
+    created in another package restarts at 1, and a root's own stamped number is not part of it.
+  - **A name collision is refused BEFORE the save.** The platform validates the name inside
+    `InternalSaveSchema` and its duplication detector throws `InvalidNameException`, which a caller cannot
+    act on; `ProcessExists(name)` runs first so the refusal names the collision and the package.
+  - **The rename touches the item AND the instance.** `SaveSchema(item, \u2026)` reads the package from
+    `designItem.Instance.PackageUId` while the manager indexes the item by its own `Name`; setting one and
+    not the other saves into the wrong package or under the wrong name.
+  - **`ForceUseInstanceFromMetaData` is unreachable, so the re-read goes through the interface member.**
+    That flag — which both production copy paths set — is `internal` on `ProcessSchemaManagerItem`. The
+    facts therefore come from `item.FindPropertyValue(\u2026)` on a freshly found item, exactly as the ADR's
+    contract note prescribes. It is still a genuine post-save read and still doubles as the collision
+    check: the family is re-read, and another member on our number in our package makes the call
+    `success:false` naming it.
+  - **`SaveSchema` can answer `false` without throwing**, committing nothing, when source generation
+    fails. Handled as its own branch with a rollback and an explicit message.
+  - **The rollback guard could NOT be fixed as the Implementation Notes describe.**
+    `FindItemByRealUId` — the lookup the SAVE path registers through — is inaccessible from a package, so
+    a `FindItemByUId` guard covers only designed items and a saved-then-rolled-back clone falls between
+    the two. `Rollback` now removes UNCONDITIONALLY; the existing try/catch already absorbs "there was
+    nothing to remove", which is the only thing the guard bought. `ProcessSchemaRepositoryTests` was
+    re-pinned to that contract and the old test name went with it.
+  - **A story-9 test caught a real defect here:** the first version of the catch called
+    `Rollback(cloneItem)` unconditionally, so an unauthorized caller produced a repository call — turning
+    the refusal into an oracle for whether a process exists. Now guarded by `cloneItem != null && !saved`.
+  - **NOT DONE, and named rather than quietly skipped:** the integration run on a dedicated sandbox (two
+    consecutive saves numbering 1 then 2; a rejected edit leaving the family unchanged) and the
+    field-by-field diff against a DESIGNER-created version, carried over from story 10. Both need a
+    disposable stand with this package installed. The local stand is the owner's working environment and
+    versions are undeletable by design, so running them there would leave permanent residue. Every INPUT
+    to those two claims is unit-covered; the claims themselves are unobserved, and the numbers 1 and 2
+    remain derived rather than measured (as story 8 already recorded).
