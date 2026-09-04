@@ -104,6 +104,10 @@ The shape was **verified against the applier**, not designed on paper: `Insert` 
 
 ### 3.2 A real entry, before and after
 
+One entry here; **§16 is a gallery of eleven more**, every "before" copied verbatim from the same captured
+response — both merge shapes, five drops with five different codes, the request bindings, the page business
+rule, the skipped normalization, and a slice of the diff as a caller pastes it.
+
 ```jsonc
 // BEFORE
 {
@@ -344,6 +348,19 @@ would have applied **both** — the second merge can overwrite the first. With `
 duplicate is visible. Coalescing merges changes conversion behaviour and needs its own decision, so it is
 recorded and left out of scope.
 
+**Correction to an earlier draft of this section, found while assembling §16: this is not fixture-only.** The
+OOTB `Leads_FormPage` does the same thing — `Tabs` (`crt.TabPanel`) and `CardToggleTabPanel` (`crt.TabPanel`)
+both merge onto the mobile `Tabs`:
+
+```json
+{ "operation": "merge", "name": "Tabs", "values": { "layoutConfig": { "column": 1, "colSpan": 1, "row": 2, "rowSpan": 1 } } }
+{ "operation": "merge", "name": "Tabs" }
+```
+
+The second carries no `values`, so on this page applying both is harmless — but that is luck, not design,
+and it is the same defect on a real page rather than a hand-written one. It raises the priority of the
+decision in §15.5 without changing what the decision is.
+
 ---
 
 ## 8. Fail instead of degrading
@@ -560,7 +577,9 @@ DONE in this branch and are described in §5.5 rather than here.
    is truncated to one column, and its operation is a **merge** (no `type` in `values`), so the defect lives
    in the twin/merge path, not in list projection generally.
 
-5. **Two merges onto one element** (section 7) — decide whether to coalesce.
+5. **Two merges onto one element** (section 7) — decide whether to coalesce. Confirmed on the OOTB
+   `Leads_FormPage`, not only in a fixture: `Tabs` and `CardToggleTabPanel` both merge onto `Tabs`.
+   Harmless there only because the second carries no `values`.
 
 6. **Content pruned as identical to the web-template baseline leaves no trace.** `PruneTemplateComponents`
    removes it before the walk, so it is in neither `sourceStructure` nor `viewConfigDiff` nor
@@ -613,3 +632,600 @@ golden-file regression is **unblocked today** — a test to write, not a blocker
 `CompactPositionalIndexes` numbers only the positional (`:top`) siblings of an anchor. Everything else is
 appended, and an appended insert has no index to carry. Ordering is implicit *because appending is the
 operation.*
+
+---
+
+## 16. Worked examples — real entries, before and after
+
+Every **before** below is copied verbatim from `Leads_FormPage-converter-guide-2026-09-02.json`, the
+captured master-shape response every measurement in this document comes from — 27 top-level fields, with
+`constraints` and `nextSteps` present and no `parentSource` (that field was both added and replaced inside
+this branch). Every **after** is the same entry under the new contract, derived by applying the change, and
+the sizes are computed from the two JSON forms rather than estimated. Two examples are marked FIXTURE:
+the real page produces nothing of that kind, so they come from the unit-test fixtures instead.
+
+### 16.1 A positional container insert
+
+**Before** — 650 chars
+
+```json
+{
+  "webName": "ProgressBarContainer",
+  "webType": "crt.FlexContainer",
+  "operation": "insert",
+  "mobileName": "ProgressBarContainer",
+  "mobileType": "crt.FlexContainer",
+  "parentName": "MainContainer",
+  "propertyName": "items",
+  "index": 0,
+  "mobileValues": {
+    "type": "crt.FlexContainer",
+    "direction": "column",
+    "fitContent": true,
+    "visible": true,
+    "color": "transparent",
+    "borderRadius": "none",
+    "padding": {
+      "top": "none",
+      "right": "small",
+      "bottom": "none",
+      "left": "small"
+    },
+    "justifyContent": "start",
+    "alignItems": "stretch",
+    "gap": "medium",
+    "wrap": "nowrap",
+    "layoutConfig": {
+      "row": 1,
+      "column": 1,
+      "colSpan": 1,
+      "rowSpan": 1
+    },
+    "items": []
+  },
+  "reason": "container; placed above the mobile Tabs (in MainContainer)"
+}
+```
+
+**After** — 472 chars (-27%)
+
+```json
+{
+  "operation": "insert",
+  "name": "ProgressBarContainer",
+  "parentName": "MainContainer",
+  "propertyName": "items",
+  "index": 0,
+  "values": {
+    "type": "crt.FlexContainer",
+    "direction": "column",
+    "fitContent": true,
+    "visible": true,
+    "color": "transparent",
+    "borderRadius": "none",
+    "padding": {
+      "top": "none",
+      "right": "small",
+      "bottom": "none",
+      "left": "small"
+    },
+    "justifyContent": "start",
+    "alignItems": "stretch",
+    "gap": "medium",
+    "wrap": "nowrap",
+    "layoutConfig": {
+      "row": 1,
+      "column": 1,
+      "colSpan": 1,
+      "rowSpan": 1
+    },
+    "items": []
+  }
+}
+```
+
+The entry was already 90 % `mobileValues`, so the saving is small — that is the point. What
+changed is that the six keys around the payload are now the six the applier reads, and `index: 0` means
+what it means to `Insert` rather than being a hint the caller has to translate. The dropped
+`reason` was *"container; placed above the mobile Tabs (in MainContainer)"* — `parentName` and `index: 0`
+say that, and say it in the form that gets applied.
+
+### 16.2 A data-bound leaf, and the binding the old shape threw away
+
+**Before** — 480 chars
+
+```json
+{
+  "webName": "LeadDisqualifyReason",
+  "webType": "crt.ComboBox",
+  "operation": "insert",
+  "mobileName": "LeadDisqualifyReason",
+  "mobileType": "crt.ComboBox",
+  "parentName": "SideAreaProfileFieldFlexContainer",
+  "propertyName": "items",
+  "mobileValues": {
+    "type": "crt.ComboBox",
+    "label": "#ResourceString(LeadDisqualifyReason_label)#",
+    "labelPosition": "above",
+    "listActions": [],
+    "showValueAsLink": true,
+    "controlActions": [],
+    "visible": false,
+    "placeholder": "",
+    "tooltip": ""
+  },
+  "reason": "field/leaf; mobile-supported"
+}
+```
+
+**After** — 342 chars (-29%)
+
+```json
+{
+  "operation": "insert",
+  "name": "LeadDisqualifyReason",
+  "parentName": "SideAreaProfileFieldFlexContainer",
+  "propertyName": "items",
+  "values": {
+    "type": "crt.ComboBox",
+    "label": "#ResourceString(LeadDisqualifyReason_label)#",
+    "labelPosition": "above",
+    "listActions": [],
+    "showValueAsLink": true,
+    "controlActions": [],
+    "visible": false,
+    "placeholder": "",
+    "tooltip": ""
+  }
+}
+```
+
+`reason` here was *"field/leaf; mobile-supported"* — one of the 119 of 155 entries whose reason
+said only what `operation` already said.
+
+The more interesting part is what is NOT in either shape: this is a `crt.ComboBox` with **no binding**.
+The converter strips `control` / `value` out of the carried values because the mobile binding property is a
+type-specific rename, and the master response then said nothing at all about it — the caller was told in
+prose to "add the value binding" with no way to know what it had been. The page's own
+`viewModelConfig` names the attribute (`LookupAttribute_mfwvuqd`, whose `modelConfig.path` is
+`PDS.LeadDisqualifyReason`), so the new response reports it:
+
+```json
+"pendingBindings": [
+  { "name": "LeadDisqualifyReason",
+    "sourceProperty": "control",
+    "sourceValue": "$LookupAttribute_mfwvuqd" }
+]
+```
+
+31 of the 136 inserts need one of these; **zero** carried anything in the captured response. This block is
+the one reconstructed example in this section — necessarily, because the field exists to report a value the
+old shape had already discarded.
+
+### 16.3 A merge twin that is also a rename
+
+**Before** — 357 chars
+
+```json
+{
+  "webName": "CardContentWrapper",
+  "webType": "crt.GridContainer",
+  "operation": "merge",
+  "mobileName": "GeneralTabContainer",
+  "mobileType": "crt.GridContainer",
+  "mobileValues": {
+    "adaptive": {
+      "small": {
+        "columns": [
+          "1fr"
+        ]
+      },
+      "medium": {
+        "columns": [
+          "1fr",
+          "1fr"
+        ]
+      },
+      "large": {
+        "columns": [
+          "1fr",
+          "1fr"
+        ]
+      }
+    }
+  },
+  "reason": "provided by the mobile template (merge into the template's element)."
+}
+```
+
+**After** — 171 chars (-52%)
+
+```json
+{
+  "operation": "merge",
+  "name": "GeneralTabContainer",
+  "values": {
+    "adaptive": {
+      "small": {
+        "columns": [
+          "1fr"
+        ]
+      },
+      "medium": {
+        "columns": [
+          "1fr",
+          "1fr"
+        ]
+      },
+      "large": {
+        "columns": [
+          "1fr",
+          "1fr"
+        ]
+      }
+    }
+  }
+}
+```
+
+The rename moves to `nameMap` — `{"CardContentWrapper": "GeneralTabContainer"}` — where it is
+stated once instead of on every entry as a `webName`/`mobileName` pair. Five of the 155 entries are
+renames, so the map holds five keys.
+
+A merge declares **no `type`**: `mobileType` is gone because the element already exists on the target and
+re-declaring its type is how you overwrite something the template owns.
+
+### 16.4 A merge whose prose restated its own values
+
+**Before** — 406 chars
+
+```json
+{
+  "webName": "Tabs",
+  "webType": "crt.TabPanel",
+  "operation": "merge",
+  "mobileName": "Tabs",
+  "mobileType": "crt.TabPanel",
+  "mobileValues": {
+    "layoutConfig": {
+      "column": 1,
+      "colSpan": 1,
+      "row": 2,
+      "rowSpan": 1
+    }
+  },
+  "reason": "provided by the mobile template (merge into the template's element).; moved down 1 row(s): the page inserts 1 element(s) above it, and its parent positions children by layoutConfig rather than by item order"
+}
+```
+
+**After** — 106 chars (-74%)
+
+```json
+{
+  "operation": "merge",
+  "name": "Tabs",
+  "values": {
+    "layoutConfig": {
+      "column": 1,
+      "colSpan": 1,
+      "row": 2,
+      "rowSpan": 1
+    }
+  }
+}
+```
+
+This is the clearest single case in the whole response. The 206-character reason ended with
+*"moved down 1 row(s): the page inserts 1 element(s) above it, and its parent positions children by
+layoutConfig rather than by item order"* — and `values.layoutConfig.row = 2` **is** that sentence. The
+prose was a description of the payload sitting next to it.
+
+### 16.5 The longest reason in the map — 466 characters
+
+**Before** — 828 chars
+
+```json
+{
+  "webName": "AttachmentList",
+  "webType": "crt.FileList",
+  "operation": "merge",
+  "mobileName": "AttachmentFileList",
+  "mobileType": "crt.FileList",
+  "mobileValues": {
+    "recordColumnName": "Lead",
+    "columns": [
+      {
+        "id": "3fb963b9-dc31-43eb-b899-ecc98131cde8",
+        "code": "AttachmentListDS_Name",
+        "caption": "#ResourceString(AttachmentListDS_Name)#",
+        "dataValueType": 28,
+        "width": 200
+      }
+    ]
+  },
+  "reason": "Attachments detail. Same component on both sides (crt.FileList) under a different template name, so the page's delta over the web-template baseline — the object-specific link column recordColumnName included — merges onto the template-provided AttachmentFileList; an unchanged property is omitted so the mobile default (e.g. RecordId) stands. — template-provided element — merge the prebuilt mobileValues onto 'AttachmentFileList' by name (do not insert a duplicate)"
+}
+```
+
+**After** — 258 chars (-69%)
+
+```json
+{
+  "operation": "merge",
+  "name": "AttachmentFileList",
+  "values": {
+    "recordColumnName": "Lead",
+    "columns": [
+      {
+        "id": "3fb963b9-dc31-43eb-b899-ecc98131cde8",
+        "code": "AttachmentListDS_Name",
+        "caption": "#ResourceString(AttachmentListDS_Name)#",
+        "dataValueType": 28,
+        "width": 200
+      }
+    ]
+  }
+}
+```
+
+Four sentences of reasoning about *why* the merge is shaped as it is, on an entry whose whole
+job is "apply these two properties to `AttachmentFileList`". Everything it explained is either in the
+payload or in the guidance article.
+
+This entry also shows the defect recorded in §15.4: `columns` carries **one** column, and the merge path is
+where that happens.
+
+### 16.6 Five drops, five codes
+
+The five drop shapes the real page produces. `before` is the `elementMap` entry; `after` is the
+`droppedElements` entry.
+
+| element | before (chars) | after |
+|---|---|---|
+| `CancelButton` | 326 | `[{"code":"drop-inherited-chrome","params":{"name":"CancelButton","scope":"MainHeader","target":"FloatingActionButton.menuItems"}}]` |
+| `SimilarLeadSearchFilter` | 241 | `[{"code":"drop-excluded-by-rule","params":{"webType":"crt.SearchFilter","hostType":"crt.ExpansionPanel","host":"SimilarLeadExpansionPanel","slot":"tools"}}]` |
+| `ExplainProbabilityScoreButton` | 183 | `[{"code":"drop-unsupported-request","params":{"request":"crt.CopilotActionRequest"}}]` |
+| `NextSteps` | 123 | `[{"code":"drop-type-not-in-mobile-registry","params":{"webType":"crt.NextSteps"}}]` |
+| `OpportunityPlanningToolsContainer` | 163 | `[{"code":"drop-empty-container"}]` |
+
+Full form of the first one:
+
+**Before**
+
+```json
+{
+  "webName": "CancelButton",
+  "webType": "crt.Button",
+  "operation": "drop",
+  "reason": "action under non-converting scope 'MainHeader'; 'CancelButton' is inherited from the web template (chrome the mobile template provides natively) — not retargeted into FloatingActionButton.menuItems (retargeting would duplicate the native element)"
+}
+```
+
+**After**
+
+```json
+{
+  "webName": "CancelButton",
+  "webType": "crt.Button",
+  "reason": [
+    {
+      "code": "drop-inherited-chrome",
+      "params": {
+        "name": "CancelButton",
+        "scope": "MainHeader",
+        "target": "FloatingActionButton.menuItems"
+      }
+    }
+  ]
+}
+```
+
+Across all twelve drops the reason text goes from **1 708 to 1 414 characters — only −17 %**, and that
+number is worth stating plainly: coding a DROP reason saves almost nothing, because its params carry values
+a caller genuinely needs. The saving in this ticket came from deleting `reason` off the 143 operations that
+are NOT drops, where it said only what `operation` already said. What the codes bought here is not bytes —
+it is that **eleven of these twelve** elements have `componentSuggestions[].category = "DirectMapping"`, so
+without a code every one of them reads as conversion loss and invites a re-insert.
+
+### 16.7 An action binding: lost with its element, and lost on its own
+
+**Before** — the chrome case, one of three identical-in-kind entries (221 chars)
+
+```json
+{
+  "elementName": "SaveButton",
+  "binding": "clicked",
+  "webRequest": "crt.SaveRecordRequest",
+  "reason": "'SaveButton' is inherited from the web template (chrome the mobile template provides natively), which carries its own action"
+}
+```
+
+**After** — 134 chars
+
+```json
+{
+  "elementName": "SaveButton",
+  "binding": "clicked",
+  "webRequest": "crt.SaveRecordRequest",
+  "reason": [
+    {
+      "code": "drop-request-chrome-native"
+    }
+  ]
+}
+```
+
+The code carries **no params**: `elementName` and `webRequest` are already on the record, and a param that
+repeats a sibling field is the redundancy this whole change removes. The reader is sent to `webRequest` to
+decide what to say — `crt.SaveRecordRequest` is the standard request the mobile control provides natively,
+so nothing is lost; a `usr.*` request there would mean the page had overridden the button and THAT is lost.
+
+**Before** — the flagged case, ten entries carrying the identical sentence (229 chars each)
+
+```json
+{
+  "elementName": "SimilarLeadExportDataButton",
+  "binding": "clicked",
+  "request": "crt.ExportDataGridToExcelRequest",
+  "reason": "Request is not in the conversion map (custom or unknown) — verify it exists on mobile before relying on it."
+}
+```
+
+**After** — 154 chars
+
+```json
+{
+  "elementName": "SimilarLeadExportDataButton",
+  "binding": "clicked",
+  "request": "crt.ExportDataGridToExcelRequest",
+  "reason": [
+    {
+      "code": "flag-request-unmapped"
+    }
+  ]
+}
+```
+
+Ten copies of one 107-character sentence is what a per-occurrence prose field looks like at scale. The code
+also fixes a misreading the sentence invited: this binding was **kept**, not lost, so the caller must not
+report loss and must not remove anything.
+
+### 16.8 `captionResource` — 35 keys that were already in `resourceStrings`
+
+**Before**, on `CreateOrderButton`:
+
+```json
+"captionResource": {
+  "key": "CreateOrderButton_caption",
+  "sourceValue": "Create new order"
+}
+```
+
+and, in the same response:
+
+```json
+"resourceStrings": { ..., "CreateOrderButton_caption": "Create new order", ... }
+```
+
+All **35 of 35** `captionResource` keys on this page are present in `resourceStrings` with byte-identical
+text — measured, not assumed. The per-entry copy is gone and `resourceStrings` is the single source, which
+also removes the question a caller had to answer on every entry: register the map, or the entry, or both?
+
+### 16.9 A page business rule (FIXTURE)
+
+`Leads_FormPage` drops no rules, so this is the `ConvertPageBusinessRules_MixedAndOr_DropsRule` fixture.
+
+**Before** — 274 chars
+
+```json
+{
+  "caption": "Mixed A AND (B OR C)",
+  "reason": "Condition mixes AND and OR across nested groups; a mobile page rule supports only a single flat condition group (one logical operator) and cannot represent this without changing when the rule fires — recreate this rule manually."
+}
+```
+
+**After** — 89 chars (-68%)
+
+```json
+{
+  "caption": "Mixed A AND (B OR C)",
+  "reason": [
+    {
+      "code": "drop-rule-condition-mixed-and-or"
+    }
+  ]
+}
+```
+
+The switch that produced that string had one arm per `PageRuleConditionIssue` value — prose keyed on an
+enum, which is a coded field written the long way. `caption` stays, because it is how the developer finds
+the rule to recreate; what the code adds is *which* manual fix it needs (split the condition here, choose a
+different comparison for `drop-rule-condition-unsupported-comparison`).
+
+### 16.10 A skipped normalization (FIXTURE)
+
+`Leads_FormPage` skips none, so this is `Analyze_PropertyNormalization_ShouldReportAGroupThatOnlySkipped`
+— a `crt.IndicatorWidget` binding its whole `config`.
+
+**Before** — 427 chars
+
+```json
+{
+  "name": "BoundIndicator",
+  "type": "crt.IndicatorWidget",
+  "properties": [
+    "config"
+  ],
+  "reason": "the element already carries a non-object value at this path — typically a whole-value binding — and a merging rule never overwrites one: replacing it with an object built from the rule alone would destroy the binding and leave the component missing fields it needs, while still appearing normalized. This element keeps its WEB value here"
+}
+```
+
+**After** — 132 chars (-69%)
+
+```json
+{
+  "name": "BoundIndicator",
+  "type": "crt.IndicatorWidget",
+  "properties": [
+    "config"
+  ],
+  "reason": [
+    {
+      "code": "skip-normalization-path-blocked"
+    }
+  ]
+}
+```
+
+Four sentences of reasoning, on every response that skips a branch, about a decision the converter had
+already made correctly. The facts stay on the record (`name`, `type`, `properties`, and the group's own
+`note` carrying the count); the reasoning is in the guidance article, read once.
+
+### 16.11 What a caller actually pastes
+
+Three consecutive operations from the real diff, `values` elided, in the order they are applied:
+
+```json
+"viewConfigDiff": [
+  {
+    "operation": "insert",
+    "name": "ProgressBarContainer",
+    "parentName": "MainContainer",
+    "propertyName": "items",
+    "index": 0,
+    "values": {
+      "type": "crt.FlexContainer",
+      "...": "(elided)"
+    }
+  },
+  {
+    "operation": "insert",
+    "name": "OverviewTab",
+    "parentName": "Tabs",
+    "propertyName": "items",
+    "index": 1,
+    "values": {
+      "type": "crt.TabContainer",
+      "...": "(elided)"
+    }
+  },
+  {
+    "operation": "insert",
+    "name": "ProcessingTab",
+    "parentName": "Tabs",
+    "propertyName": "items",
+    "index": 2,
+    "values": {
+      "type": "crt.TabContainer",
+      "...": "(elided)"
+    }
+  }
+]
+```
+
+This is the whole deliverable of the change. The same three entries carried **ten, eleven and eleven**
+keys in the captured response — `webName`, `webType`, `mobileName`, `mobileType`, a `reason` sentence each,
+and `captionResource` on the two tabs — and the caller had to work out which of them the applier wanted and
+what the applier calls them. Here there is nothing to work out. (`parentSource` is absent from all three
+because it never reached master: it was introduced and then replaced by `unresolvedParents` inside this
+branch — see §4.)
