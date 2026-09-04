@@ -10,8 +10,18 @@ namespace Clio.Command;
 /// The MCP server is frequently launched with <c>$HOME</c> as its working directory (a common
 /// host default — Claude Code starts <c>clio mcp-server</c> without an explicit cwd). Anchoring
 /// the output at the raw current directory therefore dumps page artifacts straight into the
-/// user's home folder. This resolver binds the output to the workspace root instead, and falls
-/// back to the managed clio home root (never the bare home directory) when no workspace is found.
+/// user's home folder. This resolver prefers the workspace root instead. With no workspace marker
+/// it falls back to the current directory itself, and only when THAT is the bare home directory
+/// does it use the managed clio home root — so output never litters <c>$HOME</c>, but in a plain
+/// checkout it does land under cwd rather than under a workspace root.
+/// </para>
+/// <para>
+/// An EXPLICIT caller-supplied directory is honored verbatim and is not confined: unlike the
+/// <c>--output-file</c> path of the sibling schema-writing tools, it does not go through
+/// <see cref="OutputPathConfinement"/>. Confining it needs a variant of that guard which permits an
+/// already-existing anchor (<c>Resolve</c> refuses an existing target on purpose), so the change is
+/// deliberately left out of the #1185 documentation pass rather than improvised here — the contract
+/// field for <c>output-directory</c> states the missing boundary instead.
 /// </para>
 /// <para>See <c>docs/architecture/clio-pages-workspace-binding.md</c>.</para>
 /// </summary>
