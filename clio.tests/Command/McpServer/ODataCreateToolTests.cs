@@ -677,4 +677,198 @@ public sealed class ODataCreateToolTests {
 	}
 
 	#endregion
+
+	/// <summary>
+	/// Minimal CSDL declaring Account with a text column and a date-time column, so the value guard can be
+	/// shown to key on the declared Edm type rather than on the literal's shape alone.
+	/// </summary>
+	private const string AccountCsdl = """
+		<?xml version="1.0" encoding="utf-8" standalone="no"?>
+		<edmx:Edmx Version="4.0" xmlns:edmx="http://docs.oasis-open.org/odata/ns/edmx">
+		  <edmx:DataServices>
+		    <Schema Namespace="Terrasoft.Configuration.OData" xmlns="http://docs.oasis-open.org/odata/ns/edm">
+		      <EntityType Name="Account">
+		        <Key><PropertyRef Name="Id" /></Key>
+		        <Property Name="Id" Type="Edm.Guid" Nullable="false" />
+		        <Property Name="Name" Type="Edm.String" />
+		        <Property Name="DueDate" Type="Edm.DateTimeOffset" />
+		      </EntityType>
+		    </Schema>
+		  </edmx:DataServices>
+		</edmx:Edmx>
+		""";
+
+	/// <summary>
+	/// Builds an odata-create tool over a stubbed client whose <c>$metadata</c> answers
+	/// <paramref name="metadataBody"/> and whose POST always succeeds.
+	/// </summary>
+	private static (ODataCreateTool tool, IApplicationClient client) CreateFixture(string metadataBody) {
+		IApplicationClient client = Substitute.For<IApplicationClient>();
+		IServiceUrlBuilder urlBuilder = Substitute.For<IServiceUrlBuilder>();
+		IToolCommandResolver resolver = Substitute.For<IToolCommandResolver>();
+		resolver.Resolve<IApplicationClient>(Arg.Any<EnvironmentOptions>()).Returns(client);
+		resolver.Resolve<IServiceUrlBuilder>(Arg.Any<EnvironmentOptions>()).Returns(urlBuilder);
+		urlBuilder.Build(Arg.Any<string>()).Returns(call => $"http://creatio/{call.Arg<string>()}");
+		client.ExecuteGetRequest(Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+			.Returns(metadataBody);
+		client.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+			.Returns("{\"Id\":\"11111111-1111-1111-1111-111111111111\"}");
+		return (new ODataCreateTool(resolver), client);
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("A row whose date-time value has no UTC designator or offset fails locally before any POST, and is reported as definitely not created (GitHub issue #1369).")]
+	public void Create_Should_Reject_A_Row_With_A_Zoneless_DateTime() {
+		// Arrange
+		(ODataCreateTool tool, IApplicationClient client) = CreateFixture(AccountCsdl);
+
+		// Act
+		ODataCreateBatchResponse response = tool.Create(new ODataCreateArgs {
+			EnvironmentName = "dev",
+			Entity = "Account",
+			Rows = Arr("[{\"Name\":\"Acme\",\"DueDate\":\"2024-01-01T04:00:00.000\"}]")
+		});
+
+		// Assert
+		response.Created.Should().Be(0, because: "the row never left clio, so nothing was inserted");
+		response.Results[0].RecordCreated.Should().BeFalse(
+			because: "a row rejected locally has a KNOWN side effect - it is safe to fix and re-send");
+		response.Results[0].Error.Should().Contain("DueDate",
+			because: "the caller can only fix the row when the refusal names the offending field");
+		client.DidNotReceiveWithAnyArgs()
+			.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>());
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("A date-shaped string bound to an Edm.String column is inserted: the guard keys on the declared Edm type.")]
+	public void Create_Should_Insert_A_Date_Shaped_String_On_A_Text_Column() {
+		// Arrange
+		(ODataCreateTool tool, IApplicationClient client) = CreateFixture(AccountCsdl);
+
+		// Act
+		ODataCreateBatchResponse response = tool.Create(new ODataCreateArgs {
+			EnvironmentName = "dev",
+			Entity = "Account",
+			Rows = Arr("[{\"Name\":\"2024-01-01T04:00:00\"}]")
+		});
+
+		// Assert
+		response.Created.Should().Be(1,
+			because: "Name is Edm.String, so a date-shaped text value is a legitimate insert");
+		client.Received(1).ExecutePostRequest(
+			"http://creatio/odata/Account", Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>());
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("An unreadable $metadata endpoint does not fail the insert: the batch proceeds and the guard falls back to the literal's shape.")]
+	public void Create_Should_Insert_When_Metadata_Is_Unavailable() {
+		// Arrange
+		(ODataCreateTool tool, IApplicationClient client) = CreateFixture(string.Empty);
+
+		// Act
+		ODataCreateBatchResponse response = tool.Create(new ODataCreateArgs {
+			EnvironmentName = "dev",
+			Entity = "Account",
+			Rows = Arr("[{\"Name\":\"Acme\"},{\"DueDate\":\"2024-01-01T04:00:00\"}]")
+		});
+
+		// Assert
+		response.Created.Should().Be(1,
+			because: "odata-create does not validate field names, so an unresolved metadata endpoint must never "
+				+ "turn a valid row into a failure");
+		response.Results[1].Success.Should().BeFalse(
+			because: "without a declared type the shape alone decides, and fail-closed is the honest answer");
+		client.Received(1).ExecutePostRequest(
+			Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>());
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("A batch whose rows carry no date-time-shaped value does not download the service CSDL at all.")]
+	public void Create_Should_Not_Read_Metadata_Without_A_Date_Shaped_Value() {
+		// Arrange
+		(ODataCreateTool tool, IApplicationClient client) = CreateFixture(AccountCsdl);
+
+		// Act
+		tool.Create(new ODataCreateArgs {
+			EnvironmentName = "dev",
+			Entity = "Account",
+			Rows = Arr("[{\"Name\":\"Acme\"},{\"Name\":\"Globex\"},{\"Name\":\"Initech\"}]")
+		});
+
+		// Assert
+		client.DidNotReceiveWithAnyArgs().ExecuteGetRequest(null, 0, 0, 0);
+		client.Received(3).ExecutePostRequest(
+			Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>());
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("A batch containing a date-time-shaped value reads $metadata exactly once, however many rows it inserts.")]
+	public void Create_Should_Read_Metadata_Once_Per_Batch() {
+		// Arrange
+		(ODataCreateTool tool, IApplicationClient client) = CreateFixture(AccountCsdl);
+
+		// Act
+		tool.Create(new ODataCreateArgs {
+			EnvironmentName = "dev",
+			Entity = "Account",
+			Rows = Arr("[{\"Name\":\"2024-01-01T04:00:00\"},{\"Name\":\"Globex\"},{\"Name\":\"Initech\"}]")
+		});
+
+		// Assert
+		client.Received(1).ExecuteGetRequest(
+			"http://creatio/odata/$metadata", Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>());
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("A $metadata read that throws does not fail the batch: the type map degrades to null and the guard falls back to the literal's shape (GitHub issue #1369).")]
+	public void Create_Should_Insert_When_The_Metadata_Read_Throws() {
+		// Arrange
+		(ODataCreateTool tool, IApplicationClient client) = CreateFixture(AccountCsdl);
+		client.ExecuteGetRequest(Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+			.Returns(_ => throw new System.InvalidOperationException("metadata endpoint is down"));
+
+		// Act
+		ODataCreateBatchResponse response = tool.Create(new ODataCreateArgs {
+			EnvironmentName = "dev",
+			Entity = "Account",
+			Rows = Arr("[{\"Name\":\"Acme\"},{\"DueDate\":\"2024-01-01T04:00:00\"}]")
+		});
+
+		// Assert
+		response.Created.Should().Be(1,
+			because: "the type map is an optimization for the value guard, never a precondition of the write, "
+				+ "so a throwing metadata endpoint must not turn a valid row into a failure");
+		response.Results[1].Success.Should().BeFalse(
+			because: "with no declared type the literal's shape alone decides, and fail-closed is the honest answer");
+		client.Received(1).ExecutePostRequest(
+			Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>());
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("The optional CSDL read of odata-create uses a short single-attempt budget: it only sharpens the guard, so a stalled $metadata must not hold the batch before its first POST.")]
+	public void Create_Should_Read_Metadata_On_A_Short_Single_Attempt_Budget() {
+		// Arrange
+		(ODataCreateTool tool, IApplicationClient client) = CreateFixture(AccountCsdl);
+
+		// Act
+		tool.Create(new ODataCreateArgs {
+			EnvironmentName = "dev",
+			Entity = "Account",
+			Rows = Arr("[{\"Name\":\"2024-01-01T04:00:00\"}]")
+		});
+
+		// Assert
+		client.Received(1).ExecuteGetRequest(
+			"http://creatio/odata/$metadata",
+			ODataFieldValidation.OptionalMetadataTimeoutMs,
+			ODataFieldValidation.OptionalMetadataAttempts,
+			Arg.Any<int>());
+	}
 }
