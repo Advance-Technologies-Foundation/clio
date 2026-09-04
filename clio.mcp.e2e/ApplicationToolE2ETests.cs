@@ -399,23 +399,50 @@ public sealed class ApplicationToolE2ETests {
 		reachableToolNames.Should().Contain(CreateToolName,
 			because: "the create-app MCP tool must be discoverable via the get-tool-contract compact index before the progress-marker call can run");
 
+		Dictionary<string, object?> createArgs = new() {
+			["args"] = BuildCreateArgs(
+				arrangeContext.EnvironmentName,
+				applicationName,
+				createdApplicationCode,
+				description: null,
+				ApplicationTemplateCode,
+				ApplicationIconId,
+				ApplicationIconBackground,
+				optionalTemplateDataJson: null)
+		};
+
 		// Act — invoke create-app through the progress-capable overload so the client observes the
-		// service-level stage markers the tool streams as notifications/progress.
-		CallToolResult callResult = await arrangeContext.Session.CallToolAsync(
-			CreateToolName,
-			new Dictionary<string, object?> {
-				["args"] = BuildCreateArgs(
-					arrangeContext.EnvironmentName,
-					applicationName,
-					createdApplicationCode,
-					description: null,
-					ApplicationTemplateCode,
-					ApplicationIconId,
-					ApplicationIconBackground,
-					optionalTemplateDataJson: null)
-			},
-			progress,
-			arrangeContext.CancellationTokenSource.Token);
+		// service-level stage markers the tool streams as notifications/progress. Wrapped in the
+		// transient-platform-condition retry gate (issue #1381 part 2): a KNOWN transient platform
+		// answer (the OData-rebuild window, an HTML/login-page redirect, or a rejected implicit login)
+		// is retried instead of failing the test outright. Every retry attempt gets its own progress
+		// sink so the marker assertions below see exactly one attempt's stream, never a mix of a failed
+		// attempt's partial markers and the successful attempt's full set. A login rejection is retried
+		// against a freshly-started MCP session (a fresh clio process, hence a fresh login) rather than
+		// blindly repeating the call against the same stale session; the replacement session is disposed
+		// in the `finally` below regardless of outcome.
+		McpServerSession? reauthenticatedSession = null;
+		CallToolResult callResult;
+		try {
+			callResult = await TransientPlatformConditionRetryGate.InvokeWithRetryAsync(
+				async attemptToken => {
+					McpServerSession activeSession = reauthenticatedSession ?? arrangeContext.Session;
+					progress = new MessageCollectingProgress();
+					return await activeSession.CallToolAsync(CreateToolName, createArgs, progress, attemptToken);
+				},
+				async reauthToken => {
+					if (reauthenticatedSession is not null) {
+						await reauthenticatedSession.DisposeAsync();
+					}
+					reauthenticatedSession = await McpServerSession.StartAsync(settings, reauthToken);
+				},
+				arrangeContext.CancellationTokenSource.Token);
+		}
+		finally {
+			if (reauthenticatedSession is not null) {
+				await reauthenticatedSession.DisposeAsync();
+			}
+		}
 
 		// Diagnostic: dump the raw result BEFORE parsing it. A create that fails on the environment (or
 		// returns the over-deadline "in-progress, poll" envelope) leaves IsError unset, so without the

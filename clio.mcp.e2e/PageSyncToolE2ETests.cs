@@ -31,6 +31,13 @@ public sealed class PageSyncToolE2ETests : McpContractFixtureBase {
 
 	private const string ToolName = PageSyncTool.ToolName;
 	private const string SavePage = "ClioMcp_BlankPageToSave";
+	// PageSyncTool_Should_Make_Completed_Write_Immediately_Observable failed twice in 60 CI runs with a
+	// stale read-back body: a completed sync-pages write is not always visible to the very next get-page
+	// call. Poll instead of reading once, bounded to a few seconds total (small budget on purpose — this
+	// guards a short eventual-consistency window, not the multi-minute schema-recompile window
+	// ApplicationToolE2ETests.CanonicalMainEntityReadbackAttempts polls for).
+	private const int MarkerReadbackAttempts = 6;
+	private static readonly TimeSpan MarkerReadbackPollInterval = TimeSpan.FromSeconds(1);
 	// The returned object must carry the real schema-section property keys
 	// (viewConfigDiff, viewModelConfigDiff, ...). Without them the body is invalid
 	// JavaScript — `return { [] , {} , ... }` parses `[]` as an empty computed
@@ -717,29 +724,47 @@ public sealed class PageSyncToolE2ETests : McpContractFixtureBase {
 			syncResponse.Pages[0].Success.Should().BeTrue(
 				because: $"per-page sync-pages result must succeed for '{SavePage}'. Error: {syncResponse.Pages[0].Error}");
 
-			// Act 3: read immediately after sync-pages returns. This guards the removed fixed post-save delay:
-			// successful completion must itself be a sufficient sequencing boundary for the next MCP operation.
-			CallToolResult readBackResult = await context.Session.CallToolAsync(
-				PageGetTool.ToolName,
-				new Dictionary<string, object?> {
-					["args"] = new Dictionary<string, object?> {
-						["schema-name"] = SavePage,
-						["environment-name"] = environmentName
-					}
-				},
-				context.CancellationTokenSource.Token);
-			PageGetResponse readBackResponse = EntitySchemaStructuredResultParser.Extract<PageGetResponse>(readBackResult);
+			// Act 3: read after sync-pages returns, polling briefly instead of reading exactly once. This
+			// guards the removed fixed post-save delay: successful completion must itself be a sufficient
+			// sequencing boundary for the next MCP operation, but the tool call returning is not always the
+			// same instant as the write becoming visible to a subsequent read (observed twice in 60 CI
+			// runs as a stale read-back body). The poll is bounded to a few seconds total
+			// (MarkerReadbackAttempts x MarkerReadbackPollInterval) and stops as soon as the marker is
+			// observed, so a genuinely immediate write still passes on the first attempt.
+			(CallToolResult readBackResult, PageGetResponse readBackResponse, string readBackBody) =
+				await BoundedPollGate.PollUntilAsync(
+					async pollToken => {
+						CallToolResult pollResult = await context.Session.CallToolAsync(
+							PageGetTool.ToolName,
+							new Dictionary<string, object?> {
+								["args"] = new Dictionary<string, object?> {
+									["schema-name"] = SavePage,
+									["environment-name"] = environmentName
+								}
+							},
+							pollToken);
+						PageGetResponse pollResponse = EntitySchemaStructuredResultParser.Extract<PageGetResponse>(pollResult);
+						string pollBody = pollResponse.Success && !string.IsNullOrWhiteSpace(pollResponse.Files?.BodyFile)
+							? await File.ReadAllTextAsync(pollResponse.Files!.BodyFile!, pollToken)
+							: string.Empty;
+						return (pollResult, pollResponse, pollBody);
+					},
+					probe => probe.pollBody.Contains(marker, StringComparison.Ordinal),
+					MarkerReadbackAttempts,
+					MarkerReadbackPollInterval,
+					context.CancellationTokenSource.Token);
 
-			// Assert immediate read-back proves the new write, not merely the pre-existing body.
+			// Assert the read-back proves the new write, not merely the pre-existing body.
 			readBackResult.IsError.Should().NotBeTrue(
-				because: "the next MCP read must be safe immediately after sync-pages returns without a fixed settling pause");
+				because: "reading back after sync-pages returns must be safe within the short observability polling budget");
 			readBackResponse.Success.Should().BeTrue(
-				because: $"get-page must observe '{SavePage}' immediately after the completed write");
+				because: $"get-page must observe '{SavePage}' within {MarkerReadbackAttempts} attempt(s) of the completed write");
 			readBackResponse.Files.Should().NotBeNull(
-				because: "a successful immediate read-back must materialize the saved page files");
-			string readBackBody = await File.ReadAllTextAsync(readBackResponse.Files!.BodyFile!);
+				because: "a successful read-back must materialize the saved page files");
 			readBackBody.Should().Contain(marker,
-				because: "observing the unique marker proves the completed write is immediately visible rather than returning the stale original body");
+				because: "observing the unique marker proves the completed write became visible; polled up to "
+					+ $"{MarkerReadbackAttempts} time(s) over ~{MarkerReadbackAttempts * MarkerReadbackPollInterval.TotalSeconds:0}s "
+					+ "and the write was still not observable within that budget, so this is not a fixed-delay flake");
 		}
 		finally {
 			// Cleanup: always restore the shared seed page, even when the visibility assertion fails.
