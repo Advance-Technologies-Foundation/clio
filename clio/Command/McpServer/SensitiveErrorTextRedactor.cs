@@ -170,14 +170,7 @@ internal static partial class SensitiveErrorTextRedactor {
 		if (string.IsNullOrWhiteSpace(text)) {
 			return null;
 		}
-		// Fencing is a representation, not proof of provenance: an untrusted source can forge both markers.
-		// Unwrap an existing outer fence and sanitize its payload again so this method stays idempotent without
-		// allowing a forged wrapper to bypass redaction, flattening, token neutralization, or the length limit.
-		if (text.StartsWith(UntrustedDiagnosticPrefix, StringComparison.Ordinal)
-				&& text.EndsWith(UntrustedDiagnosticSuffix, StringComparison.Ordinal)
-				&& text.Length >= UntrustedDiagnosticPrefix.Length + UntrustedDiagnosticSuffix.Length) {
-			text = text[UntrustedDiagnosticPrefix.Length..^UntrustedDiagnosticSuffix.Length];
-		}
+		text = UnwrapOuterFence(text);
 		// CLAMPED BEFORE the rule chain, not only after (PR #1374 review). The input here is
 		// server-authored and arbitrarily large - a ResponseStatus.Message can be a whole page - and Redact
 		// runs eight or more backtracking scans over it, each with its own 1 s timeout. A
@@ -189,27 +182,7 @@ internal static partial class SensitiveErrorTextRedactor {
 		if (text.Length > UntrustedInputLimit) {
 			text = text[..UntrustedInputLimit];
 		}
-		string redacted = Redact(text);
-		StringBuilder collapsed = new(redacted.Length);
-		bool lastWasSpace = false;
-		foreach (char character in redacted) {
-			// Which characters are hostile, and why each category is included, is stated once in
-			// TextUtilities.IsDisplayHostile - char.IsControl alone is not enough on three separate
-			// counts (forged line breaks via U+2028/U+2029, a lone surrogate that makes
-			// System.Text.Json throw, and bidi format overrides). The collapsing of the resulting
-			// runs below is this method's own step, because only the fenced rendering needs it.
-			char normalized = TextUtilities.IsDisplayHostile(character) ? ' ' : character;
-			if (normalized == ' ') {
-				if (lastWasSpace) {
-					continue;
-				}
-				lastWasSpace = true;
-			} else {
-				lastWasSpace = false;
-			}
-			collapsed.Append(normalized);
-		}
-		string flattened = collapsed.ToString().Trim();
+		string flattened = FlattenDisplayHostileRuns(Redact(text));
 		if (flattened.Length == 0) {
 			return null;
 		}
@@ -227,6 +200,47 @@ internal static partial class SensitiveErrorTextRedactor {
 		return fenced
 			? UntrustedDiagnosticPrefix + flattened + UntrustedDiagnosticSuffix
 			: flattened;
+	}
+
+	/// <summary>
+	/// Strips one already-present outer fence so <see cref="NeutralizeOrNull"/> stays idempotent.
+	/// </summary>
+	/// <remarks>
+	/// Fencing is a representation, not proof of provenance: an untrusted source can forge both markers.
+	/// Unwrapping and sanitizing the payload again is what stops a forged wrapper from bypassing redaction,
+	/// flattening, token neutralization, or the length limit.
+	/// </remarks>
+	private static string UnwrapOuterFence(string text) {
+		bool isFenced = text.StartsWith(UntrustedDiagnosticPrefix, StringComparison.Ordinal)
+			&& text.EndsWith(UntrustedDiagnosticSuffix, StringComparison.Ordinal)
+			&& text.Length >= UntrustedDiagnosticPrefix.Length + UntrustedDiagnosticSuffix.Length;
+		return isFenced
+			? text[UntrustedDiagnosticPrefix.Length..^UntrustedDiagnosticSuffix.Length]
+			: text;
+	}
+
+	/// <summary>
+	/// Replaces every display-hostile character with a space and collapses the resulting runs to one space.
+	/// </summary>
+	/// <remarks>
+	/// Which characters are hostile, and why each category is included, is stated once in
+	/// <see cref="TextUtilities.IsDisplayHostile"/> - <see cref="char.IsControl(char)"/> alone is not enough on
+	/// three separate counts (forged line breaks via U+2028/U+2029, a lone surrogate that makes
+	/// <c>System.Text.Json</c> throw, and bidi format overrides). Collapsing the runs is this class's own step.
+	/// </remarks>
+	private static string FlattenDisplayHostileRuns(string redacted) {
+		StringBuilder collapsed = new(redacted.Length);
+		bool lastWasSpace = false;
+		foreach (char character in redacted) {
+			char normalized = TextUtilities.IsDisplayHostile(character) ? ' ' : character;
+			bool isSpace = normalized == ' ';
+			if (isSpace && lastWasSpace) {
+				continue;
+			}
+			lastWasSpace = isSpace;
+			collapsed.Append(normalized);
+		}
+		return collapsed.ToString().Trim();
 	}
 
 	/// <summary>

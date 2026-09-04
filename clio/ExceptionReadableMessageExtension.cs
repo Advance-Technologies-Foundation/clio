@@ -69,30 +69,43 @@ internal static class ExceptionReadableMessageExtension
 	/// </para>
 	/// </remarks>
 	private static string RenderServerDetailCarrier(Exception carrier, Exception outer, bool debug)
+		=> debug
+			? RenderCarrierForDebug(carrier, outer)
+			: RenderCarrierForConsole(carrier, outer);
+
+	/// <summary>
+	/// The single non-debug line: the outer exception's context, the carrier's console rendering, and the
+	/// enrichment the ordinary arms of <see cref="GetReadableMessageException"/> would have contributed.
+	/// </summary>
+	private static string RenderCarrierForConsole(Exception carrier, Exception outer)
 	{
+		StringBuilder line = new();
+		//The outer exception said WHICH operation failed; dropping it left the operator with the
+		//provider's diagnosis and no idea which command produced it.
+		if (!ReferenceEquals(outer, carrier) && DescribeOuterContext(outer, carrier) is { } prefix)
+		{
+			line.Append(prefix).Append(": ");
+		}
 		//The CONSOLE rendering when the carrier has one: Message keeps the agent fence for the MCP
 		//envelope, and a terminal is not a model's context window (PR #1374 review).
-		string message = carrier is IConsoleRenderedFailure consoleRendered && !debug
+		line.Append(carrier is IConsoleRenderedFailure consoleRendered
 			? consoleRendered.ConsoleMessage
-			: carrier.Message;
-		if (!debug)
+			: carrier.Message);
+		//The enrichment the ordinary arms would have added. Without it a SessionRejectedException
+		//wrapping a 401 WebException - exactly what Guard composes - lost the status.
+		if (TryGetWebException(outer, out WebException nestedWebException))
 		{
-			StringBuilder line = new();
-			//The outer exception said WHICH operation failed; dropping it left the operator with the
-			//provider's diagnosis and no idea which command produced it.
-			if (!ReferenceEquals(outer, carrier) && DescribeOuterContext(outer, carrier) is { } prefix)
-			{
-				line.Append(prefix).Append(": ");
-			}
-			line.Append(message);
-			//The enrichment the ordinary arms would have added. Without it a SessionRejectedException
-			//wrapping a 401 WebException - exactly what Guard composes - lost the status.
-			if (TryGetWebException(outer, out WebException nestedWebException))
-			{
-				line.Append(" (").Append(DescribeWebException(nestedWebException)).Append(')');
-			}
-			return line.ToString();
+			line.Append(" (").Append(DescribeWebException(nestedWebException)).Append(')');
 		}
+		return line.ToString();
+	}
+
+	/// <summary>
+	/// The debug render: everything <c>ToString()</c> would have shown down to the carrier, then the
+	/// carrier's own message, its fenced server excerpt, its inner chain, and the outer's stack trace.
+	/// </summary>
+	private static string RenderCarrierForDebug(Exception carrier, Exception outer)
+	{
 		StringBuilder rendered = new();
 		//At debug nothing may be silently narrower than exception.ToString(): the outer's own type and
 		//message, and every inner ABOVE the carrier, are rendered before the carrier's own render. When
@@ -100,48 +113,54 @@ internal static class ExceptionReadableMessageExtension
 		//behaviour this arm already had.
 		if (!ReferenceEquals(outer, carrier))
 		{
-			rendered.Append(outer.GetType().Name);
-			if (!string.IsNullOrWhiteSpace(outer.Message))
-			{
-				rendered.Append(": ").Append(outer.Message);
-			}
-			for (Exception above = outer.InnerException;
-				above != null && !ReferenceEquals(above, carrier);
-				above = above.InnerException)
-			{
-				rendered.Append(Environment.NewLine).Append("---> ").Append(above.GetType().Name);
-				if (!string.IsNullOrWhiteSpace(above.Message))
-				{
-					rendered.Append(": ").Append(above.Message);
-				}
-			}
-			rendered.Append(Environment.NewLine).Append("---> ").Append(carrier.GetType().Name)
-				.Append(": ");
+			AppendChainAboveCarrier(rendered, carrier, outer);
 		}
-		rendered.Append(message);
-		if (carrier is IServerDetailCarrier { ServerDetail: { } detail })
+		rendered.Append(carrier.Message);
+		if (carrier is IServerDetailCarrier { ServerDetail: { } detail }
+			&& UntrustedText.Fenced(detail) is { } safeDetail)
 		{
-			string safeDetail = UntrustedText.Fenced(detail);
-			if (safeDetail != null)
-			{
-				rendered.Append(Environment.NewLine).Append("server detail: ").Append(safeDetail);
-			}
+			rendered.Append(Environment.NewLine).Append("server detail: ").Append(safeDetail);
 		}
 		for (Exception inner = carrier.InnerException; inner != null; inner = inner.InnerException)
 		{
-			string safeInner = UntrustedText.Fenced(
-				TextUtilities.SanitizeForDisplay(inner.Message, MaxRenderedInnerMessageLength));
-			rendered.Append(Environment.NewLine).Append("---> ").Append(inner.GetType().Name);
-			if (safeInner != null)
-			{
-				rendered.Append(": ").Append(safeInner);
-			}
+			AppendTypeAndMessage(rendered, inner.GetType().Name, UntrustedText.Fenced(
+				TextUtilities.SanitizeForDisplay(inner.Message, MaxRenderedInnerMessageLength)));
 		}
 		if (outer.StackTrace != null)
 		{
 			rendered.Append(Environment.NewLine).Append(outer.StackTrace);
 		}
 		return rendered.ToString();
+	}
+
+	/// <summary>
+	/// Renders the outer exception and every inner one ABOVE <paramref name="carrier"/>, leaving
+	/// <paramref name="rendered"/> positioned so the carrier's own message appends next.
+	/// </summary>
+	private static void AppendChainAboveCarrier(StringBuilder rendered, Exception carrier, Exception outer)
+	{
+		rendered.Append(outer.GetType().Name);
+		if (!string.IsNullOrWhiteSpace(outer.Message))
+		{
+			rendered.Append(": ").Append(outer.Message);
+		}
+		for (Exception above = outer.InnerException;
+			above != null && !ReferenceEquals(above, carrier);
+			above = above.InnerException)
+		{
+			AppendTypeAndMessage(rendered, above.GetType().Name, above.Message);
+		}
+		rendered.Append(Environment.NewLine).Append("---> ").Append(carrier.GetType().Name).Append(": ");
+	}
+
+	/// <summary>Appends one <c>---&gt; Type: message</c> chain line, omitting an absent message.</summary>
+	private static void AppendTypeAndMessage(StringBuilder rendered, string typeName, string message)
+	{
+		rendered.Append(Environment.NewLine).Append("---> ").Append(typeName);
+		if (!string.IsNullOrWhiteSpace(message))
+		{
+			rendered.Append(": ").Append(message);
+		}
 	}
 
 	/// <summary>Cap on an inner exception's message when it is rendered at debug verbosity.</summary>
