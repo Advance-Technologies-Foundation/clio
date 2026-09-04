@@ -235,3 +235,6 @@ These files are used on local dev environment only
 .serena
 .clio-pages/
 graphify-out
+# Ad-hoc MCP/HTTP probe captures written at the repository root during manual runs.
+# One of these reached master-bound history once, swept in by an `add -A` during a merge.
+/probe-*.txt
