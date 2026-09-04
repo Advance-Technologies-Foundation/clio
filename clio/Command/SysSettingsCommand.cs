@@ -270,8 +270,15 @@ namespace Clio.Command
 				string value = PrepareUpdateValue(args, hasFilePath, out string valueTypeName);
 				bool updated = _sysSettingsManager.UpdateSysSetting(args.Code, value, valueTypeName);
 				if (!updated) {
+					//PR #1373 review: same as the create refusal - a non-exception `false` is a real failure and
+					//must carry the four envelope fields rather than the all-null shape the contract reads as
+					//success.
+					SysSettingFailure refusal = ReportRefusal("updating sys-setting",
+						SysSettingErrorCategories.ProviderFailure, SysSettingFailureTexts.RefusedUpdateCause,
+						SysSettingFailureTexts.RefusedUpdateRecovery);
 					return new SysSettingUpdateResult(false, args.Code, null,
-						"Failed to update sys-setting. The setting may not exist, or the value did not match the expected type.");
+						"Failed to update sys-setting. The setting may not exist, or the value did not match the expected type.",
+						refusal.Category, refusal.Cause, refusal.RecoveryAction, refusal.CorrelationId);
 				}
 				(string readback, string readbackType) = _sysSettingsManager.GetAllUsersDefaultWithType(args.Code);
 				return new SysSettingUpdateResult(true, args.Code, ApplySecureTextMask(readbackType, readback));
@@ -479,9 +486,21 @@ namespace Clio.Command
 					args.IsPersonal ?? false,
 					referenceSchemaUId);
 				if (!response.Success) {
+					//PR #1373 review: a NON-exception refusal is classified too. This return used to carry
+					//`error-category`, `cause`, `recovery-action` and `correlation-id` all null, which the
+					//contract published as meaning SUCCESS - so an agent branching on the category could not
+					//tell a real refusal from one. `error` keeps the environment's own message byte-for-byte
+					//(existing callers and tests read it), but it is no longer the ONLY failure text: the
+					//cause and recovery are fixed local strings, and the ID is minted through the same
+					//reporter as every other failure so the log line exists to be found.
 					string message = response.ResponseStatus?.Message;
+					SysSettingFailure refusal = ReportRefusal("creating sys-setting",
+						SysSettingErrorCategories.ProviderFailure, SysSettingFailureTexts.RefusedCreateCause,
+						SysSettingFailureTexts.RefusedCreateRecovery);
 					return new SysSettingCreateResult(false, args.Code, args.ValueTypeName, null,
-						string.IsNullOrWhiteSpace(message) ? "Failed creating sys-setting." : message);
+						string.IsNullOrWhiteSpace(message) ? "Failed creating sys-setting." : message,
+						Warning: null, refusal.Category, refusal.Cause, refusal.RecoveryAction,
+						refusal.CorrelationId);
 				}
 				return ApplyInitialValue(args);
 			} catch (Exception ex) {
@@ -648,6 +667,20 @@ namespace Clio.Command
 		/// </remarks>
 		private SysSettingFailure ReportFailure(Exception ex, string operationLabel) =>
 			CategorizeAndLog(ex, operationLabel, _logger, _correlationIds);
+
+		/// <summary>
+		/// The non-exception counterpart of <see cref="ReportFailure"/>: classifies a refusal the environment
+		/// reported as data (a <c>Success == false</c> response, or a <c>false</c> return) rather than by throwing,
+		/// mints its correlation ID from the same provider and writes the same log line, so a caller quoting the ID
+		/// finds a record whichever way the failure arrived.
+		/// </summary>
+		private SysSettingFailure ReportRefusal(string operationLabel, string category, string cause,
+			string recoveryAction) {
+			SysSettingFailure failure = new($"Failed {operationLabel}.", category, cause, recoveryAction,
+				_correlationIds.New());
+			_logger.WriteError(DescribeFailureForLog(failure));
+			return failure;
+		}
 
 		/// <summary>
 		/// Classifies a failure AND writes the one log line that carries its correlation ID, for callers

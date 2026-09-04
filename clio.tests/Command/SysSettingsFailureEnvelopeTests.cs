@@ -261,4 +261,36 @@ public sealed class SysSettingsFailureEnvelopeTests {
 		ids.Distinct().Should().ContainSingle(
 			because: "exactly ONE correlation ID is minted per failure - two different IDs would send an operator looking for two records");
 	}
+
+	[Test]
+	[Description("PR #1373 review: a NON-exception refusal (UpdateSysSetting returning false) carries the four envelope fields too - all-null is what the contract publishes as success, so an agent could not tell a real refusal from one.")]
+	public void TryUpdateSysSetting_Should_Classify_A_NonException_Refusal() {
+		// Arrange
+		ISysSettingsManager manager = Substitute.For<ISysSettingsManager>();
+		manager.UpdateSysSetting(Arg.Any<string>(), Arg.Any<object>(), Arg.Any<string>()).Returns(false);
+		ILogger logger = Substitute.For<ILogger>();
+		List<string> errors = [];
+		logger.When(l => l.WriteError(Arg.Any<string>())).Do(call => errors.Add(call.Arg<string>()));
+		SysSettingsCommand command = new(manager, logger, Substitute.For<IFileSystem>(),
+			new OperationCorrelationIdProvider());
+
+		// Act
+		SysSettingUpdateResult result = command.TryUpdateSysSetting(
+			new UpdateSysSettingArgs("dev", "UsrSetting", "x") { ValueTypeName = "Text" });
+
+		// Assert
+		result.Success.Should().BeFalse(because: "the manager reported the write was not applied");
+		result.ErrorCategory.Should().Be(SysSettingErrorCategories.ProviderFailure,
+			because: "the request reached the environment and was refused there - null would read as success to an agent branching on the category");
+		result.Cause.Should().Be(SysSettingFailureTexts.RefusedUpdateCause,
+			because: "the cause has to be fixed local text, not the absence of any diagnosis");
+		result.RecoveryAction.Should().Be(SysSettingFailureTexts.RefusedUpdateRecovery,
+			because: "#1222 requires the envelope to name the next step on the non-exception path too");
+		result.CorrelationId.Should().NotBeNullOrWhiteSpace(
+			because: "a refusal that mints no ID leaves an operator with nothing to quote");
+		errors.Should().ContainSingle(
+			because: "a correlation ID the caller can quote must have a log line to find")
+			.Which.Should().Contain(result.CorrelationId,
+				because: "the log line and the envelope must carry the SAME ID whichever way the failure arrived");
+	}
 }
