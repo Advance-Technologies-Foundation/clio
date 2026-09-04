@@ -4,7 +4,6 @@ using System.Linq;
 using System.Security.Authentication;
 using ATF.Repository;
 using ATF.Repository.Providers;
-using Clio.Command.McpServer;
 
 namespace Clio.Common;
 
@@ -176,8 +175,13 @@ public sealed class ClassifyingDataProvider : IDataProvider {
 				=> new SessionRejectedException(AuthenticationMessage(operation, detail), detail),
 			AuthenticationFailureClassifier.ProviderFailureVerdict.NonJsonPage
 				=> new DataProviderFailureException(NonJsonPageMessage(operation), serverDetail: detail),
+			//BOTH renderings, chosen by the sink (PR #1374 review). Message keeps the fenced form every
+			//existing consumer already reads - the MCP envelope above all - while ConsoleMessage carries
+			//the same diagnosis without the agent fence, for the CLI renderer.
 			var _ => new DataProviderFailureException(GenericMessage(operation, detail),
-				serverDetail: detail)
+				serverDetail: detail) {
+					ConsoleMessage = ConsoleGenericMessage(operation, detail)
+				}
 		};
 	}
 
@@ -209,7 +213,7 @@ public sealed class ClassifyingDataProvider : IDataProvider {
 	/// fixed sentence can replace without destroying the diagnosis.
 	/// </summary>
 	/// <remarks>
-	/// So the text is fenced rather than dropped: <see cref="SensitiveErrorTextRedactor.RedactUntrustedOrNull"/>
+	/// So the text is fenced rather than dropped: <see cref="UntrustedText.Fenced"/>
 	/// scrubs URIs, paths, tokens and credential pairs, collapses line breaks, clamps the length, and wraps
 	/// the remainder in the marker that names it as observed data rather than as an instruction - which is
 	/// what issue #1333 needs, because this string reaches an AI agent's context through the MCP envelope.
@@ -217,6 +221,17 @@ public sealed class ClassifyingDataProvider : IDataProvider {
 	/// </remarks>
 	private static string GenericMessage(string operation, string detail) =>
 		ServerReportedFailureText.Describe(detail).ComposeMessage(operation);
+
+	/// <summary>
+	/// The same diagnostic rendered for a terminal: scrubbed, flattened and capped, with no agent fence.
+	/// </summary>
+	/// <remarks>
+	/// PR #1374 review. The fence exists for a field a model reads; the CLI renderer prints this
+	/// message to a person, for whom <c>[untrusted-source-text begin] … [untrusted-source-text end]</c>
+	/// has no meaning and reads as clio malfunctioning.
+	/// </remarks>
+	private static string ConsoleGenericMessage(string operation, string detail) =>
+		ServerReportedFailureText.Describe(detail).ComposeConsoleMessage(operation);
 
 	/// <summary>
 	/// Normalizes a server-controlled detail before it is classified. Delegates the character

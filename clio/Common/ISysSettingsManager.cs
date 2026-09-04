@@ -6,7 +6,6 @@ using System.Text.Json;
 using System.Security.Authentication;
 using System.Text.Json.Serialization;
 using ATF.Repository;
-using Clio.Command.McpServer;
 using ATF.Repository.Providers;
 using CreatioModel;
 using DocumentFormat.OpenXml.Office2010.Excel;
@@ -397,7 +396,7 @@ public class SysSettingsManager : ISysSettingsManager
 		// matches a token as a whole unit: capping first can split one and leave the visible half in the
 		// clear. Same order as ServiceResponseJsonGuard.BuildPreview.
 		string cappedResponse = TextUtilities.SanitizeForDisplay(
-			Clio.Command.McpServer.SensitiveErrorTextRedactor.Redact(rawResponse),
+			UntrustedText.Scrub(rawResponse),
 			MaxRejectedResponseDetailLength);
 		//Issue #1333: the body is a login page or an ErrorCode:5 envelope - server-authored text that can
 		//carry a token, a user's e-mail, bidi controls, or a sentence shaped like an instruction to an
@@ -629,10 +628,15 @@ public class SysSettingsManager : ISysSettingsManager
 			}
 			//Issue #1333: ResponseStatus.Message is server-authored prose. It is the platform's own
 			//validation text ("Column 'Name' is required"), so it cannot be replaced by a fixed sentence
-			//without destroying the diagnosis - but it is fenced and scrubbed before it is printed, so a
-			//token, an address or an instruction-shaped sentence cannot ride out on this line.
-			string errMsg = SensitiveErrorTextRedactor.RedactUntrustedOrNull(
-				response?.ResponseStatus?.Message);
+			//without destroying the diagnosis - but it is scrubbed, flattened and capped before it is
+			//printed, so a token, an address or an instruction-shaped sentence cannot ride out on this
+			//line.
+			//CONSOLE rendering, not the fenced one (PR #1374 review): this is _logger.WriteError for
+			//`clio set-syssetting`, so its only reader is a person at a terminal. The fenced form is for
+			//a field a model reads; printing "[untrusted-source-text begin] Column 'Name' is required.
+			//[untrusted-source-text end]" for an ordinary platform validation failure has no audience
+			//here and reads as clio malfunctioning.
+			string errMsg = UntrustedText.ForConsole(response?.ResponseStatus?.Message);
 			_logger.WriteError(
 				$"SysSettings with code: {code} is not updated. " +
 				(errMsg is null ? "Platform reported a failed update." : errMsg));

@@ -19,7 +19,8 @@ namespace Clio.Common;
 /// promoted into the tool's error field).
 /// </para>
 /// </remarks>
-public sealed class DataProviderFailureException : InvalidOperationException, IServerDetailCarrier {
+public sealed class DataProviderFailureException : InvalidOperationException, IServerDetailCarrier,
+		IConsoleRenderedFailure {
 
 	/// <summary>Creates the failure with a composed diagnostic.</summary>
 	/// <param name="message">The diagnostic to surface to the caller.</param>
@@ -40,4 +41,19 @@ public sealed class DataProviderFailureException : InvalidOperationException, IS
 
 	/// <inheritdoc/>
 	public string ServerDetail { get; }
+
+	/// <inheritdoc/>
+	/// <remarks>
+	/// PR #1374 review. Defaults to <see cref="Exception.Message"/>, so a failure whose diagnosis holds no
+	/// server text at all (a fixed local sentence, a non-JSON-page message) has nothing to render twice.
+	/// Only the arm composed from platform prose sets it, and it sets it from the SAME raw text the fenced
+	/// form came from rather than by unwrapping the fence - a forged marker therefore has no second place
+	/// where it could be mistaken for clio's own framing.
+	/// </remarks>
+	public string ConsoleMessage {
+		get => _consoleMessage ?? Message;
+		init => _consoleMessage = value;
+	}
+
+	private readonly string _consoleMessage;
 }

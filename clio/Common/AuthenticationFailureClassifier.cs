@@ -206,11 +206,20 @@ public static class AuthenticationFailureClassifier {
 			TimeSpan.FromSeconds(1));
 
 	/// <summary>
-	/// Login-page markers: the auth-routing paths Creatio redirects to, and the parser's own prose for
-	/// "the body was HTML, not JSON".
+	/// Login-page markers: the auth-routing paths and handlers Creatio's own login response names.
 	/// </summary>
+	/// <remarks>
+	/// A bare <c>&lt;html</c> alternative used to sit in this list, and it made the categorical sentence
+	/// <see cref="FixedAuthenticationDiagnostics.LoginRedirect"/> fire for ANY HTML body - a proxy or
+	/// gateway 401 challenge page included (PR #1374 review). That contradicts the deliberately ambiguous
+	/// both-causes wording <c>ClassifyingDataProvider.NonJsonPageMessage</c> keeps for the same signal, and
+	/// it sends the operator to repair credentials when the intermediary is at fault. An arbitrary HTML body
+	/// now falls through to <see cref="FixedAuthenticationDiagnostics.CredentialsRejected"/> or
+	/// <see cref="FixedAuthenticationDiagnostics.UnknownAuthenticationCause"/>, which claim only what the
+	/// caller has already proven: the rejection itself, not a cause for it.
+	/// </remarks>
 	private static readonly Regex LoginRedirectMarker =
-		new(@"/Login/|NuiLogin|SimpleLogin|ClientUnauthorizedRequest|<\s*html",
+		new(@"/Login/|NuiLogin|SimpleLogin|ClientUnauthorizedRequest",
 			RegexOptions.Compiled | RegexOptions.CultureInvariant | RegexOptions.IgnoreCase,
 			TimeSpan.FromSeconds(1));
 

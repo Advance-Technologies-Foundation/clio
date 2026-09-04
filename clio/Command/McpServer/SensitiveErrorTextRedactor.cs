@@ -146,7 +146,27 @@ internal static partial class SensitiveErrorTextRedactor {
 	/// </remarks>
 	/// <param name="text">The raw, possibly attacker-authored diagnostic.</param>
 	/// <returns>The neutralized text, or <see langword="null"/> when there is nothing to report.</returns>
-	public static string? RedactUntrustedOrNull(string? text) {
+	public static string? RedactUntrustedOrNull(string? text) => NeutralizeOrNull(text, fenced: true);
+
+	/// <summary>
+	/// The CONSOLE rendering of the same untrusted text: scrubbed, flattened and length-capped, but
+	/// <b>not</b> fenced. Returns <see langword="null"/> when there is nothing to report.
+	/// </summary>
+	/// <remarks>
+	/// PR #1374 review. <see cref="RedactUntrustedOrNull"/> exists for a field a model reads, so it wraps
+	/// its result in <c>[untrusted-source-text begin] … [untrusted-source-text end]</c>. A terminal is not
+	/// a model's context window: on the console that fence has no audience and reads as clio
+	/// malfunctioning - <c>clio set-syssetting</c> printed
+	/// <c>SysSettings with code: UsrX is not updated. [untrusted-source-text begin] Column 'Name' is
+	/// required. [untrusted-source-text end]</c> for an ordinary platform validation failure.
+	/// <para>Everything else the neutralization does is still needed here: the text is server-authored, so
+	/// secrets are still scrubbed, forged line breaks and bidi controls still collapse, a forged fence is
+	/// still neutralized, and the length is still capped - a console line must not become a page.</para>
+	/// </remarks>
+	/// <param name="text">The raw, possibly attacker-authored diagnostic.</param>
+	public static string? RedactForConsoleOrNull(string? text) => NeutralizeOrNull(text, fenced: false);
+
+	private static string? NeutralizeOrNull(string? text, bool fenced) {
 		if (string.IsNullOrWhiteSpace(text)) {
 			return null;
 		}
@@ -204,7 +224,9 @@ internal static partial class SensitiveErrorTextRedactor {
 		if (flattened.Length > UntrustedDiagnosticLimit) {
 			flattened = string.Concat(flattened.AsSpan(0, UntrustedDiagnosticLimit), "…");
 		}
-		return UntrustedDiagnosticPrefix + flattened + UntrustedDiagnosticSuffix;
+		return fenced
+			? UntrustedDiagnosticPrefix + flattened + UntrustedDiagnosticSuffix
+			: flattened;
 	}
 
 	/// <summary>

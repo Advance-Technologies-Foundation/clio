@@ -2,7 +2,6 @@ using System;
 using System.IO;
 using System.Net;
 using System.Text;
-using Clio.Command.McpServer;
 using Clio.Common;
 
 namespace Clio;
@@ -48,24 +47,81 @@ internal static class ExceptionReadableMessageExtension
 	}
 
 	/// <summary>
-	/// Renders a failure that kept a server-authored excerpt: its own composed message (never an inner
-	/// one), plus - at debug verbosity only - the scrubbed and fenced excerpt and the inner chain.
+	/// Renders a failure that kept a server-authored excerpt: the carrier's own composed message,
+	/// preceded by the context the outer exception adds and followed by the enrichment the ordinary arms
+	/// would have contributed - plus, at debug verbosity, the scrubbed and fenced excerpt and the chain.
 	/// </summary>
 	/// <remarks>
 	/// The inner chain is rendered as type name + sanitized, fenced message rather than raw, because an
 	/// inner exception on this path is the fault the platform's own text came out of.
+	/// <para>
+	/// NOT a blanket short-circuit (PR #1374 review). This extension is the global CLI renderer for ~20
+	/// commands, and <c>ClassifyingDataProvider</c> wraps the provider at both <c>BindingsModule</c>
+	/// registrations, so this arm fires far beyond sys-settings. Replacing the outer exception outright
+	/// cost three things at once: a command that wraps a provider failure to say WHICH operation failed
+	/// printed only the inner carrier's message; the <see cref="WebException"/> enrichment arm below -
+	/// whose own comment says it must precede the <see cref="InvalidOperationException"/> arm so the
+	/// 401-vs-connect signal survives into the non-debug line CI reads - was preempted one arm higher up;
+	/// and the debug render was strictly narrower than <c>ToString()</c>, printing the carrier's messages
+	/// beside a stack trace belonging to a different exception. All three are addressed here: the outer's
+	/// context is kept as a prefix, the nested-<see cref="WebException"/> enrichment is appended, and at
+	/// debug the outer's type and message plus every inner ABOVE the carrier are rendered first.
+	/// </para>
 	/// </remarks>
 	private static string RenderServerDetailCarrier(Exception carrier, Exception outer, bool debug)
 	{
-		string message = carrier.Message;
+		//The CONSOLE rendering when the carrier has one: Message keeps the agent fence for the MCP
+		//envelope, and a terminal is not a model's context window (PR #1374 review).
+		string message = carrier is IConsoleRenderedFailure consoleRendered && !debug
+			? consoleRendered.ConsoleMessage
+			: carrier.Message;
 		if (!debug)
 		{
-			return message;
+			StringBuilder line = new();
+			//The outer exception said WHICH operation failed; dropping it left the operator with the
+			//provider's diagnosis and no idea which command produced it.
+			if (!ReferenceEquals(outer, carrier) && DescribeOuterContext(outer, carrier) is { } prefix)
+			{
+				line.Append(prefix).Append(": ");
+			}
+			line.Append(message);
+			//The enrichment the ordinary arms would have added. Without it a SessionRejectedException
+			//wrapping a 401 WebException - exactly what Guard composes - lost the status.
+			if (TryGetWebException(outer, out WebException nestedWebException))
+			{
+				line.Append(" (").Append(DescribeWebException(nestedWebException)).Append(')');
+			}
+			return line.ToString();
 		}
-		StringBuilder rendered = new(message);
+		StringBuilder rendered = new();
+		//At debug nothing may be silently narrower than exception.ToString(): the outer's own type and
+		//message, and every inner ABOVE the carrier, are rendered before the carrier's own render. When
+		//the carrier IS the outer there is nothing above it, and the render starts at its message - the
+		//behaviour this arm already had.
+		if (!ReferenceEquals(outer, carrier))
+		{
+			rendered.Append(outer.GetType().Name);
+			if (!string.IsNullOrWhiteSpace(outer.Message))
+			{
+				rendered.Append(": ").Append(outer.Message);
+			}
+			for (Exception above = outer.InnerException;
+				above != null && !ReferenceEquals(above, carrier);
+				above = above.InnerException)
+			{
+				rendered.Append(Environment.NewLine).Append("---> ").Append(above.GetType().Name);
+				if (!string.IsNullOrWhiteSpace(above.Message))
+				{
+					rendered.Append(": ").Append(above.Message);
+				}
+			}
+			rendered.Append(Environment.NewLine).Append("---> ").Append(carrier.GetType().Name)
+				.Append(": ");
+		}
+		rendered.Append(message);
 		if (carrier is IServerDetailCarrier { ServerDetail: { } detail })
 		{
-			string safeDetail = SensitiveErrorTextRedactor.RedactUntrustedOrNull(detail);
+			string safeDetail = UntrustedText.Fenced(detail);
 			if (safeDetail != null)
 			{
 				rendered.Append(Environment.NewLine).Append("server detail: ").Append(safeDetail);
@@ -73,7 +129,7 @@ internal static class ExceptionReadableMessageExtension
 		}
 		for (Exception inner = carrier.InnerException; inner != null; inner = inner.InnerException)
 		{
-			string safeInner = SensitiveErrorTextRedactor.RedactUntrustedOrNull(
+			string safeInner = UntrustedText.Fenced(
 				TextUtilities.SanitizeForDisplay(inner.Message, MaxRenderedInnerMessageLength));
 			rendered.Append(Environment.NewLine).Append("---> ").Append(inner.GetType().Name);
 			if (safeInner != null)
@@ -90,6 +146,29 @@ internal static class ExceptionReadableMessageExtension
 
 	/// <summary>Cap on an inner exception's message when it is rendered at debug verbosity.</summary>
 	private const int MaxRenderedInnerMessageLength = 300;
+
+	/// <summary>
+	/// The context the outer exception adds over the carrier's own message, or <see langword="null"/>
+	/// when it adds none.
+	/// </summary>
+	/// <remarks>
+	/// An <see cref="AggregateException"/> is a container, not a fault - its message is a generic "One or
+	/// more errors occurred", which is noise in front of a real diagnosis. A wrapper whose message
+	/// already quotes the carrier's is skipped too, so the same sentence is not printed twice.
+	/// </remarks>
+	private static string DescribeOuterContext(Exception outer, Exception carrier)
+	{
+		if (outer is AggregateException || string.IsNullOrWhiteSpace(outer.Message))
+		{
+			return null;
+		}
+		string carrierMessage = carrier.Message ?? string.Empty;
+		if (carrierMessage.Length > 0 && outer.Message.Contains(carrierMessage, StringComparison.Ordinal))
+		{
+			return null;
+		}
+		return outer.Message;
+	}
 
 	/// <summary>
 	/// Finds the failure in the chain that kept a server-authored excerpt, so its own message - not an

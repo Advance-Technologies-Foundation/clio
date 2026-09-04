@@ -248,7 +248,7 @@ namespace Clio.Command
 				//an ID and write its own line, which meant the debug-verbosity server excerpt was never
 				//written for the one path an operator actually runs interactively
 				//(apply-environment-manifest, Program.cs).
-				SysSettingFailure failure = CategorizeAndLog(ex, "updating sys-setting", _logger,
+				SysSettingFailure failure = CategorizeAndLog(ex, UpdateOperationLabel, _logger,
 					_correlationIds);
 				//PR #1373 review: the local IS used. This second line is what
 				//docs/knowledge/Command/refused-syssetting-update-is-only-visible-as-a-writeerror.md pins as the
@@ -274,7 +274,7 @@ namespace Clio.Command
 					//PR #1373 review: same as the create refusal - a non-exception `false` is a real failure and
 					//must carry the four envelope fields rather than the all-null shape the contract reads as
 					//success.
-					SysSettingFailure refusal = ReportRefusal("updating sys-setting",
+					SysSettingFailure refusal = ReportRefusal(UpdateOperationLabel,
 						SysSettingErrorCategories.ProviderFailure, SysSettingFailureTexts.RefusedUpdateCause,
 						SysSettingFailureTexts.RefusedUpdateRecovery);
 					return new SysSettingUpdateResult(false, args.Code, null,
@@ -284,7 +284,7 @@ namespace Clio.Command
 				(string readback, string readbackType) = _sysSettingsManager.GetAllUsersDefaultWithType(args.Code);
 				return new SysSettingUpdateResult(true, args.Code, ApplySecureTextMask(readbackType, readback));
 			} catch (Exception ex) {
-				SysSettingFailure failure = ReportFailure(ex, "updating sys-setting");
+				SysSettingFailure failure = ReportFailure(ex, UpdateOperationLabel);
 				return new SysSettingUpdateResult(false, args.Code, null, failure.Error,
 					failure.Category, failure.Cause, failure.RecoveryAction, failure.CorrelationId);
 			}
@@ -368,17 +368,36 @@ namespace Clio.Command
 				return 1;
 			}
 
+			//WHICH step is running, tracked rather than assumed (PR #1374 review). The try below wraps
+			//BOTH CreateSysSettingIfNotExists and UpdateSysSetting, and reporting every failure as
+			//"updating sys-setting" pointed the operator at the wrong operation: an unsupported
+			//value-type-name or an unresolvable reference-schema-name is an ArgumentException raised from
+			//ValidateCreateArgs / ResolveReferenceSchemaUId, i.e. from the CREATE step.
+			string operationLabel = CreateOperationLabel;
 			try {
 				CreateSysSettingIfNotExists(opts);
+				operationLabel = UpdateOperationLabel;
 				if (!UpdateSysSetting(opts)) {
 					return 1;
 				}
-			} catch (Exception ex) {
+			} catch (Exception ex) when (CarriesServerText(ex)) {
 				//Was `ex.Message` raw: on this path that message is composed by ClassifyingDataProvider or
 				//the write-path guard, so the raw form could carry server prose straight to the console
 				//(issue #1333) - and it named no cause and no recovery action either.
 				_logger.WriteError($"Error during set setting '{opts.Code}' value occured.");
-				ReportFailure(ex, "updating sys-setting");
+				ReportFailure(ex, operationLabel);
+				return 1;
+			} catch (Exception ex) {
+				//A LOCAL fault keeps its own message (PR #1374 review). Issue #1333 is about
+				//server-authored text; a FileNotFoundException from `--file`, an IOException, a
+				//JsonException from PrepareUpdateValue or an ArgumentException from the create-argument
+				//validation is clio's own prose and names the thing that has to be fixed. Routing those
+				//through ReportFailure printed "no cause could be determined ... retry the operation" and
+				//never named the file - and CategorizeFailure sends UnauthorizedAccessException to
+				//Authentication, telling the operator to repair credentials for a local permission
+				//problem.
+				_logger.WriteError($"Error during set setting '{opts.Code}' value occured.");
+				_logger.WriteError($"Failed {operationLabel}: {ex.GetReadableMessageException()}");
 				return 1;
 			}
 			return 0;
@@ -425,8 +444,8 @@ namespace Clio.Command
 				//the category and cause on its envelope if it wants them - it just does not put a red line and
 				//an unreferenced correlation ID in front of an operator whose command is going to succeed.
 				SysSettingFailure failure = report
-					? ReportFailure(ex, "reading sys-setting")
-					: CategorizeFailure(ex, "reading sys-setting", _correlationIds.New());
+					? ReportFailure(ex, ReadOperationLabel)
+					: CategorizeFailure(ex, ReadOperationLabel, _correlationIds.New());
 				return new SysSettingGetResult(false, args.Code, string.Empty, failure.Error,
 					failure.Category, failure.Cause, failure.RecoveryAction, failure.CorrelationId);
 			}
@@ -521,14 +540,14 @@ namespace Clio.Command
 					//field an agent reads (issue #1333) - and the envelope carried none of the classified
 					//parts issue #1329 requires. Both are composed here instead.
 					SysSettingFailure failure = ReportProviderFailure(
-						response.ResponseStatus?.Message, "creating sys-setting");
+						response.ResponseStatus?.Message, CreateOperationLabel);
 					return new SysSettingCreateResult(false, args.Code, args.ValueTypeName, null,
 						failure.Error, Warning: null, failure.Category, failure.Cause,
 						failure.RecoveryAction, failure.CorrelationId);
 				}
 				return ApplyInitialValue(args);
 			} catch (Exception ex) {
-				SysSettingFailure failure = ReportFailure(ex, "creating sys-setting");
+				SysSettingFailure failure = ReportFailure(ex, CreateOperationLabel);
 				return new SysSettingCreateResult(false, args.Code, args.ValueTypeName, null, failure.Error,
 					Warning: null, failure.Category, failure.Cause, failure.RecoveryAction,
 					failure.CorrelationId);
@@ -811,6 +830,42 @@ namespace Clio.Command
 		}
 
 		/// <summary>
+		/// <see langword="true"/> when this failure - or anything it wraps - can hold text the SERVER
+		/// authored, and therefore has to be reported through the classified envelope rather than by its
+		/// own message.
+		/// </summary>
+		/// <remarks>
+		/// PR #1374 review. The CLI write path used to catch <see cref="Exception"/> and route everything
+		/// through <see cref="ReportFailure"/>, which is type-blind: a local fault has no arm in
+		/// <see cref="CategorizeFailure"/>, so a missing <c>--file</c> lost its path and printed
+		/// "no cause could be determined ... retry the operation", and
+		/// <see cref="UnauthorizedAccessException"/> - which on this path is a local file permission -
+		/// was routed to <c>Authentication</c>, sending the operator to repair working credentials.
+		/// <para>
+		/// The predicate is the two carrier types plus the transport types, which is exactly the set whose
+		/// message can hold platform prose. <see cref="EnvironmentResolutionException"/> is included even
+		/// though its text is clio-local, because <see cref="CategorizeFailure"/> has a dedicated arm for
+		/// it that gives better advice than its bare message.
+		/// </para>
+		/// </remarks>
+		private static bool CarriesServerText(Exception exception) {
+			for (Exception current = exception; current is not null; current = current.InnerException) {
+				if (current is AggregateException aggregate) {
+					return aggregate.InnerExceptions.Any(CarriesServerText);
+				}
+				if (current is IServerDetailCarrier
+						or HttpRequestException
+						or WebException
+						or SocketException
+						or AuthenticationException
+						or EnvironmentResolutionException) {
+					return true;
+				}
+			}
+			return false;
+		}
+
+		/// <summary>
 		/// The server excerpt of the first <see cref="IServerDetailCarrier"/> anywhere in the exception
 		/// chain, including inside single-fault aggregates, or <see langword="null"/> when there is none.
 		/// </summary>
@@ -872,9 +927,33 @@ namespace Clio.Command
 		}
 
 		/// <summary>Renders a classified failure as one log line, correlation ID last.</summary>
-		internal static string DescribeFailureForLog(SysSettingFailure failure) =>
-			$"{failure.Error} Cause: {failure.Cause} Action: {failure.RecoveryAction} "
-			+ $"(correlation-id: {failure.CorrelationId})";
+		/// <remarks>
+		/// The cause is omitted when it is the SAME string as the headline (PR #1374 review). Three arms of
+		/// <see cref="CategorizeFailure"/> put one composed diagnostic into both <c>Error</c> and
+		/// <c>Cause</c>, so this line printed it twice - and where that diagnostic carries the fenced
+		/// server excerpt, twice meant two <c>[untrusted-source-text begin]…[end]</c> pairs on one line.
+		/// </remarks>
+		internal static string DescribeFailureForLog(SysSettingFailure failure) {
+			string cause = string.Equals(failure.Error, failure.Cause, StringComparison.Ordinal)
+				? string.Empty
+				: $"Cause: {failure.Cause} ";
+			return $"{failure.Error} {cause}Action: {failure.RecoveryAction} "
+				+ $"(correlation-id: {failure.CorrelationId})";
+		}
+
+		/// <summary>
+		/// The operation labels these results and log lines read with. Constants because the same label
+		/// appears at several report sites for one operation, and because which label a failure carries is
+		/// part of the diagnosis - PR #1374 review found the CLI write path reporting a failed CREATE as
+		/// "updating sys-setting".
+		/// </summary>
+		private const string CreateOperationLabel = "creating sys-setting";
+
+		/// <inheritdoc cref="CreateOperationLabel"/>
+		private const string UpdateOperationLabel = "updating sys-setting";
+
+		/// <inheritdoc cref="CreateOperationLabel"/>
+		private const string ReadOperationLabel = "reading sys-setting";
 
 		// Cap on a message promoted into a user-visible field. 300 is what DataProviderFailureException's
 		// detail already uses, so the two paths expose the same amount.
