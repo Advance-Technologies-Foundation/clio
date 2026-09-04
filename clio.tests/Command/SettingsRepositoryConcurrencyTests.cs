@@ -417,6 +417,53 @@ public sealed class SettingsRepositoryConcurrencyTests {
 			because: $"a {worstCaseHold.TotalSeconds} s worst-case hold against a {lockTimeout.TotalSeconds} s lock timeout is the actual ceiling on this window — past it, widening the retry stops rescuing the writer and starts failing whoever is waiting for the lock");
 	}
 
+	[Test]
+	[Description("On the MockFileSystem abstraction branch of WriteSettingsTempFile (fileSystem is not the real System.IO.Abstractions.FileSystem, so isRealFileSystem is false), a failure while the temp file is being written leaves the destination appsettings.json byte-for-byte unchanged instead of a torn file, because the destination is never opened for writing until the temp file is complete. The real FileStream branch that every actual clio invocation takes is pinned separately, on the real file system, by SettingsRepositoryRealFileSystemPublishTests — this double cannot exercise it.")]
+	public void ConfigureEnvironment_ShouldLeaveDestinationUntouched_WhenTheTempFileWriteFails() {
+		// Arrange
+		FaultingTempWriteFileSystem fileSystem = new();
+		SeedExistingSettings(fileSystem);
+		SettingsRepository deployment = new(fileSystem);
+		// Captured AFTER construction: the constructor's own bootstrap can rewrite the seeded file (e.g.
+		// applying a pending migration), so the pre-mutation baseline is whatever is on disk once
+		// construction is done — the same baseline ConfigureEnvironment itself starts from.
+		string originalContent = fileSystem.File.ReadAllText(SettingsRepository.AppSettingsFile);
+		IOException writeFailure = new("Simulated disk failure while writing the temp settings file.");
+		fileSystem.ArmTempWriteFailure(writeFailure);
+
+		// Act
+		Action act = () => deployment.ConfigureEnvironment("deployed",
+			new EnvironmentSettings { Uri = "https://deployed.example.com" });
+
+		// Assert
+		act.Should().Throw<IOException>(
+			because: "a failure while writing the temp file is a real error that must reach the caller, not be swallowed — pinned here on the MockFileSystem abstraction branch, not on the real FileStream path")
+			.Which.Should().BeSameAs(writeFailure,
+				because: "the original write failure must stay reachable rather than being replaced by a cleanup-time exception");
+		fileSystem.File.ReadAllText(SettingsRepository.AppSettingsFile).Should().Be(originalContent,
+			because: "on this abstraction branch the destination file is only ever replaced by a FINISHED temp file, so a write failure that happens before the temp file is complete must never reach the destination — a reader must see either the old complete file or the new one, never a partial one; the real FileStream branch is not exercised by this double");
+		fileSystem.AllFiles.Should().NotContain(path => path.EndsWith(".tmp", StringComparison.Ordinal),
+			because: "the failed temp file must be cleaned up rather than left behind as an orphaned partial artifact, on this abstraction branch");
+	}
+
+	[Test]
+	[Description("A successful save leaves no temporary artifact behind: the temp file used for the atomic replace is gone once the destination has been published.")]
+	public void ConfigureEnvironment_ShouldLeaveNoTemporaryArtifact_WhenTheSaveSucceeds() {
+		// Arrange
+		MockFileSystem fileSystem = TestFileSystem.MockFileSystem();
+		SeedExistingSettings(fileSystem);
+		SettingsRepository deployment = new(fileSystem);
+
+		// Act
+		deployment.ConfigureEnvironment("deployed", new EnvironmentSettings { Uri = "https://deployed.example.com" });
+
+		// Assert
+		fileSystem.AllFiles.Should().NotContain(path => path.EndsWith(".tmp", StringComparison.Ordinal),
+			because: "a successful publish must leave only the destination file behind, not the temp file it was atomically replaced from");
+		new SettingsRepository(fileSystem).GetAllEnvironments().Should().ContainKey("deployed",
+			because: "the atomic replace must have actually landed the new content at the destination path");
+	}
+
 	// Short enough to keep the suite fast, long enough to reach the capped tail of the backoff. The
 	// subject of these tests is that the window ENDS and what it says when it does, not how long
 	// production waits, so burning the production window here would buy nothing.
@@ -491,6 +538,53 @@ public sealed class SettingsRepositoryConcurrencyTests {
 		}
 	}
 
+	// Substitutes the WRITE of the TEMP file (the step before the atomic replace) so a test can prove
+	// the destination is never touched by a failure that happens while the temp file is still being
+	// produced. Some bytes are written to the temp file before the fault fires — mirroring the shape of
+	// a real mid-write interruption (crash, disk failure) — specifically so the assertion is "the
+	// destination never sees a partial file", not merely "the temp file was never created at all".
+	//
+	// LIMIT OF THIS DOUBLE: a MockFileSystem is not System.IO.Abstractions.FileSystem, so
+	// SaveSettingsUnlocked evaluates isRealFileSystem to false and WriteSettingsTempFile takes the
+	// fileSystem.File.CreateText(...) branch overridden below — never the real FileStream branch
+	// (FileMode.CreateNew / FileShare.None / Flush(flushToDisk: true)) that every actual clio
+	// invocation takes. That branch is pinned on the real file system by
+	// SettingsRepositoryRealFileSystemPublishTests instead.
+	private sealed class FaultingTempWriteFileSystem : MockFileSystem {
+
+		private readonly FaultingTempWriteFile _file;
+
+		public FaultingTempWriteFileSystem() {
+			_file = new FaultingTempWriteFile(this);
+		}
+
+		public override IFile File => _file;
+
+		public void ArmTempWriteFailure(Exception failure) => _file.Arm(failure);
+	}
+
+	private sealed class FaultingTempWriteFile(IMockFileDataAccessor fileDataAccessor)
+		: MockFile(fileDataAccessor) {
+
+		private Exception _failure;
+
+		public void Arm(Exception failure) => _failure = failure;
+
+		public override StreamWriter CreateText(string path) {
+			StreamWriter writer = base.CreateText(path);
+			if (_failure is not null && path.EndsWith(".tmp", StringComparison.Ordinal)) {
+				Exception failure = _failure;
+				_failure = null;
+				// A few bytes really do land in the temp file before the fault fires, so the destination
+				// staying clean is proof the commit step (not luck) is what protects it.
+				writer.Write("{\"Environments\":{\"partial");
+				writer.Flush();
+				throw failure;
+			}
+			return writer;
+		}
+	}
+
 }
 
 [TestFixture]
@@ -561,6 +655,111 @@ public sealed class SettingsRepositoryProcessConcurrencyTests {
 				process.Dispose();
 			}
 			Directory.Delete(clioHome, recursive: true);
+		}
+	}
+}
+
+/// <summary>
+/// Exercises <c>SaveSettingsUnlocked</c> against a real <see cref="System.IO.Abstractions.FileSystem"/>
+/// instead of <see cref="MockFileSystem"/>, so <c>isRealFileSystem</c> is <c>true</c> and
+/// <c>WriteSettingsTempFile</c> takes the branch every actual clio invocation takes: a
+/// <see cref="FileStream"/> opened with <see cref="FileMode.CreateNew"/> / <see cref="FileShare.None"/>,
+/// the Windows ACL / Unix mode copy in <c>GetSettingsFileSecurity</c>, and
+/// <c>stream.Flush(flushToDisk: true)</c>. The mock-based tests in
+/// <c>SettingsRepositoryConcurrencyTests</c> never reach this branch — see the scope note on its
+/// <c>FaultingTempWriteFileSystem</c> double.
+/// </summary>
+[TestFixture]
+[Category("Unit")]
+[Property("Module", "Command")]
+// Own fixture, not merged into SettingsRepositoryConcurrencyTests above, for two reasons that are both
+// process-wide state:
+//   1. CLIO_HOME is a process environment variable. SettingsRepository.AppSettingsFolderPath re-reads it
+//      on every call (it is NOT cached), so redirecting it is enough to isolate the destination path per
+//      test, but a test that forgets to restore it on failure would leak the override into every test
+//      that runs afterwards in the same process — including SettingsRepositoryConcurrencyTests, whose
+//      MockFileSystem-based tests never touch AppSettingsFile directly and so would not notice, and
+//      SettingsRepositoryProcessConcurrencyTests, which sets its OWN CLIO_HOME per spawned child process
+//      and is unaffected either way.
+//   2. The SettingsRepository constructor DOES cache process-wide state: passing a non-null fileSystem
+//      overwrites the internal static SettingsRepository.FileSystem field, so a real FileSystem instance
+//      handed to one test here would keep being the default for any later `new SettingsRepository()`
+//      call elsewhere in the suite that passes no file system of its own.
+// [NonParallelizable] plus SetUp/TearDown that save and restore both of these makes a failing test unable
+// to leak either one into a fixture that runs after it.
+[NonParallelizable]
+public sealed class SettingsRepositoryRealFileSystemPublishTests {
+
+	private string _originalClioHome;
+	private System.IO.Abstractions.IFileSystem _originalStaticFileSystem;
+	private string _clioHome;
+	private System.IO.Abstractions.FileSystem _fileSystem;
+
+	[SetUp]
+	public void SetUp() {
+		_originalClioHome = Environment.GetEnvironmentVariable("CLIO_HOME");
+		_originalStaticFileSystem = SettingsRepository.FileSystem;
+		_clioHome = Path.Combine(Path.GetTempPath(), $"clio-settings-real-fs-{Guid.NewGuid():N}");
+		Directory.CreateDirectory(_clioHome);
+		Environment.SetEnvironmentVariable("CLIO_HOME", _clioHome);
+		_fileSystem = new System.IO.Abstractions.FileSystem();
+	}
+
+	[TearDown]
+	public void TearDown() {
+		Environment.SetEnvironmentVariable("CLIO_HOME", _originalClioHome);
+		SettingsRepository.FileSystem = _originalStaticFileSystem;
+		if (Directory.Exists(_clioHome)) {
+			Directory.Delete(_clioHome, recursive: true);
+		}
+	}
+
+	[Test]
+	[Description("On the real file system (isRealFileSystem true, so WriteSettingsTempFile uses the FileStream/FileMode.CreateNew/FileShare.None/Flush(flushToDisk: true) branch), a successful save publishes complete, parseable JSON at the destination and leaves no .tmp artifact beside it.")]
+	public void ConfigureEnvironment_ShouldPublishCompleteParseableSettings_WhenUsingTheRealFileSystem() {
+		// Arrange
+		SettingsRepository deployment = new(_fileSystem);
+
+		// Act
+		deployment.ConfigureEnvironment("deployed", new EnvironmentSettings { Uri = "https://deployed.example.com" });
+
+		// Assert
+		string destinationPath = SettingsRepository.AppSettingsFile;
+		File.Exists(destinationPath).Should().BeTrue(
+			because: "a successful save on the real file system must publish appsettings.json at the resolved destination");
+		string content = File.ReadAllText(destinationPath);
+		Settings persisted = null;
+		Action parse = () => persisted = JsonConvert.DeserializeObject<Settings>(content);
+		parse.Should().NotThrow(
+			because: "the published file must be complete, parseable JSON — a caller must never observe a partially written temp file that leaked to the destination path");
+		persisted.Environments.Should().ContainKey("deployed",
+			because: "the atomic replace on the real FileStream branch must have actually landed the new content at the destination path");
+		Directory.GetFiles(_clioHome, "*.tmp").Should().BeEmpty(
+			because: "the real FileStream branch must clean up its temp file once the destination has been published, leaving no orphaned artifact behind");
+	}
+
+	[Test]
+	[Description("On the real file system, repeated saves never leave the destination in a torn state: every read taken immediately after a successful ConfigureEnvironment call sees a complete file carrying every environment registered so far, and no .tmp artifact survives between saves.")]
+	public void ConfigureEnvironment_ShouldOnlyEverReplaceDestinationWithAFinishedFile_WhenSavingRepeatedlyOnTheRealFileSystem() {
+		// Arrange
+		SettingsRepository deployment = new(_fileSystem);
+		const int saveCount = 5;
+
+		// Act & Assert — interleaved per iteration: this test's subject is that the destination is
+		// complete and artifact-free after EVERY individual publish, not only after the last one, so each
+		// save is verified before the next is issued.
+		for (int index = 1; index <= saveCount; index++) {
+			deployment.ConfigureEnvironment($"deployed-{index}",
+				new EnvironmentSettings { Uri = $"https://deployed-{index}.example.com" });
+
+			string content = File.ReadAllText(SettingsRepository.AppSettingsFile);
+			Settings persisted = JsonConvert.DeserializeObject<Settings>(content);
+			for (int seen = 1; seen <= index; seen++) {
+				persisted.Environments.Should().ContainKey($"deployed-{seen}",
+					because: $"save #{index} must publish a complete file that still carries every environment registered by the {seen} saves so far — the destination is only ever replaced by a finished file, never a partial one");
+			}
+			Directory.GetFiles(_clioHome, "*.tmp").Should().BeEmpty(
+				because: $"after save #{index} on the real FileStream branch no temp artifact may remain beside the destination");
 		}
 	}
 }
