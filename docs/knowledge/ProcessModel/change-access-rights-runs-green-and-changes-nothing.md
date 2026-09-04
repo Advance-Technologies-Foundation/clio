@@ -1,5 +1,5 @@
 ---
-description: a Change access rights element whose record filter is PRESENT but conditionless, or with add and remove both empty, builds green and then changes no permissions - it has no output parameters, so nothing reports it; an element with NO record filter at all is the opposite and far worse hazard - it acts on EVERY record of the object
+description: a Change access rights element with add and remove both empty builds green and then changes no permissions - it has no output parameters, so nothing reports it; a record filter that is PRESENT but conditionless is the same runtime no-op but is REFUSED at build by a current package; an element with NO record filter at all is the opposite and far worse hazard - it acts on EVERY record of the object
 applies-to:
   - clio/Command/McpServer/Tools/ProcessDesigner/CreateBusinessProcessTool.cs
   - clio/Command/McpServer/Tools/ProcessDesigner/ModifyBusinessProcessTool.cs

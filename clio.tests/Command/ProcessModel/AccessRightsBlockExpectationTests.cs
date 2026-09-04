@@ -106,6 +106,31 @@ public sealed class AccessRightsBlockExpectationTests {
 	}
 
 	[Test]
+	[Description("A batch carrying an ABSENT-filter element and an UNDECODABLE-filter element gets BOTH remedies, each naming its own element. Returning only the first produced one message that said \"do NOT replace that filter\" about one element and then, unscoped, \"Set the filter you mean ... with the setFilter operation\" - which on a live permission change is an instruction to overwrite a legacy filter that may be narrowing exactly as intended.")]
+	public void BuildNoFilterWarning_ShouldScopeEachRemedy_WhenStatesAreMixed() {
+		// Arrange - "Wide" has no filter at all; "Legacy" has one this read-back cannot decode.
+		DescribedElement wide = Element("Wide", "{\"object\":\"Order\"}");
+		DescribedElement legacy = Element("Legacy", "{\"object\":\"Order\"}");
+		legacy.Parameters = [new DescribedParameter {
+			Name = "DataSourceFilters", Value = "a legacy filter this read-back cannot decode"
+		}];
+
+		// Act
+		string warning = AccessRightsBlockExpectation.BuildNoFilterWarning(
+			Described(wide, legacy), ["Wide", "Legacy"]);
+
+		// Assert
+		warning.Should().Contain("Set the filter you mean for 'Wide'",
+			because: "the setFilter remedy has to name the element that actually lacks a filter - unscoped, it "
+				+ "reads as advice about every element the message mentions");
+		warning.Should().Contain("Confirm 'Legacy' in the designer",
+			because: "the undecodable element needs its own remedy, and returning only the first state's "
+				+ "remedy dropped it entirely");
+		warning.Should().NotContain("Set the filter you mean for 'Wide', 'Legacy'",
+			because: "the two elements are in OPPOSITE states and must never share one instruction");
+	}
+
+	[Test]
 	[Description("The lossy-read warning fires on the server's addUnreadable/removeUnreadable counts. A supplied collection REPLACES the stored one, so building a replacement from a read that omitted entries deletes permissions nobody can see - this is the only signal that the read was incomplete.")]
 	public void BuildLossyReadWarning_ShouldFire_WhenTheServerReportsUnreportedEntries() {
 		// Arrange — 2 entries dropped from add, collection itself undecodable for remove.

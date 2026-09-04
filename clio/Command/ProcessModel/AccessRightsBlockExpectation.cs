@@ -235,24 +235,34 @@ public static class AccessRightsBlockExpectation {
 			+ ". This happens silently, because the element has no output parameters"
 			+ Remedy();
 
-		// The remedy differs by direction, so it cannot be one sentence: an ABSENT filter is urgent - the element
-		// is about to touch every record - while a conditionless one is merely inert. A local function rather than
-		// a nested ternary, so a fourth state stays a one-line addition.
+		// One remedy PER STATE, each naming the elements it applies to. Returning only the first used to drop
+		// the others, which mattered most in the combination it silenced: an absent element and an undecodable
+		// one in the same batch produced "do NOT replace it on the strength of this message" followed by an
+		// unscoped "Set the filter you mean ... with the setFilter operation" - telling the caller, in one
+		// message, both to leave a working legacy filter alone and to overwrite it. On a live permission change
+		// that is the failure this guard exists to prevent, pointed the other way.
 		string Remedy() {
+			List<string> remedies = [];
 			if (absent.Length > 0) {
-				return ". Set the filter you mean BEFORE this process runs, with the setFilter operation (to act "
-					+ "on one record, filter Id against a process parameter or a trigger output). Note that ANY "
-					+ "change to the element's object clears its record filter, so an ordinary retarget lands in "
-					+ "exactly this state.";
+				remedies.Add($"Set the filter you mean for '{absent}' BEFORE this process runs, with the "
+					+ "setFilter operation (to act on one record, filter Id against a process parameter or a "
+					+ "trigger output). Note that ANY change to the element's object clears its record filter, so "
+					+ "an ordinary retarget lands in exactly this state");
 			}
 
 			if (conditionless.Length > 0) {
-				return ". A conditionless filter is refused at build by a current CrtProcessBuilder, so an element "
-					+ "carrying one was configured by an older package or in the designer. Give it the conditions "
-					+ "you mean, and do not report a grant or revoke as applied until you have.";
+				remedies.Add($"Give '{conditionless}' the conditions you mean - a conditionless filter is "
+					+ "refused at build by a current CrtProcessBuilder, so an element carrying one was configured "
+					+ "by an older package or in the designer - and do not report a grant or revoke as applied "
+					+ "until you have");
 			}
 
-			return ". Confirm the filter in the designer before reporting a grant or revoke as applied.";
+			if (undecodable.Length > 0) {
+				remedies.Add($"Confirm '{undecodable}' in the designer before reporting a grant or revoke as "
+					+ "applied, and do NOT replace that filter on the strength of this message");
+			}
+
+			return ". " + string.Join(". ", remedies) + ".";
 		}
 	}
 
