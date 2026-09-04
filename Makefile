@@ -3,7 +3,7 @@
 #
 # Cross-platform: works on macOS/Linux. On Windows use build.ps1 or build.cmd directly.
 
-.PHONY: build build-debug build-release test test-unit test-integration test-analyzers test-mcp-e2e test-module lint check-pr check-knowledge clean help
+.PHONY: build build-debug build-release test test-unit test-integration test-analyzers test-mcp-e2e test-module lint check-pr check-knowledge check-prose clean help
 
 # ── Build ────────────────────────────────────────────────────────────────────
 
@@ -74,6 +74,10 @@ verify-docs:
 ## check-knowledge: report which docs/knowledge records this branch touches, and any dead applies-to paths
 check-knowledge:
 	python3 ./scripts/check-knowledge-applies-to.py --base $(BASE)
+
+## check-prose: report prose claims that disagree with the values they describe (advisory; --strict to fail)
+check-prose:
+	python3 ./scripts/check-prose-claims.py
 
 # ── PR workflow ───────────────────────────────────────────────────────────────
 

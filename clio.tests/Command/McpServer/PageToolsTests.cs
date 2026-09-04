@@ -406,6 +406,12 @@ public class PageToolsTests
 			because: "get-page prompt guidance must require verifying a component type exists before inserting it, so the agent does not author an invented crt.* type that saves successfully but renders broken");
 		prompt.Should().Contain("ask the user whether to use one of the existing components or build a custom one",
 			because: "get-page prompt guidance must instruct the agent to ask the user when no existing component matches, instead of fabricating a type (ENG-90939)");
+		prompt.Should().Contain("files.bodyFile",
+			because: "the prompt must route the agent to the file get-page materializes, which is the only place the editable body exists (issue #1185)");
+		prompt.Should().NotContain("raw.body",
+			because: "the MCP get-page envelope has no raw property, so a prompt naming raw.body sends the agent after a value that never arrives (issue #1185)");
+		prompt.Should().Contain("REPLACES",
+			because: "the prompt routes edits to files.bodyFile, so it must also say that the next get-page of that schema deletes and rewrites the directory holding it (PR #1351 review)");
 		prompt.Should().Contain(GuidanceGetTool.ToolName,
 			because: "get-page prompt guidance should route guide lookups through the dedicated guidance tool");
 		prompt.Should().Contain("`existing-app-maintenance`",
@@ -2629,7 +2635,7 @@ public class PageToolsTests
 			because: "an empty page body should fail before the command attempts remote validation or save");
 		response.Success.Should().BeFalse(
 			because: "the validation failure should be surfaced in the response envelope");
-		response.Error.Should().Contain("get-page raw.body",
+		response.Error.Should().Contain("files.bodyFile",
 			because: "the error should teach callers which page payload shape is required");
 		serviceUrlBuilder.ReceivedCalls().Should().BeEmpty(
 			because: "validation should fail before the command builds any service URLs");
@@ -4303,7 +4309,7 @@ public class PageToolsTests
 		ok.Should().BeFalse();
 		response.Error.Should().Contain("Object", "original server error must be preserved");
 		response.Error.Should().Contain("hint:", "hint annotation must be appended");
-		response.Error.Should().Contain("re-sending the full get-page raw.body",
+		response.Error.Should().Contain("re-sending the full get-page body verbatim",
 			"hint must explain the likely cause");
 		response.Error.Should().Contain("page-modification",
 			"hint must point back to the canonical guide resource");
