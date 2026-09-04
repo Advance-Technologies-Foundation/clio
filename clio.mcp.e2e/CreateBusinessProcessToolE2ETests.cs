@@ -638,15 +638,24 @@ public sealed class CreateBusinessProcessToolE2ETests {
 		// Gate BEFORE asserting: a CrtProcessBuilder that predates the element rejects the element TYPE, which is
 		// a different failure from the block-level discard this test is about. Such a sandbox cannot exercise
 		// either direction, so Ignore it instead of reporting a red that means "environment too old".
+		//
+		// Matched on the package's OWN refusal text (ProcessElementFactory: "Element type '<type>' is not
+		// supported yet"), not on "the create failed somehow". A bare IsError gate swallows every other create
+		// failure too - a malformed descriptor, an auth failure, a genuine regression in this very block - and
+		// reports each of them as "environment too old", so the test could never go red for the thing it exists
+		// to catch.
 		string payload = JsonSerializer.Serialize(callResult);
-		if (callResult.IsError is true && !payload.Contains("created (UId:")) {
+		bool elementTypeRejected = callResult.IsError is true
+			&& payload.Contains("is not supported yet")
+			&& payload.Contains("changeAccessRights");
+		if (elementTypeRejected) {
 			Assert.Ignore(
 				"The sandbox's deployed CrtProcessBuilder does not accept a 'changeAccessRights' element type, so "
 				+ "the accessRights block never reaches the read-back guard. This is expected until the "
 				+ "bundled archive is rebuilt from a source tree that CONTAINS the element - note the floors are "
 				+ "already at 1.4.0.40 and the bundled archive already reports that version, so the version "
-				+ "precondition passes while the block is still discarded. Until then "
-				+ "then this test is Ignored, NOT passing, and the create path is unverified end to end.");
+				+ "precondition passes while the block is still discarded. Until then this test is Ignored, "
+				+ "NOT passing, and the create path is unverified end to end.");
 		}
 
 		callResult.IsError.Should().NotBeTrue(
