@@ -238,3 +238,7 @@ graphify-out
 # Ad-hoc MCP/HTTP probe captures written at the repository root during manual runs.
 # One of these reached master-bound history once, swept in by an `add -A` during a merge.
 /probe-*.txt
+
+# Python bytecode from scripts/ (twice swept into a commit by an add -A).
+__pycache__/
+*.pyc
