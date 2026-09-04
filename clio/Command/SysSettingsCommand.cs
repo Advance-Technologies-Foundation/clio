@@ -249,7 +249,14 @@ namespace Clio.Command
 				//(apply-environment-manifest, Program.cs).
 				SysSettingFailure failure = CategorizeAndLog(ex, "updating sys-setting", _logger,
 					_correlationIds);
-				_logger.WriteError($"SysSettings with code: {opts.Code} is not updated.");
+				//PR #1373 review: the local IS used. This second line is what
+				//docs/knowledge/Command/refused-syssetting-update-is-only-visible-as-a-writeerror.md pins as the
+				//Maintainer / apply-environment-manifest flow's ONLY failure signal, and after the classifier was
+				//added in front of it the line carried no diagnosis at all - so the one line an operator or a
+				//parser reads pointed at nothing. It now carries the correlation ID of the classified record above,
+				//which is the bridge between the two lines; exactly one ID is minted per failure.
+				_logger.WriteError(
+					$"SysSettings with code: {opts.Code} is not updated. (correlation-id: {failure.CorrelationId})");
 			}
 		}
 

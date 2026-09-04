@@ -1,9 +1,11 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Net;
 using System.Net.Http;
 using System.Net.Sockets;
 using System.Security.Authentication;
+using System.Text.RegularExpressions;
 using Clio.Command;
 using Clio.Command.McpServer.Tools;
 using Clio.Common;
@@ -220,5 +222,43 @@ public sealed class SysSettingsFailureEnvelopeTests {
 			because: "an ID on a result that no log line mentions invites the caller to quote a token that finds nothing")
 			.Which.Should().Contain(failure.CorrelationId,
 				because: "the log line and the envelope must carry the SAME ID");
+	}
+
+	[Test]
+	[Description("PR #1373 review: the CLI TryUpdateSysSetting(SysSettingsOptions) overload writes the classified diagnosis AND keeps the `is not updated.` line an operator or apply-environment-manifest parser reads, with exactly one correlation ID bridging the two.")]
+	public void TryUpdateSysSetting_Cli_Should_Report_The_Diagnosis_And_Bridge_The_Second_Line() {
+		// Arrange
+		ISysSettingsManager manager = Substitute.For<ISysSettingsManager>();
+		manager.When(m => m.UpdateSysSetting(Arg.Any<string>(), Arg.Any<object>(), Arg.Any<string>()))
+			.Do(_ => throw new UnauthorizedAccessException("denied"));
+		ILogger logger = Substitute.For<ILogger>();
+		List<string> errors = [];
+		logger.When(l => l.WriteError(Arg.Any<string>())).Do(call => errors.Add(call.Arg<string>()));
+		SysSettingsCommand command = new(manager, logger, Substitute.For<IFileSystem>(),
+			new OperationCorrelationIdProvider());
+		SysSettingsOptions options = new() { Code = "UsrSetting", Value = "x", Type = "Text" };
+
+		// Act
+		command.TryUpdateSysSetting(options);
+
+		// Assert
+		errors.Should().HaveCount(2,
+			because: "the classified diagnosis and the legacy `is not updated.` signal are two distinct lines, and knowledge/Command/refused-syssetting-update-is-only-visible-as-a-writeerror.md pins the second as the apply-environment-manifest flow's only failure signal");
+		errors[0].Should().Contain("Authentication error updating sys-setting.",
+			because: "the CLI path must report WHY the write did not land, not only that it did not");
+		errors[0].Should().Contain("The environment rejected the credentials of the registered user.",
+			because: "the classified cause has to reach the operator running this interactively");
+		errors[0].Should().Contain("repair the registered profile",
+			because: "the recovery action is the operator's next step");
+		errors[1].Should().Contain("SysSettings with code: UsrSetting is not updated.",
+			because: "the legacy signal the Maintainer flow parses must stay byte-compatible at its head");
+		string[] ids = [.. errors
+			.Select(line => Regex.Match(line, @"\(correlation-id: ([0-9a-f]+)\)"))
+			.Where(match => match.Success)
+			.Select(match => match.Groups[1].Value)];
+		ids.Should().HaveCount(2,
+			because: "the second line used to carry no diagnosis at all, so the one line a parser reads pointed at nothing");
+		ids.Distinct().Should().ContainSingle(
+			because: "exactly ONE correlation ID is minted per failure - two different IDs would send an operator looking for two records");
 	}
 }
