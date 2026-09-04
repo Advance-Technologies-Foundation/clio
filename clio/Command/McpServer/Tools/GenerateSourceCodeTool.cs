@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.ComponentModel;
@@ -88,7 +88,16 @@ public sealed class GenerateSourceCodeTool(
 			Environment = args.EnvironmentName,
 			Modified = args.Modified ?? false,
 			Required = args.Required ?? false,
-			Background = args.Background ?? false
+			Background = args.Background ?? false,
+			// A WRITE IS ISSUED ONCE. RemoteCommandOptions.MaxAttempts defaults to 3 and RemoteCommand passes it
+			// straight to ExecutePostRequest, so source-code generation - a POST with real side effects - was
+			// replayed up to twice on any transport exception. DataServiceQuery states the rule this restores:
+			// "Creatio.Client retries on every transport exception, so a POST/DELETE/PATCH/PUT that commits and
+			// then loses its response would be replayed ... Only a GET - which changes nothing - inherits the
+			// default." It also makes the published timeout mean what it says: at 3 attempts the real wall clock
+			// is up to three times the figure this tool advertises in its `timeout` description, the CLI warning
+			// and docs/commands/generate-source-code.md (PR #1354 review).
+			MaxAttempts = 1
 		};
 		if (args.Timeout is { } requestedTimeout) {
 			if (requestedTimeout <= 0 || requestedTimeout > MaxTimeoutMilliseconds) {

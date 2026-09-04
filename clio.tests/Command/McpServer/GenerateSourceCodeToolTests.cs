@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text.Json;
@@ -172,6 +172,26 @@ public sealed class GenerateSourceCodeToolTests
 			because: "a positive timeout is a valid request and must execute");
 		resolvedCommand.CapturedOptions!.TimeOut.Should().Be(120000,
 			because: "the MCP 'timeout' argument must reach the command options as the request timeout");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("The POST is issued ONCE. RemoteCommandOptions.MaxAttempts defaults to 3 and RemoteCommand hands it straight to ExecutePostRequest, so a generation that committed and then lost its response was replayed up to twice - and the published timeout understated the real wall clock by the same factor (PR #1354 review).")]
+	public void GenerateSourceCode_ShouldIssueTheWriteOnce_RegardlessOfTheOptionsDefault() {
+		// Arrange
+		FakeGenerateSourceCodeCommand resolvedCommand = new();
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		commandResolver.Resolve<GenerateSourceCodeCommand>(Arg.Any<EnvironmentOptions>()).Returns(resolvedCommand);
+		GenerateSourceCodeTool tool = new(resolvedCommand, ConsoleLogger.Instance, commandResolver);
+
+		// Act
+		tool.GenerateSourceCode(new GenerateSourceCodeArgs("dev", null, null, null, Timeout: 120000));
+
+		// Assert
+		new GenerateSourceCodeOptions().MaxAttempts.Should().Be(3,
+			because: "the inherited default is what this override exists to correct - if it ever becomes 1 the override is redundant and this test says so");
+		resolvedCommand.CapturedOptions!.MaxAttempts.Should().Be(1,
+			because: "generate-source-code is a POST with real side effects, and the repo's own rule (DataServiceQuery) is that a write is issued once while only a GET inherits the retry default");
 	}
 
 	[Test]
