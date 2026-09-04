@@ -82,7 +82,11 @@ internal static partial class SensitiveErrorTextRedactor {
 	// scheme), so platform prose like "Validation failed for user john.doe@acme.com" carried a real
 	// person's address into an MCP envelope and into any log the operator pastes into a ticket. The local
 	// part deliberately excludes a leading dot so a sentence-ending "word.name@host" still matches whole.
-	[GeneratedRegex(@"[A-Za-z0-9._%+\-]+@[A-Za-z0-9](?:[A-Za-z0-9\-]*[A-Za-z0-9])?(?:\.[A-Za-z0-9](?:[A-Za-z0-9\-]*[A-Za-z0-9])?)+",
+	// The FINAL label must be alphabetic and at least two characters (PR #1374 review): with a purely
+	// alphanumeric last label, "clio@8.0.1" and the "kit@1.2.3" tail of "@creatio/ui-kit@1.2.3" matched,
+	// so package-and-version - load-bearing diagnostic content in this product - was silently replaced by
+	// a placeholder indistinguishable from a real credential redaction.
+	[GeneratedRegex(@"[A-Za-z0-9._%+\-]+@[A-Za-z0-9](?:[A-Za-z0-9\-]*[A-Za-z0-9])?(?:\.[A-Za-z0-9](?:[A-Za-z0-9\-]*[A-Za-z0-9])?)*\.[A-Za-z]{2,}",
 		RegexOptions.CultureInvariant, RegexTimeoutMilliseconds)]
 	private static partial Regex EmailRegex();
 
@@ -93,16 +97,27 @@ internal static partial class SensitiveErrorTextRedactor {
 		return texts.Select(Redact).ToList();
 	}
 
-	// Any bracketed token that starts with the fence name, whatever case or trailing words it carries.
-	// The bracket is OPTIONAL: a payload writing the bare token (untrusted-source-text end) with no
-	// bracket left the delimiter word intact, and a reader - human or model - that treats the words as
-	// the delimiter is exactly who the fence is for.
-	[GeneratedRegex(@"\[?\s*untrusted-source-text(?:[^\]]*\]|\s*(?:begin|end))",
+	// Any token that carries the fence name, bracketed or bare. A payload writing the bare token
+	// (untrusted-source-text end) with no bracket left the delimiter word intact, and a reader - human or
+	// model - that treats the words as the delimiter is exactly who the fence is for.
+	// ORDER MATTERS (PR #1374 review): the BRACKETED alternative requires its opening "[", and the bare
+	// alternative comes second. With an optional "[" in front of the greedy [^\]]* branch, a bare
+	// "untrusted-source-text end" followed anywhere later by a "]" - routine in JSON fragments, array
+	// indexes and SQL prose - matched everything in between and deleted diagnostic content the operator
+	// needs. Requiring the bracket keeps that branch's blast radius inside a real bracketed token.
+	[GeneratedRegex(@"\[\s*untrusted-source-text[^\]]*\]|untrusted-source-text\s*(?:begin|end)",
 		RegexOptions.IgnoreCase | RegexOptions.CultureInvariant, RegexTimeoutMilliseconds)]
 	private static partial Regex FenceTokenRegex();
 
 	/// <summary>Maximum length of a diagnostic composed from repository-controlled text.</summary>
 	private const int UntrustedDiagnosticLimit = 300;
+
+	/// <summary>
+	/// Maximum input length the redaction rule chain is allowed to scan. Bounds the regex work on
+	/// server-authored text before it reaches <see cref="Redact"/>; the OUTPUT is clamped to
+	/// <see cref="UntrustedDiagnosticLimit"/> separately.
+	/// </summary>
+	private const int UntrustedInputLimit = UntrustedDiagnosticLimit * 8;
 
 	/// <summary>Opens the fenced region that marks the diagnostic as observed data, not an instruction.</summary>
 	private const string UntrustedDiagnosticPrefix = "[untrusted-source-text begin] ";
@@ -142,6 +157,17 @@ internal static partial class SensitiveErrorTextRedactor {
 				&& text.EndsWith(UntrustedDiagnosticSuffix, StringComparison.Ordinal)
 				&& text.Length >= UntrustedDiagnosticPrefix.Length + UntrustedDiagnosticSuffix.Length) {
 			text = text[UntrustedDiagnosticPrefix.Length..^UntrustedDiagnosticSuffix.Length];
+		}
+		// CLAMPED BEFORE the rule chain, not only after (PR #1374 review). The input here is
+		// server-authored and arbitrarily large - a ResponseStatus.Message can be a whole page - and Redact
+		// runs eight or more backtracking scans over it, each with its own 1 s timeout. A
+		// RegexMatchTimeoutException raised on a failure-REPORTING path has no handler above it, so an
+		// oversized body turned a reportable provider failure into an unrelated crash. The bound is
+		// generous rather than tight because redaction can lengthen text (a matched token becomes
+		// "[redacted]"), and the result is clamped to UntrustedDiagnosticLimit at the end anyway -
+		// so nothing that could have survived into those 300 characters is lost here.
+		if (text.Length > UntrustedInputLimit) {
+			text = text[..UntrustedInputLimit];
 		}
 		string redacted = Redact(text);
 		StringBuilder collapsed = new(redacted.Length);

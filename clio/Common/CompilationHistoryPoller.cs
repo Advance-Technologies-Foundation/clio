@@ -76,39 +76,59 @@ public class CompilationHistoryPoller : ICompilationHistoryPoller {
 		var seen = new HashSet<Guid>();
 		int consecutiveFailures = 0;
 		while (!ct.IsCancellationRequested) {
-			List<CompilationHistory> records;
-			try {
-				records = PollOnce(baseline);
-				consecutiveFailures = 0;
-			} catch (Exception exception) when (exception is not OperationCanceledException) {
-				//A single failed round must NOT end the poll. Before ClassifyingDataProvider (issue
-				//#1371) an unreachable round came back as an empty list and the loop simply tried
-				//again; now it throws, and a compile that takes minutes cannot be abandoned because
-				//one OData read out of hundreds timed out or hit a restarting app tier. Only a
-				//SUSTAINED failure is real - that is what the budget below distinguishes.
-				consecutiveFailures++;
-				if (consecutiveFailures >= MaxConsecutiveFailures) {
-					throw new InvalidOperationException(
-						$"Compilation polling gave up after {MaxConsecutiveFailures} consecutive failed "
-						+ $"rounds. Last failure: {exception.Message}", exception);
-				}
-				if (ct.WaitHandle.WaitOne(PollIntervalMilliseconds)) {
-					break;
-				}
-				continue;
+			List<CompilationHistory> records = TryPollOnce(baseline, ref consecutiveFailures);
+			if (records is not null) {
+				baseline = ReportNewRecords(records, seen, baseline, onNewRecord);
 			}
-
-			foreach (CompilationHistory record in records) {
-				if (seen.Add(record.Id)) {
-					baseline = record.CreatedOn > baseline ? record.CreatedOn : baseline;
-					onNewRecord(record);
-				}
-			}
-
 			if (ct.WaitHandle.WaitOne(PollIntervalMilliseconds)) {
 				break;
 			}
 		}
+	}
+
+	/// <summary>
+	/// Runs one round, returning its records, or <see langword="null"/> when the round failed and the
+	/// failure is still within the budget.
+	/// </summary>
+	/// <remarks>
+	/// A single failed round must NOT end the poll. Before ClassifyingDataProvider (issue #1371) an
+	/// unreachable round came back as an empty list and the loop simply tried again; now it throws, and a
+	/// compile that takes minutes cannot be abandoned because one OData read out of hundreds timed out or
+	/// hit a restarting app tier. Only a SUSTAINED failure is real - that is what the budget distinguishes.
+	/// </remarks>
+	/// <exception cref="InvalidOperationException">
+	/// <see cref="MaxConsecutiveFailures"/> rounds failed in a row; the last failure is the inner exception.
+	/// </exception>
+	private List<CompilationHistory> TryPollOnce(DateTime baseline, ref int consecutiveFailures) {
+		try {
+			List<CompilationHistory> records = PollOnce(baseline);
+			consecutiveFailures = 0;
+			return records;
+		} catch (Exception exception) when (exception is not OperationCanceledException) {
+			consecutiveFailures++;
+			if (consecutiveFailures >= MaxConsecutiveFailures) {
+				throw new InvalidOperationException(
+					$"Compilation polling gave up after {MaxConsecutiveFailures} consecutive failed "
+					+ $"rounds. Last failure: {exception.Message}", exception);
+			}
+			return null;
+		}
+	}
+
+	/// <summary>
+	/// Reports every record not seen before and returns the advanced baseline. A real Creatio
+	/// CompilationHistory table can return the same row again across rounds, so the seen-Id set - not the
+	/// timestamp alone - is what keeps a record from being reported twice.
+	/// </summary>
+	private static DateTime ReportNewRecords(List<CompilationHistory> records, HashSet<Guid> seen,
+		DateTime baseline, Action<CompilationHistory> onNewRecord) {
+		foreach (CompilationHistory record in records) {
+			if (seen.Add(record.Id)) {
+				baseline = record.CreatedOn > baseline ? record.CreatedOn : baseline;
+				onNewRecord(record);
+			}
+		}
+		return baseline;
 	}
 
 }

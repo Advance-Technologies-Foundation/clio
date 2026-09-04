@@ -352,4 +352,46 @@ public sealed class ServerProseInDiagnosticsTests {
 		exception.Message.Should().Contain("SysSettings",
 			because: "naming the operation is what makes the failure attributable");
 	}
+
+	[Test]
+	[Description("The debug server excerpt is found when the carrier sits DEEPER in the chain, under a domain wrapper - a single unwrap missed it and the correlation ID on the envelope then bridged to nothing while the envelope still looked complete.")]
+	public void ServerDetail_Should_Be_Found_When_The_Carrier_Is_Wrapped() {
+		// Arrange
+		ILogger logger = Substitute.For<ILogger>();
+		List<string> debugLines = [];
+		logger.When(value => value.WriteDebug(Arg.Any<string>()))
+			.Do(call => debugLines.Add(call.ArgAt<string>(0)));
+		Exception carrier = new DataProviderFailureException(
+			"reading records", "Column 'Name' is required on entity SysSettings.");
+		Exception wrapped = new InvalidOperationException("Could not read the environment.", carrier);
+
+		// Act
+		SysSettingFailure failure = SysSettingsCommand.CategorizeAndLog(
+			wrapped, "reading sys-setting", logger, new OperationCorrelationIdProvider());
+
+		// Assert
+		debugLines.Should().Contain(line => line.Contains(failure.CorrelationId, StringComparison.Ordinal)
+				&& line.Contains("server detail", StringComparison.Ordinal),
+			because: "the correlation ID on the envelope has to bridge to a line that exists, whatever depth the carrier sits at");
+	}
+
+	[Test]
+	[Description("CategorizeAndLog - the overload the MCP tools' catch blocks use - writes the debug excerpt itself, so those paths no longer return a correlation ID with no matching line behind it.")]
+	public void CategorizeAndLog_Should_Write_The_Debug_Excerpt_For_Its_Own_Callers() {
+		// Arrange
+		ILogger logger = Substitute.For<ILogger>();
+		List<string> debugLines = [];
+		logger.When(value => value.WriteDebug(Arg.Any<string>()))
+			.Do(call => debugLines.Add(call.ArgAt<string>(0)));
+		Exception carrier = new DataProviderFailureException(
+			"reading records", "Column 'Name' is required on entity SysSettings.");
+
+		// Act
+		SysSettingFailure failure = SysSettingsCommand.CategorizeAndLog(
+			carrier, "reading sys-setting", logger, new OperationCorrelationIdProvider());
+
+		// Assert
+		debugLines.Should().ContainSingle(line => line.Contains(failure.CorrelationId, StringComparison.Ordinal),
+			because: "exactly one excerpt line is written per failure - the instance ReportFailure must not write a second one");
+	}
 }

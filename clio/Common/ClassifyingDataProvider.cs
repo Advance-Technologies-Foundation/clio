@@ -36,6 +36,10 @@ namespace Clio.Common;
 /// </remarks>
 public sealed class ClassifyingDataProvider : IDataProvider {
 
+	// The stand-in when the name a diagnosis would quote is not available. Named rather than repeated
+	// inline so the four sites that build an operation label cannot drift apart.
+	private const string UnknownName = "unknown";
+
 	/// <summary>Cap on the server-controlled detail embedded in an exception message.</summary>
 	private const int MaxFailureDetailLength = 300;
 
@@ -59,7 +63,7 @@ public sealed class ClassifyingDataProvider : IDataProvider {
 	/// <param name="selectQuery">The query to run.</param>
 	/// <returns>The provider's successful response.</returns>
 	public IItemsResponse GetItems(ISelectQuery selectQuery) {
-		string operation = $"reading records from entity schema '{selectQuery?.RootSchemaName ?? "unknown"}'";
+		string operation = $"reading records from entity schema '{selectQuery?.RootSchemaName ?? UnknownName}'";
 		IItemsResponse response = Guard(() => _inner.GetItems(selectQuery), operation);
 		return EnsureSuccess(response, r => r.Success, r => r.ErrorMessage, operation);
 	}
@@ -92,7 +96,7 @@ public sealed class ClassifyingDataProvider : IDataProvider {
 	/// <param name="request">The process and its parameters.</param>
 	/// <returns>The provider's successful response.</returns>
 	public IExecuteProcessResponse ExecuteProcess(IExecuteProcessRequest request) {
-		string operation = $"running process '{request?.ProcessSchemaName ?? "unknown"}'";
+		string operation = $"running process '{request?.ProcessSchemaName ?? UnknownName}'";
 		IExecuteProcessResponse response = Guard(() => _inner.ExecuteProcess(request), operation);
 		return EnsureSuccess(response, r => r.Success, r => r.ErrorMessage, operation);
 	}
@@ -232,13 +236,13 @@ public sealed class ClassifyingDataProvider : IDataProvider {
 	/// <summary>Names the schemas a batch touches, for the diagnostic.</summary>
 	private static string DescribeSchemas(List<IBaseQuery> queries) {
 		if (queries is null || queries.Count == 0) {
-			return "unknown";
+			return UnknownName;
 		}
 		string[] names = queries
 			.Select(query => query?.RootSchemaName)
 			.Where(name => !string.IsNullOrWhiteSpace(name))
 			.Distinct(StringComparer.Ordinal)
 			.ToArray();
-		return names.Length == 0 ? "unknown" : string.Join(", ", names);
+		return names.Length == 0 ? UnknownName : string.Join(", ", names);
 	}
 }

@@ -31,8 +31,6 @@ namespace Clio.Mcp.E2E;
 [AllureFeature("sys-setting")]
 [NonParallelizable]
 public sealed class SysSettingsAuthenticationFailureE2ETests {
-	private const string RegisterToolName = "reg-web-app";
-	private const string RejectedSchemaName = "SysSettings";
 	private const string KnownPlatformSetting = "Maintainer";
 
 	[Test]
@@ -166,76 +164,43 @@ public sealed class SysSettingsAuthenticationFailureE2ETests {
 	/// Stands up the isolated clio home, the credential-rejection stub, a real mcp-server session, and a
 	/// registered environment pointing at the stub, then runs <paramref name="act"/> against them.
 	/// </summary>
-	private static async Task RunAgainstCredentialRejectionStubAsync(
-		Func<McpServerSession, string, CancellationToken, Task> act) {
-		string tempHome = Path.Combine(Path.GetTempPath(), $"clio-syssettings-auth-e2e-{Guid.NewGuid():N}");
-		Directory.CreateDirectory(tempHome);
-		try {
-			string envVarName = OperatingSystem.IsWindows() ? "LOCALAPPDATA" : "HOME";
-			McpE2ESettings settings = TestConfiguration.Load();
-			settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
-			settings.ProcessEnvironmentVariables[envVarName] = tempHome;
-			using TemporaryClioSettingsOverride settingsOverride = TemporaryClioSettingsOverride.ReplaceContent(
-				"""
-				{
-				  "ActiveEnvironmentKey": null,
-				  "Environments": {}
-				}
-				""",
-				settings.ClioProcessPath,
-				settings.ProcessEnvironmentVariables);
-			await using RuntimeDetectionStubServer stubServer = RuntimeDetectionStubServer.Start(
-				new RuntimeDetectionStubServerConfiguration(
-					NetCoreHealthEnabled: true,
-					NetFrameworkHealthEnabled: true,
-					NetCoreServiceEnabled: true,
-					NetFrameworkServiceEnabled: false,
-					NetCoreUiMarkerEnabled: true,
-					NetFrameworkUiMarkerEnabled: false,
-					AuthRejectedSelectQuerySchemaName: RejectedSchemaName));
-			using CancellationTokenSource cancellationTokenSource = new(TimeSpan.FromMinutes(3));
-			await using McpServerSession session = await McpServerSession.StartAsync(settings, cancellationTokenSource.Token);
-			string environmentName = $"syssettings-auth-{Guid.NewGuid():N}";
-			await RegisterEnvironmentAsync(session, environmentName, stubServer.BaseUrl, cancellationTokenSource.Token);
+	[TestCase("Text", "must-not-be-written",
+		TestName = "UpdateSysSetting_Should_Fail_Closed_On_Rejected_Credentials(Text)")]
+	[TestCase("Lookup", "b80eb7bb-193c-4bb2-ad51-e0beb1670278",
+		TestName = "UpdateSysSetting_Should_Fail_Closed_On_Rejected_Credentials(Lookup)")]
+	[AllureTag(SysSettingUpdateTool.UpdateSysSettingToolName)]
+	[AllureName("update-sys-setting fails closed on rejected credentials")]
+	[AllureDescription("Registers an environment against a stub whose authenticated SelectQuery and sys-settings write endpoint answer with the Creatio login page, then verifies update-sys-setting returns success:false and reports no written value, for both a Text and a Lookup setting.")]
+	[Description("AC3's update half: update-sys-setting against an environment whose credentials Creatio rejects fails closed for Text and for Lookup. This is the one path where ThrowIfSessionRejected sits inside a pre-existing try/catch (JsonException) that used to report the bare \"Invalid response format.\", so the interaction is worth proving end to end.")]
+	public async Task UpdateSysSetting_Should_Fail_Closed_On_Rejected_Credentials(string valueTypeName, string value) {
+		await RunAgainstCredentialRejectionStubAsync(async (session, environmentName, cancellationToken) => {
+			// Act
+			CallToolResult callResult = await session.CallToolAsync(
+				SysSettingUpdateTool.UpdateSysSettingToolName,
+				new Dictionary<string, object?> {
+					["args"] = new Dictionary<string, object?> {
+						["environment-name"] = environmentName,
+						["code"] = KnownPlatformSetting,
+						["value-type-name"] = valueTypeName,
+						["value"] = value
+					}
+				},
+				cancellationToken);
+			SysSettingUpdateResult response = EntitySchemaStructuredResultParser.Extract<SysSettingUpdateResult>(callResult);
 
-			await act(session, environmentName, cancellationTokenSource.Token);
-		} finally {
-			TryDeleteDirectory(tempHome);
-		}
+			// Assert
+			response.Success.Should().BeFalse(
+				because: "a write must not proceed on a session the environment rejected - reporting it as updated is the same false success issue #1222 describes for reads");
+			response.Error.Should().NotBeNullOrWhiteSpace(
+				because: "the failure envelope has to carry a diagnostic the caller can act on");
+			response.Error.Should().NotContain("Invalid response format",
+				because: "the login page proves the session was rejected; the pre-existing JsonException catch on this path must not swallow that into a shapeless parser complaint");
+			response.Value.Should().BeNullOrEmpty(
+				because: "nothing was written, so no value may be advertised alongside the failure");
+		});
 	}
 
-	private static void TryDeleteDirectory(string path) {
-		try {
-			if (Directory.Exists(path)) {
-				Directory.Delete(path, recursive: true);
-			}
-		} catch {
-			// Best-effort cleanup of the isolated home directory; a leaked temp dir must not fail the test.
-		}
-	}
-
-	private static async Task RegisterEnvironmentAsync(
-		McpServerSession session,
-		string environmentName,
-		string baseUrl,
-		CancellationToken cancellationToken) {
-		IReadOnlyCollection<string> toolNames = await session.ListReachableToolNamesAsync(cancellationToken);
-		toolNames.Should().Contain(RegisterToolName,
-			because: $"the {RegisterToolName} MCP tool must be discoverable before the test can register the stub environment");
-
-		CallToolResult registerResult = await session.CallToolAsync(
-			RegisterToolName,
-			new Dictionary<string, object?> {
-				["args"] = new Dictionary<string, object?> {
-					["environment-name"] = environmentName,
-					["uri"] = baseUrl,
-					["login"] = "Supervisor",
-					["password"] = "Supervisor"
-				}
-			},
-			cancellationToken);
-		CommandExecutionEnvelope execution = McpCommandExecutionParser.Extract(registerResult);
-		execution.ExitCode.Should().Be(0,
-			because: "the stub environment must register successfully before the sys-settings tools can be exercised against it");
-	}
+	private static Task RunAgainstCredentialRejectionStubAsync(
+		Func<McpServerSession, string, CancellationToken, Task> act)
+		=> CredentialRejectionStubHarness.RunAsync("syssettings-auth", act);
 }

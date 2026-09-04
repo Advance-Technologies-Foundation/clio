@@ -576,12 +576,20 @@ namespace Clio.Command
 			}
 			bool updated = _sysSettingsManager.UpdateSysSetting(args.Code, args.Value, args.ValueTypeName);
 			if (!updated) {
-				//Partial success, so there is no Error - but the correlation ID still belongs on it: the
-				//manager logged WHY the value did not land, and the ID is how the caller points at that line.
+				//Partial success, so there is no Error - but the ID and the line that carries it are ONE
+				//operation here too (PR #1374 review). The manager's own "SysSettings with code: {code} is
+				//not updated." lines carry no correlation ID and never have, so minting a bare token here
+				//handed the caller something to grep that resolved to nothing - the exact failure
+				//CategorizeAndLog exists to prevent, and worse on the MCP path, where an agent cannot tell
+				//"the line is below my verbosity" from "the line does not exist".
+				string correlationId = _correlationIds.New();
+				_logger.WriteError(
+					$"Sys-setting '{args.Code}' was created, but the initial value could not be applied. "
+					+ $"(correlation-id: {correlationId})");
 				return new SysSettingCreateResult(true, args.Code, args.ValueTypeName, null,
 					Error: null,
 					Warning: "Sys-setting was created, but the initial value could not be applied.",
-					CorrelationId: _correlationIds.New());
+					CorrelationId: correlationId);
 			}
 			string assignedValue = _sysSettingsManager.GetAllUsersDefaultByCode(args.Code);
 			string maskedAssignedValue = ApplySecureTextMask(args.ValueTypeName, assignedValue);
@@ -730,11 +738,11 @@ namespace Clio.Command
 		/// onto this channel is a fixed local diagnostic, and why the debug excerpt beside it is scrubbed
 		/// and fenced at the point of writing.
 		/// </remarks>
-		private SysSettingFailure ReportFailure(Exception ex, string operationLabel) {
-			SysSettingFailure failure = CategorizeAndLog(ex, operationLabel, _logger, _correlationIds);
-			WriteServerDetailAtDebugVerbosity(ex, failure.CorrelationId);
-			return failure;
-		}
+		private SysSettingFailure ReportFailure(Exception ex, string operationLabel) =>
+			//CategorizeAndLog now writes the debug excerpt itself, so every caller of it - not only this
+			//one - gets the line the correlation ID bridges to. Writing it again here would emit the
+			//excerpt twice for the same failure.
+			CategorizeAndLog(ex, operationLabel, _logger, _correlationIds);
 
 		/// <summary>
 		/// The non-exception counterpart of <see cref="ReportFailure"/>: classifies a refusal the environment
@@ -746,7 +754,7 @@ namespace Clio.Command
 			string recoveryAction) {
 			SysSettingFailure failure = new($"Failed {operationLabel}.", category, cause, recoveryAction,
 				_correlationIds.New());
-			_logger.WriteError(DescribeFailureForLog(failure));
+			WriteAndForwardFailureLine(_logger, failure);
 			return failure;
 		}
 
@@ -762,7 +770,11 @@ namespace Clio.Command
 		internal static SysSettingFailure CategorizeAndLog(Exception ex, string operationLabel,
 			ILogger logger, IOperationCorrelationIdProvider correlationIds) {
 			SysSettingFailure failure = CategorizeFailure(ex, operationLabel, correlationIds.New());
-			logger.WriteError(DescribeFailureForLog(failure));
+			WriteAndForwardFailureLine(logger, failure);
+			//Here too, not only in the instance ReportFailure (PR #1374 review): this overload exists
+			//BECAUSE other callers use it - the MCP tools' catch blocks - and those paths were getting a
+			//correlation ID on the envelope with no matching debug line to bridge to.
+			WriteServerDetailAtDebugVerbosity(logger, ex, failure.CorrelationId);
 			return failure;
 		}
 
@@ -779,10 +791,13 @@ namespace Clio.Command
 		/// and its console drain is suppressed under MCP server mode, and the correlation ID is the bridge
 		/// from the reported failure to the line.
 		/// </remarks>
-		private void WriteServerDetailAtDebugVerbosity(Exception ex, string correlationId) {
-			string detail = UnwrapTransportFault(ex) is IServerDetailCarrier carrier
-				? carrier.ServerDetail
-				: null;
+		private static void WriteServerDetailAtDebugVerbosity(ILogger logger, Exception ex, string correlationId) {
+			//The WHOLE chain, not a single unwrap (PR #1374 review). UnwrapTransportFault only steps
+			//through single-inner aggregates and TargetInvocationException, so a carrier re-wrapped by a
+			//domain or transport exception - a SessionRejectedException inside an environment failure -
+			//lost its excerpt silently: the envelope still looked complete and the operator grepped the
+			//correlation ID and found nothing.
+			string detail = FindServerDetail(ex);
 			//Scrubbed and fenced even here, and that is load-bearing rather than belt-and-braces:
 			//ConsoleLogger.WriteDebug suppresses the console DRAIN under MCP server mode but still
 			//CAPTURES into the per-flow buffer BaseTool harvests into CommandExecutionResult.Messages. The
@@ -792,7 +807,24 @@ namespace Clio.Command
 			if (safeDetail is null) {
 				return;
 			}
-			_logger.WriteDebug($"(correlation-id: {correlationId}) server detail: {safeDetail}");
+			logger.WriteDebug($"(correlation-id: {correlationId}) server detail: {safeDetail}");
+		}
+
+		/// <summary>
+		/// The server excerpt of the first <see cref="IServerDetailCarrier"/> anywhere in the exception
+		/// chain, including inside single-fault aggregates, or <see langword="null"/> when there is none.
+		/// </summary>
+		private static string FindServerDetail(Exception exception) {
+			for (Exception current = exception; current is not null; current = current.InnerException) {
+				if (current is IServerDetailCarrier carrier) {
+					return carrier.ServerDetail;
+				}
+				if (current is AggregateException { InnerExceptions.Count: 1 } aggregate
+						&& aggregate.InnerExceptions[0] is IServerDetailCarrier innerCarrier) {
+					return innerCarrier.ServerDetail;
+				}
+			}
+			return null;
 		}
 
 		/// <summary>
@@ -812,8 +844,31 @@ namespace Clio.Command
 				described.ComposeMessage(operationLabel),
 				SysSettingErrorCategories.ProviderFailure, described.Cause,
 				SysSettingFailureTexts.ProviderFailureRecovery, _correlationIds.New());
-			_logger.WriteError(DescribeFailureForLog(failure));
+			WriteAndForwardFailureLine(_logger, failure);
 			return failure;
+		}
+
+		/// <summary>
+		/// Writes the one log line carrying the failure's correlation ID, and on the MCP path ALSO sends it
+		/// to the client as a <c>notifications/message</c> under the <c>clio.tool.{correlationId}</c>
+		/// category.
+		/// </summary>
+		/// <remarks>
+		/// PR #1373 review: writing the line alone was not enough to make the ID resolvable. Running as an
+		/// MCP server every ordinary sink is closed - <see cref="ConsoleLogger"/> suppresses console writes
+		/// under <c>Program.IsMcpServerMode</c>, the log file exists only when the operator passed
+		/// <c>--log</c>, and the sys-setting tools and <c>SchemaNamePrefixTool</c> are plain
+		/// <c>[McpServerToolType]</c> classes that never flush the way <c>BaseTool</c> does. So the line
+		/// reached nobody, while the shipped recovery text tells the caller to quote the ID.
+		/// The notification is built from the line directly rather than by draining the shared
+		/// <c>PreserveMessages</c> buffer: that buffer belongs to whatever flow is capturing (a
+		/// <c>BaseTool</c> parent may be), and clearing it here would swallow messages this failure did not
+		/// produce. <c>ForwardMessages</c> no-ops when no MCP server is active, so the CLI path is unchanged.
+		/// </remarks>
+		private static void WriteAndForwardFailureLine(ILogger logger, SysSettingFailure failure) {
+			string line = DescribeFailureForLog(failure);
+			logger.WriteError(line);
+			McpServer.Tools.McpLogNotifier.ForwardMessages([new ErrorMessage(line)], failure.CorrelationId);
 		}
 
 		/// <summary>Renders a classified failure as one log line, correlation ID last.</summary>

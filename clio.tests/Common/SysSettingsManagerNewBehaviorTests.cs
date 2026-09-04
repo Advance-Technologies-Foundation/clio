@@ -4,6 +4,8 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Net.Http;
 using System.Security.Authentication;
+using System.Text.Json;
+using System.Text.RegularExpressions;
 using ATF.Repository.Mock;
 using ATF.Repository.Providers;
 using Clio.Command;
@@ -23,6 +25,14 @@ namespace Clio.Tests.Common;
 public class SysSettingsManagerNewBehaviorTests {
 
 	#region Helpers
+
+	// Both lines a failed CLI update writes end with "(correlation-id: X)". Pulling the ID out is how a
+	// test proves the classified line and the "is not updated." line describe the SAME failure - the
+	// bridge the two-line contract rests on.
+	private static string ExtractCorrelationId(string logLine) {
+		Match match = Regex.Match(logLine, @"\(correlation-id: (?<id>[^)]+)\)");
+		return match.Success ? match.Groups["id"].Value : string.Empty;
+	}
 
 	private static readonly Guid AllUsersAdminUnitId = new("a29a3ba5-4b0d-de11-9a51-005056c00008");
 
@@ -526,9 +536,87 @@ public class SysSettingsManagerNewBehaviorTests {
 			because: "the platform's own text is the only diagnosable detail available");
 	}
 
+	[Test]
+	[Description("The CLI update overload logs the credential diagnosis: a rejected session must reach the operator as an authentication failure, not the opaque 'is not updated.' line.")]
+	public void TryUpdateSysSetting_Cli_ShouldLogAuthenticationFailure_WhenCredentialsAreRejected() {
+		// Arrange
+		ISysSettingsManager manager = BuildSut(BuildRejectedProvider());
+		ILogger logger = Substitute.For<ILogger>();
+		List<string> loggedErrors = [];
+		logger.When(value => value.WriteError(Arg.Any<string>()))
+			.Do(call => loggedErrors.Add(call.ArgAt<string>(0)));
+		SysSettingsCommand command = new(manager, logger, Substitute.For<IFileSystem>(), new OperationCorrelationIdProvider());
+
+		// Act
+		command.TryUpdateSysSetting(new SysSettingsOptions {
+			Code = "UsrAuthFailure", Value = "value", Type = "Text"
+		});
+
+		// Assert
+		loggedErrors.Should().Contain(message => message.Contains("Authentication error updating sys-setting."),
+			because: "a rejected session must reach the operator as an authentication failure, not the opaque 'is not updated.' line");
+		loggedErrors.Should().Contain(message =>
+				message.Contains("UsrAuthFailure") && message.Contains("is not updated."),
+			because: "the line apply-environment-manifest reads as its only failure signal still has to name the setting");
+		loggedErrors.Select(ExtractCorrelationId).Distinct().Should().HaveCount(1,
+			because: "exactly one ID is minted per failure and both lines must carry it, so quoting the ID finds the whole record");
+	}
+
+	[Test]
+	[Description("The CLI update overload logs the network diagnosis for a refused connection, so a transport fault is not reported as a value the environment refused.")]
+	public void TryUpdateSysSetting_Cli_ShouldLogANetworkError_ForARefusedConnection() {
+		// Arrange
+		IDataProvider dataProvider = new ClassifyingDataProvider(new ThrowingDataProvider(
+			() => new HttpRequestException("Connection refused at http://localhost:40124")));
+		ISysSettingsManager manager = BuildSut(dataProvider);
+		ILogger logger = Substitute.For<ILogger>();
+		List<string> loggedErrors = [];
+		logger.When(value => value.WriteError(Arg.Any<string>()))
+			.Do(call => loggedErrors.Add(call.ArgAt<string>(0)));
+		SysSettingsCommand command = new(manager, logger, Substitute.For<IFileSystem>(), new OperationCorrelationIdProvider());
+
+		// Act
+		command.TryUpdateSysSetting(new SysSettingsOptions {
+			Code = "UsrNetworkFailure", Value = "value", Type = "Text"
+		});
+
+		// Assert
+		loggedErrors.Should().Contain(message => message.Contains("Network error updating sys-setting."),
+			because: "a refused connection is a transport fault and must not be reported as a value the environment refused");
+		loggedErrors.Should().Contain(message =>
+				message.Contains("UsrNetworkFailure") && message.Contains("is not updated."),
+			because: "the line apply-environment-manifest reads as its only failure signal still has to name the setting");
+		loggedErrors.Select(ExtractCorrelationId).Distinct().Should().HaveCount(1,
+			because: "exactly one ID is minted per failure and both lines must carry it");
+	}
+
+
 	#endregion
 
 	#region InsertSysSetting — referenceSchemaUId + new type aliases
+
+	// A gateway/WAF/404 page that is NOT the Creatio login page: ThrowIfSessionRejected only fires when the
+	// body PROVES a rejected session, so this shape is the one that reaches JsonSerializer.Deserialize on the
+	// write path. It is what makes SysSettingsCommand.CategorizeError's JsonException arm reachable, and
+	// nothing exercised it before.
+	private const string NonJsonGatewayPage = "<html><head><title>404 Not Found</title></head><body>404</body></html>";
+
+	[Test]
+	[Description("A non-JSON gateway/404 answer to InsertSysSettingRequest surfaces as JsonException rather than a parsed response, so the write path reaches the JsonException arm of SysSettingsCommand.CategorizeError instead of the uncategorized \"Failed creating sys-setting.\".")]
+	public void InsertSysSetting_ThrowsJsonException_WhenWriteEndpointAnswersWithANonJsonPage() {
+		IApplicationClient applicationClient = Substitute.For<IApplicationClient>();
+		applicationClient.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>())
+			.Returns(NonJsonGatewayPage);
+		applicationClient
+			.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+			.Returns(NonJsonGatewayPage);
+		ISysSettingsManager sut = BuildSut(new DataProviderMock(), applicationClient);
+
+		Action act = () => sut.InsertSysSetting("Plain", "UsrPlain", "Text");
+
+		act.Should().Throw<JsonException>(
+			because: "a proxy/gateway page is not a rejected session, so ThrowIfSessionRejected lets it through to the deserializer - and the JsonException it raises is what CategorizeError classifies");
+	}
 
 	private const string InsertSuccessJson =
 		"""{"responseStatus":{"ErrorCode":"","Message":"","Errors":[]},"id":"acf40078-ba48-4285-9f3b-44ebafa28cac","rowsAffected":1,"nextPrcElReady":false,"success":true}""";
