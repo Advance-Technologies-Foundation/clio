@@ -423,8 +423,8 @@ public sealed class DescribedPerformer {
 /// <para>Every member is declared here on purpose, but that is NOT a substitute for an overflow bag: a field the
 /// server reports and this type does not declare is still discarded without a trace, which is the same silent-loss
 /// failure the connections feature exists to remove. Unlike <see cref="DescribeProcessResult"/>,
-/// <see cref="DescribedElement"/> and <see cref="DescribedEmail"/>, this type has no
-/// <c>[JsonExtensionData]</c> yet — an accepted gap on the connections ticket's own surface, not something these
+/// <see cref="DescribedElement"/>, <see cref="DescribedEmail"/> and <see cref="DescribedFlow"/>, this type
+/// has no <c>[JsonExtensionData]</c> yet — an accepted gap on the connections ticket's own surface, not something these
 /// remarks endorse. Add one here when that ticket is next touched.</para>
 /// </remarks>
 public sealed class DescribedConnection {
@@ -597,17 +597,70 @@ public sealed class DescribedFilterElementRef {
 
 /// <summary>A sequence flow between two nodes.</summary>
 public sealed class DescribedFlow {
-	/// <summary>Source node UId.</summary>
+	/// <summary>Source node NAME — not its UId, despite what an earlier revision of this comment said.</summary>
 	[JsonPropertyName("source")]
 	public string Source { get; set; }
 
-	/// <summary>Target node UId.</summary>
+	/// <summary>Target node NAME — not its UId, despite what an earlier revision of this comment said.</summary>
 	[JsonPropertyName("target")]
 	public string Target { get; set; }
 
 	/// <summary>Flow kind: <c>sequence</c>, <c>conditional</c>, or <c>default</c>.</summary>
 	[JsonPropertyName("kind")]
 	public string Kind { get; set; }
+
+	/// <summary>
+	/// The boolean expression deciding whether a branch is taken, exactly as stored.
+	/// <para>Reported whenever the flow carries condition TEXT - including on a flow whose <c>kind</c> is NOT
+	/// conditional, which an earlier version of this comment denied. Such text is dropped at generation time and
+	/// never evaluated, and <c>kind</c> is what says so; it is still reported because the parameter-delete and
+	/// element-retarget guards both SCAN it and refuse on it, so hiding it would leave a caller refused over
+	/// something no read API shows. <c>null</c> when there is no text, and on a conditional flow whose branch is
+	/// chosen by an activity result the text is STILL reported, because the delete guard scans it - read
+	/// <c>branchesOnActivityResult</c> to learn that the flow ignores its expression entirely.</para>
+	/// </summary>
+	/// <remarks>
+	/// This field is NOT optional polish, though the original reason for saying so is gone:
+	/// <see cref="DescribedFlow"/> had no <c>[JsonExtensionData]</c> overflow bag when this property was
+	/// added, so a server field with no property here was dropped silently on clio's re-serialize and the
+	/// caller never learned the condition existed. It has one now (added with the
+	/// <see cref="BranchesOnActivityResult"/> nullability fix), so an undeclared field survives - but a
+	/// TYPED property is still what this needs, because callers and the delete guard read it by name and a
+	/// <c>JsonElement</c> in a dictionary is not that. The bagless failure mode still applies to the
+	/// described FILTER types, and is recorded in
+	/// <c>docs/knowledge/ProcessModel/described-filter-types-have-no-json-overflow-bag.md</c>.
+	/// </remarks>
+	[JsonPropertyName("condition")]
+	public string Condition { get; set; }
+
+	/// <summary>
+	/// <c>true</c> when this flow's branch is decided by the RESULT of the preceding activity - which buttons it
+	/// was completed with - and NOT by <see cref="Condition"/>.
+	/// <para>The two are indistinguishable without it, and the difference is total: the platform reads the result
+	/// map FIRST and only falls back to the expression when it is empty, so on such a flow the condition text is
+	/// stored, reported, and never evaluated. <c>setFlowCondition</c> refuses to write one; before this field a
+	/// caller verifying their change read the OLD text and took it as proof the change landed.</para>
+	/// <para>NULLABLE on purpose, and it is the same reassuring-direction argument the field itself exists
+	/// for. <c>describe</c> is allowed on an environment whose package predates this field - its
+	/// <c>[RequiresPackage]</c> is presence-only, with no version literal - and such a server simply never
+	/// sends it. A non-nullable <c>bool</c> would leave <c>default(bool)</c>, which
+	/// <c>WhenWritingNull</c> cannot omit, so the payload would assert <c>false</c> for every flow on a
+	/// server that said nothing: a caller reading it would conclude the condition IS evaluated. Absent
+	/// stays absent instead, and a caller that finds no key knows to check the package version.</para>
+	/// </summary>
+	[JsonPropertyName("branchesOnActivityResult")]
+	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+	public bool? BranchesOnActivityResult { get; set; }
+
+	/// <summary>
+	/// Every other field the server returns on a flow, so a description round-trips losslessly - the same bag
+	/// the graph root, nodes and parameters already carry. Added with the nullability fix above: without it a
+	/// newer <c>CrtProcessBuilder</c> reporting a new flow field needs a matching clio property AND a clio
+	/// release before the caller can see it, and until then it is dropped with no trace. <c>condition</c> and
+	/// <c>branchesOnActivityResult</c> keep their typed properties because guards and callers read them by name.
+	/// </summary>
+	[JsonExtensionData]
+	public Dictionary<string, JsonElement> AdditionalData { get; set; }
 }
 
 /// <summary>A parameter read back from the schema, with its value source decoded.</summary>

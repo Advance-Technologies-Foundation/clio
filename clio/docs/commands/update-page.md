@@ -16,6 +16,11 @@ The update-page command validates and saves the raw JavaScript body of a
 Freedom UI page schema. Pass the full body string directly, typically
 after reading raw.body from get-page.
 
+> **CLI vs MCP.** The CLI `get-page` verb returns `raw.body` inline, so a CLI caller copies
+> that value. The MCP `get-page` tool returns no `raw` property — it writes the body to disk
+> and reports the path in `files.bodyFile`. MCP callers pass that path straight through as
+> `body-file`, or send the file contents as `body`.
+
 The MCP `update-page` tool also accepts `validate: false` as an explicit escape
 hatch when a full replacement body contains a pre-existing defect that is
 unrelated to the requested edit. This skips client-side content and run-process
