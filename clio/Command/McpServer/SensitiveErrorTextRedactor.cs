@@ -86,7 +86,17 @@ internal static partial class SensitiveErrorTextRedactor {
 	// alphanumeric last label, "clio@8.0.1" and the "kit@1.2.3" tail of "@creatio/ui-kit@1.2.3" matched,
 	// so package-and-version - load-bearing diagnostic content in this product - was silently replaced by
 	// a placeholder indistinguishable from a real credential redaction.
-	[GeneratedRegex(@"[A-Za-z0-9._%+\-]+@[A-Za-z0-9](?:[A-Za-z0-9\-]*[A-Za-z0-9])?(?:\.[A-Za-z0-9](?:[A-Za-z0-9\-]*[A-Za-z0-9])?)*\.[A-Za-z]{2,}",
+	// The LEADING lookbehind exists because Redact also runs over text that is ALREADY serialized JSON
+	// (ClioRunTool.RedactFailureContent scrubs a TextContentBlock whose whole body is the tool's JSON
+	// envelope). System.Text.Json writes a quote as the escape \u0022, and "u0022" is a legal e-mail local
+	// part, so without the guard the address in
+	//   ... the inline literal \u0022name@firm.com\u0022 instead of ...
+	// matched as "u0022name@firm.com" and left a dangling backslash - "\[redacted]\u0022" - which is not a
+	// valid JSON escape, so the entire tool response stopped parsing for the caller (the sync-pages /
+	// update-page inline-placeholder e2e tests). The lookbehind refuses a match that begins anywhere inside
+	// a "\uXXXX" escape - including on the "u" itself, which is where the corrupting match actually started
+	// - while a match that begins right AFTER the complete escape (the address) is still redacted.
+	[GeneratedRegex(@"(?<!\\u?[0-9A-Fa-f]{0,3})[A-Za-z0-9._%+\-]+@[A-Za-z0-9](?:[A-Za-z0-9\-]*[A-Za-z0-9])?(?:\.[A-Za-z0-9](?:[A-Za-z0-9\-]*[A-Za-z0-9])?)*\.[A-Za-z]{2,}",
 		RegexOptions.CultureInvariant, RegexTimeoutMilliseconds)]
 	private static partial Regex EmailRegex();
 

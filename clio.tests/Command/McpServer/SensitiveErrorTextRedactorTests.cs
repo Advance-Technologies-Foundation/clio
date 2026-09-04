@@ -600,6 +600,52 @@ public sealed class SensitiveErrorTextRedactorTests {
 			because: "this runs while REPORTING a failure - a regex timeout here turns a reportable provider failure into an unrelated crash");
 	}
 
+	[Test]
+	[Category("Unit")]
+	[Description("Redacting text that is ALREADY serialized JSON must leave every \\uXXXX escape whole, so the payload still parses for the caller.")]
+	public void Redact_ShouldKeepSerializedJsonParseable_WhenAnAddressSitsBetweenEscapedQuotes() {
+		// Arrange - the exact shape ClioRunTool.RedactFailureContent scrubs: a TextContentBlock whose whole
+		// body is the tool's JSON envelope, with the quotes written as \u0022 by System.Text.Json.
+		string serialized = JsonSerializer.Serialize(new {
+			success = false,
+			error = "Validation failed: view node 'EmailField' sets 'placeholder' to the inline literal " +
+				"\"name@firm.com\" instead of a localizable string."
+		});
+		serialized.Should().Contain("\\u0022name@firm.com\\u0022",
+			because: "the fixture is only meaningful while System.Text.Json still escapes a quote as \\u0022");
+
+		// Act
+		string redacted = SensitiveErrorTextRedactor.Redact(serialized);
+
+		// Assert
+		redacted.Should().NotContain("name@firm.com",
+			because: "the address itself is still sensitive and must be replaced");
+		Action parse = () => JsonSerializer.Deserialize<JsonElement>(redacted);
+		parse.Should().NotThrow(
+			because: "eating the u0022 of an escaped quote leaves a dangling backslash, which is not a valid " +
+				"JSON escape - the whole tool response then fails to parse for the caller");
+		JsonElement reparsed = JsonSerializer.Deserialize<JsonElement>(redacted);
+		reparsed.GetProperty("error").GetString().Should().Contain("EmailField")
+			.And.Contain("placeholder",
+				because: "only the address is removed; the diagnostic the agent acts on stays readable");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("The JSON-escape guard must not stop a plain address from being redacted.")]
+	public void Redact_ShouldStillReplaceAPlainAddress() {
+		// Arrange
+		const string text = "Validation failed for user john.doe@acme.com while saving.";
+
+		// Act
+		string redacted = SensitiveErrorTextRedactor.Redact(text);
+
+		// Assert
+		redacted.Should().NotContain("john.doe@acme.com",
+			because: "the lookbehind only excludes a match that starts inside a \\uXXXX escape");
+		redacted.Should().Contain("[redacted]");
+	}
+
 	/// <summary>Returns the fenced payload without the redactor's own begin/end markers.</summary>
 	private static string StripFence(string fenced) =>
 		fenced?.Replace("[untrusted-source-text begin]", string.Empty, StringComparison.OrdinalIgnoreCase)
