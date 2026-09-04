@@ -2,6 +2,7 @@ using System.Text.Json;
 using System.Text.Json.Nodes;
 using System.Text.Json.Serialization;
 using ATF.Repository.Providers;
+using Clio.Command;
 using Clio.Command.ProcessModel;
 using Clio.Common;
 using ErrorOr;
@@ -28,6 +29,68 @@ public sealed class ServerProcessDescriberTests {
 		urlBuilder.Build(ServiceUrlBuilder.KnownRoute.DescribeProcess).Returns(DescribeUrl);
 		return new ServerProcessDescriber(client,
 			Substitute.For<IDataProvider>(), urlBuilder);
+	}
+
+
+	[Test]
+	[Category("Unit")]
+	[Description("branchesOnActivityResult round-trips by its WIRE NAME, and the OUTBOUND assertion is the one that pins it. Two independent string literals have to agree - [DataMember(Name = \"branchesOnActivityResult\")] on the server contract and [JsonPropertyName] here. The inbound half does NOT depend on the attribute: ServerProcessDescriber.JsonOptions sets PropertyNameCaseInsensitive, and the JSON key differs from the C# property only in its first letter, so deserialization binds them with the attribute deleted outright. Serialization has no such fallback, which is why the third assertion - reading the key back out of the re-serialized JSON - is what reddens. Worth pinning at all because the field is a bool: a mismatched or dropped attribute yields false for EVERY flow, silently and in the reassuring direction, so a branch whose condition the platform ignores reads back as one it evaluates. A mis-SPELLED attribute value, as opposed to a missing one, would also escape the inbound assertion.")]
+	public void Describe_ShouldRoundTripBranchesOnActivityResult() {
+		// Arrange
+		IApplicationClient client = ClientReturning(
+			"{\"DescribeProcessResult\":{\"success\":true,\"name\":\"UsrProc\","
+			+ "\"elements\":[],"
+			+ "\"flows\":[{\"source\":\"task1\",\"target\":\"end1\",\"kind\":\"conditional\","
+			+ "\"condition\":\"[#Amount#] > 100\",\"branchesOnActivityResult\":true}],"
+			+ "\"parameters\":[]}}");
+		ServerProcessDescriber describer = CreateDescriber(client);
+
+		// Act
+		ErrorOr<DescribeProcessResult> result = describer.Describe(new ProcessIdentity("UsrProc", null, null), null);
+		string reserialized = JsonSerializer.Serialize(result.Value, DescribeProcessCommand.OutputOptions);
+
+		// Assert
+		result.Value.Flows[0].BranchesOnActivityResult.Should().BeTrue(
+			because: "the server said this branch is decided by the activity's RESULT, so the condition text "
+				+ "below it will never be evaluated - a caller that does not learn this reasons about a branch "
+				+ "that cannot run");
+		result.Value.Flows[0].Condition.Should().Be("[#Amount#] > 100",
+			because: "both fields come off the same flow, so asserting the flag alone would pass on a describe "
+				+ "that dropped the condition");
+		JsonNode output = JsonNode.Parse(reserialized);
+		output["flows"]![0]!["branchesOnActivityResult"]!.GetValue<bool>().Should().BeTrue(
+			because: "the outbound half is separate: without the property the field vanishes on the way OUT, "
+				+ "and a bool that vanishes reads as false rather than as missing");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("A server that never SENDS branchesOnActivityResult must not have a false invented for it. describe is allowed on an environment whose package predates the field - its [RequiresPackage] is presence-only, with no version literal - so this is the ordinary case on an older stand, not an edge case. While the property was a non-nullable bool it deserialized to default(bool) and WhenWritingNull could not omit a value type, so the payload asserted 'this branch is decided by its condition' for every flow on a server that said nothing at all, in the reassuring direction. The sibling test above pins the value when the server DOES send it; this one pins the absence, and the two together are what make the field trustworthy.")]
+	public void Describe_ShouldNotInventBranchesOnActivityResult_WhenTheServerOmitsIt() {
+		// Arrange
+		IApplicationClient client = ClientReturning(
+			"{\"DescribeProcessResult\":{\"success\":true,\"name\":\"UsrProc\","
+			+ "\"elements\":[],"
+			+ "\"flows\":[{\"source\":\"task1\",\"target\":\"end1\",\"kind\":\"conditional\","
+			+ "\"condition\":\"[#Amount#] > 100\"}],"
+			+ "\"parameters\":[]}}");
+		ServerProcessDescriber describer = CreateDescriber(client);
+
+		// Act
+		ErrorOr<DescribeProcessResult> result = describer.Describe(new ProcessIdentity("UsrProc", null, null), null);
+		string reserialized = JsonSerializer.Serialize(result.Value, DescribeProcessCommand.OutputOptions);
+
+		// Assert
+		result.Value.Flows[0].BranchesOnActivityResult.Should().BeNull(
+			because: "the server said nothing about it, and 'nothing' is not 'false' - a caller must be able "
+				+ "to tell an old package from a branch whose condition really is evaluated");
+		result.Value.Flows[0].Condition.Should().Be("[#Amount#] > 100",
+			because: "the rest of the flow still round-trips; asserting the absence alone would pass on a "
+				+ "describe that dropped everything");
+		JsonNode output = JsonNode.Parse(reserialized);
+		output["flows"]![0]!.AsObject().ContainsKey("branchesOnActivityResult").Should().BeFalse(
+			because: "an absent value must be OMITTED rather than emitted as false; while the property was a "
+				+ "non-nullable bool, WhenWritingNull could not omit it and the payload fabricated an answer");
 	}
 
 	private static IApplicationClient ClientReturning(string response) {
@@ -82,6 +145,53 @@ public sealed class ServerProcessDescriberTests {
 			because: "the parameter's direction must be read from the server, not dropped by the clio DTO");
 		parameter.IsResult.Should().BeTrue(
 			because: "isResult marks an element output usable as a mapping source and must be deserialized");
+	}
+
+	[Test]
+	[Description("Deserializes a Lookup ConstValue's valueDisplay - the referenced record's NAME - into the DescribedParameter DTO, beside the unchanged bare-Guid value, so a caller can show a word without a second read.")]
+	public void Describe_ShouldReadParameterValueDisplay_WhenServerReportsIt() {
+		// Arrange - a Lookup constant the server resolved a name for (ENG-96325); value stays the bare record id
+		IApplicationClient client = ClientReturning(
+			"{\"DescribeProcessResult\":{\"success\":true,\"name\":\"UsrProc\","
+			+ "\"elements\":[{\"uid\":\"a1b2c3d4-0000-0000-0000-000000000001\",\"name\":\"task1\",\"type\":\"ProcessSchemaUserTask\",\"buildType\":\"usertask\","
+			+ "\"parameters\":[{\"name\":\"ActivityCategory\",\"uid\":\"p1\",\"type\":\"Lookup\",\"source\":\"ConstValue\","
+			+ "\"value\":\"03df85bf-6b19-4dea-8463-d5d49b80bb28\",\"valueDisplay\":\"Call\"}]}],"
+			+ "\"flows\":[],\"parameters\":[]}}");
+		ServerProcessDescriber describer = CreateDescriber(client);
+
+		// Act
+		ErrorOr<DescribeProcessResult> result = describer.Describe(new ProcessIdentity("UsrProc", null, null), null);
+
+		// Assert
+		result.IsError.Should().BeFalse(because: "the response is a valid graph");
+		DescribedParameter parameter = result.Value.Elements[0].Parameters[0];
+		parameter.Value.Should().Be("03df85bf-6b19-4dea-8463-d5d49b80bb28",
+			because: "the runtime encoding is the bare record Guid and the display name must not replace it");
+		parameter.ValueDisplay.Should().Be("Call",
+			because: "valueDisplay is what the designer renders; dropping it in the clio DTO reinstates the Guid the "
+				+ "fix removed, and only the manual e2e suite would notice");
+	}
+
+	[Test]
+	[Description("Leaves valueDisplay unset (null) when the server omits it - an older package, or a record whose name did not resolve - so the absent field serializes away instead of becoming an empty string.")]
+	public void Describe_ShouldLeaveValueDisplayNull_WhenServerOmitsIt() {
+		// Arrange - a pre-1.4.0.40 package: the Lookup constant is reported without a display name
+		IApplicationClient client = ClientReturning(
+			"{\"DescribeProcessResult\":{\"success\":true,\"name\":\"UsrProc\","
+			+ "\"elements\":[{\"uid\":\"a1b2c3d4-0000-0000-0000-000000000001\",\"name\":\"task1\",\"type\":\"ProcessSchemaUserTask\",\"buildType\":\"usertask\","
+			+ "\"parameters\":[{\"name\":\"ActivityCategory\",\"uid\":\"p1\",\"type\":\"Lookup\",\"source\":\"ConstValue\","
+			+ "\"value\":\"03df85bf-6b19-4dea-8463-d5d49b80bb28\"}]}],"
+			+ "\"flows\":[],\"parameters\":[]}}");
+		ServerProcessDescriber describer = CreateDescriber(client);
+
+		// Act
+		ErrorOr<DescribeProcessResult> result = describer.Describe(new ProcessIdentity("UsrProc", null, null), null);
+
+		// Assert
+		result.IsError.Should().BeFalse(because: "an older package omitting the field is not an error");
+		result.Value.Elements[0].Parameters[0].ValueDisplay.Should().BeNull(
+			because: "an omitted display name must stay null so it serializes away, rather than surfacing as an empty "
+				+ "label a caller would render");
 	}
 
 	[Test]
@@ -597,12 +707,10 @@ public sealed class ServerProcessDescriberTests {
 			+ "\"flows\":[],\"parameters\":[]}}");
 		ServerProcessDescriber describer = CreateDescriber(client);
 
-		// Act — re-serialize with the SAME options DescribeProcessCommand uses for its output (WriteIndented +
-		// WhenWritingNull), so this asserts what a caller actually reads rather than a default-options shape.
-		JsonSerializerOptions commandOutputOptions = new() {
-			WriteIndented = true,
-			DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull
-		};
+		// Act — re-serialize with the command's OWN options object, not a copy of it. A hand copy made this
+		// assertion insensitive to the thing it names: deleting DefaultIgnoreCondition from
+		// DescribeProcessCommand left this test green while the caller started receiving explicit nulls.
+		JsonSerializerOptions commandOutputOptions = DescribeProcessCommand.OutputOptions;
 		ErrorOr<DescribeProcessResult> result = describer.Describe(new ProcessIdentity("UsrProc", null, null), null);
 		string reserialized = JsonSerializer.Serialize(result.Value, commandOutputOptions);
 
@@ -627,6 +735,67 @@ public sealed class ServerProcessDescriberTests {
 			because: "the element block must survive verbatim, nesting included, not be flattened or stringified");
 		output["elements"]![0]!["email"]!["futureEmailFact"]!.GetValue<string>().Should().Be("kept",
 			because: "the email block's unknown field has to reach the output too, not just the in-memory bag");
+	}
+
+	[Test]
+	[Description("A conditional flow's condition survives deserialization AND the re-serialize the caller actually reads. DescribedFlow has no [JsonExtensionData] overflow bag, so a server field with no property here is dropped silently - the field is mandatory, not polish.")]
+	public void Describe_ShouldRoundTripAConditionalFlowCondition() {
+		// Arrange
+		IApplicationClient client = ClientReturning(
+			"{\"DescribeProcessResult\":{\"success\":true,\"name\":\"UsrProc\","
+			+ "\"elements\":[],"
+			+ "\"flows\":[{\"source\":\"task1\",\"target\":\"end1\",\"kind\":\"conditional\","
+			+ "\"condition\":\"[#Amount#] > 100\"}],"
+			+ "\"parameters\":[]}}");
+		ServerProcessDescriber describer = CreateDescriber(client);
+
+		// Act
+		ErrorOr<DescribeProcessResult> result = describer.Describe(new ProcessIdentity("UsrProc", null, null), null);
+		// The command's OWN options object. Built by hand this assertion was insensitive to the setting it
+		// names: removing DefaultIgnoreCondition from DescribeProcessCommand left it green while every plain
+		// flow began shipping an explicit "condition": null to the caller.
+		string reserialized = JsonSerializer.Serialize(result.Value, DescribeProcessCommand.OutputOptions);
+
+		// Assert
+		result.Value.Flows[0].Kind.Should().Be("conditional",
+			because: "the flow kind tells a caller a branch from a plain connection");
+		result.Value.Flows[0].Condition.Should().Be("[#Amount#] > 100",
+			because: "the condition text is the ticket's read-back criterion and must be deserialized verbatim");
+		JsonNode output = JsonNode.Parse(reserialized);
+		output["flows"]![0]!["condition"]!.GetValue<string>().Should().Be("[#Amount#] > 100",
+			because: "deserializing is only half of it - DescribedFlow has no extension-data bag, so without the "
+				+ "property the field would vanish on the way OUT, which is what the caller actually reads");
+	}
+
+	[Test]
+	[Description("A plain sequence flow reports no condition, and the absent value is omitted from the output rather than emitted as an explicit null the caller has to interpret.")]
+	public void Describe_ShouldOmitConditionOnAPlainSequenceFlow() {
+		// Arrange
+		IApplicationClient client = ClientReturning(
+			"{\"DescribeProcessResult\":{\"success\":true,\"name\":\"UsrProc\","
+			+ "\"elements\":[],"
+			+ "\"flows\":[{\"source\":\"s\",\"target\":\"e\",\"kind\":\"sequence\","
+			+ "\"condition\":null}],"
+			+ "\"parameters\":[]}}");
+		ServerProcessDescriber describer = CreateDescriber(client);
+
+		// Act
+		ErrorOr<DescribeProcessResult> result = describer.Describe(new ProcessIdentity("UsrProc", null, null), null);
+		// The command's OWN options object, not a copy: built by hand this assertion was insensitive to the
+		// very setting it names - deleting DefaultIgnoreCondition from DescribeProcessCommand left it green
+		// while every plain flow began shipping an explicit "condition": null to the caller.
+		string reserialized = JsonSerializer.Serialize(result.Value, DescribeProcessCommand.OutputOptions);
+
+		// Assert
+		result.Value.Flows[0].Condition.Should().BeNull(
+			because: "the server maps its stored literal \"null\" to a real null (ProcessDescriber.ReadFlowCondition) "
+				+ "but does NOT omit the key: DescribeProcessFlow.Condition carries [DataMember(Name = "
+				+ "\"condition\")] with no EmitDefaultValue = false, so the wire carries an explicit "
+				+ "\"condition\": null - which is what this payload now sends, rather than the absent key an "
+				+ "earlier version of it guessed at");
+		JsonNode.Parse(reserialized)["flows"]![0]!.AsObject().ContainsKey("condition").Should().BeFalse(
+			because: "an absent condition is omitted under WhenWritingNull, so a caller never has to tell a null "
+				+ "condition from a missing one");
 	}
 
 	// The describer wraps the identity under a "request" property (ProcessDesignService BodyStyle=Wrapped).

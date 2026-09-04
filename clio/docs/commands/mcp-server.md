@@ -170,7 +170,7 @@ Use your MCP client to call get-tool-contract {"tool-names":["list-apps","get-ap
 Bootstrap an existing-app or page workflow from the authoritative contract before invoking discovery or mutation tools.
 
 Use your MCP client to call get-tool-contract {"tool-names":["get-page","get-component-info","sync-pages"]}.
-Bootstrap page inspection/editing and discover whether get-component-info is needed before mutating raw.body.
+Bootstrap page inspection/editing and discover whether get-component-info is needed before mutating the page body file get-page writes.
 
 Use your MCP client to call get-guidance with an unknown name, inspect `availableGuides`, then call
 get-guidance again with the selected name.
@@ -197,6 +197,7 @@ get-guidance again with the selected name.
 - Boolean parameters must be JSON booleans (true/false), not strings
 - Entity tools work DB-first: schemas are created directly in PostgreSQL
 - Guidance lookups use the persistent disk cache and hot reload only when its activation marker changes; network update checks happen through install-knowledge/update-knowledge, not every MCP session
+- Some tool calls run in a short-lived child worker process the server supervises and can kill. How many such workers may run at once is capped, and `CLIO_MCP_WORKER_CONCURRENCY` raises or lowers that cap. The default is derived from the host's processor count, so on a single-vCPU host it is low: a long operation (`compile-creatio`, `restart-*`) can be refused with `error-class=clio-worker-saturated` until the variable is raised. Nothing is spawned and no request reaches Creatio on that refusal, so it is safe to retry.
 
 ## Return Values
 

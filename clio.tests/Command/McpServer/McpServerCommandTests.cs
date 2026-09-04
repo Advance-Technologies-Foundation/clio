@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Threading;
@@ -6,8 +7,10 @@ using System.Threading.Tasks;
 using Clio.Command.McpServer;
 using Clio.Command.McpServer.Knowledge;
 using Clio.Common;
+using Clio.Common.McpWorker;
 using FluentAssertions;
 using NSubstitute;
+using NSubstitute.ExceptionExtensions;
 using NUnit.Framework;
 
 namespace Clio.Tests.Command.McpServer;
@@ -251,5 +254,53 @@ public class McpServerCommandTests {
 			"because a faulting cancellation callback during shutdown must not crash the host with an unhandled AggregateException");
 		cancellationTokenSource.IsCancellationRequested.Should().BeTrue(
 			"because the shutdown request must still mark the source cancelled even when a callback throws");
+	}
+
+	[Test]
+	[Description("A host reaps workers a PREVIOUS parent left behind; the registry has had an identity-checked reaper since stage 2 and nothing called it, which is invisible to every test except one that asserts the call.")]
+	public void ReapStaleWorkersForHost_ShouldReap_WhenTheProcessIsAnOrdinaryHost() {
+		// Arrange
+		IWorkerProcessSupervisor supervisor = Substitute.For<IWorkerProcessSupervisor>();
+		supervisor.ReapStaleWorkers().Returns(new StaleWorkerReapReport(0, 0, 0, 0, []));
+		ILogger logger = Substitute.For<ILogger>();
+		McpServerCommandOptions options = new() { Worker = false };
+
+		// Act
+		McpServerCommand.ReapStaleWorkersForHost(options, supervisor, logger);
+
+		// Assert
+		supervisor.Received(1).ReapStaleWorkers();
+	}
+
+	[Test]
+	[Description("A WORKER must not reap: it spawns no workers of its own, and reaping the shared registry from inside one would kill its siblings.")]
+	public void ReapStaleWorkersForHost_ShouldNotReap_WhenTheProcessIsAWorker() {
+		// Arrange
+		IWorkerProcessSupervisor supervisor = Substitute.For<IWorkerProcessSupervisor>();
+		ILogger logger = Substitute.For<ILogger>();
+		McpServerCommandOptions options = new() { Worker = true };
+
+		// Act
+		McpServerCommand.ReapStaleWorkersForHost(options, supervisor, logger);
+
+		// Assert
+		supervisor.DidNotReceiveWithAnyArgs().ReapStaleWorkers();
+	}
+
+	[Test]
+	[Description("A startup that cannot clean up must still serve: a throwing reaper is reported and swallowed rather than taking the host down before it answers anything.")]
+	public void ReapStaleWorkersForHost_ShouldNotThrow_WhenTheReaperFails() {
+		// Arrange
+		IWorkerProcessSupervisor supervisor = Substitute.For<IWorkerProcessSupervisor>();
+		supervisor.ReapStaleWorkers().Throws(new IOException("registry unreadable"));
+		ILogger logger = Substitute.For<ILogger>();
+		McpServerCommandOptions options = new() { Worker = false };
+
+		// Act
+		Action reap = () => McpServerCommand.ReapStaleWorkersForHost(options, supervisor, logger);
+
+		// Assert
+		reap.Should().NotThrow(
+			because: "cleanup is best-effort housekeeping; a host that refuses to start because it could not tidy up is strictly worse than one that starts with an orphan still running");
 	}
 }

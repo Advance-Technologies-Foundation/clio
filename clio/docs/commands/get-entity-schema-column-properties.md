@@ -16,16 +16,15 @@ clio get-entity-schema-column-properties [OPTIONS]
 
 ## Description
 
-Loads the full entity schema design item from the remote Creatio environment
-and prints a human-readable summary for the requested column. Own columns are
-searched first, then inherited columns. The summary includes the resolved
-default value source and is the canonical verification path after
-create-entity-schema / modify-entity-schema-column calls.
+Prints a human-readable summary for one remote entity schema column. Omit
+`--package` to discover the column in the merged runtime schema across all
+packages. Supply `--package` to retain the package-scoped designer read and
+inspect that package layer's full metadata.
 
 ## Options
 
 ```bash
---package              Target package name
+--package              Optional target package; omit for merged discovery
 --schema-name          Entity schema name
 --column-name          Column name
 
@@ -39,6 +38,9 @@ Environment options are also available:
 ## Examples
 
 ```bash
+# Discover a column across all packages
+clio get-entity-schema-column-properties -e dev --schema-name Contact --column-name UsrStatus
+
 # Read properties of an own column
 clio get-entity-schema-column-properties -e dev --package Custom --schema-name UsrVehicle --column-name Name
 
@@ -50,6 +52,11 @@ clio get-entity-schema-column-properties -e dev --package Custom --schema-name U
 
 - output is human-readable text, not JSON
 - the report includes whether the column is own or inherited
+- in merged mode, `source` describes parent-schema inheritance, not package ownership
+- merged mode reports `track-changes`, `localizable-text`, and
+  `do-not-control-integrity` as `<unknown>` because `RuntimeEntitySchemaRequest`
+  does not expose them; do not interpret those values as `false`
+- supply `--package` when those three values or package-layer ownership must be authoritative
 - the report includes the usage type (`General`, `Advanced`, or `None`) as a friendly
   name that can be passed back to `modify-entity-schema-column --usage-type`
 - the report includes default-value-source, default-value, and

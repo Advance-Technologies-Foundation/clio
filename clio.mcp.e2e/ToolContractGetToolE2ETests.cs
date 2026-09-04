@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using Allure.Net.Commons;
 using Allure.NUnit;
 using Allure.NUnit.Attributes;
@@ -207,9 +207,9 @@ public sealed class ToolContractGetToolE2ETests : McpContractFixtureBase {
 		response.Tools.Single(tool => tool.Name == PageSyncTool.ToolName)
 			.InputSchema.Properties.Should().Contain(field =>
 				field.Name == "pages" &&
-				field.Description.Contains("get-page.raw.body", StringComparison.Ordinal) &&
+				field.Description.Contains("get-page.files.bodyFile", StringComparison.Ordinal) &&
 				field.Description.Contains("localizable string", StringComparison.Ordinal),
-				because: "sync-pages should advertise raw.body as the source of page write payloads and clarify resources as localizable strings");
+				because: "sync-pages should advertise the materialized body file as the source of page write payloads and clarify resources as localizable strings");
 		response.Tools.Single(tool => tool.Name == PageSyncTool.ToolName)
 			.Description.Should().Contain("page-modification",
 				because: "sync-pages should route body and resource-payload edits through the general page modification guide");
@@ -951,9 +951,13 @@ public sealed class ToolContractGetToolE2ETests : McpContractFixtureBase {
 		pageGetContract.Description.Should().NotContain("page-schema-resources",
 			because: "get-page should avoid surfacing localizable-string leaf guidance directly in the broad contract description");
 		pageGetContract.OutputContract.Fields.Should().Contain(field =>
-				field.Name == "raw" &&
-				field.Description.Contains("raw.body", StringComparison.Ordinal),
-			because: "get-page should explicitly advertise raw.body as the editable JavaScript source");
+				field.Name == "files" &&
+				field.Description.Contains("bodyFile", StringComparison.Ordinal),
+			because: "get-page materializes the editable JavaScript source on disk, so the contract must advertise files.bodyFile");
+		pageGetContract.OutputContract.Fields.Should().NotContain(field => field.Name == "raw",
+			because: "the successful get-page MCP envelope carries no raw property (issue #1185)");
+		pageGetContract.OutputContract.Fields.Should().NotContain(field => field.Name == "bundle",
+			because: "the successful get-page MCP envelope writes the bundle to disk instead of inlining it (issue #1185)");
 	}
 
 	[Test]
@@ -1229,7 +1233,10 @@ public sealed class ToolContractGetToolE2ETests : McpContractFixtureBase {
 		// required args wrapper) or as clio's more specific argument-deserialization diagnostic (e.g. an
 		// args payload whose type cannot bind to the tool's argument record). Both correctly identify a
 		// pre-execution binding failure for this tool, so accept either (ENG-91828 contract drift).
-		(diagnostics.Contains("An error occurred invoking 'get-tool-contract'.", StringComparison.Ordinal)
+		// "invalid-parameter-type" is the contracted diagnostic the pre-method binder now emits; the two
+		// older SDK shapes stay accepted because they carry the same binding-layer contract.
+		(diagnostics.Contains("invalid-parameter-type", StringComparison.Ordinal)
+			|| diagnostics.Contains("An error occurred invoking 'get-tool-contract'.", StringComparison.Ordinal)
 			|| diagnostics.Contains("Failed to deserialize argument 'args' for MCP tool 'get-tool-contract'", StringComparison.Ordinal))
 			.Should().BeTrue(
 				because: "the transport-level failure should surface as a binding-layer invocation/deserialization error for the tool");

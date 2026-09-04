@@ -1,10 +1,51 @@
+using System;
+using System.Collections.Generic;
 using System.IO.Abstractions.TestingHelpers;
+using System.Linq;
 using System.Text.Json;
 using Clio.Command;
+using Clio.Command.McpServer.Tools;
 using FluentAssertions;
 using NUnit.Framework;
 
 namespace Clio.Tests.Command;
+
+/// <summary>
+/// Passthrough stand-in for the interprocess gate: runs the guarded work immediately and records which
+/// sentinel it was asked to hold, and for how long. Recording the ENTRY is how a test proves the disk
+/// touch is gated; recording the EXIT is how it proves the gate is not still held while clio talks to
+/// Creatio — a lock held across a network round trip would serialise unrelated callers across processes,
+/// which is the stall the worker execution boundary exists to remove.
+/// </summary>
+internal sealed class RecordingFileGate : IInterprocessFileGate {
+
+	private readonly List<string> _entered = [];
+
+	internal IReadOnlyList<string> EnteredLockPaths => _entered;
+
+	internal int Depth { get; private set; }
+
+	internal int MaxDepth { get; private set; }
+
+	internal bool IsHeld => Depth > 0;
+
+	public T Enter<T>(string lockFilePath, Func<T> action) {
+		_entered.Add(lockFilePath);
+		Depth++;
+		MaxDepth = Math.Max(MaxDepth, Depth);
+		try {
+			return action();
+		} finally {
+			Depth--;
+		}
+	}
+
+	public void Enter(string lockFilePath, Action action) =>
+		Enter(lockFilePath, () => {
+			action();
+			return true;
+		});
+}
 
 [TestFixture]
 [Category("Unit")]
@@ -16,6 +57,7 @@ public sealed class PageBaselineGuardTests {
 	private const string OutputDirectory = "/ws";
 
 	private MockFileSystem _fileSystem;
+	private RecordingFileGate _fileGate;
 	private PageBaselineGuard _guard;
 	// Built through the same GetFullPath + Combine normalization the guard uses, so path comparisons
 	// stay OS-agnostic (the Windows CI adds a drive prefix and uses backslashes; macOS/Linux do not).
@@ -24,7 +66,8 @@ public sealed class PageBaselineGuardTests {
 	[SetUp]
 	public void SetUp() {
 		_fileSystem = new MockFileSystem();
-		_guard = new PageBaselineGuard(_fileSystem);
+		_fileGate = new RecordingFileGate();
+		_guard = new PageBaselineGuard(_fileSystem, _fileGate);
 		_metaPath = _fileSystem.Path.Combine(
 			_fileSystem.Path.GetFullPath(OutputDirectory), ".clio-pages", SchemaName, "meta.json");
 	}
@@ -62,7 +105,7 @@ public sealed class PageBaselineGuardTests {
 		PageUpdateOptions options = CreateOptions("dev");
 
 		// Act
-		(string metaFilePath, bool armed) = _guard.TryArm(options, OutputDirectory);
+		(string metaFilePath, bool armed, _) = _guard.TryArm(options, OutputDirectory);
 
 		// Assert
 		armed.Should().BeTrue(because: "a baseline captured against the same environment must arm the check");
@@ -81,7 +124,7 @@ public sealed class PageBaselineGuardTests {
 		PageUpdateOptions options = CreateOptions("dev");
 
 		// Act
-		(_, bool armed) = _guard.TryArm(options, OutputDirectory);
+		(_, bool armed, _) = _guard.TryArm(options, OutputDirectory);
 
 		// Assert
 		armed.Should().BeFalse(because: "a baseline from another environment is not evidence of an external modification");
@@ -95,7 +138,7 @@ public sealed class PageBaselineGuardTests {
 		PageUpdateOptions options = CreateOptions("dev");
 
 		// Act
-		(_, bool armed) = _guard.TryArm(options, OutputDirectory);
+		(_, bool armed, _) = _guard.TryArm(options, OutputDirectory);
 
 		// Assert
 		armed.Should().BeFalse(because: "a missing baseline must fail toward no check");
@@ -110,7 +153,7 @@ public sealed class PageBaselineGuardTests {
 		PageUpdateOptions options = CreateOptions("dev");
 
 		// Act
-		(_, bool armed) = _guard.TryArm(options, OutputDirectory);
+		(_, bool armed, _) = _guard.TryArm(options, OutputDirectory);
 
 		// Assert
 		armed.Should().BeFalse(because: "a legacy meta.json without a baseline block must skip the check");
@@ -125,7 +168,7 @@ public sealed class PageBaselineGuardTests {
 		options.ExpectedChecksum = "manual-checksum";
 
 		// Act
-		(string metaFilePath, bool armed) = _guard.TryArm(options, OutputDirectory);
+		(string metaFilePath, bool armed, _) = _guard.TryArm(options, OutputDirectory);
 
 		// Assert
 		armed.Should().BeTrue(
@@ -144,7 +187,7 @@ public sealed class PageBaselineGuardTests {
 		options.ExpectedChecksum = "manual-checksum";
 
 		// Act
-		(_, bool armed) = _guard.TryArm(options, OutputDirectory);
+		(_, bool armed, _) = _guard.TryArm(options, OutputDirectory);
 
 		// Assert
 		armed.Should().BeFalse(because: "with no on-disk baseline there is nothing to move forward");
@@ -161,7 +204,7 @@ public sealed class PageBaselineGuardTests {
 		options.ExpectedChecksum = "pre-save-checksum";
 
 		// Act — arm with the pinned checksum, then refresh as PageUpdateCommand.Execute does after a save.
-		(string metaFilePath, bool armed) = _guard.TryArm(options, OutputDirectory);
+		(string metaFilePath, bool armed, _) = _guard.TryArm(options, OutputDirectory);
 		armed.Should().BeTrue(because: "a matching on-disk baseline must arm the post-save refresh on the explicit-checksum path");
 		_guard.RefreshOrDrop(metaFilePath, options, new PageUpdateResponse {
 			Success = true,
@@ -215,5 +258,136 @@ public sealed class PageBaselineGuardTests {
 		PageMetaFileModel meta = JsonSerializer.Deserialize<PageMetaFileModel>(_fileSystem.GetFile(_metaPath).TextContents);
 		meta.Baseline.Should().BeNull(
 			because: "a stale baseline must be removed when fresh metadata could not be obtained (fail toward no-check)");
+	}
+
+	// ---------------------------------------------------------------------------------------------
+	// ENG-95262 H-1: every meta.json touch runs under the schema's interprocess sentinel, and the
+	// sentinel is released before clio talks to Creatio.
+	// ---------------------------------------------------------------------------------------------
+
+	[Test]
+	[Description("TryArm must read the baseline under the schema's interprocess gate, keyed on a sentinel that sits outside the get-page-deleted schema directory.")]
+	public void TryArm_ShouldEnterTheSchemaGate_WhenReadingTheBaseline() {
+		// Arrange
+		AddMetaWithBaseline("dev", "checksum-1");
+		PageUpdateOptions options = CreateOptions("dev");
+
+		// Act
+		_guard.TryArm(options, OutputDirectory);
+
+		// Assert
+		_fileGate.EnteredLockPaths.Should().HaveCount(1,
+			because: "the baseline read is one disk touch and must be gated exactly once — a second acquisition would mean the read was split and could interleave");
+		string lockPath = _fileGate.EnteredLockPaths[0];
+		_fileSystem.Path.GetFileName(lockPath).Should().Be($"{SchemaName}.lock",
+			because: "the sentinel is per schema so unrelated pages never wait on each other");
+		_fileSystem.Path.GetFullPath(lockPath).Should().NotStartWith(
+			_fileSystem.Path.GetFullPath(_fileSystem.Path.GetDirectoryName(_metaPath)),
+			because: "get-page deletes .clio-pages/{schema}/ recursively, so a sentinel inside it would be destroyed under its holder");
+	}
+
+	[Test]
+	[Description("RefreshOrDrop must perform its whole read-merge-write inside ONE gate acquisition, so a concurrent writer cannot slip between the read and the write and lose its own update.")]
+	public void RefreshOrDrop_ShouldHoldTheGateAcrossTheWholeReadModifyWrite_WhenRefreshing() {
+		// Arrange
+		AddMetaWithBaseline("dev", "old-checksum");
+		PageUpdateOptions options = CreateOptions("dev");
+
+		// Act
+		_guard.RefreshOrDrop(_metaPath, options, new PageUpdateResponse {
+			Success = true, SavedSchemaUId = SchemaUId, NewChecksum = "fresh", NewModifiedOn = "m"
+		});
+
+		// Assert
+		_fileGate.EnteredLockPaths.Should().HaveCount(1,
+			because: "the read, the merge and the write are one indivisible unit; two acquisitions would reopen the lost-update window between them");
+		_fileGate.EnteredLockPaths.Distinct().Should().HaveCount(1,
+			because: "the whole sequence must be guarded by the same per-schema sentinel");
+	}
+
+	[Test]
+	[Description("The gate must be released before the caller reaches Creatio: holding it across a network round trip would serialise unrelated callers across processes, which is the stall this design removes.")]
+	public void TryArmAndRefreshOrDrop_ShouldNotHoldTheGate_WhenTheCreatioRoundTripRuns() {
+		// Arrange
+		AddMetaWithBaseline("dev", "checksum-1");
+		PageUpdateOptions options = CreateOptions("dev");
+
+		// Act — the exact sequence every caller runs: arm, then the save (simulated here), then refresh.
+		(string metaFilePath, bool armed, _) = _guard.TryArm(options, OutputDirectory);
+		bool heldDuringSave = _fileGate.IsHeld;
+		_guard.RefreshOrDrop(metaFilePath, options, new PageUpdateResponse {
+			Success = true, SavedSchemaUId = SchemaUId, NewChecksum = "fresh", NewModifiedOn = "m"
+		});
+
+		// Assert
+		armed.Should().BeTrue(because: "the matching baseline must arm the check for this scenario to be the real one");
+		heldDuringSave.Should().BeFalse(
+			because: "between TryArm and RefreshOrDrop the caller performs the Creatio save; a cross-process lock held across that would rebuild the head-of-line stall in a place no monitor can bound, and a budget kill mid-round-trip would strand it");
+		_fileGate.IsHeld.Should().BeFalse(because: "the gate must be released once the refresh returns");
+		_fileGate.MaxDepth.Should().Be(1,
+			because: "no acquisition should ever nest more than one level deep on this path");
+	}
+
+	[Test]
+	[Description("TryArm must report a warning that conflict detection is disarmed when an existing meta.json cannot be parsed, instead of silently proceeding without a check.")]
+	public void TryArm_ShouldReturnDisarmedWarning_WhenMetaIsCorrupt() {
+		// Arrange
+		_fileSystem.AddFile(_metaPath, new MockFileData("not-json{{{"));
+		PageUpdateOptions options = CreateOptions("dev");
+
+		// Act
+		(_, bool armed, string warning) = _guard.TryArm(options, OutputDirectory);
+
+		// Assert
+		armed.Should().BeFalse(because: "an unparseable baseline must fail toward no-check, never block the write");
+		warning.Should().NotBeNull(
+			because: "proceeding without external-modification detection is a fact the caller needs; the old code made it indistinguishable from having no baseline at all");
+	}
+
+	[Test]
+	[Description("TryArm must stay silent when no baseline exists — the ordinary state of a page that was never fetched.")]
+	public void TryArm_ShouldNotReturnWarning_WhenMetaMissing() {
+		// Arrange — no meta.json.
+		PageUpdateOptions options = CreateOptions("dev");
+
+		// Act
+		(_, bool armed, string warning) = _guard.TryArm(options, OutputDirectory);
+
+		// Assert
+		armed.Should().BeFalse(because: "there is no baseline to arm from");
+		warning.Should().BeNull(
+			because: "warning on every un-fetched page would make the channel noise and train callers to ignore it");
+	}
+
+	[Test]
+	[Description("TryArm must NOT materialise a .clio-pages tree (not even the gate's .locks directory) when the page has no baseline, so an update-page run outside a page workspace leaves no litter behind.")]
+	public void TryArm_ShouldNotCreateAnyClioPagesDirectory_WhenMetaMissing() {
+		// Arrange — no meta.json, and nothing under the anchor at all.
+		PageUpdateOptions options = CreateOptions("dev");
+
+		// Act
+		_guard.TryArm(options, OutputDirectory);
+
+		// Assert
+		_fileGate.EnteredLockPaths.Should().BeEmpty(
+			because: "taking the gate would create its .locks directory; a lookup for a baseline that was never captured must not write anything");
+		_fileSystem.AllDirectories.Should().NotContain(directory => directory.Contains(".clio-pages", StringComparison.Ordinal),
+			because: "the store promises never to create .clio-pages on the read/write path, and a stray directory would show up in the user's git status");
+	}
+
+	[Test]
+	[Description("RefreshOrDrop must return null when the refresh landed, so the caller adds no warning to a clean save.")]
+	public void RefreshOrDrop_ShouldReturnNull_WhenRefreshSucceeds() {
+		// Arrange
+		AddMetaWithBaseline("dev", "old-checksum");
+		PageUpdateOptions options = CreateOptions("dev");
+
+		// Act
+		string warning = _guard.RefreshOrDrop(_metaPath, options, new PageUpdateResponse {
+			Success = true, SavedSchemaUId = SchemaUId, NewChecksum = "fresh", NewModifiedOn = "m"
+		});
+
+		// Assert
+		warning.Should().BeNull(because: "a successful refresh must not decorate a clean response with a warning");
 	}
 }

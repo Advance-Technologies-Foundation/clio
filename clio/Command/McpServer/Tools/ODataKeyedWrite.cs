@@ -49,15 +49,24 @@ internal static class ODataKeyedWrite {
 	}
 
 	/// <summary>
-	/// Resolves the environment-scoped application client and builds the key-addressed OData URL.
+	/// Resolves the environment-scoped application client and URL builder once, and builds the
+	/// key-addressed OData URL from that same pair.
 	/// </summary>
-	internal static (IApplicationClient client, string url) ResolveTarget(
+	/// <remarks>
+	/// The URL builder is returned rather than left inside, because everything a keyed write does
+	/// before the write - the pre-write field validation in particular - has to run against the same
+	/// environment snapshot as the write itself. Resolving a second builder reloads the settings, so a
+	/// repointed environment could have validation read the type from environment B while the PATCH
+	/// still went to A: a field that exists only on B would pass and then be silently discarded by A,
+	/// with the tool reporting success.
+	/// </remarks>
+	internal static (IApplicationClient client, IServiceUrlBuilder urlBuilder, string url) ResolveTarget(
 		IToolCommandResolver commandResolver, string environmentName, string entity, string id) {
 		EnvironmentOptions options = new() { Environment = environmentName };
 		IApplicationClient client = commandResolver.Resolve<IApplicationClient>(options);
 		IServiceUrlBuilder urlBuilder = commandResolver.Resolve<IServiceUrlBuilder>(options);
 		string url = urlBuilder.Build(ODataKeyFormatter.KeyPath(entity, id));
-		return (client, url);
+		return (client, urlBuilder, url);
 	}
 
 	/// <summary>

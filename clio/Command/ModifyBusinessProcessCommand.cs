@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Text.Json;
 using System.Text.Json.Nodes;
@@ -15,14 +15,59 @@ namespace Clio.Command;
 /// Consumed by the MCP <c>modify-business-process</c> tool, which sets these properties directly.
 /// </summary>
 // The version literal states what THIS command's code needs — the newest operation it sends that an
-// older server does not have. Today that is the element-level performer block and the
-// reference-existence guard behind it (bare-Guid Lookup values, performer contact/role), shipped in
-// the 1.3.1.1 archive: an older server has no performer member and silently discards the block while
-// answering success, and a pre-guard server stores a dead id instead of refusing it. Presence alone
-// cannot express either — the email block's 1.2.0.1 floor set this precedent and is subsumed by this
-// literal. The guard fixture asserts the shipped archive satisfies the literal, so clio can never
-// demand a version it does not itself carry.
-[RequiresPackage(BundledPackages.ProcessBuilderPackageName, "1.3.1.1",
+// older server does not have. Today that is `setFlowCondition` plus the formula validator behind the
+// `expression` mapping source, both introduced by ENG-95891 and both first shipping in 1.4.0.0. They need
+// the literal for the two distinct reasons the bundled-packages article names. `setFlowCondition` is an
+// operation an older server does not carry at all: the token would be rejected by the server's own dispatch
+// registry with a "supported operations are …" message, which reads as a clio bug rather than a stale
+// environment.
+//
+// The literal is 1.4.0.44, and three versions are in play. 1.4.0.41 stopped validating formulas IN THE
+// PACKAGE, because the
+// platform's own pre-save gate was already validating them — a mapped expression and a flow condition alike,
+// measured with both package guards built out and installed
+// (spec/eng-95891-formula-expressions/eng-95891-formula-expressions-save-gate-probe.md). So the formula half
+// of this floor is no longer a tightened validator; .41 checks strictly LESS than .37 did, and an environment
+// between them refuses at least as much. It is above .41 because .42 corrected the rewrite this description
+// promises — every serialised error in one message, and an element-scoped reference named as such — and .44
+// specifically because .44 is the first archive carrying both that and the lookup-constant contract the
+// ENG-96325 merge brought in (see below). Not because .44 is what this clio bundles: the bundle moves on
+// every rebundle and the fixture only asserts the floor is satisfiable by it, so a floor that tracks the
+// bundle would demand an upgrade of environments that already work. What the floor buys is the MESSAGE contract this tool's description
+// promises: below .41 a bad formula is refused in the package's own wording, with its own reference
+// pre-check, and without the serialised-error rewrite — so an unresolvable parameter reference comes back as
+// `{ErrorType:2,ErrorData:{ParameterUId:"…"}}` rather than as a sentence.
+//
+// Do not lower it to .37 on the grounds that .37 refuses too. It does, with different text. And do not lower
+// it below .37 on any grounds: the refusals that SURVIVE the collapse were themselves measured one archive
+// at a time — the activity-result guard in .32 and the element-retarget refusal in .37. (The
+// platform-grammar element segment, which .35 added and which earlier revisions of this comment counted
+// as a third, turns out not to have been load-bearing: the strict RegexParameterValue it mirrored is used
+// only for data-source filter map paths, while a parameter VALUE is parsed by the brace-optional
+// GeneratorUtilities patterns, so the element scoping survived the looser form anyway. Do not cite it as
+// one of the refusals this floor protects; the other two are.) Against an environment at .3, `setFlowCondition` on a result-driven
+// branch is NOT refused: the condition is stored and then ignored at run time, the exact silent failure the
+// description offers protection from.
+// This subsumes the previous 1.3.1.1 floor (the element-level performer block and its reference-existence
+// guard), which subsumed the email block's 1.2.0.1 floor before it. The guard fixture asserts the shipped
+// archive satisfies the literal, so clio can never demand a version it does not itself carry.
+//
+// TWO reasons stand behind this floor now, and the merge of ENG-96325 added the second. Its
+// lookup-constant contract shipped in the 1.4.0.40 archive: a mappings[] 'value' on a Lookup target
+// may carry an already-composed macro, and an older server rejects it outright as "not a bare Guid"
+// - the same "server starts accepting an input form an older one refuses" shape that produced the
+// 1.3.1.1 literal. The number below satisfies both that and the message contract described above.
+//
+// AND AN ACCESS-CONTROL PROPERTY, which a review caught me deleting along with it. Below 1.4.0.40 the
+// display-name resolution used a raw Select rather than a rights-aware entity read, and a raw Select
+// bypasses row-level permissions - so the referenced record's name was resolved and stored into the
+// parameter's display value whether or not the acting user may see that record. The old comment
+// called this "NOT a security floor" because no RELEASED archive carried the wider read. That premise
+// is weaker now, not stronger: this branch cut roughly thirty archives between .20 and .52, and its
+// own manual runs installed .18 and .37 - both below the rights-aware read. So do not lower this
+// floor below 1.4.0.40 on message-contract grounds alone; the floor is also what keeps a
+// pre-rights-aware read off an environment clio installs onto.
+[RequiresPackage(BundledPackages.ProcessBuilderPackageName, "1.4.0.44",
 	Hint = BundledPackages.ProcessBuilderInstallHint)]
 public sealed class ModifyBusinessProcessOptions : EnvironmentOptions {
 	/// <summary>Process code (schema Name) to edit. Provide exactly one of <see cref="ProcessName"/> or <see cref="ProcessUid"/>.</summary>
@@ -104,7 +149,16 @@ public sealed class ModifyBusinessProcessService(
 		ModifyProcessResultDto result = envelope.Result
 			?? throw new InvalidOperationException("ModifyProcess returned an unexpected response shape.");
 		if (!result.Success) {
-			throw new InvalidOperationException(result.ErrorMessage ?? "ModifyProcess failed.");
+			// Surfaced HERE or nowhere. The success record below cannot carry it (it is only built on success),
+			// and this throw is the only way a refused operation leaves clio — so discarding the index would
+			// leave the caller doing on the client what the server split the field to stop them doing:
+			// bisecting the batch against a live environment. Appended rather than woven in because the
+			// server's own sentence is the primary message and several guards name neither endpoint.
+			string refusedBy = result.FailedOperationIndex.HasValue
+				? $" The operation at index {result.FailedOperationIndex.Value} is the one that refused."
+				: string.Empty;
+			throw new InvalidOperationException(
+				(result.ErrorMessage ?? "ModifyProcess failed.") + refusedBy);
 		}
 
 		return new ModifyBusinessProcessResult(result.SchemaName, result.SchemaUId, result.AppliedOperations,
@@ -143,6 +197,16 @@ public sealed class ModifyBusinessProcessService(
 
 		[JsonPropertyName("appliedOperations")]
 		public int AppliedOperations { get; set; }
+
+		// Zero-based index of the operation that refused, when a single one did. Declared for the same reason
+		// as warnings below — an undeclared member is dropped without a trace — and it matters more here,
+		// because this is the only field on a FAILED edit that says which operation to look at. Nullable, and
+		// the null carries meaning: the server sends none when the failure came after the operation loop (the
+		// pre-save gate judging the whole schema, which is now the common failure), and an older
+		// CrtProcessBuilder does not send the field at all. Both cases mean "no operation is to blame", which
+		// is exactly why the server stopped overloading appliedOperations to answer this.
+		[JsonPropertyName("failedOperationIndex")]
+		public int? FailedOperationIndex { get; set; }
 
 		[JsonPropertyName("errorMessage")]
 		public string? ErrorMessage { get; set; }

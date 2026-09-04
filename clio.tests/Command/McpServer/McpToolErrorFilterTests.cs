@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Reflection;
@@ -8,9 +8,12 @@ using System.Text.Json.Serialization;
 using System.Threading;
 using System.Threading.Tasks;
 using Clio.Command.McpServer;
+using Clio.Command.McpServer.Tools;
 using FluentAssertions;
+using Microsoft.Extensions.DependencyInjection;
 using ModelContextProtocol.Protocol;
 using ModelContextProtocol.Server;
+using NSubstitute;
 using NUnit.Framework;
 
 namespace Clio.Tests.Command.McpServer;
@@ -40,6 +43,39 @@ public sealed class McpToolErrorFilterTests
 			because: "the real cause must be surfaced so the agent can self-correct");
 		text.Should().NotContain("deserialize",
 			because: "an execution failure must not be mislabeled as an argument-binding diagnostic");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Uses the contracted invalid-parameter-type code, the nested wire name, and the expected JSON type when a composite MCP argument contains the wrong value type.")]
+	public async Task HandleCallToolErrors_Should_Report_Contracted_Type_Error_When_Nested_Argument_Has_Wrong_Type() {
+		// Arrange
+		McpRequestHandler<CallToolRequestParams, CallToolResult> handler =
+			McpToolErrorFilter.HandleCallToolErrors((_, _) => throw new AssertionException("tool body must not run"));
+		ODataReadTool toolInstance = new(Substitute.For<IToolCommandResolver>());
+		MethodInfo method = typeof(ODataReadTool).GetMethod(nameof(ODataReadTool.Read), BindingFlags.Public | BindingFlags.Instance)!;
+		RequestContext<CallToolRequestParams> context = CreateContext(
+			"odata-read",
+			new Dictionary<string, JsonElement> {
+				["args"] = JsonDocument.Parse("{\"entity\":\"Lead\",\"environment-name\":\"dev\",\"order-by\":[\"CreatedOn desc\"]}").RootElement
+			});
+		context.MatchedPrimitive = McpServerTool.Create(method, toolInstance);
+
+		// Act
+		CallToolResult result = await handler(context, CancellationToken.None);
+
+		// Assert
+		result.IsError.Should().BeTrue(
+			because: "wrong argument types must be rejected before the OData tool body executes");
+		string text = string.Join(" ", result.Content.OfType<TextContentBlock>().Select(block => block.Text));
+		text.Should().Contain("invalid-parameter-type",
+			because: "the failure must use the error code advertised by get-tool-contract");
+		text.Should().Contain("order-by",
+			because: "the nested wire parameter must be named instead of exposing only the composite args wrapper");
+		text.Should().Contain("string",
+			because: "the caller must be told the expected JSON shape");
+		text.Should().NotContain("Cannot get the value of a token type",
+			because: "the raw System.Text.Json implementation message is not an agent-facing contract diagnostic");
 	}
 
 	[Test]
@@ -433,7 +469,7 @@ public sealed class McpToolErrorFilterTests
 		};
 		McpRequestHandler<CallToolRequestParams, CallToolResult> handler =
 			McpToolErrorFilter.HandleCallToolErrors((_, _) => new ValueTask<CallToolResult>(expected));
-		RequestContext<CallToolRequestParams> context = CreateContext("fake-read-tool");
+		RequestContext<CallToolRequestParams> context = WithRoutingAuthority(CreateContext("fake-read-tool"));
 		context.MatchedPrimitive = CreateRetrySafeTool();
 
 		// Act
@@ -452,7 +488,7 @@ public sealed class McpToolErrorFilterTests
 		InvalidOperationException executionException = new("Environment with key 'NoSuchEnv' not found.");
 		McpRequestHandler<CallToolRequestParams, CallToolResult> handler =
 			McpToolErrorFilter.HandleCallToolErrors((_, _) => throw executionException);
-		RequestContext<CallToolRequestParams> context = CreateContext("fake-read-tool");
+		RequestContext<CallToolRequestParams> context = WithRoutingAuthority(CreateContext("fake-read-tool"));
 		context.MatchedPrimitive = CreateRetrySafeTool();
 
 		// Act
@@ -468,11 +504,170 @@ public sealed class McpToolErrorFilterTests
 			because: "an immediate exception is not a deadline timeout and must not be mislabeled");
 	}
 
+	// The matched dispatch site is FAIL-CLOSED on an unreachable routing authority (ENG-95262 Stage 4b), so
+	// a context that carries a MatchedPrimitive and continues into the pipeline must also carry the router —
+	// exactly as every real host does. The real router over the real declared metadata is used rather than a
+	// stub: these tools are unclassified, so it answers in-process and the behaviour pinned here is the
+	// pre-router behaviour. The EMPTY Stage 6 cohort keeps that true no matter which real tools these cases
+	// later name, and no worker dispatcher is registered — a relay reaching this fixture would be a defect.
+	private static RequestContext<CallToolRequestParams> WithRoutingAuthority(
+		RequestContext<CallToolRequestParams> context) {
+		context.Services = new ServiceCollection()
+			.AddSingleton<IMcpExecutionRouter>(
+				new McpExecutionRouter(
+					new McpToolExecutionMetadataReader(new McpToolCompatibilityCatalog()),
+					new McpWorkerCohort([]),
+					new McpWorkerPathGate(() => McpHostTransportKind.Stdio, () => false),
+					workerPathWired: true))
+			.BuildServiceProvider();
+		return context;
+	}
+
 	private static McpServerTool CreateRetrySafeTool() =>
 		McpServerTool.Create(
 			typeof(FakeRetrySafeTool).GetMethod(
 				nameof(FakeRetrySafeTool.Execute), BindingFlags.Public | BindingFlags.Instance)!,
 			new FakeRetrySafeTool());
+
+	[Test]
+	[Category("Unit")]
+	[Description("Reports a JSON object, not an array, when clio-run's dictionary-typed args parameter receives an array — the enumerable check classified every dictionary as an array.")]
+	public async Task HandleCallToolErrors_Should_Report_Object_When_ClioRun_Args_Receives_An_Array() {
+		// Arrange
+		McpRequestHandler<CallToolRequestParams, CallToolResult> handler =
+			McpToolErrorFilter.HandleCallToolErrors((_, _) => throw new AssertionException("tool body must not run"));
+		MethodInfo method = typeof(ClioRunTool).GetMethod(nameof(ClioRunTool.Run),
+			BindingFlags.Public | BindingFlags.Instance)!;
+		RequestContext<CallToolRequestParams> context = CreateContext(
+			"clio-run",
+			new Dictionary<string, JsonElement> {
+				["command"] = JsonDocument.Parse("\"sync-schemas\"").RootElement,
+				["args"] = JsonDocument.Parse("[]").RootElement
+			});
+		context.MatchedPrimitive = McpServerTool.Create(method, new ClioRunTool(Substitute.For<IClioRunExecutor>()));
+
+		// Act
+		CallToolResult result = await handler(context, CancellationToken.None);
+
+		// Assert
+		result.IsError.Should().BeTrue(
+			because: "an array is not the documented shape for the clio-run arguments object");
+		string text = string.Join(" ", result.Content.OfType<TextContentBlock>().Select(block => block.Text));
+		text.Should().Contain("invalid-parameter-type",
+			because: "the failure must use the error code advertised by get-tool-contract");
+		text.Should().Contain("an object",
+			because: "Dictionary<string, JsonElement> is carried on the wire as a JSON object");
+		text.Should().NotContain("must be an array",
+			because: "telling the caller to send an array repeats the very shape that just failed");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Says the named property CONTAINS an incompatible value when the binding failed deeper inside it, instead of naming the outer property's own CLR type.")]
+	public async Task HandleCallToolErrors_Should_Report_Containment_When_Binding_Fails_Below_The_Property() {
+		// Arrange — 'rules' IS the array the contract asks for; the incompatible value is 'actions',
+		// one level down, so the real binder produces a path of $.rules[0].actions.
+		McpRequestHandler<CallToolRequestParams, CallToolResult> handler =
+			McpToolErrorFilter.HandleCallToolErrors((_, _) => throw new AssertionException("tool body must not run"));
+		RequestContext<CallToolRequestParams> context = CreateContext(
+			"create-entity-business-rule",
+			new Dictionary<string, JsonElement> {
+				["args"] = JsonDocument.Parse("{\"rules\":[{\"actions\":\"not-an-array\"}]}").RootElement
+			});
+		context.MatchedPrimitive = McpServerTool.Create(
+			typeof(FakeToolWithNestedArgs).GetMethod(nameof(FakeToolWithNestedArgs.Execute),
+				BindingFlags.Public | BindingFlags.Instance)!,
+			new FakeToolWithNestedArgs());
+
+		// Act
+		CallToolResult result = await handler(context, CancellationToken.None);
+
+		// Assert
+		string text = string.Join(" ", result.Content.OfType<TextContentBlock>().Select(block => block.Text));
+		text.Should().Contain("rules",
+			because: "the message must still name the property the caller can navigate from");
+		text.Should().Contain("contains a value that does not match the documented shape",
+			because: "the incompatible value is nested inside the array, not the array itself");
+		text.Should().NotContain("must be an array",
+			because: "the caller already supplied an array, so that advice recommends no valid correction");
+	}
+
+
+	[Test]
+	[Category("Unit")]
+	[Description("An explicit JSON null for a required composite argument is rejected here: JsonElement.Deserialize returns null for a reference type without throwing, so {\"args\":null} used to reach the tool and answer with a typed NRE-derived failure while the same call through clio-run reported a missing required argument.")]
+	public void TryCreateArgumentDeserializationError_ShouldReject_JsonNull_ForRequiredArgument() {
+		// Arrange
+		RequestContext<CallToolRequestParams> context = CreateContext(
+			"fake-required-tool", new Dictionary<string, JsonElement> {
+				["args"] = JsonSerializer.SerializeToElement((FakeCompositeArgs?)null)
+			});
+		context.MatchedPrimitive = McpServerTool.Create(
+			typeof(FakeToolWithRequiredArgs).GetMethod(nameof(FakeToolWithRequiredArgs.Execute))!,
+			new FakeToolWithRequiredArgs());
+
+		// Act
+		bool detected = McpToolErrorFilter.TryCreateArgumentDeserializationError(
+			context, out CallToolResult? result);
+
+		// Assert
+		detected.Should().BeTrue(because: "a required argument sent as null cannot reach the tool");
+		result!.IsError.Should().BeTrue(
+			because: "both the direct and the clio-run path must surface the same IsError contract");
+		((TextContentBlock)result.Content[0]).Text.Should()
+			.Contain("invalid-parameter-type", because: "the stable error id is what callers key on").And
+			.Contain("'args'", because: "the message must name the argument that was null");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("An optional argument may legitimately be null, so the null guard must not fire for it.")]
+	public void TryCreateArgumentDeserializationError_ShouldAccept_JsonNull_ForOptionalArgument() {
+		// Arrange
+		RequestContext<CallToolRequestParams> context = CreateContext(
+			"fake-optional-tool", new Dictionary<string, JsonElement> {
+				["args"] = JsonSerializer.SerializeToElement((FakeCompositeArgs?)null)
+			});
+		context.MatchedPrimitive = McpServerTool.Create(
+			typeof(FakeToolWithOptionalArgs).GetMethod(nameof(FakeToolWithOptionalArgs.Execute))!,
+			new FakeToolWithOptionalArgs());
+
+		// Act
+		bool detected = McpToolErrorFilter.TryCreateArgumentDeserializationError(
+			context, out CallToolResult? result);
+
+		// Assert
+		detected.Should().BeFalse(because: "null is a valid value for an optional parameter");
+		result.Should().BeNull();
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("A property whose declared type IS IReadOnlyDictionary<,> is described as an object: Type.GetInterfaces() never returns the type itself, so the declared-interface case fell through to the IEnumerable branch and told the caller to send an array.")]
+	public void TryCreateArgumentDeserializationError_ShouldSayObject_ForInterfaceTypedDictionary() {
+		// Arrange
+		RequestContext<CallToolRequestParams> context = CreateContext(
+			"fake-dictionary-tool", new Dictionary<string, JsonElement> {
+				["args"] = JsonSerializer.SerializeToElement(new Dictionary<string, object> {
+					["title-localizations"] = Array.Empty<string>()
+				})
+			});
+		context.MatchedPrimitive = McpServerTool.Create(
+			typeof(FakeToolWithDictionaryArgs).GetMethod(nameof(FakeToolWithDictionaryArgs.Execute))!,
+			new FakeToolWithDictionaryArgs());
+
+		// Act
+		bool detected = McpToolErrorFilter.TryCreateArgumentDeserializationError(
+			context, out CallToolResult? result);
+
+		// Assert
+		detected.Should().BeTrue(because: "an array is not a valid value for a dictionary-typed property");
+		((TextContentBlock)result!.Content[0]).Text.Should()
+			.Contain("must be an object",
+				because: "the caller has to be told the shape that would work, not the one that just failed").And
+			.NotContain("must be an array",
+				because: "repeating the rejected shape is what made the message useless");
+	}
 
 	private static RequestContext<CallToolRequestParams> CreateContext(
 		string toolName, IDictionary<string, JsonElement>? arguments = null) =>
@@ -497,6 +692,27 @@ public sealed class McpToolErrorFilterTests
 
 	public sealed class FakeToolWithCompositeArgs {
 		public string Execute(FakeCompositeArgs args) => "ok";
+	}
+
+	// Two levels deep on purpose: a failure inside 'actions' must be reported against 'rules' as
+	// containment, not as the CLR type of 'rules' itself.
+	public sealed record FakeRuleAction(
+		[property: JsonPropertyName("type")]
+		string Type
+	);
+
+	public sealed record FakeRule(
+		[property: JsonPropertyName("actions")]
+		List<FakeRuleAction> Actions
+	);
+
+	public sealed record FakeNestedArgs(
+		[property: JsonPropertyName("rules")]
+		List<FakeRule> Rules
+	);
+
+	public sealed class FakeToolWithNestedArgs {
+		public string Execute(FakeNestedArgs args) => "ok";
 	}
 
 	public sealed class FakeToolWithCancellationToken {
@@ -539,5 +755,22 @@ public sealed class McpToolErrorFilterTests
 			RequestContext<CallToolRequestParams> request,
 			CancellationToken cancellationToken = default) =>
 			ValueTask.FromResult(new CallToolResult());
+	}
+
+	public sealed record FakeDictionaryArgs(
+		[property: JsonPropertyName("title-localizations")]
+		IReadOnlyDictionary<string, string> TitleLocalizations
+	);
+
+	public sealed class FakeToolWithRequiredArgs {
+		public string Execute([System.ComponentModel.DataAnnotations.Required] FakeCompositeArgs args) => "ok";
+	}
+
+	public sealed class FakeToolWithOptionalArgs {
+		public string Execute(FakeCompositeArgs? args = null) => "ok";
+	}
+
+	public sealed class FakeToolWithDictionaryArgs {
+		public string Execute([System.ComponentModel.DataAnnotations.Required] FakeDictionaryArgs args) => "ok";
 	}
 }

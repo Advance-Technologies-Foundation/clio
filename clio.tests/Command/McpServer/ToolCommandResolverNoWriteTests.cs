@@ -41,7 +41,8 @@ public class ToolCommandResolverNoWriteTests {
 			settingsBootstrapService,
 			accessor,
 			Substitute.For<ITargetUrlValidator>(),
-			new SessionContainerCache(SessionContainerCacheDefaults.IdleTtl, SessionContainerCacheDefaults.MaxSessions));
+			new SessionContainerCache(SessionContainerCacheDefaults.IdleTtl, SessionContainerCacheDefaults.MaxSessions),
+			new SessionTargetNormalizer());
 
 		try {
 			// Act

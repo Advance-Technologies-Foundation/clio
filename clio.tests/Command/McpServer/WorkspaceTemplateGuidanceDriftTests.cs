@@ -52,24 +52,26 @@ namespace Clio.Tests.Command.McpServer;
 [Property("Module", "McpServer")]
 public sealed class WorkspaceTemplateGuidanceDriftTests {
 
+	private static readonly TimeSpan RegexTimeout = TimeSpan.FromSeconds(1);
+
 	// Inline-backticked kebab-case token: lowercase start, at least one hyphen-separated segment.
 	private static readonly Regex BacktickedKebabToken = new(
 		@"`([a-z][a-z0-9]*(?:-[a-z0-9]+)+)`",
-		RegexOptions.Compiled);
+		RegexOptions.Compiled, RegexTimeout);
 
 	// Prose that tells a user to enable a feature flag: `clio experimental --name <key> --enable`.
 	private static readonly Regex ExperimentalFeatureKeyReference = new(
 		@"experimental\s+--name\s+([a-z][a-z0-9]*(?:-[a-z0-9]+)*)",
-		RegexOptions.Compiled | RegexOptions.IgnoreCase);
+		RegexOptions.Compiled | RegexOptions.IgnoreCase, RegexTimeout);
 
 	private static readonly Regex GuidanceNameReference = new(
 		@"name=([a-z][a-z0-9]*(?:-[a-z0-9]+)*)",
-		RegexOptions.Compiled | RegexOptions.IgnoreCase);
+		RegexOptions.Compiled | RegexOptions.IgnoreCase, RegexTimeout);
 
 	// `do\W{1,4}not` tolerates markdown emphasis between the words ("Do **NOT** use").
 	private static readonly Regex NegationMarker = new(
 		@"\bdo\W{1,4}not\b|\bdon't\b|\bnever\b",
-		RegexOptions.Compiled | RegexOptions.IgnoreCase);
+		RegexOptions.Compiled | RegexOptions.IgnoreCase, RegexTimeout);
 
 	// The discovery bridge: a long-tail MCP name on the same line as any of these is routed through the
 	// advertised surface and is therefore valid.
@@ -285,7 +287,8 @@ public sealed class WorkspaceTemplateGuidanceDriftTests {
 		bool hasValidVersionFormat = Regex.IsMatch(
 			libraryVersion,
 			"^[0-9]{1,7}(?:\\.[0-9]{1,3}){0,3}$",
-			RegexOptions.CultureInvariant);
+			RegexOptions.CultureInvariant,
+			RegexTimeout);
 		string[] versionComponents = libraryVersion.Split('.');
 		ulong sequence = document.RootElement.GetProperty("sequence").GetUInt64();
 		ulong expectedSequence = Enumerable.Range(0, 4).Aggregate(
@@ -546,6 +549,9 @@ public sealed class WorkspaceTemplateGuidanceDriftTests {
 		// Act
 		List<string> violations = [];
 		List<string> resolvedReferences = [];
+		// The THIRD case, which used to fall through both arms in silence: a name in neither array is a name
+		// the library does not publish, so the instruction hands the agent an error it cannot act on.
+		List<string> unregisteredReferences = [];
 		foreach (Type toolType in ungatedToolTypes) {
 			foreach (MethodInfo method in toolType.GetMethods()) {
 				string description = method
@@ -559,6 +565,9 @@ public sealed class WorkspaceTemplateGuidanceDriftTests {
 						violations.Add(toolType.Name + "." + method.Name + " -> get-guidance name=" + guidanceName);
 					} else if (availableNames.Contains(guidanceName)) {
 						resolvedReferences.Add(toolType.Name + " -> " + guidanceName);
+					} else {
+						unregisteredReferences.Add(
+							toolType.Name + "." + method.Name + " -> get-guidance name=" + guidanceName);
 					}
 				}
 			}
@@ -569,6 +578,12 @@ public sealed class WorkspaceTemplateGuidanceDriftTests {
 			because: "at least one un-gated tool description points at a curated guide (create-business-process "
 				+ "names process-modeling), so an empty resolved set would mean the scan stopped matching and "
 				+ "the violation check below became vacuous");
+		unregisteredReferences.Should().BeEmpty(
+			because: "a name in NEITHER availableNames nor featureGatedNames is one the pinned library does not "
+				+ "publish at all, so get-guidance answers with availableGuides instead of the article - and "
+				+ "the agent's first action on a mandatory instruction is an error. This arm was missing: the "
+				+ "oracle only flagged a name that was present and GATED, so an unpublished one passed. "
+				+ "Unregistered: " + string.Join(", ", unregisteredReferences));
 		violations.Should().BeEmpty(
 			because: "the tool gate and the guidance-article gate key off the same feature name but ship in "
 				+ "two independently released artifacts - clio and the clio-knowledge library. Un-gating a "

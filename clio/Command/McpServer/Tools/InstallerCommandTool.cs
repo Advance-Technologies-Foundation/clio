@@ -38,6 +38,15 @@ public class InstallerCommandTool(
 	/// </summary>
 	[McpServerTool(Name = DeployCreatioToolName, ReadOnly = false, Destructive = true, Idempotent = false,
 		OpenWorld = false)]
+	// Deploy family: bounded by the authoritative terminal stage, never by a generic kill — a killed deploy
+	// can leave a half-installed environment. Streams stage events, so the relay must be full-duplex.
+	[McpToolExecution(
+		Location = McpToolExecutionLocation.Worker,
+		Lifetime = McpToolExecutionLifetime.PerCall,
+		OperationFamily = McpToolOperationFamily.Deploy,
+		BudgetPolicy = McpToolBudgetPolicy.TerminalStage,
+		RequiresClientRequests = McpToolClientRequests.Progress,
+		SharedFileResource = McpToolSharedFileResource.None)]
 	[Description("""
 				 Deploys Creatio from a zip archive using the real deploy-creatio command path.
 

@@ -1,6 +1,14 @@
 namespace Clio.Command {
+	using System;
+	using System.IO;
 	using System.Linq;
+	using System.Net;
+	using System.Net.Http;
+	using System.Net.Sockets;
+	using System.Threading.Tasks;
+	using Clio.Command.McpServer;
 	using Clio.Common;
+	using Clio.Package;
 	using Newtonsoft.Json;
 	using Newtonsoft.Json.Linq;
 
@@ -16,6 +24,13 @@ namespace Clio.Command {
 		private const string ExpressionTypeKey = "expressionType";
 		private const string ColumnPathKey = "columnPath";
 		private const string SelectQueryUrl = "/DataService/json/SyncReply/SelectQuery";
+
+		/// <summary>
+		/// Operation label opening every transport/auth message produced by <see cref="ExecuteSelectQuery"/>,
+		/// matching the label the other guarded <c>SelectQuery</c> call sites use.
+		/// </summary>
+		private const string SelectQueryOperationName = "SelectQuery";
+
 		private const string FilterTypeKey = "filterType";
 		private const string IsEnabledKey = "isEnabled";
 		private const string ItemsKey = "items";
@@ -30,20 +45,129 @@ namespace Clio.Command {
 		private const string ClientUnitSchemaManagerName = "ClientUnitSchemaManager";
 		private const int ComparisonTypeEqual = 3;
 
-		private static (JArray rows, bool success) ExecuteSelectQuery(
+		/// <summary>
+		/// Executes a DataService <c>SelectQuery</c> and classifies the outcome into three distinct states, so
+		/// that a failure to reach or authenticate against the environment is never reported as an answer about
+		/// the requested data:
+		/// <list type="bullet">
+		/// <item><description><c>(rows, true, null)</c> — the service answered <c>success:true</c>.</description></item>
+		/// <item><description><c>(empty, false, null)</c> — the service answered, and rejected the query
+		/// (<c>success:false</c>). Only this state may be reported with a lookup-specific message.</description></item>
+		/// <item><description><c>(empty, false, message)</c> — the request never produced a usable answer: the call
+		/// timed out, the transport failed, the body was empty, or the body was an HTML login/error page instead of
+		/// JSON. The message names the cause and the endpoint and must be surfaced verbatim.</description></item>
+		/// </list>
+		/// </summary>
+		/// <param name="applicationClient">Authenticated Creatio HTTP client.</param>
+		/// <param name="serviceUrlBuilder">Environment-aware URL builder.</param>
+		/// <param name="query">DataService <c>SelectQuery</c> request body.</param>
+		/// <returns>The selected rows, whether the service answered successfully, and the transport/auth error when there is one.</returns>
+		/// <remarks>
+		/// The non-JSON body messages come from <see cref="ServiceResponseJsonGuard"/> — the same authority the
+		/// <c>SelectQuery</c> path fixed by ENG-93365 uses — so an expired session that answers with a login page
+		/// produces one classified message across both copies of this plumbing rather than two divergent texts.
+		/// Only the transport families that genuinely mean "this environment did not answer" are converted into a
+		/// message (mirroring <c>CreatioVersionProvider.IsSoftDegradable</c>); every other exception propagates by
+		/// design, because turning an unexpected programming error into a lookup failure is what hid these failures
+		/// in the first place.
+		/// </remarks>
+		private static (JArray rows, bool success, string transportError) ExecuteSelectQuery(
 			IApplicationClient applicationClient,
 			IServiceUrlBuilder serviceUrlBuilder,
 			JObject query) {
+			string url = serviceUrlBuilder.Build(SelectQueryUrl);
+			string responseJson;
 			try {
-				string url = serviceUrlBuilder.Build(SelectQueryUrl);
-				string responseJson = applicationClient.ExecutePostRequest(url, query.ToString(Formatting.None));
-				JObject response = JObject.Parse(responseJson);
-				bool ok = response["success"]?.Value<bool>() ?? false;
-				return ok ? (response["rows"] as JArray ?? new JArray(), true) : (new JArray(), false);
-			} catch {
-				return (new JArray(), false);
+				responseJson = applicationClient.ExecutePostRequest(url, query.ToString(Formatting.None));
+			} catch (Exception ex) when (IsTimeout(ex)) {
+				return (new JArray(), false, BuildTimeoutMessage(url, ex));
+			} catch (Exception ex) when (IsTransportFailure(ex)) {
+				return (new JArray(), false, BuildTransportMessage(url, ex));
+			}
+
+			if (string.IsNullOrWhiteSpace(responseJson))
+				return (new JArray(), false,
+					ServiceResponseJsonGuard.BuildEmptyBodyMessage(SelectQueryOperationName, url));
+
+			JObject response;
+			try {
+				response = JObject.Parse(responseJson);
+			} catch (JsonException parseException) {
+				return (new JArray(), false, ServiceResponseJsonGuard.BuildNonJsonMessage(
+					SelectQueryOperationName, url, responseJson, parseException));
+			}
+
+			return ReadSuccessFlag(response)
+				? (response["rows"] as JArray ?? new JArray(), true, null)
+				: (new JArray(), false, null);
+		}
+
+		/// <summary>
+		/// Reads the DataService <c>success</c> flag leniently, exactly as the previous catch-all did: a missing
+		/// flag or a value Newtonsoft cannot convert to a boolean counts as a rejected query, not as an unexpected
+		/// failure. Keeping this conversion lenient is what lets the bare <c>catch</c> disappear without turning an
+		/// oddly shaped-but-answered response into a propagating exception.
+		/// </summary>
+		/// <param name="response">Parsed DataService response body.</param>
+		/// <returns><see langword="true"/> when the service reported success.</returns>
+		private static bool ReadSuccessFlag(JObject response) {
+			JToken successToken = response["success"];
+			if (successToken is null)
+				return false;
+			try {
+				return successToken.Value<bool>();
+			} catch (Exception ex) when (ex is FormatException or InvalidCastException or OverflowException) {
+				return false;
 			}
 		}
+
+		/// <summary>
+		/// Returns whether the exception means the request was sent but no response arrived in time. A read timeout
+		/// reaches this code either as a <see cref="TaskCanceledException"/> (HttpClient-shaped clients) or as a
+		/// <see cref="WebException"/> with <see cref="WebExceptionStatus.Timeout"/> (WebRequest-shaped clients), so
+		/// both are classified as a timeout and kept distinct from a refused or failed connection.
+		/// </summary>
+		/// <param name="exception">Exception raised by the application client.</param>
+		/// <returns><see langword="true"/> when the failure is a timeout.</returns>
+		private static bool IsTimeout(Exception exception) =>
+			exception is TaskCanceledException
+				or TimeoutException
+				|| (exception is WebException webException && webException.Status == WebExceptionStatus.Timeout);
+
+		/// <summary>
+		/// Returns whether the exception is one of the transport families that mean "this environment did not
+		/// answer" — an HTTP error status, a refused or dropped connection, or a stream failure. Mirrors
+		/// <c>CreatioVersionProvider.IsSoftDegradable</c> minus the JSON families, which are classified by the
+		/// response-body branch instead.
+		/// </summary>
+		/// <param name="exception">Exception raised by the application client.</param>
+		/// <returns><see langword="true"/> when the failure is a transport failure.</returns>
+		private static bool IsTransportFailure(Exception exception) =>
+			exception is HttpRequestException
+				or WebException
+				or SocketException
+				or IOException;
+
+		/// <summary>Builds the caller-actionable message for a <c>SelectQuery</c> that timed out.</summary>
+		/// <param name="url">Endpoint the request was sent to.</param>
+		/// <param name="exception">The timeout raised by the application client.</param>
+		/// <returns>The message to surface.</returns>
+		private static string BuildTimeoutMessage(string url, Exception exception) =>
+			$"{SelectQueryOperationName} timed out before the environment answered (URL: {url}). "
+			+ $"Detail: {SensitiveErrorTextRedactor.Redact(exception.GetReadableMessageException())}. "
+			+ "This says nothing about the requested schema or package — retry the request, and if it persists "
+			+ "check the environment health (healthcheck) and whether the target instance is still responding.";
+
+		/// <summary>Builds the caller-actionable message for a <c>SelectQuery</c> that failed in transport.</summary>
+		/// <param name="url">Endpoint the request was sent to.</param>
+		/// <param name="exception">The transport failure raised by the application client.</param>
+		/// <returns>The message to surface.</returns>
+		private static string BuildTransportMessage(string url, Exception exception) =>
+			$"{SelectQueryOperationName} could not be completed against the environment (URL: {url}). "
+			+ $"Transport error: {SensitiveErrorTextRedactor.Redact(exception.GetReadableMessageException())}. "
+			+ "This says nothing about the requested schema or package — verify that the environment is registered "
+			+ "with valid credentials (reg-web-app, then healthcheck), that the site is running and reachable, and "
+			+ "retry the request.";
 
 		private static JObject BuildComparisonFilter(string columnPath, int comparisonType, int dataValueType, JToken value) =>
 			new JObject {
@@ -118,7 +242,9 @@ namespace Clio.Command {
 				[ColumnsKey] = BuildUIdColumnSelection(),
 				[RowCountKey] = 1
 			};
-			var (rows, success) = ExecuteSelectQuery(applicationClient, serviceUrlBuilder, query);
+			var (rows, success, transportError) = ExecuteSelectQuery(applicationClient, serviceUrlBuilder, query);
+			if (transportError is not null)
+				return (null, transportError);
 			if (!success)
 				return (null, "Failed to query schema metadata in target package.");
 			return (rows.Count > 0 ? rows[0]?["UId"]?.ToString() : null, null);
@@ -140,7 +266,11 @@ namespace Clio.Command {
 				},
 				[RowCountKey] = 1
 			};
-			var (rows, _) = ExecuteSelectQuery(applicationClient, serviceUrlBuilder, query);
+			// Deliberately best-effort: this lookup only decorates a get-page response with a friendly package
+			// name, and its string-returning signature has no channel for an error. A transport failure therefore
+			// still degrades to "package name unknown" here rather than failing the whole call — the callers that
+			// DO have an error channel are the ones that now report the classified transport message.
+			var (rows, _, _) = ExecuteSelectQuery(applicationClient, serviceUrlBuilder, query);
 			return rows.Count > 0 ? rows[0]?["Name"]?.ToString() : null;
 		}
 
@@ -154,7 +284,9 @@ namespace Clio.Command {
 				[ColumnsKey] = BuildUIdColumnSelection(),
 				[RowCountKey] = 1
 			};
-			var (rows, success) = ExecuteSelectQuery(applicationClient, serviceUrlBuilder, query);
+			var (rows, success, transportError) = ExecuteSelectQuery(applicationClient, serviceUrlBuilder, query);
+			if (transportError is not null)
+				return (null, transportError);
 			if (!success)
 				return (null, "Failed to query SysPackage");
 			if (rows.Count == 0)
@@ -204,7 +336,9 @@ namespace Clio.Command {
 				[ColumnsKey] = BuildUIdColumnSelection(),
 				[RowCountKey] = 1
 			};
-			var (rows, success) = ExecuteSelectQuery(applicationClient, serviceUrlBuilder, query);
+			var (rows, success, transportError) = ExecuteSelectQuery(applicationClient, serviceUrlBuilder, query);
+			if (transportError is not null)
+				return (null, transportError);
 			if (!success)
 				return (null, "Failed to query entity schema metadata");
 			if (rows.Count == 0)
@@ -257,7 +391,9 @@ namespace Clio.Command {
 				[ColumnsKey] = new JObject { [ItemsKey] = columnsItems },
 				[RowCountKey] = 1
 			};
-			var (rows, success) = ExecuteSelectQuery(applicationClient, serviceUrlBuilder, query);
+			var (rows, success, transportError) = ExecuteSelectQuery(applicationClient, serviceUrlBuilder, query);
+			if (transportError is not null)
+				return (null, transportError);
 			if (!success)
 				return (null, "Failed to query schema metadata");
 			if (rows.Count == 0)
@@ -303,9 +439,12 @@ namespace Clio.Command {
 			};
 			// Route through the shared, guarded ExecuteSelectQuery (like QuerySysSchemaRowByUId and every other
 			// lookup in this helper) instead of a raw ExecutePostRequest + JObject.Parse: an expired session that
-			// returns an HTML/redirect body then surfaces as a clean lookup failure rather than a raw
-			// "Unexpected character '<'" JSON parse exception.
-			var (rows, success) = ExecuteSelectQuery(applicationClient, serviceUrlBuilder, query);
+			// returns an HTML/redirect body then surfaces as an auth/transport error naming the login page and the
+			// endpoint, rather than as a raw "Unexpected character '<'" parse failure or as a lookup failure that
+			// would send the caller looking at their schema.
+			var (rows, success, transportError) = ExecuteSelectQuery(applicationClient, serviceUrlBuilder, query);
+			if (transportError is not null)
+				return (null, transportError);
 			if (!success)
 				return (null, "Failed to query schema metadata");
 			if (rows.Count == 0)

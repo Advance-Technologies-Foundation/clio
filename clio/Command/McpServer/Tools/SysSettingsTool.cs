@@ -15,6 +15,13 @@ public sealed class SysSettingGetTool(IToolCommandResolver commandResolver) {
 
 	[McpServerTool(Name = GetSysSettingToolName, ReadOnly = true, Destructive = false, Idempotent = true,
 		OpenWorld = false)]
+	[McpToolExecution(
+		Location = McpToolExecutionLocation.Worker,
+		Lifetime = McpToolExecutionLifetime.PerCall,
+		OperationFamily = McpToolOperationFamily.None,
+		BudgetPolicy = McpToolBudgetPolicy.ParentKillDefault,
+		RequiresClientRequests = McpToolClientRequests.None,
+		SharedFileResource = McpToolSharedFileResource.None)]
 	[Description("Reads the value of a Creatio system setting by code. Returns the raw string value for the All Users default. " +
 	             "Returns empty value when the setting is not configured. Use list-sys-settings to discover available codes.")]
 	public SysSettingGetResult GetSysSetting(
@@ -43,6 +50,13 @@ public sealed class SysSettingsListTool(IToolCommandResolver commandResolver) {
 
 	[McpServerTool(Name = ListSysSettingsToolName, ReadOnly = true, Destructive = false, Idempotent = true,
 		OpenWorld = false)]
+	[McpToolExecution(
+		Location = McpToolExecutionLocation.Worker,
+		Lifetime = McpToolExecutionLifetime.PerCall,
+		OperationFamily = McpToolOperationFamily.None,
+		BudgetPolicy = McpToolBudgetPolicy.ParentKillDefault,
+		RequiresClientRequests = McpToolClientRequests.None,
+		SharedFileResource = McpToolSharedFileResource.None)]
 	[Description("Lists Creatio system settings with their All-Users default values. " +
 	             "Binary settings (e.g. the logo) are listed with value <binary>; set them via update-sys-setting value-file-path. " +
 	             "Useful to discover settings before calling get-sys-setting or update-sys-setting.")]
@@ -72,6 +86,13 @@ public sealed class SysSettingCreateTool(IToolCommandResolver commandResolver) {
 
 	[McpServerTool(Name = CreateSysSettingToolName, ReadOnly = false, Destructive = true, Idempotent = false,
 		OpenWorld = false)]
+	[McpToolExecution(
+		Location = McpToolExecutionLocation.Worker,
+		Lifetime = McpToolExecutionLifetime.PerCall,
+		OperationFamily = McpToolOperationFamily.None,
+		BudgetPolicy = McpToolBudgetPolicy.ParentKillDefault,
+		RequiresClientRequests = McpToolClientRequests.None,
+		SharedFileResource = McpToolSharedFileResource.None)]
 	[Description("Creates a new Creatio system setting and optionally assigns an initial value. " +
 	             "Allowed value-type-name values match Creatio internal names: Text, ShortText (Text 50), " +
 	             "MediumText (Text 250), LongText (Text 500), SecureText (Encrypted string), MaxSizeText (Unlimited), " +
@@ -105,6 +126,13 @@ public sealed class SysSettingUpdateTool(IToolCommandResolver commandResolver) {
 
 	[McpServerTool(Name = UpdateSysSettingToolName, ReadOnly = false, Destructive = true, Idempotent = true,
 		OpenWorld = false)]
+	[McpToolExecution(
+		Location = McpToolExecutionLocation.Worker,
+		Lifetime = McpToolExecutionLifetime.PerCall,
+		OperationFamily = McpToolOperationFamily.None,
+		BudgetPolicy = McpToolBudgetPolicy.ParentKillDefault,
+		RequiresClientRequests = McpToolClientRequests.None,
+		SharedFileResource = McpToolSharedFileResource.None)]
 	[Description("Updates the All-Users default value of an existing Creatio system setting. " +
 	             "The setting must already exist; use create-sys-setting to register a new one first. " +
 	             "For a Binary setting (e.g. the logo) pass value-file-path instead of value; clio reads and Base64-encodes the file locally.")]

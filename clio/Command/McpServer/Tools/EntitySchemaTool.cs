@@ -58,6 +58,13 @@ public sealed class CreateEntitySchemaTool(
 	/// </summary>
 	[McpServerTool(Name = CreateEntitySchemaToolName, ReadOnly = false, Destructive = true, Idempotent = false,
 		OpenWorld = false)]
+	[McpToolExecution(
+		Location = McpToolExecutionLocation.Worker,
+		Lifetime = McpToolExecutionLifetime.PerCall,
+		OperationFamily = McpToolOperationFamily.None,
+		BudgetPolicy = McpToolBudgetPolicy.ParentKillDefault,
+		RequiresClientRequests = McpToolClientRequests.None,
+		SharedFileResource = McpToolSharedFileResource.None)]
 	[Description("""
 				 Creates a remote entity schema in an existing Creatio package through EntitySchemaDesignerService.
 
@@ -214,6 +221,13 @@ public sealed class CreateLookupTool : BaseTool<CreateEntitySchemaOptions> {
 	/// </summary>
 	[McpServerTool(Name = CreateLookupToolName, ReadOnly = false, Destructive = true, Idempotent = false,
 		OpenWorld = false)]
+	[McpToolExecution(
+		Location = McpToolExecutionLocation.Worker,
+		Lifetime = McpToolExecutionLifetime.PerCall,
+		OperationFamily = McpToolOperationFamily.None,
+		BudgetPolicy = McpToolBudgetPolicy.ParentKillDefault,
+		RequiresClientRequests = McpToolClientRequests.None,
+		SharedFileResource = McpToolSharedFileResource.None)]
 	[Description("""
 				 Creates a remote lookup schema in an existing Creatio package through EntitySchemaDesignerService.
 
@@ -308,8 +322,15 @@ public sealed class UpdateEntitySchemaTool(
 	/// </summary>
 	[McpServerTool(Name = UpdateEntitySchemaToolName, ReadOnly = false, Destructive = true, Idempotent = false,
 		OpenWorld = false)]
+	[McpToolExecution(
+		Location = McpToolExecutionLocation.Worker,
+		Lifetime = McpToolExecutionLifetime.PerCall,
+		OperationFamily = McpToolOperationFamily.None,
+		BudgetPolicy = McpToolBudgetPolicy.ParentKillDefault,
+		RequiresClientRequests = McpToolClientRequests.None,
+		SharedFileResource = McpToolSharedFileResource.None)]
 	[Description("Applies a batch of add, modify, and remove column operations to a remote Creatio entity schema. " +
-		"The batch is published and the OData entities are rebuilt automatically, so changed columns become reachable over OData (/0/odata/<Entity>) without a compile. That rebuild is asynchronous (~1-2 min): a 404 (or \"The request is invalid\") from an odata-* tool right after a change is the expected async gap — wait briefly and retry, do not compile. " +
+		"The batch is always published. An OData entities rebuild is requested only if at least one operation in the batch changes the published OData contract — adding or removing a column, renaming one (newName), or changing its type or reference schema; caption, description, default value, mask, usage type, and required changes leave the contract unchanged and do not trigger a rebuild. When a rebuild is requested, changed columns become reachable over OData (/0/odata/<Entity>) asynchronously (~1-2 min): a 404 (or \"The request is invalid\") from an odata-* tool right after a change is the expected async gap — wait briefly and retry, do not compile. " +
 		"An INHERITED column can have only its caption/description overridden (title-localizations / description-localizations); its name, type, and flags stay read-only. " +
 		"Entity business rules (conditional editability/required/values) are separate artifacts — call get-guidance with name business-rules to learn more. For the schema-design workflow call get-guidance with name app-modeling.")]
 	public async Task<CommandExecutionResult> UpdateEntitySchema(
@@ -438,6 +459,13 @@ public sealed class GetEntitySchemaPropertiesTool(
 	/// </summary>
 	[McpServerTool(Name = GetEntitySchemaPropertiesToolName, ReadOnly = true, Destructive = false, Idempotent = true,
 		OpenWorld = false)]
+	[McpToolExecution(
+		Location = McpToolExecutionLocation.Worker,
+		Lifetime = McpToolExecutionLifetime.PerCall,
+		OperationFamily = McpToolOperationFamily.None,
+		BudgetPolicy = McpToolBudgetPolicy.ParentKillDefault,
+		RequiresClientRequests = McpToolClientRequests.None,
+		SharedFileResource = McpToolSharedFileResource.None)]
 	[Description("Returns structured properties for a remote Creatio entity schema. "
 		+ "Omit package-name for the MERGED/EFFECTIVE view (columns from all packages) — use this for column discovery; "
 		+ "an empty column list from a single-package read does NOT prove a column is absent. "
@@ -473,11 +501,19 @@ public sealed class SetEntitySchemaPropertiesTool(
 	/// </summary>
 	[McpServerTool(Name = SetEntitySchemaPropertiesToolName, ReadOnly = false, Destructive = true,
 		Idempotent = true, OpenWorld = false)]
+	[McpToolExecution(
+		Location = McpToolExecutionLocation.Worker,
+		Lifetime = McpToolExecutionLifetime.PerCall,
+		OperationFamily = McpToolOperationFamily.None,
+		BudgetPolicy = McpToolBudgetPolicy.ParentKillDefault,
+		RequiresClientRequests = McpToolClientRequests.None,
+		SharedFileResource = McpToolSharedFileResource.None)]
 	[Description("Sets schema-level properties on a remote Creatio entity schema. "
 		+ "Currently supports primary-display-column: the column (own or inherited, resolved by name) shown as the "
-		+ "record's display value in lookups and links. The change is saved and published (OData rebuilt) like the "
-		+ "other entity-schema tools, then verified by reading it back — a target that does not persist the "
-		+ "primary-display column is reported as an error rather than a silent no-op. "
+		+ "record's display value in lookups and links. The change is saved and published like the other "
+		+ "entity-schema tools; the primary-display column does not appear in the OData contract, so setting it "
+		+ "never triggers an OData entities rebuild. The write is verified by reading the schema back — a target "
+		+ "that does not persist the primary-display column is reported as an error rather than a silent no-op. "
 		+ "Read the set value back with get-entity-schema-properties (primary-display-column-name).")]
 	public CommandExecutionResult SetEntitySchemaProperties(
 		[Description("Parameters: environment-name, package-name, schema-name (all required); primary-display-column (optional)")] [Required]
@@ -512,6 +548,13 @@ public sealed class FindEntitySchemaTool(
 	/// </summary>
 	[McpServerTool(Name = FindEntitySchemaToolName, ReadOnly = true, Destructive = false, Idempotent = true,
 		OpenWorld = false)]
+	[McpToolExecution(
+		Location = McpToolExecutionLocation.Worker,
+		Lifetime = McpToolExecutionLifetime.PerCall,
+		OperationFamily = McpToolOperationFamily.None,
+		BudgetPolicy = McpToolBudgetPolicy.ParentKillDefault,
+		RequiresClientRequests = McpToolClientRequests.None,
+		SharedFileResource = McpToolSharedFileResource.None)]
 	[Description(
 		"Finds Creatio entity schemas without a package name. Returns schema, package, maintainer, and parent. "
 		+ "Empty pattern results get one broader check; capped checks fail. Use package-name in follow-ups. "
@@ -547,14 +590,25 @@ public sealed class GetEntitySchemaColumnPropertiesTool(
 	/// </summary>
 	[McpServerTool(Name = GetEntitySchemaColumnPropertiesToolName, ReadOnly = true, Destructive = false,
 		Idempotent = true, OpenWorld = false)]
+	[McpToolExecution(
+		Location = McpToolExecutionLocation.Worker,
+		Lifetime = McpToolExecutionLifetime.PerCall,
+		OperationFamily = McpToolOperationFamily.None,
+		BudgetPolicy = McpToolBudgetPolicy.ParentKillDefault,
+		RequiresClientRequests = McpToolClientRequests.None,
+		SharedFileResource = McpToolSharedFileResource.None)]
 	[Description("Returns structured properties for the specified remote Creatio entity schema column. "
+		+ "Omit package-name to discover the column in the merged runtime schema across all packages; supply "
+		+ "package-name to preserve the exact package-scoped designer read. In merged mode, track-changes, "
+		+ "localizable-text, and do-not-control-integrity are null because the runtime endpoint does not expose "
+		+ "them, and source describes parent-schema inheritance rather than package ownership. "
 		+ "For a lookup column with a Const default, the returned default-value-config is enriched with "
 		+ "display-value (the referenced record's display value, resolved in the connected user's culture) "
 		+ "so the GUID can be verified without a second query. When the display value cannot be resolved, "
 		+ "record-resolution carries an honest marker (no-access, not-found-or-no-access, or "
 		+ "display-column-unavailable) and display-value is null.")]
 	public EntitySchemaColumnPropertiesInfo GetEntitySchemaColumnProperties(
-		[Description("Parameters: environment-name, package-name, schema-name, column-name (all required)")] [Required]
+		[Description("Parameters: environment-name, schema-name, and column-name are required; package-name is optional for merged discovery")] [Required]
 		GetEntitySchemaColumnPropertiesArgs args) {
 		GetEntitySchemaColumnPropertiesOptions options = new() {
 			Environment = args.EnvironmentName,
@@ -582,12 +636,23 @@ public sealed class ModifyEntitySchemaColumnTool(ModifyEntitySchemaColumnCommand
 	/// </summary>
 	[McpServerTool(Name = ModifyEntitySchemaColumnToolName, ReadOnly = false, Destructive = true, Idempotent = false,
 		OpenWorld = false)]
+	[McpToolExecution(
+		Location = McpToolExecutionLocation.Worker,
+		Lifetime = McpToolExecutionLifetime.PerCall,
+		OperationFamily = McpToolOperationFamily.None,
+		BudgetPolicy = McpToolBudgetPolicy.ParentKillDefault,
+		RequiresClientRequests = McpToolClientRequests.None,
+		SharedFileResource = McpToolSharedFileResource.None)]
 	[Description("Adds, modifies, or removes a column in a remote Creatio entity schema. "
-		+ "The change is published and the OData entities are rebuilt automatically, so the column becomes reachable "
-		+ "over OData (/0/odata/<Entity>) without a compile. That rebuild is asynchronous (~1-2 min): a 404 (or "
-		+ "\"The request is invalid\") from an odata-* tool right after the change is the expected async gap — wait "
-		+ "briefly and retry, do not compile. Each call publishes once, so to change several columns at once batch "
-		+ "them through update-entity-schema rather than one call per column. "
+		+ "The change is always published. An OData entities rebuild is requested only when the mutation changes "
+		+ "the published OData contract — adding or removing a column, renaming one (newName), or changing its "
+		+ "type or reference schema; "
+		+ "changing a column's caption, description, default value, mask, usage type, or required flag leaves the "
+		+ "contract unchanged and does not trigger a rebuild. When a rebuild is requested, the column becomes "
+		+ "reachable over OData (/0/odata/<Entity>) asynchronously (~1-2 min): a 404 (or \"The request is invalid\") "
+		+ "from an odata-* tool right after the change is the expected async gap — wait briefly and retry, do not "
+		+ "compile. Each call publishes once, so to change several columns at once batch them through "
+		+ "update-entity-schema rather than one call per column. "
 		+ "When setting a Const default on a lookup column, the referenced record's existence is validated "
 		+ "before save: a GUID that does not exist in the referenced schema is rejected with a non-zero exit "
 		+ "and the schema is not saved. The check is point-in-time (TOCTOU) and is skipped when the referenced "
@@ -1214,18 +1279,33 @@ public sealed record SetEntitySchemaPropertiesArgs(
 ) : EntitySchemaTargetArgsBase(EnvironmentName, PackageName, SchemaName);
 
 /// <summary>
-/// Arguments for the <c>get-entity-schema-column-properties</c> MCP tool.
+/// Arguments for the <c>get-entity-schema-column-properties</c> MCP tool. Omit <c>package-name</c> to inspect
+/// the merged runtime schema across all packages, or supply it to retain the package-scoped designer read.
 /// </summary>
+/// <remarks>
+/// This record intentionally does not extend <see cref="EntitySchemaTargetArgsBase"/> because that base marks
+/// <c>package-name</c> as required.
+/// </remarks>
 public sealed record GetEntitySchemaColumnPropertiesArgs(
+	[property: JsonPropertyName("environment-name")]
+	[property: Description(McpToolDescriptions.EnvironmentName)]
+	[property: Required]
 	string EnvironmentName,
-	string PackageName,
-	string SchemaName,
+
+	[property: JsonPropertyName("package-name")]
+	[property: Description("Optional package. Omit for merged runtime discovery; supply for authoritative package-layer metadata.")]
+	string? PackageName = null,
+
+	[property: JsonPropertyName("schema-name")]
+	[property: Description("Entity schema name")]
+	[property: Required]
+	string SchemaName = "",
 
 	[property: JsonPropertyName("column-name")]
 	[property: Description("Column name")]
 	[property: Required]
-	string ColumnName
-) : EntitySchemaTargetArgsBase(EnvironmentName, PackageName, SchemaName);
+	string ColumnName = ""
+);
 
 /// <summary>
 /// Arguments for the <c>modify-entity-schema-column</c> MCP tool.

@@ -86,6 +86,78 @@ internal static class CreatioResponseError {
 	internal static string DescribeNonJsonResponse(string body) =>
 		$"Creatio did not return a JSON response. {NonJsonResponseHint} Response: {Truncate(body)}";
 
+	/// <summary>
+	/// Attempts to classify the IIS HTML 404 returned when an entity set has no OData controller.
+	/// </summary>
+	/// <param name="body">The raw response body returned by the OData request.</param>
+	/// <param name="entityName">The requested OData entity set name.</param>
+	/// <param name="message">The actionable failure message when the body is an IIS 404.</param>
+	/// <returns><see langword="true"/> when the response is an IIS-style 404 page.</returns>
+	internal static bool TryDescribeMissingEntitySet(string body, string entityName, out string message) {
+		message = string.Empty;
+		if (!LooksLikeIisNotFoundPage(body)) {
+			return false;
+		}
+
+		message = $"OData entity set '{entityName}' could not be reached and may not be exposed over OData. "
+			+ "Use execute-esq to read schemas that do not have an OData entity set. "
+			+ "The server returned an IIS 404 page instead of an OData response.";
+		return true;
+	}
+
+	/// <summary>
+	/// The fixed, locally authored diagnostic for a read whose body IS JSON and reports an error.
+	/// </summary>
+	/// <remarks>
+	/// The extracted detail is deliberately not part of it. <c>TryDetect</c> pulls
+	/// <c>error.message</c>, <c>ExceptionMessage</c> or <c>MessageDetail</c> - all server-controlled -
+	/// and <c>SensitiveErrorTextRedactor</c> removes known secret shapes only: it cannot remove forged
+	/// instructions, opaque tokens, tenant data or embedded line breaks. This text lands in an MCP
+	/// transcript that a model reads as trusted content, so no server prose is copied into it.
+	/// </remarks>
+	internal static string DescribeServerReportedReadError(bool includeUnregisteredEntityHint = false) {
+		const string classification =
+			"Creatio reported an error for this OData read. The server's own wording is not reproduced "
+			+ "here, because a service or proxy response is not trusted text in an MCP transcript; check "
+			+ "the environment's own logs for the server-side cause, then verify the entity name, the "
+			+ "filter and the credentials.";
+		//The hint is locally authored, so it is the one piece of detail that may be added.
+		return includeUnregisteredEntityHint
+			? $"{classification} {UnregisteredEntityHint}"
+			: classification;
+	}
+
+	/// <summary>
+	/// True when the body is a recognized Creatio error, reporting only whether it is the routing miss
+	/// the locally authored <see cref="UnregisteredEntityHint"/> applies to.
+	/// </summary>
+	/// <remarks>
+	/// The extracted text is deliberately not an output. Callers that put their result into an MCP
+	/// transcript must use <see cref="DescribeServerReportedReadError"/> instead of
+	/// <see cref="TryDetect"/>, whose message carries server-controlled prose.
+	/// </remarks>
+	internal static bool TryClassify(JsonElement root, CreatioResponseContext context,
+			out bool isUnregisteredEntity) {
+		isUnregisteredEntity = false;
+		if (!TryDetect(root, context, out string detected)) {
+			return false;
+		}
+		isUnregisteredEntity = detected.Contains(UnregisteredEntityHint, StringComparison.Ordinal);
+		return true;
+	}
+
+	internal static string DescribeNonJsonReadResponse() =>
+		"Creatio did not return a JSON OData response. This points to an IIS, proxy, routing, or session "
+		+ "problem rather than an OData query-shape problem; verify the environment and retry only after the "
+		+ "endpoint is returning JSON.";
+
+	private static bool LooksLikeIisNotFoundPage(string body) {
+		string trimmedBody = body.TrimStart();
+		return trimmedBody.StartsWith("<", StringComparison.Ordinal)
+		&& body.Contains("404", StringComparison.OrdinalIgnoreCase)
+		&& body.Contains("not found", StringComparison.OrdinalIgnoreCase);
+	}
+
 	/// <summary>Truncates a raw response body to a safe preview length for error messages.</summary>
 	internal static string Truncate(string value) {
 		if (string.IsNullOrEmpty(value)) {
@@ -339,6 +411,14 @@ internal static class CreatioResponseError {
 		if (!isAspNetError) {
 			return false;
 		}
+		// NOTE: deliberately no "does the body carry other members?" guard here. ASP.NET Web API's
+		// HttpError populates InnerException whenever error detail is enabled, so such a guard would
+		// classify a genuine unhandled server exception as NOT an error - and every caller
+		// (ODataKeyedWrite.ValidateWriteResponse, ODataReadTool, ODataCreateTool,
+		// Branding/SetBackgroundImageCommand) would then report success on it. The false positive it
+		// would have prevented - a probed record whose own columns are named ExceptionMessage /
+		// ExceptionType / StackTrace - is already handled upstream by
+		// ODataFieldValidation.IsSelectedRecord, which returns before TryDetect is ever reached.
 		message = First(root, "ExceptionMessage", MessagePropertyName) ?? "Creatio returned a server error.";
 		return true;
 	}
@@ -349,11 +429,14 @@ internal static class CreatioResponseError {
 	// a genuine OData response always carries another member — an @odata.context annotation
 	// (present under the default OData metadata level this tool relies on), a value collection
 	// wrapper, or the created record's Id — so a body whose only members are Message (+
-	// MessageDetail) is an error, not data. NOTE: this safety rests on default OData metadata; a
-	// single-entity read served with odata.metadata=none that selected only a Message-named column
-	// would lose its distinguishing member and be misclassified. No current call site does that
-	// (odata-read hits the collection endpoint; odata-create echoes an Id), so the precondition is
-	// safe today — revisit this branch before adding a by-key/metadata=none read path.
+	// MessageDetail) is an error, not data. NOTE: this safety rests on default OData metadata. A
+	// by-key read path now exists (the odata-update pre-write field probe: $select=Id,<fields> on
+	// one record); under default metadata that keyed read always carries @odata.context, a
+	// non-routing member, so this guard holds. A keyed read served with odata.metadata=none that
+	// selected only a Message-named column would still lose its distinguishing member and be
+	// misclassified — no current call site does that (the probe relies on default metadata); if a
+	// metadata=none by-key read is ever added, revisit this branch. The ASP.NET-exception branch
+	// deliberately carries NO such guard - see the note in TryDetectAspNetException.
 	private static bool TryDetectRoutingError(JsonElement root, CreatioResponseContext context,
 		out string message) {
 		message = string.Empty;
