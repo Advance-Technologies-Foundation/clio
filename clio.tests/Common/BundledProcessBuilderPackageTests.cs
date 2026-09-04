@@ -1020,6 +1020,44 @@ public class BundledProcessBuilderPackageTests {
 		}
 	}
 
+	[Test]
+	[Description("The floor version is not credited with the change that justifies it. The sibling test pins WHICH version the floor sentence names; this one pins the REASON beside it, which nothing checked. The collapse - the package no longer validating a formula a second time - shipped in 1.4.0.41; .42 corrected the message that replaced the package's own reference pre-check; .44 is merely the first archive carrying both AND the ENG-96325 lookup-constant contract. Crediting the floor with the collapse describes an environment on .41 to .43 as still carrying a package wording and a reference pre-check that are already gone there, so a caller reads a refusal that does not match what they were promised and cannot tell which half is wrong.")]
+	public void FloorSentences_ShouldNotCreditTheEnforcedFloorWithTheCollapse() {
+		// Arrange
+		const string collapse = "stopped validating formulas";
+		const int precedingWindow = 60;
+		var surfaces = new Dictionary<string, (string Text, Type OptionsType)> {
+			["create-business-process description"] = (
+				GetToolDescription(typeof(Clio.Command.McpServer.Tools.ProcessDesigner.CreateBusinessProcessTool)),
+				typeof(Clio.Command.CreateBusinessProcessOptions)),
+			["modify-business-process description"] = (
+				GetToolDescription(typeof(Clio.Command.McpServer.Tools.ProcessDesigner.ModifyBusinessProcessTool)),
+				typeof(Clio.Command.ModifyBusinessProcessOptions)),
+			["McpCapabilityMap.md"] = (
+				ReadRepositoryText(Path.Combine("docs", "McpCapabilityMap.md")),
+				typeof(Clio.Command.ModifyBusinessProcessOptions))
+		};
+
+		// Act & Assert
+		foreach (KeyValuePair<string, (string Text, Type OptionsType)> surface in surfaces) {
+			string enforced = surface.Value.OptionsType
+				.GetCustomAttributes(typeof(Clio.Common.RequiresPackageAttribute), inherit: false)
+				.Cast<Clio.Common.RequiresPackageAttribute>()
+				.Select(attribute => attribute.Version)
+				.FirstOrDefault(version => !string.IsNullOrWhiteSpace(version));
+			int at = surface.Value.Text.IndexOf(collapse, StringComparison.Ordinal);
+			at.Should().BeGreaterThanOrEqualTo(0,
+				because: $"the {surface.Key} explains its floor by what the package stopped doing, and a surface "
+					+ "that dropped the explanation would pass the assertion below by carrying nothing - if it was "
+					+ "removed on purpose, remove the surface from this test in the same commit");
+			int from = Math.Max(0, at - precedingWindow);
+			surface.Value.Text.Substring(from, at - from).Should().NotContain(enforced,
+				because: $"the {surface.Key} would be naming {enforced} as the version where the package stopped "
+					+ "validating formulas itself, and that was 1.4.0.41 - so an environment on .41 to .43 gets "
+					+ "described with a package wording and a reference pre-check it no longer has");
+		}
+	}
+
 	/// <summary>
 	/// A version literal shipped on an agent-facing surface must be satisfiable by the archive this distribution
 	/// carries. It may LAG it — a capability floor records when something first shipped and freezes there — but it
