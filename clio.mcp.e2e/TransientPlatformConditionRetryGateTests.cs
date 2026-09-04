@@ -1,3 +1,4 @@
+using System.Text.Json;
 using Clio.Mcp.E2E.Support.Mcp;
 using FluentAssertions;
 using ModelContextProtocol.Protocol;
@@ -17,6 +18,9 @@ namespace Clio.Mcp.E2E;
 public sealed class TransientPlatformConditionRetryGateTests {
 	private static CallToolResult TextResult(string text) =>
 		new() { IsError = true, Content = [new TextContentBlock { Text = text }] };
+
+	private static CallToolResult SuccessfulTextResult(string text) =>
+		new() { IsError = false, Content = [new TextContentBlock { Text = text }] };
 
 	[Test]
 	[Description("Recognizes the OData-rebuild-window message as a known transient platform condition.")]
@@ -91,10 +95,86 @@ public sealed class TransientPlatformConditionRetryGateTests {
 	}
 
 	[Test]
+	[Description("Does not retry a SUCCESSFUL answer whose payload happens to embed a marker phrase, because create-app is not idempotent and only a FAILED answer should ever be retried.")]
+	public void IsKnownTransientPlatformCondition_ShouldReturnFalse_ForSuccessfulAnswerContainingMarkerText() {
+		// Arrange
+		CallToolResult result = SuccessfulTextResult(
+			"success:true, note: earlier in the run Creatio was rebuilding the OData library, now settled.");
+
+		// Act
+		bool isTransient = TransientPlatformConditionRetryGate.IsKnownTransientPlatformCondition(result);
+
+		// Assert
+		isTransient.Should().BeFalse(
+			because: "a successful answer must never be retried just because its payload happens to contain a marker phrase, since create-app is not idempotent");
+	}
+
+	[Test]
+	[Description("Recognizes the {\"success\":false} failure shape as a failure signal directly from structured content (unescaped quotes) even when the tool answer did not set IsError, so a marker still matches.")]
+	public void IsKnownTransientPlatformCondition_ShouldReturnTrue_ForUnescapedSuccessFalsePayload() {
+		// Arrange — StructuredContent is serialized at the top level, so its quotes stay plain (unescaped)
+		// in the payload DescribePayload inspects.
+		CallToolResult result = new() {
+			IsError = null,
+			StructuredContent = JsonSerializer.SerializeToElement(
+				new { success = false, error = "Creatio is currently rebuilding the OData library" })
+		};
+
+		// Act
+		bool isTransient = TransientPlatformConditionRetryGate.IsKnownTransientPlatformCondition(result);
+
+		// Assert
+		isTransient.Should().BeTrue(
+			because: "the tools' own {\"success\":false,...} envelope is itself a failure signal, independent of the MCP transport-level IsError flag, and must be recognized even with plain (unescaped) quotes");
+	}
+
+	[Test]
+	[Description("Recognizes the {\"success\":false} failure shape as a failure signal even when its quotes arrive escaped, because the payload is JSON-inside-JSON.")]
+	public void IsKnownTransientPlatformCondition_ShouldReturnTrue_ForEscapedSuccessFalsePayload() {
+		// Arrange — a TextContentBlock.Text is itself a string PROPERTY, so when DescribePayload serializes
+		// the surrounding Content list, this plain-quoted JSON body comes back with its quotes re-encoded
+		// (System.Text.Json's default encoder emits the Unicode escape \u0022, not \") in the final
+		// payload text —
+		// exercising the real escaped encoding without hand-simulating it.
+		CallToolResult result = new() {
+			IsError = null,
+			Content = [new TextContentBlock {
+				Text = "{\"success\":false,\"error\":\"Creatio is currently rebuilding the OData library\"}"
+			}]
+		};
+
+		// Act
+		bool isTransient = TransientPlatformConditionRetryGate.IsKnownTransientPlatformCondition(result);
+
+		// Assert
+		isTransient.Should().BeTrue(
+			because: "the failure shape must be recognized whether its quotes arrived plain or escaped, since the payload is JSON serialized inside JSON");
+	}
+
+	[Test]
+	[Description("Excludes the ApplicationCreateService \"metadata could not be loaded\" failure from the transient match, because a retry would replay a create that already happened.")]
+	public void IsKnownTransientPlatformCondition_ShouldReturnFalse_ForApplicationAlreadyCreatedFailure() {
+		// Arrange
+		CallToolResult result = TextResult(
+			"Application 'UsrCodex1234' was created but its metadata could not be loaded after 5 attempts. "
+			+ "Creatio is currently rebuilding the OData library, try again later.");
+
+		// Act
+		bool isTransient = TransientPlatformConditionRetryGate.IsKnownTransientPlatformCondition(result);
+
+		// Assert
+		isTransient.Should().BeFalse(
+			because: "the application was already created, so retrying would resubmit the same name/code against an application that already exists, even though the last load error embeds the OData-rebuild marker");
+	}
+
+	[Test]
 	[Description("Reports null as not a known transient platform condition.")]
 	public void IsKnownTransientPlatformCondition_ShouldReturnFalse_ForNullResult() {
+		// Arrange
+		CallToolResult? result = null;
+
 		// Act
-		bool isTransient = TransientPlatformConditionRetryGate.IsKnownTransientPlatformCondition(null);
+		bool isTransient = TransientPlatformConditionRetryGate.IsKnownTransientPlatformCondition(result);
 
 		// Assert
 		isTransient.Should().BeFalse(

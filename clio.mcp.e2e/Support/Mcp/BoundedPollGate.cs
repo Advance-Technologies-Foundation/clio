@@ -1,4 +1,5 @@
 using System;
+using System.Runtime.ExceptionServices;
 using System.Threading;
 using System.Threading.Tasks;
 
@@ -32,28 +33,68 @@ internal static class BoundedPollGate {
 	/// <param name="maxAttempts">Maximum number of probe attempts, at least 1.</param>
 	/// <param name="pollInterval">Delay between attempts.</param>
 	/// <param name="cancellationToken">Cancels the whole poll.</param>
+	/// <param name="isTransientProbeFailure">
+	/// Optional. When <paramref name="probeAsync"/> THROWS, this decides whether the exception is itself a
+	/// "not ready yet" signal rather than an abort — for example an unparsable envelope while a mid-settle
+	/// server answers with a body the caller's structured-result parser cannot parse yet, the same shape
+	/// <c>ApplicationToolE2ETests.WaitForCanonicalMainEntityAsync</c> already treats as "keep polling" by
+	/// catching <see cref="InvalidOperationException"/> around its own probe. When this returns
+	/// <see langword="true"/> for a thrown exception, the poll records it as the last observed failure and
+	/// tries again instead of letting the exception abort the whole poll. Defaults to <see langword="null"/>,
+	/// which preserves the original behaviour: any exception from <paramref name="probeAsync"/> propagates
+	/// immediately, uncaught.
+	/// </param>
 	/// <returns>The probe result that satisfied <paramref name="isSatisfied"/>, or the last probe result observed.</returns>
+	/// <exception cref="Exception">
+	/// Rethrown when the attempt budget is exhausted and every single attempt failed with an exception
+	/// matched by <paramref name="isTransientProbeFailure"/> — nothing is swallowed; the last observed
+	/// failure is surfaced instead of a synthetic "not satisfied" result with no probe result to show.
+	/// </exception>
 	internal static async Task<TResult> PollUntilAsync<TResult>(
 		Func<CancellationToken, Task<TResult>> probeAsync,
 		Func<TResult, bool> isSatisfied,
 		int maxAttempts,
 		TimeSpan pollInterval,
-		CancellationToken cancellationToken) {
+		CancellationToken cancellationToken,
+		Func<Exception, bool>? isTransientProbeFailure = null) {
 		ArgumentNullException.ThrowIfNull(probeAsync);
 		ArgumentNullException.ThrowIfNull(isSatisfied);
 		if (maxAttempts < 1) {
 			throw new ArgumentOutOfRangeException(nameof(maxAttempts), maxAttempts, "At least one attempt is required.");
 		}
 
-		TResult last = await probeAsync(cancellationToken);
-		for (int attempt = 1; attempt < maxAttempts; attempt++) {
-			if (isSatisfied(last)) {
-				return last;
+		bool hasResult = false;
+		TResult last = default!;
+		Exception? lastProbeFailure = null;
+
+		for (int attempt = 1; attempt <= maxAttempts; attempt++) {
+			if (attempt > 1) {
+				cancellationToken.ThrowIfCancellationRequested();
+				await Task.Delay(pollInterval, cancellationToken);
 			}
 
-			cancellationToken.ThrowIfCancellationRequested();
-			await Task.Delay(pollInterval, cancellationToken);
-			last = await probeAsync(cancellationToken);
+			try {
+				last = await probeAsync(cancellationToken);
+				hasResult = true;
+				lastProbeFailure = null;
+			}
+			catch (Exception probeException) when (isTransientProbeFailure is not null && isTransientProbeFailure(probeException)) {
+				// A matching probe failure is a "not ready yet" signal, not an abort: remember it so it
+				// can be surfaced (or rethrown below) instead of silently discarding it, then keep polling.
+				lastProbeFailure = probeException;
+				continue;
+			}
+
+			if (hasResult && isSatisfied(last)) {
+				return last;
+			}
+		}
+
+		if (!hasResult && lastProbeFailure is not null) {
+			// The whole budget was exhausted with nothing but transient-looking probe failures and never
+			// a single successful probe: rethrow the last one so it is surfaced as the real diagnostic,
+			// rather than silently reporting "not satisfied" with no result to show for it.
+			ExceptionDispatchInfo.Capture(lastProbeFailure).Throw();
 		}
 
 		return last;

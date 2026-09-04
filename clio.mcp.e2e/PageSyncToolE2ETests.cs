@@ -655,10 +655,10 @@ public sealed class PageSyncToolE2ETests : McpContractFixtureBase {
 	}
 
 	[Test]
-	[Description("Writes a unique reversible marker to the seeded Freedom UI page, reads it back immediately after sync-pages returns, and restores the original body.")]
+	[Description("Writes a unique reversible marker to the seeded Freedom UI page, polls get-page within a short bounded budget until the write is observable after sync-pages returns, and restores the original body.")]
 	[AllureTag(ToolName)]
-	[AllureName("sync-pages makes a completed write immediately observable")]
-	[AllureDescription("Uses the real clio MCP server to append a unique JavaScript comment to ClioMcp_BlankPageToSave, immediately reads the page after sync-pages returns, verifies the marker is visible without a settling delay, and restores the original body in cleanup.")]
+	[AllureName("sync-pages makes a completed write observable within a short bounded poll")]
+	[AllureDescription("Uses the real clio MCP server to append a unique JavaScript comment to ClioMcp_BlankPageToSave, polls get-page within a short bounded budget after sync-pages returns, verifies the marker becomes visible without a fixed settling delay, and restores the original body in cleanup.")]
 	public async Task PageSyncTool_Should_Make_Completed_Write_Immediately_Observable() {
 		// Arrange
 		McpE2ESettings settings = TestConfiguration.Load();
@@ -730,7 +730,11 @@ public sealed class PageSyncToolE2ETests : McpContractFixtureBase {
 			// same instant as the write becoming visible to a subsequent read (observed twice in 60 CI
 			// runs as a stale read-back body). The poll is bounded to a few seconds total
 			// (MarkerReadbackAttempts x MarkerReadbackPollInterval) and stops as soon as the marker is
-			// observed, so a genuinely immediate write still passes on the first attempt.
+			// observed, so a genuinely immediate write still passes on the first attempt. A probe that
+			// lands mid-write can get back an envelope EntitySchemaStructuredResultParser.Extract cannot
+			// parse yet; treat that InvalidOperationException as "not yet" instead of letting it abort the
+			// whole poll, the same way ApplicationToolE2ETests.WaitForCanonicalMainEntityAsync treats its
+			// own transiently-unparsable probe.
 			(CallToolResult readBackResult, PageGetResponse readBackResponse, string readBackBody) =
 				await BoundedPollGate.PollUntilAsync(
 					async pollToken => {
@@ -752,7 +756,8 @@ public sealed class PageSyncToolE2ETests : McpContractFixtureBase {
 					probe => probe.pollBody.Contains(marker, StringComparison.Ordinal),
 					MarkerReadbackAttempts,
 					MarkerReadbackPollInterval,
-					context.CancellationTokenSource.Token);
+					context.CancellationTokenSource.Token,
+					isTransientProbeFailure: probeException => probeException is InvalidOperationException);
 
 			// Assert the read-back proves the new write, not merely the pre-existing body.
 			readBackResult.IsError.Should().NotBeTrue(

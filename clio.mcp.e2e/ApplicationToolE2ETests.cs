@@ -421,6 +421,13 @@ public sealed class ApplicationToolE2ETests {
 		// against a freshly-started MCP session (a fresh clio process, hence a fresh login) rather than
 		// blindly repeating the call against the same stale session; the replacement session is disposed
 		// in the `finally` below regardless of outcome.
+		// Assumption this retry relies on: a retried create-app resubmits the SAME application name and
+		// code as the original attempt. That is safe only because the platform's own idempotency is what
+		// protects us — a genuine duplicate create is rejected outright with a business-rule error instead
+		// of silently succeeding twice — and TransientPlatformConditionRetryGate explicitly excludes the
+		// one case where the create is known to have already happened: ApplicationCreateService's
+		// "was created but its metadata could not be loaded" failure (see
+		// TransientPlatformConditionRetryGate.ApplicationAlreadyCreatedMarker), which is never retried.
 		McpServerSession? reauthenticatedSession = null;
 		CallToolResult callResult;
 		try {
@@ -431,8 +438,15 @@ public sealed class ApplicationToolE2ETests {
 					return await activeSession.CallToolAsync(CreateToolName, createArgs, progress, attemptToken);
 				},
 				async reauthToken => {
-					if (reauthenticatedSession is not null) {
-						await reauthenticatedSession.DisposeAsync();
+					// Null the field BEFORE disposing the previous session and BEFORE starting the
+					// replacement: if StartAsync throws, the `finally` below must not see a still-set
+					// field pointing at an already-disposed session (McpServerSession.DisposeAsync has no
+					// disposed-guard, so disposing it twice would replace the real re-authentication
+					// failure with a disposal exception).
+					McpServerSession? previousSession = reauthenticatedSession;
+					reauthenticatedSession = null;
+					if (previousSession is not null) {
+						await previousSession.DisposeAsync();
 					}
 					reauthenticatedSession = await McpServerSession.StartAsync(settings, reauthToken);
 				},

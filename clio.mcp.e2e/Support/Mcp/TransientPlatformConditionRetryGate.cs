@@ -22,12 +22,19 @@ namespace Clio.Mcp.E2E.Support.Mcp;
 /// <para>
 /// The predicate is deliberately narrow. It must NOT retry:
 /// <list type="bullet">
+/// <item><description>a SUCCESSFUL answer whose large payload happens to embed one of the marker
+/// phrases — a failure signal (a transport-level error, or the tools' own <c>success:false</c> shape)
+/// is required before any marker is even considered, because <c>create-app</c> is not idempotent and
+/// replaying a successful create would be wrong;</description></item>
 /// <item><description>a failed assertion on returned data (a wrong value, a missing field) — that is a
 /// real defect and retrying it would hide it;</description></item>
 /// <item><description><c>success:false</c> carrying a business-rule message (validation, a duplicate
 /// name, a missing dependency) — that is a real, repeatable outcome, not a platform hiccup;</description></item>
 /// <item><description><c>error-class=contention</c> — contention has its own dedicated handling
-/// elsewhere in the harness and is not one of the three platform conditions this gate exists for.</description></item>
+/// elsewhere in the harness and is not one of the three platform conditions this gate exists for;</description></item>
+/// <item><description>a create that already happened — <c>ApplicationCreateService</c>'s "created but
+/// its metadata could not be loaded" failure names a real side effect on the platform, so retrying it
+/// would replay the same application name/code against an application that already exists.</description></item>
 /// </list>
 /// Only the three exact signatures documented on <see cref="IsKnownTransientPlatformCondition"/> match,
 /// so anything else — including the cases above — falls straight through as a real result.
@@ -65,34 +72,83 @@ internal static class TransientPlatformConditionRetryGate {
 	/// </summary>
 	internal const string RedirectedToLoginPageMarker = "redirected to a login page";
 
-	/// <summary>Bounded attempt count: the initial call plus this many retries, at most.</summary>
-	private const int MaxAttempts = 4;
+	/// <summary>
+	/// The exact wording <see cref="Clio.Command.ApplicationCreateService"/> puts on its failure message
+	/// when <c>create-app</c> already created the application row before the metadata read-back failed
+	/// (<c>clio/Command/ApplicationCreateService.cs:532</c>, <c>LoadCreatedApplication</c>): <c>"Application
+	/// '&lt;code&gt;' was created but its metadata could not be loaded ..."</c>, followed by the last load
+	/// error, which can itself embed <see cref="ODataRebuildMarker"/>. Retrying that call would resubmit
+	/// the same application name and code against an application that already exists, hitting a real
+	/// "already exists" business error instead of the OData-rebuild window it looks like — so this
+	/// signature is excluded from the transient match even when a marker also appears in the same payload.
+	/// </summary>
+	internal const string ApplicationAlreadyCreatedMarker = "was created but its metadata could not be loaded";
+
+	/// <summary>
+	/// The failure-shape marker the MCP tools use in their JSON envelope (<c>{"success":false,"error":...}</c>).
+	/// Matched against the NORMALIZED payload (see <see cref="NormalizeEscapedQuotes"/>) because the
+	/// payload text is JSON-inside-JSON: the tool's own JSON body is itself carried as a string inside the
+	/// outer <see cref="CallToolResult"/> serialization, so its quotes can arrive escaped as <c>\"</c>.
+	/// </summary>
+	private const string SuccessFalseMarker = "\"success\":false";
+
+	/// <summary>
+	/// Bounded TOTAL attempt count, initial call included: the loop makes the initial call, then up to
+	/// <c>MaxAttempts - 1</c> retries, so at most <see cref="MaxAttempts"/> calls happen in all.
+	/// </summary>
+	/// <remarks>
+	/// The retry window this produces — <c>(MaxAttempts - 1) * RetryDelay</c> — is deliberately sized to
+	/// match the ~120s window the two other consumers of the SAME OData-rebuild condition converged on
+	/// independently: <c>DataBindingDbFixtureBase.WaitUntilSchemaIsQueryableAsync</c> (24 attempts × 5s)
+	/// and <c>ApplicationToolE2ETests.CanonicalMainEntityReadbackAttempts</c> (40 attempts × 3s). With
+	/// <see cref="RetryDelay"/> at 15s, 8 retries reach the same ~120s, hence 9.
+	/// </remarks>
+	private const int MaxAttempts = 9;
 
 	/// <summary>Fixed delay between attempts that are not re-authenticated (the OData/HTML-page cases).</summary>
 	private static readonly TimeSpan RetryDelay = TimeSpan.FromSeconds(15);
 
-	/// <summary>Hard upper bound for the whole retry loop, regardless of attempt count.</summary>
+	/// <summary>
+	/// Hard upper bound for the whole retry loop, regardless of attempt count. Kept genuinely above the
+	/// ~120s retry window (see <see cref="MaxAttempts"/>) so the attempt cap — not this deadline — is the
+	/// one that normally ends the loop; the deadline exists only to bound a pathological case where
+	/// individual attempts themselves run long.
+	/// </summary>
 	private static readonly TimeSpan OverallDeadline = TimeSpan.FromMinutes(3);
 
 	/// <summary>
-	/// Decides whether a failed MCP tool answer is a KNOWN transient platform condition worth retrying,
-	/// by looking for one of three exact signatures in the call's serialized structured content and text
-	/// content: <see cref="ODataRebuildMarker"/>, <see cref="LoginRejectionMarker"/>, or either of
-	/// <see cref="HtmlPageInsteadOfJsonMarker"/> / <see cref="RedirectedToLoginPageMarker"/>. Pure and
+	/// Decides whether a FAILED MCP tool answer is a KNOWN transient platform condition worth retrying, by
+	/// first requiring a failure signal (<see cref="HasFailureSignal"/>) — otherwise a successful answer
+	/// whose large payload happens to embed one of the marker phrases would be retried, and <c>create-app</c>
+	/// is not idempotent — then looking for one of three exact signatures in the call's serialized
+	/// structured content and text content: <see cref="ODataRebuildMarker"/>, <see cref="LoginRejectionMarker"/>,
+	/// or either of <see cref="HtmlPageInsteadOfJsonMarker"/> / <see cref="RedirectedToLoginPageMarker"/>.
+	/// <see cref="ApplicationAlreadyCreatedMarker"/> is excluded before the marker match: it means the
+	/// create already happened, and retrying would replay the same application name/code. Pure and
 	/// stand-free, so it is unit-tested directly (<c>TransientPlatformConditionRetryGateTests</c>).
 	/// </summary>
 	/// <param name="callResult">The tool call result to inspect, or <see langword="null"/>.</param>
-	/// <returns><c>true</c> when one of the known transient signatures is present; otherwise <c>false</c>.</returns>
+	/// <returns><c>true</c> when one of the known transient signatures is present on a failed answer; otherwise <c>false</c>.</returns>
 	internal static bool IsKnownTransientPlatformCondition(CallToolResult? callResult) {
 		string text = DescribePayload(callResult);
 		if (string.IsNullOrEmpty(text)) {
 			return false;
 		}
 
-		return text.Contains(ODataRebuildMarker, StringComparison.Ordinal)
-			|| text.Contains(LoginRejectionMarker, StringComparison.Ordinal)
-			|| text.Contains(HtmlPageInsteadOfJsonMarker, StringComparison.Ordinal)
-			|| text.Contains(RedirectedToLoginPageMarker, StringComparison.Ordinal);
+		string normalized = NormalizeEscapedQuotes(text);
+
+		if (normalized.Contains(ApplicationAlreadyCreatedMarker, StringComparison.Ordinal)) {
+			return false;
+		}
+
+		if (!HasFailureSignal(callResult, normalized)) {
+			return false;
+		}
+
+		return normalized.Contains(ODataRebuildMarker, StringComparison.Ordinal)
+			|| normalized.Contains(LoginRejectionMarker, StringComparison.Ordinal)
+			|| normalized.Contains(HtmlPageInsteadOfJsonMarker, StringComparison.Ordinal)
+			|| normalized.Contains(RedirectedToLoginPageMarker, StringComparison.Ordinal);
 	}
 
 	/// <summary>
@@ -153,6 +209,30 @@ internal static class TransientPlatformConditionRetryGate {
 	}
 
 	private static bool OverallDeadlineReached(TimeSpan elapsed) => elapsed >= OverallDeadline;
+
+	/// <summary>
+	/// A failure signal is required before any marker match counts as a known transient platform
+	/// condition: either the MCP transport itself flagged the call as an error
+	/// (<c>callResult.IsError == true</c>), or the payload carries the tools' own
+	/// <c>{"success":false,...}</c> failure shape (checked against <paramref name="normalizedPayload"/>,
+	/// which has already had escaped quotes normalized back to plain quotes).
+	/// </summary>
+	private static bool HasFailureSignal(CallToolResult? callResult, string normalizedPayload) =>
+		callResult?.IsError == true
+		|| normalizedPayload.Contains(SuccessFalseMarker, StringComparison.Ordinal);
+
+	/// <summary>
+	/// Un-escapes a quote character back to <c>"</c> so a failure-shape marker is found whether the
+	/// tool's JSON body was serialized once (plain quotes) or embedded as a JSON string inside the outer
+	/// <see cref="CallToolResult"/> serialization — the payload is JSON-inside-JSON, and the outer
+	/// serialization step re-encodes those quotes. Two encodings are normalized because callers must not
+	/// assume one over the other: the conventional backslash escape (<c>\"</c>), and the Unicode escape
+	/// <c>System.Text.Json</c>'s default (HTML-safe) encoder actually emits for a quote nested inside
+	/// another string (<c>\u0022</c>) — observed directly from <see cref="DescribePayload"/>'s own output.
+	/// </summary>
+	private static string NormalizeEscapedQuotes(string text) =>
+		text.Replace("\\u0022", "\"", StringComparison.OrdinalIgnoreCase)
+			.Replace("\\\"", "\"", StringComparison.Ordinal);
 
 	private static string DescribePayload(CallToolResult? callResult) {
 		if (callResult is null) {

@@ -4,7 +4,8 @@ applies-to:
   - clio.mcp.e2e/
   - clio.mcp.e2e/clio.mcp.e2e.runsettings
   - clio.mcp.e2e/Support/Mcp/TransientPlatformConditionRetryGate.cs
-ticket: "1381"
+  - clio.tests/McpFixturePolicyTests.cs
+ticket: clio#1381
 date: 2026-09-04
 ---
 
