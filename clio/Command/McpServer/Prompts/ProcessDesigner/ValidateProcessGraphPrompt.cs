@@ -36,8 +36,11 @@ public static class ValidateProcessGraphPrompt {
 		   existing one with `modify-business-process`) — clio builds and saves it server-side in one call.
 		   Then verify with `describe-business-process`.
 		Note: a clean validation does NOT mean every node is buildable — the rules cover the full BPMN
-		catalog, but only startEvent/signalStart/endEvent/userTask + plain sequence flows can be built
-		today (see the buildable slice in the guidance). Tell the user when the validated design needs
-		elements the builder cannot create yet.
+		catalog, while the builder creates startEvent/signalStart/endEvent/userTask/sendEmail elements.
+		Flows start plain, and `modify-business-process` + `setFlowCondition` turns one into a
+		conditional branch, so a conditional BRANCH is buildable even though a gateway ELEMENT is not —
+		the platform synthesizes the gateway. Check the buildable slice in
+		`get-guidance name=process-modeling` before promising a build, and tell the user when the
+		validated design needs elements the builder cannot create yet.
 		""";
 }

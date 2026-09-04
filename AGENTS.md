@@ -131,8 +131,10 @@ clio ships two Creatio packages inside its own distribution — `cliogate` (preb
 - a `[RequiresPackage]` version literal
 
 The normal path is one call — `pwsh ./rebundle-process-builder.ps1 -PackageRepoPath <ProcessBuilder
-checkout> -Version X.Y.Z.W`. It runs the whole procedure, computes the pins from the archive it just
-produced, and checks the archive's inventory. The article documents it, and keeps the manual steps as the
+checkout> -Version X.Y.Z.W`. It runs the whole procedure, refreshes all four clio-side pins — only the
+SHA is computed from the archive it just produced; the version comes from `-Version`, the stamp from the
+package descriptor after the restamp, and the commit from that repository's HEAD before it — and checks
+the archive's inventory. The article documents it, and keeps the manual steps as the
 fallback for a host without `pwsh`.
 
 **`-Version` is required and must go UP on every rebundle.** clio reads the shipped version out of the

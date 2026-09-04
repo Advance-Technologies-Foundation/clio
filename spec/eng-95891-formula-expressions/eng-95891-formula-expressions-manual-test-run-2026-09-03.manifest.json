@@ -1,0 +1,45 @@
+{
+  "run": "2026-09-03",
+  "kind": "contract re-measurement by the feature session, NOT a blind instrument run",
+  "scope": "stored level only",
+  "stand": {
+    "name": "krestov-test",
+    "core": "10.0.731.0",
+    "crtProcessBuilder": "1.4.0.45",
+    "crtProcessBuilderDeleteGuardReverifiedAt": "1.4.0.47",
+    "compiled": true
+  },
+  "archiveSha256": "4571CDAFA5014BBF7324639432475ECA0C72B2704706CF908BF83D7A9FF6B3F4",
+  "archiveSha256AtReverification": "1A3D2EC082F7F7FF0C83EBA871356DDBC091C9CC787619327DCEB942E3200946",
+  "commits": {
+    "clio": "a1307186108bd5210bca906f31c715880cc69f5a",
+    "crtProcessBuilder": "b8f2d457f9b57c3f495b3156c35257a647e5f2d1"
+  },
+  "driver": "mcp-server over stdio JSON-RPC, sequential; writes via clio-run / clio-run-destructive",
+  "processCodePrefix": "Usr",
+  "processCodeSuffix": "R45",
+  "verdicts": {
+    "TC-A1": "PASS",
+    "TC-A2": "PASS",
+    "TC-A3": "PASS",
+    "TC-B1": "PASS",
+    "TC-B2": "PASS",
+    "TC-B3": "PASS"
+  },
+  "contractClaimsNewlyEvidenced": [
+    "a type-mismatch refusal quotes the expression as the converter left it (1.5 -> \"1.5m\")",
+    "the unknown-identifier arm is the platform's Parameter \"X\" not found, not the deleted validator's wording",
+    "the {ErrorType:2,...} blob reaches the caller as a sentence on the mapping path too"
+  ],
+  "notCovered": [
+    "designer rendering",
+    "runtime execution",
+    "branch conditions (measured in the save-gate probe at this same archive)",
+    "a blind instrument run of the guidance library at this generation"
+  ],
+  "observations": [
+    "the dangling-reference refusal ends with a doubled full stop: the platform's period after the quoted blob is outside the rewrite's pattern. Cosmetic; the promised text is still a substring",
+    "operations and descriptor are JSON strings, not JSON values; a mapping's target keys are flat, not nested under 'target'",
+    "direction takes In/Out/Variable/Internal - the refusal lists them, and the whole descriptor is refused before any schema is written"
+  ]
+}
