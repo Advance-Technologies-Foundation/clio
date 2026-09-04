@@ -122,6 +122,9 @@ DESCRIPTION
       is not registered via --resources and is not Usr*/DS-bound. A metric title
       #ResourceString(IndicatorWidget_<slug>_title)# is registered only when you
       pass it in --resources; otherwise it renders raw.
+    - Resource keys already stored on the schema count as registered: a later save
+      of the same page does NOT have to repeat every key that an earlier save
+      registered. --resources is additions/overrides on top of what is persisted.
     A malformed VendorPrefix.Name causes a Creatio runtime error:
       "Error when register X. Type property should have format VendorPrefix.TypeName"
     - Call `clio get-guidance --name page-schema-converters` for converter details
@@ -138,7 +141,9 @@ DESCRIPTION
         are needed — this is what protects AI-agent CLI flows that read a page
         with get-page and then save it with update-page.
       - explicitly, from --expected-checksum (takes precedence over the on-disk
-        baseline).
+        baseline). Over MCP the same value is passed as the `checksum` argument,
+        which should carry the `editable.checksum` returned by the get-page call
+        the edit is based on.
     Before saving, the baseline is compared against the current
     SysSchema.Checksum of the editable schema. On a mismatch the save is blocked
     with a structured conflict response (conflict: true + conflictDetails)

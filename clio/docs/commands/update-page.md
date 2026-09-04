@@ -189,15 +189,44 @@ automatically from the baseline that a previous `get-page` stores in
 `.clio-pages/{schema-name}/meta.json` (matching environment required) — so AI-agent CLI
 flows that read a page with `get-page` and then save it with `update-page` are protected
 without extra flags. `--expected-checksum` overrides the on-disk baseline when passed
-explicitly. After a successful save the on-disk baseline is refreshed automatically, so
+explicitly. Over MCP the same baseline is supplied as the `checksum` argument — pass the
+`editable.checksum` that `get-page` returned for the body you edited. Doing so makes the
+comparison run against what you actually fetched, instead of against a `.clio-pages`
+baseline that may be stale or anchored to a different directory and would then report a
+conflict that never happened. After a successful save the on-disk baseline is refreshed automatically, so
 consecutive updates in the same session do not false-conflict. A small race window
 between the check and the save remains (last write wins).
 
 If you pass `--expected-checksum` while an on-disk baseline is also present, the explicit
-value wins and the auto-armed baseline is ignored — so supplying a stale checksum by hand
-can report a conflict against a page that has not actually changed. This edge fails safe
-(it blocks the save rather than overwriting), but if you mix the two, keep
-`--expected-checksum` current or omit it and let the on-disk baseline drive the check.
+value wins the CHECKSUM comparison and the auto-armed baseline's checksum is ignored — so
+supplying a stale checksum by hand can report a conflict against a page that has not
+actually changed. This edge fails safe (it blocks the save rather than overwriting), but if
+you mix the two, keep `--expected-checksum` current or omit it and let the on-disk baseline
+drive the check. The baseline's *schema UId* is still armed from disk, because pinning a
+checksum says nothing about schema identity; its *schema-absent* marker is not, because a
+pinned checksum asserts that an editable schema existed, and a stale `editableSchemaExists:
+false` would otherwise veto a pin that matches the server exactly.
+
+Two scope limits worth knowing before you rely on the pin (both tracked from PR #1356's
+review, neither fixed here):
+
+- **`sync-pages` does not accept a checksum.** It is the canonical page write path and
+  `update-page` is documented as the fallback, but `PageSyncPageInput` has no `checksum`
+  member, so every `sync-pages` write compares against the `.clio-pages` baseline and has
+  `--force` as its only escape. The remedy on this page is `update-page`-only.
+- **The schema-identity checks run BEFORE the checksum comparison, and they are armed from
+  disk on a pinned save too.** So a save that redirects with `--target-package-uid` /
+  `--target-schema-uid`, or one whose on-disk `editableSchemaUId` is stale, can be refused
+  as `schema-deleted-externally` / `schema-uid-mismatch` even though the pinned checksum
+  matches the server exactly. The refusal's "re-run get-page and retry" advice re-pins the
+  same checksum and loops; if you hit it on a redirected save, the redirect is the cause,
+  not an external edit. It fails safe — the write is blocked, never corrupted.
+
+A `checksum-mismatch` response returns the server's current value as
+`conflictDetails.actualChecksum`. Re-sending that value as `--expected-checksum` /
+`checksum` is **not** a resolution — it silently discards the out-of-band change exactly
+like `--force`, and needs the same explicit confirmation from the user. Re-run `get-page`
+and re-apply your edit on the fresh body instead.
 
 ## Write modes
 

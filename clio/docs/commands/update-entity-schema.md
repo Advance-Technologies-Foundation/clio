@@ -107,6 +107,12 @@ cliogate must be installed on the target Creatio environment.
 
 ## Notes
 
+- This command applies **column** operations only. Its per-operation `title-localizations`
+  sets a **column** caption. To rename the **schema** caption use
+  [set-entity-schema-properties](set-entity-schema-properties.md)
+  (`--title` / `--title-localizations`).
+- At least one operation is required; a call with none reports what is missing instead of
+  failing with an opaque null-reference message.
 - A `modify` operation on an **inherited** column may override only its caption/description (`title-localizations`/`description-localizations`); changing its name, type, or flags is rejected and stops the batch on that operation.
 - `--operation` payloads can include structured `default-value-config`.
 - `--operation` payloads can include `usage-type` (`General`, `Advanced`, or `None`; any column type); on `modify` the stored value is left unchanged when omitted.

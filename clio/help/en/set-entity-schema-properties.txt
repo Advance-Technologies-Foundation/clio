@@ -13,22 +13,39 @@ DESCRIPTION
     commands. The primary-display column is a designer-level property; it does not appear
     in the OData contract, so setting it never triggers an OData entities rebuild.
 
-    Currently supported property:
+    Supported properties:
     --primary-display-column   The column shown as the record's display value in lookups
                                and links. The target may be an OWN or an INHERITED column;
                                it is resolved by name to its column UId before saving
                                (the modern designer contract matches the primary-display
                                column by its column object, not a raw GUID field).
+    --title /                  The SCHEMA caption. This is the only command that can rename
+    --title-localizations      an existing entity schema's caption; update-entity-schema
+                               applies COLUMN operations and its title-localizations is a
+                               per-column property. Cultures you do not list keep the caption
+                               they already have.
 
-    After saving, the command reads the schema back and verifies the primary-display column
-    was persisted. If the target environment did not persist it, the command fails with a
-    clear error instead of reporting a silent success.
+    Renaming the caption is what resolves a duplicate-caption collision: a business-process
+    lookup macro [#Lookup.<Caption>.<Value>#] cannot resolve when two entity schemas share a
+    caption, and the process refuses to save.
+
+    After saving, the command reads the schema back and verifies each property was persisted.
+    If the target environment did not persist it, the command fails with a clear error instead
+    of reporting a silent success.
 
 OPTIONS
     --package                  Target package name (required; writes are package-scoped)
     --schema-name              Entity schema name (required)
     --primary-display-column   Column name (own or inherited) to set as the primary-display
-                               column (optional; at least one settable property is required)
+                               column (optional)
+    --title                    New schema caption for the effective caption culture (optional)
+    --title-localizations      New schema caption per culture as JSON, e.g.
+                               '{"en-US":"Mention language"}' (optional)
+    --caption-culture          Culture used for a scalar --title (e.g. en-US). Precedence:
+                               this override > the connected user's profile culture > en-US
+
+    At least one settable property (--primary-display-column, --title or
+    --title-localizations) is required.
 
     Environment options are also available:
     -e, --Environment          Environment name from the registered configuration
@@ -43,11 +60,16 @@ EXAMPLES
     # Set an inherited column as the primary-display column
     clio set-entity-schema-properties -e dev --package Custom --schema-name UsrTickets --primary-display-column Subject
 
+    # Rename the schema caption so it stops colliding with another schema's caption
+    clio set-entity-schema-properties -e dev --package Custom --schema-name labLanguage --title-localizations '{"en-US":"Mention language"}'
+
 NOTES
-    - read the set value back with get-entity-schema-properties (primary-display-column-name)
-    - the change is published automatically; no compile needed. Setting the primary-display
-      column does not change the OData contract, so it does not trigger an OData entities rebuild
+    - read the set values back with get-entity-schema-properties
+    - the change is published automatically; no compile needed. Neither the primary-display column
+      nor the schema caption changes the OData contract, so setting them does not trigger an
+      OData entities rebuild
     - at least one settable property must be supplied, otherwise the command reports an error
+    - a caption change is merged per culture; captions for cultures you do not list are preserved
     - naming a column that does not exist on the schema fails with a clear error
 
 REPORTING BUGS

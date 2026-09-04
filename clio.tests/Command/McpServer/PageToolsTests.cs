@@ -2745,6 +2745,9 @@ public class PageToolsTests
 			.And.Contain("$UsrName")
 			.And.Contain("$context.set",
 				because: "the response should guide toward the correct declared attribute written by the handler");
+		// The persisted-resource-key rescue (issue #1320) must NOT fire here: this body is blocked by a
+		// standard-field BINDING error, and a persisted key can never clear one. The "no Creatio I/O for a
+		// rejected body" cost contract therefore still holds - not one read, not one write.
 		serviceUrlBuilder.DidNotReceive().Build("/ServiceModel/ClientUnitSchemaDesignerService.svc/GetSchema");
 		serviceUrlBuilder.DidNotReceive().Build("/ServiceModel/ClientUnitSchemaDesignerService.svc/SaveSchema");
 	}

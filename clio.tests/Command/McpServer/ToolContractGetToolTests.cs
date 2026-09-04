@@ -236,6 +236,38 @@ public sealed class ToolContractGetToolTests {
 			because: "the removed raw filter must be explicitly rejected in the discoverable contract");
 	}
 
+	// PR #1356 review (d-krestov, Gate 3) - update-page has a CURATED contract, so
+	// TryResolveFullContract serves the hand-written ToolContractCatalog literal and never looks at
+	// PageUpdateArgs. A spot check for `checksum` therefore passes verbatim with PageUpdateArgs.Checksum
+	// DELETED, while the caller's baseline is silently dropped - precisely the failure issue #1320
+	// reports. This is the curated-vs-reflection parity oracle update-page was missing; it mirrors the
+	// ODataReadArgs and PageGetArgs oracles above.
+	[Test]
+	[Category("Unit")]
+	[Description("Keeps the curated update-page input contract set-EQUAL with every bound PageUpdateArgs JSON member, so deleting a bound argument (or leaving a new one unpublished) fails instead of passing on the hand-written catalog literal (PR #1356 review).")]
+	public void ToolContractGet_Should_Keep_PageUpdate_Input_Contract_In_Sync_With_Args() {
+		// Arrange
+		ToolContractGetTool tool = BuildToolWithRegistry();
+		string[] boundArgumentNames = typeof(PageUpdateArgs)
+			.GetProperties(BindingFlags.Public | BindingFlags.Instance)
+			.Where(property => property.GetCustomAttribute<JsonExtensionDataAttribute>() is null)
+			.Select(property => property.GetCustomAttribute<JsonPropertyNameAttribute>()?.Name ?? property.Name)
+			.ToArray();
+
+		// Act
+		ToolContractGetResponse result = tool.GetToolContracts(new ToolContractGetArgs([PageUpdateTool.ToolName]));
+		ToolContractDefinition contract = result.Tools!.Single();
+
+		// Assert
+		boundArgumentNames.Should().NotBeEmpty(
+			because: "an empty reflected set would make the set-equality assertion below pass vacuously");
+		boundArgumentNames.Should().Contain("checksum",
+			because: "PageUpdateArgs must bind the conflict baseline the caller pins - if this member disappears the curated literal alone would keep advertising it, which is the silent drop issue #1320 reports");
+		contract.InputSchema.Properties.Select(property => property.Name).Should()
+			.BeEquivalentTo(boundArgumentNames,
+			because: "the curated update-page contract must advertise every argument the real stdio binder accepts and no stale ones - a curated literal that outlives its bound member advertises an argument that is silently dropped, and one that lags leaves a new argument undiscoverable");
+	}
+
 	// Pins the Codex #1 fix: the uncurated contract for a single-scalar env tool now derives from the real
 	// dispatched MCP input schema, exposing the `environmentName` property the lossy reflection fallback
 	// dropped. This is the exact mismatch the review flagged — advertised contract vs what clio-run accepts.

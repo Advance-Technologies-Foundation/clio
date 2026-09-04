@@ -252,7 +252,8 @@ public sealed class PageUpdateTool(
 	// ENG-92049 constraint (honored here): only OFFLINE validators run on this path. No HTTP
 	// signature resolution (ValidateRunProcessButtons resolves process signatures over the wire and
 	// deliberately stays on the success path); the run-process STRUCTURAL check below is a pure
-	// regex over the body. The environment check resolves the command, which is offline up to the
+	// regex over the body. ValidateBody is called with offlineOnly:true for the same reason, which
+	// withholds the persisted-resource-key rescue and its GetSchema round-trip (issue #1320). The environment check resolves the command, which is offline up to the
 	// EnvironmentResolutionException throw (the unknown-environment / missing-settings guard runs
 	// before any network call); the resolved command is discarded, so a body that cannot parse
 	// triggers no Creatio I/O even in dry-run.
@@ -282,7 +283,7 @@ public sealed class PageUpdateTool(
 		if (SchemaValidationService.ValidateMarkerIntegrity(options.Body).IsValid) {
 			// Offline syntax-failure path: chart validation is version-scoped, but no environment
 			// probe runs here, so validate against the 'latest' superset (requestedVersion: null).
-			(PageUpdateResponse contentFailure, _) = ValidateBody(options, requestedVersion: null);
+			(PageUpdateResponse contentFailure, _) = ValidateBody(options, requestedVersion: null, offlineOnly: true);
 			if (contentFailure != null) {
 				return contentFailure;
 			}
@@ -411,7 +412,7 @@ public sealed class PageUpdateTool(
 	/// write instead of only proving the validator returns an error.
 	/// </summary>
 	internal (PageUpdateResponse Failure, IReadOnlyList<string> Warnings) ValidateBody(
-		PageUpdateOptions options, string? requestedVersion) {
+		PageUpdateOptions options, string? requestedVersion, bool offlineOnly = false) {
 		if (PageSchemaTypeExtensions.FromBody(options.Body) == PageSchemaType.Mobile) {
 			// Mobile body validation requires async catalogs (CDN+cache) AND the
 			// parsed-resources lookup master added in ENG-89649. PageUpdateTool runs
@@ -454,7 +455,12 @@ public sealed class PageUpdateTool(
 		// whose label is provided in `resources` is falsely rejected here, before the
 		// resource-aware post-resolution validation runs (matches PageUpdateOptions / PageSyncTool / PageValidateTool).
 		SchemaValidationService.TryParseResources(options.Resources, out Dictionary<string, string>? explicitResources, out _);
-		(string bodyError, IReadOnlyList<string> webWarnings) = ValidateWebPageBody(options.Body, explicitResources);
+		// offlineOnly is the ResolveSyntaxFailure path: it promises no Creatio I/O for a body that cannot
+		// even parse, so the persisted-resource-key rescue (a hierarchy resolution plus GetSchema) must not
+		// be offered there. Dropping it only makes that path stricter, and it is already reporting a failure.
+		(string bodyError, IReadOnlyList<string> webWarnings) = ValidateWebPageBody(
+			options.Body, explicitResources,
+			offlineOnly ? null : () => TryGetPersistedResourceKeys(options));
 		if (bodyError != null) {
 			return (new PageUpdateResponse { Success = false, Error = bodyError }, null);
 		}
@@ -493,7 +499,11 @@ public sealed class PageUpdateTool(
 		return (null, samplingReview);
 	}
 
-	private static PageUpdateOptions BuildOptions(PageUpdateArgs args) =>
+	/// <summary>
+	/// Maps the MCP tool arguments onto the command options. Internal so the argument-to-option mapping
+	/// (notably the caller-supplied conflict <c>checksum</c>) can be asserted directly by unit tests.
+	/// </summary>
+	internal static PageUpdateOptions BuildOptions(PageUpdateArgs args) =>
 		new() {
 			SchemaName = args.SchemaName,
 			Body = args.Body,
@@ -510,6 +520,11 @@ public sealed class PageUpdateTool(
 			Login = args.Login,
 			Password = args.Password,
 			Force = args.Force ?? false,
+			// Trimmed: the arming predicate in PageBaselineGuard is whitespace-tolerant
+			// (!string.IsNullOrWhiteSpace) while the comparison is a strict Ordinal one, so a padded
+			// "  4f3374af  " would arm the check and then fail it, reporting a checksum-mismatch that
+			// did not happen. Empty and whitespace-only stay equivalent to "not supplied".
+			ExpectedChecksum = args.Checksum?.Trim(),
 			NotifyDesignerPresence = true
 		};
 
@@ -648,8 +663,34 @@ public sealed class PageUpdateTool(
 		}
 	}
 
+	/// <summary>
+	/// Reads the resource keys already stored on the target schema, resolving the command lazily.
+	/// Used only when a label-resource validator has already failed, so the extra round-trips are never
+	/// paid by a body that validates cleanly.
+	/// </summary>
+	/// <summary>The empty answer: nothing was read, so the stricter verdict stands (Sonar S1168).</summary>
+	private static readonly IReadOnlySet<string> NoPersistedResourceKeys =
+		new HashSet<string>(StringComparer.Ordinal);
+
+	private IReadOnlySet<string> TryGetPersistedResourceKeys(PageUpdateOptions options) {
+		try {
+			return ResolveCommand<PageUpdateCommand>(options).TryGetPersistedResourceKeys(options)
+				?? NoPersistedResourceKeys;
+		} catch (Exception ex) when (ex is not OperationCanceledException) {
+			// Only command RESOLUTION can fail here - the read itself reports its own reason inside the
+			// command. Failing closed leaves the stricter verdict standing, but the reason must be
+			// observable rather than surfacing as a misleading "resource is not registered".
+			_logger?.WriteWarning(SensitiveErrorTextRedactor.Redact(
+				"Persisted resource keys could not be read; the stricter label-resource verdict stands. "
+				+ ex.Message));
+			return NoPersistedResourceKeys;
+		}
+	}
+
 	private static (string Error, IReadOnlyList<string> Warnings) ValidateWebPageBody(
-		string body, IReadOnlyDictionary<string, string>? explicitResources = null) {
+		string body,
+		IReadOnlyDictionary<string, string>? explicitResources = null,
+		Func<IReadOnlySet<string>> persistedResourceKeysProvider = null) {
 		var errors = new List<string>();
 		Collect(SchemaValidationService.ValidateMarkerContent(body), errors);
 		Collect(SchemaValidationService.ValidateLocalizableTextLiterals(body), errors);
@@ -665,8 +706,11 @@ public sealed class PageUpdateTool(
 		Collect(SchemaValidationService.ValidateHandlerStructure(body), errors);
 		Collect(SchemaValidationService.ValidateRunProcessButtonStructure(body), errors);
 		Collect(SchemaValidationService.ValidateValidatorDeclarations(body), errors);
-		CollectWithPrefix(SchemaValidationService.ValidateStandardFieldBindings(body, explicitResources), "invalid form field bindings", errors);
-		CollectWithPrefix(SchemaValidationService.ValidateInsertedFieldSelfConsistency(body, explicitResources), "invalid form field bindings", errors);
+		(SchemaValidationResult standardFieldResult, SchemaValidationResult insertedFieldResult) =
+			SchemaValidationService.ValidateFieldLabelResources(
+				body, explicitResources, persistedResourceKeysProvider);
+		CollectWithPrefix(standardFieldResult, "invalid form field bindings", errors);
+		CollectWithPrefix(insertedFieldResult, "invalid form field bindings", errors);
 		var warnings = new List<string>();
 		warnings.AddRange(SchemaValidationService.ValidateSchemaDepsCompleteness(body).Warnings);
 		warnings.AddRange(SchemaValidationService.ValidateContextAccessAwait(body).Warnings);
@@ -714,7 +758,7 @@ public sealed record PageUpdateArgs(
 	string? Body,
 
 	[property: JsonPropertyName("resources")]
-	[property: Description(McpToolDescriptions.PageResources)]
+	[property: Description(McpToolDescriptions.PageResources + McpToolDescriptions.PageResourcesAdditive)]
 	string? Resources,
 
 	[property: JsonPropertyName("dry-run")]
@@ -761,6 +805,9 @@ public sealed record PageUpdateArgs(
 	[property: JsonPropertyName("output-directory")]
 	[property: Description("Optional. Directory that anchors the .clio-pages baseline lookup — pass the same value that was passed to get-page when it differs from the auto-detected workspace root. Used only for conflict-baseline discovery; does not change where the page is saved.")]
 	string? OutputDirectory = null,
+	[property: JsonPropertyName("checksum")]
+	[property: Description("Optional. The `editable.checksum` from the get-page this edit is based on. It becomes the authoritative conflict baseline; pass it on every save that follows a get-page. Re-sending a conflict response's `actualChecksum` here is NOT a resolution - it is equivalent to force=true and needs the same explicit user confirmation.")]
+	string? Checksum = null,
 	[property: JsonPropertyName("validate")]
 	[property: Description("Run client-side content and run-process validation before saving. Default: true. Set false only as an explicit escape hatch for a pre-existing page defect; JavaScript syntax, AST loadability, replace-mode marker integrity, the mobile JSON-object structure check, and the page baseline/conflict guard remain mandatory. It stays combinable with force=true - the two flags are orthogonal (one gates content checks, the other the baseline/conflict guard) - and the response then warns that both are relaxed.")]
 	bool? Validate = null

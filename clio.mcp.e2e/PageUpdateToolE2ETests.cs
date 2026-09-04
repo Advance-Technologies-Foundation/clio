@@ -98,6 +98,47 @@ public sealed class PageUpdateToolE2ETests : McpContractFixtureBase {
 	}
 
 	[Test]
+	[Description("The served update-page contract exposes the caller-supplied conflict `checksum` argument and states that `resources` is additions/overrides on top of the keys already persisted on the schema — the two contract changes for issue #1320, asserted over the real MCP surface rather than only in unit reflection.")]
+	[AllureTag(ToolName)]
+	[AllureName("update-page contract exposes the caller checksum baseline and additive resources")]
+	[AllureDescription("Fetches the update-page contract via get-tool-contract over the real clio MCP server and asserts the served input schema carries the checksum conflict-baseline field and the additive-resources wording introduced for issue #1320.")]
+	public async Task PageUpdateTool_Contract_Should_Expose_Checksum_And_Additive_Resources() {
+		// Arrange
+		await using var arrangeContext = Arrange(TimeSpan.FromMinutes(3));
+
+		// Act
+		CallToolResult contractResult = await arrangeContext.Session.CallToolAsync(
+			ToolContractGetTool.ToolName,
+			new Dictionary<string, object?> {
+				["args"] = new Dictionary<string, object?> {
+					["tool-names"] = new[] { ToolName }
+				}
+			},
+			arrangeContext.CancellationTokenSource.Token);
+		ToolContractGetResponse contracts =
+			EntitySchemaStructuredResultParser.Extract<ToolContractGetResponse>(contractResult);
+
+		// Assert
+		ToolContractDefinition contract = contracts.Tools!.Single(definition => definition.Name == ToolName);
+		contract.InputSchema.Properties.Should().Contain(field => field.Name == "checksum",
+			because: "without a checksum argument the caller's get-page baseline was silently dropped and the conflict check fell back to a possibly stale on-disk baseline (issue #1320)");
+		contract.InputSchema.Properties.Single(field => field.Name == "checksum").Description
+			.Should().Contain("get-page",
+				because: "the served contract must tell the caller which value to pass as the conflict baseline");
+		// PR #1356 review - "repeated" is a single generic word that a rewrite can keep while dropping the
+		// guarantee. Assert the two load-bearing halves of the additive wording instead: that the payload is
+		// additions/overrides, and that an already-stored key stays registered without being re-sent.
+		string servedResourcesDescription = contract.InputSchema.Properties
+			.Single(field => field.Name == "resources").Description;
+		servedResourcesDescription.Should().Contain("Additions/overrides",
+			because: "the served contract must name the payload semantics - a caller who reads it as a full replacement set re-sends every key on every save, which is the behavior issue #1320 reports");
+		servedResourcesDescription.Should().Contain("do NOT have to be repeated",
+			because: "the served contract must state the consequence: a key already stored on the schema stays registered, so it need not be re-sent on a later save (issue #1320)");
+		servedResourcesDescription.Should().NotContain("replaces the full set",
+			because: "no wording that promises replacement semantics is acceptable for an additive payload");
+	}
+
+	[Test]
 	[Description("update-page fails fast at the JavaScript-syntax gate before any remote call when the body contains an `await X = Y` (the actual production incident body), and the structured response carries the {line, column, message} per the AC.")]
 	[AllureTag(ToolName)]
 	[AllureName("update-page fails fast on JavaScript syntax error before any remote call")]

@@ -260,6 +260,54 @@ public sealed class PageBaselineGuardTests {
 			because: "a stale baseline must be removed when fresh metadata could not be obtained (fail toward no-check)");
 	}
 
+	[Test]
+	[Description("TryArm_ShouldKeepTheCallerChecksumButStillArmSchemaIdentity_WhenTheCallerPinnedAChecksum — pinning a checksum says nothing about schema identity, so dropping the baseline's schema UId and absent marker would silently disable the schema-uid-mismatch and schema-created-externally conflicts on the pinned path (issue #1320).")]
+	public void TryArm_ShouldKeepTheCallerChecksumButStillArmSchemaIdentity_WhenTheCallerPinnedAChecksum() {
+		// Arrange
+		AddMetaWithBaseline("dev", "caller-pinned-checksum");
+		PageUpdateOptions options = CreateOptions();
+		options.ExpectedChecksum = "caller-pinned-checksum";
+
+		// Act
+		(string metaFilePath, bool armed, string warning) = _guard.TryArm(options, OutputDirectory);
+
+		// Assert
+		armed.Should().BeTrue(
+			"because the matching on-disk baseline must still be refreshed after the save");
+		metaFilePath.Should().Be(_metaPath,
+			"because the guard must report the baseline it resolved");
+		options.ExpectedChecksum.Should().Be("caller-pinned-checksum",
+			"because the caller-supplied checksum is the authoritative conflict baseline and must not be overwritten from disk");
+		options.ExpectedSchemaUId.Should().Be(SchemaUId,
+			"because the schema-identity half of the baseline must stay armed so a schema-uid mismatch is still detected");
+		options.ExpectedSchemaAbsent.Should().BeFalse(
+			"because the baseline recorded an existing editable schema");
+		warning.Should().BeNull(
+			"because a readable, matching baseline whose checksum AGREES with the pin is the normal path and must not report anything");
+	}
+
+	[Test]
+	[Description("TryArm warns when the pinned checksum disagrees with the recorded baseline — the conflict-response bypass (copy actualChecksum, resubmit the same body) is otherwise byte-identical on the wire to a legitimate up-to-date save, and RefreshOrDrop then erases the only local record that the pin ever diverged (PR #1356 gate-3 review).")]
+	public void TryArm_ShouldWarn_WhenThePinnedChecksumDiffersFromTheRecordedBaseline() {
+		// Arrange
+		AddMetaWithBaseline("dev", "on-disk-checksum");
+		PageUpdateOptions options = CreateOptions();
+		options.ExpectedChecksum = "caller-pinned-checksum";
+
+		// Act
+		(_, bool armed, string warning) = _guard.TryArm(options, OutputDirectory);
+
+		// Assert
+		armed.Should().BeTrue(
+			"because the divergence is reported, not enforced — the pin still wins the comparison");
+		options.ExpectedChecksum.Should().Be("caller-pinned-checksum",
+			"because a warning must not change which checksum is authoritative");
+		warning.Should().NotBeNull(
+			"because a caller that took the conflict-response bypass and one that made a legitimate save must not be indistinguishable");
+		warning.Should().Contain("differs from the baseline",
+			"because the trace has to name what diverged");
+	}
+
 	// ---------------------------------------------------------------------------------------------
 	// ENG-95262 H-1: every meta.json touch runs under the schema's interprocess sentinel, and the
 	// sentinel is released before clio talks to Creatio.

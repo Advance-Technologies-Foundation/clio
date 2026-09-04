@@ -3039,6 +3039,29 @@ internal class RemoteEntitySchemaColumnManagerTests
 	}
 
 	[Test]
+	[Description("ENG-91044 on the SCALAR path: --title is stored under the effective culture just like a map entry, so Cyrillic text against an en-US profile must be rejected before the published, destructive write — not only when it arrives as --title-localizations (PR #1356 gate-3 review).")]
+	public void SetSchemaProperties_ShouldThrow_WhenTheScalarTitleScriptDoesNotMatchTheEffectiveCulture() {
+		// Arrange
+		_loadedSchema = CreateSchema(columns: [CreateGuidColumn("Id", IdColumnUId)]);
+		SetupLoadedSchema();
+		var options = new SetEntitySchemaPropertiesOptions {
+			Package = "UsrPkg",
+			SchemaName = "UsrVehicle",
+			Title = "Мова згадки"
+		};
+
+		// Act
+		Action act = () => _manager.SetSchemaProperties(options);
+
+		// Assert
+		act.Should().Throw<EntitySchemaDesignerException>()
+			.WithMessage("*title*",
+				because: "the equivalent --title-localizations {\"en-US\":\"Мова згадки\"} is already rejected, and the two spellings must not disagree");
+		_designerClient.DidNotReceive().SaveSchema(Arg.Any<EntityDesignSchemaDto>(),
+			Arg.Any<Clio.Command.RemoteCommandOptions>());
+	}
+
+	[Test]
 	[Description("Turns a silent server no-op into a clear error when the primary-display column is not persisted on readback.")]
 	public void SetSchemaProperties_ShouldThrow_WhenReadbackDoesNotReflectPrimaryDisplayColumn() {
 		// Arrange
@@ -3070,6 +3093,70 @@ internal class RemoteEntitySchemaColumnManagerTests
 		act.Should().Throw<EntitySchemaDesignerException>()
 			.WithMessage("*was not persisted*",
 				because: "a silent no-op on an unsupported target must surface as a clear failure, not a false success");
+	}
+
+	[Test]
+	[Description("AC-3, the shipped promise: cultures not named in the request keep the caption they already have. ApplySchemaCaption merges through SetLocalizableValue rather than replacing the collection, and a one-token change to ReplaceLocalizableValues would turn a rename into a silent wipe of every other language on a published, destructive write (PR #1356 gate-3 review).")]
+	public void SetSchemaProperties_ShouldKeepCaptionsOfCulturesNotNamed_WhenRenamingOne() {
+		// Arrange
+		_loadedSchema = CreateSchema(columns: [CreateGuidColumn("Id", IdColumnUId)]);
+		_loadedSchema.Caption = [
+			new Clio.Command.EntitySchemaDesigner.LocalizableStringDto { CultureName = "en-US", Value = "Vehicle" },
+			new Clio.Command.EntitySchemaDesigner.LocalizableStringDto { CultureName = "uk-UA", Value = "Транспорт" }
+		];
+		SetupLoadedSchema();
+		var options = new SetEntitySchemaPropertiesOptions {
+			Package = "UsrPkg",
+			SchemaName = "UsrVehicle",
+			Title = "Car"
+		};
+
+		// Act
+		_manager.SetSchemaProperties(options);
+
+		// Assert
+		_savedSchema.Should().NotBeNull(because: "a caption rename is a save");
+		_savedSchema.Caption.Should().Contain(value =>
+				value.CultureName == "en-US" && value.Value == "Car",
+			because: "the named culture takes the new caption");
+		_savedSchema.Caption.Should().Contain(value =>
+				value.CultureName == "uk-UA" && value.Value == "Транспорт",
+			because: "a culture the caller did not name must keep its existing caption - that is the promise shipped in the help text, the docs and the tool [Description]");
+	}
+
+	[Test]
+	[Description("The readback check compares the EXACT culture, not GetLocalizableValue. That helper falls back to en-US and then to the first entry, so a server that persisted only en-US would answer a uk-UA lookup with the en-US value and the check would pass on the very per-culture no-op it exists to catch (PR #1356 gate-3 review). Until now only a comment guarded this.")]
+	public void SetSchemaProperties_ShouldThrow_WhenOnlyAnotherCultureWasPersisted() {
+		// Arrange
+		_loadedSchema = CreateSchema(columns: [CreateGuidColumn("Id", IdColumnUId)]);
+		SetupLoadedSchema();
+		// A target version that ignores the uk-UA caption and persists only en-US: the reloaded schema
+		// carries an en-US entry that GetLocalizableValue would happily return for a uk-UA lookup.
+		_designerClient.SaveSchema(Arg.Any<EntityDesignSchemaDto>(), Arg.Any<Clio.Command.RemoteCommandOptions>())
+			.Returns(callInfo => {
+				_savedSchema = callInfo.ArgAt<EntityDesignSchemaDto>(0);
+				_savedSchema.Caption = [new Clio.Command.EntitySchemaDesigner.LocalizableStringDto {
+					CultureName = "en-US",
+					Value = "Автомобіль"
+				}];
+				return new Clio.Command.EntitySchemaDesigner.SaveDesignItemDesignerResponse {
+					Success = true,
+					SchemaUId = _savedSchema.UId
+				};
+			});
+		var options = new SetEntitySchemaPropertiesOptions {
+			Package = "UsrPkg",
+			SchemaName = "UsrVehicle",
+			ParsedTitleLocalizations = new Dictionary<string, string> { ["uk-UA"] = "Автомобіль" }
+		};
+
+		// Act
+		Action act = () => _manager.SetSchemaProperties(options);
+
+		// Assert
+		act.Should().Throw<EntitySchemaDesignerException>()
+			.WithMessage("*uk-UA*",
+				because: "a per-culture no-op must fail loudly instead of being reported as a successful rename - and it is the exact-culture lookup, not a fallback, that catches it");
 	}
 
 	private void SetupLoadedSchema() {
