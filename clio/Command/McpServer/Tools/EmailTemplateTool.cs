@@ -29,6 +29,13 @@ public sealed class EmailTemplateTool(IEmailTemplateContentService service) {
 
 	/// <summary>Reads legacy Content designer and current Beefree content for an email host.</summary>
 	[McpServerTool(Name = GetToolName, ReadOnly = true, Destructive = false, Idempotent = true, OpenWorld = false)]
+	[McpToolExecution(
+		Location = McpToolExecutionLocation.Worker,
+		Lifetime = McpToolExecutionLifetime.PerCall,
+		OperationFamily = McpToolOperationFamily.None,
+		BudgetPolicy = McpToolBudgetPolicy.ParentKillDefault,
+		RequiresClientRequests = McpToolClientRequests.None,
+		SharedFileResource = McpToolSharedFileResource.None)]
 	[Description(
 		"Reads the content of a Creatio marketing email (BulkEmail) or message template (EmailTemplate). " +
 		"Returns every current Beefree variant (BfEmailTemplate PageJson/PageHtml/AmpHtml) and every legacy " +
@@ -53,6 +60,13 @@ public sealed class EmailTemplateTool(IEmailTemplateContentService service) {
 
 	/// <summary>Updates or creates one guarded email-content variant.</summary>
 	[McpServerTool(Name = UpdateToolName, ReadOnly = false, Destructive = true, Idempotent = true, OpenWorld = false)]
+	[McpToolExecution(
+		Location = McpToolExecutionLocation.Worker,
+		Lifetime = McpToolExecutionLifetime.PerCall,
+		OperationFamily = McpToolOperationFamily.None,
+		BudgetPolicy = McpToolBudgetPolicy.ParentKillDefault,
+		RequiresClientRequests = McpToolClientRequests.None,
+		SharedFileResource = McpToolSharedFileResource.None)]
 	[Description(
 		"Updates one Creatio email-content variant with an optimistic checksum guard. Supports current Beefree " +
 		"storage and legacy content for both BulkEmail and EmailTemplate hosts. A Beefree update creates the " +
