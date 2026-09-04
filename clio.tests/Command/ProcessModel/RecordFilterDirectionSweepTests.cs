@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
 using System.Linq;
+using System.Text;
 using System.Text.RegularExpressions;
 using FluentAssertions;
 using NUnit.Framework;
@@ -48,7 +49,7 @@ public sealed class RecordFilterDirectionSweepTests {
 	// Phrasings that describe the INERT state. Paired with an absent-filter subject they invert the fact.
 	private const string InertWords =
 		@"match(es)?\s+no\s+records|changes?\s+nothing|changes?\s+no\s+permissions|cannot\s+act|"
-		+ @"is\s+inert|silent\s+no-?op|does\s+nothing";
+		+ @"\binert\b|silent\s+no-?op|does\s+nothing";
 
 	// Phrasings that describe the WIDE state. Paired with a conditionless subject they invert it too.
 	private const string WideWords =
@@ -56,9 +57,14 @@ public sealed class RecordFilterDirectionSweepTests {
 
 	// Subjects. "Empty filter" is deliberately absent from both: it is the ambiguous phrase that caused
 	// the inversion, and it is banned outright by EmptyFilterPhrase below.
+	// Absence is described two ways and BOTH have to be here. As a noun ("no record filter") and as the ACTION
+	// that produces it ("clearing its record filter", "the record filter was CLEARED"). The action phrasing is
+	// the one the modify path and the package notice actually use, and leaving it out is how this sweep passed
+	// over a live "CLEARING its record filter makes it match no records" that a merge had reintroduced.
 	private const string AbsentSubject =
 		@"no\s+record\s+filter|NO\s+filter|without\s+a\s+filter|absent\s+filter|filter\s+is\s+absent|"
-		+ @"no\s+filter\s+at\s+all";
+		+ @"no\s+filter\s+at\s+all|clear(?:s|ed|ing)?\s+(?:its\s+|the\s+|a\s+)?record\s+filter|"
+		+ @"record\s+filter\s+(?:was|is|were)\s+cleared|filter\s+(?:was|is)\s+CLEARED";
 
 	private const string ConditionlessSubject =
 		@"no\s+conditions|conditionless|carries\s+no\s+condition";
@@ -76,11 +82,13 @@ public sealed class RecordFilterDirectionSweepTests {
 	/// </summary>
 	private static readonly string[] ExemptionMarkers = [
 		"NotContain", "is a FAIL", "must not come back", "CORRECTED", "is the WIDEST", "is the WIDE",
-		"not the inert", "rather than wide", "NOT to none", "would be false", "must never",
+		"not the inert", "rather than wide", "NOT to none", "would be false", "must never", "rather than inert",
 		// Hypotheticals: the claim is named as the MISTAKE being prevented, not asserted. Kept as exact
 		// phrases rather than the bare word "would", which would exempt a real inversion phrased as a
 		// prediction ("an element with no filter would match no records").
-		"would tell the caller", "Calling that"
+		"would tell the caller", "Calling that",
+		// The prevented-failure shape: the claim names what a reader must NOT be told, not what is true.
+		"gets told", "is how a caller", "invites a setFilter"
 	];
 
 	/// <summary>
@@ -90,6 +98,14 @@ public sealed class RecordFilterDirectionSweepTests {
 	/// hypothetical: it silently swallowed a planted inversion while this fixture reported green.
 	/// </summary>
 	private const int ExemptionRadius = 130;
+
+	/// <summary>
+	/// Lines joined before matching. Prose here wraps constantly - C# string concatenation, XML doc comments,
+	/// hard-wrapped Markdown - so the subject and its claim routinely sit on DIFFERENT lines ("...leaves the
+	/// element" / "inert - it changes nothing"). Matching line by line cannot see those at all, which is half
+	/// of what this sweep is for.
+	/// </summary>
+	private const int WindowLines = 3;
 
 	private static readonly string[] SearchedExtensions =
 		[".cs", ".md", ".json", ".txt"];
@@ -178,7 +194,7 @@ public sealed class RecordFilterDirectionSweepTests {
 			}
 
 			for (int i = 0; i < lines.Length; i++) {
-				string line = lines[i];
+				string line = Window(lines, i);
 				if (!inversion.IsMatch(line)) {
 					continue;
 				}
@@ -237,6 +253,18 @@ public sealed class RecordFilterDirectionSweepTests {
 		$"{Path.DirectorySeparatorChar}node_modules{Path.DirectorySeparatorChar}",
 		$"{Path.DirectorySeparatorChar}.vs{Path.DirectorySeparatorChar}"
 	];
+
+	// One logical line: this line plus the next few, with the syntax that only exists because the text wraps
+	// (quote marks and leading concatenation plus signs) flattened away, so a sentence split across a string
+	// concatenation reads as the sentence it is.
+	private static string Window(string[] lines, int index) {
+		StringBuilder joined = new();
+		for (int offset = 0; offset < WindowLines && index + offset < lines.Length; offset++) {
+			joined.Append(lines[index + offset].Replace("\"", " ").TrimStart('	', ' ', '+', '/')).Append(' ');
+		}
+
+		return joined.ToString();
+	}
 
 	private static bool IsRepositoryRoot(DirectoryInfo directory) {
 		string marker = Path.Combine(directory.FullName, ".git");

@@ -66,3 +66,23 @@ branch): 35/35 manual cases, including live grant/revoke runs checked with `get-
 covers the grant/revoke paths, NOT the filter-state semantics above. The remaining guards were read from
 the disassembled `ChangeAdminRightsUserTask` and are recorded in
 `docs/change-access-rights-element-capture.md` in `cli-process-builder`.
+
+**RELEASE GATE — the `[RequiresPackage]` floor does not cover this block.** No released archive contains
+the element. The bundled `1.4.0.40` archive arrived with ENG-96325 for an unrelated feature and carries
+neither `ChangeAccessRightsApplier` nor `AccessRightsCollectionBinder`, so the declarative precondition on
+`CreateBusinessProcessOptions` / `ModifyBusinessProcessOptions` PASSES on an environment that silently
+discards the block, and `install-process-builder` installs that same archive — satisfying the floor and
+changing nothing. The read-back warning above is the only protection until that changes.
+
+This must therefore NOT ship in a clio release until all three hold:
+
+1. `crt-process-builder#40` merges.
+2. `rebundle-process-builder.ps1` produces an archive whose ProcessBuilder source tree CONTAINS the
+   element (verify by decompressing and grepping for `ChangeAccessRightsApplier`, not by reading the
+   version string — the version cannot express this).
+3. **Both** `[RequiresPackage]` literals move PAST that version. Without this the precondition stays
+   decorative even after the rebundle, because `1.4.0.40` keeps satisfying it.
+
+The `<TBD-PACKAGE-VERSION>` placeholder in `clio-knowledge`'s `access-rights.md` resolves from the same
+rebundle, so it is one gate rather than two. Raised by @b-horodyskyi on clio#1335, who verified the
+archive's symbol inventory independently.

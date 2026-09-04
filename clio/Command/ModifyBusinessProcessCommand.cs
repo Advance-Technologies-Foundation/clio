@@ -27,6 +27,17 @@ namespace Clio.Command;
 // input-contract difference — the email block's 1.2.0.1 floor set this precedent and is subsumed here.
 // The guard fixture asserts the shipped archive satisfies the literal, so clio can never demand a version
 // it does not itself carry.
+// NOTHING IN THIS FLOOR COVERS THE accessRights BLOCK. No released archive contains the Change access
+// rights element at all: the bundled 1.4.0.40 archive arrived with ENG-96325 for an unrelated feature and
+// carries neither ChangeAccessRightsApplier nor AccessRightsCollectionBinder. So this precondition PASSES
+// on an environment whose server silently discards the block, and install-process-builder installs that
+// same archive - satisfying the floor and changing nothing. AccessRightsBlockExpectation's post-operation
+// read-back is the ONLY guard for that block until a rebundle carries the element.
+// Release gate, and (c) is the part that is easy to miss: this must not ship in a clio release until
+// (a) crt-process-builder#40 merges, (b) rebundle-process-builder.ps1 produces an archive whose source
+// tree contains the element, and (c) BOTH literals here and on the other command move PAST that version -
+// because 1.4.0.40 would otherwise keep satisfying them and the precondition would stay decorative even
+// after the rebundle exists.
 [RequiresPackage(BundledPackages.ProcessBuilderPackageName, "1.4.0.40",
 	Hint = BundledPackages.ProcessBuilderInstallHint)]
 public sealed class ModifyBusinessProcessOptions : EnvironmentOptions {
