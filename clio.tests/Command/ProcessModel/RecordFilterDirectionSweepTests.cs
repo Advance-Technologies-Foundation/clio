@@ -63,7 +63,7 @@ public sealed class RecordFilterDirectionSweepTests {
 	// over a live "CLEARING its record filter makes it match no records" that a merge had reintroduced.
 	private const string AbsentSubject =
 		@"no\s+record\s+filter|NO\s+filter|without\s+a\s+filter|absent\s+filter|filter\s+is\s+absent|"
-		+ @"no\s+filter\s+at\s+all|clear(?:s|ed|ing)?\s+(?:its\s+|the\s+|a\s+)?record\s+filter|"
+		+ @"no\s+filter\s+at\s+all|clear(?:s|ed|ing)?\s+(?:\w+\s+){0,3}?record\s+filter|"
 		+ @"record\s+filter\s+(?:was|is|were)\s+cleared|filter\s+(?:was|is)\s+CLEARED";
 
 	private const string ConditionlessSubject =
