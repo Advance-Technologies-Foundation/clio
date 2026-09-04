@@ -169,6 +169,36 @@ public sealed class ValidateProcessGraphToolE2ETests {
 			because: "the R1 violation must be reported in the response findings");
 	}
 
+	[Test]
+	[Description("Over the real MCP path, an unknown flow-kind is REFUSED by the tool rather than validated as a plain flow. The refusal travels back through the MCP envelope, which is the only place a caller sees it: a silent coercion would return success:true with findings about a graph the caller never described, and nothing in the envelope would say so.")]
+	[AllureTag(ToolName)]
+	[AllureName("validate-process-graph refuses an unknown flow-kind")]
+	public async Task ValidateProcessGraph_Should_RefuseCall_WhenFlowKindIsUnknown() {
+		// Arrange
+		await using ArrangeContext arrangeContext = await ArrangeAsync();
+		string environmentName = await ResolveEnvironmentOrIgnoreAsync();
+		Dictionary<string, object?> graph = new() {
+			["environment-name"] = environmentName,
+			["nodes"] = new[] {
+				Node("s", "startEvent"), Node("a", "activityUserTask"), Node("e", "endEvent")
+			},
+			["edges"] = new[] {
+				Edge("s", "a", "sequence"), Edge("a", "e", "exclusive")
+			}
+		};
+
+		// Act
+		CallToolResult callResult = await CallToolAsync(arrangeContext, graph);
+		ValidateProcessGraphResponse response = EntitySchemaStructuredResultParser.Extract<ValidateProcessGraphResponse>(callResult);
+
+		// Assert
+		response.Success.Should().BeFalse(
+			because: "'exclusive' is not one of the three flow kinds, and coercing it to a plain flow would "
+				+ "answer about a graph the caller did not send");
+		response.Error.Should().Contain("exclusive",
+			because: "the rejected value has to reach the caller through the MCP envelope to be actionable");
+	}
+
 	// Ignores on BOTH conditions that make these tests meaningless: no environment configured, and a configured
 	// environment that cannot be reached. Checking only the former made an unreachable stand FAIL the fixture
 	// instead of skipping it, which is how every other Sandbox fixture here behaves and what the tier's

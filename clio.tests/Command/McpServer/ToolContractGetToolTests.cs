@@ -1150,6 +1150,140 @@ public sealed class ToolContractGetToolTests {
 
 	[Test]
 	[Category("Unit")]
+	[Description("The curated get-page output contract describes exactly the properties PageGetResponse can serialize - derived from the TYPE, not from a hand-typed envelope, so a new or renamed property fails this test instead of drifting out of the contract (issue #1185, PR #1351 review).")]
+	public void ToolContractGet_Should_Describe_GetPage_Success_Envelope_As_Serialized_By_The_Tool() {
+		// Arrange
+		ToolContractGetTool tool = new();
+		// The oracle is the TYPE, not an instance. A hand-built envelope is a second copy of the very shape
+		// this test exists to pin: assigning a new property in PageGetTool.GetPage would leave the copy - and
+		// therefore the test - unchanged, and the contract would drift again silently. Reflection over
+		// PageGetResponse cannot go stale that way, and it is also immune to the second trap: whether `error`
+		// carries WhenWritingNull is a serializer detail of one INSTANCE, while the contract must describe the
+		// property either way (the failure path does return it).
+		// The CLI/MCP split is declared on the properties themselves ([CliOnlyEnvelopeProperty] on Raw and
+		// Bundle) rather than restated here, so a NEW response property is required in the contract by
+		// default and only a deliberate CLI-only addition opts out - which is exactly the drift issue #1185
+		// reported, made machine-checkable.
+		HashSet<string> mcpEnvelopeProperties = typeof(PageGetResponse)
+			.GetProperties(BindingFlags.Public | BindingFlags.Instance)
+			.Where(property => property.GetCustomAttribute<System.Text.Json.Serialization.JsonIgnoreAttribute>()?.Condition
+				is not JsonIgnoreCondition.Always)
+			.Where(property => property.GetCustomAttribute<CliOnlyEnvelopePropertyAttribute>() is null)
+			.Select(property => property.GetCustomAttribute<JsonPropertyNameAttribute>()?.Name ?? property.Name)
+			.ToHashSet(StringComparer.Ordinal);
+
+		// Act
+		ToolContractGetResponse result = tool.GetToolContracts(new ToolContractGetArgs([PageGetTool.ToolName]));
+
+		// Assert
+		result.Success.Should().BeTrue(
+			because: "get-page is a curated tool and its contract must resolve");
+		ToolContractDefinition pageGetContract = result.Tools!.Single();
+		HashSet<string> contractFields = pageGetContract.OutputContract.Fields
+			.Select(field => field.Name)
+			.ToHashSet(StringComparer.Ordinal);
+		contractFields.Should().BeEquivalentTo(mcpEnvelopeProperties,
+			because: "the published get-page contract must describe exactly the properties the response type can serialize - the drift between them is the defect reported in issue #1185");
+		contractFields.Should().NotContain("raw",
+			because: "the successful MCP envelope materializes the editable body at files.bodyFile instead of returning raw.body");
+		contractFields.Should().NotContain("bundle",
+			because: "the successful MCP envelope materializes the merged bundle at files.bundleFile instead of inlining it");
+		pageGetContract.OutputContract.Fields.Should().Contain(field =>
+				field.Name == "files" && field.Description.Contains("bodyFile"),
+			because: "callers need the contract to name the property that carries the editable JavaScript source path");
+		// PR #1351 review - the INPUT half is derived from PageGetArgs by reflection, not spot-checked. A
+		// `Contain(name == "output-directory")` cannot fail for the NEXT property added to the record, which is
+		// exactly how this defect arose: OutputDirectory existed and was simply never published. Mirrors the
+		// ODataReadArgs oracle above.
+		string[] boundPageGetArguments = typeof(PageGetArgs)
+			.GetProperties(BindingFlags.Public | BindingFlags.Instance)
+			.Where(property => property.GetCustomAttribute<JsonExtensionDataAttribute>() is null)
+			.Select(property => property.GetCustomAttribute<JsonPropertyNameAttribute>()?.Name ?? property.Name)
+			.ToArray();
+		boundPageGetArguments.Should().NotBeEmpty(
+			because: "an empty reflected set would make the equivalence assertion below pass vacuously");
+		boundPageGetArguments.Should().Contain("output-directory",
+			because: "PageGetArgs binds the anchor parameter, and it is the one issue #1185 reported as unpublished");
+		pageGetContract.InputSchema.Properties.Select(property => property.Name).Should()
+			.BeEquivalentTo(boundPageGetArguments,
+			because: "the curated contract must advertise every argument the real binder accepts and no stale ones - a spot check leaves the next unpublished property undiscoverable, which is the defect issue #1185 reported");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("A successful get-page envelope whose best-effort checksum probe returned nothing omits the `editable` key entirely, and the contract says so - an agent must read its absence as 'baseline unavailable', not as 'no editable schema exists' (PR #1351 review).")]
+	public void ToolContractGet_Should_Document_GetPage_Editable_As_Optional() {
+		// Arrange
+		ToolContractGetTool tool = new();
+		PageGetResponse degradedEnvelope = new() {
+			Success = true,
+			Page = new PageMetadataInfo { SchemaName = "UsrTaskApp_FormPage" },
+			Editable = null,
+			Files = new PageGetFilesInfo { BodyFile = "body.js", BundleFile = "bundle.json", MetaFile = "meta.json" }
+		};
+
+		// Act
+		HashSet<string> serializedKeys = JsonSerializer
+			.Deserialize<Dictionary<string, JsonElement>>(JsonSerializer.Serialize(degradedEnvelope))!
+			.Keys
+			.ToHashSet(StringComparer.Ordinal);
+		ToolContractDefinition pageGetContract = tool
+			.GetToolContracts(new ToolContractGetArgs([PageGetTool.ToolName])).Tools!.Single();
+
+		// Assert
+		serializedKeys.Should().NotContain("editable",
+			because: "PageGetResponse.Editable carries JsonIgnore(WhenWritingNull), so a failed checksum probe omits the key rather than writing null");
+		serializedKeys.Should().Contain("success",
+			because: "the degraded capture is still a SUCCESSFUL get-page - which is exactly why the contract must not promise `editable` unconditionally");
+		pageGetContract.OutputContract.Fields.Single(field => field.Name == "editable").Description.Should()
+			.Contain("OPTIONAL",
+			because: "an agent that reads editable.editableSchemaExists to choose create-vs-update must be told the key can be absent");
+		// PR #1351 review - a positive assertion over the text that actually ships. The previous
+		// NotContain named a literal present nowhere in the contract, so it could not fail: a rewrite that
+		// again promised `editable` unconditionally ("always returns page, files and editable") passed it
+		// untouched.
+		pageGetContract.Description.Should().Contain("present only when",
+			because: "the description must state the CONDITION under which `editable` appears, not merely avoid one phrasing of an unconditional promise");
+		pageGetContract.Description.Should().NotContain("always returns",
+			because: "no wording of an unconditional promise is acceptable for a best-effort capture");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("The get-page contract states that the tool REPLACES .clio-pages/{schema-name}/ on every call and that the returned paths live on the MCP server host - both are agent-facing consequences the earlier contract omitted (PR #1351 review).")]
+	public void ToolContractGet_Should_Disclose_GetPage_Directory_Replacement_And_Path_Locality() {
+		// Arrange
+		ToolContractGetTool tool = new();
+
+		// Act
+		ToolContractDefinition pageGetContract = tool
+			.GetToolContracts(new ToolContractGetArgs([PageGetTool.ToolName])).Tools!.Single();
+		string filesDescription = pageGetContract.OutputContract.Fields.Single(field => field.Name == "files").Description;
+
+		// Assert
+		pageGetContract.Description.Should().Contain("REPLACES",
+			because: "get-page deletes .clio-pages/{schema-name}/ recursively before rewriting it, so an agent editing body.js in place loses the edit on the next call");
+		filesDescription.Should().Contain("deleted and rewritten",
+			because: "the field that publishes the edit target must carry the warning about that target being replaced");
+		filesDescription.Should().Contain("MCP SERVER host",
+			because: "a remote mcp-http client receives absolute paths it cannot open, and the contract must say so rather than silently pointing at an unreachable path");
+		// PR #1351 review - what an ordinary MCP session reads is the RESIDENT [Description] on PageGetTool.GetPage
+		// that `tools/list` serves, not this curated get-tool-contract entry. Both agent-facing consequences must
+		// be in that attribute too, or the two halves of the same contract disagree.
+		string residentDescription = typeof(PageGetTool)
+			.GetMethod(nameof(PageGetTool.GetPage))!
+			.GetCustomAttribute<System.ComponentModel.DescriptionAttribute>()!
+			.Description;
+		residentDescription.Should().Contain("REPLACES",
+			because: "tools/list serves this attribute, so the destroyed-in-place-edit warning has to be here and not only in the curated contract");
+		residentDescription.Should().Contain("MCP SERVER host",
+			because: "a remote client reading only tools/list must still learn the returned paths are not on its own filesystem");
+		residentDescription.Should().Contain("Destructive=false",
+			because: "the recursive delete is confined to the clio-owned .clio-pages scratch tree, and the payload's Destructive=false is only defensible if the description says so");
+	}
+
+	[Test]
+	[Category("Unit")]
 	[Description("Returns maintenance-oriented canonical flows for discovery inspection and canonical page mutation tools.")]
 	public void ToolContractGet_Should_Return_Maintenance_Oriented_Canonical_Flows() {
 		// Arrange
@@ -1247,13 +1381,30 @@ public sealed class ToolContractGetToolTests {
 			because: "update-page should point callers back to the canonical sync-pages workflow");
 		pageSyncContract.InputSchema.Properties.Should().Contain(field =>
 				field.Name == "pages" &&
-				field.Description.Contains("get-page.raw.body") &&
+				field.Description.Contains("get-page.files.bodyFile") &&
 				field.Description.Contains("localizable string"),
-			because: "sync-pages should advertise raw.body as the source of page write payloads and clarify resources as localizable strings");
+			because: "sync-pages should advertise the materialized body file as the source of page write payloads and clarify resources as localizable strings");
+		pageSyncContract.InputSchema.Properties.Should().NotContain(field =>
+				field.Name == "pages" &&
+				field.Description.Contains("raw.body"),
+			because: "get-page no longer returns raw.body over MCP, so sync-pages must not point callers at it");
 		pageUpdateContract.InputSchema.Properties.Should().Contain(field =>
 				field.Name == "body" &&
-				field.Description.Contains("get-page.raw.body"),
-			because: "update-page should advertise raw.body as the source of fallback single-page saves");
+				field.Description.Contains("get-page.files.bodyFile"),
+			because: "update-page should advertise the materialized body file as the source of fallback single-page saves");
+		// PR #1351 review - validate-page is the THIRD consumer named in issue #1185, so its body contract must stay
+		// guarded against drift. Since issue #1305 validate-page accepts `body-file`, so the get-page -> edit ->
+		// validate-page loop closes through the materialized file instead of an inline-only body.
+		ToolContractDefinition pageValidateContract = tool
+			.GetToolContracts(new ToolContractGetArgs([PageValidateTool.ToolName])).Tools!.Single();
+		string pageValidateBodyDescription = pageValidateContract.InputSchema.Properties
+			.Single(field => field.Name == "body").Description;
+		pageValidateContract.InputSchema.Properties.Should().Contain(field => field.Name == "body-file",
+			because: "validate-page accepts a body file, which is what makes the get-page -> edit -> validate-page loop composable without inline JSON escaping");
+		pageValidateBodyDescription.Should().Contain("body-file",
+			because: "the body contract must tell callers the file alternative exists, otherwise an agent will keep inlining large bodies");
+		pageValidateBodyDescription.Should().NotContain("raw.body",
+			because: "get-page no longer returns raw.body over MCP, so validate-page must not point callers at it - the same drift the sync-pages guard above catches");
 		pageUpdateContract.InputSchema.Properties.Should().Contain(field =>
 				field.Name == "resources" &&
 				field.Description.Contains("JSON object string"),

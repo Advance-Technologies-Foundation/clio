@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Globalization;
 using Clio.Command;
@@ -67,7 +67,7 @@ namespace Clio.Tests
         [TestCase(typeof(CreateBusinessProcessOptions))]
         [TestCase(typeof(ModifyBusinessProcessOptions))]
         [Test]
-        [Description("Create and Modify declare a VERSIONED requirement naming the newest input form they send that an older server refuses or mishandles: today the lookup-constant contract of the 1.4.0.40 archive (ENG-96325) — a mapping 'value' on a Lookup target may carry an already-composed [#Lookup.{objectUId}.{recordId}#] that the server decodes to the bare record id, which every earlier server rejects as 'not a bare Guid'. The same shape produced the previous 1.3.1.1 literal (the element-level performer block and the reference-existence guard, both still covered by this floor), and the 1.2.0.1 email floor before it. NOT a security floor: the raw-Select display-name read that 1.4.0.40 replaced with a rights-aware entity read never shipped in a released archive. This is the doc's rule applied ('add a literal in the commit where a command starts calling an operation an older server does not have'), and the bundled-archive guard asserts the shipped archive satisfies the literal, so it can never demand a version clio does not carry.")]
+        [Description("Create and Modify declare a VERSIONED requirement naming the newest operation they send that an older server does not have: `setFlowCondition`, which an older dispatch registry rejects by token. The floor's NUMBER is now set by the message contract rather than by a tightened validator. Until 1.4.0.41 the package validated formulas itself, and the floor tracked when each of its refusals arrived, measured one archive at a time (.32, .35, .37). .41 DELETED that validator, and .42 corrected the rewrite that replaced it (every serialised error in one message, not just the first; an element-scoped reference named as such), because the platform's own pre-save gate already refuses every class of bad formula — a flow condition included, measured with the package's guards built out and installed. So the floor no longer says 'below this a bad formula is not refused'; it says 'below this a refusal reads differently', which is what the shipped tool descriptions promise. Do not lower it below .37 either: the refusals that survive the collapse (the activity-result guard, the element-retarget scan) were measured there. The bundled-archive guard asserts the shipped archive satisfies the literal, so it can never demand a version clio does not carry.")]
         public void OptionsType_ShouldDeclareVersionedProcessBuilderRequirement_WhenTheCommandShipsVersionedOperations(
             Type optionsType)
         {
@@ -77,16 +77,30 @@ namespace Clio.Tests
             // Assert
             requirement.Should().NotBeNull(
                 because: $"{optionsType.Name} must carry the declarative {BundledPackages.ProcessBuilderPackageName} requirement so the MCP gate fires");
-            requirement!.Version.Should().Be("1.4.0.40",
-                because: "the lookup-constant contract these commands send — a mapping 'value' on a Lookup target "
-                    + "may carry an already-composed [#Lookup.{objectUId}.{recordId}#], decoded server-side to the "
-                    + "bare record id — shipped in the 1.4.0.40 archive (ENG-96325): every earlier server refuses "
-                    + "that input as 'not a bare Guid', the same accepts-what-an-older-one-refuses shape that "
-                    + "produced the previous 1.3.1.1 literal (the performer block and reference-existence guard, "
-                    + "still covered). Not a security floor — the raw-Select name read 1.4.0.40 replaced never "
-                    + "shipped. The literal is what fails CLOSED (the convergence rule only WARNS when it cannot "
-                    + "read the archive or the version carries a pre-release suffix); when the next versioned "
-                    + "input form ships, move this pin WITH the rebundle in the same commit");
+            requirement!.Version.Should().Be("1.4.0.44",
+                because: "TWO reasons stand behind this floor. ENG-96325's lookup-constant contract shipped in the 1.4.0.40 archive - a mappings[] value on a Lookup target may carry an already-composed macro that an older server rejects as 'not a bare Guid' - and setFlowCondition is an operation an older server does not carry AT ALL — its dispatch "
+                    + "registry rejects the token, which reads to a caller as a clio bug rather than a stale "
+                    + "environment — and that alone justifies a versioned floor. What sets the NUMBER changed with "
+                    + "the formula collapse. The formula half used to be a TIGHTENED VALIDATOR, measured one "
+                    + "archive at a time up to .37; .41 is the version that REMOVED that validator, on the "
+                    + "measurement that the platform's own pre-save gate already refuses every class of bad "
+                    + "formula, a flow condition included (spec/eng-95891-formula-expressions/"
+                    + "eng-95891-formula-expressions-save-gate-probe.md). So .41 checks strictly LESS than .37 "
+                    + "did, an environment between them refuses at least as much, and the floor now buys the "
+                    + "MESSAGE contract the tool descriptions promise rather than the existence of a refusal: "
+                    + "below .41 a bad formula is refused in the package's own wording, and an unresolvable "
+                    + "parameter reference comes back as the platform's serialised {ErrorType:2,ErrorData:{…}} "
+                    + "rather than as a sentence, because PlatformValidationMessage is not there. Do NOT lower it "
+                    + "to .37 on the grounds that .37 also refuses — it does, with different text — and do not "
+                    + "lower it below .37 on any grounds, because the refusals that SURVIVE the collapse were "
+                    + "measured there: the activity-result guard in .32, and the element-retarget refusal's two "
+                    + "fail-open holes (a dependency scan that failed OPEN on a sub-process reference, and an "
+                    + "element UId matched in D-form only) closed in .37. The platform-grammar element segment "
+                    + ".35 added is deliberately NOT in that list any more: the strict pattern it mirrored is used "
+                    + "only for data-source filter map paths, so a parameter value's element scoping survived the "
+                    + "looser form and the refusal protected nothing. "
+                    + "This subsumes the earlier 1.3.1.1 performer floor and the 1.2.0.1 email floor. When the "
+                    + "next versioned operation ships, move this pin WITH the rebundle in the same commit");
         }
 
         [Test]

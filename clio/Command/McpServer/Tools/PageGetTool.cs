@@ -28,10 +28,15 @@ public sealed class PageGetTool(
 		BudgetPolicy = McpToolBudgetPolicy.ParentKillDefault,
 		RequiresClientRequests = McpToolClientRequests.None,
 		SharedFileResource = McpToolSharedFileResource.ClioPages)]
+	// The tools/list payload is byte-budgeted (McpProfileGatingTests, 32768 B cap), so this
+	// description stays terse while still carrying the agent-facing consequences
+	// ToolContractGetToolTests pins here; the full contract lives in ToolContractCatalog.BuildPageGet.
 	[Description(
-		"Get a Freedom UI page. Writes body.js (editable own-body for update-page), bundle.json (full merged view; minified JSON — parse with jq/json, not grep), and meta.json to .clio-pages/{schema-name}/ and returns file paths. " +
-		"Pass output-directory to anchor output at your project root. " +
-		"BEFORE editing the body call get-guidance `page-modification` (or `mobile-page-modification` when meta.json shows schema-type == \"mobile\") — its pre-edit checklist routes visibility/lookup-filter work to business rules and other changes to the correct page-authoring guide.")]
+		"Get a Freedom UI page. Writes body.js (editable body), bundle.json (merged view) and meta.json to .clio-pages/{schema-name}/, returning paths. " +
+		"REPLACES that directory every call (recursive delete of this clio scratch tree; Destructive=false), so in-place edits are lost; save via update-page/sync-pages. " +
+		"Paths are on the MCP SERVER host, unreadable off that filesystem. " +
+		"output-directory anchors it at your project root. " +
+		"BEFORE editing, call get-guidance `page-modification` (`mobile-page-modification` if meta.json says schema-type mobile); follow its pre-edit checklist.")]
 	public PageGetResponse GetPage(
 		[Description("schema-name (required); environment-name preferred; uri/login/password fallback only.")]
 		[Required] PageGetArgs args) {
