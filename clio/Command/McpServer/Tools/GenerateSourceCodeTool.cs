@@ -26,6 +26,9 @@ public sealed class GenerateSourceCodeTool(
 	/// </summary>
 	internal const string GenerateSourceCodeToolName = "generate-source-code";
 
+	/// <summary>The canonical kebab-case name of this tool's timeout field.</summary>
+	private const string TimeoutFieldName = "timeout";
+
 	/// <summary>
 	/// Mis-spellings of this tool's own fields, mapped to their canonical kebab-case names. <c>timeOut</c> is
 	/// the likeliest one because it matches the C# property (<c>RemoteCommandOptions.TimeOut</c>), so it earns a
@@ -33,10 +36,10 @@ public sealed class GenerateSourceCodeTool(
 	/// </summary>
 	private static readonly IReadOnlyDictionary<string, string> ArgsFieldAliases =
 		new Dictionary<string, string>(StringComparer.Ordinal) {
-			["timeOut"] = "timeout",
-			["time_out"] = "timeout",
-			["timeoutMs"] = "timeout",
-			["timeout-ms"] = "timeout"
+			["timeOut"] = TimeoutFieldName,
+			["time_out"] = TimeoutFieldName,
+			["timeoutMs"] = TimeoutFieldName,
+			["timeout-ms"] = TimeoutFieldName
 		}.Concat(McpToolArgumentSupport.EnvironmentNameAliases)
 		.ToDictionary(pair => pair.Key, pair => pair.Value, StringComparer.Ordinal);
 

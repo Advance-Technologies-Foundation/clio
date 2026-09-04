@@ -49,6 +49,8 @@ public sealed class SchemaSyncTool(
 	private const string ReconciledOutcome = "reconciled";
 	private const string AlreadySatisfiedOutcome = "already-satisfied";
 	private const string CollisionOutcome = "collision";
+	private const string FailedStatus = "failed";
+	private const string SeedRowsFieldName = "seed-rows";
 
 	/// <summary>
 	/// Total number of attempts (including the first) for an operation whose failure is classified as a
@@ -368,7 +370,7 @@ public sealed class SchemaSyncTool(
 		// already-satisfied — route through it). Only default it for results that never reach FinalizeResult
 		// and set no status themselves: validation failures, the unknown-op result, the collision result, the
 		// missing-update-operations error, and the deterministic catch-path failures.
-		result.Status ??= result.Success ? "completed" : "failed";
+		result.Status ??= result.Success ? "completed" : FailedStatus;
 		return result;
 	}
 
@@ -428,7 +430,7 @@ public sealed class SchemaSyncTool(
 				new SchemaSyncOperationResult {
 					Type = ToolName,
 					Success = false,
-					Status = "failed",
+					Status = FailedStatus,
 					// NO operation ran, and none was even examined - the arguments were rejected before the
 					// `operations` array was materialized. Leaving the default 0 here serialized
 					// `operation-index: 0`, telling a caller that operations[0] is the culprit; an agent keying
@@ -451,13 +453,13 @@ public sealed class SchemaSyncTool(
 	/// </summary>
 	private static readonly IReadOnlyDictionary<string, string> OperationFieldAliases =
 		new Dictionary<string, string>(StringComparer.Ordinal) {
-			["seed-data"] = "seed-rows",
-			["seedData"] = "seed-rows",
-			["seed_data"] = "seed-rows",
-			["seedRows"] = "seed-rows",
-			["seed_rows"] = "seed-rows",
-			["rows"] = "seed-rows",
-			["values"] = "seed-rows",
+			["seed-data"] = SeedRowsFieldName,
+			["seedData"] = SeedRowsFieldName,
+			["seed_data"] = SeedRowsFieldName,
+			["seedRows"] = SeedRowsFieldName,
+			["seed_rows"] = SeedRowsFieldName,
+			["rows"] = SeedRowsFieldName,
+			["values"] = SeedRowsFieldName,
 			["name"] = "schema-name",
 			["schemaName"] = "schema-name",
 			["schema_name"] = "schema-name",
@@ -1167,7 +1169,7 @@ public sealed class SchemaSyncTool(
 				Type = operationName,
 				SchemaName = schemaName,
 				Success = false,
-				Status = "failed",
+				Status = FailedStatus,
 				Error = SensitiveErrorTextRedactor.Redact(execution.CaughtException.Message),
 				Messages = messages,
 				Attempts = attempts
@@ -1178,7 +1180,7 @@ public sealed class SchemaSyncTool(
 			Type = operationName,
 			SchemaName = schemaName,
 			Success = success,
-			Status = success ? "completed" : "failed",
+			Status = success ? "completed" : FailedStatus,
 			Outcome = success ? outcome : null,
 			Messages = messages,
 			Error = BuildOperationError(operationName, execution.ExitCode, messages),
