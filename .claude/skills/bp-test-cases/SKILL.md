@@ -1,0 +1,112 @@
+---
+name: bp-test-cases
+description: Author an AI-executable manual test prompt used to debug CrtProcessBuilder, clio, and the clio knowledge library on a real stand, and publish it on the Jira issue as a comment. Use after process functionality is committed, when asked to add manual test cases or a manual test prompt to a Jira task, or to repair a prompt that invalidated a run. Produces business-level scenarios with explicit design-time and runtime expectations; it does not execute them.
+---
+
+# BP manual test cases
+
+Turn committed business-process work into a **prompt that a different AI session can execute from
+scratch** against a real stand, and publish it on the Jira issue.
+
+**Three things are under test**, and every finding belongs to one of them:
+
+1. **`CrtProcessBuilder`** — the Creatio package: schema serialization, what the designer renders,
+   what the platform executes.
+2. **clio** — the CLI and the MCP tool surface: tool contracts, arguments, validation, errors,
+   what a tool does and what it reports back.
+3. **The clio knowledge library** — the guidance that steers an agent through the other two.
+
+The prompt is the instrument that exercises all three, not the subject. Its job is to state a
+business need precisely enough that any defect surfacing during the run belongs to one of those
+three, not to the wording.
+
+That is why the prompt must be built the way it is: every fact the executor needs is inside it, and
+every fact it must discover for itself is left out. A prompt that leads the executor hides exactly
+the defects the run exists to find.
+
+## Invocation contract
+
+`/bp-test-cases <ENG-KEY-or-URL> [--feature <slug>] [--range <git-range>] [--revise]`
+
+- `<ENG-KEY-or-URL>` — **required**. The Jira issue the functionality belongs to.
+- `--feature <slug>` — feature folder under `spec/`. Default: derive from the issue key and summary
+  (`eng-95891-formula-expressions`). Must satisfy the `spec/<feature-name>/` convention in AGENTS.md.
+- `--range <git-range>` — commits that carry the functionality. Default: `master..HEAD`.
+- `--revise` — rewrite the existing prompt instead of writing a new one. This is a **repair path**,
+  not a normal step: use it only when a run proved the prompt itself was wrong and therefore
+  measured nothing (see the run report's *Invalidated by the prompt* section). Revising a prompt to
+  make a failing product defect go away destroys the finding.
+
+## What it reads
+
+1. The committed diff in `--range` — what actually shipped, including the MCP tool surface and any
+   guidance trigger lines that changed.
+2. The Jira issue: description, acceptance criteria, comments that materially change behavior
+   (`getJiraIssue`).
+3. The guidance articles the feature depends on, in `C:\Projects\clio-knowledge\guidance\` — the
+   executor will be steered by them, so the prompt must be answerable using them.
+
+## Hard rules for the prompt
+
+These are what make the run meaningful. Violating any one of them turns the test into a
+transcription exercise. The full contract with worked examples is in
+[references/prompt-contract.md](references/prompt-contract.md) — read it before drafting.
+
+- **Business requirements, not construction steps.** State the outcome the business needs. Never
+  name process elements, tool names, arguments, schema names, or UIds.
+- **Three observation levels — Stored, Design time, Runtime.** Each case names at least one and says
+  where it stops; a storage-level case is legitimate but must not read as proof the feature works.
+  At least one case in the suite must carry a value through to runtime, or the suite states what
+  blocks it.
+- **Adversarial cases state their input verbatim.** When the case tests a refusal or an error message,
+  the exact input is the test. Mark it adversarial; it cannot double as a discovery case.
+- **A wrong-but-known outcome is labelled platform behaviour**, paired with the neighbouring outcome
+  that *would* be a regression. Without the pair the label stops detecting anything.
+- **Self-contained.** The executor session has no memory, no repository, and no access to this
+  Jira issue. Anything it cannot discover through the clio MCP surface must be stated in the prompt.
+- **No leading.** Do not hint at the element, the order of operations, or the tool to call. If the
+  prompt has to explain how, the guidance library is what needs fixing — record that instead.
+- **English**, `TC-0X` blocks, one scenario per case.
+
+## Workflow
+
+1. Read the diff, the issue, and the affected guidance articles.
+2. Identify the **business capability** that shipped — the thing a user can now express in a
+   process that they could not before. This is the subject of the prompt, not the implementation.
+3. Draft the cases: happy path first, then the negative/boundary cases the diff actually supports.
+   Do not invent behavior the code does not implement. **Group them by use site** — a capability used
+   in two places fails differently in each — and write the *Deliberately not covered* section as you
+   go, with a reason per omission. Both travel with the prompt, because the executor's coverage is
+   bounded by it.
+4. Check the draft against every rule in `references/prompt-contract.md`. Reject and rewrite your
+   own draft on the first violation — this is cheaper than a wasted stand run.
+5. Write it to `spec/<feature>/<feature>-manual-test-prompt.md`. This file is the version of record
+   and is committed; `--revise` overwrites it so the diff shows how the prompt evolved. **Without
+   `--revise`, refuse to overwrite an existing prompt** — show the difference and ask. A prompt that
+   has already been executed is the only record of what a past run actually measured.
+6. Show the draft in chat and wait for approval before touching Jira.
+7. Post it to the issue with `addCommentToJiraIssue`.
+
+## Jira write policy
+
+**Comments only.** Never modify the issue description or any other field. The description is the
+statement of work; the test prompt is revised every iteration, and its history reads correctly as a
+comment thread. The committed file in `spec/` remains the authoritative copy.
+
+This overrides `jira-manual-test-cases`, which edits the description's `Test Cases` section: reuse
+its `TC-0X` formatting, redirect its output into a comment.
+
+## Blockers
+
+- **Atlassian MCP not authorized** — `atlassian` is listed in `~/.claude/mcp-needs-auth-cache.json`
+  until the user authorizes it (claude.ai connector settings, or `claude mcp` / `/mcp` in an
+  interactive session). Write the `spec/` file, then stop and say the prompt is ready but Jira is
+  unreachable. Never report the cases as published when they were not.
+- **No committed functionality in `--range`** — stop and ask. A prompt written against uncommitted
+  work cannot be reproduced by the run.
+
+## Handoff
+
+Print the exact next command:
+
+`/bp-test-run <ENG-KEY>`
