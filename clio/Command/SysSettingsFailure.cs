@@ -84,8 +84,38 @@ internal static class SysSettingFailureTexts {
 	internal const string ProviderFailureRecovery =
 		"Read the cause, correct the reported condition on the environment, and retry.";
 
+	//PR #1373 review: an unresolvable environment and a missing/unsupported credential need OPPOSITE advice.
+	//"Register the environment with reg-web-app" is unusable over mcp-http credential passthrough - there is no
+	//environment to register and reg-web-app is not reachable on that transport.
+	internal const string PassthroughAuthenticationRecovery =
+		"Supply the authentication material the message names (a Bearer access token, or a login/password pair) "
+		+ "and call the operation again.";
+
+	internal const string RefusedTargetRecovery =
+		"The target URL was refused by policy for the reason the cause names; use an allowed environment URL "
+		+ "rather than retrying this one.";
+
 	internal const string ConfigurationRecovery =
 		"Register the environment with reg-web-app, or pick one from list-environments.";
+
+	//PR #1373 review: the two non-exception refusals had no fixed local cause of their own, so both returned an
+	//envelope with all four new fields null - which contradicts the contract's "Null on success" and leaves an
+	//agent unable to tell a real refusal from success. The create path was worse: its `error` was composed purely
+	//from server-controlled `ResponseStatus.Message`, exactly the prose #1333 says must not be the only failure
+	//text.
+	internal const string RefusedCreateCause =
+		"Creatio refused the sys-setting insert; the request reached the environment and was not applied.";
+
+	internal const string RefusedCreateRecovery =
+		"Read the error text for the environment's own reason, check that the code is not already taken and that "
+		+ "the value type is one Creatio accepts, then retry.";
+
+	internal const string RefusedUpdateCause =
+		"Creatio did not apply the sys-setting write; the setting may not exist, or the value did not match its "
+		+ "expected type.";
+
+	internal const string RefusedUpdateRecovery =
+		"Confirm the setting exists (list-sys-settings) and that the value matches its type, then retry.";
 
 	internal const string ValidationRecovery =
 		"Correct the argument named in the cause and call the operation again.";

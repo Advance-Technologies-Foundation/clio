@@ -69,7 +69,7 @@ public sealed class SchemaNamePrefixTool(IToolCommandResolver commandResolver,
 	private const string ReadOperationLabel = "reading SchemaNamePrefix";
 
 	/// <summary>This tool's historic generic label, kept for the cases that must not promote a message.</summary>
-	private const string GenericReadFailure = "Failed to read SchemaNamePrefix.";
+	internal const string GenericReadFailure = "Failed to read SchemaNamePrefix.";
 
 	/// <summary>
 	/// The <c>error</c> line: the shared classifier's message, EXCEPT where this tool deliberately refuses
@@ -82,11 +82,18 @@ public sealed class SchemaNamePrefixTool(IToolCommandResolver commandResolver,
 	/// A <c>DataProviderFailureException</c> is the opposite case and keeps its message, because that
 	/// message IS the diagnosis (in particular the non-JSON-page answer naming both possible causes).
 	/// </remarks>
-	private static string DescribeError(SysSettingFailure failure) =>
-		failure.Category is SysSettingErrorCategories.Unknown or SysSettingErrorCategories.Configuration
-			or SysSettingErrorCategories.Validation
-			? GenericReadFailure
-			: failure.Error;
+	/// <remarks>
+	/// PR #1373 review: an ALLOW-LIST, not a deny-list. The rule is the safe default, but naming the
+	/// categories that must NOT be promoted made promotion the default, so a category added later would
+	/// silently start putting its message in the headline - and <c>Configuration</c>, added in this same
+	/// change, is the proof that categories do get added. Only the three whose message genuinely IS a
+	/// promotable diagnosis are listed; anything unrecognised falls back to the generic label.
+	/// </remarks>
+	internal static string DescribeError(SysSettingFailure failure) =>
+		failure.Category is SysSettingErrorCategories.Authentication or SysSettingErrorCategories.Network
+			or SysSettingErrorCategories.ProviderFailure
+			? failure.Error
+			: GenericReadFailure;
 }
 
 /// <summary>

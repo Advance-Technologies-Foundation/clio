@@ -250,7 +250,14 @@ namespace Clio.Command
 				//(apply-environment-manifest, Program.cs).
 				SysSettingFailure failure = CategorizeAndLog(ex, "updating sys-setting", _logger,
 					_correlationIds);
-				_logger.WriteError($"SysSettings with code: {opts.Code} is not updated.");
+				//PR #1373 review: the local IS used. This second line is what
+				//docs/knowledge/Command/refused-syssetting-update-is-only-visible-as-a-writeerror.md pins as the
+				//Maintainer / apply-environment-manifest flow's ONLY failure signal, and after the classifier was
+				//added in front of it the line carried no diagnosis at all - so the one line an operator or a
+				//parser reads pointed at nothing. It now carries the correlation ID of the classified record above,
+				//which is the bridge between the two lines; exactly one ID is minted per failure.
+				_logger.WriteError(
+					$"SysSettings with code: {opts.Code} is not updated. (correlation-id: {failure.CorrelationId})");
 			}
 		}
 
@@ -264,18 +271,15 @@ namespace Clio.Command
 				string value = PrepareUpdateValue(args, hasFilePath, out string valueTypeName);
 				bool updated = _sysSettingsManager.UpdateSysSetting(args.Code, value, valueTypeName);
 				if (!updated) {
-					//Also a non-exception failure: the manager already logged the specific reason, so the
-					//message is clio's own. It still gets the classified parts and the correlation ID, so a
-					//caller does not have to tell two shapes of failure envelope apart (issue #1329).
-					SysSettingFailure failure = new(
+					//PR #1373 review: same as the create refusal - a non-exception `false` is a real failure and
+					//must carry the four envelope fields rather than the all-null shape the contract reads as
+					//success.
+					SysSettingFailure refusal = ReportRefusal("updating sys-setting",
+						SysSettingErrorCategories.ProviderFailure, SysSettingFailureTexts.RefusedUpdateCause,
+						SysSettingFailureTexts.RefusedUpdateRecovery);
+					return new SysSettingUpdateResult(false, args.Code, null,
 						"Failed to update sys-setting. The setting may not exist, or the value did not match the expected type.",
-						SysSettingErrorCategories.ProviderFailure,
-						"The environment did not apply the value.",
-						SysSettingFailureTexts.ProviderFailureRecovery,
-						_correlationIds.New());
-					_logger.WriteError(DescribeFailureForLog(failure));
-					return new SysSettingUpdateResult(false, args.Code, null, failure.Error,
-						failure.Category, failure.Cause, failure.RecoveryAction, failure.CorrelationId);
+						refusal.Category, refusal.Cause, refusal.RecoveryAction, refusal.CorrelationId);
 				}
 				(string readback, string readbackType) = _sysSettingsManager.GetAllUsersDefaultWithType(args.Code);
 				return new SysSettingUpdateResult(true, args.Code, ApplySecureTextMask(readbackType, readback));
@@ -388,7 +392,27 @@ namespace Clio.Command
 		/// Categorizes network, authentication, and validation failures into a non-throwing error
 		/// envelope for MCP callers.
 		/// </summary>
-		public SysSettingGetResult TryGetSysSetting(GetSysSettingArgs args) {
+		public SysSettingGetResult TryGetSysSetting(GetSysSettingArgs args) => ReadSysSetting(args, report: true);
+
+		/// <summary>
+		/// The same read, classified but NOT logged - for a caller that treats a failed read as a normal,
+		/// expected outcome and surfaces nothing.
+		/// </summary>
+		/// <remarks>
+		/// PR #1373 review. <c>TryGetSysSetting</c> is not sys-setting-tool-only: <c>SetLogoCommand</c>'s
+		/// <c>ReadCompanionIsOn</c> probes a companion setting and reads any failure as "the companion is off".
+		/// That path was completely silent before the classifier was wired in; afterwards every probe against an
+		/// environment where the setting is simply absent minted a correlation ID and wrote a red
+		/// <c>[ERR] … (correlation-id: …)</c> line whose ID appears in no result anywhere - while the command went
+		/// on to report success. That is the inverse of the invariant <see cref="CategorizeAndLog"/> exists for:
+		/// an ID in a log line no result mentions is the same defect as an ID on a result no log line mentions. On
+		/// the MCP <c>set-logo</c> surface those lines can also ride along with a <c>success: true</c> response and
+		/// read to an agent as evidence of failure.
+		/// </remarks>
+		public SysSettingGetResult TryGetSysSettingQuietly(GetSysSettingArgs args) =>
+			ReadSysSetting(args, report: false);
+
+		private SysSettingGetResult ReadSysSetting(GetSysSettingArgs args, bool report) {
 			try {
 				if (string.IsNullOrWhiteSpace(args.Code)) {
 					throw new ArgumentException("code is required.");
@@ -397,7 +421,12 @@ namespace Clio.Command
 				string maskedValue = ApplySecureTextMask(typeName, value ?? string.Empty);
 				return new SysSettingGetResult(true, args.Code, maskedValue);
 			} catch (Exception ex) {
-				SysSettingFailure failure = ReportFailure(ex, "reading sys-setting");
+				//Classification is unconditional; only the LOG LINE is the caller's choice. A probe still gets
+				//the category and cause on its envelope if it wants them - it just does not put a red line and
+				//an unreferenced correlation ID in front of an operator whose command is going to succeed.
+				SysSettingFailure failure = report
+					? ReportFailure(ex, "reading sys-setting")
+					: CategorizeFailure(ex, "reading sys-setting", _correlationIds.New());
 				return new SysSettingGetResult(false, args.Code, string.Empty, failure.Error,
 					failure.Category, failure.Cause, failure.RecoveryAction, failure.CorrelationId);
 			}
@@ -643,14 +672,40 @@ namespace Clio.Command
 				//said exactly what to fix. The resolver's text is clio-local (EnvironmentNotFoundError,
 				//settings-file paths), so it is safe as the cause; Error keeps the generic label so an
                 //unregistered name is still not promoted into the headline message.
-				EnvironmentResolutionException resolutionEx => new SysSettingFailure(
-					$"Failed {operationLabel}.", SysSettingErrorCategories.Configuration,
-					resolutionEx.Message, SysSettingFailureTexts.ConfigurationRecovery, correlationId),
+				//PR #1373 review: routed on the exception's OWN Reason, not on its type. Four of the resolver's
+				//throw sites are authentication and target-URL rejections, and reporting those as
+				//Configuration + "register the environment with reg-web-app" is advice a credential-passthrough
+				//caller over mcp-http cannot act on - it has no environment to register - while an agent
+				//branching on the category will not re-authenticate, because the category says the problem is
+				//local configuration. Reason defaults to Configuration, so every unregistered-name site is
+				//unchanged.
+				EnvironmentResolutionException resolutionEx =>
+					DescribeResolutionFailure(resolutionEx, operationLabel, correlationId),
 				var _ => new SysSettingFailure($"Failed {operationLabel}.",
 					SysSettingErrorCategories.Unknown, SysSettingFailureTexts.UnknownCause,
 					SysSettingFailureTexts.UnknownRecovery, correlationId)
 
 			};
+		}
+
+		/// <summary>
+		/// Classifies an <see cref="EnvironmentResolutionException"/> by what it is actually about. The
+		/// resolver's text is clio-local (a settings-file path, an allowlist reason, the missing auth kind), so
+		/// it stays safe as the cause; <c>Error</c> keeps the generic label either way, so an unregistered name
+		/// is still not promoted into the headline message.
+		/// </summary>
+		private static SysSettingFailure DescribeResolutionFailure(EnvironmentResolutionException resolutionEx,
+			string operationLabel, string correlationId) {
+			(string category, string recovery) = resolutionEx.Reason switch {
+				EnvironmentResolutionReason.Authentication => (SysSettingErrorCategories.Authentication,
+					SysSettingFailureTexts.PassthroughAuthenticationRecovery),
+				EnvironmentResolutionReason.Validation => (SysSettingErrorCategories.Validation,
+					SysSettingFailureTexts.RefusedTargetRecovery),
+				var _ => (SysSettingErrorCategories.Configuration,
+					SysSettingFailureTexts.ConfigurationRecovery),
+			};
+			return new SysSettingFailure($"Failed {operationLabel}.", category, resolutionEx.Message, recovery,
+				correlationId);
 		}
 
 		private static SysSettingFailure Authentication(string operationLabel, string correlationId) =>
@@ -678,6 +733,20 @@ namespace Clio.Command
 		private SysSettingFailure ReportFailure(Exception ex, string operationLabel) {
 			SysSettingFailure failure = CategorizeAndLog(ex, operationLabel, _logger, _correlationIds);
 			WriteServerDetailAtDebugVerbosity(ex, failure.CorrelationId);
+			return failure;
+		}
+
+		/// <summary>
+		/// The non-exception counterpart of <see cref="ReportFailure"/>: classifies a refusal the environment
+		/// reported as data (a <c>Success == false</c> response, or a <c>false</c> return) rather than by throwing,
+		/// mints its correlation ID from the same provider and writes the same log line, so a caller quoting the ID
+		/// finds a record whichever way the failure arrived.
+		/// </summary>
+		private SysSettingFailure ReportRefusal(string operationLabel, string category, string cause,
+			string recoveryAction) {
+			SysSettingFailure failure = new($"Failed {operationLabel}.", category, cause, recoveryAction,
+				_correlationIds.New());
+			_logger.WriteError(DescribeFailureForLog(failure));
 			return failure;
 		}
 

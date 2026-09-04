@@ -1,6 +1,8 @@
 ﻿using System;
 using System.Net.Http;
 using ATF.Repository.Providers;
+using System.Linq;
+using System.Reflection;
 using Clio.Command;
 using Clio.Command.McpServer.Tools;
 using Clio.Common;
@@ -265,5 +267,52 @@ public sealed class SchemaNamePrefixToolTests {
 			because: "the actionable text is not lost - it moves to the cause, beside a recovery action");
 		result.RecoveryAction.Should().Contain("list-environments",
 			because: "the caller needs the next step, not 'retry'");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("PR #1373 review: DescribeError is an ALLOW-LIST, so a category this tool does not recognise falls back to the generic label instead of promoting its message into the headline error.")]
+	public void DescribeError_Should_Fall_Back_To_The_Generic_Label_For_An_Unrecognised_Category() {
+		// Arrange
+		SysSettingFailure unrecognised = new("Some future category's own message.", "SomeFutureCategory",
+			"cause", "recovery", "abc123");
+
+		// Act
+		string described = SchemaNamePrefixTool.DescribeError(unrecognised);
+
+		// Assert
+		described.Should().Be(SchemaNamePrefixTool.GenericReadFailure,
+			because: "a deny-list made promotion the DEFAULT, so a category added later would silently start putting its own text in the headline - and Configuration, added in this same change, is the proof categories do get added");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("PR #1373 review: exactly the three categories whose message genuinely is a promotable diagnosis are promoted; every other declared category gets the generic label.")]
+	public void DescribeError_Should_Promote_Only_The_Three_Diagnosis_Carrying_Categories() {
+		// Arrange
+		string[] promotable = [
+			SysSettingErrorCategories.Authentication,
+			SysSettingErrorCategories.Network,
+			SysSettingErrorCategories.ProviderFailure,
+		];
+		string[] declared = [.. typeof(SysSettingErrorCategories)
+			.GetFields(BindingFlags.Public | BindingFlags.Static)
+			.Where(field => field.IsLiteral && field.FieldType == typeof(string))
+			.Select(field => (string)field.GetRawConstantValue()!)];
+		declared.Should().NotBeEmpty(
+			because: "an empty reflected set would make the loop below assert nothing");
+
+		// Act & Assert
+		foreach (string category in declared) {
+			string described = SchemaNamePrefixTool.DescribeError(
+				new SysSettingFailure("the category's own message", category, "cause", "recovery", "id"));
+			if (promotable.Contains(category)) {
+				described.Should().Be("the category's own message",
+					because: $"'{category}' carries a diagnosis worth putting in the headline");
+			} else {
+				described.Should().Be(SchemaNamePrefixTool.GenericReadFailure,
+					because: $"'{category}' is clio's own state or resolver text, which issue #1333 says must not become the headline error");
+			}
+		}
 	}
 }

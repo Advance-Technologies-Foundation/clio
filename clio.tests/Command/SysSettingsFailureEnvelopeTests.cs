@@ -1,9 +1,11 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Net;
 using System.Net.Http;
 using System.Net.Sockets;
 using System.Security.Authentication;
+using System.Text.RegularExpressions;
 using Clio.Command;
 using Clio.Command.McpServer.Tools;
 using Clio.Common;
@@ -220,5 +222,176 @@ public sealed class SysSettingsFailureEnvelopeTests {
 			because: "an ID on a result that no log line mentions invites the caller to quote a token that finds nothing")
 			.Which.Should().Contain(failure.CorrelationId,
 				because: "the log line and the envelope must carry the SAME ID");
+	}
+
+	[Test]
+	[Description("PR #1373 review: the CLI TryUpdateSysSetting(SysSettingsOptions) overload writes the classified diagnosis AND keeps the `is not updated.` line an operator or apply-environment-manifest parser reads, with exactly one correlation ID bridging the two.")]
+	public void TryUpdateSysSetting_Cli_Should_Report_The_Diagnosis_And_Bridge_The_Second_Line() {
+		// Arrange
+		ISysSettingsManager manager = Substitute.For<ISysSettingsManager>();
+		manager.When(m => m.UpdateSysSetting(Arg.Any<string>(), Arg.Any<object>(), Arg.Any<string>()))
+			.Do(_ => throw new UnauthorizedAccessException("denied"));
+		ILogger logger = Substitute.For<ILogger>();
+		List<string> errors = [];
+		logger.When(l => l.WriteError(Arg.Any<string>())).Do(call => errors.Add(call.Arg<string>()));
+		SysSettingsCommand command = new(manager, logger, Substitute.For<IFileSystem>(),
+			new OperationCorrelationIdProvider());
+		SysSettingsOptions options = new() { Code = "UsrSetting", Value = "x", Type = "Text" };
+
+		// Act
+		command.TryUpdateSysSetting(options);
+
+		// Assert
+		errors.Should().HaveCount(2,
+			because: "the classified diagnosis and the legacy `is not updated.` signal are two distinct lines, and knowledge/Command/refused-syssetting-update-is-only-visible-as-a-writeerror.md pins the second as the apply-environment-manifest flow's only failure signal");
+		errors[0].Should().Contain("Authentication error updating sys-setting.",
+			because: "the CLI path must report WHY the write did not land, not only that it did not");
+		errors[0].Should().Contain("The environment rejected the credentials of the registered user.",
+			because: "the classified cause has to reach the operator running this interactively");
+		errors[0].Should().Contain("repair the registered profile",
+			because: "the recovery action is the operator's next step");
+		errors[1].Should().Contain("SysSettings with code: UsrSetting is not updated.",
+			because: "the legacy signal the Maintainer flow parses must stay byte-compatible at its head");
+		string[] ids = [.. errors
+			.Select(line => Regex.Match(line, @"\(correlation-id: ([0-9a-f]+)\)"))
+			.Where(match => match.Success)
+			.Select(match => match.Groups[1].Value)];
+		ids.Should().HaveCount(2,
+			because: "the second line used to carry no diagnosis at all, so the one line a parser reads pointed at nothing");
+		ids.Distinct().Should().ContainSingle(
+			because: "exactly ONE correlation ID is minted per failure - two different IDs would send an operator looking for two records");
+	}
+
+	[Test]
+	[Description("PR #1373 review: a NON-exception refusal (UpdateSysSetting returning false) carries the four envelope fields too - all-null is what the contract publishes as success, so an agent could not tell a real refusal from one.")]
+	public void TryUpdateSysSetting_Should_Classify_A_NonException_Refusal() {
+		// Arrange
+		ISysSettingsManager manager = Substitute.For<ISysSettingsManager>();
+		manager.UpdateSysSetting(Arg.Any<string>(), Arg.Any<object>(), Arg.Any<string>()).Returns(false);
+		ILogger logger = Substitute.For<ILogger>();
+		List<string> errors = [];
+		logger.When(l => l.WriteError(Arg.Any<string>())).Do(call => errors.Add(call.Arg<string>()));
+		SysSettingsCommand command = new(manager, logger, Substitute.For<IFileSystem>(),
+			new OperationCorrelationIdProvider());
+
+		// Act
+		SysSettingUpdateResult result = command.TryUpdateSysSetting(
+			new UpdateSysSettingArgs("dev", "UsrSetting", "x") { ValueTypeName = "Text" });
+
+		// Assert
+		result.Success.Should().BeFalse(because: "the manager reported the write was not applied");
+		result.ErrorCategory.Should().Be(SysSettingErrorCategories.ProviderFailure,
+			because: "the request reached the environment and was refused there - null would read as success to an agent branching on the category");
+		result.Cause.Should().Be(SysSettingFailureTexts.RefusedUpdateCause,
+			because: "the cause has to be fixed local text, not the absence of any diagnosis");
+		result.RecoveryAction.Should().Be(SysSettingFailureTexts.RefusedUpdateRecovery,
+			because: "#1222 requires the envelope to name the next step on the non-exception path too");
+		result.CorrelationId.Should().NotBeNullOrWhiteSpace(
+			because: "a refusal that mints no ID leaves an operator with nothing to quote");
+		errors.Should().ContainSingle(
+			because: "a correlation ID the caller can quote must have a log line to find")
+			.Which.Should().Contain(result.CorrelationId,
+				because: "the log line and the envelope must carry the SAME ID whichever way the failure arrived");
+	}
+
+	[Test]
+	[Description("PR #1373 review: an EnvironmentResolutionException raised for MISSING CREDENTIALS is Authentication, not Configuration - a credential-passthrough caller has no environment to register and cannot reach reg-web-app over mcp-http.")]
+	public void CategorizeFailure_Should_Report_Authentication_For_A_Passthrough_Credential_Refusal() {
+		// Arrange
+		EnvironmentResolutionException exception = new(
+			"Authentication material (an access token or a login/password pair) is required for credential-passthrough command execution.",
+			EnvironmentResolutionReason.Authentication);
+
+		// Act
+		SysSettingFailure failure = SysSettingsCommand.CategorizeFailure(exception, Operation, CorrelationId);
+
+		// Assert
+		failure.Category.Should().Be(SysSettingErrorCategories.Authentication,
+			because: "an agent branching on Configuration will not re-authenticate, and that is the only action that can close this failure");
+		failure.RecoveryAction.Should().Be(SysSettingFailureTexts.PassthroughAuthenticationRecovery,
+			because: "'register the environment with reg-web-app' is unusable over mcp-http credential passthrough");
+		failure.Cause.Should().Contain("access token",
+			because: "the resolver text names the missing piece and is clio-local, so it stays as the cause");
+	}
+
+	[Test]
+	[Description("PR #1373 review: an EnvironmentResolutionException wrapping a target-URL allowlist rejection is Validation - the request is refused, not the local configuration missing.")]
+	public void CategorizeFailure_Should_Report_Validation_For_A_Refused_Target_Url() {
+		// Arrange
+		EnvironmentResolutionException exception = new("Target URL is not allowed by policy.",
+			EnvironmentResolutionReason.Validation, new InvalidOperationException("blocked"));
+
+		// Act
+		SysSettingFailure failure = SysSettingsCommand.CategorizeFailure(exception, Operation, CorrelationId);
+
+		// Assert
+		failure.Category.Should().Be(SysSettingErrorCategories.Validation,
+			because: "an egress rejection is a refused request, and reporting it as Configuration sends the caller to register something instead");
+		failure.RecoveryAction.Should().Be(SysSettingFailureTexts.RefusedTargetRecovery,
+			because: "retrying the same URL cannot succeed, so the recovery must not say retry");
+	}
+
+	[Test]
+	[Description("PR #1373 review: an unregistered environment keeps Configuration and its existing recovery - the Reason default means no existing throw site changed meaning.")]
+	public void CategorizeFailure_Should_Keep_Configuration_For_An_Unregistered_Environment() {
+		// Arrange
+		EnvironmentResolutionException exception = new("Environment 'ghost' is not registered.");
+
+		// Act
+		SysSettingFailure failure = SysSettingsCommand.CategorizeFailure(exception, Operation, CorrelationId);
+
+		// Assert
+		failure.Category.Should().Be(SysSettingErrorCategories.Configuration,
+			because: "Reason defaults to Configuration, so every pre-existing throw site keeps its behaviour");
+		failure.RecoveryAction.Should().Be(SysSettingFailureTexts.ConfigurationRecovery,
+			because: "reg-web-app / list-environments is exactly the right advice for this one");
+	}
+
+	[Test]
+	[Description("PR #1373 review: TryGetSysSettingQuietly classifies but writes NO log line - a caller that treats a failed read as an expected outcome (SetLogoCommand.ReadCompanionIsOn) must not leave the operator a red line and a correlation ID that appears in no result.")]
+	public void TryGetSysSettingQuietly_Should_Classify_Without_Writing_A_Log_Line() {
+		// Arrange
+		ISysSettingsManager manager = Substitute.For<ISysSettingsManager>();
+		manager.When(m => m.GetAllUsersDefaultWithType(Arg.Any<string>()))
+			.Do(_ => throw new UnauthorizedAccessException("denied"));
+		ILogger logger = Substitute.For<ILogger>();
+		List<string> errors = [];
+		logger.When(l => l.WriteError(Arg.Any<string>())).Do(call => errors.Add(call.Arg<string>()));
+		SysSettingsCommand command = new(manager, logger, Substitute.For<IFileSystem>(),
+			new OperationCorrelationIdProvider());
+
+		// Act
+		SysSettingGetResult quiet = command.TryGetSysSettingQuietly(
+			new GetSysSettingArgs("dev", "UsrCompanion"));
+
+		// Assert
+		errors.Should().BeEmpty(
+			because: "a tolerated probe whose command goes on to succeed must not put a red [ERR] line in front of an operator, nor mint an ID that appears in no result");
+		quiet.Success.Should().BeFalse(because: "the read did fail; only the reporting is suppressed");
+		quiet.ErrorCategory.Should().Be(SysSettingErrorCategories.Authentication,
+			because: "classification is unconditional - a probe that wants the category still gets it");
+	}
+
+	[Test]
+	[Description("PR #1373 review, the other side: the reporting overload still writes exactly one line, so suppressing the probe's line did not make the sys-setting tool path silent too.")]
+	public void TryGetSysSetting_Should_Still_Report_The_Failure() {
+		// Arrange
+		ISysSettingsManager manager = Substitute.For<ISysSettingsManager>();
+		manager.When(m => m.GetAllUsersDefaultWithType(Arg.Any<string>()))
+			.Do(_ => throw new UnauthorizedAccessException("denied"));
+		ILogger logger = Substitute.For<ILogger>();
+		List<string> errors = [];
+		logger.When(l => l.WriteError(Arg.Any<string>())).Do(call => errors.Add(call.Arg<string>()));
+		SysSettingsCommand command = new(manager, logger, Substitute.For<IFileSystem>(),
+			new OperationCorrelationIdProvider());
+
+		// Act
+		SysSettingGetResult reported = command.TryGetSysSetting(new GetSysSettingArgs("dev", "UsrSetting"));
+
+		// Assert
+		errors.Should().ContainSingle(
+			because: "the sys-setting tool surface reports its own failures, and its correlation ID must find a log line")
+			.Which.Should().Contain(reported.CorrelationId,
+				because: "the log line and the envelope carry the SAME ID");
 	}
 }
