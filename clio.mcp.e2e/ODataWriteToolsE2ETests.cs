@@ -90,6 +90,41 @@ public sealed class ODataWriteToolsE2ETests : McpContractFixtureBase {
 	}
 
 	[Test]
+	[Description("Binds odata-create rows-file through the real MCP server and reports the requested missing environment instead of rejecting the file argument.")]
+	[AllureTag(ODataCreateTool.ToolName)]
+	[AllureName("odata-create binds rows-file over stdio")]
+	public async Task ODataCreate_Should_Bind_Rows_File_Argument() {
+		// Arrange
+		await using var arrange = Arrange(TimeSpan.FromMinutes(3));
+		string invalidEnvironmentName = $"missing-odata-file-env-{Guid.NewGuid():N}";
+		string rowsFile = System.IO.Path.Combine(System.IO.Path.GetTempPath(), $"odata-create-e2e-{Guid.NewGuid():N}.json");
+		System.IO.File.WriteAllText(rowsFile, "[{\"Name\":\"e2e\"}]");
+
+		try {
+			// Act
+			CallToolResult callResult = await arrange.Session.CallToolAsync(
+				ODataCreateTool.ToolName,
+				new Dictionary<string, object?> {
+					["args"] = new Dictionary<string, object?> {
+						["environment-name"] = invalidEnvironmentName,
+						["entity"] = "Contact",
+						["rows-file"] = rowsFile
+					}
+				},
+				arrange.CancellationTokenSource.Token);
+			ODataCreateBatchResponse response = EntitySchemaStructuredResultParser.Extract<ODataCreateBatchResponse>(callResult);
+
+			// Assert
+			callResult.IsError.Should().NotBeTrue(
+				because: "rows-file is a valid odata-create argument and should reach structured tool execution");
+			response.Error.Should().Contain(invalidEnvironmentName,
+				because: "the real dispatch should bind rows-file before reporting the missing environment");
+		} finally {
+			if (System.IO.File.Exists(rowsFile)) System.IO.File.Delete(rowsFile);
+		}
+	}
+
+	[Test]
 	[Description("Binds a multi-row odata-create batch through the real MCP server and reports a request-level invalid-environment failure.")]
 	[AllureTag(ODataCreateTool.ToolName)]
 	[AllureName("odata-create MCP tool binds a multi-row batch")]
@@ -132,8 +167,7 @@ public sealed class ODataWriteToolsE2ETests : McpContractFixtureBase {
 					["environment-name"] = $"missing-{Guid.NewGuid():N}",
 					["entity"] = "Contact",
 					["id"] = "all",
-					["rows"] = new object[] { new Dictionary<string, object?> { ["Name"] = "e2e" }
- }
+					["data"] = new Dictionary<string, object?> { ["Name"] = "e2e" }
 				}
 			},
 			arrange.CancellationTokenSource.Token);
@@ -142,6 +176,43 @@ public sealed class ODataWriteToolsE2ETests : McpContractFixtureBase {
 		callResult.IsError.Should().NotBeTrue();
 		response.Success.Should().BeFalse();
 		response.Error.Should().Contain("must be a record GUID");
+	}
+
+	[Test]
+	[Description("Binds odata-update rows-file through the real MCP server and reaches environment resolution after validating the file-backed payload shape.")]
+	[AllureTag(ODataUpdateTool.ToolName)]
+	[AllureName("odata-update binds rows-file over stdio")]
+	public async Task ODataUpdate_Should_Bind_Rows_File_Argument() {
+		// Arrange
+		await using var arrange = Arrange(TimeSpan.FromMinutes(3));
+		string invalidEnvironmentName = $"missing-odata-update-file-env-{Guid.NewGuid():N}";
+		string rowsFile = System.IO.Path.Combine(System.IO.Path.GetTempPath(), $"odata-update-e2e-{Guid.NewGuid():N}.json");
+		System.IO.File.WriteAllText(rowsFile, "{\"Name\":\"e2e\"}");
+
+		try {
+			// Act
+			CallToolResult callResult = await arrange.Session.CallToolAsync(
+				ODataUpdateTool.ToolName,
+				new Dictionary<string, object?> {
+					["args"] = new Dictionary<string, object?> {
+						["environment-name"] = invalidEnvironmentName,
+						["entity"] = "Contact",
+						["id"] = "8ecab4a1-0ca3-4515-9399-efe0a19390bd",
+						["rows-file"] = rowsFile,
+						["confirm"] = true
+					}
+				},
+				arrange.CancellationTokenSource.Token);
+			ODataWriteResponse response = EntitySchemaStructuredResultParser.Extract<ODataWriteResponse>(callResult);
+
+			// Assert
+			callResult.IsError.Should().NotBeTrue(
+				because: "rows-file is a valid odata-update argument and should reach structured tool execution");
+			response.Error.Should().Contain(invalidEnvironmentName,
+				because: "the real dispatch should bind rows-file before reporting the missing environment");
+		} finally {
+			if (System.IO.File.Exists(rowsFile)) System.IO.File.Delete(rowsFile);
+		}
 	}
 
 }

@@ -121,6 +121,8 @@ public sealed class DurableInvocationGateCompletenessTests {
 		"list-user-tasks",
 		// Merges only caller-supplied strings in memory; it has no repository, filesystem, or environment authority.
 		"merge-creatio-artifact",
+		// A GET and nothing else. The file destination lives in odata-read-to-file, which is NOT annotated
+		// ReadOnly and therefore never reaches this set.
 		"odata-read",
 		// Reads SysPackageSchemaData and the bound rows; writes nothing.
 		"read-data-binding-db",

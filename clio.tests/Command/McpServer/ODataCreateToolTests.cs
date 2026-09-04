@@ -1,5 +1,11 @@
-﻿using System.Linq;
+﻿using System;
+using System.Globalization;
+using System.Linq;
+using System.Threading;
 using System.Net.Http;
+using System.IO;
+using System.IO.Abstractions.TestingHelpers;
+using System.Text;
 using System.Text.Json;
 using Clio.Command.McpServer.Tools;
 using Clio.Common;
@@ -13,6 +19,446 @@ namespace Clio.Tests.Command.McpServer;
 [TestFixture]
 [Property("Module", "McpServer")]
 public sealed class ODataCreateToolTests {
+	[Test]
+	[Category("Unit")]
+	[Description("Reads a large create payload from rows-file and posts its rows without requiring an inline rows array.")]
+	public void Create_Should_Read_Rows_From_File() {
+		// Arrange
+		MockFileSystem fileSystem = new();
+		string rowsFile = fileSystem.Path.Combine(fileSystem.Path.GetTempPath(), $"odata-create-{System.Guid.NewGuid():N}.json");
+		fileSystem.AddFile(rowsFile, new MockFileData("[{\"Name\":\"Acme\"}]", Encoding.UTF8));
+		IApplicationClient client = Substitute.For<IApplicationClient>();
+		IServiceUrlBuilder urlBuilder = Substitute.For<IServiceUrlBuilder>();
+		IToolCommandResolver resolver = Substitute.For<IToolCommandResolver>();
+		resolver.Resolve<IApplicationClient>(Arg.Any<EnvironmentOptions>()).Returns(client);
+		resolver.Resolve<IServiceUrlBuilder>(Arg.Any<EnvironmentOptions>()).Returns(urlBuilder);
+		urlBuilder.Build(Arg.Any<string>()).Returns("http://creatio/odata/Account");
+		client.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+			.Returns("{\"Id\":\"11111111-1111-1111-1111-111111111111\"}");
+		ODataCreateTool tool = new(resolver, new ODataFileContract(fileSystem, new MockConfinedFileAccess(fileSystem)));
+
+		// Act
+		ODataCreateBatchResponse response = tool.Create(new ODataCreateArgs {
+			EnvironmentName = "dev", Entity = "Account", RowsFile = rowsFile
+		});
+
+		// Assert
+		response.Created.Should().Be(1, because: "the row loaded from disk should be posted and reported as created");
+		client.Received(1).ExecutePostRequest("http://creatio/odata/Account", "{\"Name\":\"Acme\"}", 30_000, 1, 1);
+	}
+	[Test]
+	[Category("Unit")]
+	[Description("Rejects a rows-file larger than the 10 MiB payload bound with the byte-count diagnostic, before the environment is resolved and before any POST.")]
+	public void Create_Should_Reject_A_RowsFile_Over_The_Payload_Bound_Before_Any_Post() {
+		// Arrange
+		MockFileSystem fileSystem = new();
+		string rowsFile = fileSystem.Path.Combine(fileSystem.Path.GetTempPath(), $"odata-create-huge-{System.Guid.NewGuid():N}.json");
+		//One byte past the bound: the check has to be the limit itself, not a round approximation of it.
+		long overLimit = ODataFileContract.MaxPayloadBytes + 1;
+		string padding = new('x', (int)(overLimit - "[{\"Name\":\"\"}]".Length));
+		fileSystem.AddFile(rowsFile, new MockFileData($"[{{\"Name\":\"{padding}\"}}]", Encoding.UTF8));
+		IApplicationClient client = Substitute.For<IApplicationClient>();
+		IToolCommandResolver resolver = Substitute.For<IToolCommandResolver>();
+		resolver.Resolve<IApplicationClient>(Arg.Any<EnvironmentOptions>()).Returns(client);
+		ODataCreateTool tool = new(resolver, new ODataFileContract(fileSystem, new MockConfinedFileAccess(fileSystem)));
+
+		// Act
+		ODataCreateBatchResponse response = tool.Create(new ODataCreateArgs {
+			EnvironmentName = "dev", Entity = "Account", RowsFile = rowsFile
+		});
+
+		// Assert
+		response.Created.Should().Be(0,
+			because: "reading, parsing and cloning an unbounded payload is the memory-exhaustion lever the bound exists to close");
+		response.Error.Should().Contain(ODataFileContract.MaxPayloadBytes.ToString(),
+			because: "the diagnostic has to name the limit so the caller knows what to split the payload against");
+		resolver.DidNotReceive().Resolve<IApplicationClient>(Arg.Any<EnvironmentOptions>());
+		client.DidNotReceiveWithAnyArgs().ExecutePostRequest(
+			Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>());
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Rejects a misspelled rows_file key instead of dropping it and posting the inline rows, which would execute an ambiguous request.")]
+	public void Create_Should_Reject_An_Unbound_File_Source_Alias_Before_Any_Post() {
+		// Arrange
+		MockFileSystem fileSystem = new();
+		IApplicationClient client = Substitute.For<IApplicationClient>();
+		IToolCommandResolver resolver = Substitute.For<IToolCommandResolver>();
+		resolver.Resolve<IApplicationClient>(Arg.Any<EnvironmentOptions>()).Returns(client);
+		ODataCreateTool tool = new(resolver, new ODataFileContract(fileSystem, new MockConfinedFileAccess(fileSystem)));
+		ODataCreateArgs args = JsonSerializer.Deserialize<ODataCreateArgs>(
+			"""{"environment-name":"dev","entity":"Account","rows":[{"Name":"Inline"}],"rows_file":"C:/payload.json"}""")!;
+
+		// Act
+		ODataCreateBatchResponse response = tool.Create(args);
+
+		// Assert
+		response.Created.Should().Be(0,
+			because: "a request naming two payload sources is ambiguous, even when one of them is misspelled");
+		response.Error.Should().Contain("rows-file",
+			because: "the caller has to be told the canonical spelling of the key that was dropped");
+		resolver.DidNotReceive().Resolve<IApplicationClient>(Arg.Any<EnvironmentOptions>());
+		client.DidNotReceiveWithAnyArgs().ExecutePostRequest(
+			Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>());
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Rejects an entirely unknown argument before the environment is resolved, so a typo cannot execute a partially understood request.")]
+	public void Create_Should_Reject_An_Unknown_Argument_Before_Any_Post() {
+		// Arrange
+		MockFileSystem fileSystem = new();
+		IApplicationClient client = Substitute.For<IApplicationClient>();
+		IToolCommandResolver resolver = Substitute.For<IToolCommandResolver>();
+		resolver.Resolve<IApplicationClient>(Arg.Any<EnvironmentOptions>()).Returns(client);
+		ODataCreateTool tool = new(resolver, new ODataFileContract(fileSystem, new MockConfinedFileAccess(fileSystem)));
+		ODataCreateArgs args = JsonSerializer.Deserialize<ODataCreateArgs>(
+			"""{"environment-name":"dev","entity":"Account","rows":[{"Name":"Inline"}],"stopOnErrors":true}""")!;
+
+		// Act
+		ODataCreateBatchResponse response = tool.Create(args);
+
+		// Assert
+		response.Created.Should().Be(0,
+			because: "an unbound argument means the request was not understood as written");
+		response.Error.Should().Contain("stopOnErrors",
+			because: "the caller has to see which key was not accepted");
+		client.DidNotReceiveWithAnyArgs().ExecutePostRequest(
+			Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>());
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Rejects rows and rows-file together instead of silently preferring one, so a caller never sends a payload it did not mean to.")]
+	public void Create_Should_Reject_Rows_And_RowsFile_Together() {
+		// Arrange
+		MockFileSystem fileSystem = new();
+		string rowsFile = fileSystem.Path.Combine(fileSystem.Path.GetTempPath(), $"odata-create-{System.Guid.NewGuid():N}.json");
+		fileSystem.AddFile(rowsFile, new MockFileData("[{\"Name\":\"FromFile\"}]", Encoding.UTF8));
+		IApplicationClient client = Substitute.For<IApplicationClient>();
+		IToolCommandResolver resolver = Substitute.For<IToolCommandResolver>();
+		resolver.Resolve<IApplicationClient>(Arg.Any<EnvironmentOptions>()).Returns(client);
+		ODataCreateTool tool = new(resolver, new ODataFileContract(fileSystem, new MockConfinedFileAccess(fileSystem)));
+
+		// Act
+		ODataCreateBatchResponse response = tool.Create(new ODataCreateArgs {
+			EnvironmentName = "dev", Entity = "Account", Rows = Arr("[{\"Name\":\"Inline\"}]"), RowsFile = rowsFile
+		});
+
+		// Assert
+		response.Created.Should().Be(0,
+			because: "two payload sources are ambiguous and picking one silently would send data the caller did not choose");
+		response.Error.Should().Contain("not both",
+			because: "the caller has to be told which argument to drop");
+		client.DidNotReceiveWithAnyArgs().ExecutePostRequest(
+			Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>());
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Reports a missing rows-file as a structured request error rather than letting the file exception escape as a protocol failure.")]
+	public void Create_Should_Report_Missing_RowsFile() {
+		// Arrange
+		MockFileSystem fileSystem = new();
+		string rowsFile = fileSystem.Path.Combine(fileSystem.Path.GetTempPath(), $"odata-create-absent-{System.Guid.NewGuid():N}.json");
+		IApplicationClient client = Substitute.For<IApplicationClient>();
+		IToolCommandResolver resolver = Substitute.For<IToolCommandResolver>();
+		resolver.Resolve<IApplicationClient>(Arg.Any<EnvironmentOptions>()).Returns(client);
+		ODataCreateTool tool = new(resolver, new ODataFileContract(fileSystem, new MockConfinedFileAccess(fileSystem)));
+
+		// Act
+		ODataCreateBatchResponse response = tool.Create(new ODataCreateArgs {
+			EnvironmentName = "dev", Entity = "Account", RowsFile = rowsFile
+		});
+
+		// Assert
+		response.Created.Should().Be(0,
+			because: "an absent payload file is a request error, not a transport failure");
+		response.Error.Should().Contain("was not found",
+			because: "the caller has to know the path did not resolve to a file");
+		client.DidNotReceiveWithAnyArgs().ExecutePostRequest(
+				Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>());
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Reports malformed rows-file JSON as a structured request error instead of surfacing a raw parser exception.")]
+	public void Create_Should_Report_Invalid_RowsFile_Json() {
+		// Arrange
+		MockFileSystem fileSystem = new();
+		string rowsFile = fileSystem.Path.Combine(fileSystem.Path.GetTempPath(), $"odata-create-bad-{System.Guid.NewGuid():N}.json");
+		fileSystem.AddFile(rowsFile, new MockFileData("{ not json", Encoding.UTF8));
+		IApplicationClient client = Substitute.For<IApplicationClient>();
+		IToolCommandResolver resolver = Substitute.For<IToolCommandResolver>();
+		resolver.Resolve<IApplicationClient>(Arg.Any<EnvironmentOptions>()).Returns(client);
+		ODataCreateTool tool = new(resolver, new ODataFileContract(fileSystem, new MockConfinedFileAccess(fileSystem)));
+
+		// Act
+		ODataCreateBatchResponse response = tool.Create(new ODataCreateArgs {
+			EnvironmentName = "dev", Entity = "Account", RowsFile = rowsFile
+		});
+
+		// Assert
+		response.Created.Should().Be(0,
+			because: "an unparseable payload must fail the request, not the MCP protocol frame");
+		response.Error.Should().Contain("must contain valid JSON",
+			because: "the caller has to know the file content is at fault, not the request shape");
+		client.DidNotReceiveWithAnyArgs().ExecutePostRequest(
+			Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>());
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Rejects a rows-file holding a JSON object: create takes an array of rows, and a lone object would otherwise fall through the array check with a confusing message.")]
+	public void Create_Should_Reject_RowsFile_That_Is_Not_An_Array() {
+		// Arrange
+		MockFileSystem fileSystem = new();
+		string rowsFile = fileSystem.Path.Combine(fileSystem.Path.GetTempPath(), $"odata-create-obj-{System.Guid.NewGuid():N}.json");
+		fileSystem.AddFile(rowsFile, new MockFileData("{\"Name\":\"Acme\"}", Encoding.UTF8));
+		IApplicationClient client = Substitute.For<IApplicationClient>();
+		IToolCommandResolver resolver = Substitute.For<IToolCommandResolver>();
+		resolver.Resolve<IApplicationClient>(Arg.Any<EnvironmentOptions>()).Returns(client);
+		ODataCreateTool tool = new(resolver, new ODataFileContract(fileSystem, new MockConfinedFileAccess(fileSystem)));
+
+		// Act
+		ODataCreateBatchResponse response = tool.Create(new ODataCreateArgs {
+			EnvironmentName = "dev", Entity = "Account", RowsFile = rowsFile
+		});
+
+		// Assert
+		response.Created.Should().Be(0,
+			because: "a single object is not a batch of rows and must not be posted as one");
+		response.Error.Should().Contain("non-empty array",
+			because: "the caller has to know the expected payload shape");
+		client.DidNotReceiveWithAnyArgs().ExecutePostRequest(
+			Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>());
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Rejects a rows-file outside the workspace and the OS temp directory: without confinement the argument is an arbitrary file reader that forwards whatever it reads to the OData endpoint.")]
+	public void Create_Should_Reject_RowsFile_Outside_The_Allowed_Locations() {
+		// Arrange
+		IApplicationClient client = Substitute.For<IApplicationClient>();
+		IToolCommandResolver resolver = Substitute.For<IToolCommandResolver>();
+		resolver.Resolve<IApplicationClient>(Arg.Any<EnvironmentOptions>()).Returns(client);
+		ODataCreateTool tool = new(resolver, new ODataFileContract(Substitute.For<System.IO.Abstractions.IFileSystem>(), new MockConfinedFileAccess(Substitute.For<System.IO.Abstractions.IFileSystem>())));
+		string outsidePath = Path.Combine(
+			Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), "clio-odata-confinement-probe.json");
+
+		// Act
+		ODataCreateBatchResponse response = tool.Create(new ODataCreateArgs {
+			EnvironmentName = "dev", Entity = "Account", RowsFile = outsidePath
+		});
+
+		// Assert
+		response.Created.Should().Be(0,
+			because: "a path outside the allowed locations must never be opened, whether or not it exists");
+		response.Error.Should().Contain("allowed locations",
+			because: "the caller has to be told the path was refused by confinement, not simply missing");
+		client.DidNotReceiveWithAnyArgs().ExecutePostRequest(
+				Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>());
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Accepts a rows-file holding exactly the 1000-row ceiling, so the limit is inclusive rather than off by one.")]
+	public void Create_Should_Accept_A_RowsFile_At_The_Row_Ceiling() {
+		// Arrange
+		MockFileSystem fileSystem = new();
+		string rowsFile = fileSystem.Path.Combine(fileSystem.Path.GetTempPath(),
+			$"odata-create-ceiling-{System.Guid.NewGuid():N}.json");
+		string rows = "[" + string.Join(",", Enumerable.Range(0, ODataCreateTool.MaxRowCount)
+			.Select(index => $"{{\"Name\":\"Row{index}\"}}")) + "]";
+		fileSystem.AddFile(rowsFile, new MockFileData(rows, Encoding.UTF8));
+		IApplicationClient client = Substitute.For<IApplicationClient>();
+		IServiceUrlBuilder urlBuilder = Substitute.For<IServiceUrlBuilder>();
+		IToolCommandResolver resolver = Substitute.For<IToolCommandResolver>();
+		resolver.Resolve<IApplicationClient>(Arg.Any<EnvironmentOptions>()).Returns(client);
+		resolver.Resolve<IServiceUrlBuilder>(Arg.Any<EnvironmentOptions>()).Returns(urlBuilder);
+		urlBuilder.Build(Arg.Any<string>()).Returns("http://creatio/odata/Account");
+		client.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+			.Returns("{\"Id\":\"11111111-1111-1111-1111-111111111111\"}");
+		ODataCreateTool tool = new(resolver, new ODataFileContract(fileSystem, new MockConfinedFileAccess(fileSystem)));
+
+		// Act
+		ODataCreateBatchResponse response = tool.Create(new ODataCreateArgs {
+			EnvironmentName = "dev", Entity = "Account", RowsFile = rowsFile
+		});
+
+		// Assert
+		response.Created.Should().Be(ODataCreateTool.MaxRowCount,
+			because: "the published ceiling is the largest accepted batch, not the first rejected one");
+		client.Received(ODataCreateTool.MaxRowCount).ExecutePostRequest(
+			"http://creatio/odata/Account", Arg.Any<string>(), 30_000, 1, 1);
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Rejects one row over the ceiling before the environment is resolved and before any POST, so a caller can batch without discovering the limit through a partial write.")]
+	public void Create_Should_Reject_A_RowsFile_Over_The_Row_Ceiling_Before_Resolving_Or_Posting() {
+		// Arrange
+		MockFileSystem fileSystem = new();
+		string rowsFile = fileSystem.Path.Combine(fileSystem.Path.GetTempPath(),
+			$"odata-create-over-{System.Guid.NewGuid():N}.json");
+		string rows = "[" + string.Join(",", Enumerable.Range(0, ODataCreateTool.MaxRowCount + 1)
+			.Select(index => $"{{\"Name\":\"Row{index}\"}}")) + "]";
+		fileSystem.AddFile(rowsFile, new MockFileData(rows, Encoding.UTF8));
+		IApplicationClient client = Substitute.For<IApplicationClient>();
+		IToolCommandResolver resolver = Substitute.For<IToolCommandResolver>();
+		resolver.Resolve<IApplicationClient>(Arg.Any<EnvironmentOptions>()).Returns(client);
+		ODataCreateTool tool = new(resolver, new ODataFileContract(fileSystem, new MockConfinedFileAccess(fileSystem)));
+
+		// Act
+		ODataCreateBatchResponse response = tool.Create(new ODataCreateArgs {
+			EnvironmentName = "dev", Entity = "Account", RowsFile = rowsFile
+		});
+
+		// Assert
+		response.Created.Should().Be(0);
+		response.Error.Should().Contain($"{ODataCreateTool.MaxRowCount + 1} entries",
+			because: "the caller has to be told how far over the limit the payload was");
+		response.Error.Should().Contain($"{ODataCreateTool.MaxRowCount}-row limit");
+		resolver.DidNotReceiveWithAnyArgs().Resolve<IApplicationClient>(null);
+		client.DidNotReceiveWithAnyArgs().ExecutePostRequest(
+			Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>());
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Refuses a rows-file that is not valid UTF-8 and issues no POST, instead of decoding the invalid bytes to U+FFFD and sending silently altered data.")]
+	public void Create_Should_Reject_A_RowsFile_That_Is_Not_Valid_Utf8_Without_Posting() {
+		// Arrange - 0xC3 opens a two-byte sequence that 0x28 cannot continue, so strict UTF-8 rejects it.
+		MockFileSystem fileSystem = new();
+		string rowsFile = fileSystem.Path.Combine(fileSystem.Path.GetTempPath(),
+			$"odata-create-utf8-{System.Guid.NewGuid():N}.json");
+		byte[] invalidUtf8 = [
+			(byte)'[', (byte)'{', (byte)'"', (byte)'N', (byte)'"', (byte)':', (byte)'"',
+			0xC3, 0x28,
+			(byte)'"', (byte)'}', (byte)']'
+		];
+		fileSystem.AddFile(rowsFile, new MockFileData(invalidUtf8));
+		IApplicationClient client = Substitute.For<IApplicationClient>();
+		IToolCommandResolver resolver = Substitute.For<IToolCommandResolver>();
+		resolver.Resolve<IApplicationClient>(Arg.Any<EnvironmentOptions>()).Returns(client);
+		ODataCreateTool tool = new(resolver, new ODataFileContract(fileSystem, new MockConfinedFileAccess(fileSystem)));
+
+		// Act
+		ODataCreateBatchResponse response = tool.Create(new ODataCreateArgs {
+			EnvironmentName = "dev", Entity = "Account", RowsFile = rowsFile
+		});
+
+		// Assert
+		response.Created.Should().Be(0);
+		response.Error.Should().Contain("not valid UTF-8",
+			because: "a corrupted payload is a caller-facing input error, not a transport failure");
+		client.DidNotReceiveWithAnyArgs().ExecutePostRequest(
+			Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>());
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Refuses a UTF-16LE rows-file and issues no POST: the BOM must not select an encoding, or the UTF-8-only contract is decided by the file rather than by the contract.")]
+	public void Create_Should_Reject_A_Utf16_RowsFile_Without_Posting() {
+		// Arrange - a real UTF-16LE payload WITH its BOM. ReadAllText's BOM detection would decode this fine.
+		MockFileSystem fileSystem = new();
+		string rowsFile = fileSystem.Path.Combine(fileSystem.Path.GetTempPath(),
+			$"odata-create-utf16-{System.Guid.NewGuid():N}.json");
+		byte[] utf16WithBom = new UnicodeEncoding(bigEndian: false, byteOrderMark: true)
+			.GetPreamble()
+			.Concat(Encoding.Unicode.GetBytes("[{\"Name\":\"A\"}]"))
+			.ToArray();
+		fileSystem.AddFile(rowsFile, new MockFileData(utf16WithBom));
+		IApplicationClient client = Substitute.For<IApplicationClient>();
+		IToolCommandResolver resolver = Substitute.For<IToolCommandResolver>();
+		resolver.Resolve<IApplicationClient>(Arg.Any<EnvironmentOptions>()).Returns(client);
+		ODataCreateTool tool = new(resolver, new ODataFileContract(fileSystem, new MockConfinedFileAccess(fileSystem)));
+
+		// Act
+		ODataCreateBatchResponse response = tool.Create(new ODataCreateArgs {
+			EnvironmentName = "dev", Entity = "Account", RowsFile = rowsFile
+		});
+
+		// Assert
+		response.Created.Should().Be(0);
+		response.Error.Should().Contain("not valid UTF-8",
+			because: "0xFF/0xFE cannot start a UTF-8 sequence, so a UTF-16 file must be reported as the input error it is rather than decoded by BOM detection");
+		client.DidNotReceiveWithAnyArgs().ExecutePostRequest(
+			Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>());
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Accepts a UTF-8 rows-file that carries a BOM: it is legal UTF-8, and the BOM must be stripped before JSON parsing rather than reaching the parser as U+FEFF.")]
+	public void Create_Should_Accept_A_Utf8_RowsFile_With_A_Bom() {
+		// Arrange
+		MockFileSystem fileSystem = new();
+		string rowsFile = fileSystem.Path.Combine(fileSystem.Path.GetTempPath(),
+			$"odata-create-utf8bom-{System.Guid.NewGuid():N}.json");
+		byte[] utf8WithBom = new UTF8Encoding(encoderShouldEmitUTF8Identifier: true)
+			.GetPreamble()
+			.Concat(Encoding.UTF8.GetBytes("[{\"Name\":\"A\"}]"))
+			.ToArray();
+		fileSystem.AddFile(rowsFile, new MockFileData(utf8WithBom));
+		IApplicationClient client = Substitute.For<IApplicationClient>();
+		client.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+			.Returns("{\"Id\":\"00000000-0000-0000-0000-000000000001\"}");
+		IToolCommandResolver resolver = Substitute.For<IToolCommandResolver>();
+		resolver.Resolve<IApplicationClient>(Arg.Any<EnvironmentOptions>()).Returns(client);
+		ODataCreateTool tool = new(resolver, new ODataFileContract(fileSystem, new MockConfinedFileAccess(fileSystem)));
+
+		// Act
+		ODataCreateBatchResponse response = tool.Create(new ODataCreateArgs {
+			EnvironmentName = "dev", Entity = "Account", RowsFile = rowsFile
+		});
+
+		// Assert
+		response.Error.Should().BeNull(
+			because: "a UTF-8 BOM is legal UTF-8; rejecting it would make the strictness about the BOM rather than about the encoding");
+		response.Created.Should().Be(1,
+			because: "the row behind the BOM must still be posted");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Counts the same bare array identically whether it arrives inline or through rows-file, so the summary does not depend on how the payload was supplied.")]
+	public void Create_Should_Report_The_Same_Counts_For_Inline_And_File_Rows() {
+		// Arrange
+		const string bareArray = "[{\"Name\":\"A\"},{\"Name\":\"B\"},{\"Name\":\"C\"}]";
+		MockFileSystem fileSystem = new();
+		string rowsFile = fileSystem.Path.Combine(fileSystem.Path.GetTempPath(),
+			$"odata-create-parity-{System.Guid.NewGuid():N}.json");
+		fileSystem.AddFile(rowsFile, new MockFileData(bareArray, Encoding.UTF8));
+
+		// Act
+		ODataCreateBatchResponse inlineResponse = CreateWithRows(fileSystem,
+			args => args with { Rows = Arr(bareArray) });
+		ODataCreateBatchResponse fileResponse = CreateWithRows(fileSystem,
+			args => args with { RowsFile = rowsFile });
+
+		// Assert
+		fileResponse.Created.Should().Be(inlineResponse.Created,
+			because: "rows-file is a delivery mechanism for the same array, not a different contract");
+		fileResponse.Failed.Should().Be(inlineResponse.Failed);
+		fileResponse.Results.Should().HaveSameCount(inlineResponse.Results);
+		inlineResponse.Created.Should().Be(3, because: "all three rows of the bare array are posted");
+	}
+
+	private static ODataCreateBatchResponse CreateWithRows(
+		MockFileSystem fileSystem, Func<ODataCreateArgs, ODataCreateArgs> configure) {
+		IApplicationClient client = Substitute.For<IApplicationClient>();
+		IServiceUrlBuilder urlBuilder = Substitute.For<IServiceUrlBuilder>();
+		IToolCommandResolver resolver = Substitute.For<IToolCommandResolver>();
+		resolver.Resolve<IApplicationClient>(Arg.Any<EnvironmentOptions>()).Returns(client);
+		resolver.Resolve<IServiceUrlBuilder>(Arg.Any<EnvironmentOptions>()).Returns(urlBuilder);
+		urlBuilder.Build(Arg.Any<string>()).Returns("http://creatio/odata/Account");
+		client.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+			.Returns("{\"Id\":\"11111111-1111-1111-1111-111111111111\"}");
+		ODataCreateTool tool = new(resolver, new ODataFileContract(fileSystem, new MockConfinedFileAccess(fileSystem)));
+		return tool.Create(configure(new ODataCreateArgs { EnvironmentName = "dev", Entity = "Account" }));
+	}
+
 	private static JsonElement Arr(string json) => JsonDocument.Parse(json).RootElement.Clone();
 
 	[Test]
@@ -48,7 +494,7 @@ public sealed class ODataCreateToolTests {
 			.Returns(
 				"{\"Id\":\"11111111-1111-1111-1111-111111111111\",\"Name\":\"Acme\"}",
 				"{\"Id\":\"22222222-2222-2222-2222-222222222222\",\"Name\":\"Globex\"}");
-		ODataCreateTool tool = new(resolver);
+		ODataCreateTool tool = new(resolver, new ODataFileContract(Substitute.For<System.IO.Abstractions.IFileSystem>(), new MockConfinedFileAccess(Substitute.For<System.IO.Abstractions.IFileSystem>())));
 
 		// Act
 		ODataCreateBatchResponse response = tool.Create(new ODataCreateArgs {
@@ -81,7 +527,7 @@ public sealed class ODataCreateToolTests {
 		urlBuilder.Build(Arg.Any<string>()).Returns("http://env/odata/Account");
 		client.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
 			.Returns("{\"Id\":\"11111111-1111-1111-1111-111111111111\"}");
-		ODataCreateTool tool = new(resolver);
+		ODataCreateTool tool = new(resolver, new ODataFileContract(Substitute.For<System.IO.Abstractions.IFileSystem>(), new MockConfinedFileAccess(Substitute.For<System.IO.Abstractions.IFileSystem>())));
 
 		// Act
 		tool.Create(new ODataCreateArgs { EnvironmentName = "dev", Entity = "Account", Rows = Arr("[{\"Name\":\"A\"}]") });
@@ -97,7 +543,7 @@ public sealed class ODataCreateToolTests {
 	public void Create_Should_Fail_When_Entity_Missing() {
 		// Arrange
 		IToolCommandResolver resolver = Substitute.For<IToolCommandResolver>();
-		ODataCreateTool tool = new(resolver);
+		ODataCreateTool tool = new(resolver, new ODataFileContract(Substitute.For<System.IO.Abstractions.IFileSystem>(), new MockConfinedFileAccess(Substitute.For<System.IO.Abstractions.IFileSystem>())));
 
 		// Act
 		ODataCreateBatchResponse response = tool.Create(new ODataCreateArgs {
@@ -115,7 +561,7 @@ public sealed class ODataCreateToolTests {
 	public void Create_Should_Fail_When_Rows_Empty() {
 		// Arrange
 		IToolCommandResolver resolver = Substitute.For<IToolCommandResolver>();
-		ODataCreateTool tool = new(resolver);
+		ODataCreateTool tool = new(resolver, new ODataFileContract(Substitute.For<System.IO.Abstractions.IFileSystem>(), new MockConfinedFileAccess(Substitute.For<System.IO.Abstractions.IFileSystem>())));
 
 		// Act
 		ODataCreateBatchResponse response = tool.Create(new ODataCreateArgs {
@@ -140,7 +586,7 @@ public sealed class ODataCreateToolTests {
 		urlBuilder.Build(Arg.Any<string>()).Returns("http://creatio/odata/Account");
 		client.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
 			.Returns("{\"error\":{\"code\":\"\",\"message\":\"Column Name is required\"}}");
-		ODataCreateTool tool = new(resolver);
+		ODataCreateTool tool = new(resolver, new ODataFileContract(Substitute.For<System.IO.Abstractions.IFileSystem>(), new MockConfinedFileAccess(Substitute.For<System.IO.Abstractions.IFileSystem>())));
 
 		// Act
 		ODataCreateBatchResponse response = tool.Create(new ODataCreateArgs {
@@ -166,7 +612,7 @@ public sealed class ODataCreateToolTests {
 		urlBuilder.Build(Arg.Any<string>()).Returns("http://creatio/odata/AddressType");
 		client.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
 			.Returns("{\"Message\":\"An error has occurred.\",\"ExceptionMessage\":\"Object reference not set to an instance of an object.\",\"ExceptionType\":\"System.NullReferenceException\"}");
-		ODataCreateTool tool = new(resolver);
+		ODataCreateTool tool = new(resolver, new ODataFileContract(Substitute.For<System.IO.Abstractions.IFileSystem>(), new MockConfinedFileAccess(Substitute.For<System.IO.Abstractions.IFileSystem>())));
 
 		// Act
 		ODataCreateBatchResponse response = tool.Create(new ODataCreateArgs {
@@ -192,7 +638,7 @@ public sealed class ODataCreateToolTests {
 		urlBuilder.Build(Arg.Any<string>()).Returns("http://creatio/0/odata/UsrCustomerStatus");
 		client.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
 			.Returns("{\"Message\":\"No HTTP resource was found that matches the request URI '.../0/odata/UsrCustomerStatus'.\",\"MessageDetail\":\"No type was found that matches the controller named 'UsrCustomerStatus'.\"}");
-		ODataCreateTool tool = new(resolver);
+		ODataCreateTool tool = new(resolver, new ODataFileContract(Substitute.For<System.IO.Abstractions.IFileSystem>(), new MockConfinedFileAccess(Substitute.For<System.IO.Abstractions.IFileSystem>())));
 
 		// Act
 		ODataCreateBatchResponse response = tool.Create(new ODataCreateArgs {
@@ -221,7 +667,7 @@ public sealed class ODataCreateToolTests {
 		urlBuilder.Build(Arg.Any<string>()).Returns("http://creatio/odata/Account");
 		client.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
 			.Returns("{\"Message\":\"Authorization has been denied for this request.\"}");
-		ODataCreateTool tool = new(resolver);
+		ODataCreateTool tool = new(resolver, new ODataFileContract(Substitute.For<System.IO.Abstractions.IFileSystem>(), new MockConfinedFileAccess(Substitute.For<System.IO.Abstractions.IFileSystem>())));
 
 		// Act
 		ODataCreateBatchResponse response = tool.Create(new ODataCreateArgs {
@@ -248,7 +694,7 @@ public sealed class ODataCreateToolTests {
 		urlBuilder.Build(Arg.Any<string>()).Returns("http://creatio/odata/EmailMessageData");
 		client.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
 			.Returns("{\"@odata.context\":\"http://creatio/odata/$metadata#EmailMessageData/$entity\",\"Id\":\"22222222-2222-2222-2222-222222222222\",\"Message\":\"Hello there\"}");
-		ODataCreateTool tool = new(resolver);
+		ODataCreateTool tool = new(resolver, new ODataFileContract(Substitute.For<System.IO.Abstractions.IFileSystem>(), new MockConfinedFileAccess(Substitute.For<System.IO.Abstractions.IFileSystem>())));
 
 		// Act
 		ODataCreateBatchResponse response = tool.Create(new ODataCreateArgs {
@@ -276,7 +722,7 @@ public sealed class ODataCreateToolTests {
 			.Returns("{\"@odata.context\":\"http://creatio/odata/$metadata#UsrIntegrationLog/$entity\","
 				+ "\"Id\":\"33333333-3333-3333-3333-333333333333\",\"Success\":false,"
 				+ "\"errorInfo\":null}");
-		ODataCreateTool tool = new(resolver);
+		ODataCreateTool tool = new(resolver, StubFileContract());
 
 		// Act
 		ODataCreateBatchResponse response = tool.Create(new ODataCreateArgs {
@@ -304,7 +750,7 @@ public sealed class ODataCreateToolTests {
 		client.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
 			.Returns("{\"Code\":-1,\"Exception\":\"Access to the entity is denied.\","
 				+ "\"Id\":\"44444444-4444-4444-4444-444444444444\"}");
-		ODataCreateTool tool = new(resolver);
+		ODataCreateTool tool = new(resolver, StubFileContract());
 
 		// Act
 		ODataCreateBatchResponse response = tool.Create(new ODataCreateArgs {
@@ -331,7 +777,7 @@ public sealed class ODataCreateToolTests {
 		urlBuilder.Build(Arg.Any<string>()).Returns("http://creatio/odata/UsrThing");
 		client.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
 			.Returns("{\"@odata.context\":\"http://creatio/odata/$metadata#UsrThing/$entity\",\"Id\":\"33333333-3333-3333-3333-333333333333\",\"Code\":200,\"Message\":\"Created\"}");
-		ODataCreateTool tool = new(resolver);
+		ODataCreateTool tool = new(resolver, StubFileContract());
 
 		// Act
 		ODataCreateBatchResponse response = tool.Create(new ODataCreateArgs {
@@ -357,7 +803,7 @@ public sealed class ODataCreateToolTests {
 		urlBuilder.Build(Arg.Any<string>()).Returns("http://secret-host:88/prod-app/0/odata/UsrCustomerStatus");
 		client.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
 			.Returns("{\"Message\":\"No HTTP resource was found that matches the request URI 'http://secret-host:88/prod-app/0/odata/UsrCustomerStatus'.\"}");
-		ODataCreateTool tool = new(resolver);
+		ODataCreateTool tool = new(resolver, new ODataFileContract(Substitute.For<System.IO.Abstractions.IFileSystem>(), new MockConfinedFileAccess(Substitute.For<System.IO.Abstractions.IFileSystem>())));
 
 		// Act
 		ODataCreateBatchResponse response = tool.Create(new ODataCreateArgs {
@@ -382,7 +828,7 @@ public sealed class ODataCreateToolTests {
 		urlBuilder.Build(Arg.Any<string>()).Returns("http://creatio/odata/Account");
 		client.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
 			.Returns("{\"Message\":\"\",\"MessageDetail\":\"\"}");
-		ODataCreateTool tool = new(resolver);
+		ODataCreateTool tool = new(resolver, new ODataFileContract(Substitute.For<System.IO.Abstractions.IFileSystem>(), new MockConfinedFileAccess(Substitute.For<System.IO.Abstractions.IFileSystem>())));
 
 		// Act
 		ODataCreateBatchResponse response = tool.Create(new ODataCreateArgs {
@@ -410,7 +856,7 @@ public sealed class ODataCreateToolTests {
 		// not recognize it; with no Id it falls through to the id-missing fallback branch.
 		client.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
 			.Returns("{\"Message\":\"The request is invalid.\",\"ModelState\":{\"row\":[\"failed calling http://secret-host:88/prod-app/0/odata/Account\"]}}");
-		ODataCreateTool tool = new(resolver);
+		ODataCreateTool tool = new(resolver, new ODataFileContract(Substitute.For<System.IO.Abstractions.IFileSystem>(), new MockConfinedFileAccess(Substitute.For<System.IO.Abstractions.IFileSystem>())));
 
 		// Act
 		ODataCreateBatchResponse response = tool.Create(new ODataCreateArgs {
@@ -435,7 +881,7 @@ public sealed class ODataCreateToolTests {
 		urlBuilder.Build(Arg.Any<string>()).Returns("http://creatio/odata/NumberKeyed");
 		client.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
 			.Returns("{\"Id\":42,\"Name\":\"Office\"}");
-		ODataCreateTool tool = new(resolver);
+		ODataCreateTool tool = new(resolver, new ODataFileContract(Substitute.For<System.IO.Abstractions.IFileSystem>(), new MockConfinedFileAccess(Substitute.For<System.IO.Abstractions.IFileSystem>())));
 
 		// Act
 		ODataCreateBatchResponse response = tool.Create(new ODataCreateArgs {
@@ -461,7 +907,7 @@ public sealed class ODataCreateToolTests {
 		urlBuilder.Build(Arg.Any<string>()).Returns("http://creatio/odata/AddressType");
 		client.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
 			.Returns("{\"Name\":\"Office\"}");
-		ODataCreateTool tool = new(resolver);
+		ODataCreateTool tool = new(resolver, new ODataFileContract(Substitute.For<System.IO.Abstractions.IFileSystem>(), new MockConfinedFileAccess(Substitute.For<System.IO.Abstractions.IFileSystem>())));
 
 		// Act
 		ODataCreateBatchResponse response = tool.Create(new ODataCreateArgs {
@@ -488,7 +934,7 @@ public sealed class ODataCreateToolTests {
 			.Returns(
 				"{\"error\":{\"code\":\"\",\"message\":\"bad row\"}}",
 				"{\"Id\":\"22222222-2222-2222-2222-222222222222\"}");
-		ODataCreateTool tool = new(resolver);
+		ODataCreateTool tool = new(resolver, new ODataFileContract(Substitute.For<System.IO.Abstractions.IFileSystem>(), new MockConfinedFileAccess(Substitute.For<System.IO.Abstractions.IFileSystem>())));
 
 		// Act
 		ODataCreateBatchResponse response = tool.Create(new ODataCreateArgs {
@@ -515,7 +961,7 @@ public sealed class ODataCreateToolTests {
 		urlBuilder.Build(Arg.Any<string>()).Returns("http://creatio/odata/Account");
 		client.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
 			.Returns("{\"error\":{\"code\":\"\",\"message\":\"bad row\"}}");
-		ODataCreateTool tool = new(resolver);
+		ODataCreateTool tool = new(resolver, new ODataFileContract(Substitute.For<System.IO.Abstractions.IFileSystem>(), new MockConfinedFileAccess(Substitute.For<System.IO.Abstractions.IFileSystem>())));
 
 		// Act
 		ODataCreateBatchResponse response = tool.Create(new ODataCreateArgs {
@@ -529,7 +975,100 @@ public sealed class ODataCreateToolTests {
 		client.Received(1).ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>(), 30_000, 1, 1);
 	}
 
+	[Test]
+	[Category("Unit")]
+	[Description("Stops the batch when the caller cancels it: no further row is POSTed, and the first unattempted row is reported as definitely not created.")]
+	public void Create_Should_Stop_Posting_When_The_Caller_Cancels() {
+		// Arrange
+		IApplicationClient client = Substitute.For<IApplicationClient>();
+		IServiceUrlBuilder urlBuilder = Substitute.For<IServiceUrlBuilder>();
+		IToolCommandResolver resolver = Substitute.For<IToolCommandResolver>();
+		resolver.Resolve<IApplicationClient>(Arg.Any<EnvironmentOptions>()).Returns(client);
+		resolver.Resolve<IServiceUrlBuilder>(Arg.Any<EnvironmentOptions>()).Returns(urlBuilder);
+		urlBuilder.Build(Arg.Any<string>()).Returns("http://creatio/odata/Account");
+		using CancellationTokenSource cancellation = new();
+		//Cancel from inside the first POST, so the guard is exercised BETWEEN rows exactly as a caller
+		//disconnecting mid-batch would trigger it.
+		client.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+			.Returns(_ => {
+				cancellation.Cancel();
+				return "{\"Id\":\"11111111-1111-1111-1111-111111111111\"}";
+			});
+		ODataCreateTool tool = new(resolver, new ODataFileContract(Substitute.For<System.IO.Abstractions.IFileSystem>(), new MockConfinedFileAccess(Substitute.For<System.IO.Abstractions.IFileSystem>())));
+
+		// Act
+		ODataCreateBatchResponse response = tool.Create(new ODataCreateArgs {
+			EnvironmentName = "dev",
+			Entity = "Account",
+			Rows = Arr("[{\"Name\":\"First\"},{\"Name\":\"Second\"},{\"Name\":\"Third\"}]")
+		}, cancellation.Token);
+
+		// Assert
+		client.Received(1).ExecutePostRequest(
+			Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>());
+		response.Created.Should().Be(1, because: "only the row already in flight completes");
+		response.Results.Should().HaveCount(2,
+			because: "the first row that was not attempted is reported, and nothing after it is sent");
+		response.Results[1].RecordCreated.Should().BeFalse(
+			because: "a row that was never sent definitely did not insert, so the caller can re-send it safely");
+		response.Results[1].Error.Should().Contain("cancelled",
+			because: "the caller has to know the batch stopped early and why");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Caps each row's request timeout to what is left of the batch budget, so the last row cannot overshoot the aggregate deadline by a further full timeout.")]
+	public void Create_Should_Cap_Row_Timeout_To_The_Batch_Budget() {
+		// Arrange
+		IApplicationClient client = Substitute.For<IApplicationClient>();
+		IServiceUrlBuilder urlBuilder = Substitute.For<IServiceUrlBuilder>();
+		IToolCommandResolver resolver = Substitute.For<IToolCommandResolver>();
+		resolver.Resolve<IApplicationClient>(Arg.Any<EnvironmentOptions>()).Returns(client);
+		resolver.Resolve<IServiceUrlBuilder>(Arg.Any<EnvironmentOptions>()).Returns(urlBuilder);
+		urlBuilder.Build(Arg.Any<string>()).Returns("http://creatio/odata/Account");
+		client.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+			.Returns("{\"Id\":\"11111111-1111-1111-1111-111111111111\"}");
+		ODataCreateTool tool = new(resolver, new ODataFileContract(Substitute.For<System.IO.Abstractions.IFileSystem>(), new MockConfinedFileAccess(Substitute.For<System.IO.Abstractions.IFileSystem>())));
+
+		// Act
+		tool.Create(new ODataCreateArgs {
+			EnvironmentName = "dev", Entity = "Account", Rows = Arr("[{\"Name\":\"Acme\"}]")
+		});
+
+		// Assert
+		client.Received(1).ExecutePostRequest(
+			Arg.Any<string>(),
+			Arg.Any<string>(),
+			Arg.Is<int>(timeout => timeout > 0 && timeout <= ODataCreateTool.RowRequestTimeoutMs),
+			Arg.Any<int>(),
+			Arg.Any<int>());
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Keeps the row-ceiling wording and the enforced ceiling derived from one another, so an agent cannot read one limit off a description and be rejected by another.")]
+	public void Create_Should_Publish_The_Enforced_Row_Ceiling() {
+		// Arrange
+
+		// Act
+		string limitText = ODataCreateTool.RowCountLimitDescription;
+
+		// Assert
+		ODataCreateTool.MaxRowCountText.Should().Be(ODataCreateTool.MaxRowCount.ToString(CultureInfo.InvariantCulture),
+			because: "the text form of the ceiling is what every description is built from, so it must equal the enforced value");
+		limitText.Should().Contain(ODataCreateTool.MaxRowCountText,
+			because: "the shared wording has to state the number it enforces");
+	}
+
 	#region record-created side-effect state
+
+	/// <summary>
+	/// The file contract this tool now takes as a required dependency, backed by substitutes: these tests
+	/// exercise the inline create path, which never reaches it.
+	/// </summary>
+	private static ODataFileContract StubFileContract() =>
+		new(Substitute.For<System.IO.Abstractions.IFileSystem>(),
+			new MockConfinedFileAccess(Substitute.For<System.IO.Abstractions.IFileSystem>()));
 
 	private static ODataCreateTool BuildTool(IApplicationClient client) {
 		IServiceUrlBuilder urlBuilder = Substitute.For<IServiceUrlBuilder>();
@@ -537,7 +1076,7 @@ public sealed class ODataCreateToolTests {
 		resolver.Resolve<IApplicationClient>(Arg.Any<EnvironmentOptions>()).Returns(client);
 		resolver.Resolve<IServiceUrlBuilder>(Arg.Any<EnvironmentOptions>()).Returns(urlBuilder);
 		urlBuilder.Build(Arg.Any<string>()).Returns(call => $"http://creatio/{call.Arg<string>()}");
-		return new ODataCreateTool(resolver);
+		return new ODataCreateTool(resolver, StubFileContract());
 	}
 
 	[Test]

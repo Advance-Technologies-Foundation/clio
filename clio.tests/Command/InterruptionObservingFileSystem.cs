@@ -103,6 +103,17 @@ internal sealed class InterruptionObservingFileSystem {
 			_onMutation();
 			return opened;
 		});
+		// The FileStreamOptions overload is a SEPARATE member, so forwarding the (mode, access) one above
+		// does not cover it: a caller that needs a creation-time Unix mode has to use this one, and an
+		// unforwarded substitute member returns null rather than failing, which surfaces as an
+		// ArgumentNullException from deep inside the system under test instead of as a missing forwarder.
+		file.Open(Arg.Any<string>(), Arg.Any<FileStreamOptions>()).Returns(call => {
+			_contentWriteTargets.Add(call.ArgAt<string>(0));
+			FileSystemStream opened = _inner.File.Open(
+				call.ArgAt<string>(0), call.ArgAt<FileStreamOptions>(1));
+			_onMutation();
+			return opened;
+		});
 
 		IFileSystem observing = Substitute.For<IFileSystem>();
 		observing.Path.Returns(_inner.Path);

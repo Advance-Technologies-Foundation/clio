@@ -208,7 +208,10 @@ jobs:
 
   unit-tests:
     name: Unit Tests
-    needs: [changes, unit-test-shards, net8-compatibility, conflict-resolver-tests]
+    # The Unix file-mode leg is aggregated HERE, not left as a separate context: the branch ruleset requires
+    # `Unit Tests`, so a job it does not depend on can fail while every required context stays green - a
+    # mutation removing UnixCreateMode would have merged. Aggregating it makes the required gate cover it.
+    needs: [changes, unit-test-shards, unix-file-mode-tests, net8-compatibility, conflict-resolver-tests]
     if: always()
     runs-on: ubuntu-latest
     permissions: {}
@@ -220,9 +223,69 @@ jobs:
             needs.changes.outputs.tests   == 'true' ||
             github.ref == 'refs/heads/master') &&
            (needs.unit-test-shards.result != 'success' ||
+            needs.unix-file-mode-tests.result != 'success' ||
             needs.net8-compatibility.result != 'success' ||
             needs.conflict-resolver-tests.result != 'success'))
         run: exit 1
+
+  # ── Unix file-mode gate ─────────────────────────────────────────────
+  # The unit job above runs on windows-latest, where Unix file modes have no meaning and
+  # OutputPathConfinementTests skips its 0600 regressions outright. Without this leg CI stays green if
+  # UnixCreateMode is removed or downgraded to a create-then-chmod, and the confidentiality guarantee for a
+  # raw service response written under the SHARED OS temp root is unprotected.
+  # It also runs ConfinedFileAccessTests, whose no-follow guarantee rests on raw O_* flag values that differ
+  # per platform AND per Linux architecture. A wrong value fails silently in the dangerous direction - the
+  # open just succeeds without the guarantee - so every platform whose constant set differs needs a leg that
+  # actually exercises it. macOS is not optional here: the Darwin O_* values are entirely different numbers
+  # from the Linux ones, ELOOP is 62 there against 40 on Linux, and a Linux-only leg shipped that whole set
+  # unexercised on a product that supports macOS. The legs are a MATRIX rather than separate jobs so the
+  # `Unit Tests` aggregation below keeps covering all of them through one `needs` entry.
+  # BoundedGetDeadlineTests is in the same filter for the same reason: its owner-only staging-directory
+  # regression is Platform(Exclude = "Win"), so the Windows unit job skips it and only this leg gates the
+  # 0700-at-creation guarantee for the raw response staged under the shared OS temp root.
+  unix-file-mode-tests:
+    name: Unix File Mode Tests (${{ matrix.os }})
+    needs: changes
+    if: >-
+      needs.changes.outputs.clio-src == 'true' ||
+      needs.changes.outputs.tests   == 'true' ||
+      github.ref == 'refs/heads/master'
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 1
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: |
+            8.0.x
+            10.0.x
+
+      - name: Run Unix file-mode confidentiality tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          # TestCategory, not the Category alias: the NUnit adapter can classify a mixed Category +
+          # FullyQualifiedName expression as a generic filter and replace it with an empty one (see
+          # docs/knowledge/Tests/nunit-adapter-drops-large-non-category-shard-filters.md).
+          dotnet test ./clio.tests/clio.tests.csproj \
+            --framework net10.0 \
+            --filter "(FullyQualifiedName~OutputPathConfinementTests|FullyQualifiedName~ConfinedFileAccessTests|FullyQualifiedName~BoundedGetDeadlineTests)&TestCategory=Integration" \
+            -p:RunAnalyzers=false \
+            | tee unix-file-mode-tests.log
+          # Executed-count floor: a mis-selected filter that ran nothing (or a stray subset) must not pass
+          # silently. Both legs currently execute 32 cases; the floor leaves room for platform skips.
+          passed=$(grep -Eo 'Passed:[[:space:]]+[0-9]+' unix-file-mode-tests.log | tail -1 | grep -Eo '[0-9]+' || echo 0)
+          echo "Executed (passed) confinement cases: ${passed}"
+          if [ "${passed}" -lt 20 ]; then
+            echo "::error::Unix file-mode leg executed only ${passed} passing cases; the filter selected too little." >&2
+            exit 1
+          fi
 
   # ── ClioGate tests (only when the bundled service changes) ──────────
   cliogate-tests:
