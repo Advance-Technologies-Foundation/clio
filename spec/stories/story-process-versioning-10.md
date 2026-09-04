@@ -55,7 +55,7 @@ Test naming: `MethodName_ShouldBehavior_WhenCondition`
 
 ## Definition of Done
 
-- [ ] The diff against a designer-made version is attached to the PR — a unit test cannot establish this. **NOT DONE, and not deferrable to effort**: this story persists nothing, so half of that diff does not exist yet. It belongs with the save (story 12) and is recorded there.
+- [x] The diff against a designer-made version is attached to the PR — a unit test cannot establish this. **DONE at story 12**, once there was something persisted to compare: on `creatio_2` the designer's own `Save new version` produced a version identical to this build's on every `SysSchema` column and every `SysSchemaProperty` value except the number itself. Recorded in story 12's Dev Agent Record and the workspace diary.
 - [x] An assertion over the SOURCE instance's `Outgoings` counts and `Group` binding exists, because a row comparison cannot see this class of defect
 - [x] Code compiles clean; tests use fixture-level `[TestFixture(Category = "UnitTests")]` — this repo's convention, and the opposite of clio's
 - [x] Workspace-diary entry added (`CLAUDE.md:131-150`) — mandatory in this repo

@@ -95,10 +95,42 @@ Test naming: `MethodName_ShouldBehavior_WhenCondition`
   - **A story-9 test caught a real defect here:** the first version of the catch called
     `Rollback(cloneItem)` unconditionally, so an unauthorized caller produced a repository call — turning
     the refusal into an oracle for whether a process exists. Now guarded by `cloneItem != null && !saved`.
-  - **NOT DONE, and named rather than quietly skipped:** the integration run on a dedicated sandbox (two
-    consecutive saves numbering 1 then 2; a rejected edit leaving the family unchanged) and the
-    field-by-field diff against a DESIGNER-created version, carried over from story 10. Both need a
-    disposable stand with this package installed. The local stand is the owner's working environment and
-    versions are undeletable by design, so running them there would leave permanent residue. Every INPUT
-    to those two claims is unit-covered; the claims themselves are unobserved, and the numbers 1 and 2
-    remain derived rather than measured (as story 8 already recorded).
+  - **VERIFIED ON A STAND — the numbers 1 and 2 are observed, not derived.** Run against `creatio_2`
+    (`C:\Projects\creatio_2`, port 40002, core 10.2.20.0, classic DB mode), a second local stand the
+    owner pointed at. The branch build installed through `push-workspace` and
+    `ProcessDesignService/Ping` answered `{"PingResult":{"success":true}}`.
+    - First call, empty edit list: `success:true, version:1, versionName:"UsrVerifyStory12Custom1",
+      isActiveVersion:false, versionRootSchemaUId:<root>, appliedOperations:0, warnings:null`.
+    - Second call, same root: `version:2, versionName:"UsrVerifyStory12Custom2"`. **AC-01 observed.**
+    - A rejected descriptor (`op:"addWidget"`): `success:false`, every version member null/0, the message
+      naming the unsupported operation. `SysSchema` then held exactly THREE rows for the family, so
+      nothing was persisted — **FR-16 observed rather than argued.**
+    - In the database, both versions' `SysSchema.ParentId` equals the ROOT's `SysSchema.Id`, not its UId
+      — the translation story 8 measured, now confirmed from the write side.
+    - Through the READ half, `describe-business-process` on the root reports `version:0,
+      isActiveVersion:true` and a `versions[]` of three: root active at 0, both created versions inactive
+      at 1 and 2, all in one package. **The root stayed active through both creations**, so creating a
+      version changed nothing about what the environment executes. Stories 1-5 and 9-12 agree end to end.
+    - `warnings` was null on both saves, so the saved versions came back `IsInterpretable = true` and the
+      AC-06 warning path stayed correctly silent.
+    - Trap for any caller: the WCF body must be WRAPPED by the parameter name (`{"request": {…}}`). A bare
+      descriptor answers `Value cannot be null. Parameter name: request`, which reads like a null-check bug.
+    - Permanent residue on `creatio_2`: `UsrVerifyStory12` plus `UsrVerifyStory12Custom1` and `…Custom2`
+      in package `Custom`. Versions are undeletable by design, which is why this ran on the second stand.
+  - **The diff against a DESIGNER-created version is DONE, and the two are indistinguishable.** Run on
+    `creatio_2` through the classic designer (served on the 10.2 line, entered from the process card).
+    Observed first-hand: the SAVE split button offers `Save new version (Ctrl+Alt+N)` /
+    `Save current version (Ctrl+Alt+S)`, and the former creates the version and then ASKS in a separate
+    prompt — *Set the current version of the process "Story 12 verification" actual?* YES / NO. Answered
+    NO, so the comparison is apples to apples. The designer's version came out as `…Custom3` — it
+    CONTINUED the numbering, an independent confirmation that this build's allocator call and the
+    platform's own agree on (root, package).
+    - `SysSchemaProperty`: identical sets of nine properties and identical values except the number —
+      `CreatedInVersion 10.2.20.0`, `IsActiveVersion False`, `IsCreatedInSvg True`,
+      `IsInterpretable True`, `IsTracing False`, `StudioFreeProcessUrl` empty, `Tag Business Process`,
+      `UseForceCompile False`, `Version 1 / 2 / 3`.
+    - `SysSchema` row: identical `ParentId` (the ROOT's Id), `ExtendParent False`, same `SysPackageId`,
+      `ManagerName`, `Caption`, `IsChanged True`, `IsLocked True`, `DenyExtending False`.
+    - Two read traps worth keeping: `SysSchema` has no `CreatedInVersion` COLUMN (it exists only as a
+      `SysSchemaProperty` row), and OData cannot `$filter` `SysSchemaProperty` by `SysSchemaId` even
+      though the column projects fine. Property reads go through SQL.
