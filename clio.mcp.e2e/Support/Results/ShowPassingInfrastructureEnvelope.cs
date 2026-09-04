@@ -76,7 +76,7 @@ internal static class ShowPassingInfrastructureResultParser
 			return contentEnvelope!;
 		}
 
-		throw new InvalidOperationException("Could not parse show-passing-infrastructure MCP result.");
+		throw new InvalidOperationException($"Could not parse show-passing-infrastructure MCP result: {McpResultDiagnostics.Describe(callResult)}");
 	}
 
 	private static bool TrySerializeToJsonElement(object? value, out JsonElement element)

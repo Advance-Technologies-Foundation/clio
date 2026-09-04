@@ -30,7 +30,7 @@ internal static class FsmModeStatusResultParser
 			return contentResult!;
 		}
 
-		throw new InvalidOperationException("Could not parse get-fsm-mode MCP result.");
+		throw new InvalidOperationException($"Could not parse get-fsm-mode MCP result: {McpResultDiagnostics.Describe(callResult)}");
 	}
 
 	private static bool TrySerializeToJsonElement(object? value, out JsonElement element)

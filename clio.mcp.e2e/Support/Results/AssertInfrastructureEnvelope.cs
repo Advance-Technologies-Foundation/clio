@@ -50,7 +50,7 @@ internal static class AssertInfrastructureResultParser
 			return contentEnvelope!;
 		}
 
-		throw new InvalidOperationException("Could not parse assert-infrastructure structured MCP result.");
+		throw new InvalidOperationException($"Could not parse assert-infrastructure structured MCP result: {McpResultDiagnostics.Describe(callResult)}");
 	}
 
 	private static bool TrySerializeToJsonElement(object? value, out JsonElement element)

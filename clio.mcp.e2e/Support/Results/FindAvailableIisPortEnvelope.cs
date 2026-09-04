@@ -29,7 +29,7 @@ internal static class FindAvailableIisPortResultParser
 			return contentEnvelope!;
 		}
 
-		throw new InvalidOperationException("Could not parse find-empty-iis-port MCP result.");
+		throw new InvalidOperationException($"Could not parse find-empty-iis-port MCP result: {McpResultDiagnostics.Describe(callResult)}");
 	}
 
 	private static bool TrySerializeToJsonElement(object? value, out JsonElement element)

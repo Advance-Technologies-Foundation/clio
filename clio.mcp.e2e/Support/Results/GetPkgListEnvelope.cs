@@ -34,7 +34,7 @@ internal static class GetPkgListResultParser {
 			return contentResponse!;
 		}
 
-		throw new InvalidOperationException("Could not parse list-packages MCP result.");
+		throw new InvalidOperationException($"Could not parse list-packages MCP result: {McpResultDiagnostics.Describe(callResult)}");
 	}
 
 	private static bool TrySerializeToJsonElement(object? value, out JsonElement element) {

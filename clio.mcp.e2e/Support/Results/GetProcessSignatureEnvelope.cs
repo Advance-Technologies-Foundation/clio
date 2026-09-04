@@ -33,7 +33,7 @@ internal static class GetProcessSignatureResultParser {
 			return contentEnvelope!;
 		}
 
-		throw new InvalidOperationException("Could not parse get-process-signature MCP result.");
+		throw new InvalidOperationException($"Could not parse get-process-signature MCP result: {McpResultDiagnostics.Describe(callResult)}");
 	}
 
 	private static bool TrySerializeToJsonElement(object? value, out JsonElement element) {

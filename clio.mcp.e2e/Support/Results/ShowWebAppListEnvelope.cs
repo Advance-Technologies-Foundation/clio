@@ -28,7 +28,7 @@ internal static class ShowWebAppListResultParser
 			return contentResult;
 		}
 
-		throw new InvalidOperationException("Could not parse show-webApp-list MCP result.");
+		throw new InvalidOperationException($"Could not parse show-webApp-list MCP result: {McpResultDiagnostics.Describe(callResult)}");
 	}
 
 	/// <summary>
@@ -47,7 +47,7 @@ internal static class ShowWebAppListResultParser
 			return content.GetRawText();
 		}
 
-		throw new InvalidOperationException("Could not read the show-webApp-list MCP result payload.");
+		throw new InvalidOperationException($"Could not read the show-webApp-list MCP result payload: {McpResultDiagnostics.Describe(callResult)}");
 	}
 
 	private static bool TrySerializeToJsonElement(object? value, out JsonElement element)
