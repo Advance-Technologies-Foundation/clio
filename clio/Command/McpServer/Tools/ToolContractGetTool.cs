@@ -435,6 +435,7 @@ internal static class ToolContractCatalog {
 	private const string ApplicationIdFieldName = "application-id";
 	private const string ArrayType = "array";
 	private const string BindingNameFieldName = "binding-name";
+	private const string BodyFileFieldName = "body-file";
 	private const string BooleanFalseLiteral = "false";
 	private const string BooleanType = "boolean";
 	private const string ColumnNameFieldName = "column-name";
@@ -4926,7 +4927,7 @@ internal static class ToolContractCatalog {
 				EnvironmentOrExplicitConnectionFields(
 					Field(SchemaNameFieldName, StringType, "Freedom UI page schema name."),
 					Field("body", StringType, "Full page body with all marker pairs. Reuse the CONTENTS of the file at `get-page.files.bodyFile` rather than the bundle written to `get-page.files.bundleFile`. Either `body` or `body-file` must be provided. WARNING: re-sending the full inherited body verbatim is wrong in BOTH modes, and they fail differently. In `append` a full-config body is rejected UP-FRONT, offline \u2014 that mode takes only the new viewConfigDiff/handlers operations in the diff form, and the rejection itself points at replace mode. In `replace` the body reaches the SERVER and can fail there with 'Object vs Array' when it re-applies merges already inherited from the parent hierarchy, so passing the `get-page.files.bodyFile` path straight through as `body-file` is mechanically accepted but IS the resend hazard, not a recommendation."),
-					Field("body-file", StringType, "Absolute path to a file containing the page body. Used when `body` is empty. Enables passing large bodies without inline JSON escaping."),
+					Field(BodyFileFieldName, StringType, "Absolute path to a file containing the page body. Used when `body` is empty. Enables passing large bodies without inline JSON escaping."),
 					Field(DryRunFieldName, BooleanType, "Validate without saving."),
 					Field(ValidateFieldName, BooleanType, "Run client-side content and run-process validation before saving. Set false only as an explicit escape hatch for a pre-existing page defect; JavaScript syntax, AST loadability, replace-mode marker integrity, the mobile JSON-object structure check, and the page baseline/conflict guard remain mandatory. It stays combinable with force=true - the two flags are orthogonal (one gates content checks, the other the baseline/conflict guard) - and the response then warns that both are relaxed."),
 					Field(ResourcesFieldName, StringType, "Optional JSON object string of localizable strings the platform does NOT auto-provide (custom tab/group titles, button captions, validator messages, explicit overrides). Only include keys with NO matching DS-bound view model attribute on the page \u2014 see `page-schema-resources` guidance."),
@@ -5014,13 +5015,13 @@ internal static class ToolContractCatalog {
 				[],
 				[
 					Field("body", StringType, "Full JavaScript page body with markers (web) or plain JSON body (mobile). Auto-detected by leading character. Pass either 'body' or 'body-file'; one of the two is required."),
-					Field("body-file", StringType, "Absolute path to a file holding the page body. Used when 'body' is empty; lets a large body be validated without inline JSON escaping."),
+					Field(BodyFileFieldName, StringType, "Absolute path to a file holding the page body. Used when 'body' is empty; lets a large body be validated without inline JSON escaping."),
 					Field(VersionFieldName, StringType, "Optional platform version (3-part semver, e.g. '8.3.3') scoping the registry-driven chart-widget check. Falls back to the 'latest' catalog when omitted."),
 					Field(ResourcesFieldName, StringType, "Optional JSON object string of localizable strings the platform does NOT auto-provide (custom titles, button captions, validator messages, explicit overrides). Applicable to web pages only. Only include keys with NO matching DS-bound view model attribute on the page \u2014 see `page-schema-resources` guidance.")
 				],
 				AnyOf: [
 					new[] { "body" },
-					["body-file"]
+					[BodyFileFieldName]
 				]),
 			EnvelopeOutput(
 				"valid",
@@ -5045,7 +5046,7 @@ internal static class ToolContractCatalog {
 					["body"] = "{\"type\": \"ep.MobileViewElement\", \"items\": []}"
 				}),
 				Example("Validate a large body straight from the file get-page wrote", new Dictionary<string, object?> {
-					["body-file"] = "/abs/path/.clio-pages/UsrMyApp_FormPage/body.js"
+					[BodyFileFieldName] = "/abs/path/.clio-pages/UsrMyApp_FormPage/body.js"
 				})
 			],
 			Flow(

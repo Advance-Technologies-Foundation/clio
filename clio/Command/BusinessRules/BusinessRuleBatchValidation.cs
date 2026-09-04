@@ -73,9 +73,9 @@ internal static class BusinessRuleBatchValidation {
 			missing.Add(schemaFieldName);
 		}
 
+		string collectionItemNoun = collectionFieldName == "rules" ? "rule." : "rule name.";
 		string? emptyCollectionError = collectionFieldName is not null && collectionCount <= 0
-			? $"{collectionFieldName} is required and must contain at least one "
-				+ (collectionFieldName == "rules" ? "rule." : "rule name.")
+			? $"{collectionFieldName} is required and must contain at least one {collectionItemNoun}"
 			: null;
 
 		return missing.Count switch {
