@@ -125,9 +125,17 @@ public sealed class PageUpdateToolE2ETests : McpContractFixtureBase {
 		contract.InputSchema.Properties.Single(field => field.Name == "checksum").Description
 			.Should().Contain("get-page",
 				because: "the served contract must tell the caller which value to pass as the conflict baseline");
-		contract.InputSchema.Properties.Single(field => field.Name == "resources").Description
-			.Should().Contain("repeated",
-				because: "the served contract must state that keys already stored on the schema do not have to be re-sent on a later save (issue #1320)");
+		// PR #1356 review - "repeated" is a single generic word that a rewrite can keep while dropping the
+		// guarantee. Assert the two load-bearing halves of the additive wording instead: that the payload is
+		// additions/overrides, and that an already-stored key stays registered without being re-sent.
+		string servedResourcesDescription = contract.InputSchema.Properties
+			.Single(field => field.Name == "resources").Description;
+		servedResourcesDescription.Should().Contain("Additions/overrides",
+			because: "the served contract must name the payload semantics - a caller who reads it as a full replacement set re-sends every key on every save, which is the behavior issue #1320 reports");
+		servedResourcesDescription.Should().Contain("do NOT have to be repeated",
+			because: "the served contract must state the consequence: a key already stored on the schema stays registered, so it need not be re-sent on a later save (issue #1320)");
+		servedResourcesDescription.Should().NotContain("replaces the full set",
+			because: "no wording that promises replacement semantics is acceptable for an additive payload");
 	}
 
 	[Test]
