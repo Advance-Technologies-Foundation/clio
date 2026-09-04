@@ -430,6 +430,19 @@ public class SysSettingsManager : ISysSettingsManager
 		return value is null ? string.Empty : FormatTypedValue(sysSetting, value);
 	}
 
+	public T GetSysSettingValueByCode<T>(string code){
+		string val = GetSysSettingValueByCode(code);
+		return typeof(T) switch {
+			_ when typeof(T) == typeof(string) => (T)(object)val,
+			_ when typeof(T) == typeof(int) => (T)ConvertToInt(val),
+			_ when typeof(T) == typeof(decimal) => (T)ConvertToDecimal(val),
+			_ when typeof(T) == typeof(bool) => (T)ConvertToBool(val),
+			_ when typeof(T) == typeof(DateTime) => (T)ConvertToDateTime(val),
+			_ when typeof(T) == typeof(Guid) => (T)ConvertToGuid(val),
+			_ => throw new ArgumentOutOfRangeException()
+		};
+	}
+
 	/// <summary>
 	/// Reads the setting through the cliogate short-circuit, returning <see cref="string.Empty"/> when
 	/// that endpoint cannot answer, so the caller falls through to the DataService read.
@@ -497,19 +510,6 @@ public class SysSettingsManager : ISysSettingsManager
 		}
 
 		return false;
-	}
-
-	public T GetSysSettingValueByCode<T>(string code){
-		string val = GetSysSettingValueByCode(code);
-		return typeof(T) switch {
-			_ when typeof(T) == typeof(string) => (T)(object)val,
-			_ when typeof(T) == typeof(int) => (T)ConvertToInt(val),
-			_ when typeof(T) == typeof(decimal) => (T)ConvertToDecimal(val),
-			_ when typeof(T) == typeof(bool) => (T)ConvertToBool(val),
-			_ when typeof(T) == typeof(DateTime) => (T)ConvertToDateTime(val),
-			_ when typeof(T) == typeof(Guid) => (T)ConvertToGuid(val),
-			_ => throw new ArgumentOutOfRangeException()
-		};
 	}
 
 	/// <summary>

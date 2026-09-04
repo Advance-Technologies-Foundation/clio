@@ -186,7 +186,7 @@ namespace Clio.Package
 				if (HasSettled(observed.LastActivityAt)) {
 					StopMonitoring(cts, pollThread, httpTask);
 					if (observed.HasErrors) {
-						throw new Exception($"Package compilation failed: {observed.ErrorDetails}");
+						throw new InvalidOperationException($"Package compilation failed: {observed.ErrorDetails}");
 					}
 					return;
 				}
