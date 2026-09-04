@@ -272,6 +272,87 @@ public static class ReasonCodes {
 	/// </summary>
 	public const string DropNotAnActionInScope = "drop-not-an-action-in-scope";
 
+	// ── Why a request BINDING did not convert ────────
+	// These describe the BINDING, not the element. Where the element itself was dropped, the entry carries
+	// that element's OWN code verbatim instead of a code of its own — the two collections then agree by
+	// construction, rather than by two sentences someone has to keep saying the same thing (ENG-95827).
+
+	/// <summary>
+	/// The element was dropped as inherited chrome and the mobile template's native control carries its own
+	/// action. Nothing is lost when the source bound the platform's standard request; a CUSTOM request on an
+	/// inherited button IS lost, which is the reason the binding is reported at all rather than dropped
+	/// silently. Params: NONE — the record's own <c>elementName</c> and <c>webRequest</c> already name the
+	/// element and the request, and a param repeating a sibling field is the redundancy this ticket removes.
+	/// </summary>
+	public const string DropRequestChromeNative = "drop-request-chrome-native";
+
+	/// <summary>
+	/// The request is KNOWN-unsupported on mobile, so the binding was removed while the component itself
+	/// still renders. Params: <c>note</c> only, when the conversion rule authors one — the request is already
+	/// the record's <c>webRequest</c>.
+	/// </summary>
+	public const string DropRequestUnsupported = "drop-request-unsupported";
+
+	/// <summary>
+	/// The binding was discarded with its container, which the empty-container pass removed after the
+	/// binding had been recorded. Params: none — the container's own <c>droppedElements</c> entry
+	/// (<see cref="DropEmptyContainer"/>) carries the detail.
+	/// </summary>
+	public const string DropRequestElementEmptyContainer = "drop-request-element-empty-container";
+
+	/// <summary>
+	/// The binding was discarded with its element, which an <c>excludedComponents</c> rule removed after the
+	/// binding had been recorded. Params: none — the element's own <c>droppedElements</c> entry
+	/// (<see cref="DropExcludedByRule"/> or <see cref="DropParentExcluded"/>) carries the detail.
+	/// </summary>
+	public const string DropRequestElementExcluded = "drop-request-element-excluded";
+
+	// ── Why a request was KEPT but needs review ──────
+	/// <summary>
+	/// The request is in neither the conversion map nor the bundled set, so the binding was kept VERBATIM
+	/// for manual verification — the component works, the action may or may not. Params: NONE — the record's
+	/// own <c>request</c> field names it.
+	/// </summary>
+	public const string FlagRequestUnmapped = "flag-request-unmapped";
+
+	// ── Why a page BUSINESS RULE did not convert ─────
+	/// <summary>
+	/// The condition mixes AND and OR across nested groups; the flat single-operator mobile input cannot
+	/// represent it without changing when the rule fires. Params: none.
+	/// </summary>
+	public const string DropRuleConditionMixedAndOr = "drop-rule-condition-mixed-and-or";
+
+	/// <summary>
+	/// The condition uses a comparison operator with no supported mobile equivalent; emitting it would
+	/// silently change the comparison. Params: none.
+	/// </summary>
+	public const string DropRuleConditionUnsupportedComparison = "drop-rule-condition-unsupported-comparison";
+
+	/// <summary>
+	/// The condition cannot be converted and the cause is not classified further. Params: none.
+	/// </summary>
+	/// <remarks>
+	/// UNREACHABLE today and deliberately kept: <see cref="PageRuleConditionIssue"/> has exactly
+	/// <c>MixedAndOr</c> and <c>UnrecognizedComparison</c> besides <c>None</c>, and both have their own code,
+	/// so this is the default arm of that switch. It exists so a FUTURE condition issue reports as an
+	/// unclassified drop instead of crashing the converter or silently reusing a code that names the wrong
+	/// cause. There is therefore no test that produces it — see <c>MobileDropReasonCodeVocabularyTests</c>.
+	/// </remarks>
+	public const string DropRuleConditionUnconvertible = "drop-rule-condition-unconvertible";
+
+	/// <summary>
+	/// Every element the rule's actions reference was dropped, so no action converts. Params: none.
+	/// </summary>
+	public const string DropRuleNoActionConverts = "drop-rule-no-action-converts";
+
+	// ── Why a NORMALIZATION was skipped ──────────────
+	/// <summary>
+	/// The element carries a NON-OBJECT value at the path — typically a whole-value binding — and a merging
+	/// rule never overwrites one, so the element keeps its source value there. Params: none; the entry's own
+	/// <c>properties</c> name the refused paths.
+	/// </summary>
+	public const string SkipNormalizationPathBlocked = "skip-normalization-path-blocked";
+
 }
 
 /// <summary>
@@ -1085,8 +1166,9 @@ public sealed class DroppedPageBusinessRule {
 	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
 	public string Caption { get; init; }
 
+	/// <summary>Coded cause. See <c>ReasonCodes.DropRule*</c>; decoded by the guidance article.</summary>
 	[JsonPropertyName("reason")]
-	public string Reason { get; init; }
+	public IReadOnlyList<ReasonCode> Reason { get; init; } = [];
 }
 
 /// <summary>
@@ -1136,8 +1218,13 @@ public sealed class DroppedRequest {
 	[JsonPropertyName("webRequest")]
 	public string WebRequest { get; init; }
 
+	/// <summary>
+	/// Coded cause. A binding lost because its ELEMENT was dropped carries that element's OWN code — the
+	/// same one its <c>droppedElements</c> entry reports — so the two can never disagree. A binding lost
+	/// while its element SURVIVED carries a <c>ReasonCodes.DropRequest*</c> code of its own.
+	/// </summary>
 	[JsonPropertyName("reason")]
-	public string Reason { get; init; }
+	public IReadOnlyList<ReasonCode> Reason { get; init; } = [];
 }
 
 /// <summary>An unknown/custom request kept in the binding but flagged for manual verification.</summary>
@@ -1151,8 +1238,9 @@ public sealed class FlaggedRequest {
 	[JsonPropertyName("request")]
 	public string Request { get; init; }
 
+	/// <summary>Coded cause — <see cref="ReasonCodes.FlagRequestUnmapped"/>.</summary>
 	[JsonPropertyName("reason")]
-	public string Reason { get; init; }
+	public IReadOnlyList<ReasonCode> Reason { get; init; } = [];
 }
 
 /// <summary>
@@ -1307,9 +1395,9 @@ public sealed class NormalizationSkip {
 	[JsonPropertyName("properties")]
 	public IReadOnlyList<string> Properties { get; init; } = [];
 
-	/// <summary>Why the branch was refused, in caller-facing wording.</summary>
+	/// <summary>Coded cause — <see cref="ReasonCodes.SkipNormalizationPathBlocked"/>.</summary>
 	[JsonPropertyName("reason")]
-	public string Reason { get; init; }
+	public IReadOnlyList<ReasonCode> Reason { get; init; } = [];
 }
 
 /// <summary>One field's proposed per-breakpoint cell placement (mirrors its baked-in mobileValues).</summary>

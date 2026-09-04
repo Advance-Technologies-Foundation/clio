@@ -10,9 +10,11 @@ using FluentAssertions;
 using NUnit.Framework;
 
 /// <summary>
-/// Pins the CLOSED VOCABULARY of <see cref="ReasonCodes"/> — the codes the converter can put in
-/// <c>guide.droppedElements[].reason</c> — so that adding, renaming or removing one cannot ship without
-/// the guidance article that decodes it moving in the same change.
+/// Pins the CLOSED VOCABULARY of <see cref="ReasonCodes"/> — the codes the converter can put in ANY
+/// <c>reason</c> it returns (<c>droppedElements</c>, <c>requestConversions.droppedRequests</c> and
+/// <c>flaggedRequests</c>, <c>pageBusinessRules.droppedRules</c>, <c>normalizations.*.skipped</c>) — so
+/// that adding, renaming or removing one cannot ship without the guidance article that decodes it moving
+/// in the same change.
 /// <para>
 /// This exists because ENG-95827 proved the gap is invisible otherwise. Its last commit folded
 /// <c>relocate-children</c> into <c>droppedElements</c> as
@@ -44,7 +46,14 @@ public sealed class MobileDropReasonCodeVocabularyTests {
 	/// <c>freedom-page-mobile-reason-codes</c>
 	/// (<c>guidance/mcp/guides/platform/mobile/web-to-mobile-reason-codes.md</c>).
 	/// </summary>
+	/// <remarks>
+	/// One vocabulary spans FOUR record kinds — a dropped element, a dropped or flagged request binding, a
+	/// dropped page business rule, a skipped normalization — because a caller reads them all the same way
+	/// and a per-collection vocabulary would let the same cause acquire two spellings. That is also why the
+	/// <c>drop-</c> prefix is not asserted anywhere: <c>flag-</c> and <c>skip-</c> are first-class here.
+	/// </remarks>
 	private static readonly string[] PublishedCodes = [
+		// an element that did not reach the mobile page
 		"drop-empty-container",
 		"drop-container-no-mobile-equivalent",
 		"drop-excluded-by-rule",
@@ -55,14 +64,27 @@ public sealed class MobileDropReasonCodeVocabularyTests {
 		"drop-type-not-in-mobile-registry",
 		"drop-unknown-request",
 		"drop-no-rule-in-scope",
-		"drop-not-an-action-in-scope"
+		"drop-not-an-action-in-scope",
+		// a request binding: lost with its element, or lost on its own
+		"drop-request-chrome-native",
+		"drop-request-unsupported",
+		"drop-request-element-empty-container",
+		"drop-request-element-excluded",
+		"flag-request-unmapped",
+		// a page business rule that does not convert
+		"drop-rule-condition-mixed-and-or",
+		"drop-rule-condition-unsupported-comparison",
+		"drop-rule-condition-unconvertible",
+		"drop-rule-no-action-converts",
+		// a normalization the stamp refused
+		"skip-normalization-path-blocked"
 	];
 
 	/// <summary>Shape an agent's <c>switch</c> and the article's lookup table both depend on.</summary>
 	private static readonly Regex KebabCase = new("^[a-z][a-z0-9]*(-[a-z0-9]+)*$", RegexOptions.Compiled);
 
 	[Test]
-	[Description("The reason-code vocabulary is exactly the set published in the guidance article, so a code cannot be added, renamed or removed in clio alone.")]
+	[Description("The reason-code vocabulary — across every collection that carries one — is exactly the set published in the guidance article, so a code cannot be added, renamed or removed in clio alone.")]
 	public void Vocabulary_ShouldBeExactlyTheSetTheGuidanceArticleDocuments() {
 		// Arrange
 		string[] expected = [.. PublishedCodes.OrderBy(code => code, StringComparer.Ordinal)];

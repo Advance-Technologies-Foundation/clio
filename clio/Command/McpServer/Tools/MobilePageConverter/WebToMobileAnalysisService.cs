@@ -439,16 +439,11 @@ public static class WebToMobileAnalysisService {
 			if (rule.ConditionIssue != PageRuleConditionIssue.None) {
 				dropped.Add(new DroppedPageBusinessRule {
 					Caption = rule.Caption,
-					Reason = rule.ConditionIssue switch {
-						PageRuleConditionIssue.MixedAndOr =>
-							"Condition mixes AND and OR across nested groups; a mobile page rule supports only a "
-							+ "single flat condition group (one logical operator) and cannot represent this without "
-							+ "changing when the rule fires — recreate this rule manually.",
-						PageRuleConditionIssue.UnrecognizedComparison =>
-							"Condition uses a comparison operator with no supported mobile equivalent; emitting it "
-							+ "would silently change the comparison — recreate this rule manually.",
-						_ => "Condition cannot be converted for the mobile page — recreate this rule manually."
-					}
+					Reason = [Reason(rule.ConditionIssue switch {
+						PageRuleConditionIssue.MixedAndOr => ReasonCodes.DropRuleConditionMixedAndOr,
+						PageRuleConditionIssue.UnrecognizedComparison => ReasonCodes.DropRuleConditionUnsupportedComparison,
+						_ => ReasonCodes.DropRuleConditionUnconvertible
+					})]
 				});
 				continue;
 			}
@@ -474,7 +469,7 @@ public static class WebToMobileAnalysisService {
 			if (!anyActionConverted) {
 				dropped.Add(new DroppedPageBusinessRule {
 					Caption = rule.Caption,
-					Reason = "No action converts to mobile: every referenced element is dropped or unsupported on mobile."
+					Reason = [Reason(ReasonCodes.DropRuleNoActionConverts)]
 				});
 				continue;
 			}
@@ -1909,7 +1904,7 @@ public static class WebToMobileAnalysisService {
 					if (scopedRequest is not null) {
 						ctx.DroppedRequests.Add(new DroppedRequest {
 							ElementName = name, Binding = "clicked", WebRequest = scopedRequest,
-							Reason = $"'{name}' is inherited from the web template (chrome the mobile template provides natively), which carries its own action"
+							Reason = [Reason(ReasonCodes.DropRequestChromeNative)]
 						});
 					}
 				} else if (scopedTarget is { } target && clicked == ClickedConvertibility.Convertible && !targetMissing) {
@@ -1924,14 +1919,16 @@ public static class WebToMobileAnalysisService {
 						CaptionResource = scopedCaption, Values = scopedValues
 					});
 				} else {
-					(ReasonCode dropReason, string requestLossReason) = ScopeDropReason(
-						ctx, scopeContainer, name, scopedType, scopedTarget, clicked, scopedRequest, targetMissing);
+					ReasonCode dropReason = ScopeDropReason(
+						ctx, scopeContainer, scopedType, scopedTarget, clicked, scopedRequest, targetMissing);
 					ctx.Out.Add(Drop(name, type, dropReason));
 					// Record the lost action so requestConversions surfaces it (BuildMobileValues did not run, so
 					// nothing recorded it yet). None-clicked nodes carry no request and nothing is recorded.
+					// The binding carries the ELEMENT's code, not one of its own: the element is why the action is
+					// gone, so restating it in a second vocabulary could only ever drift from the first.
 					if (scopedRequest is not null) {
 						ctx.DroppedRequests.Add(new DroppedRequest {
-							ElementName = name, Binding = "clicked", WebRequest = scopedRequest, Reason = requestLossReason
+							ElementName = name, Binding = "clicked", WebRequest = scopedRequest, Reason = [dropReason]
 						});
 					}
 				}
@@ -2194,7 +2191,7 @@ public static class WebToMobileAnalysisService {
 					if (nativeSourceRequest is not null) {
 						ctx.DroppedRequests.Add(new DroppedRequest {
 							ElementName = name, Binding = "clicked", WebRequest = nativeSourceRequest,
-							Reason = $"'{name}' is inherited from the web template (chrome the mobile template provides natively), which carries its own action"
+							Reason = [Reason(ReasonCodes.DropRequestChromeNative)]
 						});
 					}
 					RecurseChildArrays(ctx, node, name, leafMobileType, Append(sourceAncestors, name), inNonConvertingScope: true);
@@ -2204,13 +2201,16 @@ public static class WebToMobileAnalysisService {
 				// is known to lack, emit a drop entry for the element instead. Nested actions are still recursed
 				// in scope so they too get an explicit outcome rather than vanishing under a missing target.
 				if (RetargetTargetMissing(ctx, leafTarget.Parent)) {
-					ctx.Out.Add(Drop(name, type,
-						Reason(ReasonCodes.DropTargetMissing, ("target", Nz(leafTarget.Parent)))));
+					ReasonCode targetMissingReason =
+						Reason(ReasonCodes.DropTargetMissing, ("target", Nz(leafTarget.Parent)));
+					ctx.Out.Add(Drop(name, type, targetMissingReason));
 					ClassifyClicked(ctx, node, out string missingTargetRequest);
+					// Same code object as the element's drop — see the scope path above for why the binding does
+					// not get a second vocabulary of its own.
 					if (missingTargetRequest is not null) {
 						ctx.DroppedRequests.Add(new DroppedRequest {
 							ElementName = name, Binding = "clicked", WebRequest = missingTargetRequest,
-							Reason = $"its element could not be placed (conversion target '{leafTarget.Parent}' is absent on the mobile template)"
+							Reason = [targetMissingReason]
 						});
 					}
 					RecurseChildArrays(ctx, node, name, leafMobileType, Append(sourceAncestors, name), inNonConvertingScope: true);
@@ -2407,13 +2407,12 @@ public static class WebToMobileAnalysisService {
 	/// container-only node instead of collapsing them into one string. The mechanism is name-agnostic (any
 	/// <c>nonConvertingScopeContainers</c> entry), so the wording says "scope", not "header".
 	/// </summary>
-	private static (ReasonCode DropReason, string RequestLossReason) ScopeDropReason(
-		ElementMapContext ctx, string scopeContainer, string name, string scopedType,
+	private static ReasonCode ScopeDropReason(
+		ElementMapContext ctx, string scopeContainer, string scopedType,
 		(string Parent, string Property)? scopedTarget, ClickedConvertibility clicked, string request, bool targetMissing) {
 		JsonNode scope = Nz(scopeContainer);
 		if (targetMissing && scopedTarget is { } target) {
-			return (Reason(ReasonCodes.DropTargetMissing, ("target", Nz(target.Parent)), ("scope", scope)),
-				$"its element could not be placed (conversion target '{target.Parent}' is absent on the mobile template)");
+			return Reason(ReasonCodes.DropTargetMissing, ("target", Nz(target.Parent)), ("scope", scope));
 		}
 		if (clicked == ClickedConvertibility.Unsupported) {
 			// Distinguish a KNOWN-unsupported request (the versioned map clears its mobile target) from an
@@ -2423,19 +2422,15 @@ public static class WebToMobileAnalysisService {
 			bool knownUnsupported = ctx.RequestMap.TryGetValue(request, out RequestMappingRule rule)
 				&& string.IsNullOrWhiteSpace(rule.Mobile);
 			return knownUnsupported
-				? (Reason(ReasonCodes.DropUnsupportedRequest, ("request", Nz(request)), ("scope", scope)),
-					$"'{request}' is not supported on the Creatio Mobile app; the action was dropped")
-				: (Reason(ReasonCodes.DropUnknownRequest, ("request", Nz(request)), ("scope", scope)),
-					$"'{request}' is not in the conversion map (custom or unknown); the button was dropped — verify the request exists on mobile before re-adding it");
+				? Reason(ReasonCodes.DropUnsupportedRequest, ("request", Nz(request)), ("scope", scope))
+				: Reason(ReasonCodes.DropUnknownRequest, ("request", Nz(request)), ("scope", scope));
 		}
 		if (scopedType is null) {
-			return (Reason(ReasonCodes.DropNoRuleInScope, ("scope", scope)),
-				"no conversion rule matched the component in scope; its action was dropped");
+			return Reason(ReasonCodes.DropNoRuleInScope, ("scope", scope));
 		}
 		// A convertible/absent clicked but no template placement, or a container-only node (no clicked): not itself
 		// an action to place. Its nested actions, if any, are still flattened by the in-scope recursion below.
-		return (Reason(ReasonCodes.DropNotAnActionInScope, ("scope", scope)),
-			"the component is not itself a placeable action; its action was dropped");
+		return Reason(ReasonCodes.DropNotAnActionInScope, ("scope", scope));
 	}
 
 	/// <summary>
@@ -3658,11 +3653,13 @@ public static class WebToMobileAnalysisService {
 					ElementName = elementName, Binding = binding, WebRequest = webRequest, MobileRequest = rule.Mobile
 				});
 			} else {
+				// rule.Note is AUTHORED in the rules file. It used to BE the reason, which made a rules author
+				// the writer of response prose; it is now a param beside the code, so the caller branches on
+				// the code and shows the note only as the author's extra detail.
 				ctx.DroppedRequests.Add(new DroppedRequest {
 					ElementName = elementName, Binding = binding, WebRequest = webRequest,
-					Reason = string.IsNullOrWhiteSpace(rule.Note)
-						? "Request is not supported on mobile; the binding was removed (the component still renders)."
-						: rule.Note
+					Reason = [Reason(ReasonCodes.DropRequestUnsupported,
+						("note", string.IsNullOrWhiteSpace(rule.Note) ? null : rule.Note))]
 				});
 			}
 			return;
@@ -3672,7 +3669,7 @@ public static class WebToMobileAnalysisService {
 		values[binding] = (JObject)source.DeepClone();
 		ctx.FlaggedRequests.Add(new FlaggedRequest {
 			ElementName = elementName, Binding = binding, Request = webRequest,
-			Reason = "Request is not in the conversion map (custom or unknown) — verify it exists on mobile before relying on it."
+			Reason = [Reason(ReasonCodes.FlagRequestUnmapped)]
 		});
 	}
 
@@ -3716,10 +3713,10 @@ public static class WebToMobileAnalysisService {
 		List<ConvertedRequest> converted, List<DroppedRequest> dropped, List<FlaggedRequest> flagged,
 		HashSet<string> emptyRemovedMobileNames, HashSet<string> excludedRemovedMobileNames) {
 		ReclassifyRemovedBindings(converted, flagged, dropped, emptyRemovedMobileNames,
-			"its container was removed as an empty container — the binding was discarded with it");
+			Reason(ReasonCodes.DropRequestElementEmptyContainer));
 		if (excludedRemovedMobileNames is { Count: > 0 }) {
 			ReclassifyRemovedBindings(converted, flagged, dropped, excludedRemovedMobileNames,
-				"its element was removed by an excludedComponents rule — the binding was discarded with it");
+				Reason(ReasonCodes.DropRequestElementExcluded));
 		}
 		if (converted.Count == 0 && dropped.Count == 0 && flagged.Count == 0) {
 			return null;
@@ -3737,12 +3734,12 @@ public static class WebToMobileAnalysisService {
 	/// </summary>
 	private static void ReclassifyRemovedBindings(
 		List<ConvertedRequest> converted, List<FlaggedRequest> flagged, List<DroppedRequest> dropped,
-		HashSet<string> removedMobileNames, string reason) {
+		HashSet<string> removedMobileNames, ReasonCode reason) {
 		for (int i = converted.Count - 1; i >= 0; i--) {
 			if (removedMobileNames.Contains(converted[i].ElementName)) {
 				dropped.Add(new DroppedRequest {
 					ElementName = converted[i].ElementName, Binding = converted[i].Binding,
-					WebRequest = converted[i].WebRequest, Reason = reason
+					WebRequest = converted[i].WebRequest, Reason = [reason]
 				});
 				converted.RemoveAt(i);
 			}
@@ -3751,7 +3748,7 @@ public static class WebToMobileAnalysisService {
 			if (removedMobileNames.Contains(flagged[i].ElementName)) {
 				dropped.Add(new DroppedRequest {
 					ElementName = flagged[i].ElementName, Binding = flagged[i].Binding,
-					WebRequest = flagged[i].Request, Reason = reason
+					WebRequest = flagged[i].Request, Reason = [reason]
 				});
 				flagged.RemoveAt(i);
 			}
@@ -5422,11 +5419,7 @@ public static class WebToMobileAnalysisService {
 			if (skipped.Count > 0) {
 				accumulator.Skipped.Add(new NormalizationSkip {
 					Name = name, Type = type, Properties = skipped,
-					Reason = "the element already carries a non-object value at this path — typically a "
-						+ "whole-value binding — and a merging rule never overwrites one: replacing it with an "
-						+ "object built from the rule alone would destroy the binding and leave the component "
-						+ "missing fields it needs, while still appearing normalized. This element keeps its "
-						+ "WEB value here"
+					Reason = [Reason(ReasonCodes.SkipNormalizationPathBlocked)]
 				});
 			}
 		}

@@ -234,7 +234,7 @@ Those 12 drops need **four different things said to the user**:
 | emptied container | 2 | automatic housekeeping, nothing to say |
 | type not in mobile registry | 1 | the only one also derivable (`category: "unsupported"`) |
 
-### 5.4 The surviving vocabulary — 27 codes → 10
+### 5.4 The surviving vocabulary — 27 codes → 11 for elements
 
 ```
 NOT LOSS            drop-inherited-chrome · drop-excluded-by-rule · drop-parent-excluded ·
@@ -249,6 +249,42 @@ IN SCOPE, NO-OP     drop-no-rule-in-scope · drop-not-an-action-in-scope
 the first means clio **knows** the request is unavailable on mobile; the second means it is in neither the
 versioned map nor the bundled set, so clio can only say it does not know it — and if that custom request
 **is** implemented on mobile, the action can be re-added by hand.
+
+### 5.5 The four sibling collections, which the first pass missed
+
+Coding `droppedElements` left FOUR other fields still declaring `reason` as a plain `string`:
+`pageBusinessRules.droppedRules[]`, `requestConversions.droppedRequests[]`,
+`requestConversions.flaggedRequests[]` and `normalizations.*.skipped[]`. Measured on the same page:
+**1 445 characters across 13 entries, 4 distinct texts** — ten of the thirteen were the identical
+107-character sentence, and `WebToMobileAnalysisService.cs` piped `rule.Note` (prose authored in the
+RULES FILE) straight to the wire. They now carry codes: **1 445 → 457 characters, −68 %.**
+
+Two findings shaped the design, and neither was about bytes:
+
+- **`ScopeDropReason` returned a `(ReasonCode, string)` pair, and the string restated the code in every
+  one of its five branches** — same cause, same params, two vocabularies. The duplication was built into
+  the method signature. It now returns the code alone, and a binding lost because its ELEMENT was dropped
+  carries **that element's own code object**. The two collections agree by construction rather than by two
+  sentences someone has to keep saying the same thing, and a test pins it as
+  `Codes(binding.Reason) == Codes(element)`.
+- **A param must never repeat a sibling field.** The first draft of `drop-request-chrome-native` carried
+  `params.name` and `params.request` — both already on the record as `elementName` and `webRequest`. Caught
+  and removed before commit; it is the same redundancy this ticket exists to delete, and removing it is
+  what turned a −36 % saving into −68 %. The article now states the rule: `params` carries only what the
+  code ADDS, and every record names its own subject.
+
+Inherited chrome keeps a code of its own rather than the element's, because it is the one case where the
+element's drop and the binding's loss are **different facts**: the mobile control provides the standard
+request natively, so nothing is lost — unless the page had overridden that button with a custom `usr.*`
+request, which IS lost and which only this record reveals. The reader is sent to the entry's own
+`webRequest` to tell the two apart.
+
+The vocabulary is 21 codes in one namespace — not five per-collection vocabularies — so a cause cannot
+acquire two spellings. `flag-` and `skip-` join `drop-`, which is why the guard deliberately does not
+assert a `drop-` prefix. One code, `drop-rule-condition-unconvertible`, is **unreachable today** and kept
+on purpose: it is the default arm of a switch over `PageRuleConditionIssue`, whose only two non-`None`
+values have codes of their own. Both the constant and the guard fixture say so, so nobody reads it as
+tested.
 
 ---
 
@@ -364,7 +400,7 @@ for those rules. `libraryVersion` **1.13.67 → 1.13.83**.
 | Article | Before | After |
 |---|---|---|
 | `freedom-page-web-to-mobile-conversion` | 41 253 chars | **49 809** |
-| `freedom-page-mobile-reason-codes` | — | **NEW**, 6 026 chars |
+| `freedom-page-mobile-reason-codes` | — | **NEW**, 12 957 chars |
 
 The code table became its own article because folding it into the conversion article took that article to
 **52 919** characters — past the recorded probes where `page-schema-handlers` spilled at 50 351 and
@@ -501,55 +537,43 @@ with the reasoning.
 
 ## 15. Remaining work (not in this branch)
 
-Ordered by impact. Items 2, 3, 6, 9, 11 and 12 come from re-auditing this branch against the code AFTER it
-was written; four of them correct or replace what an earlier draft of this section claimed.
+Ordered by impact. Items 4, 7, 9 and 10 come from re-auditing this branch against the code AFTER it was
+written; several correct or replace what an earlier draft of this section claimed. Two items this list
+carried — prose surviving in four sibling collections, and one drop reported twice in two languages — were
+DONE in this branch and are described in §5.5 rather than here.
 
 1. **Converted mobile pages are monolingual.** `resourceStrings` is `{key: string}` and
    `ResourceStringHelper.cs:103` writes `["cultureName"] = "en-US"` unconditionally. Measured on a cached
    `Contacts_FormPage`: **195 of 204** source resources carry more than one culture — conversion keeps only
    `en-US`. **Genuine data loss and the largest item left.**
 
-2. **Prose `reason` survives in four sibling collections.** The coding pass reached `droppedElements` and
-   stopped there. `pageBusinessRules.droppedRules[]`, `requestConversions.droppedRequests[]`,
-   `requestConversions.flaggedRequests[]` and `normalizations.*.skipped[]` still declare `reason` as a plain
-   `string`. Measured on the same `Leads_FormPage`: **1 445 characters across 13 entries, 4 distinct
-   texts** — ten of the thirteen are the identical 107-character sentence, and two of the four run 230 and
-   340 characters. `WebToMobileAnalysisService.cs:3661` also passes `rule.Note` straight to the wire, so a
-   rules-FILE author writes response prose the converter never inspects. Note `flaggedRequests` is a real
-   signal that needs a code of its own — the component is KEPT and its request is unknown — not a deletion.
-
-3. **The same drop is reported twice, in two languages.** `SaveButton`, `CancelButton` and `CloseButton` are
-   in `droppedElements` with `drop-inherited-chrome` *and* in `requestConversions.droppedRequests` with
-   124–126 characters of prose saying the same thing. Which collection owns an inherited-chrome action has
-   to be settled before item 2, or the duplicate gets coded twice instead of removed.
-
-4. **Stage 2 of the binding** — per-mobile-type binding rules in the rules file, after which
+2. **Stage 2 of the binding** — per-mobile-type binding rules in the rules file, after which
    `pendingBindings` disappears and `viewConfigDiff` is 100 % verbatim.
 
-5. **Caption re-keying is unconditional.** `<mobileName>_caption` exists because `update-page` never
+3. **Caption re-keying is unconditional.** `<mobileName>_caption` exists because `update-page` never
    overwrites an existing key, but `MobileTemplateProbe` does not capture the template's resource keys, so a
    real collision cannot be detected and the converter re-keys always.
 
-6. **`AttachmentList` loses its columns** — *narrower than an earlier draft of this section said.* Every
+4. **`AttachmentList` loses its columns** — *narrower than an earlier draft of this section said.* Every
    other list on the real page carries its full column set (`SimilarLeadList` 6, `StageHistoryList` 4,
    `LeadsByCustomerList` and `OpportunitiesByCustomerList` 5 each, `ProductsList` 2). Only `AttachmentList`
    is truncated to one column, and its operation is a **merge** (no `type` in `values`), so the defect lives
    in the twin/merge path, not in list projection generally.
 
-7. **Two merges onto one element** (section 7) — decide whether to coalesce.
+5. **Two merges onto one element** (section 7) — decide whether to coalesce.
 
-8. **Content pruned as identical to the web-template baseline leaves no trace.** `PruneTemplateComponents`
+6. **Content pruned as identical to the web-template baseline leaves no trace.** `PruneTemplateComponents`
    removes it before the walk, so it is in neither `sourceStructure` nor `viewConfigDiff` nor
    `droppedElements`. This is NOT the same set as inherited chrome, which *is* now traced
    (`drop-inherited-chrome`) — the distinction is worth stating because the two are easy to conflate.
 
-9. **`remove` operation support**, once the converter needs to delete a base-template element. One thing to
+7. **`remove` operation support**, once the converter needs to delete a base-template element. One thing to
    know first: the internal element map still uses `relocate-children`, a word the applier does not have. It
    is filtered out at projection (`ProjectViewConfigDiff`) and reported as
    `drop-container-no-mobile-equivalent`, which is deliberate — but it means the internal and wire
    vocabularies are not the same list, and adding `remove` touches that seam.
 
-10. **Source-side renaming for the mobile→mobile source kind** — 7 remaining `web*` wire names, all still
+8. **Source-side renaming for the mobile→mobile source kind** — 7 remaining `web*` wire names, all still
     present:
 
     | Current | Proposed |
@@ -569,9 +593,9 @@ was written; four of them correct or replace what an earlier draft of this secti
     data: `WebToMobilePageConversionRulesModels.cs` holds five more `"web"` properties in the rules schema,
     so renaming the wire alone splits the vocabulary in half.
 
-11. **`mobileType` is verified against the `environment-superset`** rather than the target catalog.
+9. **`mobileType` is verified against the `environment-superset`** rather than the target catalog.
 
-12. **`resourceStrings` token closure is not a test invariant.** Nested-token collection is covered
+10. **`resourceStrings` token closure is not a test invariant.** Nested-token collection is covered
     (`WebToMobileConversionServiceTests.cs:3952`) and the whole-map registration rule is pinned (`:8593`),
     but nothing asserts `tokens ⊆ keys` over a whole response — the one check that would make a raw
     `#ResourceString` reaching the device impossible rather than unlikely.

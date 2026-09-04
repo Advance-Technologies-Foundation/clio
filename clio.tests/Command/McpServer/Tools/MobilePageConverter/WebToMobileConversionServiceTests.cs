@@ -182,19 +182,30 @@ public sealed class WebToMobileConversionServiceTests {
 	private static string[] DroppedNames(MobilePageConversionGuide guide) =>
 		[.. (guide.DroppedElements ?? []).Select(e => e.WebName)];
 
+	/// <summary>
+	/// The reason codes on any coded record, in emission order. Takes the LIST rather than one record type
+	/// so droppedElements, droppedRules, droppedRequests, flaggedRequests and normalizations.skipped are all
+	/// asserted the same way — they carry the same shape, and a per-type helper each would drift.
+	/// </summary>
+	private static string[] Codes(IReadOnlyList<ReasonCode> reason) =>
+		[.. (reason ?? []).Select(r => r.Code)];
+
 	/// <summary>The reason codes on a dropped element, in emission order.</summary>
-	private static string[] Codes(DroppedElement dropped) =>
-		[.. (dropped?.Reason ?? []).Select(r => r.Code)];
+	private static string[] Codes(DroppedElement dropped) => Codes(dropped?.Reason);
 
 	/// <summary>
-	/// One reason param on a dropped element as a string — null when absent. Used instead of
-	/// substring-matching a sentence, so a test states WHICH value it pins and where it lives.
+	/// One reason param as a string — null when absent. Used instead of substring-matching a sentence, so a
+	/// test states WHICH value it pins and where it lives.
 	/// </summary>
-	private static string ReasonParam(DroppedElement dropped, string code, string key) =>
-		(dropped?.Reason ?? [])
+	private static string ReasonParam(IReadOnlyList<ReasonCode> reason, string code, string key) =>
+		(reason ?? [])
 			.Where(r => r.Code == code && r.Params is not null && r.Params.ContainsKey(key))
 			.Select(r => r.Params[key]?.ToString())
 			.FirstOrDefault();
+
+	/// <summary>One reason param on a dropped element as a string — null when absent.</summary>
+	private static string ReasonParam(DroppedElement dropped, string code, string key) =>
+		ReasonParam(dropped?.Reason, code, key);
 
 
 
@@ -1756,9 +1767,18 @@ public sealed class WebToMobileConversionServiceTests {
 		ViewConfigDiffOperation send = Element(guide, "SendForApprovalButton");
 		send.Operation.Should().Be("insert", because: "a page-authored header action (absent from the web baseline) still converts");
 		send.ParentName.Should().Be("FloatingActionButton", because: "it is retargeted into the FAB");
-		guide.RequestConversions!.DroppedRequests.Should().Contain(
-			r => r.ElementName == "SaveButton" && r.WebRequest == "crt.SaveRecordRequest",
-			because: "the native element carries its own action, but the dropped web request must still be reported so requestConversions does not silently under-count");
+		DroppedRequest saveBinding = guide.RequestConversions!.DroppedRequests.Should().ContainSingle(
+				r => r.ElementName == "SaveButton" && r.WebRequest == "crt.SaveRecordRequest",
+				because: "the native element carries its own action, but the dropped web request must still be reported so requestConversions does not silently under-count")
+			.Subject;
+		Codes(saveBinding.Reason).Should().Equal([ReasonCodes.DropRequestChromeNative],
+			because: "the binding needs a code of its OWN here, unlike every other dropped binding: the element "
+				+ "was chrome, so the standard request is provided natively and nothing is lost — but a CUSTOM "
+				+ "request on an inherited button IS lost, and that is the case this record exists for");
+		saveBinding.WebRequest.Should().Be("crt.SaveRecordRequest",
+			because: "the code alone cannot tell the reader whether the lost request was the standard one or a "
+				+ "custom override — the record's own webRequest field does, which is why the code carries no "
+				+ "param repeating it");
 	}
 
 	[Test]
@@ -2026,9 +2046,13 @@ public sealed class WebToMobileConversionServiceTests {
 			because: "a clicked request the mobile app does not support (a custom usr.* request) must not become a live FAB menu item");
 		ReasonParam(custom, ReasonCodes.DropUnknownRequest, "request").Should().Be("usr.MyCustomRequest",
 			because: "the drop reason names the unsupported request");
-		guide.RequestConversions!.DroppedRequests.Should().ContainSingle(r =>
-			r.ElementName == "CustomBtn" && r.WebRequest == "usr.MyCustomRequest",
-			because: "the lost header action must surface in requestConversions rather than being moved into the FAB");
+		DroppedRequest customBinding = guide.RequestConversions!.DroppedRequests.Should().ContainSingle(r =>
+				r.ElementName == "CustomBtn" && r.WebRequest == "usr.MyCustomRequest",
+				because: "the lost header action must surface in requestConversions rather than being moved into the FAB")
+			.Subject;
+		Codes(customBinding.Reason).Should().Equal(Codes(custom),
+			because: "a binding lost because its ELEMENT was dropped carries that element's OWN code — the two "
+				+ "records are one fact, and a second vocabulary for it could only ever drift from the first");
 	}
 
 	[Test]
@@ -2051,9 +2075,12 @@ public sealed class WebToMobileConversionServiceTests {
 			because: "an unsupported clicked request must not be retargeted into the FAB, matching how the leaf path drops the same button");
 		ReasonParam(print, ReasonCodes.DropUnknownRequest, "request").Should().Be("crt.PrintablesRequest",
 			because: "this request is in NEITHER the versioned map nor the bundled set, so clio can only say it does not know it — the separate known-unsupported code would be a claim it cannot make");
-		guide.RequestConversions!.DroppedRequests.Should().ContainSingle(r =>
-			r.ElementName == "PrintBtn" && r.WebRequest == "crt.PrintablesRequest",
-			because: "the lost header action must surface in requestConversions, not be moved into the FAB");
+		DroppedRequest printBinding = guide.RequestConversions!.DroppedRequests.Should().ContainSingle(r =>
+				r.ElementName == "PrintBtn" && r.WebRequest == "crt.PrintablesRequest",
+				because: "the lost header action must surface in requestConversions, not be moved into the FAB")
+			.Subject;
+		Codes(printBinding.Reason).Should().Equal(Codes(print),
+			because: "the binding mirrors its element's code, so the caller reads one cause for one loss");
 	}
 
 	[Test]
@@ -2075,9 +2102,13 @@ public sealed class WebToMobileConversionServiceTests {
 		more.Operation.Should().Be("insert",
 			because: "a crt.MenuItem with an unsupported request is kept (flagged), not dropped — only a crt.Button is dropped");
 		more.ParentName.Should().Be("FloatingActionButton", because: "the menu item still retargets into the FAB");
-		guide.RequestConversions!.FlaggedRequests.Should().ContainSingle(r =>
-			r.ElementName == "MoreItem" && r.Request == "usr.CustomMenuRequest",
-			because: "the unknown request on a non-button is kept verbatim and flagged for manual review");
+		FlaggedRequest moreBinding = guide.RequestConversions!.FlaggedRequests.Should().ContainSingle(r =>
+				r.ElementName == "MoreItem" && r.Request == "usr.CustomMenuRequest",
+				because: "the unknown request on a non-button is kept verbatim and flagged for manual review")
+			.Subject;
+		Codes(moreBinding.Reason).Should().Equal([ReasonCodes.FlagRequestUnmapped],
+			because: "a FLAG is not a drop — the component works and only the action is unverified — so it needs "
+				+ "its own code rather than borrowing one that tells the user something was lost");
 	}
 
 	[Test]
@@ -2122,9 +2153,13 @@ public sealed class WebToMobileConversionServiceTests {
 		DroppedNames(guide).Should().Contain("PrintBtn", because: "an explicitly-unsupported clicked cannot become a live action");
 		ReasonParam(print, ReasonCodes.DropUnsupportedRequest, "request").Should().Be("crt.PrintablesRequest",
 			because: "the drop reason names the offending request instead of a generic message");
-		guide.RequestConversions!.DroppedRequests.Should().ContainSingle(r =>
-			r.ElementName == "PrintBtn" && r.WebRequest == "crt.PrintablesRequest",
-			because: "the lost header action must surface in requestConversions, not disappear silently");
+		DroppedRequest printBinding = guide.RequestConversions!.DroppedRequests.Should().ContainSingle(r =>
+				r.ElementName == "PrintBtn" && r.WebRequest == "crt.PrintablesRequest",
+				because: "the lost header action must surface in requestConversions, not disappear silently")
+			.Subject;
+		Codes(printBinding.Reason).Should().Equal(Codes(print),
+			because: "the binding mirrors its element's code — here the KNOWN-unsupported one, which is a "
+				+ "different thing to tell the user than an unknown custom request");
 	}
 
 	[Test]
@@ -2230,8 +2265,12 @@ public sealed class WebToMobileConversionServiceTests {
 			because: "the FAB target is absent on the mobile template, so an unresolvable insert must not be emitted");
 		ReasonParam(order, ReasonCodes.DropTargetMissing, "target").Should().Be("FloatingActionButton",
 			because: "the drop names the conversion target the mobile template lacks, so the fix is traceable to the rule");
-		guide.RequestConversions!.DroppedRequests.Should().ContainSingle(r => r.ElementName == "OrderBtn",
-			because: "the action lost to a missing target is recorded");
+		DroppedRequest orderBinding = guide.RequestConversions!.DroppedRequests
+			.Should().ContainSingle(r => r.ElementName == "OrderBtn",
+				because: "the action lost to a missing target is recorded")
+			.Subject;
+		Codes(orderBinding.Reason).Should().Contain(ReasonCodes.DropTargetMissing,
+			because: "a rules-file defect must read as one on the binding too, not as an unexplained lost action");
 	}
 
 	[Test]
@@ -2346,9 +2385,18 @@ public sealed class WebToMobileConversionServiceTests {
 			because: "SaveButton is inherited from the web template baseline, so the leaf retarget is suppressed to avoid duplication");
 		Codes(save).Should().Contain(ReasonCodes.DropInheritedChrome,
 			because: "the drop reason must state why the inherited-chrome leaf was not retargeted");
-		guide.RequestConversions!.DroppedRequests.Should().Contain(
-			r => r.ElementName == "SaveButton" && r.WebRequest == "crt.SaveRecordRequest",
-			because: "the native element carries its own action, but the dropped web request must still be reported so requestConversions does not silently under-count");
+		DroppedRequest saveBinding = guide.RequestConversions!.DroppedRequests.Should().ContainSingle(
+				r => r.ElementName == "SaveButton" && r.WebRequest == "crt.SaveRecordRequest",
+				because: "the native element carries its own action, but the dropped web request must still be reported so requestConversions does not silently under-count")
+			.Subject;
+		Codes(saveBinding.Reason).Should().Equal([ReasonCodes.DropRequestChromeNative],
+			because: "the binding needs a code of its OWN here, unlike every other dropped binding: the element "
+				+ "was chrome, so the standard request is provided natively and nothing is lost — but a CUSTOM "
+				+ "request on an inherited button IS lost, and that is the case this record exists for");
+		saveBinding.WebRequest.Should().Be("crt.SaveRecordRequest",
+			because: "the code alone cannot tell the reader whether the lost request was the standard one or a "
+				+ "custom override — the record's own webRequest field does, which is why the code carries no "
+				+ "param repeating it");
 	}
 
 	[Test]
@@ -2550,9 +2598,14 @@ public sealed class WebToMobileConversionServiceTests {
 
 		PageBusinessRuleConversionInfo result = WebToMobileAnalysisService.ConvertPageBusinessRules(probe, elementMap);
 
-		result.ConvertedRules.Should().BeEmpty();
+		result.ConvertedRules.Should().BeEmpty(
+			because: "the rule's only action referenced a dropped element, so nothing survives to convert");
 		result.DroppedRules.Should().HaveCount(1);
-		result.DroppedRules[0].Caption.Should().Be("Lock ghost");
+		result.DroppedRules[0].Caption.Should().Be("Lock ghost",
+			because: "the caption is how the developer finds the rule to recreate by hand");
+		Codes(result.DroppedRules[0].Reason).Should().Equal([ReasonCodes.DropRuleNoActionConverts],
+			because: "a rule lost to its ELEMENTS is a different manual fix from a rule lost to its CONDITION, "
+				+ "and only the code separates them");
 	}
 
 	[Test]
@@ -2656,8 +2709,11 @@ public sealed class WebToMobileConversionServiceTests {
 
 		result.ConvertedRules.Should().BeEmpty();
 		result.DroppedRules.Should().HaveCount(1);
-		result.DroppedRules[0].Caption.Should().Be("Mixed A AND (B OR C)");
-		result.DroppedRules[0].Reason.Should().Contain("mixes AND and OR");
+		result.DroppedRules[0].Caption.Should().Be("Mixed A AND (B OR C)",
+			because: "the caption is how the developer finds the rule to recreate by hand");
+		Codes(result.DroppedRules[0].Reason).Should().Equal([ReasonCodes.DropRuleConditionMixedAndOr],
+			because: "the mixed AND/OR cause must be a code the caller can branch on, not a sentence to "
+				+ "substring-match — and it must be the ONLY code, so the caller reports one cause");
 	}
 
 	[Test]
@@ -2675,8 +2731,11 @@ public sealed class WebToMobileConversionServiceTests {
 
 		result.ConvertedRules.Should().BeEmpty();
 		result.DroppedRules.Should().HaveCount(1);
-		result.DroppedRules[0].Caption.Should().Be("Name begins with A");
-		result.DroppedRules[0].Reason.Should().Contain("comparison operator");
+		result.DroppedRules[0].Caption.Should().Be("Name begins with A",
+			because: "the caption is how the developer finds the rule to recreate by hand");
+		Codes(result.DroppedRules[0].Reason).Should().Equal([ReasonCodes.DropRuleConditionUnsupportedComparison],
+			because: "an unsupported comparison is a DIFFERENT manual fix from a mixed AND/OR condition, so the "
+				+ "two must stay distinguishable by code alone");
 	}
 
 	[Test]
@@ -3732,8 +3791,13 @@ public sealed class WebToMobileConversionServiceTests {
 
 		DroppedNames(guide).Should().NotContain("Progress",
 			because: "a non-button component is not dropped for an unsupported (likely system) request");
-		guide.RequestConversions!.FlaggedRequests.Should().ContainSingle(r =>
-			r.ElementName == "Progress" && r.Request == "usr.SomeSystemRequest");
+		FlaggedRequest progressBinding = guide.RequestConversions!.FlaggedRequests.Should().ContainSingle(r =>
+				r.ElementName == "Progress" && r.Request == "usr.SomeSystemRequest",
+				because: "the kept-but-unverified request must still be reported so the developer can check it")
+			.Subject;
+		Codes(progressBinding.Reason).Should().Equal([ReasonCodes.FlagRequestUnmapped],
+			because: "the code says KEEP AND VERIFY; the request to verify is the record's own request field, so "
+				+ "the code needs no param to repeat it");
 	}
 
 	[Test]
@@ -5430,6 +5494,9 @@ public sealed class WebToMobileConversionServiceTests {
 				+ "\"could not normalize\"");
 		skip.Properties.Should().BeEquivalentTo(["config"],
 			because: "the report names the branch that was refused");
+		Codes(skip.Reason).Should().Equal([ReasonCodes.SkipNormalizationPathBlocked],
+			because: "the cause is a coded token now; the four-sentence rationale it replaced belongs in the "
+				+ "guidance article, not in every response that skips a branch");
 		guide.Normalizations["metricStyle"].Note.Should().Contain("1 skipped",
 			because: "suppressing the count would hide the one case where an element kept its web values — and the note is now the single place it is stated");
 	}
@@ -6956,11 +7023,13 @@ public sealed class WebToMobileConversionServiceTests {
 			because: "the container's only child dropped, so the empty-container pass removes the container itself");
 		guide.RequestConversions!.ConvertedRequests.Should().NotContain(r => r.ElementName == "EmptyBox",
 			because: "reporting a binding as converted for a removed element would contradict the drop entry and invite the caller to re-create the container");
-		guide.RequestConversions.DroppedRequests.Should().ContainSingle(r =>
+		DroppedRequest emptyBoxBinding = guide.RequestConversions.DroppedRequests.Should().ContainSingle(r =>
 				r.ElementName == "EmptyBox" && r.Binding == "clicked" && r.WebRequest == "crt.SaveRecordRequest",
 				because: "the discarded binding must stay visible in the report instead of vanishing silently")
-			.Which.Reason.Should().Contain("empty container",
-				because: "the reason must name the removal so the reader can connect it to the elementMap drop entry");
+			.Subject;
+		Codes(emptyBoxBinding.Reason).Should().Equal([ReasonCodes.DropRequestElementEmptyContainer],
+			because: "the code must name WHICH removal discarded the binding, so the reader can connect it to the "
+				+ "container's own droppedElements entry rather than reading it as an independent loss");
 		guide.RequestConversions.ConvertedRequests.Should().ContainSingle(r => r.ElementName == "SaveButton",
 			because: "reconciliation is scoped to removed containers — a surviving element's converted binding still reports as converted");
 	}
@@ -7654,9 +7723,13 @@ public sealed class WebToMobileConversionServiceTests {
 			because: "the discarded binding must stay visible in the report, not vanish silently");
 		guide.RequestConversions.ConvertedRequests.Should().NotContain(r => r.ElementName == "SaveButton",
 			because: "a conversion must not be claimed for an element the map says not to create");
-		guide.RequestConversions.DroppedRequests.Should().ContainSingle(r => r.ElementName == "SaveButton")
-			.Which.Reason.Should().Contain("excludedComponents",
-				because: "the reconciliation must name WHICH removal discarded the binding");
+		DroppedRequest excludedBinding = guide.RequestConversions.DroppedRequests
+			.Should().ContainSingle(r => r.ElementName == "SaveButton",
+				because: "the discarded binding must stay visible in the report, not vanish silently")
+			.Subject;
+		Codes(excludedBinding.Reason).Should().Equal([ReasonCodes.DropRequestElementExcluded],
+			because: "the reconciliation must name WHICH removal discarded the binding — the exclusion pass, not "
+				+ "the empty-container pass, which is a different thing to tell the user");
 	}
 
 	[Test]
