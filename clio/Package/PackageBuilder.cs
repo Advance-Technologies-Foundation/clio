@@ -178,10 +178,15 @@ namespace Clio.Package
 					return;
 				}
 
-				if (HasSettled(progress.LastActivityAt)) {
+				//ONE snapshot per iteration, taken under the same lock Observe writes under: the three
+				//fields are written on the poll thread and read here, so an unsynchronized read could be
+				//hoisted out of the loop (a settle the poll thread saw is never observed, and the compile
+				//reports a timeout instead) or mix a fresh HasErrors with a stale ErrorDetails.
+				CompilationProgressSnapshot observed = progress.Snapshot();
+				if (HasSettled(observed.LastActivityAt)) {
 					StopMonitoring(cts, pollThread, httpTask);
-					if (progress.HasErrors) {
-						throw new Exception($"Package compilation failed: {progress.ErrorDetails}");
+					if (observed.HasErrors) {
+						throw new Exception($"Package compilation failed: {observed.ErrorDetails}");
 					}
 					return;
 				}
@@ -235,23 +240,47 @@ namespace Clio.Package
 			/// <summary>An empty <c>ErrorsWarnings</c> array, which is not an error report.</summary>
 			private const string EmptyErrorsWarnings = "[]";
 
-			public DateTime? LastActivityAt { get; private set; }
+			/// <summary>
+			/// Guards all three fields. A lock rather than <c>Volatile</c> per field, for two reasons:
+			/// <c>DateTime?</c> is a 16-byte struct, so its write is not atomic and volatile could not make
+			/// it so; and the wait loop wants a CONSISTENT view of all three at once, which per-field
+			/// barriers cannot give it.
+			/// </summary>
+			private readonly object _gate = new();
 
-			public bool HasErrors { get; private set; }
+			private DateTime? _lastActivityAt;
 
-			public string ErrorDetails { get; private set; }
+			private bool _hasErrors;
+
+			private string _errorDetails;
 
 			public void Observe(CompilationHistory record) {
-				LastActivityAt = DateTime.UtcNow;
-				if (record.Result || string.IsNullOrEmpty(record.ErrorsWarnings)
-						|| record.ErrorsWarnings == EmptyErrorsWarnings) {
-					return;
+				lock (_gate) {
+					_lastActivityAt = DateTime.UtcNow;
+					if (record.Result || string.IsNullOrEmpty(record.ErrorsWarnings)
+							|| record.ErrorsWarnings == EmptyErrorsWarnings) {
+						return;
+					}
+					_hasErrors = true;
+					_errorDetails = record.ErrorsWarnings;
 				}
-				HasErrors = true;
-				ErrorDetails = record.ErrorsWarnings;
+			}
+
+			/// <summary>One consistent view of what the poll thread has observed so far.</summary>
+			public CompilationProgressSnapshot Snapshot() {
+				lock (_gate) {
+					return new CompilationProgressSnapshot(_lastActivityAt, _hasErrors, _errorDetails);
+				}
 			}
 
 		}
+
+		/// <summary>
+		/// An immutable view of <see cref="CompilationProgress"/> taken under its lock, so the wait loop
+		/// never mixes a fresh error flag with stale error text.
+		/// </summary>
+		private readonly record struct CompilationProgressSnapshot(
+			DateTime? LastActivityAt, bool HasErrors, string ErrorDetails);
 
 		private static void ObserveCancelledRequest(Task request, CancellationTokenSource cancellation) {
 			try {
