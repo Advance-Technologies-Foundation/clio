@@ -29,6 +29,13 @@ public sealed class AddPackageDependencyTool(
 	/// </summary>
 	[McpServerTool(Name = AddPackageDependencyToolName, ReadOnly = false, Destructive = false, Idempotent = true,
 		OpenWorld = false)]
+	[McpToolExecution(
+		Location = McpToolExecutionLocation.Worker,
+		Lifetime = McpToolExecutionLifetime.PerCall,
+		OperationFamily = McpToolOperationFamily.None,
+		BudgetPolicy = McpToolBudgetPolicy.ParentKillDefault,
+		RequiresClientRequests = McpToolClientRequests.None,
+		SharedFileResource = McpToolSharedFileResource.None)]
 	[Description("""
 				 Adds one or more package dependencies to a Creatio package via PackageService.svc.
 

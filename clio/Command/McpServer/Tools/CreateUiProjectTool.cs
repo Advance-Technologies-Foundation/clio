@@ -27,6 +27,13 @@ public class CreateUiProjectTool(
 	/// </summary>
 	[McpServerTool(Name = CreateUiProjectToolName, ReadOnly = false, Destructive = false, Idempotent = false,
 		OpenWorld = false)]
+	[McpToolExecution(
+		Location = McpToolExecutionLocation.Worker,
+		Lifetime = McpToolExecutionLifetime.PerCall,
+		OperationFamily = McpToolOperationFamily.None,
+		BudgetPolicy = McpToolBudgetPolicy.ParentKillDefault,
+		RequiresClientRequests = McpToolClientRequests.None,
+		SharedFileResource = McpToolSharedFileResource.None)]
 	[Description("""
 				 Creates a new Angular (Freedom UI remote module) project inside an existing clio workspace.
 
@@ -84,7 +91,7 @@ public class CreateUiProjectTool(
 		// at resolution time, so without this any agent invoking the tool from an arbitrary cwd would
 		// scaffold packages/projects under the wrong (or non-workspace) folder. The process-wide cwd
 		// mutation runs under the single global CwdLock (H1). Lock ordering is per-tenant → CwdLock:
-		// ExecuteUnderTenantLock takes the tenant lock first (CreateUiProject is environment-less, so the
+		// ExecuteUnderTenantLock takes the tenant lock first (CreateUiProject writes only local files, so the
 		// shared-fallback key — the same key the inner InternalExecute reacquires reentrantly), then we
 		// take CwdLock inside; no path takes CwdLock and then a per-tenant lock, so there is no deadlock.
 		return ExecuteUnderTenantLock(options, () => {

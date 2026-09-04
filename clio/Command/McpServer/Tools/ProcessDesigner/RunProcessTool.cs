@@ -38,6 +38,18 @@ public sealed class RunProcessTool(
 		+ "work. Judge the outcome from the process's own effects, or from a later SysProcessLog read "
 		+ "(odata-read on SysProcessLog, newest row for this process).";
 
+	// A launch can outlive the MCP response deadline and holds the per-tenant monitor for the whole call, so a
+	// wedged run wedges the host: the boundary belongs in a worker. PerCall with no family because the platform
+	// exposes no handle for an in-flight synchronous run (see BuildStillRunningNote), so there is no status
+	// poller for a sticky worker to serve. ParentKillDefault is safe here: the process runs server-side in
+	// Creatio, so killing the worker abandons the wait, it does not abort the process.
+	[McpToolExecution(
+		Location = McpToolExecutionLocation.Worker,
+		Lifetime = McpToolExecutionLifetime.PerCall,
+		OperationFamily = McpToolOperationFamily.None,
+		BudgetPolicy = McpToolBudgetPolicy.ParentKillDefault,
+		RequiresClientRequests = McpToolClientRequests.Progress,
+		SharedFileResource = McpToolSharedFileResource.None)]
 	[McpServerTool(Name = ToolName, ReadOnly = false, Destructive = true, Idempotent = false, OpenWorld = false)]
 	[Description(
 		"Run (launch) a Creatio business process; resolve its CODE and parameter codes with get-process-signature "

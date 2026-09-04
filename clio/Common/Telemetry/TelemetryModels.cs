@@ -10,10 +10,18 @@ namespace Clio.Common.Telemetry;
 public sealed record TelemetryEventRequest(
 	[property: JsonPropertyName("session_id")] string SessionId,
 	[property: JsonPropertyName("event_name")] string EventName,
-	[property: JsonPropertyName("coding_agent")] string CodingAgent,
-	[property: JsonPropertyName("plugin_version")] string PluginVersion,
+	// Optional: the guidance article and the toolkit's hook both tell an agent to OMIT these rather than
+	// send a guessed version or the placeholder `unknown`, so the shape has to permit their absence.
+	[property: JsonPropertyName("coding_agent")] string CodingAgent = null,
+	[property: JsonPropertyName("plugin_version")] string PluginVersion = null,
 	[property: JsonPropertyName("duration_ms")] long? DurationMs = null,
-	[property: JsonPropertyName("telemetry_consent")] string TelemetryConsent = null
+	[property: JsonPropertyName("telemetry_consent")] string TelemetryConsent = null,
+	[property: JsonPropertyName("workflow")] string Workflow = null,
+	[property: JsonPropertyName("variant")] string Variant = null,
+	[property: JsonPropertyName("model")] string Model = null,
+	[property: JsonPropertyName("input_tokens")] long? InputTokens = null,
+	[property: JsonPropertyName("output_tokens")] long? OutputTokens = null,
+	[property: JsonPropertyName("cached_input_tokens")] long? CachedInputTokens = null
 ) {
 	[JsonExtensionData]
 	public Dictionary<string, System.Text.Json.JsonElement> ExtensionData { get; init; }
@@ -64,7 +72,12 @@ internal sealed record ConsentState(
 
 internal sealed record TelemetrySessionState(
 	[property: JsonPropertyName("session_id")] string SessionId,
-	[property: JsonPropertyName("events")] Dictionary<string, DateTimeOffset> Events
+	[property: JsonPropertyName("events")] Dictionary<string, DateTimeOffset> Events,
+	// The unit of a run in the funnel is the PAIR (session_id, workflow), not the session alone: one
+	// host session legitimately carries several flows, and a deterministic session-start floor emits
+	// under `unattributed` before the agent knows which flow it is running. State is therefore keyed
+	// per pair, so each flow anchors its own elapsed time instead of the first flow to report winning.
+	[property: JsonPropertyName("workflow")] string Workflow = null
 );
 
 /// <summary>
