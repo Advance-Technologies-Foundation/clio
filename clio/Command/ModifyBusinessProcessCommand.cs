@@ -149,7 +149,16 @@ public sealed class ModifyBusinessProcessService(
 		ModifyProcessResultDto result = envelope.Result
 			?? throw new InvalidOperationException("ModifyProcess returned an unexpected response shape.");
 		if (!result.Success) {
-			throw new InvalidOperationException(result.ErrorMessage ?? "ModifyProcess failed.");
+			// Surfaced HERE or nowhere. The success record below cannot carry it (it is only built on success),
+			// and this throw is the only way a refused operation leaves clio — so discarding the index would
+			// leave the caller doing on the client what the server split the field to stop them doing:
+			// bisecting the batch against a live environment. Appended rather than woven in because the
+			// server's own sentence is the primary message and several guards name neither endpoint.
+			string refusedBy = result.FailedOperationIndex.HasValue
+				? $" The operation at index {result.FailedOperationIndex.Value} is the one that refused."
+				: string.Empty;
+			throw new InvalidOperationException(
+				(result.ErrorMessage ?? "ModifyProcess failed.") + refusedBy);
 		}
 
 		return new ModifyBusinessProcessResult(result.SchemaName, result.SchemaUId, result.AppliedOperations,
@@ -188,6 +197,16 @@ public sealed class ModifyBusinessProcessService(
 
 		[JsonPropertyName("appliedOperations")]
 		public int AppliedOperations { get; set; }
+
+		// Zero-based index of the operation that refused, when a single one did. Declared for the same reason
+		// as warnings below — an undeclared member is dropped without a trace — and it matters more here,
+		// because this is the only field on a FAILED edit that says which operation to look at. Nullable, and
+		// the null carries meaning: the server sends none when the failure came after the operation loop (the
+		// pre-save gate judging the whole schema, which is now the common failure), and an older
+		// CrtProcessBuilder does not send the field at all. Both cases mean "no operation is to blame", which
+		// is exactly why the server stopped overloading appliedOperations to answer this.
+		[JsonPropertyName("failedOperationIndex")]
+		public int? FailedOperationIndex { get; set; }
 
 		[JsonPropertyName("errorMessage")]
 		public string? ErrorMessage { get; set; }
