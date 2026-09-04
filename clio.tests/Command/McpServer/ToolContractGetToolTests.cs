@@ -964,8 +964,13 @@ public sealed class ToolContractGetToolTests {
 		result.Success.Should().BeTrue(
 			because: "tool-contract-get should expose the create-page-business-rule contract");
 		ToolContractDefinition contract = result.Tools!.Single();
-		contract.InputSchema.Required.Should().Contain(["environment-name", "package-name", "page-schema-name", "rules"],
-			because: "page-business-rule creation requires environment package page and rules payload");
+		contract.InputSchema.Required.Should().Contain(["environment-name", "package-name", "rules"],
+			because: "page-business-rule creation requires environment package and rules payload");
+		contract.InputSchema.Required.Should().NotContain("page-schema-name",
+			because: "the page schema may arrive under the accepted 'schema-name' alias, so a client validating against the advertised schema must not reject that call");
+		contract.Aliases.Should().Contain(alias =>
+				alias.CanonicalName == "page-schema-name" && alias.Alias == "schema-name" && alias.Status == "accepted",
+			because: "an alias the server honors must be discoverable in the contract agents read before calling");
 		contract.InputSchema.Validators.Should().Contain(validator =>
 				validator.Name == "enum" &&
 				validator.Field == "rules[*].actions[*].type" &&
@@ -1387,17 +1392,17 @@ public sealed class ToolContractGetToolTests {
 				field.Name == "body" &&
 				field.Description.Contains("get-page.files.bodyFile"),
 			because: "update-page should advertise the materialized body file as the source of fallback single-page saves");
-		// PR #1351 review - validate-page is the THIRD consumer named in issue #1185 and was the one clause left
-		// unguarded, so it could be reverted to `raw.body`, or lose the "no body-file parameter" qualifier that
-		// makes the get-page -> edit -> validate-page loop composable, with a fully green suite.
+		// PR #1351 review - validate-page is the THIRD consumer named in issue #1185, so its body contract must stay
+		// guarded against drift. Since issue #1305 validate-page accepts `body-file`, so the get-page -> edit ->
+		// validate-page loop closes through the materialized file instead of an inline-only body.
 		ToolContractDefinition pageValidateContract = tool
 			.GetToolContracts(new ToolContractGetArgs([PageValidateTool.ToolName])).Tools!.Single();
 		string pageValidateBodyDescription = pageValidateContract.InputSchema.Properties
 			.Single(field => field.Name == "body").Description;
-		pageValidateBodyDescription.Should().Contain("INLINE",
-			because: "validate-page takes the body inline only, and an agent that assumes a body-file parameter cannot close the get-page -> edit -> validate-page loop");
-		pageValidateBodyDescription.Should().Contain("get-page.files.bodyFile",
-			because: "the loop is only composable if the contract names the file get-page actually materializes");
+		pageValidateContract.InputSchema.Properties.Should().Contain(field => field.Name == "body-file",
+			because: "validate-page accepts a body file, which is what makes the get-page -> edit -> validate-page loop composable without inline JSON escaping");
+		pageValidateBodyDescription.Should().Contain("body-file",
+			because: "the body contract must tell callers the file alternative exists, otherwise an agent will keep inlining large bodies");
 		pageValidateBodyDescription.Should().NotContain("raw.body",
 			because: "get-page no longer returns raw.body over MCP, so validate-page must not point callers at it - the same drift the sync-pages guard above catches");
 		pageUpdateContract.InputSchema.Properties.Should().Contain(field =>
@@ -3250,5 +3255,57 @@ public sealed class ToolContractGetToolTests {
 			because: "the legacy stdio client's ClientInfo must be detected end-to-end so the no-names call returns full tool contracts, not the compact index");
 		result.Index.Should().BeNull(
 			because: "the legacy client's full-shape response must not also carry the compact index");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("validate-page's curated contract states the either-or shape in the machine-readable any-of, not only in English inside a field description (PR #1352 review; AC-1297).")]
+	public void ToolContractGet_Should_Publish_AnyOf_For_ValidatePage_BodyInputs() {
+		// Arrange
+		ToolContractGetTool tool = BuildToolWithRegistry();
+
+		// Act
+		ToolContractDefinition contract = tool.GetToolContracts(new ToolContractGetArgs([
+			PageValidateTool.ToolName
+		])).Tools!.Single();
+
+		// Assert — emptying `required` without adding `any-of` made the contract contradict itself: the machine
+		// list said nothing was required while the `body` description said one of the two was. Only a consumer
+		// that parses English inside a description recovered the truth.
+		contract.InputSchema.Required.Should().NotContain("body",
+			because: "either input alone is a complete call, so neither may be unconditionally required");
+		contract.InputSchema.Required.Should().NotContain("body-file",
+			because: "requiring the alternative would mirror the same defect");
+		contract.InputSchema.AnyOf.Should().NotBeNull(
+			because: "the either-or requirement has a first-class slot and must not live only in prose");
+		contract.InputSchema.AnyOf!.Select(group => string.Join(",", group)).Should().BeEquivalentTo(
+			["body", "body-file"],
+			because: "the two accepted shapes are 'body alone' and 'body-file alone'");
+		contract.InputSchema.Properties.Select(field => field.Name).Should().Contain(["body", "body-file"],
+			because: "both inputs must still be advertised for the any-of groups to name anything");
+	}
+
+	[TestCase(CreatePageBusinessRuleTool.BusinessRuleCreateToolName)]
+	[TestCase(ReadPageBusinessRuleTool.ToolName)]
+	[TestCase(UpdatePageBusinessRuleTool.ToolName)]
+	[TestCase(DeletePageBusinessRuleTool.ToolName)]
+	[Category("Unit")]
+	[Description("Each page business-rule contract publishes the page-schema-name / schema-name either-or as any-of, so the alias relaxation is machine-readable rather than described in prose (PR #1352 review).")]
+	public void ToolContractGet_Should_Publish_AnyOf_For_PageSchemaNameAlias(string toolName) {
+		// Arrange
+		ToolContractGetTool tool = BuildToolWithRegistry();
+
+		// Act
+		ToolContractDefinition contract = tool.GetToolContracts(new ToolContractGetArgs([toolName])).Tools!.Single();
+
+		// Assert
+		contract.InputSchema.Required.Should().NotContain("page-schema-name",
+			because: "the alias is advertised as equally valid, so the canonical spelling is not mandatory");
+		contract.InputSchema.AnyOf.Should().NotBeNull(
+			because: "a field description saying 'the alias is accepted in its place' is not a contract a " +
+				"client can validate against");
+		contract.InputSchema.AnyOf!.Select(group => string.Join(",", group)).Should().BeEquivalentTo(
+			["page-schema-name", "schema-name"],
+			because: "exactly one of the two spellings identifies the page");
 	}
 }

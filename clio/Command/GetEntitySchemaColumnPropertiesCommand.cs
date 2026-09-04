@@ -67,10 +67,10 @@ public class GetEntitySchemaColumnPropertiesCommand : Command<GetEntitySchemaCol
 	private static void Validate(GetEntitySchemaColumnPropertiesOptions options) {
 		ArgumentNullException.ThrowIfNull(options);
 		if (string.IsNullOrWhiteSpace(options.SchemaName)) {
-			throw new ArgumentException("Schema name is required.", nameof(options.SchemaName));
+			throw new ArgumentException("schema-name is required.");
 		}
 		if (string.IsNullOrWhiteSpace(options.ColumnName)) {
-			throw new ArgumentException("Column name is required.", nameof(options.ColumnName));
+			throw new ArgumentException("column-name is required.");
 		}
 	}
 

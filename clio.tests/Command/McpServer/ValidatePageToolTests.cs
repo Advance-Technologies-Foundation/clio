@@ -1,3 +1,5 @@
+using System;
+using System.IO;
 using System.Linq;
 using Clio.Command;
 using Clio.Command.McpServer.Tools;
@@ -326,5 +328,86 @@ public sealed class ValidatePageToolTests {
 			.GetArguments()[0];
 		requestedVersion.Should().Be("8.1.5",
 			because: "validate-page must scope its chart-widget pre-flight check to the version the agent passed");
+	}
+
+	[Test]
+	[Description("body-file: the file contents are validated when body is omitted (issue #1297).")]
+	public async System.Threading.Tasks.Task ValidatePage_WhenBodyFileSupplied_ValidatesFileContents() {
+		// Arrange
+		PageValidateTool tool = CreateTool();
+		string mobileBody = """
+			{
+			  "viewConfigDiff": [],
+			  "viewModelConfigDiff": [],
+			  "modelConfigDiff": []
+			}
+			""";
+		string bodyFilePath = Path.Combine(Path.GetTempPath(), $"clio-validate-page-{Guid.NewGuid():N}.js");
+		File.WriteAllText(bodyFilePath, mobileBody);
+		try {
+			PageValidateArgs args = new(null, null, null, bodyFilePath);
+
+			// Act
+			PageValidateResponse response = await tool.ValidatePage(args);
+
+			// Assert
+			response.Valid.Should().BeTrue(
+				because: "body-file is the documented escape hatch for large bodies and must be read instead of reported as an empty body");
+			response.Validation.Errors.Should().BeNullOrEmpty(
+				because: "the file content is a well-formed mobile body and must produce no errors");
+		} finally {
+			File.Delete(bodyFilePath);
+		}
+	}
+
+	[Test]
+	[Description("body wins over body-file when both are supplied, matching the update-page precedence.")]
+	public async System.Threading.Tasks.Task ValidatePage_WhenBodyAndBodyFileSupplied_InlineBodyWins() {
+		// Arrange
+		PageValidateTool tool = CreateTool();
+		PageValidateArgs args = new("{\"viewConfigDiff\": []}", null, null, "/this/path/does/not/exist.js");
+
+		// Act
+		PageValidateResponse response = await tool.ValidatePage(args);
+
+		// Assert
+		response.Valid.Should().BeTrue(
+			because: "an inline body must short-circuit body-file resolution without touching the filesystem");
+	}
+
+	[Test]
+	[Description("A body-file path that does not exist is reported as a file-not-found error, not as an empty body.")]
+	public async System.Threading.Tasks.Task ValidatePage_WhenBodyFileMissing_ReportsFileNotFound() {
+		// Arrange
+		PageValidateTool tool = CreateTool();
+		string missingPath = Path.Combine(Path.GetTempPath(), $"clio-missing-{Guid.NewGuid():N}.js");
+		PageValidateArgs args = new(null, null, null, missingPath);
+
+		// Act
+		PageValidateResponse response = await tool.ValidatePage(args);
+
+		// Assert
+		response.Valid.Should().BeFalse(
+			because: "an unreadable body-file cannot be validated");
+		response.Validation.Errors.Should().ContainSingle(error => error.Contains("File not found"),
+			because: "the caller must learn the path was unreadable rather than that the body was empty");
+	}
+
+	[Test]
+	[Description("Neither body nor body-file supplied: the caller is told exactly which two parameters can carry the body.")]
+	public async System.Threading.Tasks.Task ValidatePage_WhenNoBodySource_ReportsBothParameterNames() {
+		// Arrange
+		PageValidateTool tool = CreateTool();
+		PageValidateArgs args = new(null, null);
+
+		// Act
+		PageValidateResponse response = await tool.ValidatePage(args);
+
+		// Assert
+		response.Valid.Should().BeFalse(
+			because: "there is nothing to validate without a body");
+		response.Validation.Errors.Should().ContainSingle(error =>
+				error.Contains("'body'") && error.Contains("'body-file'"),
+			because: "the error must name both accepted parameters instead of the bare 'JS body is null or empty.'");
 	}
 }
