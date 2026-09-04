@@ -99,32 +99,78 @@ namespace Clio.Package
 			}
 		}
 
+		/// <summary>
+		/// <see langword="true"/> when no compilation-history activity has been seen for
+		/// <see cref="CompilationSettleSeconds"/>, which is how a response-less 8.3.3+ compile signals
+		/// that it finished.
+		/// </summary>
+		private static bool HasSettled(DateTime? lastActivityAt)
+			=> lastActivityAt.HasValue
+				&& (DateTime.UtcNow - lastActivityAt.Value).TotalSeconds >= CompilationSettleSeconds;
+
+		/// <summary>
+		/// Ends the monitoring of a response-less compile: stops the poll thread and cancels, then
+		/// OBSERVES, the pending HTTP request.
+		/// </summary>
+		/// <remarks>
+		/// Every exit from the wait loop has to do all three, in this order - leaving the cancelled request
+		/// unobserved raises an unhandled task exception later, and disposing the token source while the poll
+		/// thread still holds its token throws ObjectDisposedException. Extracted so no exit path can carry
+		/// only part of the sequence.
+		/// </remarks>
+		private static void StopMonitoring(CancellationTokenSource cts, Thread pollThread, Task httpTask) {
+			cts.Cancel();
+			pollThread.Join();
+			ObserveCancelledRequest(httpTask, cts);
+		}
+
+		/// <summary>
+		/// Reads the compilation-history baseline, degrading to <c>null</c> when the read fails.
+		/// </summary>
+		/// <remarks>
+		/// ClassifyingDataProvider turns a failed OData round into an exception instead of an empty list, so an
+		/// unguarded read here would abort the build before the compilation request is ever sent - one transient
+		/// OData failure would fail a compile that would otherwise have succeeded. The baseline only sharpens
+		/// which history rows count as new (Poll falls back to DateTime.MinValue without it), so a failed read is
+		/// reported as a warning and the compilation goes ahead.
+		/// </remarks>
+		private CompilationHistory TryGetBaseline() {
+			try {
+				return _compilationHistoryPoller.GetBaseline();
+			} catch (Exception exception) {
+				_logger.WriteWarning($"Could not read the compilation history baseline: {exception.Message}");
+				return null;
+			}
+		}
+
 		// In Creatio 8.3.3+, RebuildPackage no longer sends back an HTTP response —
 		// the server compiles in the background and drops the connection. Use a cancellable
 		// asynchronous request while the CompilationHistoryPoller detects completion via OData.
 		private void CompileWithPolling(string url, string requestData) {
-			CompilationHistory baseline = _compilationHistoryPoller.GetBaseline();
+			CompilationHistory baseline = TryGetBaseline();
 			DateTime baselineCreatedOn = baseline?.CreatedOn ?? DateTime.MinValue;
 
 			DateTime timeoutAt = DateTime.UtcNow.AddMinutes(CompilationTimeoutMinutes);
-			DateTime? lastActivityAt = null;
-			bool hasErrors = false;
-			string errorDetails = null;
+			CompilationProgress progress = new();
 
 			using CancellationTokenSource cts = new();
 			Task httpTask = SendCompilationRequestAsync(cts.Token);
-			Thread pollThread = new(() => {
-				_compilationHistoryPoller.Poll(baselineCreatedOn, cts.Token, record => {
-					lastActivityAt = DateTime.UtcNow;
-					if (!record.Result && !string.IsNullOrEmpty(record.ErrorsWarnings) && record.ErrorsWarnings != "[]") {
-						hasErrors = true;
-						errorDetails = record.ErrorsWarnings;
-					}
-				});
-			});
-			pollThread.Start();
+			// Published through a ONE-ELEMENT HOLDER with Volatile.Write/Read, not a plain captured local: the
+			// write happens on the poll thread and the read on the main thread's spin loop below, so without an
+			// explicit barrier there is no happens-before edge and the JIT may hoist the read out of the loop.
+			Exception[] pollFaultBox = new Exception[1];
+			Thread pollThread = StartPollThread(baselineCreatedOn, cts, progress, pollFaultBox);
 
 			while (DateTime.UtcNow < timeoutAt) {
+				//Observed on the MAIN thread, so the fault is reported rather than silently ending the
+				//poll and letting the loop run to its full timeout with nothing watching the compile.
+				Exception pollFault = Volatile.Read(ref pollFaultBox[0]);
+				if (pollFault is not null) {
+					StopMonitoring(cts, pollThread, httpTask);
+					throw new InvalidOperationException(
+						$"Package compilation could not be monitored: {pollFault.Message}", pollFault);
+				}
+
 				if (httpTask.IsCompleted) {
 					cts.Cancel();
 					pollThread.Join();
@@ -132,13 +178,15 @@ namespace Clio.Package
 					return;
 				}
 
-				if (lastActivityAt.HasValue &&
-					(DateTime.UtcNow - lastActivityAt.Value).TotalSeconds >= CompilationSettleSeconds) {
-					cts.Cancel();
-					pollThread.Join();
-					ObserveCancelledRequest(httpTask, cts);
-					if (hasErrors) {
-						throw new Exception($"Package compilation failed: {errorDetails}");
+				//ONE snapshot per iteration, taken under the same lock Observe writes under: the three
+				//fields are written on the poll thread and read here, so an unsynchronized read could be
+				//hoisted out of the loop (a settle the poll thread saw is never observed, and the compile
+				//reports a timeout instead) or mix a fresh HasErrors with a stale ErrorDetails.
+				CompilationProgressSnapshot observed = progress.Snapshot();
+				if (HasSettled(observed.LastActivityAt)) {
+					StopMonitoring(cts, pollThread, httpTask);
+					if (observed.HasErrors) {
+						throw new InvalidOperationException($"Package compilation failed: {observed.ErrorDetails}");
 					}
 					return;
 				}
@@ -146,9 +194,7 @@ namespace Clio.Package
 				Thread.Sleep(500);
 			}
 
-			cts.Cancel();
-			pollThread.Join();
-			ObserveCancelledRequest(httpTask, cts);
+			StopMonitoring(cts, pollThread, httpTask);
 			throw new TimeoutException($"Package compilation did not complete within {CompilationTimeoutMinutes} minutes.");
 
 			async Task SendCompilationRequestAsync(CancellationToken cancellationToken) {
@@ -157,6 +203,84 @@ namespace Clio.Package
 					url, requestData, Timeout.Infinite, cancellationToken: cancellationToken).ConfigureAwait(false);
 			}
 		}
+
+		/// <summary>
+		/// Starts the dedicated poll thread, capturing any fault it gives up with instead of letting it
+		/// escape.
+		/// </summary>
+		/// <remarks>
+		/// The poll fault is CAPTURED, never allowed to escape the thread. An unhandled exception on a
+		/// dedicated thread terminates the whole process, so a failed OData round would have killed clio
+		/// mid-compile and skipped every cleanup in the wait loop (cts.Cancel / Join /
+		/// ObserveCancelledRequest). Poll itself already tolerates individual failed rounds; this catches
+		/// the case where it gives up, and hands the fault to the wait loop to report on the main thread.
+		/// An unobserved fault is strictly worse than no guard at all - the poll thread has exited, nothing
+		/// is watching the compilation history, and the loop runs to the full CompilationTimeoutMinutes
+		/// with an open HTTP request before reporting a timeout instead of the real fault.
+		/// </remarks>
+		private Thread StartPollThread(DateTime baselineCreatedOn, CancellationTokenSource cts,
+			CompilationProgress progress, Exception[] pollFaultBox) {
+			Thread pollThread = new(() => {
+				try {
+					_compilationHistoryPoller.Poll(baselineCreatedOn, cts.Token, progress.Observe);
+				} catch (Exception exception) {
+					Volatile.Write(ref pollFaultBox[0], exception);
+				}
+			});
+			pollThread.Start();
+			return pollThread;
+		}
+
+		/// <summary>
+		/// What the poll thread has observed so far, read by the wait loop on the main thread: when the
+		/// last record arrived, and whether any of them reported a compilation error.
+		/// </summary>
+		private sealed class CompilationProgress {
+
+			/// <summary>An empty <c>ErrorsWarnings</c> array, which is not an error report.</summary>
+			private const string EmptyErrorsWarnings = "[]";
+
+			/// <summary>
+			/// Guards all three fields. A lock rather than <c>Volatile</c> per field, for two reasons:
+			/// <c>DateTime?</c> is a 16-byte struct, so its write is not atomic and volatile could not make
+			/// it so; and the wait loop wants a CONSISTENT view of all three at once, which per-field
+			/// barriers cannot give it.
+			/// </summary>
+			private readonly object _gate = new();
+
+			private DateTime? _lastActivityAt;
+
+			private bool _hasErrors;
+
+			private string _errorDetails;
+
+			public void Observe(CompilationHistory record) {
+				lock (_gate) {
+					_lastActivityAt = DateTime.UtcNow;
+					if (record.Result || string.IsNullOrEmpty(record.ErrorsWarnings)
+							|| record.ErrorsWarnings == EmptyErrorsWarnings) {
+						return;
+					}
+					_hasErrors = true;
+					_errorDetails = record.ErrorsWarnings;
+				}
+			}
+
+			/// <summary>One consistent view of what the poll thread has observed so far.</summary>
+			public CompilationProgressSnapshot Snapshot() {
+				lock (_gate) {
+					return new CompilationProgressSnapshot(_lastActivityAt, _hasErrors, _errorDetails);
+				}
+			}
+
+		}
+
+		/// <summary>
+		/// An immutable view of <see cref="CompilationProgress"/> taken under its lock, so the wait loop
+		/// never mixes a fresh error flag with stale error text.
+		/// </summary>
+		private readonly record struct CompilationProgressSnapshot(
+			DateTime? LastActivityAt, bool HasErrors, string ErrorDetails);
 
 		private static void ObserveCancelledRequest(Task request, CancellationTokenSource cancellation) {
 			try {

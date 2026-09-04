@@ -21,12 +21,18 @@ public sealed record GetSysSettingArgs(
 /// Structured response of the get-sys-setting MCP tool: echoes the requested code, returns the All-Users
 /// default value (empty when the setting is unknown or has no All-Users row), and carries an optional
 /// error message on failure.
+/// On failure the envelope also carries <c>error-category</c>, <c>cause</c>, <c>recovery-action</c>
+/// and <c>correlation-id</c> (issue #1329); <c>error</c> keeps its historic single-line text.
 /// </summary>
 public sealed record SysSettingGetResult(
 	[property: JsonPropertyName("success")] bool Success,
 	[property: JsonPropertyName("code")] string Code,
 	[property: JsonPropertyName("value")] string Value,
-	[property: JsonPropertyName("error")] string? Error = null);
+	[property: JsonPropertyName("error")] string? Error = null,
+	[property: JsonPropertyName("error-category")] string? ErrorCategory = null,
+	[property: JsonPropertyName("cause")] string? Cause = null,
+	[property: JsonPropertyName("recovery-action")] string? RecoveryAction = null,
+	[property: JsonPropertyName("correlation-id")] string? CorrelationId = null);
 
 /// <summary>
 /// Request payload for the list-sys-settings MCP tool: identifies the environment whose sys-setting catalog should be returned.
@@ -40,11 +46,17 @@ public sealed record ListSysSettingsArgs(
 /// <summary>
 /// Structured response of the list-sys-settings MCP tool: catalog of sys-settings filtered to the supported surface
 /// (Binary entries are excluded; SecureText values are masked). Carries an optional error message on failure.
+/// On failure the envelope also carries <c>error-category</c>, <c>cause</c>, <c>recovery-action</c>
+/// and <c>correlation-id</c> (issue #1329); <c>error</c> keeps its historic single-line text.
 /// </summary>
 public sealed record SysSettingsListResult(
 	[property: JsonPropertyName("success")] bool Success,
 	[property: JsonPropertyName("settings")] SysSettingItem[] Settings,
-	[property: JsonPropertyName("error")] string? Error = null);
+	[property: JsonPropertyName("error")] string? Error = null,
+	[property: JsonPropertyName("error-category")] string? ErrorCategory = null,
+	[property: JsonPropertyName("cause")] string? Cause = null,
+	[property: JsonPropertyName("recovery-action")] string? RecoveryAction = null,
+	[property: JsonPropertyName("correlation-id")] string? CorrelationId = null);
 
 /// <summary>
 /// Per-setting row returned by list-sys-settings. The <c>Value</c> field carries the All-Users default formatted by type;
@@ -100,6 +112,8 @@ public sealed record CreateSysSettingArgs(
 /// Structured response of the create-sys-setting MCP tool: echoes the resulting code and value-type-name,
 /// reports the assigned value, and surfaces an optional error on failure or an optional partial-success
 /// warning when the row was created but the initial value could not be applied.
+/// On failure the envelope also carries <c>error-category</c>, <c>cause</c>, <c>recovery-action</c>
+/// and <c>correlation-id</c> (issue #1329); <c>error</c> keeps its historic single-line text.
 /// </summary>
 public sealed record SysSettingCreateResult(
 	[property: JsonPropertyName("success")] bool Success,
@@ -107,7 +121,11 @@ public sealed record SysSettingCreateResult(
 	[property: JsonPropertyName("value-type-name")] string ValueTypeName,
 	[property: JsonPropertyName("value")] string? Value = null,
 	[property: JsonPropertyName("error")] string? Error = null,
-	[property: JsonPropertyName("warning")] string? Warning = null);
+	[property: JsonPropertyName("warning")] string? Warning = null,
+	[property: JsonPropertyName("error-category")] string? ErrorCategory = null,
+	[property: JsonPropertyName("cause")] string? Cause = null,
+	[property: JsonPropertyName("recovery-action")] string? RecoveryAction = null,
+	[property: JsonPropertyName("correlation-id")] string? CorrelationId = null);
 
 /// <summary>
 /// Request payload for the update-sys-setting MCP tool. <see cref="ValueTypeName"/> is a fallback used only when
@@ -135,9 +153,15 @@ public sealed record UpdateSysSettingArgs(
 /// <summary>
 /// Structured response of the update-sys-setting MCP tool: echoes the requested code and returns the assigned
 /// value (read back from the All-Users default after a successful write) or an error message on failure.
+/// On failure the envelope also carries <c>error-category</c>, <c>cause</c>, <c>recovery-action</c>
+/// and <c>correlation-id</c> (issue #1329); <c>error</c> keeps its historic single-line text.
 /// </summary>
 public sealed record SysSettingUpdateResult(
 	[property: JsonPropertyName("success")] bool Success,
 	[property: JsonPropertyName("code")] string Code,
 	[property: JsonPropertyName("value")] string? Value = null,
-	[property: JsonPropertyName("error")] string? Error = null);
+	[property: JsonPropertyName("error")] string? Error = null,
+	[property: JsonPropertyName("error-category")] string? ErrorCategory = null,
+	[property: JsonPropertyName("cause")] string? Cause = null,
+	[property: JsonPropertyName("recovery-action")] string? RecoveryAction = null,
+	[property: JsonPropertyName("correlation-id")] string? CorrelationId = null);

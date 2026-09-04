@@ -1,4 +1,5 @@
 ﻿using System.Collections.Generic;
+using System.Globalization;
 using System.Linq;
 using System.Text;
 using Clio.Project.NuGet;
@@ -90,16 +91,112 @@ namespace Clio.Common
 			if (string.IsNullOrEmpty(text)) {
 				return text;
 			}
-			var sb = new StringBuilder(text.Length);
-			foreach (char character in text) {
-				sb.Append(char.IsControl(character) ? ' ' : character);
-			}
-			string sanitized = sb.ToString();
+			// Normalization runs BEFORE the cap on purpose: it removes the control characters and lone
+			// surrogates, so the cap only ever has to deal with well-formed text. It does NOT make the cap
+			// safe on its own - a well-formed surrogate PAIR is deliberately preserved, so a cut at
+			// maxLength can still land between its two halves. TruncateWithoutSplittingSurrogatePair is
+			// what stops that lone half from reaching System.Text.Json, which throws on invalid UTF-16 and
+			// would take down the whole MCP response rather than just garble one message.
+			string sanitized = NeutralizeDisplayHostileCharacters(text);
 			if (sanitized.Length > maxLength) {
-				return sanitized.Substring(0, maxLength) + "...";
+				return TruncateWithoutSplittingSurrogatePair(sanitized, maxLength) + "...";
 			}
 			return sanitized;
 		}
+
+		/// <summary>
+		/// Cuts <paramref name="text"/> down to at most <paramref name="maxLength"/> characters without
+		/// leaving a lone high surrogate at the end.
+		/// </summary>
+		/// <param name="text">The text to cut.</param>
+		/// <param name="maxLength">The maximum number of characters to keep.</param>
+		/// <returns>
+		/// <paramref name="text"/> unchanged when it is <c>null</c>, empty, or already short enough;
+		/// otherwise its first <paramref name="maxLength"/> characters, minus a trailing high surrogate
+		/// when the cut landed inside a surrogate pair.
+		/// </returns>
+		/// <remarks>
+		/// A plain <c>Substring</c> is not enough for any text that is later serialized: an astral character
+		/// (emoji, CJK extension) occupies TWO chars, so a cut that falls between them keeps the high half on
+		/// its own. <c>System.Text.Json</c> throws on that invalid UTF-16, so one over-long message with an
+		/// emoji near the cut point fails the entire response instead of being truncated. Dropping the
+		/// orphaned half costs one character and removes that failure mode entirely.
+		/// </remarks>
+		public static string TruncateWithoutSplittingSurrogatePair(string text, int maxLength) {
+			if (string.IsNullOrEmpty(text) || text.Length <= maxLength) {
+				return text;
+			}
+			if (maxLength <= 0) {
+				return string.Empty;
+			}
+			string result = text.Substring(0, maxLength);
+			return char.IsHighSurrogate(result[^1]) ? result[..^1] : result;
+		}
+
+		/// <summary>
+		/// Maps every character that can misrepresent text in a terminal, a log pipeline, or a JSON payload
+		/// to a plain space, leaving everything else untouched. Runs of spaces are NOT collapsed - a caller
+		/// that wants that does it as its own step.
+		/// </summary>
+		/// <remarks>
+		/// <c>char.IsControl</c> alone is not enough on any of three counts, and this method is the single
+		/// place that says so (<c>SensitiveErrorTextRedactor</c> builds on it rather than repeating it):
+		/// <list type="bullet">
+		/// <item>U+2028 LINE SEPARATOR and U+2029 PARAGRAPH SEPARATOR are category Zl/Zp, not control
+		/// characters, yet render as line breaks and survive JSON as themselves - so an untrusted
+		/// diagnostic could forge a rendered block without a single control byte.</item>
+		/// <item>A lone surrogate reaches <c>System.Text.Json</c>, which THROWS on invalid UTF-16.</item>
+		/// <item>Format characters (bidi overrides) can reverse the visible order of a marker and its
+		/// payload in a terminal.</item>
+		/// </list>
+		/// An ordinary space is itself a separator, so it maps to a space and is unchanged; U+00A0 and
+		/// friends become ordinary spaces, which is the intent.
+		/// </remarks>
+		/// <param name="text">The untrusted text to neutralize.</param>
+		/// <returns>The text with every display-hostile character replaced by a space.</returns>
+		public static string NeutralizeDisplayHostileCharacters(string text) {
+			if (string.IsNullOrEmpty(text)) {
+				return text;
+			}
+			var sb = new StringBuilder(text.Length);
+			// Iterated by INDEX, not foreach, so a well-formed surrogate PAIR can be recognized and kept.
+			// char.IsSurrogate cannot tell a lone surrogate from half of a valid pair, so neutralizing on it
+			// alone replaced every astral character - emoji, CJK extensions, several whole scripts - with two
+			// spaces, for every caller of this shared utility (theme captions and CSS paths, package and
+			// environment names, service error messages), none of which had anything to do with the lone
+			// surrogate that breaks System.Text.Json. Only ORPHANS are neutralized.
+			// A while loop, not a for: a valid surrogate PAIR consumes two positions, and advancing the
+			// counter from inside a for body is exactly what makes such a loop hard to follow.
+			int index = 0;
+			while (index < text.Length) {
+				char character = text[index];
+				if (char.IsHighSurrogate(character) && index + 1 < text.Length && char.IsLowSurrogate(text[index + 1])) {
+					sb.Append(character).Append(text[index + 1]);
+					index += 2;
+					continue;
+				}
+				sb.Append(IsDisplayHostile(character) ? ' ' : character);
+				index++;
+			}
+			return sb.ToString();
+		}
+
+		/// <summary>
+		/// <see langword="true"/> when the character must not reach a terminal, a log sink, or a JSON
+		/// serializer as itself. See <see cref="NeutralizeDisplayHostileCharacters"/> for why each
+		/// category is included.
+		/// </summary>
+		/// <param name="character">The character to test.</param>
+		/// <remarks>
+		/// Judges ONE char in isolation, so it answers <see langword="true"/> for either half of a valid
+		/// surrogate pair. <see cref="NeutralizeDisplayHostileCharacters"/> pairs up first and only asks about
+		/// orphans; a caller that scans char by char without doing the same will destroy every astral character.
+		/// </remarks>
+		public static bool IsDisplayHostile(char character) =>
+			char.IsControl(character)
+			|| char.IsSeparator(character)
+			|| char.IsSurrogate(character)
+			|| CharUnicodeInfo.GetUnicodeCategory(character) == UnicodeCategory.Format;
 
 		/// <summary>
 		/// Renders a <see cref="PackageVersion"/> that came from OUTSIDE clio — a target environment's

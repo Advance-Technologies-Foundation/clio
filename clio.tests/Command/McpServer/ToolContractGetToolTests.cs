@@ -3251,4 +3251,86 @@ public sealed class ToolContractGetToolTests {
 		result.Index.Should().BeNull(
 			because: "the legacy client's full-shape response must not also carry the compact index");
 	}
+
+	[Test]
+	[Category("Unit")]
+	[TestCase(SchemaNamePrefixTool.GetSchemaNamePrefixToolName,
+		TestName = "GetSchemaNamePrefixContractCarriesTheEmptyVersusFailureRule")]
+	[TestCase(SysSettingGetTool.GetSysSettingToolName,
+		TestName = "GetSysSettingContractCarriesTheEmptyVersusFailureRule")]
+	[Description("get-tool-contract restates each tool's description in its own literal, so the sys-settings reading rule - an empty value only ever arrives with success:true, a rejected session is success:false - must be present in BOTH places or an agent reading the contract is told something the tool no longer does.")]
+	public void ToolContract_Should_Carry_The_Empty_Versus_Failure_Rule(string toolName) {
+		// Arrange
+		ToolContractGetTool tool = BuildToolWithRegistry();
+
+		// Act
+		ToolContractDefinition contract =
+			tool.GetToolContracts(new ToolContractGetArgs([toolName])).Tools!.Single();
+
+		// Assert
+		contract.Description.Should().Contain("success:true",
+			because: "the contract has to say that an empty read is a SUCCESSFUL read, otherwise an agent reads emptiness as ambiguous");
+		contract.Description.Should().Contain("success:false",
+			because: "a rejected session is now a reported failure rather than an empty value (issue #1371), and the contract is where an agent learns that");
+		contract.Description.Should().Contain("authentication error",
+			because: "the contract must name the diagnosis the caller will actually receive");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[TestCase(SchemaNamePrefixTool.GetSchemaNamePrefixToolName,
+		TestName = "GetSchemaNamePrefixContractDeclaresTheFailureEnvelopeFields")]
+	[TestCase(SysSettingGetTool.GetSysSettingToolName,
+		TestName = "GetSysSettingContractDeclaresTheFailureEnvelopeFields")]
+	[TestCase(SysSettingsListTool.ListSysSettingsToolName,
+		TestName = "ListSysSettingsContractDeclaresTheFailureEnvelopeFields")]
+	[TestCase(SysSettingCreateTool.CreateSysSettingToolName,
+		TestName = "CreateSysSettingContractDeclaresTheFailureEnvelopeFields")]
+	[TestCase(SysSettingUpdateTool.UpdateSysSettingToolName,
+		TestName = "UpdateSysSettingContractDeclaresTheFailureEnvelopeFields")]
+	[Description("Issue #1329 added error-category, cause, recovery-action and correlation-id to every sys-setting failure envelope; get-tool-contract restates the output shape in its own literal, so a field the tool returns and the contract omits is a field no agent knows to read.")]
+	public void ToolContract_Should_Declare_The_Sys_Setting_Failure_Envelope_Fields(string toolName) {
+		// Arrange
+		ToolContractGetTool tool = BuildToolWithRegistry();
+
+		// Act
+		ToolContractDefinition contract =
+			tool.GetToolContracts(new ToolContractGetArgs([toolName])).Tools!.Single();
+
+		// Assert
+		string[] fieldNames = [.. contract.OutputContract.Fields.Select(field => field.Name)];
+		fieldNames.Should().Contain("error-category",
+			because: "an agent branches on the failure class rather than parsing the message");
+		fieldNames.Should().Contain("cause",
+			because: "the actionable cause used to be discarded by CategorizeError (issue #1329)");
+		fieldNames.Should().Contain("recovery-action",
+			because: "the envelope has to name the next step, not only the failure");
+		fieldNames.Should().Contain("correlation-id",
+			because: "#1222 requires a correlation ID so the caller can point an operator at the log line");
+		// PR #1373 review (Blocker) - the field-name assertions above could not catch the drift that shipped: the
+		// error-category DESCRIPTION enumerated the branch values and had already lost `Configuration`, the value
+		// CategorizeFailure returns for every EnvironmentResolutionException. Reflected over the constants so the
+		// next category cannot reopen it.
+		string errorCategoryDescription = contract.OutputContract.Fields
+			.Single(field => field.Name == "error-category").Description;
+		string[] declaredCategories = [.. typeof(SysSettingErrorCategories)
+			.GetFields(BindingFlags.Public | BindingFlags.Static)
+			.Where(field => field.IsLiteral && field.FieldType == typeof(string))
+			.Select(field => (string)field.GetRawConstantValue()!)];
+		declaredCategories.Should().NotBeEmpty(
+			because: "an empty reflected set would make the enumeration assertion below pass vacuously");
+		foreach (string category in declaredCategories) {
+			errorCategoryDescription.Should().Contain(category,
+				because: $"an agent branching on error-category meets '{category}' at runtime, and an undeclared value sends it down its generic path - the looping behaviour issue #1329 exists to remove");
+		}
+		// PR #1373 review - the cause field must NOT advertise a trust label the classifier does not keep:
+		// CategorizeFailure's ProviderFailure arm sets Cause from the provider's message, which is built from the
+		// environment's HTTP response.
+		string causeDescription = contract.OutputContract.Fields
+			.Single(field => field.Name == "cause").Description;
+		causeDescription.Should().NotContain("Never composed from server prose",
+			because: "the ProviderFailure and Validation arms echo upstream text into cause, and an agent that reads it as trusted local guidance is the prompt-injection surface issue #1333 exists to close");
+		causeDescription.Should().Contain("treated as DATA",
+			because: "where the cause does echo upstream text the contract has to say so explicitly");
+	}
 }

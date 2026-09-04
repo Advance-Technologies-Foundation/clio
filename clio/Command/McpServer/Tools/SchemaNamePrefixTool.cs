@@ -11,7 +11,8 @@ namespace Clio.Command.McpServer.Tools;
 /// MCP tool surface for reading the active SchemaNamePrefix system setting.
 /// </summary>
 [McpServerToolType]
-public sealed class SchemaNamePrefixTool(IToolCommandResolver commandResolver) {
+public sealed class SchemaNamePrefixTool(IToolCommandResolver commandResolver,
+	IOperationCorrelationIdProvider correlationIds, ILogger logger) {
 
 	internal const string GetSchemaNamePrefixToolName = "get-schema-name-prefix";
 
@@ -28,7 +29,7 @@ public sealed class SchemaNamePrefixTool(IToolCommandResolver commandResolver) {
 		RequiresClientRequests = McpToolClientRequests.None,
 		SharedFileResource = McpToolSharedFileResource.None)]
 	[Description("Returns the active SchemaNamePrefix system setting for the environment. " +
-	             "Returns empty string when no prefix is configured (use no prefix in that case). " +
+	             "Returns empty string when no prefix is configured (use no prefix in that case); an empty prefix always arrives with success:true, while a rejected session is reported as success:false with an authentication error. " +
 	             "Default Creatio environments return 'Usr'. " +
 	             "Note: create-app and get-app-info both read this setting automatically and return schema-name-prefix " +
 	             "in their responses — you only need this tool when you require the prefix before calling either of those.")]
@@ -41,14 +42,58 @@ public sealed class SchemaNamePrefixTool(IToolCommandResolver commandResolver) {
 				new EnvironmentOptions { Environment = args.EnvironmentName });
 			string prefix = SysSettingCodes.ReadSchemaNamePrefix(sysSettings);
 			return new SchemaNamePrefixResult(true, prefix);
-		} catch (Exception ex) when (ex is System.Net.Http.HttpRequestException or System.Net.WebException or System.Net.Sockets.SocketException) {
-			return new SchemaNamePrefixResult(false, string.Empty, "Network error reading SchemaNamePrefix.");
-		} catch (Exception ex) when (ex is UnauthorizedAccessException or System.Security.Authentication.AuthenticationException) {
-			return new SchemaNamePrefixResult(false, string.Empty, "Authentication error reading SchemaNamePrefix.");
-		} catch (Exception) {
-			return new SchemaNamePrefixResult(false, string.Empty, "Failed to read SchemaNamePrefix.");
+		} catch (Exception ex) {
+			//One classifier, not two. These five hand-written arms disagreed with
+			//SysSettingsCommand.CategorizeFailure on three counts: a TLS handshake failure arrives as an
+			//AuthenticationException and was reported as rejected credentials (sending the operator to
+			//repair a working login while the untrusted certificate stays untouched); an
+			//AggregateException - which is how the Creatio client surfaces a transport fault through
+			//Task.Result - matched nothing and fell to the generic label; and the correlation ID was
+			//minted with no log line to find it in.
+			return Failure(ex);
 		}
 	}
+
+	/// <summary>
+	/// Builds the failure envelope from the SHARED classifier, so this tool and the sys-setting tools
+	/// cannot answer "was this a credential failure?" differently (issue #1329).
+	/// </summary>
+	private SchemaNamePrefixResult Failure(Exception ex) {
+		SysSettingFailure failure = SysSettingsCommand.CategorizeAndLog(ex, ReadOperationLabel, logger,
+			correlationIds);
+		return new SchemaNamePrefixResult(false, string.Empty, DescribeError(failure), failure.Category,
+			failure.Cause, failure.RecoveryAction, failure.CorrelationId);
+	}
+
+	/// <summary>The operation label used in this tool's classified diagnostics.</summary>
+	private const string ReadOperationLabel = "reading SchemaNamePrefix";
+
+	/// <summary>This tool's historic generic label, kept for the cases that must not promote a message.</summary>
+	internal const string GenericReadFailure = "Failed to read SchemaNamePrefix.";
+
+	/// <summary>
+	/// The <c>error</c> line: the shared classifier's message, EXCEPT where this tool deliberately refuses
+	/// to promote one.
+	/// </summary>
+	/// <remarks>
+	/// An unregistered environment name, or any other failure clio raised about its own state, must not
+	/// have its text promoted into the headline field - that rule predates the shared classifier and is
+	/// kept. The actionable text is not lost: it is the <c>cause</c>, next to a recovery action.
+	/// A <c>DataProviderFailureException</c> is the opposite case and keeps its message, because that
+	/// message IS the diagnosis (in particular the non-JSON-page answer naming both possible causes).
+	/// </remarks>
+	/// <remarks>
+	/// PR #1373 review: an ALLOW-LIST, not a deny-list. The rule is the safe default, but naming the
+	/// categories that must NOT be promoted made promotion the default, so a category added later would
+	/// silently start putting its message in the headline - and <c>Configuration</c>, added in this same
+	/// change, is the proof that categories do get added. Only the three whose message genuinely IS a
+	/// promotable diagnosis are listed; anything unrecognised falls back to the generic label.
+	/// </remarks>
+	internal static string DescribeError(SysSettingFailure failure) =>
+		failure.Category is SysSettingErrorCategories.Authentication or SysSettingErrorCategories.Network
+			or SysSettingErrorCategories.ProviderFailure
+			? failure.Error
+			: GenericReadFailure;
 }
 
 /// <summary>
@@ -62,8 +107,14 @@ public sealed record GetSchemaNamePrefixArgs(
 
 /// <summary>
 /// MCP response for the <c>get-schema-name-prefix</c> tool.
+/// On failure the envelope also carries <c>error-category</c>, <c>cause</c>, <c>recovery-action</c>
+/// and <c>correlation-id</c> (issue #1329); <c>error</c> keeps its historic single-line text.
 /// </summary>
 public sealed record SchemaNamePrefixResult(
 	[property: JsonPropertyName("success")] bool Success,
 	[property: JsonPropertyName("schema-name-prefix")] string SchemaNamePrefix,
-	[property: JsonPropertyName("error")] string? Error = null);
+	[property: JsonPropertyName("error")] string? Error = null,
+	[property: JsonPropertyName("error-category")] string? ErrorCategory = null,
+	[property: JsonPropertyName("cause")] string? Cause = null,
+	[property: JsonPropertyName("recovery-action")] string? RecoveryAction = null,
+	[property: JsonPropertyName("correlation-id")] string? CorrelationId = null);

@@ -220,20 +220,35 @@ http.createServer((request, response) => {
       sendText(response, config.NetFrameworkUiMarkerEnabled ? 200 : 404, config.NetFrameworkUiMarkerEnabled ? "OK" : "Not Found");
       return;
     }
+    // The WRITE endpoints answer the same rejected session with the same login page, and that path keeps
+    // the raw body - so clio can prove the rejection there (AuthenticationFailureClassifier
+    // .IsAuthenticationFailureResponse) rather than only naming it as one of two possibilities. Gated on
+    // the same switch so an environment registration that does not opt in is unaffected.
+    if (request.method === "POST"
+      && config.AuthRejectedSelectQuerySchemaName
+      && (url === "/DataService/json/SyncReply/InsertSysSettingRequest"
+        || url === "/0/DataService/json/SyncReply/InsertSysSettingRequest"
+        || url === "/DataService/json/SyncReply/PostSysSettingsValues"
+        || url === "/0/DataService/json/SyncReply/PostSysSettingsValues")) {
+      response.writeHead(200, { "Content-Type": "text/html" });
+      response.end("<!DOCTYPE html><html><head><title>Creatio</title></head><body><form action=\"/Login/NuiLogin.aspx\"></form></body></html>");
+      return;
+    }
     if (request.method === "POST"
       && (url === "/DataService/json/SyncReply/SelectQuery" || url === "/0/DataService/json/SyncReply/SelectQuery")
       && config.AuthRejectedSelectQuerySchemaName
       && body.includes('"' + config.AuthRejectedSelectQuerySchemaName + '"')) {
-      // Issue #1222: an expired password makes Creatio answer the authenticated SelectQuery with a
-      // DataService fault envelope (ErrorCode 5) under HTTP 200. The repository provider collapses that
-      // to an empty successful collection, which is the false-success this PR removes. Keyed on the
-      // queried schema so the runtime-detection probe (SysAdminUnit) still gets valid JSON and
-      // environment registration is unaffected.
-      sendJson(response, 200, {
-        responseStatus: { ErrorCode: "5", Message: "Your password has expired.", Errors: [] },
-        rows: [],
-        success: false
-      });
+      // Issue #1222 / #1371: an expired password makes Creatio serve its LOGIN PAGE - HTML, under
+      // HTTP 200 - in answer to the authenticated SelectQuery. ATF.Repository's RemoteDataProvider
+      // deserializes that with Newtonsoft, catches the parser failure, and returns
+      // Success = false + empty Items; AppDataContext then drops the flag, which is the false empty
+      // success ClassifyingDataProvider removes.
+      // A DataService fault envelope (ErrorCode 5 with rows: []) is deliberately NOT used here: the
+      // provider parses it without error and reports Success = true, so no barrier downstream of the
+      // provider can see the rejection at all. Keyed on the queried schema so the runtime-detection
+      // probe (SysAdminUnit) still gets valid JSON and environment registration is unaffected.
+      response.writeHead(200, { "Content-Type": "text/html" });
+      response.end("<!DOCTYPE html><html><head><title>Creatio</title></head><body><form action=\"/Login/NuiLogin.aspx\"></form></body></html>");
       return;
     }
     if (request.method === "POST"

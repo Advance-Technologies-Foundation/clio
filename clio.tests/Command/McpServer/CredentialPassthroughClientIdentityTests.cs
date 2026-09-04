@@ -70,6 +70,47 @@ public class CredentialPassthroughClientIdentityTests {
 	// instance reachable from the root object graph. Used for IDataProvider, whose bearer-vs-login
 	// difference lives inside the ATF RemoteDataProvider's private client field; navigating by type
 	// (not hardcoded ATF field names) keeps the assertion resilient to ATF internals.
+	/// <summary>
+	/// Walks whatever <see cref="IDataProvider"/> decorators the container installed - the classifying
+	/// decorator, the lazy one - until it reaches the provider that actually holds a transport.
+	/// </summary>
+	/// <remarks>
+	/// Field-name-agnostic on purpose. Pinning <c>_inner</c> / <c>_lazy</c> made this test fail whenever a
+	/// decorator was added or a field renamed, which says nothing about the property under test (that the
+	/// caller's bearer token reaches the DB/ESQ path). Any private field holding an
+	/// <see cref="IDataProvider"/> is followed, and any <see cref="Lazy{T}"/> is forced.
+	/// </remarks>
+	private static object UnwrapToRealDataProvider(object provider) {
+		for (int depth = 0; depth < 8 && provider is not null; depth++) {
+			object next = null;
+			foreach (FieldInfo field in provider.GetType()
+					.GetFields(BindingFlags.Instance | BindingFlags.NonPublic)) {
+				object value = field.GetValue(provider);
+				if (value is null) {
+					continue;
+				}
+				if (value is IDataProvider nestedProvider) {
+					next = nestedProvider;
+					break;
+				}
+				//A Lazy<IDataProvider> has to be forced before its value can be followed; forcing it is
+				//also what builds the RemoteDataProvider whose client this test inspects.
+				Type valueType = value.GetType();
+				if (valueType.IsGenericType && valueType.GetGenericTypeDefinition() == typeof(Lazy<>)
+						&& typeof(IDataProvider).IsAssignableFrom(valueType.GetGenericArguments()[0])) {
+					next = valueType.GetProperty("Value", BindingFlags.Instance | BindingFlags.Public)!
+						.GetValue(value);
+					break;
+				}
+			}
+			if (next is null) {
+				return provider;
+			}
+			provider = next;
+		}
+		return provider;
+	}
+
 	private static IReadOnlyList<CreatioClient> FindCreatioClients(object root, int maxDepth = 8) {
 		List<CreatioClient> found = new();
 		HashSet<object> visited = new(ReferenceEqualityComparer.Instance);
@@ -150,13 +191,11 @@ public class CredentialPassthroughClientIdentityTests {
 		// Arrange
 		IServiceProvider container = BuildBearerPassthroughContainer();
 
-		// Act — resolve the IDataProvider and force the LazyDataProvider to build the real
-		// RemoteDataProvider, then locate the underlying CreatioClient by type.
+		// Act — resolve the IDataProvider, unwrap whatever decorators wrap it, then locate the underlying
+		// CreatioClient by type. The unwrapping is deliberately field-name-agnostic: this test is about the
+		// TOKEN reaching the DB/ESQ path, so it must not fail because a decorator renamed a private field.
 		IDataProvider dataProvider = container.GetRequiredService<IDataProvider>();
-		object lazy = GetPrivateField<object>(dataProvider, "_lazy");
-		object realProvider = lazy.GetType()
-			.GetProperty("Value", BindingFlags.Instance | BindingFlags.Public)!
-			.GetValue(lazy);
+		object realProvider = UnwrapToRealDataProvider(dataProvider);
 		IReadOnlyList<CreatioClient> clients = FindCreatioClients(realProvider);
 
 		// Assert
