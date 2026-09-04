@@ -668,9 +668,14 @@ public sealed class PageUpdateTool(
 	/// Used only when a label-resource validator has already failed, so the extra round-trips are never
 	/// paid by a body that validates cleanly.
 	/// </summary>
+	/// <summary>The empty answer: nothing was read, so the stricter verdict stands (Sonar S1168).</summary>
+	private static readonly IReadOnlySet<string> NoPersistedResourceKeys =
+		new HashSet<string>(StringComparer.Ordinal);
+
 	private IReadOnlySet<string> TryGetPersistedResourceKeys(PageUpdateOptions options) {
 		try {
-			return ResolveCommand<PageUpdateCommand>(options).TryGetPersistedResourceKeys(options);
+			return ResolveCommand<PageUpdateCommand>(options).TryGetPersistedResourceKeys(options)
+				?? NoPersistedResourceKeys;
 		} catch (Exception ex) when (ex is not OperationCanceledException) {
 			// Only command RESOLUTION can fail here - the read itself reports its own reason inside the
 			// command. Failing closed leaves the stricter verdict standing, but the reason must be
@@ -678,7 +683,7 @@ public sealed class PageUpdateTool(
 			_logger?.WriteWarning(SensitiveErrorTextRedactor.Redact(
 				"Persisted resource keys could not be read; the stricter label-resource verdict stands. "
 				+ ex.Message));
-			return null;
+			return NoPersistedResourceKeys;
 		}
 	}
 

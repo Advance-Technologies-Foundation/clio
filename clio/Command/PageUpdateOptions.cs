@@ -257,30 +257,40 @@
 			return true;
 		}
 
+		/// <summary>The empty answer of <see cref="TryGetPersistedResourceKeys"/>: nothing was read.</summary>
+		private static readonly IReadOnlySet<string> NoPersistedResourceKeys =
+			new HashSet<string>(StringComparer.Ordinal);
+
 		/// <summary>
 		/// Resolves the target schema and returns the resource keys already persisted on it, for the
 		/// MCP pre-execution validation gate which has no resolved schema context of its own.
 		/// </summary>
 		/// <param name="options">The pending write request identifying the schema and environment.</param>
-		/// <returns>The persisted resource keys, or <c>null</c> when they could not be read.</returns>
+		/// <returns>The persisted resource keys; EMPTY when they could not be read.</returns>
 		/// <remarks>
 		/// Best-effort and intended for the FAILURE path only: it costs a hierarchy resolution plus a
-		/// <c>GetSchema</c> round-trip, and a <c>null</c> result simply restores the previous, stricter
+		/// <c>GetSchema</c> round-trip, and an empty result simply restores the previous, stricter
 		/// behaviour rather than letting an unvalidated body through.
+		/// <para>Empty rather than <see langword="null"/> (Sonar S1168), which changes nothing for the
+		/// consumers: the validator gates on <c>is not { Count: &gt; 0 }</c> and every key lookup is a
+		/// <c>Contains</c>, so an empty set and a null one already produced the same strict verdict. The
+		/// tri-state CARRIER is unaffected - <c>PersistedResourceKeysRead = true</c> with a null
+		/// <c>PersistedResourceKeysSnapshot</c> is still what "read, nothing available" is stored as.
+		/// </para>
 		/// </remarks>
 		internal IReadOnlySet<string> TryGetPersistedResourceKeys(PageUpdateOptions options) {
 			if (options.PersistedResourceKeysRead) {
-				return options.PersistedResourceKeysSnapshot;
+				return options.PersistedResourceKeysSnapshot ?? NoPersistedResourceKeys;
 			}
 			try {
-				return TryResolveContext(options, out EditableSchemaContext context, out _)
+				return (TryResolveContext(options, out EditableSchemaContext context, out _)
 					? LoadPersistedResourceKeys(options, context)
-					: null;
+					: null) ?? NoPersistedResourceKeys;
 			} catch (Exception ex) when (ex is not OperationCanceledException) {
 				LogPersistedResourceKeyFailure(ex);
 				options.PersistedResourceKeysRead = true;
 				options.PersistedResourceKeysSnapshot = null;
-				return null;
+				return NoPersistedResourceKeys;
 			}
 		}
 

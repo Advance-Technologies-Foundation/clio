@@ -226,8 +226,9 @@ internal sealed class RemoteEntitySchemaColumnManager : IRemoteEntitySchemaColum
 	/// the caller did not mention untouched. A scalar <c>--title</c> is anchored to the culture produced by
 	/// <paramref name="effectiveCultureNameProvider"/>, which is invoked only in that case.
 	/// </summary>
-	/// <returns>The culture-to-caption map that must be verified after the save, or <c>null</c> when
-	/// no caption change was requested.</returns>
+	/// <returns>The culture-to-caption map that must be verified after the save; EMPTY when no caption
+	/// change was requested. Empty rather than <see langword="null"/> (Sonar S1168) - the only consumer,
+	/// <see cref="VerifySchemaCaption"/>, iterates it, so an empty map already means "verify nothing".</returns>
 	private static IReadOnlyDictionary<string, string> ApplySchemaCaption(EntityDesignSchemaDto schema,
 		SetEntitySchemaPropertiesOptions options, Func<string> effectiveCultureNameProvider) {
 		IReadOnlyDictionary<string, string> localizations =
@@ -246,8 +247,8 @@ internal sealed class RemoteEntitySchemaColumnManager : IRemoteEntitySchemaColum
 				[effectiveCulture] = options.Title.Trim()
 			};
 		}
-		if (localizations is null || localizations.Count == 0) {
-			return null;
+		if (localizations is not { Count: > 0 }) {
+			return ReadOnlyDictionary<string, string>.Empty;
 		}
 		schema.Caption ??= [];
 		foreach (KeyValuePair<string, string> localization in localizations) {
@@ -264,7 +265,7 @@ internal sealed class RemoteEntitySchemaColumnManager : IRemoteEntitySchemaColum
 	/// </summary>
 	private static void VerifySchemaCaption(EntityDesignSchemaDto reloadedSchema,
 		IReadOnlyDictionary<string, string> requestedTitles, string schemaName) {
-		if (requestedTitles is null) {
+		if (requestedTitles is not { Count: > 0 }) {
 			return;
 		}
 		foreach (KeyValuePair<string, string> localization in requestedTitles) {
