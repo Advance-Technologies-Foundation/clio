@@ -30,6 +30,13 @@ public class UpdateThemeTool(
 		};
 
 	/// <summary>Overwrites the addressed theme on the target environment with the supplied caption, CSS class name, and CSS content.</summary>
+	[McpToolExecution(
+		Location = McpToolExecutionLocation.Worker,
+		Lifetime = McpToolExecutionLifetime.PerCall,
+		OperationFamily = McpToolOperationFamily.None,
+		BudgetPolicy = McpToolBudgetPolicy.ParentKillDefault,
+		RequiresClientRequests = McpToolClientRequests.None,
+		SharedFileResource = McpToolSharedFileResource.None)]
 	[McpServerTool(Name = ToolName, ReadOnly = false, Destructive = true, Idempotent = true, OpenWorld = false),
 	 Description("Overwrite an existing custom Creatio theme on a registered environment via the native ThemeService " +
 		"(full overwrite by id; the package cannot be changed). Requires Creatio " + ThemeServiceRequirement.MinVersion +

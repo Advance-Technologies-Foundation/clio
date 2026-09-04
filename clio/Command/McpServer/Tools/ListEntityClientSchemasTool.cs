@@ -17,6 +17,13 @@ public sealed class ListEntityClientSchemasTool(
 	internal const string ToolName = "list-entity-client-schemas";
 
 	[McpServerTool(Name = ToolName, ReadOnly = true, Destructive = false, Idempotent = true, OpenWorld = false)]
+	[McpToolExecution(
+		Location = McpToolExecutionLocation.Worker,
+		Lifetime = McpToolExecutionLifetime.PerCall,
+		OperationFamily = McpToolOperationFamily.None,
+		BudgetPolicy = McpToolBudgetPolicy.ParentKillDefault,
+		RequiresClientRequests = McpToolClientRequests.None,
+		SharedFileResource = McpToolSharedFileResource.None)]
 	[Description(
 		"Resolve the page-role graph of an entity for a Classic->Freedom migration: its Classic sections, " +
 		"edit pages (including per-type/typed pages) and add mini pages, each classified classic, freedom, or unknown. " +

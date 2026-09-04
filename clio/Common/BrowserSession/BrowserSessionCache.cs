@@ -6,6 +6,20 @@ using System.Text;
 namespace Clio.Common.BrowserSession;
 
 /// <inheritdoc cref="IBrowserSessionCache" />
+/// <remarks>
+/// <b>Concurrency policy: last write wins, and that is deliberate (H-2, ENG-95262).</b> Several clio
+/// processes can log in against the same environment at the same time, so the same cache file can be
+/// written twice. There is no lock, because there is nothing to arbitrate: <see cref="BuildKey"/> hashes
+/// the login, password and client id into the file name, so two writers that agree on the key agree on
+/// the credentials, and the two sessions they produce are interchangeable. A newer session overwriting
+/// an older one loses nothing.
+/// <para>
+/// What WOULD be a defect is a torn read — Playwright loading a storageState file while a second process
+/// is halfway through writing it, and failing on truncated JSON. That is why <see cref="Write"/> replaces
+/// the file in one indivisible step rather than truncating and rewriting it in place: a reader observes
+/// either the whole old session or the whole new one.
+/// </para>
+/// </remarks>
 public sealed class BrowserSessionCache : IBrowserSessionCache {
 	private const string SessionsDirName = "sessions";
 	private const string FileSuffix = ".storageState.json";
@@ -69,7 +83,10 @@ public sealed class BrowserSessionCache : IBrowserSessionCache {
 		// Write with owner-only mode at creation time to eliminate the race window between
 		// a world-readable create and the subsequent HardenFile chmod. HardenFile is kept
 		// as belt-and-suspenders (e.g. for path collisions with pre-existing files).
-		_fileSystem.WriteOwnerOnlyTextToFile(targetPath, storageStateJson);
+		// The write is ATOMIC (temp file + replace): a concurrent reader — Playwright loading this file as
+		// storageState — must never see a truncated prefix of a session another process is writing. See the
+		// last-write-wins note on the class.
+		_fileSystem.WriteOwnerOnlyTextToFileAtomic(targetPath, storageStateJson);
 		_fileSecurityHardening.HardenFile(targetPath);
 	}
 

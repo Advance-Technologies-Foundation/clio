@@ -246,8 +246,11 @@ public sealed class InstallProcessBuilderToolTests {
 		ConsoleLogger.Instance.ClearMessages();
 		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
 		commandResolver.GetTenantKey(Arg.Any<EnvironmentOptions>()).Returns("busy-tenant");
+		// Keyed by TARGET, not tenant — the configuration build is server-wide, so it excludes across
+		// principals and shares one key with the worker-routed compile path.
+		commandResolver.GetTargetKey(Arg.Any<EnvironmentOptions>()).Returns("busy-target");
 		InstallProcessBuilderTool tool = new(ConsoleLogger.Instance, commandResolver);
-		McpToolExecutionLock.TryReserveConfigurationBuild("busy-tenant", out McpToolExecutionLock.BuildReservation heldReservation).Should().BeTrue(
+		McpToolExecutionLock.TryReserveConfigurationBuild("busy-target", out McpToolExecutionLock.BuildReservation heldReservation).Should().BeTrue(
 			because: "the test needs to hold the reservation the tool will find taken");
 
 		try {

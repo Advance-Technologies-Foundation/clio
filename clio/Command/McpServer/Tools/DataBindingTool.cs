@@ -21,6 +21,17 @@ public class CreateDataBindingTool(
 
 	[McpServerTool(Name = CreateDataBindingToolName, ReadOnly = false, Destructive = true, Idempotent = false,
 		OpenWorld = false)]
+	// Worker even though a built-in offline template can satisfy the call without a round-trip: the other
+	// branch resolves the environment (InternalExecute<CreateDataBindingCommand>) and the display-value
+	// resolver reads runtime lookup data, so this tool CAN block on Creatio. Its two siblings in this file
+	// cannot, and are classified in-process.
+	[McpToolExecution(
+		Location = McpToolExecutionLocation.Worker,
+		Lifetime = McpToolExecutionLifetime.PerCall,
+		OperationFamily = McpToolOperationFamily.None,
+		BudgetPolicy = McpToolBudgetPolicy.ParentKillDefault,
+		RequiresClientRequests = McpToolClientRequests.None,
+		SharedFileResource = McpToolSharedFileResource.None)]
 	[Description("Creates or regenerates a package data binding from a built-in template or a runtime entity schema.")]
 	public CommandExecutionResult CreateDataBinding(
 		[Description("create-data-binding parameters")]
@@ -51,6 +62,17 @@ public class AddDataBindingRowTool(AddDataBindingRowCommand command, ILogger log
 
 	[McpServerTool(Name = AddDataBindingRowToolName, ReadOnly = false, Destructive = true, Idempotent = false,
 		OpenWorld = false)]
+	// In-process, correcting the inventory's file-level Worker signal: AddDataBindingRowOptions is NOT an
+	// EnvironmentOptions (the tool cannot even accept an environment) and the service builds the row with
+	// allowRemoteDisplayValueResolution: false, so no path here can block on Creatio. The Worker signal was
+	// inherited from the environment-scoped create-data-binding sibling in this same file.
+	[McpToolExecution(
+		Location = McpToolExecutionLocation.InProcess,
+		Lifetime = McpToolExecutionLifetime.NotApplicable,
+		OperationFamily = McpToolOperationFamily.None,
+		BudgetPolicy = McpToolBudgetPolicy.None,
+		RequiresClientRequests = McpToolClientRequests.None,
+		SharedFileResource = McpToolSharedFileResource.None)]
 	[Description("Adds or replaces a row in an existing local package data binding.")]
 	public CommandExecutionResult AddDataBindingRow(
 		[Description("add-data-binding-row parameters")]
@@ -76,6 +98,15 @@ public class RemoveDataBindingRowTool(RemoveDataBindingRowCommand command, ILogg
 
 	[McpServerTool(Name = RemoveDataBindingRowToolName, ReadOnly = false, Destructive = true, Idempotent = false,
 		OpenWorld = false)]
+	// In-process for the same reason as add-data-binding-row: RemoveDataBindingRowOptions is not an
+	// EnvironmentOptions and RemoveRow only rewrites local workspace binding files.
+	[McpToolExecution(
+		Location = McpToolExecutionLocation.InProcess,
+		Lifetime = McpToolExecutionLifetime.NotApplicable,
+		OperationFamily = McpToolOperationFamily.None,
+		BudgetPolicy = McpToolBudgetPolicy.None,
+		RequiresClientRequests = McpToolClientRequests.None,
+		SharedFileResource = McpToolSharedFileResource.None)]
 	[Description("Removes a row from an existing local package data binding by primary-key value.")]
 	public CommandExecutionResult RemoveDataBindingRow(
 		[Description("remove-data-binding-row parameters")]

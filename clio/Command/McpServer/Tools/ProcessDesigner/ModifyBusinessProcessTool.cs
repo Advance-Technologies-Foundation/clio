@@ -24,6 +24,13 @@ public class ModifyBusinessProcessTool(
 	/// <param name="processUid">Process schema UId to edit. Provide this or <paramref name="processName"/>.</param>
 	/// <param name="operations">Inline JSON operations array.</param>
 	/// <returns>The command execution result with the edited schema identity in the log output.</returns>
+	[McpToolExecution(
+		Location = McpToolExecutionLocation.Worker,
+		Lifetime = McpToolExecutionLifetime.PerCall,
+		OperationFamily = McpToolOperationFamily.None,
+		BudgetPolicy = McpToolBudgetPolicy.ParentKillDefault,
+		RequiresClientRequests = McpToolClientRequests.None,
+		SharedFileResource = McpToolSharedFileResource.None)]
 	[McpServerTool(Name = ModifyBusinessProcessToolName, ReadOnly = false, Destructive = true, Idempotent = false,
 		 OpenWorld = false),
 	 Description("BEFORE CALLING with an accessRights block: that block changes who can read, edit or delete LIVE records. Show the user the target object, the element record filter that decides WHICH records are affected, and every grantee with its operations and level - calling out level:delegate as onward re-sharing, level:restrict as the platform Deny level, which is DESTRUCTIVE rather than inert: UseDenyRecordRights gates only record positioning, never whether a right row is written. Against a grantee who already holds Allow it DOWNGRADES that row to Deny, and a fresh insert writes one row per operation - the one you named at your level and the OTHER TWO at Deny - so operations:['read'] denies edit and delete as well, and a remove entry is the way to take access away. Call out a remove entry as a revoke, and a supplied add/remove as a REPLACEMENT that drops every entry it does not restate - and get an explicit yes. The element has no output parameters, so nothing at run time will report what it did. "

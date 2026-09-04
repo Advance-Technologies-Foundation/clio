@@ -59,7 +59,7 @@ public sealed record SettingsBootstrapResult(
 public sealed class SettingsBootstrapService : ISettingsBootstrapService {
 	private const string SettingsFileUnreadableCode = "settings-file-unreadable";
 	private const string SettingsFileMissingCode = "settings-file-missing";
-	private const int CurrentSettingsVersion = 2;
+	private const int CurrentSettingsVersion = 3;
 
 	/// <summary>
 	/// Status reported when appsettings.json does not exist and the caller asked for no repair write.
@@ -186,8 +186,9 @@ public sealed class SettingsBootstrapService : ISettingsBootstrapService {
 		// silently disabling auto-update. Clear that legacy artifact so the opt-out default
 		// (enabled) applies again. Guarded by SettingsVersion, this runs once — a deliberate
 		// 'clio autoupdate --disable' made afterwards is preserved.
-		if ((settings.SettingsVersion ?? 0) < 1 && settings.Autoupdate == false) {
-			settings.Autoupdate = null;
+		if ((settings.SettingsVersion ?? 0) < 1
+			&& settings.Autoupdate is { WasLegacyScalar: true, Clio.Enabled: false }) {
+			settings.Autoupdate.Clio.Enabled = true;
 			repairs.Add(new SettingsRepair(
 				"autoupdate-legacy-default-reset",
 				"auto-update was disabled by a legacy default and has been re-enabled "

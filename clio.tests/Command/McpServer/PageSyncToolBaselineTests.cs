@@ -19,7 +19,15 @@ public sealed class PageSyncToolBaselineTests
 {
 	private const string SchemaUId = "test-uid";
 	private const string SchemaName = "UsrTodo_FormPage";
-	private const string MetaPath = "/ws/.clio-pages/UsrTodo_FormPage/meta.json";
+	private const string SchemaDirPath = "/ws/.clio-pages/UsrTodo_FormPage";
+	private const string MetaPath = SchemaDirPath + "/meta.json";
+	private const string BodyPath = SchemaDirPath + "/body.js";
+	private const string BundlePath = SchemaDirPath + "/bundle.json";
+
+	private const string VerifiedChecksum = "verify-checksum";
+	private const string PreviousBody = "define('TestPage', [], function() { return 'previous-generation'; });";
+	private const string CompetingWriterBody = "define('TestPage', [], function() { return 'competing-generation'; });";
+	private const string CompetingWriterChecksum = "competing-writer-checksum";
 
 	private const string ValidPageBody = "define('TestPage', /**SCHEMA_DEPS*/[]/**SCHEMA_DEPS*/, " +
 		"function(/**SCHEMA_ARGS*//**SCHEMA_ARGS*/) { return { " +
@@ -76,18 +84,22 @@ public sealed class PageSyncToolBaselineTests
 		$$"""{"success": true, "rows": [{"Checksum": "{{checksum}}", "ModifiedOn": "2026-06-12T09:00:00"}]}""";
 
 	private static PageSyncTool CreateTool(PageUpdateCommand updateCommand, MockFileSystem fileSystem,
-		PageGetCommand getCommand = null) {
+		PageGetCommand getCommand = null, IInterprocessFileGate fileGate = null) {
 		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
 		commandResolver.Resolve<PageUpdateCommand>(Arg.Any<PageUpdateOptions>()).Returns(updateCommand);
 		if (getCommand != null) {
 			commandResolver.Resolve<PageGetCommand>(Arg.Any<PageGetOptions>()).Returns(getCommand);
 		}
+		// The baseline guard stays UNGATED even when a gate is supplied: only the tool's own
+		// .clio-pages writes are under test here, and routing the guard's pre-save read through the same
+		// gate double would consume a one-shot interleaving trigger before the verify publication runs.
 		return new PageSyncTool(
 			commandResolver, fileSystem,
 			Substitute.For<IMobileComponentInfoCatalog>(),
 			Substitute.For<IComponentInfoCatalog>(),
 			Substitute.For<IPageBodySamplingService>(),
-			new PageBaselineGuard(fileSystem));
+			new PageBaselineGuard(fileSystem),
+			fileGate: fileGate);
 	}
 
 	private static MockFileSystem CreateFileSystemWithBaseline(string checksum, string environmentName = "dev") {
@@ -291,6 +303,101 @@ public sealed class PageSyncToolBaselineTests
 			new PageSchemaBodyParser(),
 			new PageBundleBuilder(() => new JsonDiffApplier(), () => new JsonPathDiffApplier()),
 			CreatePassthroughPageFileWriter());
+	}
+
+	[Test]
+	[Description("A competing writer that replaces the whole schema directory in the gap between sync-pages' verified body write and its meta write must not be able to leave body.js and meta.json describing different generations.")]
+	public async Task SyncPages_ShouldPublishTheVerifiedBodyAndItsBaselineTogether_WhenAnotherWriterReplacesTheSchemaDirectory() {
+		// Arrange — the competing writer publishes a COMPLETE, different generation, the way get-page
+		// does: it swaps the schema directory wholesale rather than editing files inside it.
+		MockFileSystem fileSystem = CreateFileSystemWithPublishedPage();
+		OneShotInterleavingFileGate fileGate = new(() => ReplaceSchemaDirectory(fileSystem));
+		PageUpdateCommand updateCommand = CreateUpdateCommand(ChecksumRow("match"));
+		PageGetCommand getCommand = CreateGetCommandWithChecksum(VerifiedChecksum);
+		PageSyncTool tool = CreateTool(updateCommand, fileSystem, getCommand, fileGate);
+		PageSyncArgs args = new(
+			"dev",
+			[new PageSyncPageInput(SchemaName, ValidPageBody)],
+			Validate: false,
+			Verify: true,
+			SkipSampling: true,
+			OutputDirectory: "/ws");
+
+		// Act
+		PageSyncResponse response = await tool.SyncPages(args, null);
+
+		// Assert
+		response.Pages[0].Success.Should().BeTrue(because: "a concurrent local writer must not fail a save that landed on the server");
+		response.Pages[0].VerifiedBodyFile.Should().NotBeNull(
+			because: "the verify publication must actually have run for the pairing below to be evidence of anything");
+		string body = fileSystem.GetFile(BodyPath).TextContents;
+		PageMetaFileModel meta = JsonSerializer.Deserialize<PageMetaFileModel>(fileSystem.GetFile(MetaPath).TextContents);
+		bool bodyIsFromVerify = body == ValidPageBody;
+		bool metaIsFromVerify = meta.Baseline?.Checksum == VerifiedChecksum;
+		metaIsFromVerify.Should().Be(bodyIsFromVerify,
+			because: "a baseline captured against one generation of body.js while the other generation sits beside it is exactly the stale-or-false conflict signal the baseline exists to prevent — the pair must be published without a gap another writer can enter");
+	}
+
+	[Test]
+	[Description("sync-pages must publish the verified body and its refreshed baseline under ONE interprocess gate acquisition, so no other writer can interleave between them.")]
+	public async Task SyncPages_ShouldTakeTheSchemaGateOnce_WhenPublishingTheVerifiedReadBack() {
+		// Arrange
+		MockFileSystem fileSystem = CreateFileSystemWithPublishedPage();
+		OneShotInterleavingFileGate fileGate = new(() => { });
+		PageUpdateCommand updateCommand = CreateUpdateCommand(ChecksumRow("match"));
+		PageGetCommand getCommand = CreateGetCommandWithChecksum(VerifiedChecksum);
+		PageSyncTool tool = CreateTool(updateCommand, fileSystem, getCommand, fileGate);
+		PageSyncArgs args = new(
+			"dev",
+			[new PageSyncPageInput(SchemaName, ValidPageBody)],
+			Validate: false,
+			Verify: true,
+			SkipSampling: true,
+			OutputDirectory: "/ws");
+
+		// Act
+		PageSyncResponse response = await tool.SyncPages(args, null);
+
+		// Assert
+		response.Pages[0].Success.Should().BeTrue(because: "the verified save must succeed for its gate usage to be meaningful");
+		fileGate.TopLevelAcquisitions.Should().Be(1,
+			because: "every additional acquisition is a window in which a concurrent get-page can replace the schema directory between the body write and the meta write");
+	}
+
+	/// <summary>
+	/// A complete, previously published <c>.clio-pages/{schema}/</c> tree: the three files a finished
+	/// get-page leaves, with a baseline whose checksum matches what the update path will read back, so
+	/// the save proceeds instead of raising a conflict.
+	/// </summary>
+	private static MockFileSystem CreateFileSystemWithPublishedPage() {
+		MockFileSystem fileSystem = CreateFileSystemWithBaseline("match");
+		fileSystem.AddFile(BodyPath, new MockFileData(PreviousBody));
+		fileSystem.AddFile(BundlePath, new MockFileData("{\"name\":\"previous-generation\"}"));
+		return fileSystem;
+	}
+
+	/// <summary>
+	/// Publishes a whole other generation over the schema directory, mirroring how
+	/// <c>PageFileWriter</c> publishes: the previous tree is replaced, not merged into.
+	/// </summary>
+	private static void ReplaceSchemaDirectory(MockFileSystem fileSystem) {
+		// Normalised the way the sibling kill-safety fixture does, so the directory op is separator-agnostic.
+		fileSystem.Directory.Delete(fileSystem.Path.GetFullPath(SchemaDirPath), recursive: true);
+		fileSystem.AddFile(BodyPath, new MockFileData(CompetingWriterBody));
+		fileSystem.AddFile(BundlePath, new MockFileData("{\"name\":\"competing-generation\"}"));
+		fileSystem.AddFile(MetaPath, new MockFileData(JsonSerializer.Serialize(new PageMetaFileModel {
+			FetchedAt = "2026-08-19T00:00:00.0000000Z",
+			Page = new PageMetadataInfo { SchemaName = SchemaName },
+			Baseline = new PageBaselineInfo {
+				SchemaName = SchemaName,
+				EnvironmentName = "dev",
+				EditableSchemaExists = true,
+				EditableSchemaUId = SchemaUId,
+				Checksum = CompetingWriterChecksum,
+				ModifiedOn = "raw",
+				CapturedAt = "2026-08-19T00:00:00.0000000Z"
+			}
+		})));
 	}
 
 	private static IPageFileWriter CreatePassthroughPageFileWriter() {

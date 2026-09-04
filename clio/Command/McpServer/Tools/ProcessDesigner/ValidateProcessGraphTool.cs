@@ -37,7 +37,17 @@ public sealed class ValidateProcessGraphTool {
 	/// <param name="args">The planned graph (nodes by <c>data-id</c>, edges by flow kind).</param>
 	/// <returns>The validation response (success flag, has-errors, findings).</returns>
 	[McpServerTool(Name = ToolName, ReadOnly = true, Destructive = false, Idempotent = true, OpenWorld = false)]
-	[Description("Validates a planned Creatio business-process graph (nodes by data-id, e.g. startEvent/readDataUserTask/exclusiveGateway/endEvent; edges by flow-kind sequence|conditional|default) against the BPMN connection rules R1-R17. The graph is validated in-memory, but the tool requires the 'CrtProcessBuilder' package to be installed on the target environment (install it with install-process-builder) (named by environment-name). Returns structured findings (error/warning + ruleId). Call this BEFORE driving the designer. IMPORTANT: a passing graph is NOT necessarily buildable — the rules cover the full BPMN catalog (gateways, conditional/default flows, timers, sub-processes), while create-business-process / modify-business-process build only startEvent/signalStart/endEvent/userTask/sendEmail/readData/changeData/changeAccessRights elements joined by plain sequence flows; check the buildable slice in get-guidance name=process-modeling before promising a build.")]
+	// Worker despite the graph itself being validated in memory: the method first resolves the requested
+	// environment and queries its installed packages through IRequiredPackageChecker, so it CAN block on
+	// Creatio before any local work starts.
+	[McpToolExecution(
+		Location = McpToolExecutionLocation.Worker,
+		Lifetime = McpToolExecutionLifetime.PerCall,
+		OperationFamily = McpToolOperationFamily.None,
+		BudgetPolicy = McpToolBudgetPolicy.ParentKillDefault,
+		RequiresClientRequests = McpToolClientRequests.None,
+		SharedFileResource = McpToolSharedFileResource.None)]
+	[Description("Validates a planned Creatio business-process graph (nodes by data-id, e.g. startEvent/readDataUserTask/exclusiveGateway/endEvent; edges by flow-kind sequence|conditional|default) against the BPMN connection rules R1-R17. The graph is validated in-memory, but the tool requires the 'CrtProcessBuilder' package to be installed on the target environment (install it with install-process-builder) (named by environment-name). Returns structured findings (error/warning + ruleId). Call this BEFORE driving the designer. IMPORTANT: a passing graph is NOT necessarily buildable — the rules cover the full BPMN catalog (gateways, conditional/default flows, timers, sub-processes), while create-business-process / modify-business-process build only startEvent/signalStart/endEvent/userTask/sendEmail/readData/changeData/changeAccessRights/performTask elements joined by plain sequence flows; check the buildable slice in get-guidance name=process-modeling before promising a build.")]
 	public ValidateProcessGraphResponse Validate([Required] ValidateProcessGraphArgs args) {
 		try {
 			IRequiredPackageChecker checker = _commandResolver.Resolve<IRequiredPackageChecker>(

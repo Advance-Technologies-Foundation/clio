@@ -33,6 +33,13 @@ public sealed class AssertInfrastructureTool
 	/// </summary>
 	[McpServerTool(Name = AssertInfrastructureToolName, ReadOnly = true, Destructive = false, Idempotent = true,
 		OpenWorld = false)]
+	[McpToolExecution(
+		Location = McpToolExecutionLocation.InProcess,
+		Lifetime = McpToolExecutionLifetime.NotApplicable,
+		OperationFamily = McpToolOperationFamily.None,
+		BudgetPolicy = McpToolBudgetPolicy.None,
+		RequiresClientRequests = McpToolClientRequests.None,
+		SharedFileResource = McpToolSharedFileResource.None)]
 	[Description("""
 				 Runs the full infrastructure assertion sweep in one call and returns a machine-readable aggregate result.
 				 

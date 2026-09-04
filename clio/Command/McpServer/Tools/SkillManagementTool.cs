@@ -17,6 +17,13 @@ public sealed class InstallSkillsTool(InstallSkillsCommand command, ILogger logg
 	/// <summary>
 	/// Installs the Creatio toolkit skill globally for detected coding agents.
 	/// </summary>
+	[McpToolExecution(
+		Location = McpToolExecutionLocation.InProcess,
+		Lifetime = McpToolExecutionLifetime.NotApplicable,
+		OperationFamily = McpToolOperationFamily.None,
+		BudgetPolicy = McpToolBudgetPolicy.None,
+		RequiresClientRequests = McpToolClientRequests.None,
+		SharedFileResource = McpToolSharedFileResource.None)]
 	[McpServerTool(Name = ToolName, ReadOnly = false, Destructive = false, Idempotent = true, OpenWorld = true)]
 	[Description("Installs the Creatio AI App Development Toolkit skill for all detected coding agents "
 		+ "(claude, codex, cursor, copilot) using each agent's native plugin mechanism, or one agent via target")]
@@ -41,6 +48,13 @@ public sealed class UpdateSkillTool(UpdateSkillCommand command, ILogger logger)
 	/// <summary>
 	/// Updates the Creatio toolkit skill for detected coding agents (Claude included).
 	/// </summary>
+	[McpToolExecution(
+		Location = McpToolExecutionLocation.InProcess,
+		Lifetime = McpToolExecutionLifetime.NotApplicable,
+		OperationFamily = McpToolOperationFamily.None,
+		BudgetPolicy = McpToolBudgetPolicy.None,
+		RequiresClientRequests = McpToolClientRequests.None,
+		SharedFileResource = McpToolSharedFileResource.None)]
 	[McpServerTool(Name = ToolName, ReadOnly = false, Destructive = false, Idempotent = true, OpenWorld = true)]
 	[Description("Updates the Creatio AI App Development Toolkit skill for all detected coding agents "
 		+ "(claude, codex, cursor, copilot), or one agent via target")]
@@ -65,6 +79,13 @@ public sealed class DeleteSkillTool(DeleteSkillCommand command, ILogger logger)
 	/// <summary>
 	/// Uninstalls the Creatio toolkit skill from detected coding agents (idempotent).
 	/// </summary>
+	[McpToolExecution(
+		Location = McpToolExecutionLocation.InProcess,
+		Lifetime = McpToolExecutionLifetime.NotApplicable,
+		OperationFamily = McpToolOperationFamily.None,
+		BudgetPolicy = McpToolBudgetPolicy.None,
+		RequiresClientRequests = McpToolClientRequests.None,
+		SharedFileResource = McpToolSharedFileResource.None)]
 	[McpServerTool(Name = ToolName, ReadOnly = false, Destructive = true, Idempotent = true, OpenWorld = false)]
 	[Description("Uninstalls the Creatio AI App Development Toolkit skill from all detected coding agents, "
 		+ "or one agent via target. Leaves the shared clio MCP server entry in place")]
