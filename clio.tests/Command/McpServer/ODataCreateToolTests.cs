@@ -787,8 +787,8 @@ public sealed class ODataCreateToolTests {
 
 	[Test]
 	[Category("Unit")]
-	[Description("The batch reads $metadata once regardless of how many rows it inserts.")]
-	public void Create_Should_Read_Metadata_Once_Per_Batch() {
+	[Description("A batch whose rows carry no date-time-shaped value does not download the service CSDL at all.")]
+	public void Create_Should_Not_Read_Metadata_Without_A_Date_Shaped_Value() {
 		// Arrange
 		(ODataCreateTool tool, IApplicationClient client) = CreateFixture(AccountCsdl);
 
@@ -797,6 +797,26 @@ public sealed class ODataCreateToolTests {
 			EnvironmentName = "dev",
 			Entity = "Account",
 			Rows = Arr("[{\"Name\":\"Acme\"},{\"Name\":\"Globex\"},{\"Name\":\"Initech\"}]")
+		});
+
+		// Assert
+		client.DidNotReceiveWithAnyArgs().ExecuteGetRequest(null, 0, 0, 0);
+		client.Received(3).ExecutePostRequest(
+			Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>());
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("A batch containing a date-time-shaped value reads $metadata exactly once, however many rows it inserts.")]
+	public void Create_Should_Read_Metadata_Once_Per_Batch() {
+		// Arrange
+		(ODataCreateTool tool, IApplicationClient client) = CreateFixture(AccountCsdl);
+
+		// Act
+		tool.Create(new ODataCreateArgs {
+			EnvironmentName = "dev",
+			Entity = "Account",
+			Rows = Arr("[{\"Name\":\"2024-01-01T04:00:00\"},{\"Name\":\"Globex\"},{\"Name\":\"Initech\"}]")
 		});
 
 		// Assert

@@ -42,6 +42,29 @@ internal static class ODataDateTimeGuard {
 	};
 
 	/// <summary>
+	/// True when the payload carries at least one top-level string value shaped like a zone-less
+	/// date-time. It lets a caller decide whether the entity's Edm types are worth fetching at all: the
+	/// service-root CSDL is a multi-megabyte document (about 3 MB on a stock Creatio 10.1), and a payload
+	/// with no date-shaped value can never be refused by
+	/// <see cref="FindZoneLessDateTime(JsonElement, IReadOnlyDictionary{string, string})"/>, whatever the
+	/// types say.
+	/// </summary>
+	/// <param name="payload">The data/row object as supplied by the caller.</param>
+	internal static bool HasZoneLessCandidate(JsonElement payload) {
+		if (payload.ValueKind != JsonValueKind.Object) {
+			return false;
+		}
+		foreach (JsonProperty property in payload.EnumerateObject()) {
+			if (property.Value.ValueKind == JsonValueKind.String
+				&& property.Value.GetString() is { Length: > 0 } value
+				&& ZoneLessDateTimePattern.IsMatch(value)) {
+				return true;
+			}
+		}
+		return false;
+	}
+
+	/// <summary>
 	/// Inspects the top-level string values of one write payload and returns the caller-facing refusal
 	/// for the first field whose value is a zone-less date-time, or <see langword="null"/> when the
 	/// payload may be sent.

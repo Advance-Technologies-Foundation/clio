@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.ComponentModel;
+using System.Linq;
 using System.ComponentModel.DataAnnotations;
 using System.Text.Json;
 using System.Text.Json.Serialization;
@@ -77,11 +78,15 @@ public sealed class ODataCreateTool(IToolCommandResolver commandResolver) {
 		}
 
 		string url = urlBuilder.Build(ODataKeyFormatter.CollectionPath(args.Entity));
-		// One metadata read for the whole batch, and only to type the value guard: odata-create does not
-		// validate field NAMES, and an unresolved metadata endpoint must never fail the insert - the guard
-		// then falls back to the literal's shape alone.
+		// The metadata read is at most ONE per batch, and only when some row actually carries a
+		// date-time-shaped literal: the service-root CSDL is a multi-megabyte document, and a batch of
+		// plain rows would otherwise pay that download for a guard that cannot fire. It only ever types
+		// the value guard - odata-create does not validate field NAMES - so an unresolved metadata
+		// endpoint must never fail the insert; the guard then falls back to the literal's shape alone.
 		IReadOnlyDictionary<string, string> propertyTypes =
-			ODataFieldValidation.TryGetPropertyTypes(client, urlBuilder, args.Entity.Trim());
+			rows.EnumerateArray().Any(ODataDateTimeGuard.HasZoneLessCandidate)
+				? ODataFieldValidation.TryGetPropertyTypes(client, urlBuilder, args.Entity.Trim())
+				: null;
 		List<ODataRowResult> results = [];
 		int index = 0;
 		foreach (JsonElement row in rows.EnumerateArray()) {
