@@ -1,5 +1,5 @@
 ---
-description: docs/McpCapabilityMap.md restates MCP tool attributes and descriptions by hand, is absent from AGENTS.md's required MCP targets, and no test pins it - so it silently starts lying when a tool changes
+description: docs/McpCapabilityMap.md restates MCP tool attributes and descriptions by hand and is absent from AGENTS.md's required MCP targets, so it silently starts lying when a tool changes - two floor sentences in it are pinned now, the rest is not
 applies-to:
   - docs/McpCapabilityMap.md
   - clio/Command/McpServer/Tools/

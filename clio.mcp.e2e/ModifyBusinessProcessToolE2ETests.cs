@@ -873,7 +873,10 @@ public sealed class ModifyBusinessProcessToolE2ETests {
 		callResultJson.Should().Contain("Int32",
 			because: "the refusal must name the TARGET type, so a caller can tell a type failure from a syntax one");
 		callResultJson.Should().Contain("1.5",
-			because: "it must quote the expression AS WRITTEN, not the converted '1.5m' the caller never typed");
+			because: "the refusal has to echo the expression at all, and the bare '1.5' is deliberately the "
+				+ "substring BOTH forms share: the platform quotes it as its own converter left it, so what "
+				+ "comes back is '1.5m' - asserting on the converted form would pin a platform detail, and "
+				+ "asserting it is quoted 'as written' would assert something measurably untrue");
 		DescribedParameter parameter = await ReadParameterAsync(context, processName, "Amount");
 		parameter.Source.Should().NotBe("Script",
 			because: "a refused mapping must leave the parameter unbound, not half-applied");

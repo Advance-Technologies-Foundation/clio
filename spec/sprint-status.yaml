@@ -2845,7 +2845,7 @@ stories:
     test_plan: spec/eng-95891-formula-expressions/eng-95891-formula-expressions-test-plan.md
     note: >-
       S4 (clio half), S7 and S9 on branch feature/ENG-95891-formula-expressions. DescribedFlow.condition
-      (mandatory - no JsonExtensionData bag), setFlowCondition documented on the modify tool/prompt/capability
+      (mandatory; it carries a JsonExtensionData bag, added in review), setFlowCondition documented on the modify tool/prompt/capability
       map, the phantom described-parameter 'expression' field corrected on both surfaces, CrtProcessBuilder
       rebundled (1.4.0.38 at the time of writing; the archive version is the source of truth, not this note)
       with pins refreshed, and the create/modify [RequiresPackage] literals raised to
@@ -2916,8 +2916,9 @@ stories:
       the phrases I had written instead of for the claim. libraryVersion bumped and the fixture
       re-pinned to match it (read the pair off bundle-source.json and curated-knowledge-names.json
       rather than from this note),
-      119 bundle tests pass. The article now sits at ~99% of the single-response budget and is the
-      FIRST to split when ProcessGuideResponseSizeTests next goes red.
+      the bundle suite passes (count moves with the branch - read it off a run, not off this note).
+      process-formulas WAS split, into process-branch-conditions; the article now first against the
+      single-response budget is process-data-elements, and that is ENG-96536.
     depends_on:
       - story-eng-95891-formula-expressions-1
     blocks: []

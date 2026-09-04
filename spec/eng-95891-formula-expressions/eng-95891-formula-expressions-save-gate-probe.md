@@ -154,7 +154,9 @@ tiers were re-run against it: `ModifyBusinessProcessToolE2ETests` + `CreateBusin
 60 tests, 0 failures. The measurements above are 1.4.0.41's and were not re-taken — none of them touches
 a code path .42 changed.
 
-**1.4.0.43** is what this branch finally bundles and what the stand now runs. It differs from .42 in
+**1.4.0.43** is what the stand ran when these measurements were taken, and what this branch bundled at
+the time. The branch has rebundled twice since (1.4.0.52, then 1.4.0.53 for the second review round);
+none of those touches the messages below. It differs from .42 in
 byte-order marks alone (patch scripts had added a BOM to nine files that had none), so the E2E tier was
 not re-run against it; the rewrite was re-probed once by hand and answers as above. A version bump was
 required anyway, because moving package bytes invalidates the archive an environment has already

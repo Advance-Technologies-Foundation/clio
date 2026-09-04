@@ -113,7 +113,7 @@ gate that refuses it anyway. So this guard goes too, and it is not covered by st
    `Validate` alone, so the six paths that store caller text without validating it never touched it —
    one request could already hand the gate `MaxRequestItems` x 2048 characters through those. It bounded
    the work of a validator that no longer exists, not what the gate sees. An aggregate bound over all
-   eight paths would therefore be NEW protection, needing the scoped instance and the DI registration
+   seven paths would therefore be NEW protection, needing the scoped instance and the DI registration
    back; it is left open rather than done, because nothing has measured the gate's converters to be a
    real exposure at that volume.
 4. Delete `KnownMacroFamilies` / `FindUnrecognisedMacroFamily` / `IsInsideStringLiteral` /
