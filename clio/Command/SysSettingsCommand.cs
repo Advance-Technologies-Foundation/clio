@@ -9,6 +9,7 @@ using System.Reflection;
 using System.Security.Authentication;
 using System.Text.Json;
 using System.Text.RegularExpressions;
+using Clio.Command.McpServer;
 using Clio.Command.McpServer.Tools;
 using Clio.Common;
 using CommandLine;
@@ -247,7 +248,7 @@ namespace Clio.Command
 				//an ID and write its own line, which meant the debug-verbosity server excerpt was never
 				//written for the one path an operator actually runs interactively
 				//(apply-environment-manifest, Program.cs).
-				SysSettingFailure failure = CategorizeAndLog(ex, "updating sys-setting", _logger,
+				SysSettingFailure failure = CategorizeAndLog(ex, UpdateOperationLabel, _logger,
 					_correlationIds);
 				//PR #1373 review: the local IS used. This second line is what
 				//docs/knowledge/Command/refused-syssetting-update-is-only-visible-as-a-writeerror.md pins as the
@@ -273,7 +274,7 @@ namespace Clio.Command
 					//PR #1373 review: same as the create refusal - a non-exception `false` is a real failure and
 					//must carry the four envelope fields rather than the all-null shape the contract reads as
 					//success.
-					SysSettingFailure refusal = ReportRefusal("updating sys-setting",
+					SysSettingFailure refusal = ReportRefusal(UpdateOperationLabel,
 						SysSettingErrorCategories.ProviderFailure, SysSettingFailureTexts.RefusedUpdateCause,
 						SysSettingFailureTexts.RefusedUpdateRecovery);
 					return new SysSettingUpdateResult(false, args.Code, null,
@@ -283,7 +284,7 @@ namespace Clio.Command
 				(string readback, string readbackType) = _sysSettingsManager.GetAllUsersDefaultWithType(args.Code);
 				return new SysSettingUpdateResult(true, args.Code, ApplySecureTextMask(readbackType, readback));
 			} catch (Exception ex) {
-				SysSettingFailure failure = ReportFailure(ex, "updating sys-setting");
+				SysSettingFailure failure = ReportFailure(ex, UpdateOperationLabel);
 				return new SysSettingUpdateResult(false, args.Code, null, failure.Error,
 					failure.Category, failure.Cause, failure.RecoveryAction, failure.CorrelationId);
 			}
@@ -367,13 +368,36 @@ namespace Clio.Command
 				return 1;
 			}
 
+			//WHICH step is running, tracked rather than assumed (PR #1374 review). The try below wraps
+			//BOTH CreateSysSettingIfNotExists and UpdateSysSetting, and reporting every failure as
+			//"updating sys-setting" pointed the operator at the wrong operation: an unsupported
+			//value-type-name or an unresolvable reference-schema-name is an ArgumentException raised from
+			//ValidateCreateArgs / ResolveReferenceSchemaUId, i.e. from the CREATE step.
+			string operationLabel = CreateOperationLabel;
 			try {
 				CreateSysSettingIfNotExists(opts);
+				operationLabel = UpdateOperationLabel;
 				if (!UpdateSysSetting(opts)) {
 					return 1;
 				}
+			} catch (Exception ex) when (CarriesServerText(ex)) {
+				//Was `ex.Message` raw: on this path that message is composed by ClassifyingDataProvider or
+				//the write-path guard, so the raw form could carry server prose straight to the console
+				//(issue #1333) - and it named no cause and no recovery action either.
+				_logger.WriteError($"Error during set setting '{opts.Code}' value occured.");
+				ReportFailure(ex, operationLabel);
+				return 1;
 			} catch (Exception ex) {
-				_logger.WriteError($"Error during set setting '{opts.Code}' value occured with message: {ex.Message}");
+				//A LOCAL fault keeps its own message (PR #1374 review). Issue #1333 is about
+				//server-authored text; a FileNotFoundException from `--file`, an IOException, a
+				//JsonException from PrepareUpdateValue or an ArgumentException from the create-argument
+				//validation is clio's own prose and names the thing that has to be fixed. Routing those
+				//through ReportFailure printed "no cause could be determined ... retry the operation" and
+				//never named the file - and CategorizeFailure sends UnauthorizedAccessException to
+				//Authentication, telling the operator to repair credentials for a local permission
+				//problem.
+				_logger.WriteError($"Error during set setting '{opts.Code}' value occured.");
+				_logger.WriteError($"Failed {operationLabel}: {ex.GetReadableMessageException()}");
 				return 1;
 			}
 			return 0;
@@ -420,8 +444,8 @@ namespace Clio.Command
 				//the category and cause on its envelope if it wants them - it just does not put a red line and
 				//an unreferenced correlation ID in front of an operator whose command is going to succeed.
 				SysSettingFailure failure = report
-					? ReportFailure(ex, "reading sys-setting")
-					: CategorizeFailure(ex, "reading sys-setting", _correlationIds.New());
+					? ReportFailure(ex, ReadOperationLabel)
+					: CategorizeFailure(ex, ReadOperationLabel, _correlationIds.New());
 				return new SysSettingGetResult(false, args.Code, string.Empty, failure.Error,
 					failure.Category, failure.Cause, failure.RecoveryAction, failure.CorrelationId);
 			}
@@ -511,25 +535,19 @@ namespace Clio.Command
 					args.IsPersonal ?? false,
 					referenceSchemaUId);
 				if (!response.Success) {
-					//PR #1373 review: a NON-exception refusal is classified too. This return used to carry
-					//`error-category`, `cause`, `recovery-action` and `correlation-id` all null, which the
-					//contract published as meaning SUCCESS - so an agent branching on the category could not
-					//tell a real refusal from one. `error` keeps the environment's own message byte-for-byte
-					//(existing callers and tests read it), but it is no longer the ONLY failure text: the
-					//cause and recovery are fixed local strings, and the ID is minted through the same
-					//reporter as every other failure so the log line exists to be found.
-					string message = response.ResponseStatus?.Message;
-					SysSettingFailure refusal = ReportRefusal("creating sys-setting",
-						SysSettingErrorCategories.ProviderFailure, SysSettingFailureTexts.RefusedCreateCause,
-						SysSettingFailureTexts.RefusedCreateRecovery);
+					//A create can fail WITHOUT an exception: the platform answers with success:false and its
+					//own prose. That prose used to become `error` verbatim - server-authored text on the one
+					//field an agent reads (issue #1333) - and the envelope carried none of the classified
+					//parts issue #1329 requires. Both are composed here instead.
+					SysSettingFailure failure = ReportProviderFailure(
+						response.ResponseStatus?.Message, CreateOperationLabel);
 					return new SysSettingCreateResult(false, args.Code, args.ValueTypeName, null,
-						string.IsNullOrWhiteSpace(message) ? "Failed creating sys-setting." : message,
-						Warning: null, refusal.Category, refusal.Cause, refusal.RecoveryAction,
-						refusal.CorrelationId);
+						failure.Error, Warning: null, failure.Category, failure.Cause,
+						failure.RecoveryAction, failure.CorrelationId);
 				}
 				return ApplyInitialValue(args);
 			} catch (Exception ex) {
-				SysSettingFailure failure = ReportFailure(ex, "creating sys-setting");
+				SysSettingFailure failure = ReportFailure(ex, CreateOperationLabel);
 				return new SysSettingCreateResult(false, args.Code, args.ValueTypeName, null, failure.Error,
 					Warning: null, failure.Category, failure.Cause, failure.RecoveryAction,
 					failure.CorrelationId);
@@ -577,9 +595,20 @@ namespace Clio.Command
 			}
 			bool updated = _sysSettingsManager.UpdateSysSetting(args.Code, args.Value, args.ValueTypeName);
 			if (!updated) {
+				//Partial success, so there is no Error - but the ID and the line that carries it are ONE
+				//operation here too (PR #1374 review). The manager's own "SysSettings with code: {code} is
+				//not updated." lines carry no correlation ID and never have, so minting a bare token here
+				//handed the caller something to grep that resolved to nothing - the exact failure
+				//CategorizeAndLog exists to prevent, and worse on the MCP path, where an agent cannot tell
+				//"the line is below my verbosity" from "the line does not exist".
+				string correlationId = _correlationIds.New();
+				_logger.WriteError(
+					$"Sys-setting '{args.Code}' was created, but the initial value could not be applied. "
+					+ $"(correlation-id: {correlationId})");
 				return new SysSettingCreateResult(true, args.Code, args.ValueTypeName, null,
 					Error: null,
-					Warning: "Sys-setting was created, but the initial value could not be applied.");
+					Warning: "Sys-setting was created, but the initial value could not be applied.",
+					CorrelationId: correlationId);
 			}
 			string assignedValue = _sysSettingsManager.GetAllUsersDefaultByCode(args.Code);
 			string maskedAssignedValue = ApplySecureTextMask(args.ValueTypeName, assignedValue);
@@ -622,6 +651,14 @@ namespace Clio.Command
 				WebException => Network(operationLabel, correlationId),
 				SocketException => Network(operationLabel, correlationId),
 				UnauthorizedAccessException => Authentication(operationLabel, correlationId),
+				//UNCONDITIONAL, and before the AuthenticationException arms. SessionRejectedException is
+				//only ever raised where the rejection was already PROVEN (a raw body carrying Creatio's
+				//auth-routing markers, or a corroborated provider verdict), so re-asking the question is
+				//not merely redundant - it is wrong. The classifier would run the TLS-prose regex over
+				//this exception's own message, and that message interpolates the operation label, which
+				//carries the caller's operand: reading sys-setting 'SslCertificateThumbprint' matches
+				///certificate/ and flipped a proven credential rejection to "Network error".
+				SessionRejectedException => Authentication(operationLabel, correlationId),
 				//A bare AuthenticationException is asked the same question as the wrapped ones: the framework
 				//raises this type for a TLS handshake too, and a bad server certificate reported as rejected
 				//credentials hides the only diagnosis that leads to the fix.
@@ -713,10 +750,17 @@ namespace Clio.Command
 		/// builds and the line an operator greps carry the SAME ID.
 		/// </summary>
 		/// <remarks>
-		/// Safe on the MCP path: <see cref="ConsoleLogger"/> suppresses every console write in MCP server
-		/// mode, because stdout there frames JSON-RPC.
+		/// The line cannot corrupt the stdio transport: <see cref="ConsoleLogger"/> suppresses the console
+		/// DRAIN in MCP server mode, because stdout there frames JSON-RPC. That is NOT the same as the
+		/// line being invisible to a caller - the logger still captures into the per-flow buffer
+		/// <c>BaseTool</c> harvests into <c>CommandExecutionResult.Messages</c> - which is why what goes
+		/// onto this channel is a fixed local diagnostic, and why the debug excerpt beside it is scrubbed
+		/// and fenced at the point of writing.
 		/// </remarks>
 		private SysSettingFailure ReportFailure(Exception ex, string operationLabel) =>
+			//CategorizeAndLog now writes the debug excerpt itself, so every caller of it - not only this
+			//one - gets the line the correlation ID bridges to. Writing it again here would emit the
+			//excerpt twice for the same failure.
 			CategorizeAndLog(ex, operationLabel, _logger, _correlationIds);
 
 		/// <summary>
@@ -746,6 +790,116 @@ namespace Clio.Command
 			ILogger logger, IOperationCorrelationIdProvider correlationIds) {
 			SysSettingFailure failure = CategorizeFailure(ex, operationLabel, correlationIds.New());
 			WriteAndForwardFailureLine(logger, failure);
+			//Here too, not only in the instance ReportFailure (PR #1374 review): this overload exists
+			//BECAUSE other callers use it - the MCP tools' catch blocks - and those paths were getting a
+			//correlation ID on the envelope with no matching debug line to bridge to.
+			WriteServerDetailAtDebugVerbosity(logger, ex, failure.CorrelationId);
+			return failure;
+		}
+
+		/// <summary>
+		/// Writes the neutralized server excerpt on the DEBUG channel only, tagged with the same
+		/// correlation ID the failure envelope carries.
+		/// </summary>
+		/// <remarks>
+		/// Issue #1333. The excerpt is server-authored text, so it may never appear in <c>error</c>,
+		/// <c>cause</c>, the MCP envelope or the default log line - the fixed local diagnostic goes there
+		/// instead. It still has to be recoverable, because an operator who cannot see what Creatio
+		/// actually said cannot tell an expired password from a misconfigured proxy. The channel is
+		/// debug-gated (<c>ConsoleLogger.WriteDebug</c> returns early unless <c>--debug</c> was passed)
+		/// and its console drain is suppressed under MCP server mode, and the correlation ID is the bridge
+		/// from the reported failure to the line.
+		/// </remarks>
+		private static void WriteServerDetailAtDebugVerbosity(ILogger logger, Exception ex, string correlationId) {
+			//The WHOLE chain, not a single unwrap (PR #1374 review). UnwrapTransportFault only steps
+			//through single-inner aggregates and TargetInvocationException, so a carrier re-wrapped by a
+			//domain or transport exception - a SessionRejectedException inside an environment failure -
+			//lost its excerpt silently: the envelope still looked complete and the operator grepped the
+			//correlation ID and found nothing.
+			string detail = FindServerDetail(ex);
+			//Scrubbed and fenced even here, and that is load-bearing rather than belt-and-braces:
+			//ConsoleLogger.WriteDebug suppresses the console DRAIN under MCP server mode but still
+			//CAPTURES into the per-flow buffer BaseTool harvests into CommandExecutionResult.Messages. The
+			//excerpt reaching this line is only control-character normalized and length-capped, so a
+			//bearer token, a target URI or a credential pair inside it would otherwise be intact.
+			string safeDetail = SensitiveErrorTextRedactor.RedactUntrustedOrNull(detail);
+			if (safeDetail is null) {
+				return;
+			}
+			logger.WriteDebug($"(correlation-id: {correlationId}) server detail: {safeDetail}");
+		}
+
+		/// <summary>
+		/// <see langword="true"/> when this failure - or anything it wraps - can hold text the SERVER
+		/// authored, and therefore has to be reported through the classified envelope rather than by its
+		/// own message.
+		/// </summary>
+		/// <remarks>
+		/// PR #1374 review. The CLI write path used to catch <see cref="Exception"/> and route everything
+		/// through <see cref="ReportFailure"/>, which is type-blind: a local fault has no arm in
+		/// <see cref="CategorizeFailure"/>, so a missing <c>--file</c> lost its path and printed
+		/// "no cause could be determined ... retry the operation", and
+		/// <see cref="UnauthorizedAccessException"/> - which on this path is a local file permission -
+		/// was routed to <c>Authentication</c>, sending the operator to repair working credentials.
+		/// <para>
+		/// The predicate is the two carrier types plus the transport types, which is exactly the set whose
+		/// message can hold platform prose. <see cref="EnvironmentResolutionException"/> is included even
+		/// though its text is clio-local, because <see cref="CategorizeFailure"/> has a dedicated arm for
+		/// it that gives better advice than its bare message.
+		/// </para>
+		/// </remarks>
+		private static bool CarriesServerText(Exception exception) {
+			for (Exception current = exception; current is not null; current = current.InnerException) {
+				if (current is AggregateException aggregate) {
+					return aggregate.InnerExceptions.Any(CarriesServerText);
+				}
+				if (current is IServerDetailCarrier
+						or HttpRequestException
+						or WebException
+						or SocketException
+						or AuthenticationException
+						or EnvironmentResolutionException) {
+					return true;
+				}
+			}
+			return false;
+		}
+
+		/// <summary>
+		/// The server excerpt of the first <see cref="IServerDetailCarrier"/> anywhere in the exception
+		/// chain, including inside single-fault aggregates, or <see langword="null"/> when there is none.
+		/// </summary>
+		private static string FindServerDetail(Exception exception) {
+			for (Exception current = exception; current is not null; current = current.InnerException) {
+				if (current is IServerDetailCarrier carrier) {
+					return carrier.ServerDetail;
+				}
+				if (current is AggregateException { InnerExceptions.Count: 1 } aggregate
+						&& aggregate.InnerExceptions[0] is IServerDetailCarrier innerCarrier) {
+					return innerCarrier.ServerDetail;
+				}
+			}
+			return null;
+		}
+
+		/// <summary>
+		/// Composes the failure envelope for a provider failure reported WITHOUT an exception - a
+		/// <c>success:false</c> response whose only diagnosis is the platform's own prose.
+		/// </summary>
+		/// <remarks>
+		/// The prose is fenced and scrubbed rather than dropped (issue #1333): it is the platform's own
+		/// validation text, so no fixed sentence can replace it, but it reaches an agent's context through
+		/// the MCP envelope and must therefore be marked as observed data. Composition is shared with
+		/// <see cref="ClassifyingDataProvider"/> through
+		/// <see cref="ServerReportedFailureText.Describe"/>, so the two cannot drift.
+		/// </remarks>
+		private SysSettingFailure ReportProviderFailure(string serverMessage, string operationLabel) {
+			ServerReportedFailureText described = ServerReportedFailureText.Describe(serverMessage);
+			SysSettingFailure failure = new(
+				described.ComposeMessage(operationLabel),
+				SysSettingErrorCategories.ProviderFailure, described.Cause,
+				SysSettingFailureTexts.ProviderFailureRecovery, _correlationIds.New());
+			WriteAndForwardFailureLine(_logger, failure);
 			return failure;
 		}
 
@@ -773,9 +927,33 @@ namespace Clio.Command
 		}
 
 		/// <summary>Renders a classified failure as one log line, correlation ID last.</summary>
-		internal static string DescribeFailureForLog(SysSettingFailure failure) =>
-			$"{failure.Error} Cause: {failure.Cause} Action: {failure.RecoveryAction} "
-			+ $"(correlation-id: {failure.CorrelationId})";
+		/// <remarks>
+		/// The cause is omitted when it is the SAME string as the headline (PR #1374 review). Three arms of
+		/// <see cref="CategorizeFailure"/> put one composed diagnostic into both <c>Error</c> and
+		/// <c>Cause</c>, so this line printed it twice - and where that diagnostic carries the fenced
+		/// server excerpt, twice meant two <c>[untrusted-source-text begin]…[end]</c> pairs on one line.
+		/// </remarks>
+		internal static string DescribeFailureForLog(SysSettingFailure failure) {
+			string cause = string.Equals(failure.Error, failure.Cause, StringComparison.Ordinal)
+				? string.Empty
+				: $"Cause: {failure.Cause} ";
+			return $"{failure.Error} {cause}Action: {failure.RecoveryAction} "
+				+ $"(correlation-id: {failure.CorrelationId})";
+		}
+
+		/// <summary>
+		/// The operation labels these results and log lines read with. Constants because the same label
+		/// appears at several report sites for one operation, and because which label a failure carries is
+		/// part of the diagnosis - PR #1374 review found the CLI write path reporting a failed CREATE as
+		/// "updating sys-setting".
+		/// </summary>
+		private const string CreateOperationLabel = "creating sys-setting";
+
+		/// <inheritdoc cref="CreateOperationLabel"/>
+		private const string UpdateOperationLabel = "updating sys-setting";
+
+		/// <inheritdoc cref="CreateOperationLabel"/>
+		private const string ReadOperationLabel = "reading sys-setting";
 
 		// Cap on a message promoted into a user-visible field. 300 is what DataProviderFailureException's
 		// detail already uses, so the two paths expose the same amount.

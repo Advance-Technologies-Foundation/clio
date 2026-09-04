@@ -42,15 +42,6 @@ public sealed class ClassifyingDataProvider : IDataProvider {
 	/// <summary>Cap on the server-controlled detail embedded in an exception message.</summary>
 	private const int MaxFailureDetailLength = 300;
 
-	/// <summary>
-	/// Stand-in detail for a failure the provider reported with no text at all. <c>ConvertBatchResponse</c>
-	/// sets <c>ErrorMessage</c> to <see cref="string.Empty"/> when the batch carries no
-	/// <c>ResponseStatus</c>, and <c>new ExecuteResponse()</c> leaves it <see langword="null"/>, so
-	/// without this the message would end at a bare colon and name no cause.
-	/// </summary>
-	private const string UnreportedFailureDetail =
-		"the environment reported an unsuccessful response without an error message.";
-
 	private readonly IDataProvider _inner;
 
 	/// <summary>Wraps <paramref name="inner"/> so its unsuccessful responses become exceptions.</summary>
@@ -137,7 +128,8 @@ public sealed class ClassifyingDataProvider : IDataProvider {
 		} catch (Exception exception) {
 			string detail = Sanitize(exception.Message);
 			if (AuthenticationFailureClassifier.IsAuthenticationFailure(exception)) {
-				throw new AuthenticationException(AuthenticationMessage(operation, detail), exception);
+				throw new SessionRejectedException(AuthenticationMessage(operation, detail), detail,
+					exception);
 			}
 			//Prose is consulted ONLY when there is no typed status to read. A typed status is
 			//authoritative in both directions, so a typed 404 whose body happens to mention a standalone
@@ -145,7 +137,7 @@ public sealed class ClassifyingDataProvider : IDataProvider {
 			if (!AuthenticationFailureClassifier.HasTypedStatus(exception)
 				&& AuthenticationFailureClassifier.ClassifyProviderErrorMessage(detail)
 					== AuthenticationFailureClassifier.ProviderFailureVerdict.NonJsonPage) {
-				throw new DataProviderFailureException(NonJsonPageMessage(operation, detail), exception);
+				throw new DataProviderFailureException(NonJsonPageMessage(operation), exception, detail);
 			}
 			throw;
 		}
@@ -180,15 +172,28 @@ public sealed class ClassifyingDataProvider : IDataProvider {
 		string detail = Sanitize(readErrorMessage(response));
 		throw AuthenticationFailureClassifier.ClassifyProviderErrorMessage(detail) switch {
 			AuthenticationFailureClassifier.ProviderFailureVerdict.Authentication
-				=> new AuthenticationException(AuthenticationMessage(operation, detail)),
+				=> new SessionRejectedException(AuthenticationMessage(operation, detail), detail),
 			AuthenticationFailureClassifier.ProviderFailureVerdict.NonJsonPage
-				=> new DataProviderFailureException(NonJsonPageMessage(operation, detail)),
-			var _ => new DataProviderFailureException(GenericMessage(operation, detail))
+				=> new DataProviderFailureException(NonJsonPageMessage(operation), serverDetail: detail),
+			//BOTH renderings, chosen by the sink (PR #1374 review). Message keeps the fenced form every
+			//existing consumer already reads - the MCP envelope above all - while ConsoleMessage carries
+			//the same diagnosis without the agent fence, for the CLI renderer.
+			var _ => new DataProviderFailureException(GenericMessage(operation, detail),
+				serverDetail: detail) {
+					ConsoleMessage = ConsoleGenericMessage(operation, detail)
+				}
 		};
 	}
 
+	/// <summary>
+	/// The authentication diagnostic. <paramref name="detail"/> only CHOOSES one of the fixed local
+	/// sentences in <see cref="AuthenticationFailureClassifier.FixedAuthenticationDiagnostics"/>; none of
+	/// its own text is copied into the message (issue #1333). The excerpt travels on
+	/// <see cref="SessionRejectedException.ServerDetail"/> instead, for debug verbosity.
+	/// </summary>
 	private static string AuthenticationMessage(string operation, string detail) =>
-		$"Authentication failed while {operation}: {detail} "
+		$"Authentication failed while {operation}: "
+		+ $"{AuthenticationFailureClassifier.DescribeAuthenticationCause(detail)} "
 		+ "Verify the environment credentials (for an expired password, repair the registered profile) "
 		+ "and retry.";
 
@@ -197,26 +202,50 @@ public sealed class ClassifyingDataProvider : IDataProvider {
 	/// message the provider preserved cannot tell them apart. Claiming one would send the operator to
 	/// repair working credentials whenever the real problem was a proxy, a gateway or a wrong path.
 	/// </summary>
-	private static string NonJsonPageMessage(string operation, string detail) =>
+	private static string NonJsonPageMessage(string operation) =>
 		$"Failed {operation}: the environment answered with a non-JSON page where a DataService response "
 		+ "was expected - either the session was rejected (expired password / login redirect) or the URL "
-		+ $"does not reach Creatio (proxy, gateway, wrong path). Detail: {detail}";
-
-	private static string GenericMessage(string operation, string detail) =>
-		$"Failed {operation}: {detail}";
+		+ "does not reach Creatio (proxy, gateway, wrong path).";
 
 	/// <summary>
-	/// Normalizes a server-controlled detail before it is embedded in an exception message, and before it
-	/// is classified. Delegates the character neutralization and the length cap to the shared
-	/// <see cref="TextUtilities.SanitizeForDisplay"/>; an absent detail becomes
-	/// <see cref="UnreportedFailureDetail"/> rather than leaving the message ending at a colon.
+	/// The one message that must still carry server text: a plain <c>Success == false</c> whose
+	/// <c>ErrorMessage</c> is the platform's own validation prose ("Column 'Name' is required"), which no
+	/// fixed sentence can replace without destroying the diagnosis.
+	/// </summary>
+	/// <remarks>
+	/// So the text is fenced rather than dropped: <see cref="UntrustedText.Fenced"/>
+	/// scrubs URIs, paths, tokens and credential pairs, collapses line breaks, clamps the length, and wraps
+	/// the remainder in the marker that names it as observed data rather than as an instruction - which is
+	/// what issue #1333 needs, because this string reaches an AI agent's context through the MCP envelope.
+	/// A detail the fence reduces to nothing leaves the message naming only the operation.
+	/// </remarks>
+	private static string GenericMessage(string operation, string detail) =>
+		ServerReportedFailureText.Describe(detail).ComposeMessage(operation);
+
+	/// <summary>
+	/// The same diagnostic rendered for a terminal: scrubbed, flattened and capped, with no agent fence.
+	/// </summary>
+	/// <remarks>
+	/// PR #1374 review. The fence exists for a field a model reads; the CLI renderer prints this
+	/// message to a person, for whom <c>[untrusted-source-text begin] … [untrusted-source-text end]</c>
+	/// has no meaning and reads as clio malfunctioning.
+	/// </remarks>
+	private static string ConsoleGenericMessage(string operation, string detail) =>
+		ServerReportedFailureText.Describe(detail).ComposeConsoleMessage(operation);
+
+	/// <summary>
+	/// Normalizes a server-controlled detail before it is classified. Delegates the character
+	/// neutralization and the length cap to the shared <see cref="TextUtilities.SanitizeForDisplay"/>, and
+	/// returns <see langword="null"/> - never a stand-in sentence - when the provider reported no text, so
+	/// that "the server said nothing" stays distinguishable from "the server said this" all the way to
+	/// <see cref="ServerReportedFailureText"/>.
 	/// </summary>
 	private static string Sanitize(string detail) {
 		if (string.IsNullOrWhiteSpace(detail)) {
-			return UnreportedFailureDetail;
+			return null;
 		}
 		string cleaned = TextUtilities.SanitizeForDisplay(detail, MaxFailureDetailLength).Trim();
-		return cleaned.Length == 0 ? UnreportedFailureDetail : cleaned;
+		return cleaned.Length == 0 ? null : cleaned;
 	}
 
 	/// <summary>Names the schemas a batch touches, for the diagnostic.</summary>

@@ -141,6 +141,12 @@ public sealed class SysSettingsAuthenticationFailureE2ETests {
 			response.Error.Should().Contain("Authentication",
 				because: "the WRITE path still holds the raw response body, so a login page there proves the "
 				+ "session was rejected - it is not the ambiguous non-JSON answer the read path has to report");
+			//Issue #1333: the raw body was embedded in this diagnostic and reached the MCP envelope.
+			response.Error.Should().NotContain("<html",
+				because: "the login page's markup - and anything a third party put inside it - must not "
+				+ "travel on a field an AI agent reads as part of its own context");
+			response.Cause.Should().NotContain("<html",
+				because: "the cause is a fixed local diagnostic, never composed from server prose");
 			response.Warning.Should().BeNull(
 				because: "a fail-closed refusal is not a partial success and must not be softened into a warning");
 			response.ErrorCategory.Should().Be(SysSettingErrorCategories.Authentication,
