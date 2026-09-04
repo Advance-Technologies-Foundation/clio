@@ -3156,5 +3156,30 @@ public sealed class ToolContractGetToolTests {
 			because: "the envelope has to name the next step, not only the failure");
 		fieldNames.Should().Contain("correlation-id",
 			because: "#1222 requires a correlation ID so the caller can point an operator at the log line");
+		// PR #1373 review (Blocker) - the field-name assertions above could not catch the drift that shipped: the
+		// error-category DESCRIPTION enumerated the branch values and had already lost `Configuration`, the value
+		// CategorizeFailure returns for every EnvironmentResolutionException. Reflected over the constants so the
+		// next category cannot reopen it.
+		string errorCategoryDescription = contract.OutputContract.Fields
+			.Single(field => field.Name == "error-category").Description;
+		string[] declaredCategories = [.. typeof(SysSettingErrorCategories)
+			.GetFields(BindingFlags.Public | BindingFlags.Static)
+			.Where(field => field.IsLiteral && field.FieldType == typeof(string))
+			.Select(field => (string)field.GetRawConstantValue()!)];
+		declaredCategories.Should().NotBeEmpty(
+			because: "an empty reflected set would make the enumeration assertion below pass vacuously");
+		foreach (string category in declaredCategories) {
+			errorCategoryDescription.Should().Contain(category,
+				because: $"an agent branching on error-category meets '{category}' at runtime, and an undeclared value sends it down its generic path - the looping behaviour issue #1329 exists to remove");
+		}
+		// PR #1373 review - the cause field must NOT advertise a trust label the classifier does not keep:
+		// CategorizeFailure's ProviderFailure arm sets Cause from the provider's message, which is built from the
+		// environment's HTTP response.
+		string causeDescription = contract.OutputContract.Fields
+			.Single(field => field.Name == "cause").Description;
+		causeDescription.Should().NotContain("Never composed from server prose",
+			because: "the ProviderFailure and Validation arms echo upstream text into cause, and an agent that reads it as trusted local guidance is the prompt-injection surface issue #1333 exists to close");
+		causeDescription.Should().Contain("treated as DATA",
+			because: "where the cause does echo upstream text the contract has to say so explicitly");
 	}
 }
