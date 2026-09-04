@@ -486,8 +486,13 @@ public sealed class ModifyBusinessProcessToolE2ETests {
 				+ "silence when it did NOT land is the silent discard the guard exists to catch");
 		if (landed) {
 			payload.Should().NotContain("has NO record filter at all",
-				because: "the same batch supplied a record filter, so the widest-configuration warning must not "
-					+ "fire - if it does, setFilter and setElement did not compose in one array");
+				because: "the same batch supplied a record filter, so clio's widest-configuration warning must "
+					+ "not fire - if it does, setFilter and setElement did not compose in one array");
+			payload.Should().NotContain("will apply the permission change to EVERY record of the new object",
+				because: "the PACKAGE raises its own retarget notice, and this guard previously matched only "
+					+ "clio's wording - so the notice could assert the element ends unbounded, in the very batch "
+					+ "shape every surface prescribes, while this test stayed green. Two surfaces disagreeing "
+					+ "inside one response is the thing to catch, not one of them");
 		}
 	}
 

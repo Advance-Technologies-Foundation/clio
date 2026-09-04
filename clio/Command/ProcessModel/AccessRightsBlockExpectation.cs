@@ -491,5 +491,3 @@ public static class AccessRightsBlockExpectation {
 	// path, not this check's. Returning null here just skips the verification rather than masking the real
 	// failure with a second, less useful message.
 }
-// CONTROL-PLANT: ANY change to the element's object clears its record filter, so
-// an ordinary retarget leaves the element inert - it changes nothing at run time.
