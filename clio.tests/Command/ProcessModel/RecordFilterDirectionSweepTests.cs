@@ -49,7 +49,7 @@ public sealed class RecordFilterDirectionSweepTests {
 	// Phrasings that describe the INERT state. Paired with an absent-filter subject they invert the fact.
 	private const string InertWords =
 		@"match(es)?\s+no\s+records|changes?\s+nothing|changes?\s+no\s+permissions|cannot\s+act|"
-		+ @"\binert\b|silent\s+no-?op|does\s+nothing";
+		+ @"\binert\b|silent\s+no-?op|(?:does|do|did)\s+nothing|is\s+an?\s+no-?op";
 
 	// Phrasings that describe the WIDE state. Paired with a conditionless subject they invert it too.
 	private const string WideWords =
@@ -199,15 +199,20 @@ public sealed class RecordFilterDirectionSweepTests {
 					continue;
 				}
 
-				Match match = inversion.Match(line);
-				int from = Math.Max(0, match.Index - ExemptionRadius);
-				int to = Math.Min(line.Length, match.Index + match.Length + ExemptionRadius);
-				string vicinity = line[from..to];
-				if (ExemptionMarkers.Any(marker => vicinity.Contains(marker, StringComparison.OrdinalIgnoreCase))) {
-					continue;
-				}
+				// EVERY match in the window, not just the first. A window often holds a correct contrastive
+				// sentence AND, further along, a real inversion; stopping at the first match let an exempted
+				// one hide the offender behind it.
+				for (Match match = inversion.Match(line); match.Success; match = match.NextMatch()) {
+					int from = Math.Max(0, match.Index - ExemptionRadius);
+					int to = Math.Min(line.Length, match.Index + match.Length + ExemptionRadius);
+					string vicinity = line[from..to];
+					if (ExemptionMarkers.Any(marker => vicinity.Contains(marker, StringComparison.OrdinalIgnoreCase))) {
+						continue;
+					}
 
-				offenders.Add($"  {relative}:{i + 1}: ...{vicinity.Trim()}...");
+					offenders.Add($"  {relative}:{i + 1}: ...{vicinity.Trim()}...");
+					break;
+				}
 			}
 		}
 
