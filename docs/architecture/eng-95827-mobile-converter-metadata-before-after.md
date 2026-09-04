@@ -386,12 +386,35 @@ addition with a message naming the article; `MobileDropReasonCodeCoverageTests` 
 entry is deleted, or if the article documents a code the converter cannot emit. Both were verified
 non-vacuous by mutation.
 
-The same audit found three shipped references to `elementMap` that outlived the field: the ROUTE in
-`routing.md` (which sent a caller to decode `elementMap[].reason`), the hand-off sentence in
-`page-modification.md`, and — worst of the three — the `bundle-source.json` title and description for the
-codes article, which still advertised "the four component-twin states, insert classifications, placement
-changes" the article no longer contains. That description is what a model reads when choosing an article, so
-a wrong one is worse than a terse one.
+The same audit found three shipped references to `elementMap` that outlived the field — and only one of them
+wanted its name corrected.
+
+- **`bundle-source.json`'s title and description for the codes article. Rewritten.** The worst of the three:
+  the description still advertised "the four component-twin states, insert classifications, placement changes
+  the converter made on the caller's behalf" — content the article no longer has at all, since those codes
+  were deleted when `reason` came off the operations. A model chooses an article by this text, so a
+  description promising removed content is worse than a terse one.
+- **The ROUTE in `routing.md`. Deleted, not fixed.** The conversion article already routes onward to the
+  codes article twice, and one of those also says *when* — "load it once per run when `droppedElements` is
+  non-empty" — which a routing entry cannot. That duplicate was the only mention outside the conversion
+  guides and it was the copy that rotted. `routing.md` already treats `dashboards` this way: the entry is
+  listed, the sub-guides are reached through it. No test required the line.
+- **The hand-off sentence in `page-modification.md`. Decoupled, not renamed.** The sentence is load-bearing,
+  but not for the reason its guard fixture gave. It is not the `Scaffold`/`"actions"` prohibition — the
+  converter never inserts there, it targets `MainContainer`, a FAB's `menuItems`, header tools and
+  `floatAction`. It is the clause directly above: *"read the names from get-page."* A conversion diff inserts
+  into containers the same diff creates, which `get-page` cannot show yet, so an agent obeying that line
+  literally reroutes the converter's own inserts. The sentence now says exactly that and names no converter
+  field: `viewConfigDiff` already appears nine times in that file meaning the mobile page's own body
+  property, so a tenth use meaning the converter's RESPONSE field was ambiguous as well as coupled. The
+  guard pins the phrase rather than the schema name.
+
+The rule behind the last two: a general guide must not need a commit when the converter renames a field. Two
+fixtures had also recorded opposite principles about that same file — one asserting the mobile guides "stay
+converter-free", the other requiring the pointer to exist — and that contradiction is what let the stale line
+sit unnoticed. The principle is now written where it is enforced: a pointer to the conversion guide is
+allowed wherever a general rule would otherwise contradict it, but a converter response FIELD NAME outside
+the conversion guides is not.
 
 ---
 
