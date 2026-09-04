@@ -128,6 +128,20 @@ Test naming: `MethodName_ShouldBehavior_WhenCondition`
     `Terrasoft.manager.ProcessSchemaManager`, overrides it to `return true`. The silent-no-op branch is
     real but narrow: embedded (case/DCM) managers and anything inheriting the base, NOT business
     processes. I recorded it too broadly and the network trace caught it.
+  - **CORRECTED 2026-09-04, raised by the ticket owner: versioning IS reachable on the local stand.** The
+    route is the process CARD page `#CardModuleV2/VwProcessLibPageV2/edit/<id>`, served by the Freedom
+    shell, which hosts the versions detail. The owner created `UsrProcess_329f1da` +
+    `UsrProcess_329f1daCustom1` there. What the probes below actually established is narrower: the
+    process DESIGNER is unreachable by URL on that build. I generalised from that to "no implementation
+    is reachable", and the card-page URL was sitting in a studio-stand snapshot I had already taken.
+    So the studio detour was not needed for AC-01 — though it did yield the created-inactive fact and the
+    UId-to-Id translation, which the UI route would not have exposed.
+  - Open question the correction raises, and it matters for stories 9-13: through the raw composer my two
+    versions came out INACTIVE with the root left active, while in the owner's family the root is
+    inactive and the version active. Timestamps favour a SEPARATE activation step — root created
+    08:23:01, version 08:23:21, then BOTH rows modified at 08:23:29.9 and 08:23:31.2, one write touching
+    both — which supports the independence recorded above. But that is inference, not observation:
+    whether the card page exposes "create version" and "set actual" as one gesture or two is unconfirmed.
   - **AC-01, third pass: run properly, and it cannot be executed here — dead ends named.** Five routes
     to an implementation that creates a version were tried. The Shell hash `#ProcessSchemaDesigner/<uid>`
     falls back to the app list; `ViewModule.aspx` REDIRECTS to the Shell; `ProcessDesigner.aspx` and
