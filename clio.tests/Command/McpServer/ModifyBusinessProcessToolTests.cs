@@ -1,4 +1,8 @@
+using System;
+using System.IO;
+using System.Reflection;
 using Clio.Command;
+using Clio.Command.McpServer.Prompts.ProcessDesigner;
 using Clio.Command.McpServer.Tools;
 using Clio.Command.McpServer.Tools.ProcessDesigner;
 using Clio.Command.ProcessModel;
@@ -14,6 +18,9 @@ namespace Clio.Tests.Command.McpServer;
 public class ModifyBusinessProcessToolTests {
 	private const string SampleOperations =
 		"[{\"op\":\"removeElement\",\"elementName\":\"StartEvent1\"}]";
+
+	private static readonly string RepositoryRoot = Path.GetFullPath(
+		Path.Combine(AppContext.BaseDirectory, "..", "..", "..", ".."));
 
 	[Test]
 	[Description("Resolves the modify-business-process MCP tool for the requested environment and forwards the identity and operations into command options.")]
@@ -261,6 +268,35 @@ public class ModifyBusinessProcessToolTests {
 		public override int Execute(ModifyBusinessProcessOptions options) {
 			CapturedOptions = options;
 			return _exitCode;
+		}
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Every shipped clio surface that tells a caller how to get rid of a flow condition also carries the consequence of the destructive route. Removing the last conditional flow off an element stops the platform synthesizing the exclusive gateway, so EVERY outgoing flow is then taken - and describe reports kind:'sequence' on both, which reads exactly like the condition was cleared as asked. A surface that teaches remove-and-add without that sentence turns an approval gate into a parallel split silently.")]
+	public void ClearingACondition_ShouldCarryTheGatewayHazard_OnEveryShippedSurface() {
+		// Arrange
+		const string hazard = "stops synthesizing the gateway";
+		string toolDescription = typeof(ModifyBusinessProcessTool)
+			.GetMethod(nameof(ModifyBusinessProcessTool.ModifyBusinessProcess))!
+			.GetCustomAttribute<System.ComponentModel.DescriptionAttribute>()!.Description;
+		string prompt = ModifyBusinessProcessPrompt.PromptByProcess("env", "UsrSampleProcess");
+		string capabilityMap = File.ReadAllText(Path.Combine(RepositoryRoot, "docs", "McpCapabilityMap.md"));
+
+		// Act
+		(string Surface, string Text)[] surfaces = [
+			("modify-business-process [Description]", toolDescription),
+			("modify-business-process prompt", prompt),
+			("docs/McpCapabilityMap.md", capabilityMap)
+		];
+
+		// Assert
+		foreach ((string surface, string text) in surfaces) {
+			text.Should().Contain(hazard,
+				because: $"'{surface}' tells a caller what to do about an unwanted flow condition, and without this "
+					+ "consequence they take the remove-and-add route, lose the synthesized gateway, and every "
+					+ "outgoing branch runs - measured on a stand at the shipping archive: an approval path became "
+					+ "unreachable for every input and describe still reported kind:'sequence' on both flows");
 		}
 	}
 }

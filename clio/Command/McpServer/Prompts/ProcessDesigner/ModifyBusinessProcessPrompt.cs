@@ -36,9 +36,12 @@ public static class ModifyBusinessProcessPrompt {
 		 the order their flows were added and the first true one wins. No gateway is needed — the platform
 		 synthesizes one for a conditional flow whose source is an activity. The condition must be a bool (an int is refused; the interpreted engine does not coerce)
 		 and every `[#…#]` parameter reference in it must resolve in that process. A condition on a DEFAULT branch
-		 is refused. There is no clear-condition operation: to drop one, `removeFlow` then `addFlow` a plain flow
-		 — but the replacement lands LAST, and since precedence IS insertion order that silently changes which
-		 sibling branch runs, so re-add every sibling in the intended order. An EMPTY condition is refused
+		 is refused. There is no clear-condition operation, and `removeFlow` + `addFlow` is NOT a substitute for
+		 one: if it was the last conditional flow off that element the platform stops synthesizing the gateway
+		 and EVERY outgoing flow is then taken — a parallel split that `describe` reports as `kind:"sequence"` on
+		 both, reading exactly like a cleared condition. The replacement also lands LAST, and since precedence IS
+		 insertion order that silently changes which sibling branch runs. To CHANGE a condition call
+		 `setFlowCondition` again; to make a branch always taken set its condition to `true`. An EMPTY condition is refused
 		 because the platform stores one as the literal `true`. `setFilter`/`clearFilter`
 		 set or remove a `signalStart`'s record filter, `setSignal` reconfigures a `signalStart`'s record trigger
 		 and its tracked-change `changedColumns` in place, and `setElement` changes element-level fields in place —
