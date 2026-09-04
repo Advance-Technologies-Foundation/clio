@@ -94,7 +94,7 @@ internal static class PageOutputDirectoryResolver {
 				fileSystem.Directory.GetCurrentDirectory(),
 				Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
 				ClioRuntimePaths.Home,
-				null)!; // non-null fallback, so the bare-home branch cannot yield null
+				null);
 		}
 	}
 
