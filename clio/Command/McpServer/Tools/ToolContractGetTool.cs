@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.ComponentModel;
 using System.Diagnostics.CodeAnalysis;
@@ -161,7 +161,8 @@ public sealed class ToolContractGetTool {
 		"Argument shapes accepted at runtime by any tool whose only parameter is an args record: "
 		+ "wrapped {\"args\": {\"<field>\": \"<value>\"}} (the shape tools/list publishes) and flat "
 		+ "{\"<field>\": \"<value>\"} (normalized to the wrapped shape on arrival). Rules: every flat key "
-		+ "must be a real field name — an all-unknown payload is refused, never answered with defaults; "
+		+ "must be a real field name — a payload carrying any unknown key (even beside a valid one) is "
+		+ "refused, never answered with defaults; "
 		+ "mixing an \"args\" object with extra top-level keys is refused as ambiguous; an args value must "
 		+ "be a JSON object, never a string containing JSON text.";
 

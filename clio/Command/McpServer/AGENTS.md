@@ -85,14 +85,18 @@ runtime (ENG-95885). Normalization lives at the call-tool pipeline layer
 whole resident set with no per-tool edits:
 
 - wrapped — `{"args": {"<field>": "<value>"}}` — what `tools/list` publishes; unchanged, byte-compatible.
-- flat — `{"<field>": "<value>"}` — rewritten into the wrapper on arrival, with EVERY top-level key moved
-  inside it (never only the keys that matched, so a co-present typo is not silently dropped).
+- flat — `{"<field>": "<value>"}` — rewritten into the wrapper on arrival ONLY when EVERY top-level key is
+  a wire property; all of them are moved inside the wrapper together.
 
 The payload is CLASSIFIED, never wrapped blindly. Refused shapes:
 
-- **unknown-only** — no top-level key is a wire property: refused with the canonical field list. Wrapping
-  it would let the serializer drop the key, materialize the record with defaults, and let the tool answer
-  a validation mistake with a plausible list/default **success** — worse for an agent than a hard failure.
+- **any unknown key** — at least one top-level key is not a wire property, whether the WHOLE payload is
+  unknown or a real field sits next to a typo (`{"environment-name":"dev","filer":"x"}`): refused with the
+  canonical field list. The PARTIAL case is refused for the same reason as the all-unknown case — for the
+  resident majority whose args record has no `[JsonExtensionData]` overflow bag, wrapping the payload lets
+  the serializer silently DROP the typo at bind time (it ignores unmapped members) and the tool answers a
+  validation mistake with a plausible list/default **success** — worse for an agent than a hard failure.
+  The good field does not make the typo safe. Only `[McpRecoversUnknownArguments]` (below) forwards it.
 - **hybrid** — an `args` object plus extra top-level keys: refused as ambiguous, no silent precedence.
 - **empty `{}`** — keeps today's missing-parameter error unless the tool declares capability (below).
 - an argument the tool binds as an object but which arrives as a **JSON string**: refused with a
@@ -106,8 +110,8 @@ generated schema (the schema's required-property set is a weak proxy for runtime
 - `[McpAcceptsEmptyArguments]` — the tool has a documented no-arguments operation, so `{}` is a real call
   and the empty wrapper is synthesized. Today: `list-apps`, `get-request-info`.
 - `[McpRecoversUnknownArguments]` — the tool binds a `[JsonExtensionData]` bag AND inspects it (alias
-  rename, flat recovery, or an explicit unknown-arg error), so an unknown-only payload is forwarded to
-  its richer diagnosis instead of refused. Today: `get-tool-contract`.
+  rename, flat recovery, or an explicit unknown-arg error), so a payload carrying any unknown key is
+  forwarded to its richer diagnosis instead of refused. Today: `get-tool-contract`.
   `McpFlatArgumentNormalizationCompletenessTests` fails the build if this is declared on an args record
   that has no overflow bag.
 

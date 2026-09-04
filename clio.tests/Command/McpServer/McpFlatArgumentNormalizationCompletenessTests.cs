@@ -69,7 +69,7 @@ public sealed class McpFlatArgumentNormalizationCompletenessTests
 				}
 			};
 
-			bool refused = McpToolErrorFilter.TryNormalizeArguments(
+			bool refused = McpToolErrorFilter.TryRefuseOrRewriteArguments(
 				parameters, contract.Method, out CallToolResult? result);
 
 			if (refused || result is not null) {
@@ -117,7 +117,7 @@ public sealed class McpFlatArgumentNormalizationCompletenessTests
 				}
 			};
 
-			bool refused = McpToolErrorFilter.TryNormalizeArguments(
+			bool refused = McpToolErrorFilter.TryRefuseOrRewriteArguments(
 				parameters, contract.Method, out CallToolResult? result);
 
 			if (!refused || result is null || result.IsError != true) {
@@ -138,6 +138,70 @@ public sealed class McpFlatArgumentNormalizationCompletenessTests
 
 	[Test]
 	[Category("Unit")]
+	[Description("A PARTIAL-unknown payload — one canonical field beside a typo — is REFUSED for every resident single-composite-args tool whose args record has no [JsonExtensionData] overflow bag, so the good field never makes the typo safe by letting the serializer drop it into a plausible success (ENG-95885 R2, partial-unknown hole).")]
+	public void PartialUnknownPayload_ShouldBeRefused_ForEveryArgsRecordWithoutOverflowBucket() {
+		// Arrange
+		List<string> failures = [];
+		int covered = 0;
+
+		// Act
+		foreach (ResidentToolContract contract in EnumerateResidentSingleCompositeArgsTools()) {
+			if (HasJsonExtensionDataBucket(contract.ArgsType)) {
+				// The record can SEE the unknown key, so forwarding is a declared per-tool decision
+				// (McpRecoversUnknownArguments) — not this gate's concern.
+				continue;
+			}
+			covered++;
+			CallToolRequestParams parameters = new() {
+				Name = contract.ToolName,
+				Arguments = new Dictionary<string, JsonElement>(StringComparer.Ordinal) {
+					[contract.CanonicalPropertyNames[0]] = JsonSerializer.SerializeToElement("real"),
+					["definitely-not-a-real-argument"] = JsonSerializer.SerializeToElement("typo")
+				}
+			};
+
+			bool refused = McpToolErrorFilter.TryRefuseOrRewriteArguments(
+				parameters, contract.Method, out CallToolResult? result);
+
+			if (!refused || result is null || result.IsError != true) {
+				failures.Add(
+					$"{contract.ToolName} (args {contract.ArgsType.Name}, no overflow bag): a canonical field "
+					+ "next to a typo was not refused, so the serializer can silently drop the typo");
+			}
+		}
+
+		// Assert
+		covered.Should().BeGreaterThan(0,
+			because: "the no-overflow-bag population is the whole point of this gate; an empty set means the "
+				+ "reflection filter is wrong");
+		failures.Should().BeEmpty(
+			because: "a real field beside a typo must not be rescued into a defaulted success. Failures:"
+				+ $"{Environment.NewLine}{string.Join(Environment.NewLine, failures)}");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("No resident single-composite-args tool exposes a wire field whose name equals its own args-wrapper parameter name, so the already-wrapped classification (keyed on the wrapper name) can never be fooled into treating a flat field as the SDK wrapper (ENG-95885 latent-collision guard).")]
+	public void NoResidentToolHasWireFieldNamedLikeItsWrapper() {
+		// Arrange
+		List<string> collisions = [];
+
+		// Act
+		foreach (ResidentToolContract contract in EnumerateResidentSingleCompositeArgsTools()) {
+			if (contract.CanonicalPropertyNames.Contains(contract.WrapperName, StringComparer.Ordinal)) {
+				collisions.Add($"{contract.ToolName}: wire field named '{contract.WrapperName}'");
+			}
+		}
+
+		// Assert
+		collisions.Should().BeEmpty(
+			because: "a wire field whose name equals the wrapper parameter name would make a legitimate flat "
+				+ "call read as an already-wrapped pass-through (or be misrefused as ambiguous). Collisions:"
+				+ $"{Environment.NewLine}{string.Join(Environment.NewLine, collisions)}");
+	}
+
+	[Test]
+	[Category("Unit")]
 	[Description("An empty payload is refused (left to today's missing-parameter behavior) for every resident tool that has NOT declared no-arguments capability — the capability is fail-closed and never inferred from the schema (ENG-95885 R3).")]
 	public void EmptyPayload_ShouldStayUntouched_ForEveryToolWithoutDeclaredCapability() {
 		// Arrange
@@ -151,7 +215,7 @@ public sealed class McpFlatArgumentNormalizationCompletenessTests
 			Dictionary<string, JsonElement> arguments = new(StringComparer.Ordinal);
 			CallToolRequestParams parameters = new() { Name = contract.ToolName, Arguments = arguments };
 
-			McpToolErrorFilter.TryNormalizeArguments(parameters, contract.Method, out CallToolResult? _);
+			McpToolErrorFilter.TryRefuseOrRewriteArguments(parameters, contract.Method, out CallToolResult? _);
 
 			if (!ReferenceEquals(parameters.Arguments, arguments)) {
 				failures.Add(

@@ -559,10 +559,12 @@ public sealed class McpToolErrorFilterTests
 		result.IsError.Should().BeFalse(because: "a canonical flat payload is a valid call, not a caller error");
 		forwardedParams.Should().NotBeNull(because: "the call must reach the next handler, not be short-circuited");
 		forwardedParams!.Arguments.Should().ContainSingle(because: "the whole payload collapses into one wrapper key")
-			.Which.Key.Should().Be("args");
+			.Which.Key.Should().Be("args", because: "the synthesized wrapper key is the args-parameter name");
 		JsonElement wrapped = forwardedParams.Arguments!["args"];
-		wrapped.ValueKind.Should().Be(JsonValueKind.Object);
-		wrapped.GetProperty("environment-name").GetString().Should().Be("local");
+		wrapped.ValueKind.Should().Be(JsonValueKind.Object,
+			because: "the wrapper the SDK binds the record from must be a JSON object");
+		wrapped.GetProperty("environment-name").GetString().Should().Be("local",
+			because: "the matched canonical field must survive the rewrite unchanged");
 		wrapped.GetProperty("filter").GetString().Should().Be("some-filter",
 			because: "every top-level key moves into the wrapper — cherry-picking only the matched keys would "
 				+ "silently drop a co-present field");
@@ -593,7 +595,8 @@ public sealed class McpToolErrorFilterTests
 		await handler(context, CancellationToken.None);
 
 		// Assert
-		forwardedParams!.Arguments.Should().ContainSingle().Which.Key.Should().Be("args");
+		forwardedParams!.Arguments.Should().ContainSingle(because: "an already-wrapped payload keeps its single wrapper key")
+			.Which.Key.Should().Be("args", because: "the wrapper key is unchanged");
 		forwardedParams.Arguments!["args"].GetProperty("environment-name").GetString().Should().Be("local",
 			because: "the working wrapped shape must stay byte-compatible — it must not be re-wrapped or rebuilt");
 	}
@@ -622,11 +625,42 @@ public sealed class McpToolErrorFilterTests
 		reachedTool.Should().BeFalse(
 			because: "wrapping an unknown-only payload into a record with no overflow bag would materialize "
 				+ "defaults and let the tool answer a validation mistake with a plausible list/default success");
-		result.IsError.Should().BeTrue();
+		result.IsError.Should().BeTrue(because: "an unknown-only payload is a refusal, surfaced as an error result");
 		string text = string.Join(" ", result.Content.OfType<TextContentBlock>().Select(b => b.Text));
 		text.Should().Contain("enviroment", because: "the offending key must be named");
 		text.Should().Contain("\"environment-name\"", because: "the canonical field list must be offered");
 		text.Should().Contain("\"filter\"", because: "every valid field is listed, not only the nearest match");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("T3b: a PARTIAL-unknown payload (a canonical field beside a typo) against an args record with no [JsonExtensionData] overflow bag is refused with the canonical field list — the good field does not rescue the typo into a silently-dropped success (ENG-95885 R2, partial-unknown hole).")]
+	public async Task Normalization_ShouldRefusePartialUnknownPayload_WhenArgsRecordHasNoOverflowBucket() {
+		// Arrange
+		RequestContext<CallToolRequestParams> context = CreateContext(
+			"list-apps", new Dictionary<string, JsonElement> {
+				["environment-name"] = JsonSerializer.SerializeToElement("local"),
+				["filer"] = JsonSerializer.SerializeToElement("x")
+			});
+		context.MatchedPrimitive = CreateRealTool();
+		bool reachedTool = false;
+		McpRequestHandler<CallToolRequestParams, CallToolResult> handler =
+			McpToolErrorFilter.HandleCallToolErrors((_, _) => {
+				reachedTool = true;
+				return ValueTask.FromResult(new CallToolResult { IsError = false });
+			});
+
+		// Act
+		CallToolResult result = await handler(context, CancellationToken.None);
+
+		// Assert
+		reachedTool.Should().BeFalse(
+			because: "for a no-overflow-bag record the serializer would silently drop 'filer' at bind time, so a "
+				+ "real field beside a typo must be refused rather than answered with a plausible success");
+		result.IsError.Should().BeTrue(because: "a payload carrying any unknown key is a refusal");
+		string text = string.Join(" ", result.Content.OfType<TextContentBlock>().Select(b => b.Text));
+		text.Should().Contain("filer", because: "the offending typo key must be named so the agent can fix it");
+		text.Should().Contain("\"environment-name\"", because: "the canonical field list must be offered");
 	}
 
 	[Test]
@@ -752,7 +786,8 @@ public sealed class McpToolErrorFilterTests
 		await handler(context, CancellationToken.None);
 
 		// Assert
-		forwardedParams!.Arguments.Should().ContainSingle().Which.Key.Should().Be("args");
+		forwardedParams!.Arguments.Should().ContainSingle(because: "a synthesized no-arguments call has exactly the wrapper key")
+			.Which.Key.Should().Be("args", because: "the synthesized key is the args-parameter name");
 		forwardedParams.Arguments!["args"].ValueKind.Should().Be(JsonValueKind.Object,
 			because: "an empty args object is what the SDK needs to bind the record for a no-arguments call");
 	}
@@ -783,7 +818,8 @@ public sealed class McpToolErrorFilterTests
 		forwardedParams!.Arguments.Should().BeSameAs(arguments,
 			because: "capability is declared explicitly, never inferred — an undeclared tool keeps its current "
 				+ "missing-parameter behavior");
-		forwardedParams.Arguments.Should().BeEmpty();
+		forwardedParams.Arguments.Should().BeEmpty(
+			because: "the empty payload is passed through untouched, not turned into a synthesized wrapper");
 	}
 
 	[Test]
@@ -807,7 +843,7 @@ public sealed class McpToolErrorFilterTests
 		CallToolResult result = await handler(context, CancellationToken.None);
 
 		// Assert
-		result.IsError.Should().BeTrue();
+		result.IsError.Should().BeTrue(because: "a wrong JSON value type is a per-argument binding failure");
 		string text = string.Join(" ", result.Content.OfType<TextContentBlock>().Select(b => b.Text));
 		text.Should().Contain("invalid-parameter-type",
 			because: "the deserialization preflight must run over the REWRITTEN arguments, so the "
@@ -855,9 +891,11 @@ public sealed class McpToolErrorFilterTests
 			because: "Arguments is replaced on the existing instance; a fresh params object would drop transport metadata");
 		forwardedParams!.ProgressToken.Should().NotBeNull(
 			because: "a long-running tool still has to emit notifications/progress after normalization");
-		forwardedParams.ProgressToken.ToString().Should().Contain("progress-123");
+		forwardedParams.ProgressToken.ToString().Should().Contain("progress-123",
+			because: "the caller's exact progress token, projected from _meta, must survive the rewrite");
 		forwardedParams.Meta.Should().NotBeNull(because: "_meta carries the clioStageEvent stream ClioRing consumes");
-		forwardedParams.Meta!["clioStageEvent"]!.GetValue<string>().Should().Be("stage-marker");
+		forwardedParams.Meta!["clioStageEvent"]!.GetValue<string>().Should().Be("stage-marker",
+			because: "the stage-event marker must survive on the same params instance for ClioRing to read it");
 	}
 
 	[Test]
@@ -888,8 +926,10 @@ public sealed class McpToolErrorFilterTests
 		CallToolResult result = await handler(context, CancellationToken.None);
 
 		// Assert
-		result.IsError.Should().BeFalse();
-		forwardedParams!.Arguments.Should().ContainSingle().Which.Key.Should().Be("args");
+		result.IsError.Should().BeFalse(
+			because: "a declared unknown-recoverer receives the payload rather than a refusal");
+		forwardedParams!.Arguments.Should().ContainSingle(because: "the forwarded payload collapses into the wrapper key")
+			.Which.Key.Should().Be("args", because: "the wrapper key is the args-parameter name");
 		forwardedParams.Arguments!["args"].GetProperty("some-alias").GetString().Should().Be("value",
 			because: "the unknown key must travel INTO the tool's own overflow bag, where the tool diagnoses it");
 	}
@@ -916,7 +956,7 @@ public sealed class McpToolErrorFilterTests
 		CallToolResult result = await handler(context, CancellationToken.None);
 
 		// Assert
-		result.IsError.Should().BeTrue();
+		result.IsError.Should().BeTrue(because: "a JSON-encoded object argument is refused, not decoded");
 		string text = string.Join(" ", result.Content.OfType<TextContentBlock>().Select(b => b.Text));
 		text.Should().Contain("must be a JSON object",
 			because: "the error must name the required shape so the agent can fix the call in one attempt");
