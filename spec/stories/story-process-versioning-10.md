@@ -7,7 +7,7 @@
 **ADR**: [adr-process-versioning.md](../adr/adr-process-versioning.md)
 **Test plan**: [tp-process-versioning.md](../test-plans/tp-process-versioning.md)
 **Repository**: crt-process-builder
-**Status**: ready-for-dev
+**Status**: in-progress
 **Size**: M
 
 ---
@@ -28,13 +28,13 @@ editing the clone cannot reach into the live source instance
 
 ## Acceptance Criteria
 
-- [ ] **AC-01** — Given a source process, when the clone is materialised, then it comes from the source's serialized metadata with the source schema UId replaced throughout and `CreatedInOwnerSchemaUId` (`BL8`) repaired back to the original
-- [ ] **AC-02** — Given the materialised clone, when its elements are inspected, then no element holds a reference to the source schema and none shares a `LocalizableString` instance with it
-- [ ] **AC-03** — Given the clone, when its `ParentSchemaUId` is read, then it equals the family root — the root's own UId when the source is the root, and the root (never the source) when the source is itself a version
-- [ ] **AC-04** — Given the clone, when `IsActiveVersion` and `IsDelivered` are read, then both are explicitly false, and `Version` is not the source's copied value
-- [ ] **AC-05** — Given the clone, when its caption is read, then it equals the source's on BOTH the manager item and the instance
-- [ ] **AC-06** — Given the clone was materialised, when the SOURCE instance in the manager cache is inspected, then its elements' `Outgoings`/`Incomings` counts and its `Group` resource binding are unchanged
-- [ ] **AC-ERR** — Given the metadata cannot be materialised, when the operation returns, then it reports `success:false` and no schema was registered
+- [x] **AC-01** — Given a source process, when the clone is materialised, then it comes from the source's serialized metadata with the source schema UId replaced throughout and `CreatedInOwnerSchemaUId` (`BL8`) repaired back to the original
+- [x] **AC-02** — Given the materialised clone, when its elements are inspected, then no element holds a reference to the source schema and none shares a `LocalizableString` instance with it
+- [x] **AC-03** — Given the clone, when its `ParentSchemaUId` is read, then it equals the family root — the root's own UId when the source is the root, and the root (never the source) when the source is itself a version
+- [x] **AC-04** — Given the clone, when `IsActiveVersion` and `IsDelivered` are read, then both are explicitly false, and `Version` is not the source's copied value
+- [x] **AC-05** — Given the clone, when its caption is read, then it equals the source's on BOTH the manager item and the instance
+- [x] **AC-06** — Given the clone was materialised, when the SOURCE instance in the manager cache is inspected, then its elements' `Outgoings`/`Incomings` counts and its `Group` resource binding are unchanged
+- [x] **AC-ERR** — Given the metadata cannot be materialised, when the operation returns, then it reports `success:false` and no schema was registered
 
 ## Implementation Notes
 
@@ -55,18 +55,45 @@ Test naming: `MethodName_ShouldBehavior_WhenCondition`
 
 ## Definition of Done
 
-- [ ] The diff against a designer-made version is attached to the PR — a unit test cannot establish this
-- [ ] An assertion over the SOURCE instance's `Outgoings` counts and `Group` binding exists, because a row comparison cannot see this class of defect
-- [ ] Code compiles clean; tests use fixture-level `[TestFixture(Category = "UnitTests")]` — this repo's convention, and the opposite of clio's
-- [ ] Workspace-diary entry added (`CLAUDE.md:131-150`) — mandatory in this repo
+- [ ] The diff against a designer-made version is attached to the PR — a unit test cannot establish this. **NOT DONE, and not deferrable to effort**: this story persists nothing, so half of that diff does not exist yet. It belongs with the save (story 12) and is recorded there.
+- [x] An assertion over the SOURCE instance's `Outgoings` counts and `Group` binding exists, because a row comparison cannot see this class of defect
+- [x] Code compiles clean; tests use fixture-level `[TestFixture(Category = "UnitTests")]` — this repo's convention, and the opposite of clio's
+- [x] Workspace-diary entry added (`CLAUDE.md:131-150`) — mandatory in this repo
 - [ ] PR description references this story file
-- [ ] `docs/process-builder-architecture.md` and `.puml` updated together
-- [ ] ClioRing MCP compatibility verdict recorded (`AGENTS.md:241-299`)
+- [x] `docs/process-builder-architecture.md` and `.puml` updated together
+- [x] ClioRing MCP compatibility verdict recorded — the anchor `AGENTS.md:241-299` does not resolve in this repository (no `AGENTS.md`; `CLAUDE.md` is 150 lines with no ClioRing section). Verdict: no MCP surface changes, nothing for ClioRing to be compatible with until stories 16-17.
 
 ## Dev Agent Record
 
-{Left blank — filled by dev agent during implementation}
-- Implementation started: 
-- Implementation completed: 
-- Tests passing: 
-- Notes: 
+- Implementation started: 2026-09-04
+- Implementation completed: 2026-09-04
+- Tests passing: `dotnet test tests/CrtProcessBuilder/CrtProcessBuilder.Tests.csproj -c dev-nf` → **944 passed, 0 failed** (10 new in `ProcessVersionCloneFactoryTests`). Build clean, 0 warnings.
+- Notes:
+  - **The platform's own clone helper is unreachable, but its parts are not.** `CloneSchemaUsingMetaData`
+    is private and `SaveClonedSchema` is protected — and the latter deliberately RESETS versioning
+    (`Version = 0`, `ParentSchemaUId = DefSchema.UId`, `IsActiveVersion = true`), so it is Copy, not
+    Version. The pieces are public: `GetMetaDataSerializer` is `public override` on
+    `BaseProcessSchemaManager:1114` even though `IInternalSchemaManager`, which declares it, is
+    `internal`; `ProcessJsonDataReader`, `ProcessJsonMetaDataSerializer` and
+    `MetaItem.ReadMetaData/WriteMetaData` are public too. Nothing in the platform is touched.
+  - The serializer's envelope must be stepped into — `Read(); ReadInto(); ReadInto();` before
+    `ReadMetaData` — exactly as the platform's clone path does. That framing lives in the repository, not
+    in a caller.
+  - **`BL8` is per ELEMENT, not per schema.** `CreatedInOwnerSchemaUId` is on `ProcessSchemaBaseElement`.
+    Only the elements whose key the replace rewrote (source UId → clone UId) are repaired; ones inherited
+    from an ancestor carry that ancestor's UId and repairing them would be a second defect.
+  - **The family-root test is not a null check.** A non-version process carries
+    `ParentSchemaUId == manager.GetDefSchemaUId()`, not `Guid.Empty`, so "the source is itself a version"
+    is `parent != Empty && parent != defSchemaUId` — the predicate the platform's client composer uses. A
+    server-side copy of `ParentSchemaUId` would root the family at the BASE process schema. Both halves
+    are set: the schema's `ParentSchemaUId` (which the save translates into `SysSchema.ParentId`) and the
+    manager item's `ParentUId` (which `GetAllVersionItems` reads).
+  - **Deviation from the Test Requirements table, argued:** the clone tests live in a NEW fixture
+    `ProcessVersionCloneFactoryTests` rather than in `ProcessVersionSaveHandlerTests`. AC-02 and AC-06
+    need REAL `ProcessSchema` objects, so the fixture must inherit `BaseComposableAppTestFixture`, while
+    the story-9 handler fixture is deliberately plain NUnit. One fixture cannot be both.
+  - **`ProcessExists(Guid)` from story 9 was removed.** `FindSchemaItem(Guid)` is the same `FindItemByUId`
+    pre-validation and the handler needs the item anyway; two members for one question was one too many.
+    AC-ERR of story 9 still holds through the surviving member.
+  - Runtime self-verification not performed: this story persists nothing and the operation is still
+    unreachable through clio. It becomes meaningful at story 12.
