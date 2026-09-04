@@ -40,7 +40,15 @@ public class DescribeProcessOptions : EnvironmentOptions {
 public class DescribeProcessCommand(IProcessDescriber describer, ILogger logger)
 	: Command<DescribeProcessOptions> {
 
-	private static readonly JsonSerializerOptions OutputOptions = new() {
+	/// <summary>
+	/// The options this command's JSON output is written with — <c>internal</c> so tests can assert against the
+	/// REAL object rather than a copy.
+	/// <para>Not a formality: two tests claimed to re-serialize "with the SAME options DescribeProcessCommand
+	/// uses" via a hand copy, and deleting <c>DefaultIgnoreCondition</c> here left the whole unit suite green
+	/// while every plain flow began shipping <c>"condition": null</c> to the caller — which is precisely what
+	/// those tests exist to prevent. A copy of a value cannot pin the value.</para>
+	/// </summary>
+	internal static readonly JsonSerializerOptions OutputOptions = new() {
 		WriteIndented = true,
 		DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull
 	};

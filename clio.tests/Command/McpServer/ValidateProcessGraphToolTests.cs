@@ -81,6 +81,48 @@ public sealed class ValidateProcessGraphToolTests {
 
 	[Test]
 	[Category("Unit")]
+	[Description("An UNKNOWN flow-kind is refused rather than treated as a plain sequence flow. The parser used to fall through to sequence for anything it did not recognise, so a typo ('conditionnal') validated a graph nobody described - and in the reassuring direction, because a plain flow violates fewer rules than a conditional one. A tool whose whole job is catching a mistake before the designer is driven must not silently correct the input.")]
+	public void Validate_ShouldRefuseTheCall_WhenFlowKindIsUnknown() {
+		// Arrange
+		List<ProcessGraphNodeArg> nodes = [N("s", "startEvent"), N("a", "activityUserTask"), N("e", "endEvent")];
+		List<ProcessGraphEdgeArg> edges = [E("s", "a"), E("a", "e", "conditionnal")];
+
+		// Act
+		ValidateProcessGraphResponse response = Validate(nodes, edges);
+
+		// Assert
+		response.Success.Should().BeFalse(
+			because: "an unrecognised flow-kind is a caller mistake, and answering about a different graph hides it");
+		response.Error.Should().Contain("conditionnal",
+			because: "the caller cannot fix a rejected value it is not shown");
+		response.Error.Should().Contain("conditional",
+			because: "the refusal has to name the legal values, or the caller guesses again");
+		response.HasErrors.Should().BeNull(
+			because: "the graph was never validated, so there is no answer about its rules - and while this "
+				+ "was a non-nullable bool the payload said \"has-errors\": false, which this tool's own "
+				+ "description advertises and the shipped prompt tells the agent to branch on, so a graph "
+				+ "nobody looked at read as a graph with nothing wrong");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("An OMITTED flow-kind is still a plain sequence flow. That is the documented default and the common case, so refusing an unknown kind must not turn the optional field into a required one.")]
+	public void Validate_ShouldTreatAnOmittedFlowKindAsSequence() {
+		// Arrange
+		List<ProcessGraphNodeArg> nodes = [N("s", "startEvent"), N("r", "readDataUserTask"), N("e", "endEvent")];
+		List<ProcessGraphEdgeArg> edges = [new("s", "r", null), new("r", "e", null)];
+
+		// Act
+		ValidateProcessGraphResponse response = Validate(nodes, edges);
+
+		// Assert
+		response.Success.Should().BeTrue(because: "flow-kind is optional and defaults to a plain sequence flow");
+		response.HasErrors.Should().BeFalse(
+			because: "Start -> Read data -> End over two plain flows violates no rule");
+	}
+
+	[Test]
+	[Category("Unit")]
 	[Description("R14: a default flow with no sibling conditional (conditional/default flow-kinds are parsed) surfaces an error.")]
 	public void Validate_ShouldSurfaceR14Error_WhenDefaultFlowHasNoSiblingConditional() {
 		// Arrange

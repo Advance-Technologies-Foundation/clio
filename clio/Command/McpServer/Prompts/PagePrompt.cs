@@ -13,13 +13,13 @@ public static class PagePrompt {
 	/// <summary>
 	/// Builds a prompt for inspecting a Freedom UI page before editing it.
 	/// </summary>
-	[McpServerPrompt(Name = PageGetTool.ToolName), Description("Prompt to inspect a Freedom UI page bundle and raw body")]
+	[McpServerPrompt(Name = PageGetTool.ToolName), Description("Prompt to inspect a Freedom UI page bundle and the materialized body file")]
 	public static string GetPage(
 		[Required] [Description("Freedom UI page schema name")] string schemaName,
 		[Description("Optional Creatio environment name")] string? environmentName = null) =>
 		$"""
 		 For the canonical existing-app maintenance flow, call `{GuidanceGetTool.ToolName}` with `name` set to `existing-app-maintenance`.
-		 For any page-body modification, call `{GuidanceGetTool.ToolName}` with `name` set to `page-modification` before editing `raw.body`; follow its pre-edit checklist to route localizable strings, converters, handlers, validators, SDK calls, and business-rule requirements to specialized guides.
+		 For any page-body modification, call `{GuidanceGetTool.ToolName}` with `name` set to `page-modification` before editing the body file `get-page` writes at `files.bodyFile` (get-page REPLACES the `.clio-pages` directory of that schema on every call, so an in-place edit is destroyed by the next `get-page` of that schema \u2014 send it through `update-page` / `sync-pages`); follow its pre-edit checklist to route localizable strings, converters, handlers, validators, SDK calls, and business-rule requirements to specialized guides.
 		 If the page-body task edits `handlers`, you must call `{GuidanceGetTool.ToolName}` with `name` set to `page-schema-handlers` before proposing or applying changes, and you must not author handler changes until that guidance has been read.
 		 If the page-body task edits `validators`, you must call `{GuidanceGetTool.ToolName}` with `name` set to `page-schema-validators` before proposing or applying changes, and you must not author validator changes until that guidance has been read; never use handler signatures like `handler(request, next)` inside SCHEMA_VALIDATORS — validators must return a function that accepts a control argument, not a request/next pair.
 		 If the requirement is field-value validation such as max/min/length/range/regex, including when the threshold comes from a system setting or other async SDK read, treat it as `validators` work and read `page-schema-validators`, not `page-schema-handlers`.
