@@ -78,7 +78,7 @@ public class ModifyBusinessProcessTool(
 		 + "element and its flows; partial update: omit on to keep the current change type, omit entity to keep the "
 		 + "current one (retargeting it clears any old-entity filter), omit changedColumns to clear column tracking; "
 		 + "changedColumns is valid only for on:modified), setElement (elementName + an 'elementUpdate':"
-		 + "{useBackgroundMode?, readData?, changeData?, email?, performer?} — changes element-level fields IN PLACE, preserving the element and its "
+		 + "{useBackgroundMode?, readData?, changeData?, email?, performer?, openEditPage?} — changes element-level fields IN PLACE, preserving the element and its "
 		 + "flows; only the fields you pass change. useBackgroundMode applies to ANY element kind. readData "
 		 + "{source?, mode?:first, columns?, sort?:{column, direction?:asc|desc}} reconfigures a readData element's "
 		 + "data configuration: omit source to keep the current source object, omit columns/sort to keep the current "
@@ -121,6 +121,24 @@ public class ModifyBusinessProcessTool(
 		 + "to open the page for); re-applying replaces the choice in place. REFUSED on every other element kind, "
 		 + "the retired CallUserTask by name — its runtime IGNORES the assignment, so writing it there would "
 		 + "assign nobody silently; model a call as performTask + ActivityCategory instead), "
+		 + "openEditPage "
+		 + "(Open edit page elements only, same block as create-business-process) reconfigures the element IN "
+		 + "PLACE: every omitted field keeps its stored value. A supplied defaultValues array REPLACES the whole "
+		 + "set, and [] REMOVES every pre-filled value — the one way to empty that block. An object-bound field "
+		 + "(defaultValues, recordId, resultsByColumn) needs NO page here: it resolves against the object the "
+		 + "element already STORES. Changing the page to one of ANOTHER OBJECT, and changing the editMode, are "
+		 + "DESTRUCTIVE and guarded, mirroring the designer. Both REQUIRE the new mode-specific value in the same "
+		 + "update (defaultValues "
+		 + "for add, recordId for edit); a refused update leaves the element untouched, and a completed switch "
+		 + "CLEARS the branch being left. A page change that also changes the OBJECT is refused while "
+		 + "object-bound configuration is stored (the completion conditions and the resultsByColumn column), "
+		 + "naming the order to use. The completion mode is validated against the element's STORED filter here, "
+		 + "since setElement carries no filter field: set the conditions with setFilter in the same batch or "
+		 + "earlier, and going BACK to onSave needs clearFilter first in the same ordered batch. A performer block "
+		 + "REPLACES the whole assignment (type, contact/role and showPage together), so pass every part you want "
+		 + "kept; omitting the block leaves the stored assignment alone. A logActivity block writes only the parts "
+		 + "you pass, and each interval you pass writes BOTH its number and its unit. See get-guidance "
+		 + "name=process-modeling for what each of these rules is protecting), "
 		 + "setConnections (elementName + 'connections':[{column, and exactly ONE source of recordId (+optional "
 		 + "referenceSchema, which is a CHECK not a source) | processParameter | sourceElement + "
 		 + "sourceElementParameter | expression}] — binds the 'Connected to' links of the Activity the "
@@ -225,7 +243,7 @@ public sealed record ModifyBusinessProcessArgs(
 	string EnvironmentName,
 
 	[property: JsonPropertyName("operations")]
-	[property: Description("Inline JSON operations array, e.g. [{\"op\":\"removeElement\",\"elementName\":\"StartEvent1\"}].")]
+	[property: Description("The operations array SERIALIZED AS A JSON STRING - not a nested array. Passing a real array fails with \"Cannot get the value of a token type 'StartArray' as a string\". e.g. \"[{\\\"op\\\":\\\"removeElement\\\",\\\"elementName\\\":\\\"StartEvent1\\\"}]\".")]
 	[property: Required]
 	string Operations,
 

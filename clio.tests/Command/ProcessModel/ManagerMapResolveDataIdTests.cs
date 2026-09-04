@@ -52,6 +52,10 @@ public sealed class ManagerMapResolveDataIdTests {
 	[TestCase("userTask", ManagerMap.EventType.UserTask)]
 	[TestCase("emailTemplateUserTask", ManagerMap.EventType.UserTask)]
 	[TestCase("sendEmail", ManagerMap.EventType.UserTask)]
+	[TestCase("openEditPageUserTask", ManagerMap.EventType.UserTask)]
+	// The dedicated build token, which does NOT end with the "usertask" suffix the fallback arm matches on — so a
+	// missing explicit entry would resolve a VALID graph to Unknown and validate-process-graph would reject it.
+	[TestCase("openEditPage", ManagerMap.EventType.UserTask)]
 	[TestCase("formulaTask", ManagerMap.EventType.FormulaTask)]
 	[TestCase("scriptTask", ManagerMap.EventType.ScriptTask)]
 	[TestCase("webService", ManagerMap.EventType.WebServiceTask)]

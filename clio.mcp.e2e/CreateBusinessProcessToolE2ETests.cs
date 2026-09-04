@@ -46,6 +46,21 @@ public sealed class CreateBusinessProcessToolE2ETests {
 	private const string ElementSourceOutput = "ActivityResult";
 	private const string ElementTargetInput = "UserId";
 
+	// Open edit page (ENG-92715). AccountPageV2 is the base product's Classic Account edit page and is registered
+	// on the Accounts section, so it is inside the designer's own candidate set on any stand. It also belongs to an
+	// UNTYPED object, which is what keeps these tests free of a recordType discriminator. Swap the pair if a stand
+	// lacks it - any section-registered edit page of an untyped object works.
+	private const string OpenEditPageName = "AccountPageV2";
+	private const string OpenEditPageObject = "Account";
+
+	// A lookup column present on Account on every environment, so the results list needs no seeded metadata.
+	private const string OpenEditPageResultColumn = "Owner";
+
+	// A platform role present on every environment, so the name-resolution path can be exercised without seeding data.
+	private const string OpenEditPagePerformerRole = "All employees";
+	// A text column of that object, for the add-mode pre-filled value: a constant is only storable on a TEXT column.
+	private const string OpenEditPageTextColumn = "Address";
+
 	[Test]
 	[Description("Starts the real clio MCP server and verifies create-business-process is discoverable via the get-tool-contract compact index (hermetic).")]
 	[AllureTag(ToolName)]
@@ -660,6 +675,385 @@ public sealed class CreateBusinessProcessToolE2ETests {
 	// A sendEmail element carrying a custom-message HTML body with a distinctive probe token, so the describe read-back
 	// proves the body round-tripped (build stores it as a ConstValue on the Body parameter, describe decodes it) rather
 	// than just that a sendEmail element exists. StartEvent1 -> SendEmail1 -> EndEvent1 is a minimal valid graph.
+
+	[Test]
+	[Description("Over the real MCP path, create-business-process builds an openEditPage element in ADD mode with a pre-filled column value, and describe-business-process reads the whole block back. This is the ONLY place the page-candidate query is exercised end to end: the unit tests substitute that reader, so the SysModule/SysModuleEntity/SysModuleEdit join, the SysSchema name resolution and the derivation of the object from the page are proven here and nowhere else.")]
+	[AllureTag(ToolName)]
+	[AllureName("create-business-process builds an openEditPage add-mode element and describe reads it back")]
+	public async Task CreateBusinessProcess_Should_BuildOpenEditPageAddMode_AndReadItBack() {
+		// Arrange
+		await using ArrangeContext context = await ArrangeAsync(requireReachableEnvironment: true);
+		string processName = $"UsrClioBpOpenEditPageAddE2e{Guid.NewGuid():N}";
+
+		// Act
+		CallToolResult callResult = await CallToolAsync(context, new Dictionary<string, object?> {
+			["environment-name"] = context.EnvironmentName,
+			["descriptor"] = BuildOpenEditPageAddDescriptor(processName)
+		});
+
+		// Assert
+		callResult.IsError.Should().NotBeTrue(
+			because: "an openEditPage element with a page and pre-filled values must build without a transport error");
+		// The success LINE, not merely the name: the command logs "Building process '<name>'..." BEFORE it calls the
+		// server, so a name match alone also passes when the build then fails - and a rejected descriptor would then
+		// surface as an unrelated describe parse error instead of the real server message.
+		JsonSerializer.Serialize(callResult).Should().Contain("created (UId:",
+			because: "only a genuinely successful build logs the created-schema line (run against an environment whose "
+				+ "ProcessDesignService package supports the openEditPage element)");
+
+		DescribeProcessResult graph = ParseDescribeGraph(await DescribeAsync(context, processName));
+		DescribedElement element = graph.Elements.Single(node => node.Name == "OpenPage1");
+		element.BuildType.Should().Be("openeditpage",
+			because: "an Open edit page element round-trips to the dedicated openEditPage build token, not the generic "
+				+ "userTask - which is what the handler registration order guarantees");
+		element.OpenEditPage.Should().NotBeNull(
+			because: "describe surfaces the element's configuration in its own openEditPage block");
+		element.OpenEditPage!.Page.Should().Be(OpenEditPageName,
+			because: "the stored page UId resolves back to the name the descriptor asked for - the SysSchema read");
+		element.OpenEditPage.Object.Should().Be(OpenEditPageObject,
+			because: "the object is DERIVED from the page by the candidate query, never supplied by the caller, so "
+				+ "reading it back is what proves that query ran against the real tables");
+		element.OpenEditPage.EditMode.Should().Be("add",
+			because: "the stored RecordEditMode maps back to the token the caller used");
+		element.OpenEditPage.PageTypeUId.Should().BeNull(
+			because: "the target object is untyped, so no record type is stored - the same result all three designer "
+				+ "captures show");
+		element.OpenEditPage.CompletionMode.Should().Be("onSave",
+			because: "the completion mode is written explicitly at create, so describe can report it rather than "
+				+ "answering 'no mode' for an element that completes on save");
+		element.OpenEditPage.Recommendation.Should().Be("Fill in the account details",
+			because: "the recommendation is stored as a single-line constant and round-trips");
+		element.OpenEditPage.DefaultValues.Should().NotBeNullOrEmpty(
+			because: "the pre-filled column value must read back - it is stored through the platform's own packer, so "
+				+ "an empty read here would mean the designer card cannot show it either");
+		JsonSerializer.Serialize(element.OpenEditPage.DefaultValues).Should().Contain(OpenEditPageTextColumn,
+			because: "the read-back names the column that was pre-filled");
+	}
+
+	[Test]
+	[Description("Over the real MCP path, create-business-process builds an openEditPage element in EDIT mode whose record comes from a signalStart element's RecordId output, and describe reads the block back. This pairs the element with the trigger it is used with in practice, and exercises the element-output value source rather than a fixed record id.")]
+	[AllureTag(ToolName)]
+	[AllureName("create-business-process builds an openEditPage edit-mode element from a trigger record")]
+	public async Task CreateBusinessProcess_Should_BuildOpenEditPageEditMode_FromTriggerRecord() {
+		// Arrange
+		await using ArrangeContext context = await ArrangeAsync(requireReachableEnvironment: true);
+		string processName = $"UsrClioBpOpenEditPageEditE2e{Guid.NewGuid():N}";
+
+		// Act
+		CallToolResult callResult = await CallToolAsync(context, new Dictionary<string, object?> {
+			["environment-name"] = context.EnvironmentName,
+			["descriptor"] = BuildOpenEditPageEditDescriptor(processName)
+		});
+
+		// Assert
+		callResult.IsError.Should().NotBeTrue(
+			because: "an edit-mode element taking its record from an earlier element's output must build cleanly");
+		JsonSerializer.Serialize(callResult).Should().Contain("created (UId:",
+			because: "only a successful build logs the created-schema line");
+
+		DescribeProcessResult graph = ParseDescribeGraph(await DescribeAsync(context, processName));
+		DescribedElement element = graph.Elements.Single(node => node.Name == "OpenPage1");
+		element.OpenEditPage.Should().NotBeNull(because: "the element is configured, so it reports its block");
+		element.OpenEditPage!.EditMode.Should().Be("edit",
+			because: "edit mode is what makes the element open an EXISTING record");
+		element.OpenEditPage.RecordId.Should().NotBeNull(
+			because: "edit mode requires a record, so the read-back must report which one it opens");
+		element.OpenEditPage.DefaultValues.Should().BeNullOrEmpty(
+			because: "pre-filled values belong to add mode only and the write path refuses them here, so an edit-mode "
+				+ "element must come back without any");
+	}
+
+	[Test]
+	[Description("Over the real MCP path, create-business-process turns on an openEditPage element's results-by-column list against a real LOOKUP column, and describe resolves the stored UId back to the column name. Only a stand proves this end: the column is stored as a UId resolved through the platform's own metadata, so a wrong encoding would read back as 'no column' rather than failing the build.")]
+	[AllureTag(ToolName)]
+	[AllureName("create-business-process configures an openEditPage results-by-column list")]
+	public async Task CreateBusinessProcess_Should_ConfigureOpenEditPageResultsByColumn() {
+		// Arrange
+		await using ArrangeContext context = await ArrangeAsync(requireReachableEnvironment: true);
+		string processName = $"UsrClioBpOpenEditPageResultsE2e{Guid.NewGuid():N}";
+
+		// Act
+		CallToolResult callResult = await CallToolAsync(context, new Dictionary<string, object?> {
+			["environment-name"] = context.EnvironmentName,
+			["descriptor"] = BuildOpenEditPageResultsByColumnDescriptor(processName)
+		});
+
+		// Assert
+		callResult.IsError.Should().NotBeTrue(
+			because: "Owner is a lookup column on Account on every environment, so the list must configure cleanly");
+		JsonSerializer.Serialize(callResult).Should().Contain("created (UId:",
+			because: "IsError stays null on a refusal, so without the success line a refused build surfaces as an "
+				+ "unrelated failure inside the describe step instead of as the server's refusal");
+		DescribeProcessResult graph = ParseDescribeGraph(await DescribeAsync(context, processName));
+		DescribedOpenEditPageResultsByColumn results = graph.Elements
+			.Single(node => node.Name == "OpenPage1").OpenEditPage!.ResultsByColumn;
+		results.Should().NotBeNull(because: "describe is how a caller sees which results a step offers");
+		results!.Enabled.Should().BeTrue(because: "naming a column turns the list on");
+		results.Column.Should().Be(OpenEditPageResultColumn,
+			because: "the stored UId resolved back to the column name, which is what proves the write used the "
+				+ "platform's own column identifier rather than the name");
+		results.ColumnUId.Should().NotBeNullOrWhiteSpace(
+			because: "an empty UId here would mean the column never landed, however successful the build looked");
+	}
+
+	[Test]
+	[Description("Over the real MCP path, create-business-process configures an openEditPage element's Log activity block and describe reads every scheduling PAIR back with its unit. Only a real server proves the pairing: each interval is two independent platform parameters, and a stand is the only place that shows both members actually landed - a number stored without its period would read back with a null unit here rather than failing anywhere.")]
+	[AllureTag(ToolName)]
+	[AllureName("create-business-process configures an openEditPage element's Log activity block")]
+	public async Task CreateBusinessProcess_Should_ConfigureOpenEditPageLogActivity() {
+		// Arrange
+		await using ArrangeContext context = await ArrangeAsync(requireReachableEnvironment: true);
+		string processName = $"UsrClioBpOpenEditPageActivityE2e{Guid.NewGuid():N}";
+
+		// Act
+		CallToolResult callResult = await CallToolAsync(context, new Dictionary<string, object?> {
+			["environment-name"] = context.EnvironmentName,
+			["descriptor"] = BuildOpenEditPageLogActivityDescriptor(processName)
+		});
+
+		// Assert
+		callResult.IsError.Should().NotBeTrue(because: "a logged activity with paired intervals must build cleanly");
+		JsonSerializer.Serialize(callResult).Should().Contain("created (UId:",
+			because: "only a successful build logs the created-schema line");
+
+		DescribeProcessResult graph = ParseDescribeGraph(await DescribeAsync(context, processName));
+		DescribedOpenEditPageLogActivity activity = graph.Elements
+			.Single(node => node.Name == "OpenPage1").OpenEditPage!.LogActivity;
+		activity.Should().NotBeNull(
+			because: "the element stores the block, and describe is how a caller confirms an activity is logged at all");
+		activity!.Enabled.Should().BeTrue(
+			because: "supplying the block turns the gate on - without it the platform creates no activity and every "
+				+ "scheduling field below is inert");
+		activity.Duration!.Value.Should().Be(20, because: "the amount reached the server as written");
+		activity.Duration.Unit.Should().Be("minutes",
+			because: "the PERIOD member landed too and decoded back - a unit of null here would mean the number was "
+				+ "stored alone, measured in whatever the schema default happened to be");
+		activity.RemindIn!.Unit.Should().Be("hours", because: "each interval carries its own unit independently");
+		activity.ShowInCalendar.Should().BeTrue(because: "the calendar flag persists as written");
+	}
+
+	[Test]
+	[Description("Over the real MCP path, create-business-process assigns an openEditPage element to a ROLE named by name, and describe reads the assignment back. Only a real environment can prove this end of it: the role name is resolved against SysAdminUnit, and the assignment lives on a RoleId parameter the user-task schema does not declare - the element has to grow it, exactly as the designer does, or the designer card shows no performer at all.")]
+	[AllureTag(ToolName)]
+	[AllureName("create-business-process assigns an openEditPage element to a role by name")]
+	public async Task CreateBusinessProcess_Should_AssignOpenEditPagePerformer_ByRoleName() {
+		// Arrange
+		await using ArrangeContext context = await ArrangeAsync(requireReachableEnvironment: true);
+		string processName = $"UsrClioBpOpenEditPagePerformerE2e{Guid.NewGuid():N}";
+
+		// Act
+		CallToolResult callResult = await CallToolAsync(context, new Dictionary<string, object?> {
+			["environment-name"] = context.EnvironmentName,
+			["descriptor"] = BuildOpenEditPagePerformerDescriptor(processName)
+		});
+
+		// Assert
+		callResult.IsError.Should().NotBeTrue(
+			because: "a role named by name must resolve on a real environment - All employees is a platform role "
+				+ "present on every stand");
+		JsonSerializer.Serialize(callResult).Should().Contain("created (UId:",
+			because: "only a successful build logs the created-schema line");
+
+		DescribeProcessResult graph = ParseDescribeGraph(await DescribeAsync(context, processName));
+		DescribedPerformer performer = graph.Elements
+			.Single(node => node.Name == "OpenPage1").OpenEditPage!.Performer;
+		performer.Should().NotBeNull(
+			because: "the assignment is stored on the element's own options, so a null here would mean the designer "
+				+ "card renders an unassigned step whatever the parameters say");
+		performer!.Type.Should().Be("role",
+			because: "the stored assignment type is what the read-back derives the kind from");
+		performer.Role.Should().NotBeNullOrWhiteSpace(
+			because: "the role macro must be written on the dynamically CREATED RoleId parameter - an empty read here "
+				+ "would mean the parameter was never added, which no schema-declared lookup would reveal");
+		performer.RoleDisplay.Should().Be(OpenEditPagePerformerRole,
+			because: "the name the caller used is kept as the display value, so a human opening the element sees a "
+				+ "role name rather than a GUID");
+		performer.ShowPage.Should().BeFalse(
+			because: "the flag is written explicitly at create — so describe can report it rather than leaving it to an "
+				+ "unreportable schema default — but its VALUE follows the performer, and a ROLE performer cannot have "
+				+ "the page open by itself: the platform opens it only for the user a step is assigned to, and the "
+				+ "designer disables that checkbox for role/manager");
+	}
+
+	[Test]
+	[Description("Over the real MCP path, a page the process designer does NOT offer is REFUSED rather than stored. This is the protective half of the page rule: the designer resolves a stored page against its own candidate list, so an unlisted one would render 'Which page to open?' empty and lose the element's configuration on the next human save.")]
+	[AllureTag(ToolName)]
+	[AllureName("create-business-process refuses a page outside the designer's candidate set")]
+	public async Task CreateBusinessProcess_Should_RefuseOpenEditPage_WhenPageIsNotOffered() {
+		// Arrange
+		await using ArrangeContext context = await ArrangeAsync(requireReachableEnvironment: true);
+		string processName = $"UsrClioBpOpenEditPageRefuseE2e{Guid.NewGuid():N}";
+
+		// Act
+		CallToolResult callResult = await CallToolAsync(context, new Dictionary<string, object?> {
+			["environment-name"] = context.EnvironmentName,
+			["descriptor"] = BuildOpenEditPageUnlistedPageDescriptor(processName)
+		});
+
+		// Assert
+		string callResultJson = JsonSerializer.Serialize(callResult);
+		callResultJson.Should().NotContain("created (UId:",
+			because: "the build must be refused, not saved - storing an unshowable page is the silent data-loss case "
+				+ "this rule exists to prevent");
+		callResultJson.Should().Contain("not a page the process designer can open",
+			because: "the refusal has to say WHY and point at how to find a valid page, or the caller cannot act on it");
+	}
+
+	private static string BuildOpenEditPageAddDescriptor(string processName) =>
+		$$"""
+		{
+		  "name": "{{processName}}",
+		  "caption": "Clio BP Open Edit Page Add E2E",
+		  "packageName": "Custom",
+		  "elements": [
+		    { "name": "StartEvent1", "type": "startEvent" },
+		    { "name": "OpenPage1", "type": "openEditPage", "caption": "Open the account page",
+		      "openEditPage": {
+		        "page": "{{OpenEditPageName}}",
+		        "editMode": "add",
+		        "recommendation": "Fill in the account details",
+		        "hint": "Confirm the billing address with the customer",
+		        "defaultValues": [ { "column": "{{OpenEditPageTextColumn}}", "value": "ClioOpenEditPageProbe" } ],
+		        "completion": { "mode": "onSave" }
+		      } },
+		    { "name": "EndEvent1", "type": "endEvent" }
+		  ],
+		  "flows": [
+		    { "source": "StartEvent1", "target": "OpenPage1" },
+		    { "source": "OpenPage1", "target": "EndEvent1" }
+		  ]
+		}
+		""";
+
+	// A results-by-column list on a lookup column that exists on Account everywhere, so the test needs no seeding.
+	private static string BuildOpenEditPageResultsByColumnDescriptor(string processName) =>
+		$$"""
+		{
+		  "name": "{{processName}}",
+		  "caption": "Clio BP Open Edit Page Results By Column E2E",
+		  "packageName": "Custom",
+		  "elements": [
+		    { "name": "StartEvent1", "type": "startEvent" },
+		    { "name": "OpenPage1", "type": "openEditPage", "caption": "Fill in the account",
+		      "openEditPage": {
+		        "page": "{{OpenEditPageName}}",
+		        "editMode": "add",
+		        "recommendation": "Fill in the account details",
+		        "resultsByColumn": { "column": "{{OpenEditPageResultColumn}}" }
+		      } },
+		    { "name": "EndEvent1", "type": "endEvent" }
+		  ],
+		  "flows": [
+		    { "source": "StartEvent1", "target": "OpenPage1" },
+		    { "source": "OpenPage1", "target": "EndEvent1" }
+		  ]
+		}
+		""";
+
+	// A logged activity with two of the three scheduling pairs set to DIFFERENT units, so a server that mixed the
+	// period parameters up would be caught by the read-back rather than passing on symmetry.
+	private static string BuildOpenEditPageLogActivityDescriptor(string processName) =>
+		$$"""
+		{
+		  "name": "{{processName}}",
+		  "caption": "Clio BP Open Edit Page Log Activity E2E",
+		  "packageName": "Custom",
+		  "elements": [
+		    { "name": "StartEvent1", "type": "startEvent" },
+		    { "name": "OpenPage1", "type": "openEditPage", "caption": "Fill in the account",
+		      "openEditPage": {
+		        "page": "{{OpenEditPageName}}",
+		        "editMode": "add",
+		        "recommendation": "Fill in the account details",
+		        "logActivity": {
+		          "duration": { "value": 20, "unit": "minutes" },
+		          "remindIn": { "value": 2, "unit": "hours" },
+		          "showInCalendar": true
+		        }
+		      } },
+		    { "name": "EndEvent1", "type": "endEvent" }
+		  ],
+		  "flows": [
+		    { "source": "StartEvent1", "target": "OpenPage1" },
+		    { "source": "OpenPage1", "target": "EndEvent1" }
+		  ]
+		}
+		""";
+
+	// A performer assigned by ROLE NAME. The role is resolved server-side against SysAdminUnit, so this descriptor is
+	// also what proves the name-resolution path against real data rather than a substituted reader.
+	private static string BuildOpenEditPagePerformerDescriptor(string processName) =>
+		$$"""
+		{
+		  "name": "{{processName}}",
+		  "caption": "Clio BP Open Edit Page Performer E2E",
+		  "packageName": "Custom",
+		  "elements": [
+		    { "name": "StartEvent1", "type": "startEvent" },
+		    { "name": "OpenPage1", "type": "openEditPage", "caption": "Open the account page",
+		      "openEditPage": {
+		        "page": "{{OpenEditPageName}}",
+		        "editMode": "add",
+		        "recommendation": "Fill in the account details",
+		        "performer": { "type": "role", "role": "{{OpenEditPagePerformerRole}}" }
+		      } },
+		    { "name": "EndEvent1", "type": "endEvent" }
+		  ],
+		  "flows": [
+		    { "source": "StartEvent1", "target": "OpenPage1" },
+		    { "source": "OpenPage1", "target": "EndEvent1" }
+		  ]
+		}
+		""";
+
+	// Edit mode taking its record from the signal that STARTED the process - the shape this element is actually used
+	// in, and the one that exercises the element-output value source instead of a fixed record id.
+	private static string BuildOpenEditPageEditDescriptor(string processName) =>
+		$$"""
+		{
+		  "name": "{{processName}}",
+		  "caption": "Clio BP Open Edit Page Edit E2E",
+		  "packageName": "Custom",
+		  "elements": [
+		    { "name": "Start1", "type": "signalStart",
+		      "signal": { "entity": "{{OpenEditPageObject}}", "on": "added" } },
+		    { "name": "OpenPage1", "type": "openEditPage", "caption": "Review the new account",
+		      "openEditPage": {
+		        "page": "{{OpenEditPageName}}",
+		        "editMode": "edit",
+		        "recommendation": "Review the account that was just created",
+		        "recordId": { "sourceElement": "Start1", "sourceElementParameter": "RecordId" }
+		      } },
+		    { "name": "EndEvent1", "type": "endEvent" }
+		  ],
+		  "flows": [
+		    { "source": "Start1", "target": "OpenPage1" },
+		    { "source": "OpenPage1", "target": "EndEvent1" }
+		  ]
+		}
+		""";
+
+	// A real schema that is NOT a section-registered edit page. ProcessSchemaManager is a configuration schema that
+	// exists on every stand, so the refusal proves the CANDIDATE-SET check rather than a name-resolution failure.
+	private static string BuildOpenEditPageUnlistedPageDescriptor(string processName) =>
+		$$"""
+		{
+		  "name": "{{processName}}",
+		  "caption": "Clio BP Open Edit Page Refusal E2E",
+		  "packageName": "Custom",
+		  "elements": [
+		    { "name": "StartEvent1", "type": "startEvent" },
+		    { "name": "OpenPage1", "type": "openEditPage",
+		      "openEditPage": { "page": "BaseUserTaskPropertiesPage", "editMode": "add" } },
+		    { "name": "EndEvent1", "type": "endEvent" }
+		  ],
+		  "flows": [
+		    { "source": "StartEvent1", "target": "OpenPage1" },
+		    { "source": "OpenPage1", "target": "EndEvent1" }
+		  ]
+		}
+		""";
+
 	private static string BuildSendEmailDescriptor(string processName) =>
 		$$"""
 		{

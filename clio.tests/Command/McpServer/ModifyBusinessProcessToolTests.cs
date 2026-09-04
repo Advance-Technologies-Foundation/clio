@@ -1,4 +1,7 @@
 using Clio.Command;
+using Clio.Command.McpServer.Prompts.ProcessDesigner;
+using System.Text.RegularExpressions;
+using System.Linq;
 using Clio.Command.McpServer.Tools;
 using Clio.Command.McpServer.Tools.ProcessDesigner;
 using Clio.Command.ProcessModel;
@@ -161,6 +164,66 @@ public class ModifyBusinessProcessToolTests {
 			because: "the changeData block and every value-source kind in it must pass through unchanged — the "
 				+ "server owns the semantics, so any reshaping here would silently alter what the caller asked for");
 		ConsoleLogger.Instance.ClearMessages();
+	}
+
+	[Test]
+	[Description("Forwards a setElement operation carrying an openEditPage block verbatim - the tool is an opaque pass-through, so the destructive mode switch and its replacement payload ride through to the command unmodified. The mode switch is chosen deliberately: it is the operation whose refusal rules live entirely server-side, so a tool that reshaped the block would change which refusals the caller sees while every clio-side test still passed.")]
+	[Category("Unit")]
+	public void ModifyBusinessProcess_Should_Forward_OpenEditPage_SetElement_Verbatim() {
+		// Arrange
+		ConsoleLogger.Instance.ClearMessages();
+		const string openEditPageOps =
+			"[{\"op\":\"setElement\",\"elementName\":\"OpenPage1\",\"elementUpdate\":{\"openEditPage\":{"
+			+ "\"editMode\":\"edit\",\"recordId\":{\"processParameter\":\"AccountIdParameter\"},"
+			+ "\"performer\":{\"type\":\"user\",\"showPage\":true},"
+			+ "\"logActivity\":{\"enabled\":true,\"duration\":{\"value\":5,\"unit\":\"minutes\"}},"
+			+ "\"completion\":{\"mode\":\"onSave\"}}}}]";
+		FakeModifyBusinessProcessCommand defaultCommand = new();
+		FakeModifyBusinessProcessCommand resolvedCommand = new();
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		commandResolver.Resolve<ModifyBusinessProcessCommand>(Arg.Any<ModifyBusinessProcessOptions>())
+			.Returns(resolvedCommand);
+		ModifyBusinessProcessTool tool = new(defaultCommand, ConsoleLogger.Instance, commandResolver);
+
+		// Act
+		CommandExecutionResult result = tool.ModifyBusinessProcess(
+			new ModifyBusinessProcessArgs("docker_fix2", openEditPageOps, "UsrSampleProcess", null));
+
+		// Assert
+		result.ExitCode.Should().Be(0,
+			because: "a valid openEditPage setElement operation must be forwarded for the requested environment");
+		resolvedCommand.CapturedOptions.Should().NotBeNull(
+			because: "the resolved command should receive the forwarded operations");
+		resolvedCommand.CapturedOptions!.OperationsJson.Should().Be(openEditPageOps,
+			because: "the openEditPage block must pass through unchanged - the mode switch, its record payload and "
+				+ "the nested completion block are all judged server-side, so reshaping any of them here would "
+				+ "alter the request without changing a single clio-side assertion");
+		ConsoleLogger.Instance.ClearMessages();
+	}
+
+	[Test]
+	[Description("The rendered modify prompt carries no line duplicated verbatim and no clause left without its object. This is a MERGE guard, not a style check: the text is one 30-line sentence assembled from per-element fragments, so a merge that lands the same fragment twice, or truncates one mid-clause, produces a string that still compiles, still ships, and is fed verbatim to an LLM on every invocation - degrading instruction-following with nothing to notice it. That damage reached this file once already.")]
+	[Category("Unit")]
+	public void RenderedPrompt_Should_CarryNoDuplicatedLine_NorAClauseWithoutItsObject() {
+		// Arrange
+		string prompt = ModifyBusinessProcessPrompt.PromptByProcess("docker_fix2", "UsrSampleProcess");
+		string[] lines = prompt.Split('\n').Select(line => line.Trim()).Where(line => line.Length > 0).ToArray();
+
+		// Act
+		string[] duplicatedNeighbours = lines
+			.Zip(lines.Skip(1), (first, second) => first == second ? first : null)
+			.Where(line => line != null)
+			.ToArray()!;
+		int connectionsClause = Regex.Matches(prompt,
+			Regex.Escape("`setConnections` binds the \"Connected to\" links of the")).Count;
+
+		// Assert
+		duplicatedNeighbours.Should().BeEmpty(
+			because: "a fragment landing twice is what a bad merge produces here, and a duplicated noun phrase "
+				+ "inside one long sentence reads as emphasis to a model rather than as damage");
+		connectionsClause.Should().Be(1,
+			because: "the clause is what introduces setConnections; a second copy means one of them was cut off "
+				+ "from the object it introduces, leaving an enumeration item that never says what it binds");
 	}
 
 	[Test]
