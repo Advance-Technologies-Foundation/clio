@@ -152,18 +152,29 @@ def check_archive_pins():
         report("BLOCKER", PIN, "the pin file could not be read, so NO archive pin was verified - not a pass")
         return None
     version = const(pin, "ExpectedArchiveVersion")
+    check_descriptor_pins(pin, version)
+    check_sha_pin(pin)
+    return version
+
+
+def check_descriptor_pins(pin, version):
+    """The version and stamp arms, or a finding saying they could not run."""
     actual = descriptor_of(ARCHIVE)
-    if actual:
-        if version and actual[0] != version:
-            report("BLOCKER", PIN, "ExpectedArchiveVersion is {}; the archive says {}".format(version, actual[0]))
-        stamp = const(pin, "ExpectedDescriptorModifiedOnUtc")
-        if stamp and actual[1] != stamp:
-            report("BLOCKER", PIN,
-                   "ExpectedDescriptorModifiedOnUtc is {}; the archive says {}".format(stamp, actual[1]))
-    else:
+    if not actual:
         report("BLOCKER", ARCHIVE,
                "the archive is missing or unreadable, so ExpectedArchiveVersion and "
                "ExpectedDescriptorModifiedOnUtc were NOT verified - 'checked nothing', not 'clean'")
+        return
+    if version and actual[0] != version:
+        report("BLOCKER", PIN, "ExpectedArchiveVersion is {}; the archive says {}".format(version, actual[0]))
+    stamp = const(pin, "ExpectedDescriptorModifiedOnUtc")
+    if stamp and actual[1] != stamp:
+        report("BLOCKER", PIN,
+               "ExpectedDescriptorModifiedOnUtc is {}; the archive says {}".format(stamp, actual[1]))
+
+
+def check_sha_pin(pin):
+    """The archive's bytes against the pinned digest, then every built copy against the same digest."""
     sha = const(pin, "ExpectedArchiveSha256")
     got = digest(ARCHIVE)
     if not sha:
@@ -172,6 +183,11 @@ def check_archive_pins():
         report("BLOCKER", ARCHIVE, "the archive could not be hashed, so ExpectedArchiveSha256 was NOT verified")
     elif got.upper() != sha.upper().replace(" ", ""):
         report("BLOCKER", PIN, "ExpectedArchiveSha256 does not match the committed archive ({}...)".format(got[:16]))
+    check_build_outputs(got)
+
+
+def check_build_outputs(committed):
+    """Every built copy must carry the committed bytes - an install resolves the archive from there."""
     outputs = build_outputs()
     if not outputs:
         report("HIGH", ARCHIVE,
@@ -181,11 +197,10 @@ def check_archive_pins():
         built = digest(output)
         if built is None:
             report("HIGH", output, "the build output could not be hashed, so it was NOT compared")
-        elif got and built != got:
+        elif committed and built != committed:
             report("HIGH", output,
                    "the build output carries DIFFERENT bytes from the committed archive - an install resolves "
                    "it from here, so any local verification proves nothing")
-    return version
 
 
 def version_family(current):
