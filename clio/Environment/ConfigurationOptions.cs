@@ -1121,7 +1121,7 @@ namespace Clio
 				string issue = latest.Report.Issues.FirstOrDefault()?.Message
 					?? "appsettings.json is unreadable.";
 				throw new InvalidOperationException(
-					$"Cannot update settings because {issue}");
+					$"Cannot update settings because {issue} Fix or delete {AppSettingsFile} and retry.");
 			}
 
 			expectedContent = _fileSystem.File.ReadAllText(AppSettingsFile);

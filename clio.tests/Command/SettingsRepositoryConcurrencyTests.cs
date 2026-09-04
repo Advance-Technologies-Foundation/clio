@@ -417,6 +417,53 @@ public sealed class SettingsRepositoryConcurrencyTests {
 			because: $"a {worstCaseHold.TotalSeconds} s worst-case hold against a {lockTimeout.TotalSeconds} s lock timeout is the actual ceiling on this window — past it, widening the retry stops rescuing the writer and starts failing whoever is waiting for the lock");
 	}
 
+	[Test]
+	[Description("A failure while the temp file is being written leaves the destination appsettings.json byte-for-byte unchanged instead of a torn file, because the destination is never opened for writing until the temp file is complete.")]
+	public void ConfigureEnvironment_ShouldLeaveDestinationUntouched_WhenTheTempFileWriteFails() {
+		// Arrange
+		FaultingTempWriteFileSystem fileSystem = new();
+		SeedExistingSettings(fileSystem);
+		SettingsRepository deployment = new(fileSystem);
+		// Captured AFTER construction: the constructor's own bootstrap can rewrite the seeded file (e.g.
+		// applying a pending migration), so the pre-mutation baseline is whatever is on disk once
+		// construction is done — the same baseline ConfigureEnvironment itself starts from.
+		string originalContent = fileSystem.File.ReadAllText(SettingsRepository.AppSettingsFile);
+		IOException writeFailure = new("Simulated disk failure while writing the temp settings file.");
+		fileSystem.ArmTempWriteFailure(writeFailure);
+
+		// Act
+		Action act = () => deployment.ConfigureEnvironment("deployed",
+			new EnvironmentSettings { Uri = "https://deployed.example.com" });
+
+		// Assert
+		act.Should().Throw<IOException>(
+			because: "a failure while writing the temp file is a real error that must reach the caller, not be swallowed")
+			.Which.Should().BeSameAs(writeFailure,
+				because: "the original write failure must stay reachable rather than being replaced by a cleanup-time exception");
+		fileSystem.File.ReadAllText(SettingsRepository.AppSettingsFile).Should().Be(originalContent,
+			because: "the destination file is only ever replaced by a FINISHED temp file, so a write failure that happens before the temp file is complete must never reach the destination — a reader must see either the old complete file or the new one, never a partial one");
+		fileSystem.AllFiles.Should().NotContain(path => path.EndsWith(".tmp", StringComparison.Ordinal),
+			because: "the failed temp file must be cleaned up rather than left behind as an orphaned partial artifact");
+	}
+
+	[Test]
+	[Description("A successful save leaves no temporary artifact behind: the temp file used for the atomic replace is gone once the destination has been published.")]
+	public void ConfigureEnvironment_ShouldLeaveNoTemporaryArtifact_WhenTheSaveSucceeds() {
+		// Arrange
+		MockFileSystem fileSystem = TestFileSystem.MockFileSystem();
+		SeedExistingSettings(fileSystem);
+		SettingsRepository deployment = new(fileSystem);
+
+		// Act
+		deployment.ConfigureEnvironment("deployed", new EnvironmentSettings { Uri = "https://deployed.example.com" });
+
+		// Assert
+		fileSystem.AllFiles.Should().NotContain(path => path.EndsWith(".tmp", StringComparison.Ordinal),
+			because: "a successful publish must leave only the destination file behind, not the temp file it was atomically replaced from");
+		new SettingsRepository(fileSystem).GetAllEnvironments().Should().ContainKey("deployed",
+			because: "the atomic replace must have actually landed the new content at the destination path");
+	}
+
 	// Short enough to keep the suite fast, long enough to reach the capped tail of the backoff. The
 	// subject of these tests is that the window ENDS and what it says when it does, not how long
 	// production waits, so burning the production window here would buy nothing.
@@ -488,6 +535,46 @@ public sealed class SettingsRepositoryConcurrencyTests {
 				}
 			}
 			base.Move(sourceFileName, destFileName, overwrite);
+		}
+	}
+
+	// Substitutes the WRITE of the TEMP file (the step before the atomic replace) so a test can prove
+	// the destination is never touched by a failure that happens while the temp file is still being
+	// produced. Some bytes are written to the temp file before the fault fires — mirroring the shape of
+	// a real mid-write interruption (crash, disk failure) — specifically so the assertion is "the
+	// destination never sees a partial file", not merely "the temp file was never created at all".
+	private sealed class FaultingTempWriteFileSystem : MockFileSystem {
+
+		private readonly FaultingTempWriteFile _file;
+
+		public FaultingTempWriteFileSystem() {
+			_file = new FaultingTempWriteFile(this);
+		}
+
+		public override IFile File => _file;
+
+		public void ArmTempWriteFailure(Exception failure) => _file.Arm(failure);
+	}
+
+	private sealed class FaultingTempWriteFile(IMockFileDataAccessor fileDataAccessor)
+		: MockFile(fileDataAccessor) {
+
+		private Exception _failure;
+
+		public void Arm(Exception failure) => _failure = failure;
+
+		public override StreamWriter CreateText(string path) {
+			StreamWriter writer = base.CreateText(path);
+			if (_failure is not null && path.EndsWith(".tmp", StringComparison.Ordinal)) {
+				Exception failure = _failure;
+				_failure = null;
+				// A few bytes really do land in the temp file before the fault fires, so the destination
+				// staying clean is proof the commit step (not luck) is what protects it.
+				writer.Write("{\"Environments\":{\"partial");
+				writer.Flush();
+				throw failure;
+			}
+			return writer;
 		}
 	}
 

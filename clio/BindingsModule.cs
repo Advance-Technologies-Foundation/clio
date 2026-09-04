@@ -1460,7 +1460,10 @@ public class BindingsModule {
 				string issue = report.Issues.FirstOrDefault()?.Message
 					?? "appsettings.json is unreadable.";
 				ConsoleLogger.Instance.WriteWarning(
-					$"clio settings bootstrap is degraded. {issue} File path: {report.SettingsFilePath}");
+					$"clio settings bootstrap is degraded. {issue} File path: {report.SettingsFilePath}. "
+					+ "Fix or delete it and retry — clio never rewrites a broken settings file on its own, "
+					+ "so a hand fix (or deletion, if the registered environments are not worth recovering) "
+					+ "is the only way forward.");
 				_bootstrapDiagnosticsLogged = true;
 			}
 		}
