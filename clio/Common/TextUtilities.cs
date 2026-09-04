@@ -134,14 +134,18 @@ namespace Clio.Common
 			// spaces, for every caller of this shared utility (theme captions and CSS paths, package and
 			// environment names, service error messages), none of which had anything to do with the lone
 			// surrogate that breaks System.Text.Json. Only ORPHANS are neutralized.
-			for (int index = 0; index < text.Length; index++) {
+			// A while loop, not a for: a valid surrogate PAIR consumes two positions, and advancing the
+			// counter from inside a for body is exactly what makes such a loop hard to follow.
+			int index = 0;
+			while (index < text.Length) {
 				char character = text[index];
 				if (char.IsHighSurrogate(character) && index + 1 < text.Length && char.IsLowSurrogate(text[index + 1])) {
 					sb.Append(character).Append(text[index + 1]);
-					index++;
+					index += 2;
 					continue;
 				}
 				sb.Append(IsDisplayHostile(character) ? ' ' : character);
+				index++;
 			}
 			return sb.ToString();
 		}
