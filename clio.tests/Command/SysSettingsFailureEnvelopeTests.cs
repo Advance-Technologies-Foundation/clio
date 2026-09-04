@@ -293,4 +293,52 @@ public sealed class SysSettingsFailureEnvelopeTests {
 			.Which.Should().Contain(result.CorrelationId,
 				because: "the log line and the envelope must carry the SAME ID whichever way the failure arrived");
 	}
+
+	[Test]
+	[Description("PR #1373 review: TryGetSysSettingQuietly classifies but writes NO log line - a caller that treats a failed read as an expected outcome (SetLogoCommand.ReadCompanionIsOn) must not leave the operator a red line and a correlation ID that appears in no result.")]
+	public void TryGetSysSettingQuietly_Should_Classify_Without_Writing_A_Log_Line() {
+		// Arrange
+		ISysSettingsManager manager = Substitute.For<ISysSettingsManager>();
+		manager.When(m => m.GetAllUsersDefaultWithType(Arg.Any<string>()))
+			.Do(_ => throw new UnauthorizedAccessException("denied"));
+		ILogger logger = Substitute.For<ILogger>();
+		List<string> errors = [];
+		logger.When(l => l.WriteError(Arg.Any<string>())).Do(call => errors.Add(call.Arg<string>()));
+		SysSettingsCommand command = new(manager, logger, Substitute.For<IFileSystem>(),
+			new OperationCorrelationIdProvider());
+
+		// Act
+		SysSettingGetResult quiet = command.TryGetSysSettingQuietly(
+			new GetSysSettingArgs("dev", "UsrCompanion"));
+
+		// Assert
+		errors.Should().BeEmpty(
+			because: "a tolerated probe whose command goes on to succeed must not put a red [ERR] line in front of an operator, nor mint an ID that appears in no result");
+		quiet.Success.Should().BeFalse(because: "the read did fail; only the reporting is suppressed");
+		quiet.ErrorCategory.Should().Be(SysSettingErrorCategories.Authentication,
+			because: "classification is unconditional - a probe that wants the category still gets it");
+	}
+
+	[Test]
+	[Description("PR #1373 review, the other side: the reporting overload still writes exactly one line, so suppressing the probe's line did not make the sys-setting tool path silent too.")]
+	public void TryGetSysSetting_Should_Still_Report_The_Failure() {
+		// Arrange
+		ISysSettingsManager manager = Substitute.For<ISysSettingsManager>();
+		manager.When(m => m.GetAllUsersDefaultWithType(Arg.Any<string>()))
+			.Do(_ => throw new UnauthorizedAccessException("denied"));
+		ILogger logger = Substitute.For<ILogger>();
+		List<string> errors = [];
+		logger.When(l => l.WriteError(Arg.Any<string>())).Do(call => errors.Add(call.Arg<string>()));
+		SysSettingsCommand command = new(manager, logger, Substitute.For<IFileSystem>(),
+			new OperationCorrelationIdProvider());
+
+		// Act
+		SysSettingGetResult reported = command.TryGetSysSetting(new GetSysSettingArgs("dev", "UsrSetting"));
+
+		// Assert
+		errors.Should().ContainSingle(
+			because: "the sys-setting tool surface reports its own failures, and its correlation ID must find a log line")
+			.Which.Should().Contain(reported.CorrelationId,
+				because: "the log line and the envelope carry the SAME ID");
+	}
 }

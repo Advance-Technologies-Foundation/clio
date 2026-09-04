@@ -387,7 +387,27 @@ namespace Clio.Command
 		/// Categorizes network, authentication, and validation failures into a non-throwing error
 		/// envelope for MCP callers.
 		/// </summary>
-		public SysSettingGetResult TryGetSysSetting(GetSysSettingArgs args) {
+		public SysSettingGetResult TryGetSysSetting(GetSysSettingArgs args) => ReadSysSetting(args, report: true);
+
+		/// <summary>
+		/// The same read, classified but NOT logged - for a caller that treats a failed read as a normal,
+		/// expected outcome and surfaces nothing.
+		/// </summary>
+		/// <remarks>
+		/// PR #1373 review. <c>TryGetSysSetting</c> is not sys-setting-tool-only: <c>SetLogoCommand</c>'s
+		/// <c>ReadCompanionIsOn</c> probes a companion setting and reads any failure as "the companion is off".
+		/// That path was completely silent before the classifier was wired in; afterwards every probe against an
+		/// environment where the setting is simply absent minted a correlation ID and wrote a red
+		/// <c>[ERR] … (correlation-id: …)</c> line whose ID appears in no result anywhere - while the command went
+		/// on to report success. That is the inverse of the invariant <see cref="CategorizeAndLog"/> exists for:
+		/// an ID in a log line no result mentions is the same defect as an ID on a result no log line mentions. On
+		/// the MCP <c>set-logo</c> surface those lines can also ride along with a <c>success: true</c> response and
+		/// read to an agent as evidence of failure.
+		/// </remarks>
+		public SysSettingGetResult TryGetSysSettingQuietly(GetSysSettingArgs args) =>
+			ReadSysSetting(args, report: false);
+
+		private SysSettingGetResult ReadSysSetting(GetSysSettingArgs args, bool report) {
 			try {
 				if (string.IsNullOrWhiteSpace(args.Code)) {
 					throw new ArgumentException("code is required.");
@@ -396,7 +416,12 @@ namespace Clio.Command
 				string maskedValue = ApplySecureTextMask(typeName, value ?? string.Empty);
 				return new SysSettingGetResult(true, args.Code, maskedValue);
 			} catch (Exception ex) {
-				SysSettingFailure failure = ReportFailure(ex, "reading sys-setting");
+				//Classification is unconditional; only the LOG LINE is the caller's choice. A probe still gets
+				//the category and cause on its envelope if it wants them - it just does not put a red line and
+				//an unreferenced correlation ID in front of an operator whose command is going to succeed.
+				SysSettingFailure failure = report
+					? ReportFailure(ex, "reading sys-setting")
+					: CategorizeFailure(ex, "reading sys-setting", _correlationIds.New());
 				return new SysSettingGetResult(false, args.Code, string.Empty, failure.Error,
 					failure.Category, failure.Cause, failure.RecoveryAction, failure.CorrelationId);
 			}
