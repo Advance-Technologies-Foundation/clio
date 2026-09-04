@@ -41,6 +41,8 @@ public sealed class ODataCreateTool(IToolCommandResolver commandResolver) {
 		"entity in one call rather than one call per row. Each row is inserted sequentially and reported " +
 		"independently — a failed row does not abort the rest unless 'stop-on-error' is set. " +
 		"Returns a created/failed summary and a per-row result array with each created record's Id. " +
+		"A date-time value without a UTC designator or offset (e.g. '2024-01-01T04:00:00') fails its row before any " +
+		"request - send '...Z' or '...+02:00' instead. " +
 		"CRITICAL for failed rows — read 'record-created' before reacting: true inserted, false definitely not " +
 		"inserted (rejected locally, safe to fix and re-send), null UNKNOWN. Null means Creatio failed the call " +
 		"but may already have written the record, which happens when a post-insert entity event handler throws; " +
@@ -75,10 +77,15 @@ public sealed class ODataCreateTool(IToolCommandResolver commandResolver) {
 		}
 
 		string url = urlBuilder.Build(ODataKeyFormatter.CollectionPath(args.Entity));
+		// One metadata read for the whole batch, and only to type the value guard: odata-create does not
+		// validate field NAMES, and an unresolved metadata endpoint must never fail the insert - the guard
+		// then falls back to the literal's shape alone.
+		IReadOnlyDictionary<string, string> propertyTypes =
+			ODataFieldValidation.TryGetPropertyTypes(client, urlBuilder, args.Entity.Trim());
 		List<ODataRowResult> results = [];
 		int index = 0;
 		foreach (JsonElement row in rows.EnumerateArray()) {
-			ODataRowResult result = CreateRow(client, url, row, index);
+			ODataRowResult result = CreateRow(client, url, row, index, propertyTypes);
 			results.Add(result);
 			if (!result.Success && args.StopOnError) {
 				break;
@@ -88,7 +95,8 @@ public sealed class ODataCreateTool(IToolCommandResolver commandResolver) {
 		return ODataCreateBatchResponse.From(results);
 	}
 
-	private static ODataRowResult CreateRow(IApplicationClient client, string url, JsonElement row, int index) {
+	private static ODataRowResult CreateRow(IApplicationClient client, string url, JsonElement row, int index,
+		IReadOnlyDictionary<string, string> propertyTypes) {
 		try {
 			if (row.ValueKind != JsonValueKind.Object || !row.EnumerateObject().MoveNext()) {
 				return new ODataRowResult {
@@ -97,6 +105,16 @@ public sealed class ODataCreateTool(IToolCommandResolver commandResolver) {
 					// Rejected locally: no request left clio, so not-inserted is KNOWN, not assumed.
 					RecordCreated = false,
 					Error = "row must be a non-empty object of field/value pairs."
+				};
+			}
+			string zoneLessDateTime = ODataDateTimeGuard.FindZoneLessDateTime(row, propertyTypes);
+			if (zoneLessDateTime is not null) {
+				return new ODataRowResult {
+					Index = index,
+					Success = false,
+					// Rejected locally before any POST, so not-inserted is KNOWN for this row.
+					RecordCreated = false,
+					Error = zoneLessDateTime
 				};
 			}
 			string responseJson = client.ExecutePostRequest(url, row.GetRawText(), 30_000);
@@ -188,6 +206,8 @@ public sealed record ODataCreateArgs {
 		"Pass all rows for the same entity here rather than calling the tool once per row. " +
 		"Use dataforge-get-table-columns to discover field names. " +
 		"Set lookup fields via their <Field>Id column with a GUID (e.g. AccountId), not the display name. " +
+		"Date-time values MUST carry a UTC designator or offset ('2024-01-01T04:00:00Z' or '2024-01-01T04:00:00+02:00'); " +
+		"a zone-less literal fails that row before any request, because the platform may silently store 0001-01-01. " +
 		"Example: [ { \"Name\": \"Acme\", \"TypeId\": \"8ecab4a1-0ca3-4515-9399-efe0a19390bd\" }, { \"Name\": \"Globex\" } ]")]
 	[Required]
 	public JsonElement? Rows { get; init; }

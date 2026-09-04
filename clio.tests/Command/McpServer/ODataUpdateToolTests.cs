@@ -43,6 +43,7 @@ public sealed class ODataUpdateToolTests {
 		        <Property Name="Name" Type="Edm.String" />
 		        <Property Name="JobTitle" Type="Edm.String" />
 		        <Property Name="SomeGuid" Type="Edm.Guid" />
+		        <Property Name="DueDate" Type="Edm.DateTimeOffset" />
 		        <Property Name="AccountId" Type="Edm.Guid" />
 		        <NavigationProperty Name="Account" Type="Terrasoft.Configuration.OData.Account">
 		          <ReferentialConstraint Property="AccountId" ReferencedProperty="Id" />
@@ -892,5 +893,134 @@ public sealed class ODataUpdateToolTests {
 		repointedRoot.DidNotReceiveWithAnyArgs().Build(null);
 		client.Received(1).ExecuteGetRequest(MetadataUrl, Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>());
 		client.Received(1).ExecutePatchRequest(KeyUrl, """{"Name":"New"}""", 30000);
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("A date-time value without a UTC designator or offset is refused before the PATCH, and the refusal names the field, the value and both accepted forms (GitHub issue #1369).")]
+	public void Update_Should_Reject_A_DateTime_Without_A_Zone() {
+		// Arrange
+		Fixture f = CsdLFixture();
+
+		// Act
+		ODataWriteResponse response = Update(f, "{\"DueDate\":\"2024-01-01T04:00:00.000\"}");
+
+		// Assert
+		response.Success.Should().BeFalse(
+			because: "the platform either rejects such a literal opaquely or stores DateTime.MinValue while "
+				+ "reporting success, so clio must fail the call itself");
+		response.Error.Should().Contain("DueDate",
+			because: "the caller can only fix the payload when the refusal names the offending field");
+		response.Error.Should().Contain("2024-01-01T04:00:00.000",
+			because: "naming the rejected value distinguishes it from the other fields in the same payload");
+		response.Error.Should().Contain("Z",
+			because: "the refusal must state the accepted UTC form, not merely that the value is wrong");
+		response.Error.Should().Contain("+02:00",
+			because: "an explicit offset is equally accepted and the caller must learn that too");
+		f.Client.DidNotReceiveWithAnyArgs()
+			.ExecutePatchRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>());
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("A date-time value carrying a UTC designator is written unchanged.")]
+	public void Update_Should_Write_A_DateTime_With_A_Utc_Designator() {
+		// Arrange
+		Fixture f = CsdLFixture();
+		f.Client.ExecutePatchRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>()).Returns(string.Empty);
+
+		// Act
+		ODataWriteResponse response = Update(f, "{\"DueDate\":\"2024-01-01T04:00:00.000Z\"}");
+
+		// Assert
+		response.Success.Should().BeTrue(because: "a zoned literal is exactly what the OData endpoint accepts");
+		f.Client.Received(1).ExecutePatchRequest(KeyUrl, "{\"DueDate\":\"2024-01-01T04:00:00.000Z\"}", 30_000);
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("A date-time value carrying an explicit offset is written unchanged.")]
+	public void Update_Should_Write_A_DateTime_With_An_Explicit_Offset() {
+		// Arrange
+		Fixture f = CsdLFixture();
+		f.Client.ExecutePatchRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>()).Returns(string.Empty);
+
+		// Act
+		ODataWriteResponse response = Update(f, "{\"DueDate\":\"2024-01-01T04:00:00+02:00\"}");
+
+		// Assert
+		response.Success.Should().BeTrue(because: "an explicit offset states the instant unambiguously");
+		f.Client.Received(1).ExecutePatchRequest(KeyUrl, Arg.Any<string>(), 30_000);
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("A date-shaped string bound to an Edm.String column is written unchanged: the guard is gated on the declared Edm type.")]
+	public void Update_Should_Not_Reject_A_Date_Shaped_String_On_A_Text_Column() {
+		// Arrange
+		Fixture f = CsdLFixture();
+		f.Client.ExecutePatchRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>()).Returns(string.Empty);
+
+		// Act
+		ODataWriteResponse response = Update(f, "{\"Name\":\"2024-01-01T04:00:00\"}");
+
+		// Assert
+		response.Success.Should().BeTrue(
+			because: "$metadata declares Name as Edm.String, so a date-shaped text value is a legitimate write "
+				+ "and a purely textual rule would have made that column unwritable");
+		f.Client.Received(1).ExecutePatchRequest(KeyUrl, Arg.Any<string>(), 30_000);
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("A date-only value is written unchanged: Creatio publishes date columns as Edm.DateTimeOffset too, so rejecting it would break ordinary date writes.")]
+	public void Update_Should_Not_Reject_A_Date_Only_Value() {
+		// Arrange
+		Fixture f = CsdLFixture();
+		f.Client.ExecutePatchRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>()).Returns(string.Empty);
+
+		// Act
+		ODataWriteResponse response = Update(f, "{\"DueDate\":\"2024-01-01\"}");
+
+		// Assert
+		response.Success.Should().BeTrue(
+			because: "the platform accepts a date-only literal and stores it in the server's local zone - a shift, "
+				+ "not the data loss this guard exists to stop");
+		f.Client.Received(1).ExecutePatchRequest(KeyUrl, Arg.Any<string>(), 30_000);
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("With $metadata unavailable the guard still fires on the literal's shape alone, so an unreadable metadata endpoint never silently disables it.")]
+	public void Update_Should_Reject_A_Zoneless_DateTime_On_The_Fallback_Path() {
+		// Arrange - $metadata is empty, so name validation degrades to the $select probe and no Edm type is known.
+		Fixture f = new(string.Empty, ProbeOkForUrl);
+
+		// Act
+		ODataWriteResponse response = Update(f, "{\"DueDate\":\"2024-01-01T04:00:00\"}");
+
+		// Assert
+		response.Success.Should().BeFalse(
+			because: "fail-closed on the shape is the only honest answer when the declared type cannot be read");
+		f.Client.DidNotReceiveWithAnyArgs()
+			.ExecutePatchRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>());
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Null and non-date string values pass the date-time guard untouched.")]
+	public void Update_Should_Pass_Null_And_Non_Date_Values() {
+		// Arrange
+		Fixture f = CsdLFixture();
+		f.Client.ExecutePatchRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>()).Returns(string.Empty);
+
+		// Act
+		ODataWriteResponse response = Update(f, "{\"DueDate\":null,\"JobTitle\":\"CEO\"}");
+
+		// Assert
+		response.Success.Should().BeTrue(
+			because: "clearing a date and writing ordinary text must stay unaffected by a value guard aimed at "
+				+ "zone-less date-time literals");
+		f.Client.Received(1).ExecutePatchRequest(KeyUrl, Arg.Any<string>(), 30_000);
 	}
 }
