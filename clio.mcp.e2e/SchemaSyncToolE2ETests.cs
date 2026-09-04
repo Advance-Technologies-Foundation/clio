@@ -400,6 +400,17 @@ public sealed class SchemaSyncToolE2ETests : McpContractFixtureBase {
 			because: "the caller must receive actionable guidance before any remote mutation");
 		result.GetProperty("error").GetString().Should().NotContain(invalidEnvironmentName,
 			because: "local validation must happen before environment resolution");
+		// The shape rejection hit the ONLY operation, so nothing is resubmittable as sent. The plan is still
+		// emitted with an EMPTY operations array rather than suppressed: `failed-operation` is what a
+		// recovering caller reads, and an absent `resume-plan` on an abort contradicts the served contract
+		// (PR #1354 review).
+		JsonElement virtualResumePlan = response.GetProperty("resume-plan");
+		virtualResumePlan.GetProperty("operations").GetArrayLength().Should().Be(0,
+			because: "the rejected operation is not resubmittable verbatim and nothing followed it");
+		virtualResumePlan.GetProperty("failed-operation").GetProperty("operation-index").GetInt32().Should().Be(0,
+			because: "the plan must still name which operation failed even when it lists no resubmittable operations");
+		virtualResumePlan.GetProperty("instruction").GetString().Should().Contain("FIELD SHAPE",
+			because: "the caller must be told to correct the field shape before resubmitting the operation itself");
 	}
 
 	[Test]
@@ -466,7 +477,7 @@ public sealed class SchemaSyncToolE2ETests : McpContractFixtureBase {
 	[Description("Emits a machine-readable resume plan when a batch aborts mid-way (ENG-93374).")]
 	[AllureTag(ToolName)]
 	[AllureName("sync-schemas emits a resume plan on a mid-batch abort")]
-	[AllureDescription("Starts the real MCP server without a reachable environment and submits a two-operation batch whose first operation fails local validation. Verifies the structured response separates completed/failed/not-run operations and carries a resume-plan whose operations echo the failed op plus the not-run op in re-submittable shape.")]
+	[AllureDescription("Starts the real MCP server without a reachable environment and submits a two-operation batch whose first operation fails local SEED-ROW validation (a content problem, not a field-shape one, so the op stays resubmittable verbatim). Verifies the structured response separates completed/failed/not-run operations and carries a resume-plan whose operations echo the failed op plus the not-run op in re-submittable shape.")]
 	public async Task SchemaSyncTool_Should_Emit_ResumePlan_On_MidBatch_Abort() {
 		// Arrange
 		await using ArrangeContext context = await ArrangeAsync(requireEnvironment: false);
@@ -480,18 +491,14 @@ public sealed class SchemaSyncToolE2ETests : McpContractFixtureBase {
 					["environment-name"] = invalidEnvironmentName,
 					["package-name"] = "UsrPkg",
 					["operations"] = new object?[] {
-						// Op 0 fails local validation (virtual entity cannot carry seed rows) before any
-						// environment resolution, so the batch aborts at index 0 and op 1 never runs.
+						// Op 0 fails local seed-row validation (a standalone seed-data with no rows) before
+						// any environment resolution, so the batch aborts at index 0 and op 1 never runs.
+						// A CONTENT failure like this stays resubmittable verbatim, unlike a field-shape
+						// rejection — see SchemaSyncTool_Should_Omit_ShapeRejected_Operation_From_ResumePlan
+						// for the counterpart contract (issue #1303).
 						new Dictionary<string, object?> {
-							["type"] = "create-entity",
-							["schema-name"] = "UsrVirtualItem",
-							["title-localizations"] = BuildLocalizations("Virtual item"),
-							["is-virtual"] = true,
-							["seed-rows"] = new object?[] {
-								new Dictionary<string, object?> {
-									["values"] = new Dictionary<string, object?> { ["Name"] = "Unavailable" }
-								}
-							}
+							["type"] = "seed-data",
+							["schema-name"] = "UsrGenre"
 						},
 						new Dictionary<string, object?> {
 							["type"] = "update-entity",
@@ -531,10 +538,364 @@ public sealed class SchemaSyncToolE2ETests : McpContractFixtureBase {
 		JsonElement[] resumeOperations = resumePlan.GetProperty("operations").EnumerateArray().ToArray();
 		resumeOperations.Should().HaveCount(2,
 			because: "the resume plan must carry the failed op followed by every not-run op");
-		resumeOperations[0].GetProperty("type").GetString().Should().Be("create-entity",
-			because: "the failed create-entity must be resubmittable as-is");
+		resumeOperations[0].GetProperty("type").GetString().Should().Be("seed-data",
+			because: "the failed seed-data op only needs its rows corrected, so it must be echoed back as resubmittable");
 		resumeOperations[1].GetProperty("type").GetString().Should().Be("update-entity",
 			because: "the not-run update-entity must be resubmittable as-is");
+	}
+
+	// ---------------------------------------------------------------------------------------------------
+	// issue #1303: field-shape rejection. Before the fix, System.Text.Json silently dropped every JSON field
+	// that did not bind, so a create-lookup carrying its rows under 'seed-data' reported outcome "created"
+	// and seeded nothing. Each test below runs with a deliberately unregistered environment name and asserts
+	// that name never appears in the diagnostic, proving the rejection happens BEFORE environment resolution.
+	// ---------------------------------------------------------------------------------------------------
+
+	[Test]
+	[Description("Rejects a top-level camelCase argument instead of running the whole batch against a null target (issue #1303).")]
+	[AllureTag(ToolName)]
+	[AllureName("sync-schemas rejects an unbindable top-level argument with a rename hint")]
+	[AllureDescription("Starts the real MCP server, sends sync-schemas with camelCase environmentName/packageName, and verifies the batch is refused up front with a rename hint naming the canonical kebab-case fields, applying nothing.")]
+	public async Task SchemaSyncTool_Should_Reject_Unbindable_TopLevel_Argument_With_Rename_Hint() {
+		// Arrange
+		await using ArrangeContext context = await ArrangeAsync(requireEnvironment: false);
+		string invalidEnvironmentName = $"missing-sync-schemas-env-{Guid.NewGuid():N}";
+
+		// Act
+		CallToolResult callResult = await context.Session.CallToolAsync(
+			ToolName,
+			new Dictionary<string, object?> {
+				["args"] = new Dictionary<string, object?> {
+					["environmentName"] = invalidEnvironmentName,
+					["packageName"] = "UsrPkg",
+					["operations"] = new object?[] {
+						new Dictionary<string, object?> {
+							["type"] = "create-lookup",
+							["schema-name"] = "UsrTodoStatus",
+							["title-localizations"] = BuildLocalizations("Todo Status")
+						}
+					}
+				}
+			},
+			context.CancellationTokenSource.Token);
+		JsonElement response = ExtractSchemaSyncResponse(callResult);
+		JsonElement result = response.GetProperty("results").EnumerateArray().Single();
+		string error = result.GetProperty("error").GetString()!;
+
+		// Assert
+		callResult.IsError.Should().NotBeTrue(
+			because: "an unbindable argument is a caller-actionable structured failure, not an MCP protocol error");
+		response.GetProperty("success").GetBoolean().Should().BeFalse(
+			because: "a batch whose target fields did not bind must never report success");
+		result.GetProperty("type").GetString().Should().Be("sync-schemas",
+			because: "a top-level argument rejection is attributed to the call itself, not to any single operation");
+		error.Should().Contain("'environmentName' -> 'environment-name'",
+			because: "the caller must be told the exact rename instead of having the field silently dropped");
+		error.Should().Contain("'packageName' -> 'package-name'",
+			because: "every unbound top-level field must be reported, not just the first one");
+		error.Should().Contain("Nothing was applied",
+			because: "the caller must know the batch had no server-side effect before retrying");
+		error.Should().NotContain(invalidEnvironmentName,
+			because: "the field-shape check must run before environment resolution");
+	}
+
+	[Test]
+	[Description("Rejects seed rows sent under the 'seed-data' field name and explains that seed-data is an operation type (issue #1303 A1).")]
+	[AllureTag(ToolName)]
+	[AllureName("sync-schemas rejects rows sent under 'seed-data' with the operation-TYPE note")]
+	[AllureDescription("Starts the real MCP server and submits a create-lookup whose rows are keyed 'seed-data' instead of 'seed-rows'. Verifies the operation is refused with the rename hint plus the note that seed-data is an operation TYPE, instead of reporting a successful create that seeded nothing.")]
+	public async Task SchemaSyncTool_Should_Reject_SeedData_Field_With_OperationType_Note() {
+		// Arrange
+		await using ArrangeContext context = await ArrangeAsync(requireEnvironment: false);
+		string invalidEnvironmentName = $"missing-sync-schemas-env-{Guid.NewGuid():N}";
+
+		// Act
+		CallToolResult callResult = await context.Session.CallToolAsync(
+			ToolName,
+			new Dictionary<string, object?> {
+				["args"] = new Dictionary<string, object?> {
+					["environment-name"] = invalidEnvironmentName,
+					["package-name"] = "UsrPkg",
+					["operations"] = new object?[] {
+						new Dictionary<string, object?> {
+							["type"] = "create-lookup",
+							["schema-name"] = "UsrTodoStatus",
+							["title-localizations"] = BuildLocalizations("Todo Status"),
+							["seed-data"] = new object?[] {
+								new Dictionary<string, object?> {
+									["values"] = new Dictionary<string, object?> { ["Name"] = "Open" }
+								}
+							}
+						}
+					}
+				}
+			},
+			context.CancellationTokenSource.Token);
+		JsonElement response = ExtractSchemaSyncResponse(callResult);
+		JsonElement result = response.GetProperty("results").EnumerateArray().Single();
+		string error = result.GetProperty("error").GetString()!;
+
+		// Assert
+		callResult.IsError.Should().NotBeTrue(
+			because: "a mis-keyed operation field is a caller-actionable structured failure, not an MCP protocol error");
+		response.GetProperty("success").GetBoolean().Should().BeFalse(
+			because: "the pre-fix defect was exactly this: outcome 'created' while the rows were silently dropped");
+		error.Should().Contain("'seed-data' -> 'seed-rows'",
+			because: "the caller must be told which field name carries rows");
+		error.Should().Contain("operation TYPE",
+			because: "'seed-data' is a legitimate value of 'type', so an unqualified rename hint would read as 'the seed-data operation is gone'");
+		error.Should().Contain("Nothing was applied for this operation",
+			because: "the caller must know the lookup was not created before retrying");
+		error.Should().NotContain(invalidEnvironmentName,
+			because: "the field-shape check must run before environment resolution");
+	}
+
+	[Test]
+	[Description("Rejects an operation that names the schema with 'name' instead of 'schema-name' (issue #1303).")]
+	[AllureTag(ToolName)]
+	[AllureName("sync-schemas rejects the 'name' alias with a rename hint")]
+	[AllureDescription("Starts the real MCP server and submits a create-lookup keyed 'name' instead of 'schema-name'. Verifies the operation is refused with the rename hint rather than binding an empty schema name.")]
+	public async Task SchemaSyncTool_Should_Reject_Name_Alias_With_Rename_Hint() {
+		// Arrange
+		await using ArrangeContext context = await ArrangeAsync(requireEnvironment: false);
+		string invalidEnvironmentName = $"missing-sync-schemas-env-{Guid.NewGuid():N}";
+
+		// Act
+		CallToolResult callResult = await context.Session.CallToolAsync(
+			ToolName,
+			new Dictionary<string, object?> {
+				["args"] = new Dictionary<string, object?> {
+					["environment-name"] = invalidEnvironmentName,
+					["package-name"] = "UsrPkg",
+					["operations"] = new object?[] {
+						new Dictionary<string, object?> {
+							["type"] = "create-lookup",
+							["name"] = "UsrTodoStatus",
+							["title-localizations"] = BuildLocalizations("Todo Status")
+						}
+					}
+				}
+			},
+			context.CancellationTokenSource.Token);
+		JsonElement response = ExtractSchemaSyncResponse(callResult);
+		JsonElement result = response.GetProperty("results").EnumerateArray().Single();
+		string error = result.GetProperty("error").GetString()!;
+
+		// Assert
+		callResult.IsError.Should().NotBeTrue(
+			because: "a mis-keyed operation field is a caller-actionable structured failure, not an MCP protocol error");
+		response.GetProperty("success").GetBoolean().Should().BeFalse(
+			because: "an operation whose schema name did not bind must never be reported as applied");
+		error.Should().Contain("'name' -> 'schema-name'",
+			because: "the caller must be told the canonical field name for the schema");
+		error.Should().NotContain(invalidEnvironmentName,
+			because: "the field-shape check must run before environment resolution");
+	}
+
+	[Test]
+	[Description("Rejects a genuinely unknown operation field and lists the valid field names (issue #1303).")]
+	[AllureTag(ToolName)]
+	[AllureName("sync-schemas rejects an unknown operation field with a valid-field hint")]
+	[AllureDescription("Starts the real MCP server and submits a create-lookup carrying a field with no canonical counterpart. Verifies the operation is refused, the unknown field is quoted back, and the valid operation field names are listed.")]
+	public async Task SchemaSyncTool_Should_Reject_Unknown_Operation_Field_With_ValidField_Hint() {
+		// Arrange
+		await using ArrangeContext context = await ArrangeAsync(requireEnvironment: false);
+		string invalidEnvironmentName = $"missing-sync-schemas-env-{Guid.NewGuid():N}";
+
+		// Act
+		CallToolResult callResult = await context.Session.CallToolAsync(
+			ToolName,
+			new Dictionary<string, object?> {
+				["args"] = new Dictionary<string, object?> {
+					["environment-name"] = invalidEnvironmentName,
+					["package-name"] = "UsrPkg",
+					["operations"] = new object?[] {
+						new Dictionary<string, object?> {
+							["type"] = "create-lookup",
+							["schema-name"] = "UsrTodoStatus",
+							["title-localizations"] = BuildLocalizations("Todo Status"),
+							["totally-made-up-field"] = "whatever"
+						}
+					}
+				}
+			},
+			context.CancellationTokenSource.Token);
+		JsonElement response = ExtractSchemaSyncResponse(callResult);
+		JsonElement result = response.GetProperty("results").EnumerateArray().Single();
+		string error = result.GetProperty("error").GetString()!;
+
+		// Assert
+		callResult.IsError.Should().NotBeTrue(
+			because: "an unknown operation field is a caller-actionable structured failure, not an MCP protocol error");
+		response.GetProperty("success").GetBoolean().Should().BeFalse(
+			because: "an operation carrying a field the tool cannot bind must never be reported as applied");
+		error.Should().Contain("Unknown args: 'totally-made-up-field'",
+			because: "the caller must see exactly which field could not be bound");
+		error.Should().Contain("Valid operation fields:",
+			because: "the caller must be able to correct the call without re-reading the whole contract");
+		error.Should().Contain("seed-rows",
+			because: "the valid-field hint must enumerate the real operation field names");
+		error.Should().NotContain(invalidEnvironmentName,
+			because: "the field-shape check must run before environment resolution");
+	}
+
+	[Test]
+	[Description("Rejects an operation with a blank schema-name in MCP terms, never leaking the find-entity-schema CLI switches (issue #1303 C2).")]
+	[AllureTag(ToolName)]
+	[AllureName("sync-schemas rejects a blank schema-name without leaking CLI switch names")]
+	[AllureDescription("Starts the real MCP server and submits an update-entity with an empty schema-name. Verifies the failure names the kebab-case MCP field and does not surface the --search-pattern/--uid CLI message from find-entity-schema.")]
+	public async Task SchemaSyncTool_Should_Reject_Blank_SchemaName_Without_Leaking_Cli_Switches() {
+		// Arrange
+		await using ArrangeContext context = await ArrangeAsync(requireEnvironment: false);
+		string invalidEnvironmentName = $"missing-sync-schemas-env-{Guid.NewGuid():N}";
+
+		// Act
+		CallToolResult callResult = await context.Session.CallToolAsync(
+			ToolName,
+			new Dictionary<string, object?> {
+				["args"] = new Dictionary<string, object?> {
+					["environment-name"] = invalidEnvironmentName,
+					["package-name"] = "UsrPkg",
+					["operations"] = new object?[] {
+						new Dictionary<string, object?> {
+							["type"] = "update-entity",
+							["schema-name"] = "   ",
+							["update-operations"] = new object?[] {
+								new Dictionary<string, object?> {
+									["action"] = "add",
+									["column-name"] = "UsrPages",
+									["type"] = "Integer"
+								}
+							}
+						}
+					}
+				}
+			},
+			context.CancellationTokenSource.Token);
+		JsonElement response = ExtractSchemaSyncResponse(callResult);
+		JsonElement result = response.GetProperty("results").EnumerateArray().Single();
+		string error = result.GetProperty("error").GetString()!;
+
+		// Assert
+		callResult.IsError.Should().NotBeTrue(
+			because: "a missing required field is a caller-actionable structured failure, not an MCP protocol error");
+		response.GetProperty("success").GetBoolean().Should().BeFalse(
+			because: "an operation with no schema name cannot be applied");
+		error.Should().Contain("'schema-name' is required",
+			because: "the failure must name the exact kebab-case MCP field the caller has to fill in");
+		error.Should().NotContain("--search-pattern",
+			because: "an MCP caller never used a CLI switch, so find-entity-schema's message must not leak through");
+		error.Should().NotContain("--uid",
+			because: "an MCP caller never used a CLI switch, so find-entity-schema's message must not leak through");
+		error.Should().NotContain(invalidEnvironmentName,
+			because: "the required-field check must run before environment resolution");
+	}
+
+	[Test]
+	[Description("Omits a shape-rejected operation from resume-plan.operations so the caller is not told to replay the payload just rejected (issue #1303).")]
+	[AllureTag(ToolName)]
+	[AllureName("sync-schemas omits a shape-rejected operation from the resume plan")]
+	[AllureDescription("Submits a two-operation batch whose first operation carries an unbindable field. Verifies resume-plan.operations carries ONLY the not-run second operation, that failed-operation still reports index 0, and that the instruction tells the caller to fix the field names first.")]
+	public async Task SchemaSyncTool_Should_Omit_ShapeRejected_Operation_From_ResumePlan() {
+		// Arrange
+		await using ArrangeContext context = await ArrangeAsync(requireEnvironment: false);
+		string invalidEnvironmentName = $"missing-sync-schemas-env-{Guid.NewGuid():N}";
+
+		// Act
+		CallToolResult callResult = await context.Session.CallToolAsync(
+			ToolName,
+			new Dictionary<string, object?> {
+				["args"] = new Dictionary<string, object?> {
+					["environment-name"] = invalidEnvironmentName,
+					["package-name"] = "UsrPkg",
+					["operations"] = new object?[] {
+						// Op 0 is rejected for its FIELD SHAPE before any server call, so it must NOT be
+						// echoed back as resubmittable — the caller has to rename 'seed-data' first.
+						new Dictionary<string, object?> {
+							["type"] = "create-lookup",
+							["schema-name"] = "UsrTodoStatus",
+							["title-localizations"] = BuildLocalizations("Todo Status"),
+							["seed-data"] = new object?[] {
+								new Dictionary<string, object?> {
+									["values"] = new Dictionary<string, object?> { ["Name"] = "Open" }
+								}
+							}
+						},
+						new Dictionary<string, object?> {
+							["type"] = "update-entity",
+							["schema-name"] = "UsrBooks",
+							["update-operations"] = new object?[] {
+								new Dictionary<string, object?> {
+									["action"] = "add",
+									["column-name"] = "UsrPages",
+									["type"] = "Integer"
+								}
+							}
+						}
+					}
+				}
+			},
+			context.CancellationTokenSource.Token);
+		JsonElement response = ExtractSchemaSyncResponse(callResult);
+		JsonElement resumePlan = response.GetProperty("resume-plan");
+		JsonElement[] resumeOperations = resumePlan.GetProperty("operations").EnumerateArray().ToArray();
+
+		// Assert
+		response.GetProperty("success").GetBoolean().Should().BeFalse(
+			because: "the batch aborted on the shape-rejected first operation");
+		resumePlan.GetProperty("failed-operation").GetProperty("operation-index").GetInt32().Should().Be(0,
+			because: "the resume plan must still name the failed operation by its request index even when it is not resubmittable verbatim");
+		resumePlan.GetProperty("not-run-operation-indexes").EnumerateArray().Select(e => e.GetInt32())
+			.Should().Equal([1],
+			because: "the second operation never ran and must be listed as not-run");
+		resumeOperations.Should().HaveCount(1,
+			because: "only the not-run operation is resubmittable as-is; replaying the rejected payload verbatim would fail again");
+		resumeOperations[0].GetProperty("type").GetString().Should().Be("update-entity",
+			because: "the single resume operation must be the not-run update-entity, not the shape-rejected create-lookup");
+		resumePlan.GetProperty("instruction").GetString().Should().Contain("FIELD SHAPE",
+			because: "the instruction must explain why the failed operation is absent from the resubmit list");
+	}
+
+	[Test]
+	[Description("Keeps binding the legacy 'operation' key so the field-shape rejection does not break callers that spell the operation type the old way (issue #1303 regression guard).")]
+	[AllureTag(ToolName)]
+	[AllureName("sync-schemas still accepts the legacy 'operation' key")]
+	[AllureDescription("Submits an operation that names its type with the legacy 'operation' key instead of 'type'. Verifies the new unknown-field rejection does NOT fire: the operation is consumed and fails later for an environment reason, not for its field shape.")]
+	public async Task SchemaSyncTool_Should_Still_Bind_Legacy_Operation_Key() {
+		// Arrange
+		await using ArrangeContext context = await ArrangeAsync(requireEnvironment: false);
+		string invalidEnvironmentName = $"missing-sync-schemas-env-{Guid.NewGuid():N}";
+
+		// Act
+		CallToolResult callResult = await context.Session.CallToolAsync(
+			ToolName,
+			new Dictionary<string, object?> {
+				["args"] = new Dictionary<string, object?> {
+					["environment-name"] = invalidEnvironmentName,
+					["package-name"] = "UsrPkg",
+					["operations"] = new object?[] {
+						new Dictionary<string, object?> {
+							["operation"] = "create-lookup",
+							["schema-name"] = "UsrTodoStatus",
+							["title-localizations"] = BuildLocalizations("Todo Status")
+						}
+					}
+				}
+			},
+			context.CancellationTokenSource.Token);
+		JsonElement response = ExtractSchemaSyncResponse(callResult);
+		JsonElement result = response.GetProperty("results").EnumerateArray().Single();
+		string error = result.GetProperty("error").GetString() ?? string.Empty;
+
+		// Assert
+		callResult.IsError.Should().NotBeTrue(
+			because: "the legacy spelling must still travel through the normal structured MCP result envelope");
+		result.GetProperty("type").GetString().Should().Be("create-lookup",
+			because: "the tool must have READ the legacy 'operation' key to report the type back — this is the positive binding proof, not merely the absence of a rejection");
+		error.Should().NotContain("Unknown args: 'operation'",
+			because: "'operation' is consumed by the tool itself as the legacy spelling of 'type' and must never be reported as unbindable");
+		error.Should().NotContain("Valid operation fields:",
+			because: "the field-shape rejection must not fire for an operation the tool can still read");
 	}
 
 	[Test]

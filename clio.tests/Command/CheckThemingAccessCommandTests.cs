@@ -2,7 +2,10 @@ namespace Clio.Tests.Command;
 
 using System.Collections.Generic;
 using System.Linq;
+using System.Reflection;
+using Clio.Command.McpServer.Tools;
 using Clio.Command.Theming;
+using Clio.Common;
 using Clio.Common;
 using FluentAssertions;
 using NSubstitute;
@@ -93,5 +96,35 @@ public sealed class CheckThemingAccessCommandTests {
 		exitCode.Should().Be(0, because: "a completed access probe is a successful command run regardless of the verdicts");
 		_logger.Received(1).WriteInfo(Arg.Is<string>(message =>
 			message.Contains("CanManageThemes: True") && message.Contains("CanCustomizeBranding: False")));
+	}
+
+	[Test]
+	[Description("check-theming-access must NOT be version-gated: it reads only RightsService/LicenseService, so it has to answer on any Creatio core (issue #1303 C5).")]
+	public void CheckThemingAccessOptions_ShouldNotBeVersionGated_WhenTheProbeIsAdvisoryOnly() {
+		// Arrange
+		System.Type optionsType = typeof(CheckThemingAccessOptions);
+
+		// Act
+		RequiresCreatioVersionAttribute attribute = optionsType.GetCustomAttribute<RequiresCreatioVersionAttribute>();
+
+		// Assert
+		attribute.Should().BeNull(
+			because: "the advisory access probe must run on any Creatio version; gating it made the first step of the branding flow fail instead of answering");
+	}
+
+	[Test]
+	[Description("A successful theming-access answer reports the ThemeService floor so a caller on an older core learns the write-command requirement from the advisory answer.")]
+	public void ThemingAccessResult_ShouldCarryThemeServiceMinVersion_WhenProbeSucceeds() {
+		// Arrange
+		bool canManageThemes = true;
+		bool canCustomizeBranding = true;
+
+		// Act
+		ThemingAccessResult result = ThemingAccessResult.Successful(canManageThemes, canCustomizeBranding);
+
+		// Assert
+		result.Success.Should().BeTrue(because: "a completed probe is a successful result");
+		result.ThemeServiceMinVersion.Should().Be(ThemeServiceRequirement.MinVersion,
+			because: "the answer must name the ThemeService floor the theme WRITE commands still require");
 	}
 }

@@ -192,12 +192,20 @@ public class CheckThemingAccessToolTests {
 	}
 
 	[Test]
-	[Description("Returns a structured failure carrying the version-requirement message and never probes rights or license when the target environment does not satisfy the Creatio version floor.")]
+	[Description("Probes rights and license even when the resolved version checker would refuse, because check-theming-access is deliberately no longer version-gated (issue #1303 C5).")]
 	[Category("Unit")]
-	public void CheckThemingAccess_ShouldReturnFailure_WhenCreatioVersionRequirementIsUnmet() {
+	public void CheckThemingAccess_ShouldStillProbe_WhenVersionCheckerWouldRefuse() {
 		// Arrange
 		(CheckThemingAccessTool tool, IToolCommandResolver resolver, ICreatioRightsClient rights,
-			ICreatioLicenseClient _) = CreateTool();
+			ICreatioLicenseClient license) = CreateTool();
+		rights.GetCanExecuteOperation("CanManageThemes", Arg.Any<CreatioRequestOptions>()).Returns(true);
+		license
+			.GetLicenseOperationStatuses(
+				Arg.Is<IReadOnlyCollection<string>>(names => names.Contains("CanCustomizeBranding")),
+				Arg.Any<CreatioRequestOptions>())
+			.Returns(new Dictionary<string, bool> { ["CanCustomizeBranding"] = true });
+		// A checker that refuses everything: it must NOT be consulted for this command, because
+		// CheckThemingAccessOptions carries no [RequiresCreatioVersion] attribute any more.
 		ICreatioVersionChecker versionChecker = Substitute.For<ICreatioVersionChecker>();
 		versionChecker
 			.When(c => c.EnsureRequirements(Arg.Any<object>()))
@@ -210,13 +218,35 @@ public class CheckThemingAccessToolTests {
 		ThemingAccessResult result = tool.CheckThemingAccess(new CheckThemingAccessArgs(EnvironmentName: "docker_fix2"));
 
 		// Assert
-		result.Success.Should().BeFalse(
-			because: "an unmet Creatio version requirement must refuse the access probe exactly as the theme CRUD tools are refused");
-		result.Error.Should().Contain("requires Creatio 10.0.0 or later",
-			because: "the version-requirement message must be surfaced to the MCP caller");
-		result.Error.Should().Contain($"[{CreatioVersionRequirementException.VersionTooOldCode}]",
-			because: "the typed result carries no exit code, so the stable machine-readable ErrorCode must travel in the error message");
-		rights.DidNotReceive().GetCanExecuteOperation(Arg.Any<string>(), Arg.Any<CreatioRequestOptions>());
+		result.Success.Should().BeTrue(
+			because: "the advisory access probe reads only RightsService/LicenseService, so an older core must no longer refuse it");
+		result.Error.Should().BeNull(
+			because: "a successful probe carries no error, and in particular not the removed version-gate refusal");
+		result.CanManageThemes.Should().BeTrue(
+			because: "the CanManageThemes operation right must be reported from the real probe rather than short-circuited by a version gate");
+		rights.Received().GetCanExecuteOperation("CanManageThemes", Arg.Any<CreatioRequestOptions>());
+	}
+
+	[Test]
+	[Description("Reports the ThemeService floor as themeServiceMinVersion on success so a caller on an older core learns the theme write-command requirement from the answer instead of from a refusal.")]
+	[Category("Unit")]
+	public void CheckThemingAccess_ShouldReportThemeServiceMinVersion_OnSuccess() {
+		// Arrange
+		(CheckThemingAccessTool tool, IToolCommandResolver _, ICreatioRightsClient rights,
+			ICreatioLicenseClient license) = CreateTool();
+		rights.GetCanExecuteOperation("CanManageThemes", Arg.Any<CreatioRequestOptions>()).Returns(false);
+		license
+			.GetLicenseOperationStatuses(Arg.Any<IReadOnlyCollection<string>>(), Arg.Any<CreatioRequestOptions>())
+			.Returns(new Dictionary<string, bool> { ["CanCustomizeBranding"] = false });
+
+		// Act
+		ThemingAccessResult result = tool.CheckThemingAccess(new CheckThemingAccessArgs(EnvironmentName: "docker_fix2"));
+
+		// Assert
+		result.Success.Should().BeTrue(
+			because: "a completed probe succeeds even when both verdicts are negative — 'no access' is an answer, not a failure");
+		result.ThemeServiceMinVersion.Should().Be(ThemeServiceRequirement.MinVersion,
+			because: "the ungated advisory answer must still disclose the floor the theme WRITE commands require");
 	}
 
 	private static (CheckThemingAccessTool tool, IToolCommandResolver resolver, ICreatioRightsClient rights,

@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Diagnostics.CodeAnalysis;
 using System.ComponentModel;
 using System.ComponentModel.DataAnnotations;
 using System.Linq;
@@ -30,6 +31,13 @@ public sealed class SchemaSyncTool(
 	TimeSpan? maxCumulativeRetryDelay = null) {
 
 	internal const string ToolName = "sync-schemas";
+
+	/// <summary>
+	/// The <c>operation-index</c> a result carries when it describes the CALL and not an operation: the whole-call
+	/// argument rejection, which happens before the <c>operations</c> array is materialized. A real index is
+	/// zero-based, so <c>-1</c> cannot collide with one.
+	/// </summary>
+	internal const int NoOperationIndex = -1;
 	private const string CreateLookupOperationName = "create-lookup";
 	private const string CreateEntityOperationName = "create-entity";
 	private const string UpdateEntityOperationName = "update-entity";
@@ -41,6 +49,8 @@ public sealed class SchemaSyncTool(
 	private const string ReconciledOutcome = "reconciled";
 	private const string AlreadySatisfiedOutcome = "already-satisfied";
 	private const string CollisionOutcome = "collision";
+	private const string FailedStatus = "failed";
+	private const string SeedRowsFieldName = "seed-rows";
 
 	/// <summary>
 	/// Total number of attempts (including the first) for an operation whose failure is classified as a
@@ -135,8 +145,29 @@ public sealed class SchemaSyncTool(
 		CancellationToken cancellationToken = default) {
 		// Materialize the operations once so the enrichment collectors and the execution loop share a single
 		// enumeration pass (args.Operations may be a lazy IEnumerable).
+		// The top-level field-shape check runs BEFORE the operations array is materialized. Order matters: a
+		// mis-keyed `operations` (or an omitted one) leaves the non-nullable positional property null, and
+		// `Enumerable.ToList(null)` would throw ArgumentNullException — surfacing as "Value cannot be null.
+		// (Parameter 'source')", which is exactly the unactionable answer this validation exists to remove.
+		string? argsError = McpToolArgumentSupport.BuildLegacyAliasError(
+			args.ExtensionData,
+			ArgsFieldAliases,
+			".",
+			ArgsFieldHint);
+		if (argsError is not null) {
+			return BuildTopLevelRejection($"sync-schemas arguments are invalid: {argsError} Nothing was applied.");
+		}
+		// An omitted `operations` leaves ExtensionData empty, so the alias check above cannot catch it.
+		if (args.Operations is null) {
+			return BuildTopLevelRejection(
+				$"sync-schemas arguments are invalid: 'operations' is required and must be a non-empty array of schema operations. {ArgsFieldHint} Nothing was applied.");
+		}
 		IReadOnlyList<SchemaSyncOperation> operations =
 			args.Operations as IReadOnlyList<SchemaSyncOperation> ?? args.Operations.ToList();
+		if (operations.Count == 0) {
+			return BuildTopLevelRejection(
+				$"sync-schemas arguments are invalid: 'operations' is empty, so there is nothing to apply. Send at least one operation. {ArgsFieldHint} Nothing was applied.");
+		}
 		// Data Forge enrichment is DIAGNOSTIC ONLY — it never gates the schema operations below. The
 		// builder already degrades gracefully (an unhealthy dataforge subsystem, e.g. 'baseUri: Value
 		// cannot be null', is caught and surfaced as a warning rather than thrown). This outer guard is
@@ -216,11 +247,21 @@ public sealed class SchemaSyncTool(
 	/// </summary>
 	private bool ExecuteBatchOperation(SchemaSyncOperation op, int index, BatchContext ctx) {
 		logger.ClearMessages();
-		if (TryValidateSeedRows(op, index, out SchemaSyncOperationResult? seedValidationFailure)) {
-			ctx.State.Results.Add(Classify(seedValidationFailure, index));
-			// A validation failure applied nothing on the server, so the whole operation is
-			// resubmittable as-is.
-			ctx.State.Abort(index, op);
+		// Field-shape and schema-name checks run before the seed-row checks and before any server call: an
+		// operation whose keys did not bind must never reach the convergence read, or the caller gets a
+		// success envelope for work that silently did nothing.
+		// NOTE: the || short-circuit is load-bearing — every Try* method opens by setting the out parameter to
+		// null, so a later call must not run once an earlier one has produced the failure.
+		bool shapeRejected =
+			TryValidateOperationFields(op, index, out SchemaSyncOperationResult? fieldValidationFailure)
+			|| TryValidateSchemaName(op, index, out fieldValidationFailure)
+			|| TryValidateVirtualSeedRows(op, index, out fieldValidationFailure);
+		if (shapeRejected || TryValidateSeedRows(op, index, out fieldValidationFailure)) {
+			ctx.State.Results.Add(Classify(fieldValidationFailure, index));
+			// A validation failure applied nothing on the server. A seed-row failure is still resubmittable
+			// as-is once the rows are corrected, but a SHAPE rejection must not be echoed back under a
+			// "resubmit verbatim" instruction — the caller has to fix the field names first.
+			ctx.State.Abort(index, op, resubmittableVerbatim: !shapeRejected);
 			return false;
 		}
 		ctx.ReportStage($"{index + 1}/{ctx.Total}: {GetReportedOperationType(op)} {op.SchemaName}");
@@ -228,7 +269,13 @@ public sealed class SchemaSyncTool(
 			Classify(ExecuteOperation(op, ctx.Args, index, ctx.TenantKey, ctx.RetryBudget), index);
 		ctx.State.Results.Add(result);
 		if (!result.Success) {
-			ctx.State.Abort(index, op);
+			// An operation whose `type` never bound to a dispatch arm (legacy `operation` key, missing or
+			// invalid `type`) fails HERE rather than in the Try* chain above, but it is the same class of
+			// failure: no edit to the rows or the environment can make that payload succeed. Echoing it back
+			// under "resubmit ONLY the operations in resume-plan.operations" would send an agent into an
+			// endless replay of a call that can never bind (PR #1354 review), so it is excluded from the plan
+			// exactly like the field-shape rejections.
+			ctx.State.Abort(index, op, resubmittableVerbatim: !IsUnbindableOperationType(op));
 			return false;
 		}
 		if (op.SeedRows?.Any() != true || IsSeedDataOperation(op)) {
@@ -323,12 +370,21 @@ public sealed class SchemaSyncTool(
 		// already-satisfied — route through it). Only default it for results that never reach FinalizeResult
 		// and set no status themselves: validation failures, the unknown-op result, the collision result, the
 		// missing-update-operations error, and the deterministic catch-path failures.
-		result.Status ??= result.Success ? "completed" : "failed";
+		result.Status ??= result.Success ? "completed" : FailedStatus;
 		return result;
 	}
 
 	private static bool IsSeedDataOperation(SchemaSyncOperation op) =>
 		string.Equals(op.Type, SeedDataOperationName, StringComparison.Ordinal);
+
+	/// <summary>
+	/// Whether this operation's <c>type</c> binds to a dispatch arm of <see cref="ExecuteOperation"/>. The
+	/// complement of the <c>_ =&gt;</c> default branch, kept beside it so the two cannot drift: a false here
+	/// means the operation reports <see cref="BuildUnknownOperationError"/> and is NOT resubmittable verbatim.
+	/// </summary>
+	private static bool IsUnbindableOperationType(SchemaSyncOperation op) =>
+		op.Type is not (CreateLookupOperationName or CreateEntityOperationName
+			or UpdateEntityOperationName or SeedDataOperationName);
 
 	private SchemaSyncOperationResult ExecuteOperation(SchemaSyncOperation op, SchemaSyncArgs args, int operationIndex, string tenantKey, RetryBudget retryBudget) {
 		return op.Type switch {
@@ -345,10 +401,203 @@ public sealed class SchemaSyncTool(
 		};
 	}
 
+	/// <summary>
+	/// Mis-spellings of the top-level <see cref="SchemaSyncArgs"/> fields, mapped to their canonical
+	/// kebab-case names.
+	/// </summary>
+	private static readonly IReadOnlyDictionary<string, string> ArgsFieldAliases =
+		new Dictionary<string, string>(StringComparer.Ordinal) {
+			["packageName"] = "package-name",
+			["package_name"] = "package-name",
+			["package"] = "package-name",
+			["ops"] = "operations",
+			["operation-list"] = "operations",
+			["Operations"] = "operations"
+		}.Concat(McpToolArgumentSupport.EnvironmentNameAliases)
+		.ToDictionary(pair => pair.Key, pair => pair.Value, StringComparer.Ordinal);
+
+	/// <summary>The valid top-level field names, listed in every top-level rejection.</summary>
+	private const string ArgsFieldHint = "Valid fields: environment-name, package-name, operations.";
+
+	/// <summary>
+	/// Builds the whole-call rejection envelope used when the arguments fail before any operation runs, so the
+	/// response literal is not duplicated per failure branch.
+	/// </summary>
+	private static SchemaSyncResponse BuildTopLevelRejection(string error) {
+		return new SchemaSyncResponse {
+			Success = false,
+			Results = [
+				new SchemaSyncOperationResult {
+					Type = ToolName,
+					Success = false,
+					Status = FailedStatus,
+					// NO operation ran, and none was even examined - the arguments were rejected before the
+					// `operations` array was materialized. Leaving the default 0 here serialized
+					// `operation-index: 0`, telling a caller that operations[0] is the culprit; an agent keying
+					// recovery off that field would resubmit from index 1 and skip a schema operation that was
+					// never applied (PR #1354 review). NoOperationIndex is the sentinel for "this result is
+					// about the call, not about an operation".
+					OperationIndex = NoOperationIndex,
+					Error = error
+				}
+			]
+		};
+	}
+
+	/// <summary>
+	/// The mis-spellings of a <see cref="SchemaSyncOperation"/> field an LLM tends to emit, each mapped to the
+	/// canonical kebab-case name. Without this table an unbound field lands in
+	/// <see cref="SchemaSyncOperation.ExtensionData"/> and is dropped by System.Text.Json without a word, so a
+	/// <c>create-lookup</c> carrying rows under the wrong key reports <c>outcome: created</c> and seeds nothing
+	/// (issue #1303 A1).
+	/// </summary>
+	private static readonly IReadOnlyDictionary<string, string> OperationFieldAliases =
+		new Dictionary<string, string>(StringComparer.Ordinal) {
+			["seed-data"] = SeedRowsFieldName,
+			["seedData"] = SeedRowsFieldName,
+			["seed_data"] = SeedRowsFieldName,
+			["seedRows"] = SeedRowsFieldName,
+			["seed_rows"] = SeedRowsFieldName,
+			["rows"] = SeedRowsFieldName,
+			["values"] = SeedRowsFieldName,
+			["name"] = "schema-name",
+			["schemaName"] = "schema-name",
+			["schema_name"] = "schema-name",
+			["titleLocalizations"] = "title-localizations",
+			["title_localizations"] = "title-localizations",
+			["parentSchemaName"] = "parent-schema-name",
+			["parent_schema_name"] = "parent-schema-name",
+			["extendParent"] = "extend-parent",
+			["extend_parent"] = "extend-parent",
+			["updateOperations"] = "update-operations",
+			["update_operations"] = "update-operations",
+			["isVirtual"] = "is-virtual",
+			["is_virtual"] = "is-virtual"
+		};
+
+	/// <summary>
+	/// Field names in <see cref="SchemaSyncOperation.ExtensionData"/> that the tool itself consumes, so they
+	/// must not be reported as unknown. <c>operation</c> is the legacy spelling of <c>type</c> read back in
+	/// <c>GetReportedOperationType</c>/<c>BuildUnknownOperationError</c>.
+	/// </summary>
+	private static readonly IReadOnlySet<string> ConsumedOperationExtensionFields =
+		new HashSet<string>(StringComparer.Ordinal) { "operation" };
+
+	/// <summary>
+	/// The valid <see cref="SchemaSyncOperation"/> field names, listed in the unknown-field error so the caller
+	/// can correct the call without re-reading the whole contract.
+	/// </summary>
+	private const string OperationFieldHint =
+		"Valid operation fields: type, schema-name, title-localizations, parent-schema-name, extend-parent, " +
+		"columns, update-operations, seed-rows, is-virtual (legacy: title).";
+
+	/// <summary>
+	/// Rejects an operation whose JSON carried fields the tool cannot bind. This runs BEFORE any server call so
+	/// a mis-keyed payload fails loudly instead of being partially applied: previously every unbound field was
+	/// swallowed silently, which is why rows sent under <c>seed-data</c> disappeared while the operation still
+	/// reported success.
+	/// </summary>
+	private static bool TryValidateOperationFields(
+		SchemaSyncOperation op,
+		int operationIndex,
+		[NotNullWhen(true)] out SchemaSyncOperationResult? validationFailure) {
+		validationFailure = null;
+		Dictionary<string, JsonElement> unbound = (op.ExtensionData ?? [])
+			.Where(pair => !ConsumedOperationExtensionFields.Contains(pair.Key))
+			.ToDictionary(pair => pair.Key, pair => pair.Value, StringComparer.Ordinal);
+		string? aliasError = McpToolArgumentSupport.BuildLegacyAliasError(
+			unbound,
+			OperationFieldAliases,
+			".",
+			OperationFieldHint);
+		if (aliasError is null) {
+			return false;
+		}
+		// 'seed-data' is a legitimate VALUE of the 'type' field, so an unqualified "rename seed-data" hint
+		// reads as "the seed-data operation type is gone". Say which one the caller got wrong.
+		string note = BuildRenameShapeNote(unbound);
+		validationFailure = new SchemaSyncOperationResult {
+			Type = GetReportedOperationType(op),
+			SchemaName = op.SchemaName,
+			Success = false,
+			Error = $"sync-schemas operations[{operationIndex}] is invalid: {aliasError}{note} " +
+				"Nothing was applied for this operation."
+		};
+		return true;
+	}
+
+	/// <summary>
+	/// Adds the shape reminder a bare rename hint cannot carry. Renaming <c>seed-data</c>/<c>values</c>/
+	/// <c>rows</c> to <c>seed-rows</c> is not enough on its own: <c>seed-rows</c> is an ARRAY whose items each
+	/// wrap their columns in a <c>values</c> map, so a caller who follows the rename literally would just fail
+	/// a second time — this time in the SDK binder, outside the structured envelope.
+	/// </summary>
+	private static string BuildRenameShapeNote(IReadOnlyDictionary<string, JsonElement> unbound) {
+		if (unbound.ContainsKey("seed-data")) {
+			return " Note: 'seed-data' is an operation TYPE (\"type\": \"seed-data\"), not a field; rows always go in "
+				+ "'seed-rows', which is an array of row objects: \"seed-rows\": [{\"values\": {\"Name\": \"Positive\"}}].";
+		}
+		if (unbound.ContainsKey("values") || unbound.ContainsKey("rows")) {
+			return " Note: 'seed-rows' is an ARRAY of row objects, each wrapping its columns in a 'values' map: "
+				+ "\"seed-rows\": [{\"values\": {\"Name\": \"Positive\"}}].";
+		}
+		return string.Empty;
+	}
+
+	/// <summary>
+	/// Rejects an operation with no <c>schema-name</c> up front. Without this check a blank name reaches
+	/// <c>FindEntitySchemaCommand.Validate</c>, whose message talks about the <c>--schema-name</c>/
+	/// <c>--search-pattern</c>/<c>--uid</c> CLI switches that an MCP caller never used (issue #1303 C2).
+	/// </summary>
+	private static bool TryValidateSchemaName(
+		SchemaSyncOperation op,
+		int operationIndex,
+		[NotNullWhen(true)] out SchemaSyncOperationResult? validationFailure) {
+		validationFailure = null;
+		if (!string.IsNullOrWhiteSpace(op.SchemaName)) {
+			return false;
+		}
+		validationFailure = new SchemaSyncOperationResult {
+			Type = GetReportedOperationType(op),
+			SchemaName = op.SchemaName,
+			Success = false,
+			Error = $"sync-schemas operations[{operationIndex}] is invalid: 'schema-name' is required and cannot be empty. " +
+				"Nothing was applied for this operation."
+		};
+		return true;
+	}
+
+	/// <summary>
+	/// Rejects a virtual <c>create-entity</c> that also carries <c>seed-rows</c>. Classified with the SHAPE
+	/// rejections rather than the seed-row ones on purpose: no edit to the rows can make this operation valid —
+	/// the caller must drop either <c>seed-rows</c> or <c>is-virtual</c> — so echoing it back under a "resubmit
+	/// these operations" instruction would advertise a recovery path that rejects forever.
+	/// </summary>
+	private static bool TryValidateVirtualSeedRows(
+		SchemaSyncOperation op,
+		int operationIndex,
+		[NotNullWhen(true)] out SchemaSyncOperationResult? validationFailure) {
+		validationFailure = null;
+		if (op.SeedRows?.Any() != true
+			|| !string.Equals(op.Type, CreateEntityOperationName, StringComparison.Ordinal)
+			|| !op.IsVirtual) {
+			return false;
+		}
+		validationFailure = new SchemaSyncOperationResult {
+			Type = CreateEntityOperationName,
+			SchemaName = op.SchemaName,
+			Success = false,
+			Error = $"sync-schemas operations[{operationIndex}] is invalid: virtual create-entity operations cannot "
+				+ "include seed-rows because virtual entities have no physical database table. Drop 'seed-rows', or "
+				+ "set 'is-virtual' to false. Nothing was applied for this operation."
+		};
+		return true;
+	}
+
 	private static bool TryValidateSeedRows(
 		SchemaSyncOperation op,
 		int operationIndex,
-		out SchemaSyncOperationResult? validationFailure) {
+		[NotNullWhen(true)] out SchemaSyncOperationResult? validationFailure) {
 		validationFailure = null;
 		if (IsSeedDataOperation(op) && op.SeedRows?.Any() != true) {
 			validationFailure = new SchemaSyncOperationResult {
@@ -361,15 +610,6 @@ public sealed class SchemaSyncTool(
 		}
 		if (op.SeedRows?.Any() != true) {
 			return false;
-		}
-		if (string.Equals(op.Type, CreateEntityOperationName, StringComparison.Ordinal) && op.IsVirtual) {
-			validationFailure = new SchemaSyncOperationResult {
-				Type = CreateEntityOperationName,
-				SchemaName = op.SchemaName,
-				Success = false,
-				Error = $"sync-schemas operations[{operationIndex}] is invalid: virtual create-entity operations cannot include seed-rows because virtual entities have no physical database table."
-			};
-			return true;
 		}
 
 		if (op.SeedRows.Any(row => row is null || row.Values is null)) {
@@ -929,7 +1169,7 @@ public sealed class SchemaSyncTool(
 				Type = operationName,
 				SchemaName = schemaName,
 				Success = false,
-				Status = "failed",
+				Status = FailedStatus,
 				Error = SensitiveErrorTextRedactor.Redact(execution.CaughtException.Message),
 				Messages = messages,
 				Attempts = attempts
@@ -940,7 +1180,7 @@ public sealed class SchemaSyncTool(
 			Type = operationName,
 			SchemaName = schemaName,
 			Success = success,
-			Status = success ? "completed" : "failed",
+			Status = success ? "completed" : FailedStatus,
 			Outcome = success ? outcome : null,
 			Messages = messages,
 			Error = BuildOperationError(operationName, execution.ExitCode, messages),
@@ -989,7 +1229,10 @@ public sealed class SchemaSyncTool(
 		}
 		SchemaSyncOperationResult? failedResult = state.Results.LastOrDefault(r => !r.Success);
 		var notRunIndexes = new List<int>();
-		var resumeOperations = new List<SchemaSyncOperation> { state.FailedResumeOperation };
+		var resumeOperations = new List<SchemaSyncOperation>();
+		if (state.FailedOperationIsResubmittableVerbatim) {
+			resumeOperations.Add(state.FailedResumeOperation);
+		}
 		for (int index = state.AbortedAtIndex + 1; index < operations.Count; index++) {
 			notRunIndexes.Add(index);
 			resumeOperations.Add(operations[index]);
@@ -997,10 +1240,22 @@ public sealed class SchemaSyncTool(
 		// Earlier operations in this batch may have skipped their inline seed (already-satisfied create) —
 		// carry those standalone seed-data ops along so an abort does not drop the deferred seeding.
 		resumeOperations.AddRange(state.DeferredSeedOperations.Select(deferred => deferred.Operation));
+		// An empty `operations` is a legitimate plan and is still EMITTED (PR #1354 review). This happens on a
+		// shape rejection of the last (or only) operation with no deferred seeds - the common single-operation
+		// LLM call. Suppressing the whole plan there made `resume-plan` absent on an abort, which contradicts
+		// the served contract and drops the structured `failed-operation` summary (operation-index / type /
+		// schema-name / error) consumers key off. The shape-rejection instruction below already tells the
+		// caller to correct the field names and resubmit the operation itself, so an empty `operations` array
+		// advertises no recovery path that does not exist - it says "nothing here is resubmittable AS SENT".
 		return new SchemaSyncResumePlan {
-			Instruction = "Batch aborted before completing. Resubmit ONLY the operations in resume-plan.operations "
-				+ "(the failed operation, the not-run operations, and any deferred seed-data operations) as a new "
-				+ "sync-schemas call; do NOT resubmit the operations already marked completed.",
+			Instruction = state.FailedOperationIsResubmittableVerbatim
+				? "Batch aborted before completing. Resubmit ONLY the operations in resume-plan.operations "
+					+ "(the failed operation, the not-run operations, and any deferred seed-data operations) as a new "
+					+ "sync-schemas call; do NOT resubmit the operations already marked completed."
+				: "Batch aborted before completing. The failed operation was rejected for its FIELD SHAPE and is "
+					+ "deliberately NOT included in resume-plan.operations — correct the field names reported in its "
+					+ "error, then resubmit it together with the operations listed here (the not-run operations and any "
+					+ "deferred seed-data operations); do NOT resubmit the operations already marked completed.",
 			FailedOperation = new SchemaSyncResumeFailure(
 				state.AbortedAtIndex,
 				failedResult?.Type ?? state.FailedResumeOperation.Type,
@@ -1050,14 +1305,22 @@ public sealed class SchemaSyncTool(
 
 		public SchemaSyncOperation? FailedResumeOperation { get; private set; }
 
+		/// <summary>
+		/// Whether the failed operation may be resubmitted BYTE-FOR-BYTE. False when it was rejected for its
+		/// field shape (an unbindable key, or a missing schema-name): echoing such an operation back under a
+		/// "resubmit these" instruction would tell the caller to replay the very payload just rejected.
+		/// </summary>
+		public bool FailedOperationIsResubmittableVerbatim { get; private set; } = true;
+
 		public List<(int Index, SchemaSyncOperation Operation)> DeferredSeedOperations { get; } = [];
 
 		/// <summary>
 		/// Records the stop-on-first-failure abort point and the operation shape to resubmit for it.
 		/// </summary>
-		public void Abort(int index, SchemaSyncOperation resumeOperation) {
+		public void Abort(int index, SchemaSyncOperation resumeOperation, bool resubmittableVerbatim = true) {
 			AbortedAtIndex = index;
 			FailedResumeOperation = resumeOperation;
+			FailedOperationIsResubmittableVerbatim = resubmittableVerbatim;
 		}
 	}
 
@@ -1165,7 +1428,15 @@ public sealed record SchemaSyncArgs(
 	[property: Description("Ordered list of schema operations to execute")]
 	[property: Required]
 	IEnumerable<SchemaSyncOperation> Operations
-);
+) {
+	/// <summary>
+	/// Overflow bag for top-level fields that did not bind. Without it a camelCase
+	/// <c>environmentName</c>/<c>packageName</c> is dropped by System.Text.Json and the batch runs against a
+	/// null environment instead of telling the caller to rename the field.
+	/// </summary>
+	[JsonExtensionData]
+	public Dictionary<string, JsonElement>? ExtensionData { get; init; }
+}
 
 /// <summary>
 /// A single schema operation within a <c>sync-schemas</c> batch.
@@ -1328,7 +1599,9 @@ public sealed class SchemaSyncOperationResult {
 	public string Status { get; set; }
 
 	/// <summary>
-	/// Zero-based index of the originating operation in the request <c>operations</c> array (ENG-93374).
+	/// Zero-based index of the originating operation in the request <c>operations</c> array (ENG-93374), or
+	/// <c>-1</c> when the result is about the CALL rather than about an operation (a whole-call argument
+	/// rejection, where no operation ran or was examined).
 	/// </summary>
 	[JsonPropertyName("operation-index")]
 	public int OperationIndex { get; set; }

@@ -31,10 +31,26 @@ entity column references.
 
 ### Operation Types
 
-Each operation in the `operations` array must have a `type` and `schema-name`. Additional
+Each operation in the `operations` array must have a `type` and a non-empty `schema-name`. Additional
 fields depend on the operation type.
 
 Requests use `operations[*].type`. Responses also identify each result by `type`. Do not send `operations[*].operation` in requests.
+
+**Field names are validated, not ignored.** A field the tool cannot bind is reported instead of being
+dropped: the error names the offending field with a rename hint (for example
+`'seed-data' -> 'seed-rows'`, `'name' -> 'schema-name'`, and the camelCase spellings
+`seedData`/`schemaName`/`packageName`) plus the list of valid fields. An unbindable **top-level** field
+fails the call before any server request, so nothing at all is applied. An unbindable
+**`operations[i]`** field fails before that operation's first server call: nothing is applied for it,
+but operations earlier in the batch have already run and remain `completed` in `results`. A missing or
+blank `schema-name` is rejected the same way, up front.
+
+**Two levels are validated, the levels below them are not.** The guarantee above covers the top-level
+arguments and each `operations[i]` object. Keys nested INSIDE `columns[*]`, `update-operations[*]` and
+`seed-rows[*]` are deliberately bound loosely and an unknown one there is dropped silently under
+`success: true`. That is on purpose: the `get-app-info` column round-trip (see
+[get-app-info](get-app-info.md)) sends a column back exactly as it was read, and a strict bind at that
+level would reject it. Send only the documented keys inside those three collections.
 
 #### `create-lookup`
 
@@ -87,6 +103,9 @@ Inserts `seed-rows` into an existing schema as a standalone operation (as oppose
 `seed-rows` that follow a `create-lookup`/`create-entity` in the same operation). This is primarily
 used by the `resume-plan`: when a create succeeds but its inline seeding fails, the resume operation
 is a `seed-data` op so resuming seeds the already-created schema without recreating it.
+
+`seed-data` is an operation **type**, never a field. Rows always go in `seed-rows` — an operation that
+carries a `seed-data` *field* is rejected with that hint instead of having the rows silently dropped.
 
 | Field | Required | Description |
 |---|---|---|
@@ -338,6 +357,23 @@ Operations execute in order and **stop on the first failure**. Subsequent operat
 on earlier ones (e.g., a lookup must exist and be registered before it can be maintained through
 `Lookups` or referenced as a column type).
 
+### Invalid field shape (rejected before any server call)
+
+An operation whose JSON carries a field the tool cannot bind — or whose `schema-name` is missing or
+blank — is rejected before that operation issues its first server call, including before the
+convergence read. The operation result carries `success: false` and an `error` that names the
+unbindable fields, the canonical name to rename each one to, and the full list of valid operation
+fields. Nothing is applied for that operation, and the batch stops there like any other failure.
+
+Scope matters for recovery: this is a **per-operation** gate, so operations earlier in the batch have
+already been applied and are listed in `results` as `completed` — do not resend them. An unbindable
+**top-level** field (`environment-name`, `package-name`, `operations`) is caught before the batch
+starts at all, so in that case nothing was applied anywhere.
+
+This class of failure is deliberately **not** echoed back verbatim: the failed operation is omitted
+from `resume-plan.operations` (see [Resume plan](#resume-plan)), because resubmitting the same payload
+would only repeat the rejection.
+
 ### Transient network retry
 
 A transient network-level failure (DNS resolution failure, connection reset/refused, timeout, or a
@@ -373,8 +409,27 @@ resume from the point of failure without re-running the whole batch:
 
 `resume-plan.operations` contains the failed operation followed by every not-run operation, echoed in
 re-submittable input shape. Resubmit **only** `resume-plan.operations` as a new `sync-schemas` call;
-do not resend the operations already marked `completed`. When a create succeeded but its inline
-seeding failed, the resume operation for that step is a standalone `seed-data` operation (not another
+do not resend the operations already marked `completed`.
+
+**Exception — field-shape rejection.** When the operation failed the field-shape check (an unbindable
+field name, a missing `schema-name`, or a `type` that binds to no operation), it is deliberately
+**omitted** from `resume-plan.operations`, and `instruction` says so: correct the field names reported
+in `failed-operation.error`, then resubmit that operation together with the operations the plan does
+list. When that rejected operation was the last (or only) one and nothing was deferred,
+`resume-plan.operations` comes back as an **empty array** — the plan is still emitted, because
+`failed-operation` and `not-run-operation-indexes` are what a recovering caller reads. An empty
+`operations` means "nothing here is resubmittable as sent", not "the plan is missing".
+
+**Presence.** `resume-plan` is present whenever the batch aborted, and also on a fully successful batch
+that deferred an inline seed (the deferred `seed-data` operations are carried in `operations`). Its
+presence is therefore not a failure signal — read `success` and `results[*].status` for that.
+
+**`operation-index` on a whole-call rejection.** When the arguments are rejected before the
+`operations` array is even read (a mis-keyed or missing `operations`, an unbindable top-level field),
+the single result in `results` describes the CALL, not an operation, and carries
+`"operation-index": -1`. A real operation index is zero-based, so `-1` cannot be mistaken for one.
+
+When a create succeeded but its inline seeding failed, the resume operation for that step is a standalone `seed-data` operation (not another
 create), so resuming never recreates the already-created schema.
 
 #### Deferred inline seed (successful batch)

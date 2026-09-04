@@ -1,5 +1,8 @@
-using System;
+﻿using System;
+using System.Collections.Generic;
 using System.Linq;
+using System.Text.Json;
+using System.Threading.Tasks;
 using Clio.Command;
 using Clio.Command.McpServer.Tools;
 using Clio.Common;
@@ -149,12 +152,261 @@ public sealed class GenerateSourceCodeToolTests
 			because: "the environment-resolution failure must surface in the output");
 	}
 
+
+	[Test]
+	[Category("Unit")]
+	[Description("Maps the MCP 'timeout' argument onto GenerateSourceCodeOptions.TimeOut so a long generation is not cut off at the default request timeout.")]
+	public void GenerateSourceCode_ShouldMapTimeoutOntoOptions_WhenTimeoutIsSupplied() {
+		// Arrange
+		FakeGenerateSourceCodeCommand resolvedCommand = new();
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		commandResolver.Resolve<GenerateSourceCodeCommand>(Arg.Any<EnvironmentOptions>()).Returns(resolvedCommand);
+		GenerateSourceCodeTool tool = new(resolvedCommand, ConsoleLogger.Instance, commandResolver);
+
+		// Act
+		CommandExecutionResult result = tool.GenerateSourceCode(
+			new GenerateSourceCodeArgs("dev", null, null, null, Timeout: 120000));
+
+		// Assert
+		result.ExitCode.Should().Be(0,
+			because: "a positive timeout is a valid request and must execute");
+		resolvedCommand.CapturedOptions!.TimeOut.Should().Be(120000,
+			because: "the MCP 'timeout' argument must reach the command options as the request timeout");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("The POST is issued ONCE. RemoteCommandOptions.MaxAttempts defaults to 3 and RemoteCommand hands it straight to ExecutePostRequest, so a generation that committed and then lost its response was replayed up to twice - and the published timeout understated the real wall clock by the same factor (PR #1354 review).")]
+	public void GenerateSourceCode_ShouldIssueTheWriteOnce_RegardlessOfTheOptionsDefault() {
+		// Arrange
+		FakeGenerateSourceCodeCommand resolvedCommand = new();
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		commandResolver.Resolve<GenerateSourceCodeCommand>(Arg.Any<EnvironmentOptions>()).Returns(resolvedCommand);
+		GenerateSourceCodeTool tool = new(resolvedCommand, ConsoleLogger.Instance, commandResolver);
+
+		// Act
+		tool.GenerateSourceCode(new GenerateSourceCodeArgs("dev", null, null, null, Timeout: 120000));
+
+		// Assert
+		new GenerateSourceCodeOptions().MaxAttempts.Should().Be(3,
+			because: "the inherited default is what this override exists to correct - if it ever becomes 1 the override is redundant and this test says so");
+		resolvedCommand.CapturedOptions!.MaxAttempts.Should().Be(1,
+			because: "generate-source-code is a POST with real side effects, and the repo's own rule (DataServiceQuery) is that a write is issued once while only a GET inherits the retry default");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Leaves the request timeout at its default when the caller omits the 'timeout' argument.")]
+	public void GenerateSourceCode_ShouldLeaveDefaultTimeout_WhenTimeoutIsOmitted() {
+		// Arrange
+		FakeGenerateSourceCodeCommand resolvedCommand = new();
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		commandResolver.Resolve<GenerateSourceCodeCommand>(Arg.Any<EnvironmentOptions>()).Returns(resolvedCommand);
+		GenerateSourceCodeTool tool = new(resolvedCommand, ConsoleLogger.Instance, commandResolver);
+		int defaultTimeOut = new GenerateSourceCodeOptions().TimeOut;
+
+		// Act
+		tool.GenerateSourceCode(new GenerateSourceCodeArgs("dev", null, null, null));
+
+		// Assert
+		resolvedCommand.CapturedOptions!.TimeOut.Should().Be(defaultTimeOut,
+			because: "omitting timeout must leave the command's own default untouched rather than overwriting it with zero");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[TestCase(0)]
+	[TestCase(-1)]
+	[Description("Rejects a non-positive 'timeout' as a validation error without resolving or running the command.")]
+	public void GenerateSourceCode_ShouldRejectNonPositiveTimeout_WhenTimeoutIsZeroOrNegative(int timeout) {
+		// Arrange
+		FakeGenerateSourceCodeCommand resolvedCommand = new();
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		commandResolver.Resolve<GenerateSourceCodeCommand>(Arg.Any<EnvironmentOptions>()).Returns(resolvedCommand);
+		GenerateSourceCodeTool tool = new(resolvedCommand, ConsoleLogger.Instance, commandResolver);
+
+		// Act
+		CommandExecutionResult result = tool.GenerateSourceCode(
+			new GenerateSourceCodeArgs("dev", null, null, null, Timeout: timeout));
+
+		// Assert
+		result.ExitCode.Should().Be(1,
+			because: "a non-positive timeout is a caller mistake and must surface as a validation error");
+		result.Output.Should().Contain(message =>
+			message.Value != null && message.Value.ToString()!.Contains("'timeout' must be between 1 and"),
+			because: "the error must name the offending argument so the caller can correct it");
+		commandResolver.DidNotReceive().Resolve<GenerateSourceCodeCommand>(Arg.Any<EnvironmentOptions>());
+	}
+
+	[Test]
+	[Category("Unit")]
+	[TestCaseSource(nameof(CancellationShapes))]
+	[Description("A cancelled or timed-out generation fails with a non-zero exit code and a message naming the timeout, never a success envelope — the guarantee the tool's own 'timeout' description publishes to callers (PR #1354 review).")]
+	public void GenerateSourceCode_ShouldReturnExitCodeOne_WhenTheGenerationIsCancelledOrTimesOut(Exception failure) {
+		// Arrange
+		ThrowingGenerateSourceCodeCommand resolvedCommand = new(failure);
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		commandResolver.Resolve<GenerateSourceCodeCommand>(Arg.Any<EnvironmentOptions>()).Returns(resolvedCommand);
+		GenerateSourceCodeTool tool = new(resolvedCommand, ConsoleLogger.Instance, commandResolver);
+
+		// Act
+		CommandExecutionResult result = tool.GenerateSourceCode(
+			new GenerateSourceCodeArgs("dev", null, null, null, Timeout: 120000));
+
+		// Assert
+		// The description used to promise exit code 1 specifically. It is not what happens: a cancellation
+		// surfaces through the generic execution catch as -1 ("clio itself failed"), and only the
+		// caller-actionable refusals (package / environment / version) are mapped to 1. Rather than reshape
+		// that mapping for every tool, the description now states the guarantee that actually holds — the run
+		// FAILS with a non-zero exit code and an error naming the timeout — and this test pins it (PR #1354 review).
+		result.ExitCode.Should().NotBe(0,
+			because: "reporting a cancelled or timed-out generation as a success is the original symptom issue #1303 B1 reports");
+		result.Output.Should().Contain(message =>
+			message.GetType() == typeof(ErrorMessage) &&
+			message.Value != null &&
+			message.Value.ToString()!.Contains("timed out", StringComparison.OrdinalIgnoreCase),
+			because: "the caller must be told the run was cut short by the timeout, not handed an opaque framework message");
+	}
+
+	private static IEnumerable<TestCaseData> CancellationShapes() {
+		yield return new TestCaseData(new OperationCanceledException("The operation timed out."))
+			.SetName("GenerateSourceCode_ShouldReturnExitCodeOne_OnOperationCanceledException");
+		yield return new TestCaseData(new TaskCanceledException("The request timed out."))
+			.SetName("GenerateSourceCode_ShouldReturnExitCodeOne_OnTaskCanceledException");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[TestCase(10_800_001)]
+	[TestCase(86_400_000)]
+	[TestCase(int.MaxValue)]
+	[Description("Rejects a 'timeout' above the documented 3-hour maximum: generate-source-code is a server write, so it is excluded from the pipeline read-response deadline and nothing else would cut a mis-scaled value short (PR #1354 review).")]
+	public void GenerateSourceCode_ShouldRejectTimeoutAboveTheMaximum(int timeout) {
+		// Arrange
+		FakeGenerateSourceCodeCommand resolvedCommand = new();
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		commandResolver.Resolve<GenerateSourceCodeCommand>(Arg.Any<EnvironmentOptions>()).Returns(resolvedCommand);
+		GenerateSourceCodeTool tool = new(resolvedCommand, ConsoleLogger.Instance, commandResolver);
+
+		// Act
+		CommandExecutionResult result = tool.GenerateSourceCode(
+			new GenerateSourceCodeArgs("dev", null, null, null, Timeout: timeout));
+
+		// Assert
+		result.ExitCode.Should().Be(1,
+			because: "an unbounded timeout would hold the HTTP request and the MCP tool call open for days");
+		result.Output.Should().Contain(message =>
+			message.Value != null && message.Value.ToString()!.Contains(GenerateSourceCodeTool.MaxTimeoutMilliseconds.ToString()),
+			because: "the rejection must name the accepted maximum so the caller can correct the call in one round-trip");
+		commandResolver.DidNotReceive().Resolve<GenerateSourceCodeCommand>(Arg.Any<EnvironmentOptions>());
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Rejects a camelCase environmentName with an explicit rename hint instead of silently running against a null environment.")]
+	public void GenerateSourceCode_ShouldRejectCamelCaseEnvironmentName_WithRenameHint() {
+		// Arrange
+		FakeGenerateSourceCodeCommand resolvedCommand = new();
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		commandResolver.Resolve<GenerateSourceCodeCommand>(Arg.Any<EnvironmentOptions>()).Returns(resolvedCommand);
+		GenerateSourceCodeTool tool = new(resolvedCommand, ConsoleLogger.Instance, commandResolver);
+		GenerateSourceCodeArgs args = new(null!, null, null, null) {
+			ExtensionData = new Dictionary<string, JsonElement> {
+				["environmentName"] = ToJsonElement("dev")
+			}
+		};
+
+		// Act
+		CommandExecutionResult result = tool.GenerateSourceCode(args);
+
+		// Assert
+		result.ExitCode.Should().Be(1,
+			because: "an unbound argument must fail loudly rather than be dropped by the JSON binder");
+		result.Output.Should().Contain(message =>
+			message.Value != null && message.Value.ToString()!.Contains("'environmentName' -> 'environment-name'"),
+			because: "the caller must be told the exact rename to apply");
+		commandResolver.DidNotReceive().Resolve<GenerateSourceCodeCommand>(Arg.Any<EnvironmentOptions>());
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Reports a genuinely unknown argument under 'Unknown args' together with the valid-field hint.")]
+	public void GenerateSourceCode_ShouldRenameTimeOutSpelling_RatherThanCallingItUnknown() {
+		// Arrange
+		FakeGenerateSourceCodeCommand resolvedCommand = new();
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		commandResolver.Resolve<GenerateSourceCodeCommand>(Arg.Any<EnvironmentOptions>()).Returns(resolvedCommand);
+		GenerateSourceCodeTool tool = new(resolvedCommand, ConsoleLogger.Instance, commandResolver);
+		GenerateSourceCodeArgs args = new("dev", null, null, null) {
+			ExtensionData = new Dictionary<string, JsonElement> {
+				["timeOut"] = ToJsonElement("600000")
+			}
+		};
+
+		// Act
+		CommandExecutionResult result = tool.GenerateSourceCode(args);
+
+		// Assert
+		result.ExitCode.Should().Be(1,
+			because: "an unbindable argument must not be silently ignored");
+		result.Output.Should().Contain(message =>
+			message.Value != null && message.Value.ToString()!.Contains("Rename: 'timeOut' -> 'timeout'"),
+			because: "'timeOut' matches the C# property name, so it is the likeliest mis-spelling and must earn a rename hint rather than a bare unknown-argument list");
+		commandResolver.DidNotReceive().Resolve<GenerateSourceCodeCommand>(Arg.Any<EnvironmentOptions>());
+	}
+
+	[Test]
+	[Description("Reports a genuinely unrecognized argument under 'Unknown args' together with the list of accepted field names, so the caller can correct the call in one round-trip.")]
+	[Category("Unit")]
+	public void GenerateSourceCode_ShouldReportUnknownArgument_WithValidFieldHint() {
+		// Arrange
+		FakeGenerateSourceCodeCommand resolvedCommand = new();
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		commandResolver.Resolve<GenerateSourceCodeCommand>(Arg.Any<EnvironmentOptions>()).Returns(resolvedCommand);
+		GenerateSourceCodeTool tool = new(resolvedCommand, ConsoleLogger.Instance, commandResolver);
+		GenerateSourceCodeArgs args = new("dev", null, null, null) {
+			ExtensionData = new Dictionary<string, JsonElement> {
+				["bogusField"] = ToJsonElement("x")
+			}
+		};
+
+		// Act
+		CommandExecutionResult result = tool.GenerateSourceCode(args);
+
+		// Assert
+		result.ExitCode.Should().Be(1,
+			because: "an unbindable argument must not be silently ignored");
+		result.Output.Should().Contain(message =>
+			message.Value != null && message.Value.ToString()!.Contains("Unknown args: 'bogusField'"),
+			because: "the unknown argument must be named back to the caller");
+		result.Output.Should().Contain(message =>
+			message.Value != null && message.Value.ToString()!.Contains("Valid fields: environment-name, modified, required, background, timeout."),
+			because: "the rejection must list the accepted field names so the caller can correct the call in one round-trip");
+		commandResolver.DidNotReceive().Resolve<GenerateSourceCodeCommand>(Arg.Any<EnvironmentOptions>());
+	}
+
+	private static JsonElement ToJsonElement(string value) =>
+		JsonDocument.Parse($"\"{value}\"").RootElement.Clone();
+
 	private static McpServerToolAttribute GetToolAttribute() =>
 		typeof(GenerateSourceCodeTool)
 			.GetMethod(nameof(GenerateSourceCodeTool.GenerateSourceCode))!
 			.GetCustomAttributes(typeof(McpServerToolAttribute), inherit: false)
 			.Cast<McpServerToolAttribute>()
 			.Single();
+
+	/// <summary>
+	/// A command whose execution throws the shape an HTTP timeout / caller cancellation surfaces as, so the
+	/// contract claim "a cancelled or timed-out generation returns exit-code 1, never 0" is pinned by a test
+	/// rather than by one manual run on a live stand (PR #1354 review).
+	/// </summary>
+	private sealed class ThrowingGenerateSourceCodeCommand(Exception failure) : GenerateSourceCodeCommand(
+		Substitute.For<IApplicationClient>(),
+		new EnvironmentSettings(),
+		Substitute.For<IServiceUrlBuilder>())
+	{
+		public override int Execute(GenerateSourceCodeOptions options) => throw failure;
+	}
 
 	private sealed class FakeGenerateSourceCodeCommand : GenerateSourceCodeCommand
 	{
