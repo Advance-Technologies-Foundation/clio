@@ -1,4 +1,4 @@
-using System.Text.Json.Nodes;
+﻿using System.Text.Json.Nodes;
 using System.Threading;
 using System.Threading.Tasks;
 using Allure.NUnit;
@@ -88,8 +88,8 @@ public sealed class SchemaNamePrefixToolE2ETests {
 	[Test]
 	[AllureTag(ToolName)]
 	[AllureName("get-schema-name-prefix returns the full classified failure envelope on a rejected session")]
-	[AllureDescription("Drives get-schema-name-prefix over the real mcp-server against a stub whose authenticated SelectQuery answers with the Creatio login page, and asserts the whole failure envelope: success:false, an authentication error-category, a cause, a recovery action and a correlation ID.")]
-	[Description("The tool lost five hand-written catch arms and gained four envelope fields, and nothing over the real MCP path asserted them. This pins the classified failure shape end to end: Authentication category, non-empty cause and recovery-action, a correlation ID, and no prefix advertised alongside the failure.")]
+	[AllureDescription("Drives get-schema-name-prefix over the real mcp-server against a stub whose authenticated SelectQuery answers with the Creatio login page, and asserts the whole failure envelope: success:false, the read path's ProviderFailure error-category, a cause, a recovery action and a correlation ID.")]
+	[Description("The tool lost five hand-written catch arms and gained four envelope fields, and nothing over the real MCP path asserted them. This pins the classified failure shape end to end: the ProviderFailure category the READ path can actually prove (the same one get-sys-setting reports on this stub), non-empty cause and recovery-action, a correlation ID, and no prefix advertised alongside the failure.")]
 	public async Task GetSchemaNamePrefix_Should_Return_The_Classified_Failure_Envelope() {
 		await CredentialRejectionStubHarness.RunAsync("schemanameprefix-auth",
 			async (session, environmentName, cancellationToken) => {
@@ -100,11 +100,16 @@ public sealed class SchemaNamePrefixToolE2ETests {
 				response.Success.Should().BeFalse(
 					because: "a rejected credential must not be reported as a successful prefix read - an empty "
 					+ "prefix on success:true is indistinguishable from an environment that has none configured");
-				response.ErrorCategory.Should().Be(SysSettingErrorCategories.Authentication,
-					because: "the login page under HTTP 200 is the shared classifier's authentication verdict, and "
-					+ "this tool must not disagree with the sys-setting tools about it");
+				response.ErrorCategory.Should().Be(SysSettingErrorCategories.ProviderFailure,
+					because: "this is the READ path, where ATF keeps only the parser message and never the body - "
+					+ "so a login page and a gateway error page are indistinguishable and the envelope reports the "
+					+ "provider verdict rather than claiming a credential rejection, exactly as "
+					+ "SysSettingsAuthenticationFailureE2ETests asserts for get-sys-setting. Agreeing with the "
+					+ "sys-setting tools is the point; Authentication is the WRITE path's definite verdict, and "
+					+ "this tool has no write path");
 				response.Error.Should().NotBeNullOrWhiteSpace(
-					because: "the headline field carries the promotable diagnosis for the Authentication category");
+					because: "ProviderFailure is one of the three categories whose message IS the diagnosis, so it "
+					+ "is promoted into the headline rather than replaced by the generic label");
 				response.Cause.Should().NotBeNullOrWhiteSpace(
 					because: "the cause is what tells the caller WHY, and it is the field the no-promotion rule "
 					+ "keeps the actionable text in");

@@ -414,7 +414,7 @@ public class SysSettingsManager : ISysSettingsManager
 	#region Methods: Public
 
 	public string GetSysSettingValueByCode(string code){
-		string providerValue = _dataProvider.GetSysSettingValue<string>(code);
+		string providerValue = ReadThroughCliogateOrFallBack(code);
 		if (!string.IsNullOrEmpty(providerValue)) {
 			return providerValue;
 		}
@@ -425,6 +425,38 @@ public class SysSettingsManager : ISysSettingsManager
 		SysSettingsValue value = sysSetting.SysSettingsValues
 			.FirstOrDefault(v => v.SysAdminUnitId == SysAdminUnitIds.AllEmployees);
 		return value is null ? string.Empty : FormatTypedValue(sysSetting, value);
+	}
+
+	/// <summary>
+	/// Reads the setting through the cliogate short-circuit, returning <see cref="string.Empty"/> when
+	/// that endpoint cannot answer, so the caller falls through to the DataService read.
+	/// </summary>
+	/// <remarks>
+	/// The cliogate call is an OPTIMIZATION, not the contract: an environment without cliogate installed
+	/// answers it with a 404 whose body is not JSON, and ATF's provider does not catch on this method - so
+	/// the parser failure (a Newtonsoft <c>JsonReaderException</c>, which no arm of
+	/// <c>SysSettingsCommand.CategorizeFailure</c> recognises) escaped as an uncategorised Unknown and the
+	/// SelectQuery path below never ran. That made every reader of this method - get-schema-name-prefix
+	/// above all - report "no cause could be determined" for an environment the DataService path could
+	/// have answered, or could have diagnosed properly as a rejected session.
+	/// <para>
+	/// A PROVEN credential rejection is rethrown rather than swallowed: falling back after one would run
+	/// the same rejected session through a second endpoint and report the second failure instead of the
+	/// diagnosis already established.
+	/// </para>
+	/// </remarks>
+	private string ReadThroughCliogateOrFallBack(string code) {
+		try {
+			return _dataProvider.GetSysSettingValue<string>(code);
+		} catch (SessionRejectedException) {
+			throw;
+		} catch (AuthenticationException) {
+			throw;
+		} catch (OperationCanceledException) {
+			throw;
+		} catch (Exception) {
+			return string.Empty;
+		}
 	}
 
 	public T GetSysSettingValueByCode<T>(string code){
