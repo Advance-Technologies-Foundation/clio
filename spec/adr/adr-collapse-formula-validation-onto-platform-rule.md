@@ -233,7 +233,9 @@ alone, because each is a choice with a cost, and a reader asking "why is this op
   serialisation returns the platform's text unchanged. This is part of what the `[RequiresPackage]` floor
   of **1.4.0.44** buys, and all three floor sentences say so. Three distinct versions, and none of them is
   "the archive clio bundles" — that heuristic is forbidden by the floor rationale in
-  `ModifyBusinessProcessCommand`, and it is also simply wrong here, the bundle being 1.4.0.52. The collapse
+  `ModifyBusinessProcessCommand`, and it is also simply wrong here: the bundle has run ahead of the floor ever
+  since, and moves again on every rebundle - which is exactly why the floor cannot be explained by it.
+  Naming the bundled version in this sentence would re-stale it each time, as one already did. The collapse
   itself shipped in 1.4.0.41; .42 is where the rewrite handles every serialised error in one message and
   names an element-scoped reference as such; .44 is the first archive carrying both AND the ENG-96325
   lookup-constant input contract, which is what makes it the lowest version at which every refusal the

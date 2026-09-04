@@ -55,7 +55,11 @@ COUNTED = re.compile(
     r"(passing|tests?|flows?|processes|records?|names?|files?|articles?|occurrences?|lists?|times)\b",
     re.IGNORECASE,
 )
-VERSION = re.compile(r"(?<![\w.])(\d+\.\d+\.\d+\.\d+)(?![\w.])")
+# The trailing guard rejects a following dot only when a DIGIT follows it, i.e. a longer version.
+# `(?![\w.])` rejected any dot at all, so a version closing a sentence - "the bundle being 1.4.0.52." -
+# matched nothing and was invisible. That is the commonest position for a version in prose, and it hid a
+# stale number in the ADR sentence explaining that the floor is NOT tied to the bundle.
+VERSION = re.compile(r"(?<![\w.])(\d+\.\d+\.\d+\.\d+)(?!\w)(?!\.\d)")
 
 findings = []
 
