@@ -522,6 +522,45 @@ public class SysSettingsManagerNewBehaviorTests {
 			because: "the platform's own text is the only diagnosable detail available");
 	}
 
+	[Test]
+	[Description("The CLI update overload logs the credential diagnosis: a rejected session must reach the operator as an authentication failure, not the opaque 'is not updated.' line.")]
+	public void TryUpdateSysSetting_Cli_ShouldLogAuthenticationFailure_WhenCredentialsAreRejected() {
+		// Arrange
+		ISysSettingsManager manager = BuildSut(BuildRejectedProvider());
+		ILogger logger = Substitute.For<ILogger>();
+		SysSettingsCommand command = new(manager, logger, Substitute.For<IFileSystem>());
+
+		// Act
+		command.TryUpdateSysSetting(new SysSettingsOptions {
+			Code = "UsrAuthFailure", Value = "value", Type = "Text"
+		});
+
+		// Assert
+		logger.Received().WriteError(Arg.Is<string>(message =>
+				message.Contains("UsrAuthFailure") && message.Contains("Authentication error updating sys-setting.")));
+	}
+
+	[Test]
+	[Description("The CLI update overload logs the network diagnosis for a refused connection, so a transport fault is not reported as a value the environment refused.")]
+	public void TryUpdateSysSetting_Cli_ShouldLogANetworkError_ForARefusedConnection() {
+		// Arrange
+		IDataProvider dataProvider = new ClassifyingDataProvider(new ThrowingDataProvider(
+			() => new HttpRequestException("Connection refused at http://localhost:40124")));
+		ISysSettingsManager manager = BuildSut(dataProvider);
+		ILogger logger = Substitute.For<ILogger>();
+		SysSettingsCommand command = new(manager, logger, Substitute.For<IFileSystem>());
+
+		// Act
+		command.TryUpdateSysSetting(new SysSettingsOptions {
+			Code = "UsrNetworkFailure", Value = "value", Type = "Text"
+		});
+
+		// Assert
+		logger.Received().WriteError(Arg.Is<string>(message =>
+				message.Contains("UsrNetworkFailure") && message.Contains("Network error updating sys-setting.")));
+	}
+
+
 	#endregion
 
 	#region InsertSysSetting — referenceSchemaUId + new type aliases
