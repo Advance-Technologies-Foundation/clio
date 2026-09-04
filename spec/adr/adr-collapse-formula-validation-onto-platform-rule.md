@@ -230,11 +230,14 @@ alone, because each is a choice with a cost, and a reader asking "why is this op
   verdict instead. `PlatformValidationMessage` rewrites that one serialised object into a sentence naming
   the reference and the remedy, and passes every other message through untouched. It decides nothing
   about validity, so no rule in it can drift from the platform's, and an unknown error type or a changed
-  serialisation returns the platform's text unchanged. This is what the `[RequiresPackage]` floor of
-  1.4.0.42 actually buys, and both floor rationales say so. (The collapse itself shipped in 1.4.0.41; the
-  floor is .42 because that is the archive clio bundles, and because .42 is where the rewrite handles
-  every serialised error in one message and names an element-scoped reference as such — both of which the
-  shipped descriptions promise.)
+  serialisation returns the platform's text unchanged. This is part of what the `[RequiresPackage]` floor
+  of **1.4.0.44** buys, and all three floor sentences say so. Three distinct versions, and none of them is
+  "the archive clio bundles" — that heuristic is forbidden by the floor rationale in
+  `ModifyBusinessProcessCommand`, and it is also simply wrong here, the bundle being 1.4.0.52. The collapse
+  itself shipped in 1.4.0.41; .42 is where the rewrite handles every serialised error in one message and
+  names an element-scoped reference as such; .44 is the first archive carrying both AND the ENG-96325
+  lookup-constant input contract, which is what makes it the lowest version at which every refusal the
+  shipped descriptions promise both happens and reads as promised.)
 - The reasoning below is kept because it is why the refactor was SAFE to fold into the open PRs
   rather than held back, but read it as history: it was written when the plan was a follow-up branch,
   and the collapse shipped on the same branch instead. Today's
