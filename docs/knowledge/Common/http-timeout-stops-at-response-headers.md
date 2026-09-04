@@ -12,8 +12,8 @@ date: 2026-09-02
 `HttpCompletionOption.ResponseHeadersRead` only up to the moment the headers arrive. Every subsequent read
 from `response.Content`'s stream is governed by nothing but the token those reads are given.
 `ExecuteGetRequestBoundedAsync` therefore builds a linked `CancellationTokenSource`, calls `CancelAfter`
-with the request timeout, and passes THAT token to the send, to `ReadAsStreamAsync` and to every body read
-and buffer write.
+with the request timeout, and passes THAT token into `DownloadFileByGetBoundedAsync`, which hands it to the
+send, to `ReadAsStreamAsync` and to every body read and file write.
 
 **Why it is this way** — the two ways this call can end mean different things and must stay
 distinguishable. The deadline expiring is the server failing to deliver in time, and it surfaces as

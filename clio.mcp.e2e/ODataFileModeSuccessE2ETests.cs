@@ -1,4 +1,6 @@
+using System.Globalization;
 using System.Linq;
+using System.Text.RegularExpressions;
 using Allure.NUnit;
 using Allure.NUnit.Attributes;
 using Clio.Command.McpServer.Tools;
@@ -227,20 +229,33 @@ public sealed class ODataFileModeSuccessE2ETests {
 					File.Exists(outputFile).Should().BeFalse(
 						because: "nothing may be published for a body that was refused");
 
+					// Assert - the CLIENT stopped reading within one copy buffer of the ceiling. This is the
+					// assertion that separates a byte bound from a time bound, and it is machine-independent:
+					// the ceiling is tested before each write inside the transport's copy loop, so the count
+					// the caller is told about can exceed the limit by at most one 80 KiB read. The previous
+					// implementation could only watch the growing staging file from another task, and that
+					// count reached 134,676,480 bytes against this same 64 MiB ceiling on a CI agent - twice
+					// the limit, and unbounded in principle, because the producer is not scheduled in step
+					// with the observer.
+					long reportedBytes = ExtractReportedByteCount(response.Error!);
+					reportedBytes.Should().BeInRange(
+						ODataFileContract.MaxResponseBytes, ODataFileContract.MaxResponseBytes + CopyBufferBytes,
+						because: "the ceiling is enforced before each write in the transport copy loop, so the "
+							+ "overshoot is exactly one read buffer regardless of host load - a poll-based "
+							+ $"bound reports an arbitrary figure instead (reported {reportedBytes} bytes)");
+
 					// Assert - the PRODUCER was cut off near the limit, not after the whole body arrived.
 					// This is what separates a real streaming bound from one applied to an already-buffered
 					// response: with the latter the server drains all 512 MiB before anything is rejected.
 					long sent = await stubServer.GetODataSentBytesAsync(cancellationToken);
-					// The overshoot past the ceiling is bytes already in flight in the socket buffers, and how
-					// many those are is a property of the MACHINE, not of the limit: locally the server gets
-					// ~72 MiB out against the 64 MiB ceiling, on the CI agent it reached 140 MiB, which failed
-					// a 2x bound while still proving the point. What this assertion exists to separate is
-					// "abandoned mid-stream" from "drained the whole body", so it is pinned to HALF the body
-					// the stub was told to send: any client that buffered the response would show the full
-					// 512 MiB, and no amount of socket buffering reaches 256 MiB.
-					sent.Should().BeLessThan(OversizedResponseBytes / 2,
-						because: "the transfer must be abandoned close to the ceiling; draining the whole "
-							+ $"512 MiB body would mean the limit ran too late (server sent {sent} bytes)");
+					// The server-side figure is the one that stays machine-dependent: the overshoot past the
+					// ceiling is whatever the socket buffers had already accepted, which locally is ~72 MiB.
+					// It is pinned to twice the ceiling rather than to half the body, which is tight enough to
+					// catch the 140-173 MiB the poll-based version let through while still leaving room for
+					// socket buffering.
+					sent.Should().BeLessThan(2 * ODataFileContract.MaxResponseBytes,
+						because: "the transfer must be abandoned close to the ceiling; a figure at or past "
+							+ $"twice the limit means it ran too late (server sent {sent} bytes)");
 
 					// Assert - the session survives the refusal and still answers the next call.
 					CallToolResult followUp = await session.CallToolAsync(
@@ -263,6 +278,25 @@ public sealed class ODataFileModeSuccessE2ETests {
 				File.Delete(outputFile);
 			}
 		}
+	}
+
+	/// <summary>
+	/// Copy-buffer size of the transport's bounded download loop, which is the whole overshoot the ceiling
+	/// can ever have. Pinned as a literal because it is a property of the transport rather than of clio, and
+	/// a change to it should make this assertion fail and be re-read rather than adapt silently.
+	/// </summary>
+	private const long CopyBufferBytes = 81920;
+
+	/// <summary>
+	/// Pulls the byte count out of the "Response is at least N bytes, which exceeds the M-byte limit."
+	/// message, so the assertion reads the number the caller was actually given rather than trusting a
+	/// separate measurement of the same thing.
+	/// </summary>
+	private static long ExtractReportedByteCount(string error) {
+		Match match = Regex.Match(error, @"at least (\d+) bytes");
+		match.Success.Should().BeTrue(
+			because: $"the oversize error must report the observed byte count; got '{error}'");
+		return long.Parse(match.Groups[1].Value, CultureInfo.InvariantCulture);
 	}
 
 	private static RuntimeDetectionStubServerConfiguration EchoStubConfiguration(int oversizedBytes = 0) =>
