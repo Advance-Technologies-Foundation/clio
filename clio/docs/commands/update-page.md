@@ -202,6 +202,21 @@ checksum says nothing about schema identity; its *schema-absent* marker is not, 
 pinned checksum asserts that an editable schema existed, and a stale `editableSchemaExists:
 false` would otherwise veto a pin that matches the server exactly.
 
+Two scope limits worth knowing before you rely on the pin (both tracked from PR #1356's
+review, neither fixed here):
+
+- **`sync-pages` does not accept a checksum.** It is the canonical page write path and
+  `update-page` is documented as the fallback, but `PageSyncPageInput` has no `checksum`
+  member, so every `sync-pages` write compares against the `.clio-pages` baseline and has
+  `--force` as its only escape. The remedy on this page is `update-page`-only.
+- **The schema-identity checks run BEFORE the checksum comparison, and they are armed from
+  disk on a pinned save too.** So a save that redirects with `--target-package-uid` /
+  `--target-schema-uid`, or one whose on-disk `editableSchemaUId` is stale, can be refused
+  as `schema-deleted-externally` / `schema-uid-mismatch` even though the pinned checksum
+  matches the server exactly. The refusal's "re-run get-page and retry" advice re-pins the
+  same checksum and loops; if you hit it on a redirected save, the redirect is the cause,
+  not an external edit. It fails safe — the write is blocked, never corrupted.
+
 A `checksum-mismatch` response returns the server's current value as
 `conflictDetails.actualChecksum`. Re-sending that value as `--expected-checksum` /
 `checksum` is **not** a resolution — it silently discards the out-of-band change exactly

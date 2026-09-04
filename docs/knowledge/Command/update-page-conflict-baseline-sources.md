@@ -8,8 +8,11 @@ ticket: GH-1320
 date: 2026-09-03
 ---
 
-**What is true** — `PageBaselineGuard.TryArm` prefers a caller-pinned `PageUpdateOptions.
-ExpectedChecksum` and otherwise arms the check from `.clio-pages/{schema}/meta.json`. That on-disk
+**What is true** — `PageBaselineGuard.TryArm` splits the baseline in two, and only one half is
+conditional. The CHECKSUM comparison prefers a caller-pinned `PageUpdateOptions.ExpectedChecksum` and
+otherwise reads `.clio-pages/{schema}/meta.json`. The SCHEMA-IDENTITY half is armed from that same
+on-disk baseline on **both** paths — `ExpectedSchemaUId` unconditionally, and only the schema-absent
+marker (`ExpectedSchemaAbsent`) is withheld when the caller pinned a checksum. That on-disk
 baseline is keyed by **(anchor directory, schema name)** only — not by schema UId — and the anchor is
 resolved from the process cwd unless `output-directory` overrides it. It is rewritten both by
 `get-page` and, post-save, by `RefreshOrDrop`.
@@ -23,6 +26,19 @@ The MCP `update-page` tool exposes a `checksum` argument for exactly this. Passi
 `editable.checksum` from the `get-page` response makes the comparison run against the body the caller
 actually read. It does not weaken detection: a genuinely stale caller checksum still mismatches the
 current `SysSchema.Checksum` and is still refused.
+
+**Two scope limits, both deliberate and both still open.** First, the remedy is on `update-page`
+only. `sync-pages` is the tool clio calls the canonical page write path (`update-page` even carries a
+`ToolDeprecation` saying so), and `PageSyncPageInput` has no `checksum` member — `BuildUpdateRequest`
+never sets `ExpectedChecksum`, so every `sync-pages` write is on the unpinned path with `force: true`
+as its only escape. An agent following clio's own guidance takes that path. Second, because
+`ExpectedSchemaUId` is armed from disk even on a pinned save, the two schema-identity checks run
+BEFORE the checksum comparison: a save that redirects with `target-package-uid` / `target-schema-uid`,
+or one whose on-disk `EditableSchemaUId` is stale, can be refused as `schema-deleted-externally` /
+`schema-uid-mismatch` even though the pin matches the server exactly — and `BuildConflictErrorMessage`
+answers that with "re-run get-page and retry", which re-pins the same checksum and loops. It fails
+safe (a write is blocked, never corrupted), but the only exit is the `force` reflex this record exists
+to remove. Both are tracked for their own change; see PR #1356's review threads.
 
 **Why it is this way** — the on-disk baseline exists to protect plain CLI flows that have no way to
 carry state between two process invocations. It is a fallback, not the truth.
