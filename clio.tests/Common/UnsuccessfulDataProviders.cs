@@ -145,3 +145,34 @@ internal sealed class NullResponseDataProvider : IDataProvider {
 
 	public IExecuteProcessResponse ExecuteProcess(IExecuteProcessRequest request) => null;
 }
+
+/// <summary>
+/// An <see cref="IDataProvider"/> that fails ONLY the cliogate short-circuit
+/// (<see cref="IDataProvider.GetSysSettingValue{T}"/>) and delegates everything else to an inner
+/// provider, so the DataService fallback in <c>SysSettingsManager.GetSysSettingValueByCode</c> can be
+/// exercised with a real answering environment behind it.
+/// </summary>
+internal sealed class CliogateFailingDataProvider : IDataProvider {
+
+	private readonly IDataProvider _inner;
+	private readonly Func<Exception> _shortCircuitFailure;
+
+	internal CliogateFailingDataProvider(IDataProvider inner, Func<Exception> shortCircuitFailure) {
+		_inner = inner;
+		_shortCircuitFailure = shortCircuitFailure;
+	}
+
+	public IDefaultValuesResponse GetDefaultValues(string schemaName) => _inner.GetDefaultValues(schemaName);
+
+	public IItemsResponse GetItems(ISelectQuery selectQuery) => _inner.GetItems(selectQuery);
+
+	public IExecuteResponse BatchExecute(List<IBaseQuery> queries) => _inner.BatchExecute(queries);
+
+	public T GetSysSettingValue<T>(string sysSettingCode) => throw _shortCircuitFailure();
+
+	public bool GetFeatureEnabled(string featureCode) => _inner.GetFeatureEnabled(featureCode);
+
+	public IExecuteProcessResponse ExecuteProcess(IExecuteProcessRequest request) =>
+		_inner.ExecuteProcess(request);
+}
+

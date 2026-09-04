@@ -2,6 +2,9 @@
 using System.Collections.Generic;
 using System.Globalization;
 using System.Linq;
+using System.Net;
+using System.Net.Http;
+using System.Net.Sockets;
 using System.Text.Json;
 using System.Security.Authentication;
 using System.Text.Json.Serialization;
@@ -454,9 +457,46 @@ public class SysSettingsManager : ISysSettingsManager
 			throw;
 		} catch (OperationCanceledException) {
 			throw;
-		} catch (Exception) {
+		} catch (Exception exception) when (!IsConnectionLevelFailure(exception)) {
 			return string.Empty;
 		}
+	}
+
+	/// <summary>
+	/// True when the request never reached the server at all (refused connection, unresolvable host,
+	/// broken TLS handshake) - as opposed to a server that answered with a status or an unparseable body.
+	/// </summary>
+	/// <remarks>
+	/// Only these failures are rethrown from the cliogate short-circuit instead of falling back. The
+	/// fallback exists for an environment that ANSWERS the cliogate endpoint badly - a 404 whose body is
+	/// not JSON when cliogate is not installed - and for that case the DataService read below is a real
+	/// second chance. When the host itself is unreachable, the second read goes to the same dead endpoint
+	/// and can only fail again; the cost of trying is that the typed exception is lost. ATF's provider
+	/// catches on the DataService path and returns <c>Success == false</c>, so the retry surfaces as a
+	/// <see cref="DataProviderFailureException"/> carrying prose and no inner fault - and every consumer
+	/// that classifies by exception TYPE (ApplicationSectionCreateCommand's transport/server-error split
+	/// above all) then has nothing left to read and reports an unclassified failure. Rethrowing here keeps
+	/// the <see cref="SocketException"/> / <see cref="WebException"/> / <see cref="HttpRequestException"/>
+	/// those consumers match on. A <see cref="HttpRequestException"/> that DOES carry a status code came
+	/// from a server that answered, so it keeps falling back.
+	/// </remarks>
+	private static bool IsConnectionLevelFailure(Exception exception) {
+		for (Exception current = exception; current is not null; current = current.InnerException) {
+			switch (current) {
+				case SocketException:
+					return true;
+				case WebException webException:
+					return webException.Status is WebExceptionStatus.ConnectFailure
+						or WebExceptionStatus.NameResolutionFailure
+						or WebExceptionStatus.ProxyNameResolutionFailure
+						or WebExceptionStatus.SecureChannelFailure
+						or WebExceptionStatus.TrustFailure;
+				case HttpRequestException { StatusCode: null }:
+					return true;
+			}
+		}
+
+		return false;
 	}
 
 	public T GetSysSettingValueByCode<T>(string code){

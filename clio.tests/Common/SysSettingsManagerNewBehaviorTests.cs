@@ -3,6 +3,7 @@ using System.IO;
 using System.Collections.Generic;
 using System.Linq;
 using System.Net.Http;
+using System.Net.Sockets;
 using System.Security.Authentication;
 using System.Text.Json;
 using System.Text.RegularExpressions;
@@ -258,6 +259,39 @@ public class SysSettingsManagerNewBehaviorTests {
 
 		sut.GetSysSettingValueByCode("EmptyInt").Should().BeEmpty(
 			because: "missing SysSettingsValue rows should produce an empty result");
+	}
+
+	[Test]
+	[Description("A refused connection on the cliogate short-circuit keeps its typed transport exception instead of falling back: the DataService retry would hit the same dead host and could only return prose, which every type-based classifier (create-app-section's transport/server-error split) reads as unclassified.")]
+	public void GetSysSettingValueByCode_RethrowsTheTransportFault_WhenTheHostIsUnreachable() {
+		IDataProvider dataProvider = new ClassifyingDataProvider(new ThrowingDataProvider(
+			() => new HttpRequestException(
+				"Connection refused (127.0.0.1:9)",
+				new SocketException(61))));
+		ISysSettingsManager sut = BuildSut(dataProvider);
+
+		Action act = () => sut.GetSysSettingValueByCode("SchemaNamePrefix");
+
+		Exception thrown = act.Should().Throw<HttpRequestException>(
+			because: "a host that never answered is not a cliogate-less environment, so the typed fault must survive")
+			.Which;
+		thrown.InnerException.Should().BeOfType<SocketException>(
+			because: "the classifiers walk the chain for the SocketException that proves the request never left the client");
+	}
+
+	[Test]
+	[Description("A server that DOES answer badly still falls back: a status-carrying HttpRequestException (the cliogate-less 404) leaves the short-circuit and lets the DataService read supply the value.")]
+	public void GetSysSettingValueByCode_StillFallsBackToTheModel_WhenCliogateAnswersWithAStatus() {
+		Guid id = Guid.NewGuid();
+		DataProviderMock providerMock = SetupSysSettingsMock(id, "MyInt", "Integer",
+			new() { { "IntegerValue", 42 } });
+		IDataProvider dataProvider = new CliogateFailingDataProvider(
+			providerMock,
+			() => new HttpRequestException("Not Found", null, System.Net.HttpStatusCode.NotFound));
+		ISysSettingsManager sut = BuildSut(dataProvider);
+
+		sut.GetSysSettingValueByCode("MyInt").Should().Be("42",
+			because: "an answering server means the environment is reachable and simply lacks cliogate, which is exactly what the fallback exists for");
 	}
 
 	#endregion
