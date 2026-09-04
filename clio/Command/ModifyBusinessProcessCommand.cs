@@ -225,8 +225,7 @@ public class ModifyBusinessProcessCommand(
 	// configuration never landed. Read the process back ONCE and check both. Only runs when the operations
 	// actually carried a block. See EmailBlockExpectation / AccessRightsBlockExpectation.
 	private void WarnOnDiscardedBlocks(ModifyBusinessProcessOptions options, string? schemaName) {
-		IReadOnlyList<string> expectedEmail = EmailBlockExpectation.FromOperations(options.OperationsJson);
-		IReadOnlyList<string> expectedRights = AccessRightsBlockExpectation.FromOperations(options.OperationsJson);
+		BlockExpectationIntent intent = BlockExpectationIntent.FromOperations(options.OperationsJson);
 
 		// An accessRights block on addElement is dropped by the server (it applies only email/performer).
 		// That is by design, but the outcome the caller lives with is the same unconfigured element as a
@@ -237,15 +236,14 @@ public class ModifyBusinessProcessCommand(
 		// ignore the whole family, including the true ones below.
 		string? ignoredOnAdd = AccessRightsBlockExpectation.BuildAddElementWarning(
 			[.. AccessRightsBlockExpectation.IgnoredOnAddElement(options.OperationsJson)
-				.Except(expectedRights, StringComparer.OrdinalIgnoreCase)]);
+				.Except(intent.ConfiguredRights, StringComparer.OrdinalIgnoreCase)]);
 		if (ignoredOnAdd is not null) {
 			logger.WriteWarning(ignoredOnAdd);
 		}
 		// A setFilter/clearFilter carries no block, so it used to return here - and clearing the filter on a
 		// Change access rights element is the single most dangerous edit this surface offers, because it moves
 		// the element from narrowing to acting on EVERY record of its object. Read back for those too.
-		IReadOnlyList<string> filterTouched = AccessRightsBlockExpectation.FilterTouched(options.OperationsJson);
-		if (expectedEmail.Count == 0 && expectedRights.Count == 0 && filterTouched.Count == 0) {
+		if (intent.IsEmpty) {
 			return;
 		}
 
@@ -255,21 +253,20 @@ public class ModifyBusinessProcessCommand(
 		string code = string.IsNullOrWhiteSpace(schemaName) ? options.ProcessName : schemaName;
 		if (string.IsNullOrWhiteSpace(code) && string.IsNullOrWhiteSpace(options.ProcessUid)) {
 			// Nothing to read back against; silence would be indistinguishable from a verified success.
-			BlockExpectationReporter.WarnAccessRightsUnverified(logger, expectedRights,
-				"the edit returned no process identity to read back", filterTouched);
+			BlockExpectationReporter.WarnAccessRightsUnverified(logger, intent,
+				"the edit returned no process identity to read back");
 			return;
 		}
 
 		ErrorOr<DescribeProcessResult> described = processDescriber.Describe(
 			new ProcessIdentity(string.IsNullOrWhiteSpace(code) ? null : code, options.ProcessUid, null), null);
 		if (described.IsError) {
-			BlockExpectationReporter.WarnAccessRightsUnverified(logger, expectedRights,
-				described.FirstError.Description, filterTouched);
+			BlockExpectationReporter.WarnAccessRightsUnverified(logger, intent,
+				described.FirstError.Description);
 			return;
 		}
 
-		BlockExpectationReporter.ReportDescribed(logger, described.Value, expectedRights, expectedEmail,
-			filterTouched);
+		BlockExpectationReporter.ReportDescribed(logger, described.Value, intent);
 	}
 }
 

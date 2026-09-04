@@ -238,9 +238,16 @@ public sealed class RecordFilterDirectionSweepTests {
 		$"{Path.DirectorySeparatorChar}.vs{Path.DirectorySeparatorChar}"
 	];
 
+	private static bool IsRepositoryRoot(DirectoryInfo directory) {
+		string marker = Path.Combine(directory.FullName, ".git");
+		return Directory.Exists(marker) || File.Exists(marker);
+	}
+
 	private static string FindRepositoryRoot() {
 		DirectoryInfo? directory = new(TestContext.CurrentContext.TestDirectory);
-		while (directory is not null && !Directory.Exists(Path.Combine(directory.FullName, ".git"))) {
+		// A git WORKTREE carries .git as a FILE rather than a directory, so a directory-only check walks
+		// past the root and returns null.
+		while (directory is not null && !IsRepositoryRoot(directory)) {
 			directory = directory.Parent;
 		}
 

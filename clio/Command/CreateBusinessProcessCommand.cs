@@ -186,15 +186,15 @@ public class CreateBusinessProcessCommand(
 	// carried a block, so the ordinary path pays nothing. See EmailBlockExpectation / AccessRightsBlockExpectation
 	// for why this is behavioural rather than version-based.
 	private void WarnOnDiscardedBlocks(CreateBusinessProcessOptions options, string? schemaName) {
-		IReadOnlyList<string> expectedEmail = EmailBlockExpectation.FromDescriptor(options.DescriptorJson);
-		IReadOnlyList<string> expectedRights = AccessRightsBlockExpectation.FromDescriptor(options.DescriptorJson);
-		if (expectedEmail.Count == 0 && expectedRights.Count == 0) {
+		BlockExpectationIntent intent = BlockExpectationIntent.FromDescriptor(options.DescriptorJson);
+		if (intent.IsEmpty) {
 			return;
 		}
 
 		if (string.IsNullOrWhiteSpace(schemaName)) {
 			// Nothing to read back against. Silence here would be indistinguishable from a verified success.
-			BlockExpectationReporter.WarnAccessRightsUnverified(logger, expectedRights, "the operation returned no process name to read back");
+			BlockExpectationReporter.WarnAccessRightsUnverified(logger, intent,
+				"the operation returned no process name to read back");
 			return;
 		}
 
@@ -205,11 +205,11 @@ public class CreateBusinessProcessCommand(
 			// silence either when access rights were requested: that guard is the only automated check that a
 			// grant or revoke actually landed, and reporting "verified" and "could not check" identically would
 			// let an unapplied revoke pass as applied.
-			BlockExpectationReporter.WarnAccessRightsUnverified(logger, expectedRights, described.FirstError.Description);
+			BlockExpectationReporter.WarnAccessRightsUnverified(logger, intent, described.FirstError.Description);
 			return;
 		}
 
-		BlockExpectationReporter.ReportDescribed(logger, described.Value, expectedRights, expectedEmail);
+		BlockExpectationReporter.ReportDescribed(logger, described.Value, intent);
 
 		// A package that predates the body-macro feature stores the [[…]] placeholders verbatim and still answers
 		// success, so the read-back is the only place the un-resolved body surfaces — the element reports a body but

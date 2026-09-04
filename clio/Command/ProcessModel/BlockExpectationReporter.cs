@@ -1,6 +1,4 @@
-using System;
 using System.Collections.Generic;
-using System.Linq;
 using Clio.Common;
 
 namespace Clio.Command.ProcessModel;
@@ -24,37 +22,24 @@ internal static class BlockExpectationReporter {
 	/// not be checked, then what was configured too widely, then what was dropped outright.
 	/// </summary>
 	internal static void ReportDescribed(ILogger logger, DescribeProcessResult described,
-			IReadOnlyList<string> expectedRights, IReadOnlyList<string> expectedEmail,
-			IReadOnlyList<string>? filterTouched = null) {
-		// An element the batch only RE-FILTERED is just as unverifiable when the read-back cannot find it, so it
-		// must be reported - but in its OWN words. It sent no block, and an element the read-back could not
-		// resolve is precisely one whose type is unknown, so the accessRights wording would be a false
-		// accusation for the readData/changeData elements that share the clearFilter operation.
-		IReadOnlyList<string> filterOnly =
-			[.. (filterTouched ?? []).Except(expectedRights, StringComparer.OrdinalIgnoreCase)];
+			BlockExpectationIntent intent) {
+		// Each check below takes the ONE subset its wording is true of. See BlockExpectationIntent for why the
+		// subsets are not interchangeable; the short version is that a block-shaped message must never name an
+		// element that sent no block, and the filter-state message must cover the ones that did not.
 		const string unresolved = "the saved process does not report an element with that name or UId";
 		Warn(logger, BuildUnverifiedWarning(
-			AccessRightsBlockExpectation.Unresolved(described, expectedRights), unresolved));
+			AccessRightsBlockExpectation.Unresolved(described, intent.ConfiguredRights), unresolved));
 		Warn(logger, BuildUnverifiedFilterWarning(
-			AccessRightsBlockExpectation.Unresolved(described, filterOnly), unresolved));
-		// A re-filtered element reaches no other check here: it is deliberately excluded from Missing() and from
-		// the lossy-read check, both of which speak for blocks the caller SENT. So when the read-back resolves it
-		// but reports no accessRights block at all - which is every environment whose CrtProcessBuilder predates
-		// the element, admitted today because the rebundle is deferred - it would otherwise pass in silence.
-		Warn(logger, AccessRightsBlockExpectation.BuildUnreportableFilterWarning(described, filterTouched));
-		Warn(logger, AccessRightsBlockExpectation.BuildLossyReadWarning(described, expectedRights));
-		// The filter-state check covers elements this batch RE-FILTERED as well as those it configured: a
-		// setFilter/clearFilter carries no block, so every other check here skips it, yet clearing a filter is
-		// what moves an element from narrowing to acting on every record. Only this check gets the wider list -
-		// the others would accuse a payload that never sent a block.
-		Warn(logger, AccessRightsBlockExpectation.BuildNoFilterWarning(described,
-			filterTouched is null or { Count: 0 }
-				? expectedRights
-				: [.. expectedRights.Concat(filterTouched).Distinct(StringComparer.OrdinalIgnoreCase)]));
+			AccessRightsBlockExpectation.Unresolved(described, intent.RefilteredOnly), unresolved));
+		Warn(logger, AccessRightsBlockExpectation.BuildUnreportableFilterWarning(
+			described, intent.FilterTouched));
+		Warn(logger, AccessRightsBlockExpectation.BuildLossyReadWarning(described, intent.ConfiguredRights));
+		Warn(logger, AccessRightsBlockExpectation.BuildNoFilterWarning(
+			described, intent.RecordFilterSubjects));
 		Warn(logger, AccessRightsBlockExpectation.BuildWarning(
-			AccessRightsBlockExpectation.Missing(described, expectedRights)));
+			AccessRightsBlockExpectation.Missing(described, intent.ConfiguredRights)));
 		Warn(logger, EmailBlockExpectation.BuildWarning(
-			EmailBlockExpectation.Missing(described, expectedEmail)));
+			EmailBlockExpectation.Missing(described, intent.ConfiguredEmail)));
 	}
 
 	/// <summary>
@@ -63,11 +48,10 @@ internal static class BlockExpectationReporter {
 	/// command still succeeds — an unreadable description is not evidence of a drop — but the caller is told the
 	/// verification did not happen, so an unapplied revoke cannot pass as an applied one.
 	/// </summary>
-	internal static void WarnAccessRightsUnverified(ILogger logger, IReadOnlyList<string> expectedRights,
-			string reason, IReadOnlyList<string>? filterTouched = null) {
-		Warn(logger, BuildUnverifiedWarning(expectedRights, reason));
-		Warn(logger, BuildUnverifiedFilterWarning(
-			[.. (filterTouched ?? []).Except(expectedRights, StringComparer.OrdinalIgnoreCase)], reason));
+	internal static void WarnAccessRightsUnverified(ILogger logger, BlockExpectationIntent intent,
+			string reason) {
+		Warn(logger, BuildUnverifiedWarning(intent.ConfiguredRights, reason));
+		Warn(logger, BuildUnverifiedFilterWarning(intent.RefilteredOnly, reason));
 	}
 
 	// An element this batch only RE-FILTERED gets its own wording. It sent no block, and with the read-back
@@ -90,13 +74,13 @@ internal static class BlockExpectationReporter {
 	}
 
 	// One wording for every "the check did not happen" outcome, so they cannot drift apart.
-	private static string? BuildUnverifiedWarning(IReadOnlyList<string> expectedRights, string reason) {
-		if (expectedRights.Count == 0) {
+	private static string? BuildUnverifiedWarning(IReadOnlyList<string> configuredRights, string reason) {
+		if (configuredRights.Count == 0) {
 			return null;
 		}
 
-		string elements = string.Join("', '", expectedRights);
-		string subject = expectedRights.Count == 1 ? "element" : "elements";
+		string elements = string.Join("', '", configuredRights);
+		string subject = configuredRights.Count == 1 ? "element" : "elements";
 		return $"Could not verify that the 'accessRights' configuration for the {subject} '{elements}' landed: "
 			+ $"{reason}. The operation itself succeeded, but this check is the only signal that the permissions "
 			+ "were actually written — the element has no output parameters. Re-read the process with "
