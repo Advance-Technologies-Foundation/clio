@@ -34,7 +34,10 @@ method rather than only measured, and n=1 and n=2 still convert correctly. So `1
 divisions contains zero brackets as written, fits any sane length cap, and reaches the parser about
 1200 deep. **The conversion half is already known platform-side: the platform's own test for the
 correct sibling output is disabled under `CRM-49394`
-(`Terrasoft.Core.Tests/GeneratorUtilities.Tests.cs:383`).**
+(`Terrasoft.Core.Tests/GeneratorUtilities.Tests.cs:383`) — which today resolves to
+`ENG-64061`, "Ошибка вычисления выражений с делением", opened 2019-09-26, component
+`bpms platform`, Major, still To Do and unassigned. Grepping Jira for the CRM key finds
+nothing, which is why it is worth writing both down.**
 
 The platform bounds none of this. No platform assembly caps the length of formula or expression text
 — the only length caps under `TSBpm/Src/Lib` are in the DEPLOYED copy of this package itself, under
@@ -104,6 +107,16 @@ reads. In ENG-95891 that guard took ten review rounds and produced ten defects, 
 trying to predict the converter's inflation from outside the converter; the worst real formula in the
 whole shipped corpus scores 4 against a limit of 32. If the crash is worth closing, it is closed in
 the engine or in `ProcessParameterValueProvider.ValidateExpression`, which all three doors pass
-through. The executable reproduction of the curve is
+through.
+
+**No ticket was raised for it, and that is a decision rather than an omission.** Asked directly during
+the ENG-95891 review — a cross-repo reviewer's point was that a knowledge file inside a feature branch
+is the least likely place anyone finds a platform finding again, which is fair. The project owner
+decided against filing: it is a core defect, the responsible team has carried the adjacent half
+(`ENG-64061`) for seven years without it being picked up, and the platform works acceptably as it
+stands. So do not re-raise it as an oversight, and do not file it on the strength of this record
+alone; the decision is recorded here precisely so the next reviewer finds the answer instead of the
+question. What this record adds over `ENG-64061` — the depth curve `max(2, 2n-2)` derived from the
+converter itself, and an executable reproduction — is available to whoever does pick it up. The executable reproduction of the curve is
 `ConvertExpressionTextToCode_ShouldReportDepthInflationPerDivision` in the package's
 `ProcessFormulaEngineProbeTests`.
