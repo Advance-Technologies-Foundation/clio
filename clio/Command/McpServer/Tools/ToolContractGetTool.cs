@@ -77,6 +77,14 @@ public sealed class ToolContractGetTool {
 		BudgetPolicy = McpToolBudgetPolicy.None,
 		RequiresClientRequests = McpToolClientRequests.None,
 		SharedFileResource = McpToolSharedFileResource.None)]
+	// ENG-95885 (field-test defect: a FLAT name-only call silently returned the full tool INDEX as a
+	// success). A flat {"name":"<tool>"} payload carries no key that is a canonical wire property of
+	// ToolContractGetArgs ("tool-names" / "detail"), so the normalizer classifies it unknown-only. This
+	// declaration forwards it instead of refusing it: the key binds into the args record's
+	// [JsonExtensionData] overflow bag and TryRecoverFlatToolNames below resolves the NAMED contract.
+	// Before ENG-95885 the flat call bound `args` to null, fell through to the no-tool-names branch, and
+	// handed the agent the entire index back as a plausible success.
+	[McpRecoversUnknownArguments]
 	[Description("Returns clio MCP tool contracts. Omit tool-names for a compact index of ALL tools (names + one-line purpose + safety flags) — cheap discovery without full schemas; pass tool-names to expand those tools' full contracts (parameter schema, aliases, defaults, examples, and preferred or fallback workflow hints); pass detail=full (with no tool-names) to expand every tool's full contract at once.")]
 	public ToolContractGetResponse GetToolContracts(
 		[Description("Parameters: tool-names (optional array of tool names) and detail (optional 'index' | 'full'). Omit entirely for a compact index of all tools; pass tool-names for full contracts; pass detail=full to expand all full contracts.")]
@@ -135,7 +143,38 @@ public sealed class ToolContractGetTool {
 	}
 
 	private const string ExpectedArgsShapeHint =
-		"Expected args shape: {\"tool-names\": [\"list-pages\", ...] } or omit tool-names to list all.";
+		"Expected args shape: {\"tool-names\": [\"list-pages\", ...] } or omit tool-names to list all. "
+		+ AcceptedArgumentShapesHint;
+
+	/// <summary>
+	/// ENG-95885. The canonical statement of clio's runtime argument-shape contract, carried on the
+	/// <c>get-tool-contract</c> surface — the one tool every agent reads before calling anything else.
+	/// </summary>
+	/// <remarks>
+	/// This is deliberately framed as a TOLERANT RUNTIME layer, not a schema change: <c>tools/list</c>
+	/// keeps publishing <c>required: ["args"]</c>, so the published schema and the accepted input set are
+	/// NOT identical and this text must never claim they are. Server instructions stay pointer-only
+	/// (<c>McpServerInstructions</c>), and the narrative guidance articles live in the external
+	/// clio-knowledge repository — so the rule is stated once, here, next to the contracts it governs.
+	/// </remarks>
+	internal const string AcceptedArgumentShapesHint =
+		"Argument shapes accepted at runtime by any tool whose only parameter is an args record: "
+		+ "wrapped {\"args\": {\"<field>\": \"<value>\"}} (the shape tools/list publishes) and flat "
+		+ "{\"<field>\": \"<value>\"} (normalized to the wrapped shape on arrival). Rules: every flat key "
+		+ "must be a real field name — a payload carrying any unknown key (even beside a valid one) is "
+		+ "refused, never answered with defaults; "
+		+ "mixing an \"args\" object with extra top-level keys is refused as ambiguous; an args value must "
+		+ "be a JSON object, never a string containing JSON text.";
+
+	// ENG-95885: the accepted-shape rule is deliberately NOT advertised in the published tools/list
+	// description. That payload is ratcheted by a byte budget
+	// (McpProfileGatingTests.RegisterEnabledPrimitives_ShouldKeepToolsSerializedSizeWithinBudget_WhenCalled,
+	// 32768 bytes) and the current default surface leaves ~15 bytes of headroom, so even a one-line
+	// summary (~236 bytes) breaks it. Raising the ceiling for a rule an agent needs at the moment a call
+	// FAILS would trade every session's context for text most sessions never read. The rule therefore
+	// lives where it is actually consumed: the error text below (ExpectedArgsShapeHint), the normalizer's
+	// refusal messages in McpToolErrorFilter, the full get-tool-contract output, and
+	// clio/Command/McpServer/AGENTS.md.
 
 	private static readonly Dictionary<string, string> LegacyAliases = new(StringComparer.Ordinal) {
 		["toolNames"] = ToolNamesParam,

@@ -1229,15 +1229,19 @@ public sealed class ToolContractGetToolE2ETests : McpContractFixtureBase {
 		string diagnostics = string.Join(
 			Environment.NewLine,
 			(callResult.Content ?? []).Select(content => content.ToString()));
-		// A binding-layer failure surfaces either as the SDK's generic invocation error (e.g. a missing
-		// required args wrapper) or as clio's more specific argument-deserialization diagnostic (e.g. an
-		// args payload whose type cannot bind to the tool's argument record). Both correctly identify a
-		// pre-execution binding failure for this tool, so accept either (ENG-91828 contract drift).
-		// "invalid-parameter-type" is the contracted diagnostic the pre-method binder now emits; the two
-		// older SDK shapes stay accepted because they carry the same binding-layer contract.
+		// A binding-layer failure surfaces in one of four forms, each of which correctly identifies a
+		// pre-execution binding failure for this tool (ENG-91828 contract drift):
+		//   * "invalid-parameter-type", the contracted diagnostic the pre-method binder now emits;
+		//   * the SDK's generic invocation error (e.g. a missing required args wrapper);
+		//   * clio's argument-deserialization diagnostic (an args payload whose type cannot bind);
+		//   * ENG-95885's precise shape-naming error, which now pre-empts the raw deserializer text
+		//     whenever an argument the tool expects as a JSON OBJECT arrives as a JSON string. That
+		//     replacement is the point of the change — "... BytePositionInLine: 9" told an agent nothing
+		//     about the required shape.
 		(diagnostics.Contains("invalid-parameter-type", StringComparison.Ordinal)
 			|| diagnostics.Contains("An error occurred invoking 'get-tool-contract'.", StringComparison.Ordinal)
-			|| diagnostics.Contains("Failed to deserialize argument 'args' for MCP tool 'get-tool-contract'", StringComparison.Ordinal))
+			|| diagnostics.Contains("Failed to deserialize argument 'args' for MCP tool 'get-tool-contract'", StringComparison.Ordinal)
+			|| diagnostics.Contains("must be a JSON object", StringComparison.Ordinal))
 			.Should().BeTrue(
 				because: "the transport-level failure should surface as a binding-layer invocation/deserialization error for the tool");
 	}

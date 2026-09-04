@@ -1,6 +1,10 @@
 using System;
 using System.Collections.Generic;
+using System.Diagnostics.CodeAnalysis;
+using System.Linq;
+using System.Reflection;
 using System.Text.Json;
+using System.Threading;
 
 namespace Clio.Command.McpServer.Tools;
 
@@ -13,6 +17,99 @@ namespace Clio.Command.McpServer.Tools;
 /// </summary>
 internal static class McpToolArgumentSupport {
 	/// <summary>
+	/// True when the SDK binds this parameter from the request's <c>arguments</c> object. Parameters the
+	/// SDK injects from the request context (<see cref="RequestContext{T}"/>, <see cref="CancellationToken"/>,
+	/// <see cref="IServiceProvider"/>, <c>McpServer</c>, and anything else the MCP SDK owns) are not bound
+	/// from caller-supplied arguments, so they are excluded when deciding how many user-supplied
+	/// parameters a tool exposes.
+	/// </summary>
+	/// <remarks>
+	/// ENG-95885: this predicate is the SINGLE definition shared by <c>ClioRunTool</c>'s argument mapping
+	/// and <c>McpToolErrorFilter</c>'s flat-argument normalizer. Both must agree on "exactly one bindable
+	/// non-framework composite parameter" — if they drifted apart, the normalizer could rewrite a
+	/// <c>clio-run</c> payload that <c>ClioRunExecutor.RecoverWrappedCall</c> also claims ownership of, and
+	/// two mechanisms would fight over the same arguments object.
+	/// </remarks>
+	public static bool IsBindableToolParameter(ParameterInfo parameter) {
+		ArgumentNullException.ThrowIfNull(parameter);
+		return !IsFrameworkOwnedType(parameter.ParameterType);
+	}
+
+	/// <summary>
+	/// True when <paramref name="type"/> belongs to the hosting framework rather than to a tool's own
+	/// caller-supplied argument contract. Three independent rules, none of them name-based:
+	/// <list type="number">
+	/// <item><description>the two BCL context types the SDK injects (<see cref="CancellationToken"/>,
+	/// <see cref="IServiceProvider"/>);</description></item>
+	/// <item><description>anything declared in the MCP SDK's own assembly — <c>McpServer</c>,
+	/// <c>IMcpServer</c>, <see cref="RequestContext{T}"/>, <c>ProgressToken</c> and every future
+	/// SDK-injected type, whatever namespace the SDK puts it in;</description></item>
+	/// <item><description>anything ASSIGNABLE TO <c>McpServer</c>, which catches a host-defined subclass
+	/// declared OUTSIDE the SDK assembly — the one framework shape rule 2 cannot see.</description></item>
+	/// </list>
+	/// </summary>
+	/// <remarks>
+	/// The exclusion is keyed on the SDK ASSEMBLY, never on a namespace-name prefix. A prefix match
+	/// (<c>type.Namespace.StartsWith("ModelContextProtocol")</c>) silently swallowed any unrelated type
+	/// whose namespace merely began with those characters, and silently missed an <c>McpServer</c>
+	/// subclass declared elsewhere — both of which would move the "exactly one bindable parameter" count
+	/// and hand the normalizer a payload it must not rewrite. Assembly identity plus
+	/// <see cref="Type.IsAssignableFrom"/> cannot drift that way at the next SDK upgrade.
+	/// Pinned by <c>McpToolArgumentSupportTests</c>.
+	/// </remarks>
+	public static bool IsFrameworkOwnedType(Type type) {
+		ArgumentNullException.ThrowIfNull(type);
+		if (type == typeof(CancellationToken) || type == typeof(IServiceProvider)) {
+			return true;
+		}
+		if (type.Assembly == McpSdkAssembly) {
+			return true;
+		}
+		return typeof(ModelContextProtocol.Server.McpServer).IsAssignableFrom(type);
+	}
+
+	/// <summary>
+	/// The assembly that owns every SDK-injected parameter type. Resolved from a type the tool layer
+	/// actually declares, so it follows the SDK package rather than a hardcoded assembly name.
+	/// </summary>
+	private static readonly Assembly McpSdkAssembly =
+		typeof(ModelContextProtocol.Server.McpServer).Assembly;
+
+	/// <summary>
+	/// True for a composite ("args record") parameter — a non-string reference type the tool expects to
+	/// receive as ONE bound argument object. Scalars (string, bool, numbers, enums, and any other value
+	/// type) are bound by name from the arguments object instead, so a single scalar parameter is not a
+	/// composite wrapper.
+	/// </summary>
+	public static bool IsCompositeArgsParameter(Type type) {
+		ArgumentNullException.ThrowIfNull(type);
+		Type underlying = Nullable.GetUnderlyingType(type) ?? type;
+		return underlying != typeof(string) && !underlying.IsValueType;
+	}
+
+	/// <summary>
+	/// The shared trigger predicate: true when <paramref name="method"/> exposes EXACTLY ONE bindable
+	/// non-framework parameter and that parameter is composite. This is the only shape for which a flat
+	/// argument payload is unambiguous — a multi-parameter tool (e.g. <c>clio-run</c>'s
+	/// <c>command</c> + <c>args</c>) or a single-scalar tool binds top-level keys by parameter name, so
+	/// its payload must never be rewritten.
+	/// </summary>
+	/// <param name="method">The tool implementation method.</param>
+	/// <param name="parameter">The single composite parameter when the predicate holds; otherwise <c>null</c>.</param>
+	public static bool TryGetSingleCompositeParameter(
+		MethodInfo method,
+		[NotNullWhen(true)] out ParameterInfo? parameter) {
+		ArgumentNullException.ThrowIfNull(method);
+		parameter = null;
+		ParameterInfo[] bindable = method.GetParameters().Where(IsBindableToolParameter).ToArray();
+		if (bindable.Length != 1 || !IsCompositeArgsParameter(bindable[0].ParameterType)) {
+			return false;
+		}
+		parameter = bindable[0];
+		return true;
+	}
+
+	/// <summary>
 	/// The camelCase / snake_case mis-spellings of <c>environment-name</c> an LLM tends to emit, each mapped to
 	/// the canonical kebab-case name so a wrong spelling is rejected with a rename hint instead of silently
 	/// binding to nothing. Shared by every environment-scoped tool so the pair is defined once; a tool with extra
@@ -21,7 +118,12 @@ internal static class McpToolArgumentSupport {
 	public static readonly IReadOnlyDictionary<string, string> EnvironmentNameAliases =
 		new Dictionary<string, string>(StringComparer.Ordinal) {
 			["environmentName"] = "environment-name",
-			["environment_name"] = "environment-name"
+			["environment_name"] = "environment-name",
+			// ENG-95885: the bare 'environment' spelling was the one missing member of this set — it is
+			// what an agent writes when it is thinking about the CLI's -e/--environment flag. Like every
+			// other entry it is REJECTION-ONLY: it produces a rename hint, never a silent binding, so the
+			// accepted field set stays exactly the canonical kebab-case one.
+			["environment"] = "environment-name"
 		};
 
 	/// <summary>
