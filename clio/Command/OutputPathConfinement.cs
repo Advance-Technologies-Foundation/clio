@@ -121,29 +121,37 @@ internal static class OutputPathConfinement {
 		// branches of one decision (explicit path vs default), so they never nest.
 		lock (McpServer.Tools.McpToolExecutionLock.CwdLock) {
 			string home = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+			// No home fallback here, deliberately. PageOutputDirectoryResolver substitutes clio's OWN home
+			// (the directory holding appsettings.json with its cleartext credentials) when the cwd is the bare
+			// $HOME - the common MCP-host default - and that is the right anchor for a TOOL-OWNED default
+			// path (ResolveDefaultAnchor keeps it). It is the wrong boundary for a CALLER-supplied path: a
+			// prompt-injected rows-file would then sit inside the allowed zone. With null the bare-home case
+			// collapses to temp-only, which is what an untrusted anchor already does below.
 			string anchor = PageOutputDirectoryResolver.ResolveAnchor(
 				fileSystem,
 				fileSystem.Directory.GetCurrentDirectory(),
 				home,
-				ClioRuntimePaths.Home,
+				null,
 				null);
 			string full = fileSystem.Path.GetFullPath(candidatePath);
 			string tempRoot = fileSystem.Path.GetFullPath(fileSystem.Path.GetTempPath());
+			string clioHome = fileSystem.Path.GetFullPath(ClioRuntimePaths.Home);
 
 			// Confine the REAL (symlink-followed) path, not just the lexical one: Path.GetFullPath collapses `..`
 			// but never resolves a symlink, and the later write follows links. A link planted under an allowed
 			// root (the classic world-writable /tmp attack) could otherwise land the write on an arbitrary file.
 			// BOTH bounds are resolved the same way so a symlinked temp/home root (e.g. macOS /var -> /private/var)
 			// does not cause a false rejection of an in-bounds path.
-			string real, realTempRoot, realAnchor, realHome;
+			string real, realTempRoot, realAnchor, realHome, realClioHome;
 			try {
 				real = ResolveRealPath(fileSystem, full);
 				// Resolve the bounds the same way — including these system paths — so an unresolvable link
 				// anywhere in the comparison fails CLOSED with the friendly message rather than escaping Resolve
 				// as an opaque exception.
 				realTempRoot = ResolveRealPath(fileSystem, tempRoot);
-				realAnchor = ResolveRealPath(fileSystem, anchor);
+				realAnchor = string.IsNullOrEmpty(anchor) ? anchor : ResolveRealPath(fileSystem, anchor);
 				realHome = string.IsNullOrEmpty(home) ? home : ResolveRealPath(fileSystem, home);
+				realClioHome = ResolveRealPath(fileSystem, clioHome);
 			}
 			catch (UnresolvableLinkException) {
 				// A confirmed symlink whose chain could not be resolved (cycle / pathological depth / a target
@@ -151,6 +159,17 @@ internal static class OutputPathConfinement {
 				// confinement (see ResolveRealPath / ResolveSymlink).
 				return (null, null,
 					$"{optionName} '{candidatePath}' resolves through an unresolvable symbolic link; refusing to continue.");
+			}
+
+			// clio's own configuration directory is denied as a WHOLE subtree, and denied BEFORE the allowed
+			// zones are consulted, so it holds even when the allowed zones would otherwise contain it: a
+			// CLIO_HOME pointed inside a workspace, a cwd that IS clio home, or a CLIO_HOME under the temp
+			// root. The directory holds more than appsettings.json - the telemetry outbox, the worker
+			// registry, the cache - none of which a caller-supplied payload path has any business reading
+			// or creating files in.
+			if (IsWithinDirectory(realClioHome, real)) {
+				return (null, null,
+					$"{optionName} '{candidatePath}' resolves inside clio's own configuration directory; refusing to continue.");
 			}
 
 			// A filesystem root ('/', 'C:\') or an ancestor of the user's home directory ('/Users', '/home',

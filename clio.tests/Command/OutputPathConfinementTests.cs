@@ -5,6 +5,8 @@ using System.IO;
 using System.Linq;
 using System.Runtime.InteropServices;
 using Clio.Command;
+using Clio.Common;
+using Clio;
 using FluentAssertions;
 using NUnit.Framework;
 using IoFileSystem = System.IO.Abstractions.IFileSystem;
@@ -242,6 +244,40 @@ public sealed class OutputPathConfinementTests {
 		// Assert
 		trusted.Should().BeTrue(
 			because: "a specific directory that is neither a filesystem root nor an ancestor of home is a valid write boundary");
+	}
+
+	[Test]
+	[Category("Integration")]
+	[Description("A caller-supplied INPUT path inside clio's own configuration directory (the appsettings.json credential store) is refused with the configuration-directory message, regardless of what the anchor resolved to.")]
+	public void ResolveForRead_ShouldRefuse_APathInsideClioHome() {
+		// Arrange - a probe under clio home; it need not exist, the deny runs before the existence rule.
+		string probe = Path.Combine(ClioRuntimePaths.Home, "probe-" + Guid.NewGuid().ToString("N") + ".json");
+
+		// Act
+		(string path, string error) = OutputPathConfinement.ResolveForRead(_fileSystem, probe, "rows-file");
+
+		// Assert
+		path.Should().BeNull(because: "nothing under clio's configuration directory may be handed back for reading");
+		error.Should().Contain("configuration directory",
+			because: "the refusal must name the clio-home deny, not the generic out-of-zone message: on a host where "
+				+ "clio home is the anchor the generic check would let this path through");
+	}
+
+	[Test]
+	[Category("Integration")]
+	[Description("A caller-supplied OUTPUT path inside clio's own configuration directory is refused the same way, so odata-read-to-file cannot create files under cache/, sessions/ or next to appsettings.json.")]
+	public void ResolveCanonicalOutput_ShouldRefuse_APathInsideClioHome() {
+		// Arrange
+		string probe = Path.Combine(ClioRuntimePaths.Home, "cache", "probe-" + Guid.NewGuid().ToString("N") + ".json");
+
+		// Act
+		(string path, string error) = OutputPathConfinement.ResolveCanonicalOutput(_fileSystem, probe);
+
+		// Assert
+		path.Should().BeNull(because: "the whole clio-home subtree is denied, not just the settings file");
+		error.Should().Contain("configuration directory",
+			because: "the subtree deny has to fire before the allowed-zone check so it holds even when clio home "
+				+ "lies inside a zone that would otherwise be allowed");
 	}
 
 	[Test]

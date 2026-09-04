@@ -46,13 +46,15 @@ internal static class PageOutputDirectoryResolver {
 	/// <param name="fileSystem">File-system abstraction used to probe for the workspace marker.</param>
 	/// <param name="currentDirectory">The process current working directory.</param>
 	/// <param name="homeDirectory">The user's home directory (<c>SpecialFolder.UserProfile</c>).</param>
-	/// <param name="homeFallbackAnchor">Anchor used instead of the bare home directory (clio home root).</param>
+	/// <param name="homeFallbackAnchor">Anchor used instead of the bare home directory (clio home root), or
+	/// <see langword="null"/> to yield NO anchor in that case - what a caller-supplied path is confined with, so
+	/// clio's own configuration directory never becomes its boundary.</param>
 	/// <param name="explicitDirectory">Optional caller-pinned output directory.</param>
-	public static string ResolveAnchor(
+	public static string? ResolveAnchor(
 		IFileSystem fileSystem,
 		string currentDirectory,
 		string homeDirectory,
-		string homeFallbackAnchor,
+		string? homeFallbackAnchor,
 		string? explicitDirectory) {
 		if (!string.IsNullOrWhiteSpace(explicitDirectory)) {
 			return fileSystem.Path.GetFullPath(explicitDirectory);
@@ -92,7 +94,7 @@ internal static class PageOutputDirectoryResolver {
 				fileSystem.Directory.GetCurrentDirectory(),
 				Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
 				ClioRuntimePaths.Home,
-				null);
+				null)!; // non-null fallback, so the bare-home branch cannot yield null
 		}
 	}
 
