@@ -4,6 +4,7 @@ using Allure.NUnit;
 using Allure.NUnit.Attributes;
 using Clio.Command.McpServer.Tools;
 using Clio.Mcp.E2E.Support.Configuration;
+using Clio.Mcp.E2E.Support.Creatio;
 using Clio.Mcp.E2E.Support.Mcp;
 using Clio.Mcp.E2E.Support.Results;
 using FluentAssertions;
@@ -49,6 +50,37 @@ public sealed class SchemaNamePrefixToolE2ETests {
 			because: "the sandbox environment should have SchemaNamePrefix configured to a non-empty value");
 		response.Error.Should().BeNull(
 			because: "no error message should be present when the tool call succeeds");
+	}
+
+	[Test]
+	[AllureTag(ToolName)]
+	[AllureName("get-schema-name-prefix reports rejected credentials instead of an empty prefix")]
+	[AllureDescription("Registers an environment against a stub whose authenticated SelectQuery answers with the Creatio login page, then verifies get-schema-name-prefix returns success:false with an error rather than a successful empty prefix.")]
+	[Description("get-schema-name-prefix against an environment whose credentials Creatio rejects returns success:false with a diagnostic, not a valid-looking empty prefix. The tool's own [Description] now promises that behaviour and AGENTS.md makes MCP e2e coverage mandatory for a changed MCP tool, so the failure shape is pinned here and not only in the unit tests.")]
+	public async Task GetSchemaNamePrefix_Should_Report_Authentication_Failure() {
+		await CredentialRejectionStubHarness.RunAsync("schemanameprefix-auth",
+			async (session, environmentName, cancellationToken) => {
+				// Act
+				CallToolResult callResult = await session.CallToolAsync(
+					ToolName,
+					new Dictionary<string, object?> {
+						["args"] = new Dictionary<string, object?> {
+							["environment-name"] = environmentName
+						}
+					},
+					cancellationToken);
+				SchemaNamePrefixResult response =
+					EntitySchemaStructuredResultParser.Extract<SchemaNamePrefixResult>(callResult);
+
+				// Assert
+				response.Success.Should().BeFalse(
+					because: "a rejected credential must not be reported as a successful prefix read - the empty "
+					+ "prefix that used to come back is indistinguishable from an environment that has none configured");
+				response.Error.Should().NotBeNullOrWhiteSpace(
+					because: "the failure envelope has to carry a diagnostic the caller can act on");
+				response.SchemaNamePrefix.Should().BeNullOrEmpty(
+					because: "nothing was read, so no prefix may be advertised alongside the failure");
+			});
 	}
 
 	private static async Task<CallToolResult> CallToolAsync(

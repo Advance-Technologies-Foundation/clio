@@ -2,6 +2,7 @@ using System;
 using System.Net;
 using System.Net.Http;
 using System.Security.Authentication;
+using System.Text.Json;
 using Clio.Command;
 using FluentAssertions;
 using NUnit.Framework;
@@ -188,5 +189,29 @@ public sealed class SysSettingsErrorClassificationTests {
 		string message = SysSettingsCommand.CategorizeError(exception, Operation);
 
 		message.Should().Be(AuthenticationError);
+	}
+
+	[Test]
+	[Description("A JsonException - what a proxy/gateway or 404 page raises when it reaches JsonSerializer.Deserialize on the write path - is reported as a non-JSON response naming the likely cause, not as the uncategorized \"Failed ...\" the operator used to get after the preflight probe was removed.")]
+	public void CategorizeError_Should_Report_A_NonJson_Response_For_A_JsonException() {
+		JsonException fault = new("'<' is an invalid start of a value. Path: $ | LineNumber: 0 | BytePositionInLine: 0.");
+
+		string message = SysSettingsCommand.CategorizeError(fault, "creating sys-setting");
+
+		message.Should().Be(
+			"Creatio returned a non-JSON response creating sys-setting - the URL may not reach Creatio, "
+			+ "or a proxy/gateway answered instead of it.",
+			because: "the write path's only remaining diagnosis for a non-login-page body must name the cause the operator can act on");
+	}
+
+	[Test]
+	[Description("The JsonException arm is reached through the transport wrapper too: the Creatio client surfaces faults via Task.Result, so an AggregateException carrying a single JsonException must classify as the same non-JSON response.")]
+	public void CategorizeError_Should_Report_A_NonJson_Response_For_An_Aggregate_Wrapping_A_JsonException() {
+		AggregateException fault = new(new JsonException("'<' is an invalid start of a value."));
+
+		string message = SysSettingsCommand.CategorizeError(fault, "updating sys-setting");
+
+		message.Should().Contain("non-JSON response updating sys-setting",
+			because: "unwrapping a single-fault aggregate must not lose the non-JSON diagnosis");
 	}
 }

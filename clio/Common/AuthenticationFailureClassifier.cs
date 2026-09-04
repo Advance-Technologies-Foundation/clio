@@ -219,10 +219,12 @@ public static class AuthenticationFailureClassifier {
 			if (document.RootElement.ValueKind != JsonValueKind.Object) {
 				return false;
 			}
-			foreach (JsonProperty property in document.RootElement.EnumerateObject()) {
-				if (string.Equals(property.Name, "success", StringComparison.OrdinalIgnoreCase)) {
-					return property.Value.ValueKind == JsonValueKind.True;
-				}
+			JsonProperty[] successFlag = document.RootElement.EnumerateObject()
+				.Where(property => string.Equals(property.Name, "success", StringComparison.OrdinalIgnoreCase))
+				.Take(1)
+				.ToArray();
+			if (successFlag.Length == 1) {
+				return successFlag[0].Value.ValueKind == JsonValueKind.True;
 			}
 			// NO success flag: NOT treated as successful. The platform's own fault envelopes take this shape
 			// ({"Message":"Authentication failed.","StackTrace":null}), so exempting a flagless object would

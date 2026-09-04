@@ -99,11 +99,55 @@ namespace Clio.Package
 			}
 		}
 
+		/// <summary>
+		/// <see langword="true"/> when no compilation-history activity has been seen for
+		/// <see cref="CompilationSettleSeconds"/>, which is how a response-less 8.3.3+ compile signals
+		/// that it finished.
+		/// </summary>
+		private static bool HasSettled(DateTime? lastActivityAt)
+			=> lastActivityAt.HasValue
+				&& (DateTime.UtcNow - lastActivityAt.Value).TotalSeconds >= CompilationSettleSeconds;
+
+		/// <summary>
+		/// Ends the monitoring of a response-less compile: stops the poll thread and cancels, then
+		/// OBSERVES, the pending HTTP request.
+		/// </summary>
+		/// <remarks>
+		/// Every exit from the wait loop has to do all three, in this order - leaving the cancelled request
+		/// unobserved raises an unhandled task exception later, and disposing the token source while the poll
+		/// thread still holds its token throws ObjectDisposedException. Extracted so no exit path can carry
+		/// only part of the sequence.
+		/// </remarks>
+		private static void StopMonitoring(CancellationTokenSource cts, Thread pollThread, Task httpTask) {
+			cts.Cancel();
+			pollThread.Join();
+			ObserveCancelledRequest(httpTask, cts);
+		}
+
+		/// <summary>
+		/// Reads the compilation-history baseline, degrading to <c>null</c> when the read fails.
+		/// </summary>
+		/// <remarks>
+		/// ClassifyingDataProvider turns a failed OData round into an exception instead of an empty list, so an
+		/// unguarded read here would abort the build before the compilation request is ever sent - one transient
+		/// OData failure would fail a compile that would otherwise have succeeded. The baseline only sharpens
+		/// which history rows count as new (Poll falls back to DateTime.MinValue without it), so a failed read is
+		/// reported as a warning and the compilation goes ahead.
+		/// </remarks>
+		private CompilationHistory TryGetBaseline() {
+			try {
+				return _compilationHistoryPoller.GetBaseline();
+			} catch (Exception exception) {
+				_logger.WriteWarning($"Could not read the compilation history baseline: {exception.Message}");
+				return null;
+			}
+		}
+
 		// In Creatio 8.3.3+, RebuildPackage no longer sends back an HTTP response —
 		// the server compiles in the background and drops the connection. Use a cancellable
 		// asynchronous request while the CompilationHistoryPoller detects completion via OData.
 		private void CompileWithPolling(string url, string requestData) {
-			CompilationHistory baseline = _compilationHistoryPoller.GetBaseline();
+			CompilationHistory baseline = TryGetBaseline();
 			DateTime baselineCreatedOn = baseline?.CreatedOn ?? DateTime.MinValue;
 
 			DateTime timeoutAt = DateTime.UtcNow.AddMinutes(CompilationTimeoutMinutes);
@@ -145,9 +189,7 @@ namespace Clio.Package
 				//poll and letting the loop run to its full timeout with nothing watching the compile.
 				Exception pollFault = Volatile.Read(ref pollFaultBox[0]);
 				if (pollFault is not null) {
-					cts.Cancel();
-					pollThread.Join();
-					ObserveCancelledRequest(httpTask, cts);
+					StopMonitoring(cts, pollThread, httpTask);
 					throw new InvalidOperationException(
 						$"Package compilation could not be monitored: {pollFault.Message}", pollFault);
 				}
@@ -159,11 +201,8 @@ namespace Clio.Package
 					return;
 				}
 
-				if (lastActivityAt.HasValue &&
-					(DateTime.UtcNow - lastActivityAt.Value).TotalSeconds >= CompilationSettleSeconds) {
-					cts.Cancel();
-					pollThread.Join();
-					ObserveCancelledRequest(httpTask, cts);
+				if (HasSettled(lastActivityAt)) {
+					StopMonitoring(cts, pollThread, httpTask);
 					if (hasErrors) {
 						throw new Exception($"Package compilation failed: {errorDetails}");
 					}
@@ -173,9 +212,7 @@ namespace Clio.Package
 				Thread.Sleep(500);
 			}
 
-			cts.Cancel();
-			pollThread.Join();
-			ObserveCancelledRequest(httpTask, cts);
+			StopMonitoring(cts, pollThread, httpTask);
 			throw new TimeoutException($"Package compilation did not complete within {CompilationTimeoutMinutes} minutes.");
 
 			async Task SendCompilationRequestAsync(CancellationToken cancellationToken) {
