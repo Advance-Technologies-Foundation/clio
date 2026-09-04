@@ -129,6 +129,14 @@ name instead of trying to edit a non-existent local `insert`.
   `--resources`. Binding expressions (any `$`-prefixed value) and non-string values (e.g.
   `placeholder: false`) are not literals and pass. Call `clio get-guidance --name page-schema-resources`
   for the full rule.
+  A **component's own data descriptor is exempt**: a `data` object that carries the platform's
+  `typeName` marker, on a node declaring a component `type`, is component metadata (uId, schemaType,
+  typeName and the caption the platform stamped on it) rather than page-authored text, so a literal
+  anywhere inside it is accepted — at any depth, not only at the entry root. This is what a Timeline
+  composer (`crt.EmailComposer` / `crt.FeedComposer`) ships as `data.caption: "Email"` / `"Feed"`.
+  Do NOT delete such a caption to satisfy the rule: the platform never restores it and the composer
+  stays permanently unlabelled. An author-writable input that merely happens to be named `data`
+  (e.g. `crt.FilterBuilderSource`) carries no `typeName` and stays fully validated.
 - **Inserted widget/metric titles must resolve.** A `title`/`caption`/`tooltip`/`placeholder` on a
   freshly inserted (`operation:"insert"`) widget/container bound as 
   `#ResourceString(<Key>)#` is **rejected** when `<Key>` will not resolve — i.e. it is not passed in
@@ -190,7 +198,10 @@ can report a conflict against a page that has not actually changed. This edge fa
 
 `--mode replace` (default) saves the body verbatim. `--mode append` loads the current
 schema body from the server and merges your incoming fragment into it — `viewConfigDiff`
-entries dedupe by `name` (incoming wins), handlers dedupe by `request`.
+entries dedupe by `name`, handlers dedupe by `request`, and `SCHEMA_CONVERTERS` and
+`SCHEMA_VALIDATORS` entries dedupe by type key (incoming wins). After the append merge,
+the final web body is rejected if a custom validator reference has no matching
+`SCHEMA_VALIDATORS` declaration. Built-in `crt.*` validators need no local declaration.
 
 Append requires the **diff form**. A full-config body — the `SCHEMA_VIEW_MODEL_CONFIG` /
 `SCHEMA_MODEL_CONFIG` markers (mobile: top-level `viewModelConfig` / `modelConfig`) instead

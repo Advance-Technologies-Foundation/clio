@@ -29,13 +29,15 @@ public sealed class PageUpdateCommandBaselineTests {
 
 	private IApplicationClient _applicationClient;
 	private IPageBaselineGuard _guard;
+	private ILogger _logger;
 	private PageUpdateCommand _command;
 
 	[SetUp]
 	public void SetUp() {
 		_applicationClient = Substitute.For<IApplicationClient>();
 		IServiceUrlBuilder serviceUrlBuilder = Substitute.For<IServiceUrlBuilder>();
-		ILogger logger = Substitute.For<ILogger>();
+		_logger = Substitute.For<ILogger>();
+		ILogger logger = _logger;
 		serviceUrlBuilder.Build("/DataService/json/SyncReply/SelectQuery").Returns(SelectQueryUrl);
 		serviceUrlBuilder.Build("/ServiceModel/ClientUnitSchemaDesignerService.svc/GetSchema").Returns(GetSchemaUrl);
 		serviceUrlBuilder.Build("/ServiceModel/ClientUnitSchemaDesignerService.svc/SaveSchema").Returns(SaveSchemaUrl);
@@ -76,7 +78,7 @@ public sealed class PageUpdateCommandBaselineTests {
 			.Returns(ci => {
 				ci.Arg<PageUpdateOptions>().ExpectedChecksum = baselineChecksum;
 				ci.Arg<PageUpdateOptions>().ExpectedSchemaUId = SchemaUId;
-				return (MetaPath, true);
+				return (MetaPath, true, (string)null);
 			});
 
 	private static PageUpdateOptions CreateOptions(bool dryRun = false) =>
@@ -118,7 +120,7 @@ public sealed class PageUpdateCommandBaselineTests {
 	[Description("Execute must not refresh the baseline when the guard reports it is not armed (no on-disk baseline).")]
 	public void Execute_ShouldNotRefreshBaseline_WhenNotArmed() {
 		// Arrange
-		_guard.TryArm(Arg.Any<PageUpdateOptions>(), Arg.Any<string>()).Returns(((string)null, false));
+		_guard.TryArm(Arg.Any<PageUpdateOptions>(), Arg.Any<string>()).Returns(((string)null, false, (string)null));
 		StubChecksumByUId();
 
 		// Act
@@ -133,7 +135,7 @@ public sealed class PageUpdateCommandBaselineTests {
 	[Description("Execute must not refresh the baseline on a dry-run even when armed, because no save occurred.")]
 	public void Execute_ShouldNotRefreshBaseline_WhenDryRun() {
 		// Arrange
-		_guard.TryArm(Arg.Any<PageUpdateOptions>(), Arg.Any<string>()).Returns((MetaPath, true));
+		_guard.TryArm(Arg.Any<PageUpdateOptions>(), Arg.Any<string>()).Returns((MetaPath, true, (string)null));
 		StubChecksumByUId();
 
 		// Act
@@ -142,5 +144,41 @@ public sealed class PageUpdateCommandBaselineTests {
 		// Assert
 		exitCode.Should().Be(0, because: "a dry-run validation must succeed");
 		_guard.DidNotReceive().RefreshOrDrop(Arg.Any<string>(), Arg.Any<PageUpdateOptions>(), Arg.Any<PageUpdateResponse>());
+	}
+
+	[Test]
+	[Description("TC-U-901: a baseline refresh that failed must reach the CLI response as a WARNING and must not turn a successful save into a failure.")]
+	public void Execute_ShouldSurfaceRefreshWarningAndStillSucceed_WhenRefreshFails() {
+		// Arrange
+		const string RefreshWarning = "The page was saved, but its conflict baseline could not be updated.";
+		ArmGuardWithChecksum("baseline-checksum");
+		StubChecksumByUId(ChecksumRow("baseline-checksum"), ChecksumRow("fresh-after-save"));
+		_guard.RefreshOrDrop(Arg.Any<string>(), Arg.Any<PageUpdateOptions>(), Arg.Any<PageUpdateResponse>())
+			.Returns(RefreshWarning);
+
+		// Act
+		int exitCode = _command.Execute(CreateOptions());
+
+		// Assert
+		exitCode.Should().Be(0,
+			because: "the save already landed on the server, so a lost baseline refresh must never be reported as a failed write");
+		_logger.Received().WriteInfo(Arg.Is<string>(json => json.Contains(RefreshWarning)));
+	}
+
+	[Test]
+	[Description("TC-U-901: a baseline DISCOVERY warning (conflict detection disarmed) must reach the CLI response even when the guard did not arm the check.")]
+	public void Execute_ShouldSurfaceDiscoveryWarning_WhenBaselineCouldNotBeRead() {
+		// Arrange
+		const string DiscoveryWarning = "External-modification detection is DISARMED for this page.";
+		_guard.TryArm(Arg.Any<PageUpdateOptions>(), Arg.Any<string>())
+			.Returns(((string)null, false, DiscoveryWarning));
+		StubChecksumByUId();
+
+		// Act
+		int exitCode = _command.Execute(CreateOptions());
+
+		// Assert
+		exitCode.Should().Be(0, because: "an unreadable baseline must fail toward no-check, not block the write");
+		_logger.Received().WriteInfo(Arg.Is<string>(json => json.Contains(DiscoveryWarning)));
 	}
 }

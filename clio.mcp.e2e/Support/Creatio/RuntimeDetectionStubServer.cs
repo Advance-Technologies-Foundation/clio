@@ -298,6 +298,21 @@ http.createServer((request, response) => {
       // bytes on disk, and the fact that a file-backed payload actually reached the write request.
       if (request.method === "GET") {
         const oversized = config.ODataOversizedBytes || 0;
+        // odata-update runs a BY-KEY pre-write field probe before it PATCHes, and that probe is only
+        // satisfied by a body that IS the addressed record: an Id equal to the key in the URL plus every
+        // $select-ed field. The collection body below is byte-pinned by the read-to-file test, so it cannot
+        // double as the probe answer - a by-key GET gets its own single-record document whose Id is echoed
+        // back out of the request URL. Guarded on the oversized mode so that test keeps owning the GET.
+        const keyMatch = oversized > 0 ? null : /\/odata\/[^/?(]+\(([^)]*)\)/.exec(url);
+        if (keyMatch) {
+          const key = decodeURIComponent(keyMatch[1]).replace(/^guid'/, "").replace(/'/g, "");
+          sendJson(response, 200, {
+            "@odata.context": "http://127.0.0.1/odata/$metadata#" + config.ODataEchoEntity + "/$entity",
+            Id: key,
+            Name: "Alpha"
+          });
+          return;
+        }
         if (oversized > 0) {
           // Streams a body far past clio's ceiling WITHOUT a Content-Length, honouring backpressure, and
           // records how much it actually managed to send. A client that buffers the whole response before

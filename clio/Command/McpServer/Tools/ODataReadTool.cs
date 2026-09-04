@@ -37,6 +37,13 @@ public sealed class ODataReadTool(IToolCommandResolver commandResolver) {
 	// contract - raw-name compatibility, and the bounded retry-safe read semantics the MCP read-deadline
 	// pipeline (McpReadResponseDeadline) only applies to a ReadOnly tool.
 	[McpServerTool(Name = ToolName, ReadOnly = true, Destructive = false, Idempotent = true, OpenWorld = false)]
+	[McpToolExecution(
+		Location = McpToolExecutionLocation.Worker,
+		Lifetime = McpToolExecutionLifetime.PerCall,
+		OperationFamily = McpToolOperationFamily.None,
+		BudgetPolicy = McpToolBudgetPolicy.ParentKillDefault,
+		RequiresClientRequests = McpToolClientRequests.None,
+		SharedFileResource = McpToolSharedFileResource.None)]
 	[Description(
 		"Query Creatio records via OData v4. " +
 		"Supports structured filters, select, expand, order by, top, skip, and total-count requests. " +

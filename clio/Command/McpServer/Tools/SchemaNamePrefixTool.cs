@@ -20,6 +20,13 @@ public sealed class SchemaNamePrefixTool(IToolCommandResolver commandResolver) {
 	/// </summary>
 	[McpServerTool(Name = GetSchemaNamePrefixToolName, ReadOnly = true, Destructive = false, Idempotent = true,
 		OpenWorld = false)]
+	[McpToolExecution(
+		Location = McpToolExecutionLocation.Worker,
+		Lifetime = McpToolExecutionLifetime.PerCall,
+		OperationFamily = McpToolOperationFamily.None,
+		BudgetPolicy = McpToolBudgetPolicy.ParentKillDefault,
+		RequiresClientRequests = McpToolClientRequests.None,
+		SharedFileResource = McpToolSharedFileResource.None)]
 	[Description("Returns the active SchemaNamePrefix system setting for the environment. " +
 	             "Returns empty string when no prefix is configured (use no prefix in that case). " +
 	             "Default Creatio environments return 'Usr'. " +

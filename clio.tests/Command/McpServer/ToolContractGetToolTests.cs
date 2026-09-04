@@ -1317,6 +1317,11 @@ public sealed class ToolContractGetToolTests {
 				field.Name == "validate" &&
 				field.Description.Contains("pre-existing"),
 			because: "update-page should expose the guarded validation escape hatch in its curated contract");
+		pageUpdateContract.InputSchema.Properties.Should().Contain(field =>
+				field.Name == "mode" &&
+				field.Description.Contains("SCHEMA_VALIDATORS", StringComparison.Ordinal) &&
+				field.Description.Contains("incoming wins", StringComparison.Ordinal),
+			because: "append callers must know that validator declarations merge by type key instead of being discarded");
 		ToolContractDefinition modifyColumnContract = contracts.Single(contract => contract.Name == ModifyEntitySchemaColumnTool.ModifyEntitySchemaColumnToolName);
 		modifyColumnContract.PreferredFlow.Tools.Should().Equal(
 				new[] {

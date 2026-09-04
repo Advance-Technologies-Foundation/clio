@@ -51,6 +51,16 @@ public sealed class ODataReadToFileTool(IToolCommandResolver commandResolver, IO
 	// the agent would be stuck with a file it was told was never written. Same reasoning as get-page.
 	// Idempotent is FALSE for the same reason: a second call to the same output-file is rejected, not a no-op.
 	[McpServerTool(Name = ToolName, ReadOnly = false, Destructive = false, Idempotent = false, OpenWorld = false)]
+	// Same execution classification as odata-read: one bounded OData GET per call in a supervised worker.
+	// SharedFileResource is None even though the call writes a file - output-file is a caller-named path
+	// confined to the workspace or the OS temp root, not one of the stores clio itself coordinates on.
+	[McpToolExecution(
+		Location = McpToolExecutionLocation.Worker,
+		Lifetime = McpToolExecutionLifetime.PerCall,
+		OperationFamily = McpToolOperationFamily.None,
+		BudgetPolicy = McpToolBudgetPolicy.ParentKillDefault,
+		RequiresClientRequests = McpToolClientRequests.None,
+		SharedFileResource = McpToolSharedFileResource.None)]
 	[Description(
 		"Query Creatio records via OData v4 and write the raw JSON response to a local file, returning a compact " +
 		"row/column-size summary instead of inline values. Use this only when the response is too large to return " +

@@ -4,7 +4,6 @@ using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using System.Reflection;
-using System.Runtime.InteropServices;
 using System.Text;
 using System.Threading;
 using Microsoft.Extensions.DependencyInjection;
@@ -21,6 +20,8 @@ using Clio.Command.Theming;
 using Clio.Command.TIDE;
 using Clio.Command.Update;
 using Clio.Common;
+using Clio.Common.McpWorker;
+using Clio.Common.Skills;
 using Clio.Help;
 using Clio.Package;
 using Clio.Query;
@@ -297,6 +298,22 @@ internal class Program {
 
 	internal static bool IsCfgOpenCommand;
 	internal static bool IsMcpServerMode { get; set; }
+
+	/// <summary>
+	/// Gets or sets a value indicating whether this process is an MCP WORKER child — an
+	/// <c>mcp-server --worker</c> spawned by an MCP host to serve one call.
+	/// </summary>
+	/// <remarks>
+	/// Read from a plain argument scan during startup, because the composition root needs it BEFORE the
+	/// parser runs: the container decides between the live and the frozen feature-toggle service, and that
+	/// same service gates which verbs the parser is even offered. Stored on
+	/// <see cref="McpWorkerEnvironment.IsWorkerProcess"/> so the composition root does not have to reach
+	/// back into <see cref="Program"/>; this property is the named entry point for it.
+	/// </remarks>
+	internal static bool IsMcpWorkerMode {
+		get => McpWorkerEnvironment.IsWorkerProcess;
+		set => McpWorkerEnvironment.IsWorkerProcess = value;
+	}
 	public static IAppUpdater _appUpdater;
 
 	private sealed record CommandSuggestionEntry(string CanonicalName, IReadOnlyList<string> SearchTerms);
@@ -1278,16 +1295,74 @@ internal class Program {
 	/// </summary>
 	/// <param name="args">Command line arguments</param>
 	/// <returns>Exit code indicating success (0) or failure (non-zero)</returns>
+	// Splits a raw --log NAME pair out of argv (returning NAME, or empty when --log was not passed) and
+	// removes both tokens from `args` in place, so every downstream parser only ever sees the real argv.
+	private static string ExtractLogTarget(ref string[] args) {
+		if (!args.Contains("--log")) {
+			return string.Empty;
+		}
+		int logIndex = Array.IndexOf(args, "--log");
+		// A trailing "--log" with no value would index past the end. Fail with the actual problem instead
+		// of an IndexOutOfRangeException from deep inside argument parsing.
+		if (logIndex + 1 >= args.Length) {
+			throw new ArgumentException("--log requires a value.", nameof(args));
+		}
+		string logTarget = args[logIndex + 1];
+		// Remove by POSITION, not by value: a positional argument that happens to equal the log target
+		// (`clio <verb> --log <verb>`) would otherwise be stripped along with it and the verb would be lost.
+		args = args.Where((_, index) => index != logIndex && index != logIndex + 1).ToArray();
+		return logTarget;
+	}
+
+	// Populates every static run-mode flag Main used to set inline, and returns whether this invocation is
+	// an MCP verb — the one piece of state every caller of this method still needs.
+	private static bool ConfigureRunModeFlags(string[] args, string[] clearArgs) {
+		bool isMcp = IsMcpCommand(clearArgs);
+		IsMcpServerMode = isMcp;
+		// Scoped to the MCP verb on purpose: a --worker option added to some unrelated verb later must not
+		// put the whole process into worker mode.
+		IsMcpWorkerMode = isMcp && McpWorkerEnvironment.IsWorkerModeArgv(clearArgs);
+		// ENG-95262 Stage 6 — the worker execution boundary is STDIO-ONLY, so the transport has to be
+		// declared before any routing question is asked. IsMcpCommand matches mcp-server / mcp only; the
+		// HTTP host declares itself in McpHttpServerCommand.Run, and everything else stays Unknown,
+		// which is the fail-closed answer.
+		if (isMcp) {
+			Clio.Command.McpServer.McpHostTransport.Current = Clio.Command.McpServer.McpHostTransportKind.Stdio;
+		}
+		IsDebugMode = args.Any(x => x.ToLower() == "--debug");
+		AddTimeStampToOutput = args.Any(x => x.ToLower() == "--ts");
+		// Detect json output early (before the background updater logs) so decorated diagnostics are
+		// routed to stderr and stdout stays a single JSON envelope. Honors --json true|false and a
+		// bare --json (normalized to true); an explicit --json false stays off.
+		IsJsonOutputMode = IsJsonOutputRequested(args);
+		OriginalArgs = args;
+		// Set IsCfgOpenCommand based on input arguments
+		IsCfgOpenCommand = (args.Length >= 2 && args[0] == "cfg" && args[1] == "open");
+		return isMcp;
+	}
+
+	// Neutralize any ambient HTTP(S)/ALL_PROXY for all outbound HttpClient calls when running as an MCP
+	// server. AI-agent sandboxes frequently inject process proxy env vars (sometimes pointing at a
+	// dead/poisoned address); clio always targets an explicitly configured Creatio URL that must be reached
+	// directly, so an inherited proxy must not break it. An empty WebProxy bypasses every host. CLI mode is
+	// unchanged (a CLI user may legitimately need the proxy). See
+	// DataForgeStatus_Should_Ignore_Poisoned_Proxy_Environment_Variables (ENG-90640).
+	// Opt out (fail-safe default is to bypass) by setting CLIO_MCP_RESPECT_AMBIENT_PROXY=true|1 — for an
+	// org that mandates an inspecting/DLP egress proxy even for the MCP server.
+	private static void ConfigureMcpEnvironment(bool isMcp) {
+		if (!isMcp) {
+			return;
+		}
+		if (!IsTruthyEnvironmentFlag("CLIO_MCP_RESPECT_AMBIENT_PROXY")) {
+			System.Net.Http.HttpClient.DefaultProxy = new System.Net.WebProxy();
+		}
+		ConsoleLogger.Instance.PreserveMessages = true;
+	}
+
 	public static int Main(string[] args){
 		bool loggerStarted = false;
 		try {
-			string logTarget = string.Empty;
-			bool isLog = args.Contains("--log");
-			if (isLog) {
-				int logIndex = Array.IndexOf(args, "--log");
-				logTarget = args[logIndex + 1];
-				args = args.Where(x => x != "--log" && x != logTarget).ToArray();
-			}
+			string logTarget = ExtractLogTarget(ref args);
 
 			string[] clearArgs = args.Where(x => x.ToLower() != "--debug" && x.ToLower() != "--ts").ToArray();
 			if (clearArgs.Length > 0 && string.Equals(clearArgs[0], "__generate-help-artifacts", StringComparison.OrdinalIgnoreCase)) {
@@ -1296,34 +1371,9 @@ internal class Program {
 			if (TryHandleBuiltInVersion(clearArgs, out int versionExitCode)) {
 				return versionExitCode;
 			}
-			bool isMcp = IsMcpCommand(clearArgs);
-			IsMcpServerMode = isMcp;
-			IsDebugMode = args.Any(x => x.ToLower() == "--debug");
-			AddTimeStampToOutput = args.Any(x => x.ToLower() == "--ts");
-			// Detect json output early (before the background updater logs) so decorated diagnostics are
-			// routed to stderr and stdout stays a single JSON envelope. Honors --json true|false and a
-			// bare --json (normalized to true); an explicit --json false stays off.
-			IsJsonOutputMode = IsJsonOutputRequested(args);
-			OriginalArgs = args;
-			
-			// Set IsCfgOpenCommand based on input arguments
-			IsCfgOpenCommand = (args.Length >= 2 && args[0] == "cfg" && args[1] == "open");
-			
-			if (isMcp) {
-				// Neutralize any ambient HTTP(S)/ALL_PROXY for all outbound HttpClient calls when running
-				// as an MCP server. AI-agent sandboxes frequently inject process proxy env vars (sometimes
-				// pointing at a dead/poisoned address); clio always targets an explicitly configured Creatio
-				// URL that must be reached directly, so an inherited proxy must not break it. An empty
-				// WebProxy bypasses every host. CLI mode is unchanged (a CLI user may legitimately need the
-				// proxy). See DataForgeStatus_Should_Ignore_Poisoned_Proxy_Environment_Variables (ENG-90640).
-				// Opt out (fail-safe default is to bypass) by setting CLIO_MCP_RESPECT_AMBIENT_PROXY=true|1
-				// — for an org that mandates an inspecting/DLP egress proxy even for the MCP server.
-				if (!IsTruthyEnvironmentFlag("CLIO_MCP_RESPECT_AMBIENT_PROXY")) {
-					System.Net.Http.HttpClient.DefaultProxy = new System.Net.WebProxy();
-				}
-				ConsoleLogger.Instance.PreserveMessages = true;
-			}
-			
+			bool isMcp = ConfigureRunModeFlags(args, clearArgs);
+			ConfigureMcpEnvironment(isMcp);
+
 				if (logTarget.ToLower() == "creatio") {
 					useCreatioLogStreamer = true;
 					ConsoleLogger.Instance.StartWithStream();
@@ -1533,6 +1583,19 @@ internal class Program {
 		string first = args[0];
 		if (string.Equals(first, "update-cli", StringComparison.OrdinalIgnoreCase)
 			|| string.Equals(first, "update", StringComparison.OrdinalIgnoreCase)
+			|| string.Equals(first, "install-knowledge", StringComparison.OrdinalIgnoreCase)
+			|| string.Equals(first, "update-knowledge", StringComparison.OrdinalIgnoreCase)
+			|| string.Equals(first, "delete-knowledge", StringComparison.OrdinalIgnoreCase)
+			|| string.Equals(first, "add-knowledge-source", StringComparison.OrdinalIgnoreCase)
+			|| string.Equals(first, "remove-knowledge-source", StringComparison.OrdinalIgnoreCase)
+			|| string.Equals(first, "enable-knowledge-source", StringComparison.OrdinalIgnoreCase)
+			|| string.Equals(first, "disable-knowledge-source", StringComparison.OrdinalIgnoreCase)
+			|| string.Equals(first, "install-toolkit", StringComparison.OrdinalIgnoreCase)
+			|| string.Equals(first, "install-skills", StringComparison.OrdinalIgnoreCase)
+			|| string.Equals(first, "update-toolkit", StringComparison.OrdinalIgnoreCase)
+			|| string.Equals(first, "update-skill", StringComparison.OrdinalIgnoreCase)
+			|| string.Equals(first, "delete-toolkit", StringComparison.OrdinalIgnoreCase)
+			|| string.Equals(first, "delete-skill", StringComparison.OrdinalIgnoreCase)
 			|| string.Equals(first, "autoupdate", StringComparison.OrdinalIgnoreCase)
 			|| string.Equals(first, "mcp-http", StringComparison.OrdinalIgnoreCase)) {
 			return true;
@@ -1543,31 +1606,32 @@ internal class Program {
 			|| string.Equals(arg, "--version", StringComparison.OrdinalIgnoreCase));
 	}
 
-	private static void RunStartupUpdateCheck(string[] args, IServiceProvider serviceProvider) {
+	internal static void RunStartupUpdateCheck(string[] args, IServiceProvider serviceProvider) {
 		if (ShouldSkipUpdateCheck(args)) return;
+		ISettingsRepository settingsRepository;
 		try {
+			settingsRepository = serviceProvider.GetRequiredService<ISettingsRepository>();
+		}
+		catch {
+			return;
+		}
+		RunIfDue(settingsRepository, AutoUpdateTarget.Clio, () => {
 			IAppUpdater appUpdater = serviceProvider.GetRequiredService<IAppUpdater>();
-			ISettingsRepository settingsRepository = serviceProvider.GetRequiredService<ISettingsRepository>();
-			string cacheFolder = SettingsRepository.AppSettingsFolderPath;
-			(bool available, string latestVersion) = appUpdater
-				.CheckForUpdateWithCacheAsync(cacheFolder)
-				.GetAwaiter().GetResult();
+			appUpdater.UpdateInBackgroundAsync().GetAwaiter().GetResult();
+		});
+		RunIfDue(settingsRepository, AutoUpdateTarget.Knowledge,
+			() => serviceProvider.GetRequiredService<IKnowledgeSourceManagementService>().Update(sourceAlias: null));
+		RunIfDue(settingsRepository, AutoUpdateTarget.Toolkit,
+			() => serviceProvider.GetRequiredService<ISkillInstallService>().Update(target: null, repo: null));
+	}
 
-			if (!available || string.IsNullOrEmpty(latestVersion)) return;
-
-			string currentVersion = appUpdater.GetCurrentVersion();
-			if (settingsRepository.GetAutoupdate()) {
-				ConsoleLogger.Instance.WriteInfo(
-					$"Updating clio {currentVersion} -> {latestVersion} in background...");
-				appUpdater.UpdateInBackgroundAsync().GetAwaiter().GetResult();
-			} else {
-				ConsoleLogger.Instance.WriteWarning(
-					RuntimeInformation.IsOSPlatform(OSPlatform.Windows) 
-						? $"clio {latestVersion} is available. Run 'dotnet tool update clio -g' to update." 
-						: $"clio {latestVersion} is available. Run 'clio update' to update.");
+	private static void RunIfDue(ISettingsRepository settingsRepository, AutoUpdateTarget target, Action update) {
+		try {
+			if (settingsRepository.TryScheduleAutoupdate(target, DateTimeOffset.UtcNow)) {
+				update();
 			}
 		} catch {
-			// startup update check must never crash the tool
+			// automatic updates are best effort and must never fail the requested command
 		}
 	}
 

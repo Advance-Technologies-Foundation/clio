@@ -59,6 +59,9 @@ public sealed class CompileCreatioToolTests
 		ConsoleLogger.Instance.ClearMessages();
 		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
 		commandResolver.GetTenantKey(Arg.Any<EnvironmentOptions>()).Returns("sandbox-tenant");
+		// The configuration-build reservation is keyed by TARGET, not tenant: it guards a server-wide
+		// rebuild, so it must exclude across principals and must match the key the worker-routed path uses.
+		commandResolver.GetTargetKey(Arg.Any<EnvironmentOptions>()).Returns("sandbox-target");
 		FakeCompileConfigurationCommand resolvedCommand = new();
 		commandResolver.Resolve<CompileConfigurationCommand>(Arg.Any<CompileConfigurationOptions>())
 			.Returns(resolvedCommand);
@@ -102,6 +105,9 @@ public sealed class CompileCreatioToolTests
 		ConsoleLogger.Instance.ClearMessages();
 		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
 		commandResolver.GetTenantKey(Arg.Any<EnvironmentOptions>()).Returns("sandbox-tenant");
+		// The configuration-build reservation is keyed by TARGET, not tenant: it guards a server-wide
+		// rebuild, so it must exclude across principals and must match the key the worker-routed path uses.
+		commandResolver.GetTargetKey(Arg.Any<EnvironmentOptions>()).Returns("sandbox-target");
 		FakeCompilePackageCommand resolvedCommand = new();
 		commandResolver.Resolve<CompilePackageCommand>(Arg.Any<CompilePackageOptions>())
 			.Returns(resolvedCommand);
@@ -142,6 +148,9 @@ public sealed class CompileCreatioToolTests
 		ConsoleLogger.Instance.ClearMessages();
 		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
 		commandResolver.GetTenantKey(Arg.Any<EnvironmentOptions>()).Returns("sandbox-tenant");
+		// The configuration-build reservation is keyed by TARGET, not tenant: it guards a server-wide
+		// rebuild, so it must exclude across principals and must match the key the worker-routed path uses.
+		commandResolver.GetTargetKey(Arg.Any<EnvironmentOptions>()).Returns("sandbox-target");
 		FakeCompileConfigurationCommand resolvedCommand = new() { ExitCodeToReturn = 1 };
 		commandResolver.Resolve<CompileConfigurationCommand>(Arg.Any<CompileConfigurationOptions>())
 			.Returns(resolvedCommand);
@@ -177,6 +186,9 @@ public sealed class CompileCreatioToolTests
 		ConsoleLogger.Instance.ClearMessages();
 		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
 		commandResolver.GetTenantKey(Arg.Any<EnvironmentOptions>()).Returns("sandbox-tenant");
+		// The configuration-build reservation is keyed by TARGET, not tenant: it guards a server-wide
+		// rebuild, so it must exclude across principals and must match the key the worker-routed path uses.
+		commandResolver.GetTargetKey(Arg.Any<EnvironmentOptions>()).Returns("sandbox-target");
 		commandResolver.Resolve<CompileConfigurationCommand>(Arg.Any<CompileConfigurationOptions>())
 			.Returns(_ => throw new EnvironmentResolutionException("Environment 'sandbox' not found."));
 		ICompileOperationRegistry registry = new CompileOperationRegistry();
@@ -263,6 +275,9 @@ public sealed class CompileCreatioToolTests
 		ConsoleLogger.Instance.ClearMessages();
 		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
 		commandResolver.GetTenantKey(Arg.Any<EnvironmentOptions>()).Returns("sandbox-tenant");
+		// The configuration-build reservation is keyed by TARGET, not tenant: it guards a server-wide
+		// rebuild, so it must exclude across principals and must match the key the worker-routed path uses.
+		commandResolver.GetTargetKey(Arg.Any<EnvironmentOptions>()).Returns("sandbox-target");
 		// The resolved compile blocks on the gate until the test releases it, so Task.Delay(deadline)
 		// deterministically wins the WhenAny race (no timing dependence). The gate is released in finally so
 		// the detached work completes promptly and does not hold the tenant lock past the test.
@@ -429,11 +444,14 @@ public sealed class CompileCreatioToolTests
 		ConsoleLogger.Instance.ClearMessages();
 		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
 		commandResolver.GetTenantKey(Arg.Any<EnvironmentOptions>()).Returns("sandbox-tenant");
+		// The configuration-build reservation is keyed by TARGET, not tenant: it guards a server-wide
+		// rebuild, so it must exclude across principals and must match the key the worker-routed path uses.
+		commandResolver.GetTargetKey(Arg.Any<EnvironmentOptions>()).Returns("sandbox-target");
 		ICompileOperationRegistry registry = new CompileOperationRegistry();
 		CompileCreatioTool tool = new(ConsoleLogger.Instance, commandResolver, registry);
 
 		// Simulate a compile already running for this tenant by holding its reservation.
-		McpToolExecutionLock.TryReserveConfigurationBuild("sandbox-tenant", out McpToolExecutionLock.BuildReservation heldReservation).Should().BeTrue(
+		McpToolExecutionLock.TryReserveConfigurationBuild("sandbox-target", out McpToolExecutionLock.BuildReservation heldReservation).Should().BeTrue(
 			because: "the first reservation for a tenant must succeed");
 
 		try
@@ -453,7 +471,7 @@ public sealed class CompileCreatioToolTests
 		}
 		finally
 		{
-			McpToolExecutionLock.ReleaseConfigurationBuild("sandbox-tenant", heldReservation);
+			McpToolExecutionLock.ReleaseConfigurationBuild("sandbox-target", heldReservation);
 			ConsoleLogger.Instance.ClearMessages();
 		}
 	}
@@ -467,14 +485,17 @@ public sealed class CompileCreatioToolTests
 		ConsoleLogger.Instance.ClearMessages();
 		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
 		commandResolver.GetTenantKey(Arg.Any<EnvironmentOptions>()).Returns("sandbox-tenant");
+		// The configuration-build reservation is keyed by TARGET, not tenant: it guards a server-wide
+		// rebuild, so it must exclude across principals and must match the key the worker-routed path uses.
+		commandResolver.GetTargetKey(Arg.Any<EnvironmentOptions>()).Returns("sandbox-target");
 		FakeCompileConfigurationCommand resolvedCommand = new();
 		commandResolver.Resolve<CompileConfigurationCommand>(Arg.Any<CompileConfigurationOptions>())
 			.Returns(resolvedCommand);
 		ICompileOperationRegistry registry = new CompileOperationRegistry();
 		CompileCreatioTool tool = new(ConsoleLogger.Instance, commandResolver, registry);
 
-		McpToolExecutionLock.TryReserveConfigurationBuild("sandbox-tenant", out McpToolExecutionLock.BuildReservation heldReservation).Should().BeTrue();
-		McpToolExecutionLock.ReleaseConfigurationBuild("sandbox-tenant", heldReservation);
+		McpToolExecutionLock.TryReserveConfigurationBuild("sandbox-target", out McpToolExecutionLock.BuildReservation heldReservation).Should().BeTrue();
+		McpToolExecutionLock.ReleaseConfigurationBuild("sandbox-target", heldReservation);
 
 		try
 		{

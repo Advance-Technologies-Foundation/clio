@@ -98,7 +98,7 @@ public sealed class BrowserSessionCacheTests {
 		// Assert
 		path.Replace('\\', '/').Should().EndWith("sessions/dev-creatio-com-0_0123456789abcdef.storageState.json",
 			because: "the cache lives under {clio-home}/sessions/{key}.storageState.json");
-		_fileSystem.DidNotReceiveWithAnyArgs().WriteOwnerOnlyTextToFile(default, default);
+		_fileSystem.DidNotReceiveWithAnyArgs().WriteOwnerOnlyTextToFileAtomic(default, default);
 		_fileSystem.DidNotReceiveWithAnyArgs().CreateDirectoryIfNotExists(default);
 	}
 
@@ -116,7 +116,10 @@ public sealed class BrowserSessionCacheTests {
 		// Assert
 		_fileSystem.Received(1).CreateDirectoryIfNotExists(
 			Arg.Is<string>(d => d.Replace('\\', '/').EndsWith("sessions")));
-		_fileSystem.Received(1).WriteOwnerOnlyTextToFile(expectedPath, json);
+		// ENG-95262 H-2: the cached session is replaced ATOMICALLY, so a concurrent Playwright read can
+		// never load a truncated storageState. The owner-only permissions are carried onto the temp file,
+		// so the atomic variant does not reopen the world-readable window the plain write closed.
+		_fileSystem.Received(1).WriteOwnerOnlyTextToFileAtomic(expectedPath, json);
 		_hardening.Received(1).HardenDirectory(Arg.Is<string>(d => d.Replace('\\', '/').EndsWith("sessions")));
 		_hardening.Received(1).HardenFile(expectedPath);
 	}
@@ -132,7 +135,7 @@ public sealed class BrowserSessionCacheTests {
 		_sut.Write("ignored-key", json, overridePath);
 
 		// Assert
-		_fileSystem.Received(1).WriteOwnerOnlyTextToFile(System.IO.Path.GetFullPath(overridePath), json);
+		_fileSystem.Received(1).WriteOwnerOnlyTextToFileAtomic(System.IO.Path.GetFullPath(overridePath), json);
 		_hardening.Received(1).HardenFile(System.IO.Path.GetFullPath(overridePath));
 	}
 
@@ -148,7 +151,7 @@ public sealed class BrowserSessionCacheTests {
 		// Assert
 		act.Should().Throw<ArgumentException>(
 			because: "a path-traversal --output-path must be refused before any write");
-		_fileSystem.DidNotReceiveWithAnyArgs().WriteOwnerOnlyTextToFile(default, default);
+		_fileSystem.DidNotReceiveWithAnyArgs().WriteOwnerOnlyTextToFileAtomic(default, default);
 		_hardening.DidNotReceiveWithAnyArgs().HardenFile(default);
 	}
 
@@ -177,7 +180,7 @@ public sealed class BrowserSessionCacheTests {
 			// Assert
 			act.Should().Throw<ArgumentException>(
 				because: "a parent-directory symlink must be rejected before any write to prevent token exfiltration");
-			_fileSystem.DidNotReceiveWithAnyArgs().WriteOwnerOnlyTextToFile(default, default);
+			_fileSystem.DidNotReceiveWithAnyArgs().WriteOwnerOnlyTextToFileAtomic(default, default);
 		} finally {
 			try { System.IO.Directory.Delete(symlinkDir); } catch { /* best effort */ }
 			try { System.IO.Directory.Delete(realTarget, recursive: true); } catch { /* best effort */ }

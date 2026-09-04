@@ -17,6 +17,13 @@ public sealed class SqlSchemaInstallTool(
 	internal const string ToolName = "install-sql-schema";
 
 	[McpServerTool(Name = ToolName, ReadOnly = false, Destructive = true, Idempotent = false, OpenWorld = false)]
+	[McpToolExecution(
+		Location = McpToolExecutionLocation.Worker,
+		Lifetime = McpToolExecutionLifetime.PerCall,
+		OperationFamily = McpToolOperationFamily.None,
+		BudgetPolicy = McpToolBudgetPolicy.ParentKillDefault,
+		RequiresClientRequests = McpToolClientRequests.None,
+		SharedFileResource = McpToolSharedFileResource.None)]
 	[Description(
 		"Execute a SQL script schema on a remote Creatio environment. " +
 		"WARNING: executes raw SQL directly on the database. Irreversible. " +

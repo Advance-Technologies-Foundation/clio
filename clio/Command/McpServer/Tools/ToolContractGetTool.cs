@@ -67,6 +67,16 @@ public sealed class ToolContractGetTool {
 	}
 
 	[McpServerTool(Name = ToolName, ReadOnly = true, Destructive = false, Idempotent = true, OpenWorld = false)]
+	// InProcess (the inventory's file-level heuristic said worker): the tool serves the curated static
+	// contract catalog plus IMcpToolInvokerRegistry annotations and resolves no environment anywhere, so it
+	// can never block on Creatio — §3's own rule names tool contracts as in-process.
+	[McpToolExecution(
+		Location = McpToolExecutionLocation.InProcess,
+		Lifetime = McpToolExecutionLifetime.NotApplicable,
+		OperationFamily = McpToolOperationFamily.None,
+		BudgetPolicy = McpToolBudgetPolicy.None,
+		RequiresClientRequests = McpToolClientRequests.None,
+		SharedFileResource = McpToolSharedFileResource.None)]
 	[Description("Returns clio MCP tool contracts. Omit tool-names for a compact index of ALL tools (names + one-line purpose + safety flags) — cheap discovery without full schemas; pass tool-names to expand those tools' full contracts (parameter schema, aliases, defaults, examples, and preferred or fallback workflow hints); pass detail=full (with no tool-names) to expand every tool's full contract at once.")]
 	public ToolContractGetResponse GetToolContracts(
 		[Description("Parameters: tool-names (optional array of tool names) and detail (optional 'index' | 'full'). Omit entirely for a compact index of all tools; pass tool-names for full contracts; pass detail=full to expand all full contracts.")]
@@ -1199,12 +1209,12 @@ internal static class ToolContractCatalog {
 	}
 
 	private static ToolContractDefinition BuildSendTelemetry() {
-		return BuildSendTelemetryContract(SendTelemetryTool.ToolName, "Use at product workflow milestones after the user has granted consent; until consent is granted nothing is stored, so events sent earlier are silently dropped. The set of events and their order is owned by the consuming skill/contract. Delivery is non-blocking and fire-and-forget.");
+		return BuildSendTelemetryContract(SendTelemetryTool.ToolName, "Use at the stages of whatever Creatio workflow you are running, once consent is granted. While consent is unknown a send without telemetry_consent is rejected with telemetry-consent-required (ask the user, then retry carrying the decision); once denied, a send succeeds with status consent-denied and stores nothing. Which stages land where is owned by the consuming contract. Delivery is non-blocking and fire-and-forget.");
 	}
 
 	private static ToolContractDefinition BuildGetTelemetryConsent() {
 		return BuildGetTelemetryConsentContract(GetTelemetryConsentTool.ToolName,
-			"Use before sending the first product telemetry event to check whether consent is already stored. When telemetry_consent is unknown, the consuming workflow obtains the user's decision and persists it once via send-telemetry; until consent is granted, send-telemetry stores nothing, so events sent earlier are silently dropped.");
+			"Use before sending the first product telemetry event to check whether consent is already stored. When telemetry_consent is unknown, the consuming workflow obtains the user's decision and persists it once via send-telemetry; a send made before that is rejected with telemetry-consent-required rather than dropped, so ask the user and retry carrying the decision.");
 	}
 
 	private static ToolContractDefinition BuildWithdrawTelemetryConsent() {
@@ -1235,7 +1245,7 @@ internal static class ToolContractCatalog {
 	private static ToolContractDefinition BuildGetTelemetryConsentContract(string toolName, string flowNotes) {
 		return new ToolContractDefinition(
 			toolName,
-			"Reads locally persisted product telemetry consent without storing any telemetry event. Telemetry covers an AI-assisted Creatio app-development session run through this MCP server, driven by a consuming skill/contract; if no such skill is active, do not call this tool or prompt for consent.",
+			"Reads locally persisted product telemetry consent without storing any telemetry event. Telemetry covers AI-assisted Creatio work of EVERY kind run through this MCP server, not only app creation; an agent working on a developer's behalf is in scope EVEN WHEN NO SKILL FILE IS LOADED — 'no skill loaded' is not 'ad-hoc use'. Skip it only for non-agent use such as a plain script or a CI job. Call this before the first telemetry event of a run. When it reads unknown, ASK THE DEVELOPER yourself — no skill is required to own that prompt — and persist their answer once via send-telemetry; until then a send without telemetry_consent is rejected with telemetry-consent-required rather than dropped. Consent is per installation and persists across sessions.",
 			new ToolInputSchemaContract([], []),
 			EnvelopeOutput(
 				SuccessFieldName,
@@ -1262,21 +1272,29 @@ internal static class ToolContractCatalog {
 	private static ToolContractDefinition BuildSendTelemetryContract(string toolName, string flowNotes) {
 		return new ToolContractDefinition(
 			toolName,
-			"Stores a single product telemetry event (about an AI-assisted Creatio app-development session run through this MCP server, driven by a consuming skill/contract) as a local OpenTelemetry-shaped JSON file after user consent. If no such skill is active, do not call this tool. When a telemetry endpoint is configured, stored events are uploaded in the background and removed locally on success; no agent action is needed.",
+			"Stores a single product telemetry event about AI-assisted Creatio work run through this MCP server as a local OpenTelemetry-shaped JSON file after user consent. It covers EVERY workflow, not only app creation, and an agent working on a developer's behalf is in scope even when no skill file is loaded. When a telemetry endpoint is configured, stored events are uploaded in the background and removed locally on success; no agent action is needed.",
 			new ToolInputSchemaContract(
-				["session_id", EventNameFieldName, "coding_agent", "plugin_version"],
+				["session_id", EventNameFieldName],
 				[
-					Field("session_id", StringType, "Stable product workflow session identifier reused across all events in one app-creation conversation."),
+					Field("session_id", StringType, "Opaque random identifier (generate a fresh GUID) reused for every event of one workflow run. Never derive it from user, account, host, file-path or email data, and never reuse another run's id."),
 					Field(EventNameFieldName, StringType,
-						$"Product event name. Allowed values: {string.Join(", ", Clio.Common.Telemetry.TelemetryService.AllowedEventNames)}."),
-					Field("coding_agent", StringType, "Agent or host name, for example Claude Code, Codex, GitHub Copilot CLI, or Cursor."),
-					Field("plugin_version", StringType, "Product plugin version."),
+						$"Product event name — a flow-agnostic stage. USE ONE OF THESE: {string.Join(", ", Clio.Common.Telemetry.TelemetryService.CanonicalEventNames)}. The following are also accepted but DEPRECATED — they encode app-creation into the name that the `workflow` field now carries, so never pick one for a new contract: {string.Join(", ", Clio.Common.Telemetry.TelemetryService.LegacyAppCreationEventNames)}."),
+					Field("workflow", StringType, $"Which flow this run is, for example app-creation, classic-to-freedom-migration, mobile-page-conversion, branding or app-maintenance. Send it on every event: the stage names are shared, so without it a stage cannot be attributed to a flow, and it also keys the run's elapsed-time state. Must be {Clio.Common.Telemetry.TelemetryService.TokenShapeSentence}. Send a slug or OMIT the field — never a display name such as 'Classic-to-Freedom Migration': an invalid token rejects the WHOLE event, not just the field. A field you omit, or leave blank, is recorded as the reserved 'unattributed'."),
+					Field("variant", StringType, "Optional bounded qualifier the flow defines for that stage — a migration scope, a blocked reason, a unit kind. Same token shape as workflow; never free text and never customer data. OMIT it rather than sending a value that is not that shape: an invalid token rejects the WHOLE event, not just the field."),
+					Field("model", StringType, "Optional identifier of the model driving the run, for example claude-opus-5 or gpt-5. Send the id, lowercased, not a display name or a version guess. Same token shape as workflow. OMIT it rather than sending a value that is not that shape — a host placeholder such as '<synthetic>', a display name, anything with spaces or capitals: an invalid token rejects the WHOLE event, not just the field, so a stage that would otherwise have been recorded is lost."),
+					Field("input_tokens", NumberType, "Optional running total of prompt tokens consumed by the session at the moment this stage was reached. Non-negative; snapshot, not a delta."),
+					Field("output_tokens", NumberType, "Optional running total of generated tokens consumed by the session at the moment this stage was reached. Non-negative; snapshot, not a delta."),
+					Field("cached_input_tokens", NumberType, "Optional running total of prompt tokens served from cache. Non-negative; snapshot, not a delta."),
+					Field("coding_agent", StringType, "Optional agent or host name, for example Claude Code, Codex, GitHub Copilot CLI, or Cursor. Send the value your toolkit supplies, verbatim; OMIT it rather than guessing. Stored canonicalised to a lowercase slug so one host is one cohort."),
+					Field("plugin_version", StringType, "Optional product plugin version, taken verbatim from the toolkit that supplies it. OMIT it when nothing supplies one — a guessed version or a placeholder such as 'unknown' lands real runs in a cohort that never existed."),
 					Field(TelemetryConsentFieldName, StringType, "Optional first-use consent value after asking the user: granted or denied."),
-					Field("duration_ms", NumberType, "Optional elapsed time in milliseconds for the step this event represents, where applicable. Omit it and clio infers the duration from local session timing when it can.")
+					Field("duration_ms", NumberType, "Optional elapsed time in milliseconds for the step this event represents, where applicable. Omit it and clio infers the duration from local session timing when it can. A stage that repeats within one run (work_item_completed) carries no inferred duration: the cost of a single unit is the interval between consecutive such events, which a consumer computes from their timestamps, because an anchor here would instead measure the gap since the previously REPORTED unit and would collapse to milliseconds whenever an agent reports several units together.")
 				],
 				Validators: [
 					new ToolContractValidator("enum", "unknown-event-name", EventNameFieldName,
-						Context: "event_name must be one of the documented product event names.")
+						Context: "event_name must be one of the documented product event names."),
+					new ToolContractValidator("token", "invalid-token", Fields: ["workflow", "variant", "model"],
+						Context: $"workflow, variant and model must each be {Clio.Common.Telemetry.TelemetryService.TokenShapeSentence}. A value that is not rejects the whole event; omit the optional ones instead of sending one.")
 				]),
 			EnvelopeOutput(
 				SuccessFieldName,
@@ -1297,7 +1315,7 @@ internal static class ToolContractCatalog {
 				new ToolErrorCodeContract("unsupported-fields",
 					"The payload contains fields outside the documented product telemetry fields."),
 				new ToolErrorCodeContract("missing-required-field",
-					"A required telemetry field (session_id, event_name, coding_agent, or plugin_version) is blank."),
+					"A required telemetry field (session_id or event_name) is blank. coding_agent and plugin_version are optional: omitting them is accepted, guessing them is not."),
 				new ToolErrorCodeContract("unknown-event-name",
 					"event_name is not one of the documented product event names."),
 				new ToolErrorCodeContract("unknown-consent",
@@ -1307,25 +1325,32 @@ internal static class ToolContractCatalog {
 				new ToolErrorCodeContract("invalid-session-id",
 					"session_id must be 1-128 characters of letters, digits, '.', '_', ':' or '-'."),
 				new ToolErrorCodeContract("field-too-long",
-					"A scalar metadata field (coding_agent or plugin_version) exceeds the 64-character limit.")
+					"A scalar metadata field (coding_agent or plugin_version) exceeds the 64-character limit."),
+				new ToolErrorCodeContract("invalid-token-count",
+					"input_tokens, output_tokens or cached_input_tokens is negative."),
+				new ToolErrorCodeContract("invalid-token",
+					$"workflow, variant or model is not {Clio.Common.Telemetry.TelemetryService.TokenShapeSentence}. The event is rejected as a whole, so omit an optional token you cannot supply in that shape rather than sending it.")
 			]),
 			[],
 			[
 				new ToolContractDefaultValue(TelemetryConsentFieldName, "omitted after first run", "Consent is persisted locally after the first granted or denied value.")
 			],
 			[
-				Example("Store a Business Plan generated event after consent", new Dictionary<string, object?> {
+				Example("Store a plan-presented stage for a migration run", new Dictionary<string, object?> {
 					["session_id"] = "018f6e4a-0000-7000-9000-000000000001",
-					[EventNameFieldName] = "business_plan_generated",
+					[EventNameFieldName] = "plan_presented",
+					["workflow"] = "classic-to-freedom-migration",
 					["coding_agent"] = "Codex",
-					["plugin_version"] = "0.1.0"
+					["plugin_version"] = "1.6.0"
 				})
 			],
 			Flow([toolName], flowNotes),
 			[],
 			[],
 			[
-				new ToolAntiPattern("Adding custom telemetry fields", "The send-telemetry tool accepts only the documented product telemetry fields listed in this contract (including the optional duration_ms); any other field is rejected as unsupported-fields.")
+				new ToolAntiPattern("Adding custom telemetry fields", "The send-telemetry tool accepts only the documented product telemetry fields listed in this contract (session_id, event_name, workflow, variant, model, input_tokens, output_tokens, cached_input_tokens, coding_agent, plugin_version, telemetry_consent, duration_ms); any other field is rejected as unsupported-fields."),
+				new ToolAntiPattern("Inventing a per-flow event name", "event_name is a flow-agnostic stage and the flow travels in the workflow field. A name like migration_plan_approved or branding_approved is rejected as unknown-event-name — send the stage plus your workflow instead."),
+				new ToolAntiPattern("Omitting workflow", "A stage without workflow cannot be attributed to a flow, so it silently degrades the funnel it was meant to measure. Send workflow on every event.")
 			]);
 	}
 
@@ -4949,7 +4974,7 @@ internal static class ToolContractCatalog {
 					Field(ResourcesFieldName, StringType, "Optional JSON object string of localizable strings the platform does NOT auto-provide (custom tab/group titles, button captions, validator messages, explicit overrides). Only include keys with NO matching DS-bound view model attribute on the page \u2014 see `page-schema-resources` guidance."),
 					Field("optional-properties", StringType, "JSON array of {key, value} objects merged into schema optionalProperties (e.g. '[{\"key\":\"entitySchemaName\",\"value\":\"UsrMyEntity\"}]')."),
 					Field(VerifyFieldName, BooleanType, "If true, read the page back after saving and return its metadata. Best-effort \u2014 verify failure does not fail the update."),
-					Field("mode", StringType, "Write mode. 'replace' (default) saves the body verbatim. 'append' merges the incoming fragment with the schema's current body \u2014 viewConfigDiff entries dedupe by `name` (incoming wins), handlers dedupe by `request`."),
+					Field("mode", StringType, "Write mode. 'replace' (default) saves the body verbatim. 'append' merges the incoming fragment with the schema's current body \u2014 viewConfigDiff entries dedupe by `name`, handlers by `request`, and SCHEMA_CONVERTERS / SCHEMA_VALIDATORS entries by type key (incoming wins). The final merged web body rejects unresolved custom validator references."),
 					Field("target-package-uid", StringType, "Explicit target package UId for the replacing schema. Overrides automatic design-package resolution."),
 					Field("target-schema-uid", StringType, "Explicit schema UId to save into directly. Bypasses hierarchy resolution entirely.")),
 				AnyOf: EnvironmentOrExplicitConnectionRequirements()),
@@ -5530,7 +5555,7 @@ internal static class ToolContractCatalog {
 	private static ToolContractDefinition BuildNewUiProject() {
 		return new ToolContractDefinition(
 			CreateUiProjectTool.CreateUiProjectToolName,
-			"Scaffolds a Freedom UI Angular remote-module project inside an existing clio workspace. Pure local file-system scaffolding under <workspaceDirectory>/projects/<projectName> and <workspaceDirectory>/packages/<packageName>; no Creatio environment is contacted. The MCP wrapper pins the process working directory to workspaceDirectory and runs the underlying CLI in silent mode, so the interactive 'download package?' prompt is auto-answered 'no'.",
+			"Scaffolds a Freedom UI Angular remote-module project inside an existing clio workspace. Writes under <workspaceDirectory>/projects/<projectName> and <workspaceDirectory>/packages/<packageName>. It DOES read the environment once: a SysPackage lookup runs unconditionally to check whether the package already exists (UiProjectCreator.Create), so the tool needs a reachable environment even though it changes nothing on it. The MCP wrapper pins the process working directory to workspaceDirectory and runs the underlying CLI in silent mode, so the interactive 'download package?' prompt is auto-answered 'no'.",
 			new ToolInputSchemaContract(
 				[WorkspaceDirectoryFieldName, ProjectNameFieldName, "packageName", VendorPrefixFieldName],
 				[
@@ -5613,7 +5638,7 @@ internal static class ToolContractCatalog {
 			AntiPatterns: [
 				new ToolAntiPattern(
 					$"{CreateUiProjectTool.CreateUiProjectToolName} → {CompileCreatioTool.CompileCreatioToolName}",
-					"new-ui-project is local file-system scaffolding only. No Creatio assemblies change and no environment is contacted, so a compile-creatio follow-up serves no purpose."),
+					"new-ui-project writes only local files: no Creatio assemblies change, so a compile-creatio follow-up serves no purpose. (It does read the environment once for a SysPackage existence check, but that changes nothing there.)"),
 				new ToolAntiPattern(
 					$"{ApplicationCreateTool.ApplicationCreateToolName} → {CreateUiProjectTool.CreateUiProjectToolName}",
 					"create-app installs an application into a Creatio environment; new-ui-project scaffolds an Angular remote module on the local file system. They address different artifacts and should not be chained as if one followed from the other."),
