@@ -37,6 +37,7 @@ public sealed class ModifyBusinessProcessCommandTests {
 	[TearDown]
 	public void TearDown() {
 		_modifyBusinessProcessService.ClearReceivedCalls();
+		_processDescriber.ClearReceivedCalls();
 		_logger.ClearReceivedCalls();
 	}
 

@@ -44,9 +44,8 @@ public static class CreateBusinessProcessPrompt {
 		 `filter` — WHICH records get them; without one the runtime acts on EVERY record; with one that has no conditions it silently does nothing. When the descriptor contains a `changeAccessRights` element, confirm it the way a
 		 destructive edit is confirmed: show the user the target object, the element record `filter` that decides
 		 WHICH records are affected, every grantee, and each entry's operations and level (call out `delegate` as
-		 onward re-sharing, `restrict` as the platform Deny level, which is DESTRUCTIVE rather than inert (it
-		 DOWNGRADES an existing Allow row for that grantee to Deny) and which lands in the `add`
-		 GRANT collection: UseDenyRecordRights gates only record positioning, never whether a right row is written. Against a grantee who already holds Allow it DOWNGRADES that row to Deny, and a fresh insert writes one row per operation - the one you named at your level and the OTHER TWO at Deny - so operations:['read'] denies edit and delete as well. Prefer a remove entry to take access away, and a `remove` entry as a revoke), and get an explicit yes before calling
+		 onward re-sharing, `restrict` as the platform Deny level, which is DESTRUCTIVE rather than inert and
+		 lands in the `add` GRANT collection: UseDenyRecordRights gates only record positioning, never whether a right row is written. Against a grantee who already holds Allow it DOWNGRADES that row to Deny, and a fresh insert writes one row per operation - the one you named at your level and the OTHER TWO at Deny - so operations:['read'] denies edit and delete as well. Prefer a remove entry to take access away, and a `remove` entry as a revoke), and get an explicit yes before calling
 		 `create-business-process` — the element reports nothing at run time about what it granted or revoked.
 		 Confirm the target package with the
 		 user before building.

@@ -452,6 +452,12 @@ public static class AccessRightsBlockExpectation {
 		&& ((group.Conditions?.Count ?? 0) > 0
 			|| (group.Groups?.Any(NarrowsSomething) ?? false));
 
+	// Whether the described element is a "Change access rights" element. Checked against userTaskName rather
+	// than the presence of an accessRights block, because the one case this has to survive is a package that
+	// reports the element but NOT its block.
+	private static bool IsChangeAccessRightsElement(DescribedElement element) =>
+		string.Equals(element.UserTaskName, ChangeAccessRightsUserTask, StringComparison.OrdinalIgnoreCase);
+
 	/// <summary>
 	/// The element's <c>accessRights</c> block from the extension bag, or false when it carries none. This is the
 	/// ONLY channel the block travels on: DescribedElement has no typed AccessRights member, so every check in this
@@ -463,11 +469,6 @@ public static class AccessRightsBlockExpectation {
 	/// match rather than filtering, which is why the loop is not the "simplify with Where" shape a static analyser
 	/// suggests.</para>
 	/// </summary>
-	// Whether the described element is a "Change access rights" element. Checked against userTaskName rather
-	// than the presence of an accessRights block, because the one case this has to survive is a package that
-	// reports the element but NOT its block.
-	private static bool IsChangeAccessRightsElement(DescribedElement element) =>
-		string.Equals(element.UserTaskName, ChangeAccessRightsUserTask, StringComparison.OrdinalIgnoreCase);
 
 	private static bool TryGetAccessRights(DescribedElement element, out JsonElement block) {
 		block = default;

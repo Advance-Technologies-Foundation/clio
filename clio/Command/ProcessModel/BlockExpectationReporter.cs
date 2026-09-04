@@ -7,7 +7,7 @@ namespace Clio.Command.ProcessModel;
 /// The warning-EMISSION half of the post-operation block guards, shared by <c>create-business-process</c> and
 /// <c>modify-business-process</c>.
 /// <para><see cref="BlockExpectationJson"/> keeps the payload-reading mechanics; this keeps the reporting. Both
-/// commands read the saved process back once and then report the SAME four outcomes in the same words — an
+/// commands read the saved process back once and then report the SAME outcomes in the same words — an
 /// element the read-back cannot resolve, a missing record filter, a dropped accessRights block and a dropped
 /// email block — and both need the same "could not verify" wording when the read-back itself fails. Only how
 /// each command IDENTIFIES the process differs, and that stays in the command.</para>

@@ -621,7 +621,7 @@ public sealed class CreateBusinessProcessToolE2ETests {
 	}
 
 	[Test]
-	[Description("Closes the accessRights guard's load-bearing assumption end to end. AccessRightsBlockExpectation decides whether to warn by looking for the block on DescribedElement.AdditionalData, and every unit test around it CONSTRUCTS that dictionary by hand - so if the real server never surfaces the block there, ReportsAccessRights returns false on a SUCCESSFUL write and clio tells the caller the permissions were not changed when they were. Requires a sandbox whose deployed CrtProcessBuilder understands the element: one that predates it rejects the changeAccessRights element TYPE outright, before any block-level check, so that environment is Ignored rather than failed.")]
+	[Description("Closes the accessRights guard's load-bearing assumption end to end. AccessRightsBlockExpectation decides whether to warn by looking for the block on DescribedElement.AdditionalData, and every unit test around it CONSTRUCTS that dictionary by hand - so if the real server never surfaces the block there, the block-presence check returns false on a SUCCESSFUL write and clio tells the caller the permissions were not changed when they were. Requires a sandbox whose deployed CrtProcessBuilder understands the element: one that predates it rejects the changeAccessRights element TYPE outright, before any block-level check, so that environment is Ignored rather than failed.")]
 	[AllureTag(ToolName)]
 	[AllureName("create-business-process: the accessRights drop warning agrees with what actually landed")]
 	public async Task CreateBusinessProcess_Should_KeepTheAccessRightsDropWarning_ConsistentWithWhatLanded() {
@@ -659,7 +659,7 @@ public sealed class CreateBusinessProcessToolE2ETests {
 		DescribeProcessResult graph = ParseDescribeGraph(await DescribeAsync(context, processName));
 		DescribedElement element = graph.Elements.Single(e => e.Name == "GrantRights1");
 
-		// The exact predicate AccessRightsBlockExpectation.ReportsAccessRights uses, run against a REAL read-back
+		// The exact predicate AccessRightsBlockExpectation applies internally, run against a REAL read-back
 		// instead of a hand-built dictionary.
 		bool blockLanded = element.AdditionalData is not null
 			&& element.AdditionalData.Any(entry =>
@@ -676,7 +676,7 @@ public sealed class CreateBusinessProcessToolE2ETests {
 		if (blockLanded) {
 			// Read from AdditionalData deliberately: DescribedElement has no typed AccessRights member, so the
 			// extension bag is not a convenience here — it is the ONLY channel the block travels on, which is
-			// what makes ReportsAccessRights' dependency on it structural rather than incidental.
+			// what makes the guard's dependency on that bag structural rather than incidental.
 			JsonElement block = element.AdditionalData!.First(entry =>
 				string.Equals(entry.Key, "accessRights", StringComparison.OrdinalIgnoreCase)).Value;
 			block.GetProperty("object").GetString().Should().Be("Contact",
