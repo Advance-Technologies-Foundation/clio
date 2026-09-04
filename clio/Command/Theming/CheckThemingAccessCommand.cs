@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using System.Diagnostics.CodeAnalysis;
 using Clio.Common;
 
 namespace Clio.Command.Theming;
@@ -15,6 +16,10 @@ namespace Clio.Command.Theming;
 /// gated, and the answer below reports the ThemeService floor explicitly so a caller on an older core is not
 /// misled into thinking custom themes are usable.
 /// </remarks>
+[SuppressMessage("Minor Code Smell", "S2094:Classes should not be empty",
+	Justification = "Options carrier for the command, instantiated by CommandLine verb binding; it inherits every "
+		+ "argument it needs from EnvironmentOptions, so an interface cannot replace it. Matches the other "
+		+ "argument-free *Options types in clio/Command.")]
 public class CheckThemingAccessOptions : EnvironmentOptions
 {
 }
