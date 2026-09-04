@@ -84,6 +84,17 @@ internal static class SysSettingFailureTexts {
 	internal const string ProviderFailureRecovery =
 		"Read the cause, correct the reported condition on the environment, and retry.";
 
+	//PR #1373 review: an unresolvable environment and a missing/unsupported credential need OPPOSITE advice.
+	//"Register the environment with reg-web-app" is unusable over mcp-http credential passthrough - there is no
+	//environment to register and reg-web-app is not reachable on that transport.
+	internal const string PassthroughAuthenticationRecovery =
+		"Supply the authentication material the message names (a Bearer access token, or a login/password pair) "
+		+ "and call the operation again.";
+
+	internal const string RefusedTargetRecovery =
+		"The target URL was refused by policy for the reason the cause names; use an allowed environment URL "
+		+ "rather than retrying this one.";
+
 	internal const string ConfigurationRecovery =
 		"Register the environment with reg-web-app, or pick one from list-environments.";
 

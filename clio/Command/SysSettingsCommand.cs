@@ -662,14 +662,40 @@ namespace Clio.Command
 				//said exactly what to fix. The resolver's text is clio-local (EnvironmentNotFoundError,
 				//settings-file paths), so it is safe as the cause; Error keeps the generic label so an
                 //unregistered name is still not promoted into the headline message.
-				EnvironmentResolutionException resolutionEx => new SysSettingFailure(
-					$"Failed {operationLabel}.", SysSettingErrorCategories.Configuration,
-					resolutionEx.Message, SysSettingFailureTexts.ConfigurationRecovery, correlationId),
+				//PR #1373 review: routed on the exception's OWN Reason, not on its type. Four of the resolver's
+				//throw sites are authentication and target-URL rejections, and reporting those as
+				//Configuration + "register the environment with reg-web-app" is advice a credential-passthrough
+				//caller over mcp-http cannot act on - it has no environment to register - while an agent
+				//branching on the category will not re-authenticate, because the category says the problem is
+				//local configuration. Reason defaults to Configuration, so every unregistered-name site is
+				//unchanged.
+				EnvironmentResolutionException resolutionEx =>
+					DescribeResolutionFailure(resolutionEx, operationLabel, correlationId),
 				var _ => new SysSettingFailure($"Failed {operationLabel}.",
 					SysSettingErrorCategories.Unknown, SysSettingFailureTexts.UnknownCause,
 					SysSettingFailureTexts.UnknownRecovery, correlationId)
 
 			};
+		}
+
+		/// <summary>
+		/// Classifies an <see cref="EnvironmentResolutionException"/> by what it is actually about. The
+		/// resolver's text is clio-local (a settings-file path, an allowlist reason, the missing auth kind), so
+		/// it stays safe as the cause; <c>Error</c> keeps the generic label either way, so an unregistered name
+		/// is still not promoted into the headline message.
+		/// </summary>
+		private static SysSettingFailure DescribeResolutionFailure(EnvironmentResolutionException resolutionEx,
+			string operationLabel, string correlationId) {
+			(string category, string recovery) = resolutionEx.Reason switch {
+				EnvironmentResolutionReason.Authentication => (SysSettingErrorCategories.Authentication,
+					SysSettingFailureTexts.PassthroughAuthenticationRecovery),
+				EnvironmentResolutionReason.Validation => (SysSettingErrorCategories.Validation,
+					SysSettingFailureTexts.RefusedTargetRecovery),
+				var _ => (SysSettingErrorCategories.Configuration,
+					SysSettingFailureTexts.ConfigurationRecovery),
+			};
+			return new SysSettingFailure($"Failed {operationLabel}.", category, resolutionEx.Message, recovery,
+				correlationId);
 		}
 
 		private static SysSettingFailure Authentication(string operationLabel, string correlationId) =>

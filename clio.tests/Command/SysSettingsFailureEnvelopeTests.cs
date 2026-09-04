@@ -295,6 +295,59 @@ public sealed class SysSettingsFailureEnvelopeTests {
 	}
 
 	[Test]
+	[Description("PR #1373 review: an EnvironmentResolutionException raised for MISSING CREDENTIALS is Authentication, not Configuration - a credential-passthrough caller has no environment to register and cannot reach reg-web-app over mcp-http.")]
+	public void CategorizeFailure_Should_Report_Authentication_For_A_Passthrough_Credential_Refusal() {
+		// Arrange
+		EnvironmentResolutionException exception = new(
+			"Authentication material (an access token or a login/password pair) is required for credential-passthrough command execution.",
+			EnvironmentResolutionReason.Authentication);
+
+		// Act
+		SysSettingFailure failure = SysSettingsCommand.CategorizeFailure(exception, Operation, CorrelationId);
+
+		// Assert
+		failure.Category.Should().Be(SysSettingErrorCategories.Authentication,
+			because: "an agent branching on Configuration will not re-authenticate, and that is the only action that can close this failure");
+		failure.RecoveryAction.Should().Be(SysSettingFailureTexts.PassthroughAuthenticationRecovery,
+			because: "'register the environment with reg-web-app' is unusable over mcp-http credential passthrough");
+		failure.Cause.Should().Contain("access token",
+			because: "the resolver text names the missing piece and is clio-local, so it stays as the cause");
+	}
+
+	[Test]
+	[Description("PR #1373 review: an EnvironmentResolutionException wrapping a target-URL allowlist rejection is Validation - the request is refused, not the local configuration missing.")]
+	public void CategorizeFailure_Should_Report_Validation_For_A_Refused_Target_Url() {
+		// Arrange
+		EnvironmentResolutionException exception = new("Target URL is not allowed by policy.",
+			EnvironmentResolutionReason.Validation, new InvalidOperationException("blocked"));
+
+		// Act
+		SysSettingFailure failure = SysSettingsCommand.CategorizeFailure(exception, Operation, CorrelationId);
+
+		// Assert
+		failure.Category.Should().Be(SysSettingErrorCategories.Validation,
+			because: "an egress rejection is a refused request, and reporting it as Configuration sends the caller to register something instead");
+		failure.RecoveryAction.Should().Be(SysSettingFailureTexts.RefusedTargetRecovery,
+			because: "retrying the same URL cannot succeed, so the recovery must not say retry");
+	}
+
+	[Test]
+	[Description("PR #1373 review: an unregistered environment keeps Configuration and its existing recovery - the Reason default means no existing throw site changed meaning.")]
+	public void CategorizeFailure_Should_Keep_Configuration_For_An_Unregistered_Environment() {
+		// Arrange
+		EnvironmentResolutionException exception = new("Environment 'ghost' is not registered.");
+
+		// Act
+		SysSettingFailure failure = SysSettingsCommand.CategorizeFailure(exception, Operation, CorrelationId);
+
+		// Assert
+		failure.Category.Should().Be(SysSettingErrorCategories.Configuration,
+			because: "Reason defaults to Configuration, so every pre-existing throw site keeps its behaviour");
+		failure.RecoveryAction.Should().Be(SysSettingFailureTexts.ConfigurationRecovery,
+			because: "reg-web-app / list-environments is exactly the right advice for this one");
+	}
+
+	[Test]
 	[Description("PR #1373 review: TryGetSysSettingQuietly classifies but writes NO log line - a caller that treats a failed read as an expected outcome (SetLogoCommand.ReadCompanionIsOn) must not leave the operator a red line and a correlation ID that appears in no result.")]
 	public void TryGetSysSettingQuietly_Should_Classify_Without_Writing_A_Log_Line() {
 		// Arrange
