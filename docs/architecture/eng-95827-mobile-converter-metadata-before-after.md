@@ -359,12 +359,12 @@ it from 8 424 to ~1 500 characters. That ignored the JSON structural overhead pe
 ## 10. Guidance (clio-knowledge)
 
 Everything that was procedure rather than data moved into the published articles, which are now the only home
-for those rules. `libraryVersion` **1.13.67 → 1.13.82**.
+for those rules. `libraryVersion` **1.13.67 → 1.13.83**.
 
 | Article | Before | After |
 |---|---|---|
 | `freedom-page-web-to-mobile-conversion` | 41 253 chars | **49 809** |
-| `freedom-page-mobile-reason-codes` | — | **NEW**, 5 259 chars |
+| `freedom-page-mobile-reason-codes` | — | **NEW**, 6 026 chars |
 
 The code table became its own article because folding it into the conversion article took that article to
 **52 919** characters — past the recorded probes where `page-schema-handlers` spilled at 50 351 and
@@ -374,6 +374,24 @@ a sentence at least arrives with the payload.
 
 Two guard fixtures that pinned drop-reason **sentences** now pin the **codes**, which is strictly stronger: a
 code is a closed-vocabulary token the converter cannot reword by accident.
+
+A third pair pins the vocabulary as a WHOLE, and it exists because this document's own audit caught what
+nothing else could. The commit that folded `relocate-children` into `droppedElements` minted
+`drop-container-no-mobile-equivalent` and never added its article entry; every suite stayed green, because
+that code fires on **zero** of the 12 drops of the page everything here was measured on. No sample, no
+fixture and no read of a real response would have shown it missing. The guard is two-sided by necessity —
+neither repository references the other — so each half pins the same eleven codes at its own end:
+`MobileDropReasonCodeVocabularyTests` (clio) reads them off the constants by reflection and fails on any
+addition with a message naming the article; `MobileDropReasonCodeCoverageTests` (clio-knowledge) fails if an
+entry is deleted, or if the article documents a code the converter cannot emit. Both were verified
+non-vacuous by mutation.
+
+The same audit found three shipped references to `elementMap` that outlived the field: the ROUTE in
+`routing.md` (which sent a caller to decode `elementMap[].reason`), the hand-off sentence in
+`page-modification.md`, and — worst of the three — the `bundle-source.json` title and description for the
+codes article, which still advertised "the four component-twin states, insert classifications, placement
+changes" the article no longer contains. That description is what a model reads when choosing an article, so
+a wrong one is worse than a terse one.
 
 ---
 
@@ -436,7 +454,10 @@ a909d2777  refactor: drop the constraints that restate structured guide data
 9e4f87df1  feat: enforce the unconditional mobile invariants instead of stating them
 ```
 
-**clio-knowledge** (12 commits + 1 merge) — `libraryVersion` 1.13.67 → 1.13.82, one new article.
+**clio-knowledge** (13 commits + 1 merge) — `libraryVersion` 1.13.67 → 1.13.83, one new article.
+
+Landing after the list above: the commit that added this file, and one per repository closing the guidance
+gap described in §10 (a commit cannot carry its own SHA, so they are named rather than listed).
 
 ---
 
@@ -457,34 +478,91 @@ with the reasoning.
 
 ## 15. Remaining work (not in this branch)
 
+Ordered by impact. Items 2, 3, 6, 9, 11 and 12 come from re-auditing this branch against the code AFTER it
+was written; four of them correct or replace what an earlier draft of this section claimed.
+
 1. **Converted mobile pages are monolingual.** `resourceStrings` is `{key: string}` and
-   `ResourceStringHelper.CreateLocalizableEntry` hardcodes `cultureName: "en-US"`. Measured on a cached
+   `ResourceStringHelper.cs:103` writes `["cultureName"] = "en-US"` unconditionally. Measured on a cached
    `Contacts_FormPage`: **195 of 204** source resources carry more than one culture — conversion keeps only
    `en-US`. **Genuine data loss and the largest item left.**
-2. **Stage 2 of the binding** — per-mobile-type binding rules in the rules file, after which
+
+2. **Prose `reason` survives in four sibling collections.** The coding pass reached `droppedElements` and
+   stopped there. `pageBusinessRules.droppedRules[]`, `requestConversions.droppedRequests[]`,
+   `requestConversions.flaggedRequests[]` and `normalizations.*.skipped[]` still declare `reason` as a plain
+   `string`. Measured on the same `Leads_FormPage`: **1 445 characters across 13 entries, 4 distinct
+   texts** — ten of the thirteen are the identical 107-character sentence, and two of the four run 230 and
+   340 characters. `WebToMobileAnalysisService.cs:3661` also passes `rule.Note` straight to the wire, so a
+   rules-FILE author writes response prose the converter never inspects. Note `flaggedRequests` is a real
+   signal that needs a code of its own — the component is KEPT and its request is unknown — not a deletion.
+
+3. **The same drop is reported twice, in two languages.** `SaveButton`, `CancelButton` and `CloseButton` are
+   in `droppedElements` with `drop-inherited-chrome` *and* in `requestConversions.droppedRequests` with
+   124–126 characters of prose saying the same thing. Which collection owns an inherited-chrome action has
+   to be settled before item 2, or the duplicate gets coded twice instead of removed.
+
+4. **Stage 2 of the binding** — per-mobile-type binding rules in the rules file, after which
    `pendingBindings` disappears and `viewConfigDiff` is 100 % verbatim.
-3. **Caption re-keying is unconditional.** `<mobileName>_caption` exists because `update-page` never
+
+5. **Caption re-keying is unconditional.** `<mobileName>_caption` exists because `update-page` never
    overwrites an existing key, but `MobileTemplateProbe` does not capture the template's resource keys, so a
    real collision cannot be detected and the converter re-keys always.
-4. **List column projection** — `AttachmentList.values.columns` carries 1 column against 5 declared
-   sub-attributes.
-5. **Synthesized container names are random** (`MainTabContainer_4fjmsq8`); making them deterministic would
-   unlock whole-response golden-file regression.
-6. **Two merges onto one element** (section 7) — decide whether to coalesce.
-7. `remove` operation support, once the converter needs to delete a base-template element.
-8. **Source-side renaming for the mobile→mobile source kind** — 7 remaining `web*` wire names, all still
-   present:
 
-   | Current | Proposed |
-   |---|---|
-   | `containerMap[].web` (`.mobile` stays) | `.source` / `.target` |
-   | `componentSuggestions[].primaryWebMerge` | `primarySourceMerge` |
-   | `droppedElements[].webName` / `.webType` | `sourceName` / `sourceType` |
-   | `webOnlySections` | `sourceOnlySections` |
-   | `requestConversions[].webRequest` × 2 | `sourceRequest` |
+6. **`AttachmentList` loses its columns** — *narrower than an earlier draft of this section said.* Every
+   other list on the real page carries its full column set (`SimilarLeadList` 6, `StageHistoryList` 4,
+   `LeadsByCustomerList` and `OpportunitiesByCustomerList` 5 each, `ProductsList` 2). Only `AttachmentList`
+   is truncated to one column, and its operation is a **merge** (no `type` in `values`), so the defect lives
+   in the twin/merge path, not in list projection generally.
 
-   Note the collision to resolve with it: the response root already has `sourceType` meaning *the source
-   PAGE kind* (`"freedom-web"`). If a second source kind arrives it should become `sourcePageType`, before
-   `sourceType` acquires a second meaning on a nested object.
-9. `mobileType` is verified against the `environment-superset` rather than the target catalog; `index` is
-   absent on 149 of 155 entries (ordering otherwise implicit).
+7. **Two merges onto one element** (section 7) — decide whether to coalesce.
+
+8. **Content pruned as identical to the web-template baseline leaves no trace.** `PruneTemplateComponents`
+   removes it before the walk, so it is in neither `sourceStructure` nor `viewConfigDiff` nor
+   `droppedElements`. This is NOT the same set as inherited chrome, which *is* now traced
+   (`drop-inherited-chrome`) — the distinction is worth stating because the two are easy to conflate.
+
+9. **`remove` operation support**, once the converter needs to delete a base-template element. One thing to
+   know first: the internal element map still uses `relocate-children`, a word the applier does not have. It
+   is filtered out at projection (`ProjectViewConfigDiff`) and reported as
+   `drop-container-no-mobile-equivalent`, which is deliberate — but it means the internal and wire
+   vocabularies are not the same list, and adding `remove` touches that seam.
+
+10. **Source-side renaming for the mobile→mobile source kind** — 7 remaining `web*` wire names, all still
+    present:
+
+    | Current | Proposed |
+    |---|---|
+    | `containerMap[].web` (`.mobile` stays) | `.source` / `.target` |
+    | `componentSuggestions[].primaryWebMerge` | `primarySourceMerge` |
+    | `droppedElements[].webName` / `.webType` | `sourceName` / `sourceType` |
+    | `webOnlySections` | `sourceOnlySections` |
+    | `requestConversions[].webRequest` × 2 | `sourceRequest` |
+
+    *Correction to an earlier draft of this section:* the `sourceType` collision is neither hypothetical nor
+    what was described there. The wire ALREADY carries three `sourceType` fields with **two** meanings —
+    `componentSuggestions[].sourceType` is a COMPONENT type (`crt.ComboBox`), while `guide.sourceType` and
+    the response envelope's `sourceType` are the source PAGE kind (`freedom-web`). Renaming
+    `droppedElements[].webType` → `sourceType` is therefore *consistent* with a meaning the wire already has;
+    the anomaly is the page-kind field, which should become `sourcePageType`. And the rename reaches AUTHORED
+    data: `WebToMobilePageConversionRulesModels.cs` holds five more `"web"` properties in the rules schema,
+    so renaming the wire alone splits the vocabulary in half.
+
+11. **`mobileType` is verified against the `environment-superset`** rather than the target catalog.
+
+12. **`resourceStrings` token closure is not a test invariant.** Nested-token collection is covered
+    (`WebToMobileConversionServiceTests.cs:3952`) and the whole-map registration rule is pinned (`:8593`),
+    but nothing asserts `tokens ⊆ keys` over a whole response — the one check that would make a raw
+    `#ResourceString` reaching the device impossible rather than unlikely.
+
+### One item listed here was never true
+
+**Synthesized container names are NOT random.** `StableSuffix` is the first 7 lowercase base36 characters of
+SHA-256 over `$"{sourcePage}:{tabName}"`, extended deterministically on collision, carrying a doc comment
+that rejects `Guid.NewGuid` by name for exactly this reason. It came from `master` in commit `842ea2574`
+(ENG-95573); the plan note this section inherited predates it. A sweep for `Guid.NewGuid`, `DateTime.Now`,
+`DateTime.UtcNow` and `Random` across the converter returns **nothing but that comment**, so whole-response
+golden-file regression is **unblocked today** — a test to write, not a blocker to clear.
+
+**And one was a design decision, not a gap:** `index` is absent on 149 of 155 entries because
+`CompactPositionalIndexes` numbers only the positional (`:top`) siblings of an anchor. Everything else is
+appended, and an appended insert has no index to carry. Ordering is implicit *because appending is the
+operation.*
