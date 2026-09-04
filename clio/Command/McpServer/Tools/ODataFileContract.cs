@@ -39,12 +39,16 @@ public interface IODataFileContract {
 	/// </summary>
 	/// <param name="resolvedPath">Path previously returned by <see cref="TryResolveOutputPath"/>.</param>
 	/// <param name="responseUtf8">Raw response body, as the UTF-8 bytes that arrived on the wire.</param>
+	/// <param name="entityName">
+	/// The requested OData entity set, used to classify a non-OData body the same way the inline read does.
+	/// </param>
 	/// <param name="countRequested">Whether the caller asked for a verified total count.</param>
 	/// <param name="summary">Row/column summary when the method returns <see langword="true"/>.</param>
 	/// <param name="error">Caller-facing error when the method returns <see langword="false"/>.</param>
 	bool TryWriteReadResponse(
 		string resolvedPath,
 		byte[] responseUtf8,
+		string entityName,
 		bool countRequested,
 		out ODataReadFileSummary summary,
 		out string error);
@@ -183,6 +187,7 @@ public sealed class ODataFileContract(IFileSystem fileSystem, IConfinedFileAcces
 	public bool TryWriteReadResponse(
 		string resolvedPath,
 		byte[] responseUtf8,
+		string entityName,
 		bool countRequested,
 		out ODataReadFileSummary summary,
 		out string error) {
@@ -191,7 +196,8 @@ public sealed class ODataFileContract(IFileSystem fileSystem, IConfinedFileAcces
 		try {
 			// The ceiling is enforced by the caller WHILE the body arrives, which is the only place it can
 			// actually bound anything; by here the payload is already in memory and within it.
-			(ODataReadFileSummary built, string summaryError) = BuildSummary(responseUtf8 ?? [], countRequested);
+			(ODataReadFileSummary built, string summaryError) =
+				BuildSummary(responseUtf8 ?? [], entityName, countRequested);
 			if (summaryError is not null) {
 				return Fail(summaryError, out error);
 			}
@@ -211,12 +217,23 @@ public sealed class ODataFileContract(IFileSystem fileSystem, IConfinedFileAcces
 		return false;
 	}
 
-	private static (ODataReadFileSummary summary, string error) BuildSummary(byte[] json, bool countRequested) {
+	private static (ODataReadFileSummary summary, string error) BuildSummary(byte[] json, string entityName,
+		bool countRequested) {
 		JsonDocument document;
 		try {
 			document = JsonDocument.Parse(json);
-		} catch (JsonException ex) {
-			return (null, SensitiveErrorTextRedactor.Redact($"Failed to parse OData response: {ex.Message}"));
+		} catch (JsonException) {
+			// The parser's own message ("'<' is an invalid start of a value") names the symptom and not the
+			// cause, and it is the same body the INLINE read already classifies properly - an IIS 404 page
+			// for an entity set with no OData controller is by far the most common one, and the actionable
+			// answer is to use execute-esq instead. Answering the file mode with a raw parser message left
+			// the two paths giving different diagnostics for the same server response; a real stand returned
+			// exactly that for an unknown entity. The exception message is dropped rather than appended: the
+			// fixed diagnostics are locally authored on purpose, so nothing server-controlled is echoed.
+			string body = Encoding.UTF8.GetString(json);
+			return CreatioResponseError.TryDescribeMissingEntitySet(body, entityName, out string missingEntitySet)
+				? (null, missingEntitySet)
+				: (null, CreatioResponseError.DescribeNonJsonReadResponse());
 		}
 		using (document) {
 			JsonElement root = document.RootElement;

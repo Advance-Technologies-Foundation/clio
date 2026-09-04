@@ -55,6 +55,47 @@ public sealed class ODataReadToFileToolTests {
 
 	[Test]
 	[Category("Unit")]
+	[Description("Answers an IIS 404 page with the same actionable diagnostic the inline read gives, so the two paths do not disagree about the same server response.")]
+	public void ReadToFile_Should_Describe_AMissingEntitySet_WhenTheServerReturnsAnIisPage() {
+		// Arrange - the body a real stand returns for an entity set with no OData controller. It is not JSON,
+		// so the parse fails; what matters is WHICH message the caller gets. Answering with the parser's own
+		// "'<' is an invalid start of a value" named the symptom, not the cause, and left the file mode
+		// disagreeing with the inline read about an identical response.
+		MockFileSystem fileSystem = new();
+		string outputFile = fileSystem.Path.Combine(fileSystem.Path.GetTempPath(), $"odata-iis-{Guid.NewGuid():N}.json");
+		ICreatioApplicationClient client = Substitute.For<ICreatioApplicationClient>();
+		IServiceUrlBuilder urlBuilder = Substitute.For<IServiceUrlBuilder>();
+		IToolCommandResolver resolver = Substitute.For<IToolCommandResolver>();
+		resolver.Resolve<IApplicationClient>(Arg.Any<EnvironmentOptions>()).Returns(client);
+		resolver.Resolve<IServiceUrlBuilder>(Arg.Any<EnvironmentOptions>()).Returns(urlBuilder);
+		urlBuilder.Build(Arg.Any<string>()).Returns("http://creatio/odata/UsrNoSuchEntity?$top=25");
+		client.ExecuteGetRequestBoundedAsync(
+				Arg.Any<string>(), Arg.Any<long>(), Arg.Any<int>(), Arg.Any<CancellationToken>())
+			.Returns(Task.FromResult(Encoding.UTF8.GetBytes(
+				"<html><head><title>404 - File or directory not found.</title></head>"
+				+ "<body><h2>404 - File or directory not found.</h2></body></html>")));
+		ODataReadToFileTool tool = new(resolver, new ODataFileContract(fileSystem, new MockConfinedFileAccess(fileSystem)));
+
+		// Act
+		ODataReadResponse response = tool.ReadToFile(new ODataReadToFileArgs {
+			EnvironmentName = "dev", Entity = "UsrNoSuchEntity", OutputFile = outputFile
+		});
+
+		// Assert
+		response.Success.Should().BeFalse(
+			because: "an IIS page is not an OData response, so the call must fail");
+		response.Error.Should().Contain("UsrNoSuchEntity",
+			because: "the diagnostic has to name the entity set the caller asked for");
+		response.Error.Should().Contain("execute-esq",
+			because: "the actionable answer for a schema without an OData entity set is to read it with execute-esq, which is exactly what the inline read says");
+		response.Error.Should().NotContain("invalid start of a value",
+			because: "the parser message names the symptom rather than the cause and must not be what the caller is handed");
+		fileSystem.File.Exists(outputFile).Should().BeFalse(
+			because: "a rejected body must never be published to the output file");
+	}
+
+	[Test]
+	[Category("Unit")]
 	[Description("Leaves OData control annotations out of the column summary, so the file-mode summary describes the same columns the inline read surfaces.")]
 	public void ReadToFile_Should_Not_Count_ODataAnnotations_As_Columns() {
 		// Arrange - a single-entity response, which is where Creatio attaches @odata.context beside the real

@@ -112,7 +112,8 @@ public sealed class ODataReadToFileTool(IToolCommandResolver commandResolver, IO
 			// away. Error detection, the paging annotations and the summary all come out of one pass, and the
 			// file is published only after that pass accepts the body.
 			if (!_fileContract.TryWriteReadResponse(
-				outputPath, responseUtf8, args.Count, out ODataReadFileSummary summary, out string fileError)) {
+				outputPath, responseUtf8, args.Entity, args.Count,
+				out ODataReadFileSummary summary, out string fileError)) {
 				return ODataReadResponse.Failure(fileError);
 			}
 			return new ODataReadResponse(
