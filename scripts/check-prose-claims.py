@@ -137,9 +137,19 @@ def digest(path):
 
 
 def check_archive_pins():
-    """Every pin beside the archive must describe the archive that is actually committed."""
+    """Every pin beside the archive must describe the archive that is actually committed.
+
+    Every arm below REPORTS when it cannot run. That is not defensive noise: review of PR #1340 found
+    that a missing or unreadable archive produced zero findings here, byte-identical to a clean pass -
+    `descriptor_of` returns None on OSError (which covers gzip.BadGzipFile) and the old `if actual:`
+    swallowed both BLOCKER arms with it. Reproduced by moving the archive aside: 118 findings and 5 at
+    BLOCKER/HIGH both before and after, so deleting the very thing these pins describe changed nothing
+    the tool said. This file's own rule is that a check which verified NOTHING must say so, and it was
+    the one place breaking it.
+    """
     pin = read(PIN)
     if not pin:
+        report("BLOCKER", PIN, "the pin file could not be read, so NO archive pin was verified - not a pass")
         return None
     version = const(pin, "ExpectedArchiveVersion")
     actual = descriptor_of(ARCHIVE)
@@ -150,13 +160,28 @@ def check_archive_pins():
         if stamp and actual[1] != stamp:
             report("BLOCKER", PIN,
                    "ExpectedDescriptorModifiedOnUtc is {}; the archive says {}".format(stamp, actual[1]))
+    else:
+        report("BLOCKER", ARCHIVE,
+               "the archive is missing or unreadable, so ExpectedArchiveVersion and "
+               "ExpectedDescriptorModifiedOnUtc were NOT verified - 'checked nothing', not 'clean'")
     sha = const(pin, "ExpectedArchiveSha256")
     got = digest(ARCHIVE)
-    if sha and got and got.upper() != sha.upper().replace(" ", ""):
+    if not sha:
+        report("BLOCKER", PIN, "ExpectedArchiveSha256 is absent, so the archive's bytes were NOT verified")
+    elif got is None:
+        report("BLOCKER", ARCHIVE, "the archive could not be hashed, so ExpectedArchiveSha256 was NOT verified")
+    elif got.upper() != sha.upper().replace(" ", ""):
         report("BLOCKER", PIN, "ExpectedArchiveSha256 does not match the committed archive ({}...)".format(got[:16]))
-    for output in build_outputs():
+    outputs = build_outputs()
+    if not outputs:
+        report("HIGH", ARCHIVE,
+               "nothing is built, so the build-output comparison verified NOTHING - and an install "
+               "resolves the archive from the build output, which is exactly the check that was skipped")
+    for output in outputs:
         built = digest(output)
-        if built and got and built != got:
+        if built is None:
+            report("HIGH", output, "the build output could not be hashed, so it was NOT compared")
+        elif got and built != got:
             report("HIGH", output,
                    "the build output carries DIFFERENT bytes from the committed archive - an install resolves "
                    "it from here, so any local verification proves nothing")
