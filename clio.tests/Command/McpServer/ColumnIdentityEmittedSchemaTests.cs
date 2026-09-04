@@ -161,6 +161,22 @@ public sealed class ColumnIdentityEmittedSchemaTests {
 
 	[Test]
 	[Category("Unit")]
+	[Description("get-entity-schema-column-properties keeps package-name optional in the emitted MCP schema so strict clients can request merged discovery.")]
+	public void GetEntitySchemaColumnProperties_Should_NotRequirePackageName_InEmittedInputSchema() {
+		// Arrange & Act
+		using JsonDocument schema = EmittedInputSchema(
+			GetEntitySchemaColumnPropertiesTool.GetEntitySchemaColumnPropertiesToolName);
+		JsonElement argsSchema = schema.RootElement.GetProperty("properties").GetProperty("args");
+
+		// Assert
+		RequiredNames(argsSchema).Should().NotContain("package-name",
+			because: "omitting package-name is the public signal for merged runtime discovery");
+		RequiredNames(argsSchema).Should().Contain(["environment-name", "schema-name", "column-name"],
+			because: "only package scope became optional; the target environment, schema, and column remain required");
+	}
+
+	[Test]
+	[Category("Unit")]
 	[Description("update-entity-schema does not list 'column-name' as required inside its operations items, so the get-app-info read shape round-trips (PR #984 review).")]
 	public void UpdateEntitySchema_Should_NotRequireColumnName_InEmittedOperationSchema() {
 		// Arrange & Act

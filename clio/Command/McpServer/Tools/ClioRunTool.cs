@@ -67,7 +67,9 @@ public interface IClioRunExecutor {
 /// <inheritdoc />
 public sealed class ClioRunExecutor(
 	IMcpToolInvokerRegistry toolRegistry,
-	IMcpToolCompatibilityCatalog compatibilityCatalog) : IClioRunExecutor {
+	IMcpToolCompatibilityCatalog compatibilityCatalog,
+	IMcpExecutionRouter executionRouter,
+	Relay.IMcpWorkerCallDispatcher workerCallDispatcher = null) : IClioRunExecutor {
 
 	/// <inheritdoc />
 	public ValueTask<CallToolResult> RunAsync(
@@ -166,6 +168,34 @@ public sealed class ClioRunExecutor(
 			return Error(SensitiveErrorTextRedactor.Redact($"Error: {ex.Message}"));
 		}
 
+		// ENG-95262 dispatch site (c) of three — the CLIO-RUN INNER path, and the only place ADR rule 7 can
+		// be satisfied: `toolName` here is the UNWRAPPED, alias-canonicalised inner command, so a long-tail
+		// tool reached through the executor routes exactly as it would when named directly. Keying on the
+		// wrapper's own name instead would give the entire long tail clio-run's in-process row.
+		// The resolved name is passed EXPLICITLY rather than read off callContext, because DispatchAsync
+		// below retargets that context in place (and restores it in a finally, sometimes late).
+		// DispatchAsync is the single funnel for BOTH long-tail paths — this one and the durable handler's
+		// InvokeResolvedAsync — but the routing decision cannot be folded into it: site (b) must route right
+		// after its write-capability confirmation gate, and that gate refuses the call long before any
+		// dispatch happens, so a decision made inside DispatchAsync would never run for a refused write.
+		McpExecutionRoute route = executionRouter.Resolve(toolName, innerCommand: null);
+		if (!route.ExecutesInProcess) {
+			if (workerCallDispatcher is null) {
+				// Fail-closed: a site with no dispatcher refuses rather than running a worker-routed call in
+				// the host process, which would silently bypass the execution boundary.
+				return McpExecutionRouter.WorkerPathNotWiredResult(route);
+			}
+			// The ORIGINAL clio-run params are relayed, not the unwrapped inner call. The child's own
+			// clio-run executes any tool directly (the host-level destructive gating this call already
+			// passed lives in the parent), so unwrapping here would only add a params rebuild that can drop
+			// arguments — the double-wrapping trap BuildChildParams exists to avoid — and would lose the
+			// caller's _meta, taking ClioRing's progress-token correlation with it.
+			return await workerCallDispatcher
+				.DispatchAsync(route, callContext.Params,
+					new Relay.McpServerParentSession(callContext.Server), cancellationToken)
+				.ConfigureAwait(false);
+		}
+
 		// ENG-93373: bound a retry-safe (read-only, or the get-page local-write read) inner dispatch by the
 		// read-response deadline, so a read reached THROUGH clio-run — the PRIMARY long-tail read vector, since
 		// non-resident tools are invoked via clio-run per core-rules — is bounded exactly as a direct call is.
@@ -244,6 +274,11 @@ public sealed class ClioRunExecutor(
 		callContext.Params = childParams;
 		callContext.MatchedPrimitive = tool;
 		try {
+			if (McpToolErrorFilter.TryCreateArgumentDeserializationError(
+				callContext,
+				out CallToolResult? argumentErrorResult)) {
+				return argumentErrorResult;
+			}
 			return await tool.InvokeAsync(callContext, cancellationToken).ConfigureAwait(false);
 		}
 		catch (OperationCanceledException) {
@@ -609,6 +644,17 @@ public sealed class ClioRunTool(IClioRunExecutor executor) {
 	/// Runs any clio MCP tool by name with free-form JSON arguments (read or write/destructive).
 	/// </summary>
 	[McpServerTool(Name = ToolName, ReadOnly = false, Destructive = true, Idempotent = false, OpenWorld = true)]
+	// The wrapper itself only resolves the inner tool and dispatches it in-process; the router keys on the
+	// UNWRAPPED inner tool name (ADR rule 7), so the inner tool's own metadata decides whether that call is
+	// relayed to a worker. The caller's progress token is forwarded to the inner tool, which is why the
+	// wrapper declares no client requests of its own.
+	[McpToolExecution(
+		Location = McpToolExecutionLocation.InProcess,
+		Lifetime = McpToolExecutionLifetime.NotApplicable,
+		OperationFamily = McpToolOperationFamily.None,
+		BudgetPolicy = McpToolBudgetPolicy.None,
+		RequiresClientRequests = McpToolClientRequests.None,
+		SharedFileResource = McpToolSharedFileResource.None)]
 	[Description("Generic executor for clio MCP tools hidden from tools/list (the long tail). `command` is an MCP tool name (kebab-case, e.g. \"sync-schemas\", \"create-lookup\", \"execute-esq\", \"odata-read\") and `args` is the JSON arguments object that tool expects. Call shape: {\"command\":\"<tool>\",\"args\":{...}}. The wrapped shape {\"args\":{\"command\":\"<tool>\",\"args\":{...}}} is also accepted. Runs ANY tool — including write/destructive ones — directly; you do NOT need a different executor. Unknown tool or invalid args return a structured Error result with the real cause. Marked destructive so the host can confirm; not auto-approved.")]
 	public ValueTask<CallToolResult> Run(
 		RequestContext<CallToolRequestParams> context,
@@ -636,6 +682,17 @@ public sealed class ClioRunDestructiveTool(IClioRunExecutor executor) {
 	/// Runs any clio MCP tool by name with free-form JSON arguments. Alias of <c>clio-run</c>.
 	/// </summary>
 	[McpServerTool(Name = ToolName, ReadOnly = false, Destructive = true, Idempotent = false, OpenWorld = true)]
+	// Identical to clio-run: `destructiveSurface: true` is retained on the executor signature for back-compat
+	// but no longer routes or refuses (see ClioRunExecutor.RunAsync), so both names run ONE body and must carry
+	// the same execution metadata. AliasOf makes that link machine-readable.
+	[McpToolExecution(
+		Location = McpToolExecutionLocation.InProcess,
+		Lifetime = McpToolExecutionLifetime.NotApplicable,
+		OperationFamily = McpToolOperationFamily.None,
+		BudgetPolicy = McpToolBudgetPolicy.None,
+		RequiresClientRequests = McpToolClientRequests.None,
+		SharedFileResource = McpToolSharedFileResource.None,
+		AliasOf = ClioRunTool.ToolName)]
 	[Description("Deprecated alias of `clio-run` (identical behavior — runs ANY clio MCP tool by name, read or write/destructive). Kept so a caller that picks either executor succeeds. Prefer `clio-run`. `command` is an MCP tool name (kebab-case); `args` is the JSON arguments object that tool expects. Call shape: {\"command\":\"<tool>\",\"args\":{...}}; the wrapped shape {\"args\":{\"command\":\"<tool>\",\"args\":{...}}} is also accepted.")]
 	public ValueTask<CallToolResult> Run(
 		RequestContext<CallToolRequestParams> context,

@@ -29,6 +29,13 @@ public sealed class ListPrintablesTool(
 	internal const string ToolName = "list-printables";
 
 	[McpServerTool(Name = ToolName, ReadOnly = true, Destructive = false, Idempotent = true, OpenWorld = false)]
+	[McpToolExecution(
+		Location = McpToolExecutionLocation.Worker,
+		Lifetime = McpToolExecutionLifetime.PerCall,
+		OperationFamily = McpToolOperationFamily.None,
+		BudgetPolicy = McpToolBudgetPolicy.ParentKillDefault,
+		RequiresClientRequests = McpToolClientRequests.None,
+		SharedFileResource = McpToolSharedFileResource.None)]
 	[Description(
 		"List the MS Word printables (reports) registered in a Creatio environment, optionally filtered " +
 		"by the entity they are attached to (directly or via their section module). " +

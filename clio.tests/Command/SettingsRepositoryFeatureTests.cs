@@ -4,8 +4,12 @@ using System.IO;
 using System.Linq;
 using System.Text.Json.Nodes;
 using System.IO.Abstractions.TestingHelpers;
+using Clio.Common;
+using Clio.Common.McpWorker;
 using Clio.Tests.Infrastructure;
+using Clio.UserEnvironment;
 using FluentAssertions;
+using Newtonsoft.Json;
 using NUnit.Framework;
 
 namespace Clio.Tests.Command;
@@ -111,6 +115,35 @@ public sealed class SettingsRepositoryFeatureTests {
 			because: "NuGet sources require a package identity and signing trust while Git sources do not");
 	}
 
+	[Test]
+	[Description("Documents every persisted deploy-creatio default and constrains the automatic site-port range shape.")]
+	public void AppSettingsSchema_ShouldDescribeDeployCreatioDefaults() {
+		// Arrange
+		string templatePath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "tpl", "jsonschema", "schema.json.tpl");
+		JsonObject schema = JsonNode.Parse(File.ReadAllText(templatePath))!.AsObject();
+		JsonObject rootProperties = schema["properties"]!.AsObject();
+		JsonObject defaults = schema["definitions"]!["deploycreatiodefaults"]!.AsObject();
+		JsonObject properties = defaults["properties"]!.AsObject();
+		JsonObject range = properties["site-port-range"]!.AsObject();
+
+		// Act
+		string[] keys = properties.Select(property => property.Key).ToArray();
+		int[] defaultRange = range["default"]!.AsArray().Select(value => value!.GetValue<int>()).ToArray();
+
+		// Assert
+		rootProperties.Should().ContainKey("deploy-creatio-defaults",
+			because: "the generated settings file points editors at this bundled schema");
+		keys.Should().BeEquivalentTo([
+			"db-server-name", "redis-server-name", "site-name", "site-port", "site-port-range", "deployment"
+		], because: "editor completion must expose every deploy default persisted by SettingsRepository");
+		range["minItems"]!.GetValue<int>().Should().Be(2,
+			because: "runtime validation requires exactly a start and end port");
+		range["maxItems"]!.GetValue<int>().Should().Be(2,
+			because: "runtime validation rejects extra range values");
+		defaultRange.Should().Equal(new[] { 40100, 40199 },
+			because: "schema hover and completion must agree with the materialized built-in value");
+	}
+
 	private static string[] RequiredForTransport(JsonObject source, string transportType) => source["allOf"]!
 		.AsArray()
 		.Single(rule => rule!["if"]!["properties"]!["type"]!["const"]!.GetValue<string>() == transportType)!
@@ -191,6 +224,30 @@ public sealed class SettingsRepositoryFeatureTests {
 		// Assert
 		nullAct.Should().Throw<ArgumentException>(because: "a null feature name cannot be persisted");
 		whitespaceAct.Should().Throw<ArgumentException>(because: "a whitespace feature name cannot be persisted");
+	}
+
+	[Test]
+	[Description("A feature key containing the MCP worker payload separators is accepted, persisted, and still survives the freeze the host hands to every worker child.")]
+	public void SetFeature_ShouldPersistAndStayWorkerSafe_WhenNameContainsPayloadSeparators() {
+		// Arrange — the write surface refuses only null/empty/whitespace, so this key is reachable through
+		// `clio experimental --name "a;b=c" --enable`, and a hand-edited appsettings.json can hold it no
+		// matter what the write surface allows.
+		const string separatorBearingKey = "a;b=c";
+		SettingsRepository sut = new(_fileSystem);
+
+		// Act
+		sut.SetFeature(separatorBearingKey, true);
+		SettingsRepository reloaded = new(_fileSystem);
+		IReadOnlyDictionary<string, bool> persisted = reloaded.GetFeatures();
+		string workerPayload = McpWorkerEnvironment.Format(persisted);
+
+		// Assert
+		persisted.Should().ContainKey(separatorBearingKey,
+			because: "the repository persists the key as supplied; nothing between the command and the file "
+				+ "narrows the accepted character set");
+		McpWorkerEnvironment.Parse(workerPayload).Should().ContainKey(separatorBearingKey,
+			because: "the host freezes this exact map into every worker before spawning it, so a key the "
+				+ "settings file can hold must never be the reason a worker fails to start");
 	}
 
 	[Test]
@@ -288,5 +345,87 @@ public sealed class SettingsRepositoryFeatureTests {
 		// Assert
 		snapshot.Should().ContainKey("snapshot-feature", because: "the snapshot reflects the stored feature flags");
 		stillEnabled.Should().BeTrue(because: "mutating the returned snapshot must not change the repository's stored state");
+	}
+
+	[Test]
+	[Description("Claims each due automatic update once and advances its independent next-run timestamp by the configured frequency.")]
+	public void TryScheduleAutoupdate_ShouldAdvanceIndependentTimestamp_WhenPolicyIsDue() {
+		// Arrange
+		DateTimeOffset now = new(2026, 9, 3, 12, 0, 0, TimeSpan.Zero);
+		SettingsRepository sut = new(_fileSystem);
+
+		// Act
+		bool first = sut.TryScheduleAutoupdate(AutoUpdateTarget.Knowledge, now);
+		bool repeated = new SettingsRepository(_fileSystem)
+			.TryScheduleAutoupdate(AutoUpdateTarget.Knowledge, now.AddMinutes(59));
+		bool toolkit = new SettingsRepository(_fileSystem)
+			.TryScheduleAutoupdate(AutoUpdateTarget.Toolkit, now);
+		Settings persisted = JsonConvert.DeserializeObject<Settings>(
+			_fileSystem.File.ReadAllText(SettingsRepository.AppSettingsFile));
+
+		// Assert
+		first.Should().BeTrue(because: "a missing next-run timestamp makes the enabled policy due immediately");
+		repeated.Should().BeFalse(because: "the same policy must wait for its configured frequency");
+		toolkit.Should().BeTrue(because: "the toolkit schedule is independent from knowledge");
+		persisted.Autoupdate.Knowledge.NextRun.Should().Be(now.AddMinutes(60),
+			because: "knowledge uses its one-hour default frequency");
+		persisted.Autoupdate.Toolkit.NextRun.Should().Be(now.AddMinutes(60),
+			because: "toolkit uses its own one-hour default frequency");
+	}
+
+	[Test]
+	[Description("Leaves a disabled automatic update untouched even when its next-run timestamp is in the past.")]
+	public void TryScheduleAutoupdate_ShouldNotAdvanceTimestamp_WhenPolicyIsDisabled() {
+		// Arrange
+		const string json = """
+			{
+			  "SettingsVersion": 2,
+			  "autoupdate": {
+			    "knowledge": {
+			      "enabled": false,
+			      "next-run": "2026-09-03T10:00:00+00:00"
+			    }
+			  },
+			  "Environments": {}
+			}
+			""";
+		_fileSystem.File.WriteAllText(SettingsRepository.AppSettingsFile, json);
+		SettingsRepository sut = new(_fileSystem);
+		string beforeSchedule = _fileSystem.File.ReadAllText(SettingsRepository.AppSettingsFile);
+		Settings normalized = JsonConvert.DeserializeObject<Settings>(beforeSchedule);
+
+		// Act
+		bool result = sut.TryScheduleAutoupdate(AutoUpdateTarget.Knowledge,
+			new DateTimeOffset(2026, 9, 3, 12, 0, 0, TimeSpan.Zero));
+
+		// Assert
+		result.Should().BeFalse(because: "disabled policies do not run automatically");
+		normalized.Autoupdate.Knowledge.FrequencyMinutes.Should().Be(60,
+			because: "omitted frequencies use the component default");
+		_fileSystem.File.ReadAllText(SettingsRepository.AppSettingsFile).Should().Be(beforeSchedule,
+			because: "a skipped check must not rewrite appsettings.json");
+	}
+
+	[Test]
+	[Description("Preserves the existing pre-version migration when startup schedules content before normal repairs run.")]
+	public void TryScheduleAutoupdate_ShouldResetHistoricalFalse_WhenBootstrapRepairsAreDeferred() {
+		// Arrange
+		const string json = """
+			{
+			  "Autoupdate": false,
+			  "Environments": {}
+			}
+			""";
+		_fileSystem.File.WriteAllText(SettingsRepository.AppSettingsFile, json);
+		SettingsRepository sut = new(_fileSystem, new SettingsBootstrapService(_fileSystem, applyRepairs: false));
+
+		// Act
+		sut.TryScheduleAutoupdate(AutoUpdateTarget.Knowledge,
+			new DateTimeOffset(2026, 9, 3, 12, 0, 0, TimeSpan.Zero));
+		SettingsRepository reloaded = new(_fileSystem);
+
+		// Assert
+		reloaded.GetAutoupdate().Should().BeTrue(
+			because: "the historical serialized false default must not become a deliberate clio opt-out");
 	}
 }

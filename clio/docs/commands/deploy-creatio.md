@@ -18,14 +18,29 @@ Deploys Creatio application from a zip file. On Windows, deploys to Internet Inf
 Services (IIS) by default. On macOS and Linux, uses dotnet runtime. Supports cross-platform
 deployment with optional HTTPS configuration and automatic service management.
 
-For IIS deployments, clio reserves the requested port across concurrent clio
-processes before extracting files, restoring the database, or creating IIS
-objects. The command also checks existing IIS bindings and active listeners.
-If the port is already used or another clio deployment has reserved it, the
-deployment fails before changing the target. Clio also serializes deploy and
+For IIS deployments, an explicit `--site-port` wins. Otherwise a configured fixed
+`deploy-creatio-defaults.site-port` wins, followed by the first available port in
+`deploy-creatio-defaults.site-port-range`. Fresh and upgraded Clio settings persist
+the built-in inclusive range `[40100, 40199]` when no range was configured.
+
+Clio reserves the chosen port across concurrent processes before extracting files,
+restoring the database, or creating IIS objects. The command also checks existing
+IIS bindings and active listeners. An explicit used or reserved port fails; automatic
+selection continues to the next range candidate. Clio also serializes deploy and
 uninstall operations that use the same environment name or resolve to the same
 physical target directory. Deployments using different names, ports, and target
 directories can still run in parallel.
+
+The default persisted settings fragment is:
+
+```json
+{
+  "deploy-creatio-defaults": {
+    "site-port-range": [40100, 40199]
+  }
+}
+```
+
 On a clean Windows host, clio prepares required IIS features while holding the
 name and target reservations, then performs the IIS/TCP port validation.
 Site names must be safe single directory names. An explicit `--app-path` must be an
@@ -93,8 +108,10 @@ for this value. Silent deployment fails with a clear error instead of waiting
 for console input.
 
 --site-port PORT
-HTTP port number for the application
-Default: 80 (HTTP), 443 (HTTPS)
+Optional explicit application port. For IIS this overrides the configured fixed
+site port and automatic range. When omitted, Clio uses the fixed default when
+present or reserves the first available configured-range port. Dotnet deployment
+retains its existing interactive/default port behavior.
 
 --zip-file FILE_PATH
 Required. Path to Creatio zip file or directory
@@ -214,8 +231,8 @@ Default: false
 ## Examples
 
 ```bash
-1. Basic deployment with default settings (PostgreSQL, port 40001, auto-run):
-clio deploy-creatio --site-name "Default" --zip-file "C:\creatio-app.zip" --site-port 40001 --silent
+1. Basic IIS deployment using the configured automatic port range:
+clio deploy-creatio --site-name "Default" --zip-file "C:\creatio-app.zip" --silent
 
 2. Deploy with MS SQL and custom port:
 clio deploy-creatio --site-name "Production" --db mssql --site-port 8080 \\
@@ -317,7 +334,7 @@ Password Reset Script (Creatio >= 8.3.3):
 - Script errors do not block deployment (warning only)
 
 Windows (Default - IIS):
-- Reserves and validates the requested port before deployment changes begin
+- Reserves and validates the explicit, fixed-default, or automatically selected port before deployment changes begin
 - Creates IIS Application Pool
 - Creates IIS Website with exactly one HTTP or HTTPS binding
 - Treats required IIS creation failures as deployment failures
@@ -545,6 +562,30 @@ Linux:
     warning, and the run ends success-with-warnings without exposing database credentials.
 
     The envelope carries a schemaVersion field (currently 1) and is forward-compatible.
+
+    Bounded by the terminal stage, never by a stopwatch. Over MCP the tool runs in a
+    short-lived clio worker process, and the parent waits for the run's own
+    "run-completed" event rather than for a fixed budget: a healthy deploy that keeps
+    streaming stages is never truncated, however long it takes. Two bounds apply, and
+    neither is a total:
+      - stage-event silence: 300 s with no stage event of any kind. Every stage event
+        restarts it, and a stage that is still working re-announces itself as running
+        every 30 s, so a long stage (a database restore, a large file copy) keeps the
+        stream alive and silence means the worker itself stopped talking. Override with
+        CLIO_MCP_WORKER_STAGE_SILENCE_SECONDS (seconds, 0 < n <= 3600); lowering it below
+        a few of those 30 s refreshes puts healthy long stages back at risk.
+      - post-terminal exit grace: 30 s between "run-completed" and the worker exiting.
+        A worker that hangs afterwards is terminated and the tool result is the
+        terminal outcome, not an error.
+
+    If the run never reports a terminal stage - the worker crashed, was cancelled, or
+    went silent past the bound - the tool answers with an explicit INDETERMINATE error
+    naming the last stage reached (outcome=indeterminate,
+    error-class=clio-deploy-indeterminate, environment-state=possibly-half-installed).
+    clio does NOT retry it, and neither should a caller: the deployment may have partly
+    completed, so inspect and clean the target before any new attempt. There is no
+    "cancelled" run outcome in the stage-event contract, so a cancelled deploy resolves
+    through this same indeterminate path.
 
 ## Reporting Bugs
 

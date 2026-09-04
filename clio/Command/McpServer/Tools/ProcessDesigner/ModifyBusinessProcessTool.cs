@@ -24,6 +24,13 @@ public class ModifyBusinessProcessTool(
 	/// <param name="processUid">Process schema UId to edit. Provide this or <paramref name="processName"/>.</param>
 	/// <param name="operations">Inline JSON operations array.</param>
 	/// <returns>The command execution result with the edited schema identity in the log output.</returns>
+	[McpToolExecution(
+		Location = McpToolExecutionLocation.Worker,
+		Lifetime = McpToolExecutionLifetime.PerCall,
+		OperationFamily = McpToolOperationFamily.None,
+		BudgetPolicy = McpToolBudgetPolicy.ParentKillDefault,
+		RequiresClientRequests = McpToolClientRequests.None,
+		SharedFileResource = McpToolSharedFileResource.None)]
 	[McpServerTool(Name = ModifyBusinessProcessToolName, ReadOnly = false, Destructive = true, Idempotent = false,
 		 OpenWorld = false),
 	 Description("Edit an EXISTING business process on a Creatio environment by applying an ordered JSON array of "
@@ -42,7 +49,7 @@ public class ModifyBusinessProcessTool(
 		 + "elementParameter} or {targetProcessParameter}, and one source of {sourceElement, sourceElementParameter} "
 		 + "| processParameter | value | expression; parameter-to-parameter mappings require compatible types; "
 		 + "a Lookup target's 'value' takes a bare non-empty record Guid, stored as the ConstValue the runtime "
-		 + "actually reads (the route ships from CrtProcessBuilder 1.3.1.1; THIS clio additionally refuses any "
+		 + "actually reads (THIS clio bundles CrtProcessBuilder 1.4.0.40 and refuses any "
 		 + "environment older than the version it BUNDLES — up front, via the package-convergence message naming "
 		 + "both versions — while an older clio surfaces the old package's [#Lookup…#]-macro rejection; either "
 		 + "refusal means the ENVIRONMENT IS BEHIND, not that the parameter is unsettable: update the package); "
@@ -50,7 +57,13 @@ public class ModifyBusinessProcessTool(
 		 + "[#Lookup…#] expression form stays the named fallback), Guid.Empty is refused as "
 		 + "referencing no record, and a Guid that exists in NO record of the parameter's reference object is "
 		 + "refused naming that object — so an id of the WRONG entity, e.g. a role id on the Contact-typed "
-		 + "OwnerId, cannot be stored; to assign a TEAM use the element-level 'performer' block, not OwnerId; "
+		 + "OwnerId, cannot be stored; an already-composed [#Lookup.{objectUId}.{recordId}#] is ALSO accepted on a "
+		 + "Lookup target and decoded to that bare id, so a value echoed back from describe re-submits unchanged; "
+		 + "the referenced record's NAME is resolved and stored as the parameter's display value, which is what the "
+		 + "designer renders — so 'Task category' shows Call, not a Guid, and describe reports it as valueDisplay "
+		 + "beside the unchanged bare-Guid value; the same name resolution applies to a Lookup process parameter's "
+		 + "DEFAULT set through addParameter / setParameter 'value' (the macro decode does NOT — mapping route only); "
+		 + "to assign a TEAM use the element-level 'performer' block, not OwnerId; "
 		 + "re-mapping an already-bound target overwrites it in place — there is no removeMapping/clear op), "
 		 + "setParameter (with 'parameterName' = the target parameter by name/UId and 'parameterUpdate' = any of "
 		 + "caption/description/code/direction/referenceSchema (re-targets an existing Lookup only)/value, updated "

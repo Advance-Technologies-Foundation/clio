@@ -14,6 +14,7 @@ namespace Clio.Tests.Command.McpServer;
 [Property("Module", "McpServer")]
 public sealed class SchemaValidationServiceTests
 {
+	private static readonly TimeSpan RegexTimeout = TimeSpan.FromSeconds(1);
 
 	private const string ValidListPageBody =
 		"""
@@ -114,7 +115,8 @@ public sealed class SchemaValidationServiceTests
 	[Description("BuildMarkerPattern generates correct regex for matching /**MARKER*/ pairs")]
 	public void BuildMarkerPattern_GeneratesCorrectRegex() {
 		string pattern = SchemaValidationService.BuildMarkerPattern("SCHEMA_DEPS");
-		var regex = new System.Text.RegularExpressions.Regex(pattern, System.Text.RegularExpressions.RegexOptions.Singleline);
+		var regex = new System.Text.RegularExpressions.Regex(
+			pattern, System.Text.RegularExpressions.RegexOptions.Singleline, RegexTimeout);
 		regex.IsMatch("/**SCHEMA_DEPS*/[]/**SCHEMA_DEPS*/").Should()
 			.BeTrue("because the pattern should match the standard marker pair format");
 		regex.IsMatch("/* Start:SCHEMA_DEPS */").Should()
@@ -2666,6 +2668,24 @@ public sealed class SchemaValidationServiceTests
 	}
 
 	[Test]
+	[Description("Designer-only _designOptions metadata is ignored by the localizable-text validator, so a templateValuesMapping attribute name is not mistaken for user-visible text.")]
+	public void ValidateLocalizableTextLiterals_DesignerOptionsCaptionMapping_ReturnsValid() {
+		// Arrange
+		string body = BuildDiffBackedPageBody(
+			"""[{"operation":"insert","name":"Playbook_g0bz14m","values":{"type":"crt.Playbook","_designOptions":{"templateValuesMapping":{"caption":"Playbook_KnowledgeBaseDS_Name"}}}}]""",
+			"[]");
+
+		// Act
+		SchemaValidationResult result = SchemaValidationService.ValidateLocalizableTextLiterals(body);
+
+		// Assert
+		result.IsValid.Should().BeTrue(
+			because: "_designOptions.templateValuesMapping.caption is designer metadata naming a data-source attribute, not runtime user-visible text");
+		result.Errors.Should().BeEmpty(
+			because: "designer metadata must not produce a localizable-text validation error");
+	}
+
+	[Test]
 	[Description("A panel/tab title set as an inline literal is rejected — titles are user-visible text and must be localizable.")]
 	public void ValidateLocalizableTextLiterals_TitleInlineLiteral_ReturnsInvalid() {
 		// Arrange
@@ -3258,6 +3278,57 @@ public sealed class SchemaValidationServiceTests
 			}
 		]
 	""";
+
+	[Test]
+	[Description("The caption-binding scanner skips _designOptions too, so the file has ONE rule about designer metadata rather than one scanner that walks it and one that does not.")]
+	public void ValidateInsertedWidgetCaptionResources_DesignerOptionsCaptionMapping_ReturnsValid() {
+		// Arrange - the designer copy carries a resource-key-shaped caption that resolves nowhere.
+		string body = BuildDiffBackedPageBody(
+			"""[{"operation":"insert","name":"Playbook_g0bz14m","values":{"type":"crt.Playbook","_designOptions":{"templateValuesMapping":{"caption":"$Resources.Strings.PlaybookDesignerOnlyCaption"}}}}]""",
+			"[]");
+
+		// Act
+		SchemaValidationResult result = SchemaValidationService.ValidateInsertedWidgetCaptionResources(body);
+
+		// Assert
+		result.IsValid.Should().BeTrue(
+			because: "_designOptions is designer bookkeeping - no runtime binding reads it, so an unresolvable key there renders nothing");
+		result.Errors.Should().BeEmpty(
+			because: "both localizable-text scanners must treat designer metadata identically");
+	}
+
+	[TestCase("not json at all", TestName = "ValidateMobileBodyStructure_NotJson_ReturnsInvalid")]
+	[TestCase("{ \"viewConfigDiff\": [ }", TestName = "ValidateMobileBodyStructure_MalformedJson_ReturnsInvalid")]
+	[TestCase("[]", TestName = "ValidateMobileBodyStructure_RootIsNotAnObject_ReturnsInvalid")]
+	[TestCase("", TestName = "ValidateMobileBodyStructure_Empty_ReturnsInvalid")]
+	[Description("The mobile structural floor rejects anything that is not a JSON object - it is the mobile counterpart of the web syntax gate and update-page validate=false does not bypass it.")]
+	public void ValidateMobileBodyStructure_StructurallyBrokenBody_ReturnsInvalid(string body) {
+		// Act
+		SchemaValidationResult result = SchemaValidationService.ValidateMobileBodyStructure(body);
+
+		// Assert
+		result.IsValid.Should().BeFalse(
+			because: "a body that is not a JSON object is not a page and must never be persisted");
+		result.Errors.Should().NotBeEmpty(
+			because: "the caller needs to know why the body was refused");
+	}
+
+	[Test]
+	[Description("The mobile structural floor passes a body that parses to an object even when it carries sections the CONTENT rules would reject - that split is what makes validate=false meaningful.")]
+	public void ValidateMobileBodyStructure_ContentRuleViolation_ReturnsValid() {
+		// Arrange
+		string body = """{"viewConfigDiff":[],"handlers":[]}""";
+
+		// Act
+		SchemaValidationResult structureResult = SchemaValidationService.ValidateMobileBodyStructure(body);
+		SchemaValidationResult contentResult = SchemaValidationService.ValidateMobileBody(body);
+
+		// Assert
+		structureResult.IsValid.Should().BeTrue(
+			because: "'handlers' is a CONTENT rule, not a structural one - the body itself is a well-formed JSON object");
+		contentResult.IsValid.Should().BeFalse(
+			because: "the full validator still rejects the AMD-only section when content validation is on");
+	}
 
 	[Test]
 	[Description("Inserted metric widget whose #ResourceString title key is neither registered, DS-bound, nor Usr-derivable and is not passed in resources is rejected (ENG-93098) — the binding would render raw $Resources.Strings.<key>.")]
@@ -6723,6 +6794,116 @@ public sealed class SchemaValidationServiceTests
 	}
 
         #endregion
+
+	#region ValidateCustomValidatorReferences
+
+	[Test]
+	[Description("A custom validator reference is valid when the final SCHEMA_VALIDATORS object declares the same type key")]
+	public void ValidateCustomValidatorReferences_WhenTypeIsDeclared_ReturnsValid() {
+		// Arrange
+		string body = """
+			/**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/[{"operation":"merge","path":["attributes"],"values":{"UsrName":{"validators":{"Probe":{"type":"usr.Probe"}}}}}]/**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/
+			/**SCHEMA_VALIDATORS*/{"usr.Probe":{"validator":function(){return function(){return null;};},"params":[],"async":false}}/**SCHEMA_VALIDATORS*/
+			""";
+
+		// Act
+		SchemaValidationResult result = SchemaValidationService.ValidateCustomValidatorReferences(body);
+
+		// Assert
+		result.IsValid.Should().BeTrue("because the final page body declares the referenced custom validator type");
+		result.Errors.Should().BeEmpty("because every custom validator reference is resolved locally");
+	}
+
+	[Test]
+	[Description("A custom validator reference is rejected when the final SCHEMA_VALIDATORS object omits its type key")]
+	public void ValidateCustomValidatorReferences_WhenTypeIsMissing_ReturnsError() {
+		// Arrange
+		string body = """
+			/**SCHEMA_VIEW_MODEL_CONFIG*/{"attributes":{"UsrName":{"validators":{"Probe":{"type":"usr.Missing"}}}}}/**SCHEMA_VIEW_MODEL_CONFIG*/
+			/**SCHEMA_VALIDATORS*/{}/**SCHEMA_VALIDATORS*/
+			""";
+
+		// Act
+		SchemaValidationResult result = SchemaValidationService.ValidateCustomValidatorReferences(body);
+
+		// Assert
+		result.IsValid.Should().BeFalse("because the final page body does not declare the referenced custom validator type");
+		result.Errors.Should().ContainSingle(error => error.Contains("UsrName") && error.Contains("usr.Missing"),
+			because: "the validation error must identify both the attribute and unresolved validator type");
+	}
+
+	[Test]
+	[Description("A built-in crt validator reference does not require a page-local SCHEMA_VALIDATORS declaration")]
+	public void ValidateCustomValidatorReferences_WhenTypeIsBuiltIn_ReturnsValid() {
+		// Arrange
+		string body = """
+			/**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/[{"operation":"merge","path":["attributes"],"values":{"UsrName":{"validators":{"Required":{"type":"crt.Required"}}}}}]/**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/
+			/**SCHEMA_VALIDATORS*/{}/**SCHEMA_VALIDATORS*/
+			""";
+
+		// Act
+		SchemaValidationResult result = SchemaValidationService.ValidateCustomValidatorReferences(body);
+
+		// Assert
+		result.IsValid.Should().BeTrue("because built-in crt validators are resolved by the platform");
+		result.Errors.Should().BeEmpty("because built-in validator types do not need page-local factories");
+	}
+
+	[Test]
+	[Description("A custom validator reference on a diff targeting one attribute directly is rejected when its type key is undeclared")]
+	public void ValidateCustomValidatorReferences_WhenTargetedAttributeTypeIsMissing_ReturnsError() {
+		// Arrange
+		string body = """
+			/**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/[{"operation":"merge","path":["attributes","UsrName"],"values":{"validators":{"Probe":{"type":"usr.Missing"}}}}]/**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/
+			/**SCHEMA_VALIDATORS*/{}/**SCHEMA_VALIDATORS*/
+			""";
+
+		// Act
+		SchemaValidationResult result = SchemaValidationService.ValidateCustomValidatorReferences(body);
+
+		// Assert
+		result.IsValid.Should().BeFalse("because a targeted attribute diff still introduces a custom validator reference");
+		result.Errors.Should().ContainSingle(error => error.Contains("UsrName") && error.Contains("usr.Missing"),
+			because: "the diagnostic must preserve the attribute name from the diff path");
+	}
+
+	[Test]
+	[Description("A custom validator reference in a diff targeting an attribute validators map is rejected when its type key is undeclared")]
+	public void ValidateCustomValidatorReferences_WhenTargetedValidatorsMapTypeIsMissing_ReturnsError() {
+		// Arrange
+		string body = """
+			/**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/[{"operation":"merge","path":["attributes","UsrName","validators"],"values":{"Probe":{"type":"usr.Missing"}}}]/**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/
+			/**SCHEMA_VALIDATORS*/{}/**SCHEMA_VALIDATORS*/
+			""";
+
+		// Act
+		SchemaValidationResult result = SchemaValidationService.ValidateCustomValidatorReferences(body);
+
+		// Assert
+		result.IsValid.Should().BeFalse("because a validators-map diff still introduces a custom validator reference");
+		result.Errors.Should().ContainSingle(error => error.Contains("UsrName") && error.Contains("usr.Missing"),
+			because: "the diagnostic must preserve the owning attribute name from the diff path");
+	}
+
+	[Test]
+	[Description("A custom validator reference in a diff targeting one validator entry is rejected when its type key is undeclared")]
+	public void ValidateCustomValidatorReferences_WhenTargetedValidatorEntryTypeIsMissing_ReturnsError() {
+		// Arrange
+		string body = """
+			/**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/[{"operation":"merge","path":["attributes","UsrName","validators","Probe"],"values":{"type":"usr.Missing"}}]/**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/
+			/**SCHEMA_VALIDATORS*/{}/**SCHEMA_VALIDATORS*/
+			""";
+
+		// Act
+		SchemaValidationResult result = SchemaValidationService.ValidateCustomValidatorReferences(body);
+
+		// Assert
+		result.IsValid.Should().BeFalse("because a validator-entry diff still introduces a custom validator reference");
+		result.Errors.Should().ContainSingle(error => error.Contains("UsrName") && error.Contains("usr.Missing"),
+			because: "the diagnostic must preserve the owning attribute name from the diff path");
+	}
+
+	#endregion
 
 	#region ValidateMobileNoValidatorReferences
 

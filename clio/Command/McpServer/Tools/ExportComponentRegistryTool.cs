@@ -72,6 +72,13 @@ public sealed class ExportComponentRegistryTool(
 	// completed export into an "already exists" failure. One boolean cannot describe both shapes, so it
 	// carries the safe value for the non-repeatable one.
 	[McpServerTool(Name = ToolName, ReadOnly = false, Destructive = false, Idempotent = false, OpenWorld = false)]
+	[McpToolExecution(
+		Location = McpToolExecutionLocation.Worker,
+		Lifetime = McpToolExecutionLifetime.PerCall,
+		OperationFamily = McpToolOperationFamily.None,
+		BudgetPolicy = McpToolBudgetPolicy.ParentKillDefault,
+		RequiresClientRequests = McpToolClientRequests.None,
+		SharedFileResource = McpToolSharedFileResource.None)]
 	[Description(
 		"Write the FULL Freedom UI component registry for a resolved platform version to a file — one call " +
 		"instead of dozens of get-component-info round-trips when validating many crt.* componentTypes/propMap " +
@@ -183,7 +190,8 @@ public sealed class ExportComponentRegistryTool(
 		using CancellationTokenSource budgetCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
 		budgetCts.CancelAfter(VersionResolutionBudget);
 		try {
-			return await resolverFactory.Create(settings)
+			using IOwnedPlatformVersionResolver resolver = resolverFactory.CreateOwned(settings);
+			return await resolver
 				.ResolveAsync(budgetCts.Token)
 				.WaitAsync(VersionResolutionBudget, cancellationToken)
 				.ConfigureAwait(false);

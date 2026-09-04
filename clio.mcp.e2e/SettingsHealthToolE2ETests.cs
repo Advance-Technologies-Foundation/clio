@@ -23,7 +23,14 @@ public sealed class SettingsHealthToolE2ETests {
 		// Arrange
 		McpE2ESettings settings = TestConfiguration.Load();
 		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
-		settings.ProcessEnvironmentVariables["HOME"] = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+		// This fixture deliberately installs a catalog whose ActiveEnvironmentKey does not resolve, which
+		// is precisely the state that makes SettingsBootstrapService report CanExecuteEnvTools = false —
+		// so every environment-touching tool in the suite answers "clio settings bootstrap is broken" and
+		// every reachability probe skips. Written to the SHARED catalog (setting HOME alone leaves the
+		// suite-owned CLIO_HOME in charge) that blast radius is the whole run, and the snapshot/restore
+		// that is supposed to contain it is a non-atomic write that takes none of clio's cross-process
+		// locks. A private home keeps the deliberate breakage where it belongs.
+		IsolatedClioHome.CreateAndRedirect(settings, "settings-health-home");
 		TemporaryClioSettingsOverride settingsOverride = TemporaryClioSettingsOverride.SetWrongActiveEnvironmentKey(
 			settings.ClioProcessPath,
 			settings.ProcessEnvironmentVariables);

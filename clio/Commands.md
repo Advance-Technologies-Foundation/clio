@@ -227,7 +227,7 @@ Use `clio help` for the terminal overview and `clio <command> --help` for comman
 <a id="up"></a>
 - [`unlock-package`](docs/commands/unlock-package.md) - Unlock a package in Creatio, `up`
 <a id="autoupdate"></a>
-- [`autoupdate`](docs/commands/autoupdate.md) - Enable or disable automatic updates on startup
+- [`autoupdate`](docs/commands/autoupdate.md) - Enable or disable automatic clio updates on startup
 <a id="experimental"></a>
 <a id="exp"></a>
 - [`experimental`](docs/commands/experimental.md) - List and toggle clio experimental feature flags, `exp`
@@ -384,7 +384,7 @@ Use `clio help` for the terminal overview and `clio <command> --help` for comman
 <a id="client-unit-schema-get"></a>
 - [`get-client-unit-schema`](docs/commands/get-client-unit-schema.md) - Read body and metadata of a client unit (JavaScript) schema on a remote Creatio environment, `client-unit-schema-get`
 <a id="get-entity-schema-column-properties"></a>
-- [`get-entity-schema-column-properties`](docs/commands/get-entity-schema-column-properties.md) - Get column properties from a remote Creatio entity schema
+- [`get-entity-schema-column-properties`](docs/commands/get-entity-schema-column-properties.md) - Get one column's properties (omit `--package` for merged discovery across all packages)
 <a id="find-entity-schema"></a>
 - [`find-entity-schema`](docs/commands/find-entity-schema.md) - Find entity schemas in a Creatio environment by name, pattern, or UId
 <a id="get-entity-schema-properties"></a>
@@ -524,7 +524,7 @@ Use `clio help` for the terminal overview and `clio <command> --help` for comman
 <a id="dc"></a>
 <a id="ic"></a>
 <a id="install-creatio"></a>
-- [`deploy-creatio`](docs/commands/deploy-creatio.md) - Install Creatio with collision-safe IIS port reservation and local infrastructure defaults, `dc`, `ic`, `install-creatio`
+- [`deploy-creatio`](docs/commands/deploy-creatio.md) - Install Creatio with automatic collision-safe IIS port selection and local infrastructure defaults, `dc`, `ic`, `install-creatio`
 <a id="deploy-identity"></a>
 - [`deploy-identity`](docs/commands/deploy-identity.md) - Deploy IdentityService to IIS and connect it to a Creatio environment
 <a id="get-identity-service-config"></a>
@@ -740,7 +740,7 @@ Use `clio help` for the terminal overview and `clio <command> --help` for comman
 <a id="register"></a>
 - [`register`](docs/commands/register.md) - Register clio shell integrations
 <a id="config"></a>
-- [`config`](docs/commands/config.md) - View and set clio configuration defaults (e.g. deploy-creatio defaults used by the Explorer context menu)
+- [`config`](docs/commands/config.md) - View and set clio configuration defaults, including the deploy-creatio IIS port range
 <a id="pin-certificate"></a>
 - [`pin-certificate`](docs/commands/pin-certificate.md) - Select the preferred local IIS certificate for HTTPS deployments
 <a id="set-app-icon"></a>

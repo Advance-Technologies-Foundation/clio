@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.IO;
 using System.IO.Abstractions.TestingHelpers;
@@ -36,6 +36,154 @@ public class PageToolsTests
 	[Description("Verifies that PageUpdateTool has the correct MCP tool name")]
 	public void PageUpdateTool_HasCorrectName() {
 		PageUpdateTool.ToolName.Should().Be("update-page", "because the MCP tool name must match the protocol contract");
+	}
+
+	[Test]
+	[Description("The update-page MCP contract documents validate=false as a guarded escape hatch while retaining the syntax and AST loadability floor.")]
+	public void PageUpdateTool_Description_Should_Document_ValidationEscapeHatch() {
+		// Arrange
+		var method = typeof(PageUpdateTool).GetMethod(nameof(PageUpdateTool.UpdatePage))!;
+		string description = method.GetCustomAttributes(typeof(System.ComponentModel.DescriptionAttribute), false)
+			.Cast<System.ComponentModel.DescriptionAttribute>().Single().Description;
+
+		// Act
+		bool mentionsEscapeHatch = description.Contains("validate=false", StringComparison.Ordinal);
+
+		// Assert
+		mentionsEscapeHatch.Should().BeTrue(
+			because: "callers need to know that validation can be bypassed only explicitly for pre-existing defects");
+		description.Should().Contain("JavaScript syntax",
+			because: "the contract must make clear that validate=false does not bypass the mandatory syntax floor");
+	}
+
+	[Test]
+	[Description("Serializes the update-page validation escape hatch using the kebab-case MCP argument name.")]
+	public void PageUpdateArgs_ShouldSerializeValidateUsingKebabCase() {
+		// Arrange
+		PageUpdateArgs args = new("UsrValidationEscape_FormPage", "define(...)", null, null, null, null, null, null,
+			Validate: false);
+
+		// Act
+		string json = System.Text.Json.JsonSerializer.Serialize(args);
+
+		// Assert
+		json.Should().Contain("\"validate\":false",
+			because: "the MCP contract must expose the explicit validation escape hatch");
+		json.Should().NotContain("\"validation\":",
+			because: "the argument is named validate in the MCP contract");
+	}
+
+	[Test]
+	[Description("update-page validate=false bypasses pre-existing content and run-process validation while still allowing the command save path to run.")]
+	public async System.Threading.Tasks.Task PageUpdateTool_Should_BypassContentValidation_WhenValidateIsFalse() {
+		// Arrange
+		IApplicationClient applicationClient = Substitute.For<IApplicationClient>();
+		applicationClient.ExecutePostRequest(
+				Arg.Is<string>(url => url.Contains("GetSchema")), Arg.Any<string>())
+			.Returns(new JObject {
+				["success"] = true,
+				["schema"] = new JObject {
+					["body"] = CreatePageBody(),
+					["localizableStrings"] = new JArray()
+				}
+			}.ToString());
+		applicationClient.ExecutePostRequest(
+				Arg.Is<string>(url => url.Contains("SaveSchema")), Arg.Any<string>())
+			.Returns(new JObject { ["success"] = true }.ToString());
+		PageUpdateTool tool = BuildAppendGuardTool(applicationClient);
+		string body = CreatePageBody(
+			viewConfigDiff: """[{"operation":"insert","name":"Playbook_g0bz14m","values":{"type":"crt.Playbook","_designOptions":{"templateValuesMapping":{"caption":"Playbook_KnowledgeBaseDS_Name"}}}},{"operation":"insert","name":"RunBpButton","values":{"type":"crt.Button","clicked":{"request":"crt.RunBusinessProcessRequest","params":{"processRunType":"RegardlessOfThePage"}}}}]""");
+		PageUpdateArgs args = new("UsrValidationEscape_FormPage", body, null, false, null, null, null, null,
+			SkipSampling: true, TargetSchemaUId: "validation-schema-uid", Validate: false);
+
+		// Act
+		PageUpdateResponse response = await tool.UpdatePage(args, null);
+
+		// Assert
+		(response.Error ?? string.Empty).Should().NotContain("processName",
+			because: "validate=false must bypass the pre-existing run-process structural false positive");
+		(response.Error ?? string.Empty).Should().NotContain("user-visible text",
+			because: "validate=false must bypass the pre-existing designer metadata false positive");
+		response.Success.Should().BeTrue(
+			because: "validation disabled must allow the syntactically valid replacement to be persisted");
+		applicationClient.Received(1).ExecutePostRequest(
+			Arg.Is<string>(url => url.Contains("SaveSchema")), Arg.Any<string>());
+	}
+
+	[Test]
+	[Description("The MCP adapter words the escape-hatch hint for a command-layer content failure, so discoverability survives moving the hint off the CLI-reachable command.")]
+	public async System.Threading.Tasks.Task PageUpdateTool_Should_NameTheEscapeHatch_WhenCommandContentValidationFails() {
+		// Arrange
+		IApplicationClient applicationClient = Substitute.For<IApplicationClient>();
+		applicationClient.ExecutePostRequest(
+				Arg.Is<string>(url => url.Contains("GetSchema")), Arg.Any<string>())
+			.Returns(new JObject {
+				["success"] = true,
+				["schema"] = new JObject {
+					["body"] = CreatePageBody(),
+					["localizableStrings"] = new JArray()
+				}
+			}.ToString());
+		PageUpdateTool tool = BuildAppendGuardTool(applicationClient);
+		// A mobile body carrying an AMD-only 'handlers' section - a CONTENT rule, the half validate=false skips.
+		PageUpdateArgs args = new("UsrMobile_FormPage",
+			"""
+			{
+			  "viewConfigDiff": [],
+			  "handlers": []
+			}
+			""",
+			null, true, null, null, null, null,
+			SkipSampling: true, TargetSchemaUId: "validation-schema-uid");
+
+		// Act
+		PageUpdateResponse response = await tool.UpdatePage(args, null);
+
+		// Assert
+		response.Success.Should().BeFalse(
+			because: "the content rule applies with validation on");
+		response.Error.Should().Contain("validate=false",
+			because: "discoverability was the original complaint - an MCP caller must learn about the flag at "
+				+ "the point of failure, even though the command layer no longer words the hint itself");
+	}
+
+	[Test]
+	[Description("update-page allows validate=false together with force=true - the flags are orthogonal - but warns that both guards are down, instead of dead-ending a caller who must overwrite an external change on a page carrying a pre-existing defect.")]
+	public async System.Threading.Tasks.Task PageUpdateTool_Should_WarnRatherThanReject_WhenValidationBypassMeetsForce() {
+		// Arrange
+		PageUpdateTool tool = BuildAppendGuardTool();
+		PageUpdateArgs args = new("UsrValidationEscape_FormPage", CreatePageBody(), null, true, null, null, null, null,
+			SkipSampling: true, Force: true, Validate: false);
+
+		// Act
+		PageUpdateResponse response = await tool.UpdatePage(args, null);
+
+		// Assert
+		(response.Error ?? string.Empty).Should().NotContain("cannot be combined",
+			because: "sync-pages already supports this pair through its per-page force flag, so update-page must not "
+				+ "refuse it and leave the caller with no way through");
+		response.Warnings.Should().Contain(warning => warning.Contains("baseline/conflict guard"),
+			because: "relaxing both guards at once must be visible in the response rather than silent");
+	}
+
+	[Test]
+	[Description("update-page validate=false does not bypass the mandatory JavaScript syntax gate.")]
+	public async System.Threading.Tasks.Task PageUpdateTool_Should_RetainSyntaxGate_WhenValidateIsFalse() {
+		// Arrange
+		PageUpdateTool tool = BuildSyntaxFailureTool(out IApplicationClient applicationClient);
+		PageUpdateArgs args = new("UsrValidationEscapeSyntax_FormPage", SyntaxBrokenMarkerBody, null, true, null, null, null, null,
+			SkipSampling: true, Validate: false);
+
+		// Act
+		PageUpdateResponse response = await tool.UpdatePage(args, null);
+
+		// Assert
+		response.Success.Should().BeFalse(
+			because: "validation=false must not permit a JavaScript body that cannot load");
+		response.Error.Should().Contain("JavaScript syntax error",
+			because: "the mandatory syntax gate must remain the reported failure when content validation is disabled");
+		applicationClient.ReceivedCalls().Should().BeEmpty(
+			because: "a syntax-invalid body must never reach the remote save path");
 	}
 
 	[Test]
@@ -2215,6 +2363,164 @@ public class PageToolsTests
 	}
 
 	[Test]
+	[Description("validate=false does NOT disable the mobile structural floor: a body that is not valid JSON is still rejected, so a malformed mobile body can never be persisted.")]
+	[Category("Unit")]
+	public void TryUpdatePage_WhenMobileBodyIsMalformedJson_AndValidateIsFalse_StillRejects() {
+		// Arrange
+		IApplicationClient applicationClient = Substitute.For<IApplicationClient>();
+		IServiceUrlBuilder serviceUrlBuilder = Substitute.For<IServiceUrlBuilder>();
+		ILogger logger = Substitute.For<ILogger>();
+		SetupSchemaMetadata(applicationClient, serviceUrlBuilder, "UsrMobile_FormPage");
+		PageUpdateCommand command = new(applicationClient, serviceUrlBuilder, logger, Substitute.For<IPageBaselineGuard>());
+		PageUpdateOptions options = new() {
+			SchemaName = "UsrMobile_FormPage",
+			// Unterminated array - valid enough to be recognised as a mobile body, not valid JSON.
+			Body = "{ \"viewConfigDiff\": [ }",
+			Validate = false,
+			DryRun = true
+		};
+
+		// Act
+		bool result = command.TryUpdatePage(options, out PageUpdateResponse response);
+
+		// Assert
+		result.Should().BeFalse(
+			because: "the structural floor is the mobile counterpart of the web syntax gate and is not bypassable; "
+				+ "nothing downstream re-checks it (CollectMobileViewModelPaths is fail-soft)");
+		response.Error.Should().Contain("not valid JSON",
+			because: "the caller must be told the body is structurally broken, not silently get a saved page");
+	}
+
+	[Test]
+	[Description("validate=false skips the mobile CONTENT rules: an AMD-only 'handlers' section no longer blocks the save once the escape hatch is on.")]
+	[Category("Unit")]
+	public void TryUpdatePage_WhenMobileBodyHasHandlers_AndValidateIsFalse_SkipsContentRules() {
+		// Arrange
+		IApplicationClient applicationClient = Substitute.For<IApplicationClient>();
+		IServiceUrlBuilder serviceUrlBuilder = Substitute.For<IServiceUrlBuilder>();
+		ILogger logger = Substitute.For<ILogger>();
+		SetupSchemaMetadata(applicationClient, serviceUrlBuilder, "UsrMobile_FormPage");
+		PageUpdateCommand command = new(applicationClient, serviceUrlBuilder, logger, Substitute.For<IPageBaselineGuard>());
+		PageUpdateOptions options = new() {
+			SchemaName = "UsrMobile_FormPage",
+			Body = """
+				{
+				  "viewConfigDiff": [],
+				  "handlers": []
+				}
+				""",
+			Validate = false,
+			DryRun = true
+		};
+
+		// Act
+		bool result = command.TryUpdatePage(options, out PageUpdateResponse response);
+
+		// Assert
+		result.Should().BeTrue(
+			because: "the disallowed 'handlers' section is a CONTENT rule, which is the half the escape hatch skips");
+		(response.Error ?? string.Empty).Should().NotContain("handlers",
+			because: "the content rule must not fire once validation is explicitly disabled");
+	}
+
+	[Test]
+	[Description("validate=false does NOT drop replace-mode marker integrity on a web page - a markerless body would produce a page the tool could no longer read back.")]
+	[Category("Unit")]
+	public void TryUpdatePage_WhenWebReplaceBodyMissesMarkers_AndValidateIsFalse_StillRejects() {
+		// Arrange
+		IApplicationClient applicationClient = Substitute.For<IApplicationClient>();
+		IServiceUrlBuilder serviceUrlBuilder = Substitute.For<IServiceUrlBuilder>();
+		ILogger logger = Substitute.For<ILogger>();
+		serviceUrlBuilder.Build(Arg.Any<string>())
+			.Returns(callInfo => "http://test" + callInfo.Arg<string>());
+		applicationClient.ExecutePostRequest(
+				Arg.Is<string>(url => url.Contains("SelectQuery")),
+				Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+			.Returns(new JObject {
+				["success"] = true,
+				["rows"] = new JArray { new JObject { ["UId"] = "web-schema-uid", ["SchemaType"] = 9 } }
+			}.ToString());
+		PageUpdateCommand command = new(applicationClient, serviceUrlBuilder, logger,
+			Substitute.For<IPageBaselineGuard>(), CreateHierarchyClientFor("web-schema-uid"));
+		PageUpdateOptions options = new() {
+			SchemaName = "UsrWeb_FormPage",
+			// Parses as JavaScript, so the syntax gate alone would let it through.
+			Body = "define('UsrWeb_FormPage', [], function() { return { viewConfigDiff: [] }; });",
+			Validate = false,
+			DryRun = true
+		};
+
+		// Act
+		bool result = command.TryUpdatePage(options, out PageUpdateResponse response);
+
+		// Assert
+		result.Should().BeFalse(
+			because: "markers are the 'is this still a recognizable page' test - without them PageSchemaSectionReader "
+				+ "cannot extract sections and append-merge is dead on that page");
+		response.Error.Should().Contain("marker",
+			because: "the marker floor, not a downstream failure, must be the reported reason");
+	}
+
+	[Test]
+	[Description("A content-validation failure is MARKED as skippable but does not name validate=false in the command layer: PageUpdateCommand is CLI-reachable and Validate carries no [Option], so a CLI user must not be pointed at a flag their parser rejects. The MCP adapter words the hint off this marker.")]
+	[Category("Unit")]
+	public void TryUpdatePage_WhenContentValidationFails_MarksTheFailureWithoutNamingTheMcpOnlyFlag() {
+		// Arrange
+		IApplicationClient applicationClient = Substitute.For<IApplicationClient>();
+		IServiceUrlBuilder serviceUrlBuilder = Substitute.For<IServiceUrlBuilder>();
+		ILogger logger = Substitute.For<ILogger>();
+		SetupSchemaMetadata(applicationClient, serviceUrlBuilder, "UsrMobile_FormPage");
+		PageUpdateCommand command = new(applicationClient, serviceUrlBuilder, logger, Substitute.For<IPageBaselineGuard>());
+		PageUpdateOptions options = new() {
+			SchemaName = "UsrMobile_FormPage",
+			Body = """
+				{
+				  "viewConfigDiff": [],
+				  "handlers": []
+				}
+				""",
+			DryRun = true
+		};
+
+		// Act
+		bool result = command.TryUpdatePage(options, out PageUpdateResponse response);
+
+		// Assert
+		result.Should().BeFalse(
+			because: "the content rule still applies with validation on");
+		response.ContentValidationFailure.Should().BeTrue(
+			because: "the MCP adapter needs to know this failure came from the half validate=false skips");
+		response.Error.Should().NotContain("validate=false",
+			because: "a CLI user cannot set validate, so the command layer must not advertise it");
+	}
+
+	[Test]
+	[Description("A structural-floor failure is NOT marked as skippable, so the escape hatch is never advertised for a rule validate=false cannot bypass.")]
+	[Category("Unit")]
+	public void TryUpdatePage_WhenStructuralFloorFails_DoesNotMarkTheFailureAsSkippable() {
+		// Arrange
+		IApplicationClient applicationClient = Substitute.For<IApplicationClient>();
+		IServiceUrlBuilder serviceUrlBuilder = Substitute.For<IServiceUrlBuilder>();
+		ILogger logger = Substitute.For<ILogger>();
+		SetupSchemaMetadata(applicationClient, serviceUrlBuilder, "UsrMobile_FormPage");
+		PageUpdateCommand command = new(applicationClient, serviceUrlBuilder, logger, Substitute.For<IPageBaselineGuard>());
+		PageUpdateOptions options = new() {
+			SchemaName = "UsrMobile_FormPage",
+			Body = "{ this is not valid json",
+			DryRun = true
+		};
+
+		// Act
+		bool result = command.TryUpdatePage(options, out PageUpdateResponse response);
+
+		// Assert
+		result.Should().BeFalse(
+			because: "the mobile structural floor rejects a body that is not a JSON object");
+		response.ContentValidationFailure.Should().BeFalse(
+			because: "the structural floor is not bypassable, so the escape hatch must never be advertised for it");
+	}
+
+	[Test]
 	[Description("TryUpdatePage rejects a mobile JSON body that contains a 'validators' section.")]
 	[Category("Unit")]
 	public void TryUpdatePage_WhenMobileBodyHasValidators_ReturnsValidationError() {
@@ -4129,6 +4435,64 @@ public class PageToolsTests
 	}
 
 	[Test]
+	[Description("update-page append dry-run rejects a custom validator binding that remains unresolved after merging, before any save request")]
+	public void TryUpdatePage_AppendDryRun_Should_Reject_Unresolved_CustomValidator_Before_Save() {
+		// Arrange
+		var applicationClient = Substitute.For<IApplicationClient>();
+		var serviceUrlBuilder = Substitute.For<IServiceUrlBuilder>();
+		var logger = Substitute.For<ILogger>();
+		var hierarchyClient = Substitute.For<IPageDesignerHierarchyClient>();
+		const string originalUId = "86416224-550a-4087-87d9-d4ebc9aa69c8";
+		const string designPkg = "520a3697-4d73-c598-38d4-a7501f8c8e9b";
+		serviceUrlBuilder.Build(Arg.Any<string>()).Returns(call => "http://test" + call.ArgAt<string>(0));
+		hierarchyClient.GetDesignPackageUId(originalUId).Returns(designPkg);
+		hierarchyClient.GetParentSchemas(originalUId, designPkg).Returns(new List<PageDesignerHierarchySchema> {
+			new() { UId = originalUId, Name = "UsrValidator_FormPage", PackageUId = designPkg, PackageName = "UsrValidator" }
+		});
+		string currentBody = "define(\"UsrValidator_FormPage\", /**SCHEMA_DEPS*/[]/**SCHEMA_DEPS*/, function/**SCHEMA_ARGS*/()/**SCHEMA_ARGS*/ { return { " +
+			"viewConfigDiff: /**SCHEMA_VIEW_CONFIG_DIFF*/[]/**SCHEMA_VIEW_CONFIG_DIFF*/, " +
+			"viewModelConfigDiff: /**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/[]/**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/, " +
+			"modelConfigDiff: /**SCHEMA_MODEL_CONFIG_DIFF*/[]/**SCHEMA_MODEL_CONFIG_DIFF*/, " +
+			"handlers: /**SCHEMA_HANDLERS*/[]/**SCHEMA_HANDLERS*/, " +
+			"converters: /**SCHEMA_CONVERTERS*/{}/**SCHEMA_CONVERTERS*/, " +
+			"validators: /**SCHEMA_VALIDATORS*/{}/**SCHEMA_VALIDATORS*/ }; });";
+		var metadataResponse = new JObject {
+			["success"] = true,
+			["rows"] = new JArray { new JObject { ["UId"] = originalUId } }
+		};
+		var getSchemaResponse = new JObject {
+			["success"] = true,
+			["schema"] = new JObject { ["uId"] = originalUId, ["name"] = "UsrValidator_FormPage", ["body"] = currentBody, ["package"] = new JObject { ["uId"] = designPkg } }
+		};
+		bool saveAttempted = false;
+		int callIndex = 0;
+		applicationClient.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+			.Returns(_ => {
+				callIndex++;
+				if (callIndex == 1) return metadataResponse.ToString();
+				if (callIndex == 2) return getSchemaResponse.ToString();
+				saveAttempted = true;
+				return new JObject { ["success"] = true }.ToString();
+			});
+		string incomingBody = "/**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/[{\"operation\":\"merge\",\"path\":[\"attributes\"],\"values\":{\"UsrName\":{\"validators\":{\"Probe\":{\"type\":\"usr.Missing\"}}}}}]/**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/";
+		var command = new PageUpdateCommand(applicationClient, serviceUrlBuilder, logger, Substitute.For<IPageBaselineGuard>(), hierarchyClient);
+
+		// Act
+		bool ok = command.TryUpdatePage(new PageUpdateOptions {
+			SchemaName = "UsrValidator_FormPage",
+			Body = incomingBody,
+			Mode = "append",
+			DryRun = true
+		}, out PageUpdateResponse response);
+
+		// Assert
+		ok.Should().BeFalse(because: "dry-run must validate the same final merged body that a real append would save");
+		response.ContentValidationFailure.Should().BeTrue(because: "an unresolved custom validator is a skippable content-rule failure");
+		response.Error.Should().Contain("usr.Missing", because: "the failure must identify the unresolved validator type");
+		saveAttempted.Should().BeFalse(because: "dry-run must never send a SaveSchema request");
+	}
+
+	[Test]
 	[Description("update-page append: a valid diff-form incoming fragment against a full-config CURRENT server body fails through the public TryUpdatePage path with the server-side message, without the misdirecting 'Append merge failed'/'marker pairs' wrapper text (ENG-94422)")]
 	public void TryUpdatePage_AppendMode_Should_ReportServerSideMessage_WhenCurrentBodyIsFullConfig() {
 		// Arrange
@@ -4637,6 +5001,111 @@ public class PageToolsTests
 
 		merged.Should().Contain("/**SCHEMA_CONVERTERS*/{}/**SCHEMA_CONVERTERS*/",
 			because: "merging two empty converter sections must produce an empty converter section");
+	}
+
+	[Test]
+	[Description("PageBodyMerger validators merge: incoming validator keys are added while existing validator factories remain intact")]
+	public void PageBodyMerger_Should_Merge_Validators_By_Key() {
+		// Arrange
+		string currentBody = "/**SCHEMA_DEPS*/[]/**SCHEMA_DEPS*/ /**SCHEMA_ARGS*/()/**SCHEMA_ARGS*/ " +
+			"/**SCHEMA_VIEW_CONFIG_DIFF*/[]/**SCHEMA_VIEW_CONFIG_DIFF*/ " +
+			"/**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/[]/**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/ " +
+			"/**SCHEMA_MODEL_CONFIG_DIFF*/[]/**SCHEMA_MODEL_CONFIG_DIFF*/ " +
+			"/**SCHEMA_HANDLERS*/[]/**SCHEMA_HANDLERS*/ " +
+			"/**SCHEMA_CONVERTERS*/{}/**SCHEMA_CONVERTERS*/ " +
+			"/**SCHEMA_VALIDATORS*/{\"usr.Existing\":{validator:function(){return function(){return null;};},params:[],async:false}}/**SCHEMA_VALIDATORS*/";
+		string incomingBody = "/**SCHEMA_VIEW_CONFIG_DIFF*/[]/**SCHEMA_VIEW_CONFIG_DIFF*/ " +
+			"/**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/[]/**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/ " +
+			"/**SCHEMA_MODEL_CONFIG_DIFF*/[]/**SCHEMA_MODEL_CONFIG_DIFF*/ " +
+			"/**SCHEMA_HANDLERS*/[]/**SCHEMA_HANDLERS*/ " +
+			"/**SCHEMA_VALIDATORS*/{\"usr.Added\":{validator:function(config){return function(control){return control.value?null:{\"usr.Added\":{message:config.message}};};},params:[{name:\"message\"}],async:false}}/**SCHEMA_VALIDATORS*/";
+
+		// Act
+		string merged = PageBodyMerger.Merge(currentBody, incomingBody);
+
+		// Assert
+		merged.Should().Contain("usr.Existing", because: "the existing validator must survive an append");
+		merged.Should().Contain("usr.Added", because: "the incoming validator must be added to the saved body");
+		merged.Should().Contain("control.value?null", because: "the incoming JavaScript factory must be preserved verbatim");
+	}
+
+	[Test]
+	[Description("PageBodyMerger validators dedupe: an incoming validator factory replaces the current entry with the same type key")]
+	public void PageBodyMerger_Should_Replace_Validator_When_Key_Matches() {
+		// Arrange
+		string currentBody = "/**SCHEMA_DEPS*/[]/**SCHEMA_DEPS*/ /**SCHEMA_ARGS*/()/**SCHEMA_ARGS*/ " +
+			"/**SCHEMA_VIEW_CONFIG_DIFF*/[]/**SCHEMA_VIEW_CONFIG_DIFF*/ " +
+			"/**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/[]/**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/ " +
+			"/**SCHEMA_MODEL_CONFIG_DIFF*/[]/**SCHEMA_MODEL_CONFIG_DIFF*/ " +
+			"/**SCHEMA_HANDLERS*/[]/**SCHEMA_HANDLERS*/ " +
+			"/**SCHEMA_CONVERTERS*/{}/**SCHEMA_CONVERTERS*/ " +
+			"/**SCHEMA_VALIDATORS*/{\"usr.Unique\":{validator:function(){return function(){return \"old\";};},params:[],async:false},\"usr.Keep\":{validator:function(){return function(){return null;};},params:[],async:false}}/**SCHEMA_VALIDATORS*/";
+		string incomingBody = "/**SCHEMA_VIEW_CONFIG_DIFF*/[]/**SCHEMA_VIEW_CONFIG_DIFF*/ " +
+			"/**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/[]/**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/ " +
+			"/**SCHEMA_MODEL_CONFIG_DIFF*/[]/**SCHEMA_MODEL_CONFIG_DIFF*/ " +
+			"/**SCHEMA_HANDLERS*/[]/**SCHEMA_HANDLERS*/ " +
+			"/**SCHEMA_VALIDATORS*/{\"usr.Unique\":{validator:function(){return function(){return \"new\";};},params:[],async:false}}/**SCHEMA_VALIDATORS*/";
+
+		// Act
+		string merged = PageBodyMerger.Merge(currentBody, incomingBody);
+
+		// Assert
+		merged.Should().Contain("return \"new\"", because: "the incoming validator must win when its type key matches");
+		merged.Should().NotContain("return \"old\"", because: "the replaced validator factory must not remain in the saved body");
+		merged.Should().Contain("usr.Keep", because: "non-colliding existing validators must be preserved");
+	}
+
+	[Test]
+	[Description("PageBodyMerger validators: an empty incoming validator section preserves current validator factories")]
+	public void PageBodyMerger_Should_Preserve_Validators_When_Incoming_Is_Empty() {
+		// Arrange
+		string currentBody = "/**SCHEMA_DEPS*/[]/**SCHEMA_DEPS*/ /**SCHEMA_ARGS*/()/**SCHEMA_ARGS*/ " +
+			"/**SCHEMA_VIEW_CONFIG_DIFF*/[]/**SCHEMA_VIEW_CONFIG_DIFF*/ " +
+			"/**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/[]/**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/ " +
+			"/**SCHEMA_MODEL_CONFIG_DIFF*/[]/**SCHEMA_MODEL_CONFIG_DIFF*/ " +
+			"/**SCHEMA_HANDLERS*/[]/**SCHEMA_HANDLERS*/ " +
+			"/**SCHEMA_CONVERTERS*/{}/**SCHEMA_CONVERTERS*/ " +
+			"/**SCHEMA_VALIDATORS*/{\"usr.Keep\":{validator:function(){return function(){return null;};},params:[],async:false}}/**SCHEMA_VALIDATORS*/";
+		string incomingBody = "/**SCHEMA_VIEW_CONFIG_DIFF*/[]/**SCHEMA_VIEW_CONFIG_DIFF*/ " +
+			"/**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/[]/**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/ " +
+			"/**SCHEMA_MODEL_CONFIG_DIFF*/[]/**SCHEMA_MODEL_CONFIG_DIFF*/ " +
+			"/**SCHEMA_HANDLERS*/[]/**SCHEMA_HANDLERS*/ " +
+			"/**SCHEMA_VALIDATORS*/{}/**SCHEMA_VALIDATORS*/";
+
+		// Act
+		string merged = PageBodyMerger.Merge(currentBody, incomingBody);
+
+		// Assert
+		merged.Should().Contain("usr.Keep", because: "an empty incoming validator object must not erase current validators");
+	}
+
+	[Test]
+	[Description("PageBodyMerger validators: regex literals and comments remain intact and do not consume sibling validator entries")]
+	public void PageBodyMerger_Should_Preserve_Regex_Comment_And_Sibling_Validators() {
+		// Arrange
+		string currentBody = "define(\"X\", /**SCHEMA_DEPS*/[]/**SCHEMA_DEPS*/, function/**SCHEMA_ARGS*/()/**SCHEMA_ARGS*/ { return { " +
+			"viewConfigDiff: /**SCHEMA_VIEW_CONFIG_DIFF*/[]/**SCHEMA_VIEW_CONFIG_DIFF*/, " +
+			"viewModelConfigDiff: /**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/[]/**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/, " +
+			"modelConfigDiff: /**SCHEMA_MODEL_CONFIG_DIFF*/[]/**SCHEMA_MODEL_CONFIG_DIFF*/, " +
+			"handlers: /**SCHEMA_HANDLERS*/[]/**SCHEMA_HANDLERS*/, " +
+			"converters: /**SCHEMA_CONVERTERS*/{}/**SCHEMA_CONVERTERS*/, " +
+			"validators: /**SCHEMA_VALIDATORS*/{\"usr.Regex\":{validator:function(){return function(control){/* keep }, comment */ return /[},]/.test(control.value)?null:{};};},params:[],async:false},\"usr.Keep\":{validator:function(){return function(){return null;};},params:[],async:false}}/**SCHEMA_VALIDATORS*/ }; });";
+		string incomingBody = "/**SCHEMA_VIEW_CONFIG_DIFF*/[]/**SCHEMA_VIEW_CONFIG_DIFF*/ " +
+			"/**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/[]/**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/ " +
+			"/**SCHEMA_MODEL_CONFIG_DIFF*/[]/**SCHEMA_MODEL_CONFIG_DIFF*/ " +
+			"/**SCHEMA_HANDLERS*/[]/**SCHEMA_HANDLERS*/ " +
+			"/**SCHEMA_VALIDATORS*/{\"usr.Added\":{validator:function(){return function(){return null;};},params:[],async:false}}/**SCHEMA_VALIDATORS*/";
+
+		// Act
+		string merged = PageBodyMerger.Merge(currentBody, incomingBody);
+		PageBodySyntaxValidationResult syntax = PageBodySyntaxValidator.Validate(merged);
+
+		// Assert
+		merged.Should().Contain("/[},]/", because: "braces and commas inside a regex literal must remain raw JavaScript");
+		merged.Should().Contain("keep }, comment", because: "comment text must not alter object-entry boundaries");
+		merged.Should().Contain("usr.Keep", because: "a complex validator must not consume its following sibling");
+		merged.Should().Contain("usr.Added", because: "the incoming validator must still be appended");
+		syntax.IsValid.Should().BeTrue("because the keyed-object merge must produce syntactically valid JavaScript");
 	}
 
 	[Test]
@@ -5598,6 +6067,8 @@ public class PageToolsTests
 	private static PageUpdateTool BuildAppendGuardTool(IApplicationClient applicationClient = null) {
 		applicationClient ??= Substitute.For<IApplicationClient>();
 		IServiceUrlBuilder serviceUrlBuilder = Substitute.For<IServiceUrlBuilder>();
+		serviceUrlBuilder.Build(Arg.Any<string>())
+			.Returns(callInfo => "http://test" + callInfo.Arg<string>());
 		ILogger logger = Substitute.For<ILogger>();
 		PageUpdateCommand command = new(applicationClient, serviceUrlBuilder, logger, Substitute.For<IPageBaselineGuard>());
 		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();

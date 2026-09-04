@@ -164,6 +164,10 @@ internal class ServiceUrlBuilderCommandTests
 				ServiceUrlBuilder.KnownRoute.RuntimeEntitySchemaRequest,
 				new EnvironmentSettings {IsNetCore = false, Uri = "http://localhost"},
 				"http://localhost/0/DataService/json/SyncReply/RuntimeEntitySchemaRequest");
+			yield return new TestCaseDataWithEnvSettingAndKnownRoutes(
+				ServiceUrlBuilder.KnownRoute.GetEntitySchemaDesignItem,
+				new EnvironmentSettings {IsNetCore = false, Uri = "http://localhost"},
+				"http://localhost/0/ServiceModel/EntitySchemaDesignerService.svc/GetSchemaDesignItem");
 		}
 	}
 
@@ -194,6 +198,12 @@ internal class ServiceUrlBuilderCommandTests
 			yield return new TestCaseDataWithKnownRoutes(true, "http://localhost",
 				ServiceUrlBuilder.KnownRoute.RuntimeEntitySchemaRequest,
 				"http://localhost/DataService/json/SyncReply/RuntimeEntitySchemaRequest");
+			yield return new TestCaseDataWithKnownRoutes(false, "http://localhost",
+				ServiceUrlBuilder.KnownRoute.GetEntitySchemaDesignItem,
+				"http://localhost/0/ServiceModel/EntitySchemaDesignerService.svc/GetSchemaDesignItem");
+			yield return new TestCaseDataWithKnownRoutes(true, "http://localhost",
+				ServiceUrlBuilder.KnownRoute.GetEntitySchemaDesignItem,
+				"http://localhost/ServiceModel/EntitySchemaDesignerService.svc/GetSchemaDesignItem");
 			// Pinned because this one route decides install-process-builder's exit code. A typo in the path —
 			// CreatioApiGatewayService instead of ProcessDesignService, or Pong for Ping — yields an IIS HTML
 			// page, which the verifier correctly reads as "nothing is serving". So the command would return 1
@@ -206,6 +216,12 @@ internal class ServiceUrlBuilderCommandTests
 			yield return new TestCaseDataWithKnownRoutes(true, "http://localhost",
 				ServiceUrlBuilder.KnownRoute.ProcessBuilderPing,
 				"http://localhost/rest/ProcessDesignService/Ping");
+			yield return new TestCaseDataWithKnownRoutes(false, "http://localhost",
+				ServiceUrlBuilder.KnownRoute.ImageApiUpload,
+				"http://localhost/0/ImageAPIService/upload");
+			yield return new TestCaseDataWithKnownRoutes(true, "http://localhost",
+				ServiceUrlBuilder.KnownRoute.ImageApiUpload,
+				"http://localhost/ImageAPIService/upload");
 		}
 	}
 
@@ -263,6 +279,7 @@ internal class ServiceUrlBuilderCommandTests
 	}
 
 	[TestCaseSource(nameof(TestCasesWithEnvSettingsAndKnownRoutes))]
+	[Description("Builds known routes against an explicitly supplied environment shape.")]
 	public void BuildWithEnvsAndKnownRoute_Returns_CorrectUrl(TestCaseDataWithEnvSettingAndKnownRoutes testCaseData){
 		//Arrange
 		EnvironmentSettings environmentSettingsMock = new() {
@@ -276,10 +293,12 @@ internal class ServiceUrlBuilderCommandTests
 		string actual = sut.Build(testCaseData.KnownRoute, environmentSettingsMock);
 
 		//Assert
-		actual.Should().Be(testCaseData.ExpectedUrl);
+		actual.Should().Be(testCaseData.ExpectedUrl,
+			because: "the explicit environment determines both route prefix and application origin");
 	}
 
 	[TestCaseSource(nameof(TestCasesWithKnownRoute))]
+	[Description("Builds each known route against the builder's configured environment.")]
 	public void BuildWithKnownRoute_Returns_CorrectUrl(TestCaseDataWithKnownRoutes testCaseData){
 		//Arrange
 		EnvironmentSettings environmentSettingsMock = new() {
@@ -292,7 +311,8 @@ internal class ServiceUrlBuilderCommandTests
 		string actual = sut.Build(testCaseData.KnownRoute);
 
 		//Assert
-		actual.Should().Be(testCaseData.ExpectedUrl);
+		actual.Should().Be(testCaseData.ExpectedUrl,
+			because: "known routes must preserve the runtime-specific workspace prefix");
 	}
 
 	

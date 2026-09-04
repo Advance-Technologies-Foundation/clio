@@ -136,13 +136,18 @@ public class CreateBusinessProcessTool(
 		 + "element output as a process output); source is exactly one of {sourceElement, sourceElementParameter} "
 		 + "(another element's output), processParameter, value, or expression; parameter-to-parameter mappings "
 		 + "require compatible types; a Lookup target's 'value' takes a bare non-empty record Guid, stored as the "
-		 + "ConstValue the runtime actually reads (the route ships from CrtProcessBuilder 1.3.1.1; THIS clio "
+		 + "ConstValue the runtime actually reads (THIS clio bundles CrtProcessBuilder 1.4.0.40 and "
 		 + "additionally refuses any environment older than the version it BUNDLES — up front, via the "
 		 + "package-convergence message naming both versions — while an older clio surfaces the old package's "
 		 + "[#Lookup…#]-macro rejection; either refusal means the environment is behind, not that the parameter "
 		 + "is unsettable), while a non-Guid lookup value is refused with a "
 		 + "bare-Guid-first message (the [#Lookup…#] expression form stays the named fallback) and Guid.Empty "
-		 + "as referencing no record. "
+		 + "as referencing no record; an already-composed [#Lookup.{objectUId}.{recordId}#] is ALSO accepted on a "
+		 + "Lookup target and decoded to that bare id, so a value echoed back from describe re-submits unchanged. "
+		 + "The referenced record's NAME is resolved and stored as the parameter's display value, which is what the "
+		 + "designer renders — so 'Task category' shows Call, not a Guid; describe reports it as valueDisplay beside "
+		 + "the unchanged bare-Guid value. The same name resolution applies to a Lookup process parameter's DEFAULT "
+		 + "set through parameters[] 'value' (the macro decode does NOT — that is the mapping route only). "
 		 + "To run the process when a record "
 		 + "is saved/added/changed, use a "
 		 + "signalStart element with signal:{entity:<EntityName>, on:added|modified|deleted (one event), "
@@ -150,6 +155,13 @@ public class CreateBusinessProcessTool(
 		 + "on:modified trigger to fire ONLY when one of those column values changes (column names on the "
 		 + "trigger entity; valid only for on:modified; omit for any-change). To fire that trigger only for "
 		 + "matching records, add filter:{object, logicalOperation:and|or, conditions:[{column (entity column name, may be a lookup dot-path like Account.Code), comparison:equal|notEqual|greater|less|contains|isNull|..., one of value|macro (+macroArgument), optional datePart}], groups?} to the signalStart element. A signalStart filter's right side must be a constant/macro/datePart — NOT a process/element parameter (the signal is evaluated before the process instance exists; the server rejects a parameter reference here). The server serializes the platform filter; never hand-write filter JSON. Read get-guidance name=process-modeling FIRST — the full descriptor contract (buildable slice, filter condition + datePart/macro vocabulary, date/time DEFAULT-value macro rules and the Lookup bare-Guid default rule, mapping type-compatibility groups, formula policy, FSD caveat). Use list-user-tasks to discover valid userTaskName values. Requires the ProcessDesignService (CrtProcessBuilder) package on the target environment; install it with install-process-builder. After a successful create the process is INTERPRETED and runs as-is: do NOT run compile-creatio, and do NOT infer a compile from a raw process read (a `VwSysProcess` row's `NeedInstall`/`NeedUpdateSourceCode`/`NeedUpdateStructure` are dirty flags, not a compile trigger) — verify with describe-business-process. The response carries a compile-not-required note; a process needs a compile only if it has a Script Task (custom C#), which clio cannot author.")]
+	[McpToolExecution(
+		Location = McpToolExecutionLocation.Worker,
+		Lifetime = McpToolExecutionLifetime.PerCall,
+		OperationFamily = McpToolOperationFamily.None,
+		BudgetPolicy = McpToolBudgetPolicy.ParentKillDefault,
+		RequiresClientRequests = McpToolClientRequests.None,
+		SharedFileResource = McpToolSharedFileResource.None)]
 	public CommandExecutionResult CreateBusinessProcess(
 		[Description("create-business-process parameters")] [Required] CreateBusinessProcessArgs args
 	) {

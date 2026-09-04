@@ -32,6 +32,13 @@ public sealed class AddItemModelTool(
 	/// </summary>
 	[McpServerTool(Name = AddItemModelToolName, ReadOnly = false, Destructive = true, Idempotent = false,
 		OpenWorld = false)]
+	[McpToolExecution(
+		Location = McpToolExecutionLocation.Worker,
+		Lifetime = McpToolExecutionLifetime.PerCall,
+		OperationFamily = McpToolOperationFamily.None,
+		BudgetPolicy = McpToolBudgetPolicy.ParentKillDefault,
+		RequiresClientRequests = McpToolClientRequests.None,
+		SharedFileResource = McpToolSharedFileResource.None)]
 	[Description("Generates all C# entity models from the specified Creatio environment into the provided local folder.")]
 	public CommandExecutionResult AddItemModel(
 		[Description("add-item model parameters")]
@@ -133,8 +140,9 @@ internal static class AddItemModelToolPathValidator {
 
 internal static partial class AddItemModelToolOutputCompactor {
 	private const string BaseModelExtensionsFileName = "BaseModelExtensions.cs";
+	private const int RegexTimeoutMilliseconds = 1_000;
 
-	[GeneratedRegex(@"^Generated:\s*(?<count>\d+)\s+models\s+from\s+\d+\s*$", RegexOptions.CultureInvariant)]
+	[GeneratedRegex(@"^Generated:\s*(?<count>\d+)\s+models\s+from\s+\d+\s*$", RegexOptions.CultureInvariant, RegexTimeoutMilliseconds)]
 	private static partial Regex ProgressMessageRegex();
 
 	internal static CommandExecutionResult Compact(

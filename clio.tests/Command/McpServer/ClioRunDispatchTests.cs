@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text.Json;
@@ -6,6 +6,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using Clio.Command.McpServer;
 using Clio.Command.McpServer.Tools;
+using Clio.Common;
 using FluentAssertions;
 using ModelContextProtocol.Protocol;
 using ModelContextProtocol.Server;
@@ -31,7 +32,21 @@ public sealed class ClioRunDispatchTests {
 		_registry = Substitute.For<IMcpToolInvokerRegistry>();
 		// An inert catalog substitute: TryResolveAlias defaults to false, so alias resolution never
 		// interferes with the direct-name dispatch behavior these tests pin.
-		_sut = new ClioRunExecutor(_registry, Substitute.For<IMcpToolCompatibilityCatalog>());
+		// The real execution router over the real declared metadata (ENG-95262 Stage 4b). NOTE the reader's
+		// public constructor scans the EXECUTING assembly — clio.dll — so this is the full PRODUCTION
+		// metadata map, not an empty one, and some names used below are real worker-classified tools. What
+		// keeps the dispatch behaviour pinned here unchanged is the router's SHAPE: it is given an EMPTY
+		// Stage 6 cohort, so every name — real, synthetic, classified or not — resolves to an in-process
+		// disposition and no site ever takes its relay or refusal branch. Stating the empty cohort here,
+		// rather than relying on the shipped one, is what keeps these cases pinned when the cohort grows.
+		_sut = new ClioRunExecutor(
+			_registry,
+			Substitute.For<IMcpToolCompatibilityCatalog>(),
+			new McpExecutionRouter(
+				new McpToolExecutionMetadataReader(Substitute.For<IMcpToolCompatibilityCatalog>()),
+				new McpWorkerCohort([]),
+				new McpWorkerPathGate(() => McpHostTransportKind.Stdio, () => false),
+				workerPathWired: true));
 	}
 
 	// A real SDK-built tool over a static echo method, so InvokeAsync executes without a live server.
@@ -47,6 +62,65 @@ public sealed class ClioRunDispatchTests {
 			typeof(EchoToolType).GetMethod(nameof(EchoToolType.Echo))!,
 			target: null,
 			new McpServerToolCreateOptions { SerializerOptions = JsonSerializerOptions.Default });
+
+	// The REAL odata-read tool, built by the SDK over its own method, so a clio-run dispatch runs the
+	// actual response classification rather than a synthetic envelope.
+	private static McpServerTool BuildODataReadTool(IToolCommandResolver commandResolver) =>
+		McpServerTool.Create(
+			typeof(ODataReadTool).GetMethod(nameof(ODataReadTool.Read))!,
+			target: new ODataReadTool(commandResolver),
+			new McpServerToolCreateOptions { SerializerOptions = JsonSerializerOptions.Default });
+
+	[Test]
+	[Category("Unit")]
+	[Description("A dispatched odata-read whose response describes a different entity set is forwarded as a failure carrying no payload, so the unrelated body never reaches the agent as the requested data.")]
+	public async Task RunAsync_ShouldReportFailure_WhenDispatchedODataReadAnswersForAnotherEntity() {
+		// Arrange
+		const string marker = "private response marker";
+		IApplicationClient applicationClient = Substitute.For<IApplicationClient>();
+		IServiceUrlBuilder serviceUrlBuilder = Substitute.For<IServiceUrlBuilder>();
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		commandResolver.Resolve<IApplicationClient>(Arg.Any<EnvironmentOptions>()).Returns(applicationClient);
+		commandResolver.Resolve<IServiceUrlBuilder>(Arg.Any<EnvironmentOptions>()).Returns(serviceUrlBuilder);
+		serviceUrlBuilder.Build(Arg.Any<string>()).Returns("http://creatio/odata/Contact?$top=25");
+		applicationClient.ExecuteGetRequest(Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+			.Returns("{\"@odata.context\":\"http://creatio/odata/$metadata#Account/$entity\","
+				+ "\"Id\":\"1\",\"Name\":\"" + marker + "\"}");
+		RegisterTool(ODataReadTool.ToolName, BuildODataReadTool(commandResolver), destructive: false);
+		JsonElement arguments = JsonDocument
+			.Parse("{\"environment-name\":\"dev\",\"entity\":\"Contact\"}").RootElement;
+
+		// Act
+		CallToolResult result = await _sut.RunAsync(
+			ODataReadTool.ToolName, arguments, destructiveSurface: false, CallContext(), CancellationToken.None);
+
+		// Assert
+		string text = ErrorText(result);
+		text.Should().Contain("\"success\":false",
+			because: "a body describing Account is not the requested Contact read and must be dispatched back as a failure");
+		text.Should().NotContain(marker,
+			because: "clio-run must not forward the unrelated body's content to the agent");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Returns the contracted invalid-parameter-type diagnostic when clio-run dispatch receives a wrong JSON value type for a target tool argument.")]
+	public async Task RunAsync_ShouldReportContractedTypeError_WhenDispatchedArgumentHasWrongType() {
+		// Arrange
+		RegisterTool("echo-tool", BuildEchoTool(), destructive: false);
+		JsonElement arguments = JsonDocument.Parse("{\"value\":[\"wrong\"]}").RootElement;
+
+		// Act
+		CallToolResult result = await _sut.RunAsync("echo-tool", arguments, destructiveSurface: false, CallContext(), CancellationToken.None);
+
+		// Assert
+		string text = ErrorText(result);
+		result.IsError.Should().BeTrue(because: "clio-run must reject an incompatible target argument before invoking the tool");
+		text.Should().Contain("invalid-parameter-type", because: "the nested dispatch must use the MCP argument error contract");
+		text.Should().Contain("value", because: "the target argument name must be actionable");
+		text.Should().Contain("string", because: "the diagnostic must state the expected JSON type");
+		text.Should().NotContain("Cannot get the value of a token type", because: "the SDK implementation exception must not leak to the agent");
+	}
 
 	// A real SDK-built tool whose method throws, so InvokeAsync surfaces an exception (which the SDK
 	// wraps) for the error-masking guard test.

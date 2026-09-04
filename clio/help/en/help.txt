@@ -4,160 +4,229 @@ Usage:
   clio <command> [arguments] [options]
 
 Commands:
-  activate-pkg                         Activate a package in Creatio, activate-package, apkg, enable-package
-  add-knowledge-source                 Add a trusted Git or NuGet knowledge source
-  add-data-binding-row                 Add or replace a row in a package data binding
-  add-item                             Generate package item models from Creatio metadata, create
-  add-package                          Add package to workspace or local folder, ap
-  add-schema                           Create a schema file in a workspace package
-  add-user-task                        Create a user task schema in a workspace package
-  alm-deploy                           Deploy a package to Creatio, deploy
-  apply-manifest                       Apply an environment manifest, apply-environment-manifest, applym
-  assert                               Validates infrastructure and filesystem resources
-  build-docker-image                   Build a Docker image for a Creatio .NET 8+ distribution or bundled database backup
-  build-theme                          Build the artifacts of a Creatio theme from brand colours and fonts
-  build-workspace                      Build the current workspace in Creatio, build, compile, compile-all, rebuild
-  call-service                         Call a Creatio service endpoint, cs
-  cfg-worspace                         Configure workspace package selection, cfgw
-  check-nuget-update                   Check NuGet for Creatio package updates, check
-  check-windows-features               Check windows for the required components, cf, checkf, checks, checkw
-  clear-local-env                      Clear deleted local environments, clear-env
-  clear-redis-db                       Clear redis database, flushdb
-  clear-themes-cache                   Refresh the Creatio theme catalog cache, flush-themes
-  clone-env                            Clone one environment to another, clone, clone-environment
-  compare-web-farm-node                Compare file content across web farm nodes, check-farm, check-web-farm-node, cwf, farm-check
-  compile-configuration                Compile the full configuration in Creatio, cc, compile-remote
-  compile-package                      Compile one or more packages in Creatio, comp-pkg
-  compressApp                          Archive an application directory into ZIP, comp-app
-  create-data-binding                  Create or regenerate a package data binding
-  create-data-binding-db               Create a DB-first package data binding by saving data directly to the remote Creatio database
-  create-entity-schema                 Create an entity schema in a remote Creatio package
-  create-k8-files                      Prepare K8 files for deployment, ck8f
-  create-theme                         Create a custom Creatio theme directly on the target environment via the native ThemeService
-  disable-knowledge-source             Stop serving a trusted source while retaining its cache
-  enable-knowledge-source              Enable a configured trusted knowledge source
-  create-workspace                     Create a local workspace, createw
-  CustomizeDataProtection              Toggle CustomizeDataProtection in appsettings.json, cdp
-  dataservice                          Send a Creatio DataService request, ds
-  deactivate-pkg                       Deactivate a package in Creatio, deactivate-package, disable-package, dpkg
-  delete-infrastructure                Delete Kubernetes infrastructure for Creatio (removes namespace and all resources), di-delete, remove-infrastructure
-  delete-pkg-remote                    Delete a package from Creatio, delete
-  delete-schema                        Delete a schema from a workspace package
-  delete-theme                         Delete a custom Creatio theme from the target environment via the native ThemeService
-  delete-toolkit                       Uninstall the Creatio AI App Development Toolkit from coding agents
-  distribute-license                   Add or remove users from a Creatio license package, grant-license
-  deploy-application                   Copy an application package between Creatio environments, deploy-app
-  deploy-creatio                       Install Creatio from a distribution package, dc, ic, install-creatio
-  deploy-infrastructure                Deploy Kubernetes infrastructure for Creatio (namespace, storage, redis, postgres, pgadmin), di
-  download-application                 Download an application package from Creatio, dapp, download-app
-  download-configuration               Download configuration libraries from Creatio, dconf
-  env-ui                               Interactive console UI for environment management, far, gui
-  execute-sql-script                   Execute a SQL script in Creatio, sql
-  experimental                         List and toggle clio experimental feature flags, exp
-  externalLink                         Handle external deep links, link
-  extract-pkg-zip                      Extract a packaged application or package archive, extract, unzip
-  generate-pkg-zip                     Prepare an archive of creatio package, comp-pkg, compress
-  generate-process-model               Generate process model for ATF.Repository, gpm
-  get-app-hash                         Calculate the hash of an application package
-  get-app-list                         List installed applications, app-list, apps, apps-list, lia, list-apps
-  get-build-info                       Resolve the build artifact path for a Creatio distribution, bi, buildinfo
-  get-entity-schema-column-properties  Get column properties from a remote Creatio entity schema
-  get-entity-schema-properties         Get properties from a remote Creatio entity schema
-  get-info                             Show system information for a Creatio instance, describe, describe-creatio, instance-info
-  list-packages                        List packages in a Creatio environment, get-pkg-list, packages
-  get-pkg-version                      Get package version, gpv
-  get-webservice-url                   Show the configured base URL for a web service, gwu
-  git-sync                             Syncs environment with Git repository, sync
-  healthcheck                          Run Creatio health checks, hc
-  hosts                                List all Creatio hosts and their status, list-hosts
-  info                                 Show clio, cliogate, and .NET runtime versions, get-version, i, ver
-  install-application                  Install an application package into Creatio, install-app, push-app
-  install-dbhub                        Install, adopt, or repair a local loopback dbHub HTTP MCP server
-  install-gate                         Install or update cliogate in Creatio, gate, installgate, update-gate
-  install-knowledge                    Install verified knowledge from one source or all enabled sources
-  install-nuget-pkg                    Install NuGet package to a web application (website), installng
-  install-toolkit                      Install the Creatio AI App Development Toolkit for all detected coding agents
-  last-compilation-log                 Get last compilation log, lcl
-  link-core-src                        Link core source code to environment for development, lcs
-  link-from-repository                 Link repository package(s) to environment, l4r, link4repo
-  link-package-store                   Link PackageStore packages into an environment, lps
-  link-to-repository                   Link environment package(s) to repository, l2r, link2repo
-  list-themes                          List the custom Creatio themes available on the target environment, get-themes
-  listen                               Stream Creatio log events over WebSocket
-  lock-package                         Lock a package in Creatio, lp
-  manage-windows-features              Install windows features required for Creatio, mng-win-features, mwf
-  mcp-server                           Start the MCP server over stdio, mcp
-  info-knowledge                       Show trusted sources, installed generations, validation, and update status
-  merge-workspaces                     Merge packages from multiple workspaces and install them to the environment, mergew
-  mock-data                            Generate mock data for unit tests, data-mock
-  modify-entity-schema-column          Add, modify, or remove a column in a remote Creatio entity schema
-  modify-user-task-parameters          Add or remove parameters in a user task schema
-  new-pkg                              Create a new package project, init
-  new-integration-test-project         Create a portable Creatio integration-test project, integration-test
-  new-test-project                     Create a new test project, create-test-project, unit-test
-  new-ui-project                       Create a new Freedom UI project, create-ui-project, createup, new-ui, ui, uiproject
-  open-k8-files                        Open the Kubernetes manifests folder, cfg-k8, cfg-k8f, cfg-k8s
-  open-settings                        Open the clio settings file, conf, configuration, os, settings
-  open-web-app                         Open a registered Creatio environment in the browser, open
-  pack-nuget-pkg                       Pack a package into a NuGet artifact, pack
-  page-get                             Get a Freedom UI page bundle and raw schema body
-  page-list                            List Freedom UI pages
-  page-update                          Update Freedom UI page schema body
-  ping-app                             Verify connectivity to a Creatio environment, ping
-  pkg-hotfix                           Enable/disable hotfix state for package, hf, hotfix
-  pkg-to-db                            Load packages into Creatio database storage, 2db, todb
-  pkg-to-file-system                   Load packages into Creatio file system storage, 2fs, tofs
-  publish-app                          Publish a workspace to a ZIP archive or hub folder, ph, publish-hub, publish-workspace, publishw
-  pull-pkg                             Download package from a web application, download
-  push-nuget-pkg                       Push a NuGet package to a feed, push-n, push-nuget
-  push-pkg                             Install a package into Creatio, install, push
-  push-workspace                       Push workspace to selected environment, pushw
-  reg-web-app                          Register a Creatio environment, cfg, reg
-  register                             Register clio shell integrations
-  remove-data-binding-row              Remove a row from a package data binding
-  remove-data-binding-row-db           Remove a row from a DB-first package data binding
-  restart-web-app                      Restart a web application, restart
-  remove-knowledge-source              Remove a trusted source and its Clio-managed cache
-  restore-configuration                Restore the configuration from the last backup, rc, restore
-  restore-db                           Restore a database backup, rdb
-  restore-nuget-pkg                    Restore NuGet package to a folder, restore-nuget, rn
-  restore-workspace                    Restore editable packages into a workspace, pull-workspace, pullw, restorew
-  run                                  Run scenario, run-scenario, scenario
-  save-state                           Save state of Creatio instance to file, save-manifest, state
-  set-app-icon                         Set application icon, ai, appicon, set-icon
-  set-app-version                      Set application version, appversion
-  set-dev-mode                         Toggle developer mode for a Creatio environment, dev, unlock
-  set-feature                          Set feature state, feature
-  set-fsm-config                       Set file system mode properties in config file, fsmc, sfsmc
-  set-pkg-version                      Set package version, spv
-  set-syssetting                       Get or set a system setting value, get-syssetting, ss, sys-setting, syssetting
-  set-webservice-url                   Set a base URL for a registered web service, swu, webservice
-  show-diff                            Compare settings between two Creatio environments, compare, diff
-  show-local-envs                      Show local environments with filesystem and auth status, localenvs
-  show-package-file-content            Show files that belong to a package, files, show-files
-  list-environments                    List registered Creatio environments, show-web-app-list, env, envs, show-web-app
-  list-knowledge-examples              Discover registered reference examples without cloning their repositories
-  list-knowledge-sources               List all configured knowledge sources, including disabled sources
-  start                                Start local Creatio application, sc, start-creatio, start-server
-  stop                                 Stop Creatio application(s) and remove services, stop-creatio
-  switch-nuget-to-dll-reference        Switches nuget references to dll references in csproj files, nuget2dll
-  sync-dbhub                           Reconcile clio-owned dbHub sources with local Creatio environments
-  turn-farm-mode                       Configure IIS site for Creatio web farm deployment, farm-mode, tfm
-  turn-fsm                             Turn file system mode on or off for an environment, fsm, tfsm
-  uninstall-app-remote                 Uninstall an application package from Creatio, uninstall
-  uninstall-creatio                    Uninstall local instance of creatio, uc
-  unlock-package                       Unlock a package in Creatio, up
-  unreg-web-app                        Remove a registered Creatio environment, unreg
-  unregister                           Remove clio shell integrations
-  update-cli                           Update clio, update
-  update-entity-schema                 Apply batch column operations to a remote Creatio entity schema
-  update-theme                         Overwrite an existing custom Creatio theme on the target environment via the native ThemeService
-  update-toolkit                       Update the Creatio AI App Development Toolkit for all detected coding agents
-  update-knowledge                     Update verified knowledge from one source or all enabled sources
-  delete-knowledge                     Delete installed knowledge while retaining source configuration
-  upload-license                       Load license to selected environment, license, load-license, loadlicense
-  upload-licenses                      Upload license files to Creatio, lic
-  upsert-data-binding-row-db           Upsert a row in a DB-first package data binding
+  activate-pkg                                Activate a package in Creatio, activate-package, apkg, enable-package
+  add-custom-logging                          Add package-specific NLog file routing to a local Creatio environment
+  add-data-binding-row                        Add or replace a row in a package data binding
+  add-item                                    Generate package item models from Creatio metadata, create
+  add-knowledge-source                        Add and enable a trusted Git or NuGet knowledge source
+  add-package                                 Add a package; --as-app also creates a localization schema and injectable resolver, ap
+  add-package-dependency                      Add one or more package dependencies to a package, add-pkg-dep, add-pkg-dependency
+  add-schema                                  Create a schema file in a workspace package
+  add-user-task                               Create a user task schema in a workspace package
+  alm-deploy                                  Deploy a package to Creatio, deploy
+  apply-manifest                              Apply an environment manifest, apply-environment-manifest, applym
+  assert                                      Validates infrastructure and filesystem resources
+  autoupdate                                  Enable or disable automatic clio updates on startup
+  build-docker-image                          Build a Docker image for a Creatio .NET 8+ distribution or bundled database backup
+  build-theme                                 Build the artifacts of a Creatio theme from brand colours and fonts
+  build-workspace                             Build the current workspace in Creatio, build, compile, compile-all, rebuild
+  call-service                                Call a Creatio service endpoint, cs
+  cfg-worspace                                Configure workspace package selection, cfgw
+  check-auth-code-flow                        Check whether the environment can use the OAuth authorization code flow with Identity Service, auth-code-flow
+  check-nuget-update                          Check NuGet for Creatio package updates, check
+  check-windows-features                      Check windows for the required components, cf, checkf, checks, checkw
+  clear-browser-session                       Delete the cached browser session for a Creatio environment, clear-session
+  clear-local-env                             Clear deleted local environments, clear-env
+  clear-redis-db                              Clear redis database, flushdb
+  clear-themes-cache                          Refresh the Creatio theme catalog cache, flush-themes
+  clone-env                                   Clone one environment to another, clone, clone-environment
+  compare-web-farm-node                       Compare file content across web farm nodes, check-farm, check-web-farm-node, cwf, farm-check
+  compile-configuration                       Compile the full configuration in Creatio, cc, compile-remote
+  compile-package                             Compile one or more packages in Creatio, comp-pkg
+  component-registry-refresh                  Refresh the local Freedom UI component registry cache from the academy.creatio.com CDN, component-registry
+  compressApp                                 Archive an application directory into ZIP, comp-app
+  config                                      View and set deploy-creatio defaults and agent knowledge-feedback approval
+  create-app                                  Create a new application in Creatio
+  create-app-section                          Create a section inside an existing installed application
+  create-client-unit-schema                   Create a new JavaScript (ClientUnit) schema on a remote Creatio environment, client-unit-schema-create
+  create-data-binding                         Create or regenerate a package data binding
+  create-data-binding-db                      Create a DB-first package data binding by saving data directly to the remote Creatio database
+  create-entity-schema                        Create an entity schema in a remote Creatio package
+  create-k8-files                             Prepare K8 files for deployment, ck8f
+  create-lookup                               Create a lookup entity schema in a remote Creatio package
+  create-page                                 Create a new Freedom UI page from a supported template, page-create
+  create-related-page-addon                   Configure the RelatedPage add-on (default/add page per role and type) for an object, related-page-addon, set-related-pages
+  create-schema                               Create a new C# source-code schema on a remote Creatio environment, schema-create
+  create-sql-schema                           Create a new SQL script schema on a remote Creatio environment, sql-schema-create
+  create-theme                                Create a custom Creatio theme directly on the target environment via the native ThemeService
+  create-workspace                            Create a local workspace, createw
+  CustomizeDataProtection                     Toggle CustomizeDataProtection in appsettings.json, cdp
+  dataservice                                 Send a Creatio DataService request, ds
+  deactivate-pkg                              Deactivate a package in Creatio, deactivate-package, disable-package, dpkg
+  delete-app-section                          Delete a section from an existing installed application
+  delete-infrastructure                       Delete Kubernetes infrastructure for Creatio (removes namespace and all resources), di-delete, remove-infrastructure
+  delete-knowledge                            Delete installed knowledge for one source or all enabled sources
+  delete-pkg-remote                           Delete package from a web application, delete
+  delete-schema                               Delete a schema from a workspace package
+  delete-theme                                Delete a custom Creatio theme from the target environment via the native ThemeService
+  delete-toolkit                              Uninstall the Creatio AI App Development Toolkit from coding agents, delete-skill
+  deploy-application                          Copy an application package between Creatio environments, deploy-app
+  deploy-creatio                              Install Creatio from a distribution package, dc, ic, install-creatio
+  deploy-infrastructure                       Deploy Kubernetes infrastructure for Creatio (namespace, storage, redis, postgres, pgadmin), di
+  disable-knowledge-source                    Disable one configured knowledge source without deleting its cache
+  distribute-license                          Add or remove users from a Creatio license package, grant-license
+  download-application                        Download an application package from Creatio, dapp, download-app
+  download-configuration                      Download configuration libraries from Creatio, dconf
+  enable-knowledge-source                     Enable one configured knowledge source
+  env-ui                                      Interactive console UI for environment management, far, gui
+  execute-sql-script                          Execute a SQL script in Creatio, sql
+  experimental                                List and toggle clio experimental feature flags, exp
+  export-component-registry                   Write the full Freedom UI component registry for a resolved platform version to a file (byte-faithful to the source, no per-component round-trips, no documentation bodies fetched), export-registry
+  export-schema                               Export a single schema from a Creatio environment into a reviewable bundle folder, schema-export
+  externalLink                                Handle external deep links, link
+  extract-pkg-zip                             Extract a packaged application or package archive, extract, unzip
+  find-app                                    Find installed applications and their sections in a Creatio environment by name, code, or pattern
+  find-entity-schema                          Find entity schemas in a Creatio environment by name, pattern, or UId
+  generate-pkg-zip                            Prepare an archive of creatio package, comp-pkg, compress
+  generate-process-model                      Generate process model for ATF.Repository, gpm
+  generate-source-code                        Generate source code for schemas in Creatio, gsc
+  get-app-hash                                Calculate the hash of an application package
+  get-app-info                                Get information about an installed Creatio application
+  get-browser-session                         Obtain a Playwright-compatible browser session (storageState) for a Creatio environment, get-session
+  get-build-info                              Resolve the build artifact path for a Creatio distribution, bi, buildinfo
+  get-classic-list-columns                    Resolve the effective default column set of a Classic section list without changing Creatio data
+  get-classic-page-sources                    Collect the Classic page sources for folding (the full replacing-layer chain + parent-template seed + resolution inputs) and write the manifest JSON to disk for the migration engine to fold, classic-migration-bundle, classic-page-sources, get-classic-migration-bundle
+  get-client-unit-schema                      Read the body and metadata of a client unit (JavaScript) schema from a remote Creatio environment, client-unit-schema-get
+  get-component-info                          Get curated Freedom UI component metadata by component type or list the catalog, component-info
+  get-entity-schema-column-properties         Get column properties from a remote Creatio entity schema
+  get-entity-schema-properties                Get properties from a remote Creatio entity schema
+  get-identity-assertion                      Issue a short-lived signed identity assertion (JWT) for the current authorized user, identity-assertion
+  get-identity-public-jwk                     Get the instance public key (JWK) used to verify identity assertions in Identity Service V3, identity-public-jwk
+  get-info                                    Show system information for a Creatio instance, describe, describe-creatio, instance-info
+  get-page                                    Read a Freedom UI page as a merged bundle plus raw schema body, page-get
+  get-page-hierarchy                          Get the full Freedom UI page replacing-schema chain (root first) with each schema's raw body in one round-trip, page-hierarchy-get
+  get-pkg-version                             Get package version, gpv
+  get-process-signature                       Read the parameter signature (codes, types, direction) of a Creatio business process, gps
+  get-record-rights                           Read the record-level access rights of a single Creatio record
+  get-related-page-addon                      Read an object's current RelatedPage configuration (bound default/add pages per role and type), get-related-pages, related-page-addon-get
+  get-schema                                  Read the body and metadata of a C# source-code schema from a remote Creatio environment, schema-get
+  get-sql-schema                              Read the body and metadata of a SQL script schema from a remote Creatio environment, sql-schema-get
+  get-user-culture                            Print the logged-in Creatio user's profile culture (e.g. en-US, uk-UA) for an environment, profile-language
+  get-webservice-url                          Show the configured base URL for a web service, gwu
+  git-sync                                    Syncs environment with Git repository, sync
+  healthcheck                                 Run Creatio health checks, hc
+  hosts                                       List all Creatio hosts and their status, list-hosts
+  idp-bind                                    Bind an identity provider to an external service code
+  idp-delete                                  Delete an identity provider
+  idp-list                                    List identity providers
+  idp-services                                List external services and identity provider bindings
+  idp-set-default                             Set the default identity provider
+  idp-set-secret                              Set identity provider client secret
+  idp-unbind                                  Unbind an identity provider from an external service code
+  idp-upsert                                  Create or update an identity provider
+  import-schema                               Import a schema bundle produced by export-schema into a package of a Creatio environment, schema-import
+  info                                        Show clio, cliogate, and .NET runtime versions, get-version, i, ver
+  info-knowledge                              Show configured knowledge sources, installed generations, validation, and update status
+  install-application                         Install an application package into Creatio, install-app, push-app
+  install-dbhub                               Install, adopt, or repair a local loopback dbHub HTTP MCP server
+  install-gate                                Install or update cliogate in Creatio, gate, installgate, update-gate
+  install-knowledge                           Install verified knowledge from one source or all enabled sources
+  install-nuget-pkg                           Install NuGet package to a web application (website), installng
+  install-process-builder                     Install or update the bundled process-builder package in Creatio, installprocessbuilder, update-process-builder
+  install-sql-schema                          Execute a SQL script schema on a remote Creatio environment (runs raw SQL directly on the database), execute-sql-schema, sql-schema-install
+  install-toolkit                             Install the Creatio AI App Development Toolkit for all detected coding agents, install-skills
+  last-compilation-log                        Get last compilation log, lcl
+  link-core-src                               Link core source code to environment for development, lcs
+  link-from-repository                        Link repository package(s) to environment, l4r, link4repo
+  link-package-store                          Link PackageStore packages into an environment, lps
+  link-to-repository                          Link environment package(s) to repository, l2r, link2repo
+  list-app-sections                           List sections of an existing installed application
+  list-apps                                   List installed applications, app-list, apps, apps-list, get-app-list, lia
+  list-entity-client-schemas                  Resolve the page-role graph of an entity for a Classic->Freedom migration: its Classic sections, edit pages (including per-type/typed pages), and add mini pages, each classified classic, freedom, or unknown. One level only — the skill recurses into detail entities. Pure ESQ; no schema-body parsing, migration-unit-resolve
+  list-environments                           List registered Creatio environments, env, envs, show-web-app, show-web-app-list
+  list-knowledge-examples                     List registered reference examples without cloning their repositories
+  list-knowledge-sources                      List all configured knowledge sources, including disabled sources
+  list-packages                               List packages in a Creatio environment, get-pkg-list, packages
+  list-page-templates                         List Freedom UI page templates available for create-page, page-templates, page-templates-list
+  list-pages                                  List Freedom UI page schemas in a Creatio environment, page-list
+  list-themes                                 List the custom Creatio themes available on the target environment, get-themes
+  listen                                      Stream Creatio log events over WebSocket
+  lock-package                                Lock a package in Creatio, lp
+  manage-windows-features                     Install windows features required for Creatio, mng-win-features, mwf
+  mcp-http                                    Start the MCP server over HTTP
+  mcp-server                                  Start the MCP server over stdio, mcp
+  merge-creatio-artifact                      Semantically merge three versions of a supported Creatio artifact
+  merge-workspaces                            Merge packages from multiple workspaces and install them to the environment, mergew
+  mock-data                                   Generate mock data for unit tests, data-mock
+  modify-entity-schema-column                 Add, modify, or remove a column in a remote Creatio entity schema
+  modify-user-task-parameters                 Add or remove parameters in a user task schema
+  new-integration-test-project                Add a Creatio integration test project, integration-test
+  new-pkg                                     Create a new package project, init
+  new-test-project                            Create a new test project, create-test-project, unit-test
+  new-ui-project                              Create a new Freedom UI project, create-ui-project, createup, new-ui, ui, uiproject
+  open-k8-files                               Open the Kubernetes manifests folder, cfg-k8, cfg-k8f, cfg-k8s
+  open-settings                               Open the clio settings file, conf, configuration, os, settings
+  open-web-app                                Open a registered Creatio environment in the browser, open
+  pack-nuget-pkg                              Pack a package into a NuGet artifact, pack
+  pin-certificate                             Select the preferred local-machine certificate for IIS HTTPS deployments
+  ping-app                                    Verify connectivity to a Creatio environment, ping
+  pkg-hotfix                                  Enable/disable hotfix state for package, hf, hotfix
+  pkg-to-db                                   Load packages into Creatio database storage, 2db, todb
+  pkg-to-file-system                          Load packages into Creatio file system storage, 2fs, tofs
+  prune-db-templates                          Interactively prune managed PostgreSQL templates
+  publish-app                                 Publish a workspace to a ZIP archive or hub folder, ph, publish-hub, publish-workspace, publishw
+  pull-pkg                                    Download package from a web application, download
+  push-nuget-pkg                              Push a NuGet package to a feed, push-n, push-nuget
+  push-pkg                                    Install a package into Creatio, install, push
+  push-workspace                              Push workspace to selected environment, pushw
+  read-data-binding-db                        Read which columns a remote DB-first data binding actually ships, get-data-binding-db
+  reg-web-app                                 Register a Creatio environment, cfg, reg
+  regenerate-identity-signing-key             Regenerate the instance identity-assertion signing key pair (the private key never leaves Creatio), identity-regenerate-key
+  register                                    Register clio shell integrations
+  register-sso-provider                       Register a new OIDC SSO provider in Creatio, sso-register-provider
+  remove-data-binding-row                     Remove a row from a package data binding
+  remove-data-binding-row-db                  Remove a row from a DB-first package data binding
+  remove-knowledge-source                     Remove one configured knowledge source and its managed cache
+  remove-package-dependency                   Remove one or more package dependencies from a package, remove-pkg-dep, remove-pkg-dependency
+  restart-web-app                             Restart a web application, restart
+  restore-configuration                       Restore the configuration from the last backup, rc, restore
+  restore-db                                  Restore a database backup, rdb
+  restore-nuget-pkg                           Restore NuGet package to a folder, restore-nuget, rn
+  restore-workspace                           Restore editable packages into a workspace, pull-workspace, pullw, restorew
+  run                                         Run a YAML scenario and refresh environments between dependent steps, run-scenario, scenario
+  save-state                                  Save state of Creatio instance to file, save-manifest, state
+  set-app-icon                                Set application icon, ai, appicon, set-icon
+  set-app-version                             Set application version, appversion
+  set-background-image                        Set an image as the environment's shell background and bind it into a package as data bindings
+  set-dev-mode                                Toggle developer mode for a Creatio environment, dev, unlock
+  set-entity-schema-properties                Set schema-level properties on a remote Creatio entity schema
+  set-feature                                 Set feature state, feature
+  set-file-content-storage-connection-string  Set the connection string of a file content storage in a running Creatio application, set-fcs-connection-string
+  set-fsm-config                              Set file system mode properties in config file, fsmc, sfsmc
+  set-logo                                    Apply the product logos and the browser-tab favicon from local image files and bind them into a package as data bindings
+  set-pkg-version                             Set package version, spv
+  set-record-rights                           Grant or revoke a record-level access right on a single Creatio record (destructive)
+  set-syssetting                              Get or set a system setting value, get-syssetting, ss, sys-setting, syssetting
+  set-user-theme                              Apply a Creatio theme to the current (authenticated) user's profile on the target environment, apply-user-theme
+  set-webservice-url                          Set a base URL for a registered web service, swu, webservice
+  show-diff                                   Compare settings between two Creatio environments, compare, diff
+  show-local-envs                             Show local environments with filesystem and auth status, localenvs
+  show-package-file-content                   Show files that belong to a package, files, show-files
+  start                                       Start local Creatio application, sc, start-creatio, start-server
+  stop                                        Stop Creatio application(s) and remove services, stop-creatio
+  switch-nuget-to-dll-reference               Switches nuget references to dll references in csproj files, nuget2dll
+  sync-dbhub                                  Reconcile clio-owned dbHub sources with local Creatio environments
+  turn-farm-mode                              Configure IIS site for Creatio web farm deployment, farm-mode, tfm
+  turn-fsm                                    Turn file system mode on or off for an environment, fsm, tfsm
+  uninstall-app-remote                        Uninstall an application package from Creatio, uninstall
+  uninstall-creatio                           Uninstall local instance of creatio, uc
+  unlock-package                              Unlock package, up
+  unreg-web-app                               Remove a registered Creatio environment, unreg
+  unregister                                  Remove clio shell integrations
+  update-app-section                          Update metadata of a section inside an existing installed application
+  update-cli                                  Update clio, update
+  update-client-unit-schema                   Update the raw body of a client unit schema, client-unit-schema-update
+  update-entity-schema                        Apply batch column operations to a remote Creatio entity schema
+  update-knowledge                            Update verified knowledge from one source or all enabled sources
+  update-page                                 Update the raw schema body of a Freedom UI page, page-update
+  update-schema                               Update the body of a C# source-code schema on a remote Creatio environment, schema-update
+  update-sql-schema                           Update the body of a SQL script schema on a remote Creatio environment, sql-schema-update
+  update-theme                                Overwrite an existing custom Creatio theme on the target environment via the native ThemeService
+  update-toolkit                              Update the Creatio AI App Development Toolkit for all detected coding agents, update-skill
+  upload-image                                Upload a local image to an environment and print its image id
+  upload-license                              Load license to selected environment, license, load-license, loadlicense
+  upload-licenses                             Upload license files to Creatio, lic
+  upsert-data-binding-row-db                  Upsert a row in a DB-first package data binding
 
 Run `clio <command> --help` for command details.
 See `clio/Commands.md` for the grouped reference.

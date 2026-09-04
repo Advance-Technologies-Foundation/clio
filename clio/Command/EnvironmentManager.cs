@@ -16,6 +16,7 @@ namespace Clio.Command
 		private IFileSystem fileSystem;
 		private IDeserializer yamlDesirializer;
 		private readonly ISerializer serializer;
+		private static readonly TimeSpan RegexTimeout = TimeSpan.FromSeconds(1);
 
 		public EnvironmentManager(IFileSystem fileSystem, IDeserializer deserializer, ISerializer serializer) {
 			this.fileSystem = fileSystem;
@@ -120,7 +121,7 @@ namespace Clio.Command
         
                 for (int i = 0; i < lines.Length; i++)
                 {
-                    if (Regex.IsMatch(lines[i], pattern))
+                    if (Regex.IsMatch(lines[i], pattern, RegexOptions.None, RegexTimeout))
                     {
                         matchingLineNumbers.Add(i + 1); // Add 1 because line numbers start from 1
                     }

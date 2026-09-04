@@ -85,6 +85,15 @@ public sealed class RequestInfoTool(
 	/// <param name="cancellationToken">Cancellation token propagated by the MCP host.</param>
 	/// <returns>A structured response with a request list or a full request definition.</returns>
 	[McpServerTool(Name = ToolName, ReadOnly = true, Destructive = false, Idempotent = true, OpenWorld = false)]
+	// Worker, not in-process: the catalog itself is a CDN/cache read, but an environment-name/uri call probes
+	// the environment through cliogate (GetSysInfo) to resolve the platform version, so it can block on Creatio.
+	[McpToolExecution(
+		Location = McpToolExecutionLocation.Worker,
+		Lifetime = McpToolExecutionLifetime.PerCall,
+		OperationFamily = McpToolOperationFamily.None,
+		BudgetPolicy = McpToolBudgetPolicy.ParentKillDefault,
+		RequiresClientRequests = McpToolClientRequests.None,
+		SharedFileResource = McpToolSharedFileResource.None)]
 	[Description("Get curated Freedom UI request metadata (crt.*Request types wired through request bindings such as a button's clicked) by request type, or list all cataloged requests. " +
 		"PROACTIVELY list the catalog (omit request-type, or pass 'list') before wiring a button/menu action to a platform request, " +
 		"so the request name and its params come from the catalog instead of memory. " +
@@ -184,7 +193,7 @@ public sealed class RequestInfoTool(
 
 		if (hasEnvironment) {
 			EnvironmentSettings settings = ResolveEnvironmentSettings(args);
-			IPlatformVersionResolver resolver = resolverFactory.Create(settings);
+			using IOwnedPlatformVersionResolver resolver = resolverFactory.CreateOwned(settings);
 			return resolver.ResolveAsync(cancellationToken);
 		}
 

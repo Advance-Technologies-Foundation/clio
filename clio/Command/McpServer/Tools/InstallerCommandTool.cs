@@ -38,16 +38,28 @@ public class InstallerCommandTool(
 	/// </summary>
 	[McpServerTool(Name = DeployCreatioToolName, ReadOnly = false, Destructive = true, Idempotent = false,
 		OpenWorld = false)]
+	// Deploy family: bounded by the authoritative terminal stage, never by a generic kill — a killed deploy
+	// can leave a half-installed environment. Streams stage events, so the relay must be full-duplex.
+	[McpToolExecution(
+		Location = McpToolExecutionLocation.Worker,
+		Lifetime = McpToolExecutionLifetime.PerCall,
+		OperationFamily = McpToolOperationFamily.Deploy,
+		BudgetPolicy = McpToolBudgetPolicy.TerminalStage,
+		RequiresClientRequests = McpToolClientRequests.Progress,
+		SharedFileResource = McpToolSharedFileResource.None)]
 	[Description("""
 				 Deploys Creatio from a zip archive using the real deploy-creatio command path.
 
 				 Before calling this tool, first run `assert-infrastructure` for full infrastructure visibility,
 				 then run `show-passing-infrastructure` for deployable choices and recommendations.
-				 If you are deploying locally to IIS, also run `find-empty-iis-port` to choose a safe `sitePort`.
+				 For local IIS, omit `sitePort` to let clio reserve the first available port from
+				 `deploy-creatio-defaults.site-port-range`; use `find-empty-iis-port` only when you want to
+				 inspect or explicitly choose a port.
 				 Review the failing areas from `assert-infrastructure`, prefer the recommended bundle from
 				 `show-passing-infrastructure`, and then call `deploy-creatio` with the selected arguments.
-				 For an IIS deployment, clio reserves and revalidates `sitePort` across concurrent clio
-				 processes before changing files, databases, or IIS. A collision fails the deployment;
+				 For an IIS deployment, clio reserves and revalidates the explicit or automatically selected
+				 port across concurrent clio processes before changing files, databases, or IIS. An explicit
+				 port collision fails; automatic selection continues through the configured range.
 				 deploy and uninstall are also serialized by environment name and physical target directory.
 				 Deployments on different names, ports, and target directories can proceed in parallel.
 				 Deployment preserves the build database's existing forced-password-change state and does not
@@ -70,7 +82,6 @@ public class InstallerCommandTool(
 		{
 			SiteName = args.SiteName,
 			ZipFile = args.ZipFile,
-			SitePort = args.SitePort,
 			DbServerName = args.DbServerName,
 			RedisServerName = args.RedisServerName,
 			UseHttps = args.UseHttps,
@@ -80,6 +91,9 @@ public class InstallerCommandTool(
 			IsSilent = true,
 			DropIfExists = true
 		};
+		if (args.SitePort.HasValue) {
+			options.SitePort = args.SitePort.Value;
+		}
 
 		// Subscribe the injected command (an IStageEventSource) so each ClioStageEvent is forwarded as a
 		// notifications/progress with the typed envelope in _meta.clioStageEvent. No-op when the caller
@@ -109,17 +123,16 @@ public sealed record DeployCreatioArgs(
 	string ZipFile,
 
 	[property: JsonPropertyName("sitePort")]
-	[property: Description("Port where Creatio will be deployed; IIS deployments reserve and validate it before mutation")]
-	[property: Required]
-	int SitePort,
+	[property: Description("Optional explicit deployment port; omit for local IIS to reserve the first available configured site-port-range value")]
+	int? SitePort = null,
 
 	[property: JsonPropertyName("dbServerName")]
 	[property: Description("Optional local database server configuration name; omit to keep the default Kubernetes deployment path")]
-	string? DbServerName,
+	string? DbServerName = null,
 
 	[property: JsonPropertyName("redisServerName")]
 	[property: Description("Optional local Redis server configuration name")]
-	string? RedisServerName,
+	string? RedisServerName = null,
 
 	[property: JsonPropertyName("useHttps")]
 	[property: Description("Prefer HTTPS for local IIS deployment; falls back to HTTP when no usable certificate is installed")]

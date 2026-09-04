@@ -22,7 +22,14 @@ namespace Clio.Command
             internal set => _timeOut = value;
         }
 
-        public int MaxAttempts { get; internal set; } = 3;
+        private int? _maxAttempts;
+
+        public int MaxAttempts
+        {
+            get => _maxAttempts ?? 3;
+            internal set => _maxAttempts = value;
+        }
+
         public int RetryDelay { get; internal set; } = 1;
 
 

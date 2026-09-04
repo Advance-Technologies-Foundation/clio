@@ -47,10 +47,20 @@ namespace Clio.Command
 				CreatioPackage package = CreatioPackage.CreatePackage(options.Name, settings.Maintainer);
 				package.Create();
 				if (!string.IsNullOrEmpty(options.Rebase) && options.Rebase != "nuget") {
-					_referenceCommand.Execute(new ReferenceOptions {
-						Path = package.FullPath,
+					int referenceResult = _referenceCommand.Execute(new ReferenceOptions {
+						//The reference command loads a project file, not the package directory
+						Path = package.ProjectFilePath,
 						ReferenceType = options.Rebase
 					});
+					if (referenceResult != 0) {
+						//An unsupported reference type reports the failure and returns nonzero without
+						//rebasing anything. Reporting "Done" and exiting 0 here told the caller the package
+						//was ready, and removing packages.config on top of that left it with a package that
+						//neither restores its assemblies nor points at local ones.
+						_logger.WriteError(
+							$"Failed to set '{options.Rebase}' references for package '{options.Name}'.");
+						return referenceResult;
+					}
 					package.RemovePackageConfig();
 				}
 				_logger.WriteInfo("Done");

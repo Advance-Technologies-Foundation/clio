@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.ComponentModel;
 using System.ComponentModel.DataAnnotations;
@@ -28,6 +28,13 @@ public sealed class ODataCreateTool(IToolCommandResolver commandResolver) {
 
 	/// <summary>Creates one or more Creatio records using OData v4.</summary>
 	[McpServerTool(Name = ToolName, ReadOnly = false, Destructive = false, Idempotent = false, OpenWorld = false)]
+	[McpToolExecution(
+		Location = McpToolExecutionLocation.Worker,
+		Lifetime = McpToolExecutionLifetime.PerCall,
+		OperationFamily = McpToolOperationFamily.None,
+		BudgetPolicy = McpToolBudgetPolicy.ParentKillDefault,
+		RequiresClientRequests = McpToolClientRequests.None,
+		SharedFileResource = McpToolSharedFileResource.None)]
 	[Description(
 		"Create one or more Creatio records via OData v4 (POST) in a single call. " +
 		"Provide the entity set name and a 'rows' array of field/value objects; pass all rows for the same " +
@@ -114,7 +121,7 @@ public sealed class ODataCreateTool(IToolCommandResolver commandResolver) {
 		try {
 			using JsonDocument doc = JsonDocument.Parse(json);
 			JsonElement root = doc.RootElement;
-			if (ODataResponseError.TryDetect(root, out string serverError)) {
+			if (CreatioResponseError.TryDetect(root, CreatioResponseContext.ODataPayload, out string serverError)) {
 				// Redact like the sibling error paths: a routing Message can embed the absolute request
 				// URI (host/port/app path), which must not leak into the MCP transcript or logs.
 				return new ODataRowResult {
@@ -145,13 +152,13 @@ public sealed class ODataCreateTool(IToolCommandResolver commandResolver) {
 					Success = false,
 					RecordCreated = null,
 					RetryGuidance = UnknownSideEffectGuidance,
-					Error = SensitiveErrorTextRedactor.Redact($"OData create did not return a record Id. Response: {ODataResponseError.Truncate(json)}")
+					Error = $"OData create did not return a record Id. Response: {CreatioResponseError.Truncate(SensitiveErrorTextRedactor.Redact(json))}"
 				};
 			}
 			return new ODataRowResult { Index = index, Success = true, RecordCreated = true, Id = id };
 		} catch (JsonException) {
 			// A non-JSON body never comes from Creatio's OData pipeline by itself - even a server
-			// error is one of the JSON shapes ODataResponseError.TryDetect recognizes. This shape means
+			// error is one of the JSON shapes CreatioResponseError.TryDetect recognizes. This shape means
 			// the request did not reach Creatio intact (a proxy/IIS/routing error, or a session
 			// redirect), so the row's side effect is UNKNOWN, not a confirmed create - never report
 			// record-created here.
@@ -160,7 +167,7 @@ public sealed class ODataCreateTool(IToolCommandResolver commandResolver) {
 				Success = false,
 				RecordCreated = null,
 				RetryGuidance = UnknownSideEffectGuidance,
-				Error = SensitiveErrorTextRedactor.Redact(ODataResponseError.DescribeNonJsonResponse(json))
+				Error = SensitiveErrorTextRedactor.Redact(CreatioResponseError.DescribeNonJsonResponse(json))
 			};
 		}
 	}

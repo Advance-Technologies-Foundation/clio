@@ -271,6 +271,15 @@ public static class SchemaValidationService
 	};
 
 	/// <summary>
+	/// Name of the Freedom UI designer-metadata property. Its subtree is designer bookkeeping, not runtime
+	/// page content: it mirrors captions and filters that already live on the real component, so scanning it
+	/// double-reports and produces false positives. Both localizable-text scanners and
+	/// <c>PageBodyAstLinter</c> skip it, all three with an ordinal (case-sensitive) comparison - the
+	/// property name is emitted verbatim by the designer.
+	/// </summary>
+	private const string DesignOptionsPropertyName = "_designOptions";
+
+	/// <summary>
 	/// Canonical clause describing the widget-caption rule, authored here and embedded verbatim in the
 	/// per-occurrence diagnostic (<see cref="BuildUnresolvedCaptionError"/>)
 	/// </summary>
@@ -361,15 +370,14 @@ public static class SchemaValidationService
 	}
 
 	/// <summary>
-	/// Validates a mobile page body and reports errors for any AMD-only constructs
-	/// (<c>validators</c>, <c>handlers</c>, custom <c>converters</c> sections) that are
-	/// not supported in mobile JSON bodies.
+	/// Validates the STRUCTURAL floor of a mobile page body: it is non-empty, parses as JSON, and its root
+	/// is an object. This is the mobile equivalent of the web syntax + loadability gate and therefore runs
+	/// even when the caller disabled content validation (<c>update-page validate=false</c>); a body that
+	/// fails here is not a page at all and must never be persisted.
 	/// </summary>
 	/// <param name="body">Plain-JSON mobile page body to validate.</param>
-	/// <returns>
-	/// A <see cref="SchemaValidationResult"/> that is invalid when disallowed top-level keys are found.
-	/// </returns>
-	public static SchemaValidationResult ValidateMobileBody(string body) {
+	/// <returns>A <see cref="SchemaValidationResult"/> that is invalid when the body is not a JSON object.</returns>
+	public static SchemaValidationResult ValidateMobileBodyStructure(string body) {
 		var result = new SchemaValidationResult { IsValid = true };
 		if (string.IsNullOrWhiteSpace(body)) {
 			result.IsValid = false;
@@ -388,8 +396,32 @@ public static class SchemaValidationService
 			if (document.RootElement.ValueKind != JsonValueKind.Object) {
 				result.IsValid = false;
 				result.Errors.Add("Mobile page body must be a JSON object.");
-				return result;
 			}
+		}
+		return result;
+	}
+
+	/// <summary>
+	/// Validates a mobile page body: first the structural floor
+	/// (<see cref="ValidateMobileBodyStructure"/>), then the CONTENT rules - AMD-only constructs
+	/// (<c>validators</c>, <c>handlers</c>, custom <c>converters</c> sections) that are not supported in
+	/// mobile JSON bodies, plus the diff-array / config-object / unknown-root-property shape rules.
+	/// The content half is what <c>update-page validate=false</c> skips.
+	/// </summary>
+	/// <param name="body">Plain-JSON mobile page body to validate.</param>
+	/// <returns>
+	/// A <see cref="SchemaValidationResult"/> that is invalid when the body is structurally broken or
+	/// disallowed top-level keys are found.
+	/// </returns>
+	public static SchemaValidationResult ValidateMobileBody(string body) {
+		SchemaValidationResult structureResult = ValidateMobileBodyStructure(body);
+		if (!structureResult.IsValid) {
+			return structureResult;
+		}
+		var result = new SchemaValidationResult { IsValid = true };
+		// ValidateMobileBodyStructure already proved the body parses and its root is an object, so this
+		// second parse cannot throw; it is the cost of keeping the structural floor callable on its own.
+		using (JsonDocument document = JsonDocument.Parse(body)) {
 			if (document.RootElement.TryGetProperty("validators", out _)) {
 				result.IsValid = false;
 				result.Errors.Add("Mobile pages do not support validators. Remove the 'validators' section.");
@@ -2442,6 +2474,11 @@ public static class SchemaValidationService
 			case JsonValueKind.Object:
 				string currentName = TryGetNodeName(node, out string nodeName) ? nodeName : ownerName;
 				foreach (JsonProperty property in node.EnumerateObject()) {
+					// Designer metadata mirrors the real component's captions; scanning it reports the same
+					// caption twice and flags designer-only copies that no runtime binding reads.
+					if (string.Equals(property.Name, DesignOptionsPropertyName, StringComparison.Ordinal)) {
+						continue;
+					}
 					if (property.Value.ValueKind == JsonValueKind.String &&
 					    InsertedWidgetCaptionProperties.Contains(property.Name)) {
 						CheckCaptionBinding(currentName, property.Name, property.Value.GetString()!, resolves, result);
@@ -2612,6 +2649,9 @@ public static class SchemaValidationService
 				// for the entry root — see the entryRootType note above).
 				string currentType = TryGetComponentType(node, out string nodeType) ? nodeType : entryRootType;
 				foreach (JsonProperty property in node.EnumerateObject()) {
+					if (string.Equals(property.Name, DesignOptionsPropertyName, StringComparison.Ordinal)) {
+						continue;
+					}
 					ScanTextPropertyForLiterals(currentName, currentType, property, result);
 					ScanNodeForTextLiterals(property.Value, currentName, string.Empty, result);
 				}
@@ -3435,6 +3475,149 @@ public static class SchemaValidationService
 		}
 		return result;
 	}
+
+	/// <summary>
+	/// Validates that every custom validator type referenced by a view-model attribute is declared
+	/// in the page body's <c>SCHEMA_VALIDATORS</c> section. Built-in <c>crt.*</c> validators do not
+	/// require page-local declarations.
+	/// </summary>
+	/// <param name="jsBody">Freedom UI web page body.</param>
+	/// <returns>A validation result containing every unresolved custom validator reference.</returns>
+	public static SchemaValidationResult ValidateCustomValidatorReferences(string jsBody) {
+		var result = new SchemaValidationResult { IsValid = true };
+		if (string.IsNullOrWhiteSpace(jsBody)) {
+			return result;
+		}
+
+		var declaredTypes = new HashSet<string>(StringComparer.Ordinal);
+		if (PageSchemaSectionReader.TryRead(jsBody, out string validatorsContent, SchemaValidatorsMarker)) {
+			declaredTypes.UnionWith(EnumerateTopLevelDeclarationKeys(validatorsContent));
+		}
+		var reportedReferences = new HashSet<string>(StringComparer.Ordinal);
+		ForEachMarkerAttributesContainer(jsBody, SchemaViewModelConfig, false,
+			attributes => CollectMissingCustomValidatorReferences(attributes, declaredTypes, reportedReferences, result));
+		ForEachMarkerAttributesContainer(jsBody, SchemaViewModelConfigDiff, true,
+			attributes => CollectMissingCustomValidatorReferences(attributes, declaredTypes, reportedReferences, result));
+		CollectTargetedDiffMissingCustomValidatorReferences(
+			jsBody, declaredTypes, reportedReferences, result);
+		result.IsValid = result.Errors.Count == 0;
+		return result;
+	}
+
+	private static void CollectMissingCustomValidatorReferences(
+		JsonElement attributesElement,
+		IReadOnlySet<string> declaredTypes,
+		ISet<string> reportedReferences,
+		SchemaValidationResult result) {
+		foreach (JsonProperty attribute in EnumerateAttributesWithValidatorObjects(attributesElement)) {
+			CollectMissingCustomValidatorReferences(
+				attribute.Name, attribute.Value, declaredTypes, reportedReferences, result);
+		}
+	}
+
+	private static void CollectMissingCustomValidatorReferences(
+		string attributeName,
+		JsonElement attributeBody,
+		IReadOnlySet<string> declaredTypes,
+		ISet<string> reportedReferences,
+		SchemaValidationResult result) {
+		if (!attributeBody.TryGetProperty(ValidatorsPropertyName, out JsonElement validators) ||
+			validators.ValueKind != JsonValueKind.Object) {
+			return;
+		}
+		CollectMissingCustomValidatorReferencesFromValidators(
+			attributeName, validators, declaredTypes, reportedReferences, result);
+	}
+
+	private static void CollectMissingCustomValidatorReferencesFromValidators(
+		string attributeName,
+		JsonElement validators,
+		IReadOnlySet<string> declaredTypes,
+		ISet<string> reportedReferences,
+		SchemaValidationResult result) {
+		foreach (JsonProperty validator in validators.EnumerateObject()) {
+			CollectMissingCustomValidatorReference(
+				attributeName, validator.Value, declaredTypes, reportedReferences, result);
+		}
+	}
+
+	private static void CollectMissingCustomValidatorReference(
+		string attributeName,
+		JsonElement validator,
+		IReadOnlySet<string> declaredTypes,
+		ISet<string> reportedReferences,
+		SchemaValidationResult result) {
+		if (!validator.TryGetProperty(TypePropertyName, out JsonElement typeElement) ||
+			typeElement.ValueKind != JsonValueKind.String) {
+			return;
+		}
+		string validatorType = typeElement.GetString();
+		if (string.IsNullOrWhiteSpace(validatorType) ||
+			validatorType.StartsWith("crt.", StringComparison.OrdinalIgnoreCase) ||
+			declaredTypes.Contains(validatorType)) {
+			return;
+		}
+		string referenceKey = $"{attributeName}\u0000{validatorType}";
+		if (!reportedReferences.Add(referenceKey)) {
+			return;
+		}
+		result.Errors.Add(
+			$"Attribute '{attributeName}' references custom validator type '{validatorType}', " +
+			"but the final page body does not declare that key in SCHEMA_VALIDATORS.");
+	}
+
+	private static void CollectTargetedDiffMissingCustomValidatorReferences(
+		string jsBody,
+		IReadOnlySet<string> declaredTypes,
+		ISet<string> reportedReferences,
+		SchemaValidationResult result) {
+		if (!TryReadMarkerRootElement(jsBody, SchemaViewModelConfigDiff, out JsonDocument? document)) {
+			return;
+		}
+		using (document) {
+			if (document.RootElement.ValueKind != JsonValueKind.Array) {
+				return;
+			}
+			foreach (JsonElement operation in document.RootElement.EnumerateArray()) {
+				if (operation.ValueKind != JsonValueKind.Object) {
+					continue;
+				}
+				if (operation.TryGetProperty(OperationPropertyName, out JsonElement operationKind) &&
+					operationKind.ValueKind == JsonValueKind.String &&
+					string.Equals(operationKind.GetString(), "remove", StringComparison.OrdinalIgnoreCase)) {
+					continue;
+				}
+				if (!operation.TryGetProperty("path", out JsonElement path) ||
+					path.ValueKind != JsonValueKind.Array || path.GetArrayLength() is < 2 or > 4 ||
+					path[0].ValueKind != JsonValueKind.String ||
+					!string.Equals(path[0].GetString(), AttributesPropertyName, StringComparison.OrdinalIgnoreCase) ||
+					path[1].ValueKind != JsonValueKind.String ||
+					!operation.TryGetProperty(ValuesPropertyName, out JsonElement attributeBody) ||
+					attributeBody.ValueKind != JsonValueKind.Object) {
+					continue;
+				}
+				string attributeName = path[1].GetString();
+				switch (path.GetArrayLength()) {
+					case 2:
+						CollectMissingCustomValidatorReferences(
+							attributeName, attributeBody, declaredTypes, reportedReferences, result);
+						break;
+					case 3 when IsValidatorsPathSegment(path[2]):
+						CollectMissingCustomValidatorReferencesFromValidators(
+							attributeName, attributeBody, declaredTypes, reportedReferences, result);
+						break;
+					case 4 when IsValidatorsPathSegment(path[2]) && path[3].ValueKind == JsonValueKind.String:
+						CollectMissingCustomValidatorReference(
+							attributeName, attributeBody, declaredTypes, reportedReferences, result);
+						break;
+				}
+			}
+		}
+	}
+
+	private static bool IsValidatorsPathSegment(JsonElement segment) =>
+		segment.ValueKind == JsonValueKind.String &&
+		string.Equals(segment.GetString(), ValidatorsPropertyName, StringComparison.OrdinalIgnoreCase);
 
 	/// <summary>
 	/// Validates that validator <c>params</c> values do not use the reactive binding syntax

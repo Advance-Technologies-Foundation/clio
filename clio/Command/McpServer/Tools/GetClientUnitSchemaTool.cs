@@ -22,6 +22,13 @@ public sealed class GetClientUnitSchemaTool(
 	// OS temp directory AND does not already exist — an existing target is refused, never overwritten
 	// (OutputPathConfinement, shared with get-classic-page-sources), rejected before any write otherwise, so this
 	// MCP-callable tool cannot be steered into overwriting an arbitrary file.
+	[McpToolExecution(
+		Location = McpToolExecutionLocation.Worker,
+		Lifetime = McpToolExecutionLifetime.PerCall,
+		OperationFamily = McpToolOperationFamily.None,
+		BudgetPolicy = McpToolBudgetPolicy.ParentKillDefault,
+		RequiresClientRequests = McpToolClientRequests.None,
+		SharedFileResource = McpToolSharedFileResource.None)]
 	[McpServerTool(Name = ToolName, ReadOnly = false, Destructive = false, Idempotent = true, OpenWorld = false)]
 	[Description(
 		"Read the JavaScript body and metadata of a client unit schema from a remote Creatio environment. " +

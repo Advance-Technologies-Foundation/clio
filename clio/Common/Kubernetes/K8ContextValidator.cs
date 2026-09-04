@@ -26,6 +26,7 @@ namespace Clio.Common.Kubernetes
 	public class K8ContextValidator : IK8ContextValidator
 	{
 		private readonly IKubernetesClient _k8sClient;
+		private static readonly TimeSpan RegexTimeout = TimeSpan.FromSeconds(1);
 
 		public K8ContextValidator(IKubernetesClient k8sClient)
 		{
@@ -74,7 +75,7 @@ namespace Clio.Common.Kubernetes
 				// Validate context regex if specified
 				if (!string.IsNullOrEmpty(contextRegex))
 				{
-					var regex = new Regex(contextRegex);
+					var regex = new Regex(contextRegex, RegexOptions.None, RegexTimeout);
 					if (!regex.IsMatch(context.Name))
 					{
 						var result = AssertionResult.Failure(

@@ -107,14 +107,34 @@ internal static class OutputPathConfinement {
 	}
 
 	/// <summary>
-	/// Atomically writes <paramref name="content"/> to <paramref name="resolvedPath"/> — a path already returned
-	/// by <see cref="Resolve"/> — creating the parent directory if needed. The create itself is the gate:
-	/// <see cref="FileMode.CreateNew"/> fails if the target exists, so it (a) keeps the additive Destructive=false
-	/// contract honest even against a target that appeared after <see cref="Resolve"/> checked, and (b) collapses
-	/// the resolve→write TOCTOU window; on POSIX its <c>O_EXCL</c> also refuses to follow a symlink at the final
-	/// component. Throws <see cref="IOException"/> with a caller-facing message when the target already exists.
+	/// Writes <paramref name="content"/> to <paramref name="resolvedPath"/> — a path already returned by
+	/// <see cref="Resolve"/> — creating the parent directory if needed. The body is completed in a sibling
+	/// temporary file and then MOVED onto the target, so the target is only ever observable absent or complete.
+	/// Throws <see cref="IOException"/> with a caller-facing message when the target already exists.
 	/// </summary>
-	/// <param name="fileSystem">File-system abstraction used for the directory probe and the atomic write.</param>
+	/// <remarks>
+	/// <para>
+	/// <b>Why the body is not written straight to the target (ENG-95262).</b> <c>get-schema</c> ships in the
+	/// worker cohort, so this write is bounded by the parent KILLING the worker — <c>TerminateJobObject</c> over
+	/// the job on Windows, <c>kill(-pid, SIGKILL)</c> to the process group on Unix. No <c>finally</c> runs. A
+	/// <see cref="FileMode.CreateNew"/> directly on the target creates the file FIRST and fills it after, so a
+	/// kill in between leaves a truncated — usually empty — file at exactly the path <see cref="Resolve"/>
+	/// refuses to overwrite. The truncated file then BLOCKS the retry that would repair it, and a transient kill
+	/// becomes manual cleanup. Staging the body elsewhere removes that state: a kill leaves either no target at
+	/// all (retry works) or the complete one, plus at worst a dot-prefixed temporary file beside it.
+	/// </para>
+	/// <para>
+	/// <b>What the move gives up, and why that is the right trade.</b> The direct <c>CreateNew</c> claimed the
+	/// name with a single atomic operation — on POSIX its <c>O_EXCL</c> also refuses to follow a symlink at the
+	/// final component. The publish here is a NON-overwriting move: atomic-exclusive on Windows, and on Unix at
+	/// worst a check-then-rename. So the window in which a concurrently created target could be clobbered shrinks
+	/// from the two network round-trips between <see cref="Resolve"/> and this call down to two syscalls — it is
+	/// not reopened to what it was before <c>CreateNew</c> was introduced. Trading a two-syscall race against a
+	/// kill window that spans the whole body write is worth it in a build where the kill is the routine bound.
+	/// The temporary name carries a fresh <see cref="Guid"/>, so it is not a name an attacker can pre-plant.
+	/// </para>
+	/// </remarks>
+	/// <param name="fileSystem">File-system abstraction used for the directory probe and the staged write.</param>
 	/// <param name="resolvedPath">The confined absolute path returned by <see cref="Resolve"/>.</param>
 	/// <param name="content">The text to write.</param>
 	internal static void WriteAtomic(IoFileSystem fileSystem, string resolvedPath, string content) {
@@ -122,15 +142,28 @@ internal static class OutputPathConfinement {
 		if (!string.IsNullOrEmpty(directory) && !fileSystem.Directory.Exists(directory)) {
 			fileSystem.Directory.CreateDirectory(directory);
 		}
+		// A sibling, so the publish below is a same-volume rename rather than a copy.
+		string staged = fileSystem.Path.Combine(
+			string.IsNullOrEmpty(directory) ? "." : directory,
+			$".{fileSystem.Path.GetFileName(resolvedPath)}.{Guid.NewGuid():N}.tmp");
 		try {
-			using Stream stream = fileSystem.File.Open(resolvedPath, FileMode.CreateNew, FileAccess.Write);
-			using var writer = new StreamWriter(stream);
-			writer.Write(content);
+			using (Stream stream = fileSystem.File.Open(staged, FileMode.CreateNew, FileAccess.Write)) {
+				using var writer = new StreamWriter(stream);
+				writer.Write(content);
+			}
+			fileSystem.File.Move(staged, resolvedPath);
 		}
 		catch (IOException) when (fileSystem.File.Exists(resolvedPath)) {
 			throw new IOException(
 				$"output-file '{resolvedPath}' already exists; refusing to overwrite it. Choose a different " +
 				"path or remove the existing file.");
+		}
+		finally {
+			// Best-effort: on the success path the move has already consumed the staged file. A kill skips this
+			// entirely, which is precisely why the staged file — and not the target — is the one left behind.
+			if (fileSystem.File.Exists(staged)) {
+				fileSystem.File.Delete(staged);
+			}
 		}
 	}
 

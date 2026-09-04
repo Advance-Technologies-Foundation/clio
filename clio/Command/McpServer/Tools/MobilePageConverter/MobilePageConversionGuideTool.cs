@@ -59,6 +59,15 @@ public sealed class MobilePageConversionGuideTool {
 	internal const string ToolName = "get-mobile-page-conversion-guide";
 
 	[McpServerTool(Name = ToolName, ReadOnly = true, Destructive = false, Idempotent = true, OpenWorld = false)]
+	// Advisory-only in what it WRITES (nothing), but it READS the source page and probes the environment's
+	// platform version, so it can block on Creatio and must run in a worker.
+	[McpToolExecution(
+		Location = McpToolExecutionLocation.Worker,
+		Lifetime = McpToolExecutionLifetime.PerCall,
+		OperationFamily = McpToolOperationFamily.None,
+		BudgetPolicy = McpToolBudgetPolicy.ParentKillDefault,
+		RequiresClientRequests = McpToolClientRequests.None,
+		SharedFileResource = McpToolSharedFileResource.None)]
 	[Description(
 		"Detect a page's source type and return an advisory mobile-conversion GUIDE. Supported source type today: "
 		+ "Freedom UI WEB (sourceType \"freedom-web\"); any other source type is detected and reported as not yet "
@@ -82,14 +91,7 @@ public sealed class MobilePageConversionGuideTool {
 
 		PageGetResponse pageResponse;
 		try {
-			PageGetCommand getCommand = _commandResolver.Resolve<PageGetCommand>(getOptions);
-			lock (McpToolExecutionLock.GetLock(McpToolExecutionLock.SharedFallbackKey)) {
-				try {
-					getCommand.TryGetPage(getOptions, out pageResponse);
-				} finally {
-					_logger.ClearMessages();
-				}
-			}
+			pageResponse = ReadPageUnderTenantLock(getOptions);
 		} catch (Exception ex) {
 			return Fail(args, null, $"Failed to read source page '{args.SchemaName}': {ex.Message}");
 		}
@@ -168,7 +170,9 @@ public sealed class MobilePageConversionGuideTool {
 		IReadOnlyList<WebToMobileAnalysisService.PositionalPlacement> positionalPlacements = BuildPositionalPlacements(templateRule);
 
 		// Best-effort read of the mobile template's own bundle. Used for three independent probes: the
-		// positional-insert container-parent map (only needed when the rule declares positional entries),
+		// positional-insert container-parent map (read UNCONDITIONALLY: it also tells the adaptive pass where
+		// the mobile template nests a container twin, and only PageWithTabsFreedomTemplate declares positional
+		// entries — gating on them left twin placement dead for every other template family),
 		// every array anywhere in the template's own merged viewModelConfig (filterAttributes, sortingConfig,
 		// or any other array — generic), and the template's own list-collection keys — all fetched
 		// unconditionally whenever a mobile template is known, so the page's own arrays can be UNIONED with
@@ -176,9 +180,7 @@ public sealed class MobilePageConversionGuideTool {
 		// instead of the mobile diff engine's array-replace root merge silently dropping one side (see
 		// WebToMobileAnalysisService.SplitRootMergeIntoTargetedMerges).
 		MobileTemplateProbe mobileTemplateProbe = LoadMobileTemplateProbe(templateRule?.Mobile, args);
-		IReadOnlyDictionary<string, string> mobileContainerParents = positionalPlacements is { Count: > 0 }
-			? mobileTemplateProbe.ContainerParents
-			: null;
+		IReadOnlyDictionary<string, string> mobileContainerParents = mobileTemplateProbe.ContainerParents;
 
 		// Read the source page's web template (its parent schema) so its inherited chrome can be
 		// filtered out of the conversion: the merged page tree carries the template's header/scaffold
@@ -249,10 +251,10 @@ public sealed class MobilePageConversionGuideTool {
 	/// <c>environment-name</c>/<c>uri</c> is probed for its platform version; neither degrades to <c>latest</c>
 	/// on the fallback tier (surfaced as <c>latest-fallback</c> so the caller confirms with the user).
 	/// </summary>
-	private Task<PlatformVersionResolution> ResolveVersionAsync(
+	private async Task<PlatformVersionResolution> ResolveVersionAsync(
 		MobilePageConversionGuideArgs args, CancellationToken cancellationToken) {
 		if (!string.IsNullOrWhiteSpace(args.Version)) {
-			return Task.FromResult(new PlatformVersionResolution(args.Version.Trim(), VersionResolutionSource.Environment));
+			return new PlatformVersionResolution(args.Version.Trim(), VersionResolutionSource.Environment);
 		}
 		if (!string.IsNullOrWhiteSpace(args.EnvironmentName) || !string.IsNullOrWhiteSpace(args.Uri)) {
 			EnvironmentSettings settings = _settingsRepository.GetEnvironment(new EnvironmentOptions {
@@ -261,9 +263,56 @@ public sealed class MobilePageConversionGuideTool {
 				Login = args.Login,
 				Password = args.Password
 			});
-			return _versionResolverFactory.Create(settings).ResolveAsync(cancellationToken);
+			using IOwnedPlatformVersionResolver resolver = _versionResolverFactory.CreateOwned(settings);
+			return await resolver.ResolveAsync(cancellationToken).ConfigureAwait(false);
 		}
-		return Task.FromResult(ComponentInfoResolution.CreateNoActiveEnvironmentFallback());
+		return ComponentInfoResolution.CreateNoActiveEnvironmentFallback();
+	}
+
+	/// <summary>
+	/// Reads one page (the conversion source, or a web/mobile template) under the per-tenant MCP execution
+	/// lock (FR-05), with every in-flight marker balanced on both the normal and the exception path. The
+	/// single seam behind all three page reads this tool performs.
+	/// </summary>
+	/// <param name="options">The page-read options carrying the target identity (environment name, or uri/login/password).</param>
+	/// <returns>
+	/// The command's response; <see langword="null"/> only if the command left the out-parameter unset. A
+	/// resolution failure propagates as an exception, which each caller handles per its own policy (the
+	/// source-page read fails the tool; the two template probes degrade to a best-effort baseline).
+	/// </returns>
+	/// <remarks>
+	/// <para>
+	/// This tool derives from nothing, so <c>BaseTool&lt;T&gt;.ExecuteUnderTenantLock</c> — which balances the
+	/// markers by construction — is out of reach (it is <c>private protected</c>, requiring a derived type in
+	/// this assembly). This helper is the same shape spelled out explicitly, matching the other non-derived
+	/// call sites (<see cref="PageEditToolHelpers.TryExecuteSaveBody"/>, <c>AddItemModelTool</c>,
+	/// <c>PageSyncTool</c>, <c>SchemaSyncTool</c>).
+	/// </para>
+	/// <para>
+	/// Three things this ordering is load-bearing for. The key is the RESOLVED tenant
+	/// (<see cref="IToolCommandResolver.GetTenantKey"/>), never
+	/// <see cref="McpToolExecutionLock.SharedFallbackKey"/>, so unrelated tenants do not serialize behind one
+	/// mobile conversion. <see cref="McpToolExecutionLock.MarkAvailable"/> runs in a <c>finally</c>, balancing
+	/// the in-use pin <see cref="McpToolExecutionLock.GetLock"/> takes at hand-out — unbalanced, that mapping
+	/// is never evictable again. And <c>Resolve</c> runs INSIDE the lock, after
+	/// <see cref="McpToolExecutionLock.MarkInUse"/>, so the session container cannot be LRU-evicted and
+	/// disposed while this call is acquiring it.
+	/// </para>
+	/// </remarks>
+	internal PageGetResponse ReadPageUnderTenantLock(PageGetOptions options) {
+		string tenantKey = _commandResolver.GetTenantKey(options);
+		lock (McpToolExecutionLock.GetLock(tenantKey)) {
+			McpToolExecutionLock.MarkInUse(tenantKey);
+			try {
+				PageGetCommand command = _commandResolver.Resolve<PageGetCommand>(options);
+				command.TryGetPage(options, out PageGetResponse response);
+				return response;
+			} finally {
+				// MarkAvailable FIRST: the pin must be released even if clearing the capture buffer throws.
+				McpToolExecutionLock.MarkAvailable(tenantKey);
+				_logger.ClearMessages();
+			}
+		}
 	}
 
 	/// <summary>
@@ -310,15 +359,7 @@ public sealed class MobilePageConversionGuideTool {
 				Login = args.Login,
 				Password = args.Password
 			};
-			PageGetResponse templateResponse;
-			PageGetCommand command = _commandResolver.Resolve<PageGetCommand>(options);
-			lock (McpToolExecutionLock.GetLock(McpToolExecutionLock.SharedFallbackKey)) {
-				try {
-					command.TryGetPage(options, out templateResponse);
-				} finally {
-					_logger.ClearMessages();
-				}
-			}
+			PageGetResponse templateResponse = ReadPageUnderTenantLock(options);
 			if (templateResponse?.Success == true && templateResponse.Bundle?.ViewConfig is { } viewConfig) {
 				// One traversal: derive Names from the node map's keys rather than walking the tree twice.
 				IReadOnlyDictionary<string, JObject> nodes =
@@ -505,15 +546,7 @@ public sealed class MobilePageConversionGuideTool {
 				Login = args.Login,
 				Password = args.Password
 			};
-			PageGetResponse templateResponse;
-			PageGetCommand command = _commandResolver.Resolve<PageGetCommand>(options);
-			lock (McpToolExecutionLock.GetLock(McpToolExecutionLock.SharedFallbackKey)) {
-				try {
-					command.TryGetPage(options, out templateResponse);
-				} finally {
-					_logger.ClearMessages();
-				}
-			}
+			PageGetResponse templateResponse = ReadPageUnderTenantLock(options);
 			if (templateResponse?.Success == true && templateResponse.Bundle is { } bundle) {
 				IReadOnlyDictionary<string, string> parents = emptyParents;
 				IReadOnlyDictionary<string, string> types = emptyTypes;
