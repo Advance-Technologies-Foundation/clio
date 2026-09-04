@@ -369,7 +369,7 @@ public class SysSettingsManager : ISysSettingsManager
 	/// Without this check, a rejected session on a write reached the caller as
 	/// "Failed creating sys-setting." / "... is not updated. Invalid response format.": the login page is
 	/// not JSON, so the deserializer threw a <see cref="JsonException"/> that
-	/// <c>SysSettingsCommand.CategorizeError</c> has no arm for. The genuinely-malformed-JSON path below is
+	/// <c>SysSettingsCommand.CategorizeFailure</c> has no arm for. The genuinely-malformed-JSON path below is
 	/// unaffected, because it is only reached once this check has passed.
 	/// </para>
 	/// </remarks>
@@ -377,23 +377,38 @@ public class SysSettingsManager : ISysSettingsManager
 	/// <param name="operationLabel">The sys-settings operation, used in the diagnostic.</param>
 	/// <exception cref="AuthenticationException">Creatio rejected the credentials.</exception>
 	private static void ThrowIfSessionRejected(string rawResponse, string operationLabel) {
+		//CLASSIFIED on the RAW body, DISPLAYED from the capped one - two different budgets, deliberately.
+		//The runaway-regex concern is real but belongs inside the classifier, and that is where it now
+		//lives: IsAuthenticationFailureResponse / DescribeAuthenticationCause bound the text themselves at
+		//MaxClassifiedBodyLength before any scan. Pre-capping the input HERE at the DISPLAY cap (300 chars)
+		//used that number as a classification budget as well, and Creatio's auth-routing markers (/Login/,
+		//NuiLogin, SimpleLogin, ClientUnauthorizedRequest) and an ErrorCode:5 envelope routinely sit past a
+		//doctype/meta/script preamble or a proxy interstitial - so a marker beyond 300 bytes made this
+		//method return normally, the login page was then parsed as JSON, and the rejected session went
+		//undetected.
 		if (!AuthenticationFailureClassifier.IsAuthenticationFailureResponse(rawResponse)) {
 			return;
 		}
-		// REDACTED BEFORE THE CAP, and only then sanitized for display. SanitizeForDisplay performs no
-		// redaction at all - it neutralizes display-hostile characters and caps length - so the quoted body was
-		// carrying the first 300 bytes of a Creatio login page (anti-forgery/bootstrap markers, internal
-		// hostnames, absolute URLs) into the operator console, CI logs and every sink that records the
-		// exception. Redaction has to run first because the redactor matches a token as a whole unit: capping
-		// first can split one and leave the visible half in the clear. Same order as
-		// ServiceResponseJsonGuard.BuildPreview.
-		string detail = TextUtilities.SanitizeForDisplay(
-			Clio.Command.McpServer.SensitiveErrorTextRedactor.Redact(rawResponse), MaxRejectedResponseDetailLength);
-		throw new AuthenticationException(
+		// REDACTED BEFORE THE CAP. SanitizeForDisplay performs no redaction at all - it neutralizes
+		// display-hostile characters and caps length - so the excerpt this builds still carried the first
+		// bytes of a Creatio login page (anti-forgery/bootstrap markers, internal hostnames, absolute URLs)
+		// into ServerDetail and every sink that records it. Redaction has to run FIRST because the redactor
+		// matches a token as a whole unit: capping first can split one and leave the visible half in the
+		// clear. Same order as ServiceResponseJsonGuard.BuildPreview.
+		string cappedResponse = TextUtilities.SanitizeForDisplay(
+			UntrustedText.Scrub(rawResponse),
+			MaxRejectedResponseDetailLength);
+		//Issue #1333: the body is a login page or an ErrorCode:5 envelope - server-authored text that can
+		//carry a token, a user's e-mail, bidi controls, or a sentence shaped like an instruction to an
+		//agent. It used to be embedded here and therefore reached the CLI output, the log and the MCP
+		//envelope. Only a FIXED local sentence goes into the message now; the excerpt rides along on
+		//ServerDetail, which a handler writes at debug verbosity beside the correlation ID.
+		throw new SessionRejectedException(
 			$"Authentication failed while {operationLabel}: "
-			+ $"{detail} "
+			+ $"{AuthenticationFailureClassifier.DescribeAuthenticationCause(rawResponse)} "
 			+ "Verify the environment credentials (for an expired password, repair the registered profile) "
-			+ "and retry.");
+			+ "and retry.",
+			cappedResponse);
 	}
 
 	#region Methods: Public
@@ -611,10 +626,20 @@ public class SysSettingsManager : ISysSettingsManager
 				&& perCodeOk) {
 				return true;
 			}
-			string errMsg = response?.ResponseStatus?.Message;
+			//Issue #1333: ResponseStatus.Message is server-authored prose. It is the platform's own
+			//validation text ("Column 'Name' is required"), so it cannot be replaced by a fixed sentence
+			//without destroying the diagnosis - but it is scrubbed, flattened and capped before it is
+			//printed, so a token, an address or an instruction-shaped sentence cannot ride out on this
+			//line.
+			//CONSOLE rendering, not the fenced one (PR #1374 review): this is _logger.WriteError for
+			//`clio set-syssetting`, so its only reader is a person at a terminal. The fenced form is for
+			//a field a model reads; printing "[untrusted-source-text begin] Column 'Name' is required.
+			//[untrusted-source-text end]" for an ordinary platform validation failure has no audience
+			//here and reads as clio malfunctioning.
+			string errMsg = UntrustedText.ForConsole(response?.ResponseStatus?.Message);
 			_logger.WriteError(
 				$"SysSettings with code: {code} is not updated. " +
-				(string.IsNullOrWhiteSpace(errMsg) ? "Platform reported a failed update." : errMsg));
+				(errMsg is null ? "Platform reported a failed update." : errMsg));
 			return false;
 		} catch (JsonException) {
 			_logger.WriteError($"SysSettings with code: {code} is not updated. Invalid response format.");

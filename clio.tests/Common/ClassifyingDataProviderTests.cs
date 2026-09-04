@@ -59,8 +59,16 @@ public class ClassifyingDataProviderTests {
 		// Assert
 		AuthenticationException exception = act.Should().Throw<AuthenticationException>(
 			because: "an unsuccessful ATF response is dropped to an empty collection by Models<T>(), so the decorator is the only barrier between a rejected read and a false empty success").Which;
-		exception.Message.Should().Contain("Your password has expired",
-			because: "the actionable platform cause has to survive the classification");
+		exception.Message.Should().Contain("The password for the registered user has expired.",
+			because: "issue #1333: the cause survives the classification as a FIXED LOCAL sentence - the "
+			+ "platform's own prose must not be copied into a caller-visible field");
+		exception.Message.Should().NotContain("Your password has expired",
+			because: "server-authored text can carry a token, an address, bidi controls or an "
+			+ "instruction-shaped sentence, and this message reaches the CLI, the log and an MCP envelope");
+		exception.Should().BeOfType<SessionRejectedException>(
+			because: "the raw excerpt has to survive somewhere the operator can reach it at debug verbosity");
+		((SessionRejectedException)exception).ServerDetail.Should().Contain("Your password has expired",
+			because: "the correlation ID is the bridge back to what the server actually said");
 		exception.Message.Should().Contain("Verify the environment credentials",
 			because: "an automation caller needs a recovery action, not just an exception type");
 		exception.Message.Should().Contain("SysSettings",
