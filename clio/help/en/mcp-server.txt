@@ -150,6 +150,7 @@ NOTES
     - If you use an external MCP client wrapper, follow that wrapper's own parsing and transport guarantees
     - Boolean parameters must be JSON booleans (true/false), not strings
     - Entity tools work DB-first: schemas are created directly in PostgreSQL
+    - Some tool calls run in a short-lived child worker process the server supervises and can kill. The number of such workers allowed at once is capped, and CLIO_MCP_WORKER_CONCURRENCY raises or lowers that cap. The default is derived from the processor count, so on a single-vCPU host it is low and a long operation (compile-creatio, restart-*) can be refused with error-class=clio-worker-saturated until the variable is raised; nothing is spawned and no request reaches Creatio on that refusal, so it is safe to retry
     - Guidance/resource/example lookups use local installed content; only explicit install/update or info-knowledge checkUpdates=true operations contact transports
     - Product telemetry is consent-gated: nothing is uploaded unless consent is granted. A production collector endpoint ships as the default, so uploads begin automatically once consent is granted; override it with CLIO_TELEMETRY_ENDPOINT or the settings "telemetry.endpoint" (https, or http only for loopback), or disable uploading entirely (regardless of consent) with CLIO_TELEMETRY_ENABLED=false or "telemetry.enabled": false. Events are stored under <clio-home>/telemetry (override CLIO_TELEMETRY_HOME) and exclude prompts, secrets, customer data, and generated content
 

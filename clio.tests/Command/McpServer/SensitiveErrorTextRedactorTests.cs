@@ -121,6 +121,26 @@ public sealed class SensitiveErrorTextRedactorTests {
 
 	[Test]
 	[Category("Unit")]
+	[Description("Redacts a QUOTED credential value: the bare value class excludes a quote, so without the quoted " +
+		"alternation the whole pair matches nothing and the secret reaches the reader verbatim.")]
+	public void Redact_ShouldRedactQuotedCredentialValues() {
+		// Arrange
+		const string message = "Auth rejected: password=\"hunter2 with spaces\" secret='s3cr3t'";
+
+		// Act
+		string result = SensitiveErrorTextRedactor.Redact(message);
+
+		// Assert
+		result.Should().NotContain("hunter2", because: "a double-quoted password value must be redacted too");
+		result.Should().NotContain("s3cr3t", because: "a single-quoted secret value must be redacted too");
+		result.Should().Contain("password=[redacted]",
+			because: "the key is kept and the whole quoted value — quotes included — is replaced");
+		result.Should().Contain("secret=[redacted]",
+			because: "the single-quoted form is redacted the same way as the double-quoted one");
+	}
+
+	[Test]
+	[Category("Unit")]
 	[Description("Redacts the host/database values inside a connection-string-style message.")]
 	public void Redact_ShouldRedactConnectionStringHostAndDatabase() {
 		// Arrange

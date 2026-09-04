@@ -38,7 +38,21 @@ public sealed class McpDurableCallToolHandlerTests {
 		_registry = Substitute.For<IMcpToolInvokerRegistry>();
 		_catalog = Substitute.For<IMcpToolCompatibilityCatalog>();
 		_executor = Substitute.For<IClioRunExecutor>();
-		_sut = new McpDurableCallToolHandler(_registry, _catalog, _executor);
+		// The real execution router over the real declared metadata (ENG-95262 Stage 4b). NOTE the reader's
+		// public constructor scans the EXECUTING assembly — clio.dll — so this is the full PRODUCTION
+		// metadata map, not an empty one, and several names resolved below (restart-by-environment-name,
+		// odata-create) are real worker-classified tools. What keeps the forgiving-handler outcomes pinned
+		// here unchanged is the router's SHAPE: it is given an EMPTY Stage 6 cohort, so every name resolves
+		// to an in-process disposition and the handler never takes its relay or refusal branch.
+		_sut = new McpDurableCallToolHandler(
+			_registry,
+			_catalog,
+			_executor,
+			new McpExecutionRouter(
+				new McpToolExecutionMetadataReader(Substitute.For<IMcpToolCompatibilityCatalog>()),
+				new McpWorkerCohort([]),
+				new McpWorkerPathGate(() => McpHostTransportKind.Stdio, () => false),
+				workerPathWired: true));
 	}
 
 	[TearDown]

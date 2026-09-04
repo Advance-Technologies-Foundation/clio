@@ -26,10 +26,28 @@ internal sealed class KnowledgeFeedbackPolicyTools {
 	}
 
 	[McpServerTool(Name = GetToolName, ReadOnly = true, Destructive = false, Idempotent = true, OpenWorld = false)]
+	// Reads the local policy service only; it resolves no environment and never reaches Creatio, so there is
+	// nothing for a worker to isolate.
+	[McpToolExecution(
+		Location = McpToolExecutionLocation.InProcess,
+		Lifetime = McpToolExecutionLifetime.NotApplicable,
+		OperationFamily = McpToolOperationFamily.None,
+		BudgetPolicy = McpToolBudgetPolicy.None,
+		RequiresClientRequests = McpToolClientRequests.None,
+		SharedFileResource = McpToolSharedFileResource.None)]
 	[Description("Returns configured and effective knowledge-feedback mode, destination, reporting scope, current reporting-policy hash, standing approval, and any reason auto approval is stale. This is a non-resident tool; invoke it through clio-run.")]
 	public KnowledgeFeedbackPolicy Get() => _service.GetPolicy();
 
 	[McpServerTool(Name = ConfigureToolName, ReadOnly = false, Destructive = true, Idempotent = true, OpenWorld = false)]
+	// Writes clio's own local policy configuration; it resolves no environment and never reaches Creatio.
+	// Destructive = true is a consent gate, not an environment effect, so it does not imply a worker.
+	[McpToolExecution(
+		Location = McpToolExecutionLocation.InProcess,
+		Lifetime = McpToolExecutionLifetime.NotApplicable,
+		OperationFamily = McpToolOperationFamily.None,
+		BudgetPolicy = McpToolBudgetPolicy.None,
+		RequiresClientRequests = McpToolClientRequests.None,
+		SharedFileResource = McpToolSharedFileResource.None)]
 	[Description("Updates knowledge-feedback mode, GitHub repository destination, or reporting scope. Explicit mode=auto records standing approval for the current knowledge-feedback article hash. Selecting or retargeting auto requires confirmed=true plus the exact policy hash, destination, and scope shown to the user. This is a non-resident tool; invoke it through clio-run.")]
 	public KnowledgeFeedbackConfigureResponse Configure(KnowledgeFeedbackConfigureArgs args) {
 		try {

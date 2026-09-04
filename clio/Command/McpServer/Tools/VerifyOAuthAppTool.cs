@@ -30,6 +30,13 @@ public sealed class VerifyOAuthAppTool(
 	/// </summary>
 	[McpServerTool(Name = VerifyOAuthAppToolName, ReadOnly = true, Destructive = false,
 		Idempotent = true, OpenWorld = false)]
+	[McpToolExecution(
+		Location = McpToolExecutionLocation.Worker,
+		Lifetime = McpToolExecutionLifetime.PerCall,
+		OperationFamily = McpToolOperationFamily.None,
+		BudgetPolicy = McpToolBudgetPolicy.ParentKillDefault,
+		RequiresClientRequests = McpToolClientRequests.None,
+		SharedFileResource = McpToolSharedFileResource.None)]
 	[Description("""
 				 Verifies a server-to-server OAuth app end to end over REST: acquires a client_credentials access token from the
 				 IdentityService token endpoint, then runs a minimal bearer-authenticated Creatio DataService smoke request with that

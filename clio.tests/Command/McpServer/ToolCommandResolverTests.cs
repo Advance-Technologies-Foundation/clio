@@ -21,7 +21,8 @@ public class ToolCommandResolverTests {
 		ISettingsBootstrapService settingsBootstrapService,
 		ICredentialContextAccessor credentialContextAccessor = null,
 		ITargetUrlValidator targetUrlValidator = null,
-		ISessionContainerCache sessionContainerCache = null) =>
+		ISessionContainerCache sessionContainerCache = null,
+		ISessionTargetNormalizer sessionTargetNormalizer = null) =>
 		new(
 			settingsRepository,
 			settingsBootstrapService,
@@ -30,7 +31,9 @@ public class ToolCommandResolverTests {
 			credentialContextAccessor ?? Substitute.For<ICredentialContextAccessor>(),
 			targetUrlValidator ?? Substitute.For<ITargetUrlValidator>(),
 			sessionContainerCache
-				?? new SessionContainerCache(SessionContainerCacheDefaults.IdleTtl, SessionContainerCacheDefaults.MaxSessions));
+				?? new SessionContainerCache(SessionContainerCacheDefaults.IdleTtl, SessionContainerCacheDefaults.MaxSessions),
+			// The real normaliser: the cache key it folds the target into is part of what these tests observe.
+			sessionTargetNormalizer ?? new SessionTargetNormalizer());
 
 	[Test]
 	[Description("Rejects unknown environment names instead of resolving MCP commands against default localhost settings.")]

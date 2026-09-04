@@ -2,6 +2,8 @@ using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Text.RegularExpressions;
+using System.Threading;
+using System.Threading.Tasks;
 
 namespace Clio.Command.McpServer.Progress;
 
@@ -119,6 +121,32 @@ public sealed class StageEventEmitter : IStageEventEmitter {
 
 	private const string RedactedToken = "[redacted]";
 
+	/// <summary>
+	/// How often a stage that is still running re-announces itself while its action executes.
+	/// </summary>
+	/// <remarks>
+	/// <para>
+	/// <b>This exists because a healthy deploy does NOT stream continuously.</b> One stage produces one
+	/// <c>running</c> event, then the stage's work, then its terminal status — so a legitimately long
+	/// stage (a database restore, a large file copy, an installer step) emits nothing for its whole
+	/// duration. The parent of a worker-executed deploy bounds the call by stage-event SILENCE
+	/// (<c>McpWorkerCallDispatcher.DefaultStageEventSilenceBound</c>, ADR §3.3), so without this refresh a
+	/// six-minute restore is indistinguishable from a dead child: the parent reports the run
+	/// INDETERMINATE, marks the environment possibly half-installed and kills a worker that was fine —
+	/// manufacturing the exact damage the protocol exists to prevent.
+	/// </para>
+	/// <para>
+	/// <b>The relationship to that bound is enforced, not merely intended.</b> The child cannot read the
+	/// parent's bound — <c>CLIO_MCP_WORKER_STAGE_SILENCE_SECONDS</c> configures the SUPERVISOR and is
+	/// deliberately outside the worker's inherited-variable allowlist — so the two values cannot be
+	/// derived from one another at run time. They are instead pinned by
+	/// <c>StageEventLivenessHeartbeatTests.DefaultStageEventSilenceBound_ShouldBeAComfortableMultipleOfTheStageLivenessRefreshInterval</c>,
+	/// which fails the build if either number moves so that a refresh no longer fits several times over
+	/// inside the silence bound. On the shipped defaults it fits ten times (30 s against 300 s).
+	/// </para>
+	/// </remarks>
+	public static readonly TimeSpan StageLivenessRefreshInterval = TimeSpan.FromSeconds(30);
+
 	// Deny-list patterns applied to every string field at the single emission boundary. They target the
 	// secret *value* portions of connection strings, credentials, and tokens while leaving non-secret
 	// technical context (stage names, paths, plain URLs, symbolic codes) intact.
@@ -135,6 +163,97 @@ public sealed class StageEventEmitter : IStageEventEmitter {
 	];
 
 	private readonly HashSet<string> _emitted = new(StringComparer.Ordinal);
+
+	/// <summary>
+	/// Guards the sequencing chokepoint: the counter increment, the queue of stamped events, and the flag
+	/// that says a thread is already delivering them. The in-stage liveness refresh emits from its own
+	/// thread, so two events sharing one <c>sequence</c> would stall ClioRing's ordered replay, which
+	/// buffers until the next contiguous number arrives.
+	/// </summary>
+	/// <remarks>
+	/// <para>
+	/// <b>The sink is invoked OUTSIDE this lock, and that separation is the whole of the fix.</b> Holding
+	/// it across the sink made the ordering guarantee and the liveness guarantee mutually exclusive: a
+	/// beat blocked on pipe backpressure held the lock, the bounded join in
+	/// <see cref="StopLivenessRefresh"/> gave up on that beat by design, and the stage's own terminal
+	/// transition — and after it the run's <c>run-completed</c> — then blocked on the lock the timed-out
+	/// beat still owned. The stage could not finish, the run reported no terminal stage, and the parent
+	/// classified a healthy deploy as indeterminate and killed the worker: precisely the outcome the
+	/// bounded join was added to prevent.
+	/// </para>
+	/// <para>
+	/// <b>It guards emission only, and that is sufficient because of where the boundary runs.</b> The
+	/// refresh reaches exactly one member — <c>EmitStage</c> — and touches no other state; every mutation
+	/// of <see cref="_emitted"/>, <see cref="_manifest"/>, <see cref="_completed"/> and the cascade happens
+	/// on the stage's own thread. Anything added to the beat path that reads or writes those fields needs
+	/// this lock too.
+	/// </para>
+	/// </remarks>
+	private readonly object _emitLock = new();
+
+	/// <summary>
+	/// Events already stamped and not yet delivered, in sequence order. Guarded by
+	/// <see cref="_emitLock"/>.
+	/// </summary>
+	/// <remarks>
+	/// Each entry carries the sink CAPTURED AT ENQUEUE TIME rather than reading <see cref="_sink"/> at
+	/// delivery: a <see cref="Begin"/> for a second run would otherwise be able to divert the tail of the
+	/// previous run's stream into the new run's subscriber.
+	/// </remarks>
+	private readonly Queue<PendingStageEvent> _pending = new();
+
+	/// <summary>Whether a thread is inside the delivery loop right now. Guarded by <see cref="_emitLock"/>.</summary>
+	private bool _delivering;
+
+	/// <summary>
+	/// The managed thread currently inside the delivery loop, or <c>0</c>. Guarded by
+	/// <see cref="_emitLock"/>.
+	/// </summary>
+	/// <remarks>
+	/// Recorded so that a sink which emits while it is being delivered to does not wait for a loop it is
+	/// itself standing in — a self-wait that could only end at the bound.
+	/// </remarks>
+	private int _deliveringThreadId;
+
+	/// <summary>
+	/// Test seam: the in-stage liveness interval this instance runs with.
+	/// </summary>
+	/// <remarks>
+	/// Production never sets it — <see cref="StageLivenessRefreshInterval"/> is the shipped value, and a
+	/// second knob would be a second thing that can drift away from the parent's silence bound. A test
+	/// scales it down so a refresh can be observed without a stage that runs for a minute.
+	/// </remarks>
+	internal TimeSpan LivenessRefreshInterval { get; set; } = StageLivenessRefreshInterval;
+
+	/// <summary>
+	/// Test seam: how long a terminal event waits for a delivery loop it could not join.
+	/// </summary>
+	/// <remarks>
+	/// Production never sets it — <see cref="DefaultTerminalDeliveryBound"/> is the shipped value. A test
+	/// that wants to observe the give-up path without paying seconds shortens it here.
+	/// </remarks>
+	internal TimeSpan TerminalDeliveryBound { get; set; } = DefaultTerminalDeliveryBound;
+
+	/// <summary>
+	/// Floor on how long <see cref="StopLivenessRefresh"/> waits for an in-flight beat before carrying on.
+	/// </summary>
+	/// <remarks>
+	/// A beat has only one sink call to finish, so a second is generous for every healthy sink and short
+	/// enough that a sink which is not returning cannot hold a stage open. It is a FLOOR rather than the
+	/// bound itself so that a test scaling the interval down to milliseconds still joins reliably.
+	/// </remarks>
+	private static readonly TimeSpan MinimumLivenessJoinBound = TimeSpan.FromSeconds(1);
+
+	/// <summary>
+	/// How long a terminal event waits for a delivery loop somebody else is running, when it could not
+	/// deliver itself.
+	/// </summary>
+	/// <remarks>
+	/// Generous for a sink that is merely slow, and short enough that a sink which is not returning at all
+	/// cannot hold the run open — the parent's own post-terminal exit grace is 30 s (ADR §3.3), so a
+	/// terminal event that has not reached the pipe within seconds is not going to.
+	/// </remarks>
+	private static readonly TimeSpan DefaultTerminalDeliveryBound = TimeSpan.FromSeconds(2);
 	private Action<ClioStageEvent> _sink;
 	private string _operation = string.Empty;
 	private Guid _runId;
@@ -145,10 +264,15 @@ public sealed class StageEventEmitter : IStageEventEmitter {
 	/// <inheritdoc />
 	public void Begin(string operation, IReadOnlyList<StageDescriptor> stages, Action<ClioStageEvent> sink) {
 		ArgumentNullException.ThrowIfNull(stages);
-		_sink = sink;
+		lock (_emitLock) {
+			// The counter, the sink and the undelivered tail of any previous run move together: a queue kept
+			// across a Begin would deliver the old run's numbering into the new run's stream.
+			_sink = sink;
+			_sequence = 0;
+			_pending.Clear();
+		}
 		_operation = operation;
 		_runId = Guid.NewGuid();
-		_sequence = 0;
 		_completed = false;
 		_emitted.Clear();
 
@@ -184,14 +308,32 @@ public sealed class StageEventEmitter : IStageEventEmitter {
 		EmitStage(entry, ClioStageEventContract.StageStatuses.Running, startedAtUtc: startedAtUtc,
 			message: entry.Name);
 
+		// While the stage's work runs it says nothing, and a parent that bounds a worker by stage-event
+		// SILENCE cannot tell a six-minute database restore from a child that died. The refresh below is
+		// what makes silence mean "this worker has stopped talking".
+		using CancellationTokenSource liveness = new();
+		// "Refreshing switched off" is carried by the ABSENCE of a task, not by a completed one: the bounded
+		// join below then has nothing to cancel and nothing to wait on, which is the same behaviour as before.
+		TimeSpan refreshInterval = LivenessRefreshInterval;
+		Task refreshing = refreshInterval > TimeSpan.Zero
+			? StartLivenessRefresh(entry, startedAtUtc, refreshInterval, liveness.Token)
+			: null;
+
 		int exitCode;
 		try {
 			exitCode = stage();
 		}
 		catch (Exception ex) {
 			stopwatch.Stop();
+			// STOPPED BEFORE THE CASCADE, not merely before the method returns: the cascade ends in the
+			// run's terminal event, and a beat landing after that would report a finished run as working.
+			// The `finally` below repeats this harmlessly; it cannot replace it.
+			StopLivenessRefresh(liveness, refreshing);
 			FailAndCascade(entry, stopwatch.ElapsedMilliseconds, ex.Message, StageFailedErrorCode);
 			throw;
+		}
+		finally {
+			StopLivenessRefresh(liveness, refreshing);
 		}
 
 		stopwatch.Stop();
@@ -207,6 +349,85 @@ public sealed class StageEventEmitter : IStageEventEmitter {
 		EmitStage(entry, ClioStageEventContract.StageStatuses.Done, durationMs: stopwatch.ElapsedMilliseconds,
 			message: entry.Name);
 		return 0;
+	}
+
+	/// <summary>
+	/// Starts the in-stage liveness refresh for <paramref name="entry"/>.
+	/// </summary>
+	/// <param name="entry">The stage that is about to run.</param>
+	/// <param name="startedAtUtc">The stage's own start, repeated verbatim on every refresh.</param>
+	/// <param name="interval">The refresh period; the caller only calls in when it is positive.</param>
+	/// <param name="cancellationToken">Cancelled the moment the stage ends.</param>
+	/// <returns>The refresh task.</returns>
+	/// <remarks>
+	/// The refresh is an ORDINARY <c>running</c> transition for the CURRENT stage, byte-identical to the
+	/// one the stage opened with apart from its <c>sequence</c>. That is deliberate and it is the whole
+	/// compatibility argument: the stage vocabulary is unchanged, no field is added, and the
+	/// <c>(runId, sequence)</c> pair ClioRing correlates and orders on keeps its meaning — a refresh is
+	/// simply the next event of the run.
+	/// </remarks>
+	private Task StartLivenessRefresh(ClioStageManifestEntry entry, DateTimeOffset startedAtUtc,
+		TimeSpan interval, CancellationToken cancellationToken) {
+		// CancellationToken.None on Task.Run rather than the stage's token: a task cancelled before its
+		// body ran would surface as a faulted join instead of an orderly stop.
+		return Task.Run(async () => {
+			while (true) {
+				try {
+					await Task.Delay(interval, cancellationToken).ConfigureAwait(false);
+				}
+				catch (OperationCanceledException) {
+					return;
+				}
+
+				if (cancellationToken.IsCancellationRequested) {
+					return;
+				}
+
+				EmitStage(entry, ClioStageEventContract.StageStatuses.Running, startedAtUtc: startedAtUtc,
+					message: entry.Name);
+			}
+		}, CancellationToken.None);
+	}
+
+	/// <summary>
+	/// Stops the refresh and waits — BRIEFLY — for it, so that in practice no beat is in flight when the
+	/// stage's own terminal transition is emitted. Idempotent, because the failure path stops it before
+	/// the cascade and the <c>finally</c> stops it again.
+	/// </summary>
+	/// <param name="liveness">The refresh's cancellation source.</param>
+	/// <param name="refreshing">The refresh task, or <see langword="null"/>.</param>
+	/// <remarks>
+	/// <b>The wait is BOUNDED, and the weaker guarantee is the deliberate half of that trade.</b> The
+	/// refresh emits through the caller's sink, which in a worker writes to a pipe; a parent that has
+	/// stopped reading can leave that write outstanding, and an unbounded join here would wedge the stage
+	/// thread inside a <c>finally</c> — a deploy that then produces no further stage event and no result,
+	/// which is exactly the "possibly half-installed" report this whole refresh exists to prevent, re-entered
+	/// through a different door. So the join gives up after <see cref="MinimumLivenessJoinBound"/> (or the
+	/// refresh interval, whichever is longer) and lets the stage finish. A beat landing just after the
+	/// terminal transition is a cosmetic oddity the consumer already drops — ClioRing ignores a
+	/// non-advancing step transition — and is strictly cheaper than a wedged stage.
+	/// </remarks>
+	private void StopLivenessRefresh(CancellationTokenSource liveness, Task refreshing) {
+		if (refreshing is null || liveness.IsCancellationRequested) {
+			return;
+		}
+
+		liveness.Cancel();
+		TimeSpan joinBound = LivenessRefreshInterval > MinimumLivenessJoinBound
+			? LivenessRefreshInterval
+			: MinimumLivenessJoinBound;
+		try {
+			// Returns false rather than throwing when the bound expires; an in-flight beat needs only to
+			// finish one sink call, so reaching the bound means the sink itself is not returning.
+			// CancellationToken.None is deliberate, not an oversight: this join exists to be BOUNDED by
+			// time alone. Handing it a token would let a cancelled stage skip the wait and emit its terminal
+			// transition with a beat still in flight — the ordering this whole join is here to keep.
+			_ = refreshing.Wait(joinBound, CancellationToken.None);
+		}
+		catch (AggregateException) {
+			// A refresh that could not reach the sink is a progress problem, never a stage problem: it must
+			// not replace the stage's own outcome (or its exception) on the way out.
+		}
 	}
 
 	// Shared failure path for both the thrown-stage and non-zero-return cases: emit the active stage as
@@ -306,11 +527,117 @@ public sealed class StageEventEmitter : IStageEventEmitter {
 				durationMs, message, detail, errorCode, skipReason)));
 	}
 
+	/// <summary>One stamped event and the sink it is owed to.</summary>
+	/// <param name="Event">The redacted, sequenced event.</param>
+	/// <param name="Sink">The subscriber captured when the event was stamped.</param>
+	private readonly record struct PendingStageEvent(ClioStageEvent Event, Action<ClioStageEvent> Sink);
+
 	// The single redaction + sequencing chokepoint: every event is scrubbed of secrets and stamped with the
 	// next monotonic sequence before it reaches the sink. A null/absent sink makes emission a pure no-op.
 	private void Emit(ClioStageEvent stageEvent) {
-		ClioStageEvent sequenced = Redact(stageEvent) with { Sequence = _sequence++ };
-		_sink?.Invoke(sequenced);
+		// STAMP AND ENQUEUE under the lock; DELIVER outside it. The sequence is what ClioRing
+		// de-duplicates and orders on, so stamping has to be serialised — but delivery is serialised by the
+		// single delivery loop below instead of by this lock, so a sink that blocks holds up only the
+		// events behind it and never a thread that is merely trying to raise one.
+		bool deliverHere;
+		lock (_emitLock) {
+			ClioStageEvent sequenced = Redact(stageEvent) with { Sequence = _sequence++ };
+			Action<ClioStageEvent> sink = _sink;
+			if (sink is null) {
+				return;
+			}
+			_pending.Enqueue(new PendingStageEvent(sequenced, sink));
+			deliverHere = !_delivering;
+			if (deliverHere) {
+				_delivering = true;
+				_deliveringThreadId = Environment.CurrentManagedThreadId;
+			}
+			else if (sequenced.EventType == ClioStageEventContract.EventTypes.RunCompleted
+				&& _deliveringThreadId != Environment.CurrentManagedThreadId) {
+				// Somebody else's loop owes this run its terminal event. Waiting for it — BOUNDED, and with
+				// the lock released — is the difference between "the terminal event went out behind a slow
+				// beat" and "the process ended with it still queued".
+				AwaitDelivery();
+			}
+		}
+
+		if (deliverHere) {
+			// In the ordinary single-threaded case this runs the queue dry before Emit returns, so the sink
+			// still sees the event synchronously, exactly as it did when the lock spanned the invocation.
+			DeliverPending();
+		}
+	}
+
+	/// <summary>
+	/// Delivers stamped events, in order, until the queue is empty. Exactly one thread runs this at a
+	/// time, which is what keeps delivery ordered now that the sink is invoked outside
+	/// <see cref="_emitLock"/>.
+	/// </summary>
+	private void DeliverPending() {
+		try {
+			while (true) {
+				PendingStageEvent next;
+				lock (_emitLock) {
+					if (!_pending.TryDequeue(out next)) {
+						StopDelivering();
+						return;
+					}
+				}
+
+				try {
+					next.Sink(next.Event);
+				}
+				catch (Exception) {
+					// A progress sink must never break the run it is reporting on — the shipped subscriber
+					// (StageEventProgressForwarder) already swallows its own send failures for this reason, and
+					// a shared delivery loop must not start attributing one subscriber's fault to whichever
+					// thread happens to be draining.
+				}
+			}
+		}
+		catch (Exception) {
+			// Nothing ordinary reaches here — the sink is the only thing that can throw and it is caught
+			// above. Releasing the loop on the way out anyway is what keeps the failure LOCAL: a flag left
+			// set would mute the emitter for the rest of the run, and a run that stops emitting is exactly
+			// what the parent reports as a possibly half-installed environment.
+			lock (_emitLock) {
+				StopDelivering();
+			}
+			throw;
+		}
+	}
+
+	/// <summary>
+	/// Releases the delivery loop and wakes whoever is waiting on it. Called with
+	/// <see cref="_emitLock"/> HELD, so an event enqueued after this point is guaranteed to find
+	/// <see cref="_delivering"/> false and carry itself.
+	/// </summary>
+	private void StopDelivering() {
+		_delivering = false;
+		_deliveringThreadId = 0;
+		Monitor.PulseAll(_emitLock);
+	}
+
+	/// <summary>
+	/// Waits — briefly, with <see cref="_emitLock"/> released — for the running delivery loop to empty the
+	/// queue. Called with the lock HELD.
+	/// </summary>
+	private void AwaitDelivery() {
+		if (TerminalDeliveryBound <= TimeSpan.Zero) {
+			return;
+		}
+
+		long deadline = Environment.TickCount64 + (long)TerminalDeliveryBound.TotalMilliseconds;
+		while (_pending.Count > 0) {
+			long remaining = deadline - Environment.TickCount64;
+			if (remaining <= 0) {
+				// Given up on deliberately. The alternative is waiting on a sink that is not returning, which
+				// is the wedge this whole change removes; a terminal event that cannot reach the pipe is a
+				// transport failure the parent's silence bound already covers.
+				return;
+			}
+			Monitor.Wait(_emitLock, (int)remaining);
+		}
 	}
 
 	private static ClioStageEvent Redact(ClioStageEvent stageEvent) {

@@ -130,6 +130,14 @@ public class McpHttpServerCommand : Command<McpHttpServerCommandOptions>
 	private static readonly string[] LoopbackHostAliases = ["localhost", "127.0.0.1", "[::1]", "::1"];
 
 	internal static int Run(McpHttpServerCommandOptions options) {
+		// ENG-95262 Stage 6 — declared FIRST, before any container is built or any request is served. The
+		// worker execution boundary is stdio-only while Stage 5 is deferred: on stdio no secret crosses the
+		// parent/child boundary (the child reads appsettings.json itself and receives only the environment
+		// NAME), whereas here the caller's credentials live in this host's HttpContext and the channel that
+		// would hand them down does not exist. A cohort tool relayed from here would therefore either fail
+		// or run under a DIFFERENT identity, so the router refuses to relay at all — see IMcpWorkerPathGate.
+		// Reviving mcp-http (OQ-9) means BUILDING that channel and then lifting the gate deliberately.
+		McpHostTransport.Current = McpHostTransportKind.Http;
 		if (!IsTruthyEnvironmentFlag("CLIO_MCP_RESPECT_AMBIENT_PROXY")) {
 			System.Net.Http.HttpClient.DefaultProxy = new System.Net.WebProxy();
 		}

@@ -69,6 +69,19 @@ public sealed class InstallProcessBuilderTool(
 	// makes the target rebuild its configuration.
 	[McpServerTool(Name = InstallProcessBuilderToolName, ReadOnly = false, Destructive = true,
 		Idempotent = true, OpenWorld = false)]
+	// One of the five long-running starters. Sticky because the install keeps running past the response
+	// deadline (the detached continuation above), so the worker must outlive the answer; ConfigurationBuild
+	// because it holds the narrow reservation this file already takes and must exclude a concurrent
+	// compile-creatio on the same tenant (which the parent owns from Stage 7 on). It has no operation
+	// registry, so reaping needs the private completion signal (ADR rule 5).
+	[McpToolExecution(
+		Location = McpToolExecutionLocation.Worker,
+		Lifetime = McpToolExecutionLifetime.Sticky,
+		OperationFamily = McpToolOperationFamily.ConfigurationBuild,
+		BudgetPolicy = McpToolBudgetPolicy.ParentKillExtended,
+		RequiresClientRequests = McpToolClientRequests.Progress,
+		SharedFileResource = McpToolSharedFileResource.ConfigurationBuild,
+		StartsOperation = true)]
 	[Description("""
 	             Installs (or updates) the bundled CrtProcessBuilder package into a registered Creatio
 	             environment, making ProcessDesignService reachable there.
@@ -164,8 +177,11 @@ public sealed class InstallProcessBuilderTool(
 	// past the response deadline — rather than where the tool method returned.
 	private CommandExecutionResult RunInstall(
 		InstallProcessBuilderOptions options, StrongBox<bool> callerAlreadyAnswered) {
-		string tenantKey = ResolveTenantLockKey(options);
-		if (!McpToolExecutionLock.TryReserveConfigurationBuild(tenantKey, out McpToolExecutionLock.BuildReservation reservation)) {
+		// TARGET key, not tenant: the configuration build is server-wide, so this must exclude across
+		// principals too — and it must use the SAME key the worker-routed path reserves under, or the two
+		// stop excluding each other the moment one of them is routed to a worker and the other is not.
+		string buildKey = ResolveTargetResourceKey(options);
+		if (!McpToolExecutionLock.TryReserveConfigurationBuild(buildKey, out McpToolExecutionLock.BuildReservation reservation)) {
 			// Caller-actionable refusal (exit 1), not a clio failure: waiting fixes it. Deliberately fails
 			// fast — a second install would rebuild and restart an instance that is already being rebuilt.
 			return CommandExecutionResult.FromValidationError(
@@ -182,7 +198,13 @@ public sealed class InstallProcessBuilderTool(
 			return result;
 		}
 		finally {
-			McpToolExecutionLock.ReleaseConfigurationBuild(tenantKey, reservation);
+			McpToolExecutionLock.ReleaseConfigurationBuild(buildKey, reservation);
+			// No completion signal is sent from here. install-process-builder has no operation registry at
+			// all, so the private signal (ADR rule 5) is the ONLY way the parent learns this sticky worker
+			// has finished — which is exactly why sending it from this finally was wrong: the reservation
+			// refusal above returns before it, and that refusal is the likeliest outcome when a build is
+			// already running. WorkerOperationCompletionSignal's choke point emits it around every exit, and
+			// the heartbeat helper leases this work so a past-deadline install is not read as finished.
 		}
 	}
 

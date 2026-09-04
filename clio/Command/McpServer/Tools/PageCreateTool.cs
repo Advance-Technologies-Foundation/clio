@@ -17,6 +17,13 @@ public sealed class PageCreateTool(
 	internal const string ToolName = "create-page";
 
 	[McpServerTool(Name = ToolName, ReadOnly = false, Destructive = true, Idempotent = false, OpenWorld = false)]
+	[McpToolExecution(
+		Location = McpToolExecutionLocation.Worker,
+		Lifetime = McpToolExecutionLifetime.PerCall,
+		OperationFamily = McpToolOperationFamily.None,
+		BudgetPolicy = McpToolBudgetPolicy.ParentKillDefault,
+		RequiresClientRequests = McpToolClientRequests.None,
+		SharedFileResource = McpToolSharedFileResource.None)]
 	[Description("Create a new Freedom UI page schema from a supported template. Use `list-page-templates` first to discover valid template values. Prefer `environment-name`; keep direct connection args only for bootstrap or emergency fallback flows. " +
 		"To create a DASHBOARD, use `template` `BaseDashboardTemplate` and pass its link-back properties through `optional-properties` (DashboardsEntitySchemaName / DashboardsElementName / DashboardsClientUnitSchemaUId) — call get-guidance with name `dashboard-creation` FIRST to learn how to retrieve each value (including the root-schema UId rule). " +
 		"To create a HOME PAGE (template `BaseHomePage`), also bind it to a workplace (SysWorkplace.HomePageUId) — call get-guidance with name `home-page`. " +
