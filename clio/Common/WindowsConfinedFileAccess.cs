@@ -51,7 +51,7 @@ internal sealed class WindowsConfinedFileAccess : IConfinedFileAccess {
 		// been pulled into memory by the time anything could reject it.
 		using (FileStream source = new(handle, FileAccess.Read)) {
 			if (source.Length > maxBytes) {
-				throw new IOException(ConfinedFileAccess.DescribeTooLarge(source.Length, maxBytes));
+				throw new InputFileTooLargeException(source.Length, maxBytes);
 			}
 			CopyBounded(source, buffer, maxBytes);
 		}
@@ -106,6 +106,65 @@ internal sealed class WindowsConfinedFileAccess : IConfinedFileAccess {
 	private const int ErrorFileNotFound = 2;
 	private const int ErrorPathNotFound = 3;
 
+	/// <summary>IO_REPARSE_TAG_SYMLINK: a symbolic link, the one kind of reparse point Windows follows by name.</summary>
+	internal const uint ReparseTagSymlink = 0xA000000C;
+
+	/// <summary>IO_REPARSE_TAG_MOUNT_POINT: a junction (or volume mount point), also followed by name.</summary>
+	internal const uint ReparseTagMountPoint = 0xA0000003;
+
+	/// <summary>
+	/// Reads the reparse TAG of <paramref name="path"/> without following it. The tag is what separates a
+	/// link Windows redirects a pathname through (a symbolic link or a junction) from every other reparse
+	/// point - a cloud-files placeholder under a OneDrive-redirected folder, an app-execution alias, a WSL
+	/// link - which Windows does NOT follow and which therefore cannot move a write anywhere else.
+	/// </summary>
+	/// <remarks>
+	/// Exists because <see cref="FileSystemInfo.LinkTarget"/> returns <see langword="null"/> on Windows for a
+	/// symbolic link whose target does not exist (dangling) or cannot be resolved (a cycle), while the entry
+	/// still carries <see cref="FileAttributes.ReparsePoint"/>. A caller that judged only <c>LinkTarget</c>
+	/// would take those links for ordinary entries; a caller that judged only the attribute would refuse every
+	/// placeholder. The tag answers both.
+	/// </remarks>
+	/// <param name="path">Absolute path of an existing entry (the link itself, not its target).</param>
+	/// <param name="tag">The reparse tag when the call succeeds; <c>0</c> for an entry that is not a reparse point.</param>
+	/// <returns><see langword="true"/> when the entry could be opened and inspected; otherwise <see langword="false"/>.</returns>
+	internal static bool TryGetReparseTag(string path, out uint tag) {
+		tag = 0;
+		SafeFileHandle handle = PinnedPath.CreateFileW(
+			path, 0, PinnedPath.FileShareReadWriteDelete, IntPtr.Zero, PinnedPath.OpenExisting,
+			PinnedPath.BackupSemantics | PinnedPath.OpenReparsePoint, IntPtr.Zero);
+		try {
+			if (handle.IsInvalid) {
+				return false;
+			}
+			if (!GetFileInformationByHandleEx(handle, FileAttributeTagInfoClass, out FileAttributeTagInfo info,
+				(uint)Marshal.SizeOf<FileAttributeTagInfo>())) {
+				return false;
+			}
+			tag = (info.FileAttributes & FileAttributeReparsePoint) != 0 ? info.ReparseTag : 0;
+			return true;
+		}
+		finally {
+			handle.Dispose();
+		}
+	}
+
+	// FILE_INFO_BY_HANDLE_CLASS.FileAttributeTagInfo
+	private const int FileAttributeTagInfoClass = 9;
+
+	[StructLayout(LayoutKind.Sequential)]
+	private struct FileAttributeTagInfo {
+
+		public uint FileAttributes;
+		public uint ReparseTag;
+
+	}
+
+	[DllImport("kernel32.dll", SetLastError = true)]
+	[return: MarshalAs(UnmanagedType.Bool)]
+	private static extern bool GetFileInformationByHandleEx(SafeFileHandle file, int fileInformationClass,
+		out FileAttributeTagInfo fileInformation, uint bufferSize);
+
 	[StructLayout(LayoutKind.Sequential)]
 	private struct ByHandleFileInformation {
 
@@ -147,7 +206,7 @@ internal sealed class WindowsConfinedFileAccess : IConfinedFileAccess {
 			}
 			total += read;
 			if (total > maxBytes) {
-				throw new IOException(ConfinedFileAccess.DescribeTooLarge(total, maxBytes));
+				throw new InputFileTooLargeException(total, maxBytes);
 			}
 			destination.Write(chunk, 0, read);
 		}
@@ -208,8 +267,10 @@ internal sealed class WindowsConfinedFileAccess : IConfinedFileAccess {
 		// READ only, for the final component: the entry must not be renamed or deleted while it is read, and
 		// nothing needs to write it at the same time.
 		internal const uint FileShareRead = 0x00000001;
+		// Everything shared, for a METADATA-only probe that must not disturb an entry it merely inspects.
+		internal const uint FileShareReadWriteDelete = 0x00000007;
 		internal const uint OpenExisting = 3;
-		private const uint BackupSemantics = 0x02000000;
+		internal const uint BackupSemantics = 0x02000000;
 		internal const uint OpenReparsePoint = 0x00200000;
 
 		private readonly List<SafeFileHandle> _handles;

@@ -342,7 +342,9 @@ internal static class OutputPathConfinement {
 			// segment and appended lexically — never canonicalized. The later write follows the link at the OS
 			// level and lands OUTSIDE the allowed zone (the terminal-/intermediate-symlink escape). Stop the walk
 			// at a reparse point too, so its own component is canonicalized (and thus confinement-checked)
-			// regardless of whether its target exists yet.
+			// regardless of whether its target exists yet. On Windows a dangling link's target cannot be read
+			// at all; wherever TryReadLinkTarget is consulted for such a link it throws UnresolvableLinkException,
+			// and the walk fails CLOSED.
 			while (!string.IsNullOrEmpty(current)
 				&& !fileSystem.Directory.Exists(current)
 				&& !fileSystem.File.Exists(current)
@@ -426,8 +428,10 @@ internal static class OutputPathConfinement {
 
 	// True when <paramref name="path"/> is a symbolic link / reparse point, EVEN when its target does not exist
 	// (a dangling link). Distinct from File.Exists / Directory.Exists, which follow the link and report false for
-	// a dangling one. Returns false — never throws — when link metadata cannot be read (mock / unsupported FS),
-	// so a filesystem without link support degrades to the lexical fallback in ResolveRealPath.
+	// a dangling one. Returns false when link metadata cannot be read (mock / unsupported FS), so a filesystem
+	// without link support degrades to the lexical fallback in ResolveRealPath. The one way it does throw is
+	// UnresolvableLinkException, for a link Windows would follow but whose target .NET cannot read - see
+	// TryReadLinkTarget - which ResolveRealPath propagates so the caller fails CLOSED.
 	private static bool IsReparsePoint(IoFileSystem fileSystem, string path) =>
 		TryReadLinkTarget(fileSystem, path, out _);
 
@@ -437,7 +441,45 @@ internal static class OutputPathConfinement {
 		// not-a-link (a security softening). Read each under its own guard instead.
 		target = ReadLinkTargetOrNull(() => fileSystem.FileInfo.New(path).LinkTarget)
 			?? ReadLinkTargetOrNull(() => fileSystem.DirectoryInfo.New(path).LinkTarget);
-		return target != null;
+		if (target != null) {
+			return true;
+		}
+		// On Windows, LinkTarget is null not only for an ordinary entry but ALSO for a symbolic link whose target
+		// does not exist (dangling) or cannot be resolved (a cycle), while the entry still carries the
+		// ReparsePoint attribute. Taking null for "not a link" there left both defenses inert: the dangling link
+		// was appended as a lexical tail segment and the cycle degraded to its lexical path, and the later write
+		// followed the link at the OS level. Ask the reparse TAG instead. Only a symbolic link or a junction is
+		// followed by a Windows pathname; every other reparse point (a cloud-files placeholder, an app-execution
+		// alias, a WSL link) is an ordinary entry at its own location and must NOT be refused.
+		if (IsWindowsLinkWithUnreadableTarget(fileSystem, path)) {
+			throw new UnresolvableLinkException();
+		}
+		return false;
+	}
+
+	// True for an entry that IS a symbolic link or junction (by reparse tag) but whose target .NET could not
+	// read - the dangling / cyclic case above. Fails CLOSED when the entry carries the ReparsePoint attribute
+	// but its tag cannot be read at all: an uninspected reparse point may be a link. A mock file system (unit
+	// tests) has no real entry at the path, so the attribute probe fails and this is false - the lexical
+	// fallback those tests already rely on.
+	private static bool IsWindowsLinkWithUnreadableTarget(IoFileSystem fileSystem, string path) {
+		if (!OperatingSystem.IsWindows() || !HasReparsePointAttribute(fileSystem, path)) {
+			return false;
+		}
+		if (!WindowsConfinedFileAccess.TryGetReparseTag(path, out uint tag)) {
+			return true;
+		}
+		return tag is WindowsConfinedFileAccess.ReparseTagSymlink or WindowsConfinedFileAccess.ReparseTagMountPoint;
+	}
+
+	private static bool HasReparsePointAttribute(IoFileSystem fileSystem, string path) {
+		try {
+			// GetAttributes reports the entry ITSELF (it does not follow a link), so a dangling link still answers.
+			return (fileSystem.File.GetAttributes(path) & FileAttributes.ReparsePoint) != 0;
+		}
+		catch (Exception) {
+			return false;
+		}
 	}
 
 	private static string ReadLinkTargetOrNull(Func<string> read) {
