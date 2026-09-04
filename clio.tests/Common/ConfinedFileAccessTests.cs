@@ -444,6 +444,74 @@ public sealed class ConfinedFileAccessTests {
 				+ "returns");
 	}
 
+	[Test]
+	[Category("Integration")]
+	[Description("Swaps an INTERMEDIATE component for a link to another directory while confined writes run against it, and requires that nothing is ever created at the swap target - the property a pathname check followed by an open-by-name cannot provide.")]
+	public void WriteNew_ShouldNeverCreateAnythingOutsideTheRoot_WhenAnIntermediateComponentIsSwappedDuringTheDescent() {
+		// Arrange
+		string approvedDirectory = Path.Combine(_sandbox, "approved");
+		string outsideDirectory = Path.Combine(_sandbox, "outside");
+		Directory.CreateDirectory(approvedDirectory);
+		Directory.CreateDirectory(outsideDirectory);
+		if (!DirectorySymbolicLinksAvailable(Path.Combine(_sandbox, "probe-dir"))) {
+			Assert.Ignore("Directory symbolic-link creation is unavailable in this environment.");
+		}
+		using CancellationTokenSource stop = new(TimeSpan.FromSeconds(3));
+		int successfulWrites = 0;
+		int attempt = 0;
+
+		// Act
+		// The swap is what makes this a race regression rather than a restatement of the pre-planted-link
+		// case: the component is a REAL DIRECTORY when its name is checked and a LINK by the time the descent
+		// opens and pins it. A descent that judges only the pathname pins the link, then creates the missing
+		// inner segment and the payload underneath it - outside the allowed root, and Reverify only notices
+		// once that directory already exists and cannot be taken back. Only inspecting the OPENED HANDLE
+		// closes the interval, so a version without that check fails here while passing every static case.
+		Task swapper = Task.Run(() => {
+			while (!stop.IsCancellationRequested) {
+				TryQuietly(() => Directory.Delete(approvedDirectory, recursive: true));
+				TryQuietly(() => Directory.CreateSymbolicLink(approvedDirectory, "outside"));
+				TryQuietly(() => Directory.Delete(approvedDirectory));
+				TryQuietly(() => Directory.CreateDirectory(approvedDirectory));
+			}
+		});
+		while (!stop.IsCancellationRequested) {
+			string target = Path.Combine(approvedDirectory, "nested", $"out-{attempt++}.json");
+			try {
+				_access.WriteNew(target, Encoding.UTF8.GetBytes("{\"ok\":true}"));
+				successfulWrites++;
+			}
+			catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) {
+				// Refusing the write is the correct outcome for a swapped component, and losing a race to the
+				// swapper over the directory itself is equally uninteresting - only a side effect at the swap
+				// target is a defect.
+			}
+		}
+		stop.Cancel();
+		swapper.Wait(TimeSpan.FromSeconds(5));
+		// The link is dropped before the assertions so the swap target is inspected as itself, not through it.
+		TryQuietly(() => Directory.Delete(approvedDirectory));
+
+		// Assert
+		Directory.GetFileSystemEntries(outsideDirectory).Should().BeEmpty(
+			because: "a write approved for one directory must never create a directory or a file at whatever "
+				+ "an intermediate component was replaced with in between");
+		successfulWrites.Should().BeGreaterThan(0,
+			because: "a run in which every single write failed would prove nothing about where a successful "
+				+ "one lands");
+	}
+
+	private static bool DirectorySymbolicLinksAvailable(string probePath) {
+		try {
+			Directory.CreateSymbolicLink(probePath, "outside");
+			Directory.Delete(probePath);
+			return true;
+		}
+		catch (Exception ex) when (ex is UnauthorizedAccessException or IOException or PlatformNotSupportedException) {
+			return false;
+		}
+	}
+
 	private static bool SymbolicLinksAvailable(string probePath) {
 		try {
 			File.CreateSymbolicLink(probePath, "secret.json");

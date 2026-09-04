@@ -135,6 +135,29 @@ internal sealed class WindowsConfinedFileAccess : IConfinedFileAccess {
 	private static extern bool GetFileInformationByHandle(SafeFileHandle file,
 		out ByHandleFileInformation fileInformation);
 
+	// The directory counterpart of RejectReparsePointHandle, and the reason the pathname check alone is not
+	// enough: RejectReparsePoint(component) judges a NAME, and between that call and CreateFileW a local
+	// racer can replace the component with a junction. The descent would then pin the junction, and every
+	// later absolute-path create under it lands outside the allowed root - Reverify only notices afterwards,
+	// once the out-of-root directory already exists and cannot be taken back. Judging the handle closes the
+	// interval: whatever the name resolved to, THIS object is proven to be a real directory and not a link.
+	private static void RejectReparsePointDirectoryHandle(SafeFileHandle handle, string directory) {
+		if (!GetFileInformationByHandle(handle, out ByHandleFileInformation information)) {
+			int error = Marshal.GetLastWin32Error();
+			throw new IOException(
+				$"could not inspect the pinned handle for path component '{directory}' (error {error}); "
+				+ "refusing to continue, because an uninspected handle may be a reparse point.");
+		}
+		if ((information.FileAttributes & FileAttributeReparsePoint) != 0) {
+			throw new IOException(
+				$"'{directory}' is a reparse point; the path changed after it was approved, refusing to continue.");
+		}
+		if ((information.FileAttributes & FileAttributeDirectory) == 0) {
+			throw new IOException(
+				$"'{directory}' is not a directory; the path changed after it was approved, refusing to continue.");
+		}
+	}
+
 	// Stops at maxBytes + 1 bytes, so a file whose reported length lies (a sparse or concurrently grown
 	// file) cannot make the copy unbounded either.
 	private static void CopyBounded(Stream source, Stream destination, long maxBytes) {
@@ -318,6 +341,15 @@ internal sealed class WindowsConfinedFileAccess : IConfinedFileAccess {
 				throw new IOException(
 					$"could not pin path component '{directory}' (error {error}); refusing to continue, "
 					+ "because an unpinned component can be replaced while the operation runs.");
+			}
+			// Inspected BEFORE the handle joins the pinned list and before the descent goes any deeper, so a
+			// junction swapped in after the pathname check is never pinned and never descended through.
+			try {
+				RejectReparsePointDirectoryHandle(handle, directory);
+			}
+			catch {
+				handle.Dispose();
+				throw;
 			}
 			return handle;
 		}
