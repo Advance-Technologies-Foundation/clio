@@ -107,6 +107,19 @@ public sealed class RecordFilterDirectionSweepTests {
 	/// </summary>
 	private const int WindowLines = 3;
 
+	/// <summary>
+	/// Files that MUST be in the swept set. Each one states the record-filter direction, so if the enumeration
+	/// narrows, these disappear from it before any count looks suspicious.
+	/// </summary>
+	private static readonly string[] MustBeSwept = [
+		"clio/Command/ProcessModel/AccessRightsBlockExpectation.cs",
+		"clio/Command/ProcessModel/BlockExpectationReporter.cs",
+		"clio/Command/McpServer/Tools/ProcessDesigner/ModifyBusinessProcessTool.cs",
+		"clio/Command/McpServer/Prompts/ProcessDesigner/ModifyBusinessProcessPrompt.cs",
+		"docs/McpCapabilityMap.md",
+		"docs/knowledge/ProcessModel/change-access-rights-runs-green-and-changes-nothing.md"
+	];
+
 	private static readonly string[] SearchedExtensions =
 		[".cs", ".md", ".json", ".txt"];
 
@@ -173,6 +186,17 @@ public sealed class RecordFilterDirectionSweepTests {
 		tracked.Count.Should().BeGreaterThan(500,
 			because: "the repository has thousands of tracked files, so a near-empty list means the enumeration "
 				+ "failed rather than that there is nothing left to sweep");
+
+		// A count alone cannot detect the sweep NARROWING - the sibling guard in clio-knowledge read 87 of 135
+		// declared bodies while comfortably clearing its floor, so the regression sailed past the assertion
+		// meant to prevent it. These name the files that carry the fact; if any stops being swept, whatever
+		// change did that is exactly what needs to be seen.
+		foreach (string required in MustBeSwept) {
+			tracked.Should().Contain(entry => entry.EndsWith(required.Replace('/', Path.DirectorySeparatorChar),
+					StringComparison.OrdinalIgnoreCase),
+				because: $"'{required}' states the record-filter fact, so a sweep that no longer reads it is "
+					+ "reporting green about text it never looked at");
+		}
 
 		List<string> offenders = [];
 		foreach (string relative in tracked) {
