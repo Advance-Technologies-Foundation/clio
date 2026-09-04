@@ -129,6 +129,12 @@ All flags and tool names: **kebab-case only**. Tool contracts are indexed throug
 | OQ-03 | Order of the `CrtProcessBuilder` rebundle relative to the in-flight version stamps in that repository, and therefore when the versioned `[RequiresPackage]` floor may land | Dev | before FR-14 ships |
 | OQ-04 | Does `ServiceModel/ProcessEngineService.svc/RunProcess` fold a NON-active version code onto the active version, or start exactly the schema named? Only the scheduled path is evidenced (`ProcessRunner.TryRunScheduledProcess` -> `GetActiveVersionItem`); settling it needs a launch on a disposable stand, so `run-process` currently tells the agent to pass the active code explicitly and says the fold is not established | Dev | before any guidance article describes launching a versioned process (story 6 / 18) |
 
+## Activation is the caller's choice, not the create operation's
+
+Observed in the product on 2026-09-04: the designer's SAVE split button offers `Save new version (Ctrl+Alt+N)` and `Save current version (Ctrl+Alt+S)`, and choosing the former creates the version and then ASKS — *Set the current version of the process "<caption>" actual?* YES / NO.
+
+So `ModifyProcessAsNewVersion` MUST NOT activate what it creates, and an agent MUST NOT call `SetActiveProcessVersion` on its own initiative after creating one. It asks the user, exactly as the product does. This is the answer to the question raised when this ticket's scope was agreed — whether an agent should make an automatically created version active — and it is a product observation rather than a design preference. Auto-activating would change which graph the runtime executes without the user having agreed to it, which is the class of silent consequence this whole ticket exists to remove.
+
 ## Dependencies
 
 - Depends on: `CrtProcessBuilder` gaining two operations; the bundled archive, its pins and the tools' version floor move together (`BundledArchive_ShouldCarryAtLeastEveryDeclaredRequirement`).

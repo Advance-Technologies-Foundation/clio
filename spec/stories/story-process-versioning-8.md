@@ -136,12 +136,26 @@ Test naming: `MethodName_ShouldBehavior_WhenCondition`
     is reachable", and the card-page URL was sitting in a studio-stand snapshot I had already taken.
     So the studio detour was not needed for AC-01 — though it did yield the created-inactive fact and the
     UId-to-Id translation, which the UI route would not have exposed.
-  - Open question the correction raises, and it matters for stories 9-13: through the raw composer my two
-    versions came out INACTIVE with the root left active, while in the owner's family the root is
-    inactive and the version active. Timestamps favour a SEPARATE activation step — root created
-    08:23:01, version 08:23:21, then BOTH rows modified at 08:23:29.9 and 08:23:31.2, one write touching
-    both — which supports the independence recorded above. But that is inference, not observation:
-    whether the card page exposes "create version" and "set actual" as one gesture or two is unconfirmed.
+  - **The open question is now CLOSED by observation** (owner screenshots, 2026-09-04). The designer SAVE
+    is a split button — `Save new version (Ctrl+Alt+N)` / `Save current version (Ctrl+Alt+S)` — and
+    choosing the former creates the version and then ASKS in a separate prompt: *Set the current version
+    of the process "<caption>" actual?* YES / NO. So create and activate ARE separate, the composer
+    leaving `isActiveVersion = false` is the real product state rather than an artefact of the raw API
+    path, and the owner's active version is simply a YES. The timestamps read correctly in hindsight.
+  - **Consequence for the contract, and it answers the question raised when scope was agreed:**
+    `ModifyProcessAsNewVersion` must NOT activate, and the agent must ASK rather than call
+    `SetActiveProcessVersion` itself. The product does not decide for the user; neither may we. Recorded
+    in the PRD as its own section.
+  - Also observed: "Save current version" — the in-place overwrite the guidance warns about — sits in the
+    SAME menu as the safe option, one item away. That is precisely why the modify precondition had to go
+    where the modify instruction lives.
+  - The naming formula holds on a second stand through the UI route too: root `UsrProcess_329f1da` +
+    package `Custom` + version 1 → `UsrProcess_329f1daCustom1`.
+  - Reachability correction is now complete: the DESIGNER is reachable as well, just not by any URL I
+    constructed — it is entered from the process card page. Recorded as
+    `docs/knowledge/platform/process-designer-is-entered-from-the-process-card-not-a-url.md`, including
+    the procedural lesson: when a UI route is needed, follow the product navigation instead of guessing
+    module names.
   - **AC-01, third pass: run properly, and it cannot be executed here — dead ends named.** Five routes
     to an implementation that creates a version were tried. The Shell hash `#ProcessSchemaDesigner/<uid>`
     falls back to the app list; `ViewModule.aspx` REDIRECTS to the Shell; `ProcessDesigner.aspx` and
