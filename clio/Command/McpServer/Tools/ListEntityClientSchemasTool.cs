@@ -27,6 +27,8 @@ public sealed class ListEntityClientSchemasTool(
 	[Description(
 		"Resolve the page-role graph of an entity for a Classic->Freedom migration: its Classic sections, " +
 		"edit pages (including per-type/typed pages) and add mini pages, each classified classic, freedom, or unknown. " +
+		"Each per-type edit page also carries the Type's display name (`typeColumnDisplayValue`) alongside its raw " +
+		"`typeColumnValue` GUID when it resolves on-stand, so the type need not be looked up separately. " +
 		"One level only — recurse into detail entities by calling this per detail entity; details-on-page and " +
 		"Freedom counterparts are read from the page body by the merge module, not here. " +
 		"Prefer `environment-name`; keep direct connection args only for bootstrap or emergency fallback flows.")]

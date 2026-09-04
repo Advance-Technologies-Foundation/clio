@@ -22,7 +22,7 @@ namespace Clio.Command.EntitySchemaDesigner;
 /// any expected failure degrades to a record-resolution marker (never an exception), so enrichment can
 /// never make the readback fail relative to the GUID-only behavior it augments.
 /// </remarks>
-internal interface ILookupDefaultDisplayValueResolver
+public interface ILookupDefaultDisplayValueResolver
 {
 	/// <summary>
 	/// Resolves the display value of the referenced record for a lookup <c>Const</c> default.
@@ -53,7 +53,7 @@ internal interface ILookupDefaultDisplayValueResolver
 /// display column, e.g. an <c>ImageLookup</c> → <c>SysImage</c> reference). <see langword="null"/> when a
 /// display value is present or enrichment did not apply.
 /// </param>
-internal sealed record LookupDefaultResolution(string? DisplayValue, string? RecordResolution);
+public sealed record LookupDefaultResolution(string? DisplayValue, string? RecordResolution);
 
 /// <summary>
 /// Default <see cref="ILookupDefaultDisplayValueResolver"/> implementation. Discovers the referenced

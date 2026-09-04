@@ -3,7 +3,9 @@ namespace Clio.Command;
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using Clio.Command.EntitySchemaDesigner;
 using Clio.Common;
+using Clio.Common.EntitySchema;
 using CommandLine;
 using Newtonsoft.Json.Linq;
 using static Clio.Command.ClassicEntitySchemaQuery;
@@ -12,6 +14,7 @@ using static Clio.Command.ClassicEntitySchemaQuery;
 [Verb("list-entity-client-schemas", Aliases = ["migration-unit-resolve"],
 	HelpText = "Resolve the page-role graph of an entity for a Classic->Freedom migration: its Classic sections, " +
 		"edit pages (including per-type/typed pages), and add mini pages, each classified classic, freedom, or unknown. " +
+		"Per-type edit pages also carry the Type's display name (typeColumnDisplayValue) when it resolves on-stand. " +
 		"One level only — the skill recurses into detail entities. Pure ESQ; no schema-body parsing.")]
 public class ListEntityClientSchemasOptions : EnvironmentOptions {
 
@@ -44,6 +47,13 @@ public sealed class MigrationSectionInfo {
 public sealed class MigrationEditPageInfo {
 	/// <summary>The type-column value this edit page is registered for (empty for the default page).</summary>
 	[System.Text.Json.Serialization.JsonPropertyName("typeColumnValue")] public string TypeColumnValue { get; set; }
+	/// <summary>
+	/// The display name (Type-lookup caption) of <see cref="TypeColumnValue"/> for a per-type page, resolved by a
+	/// deterministic GUID-&gt;caption join against the entity's Type-column reference lookup. <c>null</c> when the
+	/// entity is not typed, the page is the default page, or the name could not be resolved on-stand — the offline
+	/// migration engine then renders the raw GUID with a "resolve the type name on-stand" note (ENG-96327).
+	/// </summary>
+	[System.Text.Json.Serialization.JsonPropertyName("typeColumnDisplayValue")] public string TypeColumnDisplayValue { get; set; }
 	/// <summary>Name of the card (edit page) schema.</summary>
 	[System.Text.Json.Serialization.JsonPropertyName("cardSchema")] public string CardSchema { get; set; }
 	/// <summary>UId of the card schema.</summary>
@@ -136,13 +146,19 @@ public class ListEntityClientSchemasCommand : Command<ListEntityClientSchemasOpt
 	private readonly IApplicationClient _applicationClient;
 	private readonly IServiceUrlBuilder _serviceUrlBuilder;
 	private readonly ILogger _logger;
+	private readonly IRuntimeEntitySchemaReader _runtimeEntitySchemaReader;
+	private readonly ILookupDefaultDisplayValueResolver _lookupDisplayValueResolver;
 
 	/// <summary>Initializes a new instance of the <see cref="ListEntityClientSchemasCommand"/> class.</summary>
 	public ListEntityClientSchemasCommand(
-		IApplicationClient applicationClient, IServiceUrlBuilder serviceUrlBuilder, ILogger logger) {
+		IApplicationClient applicationClient, IServiceUrlBuilder serviceUrlBuilder, ILogger logger,
+		IRuntimeEntitySchemaReader runtimeEntitySchemaReader,
+		ILookupDefaultDisplayValueResolver lookupDisplayValueResolver) {
 		_applicationClient = applicationClient;
 		_serviceUrlBuilder = serviceUrlBuilder;
 		_logger = logger;
+		_runtimeEntitySchemaReader = runtimeEntitySchemaReader;
+		_lookupDisplayValueResolver = lookupDisplayValueResolver;
 	}
 
 	/// <summary>
@@ -226,6 +242,11 @@ public class ListEntityClientSchemasCommand : Command<ListEntityClientSchemasOpt
 				};
 			}).ToList();
 
+			// ENG-96553: for a typed entity, resolve each per-type edit page's Type-lookup GUID to its display name so
+			// the migration plan can name the type instead of the raw GUID. The deterministic GUID->caption join is done
+			// here because the migration engine is a pure offline function over the manifest and cannot query the stand.
+			EnrichTypeDisplayNames(options.EntityName, editRows, editPages);
+
 			bool empty = sections.Count == 0 && editPages.Count == 0;
 			response = new ListEntityClientSchemasResponse {
 				Success = true,
@@ -258,6 +279,66 @@ public class ListEntityClientSchemasCommand : Command<ListEntityClientSchemasOpt
 		if (ClassicTemplates.Contains(template))
 			return KindClassic;
 		return KindUnknown;
+	}
+
+	/// <summary>
+	/// Best-effort enrichment: sets <see cref="MigrationEditPageInfo.TypeColumnDisplayValue"/> for each per-type edit
+	/// page by resolving its Type-lookup GUID against the entity's Type-column reference lookup. Fail-soft — any gap
+	/// (non-typed entity, unresolvable type column, denied read) leaves the page GUID-only and never fails the resolve.
+	/// </summary>
+	private void EnrichTypeDisplayNames(
+		string entityName, JArray editRows, List<MigrationEditPageInfo> editPages) {
+		try {
+			// Distinct, GUID-parseable per-type values only. A default page (empty value) or a non-GUID registration
+			// contributes nothing and must trigger no extra round-trip, so a non-typed entity stays a pure read.
+			string[] typeValues = editPages
+				.Select(page => page.TypeColumnValue)
+				.Where(value => Guid.TryParse(value, out _))
+				.Distinct(StringComparer.OrdinalIgnoreCase)
+				.ToArray();
+			if (typeValues.Length == 0) {
+				return;
+			}
+			// The Type column is a property of the entity's SysModuleEntity, so it is identical across the edit rows;
+			// the first non-empty value identifies it.
+			string typeColumnUId = editRows
+				.Select(row => row["TypeColumnUId"]?.ToString())
+				.FirstOrDefault(uId => !string.IsNullOrWhiteSpace(uId) && uId != EmptyGuid);
+			if (string.IsNullOrWhiteSpace(typeColumnUId) || !Guid.TryParse(typeColumnUId, out Guid typeColumnGuid)) {
+				return;
+			}
+			string referenceSchemaName = _runtimeEntitySchemaReader.GetByName(entityName).Columns
+				.FirstOrDefault(column => column.UId == typeColumnGuid)?.ReferenceSchemaName;
+			if (string.IsNullOrWhiteSpace(referenceSchemaName)) {
+				return;
+			}
+			// The resolver reads the display value via the injected environment-bound client; only TimeOut is taken
+			// from the options object, so a default RemoteCommandOptions is sufficient here (the command carries no
+			// timeout option of its own).
+			var resolverOptions = new RemoteCommandOptions();
+			var displayByValue = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+			foreach (string value in typeValues) {
+				LookupDefaultResolution resolution = _lookupDisplayValueResolver.Resolve(
+					referenceSchemaName, Guid.Parse(value), resolverOptions);
+				if (!string.IsNullOrWhiteSpace(resolution?.DisplayValue)) {
+					displayByValue[value] = resolution.DisplayValue;
+				}
+			}
+			if (displayByValue.Count == 0) {
+				return;
+			}
+			foreach (MigrationEditPageInfo page in editPages) {
+				if (!string.IsNullOrWhiteSpace(page.TypeColumnValue)
+					&& displayByValue.TryGetValue(page.TypeColumnValue, out string displayValue)) {
+					page.TypeColumnDisplayValue = displayValue;
+				}
+			}
+		} catch (Exception ex) {
+			// Type-name enrichment is a readability aid only: the engine renders a GUID + "resolve the type name
+			// on-stand" fallback when it is absent (ENG-96327), so a failure here must never turn a successful
+			// page-role resolve into an error.
+			_logger.WriteWarning($"Could not resolve type display names for entity '{entityName}'. {ex.Message}");
+		}
 	}
 
 	private IReadOnlyDictionary<string, (string name, string template)> ResolveSchemaMetaBatch(IEnumerable<string> uIds) {
@@ -319,7 +400,9 @@ public class ListEntityClientSchemasCommand : Command<ListEntityClientSchemasOpt
 	private static JObject BuildSelectEditPages(string entityUId) => Query("SysModuleEdit",
 		new JObject {
 			["TypeColumnValue"] = Column("TypeColumnValue"), [CardSchemaUIdColumn] = Column(CardSchemaUIdColumn),
-			[MiniPageSchemaUIdColumn] = Column(MiniPageSchemaUIdColumn), ["MiniPageModes"] = Column("MiniPageModes")
+			[MiniPageSchemaUIdColumn] = Column(MiniPageSchemaUIdColumn), ["MiniPageModes"] = Column("MiniPageModes"),
+			// The entity's Type column UId (identical across rows) — used to resolve per-type display names (ENG-96553).
+			["TypeColumnUId"] = Column("SysModuleEntity.TypeColumnUId")
 		},
 		Group(("byEntity", Eq("SysModuleEntity.SysEntitySchemaUId", entityUId, 0))), EditPageRowCount);
 }
