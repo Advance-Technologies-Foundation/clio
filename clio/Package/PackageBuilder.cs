@@ -151,38 +151,15 @@ namespace Clio.Package
 			DateTime baselineCreatedOn = baseline?.CreatedOn ?? DateTime.MinValue;
 
 			DateTime timeoutAt = DateTime.UtcNow.AddMinutes(CompilationTimeoutMinutes);
-			DateTime? lastActivityAt = null;
-			bool hasErrors = false;
-			string errorDetails = null;
+			CompilationProgress progress = new();
 
 			using CancellationTokenSource cts = new();
 			Task httpTask = SendCompilationRequestAsync(cts.Token);
-			// The poll fault is CAPTURED, never allowed to escape this lambda. An unhandled exception on a
-			// dedicated thread terminates the whole process, so a failed OData round would have killed
-			// clio mid-compile and skipped every cleanup below (cts.Cancel / Join / ObserveCancelledRequest).
-			// Poll itself already tolerates individual failed rounds; this catches the case where it gives
-			// up, and hands the fault to the loop below to report on the main thread.
 			// Published through a ONE-ELEMENT HOLDER with Volatile.Write/Read, not a plain captured local: the
 			// write happens on the poll thread and the read on the main thread's spin loop below, so without an
 			// explicit barrier there is no happens-before edge and the JIT may hoist the read out of the loop.
-			// An unobserved fault is strictly worse than no guard at all - the poll thread has exited, nothing is
-			// watching the compilation history, and the loop runs to the full CompilationTimeoutMinutes with an
-			// open HTTP request before reporting a timeout instead of the real fault.
 			Exception[] pollFaultBox = new Exception[1];
-			Thread pollThread = new(() => {
-				try {
-					_compilationHistoryPoller.Poll(baselineCreatedOn, cts.Token, record => {
-						lastActivityAt = DateTime.UtcNow;
-						if (!record.Result && !string.IsNullOrEmpty(record.ErrorsWarnings) && record.ErrorsWarnings != "[]") {
-							hasErrors = true;
-							errorDetails = record.ErrorsWarnings;
-						}
-					});
-				} catch (Exception exception) {
-					Volatile.Write(ref pollFaultBox[0], exception);
-				}
-			});
-			pollThread.Start();
+			Thread pollThread = StartPollThread(baselineCreatedOn, cts, progress, pollFaultBox);
 
 			while (DateTime.UtcNow < timeoutAt) {
 				//Observed on the MAIN thread, so the fault is reported rather than silently ending the
@@ -201,10 +178,10 @@ namespace Clio.Package
 					return;
 				}
 
-				if (HasSettled(lastActivityAt)) {
+				if (HasSettled(progress.LastActivityAt)) {
 					StopMonitoring(cts, pollThread, httpTask);
-					if (hasErrors) {
-						throw new Exception($"Package compilation failed: {errorDetails}");
+					if (progress.HasErrors) {
+						throw new Exception($"Package compilation failed: {progress.ErrorDetails}");
 					}
 					return;
 				}
@@ -220,6 +197,60 @@ namespace Clio.Package
 				using HttpResponseMessage _ = await client.ExecutePostRequestAsync(
 					url, requestData, Timeout.Infinite, cancellationToken: cancellationToken).ConfigureAwait(false);
 			}
+		}
+
+		/// <summary>
+		/// Starts the dedicated poll thread, capturing any fault it gives up with instead of letting it
+		/// escape.
+		/// </summary>
+		/// <remarks>
+		/// The poll fault is CAPTURED, never allowed to escape the thread. An unhandled exception on a
+		/// dedicated thread terminates the whole process, so a failed OData round would have killed clio
+		/// mid-compile and skipped every cleanup in the wait loop (cts.Cancel / Join /
+		/// ObserveCancelledRequest). Poll itself already tolerates individual failed rounds; this catches
+		/// the case where it gives up, and hands the fault to the wait loop to report on the main thread.
+		/// An unobserved fault is strictly worse than no guard at all - the poll thread has exited, nothing
+		/// is watching the compilation history, and the loop runs to the full CompilationTimeoutMinutes
+		/// with an open HTTP request before reporting a timeout instead of the real fault.
+		/// </remarks>
+		private Thread StartPollThread(DateTime baselineCreatedOn, CancellationTokenSource cts,
+			CompilationProgress progress, Exception[] pollFaultBox) {
+			Thread pollThread = new(() => {
+				try {
+					_compilationHistoryPoller.Poll(baselineCreatedOn, cts.Token, progress.Observe);
+				} catch (Exception exception) {
+					Volatile.Write(ref pollFaultBox[0], exception);
+				}
+			});
+			pollThread.Start();
+			return pollThread;
+		}
+
+		/// <summary>
+		/// What the poll thread has observed so far, read by the wait loop on the main thread: when the
+		/// last record arrived, and whether any of them reported a compilation error.
+		/// </summary>
+		private sealed class CompilationProgress {
+
+			/// <summary>An empty <c>ErrorsWarnings</c> array, which is not an error report.</summary>
+			private const string EmptyErrorsWarnings = "[]";
+
+			public DateTime? LastActivityAt { get; private set; }
+
+			public bool HasErrors { get; private set; }
+
+			public string ErrorDetails { get; private set; }
+
+			public void Observe(CompilationHistory record) {
+				LastActivityAt = DateTime.UtcNow;
+				if (record.Result || string.IsNullOrEmpty(record.ErrorsWarnings)
+						|| record.ErrorsWarnings == EmptyErrorsWarnings) {
+					return;
+				}
+				HasErrors = true;
+				ErrorDetails = record.ErrorsWarnings;
+			}
+
 		}
 
 		private static void ObserveCancelledRequest(Task request, CancellationTokenSource cancellation) {

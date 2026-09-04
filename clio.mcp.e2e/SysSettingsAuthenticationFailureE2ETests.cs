@@ -142,8 +142,8 @@ public sealed class SysSettingsAuthenticationFailureE2ETests {
 		TestName = "UpdateSysSetting_Should_Fail_Closed_On_Rejected_Credentials(Lookup)")]
 	[AllureTag(SysSettingUpdateTool.UpdateSysSettingToolName)]
 	[AllureName("update-sys-setting fails closed on rejected credentials")]
-	[AllureDescription("Registers an environment against a stub whose authenticated SelectQuery and sys-settings write endpoint answer with the Creatio login page, then verifies update-sys-setting returns success:false and reports no written value, for both a Text and a Lookup setting.")]
-	[Description("AC3's update half: update-sys-setting against an environment whose credentials Creatio rejects fails closed for Text and for Lookup. This is the one path where ThrowIfSessionRejected sits inside a pre-existing try/catch (JsonException) that used to report the bare \"Invalid response format.\", so the interaction is worth proving end to end.")]
+	[AllureDescription("Registers an environment against a stub whose authenticated SelectQuery answers with the Creatio login page, then verifies update-sys-setting returns success:false and reports no written value, for both a Text and a Lookup setting.")]
+	[Description("AC3's update half: update-sys-setting against an environment whose credentials Creatio rejects fails closed for Text and for Lookup. WHERE the rejection is raised, stated precisely (PR #1372 review): the update path reads before it writes - PrepareUpdateValue calls GetAllUsersDefaultWithType and SysSettingsManager.UpdateSysSetting calls GetSysSettingByCode, both SelectQuery reads on SysSettings, which this stub rejects - so the throw happens on the READ step and the PostSysSettingsValues endpoint is never reached. This test therefore proves the fail-closed envelope of the update tool, NOT the write-path ThrowIfSessionRejected sitting inside the pre-existing catch (JsonException). Covering that interaction needs a stub mode that lets the SysSettings reads through and rejects only the write endpoints; it is tracked as a follow-up rather than claimed here.")]
 	public async Task UpdateSysSetting_Should_Fail_Closed_On_Rejected_Credentials(string valueTypeName, string value) {
 		await RunAgainstCredentialRejectionStubAsync(async (session, environmentName, cancellationToken) => {
 			// Act
@@ -166,7 +166,7 @@ public sealed class SysSettingsAuthenticationFailureE2ETests {
 			response.Error.Should().NotBeNullOrWhiteSpace(
 				because: "the failure envelope has to carry a diagnostic the caller can act on");
 			response.Error.Should().NotContain("Invalid response format",
-				because: "the login page proves the session was rejected; the pre-existing JsonException catch on this path must not swallow that into a shapeless parser complaint");
+				because: "the login page proves the session was rejected, so the diagnostic must name that and not degrade into a shapeless parser complaint - here on the READ step, since that is where this stub raises it (see the Description)");
 			response.Value.Should().BeNullOrEmpty(
 				because: "nothing was written, so no value may be advertised alongside the failure");
 		});

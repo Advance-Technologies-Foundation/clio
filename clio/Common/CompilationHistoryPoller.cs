@@ -76,8 +76,8 @@ public class CompilationHistoryPoller : ICompilationHistoryPoller {
 		var seen = new HashSet<Guid>();
 		int consecutiveFailures = 0;
 		while (!ct.IsCancellationRequested) {
-			List<CompilationHistory> records = TryPollOnce(baseline, ref consecutiveFailures);
-			if (records is not null) {
+			if (TryPollOnce(baseline, ref consecutiveFailures,
+					out List<CompilationHistory> records)) {
 				baseline = ReportNewRecords(records, seen, baseline, onNewRecord);
 			}
 			if (ct.WaitHandle.WaitOne(PollIntervalMilliseconds)) {
@@ -87,8 +87,9 @@ public class CompilationHistoryPoller : ICompilationHistoryPoller {
 	}
 
 	/// <summary>
-	/// Runs one round, returning its records, or <see langword="null"/> when the round failed and the
-	/// failure is still within the budget.
+	/// Runs one round, reporting whether it succeeded. A failed round within the budget returns
+	/// <see langword="false"/>, which is NOT the same as a successful round that found nothing - hence a
+	/// <see langword="bool"/> plus an <see langword="out"/> list rather than a null list (Sonar S1168).
 	/// </summary>
 	/// <remarks>
 	/// A single failed round must NOT end the poll. Before ClassifyingDataProvider (issue #1371) an
@@ -99,11 +100,12 @@ public class CompilationHistoryPoller : ICompilationHistoryPoller {
 	/// <exception cref="InvalidOperationException">
 	/// <see cref="MaxConsecutiveFailures"/> rounds failed in a row; the last failure is the inner exception.
 	/// </exception>
-	private List<CompilationHistory> TryPollOnce(DateTime baseline, ref int consecutiveFailures) {
+	private bool TryPollOnce(DateTime baseline, ref int consecutiveFailures,
+		out List<CompilationHistory> records) {
 		try {
-			List<CompilationHistory> records = PollOnce(baseline);
+			records = PollOnce(baseline);
 			consecutiveFailures = 0;
-			return records;
+			return true;
 		} catch (Exception exception) when (exception is not OperationCanceledException) {
 			consecutiveFailures++;
 			if (consecutiveFailures >= MaxConsecutiveFailures) {
@@ -111,7 +113,8 @@ public class CompilationHistoryPoller : ICompilationHistoryPoller {
 					$"Compilation polling gave up after {MaxConsecutiveFailures} consecutive failed "
 					+ $"rounds. Last failure: {exception.Message}", exception);
 			}
-			return null;
+			records = null;
+			return false;
 		}
 	}
 
