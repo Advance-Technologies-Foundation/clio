@@ -399,23 +399,64 @@ public sealed class ApplicationToolE2ETests {
 		reachableToolNames.Should().Contain(CreateToolName,
 			because: "the create-app MCP tool must be discoverable via the get-tool-contract compact index before the progress-marker call can run");
 
+		Dictionary<string, object?> createArgs = new() {
+			["args"] = BuildCreateArgs(
+				arrangeContext.EnvironmentName,
+				applicationName,
+				createdApplicationCode,
+				description: null,
+				ApplicationTemplateCode,
+				ApplicationIconId,
+				ApplicationIconBackground,
+				optionalTemplateDataJson: null)
+		};
+
 		// Act — invoke create-app through the progress-capable overload so the client observes the
-		// service-level stage markers the tool streams as notifications/progress.
-		CallToolResult callResult = await arrangeContext.Session.CallToolAsync(
-			CreateToolName,
-			new Dictionary<string, object?> {
-				["args"] = BuildCreateArgs(
-					arrangeContext.EnvironmentName,
-					applicationName,
-					createdApplicationCode,
-					description: null,
-					ApplicationTemplateCode,
-					ApplicationIconId,
-					ApplicationIconBackground,
-					optionalTemplateDataJson: null)
-			},
-			progress,
-			arrangeContext.CancellationTokenSource.Token);
+		// service-level stage markers the tool streams as notifications/progress. Wrapped in the
+		// transient-platform-condition retry gate (issue #1381 part 2): a KNOWN transient platform
+		// answer (the OData-rebuild window, an HTML/login-page redirect, or a rejected implicit login)
+		// is retried instead of failing the test outright. Every retry attempt gets its own progress
+		// sink so the marker assertions below see exactly one attempt's stream, never a mix of a failed
+		// attempt's partial markers and the successful attempt's full set. A login rejection is retried
+		// against a freshly-started MCP session (a fresh clio process, hence a fresh login) rather than
+		// blindly repeating the call against the same stale session; the replacement session is disposed
+		// in the `finally` below regardless of outcome.
+		// Assumption this retry relies on: a retried create-app resubmits the SAME application name and
+		// code as the original attempt. That is safe only because the platform's own idempotency is what
+		// protects us — a genuine duplicate create is rejected outright with a business-rule error instead
+		// of silently succeeding twice — and TransientPlatformConditionRetryGate explicitly excludes the
+		// one case where the create is known to have already happened: ApplicationCreateService's
+		// "was created but its metadata could not be loaded" failure (see
+		// TransientPlatformConditionRetryGate.ApplicationAlreadyCreatedMarker), which is never retried.
+		McpServerSession? reauthenticatedSession = null;
+		CallToolResult callResult;
+		try {
+			callResult = await TransientPlatformConditionRetryGate.InvokeWithRetryAsync(
+				async attemptToken => {
+					McpServerSession activeSession = reauthenticatedSession ?? arrangeContext.Session;
+					progress = new MessageCollectingProgress();
+					return await activeSession.CallToolAsync(CreateToolName, createArgs, progress, attemptToken);
+				},
+				async reauthToken => {
+					// Null the field BEFORE disposing the previous session and BEFORE starting the
+					// replacement: if StartAsync throws, the `finally` below must not see a still-set
+					// field pointing at an already-disposed session (McpServerSession.DisposeAsync has no
+					// disposed-guard, so disposing it twice would replace the real re-authentication
+					// failure with a disposal exception).
+					McpServerSession? previousSession = reauthenticatedSession;
+					reauthenticatedSession = null;
+					if (previousSession is not null) {
+						await previousSession.DisposeAsync();
+					}
+					reauthenticatedSession = await McpServerSession.StartAsync(settings, reauthToken);
+				},
+				arrangeContext.CancellationTokenSource.Token);
+		}
+		finally {
+			if (reauthenticatedSession is not null) {
+				await reauthenticatedSession.DisposeAsync();
+			}
+		}
 
 		// Diagnostic: dump the raw result BEFORE parsing it. A create that fails on the environment (or
 		// returns the over-deadline "in-progress, poll" envelope) leaves IsError unset, so without the
