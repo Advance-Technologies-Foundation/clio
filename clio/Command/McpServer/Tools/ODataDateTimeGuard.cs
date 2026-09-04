@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Text.Json;
 using System.Text.RegularExpressions;
 
@@ -27,9 +28,13 @@ internal static class ODataDateTimeGuard {
 
 	/// <summary>
 	/// An ISO-8601 date-time with a time component and NO zone suffix - the exact shape the platform
-	/// mishandles. Anchored on purpose: a value that already ends in <c>Z</c> or <c>+hh:mm</c>/<c>-hh:mm</c>
-	/// does not match, and neither does a date-only <c>2024-01-01</c> (see the remarks on
+	/// mishandles. Anchored on purpose: a value that already ends in a UTC designator (<c>Z</c> or the
+	/// equally valid lowercase <c>z</c> - ISO 8601 permits either case) or in an offset
+	/// (<c>+hh:mm</c>/<c>-hh:mm</c>, and the basic <c>+hhmm</c> form) does not match, and neither does a
+	/// date-only <c>2024-01-01</c> (see the remarks on
 	/// <see cref="FindZoneLessDateTime(JsonElement, IReadOnlyDictionary{string, string})"/>).
+	/// The value is trimmed before matching, so a padded <c>" 2024-01-01T04:00:00 "</c> is recognised as
+	/// zone-less rather than slipping past the anchors.
 	/// </summary>
 	private static readonly Regex ZoneLessDateTimePattern = new(
 		@"^\d{4}-\d{2}-\d{2}[Tt ]\d{2}:\d{2}(:\d{2}(\.\d+)?)?$",
@@ -57,7 +62,7 @@ internal static class ODataDateTimeGuard {
 		foreach (JsonProperty property in payload.EnumerateObject()) {
 			if (property.Value.ValueKind == JsonValueKind.String
 				&& property.Value.GetString() is { Length: > 0 } value
-				&& ZoneLessDateTimePattern.IsMatch(value)) {
+				&& IsZoneLess(value)) {
 				return true;
 			}
 		}
@@ -94,12 +99,16 @@ internal static class ODataDateTimeGuard {
 		if (payload.ValueKind != JsonValueKind.Object) {
 			return null;
 		}
+		// Every offending field is collected, not just the first: a caller that sent three zone-less
+		// values would otherwise pay one refused round-trip per field to discover them one at a time,
+		// which is exactly what the reporter of GitHub issue #1369 hit.
+		List<KeyValuePair<string, string>> offenders = [];
 		foreach (JsonProperty property in payload.EnumerateObject()) {
 			if (property.Value.ValueKind != JsonValueKind.String) {
 				continue;
 			}
 			string value = property.Value.GetString();
-			if (string.IsNullOrEmpty(value) || !ZoneLessDateTimePattern.IsMatch(value)) {
+			if (string.IsNullOrEmpty(value) || !IsZoneLess(value)) {
 				continue;
 			}
 			if (propertyTypes is not null
@@ -107,21 +116,33 @@ internal static class ODataDateTimeGuard {
 				&& !TemporalEdmTypes.Contains(edmType)) {
 				continue;
 			}
-			return BuildMessage(property.Name, value);
+			offenders.Add(new KeyValuePair<string, string>(property.Name, value));
 		}
-		return null;
+		return offenders.Count == 0 ? null : BuildMessage(offenders);
 	}
 
 	/// <summary>
-	/// Builds the refusal text: it names the field and the value, says why the literal cannot be sent,
-	/// gives both accepted forms, and states that clio does not guess the zone.
+	/// True when the value - trimmed first, because surrounding whitespace would otherwise defeat the
+	/// anchors and forward the literal untouched - is the zone-less date-time shape.
 	/// </summary>
-	private static string BuildMessage(string field, string value) =>
-		$"data field '{field}' carries the date-time value '{value}', which has no UTC designator and no "
-		+ "time-zone offset. Creatio publishes date-time columns as Edm.DateTimeOffset, whose literal form "
-		+ "requires a zone: depending on the platform build such a value is either rejected outright or "
-		+ "silently stored as 0001-01-01T00:00:00Z while the call still reports success (GitHub issue #1369). "
-		+ "Send the instant explicitly - '2024-01-01T04:00:00Z' for UTC, or '2024-01-01T04:00:00+02:00' for a "
-		+ "local offset. clio does not append 'Z' for you, because the zone you meant cannot be guessed. "
-		+ "Nothing was written.";
+	private static bool IsZoneLess(string value) => ZoneLessDateTimePattern.IsMatch(value.Trim());
+
+	/// <summary>
+	/// Builds the refusal text: it names every offending field and value, says why the literals cannot be
+	/// sent, gives both accepted forms, and states that clio does not guess the zone.
+	/// </summary>
+	private static string BuildMessage(IReadOnlyList<KeyValuePair<string, string>> offenders) {
+		string subject = offenders.Count == 1
+			? $"data field '{offenders[0].Key}' carries the date-time value '{offenders[0].Value}', which has"
+			: "data fields "
+				+ string.Join(", ", offenders.Select(o => $"'{o.Key}' ('{o.Value}')"))
+				+ " carry date-time values which have";
+		return subject
+			+ " no UTC designator and no time-zone offset. Creatio publishes date-time columns as "
+			+ "Edm.DateTimeOffset, whose literal form requires a zone: depending on the platform build such a "
+			+ "value is either rejected outright or silently stored as 0001-01-01T00:00:00Z while the call "
+			+ "still reports success (GitHub issue #1369). Send the instant explicitly - "
+			+ "'2024-01-01T04:00:00Z' for UTC, or '2024-01-01T04:00:00+02:00' for a local offset. clio does "
+			+ "not append 'Z' for you, because the zone you meant cannot be guessed. Nothing was written.";
+	}
 }

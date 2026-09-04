@@ -36,6 +36,8 @@ public sealed class ODataUpdateToolTests {
 		        <Property Name="Id" Type="Edm.Guid" Nullable="false" />
 		        <Property Name="CreatedOn" Type="Edm.DateTimeOffset" />
 		        <Property Name="ModifiedOn" Type="Edm.DateTimeOffset" />
+		        <Property Name="BaseNote" Type="Edm.String" />
+		        <Property Name="DueDate" Type="Edm.String" />
 		      </EntityType>
 		      <EntityType Name="Contact" BaseType="Terrasoft.Configuration.OData.BaseEntity">
 		        <Key><PropertyRef Name="Id" /></Key>
@@ -913,8 +915,9 @@ public sealed class ODataUpdateToolTests {
 			because: "the caller can only fix the payload when the refusal names the offending field");
 		response.Error.Should().Contain("2024-01-01T04:00:00.000",
 			because: "naming the rejected value distinguishes it from the other fields in the same payload");
-		response.Error.Should().Contain("Z",
-			because: "the refusal must state the accepted UTC form, not merely that the value is wrong");
+		response.Error.Should().Contain("2024-01-01T04:00:00Z",
+			because: "the refusal must spell out the accepted UTC form; a bare 'Z' assertion is also satisfied by "
+				+ "the MinValue text the message quotes, so it would pass without the guidance being present");
 		response.Error.Should().Contain("+02:00",
 			because: "an explicit offset is equally accepted and the caller must learn that too");
 		f.Client.DidNotReceiveWithAnyArgs()
@@ -1022,5 +1025,102 @@ public sealed class ODataUpdateToolTests {
 			because: "clearing a date and writing ordinary text must stay unaffected by a value guard aimed at "
 				+ "zone-less date-time literals");
 		f.Client.Received(1).ExecutePatchRequest(KeyUrl, Arg.Any<string>(), 30_000);
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Every zone-less field is reported in one refusal, so a payload with three of them costs one refused round-trip and not three (GitHub issue #1369).")]
+	public void Update_Should_Report_All_ZoneLess_Fields_At_Once() {
+		// Arrange
+		Fixture f = CsdLFixture();
+
+		// Act
+		ODataWriteResponse response = Update(
+			f, "{\"DueDate\":\"2024-01-01T04:00:00\",\"CreatedOn\":\"2024-02-02T05:00:00\",\"ModifiedOn\":\"2024-03-03T06:00:00\"}");
+
+		// Assert
+		response.Success.Should().BeFalse(because: "each of the three literals lacks a zone");
+		response.Error.Should().Contain("DueDate", because: "the first offending field must be named");
+		response.Error.Should().Contain("CreatedOn",
+			because: "reporting only the first field forces the caller into one refused call per field");
+		response.Error.Should().Contain("ModifiedOn",
+			because: "the caller can fix the whole payload in one edit only when every offender is listed");
+		f.Client.DidNotReceiveWithAnyArgs()
+			.ExecutePatchRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>());
+	}
+
+	[TestCase("2024-01-01 04:00:00", TestName = "Space separator")]
+	[TestCase("2024-01-01t04:00:00", TestName = "Lowercase t separator")]
+	[TestCase("2024-01-01T04:00", TestName = "Hours and minutes only")]
+	[TestCase(" 2024-01-01T04:00:00 ", TestName = "Whitespace padded")]
+	[Category("Unit")]
+	[Description("Every zone-less ISO-8601 shape the guard admits is refused before the PATCH, including the whitespace-padded one that would otherwise defeat the anchors.")]
+	public void Update_Should_Reject_Every_ZoneLess_Shape(string value) {
+		// Arrange
+		Fixture f = CsdLFixture();
+
+		// Act
+		ODataWriteResponse response = Update(f, "{\"DueDate\":\"" + value + "\"}");
+
+		// Assert
+		response.Success.Should().BeFalse(
+			because: "the shape carries a time component and no zone, whatever separator or padding it uses");
+		response.Error.Should().Contain("DueDate", because: "the refusal must name the offending field");
+		f.Client.DidNotReceiveWithAnyArgs()
+			.ExecutePatchRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>());
+	}
+
+	[TestCase("2024-01-01T04:00:00.000z", TestName = "Lowercase utc designator")]
+	[TestCase("2024-01-01T04:00:00+0200", TestName = "Basic form offset without a colon")]
+	[Category("Unit")]
+	[Description("A literal that already states its zone is written unchanged, including the ISO-8601 lowercase 'z' designator and the basic '+hhmm' offset form.")]
+	public void Update_Should_Write_A_DateTime_Whose_Zone_Is_Stated_In_An_Alternative_Form(string value) {
+		// Arrange
+		Fixture f = CsdLFixture();
+		f.Client.ExecutePatchRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>()).Returns(string.Empty);
+
+		// Act
+		ODataWriteResponse response = Update(f, "{\"DueDate\":\"" + value + "\"}");
+
+		// Assert
+		response.Success.Should().BeTrue(
+			because: "ISO 8601 accepts both spellings, so refusing them would reject a perfectly explicit instant");
+		f.Client.Received(1).ExecutePatchRequest(KeyUrl, "{\"DueDate\":\"" + value + "\"}", 30_000);
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("An Edm type INHERITED through BaseType reaches the value guard: a date-shaped string on an inherited text column is written unchanged.")]
+	public void Update_Should_Write_A_Date_Shaped_String_On_An_Inherited_Text_Column() {
+		// Arrange
+		Fixture f = CsdLFixture();
+		f.Client.ExecutePatchRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>()).Returns(string.Empty);
+
+		// Act
+		ODataWriteResponse response = Update(f, "{\"BaseNote\":\"2024-01-01T04:00:00\"}");
+
+		// Assert
+		response.Success.Should().BeTrue(
+			because: "BaseNote is Edm.String on the BaseEntity Contact derives from, and the inherited type map "
+				+ "must reach the guard or every inherited column would fall back to the shape alone");
+		f.Client.Received(1).ExecutePatchRequest(KeyUrl, "{\"BaseNote\":\"2024-01-01T04:00:00\"}", 30_000);
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("A property redeclared on the derived type keeps the DERIVED Edm type: Contact's DueDate is Edm.DateTimeOffset even though BaseEntity declares it as Edm.String.")]
+	public void Update_Should_Prefer_The_Derived_Edm_Type_Over_The_Inherited_One() {
+		// Arrange
+		Fixture f = CsdLFixture();
+
+		// Act
+		ODataWriteResponse response = Update(f, "{\"DueDate\":\"2024-01-01T04:00:00\"}");
+
+		// Assert
+		response.Success.Should().BeFalse(
+			because: "the inherited Edm.String must not overwrite Contact's own Edm.DateTimeOffset declaration - "
+				+ "if it did, every redeclared temporal column would silently lose the guard");
+		f.Client.DidNotReceiveWithAnyArgs()
+			.ExecutePatchRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>());
 	}
 }

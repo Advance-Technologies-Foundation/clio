@@ -57,6 +57,18 @@ internal static class ODataFieldValidation {
 	internal const int FollowUpProbeTimeoutMs = 10_000;
 
 	/// <summary>
+	/// Timeout for the OPTIONAL metadata read of <see cref="TryGetPropertyTypes"/>, used with a single
+	/// attempt. On that path the CSDL only sharpens the value guard - the write proceeds without it - so
+	/// it must not inherit the mandatory pre-write budget (<see cref="RequestTimeoutMs"/> x
+	/// <see cref="TransientAttempts"/> = up to 90 s plus delays); a stalled <c>$metadata</c> would
+	/// otherwise hold the whole batch before its first POST.
+	/// </summary>
+	internal const int OptionalMetadataTimeoutMs = 10_000;
+
+	/// <summary>Attempts used for the optional metadata read: one, then degrade.</summary>
+	internal const int OptionalMetadataAttempts = 1;
+
+	/// <summary>
 	/// A data field to validate. Only the name is carried: validation is name-only, so a value
 	/// would be plumbed through and never read.
 	/// </summary>
@@ -106,7 +118,7 @@ internal static class ODataFieldValidation {
 
 		List<string> keys = fields.Select(field => field.Name).Distinct(StringComparer.Ordinal).ToList();
 
-		EntityMetadata metadata = FetchMetadata(client, urlBuilder, entity);
+		EntityMetadata metadata = FetchMetadata(client, urlBuilder, entity, RequestTimeoutMs, TransientAttempts);
 		if (metadata.Resolved) {
 			propertyTypes = metadata.PropertyTypes;
 			// The service's own type definition is the oracle: every unknown name is known from
@@ -137,7 +149,8 @@ internal static class ODataFieldValidation {
 		IServiceUrlBuilder urlBuilder,
 		string entity) {
 		try {
-			EntityMetadata metadata = FetchMetadata(client, urlBuilder, entity);
+			EntityMetadata metadata = FetchMetadata(
+				client, urlBuilder, entity, OptionalMetadataTimeoutMs, OptionalMetadataAttempts);
 			return metadata.Resolved ? metadata.PropertyTypes : null;
 		} catch (Exception) {
 			// The type map is an optimization for the value guard, never a precondition of the write:
@@ -173,9 +186,11 @@ internal static class ODataFieldValidation {
 	private static EntityMetadata FetchMetadata(
 		IApplicationClient client,
 		IServiceUrlBuilder urlBuilder,
-		string entity) {
+		string entity,
+		int timeoutMs,
+		int attempts) {
 		string url = urlBuilder.Build("odata/$metadata");
-		string body = client.ExecuteGetRequest(url, RequestTimeoutMs, TransientAttempts, TransientDelaySec);
+		string body = client.ExecuteGetRequest(url, timeoutMs, attempts, TransientDelaySec);
 		if (string.IsNullOrWhiteSpace(body)) {
 			return new EntityMetadata(false, [], [], null, "the OData metadata response was empty.");
 		}

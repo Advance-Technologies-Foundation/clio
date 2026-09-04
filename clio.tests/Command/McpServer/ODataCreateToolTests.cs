@@ -823,4 +823,52 @@ public sealed class ODataCreateToolTests {
 		client.Received(1).ExecuteGetRequest(
 			"http://creatio/odata/$metadata", Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>());
 	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("A $metadata read that throws does not fail the batch: the type map degrades to null and the guard falls back to the literal's shape (GitHub issue #1369).")]
+	public void Create_Should_Insert_When_The_Metadata_Read_Throws() {
+		// Arrange
+		(ODataCreateTool tool, IApplicationClient client) = CreateFixture(AccountCsdl);
+		client.ExecuteGetRequest(Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+			.Returns(_ => throw new System.InvalidOperationException("metadata endpoint is down"));
+
+		// Act
+		ODataCreateBatchResponse response = tool.Create(new ODataCreateArgs {
+			EnvironmentName = "dev",
+			Entity = "Account",
+			Rows = Arr("[{\"Name\":\"Acme\"},{\"DueDate\":\"2024-01-01T04:00:00\"}]")
+		});
+
+		// Assert
+		response.Created.Should().Be(1,
+			because: "the type map is an optimization for the value guard, never a precondition of the write, "
+				+ "so a throwing metadata endpoint must not turn a valid row into a failure");
+		response.Results[1].Success.Should().BeFalse(
+			because: "with no declared type the literal's shape alone decides, and fail-closed is the honest answer");
+		client.Received(1).ExecutePostRequest(
+			Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>());
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("The optional CSDL read of odata-create uses a short single-attempt budget: it only sharpens the guard, so a stalled $metadata must not hold the batch before its first POST.")]
+	public void Create_Should_Read_Metadata_On_A_Short_Single_Attempt_Budget() {
+		// Arrange
+		(ODataCreateTool tool, IApplicationClient client) = CreateFixture(AccountCsdl);
+
+		// Act
+		tool.Create(new ODataCreateArgs {
+			EnvironmentName = "dev",
+			Entity = "Account",
+			Rows = Arr("[{\"Name\":\"2024-01-01T04:00:00\"}]")
+		});
+
+		// Assert
+		client.Received(1).ExecuteGetRequest(
+			"http://creatio/odata/$metadata",
+			ODataFieldValidation.OptionalMetadataTimeoutMs,
+			ODataFieldValidation.OptionalMetadataAttempts,
+			Arg.Any<int>());
+	}
 }
