@@ -7151,8 +7151,8 @@ public sealed class SchemaValidationServiceTests
 	}
 
 	[Test]
-	[Description("Silently allows unknown types that are in neither mobile nor web registry (custom components).")]
-	public void ValidateMobileComponentTypes_WhenCustomType_ReturnsValid() {
+	[Description("A type in NEITHER registry does not block the write (it may be a package-registered custom component) but is no longer silent: it now warns, because the same shape is produced by a misspelled or invented type, which used to reach the save with no diagnostic at all (ENG-95827).")]
+	public void ValidateMobileComponentTypes_WhenTypeInNeitherRegistry_WarnsWithoutBlocking() {
 		// Arrange
 		string body = """
 		              {
@@ -7168,8 +7168,32 @@ public sealed class SchemaValidationServiceTests
 		SchemaValidationResult result = SchemaValidationService.ValidateMobileComponentTypes(body, allowed, webOnly);
 
 		// Assert
-		result.IsValid.Should().BeTrue("because custom types not in either registry should be allowed");
-		result.Warnings.Should().BeEmpty("because the type is not a known web-only component");
+		result.IsValid.Should().BeTrue(
+			because: "a genuinely custom mobile component is also absent from both registries, so this must never refuse the write");
+		result.Warnings.Should().ContainSingle(w => w.Contains("usr.CustomWidget") && w.Contains("NEITHER"),
+			because: "the caller has to be able to tell a registered custom component from a typo, and silence made the two indistinguishable");
+	}
+
+	[Test]
+	[Description("The web-only diagnostic keeps its own distinct wording after the neither-registry branch was added, so the two cases stay separable by the caller.")]
+	public void ValidateMobileComponentTypes_WhenWebOnlyTypeUsed_KeepsWebRegistryWording() {
+		// Arrange
+		string body = """
+		              {
+		                "viewConfigDiff": [
+		                  {"operation":"insert","name":"X","type":"crt.DataGrid"}
+		                ]
+		              }
+		              """;
+		HashSet<string> allowed = new(StringComparer.OrdinalIgnoreCase) { "crt.Input" };
+		HashSet<string> webOnly = new(StringComparer.OrdinalIgnoreCase) { "crt.DataGrid" };
+
+		// Act
+		SchemaValidationResult result = SchemaValidationService.ValidateMobileComponentTypes(body, allowed, webOnly);
+
+		// Assert
+		result.Warnings.Should().ContainSingle(w => w.Contains("web registry") && !w.Contains("NEITHER"),
+			because: "a web-only type has a known mobile alternative to look for, which is different advice from an unrecognised type");
 	}
 
 	#endregion
@@ -7976,6 +8000,118 @@ public sealed class SchemaValidationServiceTests
 			because: "the pipeline must surface the placement advisory that the type-placement rule cannot catch");
 		errors.Should().NotContain(e => e.Contains("Scaffold"),
 			because: "an undiscoverable placement is advisory, not a reason to refuse the write");
+	}
+
+	#endregion
+
+	#region ValidateMobileSingleScaffoldRoot
+
+	[Test]
+	[Description("An insert whose values.type is crt.Scaffold blocks: the mobile template already provides the Scaffold root and a second one shadows the native element.")]
+	public void ValidateMobileSingleScaffoldRoot_WhenInsertAuthorsScaffoldType_AddsBlockingError() {
+		// Arrange
+		string body = """
+		              {
+		                "viewConfigDiff": [
+		                  {"operation":"insert","name":"MyScaffold","parentName":"","propertyName":"items",
+		                   "values":{"type":"crt.Scaffold"}}
+		                ]
+		              }
+		              """;
+
+		// Act
+		SchemaValidationResult result = SchemaValidationService.ValidateMobileSingleScaffoldRoot(body);
+
+		// Assert
+		result.IsValid.Should().BeFalse(
+			because: "a page that authors its own Scaffold shadows the template's root, so the navigation bar and body come from the wrong element");
+		result.Errors.Should().ContainSingle(e => e.Contains("crt.Scaffold") && e.Contains("merge"),
+			because: "the diagnostic must name the offending type and point at the supported alternative (merge onto the template's root)");
+	}
+
+	[Test]
+	[Description("An insert of an element NAMED Scaffold blocks whatever type it declares, because the template already owns that element name.")]
+	public void ValidateMobileSingleScaffoldRoot_WhenInsertUsesScaffoldName_AddsBlockingError() {
+		// Arrange
+		string body = """
+		              {
+		                "viewConfigDiff": [
+		                  {"operation":"insert","name":"Scaffold","parentName":"","propertyName":"items",
+		                   "values":{"type":"crt.GridContainer"}}
+		                ]
+		              }
+		              """;
+
+		// Act
+		SchemaValidationResult result = SchemaValidationService.ValidateMobileSingleScaffoldRoot(body);
+
+		// Assert
+		result.IsValid.Should().BeFalse(
+			because: "the element name Scaffold belongs to the template, so an insert under it collides regardless of the declared type");
+	}
+
+	[Test]
+	[Description("A flat-shaped insert carrying the type at entry level is caught too, so the shape the type-placement rule tolerates cannot smuggle a second Scaffold through.")]
+	public void ValidateMobileSingleScaffoldRoot_WhenFlatInsertDeclaresScaffoldType_AddsBlockingError() {
+		// Arrange
+		string body = """
+		              {
+		                "viewConfigDiff": [
+		                  {"operation":"insert","name":"SecondRoot","type":"crt.Scaffold","propertyName":"items"}
+		                ]
+		              }
+		              """;
+
+		// Act
+		SchemaValidationResult result = SchemaValidationService.ValidateMobileSingleScaffoldRoot(body);
+
+		// Assert
+		result.IsValid.Should().BeFalse(
+			because: "the rule resolves the type the same way the registry lookup does, so the flat shape is not an escape hatch");
+	}
+
+	[Test]
+	[Description("A merge onto Scaffold stays valid: patching the template's own root is the supported way to configure it.")]
+	public void ValidateMobileSingleScaffoldRoot_WhenMergeTargetsScaffold_StaysValid() {
+		// Arrange
+		string body = """
+		              {
+		                "viewConfigDiff": [
+		                  {"operation":"merge","name":"Scaffold","values":{"title":"#ResourceString(Title)#"}}
+		                ]
+		              }
+		              """;
+
+		// Act
+		SchemaValidationResult result = SchemaValidationService.ValidateMobileSingleScaffoldRoot(body);
+
+		// Assert
+		result.IsValid.Should().BeTrue(
+			because: "merge is the documented way to patch the template-provided Scaffold and must not be confused with authoring a second one");
+	}
+
+	[Test]
+	[Description("The single-Scaffold rule is wired into the mobile validation pipeline as a blocking error, so update-page refuses the body instead of relying on guidance prose.")]
+	public void ValidateMobilePage_WhenBodyAuthorsSecondScaffold_ReportsBlockingError() {
+		// Arrange
+		string body = """
+		              {
+		                "viewConfigDiff": [
+		                  {"operation":"insert","name":"MyScaffold","parentName":"","propertyName":"items",
+		                   "values":{"type":"crt.Scaffold"}}
+		                ],
+		                "viewModelConfigDiff": [],
+		                "modelConfigDiff": []
+		              }
+		              """;
+		var empty = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+		// Act
+		(List<string> errors, List<string> _) = SchemaValidationService.ValidateMobilePage(body, empty, empty);
+
+		// Assert
+		errors.Should().Contain(e => e.Contains("crt.Scaffold"),
+			because: "the invariant must be enforced by the validator the caller cannot skip, not stated in the conversion guide's constraints");
 	}
 
 	#endregion

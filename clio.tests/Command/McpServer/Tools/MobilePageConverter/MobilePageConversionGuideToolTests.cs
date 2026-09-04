@@ -93,6 +93,124 @@ public sealed class MobilePageConversionGuideToolTests {
 		MobilePageConversionGuideTool.WorseResolvedFrom(a, b);
 
 	[Test]
+	[Description("ENG-95827: a web template no templates entry matches falls back to the rules' defaultMobileTemplate, so the page still gets a mobile target AND clio still gets a template bundle to diff the data sections against — without one both diffs degrade to a root merge. The fallback deliberately carries NO container or component correspondence: for an unrecognised web template no name twins are known, and asserting them would relocate elements.")]
+	public void DefaultTemplateRule_FallsBackToTheRulesDefault_WithNoNameCorrespondence() {
+		// Arrange
+		var rules = new WebToMobilePageConversionRules {
+			DefaultMobileTemplate = "BaseMobilePageTemplate",
+			Templates = [new TemplateMappingRule { Web = "ListPageV3Template", Mobile = "BaseMobileListTemplate" }]
+		};
+
+		// Act
+		TemplateMappingRule unmatched = MobilePageConversionGuideTool.ResolveTemplateRule(rules, "UsrCustomTemplate");
+		TemplateMappingRule fallback = MobilePageConversionGuideTool.DefaultTemplateRule(rules);
+
+		// Assert
+		unmatched.Should().BeNull(
+			because: "ResolveTemplateRule must keep answering 'no match' — it is also the predicate that finds the first ANCESTOR matching a rule, and a never-null result would make every ancestor match");
+		fallback!.Mobile.Should().Be("BaseMobilePageTemplate",
+			because: "a generic mobile base is a far better answer than none: it gives create-page a target and the differ a real base");
+		fallback.Containers.Should().BeNullOrEmpty(
+			because: "no container name twins are known for an unrecognised web template, and inventing them would misplace elements rather than leave them where the tree walk puts them");
+		fallback.Components.Should().BeNullOrEmpty(
+			because: "same reasoning as the containers — a guessed component twin is worse than none");
+		fallback.Note.Should().Contain("generic mobile base",
+			because: "the caller must not read the recommendation as a matched counterpart");
+	}
+
+	[Test]
+	[Description("ENG-95827: an unreadable mobile template FAILS the tool instead of degrading the guide. Without that template MobileTypesByName is empty, which silently stops the automatic same-name twin from being detected — so an element the template already provides (Feed, Tabs) falls through to the insert path and the page ships a DUPLICATE of a native element — and RetargetTargetMissing fails open, so a retarget into a container the template lacks is no longer caught. Shipping that guide with a footnote about the least of it (a root-merge data-section diff) is what this replaces.")]
+	public void RejectUnobtainableMobileTemplate_WhenNamedTemplateIsUnreadable_FailsWithTheReRunRemedy() {
+		// Act
+		MobilePageConversionGuideResponse rejection = MobilePageConversionGuideTool.RejectUnobtainableMobileTemplate(
+			Args(), WebToMobileAnalysisService.SourceTypeFreedomWeb, "MobilePageWithTabsFreedomTemplate",
+			templateUnavailable: true);
+
+		// Assert
+		rejection.Should().NotBeNull(because: "a guide that cannot be trusted is worse than no guide");
+		rejection!.Success.Should().BeFalse();
+		rejection.Error.Should().Contain("MobilePageWithTabsFreedomTemplate",
+			because: "naming the schema is what makes the failure actionable — the caller checks that one thing");
+		rejection.Error.Should().Contain("DUPLICATES",
+			because: "the duplicate-native-element consequence is the severe one and the reason this is a failure rather than a diagnostic");
+		rejection.Error.Should().Contain("mobile package is installed",
+			because: "the usual cause is the mobile package missing from the target environment, so the fix is named");
+	}
+
+	[Test]
+	[Description("ENG-95827: the two unobtainable-template causes get DIFFERENT fixes, so the failure distinguishes them — a template that was never named cannot be re-read, and telling the caller to re-run would be advice that cannot work. The fix there is a rules-file entry.")]
+	public void RejectUnobtainableMobileTemplate_WhenNoTemplateWasNamed_PointsAtTheRulesFileInstead() {
+		// Act
+		MobilePageConversionGuideResponse rejection = MobilePageConversionGuideTool.RejectUnobtainableMobileTemplate(
+			Args(), WebToMobileAnalysisService.SourceTypeFreedomWeb, mobileTemplateName: null,
+			templateUnavailable: true);
+
+		// Assert
+		rejection!.Error.Should().Contain("defaultMobileTemplate",
+			because: "with nothing named there is no schema to re-read; the actionable fix is a rules-file entry");
+		rejection.Error.Should().NotContain("mobile package is installed",
+			because: "suggesting an environment check for a template that was never named sends the caller after the wrong thing");
+	}
+
+	[Test]
+	[Description("ENG-95827: a readable mobile template is the normal path and must not be rejected — the gate fires on unavailability alone, never on a template that simply lacks one config section.")]
+	public void RejectUnobtainableMobileTemplate_WhenTemplateIsReadable_ReturnsNull() {
+		// Act
+		MobilePageConversionGuideResponse rejection = MobilePageConversionGuideTool.RejectUnobtainableMobileTemplate(
+			Args(), WebToMobileAnalysisService.SourceTypeFreedomWeb, "BaseMobilePageTemplate",
+			templateUnavailable: false);
+
+		// Assert
+		rejection.Should().BeNull(because: "the guide is trustworthy whenever the template was read, so nothing blocks it");
+	}
+
+	[Test]
+	[Description("ENG-95827: an unreadable WEB template fails the tool for the same reason the mobile one does. With no baseline, PruneTemplateComponents is skipped entirely (it is gated on a non-empty name set) so the whole inherited chrome converts to inserts, and the automatic same-name twin — gated on WebBaselineNodes — never fires. Both produce a guide instructing the caller to duplicate native elements, previously with success:true and nothing in the payload saying so.")]
+	public void RejectUnobtainableWebTemplate_WhenNamedTemplateIsUnreadable_FailsNamingTheBaselineLoss() {
+		// Act
+		MobilePageConversionGuideResponse rejection = MobilePageConversionGuideTool.RejectUnobtainableWebTemplate(
+			Args(), WebToMobileAnalysisService.SourceTypeFreedomWeb, "PageWithTabsFreedomTemplate",
+			templateUnavailable: true);
+
+		// Assert
+		rejection.Should().NotBeNull(
+			because: "the state was previously carried into Analyze as a flag that NOTHING read, so it was silently unguarded");
+		rejection!.Success.Should().BeFalse(
+			because: "the caller must be able to tell a refusal from a guide it can act on");
+		rejection.Error.Should().Contain("PageWithTabsFreedomTemplate",
+			because: "naming the schema is what makes the failure actionable — the caller checks that one thing");
+		rejection.Error.Should().Contain("duplicates",
+			because: "the duplicated-native-element consequence is the severe one and the reason this is a failure rather than a diagnostic");
+	}
+
+	[Test]
+	[Description("ENG-95827: a page with NO parent web template is the ordinary case and must NOT be refused — it yields an empty baseline legitimately, which is why the gate keys on unavailability rather than on the baseline being empty.")]
+	public void RejectUnobtainableWebTemplate_WhenNoTemplateWasNamed_ReturnsNull() {
+		// Act
+		MobilePageConversionGuideResponse rejection = MobilePageConversionGuideTool.RejectUnobtainableWebTemplate(
+			Args(), WebToMobileAnalysisService.SourceTypeFreedomWeb, webTemplateName: null,
+			templateUnavailable: false);
+
+		// Assert
+		rejection.Should().BeNull(
+			because: "a template-less page converts fine; refusing it would break every page that does not inherit from one");
+	}
+
+	[Test]
+	[Description("ENG-95827: with no defaultMobileTemplate declared, the fallback stays null rather than inventing a schema name — a partner rules file that omits it must not send create-page at a template that may not exist.")]
+	public void DefaultTemplateRule_WithoutADeclaredDefault_ReturnsNull() {
+		// Arrange
+		var rules = new WebToMobilePageConversionRules { Templates = [] };
+
+		// Act
+		TemplateMappingRule fallback = MobilePageConversionGuideTool.DefaultTemplateRule(rules);
+
+		// Assert
+		fallback.Should().BeNull(
+			because: "the default is rules-file data, not a hardcoded name — and when it is absent the root-merge degradation is reported with cause no-template-base instead");
+	}
+
+	[Test]
 	[Description("The detection and the gate compose: a 'web' schema-type detects as freedom-web and passes the gate (no rejection).")]
 	public void DetectThenReject_AcceptsWebSchemaType() {
 		// Act

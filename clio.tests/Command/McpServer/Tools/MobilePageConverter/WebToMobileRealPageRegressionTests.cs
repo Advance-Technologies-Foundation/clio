@@ -1,4 +1,4 @@
-namespace Clio.Tests.Command.McpServer.Tools.MobilePageConverter;
+﻿namespace Clio.Tests.Command.McpServer.Tools.MobilePageConverter;
 
 using System;
 using System.Collections.Generic;
@@ -49,6 +49,34 @@ public sealed class WebToMobileRealPageRegressionTests {
 	/// <see cref="Analyze_ShouldKeepSearchFilterOffTheCanvas_EvenWhenItIsNotAMobileType"/> pins separately.
 	/// </para>
 	/// </summary>
+	/// <summary>The mobile component type an insert declares — it lives in <c>values.type</c>.</summary>
+	private static string TypeOf(ViewConfigDiffOperation operation) =>
+		operation?.Values?["type"]?.GetValue<string>();
+
+	/// <summary>
+	/// Every name the SOURCE page had: <c>sourceStructure</c> plus the <c>nameMap</c> source keys. A
+	/// viewConfigDiff name in neither was synthesized by the converter.
+	/// </summary>
+	private static string[] SourceNames(MobilePageConversionGuide guide) =>
+		[.. (guide.SourceStructure ?? []).Select(entry => entry.Name)
+			.Concat((guide.NameMap ?? new Dictionary<string, string>()).Keys)
+			.Where(name => !string.IsNullOrEmpty(name))];
+
+	/// <summary>
+	/// The SOURCE element name behind an operation, by reversing the published <c>nameMap</c>; the
+	/// operation's own name when nothing renamed it. Null for a converter-synthesized operation.
+	/// </summary>
+	private static string SourceNameOf(MobilePageConversionGuide guide, ViewConfigDiffOperation operation) {
+		if (guide?.NameMap is not null) {
+			foreach (KeyValuePair<string, string> rename in guide.NameMap) {
+				if (string.Equals(rename.Value, operation?.Name, StringComparison.Ordinal)) {
+					return rename.Key;
+				}
+			}
+		}
+		return SourceNames(guide).Contains(operation?.Name) ? operation?.Name : null;
+	}
+
 	private static IReadOnlySet<string> MobileTypesResolvingSearchFilter(JsonNode viewConfig) {
 		var types = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 		CollectTypes(viewConfig, types);
@@ -74,16 +102,22 @@ public sealed class WebToMobileRealPageRegressionTests {
 		MobilePageConversionGuide guide = Convert(fixture, mobileTypes, BundledRules());
 
 		// Assert
-		List<ElementMapEntry> searchFilters = SearchFilterEntries(guide);
+		List<DroppedElement> searchFilters = DroppedSearchFilters(guide);
 		searchFilters.Should().HaveCount(5,
-			because: "each of the page's five search filters must be accounted for in the element map");
-		searchFilters.Should().OnlyContain(e => e.Operation == "drop",
-			because: "every one of them is in the position the shipped rule bans, so none may reach the mobile page");
-		searchFilters.Should().OnlyContain(e => e.Reason!.Contains("excludedComponents"),
+			because: "each of the page's five search filters must be accounted for in droppedElements");
+		SurvivingSearchFilters(guide).Should().BeEmpty(
+			because: "every one of them is in the position the shipped rule bans, so none may reach the mobile page — an operation for one would put it on the canvas");
+		searchFilters.Should().OnlyContain(
+			e => e.Reason!.Any(r => r.Code == ReasonCodes.DropExcludedByRule),
 			because: "the removal must be attributed to the RULE — an unsupported-type drop would satisfy the "
 				+ "acceptance criterion by accident and hide the rule regressing");
-		searchFilters.Should().OnlyContain(e => e.Reason!.Contains("crt.ExpansionPanel") && e.Reason.Contains("tools"),
-			because: "the reason names the host and the slot so a reader can trace the drop back to the rules file");
+		searchFilters.Should().OnlyContain(
+			e => e.Reason!.Any(r => r.Code == ReasonCodes.DropExcludedByRule
+				&& r.Params != null
+				&& r.Params["hostType"]!.GetValue<string>() == "crt.ExpansionPanel"
+				&& r.Params["slot"]!.GetValue<string>() == "tools"),
+			because: "the reason names the host and the slot as PARAMS so a reader can trace the drop back to "
+				+ "the rules file without parsing a sentence");
 		VerbatimCarriersOfSearchFilter(guide).Should().BeEmpty(
 			because: "the acceptance criterion is about the CANVAS, not the report: a drop entry plus a verbatim "
 				+ "copy still inside a surviving host's mobileValues is exactly the shape that kept rendering the "
@@ -104,10 +138,13 @@ public sealed class WebToMobileRealPageRegressionTests {
 		// Assert
 		IReadOnlyList<string> changed = OperationDifferences(without, withRule);
 		changed.Should().BeEquivalentTo(
-			SearchFilterEntries(withRule).Select(e => e.WebName),
+			DroppedSearchFilters(withRule).Select(e => e.WebName),
 			because: "the exclusion must touch the banned components and nothing else on the page");
-		withRule.ElementMap.Count.Should().Be(without.ElementMap.Count,
-			because: "a removal that cascaded into containers or orphans would change the entry count");
+		(withRule.ViewConfigDiff.Count + (withRule.DroppedElements?.Count ?? 0)).Should()
+			.Be(without.ViewConfigDiff.Count + (without.DroppedElements?.Count ?? 0),
+				because: "every source element is still accounted for, in one list or the other — a removal that "
+					+ "cascaded into containers or orphans would change the TOTAL, while the split alone only moves "
+					+ "the five banned filters from one list to the other");
 		AttributeCount(withRule).Should().Be(AttributeCount(without),
 			because: "the removal is layout cleanup, not attribute cleanup — no attribute may be pruned by it");
 		withRule.RequestConversions?.ConvertedRequests?.Count.Should()
@@ -131,8 +168,10 @@ public sealed class WebToMobileRealPageRegressionTests {
 		MobilePageConversionGuide guide = Convert(fixture, mobileTypes, BundledRules());
 
 		// Assert
-		SearchFilterEntries(guide).Should().OnlyContain(e => e.Operation == "drop",
+		DroppedSearchFilters(guide).Should().NotBeEmpty(
 			because: "an unsupported type is dropped by the converter regardless of any exclusion rule");
+		SurvivingSearchFilters(guide).Should().BeEmpty(
+			because: "a dropped component must produce no operation at all");
 		VerbatimCarriersOfSearchFilter(guide).Should().BeEmpty(
 			because: "a dropped component must not survive as a node carried verbatim inside a surviving "
 				+ "host's values — that is the shape that would still render it on the canvas");
@@ -154,8 +193,8 @@ public sealed class WebToMobileRealPageRegressionTests {
 		MobilePageConversionGuide guide = Convert(fixture, mobileTypes, BundledRules());
 
 		// Assert
-		ElementMapEntry header = guide.ElementMap
-			.Single(e => string.Equals(e.WebName, "NextStepsTabContainerHeaderContainer", StringComparison.Ordinal));
+		ViewConfigDiffOperation header = guide.ViewConfigDiff
+			.Single(e => string.Equals(SourceNameOf(guide, e), "NextStepsTabContainerHeaderContainer", StringComparison.Ordinal));
 		header.Operation.Should().Be("insert",
 			because: "the header container is a crt.FlexContainer, a mobile-supported type that must reach the page");
 		header.ParentName.Should().StartWith("GridContainer_",
@@ -177,7 +216,7 @@ public sealed class WebToMobileRealPageRegressionTests {
 		MobilePageConversionGuide guide = Convert(fixture, mobileTypes, BundledRules());
 
 		// Assert
-		List<ElementMapEntry> layers = SynthesizedTabLayers(guide);
+		List<ViewConfigDiffOperation> layers = SynthesizedTabLayers(guide);
 		layers.Should().NotBeEmpty(
 			because: "the pinned page has converted tabs, so the pass must have synthesized their body/Area layers");
 		layers.Should().OnlyContain(e => DeclaredChildSlots(e).SequenceEqual(new[] { "items" }),
@@ -185,7 +224,7 @@ public sealed class WebToMobileRealPageRegressionTests {
 				+ "slot carried over from the web parent that the mobile component does not render. Offenders: "
 				+ string.Join(", ", layers
 					.Where(e => !DeclaredChildSlots(e).SequenceEqual(new[] { "items" }))
-					.Select(e => $"{e.MobileName} [{string.Join("|", DeclaredChildSlots(e))}]")));
+					.Select(e => $"{e.Name} [{string.Join("|", DeclaredChildSlots(e))}]")));
 	}
 
 	[Test]
@@ -207,16 +246,16 @@ public sealed class WebToMobileRealPageRegressionTests {
 		// Assert
 		var checkedAreas = new List<string>();
 		foreach (string headerName in headerNames) {
-			ElementMapEntry header = guide.ElementMap.SingleOrDefault(
-				e => string.Equals(e.WebName, headerName, StringComparison.Ordinal)
+			ViewConfigDiffOperation header = guide.ViewConfigDiff.SingleOrDefault(
+				e => string.Equals(SourceNameOf(guide, e), headerName, StringComparison.Ordinal)
 					&& string.Equals(e.Operation, "insert", StringComparison.Ordinal));
 			if (header?.ParentName is not { Length: > 0 } area) {
 				continue; // a header the converter dropped entirely carries no row to compare
 			}
-			List<ElementMapEntry> bodySiblings = guide.ElementMap
+			List<ViewConfigDiffOperation> bodySiblings = guide.ViewConfigDiff
 				.Where(e => string.Equals(e.Operation, "insert", StringComparison.Ordinal)
 					&& string.Equals(e.ParentName, area, StringComparison.OrdinalIgnoreCase)
-					&& !headerNames.Contains(e.WebName, StringComparer.Ordinal))
+					&& !headerNames.Contains(SourceNameOf(guide, e), StringComparer.Ordinal))
 				.ToList();
 			if (bodySiblings.Count == 0) {
 				continue; // nothing to sit above — a header-only tab cannot express the ordering
@@ -227,7 +266,7 @@ public sealed class WebToMobileRealPageRegressionTests {
 				because: $"the retarget gives every moved child a single-column layoutConfig, so '{headerName}' must carry a row");
 			bodySiblings.Select(AssignedRow).Should().OnlyContain(bodyRow => bodyRow > headerRow,
 				because: $"the tools strip is the tab's header: in Area '{area}' it must render above "
-					+ $"[{string.Join(", ", bodySiblings.Select(e => $"{e.WebName ?? e.MobileName}@row{AssignedRow(e)}"))}], "
+					+ $"[{string.Join(", ", bodySiblings.Select(e => $"{SourceNameOf(guide, e) ?? e.Name}@row{AssignedRow(e)}"))}], "
 					+ $"but it was placed at row {headerRow}");
 		}
 		checkedAreas.Should().HaveCountGreaterThan(1,
@@ -238,8 +277,8 @@ public sealed class WebToMobileRealPageRegressionTests {
 	// ── helpers ──────────────────────────────────────────────────────────────────────────────────
 
 	/// <summary>The grid row the tab-area pass assigned to a moved child, or -1 when it carries no placement.</summary>
-	private static int AssignedRow(ElementMapEntry entry) =>
-		entry.MobileValues is JsonObject values
+	private static int AssignedRow(ViewConfigDiffOperation entry) =>
+		entry.Values is JsonObject values
 		&& values["layoutConfig"] is JsonObject layoutConfig
 		&& layoutConfig["row"] is JsonValue row
 		&& row.TryGetValue(out int parsed)
@@ -275,18 +314,18 @@ public sealed class WebToMobileRealPageRegressionTests {
 	}
 
 	/// <summary>The tab-body and Area containers the tab-area pass synthesizes (no web counterpart).</summary>
-	private static List<ElementMapEntry> SynthesizedTabLayers(MobilePageConversionGuide guide) =>
-		guide.ElementMap
+	private static List<ViewConfigDiffOperation> SynthesizedTabLayers(MobilePageConversionGuide guide) =>
+		guide.ViewConfigDiff
 			.Where(e => string.Equals(e.Operation, "insert", StringComparison.Ordinal)
-				&& e.WebName is null or { Length: 0 }
-				&& e.MobileName is { Length: > 0 }
-				&& (e.MobileName.StartsWith("MainTabContainer_", StringComparison.Ordinal)
-					|| e.MobileName.StartsWith("GridContainer_", StringComparison.Ordinal)))
+				&& SourceNameOf(guide, e) is null or { Length: 0 }
+				&& e.Name is { Length: > 0 }
+				&& (e.Name.StartsWith("MainTabContainer_", StringComparison.Ordinal)
+					|| e.Name.StartsWith("GridContainer_", StringComparison.Ordinal)))
 			.ToList();
 
 	/// <summary>The child-collection slots an entry's prebuilt <c>mobileValues</c> physically declares, ordered.</summary>
-	private static IReadOnlyList<string> DeclaredChildSlots(ElementMapEntry entry) =>
-		entry.MobileValues is JsonObject values
+	private static IReadOnlyList<string> DeclaredChildSlots(ViewConfigDiffOperation entry) =>
+		entry.Values is JsonObject values
 			? values.Where(pair => pair.Value is JsonArray)
 				.Select(pair => pair.Key)
 				.OrderBy(slot => slot, StringComparer.Ordinal)
@@ -335,10 +374,10 @@ public sealed class WebToMobileRealPageRegressionTests {
 
 	/// <summary>Surviving entries whose prebuilt <c>mobileValues</c> still carry a <c>crt.SearchFilter</c> node.</summary>
 	private static IReadOnlyList<string> VerbatimCarriersOfSearchFilter(MobilePageConversionGuide guide) =>
-		guide.ElementMap
-			.Where(e => e.MobileValues is not null
-				&& e.MobileValues.ToJsonString().Contains("crt.SearchFilter", StringComparison.Ordinal))
-			.Select(e => e.MobileName ?? e.WebName ?? "<unnamed>")
+		guide.ViewConfigDiff
+			.Where(e => e.Values is not null
+				&& e.Values.ToJsonString().Contains("crt.SearchFilter", StringComparison.Ordinal))
+			.Select(e => e.Name ?? "<unnamed>")
 			.ToList();
 
 	private static MobilePageConversionGuide Convert(
@@ -359,11 +398,18 @@ public sealed class WebToMobileRealPageRegressionTests {
 			containerNameMap: new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase));
 	}
 
-	private static List<ElementMapEntry> SearchFilterEntries(MobilePageConversionGuide guide) =>
-		guide.ElementMap
-			.Where(e => string.Equals(e.WebType, "crt.SearchFilter", StringComparison.OrdinalIgnoreCase)
-				|| string.Equals(e.MobileType, "crt.SearchFilter", StringComparison.OrdinalIgnoreCase))
-			.ToList();
+	/// <summary>Every search filter the converter DROPPED, with its reason.</summary>
+	private static List<DroppedElement> DroppedSearchFilters(MobilePageConversionGuide guide) =>
+		[.. (guide.DroppedElements ?? [])
+			.Where(e => string.Equals(e.WebType, "crt.SearchFilter", StringComparison.OrdinalIgnoreCase))];
+
+	/// <summary>
+	/// Every search filter that SURVIVED into an operation. Must always be empty on this page — the point of
+	/// the acceptance criterion is that none reaches the canvas.
+	/// </summary>
+	private static List<ViewConfigDiffOperation> SurvivingSearchFilters(MobilePageConversionGuide guide) =>
+		[.. guide.ViewConfigDiff
+			.Where(e => string.Equals(TypeOf(e), "crt.SearchFilter", StringComparison.OrdinalIgnoreCase))];
 
 	private static int AttributeCount(MobilePageConversionGuide guide) =>
 		guide.ViewModelConfig?["attributes"] is JsonObject attributes ? attributes.Count : -1;
@@ -380,9 +426,9 @@ public sealed class WebToMobileRealPageRegressionTests {
 	}
 
 	private static Dictionary<string, string> OperationsByWebName(MobilePageConversionGuide guide) =>
-		guide.ElementMap
-			.Where(e => e.WebName is { Length: > 0 })
-			.GroupBy(e => e.WebName!, StringComparer.OrdinalIgnoreCase)
+		guide.ViewConfigDiff
+			.Where(e => SourceNameOf(guide, e) is { Length: > 0 })
+			.GroupBy(e => SourceNameOf(guide, e)!, StringComparer.OrdinalIgnoreCase)
 			.ToDictionary(g => g.Key, g => g.First().Operation, StringComparer.OrdinalIgnoreCase);
 
 	private static string Operation(Dictionary<string, string> map, string name) =>

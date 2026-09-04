@@ -1,7 +1,7 @@
 {
   "library": "com.creatio.clio",
-  "libraryVersion": "1.13.54",
-  "sequence": 1013054000,
+  "libraryVersion": "1.13.81",
+  "sequence": 1013081000,
   "availableNames": [
     "agent-execution",
     "app-modeling",
@@ -67,7 +67,7 @@
     "creatio.identity-assertion",
     "creatio.indicator-widget",
     "creatio.integration-testing",
-	"creatio.knowledge-feedback",
+    "creatio.knowledge-feedback",
     "creatio.localizable-values",
     "creatio.mobile-page-modification",
     "creatio.package-dependencies",
@@ -124,7 +124,7 @@
     "identity-assertion",
     "indicator-widget",
     "integration-testing",
-	"knowledge-feedback",
+    "knowledge-feedback",
     "localizable-values",
     "mobile-page-modification",
     "package-dependencies",
@@ -159,7 +159,9 @@
     "workplaces"
   ],
   "featureGatedNames": [
+    "creatio.freedom-page-mobile-reason-codes",
     "creatio.freedom-page-web-to-mobile-conversion",
+    "freedom-page-mobile-reason-codes",
     "freedom-page-web-to-mobile-conversion"
   ]
 }

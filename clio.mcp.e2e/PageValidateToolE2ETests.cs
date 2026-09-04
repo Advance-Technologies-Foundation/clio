@@ -737,6 +737,70 @@ public sealed class PageValidateToolE2ETests : McpContractFixtureBase {
 	}
 
 	[Test]
+	[Description("ENG-95827: returns valid=false for a mobile JSON body that authors a second crt.Scaffold. Every mobile template already provides the Scaffold root, and a page-authored one shadows the native element so the navigation bar and page body come from the wrong place. The invariant previously travelled only as prose (the conversion guide's constraints and the crt.Scaffold registry description) with nothing enforcing it.")]
+	[AllureTag(ToolName)]
+	[AllureName("validate-page rejects a mobile body that authors a second Scaffold")]
+	[AllureDescription("Sends a mobile JSON body whose viewConfigDiff inserts an element of type crt.Scaffold and verifies validate-page returns valid=false with an error naming the type, proving the single-Scaffold rule is enforced end-to-end instead of being stated as advisory guidance.")]
+	public async Task PageValidateTool_Should_Reject_Mobile_Body_Authoring_A_Second_Scaffold() {
+		// Arrange
+		await using var context = Arrange(TimeSpan.FromMinutes(3));
+		string mobileBodyWithSecondScaffold = """
+			{
+			  "viewConfigDiff": [
+			    { "operation": "insert", "name": "MyScaffold", "parentName": "", "propertyName": "items",
+			      "values": { "type": "crt.Scaffold" } }
+			  ],
+			  "viewModelConfigDiff": [],
+			  "modelConfigDiff": []
+			}
+			""";
+
+		// Act
+		PageValidateResponse response = await CallAsync(
+			context.Session, context.CancellationTokenSource.Token, mobileBodyWithSecondScaffold);
+
+		// Assert
+		response.Valid.Should().BeFalse(
+			because: "a second Scaffold shadows the template-provided root, so the write must be refused rather than merely discouraged in guidance");
+		response.Validation.Should().NotBeNull(
+			because: "validation details are always included in the response");
+		response.Validation!.Errors.Should().Contain(e => e.Contains("crt.Scaffold"),
+			because: "the caller has to be told which element is the offending one to be able to fix the body");
+	}
+
+	[Test]
+	[Description("ENG-95827: a component type absent from BOTH the mobile and the web registry is reported as a warning and does not block the write. It must not block, because a custom mobile component registered in the caller's own package is legitimately absent from the registry; it must not stay silent either, because a misspelled or invented type produces the same shape and used to reach the save with no diagnostic at all.")]
+	[AllureTag(ToolName)]
+	[AllureName("validate-page warns without blocking for a type in neither registry")]
+	[AllureDescription("Sends a mobile body inserting a component type present in neither registry and verifies validate-page still returns valid=true while surfacing a warning that names the type, so a typo is visible without refusing a legitimate custom component.")]
+	public async Task PageValidateTool_Should_Warn_Without_Blocking_For_Type_In_Neither_Registry() {
+		// Arrange
+		await using var context = Arrange(TimeSpan.FromMinutes(3));
+		string mobileBodyWithUnknownType = """
+			{
+			  "viewConfigDiff": [
+			    { "operation": "insert", "name": "UsrProbeWidget", "parentName": "MainContainer", "propertyName": "items",
+			      "values": { "type": "usr.NotARealComponentType" } }
+			  ],
+			  "viewModelConfigDiff": [],
+			  "modelConfigDiff": []
+			}
+			""";
+
+		// Act
+		PageValidateResponse response = await CallAsync(
+			context.Session, context.CancellationTokenSource.Token, mobileBodyWithUnknownType);
+
+		// Assert
+		response.Valid.Should().BeTrue(
+			because: "an unrecognised type may be a package-registered custom component, so it is advisory and must never refuse the write");
+		response.Validation.Should().NotBeNull(
+			because: "validation details are always included in the response");
+		response.Validation!.Warnings.Should().Contain(w => w.Contains("usr.NotARealComponentType"),
+			because: "the previously silent case has to name the type so a typo is distinguishable from a deliberate custom component");
+	}
+
+	[Test]
 	[Description("Returns valid=false for a mobile JSON body whose viewConfigDiff trips the Creatio differ: a child insert targets a parent slot (itemLayout) the in-diff parent does not declare, so the differ raises the not-a-container error via MobileDiffApplyValidator.")]
 	[AllureTag(ToolName)]
 	[AllureName("validate-page rejects a mobile body that trips the differ (not a container)")]
