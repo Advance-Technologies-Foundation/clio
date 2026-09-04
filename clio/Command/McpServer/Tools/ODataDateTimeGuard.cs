@@ -59,14 +59,11 @@ internal static class ODataDateTimeGuard {
 		if (payload.ValueKind != JsonValueKind.Object) {
 			return false;
 		}
-		foreach (JsonProperty property in payload.EnumerateObject()) {
-			if (property.Value.ValueKind == JsonValueKind.String
-				&& property.Value.GetString() is { Length: > 0 } value
-				&& IsZoneLess(value)) {
-				return true;
-			}
-		}
-		return false;
+		return payload.EnumerateObject()
+			.Select(property => property.Value)
+			.Any(value => value.ValueKind == JsonValueKind.String
+				&& value.GetString() is { Length: > 0 } text
+				&& IsZoneLess(text));
 	}
 
 	/// <summary>
