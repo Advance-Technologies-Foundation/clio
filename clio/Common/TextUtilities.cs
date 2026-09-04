@@ -91,15 +91,46 @@ namespace Clio.Common
 			if (string.IsNullOrEmpty(text)) {
 				return text;
 			}
-			// Normalization runs BEFORE the cap on purpose: it maps every surrogate to a space, so a
-			// truncation at maxLength can no longer split a surrogate pair and leave a lone surrogate that
-			// System.Text.Json refuses to serialize - which would take down the whole MCP response rather
-			// than just garble one message.
+			// Normalization runs BEFORE the cap on purpose: it removes the control characters and lone
+			// surrogates, so the cap only ever has to deal with well-formed text. It does NOT make the cap
+			// safe on its own - a well-formed surrogate PAIR is deliberately preserved, so a cut at
+			// maxLength can still land between its two halves. TruncateWithoutSplittingSurrogatePair is
+			// what stops that lone half from reaching System.Text.Json, which throws on invalid UTF-16 and
+			// would take down the whole MCP response rather than just garble one message.
 			string sanitized = NeutralizeDisplayHostileCharacters(text);
 			if (sanitized.Length > maxLength) {
-				return sanitized.Substring(0, maxLength) + "...";
+				return TruncateWithoutSplittingSurrogatePair(sanitized, maxLength) + "...";
 			}
 			return sanitized;
+		}
+
+		/// <summary>
+		/// Cuts <paramref name="text"/> down to at most <paramref name="maxLength"/> characters without
+		/// leaving a lone high surrogate at the end.
+		/// </summary>
+		/// <param name="text">The text to cut.</param>
+		/// <param name="maxLength">The maximum number of characters to keep.</param>
+		/// <returns>
+		/// <paramref name="text"/> unchanged when it is <c>null</c>, empty, or already short enough;
+		/// otherwise its first <paramref name="maxLength"/> characters, minus a trailing high surrogate
+		/// when the cut landed inside a surrogate pair.
+		/// </returns>
+		/// <remarks>
+		/// A plain <c>Substring</c> is not enough for any text that is later serialized: an astral character
+		/// (emoji, CJK extension) occupies TWO chars, so a cut that falls between them keeps the high half on
+		/// its own. <c>System.Text.Json</c> throws on that invalid UTF-16, so one over-long message with an
+		/// emoji near the cut point fails the entire response instead of being truncated. Dropping the
+		/// orphaned half costs one character and removes that failure mode entirely.
+		/// </remarks>
+		public static string TruncateWithoutSplittingSurrogatePair(string text, int maxLength) {
+			if (string.IsNullOrEmpty(text) || text.Length <= maxLength) {
+				return text;
+			}
+			if (maxLength <= 0) {
+				return string.Empty;
+			}
+			string result = text.Substring(0, maxLength);
+			return char.IsHighSurrogate(result[^1]) ? result[..^1] : result;
 		}
 
 		/// <summary>

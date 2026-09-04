@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading;
@@ -46,14 +46,27 @@ public class CompilationHistoryPoller : ICompilationHistoryPoller {
 	/// that a genuinely dead stand is reported promptly, long enough that a restarting app tier or a
 	/// single timed-out read does not abandon a compile that has been running for minutes.
 	/// </summary>
-	private const int MaxConsecutiveFailures = 10;
+	public const int MaxConsecutiveFailures = 10;
 
-	private const int PollIntervalMilliseconds = 1_000;
+	/// <summary>
+	/// Default gap between rounds, in milliseconds.
+	/// </summary>
+	public const int DefaultPollIntervalMilliseconds = 1_000;
 
 	private readonly IDataProvider _dataProvider;
 
-	public CompilationHistoryPoller(IDataProvider dataProvider) {
+	private readonly int _pollIntervalMilliseconds;
+
+	/// <param name="dataProvider">The provider each round queries through.</param>
+	/// <param name="pollIntervalMilliseconds">
+	/// Gap between rounds. Only a test passes anything but the default: at one second a run that has to
+	/// exhaust the ten-round budget spends ten real seconds sleeping, which is why the budget boundary
+	/// went untested. A near-zero interval makes those rounds run back to back.
+	/// </param>
+	public CompilationHistoryPoller(IDataProvider dataProvider,
+		int pollIntervalMilliseconds = DefaultPollIntervalMilliseconds) {
 		_dataProvider = dataProvider;
+		_pollIntervalMilliseconds = pollIntervalMilliseconds;
 	}
 
 	public CompilationHistory GetBaseline() {
@@ -80,7 +93,7 @@ public class CompilationHistoryPoller : ICompilationHistoryPoller {
 					out List<CompilationHistory> records)) {
 				baseline = ReportNewRecords(records, seen, baseline, onNewRecord);
 			}
-			if (ct.WaitHandle.WaitOne(PollIntervalMilliseconds)) {
+			if (ct.WaitHandle.WaitOne(_pollIntervalMilliseconds)) {
 				break;
 			}
 		}

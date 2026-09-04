@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Linq;
 using System.Net;
 using System.Net.Http;
@@ -91,9 +91,16 @@ public static class AuthenticationFailureClassifier {
 	/// raised as an <see cref="System.Security.Authentication.AuthenticationException"/> telling the
 	/// operator to repair working credentials. That is the misdiagnosis class the removed preflight probe
 	/// was blamed for, and the decorator puts this predicate on every command rather than on one.
+	/// <para>
+	/// The JSON rendering ends in a <c>(?![0-9])</c> boundary because the trailing quote is optional (the
+	/// property carries the code both quoted and bare). Without the boundary the pattern matched the first
+	/// digit of any code STARTING with 5 - <c>"ErrorCode":"50"</c>, <c>"ErrorCode":500</c> - so an ordinary
+	/// server-side DataService failure in the 5x/5xx range was reported as rejected credentials, which is
+	/// the same misdiagnosis this class exists to remove.
+	/// </para>
 	/// </remarks>
 	private static readonly Regex DataServiceAuthenticationErrorCode =
-		new(@"^\s*5:\s|""[Ee]rror[Cc]ode""\s*:\s*""?5""?",
+		new(@"^\s*5:\s|""[Ee]rror[Cc]ode""\s*:\s*""?5""?(?![0-9])",
 			RegexOptions.Compiled | RegexOptions.CultureInvariant,
 			TimeSpan.FromSeconds(1));
 

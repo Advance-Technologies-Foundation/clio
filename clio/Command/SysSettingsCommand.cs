@@ -962,6 +962,10 @@ namespace Clio.Command
 		// Redaction runs BEFORE the cap, deliberately: SensitiveErrorTextRedactor matches a token as a whole
 		// unit, so capping first can split one in half and leave the visible fragment unredacted. This is the
 		// same order ServiceResponseJsonGuard.BuildPreview uses.
+		// The cap itself goes through TruncateWithoutSplittingSurrogatePair rather than a raw slice: Redact
+		// only scrubs secrets, it does not touch surrogates, so an astral character straddling the cap point
+		// would leave a lone high surrogate in SysSettingFailure.Error/.Cause - and System.Text.Json throws
+		// on invalid UTF-16, failing the whole tool response instead of truncating one message.
 		private static string SafeDetail(string message) {
 			if (string.IsNullOrEmpty(message)) {
 				return message;
@@ -969,7 +973,7 @@ namespace Clio.Command
 			string redacted = McpServer.SensitiveErrorTextRedactor.Redact(message);
 			return redacted.Length <= MaxPromotedMessageLength
 				? redacted
-				: redacted[..MaxPromotedMessageLength] + "...";
+				: TextUtilities.TruncateWithoutSplittingSurrogatePair(redacted, MaxPromotedMessageLength) + "...";
 		}
 		// Bounds every walk over an exception chain. A chain this deep is not something a transport
 		// produces, and the bound is what keeps a hand-built or self-referencing chain from looping.

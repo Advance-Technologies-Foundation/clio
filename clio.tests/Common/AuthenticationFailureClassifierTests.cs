@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Net;
 using System.Net.Sockets;
 using System.Net.Http;
@@ -239,6 +239,33 @@ internal sealed class AuthenticationFailureClassifierTests {
 		// Assert
 		verdict.Should().NotBe(AuthenticationFailureClassifier.ProviderFailureVerdict.Authentication,
 			because: "a deadlock and a parser error are not rejected credentials, and the decorator puts this predicate on every command");
+	}
+
+	[Test]
+	[TestCase("{\"responseStatus\":{\"ErrorCode\":\"50\",\"Message\":\"x\"}}", TestName = "QuotedFiftyErrorCode")]
+	[TestCase("{\"responseStatus\":{\"ErrorCode\":500,\"Message\":\"x\"}}", TestName = "BareFiveHundredErrorCode")]
+	[TestCase("{\"responseStatus\":{\"ErrorCode\":\"55\",\"Message\":\"x\"}}", TestName = "QuotedFiftyFiveErrorCode")]
+	[Description("The JSON ErrorCode arm needs a digit boundary: without it the optional trailing quote lets any code merely STARTING with 5 match, so an ordinary server-side DataService failure in the 5x/5xx range was reported as rejected credentials (PR #1372 review).")]
+	public void ClassifyProviderErrorMessage_ShouldNotReportAuthentication_ForAnErrorCodeThatMerelyStartsWithFive(string message) {
+		// Act
+		AuthenticationFailureClassifier.ProviderFailureVerdict verdict = AuthenticationFailureClassifier.ClassifyProviderErrorMessage(message);
+
+		// Assert
+		verdict.Should().NotBe(AuthenticationFailureClassifier.ProviderFailureVerdict.Authentication,
+			because: "only ErrorCode 5 exactly is the platform's authentication-rejection code, and this predicate is the strongest authentication signal there is");
+	}
+
+	[Test]
+	[TestCase("{\"responseStatus\":{\"ErrorCode\":\"5\",\"Message\":\"x\"}}", TestName = "QuotedFiveErrorCode")]
+	[TestCase("{\"responseStatus\":{\"ErrorCode\":5,\"Message\":\"x\"}}", TestName = "BareFiveErrorCode")]
+	[Description("The digit boundary must not cost the rendering the arm exists for: ErrorCode 5, quoted or bare, is still an authentication verdict (PR #1372 review).")]
+	public void ClassifyProviderErrorMessage_ShouldReportAuthentication_ForErrorCodeFiveExactly(string message) {
+		// Act
+		AuthenticationFailureClassifier.ProviderFailureVerdict verdict = AuthenticationFailureClassifier.ClassifyProviderErrorMessage(message);
+
+		// Assert
+		verdict.Should().Be(AuthenticationFailureClassifier.ProviderFailureVerdict.Authentication,
+			because: "tightening the pattern must not lose the code it was written to match");
 	}
 
 	[Test]

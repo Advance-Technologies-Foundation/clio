@@ -1,4 +1,4 @@
-namespace Clio.Tests.Common;
+﻿namespace Clio.Tests.Common;
 
 using Clio.Common;
 using Clio.Project.NuGet;
@@ -235,5 +235,50 @@ public sealed class TextUtilitiesTests
 		result.Should().Be("before   after",
 			because: "an unpaired surrogate is what System.Text.Json refuses to serialize");
 		result.Should().NotContain(((char)0xD83D).ToString());
+	}
+
+	[Test]
+	[Description("The cap must not split a surrogate pair: preserving well-formed pairs means a cut at maxLength can now land between the two halves, and the lone high half makes System.Text.Json throw - failing the whole MCP response instead of truncating one message (PR #1372 review).")]
+	public void SanitizeForDisplay_ShouldNotLeaveALoneSurrogate_WhenTheCapSplitsAPair() {
+		// Arrange - the emoji starts at index 9, so a cap of 10 falls between its high and low halves.
+		const int maxLength = 10;
+		string text = new string('a', 9) + "\U0001F600" + new string('b', 40);
+
+		// Act
+		string sanitized = TextUtilities.SanitizeForDisplay(text, maxLength);
+
+		// Assert
+		sanitized.Should().Be(new string('a', 9) + "...",
+			because: "the orphaned high half is dropped rather than carried into the output");
+		System.Action serialize = () => System.Text.Json.JsonSerializer.Serialize(sanitized);
+		serialize.Should().NotThrow(
+			because: "invalid UTF-16 reaching System.Text.Json is exactly the failure this guard exists to prevent");
+	}
+
+	[Test]
+	[Description("A cap that lands on a pair BOUNDARY keeps the whole pair - the guard drops an orphan, not a valid character (PR #1372 review).")]
+	public void SanitizeForDisplay_ShouldKeepTheWholePair_WhenTheCapFallsAfterIt() {
+		// Arrange - the emoji occupies indexes 9 and 10, so a cap of 11 includes both halves.
+		const int maxLength = 11;
+		string text = new string('a', 9) + "\U0001F600" + new string('b', 40);
+
+		// Act
+		string sanitized = TextUtilities.SanitizeForDisplay(text, maxLength);
+
+		// Assert
+		sanitized.Should().Be(new string('a', 9) + "\U0001F600" + "...",
+			because: "only a half-pair is hostile; a complete astral character is ordinary text");
+	}
+
+	[Test]
+	[TestCase(null, TestName = "TruncateWithoutSplittingSurrogatePair returns null for null input")]
+	[TestCase("", TestName = "TruncateWithoutSplittingSurrogatePair returns empty for empty input")]
+	[Description("Null and empty pass through untouched, matching the other helpers in this class.")]
+	public void TruncateWithoutSplittingSurrogatePair_ShouldReturnInputUnchanged_WhenNullOrEmpty(string text) {
+		// Act
+		string result = TextUtilities.TruncateWithoutSplittingSurrogatePair(text, 10);
+
+		// Assert
+		result.Should().Be(text);
 	}
 }
