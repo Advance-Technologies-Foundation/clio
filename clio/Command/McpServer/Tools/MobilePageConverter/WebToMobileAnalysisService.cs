@@ -2180,12 +2180,23 @@ public static class WebToMobileAnalysisService {
 			//     type-driven — it lives in the general components rule and is surfaced in
 			//     componentSuggestions[<type>]; clio hardcodes no component-specific transform here.
 			if (ctx.ComponentMap.TryGetValue(name, out ComponentMappingRule compRule)) {
-				// The mobile type is normally the web type when it survives on mobile as-is; a rule that maps
-				// to a DIFFERENT mobile type (web crt.FolderTree → mobile crt.FolderTreeActions) declares it
-				// explicitly so carried values can be shape-coerced against the right registry contract.
+				// The mobile type is the type of the element the TEMPLATE actually provides. An explicit rule
+				// mapping wins (web crt.FolderTree → mobile crt.FolderTreeActions declares it, so carried values
+				// are shape-coerced against the right contract); otherwise it is read off the mobile template
+				// probe, which is authoritative whenever it ran. Only when the probe could not tell does the web
+				// type stand in, and then only if it exists on mobile at all.
+				// The web type must never be the FIRST answer: it asks whether the component exists SOMEWHERE on
+				// mobile, not whether it is what sits under compRule.Mobile —
+				// and it silently inverted when the mobile catalog grew to cover the Flutter runtime
+				// (ENG-91859): crt.DataGrid became a known mobile type, so DataTable → List began to look like a
+				// same-component twin and carried DataGrid-shaped values (columns, features, bulkActions, …) onto
+				// an element that is a crt.List and declares none of them. The list then rendered with no row.
 				string twinMobileType = !string.IsNullOrWhiteSpace(compRule.MobileType)
 					? compRule.MobileType
-					: (ctx.MobileTypes.Contains(type ?? "") ? type : null);
+					: ctx.MobileTypesByName.TryGetValue(compRule.Mobile, out string templateTwinType)
+						&& !string.IsNullOrWhiteSpace(templateTwinType)
+							? templateTwinType
+							: (ctx.MobileTypes.Contains(type ?? "") ? type : null);
 				// Deterministic merge payload carried onto the template-provided element:
 				//  • an explicit carryProperties whitelist → just those keys (e.g. the folder tree binding);
 				//  • otherwise, when the twin is the SAME component on both sides (twinMobileType == web type,
@@ -2687,8 +2698,9 @@ public static class WebToMobileAnalysisService {
 	/// (<paramref name="webType"/> survives on mobile as <paramref name="twinMobileType"/>, e.g.
 	/// crt.FileList → crt.FileList), the page's DELTA over the web-template baseline is carried
 	/// (<see cref="BuildDeltaTwinMergeValues"/>) — a name twin of one component is just the same element renamed
-	/// between the web and mobile templates. A twin whose web type has no mobile equivalent (a structural
-	/// conversion, e.g. crt.DataGrid → crt.List) gets no payload and stays advisory.
+	/// between the web and mobile templates. A twin whose target element is a DIFFERENT component (a
+	/// structural conversion, e.g. crt.DataGrid → crt.List) gets no payload and stays advisory — the
+	/// test is the target element's own type, never whether the web type exists somewhere on mobile.
 	/// </summary>
 	private static JsonNode BuildTwinMergeValues(ElementMapContext ctx, JObject node, ComponentMappingRule rule, string twinMobileType, string webType) {
 		if (rule.CarryProperties is { Count: > 0 }) {

@@ -2824,6 +2824,70 @@ public sealed class WebToMobileConversionServiceTests {
 	}
 
 	[Test]
+	[Description("ENG-91859 regression: once the mobile catalog carries crt.DataGrid, a DataTable->List twin must STILL stay advisory. The element the template provides under that name is a crt.List, so DataGrid-shaped values (columns, features, ...) must never be carried onto it - the old test asked whether the web type existed somewhere on mobile, which inverted when the catalog grew to cover the Flutter runtime.")]
+	public void Analyze_TemplateComponentTwin_StaysAdvisory_IfTheTargetElementIsADifferentComponent() {
+		// Arrange
+		PageBundleInfo bundle = Bundle("""
+			[ { "name": "ListContainer", "type": "crt.FlexContainer", "items": [
+				{ "name": "DataTable", "type": "crt.DataGrid", "columns": [ { "code": "PDS_Title", "sticky": true } ] } ] } ]
+			""");
+		var web = Reg(("crt.FlexContainer", true), ("crt.DataGrid", false));
+		var containerNameMap = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase) { ["ListContainer"] = "ListContainer" };
+		var componentNameMap = new Dictionary<string, ComponentMappingRule>(StringComparer.OrdinalIgnoreCase) {
+			["DataTable"] = new ComponentMappingRule { Web = "DataTable", Mobile = "List", Note = "Primary list component." }
+		};
+		IReadOnlySet<string> templateNames = Names("ListContainer", "DataTable");
+		// The post-ENG-91859 mobile catalog: crt.DataGrid IS a known mobile type...
+		IReadOnlySet<string> mobileTypes = Names("crt.FlexContainer", "crt.DataGrid", "crt.List");
+		// ...but the element the mobile template provides under the mapped name is a crt.List.
+		IReadOnlyDictionary<string, string> templateTypes = MobileTypesByName(("List", "crt.List"));
+
+		// Act
+		MobilePageConversionGuide guide = Analyze(
+			bundle, webByType: web, containerNameMap: containerNameMap,
+			templateComponentNames: templateNames, componentNameMap: componentNameMap,
+			mobileTypes: mobileTypes, mobileTemplateTypesByName: templateTypes);
+
+		// Assert
+		ElementMapEntry twin = Element(guide, "DataTable");
+		twin.Operation.Should().Be("merge", because: "the template already provides the element, so it is configured by name and never inserted twice");
+		twin.MobileType.Should().Be("crt.List", because: "the mobile type of a twin is the type of the element the template actually provides, not the web type that happens to also exist on mobile");
+		twin.MobileValues.Should().BeNull(because: "carrying DataGrid-shaped values onto a crt.List writes properties that component does not declare, and the list then renders with no row");
+		twin.Reason.Should().Contain("componentSuggestions", because: "a structural conversion stays advisory and delegates the how-to to the type-driven suggestion");
+	}
+
+	[Test]
+	[Description("An explicit MobileType on the components rule wins over the mobile template probe: the rule author stated the target component deliberately, so carried values are shape-coerced against that contract even when the probe reports something else.")]
+	public void Analyze_TemplateComponentTwin_PrefersTheRuleMobileType_OverTheTemplateProbe() {
+		// Arrange
+		PageBundleInfo bundle = Bundle("""
+			[ { "name": "ContentContainer", "type": "crt.FlexContainer", "items": [
+				{ "name": "FolderTree", "type": "crt.FolderTree", "sourceSchemaName": "FolderTree", "rootSchemaName": "UsrMouse" } ] } ]
+			""");
+		var web = Reg(("crt.FlexContainer", true), ("crt.FolderTree", false));
+		var containerNameMap = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase) { ["ContentContainer"] = "HeaderContainer" };
+		var componentNameMap = new Dictionary<string, ComponentMappingRule>(StringComparer.OrdinalIgnoreCase) {
+			["FolderTree"] = new ComponentMappingRule {
+				Web = "FolderTree", Mobile = "FolderTreeActions", MobileType = "crt.FolderTreeActions",
+				CarryProperties = new[] { "sourceSchemaName", "rootSchemaName" }
+			}
+		};
+		// The probe reports a different type for that element; the rule must still win.
+		IReadOnlyDictionary<string, string> templateTypes = MobileTypesByName(("FolderTreeActions", "crt.Something"));
+
+		// Act
+		MobilePageConversionGuide guide = Analyze(
+			bundle, webByType: web, containerNameMap: containerNameMap,
+			templateComponentNames: Names("ContentContainer", "FolderTree"), componentNameMap: componentNameMap,
+			mobileTemplateTypesByName: templateTypes);
+
+		// Assert
+		ElementMapEntry twin = Element(guide, "FolderTree");
+		twin.MobileType.Should().Be("crt.FolderTreeActions", because: "an explicit rule mapping is a deliberate statement and outranks whatever the template probe happened to read");
+		twin.MobileValues.Should().NotBeNull(because: "a carryProperties whitelist always produces a payload, independently of the type resolution");
+	}
+
+	[Test]
 	[Description("A component twin whose rule declares carryProperties (FolderTree→FolderTreeActions) is kept through baseline subtraction AND gets a deterministic merge payload: the whitelisted web props (sourceSchemaName/rootSchemaName) are carried verbatim onto the mobile element, so the app-authored rootSchemaName is not lost to template-chrome pruning.")]
 	public void Analyze_TemplateComponentTwin_CarryProperties_CarriesWebSchemaBindingOntoMobileElement() {
 		PageBundleInfo bundle = Bundle("""
