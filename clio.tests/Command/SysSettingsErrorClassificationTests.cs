@@ -196,12 +196,16 @@ public sealed class SysSettingsErrorClassificationTests {
 	public void CategorizeError_Should_Report_A_NonJson_Response_For_A_JsonException() {
 		JsonException fault = new("'<' is an invalid start of a value. Path: $ | LineNumber: 0 | BytePositionInLine: 0.");
 
-		string message = SysSettingsCommand.CategorizeError(fault, "creating sys-setting");
+		SysSettingFailure failure = SysSettingsCommand.CategorizeFailure(fault, "creating sys-setting", "test-id");
 
-		message.Should().Be(
-			"Creatio returned a non-JSON response creating sys-setting - the URL may not reach Creatio, "
-			+ "or a proxy/gateway answered instead of it.",
-			because: "the write path's only remaining diagnosis for a non-login-page body must name the cause the operator can act on");
+		failure.Error.Should().Be("Creatio returned a non-JSON response creating sys-setting.",
+			because: "the write path's only remaining diagnosis for a non-login-page body must say what came back, not the uncategorized \"Failed ...\"");
+		failure.Category.Should().Be(SysSettingErrorCategories.Network,
+			because: "an answer that is not JSON at all did not come from Creatio's DataService - it is a reachability problem, not a credential one");
+		failure.Cause.Should().Be(SysSettingFailureTexts.NonJsonResponseCause,
+			because: "the actionable half - that the URL may not reach Creatio, or a proxy answered instead - belongs in the cause field");
+		failure.RecoveryAction.Should().Be(SysSettingFailureTexts.NonJsonResponseRecovery,
+			because: "every classified failure ships the action next to the verdict");
 	}
 
 	[Test]
@@ -209,9 +213,11 @@ public sealed class SysSettingsErrorClassificationTests {
 	public void CategorizeError_Should_Report_A_NonJson_Response_For_An_Aggregate_Wrapping_A_JsonException() {
 		AggregateException fault = new(new JsonException("'<' is an invalid start of a value."));
 
-		string message = SysSettingsCommand.CategorizeError(fault, "updating sys-setting");
+		SysSettingFailure failure = SysSettingsCommand.CategorizeFailure(fault, "updating sys-setting", "test-id");
 
-		message.Should().Contain("non-JSON response updating sys-setting",
+		failure.Error.Should().Contain("non-JSON response updating sys-setting",
 			because: "unwrapping a single-fault aggregate must not lose the non-JSON diagnosis");
+		failure.Category.Should().Be(SysSettingErrorCategories.Network,
+			because: "the wrapper must not change the verdict the inner fault earns");
 	}
 }

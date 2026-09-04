@@ -21,6 +21,9 @@ internal sealed class McpServerSession : IAsyncDisposable {
 	private TaskCompletionSource<bool> _progressCapturedSignal = CreateProgressCapturedSignal();
 	private IAsyncDisposable? _progressCaptureRegistration;
 	private bool _progressCaptureRegistered;
+	private readonly ConcurrentQueue<JsonNode> _capturedLogParams = new();
+	private IAsyncDisposable? _logCaptureRegistration;
+	private bool _logCaptureRegistered;
 	private HashSet<string>? _advertisedToolNames;
 	private IReadOnlyCollection<string>? _reachableToolNames;
 	private IReadOnlyList<ToolContractIndexEntry>? _toolContractIndex;
@@ -115,6 +118,57 @@ internal sealed class McpServerSession : IAsyncDisposable {
 		} catch (JsonException) {
 			// Invalid-settings fixtures must reach the real server unchanged and assert its diagnostics.
 		}
+	}
+
+	/// <summary>
+	/// Registers a raw <c>notifications/message</c> handler so a test can assert what the server actually
+	/// forwarded to the client's log pane. Idempotent - registering more than once per session is a no-op.
+	/// </summary>
+	/// <remarks>
+	/// Needed because it is the ONLY sink a classified failure can reach when clio runs as an MCP server:
+	/// the console is suppressed under MCP server mode and the log file exists only with <c>--log</c>. A
+	/// correlation ID in a tool's failure envelope is only resolvable if it also arrives here.
+	/// </remarks>
+	public void StartCapturingLogNotifications() {
+		if (_logCaptureRegistered) {
+			return;
+		}
+
+		_logCaptureRegistered = true;
+		_logCaptureRegistration = Client.RegisterNotificationHandler(
+			NotificationMethods.LoggingMessageNotification, (notification, _) => {
+			JsonNode? paramsNode = notification.Params?.DeepClone();
+			if (paramsNode is not null) {
+				_capturedLogParams.Enqueue(paramsNode);
+			}
+
+			return default;
+		});
+	}
+
+	/// <summary>
+	/// The raw <c>params</c> nodes of every <c>notifications/message</c> captured since
+	/// <see cref="StartCapturingLogNotifications"/> was called, in arrival order.
+	/// </summary>
+	public IReadOnlyList<JsonNode> CapturedLogParams => [.. _capturedLogParams];
+
+	/// <summary>
+	/// Waits until a captured <c>notifications/message</c> satisfies <paramref name="predicate"/>, or the
+	/// timeout elapses. Notification dispatch and tool completion are independent SDK continuations, so a
+	/// finished tool call does not guarantee the handler has already run.
+	/// </summary>
+	public async Task<bool> WaitForCapturedLogAsync(
+		Func<JsonNode, bool> predicate,
+		TimeSpan timeout,
+		CancellationToken cancellationToken) {
+		DateTime deadline = DateTime.UtcNow + timeout;
+		while (DateTime.UtcNow < deadline) {
+			if (_capturedLogParams.Any(predicate)) {
+				return true;
+			}
+			await Task.Delay(TimeSpan.FromMilliseconds(100), cancellationToken);
+		}
+		return _capturedLogParams.Any(predicate);
 	}
 
 	/// <summary>
@@ -441,6 +495,9 @@ internal sealed class McpServerSession : IAsyncDisposable {
 	public async ValueTask DisposeAsync() {
 		if (_progressCaptureRegistration is not null) {
 			await _progressCaptureRegistration.DisposeAsync();
+		}
+		if (_logCaptureRegistration is not null) {
+			await _logCaptureRegistration.DisposeAsync();
 		}
 		await Client.DisposeAsync();
 	}

@@ -729,7 +729,7 @@ namespace Clio.Command
 			string recoveryAction) {
 			SysSettingFailure failure = new($"Failed {operationLabel}.", category, cause, recoveryAction,
 				_correlationIds.New());
-			_logger.WriteError(DescribeFailureForLog(failure));
+			WriteAndForwardFailureLine(_logger, failure);
 			return failure;
 		}
 
@@ -745,8 +745,31 @@ namespace Clio.Command
 		internal static SysSettingFailure CategorizeAndLog(Exception ex, string operationLabel,
 			ILogger logger, IOperationCorrelationIdProvider correlationIds) {
 			SysSettingFailure failure = CategorizeFailure(ex, operationLabel, correlationIds.New());
-			logger.WriteError(DescribeFailureForLog(failure));
+			WriteAndForwardFailureLine(logger, failure);
 			return failure;
+		}
+
+		/// <summary>
+		/// Writes the one log line carrying the failure's correlation ID, and on the MCP path ALSO sends it
+		/// to the client as a <c>notifications/message</c> under the <c>clio.tool.{correlationId}</c>
+		/// category.
+		/// </summary>
+		/// <remarks>
+		/// PR #1373 review: writing the line alone was not enough to make the ID resolvable. Running as an
+		/// MCP server every ordinary sink is closed - <see cref="ConsoleLogger"/> suppresses console writes
+		/// under <c>Program.IsMcpServerMode</c>, the log file exists only when the operator passed
+		/// <c>--log</c>, and the sys-setting tools and <c>SchemaNamePrefixTool</c> are plain
+		/// <c>[McpServerToolType]</c> classes that never flush the way <c>BaseTool</c> does. So the line
+		/// reached nobody, while the shipped recovery text tells the caller to quote the ID.
+		/// The notification is built from the line directly rather than by draining the shared
+		/// <c>PreserveMessages</c> buffer: that buffer belongs to whatever flow is capturing (a
+		/// <c>BaseTool</c> parent may be), and clearing it here would swallow messages this failure did not
+		/// produce. <c>ForwardMessages</c> no-ops when no MCP server is active, so the CLI path is unchanged.
+		/// </remarks>
+		private static void WriteAndForwardFailureLine(ILogger logger, SysSettingFailure failure) {
+			string line = DescribeFailureForLog(failure);
+			logger.WriteError(line);
+			McpServer.Tools.McpLogNotifier.ForwardMessages([new ErrorMessage(line)], failure.CorrelationId);
 		}
 
 		/// <summary>Renders a classified failure as one log line, correlation ID last.</summary>

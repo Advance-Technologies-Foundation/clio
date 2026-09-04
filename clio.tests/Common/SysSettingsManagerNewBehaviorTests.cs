@@ -5,6 +5,7 @@ using System.Linq;
 using System.Net.Http;
 using System.Security.Authentication;
 using System.Text.Json;
+using System.Text.RegularExpressions;
 using ATF.Repository.Mock;
 using ATF.Repository.Providers;
 using Clio.Command;
@@ -24,6 +25,14 @@ namespace Clio.Tests.Common;
 public class SysSettingsManagerNewBehaviorTests {
 
 	#region Helpers
+
+	// Both lines a failed CLI update writes end with "(correlation-id: X)". Pulling the ID out is how a
+	// test proves the classified line and the "is not updated." line describe the SAME failure - the
+	// bridge the two-line contract rests on.
+	private static string ExtractCorrelationId(string logLine) {
+		Match match = Regex.Match(logLine, @"\(correlation-id: (?<id>[^)]+)\)");
+		return match.Success ? match.Groups["id"].Value : string.Empty;
+	}
 
 	private static readonly Guid AllUsersAdminUnitId = new("a29a3ba5-4b0d-de11-9a51-005056c00008");
 
@@ -532,7 +541,7 @@ public class SysSettingsManagerNewBehaviorTests {
 		List<string> loggedErrors = [];
 		logger.When(value => value.WriteError(Arg.Any<string>()))
 			.Do(call => loggedErrors.Add(call.ArgAt<string>(0)));
-		SysSettingsCommand command = new(manager, logger, Substitute.For<IFileSystem>());
+		SysSettingsCommand command = new(manager, logger, Substitute.For<IFileSystem>(), new OperationCorrelationIdProvider());
 
 		// Act
 		command.TryUpdateSysSetting(new SysSettingsOptions {
@@ -540,9 +549,13 @@ public class SysSettingsManagerNewBehaviorTests {
 		});
 
 		// Assert
-		loggedErrors.Should().ContainSingle(message =>
-				message.Contains("UsrAuthFailure") && message.Contains("Authentication error updating sys-setting."),
-			because: "a rejected session must reach the operator as an authentication failure naming the setting, not the opaque 'is not updated.' line");
+		loggedErrors.Should().Contain(message => message.Contains("Authentication error updating sys-setting."),
+			because: "a rejected session must reach the operator as an authentication failure, not the opaque 'is not updated.' line");
+		loggedErrors.Should().Contain(message =>
+				message.Contains("UsrAuthFailure") && message.Contains("is not updated."),
+			because: "the line apply-environment-manifest reads as its only failure signal still has to name the setting");
+		loggedErrors.Select(ExtractCorrelationId).Distinct().Should().HaveCount(1,
+			because: "exactly one ID is minted per failure and both lines must carry it, so quoting the ID finds the whole record");
 	}
 
 	[Test]
@@ -556,7 +569,7 @@ public class SysSettingsManagerNewBehaviorTests {
 		List<string> loggedErrors = [];
 		logger.When(value => value.WriteError(Arg.Any<string>()))
 			.Do(call => loggedErrors.Add(call.ArgAt<string>(0)));
-		SysSettingsCommand command = new(manager, logger, Substitute.For<IFileSystem>());
+		SysSettingsCommand command = new(manager, logger, Substitute.For<IFileSystem>(), new OperationCorrelationIdProvider());
 
 		// Act
 		command.TryUpdateSysSetting(new SysSettingsOptions {
@@ -564,9 +577,13 @@ public class SysSettingsManagerNewBehaviorTests {
 		});
 
 		// Assert
-		loggedErrors.Should().ContainSingle(message =>
-				message.Contains("UsrNetworkFailure") && message.Contains("Network error updating sys-setting."),
+		loggedErrors.Should().Contain(message => message.Contains("Network error updating sys-setting."),
 			because: "a refused connection is a transport fault and must not be reported as a value the environment refused");
+		loggedErrors.Should().Contain(message =>
+				message.Contains("UsrNetworkFailure") && message.Contains("is not updated."),
+			because: "the line apply-environment-manifest reads as its only failure signal still has to name the setting");
+		loggedErrors.Select(ExtractCorrelationId).Distinct().Should().HaveCount(1,
+			because: "exactly one ID is minted per failure and both lines must carry it");
 	}
 
 
