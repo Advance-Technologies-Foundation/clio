@@ -1186,8 +1186,22 @@ public sealed class ToolContractGetToolTests {
 		pageGetContract.OutputContract.Fields.Should().Contain(field =>
 				field.Name == "files" && field.Description.Contains("bodyFile"),
 			because: "callers need the contract to name the property that carries the editable JavaScript source path");
-		pageGetContract.InputSchema.Properties.Should().Contain(field => field.Name == "output-directory",
-			because: "get-page writes files to disk, so the parameter that anchors that output must be part of the published input contract");
+		// PR #1351 review - the INPUT half is derived from PageGetArgs by reflection, not spot-checked. A
+		// `Contain(name == "output-directory")` cannot fail for the NEXT property added to the record, which is
+		// exactly how this defect arose: OutputDirectory existed and was simply never published. Mirrors the
+		// ODataReadArgs oracle above.
+		string[] boundPageGetArguments = typeof(PageGetArgs)
+			.GetProperties(BindingFlags.Public | BindingFlags.Instance)
+			.Where(property => property.GetCustomAttribute<JsonExtensionDataAttribute>() is null)
+			.Select(property => property.GetCustomAttribute<JsonPropertyNameAttribute>()?.Name ?? property.Name)
+			.ToArray();
+		boundPageGetArguments.Should().NotBeEmpty(
+			because: "an empty reflected set would make the equivalence assertion below pass vacuously");
+		boundPageGetArguments.Should().Contain("output-directory",
+			because: "PageGetArgs binds the anchor parameter, and it is the one issue #1185 reported as unpublished");
+		pageGetContract.InputSchema.Properties.Select(property => property.Name).Should()
+			.BeEquivalentTo(boundPageGetArguments,
+			because: "the curated contract must advertise every argument the real binder accepts and no stale ones - a spot check leaves the next unpublished property undiscoverable, which is the defect issue #1185 reported");
 	}
 
 	[Test]
@@ -1219,8 +1233,14 @@ public sealed class ToolContractGetToolTests {
 		pageGetContract.OutputContract.Fields.Single(field => field.Name == "editable").Description.Should()
 			.Contain("OPTIONAL",
 			because: "an agent that reads editable.editableSchemaExists to choose create-vs-update must be told the key can be absent");
-		pageGetContract.Description.Should().NotContain("`page`, `files` and `editable` only",
-			because: "the tool description must not state unconditional presence for a best-effort capture");
+		// PR #1351 review - a positive assertion over the text that actually ships. The previous
+		// NotContain named a literal present nowhere in the contract, so it could not fail: a rewrite that
+		// again promised `editable` unconditionally ("always returns page, files and editable") passed it
+		// untouched.
+		pageGetContract.Description.Should().Contain("present only when",
+			because: "the description must state the CONDITION under which `editable` appears, not merely avoid one phrasing of an unconditional promise");
+		pageGetContract.Description.Should().NotContain("always returns",
+			because: "no wording of an unconditional promise is acceptable for a best-effort capture");
 	}
 
 	[Test]
@@ -1242,6 +1262,19 @@ public sealed class ToolContractGetToolTests {
 			because: "the field that publishes the edit target must carry the warning about that target being replaced");
 		filesDescription.Should().Contain("MCP SERVER host",
 			because: "a remote mcp-http client receives absolute paths it cannot open, and the contract must say so rather than silently pointing at an unreachable path");
+		// PR #1351 review - what an ordinary MCP session reads is the RESIDENT [Description] on PageGetTool.GetPage
+		// that `tools/list` serves, not this curated get-tool-contract entry. Both agent-facing consequences must
+		// be in that attribute too, or the two halves of the same contract disagree.
+		string residentDescription = typeof(PageGetTool)
+			.GetMethod(nameof(PageGetTool.GetPage))!
+			.GetCustomAttribute<System.ComponentModel.DescriptionAttribute>()!
+			.Description;
+		residentDescription.Should().Contain("REPLACES",
+			because: "tools/list serves this attribute, so the destroyed-in-place-edit warning has to be here and not only in the curated contract");
+		residentDescription.Should().Contain("MCP SERVER host",
+			because: "a remote client reading only tools/list must still learn the returned paths are not on its own filesystem");
+		residentDescription.Should().Contain("Destructive=false",
+			because: "the recursive delete is confined to the clio-owned .clio-pages scratch tree, and the payload's Destructive=false is only defensible if the description says so");
 	}
 
 	[Test]
@@ -1354,6 +1387,19 @@ public sealed class ToolContractGetToolTests {
 				field.Name == "body" &&
 				field.Description.Contains("get-page.files.bodyFile"),
 			because: "update-page should advertise the materialized body file as the source of fallback single-page saves");
+		// PR #1351 review - validate-page is the THIRD consumer named in issue #1185 and was the one clause left
+		// unguarded, so it could be reverted to `raw.body`, or lose the "no body-file parameter" qualifier that
+		// makes the get-page -> edit -> validate-page loop composable, with a fully green suite.
+		ToolContractDefinition pageValidateContract = tool
+			.GetToolContracts(new ToolContractGetArgs([PageValidateTool.ToolName])).Tools!.Single();
+		string pageValidateBodyDescription = pageValidateContract.InputSchema.Properties
+			.Single(field => field.Name == "body").Description;
+		pageValidateBodyDescription.Should().Contain("INLINE",
+			because: "validate-page takes the body inline only, and an agent that assumes a body-file parameter cannot close the get-page -> edit -> validate-page loop");
+		pageValidateBodyDescription.Should().Contain("get-page.files.bodyFile",
+			because: "the loop is only composable if the contract names the file get-page actually materializes");
+		pageValidateBodyDescription.Should().NotContain("raw.body",
+			because: "get-page no longer returns raw.body over MCP, so validate-page must not point callers at it - the same drift the sync-pages guard above catches");
 		pageUpdateContract.InputSchema.Properties.Should().Contain(field =>
 				field.Name == "resources" &&
 				field.Description.Contains("JSON object string"),

@@ -786,7 +786,8 @@
 			}
 			if (serverError.Contains("requires an element of type 'Object'", StringComparison.OrdinalIgnoreCase) &&
 				serverError.Contains("type 'Array'", StringComparison.OrdinalIgnoreCase)) {
-				return serverError + " [hint: this typically happens when re-sending the full get-page body verbatim — " +
+				return serverError + " [hint: this typically happens when re-sending the full get-page body verbatim in " +
+					"mode='replace' — the mode in which the body reaches the server; " +
 					"backend re-applies existing merges that now conflict with parent hierarchy. " +
 					"Send only NEW viewConfigDiff/handlers operations (the new component insert + matching handler), " +
 					"not the entire inherited body. See docs://mcp/guides/page-modification for the minimal-diff pattern.]";
