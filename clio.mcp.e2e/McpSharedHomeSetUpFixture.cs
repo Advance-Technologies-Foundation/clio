@@ -56,6 +56,7 @@ public sealed class McpSharedHomeSetUpFixture {
 			["root-path"] = Path.Combine(_sharedClioHome, "knowledge"),
 			["sources"] = new JsonObject()
 		};
+		EnableSuiteFeatures(root);
 		File.WriteAllText(
 			_isolatedSettingsPath,
 			root.ToJsonString(new JsonSerializerOptions { WriteIndented = true }));
@@ -82,6 +83,37 @@ public sealed class McpSharedHomeSetUpFixture {
 		}
 		_sharedClioHome = null;
 		_isolatedSettingsPath = null;
+	}
+
+	/// <summary>
+	/// Forces the feature flags the suite's own fixtures depend on ON in the suite-owned copy, carrying
+	/// every other flag over unchanged.
+	/// </summary>
+	/// <remarks>
+	/// A tool carrying <c>[FeatureToggle(...)]</c> is not registered on the MCP surface while its flag is
+	/// off, and flags live in the clio home. Leaving them to the runner's machine made
+	/// <c>MobilePageConversionGuideSandboxE2ETests</c> run or skip according to which TeamCity agent picked
+	/// up the build — ignored in 43 of 55 runs, executed in 12, with no build parameter separating the two
+	/// groups (issue #1382). Deciding it here, in the one home the suite already owns and repairs, is what
+	/// makes the outcome a property of the code rather than of the machine. The fixtures that must observe
+	/// a flag OFF (see <c>MobilePageConversionGuideToolE2ETests</c>) write their own home and are unaffected.
+	/// The keys are removed case-insensitively first because Newtonsoft matches <c>features</c> as a
+	/// case-insensitive fallback, so a hand-edited <c>"Features"</c> would otherwise shadow this one.
+	/// </remarks>
+	private static void EnableSuiteFeatures(JsonObject root) {
+		JsonObject features = new();
+		foreach (string key in root.Select(property => property.Key)
+			.Where(key => string.Equals(key, "features", StringComparison.OrdinalIgnoreCase))
+			.ToList()) {
+			if (root[key] is JsonObject existing) {
+				foreach (KeyValuePair<string, JsonNode?> flag in existing) {
+					features[flag.Key] = flag.Value?.DeepClone();
+				}
+			}
+			root.Remove(key);
+		}
+		features["mobile-page-converter"] = true;
+		root["features"] = features;
 	}
 
 	private static void ProtectDirectoryForCurrentUser(string path) {
