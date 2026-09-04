@@ -69,7 +69,7 @@ public sealed class McpFlatArgumentNormalizationCompletenessTests
 				}
 			};
 
-			bool refused = McpToolErrorFilter.TryRefuseOrRewriteArguments(
+			bool refused = McpToolErrorFilter.TryRefuseArguments(
 				parameters, contract.Method, out CallToolResult? result);
 
 			if (refused || result is not null) {
@@ -117,7 +117,7 @@ public sealed class McpFlatArgumentNormalizationCompletenessTests
 				}
 			};
 
-			bool refused = McpToolErrorFilter.TryRefuseOrRewriteArguments(
+			bool refused = McpToolErrorFilter.TryRefuseArguments(
 				parameters, contract.Method, out CallToolResult? result);
 
 			if (!refused || result is null || result.IsError != true) {
@@ -160,7 +160,7 @@ public sealed class McpFlatArgumentNormalizationCompletenessTests
 				}
 			};
 
-			bool refused = McpToolErrorFilter.TryRefuseOrRewriteArguments(
+			bool refused = McpToolErrorFilter.TryRefuseArguments(
 				parameters, contract.Method, out CallToolResult? result);
 
 			if (!refused || result is null || result.IsError != true) {
@@ -215,7 +215,7 @@ public sealed class McpFlatArgumentNormalizationCompletenessTests
 			Dictionary<string, JsonElement> arguments = new(StringComparer.Ordinal);
 			CallToolRequestParams parameters = new() { Name = contract.ToolName, Arguments = arguments };
 
-			McpToolErrorFilter.TryRefuseOrRewriteArguments(parameters, contract.Method, out CallToolResult? _);
+			McpToolErrorFilter.TryRefuseArguments(parameters, contract.Method, out CallToolResult? _);
 
 			if (!ReferenceEquals(parameters.Arguments, arguments)) {
 				failures.Add(

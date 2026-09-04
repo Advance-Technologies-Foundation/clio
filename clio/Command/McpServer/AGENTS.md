@@ -81,7 +81,7 @@ read deadline. See `spec/adr/adr-read-only-mcp-response-deadline.md`.
 
 For a tool whose ONLY bindable parameter is a composite `args` record, two call shapes are accepted at
 runtime (ENG-95885). Normalization lives at the call-tool pipeline layer
-(`McpToolErrorFilter.TryNormalizeCallArguments`), NOT per tool, so it is transport-neutral and covers the
+(`McpToolErrorFilter.TryRefuseCallArguments`), NOT per tool, so it is transport-neutral and covers the
 whole resident set with no per-tool edits:
 
 - wrapped — `{"args": {"<field>": "<value>"}}` — what `tools/list` publishes; unchanged, byte-compatible.
@@ -134,6 +134,15 @@ Rules to keep:
 - **Resident tools only.** The durable long-tail path (`McpDurableCallToolHandler` /
   `InvokeResolvedAsync`) has no `MatchedPrimitive` to reflect and stays wrapped-only; the long tail is
   reached through `clio-run`, which owns its own recovery.
+- **Framework parameters are excluded by SDK ASSEMBLY, never by namespace name.**
+  `McpToolArgumentSupport.IsFrameworkOwnedType` keys on the SDK assembly plus `IsAssignableFrom` on
+  `McpServer`. Do not reintroduce a `Namespace.StartsWith("ModelContextProtocol")` match — it swallows
+  unrelated same-prefix namespaces and misses an `McpServer` subclass declared elsewhere, either of
+  which moves the bindable-parameter count and hands the normalizer a payload it must not rewrite.
+
+**Why the accepted input set is wider than the published schema, and why it can never be narrowed
+again:** see [`spec/adr/adr-mcp-flat-argument-normalization.md`](../../../spec/adr/adr-mcp-flat-argument-normalization.md).
+Tightening `tools/list` back to reject a flat payload is an explicit, permanent non-goal recorded there.
 
 ## Uniformity rules
 

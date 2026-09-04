@@ -32,15 +32,48 @@ internal static class McpToolArgumentSupport {
 	/// </remarks>
 	public static bool IsBindableToolParameter(ParameterInfo parameter) {
 		ArgumentNullException.ThrowIfNull(parameter);
-		Type type = parameter.ParameterType;
-		if (type == typeof(CancellationToken) || type == typeof(IServiceProvider)) {
-			return false;
-		}
-		if (type.Namespace?.StartsWith("ModelContextProtocol", StringComparison.Ordinal) == true) {
-			return false;
-		}
-		return !(type.IsGenericType && type.GetGenericTypeDefinition() == typeof(ModelContextProtocol.Server.RequestContext<>));
+		return !IsFrameworkOwnedType(parameter.ParameterType);
 	}
+
+	/// <summary>
+	/// True when <paramref name="type"/> belongs to the hosting framework rather than to a tool's own
+	/// caller-supplied argument contract. Three independent rules, none of them name-based:
+	/// <list type="number">
+	/// <item><description>the two BCL context types the SDK injects (<see cref="CancellationToken"/>,
+	/// <see cref="IServiceProvider"/>);</description></item>
+	/// <item><description>anything declared in the MCP SDK's own assembly — <c>McpServer</c>,
+	/// <c>IMcpServer</c>, <see cref="RequestContext{T}"/>, <c>ProgressToken</c> and every future
+	/// SDK-injected type, whatever namespace the SDK puts it in;</description></item>
+	/// <item><description>anything ASSIGNABLE TO <c>McpServer</c>, which catches a host-defined subclass
+	/// declared OUTSIDE the SDK assembly — the one framework shape rule 2 cannot see.</description></item>
+	/// </list>
+	/// </summary>
+	/// <remarks>
+	/// The exclusion is keyed on the SDK ASSEMBLY, never on a namespace-name prefix. A prefix match
+	/// (<c>type.Namespace.StartsWith("ModelContextProtocol")</c>) silently swallowed any unrelated type
+	/// whose namespace merely began with those characters, and silently missed an <c>McpServer</c>
+	/// subclass declared elsewhere — both of which would move the "exactly one bindable parameter" count
+	/// and hand the normalizer a payload it must not rewrite. Assembly identity plus
+	/// <see cref="Type.IsAssignableFrom"/> cannot drift that way at the next SDK upgrade.
+	/// Pinned by <c>McpToolArgumentSupportTests</c>.
+	/// </remarks>
+	public static bool IsFrameworkOwnedType(Type type) {
+		ArgumentNullException.ThrowIfNull(type);
+		if (type == typeof(CancellationToken) || type == typeof(IServiceProvider)) {
+			return true;
+		}
+		if (type.Assembly == McpSdkAssembly) {
+			return true;
+		}
+		return typeof(ModelContextProtocol.Server.McpServer).IsAssignableFrom(type);
+	}
+
+	/// <summary>
+	/// The assembly that owns every SDK-injected parameter type. Resolved from a type the tool layer
+	/// actually declares, so it follows the SDK package rather than a hardcoded assembly name.
+	/// </summary>
+	private static readonly Assembly McpSdkAssembly =
+		typeof(ModelContextProtocol.Server.McpServer).Assembly;
 
 	/// <summary>
 	/// True for a composite ("args record") parameter — a non-string reference type the tool expects to

@@ -1029,6 +1029,37 @@ Implication:
 - external AI should inspect each tool schema literally
 - argument-name conventions are not globally uniform
 
+#### Accepted call shapes are wider than the published schema (ENG-95885)
+
+For a **resident** tool whose only bindable parameter is a composite `args` record, the server accepts
+BOTH shapes at runtime, even though `tools/list` still publishes `required: ["args"]`:
+
+- wrapped — `{"args": {"<field>": "<value>"}}` — unchanged, byte-compatible
+- flat — `{"<field>": "<value>"}` — rewritten into the wrapper on arrival, but only when EVERY
+  top-level key is a wire property of the record; all of them move inside the wrapper together
+
+The payload is classified, never wrapped blindly, so `tools/call` has two caller-facing error classes
+beyond the deserialization diagnostics above:
+
+- **unknown-argument refusal** — at least one top-level key is not a wire property, whether the whole
+  payload is unknown or a real field sits beside a typo. Names the offending key(s) and lists the
+  canonical fields; nothing runs. A tool that diagnoses unknown keys itself
+  (`[McpRecoversUnknownArguments]`, today `get-tool-contract`) receives the payload instead.
+- **ambiguous-shape refusal** — an `args` object AND extra top-level keys in the same payload. Refused
+  with no silent precedence in either direction.
+
+An empty `{}` keeps today's missing-parameter error unless the tool declares
+`[McpAcceptsEmptyArguments]` (today `list-apps`, `get-request-info`). An argument the tool binds as an
+object but which arrives as a JSON string is refused with a shape-naming error and is never parsed.
+
+`clio-run` is multi-parameter and is deliberately excluded from this normalization — it keeps its own
+`{"command": …, "args": {…}}` recovery. The durable unmatched-name path is excluded too and stays
+wrapped-only.
+
+Authoritative statements: `ToolContractGetTool.AcceptedArgumentShapesHint` (agent-facing) and
+[`spec/adr/adr-mcp-flat-argument-normalization.md`](../spec/adr/adr-mcp-flat-argument-normalization.md)
+(the design record, including why the widening is a one-way door).
+
 ### 3. ~~Mixed metadata richness~~ (Fixed)
 
 All lifecycle tools now declare explicit safety metadata (`ReadOnly`, `Destructive`,

@@ -572,6 +572,51 @@ public sealed class McpToolErrorFilterTests
 
 	[Test]
 	[Category("Unit")]
+	[Description("T1b: a canonical flat payload whose values are a nested ARRAY and a nested OBJECT is rewritten with those values intact — every other flat-rewrite case uses scalar strings only, so this is the one that proves BuildWrappedArguments re-emits composite JSON rather than flattening or stringifying it (ENG-95885 R1, review finding).")]
+	public async Task Normalization_ShouldPreserveNestedValues_WhenPayloadIsCanonicalFlat() {
+		// Arrange
+		RequestContext<CallToolRequestParams> context = CreateContext(
+			"fake-structured-tool", new Dictionary<string, JsonElement> {
+				["rules"] = JsonDocument.Parse("""[{"actions":[{"type":"send"}]}]""").RootElement.Clone(),
+				["action"] = JsonDocument.Parse("""{"type":"log"}""").RootElement.Clone(),
+				["name"] = JsonSerializer.SerializeToElement("mixed-kinds")
+			});
+		context.MatchedPrimitive = McpServerTool.Create(
+			typeof(FakeToolWithStructuredArgs).GetMethod(
+				nameof(FakeToolWithStructuredArgs.Execute), BindingFlags.Public | BindingFlags.Instance)!,
+			new FakeToolWithStructuredArgs());
+		context = WithRoutingAuthority(context);
+		CallToolRequestParams? forwardedParams = null;
+		McpRequestHandler<CallToolRequestParams, CallToolResult> handler =
+			McpToolErrorFilter.HandleCallToolErrors((forwardedContext, _) => {
+				forwardedParams = forwardedContext.Params;
+				return ValueTask.FromResult(new CallToolResult { IsError = false });
+			});
+
+		// Act
+		CallToolResult result = await handler(context, CancellationToken.None);
+
+		// Assert
+		result.IsError.Should().BeFalse(
+			because: "a canonical flat payload is a valid call whatever JSON kinds its values are");
+		forwardedParams.Should().NotBeNull(because: "the call must reach the next handler, not be short-circuited");
+		JsonElement wrapped = forwardedParams!.Arguments!["args"];
+		JsonElement rules = wrapped.GetProperty("rules");
+		rules.ValueKind.Should().Be(JsonValueKind.Array,
+			because: "an array value must survive the rewrite as an array, not as a string or an object");
+		rules[0].GetProperty("actions")[0].GetProperty("type").GetString().Should().Be("send",
+			because: "the rewrite must re-emit the whole nested subtree, two levels deep, unchanged");
+		JsonElement action = wrapped.GetProperty("action");
+		action.ValueKind.Should().Be(JsonValueKind.Object,
+			because: "an object value must survive the rewrite as an object");
+		action.GetProperty("type").GetString().Should().Be("log",
+			because: "the nested object's own properties must be preserved verbatim");
+		wrapped.GetProperty("name").GetString().Should().Be("mixed-kinds",
+			because: "a scalar co-key must still move into the wrapper alongside the composite ones");
+	}
+
+	[Test]
+	[Category("Unit")]
 	[Description("T2: an already-wrapped payload passes through the filter unchanged — no rewrite, no hint, no error (ENG-95885 R1).")]
 	public async Task Normalization_ShouldLeavePayloadUntouched_WhenAlreadyWrapped() {
 		// Arrange
@@ -1200,6 +1245,23 @@ public sealed class McpToolErrorFilterTests
 	public sealed class FakeUnknownRecoveringTool {
 		[Clio.Command.McpServer.Tools.McpRecoversUnknownArguments]
 		public string Execute(FakeArgsWithNonContractProperties args) => "ok";
+	}
+
+	// Wire fields of three different JSON kinds on ONE record — an array of objects, a bare object, and
+	// a scalar — so a single flat payload exercises every value kind BuildWrappedArguments must re-emit.
+	public sealed record FakeStructuredArgs(
+		[property: JsonPropertyName("rules")]
+		List<FakeRule>? Rules = null,
+
+		[property: JsonPropertyName("action")]
+		FakeRuleAction? Action = null,
+
+		[property: JsonPropertyName("name")]
+		string? Name = null
+	);
+
+	public sealed class FakeToolWithStructuredArgs {
+		public string Execute(FakeStructuredArgs args) => "ok";
 	}
 
 	public sealed record FakeTypedArgs(

@@ -60,7 +60,7 @@ public static class McpToolErrorFilter
 		// instead of falling into the generic catch. It also runs ahead of the ENG-95262 matched-route
 		// dispatch below, so a relayed call reaches the worker already normalized. A returned result means
 		// the shape was REFUSED.
-		if (TryRefuseOrRewriteCallArguments(context, out CallToolResult? normalizationErrorResult)) {
+		if (TryRefuseCallArguments(context, out CallToolResult? normalizationErrorResult)) {
 			return normalizationErrorResult!;
 		}
 		if (TryCreateArgumentDeserializationError(context, out CallToolResult? argumentErrorResult)) {
@@ -347,11 +347,18 @@ public static class McpToolErrorFilter
 	/// with no silent precedence in either direction.</description></item>
 	/// </list>
 	/// </summary>
-	/// <returns><c>true</c> when the call must be REFUSED (<paramref name="result"/> carries the error);
-	/// <c>false</c> when the call proceeds — either untouched or with rewritten arguments. Note the
-	/// inverted sense: <c>true</c> is the refusal, not success — callers read the result as
-	/// <c>refused</c>.</returns>
-	internal static bool TryRefuseOrRewriteCallArguments(
+	/// <returns><c>true</c> when the call must be REFUSED — <paramref name="result"/> then carries the
+	/// error. <c>false</c> when the call proceeds, either untouched or with
+	/// <see cref="CallToolRequestParams.Arguments"/> REWRITTEN in place on the caller's instance (the
+	/// side effect the "refuse" in the name does not spell out; see
+	/// <see cref="BuildWrappedArguments"/>).</returns>
+	/// <remarks>
+	/// The boolean follows this file's <c>Try*</c> convention — <c>true</c> means the named verb
+	/// happened and the <c>out</c> parameter holds its result, exactly as in
+	/// <see cref="TryDetectFlatArgsMismatch"/> and
+	/// <see cref="TryCreateArgumentDeserializationError"/>. Read the return as <c>refused</c>.
+	/// </remarks>
+	internal static bool TryRefuseCallArguments(
 		RequestContext<CallToolRequestParams> context,
 		out CallToolResult? result) {
 		result = null;
@@ -369,18 +376,19 @@ public static class McpToolErrorFilter
 			return false;
 		}
 
-		return TryRefuseOrRewriteArguments(parameters, method, out result);
+		return TryRefuseArguments(parameters, method, out result);
 	}
 
 	/// <summary>
-	/// The reflection-only core of <see cref="TryRefuseOrRewriteCallArguments"/>: classifies (and where
+	/// The reflection-only core of <see cref="TryRefuseCallArguments"/>: classifies (and where
 	/// unambiguous, rewrites) <paramref name="parameters"/> against the contract of
 	/// <paramref name="method"/>. Split out from the context-bound entry point so a completeness test can
 	/// drive it across every resident tool method without constructing MCP primitives. Returns <c>true</c>
-	/// when the call must be REFUSED (the inverted sense described on
-	/// <see cref="TryRefuseOrRewriteCallArguments"/>).
+	/// when the call must be REFUSED, and otherwise may REWRITE
+	/// <see cref="CallToolRequestParams.Arguments"/> in place — same contract as
+	/// <see cref="TryRefuseCallArguments"/>.
 	/// </summary>
-	internal static bool TryRefuseOrRewriteArguments(
+	internal static bool TryRefuseArguments(
 		CallToolRequestParams parameters,
 		MethodInfo method,
 		out CallToolResult? result) {
@@ -772,7 +780,7 @@ public static class McpToolErrorFilter
 	/// </summary>
 	/// <remarks>
 	/// ENG-95885: for a single-composite-args tool this hint is now MOSTLY SHADOWED — the upstream
-	/// <see cref="TryRefuseOrRewriteCallArguments"/> pass has already rewritten a canonical-flat payload
+	/// <see cref="TryRefuseCallArguments"/> pass has already rewritten a canonical-flat payload
 	/// into the wrapper (or refused an unknown/ambiguous one) before this runs. It still covers the
 	/// residual MULTI-bindable-parameter tool that carries a composite parameter (which the normalizer's
 	/// single-composite trigger gate deliberately skips). Do not delete it as dead code without proving
