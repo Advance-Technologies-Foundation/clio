@@ -1125,7 +1125,12 @@ public static class ManagerMap{
 			// "sendemail" is the dedicated build/describe token for the Send email element (EmailTemplateUserTask) —
 			// an activity like any user task for the connection rules; the camelCase data-id emailTemplateUserTask
 			// is already covered by the "usertask"-suffix arm below.
-			"usertask" or "performtask" or "sendemail" => EventType.UserTask,
+			// "readdata" / "changedata" / "changeaccessrights" are the same case: dedicated build/describe tokens
+			// whose data-ids (readDataUserTask / changeDataUserTask / changeAdminRightsUserTask) already resolve
+			// through that suffix arm, while the token a descriptor actually carries does not end in "usertask"
+			// and would otherwise fall to Unknown — a hard validator Error on a graph that builds fine.
+			"usertask" or "performtask" or "sendemail" or "readdata" or "changedata"
+					or "changeaccessrights" => EventType.UserTask,
 			var i when i.StartsWith("intermediatecatchevent", StringComparison.Ordinal) => EventType.IntermediateCatchSignalEvent,
 			var i when i.StartsWith("intermediatethrowevent", StringComparison.Ordinal) => EventType.IntermediateThrowSignalEvent,
 			// every system/user action element ends with the "usertask" suffix and is an activity.

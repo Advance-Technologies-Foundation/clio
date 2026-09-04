@@ -443,6 +443,160 @@ public sealed class ModifyBusinessProcessToolE2ETests {
 
 	// A signal-start process with NO filter — the base for the setFilter/clearFilter e2e (setFilter targets a
 	// signalStart or a DataSourceFilters-exposing data element). Contact.Name is a base column on every stand.
+	[Test]
+	[Description("Mandatory MCP e2e gate for the modify path, which is the higher-risk one: a supplied add/remove REPLACES the stored collection. Sets an accessRights block and a record filter in ONE operations array, then asserts the block round-trips through describe AND that clio's post-operation warning agrees with what actually landed. The guard's load-bearing assumption is that a real server surfaces the block on DescribedElement.AdditionalData; every unit test around it builds that dictionary by hand, so only this can falsify it.")]
+	[AllureTag(ToolName)]
+	[AllureName("modify-business-process setElement accessRights round-trips and its warning matches reality")]
+	public async Task ModifyBusinessProcess_Should_KeepTheAccessRightsWarning_ConsistentWithWhatLanded() {
+		// Arrange - a process carrying a Change access rights element with nothing configured yet.
+		await using ArrangeContext context = await ArrangeAsync(requireReachableEnvironment: true);
+		string processName = $"UsrClioBpModAccessRightsE2e{Guid.NewGuid():N}";
+		CallToolResult built = await CallToolAsync(context, CreateToolName, new Dictionary<string, object?> {
+			["environment-name"] = context.EnvironmentName,
+			["descriptor"] = BuildBareAccessRightsDescriptor(processName)
+		});
+		SkipWhenPackagePredatesTheElement(built);
+
+		// Act - configure the block and its record filter in one batch.
+		CallToolResult edited = await CallToolAsync(context, ToolName, new Dictionary<string, object?> {
+			["environment-name"] = context.EnvironmentName,
+			["process-name"] = processName,
+			["operations"] = BuildAccessRightsSetElementOperations()
+		});
+
+		// Assert
+		edited.IsError.Should().NotBeTrue(because: "configuring the block must apply without a transport error");
+		string payload = JsonSerializer.Serialize(edited);
+
+		DescribeProcessResult graph = ParseDescribeGraph(await CallToolAsync(context, DescribeProcessTool.ToolName,
+			new Dictionary<string, object?> {
+				["environment-name"] = context.EnvironmentName,
+				["process-name"] = processName
+			}));
+		DescribedElement element = graph.Elements.Single(e => e.Name == "GrantRights1");
+		bool landed = element.AdditionalData is not null
+			&& element.AdditionalData.Any(entry =>
+				string.Equals(entry.Key, "accessRights", StringComparison.OrdinalIgnoreCase)
+				&& entry.Value.ValueKind is not (JsonValueKind.Undefined or JsonValueKind.Null));
+		bool warnedDiscarded = payload.Contains("does not implement IExtensibleDataObject");
+
+		warnedDiscarded.Should().Be(!landed,
+			because: "the drop warning has to track reality in BOTH directions on the modify path too - warning "
+				+ "when the block DID land tells a caller to treat a real permission change as not applied, and "
+				+ "silence when it did NOT land is the silent discard the guard exists to catch");
+		if (landed) {
+			payload.Should().NotContain("has NO record filter at all",
+				because: "the same batch supplied a record filter, so clio's widest-configuration warning must "
+					+ "not fire - if it does, setFilter and setElement did not compose in one array");
+			payload.Should().NotContain("will apply the permission change to EVERY record of the new object",
+				because: "the PACKAGE raises its own retarget notice, and this guard previously matched only "
+					+ "clio's wording - so the notice could assert the element ends unbounded, in the very batch "
+					+ "shape every surface prescribes, while this test stayed green. Two surfaces disagreeing "
+					+ "inside one response is the thing to catch, not one of them");
+		}
+	}
+
+	[Test]
+	[Description("A clearFilter-only batch carries no accessRights block, so every block-shaped check skips it - yet clearing the filter moves the element from narrowing to acting on EVERY record of its object. Asserts the record-filter warning actually reaches the caller over the real MCP path, which is the one path a unit test cannot prove.")]
+	[AllureTag(ToolName)]
+	[AllureName("modify-business-process clearFilter-only batch still warns about the widened element")]
+	public async Task ModifyBusinessProcess_Should_WarnOnAClearFilterOnlyBatch() {
+		// Arrange - build, then configure the element WITH a filter so there is one to clear.
+		await using ArrangeContext context = await ArrangeAsync(requireReachableEnvironment: true);
+		string processName = $"UsrClioBpClearFilterWarnE2e{Guid.NewGuid():N}";
+		CallToolResult built = await CallToolAsync(context, CreateToolName, new Dictionary<string, object?> {
+			["environment-name"] = context.EnvironmentName,
+			["descriptor"] = BuildBareAccessRightsDescriptor(processName)
+		});
+		SkipWhenPackagePredatesTheElement(built);
+		await CallToolAsync(context, ToolName, new Dictionary<string, object?> {
+			["environment-name"] = context.EnvironmentName,
+			["process-name"] = processName,
+			["operations"] = BuildAccessRightsSetElementOperations()
+		});
+
+		// Act - clearFilter ALONE. No block in the payload at all.
+		CallToolResult cleared = await CallToolAsync(context, ToolName, new Dictionary<string, object?> {
+			["environment-name"] = context.EnvironmentName,
+			["process-name"] = processName,
+			["operations"] = """[ { "op": "clearFilter", "elementName": "GrantRights1" } ]"""
+		});
+
+		// Assert
+		cleared.IsError.Should().NotBeTrue(because: "clearFilter must apply without a transport error");
+		JsonSerializer.Serialize(cleared).Should().Contain("EVERY record of the target object",
+			because: "this batch left the element acting on every record of its object, and it carries no block, "
+				+ "so the filter-state check is the ONLY thing that speaks - a silent success here is exactly "
+				+ "the gap the guard was widened to close");
+	}
+
+	// Same shape as the create fixture's: the described graph arrives as the Info log-message value inside the
+	// clio command envelope, so a test can assert element fields instead of substring-matching the escaped payload.
+	private static DescribeProcessResult ParseDescribeGraph(CallToolResult describeResult) {
+		CommandExecutionEnvelope envelope = McpCommandExecutionParser.Extract(describeResult);
+		string graphJson = envelope.Output!
+			.Select(message => message.Value)
+			.First(value => !string.IsNullOrWhiteSpace(value) && value!.TrimStart().StartsWith("{", StringComparison.Ordinal))!;
+		return JsonSerializer.Deserialize<DescribeProcessResult>(graphJson,
+			new JsonSerializerOptions { PropertyNameCaseInsensitive = true })!;
+	}
+
+	// The gate, in one place so both tests read the same way. A CrtProcessBuilder predating the element rejects
+	// the element TYPE outright, before anything this fixture is about, so such an environment can exercise
+	// neither direction. It is Ignored rather than failed - but named, so an ignored run is not mistaken for
+	// coverage: the rebundle is the follow-up that makes these two tests meaningful.
+	private static void SkipWhenPackagePredatesTheElement(CallToolResult built) {
+		string payload = JsonSerializer.Serialize(built);
+		if (built.IsError is true && !payload.Contains("created (UId:")) {
+			Assert.Ignore(
+				"The sandbox's deployed CrtProcessBuilder does not accept a 'changeAccessRights' element type, so "
+				+ "the accessRights block never reaches the read-back guard. This is expected until the "
+				+ "bundled archive is rebuilt from a source tree that CONTAINS the element - note the floors are "
+				+ "already at 1.4.0.40 and the bundled archive already reports that version, so the version "
+				+ "precondition passes while the block is still discarded. Until then "
+				+ "then this test is Ignored, NOT passing, and the modify path is unverified end to end.");
+		}
+	}
+
+	// A Change access rights element with NO accessRights block yet: the modify path configures it. Kept separate
+	// from the create fixture's descriptor so a change there cannot silently alter what this fixture edits.
+	private static string BuildBareAccessRightsDescriptor(string processName) =>
+		$$"""
+		{
+		  "name": "{{processName}}",
+		  "caption": "Clio BP Modify AccessRights E2E",
+		  "packageName": "Custom",
+		  "elements": [
+		    { "name": "StartEvent1", "type": "startEvent" },
+		    { "name": "GrantRights1", "type": "changeAccessRights", "caption": "Grant rights" },
+		    { "name": "EndEvent1", "type": "endEvent" }
+		  ],
+		  "flows": [
+		    { "source": "StartEvent1", "target": "GrantRights1" },
+		    { "source": "GrantRights1", "target": "EndEvent1" }
+		  ],
+		  "parameters": [
+		    { "name": "ContactIdParameter", "type": "Guid", "direction": "In", "caption": "Contact Id" }
+		  ]
+		}
+		""";
+
+	// setElement + setFilter in ONE array: the composition the tool description prescribes after a retarget, and
+	// the shape whose warning behaviour the modify guard is responsible for.
+	private static string BuildAccessRightsSetElementOperations() =>
+		"""
+		[
+		  { "op": "setElement", "elementName": "GrantRights1",
+		    "elementUpdate": { "accessRights": {
+		      "object": "Contact",
+		      "add": [ { "operations": [ "read" ], "level": "permit",
+		                 "grantee": { "type": "role", "role": "All employees" } } ] } } },
+		  { "op": "setFilter", "elementName": "GrantRights1",
+		    "filter": { "object": "Contact", "conditions": [
+		      { "column": "Id", "comparison": "equal", "processParameter": "ContactIdParameter" } ] } }
+		]
+		""";
+
 	private static string BuildSignalStartDescriptor(string processName) =>
 		$$"""
 		{

@@ -620,6 +620,111 @@ public sealed class CreateBusinessProcessToolE2ETests {
 			because: "an 'expression' recipient is stored as a formula, which is what makes it resolve at send time");
 	}
 
+	[Test]
+	[Description("Closes the accessRights guard's load-bearing assumption end to end. AccessRightsBlockExpectation decides whether to warn by looking for the block on DescribedElement.AdditionalData, and every unit test around it CONSTRUCTS that dictionary by hand - so if the real server never surfaces the block there, the block-presence check returns false on a SUCCESSFUL write and clio tells the caller the permissions were not changed when they were. Requires a sandbox whose deployed CrtProcessBuilder understands the element: one that predates it rejects the changeAccessRights element TYPE outright, before any block-level check, so that environment is Ignored rather than failed.")]
+	[AllureTag(ToolName)]
+	[AllureName("create-business-process: the accessRights drop warning agrees with what actually landed")]
+	public async Task CreateBusinessProcess_Should_KeepTheAccessRightsDropWarning_ConsistentWithWhatLanded() {
+		// Arrange
+		await using ArrangeContext context = await ArrangeAsync(requireReachableEnvironment: true);
+		string processName = $"UsrClioBpAccessRightsE2e{Guid.NewGuid():N}";
+
+		// Act
+		CallToolResult callResult = await CallToolAsync(context, new Dictionary<string, object?> {
+			["environment-name"] = context.EnvironmentName,
+			["descriptor"] = BuildAccessRightsDescriptor(processName)
+		});
+
+		// Gate BEFORE asserting: a CrtProcessBuilder that predates the element rejects the element TYPE, which is
+		// a different failure from the block-level discard this test is about. Such a sandbox cannot exercise
+		// either direction, so Ignore it instead of reporting a red that means "environment too old".
+		string payload = JsonSerializer.Serialize(callResult);
+		if (callResult.IsError is true && !payload.Contains("created (UId:")) {
+			Assert.Ignore(
+				"The sandbox's deployed CrtProcessBuilder does not accept a 'changeAccessRights' element type, so "
+				+ "the accessRights block never reaches the read-back guard. This is expected until the "
+				+ "bundled archive is rebuilt from a source tree that CONTAINS the element - note the floors are "
+				+ "already at 1.4.0.40 and the bundled archive already reports that version, so the version "
+				+ "precondition passes while the block is still discarded. Until then "
+				+ "then this test is Ignored, NOT passing, and the create path is unverified end to end.");
+		}
+
+		callResult.IsError.Should().NotBeTrue(
+			because: "once the element type is accepted, the build must succeed whether or not the deployed "
+				+ "package understands the BLOCK - a server that cannot deserialize it discards it and still "
+				+ "answers success, which is the whole reason the read-back guard exists");
+		payload.Should().Contain("created (UId:",
+			because: "only a genuinely successful build logs the created-schema line");
+
+		DescribeProcessResult graph = ParseDescribeGraph(await DescribeAsync(context, processName));
+		DescribedElement element = graph.Elements.Single(e => e.Name == "GrantRights1");
+
+		// The exact predicate AccessRightsBlockExpectation applies internally, run against a REAL read-back
+		// instead of a hand-built dictionary.
+		bool blockLanded = element.AdditionalData is not null
+			&& element.AdditionalData.Any(entry =>
+				string.Equals(entry.Key, "accessRights", StringComparison.OrdinalIgnoreCase)
+				&& entry.Value.ValueKind is not (JsonValueKind.Undefined or JsonValueKind.Null));
+		bool warnedItWasDiscarded = payload.Contains("does not implement IExtensibleDataObject");
+
+		warnedItWasDiscarded.Should().Be(!blockLanded,
+			because: "the warning must track reality in BOTH directions. Warning when the block DID land tells a "
+				+ "caller to treat a real permission change as not applied; staying silent when it did NOT land "
+				+ "is the silent discard the guard was written to catch. Either way round the caller acts on a "
+				+ "false belief about who can reach the records.");
+
+		if (blockLanded) {
+			// Read from AdditionalData deliberately: DescribedElement has no typed AccessRights member, so the
+			// extension bag is not a convenience here — it is the ONLY channel the block travels on, which is
+			// what makes the guard's dependency on that bag structural rather than incidental.
+			JsonElement block = element.AdditionalData!.First(entry =>
+				string.Equals(entry.Key, "accessRights", StringComparison.OrdinalIgnoreCase)).Value;
+			block.GetProperty("object").GetString().Should().Be("Contact",
+				because: "the target object must round-trip through build and describe");
+			block.GetProperty("add").GetArrayLength().Should().Be(1,
+				because: "the single add entry that was sent must read back, so a landed block means a landed "
+					+ "CONFIGURATION and not merely a present key");
+		}
+	}
+
+	// A minimal but COMPLETE changeAccessRights element: an object that uses record permissions, one add entry with
+	// an explicit level and a role grantee, and a record filter targeting a single record through a process
+	// parameter. The filter matters even though this process is never run — without one the element is a documented
+	// silent no-op, and clio emits a second, different warning that would muddy the assertion this test makes.
+	private static string BuildAccessRightsDescriptor(string processName) =>
+		$$"""
+		{
+		  "name": "{{processName}}",
+		  "caption": "Clio BP Access Rights E2E",
+		  "packageName": "Custom",
+		  "elements": [
+		    { "name": "StartEvent1", "type": "startEvent" },
+		    { "name": "GrantRights1", "type": "changeAccessRights", "caption": "Grant read",
+		      "accessRights": {
+		        "object": "Contact",
+		        "add": [
+		          { "operations": [ "read" ], "level": "permit",
+		            "grantee": { "type": "role", "role": "All employees" } }
+		        ]
+		      },
+		      "filter": {
+		        "object": "Contact",
+		        "conditions": [
+		          { "column": "Id", "comparison": "equal", "processParameter": "ContactIdParameter" }
+		        ]
+		      } },
+		    { "name": "EndEvent1", "type": "endEvent" }
+		  ],
+		  "flows": [
+		    { "source": "StartEvent1", "target": "GrantRights1" },
+		    { "source": "GrantRights1", "target": "EndEvent1" }
+		  ],
+		  "parameters": [
+		    { "name": "ContactIdParameter", "type": "Guid", "direction": "In", "caption": "Contact Id" }
+		  ]
+		}
+		""";
+
 	// Exercises EVERY field the create-business-process email contract advertises, in one element, so the write path
 	// has executable verification rather than only prose. `sender` is deliberately omitted: it needs a mailbox record
 	// (or an address configured on that specific environment), which would make this test depend on stand data rather

@@ -1,9 +1,13 @@
 using Clio.Command;
+using System.Reflection;
 using Clio.Command.McpServer.Tools;
+using Clio.Command.McpServer.Prompts.ProcessDesigner;
 using Clio.Command.McpServer.Tools.ProcessDesigner;
 using Clio.Command.ProcessModel;
 using Clio.Common;
+using System.Linq;
 using FluentAssertions;
+using ModelContextProtocol.Server;
 using NSubstitute;
 using NUnit.Framework;
 
@@ -14,6 +18,24 @@ namespace Clio.Tests.Command.McpServer;
 public class CreateBusinessProcessToolTests {
 	private const string SampleDescriptor =
 		"{\"name\":\"UsrSampleProcess\",\"packageName\":\"Custom\",\"elements\":[],\"flows\":[]}";
+
+	[Test]
+	[Category("Unit")]
+	[Description("Pins the destructive classification of create-business-process. This annotation - not the description prose - is what an MCP host reads to decide whether a call needs human approval, so a silent flip back to false would let a host auto-run it.")]
+	public void CreateBusinessProcess_Should_Be_Marked_As_Destructive() {
+		// Arrange
+		System.Reflection.MethodInfo method = typeof(CreateBusinessProcessTool).GetMethod(nameof(CreateBusinessProcessTool.CreateBusinessProcess))!;
+		McpServerToolAttribute attribute = method
+			.GetCustomAttributes(typeof(McpServerToolAttribute), inherit: false)
+			.Cast<McpServerToolAttribute>()
+			.Single();
+
+		// Act
+		bool destructive = attribute.Destructive;
+
+		// Assert
+		destructive.Should().BeTrue(because: "create-business-process can author a changeAccessRights element with remove entries or a restrict-level entry on a signalStart process, so a host set to auto-run non-destructive tools would otherwise install an autonomous permission revoke unattended");
+	}
 
 	[Test]
 	[Description("Resolves the create-business-process MCP tool for the requested environment and forwards the inline descriptor and package override into command options.")]
@@ -174,6 +196,48 @@ public class CreateBusinessProcessToolTests {
 		ConsoleLogger.Instance.ClearMessages();
 	}
 
+	[Test]
+	[Description("Forwards a descriptor that contains a changeAccessRights element with its full accessRights block verbatim — the tool is an opaque pass-through, so the target object, considerTimeInFilter, both permission collections and every grantee kind (role by name, employee by contact formula, and selectedEmployees with its Contact-rooted filter), plus the element record filter that decides WHICH records are affected, ride through to the command byte-for-byte. Guards the one thing this repo CAN assert about the accessRights contract: that clio does not reshape it on the way to the server.")]
+	[Category("Unit")]
+	public void CreateBusinessProcess_Should_Forward_AccessRights_Descriptor_Verbatim() {
+		// Arrange
+		ConsoleLogger.Instance.ClearMessages();
+		const string accessRightsDescriptor =
+			"{\"name\":\"UsrGrantRightsProc\",\"packageName\":\"Custom\",\"elements\":[{\"name\":\"GrantRights\","
+			+ "\"type\":\"changeAccessRights\",\"caption\":\"Grant rights\",\"accessRights\":{\"object\":\"Order\","
+			+ "\"considerTimeInFilter\":true,"
+			+ "\"add\":[{\"operations\":[\"read\",\"edit\"],\"level\":\"delegate\","
+			+ "\"grantee\":{\"type\":\"role\",\"role\":\"All employees\"}},"
+			+ "{\"operations\":[\"delete\"],\"grantee\":{\"type\":\"selectedEmployees\","
+			+ "\"filter\":{\"conditions\":[{\"column\":\"Name\",\"comparison\":\"contain\",\"value\":\"Supervisor\"}]}}}],"
+			+ "\"remove\":[{\"operations\":[\"delete\"],"
+			+ "\"grantee\":{\"type\":\"employee\",\"contact\":\"[#SysVariable.CurrentUserContact#]\"}}]},"
+			+ "\"filter\":{\"object\":\"Order\",\"conditions\":[{\"column\":\"Id\",\"comparison\":\"equal\","
+			+ "\"processParameter\":\"OrderId\"}]}}],"
+			+ "\"parameters\":[{\"name\":\"OrderId\",\"type\":\"Guid\",\"direction\":\"In\"}]}";
+		FakeCreateBusinessProcessCommand defaultCommand = new();
+		FakeCreateBusinessProcessCommand resolvedCommand = new();
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		commandResolver.Resolve<CreateBusinessProcessCommand>(Arg.Any<CreateBusinessProcessOptions>())
+			.Returns(resolvedCommand);
+		CreateBusinessProcessTool tool = new(defaultCommand, ConsoleLogger.Instance, commandResolver);
+
+		// Act
+		CommandExecutionResult result = tool.CreateBusinessProcess(
+			new CreateBusinessProcessArgs("docker_fix2", accessRightsDescriptor, null));
+
+		// Assert
+		result.ExitCode.Should().Be(0,
+			because: "a valid changeAccessRights descriptor must be forwarded for the requested environment");
+		resolvedCommand.CapturedOptions.Should().NotBeNull(
+			because: "the resolved command should receive the forwarded accessRights descriptor");
+		resolvedCommand.CapturedOptions!.DescriptorJson.Should().Be(accessRightsDescriptor,
+			because: "the accessRights block, every grantee kind and the element record filter must pass "
+				+ "through byte-for-byte — the server owns the semantics, and this element has no output "
+				+ "parameters, so a reshaping here would change what rights are written with nothing to report it");
+		ConsoleLogger.Instance.ClearMessages();
+	}
+
 	private sealed class FakeCreateBusinessProcessCommand : CreateBusinessProcessCommand {
 		private readonly int _exitCode;
 
@@ -188,6 +252,30 @@ public class CreateBusinessProcessToolTests {
 		public override int Execute(CreateBusinessProcessOptions options) {
 			CapturedOptions = options;
 			return _exitCode;
+		}
+	}
+	[Test]
+	[Category("Unit")]
+	[Description("Pins the DIRECTION of the record-filter consequence in the always-loaded tool description and in the prompt. An ABSENT record filter is the WIDENING state - the runtime gates on a non-empty filter, so the query runs unfiltered with record permissions disabled - while a PRESENT-but-conditionless one is the inert state. The shipped text had these two swapped, on every surface at once, which told callers that the widest permission change the feature can produce was harmless. Prose is the whole contract here: the element has no output parameters, so nothing at run time contradicts a wrong description.")]
+	public void CreateBusinessProcessTool_ShouldStateTheRecordFilterConsequence_InTheWideningDirection() {
+		// Arrange
+		string[] surfaces = [
+			typeof(CreateBusinessProcessTool).GetMethod(nameof(CreateBusinessProcessTool.CreateBusinessProcess))!
+				.GetCustomAttribute<System.ComponentModel.DescriptionAttribute>()!.Description,
+			CreateBusinessProcessPrompt.PromptByEnvironmentName("sandbox")
+		];
+
+		// Act & Assert
+		foreach (string surface in surfaces) {
+			surface.Should().Contain("EVERY record",
+				because: "a Change access rights element with no record filter applies the change to every row of "
+					+ "its object, and this is the only place a caller is ever told so");
+			surface.Should().NotContain("matches no records",
+				because: "that is the inverted claim this feature shipped with - it describes the "
+					+ "present-but-conditionless state, and applying it to an absent filter presents the widest "
+					+ "possible configuration as a no-op");
+			surface.Should().NotContain("match no records",
+				because: "the same inversion in the future tense - both phrasings reached shipped text before");
 		}
 	}
 }

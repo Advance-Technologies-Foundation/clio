@@ -1,9 +1,13 @@
 using Clio.Command;
+using System.Reflection;
 using Clio.Command.McpServer.Tools;
+using Clio.Command.McpServer.Prompts.ProcessDesigner;
 using Clio.Command.McpServer.Tools.ProcessDesigner;
 using Clio.Command.ProcessModel;
 using Clio.Common;
+using System.Linq;
 using FluentAssertions;
+using ModelContextProtocol.Server;
 using NSubstitute;
 using NUnit.Framework;
 
@@ -14,6 +18,24 @@ namespace Clio.Tests.Command.McpServer;
 public class ModifyBusinessProcessToolTests {
 	private const string SampleOperations =
 		"[{\"op\":\"removeElement\",\"elementName\":\"StartEvent1\"}]";
+
+	[Test]
+	[Category("Unit")]
+	[Description("Pins the destructive classification of modify-business-process. This annotation - not the description prose - is what an MCP host reads to decide whether a call needs human approval, so a silent flip back to false would let a host auto-run it.")]
+	public void ModifyBusinessProcess_Should_Be_Marked_As_Destructive() {
+		// Arrange
+		System.Reflection.MethodInfo method = typeof(ModifyBusinessProcessTool).GetMethod(nameof(ModifyBusinessProcessTool.ModifyBusinessProcess))!;
+		McpServerToolAttribute attribute = method
+			.GetCustomAttributes(typeof(McpServerToolAttribute), inherit: false)
+			.Cast<McpServerToolAttribute>()
+			.Single();
+
+		// Act
+		bool destructive = attribute.Destructive;
+
+		// Assert
+		destructive.Should().BeTrue(because: "modify-business-process edits an existing process in place and can revoke record permissions through an accessRights block");
+	}
 
 	[Test]
 	[Description("Resolves the modify-business-process MCP tool for the requested environment and forwards the identity and operations into command options.")]
@@ -247,6 +269,43 @@ public class ModifyBusinessProcessToolTests {
 		ConsoleLogger.Instance.ClearMessages();
 	}
 
+	[Test]
+	[Description("Forwards a setElement operation carrying an accessRights block verbatim — the tool is an opaque pass-through, so a replaced add collection, a remove collection cleared with an empty array, and the object retarget that clears the stored record filter all ride through unchanged, together with the setFilter re-issued in the same array.")]
+	[Category("Unit")]
+	public void ModifyBusinessProcess_Should_Forward_AccessRights_SetElement_Verbatim() {
+		// Arrange
+		ConsoleLogger.Instance.ClearMessages();
+		const string accessRightsOps =
+			"[{\"op\":\"setElement\",\"elementName\":\"GrantRights\",\"elementUpdate\":{\"accessRights\":{"
+			+ "\"object\":\"Contact\",\"considerTimeInFilter\":false,"
+			+ "\"add\":[{\"operations\":[\"read\"],\"level\":\"permit\","
+			+ "\"grantee\":{\"type\":\"role\",\"role\":\"System administrators\"}}],"
+			+ "\"remove\":[]}}},"
+			+ "{\"op\":\"setFilter\",\"elementName\":\"GrantRights\",\"filter\":{\"object\":\"Contact\","
+			+ "\"conditions\":[{\"column\":\"Id\",\"comparison\":\"equal\",\"processParameter\":\"ContactId\"}]}}]";
+		FakeModifyBusinessProcessCommand defaultCommand = new();
+		FakeModifyBusinessProcessCommand resolvedCommand = new();
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		commandResolver.Resolve<ModifyBusinessProcessCommand>(Arg.Any<ModifyBusinessProcessOptions>())
+			.Returns(resolvedCommand);
+		ModifyBusinessProcessTool tool = new(defaultCommand, ConsoleLogger.Instance, commandResolver);
+
+		// Act
+		CommandExecutionResult result = tool.ModifyBusinessProcess(
+			new ModifyBusinessProcessArgs("docker_fix2", accessRightsOps, "UsrSampleProcess", null));
+
+		// Assert
+		result.ExitCode.Should().Be(0,
+			because: "a valid accessRights setElement operation must be forwarded for the requested environment");
+		resolvedCommand.CapturedOptions.Should().NotBeNull(
+			because: "the resolved command should receive the forwarded operations");
+		resolvedCommand.CapturedOptions!.OperationsJson.Should().Be(accessRightsOps,
+			because: "replace-and-clear semantics live in the exact arrays the caller sent — an empty "
+				+ "remove array means CLEAR, so dropping or rewriting it here would silently keep permissions "
+				+ "the caller asked to stop revoking, and the paired setFilter must survive in the same order");
+		ConsoleLogger.Instance.ClearMessages();
+	}
+
 	private sealed class FakeModifyBusinessProcessCommand : ModifyBusinessProcessCommand {
 		private readonly int _exitCode;
 
@@ -261,6 +320,30 @@ public class ModifyBusinessProcessToolTests {
 		public override int Execute(ModifyBusinessProcessOptions options) {
 			CapturedOptions = options;
 			return _exitCode;
+		}
+	}
+	[Test]
+	[Category("Unit")]
+	[Description("Pins the DIRECTION of the record-filter consequence in the always-loaded tool description and in the prompt. An ABSENT record filter is the WIDENING state - the runtime gates on a non-empty filter, so the query runs unfiltered with record permissions disabled - while a PRESENT-but-conditionless one is the inert state. The shipped text had these two swapped, on every surface at once, which told callers that the widest permission change the feature can produce was harmless. Prose is the whole contract here: the element has no output parameters, so nothing at run time contradicts a wrong description.")]
+	public void ModifyBusinessProcessTool_ShouldStateTheRecordFilterConsequence_InTheWideningDirection() {
+		// Arrange
+		string[] surfaces = [
+			typeof(ModifyBusinessProcessTool).GetMethod(nameof(ModifyBusinessProcessTool.ModifyBusinessProcess))!
+				.GetCustomAttribute<System.ComponentModel.DescriptionAttribute>()!.Description,
+			ModifyBusinessProcessPrompt.PromptByProcess("sandbox", "UsrSampleProcess")
+		];
+
+		// Act & Assert
+		foreach (string surface in surfaces) {
+			surface.Should().Contain("EVERY record",
+				because: "a Change access rights element with no record filter applies the change to every row of "
+					+ "its object, and this is the only place a caller is ever told so");
+			surface.Should().NotContain("matches no records",
+				because: "that is the inverted claim this feature shipped with - it describes the "
+					+ "present-but-conditionless state, and applying it to an absent filter presents the widest "
+					+ "possible configuration as a no-op");
+			surface.Should().NotContain("match no records",
+				because: "the same inversion in the future tense - both phrasings reached shipped text before");
 		}
 	}
 }

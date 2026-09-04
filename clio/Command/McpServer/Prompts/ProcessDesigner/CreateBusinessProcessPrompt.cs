@@ -38,7 +38,16 @@ public static class CreateBusinessProcessPrompt {
 		 `performer`; email TEMPLATES are not supported (custom message only). To put PROCESS DATA in the body use the
 		 by-name macros the server resolves for you — `[[param:Name]]`, `[[element:Element.Output]]`, or
 		 `[[element:Element.Output.Column]]`; the exact parameter/element names come from the `parameters[]` / `elements[]` you declare in THIS same descriptor
-		 — there is no process to `describe-business-process` yet (that is the modify path); an unknown name is rejected, and column names are case-sensitive. Confirm the target package with the
+		 — there is no process to `describe-business-process` yet (that is the modify path); an unknown name is rejected, and column names are case-sensitive.
+		 To grant or revoke record permissions on records matching a filter, add a `changeAccessRights` element
+		 with an `accessRights` block (target object + `add`/`remove` permission entries) plus the element's record
+		 `filter` — WHICH records get them; without one the runtime acts on EVERY record; with one that has no conditions it silently does nothing. When the descriptor contains a `changeAccessRights` element, confirm it the way a
+		 destructive edit is confirmed: show the user the target object, the element record `filter` that decides
+		 WHICH records are affected, every grantee, and each entry's operations and level (call out `delegate` as
+		 onward re-sharing, `restrict` as the platform Deny level, which is DESTRUCTIVE rather than inert and
+		 lands in the `add` GRANT collection: UseDenyRecordRights gates only record positioning, never whether a right row is written. Against a grantee who already holds Allow it DOWNGRADES that row to Deny, and a fresh insert writes one row per operation - the one you named at your level and the OTHER TWO at Deny - so operations:['read'] denies edit and delete as well. Prefer a remove entry to take access away, and a `remove` entry as a revoke), and get an explicit yes before calling
+		 `create-business-process` — the element reports nothing at run time about what it granted or revoked.
+		 Confirm the target package with the
 		 user before building.
 		 """;
 }

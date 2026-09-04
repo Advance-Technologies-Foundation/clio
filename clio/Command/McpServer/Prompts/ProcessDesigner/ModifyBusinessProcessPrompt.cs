@@ -33,7 +33,13 @@ public static class ModifyBusinessProcessPrompt {
 		 and its tracked-change `changedColumns` in place, and `setElement` changes element-level fields in place —
 		 `useBackgroundMode` on any element kind, a `sendEmail` element's `email` block, where the fields you
 		 pass (`mode`, `sender`, `subject`, `body`, `importance`, `ignoreErrors`, `performer`) replace the current
-		 value but `to`/`cc`/`bcc` recipients match-or-append (an address the line already carries is a no-op, a new one is appended), and a `performTask` element's `performer` block
+		 value but `to`/`cc`/`bcc` recipients match-or-append (an address the line already carries is a no-op, a new one is appended), a Change access rights
+		 element's `accessRights` block (a partial update: a supplied `add`/`remove` REPLACES that whole collection
+		 and `[]` clears it — clearing ONE is safe only while the other still holds an entry, since an element
+		 left with BOTH empty builds and runs green while changing nothing; and ANY object change, the first
+		 configuration included, clears the stored record filter unless it already targets the incoming object,
+		 which leaves the element applying the permission change to EVERY record of the new object rather than
+		 to none — re-issue `setFilter` in the same array), and a `performTask` element's `performer` block
 		 (`type:user|manager|role` plus `contact?`/`role?`/`showPage?` — WHO performs the task; `role` is the honest
 		 "assign to a team": the created Activity carries the role in its own OwnerRole column with an EMPTY
 		 owner, so never fake a team by writing a role id into the OwnerId parameter — that id is refused as
@@ -49,6 +55,18 @@ public static class ModifyBusinessProcessPrompt {
 		 (nothing is saved). Example — switch a process to start on record save: `removeElement` the start event,
 		 `addElement` a `signalStart`, then `addFlow` from it to the first task. Confirm destructive removals
 		 (`removeElement` / `removeFlow` / `removeParameter` / `clearConnections`) with the user before proceeding.
+		 Confirm access-rights changes the same way: a `setElement` carrying ANY `accessRights` block changes who
+		 can reach live records - an `add` widens access to everyone it names, and a `remove` entry or a
+		 collection cleared with `[]` revokes or drops record permissions, and the element has NO output to
+		 report what it did at run time — show the user the object, the record `filter` that decides WHICH
+		 records are affected, and every grantee with its operations and level — calling out `restrict` as the
+		 platform Deny level, DESTRUCTIVE rather than inert and landing in the `add` GRANT collection: UseDenyRecordRights gates only record positioning, never whether a right row is written. Against a grantee who already holds Allow it DOWNGRADES that row to Deny, and a fresh insert writes one row per operation - the one you named at your level and the OTHER TWO at Deny - so operations:['read'] denies edit and delete as well. Prefer a remove entry to take access away, and a supplied `add`/`remove`
+		 as a REPLACEMENT that drops every entry it does not restate — and get an explicit yes before applying it.
+		 If the element's `accessRights` read back with an EMPTY `add` or `remove`, check the collection's
+		 `addUnreadable`/`removeUnreadable` count before you ask. Zero means it is genuinely empty; anything
+		 else (or -1, the collection itself did not decode) means the before-state you are showing is
+		 INCOMPLETE and a replacement would drop entries neither of you can see — say that plainly, and prefer
+		 omitting the field to restating it.
 		 A SUCCESSFUL edit can still report caveats, and they arrive as `message-type: "Warning"` entries in
 		 `execution-log-messages` — there is no separate `warnings` field on the response, so looking for one and
 		 finding nothing is not evidence there were none. Read them: a connection bound to a column with no

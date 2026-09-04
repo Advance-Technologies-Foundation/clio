@@ -26,6 +26,17 @@ namespace Clio.Command;
 // input-contract difference — the email block's 1.2.0.1 floor set this precedent and is subsumed here.
 // The guard fixture asserts the shipped archive satisfies the literal, so clio can never demand a version
 // it does not itself carry.
+// NOTHING IN THIS FLOOR COVERS THE accessRights BLOCK. No released archive contains the Change access
+// rights element at all: the bundled 1.4.0.40 archive arrived with ENG-96325 for an unrelated feature and
+// carries neither ChangeAccessRightsApplier nor AccessRightsCollectionBinder. So this precondition PASSES
+// on an environment whose server silently discards the block, and install-process-builder installs that
+// same archive - satisfying the floor and changing nothing. AccessRightsBlockExpectation's post-operation
+// read-back is the ONLY guard for that block until a rebundle carries the element.
+// Release gate, and (c) is the part that is easy to miss: this must not ship in a clio release until
+// (a) crt-process-builder#40 merges, (b) rebundle-process-builder.ps1 produces an archive whose source
+// tree contains the element, and (c) BOTH literals here and on the other command move PAST that version -
+// because 1.4.0.40 would otherwise keep satisfying them and the precondition would stay decorative even
+// after the rebundle exists.
 [RequiresPackage(BundledPackages.ProcessBuilderPackageName, "1.4.0.40",
 	Hint = BundledPackages.ProcessBuilderInstallHint)]
 public sealed class CreateBusinessProcessOptions : EnvironmentOptions {
@@ -162,7 +173,16 @@ public class CreateBusinessProcessCommand(
 				options.Environment,
 				new CreateBusinessProcessRequest(options.DescriptorJson, options.PackageName));
 			logger.WriteInfo($"Process '{result.SchemaName}' created (UId: {result.SchemaUId}).");
-			WarnOnDiscardedEmailBlocks(options, result.SchemaName);
+			// Verification runs AFTER the write landed, so it must never change the outcome the caller sees.
+			// Inside Execute's blanket catch a throw here would report a succeeded operation as failed, and on a
+			// tool that grants and revokes live permissions that invites a retry: a duplicate schema on create, a
+			// re-applied replace on modify.
+			try {
+				WarnOnDiscardedBlocks(options, result.SchemaName);
+			} catch (Exception verification) {
+				logger.WriteWarning(
+					$"The process was created, but verifying its configuration failed: {verification.Message}. Re-read it with describe-business-process before reporting a grant or revoke as applied.");
+			}
 			return 0;
 		} catch (Exception exception) {
 			logger.WriteError(exception.Message);
@@ -170,28 +190,37 @@ public class CreateBusinessProcessCommand(
 		}
 	}
 
-	// A server that predates sendEmail DISCARDS an email block and still answers success:true, so a build can
-	// report a configured email element that is in fact empty. Read the saved process back and say so when the
-	// block did not land. Only runs when the descriptor actually carried a block, so the ordinary path pays
-	// nothing; a failure to verify is never escalated, because an unreadable description is not evidence of a
-	// dropped block. See EmailBlockExpectation for why this is behavioural rather than version-based.
-	private void WarnOnDiscardedEmailBlocks(CreateBusinessProcessOptions options, string? schemaName) {
-		IReadOnlyList<string> expected = EmailBlockExpectation.FromDescriptor(options.DescriptorJson);
-		if (expected.Count == 0 || string.IsNullOrWhiteSpace(schemaName)) {
+	// A server that predates a block DISCARDS it and still answers success:true, so a build can report a
+	// configured element that is in fact empty. Read the saved process back ONCE and check every block the
+	// payload carried: two guards issuing byte-identical describes would double the latency and the retry
+	// budget of the success path for a payload that configures both. Only runs when the descriptor actually
+	// carried a block, so the ordinary path pays nothing. See EmailBlockExpectation / AccessRightsBlockExpectation
+	// for why this is behavioural rather than version-based.
+	private void WarnOnDiscardedBlocks(CreateBusinessProcessOptions options, string? schemaName) {
+		BlockExpectationIntent intent = BlockExpectationIntent.FromDescriptor(options.DescriptorJson);
+		if (intent.IsEmpty) {
+			return;
+		}
+
+		if (string.IsNullOrWhiteSpace(schemaName)) {
+			// Nothing to read back against. Silence here would be indistinguishable from a verified success.
+			BlockExpectationReporter.WarnAccessRightsUnverified(logger, intent,
+				"the operation returned no process name to read back");
 			return;
 		}
 
 		ErrorOr<DescribeProcessResult> described =
 			processDescriber.Describe(new ProcessIdentity(schemaName, null, null), null);
 		if (described.IsError) {
+			// An unreadable description is not evidence of a drop, so this never fails the command. It is not
+			// silence either when access rights were requested: that guard is the only automated check that a
+			// grant or revoke actually landed, and reporting "verified" and "could not check" identically would
+			// let an unapplied revoke pass as applied.
+			BlockExpectationReporter.WarnAccessRightsUnverified(logger, intent, described.FirstError.Description);
 			return;
 		}
 
-		string? dropped = EmailBlockExpectation.BuildWarning(
-			EmailBlockExpectation.Missing(described.Value, expected));
-		if (dropped is not null) {
-			logger.WriteWarning(dropped);
-		}
+		BlockExpectationReporter.ReportDescribed(logger, described.Value, intent);
 
 		// A package that predates the body-macro feature stores the [[…]] placeholders verbatim and still answers
 		// success, so the read-back is the only place the un-resolved body surfaces — the element reports a body but
