@@ -32,7 +32,7 @@ internal sealed class UnixConfinedFileAccess : IConfinedFileAccess {
 		long length = stream.Length;
 		if (length > maxBytes) {
 			stream.Dispose();
-			throw new IOException(ConfinedFileAccess.DescribeTooLarge(length, maxBytes));
+			throw new InputFileTooLargeException(length, maxBytes);
 		}
 		return stream;
 	}

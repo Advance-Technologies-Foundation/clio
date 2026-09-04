@@ -123,9 +123,10 @@ public sealed class ODataFileContract(IFileSystem fileSystem, IConfinedFileAcces
 			//and the caller gets the input error.
 			json = StrictUtf8.GetString(StripUtf8Bom(payload));
 			return true;
-		} catch (IOException ex) when (ex.Message.Contains("exceeds", StringComparison.Ordinal)) {
-			// The size ceiling, reported by the confined open before the content was pulled into memory.
-			error = $"{optionName} {ex.Message}";
+		} catch (InputFileTooLargeException ex) {
+			// The size ceiling, reported by the confined open before the content was pulled into memory. Typed,
+			// not matched on the message: the message is the platform implementation's to word.
+			error = $"{optionName} is at least {ex.ObservedBytes} bytes, which exceeds the {ex.MaxBytes}-byte limit.";
 			return false;
 		} catch (DecoderFallbackException) {
 			// Encoding.UTF8 replaces an invalid byte sequence with U+FFFD, so a corrupted payload still parsed

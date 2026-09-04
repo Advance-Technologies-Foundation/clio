@@ -33,7 +33,8 @@ public interface IConfinedFileAccess {
 	/// the file contained, which is exactly the exhaustion the bound exists to prevent.
 	/// </param>
 	/// <returns>A readable stream positioned at the start of the file, never longer than <paramref name="maxBytes"/>.</returns>
-	/// <exception cref="IOException">A component is a symbolic link, the file is larger than the ceiling, or it cannot be opened.</exception>
+	/// <exception cref="InputFileTooLargeException">The file is larger than the ceiling; the read was refused before any content was buffered.</exception>
+	/// <exception cref="IOException">A component is a symbolic link, or the file cannot be opened.</exception>
 	Stream OpenRead(string canonicalPath, long maxBytes);
 
 	/// <summary>
@@ -61,9 +62,4 @@ public sealed class ConfinedFileAccess : IConfinedFileAccess {
 	/// <inheritdoc/>
 	public void WriteNew(string canonicalPath, byte[] content) => _platform.WriteNew(canonicalPath, content);
 
-	/// <summary>The message both platform implementations use when a file is past the ceiling.</summary>
-	/// <param name="observedBytes">Size seen so far.</param>
-	/// <param name="maxBytes">The ceiling.</param>
-	internal static string DescribeTooLarge(long observedBytes, long maxBytes) =>
-		$"file is at least {observedBytes} bytes, which exceeds the {maxBytes}-byte limit.";
 }

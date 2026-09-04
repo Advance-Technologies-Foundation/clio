@@ -24,7 +24,7 @@ internal sealed class MockConfinedFileAccess(IFileSystem fileSystem) : IConfined
 	public Stream OpenRead(string canonicalPath, long maxBytes) {
 		byte[] content = _fileSystem.File.ReadAllBytes(canonicalPath);
 		if (content.LongLength > maxBytes) {
-			throw new IOException($"file is at least {content.LongLength} bytes, which exceeds the {maxBytes}-byte limit.");
+			throw new InputFileTooLargeException(content.LongLength, maxBytes);
 		}
 		return new MemoryStream(content, writable: false);
 	}

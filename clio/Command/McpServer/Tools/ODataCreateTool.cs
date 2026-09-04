@@ -57,6 +57,14 @@ public sealed class ODataCreateTool(IToolCommandResolver commandResolver, IOData
 	/// </summary>
 	internal const int MaxBatchDurationMs = 5 * 60 * 1000;
 
+	/// <summary>
+	/// Smallest remaining budget a row is still sent with. Below it the row is reported as NOT ATTEMPTED
+	/// (known not inserted, safe to re-send) rather than posted with a near-zero timeout: a row sent with,
+	/// say, a 1 ms timeout times out on the wire and lands in the "side effect unknown, do not retry blindly"
+	/// bucket purely because the clock ran out, which costs the caller a manual reconciliation for nothing.
+	/// </summary>
+	internal const int MinRowBudgetMs = 1000;
+
 	private const string CancelledMessage =
 		"row was not attempted: the batch was cancelled.";
 
@@ -208,14 +216,18 @@ public sealed class ODataCreateTool(IToolCommandResolver commandResolver, IOData
 		return results;
 	}
 
-	/// <summary>Reason to stop before the next row, or <see langword="null"/> to keep going.</summary>
+	/// <summary>
+	/// Reason to stop before the next row, or <see langword="null"/> to keep going. The budget check uses
+	/// <see cref="MinRowBudgetMs"/> as its floor, not zero, so the last row is never issued with a timeout it
+	/// cannot possibly meet.
+	/// </summary>
 	/// <param name="cancellationToken">Caller token.</param>
 	/// <param name="remainingMs">Milliseconds left of the batch budget.</param>
 	private static string DescribeAbort(CancellationToken cancellationToken, int remainingMs) {
 		if (cancellationToken.IsCancellationRequested) {
 			return CancelledMessage;
 		}
-		return remainingMs <= 0 ? DeadlineMessage : null;
+		return remainingMs < MinRowBudgetMs ? DeadlineMessage : null;
 	}
 
 	/// <summary>

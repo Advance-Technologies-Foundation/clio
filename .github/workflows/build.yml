@@ -270,10 +270,22 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          # TestCategory, not the Category alias: the NUnit adapter can classify a mixed Category +
+          # FullyQualifiedName expression as a generic filter and replace it with an empty one (see
+          # docs/knowledge/Tests/nunit-adapter-drops-large-non-category-shard-filters.md).
           dotnet test ./clio.tests/clio.tests.csproj \
             --framework net10.0 \
-            --filter "(FullyQualifiedName~OutputPathConfinementTests|FullyQualifiedName~ConfinedFileAccessTests|FullyQualifiedName~BoundedGetDeadlineTests)&Category=Integration" \
-            -p:RunAnalyzers=false
+            --filter "(FullyQualifiedName~OutputPathConfinementTests|FullyQualifiedName~ConfinedFileAccessTests|FullyQualifiedName~BoundedGetDeadlineTests)&TestCategory=Integration" \
+            -p:RunAnalyzers=false \
+            | tee unix-file-mode-tests.log
+          # Executed-count floor: a mis-selected filter that ran nothing (or a stray subset) must not pass
+          # silently. Both legs currently execute 32 cases; the floor leaves room for platform skips.
+          passed=$(grep -Eo 'Passed:[[:space:]]+[0-9]+' unix-file-mode-tests.log | tail -1 | grep -Eo '[0-9]+' || echo 0)
+          echo "Executed (passed) confinement cases: ${passed}"
+          if [ "${passed}" -lt 20 ]; then
+            echo "::error::Unix file-mode leg executed only ${passed} passing cases; the filter selected too little." >&2
+            exit 1
+          fi
 
   # ── ClioGate tests (only when the bundled service changes) ──────────
   cliogate-tests:
