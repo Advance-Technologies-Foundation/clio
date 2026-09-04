@@ -1,6 +1,6 @@
 # ENG-95827 — `get-mobile-page-conversion-guide`: metadata before / after
 
-**Ticket:** [ENG-95827](https://creatio.atlassian.net/browse/ENG-95827) — *[Mobile Page converter] Support mobile converter on Sonnet 4.6*
+**Ticket:** [ENG-95827](https://creatio.atlassian.net/browse/ENG-95827) — *[Mobile Page converter] Support mobile converter on Sonnet 5*
 **Branch:** `feature/ENG-95827-mobile-converter-should-be-deterministic-oriented` (clio + clio-knowledge)
 **Pull requests:** [clio#1365](https://github.com/Advance-Technologies-Foundation/clio/pull/1365) · [clio-knowledge#131](https://github.com/Advance-Technologies-Foundation/clio-knowledge/pull/131)
 **Measured on:** the OOTB `Leads_FormPage` response captured 2026-09-02 (155 elements, 227 225 characters total).
