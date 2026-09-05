@@ -28,6 +28,8 @@ Groups:
 4. **The diagram a person reads** — whether a business analyst opening the process can follow it.
 5. **Checking a plan before building it** — reviewing a described process for problems before any of
    it is created.
+6. **A mistake that must be caught wherever it is expressed** — the same bad shape reaching the tooling
+   two different ways, which must be refused both times and for the same reason.
 
 Most cases are observed at three levels — what is **stored** and read back, what is visible at
 **design time** when the process is opened, and what happens at **runtime**. Group 5 and TC-05 are the
@@ -329,6 +331,40 @@ This case stops at the check. It is a regression guard: this shape was previousl
 
 ---
 
+## Group 6 — a mistake that must be caught wherever it is expressed
+
+## TC-11 — a step is wired back into itself (adversarial)
+
+**Adversarial case — the shape is stated verbatim because the reaction is what is under test. It is
+stated once and tried two ways on purpose: the same mistake must be caught whichever way it arrives.**
+
+Preconditions:
+
+- None.
+
+Business requirement (stated as the input, verbatim):
+
+- A step has to run again after it finishes, so express it the naive way: **a path leaving that step
+  and arriving back at the same step**, with nothing in between.
+- Try this **twice**, in whichever order you like:
+  1. build it, and
+  2. describe the same shape as a plan and have the plan checked.
+
+Expected — what must happen, both times:
+
+- **Building it must be refused.** Quote the refusal. It must say what is wrong and it must tell you
+  what to do instead — a person who wanted a repeat has to be able to get one from what the message
+  says, not by guessing.
+- **The plan check must report it as an error**, not merely a warning, and must identify the step.
+- The two must agree. A shape that is refused when built and accepted when checked, or the reverse,
+  is a defect in itself — report the disagreement as the finding, not just the two outcomes.
+
+This case stops at the refusal and the finding; nothing is built, so there is no stored or runtime
+observation to make. If the build is **not** refused, that is the result — then say what was stored,
+and do not run the process.
+
+---
+
 ## Deliberately not covered
 
 - **Inclusive (OR) and event-based decision points.** They are a separate piece of work
@@ -348,3 +384,11 @@ This case stops at the check. It is a regression guard: this shape was previousl
   the known-behaviour note on TC-08.
 - **Performance.** Nothing here is timed. Process log timestamps are used in TC-04 only to establish
   ordering, never duration.
+- **Removing one of two paths that connect the same pair of steps.** Reading a process back now names
+  each path, but no operation accepts that name as a handle, so the surgical case has no route through
+  the tooling to test. What to do about it is an open question on this issue rather than shipped
+  behaviour, and a case would be testing a decision that has not been made.
+- **What happens to a decision point when its last rule-carrying path is taken away.** The consequence
+  is documented on the surfaces a person reads, but whether the tooling should refuse, warn, or simply
+  report the resulting shape is an open question on this issue. A case here would report which option
+  was chosen, not whether the product works.
