@@ -3262,9 +3262,26 @@ stories:
       Two review claims refuted by measurement: a duplicate element UId cannot reach the engine
       (MetaItemCollection.InsertItem throws first) and a dangling endpoint cannot be set directly (the
       TargetRefUId setter throws) - the reachable shape is an element removed after its flows.
-      STILL OPEN on this story: S1 (FlowManagerItems.Default and the flow-name prefixes), S2 (the two
-      gateway element handlers and their DefaultSize), S3 (flow kinds, setFlow, the structural rules,
-      RemoveFlow detach), S5 (describe).
+      S1, S2, S3 and S5 are also DONE (commits f9d9ea2, 55b5c99, cb59f2c). Gateways and the three flow
+      kinds are buildable: two gateway element handlers with the measured 55x55 DefaultSize, the
+      default-flow palette item and per-kind name prefixes, a new FlowKindRules holding the authoring
+      rules shared by both write paths, AddFlow/SetFlow on the graph builder with the re-kind body
+      generalised out of ENG-95891's conditional-only version, RemoveFlow detaching its endpoints (T-8),
+      ValidateStructure's stale remark rewritten with three fixtures (T-13), and describe reporting a
+      flow's name while delegating kind classification to the write path's own classifier instead of
+      keeping a second copy.
+      The build path and addFlow no longer refuse `kind` and `condition`; the two-step workaround those
+      refusals named had a window in which the process was saved with a flow that did not yet branch.
+      A lone unconditional flow out of a deciding gateway is NORMALISED to a default branch rather than
+      refused - that shape is 45 shipped gateways, and it exists because the designer cannot draw a plain
+      sequence flow out of a gateway at all.
+      RECORDED, and it invalidates an argument this spec folder itself makes: setting VisualType has NO
+      effect on serialization. ProcessSchemaSequenceFlow.WriteMetaData passes the LITERAL AutoPolyline
+      rather than the property, so CI6 is 1 whatever the object holds - which is why all 9 762 shipped
+      flows read back AutoPolyline. That count is therefore not evidence of designer behaviour. Knowledge
+      record: docs/knowledge/platform/sequence-flow-visualtype-is-written-as-a-literal.md.
+      1201 unit tests pass (from 1149 at the start of the ticket).
+      STILL OPEN on this story: nothing. The remaining work is stories 2 and 3.
     depends_on: []
     blocks:
       - story-eng-91853-gateways-and-flows-2
