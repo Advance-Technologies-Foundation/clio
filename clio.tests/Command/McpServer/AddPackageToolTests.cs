@@ -31,7 +31,8 @@ public class AddPackageToolTests {
 			@"C:\Projects\clio-with-core-and-ui\workspace",
 			"docker_fix2",
 			true,
-			@"C:\Builds\creatio.zip"));
+			@"C:\Builds\creatio.zip",
+			"Ktl"));
 
 		// Assert
 		result.ExitCode.Should().Be(0, "because the tool should forward a valid add-package request");
@@ -40,7 +41,8 @@ public class AddPackageToolTests {
 			&& options.WorkspacePath == @"C:\Projects\clio-with-core-and-ui\workspace"
 			&& options.Environment == "docker_fix2"
 			&& options.AsApp
-			&& options.BuildZipPath == @"C:\Builds\creatio.zip"));
+			&& options.BuildZipPath == @"C:\Builds\creatio.zip"
+			&& options.SchemaNamePrefix == "Ktl"));
 		defaultCommand.CapturedOptions.Should().BeNull(
 			"because the environment-aware tool should execute the resolved command instance");
 		resolvedCommand.CapturedOptions.Should().NotBeNull("because the resolved command should receive the mapped options");
@@ -70,6 +72,8 @@ public class AddPackageToolTests {
 		resolvedCommand.CapturedOptions.Environment.Should().BeNull("because environment-name is not optional for the MCP tool");
 		resolvedCommand.CapturedOptions.AsApp.Should().BeFalse("because as-app should default to false when omitted");
 		resolvedCommand.CapturedOptions.BuildZipPath.Should().BeNull("because build-zip-path is optional");
+		resolvedCommand.CapturedOptions.SchemaNamePrefix.Should().BeNull(
+			"because an omitted schema-name-prefix must let the generator read it from the environment");
 		ConsoleLogger.Instance.ClearMessages();
 	}
 

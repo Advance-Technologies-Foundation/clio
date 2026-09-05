@@ -60,6 +60,14 @@ public sealed class AddPackageToolE2ETests : McpContractFixtureBase {
 		AllureApi.Step("Assert successful command output is reported", () =>
 			execution.Output.Should().Contain(message => message.MessageType == LogDecoratorType.Info,
 				because: "successful MCP execution must expose informational command output"));
+		AllureApi.Step("Assert the missing-environment consequence is warned about", () =>
+			execution.Output.Should().Contain(message => message.MessageType == LogDecoratorType.Warning
+					&& message.Value != null
+					&& message.Value.Contains("No Creatio environment was resolved")
+					&& message.Value.Contains("schema-name-prefix"),
+				because: "without an environment the schema is generated unprefixed and Creatio would "
+					+ "refuse it when it loads the package from the file system, so the caller must be told "
+					+ "and given the explicit-prefix escape hatch"));
 		string packagePath = Path.Combine(workspacePath, "packages", packageName);
 		AllureApi.Step("Assert the application descriptor is generated", () =>
 			File.Exists(Path.Combine(packagePath, "Files", "app-descriptor.json")).Should().BeTrue(
@@ -104,6 +112,71 @@ public sealed class AddPackageToolE2ETests : McpContractFixtureBase {
 		AllureApi.Step("Assert the composition root registers the resolver", () =>
 			application.Should().Contain("AddTransient<LocalizableStrings.ILocalizableStringResolver",
 				because: "the application composition root must register the generated adapter"));
+	}
+
+	[Test]
+	[AllureTag(ToolName)]
+	[AllureName("add-package as-app applies an explicitly requested schema-name prefix")]
+	[AllureDescription("Invokes the real add-package MCP tool with schema-name-prefix and verifies the prefix reaches the schema folder, resource folder, descriptor, and generated class without contacting Creatio.")]
+	[Description("Applies the requested schema-name prefix to every generated schema artefact when schema-name-prefix is supplied.")]
+	public async Task AddPackage_ShouldPrefixGeneratedSchema_WhenSchemaNamePrefixIsRequested() {
+		// Arrange
+		McpE2ESettings settings = TestConfiguration.Load();
+		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
+		string rootDirectory = CreateFixtureDirectory("add-package-prefix");
+		string workspaceName = $"workspace-{Guid.NewGuid():N}";
+		string workspacePath = Path.Combine(rootDirectory, workspaceName);
+		string packageName = $"Pkg{Guid.NewGuid():N}"[..18];
+		const string requestedPrefix = "Ktl";
+		await AllureApi.Step("Arrange an empty clio workspace", async () =>
+			await ClioCliCommandRunner.RunAndAssertSuccessAsync(settings,
+				["create-workspace", workspaceName, "--empty", "--directory", rootDirectory]));
+		await using ArrangeContext arrangeContext = Arrange(TimeSpan.FromMinutes(3));
+
+		// Act
+		CallToolResult callResult = await AllureApi.Step("Invoke add-package with an explicit prefix", async () =>
+			await arrangeContext.Session.CallToolAsync(ToolName,
+				new Dictionary<string, object?> {
+					["args"] = new Dictionary<string, object?> {
+						["name"] = packageName,
+						["workspace-path"] = workspacePath,
+						["as-app"] = true,
+						["schema-name-prefix"] = requestedPrefix
+					}
+				}, arrangeContext.CancellationTokenSource.Token));
+		CommandExecutionEnvelope execution = McpCommandExecutionParser.Extract(callResult);
+
+		// Assert
+		AllureApi.Step("Assert the MCP call has no protocol error", () =>
+			callResult.IsError.Should().NotBeTrue(because: "a valid local package creation must succeed"));
+		AllureApi.Step("Assert add-package succeeds", () =>
+			execution.ExitCode.Should().Be(0, because: "add-package should complete successfully"));
+		string packagePath = Path.Combine(workspacePath, "packages", packageName);
+		string schemaName = $"{requestedPrefix}{packageName}LocalizableStrings";
+		string schemaDirectory = Path.Combine(packagePath, "Schemas", schemaName);
+		AllureApi.Step("Assert the schema folder carries the requested prefix", () =>
+			Directory.Exists(schemaDirectory).Should().BeTrue(
+				because: "Creatio matches a schema by the code the folder name encodes"));
+		AllureApi.Step("Assert the resource folder carries the requested prefix", () =>
+			Directory.Exists(Path.Combine(packagePath, "Resources", $"{schemaName}.SourceCode"))
+				.Should().BeTrue(because: "schema resources are addressed by the prefixed schema name"));
+		string descriptor = await File.ReadAllTextAsync(Path.Combine(schemaDirectory, "descriptor.json"));
+		AllureApi.Step("Assert the descriptor name carries the requested prefix", () =>
+			descriptor.Should().Contain($"\"Name\": \"{schemaName}\"",
+				because: "the descriptor name is the schema code Creatio validates the prefix against"));
+		string generatedClass = await File.ReadAllTextAsync(Path.Combine(schemaDirectory, $"{schemaName}.cs"));
+		AllureApi.Step("Assert the generated class carries the requested prefix", () =>
+			generatedClass.Should().Contain($"public class {schemaName}",
+				because: "the generated class name must match the schema code it is compiled under"));
+		AllureApi.Step("Assert no unprefixed schema folder is left behind", () =>
+			Directory.Exists(Path.Combine(packagePath, "Schemas", $"{packageName}LocalizableStrings"))
+				.Should().BeFalse(because: "the prefix must replace the plain name, not be added beside it"));
+		AllureApi.Step("Assert an explicit prefix suppresses the missing-environment warning", () =>
+			execution.Output.Should().NotContain(message => message.MessageType == LogDecoratorType.Warning
+					&& message.Value != null
+					&& message.Value.Contains("No Creatio environment was resolved"),
+				because: "an explicit prefix answers the question that warning asks, and needs no Creatio "
+					+ "call; unrelated warnings must not decide this assertion"));
 	}
 
 	[Test]

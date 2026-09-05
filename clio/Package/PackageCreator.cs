@@ -15,7 +15,18 @@ namespace Clio.Package;
 public interface IPackageCreator{
 	#region Methods: Public
 
-	void Create(string packageName, bool? asApp);
+	/// <summary>Creates a package in the current workspace or working directory.</summary>
+	/// <param name="packageName">Name of the package to create.</param>
+	/// <param name="asApp">When <see langword="true"/>, also generates application-package artefacts.</param>
+	/// <param name="schemaNamePrefix">
+	/// Prefix for generated schema names. <see langword="null"/> resolves it from the target environment's
+	/// <c>SchemaNamePrefix</c> system setting; a non-null value (including an empty one) wins over it.
+	/// </param>
+	void Create(string packageName, bool? asApp, string schemaNamePrefix = null);
+
+	/// <summary>Creates a package that is not an application package at an explicit packages path.</summary>
+	/// <param name="packagesPath">Directory that holds packages.</param>
+	/// <param name="packageName">Name of the package to create.</param>
 	void Create(string packagesPath, string packageName);
 
 	#endregion
@@ -43,6 +54,7 @@ public class PackageCreator : IPackageCreator{
 	private readonly IFileSystem _fileSystem;
 	private readonly IJsonConverter _jsonConverter;
 	private readonly ISchemaBuilder _schemaBuilder;
+	private readonly ISchemaNamePrefixResolver _schemaNamePrefixResolver;
 	private readonly IStandalonePackageFileManager _standalonePackageFileManager;
 	private readonly ITemplateProvider _templateProvider;
 	private readonly IWorkingDirectoriesProvider _workingDirectoriesProvider;
@@ -60,7 +72,8 @@ public class PackageCreator : IPackageCreator{
 		IWorkspaceSolutionCreator workspaceSolutionCreator, ITemplateProvider templateProvider,
 		IWorkspacePathBuilder workspacePathBuilder, IStandalonePackageFileManager standalonePackageFileManager,
 		IJsonConverter jsonConverter, IWorkingDirectoriesProvider workingDirectoriesProvider,
-		IFileSystem fileSystem, ISchemaBuilder schemaBuilder) {
+		IFileSystem fileSystem, ISchemaBuilder schemaBuilder,
+		ISchemaNamePrefixResolver schemaNamePrefixResolver) {
 		environmentSettings.CheckArgumentNull(nameof(environmentSettings));
 		templateProvider.CheckArgumentNull(nameof(templateProvider));
 		workspace.CheckArgumentNull(nameof(workspace));
@@ -71,6 +84,7 @@ public class PackageCreator : IPackageCreator{
 		workingDirectoriesProvider.CheckArgumentNull(nameof(workingDirectoriesProvider));
 		fileSystem.CheckArgumentNull(nameof(fileSystem));
 		schemaBuilder.CheckArgumentNull(nameof(schemaBuilder));
+		schemaNamePrefixResolver.CheckArgumentNull(nameof(schemaNamePrefixResolver));
 		_environmentSettings = environmentSettings;
 		_workspace = workspace;
 		_workspaceSolutionCreator = workspaceSolutionCreator;
@@ -81,6 +95,7 @@ public class PackageCreator : IPackageCreator{
 		_workingDirectoriesProvider = workingDirectoriesProvider;
 		_fileSystem = fileSystem;
 		_schemaBuilder = schemaBuilder;
+		_schemaNamePrefixResolver = schemaNamePrefixResolver;
 	}
 
 	#endregion
@@ -117,9 +132,12 @@ public class PackageCreator : IPackageCreator{
 		SaveAppDescriptorToFile(addDescriptorDto, appDescriptorPath);
 	}
 
-	private void AddLocalizationSchema(string packagesPath, string packageName) {
+	private void AddLocalizationSchema(string packagesPath, string packageName, string resolvedPrefix) {
 		string packagePath = _fileSystem.Combine(packagesPath, packageName);
-		string schemaName = $"{packageName}LocalizableStrings";
+		// Every artefact of the generated schema - descriptor Name/Caption, the C# class, the Schemas and
+		// Resources folder names and the metadata code - is derived from this one string inside
+		// SchemaBuilder, so prefixing here prefixes all of them consistently.
+		string schemaName = ApplySchemaNamePrefix(resolvedPrefix, $"{packageName}LocalizableStrings");
 		SourceCodeSchemaOptions options = new(
 			RootNameSpace(packageName),
 			"Owns package-level backend localizable values that have no more natural schema owner. " +
@@ -129,6 +147,15 @@ public class PackageCreator : IPackageCreator{
 			});
 		_schemaBuilder.AddSchema("source-code", schemaName, packagePath, options);
 	}
+
+	/// <summary>
+	/// Prepends <paramref name="prefix"/> to <paramref name="schemaName"/>, leaving a name that already
+	/// carries it untouched so a package named after the prefix does not produce a doubled schema code.
+	/// </summary>
+	private static string ApplySchemaNamePrefix(string prefix, string schemaName) =>
+		string.IsNullOrEmpty(prefix) || schemaName.StartsWith(prefix, StringComparison.Ordinal)
+			? schemaName
+			: prefix + schemaName;
 
 	private void AddPackageToWorkspaceIfNeeded(string packageName) {
 		if (!IsWorkspace) {
@@ -208,12 +235,20 @@ public class PackageCreator : IPackageCreator{
 		_jsonConverter.SerializeObjectToFile(descriptor, descriptorPath);
 	}
 
-	private void CreatePackageIfNotExists(string packagesPath, string packageName, bool includeLocalizationServices) {
+	/// <summary>
+	/// Throws when the package directory already exists, so the caller learns it from a local check
+	/// rather than after a Creatio round trip or a partial write.
+	/// </summary>
+	private void EnsurePackageDirectoryIsFree(string packagesPath, string packageName) {
 		string packagePath = _fileSystem.Combine(packagesPath, packageName);
 		if (_fileSystem.ExistsDirectory(packagePath)) {
 			throw new InvalidOperationException($"Directory '{packagePath}' already exists");
 		}
+	}
 
+	private void CreatePackageIfNotExists(string packagesPath, string packageName, bool includeLocalizationServices) {
+		string packagePath = _fileSystem.Combine(packagesPath, packageName);
+		EnsurePackageDirectoryIsFree(packagesPath, packageName);
 		_templateProvider.CopyTemplateFolder("package", packagePath);
 		if (includeLocalizationServices) {
 			_templateProvider.CopyTemplateFolder("package-localization", packagePath, "", "", false);
@@ -294,10 +329,19 @@ public class PackageCreator : IPackageCreator{
 		}
 	}
 
-	private void CreateCore(string packagesPath, string packageName, bool? asApp) {
+	private void CreateCore(string packagesPath, string packageName, bool? asApp, string schemaNamePrefix) {
+		// Order matters twice over. The free-directory check is local and instant, so it runs first: it
+		// must not cost the caller a Creatio request to be told the package already exists. The prefix is
+		// then resolved BEFORE anything is written, because that resolution can reach Creatio and a call
+		// interrupted mid-request would otherwise leave a package directory with no schema and no
+		// descriptor - which the next attempt refuses, and a human has to delete by hand.
+		EnsurePackageDirectoryIsFree(packagesPath, packageName);
+		string resolvedPrefix = asApp == true
+			? _schemaNamePrefixResolver.Resolve(schemaNamePrefix)
+			: string.Empty;
 		CreatePackageIfNotExists(packagesPath, packageName, asApp == true);
 		if (asApp == true) {
-			AddLocalizationSchema(packagesPath, packageName);
+			AddLocalizationSchema(packagesPath, packageName, resolvedPrefix);
 		}
 		AddPackageToWorkspaceIfNeeded(packageName);
 		if (asApp == true) {
@@ -325,18 +369,27 @@ public class PackageCreator : IPackageCreator{
 
 	#region Methods: Public
 
-	public void Create(string packageName, bool? asApp) {
+	/// <inheritdoc/>
+	public void Create(string packageName, bool? asApp, string schemaNamePrefix = null) {
 		string packagesPath = GetPackagesPath();
-		Create(packagesPath, packageName, asApp);
+		Create(packagesPath, packageName, asApp, schemaNamePrefix);
 	}
 
+	/// <inheritdoc/>
 	public void Create(string packagesPath, string packageName) {
-		CreateCore(packagesPath, packageName, null);
+		CreateCore(packagesPath, packageName, null, null);
 	}
 
-	public void Create(string packagesPath, string packageName, bool? asApp) {
+	/// <summary>Creates a package at an explicit packages path.</summary>
+	/// <param name="packagesPath">Directory that holds packages.</param>
+	/// <param name="packageName">Name of the package to create.</param>
+	/// <param name="asApp">When <see langword="true"/>, also generates application-package artefacts.</param>
+	/// <param name="schemaNamePrefix">
+	/// Prefix for generated schema names; <see langword="null"/> resolves it from the target environment.
+	/// </param>
+	public void Create(string packagesPath, string packageName, bool? asApp, string schemaNamePrefix = null) {
 		ValidatePackageName(packageName);
-		CreateCore(packagesPath, packageName, asApp);
+		CreateCore(packagesPath, packageName, asApp, schemaNamePrefix);
 	}
 
 	#endregion
