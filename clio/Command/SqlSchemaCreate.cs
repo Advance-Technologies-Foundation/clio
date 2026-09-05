@@ -94,10 +94,22 @@ public class SqlSchemaCreateCommand : Command<SqlSchemaCreateOptions> {
 				response = new SqlSchemaCreateResponse { Success = false, Error = packageError };
 				return false;
 			}
-			if (SchemaDesignerHelper.SchemaNameExists(_applicationClient, _serviceUrlBuilder, options.SchemaName, Kind)) {
+			// Resolve directly instead of through SchemaNameExists: that helper discards the resolve error,
+			// so a SelectQuery that failed for a transport reason would read as "the schema does not exist"
+			// and the command would go on to create a schema that may already be there.
+			(string existingUId, string existsError) = SchemaDesignerHelper.ResolveSchemaUId(
+				_applicationClient, _serviceUrlBuilder, options.SchemaName, Kind);
+			if (existingUId != null) {
 				response = new SqlSchemaCreateResponse {
 					Success = false,
 					Error = $"Schema '{options.SchemaName}' already exists in this environment."
+				};
+				return false;
+			}
+			if (existsError != null && !SchemaDesignerHelper.IsSchemaNotFound(existsError)) {
+				response = new SqlSchemaCreateResponse {
+					Success = false,
+					Error = $"Could not check whether schema '{options.SchemaName}' already exists: {existsError}"
 				};
 				return false;
 			}
@@ -110,19 +122,36 @@ public class SqlSchemaCreateCommand : Command<SqlSchemaCreateOptions> {
 			}
 			string captionCulture = _captionCultureResolver.Resolve(options, options.CaptionCulture);
 			SchemaDesignerHelper.ApplySchemaMetadata(schema, options.SchemaName, caption, options.Description, captionCulture);
-			string saveError = SchemaDesignerHelper.SaveSchema(_applicationClient, _serviceUrlBuilder, schema, Kind);
+			string saveError = SchemaDesignerHelper.SaveSchema(
+				_applicationClient, _serviceUrlBuilder, schema, Kind, out bool outcomeUnknown);
 			if (saveError != null) {
-				response = new SqlSchemaCreateResponse { Success = false, Error = saveError };
-				return false;
+				if (!outcomeUnknown) {
+					response = new SqlSchemaCreateResponse { Success = false, Error = saveError };
+					return false;
+				}
+				// The save answer was unusable, so the write was neither observed to succeed nor to fail.
+				// Read the schema back before claiming either: reporting a failure for a schema that WAS
+				// created leaves the caller retrying a create that can only fail as "already exists".
+				(string createdUId, string resolveError) = SchemaDesignerHelper.ResolveSchemaUId(
+					_applicationClient, _serviceUrlBuilder, options.SchemaName, Kind);
+				if (resolveError != null && !SchemaDesignerHelper.IsSchemaNotFound(resolveError)) {
+					// The verification itself failed, so the outcome stays unknown - say so rather than
+					// turning a failed read-back into a claim about the schema.
+					response = new SqlSchemaCreateResponse {
+						Success = false,
+						Error = $"{saveError} The result could not be verified either: {resolveError} "
+							+ $"Check whether schema '{options.SchemaName}' exists before retrying."
+					};
+					return false;
+				}
+				if (createdUId == null) {
+					response = new SqlSchemaCreateResponse { Success = false, Error = saveError };
+					return false;
+				}
+				response = BuildSuccess(options, createdUId, packageUId, caption);
+				return true;
 			}
-			response = new SqlSchemaCreateResponse {
-				Success = true,
-				SchemaName = options.SchemaName,
-				SchemaUId = schema["uId"]?.ToString(),
-				PackageName = options.PackageName,
-				PackageUId = packageUId,
-				Caption = caption
-			};
+			response = BuildSuccess(options, schema["uId"]?.ToString(), packageUId, caption);
 			return true;
 		}
 		catch (Exception ex) {
@@ -130,6 +159,17 @@ public class SqlSchemaCreateCommand : Command<SqlSchemaCreateOptions> {
 			return false;
 		}
 	}
+
+	private static SqlSchemaCreateResponse BuildSuccess(
+		SqlSchemaCreateOptions options, string schemaUId, string packageUId, string caption) =>
+		new() {
+			Success = true,
+			SchemaName = options.SchemaName,
+			SchemaUId = schemaUId,
+			PackageName = options.PackageName,
+			PackageUId = packageUId,
+			Caption = caption
+		};
 
 	public override int Execute(SqlSchemaCreateOptions options) {
 		bool success = TryCreate(options, out SqlSchemaCreateResponse response);

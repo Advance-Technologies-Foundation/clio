@@ -24,6 +24,84 @@ public class ServiceResponseJsonGuardTests
 	};
 
 	[Test]
+	[Description("TryParseJObject parses a valid JSON object body and reports no error.")]
+	public void TryParseJObject_ParsesObject_WhenBodyIsValidJson() {
+		// Arrange
+		const string body = """{"success":true}""";
+
+		// Act
+		bool parsed = ServiceResponseJsonGuard.TryParseJObject(
+			"ScriptSchemaDesignerService CreateNewSchema", Url, body, null,
+			out Newtonsoft.Json.Linq.JObject result, out string error);
+
+		// Assert
+		parsed.Should().BeTrue("a valid JSON object body must parse through the guard unchanged");
+		error.Should().BeNull("a successful parse reports no failure");
+		result["success"]!.ToObject<bool>().Should().BeTrue("the parsed object must carry the body's content");
+	}
+
+	[Test]
+	[Description("TryParseJObject reports an empty body as a named empty-response failure, not a parser message.")]
+	public void TryParseJObject_ReportsEmptyBody_WithOperationAndUrl() {
+		// Arrange
+		const string body = "";
+
+		// Act
+		bool parsed = ServiceResponseJsonGuard.TryParseJObject(
+			"ScriptSchemaDesignerService CreateNewSchema", Url, body, "Hint text.",
+			out Newtonsoft.Json.Linq.JObject result, out string error);
+
+		// Assert
+		parsed.Should().BeFalse("an empty body carries no JSON object to parse");
+		result.Should().BeNull("nothing can be parsed out of an empty body");
+		error.Should().Contain("ScriptSchemaDesignerService CreateNewSchema",
+				"the failure must name the service and operation the caller invoked")
+			.And.Contain(Url, "the failure must name the endpoint that answered")
+			.And.Contain("Hint text.", "the caller-authored hint must be appended")
+			.And.NotContain("Error reading JObject",
+				"the raw Newtonsoft parser message is the very text this guard replaces (issue #1322)");
+	}
+
+	[Test]
+	[Description("TryParseJObject catches Newtonsoft's reader failure for a truncated JSON body.")]
+	public void TryParseJObject_ReportsUnparseableBody_WithPreview() {
+		// Arrange
+		const string body = """{"success":""";
+
+		// Act
+		bool parsed = ServiceResponseJsonGuard.TryParseJObject(
+			"ScriptSchemaDesignerService SaveSchema", Url, body, null,
+			out Newtonsoft.Json.Linq.JObject result, out string error);
+
+		// Assert
+		parsed.Should().BeFalse("a truncated body is not parseable JSON");
+		result.Should().BeNull("nothing can be parsed out of a truncated body");
+		error.Should().Contain("unparseable response",
+				"a truncated body must be classified rather than thrown as a raw Newtonsoft exception")
+			.And.Contain(Url, "the failure must name the endpoint that answered");
+	}
+
+	[Test]
+	[Description("TryParseJObject classifies an HTML body without echoing the markup into the message.")]
+	public void TryParseJObject_ReportsHtmlBody_WithoutEchoingMarkup() {
+		// Arrange
+		const string body = "<!DOCTYPE html><html><body>Sign in<input name=\"token\" value=\"secret\"/></body></html>";
+
+		// Act
+		bool parsed = ServiceResponseJsonGuard.TryParseJObject(
+			"ScriptSchemaDesignerService GetSchema", Url, body, null,
+			out Newtonsoft.Json.Linq.JObject result, out string error);
+
+		// Assert
+		parsed.Should().BeFalse("an HTML page is not a JSON object");
+		result.Should().BeNull("nothing can be parsed out of an HTML page");
+		error.Should().Contain("HTML page instead of JSON",
+				"the caller must be told the endpoint answered with a page rather than a payload")
+			.And.NotContain("secret",
+				"an error or login page can carry tokens, so its body is never echoed into a transcript");
+	}
+
+	[Test]
 	[Description("Deserialize returns the parsed response when the body is valid JSON.")]
 	public void Deserialize_ReturnsParsedResponse_WhenBodyIsValidJson() {
 		// Arrange

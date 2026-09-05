@@ -5,6 +5,7 @@ using System.Collections.Generic;
 using System.Linq;
 using Clio.Command.EntitySchemaDesigner;
 using Clio.Common;
+using Clio.Package;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
 
@@ -77,6 +78,31 @@ internal static class SchemaDesignerHelper {
 	private const string ParameterKey = "parameter";
 	private const string DataValueTypeKey = "dataValueType";
 
+	/// <summary>
+	/// Locally authored tail appended to a designer-service response that was empty or not JSON. It names
+	/// the two causes actually observed on a live stand: the designer <c>.svc</c> route is not present on
+	/// the target Creatio version (an unrouted <c>.svc</c> answers 404 with a zero-length body, which is
+	/// what produced the bare Newtonsoft parser message in issue #1322), and the ordinary
+	/// package/permission causes. No HTTP status is quoted because the synchronous client this helper
+	/// calls through does not expose one (issue #1317).
+	/// </summary>
+	internal const string DesignerServiceHint =
+		"If this repeats, the designer route may not be served by this Creatio version at all; otherwise "
+		+ "verify that the target package exists and is unlocked and editable, that the connected user may "
+		+ "manage configuration, and that the session is still valid (healthcheck).";
+
+	// One label per designer call, so the failure names the service and the operation
+	// (for example "ScriptSchemaDesignerService CreateNewSchema") instead of a bare parser message.
+	private static string DesignerOperation(SchemaDesignerKind kind, string operation) =>
+		$"{kind.ServiceName} {operation}";
+
+	private static (JObject parsed, string error) ParseServiceResponse(
+		string operationName, string url, string responseBody, string hint = null) =>
+		ServiceResponseJsonGuard.TryParseJObject(operationName, url, responseBody, hint,
+			out JObject parsed, out string error)
+			? (parsed, null)
+			: (null, error);
+
 	internal static string ValidateCreateInput(string schemaName, string packageName) {
 		if (string.IsNullOrWhiteSpace(schemaName))
 			return "schema-name is required";
@@ -125,7 +151,9 @@ internal static class SchemaDesignerHelper {
 		var query = BuildSelectUIdByName(schemaName, kind.ManagerName);
 		string url = urlBuilder.Build(SelectQueryRoute);
 		string responseJson = client.ExecutePostRequest(url, query.ToString(Formatting.None));
-		JObject selectResponse = JObject.Parse(responseJson);
+		(JObject selectResponse, string parseError) = ParseServiceResponse("SelectQuery", url, responseJson);
+		if (parseError != null)
+			return (null, parseError);
 		// DataService returns HTTP 200 even on failure (restricted SysSchema access, auth, invalid column). Key
 		// failure off the same authoritative detector the ClientUnit layer path uses, so a failure envelope is
 		// surfaced as the real error instead of an empty-rows "not found" — which would also silently corrupt
@@ -155,7 +183,10 @@ internal static class SchemaDesignerHelper {
 		var query = BuildSelectLayersByName(schemaName, kind.ManagerName);
 		string url = urlBuilder.Build(SelectQueryRoute);
 		string responseJson = client.ExecutePostRequest(url, query.ToString(Formatting.None));
-		JObject selectResponse = JObject.Parse(responseJson);
+		(JObject selectResponse, string parseError) = ParseServiceResponse("SelectQuery", url, responseJson);
+		if (parseError != null) {
+			return ([], parseError);
+		}
 		// Surface an explicit DataService failure instead of masking it as an empty result — otherwise the
 		// caller reports a misleading "not found". Route through the shared SelectQuery detector so this keys
 		// failure off the same three signals as ReadRows (success:false / an errorInfo object / a
@@ -201,7 +232,10 @@ internal static class SchemaDesignerHelper {
 		var query = BuildSelectLayersByNames(layersByName.Keys, kind.ManagerName);
 		string url = urlBuilder.Build(SelectQueryRoute);
 		string responseJson = client.ExecutePostRequest(url, query.ToString(Formatting.None));
-		JObject selectResponse = JObject.Parse(responseJson);
+		(JObject selectResponse, string parseError) = ParseServiceResponse("SelectQuery", url, responseJson);
+		if (parseError != null) {
+			return (layersByName, parseError);
+		}
 		// Same shared SelectQuery failure detection as EnumerateSchemaLayers: a batch failure must not be
 		// read as "every requested name is empty", which PrimeLayerBatch would then memoize for the whole run.
 		if (DataServiceSelectResponse.TryGetFailure(selectResponse, out string failure)) {
@@ -252,6 +286,25 @@ internal static class SchemaDesignerHelper {
 		return result;
 	}
 
+	/// <summary>
+	/// The locally authored "no such schema" text <see cref="ResolveSchemaUId"/> returns. Callers branch on
+	/// it, so it is matched through <see cref="IsSchemaNotFound"/> rather than by searching for the words
+	/// "not found" - a server-authored failure reason can carry those words too, and letting server prose
+	/// pick a control-flow branch is how a transport failure gets read as "the schema does not exist".
+	/// </summary>
+	private const string SchemaNotFoundPrefix = "Schema '";
+
+	/// <summary>
+	/// True when a resolve error is the locally authored "schema does not exist" outcome - an observation
+	/// about the schema - rather than a failure that says nothing about it.
+	/// </summary>
+	/// <param name="resolveError">Error text returned by <see cref="ResolveSchemaUId"/>.</param>
+	/// <returns><see langword="true"/> for the not-found outcome.</returns>
+	internal static bool IsSchemaNotFound(string resolveError) =>
+		resolveError is not null
+		&& resolveError.StartsWith(SchemaNotFoundPrefix, StringComparison.Ordinal)
+		&& resolveError.Contains("' not found (ManagerName=", StringComparison.Ordinal);
+
 	internal static bool SchemaNameExists(
 		IApplicationClient client,
 		IServiceUrlBuilder urlBuilder,
@@ -274,7 +327,10 @@ internal static class SchemaDesignerHelper {
 		};
 		string designerUrl = urlBuilder.Build(kind.GetRoute);
 		string json = client.ExecutePostRequest(designerUrl, request.ToString(Formatting.None));
-		JObject response = JObject.Parse(json);
+		(JObject response, string parseError) = ParseServiceResponse(
+			DesignerOperation(kind, "GetSchema"), designerUrl, json, DesignerServiceHint);
+		if (parseError != null)
+			return (null, parseError);
 		if (response["schema"] is not JObject loaded) {
 			string label = schemaName ?? schemaUId;
 			// Carry the designer service's own reason (permission, locked package, invalid UId) so a
@@ -293,10 +349,42 @@ internal static class SchemaDesignerHelper {
 		IApplicationClient client,
 		IServiceUrlBuilder urlBuilder,
 		JObject schema,
-		SchemaDesignerKind kind) {
+		SchemaDesignerKind kind) =>
+		SaveSchema(client, urlBuilder, schema, kind, out _);
+
+	/// <summary>
+	/// Saves a designer schema, additionally reporting whether the failure leaves the outcome UNKNOWN.
+	/// </summary>
+	/// <remarks>
+	/// A save whose response was empty or not JSON says nothing about whether the schema was written:
+	/// the request may have been applied and the answer lost, or never have reached the service at all.
+	/// Callers that can read the schema back (see <c>create-sql-schema</c>) must verify instead of
+	/// reporting a failure they did not observe.
+	/// </remarks>
+	/// <param name="client">Application client used for the request.</param>
+	/// <param name="urlBuilder">Builder for the designer save route.</param>
+	/// <param name="schema">Schema payload to save.</param>
+	/// <param name="kind">Which designer service to save through.</param>
+	/// <param name="outcomeUnknown">
+	/// <see langword="true"/> when the service answer was unusable, so the save was neither observed to
+	/// succeed nor observed to fail.
+	/// </param>
+	/// <returns>The failure message, or <see langword="null"/> when the service reported success.</returns>
+	internal static string SaveSchema(
+		IApplicationClient client,
+		IServiceUrlBuilder urlBuilder,
+		JObject schema,
+		SchemaDesignerKind kind,
+		out bool outcomeUnknown) {
+		outcomeUnknown = false;
 		string saveUrl = urlBuilder.Build(kind.SaveRoute);
 		string json = client.ExecutePostRequest(saveUrl, schema.ToString(Formatting.None));
-		JObject response = JObject.Parse(json);
+		(JObject response, string parseError) = ParseServiceResponse(
+			DesignerOperation(kind, "SaveSchema"), saveUrl, json, DesignerServiceHint);
+		if (parseError != null) {
+			outcomeUnknown = true;
+			return parseError;
+		}
 		if (response["success"]?.Value<bool>() ?? false)
 			return null;
 		return PageSchemaMetadataHelper.ParseSaveErrorMessage(response, "Failed to save schema");
@@ -310,7 +398,10 @@ internal static class SchemaDesignerHelper {
 		string createUrl = urlBuilder.Build(kind.CreateRoute);
 		var request = new JObject { ["packageUId"] = packageUId };
 		string json = client.ExecutePostRequest(createUrl, request.ToString(Formatting.None));
-		JObject response = JObject.Parse(json);
+		(JObject response, string parseError) = ParseServiceResponse(
+			DesignerOperation(kind, "CreateNewSchema"), createUrl, json, DesignerServiceHint);
+		if (parseError != null)
+			return (null, parseError);
 		if (!(response["success"]?.Value<bool>() ?? false))
 			return (null, response["errorInfo"]?["message"]?.ToString() ?? "CreateNewSchema failed");
 		if (response["schema"] is not JObject created)
