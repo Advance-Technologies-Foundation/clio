@@ -93,9 +93,17 @@ public class SqlSchemaUpdateCommand : Command<SqlSchemaUpdateOptions> {
 				return false;
 			}
 			schemaToSave["body"] = options.Body;
-			string saveError = SchemaDesignerHelper.SaveSchema(_applicationClient, _serviceUrlBuilder, schemaToSave, Kind);
+			string saveError = SchemaDesignerHelper.SaveSchema(
+				_applicationClient, _serviceUrlBuilder, schemaToSave, Kind, out bool outcomeUnknown);
 			if (saveError != null) {
-				response = new SqlSchemaUpdateResponse { Success = false, Error = saveError };
+				// An unusable save answer says nothing about whether the body was written, so the failure
+				// carries that instead of reading as an observed rejection.
+				response = new SqlSchemaUpdateResponse {
+					Success = false,
+					Error = outcomeUnknown
+						? $"{saveError} {SchemaDesignerHelper.SaveOutcomeUnknownNote}"
+						: saveError
+				};
 				return false;
 			}
 			response = CreateSuccessResponse(options, dryRun: false);
