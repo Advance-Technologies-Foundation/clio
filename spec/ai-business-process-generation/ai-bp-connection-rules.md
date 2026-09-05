@@ -98,14 +98,20 @@ Reuse `clio/Command/ProcessModel/Schema.cs` `ManagerMap.EventType` to classify n
 Emit structured findings `{severity (error|warning), ruleId, message, node/edge}`:
 
 - **errors**: start has incoming (R1) / start has ≠1 outgoing (R1); end has outgoing (R2);
-  edge from/to missing node or end-as-source (R2); default flow with no sibling conditional (R14);
+  edge from/to missing node or end-as-source (R2); a default flow with no sibling conditional on a
+  source that has MORE THAN ONE outgoing flow (R14 — the arity scope is the rule, not a detail: 45
+  shipped gateways are the one-outgoing shape); a second default flow out of one element (R14);
+  a plain sequence flow out of a DIVERGING or-gateway (R7/R9, same arity scope — 14 shipped gateways
+  are the one-outgoing shape); a flow from an element to itself (R15); a supplied-but-blank condition
+  on a conditional flow (R13);
   conditional/default on parallel or event-based gateway (R11); conditional flow not from
   gateway/activity (R13); event-based gateway outgoing not leading to a catch event (R10);
   orphan node / node that cannot reach an end (R15); no start or >1 start (R3).
-- **warnings**: diverging Exclusive/Inclusive gateway missing a default (R7/R9/R14);
-  parallel converge that can deadlock; `addDataUserTask`→consumer without an intervening
-  `readDataUserTask` when non-Id fields are referenced (R17); multiple outgoing sequence flows
-  (implicit parallel — confirm intent, R12).
+- **warnings**: diverging Exclusive/Inclusive gateway missing a default (R7/R9); a parallel join two
+  of whose incoming branches leave one or-gateway by DIFFERENT flows (R8 — ancestry is not enough,
+  and comparing it warns on almost every real graph); `addDataUserTask`→consumer without an
+  intervening `readDataUserTask` when non-Id fields are referenced (R17); multiple outgoing sequence
+  flows (implicit parallel — confirm intent, R12).
 
 Exposed as MCP tool `validate-process-graph` (BaseTool, ReadOnly) so the agent pre-checks its
 plan before calling `create-business-process`.

@@ -177,19 +177,45 @@ public sealed class ProcessGraphValidatorTests {
 
 	[Test]
 	[Category("Unit")]
-	[Description("R14: a default flow with no sibling conditional flow is an error.")]
-	public void Validate_ShouldReturnR14Error_WhenDefaultFlowHasNoSiblingConditional() {
+	[Description("R14: a default flow with no sibling conditional flow is an error where the source actually BRANCHES. The source is a DIVERGING activity, and that matters: this test used to arrange a single default flow out of an exclusive gateway, which is the CONVERGING shape 45 shipped gateways are in, and it asserted the rule that rejected them.")]
+	public void Validate_ShouldReturnR14Error_WhenDivergingSourceHasADefaultWithNoConditional() {
 		// Arrange
-		List<ProcessGraphNode> nodes =
-			[Node("s", "startEvent"), Node("g", "exclusiveGateway"), Node("a", "activityUserTask"), Node("e", "endEvent")];
-		List<ProcessGraphEdge> edges = [Seq("s", "g"), Def("g", "a"), Seq("a", "e")];
+		List<ProcessGraphNode> nodes = [Node("s", "startEvent"), Node("a", "activityUserTask"),
+			Node("b", "activityUserTask"), Node("c", "activityUserTask"), Node("e", "endEvent")];
+		List<ProcessGraphEdge> edges =
+			[Seq("s", "a"), Def("a", "b"), Seq("a", "c"), Seq("b", "e"), Seq("c", "e")];
 
 		// Act
 		ProcessGraphValidationResult result = Validate(nodes, edges);
 
 		// Assert
-		result.Findings.Should().Contain(f => f.RuleId == "R14" && f.Severity == ProcessGraphSeverity.Error,
-			because: "a default flow is legal only when at least one sibling conditional flow exists (R14)");
+		result.Findings.Should().Contain(
+			f => f.RuleId == "R14" && f.Severity == ProcessGraphSeverity.Error
+				&& f.Message.Contains("sibling conditional"),
+			because: "a default branch is the fallback of something, so with no conditional sibling there is "
+				+ "nothing for it to fall back from - and the message discriminator matters because R14 now "
+				+ "reports two different defects");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("R14 is scoped by ARITY. A converging or-gateway's single outgoing flow is a default flow by construction - the designer's allowed-outgoing list for an or-gateway is conditional + default with no plain sequence flow - and unscoped this rule called 45 shipped gateways invalid. HasErrors is asserted rather than one rule id, because the whole point is that the shape the designer itself produces is clean.")]
+	public void Validate_ShouldReturnNoError_ForAConvergingGatewayWithOneDefaultFlow() {
+		// Arrange
+		List<ProcessGraphNode> nodes = [Node("s", "startEvent"), Node("split", "exclusiveGateway"),
+			Node("a", "activityUserTask"), Node("b", "activityUserTask"),
+			Node("merge", "exclusiveGateway"), Node("e", "endEvent")];
+		List<ProcessGraphEdge> edges = [Seq("s", "split"), Cond("split", "a"), Def("split", "b"),
+			Def("a", "merge"), Def("b", "merge"), Def("merge", "e")];
+
+		// Act
+		ProcessGraphValidationResult result = Validate(nodes, edges);
+
+		// Assert
+		result.HasErrors.Should().BeFalse(
+			because: "a converging gateway has one way out and the designer cannot draw a plain flow there, "
+				+ "so its single default flow is the only shape available - and asserting HasErrors rather "
+				+ "than one rule id is what keeps a future rule from quietly rejecting it by another name");
 	}
 
 	[Test]

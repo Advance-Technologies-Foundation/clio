@@ -1,4 +1,4 @@
-using System.Collections.Generic;
+﻿using System.Collections.Generic;
 using System.Linq;
 using Role = Clio.Command.ProcessModel.ManagerMap.ProcessElementRole;
 using EventType = Clio.Command.ProcessModel.ManagerMap.EventType;
@@ -165,7 +165,8 @@ public sealed class ProcessGraphValidator : IProcessGraphValidator {
 	// R14 — a default flow needs a sibling conditional flow. R7/R9 — a diverging gateway should have a default flow.
 	private static void CheckDefaultFlowRules(ProcessGraphNode node, EventType eventType,
 			List<ProcessGraphEdge> outs, List<ProcessGraphFinding> findings) {
-		bool hasDefault = outs.Any(o => o.FlowKind == ProcessFlowKind.Default);
+		List<ProcessGraphEdge> defaults = outs.Where(o => o.FlowKind == ProcessFlowKind.Default).ToList();
+		bool hasDefault = defaults.Count > 0;
 		bool hasConditional = outs.Any(o => o.FlowKind == ProcessFlowKind.Conditional);
 
 		// R14 — a default flow needs a sibling conditional only where the source actually BRANCHES.
@@ -176,7 +177,7 @@ public sealed class ProcessGraphValidator : IProcessGraphValidator {
 		// among them BulkFileManagement/DeleteFilesInTable and CaseService/RunSendEmailToCaseGroup. Academy's
 		// wording ("a default flow is used when there is at least one conditional flow outgoing from the same
 		// process element") simply does not contemplate the shape the designer itself produces.
-		if (hasDefault && !hasConditional && outs.Count > 1) {
+		if (hasDefault && !hasConditional && outs.Count > 1 && defaults.Count == 1) {
 			findings.Add(new ProcessGraphFinding(ProcessGraphSeverity.Error, "R14",
 				$"Default flow from '{node.Name}' requires at least one sibling conditional flow.", node.Name));
 		}
@@ -186,7 +187,6 @@ public sealed class ProcessGraphValidator : IProcessGraphValidator {
 		// leaves the second one dead metadata that reads like a live branch. Zero sources in the shipped
 		// corpus carry two, and the designer keeps the invariant by DEMOTING the previous default when a new
 		// one is promoted - a silent edit this validator reports instead of imitating.
-		List<ProcessGraphEdge> defaults = outs.Where(o => o.FlowKind == ProcessFlowKind.Default).ToList();
 		if (defaults.Count > 1) {
 			findings.Add(new ProcessGraphFinding(ProcessGraphSeverity.Error, "R14",
 				$"Element '{node.Name}' has {defaults.Count} default flows; only one branch can be the one "
@@ -248,10 +248,13 @@ public sealed class ProcessGraphValidator : IProcessGraphValidator {
 
 			// A conditional flow with no condition is NOT an error the platform reports: it substitutes the
 			// literal "true", producing a branch that looks conditional and always fires. 7 shipped flows are
-			// in that state. Reported only when the caller supplied conditions at all - the field is optional,
-			// and a caller who omits it everywhere is describing a graph shape rather than its predicates, so
-			// flagging every conditional flow would be noise rather than a finding.
-			if (edge.Condition is { Length: 0 } || (edge.Condition is not null && edge.Condition.Trim().Length == 0)) {
+			// in that state.
+			//
+			// A NULL condition is the field being omitted on THIS edge and raises nothing: the field is
+			// optional, and a caller describing a graph's shape rather than its predicates must not be
+			// flooded with findings about a value they never claimed to supply. Only a supplied-but-blank
+			// one is the mistake.
+			if (edge.Condition is { } condition && condition.Trim().Length == 0) {
 				findings.Add(new ProcessGraphFinding(ProcessGraphSeverity.Error, "R13",
 					$"Conditional flow '{edge.Source}' -> '{edge.Target}' has an empty condition, which the "
 					+ "platform stores as the literal 'true' - a branch that always fires.", edge.Source, edge));
@@ -286,29 +289,74 @@ public sealed class ProcessGraphValidator : IProcessGraphValidator {
 	private static void CheckParallelJoinDeadlock(IReadOnlyList<ProcessGraphNode> nodes,
 			IReadOnlyDictionary<string, List<ProcessGraphEdge>> incoming,
 			IReadOnlyDictionary<string, List<ProcessGraphEdge>> outgoing, List<ProcessGraphFinding> findings) {
+		// Type only. A converging or-gateway needs no arity filter here and had one until a mutation showed
+		// it could not fail: with ONE outgoing flow, every branch that gets behind the gateway came through
+		// that same flow, so the divergence test below always finds them overlapping. The filter was a fast
+		// path no test could distinguish from the check it guarded, which is the shape of code that rots.
+		HashSet<string> orGateways = nodes
+			.Where(n => TypeOf(n) is EventType.ExclusiveGateway or EventType.InclusiveGateway)
+			.Select(n => n.Name)
+			.ToHashSet();
 		foreach (ProcessGraphNode node in nodes.Where(n => TypeOf(n) == EventType.ParallelGateway)) {
 			List<ProcessGraphEdge> ins = incoming[node.Name];
-			if (ins.Count < 2) {
+			if (ins.Count < 2 || orGateways.Count == 0) {
 				continue;
 			}
-			// One backward reachable set per incoming branch, then the or-gateways two of them share.
-			List<HashSet<string>> perBranch = ins
-				.Select(edge => TraverseBackward([edge.Source], incoming))
+			// EDGES, not nodes, and that is the whole rule. Sharing an or-gateway ANCESTOR proves nothing:
+			// for a genuine AND fork the two backward walks are identical from the fork upward, so they
+			// contain every earlier or-gateway in the process and a node-level intersection warns on almost
+			// any parallel section that has a choice somewhere behind it - including a plain retry loop,
+			// because the walk goes round the back-edge. What deadlocks is two branches leaving one
+			// or-gateway BY DIFFERENT EDGES, so that is what is compared.
+			List<HashSet<ProcessGraphEdge>> perBranch = ins
+				.Select(edge => TraverseBackwardEdges(edge.Source, incoming))
 				.ToList();
-			string split = perBranch
-				.SelectMany((reachable, index) => perBranch.Skip(index + 1).SelectMany(other => reachable.Intersect(other)))
-				.Distinct()
-				.FirstOrDefault(name => nodes.Any(n => n.Name == name
-					&& TypeOf(n) is EventType.ExclusiveGateway or EventType.InclusiveGateway
-					&& outgoing[name].Count > 1));
+			string split = orGateways.FirstOrDefault(gateway => DivergesIntoTwoBranches(gateway, perBranch));
 			if (split != null) {
 				findings.Add(new ProcessGraphFinding(ProcessGraphSeverity.Warning, "R8",
-					$"Parallel join '{node.Name}' waits for every incoming branch, but two of them come from "
-					+ $"the gateway '{split}', which takes only one. If that is the shape you meant, the "
-					+ "instance will hang in Running with no error - use an exclusive gateway to merge instead.",
+					$"Parallel join '{node.Name}' waits for every incoming branch, but two of them leave the "
+					+ $"gateway '{split}' by different flows, and that gateway takes only one. If that is the "
+					+ "shape you meant, the instance will hang in Running with no error - use an exclusive "
+					+ "gateway to merge instead.",
 					node.Name));
 			}
 		}
+	}
+
+	// True when two of the join's branches trace back through DISJOINT outgoing flows of the same gateway -
+	// so the gateway picks one of them and the other never delivers its token. Branches that reach the
+	// gateway through the same flow (or through all of them, which is what a fully merged choice upstream
+	// looks like) are not in conflict and must not warn.
+	private static bool DivergesIntoTwoBranches(string gateway, List<HashSet<ProcessGraphEdge>> perBranch) {
+		List<HashSet<ProcessGraphEdge>> atGateway = perBranch
+			.Select(edges => edges.Where(edge => edge.Source == gateway).ToHashSet())
+			.ToList();
+		return atGateway.Where(left => left.Count > 0)
+			.SelectMany((left, index) => atGateway.Skip(index + 1).Where(right => right.Count > 0)
+				.Select(right => !left.Overlaps(right)))
+			.Any(disjoint => disjoint);
+	}
+
+	// Backward BFS collecting the EDGES walked, not the nodes reached. Terminates on a cycle for the same
+	// reason TraverseBackward does - a node is enqueued once - so a retry loop's back-edge is followed once.
+	private static HashSet<ProcessGraphEdge> TraverseBackwardEdges(string seed,
+			IReadOnlyDictionary<string, List<ProcessGraphEdge>> incoming) {
+		HashSet<ProcessGraphEdge> walked = [];
+		HashSet<string> visited = [seed];
+		Queue<string> queue = new([seed]);
+		while (queue.Count > 0) {
+			string current = queue.Dequeue();
+			if (!incoming.TryGetValue(current, out List<ProcessGraphEdge> ins)) {
+				continue;
+			}
+			foreach (ProcessGraphEdge edge in ins) {
+				walked.Add(edge);
+				if (visited.Add(edge.Source)) {
+					queue.Enqueue(edge.Source);
+				}
+			}
+		}
+		return walked;
 	}
 
 	// R15 — reachability: every node must be reachable from a start and able to reach an end.

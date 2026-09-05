@@ -134,10 +134,12 @@ public sealed class ValidateProcessGraphToolTests {
 		ValidateProcessGraphResponse response = Validate(nodes, edges);
 
 		// Assert
-		response.Findings.Should().Contain(f => f.RuleId == "R14" && f.Severity == "error",
+		response.Findings.Should().Contain(
+			f => f.RuleId == "R14" && f.Severity == "error" && f.Message.Contains("sibling conditional"),
 			because: "a default branch says 'taken when nothing else matched', so with no conditional sibling "
 				+ "there is nothing for it to be the fallback of - and this also proves the 'default' "
-				+ "flow-kind was parsed");
+				+ "flow-kind was parsed. R14 now reports two different defects, so the message is what says "
+				+ "which one fired");
 	}
 
 	[Test]
@@ -160,6 +162,10 @@ public sealed class ValidateProcessGraphToolTests {
 			because: "a converging gateway has exactly one way out and the designer cannot draw a plain flow "
 				+ "there, so its single default flow is the only shape available - calling it invalid rejects "
 				+ "content the designer itself produces");
+		response.HasErrors.Should().BeFalse(
+			because: "the whole graph is a canonical conditional+default split feeding a converging gateway - "
+				+ "the shape the designer produces - so asserting the WHOLE error surface rather than one "
+				+ "rule id is what stops a future rule from rejecting it by another name");
 	}
 
 	[Test]
@@ -218,6 +224,9 @@ public sealed class ValidateProcessGraphToolTests {
 		response.Findings.Should().NotContain(f => f.RuleId == "R7" && f.NodeName == "merge",
 			because: "a gateway with one way out is not choosing anything, so the flow-kind rule has nothing "
 				+ "to say about it");
+		response.HasErrors.Should().BeFalse(
+			because: "14 shipped exclusive gateways carry exactly this single plain flow, so the whole graph "
+				+ "must come back clean and not merely free of one rule id");
 	}
 
 	[Test]
@@ -274,8 +283,11 @@ public sealed class ValidateProcessGraphToolTests {
 
 		// Assert
 		response.Findings.Should().Contain(
-			f => f.RuleId == "R13" && f.Severity == "error" && f.Message.Contains("literal 'true'"),
-			because: "a branch that always fires is the opposite of the branch the author described");
+			f => f.RuleId == "R13" && f.Severity == "error" && f.Message.Contains("literal 'true'")
+				&& f.Source == "g" && f.Target == "a",
+			because: "a branch that always fires is the opposite of the branch the author described - and the "
+				+ "source/target are how an agent finds the offending flow, so they are asserted rather than "
+				+ "assumed");
 	}
 
 	[Test]
@@ -312,9 +324,124 @@ public sealed class ValidateProcessGraphToolTests {
 
 		// Assert
 		response.Findings.Should().Contain(
-			f => f.RuleId == "R8" && f.Severity == "warning" && f.Message.Contains("hang in Running"),
+			f => f.RuleId == "R8" && f.Severity == "warning" && f.NodeName == "and"
+				&& f.Message.Contains("hang in Running"),
 			because: "an AND join behind an XOR split waits for a branch that will never run, and nothing "
-				+ "anywhere reports it");
+				+ "anywhere reports it - the finding names the JOIN, which is the element to change");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("R8 must NOT fire when a parallel section sits downstream of a choice. Both branches of the fork run whenever the choice reaches it, and when the choice goes the other way no token reaches the join at all - there is no deadlock in either case. This is the graph that proves the rule compares DIVERGENCE and not ancestry: for a genuine AND fork the two backward walks are identical from the fork upward, so they contain every or-gateway in the process behind it, and a node-level intersection warns on almost any real graph.")]
+	public void Validate_ShouldNotWarnR8_WhenAParallelForkSitsBelowAChoice() {
+		// Arrange: xor picks between a parallel section and a plain branch.
+		List<ProcessGraphNodeArg> nodes = [N("s", "startEvent"), N("xor", "exclusiveGateway"),
+			N("fork", "parallelGateway"), N("a", "activityUserTask"), N("b", "activityUserTask"),
+			N("join", "parallelGateway"), N("other", "activityUserTask"), N("e", "endEvent")];
+		List<ProcessGraphEdgeArg> edges = [E("s", "xor"),
+			new ProcessGraphEdgeArg("xor", "fork", "conditional", "1 > 0"), E("xor", "other", "default"),
+			E("fork", "a"), E("fork", "b"), E("a", "join"), E("b", "join"), E("join", "e"), E("other", "e")];
+
+		// Act
+		ValidateProcessGraphResponse response = Validate(nodes, edges);
+
+		// Assert
+		response.Findings.Should().NotContain(f => f.RuleId == "R8",
+			because: "both arms of the fork reach the join through the SAME flow out of the xor, so the xor "
+				+ "never chooses between them - warning here would tell an agent to replace a correct AND "
+				+ "join with an XOR one, which fires everything downstream twice");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("R8 must NOT fire when a CONVERGING or-gateway sits upstream of a parallel section. The gateway has one way out, so it chooses nothing; this is the 45-shipped-gateway shape, and it is what the rule's own or-gateway arity guard exists to exempt.")]
+	public void Validate_ShouldNotWarnR8_WhenAConvergingGatewayFeedsAParallelFork() {
+		// Arrange
+		List<ProcessGraphNodeArg> nodes = [N("s", "startEvent"), N("merge", "exclusiveGateway"),
+			N("fork", "parallelGateway"), N("a", "activityUserTask"), N("b", "activityUserTask"),
+			N("join", "parallelGateway"), N("e", "endEvent")];
+		List<ProcessGraphEdgeArg> edges = [E("s", "merge"), E("merge", "fork", "default"),
+			E("fork", "a"), E("fork", "b"), E("a", "join"), E("b", "join"), E("join", "e")];
+
+		// Act
+		ValidateProcessGraphResponse response = Validate(nodes, edges);
+
+		// Assert
+		response.Findings.Should().NotContain(f => f.RuleId == "R8",
+			because: "a gateway with one way out picks nothing, so it cannot starve a join");
+		response.HasErrors.Should().BeFalse(
+			because: "this is a shape the designer itself produces, so no rule may call it invalid");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("R8 must NOT fire on a retry loop. The backward walk follows the back-edge, so the loop's own exclusive gateway ends up behind BOTH branches of any parallel section inside the loop - ancestry again, not divergence. Back-edges are in 15% of real gateway processes.")]
+	public void Validate_ShouldNotWarnR8_ForAParallelSectionInsideARetryLoop() {
+		// Arrange: fork/join inside a loop whose exit is decided by an exclusive gateway.
+		List<ProcessGraphNodeArg> nodes = [N("s", "startEvent"), N("fork", "parallelGateway"),
+			N("a", "activityUserTask"), N("b", "activityUserTask"), N("join", "parallelGateway"),
+			N("retry", "exclusiveGateway"), N("e", "endEvent")];
+		List<ProcessGraphEdgeArg> edges = [E("s", "fork"), E("fork", "a"), E("fork", "b"),
+			E("a", "join"), E("b", "join"), E("join", "retry"),
+			new ProcessGraphEdgeArg("retry", "fork", "conditional", "1 > 0"), E("retry", "e", "default")];
+
+		// Act
+		ValidateProcessGraphResponse response = Validate(nodes, edges);
+
+		// Assert
+		response.Findings.Should().NotContain(f => f.RuleId == "R8",
+			because: "both arms re-enter the loop through the same flow out of the retry gateway");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("The INCLUSIVE gateway's half of every rule this change touches, in one graph: R9 rather than R7 is the rule id, the no-default warning names the runtime exception, and the arity scope holds for a converging inclusive gateway too. Without this the 'R7 : R9' selector, the inclusive arm of the or-gateway guard and the inclusive arm of the R14 arity scope are all unexecuted - and 5 of the 45 shipped counter-examples are inclusive gateways.")]
+	public void Validate_ShouldSurfaceR9_ForAnInclusiveGateway_AndScopeItByArity() {
+		// Arrange
+		List<ProcessGraphNodeArg> nodes = [N("s", "startEvent"), N("split", "inclusiveGateway"),
+			N("a", "activityUserTask"), N("b", "activityUserTask"), N("merge", "inclusiveGateway"),
+			N("e", "endEvent")];
+		List<ProcessGraphEdgeArg> edges = [E("s", "split"),
+			new ProcessGraphEdgeArg("split", "a", "conditional", "1 > 0"),
+			new ProcessGraphEdgeArg("split", "b", "conditional", "2 > 1"),
+			E("a", "merge"), E("b", "merge"), E("merge", "e", "default")];
+
+		// Act
+		ValidateProcessGraphResponse response = Validate(nodes, edges);
+
+		// Assert
+		response.Findings.Should().Contain(
+			f => f.RuleId == "R9" && f.Severity == "warning" && f.NodeName == "split"
+				&& f.Message.Contains("MismatchItemsCountException"),
+			because: "an inclusive gateway reports R9, not R7, and the warning names the failure it causes");
+		response.Findings.Should().NotContain(f => f.NodeName == "merge",
+			because: "the converging inclusive gateway has one way out, so every arity-scoped rule leaves "
+				+ "it alone - the same exemption the exclusive one gets");
+		response.HasErrors.Should().BeFalse(
+			because: "two conditional branches with no default is legal - 65 shipped exclusive gateways are "
+				+ "in exactly that shape, which is why R7/R9 is a warning");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("An omitted flow-kind is a plain SEQUENCE flow, and the graph is diverging so the answer is discriminating. The previous arrangement was a straight chain, where one outgoing flow per node makes sequence, conditional and default indistinguishable - the R14 arity scope this change introduced is what took that test's discriminating power away.")]
+	public void Validate_ShouldTreatAnOmittedFlowKindAsSequence_OnADivergingSource() {
+		// Arrange
+		List<ProcessGraphNodeArg> nodes = [N("s", "startEvent"), N("a", "activityUserTask"),
+			N("e1", "endEvent"), N("e2", "endEvent")];
+		List<ProcessGraphEdgeArg> edges = [E("s", "a"),
+			new ProcessGraphEdgeArg("a", "e1"), new ProcessGraphEdgeArg("a", "e2")];
+
+		// Act
+		ValidateProcessGraphResponse response = Validate(nodes, edges);
+
+		// Assert
+		response.HasErrors.Should().BeFalse(
+			because: "two plain flows out of an activity are an implicit parallel split, which is legal - "
+				+ "read as DEFAULT they would be two default flows and two R14 errors");
+		response.Findings.Should().Contain(f => f.RuleId == "R12" && f.Severity == "warning",
+			because: "R12 warns about the implicit parallel split, and it fires only for SEQUENCE flows - "
+				+ "read as conditional there would be no finding at all");
 	}
 
 	[Test]
