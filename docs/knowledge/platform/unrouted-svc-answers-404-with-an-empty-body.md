@@ -3,6 +3,7 @@ description: an unrouted Creatio .svc answers 404 with a zero-length body and cl
 applies-to:
   - clio/Command/SchemaDesignerHelper.cs
   - clio/Command/SqlSchemaCreate.cs
+  - clio/Command/SourceCodeSchemaCreate.cs
   - clio/Package/ServiceResponseJsonGuard.cs
 ticket: GH-1322
 date: 2026-09-05

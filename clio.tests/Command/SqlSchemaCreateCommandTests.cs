@@ -148,7 +148,7 @@ public sealed class SqlSchemaCreateCommandTests {
 
 	[Test]
 	[Description("An empty CreateNewSchema body is reported as a named service failure, not as the raw Newtonsoft parser message (issue #1322).")]
-	public void TryCreate_Reports_Empty_CreateNewSchema_Response_With_Service_And_Url() {
+	public void TryCreate_ShouldNameServiceAndUrl_WhenCreateNewSchemaReturnsEmptyBody() {
 		// Arrange
 		var selectResponses = new Queue<string>([
 			$$"""{"success": true, "rows": [{"UId": "{{PackageUId}}"}]}""",
@@ -167,14 +167,15 @@ public sealed class SqlSchemaCreateCommandTests {
 		response.Error.Should().Contain("ScriptSchemaDesignerService CreateNewSchema",
 				"the caller must learn which service and operation answered with nothing")
 			.And.Contain(CreateNewSchemaUrl, "the endpoint URL is what makes a missing route diagnosable")
-			.And.Contain("unlocked", "the message must carry an actionable hint")
+			.And.Contain(SchemaDesignerHelper.DesignerServiceHint,
+				"the message must carry the whole locally authored hint, not one word of it")
 			.And.NotContain("Error reading JObject",
 				"the bare Newtonsoft parser message is exactly what issue #1322 reported as unactionable");
 	}
 
 	[Test]
 	[Description("An HTML login/error page from CreateNewSchema is classified without echoing the markup.")]
-	public void TryCreate_Reports_Html_CreateNewSchema_Response_Without_Echoing_Markup() {
+	public void TryCreate_ShouldNotEchoMarkup_WhenCreateNewSchemaReturnsHtmlPage() {
 		// Arrange
 		var selectResponses = new Queue<string>([
 			$$"""{"success": true, "rows": [{"UId": "{{PackageUId}}"}]}""",
@@ -199,7 +200,7 @@ public sealed class SqlSchemaCreateCommandTests {
 
 	[Test]
 	[Description("An unusable SaveSchema response is verified by reading the schema back, and reports success when the schema exists.")]
-	public void TryCreate_Verifies_Unknown_Save_Outcome_And_Reports_Success_When_Schema_Exists() {
+	public void TryCreate_ShouldReportSuccess_WhenUnknownSaveOutcomeReadsBackAsExisting() {
 		// Arrange
 		var selectResponses = new Queue<string>([
 			$$"""{"success": true, "rows": [{"UId": "{{PackageUId}}"}]}""",
@@ -223,7 +224,7 @@ public sealed class SqlSchemaCreateCommandTests {
 
 	[Test]
 	[Description("An unusable SaveSchema response whose read-back finds no schema is reported as a failure.")]
-	public void TryCreate_Reports_Failure_When_Unknown_Save_Outcome_Reads_Back_Missing() {
+	public void TryCreate_ShouldReportFailure_WhenUnknownSaveOutcomeReadsBackAsMissing() {
 		// Arrange
 		var selectResponses = new Queue<string>([
 			$$"""{"success": true, "rows": [{"UId": "{{PackageUId}}"}]}""",
@@ -247,7 +248,7 @@ public sealed class SqlSchemaCreateCommandTests {
 
 	[Test]
 	[Description("When the read-back after an unusable SaveSchema response itself fails, the outcome is reported as unverified rather than as a failure.")]
-	public void TryCreate_Reports_Unverified_When_Read_Back_Itself_Fails() {
+	public void TryCreate_ShouldReportUnverified_WhenReadBackItselfFails() {
 		// Arrange
 		var selectResponses = new Queue<string>([
 			$$"""{"success": true, "rows": [{"UId": "{{PackageUId}}"}]}""",
@@ -272,7 +273,7 @@ public sealed class SqlSchemaCreateCommandTests {
 
 	[Test]
 	[Description("A failed duplicate-name check aborts instead of proceeding to create, so a transport failure is never read as 'the schema does not exist'.")]
-	public void TryCreate_Aborts_When_Duplicate_Check_Cannot_Be_Answered() {
+	public void TryCreate_ShouldAbort_WhenDuplicateCheckCannotBeAnswered() {
 		// Arrange
 		var selectResponses = new Queue<string>([
 			$$"""{"success": true, "rows": [{"UId": "{{PackageUId}}"}]}""",
@@ -289,6 +290,29 @@ public sealed class SqlSchemaCreateCommandTests {
 		result.Should().BeFalse("an unanswerable duplicate check is a failure, not a licence to create");
 		response.Error.Should().Contain("SelectQuery",
 			"the caller must learn which request could not be answered");
+		_applicationClient.Received(0).ExecutePostRequest(CreateNewSchemaUrl, Arg.Any<string>());
+	}
+
+	[Test]
+	[Description("A duplicate-name check answered with a DataService failure envelope aborts the create instead of reading as 'the schema does not exist'.")]
+	public void TryCreate_ShouldAbort_WhenDuplicateCheckReturnsFailureEnvelope() {
+		// Arrange
+		var selectResponses = new Queue<string>([
+			$$"""{"success": true, "rows": [{"UId": "{{PackageUId}}"}]}""",
+			"""{"success":false,"errorInfo":{"message":"Schema not found in cache"}}"""
+		]);
+		_applicationClient.ExecutePostRequest(SelectQueryUrl, Arg.Any<string>())
+			.Returns(_ => selectResponses.Dequeue());
+		var options = new SqlSchemaCreateOptions { SchemaName = "UsrMySqlScript", PackageName = "Custom" };
+
+		// Act
+		bool result = _command.TryCreate(options, out SqlSchemaCreateResponse response);
+
+		// Assert
+		result.Should().BeFalse(
+			"a failure envelope leaves the duplicate check unanswered, and prose that happens to say 'not found' must not decide the branch");
+		response.Error.Should().Contain("Could not check whether schema",
+			"the caller must be told the check failed rather than that the schema is absent");
 		_applicationClient.Received(0).ExecutePostRequest(CreateNewSchemaUrl, Arg.Any<string>());
 	}
 }

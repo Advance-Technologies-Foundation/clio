@@ -60,6 +60,71 @@ public sealed record MergedLocalizableString(
 	[property: System.Text.Json.Serialization.JsonPropertyName("uId")] string UId,
 	[property: System.Text.Json.Serialization.JsonPropertyName("values")] IReadOnlyList<MergedLocalizableStringValue> Values);
 
+/// <summary>
+/// How a schema-name resolution ended. Callers that must tell "the schema is absent" apart from
+/// "the check could not be answered" branch on this instead of matching the error text: the error
+/// prose is authored in several places and a wording change would silently flip the branch, which is
+/// how a transport failure gets read as "the schema does not exist".
+/// </summary>
+internal enum SchemaResolveStatus {
+
+	/// <summary>The schema was found and its UId is available.</summary>
+	Resolved = 0,
+
+	/// <summary>The query was answered and reported no such schema — an observation about the schema.</summary>
+	NotFound = 1,
+
+	/// <summary>
+	/// The query could not be answered (unusable response body, DataService failure envelope), or it was
+	/// answered but carried no UId. Neither says the schema is absent, so a caller must abort rather than
+	/// treat it as a licence to create.
+	/// </summary>
+	Unanswerable = 2
+}
+
+/// <summary>
+/// Outcome of resolving a schema name to its UId: the UId when resolved, the discriminated
+/// <see cref="SchemaResolveStatus"/>, and the failure text for the two non-resolved statuses.
+/// </summary>
+/// <param name="UId">Resolved schema UId, or <see langword="null"/> when not resolved.</param>
+/// <param name="Status">Which of the three outcomes occurred.</param>
+/// <param name="Error">Failure text, or <see langword="null"/> when resolved.</param>
+internal readonly record struct SchemaResolveResult(string UId, SchemaResolveStatus Status, string Error) {
+
+	/// <summary>Builds a resolved outcome.</summary>
+	/// <param name="uId">The resolved schema UId.</param>
+	/// <returns>The resolved outcome.</returns>
+	internal static SchemaResolveResult Resolved(string uId) => new(uId, SchemaResolveStatus.Resolved, null);
+
+	/// <summary>Builds the "answered, and there is no such schema" outcome.</summary>
+	/// <param name="error">Failure text naming the schema and manager.</param>
+	/// <returns>The not-found outcome.</returns>
+	internal static SchemaResolveResult NotFound(string error) => new(null, SchemaResolveStatus.NotFound, error);
+
+	/// <summary>Builds the "the check could not be answered" outcome.</summary>
+	/// <param name="error">Failure text describing why the check is unanswerable.</param>
+	/// <returns>The unanswerable outcome.</returns>
+	internal static SchemaResolveResult Unanswerable(string error) =>
+		new(null, SchemaResolveStatus.Unanswerable, error);
+
+	/// <summary>True when the schema was found.</summary>
+	internal bool IsResolved => Status == SchemaResolveStatus.Resolved;
+
+	/// <summary>True when the query was answered and reported no such schema.</summary>
+	internal bool IsNotFound => Status == SchemaResolveStatus.NotFound;
+
+	/// <summary>
+	/// Deconstructs into the legacy <c>(uId, error)</c> shape used by callers that treat every
+	/// non-resolved outcome as a plain failure.
+	/// </summary>
+	/// <param name="uId">Resolved schema UId, or <see langword="null"/>.</param>
+	/// <param name="error">Failure text, or <see langword="null"/>.</param>
+	internal void Deconstruct(out string uId, out string error) {
+		uId = UId;
+		error = Error;
+	}
+}
+
 internal static class SchemaDesignerHelper {
 
 	private const string SelectQueryRoute = "/DataService/json/SyncReply/SelectQuery";
@@ -91,6 +156,15 @@ internal static class SchemaDesignerHelper {
 		+ "verify that the target package exists and is unlocked and editable, that the connected user may "
 		+ "manage configuration, and that the session is still valid (healthcheck).";
 
+	/// <summary>
+	/// Locally authored tail a caller appends when <c>SaveSchema</c> reported <c>outcomeUnknown</c> and the
+	/// caller cannot read the schema back: the write was neither observed to succeed nor observed to fail,
+	/// so the error must not be reported as an observed failure.
+	/// </summary>
+	internal const string SaveOutcomeUnknownNote =
+		"The save outcome is unknown - the request may have been applied and only the answer lost - so "
+		+ "verify the schema in the environment before retrying.";
+
 	// One label per designer call, so the failure names the service and the operation
 	// (for example "ScriptSchemaDesignerService CreateNewSchema") instead of a bare parser message.
 	private static string DesignerOperation(SchemaDesignerKind kind, string operation) =>
@@ -113,7 +187,7 @@ internal static class SchemaDesignerHelper {
 		return null;
 	}
 
-	internal static (string uId, string error) ResolveSchemaUId(
+	internal static SchemaResolveResult ResolveSchemaUId(
 		IApplicationClient client,
 		IServiceUrlBuilder urlBuilder,
 		string schemaName,
@@ -129,21 +203,24 @@ internal static class SchemaDesignerHelper {
 		}
 		(IReadOnlyList<SchemaLayer> layers, string error) = EnumerateSchemaLayers(client, urlBuilder, schemaName, kind);
 		if (error != null)
-			return (null, error);
+			return SchemaResolveResult.Unanswerable(error);
 		if (layers.Count == 0)
-			return (null, $"Schema '{schemaName}' not found (ManagerName='{kind.ManagerName}')");
+			return SchemaResolveResult.NotFound(SchemaNotFoundError(schemaName, kind));
 		// Layers are ordered base->top; the top (most-derived) layer wins for a single-schema resolve, so a
 		// multi-layer classic name always resolves to the same UId instead of a DB-order-dependent random layer.
 		string uId = layers[layers.Count - 1].UId;
+		// A row with a blank UId is NOT evidence that the schema is absent - the row exists, only its
+		// identifier is unusable - so this is classified as unanswerable, not as not-found. A caller that
+		// treated it as "absent" would create a second schema over an existing one.
 		if (string.IsNullOrWhiteSpace(uId))
-			return (null, $"Schema '{schemaName}' metadata is missing UId");
-		return (uId, null);
+			return SchemaResolveResult.Unanswerable(MissingUIdError(schemaName));
+		return SchemaResolveResult.Resolved(uId);
 	}
 
 	// Pre-PR single-row resolution preserved verbatim for the non-ClientUnit kinds (SqlScript/SourceCode):
 	// a UId-by-name query capped at one row, taking that row's UId. Kept deliberately unchanged so the layer
 	// the Sql/SourceCode update/install commands target is not altered by this PR (see ResolveSchemaUId).
-	private static (string uId, string error) ResolveSchemaUIdSingle(
+	private static SchemaResolveResult ResolveSchemaUIdSingle(
 		IApplicationClient client,
 		IServiceUrlBuilder urlBuilder,
 		string schemaName,
@@ -153,21 +230,28 @@ internal static class SchemaDesignerHelper {
 		string responseJson = client.ExecutePostRequest(url, query.ToString(Formatting.None));
 		(JObject selectResponse, string parseError) = ParseServiceResponse("SelectQuery", url, responseJson);
 		if (parseError != null)
-			return (null, parseError);
+			return SchemaResolveResult.Unanswerable(parseError);
 		// DataService returns HTTP 200 even on failure (restricted SysSchema access, auth, invalid column). Key
 		// failure off the same authoritative detector the ClientUnit layer path uses, so a failure envelope is
 		// surfaced as the real error instead of an empty-rows "not found" — which would also silently corrupt
-		// SchemaNameExists (a permission failure read as "schema does not exist").
+		// the duplicate-name check (a permission failure read as "schema does not exist").
 		if (DataServiceSelectResponse.TryGetFailure(selectResponse, out string failure))
-			return (null, $"SelectQuery for schema '{schemaName}' failed: {failure}");
+			return SchemaResolveResult.Unanswerable($"SelectQuery for schema '{schemaName}' failed: {failure}");
 		var rows = selectResponse["rows"] as JArray ?? [];
 		if (rows.Count == 0)
-			return (null, $"Schema '{schemaName}' not found (ManagerName='{kind.ManagerName}')");
+			return SchemaResolveResult.NotFound(SchemaNotFoundError(schemaName, kind));
 		string uId = rows[0]["UId"]?.ToString();
+		// See ResolveSchemaUId: a blank UId leaves the question unanswered rather than answering "absent".
 		if (string.IsNullOrWhiteSpace(uId))
-			return (null, $"Schema '{schemaName}' metadata is missing UId");
-		return (uId, null);
+			return SchemaResolveResult.Unanswerable(MissingUIdError(schemaName));
+		return SchemaResolveResult.Resolved(uId);
 	}
+
+	private static string SchemaNotFoundError(string schemaName, SchemaDesignerKind kind) =>
+		$"Schema '{schemaName}' not found (ManagerName='{kind.ManagerName}')";
+
+	private static string MissingUIdError(string schemaName) =>
+		$"Schema '{schemaName}' metadata is missing UId";
 
 	/// <summary>
 	/// Enumerates every same-named schema layer (one <c>SysSchema</c> row per package that defines or replaces
@@ -286,34 +370,6 @@ internal static class SchemaDesignerHelper {
 		return result;
 	}
 
-	/// <summary>
-	/// The locally authored "no such schema" text <see cref="ResolveSchemaUId"/> returns. Callers branch on
-	/// it, so it is matched through <see cref="IsSchemaNotFound"/> rather than by searching for the words
-	/// "not found" - a server-authored failure reason can carry those words too, and letting server prose
-	/// pick a control-flow branch is how a transport failure gets read as "the schema does not exist".
-	/// </summary>
-	private const string SchemaNotFoundPrefix = "Schema '";
-
-	/// <summary>
-	/// True when a resolve error is the locally authored "schema does not exist" outcome - an observation
-	/// about the schema - rather than a failure that says nothing about it.
-	/// </summary>
-	/// <param name="resolveError">Error text returned by <see cref="ResolveSchemaUId"/>.</param>
-	/// <returns><see langword="true"/> for the not-found outcome.</returns>
-	internal static bool IsSchemaNotFound(string resolveError) =>
-		resolveError is not null
-		&& resolveError.StartsWith(SchemaNotFoundPrefix, StringComparison.Ordinal)
-		&& resolveError.Contains("' not found (ManagerName=", StringComparison.Ordinal);
-
-	internal static bool SchemaNameExists(
-		IApplicationClient client,
-		IServiceUrlBuilder urlBuilder,
-		string schemaName,
-		SchemaDesignerKind kind) {
-		(string uId, _) = ResolveSchemaUId(client, urlBuilder, schemaName, kind);
-		return uId != null;
-	}
-
 	internal static (JObject schema, string error) LoadSchema(
 		IApplicationClient client,
 		IServiceUrlBuilder urlBuilder,
@@ -344,13 +400,6 @@ internal static class SchemaDesignerHelper {
 		}
 		return (loaded, null);
 	}
-
-	internal static string SaveSchema(
-		IApplicationClient client,
-		IServiceUrlBuilder urlBuilder,
-		JObject schema,
-		SchemaDesignerKind kind) =>
-		SaveSchema(client, urlBuilder, schema, kind, out _);
 
 	/// <summary>
 	/// Saves a designer schema, additionally reporting whether the failure leaves the outcome UNKNOWN.

@@ -25,7 +25,7 @@ public class ServiceResponseJsonGuardTests
 
 	[Test]
 	[Description("TryParseJObject parses a valid JSON object body and reports no error.")]
-	public void TryParseJObject_ParsesObject_WhenBodyIsValidJson() {
+	public void TryParseJObject_ShouldParseObject_WhenBodyIsValidJson() {
 		// Arrange
 		const string body = """{"success":true}""";
 
@@ -42,7 +42,7 @@ public class ServiceResponseJsonGuardTests
 
 	[Test]
 	[Description("TryParseJObject reports an empty body as a named empty-response failure, not a parser message.")]
-	public void TryParseJObject_ReportsEmptyBody_WithOperationAndUrl() {
+	public void TryParseJObject_ShouldNameOperationAndUrl_WhenBodyIsEmpty() {
 		// Arrange
 		const string body = "";
 
@@ -64,7 +64,7 @@ public class ServiceResponseJsonGuardTests
 
 	[Test]
 	[Description("TryParseJObject catches Newtonsoft's reader failure for a truncated JSON body.")]
-	public void TryParseJObject_ReportsUnparseableBody_WithPreview() {
+	public void TryParseJObject_ShouldReportUnparseableBody_WhenBodyIsTruncated() {
 		// Arrange
 		const string body = """{"success":""";
 
@@ -83,7 +83,7 @@ public class ServiceResponseJsonGuardTests
 
 	[Test]
 	[Description("TryParseJObject classifies an HTML body without echoing the markup into the message.")]
-	public void TryParseJObject_ReportsHtmlBody_WithoutEchoingMarkup() {
+	public void TryParseJObject_ShouldNotEchoMarkup_WhenBodyIsHtml() {
 		// Arrange
 		const string body = "<!DOCTYPE html><html><body>Sign in<input name=\"token\" value=\"secret\"/></body></html>";
 
@@ -99,6 +99,29 @@ public class ServiceResponseJsonGuardTests
 				"the caller must be told the endpoint answered with a page rather than a payload")
 			.And.NotContain("secret",
 				"an error or login page can carry tokens, so its body is never echoed into a transcript");
+	}
+
+	[TestCase("null", TestName = "TryParseJObject_ShouldClassifyFailure_WhenBodyIsJsonNull")]
+	[TestCase("[]", TestName = "TryParseJObject_ShouldClassifyFailure_WhenBodyIsJsonArray")]
+	[TestCase("123", TestName = "TryParseJObject_ShouldClassifyFailure_WhenBodyIsJsonNumber")]
+	[Description("TryParseJObject classifies a body that is valid JSON but not an object, naming the operation and the URL instead of surfacing only the raw Newtonsoft reader text.")]
+	public void TryParseJObject_ShouldClassifyFailure_WhenBodyIsValidJsonButNotAnObject(string body) {
+		// Arrange
+		const string operation = "ScriptSchemaDesignerService CreateNewSchema";
+
+		// Act
+		bool parsed = ServiceResponseJsonGuard.TryParseJObject(
+			operation, Url, body, null,
+			out Newtonsoft.Json.Linq.JObject result, out string error);
+
+		// Assert
+		parsed.Should().BeFalse("a JSON scalar, array or null is not the object the designer contract promises");
+		result.Should().BeNull("no JSON object can be produced from a non-object body");
+		error.Should().StartWith(operation,
+				"the message must open with the service and operation, not with the parser's own text")
+			.And.Contain(Url, "the failure must name the endpoint that answered")
+			.And.Contain("unparseable response",
+				"a non-object body is classified the same way any other unusable body is");
 	}
 
 	[Test]

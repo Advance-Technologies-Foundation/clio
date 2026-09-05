@@ -94,23 +94,9 @@ public class SqlSchemaCreateCommand : Command<SqlSchemaCreateOptions> {
 				response = new SqlSchemaCreateResponse { Success = false, Error = packageError };
 				return false;
 			}
-			// Resolve directly instead of through SchemaNameExists: that helper discards the resolve error,
-			// so a SelectQuery that failed for a transport reason would read as "the schema does not exist"
-			// and the command would go on to create a schema that may already be there.
-			(string existingUId, string existsError) = SchemaDesignerHelper.ResolveSchemaUId(
-				_applicationClient, _serviceUrlBuilder, options.SchemaName, Kind);
-			if (existingUId != null) {
-				response = new SqlSchemaCreateResponse {
-					Success = false,
-					Error = $"Schema '{options.SchemaName}' already exists in this environment."
-				};
-				return false;
-			}
-			if (existsError != null && !SchemaDesignerHelper.IsSchemaNotFound(existsError)) {
-				response = new SqlSchemaCreateResponse {
-					Success = false,
-					Error = $"Could not check whether schema '{options.SchemaName}' already exists: {existsError}"
-				};
+			SqlSchemaCreateResponse duplicateFailure = CheckSchemaIsAbsent(options.SchemaName);
+			if (duplicateFailure != null) {
+				response = duplicateFailure;
 				return false;
 			}
 			string caption = string.IsNullOrWhiteSpace(options.Caption) ? options.SchemaName : options.Caption.Trim();
@@ -129,27 +115,8 @@ public class SqlSchemaCreateCommand : Command<SqlSchemaCreateOptions> {
 					response = new SqlSchemaCreateResponse { Success = false, Error = saveError };
 					return false;
 				}
-				// The save answer was unusable, so the write was neither observed to succeed nor to fail.
-				// Read the schema back before claiming either: reporting a failure for a schema that WAS
-				// created leaves the caller retrying a create that can only fail as "already exists".
-				(string createdUId, string resolveError) = SchemaDesignerHelper.ResolveSchemaUId(
-					_applicationClient, _serviceUrlBuilder, options.SchemaName, Kind);
-				if (resolveError != null && !SchemaDesignerHelper.IsSchemaNotFound(resolveError)) {
-					// The verification itself failed, so the outcome stays unknown - say so rather than
-					// turning a failed read-back into a claim about the schema.
-					response = new SqlSchemaCreateResponse {
-						Success = false,
-						Error = $"{saveError} The result could not be verified either: {resolveError} "
-							+ $"Check whether schema '{options.SchemaName}' exists before retrying."
-					};
-					return false;
-				}
-				if (createdUId == null) {
-					response = new SqlSchemaCreateResponse { Success = false, Error = saveError };
-					return false;
-				}
-				response = BuildSuccess(options, createdUId, packageUId, caption);
-				return true;
+				response = VerifyUnknownSaveOutcome(options, saveError, packageUId, caption);
+				return response.Success;
 			}
 			response = BuildSuccess(options, schema["uId"]?.ToString(), packageUId, caption);
 			return true;
@@ -158,6 +125,65 @@ public class SqlSchemaCreateCommand : Command<SqlSchemaCreateOptions> {
 			response = new SqlSchemaCreateResponse { Success = false, Error = ex.Message };
 			return false;
 		}
+	}
+
+	/// <summary>
+	/// Checks that the target schema name is free, returning the failure response when it is taken or when
+	/// the check could not be answered.
+	/// </summary>
+	/// <remarks>
+	/// Branches on the discriminated resolve outcome, not on the error text: only an answered "there is no
+	/// such schema" licenses the create. Anything unanswerable (a transport failure, a DataService failure
+	/// envelope, a row with no UId) aborts, or a create runs over a schema that may already be there.
+	/// </remarks>
+	/// <param name="schemaName">Schema name the create would take.</param>
+	/// <returns>The failure response, or <see langword="null"/> when the name is free.</returns>
+	private SqlSchemaCreateResponse CheckSchemaIsAbsent(string schemaName) {
+		SchemaResolveResult existing = SchemaDesignerHelper.ResolveSchemaUId(
+			_applicationClient, _serviceUrlBuilder, schemaName, Kind);
+		if (existing.IsResolved) {
+			return new SqlSchemaCreateResponse {
+				Success = false,
+				Error = $"Schema '{schemaName}' already exists in this environment."
+			};
+		}
+		if (existing.IsNotFound) {
+			return null;
+		}
+		return new SqlSchemaCreateResponse {
+			Success = false,
+			Error = $"Could not check whether schema '{schemaName}' already exists: {existing.Error}"
+		};
+	}
+
+	/// <summary>
+	/// Reads the schema back after a save whose answer was unusable, so the command reports what the
+	/// environment actually holds instead of a failure it never observed.
+	/// </summary>
+	/// <remarks>
+	/// Reporting a failure for a schema that WAS created leaves the caller retrying a create that can only
+	/// fail as "already exists"; reporting success for one that was not created is worse still. When the
+	/// read-back itself cannot be answered, the outcome is reported as unverified.
+	/// </remarks>
+	/// <param name="options">The create request being reported on.</param>
+	/// <param name="saveError">The classified save failure whose outcome is unknown.</param>
+	/// <param name="packageUId">UId of the package that would own the schema.</param>
+	/// <param name="caption">Caption applied to the schema.</param>
+	/// <returns>The response to surface, successful only when the read-back found the schema.</returns>
+	private SqlSchemaCreateResponse VerifyUnknownSaveOutcome(
+		SqlSchemaCreateOptions options, string saveError, string packageUId, string caption) {
+		SchemaResolveResult readBack = SchemaDesignerHelper.ResolveSchemaUId(
+			_applicationClient, _serviceUrlBuilder, options.SchemaName, Kind);
+		if (!readBack.IsResolved && !readBack.IsNotFound) {
+			return new SqlSchemaCreateResponse {
+				Success = false,
+				Error = $"{saveError} The result could not be verified either: {readBack.Error} "
+					+ $"Check whether schema '{options.SchemaName}' exists before retrying."
+			};
+		}
+		return readBack.IsResolved
+			? BuildSuccess(options, readBack.UId, packageUId, caption)
+			: new SqlSchemaCreateResponse { Success = false, Error = saveError };
 	}
 
 	private static SqlSchemaCreateResponse BuildSuccess(
