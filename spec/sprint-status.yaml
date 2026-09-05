@@ -3291,7 +3291,7 @@ stories:
     feature: "eng-91853-gateways-and-flows"
     repo: "clio"
     size: M
-    status: ready-for-dev
+    status: in-progress
     jira: ENG-91853
     file: spec/eng-91853-gateways-and-flows/eng-91853-gateways-and-flows-plan.md
     test_plan: spec/eng-91853-gateways-and-flows/eng-91853-gateways-and-flows-test-plan.md
@@ -3305,7 +3305,29 @@ stories:
       reject 60+ shipped gateways.
       DescribeProcessPrompt introduces `condition` AND `branchesOnActivityResult` together - ENG-95891
       reverted its own edit to that file so this ticket ships both at once.
-      Rebundle raises the archive above 1.4.0.57 and the [RequiresPackage] floors above 1.4.0.44.
+      DONE (commits 96061c532, 3f2bc0fbd, 61c777e72). R14 is arity-scoped, and the regression test is a
+      converging gateway rather than a phrasing change. Added: R15 self-loop, one default per source,
+      the or-gateway plain-flow error (arity-scoped for the same reason - 14 shipped gateways carry a
+      single plain flow), the empty-condition error, and the parallel-join deadlock warning
+      ai-bp-connection-rules promised and nobody wrote. R7/R9's warning now names
+      MismatchItemsCountException instead of saying the process "dead-ends".
+      The empty-condition rule needed a CONTRACT change and could not have existed before: the edge
+      argument was {source, target, flow-kind}, so the validator could not see conditions. `condition` is
+      now an optional fourth field, and an OMITTED one raises nothing - only a supplied-but-empty one.
+      S7: both prompts and three tool descriptions stopped saying a gateway ELEMENT is not buildable, and
+      say instead what is still out (inclusive/event-based gateways, timer/message starts, intermediate
+      events, sub-processes, formula/script tasks, the activity-result dialect) - the fork narrowed, it
+      did not close. DescribeProcessPrompt introduces condition AND branchesOnActivityResult together,
+      which is what ENG-95891's revert was for, and says never to narrate a condition as "what decides
+      this branch" without checking both. TC-D-01 in the manual QA doc INVERTS from a negative case to a
+      positive one, checking the three things an error message would never have shown.
+      Rebundled 1.4.0.58 from crt-process-builder 571fbb1; floors 1.4.0.44 -> 1.4.0.58, which is a
+      CAPABILITY floor rather than a message one, unlike the two before it. Four surfaces state that
+      literal and each is a tripwire that fired.
+      10011 targeted unit tests pass. Release rather than Debug, because a running MCP server holds the
+      Debug output open; only Release/net10.0 received the new archive, the other three build outputs
+      still carry 1.4.0.57.
+      STILL OPEN: nothing on this story. Stand verification and the PR are session D.
     depends_on:
       - story-eng-91853-gateways-and-flows-1
     blocks:
