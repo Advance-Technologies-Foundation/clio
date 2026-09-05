@@ -209,12 +209,18 @@ public sealed class ValidateProcessGraphToolTests {
 		response.Findings.Should().Contain(
 			f => f.RuleId == "R14" && f.Severity == "error" && f.Message.Contains("2 default flows"),
 			because: "two fallbacks out of one element make 'the branch taken when nothing matched' undecidable");
+		response.Findings.Should().NotContain(f => f.Message.Contains("sibling conditional"),
+			because: "the sibling-conditional half of R14 is scoped to exactly ONE default, and this is what "
+				+ "that clause decides: with two of them the source's problem is the second default, not a "
+				+ "missing condition, and reporting both would send the caller to add a conditional flow "
+				+ "beside a fallback that is already ambiguous. Without this assertion the clause can be "
+				+ "deleted with the suite green");
 	}
 
 	[Test]
 	[Category("Unit")]
-	[Description("R7: a DIVERGING exclusive gateway may not carry a plain sequence flow - the mirror of R11. From an or-gateway the designer offers conditional and default only and removes the plain connection from the menu, so a plain flow there says nothing about how the branch is chosen.")]
-	public void Validate_ShouldSurfaceR7Error_WhenADivergingGatewayHasAPlainFlow() {
+	[Description("R7: a DIVERGING exclusive gateway carrying a plain sequence flow is WARNED about, not refused - the mirror of R11, softened by measurement. The designer offers conditional and default only out of an or-gateway and removes the plain connection from the menu, so the flow says nothing about how its branch is chosen; but seven shipped or-gateways are in exactly that shape and they run, because the runtime takes any non-conditional outgoing as the default branch.")]
+	public void Validate_ShouldWarnR7_WhenADivergingGatewayHasAPlainFlow() {
 		// Arrange
 		List<ProcessGraphNodeArg> nodes = [N("s", "startEvent"), N("g", "exclusiveGateway"),
 			N("a", "activityUserTask"), N("b", "activityUserTask"), N("e", "endEvent")];
@@ -365,6 +371,29 @@ public sealed class ValidateProcessGraphToolTests {
 				&& f.Message.Contains("hang in Running"),
 			because: "an AND join behind an XOR split waits for a branch that will never run, and nothing "
 				+ "anywhere reports it - the finding names the JOIN, which is the element to change");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("R8 fires when the or-gateway feeds the parallel join DIRECTLY. One arm goes through an activity and the other jumps straight to the join - the commonest hand-authored deadlock of the family, and the one shape the rule missed, because the backward walk started at the inbound edge's SOURCE and so never contained the inbound edge itself. The direct branch projected to nothing at the gateway and was discarded before any pair could form.")]
+	public void Validate_ShouldWarnR8_WhenAnOrGatewayFeedsTheJoinDirectly() {
+		// Arrange: xor picks ONE arm; the join waits for both.
+		List<ProcessGraphNodeArg> nodes = [N("s", "startEvent"), N("xor", "exclusiveGateway"),
+			N("a", "activityUserTask"), N("join", "parallelGateway"), N("e", "endEvent")];
+		List<ProcessGraphEdgeArg> edges = [E("s", "xor"),
+			new ProcessGraphEdgeArg("xor", "a", "conditional", "1 > 0"), E("xor", "join", "default"),
+			E("a", "join"), E("join", "e")];
+
+		// Act
+		ValidateProcessGraphResponse response = Validate(nodes, edges);
+
+		// Assert
+		response.Findings.Should().Contain(
+			f => f.RuleId == "R8" && f.Severity == "warning" && f.NodeName == "join"
+				&& f.Message.Contains("xor"),
+			because: "the two branches leave 'xor' by different flows and the gateway takes only one, so "
+				+ "whichever way it goes the join is still waiting for the other - the instance hangs in "
+				+ "Running with no error, which is why the warning has to name the gateway");
 	}
 
 	[Test]

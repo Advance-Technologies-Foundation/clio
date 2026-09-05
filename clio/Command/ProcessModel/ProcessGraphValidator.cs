@@ -326,8 +326,14 @@ public sealed class ProcessGraphValidator : IProcessGraphValidator {
 			// any parallel section that has a choice somewhere behind it - including a plain retry loop,
 			// because the walk goes round the back-edge. What deadlocks is two branches leaving one
 			// or-gateway BY DIFFERENT EDGES, so that is what is compared.
+			// Seeded with the INBOUND EDGE, not just with its source. Walking from the source alone drops
+			// the one edge that is guaranteed to be on the branch, and that is precisely the edge that
+			// matters when the or-gateway feeds the join DIRECTLY: xor -default-> and, with the other arm
+			// going xor -conditional-> A -> and. The direct branch then projects to the empty set at the
+			// gateway, the Count > 0 filter discards it, no pair forms and the commonest hand-authored
+			// deadlock of all raised nothing - while the join can never fire whichever way the gateway goes.
 			List<HashSet<ProcessGraphEdge>> perBranch = ins
-				.Select(edge => TraverseBackwardEdges(edge.Source, incoming))
+				.Select(edge => TraverseBackwardEdges(edge, incoming))
 				.ToList();
 			string split = orGateways.FirstOrDefault(gateway => DivergesIntoTwoBranches(gateway, perBranch));
 			if (split != null) {
@@ -357,11 +363,11 @@ public sealed class ProcessGraphValidator : IProcessGraphValidator {
 
 	// Backward BFS collecting the EDGES walked, not the nodes reached. Terminates on a cycle for the same
 	// reason TraverseBackward does - a node is enqueued once - so a retry loop's back-edge is followed once.
-	private static HashSet<ProcessGraphEdge> TraverseBackwardEdges(string seed,
+	private static HashSet<ProcessGraphEdge> TraverseBackwardEdges(ProcessGraphEdge seed,
 			IReadOnlyDictionary<string, List<ProcessGraphEdge>> incoming) {
-		HashSet<ProcessGraphEdge> walked = [];
-		HashSet<string> visited = [seed];
-		Queue<string> queue = new([seed]);
+		HashSet<ProcessGraphEdge> walked = [seed];
+		HashSet<string> visited = [seed.Source];
+		Queue<string> queue = new([seed.Source]);
 		while (queue.Count > 0) {
 			string current = queue.Dequeue();
 			if (!incoming.TryGetValue(current, out List<ProcessGraphEdge> ins)) {
