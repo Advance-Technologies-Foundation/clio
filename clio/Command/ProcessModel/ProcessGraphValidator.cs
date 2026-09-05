@@ -137,7 +137,7 @@ public sealed class ProcessGraphValidator : IProcessGraphValidator {
 		}
 
 		CheckEventBasedGatewayTargets(node, eventType, outs, nodeByName, findings);
-		CheckDefaultFlowRules(node, eventType, outs, findings);
+		CheckDefaultFlowRules(node, eventType, outs, nodeByName, findings);
 
 		// R12 (warning) — multiple outgoing sequence flows from a non-gateway = implicit parallel split.
 		if (role != Role.Gateway && outs.Count(o => o.FlowKind == ProcessFlowKind.Sequence) > 1) {
@@ -164,7 +164,8 @@ public sealed class ProcessGraphValidator : IProcessGraphValidator {
 
 	// R14 — a default flow needs a sibling conditional flow. R7/R9 — a diverging gateway should have a default flow.
 	private static void CheckDefaultFlowRules(ProcessGraphNode node, EventType eventType,
-			List<ProcessGraphEdge> outs, List<ProcessGraphFinding> findings) {
+			List<ProcessGraphEdge> outs, IReadOnlyDictionary<string, ProcessGraphNode> nodeByName,
+			List<ProcessGraphFinding> findings) {
 		List<ProcessGraphEdge> defaults = outs.Where(o => o.FlowKind == ProcessFlowKind.Default).ToList();
 		bool hasDefault = defaults.Count > 0;
 		bool hasConditional = outs.Any(o => o.FlowKind == ProcessFlowKind.Conditional);
@@ -177,7 +178,17 @@ public sealed class ProcessGraphValidator : IProcessGraphValidator {
 		// among them BulkFileManagement/DeleteFilesInTable and CaseService/RunSendEmailToCaseGroup. Academy's
 		// wording ("a default flow is used when there is at least one conditional flow outgoing from the same
 		// process element") simply does not contemplate the shape the designer itself produces.
-		if (hasDefault && !hasConditional && outs.Count > 1 && defaults.Count == 1) {
+		// EXEMPT when a plain sibling leads into a GATEWAY. That is not an unexpressed decision, it is the
+		// decision living one element further on, and the platform says so explicitly:
+		// ProcessSchemaFlowNode.GetOutgoingsDefFlows, with no conditional flow present, recurses into a
+		// sequence flow whose target is a gateway and collects THAT gateway's default flows. Without this the
+		// arity fix went 45 shipped gateways to 1, not to 0 - CrtLeadOppMgmtApp/LeadDistribution's
+		// ReadDataUserTask1 is the one, and it runs.
+		bool plainSiblingLeadsToAGateway = outs.Any(edge => edge.FlowKind == ProcessFlowKind.Sequence
+			&& nodeByName.TryGetValue(edge.Target, out ProcessGraphNode target)
+			&& RoleOf(target) == Role.Gateway);
+		if (hasDefault && !hasConditional && outs.Count > 1 && defaults.Count == 1
+				&& !plainSiblingLeadsToAGateway) {
 			findings.Add(new ProcessGraphFinding(ProcessGraphSeverity.Error, "R14",
 				$"Default flow from '{node.Name}' requires at least one sibling conditional flow.", node.Name));
 		}
@@ -198,15 +209,22 @@ public sealed class ProcessGraphValidator : IProcessGraphValidator {
 		}
 		string ruleId = eventType == EventType.ExclusiveGateway ? "R7" : "R9";
 
-		// R7 / R9 (error) — a DIVERGING or-gateway's outgoing flows must each say how they are chosen. The
-		// mirror of R11: from an or-gateway the designer offers conditional and default only, and removes the
-		// plain connection from the menu entirely. Arity-scoped for the same reason R14 is - 14 shipped
-		// exclusive gateways do carry a single plain sequence flow, all of them with exactly ONE outgoing,
-		// i.e. legacy converging gateways from an older designer, which are tolerated on read.
+		// R7 / R9 (warning) — a DIVERGING or-gateway's outgoing flows should each say how they are chosen.
+		// The mirror of R11, and a WARNING rather than an error for the same reason R14 is arity-scoped and R6
+		// is not implemented at all: it describes shipped, running content. Seven or-gateways in the shipped
+		// 7.8.0 corpus are diverging and carry a plain sequence flow - Compensation/BonusVisaBaseSubProcess,
+		// Compensation/BonusVisaBaseSubProcessCompensation1, CrtOpportunityManagement/Presentation780,
+		// LeadFinance/LeadManagementFinance, OldGoogleIntegration/SynchronizeWithGoogleModuleProcess,
+		// OpportunityBank/Presentation780Finance and PRMBase/CreateOrUpdatePartnerParamHistory - and they run,
+		// because FlowConditionalGateway.GetIsDefSequenceFlow treats ANY outgoing that is not a conditional
+		// flow as the default branch. Calling that invalid would repeat the mistake R14 was arity-scoped to
+		// undo - a rule that rejects real, shipped, running processes - in a brand new rule, and it is
+		// reachable by the ordinary describe-then-validate route rather than only by hand-written input.
 		if (outs.Any(o => o.FlowKind == ProcessFlowKind.Sequence)) {
-			findings.Add(new ProcessGraphFinding(ProcessGraphSeverity.Error, ruleId,
-				$"Diverging gateway '{node.Name}' has a plain sequence flow; every outgoing flow from a "
-				+ "gateway that chooses must be conditional (with a condition) or default.", node.Name));
+			findings.Add(new ProcessGraphFinding(ProcessGraphSeverity.Warning, ruleId,
+				$"Diverging gateway '{node.Name}' has a plain sequence flow. At run time it is taken as the "
+				+ "default branch; say so explicitly with kind 'default', or give it a condition, so the "
+				+ "diagram states which branch is the fallback.", node.Name));
 		}
 
 		// R7 / R9 (warning) — a diverging or-gateway should have a default flow. Stays a WARNING because 65

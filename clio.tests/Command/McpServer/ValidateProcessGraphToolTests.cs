@@ -170,6 +170,30 @@ public sealed class ValidateProcessGraphToolTests {
 
 	[Test]
 	[Category("Unit")]
+	[Description("R14 does not fire when a plain sibling leads into a GATEWAY. That is not an unexpressed decision, it is the decision living one element further on, and the platform says so: ProcessSchemaFlowNode.GetOutgoingsDefFlows, with no conditional flow present, recurses into a sequence flow whose target is a gateway and collects THAT gateway's default flows. This is the shape of CrtLeadOppMgmtApp/LeadDistribution's ReadDataUserTask1 - the ONE shipped process the arity fix still rejected, which is how 45 became 1 rather than 0.")]
+	public void Validate_ShouldNotSurfaceR14_WhenAPlainSiblingLeadsIntoAGateway() {
+		// Arrange: a read-data task with a default branch and a plain flow into a gateway.
+		List<ProcessGraphNodeArg> nodes = [N("s", "startEvent"), N("read", "readDataUserTask"),
+			N("a", "activityUserTask"), N("gw", "exclusiveGateway"), N("b", "activityUserTask"),
+			N("c", "activityUserTask"), N("e", "endEvent")];
+		List<ProcessGraphEdgeArg> edges = [E("s", "read"), E("read", "a", "default"), E("read", "gw"),
+			new ProcessGraphEdgeArg("gw", "b", "conditional", "1 > 0"), E("gw", "c", "default"),
+			E("a", "e"), E("b", "e"), E("c", "e")];
+
+		// Act
+		ValidateProcessGraphResponse response = Validate(nodes, edges);
+
+		// Assert
+		response.Findings.Should().NotContain(f => f.RuleId == "R14" && f.NodeName == "read",
+			because: "the default branch has something to be the fallback OF - the conditions are inside the "
+				+ "gateway the plain sibling leads to, and the platform walks into it to find them");
+		response.HasErrors.Should().BeFalse(
+			because: "this is a shipped, running process, and the rule that rejected it is the one this "
+				+ "change exists to scope correctly");
+	}
+
+	[Test]
+	[Category("Unit")]
 	[Description("R14: at most one default flow per source. The default is the branch taken when nothing matched, so two make that undecidable; the platform does not refuse it and picks by collection order, which leaves the second one dead metadata that reads like a live branch. Zero sources in the shipped corpus carry two.")]
 	public void Validate_ShouldSurfaceR14Error_WhenASourceHasTwoDefaultFlows() {
 		// Arrange
@@ -202,8 +226,13 @@ public sealed class ValidateProcessGraphToolTests {
 
 		// Assert
 		response.Findings.Should().Contain(
-			f => f.RuleId == "R7" && f.Severity == "error" && f.Message.Contains("plain sequence flow"),
-			because: "every outgoing flow from a gateway that chooses has to say how it is chosen");
+			f => f.RuleId == "R7" && f.Severity == "warning" && f.Message.Contains("plain sequence flow"),
+			because: "the diagram should say which branch is the fallback - but a WARNING, because seven "
+				+ "shipped or-gateways are diverging and carry a plain flow, and they run: the runtime takes "
+				+ "any non-conditional outgoing as the default. An error here would reject real content, "
+				+ "which is the defect the R14 arity scope in this same change exists to undo");
+		response.HasErrors.Should().BeFalse(
+			because: "a shape the shipped corpus contains seven times over must not fail validation");
 	}
 
 	[Test]
@@ -248,6 +277,14 @@ public sealed class ValidateProcessGraphToolTests {
 			f => f.RuleId == "R7" && f.Severity == "warning" && f.Message.Contains("MismatchItemsCountException"),
 			because: "the consequence is specific and findable, and naming it is what lets a reader search for "
 				+ "it - 'dead-ends' names nothing");
+		Validate([N("s", "startEvent"), N("split", "exclusiveGateway"), N("x", "activityUserTask"),
+				N("y", "activityUserTask"), N("e", "endEvent")],
+			[E("s", "split"), new ProcessGraphEdgeArg("split", "x", "conditional", "1 > 0"),
+				E("split", "y", "default"), E("x", "e"), E("y", "e")])
+			.Findings.Should().NotContain(f => f.RuleId == "R7" && f.NodeName == "split",
+				because: "the guard that asks whether a default EXISTS was unfalsifiable until this line: "
+					+ "replacing it with `if (true)` left the whole suite green while the warning fired on "
+					+ "every diverging gateway, the canonical conditional+default split included");
 	}
 
 	[Test]
