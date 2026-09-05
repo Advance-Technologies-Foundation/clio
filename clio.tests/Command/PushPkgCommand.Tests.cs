@@ -280,4 +280,19 @@ public class PushPkgCommandTestCase : BaseCommandTests<PushPkgOptions>
 			because: "the closing failure line is the only thing a script operator sees");
 	}
 
+	[Test]
+	[Description("GH-1299: the closing line carries only the identity of what failed, so it does not repeat the reason line the installer already wrote or point at a log that may not exist.")]
+	public void BuildFailureMessage_ShouldCarryIdentityOnly_WhenThePackageIsNamed() {
+		// Act
+		string message = PushPackageCommand.BuildFailureMessage(new PushPkgOptions { Name = "UsrIssue1299.gz" });
+
+		// Assert
+		message.Should().Contain("UsrIssue1299.gz",
+			because: "the identity of what failed is the one thing the installer's own reason line does not carry");
+		message.Should().NotContain("Package installation failed",
+			because: "BasePackageInstaller already writes \"Package installation failed: <reason>\" on the preceding line");
+		message.Should().NotContain("See the installation log above",
+			because: "no installation runs when the package is not found by path, so the suffix pointed at output that does not exist");
+	}
+
 }

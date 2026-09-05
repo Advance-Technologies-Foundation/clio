@@ -36,6 +36,7 @@ namespace Clio.Package
 		private const string InstallationFinishedMarker = "Package installation finished";
 		private const string LocallyModifiedMarker = "has been modified locally";
 		private const string GenericFailureMessage = "Packages installation failed";
+		private static readonly TimeSpan RegexTimeout = TimeSpan.FromSeconds(2);
 
 		#endregion
 
@@ -43,7 +44,17 @@ namespace Clio.Package
 
 		private static readonly Regex LocallyModifiedSchemaRegex = new Regex(
 			"Unable to install\\s+\\w+\\s+\"(?<schema>[^\"]+)\"",
-			RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
+			RegexOptions.IgnoreCase | RegexOptions.CultureInvariant, RegexTimeout);
+
+		/// <summary>
+		/// A C# compiler diagnostic of severity "error", as the compiler itself formats it
+		/// (<c>... .cs(1,79) error CS1519: Invalid token ...</c>). Matched case-sensitively and without the
+		/// surrounding platform prose on purpose: the compiler's own wording is stable, while the platform
+		/// line that introduces the block ("Errors and (or) warnings occurred while compiling configuration
+		/// dll") is written for warning-only builds too and therefore says nothing about failure.
+		/// </summary>
+		private static readonly Regex CompilationErrorRegex = new Regex(
+			"\\berror CS[0-9]+\\b", RegexOptions.CultureInvariant, RegexTimeout);
 
 		#endregion
 
@@ -113,6 +124,45 @@ namespace Clio.Package
 			&& installLog.IndexOf(SuccessMessage, StringComparison.OrdinalIgnoreCase) >= 0;
 
 		/// <summary>
+		/// Determines whether the run failed to compile, which is a real failure that a skipped locally
+		/// modified schema does not explain.
+		/// </summary>
+		/// <param name="installLog">Installation log produced by the current run.</param>
+		/// <returns><c>true</c> when the log carries at least one C# compiler error.</returns>
+		/// <remarks>
+		/// Deliberately narrow. The installation log carries error text on healthy runs too - a run that
+		/// installed correctly on Creatio 10.1.725 still logged
+		/// "Error while saving the metadata of application ... into DB" with a full stack trace, and
+		/// "Errors and (or) warnings occurred while compiling configuration dll" is printed whenever the
+		/// build produced warnings alone. Refusing the classification on any error text would therefore
+		/// refuse it almost always. A <c>CS</c> diagnostic of severity <c>error</c> is different: it is
+		/// emitted by the C# compiler, only for a build that failed, and it was absent from every healthy
+		/// run measured while it was present in the run that broke the configuration.
+		/// </remarks>
+		public static bool HasCompilationFailure(string installLog) =>
+			!string.IsNullOrWhiteSpace(installLog) && CompilationErrorRegex.IsMatch(installLog);
+
+		/// <summary>
+		/// Returns the first log line carrying a C# compiler error, so the failure line can name the real
+		/// cause instead of echoing the platform's generic message.
+		/// </summary>
+		/// <param name="installLog">Installation log produced by the current run.</param>
+		/// <returns>The trimmed line, or <c>null</c> when the log carries no compiler error.</returns>
+		public static string GetFirstCompilationErrorLine(string installLog) {
+			if (string.IsNullOrWhiteSpace(installLog)) {
+				return null;
+			}
+			using StringReader reader = new StringReader(installLog);
+			string line;
+			while ((line = reader.ReadLine()) != null) {
+				if (CompilationErrorRegex.IsMatch(line)) {
+					return line.Trim();
+				}
+			}
+			return null;
+		}
+
+		/// <summary>
 		/// Determines whether the service answered with exactly the generic failure message, which is what
 		/// the platform sends for a run whose only problem was a skipped locally modified schema.
 		/// </summary>
@@ -131,22 +181,41 @@ namespace Clio.Package
 
 		/// <summary>
 		/// Decides whether a failure reported by the installation service is in fact a completed
-		/// installation whose only problem was a schema skipped because it was modified on the environment.
+		/// installation that clio has no evidence of anything failing in, beyond schemas the platform
+		/// skipped because they were modified on the environment.
 		/// </summary>
 		/// <param name="response">Deserialized service response; may be <c>null</c>.</param>
 		/// <param name="installLog">Installation log produced by the current run.</param>
 		/// <param name="failOnError">Whether <c>--fail-on-error</c> was requested.</param>
 		/// <returns><c>true</c> when the run must be treated as a success with warnings.</returns>
 		/// <remarks>
-		/// All four conditions are required: the run reached the completion marker, at least one locally
-		/// modified schema was skipped, the response carries only the generic failure message, and the
-		/// caller did not ask for the strict <c>--fail-on-error</c> mode.
+		/// All five conditions are required: the caller did not ask for the strict <c>--fail-on-error</c>
+		/// mode, the run reached the completion marker, at least one locally modified schema was skipped,
+		/// the response carries only the generic failure message, and the log carries no C# compiler error.
+		/// <para>
+		/// The last condition exists because the first four do NOT establish that the skip was the only
+		/// problem. The service answers <c>success:false</c> with the same generic message when it has
+		/// collected several unrelated problems, and <c>push-pkg</c> installs with
+		/// <c>ContinueIfError = true</c> by default, so a multi-package archive can carry a skipped schema
+		/// AND a package that fails to compile and still reach the completion marker. That exact run was
+		/// measured on Creatio 10.1.725: without the compilation check clio reported it as a success while
+		/// the environment's configuration no longer compiled. See
+		/// <see cref="HasCompilationFailure"/> for why the check is a compiler diagnostic rather than a
+		/// scan for error text.
+		/// </para>
+		/// <para>
+		/// This is evidence-based, not a proof of "nothing else failed": a failure the platform reports
+		/// neither in <c>errorInfo</c> nor as a compiler diagnostic is still downgraded. The caller is
+		/// responsible for handing in a log window that belongs to this run - see
+		/// <c>BasePackageInstaller.InstallPackageOnServerWithLogListener</c>.
+		/// </para>
 		/// </remarks>
 		public static bool ShouldTreatAsSuccess(BaseResponse response, string installLog, bool failOnError) =>
 			!failOnError
 			&& IsInstallationCompleted(installLog)
 			&& GetLocallyModifiedSchemaLines(installLog).Count > 0
-			&& IsGenericInstallationFailure(response);
+			&& IsGenericInstallationFailure(response)
+			&& !HasCompilationFailure(installLog);
 
 		/// <summary>
 		/// Builds a human-readable reason for a reported installation failure, so the final line never
@@ -161,9 +230,17 @@ namespace Clio.Package
 		/// <returns>A non-empty description of what failed.</returns>
 		public static string DescribeFailure(BaseResponse response, string installLog,
 			bool successMessageCheckPassed = true) {
+			string compilationErrorLine = GetFirstCompilationErrorLine(installLog);
+			if (compilationErrorLine != null && IsGenericInstallationFailure(response)) {
+				// Measured on Creatio 10.1.725: a run that failed to compile is still answered with the
+				// generic message, so echoing the response would tell the operator nothing. The compiler's
+				// own line names the schema, the position and the diagnostic.
+				return $"the configuration failed to compile. {compilationErrorLine}";
+			}
 			string message = response?.ErrorInfo?.Message;
 			if (!string.IsNullOrWhiteSpace(message)) {
-				string errorCode = response?.ErrorInfo?.ErrorCode;
+				// response and response.ErrorInfo are both non-null here: message came from them.
+				string errorCode = response.ErrorInfo.ErrorCode;
 				return string.IsNullOrWhiteSpace(errorCode)
 					? message.Trim()
 					: $"{errorCode.Trim()}: {message.Trim()}";
