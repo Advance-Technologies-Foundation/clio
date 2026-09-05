@@ -10,6 +10,7 @@
 	using System.Threading;
 	using System;
 	using System.Linq;
+	using System.Collections.Generic;
 
 	public abstract class BasePackageInstaller {
 
@@ -176,6 +177,52 @@
 			return currentLogContent;
 		}
 
+		/// <summary>
+		/// Logs every schema the platform skipped because it was edited on the environment, plus a closing
+		/// summary. These are warnings: the installation itself ran, the element was simply left alone.
+		/// </summary>
+		/// <param name="currentInstallLog">Installation log produced by the current run.</param>
+		private void ReportLocallyModifiedSchemas(string currentInstallLog) {
+			IReadOnlyList<string> lines = InstallLogAnalyzer.GetLocallyModifiedSchemaLines(currentInstallLog);
+			if (lines.Count == 0) {
+				return;
+			}
+			foreach (string line in lines) {
+				_logger.WriteWarning(line);
+			}
+			IReadOnlyList<string> names = InstallLogAnalyzer.GetLocallyModifiedSchemaNames(currentInstallLog);
+			string schemaList = names.Count > 0 ? string.Join(", ", names) : "see the messages above";
+			_logger.WriteWarning(
+				$"{lines.Count} schema(s) skipped because they were modified locally: {schemaList}. " +
+				"Resolve the conflict on the environment and mark the elements as unchanged to install them.");
+		}
+
+		/// <summary>
+		/// Decides whether a failure reported by the installation service is in fact a completed
+		/// installation whose only problem was a locally modified schema.
+		/// </summary>
+		/// <param name="response">Deserialized service response; may be <c>null</c>.</param>
+		/// <param name="currentInstallLog">Installation log produced by the current run.</param>
+		/// <returns><c>true</c> when the run must be treated as a success with warnings.</returns>
+		/// <remarks>
+		/// The platform answers <c>success:false</c> with the generic message "Packages installation failed"
+		/// for a run that only skipped locally modified schemas, which used to make clio exit non-zero after
+		/// an installation that actually finished. The decision itself lives in
+		/// <see cref="InstallLogAnalyzer.ShouldTreatAsSuccess"/> so that it is testable without a server; an
+		/// invalid archive is excluded here as well, because that failure is reported through the log rather
+		/// than through <c>errorInfo</c> and must keep its dedicated exit code.
+		/// </remarks>
+		private bool TryDowngradeReportedFailure(BaseResponse response, string currentInstallLog) {
+			if (IsInvalidGZipArchiveFailure(response, currentInstallLog)
+				|| !InstallLogAnalyzer.ShouldTreatAsSuccess(response, currentInstallLog, CheckLogsOnSuccessMessage)) {
+				return false;
+			}
+			_logger.WriteWarning(
+				"The installation service reported a failure, but the installation finished and the only " +
+				"reported problem was a locally modified schema. Treating the installation as successful.");
+			return true;
+		}
+
 		protected abstract string GetRequestData(string fileName, PackageInstallOptions packageInstallOptions);
 
 		private string InstallPackageOnServer(string fileName, EnvironmentSettings environmentSettings,
@@ -239,15 +286,23 @@
 			var currentInstallLog = GetLogDiff(initialInstallLog, completeInstallLog);
 			bool successLog = true;
 			if (CheckLogsOnSuccessMessage) {
-				successLog = completeInstallLog.ToLower().Contains("application installed successfully");
+				successLog = InstallLogAnalyzer.IsSuccessMessagePresent(completeInstallLog);
 			}
 			_logger.Write(GetLogDiff(log, completeInstallLog));
 			var success = (response != null && response.Success || response == null) && successLog;
+			ReportLocallyModifiedSchemas(currentInstallLog);
 			if (ThrowInvalidGZipArchiveInstallException && !success
 				&& IsInvalidGZipArchiveFailure(response, currentInstallLog)) {
 				SaveLogFile(completeInstallLog, _reportPath);
 				throw new InvalidGZipArchiveInstallException(
 					GetInvalidGZipArchiveMessage(response, currentInstallLog));
+			}
+			if (!success) {
+				success = TryDowngradeReportedFailure(response, currentInstallLog);
+			}
+			if (!success) {
+				_logger.WriteError("Package installation failed: "
+					+ InstallLogAnalyzer.DescribeFailure(response, currentInstallLog, successLog));
 			}
 			return (success, completeInstallLog);
 		}

@@ -157,7 +157,8 @@
 		{
 			PackageInstallOptions packageInstallOptions = ExtractPackageInstallOptions(options);
 			bool createBackup = options.SkipBackup != true;
-			bool success = false;
+			bool success = true;
+			List<int> failedMarketplaceIds = new();
 			try
 			{
 				if (options.MarketplaceIds != null && options.MarketplaceIds.Any())
@@ -176,9 +177,10 @@
 							_logger.WriteLine($"Done installing app by id: {MarketplaceId}");
 						} else {
 							_logger.WriteError($"Error installing app by id: {MarketplaceId}");
+							failedMarketplaceIds.Add(MarketplaceId);
 						}
+						success &= _loopSuccess;
 					}
-					success = true;
 				}
 				else
 				{
@@ -192,15 +194,44 @@
 				if (success) {
 					_logger.WriteLine("Done");
 				} else {
-					_logger.WriteError("Error");
+					_logger.WriteError(BuildFailureMessage(options, failedMarketplaceIds));
 				}
 				return success ? 0 : 1;
 			}
 			catch (Exception e)
 			{
-				_logger.WriteError(e.StackTrace);
+				string message = string.IsNullOrWhiteSpace(e.Message)
+					? "no error message was provided."
+					: e.Message;
+				_logger.WriteError($"{e.GetType().Name}: {message}");
+				if (!string.IsNullOrWhiteSpace(e.StackTrace)) {
+					_logger.WriteError(e.StackTrace);
+				}
 				return 1;
 			}
+		}
+
+		/// <summary>
+		/// Builds the closing failure line so that it always names what failed instead of printing a bare
+		/// "Error". The command is invoked either with a package name or with marketplace application
+		/// ids, so both have to be covered.
+		/// </summary>
+		/// <param name="options">The options the command was invoked with.</param>
+		/// <param name="failedMarketplaceIds">
+		/// Marketplace application ids whose installation failed. Only the failed ones belong here, so that
+		/// a partially failed batch does not accuse the applications that installed fine.
+		/// </param>
+		/// <returns>A non-empty message naming the package or the marketplace ids that failed.</returns>
+		internal static string BuildFailureMessage(PushPkgOptions options,
+			IReadOnlyCollection<int> failedMarketplaceIds = null) {
+			const string suffix = "See the installation log above.";
+			if (!string.IsNullOrWhiteSpace(options?.Name)) {
+				return $"Package installation failed for \"{options.Name}\". {suffix}";
+			}
+			return failedMarketplaceIds is {Count: > 0}
+				? $"Package installation failed for marketplace application id(s): "
+					+ $"{string.Join(", ", failedMarketplaceIds)}. {suffix}"
+				: $"Package installation failed. {suffix}";
 		}
 
 		/// <summary>

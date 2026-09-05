@@ -68,6 +68,13 @@ push-pkg package without creating backup first; omitted option keeps
 the existing backup behavior
 ```
 
+## Exit Codes
+
+| Code | Meaning |
+|---|---|
+| `0` | The installation finished. Schemas the platform skipped because they were modified on the environment are reported as `[WAR]` warnings and do not fail the command &mdash; the package itself was installed. |
+| `1` | The installation actually failed, or clio could not reach the environment. The reason the platform reported and the package that failed are both named on the closing lines. |
+
 ## Reporting Bugs
 
     https://github.com/Advance-Technologies-Foundation/clio
