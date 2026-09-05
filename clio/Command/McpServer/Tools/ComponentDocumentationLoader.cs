@@ -22,7 +22,8 @@ namespace Clio.Command.McpServer.Tools;
 /// <param name="Warning">
 /// Wire value for <c>documentationWarning</c>: set only when a flavor's <c>*_LOCAL_FILE</c>
 /// override is active and at least one declared file was not present in the working copy,
-/// naming each path and where it was expected. <see langword="null"/> otherwise.
+/// naming each registry-relative path and the override variable that captured it.
+/// <see langword="null"/> otherwise.
 /// </param>
 internal sealed record ComponentDocumentationOutcome(
 	string? Documentation,
@@ -81,16 +82,22 @@ internal static class ComponentDocumentationLoader {
 		foreach (string docPath in docs) {
 			ComponentDocumentationFetchResult result = await docsClient
 				.GetDocAsync(resolvedVersion, docPath, cancellationToken).ConfigureAwait(false);
-			if (!string.IsNullOrEmpty(result.Content)) {
-				blocks.Add(result.Content);
+			// Keyed on the tier, not on emptiness: a file that exists in the working copy but is
+			// still a 0-byte generator stub WAS served locally, and must not be reported as
+			// "not found" — the developer would be told to create a file they already have.
+			if (result.Source != ComponentDocumentationSource.None) {
 				servedBy.Add(result.Source);
+				if (!string.IsNullOrEmpty(result.Content)) {
+					blocks.Add(result.Content);
+				}
 				continue;
 			}
 			// A local override was active for this namespace and did not carry the file: the
 			// chain deliberately stopped instead of substituting the published CDN copy, so the
-			// response has to say which file is missing and where it was looked for.
-			if (result.ExpectedLocalPath is not null) {
-				localMisses.Add($"'{docPath}' (expected at '{result.ExpectedLocalPath}')");
+			// response has to say which file is missing and which override captured it. The
+			// resolved host path stays in the server-side log — it is not wire content.
+			if (result.LocalOverrideVariable is not null) {
+				localMisses.Add($"'{docPath}' (expected in the directory of {result.LocalOverrideVariable})");
 			}
 		}
 

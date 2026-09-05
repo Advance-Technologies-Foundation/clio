@@ -19,6 +19,7 @@ namespace Clio.Tests.Command.McpServer;
 [TestFixture]
 [Category("Unit")]
 [Property("Module", "McpServer")]
+[NonParallelizable] // mutates the process-wide CLIO_*_LOCAL_FILE environment variables
 public sealed class ComponentRegistryDocsClientTests {
 	private const string CdnBaseUrl = "https://cdn.test/api/mcp/";
 	private const string SamplePayload = "# Sample doc\n\nHello.";
@@ -125,8 +126,8 @@ public sealed class ComponentRegistryDocsClientTests {
 		result.Content.Should().BeNull(because: "the caller will skip the missing doc and keep any successfully-fetched siblings");
 		result.Source.Should().Be(ComponentDocumentationSource.None,
 			because: "nothing was served, and the tier must say so rather than being guessed by the caller");
-		result.ExpectedLocalPath.Should().BeNull(
-			because: "no local override is active, so there is no working-copy path to point the developer at");
+		result.LocalOverrideVariable.Should().BeNull(
+			because: "no local override is active, so there is no override to point the developer at");
 		handler.Requests.Should().HaveCount(1,
 			because: "4xx is treated as permanent — no exponential-backoff retries");
 	}
@@ -174,6 +175,8 @@ public sealed class ComponentRegistryDocsClientTests {
 			because: "a local hit must short-circuit the network exactly as the registry-JSON override does");
 		cache.Written.Should().BeEmpty(
 			because: "writing an unpublished draft into the docs cache would poison the next env-unset call");
+		result.LocalOverrideVariable.Should().BeNull(
+			because: "a served result is never a miss, so the loader must not be able to render a 'not found' warning for it");
 	}
 
 	[Test]
@@ -198,10 +201,33 @@ public sealed class ComponentRegistryDocsClientTests {
 			because: "silently substituting published prose for a missing local file is the defect being fixed (issue #1361)");
 		result.Source.Should().Be(ComponentDocumentationSource.None,
 			because: "the caller needs to tell 'not generated locally' apart from 'served'");
-		result.ExpectedLocalPath.Should().Be(Path.Combine(WorkingCopyRoot, "docs", "sample.md"),
-			because: "the warning must name the exact file the developer has to generate");
+		result.LocalOverrideVariable.Should().Be(RegistryFlavor.Web.LocalFileEnvironmentVariable,
+			because: "the warning must name the override that captured the path, without echoing the resolved host path onto the wire");
 		handler.Requests.Should().BeEmpty(
 			because: "with the override active the CDN must not be consulted at all");
+	}
+
+	[Test]
+	[Description("A declared doc that exists in the working copy but is still an empty generator stub is a local hit, not a local miss.")]
+	public async Task GetDocAsync_Treats_An_Empty_Local_File_As_A_Local_Hit() {
+		// Arrange
+		string registryPath = Path.Combine(WorkingCopyRoot, "ComponentRegistry.json");
+		MockFileSystem fs = new();
+		fs.AddFile(registryPath, new MockFileData("[]"));
+		fs.AddFile(Path.Combine(WorkingCopyRoot, "docs", "sample.md"), new MockFileData(string.Empty));
+		FakeDocsCacheStore cache = new();
+		FakeHttpHandler handler = new();
+		ComponentRegistryDocsClient client = CreateClient(cache, handler, fs);
+		using EnvironmentVariableScope envScope = new(RegistryFlavor.Web.LocalFileEnvironmentVariable, registryPath);
+
+		// Act
+		ComponentDocumentationFetchResult result = await client.GetDocAsync("8.2.1", "docs/sample.md");
+
+		// Assert
+		result.Source.Should().Be(ComponentDocumentationSource.Local,
+			because: "the file exists in the working copy — it was served, it is simply empty");
+		result.LocalOverrideVariable.Should().BeNull(
+			because: "telling the developer to generate a file they already have is the diagnostic defect being fixed");
 	}
 
 	[Test]
@@ -259,22 +285,6 @@ public sealed class ComponentRegistryDocsClientTests {
 			CdnBaseUrl);
 	}
 
-	/// <summary>
-	/// Scopes an environment variable to one test and restores the previous value on
-	/// dispose, so the process-wide override cannot leak into sibling tests.
-	/// </summary>
-	private sealed class EnvironmentVariableScope : IDisposable {
-		private readonly string _name;
-		private readonly string? _previous;
-
-		public EnvironmentVariableScope(string name, string? value) {
-			_name = name;
-			_previous = Environment.GetEnvironmentVariable(name);
-			Environment.SetEnvironmentVariable(name, value);
-		}
-
-		public void Dispose() => Environment.SetEnvironmentVariable(_name, _previous);
-	}
 
 	private sealed class FakeHttpClientFactory(FakeHttpHandler handler) : IHttpClientFactory {
 		public HttpClient CreateClient(string name) => new(handler) { Timeout = TimeSpan.FromSeconds(5) };

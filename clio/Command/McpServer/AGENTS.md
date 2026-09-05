@@ -140,14 +140,22 @@ honest, and none of them may be relaxed into a fall-through:
 
 - while an override is active it is the **only** documentation tier — a declared
   file that is absent from the working copy returns `documentationSource: "none"`
-  plus `documentationWarning` naming the expected path, and the published CDN copy
+  plus `documentationWarning` naming the registry-relative path and the `*_LOCAL_FILE`
+  variable that captured it (the resolved host path stays in the server-side log, so
+  `mcp-http` never echoes the server's directory layout to a remote client), and the
+  published CDN copy
   is **not** substituted. Silent substitution was the reported defect: the
   developer validated a documentation edit against production prose and the
   round-trip only looked successful;
 - locally-read documentation is **never** written to the docs cache, so an
   unpublished draft cannot leak into a later env-unset call;
-- the containment check (`Path.GetFullPath` + `StartsWith(root + separator)`) runs
-  at the filesystem boundary in addition to `ComponentRegistryDocsPath.TryNormalise`.
+- the containment check (`IFileSystem.Path.GetFullPath` + `StartsWith(root + separator)`)
+  runs at the filesystem boundary in addition to `ComponentRegistryDocsPath.TryNormalise`.
+  It is **lexical**: symlinks are not resolved, so the override directory is a trusted
+  input — a `docs/` symlink pointing outside it is followed. Point `*_LOCAL_FILE` only at
+  a directory you own. The variable must hold an **absolute** path: the MCP server runs as
+  a child process whose working directory is not the developer's shell, so a relative path
+  resolves against a directory nobody chose.
 
 `documentationSource` (`local` | `cache` | `cdn` | `mixed` | `none`) and
 `documentationWarning` are emitted on `get-component-info` and `get-request-info`

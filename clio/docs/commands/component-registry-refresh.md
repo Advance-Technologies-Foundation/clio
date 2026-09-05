@@ -45,6 +45,10 @@ While iterating on the `ComponentRegistry.json` payload itself, point
 export CLIO_COMPONENT_REGISTRY_LOCAL_FILE=/path/to/my/ComponentRegistry.json
 ```
 
+The value must be an **absolute** path. clio's MCP server runs as a child process
+whose working directory is not your shell's, so a relative path is resolved against
+a directory you did not choose and the override silently misses.
+
 When set, every `get-component-info` call reads the file directly and reports
 `source=local` — the CDN, the on-disk cache, and the embedded snapshot are all
 bypassed. The env variable is read on every call, so edits are visible to a
@@ -57,9 +61,11 @@ file — the layout the producer-side generator writes — so
 `/path/to/my/docs/my-widget.component.md`. While the override is active that
 working copy is the only documentation tier: a declared file you have not
 generated yet is reported as `documentationSource: "none"` with a
-`documentationWarning` naming the expected path, rather than being quietly filled
-in from the published academy copy. Locally-read documentation is never written to
-the docs cache. Each registry flavour owns one documentation namespace
+`documentationWarning` naming that path and the override variable, rather than being
+quietly filled in from the published academy copy. Locally-read documentation is never
+written to the docs cache. The override directory is a **trusted** input: containment is
+checked lexically and symlinks inside it are not resolved, so point the variable only at a
+directory you own. Each registry flavour owns one documentation namespace
 (`CLIO_COMPONENT_REGISTRY_LOCAL_FILE` → `docs/`,
 `CLIO_MOBILE_COMPONENT_REGISTRY_LOCAL_FILE` → `mobile-docs/`,
 `CLIO_REQUEST_REGISTRY_LOCAL_FILE` → `request-docs/`,

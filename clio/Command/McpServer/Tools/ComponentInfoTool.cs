@@ -851,9 +851,10 @@ public sealed class ComponentInfoResponse : ComponentSelectionMetadata {
 	/// <summary>
 	/// Gets the operator-facing explanation emitted only when a component-registry
 	/// local-file override is active and at least one declared documentation file was not
-	/// present in the working copy. Names each missing path and the absolute location it
-	/// was expected at. While an override is active the published CDN copy is deliberately
-	/// never substituted, so this warning is the only signal that a recipe is missing.
+	/// present in the working copy. While an override is active the published CDN copy is deliberately
+	/// never substituted, so this warning is the only signal that a recipe is missing. The
+	/// registry-relative path and the override variable name are named; the resolved host
+	/// path is deliberately not echoed onto the wire.
 	/// </summary>
 	[JsonPropertyName("documentationWarning")]
 	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]

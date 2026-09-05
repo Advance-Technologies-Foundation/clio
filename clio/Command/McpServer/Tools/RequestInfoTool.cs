@@ -568,29 +568,6 @@ public sealed class RequestInfoResponse {
 	public string? Documentation { get; init; }
 
 	/// <summary>
-	/// Gets the tier that served <see cref="Documentation"/>: <c>local</c> (the developer working
-	/// copy next to a <c>*_LOCAL_FILE</c> registry override), <c>cache</c>, <c>cdn</c>,
-	/// <c>mixed</c> when the declared files came from different tiers, or <c>none</c> when
-	/// nothing could be served. Emitted on detail responses whose registry entry declares
-	/// <c>references.docs[]</c>; omitted when it declares none, so an absent field means
-	/// "no documentation exists" rather than "provenance unknown" (issue #1361).
-	/// </summary>
-	[JsonPropertyName("documentationSource")]
-	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-	public string? DocumentationSource { get; init; }
-
-	/// <summary>
-	/// Gets the operator-facing explanation emitted only when a component-registry
-	/// local-file override is active and at least one declared documentation file was not
-	/// present in the working copy. Names each missing path and the absolute location it
-	/// was expected at. While an override is active the published CDN copy is deliberately
-	/// never substituted, so this warning is the only signal that a recipe is missing.
-	/// </summary>
-	[JsonPropertyName("documentationWarning")]
-	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-	public string? DocumentationWarning { get; init; }
-
-	/// <summary>
 	/// Gets or sets the disambiguation flag emitted as <c>true</c> only when the request
 	/// DECLARES docs but none could be loaded (a transient docs CDN/cache failure), so
 	/// <see cref="Documentation"/> is omitted. Lets the agent tell a fetch failure (retry
@@ -599,6 +576,16 @@ public sealed class RequestInfoResponse {
 	[JsonPropertyName("documentationUnavailable")]
 	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
 	public bool? DocumentationUnavailable { get; init; }
+
+	/// <inheritdoc cref="ComponentInfoResponse.DocumentationSource"/>
+	[JsonPropertyName("documentationSource")]
+	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+	public string? DocumentationSource { get; init; }
+
+	/// <inheritdoc cref="ComponentInfoResponse.DocumentationWarning"/>
+	[JsonPropertyName("documentationWarning")]
+	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+	public string? DocumentationWarning { get; init; }
 
 	/// <summary>
 	/// Gets or sets the platform version the catalog was filtered against. Same semantics

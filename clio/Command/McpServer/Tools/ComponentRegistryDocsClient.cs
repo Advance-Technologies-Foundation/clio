@@ -1,5 +1,4 @@
 using System;
-using System.IO;
 using System.Net;
 using System.Net.Http;
 using System.Text;
@@ -36,15 +35,17 @@ public enum ComponentDocumentationSource {
 /// </summary>
 /// <param name="Content">UTF-8 decoded markdown, or <see langword="null"/> when nothing was served.</param>
 /// <param name="Source">The tier that served <paramref name="Content"/>.</param>
-/// <param name="ExpectedLocalPath">
-/// When the flavor's local override is active, the absolute path the file was expected at.
-/// Lets the caller name the missing file in an operator-facing warning instead of leaving a
-/// local-override miss silent. <see langword="null"/> when no override is active.
+/// <param name="LocalOverrideVariable">
+/// Name of the <c>*_LOCAL_FILE</c> environment variable whose override was active when the
+/// file was NOT found in the working copy. Lets the caller name the missing file and the
+/// override that captured it in an operator-facing warning instead of leaving a
+/// local-override miss silent, without echoing an absolute host path onto the wire.
+/// <see langword="null"/> on every served result and whenever no override is active.
 /// </param>
 public sealed record ComponentDocumentationFetchResult(
 	string? Content,
 	ComponentDocumentationSource Source,
-	string? ExpectedLocalPath = null) {
+	string? LocalOverrideVariable = null) {
 
 	/// <summary>Nothing was served and no local override was active.</summary>
 	public static ComponentDocumentationFetchResult Missing { get; } =
@@ -212,20 +213,21 @@ public sealed class ComponentRegistryDocsClient : IComponentRegistryDocsClient {
 			return null;
 		}
 
-		string? docsRoot = Path.GetDirectoryName(Path.GetFullPath(registryFilePath.Trim()));
+		string? docsRoot = _fileSystem.Path.GetDirectoryName(_fileSystem.Path.GetFullPath(registryFilePath.Trim()));
 		if (string.IsNullOrEmpty(docsRoot)) {
 			return null;
 		}
 
-		string candidate = Path.GetFullPath(Path.Combine(docsRoot, normalisedDocPath));
+		string candidate = _fileSystem.Path.GetFullPath(_fileSystem.Path.Combine(docsRoot, normalisedDocPath));
 		// Defence in depth: TryNormalise already rejects "..", backslashes and rooted paths,
 		// but the containment check is repeated at every filesystem boundary per the repo rule.
-		if (!candidate.StartsWith(docsRoot + Path.DirectorySeparatorChar, StringComparison.Ordinal)) {
+		if (!candidate.StartsWith(docsRoot + _fileSystem.Path.DirectorySeparatorChar, StringComparison.Ordinal)) {
+			// The rejected path stays in the server-side log only: a caller must not be handed a
+			// path the containment check refused, and must not be told to generate a file there.
 			_logger.LogWarning(
 				"component-registry-docs reject reason=local-escape flavor={Flavor} version={Version} path={Path} resolved={Resolved}",
 				flavor.DisplayName, version, normalisedDocPath, candidate);
-			return new ComponentDocumentationFetchResult(
-				Content: null, ComponentDocumentationSource.None, candidate);
+			return ComponentDocumentationFetchResult.Missing;
 		}
 
 		if (!_fileSystem.File.Exists(candidate)) {
@@ -233,7 +235,7 @@ public sealed class ComponentRegistryDocsClient : IComponentRegistryDocsClient {
 				"component-registry-docs source=local-miss flavor={Flavor} version={Version} path={Path} expected={Expected}",
 				flavor.DisplayName, version, normalisedDocPath, candidate);
 			return new ComponentDocumentationFetchResult(
-				Content: null, ComponentDocumentationSource.None, candidate);
+				Content: null, ComponentDocumentationSource.None, flavor.LocalFileEnvironmentVariable);
 		}
 
 		// Never written to the docs cache: the override stays a read-only test channel, so an
@@ -242,7 +244,7 @@ public sealed class ComponentRegistryDocsClient : IComponentRegistryDocsClient {
 		_logger.LogInformation(
 			"component-registry-docs source=local flavor={Flavor} version={Version} path={Path} file={File} bytes={Bytes}",
 			flavor.DisplayName, version, normalisedDocPath, candidate, content.Length);
-		return new ComponentDocumentationFetchResult(content, ComponentDocumentationSource.Local, candidate);
+		return new ComponentDocumentationFetchResult(content, ComponentDocumentationSource.Local);
 	}
 
 	private async Task<byte[]?> TryFetchFromCdnAsync(string version, string normalisedDocPath, CancellationToken cancellationToken) {

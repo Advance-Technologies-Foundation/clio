@@ -32,3 +32,10 @@ working copy and reported as `documentationSource: "none"`; with both set, it is
 one. Nothing fails loudly — the response just carries the wrong prose or a warning naming a path in a
 directory the developer never edited. If cross-namespace references become real, stop inferring and
 pass `RegistryFlavor` explicitly from the two tools, which already know their `schema-type`.
+
+**Also trusted, also silent** — the containment check is lexical (`GetFullPath` +
+`StartsWith`), so the override directory itself is a trusted input: a `docs/` symlink
+pointing outside it passes the check and is followed. And `*_LOCAL_FILE` must hold an
+absolute path — the MCP server is a child process whose working directory is not the
+developer's shell, so a relative value resolves against a directory nobody chose and the
+override just misses without saying why.

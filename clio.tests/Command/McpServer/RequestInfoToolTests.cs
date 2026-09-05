@@ -270,6 +270,10 @@ public sealed class RequestInfoToolTests {
 			because: "the fetched markdown must surface on the detail response");
 		response.DocumentationUnavailable.Should().BeNull(
 			because: "all declared docs loaded, so no fetch-failure flag is emitted");
+		response.DocumentationSource.Should().Be("cdn",
+			because: "get-request-info must declare which tier served the markdown, exactly as get-component-info does");
+		response.DocumentationWarning.Should().BeNull(
+			because: "no local override miss occurred, so there is nothing to warn about");
 		docsClient.Requests.Should().ContainSingle(
 				because: "exactly one doc path is declared on the entry")
 			.Which.Should().Be(("latest", CloseDocPath),
@@ -295,6 +299,28 @@ public sealed class RequestInfoToolTests {
 	}
 
 	[Test]
+	[Description("With a local override active and the declared doc absent from the working copy, the request detail response reports documentationSource none and names the file plus the override variable.")]
+	public async Task GetRequestInfo_ShouldSurfaceProvenance_WhenLocalOverrideLacksTheDoc() {
+		// Arrange
+		FakeDocsClient docsClient = new();
+		docsClient.SeedLocalMiss("latest", CloseDocPath, RegistryFlavor.Requests.LocalFileEnvironmentVariable);
+		RequestInfoTool tool = CreateTool(docsClient);
+
+		// Act
+		RequestInfoResponse response = await tool.GetRequestInfo(new RequestInfoArgs("crt.ClosePageRequest"));
+
+		// Assert
+		response.Documentation.Should().BeNull(
+			because: "substituting the published CDN copy for a missing local file is the defect being fixed (issue #1361)");
+		response.DocumentationSource.Should().Be("none",
+			because: "nothing was served, and the caller must be able to tell that apart from a served doc");
+		response.DocumentationWarning.Should().Contain(CloseDocPath,
+			because: "the warning must name the registry-relative file the developer has to generate");
+		response.DocumentationWarning.Should().Contain(RegistryFlavor.Requests.LocalFileEnvironmentVariable,
+			because: "naming the override that captured the path is what makes the warning actionable");
+	}
+
+	[Test]
 	[Description("A request without declared docs omits both documentation fields — absence of docs is not an error condition.")]
 	public async Task GetRequestInfo_ShouldOmitDocumentationFields_WhenEntryDeclaresNoDocs() {
 		// Arrange
@@ -308,6 +334,9 @@ public sealed class RequestInfoToolTests {
 		response.Documentation.Should().BeNull(because: "the entry declares no docs");
 		response.DocumentationUnavailable.Should().BeNull(
 			because: "no docs were declared, so there is no fetch failure to flag");
+		response.DocumentationSource.Should().BeNull(
+			because: "an absent documentationSource must mean 'no documentation exists', not 'provenance unknown'");
+		response.DocumentationWarning.Should().BeNull(because: "there is no declared file to be missing");
 	}
 
 	[Test]
@@ -879,19 +908,29 @@ public sealed class RequestInfoToolTests {
 	/// real client uses to signal "skip this doc".
 	/// </summary>
 	private sealed class FakeDocsClient : IComponentRegistryDocsClient {
-		private readonly Dictionary<(string Version, string DocPath), string> _docs = new();
+		private readonly Dictionary<(string Version, string DocPath), ComponentDocumentationFetchResult> _docs = new();
 
 		public List<(string Version, string DocPath)> Requests { get; } = new();
 
-		public FakeDocsClient Seed(string version, string docPath, string content) {
-			_docs[(version, docPath)] = content;
+		public FakeDocsClient Seed(
+			string version,
+			string docPath,
+			string content,
+			ComponentDocumentationSource source = ComponentDocumentationSource.Cdn) {
+			_docs[(version, docPath)] = new ComponentDocumentationFetchResult(content, source);
+			return this;
+		}
+
+		public FakeDocsClient SeedLocalMiss(string version, string docPath, string overrideVariable) {
+			_docs[(version, docPath)] = new ComponentDocumentationFetchResult(
+				Content: null, ComponentDocumentationSource.None, overrideVariable);
 			return this;
 		}
 
 		public Task<ComponentDocumentationFetchResult> GetDocAsync(string version, string docPath, CancellationToken cancellationToken = default) {
 			Requests.Add((version, docPath));
-			return Task.FromResult(_docs.TryGetValue((version, docPath), out string? value)
-				? new ComponentDocumentationFetchResult(value, ComponentDocumentationSource.Cdn)
+			return Task.FromResult(_docs.TryGetValue((version, docPath), out ComponentDocumentationFetchResult? value)
+				? value
 				: ComponentDocumentationFetchResult.Missing);
 		}
 	}
