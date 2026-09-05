@@ -58,8 +58,14 @@ namespace Clio.Command;
 // lookup-constant contract shipped in the 1.4.0.40 archive: a mappings[] 'value' on a Lookup target
 // may carry an already-composed macro, and an older server rejects it outright as "not a bare Guid"
 // - the same "server starts accepting an input form an older one refuses" shape that produced the
-// 1.3.1.1 literal. The number below satisfies both that and the message contract described above.
-[RequiresPackage(BundledPackages.ProcessBuilderPackageName, "1.4.0.44",
+// 1.3.1.1 literal. The number below satisfies both that and the message contract described above.//
+// Raised to 1.4.0.58 by ENG-91853, and this floor is a CAPABILITY floor rather than a message one: below
+// it the package refuses `flows[].kind` and `flows[].condition` outright, and refuses the two gateway
+// element tokens as unsupported types. Those refusals are honest - an older package tells the caller it
+// cannot do this - but the descriptions above now document a declarative branch as the supported route,
+// so without the floor an agent following them is refused by the environment instead of by clio, one
+// round-trip later and with no hint that the package is what is behind.
+[RequiresPackage(BundledPackages.ProcessBuilderPackageName, "1.4.0.58",
 	Hint = BundledPackages.ProcessBuilderInstallHint)]
 public sealed class CreateBusinessProcessOptions : EnvironmentOptions {
 	/// <summary>Inline JSON process descriptor (name, caption, packageName, elements[], flows[], parameters[], mappings[]).</summary>
