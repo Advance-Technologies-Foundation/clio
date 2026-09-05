@@ -11,7 +11,10 @@ using System;
 namespace Clio.Tests;
 
 [TestFixture]
-[Property("Module", "Core")]
+// Module=Package to match AGENTS.md's clio/Package/ -> Package mapping: this fixture exercises
+// ApplicationInstaller/BasePackageInstaller, so the targeted filter for a clio/Package/ change must select it
+// together with InstallerFailureClassificationTests (GH-1299).
+[Property("Module", "Package")]
 internal class ApplicationInstallerTests : BaseClioModuleTests
 {
 	[Test]

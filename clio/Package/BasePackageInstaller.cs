@@ -10,6 +10,7 @@
 	using System.Threading;
 	using System;
 	using System.Linq;
+	using System.Collections.Generic;
 
 	public abstract class BasePackageInstaller {
 
@@ -176,6 +177,87 @@
 			return currentLogContent;
 		}
 
+		/// <summary>
+		/// Logs every schema the platform skipped because it was edited on the environment, plus a closing
+		/// summary. These are warnings: the installation itself ran, the element was simply left alone.
+		/// </summary>
+		/// <param name="currentInstallLog">Installation log produced by the current run.</param>
+		private void ReportLocallyModifiedSchemas(string currentInstallLog) {
+			IReadOnlyList<string> lines = InstallLogAnalyzer.GetLocallyModifiedSchemaLines(currentInstallLog);
+			if (lines.Count == 0) {
+				return;
+			}
+			foreach (string line in lines) {
+				_logger.WriteWarning(line);
+			}
+			IReadOnlyList<string> names = InstallLogAnalyzer.GetLocallyModifiedSchemaNames(currentInstallLog);
+			string schemaList = names.Count > 0 ? string.Join(", ", names) : "see the messages above";
+			_logger.WriteWarning(
+				$"{lines.Count} schema(s) skipped because they were modified locally: {schemaList}. " +
+				"Resolve the conflict on the environment and mark the elements as unchanged to install them.");
+		}
+
+		/// <summary>
+		/// Determines whether the log window handed to the classification really is this run's output.
+		/// </summary>
+		/// <param name="initialInstallLog">Log read from the environment before the installation started.</param>
+		/// <param name="completeInstallLog">Log read from the environment after the installation returned.</param>
+		/// <returns><c>true</c> when the final log demonstrably extends the initial one.</returns>
+		/// <remarks>
+		/// <see cref="GetLogDiff"/> is a length subtraction, so it only yields this run's output when the
+		/// final log actually starts with the initial one. Two things break that. First,
+		/// <see cref="IApplicationLogProvider"/> swallows every failure of the log request and answers with
+		/// an empty string, and an empty initial log makes the subtraction return the environment's WHOLE
+		/// shared history. Second, the endpoint sometimes hands back an HTML error page ("500 - Internal
+		/// Server Error") in place of the log, and that body reaches clio as log content rather than as a
+		/// failure - observed repeatedly on Creatio 10.1.725 while measuring GH-1299, including during the
+		/// runs that verified this fix. Either shape makes the classification read a completion marker and
+		/// a skip line that this run never wrote. Refusing the downgrade then keeps the pre-classification
+		/// outcome, which is the safe direction.
+		/// </remarks>
+		private static bool IsLogWindowOfThisRun(string initialInstallLog, string completeInstallLog) =>
+			!string.IsNullOrEmpty(initialInstallLog)
+			&& completeInstallLog != null
+			&& completeInstallLog.StartsWith(initialInstallLog, StringComparison.Ordinal);
+
+		/// <summary>
+		/// Decides whether a failure reported by the installation service is in fact a completed
+		/// installation that carries no evidence of anything failing beyond a locally modified schema.
+		/// </summary>
+		/// <param name="response">Deserialized service response; may be <c>null</c>.</param>
+		/// <param name="currentInstallLog">Installation log produced by the current run.</param>
+		/// <param name="logWindowIsOfThisRun">
+		/// Whether <paramref name="currentInstallLog"/> was proven to be this run's own output; see
+		/// <see cref="IsLogWindowOfThisRun"/>. The downgrade is refused when it was not.
+		/// </param>
+		/// <returns><c>true</c> when the run must be treated as a success with warnings.</returns>
+		/// <remarks>
+		/// The platform answers <c>success:false</c> with the generic message "Packages installation failed"
+		/// for a run that only skipped locally modified schemas, which used to make clio exit non-zero after
+		/// an installation that actually finished. The decision itself lives in
+		/// <see cref="InstallLogAnalyzer.ShouldTreatAsSuccess"/> so that it is testable without a server; an
+		/// invalid archive is excluded here as well, because that failure is reported through the log rather
+		/// than through <c>errorInfo</c> and must keep its dedicated exit code.
+		/// </remarks>
+		private bool TryDowngradeReportedFailure(BaseResponse response, string currentInstallLog,
+			bool logWindowIsOfThisRun) {
+			if (!logWindowIsOfThisRun) {
+				_logger.WriteWarning(
+					"The installation log could not be attributed to this run, so the reported failure is "
+					+ "kept. Re-run the command to get a usable log.");
+				return false;
+			}
+			if (IsInvalidGZipArchiveFailure(response, currentInstallLog)
+				|| !InstallLogAnalyzer.ShouldTreatAsSuccess(response, currentInstallLog, CheckLogsOnSuccessMessage)) {
+				return false;
+			}
+			_logger.WriteWarning(
+				"The installation service reported a failure, but the installation finished and the only "
+				+ "problem reported in this run's log was a locally modified schema. Treating the "
+				+ "installation as successful.");
+			return true;
+		}
+
 		protected abstract string GetRequestData(string fileName, PackageInstallOptions packageInstallOptions);
 
 		private string InstallPackageOnServer(string fileName, EnvironmentSettings environmentSettings,
@@ -239,15 +321,24 @@
 			var currentInstallLog = GetLogDiff(initialInstallLog, completeInstallLog);
 			bool successLog = true;
 			if (CheckLogsOnSuccessMessage) {
-				successLog = completeInstallLog.ToLower().Contains("application installed successfully");
+				successLog = InstallLogAnalyzer.IsSuccessMessagePresent(completeInstallLog);
 			}
 			_logger.Write(GetLogDiff(log, completeInstallLog));
 			var success = (response != null && response.Success || response == null) && successLog;
+			ReportLocallyModifiedSchemas(currentInstallLog);
 			if (ThrowInvalidGZipArchiveInstallException && !success
 				&& IsInvalidGZipArchiveFailure(response, currentInstallLog)) {
 				SaveLogFile(completeInstallLog, _reportPath);
 				throw new InvalidGZipArchiveInstallException(
 					GetInvalidGZipArchiveMessage(response, currentInstallLog));
+			}
+			if (!success) {
+				success = TryDowngradeReportedFailure(response, currentInstallLog,
+					IsLogWindowOfThisRun(initialInstallLog, completeInstallLog));
+			}
+			if (!success) {
+				_logger.WriteError("Package installation failed: "
+					+ InstallLogAnalyzer.DescribeFailure(response, currentInstallLog, successLog));
 			}
 			return (success, completeInstallLog);
 		}
