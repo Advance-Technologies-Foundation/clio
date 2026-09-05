@@ -1,6 +1,8 @@
 ﻿using System;
+using System.Globalization;
 using System.Linq;
 using System.Text.Json;
+using System.Text.RegularExpressions;
 
 namespace Clio.Common;
 
@@ -83,27 +85,93 @@ internal static class CreatioResponseError {
 	/// <summary>
 	/// Builds the failure text for a write response body that failed to parse as JSON.
 	/// </summary>
-	internal static string DescribeNonJsonResponse(string body) =>
-		$"Creatio did not return a JSON response. {NonJsonResponseHint} Response: {Truncate(body)}";
+	/// <remarks>
+	/// The HTTP status is named when the body is an error page that carries one in its title, because
+	/// the transport (<see cref="IApplicationClient"/>) never exposes the status itself and a caller
+	/// otherwise cannot tell a 404 (the entity has no OData controller) from a 405 or a 503. The
+	/// truncated body stays: unlike the read path, a write failure has an unverified side effect and
+	/// the raw tail is what lets a human confirm which hop answered.
+	/// </remarks>
+	internal static string DescribeNonJsonResponse(string body) {
+		string status = TryGetMarkupErrorStatusCode(body, out int statusCode)
+			? $" The server answered with an HTTP {statusCode} error page."
+			: string.Empty;
+		return $"Creatio did not return a JSON response.{status} {NonJsonResponseHint} Response: {Truncate(body)}";
+	}
 
 	/// <summary>
-	/// Attempts to classify the IIS HTML 404 returned when an entity set has no OData controller.
+	/// Attempts to classify the IIS/proxy HTML error page returned when an OData request never
+	/// reaches a Creatio OData controller.
 	/// </summary>
 	/// <param name="body">The raw response body returned by the OData request.</param>
 	/// <param name="entityName">The requested OData entity set name.</param>
-	/// <param name="message">The actionable failure message when the body is an IIS 404.</param>
-	/// <returns><see langword="true"/> when the response is an IIS-style 404 page.</returns>
-	internal static bool TryDescribeMissingEntitySet(string body, string entityName, out string message) {
+	/// <param name="message">The actionable failure message when the body is an HTML error page.</param>
+	/// <param name="statusCode">
+	/// The HTTP status read out of the page title when the page carries one; otherwise
+	/// <see langword="null"/>.
+	/// </param>
+	/// <returns><see langword="true"/> when the response is an IIS-style HTML error page.</returns>
+	/// <remarks>
+	/// The status is recovered from the page rather than from the transport on purpose:
+	/// <see cref="IApplicationClient"/> exposes only the response body, never the HTTP status, so a
+	/// caller that has to distinguish a transient 404 from a permanent one has nowhere else to read it.
+	/// Only the three digits are lifted out - no other fragment of the page reaches the caller, because
+	/// this text lands in an MCP transcript that a model reads as trusted content.
+	/// </remarks>
+	internal static bool TryDescribeMarkupErrorResponse(string body, string entityName, out string message,
+			out int? statusCode) {
 		message = string.Empty;
-		if (!LooksLikeIisNotFoundPage(body)) {
+		statusCode = null;
+		if (!LooksLikeHtmlErrorPage(body)) {
 			return false;
 		}
-
-		message = $"OData entity set '{entityName}' could not be reached and may not be exposed over OData. "
-			+ "Use execute-esq to read schemas that do not have an OData entity set. "
-			+ "The server returned an IIS 404 page instead of an OData response.";
+		statusCode = TryGetMarkupErrorStatusCode(body, out int parsedStatusCode) ? parsedStatusCode : null;
+		string entity = string.IsNullOrWhiteSpace(entityName) ? "<unnamed>" : entityName;
+		message = statusCode switch {
+			HttpNotFound =>
+				$"Entity '{entity}' is not exposed over OData on this environment (HTTP {HttpNotFound}). "
+				+ $"{UnregisteredEntityHint} Use execute-esq to read schemas that never get an OData entity set.",
+			{ } knownStatus =>
+				$"The OData request for entity '{entity}' was answered with an HTTP {knownStatus} error page "
+				+ "instead of an OData response, so it never reached a Creatio OData controller. "
+				+ "Verify the environment URL, the authentication and any proxy in front of it.",
+			_ =>
+				$"OData entity set '{entity}' could not be reached and may not be exposed over OData. "
+				+ "Use execute-esq to read schemas that do not have an OData entity set. "
+				+ "The server returned an HTML error page instead of an OData response."
+		};
 		return true;
 	}
+
+	/// <summary>The HTTP status that identifies an entity set with no reachable OData controller.</summary>
+	private const int HttpNotFound = 404;
+
+	/// <summary>
+	/// Reads the HTTP status out of an IIS-style error page title such as
+	/// <c>&lt;title&gt;404 - File or directory not found.&lt;/title&gt;</c>.
+	/// </summary>
+	/// <param name="body">The raw response body.</param>
+	/// <param name="statusCode">The parsed three-digit status when the title carries one.</param>
+	/// <returns><see langword="true"/> when a status could be read.</returns>
+	internal static bool TryGetMarkupErrorStatusCode(string body, out int statusCode) {
+		statusCode = 0;
+		if (string.IsNullOrEmpty(body)) {
+			return false;
+		}
+		Match titleMatch = MarkupErrorTitleStatusPattern.Match(body);
+		return titleMatch.Success
+			&& int.TryParse(titleMatch.Groups["status"].Value, NumberStyles.None, CultureInfo.InvariantCulture,
+				out statusCode);
+	}
+
+	/// <summary>
+	/// Matches the leading three-digit status in an HTML title. The bounded quantifiers keep a crafted
+	/// body from turning this into a backtracking cost.
+	/// </summary>
+	private static readonly Regex MarkupErrorTitleStatusPattern = new(
+		@"<title>\s{0,8}(?<status>[1-5]\d{2})\s{0,8}[-–:]",
+		RegexOptions.IgnoreCase | RegexOptions.CultureInvariant,
+		TimeSpan.FromSeconds(1));
 
 	/// <summary>
 	/// The fixed, locally authored diagnostic for a read whose body IS JSON and reports an error.
@@ -151,12 +219,14 @@ internal static class CreatioResponseError {
 		+ "problem rather than an OData query-shape problem; verify the environment and retry only after the "
 		+ "endpoint is returning JSON.";
 
-	private static bool LooksLikeIisNotFoundPage(string body) {
-		string trimmedBody = body.TrimStart();
-		return trimmedBody.StartsWith("<", StringComparison.Ordinal)
-		&& body.Contains("404", StringComparison.OrdinalIgnoreCase)
-		&& body.Contains("not found", StringComparison.OrdinalIgnoreCase);
-	}
+	/// <summary>
+	/// True when the body is an HTML error page rather than an OData response. The 404 wording is no
+	/// longer required: the same IIS page shape carries 401, 405 and 503 too, and treating only the
+	/// 404 as markup left every other status falling through to the opaque
+	/// "did not return a JSON OData response" text with no status a caller could key off.
+	/// </summary>
+	private static bool LooksLikeHtmlErrorPage(string body) =>
+		!string.IsNullOrWhiteSpace(body) && IsMarkup(body);
 
 	/// <summary>Truncates a raw response body to a safe preview length for error messages.</summary>
 	internal static string Truncate(string value) {

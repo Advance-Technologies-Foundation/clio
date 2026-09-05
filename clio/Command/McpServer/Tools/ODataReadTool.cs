@@ -127,6 +127,14 @@ public sealed class ODataReadTool(IToolCommandResolver commandResolver) {
 		if (args.Skip is < 0) {
 			return $"skip must be zero or greater (got {args.Skip}).";
 		}
+		if (!TryNormalizeColumnList(args.Select, "select", out string[]? selectColumns, out string? selectError)) {
+			return selectError;
+		}
+		args.SelectColumns = selectColumns;
+		if (!TryNormalizeColumnList(args.Expand, "expand", out string[]? expandColumns, out string? expandError)) {
+			return expandError;
+		}
+		args.ExpandColumns = expandColumns;
 		if (args.FiltersProvided && args.Filters is null) {
 			return "filters must be a structured object containing at least one condition in all or any; null is not supported.";
 		}
@@ -157,6 +165,62 @@ public sealed class ODataReadTool(IToolCommandResolver commandResolver) {
 		}
 		return null;
 	}
+
+	/// <summary>
+	/// Accepts a column list in either shape the caller may reasonably send: a JSON array of strings,
+	/// or the comma-separated form OData itself uses in <c>$select</c>/<c>$expand</c>. Blank entries are
+	/// dropped so a trailing comma is not turned into an empty column.
+	/// </summary>
+	/// <remarks>
+	/// The argument is bound as a <see cref="JsonElement"/> rather than a <c>string[]</c> on purpose.
+	/// A typed array made the serializer reject the string form before the tool ever ran, so the caller
+	/// got "The JSON value could not be converted to System.String[]" - a serializer message about a
+	/// .NET type, not a statement about this tool's contract. Binding loosely and validating here is
+	/// what lets the contract message be written locally. Doing the split in a custom converter would
+	/// reintroduce the same defect, because a converter can only reject by throwing a JsonException.
+	/// </remarks>
+	/// <param name="value">The raw JSON value supplied for the argument, if any.</param>
+	/// <param name="argumentName">The argument name used in the contract message.</param>
+	/// <param name="columns">The normalized column list, or null when the argument was omitted or empty.</param>
+	/// <param name="error">The contract message when the shape is not accepted.</param>
+	/// <returns><see langword="false"/> when the supplied shape is not accepted.</returns>
+	private static bool TryNormalizeColumnList(JsonElement? value, string argumentName,
+			out string[]? columns, out string? error) {
+		columns = null;
+		error = null;
+		if (value is not { } element || element.ValueKind is JsonValueKind.Undefined or JsonValueKind.Null) {
+			return true;
+		}
+		List<string> parsed = [];
+		switch (element.ValueKind) {
+			case JsonValueKind.String:
+				parsed.AddRange(SplitColumnList(element.GetString()));
+				break;
+			case JsonValueKind.Array:
+				foreach (JsonElement item in element.EnumerateArray()) {
+					if (item.ValueKind != JsonValueKind.String) {
+						error = ColumnListContractError(argumentName);
+						return false;
+					}
+					parsed.AddRange(SplitColumnList(item.GetString()));
+				}
+				break;
+			default:
+				error = ColumnListContractError(argumentName);
+				return false;
+		}
+		columns = parsed.Count > 0 ? parsed.ToArray() : null;
+		return true;
+	}
+
+	private static IEnumerable<string> SplitColumnList(string? value) =>
+		string.IsNullOrWhiteSpace(value)
+			? []
+			: value.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+
+	private static string ColumnListContractError(string argumentName) =>
+		$"{argumentName} must be an array of column names or a comma-separated string, "
+		+ $"for example [\"Id\",\"Name\"] or \"Id,Name\".";
 
 	private static void AddConditions(
 		ICollection<(string Path, ODataFilterCondition? Condition)> destination,
@@ -279,12 +343,12 @@ public sealed class ODataReadTool(IToolCommandResolver commandResolver) {
 			parts.Add($"$filter={Uri.EscapeDataString(effectiveFilter)}");
 		}
 
-		if (args.Select is { Length: > 0 }) {
-			parts.Add($"$select={Uri.EscapeDataString(string.Join(",", args.Select))}");
+		if (args.SelectColumns is { Length: > 0 } selectColumns) {
+			parts.Add($"$select={Uri.EscapeDataString(string.Join(",", selectColumns))}");
 		}
 
-		if (args.Expand is { Length: > 0 }) {
-			parts.Add($"$expand={Uri.EscapeDataString(string.Join(",", args.Expand))}");
+		if (args.ExpandColumns is { Length: > 0 } expandColumns) {
+			parts.Add($"$expand={Uri.EscapeDataString(string.Join(",", expandColumns))}");
 		}
 
 		if (!string.IsNullOrWhiteSpace(args.OrderBy)) {
@@ -315,8 +379,12 @@ public sealed class ODataReadTool(IToolCommandResolver commandResolver) {
 		if (string.IsNullOrWhiteSpace(json)) {
 			return ODataReadResponse.Failure(CreatioResponseError.DescribeNonJsonReadResponse());
 		}
-		if (CreatioResponseError.TryDescribeMissingEntitySet(json, entityName, out string missingEntitySetError)) {
-			return ODataReadResponse.Failure(missingEntitySetError);
+		if (CreatioResponseError.TryDescribeMarkupErrorResponse(json, entityName, out string markupError,
+				out int? markupStatusCode)) {
+			//The status travels as its own member, not only inside the prose: the documented async-gap
+			//retry after create-entity-schema/create-lookup has to key off "404" programmatically, and a
+			//caller cannot reliably do that by matching on a message it does not own.
+			return ODataReadResponse.Failure(markupError, markupStatusCode, entityName);
 		}
 
 		try {
@@ -534,16 +602,18 @@ public sealed record ODataReadArgs {
 		"Fields to return ($select). Strongly recommended for performance. " +
 		"Include all fields used in filter. " +
 		"Use dataforge-get-table-columns to discover field names. " +
-		"Example: [\"Id\",\"Name\",\"AccountId\"]")]
-	public string[]? Select { get; init; }
+		"Accepts an array or a comma-separated string. " +
+		"Example: [\"Id\",\"Name\",\"AccountId\"] or \"Id,Name,AccountId\"")]
+	public JsonElement? Select { get; init; }
 
 	/// <summary>Navigation properties to expand ($expand).</summary>
 	[JsonPropertyName("expand")]
 	[Description(
 		"Navigation properties to expand ($expand). " +
 		"Remove 'Id' suffix from a lookup field to get the navigation name: AccountId → Account. " +
-		"Example: [\"Account\",\"Owner\"]")]
-	public string[]? Expand { get; init; }
+		"Accepts an array or a comma-separated string. " +
+		"Example: [\"Account\",\"Owner\"] or \"Account,Owner\"")]
+	public JsonElement? Expand { get; init; }
 
 	/// <summary>OData $orderby clause.</summary>
 	[JsonPropertyName("order-by")]
@@ -584,6 +654,14 @@ public sealed record ODataReadArgs {
 	/// <summary>Whether the JSON request explicitly supplied the filters member.</summary>
 	[JsonIgnore]
 	internal bool FiltersProvided { get; private set; }
+
+	/// <summary>The normalized $select column list, filled in by argument validation.</summary>
+	[JsonIgnore]
+	internal string[]? SelectColumns { get; set; }
+
+	/// <summary>The normalized $expand navigation list, filled in by argument validation.</summary>
+	[JsonIgnore]
+	internal string[]? ExpandColumns { get; set; }
 
 	/// <summary>Registered clio environment name.</summary>
 	[JsonPropertyName("environment-name")]
@@ -627,11 +705,24 @@ public sealed record ODataReadResponse(
 	[property: JsonPropertyName("total-count")]
 	[property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
 	[property: Description("Total number of records matching the filter before top/skip paging, present when count=true.")]
-	long? TotalCount = null) {
+	long? TotalCount = null,
+
+	[property: JsonPropertyName("status-code")]
+	[property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+	[property: Description("HTTP status behind the failure when one could be established, for example 404 when the entity is not exposed over OData. Retry logic should key off this rather than the message text.")]
+	int? StatusCode = null,
+
+	[property: JsonPropertyName("entity")]
+	[property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+	[property: Description("The OData entity set the failure refers to.")]
+	string? Entity = null) {
 
 	/// <summary>Creates a failure response.</summary>
-	public static ODataReadResponse Failure(string message) =>
-		new(false, message, null, null);
+	/// <param name="message">The actionable failure text.</param>
+	/// <param name="statusCode">The HTTP status when one could be established; otherwise null.</param>
+	/// <param name="entity">The requested OData entity set name, when known.</param>
+	public static ODataReadResponse Failure(string message, int? statusCode = null, string? entity = null) =>
+		new(false, message, null, null, null, null, statusCode, entity);
 }
 
 /// <summary>

@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Text;
 using Clio.Common;
 using FluentAssertions;
@@ -96,6 +96,86 @@ public class CreatioResponseErrorPreambleTests
 		// Assert
 		stripped.Should().Be(body,
 			because: "a truncated preamble has no end to skip past, so the body must be classified as it arrived");
+	}
+
+
+	[TestCase("<!DOCTYPE html><html><head><title>404 - File or directory not found.</title></head></html>", 404,
+		TestName = "IIS 404 page")]
+	[TestCase("<html><head><TITLE>405 - HTTP verb used to access this page is not allowed.</TITLE></head></html>", 405,
+		TestName = "IIS 405 page with an upper-case title tag")]
+	[TestCase("<html><head><title>  503  -  Service Unavailable</title></head></html>", 503,
+		TestName = "padded status in the title")]
+	[TestCase("<html><head><title>401 : Unauthorized</title></head></html>", 401,
+		TestName = "colon separator")]
+	[Description("Reads the HTTP status out of an IIS-style error page title, which is the only place it is available because the transport returns the body alone")]
+	public void TryGetMarkupErrorStatusCode_ShouldRead_TheStatusFromThePageTitle(string body, int expected) {
+		// Arrange
+		// The body is the arranged input.
+
+		// Act
+		bool detected = CreatioResponseError.TryGetMarkupErrorStatusCode(body, out int statusCode);
+
+		// Assert
+		detected.Should().BeTrue(
+			because: "an IIS error page states its status in the title and nowhere else in the response clio can see");
+		statusCode.Should().Be(expected,
+			because: "the status is what a caller keys the documented async-gap retry off");
+	}
+
+	[TestCase("<html><head><title>Request Error</title></head></html>", TestName = "title with no status")]
+	[TestCase("<html><head><title>2026 - Report</title></head></html>", TestName = "a number outside the HTTP status range")]
+	[TestCase("{\"value\":[]}", TestName = "an ordinary JSON body")]
+	[TestCase("", TestName = "an empty body")]
+	[Description("Reports no status rather than inventing one when the body carries no HTTP status in its title")]
+	public void TryGetMarkupErrorStatusCode_ShouldReportNothing_WhenThereIsNoStatusInTheTitle(string body) {
+		// Arrange
+		// The body is the arranged input.
+
+		// Act
+		bool detected = CreatioResponseError.TryGetMarkupErrorStatusCode(body, out int statusCode);
+
+		// Assert
+		detected.Should().BeFalse(
+			because: "a status a caller could act on must never be guessed from a page that does not state one");
+		statusCode.Should().Be(0,
+			because: "the out value stays at its default when nothing was parsed");
+	}
+
+	[Test]
+	[Description("Classifies an HTML 404 as an entity that is not exposed over OData and repeats the shared async-gap hint")]
+	public void TryDescribeMarkupErrorResponse_ShouldName_TheEntityAndTheAsyncGapHint_ForA404() {
+		// Arrange
+		string body = "<!DOCTYPE html><html><head><title>404 - File or directory not found.</title></head><body>iis</body></html>";
+
+		// Act
+		bool detected = CreatioResponseError.TryDescribeMarkupErrorResponse(body, "UsrThing", out string message,
+			out int? statusCode);
+
+		// Assert
+		detected.Should().BeTrue(
+			because: "an HTML page is never an OData response and must be classified before JSON parsing is attempted");
+		statusCode.Should().Be(404,
+			because: "the 404 is what distinguishes the transient rebuild window from a permanently unexposed entity");
+		message.Should().Contain("UsrThing",
+			because: "the failure has to name the entity the caller asked for");
+		message.Should().Contain(CreatioResponseError.UnregisteredEntityHint,
+			because: "the HTML 404 and the JSON routing 404 are the same condition and must share one locally authored hint");
+		message.Should().NotContain("File or directory not found",
+			because: "no fragment of a server or proxy page may be copied into an MCP transcript");
+	}
+
+	[Test]
+	[Description("Does not claim a JSON OData body as an HTML error page")]
+	public void TryDescribeMarkupErrorResponse_ShouldNotClaim_AJsonBody() {
+		// Arrange
+		string body = "{\"@odata.context\":\"http://creatio/odata/$metadata#Contact\",\"value\":[]}";
+
+		// Act
+		bool detected = CreatioResponseError.TryDescribeMarkupErrorResponse(body, "Contact", out string _, out int? _);
+
+		// Assert
+		detected.Should().BeFalse(
+			because: "a genuine OData payload must reach the JSON classification path untouched");
 	}
 
 }
