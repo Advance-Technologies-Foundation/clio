@@ -138,8 +138,8 @@ internal sealed class InstallerFailureClassificationTests : BaseClioModuleTests 
 	}
 
 	[Test]
-	[Description("GH-1299: the installer reports success when the service answered with the generic failure message but the run finished and only skipped a locally modified schema.")]
-	public void Install_ShouldReturnTrue_WhenTheOnlyReportedProblemWasALocallyModifiedSchema() {
+	[Description("GH-1299: the installer reports success when the service answered with the generic failure message and this run's log reports nothing beyond a skipped locally modified schema.")]
+	public void Install_ShouldReturnTrue_WhenTheRunReportedNothingBeyondALocallyModifiedSchema() {
 		// Arrange
 		EnvironmentSettings environmentSettings = new();
 		string packagePath = AddPackageArchive("UsrIssue1299.gz");

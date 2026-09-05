@@ -163,15 +163,21 @@ namespace Clio.Package
 		}
 
 		/// <summary>
-		/// Determines whether the service answered with exactly the generic failure message, which is what
-		/// the platform sends for a run whose only problem was a skipped locally modified schema.
+		/// Determines whether the service answered with exactly the generic failure message, which carries
+		/// no information about WHAT went wrong.
 		/// </summary>
 		/// <param name="response">Deserialized service response; may be <c>null</c>.</param>
 		/// <returns><c>true</c> only for the generic "Packages installation failed" message.</returns>
 		/// <remarks>
+		/// This is a necessary condition for the downgrade, never a sufficient one. The platform sends the
+		/// same generic message for a run whose only problem was a skipped locally modified schema and for
+		/// a run that also failed to compile - both were measured on Creatio 10.1.725 - so what this
+		/// predicate establishes is only that the service named no specific reason.
+		/// <para>
 		/// A response with no message at all is deliberately NOT generic. That shape is what the platform
 		/// sends for real failures whose detail lives only in the log (an invalid archive, for example), and
 		/// treating it as generic would widen the downgrade well past the case it was written for.
+		/// </para>
 		/// </remarks>
 		public static bool IsGenericInstallationFailure(BaseResponse response) {
 			string message = response?.ErrorInfo?.Message;
