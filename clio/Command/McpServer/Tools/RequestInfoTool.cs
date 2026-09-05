@@ -169,7 +169,7 @@ public sealed class RequestInfoTool(
 
 		string requestedType = args.RequestType.Trim();
 		if (state.Lookup.TryGetValue(requestedType, out RequestRegistryEntry? entry)) {
-			string? documentation = await ComponentDocumentationLoader
+			ComponentDocumentationOutcome documentation = await ComponentDocumentationLoader
 				.LoadAsync(docsClient, entry.References?.Docs, state.ResolvedVersion, cancellationToken).ConfigureAwait(false);
 			return CreateDetailResponse(entry, state.ResolvedVersion, resolvedFrom, documentation, state.GlobalReferences, resolvedFromReason);
 		}
@@ -234,16 +234,17 @@ public sealed class RequestInfoTool(
 		RequestRegistryEntry entry,
 		string? resolvedTargetVersion,
 		string? resolvedFrom,
-		string? documentation,
+		ComponentDocumentationOutcome? documentation,
 		RequestGlobalReferences? globalReferences,
 		string? resolvedFromReason = null) {
+		documentation ??= ComponentDocumentationOutcome.NotDeclared;
 		IReadOnlyDictionary<string, JsonElement>? typeDefinitions = TypeReferenceClosure.Resolve(
 			entry.Parameters,
 			WiringContractSeed,
 			entry.References?.TypeDefinitions,
 			globalReferences?.TypeDefinitions);
 		bool declaresDocs = entry.References?.Docs is { Count: > 0 };
-		bool documentationMissing = string.IsNullOrEmpty(documentation);
+		bool documentationMissing = string.IsNullOrEmpty(documentation.Documentation);
 		return new RequestInfoResponse {
 			Success = true,
 			Mode = "detail",
@@ -253,7 +254,9 @@ public sealed class RequestInfoTool(
 			Parameters = entry.Parameters,
 			BaseParameters = globalReferences?.BaseParameters is { Count: > 0 } baseParameters ? baseParameters : null,
 			References = typeDefinitions is null ? null : new RequestReferencesResponse { TypeDefinitions = typeDefinitions },
-			Documentation = documentationMissing ? null : documentation,
+			Documentation = documentationMissing ? null : documentation.Documentation,
+			DocumentationSource = documentation.Source,
+			DocumentationWarning = documentation.Warning,
 			DocumentationUnavailable = declaresDocs && documentationMissing ? true : null,
 			ResolvedTargetVersion = resolvedTargetVersion,
 			ResolvedFrom = resolvedFrom,
@@ -573,6 +576,16 @@ public sealed class RequestInfoResponse {
 	[JsonPropertyName("documentationUnavailable")]
 	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
 	public bool? DocumentationUnavailable { get; init; }
+
+	/// <inheritdoc cref="ComponentInfoResponse.DocumentationSource"/>
+	[JsonPropertyName("documentationSource")]
+	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+	public string? DocumentationSource { get; init; }
+
+	/// <inheritdoc cref="ComponentInfoResponse.DocumentationWarning"/>
+	[JsonPropertyName("documentationWarning")]
+	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+	public string? DocumentationWarning { get; init; }
 
 	/// <summary>
 	/// Gets or sets the platform version the catalog was filtered against. Same semantics

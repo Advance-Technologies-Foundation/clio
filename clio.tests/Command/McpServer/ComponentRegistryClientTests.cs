@@ -19,6 +19,7 @@ namespace Clio.Tests.Command.McpServer;
 [TestFixture]
 [Category("Unit")]
 [Property("Module", "McpServer")]
+[NonParallelizable] // mutates the process-wide CLIO_*_LOCAL_FILE environment variables
 public sealed class ComponentRegistryClientTests {
 	private const string CdnBaseUrl = "https://cdn.test/api/mcp/";
 	private const string SamplePayload = """[ { "componentType": "crt.Sample", "category": "interactive", "description": "test", "container": false, "properties": {} } ]""";
@@ -440,18 +441,5 @@ public sealed class ComponentRegistryClientTests {
 			_tcs.TrySetCanceled();
 			base.Dispose(disposing);
 		}
-	}
-
-	private sealed class EnvironmentVariableScope : IDisposable {
-		private readonly string _name;
-		private readonly string? _previous;
-
-		public EnvironmentVariableScope(string name, string? value) {
-			_name = name;
-			_previous = Environment.GetEnvironmentVariable(name);
-			Environment.SetEnvironmentVariable(name, value);
-		}
-
-		public void Dispose() => Environment.SetEnvironmentVariable(_name, _previous);
 	}
 }

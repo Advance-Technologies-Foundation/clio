@@ -129,6 +129,39 @@ Above the registry chain sits the developer-only override: when
 file is served directly and the cache/CDN tiers are skipped. The override
 is fail-fast (missing file throws) and never writes to the cache.
 
+The override covers the **documentation tier too** (issue #1361). Registry JSON
+and its `docs/` tree are generated into one output directory, so
+`ComponentRegistryDocsClient` resolves every `references.docs[]` path against the
+directory of the flavour's `*_LOCAL_FILE`, picking the flavour from the path's
+documentation namespace (`docs/` → web, `mobile-docs/` → mobile, `request-docs/`
+→ requests, `mobile-request-docs/` → mobile requests — see
+`ComponentRegistryDocsPath.TryResolveFlavor`). Three rules make the provenance
+honest, and none of them may be relaxed into a fall-through:
+
+- while an override is active it is the **only** documentation tier — a declared
+  file that is absent from the working copy returns `documentationSource: "none"`
+  plus `documentationWarning` naming the registry-relative path and the `*_LOCAL_FILE`
+  variable that captured it (the resolved host path stays in the server-side log, so
+  `mcp-http` never echoes the server's directory layout to a remote client), and the
+  published CDN copy
+  is **not** substituted. Silent substitution was the reported defect: the
+  developer validated a documentation edit against production prose and the
+  round-trip only looked successful;
+- locally-read documentation is **never** written to the docs cache, so an
+  unpublished draft cannot leak into a later env-unset call;
+- the containment check (`IFileSystem.Path.GetFullPath` + `StartsWith(root + separator)`)
+  runs at the filesystem boundary in addition to `ComponentRegistryDocsPath.TryNormalise`.
+  It is **lexical**: symlinks are not resolved, so the override directory is a trusted
+  input — a `docs/` symlink pointing outside it is followed. Point `*_LOCAL_FILE` only at
+  a directory you own. The variable must hold an **absolute** path: the MCP server runs as
+  a child process whose working directory is not the developer's shell, so a relative path
+  resolves against a directory nobody chose.
+
+`documentationSource` (`local` | `cache` | `cdn` | `mixed` | `none`) and
+`documentationWarning` are emitted on `get-component-info` and `get-request-info`
+detail responses whose entry declares docs, on both the MCP and the CLI (`--pretty`
+included) surfaces.
+
 When the chain runs out of tiers (the file cache is empty AND the CDN is
 unreachable AND no local override is set), `GetAsync` throws
 `ComponentRegistryUnavailableException`. `ComponentInfoTool`'s catch-all
@@ -300,12 +333,12 @@ same async pipeline, same `CreateDetailResponse`, same response shape
 `resolvedTargetVersion`/`resolvedFrom`). The two flavors are isolated by a
 `RegistryFlavor` config carried on the client at construction time:
 
-| Flavor | CDN file | Cache subdirectory | Local-override env var | Bundled fallback |
-|---|---|---|---|---|
-| Web (default) | `{base}/{version}/ComponentRegistry.json` | `~/.clio/cache/component-registry/` | `CLIO_COMPONENT_REGISTRY_LOCAL_FILE` | none (exhaustion → `ComponentRegistryUnavailableException`) |
-| Mobile | `{base}/{version}/MobileComponentRegistry.json` | `~/.clio/cache/component-registry/mobile/` | `CLIO_MOBILE_COMPONENT_REGISTRY_LOCAL_FILE` | `Command/McpServer/Data/MobileComponentRegistry.json` (transitional, while producer rolls out) |
-| Requests (`get-request-info`) | `{base}/{version}/RequestRegistry.json` | `~/.clio/cache/component-registry/requests/` | `CLIO_REQUEST_REGISTRY_LOCAL_FILE` | none (exhaustion → `ComponentRegistryUnavailableException` naming the requests env var) |
-| Mobile requests (`get-request-info schema-type=mobile`) | `{base}/{version}/MobileRequestRegistry.json` | `~/.clio/cache/component-registry/mobile-requests/` | `CLIO_MOBILE_REQUEST_REGISTRY_LOCAL_FILE` | none (exhaustion → `ComponentRegistryUnavailableException` naming the mobile-requests env var) |
+| Flavor | CDN file | Cache subdirectory | Local-override env var (registry JSON **and** its `docs/` tree) | Docs namespace | Bundled fallback |
+|---|---|---|---|---|---|
+| Web (default) | `{base}/{version}/ComponentRegistry.json` | `~/.clio/cache/component-registry/` | `CLIO_COMPONENT_REGISTRY_LOCAL_FILE` | `docs/` | none (exhaustion → `ComponentRegistryUnavailableException`) |
+| Mobile | `{base}/{version}/MobileComponentRegistry.json` | `~/.clio/cache/component-registry/mobile/` | `CLIO_MOBILE_COMPONENT_REGISTRY_LOCAL_FILE` | `mobile-docs/` | `Command/McpServer/Data/MobileComponentRegistry.json` (transitional, while producer rolls out) |
+| Requests (`get-request-info`) | `{base}/{version}/RequestRegistry.json` | `~/.clio/cache/component-registry/requests/` | `CLIO_REQUEST_REGISTRY_LOCAL_FILE` | `request-docs/` | none (exhaustion → `ComponentRegistryUnavailableException` naming the requests env var) |
+| Mobile requests (`get-request-info schema-type=mobile`) | `{base}/{version}/MobileRequestRegistry.json` | `~/.clio/cache/component-registry/mobile-requests/` | `CLIO_MOBILE_REQUEST_REGISTRY_LOCAL_FILE` | `mobile-request-docs/` | none (exhaustion → `ComponentRegistryUnavailableException` naming the mobile-requests env var) |
 
 The mobile fallback is a deliberate, narrowly-scoped concession: the academy
 mirror does not yet serve `MobileComponentRegistry.json` (the producer-side
