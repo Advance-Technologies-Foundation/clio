@@ -123,18 +123,216 @@ public sealed class ValidateProcessGraphToolTests {
 
 	[Test]
 	[Category("Unit")]
-	[Description("R14: a default flow with no sibling conditional (conditional/default flow-kinds are parsed) surfaces an error.")]
-	public void Validate_ShouldSurfaceR14Error_WhenDefaultFlowHasNoSiblingConditional() {
+	[Description("R14: a default flow with no sibling conditional surfaces an error where the source actually BRANCHES. The source here is an activity with two outgoing flows, not a gateway, so the finding is R14's own and not the or-gateway flow-kind rule's.")]
+	public void Validate_ShouldSurfaceR14Error_WhenDivergingSourceHasADefaultWithNoConditional() {
 		// Arrange
-		List<ProcessGraphNodeArg> nodes = [N("s", "startEvent"), N("g", "exclusiveGateway"), N("a", "activityUserTask"), N("e", "endEvent")];
-		List<ProcessGraphEdgeArg> edges = [E("s", "g"), E("g", "a", "default"), E("a", "e")];
+		List<ProcessGraphNodeArg> nodes = [N("s", "startEvent"), N("a", "activityUserTask"), N("b", "activityUserTask"),
+			N("c", "activityUserTask"), N("e", "endEvent")];
+		List<ProcessGraphEdgeArg> edges = [E("s", "a"), E("a", "b", "default"), E("a", "c"), E("b", "e"), E("c", "e")];
 
 		// Act
 		ValidateProcessGraphResponse response = Validate(nodes, edges);
 
 		// Assert
 		response.Findings.Should().Contain(f => f.RuleId == "R14" && f.Severity == "error",
-			because: "a lone default flow violates R14 — and proves the 'default' flow-kind was parsed");
+			because: "a default branch says 'taken when nothing else matched', so with no conditional sibling "
+				+ "there is nothing for it to be the fallback of - and this also proves the 'default' "
+				+ "flow-kind was parsed");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("R14 is scoped by ARITY, and that scope is the fix rather than a refinement. A CONVERGING or-gateway's single outgoing flow is a default flow by construction: the designer's allowed-outgoing list for an or-gateway is conditional + default with no plain sequence flow at all, so there is no other kind it could have. Unscoped, this rule called 45 shipped gateways invalid - 40 exclusive and 5 inclusive, among them BulkFileManagement/DeleteFilesInTable and CaseService/RunSendEmailToCaseGroup.")]
+	public void Validate_ShouldNotSurfaceR14_ForAConvergingGatewayWithOneDefaultFlow() {
+		// Arrange: two branches merge into one exclusive gateway, whose single outgoing flow is the default.
+		List<ProcessGraphNodeArg> nodes = [N("s", "startEvent"), N("split", "exclusiveGateway"),
+			N("a", "activityUserTask"), N("b", "activityUserTask"), N("merge", "exclusiveGateway"), N("e", "endEvent")];
+		List<ProcessGraphEdgeArg> edges = [E("s", "split"),
+			new ProcessGraphEdgeArg("split", "a", "conditional", "1 > 0"),
+			E("split", "b", "default"), E("a", "merge", "default"), E("b", "merge", "default"),
+			E("merge", "e", "default")];
+
+		// Act
+		ValidateProcessGraphResponse response = Validate(nodes, edges);
+
+		// Assert
+		response.Findings.Should().NotContain(f => f.RuleId == "R14" && f.NodeName == "merge",
+			because: "a converging gateway has exactly one way out and the designer cannot draw a plain flow "
+				+ "there, so its single default flow is the only shape available - calling it invalid rejects "
+				+ "content the designer itself produces");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("R14: at most one default flow per source. The default is the branch taken when nothing matched, so two make that undecidable; the platform does not refuse it and picks by collection order, which leaves the second one dead metadata that reads like a live branch. Zero sources in the shipped corpus carry two.")]
+	public void Validate_ShouldSurfaceR14Error_WhenASourceHasTwoDefaultFlows() {
+		// Arrange
+		List<ProcessGraphNodeArg> nodes = [N("s", "startEvent"), N("g", "exclusiveGateway"),
+			N("a", "activityUserTask"), N("b", "activityUserTask"), N("e", "endEvent")];
+		List<ProcessGraphEdgeArg> edges = [E("s", "g"), E("g", "a", "default"), E("g", "b", "default"),
+			E("a", "e"), E("b", "e")];
+
+		// Act
+		ValidateProcessGraphResponse response = Validate(nodes, edges);
+
+		// Assert
+		response.Findings.Should().Contain(
+			f => f.RuleId == "R14" && f.Severity == "error" && f.Message.Contains("2 default flows"),
+			because: "two fallbacks out of one element make 'the branch taken when nothing matched' undecidable");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("R7: a DIVERGING exclusive gateway may not carry a plain sequence flow - the mirror of R11. From an or-gateway the designer offers conditional and default only and removes the plain connection from the menu, so a plain flow there says nothing about how the branch is chosen.")]
+	public void Validate_ShouldSurfaceR7Error_WhenADivergingGatewayHasAPlainFlow() {
+		// Arrange
+		List<ProcessGraphNodeArg> nodes = [N("s", "startEvent"), N("g", "exclusiveGateway"),
+			N("a", "activityUserTask"), N("b", "activityUserTask"), N("e", "endEvent")];
+		List<ProcessGraphEdgeArg> edges = [E("s", "g"),
+			new ProcessGraphEdgeArg("g", "a", "conditional", "1 > 0"), E("g", "b"), E("a", "e"), E("b", "e")];
+
+		// Act
+		ValidateProcessGraphResponse response = Validate(nodes, edges);
+
+		// Assert
+		response.Findings.Should().Contain(
+			f => f.RuleId == "R7" && f.Severity == "error" && f.Message.Contains("plain sequence flow"),
+			because: "every outgoing flow from a gateway that chooses has to say how it is chosen");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("The or-gateway flow-kind rule is arity-scoped like R14: 14 shipped exclusive gateways carry a single plain sequence flow, all of them with exactly ONE outgoing - legacy converging gateways from an older designer, tolerated on read.")]
+	public void Validate_ShouldNotSurfaceR7Error_ForALegacyConvergingGatewayWithOnePlainFlow() {
+		// Arrange
+		List<ProcessGraphNodeArg> nodes = [N("s", "startEvent"), N("split", "exclusiveGateway"),
+			N("a", "activityUserTask"), N("b", "activityUserTask"), N("merge", "exclusiveGateway"), N("e", "endEvent")];
+		List<ProcessGraphEdgeArg> edges = [E("s", "split"),
+			new ProcessGraphEdgeArg("split", "a", "conditional", "1 > 0"),
+			E("split", "b", "default"), E("a", "merge"), E("b", "merge"), E("merge", "e")];
+
+		// Act
+		ValidateProcessGraphResponse response = Validate(nodes, edges);
+
+		// Assert
+		response.Findings.Should().NotContain(f => f.RuleId == "R7" && f.NodeName == "merge",
+			because: "a gateway with one way out is not choosing anything, so the flow-kind rule has nothing "
+				+ "to say about it");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("R7 names the actual run-time failure rather than saying the process 'dead-ends'. FlowConditionalGateway.OnVisited throws MismatchItemsCountException when no condition matched and no default branch exists, and nothing earlier objects - the platform's own interpretation validator has no branch-coverage rule. Stays a WARNING, because 65 shipped exclusive gateways deliberately have two conditional flows and no default.")]
+	public void Validate_ShouldWarnR7_NamingTheRuntimeException_WhenADivergingGatewayHasNoDefault() {
+		// Arrange
+		List<ProcessGraphNodeArg> nodes = [N("s", "startEvent"), N("g", "exclusiveGateway"),
+			N("a", "activityUserTask"), N("b", "activityUserTask"), N("e", "endEvent")];
+		List<ProcessGraphEdgeArg> edges = [E("s", "g"),
+			new ProcessGraphEdgeArg("g", "a", "conditional", "1 > 0"),
+			new ProcessGraphEdgeArg("g", "b", "conditional", "2 > 1"), E("a", "e"), E("b", "e")];
+
+		// Act
+		ValidateProcessGraphResponse response = Validate(nodes, edges);
+
+		// Assert
+		response.Findings.Should().Contain(
+			f => f.RuleId == "R7" && f.Severity == "warning" && f.Message.Contains("MismatchItemsCountException"),
+			because: "the consequence is specific and findable, and naming it is what lets a reader search for "
+				+ "it - 'dead-ends' names nothing");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("R15: a flow from an element to itself is refused. The designer refuses to DRAW one while tolerating the three that exist in the shipped corpus on re-save; this tool only ever sees a PLANNED graph, so only the authoring half applies. At run time a self-looping task re-executes on every completion, and nothing on the diagram shows it, because the layout engine skips self-loops.")]
+	public void Validate_ShouldSurfaceR15Error_ForASelfLoop() {
+		// Arrange
+		List<ProcessGraphNodeArg> nodes = [N("s", "startEvent"), N("a", "activityUserTask"), N("e", "endEvent")];
+		List<ProcessGraphEdgeArg> edges = [E("s", "a"), E("a", "a"), E("a", "e")];
+
+		// Act
+		ValidateProcessGraphResponse response = Validate(nodes, edges);
+
+		// Assert
+		response.Findings.Should().Contain(
+			f => f.RuleId == "R15" && f.Severity == "error" && f.Message.Contains("to itself"),
+			because: "a self-loop either never runs or runs forever, and it is invisible on the diagram");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("R13: a conditional flow whose condition is supplied but EMPTY is an error. The platform does not report this - it substitutes the literal 'true', producing a branch that looks conditional and always fires, and 7 shipped flows are in that state. The rule needs the optional 'condition' field, which is why it could not exist before.")]
+	public void Validate_ShouldSurfaceR13Error_ForAConditionalFlowWithAnEmptyCondition() {
+		// Arrange
+		List<ProcessGraphNodeArg> nodes = [N("s", "startEvent"), N("g", "exclusiveGateway"),
+			N("a", "activityUserTask"), N("b", "activityUserTask"), N("e", "endEvent")];
+		List<ProcessGraphEdgeArg> edges = [E("s", "g"),
+			new ProcessGraphEdgeArg("g", "a", "conditional", "   "),
+			E("g", "b", "default"), E("a", "e"), E("b", "e")];
+
+		// Act
+		ValidateProcessGraphResponse response = Validate(nodes, edges);
+
+		// Assert
+		response.Findings.Should().Contain(
+			f => f.RuleId == "R13" && f.Severity == "error" && f.Message.Contains("literal 'true'"),
+			because: "a branch that always fires is the opposite of the branch the author described");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("An OMITTED condition raises nothing. The field is optional and purely additive, so a caller describing a graph's SHAPE rather than its predicates must not be flooded with findings about conditions they never claimed to supply.")]
+	public void Validate_ShouldNotSurfaceR13Error_WhenTheConditionIsSimplyOmitted() {
+		// Arrange
+		List<ProcessGraphNodeArg> nodes = [N("s", "startEvent"), N("g", "exclusiveGateway"),
+			N("a", "activityUserTask"), N("b", "activityUserTask"), N("e", "endEvent")];
+		List<ProcessGraphEdgeArg> edges = [E("s", "g"), E("g", "a", "conditional"), E("g", "b", "default"),
+			E("a", "e"), E("b", "e")];
+
+		// Act
+		ValidateProcessGraphResponse response = Validate(nodes, edges);
+
+		// Assert
+		response.Findings.Should().NotContain(f => f.RuleId == "R13" && f.Message.Contains("literal 'true'"),
+			because: "omitting an optional field is not the same as supplying an empty one");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("R8 (warning): a parallel join whose incoming branches come from a common exclusive split can deadlock. The join proceeds only when EVERY incoming branch has delivered a token, and an exclusive split takes one - so the instance hangs in Running with no exception and no log line, which is the failure mode with no diagnostic at all.")]
+	public void Validate_ShouldWarnR8_WhenAParallelJoinMergesBranchesOfAnExclusiveSplit() {
+		// Arrange: xor splits to a and b, both of which run into an AND join.
+		List<ProcessGraphNodeArg> nodes = [N("s", "startEvent"), N("xor", "exclusiveGateway"),
+			N("a", "activityUserTask"), N("b", "activityUserTask"), N("and", "parallelGateway"), N("e", "endEvent")];
+		List<ProcessGraphEdgeArg> edges = [E("s", "xor"),
+			new ProcessGraphEdgeArg("xor", "a", "conditional", "1 > 0"),
+			E("xor", "b", "default"), E("a", "and"), E("b", "and"), E("and", "e")];
+
+		// Act
+		ValidateProcessGraphResponse response = Validate(nodes, edges);
+
+		// Assert
+		response.Findings.Should().Contain(
+			f => f.RuleId == "R8" && f.Severity == "warning" && f.Message.Contains("hang in Running"),
+			because: "an AND join behind an XOR split waits for a branch that will never run, and nothing "
+				+ "anywhere reports it");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("A genuine AND split joined by an AND gateway raises no deadlock warning - the shape the rule must not punish, since both branches really do run.")]
+	public void Validate_ShouldNotWarnR8_ForAGenuineParallelSplitAndJoin() {
+		// Arrange
+		List<ProcessGraphNodeArg> nodes = [N("s", "startEvent"), N("fork", "parallelGateway"),
+			N("a", "activityUserTask"), N("b", "activityUserTask"), N("join", "parallelGateway"), N("e", "endEvent")];
+		List<ProcessGraphEdgeArg> edges = [E("s", "fork"), E("fork", "a"), E("fork", "b"),
+			E("a", "join"), E("b", "join"), E("join", "e")];
+
+		// Act
+		ValidateProcessGraphResponse response = Validate(nodes, edges);
+
+		// Assert
+		response.Findings.Should().NotContain(f => f.RuleId == "R8",
+			because: "both branches of an AND split always run, so the join always completes");
 	}
 
 	[Test]

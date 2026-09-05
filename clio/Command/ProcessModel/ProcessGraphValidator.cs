@@ -43,7 +43,9 @@ public sealed class ProcessGraphValidator : IProcessGraphValidator {
 			CheckAddDataChaining(node, outs, nodeByName, findings);
 		}
 
-		CheckConditionalFlowOrigins(edges, nodeByName, findings);
+		CheckConditionalFlows(edges, nodeByName, findings);
+		CheckSelfLoops(edges, findings);
+		CheckParallelJoinDeadlock(nodes, incoming, outgoing, findings);
 		CheckReachability(nodes, startNodes, outgoing, incoming, findings);
 
 		bool hasErrors = findings.Any(f => f.Severity == ProcessGraphSeverity.Error);
@@ -166,17 +168,54 @@ public sealed class ProcessGraphValidator : IProcessGraphValidator {
 		bool hasDefault = outs.Any(o => o.FlowKind == ProcessFlowKind.Default);
 		bool hasConditional = outs.Any(o => o.FlowKind == ProcessFlowKind.Conditional);
 
-		// R14 — a default flow is legal only with at least one sibling conditional flow.
-		if (hasDefault && !hasConditional) {
+		// R14 — a default flow needs a sibling conditional only where the source actually BRANCHES.
+		// Scoped by ARITY, not by element kind, and that scope is the fix rather than a refinement: a
+		// CONVERGING or-gateway's single outgoing flow is a default flow by construction, because the
+		// designer's allowed-outgoing list for an or-gateway is conditional + default with no plain sequence
+		// flow at all. Unscoped, this rule called 45 shipped gateways invalid - 40 exclusive and 5 inclusive,
+		// among them BulkFileManagement/DeleteFilesInTable and CaseService/RunSendEmailToCaseGroup. Academy's
+		// wording ("a default flow is used when there is at least one conditional flow outgoing from the same
+		// process element") simply does not contemplate the shape the designer itself produces.
+		if (hasDefault && !hasConditional && outs.Count > 1) {
 			findings.Add(new ProcessGraphFinding(ProcessGraphSeverity.Error, "R14",
 				$"Default flow from '{node.Name}' requires at least one sibling conditional flow.", node.Name));
 		}
 
-		// R7 / R9 (warning) — diverging exclusive/inclusive gateway should have a default flow.
-		if (eventType is EventType.ExclusiveGateway or EventType.InclusiveGateway && outs.Count > 1 && !hasDefault) {
-			string ruleId = eventType == EventType.ExclusiveGateway ? "R7" : "R9";
+		// R14 — at most ONE default flow per source. The default is "the branch taken when nothing matched",
+		// so two make that undecidable; the platform does not refuse it and picks by collection order, which
+		// leaves the second one dead metadata that reads like a live branch. Zero sources in the shipped
+		// corpus carry two, and the designer keeps the invariant by DEMOTING the previous default when a new
+		// one is promoted - a silent edit this validator reports instead of imitating.
+		List<ProcessGraphEdge> defaults = outs.Where(o => o.FlowKind == ProcessFlowKind.Default).ToList();
+		if (defaults.Count > 1) {
+			findings.Add(new ProcessGraphFinding(ProcessGraphSeverity.Error, "R14",
+				$"Element '{node.Name}' has {defaults.Count} default flows; only one branch can be the one "
+				+ "taken when no condition matched.", node.Name));
+		}
+
+		if (eventType is not (EventType.ExclusiveGateway or EventType.InclusiveGateway) || outs.Count <= 1) {
+			return;
+		}
+		string ruleId = eventType == EventType.ExclusiveGateway ? "R7" : "R9";
+
+		// R7 / R9 (error) — a DIVERGING or-gateway's outgoing flows must each say how they are chosen. The
+		// mirror of R11: from an or-gateway the designer offers conditional and default only, and removes the
+		// plain connection from the menu entirely. Arity-scoped for the same reason R14 is - 14 shipped
+		// exclusive gateways do carry a single plain sequence flow, all of them with exactly ONE outgoing,
+		// i.e. legacy converging gateways from an older designer, which are tolerated on read.
+		if (outs.Any(o => o.FlowKind == ProcessFlowKind.Sequence)) {
+			findings.Add(new ProcessGraphFinding(ProcessGraphSeverity.Error, ruleId,
+				$"Diverging gateway '{node.Name}' has a plain sequence flow; every outgoing flow from a "
+				+ "gateway that chooses must be conditional (with a condition) or default.", node.Name));
+		}
+
+		// R7 / R9 (warning) — a diverging or-gateway should have a default flow. Stays a WARNING because 65
+		// shipped exclusive gateways deliberately have two conditional flows and no default.
+		if (!hasDefault) {
 			findings.Add(new ProcessGraphFinding(ProcessGraphSeverity.Warning, ruleId,
-				$"Diverging gateway '{node.Name}' should have a default flow so the process never dead-ends.", node.Name));
+				$"Diverging gateway '{node.Name}' has no default flow: if no condition matches at run time the "
+				+ "process instance fails with MismatchItemsCountException. Add a default flow, or confirm the "
+				+ "conditions cover every case.", node.Name));
 		}
 	}
 
@@ -196,17 +235,78 @@ public sealed class ProcessGraphValidator : IProcessGraphValidator {
 		}
 	}
 
-	// R13 — a conditional flow may originate only from a gateway or an activity.
-	private static void CheckConditionalFlowOrigins(IReadOnlyList<ProcessGraphEdge> edges,
+	// R13 — a conditional flow may originate only from a gateway or an activity, and must carry a condition.
+	private static void CheckConditionalFlows(IReadOnlyList<ProcessGraphEdge> edges,
 			IReadOnlyDictionary<string, ProcessGraphNode> nodeByName, List<ProcessGraphFinding> findings) {
-		foreach (ProcessGraphEdge edge in edges) {
-			if (edge.FlowKind == ProcessFlowKind.Conditional && nodeByName.TryGetValue(edge.Source, out ProcessGraphNode source)) {
-				Role sourceRole = RoleOf(source);
-				if (sourceRole is not (Role.Gateway or Role.Activity)) {
-					findings.Add(new ProcessGraphFinding(ProcessGraphSeverity.Error, "R13",
-						$"Conditional flow may originate only from a gateway or an activity (source '{edge.Source}').",
-						edge.Source, edge));
-				}
+		foreach (ProcessGraphEdge edge in edges.Where(e => e.FlowKind == ProcessFlowKind.Conditional)) {
+			if (nodeByName.TryGetValue(edge.Source, out ProcessGraphNode source)
+					&& RoleOf(source) is not (Role.Gateway or Role.Activity)) {
+				findings.Add(new ProcessGraphFinding(ProcessGraphSeverity.Error, "R13",
+					$"Conditional flow may originate only from a gateway or an activity (source '{edge.Source}').",
+					edge.Source, edge));
+			}
+
+			// A conditional flow with no condition is NOT an error the platform reports: it substitutes the
+			// literal "true", producing a branch that looks conditional and always fires. 7 shipped flows are
+			// in that state. Reported only when the caller supplied conditions at all - the field is optional,
+			// and a caller who omits it everywhere is describing a graph shape rather than its predicates, so
+			// flagging every conditional flow would be noise rather than a finding.
+			if (edge.Condition is { Length: 0 } || (edge.Condition is not null && edge.Condition.Trim().Length == 0)) {
+				findings.Add(new ProcessGraphFinding(ProcessGraphSeverity.Error, "R13",
+					$"Conditional flow '{edge.Source}' -> '{edge.Target}' has an empty condition, which the "
+					+ "platform stores as the literal 'true' - a branch that always fires.", edge.Source, edge));
+			}
+		}
+	}
+
+	// R15 — a flow from an element to itself. The designer refuses to DRAW one (canConnectionCreate requires
+	// source !== target) while tolerating the three that exist in the shipped corpus on re-save, which is the
+	// posture mirrored here: refuse on author, tolerate on read. This tool only ever sees a PLANNED graph, so
+	// the read half does not apply to it. At run time a self-looping task re-executes on every completion, and
+	// nothing on the diagram shows it, because the layout engine skips self-loops when building adjacency.
+	private static void CheckSelfLoops(IReadOnlyList<ProcessGraphEdge> edges, List<ProcessGraphFinding> findings) {
+		foreach (ProcessGraphEdge edge in edges
+				.Where(e => e.Source != null && string.Equals(e.Source, e.Target, System.StringComparison.Ordinal))) {
+			findings.Add(new ProcessGraphFinding(ProcessGraphSeverity.Error, "R15",
+				$"Flow connects '{edge.Source}' to itself. To repeat an element, route the flow back through a "
+				+ "gateway that decides whether to repeat it.", edge.Source, edge));
+		}
+	}
+
+	// Parallel-join deadlock (warning) — a parallel gateway proceeds only when EVERY incoming branch has
+	// delivered a token. If two of its incoming branches trace back to a common EXCLUSIVE or inclusive split,
+	// only one of them can ever run, and the instance hangs in Running with no exception and no log line -
+	// the failure mode with no diagnostic at all, which is why it is worth a warning even though it cannot be
+	// proven from the graph alone.
+	//
+	// Deliberately the minimal no-false-positive form: it fires only on a COMMON or-gateway ancestor of two
+	// distinct incoming branches. An inclusive gateway can legitimately activate several branches at once, so
+	// this over-warns there; it is a warning, and the alternative - tracing which branches an inclusive
+	// gateway's conditions can co-activate - is not decidable from a planned graph.
+	private static void CheckParallelJoinDeadlock(IReadOnlyList<ProcessGraphNode> nodes,
+			IReadOnlyDictionary<string, List<ProcessGraphEdge>> incoming,
+			IReadOnlyDictionary<string, List<ProcessGraphEdge>> outgoing, List<ProcessGraphFinding> findings) {
+		foreach (ProcessGraphNode node in nodes.Where(n => TypeOf(n) == EventType.ParallelGateway)) {
+			List<ProcessGraphEdge> ins = incoming[node.Name];
+			if (ins.Count < 2) {
+				continue;
+			}
+			// One backward reachable set per incoming branch, then the or-gateways two of them share.
+			List<HashSet<string>> perBranch = ins
+				.Select(edge => TraverseBackward([edge.Source], incoming))
+				.ToList();
+			string split = perBranch
+				.SelectMany((reachable, index) => perBranch.Skip(index + 1).SelectMany(other => reachable.Intersect(other)))
+				.Distinct()
+				.FirstOrDefault(name => nodes.Any(n => n.Name == name
+					&& TypeOf(n) is EventType.ExclusiveGateway or EventType.InclusiveGateway
+					&& outgoing[name].Count > 1));
+			if (split != null) {
+				findings.Add(new ProcessGraphFinding(ProcessGraphSeverity.Warning, "R8",
+					$"Parallel join '{node.Name}' waits for every incoming branch, but two of them come from "
+					+ $"the gateway '{split}', which takes only one. If that is the shape you meant, the "
+					+ "instance will hang in Running with no error - use an exclusive gateway to merge instead.",
+					node.Name));
 			}
 		}
 	}

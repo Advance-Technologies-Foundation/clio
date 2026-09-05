@@ -60,7 +60,7 @@ public sealed class ValidateProcessGraphTool {
 										   .ToList();
 			List<ProcessGraphEdge> edges = (args.Edges ?? [])
 										   .Select(e =>
-											   new ProcessGraphEdge(e.Source, e.Target, ParseFlowKind(e.FlowKind)))
+											   new ProcessGraphEdge(e.Source, e.Target, ParseFlowKind(e.FlowKind), e.Condition))
 										   .ToList();
 
 			ProcessGraphValidationResult result = _validator.Validate(new ProcessGraph(nodes, edges));
@@ -141,7 +141,11 @@ public sealed record ValidateProcessGraphArgs(
 	List<ProcessGraphNodeArg> Nodes = null,
 
 	[property: JsonPropertyName("edges")]
-	[property: Description("The flows: [{source, target, flow-kind}] where flow-kind is sequence | conditional | default.")]
+	[property: Description("The flows: [{source, target, flow-kind, condition}] where flow-kind is sequence | "
+		+ "conditional | default. 'condition' is optional and only meaningful on a conditional flow; supply it "
+		+ "to have the empty-condition rule checked, because an omitted condition is stored by the platform as "
+		+ "the literal 'true' - a branch that looks conditional and always fires. Flow ORDER is branch "
+		+ "precedence: sibling conditions are evaluated in the order given here and the first true one wins.")]
 	List<ProcessGraphEdgeArg> Edges = null
 	);
 
@@ -154,7 +158,8 @@ public sealed record ProcessGraphNodeArg(
 public sealed record ProcessGraphEdgeArg(
 	[property: JsonPropertyName("source")] string Source = null,
 	[property: JsonPropertyName("target")] string Target = null,
-	[property: JsonPropertyName("flow-kind")] string FlowKind = null);
+	[property: JsonPropertyName("flow-kind")] string FlowKind = null,
+	[property: JsonPropertyName("condition")] string Condition = null);
 
 /// <summary>Response from the <c>validate-process-graph</c> MCP tool.</summary>
 public sealed class ValidateProcessGraphResponse {
