@@ -9,7 +9,11 @@ date: 2026-09-05
 **What is true** — `ODataReadArgs.Select` and `ODataReadArgs.Expand` are `JsonElement?`, not
 `string[]?`. They are normalized in `ODataReadTool.TryNormalizeColumnList`, which accepts a JSON
 array of strings and the comma-separated string form (`"Id,Name,CreatedOn"`), trims each entry and
-drops empties, and rejects every other shape with a message naming both accepted forms. The
+drops empties, and rejects every other shape with a message naming both accepted forms. Only the
+*string* form is split on commas: an array element is always one column name, so `["Id,Name"]` stays
+one (wrong) column and the server names it, instead of clio silently rewriting the request. The
+normalized lists are returned from validation as out parameters and never written back onto the args
+record, so the bound request and the executed request stay the same object. The
 `BuildQueryString` path reads the normalized `SelectColumns`/`ExpandColumns` and never the raw
 members.
 

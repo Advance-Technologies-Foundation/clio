@@ -133,12 +133,13 @@ internal static class CreatioResponseError {
 				+ $"{UnregisteredEntityHint} Use execute-esq to read schemas that never get an OData entity set.",
 			{ } knownStatus =>
 				$"The OData request for entity '{entity}' was answered with an HTTP {knownStatus} error page "
-				+ "instead of an OData response, so it never reached a Creatio OData controller. "
-				+ "Verify the environment URL, the authentication and any proxy in front of it.",
-			_ =>
-				$"OData entity set '{entity}' could not be reached and may not be exposed over OData. "
-				+ "Use execute-esq to read schemas that do not have an OData entity set. "
-				+ "The server returned an HTML error page instead of an OData response."
+				+ "instead of an OData response. Verify the environment URL, the authentication and any proxy.",
+			//No status in the title means no diagnosis beyond "this was not an OData response". Creatio's
+			//own outage page (<title>Request Error</title>) and an SSO/proxy login page both land here,
+			//and neither says anything about whether the entity has an OData controller - claiming it
+			//"may not be exposed" and steering the caller onto execute-esq would be a guess that costs
+			//them the actual cause (an outage, an expired session).
+			_ => DescribeNonJsonReadResponse()
 		};
 		return true;
 	}
@@ -165,11 +166,18 @@ internal static class CreatioResponseError {
 	}
 
 	/// <summary>
-	/// Matches the leading three-digit status in an HTML title. The bounded quantifiers keep a crafted
-	/// body from turning this into a backtracking cost.
+	/// Matches the HTTP status an error page states at the start of its title, in the four shapes the
+	/// deployments in front of Creatio actually produce: the IIS short form
+	/// (<c>&lt;title&gt;404 - File or directory not found.&lt;/title&gt;</c>), the IIS detailed form
+	/// (<c>&lt;title&gt;HTTP Error 500.0 - Internal Server Error&lt;/title&gt;</c>), the nginx/Apache
+	/// form with no separator at all (<c>&lt;title&gt;502 Bad Gateway&lt;/title&gt;</c>), and a title
+	/// tag carrying attributes (<c>&lt;title lang="en"&gt;404 - ...</c>).
+	/// Only 4xx and 5xx are accepted: a page whose title starts with 200 or 302 is not stating the
+	/// status of a failure, and stamping it onto a failed read would make the member untrustworthy.
+	/// The bounded quantifiers keep a crafted body from turning this into a backtracking cost.
 	/// </summary>
 	private static readonly Regex MarkupErrorTitleStatusPattern = new(
-		@"<title>\s{0,8}(?<status>[1-5]\d{2})\s{0,8}[-–:]",
+		@"<title[^>]{0,64}>\s{0,8}(?:HTTP\s{1,4}Error\s{1,4})?(?<status>[45]\d{2})(?:\.\d{1,2})?(?=[\s\-–:<])",
 		RegexOptions.IgnoreCase | RegexOptions.CultureInvariant,
 		TimeSpan.FromSeconds(1));
 

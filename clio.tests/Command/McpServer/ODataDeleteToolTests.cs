@@ -1,4 +1,4 @@
-using System.Linq;
+﻿using System.Linq;
 using Clio.Command.McpServer.Tools;
 using Clio.Common;
 using FluentAssertions;
@@ -127,6 +127,9 @@ public sealed class ODataDeleteToolTests {
 		// Assert
 		response.Success.Should().BeFalse(because: "an HTML error page proves the request never reached Creatio's OData pipeline");
 		response.Error.Should().Contain("was not JSON", because: "the diagnostic must point at the transport layer, not the request's OData/ESQ shape");
+		response.Error.Should().Contain("HTTP 401 error page",
+			because: "the write transport neither throws nor exposes a status, so naming the status the page states "
+				+ "is the only way the caller learns this was an auth hop rather than a routing miss");
 	}
 
 	[Test]

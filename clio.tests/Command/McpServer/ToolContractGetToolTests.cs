@@ -232,6 +232,11 @@ public sealed class ToolContractGetToolTests {
 			because: "the curated contract must advertise every argument the real stdio binder accepts and no stale arguments");
 		contract.OutputContract.Fields.Select(field => field.Name).Should().Contain("total-count",
 			because: "a requested total must be discoverable separately from page count");
+		contract.OutputContract.Fields.Select(field => field.Name).Should().Contain("status-code",
+			because: "odata-read is long-tail, so this curated entry is the whole description a caller gets - a "
+				+ "response member the caller cannot learn about from tools/list has to be pinned here");
+		contract.OutputContract.Fields.Select(field => field.Name).Should().Contain("entity",
+			because: "the failure echoes the entity set back and a contract-following caller must be able to expect it");
 		contract.Aliases.Should().Contain(alias => alias.Alias == "filter" && alias.Status == "rejected",
 			because: "the removed raw filter must be explicitly rejected in the discoverable contract");
 	}

@@ -353,6 +353,32 @@ public sealed class ODataUpdateToolTests {
 
 	[Test]
 	[Category("Unit")]
+	[Description("Routes an HTML pre-write probe response through the same markup classification the read path uses, so the HTTP status the page states and the async-gap hint reach the caller instead of a bare \"was not JSON\".")]
+	public void Update_Should_Report_The_Http_Status_Of_An_Html_Probe_Response() {
+		// Arrange
+		Fixture f = new(HtmlPage, _ => HtmlPage);
+
+		// Act
+		ODataWriteResponse response = Update(f, """{"Name":"New"}""");
+
+		// Assert
+		response.Success.Should().BeFalse(
+			because: "an HTML error page proves the probe never reached a Creatio OData controller");
+		response.Error!.Should()
+			.Contain("HTTP 404",
+				because: "the status is the only thing that separates an entity whose OData controller is still "
+					+ "being rebuilt from one that will never have one, and the transport exposes no status")
+			.And.Contain(CreatioResponseError.UnregisteredEntityHint,
+				because: "the 404 probe and the 404 read are the same condition and must share the one hint")
+			.And.Contain("No write was performed",
+				because: "an unverified outcome must stay unverified regardless of how well it is diagnosed")
+			.And.NotContain("error</body>",
+				because: "no fragment of the proxy page may reach an MCP transcript, only the status digits");
+		f.Client.DidNotReceiveWithAnyArgs().ExecutePatchRequest(null, null, 0);
+	}
+
+	[Test]
+	[Category("Unit")]
 	[Description("Refuses on an unrecognized OData error from the pre-write requests without writing, and without echoing the server's own wording.")]
 	public void Update_Should_Reject_Before_Writing_When_Probe_Hits_Different_OData_Error() {
 		// Arrange

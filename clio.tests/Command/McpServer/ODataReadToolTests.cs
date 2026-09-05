@@ -1113,6 +1113,54 @@ public sealed class ODataReadToolTests {
 			because: "an HTML error page is never an OData response");
 		response.StatusCode.Should().BeNull(
 			because: "inventing a status the page never carried would make the structured field untrustworthy");
+		response.Error.Should().NotContain("execute-esq",
+			because: "this is Creatio's own outage page - it says nothing about whether the entity is exposed over "
+				+ "OData, and steering the caller onto another tool would cost them the real cause");
+		response.Error.Should().NotContain(CreatioResponseError.UnregisteredEntityHint,
+			because: "waiting out an OData rebuild that is not happening would delay diagnosing the outage");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Treats each array element of select as one column name and never splits it on commas.")]
+	public void Read_Should_Not_Split_An_Array_Element_Of_Select() {
+		// Arrange
+		ODataReadTool tool = BuildToolReturning(
+			"{\"@odata.context\":\"http://creatio/odata/$metadata#Contact\",\"value\":[]}",
+			out IApplicationClient _);
+
+		// Act
+		bool normalized = ODataReadTool.TryNormalizeColumnList(Columns("Id,Name"), "select",
+			out string[]? columns, out string? error);
+
+		// Assert
+		normalized.Should().BeTrue(
+			because: "an array of strings is an accepted shape whatever the strings contain");
+		error.Should().BeNull(
+			because: "nothing about the shape was rejected");
+		columns.Should().ContainSingle(
+			because: "the caller chose the array shape, so a comma inside an element is part of the name they wrote")
+			.Which.Should().Be("Id,Name",
+			because: "rewriting the caller's column name would hide the mistake instead of letting the server name it");
+		tool.Should().NotBeNull(because: "the fixture is only here to keep the arrange consistent with the sibling tests");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Trims and drops blank array elements of select without splitting the surviving ones.")]
+	public void Read_Should_Trim_And_Drop_Blank_Array_Elements_Of_Select() {
+		// Arrange
+		JsonElement value = Columns(" Id ", "  ", "Name");
+
+		// Act
+		bool normalized = ODataReadTool.TryNormalizeColumnList(value, "select", out string[]? columns,
+			out string? error);
+
+		// Assert
+		normalized.Should().BeTrue(because: "an array of strings is an accepted shape");
+		error.Should().BeNull(because: "nothing about the shape was rejected");
+		columns.Should().Equal(["Id", "Name"],
+			because: "padding and an empty entry are transcription noise, not column names the server should see");
 	}
 
 	[TestCase("Id,Name,CreatedOn", TestName = "plain comma-separated select")]
