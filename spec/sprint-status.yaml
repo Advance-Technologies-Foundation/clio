@@ -3210,3 +3210,106 @@ stories:
     depends_on:
       - story-eng-95891-formula-expressions-1
     blocks: []
+
+  - id: story-eng-91853-gateways-and-flows-1
+    title: "Build exclusive/parallel gateways, conditional and default flows, and branch-aware layout"
+    feature: "eng-91853-gateways-and-flows"
+    repo: "workspace/ProcessBuilder"
+    size: M
+    status: in-progress
+    jira: ENG-91853
+    file: spec/eng-91853-gateways-and-flows/eng-91853-gateways-and-flows-plan.md
+    test_plan: spec/eng-91853-gateways-and-flows/eng-91853-gateways-and-flows-test-plan.md
+    note: >-
+      Branch feature/ENG-91853-gateways-and-flows, off main (7e93995 - crt-process-builder's default
+      branch is main, not master). Work packages S1-S5.
+      S4 (branch-aware Y auto-layout) is DONE. ProcessLayoutEngine rewritten from a per-COLUMN vertical
+      stagger to a five-phase lane model: adjacency in flow declaration order, DFS back-edge
+      classification, longest-path columns over the remaining DAG, one lane per branch, Y from the lane.
+      Fixes the three defects the analysis named - L1 (a branch's Y was not stable along its length,
+      because a node alone in its column always landed back on the centre row), L2 (a back-edge starved
+      the Kahn queue and collapsed four of six elements into column 0 on 15% of real gateway processes),
+      L3 (a merge aligned with its split only by accident). Layout.BranchStep = 130 and
+      Layout.GatewaySizePx = 55 added; Layout.VerticalStep is now unreferenced and kept per the written
+      plan, documented as such rather than silently left behind - a deletion candidate for review.
+      TWO DEVIATIONS from layout.md section 4, both traced in
+      spec/eng-91853-gateways-and-flows/eng-91853-gateways-and-flows-layout-addendum.md.
+      (1) A merge's midpoint rounds DOWN, not to even. The spec says round(mean(...)) and does not pin
+      the tie-break; C#'s default breaks the spec's own stated property, because a two-way split on lane
+      L feeds its merge lanes L and L+1 and banker's rounding aligns them only when L is even. An odd
+      parent lane needs no nesting - a second start event pushes a whole component down a lane.
+      (2) NEEDS AN OWNER DECISION: case B is not fixed and cannot be fixed by placement. Measured on the
+      graph the spec writes verbatim, every element lands on lane 0 and the short branch's connector
+      still crosses the long branch. Aligning a merge with its split (L3), keeping the first-declared
+      branch on the parent lane (T-7) and keeping a skipping connector clear (L1) are in direct conflict
+      for that one shape, and connector routing is out of scope. Left as specified. Recommended
+      resolution, traced in the addendum: a merge with a column-skipping inbound branch takes THAT
+      branch's lane, which fixes case B without touching the spec's rows A or E.
+      18 tests added, 7 existing kept and untouched: 1167 unit tests pass (baseline 1149).
+      Validated: dotnet test tests/CrtProcessBuilder/CrtProcessBuilder.Tests.csproj -c dev-nf
+      (dev-n8 is unbuildable on this host - .application/net-core is absent, only net-framework is
+      checked out).
+      Every new test was observed RED against the implementation it replaces: 8 of the first 9 fail on
+      the old engine, and the ninth (idempotence) is deliberately a property both share. Five mutations
+      of the NEW engine each caught, 14 in all: rounding mode, corridor reservation, back-edge
+      exclusion, the second root pass, start-first walk ordering, parent-lane inheritance, branch
+      declaration order, column-order processing, endpoint guards, pair de-duplication, cell claiming,
+      end-event lanes, tree-edges-only DFS, skip-if-already-positioned. Nine of those survived the first
+      round and were closed after review. The corridor reservation initially survived deletion with the
+      whole fixture green - it is reachable only from graphs an argument said were impossible, so the
+      case that pins it was found by enumerating small single-source graphs rather than by reasoning.
+      Reviewed by four parallel lenses; the test-coverage lens found more than the other three combined.
+      Two review claims refuted by measurement: a duplicate element UId cannot reach the engine
+      (MetaItemCollection.InsertItem throws first) and a dangling endpoint cannot be set directly (the
+      TargetRefUId setter throws) - the reachable shape is an element removed after its flows.
+      STILL OPEN on this story: S1 (FlowManagerItems.Default and the flow-name prefixes), S2 (the two
+      gateway element handlers and their DefaultSize), S3 (flow kinds, setFlow, the structural rules,
+      RemoveFlow detach), S5 (describe).
+    depends_on: []
+    blocks:
+      - story-eng-91853-gateways-and-flows-2
+
+  - id: story-eng-91853-gateways-and-flows-2
+    title: "Ship gateways and flow kinds through clio's validator, MCP surface and bundled archive"
+    feature: "eng-91853-gateways-and-flows"
+    repo: "clio"
+    size: M
+    status: ready-for-dev
+    jira: ENG-91853
+    file: spec/eng-91853-gateways-and-flows/eng-91853-gateways-and-flows-plan.md
+    test_plan: spec/eng-91853-gateways-and-flows/eng-91853-gateways-and-flows-test-plan.md
+    note: >-
+      S6-S7 and the rebundle half of S8, on branch feature/ENG-91853-gateways-and-flows off master.
+      The headline is a FIX, not a feature: ProcessGraphValidator.CheckDefaultFlowRules raises an error
+      when a default flow has no sibling conditional flow, and that rejects exactly 45 shipped gateways
+      (40 exclusive, 5 inclusive) whose only outgoing flow is a default one - because the designer
+      cannot draw a plain sequence flow out of an or-gateway at all. R14 must be scoped to sources with
+      MORE THAN ONE outgoing flow. Symmetrically R6 (gateway arity) must NOT be implemented: it would
+      reject 60+ shipped gateways.
+      DescribeProcessPrompt introduces `condition` AND `branchesOnActivityResult` together - ENG-95891
+      reverted its own edit to that file so this ticket ships both at once.
+      Rebundle raises the archive above 1.4.0.57 and the [RequiresPackage] floors above 1.4.0.44.
+    depends_on:
+      - story-eng-91853-gateways-and-flows-1
+    blocks:
+      - story-eng-91853-gateways-and-flows-3
+
+  - id: story-eng-91853-gateways-and-flows-3
+    title: "Publish the gateway and branch vocabulary through clio-knowledge"
+    feature: "eng-91853-gateways-and-flows"
+    repo: "clio-knowledge"
+    size: S
+    status: ready-for-dev
+    jira: ENG-91853
+    file: spec/eng-91853-gateways-and-flows/eng-91853-gateways-and-flows-plan.md
+    note: >-
+      guidance/mcp/guides/processes/process-modeling.md, on a branch off master. Needs a libraryVersion
+      and sequence bump and a re-pin of
+      clio.tests/Command/McpServer/Fixtures/curated-knowledge-names.json.
+      Two facts the article does not carry and that nothing else records: branch evaluation order is
+      flows[] ARRAY order, first true wins, and nothing encodes it - so the order an agent declares
+      branches in silently decides which one runs; and the layout re-runs over the WHOLE schema on
+      every modify, so hand-arranged element positions do not survive an unrelated edit.
+    depends_on:
+      - story-eng-91853-gateways-and-flows-2
+    blocks: []

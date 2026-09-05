@@ -23,6 +23,7 @@ gateways) and **ENG-95890** (branch-aware layout for complex processes).
 | 5 | [validator](eng-91853-gateways-and-flows-validator.md) | R1–R17 reconciliation: what to add, what to **fix** (R14 false-positives on real content), what **not** to implement (R6) |
 | 6 | [plan](eng-91853-gateways-and-flows-plan.md) | Decisions D1–D13, work packages S1–S8, estimate, branch/PR/session strategy, Definition of Done |
 | 7 | [test-plan](eng-91853-gateways-and-flows-test-plan.md) | Harness, mocking recipes, the case matrix |
+| 8 | [layout-addendum](eng-91853-gateways-and-flows-layout-addendum.md) | **Written after implementing S4.** What §4 got wrong, measured: the midpoint tie-break it left unstated breaks its own row A, and its case B is marked ✔ but is not fixable by placement at all. One open owner decision. |
 
 **Sources.** Platform `C:/Projects/Creatio/TSBpm/Src/Lib`; corpus `C:/Projects/PackageStore`
 (Creatio 7.8.0, 1 099 packages, 19 718 `metadata.json`, **1 795** flow-element containers); designer
