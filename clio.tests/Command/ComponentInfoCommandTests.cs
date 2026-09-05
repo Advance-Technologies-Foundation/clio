@@ -702,7 +702,7 @@ public sealed class ComponentInfoCommandTests {
 
 	/// <summary>
 	/// Test double for the docs client. Returns a pre-seeded markdown blob for the
-	/// matching (version, path) tuple or <see langword="null"/> otherwise — matching
+	/// matching (version, path) tuple or a <c>None</c>-sourced result otherwise — matching
 	/// the contract that the real client uses to signal "skip this doc".
 	/// </summary>
 	private sealed class FakeDocsClient : IComponentRegistryDocsClient {
@@ -714,9 +714,11 @@ public sealed class ComponentInfoCommandTests {
 			return this;
 		}
 
-		public Task<string> GetDocAsync(string version, string docPath, CancellationToken cancellationToken = default) {
+		public Task<ComponentDocumentationFetchResult> GetDocAsync(string version, string docPath, CancellationToken cancellationToken = default) {
 			Requests.Add((version, docPath));
-			return Task.FromResult(_docs.TryGetValue((version, docPath), out string value) ? value : null);
+			return Task.FromResult(_docs.TryGetValue((version, docPath), out string value)
+				? new ComponentDocumentationFetchResult(value, ComponentDocumentationSource.Cdn)
+				: ComponentDocumentationFetchResult.Missing);
 		}
 	}
 

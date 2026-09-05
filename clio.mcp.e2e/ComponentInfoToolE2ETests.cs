@@ -622,6 +622,106 @@ public sealed class ComponentInfoToolE2ETests : McpContractFixtureBase {
 		}
 	}
 
+	[Test]
+	[Description("With CLIO_COMPONENT_REGISTRY_LOCAL_FILE set, long-form documentation is served from the docs/ tree next to the override file rather than from the published CDN copy.")]
+	[AllureTag(ToolName)]
+	[AllureName("get-component-info serves documentation from the local override directory")]
+	[AllureDescription("Points the real clio MCP server at a registry fixture whose sibling docs/ folder carries a uniquely marked recipe, and verifies the response returns that markdown with documentationSource=local.")]
+	public async Task ComponentInfoTool_Should_Serve_Documentation_From_Local_Override_Directory() {
+		// Arrange — the producer-side generator writes the registry JSON and its docs/ tree into one
+		// output directory; the fixture reproduces exactly that layout (issue #1361).
+		const string marker = "E2E-LOCAL-DOC-MARKER-1361";
+		string fixtureRoot = Path.Combine(Path.GetTempPath(), $"clio-e2e-localdocs-{Guid.NewGuid():N}");
+		string fixturePath = Path.Combine(fixtureRoot, "ComponentRegistry.json");
+		const string registryJson = """
+		{
+		  "components": [
+		    { "componentType": "crt.LocalDocProbe", "category": "display", "description": "Local docs probe.", "properties": {},
+		      "references": { "docs": ["docs/local-doc-probe.component.md"] } }
+		  ]
+		}
+		""";
+		Directory.CreateDirectory(Path.Combine(fixtureRoot, "docs"));
+		await File.WriteAllTextAsync(fixturePath, registryJson);
+		await File.WriteAllTextAsync(
+			Path.Combine(fixtureRoot, "docs", "local-doc-probe.component.md"),
+			$"# Local doc probe\n\n{marker}\n");
+		try {
+			McpE2ESettings settings = TestConfiguration.Load();
+			settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
+			settings.ProcessEnvironmentVariables["CLIO_COMPONENT_REGISTRY_LOCAL_FILE"] = fixturePath;
+			using CancellationTokenSource localDocsCts = new(TimeSpan.FromMinutes(3));
+			await using McpServerSession localDocsSession = await McpServerSession.StartAsync(settings, localDocsCts.Token);
+
+			// Act
+			ComponentInfoResponse response = await CallComponentInfoAsync(
+				localDocsSession,
+				localDocsCts.Token,
+				new Dictionary<string, object?> { ["component-type"] = "crt.LocalDocProbe" });
+
+			// Assert
+			response.Success.Should().BeTrue(
+				because: "the fixture publishes crt.LocalDocProbe, so the detail lookup succeeds over the wire");
+			response.Documentation.Should().Contain(marker,
+				because: "the documentation tier must read the working copy, which is the whole point of the override (issue #1361)");
+			response.DocumentationSource.Should().Be("local",
+				because: "the response must declare that documentation came from the developer working copy");
+			response.DocumentationWarning.Should().BeNull(
+				because: "every declared file was served locally, so there is nothing to warn about");
+		}
+		finally {
+			TryDeleteFixtureDirectory(fixtureRoot);
+		}
+	}
+
+	[Test]
+	[Description("With the override active, a declared documentation file that is absent from the working copy yields documentationSource=none plus a warning, and the published CDN copy is not substituted.")]
+	[AllureTag(ToolName)]
+	[AllureName("get-component-info reports a missing local documentation file instead of substituting the CDN copy")]
+	[AllureDescription("Points the real clio MCP server at a registry fixture that declares a docs path with no file behind it, and verifies the response omits documentation, reports documentationSource=none and names the expected path in documentationWarning.")]
+	public async Task ComponentInfoTool_Should_Warn_When_Local_Override_Lacks_Declared_Documentation() {
+		// Arrange — 'docs/data-grid.component.md' IS published on the live CDN, so if the chain fell
+		// through this assertion would see published prose instead of the warning.
+		string fixtureRoot = Path.Combine(Path.GetTempPath(), $"clio-e2e-localdocs-miss-{Guid.NewGuid():N}");
+		string fixturePath = Path.Combine(fixtureRoot, "ComponentRegistry.json");
+		const string registryJson = """
+		{
+		  "components": [
+		    { "componentType": "crt.MissingDocProbe", "category": "display", "description": "Missing local docs probe.", "properties": {},
+		      "references": { "docs": ["docs/data-grid.component.md"] } }
+		  ]
+		}
+		""";
+		Directory.CreateDirectory(fixtureRoot);
+		await File.WriteAllTextAsync(fixturePath, registryJson);
+		try {
+			McpE2ESettings settings = TestConfiguration.Load();
+			settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
+			settings.ProcessEnvironmentVariables["CLIO_COMPONENT_REGISTRY_LOCAL_FILE"] = fixturePath;
+			using CancellationTokenSource missingDocsCts = new(TimeSpan.FromMinutes(3));
+			await using McpServerSession missingDocsSession = await McpServerSession.StartAsync(settings, missingDocsCts.Token);
+
+			// Act
+			ComponentInfoResponse response = await CallComponentInfoAsync(
+				missingDocsSession,
+				missingDocsCts.Token,
+				new Dictionary<string, object?> { ["component-type"] = "crt.MissingDocProbe" });
+
+			// Assert
+			response.Success.Should().BeTrue(
+				because: "a missing recipe degrades the response gracefully rather than failing the lookup");
+			response.Documentation.Should().BeNull(
+				because: "silently substituting the published CDN copy for a missing local file is the defect being fixed (issue #1361)");
+			response.DocumentationSource.Should().Be("none",
+				because: "nothing was served, and the caller must be able to tell that apart from a served doc");
+			response.DocumentationWarning.Should().Contain("docs/data-grid.component.md",
+				because: "the warning must name the file the developer has to generate into the working copy");
+		}
+		finally {
+			TryDeleteFixtureDirectory(fixtureRoot);
+		}
+	}
+
 	private static async Task<ComponentInfoResponse> CallComponentInfoAsync(
 		McpServerSession session,
 		CancellationToken cancellationToken,
@@ -641,6 +741,18 @@ public sealed class ComponentInfoToolE2ETests : McpContractFixtureBase {
 	// Best-effort teardown: the spawned clio process releases the fixture handle on its own shutdown,
 	// but on Windows that release can lag briefly — swallow the IOException so it never masks the real
 	// test result. The temp file is Guid-named, so a rare leaked file is harmless.
+	// Best-effort teardown for the directory-shaped fixtures (registry JSON plus its docs/ tree)
+	// used by the local-documentation-override tests. Same rationale as TryDeleteFixture.
+	private static void TryDeleteFixtureDirectory(string fixtureRoot) {
+		try {
+			if (Directory.Exists(fixtureRoot)) {
+				Directory.Delete(fixtureRoot, recursive: true);
+			}
+		}
+		catch (IOException) {
+		}
+	}
+
 	private static void TryDeleteFixture(string fixturePath) {
 		try {
 			if (File.Exists(fixturePath)) {

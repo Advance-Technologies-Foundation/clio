@@ -1,29 +1,75 @@
 using System;
+using System.IO;
 using System.Net;
 using System.Net.Http;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.Extensions.Logging;
+using IFileSystem = System.IO.Abstractions.IFileSystem;
 
 namespace Clio.Command.McpServer.Tools;
 
 /// <summary>
+/// Which tier of the documentation fallback chain produced the markdown for one
+/// <c>content.docs[]</c> path.
+/// </summary>
+public enum ComponentDocumentationSource {
+	/// <summary>No tier could serve the file — the path was invalid, or every tier missed.</summary>
+	None,
+
+	/// <summary>
+	/// Served from the developer working copy resolved next to the flavor's
+	/// <c>*_LOCAL_FILE</c> registry override. Never written to the disk cache.
+	/// </summary>
+	Local,
+
+	/// <summary>Served from the on-disk docs cache (fresh, or stale when the CDN could not revalidate).</summary>
+	FileCache,
+
+	/// <summary>Served from a CDN response (initial fetch or a stale-cache revalidation).</summary>
+	Cdn
+}
+
+/// <summary>
+/// Outcome of a single documentation fetch: the markdown, and the tier that produced it.
+/// </summary>
+/// <param name="Content">UTF-8 decoded markdown, or <see langword="null"/> when nothing was served.</param>
+/// <param name="Source">The tier that served <paramref name="Content"/>.</param>
+/// <param name="ExpectedLocalPath">
+/// When the flavor's local override is active, the absolute path the file was expected at.
+/// Lets the caller name the missing file in an operator-facing warning instead of leaving a
+/// local-override miss silent. <see langword="null"/> when no override is active.
+/// </param>
+public sealed record ComponentDocumentationFetchResult(
+	string? Content,
+	ComponentDocumentationSource Source,
+	string? ExpectedLocalPath = null) {
+
+	/// <summary>Nothing was served and no local override was active.</summary>
+	public static ComponentDocumentationFetchResult Missing { get; } =
+		new(Content: null, ComponentDocumentationSource.None);
+}
+
+/// <summary>
 /// Fetches long-form documentation files referenced from a component registry entry
-/// (<see cref="ComponentContent.Docs"/>). Two-tier fallback: file cache → CDN. There
-/// is no embedded fallback for docs — when both tiers miss, the call returns
-/// <see langword="null"/> and the caller (the MCP tool) skips that file and keeps
-/// any successfully-fetched siblings.
+/// (<see cref="ComponentContent.Docs"/>). Three-tier resolution: developer local
+/// override → file cache → CDN. There is no embedded fallback for docs — when the
+/// chain misses, the call returns a <see cref="ComponentDocumentationSource.None"/>
+/// result and the caller (the MCP tool) skips that file and keeps any
+/// successfully-fetched siblings.
 /// </summary>
 public interface IComponentRegistryDocsClient {
 	/// <summary>
-	/// Returns the UTF-8 decoded markdown for a documentation file, or <see langword="null"/>
-	/// when the path is invalid, the cache misses, and the CDN cannot serve it.
+	/// Returns the UTF-8 decoded markdown for a documentation file together with the tier
+	/// that served it, or a <see cref="ComponentDocumentationSource.None"/> result when the
+	/// path is invalid, the local override does not carry the file, or the cache and CDN
+	/// both miss.
 	/// </summary>
 	/// <param name="version">Resolved platform version, or <c>"latest"</c>.</param>
 	/// <param name="docPath">Registry-provided path (e.g. <c>docs/data-grid.component.md</c>).</param>
 	/// <param name="cancellationToken">Cancellation token.</param>
-	Task<string?> GetDocAsync(string version, string docPath, CancellationToken cancellationToken = default);
+	Task<ComponentDocumentationFetchResult> GetDocAsync(string version, string docPath, CancellationToken cancellationToken = default);
 }
 
 /// <summary>
@@ -50,34 +96,48 @@ public sealed class ComponentRegistryDocsClient : IComponentRegistryDocsClient {
 
 	private readonly IHttpClientFactory _httpClientFactory;
 	private readonly IComponentRegistryDocsCacheStore _cacheStore;
+	private readonly IFileSystem _fileSystem;
 	private readonly ILogger<ComponentRegistryDocsClient> _logger;
 	private readonly string _cdnBaseUrl;
 
 	public ComponentRegistryDocsClient(
 		IHttpClientFactory httpClientFactory,
 		IComponentRegistryDocsCacheStore cacheStore,
+		IFileSystem fileSystem,
 		ILogger<ComponentRegistryDocsClient> logger)
-		: this(httpClientFactory, cacheStore, logger, ResolveCdnBaseUrl()) {
+		: this(httpClientFactory, cacheStore, fileSystem, logger, ResolveCdnBaseUrl()) {
 	}
 
 	internal ComponentRegistryDocsClient(
 		IHttpClientFactory httpClientFactory,
 		IComponentRegistryDocsCacheStore cacheStore,
+		IFileSystem fileSystem,
 		ILogger<ComponentRegistryDocsClient> logger,
 		string cdnBaseUrl) {
 		_httpClientFactory = httpClientFactory ?? throw new ArgumentNullException(nameof(httpClientFactory));
 		_cacheStore = cacheStore ?? throw new ArgumentNullException(nameof(cacheStore));
+		_fileSystem = fileSystem ?? throw new ArgumentNullException(nameof(fileSystem));
 		_logger = logger ?? throw new ArgumentNullException(nameof(logger));
 		_cdnBaseUrl = cdnBaseUrl ?? throw new ArgumentNullException(nameof(cdnBaseUrl));
 	}
 
 	/// <inheritdoc />
-	public async Task<string?> GetDocAsync(string version, string docPath, CancellationToken cancellationToken = default) {
+	public async Task<ComponentDocumentationFetchResult> GetDocAsync(string version, string docPath, CancellationToken cancellationToken = default) {
 		if (!ComponentRegistryDocsPath.TryNormalise(docPath, out string normalisedPath)) {
 			_logger.LogWarning(
 				"component-registry-docs reject reason=invalid-path version={Version} path={Path}",
 				version, docPath);
-			return null;
+			return ComponentDocumentationFetchResult.Missing;
+		}
+
+		// Tier 0: developer override. When the flavor that owns this docs namespace has its
+		// *_LOCAL_FILE registry override set, the docs tree is resolved next to that file and
+		// becomes the ONLY tier: `components[]` and the recipes it points at must come from
+		// the same working copy, otherwise the developer validates a documentation edit
+		// against published CDN prose and the round-trip only looks successful (issue #1361).
+		ComponentDocumentationFetchResult? local = TryReadLocalOverride(version, normalisedPath);
+		if (local is not null) {
+			return local;
 		}
 
 		// Tier 1: fresh cache → return immediately. Stale cache → revalidate
@@ -93,7 +153,8 @@ public sealed class ComponentRegistryDocsClient : IComponentRegistryDocsClient {
 				_logger.LogInformation(
 					"component-registry-docs source=cache version={Version} path={Path} stale=false",
 					version, normalisedPath);
-				return Encoding.UTF8.GetString(cached.Content);
+				return new ComponentDocumentationFetchResult(
+					Encoding.UTF8.GetString(cached.Content), ComponentDocumentationSource.FileCache);
 			}
 
 			// Stale: try a time-boxed synchronous CDN refresh first.
@@ -103,26 +164,85 @@ public sealed class ComponentRegistryDocsClient : IComponentRegistryDocsClient {
 				_logger.LogInformation(
 					"component-registry-docs source=cdn-revalidate version={Version} path={Path} stale=true refreshed=true bytes={Bytes}",
 					version, normalisedPath, revalidated.Length);
-				return Encoding.UTF8.GetString(revalidated);
+				return new ComponentDocumentationFetchResult(
+					Encoding.UTF8.GetString(revalidated), ComponentDocumentationSource.Cdn);
 			}
 
 			// CDN unreachable, too slow, or no longer serving the file: serve the stale copy.
 			_logger.LogInformation(
 				"component-registry-docs source=cache version={Version} path={Path} stale=true refreshed=false reason=cdn-unavailable",
 				version, normalisedPath);
-			return Encoding.UTF8.GetString(cached.Content);
+			return new ComponentDocumentationFetchResult(
+				Encoding.UTF8.GetString(cached.Content), ComponentDocumentationSource.FileCache);
 		}
 
 		// Tier 2: CDN fetch, cache on success.
 		byte[]? fetched = await TryFetchFromCdnAsync(version, normalisedPath, cancellationToken).ConfigureAwait(false);
 		if (fetched is not null) {
-			return Encoding.UTF8.GetString(fetched);
+			return new ComponentDocumentationFetchResult(
+				Encoding.UTF8.GetString(fetched), ComponentDocumentationSource.Cdn);
 		}
 
 		_logger.LogInformation(
 			"component-registry-docs source=miss version={Version} path={Path}",
 			version, normalisedPath);
-		return null;
+		return ComponentDocumentationFetchResult.Missing;
+	}
+
+	/// <summary>
+	/// Tier 0. Resolves <paramref name="normalisedDocPath"/> against the directory of the
+	/// <c>*_LOCAL_FILE</c> registry override belonging to the flavor that owns the path's
+	/// documentation namespace, mirroring the layout the producer-side generator writes
+	/// (registry JSON and its <c>docs/</c> tree into one output directory).
+	/// </summary>
+	/// <returns>
+	/// <see langword="null"/> when no override is active for this namespace, so the caller
+	/// continues with the cache/CDN chain. Otherwise a result that is authoritative: the
+	/// local markdown, or a <see cref="ComponentDocumentationSource.None"/> result naming
+	/// the path that was expected. The override deliberately does NOT fall through — a
+	/// silent CDN substitution is the defect being fixed.
+	/// </returns>
+	private ComponentDocumentationFetchResult? TryReadLocalOverride(string version, string normalisedDocPath) {
+		if (!ComponentRegistryDocsPath.TryResolveFlavor(normalisedDocPath, out RegistryFlavor? flavor)) {
+			return null;
+		}
+
+		string? registryFilePath = Environment.GetEnvironmentVariable(flavor.LocalFileEnvironmentVariable);
+		if (string.IsNullOrWhiteSpace(registryFilePath)) {
+			return null;
+		}
+
+		string? docsRoot = Path.GetDirectoryName(Path.GetFullPath(registryFilePath.Trim()));
+		if (string.IsNullOrEmpty(docsRoot)) {
+			return null;
+		}
+
+		string candidate = Path.GetFullPath(Path.Combine(docsRoot, normalisedDocPath));
+		// Defence in depth: TryNormalise already rejects "..", backslashes and rooted paths,
+		// but the containment check is repeated at every filesystem boundary per the repo rule.
+		if (!candidate.StartsWith(docsRoot + Path.DirectorySeparatorChar, StringComparison.Ordinal)) {
+			_logger.LogWarning(
+				"component-registry-docs reject reason=local-escape flavor={Flavor} version={Version} path={Path} resolved={Resolved}",
+				flavor.DisplayName, version, normalisedDocPath, candidate);
+			return new ComponentDocumentationFetchResult(
+				Content: null, ComponentDocumentationSource.None, candidate);
+		}
+
+		if (!_fileSystem.File.Exists(candidate)) {
+			_logger.LogWarning(
+				"component-registry-docs source=local-miss flavor={Flavor} version={Version} path={Path} expected={Expected}",
+				flavor.DisplayName, version, normalisedDocPath, candidate);
+			return new ComponentDocumentationFetchResult(
+				Content: null, ComponentDocumentationSource.None, candidate);
+		}
+
+		// Never written to the docs cache: the override stays a read-only test channel, so an
+		// unpublished draft can never leak into the cache a later non-override run reads.
+		string content = _fileSystem.File.ReadAllText(candidate);
+		_logger.LogInformation(
+			"component-registry-docs source=local flavor={Flavor} version={Version} path={Path} file={File} bytes={Bytes}",
+			flavor.DisplayName, version, normalisedDocPath, candidate, content.Length);
+		return new ComponentDocumentationFetchResult(content, ComponentDocumentationSource.Local, candidate);
 	}
 
 	private async Task<byte[]?> TryFetchFromCdnAsync(string version, string normalisedDocPath, CancellationToken cancellationToken) {

@@ -169,7 +169,7 @@ public sealed class RequestInfoTool(
 
 		string requestedType = args.RequestType.Trim();
 		if (state.Lookup.TryGetValue(requestedType, out RequestRegistryEntry? entry)) {
-			string? documentation = await ComponentDocumentationLoader
+			ComponentDocumentationOutcome documentation = await ComponentDocumentationLoader
 				.LoadAsync(docsClient, entry.References?.Docs, state.ResolvedVersion, cancellationToken).ConfigureAwait(false);
 			return CreateDetailResponse(entry, state.ResolvedVersion, resolvedFrom, documentation, state.GlobalReferences, resolvedFromReason);
 		}
@@ -234,16 +234,17 @@ public sealed class RequestInfoTool(
 		RequestRegistryEntry entry,
 		string? resolvedTargetVersion,
 		string? resolvedFrom,
-		string? documentation,
+		ComponentDocumentationOutcome? documentation,
 		RequestGlobalReferences? globalReferences,
 		string? resolvedFromReason = null) {
+		documentation ??= ComponentDocumentationOutcome.NotDeclared;
 		IReadOnlyDictionary<string, JsonElement>? typeDefinitions = TypeReferenceClosure.Resolve(
 			entry.Parameters,
 			WiringContractSeed,
 			entry.References?.TypeDefinitions,
 			globalReferences?.TypeDefinitions);
 		bool declaresDocs = entry.References?.Docs is { Count: > 0 };
-		bool documentationMissing = string.IsNullOrEmpty(documentation);
+		bool documentationMissing = string.IsNullOrEmpty(documentation.Documentation);
 		return new RequestInfoResponse {
 			Success = true,
 			Mode = "detail",
@@ -253,7 +254,9 @@ public sealed class RequestInfoTool(
 			Parameters = entry.Parameters,
 			BaseParameters = globalReferences?.BaseParameters is { Count: > 0 } baseParameters ? baseParameters : null,
 			References = typeDefinitions is null ? null : new RequestReferencesResponse { TypeDefinitions = typeDefinitions },
-			Documentation = documentationMissing ? null : documentation,
+			Documentation = documentationMissing ? null : documentation.Documentation,
+			DocumentationSource = documentation.Source,
+			DocumentationWarning = documentation.Warning,
 			DocumentationUnavailable = declaresDocs && documentationMissing ? true : null,
 			ResolvedTargetVersion = resolvedTargetVersion,
 			ResolvedFrom = resolvedFrom,
@@ -563,6 +566,29 @@ public sealed class RequestInfoResponse {
 	[JsonPropertyName("documentation")]
 	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
 	public string? Documentation { get; init; }
+
+	/// <summary>
+	/// Gets the tier that served <see cref="Documentation"/>: <c>local</c> (the developer working
+	/// copy next to a <c>*_LOCAL_FILE</c> registry override), <c>cache</c>, <c>cdn</c>,
+	/// <c>mixed</c> when the declared files came from different tiers, or <c>none</c> when
+	/// nothing could be served. Emitted on detail responses whose registry entry declares
+	/// <c>references.docs[]</c>; omitted when it declares none, so an absent field means
+	/// "no documentation exists" rather than "provenance unknown" (issue #1361).
+	/// </summary>
+	[JsonPropertyName("documentationSource")]
+	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+	public string? DocumentationSource { get; init; }
+
+	/// <summary>
+	/// Gets the operator-facing explanation emitted only when a component-registry
+	/// local-file override is active and at least one declared documentation file was not
+	/// present in the working copy. Names each missing path and the absolute location it
+	/// was expected at. While an override is active the published CDN copy is deliberately
+	/// never substituted, so this warning is the only signal that a recipe is missing.
+	/// </summary>
+	[JsonPropertyName("documentationWarning")]
+	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+	public string? DocumentationWarning { get; init; }
 
 	/// <summary>
 	/// Gets or sets the disambiguation flag emitted as <c>true</c> only when the request

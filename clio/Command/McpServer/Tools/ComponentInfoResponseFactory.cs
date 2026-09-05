@@ -183,19 +183,22 @@ public static class ComponentInfoResponseFactory {
 	/// </summary>
 	internal static ComponentInfoResponse CreateCompositeDetailResponse(
 		CompositeDefinition composite,
-		string? documentation,
+		ComponentDocumentationOutcome? documentation,
 		string? resolvedTargetVersion,
 		string? resolvedFrom,
 		string? resolvedFromReason) {
+		documentation ??= ComponentDocumentationOutcome.NotDeclared;
 		bool declaresDocs = composite.Docs is { Count: > 0 };
-		bool documentationMissing = string.IsNullOrEmpty(documentation);
+		bool documentationMissing = string.IsNullOrEmpty(documentation.Documentation);
 		return new ComponentInfoResponse {
 			Success = true,
 			Mode = "composite",
 			Count = 1,
 			Caption = composite.Caption,
 			Description = string.IsNullOrWhiteSpace(composite.Description) ? null : composite.Description,
-			Documentation = documentationMissing ? null : documentation,
+			Documentation = documentationMissing ? null : documentation.Documentation,
+			DocumentationSource = documentation.Source,
+			DocumentationWarning = documentation.Warning,
 			DocumentationUnavailable = declaresDocs && documentationMissing ? true : null,
 			ResolvedTargetVersion = resolvedTargetVersion,
 			ResolvedFrom = resolvedFrom,
