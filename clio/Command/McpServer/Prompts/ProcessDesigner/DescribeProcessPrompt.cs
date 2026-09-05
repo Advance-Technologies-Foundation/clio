@@ -42,7 +42,7 @@ public static class DescribeProcessPrompt {
 		`branchesOnActivityResult` is true the branch is decided by which BUTTONS the preceding activity was
 		completed with, not by the expression: the text is still shown, and the runtime ignores it entirely.
 		So never narrate a condition as "what decides this branch" without checking `kind` and
-		`branchesOnActivityResult` first — on 337 of the 1 522 conditional flows in the shipped 7.8.0 corpus
+		`branchesOnActivityResult` first — on 337 of the 1 406 conditional flows in the shipped 7.8.0 corpus
 		that reading would be wrong.
 		Note: expressions (mapping formulas, filters) are returned RAW, not decoded into semantics — narrate
 		structure, types, flow, and parameter sources; where a condition/filter is not decodable, say so

@@ -3338,17 +3338,24 @@ stories:
     feature: "eng-91853-gateways-and-flows"
     repo: "clio-knowledge"
     size: S
-    status: ready-for-dev
+    status: in-progress
     jira: ENG-91853
     file: spec/eng-91853-gateways-and-flows/eng-91853-gateways-and-flows-plan.md
     note: >-
-      guidance/mcp/guides/processes/process-modeling.md, on a branch off master. Needs a libraryVersion
-      and sequence bump and a re-pin of
-      clio.tests/Command/McpServer/Fixtures/curated-knowledge-names.json.
-      Two facts the article does not carry and that nothing else records: branch evaluation order is
+      process-modeling.md and branch-conditions.md, on branch feature/ENG-91853-gateways-and-flows in
+      the linked worktree .worktrees/eng-91853 (that repository's root checkout is coordination-only).
+      Committed: cd0602e rewrites both articles and bumps libraryVersion to 1.13.94; e621362 is the
+      review-gate fix - the article said there was no clear-condition operation, and setFlow with
+      kind 'sequence' is one. The curated-knowledge-names.json re-pin landed on the clio side as
+      ed670759c. Nothing is pushed and no pull request exists.
+      Two facts the articles did not carry and that nothing else records: branch evaluation order is
       flows[] ARRAY order, first true wins, and nothing encodes it - so the order an agent declares
       branches in silently decides which one runs; and the layout re-runs over the WHOLE schema on
       every modify, so hand-arranged element positions do not survive an unrelated edit.
+      REMAINING: activity-connections.md still states five things this change made false (R8 listed as
+      not enforced, gateway elements and default flows listed as unbuildable, R14 stated without its
+      arity scope, and R7/R14 missing the new findings). It is the article branch-conditions.md routes
+      to for R1-R17, so it reaches users; the fix belongs inside the same 1.13.94 bump.
     depends_on:
       - story-eng-91853-gateways-and-flows-2
     blocks: []
