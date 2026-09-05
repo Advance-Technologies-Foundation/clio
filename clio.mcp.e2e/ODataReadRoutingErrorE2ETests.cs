@@ -132,6 +132,77 @@ public sealed class ODataReadRoutingErrorE2ETests {
 				because: "the caller should not be sent down a serialization-debugging path");
 			response.Error.Should().NotContain("404 - File or directory not found",
 				because: "the IIS boilerplate is not an actionable diagnostic");
+			response.StatusCode.Should().Be(404,
+				because: "issue #1325: the documented async-gap retry after create-entity-schema has to key off the "
+					+ "status programmatically, and the transport exposes no status of its own - it is read out of "
+					+ "the page title");
+			response.Entity.Should().Be(NonODataEntity,
+				because: "the structured failure must name the entity set it refers to");
+			response.Error.Should().Contain(CreatioResponseError.UnregisteredEntityHint,
+				because: "the HTML 404 and the JSON routing 404 are the same condition and must share the one hint");
+		}, NonODataEntity);
+	}
+
+	[Test]
+	[AllureTag(ODataReadTool.ToolName)]
+	[AllureName("odata-read accepts the comma-separated select form end to end")]
+	[AllureDescription("Sends select as the comma-separated string OData itself uses, over a real mcp-server session, and verifies it binds instead of failing on JSON deserialization.")]
+	[Description("odata-read with select passed as \"Id,Name\" reaches the tool and is answered by the tool contract, not by a System.String[] deserialization error from the MCP argument binder.")]
+	public async Task ODataRead_Should_Accept_A_Comma_Separated_Select() {
+		await RunAgainstRoutingErrorStubAsync(async (session, environmentName, cancellationToken) => {
+			// Act
+			CallToolResult callResult = await session.CallToolAsync(
+				ODataReadTool.ToolName,
+				new Dictionary<string, object?> {
+					["args"] = new Dictionary<string, object?> {
+						["environment-name"] = environmentName,
+						["entity"] = NonODataEntity,
+						["select"] = "Id,Name",
+						["top"] = 10
+					}
+				},
+				cancellationToken);
+
+			// Assert
+			callResult.IsError.Should().NotBeTrue(
+				because: "issue #1327: the comma-separated form must bind, not be rejected by the argument binder "
+					+ "with \"The JSON value could not be converted to System.String[]\"");
+			ODataReadResponse response = EntitySchemaStructuredResultParser.Extract<ODataReadResponse>(callResult);
+			response.Error.Should().NotContain("System.String[]",
+				because: "a .NET type name is a serializer message, never a statement about this tool\'s contract");
+			response.StatusCode.Should().Be(404,
+				because: "the request reached the stub and was answered by the tool contract, which proves select bound");
+		}, NonODataEntity);
+	}
+
+	[Test]
+	[AllureTag(ODataReadTool.ToolName)]
+	[AllureName("odata-read rejects an unsupported select shape with a contract message")]
+	[AllureDescription("Sends select as a number over a real mcp-server session and verifies the failure states this tool\'s contract rather than a .NET type conversion.")]
+	[Description("odata-read with a numeric select returns a contract message naming the two accepted forms, not a serializer message.")]
+	public async Task ODataRead_Should_Reject_An_Unsupported_Select_Shape_With_A_Contract_Message() {
+		await RunAgainstRoutingErrorStubAsync(async (session, environmentName, cancellationToken) => {
+			// Act
+			CallToolResult callResult = await session.CallToolAsync(
+				ODataReadTool.ToolName,
+				new Dictionary<string, object?> {
+					["args"] = new Dictionary<string, object?> {
+						["environment-name"] = environmentName,
+						["entity"] = NonODataEntity,
+						["select"] = 5,
+						["top"] = 10
+					}
+				},
+				cancellationToken);
+			ODataReadResponse response = EntitySchemaStructuredResultParser.Extract<ODataReadResponse>(callResult);
+
+			// Assert
+			response.Success.Should().BeFalse(
+				because: "a shape the tool cannot use must be rejected before any Creatio request");
+			response.Error.Should().Contain("comma-separated string",
+				because: "the message must name both accepted forms so the caller can correct the call in one step");
+			response.Error.Should().NotContain("System.String[]",
+				because: "the serializer message was the defect reported in issue #1327");
 		}, NonODataEntity);
 	}
 

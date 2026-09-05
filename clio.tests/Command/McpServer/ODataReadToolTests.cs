@@ -15,10 +15,23 @@ namespace Clio.Tests.Command.McpServer;
 [TestFixture]
 [Property("Module", "McpServer")]
 public sealed class ODataReadToolTests {
+	/// <summary>Builds the JSON array shape a caller sends for select/expand.</summary>
+	private static JsonElement Columns(params string[] names) =>
+		JsonSerializer.SerializeToElement(names);
+
+	/// <summary>Builds an arbitrary JSON value for a select/expand shape test.</summary>
+	private static JsonElement JsonValue(string rawJson) =>
+		JsonDocument.Parse(rawJson).RootElement.Clone();
+
 	private static ODataReadTool BuildToolReturning(string body,
-		out IApplicationClient applicationClient) {
+		out IApplicationClient applicationClient) =>
+		BuildToolReturning(body, out applicationClient, out IServiceUrlBuilder _);
+
+	private static ODataReadTool BuildToolReturning(string body,
+		out IApplicationClient applicationClient,
+		out IServiceUrlBuilder serviceUrlBuilder) {
 		applicationClient = Substitute.For<IApplicationClient>();
-		IServiceUrlBuilder serviceUrlBuilder = Substitute.For<IServiceUrlBuilder>();
+		serviceUrlBuilder = Substitute.For<IServiceUrlBuilder>();
 		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
 		commandResolver.Resolve<IApplicationClient>(Arg.Any<EnvironmentOptions>()).Returns(applicationClient);
 		commandResolver.Resolve<IServiceUrlBuilder>(Arg.Any<EnvironmentOptions>()).Returns(serviceUrlBuilder);
@@ -159,7 +172,7 @@ public sealed class ODataReadToolTests {
 			Filters = new ODataFilters {
 				All = [new ODataFilterCondition { Field = "Name", Op = "eq", Value = nameValue }]
 			},
-			Select = ["Id", "Name"],
+			Select = Columns("Id", "Name"),
 			Top = 1
 		});
 
@@ -197,7 +210,7 @@ public sealed class ODataReadToolTests {
 		ODataReadResponse response = tool.Read(new ODataReadArgs {
 			EnvironmentName = "dev",
 			Entity = "Contact",
-			Select = ["Id"],
+			Select = Columns("Id"),
 			OrderBy = "Id asc",
 			Top = 4,
 			Skip = 100,
@@ -1045,6 +1058,186 @@ public sealed class ODataReadToolTests {
 			because: "IIS HTML boilerplate is not an actionable MCP diagnostic");
 		response.Error.Should().NotContain("Failed to parse OData response",
 			because: "the response was a routing failure rather than malformed OData JSON");
+		response.Error.Should().Contain(CreatioResponseError.UnregisteredEntityHint,
+			because: "an HTML 404 and a JSON routing 404 are the same condition, so the HTML branch must "
+				+ "carry the same wait-and-retry hint the documented async gap after create-entity-schema relies on");
+		response.StatusCode.Should().Be(404,
+			because: "retry logic must key off the status programmatically instead of matching on the message text");
+		response.Entity.Should().Be("MessageType",
+			because: "the structured failure must name the entity it refers to");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Reports the HTTP status read out of a non-404 IIS error page title without steering the caller to the async-gap retry.")]
+	public void Read_Should_Report_The_Status_Of_A_Non_404_Html_Error_Page() {
+		// Arrange
+		ODataReadTool tool = BuildToolReturning(
+			"<!DOCTYPE html><html><head><title>503 - Service Unavailable</title></head><body>noise</body></html>",
+			out IApplicationClient _);
+
+		// Act
+		ODataReadResponse response = tool.Read(new ODataReadArgs {
+			EnvironmentName = "dev",
+			Entity = "Contact"
+		});
+
+		// Assert
+		response.Success.Should().BeFalse(
+			because: "an HTML error page is never an OData response");
+		response.StatusCode.Should().Be(503,
+			because: "the transport exposes no HTTP status, so the page title is the only place it can be read from");
+		response.Error.Should().NotContain(CreatioResponseError.UnregisteredEntityHint,
+			because: "telling the caller to wait for an OData rebuild would delay diagnosis of an unrelated outage");
+		response.Error.Should().NotContain("Service Unavailable",
+			because: "no fragment of a server or proxy page may reach an MCP transcript, only the status digits");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Leaves status-code unset when the HTML error page carries no status in its title.")]
+	public void Read_Should_Leave_Status_Code_Unset_When_The_Html_Page_Has_No_Status() {
+		// Arrange
+		ODataReadTool tool = BuildToolReturning(
+			"<html><head><title>Request Error</title></head><body>noise</body></html>",
+			out IApplicationClient _);
+
+		// Act
+		ODataReadResponse response = tool.Read(new ODataReadArgs {
+			EnvironmentName = "dev",
+			Entity = "Contact"
+		});
+
+		// Assert
+		response.Success.Should().BeFalse(
+			because: "an HTML error page is never an OData response");
+		response.StatusCode.Should().BeNull(
+			because: "inventing a status the page never carried would make the structured field untrustworthy");
+		response.Error.Should().NotContain("execute-esq",
+			because: "this is Creatio's own outage page - it says nothing about whether the entity is exposed over "
+				+ "OData, and steering the caller onto another tool would cost them the real cause");
+		response.Error.Should().NotContain(CreatioResponseError.UnregisteredEntityHint,
+			because: "waiting out an OData rebuild that is not happening would delay diagnosing the outage");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Treats each array element of select as one column name and never splits it on commas.")]
+	public void Read_Should_Not_Split_An_Array_Element_Of_Select() {
+		// Arrange
+		ODataReadTool tool = BuildToolReturning(
+			"{\"@odata.context\":\"http://creatio/odata/$metadata#Contact\",\"value\":[]}",
+			out IApplicationClient _);
+
+		// Act
+		bool normalized = ODataReadTool.TryNormalizeColumnList(Columns("Id,Name"), "select",
+			out string[]? columns, out string? error);
+
+		// Assert
+		normalized.Should().BeTrue(
+			because: "an array of strings is an accepted shape whatever the strings contain");
+		error.Should().BeNull(
+			because: "nothing about the shape was rejected");
+		columns.Should().ContainSingle(
+			because: "the caller chose the array shape, so a comma inside an element is part of the name they wrote")
+			.Which.Should().Be("Id,Name",
+			because: "rewriting the caller's column name would hide the mistake instead of letting the server name it");
+		tool.Should().NotBeNull(because: "the fixture is only here to keep the arrange consistent with the sibling tests");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Trims and drops blank array elements of select without splitting the surviving ones.")]
+	public void Read_Should_Trim_And_Drop_Blank_Array_Elements_Of_Select() {
+		// Arrange
+		JsonElement value = Columns(" Id ", "  ", "Name");
+
+		// Act
+		bool normalized = ODataReadTool.TryNormalizeColumnList(value, "select", out string[]? columns,
+			out string? error);
+
+		// Assert
+		normalized.Should().BeTrue(because: "an array of strings is an accepted shape");
+		error.Should().BeNull(because: "nothing about the shape was rejected");
+		columns.Should().Equal(["Id", "Name"],
+			because: "padding and an empty entry are transcription noise, not column names the server should see");
+	}
+
+	[TestCase("Id,Name,CreatedOn", TestName = "plain comma-separated select")]
+	[TestCase(" Id , Name , CreatedOn ", TestName = "comma-separated select with padding")]
+	[TestCase("Id,Name,,CreatedOn,", TestName = "comma-separated select with empty entries")]
+	[Category("Unit")]
+	[Description("Accepts the comma-separated string form of select, which is the shape OData itself uses in $select.")]
+	public void Read_Should_Accept_A_Comma_Separated_Select(string select) {
+		// Arrange
+		ODataReadTool tool = BuildToolReturning(
+			"{\"@odata.context\":\"http://creatio/odata/$metadata#Contact(Id,Name,CreatedOn)\",\"value\":[]}",
+			out IApplicationClient _,
+			out IServiceUrlBuilder urlBuilder);
+
+		// Act
+		ODataReadResponse response = tool.Read(new ODataReadArgs {
+			EnvironmentName = "dev",
+			Entity = "Contact",
+			Select = JsonValue(JsonSerializer.Serialize(select))
+		});
+
+		// Assert
+		response.Success.Should().BeTrue(
+			because: "the comma-separated form is the natural first attempt and must not be rejected as a .NET type error");
+		urlBuilder.Received(1).Build("odata/Contact?$select=Id%2CName%2CCreatedOn&$top=25");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Accepts the comma-separated string form of expand and builds the same $expand clause the array form builds.")]
+	public void Read_Should_Accept_A_Comma_Separated_Expand() {
+		// Arrange
+		ODataReadTool tool = BuildToolReturning(
+			"{\"@odata.context\":\"http://creatio/odata/$metadata#Contact\",\"value\":[]}",
+			out IApplicationClient _,
+			out IServiceUrlBuilder urlBuilder);
+
+		// Act
+		ODataReadResponse response = tool.Read(new ODataReadArgs {
+			EnvironmentName = "dev",
+			Entity = "Contact",
+			Expand = JsonValue("\"Account,Owner\"")
+		});
+
+		// Assert
+		response.Success.Should().BeTrue(
+			because: "expand has the same list shape as select and must accept the same two forms");
+		urlBuilder.Received(1).Build("odata/Contact?$expand=Account%2COwner&$top=25");
+	}
+
+	[TestCase("5", "select", TestName = "select as a number")]
+	[TestCase("{\"a\":1}", "select", TestName = "select as an object")]
+	[TestCase("[1,2]", "select", TestName = "select as an array of numbers")]
+	[TestCase("true", "expand", TestName = "expand as a boolean")]
+	[Category("Unit")]
+	[Description("Rejects a select/expand shape that is neither an array of names nor a comma-separated string with a contract message rather than a serializer message.")]
+	public void Read_Should_Reject_An_Unsupported_Column_List_Shape(string rawJson, string argumentName) {
+		// Arrange
+		ODataReadTool tool = BuildToolReturning("{}", out IApplicationClient client);
+		JsonElement value = JsonValue(rawJson);
+
+		// Act
+		ODataReadResponse response = tool.Read(new ODataReadArgs {
+			EnvironmentName = "dev",
+			Entity = "Contact",
+			Select = argumentName == "select" ? value : null,
+			Expand = argumentName == "expand" ? value : null
+		});
+
+		// Assert
+		response.Success.Should().BeFalse(
+			because: "an unsupported shape must be rejected, not silently ignored");
+		response.Error.Should().Be(
+			$"{argumentName} must be an array of column names or a comma-separated string, "
+			+ "for example [\"Id\",\"Name\"] or \"Id,Name\".",
+			because: "the caller needs a statement about this tool\'s contract, not \"could not be converted to System.String[]\"");
+		client.DidNotReceive().ExecuteGetRequest(Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>());
 	}
 
 	[Test]
@@ -1070,10 +1263,15 @@ public sealed class ODataReadToolTests {
 		// Assert
 		response.Success.Should().BeFalse(
 			because: "a non-JSON response cannot be a successful OData read");
-		response.Error.Should().Contain("did not return a JSON OData response",
-			because: "the failure should identify the transport/content problem");
+		response.Error.Should().Contain("HTTP 500",
+			because: "the transport hides the HTTP status, so naming the status the page states is what tells "
+				+ "the caller this is a server-side failure rather than a query-shape problem");
+		response.StatusCode.Should().Be(500,
+			because: "the status also travels as a structured member so a caller can branch on it");
 		response.Error.Should().NotContain("private response marker",
 			because: "raw proxy or server response bodies must not leak into the MCP transcript");
+		response.Error.Should().NotContain("Server Error",
+			because: "the page title is server-controlled prose; only the status digits may be lifted out of it");
 	}
 
 	[Test]
@@ -1380,7 +1578,7 @@ public sealed class ODataReadToolTests {
 		ODataReadResponse response = tool.Read(new ODataReadArgs {
 			EnvironmentName = "dev",
 			Entity = "Contact",
-			Select = ["Id", "Name"]
+			Select = Columns("Id", "Name")
 		});
 
 		// Assert

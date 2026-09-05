@@ -1,4 +1,4 @@
-using Allure.NUnit;
+﻿using Allure.NUnit;
 using Allure.NUnit.Attributes;
 using Clio.Command.McpServer.Tools;
 using Clio.Mcp.E2E.Support.Configuration;
@@ -56,6 +56,9 @@ public sealed class ODataWriteNonJsonResponseE2ETests {
 				because: "an HTML odata response must never be reported as a successful update - the request never reached a real OData controller");
 			response.Error.Should().Contain("was not JSON",
 				because: "the diagnostic must point at the transport layer, not the request's OData/ESQ shape");
+			response.Error.Should().Contain("HTTP 404",
+				because: "the status the stub's error page states must survive the whole mcp-server round trip, "
+					+ "which is the only place the write path can learn it - the transport exposes none");
 		});
 	}
 

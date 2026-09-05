@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.ComponentModel;
 using System.Diagnostics.CodeAnalysis;
@@ -2100,8 +2100,8 @@ internal static class ToolContractCatalog {
 					Field(EntityFieldName, StringType, "Creatio OData entity set name, usually the referenced lookup schema name such as Contact, Account, or a custom lookup schema."),
 					Field(EnvironmentNameFieldName, StringType, RegisteredEnvironmentNameDescription),
 					Field(FiltersFieldName, ObjectType, "Structured filter. all conditions join with AND; any conditions join with OR. GUID values in Id-suffixed fields and navigation paths ending in Id are automatically unquoted. Use lookup traversal paths such as Account/Id when filtering records by lookup primary value. Example: { \"all\": [{ \"field\": \"Account/Id\", \"op\": \"eq\", \"value\": \"8ecab4a1-0ca3-4515-9399-efe0a19390bd\" }] }."),
-					Field(SelectFieldName, ArrayType, "Fields to return. Use [\"Id\", \"Name\"] when resolving lookup records by display value."),
-					Field("expand", ArrayType, "Navigation properties to expand."),
+					Field(SelectFieldName, ArrayType, "Array of field names to return. Use [\"Id\", \"Name\"] when resolving lookup records by display value. A comma-separated string (\"Id,Name\") is tolerated as input; an array element is always one column name and is never split on commas."),
+					Field("expand", ArrayType, "Array of navigation properties to expand. A comma-separated string (\"Account,Owner\") is tolerated as input; an array element is always one navigation name and is never split on commas."),
 					Field("order-by", StringType, "OData $orderby clause, for example CreatedOn desc or Name asc."),
 					Field("top", NumberType, "Maximum number of records to return, 1-100. Default: 25. An out-of-range top (including 0 or negative) is rejected with success:false, never silently changed."),
 					Field("skip", NumberType, "Number of matching records to skip. Must be zero or greater. Use order-by for stable paging."),
@@ -2125,7 +2125,9 @@ internal static class ToolContractCatalog {
 				Field(CountFieldName, NumberType, "Number of records returned in this page."),
 				Field("total-count", NumberType, "Total records matching the filter before top/skip paging; present when count=true."),
 				Field(ValueFieldName, ArrayType, "OData value array or single entity response."),
-				Field("next-link", StringType, "OData next-link URL when more records are available; use skip with a stable order-by to request subsequent pages through this tool.")
+				Field("next-link", StringType, "OData next-link URL when more records are available; use skip with a stable order-by to request subsequent pages through this tool."),
+				Field("status-code", NumberType, "HTTP status behind a failure, present ONLY when the response was an HTML error page that states its status in its title (404 when the entity has no OData controller, 401/502/503 for an auth/proxy/outage hop). Absent otherwise: Creatio serves the JSON routing 404 with HTTP 200, and that case instead carries the wait-and-retry hint in error. Branch on both, never on status-code alone."),
+				Field(EntityFieldName, StringType, "The OData entity set the failure refers to, echoed back so several concurrent reads can be told apart.")
 			),
 			CommonErrorContract,
 			[

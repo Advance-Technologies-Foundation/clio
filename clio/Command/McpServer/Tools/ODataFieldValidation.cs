@@ -440,10 +440,17 @@ internal static class ODataFieldValidation {
 			//The body itself is never quoted: DescribeNonJsonResponse embeds a 500-character preview,
 			//and a proxy page or session redirect can put arbitrary remote content in it. The locally
 			//authored hint says what the shape means without reproducing any of it.
+			//An HTML body goes through the SAME classification the read path uses, so the probe reports
+			//the HTTP status the page states and, for a 404, the wait-and-retry hint. Without it the
+			//caller was told only "the probe response was not JSON" for an entity whose OData controller
+			//simply had not been rebuilt yet - the one case that clears itself in a minute.
 			return new ProbeResult(false, null,
-				"the probe response was not JSON, which Creatio's OData pipeline never returns by itself - "
-				+ "this points to a proxy, IIS, routing or session problem rather than the request's shape. "
-				+ "The body is not reproduced here");
+				CreatioResponseError.TryDescribeMarkupErrorResponse(body, entity, out string markupMessage, out int? _)
+					//The trailing stop is trimmed because the caller's template appends ". No write was performed".
+					? $"the probe response was not JSON but an HTML error page. {markupMessage.TrimEnd(' ', '.')}"
+					: "the probe response was not JSON, which Creatio's OData pipeline never returns by itself - "
+					+ "this points to a proxy, IIS, routing or session problem rather than the request's shape. "
+					+ "The body is not reproduced here");
 		}
 	}
 
