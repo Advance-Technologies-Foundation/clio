@@ -36,6 +36,15 @@ public interface IPackageDependencyManager
 	IReadOnlyList<string> AddDependencies(string packageName, IEnumerable<PackageDependencySpec> dependencies);
 
 	/// <summary>
+	/// Reads the dependencies <paramref name="packageName"/> currently declares, without changing anything.
+	/// Returns the DIRECT dependencies only - what the package descriptor declares, not the transitive
+	/// closure.
+	/// </summary>
+	/// <param name="packageName">Package whose dependency list is read.</param>
+	/// <returns>The declared dependency package names.</returns>
+	IReadOnlyList<string> GetDependencies(string packageName);
+
+	/// <summary>
 	/// Removes the requested dependencies from <paramref name="packageName"/> and persists the change.
 	/// Removing a dependency that is not present is a no-op (idempotent). Dependencies are matched by name
 	/// (case-insensitive); the version is ignored.

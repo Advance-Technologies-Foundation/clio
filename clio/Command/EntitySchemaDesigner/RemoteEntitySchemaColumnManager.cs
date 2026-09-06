@@ -6,6 +6,7 @@ using System.Net;
 using System.Net.Http;
 using System.Net.Sockets;
 using System.IO;
+using System.Text;
 using System.Text.Json;
 using System.Threading.Tasks;
 using Clio.Common;
@@ -170,8 +171,12 @@ internal sealed class RemoteEntitySchemaColumnManager : IRemoteEntitySchemaColum
 		// the publish both succeeded. Measured on a stand: only the item being changed is missing, for about
 		// nine seconds, while every other schema keeps answering. A probe that can fail that way cannot prove
 		// availability, and the reload below already proves the save round-trips.
+		// allowDependencyResolution: false, unlike the load at the top of the write. The save into THIS package
+		// has just succeeded, so a reload that cannot see the schema is the platform's own refresh window (see
+		// the note above), never a missing dependency - letting it write one would add a package dependency on
+		// the strength of a transient read. The candidate list is still computed for the error message.
 		return LoadSchema(schema.Name, package.Descriptor.UId, package.Descriptor.Name, options,
-			allowDependencyResolution: true);
+			allowDependencyResolution: false);
 	}
 
 	public void SetSchemaProperties(SetEntitySchemaPropertiesOptions options) {
@@ -1180,22 +1185,135 @@ internal sealed class RemoteEntitySchemaColumnManager : IRemoteEntitySchemaColum
 		DesignerResponse<EntityDesignSchemaDto>? response =
 			_entitySchemaDesignerClient.TryGetSchemaDesignItem(request, options);
 		bool schemaUnavailable = response == null || response.Schema == null;
-		if (allowDependencyResolution && schemaUnavailable && _dependencyResolver.TryAutoResolve(schemaName, packageName)) {
-			_logger.WriteInfo(
-				$"Retrying GetSchemaDesignItem for '{schemaName}' after auto-dependency resolution...");
-			response = _entitySchemaDesignerClient.TryGetSchemaDesignItem(request, options);
-			schemaUnavailable = response == null || response.Schema == null;
+		EntitySchemaDependencyResolution resolution = EntitySchemaDependencyResolution.None;
+		if (schemaUnavailable) {
+			// Runs on the READ paths too (with allowAutoAdd: false, so it cannot write). Without it the read
+			// paths reported the bare transport failure and named no package at all, which is what made
+			// `get-entity-schema-properties --package <app>` unactionable for the caller (issue #722).
+			resolution = _dependencyResolver.Resolve(schemaName, packageName,
+				allowAutoAdd: allowDependencyResolution) ?? EntitySchemaDependencyResolution.None;
+			if (resolution.DependencyAdded) {
+				_logger.WriteInfo(
+					$"Retrying GetSchemaDesignItem for '{schemaName}' after auto-dependency resolution...");
+				response = _entitySchemaDesignerClient.TryGetSchemaDesignItem(request, options);
+				schemaUnavailable = response == null || response.Schema == null;
+			}
 		}
 		if (schemaUnavailable) {
-			response = _entitySchemaDesignerClient.GetSchemaDesignItem(request, options);
+			try {
+				response = _entitySchemaDesignerClient.GetSchemaDesignItem(request, options);
+			} catch (NonJsonServiceResponseException nonJsonException)
+				when (nonJsonException is not SessionExpiredServiceResponseException) {
+				// Rethrown as the SAME type, not as EntitySchemaDesignerException: NonJsonServiceResponseException
+				// carries IAuthoritativeErrorMessage, and SurfacedExceptionMessage.Resolve stops at the outermost
+				// exception that carries it - so the enriched text below is what the MCP boundary surfaces, with
+				// the transport failure preserved as the inner exception for diagnostics. A session-expiry response
+				// is excluded by the filter: it carries no information about the schema or the package, so
+				// attaching a missing-dependency diagnosis to it would be a claim with no evidence behind it.
+				throw new NonJsonServiceResponseException(
+					BuildSchemaUnavailableMessage(schemaName, packageName, resolution,
+						SummariseTransportFailure(nonJsonException)),
+					nonJsonException);
+			}
 		}
+		// The same enriched text on the OTHER "unavailable" shape: a well-formed envelope whose schema is null.
+		// It reaches here rather than through the catch above, and reporting it bare would throw away the
+		// candidate lookup that has already run.
 		EntityDesignSchemaDto schema = response!.Schema
 			?? throw new EntitySchemaDesignerException(
-				$"GetSchemaDesignItem returned no schema for '{schemaName}'.");
+				BuildSchemaUnavailableMessage(schemaName, packageName, resolution,
+					$"GetSchemaDesignItem returned no schema for '{schemaName}'."));
 		schema.Columns = schema.Columns?.ToList() ?? [];
 		schema.InheritedColumns = schema.InheritedColumns?.ToList() ?? [];
 		schema.Indexes = schema.Indexes?.ToList() ?? [];
 		return schema;
+	}
+
+	/// <summary>Upper bound on the candidate packages named in the schema-unavailable message.</summary>
+	private const int MaxReportedDependencyCandidates = 8;
+
+	/// <summary>Upper bound on the transport-failure summary appended to the schema-unavailable message.</summary>
+	private const int MaxTransportSummaryLength = 300;
+
+	/// <summary>
+	/// Reduces a classified transport failure to its first sentence, which carries the method and the
+	/// endpoint URL.
+	/// </summary>
+	/// <remarks>
+	/// The full text is deliberately NOT appended. It ends with "clio has not established WHY the server
+	/// answered this way and states no cause" - correct for the transport layer, which has looked nothing up,
+	/// but a direct contradiction of the diagnosis this method builds on top of it. The complete message
+	/// stays reachable as the inner exception.
+	/// </remarks>
+	/// <param name="transportFailure">The classified transport failure.</param>
+	/// <returns>The bounded summary to append.</returns>
+	private static string SummariseTransportFailure(Exception transportFailure) {
+		string message = transportFailure.Message;
+		int sentenceEnd = message.IndexOf(". ", StringComparison.Ordinal);
+		string summary = sentenceEnd > 0 ? message[..(sentenceEnd + 1)] : message;
+		return summary.Length > MaxTransportSummaryLength
+			? summary[..MaxTransportSummaryLength] + "…"
+			: summary;
+	}
+
+	/// <summary>
+	/// Builds the caller-facing message for a schema the designer could not open in the target package.
+	/// </summary>
+	/// <remarks>
+	/// The missing-dependency cause is asserted ONLY when candidate packages were actually found, and it
+	/// then names them. When nothing was found the message says so instead of inventing a cause - the text
+	/// this replaced asserted "a stale database table left by a previously deleted package" as a second
+	/// cause on every HTML response, with no check anywhere producing evidence for it (issue #722).
+	/// </remarks>
+	/// <param name="schemaName">Entity schema that could not be opened.</param>
+	/// <param name="packageName">Package the request was scoped to.</param>
+	/// <param name="resolution">Candidates found for that schema, ranked, and whether one was added.</param>
+	/// <param name="transportSummary">Bounded summary of the underlying failure, kept for diagnostics.</param>
+	/// <returns>The error message to surface.</returns>
+	private static string BuildSchemaUnavailableMessage(string schemaName, string packageName,
+		EntitySchemaDependencyResolution resolution, string transportSummary) {
+		StringBuilder message = new();
+		message.Append($"Schema '{schemaName}' could not be opened in package '{packageName}'. ");
+		if (resolution.DependencyAdded) {
+			// Reporting the candidate as something to add would be wrong here: it IS added, and it did not
+			// help. Saying so is what stops the caller from repeating the write that just failed to fix this.
+			message.Append(
+				$"clio added the dependency '{resolution.Candidates[0]}' to '{packageName}' and retried, and " +
+				"the schema still could not be opened - so a missing dependency was not the cause, or not the " +
+				$"only one. Consider undoing that change with: clio remove-package-dependency --package-name " +
+				$"{packageName} --dependencies {resolution.Candidates[0]}. Then check the Creatio server log " +
+				"for the failed request. ");
+		} else if (resolution.Candidates.Count == 0) {
+			message.Append(
+				$"clio found no other package that contributes '{schemaName}' and that '{packageName}' does " +
+				"not already depend on, so it has NO evidence about the cause and states none. Confirm the " +
+				"schema name and the target package with find-entity-schema and list-packages, and check the " +
+				"Creatio server log for the failed request. ");
+		} else {
+			IReadOnlyList<string> reported = resolution.Candidates.Count > MaxReportedDependencyCandidates
+				? resolution.Candidates.Take(MaxReportedDependencyCandidates).ToList()
+				: resolution.Candidates;
+			string overflow = resolution.Candidates.Count > reported.Count
+				? $" (+{resolution.Candidates.Count - reported.Count} more, see find-entity-schema --schema-name {schemaName})"
+				: string.Empty;
+			message.Append(
+				$"The usual cause is that '{packageName}' has no dependency on the package that owns the " +
+				$"layer of '{schemaName}' it is trying to extend. These packages contribute '{schemaName}' " +
+				$"and are not already dependencies of '{packageName}'");
+			message.Append(resolution.ApplicationCandidateCount > 0
+				? $", installed applications first: {string.Join(", ", reported)}{overflow}. "
+				: $": {string.Join(", ", reported)}{overflow}. ");
+			message.Append(
+				$"Add the owning one with: clio add-package-dependency --package-name {packageName} " +
+				"--dependencies <PACKAGE>. clio does not choose for you - more than one of these can be a " +
+				"valid dependency and adding the wrong one changes the package for real; the order above is " +
+				"a ranking hint, not an answer. ");
+		}
+		message.Append(
+			"Do NOT write into the owning (managed) package and do NOT fall back to raw SQL/OData/DataService. " +
+			"MCP agents: read get-guidance name=package-dependencies for the full recovery path. " +
+			$"Underlying failure: {transportSummary}");
+		return message.ToString();
 	}
 
 	private static int ParseSupportedType(string typeName, string actionName) {
