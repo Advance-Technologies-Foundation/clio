@@ -106,6 +106,40 @@ redden a test?* — and run it.
 
 ---
 
+## 3b. The second review gate (2026-09-06) and what it changed
+
+[spec/reviews/review-eng-91853-gateways-and-flows-2026-09-06.md](../reviews/review-eng-91853-gateways-and-flows-2026-09-06.md).
+One High, no Blocker, eleven Mediums, ~20 Lows — all actioned. The five that mattered:
+
+- **The 88% claim was wrong by 242 flows.** Re-measured here: 242 of the 487 element-output conditions
+  address a COLUMN through a third meta-path segment the name form cannot express, so by-name coverage
+  is **65%**, not 88%. The sentence it came from — 932 of 1 061 carry a UId that cannot exist yet — is
+  still true, so the error was the inference, not the measurement. Both numbers now appear separately in
+  five places.
+- **R7/R9's no-default warning fired where its own message is false.** A diverging or-gateway carrying a
+  plain flow does not stop at run time; the runtime takes that flow as the default. Seven shipped
+  gateways are in that shape and all seven reach the rule through describe-then-validate.
+- **Seven guards nothing could redden** (M2, M7–M11 plus the or-gateway type filter) now have tests
+  confirmed RED under their own mutation.
+- **Two write-path messages were wrong**: a `setFlow` that changed nothing raised a notice about a write
+  that did not happen, and the refusal for clearing a default branch advised making it the default it
+  already was.
+- **The e2e gap AGENTS.md calls mandatory is closed on paper**: cases now send `setFlow`, `flows[].kind`,
+  `flows[].condition` and a gateway type token through the real MCP path. They **compile and have never
+  run** — the suite is manual-only and its sandbox `EnvironmentName` is unset here. The PR body must say
+  the e2e evidence is compile-only.
+
+**Archive is 1.4.0.62; the `[RequiresPackage]` floor stays at 1.4.0.60** — the floor states what the code
+NEEDS, and .61/.62 change only comments and two refusal wordings. Be exact about which archive buys what:
+`flows[].kind` and the gateway type tokens arrive in **.58**; the by-name condition expansion in **.60**.
+
+**One rule this gate produced, now in `docs/agent-instructions/bundled-packages.md`:** rebundle when the
+archive's BEHAVIOUR changes, and once more at the end for everything else. A raised bundled version
+hard-blocks every `[RequiresPackage]`-triggered command on any environment below it, and for a
+source-shipped package that is a configuration build plus a restart.
+
+---
+
 ## 4. Settled by measurement — do not spend a round re-deriving these
 
 The ticket's own DO-NOT list is in
