@@ -252,6 +252,12 @@ and cannot tell *which* path it belongs to without clicking.
 
 ## Finding 1 — a back edge is drawn on top of the forward flow (CrtProcessBuilder, layout)
 
+> **DISPOSITION, owner's decision 2026-09-06: DEFERRED to a separate autolayout task**
+> (`task_85915b4e`). The defect stands and the FAIL below is not withdrawn — what the owner
+> decided is WHERE it is fixed, not whether it exists. It does not block this ticket's pull
+> requests: connector routing was never in ENG-91853's scope, and the placement half of the
+> same case passes.
+
 **Observed**, TC-08, `Record batch processing`, between `Process a portion of records` (user task) and
 `Check remaining records` (exclusive gateway): a **single straight horizontal line carrying an arrowhead
 at BOTH ends**. A double-headed arrow is not BPMN, so the picture alone already says something is wrong;
@@ -287,7 +293,7 @@ what the rest of the case requires — so the shortest path for both flows is th
 and the router has no reason to bend either. Placement cannot fix this without breaking "steps run left
 to right in the order they happen".
 
-**What could fix it**, for whoever picks it up: the engine already knows about
+**What could fix it**, carried into `task_85915b4e` with this evidence: the engine already knows about
 `PolylinePointPositions` (`ProcessGraphBuilder.CarryOperatorState` copies it on a re-kind), and a back
 edge is exactly the case where an explicit route — down out of the source, back along a free lane, up
 into the target — is worth writing rather than delegating. `VisualType` is NOT the lever:
@@ -351,7 +357,11 @@ converge on a shared step that runs once.
 
 **Design time passes for TC-01 and FAILS for TC-08**, on the one requirement TC-08 leads with: a back
 edge drawn on top of the forward flow is not a visible return path. Placement is correct; the connector
-is not, and the connector is currently left entirely to the platform's router.
+is not, and the connector is currently left entirely to the platform's router. That FAIL is **deferred
+to a separate autolayout task by the owner**, not withdrawn, and it does not block this ticket — routing
+was never in its scope.
 
-Two findings, one in each direction of the ticket's own boundary: finding 1 is the layout engine's to
-answer, finding 2 is a claim in clio's rule text that a run contradicts.
+Two findings, one on each side of this ticket's boundary. Finding 1 is the layout engine's to answer and
+now has its own task. Finding 2 is a claim in clio's own rule text that a run contradicts, and it is the
+one a reader of this report should carry forward: **R12 says every outgoing flow is taken, and on a user
+task one was.**
