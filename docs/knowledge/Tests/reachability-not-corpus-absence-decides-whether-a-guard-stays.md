@@ -16,6 +16,10 @@ opposite for each:
 | length cap on a `[# … #]` token body | suite stayed green | n/a | **deleted** |
 | bracket/angle-bracket pass-through check | suite stayed green | zero | **kept, and given a test** |
 
+Read that third column as the thing being OVERRULED, not as an input to the verdict. The second row was
+kept *despite* measuring zero, and if the corpus count had decided it the row would say delete. It earns
+its place only because the decision goes the other way.
+
 The cap guarded an input that **cannot arrive**: every condition reaching that pass came through
 `AddFlow`, which bounds it at 2 048 characters first. No caller can send a longer one, so the branch is
 unreachable and the code is a comment pretending to be a check.
@@ -50,7 +54,23 @@ enumeration of known shapes does not — which is a second reason the two cases 
 3. **Then write the test**, and confirm it reddens. A guard kept without one is the same code you would
    have deleted, minus the reason.
 
-The exception to (1) is a guard against a fact **outside this repository** changing — a platform rule,
-a collection's backfill behaviour. `ProcessGraphBuilder.ReKindFlow`'s `createdInSchemaUId != Guid.Empty`
-is that case: unreachable today, kept, documented as unreachable, and deliberately not given a test,
-because the fixture that reaches it would have to build a state no production path produces.
+The exception to (1) turns on **whose fact makes the branch unreachable** — not on where the input
+comes from. That distinction is the whole of it, because "the platform might send X" can be said about
+anything, while "our own call graph is what prevents X" is checkable:
+
+- the length cap was unreachable because of `AddFlow`'s 2 048-character bound. **We own that fact.** If
+  it ever changes it changes in our diff, deliberately, and the guard can come back in the same commit.
+  → delete.
+- `ReKindFlow`'s `createdInSchemaUId != Guid.Empty` is unreachable because `MetaItemCollection.InsertItem`
+  backfills the field. **We do not own that fact.** It can change under us, without our diff, and
+  silently. → keep, unreachable, and deliberately without a test — the fixture that reaches it would
+  have to build a state no production path produces.
+
+So it is not enough that the INPUT comes from outside. You must show the unreachability itself rests on
+a fact you do not control.
+
+**The exception carries the same obligation as the delete case, mirrored.** Step 1 says to name the
+upstream fact so a deletion survives that fact changing; a kept guard must name the EXTERNAL fact and
+say what flips if it changes, so the next reader can re-derive reachability instead of trusting the
+label. Without that the exception is a free pass with good manners — and it is the one part of this
+record that someone motivated could stretch.

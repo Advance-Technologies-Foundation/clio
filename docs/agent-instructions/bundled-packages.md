@@ -105,9 +105,16 @@ environment recorded; that comparison is the entire delivery mechanism. So:
   floor is gone, but `IBundledPackageConvergence` reintroduced the same refusal with a narrower blast
   radius. `RequiredPackageChecker` **throws** on a convergence refusal (`PackageRequirementException`),
   after the requirement gate has already passed — so an environment below the bundled version cannot run
-  any `[RequiresPackage]`-gated command until it reinstalls, and for a source-shipped package like
-  `CrtProcessBuilder` that reinstall is a configuration build plus an instance restart, measured in
-  minutes. Ungated commands are unaffected, which is the whole of the difference from the old floor.
+  the affected commands until it reinstalls, and for a source-shipped package like `CrtProcessBuilder`
+  that reinstall is a configuration build plus an instance restart, measured in minutes.
+
+  The gate is **TRIGGERED requirements, not decorated commands**, and the difference is worth the clause
+  because "decorated" invites a `grep` for the attribute and a wrong conclusion. `RequiredPackageChecker`
+  reflects first and evaluates convergence only inside its per-requirement loop, so a command with no
+  triggered requirement returns before touching the package list at all — no HTTP, no convergence. And
+  `CollectTriggeredRequirements` adds a PROPERTY-level requirement only when its bool flag is `true`, so
+  a conditionally-decorated command invoked without that flag is equally unaffected. Everything else
+  keeps working, which is the whole of the difference from the old floor.
 
   **So rebundle when the archive's BEHAVIOUR changes, and once more at the end for everything else.**
   A comment, a docblock or a renamed local still moves the archive bytes (this package ships as SOURCE),
