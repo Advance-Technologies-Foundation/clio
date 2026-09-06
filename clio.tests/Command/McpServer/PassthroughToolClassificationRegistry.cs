@@ -352,6 +352,8 @@ internal static class PassthroughToolClassificationRegistry {
 			["odata-read"] = PassthroughClassification.NotApplicable,
 			["odata-read-to-file"] = PassthroughClassification.NotApplicable,
 			["odata-update"] = PassthroughClassification.NotApplicable,
+			["get-email-template"] = PassthroughClassification.NotApplicable,
+			["update-email-template"] = PassthroughClassification.NotApplicable,
 			["pkg-to-db"] = PassthroughClassification.NotApplicable,
 			["pkg-to-file-system"] = PassthroughClassification.NotApplicable,
 			["push-workspace"] = PassthroughClassification.NotApplicable,
