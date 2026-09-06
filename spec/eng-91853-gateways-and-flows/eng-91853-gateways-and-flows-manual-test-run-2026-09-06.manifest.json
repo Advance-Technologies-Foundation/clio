@@ -1,0 +1,50 @@
+{
+  "runId": "14dd2c73-2741-45f6-9bab-14a9608c13a3",
+  "issue": "ENG-91853",
+  "mode": "agent",
+  "stand": { "alias": "Creatio", "url": "http://d_krestov_n.tscrm.com:40001" },
+  "packageVersion": "1.4.0.59",
+  "prompt": {
+    "path": "spec/eng-91853-gateways-and-flows/eng-91853-gateways-and-flows-manual-test-prompt.md",
+    "commit": "eb5cfddd4"
+  },
+  "clioCommit": "97017ec32",
+  "knowledge": {
+    "libraryVersion": "1.13.94",
+    "sequence": 1013094,
+    "resolvedRevision": "6ea736c47f00f14539ae101989cf1a63409b408e"
+  },
+  "isolation": "isolated",
+  "processes": [
+    {
+      "case": "TC-01 (then TC-06 applied to it)",
+      "name": "UsrAmount_Route",
+      "uid": "a80c176f-5955-44b2-a8aa-7679c3e8dbed",
+      "package": "Custom",
+      "note": "stored state is post-TC-06: conditional threshold is > 250"
+    },
+    {
+      "case": "TC-02 (then TC-07 applied to it)",
+      "name": "UsrAmount_Escalate",
+      "uid": "876e213a-98be-4943-a039-bf1f188a9578",
+      "package": "Custom",
+      "note": "stored state is post-TC-07: the two roles are swapped, so TC-02's own end state is no longer inspectable in place"
+    },
+    {
+      "case": "TC-03",
+      "name": "UsrAmount_RouteStrict",
+      "uid": "8be65fcf-c507-481b-9275-fb1e61feff5c",
+      "package": "Custom",
+      "note": "two conditional flows, no default - the adversarial shape, intact"
+    },
+    {
+      "case": "TC-04",
+      "name": "UsrParallelCheck_Confirm",
+      "uid": "d7f95f45-449b-4f62-b59b-c474ec66fe65",
+      "package": "Custom",
+      "note": "parallel split and join, all outgoing flows plain"
+    }
+  ],
+  "notReached": ["TC-05", "TC-08", "TC-09", "TC-10", "TC-11"],
+  "notReachedReason": "the executor delegated the suite to two background sub-agents and ended its own session before the second finished; in print mode there is no later collection"
+}
