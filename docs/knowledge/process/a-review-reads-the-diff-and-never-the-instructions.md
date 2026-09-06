@@ -64,8 +64,8 @@ of the three are fixable by sharpening a trigger that already exists rather than
 | Instance | Trigger | What failed |
 |---|---|---|
 | `bundled-packages.md` | **present, and exact** — AGENTS.md names `BundledPackageConvergence.cs` in the list that says to read this article | the **verb**. It says *read*, and reading an article in order to FOLLOW it is not the act of checking it still holds |
-| `McpCapabilityMap.md` | **absent** — it appears nowhere in AGENTS.md; the required MCP targets are `Tools\*.cs`, `Prompts\*.cs`, `Resources\*.cs`, `clio.tests`, `clio.mcp.e2e`, `clio	pl\**` | nothing fires at all |
-| `CreateBusinessProcessTool`'s `[Description]` | **present** — `Tools\*.cs` is a required target and fires on every edit | the **question**. The rule asks to keep the description aligned with *"the current command behavior"* — this tool's own. Whether a tool it NAMES still exists, or is still resident, is a different question nothing asks |
+| `McpCapabilityMap.md` | **absent** — it appears nowhere in AGENTS.md; the required MCP targets are `Tools/*.cs`, `Prompts/*.cs`, `Resources/*.cs`, `clio.tests`, `clio.mcp.e2e`, `clio/tpl/**` | nothing fires at all |
+| `CreateBusinessProcessTool`'s `[Description]` | **present** — `Tools/*.cs` is a required target and fires on every edit | the **question**. The rule asks to keep the description aligned with *"the current command behavior"* — this tool's own. Whether a tool it NAMES still exists, or is still resident, is a different question nothing asks |
 
 So the honest form of the limitation is narrower than "triggers fire where attention already is": a
 trigger cannot fire on a file the diff never opens, and that is instance 2 alone. Instances 1 and 3
