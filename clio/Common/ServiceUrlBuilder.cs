@@ -255,7 +255,12 @@ public class ServiceUrlBuilder : IServiceUrlBuilder
 		/// <summary>
 		///     Reads one package-scoped entity schema design item.
 		/// </summary>
-		GetEntitySchemaDesignItem = 67
+		GetEntitySchemaDesignItem = 67,
+
+		/// <summary>
+		///     Saves an edited copy of a business process as a NEW VERSION via the ProcessDesignService package.
+		/// </summary>
+		ModifyProcessAsNewVersion = 68
 
 	}
 
@@ -325,6 +330,7 @@ public class ServiceUrlBuilder : IServiceUrlBuilder
 		{KnownRoute.ImportSchema, "/rest/CreatioApiGateway/ImportSchema"},
 		{KnownRoute.DescribeProcess, "/rest/ProcessDesignService/DescribeProcess"},
 		{KnownRoute.ModifyProcess, "/rest/ProcessDesignService/ModifyProcess"},
+		{KnownRoute.ModifyProcessAsNewVersion, "/rest/ProcessDesignService/ModifyProcessAsNewVersion"},
 		{KnownRoute.GetAvailableThemes, "ServiceModel/ThemeService.svc/GetAvailableThemes"},
 		{KnownRoute.ClearThemesCache, "ServiceModel/ThemeService.svc/ClearThemesCache"},
 		{KnownRoute.CreateTheme, "ServiceModel/ThemeService.svc/CreateTheme"},

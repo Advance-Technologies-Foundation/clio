@@ -22,6 +22,7 @@ The package is required by the process-designer capability, which is exposed as 
 tools with no CLI verbs** — `clio list-user-tasks` is not a command and will report an
 unrecognised verb:
 - create-business-process / modify-business-process
+- modify-business-process-as-new-version
 - describe-business-process
 - list-user-tasks
 - validate-process-graph

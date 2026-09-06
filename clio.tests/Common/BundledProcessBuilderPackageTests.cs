@@ -898,6 +898,9 @@ public class BundledProcessBuilderPackageTests {
 				GetToolDescription(typeof(Clio.Command.McpServer.Tools.ProcessDesigner.CreateBusinessProcessTool)),
 			["modify-business-process description"] =
 				GetToolDescription(typeof(Clio.Command.McpServer.Tools.ProcessDesigner.ModifyBusinessProcessTool)),
+			["modify-business-process-as-new-version description"] =
+				GetToolDescription(
+					typeof(Clio.Command.McpServer.Tools.ProcessDesigner.ModifyProcessAsNewVersionTool)),
 			["modify-business-process prompt"] =
 				Clio.Command.McpServer.Prompts.ProcessDesigner.ModifyBusinessProcessPrompt.PromptByProcess(
 					"env-placeholder", "process-placeholder")

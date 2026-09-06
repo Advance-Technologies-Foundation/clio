@@ -1,0 +1,260 @@
+using System;
+using System.Collections.Generic;
+using System.Text.Json;
+using System.Text.Json.Nodes;
+using System.Text.Json.Serialization;
+using Clio.Common;
+using Clio.UserEnvironment;
+
+namespace Clio.Command;
+
+/// <summary>
+/// Options for saving an edited business process as a NEW VERSION via the ProcessDesignService package.
+/// Consumed by the MCP <c>modify-business-process-as-new-version</c> tool, which sets these properties directly.
+/// </summary>
+// The floor is a MISSING OPERATION, not a changed input form — a stricter case than the sibling literals on
+// Create/Modify, and the reason this one cannot be presence-only. ModifyProcessAsNewVersion first exists in the
+// 1.5.0.0 archive; an environment on any earlier package answers the route with a 404 rather than a contract
+// error, so without the literal the caller would see a transport failure instead of "your package is behind".
+// The guard fixture asserts the shipped archive satisfies this literal, so clio can never demand a version it
+// does not itself carry.
+[RequiresPackage(BundledPackages.ProcessBuilderPackageName, "1.5.0.0",
+	Hint = BundledPackages.ProcessBuilderInstallHint)]
+public sealed class ModifyProcessAsNewVersionOptions : EnvironmentOptions {
+	/// <summary>Process code (schema Name) of the SOURCE. Provide exactly one of <see cref="ProcessName"/> or <see cref="ProcessUid"/>.</summary>
+	public string ProcessName { get; set; } = string.Empty;
+
+	/// <summary>Process schema UId of the SOURCE. Provide exactly one of <see cref="ProcessName"/> or <see cref="ProcessUid"/>.</summary>
+	public string ProcessUid { get; set; } = string.Empty;
+
+	/// <summary>
+	/// Package the new version is saved into. Optional — absent lets the platform choose, which is the SOURCE's
+	/// package when the caller may edit it and the design package otherwise. An INPUT rather than something
+	/// derived, because a version does not inherit the root's package: cross-package families exist.
+	/// </summary>
+	public string PackageName { get; set; } = string.Empty;
+
+	/// <summary>The SAME inline JSON operations array <c>modify-business-process</c> takes; empty is legal and yields a plain snapshot.</summary>
+	public string OperationsJson { get; set; } = string.Empty;
+}
+
+/// <summary>
+/// Saves an edited copy of an existing business process as a new version via the ProcessDesignService package.
+/// </summary>
+public interface IModifyProcessAsNewVersionService {
+	/// <summary>
+	/// Applies the given operations to a CLONE of the source process and saves that clone as a new version.
+	/// </summary>
+	/// <param name="environmentName">Registered clio environment name.</param>
+	/// <param name="request">Source identity, optional target package, and the operations JSON.</param>
+	/// <returns>Structured result describing the created version.</returns>
+	ModifyProcessAsNewVersionResult ModifyAsNewVersion(string environmentName,
+		ModifyProcessAsNewVersionRequest request);
+}
+
+/// <summary>
+/// Default ProcessDesignService-backed implementation of <see cref="IModifyProcessAsNewVersionService"/>.
+/// </summary>
+public sealed class ModifyProcessAsNewVersionService(
+	ISettingsRepository settingsRepository,
+	IApplicationClientFactory applicationClientFactory,
+	IServiceUrlBuilder serviceUrlBuilder,
+	ILogger logger)
+	: IModifyProcessAsNewVersionService {
+	private static readonly JsonSerializerOptions JsonOptions = new() {
+		DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,
+		PropertyNameCaseInsensitive = true
+	};
+
+	/// <inheritdoc />
+	public ModifyProcessAsNewVersionResult ModifyAsNewVersion(string environmentName,
+		ModifyProcessAsNewVersionRequest request) {
+		if (string.IsNullOrWhiteSpace(environmentName)) {
+			throw new ArgumentException("Environment name is required.", nameof(environmentName));
+		}
+
+		ArgumentNullException.ThrowIfNull(request);
+		if (string.IsNullOrWhiteSpace(request.ProcessName) && string.IsNullOrWhiteSpace(request.ProcessUid)) {
+			throw new ArgumentException("Either a process name or uid is required.", nameof(request));
+		}
+
+		EnvironmentSettings environmentSettings = settingsRepository.FindEnvironment(environmentName)
+			?? throw new InvalidOperationException(
+				EnvironmentNotFoundError.Build(environmentName, settingsRepository));
+
+		var requestObject = new JsonObject();
+		if (!string.IsNullOrWhiteSpace(request.ProcessName)) {
+			requestObject["name"] = request.ProcessName;
+		}
+		if (!string.IsNullOrWhiteSpace(request.ProcessUid)) {
+			requestObject["uid"] = request.ProcessUid;
+		}
+		if (!string.IsNullOrWhiteSpace(request.PackageName)) {
+			requestObject["packageName"] = request.PackageName;
+		}
+		// An ABSENT operations array is a legal request — a version that is a pure snapshot of the source — so
+		// the empty case sends an empty array rather than being refused the way the in-place edit refuses it.
+		requestObject["operations"] = ParseOperations(request.OperationsJson);
+
+		using IOwnedApplicationClient client = applicationClientFactory.CreateOwnedEnvironmentClient(environmentSettings);
+		string url = serviceUrlBuilder.Build(ServiceUrlBuilder.KnownRoute.ModifyProcessAsNewVersion, environmentSettings);
+		// ProcessDesignService uses BodyStyle=Wrapped: the request is wrapped under a "request" property.
+		string requestBody = new JsonObject { ["request"] = requestObject }.ToJsonString();
+		string processIdentity = string.IsNullOrWhiteSpace(request.ProcessName) ? request.ProcessUid : request.ProcessName;
+		logger.WriteInfo($"Saving a new version of process '{processIdentity}' on '{environmentName}'...");
+
+		string responseBody = client.ExecutePostRequest(url, requestBody);
+		ResponseEnvelope envelope =
+			JsonSerializer.Deserialize<ResponseEnvelope>(responseBody, JsonOptions)
+			?? throw new InvalidOperationException("ModifyProcessAsNewVersion returned an empty response.");
+		ResultDto result = envelope.Result
+			?? throw new InvalidOperationException("ModifyProcessAsNewVersion returned an unexpected response shape.");
+		if (!result.Success) {
+			throw new InvalidOperationException(BuildFailureMessage(result));
+		}
+
+		return new ModifyProcessAsNewVersionResult(result.VersionName, result.VersionSchemaUId, result.Version,
+			result.IsActiveVersion, result.VersionRootSchemaUId, result.AppliedOperations, result.Warnings);
+	}
+
+	// A failure that still names a version is NOT a failed create: the version exists and the platform offers no
+	// way to delete one, so dropping the name here would leave the caller unable to address something that is
+	// really on their environment. Both cases travel on errorMessage, and only the identity tells them apart.
+	private static string BuildFailureMessage(ResultDto result) {
+		string message = result.ErrorMessage ?? "ModifyProcessAsNewVersion failed.";
+		return string.IsNullOrWhiteSpace(result.VersionName) && string.IsNullOrWhiteSpace(result.VersionSchemaUId)
+			? message
+			: message + $" The version '{result.VersionName}' (UId: {result.VersionSchemaUId}) WAS created and "
+				+ "still exists — a version cannot be deleted.";
+	}
+
+	private static JsonArray ParseOperations(string operationsJson) {
+		if (string.IsNullOrWhiteSpace(operationsJson)) {
+			return [];
+		}
+
+		JsonNode? node;
+		try {
+			node = JsonNode.Parse(operationsJson);
+		} catch (JsonException exception) {
+			throw new InvalidOperationException(
+				$"Operations content is not valid JSON: {exception.Message}", exception);
+		}
+
+		return node as JsonArray
+			?? throw new InvalidOperationException("Operations content must be a JSON array of operations.");
+	}
+
+	#region DTOs (wire shape)
+
+	private sealed class ResponseEnvelope {
+		[JsonPropertyName("ModifyProcessAsNewVersionResult")]
+		public ResultDto? Result { get; set; }
+	}
+
+	private sealed class ResultDto {
+		[JsonPropertyName("success")]
+		public bool Success { get; set; }
+
+		[JsonPropertyName("errorMessage")]
+		public string? ErrorMessage { get; set; }
+
+		[JsonPropertyName("versionSchemaUId")]
+		public string? VersionSchemaUId { get; set; }
+
+		[JsonPropertyName("versionName")]
+		public string? VersionName { get; set; }
+
+		[JsonPropertyName("version")]
+		public int Version { get; set; }
+
+		[JsonPropertyName("isActiveVersion")]
+		public bool IsActiveVersion { get; set; }
+
+		[JsonPropertyName("versionRootSchemaUId")]
+		public string? VersionRootSchemaUId { get; set; }
+
+		[JsonPropertyName("appliedOperations")]
+		public int AppliedOperations { get; set; }
+
+		[JsonPropertyName("warnings")]
+		public List<string>? Warnings { get; set; }
+	}
+
+	#endregion
+}
+
+/// <summary>
+/// Saves an edited copy of a business process as a new version and prints the result.
+/// </summary>
+public class ModifyProcessAsNewVersionCommand(
+	IModifyProcessAsNewVersionService modifyProcessAsNewVersionService,
+	ILogger logger)
+	: Command<ModifyProcessAsNewVersionOptions> {
+	/// <inheritdoc />
+	public override int Execute(ModifyProcessAsNewVersionOptions options) {
+		try {
+			ArgumentNullException.ThrowIfNull(options);
+			if (string.IsNullOrWhiteSpace(options.Environment)) {
+				throw new InvalidOperationException("Environment name is required.");
+			}
+
+			bool hasName = !string.IsNullOrWhiteSpace(options.ProcessName);
+			bool hasUid = !string.IsNullOrWhiteSpace(options.ProcessUid);
+			if (hasName == hasUid) {
+				throw new InvalidOperationException(hasName
+					? "Provide only one of --name or --uid, not both."
+					: "One of --name or --uid is required.");
+			}
+
+			ModifyProcessAsNewVersionResult result = modifyProcessAsNewVersionService.ModifyAsNewVersion(
+				options.Environment,
+				new ModifyProcessAsNewVersionRequest(options.ProcessName, options.ProcessUid, options.PackageName,
+					options.OperationsJson));
+			logger.WriteInfo(
+				$"Version {result.Version} '{result.VersionName}' created ({result.AppliedOperations} operation(s) "
+				+ $"applied; UId: {result.VersionSchemaUId}; family root: {result.VersionRootSchemaUId}).");
+			// Said on EVERY success, not only when it is surprising: the caller asked to save a version, and what
+			// the environment RUNS is the one thing that did not change. Leaving it implicit is how an agent
+			// concludes the edit is live and stops.
+			logger.WriteInfo(result.IsActiveVersion
+				? "This version is reported ACTIVE — unexpected for a create; verify with describe-business-process."
+				: "The source version is still the actual one and keeps running. Use "
+					+ "set-active-business-process-version to switch, if that is what the user asked for.");
+			foreach (string warning in result.Warnings ?? []) {
+				logger.WriteWarning(warning);
+			}
+			return 0;
+		} catch (Exception exception) {
+			logger.WriteError(exception.Message);
+			return 1;
+		}
+	}
+}
+
+/// <summary>
+/// Request payload for saving an edited process as a new version.
+/// </summary>
+/// <param name="ProcessName">Process code (schema Name) of the source.</param>
+/// <param name="ProcessUid">Process schema UId of the source.</param>
+/// <param name="PackageName">Package the version is saved into; empty lets the platform choose.</param>
+/// <param name="OperationsJson">The JSON operations array content; empty yields a plain snapshot.</param>
+public sealed record ModifyProcessAsNewVersionRequest(string ProcessName, string ProcessUid, string PackageName,
+	string OperationsJson);
+
+/// <summary>
+/// Structured result of saving a process as a new version.
+/// </summary>
+/// <param name="VersionName">Name the PLATFORM composed (root + package + number), not one the caller chose.</param>
+/// <param name="VersionSchemaUId">UId of the created version — how the caller addresses it later.</param>
+/// <param name="Version">The number the platform allocated (max in the target package + 1).</param>
+/// <param name="IsActiveVersion">
+/// False on a successful create. Reported rather than assumed, so a caller can see that creating a version did
+/// not change what the environment executes.
+/// </param>
+/// <param name="VersionRootSchemaUId">UId of the family ROOT. The family is FLAT — a version of a version still points at the root.</param>
+/// <param name="AppliedOperations">Number of operations applied to the clone.</param>
+/// <param name="Warnings">Outcomes that applied but are not what the caller would assume; <c>null</c> when there are none.</param>
+public sealed record ModifyProcessAsNewVersionResult(string? VersionName, string? VersionSchemaUId, int Version,
+	bool IsActiveVersion, string? VersionRootSchemaUId, int AppliedOperations,
+	IReadOnlyList<string>? Warnings = null);

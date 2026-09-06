@@ -90,6 +90,25 @@ namespace Clio.Tests
         }
 
         [Test]
+        [Description("modify-business-process-as-new-version declares 1.5.0.0 for a STRICTER reason than its siblings: the ModifyProcessAsNewVersion OPERATION does not exist before that archive at all. Create/Modify name a version because an older server MISHANDLES a newer input form; this one names a version because an older server has no such route, and answers a 404 the caller would read as a transport fault rather than 'your package is behind'. The bundled-archive guard asserts the shipped archive satisfies the literal, so the floor can never demand a version clio does not carry - which is why this floor lands with the tool and the archive ships first.")]
+        public void ModifyProcessAsNewVersionOptions_ShouldDeclareTheVersionTheOperationFirstShippedIn()
+        {
+            // Arrange & Act
+            RequiresPackageAttribute requirement =
+                GetProcessBuilderRequirement(typeof(ModifyProcessAsNewVersionOptions));
+
+            // Assert
+            requirement.Should().NotBeNull(
+                because: $"the tool calls an operation that only exists in a recent {BundledPackages.ProcessBuilderPackageName}, so the gate must fire");
+            requirement!.Version.Should().Be("1.5.0.0",
+                because: "ModifyProcessAsNewVersion first ships in the 1.5.0.0 archive. Presence-only would let "
+                    + "the call reach an older package and come back a 404 - the one failure shape that reads as "
+                    + "clio being broken rather than the environment being behind");
+            requirement.Hint.Should().Be(ExpectedProcessBuilderHint,
+                because: "the install hint must be consistent across all process-designer gates");
+        }
+
+        [Test]
         [Description("get-process-signature must NOT be gated on the process-builder package: it reads the built-in DataService (ProcessSchemaRequest / VwProcessLib), not ProcessDesignService, so gating its public CLI verb on the experimental package was a shipped-capability regression (PR #715).")]
         public void GetProcessSignatureOptions_ShouldNotDeclareProcessBuilderRequirement_BecauseItUsesTheBuiltInDataService()
         {
