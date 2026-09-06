@@ -23,6 +23,8 @@ internal static class McpToolRegistrySchemaContract {
 	private const string PropertiesPropertyName = "properties";
 	private const string RequiredPropertyName = "required";
 	private const string DescriptionPropertyName = "description";
+	private const string EnvironmentNamePropertyName = "environment-name";
+	private const string UriPropertyName = "uri";
 	private const string Note =
 		"Auto-generated from the registered MCP tool input schema (the same schema clio-run dispatches against); no curated contract is available for this tool yet.";
 
@@ -107,10 +109,14 @@ internal static class McpToolRegistrySchemaContract {
 
 		List<string> required = ReadRequired(effective);
 		List<ToolContractField> properties = [];
+		bool advertisesEnvironmentName = false;
+		bool advertisesUri = false;
 		if (effective.TryGetProperty(PropertiesPropertyName, out JsonElement propertiesElement) &&
 			propertiesElement.ValueKind == JsonValueKind.Object) {
 			foreach (JsonProperty property in propertiesElement.EnumerateObject()) {
 				string name = property.Name;
+				advertisesEnvironmentName |= name == EnvironmentNamePropertyName;
+				advertisesUri |= name == UriPropertyName;
 				string type = ReadType(property.Value);
 				string description = property.Value.ValueKind == JsonValueKind.Object &&
 					property.Value.TryGetProperty(DescriptionPropertyName, out JsonElement descriptionElement) &&
@@ -120,7 +126,16 @@ internal static class McpToolRegistrySchemaContract {
 				properties.Add(new ToolContractField(name, type, description));
 			}
 		}
-		return new ToolInputSchemaContract(required, properties);
+
+		// A tool that advertises BOTH a registered environment-name AND the explicit uri fallback accepts
+		// either one, and neither is unconditionally mandatory — which is exactly what an empty `required`
+		// alone fails to say. Emit the SAME `any-of` the curated contracts carry so the derived contract
+		// states the alternative instead of leaving the caller to guess it (issue #965).
+		IReadOnlyList<IReadOnlyList<string>> anyOf =
+			advertisesEnvironmentName && advertisesUri
+				? ToolContractCatalog.EnvironmentOrExplicitConnectionRequirements()
+				: null;
+		return new ToolInputSchemaContract(required, properties, anyOf);
 	}
 
 	// clio tools that take a single complex args record are emitted by the SDK as a single top-level

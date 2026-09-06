@@ -666,25 +666,25 @@ public sealed record MobilePageConversionGuideArgs(
 
 	[property: JsonPropertyName("target-schema-name")]
 	[property: Description("Optional suggested target mobile page schema name. Defaults to the source name with a mobile suffix (e.g. UsrMyApp_FormPage -> UsrMyApp_MobileFormPage).")]
-	string TargetSchemaName,
+	string TargetSchemaName = null,
 
 	[property: JsonPropertyName("version")]
 	[property: Description("Optional Creatio/registry version used to resolve the mobile and web component registries. Defaults to the latest published registry.")]
-	string Version,
+	string Version = null,
 
 	[property: JsonPropertyName("environment-name")]
 	[property: Description("Registered clio environment name, e.g. 'local'. Preferred for normal MCP work.")]
-	string EnvironmentName,
+	string EnvironmentName = null,
 
 	[property: JsonPropertyName("uri")]
 	[property: Description("Direct Creatio URL. Use only when bootstrap is broken or before the environment can be registered through reg-web-app.")]
-	string Uri,
+	string Uri = null,
 
 	[property: JsonPropertyName("login")]
 	[property: Description("Direct Creatio login paired with `uri`. Emergency fallback only.")]
-	string Login,
+	string Login = null,
 
 	[property: JsonPropertyName("password")]
 	[property: Description("Direct Creatio password paired with `uri`. Emergency fallback only.")]
-	string Password
+	string Password = null
 );

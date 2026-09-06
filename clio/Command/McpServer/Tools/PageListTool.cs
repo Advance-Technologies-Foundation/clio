@@ -91,33 +91,33 @@ public sealed class PageListTool(
 public sealed record PageListArgs(
 	[property: JsonPropertyName("package-name")]
 	[property: Description("Filter by package name")]
-	string? PackageName,
+	string? PackageName = null,
 
 	[property: JsonPropertyName("code")]
 	[property: Description("Filter by installed application code using its primary package")]
-	string? Code,
+	string? Code = null,
 
 	[property: JsonPropertyName("search-pattern")]
 	[property: Description("Filter by schema name pattern, e.g. 'UsrMyApp*'")]
-	string? SearchPattern,
+	string? SearchPattern = null,
 
 	[property: JsonPropertyName("limit")]
 	[property: Description("Maximum number of results. Omit or pass 0 to use the default of 50. A negative limit is rejected (it must not disable the cap). The response always carries total and truncated so a capped result is observable.")]
-	int? Limit,
+	int? Limit = null,
 
 	[property: JsonPropertyName("environment-name")]
 	[property: Description(McpToolDescriptions.EnvironmentName)]
-	string? EnvironmentName,
+	string? EnvironmentName = null,
 
 	[property: JsonPropertyName("uri")]
 	[property: Description(McpToolDescriptions.Uri)]
-	string? Uri,
+	string? Uri = null,
 	[property: JsonPropertyName("login")]
 	[property: Description(McpToolDescriptions.Login)]
-	string? Login,
+	string? Login = null,
 	[property: JsonPropertyName("password")]
 	[property: Description(McpToolDescriptions.Password)]
-	string? Password,
+	string? Password = null,
 
 	[property: JsonPropertyName("uid")]
 	[property: Description("Filter by schema UId (exact match). Use to locate a specific page directly from its UId in a Creatio designer URL (#/PageDesigner/<pageUId>).")]

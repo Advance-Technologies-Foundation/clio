@@ -198,10 +198,10 @@ public sealed class DataBindingToolTests : BaseClioModuleTests {
 
 		// Act
 		CommandExecutionResult result = tool.CreateDataBinding(new CreateDataBindingArgs(
-			null,
-			_packageName,
-			"SysSettings",
-			_workspaceRoot,
+			EnvironmentName: null,
+			PackageName: _packageName,
+			SchemaName: "SysSettings",
+			WorkspacePath: _workspaceRoot,
 			ValuesJson: """{"Name":"Tool row"}"""));
 
 		// Assert
@@ -238,10 +238,10 @@ public sealed class DataBindingToolTests : BaseClioModuleTests {
 
 		// Act
 		CommandExecutionResult result = tool.CreateDataBinding(new CreateDataBindingArgs(
-			"dev",
-			_packageName,
-			"UsrImageBinding",
-			_workspaceRoot,
+			EnvironmentName: "dev",
+			PackageName: _packageName,
+			SchemaName: "UsrImageBinding",
+			WorkspacePath: _workspaceRoot,
 			ValuesJson: JsonSerializer.Serialize(new Dictionary<string, string> {
 				["Name"] = "UsrImageBinding row",
 				["UsrImage"] = Path.Combine("assets", "icon.png")
@@ -270,10 +270,10 @@ public sealed class DataBindingToolTests : BaseClioModuleTests {
 
 		// Act
 		CommandExecutionResult result = tool.CreateDataBinding(new CreateDataBindingArgs(
-			"dev",
-			_packageName,
-			"UsrLookupBinding",
-			_workspaceRoot,
+			EnvironmentName: "dev",
+			PackageName: _packageName,
+			SchemaName: "UsrLookupBinding",
+			WorkspacePath: _workspaceRoot,
 			ValuesJson:
 				"""{"Name":"Lookup row","StatusId":{"value":"b659d704-3955-e011-981f-00155d043204","displayValue":"Prompt status"}}"""));
 
@@ -300,10 +300,10 @@ public sealed class DataBindingToolTests : BaseClioModuleTests {
 
 		// Act
 		CommandExecutionResult result = tool.CreateDataBinding(new CreateDataBindingArgs(
-			"dev",
-			_packageName,
-			"UsrOfflineOnly",
-			_workspaceRoot,
+			EnvironmentName: "dev",
+			PackageName: _packageName,
+			SchemaName: "UsrOfflineOnly",
+			WorkspacePath: _workspaceRoot,
 			ValuesJson: """{"Id":"4f41bcc2-7ed0-45e8-a1fd-474918966d15","Name":"Tool row"}"""));
 
 		// Assert

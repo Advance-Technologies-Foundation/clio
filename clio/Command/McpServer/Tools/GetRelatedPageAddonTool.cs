@@ -79,19 +79,19 @@ public sealed record GetRelatedPageAddonArgs(
 
 	[property: JsonPropertyName("environment-name")]
 	[property: Description("Registered clio environment name, e.g. 'local'. Preferred for normal MCP work.")]
-	string? EnvironmentName,
+	string? EnvironmentName = null,
 
 	[property: JsonPropertyName("uri")]
 	[property: Description("Direct Creatio URL. Use only when bootstrap is broken or before the environment can be registered through reg-web-app.")]
-	string? Uri,
+	string? Uri = null,
 
 	[property: JsonPropertyName("login")]
 	[property: Description("Direct Creatio login paired with `uri`. Emergency fallback only.")]
-	string? Login,
+	string? Login = null,
 
 	[property: JsonPropertyName("password")]
 	[property: Description("Direct Creatio password paired with `uri`. Emergency fallback only.")]
-	string? Password,
+	string? Password = null,
 
 	[property: JsonPropertyName("schema-type")]
 	[property: Description("Which add-on to read: 'web' (RelatedPage, default) or 'mobile' (MobileRelatedPage — the object's default mobile edit page).")]

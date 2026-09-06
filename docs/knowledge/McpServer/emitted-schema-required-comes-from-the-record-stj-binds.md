@@ -3,6 +3,8 @@ description: the MCP SDK builds a tool schema's `required` array from the non-nu
 applies-to:
   - clio/Command/McpServer/Tools/
   - clio.tests/Command/McpServer/ColumnIdentityEmittedSchemaTests.cs
+  - clio.tests/Command/McpServer/EmittedSchemaProbe.cs
+  - clio.tests/Command/McpServer/EmittedSchemaRequiredContractTests.cs
 date: 2026-08-19
 ---
 
@@ -23,3 +25,10 @@ a client-side rejection and no server log at all. Substring assertions over the 
 not catch it either: element order, whitespace, or one extra required field all keep a
 `NotContain("\"required\":[...]")` assertion green while the relaxation is reverted. Assert by
 navigating the emitted schema, as `ColumnIdentityEmittedSchemaTests` does.
+
+**Registry-wide guard (issue #965).** After the third recurrence of this defect (PR #984, ENG-93347,
+issue #965) the guard is no longer written per tool. `EmittedSchemaRequiredContractTests` walks EVERY
+registered tool's emitted schema and fails when (a) an object advertising BOTH `environment-name` and
+`uri` lists any connection field as required — the runtime accepts either path, so neither is
+mandatory — or (b) a required property's own `description` begins with "Optional". Add a new tool
+without a default on an optional parameter and that guard, not a reviewer, is what catches it.

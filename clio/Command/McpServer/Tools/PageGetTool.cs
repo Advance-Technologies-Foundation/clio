@@ -87,17 +87,17 @@ public sealed record PageGetArgs(
 
 	[property: JsonPropertyName("environment-name")]
 	[property: Description(McpToolDescriptions.EnvironmentName)]
-	string? EnvironmentName,
+	string? EnvironmentName = null,
 
 	[property: JsonPropertyName("uri")]
 	[property: Description(McpToolDescriptions.Uri)]
-	string? Uri,
+	string? Uri = null,
 	[property: JsonPropertyName("login")]
 	[property: Description(McpToolDescriptions.Login)]
-	string? Login,
+	string? Login = null,
 	[property: JsonPropertyName("password")]
 	[property: Description(McpToolDescriptions.Password)]
-	string? Password,
+	string? Password = null,
 
 	[property: JsonPropertyName("output-directory")]
 	[property: Description("Optional. Directory to anchor .clio-pages output under (typically your project root). Defaults to the auto-detected workspace root.")]

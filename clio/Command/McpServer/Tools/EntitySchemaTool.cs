@@ -1254,15 +1254,15 @@ public sealed record GetEntitySchemaPropertiesArgs(
 	[property: Required]
 	string EnvironmentName,
 
-	[property: JsonPropertyName("package-name")]
-	[property: Description("Optional target package name. Omit to read the merged/effective schema with columns "
-		+ "from ALL packages (recommended for column discovery). Supply only to inspect a single package layer's slice.")]
-	string? PackageName,
-
 	[property: JsonPropertyName("schema-name")]
 	[property: Description("Entity schema name")]
 	[property: Required]
-	string SchemaName
+	string SchemaName,
+
+	[property: JsonPropertyName("package-name")]
+	[property: Description("Optional target package name. Omit to read the merged/effective schema with columns "
+		+ "from ALL packages (recommended for column discovery). Supply only to inspect a single package layer's slice.")]
+	string? PackageName = null
 );
 
 /// <summary>

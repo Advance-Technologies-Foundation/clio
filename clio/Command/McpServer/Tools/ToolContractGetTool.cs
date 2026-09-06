@@ -5182,7 +5182,13 @@ internal static class ToolContractCatalog {
 		];
 	}
 
-	private static IReadOnlyList<IReadOnlyList<string>> EnvironmentOrExplicitConnectionRequirements() {
+	/// <summary>
+	/// The connection alternative every environment-sensitive contract advertises: EITHER a registered
+	/// <c>environment-name</c> OR the explicit <c>uri</c>/<c>login</c>/<c>password</c> triple. Exposed to
+	/// <see cref="McpToolRegistrySchemaContract" /> so a registry-derived contract states the same
+	/// alternative as the 75 curated ones instead of inventing a second spelling of it (issue #965).
+	/// </summary>
+	internal static IReadOnlyList<IReadOnlyList<string>> EnvironmentOrExplicitConnectionRequirements() {
 		return [
 			[EnvironmentNameFieldName],
 			["uri", LoginFieldName, PasswordFieldName]
