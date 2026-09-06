@@ -34,6 +34,13 @@ public class LinkFromRepositoryTool(
 	/// </summary>
 	[McpServerTool(Name = LinkFromRepositoryByEnvironmentToolName, ReadOnly = false, Destructive = true,
 		Idempotent = false, OpenWorld = false)]
+	[McpToolExecution(
+		Location = McpToolExecutionLocation.Worker,
+		Lifetime = McpToolExecutionLifetime.PerCall,
+		OperationFamily = McpToolOperationFamily.None,
+		BudgetPolicy = McpToolBudgetPolicy.ParentKillDefault,
+		RequiresClientRequests = McpToolClientRequests.None,
+		SharedFileResource = McpToolSharedFileResource.None)]
 	[Description("Links repository package content into a Creatio environment package directory resolved by registered environment name. Not supported under credential passthrough.")]
 	public CommandExecutionResult LinkFromRepositoryByEnvironment(
 		[Description("Path to the package repository folder")] [Required] string repoPath,
@@ -72,6 +79,15 @@ public class LinkFromRepositoryTool(
 	/// </summary>
 	[McpServerTool(Name = LinkFromRepositoryByEnvPackagePathToolName, ReadOnly = false, Destructive = true,
 		Idempotent = false, OpenWorld = false)]
+	// Worker even though skip-preparation=true is a local-only branch: the DEFAULT branch runs the preparation
+	// step (maintainer read/write, unlock, 2fs) against Creatio, so this tool can block on an environment.
+	[McpToolExecution(
+		Location = McpToolExecutionLocation.Worker,
+		Lifetime = McpToolExecutionLifetime.PerCall,
+		OperationFamily = McpToolOperationFamily.None,
+		BudgetPolicy = McpToolBudgetPolicy.ParentKillDefault,
+		RequiresClientRequests = McpToolClientRequests.None,
+		SharedFileResource = McpToolSharedFileResource.None)]
 	[Description("Links repository package content into a Creatio environment package directory resolved by explicit environment package path. Under credential passthrough only the local-only skip-preparation=true branch is supported.")]
 	public CommandExecutionResult LinkFromRepositoryByEnvPackagePath(
 		[Description("Path to the target Creatio environment package directory")] [Required] string envPkgPath,
@@ -108,6 +124,13 @@ public class LinkFromRepositoryTool(
 	/// </summary>
 	[McpServerTool(Name = LinkFromRepositoryUnlockedToolName, ReadOnly = false, Destructive = true,
 		Idempotent = false, OpenWorld = false)]
+	[McpToolExecution(
+		Location = McpToolExecutionLocation.Worker,
+		Lifetime = McpToolExecutionLifetime.PerCall,
+		OperationFamily = McpToolOperationFamily.None,
+		BudgetPolicy = McpToolBudgetPolicy.ParentKillDefault,
+		RequiresClientRequests = McpToolClientRequests.None,
+		SharedFileResource = McpToolSharedFileResource.None)]
 	[Description("Queries the Creatio site for unlocked packages and links only those from the repository. " +
 		"Supports flat (repo/PackageName/) and versioned (repo/PackageName/branch/version/) repo structures. " +
 		"Not supported under credential passthrough.")]

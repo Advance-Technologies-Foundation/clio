@@ -16,6 +16,11 @@ The update-page command validates and saves the raw JavaScript body of a
 Freedom UI page schema. Pass the full body string directly, typically
 after reading raw.body from get-page.
 
+> **CLI vs MCP.** The CLI `get-page` verb returns `raw.body` inline, so a CLI caller copies
+> that value. The MCP `get-page` tool returns no `raw` property — it writes the body to disk
+> and reports the path in `files.bodyFile`. MCP callers pass that path straight through as
+> `body-file`, or send the file contents as `body`.
+
 The MCP `update-page` tool also accepts `validate: false` as an explicit escape
 hatch when a full replacement body contains a pre-existing defect that is
 unrelated to the requested edit. This skips client-side content and run-process
@@ -129,6 +134,14 @@ name instead of trying to edit a non-existent local `insert`.
   `--resources`. Binding expressions (any `$`-prefixed value) and non-string values (e.g.
   `placeholder: false`) are not literals and pass. Call `clio get-guidance --name page-schema-resources`
   for the full rule.
+  A **component's own data descriptor is exempt**: a `data` object that carries the platform's
+  `typeName` marker, on a node declaring a component `type`, is component metadata (uId, schemaType,
+  typeName and the caption the platform stamped on it) rather than page-authored text, so a literal
+  anywhere inside it is accepted — at any depth, not only at the entry root. This is what a Timeline
+  composer (`crt.EmailComposer` / `crt.FeedComposer`) ships as `data.caption: "Email"` / `"Feed"`.
+  Do NOT delete such a caption to satisfy the rule: the platform never restores it and the composer
+  stays permanently unlabelled. An author-writable input that merely happens to be named `data`
+  (e.g. `crt.FilterBuilderSource`) carries no `typeName` and stays fully validated.
 - **Inserted widget/metric titles must resolve.** A `title`/`caption`/`tooltip`/`placeholder` on a
   freshly inserted (`operation:"insert"`) widget/container bound as 
   `#ResourceString(<Key>)#` is **rejected** when `<Key>` will not resolve — i.e. it is not passed in

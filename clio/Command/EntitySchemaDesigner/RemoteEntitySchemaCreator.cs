@@ -24,7 +24,7 @@ internal sealed class RemoteEntitySchemaCreator : IRemoteEntitySchemaCreator{
 	private const string TitleLocalizationsArgumentName = "title-localizations";
 
 	internal const string ODataBuildRequestFailedWarningFragment =
-		EntitySchemaPublishHelper.ODataBuildRequestFailedWarningFragment;
+		EntitySchemaPublisher.ODataBuildRequestFailedWarningFragment;
 
 	private const string DefaultMaskingPattern = ".*";
 	private const string DefaultMaskingReplacement = "********";
@@ -34,6 +34,7 @@ internal sealed class RemoteEntitySchemaCreator : IRemoteEntitySchemaCreator{
 	private readonly ILogger _logger;
 	private readonly ISysSettingsManager _sysSettingsManager;
 	private readonly IEntitySchemaCaptionCultureResolver _captionCultureResolver;
+	private readonly IEntitySchemaPublisher _entitySchemaPublisher;
 
 	#endregion
 
@@ -92,13 +93,15 @@ internal sealed class RemoteEntitySchemaCreator : IRemoteEntitySchemaCreator{
 		IRemoteEntitySchemaDesignerClient entitySchemaDesignerClient,
 		ILogger logger,
 		ISysSettingsManager sysSettingsManager,
-		IEntitySchemaCaptionCultureResolver captionCultureResolver) {
+		IEntitySchemaCaptionCultureResolver captionCultureResolver,
+		IEntitySchemaPublisher entitySchemaPublisher) {
 		_applicationPackageListProvider = applicationPackageListProvider;
 		_defaultValueSourceResolver = defaultValueSourceResolver;
 		_entitySchemaDesignerClient = entitySchemaDesignerClient;
 		_logger = logger;
 		_sysSettingsManager = sysSettingsManager;
 		_captionCultureResolver = captionCultureResolver;
+		_entitySchemaPublisher = entitySchemaPublisher;
 	}
 
 	/// <summary>
@@ -523,9 +526,10 @@ internal sealed class RemoteEntitySchemaCreator : IRemoteEntitySchemaCreator{
 
 	private void PublishSchema(CreateEntitySchemaOptions options) {
 		// Saving + DDL alone leave the schema invisible to lookup pickers, sys-setting reference lists, and
-		// OData until the configuration is built (ENG-90403).
-		EntitySchemaPublishHelper.PublishAndRebuildOData(
-			_entitySchemaDesignerClient, _logger, options, options.SchemaName, "was created and saved");
+		// OData until the configuration is built (ENG-90403). A new schema is a new OData entity type, so the
+		// entities assembly always has to be rebuilt for it.
+		_entitySchemaPublisher.PublishSavedChanges(options, options.SchemaName, "was created and saved",
+			ODataContractImpact.Changed);
 	}
 
 	private PackageInfo ResolvePackage(string packageName) {
@@ -574,12 +578,11 @@ internal sealed class RemoteEntitySchemaCreator : IRemoteEntitySchemaCreator{
 		}
 		_entitySchemaDesignerClient.SaveSchemaDbStructure(schemaUId, options);
 		PublishSchema(options);
-		RuntimeEntitySchemaResponse runtimeResponse = _entitySchemaDesignerClient.GetRuntimeEntitySchema(schemaUId,
-			options);
-		if (!runtimeResponse.Success || runtimeResponse.Schema == null) {
-			throw new InvalidOperationException(
-				$"Schema '{options.SchemaName}' was saved but is not available in runtime.");
-		}
+		// No separate runtime-availability probe after the publish. Publishing refreshes the schema manager
+		// through SchemaManager.RefreshItems, which clears the changed items and re-initialises them as two
+		// steps; a request that lands between them is told the schema does not exist even though it was saved
+		// and published. Measured on a stand: only the schema being created is missing, for about nine seconds,
+		// while every other schema keeps answering. The design-item reload below is the check that holds.
 		DesignerResponse<EntityDesignSchemaDto>? designItemResponse = _entitySchemaDesignerClient.TryGetSchemaDesignItem(
 			new GetSchemaDesignItemRequestDto {
 				Name = options.SchemaName,
@@ -599,6 +602,16 @@ internal sealed class RemoteEntitySchemaCreator : IRemoteEntitySchemaCreator{
 					$"Schema '{options.SchemaName}' was reloaded with unexpected name '{reloadedSchema.Name}'.");
 			}
 		} else {
+			// The designer service answered with an HTML error page, so the design-item reload above could not
+			// verify anything. Only here is the runtime read worth its risk: it is the sole remaining check,
+			// and this branch is already the degraded path.
+			RuntimeEntitySchemaResponse runtimeResponse =
+				_entitySchemaDesignerClient.GetRuntimeEntitySchema(schemaUId, options);
+			if (!runtimeResponse.Success || runtimeResponse.Schema == null) {
+				throw new InvalidOperationException(
+					$"Schema '{options.SchemaName}' was saved but could not be verified: the designer service " +
+					"returned an HTML response and the runtime schema is unavailable.");
+			}
 			string runtimeName = runtimeResponse.Schema.Name;
 			if (!string.Equals(runtimeName, options.SchemaName, StringComparison.OrdinalIgnoreCase)) {
 				throw new InvalidOperationException(

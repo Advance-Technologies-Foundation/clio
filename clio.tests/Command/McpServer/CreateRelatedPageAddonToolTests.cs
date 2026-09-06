@@ -1,5 +1,7 @@
 using System;
+using System.Collections.Generic;
 using Clio.Command;
+using Clio.Command.McpServer;
 using Clio.Command.McpServer.Tools;
 using Clio.Command.RelatedPages;
 using Clio.Common;
@@ -9,11 +11,16 @@ using NUnit.Framework;
 
 namespace Clio.Tests.Command.McpServer;
 
+// NonParallelizable: the lock-key test swaps substitutes into McpToolExecutionLock's PROCESS-GLOBAL static
+// facade via Configure() and TearDown restores the production wiring. Under the assembly-level
+// [Parallelizable(ParallelScope.Fixtures)] that window would otherwise be visible to every other MCP tool test.
 [TestFixture]
 [NonParallelizable]
 [Category("Unit")]
 [Property("Module", "McpServer")]
 public sealed class CreateRelatedPageAddonToolTests {
+	private const string TenantKey = "https://tenant-under-test.creatio.com|addon-writer";
+
 	private IRelatedPageAddonService _service = null!;
 	private IRelatedPageAddonService _defaultService = null!;
 	private RelatedPageAddonRequest _captured;
@@ -37,6 +44,9 @@ public sealed class CreateRelatedPageAddonToolTests {
 		CreateRelatedPageAddonCommand resolvedCommand = new(_service, ConsoleLogger.Instance);
 
 		_commandResolver = Substitute.For<IToolCommandResolver>();
+		// MUST be stubbed: an unstubbed NSubstitute string returns "", which McpToolExecutionLock.Normalize
+		// turns into SharedFallbackKey — so the fixed and the broken tool would look identical.
+		_commandResolver.GetTenantKey(Arg.Any<EnvironmentOptions>()).Returns(TenantKey);
 		_commandResolver.Resolve<CreateRelatedPageAddonCommand>(Arg.Any<CreateRelatedPageAddonOptions>())
 			.Returns(call => {
 				_resolverOptions = call.Arg<CreateRelatedPageAddonOptions>();
@@ -54,7 +64,15 @@ public sealed class CreateRelatedPageAddonToolTests {
 	}
 
 	[TearDown]
-	public void TearDown() => ConsoleLogger.Instance.ClearMessages();
+	public void TearDown() {
+		ConsoleLogger.Instance.ClearMessages();
+		// Unconditional: a substitute left behind in the process-global facade would leak into every
+		// following fixture, so the production wiring is restored even for tests that never swapped it.
+		McpToolExecutionLock.Configure(
+			TenantExecutionLockProvider.Shared,
+			new SessionContainerCache(SessionContainerCacheDefaults.IdleTtl, SessionContainerCacheDefaults.MaxSessions));
+		_commandResolver.ClearReceivedCalls();
+	}
 
 	private static CreateRelatedPageAddonArgs Args(
 		string entitySchemaName = "UsrDeliveryItem",
@@ -249,5 +267,38 @@ public sealed class CreateRelatedPageAddonToolTests {
 			because: "a failed command resolution is reported as a failure, not surfaced as an exception");
 		response.Error.Should().Contain("boom",
 			because: "the resolver's exception message is carried into the structured response");
+	}
+
+	[Test]
+	[Description("Story 19 (ENG-95262) AC-04: the write takes the RESOLVED tenant's execution lock, never McpToolExecutionLock.SharedFallbackKey — this sibling of get-related-page-addon carried the identical defect, and its Creatio round-trip is a write, so serializing every other environment behind it lasts longer still.")]
+	public void CreateRelatedPageAddon_ShouldLockOnResolvedTenantKey_WhenEnvironmentResolves() {
+		// Arrange
+		List<string> lockKeys = [];
+		List<string> markInUseKeys = [];
+		List<string> markAvailableKeys = [];
+		object sharedLock = new();
+		ITenantExecutionLockProvider lockProvider = Substitute.For<ITenantExecutionLockProvider>();
+		// GetLock is object-typed: an unstubbed substitute returns null and production `lock (...)` would die
+		// at Monitor.ReliableEnter, so hand back one stable object for every key.
+		lockProvider.GetLock(Arg.Do<string>(lockKeys.Add)).Returns(sharedLock);
+		lockProvider.When(provider => provider.MarkAvailable(Arg.Any<string>()))
+			.Do(call => markAvailableKeys.Add(call.Arg<string>()));
+		ISessionContainerCache sessionCache = Substitute.For<ISessionContainerCache>();
+		sessionCache.When(cache => cache.MarkInUse(Arg.Any<string>()))
+			.Do(call => markInUseKeys.Add(call.Arg<string>()));
+		McpToolExecutionLock.Configure(lockProvider, sessionCache);
+
+		// Act
+		_tool.CreateRelatedPageAddon(Args());
+
+		// Assert
+		lockKeys.Should().Equal([TenantKey],
+			because: "the tool must key its execution lock on the tenant the command resolved for, so tenants do not serialize against each other");
+		lockKeys.Should().NotContain(McpToolExecutionLock.SharedFallbackKey,
+			because: "the shared fallback key is reserved for calls that carry no per-tenant identity; taking it here blocks every other environment");
+		markInUseKeys.Should().Equal([TenantKey],
+			because: "MarkInUse is skipped entirely for a fallback key, so seeing the tenant key proves a real tenant session was pinned");
+		markAvailableKeys.Should().Equal(lockKeys,
+			because: "GetLock pins the lock-provider mapping in-use at hand-out and only MarkAvailable releases it");
 	}
 }

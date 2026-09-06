@@ -37,7 +37,17 @@ public sealed class ValidateProcessGraphTool {
 	/// <param name="args">The planned graph (nodes by <c>data-id</c>, edges by flow kind).</param>
 	/// <returns>The validation response (success flag, has-errors, findings).</returns>
 	[McpServerTool(Name = ToolName, ReadOnly = true, Destructive = false, Idempotent = true, OpenWorld = false)]
-	[Description("Validates a planned Creatio business-process graph (nodes by data-id, e.g. startEvent/readDataUserTask/exclusiveGateway/endEvent; edges by flow-kind sequence|conditional|default) against the BPMN connection rules R1-R17. The graph is validated in-memory, but the tool requires the 'CrtProcessBuilder' package to be installed on the target environment (install it with install-process-builder) (named by environment-name). Returns structured findings (error/warning + ruleId). Call this BEFORE driving the designer. IMPORTANT: a passing graph is NOT necessarily buildable — the rules cover the full BPMN catalog (gateways, conditional/default flows, timers, sub-processes), while create-business-process / modify-business-process build only startEvent/signalStart/endEvent/userTask/sendEmail/approval elements joined by plain sequence flows; check the buildable slice in get-guidance name=process-modeling before promising a build; the connection rules R1-R17 this tool validates against are published in get-guidance name=process-activity-connections.")]
+	// Worker despite the graph itself being validated in memory: the method first resolves the requested
+	// environment and queries its installed packages through IRequiredPackageChecker, so it CAN block on
+	// Creatio before any local work starts.
+	[McpToolExecution(
+		Location = McpToolExecutionLocation.Worker,
+		Lifetime = McpToolExecutionLifetime.PerCall,
+		OperationFamily = McpToolOperationFamily.None,
+		BudgetPolicy = McpToolBudgetPolicy.ParentKillDefault,
+		RequiresClientRequests = McpToolClientRequests.None,
+		SharedFileResource = McpToolSharedFileResource.None)]
+	[Description("Validates a planned Creatio business-process graph (nodes by data-id, e.g. startEvent/readDataUserTask/exclusiveGateway/endEvent; edges by flow-kind sequence|conditional|default - an omitted flow-kind is a plain sequence flow, an UNKNOWN one is refused rather than treated as plain) against the BPMN connection rules R1-R17. The graph is validated in-memory, but the tool requires the 'CrtProcessBuilder' package to be installed on the target environment (install it with install-process-builder) (named by environment-name). Returns structured findings (error/warning + ruleId). Call this BEFORE driving the designer. IMPORTANT: a passing graph is NOT necessarily buildable — the rules cover the full BPMN catalog (gateways, conditional/default flows, timers, sub-processes), while create-business-process / modify-business-process build only startEvent/signalStart/endEvent/userTask/sendEmail/approval elements. Flows start plain, and modify turns one into a conditional branch with setFlowCondition - so a conditional branch IS buildable even though a gateway ELEMENT is not; check the buildable slice in get-guidance name=process-modeling before promising a build; get-guidance name=process-formulas for an `expression` mapping source or a conditional-flow condition.")]
 	public ValidateProcessGraphResponse Validate([Required] ValidateProcessGraphArgs args) {
 		try {
 			IRequiredPackageChecker checker = _commandResolver.Resolve<IRequiredPackageChecker>(
@@ -89,11 +99,32 @@ public sealed class ValidateProcessGraphTool {
 		}
 	}
 
-	private static ProcessFlowKind ParseFlowKind(string flowKind) => flowKind?.Trim().ToLowerInvariant() switch {
-		"conditional" => ProcessFlowKind.Conditional,
-		"default" => ProcessFlowKind.Default,
-		_ => ProcessFlowKind.Sequence
-	};
+	/// <summary>
+	/// Parses an edge's <c>flow-kind</c>, refusing a value that is not one of the three.
+	/// <para>An omitted kind is a plain sequence flow - that is the documented default and the common case.
+	/// An unknown one is an ERROR rather than a plain flow: this tool exists to catch a mistake before the
+	/// designer is driven, and silently reclassifying <c>"conditionnal"</c> as a plain flow makes exactly the
+	/// rules that care about the difference (R7 exclusive-diverge, R13, R14) answer about a different graph -
+	/// in the reassuring direction, since a plain flow violates fewer rules than a conditional one.</para>
+	/// </summary>
+	private static ProcessFlowKind ParseFlowKind(string flowKind) {
+		string kind = flowKind?.Trim().ToLowerInvariant();
+		switch (kind) {
+			case null:
+			case "":
+			case "sequence":
+				return ProcessFlowKind.Sequence;
+			case "conditional":
+				return ProcessFlowKind.Conditional;
+			case "default":
+				return ProcessFlowKind.Default;
+			default:
+				throw new InvalidOperationException(
+					$"Unknown 'flow-kind' value '{flowKind}'. Use 'sequence' (or omit it), 'conditional' or "
+					+ "'default'. It is refused rather than treated as a plain flow, because the rules that "
+					+ "care about the difference would then answer about a graph you did not describe.");
+		}
+	}
 }
 
 /// <summary>Request arguments for <c>validate-process-graph</c>.</summary>
@@ -134,8 +165,19 @@ public sealed class ValidateProcessGraphResponse {
 	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
 	public string Error { get; init; }
 
+	/// <summary>
+	/// Whether the graph violates a rule. NULL - and omitted - when the graph was never validated, which is
+	/// every failure path: a missing package, an unknown <c>flow-kind</c>, an unexpected fault. A non-nullable
+	/// <c>bool</c> emitted <c>"has-errors": false</c> there - so a graph that was never looked at read as a
+	/// graph with nothing wrong. Absent is the honest answer; branch on <c>success</c> first.
+	/// <para>An earlier version of this note added that the tool description advertises the field and the
+	/// prompt tells the agent to resolve every error finding. Neither is so: <c>has-errors</c> appears in no
+	/// <c>[Description]</c> and in no prompt. The argument above does not need them and is left standing on
+	/// its own; putting the field into the description is a contract change, not a comment fix.</para>
+	/// </summary>
 	[JsonPropertyName("has-errors")]
-	public bool HasErrors { get; init; }
+	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+	public bool? HasErrors { get; init; }
 
 	[JsonPropertyName("findings")]
 	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]

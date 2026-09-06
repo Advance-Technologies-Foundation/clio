@@ -41,23 +41,46 @@ public sealed class CreateBusinessProcessCommandTests {
 
 	[Test]
 	[Category("Unit")]
-	[Description("A descriptor carrying ONLY an approval block still triggers the read-back check. The two expectation checks share one describe, and the short-circuit that skips it must require BOTH to be empty — flipping its && to || would silently stop verifying approval for every payload without an email block, which is most of them.")]
-	public void Execute_ShouldStillVerifyApproval_WhenTheDescriptorCarriesNoEmailBlock() {
+	[Description("Writes every server warning out as a WARNING. The modify twin has had this covered from the start; the create side shipped the channel with service-level tests only, so deleting the loop that writes them left the whole suite green - measured, 8 273 passed against the mutation. A warning here is a caveat on a SUCCESSFUL build: an outcome that applied and is not what the caller would assume, so one deserialized and then dropped is the same defect as one never sent.")]
+	public void Execute_ShouldWriteWarnings_WhenTheServerReportsThem() {
 		// Arrange
 		CreateBusinessProcessOptions options = new() {
 			Environment = "sandbox",
-			DescriptorJson = "{\"name\":\"UsrSampleProcess\",\"packageName\":\"Custom\",\"elements\":["
-				+ "{\"name\":\"Approve1\",\"type\":\"approval\",\"approval\":{\"object\":\"Order\","
-				+ "\"approver\":{\"type\":\"user\",\"employee\":\"Anna\"}}}],\"flows\":[]}"
+			DescriptorJson = SampleDescriptor,
+			PackageName = "MyApp"
+		};
+		_createBusinessProcessService.BuildProcess("sandbox", Arg.Any<CreateBusinessProcessRequest>())
+			.Returns(new CreateBusinessProcessResult("UsrSampleProcess", "5c58c4c4-134b-4744-9c67-96d9c69c9d55",
+				new[] { "Connection 'OmniChat' is not registered", "Connection 'Account' was CLEARED" }));
+
+		// Act
+		int result = _command.Execute(options);
+
+		// Assert
+		result.Should().Be(0, because: "a warning is a caveat on a SUCCESSFUL build, not a failure");
+		_logger.Received(1).WriteWarning(Arg.Is<string>(text => text.Contains("OmniChat")));
+		_logger.Received(1).WriteWarning(Arg.Is<string>(text => text.Contains("CLEARED")));
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Writes no warning when the server reported none, so an empty channel cannot train a reader to ignore it. Pairs with the test above: without this one, a loop that warned unconditionally would also pass.")]
+	public void Execute_ShouldNotWriteAnyWarning_WhenTheServerReportsNone() {
+		// Arrange
+		CreateBusinessProcessOptions options = new() {
+			Environment = "sandbox",
+			DescriptorJson = SampleDescriptor,
+			PackageName = "MyApp"
 		};
 		_createBusinessProcessService.BuildProcess("sandbox", Arg.Any<CreateBusinessProcessRequest>())
 			.Returns(BuildResult());
 
 		// Act
-		_command.Execute(options);
+		int result = _command.Execute(options);
 
 		// Assert
-		_processDescriber.Received(1).Describe(Arg.Any<ProcessIdentity>(), Arg.Any<string>());
+		result.Should().Be(0, because: "a build with no caveats is an ordinary success");
+		_logger.DidNotReceiveWithAnyArgs().WriteWarning(default!);
 	}
 
 	[Test]
@@ -137,4 +160,25 @@ public sealed class CreateBusinessProcessCommandTests {
 			because: "the command should propagate service-level failures as a non-zero exit code");
 		_logger.Received(1).WriteError(Arg.Is<string>(message => message.Contains("Package 'Custom' was not found.")));
 	}
+	[Test]
+	[Category("Unit")]
+	[Description("A descriptor carrying ONLY an approval block still triggers the read-back check. The two expectation checks share one describe, and the short-circuit that skips it must require BOTH to be empty — flipping its && to || would silently stop verifying approval for every payload without an email block, which is most of them.")]
+	public void Execute_ShouldStillVerifyApproval_WhenTheDescriptorCarriesNoEmailBlock() {
+		// Arrange
+		CreateBusinessProcessOptions options = new() {
+			Environment = "sandbox",
+			DescriptorJson = "{\"name\":\"UsrSampleProcess\",\"packageName\":\"Custom\",\"elements\":["
+				+ "{\"name\":\"Approve1\",\"type\":\"approval\",\"approval\":{\"object\":\"Order\","
+				+ "\"approver\":{\"type\":\"user\",\"employee\":\"Anna\"}}}],\"flows\":[]}"
+		};
+		_createBusinessProcessService.BuildProcess("sandbox", Arg.Any<CreateBusinessProcessRequest>())
+			.Returns(BuildResult());
+
+		// Act
+		_command.Execute(options);
+
+		// Assert
+		_processDescriber.Received(1).Describe(Arg.Any<ProcessIdentity>(), Arg.Any<string>());
+	}
+
 }

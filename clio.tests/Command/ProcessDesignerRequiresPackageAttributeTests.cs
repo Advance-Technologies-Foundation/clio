@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Globalization;
 using Clio.Command;
@@ -67,7 +67,7 @@ namespace Clio.Tests
         [TestCase(typeof(CreateBusinessProcessOptions))]
         [TestCase(typeof(ModifyBusinessProcessOptions))]
         [Test]
-        [Description("Create and Modify declare a VERSIONED requirement naming the newest behaviour clio ADVERTISES that an older server may not have. Today that is 1.4.11.0: describe distinguishes a WRITTEN ignoreEmailErrors from the schema-level default the platform copies onto every Approval element, and clio's describe tool tells agents that absence of the field means 'not written, never off'. An older server cannot make that distinction, answers true on an element nobody configured, and reports a block for it at all — so the promise is false and a caller acting on it writes a value nobody chose. Earlier lines are subsumed: the lookup-constant input contract from ENG-96325 (1.4.0.40), the approver preserved across a user<->manager switch (1.4.7.0), and the three ENG-92713 silent drops before it — an approver discarded while answering success, a notification switched on with no template, an author notification with no recipient. Presence alone cannot express any of them. A rebundle that changes only documentation must NOT move this pin (1.4.8.0 and 1.4.10.0 did not); one that changes what the server reports or accepts must. The bundled-archive guard asserts the shipped archive SATISFIES the literal, so it can never demand a version clio does not carry.")]
+        [Description("Create and Modify declare a VERSIONED requirement naming the newest behaviour clio DEPENDS ON or ADVERTISES that an older server may not have. Two requirement lines meet here and no released archive carries both, so the literal is the version cut from the merged package source. From master: the element-level performer block and its reference-existence guard (1.3.1.1), the formula validator behind a mappings[] expression source, and the PlatformValidationMessage rewrite these descriptions promise (1.4.0.44) — a tightened validator takes a literal because convergence only warns. From ENG-92713: the approver an older server discards while answering success, a notification switched on with no template, an author notification with no recipient, the approver preserved across a user<->manager switch (1.4.7.0), and describe telling a WRITTEN ignoreEmailErrors from the schema-level default (1.4.11.0) — which clio ADVERTISES to agents as 'absence means not written, never off'. A rebundle that changes only documentation must NOT move this pin (1.4.8.0 and 1.4.10.0 did not); one that changes what the server reports or accepts must. The bundled-archive guard asserts the shipped archive satisfies the literal, so it can never demand a version clio does not carry.")]
         public void OptionsType_ShouldDeclareVersionedProcessBuilderRequirement_WhenTheCommandShipsVersionedOperations(
             Type optionsType)
         {
@@ -77,19 +77,30 @@ namespace Clio.Tests
             // Assert
             requirement.Should().NotBeNull(
                 because: $"{optionsType.Name} must carry the declarative {BundledPackages.ProcessBuilderPackageName} requirement so the MCP gate fires");
-            requirement!.Version.Should().Be("1.4.11.0",
-                because: "the floor names the newest behaviour clio ADVERTISES that an older server may not "
-                    + "have. 1.4.11.0 is that: describe distinguishes a WRITTEN ignoreEmailErrors from the "
-                    + "schema-level default the platform copies onto every Approval element, and clio's tool "
-                    + "description tells agents absence means 'not written, never off'. An older server answers "
-                    + "true there on an element nobody configured, so the promise is false and a caller acting "
-                    + "on it writes a value nobody chose. Earlier lines are subsumed: 1.4.0.40 brought the "
-                    + "lookup-constant input contract, 1.4.7.0 the approver preservation, and every ENG-92713 "
-                    + "behaviour before it fails SILENTLY on an older server. The literal is what fails CLOSED — "
-                    + "the convergence rule only WARNS when it cannot read the archive or the version carries a "
-                    + "pre-release suffix. A rebundle that changes only documentation must NOT move this pin "
-                    + "(1.4.8.0 and 1.4.10.0 did not); one that changes what the server reports or accepts must. "
-                    + "Move it WITH the rebundle in the same commit");
+            requirement!.Version.Should().Be("1.4.12.0",
+                because: "TWO reasons stand behind this floor. ENG-96325's lookup-constant contract shipped in the 1.4.0.40 archive - a mappings[] value on a Lookup target may carry an already-composed macro that an older server rejects as 'not a bare Guid' - and setFlowCondition is an operation an older server does not carry AT ALL — its dispatch "
+                    + "registry rejects the token, which reads to a caller as a clio bug rather than a stale "
+                    + "environment — and that alone justifies a versioned floor. What sets the NUMBER changed with "
+                    + "the formula collapse. The formula half used to be a TIGHTENED VALIDATOR, measured one "
+                    + "archive at a time up to .37; .41 is the version that REMOVED that validator, on the "
+                    + "measurement that the platform's own pre-save gate already refuses every class of bad "
+                    + "formula, a flow condition included (spec/eng-95891-formula-expressions/"
+                    + "eng-95891-formula-expressions-save-gate-probe.md). So .41 checks strictly LESS than .37 "
+                    + "did, an environment between them refuses at least as much, and the floor now buys the "
+                    + "MESSAGE contract the tool descriptions promise rather than the existence of a refusal: "
+                    + "below .41 a bad formula is refused in the package's own wording, and an unresolvable "
+                    + "parameter reference comes back as the platform's serialised {ErrorType:2,ErrorData:{…}} "
+                    + "rather than as a sentence, because PlatformValidationMessage is not there. Do NOT lower it "
+                    + "to .37 on the grounds that .37 also refuses — it does, with different text — and do not "
+                    + "lower it below .37 on any grounds, because the refusals that SURVIVE the collapse were "
+                    + "measured there: the activity-result guard in .32, and the element-retarget refusal's two "
+                    + "fail-open holes (a dependency scan that failed OPEN on a sub-process reference, and an "
+                    + "element UId matched in D-form only) closed in .37. The platform-grammar element segment "
+                    + ".35 added is deliberately NOT in that list any more: the strict pattern it mirrored is used "
+                    + "only for data-source filter map paths, so a parameter value's element scoping survived the "
+                    + "looser form and the refusal protected nothing. "
+                    + "This subsumes the earlier 1.3.1.1 performer floor and the 1.2.0.1 email floor. When the "
+                    + "next versioned operation ships, move this pin WITH the rebundle in the same commit");
         }
 
         [Test]

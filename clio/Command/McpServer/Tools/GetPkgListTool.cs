@@ -33,6 +33,13 @@ public sealed class GetPkgListTool(
 	/// </summary>
 	[McpServerTool(Name = GetPkgListToolName, ReadOnly = true, Destructive = false, Idempotent = true,
 		OpenWorld = false)]
+	[McpToolExecution(
+		Location = McpToolExecutionLocation.Worker,
+		Lifetime = McpToolExecutionLifetime.PerCall,
+		OperationFamily = McpToolOperationFamily.None,
+		BudgetPolicy = McpToolBudgetPolicy.ParentKillDefault,
+		RequiresClientRequests = McpToolClientRequests.None,
+		SharedFileResource = McpToolSharedFileResource.None)]
 	[Description("Returns a bounded page of packages from the specified Creatio environment as structured JSON. Results are ordered by package name and capped at 50 by default. The response always reports count, total, offset, limit, and truncated so callers can page through the full filtered set.")]
 	public PackageListResponse GetPkgList(
 		[Description("List-packages parameters")] [Required] GetPkgListArgs args) {

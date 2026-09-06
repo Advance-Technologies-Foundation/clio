@@ -37,6 +37,49 @@ public sealed class CreateBusinessProcessServiceTests {
 	}
 
 	[Test]
+	[Description("Reads the server's warnings[] off a SUCCESSFUL build. The create side shipped this member with no test at all while the modify side had four, which is the asymmetry a review found: an undeclared or misspelled member deserializes to null with nothing red anywhere, so the channel would look plumbed and carry nothing. The classes it carries are connection notices and pre-configured-page sync notices - NOT the two formula cases the doc used to name, which went with the package's own validator.")]
+	public void BuildProcess_ShouldReadWarnings_WhenServerReportsThemOnASuccessfulBuild() {
+		// Arrange
+		IOwnedApplicationClient client = Substitute.For<IOwnedApplicationClient>();
+		client.ExecutePostRequest(BuildUrl, Arg.Any<string>()).Returns(
+			"{\"BuildProcessResult\":{\"success\":true,\"schemaName\":\"UsrSampleProcess\","
+			+ "\"schemaUId\":\"5c58c4c4-134b-4744-9c67-96d9c69c9d55\","
+			+ "\"warnings\":[\"Connection 'OmniChat' is not registered\"]}}");
+		CreateBusinessProcessService service = CreateService(client, out _);
+
+		// Act
+		CreateBusinessProcessResult result = service.BuildProcess(Env,
+			new CreateBusinessProcessRequest(SampleDescriptor, "MyApp"));
+
+		// Assert
+		result.Warnings.Should().ContainSingle(
+			because: "a caveat the server raised about a build that SUCCEEDED must reach the caller - dropping "
+				+ "it leaves code that looks like it warned and did not");
+		result.Warnings[0].Should().Contain("OmniChat",
+			because: "the warning names WHICH connection is affected, which is the only actionable part of it");
+	}
+
+	[Test]
+	[Description("Leaves Warnings null when the server reports none, so an absent list cannot be mistaken for an empty-but-present one by a caller that enumerates it - and so the case of a server predating the member behaves the same way.")]
+	public void BuildProcess_ShouldLeaveWarningsNull_WhenServerReportsNone() {
+		// Arrange
+		IOwnedApplicationClient client = Substitute.For<IOwnedApplicationClient>();
+		client.ExecutePostRequest(BuildUrl, Arg.Any<string>()).Returns(
+			"{\"BuildProcessResult\":{\"success\":true,\"schemaName\":\"UsrSampleProcess\","
+			+ "\"schemaUId\":\"5c58c4c4-134b-4744-9c67-96d9c69c9d55\"}}");
+		CreateBusinessProcessService service = CreateService(client, out _);
+
+		// Act
+		CreateBusinessProcessResult result = service.BuildProcess(Env,
+			new CreateBusinessProcessRequest(SampleDescriptor, "MyApp"));
+
+		// Assert
+		result.Warnings.Should().BeNull(
+			because: "nothing was reported, and an empty list would tell a caller the server answered the "
+				+ "question when it did not");
+	}
+
+	[Test]
 	[Description("Posts the descriptor wrapped under 'request' to the resolved BuildProcess route (with the package override applied) and returns the created schema identity on success.")]
 	public void BuildProcess_ShouldPostWrappedRequestToBuildRoute_AndReturnResult_OnSuccess() {
 		// Arrange

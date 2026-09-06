@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Text.Json;
 using System.Text.Json.Nodes;
@@ -14,6 +14,57 @@ namespace Clio.Command;
 /// Options for editing an existing business process via the ProcessDesignService package.
 /// Consumed by the MCP <c>modify-business-process</c> tool, which sets these properties directly.
 /// </summary>
+// The version literal states what THIS command's code needs — the newest operation it sends that an
+// older server does not have. Today that is the element-level performer block and the
+// reference-existence guard behind it (bare-Guid Lookup values, performer contact/role), shipped in
+// the 1.3.1.1 archive: an older server has no performer member and silently discards the block while
+// answering success, and a pre-guard server stores a dead id instead of refusing it. Presence alone
+// cannot express either — the email block's 1.2.0.1 floor set this precedent and is subsumed by this
+// literal. Raised to 1.4.0.37 by ENG-95891: a build's `mappings[]` may carry an `expression` source, and
+// the formula validator behind it is a TIGHTENED VALIDATOR — a server older than 1.4.0.0 stores such a
+// mapping with no check at all, so the same descriptor that is refused on a current environment silently
+// persists a broken formula on an older one, to fail at run time. The article is explicit that a tightened
+// validator takes a literal rather than being left to convergence, because convergence only warns.
+//
+// Raised again to 1.4.0.44, and this time the reason runs the other way. 1.4.0.41 is the version that STOPPED
+// validating formulas in the package, because the platform's own pre-save gate was already doing it — for a
+// mapped expression AND for a flow condition, measured with both package guards built out and installed
+// (spec/eng-95891-formula-expressions/eng-95891-formula-expressions-save-gate-probe.md). What the floor buys
+// is therefore the MESSAGE contract these descriptions promise, not the existence of a refusal: below .41 a
+// bad formula is still refused, but by the package's own wording and its own reference pre-check, and the
+// serialised-error rewrite (PlatformValidationMessage) is not there — so an unresolvable parameter reference
+// comes back as `{ErrorType:2,ErrorData:{ParameterUId:"…"}}`.
+//
+// The floor is above .41 because the review round after .41 corrected the rewrite these descriptions
+// promise: every serialised error in one message rather than the first, and an element-scoped reference named
+// as such rather than called a process parameter. It is .44 specifically because .44 is the first archive
+// carrying BOTH that and the lookup-constant contract the ENG-96325 merge brought in (see below), so it is
+// the lowest version that satisfies everything these descriptions say. Do not re-derive it from whatever
+// this clio happens to bundle: the bundled archive moves on every rebundle, the fixture only asserts the
+// floor is SATISFIABLE by it, and a floor that tracks the bundle demands an upgrade of environments that
+// already work.
+//
+// The floor is NOT lowered back to .37 on the grounds that .37 also refuses. It does, with different text, and
+// a description that names what a refusal says is only true from .41. Nor is it a tightened validator any
+// more: .41 checks strictly LESS than .37 did, so an environment between the two refuses at least as much.
+// The superseded .37 rationale, kept because it is the reason not to go below it either way: each archive on
+// the ENG-95891 branch was decompressed and grepped for the marker of every refusal the descriptions promised,
+// and the activity-result guard (which SURVIVES the collapse) landed in .32, the platform-grammar element
+// segment in .35, the element-retarget refusal in .37.
+// The guard fixture asserts the shipped archive satisfies the literal, so clio can never
+// demand a version it does not itself carry.
+//
+// TWO reasons stand behind this floor now, and the merge of ENG-96325 added the second. Its
+// lookup-constant contract shipped in the 1.4.0.40 archive: a mappings[] 'value' on a Lookup target
+// may carry an already-composed macro, and an older server rejects it outright as "not a bare Guid"
+// - the same "server starts accepting an input form an older one refuses" shape that produced the
+// 1.3.1.1 literal. The number below satisfies both that and the message contract described above.
+//
+// ===== two requirement lines met in the ENG-92713 merge, and NO released archive carries both =====
+// Master's line above stops at 1.4.0.44; the ENG-92713 line below stops at 1.4.11.0, which was cut
+// BEFORE this branch merged main and therefore predates every formula/branch behaviour master needs.
+// The first archive carrying both is the one cut from the merged package source — the literal below.
+//
 // The version literal states what THIS command needs — the newest server behaviour it depends on that an
 // older one does not have. Two independent lines of that requirement met in this merge, and NO released
 // version carries both, which is why the floor is the version this clio bundles rather than either of them.
@@ -54,7 +105,7 @@ namespace Clio.Command;
 // since a floor tracks behaviour clio depends on rather than the version it happens to ship. 1.4.10.0 was
 // exactly such a case — it corrected two contract doc comments and did not move this literal; 1.4.11.0
 // changed what the server REPORTS, so it did.
-[RequiresPackage(BundledPackages.ProcessBuilderPackageName, "1.4.11.0",
+[RequiresPackage(BundledPackages.ProcessBuilderPackageName, "1.4.12.0",
 	Hint = BundledPackages.ProcessBuilderInstallHint)]
 public sealed class ModifyBusinessProcessOptions : EnvironmentOptions {
 	/// <summary>Process code (schema Name) to edit. Provide exactly one of <see cref="ProcessName"/> or <see cref="ProcessUid"/>.</summary>
@@ -155,7 +206,16 @@ public sealed class ModifyBusinessProcessService(
 		ModifyProcessResultDto result = envelope.Result
 			?? throw new InvalidOperationException("ModifyProcess returned an unexpected response shape.");
 		if (!result.Success) {
-			throw new InvalidOperationException(result.ErrorMessage ?? "ModifyProcess failed.");
+			// Surfaced HERE or nowhere. The success record below cannot carry it (it is only built on success),
+			// and this throw is the only way a refused operation leaves clio — so discarding the index would
+			// leave the caller doing on the client what the server split the field to stop them doing:
+			// bisecting the batch against a live environment. Appended rather than woven in because the
+			// server's own sentence is the primary message and several guards name neither endpoint.
+			string refusedBy = result.FailedOperationIndex.HasValue
+				? $" The operation at index {result.FailedOperationIndex.Value} is the one that refused."
+				: string.Empty;
+			throw new InvalidOperationException(
+				(result.ErrorMessage ?? "ModifyProcess failed.") + refusedBy);
 		}
 
 		return new ModifyBusinessProcessResult(result.SchemaName, result.SchemaUId, result.AppliedOperations,
@@ -194,6 +254,16 @@ public sealed class ModifyBusinessProcessService(
 
 		[JsonPropertyName("appliedOperations")]
 		public int AppliedOperations { get; set; }
+
+		// Zero-based index of the operation that refused, when a single one did. Declared for the same reason
+		// as warnings below — an undeclared member is dropped without a trace — and it matters more here,
+		// because this is the only field on a FAILED edit that says which operation to look at. Nullable, and
+		// the null carries meaning: the server sends none when the failure came after the operation loop (the
+		// pre-save gate judging the whole schema, which is now the common failure), and an older
+		// CrtProcessBuilder does not send the field at all. Both cases mean "no operation is to blame", which
+		// is exactly why the server stopped overloading appliedOperations to answer this.
+		[JsonPropertyName("failedOperationIndex")]
+		public int? FailedOperationIndex { get; set; }
 
 		[JsonPropertyName("errorMessage")]
 		public string? ErrorMessage { get; set; }

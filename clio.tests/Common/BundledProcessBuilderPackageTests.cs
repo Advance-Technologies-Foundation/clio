@@ -38,7 +38,6 @@ namespace Clio.Tests.Common;
 [Category("Unit")]
 [Property("Module", "Common")]
 public class BundledProcessBuilderPackageTests {
-	private static readonly TimeSpan RegexTimeout = TimeSpan.FromSeconds(1);
 
 	#region Constants: Private
 
@@ -72,41 +71,44 @@ public class BundledProcessBuilderPackageTests {
 	];
 
 	/// <summary>
-	/// SHA-256 of the committed archive. Produced by <c>rebundle-process-builder.ps1 -Version 1.4.0.40</c> from
+	/// SHA-256 of the committed archive. Produced by <c>rebundle-process-builder.ps1</c> at
+	/// <see cref="ExpectedArchiveVersion"/> from
 	/// the <c>ProcessBuilder</c> repository (<c>packages/CrtProcessBuilder</c>, branch
-	/// <c>feature/ENG-96325-lookup-constant-macro-form</c>, rebased onto <c>main</c> at 1.4.0.0, at commit
-	/// <c>67c49628ccc0c453cd1f8b77d4048e253e98b0e0</c>; that branch was SQUASH-merged into <c>main</c> as
-	/// <c>86b186d</c> (PR #41), whose <c>packages/CrtProcessBuilder</c> tree is the identical
-	/// <c>f77936135f16b146bfaa2a48c4374f11c2541fb5</c> — follow either hash) — the ENG-96325
-	/// design-time fix: a Lookup CONSTANT
-	/// keeps <c>Source = ConstValue</c> and its bare record Guid, and gains the referenced record's NAME in
-	/// <c>DisplayValue</c>, which is what the designer renders. The defect it closes was the raw id written
-	/// there, so "Task category" read as a Guid while the runtime had been correct all along. Keeping
-	/// <c>ConstValue</c> is load-bearing rather than conservative: <c>ActivityUserTask</c> derives its
-	/// allowed-results list from that source alone, client-side and server-side, so the macro form the original
-	/// brief proposed would have degraded the result dropdown to its default. Also in the cut: a
-	/// <c>[#Lookup…#]</c> passed as a <c>value</c> is decoded to the bare id, the change-data expression branch
-	/// renders the display macro, and describe gained <c>valueDisplay</c>. The record NAME is read through an
-	/// <c>EntitySchemaQuery</c> (localized, rights-checked) while the EXISTENCE guard stays a raw
-	/// <c>Select</c> — swapping them would refuse a valid id whose record the writer cannot read.
-	/// 1.4.0.40 is a PATCH over main's 1.4.0.0 — no capability is added, an existing one stops lying to the
-	/// designer — stamped above every 1.4.0.x in flight on the package repository's origin at cut time (the
-	/// highest, ENG-95891, sat at 1.4.0.39), because the convergence check treats <c>installed >= bundled</c> as
-	/// "nothing to do" and a number below an archive an environment may have recorded would never reach it. It
-	/// deliberately stays BELOW the 1.4.6.0 a feature branch (ENG-92713) carries: that stamp lives on its author's
-	/// stands and will be restamped above whatever main holds when that branch rebases, exactly as this one was —
-	/// borrowing its minor number would say "a new capability" about a patch. The 1.3.2.x and 1.4.6.1 stamps this
-	/// branch carried earlier were cut and withdrawn before release, so no shared environment can carry one; each
-	/// raise exists so a stand or checkout still holding an older archive is DETECTABLY behind.
+	/// <c>feature/ENG-95891-formula-expressions</c>), at the commit recorded mechanically in
+	/// <see cref="ExpectedProducingCommit"/> — the script captures <c>git rev-parse HEAD</c> and refuses to cut
+	/// from a tree with uncommitted changes, so this reference is no longer a sentence anyone has to keep true
+	/// by hand. Many numbers below the current one are burned rather than reused — some because two branches drew
+	/// from one monotonic sequence on the same day, most because a cut was superseded before it left the machine
+	/// and abandoned rather than re-pointed. Two branches collide unless the number is claimed BEFORE it is cut,
+	/// so a gap is always cheaper than an ambiguous number, and a version identifying two different byte sets is
+	/// worse than either.
+	/// <para>Which numbers are burned is deliberately NOT recorded, here or anywhere: two files have carried such a
+	/// list, both went stale, and this file's went stale four times. To pick the next number, go UP from this
+	/// constant — the highest THIS branch has cut — and then check the candidate is unused in BOTH histories, this
+	/// file's and the package repository's <c>descriptor.json</c>, because a cut can exist there without ever
+	/// reaching a clio commit. Do not take one above the global maximum across all branches: another branch sitting
+	/// higher does not make its number yours to continue, and adopting it produces a version that looks newer than
+	/// work it does not contain. See docs/agent-instructions/bundled-packages.md for the commands.</para>
+	/// <para>What this cut carries, over the 1.3.1.1 performer/lookup delivery it replaces: server-side
+	/// VALIDATION of formula expressions — an <c>expression</c> mapping source and a conditional-flow condition
+	/// are now parsed, their parameter references resolved against the process, and their result type checked
+	/// against the declared target, instead of being stored unchecked. The MINOR digit moved at 1.4.0.0 because
+	/// that is a new capability; every PATCH digit over it fixes something a review or a manual case found, and
+	/// each is raised so a stand still carrying an earlier one is DETECTABLY behind — same-version re-cuts make
+	/// equal version numbers mean nothing, which the convergence check cannot see through.</para>
 	/// <para>
-	/// BOTH prescribed cross-checks were RUN against that commit, not assumed — and re-run against the squash
-	/// commit on <c>main</c> after the merge. The <c>ModifiedOnUtc</c> pinned below equals the descriptor at
-	/// <c>67c49628</c> and at <c>86b186d</c> (<c>/Date(1788362204000)/</c>, read from the commits rather than
-	/// from a working tree), as does <see cref="ExpectedArchiveVersion"/>. All 122 archive entries equal the
-	/// merged tree's blobs: the two DLLs byte for byte, the 120 text files after the CRLF rendering a
-	/// <c>core.autocrlf=true</c> checkout applies to LF blobs, so these bytes are reproducible from <c>main</c>.
-	/// The only committed file absent from the archive is the <c>.DotSettings</c> that <c>clioignore</c>
-	/// excludes.
+	/// The cut ran with the package's own gate tests passing rather than under <c>-SkipTests</c>, and the
+	/// script verified the archive inventory it produced. The byte-for-byte comparison of every archive entry
+	/// against the commit's CHECKOUT rendering was NOT re-run here, and the clean-tree refusal does NOT cover
+	/// it: a clean TREE and a clean CHECKOUT are different states. `git add` normalises to LF in the INDEX while
+	/// the working tree keeps what was written, so LF files can be committed, leave the tree clean, pass the
+	/// gate, and still be packed as LF where a checkout of that same commit renders CRLF. The gate closes the
+	/// DIRTY-TREE failure and that one only — see the paragraph above for why it does not close the
+	/// commit-is-behind one either.
+	/// It earned its keep on the 1.3.1.1 cut — freshly written files carried LF
+	/// where a checkout on a <c>core.autocrlf=true</c> host produces CRLF, an archive corresponding to no commit
+	/// at all — so re-run the line-ending audit whenever the archive is cut from a tree with just-written files,
+	/// and do not read its absence here as a clean result.
 	/// </para>
 	/// Provenance rules live in <c>docs/agent-instructions/bundled-packages.md</c>.
 	/// </summary>
@@ -125,8 +127,25 @@ public class BundledProcessBuilderPackageTests {
 	/// <c>/Date(1786345127000)/</c>: that time the COMMIT was behind, because the restamp a rebundle performs
 	/// happens in the package checkout and was left uncommitted there. Both failures look identical to whoever
 	/// follows the reference — a different hash — so the check is the same: the <c>ModifiedOnUtc</c> pinned
-	/// below must match the descriptor at the commit named above. Committing that restamp on the package side
-	/// is part of every rebundle; the runbook says so.
+	/// below CANNOT match the descriptor at the commit named above, and expecting it to was the error in this
+	/// paragraph. The script captures <c>rev-parse HEAD</c> at step 0b and performs the restamp at step 2, so
+	/// the pin names the commit BEFORE the version moved — by design, and unavoidably, because the script does
+	/// not commit. Today's pins show it plainly: <see cref="ExpectedProducingCommit"/> resolves to a descriptor
+	/// reading a version one restamp behind the archive beside it.
+	/// <para>So reproducing the bytes is not a checkout, and not two steps either: check out the pin, re-run
+	/// <c>set-pkg-version</c> with the pinned version, then hand-set <c>ModifiedOnUtc</c> to
+	/// <see cref="ExpectedDescriptorModifiedOnUtc"/>, then pack. The third step is not optional —
+	/// <c>SetPackageVersionCommand</c> writes <c>DateTime.Now</c> and takes no timestamp argument, so re-running
+	/// it stamps the present and the descriptor bytes differ every time. That pin exists for exactly this. Even
+	/// then the hash matches only on a host that renders the same line endings and the same path separator, which
+	/// is why the line-ending note above is not a footnote.</para>
+	/// <para>What the pin establishes is which SOURCES the
+	/// archive was built from — which is the question that actually matters, since the descriptor is the one
+	/// file the rebundle rewrites and the one whose expected content is pinned separately. Committing the
+	/// restamp afterwards is still part of every rebundle, but not for the reason first written here: the pin
+	/// names the PRE-restamp commit, which is on the branch either way. The real reasons are that the next cut's
+	/// clean-tree gate refuses a dirty tree, and that the pinned <c>ModifiedOnUtc</c> would otherwise exist in no
+	/// commit at all.</para>
 	/// </para>
 	/// <para>
 	/// It has since been wrong a THIRD way, which no amount of checking the date would have caught: the bytes
@@ -136,13 +155,14 @@ public class BundledProcessBuilderPackageTests {
 	/// (<c>core.autocrlf=true</c>). Identical content, different bytes, unreproducible hash. So the reference
 	/// is only verifiable if the archive is packed from a CLEAN checkout: pack from a tree carrying
 	/// just-written files and the pin records bytes nobody can reproduce, which leaves this constant detecting
-	/// change while establishing nothing about provenance. The bytes pinned below were verified entry-by-entry
-	/// against a checkout of the commit named above — identical, the only file not in the archive being the
-	/// <c>.DotSettings</c> that <c>clioignore</c> excludes.
+	/// change while establishing nothing about provenance. That entry-by-entry audit was run for the 1.3.1.1
+	/// cut and is what caught the line-ending case; it was NOT re-run for the archive pinned below.
+	/// Two statements about the same bytes, one reassuring and one not, is exactly the shape this file exists
+	/// to prevent, so read the summary above as authoritative on what was and was not checked for THIS cut.
 	/// </para>
 	/// </remarks>
 	private const string ExpectedArchiveSha256 =
-		"A72F5F94E6EACC05D9DF2E208677699B0009331C8947A9D02DE65F9F89FB577B";
+		"FFF608CB706BBF19B4A7000C4AF44B437094EF4D796696062CBB7F0AED673FF8";
 
 	/// <summary>
 	/// The <c>PackageVersion</c> the shipped descriptor carries.
@@ -170,7 +190,19 @@ public class BundledProcessBuilderPackageTests {
 	/// </para>
 	/// </para>
 	/// </remarks>
-	private const string ExpectedArchiveVersion = "1.4.11.0";
+	private const string ExpectedArchiveVersion = "1.4.12.0";
+
+	/// <summary>
+	/// The commit of the PRODUCING repository the archive was cut from, written by
+	/// <c>rebundle-process-builder.ps1</c> from <c>git rev-parse HEAD</c> rather than typed here.
+	/// <para>This does not PROVE the bytes came from that commit — nothing in this repository can, because the
+	/// producing checkout is not present. What it removes is the failure mode that has actually happened three
+	/// times, all recorded on <see cref="ExpectedArchiveSha256"/>: a hand-written reference that was stale,
+	/// behind, or named no commit at all. The script now also refuses to cut from a dirty tree, so "an archive
+	/// corresponding to no commit" is unreachable rather than merely documented. Anyone with a checkout can
+	/// verify the rest with one `git checkout`.</para>
+	/// </summary>
+	private const string ExpectedProducingCommit = "32bcf452cd46d987a8ab161972f2aa6b809e4cac";
 
 	/// <summary>
 	/// The <c>ModifiedOnUtc</c> the shipped descriptor carries.
@@ -196,7 +228,7 @@ public class BundledProcessBuilderPackageTests {
 	/// command — the previous pin ended in <c>431</c>, which is how the hand edit was eventually noticed.
 	/// </para>
 	/// </remarks>
-	private const string ExpectedDescriptorModifiedOnUtc = "/Date(1788535063000)/";
+	private const string ExpectedDescriptorModifiedOnUtc = "/Date(1788705647000)/";
 
 	/// <summary>
 	/// The <c>ModifiedOnUtc</c> the shipped COMPILE-MARKER SCHEMA descriptor carries.
@@ -668,10 +700,11 @@ public class BundledProcessBuilderPackageTests {
 		declared.Should().HaveCountGreaterThanOrEqualTo(5,
 			because: "the five process-designer gates must be visible to this scan; if it finds fewer, the "
 				+ "reflection is broken and the version loop below is silently inspecting nothing");
-		// The loop is vacuous today — every declaration is presence-only — and that is the intended state.
-		// It asserts an invariant that must hold WHEN a literal appears, and the commit that adds the first
-		// one is exactly when it must already be in place. It replaces the old pin (descriptor version == a
-		// constant), which needed hand-synchronising on every rebundle and asserted a coincidence, not a rule.
+		// The loop EXECUTES today: two of the five carry a version literal (create/modify, 1.4.0.44). It was
+		// vacuous when written, deliberately — the invariant had to be in place before the first literal
+		// appeared, because the commit that adds one is exactly when it must already work. It replaces the old
+		// pin (descriptor version == a constant), which needed hand-synchronising on every rebundle and
+		// asserted a coincidence, not a rule.
 		foreach (string declaredVersion in versioned.ConvertAll(r => r.Version)) {
 			PackageVersion.TryParseVersion(declaredVersion, out PackageVersion required).Should().BeTrue(
 				because: $"RequiredPackageChecker parses '{declaredVersion}' through System.Version, so an "
@@ -687,6 +720,23 @@ public class BundledProcessBuilderPackageTests {
 					+ "gate would refuse an environment and then hand it an installer that cannot satisfy the "
 					+ "refusal - clio must never demand what it does not carry");
 		}
+	}
+
+	/// <summary>
+	/// Reads a repository file by walking up from the test assembly to the directory that holds the solution.
+	/// The fixture already resolves the bundled archive from the build output; a repository DOC is not copied
+	/// there, so it is read from the checkout instead. Fails loudly rather than skipping: a pin that silently
+	/// stops reading its surface is the failure this test exists to prevent.
+	/// </summary>
+	private static string ReadRepositoryText(string relativePath) {
+		var directory = new DirectoryInfo(TestContext.CurrentContext.TestDirectory);
+		while (directory != null && !File.Exists(Path.Combine(directory.FullName, relativePath))) {
+			directory = directory.Parent;
+		}
+		directory.Should().NotBeNull(
+			because: $"'{relativePath}' must be reachable from the test directory - without it this pin would "
+				+ "silently stop covering that surface, which is exactly how it drifted in the first place");
+		return File.ReadAllText(Path.Combine(directory.FullName, relativePath));
 	}
 
 	[Test]
@@ -890,8 +940,8 @@ public class BundledProcessBuilderPackageTests {
 	}
 
 	[Test]
-	[Description("Every 'CrtProcessBuilder <version>' literal the process-designer tool descriptions and the modify prompt hand out to agents equals the version the bundled archive actually carries. The contract text is restated on several surfaces by design (each surface reads in isolation), and this delivery re-aligned them twice by review rather than by a check — this is the check. A version bump now fails here until every shipped literal moves with the pin.")]
-	public void ToolContractVersionLiterals_ShouldMatchTheBundledArchiveVersion() {
+	[Description("No 'CrtProcessBuilder <version>' literal the process-designer tool descriptions and the modify prompt hand out to agents may name a version NEWER than the archive clio bundles. Each literal is a capability floor — the version a route or a check first shipped in — so it is expected to lag, sometimes by several releases; what it may never do is promise a version this distribution cannot install, because the remedy those same sentences hand the agent ('update the package') would then be unperformable. This pin previously demanded EQUALITY, and equality is what walked the bare-Guid lookup route's honest 1.3.1.1 through 1.4.0.0, .1, .2 and .3 — four consecutive rebundle commits, not one of them a change in the fact, while McpCapabilityMap.md went on saying 1.3.1.1 for the same route.")]
+	public void ToolContractVersionLiterals_ShouldNotExceedTheBundledArchiveVersion() {
 		// Arrange — the shipped agent-facing texts that name the package version
 		var surfaces = new Dictionary<string, string> {
 			["create-business-process description"] =
@@ -902,42 +952,135 @@ public class BundledProcessBuilderPackageTests {
 				Clio.Command.McpServer.Prompts.ProcessDesigner.ModifyBusinessProcessPrompt.PromptByProcess(
 					"env-placeholder", "process-placeholder")
 		};
-		var literalPattern = new System.Text.RegularExpressions.Regex(
-			@"CrtProcessBuilder (\d+\.\d+\.\d+\.\d+)",
-			System.Text.RegularExpressions.RegexOptions.None,
-			RegexTimeout);
+		var literalPattern = new System.Text.RegularExpressions.Regex(@"CrtProcessBuilder (\d+\.\d+\.\d+\.\d+)");
 
-		var anyVersionPattern = new System.Text.RegularExpressions.Regex(
-			@"\d+\.\d+\.\d+\.\d+",
-			System.Text.RegularExpressions.RegexOptions.None,
-			RegexTimeout);
+		var anyVersionPattern = new System.Text.RegularExpressions.Regex(@"\d+\.\d+\.\d+\.\d+");
 
 		// Act & Assert
 		foreach (KeyValuePair<string, string> surface in surfaces) {
 			System.Text.RegularExpressions.MatchCollection matches = literalPattern.Matches(surface.Value);
 			matches.Should().NotBeEmpty(
-				because: $"the {surface.Key} names the CrtProcessBuilder version this clio BUNDLES. That is NOT "
-					+ "the same number as the [RequiresPackage] floor, and the two are allowed to differ — the "
-					+ "floor names the oldest server that can honour what clio sends, the bundle is what clio "
-					+ "ships and what install-process-builder would put there. This test pins the shipped "
-					+ "literals to the BUNDLE, because that is the version a caller ends up on after taking "
-					+ "clio's own advice. It is deliberately not the version a given route was introduced in: a "
-					+ "provenance claim would go stale on every rebundle. If the sentence was removed on "
-					+ "purpose, remove the surface from this test in the same commit");
+				because: $"the {surface.Key} documents the version the lookup/performer route ships from — if the "
+					+ "sentence was removed on purpose, remove the surface from this test in the same commit");
 			foreach (System.Text.RegularExpressions.Match match in matches) {
-				match.Groups[1].Value.Should().Be(ExpectedArchiveVersion,
-					because: $"the {surface.Key} names a package version an agent will trust; a literal that "
-						+ "lags the bundled archive re-creates the exact drift this pin exists to end");
+				AssertInstallableFromThisDistribution(match.Groups[1].Value, surface.Key);
 			}
 			// The wide net behind the shaped one: ANY four-part version on these surfaces is the package
 			// version (nothing else four-part belongs in them), so a mention that drifts into a different
 			// shape — 'CrtProcessBuilder >= X', 'pre-X', a bare number — cannot hide beside a matching literal.
 			foreach (System.Text.RegularExpressions.Match match in anyVersionPattern.Matches(surface.Value)) {
-				match.Value.Should().Be(ExpectedArchiveVersion,
-					because: $"every four-part version on the {surface.Key} is a CrtProcessBuilder version "
-						+ "whatever sentence shape carries it; a stray one is drift the shaped pattern cannot see");
+				AssertInstallableFromThisDistribution(match.Value, surface.Key);
 			}
 		}
+	}
+
+	[Test]
+	[Description("The ENFORCED floor sentence must equal the literal the command actually gates on. These surfaces carry two kinds of version sentence and only one may lag: a CAPABILITY floor ('the route ships from CrtProcessBuilder 1.3.1.1') records when something first shipped and freezes there, while 'this clio requires X' states what [RequiresPackage] refuses below. The sibling pin was relaxed from equality to <= for the capability floors, which was right, and that relaxation left this sentence checked by nothing: rewriting it to 1.2.0.1 keeps the whole suite green while telling every agent to update to a version the gate does not enforce.")]
+	public void EnforcedFloorSentences_ShouldEqualTheRequiresPackageLiteral() {
+		// Arrange — the enforced floor as the ATTRIBUTE states it, by reflection rather than retyped here.
+		var surfaces = new Dictionary<string, (string Text, Type OptionsType)> {
+			["create-business-process description"] = (
+				GetToolDescription(typeof(Clio.Command.McpServer.Tools.ProcessDesigner.CreateBusinessProcessTool)),
+				typeof(Clio.Command.CreateBusinessProcessOptions)),
+			["modify-business-process description"] = (
+				GetToolDescription(typeof(Clio.Command.McpServer.Tools.ProcessDesigner.ModifyBusinessProcessTool)),
+				typeof(Clio.Command.ModifyBusinessProcessOptions)),
+			// The capability map states the same sentence to the same audience and is NOT reflected over, so it
+			// drifted to 1.4.0.37 against an enforced .44 and shipped green - found in review, not here. It is a
+			// repository file, so the pin reads it: a prose surface that promises a gate belongs to the gate's
+			// test, not to a script nothing runs. Keyed on modify's options type because the sentence in it
+			// describes the modify path's mapped expression.
+			["McpCapabilityMap.md"] = (
+				ReadRepositoryText(Path.Combine("docs", "McpCapabilityMap.md")),
+				typeof(Clio.Command.ModifyBusinessProcessOptions))
+		};
+		var sentencePattern = new System.Text.RegularExpressions.Regex(
+			@"this clio requires (\d+\.\d+\.\d+\.\d+)");
+
+		// Act & Assert
+		foreach (KeyValuePair<string, (string Text, Type OptionsType)> surface in surfaces) {
+			string enforced = surface.Value.OptionsType
+				.GetCustomAttributes(typeof(Clio.Common.RequiresPackageAttribute), inherit: false)
+				.Cast<Clio.Common.RequiresPackageAttribute>()
+				.Select(attribute => attribute.Version)
+				.FirstOrDefault(version => !string.IsNullOrWhiteSpace(version));
+			enforced.Should().NotBeNullOrWhiteSpace(
+				because: $"the {surface.Key} names an enforced floor, so its options type must carry a versioned "
+					+ "[RequiresPackage] - otherwise the sentence promises a gate that does not exist");
+			System.Text.RegularExpressions.MatchCollection matches = sentencePattern.Matches(surface.Value.Text);
+			matches.Should().NotBeEmpty(
+				because: $"the {surface.Key} is expected to state the enforced floor; if that sentence was "
+					+ "removed on purpose, remove the surface from this test in the same commit");
+			foreach (System.Text.RegularExpressions.Match match in matches) {
+				match.Groups[1].Value.Should().Be(enforced,
+					because: $"the {surface.Key} tells the agent this clio requires {match.Groups[1].Value} while "
+						+ $"[RequiresPackage] refuses below {enforced} - reading the wrong one, a caller either "
+						+ "updates to a version that changes nothing or skips an update it needs");
+			}
+		}
+	}
+
+	[Test]
+	[Description("The floor version is not credited with the change that justifies it. The sibling test pins WHICH version the floor sentence names; this one pins the REASON beside it, which nothing checked. The collapse - the package no longer validating a formula a second time - shipped in 1.4.0.41; .42 corrected the message that replaced the package's own reference pre-check; .44 is merely the first archive carrying both AND the ENG-96325 lookup-constant contract. Crediting the floor with the collapse describes an environment on .41 to .43 as still carrying a package wording and a reference pre-check that are already gone there, so a caller reads a refusal that does not match what they were promised and cannot tell which half is wrong.")]
+	public void FloorSentences_ShouldNotCreditTheEnforcedFloorWithTheCollapse() {
+		// Arrange
+		const string collapse = "stopped validating formulas";
+		const int precedingWindow = 60;
+		var surfaces = new Dictionary<string, (string Text, Type OptionsType)> {
+			["create-business-process description"] = (
+				GetToolDescription(typeof(Clio.Command.McpServer.Tools.ProcessDesigner.CreateBusinessProcessTool)),
+				typeof(Clio.Command.CreateBusinessProcessOptions)),
+			["modify-business-process description"] = (
+				GetToolDescription(typeof(Clio.Command.McpServer.Tools.ProcessDesigner.ModifyBusinessProcessTool)),
+				typeof(Clio.Command.ModifyBusinessProcessOptions)),
+			["McpCapabilityMap.md"] = (
+				ReadRepositoryText(Path.Combine("docs", "McpCapabilityMap.md")),
+				typeof(Clio.Command.ModifyBusinessProcessOptions))
+		};
+
+		// Act & Assert
+		foreach (KeyValuePair<string, (string Text, Type OptionsType)> surface in surfaces) {
+			string enforced = surface.Value.OptionsType
+				.GetCustomAttributes(typeof(Clio.Common.RequiresPackageAttribute), inherit: false)
+				.Cast<Clio.Common.RequiresPackageAttribute>()
+				.Select(attribute => attribute.Version)
+				.FirstOrDefault(version => !string.IsNullOrWhiteSpace(version));
+			int at = surface.Value.Text.IndexOf(collapse, StringComparison.Ordinal);
+			at.Should().BeGreaterThanOrEqualTo(0,
+				because: $"the {surface.Key} explains its floor by what the package stopped doing, and a surface "
+					+ "that dropped the explanation would pass the assertion below by carrying nothing - if it was "
+					+ "removed on purpose, remove the surface from this test in the same commit");
+			int from = Math.Max(0, at - precedingWindow);
+			surface.Value.Text.Substring(from, at - from).Should().NotContain(enforced,
+				because: $"the {surface.Key} would be naming {enforced} as the version where the package stopped "
+					+ "validating formulas itself, and that was 1.4.0.41 - so an environment on .41 to .43 gets "
+					+ "described with a package wording and a reference pre-check it no longer has");
+		}
+	}
+
+	/// <summary>
+	/// A version literal shipped on an agent-facing surface must be satisfiable by the archive this distribution
+	/// carries. It may LAG it — a capability floor records when something first shipped and freezes there — but it
+	/// may not exceed it: the surfaces carrying these literals also tell the agent to update the package when an
+	/// environment is behind, and a number no clio-installable archive reaches turns that instruction into a dead
+	/// end.
+	/// </summary>
+	private static void AssertInstallableFromThisDistribution(string literal, string surfaceKey) {
+		Version named = Version.Parse(literal);
+		var bundled = Version.Parse(ExpectedArchiveVersion);
+		(named <= bundled).Should().BeTrue(
+			because: $"the {surfaceKey} hands an agent '{literal}' as the version to be on and tells it to update "
+				+ $"the package to get there, but this clio bundles {bundled} — so no archive it can install "
+				+ "would ever satisfy the claim");
+	}
+
+	[Test]
+	[Description("The producing-commit pin is a full commit id. It is written by the rebundle script from git rev-parse HEAD, so a value that is not 40 hex characters means it was hand-edited - which is the failure this pin exists to replace, and the one the prose above records happening three times.")]
+	public void ExpectedProducingCommit_ShouldBeAFullCommitId() {
+		// Arrange & Act & Assert
+		ExpectedProducingCommit.Should().MatchRegex("^[0-9a-f]{40}$",
+			because: "a short id, a branch name or a placeholder cannot be checked out by a reviewer, which is the "
+				+ "only thing this pin is for");
 	}
 
 	/// <summary>The [Description] text of the type's MCP tool method (the agent-facing contract).</summary>

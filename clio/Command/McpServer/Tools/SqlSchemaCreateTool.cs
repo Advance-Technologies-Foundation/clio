@@ -17,6 +17,15 @@ public sealed class SqlSchemaCreateTool(
 	internal const string ToolName = "create-sql-schema";
 
 	[McpServerTool(Name = ToolName, ReadOnly = false, Destructive = false, Idempotent = false, OpenWorld = false)]
+	// The schema is saved on the server, not into a local workspace, so this is an environment call despite
+	// looking like scaffolding.
+	[McpToolExecution(
+		Location = McpToolExecutionLocation.Worker,
+		Lifetime = McpToolExecutionLifetime.PerCall,
+		OperationFamily = McpToolOperationFamily.None,
+		BudgetPolicy = McpToolBudgetPolicy.ParentKillDefault,
+		RequiresClientRequests = McpToolClientRequests.None,
+		SharedFileResource = McpToolSharedFileResource.None)]
 	[Description(
 		"Create a new SQL script schema on a remote Creatio environment via ScriptSchemaDesignerService. " +
 		"The schema is saved directly to the server — no local workspace files are created. " +

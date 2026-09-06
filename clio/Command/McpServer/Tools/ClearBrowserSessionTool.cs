@@ -19,6 +19,15 @@ public sealed class ClearBrowserSessionTool(IToolCommandResolver commandResolver
 
 	/// <summary>Deletes the cached browser session for the environment.</summary>
 	[McpServerTool(Name = ToolName, ReadOnly = false, Destructive = true, Idempotent = true, OpenWorld = false)]
+	// Deletes the cached storageState under the clio home directory, which get-browser-session writes — two
+	// processes could otherwise race that cache, hence the browser-session-cache file gate.
+	[McpToolExecution(
+		Location = McpToolExecutionLocation.Worker,
+		Lifetime = McpToolExecutionLifetime.PerCall,
+		OperationFamily = McpToolOperationFamily.None,
+		BudgetPolicy = McpToolBudgetPolicy.ParentKillDefault,
+		RequiresClientRequests = McpToolClientRequests.None,
+		SharedFileResource = McpToolSharedFileResource.BrowserSessionCache)]
 	[Description("Delete the cached Creatio browser session for an environment so the next get-browser-session " +
 		"performs a fresh login. Idempotent — succeeds even when no session is cached.")]
 	public ClearBrowserSessionResult ClearBrowserSession(
