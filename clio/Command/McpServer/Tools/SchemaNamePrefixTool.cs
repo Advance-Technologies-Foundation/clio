@@ -41,12 +41,20 @@ public sealed class SchemaNamePrefixTool(IToolCommandResolver commandResolver) {
 				new EnvironmentOptions { Environment = args.EnvironmentName });
 			string prefix = SysSettingCodes.ReadSchemaNamePrefix(sysSettings);
 			return new SchemaNamePrefixResult(true, prefix);
-		} catch (Exception ex) when (ex is System.Net.Http.HttpRequestException or System.Net.WebException or System.Net.Sockets.SocketException) {
-			return new SchemaNamePrefixResult(false, string.Empty, "Network error reading SchemaNamePrefix.");
-		} catch (Exception ex) when (ex is UnauthorizedAccessException or System.Security.Authentication.AuthenticationException) {
-			return new SchemaNamePrefixResult(false, string.Empty, "Authentication error reading SchemaNamePrefix.");
-		} catch (Exception) {
-			return new SchemaNamePrefixResult(false, string.Empty, "Failed to read SchemaNamePrefix.");
+		} catch (Exception ex) {
+			// The CATEGORY comes from SysSettingCodes.ClassifyReadFailure, the single owner of this
+			// taxonomy, so this tool and SchemaNamePrefixResolver cannot drift apart on what counts as a
+			// network, an authentication or a cancellation failure. Only the wording is local: the raw
+			// exception text is never echoed, because a sys-setting read surfaces the server's own
+			// response body and that can carry a login page or a token-bearing redirect.
+			return SysSettingCodes.ClassifyReadFailure(ex) switch {
+				SchemaNamePrefixReadFailure.Network =>
+					new SchemaNamePrefixResult(false, string.Empty, "Network error reading SchemaNamePrefix."),
+				SchemaNamePrefixReadFailure.Authentication =>
+					new SchemaNamePrefixResult(false, string.Empty,
+						"Authentication error reading SchemaNamePrefix."),
+				_ => new SchemaNamePrefixResult(false, string.Empty, "Failed to read SchemaNamePrefix.")
+			};
 		}
 	}
 }
