@@ -3,13 +3,14 @@
 Updated 2026-09-06, after the review gate closed. Everything is implemented, unit-green and
 mutation-checked in all three repositories. **Nothing is pushed and no pull request exists.**
 
-Two things remain, and neither is "build":
+Three things remain, and none of them is "build":
 
-1. the **stand verification** V1–V9 from [plan §4](eng-91853-gateways-and-flows-plan.md), of which only
-   V1 is outstanding — it is a browser check, which the owner does personally;
-2. one **design decision** that is the owner's and not a reviewer's — layout §4 case B, below.
-
-Then three pull requests, one per repository, into that repository's default branch.
+1. the **stand verification** — V2–V9 passed in the review session and the agent-mode manual run passed
+   six of eleven cases at the stored level, so what is left is **V1 plus `/bp-test-run ENG-91853 --mode
+   browser --env Creatio`**, which is where design-time and runtime verdicts come from. Until that runs,
+   everything but the stored level is `not verified`;
+2. **two design decisions that are the owner's**, not a reviewer's — layout §4 case B and D1, below;
+3. three pull requests, one per repository, into that repository's default branch.
 
 ---
 
@@ -122,12 +123,36 @@ of it:
   7 599 plain. The branch's prose says 1 406 / 756 / 7 600 — within one, from a scan-boundary
   difference, and deliberately left consistent rather than made a third number.
 
-### The open decision
+### The two open decisions
 
-Layout §4's **case B** is marked ✔ in its verification table and is **not fixed**; it cannot be fixed by
+**Layout §4 case B** is marked ✔ in its verification table and is **not fixed**; it cannot be fixed by
 placement. Three of the ticket's commitments conflict for that one shape and connector routing is out of
 scope. The measurement, the three options and a recommendation are in
 [layout-addendum §2](eng-91853-gateways-and-flows-layout-addendum.md). It needs a decision, not a fix.
+
+**D1 — whether the build path learns to resolve a parameter NAME.** Raised by the agent-mode manual run
+and re-measured here. `flows[].condition` works only for a condition carrying no parameter reference,
+because a condition addresses a parameter by UId meta-path and those UIds do not exist until the call
+that creates them; `ProcessParameterDescriptor` has no `uid` field, so the caller cannot pre-declare one
+either. That is **932 of the 1 061 non-empty conditions in the shipped corpus — 87.8%** — including
+`BulkFileManagement/DeleteFilesInTable`, the retry-loop topology this ticket's own layout work is argued
+on. The blind executor never used the build path once.
+
+The **contract text is fixed** in this branch: the create tool's description and `branch-conditions.md`
+now say which conditions belong here and which belong to the modify step, and
+[the knowledge record](../../docs/knowledge/ProcessModel/a-build-path-condition-cannot-reference-a-parameter.md)
+carries the measurement. What needs a decision is whether the **resolution** lands here or as a
+follow-up. The mechanism already exists one directory away — `ProcessMappingService` takes a parameter
+by NAME and expands it through `ResolveProcessParameter` + `GetMetaPath()`, on the same schema object in
+the same build call, for both the process-parameter and the element-output forms. The shape would be:
+accept `[#ParameterName#]` inside `flows[].condition` and expand it in a pass over `flows[]` AFTER the
+parameters are created, refusing by name when one does not resolve. Both forms must be covered —
+neither alone reaches half the corpus (element output 487, process parameter 445).
+
+Against doing it here: the issue description hands the expression to ENG-95891. For doing it here: this
+ticket's headline commitment is declaring the branch where the flow is declared, and today that
+commitment holds for 3% of real conditions. **If the resolution lands, the two texts fixed above become
+wrong again** — they are one decision, not two edits.
 
 ---
 
