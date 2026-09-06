@@ -303,35 +303,55 @@ into the target — is worth writing rather than delegating. `VisualType` is NOT
 **Reproduction:** open `UsrRecordBatch_Process` in the process designer and look between the task and
 the gateway. No run needed; it is design time only.
 
-## Finding 2 — TC-13 took ONE path, not two (clio, R12 wording)
+## Finding 2 — WITHDRAWN. R12 is correct; the reading was not.
 
-**Observed.** `UsrRequest_DecideNextStep` has two plain sequence flows leaving `Decide the next step`, a
-user task. The completed instance logged exactly two elements:
+**This section originally claimed** that TC-13 falsified R12's "multiple outgoing sequence flows =
+implicit parallel split", because `UsrRequest_DecideNextStep` — two plain flows off a user task —
+logged exactly two elements and completed:
 
 ```
 05:34:43.360  Decide the next step   ProcessSchemaUserTask         Completed
 05:34:54.763  Path A taken           ProcessSchemaTerminateEvent   Completed
 ```
 
-Instance status **Completed**. Path B never ran.
+**That conclusion was wrong, and the evidence never supported it.** Both of that element's targets are
+END events, and the platform source explains the observation with no selection happening at all:
 
-**Why it matters.** Three surfaces assert the opposite, unconditionally:
+- `FlowSchema.GetNextFlowElements` returns EVERY outgoing sequence flow's target and performs no
+  selection whatsoever — it is a plain `foreach` over `FindSequenceFlowsBySourceUId`.
+- `ProcessSchemaEndEvent` sets `BpmnElementName = TerminateEventName`, so an `endEvent` IS a terminate
+  event as far as the visitor is concerned.
+- `FlowVisitor` returns `false` — ending the whole instance — the moment it executes an element whose
+  `BpmnElementName` is `TerminateEventName`.
 
-- clio's **R12**: *"multiple outgoing sequence flows (implicit parallel split) — confirm intent"*;
-- `FlowKindRules`' docblock: *"with all of them plain there is no gateway and EVERY outgoing flow is
-  taken. That is a parallel split, silently."*;
-- the spawned task `task_5483c080`, which proposes warning on the build path using that same claim.
+So both branches WERE queued; the first terminate event visited ended the instance, and the second
+never ran and therefore never logged. **A process that fans out into terminate events is
+indistinguishable, in the element log, from one that selected a single branch.**
 
-On this element the platform did not fan out. The likely reason is that the source is a **user task**,
-whose outgoing flows are selected by the activity RESULT — the `branchesOnActivityResult` mechanism this
-ticket already knows about — rather than all being taken. If that is right, the claim is true for some
-source kinds and false for a user task, and all three texts state it without qualification.
+**Measured directly, and this is the part that settles it.** `UsrFanOutProbe2` — a `readData` element
+with two plain outgoing flows to two ordinary tasks, so nothing terminates before the fan-out is
+visible:
 
-**Not yet established:** what the second flow's target was, and whether the task's completion result is
-what selected Path A. One completed instance is enough to falsify "EVERY outgoing flow is taken" as an
-unconditional claim; it is not enough to state the replacement rule. That measurement belongs to
-whoever picks up `task_5483c080`, whose premise must be corrected before it is implemented — a warning
-that tells an author their process will fan out, when it will not, is worse than no warning.
+```
+13:22:58.810  Read a contact    ProcessSchemaUserTask   Completed
+13:22:58.821  Branch A task     ProcessSchemaUserTask   Running
+13:22:59.861  Branch B task     ProcessSchemaUserTask   Running
+```
+
+**Both branches ran.** R12's wording is correct, `FlowKindRules`' docblock is correct, and
+`task_5483c080`'s premise — which this report previously said needed correcting — was right all along.
+
+**What went wrong here is worth more than the finding would have been.** The original reading took a
+missing log row as evidence of a decision, when it was evidence of an instance that had already ended.
+That is the same failure this ticket recorded three times over in
+`docs/knowledge/Tests/reachability-not-corpus-absence-decides-whether-a-guard-stays.md` and in the
+platform-locations memory: *a result that looked like the answer was never shown capable of being a
+different answer.* One run with non-terminating targets would have shown it, and it cost four minutes
+once someone asked for it.
+
+The claim had already propagated into shipped package source before it was checked. That is the real
+cost, and it is why a conclusion drawn from an absence belongs in a report as `not established` until
+a positive control exists.
 
 ## Side effects left on the stand
 
@@ -361,7 +381,11 @@ is not, and the connector is currently left entirely to the platform's router. T
 to a separate autolayout task by the owner**, not withdrawn, and it does not block this ticket — routing
 was never in its scope.
 
-Two findings, one on each side of this ticket's boundary. Finding 1 is the layout engine's to answer and
-now has its own task. Finding 2 is a claim in clio's own rule text that a run contradicts, and it is the
-one a reader of this report should carry forward: **R12 says every outgoing flow is taken, and on a user
-task one was.**
+One finding stands. Finding 1 is the layout engine's to answer and now has its own task
+(`task_85915b4e`), deferred by the owner. **Finding 2 is WITHDRAWN** — R12 is correct, measured
+directly, and the original reading mistook an instance that had already terminated for a decision that
+had been made.
+
+What a reader should carry forward is the withdrawal rather than the finding: an element log that is
+missing a row is not evidence that the row's branch was not taken, because a terminate event ends the
+whole instance and every branch still queued behind it goes unrecorded.
