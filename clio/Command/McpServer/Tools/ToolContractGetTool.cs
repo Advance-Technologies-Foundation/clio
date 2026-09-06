@@ -440,6 +440,8 @@ internal static class ToolContractCatalog {
 	private const string ColumnNameFieldName = "column-name";
 	private const string ColumnsFieldName = "columns";
 	private const string CountFieldName = "count";
+	private const string OrderByFieldName = "order-by";
+	private const string OutputFileFieldName = "output-file";
 	private const string ConstDefaultValueSourceName = nameof(Terrasoft.Core.Entities.EntitySchemaColumnDefSource.Const);
 	private const string DefaultValueConfigFieldName = "default-value-config";
 	private const string DefaultValueConfigSourceKey = "source";
@@ -617,6 +619,7 @@ internal static class ToolContractCatalog {
 			[DataForgeTool.DataForgeInitializeToolName] = BuildDataForgeInitialize(),
 			[DataForgeTool.DataForgeUpdateToolName] = BuildDataForgeUpdate(),
 			[ODataReadTool.ToolName] = BuildODataRead(),
+			[ODataReadToFileTool.ToolName] = BuildODataReadToFile(),
 			[ODataCreateTool.ToolName] = BuildODataCreate(),
 			[ODataUpdateTool.ToolName] = BuildODataUpdate(),
 			[ODataDeleteTool.ToolName] = BuildODataDelete(),
@@ -702,6 +705,7 @@ internal static class ToolContractCatalog {
 		DataForgeTool.DataForgeGetTableColumnsToolName,
 		DataForgeTool.DataForgeContextToolName,
 		ODataReadTool.ToolName,
+		ODataReadToFileTool.ToolName,
 		ODataCreateTool.ToolName,
 		ODataUpdateTool.ToolName,
 		ODataDeleteTool.ToolName,
@@ -2093,7 +2097,7 @@ internal static class ToolContractCatalog {
 	private static ToolContractDefinition BuildODataRead() {
 		return new ToolContractDefinition(
 			ODataReadTool.ToolName,
-			"Reads Creatio records through OData v4. Use this to query records, page through ordered results, request a verified total count, resolve lookup primary values, verify records by Id, or inspect selected fields. Unknown arguments and malformed structured filters fail before any Creatio request; raw filter strings are not supported.",
+			"Reads Creatio records through OData v4. Use this to query records, page through ordered results, request a verified total count, resolve lookup primary values, verify records by Id, or inspect selected fields. Read-only and retry-safe: it writes nothing, locally or remotely. When a response is too large to return inline, call odata-read-to-file, which takes the same query arguments plus a required output-file. Unknown arguments and malformed structured filters fail before any Creatio request; raw filter strings are not supported.",
 			new ToolInputSchemaContract(
 				[EntityFieldName, EnvironmentNameFieldName],
 				[
@@ -2102,10 +2106,10 @@ internal static class ToolContractCatalog {
 					Field(FiltersFieldName, ObjectType, "Structured filter. all conditions join with AND; any conditions join with OR. GUID values in Id-suffixed fields and navigation paths ending in Id are automatically unquoted. Use lookup traversal paths such as Account/Id when filtering records by lookup primary value. Example: { \"all\": [{ \"field\": \"Account/Id\", \"op\": \"eq\", \"value\": \"8ecab4a1-0ca3-4515-9399-efe0a19390bd\" }] }."),
 					Field(SelectFieldName, ArrayType, "Fields to return. Use [\"Id\", \"Name\"] when resolving lookup records by display value."),
 					Field("expand", ArrayType, "Navigation properties to expand."),
-					Field("order-by", StringType, "OData $orderby clause, for example CreatedOn desc or Name asc."),
+					Field(OrderByFieldName, StringType, "OData $orderby clause, for example CreatedOn desc or Name asc."),
 					Field("top", NumberType, "Maximum number of records to return, 1-100. Default: 25. An out-of-range top (including 0 or negative) is rejected with success:false, never silently changed."),
 					Field("skip", NumberType, "Number of matching records to skip. Must be zero or greater. Use order-by for stable paging."),
-					Field("count", BooleanType, "When true, requests the total number of matching records before top/skip paging. The response returns it as total-count; response count remains the number of records in this page.")
+					Field(CountFieldName, BooleanType, "When true, requests the total number of matching records before top/skip paging. The response returns it as total-count; response count remains the number of records in this page.")
 				],
 				Validators: [
 					new ToolContractValidator("top-range", "invalid-top", "top",
@@ -2132,7 +2136,7 @@ internal static class ToolContractCatalog {
 				Alias(ParameterScope, FiltersFieldName, "filter", RejectedStatus,
 					"Raw filter strings are not supported. Use the structured 'filters' object shown in this contract."),
 				Alias(ParameterScope, "top", LimitFieldName, RejectedStatus, "Use 'top' instead of 'limit'."),
-				Alias(ParameterScope, "order-by", "orderBy", RejectedStatus, "Use 'order-by' instead of 'orderBy'."),
+				Alias(ParameterScope, OrderByFieldName, "orderBy", RejectedStatus, "Use 'order-by' instead of 'orderBy'."),
 				EnvironmentNameParameterAlias()
 			],
 			[],
@@ -2163,10 +2167,10 @@ internal static class ToolContractCatalog {
 					[EnvironmentNameFieldName] = ExampleEnvironmentName,
 					[EntityFieldName] = ExampleContactSchemaName,
 					[SelectFieldName] = new[] { "Id", "Name", "AccountId" },
-					["order-by"] = "Name asc",
+					[OrderByFieldName] = "Name asc",
 					["top"] = 10,
 					["skip"] = 20,
-					["count"] = true
+					[CountFieldName] = true
 				}),
 				Example("Query records where a text field contains a value", new Dictionary<string, object?> {
 					[EnvironmentNameFieldName] = ExampleEnvironmentName,
@@ -2206,6 +2210,79 @@ internal static class ToolContractCatalog {
 			],
 			[],
 			OdataUnregisteredEntityAntiPatterns(includeEsqEscapeRoute: true));
+	}
+
+	private static ToolContractDefinition BuildODataReadToFile() {
+		return new ToolContractDefinition(
+			ODataReadToFileTool.ToolName,
+			"Reads Creatio records through OData v4 and writes the raw JSON response to a local file, returning a compact row/column-size summary instead of inline values. Use it only when the response is too large to return inline; odata-read is the read-only tool for ordinary queries and takes the same query arguments. The write refuses an existing target, so a call is NOT retry-safe against the same path - a retry must use a different one.",
+			new ToolInputSchemaContract(
+				[EntityFieldName, EnvironmentNameFieldName, OutputFileFieldName],
+				[
+					Field(EntityFieldName, StringType, "Creatio OData entity set name, usually the referenced lookup schema name such as Contact, Account, or a custom lookup schema."),
+					Field(EnvironmentNameFieldName, StringType, RegisteredEnvironmentNameDescription),
+					Field(OutputFileFieldName, StringType, "Required path for the raw OData JSON response, confined to the workspace or the OS temp directory. The file must not already exist, so a retry must use a different path."),
+					Field(FiltersFieldName, ObjectType, "Structured filter, identical to odata-read. all conditions join with AND; any conditions join with OR. Example: { \"all\": [{ \"field\": \"Account/Id\", \"op\": \"eq\", \"value\": \"8ecab4a1-0ca3-4515-9399-efe0a19390bd\" }] }."),
+					Field(SelectFieldName, ArrayType, "Fields to return. Narrowing the projection is the cheapest way to stay under the response limit."),
+					Field("expand", ArrayType, "Navigation properties to expand."),
+					Field(OrderByFieldName, StringType, "OData $orderby clause, for example CreatedOn desc or Name asc."),
+					Field("top", NumberType, "Maximum number of records to return, 1-100. Default: 25. An out-of-range top (including 0 or negative) is rejected with success:false, never silently changed."),
+					Field("skip", NumberType, "Number of matching records to skip. Must be zero or greater. Use order-by for stable paging."),
+					Field(CountFieldName, BooleanType, "When true, requests the total number of matching records before top/skip paging; returned as total-count.")
+				],
+				Validators: [
+					new ToolContractValidator("output-file-required", "invalid-output-file", OutputFileFieldName,
+						Context: "output-file is required. Use odata-read when the response should be returned inline."),
+					new ToolContractValidator("top-range", "invalid-top", "top",
+						Context: "top must be between 1 and 100; omitting it uses the default of 25, and an out-of-range value (including 0 or negative) is rejected with success:false."),
+					new ToolContractValidator("structured-filter", "invalid-filter", "filters",
+						Context: "When filters is present it must be a non-null object containing at least one condition in all or any, exactly as for odata-read.")
+				]),
+			EnvelopeOutput(
+				SuccessFieldName,
+				[
+					SuccessFalseSignal
+				],
+				Field(SuccessFieldName, BooleanType, "Whether the OData read and the file write both succeeded."),
+				Field(ErrorFieldName, StringType, FailureMessageDescription),
+				Field(CountFieldName, NumberType, "Number of records the response carried."),
+				Field("total-count", NumberType, "Total records matching the filter before top/skip paging; present when count=true."),
+				Field("next-link", StringType, "OData next-link URL when more records are available."),
+				Field(OutputFileFieldName, StringType, "Absolute path to the raw OData response written to disk."),
+				Field("row-count", NumberType, "Number of object rows written to output-file."),
+				Field("column-sizes", ObjectType, "UTF-8 byte totals by column for rows written to output-file.")
+			),
+			CommonErrorContract,
+			[
+				Alias(ParameterScope, OutputFileFieldName, "outputFile", RejectedStatus, "Use 'output-file' instead of 'outputFile'."),
+				Alias(ParameterScope, FiltersFieldName, "filter", RejectedStatus,
+					"Raw filter strings are not supported. Use the structured 'filters' object shown in this contract."),
+				Alias(ParameterScope, "top", LimitFieldName, RejectedStatus, "Use 'top' instead of 'limit'."),
+				Alias(ParameterScope, OrderByFieldName, "orderBy", RejectedStatus, "Use 'order-by' instead of 'orderBy'."),
+				EnvironmentNameParameterAlias()
+			],
+			[],
+			[
+				Example("Keep a wide export on disk instead of inline", new Dictionary<string, object?> {
+					[EnvironmentNameFieldName] = ExampleEnvironmentName,
+					[EntityFieldName] = ExampleContactSchemaName,
+					[OutputFileFieldName] = "contacts-page-1.json",
+					[OrderByFieldName] = "Id asc",
+					["top"] = 100
+				})
+			],
+			Flow([ODataReadToFileTool.ToolName], "Use when an OData response is too large to return inline and the raw JSON should be kept on disk for a follow-up pass."),
+			[
+				Flow(
+					[ODataReadTool.ToolName, ODataReadToFileTool.ToolName],
+					"Query normally first; switch to the file destination only when the inline response is too large.")
+			],
+			[],
+			OdataUnregisteredEntityAntiPatterns(includeEsqEscapeRoute: true),
+			Preconditions: [
+				$"The response body is capped at {ODataFileContract.MaxResponseBytes} bytes for one call; a larger response is rejected without writing anything. Narrow it with select, or page it with top and skip.",
+				"output-file must not already exist and must resolve inside the workspace or the OS temp directory."
+			]);
 	}
 
 	private static ToolContractDefinition BuildGetEmailTemplate() {
@@ -2307,13 +2384,14 @@ internal static class ToolContractCatalog {
 	private static ToolContractDefinition BuildODataCreate() {
 		return new ToolContractDefinition(
 			ODataCreateTool.ToolName,
-			"Creates one or more Creatio records through OData v4 (POST) in a single call. Pass all rows for the same entity in the 'rows' array rather than one call per row; each row is inserted sequentially and reported independently. Returns a created/failed summary and a per-row result array including each created record's Id.",
+			$"Creates one or more Creatio records through OData v4 (POST) in a single call. Pass all rows for the same entity in the 'rows' array or place that JSON array in rows-file for large payloads; each row is inserted sequentially and reported independently. {ODataCreateTool.RowCountLimitDescription} Returns a created/failed summary and a per-row result array including each created record's Id.",
 			new ToolInputSchemaContract(
-				[EntityFieldName, "rows", EnvironmentNameFieldName],
+				[EntityFieldName, EnvironmentNameFieldName],
 				[
 					Field(EntityFieldName, StringType, "Creatio OData entity set name such as Contact, Account, or a custom schema."),
-					Field("rows", ArrayType, "Array of row objects to insert; each row is an object of field/value pairs for one new record. Lookup fields are set with their GUID, for example [ { \"Name\": \"Acme\", \"TypeId\": \"00000000-0000-0000-0000-000000000001\" } ]. Pass all rows in one call rather than one call per row."),
+					Field("rows", ArrayType, $"Array of row objects to insert; each row is an object of field/value pairs for one new record. Lookup fields are set with their GUID, for example [ {{ \"Name\": \"Acme\", \"TypeId\": \"00000000-0000-0000-0000-000000000001\" }} ]. Pass all rows in one call rather than one call per row. {ODataCreateTool.RowCountLimitDescription}"),
 					Field("stop-on-error", BooleanType, "Optional. Stop after the first failed row. Default false: continue and report every row independently. When true, rows after a failure are not attempted and do not appear in results, so results may be shorter than rows."),
+					Field("rows-file", StringType, "Optional path to a JSON array of row objects, confined to the workspace or the OS temp directory and capped at 10 MB. Exactly one of rows or rows-file is required; supplying both is rejected."),
 					Field(EnvironmentNameFieldName, StringType, RegisteredEnvironmentNameDescription)
 				]),
 			ODataCreateBatchOutput(),
@@ -2337,19 +2415,24 @@ internal static class ToolContractCatalog {
 					"Create the record, then read it back by the returned id to confirm persisted values.")
 			],
 			[],
-			OdataUnregisteredEntityAntiPatterns(includeEsqEscapeRoute: false));
+			OdataUnregisteredEntityAntiPatterns(includeEsqEscapeRoute: false),
+			Preconditions: [
+				ODataCreateTool.RowCountLimitDescription,
+				"The batch is bounded in wall-clock time as well as row count: rows are POSTed sequentially, and once the batch budget is spent the first row that was not attempted is reported with record-created=false and the reason, and no further row is sent."
+			]);
 	}
 
 	private static ToolContractDefinition BuildODataUpdate() {
 		return new ToolContractDefinition(
 			ODataUpdateTool.ToolName,
-			"Updates a single Creatio record through OData v4 (PATCH). Requires the record GUID and confirm=true; only supplied fields change. " +
+			"Updates a single Creatio record through OData v4 (PATCH). Requires the record GUID and confirm=true; provide the fields inline in data " +
+			"or place the JSON object in rows-file for a large payload. Only supplied fields change. " +
 			"Data field NAMES are verified against the entity's OData type ($metadata) before the write: an unknown field fails the call and nothing is written. " +
 			"Field VALUES are not validated - note that the platform silently drops the empty GUID on a lookup field, so send null to clear a reference. " +
 			"success:true means the service accepted the PATCH after this pre-validation; platform builds that silently discard unsupported values can still leave " +
 			"some fields unwritten, so re-read important values with odata-read after a critical write. Never performs a keyless mass update.",
 			new ToolInputSchemaContract(
-				[EntityFieldName, "id", "data", ConfirmFieldName, EnvironmentNameFieldName],
+				[EntityFieldName, "id", ConfirmFieldName, EnvironmentNameFieldName],
 				[
 					Field(EntityFieldName, StringType, "Creatio OData entity set name such as Contact or Account."),
 					Field("id", StringType, "GUID of the record to update. Required; a keyless mass update is rejected."),
@@ -2357,6 +2440,7 @@ internal static class ToolContractCatalog {
 						"Every field must exist on the entity's OData type; an unknown field fails the whole call before anything is written. " +
 						"Columns absent from $metadata (for example Color) cannot be written via this tool - verify them with execute-esq instead. " +
 						"Set lookups via their <Field>Id column with a real GUID; to CLEAR a lookup send null (the platform silently drops an empty GUID)."),
+					Field("rows-file", StringType, "Optional path to a JSON object of field/value pairs, confined to the workspace or the OS temp directory and capped at 10 MB. Exactly one of data or rows-file is required; supplying both is rejected. Read only after the confirm gate passes."),
 					Field(ConfirmFieldName, BooleanType, "Must be true to authorize this destructive update. When false or omitted the tool refuses without any remote call."),
 					Field(EnvironmentNameFieldName, StringType, RegisteredEnvironmentNameDescription)
 				]),

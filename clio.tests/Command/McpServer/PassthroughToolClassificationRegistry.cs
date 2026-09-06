@@ -350,6 +350,7 @@ internal static class PassthroughToolClassificationRegistry {
 			["odata-create"] = PassthroughClassification.NotApplicable,
 			["odata-delete"] = PassthroughClassification.NotApplicable,
 			["odata-read"] = PassthroughClassification.NotApplicable,
+			["odata-read-to-file"] = PassthroughClassification.NotApplicable,
 			["odata-update"] = PassthroughClassification.NotApplicable,
 			["get-email-template"] = PassthroughClassification.NotApplicable,
 			["update-email-template"] = PassthroughClassification.NotApplicable,

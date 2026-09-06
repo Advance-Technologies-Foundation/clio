@@ -3,6 +3,8 @@ namespace Clio.Command;
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Runtime.InteropServices;
+using System.Text;
 using Clio.Common;
 using IoFileSystem = System.IO.Abstractions.IFileSystem;
 
@@ -16,6 +18,10 @@ using IoFileSystem = System.IO.Abstractions.IFileSystem;
 /// </summary>
 internal static class OutputPathConfinement {
 
+	// Owner read/write only. Applied at creation time to the temporary file the final output is renamed from,
+	// so the payload is never momentarily readable by other local users of a shared temp root.
+	internal const UnixFileMode OwnerOnlyFile = UnixFileMode.UserRead | UnixFileMode.UserWrite;
+
 	// Upper bound on how many links a single path component may chain through before it is treated as a cycle.
 	// A legitimate link chain is a handful deep; anything beyond this is pathological and fails closed.
 	private const int MaxLinkResolutionDepth = 40;
@@ -26,6 +32,50 @@ internal static class OutputPathConfinement {
 	/// rather than degrade to a lexical path that would slip past confinement.
 	/// </summary>
 	public sealed class UnresolvableLinkException : Exception { }
+
+	/// <summary>
+	/// Read-side counterpart of <see cref="Resolve"/>: confines a caller-supplied INPUT path to the same
+	/// workspace anchor / OS temp directory, then requires the file to exist. Without it a file-backed
+	/// payload argument is an arbitrary file reader — a prompt-injection payload could point it at clio's
+	/// own credentials store and have the contents forwarded to a remote endpoint. The existence rule is
+	/// inverted relative to <see cref="Resolve"/>, which refuses a path that already exists; everything
+	/// before that rule is shared.
+	/// </summary>
+	/// <param name="fileSystem">File-system abstraction used for path resolution and the workspace-marker probe.</param>
+	/// <param name="inputFile">The caller-supplied input path (may be relative).</param>
+	/// <param name="optionName">Argument name used in the caller-facing messages.</param>
+	/// <returns>The resolved absolute path with a <c>null</c> error, or <c>(null, error)</c>.</returns>
+	internal static (string path, string error) ResolveForRead(
+		IoFileSystem fileSystem, string inputFile, string optionName) {
+		(string _, string real, string error) = ResolveConfined(fileSystem, inputFile, optionName);
+		if (error is not null) {
+			return (null, error);
+		}
+		if (!fileSystem.File.Exists(real)) {
+			return (null, $"{optionName} file was not found.");
+		}
+		// The CANONICAL path is returned, not the lexical one. Returning the lexical form meant the check ran
+		// on the symlink-resolved path while the caller opened the unresolved one, so an intermediate link
+		// swapped after validation redirected the read outside the allowed roots.
+		return (real, null);
+	}
+
+	/// <summary>
+	/// Output-path counterpart of <see cref="ResolveForRead"/> that returns the CANONICAL (symlink-followed)
+	/// path rather than the lexical one, so the create runs against the same path confinement approved.
+	/// Used by the OData file contract, whose payload boundary is caller-supplied on both directions.
+	/// </summary>
+	/// <param name="fileSystem">File-system abstraction used for path resolution and the workspace-marker probe.</param>
+	/// <param name="outputFile">The caller-supplied output path (may be relative).</param>
+	/// <returns>The canonical absolute path with a <c>null</c> error, or <c>(null, error)</c>.</returns>
+	internal static (string path, string error) ResolveCanonicalOutput(IoFileSystem fileSystem, string outputFile) {
+		(string _, string real, string error) = ResolveConfined(fileSystem, outputFile, "output-file");
+		if (error is not null) {
+			return (null, error);
+		}
+		string existsError = RejectExistingTarget(fileSystem, real, outputFile);
+		return existsError is not null ? (null, existsError) : (real, null);
+	}
 
 	/// <summary>
 	/// Resolves <paramref name="outputFile"/> to an absolute path and confirms it stays inside a trusted
@@ -41,6 +91,29 @@ internal static class OutputPathConfinement {
 		/// already exists is never overwritten, keeping every routing tool's Destructive=false honest).
 	/// </returns>
 	internal static (string path, string error) Resolve(IoFileSystem fileSystem, string outputFile) {
+		(string full, string _, string error) = ResolveConfined(fileSystem, outputFile, "output-file");
+		if (error is not null) {
+			return (null, error);
+		}
+		string existsError = RejectExistingTarget(fileSystem, full, outputFile);
+		return existsError is not null ? (null, existsError) : (full, null);
+	}
+
+	// Keep the Destructive=false classification honest: an explicit output-file must not silently
+	// overwrite an existing file. Confinement bounds WHERE the write lands, not WHETHER it destroys
+	// existing content. The tool-owned default output path does not flow through here, so re-runs to it
+	// still overwrite their own output.
+	private static string RejectExistingTarget(IoFileSystem fileSystem, string resolved, string requested) =>
+		fileSystem.File.Exists(resolved) || fileSystem.Directory.Exists(resolved)
+			? $"output-file '{requested}' already exists; refusing to overwrite it. Choose a different " +
+				"path or remove the existing file."
+			: null;
+
+	// Everything both directions share: resolve to an absolute, symlink-followed path and confirm it stays
+	// inside a trusted workspace anchor or the OS temp root. The existence rule is the caller's, because the
+	// two directions want opposite answers.
+	private static (string path, string realPath, string error) ResolveConfined(
+		IoFileSystem fileSystem, string candidatePath, string optionName) {
 		// H1: reading the process-global cwd (for the anchor) must serialize against the MCP workspace tools that
 		// PIN cwd. In the MCP path this runs under the shared tool lock; in the single-threaded CLI path the lock
 		// is uncontended. Callers that resolve a tool-owned DEFAULT anchor instead go through
@@ -48,36 +121,55 @@ internal static class OutputPathConfinement {
 		// branches of one decision (explicit path vs default), so they never nest.
 		lock (McpServer.Tools.McpToolExecutionLock.CwdLock) {
 			string home = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+			// No home fallback here, deliberately. PageOutputDirectoryResolver substitutes clio's OWN home
+			// (the directory holding appsettings.json with its cleartext credentials) when the cwd is the bare
+			// $HOME - the common MCP-host default - and that is the right anchor for a TOOL-OWNED default
+			// path (ResolveDefaultAnchor keeps it). It is the wrong boundary for a CALLER-supplied path: a
+			// prompt-injected rows-file would then sit inside the allowed zone. With null the bare-home case
+			// collapses to temp-only, which is what an untrusted anchor already does below.
 			string anchor = PageOutputDirectoryResolver.ResolveAnchor(
 				fileSystem,
 				fileSystem.Directory.GetCurrentDirectory(),
 				home,
-				ClioRuntimePaths.Home,
+				null,
 				null);
-			string full = fileSystem.Path.GetFullPath(outputFile);
+			string full = fileSystem.Path.GetFullPath(candidatePath);
 			string tempRoot = fileSystem.Path.GetFullPath(fileSystem.Path.GetTempPath());
+			string clioHome = fileSystem.Path.GetFullPath(ClioRuntimePaths.Home);
 
 			// Confine the REAL (symlink-followed) path, not just the lexical one: Path.GetFullPath collapses `..`
 			// but never resolves a symlink, and the later write follows links. A link planted under an allowed
 			// root (the classic world-writable /tmp attack) could otherwise land the write on an arbitrary file.
 			// BOTH bounds are resolved the same way so a symlinked temp/home root (e.g. macOS /var -> /private/var)
 			// does not cause a false rejection of an in-bounds path.
-			string real, realTempRoot, realAnchor, realHome;
+			string real, realTempRoot, realAnchor, realHome, realClioHome;
 			try {
 				real = ResolveRealPath(fileSystem, full);
 				// Resolve the bounds the same way — including these system paths — so an unresolvable link
 				// anywhere in the comparison fails CLOSED with the friendly message rather than escaping Resolve
 				// as an opaque exception.
 				realTempRoot = ResolveRealPath(fileSystem, tempRoot);
-				realAnchor = ResolveRealPath(fileSystem, anchor);
+				realAnchor = string.IsNullOrEmpty(anchor) ? anchor : ResolveRealPath(fileSystem, anchor);
 				realHome = string.IsNullOrEmpty(home) ? home : ResolveRealPath(fileSystem, home);
+				realClioHome = ResolveRealPath(fileSystem, clioHome);
 			}
 			catch (UnresolvableLinkException) {
 				// A confirmed symlink whose chain could not be resolved (cycle / pathological depth / a target
 				// that cannot be normalized). Fail CLOSED: never fall back to a lexical path that would slip past
 				// confinement (see ResolveRealPath / ResolveSymlink).
-				return (null,
-					$"output-file '{outputFile}' resolves through an unresolvable symbolic link; refusing to write.");
+				return (null, null,
+					$"{optionName} '{candidatePath}' resolves through an unresolvable symbolic link; refusing to continue.");
+			}
+
+			// clio's own configuration directory is denied as a WHOLE subtree, and denied BEFORE the allowed
+			// zones are consulted, so it holds even when the allowed zones would otherwise contain it: a
+			// CLIO_HOME pointed inside a workspace, a cwd that IS clio home, or a CLIO_HOME under the temp
+			// root. The directory holds more than appsettings.json - the telemetry outbox, the worker
+			// registry, the cache - none of which a caller-supplied payload path has any business reading
+			// or creating files in.
+			if (IsWithinDirectory(realClioHome, real)) {
+				return (null, null,
+					$"{optionName} '{candidatePath}' resolves inside clio's own configuration directory; refusing to continue.");
 			}
 
 			// A filesystem root ('/', 'C:\') or an ancestor of the user's home directory ('/Users', '/home',
@@ -87,22 +179,12 @@ internal static class OutputPathConfinement {
 			string trustedAnchor = IsTrustedAnchor(fileSystem, realAnchor, realHome) ? realAnchor : null;
 
 			if (!IsPathConfined(real, trustedAnchor, realTempRoot)) {
-				return (null,
-					$"output-file '{outputFile}' resolves outside the allowed locations; it must be inside the " +
+				return (null, null,
+					$"{optionName} '{candidatePath}' resolves outside the allowed locations; it must be inside the " +
 					"workspace or the OS temp directory.");
 			}
 
-			// Keep the Destructive=false classification honest: an explicit output-file must not silently
-			// overwrite an existing file. Confinement bounds WHERE the write lands, not WHETHER it destroys
-			// existing content. The tool-owned default output path does not flow through here, so re-runs to it
-			// still overwrite their own output.
-			if (fileSystem.File.Exists(full) || fileSystem.Directory.Exists(full)) {
-				return (null,
-					$"output-file '{outputFile}' already exists; refusing to overwrite it. Choose a different " +
-					"path or remove the existing file.");
-			}
-
-			return (full, null);
+			return (full, real, null);
 		}
 	}
 
@@ -121,7 +203,7 @@ internal static class OutputPathConfinement {
 	/// kill in between leaves a truncated — usually empty — file at exactly the path <see cref="Resolve"/>
 	/// refuses to overwrite. The truncated file then BLOCKS the retry that would repair it, and a transient kill
 	/// becomes manual cleanup. Staging the body elsewhere removes that state: a kill leaves either no target at
-	/// all (retry works) or the complete one, plus at worst a dot-prefixed temporary file beside it.
+	/// all (retry works) or the complete one, plus at worst a Guid-suffixed temporary file beside it.
 	/// </para>
 	/// <para>
 	/// <b>What the move gives up, and why that is the right trade.</b> The direct <c>CreateNew</c> claimed the
@@ -137,35 +219,12 @@ internal static class OutputPathConfinement {
 	/// <param name="fileSystem">File-system abstraction used for the directory probe and the staged write.</param>
 	/// <param name="resolvedPath">The confined absolute path returned by <see cref="Resolve"/>.</param>
 	/// <param name="content">The text to write.</param>
-	internal static void WriteAtomic(IoFileSystem fileSystem, string resolvedPath, string content) {
-		string directory = fileSystem.Path.GetDirectoryName(resolvedPath);
-		if (!string.IsNullOrEmpty(directory) && !fileSystem.Directory.Exists(directory)) {
-			fileSystem.Directory.CreateDirectory(directory);
-		}
-		// A sibling, so the publish below is a same-volume rename rather than a copy.
-		string staged = fileSystem.Path.Combine(
-			string.IsNullOrEmpty(directory) ? "." : directory,
-			$".{fileSystem.Path.GetFileName(resolvedPath)}.{Guid.NewGuid():N}.tmp");
-		try {
-			using (Stream stream = fileSystem.File.Open(staged, FileMode.CreateNew, FileAccess.Write)) {
-				using var writer = new StreamWriter(stream);
-				writer.Write(content);
-			}
-			fileSystem.File.Move(staged, resolvedPath);
-		}
-		catch (IOException) when (fileSystem.File.Exists(resolvedPath)) {
-			throw new IOException(
-				$"output-file '{resolvedPath}' already exists; refusing to overwrite it. Choose a different " +
-				"path or remove the existing file.");
-		}
-		finally {
-			// Best-effort: on the success path the move has already consumed the staged file. A kill skips this
-			// entirely, which is precisely why the staged file — and not the target — is the one left behind.
-			if (fileSystem.File.Exists(staged)) {
-				fileSystem.File.Delete(staged);
-			}
-		}
-	}
+	internal static void WriteAtomic(IoFileSystem fileSystem, string resolvedPath, string content) =>
+		WriteThroughTemporaryFile(fileSystem, resolvedPath, stream => {
+			using StreamWriter writer = new(stream, new UTF8Encoding(false), leaveOpen: true);
+			writer.Write(content);
+			writer.Flush();
+		});
 
 	/// <summary>
 	/// Byte-exact counterpart of <see cref="WriteAtomic(IoFileSystem, string, string)"/>, for a payload that must
@@ -173,19 +232,87 @@ internal static class OutputPathConfinement {
 	/// <see cref="StreamWriter"/>, which normalises the encoding (a BOM on the source is dropped, an invalid
 	/// sequence becomes U+FFFD); a caller that advertises a byte-faithful copy has to bypass that.
 	/// </summary>
-	internal static void WriteAtomic(IoFileSystem fileSystem, string resolvedPath, byte[] content) {
+	internal static void WriteAtomic(IoFileSystem fileSystem, string resolvedPath, byte[] content) =>
+		WriteThroughTemporaryFile(fileSystem, resolvedPath, stream => stream.Write(content, 0, content.Length));
+
+	/// <summary>
+	/// Lowest-level of the three <see cref="WriteAtomic(IoFileSystem, string, string)"/> overloads: hands the
+	/// open temporary-file stream to <paramref name="writeContent"/> so a caller that produces its payload
+	/// incrementally does not have to materialize it first.
+	/// </summary>
+	/// <remarks>
+	/// The 0600 guarantee is about the window in which the temporary file EXISTS, so an assertion on the
+	/// renamed final file alone cannot tell a creation-time mode from an unsafe create-then-chmod. Only a
+	/// writer that observes the open temporary file can, which is why this overload is part of the API rather
+	/// than an implementation detail.
+	/// </remarks>
+	/// <param name="fileSystem">File-system abstraction used for the directory probe and the atomic write.</param>
+	/// <param name="resolvedPath">The confined absolute path returned by <see cref="Resolve"/>.</param>
+	/// <param name="writeContent">Writes the payload into the open temporary-file stream.</param>
+	internal static void WriteAtomic(IoFileSystem fileSystem, string resolvedPath,
+		Action<Stream> writeContent) =>
+		WriteThroughTemporaryFile(fileSystem, resolvedPath, writeContent);
+
+	/// <summary>
+	/// Completes the content in a sibling temporary file and only then moves it onto the final name, without
+	/// replacing an existing file.
+	/// </summary>
+	/// <remarks>
+	/// <see cref="FileMode.CreateNew"/> reserves the NAME atomically, not the CONTENT. Writing straight into
+	/// the final path therefore left a truncated file behind whenever the write failed part-way — a full disk,
+	/// say — while the call reported failure, and the no-overwrite guard then refused every retry against the
+	/// wreckage. The temporary file is removed on every failure path, so a failed write leaves nothing at all.
+	/// <para>
+	/// On Unix the temporary file is created 0600 rather than at whatever the process umask allows. An output
+	/// file is legitimately permitted under the SHARED OS temp root, and the payload is a raw service response —
+	/// business data, often personal data — so a default 0644 would leave it readable by every other local user
+	/// for as long as it sits there, and a failed cleanup would leave the sibling temporary copy the same way.
+	/// The mode is set at CREATION, not afterwards: a chmod after the fact still leaves a window in which the
+	/// file exists world-readable. The final name inherits it, because the move renames the same inode.
+	/// </para>
+	/// </remarks>
+	private static void WriteThroughTemporaryFile(
+		IoFileSystem fileSystem, string resolvedPath, Action<Stream> writeContent) {
 		string directory = fileSystem.Path.GetDirectoryName(resolvedPath);
 		if (!string.IsNullOrEmpty(directory) && !fileSystem.Directory.Exists(directory)) {
 			fileSystem.Directory.CreateDirectory(directory);
 		}
+		string temporaryPath = $"{resolvedPath}.{Guid.NewGuid():N}.tmp";
 		try {
-			using Stream stream = fileSystem.File.Open(resolvedPath, FileMode.CreateNew, FileAccess.Write);
-			stream.Write(content, 0, content.Length);
+			FileStreamOptions options = new() {
+				Mode = FileMode.CreateNew,
+				Access = FileAccess.Write,
+				Share = FileShare.None
+			};
+			if (!RuntimeInformation.IsOSPlatform(OSPlatform.Windows)) {
+				options.UnixCreateMode = OwnerOnlyFile;
+			}
+			using (Stream stream = fileSystem.File.Open(temporaryPath, options)) {
+				writeContent(stream);
+				stream.Flush();
+			}
+			fileSystem.File.Move(temporaryPath, resolvedPath, overwrite: false);
 		}
 		catch (IOException) when (fileSystem.File.Exists(resolvedPath)) {
+			DeleteTemporaryFile(fileSystem, temporaryPath);
 			throw new IOException(
 				$"output-file '{resolvedPath}' already exists; refusing to overwrite it. Choose a different " +
 				"path or remove the existing file.");
+		}
+		catch {
+			DeleteTemporaryFile(fileSystem, temporaryPath);
+			throw;
+		}
+	}
+
+	private static void DeleteTemporaryFile(IoFileSystem fileSystem, string temporaryPath) {
+		try {
+			if (fileSystem.File.Exists(temporaryPath)) {
+				fileSystem.File.Delete(temporaryPath);
+			}
+		}
+		catch (Exception) {
+			// A leftover temporary file is not worth replacing the real failure with a second exception.
 		}
 	}
 
@@ -215,7 +342,9 @@ internal static class OutputPathConfinement {
 			// segment and appended lexically — never canonicalized. The later write follows the link at the OS
 			// level and lands OUTSIDE the allowed zone (the terminal-/intermediate-symlink escape). Stop the walk
 			// at a reparse point too, so its own component is canonicalized (and thus confinement-checked)
-			// regardless of whether its target exists yet.
+			// regardless of whether its target exists yet. On Windows a dangling link's target cannot be read
+			// at all; wherever TryReadLinkTarget is consulted for such a link it throws UnresolvableLinkException,
+			// and the walk fails CLOSED.
 			while (!string.IsNullOrEmpty(current)
 				&& !fileSystem.Directory.Exists(current)
 				&& !fileSystem.File.Exists(current)
@@ -299,8 +428,10 @@ internal static class OutputPathConfinement {
 
 	// True when <paramref name="path"/> is a symbolic link / reparse point, EVEN when its target does not exist
 	// (a dangling link). Distinct from File.Exists / Directory.Exists, which follow the link and report false for
-	// a dangling one. Returns false — never throws — when link metadata cannot be read (mock / unsupported FS),
-	// so a filesystem without link support degrades to the lexical fallback in ResolveRealPath.
+	// a dangling one. Returns false when link metadata cannot be read (mock / unsupported FS), so a filesystem
+	// without link support degrades to the lexical fallback in ResolveRealPath. The one way it does throw is
+	// UnresolvableLinkException, for a link Windows would follow but whose target .NET cannot read - see
+	// TryReadLinkTarget - which ResolveRealPath propagates so the caller fails CLOSED.
 	private static bool IsReparsePoint(IoFileSystem fileSystem, string path) =>
 		TryReadLinkTarget(fileSystem, path, out _);
 
@@ -310,7 +441,45 @@ internal static class OutputPathConfinement {
 		// not-a-link (a security softening). Read each under its own guard instead.
 		target = ReadLinkTargetOrNull(() => fileSystem.FileInfo.New(path).LinkTarget)
 			?? ReadLinkTargetOrNull(() => fileSystem.DirectoryInfo.New(path).LinkTarget);
-		return target != null;
+		if (target != null) {
+			return true;
+		}
+		// On Windows, LinkTarget is null not only for an ordinary entry but ALSO for a symbolic link whose target
+		// does not exist (dangling) or cannot be resolved (a cycle), while the entry still carries the
+		// ReparsePoint attribute. Taking null for "not a link" there left both defenses inert: the dangling link
+		// was appended as a lexical tail segment and the cycle degraded to its lexical path, and the later write
+		// followed the link at the OS level. Ask the reparse TAG instead. Only a symbolic link or a junction is
+		// followed by a Windows pathname; every other reparse point (a cloud-files placeholder, an app-execution
+		// alias, a WSL link) is an ordinary entry at its own location and must NOT be refused.
+		if (IsWindowsLinkWithUnreadableTarget(fileSystem, path)) {
+			throw new UnresolvableLinkException();
+		}
+		return false;
+	}
+
+	// True for an entry that IS a symbolic link or junction (by reparse tag) but whose target .NET could not
+	// read - the dangling / cyclic case above. Fails CLOSED when the entry carries the ReparsePoint attribute
+	// but its tag cannot be read at all: an uninspected reparse point may be a link. A mock file system (unit
+	// tests) has no real entry at the path, so the attribute probe fails and this is false - the lexical
+	// fallback those tests already rely on.
+	private static bool IsWindowsLinkWithUnreadableTarget(IoFileSystem fileSystem, string path) {
+		if (!OperatingSystem.IsWindows() || !HasReparsePointAttribute(fileSystem, path)) {
+			return false;
+		}
+		if (!WindowsConfinedFileAccess.TryGetReparseTag(path, out uint tag)) {
+			return true;
+		}
+		return tag is WindowsConfinedFileAccess.ReparseTagSymlink or WindowsConfinedFileAccess.ReparseTagMountPoint;
+	}
+
+	private static bool HasReparsePointAttribute(IoFileSystem fileSystem, string path) {
+		try {
+			// GetAttributes reports the entry ITSELF (it does not follow a link), so a dangling link still answers.
+			return (fileSystem.File.GetAttributes(path) & FileAttributes.ReparsePoint) != 0;
+		}
+		catch (Exception) {
+			return false;
+		}
 	}
 
 	private static string ReadLinkTargetOrNull(Func<string> read) {
