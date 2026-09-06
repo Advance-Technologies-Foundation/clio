@@ -13,6 +13,7 @@ public sealed class ProcessGraphValidator : IProcessGraphValidator {
 		List<ProcessGraphFinding> findings = [];
 		IReadOnlyList<ProcessGraphNode> nodes = graph?.Nodes ?? [];
 		IReadOnlyList<ProcessGraphEdge> edges = graph?.Edges ?? [];
+		(nodes, edges) = NameTheNameless(nodes, edges, findings);
 
 		// Group elements by name once. First occurrence wins for the lookup used downstream; any name that
 		// appears more than once is an error — the server doesn't guard duplicates on the build/modify
@@ -50,6 +51,48 @@ public sealed class ProcessGraphValidator : IProcessGraphValidator {
 
 		bool hasErrors = findings.Any(f => f.Severity == ProcessGraphSeverity.Error);
 		return new ProcessGraphValidationResult(hasErrors, findings);
+	}
+
+	// A name is a dictionary KEY here, so a null one threw ArgumentNullException straight out of the first
+	// ToDictionary and the caller got "Value cannot be null. (Parameter 'key')" and NOT ONE finding for any
+	// node in the graph - against this method's documented contract of never throwing on malformed input.
+	// The MCP schema marks no field required, so an agent reaches this by omitting one. Naming the nameless
+	// keeps every other rule running over the rest of the graph, which is the point: the caller wants the
+	// findings for the nodes they did name.
+	private static (IReadOnlyList<ProcessGraphNode>, IReadOnlyList<ProcessGraphEdge>) NameTheNameless(
+			IReadOnlyList<ProcessGraphNode> nodes, IReadOnlyList<ProcessGraphEdge> edges,
+			List<ProcessGraphFinding> findings) {
+		const string missing = "(missing)";
+		if (nodes.All(node => !string.IsNullOrWhiteSpace(node?.Name))
+			&& edges.All(edge => !string.IsNullOrWhiteSpace(edge?.Source) && !string.IsNullOrWhiteSpace(edge?.Target))) {
+			return (nodes, edges);
+		}
+		List<ProcessGraphNode> named = [];
+		int unnamed = 0;
+		foreach (ProcessGraphNode node in nodes) {
+			if (node is null) {
+				continue;
+			}
+			if (!string.IsNullOrWhiteSpace(node.Name)) {
+				named.Add(node);
+				continue;
+			}
+			string placeholder = $"(unnamed element {++unnamed})";
+			findings.Add(new ProcessGraphFinding(ProcessGraphSeverity.Error, "UNNAMED",
+				$"An element has no name ({placeholder}). Every element needs a name: flows reference their "
+				+ "endpoints by name, so an unnamed element cannot be connected to anything.", placeholder));
+			named.Add(node with { Name = placeholder });
+		}
+		// A blank endpoint is left as a name no element can have, so the missing-node rule reports it in the
+		// ordinary way rather than this method inventing a second vocabulary for the same mistake.
+		List<ProcessGraphEdge> connected = edges.Where(edge => edge is not null).Select(edge =>
+			string.IsNullOrWhiteSpace(edge.Source) || string.IsNullOrWhiteSpace(edge.Target)
+				? edge with {
+					Source = string.IsNullOrWhiteSpace(edge.Source) ? missing : edge.Source,
+					Target = string.IsNullOrWhiteSpace(edge.Target) ? missing : edge.Target
+				}
+				: edge).ToList();
+		return (named, connected);
 	}
 
 	private static EventType TypeOf(ProcessGraphNode node) => ManagerMap.ResolveDataId(node.Type);
@@ -144,6 +187,35 @@ public sealed class ProcessGraphValidator : IProcessGraphValidator {
 			findings.Add(new ProcessGraphFinding(ProcessGraphSeverity.Warning, "R12",
 				$"Element '{node.Name}' has multiple outgoing sequence flows (implicit parallel split) — confirm intent.", node.Name));
 		}
+
+		CheckStrayBranchBesideACondition(node, outs, findings);
+	}
+
+	// R18 (error) — a conditional branch beside TWO flows that have none. The platform synthesizes a gateway
+	// for any element that branches, and that gateway's fallback is not the `default` marker: it matches every
+	// flow that is not CONDITIONAL and removes exactly ONE of them, then runs the rest. So the second
+	// unconditional flow always starts — beside the branch the condition chose, and beside the other
+	// unconditional one when no condition matched. R12 does fire on this shape, but as a warning whose text
+	// describes an all-plain split, so it says nothing about the decision.
+	//
+	// An ERROR rather than a warning, unlike R7/R9/R13/R14: those were demoted because the shipped corpus
+	// contains the shape they rejected. This one it does not. Of 1711 schemas, 736 sources carry a conditional
+	// flow beside an unconditional one — 310 of them not gateways — and ZERO carry two unconditional ones,
+	// because connection-utils.ts turns the second connection into a conditional rather than drawing it plain.
+	// CrtProcessBuilder refuses to build it as of 1.4.0.64, so a warning here would promise a build that fails.
+	private static void CheckStrayBranchBesideACondition(ProcessGraphNode node, List<ProcessGraphEdge> outs,
+			List<ProcessGraphFinding> findings) {
+		if (!outs.Any(o => o.FlowKind == ProcessFlowKind.Conditional)) {
+			return;
+		}
+		int unconditional = outs.Count(o => o.FlowKind != ProcessFlowKind.Conditional);
+		if (unconditional < 2) {
+			return;
+		}
+		findings.Add(new ProcessGraphFinding(ProcessGraphSeverity.Error, "R18",
+			$"Element '{node.Name}' branches on a condition while carrying {unconditional} flows that have "
+			+ "none. Only one of those is the fallback — the platform starts the other one as well, beside "
+			+ "whichever branch the condition chose. Give it a condition, or remove it.", node.Name));
 	}
 
 	// R10 — event-based gateway: each outgoing must lead directly to an intermediate catch event.
@@ -274,10 +346,18 @@ public sealed class ProcessGraphValidator : IProcessGraphValidator {
 	private static void CheckConditionalFlows(IReadOnlyList<ProcessGraphEdge> edges,
 			IReadOnlyDictionary<string, ProcessGraphNode> nodeByName, List<ProcessGraphFinding> findings) {
 		foreach (ProcessGraphEdge edge in edges.Where(e => e.FlowKind == ProcessFlowKind.Conditional)) {
+			// A WARNING, not an error, and the corpus is why. Measured over 1711 shipped schemas, four
+			// conditional flows leave an event: two a start event (CrtBase
+			// PushNotificationAboutAppUpdateAvailableProcess, CrtCustomer360AI SaveNewApiKey) and two an
+			// intermediate catch signal event. They ship and they run. The designer does not offer the
+			// connection, which is why this stays a finding at all - but an ERROR told an agent that the
+			// platform's own content is invalid, and CrtProcessBuilder builds it without complaint, so the
+			// error also promised a refusal that never comes.
 			if (nodeByName.TryGetValue(edge.Source, out ProcessGraphNode source)
 					&& RoleOf(source) is not (Role.Gateway or Role.Activity)) {
-				findings.Add(new ProcessGraphFinding(ProcessGraphSeverity.Error, "R13",
-					$"Conditional flow may originate only from a gateway or an activity (source '{edge.Source}').",
+				findings.Add(new ProcessGraphFinding(ProcessGraphSeverity.Warning, "R13",
+					$"Conditional flow leaves '{edge.Source}', which is neither a gateway nor an activity. "
+					+ "The designer cannot draw that connection, though four shipped flows have it and run.",
 					edge.Source, edge));
 			}
 
