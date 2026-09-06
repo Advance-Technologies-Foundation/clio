@@ -23,6 +23,7 @@ tools with no CLI verbs** — `clio list-user-tasks` is not a command and will r
 unrecognised verb:
 - create-business-process / modify-business-process
 - modify-business-process-as-new-version
+- set-active-business-process-version
 - describe-business-process
 - list-user-tasks
 - validate-process-graph

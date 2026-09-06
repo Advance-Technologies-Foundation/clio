@@ -7,7 +7,7 @@
 **ADR**: [adr-process-versioning.md](../adr/adr-process-versioning.md)
 **Test plan**: [tp-process-versioning.md](../test-plans/tp-process-versioning.md)
 **Repository**: clio
-**Status**: ready-for-dev
+**Status**: in-progress
 **Size**: M
 
 ---
@@ -28,11 +28,11 @@ rollback is one explicit, auditable gesture
 
 ## Acceptance Criteria
 
-- [ ] **AC-01** — Given a version identity, when the tool runs, then it reports the active version read back after the write
-- [ ] **AC-02** — Given the read-back does not match, when the tool returns, then it fails and names the version that is actually active
-- [ ] **AC-03** — Given the tool metadata, when it is reflected, then it is `ReadOnly=false, Destructive=true, Idempotent=true, OpenWorld=false`
-- [ ] **AC-04** — Given the tool description, when it is read, then it states that activation affects only NEW instances, that running instances stay on their version, that the UI calls this the actual version, and that deleting a version does not exist
-- [ ] **AC-ERR** — Given neither `version-name` nor `version-uid` is supplied, or both are, when the tool runs, then the MCP result is `success:false` with a message naming the violation
+- [x] **AC-01** — Given a version identity, when the tool runs, then it reports the active version read back after the write
+- [x] **AC-02** — Given the read-back does not match, when the tool returns, then it fails and names the version that is actually active
+- [x] **AC-03** — Given the tool metadata, when it is reflected, then it is `ReadOnly=false, Destructive=true, Idempotent=true, OpenWorld=false`
+- [x] **AC-04** — Given the tool description, when it is read, then it states that activation affects only NEW instances, that running instances stay on their version, that the UI calls this the actual version, and that deleting a version does not exist
+- [x] **AC-ERR** — Given neither `version-name` nor `version-uid` is supplied, or both are, when the tool runs, then the MCP result is `success:false` with a message naming the violation
 
 ## Implementation Notes
 
@@ -97,8 +97,69 @@ Test naming: `MethodName_ShouldBehavior_WhenCondition`
 
 ## Dev Agent Record
 
-{Left blank — filled by dev agent during implementation}
-- Implementation started: 
-- Implementation completed: 
-- Tests passing: 
-- Notes: 
+- Implementation started: 2026-09-07
+- Implementation completed: 2026-09-07
+- Tests passing: 11142 unit (11124 + 18 new). The SAME two tests stay red as after story 16 — no new red.
+- Notes:
+
+**Shipped.** `SetActiveProcessVersionTool` + args record, `SetActiveProcessVersionCommand` with its options /
+service / request / result, `KnownRoute.SetActiveProcessVersion = 69` mapped to
+`/rest/ProcessDesignService/SetActiveProcessVersion`, the two `BindingsModule` registrations, the
+`PassthroughToolClassificationRegistry` row (`NotApplicable`, class (a)) and the surfaces-dictionary entry.
+Unit coverage in `SetActiveProcessVersionToolTests` (12) and `SetActiveProcessVersionServiceTests` (6), E2E
+in `SetActiveProcessVersionToolE2ETests` (4).
+
+**The read-back IS the operation, and the failure branches carry the weight.** The platform logs and
+SWALLOWS a failure to deactivate a sibling, so a call reporting plain success could leave two members flagged
+active with PACKAGE ORDER deciding which one runs. So the service never echoes the request: a mismatch throws
+and names the version the environment actually reports as actual, and remaining active siblings are counted
+into the message with what that means. Three of the six service tests exist only for those branches.
+
+**`Destructive=true` is what excludes this tool from the 120 s read-response deadline** —
+`McpReadDeadlineGate.IsRetrySafe` is `!destructive && …`, and that gate admits no server write, idempotent
+or not. Pinned by `SetActiveProcessVersion_ShouldNotBeBoundedByTheReadResponseDeadline` rather than left to
+the flag: a deadline that abandoned this call mid-switch would leave the family in exactly the two-active
+state the read-back exists to catch, with nobody reading it back. `Idempotent=true` is about REPEATING the
+call — same version twice, same state — not a claim that an abandoned call is safe to retry blindly; the
+E2E asserts the repeat, and the tool comment says which of the two the flag means.
+
+**The description carries four statements an agent cannot derive**, each pinned by a test because each is a
+wrong assumption an agent otherwise reports as fact: activation reaches NEW instances only; instances already
+running stay on their version and finish on it; the UI word is "actual" where the platform's data says
+"active"; and NO operation anywhere deletes a version, so rollback means activating an earlier one rather
+than removing the newer one. Plus an explicit ASK FIRST — the product's own designer asks before making a
+version actual, so an agent must not chain this onto `modify-business-process-as-new-version` by itself.
+
+**Same two counted pins as story 16, resolved the same way.** Surfaces dictionary MOVED (this description
+names 1.5.0.0). `ProcessDesignerGoLiveTests`' `GoLiveToolTypes` ruled out for the same reason — that set
+records the ENG-96132 go-live and counts five — with the substance pinned by
+`SetActiveProcessVersion_ShouldNotBeFeatureGated` here. `McpCoreToolProfile`: NOT resident, as with every
+process-designer tool. The versioned-floor test in `ProcessDesignerRequiresPackageAttributeTests` was
+PARAMETERISED over both versioning options types rather than duplicated, since both floors exist for the same
+missing-operation reason.
+
+**No new red.** `BundledArchive_ShouldCarryAtLeastEveryDeclaredRequirement` and
+`ToolContractVersionLiterals_ShouldMatchTheBundledArchiveVersion` were already red from story 16 and this
+story adds a second floor and a second surface to the same two — both go green in story 15's commit.
+
+**Docs verdict.** `install-process-builder` docs + help list the tool; `docs/McpCapabilityMap.md` gains its
+row. No CLI verb exists (MCP-only, like every process-designer command), so `clio/help/en/<verb>.txt`,
+`clio/docs/commands/<verb>.md`, `clio/Commands.md` and `WikiAnchors.txt` need no entry.
+
+**MCP verdict.** MCP reviewed and updated: new tool, args record, registry row, capability map, install-hint
+surfaces. No prompt added — the sequence this tool belongs to is guidance (story 18), not a per-tool prompt.
+
+**Knowledge base.** No new record: the missing-operation-floor fact written in story 16
+(`docs/knowledge/Command/a-missing-operation-floor-needs-a-version-literal-not-presence.md`) covers this
+floor too, and its `applies-to` now names both command files. No existing record names a file this story
+touches.
+
+**ClioRing compatibility reviewed, no Ring-consumed contract changed.** Same inspection as story 16 —
+`clio-ring/ClioRing.Ipc`, `clio-ring/ClioRing`, `clio-ring/ClioRing.Desktop/actions.json` carry no
+process-designer tool call. Purely additive: a new tool name, no existing name, argument, flag or result
+shape altered.
+
+**Not verified on a stand.** The E2E fixture is gated on `McpE2E:Sandbox:EnvironmentName`, which is not
+configured on this machine, so AC-01/AC-02's read-back behaviour is asserted but not yet observed over the
+real MCP path. It runs with story 15's stand verification. The underlying package operation WAS observed on
+a stand during story 13 (version 2 of "Story 12 verification" activated and left active).

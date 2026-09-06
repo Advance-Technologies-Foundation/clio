@@ -2,6 +2,7 @@
 description: a [RequiresPackage] floor for an operation the older package does not HAVE must be a version literal; presence-only turns the refusal into a 404 that reads as clio being broken
 applies-to:
   - clio/Command/ModifyProcessAsNewVersionCommand.cs
+  - clio/Command/SetActiveProcessVersionCommand.cs
   - clio.tests/Command/ProcessDesignerRequiresPackageAttributeTests.cs
 ticket: ENG-94374
 date: 2026-09-06
@@ -10,8 +11,8 @@ date: 2026-09-06
 **What is true** — `[RequiresPackage]` on a process-designer options class carries a version literal for two
 different reasons, and they are not interchangeable. The older ones (`CreateBusinessProcessOptions`,
 `ModifyBusinessProcessOptions`) name a version because an older server MISHANDLES a newer *input form* it
-still accepts. `ModifyProcessAsNewVersionOptions` names one because the `ModifyProcessAsNewVersion`
-*operation itself* does not exist before `CrtProcessBuilder 1.5.0.0`.
+still accepts. `ModifyProcessAsNewVersionOptions` and `SetActiveProcessVersionOptions` name one because the
+*operations themselves* do not exist before `CrtProcessBuilder 1.5.0.0`.
 
 **Why it is this way** — the presence-only form exists so the convergence rule (`IBundledPackageConvergence`)
 can own "keep the environment current" without a literal restating that policy where it cannot track the
