@@ -5,14 +5,16 @@ mutation-checked in all three repositories. **Nothing is pushed and no pull requ
 
 Three things remain, and none of them is "build":
 
-1. the **stand verification** — V2–V9 passed in the review session and the agent-mode manual run passed
-   six of eleven cases at the stored level, so what is left is **V1 plus `/bp-test-run ENG-91853 --mode
-   browser --env Creatio`**, which is where design-time and runtime verdicts come from. Until that runs,
-   everything but the stored level is `not verified`. The browser run should also exercise a build-path
-   condition written as a NAME, which is new in 1.4.0.60 and has no stand evidence at all;
+1. the **browser leg** — `/bp-test-run ENG-91853 --mode browser --env Creatio`. V2–V9 passed in the
+   review session, and the second agent-mode run (2026-09-06) attempted **all 15 cases** and found no
+   new defect at the stored level. What storage cannot prove is that the platform AGREES with the text:
+   that a default branch renders as the fallback, that a three-way join waits for all three, and that an
+   expanded condition evaluates. **An agent run is never a pass for the feature.** Eleven processes are
+   left in `Custom` on `Creatio` as that run's input;
 2. three pull requests, one per repository, into that repository's default branch.
 
-Both design decisions the owner had open are now settled and implemented — see §4.
+Both design decisions the owner had open are now settled and implemented — see §4. The stored-level
+evidence is in §5.
 
 ---
 
@@ -163,6 +165,38 @@ description, `docs/McpCapabilityMap.md`, `branch-conditions.md`, `formulas.md` a
 The full table is [plan §4](eng-91853-gateways-and-flows-plan.md#4-stand-verification-the-part-no-unit-test-can-cover).
 V2–V9 passed in the verification session. **V1 (designer glyphs, in the browser) is outstanding** and is
 the owner's own check.
+
+### The agent-mode run of 2026-09-06 — stored level, all 15 cases
+
+Report and manifest: `eng-91853-gateways-and-flows-manual-test-run-2026-09-06b.md`. Read back from the
+stand rather than from the executor's transcript, which is the only thing that settles it.
+
+**The one result this ticket most needed**, because 1.4.0.60/.61 had no stand evidence at all. A blind
+agent chose to write a build-path condition as a NAME, unprompted, and the expansion ran:
+
+```
+sent   : [#AmountParameter#] > 100
+stored : [#[IsOwnerSchema:false].[IsSchema:false].[Parameter:{874f9328-…}]#] > 100
+```
+
+The stored form ALONE cannot tell an expansion from a hand-written meta-path — they are byte-identical
+in `CI3`. What settles it is what was SENT. And the same agent used the UId meta-path on a later
+`setFlowCondition`, which is the first evidence that `branch-conditions.md`'s split-by-call is followed
+rather than merely written.
+
+Also proven at the stored level: the self-loop refusal has no hole (build exits 1, no schema is created,
+and R15 says the same thing in the same words); a re-kind preserves POSITION rather than appending (the
+default came back in the MIDDLE of three flows); a conditional + default straight off an activity with no
+gateway element builds, which is half the real corpus and had never been tested; and a three-branch AND
+split and join builds.
+
+The prompt fix is measured rather than asserted — run 1 delegated the suite to sub-agents and reached 6
+of 11 cases in 9 of its own turns; run 2 delegated nothing, took 126 turns, attempted 15 of 15, and
+errored on 2 tool calls instead of 9.
+
+**One finding, not this ticket's.** Two plain flows off one element get R12 from the plan check and
+NOTHING from `create-business-process`, which returns 0 in silence — so the net hangs on a step an agent
+may skip. R12 and the silent build path both predate this change; spawned separately.
 
 Three constraints that are not in the table:
 
