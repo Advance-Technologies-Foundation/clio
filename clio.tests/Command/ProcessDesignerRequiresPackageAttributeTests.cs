@@ -77,7 +77,7 @@ namespace Clio.Tests
             // Assert
             requirement.Should().NotBeNull(
                 because: $"{optionsType.Name} must carry the declarative {BundledPackages.ProcessBuilderPackageName} requirement so the MCP gate fires");
-            requirement!.Version.Should().Be("1.4.0.59",
+            requirement!.Version.Should().Be("1.4.0.60",
                 because: "TWO reasons stand behind this floor. ENG-96325's lookup-constant contract shipped in the 1.4.0.40 archive - a mappings[] value on a Lookup target may carry an already-composed macro that an older server rejects as 'not a bare Guid' - and setFlowCondition is an operation an older server does not carry AT ALL — its dispatch "
                     + "registry rejects the token, which reads to a caller as a clio bug rather than a stale "
                     + "environment — and that alone justifies a versioned floor. What sets the NUMBER changed with "

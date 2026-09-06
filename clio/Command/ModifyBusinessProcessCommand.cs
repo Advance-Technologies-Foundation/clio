@@ -67,18 +67,21 @@ namespace Clio.Command;
 // own manual runs installed .18 and .37 - both below the rights-aware read. So do not lower this
 // floor below 1.4.0.40 on message-contract grounds alone; the floor is also what keeps a
 // pre-rights-aware read off an environment clio installs onto.//
-// Raised to 1.4.0.59 by ENG-91853, and this floor is a CAPABILITY floor rather than a message one: below
+// Raised to 1.4.0.60 by ENG-91853, and this floor is a CAPABILITY floor rather than a message one: below
 // it the package refuses `flows[].kind` and `flows[].condition` outright, and refuses the two gateway
 // element tokens as unsupported types. Those refusals are honest - an older package tells the caller it
 // cannot do this - but the descriptions above now document a declarative branch as the supported route,
 // so without the floor an agent following them is refused by the environment instead of by clio, one
 // round-trip later and with no hint that the package is what is behind.
 //
-// .59 rather than .58 because .58 was superseded before it shipped anywhere, by two fixes that are not
-// about wording either: `setFlow` with an omitted `kind` used to read as 'sequence' and DESTROY a
-// conditional branch while reporting success, and the build path accepted an unbounded `condition`. The
-// first is silent data loss on a documented operation, which is the strongest reason a floor exists.
-[RequiresPackage(BundledPackages.ProcessBuilderPackageName, "1.4.0.59",
+// It moved twice more before shipping, and neither move was about wording. .59 carries two fixes -
+// `setFlow` with an omitted `kind` used to read as 'sequence' and DESTROY a conditional branch while
+// reporting success, and the build path accepted an unbounded `condition`. .60 carries the one that
+// makes `flows[].condition` worth having: below it a condition can only reference a system setting,
+// because a parameter is addressed by a UId that does not exist until this very call creates it. That
+// is 88% of the conditions in the shipped product, so below .60 the declarative branch is a contract
+// clio documents and the environment cannot honour.
+[RequiresPackage(BundledPackages.ProcessBuilderPackageName, "1.4.0.60",
 	Hint = BundledPackages.ProcessBuilderInstallHint)]
 public sealed class ModifyBusinessProcessOptions : EnvironmentOptions {
 	/// <summary>Process code (schema Name) to edit. Provide exactly one of <see cref="ProcessName"/> or <see cref="ProcessUid"/>.</summary>
