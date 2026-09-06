@@ -16,6 +16,11 @@ case names. Report exactly what you see, including anything that contradicts the
 cannot express what the business asked for, say so and say what stopped you — that is a result, not a
 failure to complete the task.
 
+**Work the cases yourself, in order, and write up each one as you finish it.** Do not hand the suite,
+or any part of it, to another agent to work in the background: nothing collects that work afterwards,
+and a case whose result is never collected is a case that was never run. Write each case's findings down
+as soon as that case is done, so a suite that stops halfway still reports everything up to that point.
+
 Groups:
 
 1. **A single decision point** — one place in a process where the path forks and only one path is
@@ -30,6 +35,11 @@ Groups:
    it is created.
 6. **A mistake that must be caught wherever it is expressed** — the same bad shape reaching the tooling
    two different ways, which must be refused both times and for the same reason.
+7. **Branching with no decision symbol on the diagram** — the choice belongs to the step itself. This is
+   roughly half of all branching in shipped product content, and it behaves differently from a drawn
+   decision point.
+8. **More than two of anything** — three ways out, three ways back in. Two-way shapes are the ones
+   everybody tests; the rules that count branches are the ones that break.
 
 Most cases are observed at three levels — what is **stored** and read back, what is visible at
 **design time** when the process is opened, and what happens at **runtime**. Group 5 and TC-05 are the
@@ -226,7 +236,9 @@ Runtime — what must happen when the process runs, and where it is visible:
 
 Preconditions:
 
-- A process with a decision point that has two rule-driven paths and one fallback path.
+- A process of its own with a decision point that has two rule-driven paths and one fallback path.
+  **Build a fresh one for this case.** Do not reuse the process from TC-02 — this case overwrites the
+  arrangement TC-02 is judged by, and reusing it destroys that evidence.
 
 Business requirement:
 
@@ -365,6 +377,132 @@ and do not run the process.
 
 ---
 
+---
+
+## Group 7 — branching with no decision symbol on the diagram
+
+## TC-12 — the step itself decides, and the diagram stays a straight line
+
+Preconditions:
+
+- None. The process takes the request amount as its input.
+
+Business requirement:
+
+- After the amount has been read, requests over 100 must go for approval and everything else must go
+  straight to fulfilment, with one fallback path taken whenever no rule matched.
+- **The business will not accept an extra decision symbol on the diagram.** These analysts read dozens
+  of these processes a week and have asked for the choice to sit on the step that makes it, not on a
+  separate shape added beside it. The diagram must read as the step, then its outgoing paths.
+- Everything else is as in TC-01: exactly one fallback, and it must keep working as rules are added.
+
+Stored — what must be written and read back:
+
+- The rule reads back as written on the approval path.
+- The fallback path reads back as the fallback, not merely as a path with no rule.
+- Reading the process back shows **no extra decision element** between the step and its paths.
+
+Design time — what must be visible when the process is opened in the designer:
+
+- The step, and two paths leaving it. No decision shape between them.
+- The fallback path is identifiable as the fallback without opening anything.
+
+Runtime — what must happen when the process runs, and where it is visible:
+
+- Amount **150** → the approval path only. Amount **50** → the fulfilment path only.
+- The process log shows the step and then the single path taken.
+
+**Known platform behaviour — do not file as a defect:** the run diagram may show the choice happening
+without any decision shape ever appearing as a step in the log, because the platform resolves the choice
+itself. What **would** be a regression, and must be reported: **both** outgoing paths being taken, or a
+decision shape appearing in the diagram that nobody asked for.
+
+## TC-13 — two ordinary paths leave one step (adversarial)
+
+**Adversarial case — the input is stated verbatim because the reaction is what is under test. This is
+the shape a careless author produces, not one to imitate.**
+
+Preconditions:
+
+- None.
+
+Business requirement (stated as the input, verbatim):
+
+- Build a process where **one step has two outgoing paths and neither of them carries any rule at all**
+  — no condition, no fallback marking, nothing. Two plain continuations from the same step.
+- The author's intention, which you must NOT encode, was "go down one of these two". Build the shape as
+  written and then find out what actually happens.
+
+Runtime — what must happen when the process runs, and where it is visible:
+
+- Run it once and report, from the process log, **how many of the two paths executed**.
+- If both executed, say so plainly: that is a silent parallel split where a choice was intended.
+- Say whether **anything at all** warned about this — the build, a plan check, a notice in the response,
+  or the designer. Quote whatever you find; if nothing warned, say that nothing warned.
+
+This case stops at what happened and what was said about it. It is not asking you to fix the process.
+
+---
+
+## Group 8 — more than two of anything
+
+## TC-14 — three checks at once, and nothing continues until all three are done
+
+Preconditions:
+
+- None. Use the contact and company records that exist on the environment.
+
+Business requirement:
+
+- Three independent checks must run at the same time: the requester's contact details, their company,
+  and their contact details a second time as a stand-in for a third source.
+- As in TC-04 the three **must not wait for each other** and the process must not depend on which
+  finishes first — but the confirmation step must not start until **all three** have finished. Two out of
+  three is not enough; the business is explicit that a missing third check is the failure it is trying
+  to prevent.
+
+Design time — what must be visible when the process is opened in the designer:
+
+- One point where the flow opens into three paths, and one point further on where all three come back
+  together before the confirmation step.
+- The three paths are on three separate levels and do not sit on top of each other.
+
+Runtime — what must happen when the process runs, and where it is visible:
+
+- All three checks appear in the process log.
+- The confirmation step's start is not earlier than the finish of **any** of the three. Quote the start
+  and finish times for all four steps.
+- The process completes.
+
+## TC-15 — several rule-driven paths come back together before the process goes on
+
+Preconditions:
+
+- None.
+
+Business requirement:
+
+- A request is routed three ways by amount — over 1000, over 100, and everything else. Each route does
+  its own step.
+- Afterwards, **whichever route was taken, the process must continue through one single shared step**
+  (a notification), and that step must appear once in the diagram, not once per route. The business
+  wants one place to change the notification later.
+- The shared step must run when **any one** route arrives; it must not wait for the others, because only
+  one route ever runs.
+
+Design time — what must be visible when the process is opened in the designer:
+
+- Three routes leaving the decision, and one point where they come back together before the shared step.
+- The shared step appears **once**, with one path leading out of the merge into it.
+
+Runtime — what must happen when the process runs, and where it is visible:
+
+- Amount **5000**, then **500**, then **50**: in each run exactly one route executes and the shared step
+  executes exactly once afterwards.
+- The process log for each run shows which route ran and the shared step after it.
+
+---
+
 ## Deliberately not covered
 
 - **Inclusive (OR) and event-based decision points.** They are a separate piece of work
@@ -382,8 +520,8 @@ and do not run the process.
   it is a result — but do not go on to explore expression validation.
 - **Connector line routing.** The tooling places steps; it does not route the lines between them. See
   the known-behaviour note on TC-08.
-- **Performance.** Nothing here is timed. Process log timestamps are used in TC-04 only to establish
-  ordering, never duration.
+- **Performance.** Nothing here is timed. Process log timestamps are used in TC-04 and TC-14 only to
+  establish ordering, never duration.
 - **Removing one of two paths that connect the same pair of steps.** Reading a process back now names
   each path, but no operation accepts that name as a handle, so the surgical case has no route through
   the tooling to test. What to do about it is an open question on this issue rather than shipped
