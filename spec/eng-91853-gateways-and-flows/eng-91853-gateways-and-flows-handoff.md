@@ -8,9 +8,11 @@ Three things remain, and none of them is "build":
 1. the **stand verification** — V2–V9 passed in the review session and the agent-mode manual run passed
    six of eleven cases at the stored level, so what is left is **V1 plus `/bp-test-run ENG-91853 --mode
    browser --env Creatio`**, which is where design-time and runtime verdicts come from. Until that runs,
-   everything but the stored level is `not verified`;
-2. **two design decisions that are the owner's**, not a reviewer's — layout §4 case B and D1, below;
-3. three pull requests, one per repository, into that repository's default branch.
+   everything but the stored level is `not verified`. The browser run should also exercise a build-path
+   condition written as a NAME, which is new in 1.4.0.60 and has no stand evidence at all;
+2. three pull requests, one per repository, into that repository's default branch.
+
+Both design decisions the owner had open are now settled and implemented — see §4.
 
 ---
 
@@ -40,7 +42,7 @@ with ~900 missing-reference errors that read like a broken checkout.
 ```
 dotnet test tests/CrtProcessBuilder/CrtProcessBuilder.Tests.csproj -c dev-nf
 ```
-→ **1224 pass, 0 fail** (baseline at the start of the ticket: 1149). This repository has **no CI at
+→ **1235 pass, 0 fail** (baseline at the start of the ticket: 1149). This repository has **no CI at
 all**, so a local run is the only gate the package ever gets.
 
 **clio** — `-c Release`, not Debug: a running MCP server holds the Debug output open and the build fails
@@ -123,36 +125,36 @@ of it:
   7 599 plain. The branch's prose says 1 406 / 756 / 7 600 — within one, from a scan-boundary
   difference, and deliberately left consistent rather than made a third number.
 
-### The two open decisions
+### The two decisions, both SETTLED by the owner on 2026-09-06
 
-**Layout §4 case B** is marked ✔ in its verification table and is **not fixed**; it cannot be fixed by
-placement. Three of the ticket's commitments conflict for that one shape and connector routing is out of
-scope. The measurement, the three options and a recommendation are in
-[layout-addendum §2](eng-91853-gateways-and-flows-layout-addendum.md). It needs a decision, not a fix.
+**Layout §4 case B — option 2, implemented.** A merge with a column-skipping inbound branch takes THAT
+branch's lane instead of the mean of its arriving lanes. It was never the conflict the addendum called
+it: the corridor IS where the merge belongs, because it is the row that connector already occupies. Rows
+A and E of the verification table are untouched (neither has a skipping branch), all 27 pre-existing
+layout tests pass unchanged, and row B's ✔ is now honest. Package commit `180025a`.
 
-**D1 — whether the build path learns to resolve a parameter NAME.** Raised by the agent-mode manual run
-and re-measured here. `flows[].condition` works only for a condition carrying no parameter reference,
-because a condition addresses a parameter by UId meta-path and those UIds do not exist until the call
-that creates them; `ProcessParameterDescriptor` has no `uid` field, so the caller cannot pre-declare one
-either. That is **932 of the 1 061 non-empty conditions in the shipped corpus — 87.8%** — including
-`BulkFileManagement/DeleteFilesInTable`, the retry-loop topology this ticket's own layout work is argued
-on. The blind executor never used the build path once.
+**D1 — implement here, done.** `flows[].condition` takes a parameter NAME on the build path
+(`[#Amount#]`, `[#Element.Parameter#]`) and `ConditionParameterNames` expands it to the UId meta-path
+after `ApplyDeclarativeContent`, which is the only order that works — a `typeFromElement` parameter is
+added there. Package commit `feae3ff`, shipped in **1.4.0.60**, floor raised to match.
 
-The **contract text is fixed** in this branch: the create tool's description and `branch-conditions.md`
-now say which conditions belong here and which belong to the modify step, and
-[the knowledge record](../../docs/knowledge/ProcessModel/a-build-path-condition-cannot-reference-a-parameter.md)
-carries the measurement. What needs a decision is whether the **resolution** lands here or as a
-follow-up. The mechanism already exists one directory away — `ProcessMappingService` takes a parameter
-by NAME and expands it through `ResolveProcessParameter` + `GetMetaPath()`, on the same schema object in
-the same build call, for both the process-parameter and the element-output forms. The shape would be:
-accept `[#ParameterName#]` inside `flows[].condition` and expand it in a pass over `flows[]` AFTER the
-parameters are created, refusing by name when one does not resolve. Both forms must be covered —
-neither alone reaches half the corpus (element output 487, process parameter 445).
+The rule is narrow toward doing nothing: only a bare identifier, or a dotted one whose head is an
+element of this schema. `[#SysSettings.Code<Type>#]`, `[#Lookup.Schema.Record#]` and both meta-path
+spellings pass through. A bare name that resolves to nothing is REFUSED naming the flow and listing what
+exists — safe because no macro family is a single identifier. The modify path is deliberately excluded:
+its UIds exist, and a whole-schema pass there could rewrite a designer-authored condition.
 
-Against doing it here: the issue description hands the expression to ENG-95891. For doing it here: this
-ticket's headline commitment is declaring the branch where the flow is declared, and today that
-commitment holds for 3% of real conditions. **If the resolution lands, the two texts fixed above become
-wrong again** — they are one decision, not two edits.
+Two guards in that pass were caught unfalsifiable BEFORE shipping, which is the first time in this
+ticket that happened in the right order. The body-length cap could not be reddened by any mutation —
+every condition arrives through `AddFlow`'s 2 048-character bound — and was deleted. The bracket guard
+also survived its first mutation and turned out to be load-bearing for an unreached reason: the platform
+emits a parameter reference with AND without the `[IsOwnerSchema:false].[IsSchema:false].` prefix, and
+the short form carries no dot, so without it a valid hand-written reference is read as a name and
+refused. It has a test now.
+
+The texts turned over a second time, exactly as this document predicted they would: the create tool's
+description, `docs/McpCapabilityMap.md`, `branch-conditions.md`, `formulas.md` and the knowledge record
+(renamed, because its subject reversed) all now say the build path takes a name.
 
 ---
 
@@ -166,7 +168,7 @@ Three constraints that are not in the table:
 
 - **Run schema-write operations SEQUENTIALLY.** A parallel burst trips IIS rapid-fail and downs a
   .NET Framework stand's application pool.
-- **Only `clio/bin/Release/net10.0` carries the 1.4.0.59 archive.** The rebundle script rebuilds one
+- **Only `clio/bin/Release/net10.0` carries the 1.4.0.60 archive.** The rebundle script rebuilds one
   output; `Debug/net10.0`, `Debug/net8.0` and `Release/net8.0` still ship an older one, and an install
   run from any of them will verify the wrong package. Debug could not be the one rebuilt, because of the
   MCP-server lock above.
