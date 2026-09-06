@@ -29,6 +29,15 @@ DESCRIPTION
     4. Load workspace packages to the database
     5. Build the package again
 
+    Step 4 requires file system development mode (FSM) to be enabled on the
+    environment. When it fails, the command stops with exit code 1 and skips
+    step 5, because building from an unchanged database copy would report
+    directions as applied while nothing on the environment changed. Steps 1-2
+    have already run at that point: the other parameter changes ARE saved and
+    built on the environment and only the directions are missing. Enable FSM
+    (clio turn-fsm on) and finish with 'clio pkg-to-db' followed by
+    'clio compile-creatio --package-name <PACKAGE>'.
+
     This command must be executed from a workspace directory.
 
 SYNOPSIS

@@ -19,12 +19,21 @@ namespace Clio.Mcp.E2E;
 /// GitHub issue #952: the loader used to report every refusal through a plain log line and return
 /// <c>void</c>, so the tool answered <c>exit-code: 0</c> with <c>message-type: "None"</c> while nothing
 /// had been loaded — both published failure signals of the <c>command-execution-result</c> contract were
-/// negative. This fixture pins the two signals on the only refusal reachable without changing the
-/// environment: FSM disabled. Nothing is mutated, because the command stops at the FSM check before it
-/// posts the import request; the test skips itself when the sandbox has FSM enabled, where the same call
-/// WOULD import packages.
-/// No AllowDestructiveMcpTests gate and no DestructiveStandAuthorization check: the arrange step only
-/// reads the FSM state, and the refused call changes nothing on the stand.
+/// negative. This fixture pins the agreement between those two signals.
+/// <para>
+/// The test asserts BOTH file design mode states instead of skipping on one of them. The MCP end-to-end
+/// stand is deployed fresh for every build, so a fixture that self-ignored whenever the stand came up
+/// with FSM enabled could disappear from the run statistics without anyone noticing. On an FSM-disabled
+/// stand nothing is mutated (the command stops at the FSM check before the import request); on an
+/// FSM-enabled stand the import really runs, which is why the standard
+/// <c>AllowDestructiveMcpTests</c> opt-in guards the fixture — CI sets it to true.
+/// </para>
+/// <para>
+/// The arrange step reads <c>get-fsm-mode</c>, which derives the mode from GetApplicationInfo, while the
+/// command itself gates on WorkspaceExplorerService.svc/GetIsFileDesignMode. Should those two signals
+/// ever disagree on an environment, this test fails and names the inconsistency instead of silently
+/// skipping — which is the outcome we want from an end-to-end fixture.
+/// </para>
 /// </remarks>
 [TestFixture]
 [AllureNUnit]
@@ -38,39 +47,45 @@ public sealed class LoadPackagesToolE2ETests : McpContractFixtureBase {
 	[Test]
 	[Category("McpE2E.Sandbox")]
 	[AllureTag(LoadPackagesToDbToolName)]
-	[AllureDescription("Invokes pkg-to-db against a sandbox environment with file system development mode disabled and verifies that the refusal reaches the caller as a non-zero exit code and an Error log message.")]
-	[AllureName("Load packages to database reports failure when file system development mode is disabled")]
-	[Description("pkg-to-db reports a non-zero exit code and an Error message when the environment has file system development mode disabled, instead of an exit code 0 with no error.")]
-	public async Task LoadPackagesToDb_Should_Report_Failure_When_FileDesignMode_Is_Disabled() {
+	[AllureDescription("Invokes pkg-to-db against the sandbox environment and verifies that the reported exit code and Error log message agree with what actually happened: a refusal on a file-system-mode-disabled environment reaches the caller as a non-zero exit code with an Error message, and a load that really ran still reports exit code 0 with no Error message.")]
+	[AllureName("Load packages to database reports the load outcome honestly in both file system development mode states")]
+	[Description("pkg-to-db reports a non-zero exit code and an Error message when the environment has file system development mode disabled, instead of an exit code 0 with no error, and still reports exit code 0 with no Error message when the load really runs.")]
+	public async Task LoadPackagesToDb_Should_Report_The_Load_Outcome_Honestly() {
 		// Arrange
 		McpE2ESettings settings = TestConfiguration.Load();
 		TestConfiguration.EnsureSandboxIsConfigured(settings);
+		if (!settings.AllowDestructiveMcpTests) {
+			Assert.Ignore("Set McpE2E:AllowDestructiveMcpTests=true to run the pkg-to-db end-to-end test: on an " +
+				"environment with file system development mode enabled it really imports the packages.");
+		}
 		await using ArrangeContext arrangeContext = Arrange();
 		string environmentName = settings.Sandbox.EnvironmentName!;
-		await AssertFileDesignModeIsDisabledAsync(arrangeContext, environmentName);
+		bool isFileDesignModeEnabled = await ArrangeFileDesignModeStateAsync(arrangeContext, environmentName);
 
 		// Act
 		CommandExecutionEnvelope execution = await ActLoadPackagesToDbAsync(arrangeContext, environmentName);
 
 		// Assert
-		AssertExitCodeReportsFailure(execution);
-		AssertErrorMessageIsReported(execution);
+		if (isFileDesignModeEnabled) {
+			AssertLoadIsReportedAsCompleted(execution);
+		} else {
+			AssertExitCodeReportsFailure(execution);
+			AssertErrorMessageIsReported(execution);
+		}
 	}
 
-	// The FSM-enabled sandbox would really import the packages, which is a mutation this read-only
-	// fixture must not perform, so the state is a precondition rather than an assertion.
-	private static async Task AssertFileDesignModeIsDisabledAsync(ArrangeContext arrangeContext, string environmentName) {
-		await AllureApi.Step("Arrange by confirming the sandbox has file system development mode disabled", async () => {
+	// Read rather than assert: the stand is deployed fresh per build and either file design mode state is
+	// legitimate, so the observed state selects which half of the contract is pinned.
+	private static async Task<bool> ArrangeFileDesignModeStateAsync(ArrangeContext arrangeContext, string environmentName) {
+		return await AllureApi.Step("Arrange by reading the sandbox file system development mode state", async () => {
 			CallToolResult callResult = await arrangeContext.Session.CallToolAsync(
 				GetFsmModeToolName,
 				new Dictionary<string, object?> { ["environmentName"] = environmentName },
 				arrangeContext.CancellationTokenSource.Token);
 			FsmModeStatusEnvelope status = FsmModeStatusResultParser.Extract(callResult);
-			if (!string.Equals(status.Mode, "off", StringComparison.OrdinalIgnoreCase)) {
-				Assert.Ignore(
-					"The sandbox environment has file system development mode enabled, where pkg-to-db would " +
-					"import packages; the disabled-mode refusal cannot be observed without mutating it.");
-			}
+			status.Mode.Should().BeOneOf(["on", "off"],
+				because: "the sandbox must report a known file system development mode before pkg-to-db is dispatched");
+			return string.Equals(status.Mode, "on", StringComparison.OrdinalIgnoreCase);
 		});
 	}
 
@@ -102,6 +117,16 @@ public sealed class LoadPackagesToolE2ETests : McpContractFixtureBase {
 	private static void AssertExitCodeReportsFailure(CommandExecutionEnvelope execution) {
 		execution.ExitCode.Should().NotBe(0,
 			because: "a load that never happened must not be reported to the caller as exit code 0 (GitHub issue #952)");
+	}
+
+	[AllureStep("Assert a load that really ran is reported as a success")]
+	private static void AssertLoadIsReportedAsCompleted(CommandExecutionEnvelope execution) {
+		execution.ExitCode.Should().Be(0,
+			because: "on a file-system-mode environment the import really runs, and the honest exit code of a " +
+			"completed load must stay 0 - the fix for GitHub issue #952 must not invert the success case");
+		execution.Output.Should().NotContain(
+			message => message.MessageType == LogDecoratorType.Error,
+			because: "a completed load must not publish the failure signal of the command-execution-result contract");
 	}
 
 	[AllureStep("Assert the refusal is reported as an error log message")]

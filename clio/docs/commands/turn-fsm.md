@@ -20,10 +20,25 @@ When turning FSM off:
 - Loads packages to the database
 - Updates configuration to disable File Design Mode
 
-Each step must succeed before the next one runs. When the package load fails
-(for example the environment reports file design mode as already disabled, or
-the platform refuses the request), the command stops with exit code 1 and the
-configuration is left unchanged.
+The two directions fail differently, because the configuration is written at a
+different point in each sequence:
+
+- turn-fsm off: the package load runs FIRST. When it fails because the platform
+refused the import, or because the file design mode state could not be read,
+the command stops with exit code 1 and the configuration is LEFT UNCHANGED -
+the environment is still in file system mode. Fix the reported error and run
+the command again, or run 'clio set-fsm-config off' to write the configuration
+without importing (the file system packages are then not carried over).
+An environment that already reports file design mode as disabled has nothing
+to import and is not an error: the configuration is written and the command
+exits with code 0.
+
+- turn-fsm on: the configuration is written FIRST and the export runs after it.
+When the export fails, the command exits with code 1 while file system mode is
+ALREADY ENABLED on the environment. On .NET Framework the IIS application pool
+recycles asynchronously on the configuration change, so the environment can
+still report file design mode as disabled for a short while; wait for the web
+application to restart and run 'clio pkg-to-file-system' to finish the export.
 
 Use either:
 - --physicalPath (path to the environment folder)

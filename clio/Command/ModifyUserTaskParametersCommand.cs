@@ -310,17 +310,10 @@ public class ModifyUserTaskParametersCommand : RemoteCommand<ModifyUserTaskParam
 
 		Logger.WriteInfo($"Applying direction metadata for {directionsByParameterName.Count} parameter(s) on '{schemaName}'...");
 		_userTaskMetadataDirectionApplier.ApplyDirections(packageName, schemaName, directionsByParameterName);
-		Logger.WriteInfo("Loading workspace packages to database to apply direction metadata changes...");
-		// Fail instead of warn: the direction values were written to the workspace metadata file only.
-		// Without a successful load into the configuration database the following BuildPackage compiles
-		// the unchanged database copy, so a warning would leave the caller believing the directions were
-		// applied when nothing on the environment changed.
-		if (!_fileDesignModePackages.LoadPackagesToDb()) {
-			throw new InvalidOperationException(
-				$"Parameter direction metadata for user task '{schemaName}' was written to the workspace but not " +
-				"applied on the environment: loading workspace packages to the database failed. " +
-				"File system development mode must be enabled on the environment.");
-		}
+		UserTaskSchemaSupport.LoadWorkspacePackagesToDatabase(_fileDesignModePackages, Logger, schemaName,
+			$"The other parameter changes to '{schemaName}' were already saved and built on the environment, so only " +
+			"the directions are missing: enable file system development mode (clio turn-fsm on) and run " +
+			$"'clio pkg-to-db' followed by 'clio compile-creatio --package-name {packageName}'.");
 		BuildPackage(packageName);
 	}
 

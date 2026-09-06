@@ -33,8 +33,8 @@ code 1 and an error message.
 ## Examples
 
 ```bash
-Load the environment's file-system packages into the database:
-clio pkg-to-db -e dev
+Load the environment's file-system packages into the database
+(the aliases 2db and todb accept exactly the same arguments):
 clio pkg-to-db -e dev
 
 Apply a data binding on an FSM environment (pkg-to-db does not do it):

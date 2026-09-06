@@ -320,7 +320,7 @@ public class Link4RepoCommand : Command<Link4RepoOptions> {
 
 		// 7. Sync packages to file system (2fs)
 		_logger.WriteInfo("Loading packages to file system (2fs)...");
-		if (!_fileDesignModePackages.LoadPackagesToFileSystem()) {
+		if (_fileDesignModePackages.LoadPackagesToFileSystem() != FileDesignModeLoadResult.Completed) {
 			_logger.WriteError("Packages were not synced to the file system: loading packages to the file system failed.");
 			return 1;
 		}

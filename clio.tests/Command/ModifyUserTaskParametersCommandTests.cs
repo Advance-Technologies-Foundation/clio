@@ -37,7 +37,7 @@ public class ModifyUserTaskParametersCommandTests : BaseCommandTests<ModifyUserT
 		IJsonConverter jsonConverter = Substitute.For<IJsonConverter>();
 		IFileSystem fileSystem = Substitute.For<IFileSystem>();
 		IFileDesignModePackages fileDesignModePackages = Substitute.For<IFileDesignModePackages>();
-		fileDesignModePackages.LoadPackagesToDb().Returns(true);
+		fileDesignModePackages.LoadPackagesToDb().Returns(FileDesignModeLoadResult.Completed);
 		IUserTaskMetadataDirectionApplier metadataDirectionApplier = Substitute.For<IUserTaskMetadataDirectionApplier>();
 		IUserTaskLookupSchemaResolver lookupSchemaResolver = Substitute.For<IUserTaskLookupSchemaResolver>();
 		EnvironmentSettings settings = new() {
@@ -122,7 +122,7 @@ public class ModifyUserTaskParametersCommandTests : BaseCommandTests<ModifyUserT
 		IJsonConverter jsonConverter = Substitute.For<IJsonConverter>();
 		IFileSystem fileSystem = Substitute.For<IFileSystem>();
 		IFileDesignModePackages fileDesignModePackages = Substitute.For<IFileDesignModePackages>();
-		fileDesignModePackages.LoadPackagesToDb().Returns(true);
+		fileDesignModePackages.LoadPackagesToDb().Returns(FileDesignModeLoadResult.Completed);
 		IUserTaskMetadataDirectionApplier metadataDirectionApplier = Substitute.For<IUserTaskMetadataDirectionApplier>();
 		IUserTaskLookupSchemaResolver lookupSchemaResolver = Substitute.For<IUserTaskLookupSchemaResolver>();
 		EnvironmentSettings settings = new() {
@@ -193,7 +193,7 @@ public class ModifyUserTaskParametersCommandTests : BaseCommandTests<ModifyUserT
 		IJsonConverter jsonConverter = Substitute.For<IJsonConverter>();
 		IFileSystem fileSystem = Substitute.For<IFileSystem>();
 		IFileDesignModePackages fileDesignModePackages = Substitute.For<IFileDesignModePackages>();
-		fileDesignModePackages.LoadPackagesToDb().Returns(false);
+		fileDesignModePackages.LoadPackagesToDb().Returns(FileDesignModeLoadResult.FileDesignModeDisabled);
 		IUserTaskMetadataDirectionApplier metadataDirectionApplier = Substitute.For<IUserTaskMetadataDirectionApplier>();
 		IUserTaskLookupSchemaResolver lookupSchemaResolver = Substitute.For<IUserTaskLookupSchemaResolver>();
 		EnvironmentSettings settings = new() {
@@ -262,7 +262,6 @@ public class ModifyUserTaskParametersCommandTests : BaseCommandTests<ModifyUserT
 		IJsonConverter jsonConverter = Substitute.For<IJsonConverter>();
 		IFileSystem fileSystem = Substitute.For<IFileSystem>();
 		IFileDesignModePackages fileDesignModePackages = Substitute.For<IFileDesignModePackages>();
-		fileDesignModePackages.LoadPackagesToDb().Returns(true);
 		IUserTaskMetadataDirectionApplier metadataDirectionApplier = Substitute.For<IUserTaskMetadataDirectionApplier>();
 		IUserTaskLookupSchemaResolver lookupSchemaResolver = Substitute.For<IUserTaskLookupSchemaResolver>();
 		EnvironmentSettings settings = new() {
@@ -334,7 +333,6 @@ public class ModifyUserTaskParametersCommandTests : BaseCommandTests<ModifyUserT
 		IJsonConverter jsonConverter = Substitute.For<IJsonConverter>();
 		IFileSystem fileSystem = Substitute.For<IFileSystem>();
 		IFileDesignModePackages fileDesignModePackages = Substitute.For<IFileDesignModePackages>();
-		fileDesignModePackages.LoadPackagesToDb().Returns(true);
 		IUserTaskMetadataDirectionApplier metadataDirectionApplier = Substitute.For<IUserTaskMetadataDirectionApplier>();
 		IUserTaskLookupSchemaResolver lookupSchemaResolver = Substitute.For<IUserTaskLookupSchemaResolver>();
 		EnvironmentSettings settings = new() {
@@ -400,7 +398,6 @@ public class ModifyUserTaskParametersCommandTests : BaseCommandTests<ModifyUserT
 		IJsonConverter jsonConverter = Substitute.For<IJsonConverter>();
 		IFileSystem fileSystem = Substitute.For<IFileSystem>();
 		IFileDesignModePackages fileDesignModePackages = Substitute.For<IFileDesignModePackages>();
-		fileDesignModePackages.LoadPackagesToDb().Returns(true);
 		IUserTaskMetadataDirectionApplier metadataDirectionApplier = Substitute.For<IUserTaskMetadataDirectionApplier>();
 		IUserTaskLookupSchemaResolver lookupSchemaResolver = Substitute.For<IUserTaskLookupSchemaResolver>();
 		EnvironmentSettings settings = new() {
@@ -456,7 +453,6 @@ public class ModifyUserTaskParametersCommandTests : BaseCommandTests<ModifyUserT
 		IJsonConverter jsonConverter = Substitute.For<IJsonConverter>();
 		IFileSystem fileSystem = Substitute.For<IFileSystem>();
 		IFileDesignModePackages fileDesignModePackages = Substitute.For<IFileDesignModePackages>();
-		fileDesignModePackages.LoadPackagesToDb().Returns(true);
 		IUserTaskMetadataDirectionApplier metadataDirectionApplier = Substitute.For<IUserTaskMetadataDirectionApplier>();
 		IUserTaskLookupSchemaResolver lookupSchemaResolver = Substitute.For<IUserTaskLookupSchemaResolver>();
 		EnvironmentSettings settings = new();
@@ -501,7 +497,6 @@ public class ModifyUserTaskParametersCommandTests : BaseCommandTests<ModifyUserT
 		IJsonConverter jsonConverter = Substitute.For<IJsonConverter>();
 		IFileSystem fileSystem = Substitute.For<IFileSystem>();
 		IFileDesignModePackages fileDesignModePackages = Substitute.For<IFileDesignModePackages>();
-		fileDesignModePackages.LoadPackagesToDb().Returns(true);
 		IUserTaskMetadataDirectionApplier metadataDirectionApplier = Substitute.For<IUserTaskMetadataDirectionApplier>();
 		IUserTaskLookupSchemaResolver lookupSchemaResolver = Substitute.For<IUserTaskLookupSchemaResolver>();
 		EnvironmentSettings settings = new() {

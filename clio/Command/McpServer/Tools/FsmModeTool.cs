@@ -56,7 +56,7 @@ public sealed class FsmModeTool(
 		BudgetPolicy = McpToolBudgetPolicy.ParentKillDefault,
 		RequiresClientRequests = McpToolClientRequests.None,
 		SharedFileResource = McpToolSharedFileResource.None)]
-	[Description("Turns FSM mode on or off for a registered Creatio environment. After changing FSM mode, run `compile-creatio` without `package-name` to perform a full compilation (`clio cc -e ENV_NAME --all`).")]
+	[Description("Turns FSM mode on or off for a registered Creatio environment. The two directions fail differently: `on` writes the configuration first and then exports the packages, so a non-zero exit code can mean FSM is already enabled while the export did not happen - re-check with `get-fsm-mode` and finish with `pkg-to-file-system` instead of calling this tool again; `off` imports the packages first and only then writes the configuration, so a non-zero exit code means the configuration was NOT changed and the environment is still in FSM mode. An environment that already reports FSM as off is not an error for `off`. After changing FSM mode, run `compile-creatio` without `package-name` to perform a full compilation (`clio cc -e ENV_NAME --all`).")]
 	public CommandExecutionResult SetFsmMode(
 		[Description("FSM mode parameters")] [Required] SetFsmModeArgs args)
 	{

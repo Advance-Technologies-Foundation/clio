@@ -3,6 +3,8 @@ description: pkg-to-db (LoadPackagesToDB) registers package definitions in the c
 applies-to:
   - clio/Package/FileDesignModePackages.cs
   - clio/Command/LoadPackagesToDbCommand.cs
+  - clio/Command/LoadPackagesToFileSystemCommand.cs
+  - clio/Command/TurnFsmCommand.cs
   - clio/tpl/workspace/AGENTS.md
 ticket: gh-952
 date: 2026-09-06
@@ -22,6 +24,14 @@ Until this record's change `LoadPackagesToStorage` returned `void` and reported 
 FSM disabled, a platform error, and a failed file-design-mode probe. Over MCP that meant `exit-code: 0`
 with `message-type: "None"` — both published failure signals of the `command-execution-result` contract
 negative — while nothing had been loaded.
+
+The loader now answers with `FileDesignModeLoadResult`, not a bool, because one caller must react to the
+three failure causes differently. `turn-fsm off` imports the packages BEFORE it writes the configuration;
+an environment that already reports file design mode as disabled had nothing to import and is that
+command's goal state, so it continues to `set-fsm-config` and exits 0, while a refused load or an
+unreadable file design mode state aborts with the configuration untouched. The enum's zero value is
+deliberately a failure (`LoadRefused`): NSubstitute returns `(TEnum)0` for an unstubbed call, and a zero
+meaning "completed" would push every test with an unstubbed loader onto the happy path without a word.
 
 **Why it is this way** — the two operations belong to different platform services, and the FSM import
 service has no data-installation switch to turn on. Reporting a row count from `pkg-to-db`, as GitHub

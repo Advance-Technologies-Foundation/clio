@@ -1,9 +1,10 @@
 # pkg-to-file-system
 
-Load packages into Creatio file system storage.
+## Description
 
+pkg-to-file-system - Export configuration-database packages to the file system
 
-## Usage
+## Synopsis
 
 ```bash
 clio pkg-to-file-system [options]
@@ -11,67 +12,53 @@ clio pkg-to-file-system [options]
 
 ## Description
 
-Load packages into Creatio file system storage.
+Exports the package definitions registered in the Creatio configuration
+database to the web application's file system. This is the reverse direction
+of pkg-to-db (2db) and the way an environment switched into file system
+development mode (FSM) gets its current configuration onto disk so it can be
+edited and put under version control.
 
-## Aliases
+Scope: the command writes package CONTENT - schemas, resources and package
+descriptors. Package DATA is not part of the export: a Data/<BindingName>
+folder is produced by create-data-binding (or by an installed package), not by
+this command.
 
-`2fs`, `tofs`
+The command requires file system development mode to be enabled on the
+environment. When FSM is disabled, when the FSM state cannot be read, or when
+the platform refuses the export, nothing is written and the command exits with
+code 1 and an error message.
 
 ## Examples
 
 ```bash
+Export the environment's packages to the file system
+(the aliases 2fs and tofs accept exactly the same arguments):
 clio pkg-to-file-system -e dev
+
+Switch an environment into file system mode and export in one step:
+clio turn-fsm -e dev on
 ```
 
-## Environment Options
+## Requirements
 
-```bash
--u, --uri <VALUE>
-Application uri
--p, --Password <VALUE>
-User password
--l, --Login <VALUE>
-User login (administrator permission required)
--i, --IsNetCore
-Use NetCore application
--e, --Environment <VALUE>
-Environment name
--m, --Maintainer <VALUE>
-Maintainer name
--c, --dev <VALUE>
-Developer mode state for environment
---WorkspacePathes <VALUE>
-Workspace path
--s, --Safe <VALUE>
-Safe action in this environment
---clientId <VALUE>
-OAuth client id
---clientSecret <VALUE>
-OAuth client secret
---authAppUri <VALUE>
-OAuth app URI
---silent
-Use default behavior without user interaction
---restart-environment
-Restart environment after execute command
---db-server-uri <VALUE>
-Db server uri
---db-user <VALUE>
-Database user
---db-password <VALUE>
-Database password
---backup-file <VALUE>
-Full path to backup file
---db-working-folder <VALUE>
-Folder visible to db server
---db-name <VALUE>
-Desired database name
---force
-Force restore
---callback-process <VALUE>
-Callback process name
---ep <VALUE>
-Path to the application root folder
-```
+File system development mode (FSM) must be enabled on the environment. Check it
+with:
+clio get-fsm-mode -e <ENVIRONMENT_NAME>
+
+## Notes
+
+- Aliases: 2fs, tofs
+- Exit code 0 means the platform reported the export as completed; any other
+outcome (FSM disabled, unreadable FSM state, platform error) exits with 1
+- turn-fsm on runs this export after it enables FSM, so a failure there leaves
+FSM enabled with the export unfinished; re-run this command once the web
+application has restarted
+
+## See Also
+
+pkg-to-db                   Import file-system package definitions into the database
+turn-fsm                    Turn file system mode on or off for an environment
+get-fsm-mode                Show whether file system development mode is enabled
+link-to-repository          Link environment packages to a local repository checkout
 
 - [Clio Command Reference](../../Commands.md#pkg-to-file-system)

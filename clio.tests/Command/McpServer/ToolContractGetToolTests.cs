@@ -285,6 +285,50 @@ public sealed class ToolContractGetToolTests {
 			because: "an agent must be pointed at the two fields the command execution envelope actually carries");
 	}
 
+	// Guards the blast radius of the issue #952 output-contract change: BuildOutputContract keys the
+	// advertised output shape on a McpToolSchemaCatalog lookup, so a regression in that lookup would flip
+	// EVERY registry-derived contract back to the tool-native-response default at once, silently. The
+	// reflection catalog enumerates every [McpServerTool] method in the assembly while the invoker
+	// registry additionally filters by feature toggle, so the catalog is a superset and no dispatchable
+	// tool may fall back.
+	[Test]
+	[Category("Unit")]
+	[Description("Every tool the invoker registry can dispatch resolves an output contract in the reflection catalog, so no registry-derived contract falls back to the tool-native-response default.")]
+	public void ToolContractGet_Should_ResolveOutputContractForEveryDispatchableTool() {
+		// Arrange
+		McpToolInvokerRegistry registry = BuildInvokerRegistry();
+
+		// Act
+		string[] unresolved = registry.ToolNames
+			.Where(toolName => !McpToolSchemaCatalog.TryGetOutputContract(toolName, out _))
+			.OrderBy(toolName => toolName, StringComparer.Ordinal)
+			.ToArray();
+
+		// Assert
+		registry.ToolNames.Should().NotBeEmpty(
+			because: "the assertion below is only meaningful when the registry actually discovered tools");
+		unresolved.Should().BeEmpty(
+			because: "a dispatchable tool whose name does not resolve in the reflection catalog silently " +
+			"reverts to advertising `success == false`, the exact defect GitHub issue #952 reported");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("An output contract lookup for a name that is not a registered MCP tool reports a miss, which is what makes the registry contract builder fall back to its defensive tool-native-response default.")]
+	public void ToolContractGet_Should_ReportOutputContractMiss_ForUnregisteredToolName() {
+		// Arrange
+		const string unregisteredToolName = "clio-tests-not-a-registered-mcp-tool";
+
+		// Act
+		bool resolved = McpToolSchemaCatalog.TryGetOutputContract(unregisteredToolName, out ToolOutputContract contract);
+
+		// Assert
+		resolved.Should().BeFalse(
+			because: "a name that no MCP tool declares must not resolve an output contract");
+		contract.Should().BeNull(
+			because: "the miss must leave no contract behind for the caller to publish as if it were reflected");
+	}
+
 	[Test]
 	[Category("Unit")]
 	[Description("The compile-creatio contract carries a create-business-process anti-pattern so an agent is told a process is interpreted and its NeedInstall flag is not a compile trigger (ENG-95706).")]

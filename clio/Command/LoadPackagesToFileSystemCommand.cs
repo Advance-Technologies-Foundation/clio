@@ -37,15 +37,26 @@ public class LoadPackagesToFileSystemCommand : Command<EnvironmentOptions>{
 
 	#region Methods: Public
 
-	public override int Execute(EnvironmentOptions options) {
+	public override int Execute(EnvironmentOptions options) =>
+		Load(options) == FileDesignModeLoadResult.Completed ? 0 : 1;
+
+	/// <summary>
+	/// Runs the same export as <see cref="Execute"/> but reports WHY nothing was exported, so a
+	/// composite caller can react to the individual causes. <c>turn-fsm on</c> uses it to tell the
+	/// caller that the configuration was written while the environment still reports file system
+	/// development mode as disabled.
+	/// </summary>
+	/// <param name="options">Environment options of the command.</param>
+	/// <returns>The outcome of the export.</returns>
+	public FileDesignModeLoadResult Load(EnvironmentOptions options) {
 		try {
-			bool loaded = _fileDesignModePackages.LoadPackagesToFileSystem();
+			FileDesignModeLoadResult result = _fileDesignModePackages.LoadPackagesToFileSystem();
 			_logger.WriteLine();
-			return loaded ? 0 : 1;
+			return result;
 		}
 		catch (Exception e) {
 			_logger.WriteError(e.GetReadableMessageException(Program.IsDebugMode));
-			return 1;
+			return FileDesignModeLoadResult.LoadRefused;
 		}
 	}
 

@@ -123,7 +123,7 @@ internal sealed class CommandHelpCatalog {
 			["publish-app"] = "Publish a workspace to a ZIP archive or hub folder",
 			["pack-nuget-pkg"] = "Pack a package into a NuGet artifact",
 			["pkg-to-db"] = "Load file-system package definitions into the configuration database (no package data)",
-			["pkg-to-file-system"] = "Load packages into Creatio file system storage",
+			["pkg-to-file-system"] = "Export configuration-database packages to the file system (no package data)",
 			["cfg-worspace"] = "Configure workspace package selection",
 			["compressApp"] = "Archive an application directory into ZIP",
 			["reg-web-app"] = "Register a Creatio environment",

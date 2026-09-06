@@ -57,7 +57,7 @@ public class Link4RepoCommandPreparationTests : BaseCommandTests<Link4RepoOption
 		_fileDesignModePackages = Substitute.For<IFileDesignModePackages>();
 		// Default to a successful load: link-to-repository now fails when the file-system load does not
 		// happen, so only the tests that assert that failure override this.
-		_fileDesignModePackages.LoadPackagesToFileSystem().Returns(true);
+		_fileDesignModePackages.LoadPackagesToFileSystem().Returns(FileDesignModeLoadResult.Completed);
 		_command = new TestablePrepLink4RepoCommand(
 			ConsoleLogger.Instance,
 			Substitute.For<IIisScanner>(),
@@ -142,7 +142,7 @@ public class Link4RepoCommandPreparationTests : BaseCommandTests<Link4RepoOption
 				Descriptor = new PackageDescriptor { Name = "PkgA", Maintainer = "MyCompany" }
 			});
 		_sysSettingsManager.GetSysSettingValueByCode("Maintainer").Returns("MyCompany");
-		_fileDesignModePackages.LoadPackagesToFileSystem().Returns(false);
+		_fileDesignModePackages.LoadPackagesToFileSystem().Returns(FileDesignModeLoadResult.LoadRefused);
 		Link4RepoOptions options = new() {
 			EnvPkgPath = envPkg,
 			RepoPath = repoPath,

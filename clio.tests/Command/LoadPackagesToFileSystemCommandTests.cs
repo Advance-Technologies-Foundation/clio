@@ -35,7 +35,7 @@ public class LoadPackagesToFileSystemCommandTests {
 	[Description("Execute should return 0 on success")]
 	public void Execute_ShouldReturnZero_WhenLoadSucceeds() {
 		// Arrange
-		_fileDesignModePackages.LoadPackagesToFileSystem().Returns(true);
+		_fileDesignModePackages.LoadPackagesToFileSystem().Returns(FileDesignModeLoadResult.Completed);
 
 		// Act
 		int result = _command.Execute(new LoadPackagesToFileSystemOptions());
@@ -49,7 +49,7 @@ public class LoadPackagesToFileSystemCommandTests {
 	[Description("Execute should return 1 when the loader reports a failed load instead of throwing")]
 	public void Execute_ShouldReturnOne_WhenLoadReportsFailure() {
 		// Arrange
-		_fileDesignModePackages.LoadPackagesToFileSystem().Returns(false);
+		_fileDesignModePackages.LoadPackagesToFileSystem().Returns(FileDesignModeLoadResult.LoadRefused);
 
 		// Act
 		int result = _command.Execute(new LoadPackagesToFileSystemOptions());

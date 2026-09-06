@@ -98,12 +98,12 @@ public class FileDesignModePackagesTests {
 		ArrangeFileDesignModeProbe(success: true, value: false);
 
 		// Act
-		bool result = _sut.LoadPackagesToDb();
+		FileDesignModeLoadResult result = _sut.LoadPackagesToDb();
 
 		// Assert
-		result.Should().BeFalse(
+		result.Should().Be(FileDesignModeLoadResult.FileDesignModeDisabled,
 			because: "an environment with disabled file design mode cannot load packages, and the caller must " +
-			"be able to turn that into a non-zero exit code");
+			"be able to tell that state apart from a load the platform refused");
 		_logger.Received(1).WriteError(Arg.Is<string>(message => message.Contains("disabled file design mode")));
 		_applicationClient.DidNotReceive().ExecutePostRequest(LoadPackagesToDbUrl, Arg.Any<string>(),
 			Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>());
@@ -117,10 +117,10 @@ public class FileDesignModePackagesTests {
 		ArrangeLoadResponse(LoadPackagesToDbUrl, success: false);
 
 		// Act
-		bool result = _sut.LoadPackagesToDb();
+		FileDesignModeLoadResult result = _sut.LoadPackagesToDb();
 
 		// Assert
-		result.Should().BeFalse(
+		result.Should().Be(FileDesignModeLoadResult.LoadRefused,
 			because: "a load the platform refused did not happen and must not be reported as a completed load");
 		_logger.Received(1).WriteError(Arg.Is<string>(message => message.Contains("platform refused the load")));
 	}
@@ -132,12 +132,12 @@ public class FileDesignModePackagesTests {
 		ArrangeFileDesignModeProbe(success: false, value: false);
 
 		// Act
-		bool result = _sut.LoadPackagesToDb();
+		FileDesignModeLoadResult result = _sut.LoadPackagesToDb();
 
 		// Assert
-		result.Should().BeFalse(
+		result.Should().Be(FileDesignModeLoadResult.FileDesignModeUnknown,
 			because: "an unreadable file design mode state leaves the load unperformed and must reach the caller " +
-			"as a failure");
+			"as its own failure rather than as a known disabled state");
 		_logger.Received(1).WriteError(Arg.Is<string>(message =>
 			message.Contains("Get file design mode ended with error") && message.Contains("probe refused")));
 		_logger.Received(1).WriteError(Arg.Is<string>(message =>
@@ -155,10 +155,11 @@ public class FileDesignModePackagesTests {
 		ArrangeLoadResponse(LoadPackagesToDbUrl, success: true);
 
 		// Act
-		bool result = _sut.LoadPackagesToDb();
+		FileDesignModeLoadResult result = _sut.LoadPackagesToDb();
 
 		// Assert
-		result.Should().BeTrue(because: "a completed load must be reported as a success");
+		result.Should().Be(FileDesignModeLoadResult.Completed,
+			because: "a completed load must be reported as a success");
 		_logger.DidNotReceive().WriteError(Arg.Any<string>());
 	}
 
@@ -169,10 +170,10 @@ public class FileDesignModePackagesTests {
 		ArrangeFileDesignModeProbe(success: true, value: false);
 
 		// Act
-		bool result = _sut.LoadPackagesToFileSystem();
+		FileDesignModeLoadResult result = _sut.LoadPackagesToFileSystem();
 
 		// Assert
-		result.Should().BeFalse(
+		result.Should().Be(FileDesignModeLoadResult.FileDesignModeDisabled,
 			because: "the file system export shares the failure reporting of the database import");
 		_logger.Received(1).WriteError(Arg.Is<string>(message =>
 			message.Contains("file system") && message.Contains("disabled file design mode")));
@@ -188,10 +189,11 @@ public class FileDesignModePackagesTests {
 		ArrangeLoadResponse(LoadPackagesToFileSystemUrl, success: true);
 
 		// Act
-		bool result = _sut.LoadPackagesToFileSystem();
+		FileDesignModeLoadResult result = _sut.LoadPackagesToFileSystem();
 
 		// Assert
-		result.Should().BeTrue(because: "a completed export must be reported as a success");
+		result.Should().Be(FileDesignModeLoadResult.Completed,
+			because: "a completed export must be reported as a success");
 		_logger.DidNotReceive().WriteError(Arg.Any<string>());
 	}
 
