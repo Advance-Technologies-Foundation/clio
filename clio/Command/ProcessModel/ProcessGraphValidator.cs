@@ -202,7 +202,10 @@ public sealed class ProcessGraphValidator : IProcessGraphValidator {
 	// contains the shape they rejected. This one it does not. Of 1711 schemas, 736 sources carry a conditional
 	// flow beside an unconditional one — 310 of them not gateways — and ZERO carry two unconditional ones,
 	// because connection-utils.ts turns the second connection into a conditional rather than drawing it plain.
-	// CrtProcessBuilder refuses to build it as of 1.4.0.64, so a warning here would promise a build that fails.
+	// CrtProcessBuilder refuses to build it as of 1.4.0.64, so a warning here would promise a build that
+	// fails. Off a GATEWAY the shape cannot arise at all: the first unconditional flow becomes the
+	// default and a second is refused outright, which is why this rule reads outs[] rather than the
+	// element's kind.
 	private static void CheckStrayBranchBesideACondition(ProcessGraphNode node, List<ProcessGraphEdge> outs,
 			List<ProcessGraphFinding> findings) {
 		if (!outs.Any(o => o.FlowKind == ProcessFlowKind.Conditional)) {

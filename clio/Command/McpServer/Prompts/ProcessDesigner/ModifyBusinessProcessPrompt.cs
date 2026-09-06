@@ -41,11 +41,11 @@ public static class ModifyBusinessProcessPrompt {
 		 and every `[#…#]` parameter reference in it must resolve in that process. A condition on a DEFAULT branch
 		 is refused. The clear-condition operation is `setFlow`, which re-kinds in place —
 		 same UId, same position — and REFUSES the one edit that reshapes the process silently: dropping the LAST
-		 conditional flow off an element that still has other outgoing flows. WHICH kind you ask for depends on
-		 the source: `kind:"sequence"` off an ordinary element, but off a deciding GATEWAY a plain flow never
-		 survives — it is refused when a conditional sibling exists and normalised to `default` when it is the
-		 gateway's only outgoing flow, because the designer cannot draw one there either. Off a gateway, clear
-		 with `kind:"default"`, and only where the gateway has no default yet. A conditional flow may also have
+		 conditional flow off an element that still has other outgoing flows. WHICH kind you get depends on
+		 the source: `kind:"sequence"` stays plain off an ordinary element, but off a deciding GATEWAY it is
+		 normalised to `default` — with a notice — because the designer can draw no other unconditional branch
+		 there. That is REFUSED only when the gateway already has a default, and re-kinding the gateway's own
+		 default to `sequence` is a silent no-op that leaves it the default. A conditional flow may also have
 		 at most ONE outgoing sibling carrying no condition: the synthesized gateway drops one unconditional flow
 		 and runs the rest, so a second one starts beside whichever branch the condition chose. `removeFlow` + `addFlow` is guarded
 		 by nothing and is NOT a substitute: if it was the last conditional flow off that element the platform

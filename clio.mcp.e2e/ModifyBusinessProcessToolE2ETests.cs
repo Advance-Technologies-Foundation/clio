@@ -101,10 +101,10 @@ public sealed class ModifyBusinessProcessToolE2ETests {
 	}
 
 	[Test]
-	[Description("Off a deciding GATEWAY, setFlow kind sequence is refused whenever a conditional sibling exists - the designer cannot draw a plain flow out of a gateway either. This is the fork the tool description and the guidance now state, and it is asserted here because the previous version of the test above assumed the opposite and could never have passed.")]
+	[Description("Off a deciding GATEWAY, setFlow kind sequence is refused when the gateway ALREADY has a default branch - the flow has nothing left to normalise into. A gateway with no default normalises the request instead, and re-kinding the gateway's own default is a silent no-op, so this is the one shape that refuses. Asserted here because the first version of the test above assumed a refusal that does not happen and could never have passed.")]
 	[AllureTag(ToolName)]
-	[AllureName("modify-business-process refuses a plain flow out of a gateway that has a conditional branch")]
-	public async Task ModifyBusinessProcess_Should_RefuseAPlainFlowOutOfADecidingGateway() {
+	[AllureName("modify-business-process refuses a second unconditional branch out of a gateway")]
+	public async Task ModifyBusinessProcess_Should_RefuseASecondUnconditionalBranchOutOfAGateway() {
 		// Arrange — a gateway with a default branch and a conditional one.
 		await using ArrangeContext context = await ArrangeAsync(requireReachableEnvironment: true);
 		string processName = $"UsrClioBpGatewayPlainE2e{Guid.NewGuid():N}";
@@ -113,13 +113,13 @@ public sealed class ModifyBusinessProcessToolE2ETests {
 			["descriptor"] = BuildTwoBranchDescriptor(processName)
 		});
 
-		// Act — ask for the kind the designer has no palette entry for.
+		// Act — clear the condition off the branch whose gateway already has a default.
 		CallToolResult callResult = await CallToolAsync(context, ToolName, new Dictionary<string, object?> {
 			["environment-name"] = context.EnvironmentName,
 			["process-name"] = processName,
 			["operations"] = """
 				[
-				  { "op": "setFlow", "source": "Decide", "target": "EndA", "kind": "sequence" }
+				  { "op": "setFlow", "source": "Decide", "target": "EndB", "kind": "sequence" }
 				]
 				"""
 		});
@@ -132,7 +132,7 @@ public sealed class ModifyBusinessProcessToolE2ETests {
 			new Dictionary<string, object?> {
 				["environment-name"] = context.EnvironmentName, ["process-name"] = processName
 			}));
-		described.Flows.Single(f => f.Source == "Decide" && f.Target == "EndA").Kind.Should().Be("default",
+		described.Flows.Single(f => f.Source == "Decide" && f.Target == "EndB").Kind.Should().Be("conditional",
 			because: "a refused operation must leave the flow exactly as it was");
 	}
 
