@@ -64,20 +64,20 @@ public sealed record GenerateProcessModelArgs(
 	[property: Required]
 	string Code,
 
-	[property: JsonPropertyName("destination-path")]
-	[property: Description("Optional destination folder or explicit .cs file path for the generated process model. Preserves current command behavior when omitted.")]
-	string? DestinationPath,
-
-	[property: JsonPropertyName("namespace")]
-	[property: Description("Optional namespace for the generated process model class")]
-	string? Namespace,
-
-	[property: JsonPropertyName("culture")]
-	[property: Description("Optional culture used to resolve localized descriptions")]
-	string? Culture,
-
 	[property: JsonPropertyName("environment-name")]
 	[property: Description(McpToolDescriptions.EnvironmentName)]
 	[property: Required]
-	string EnvironmentName
+	string EnvironmentName,
+
+	[property: JsonPropertyName("destination-path")]
+	[property: Description("Optional destination folder or explicit .cs file path for the generated process model. Preserves current command behavior when omitted.")]
+	string? DestinationPath = null,
+
+	[property: JsonPropertyName("namespace")]
+	[property: Description("Optional namespace for the generated process model class")]
+	string? Namespace = null,
+
+	[property: JsonPropertyName("culture")]
+	[property: Description("Optional culture used to resolve localized descriptions")]
+	string? Culture = null
 );

@@ -216,7 +216,8 @@ public sealed class EntitySchemaToolTests {
 
 		// Act
 		EntitySchemaPropertiesInfo result = tool.GetEntitySchemaProperties(
-			new GetEntitySchemaPropertiesArgs("dev", "UsrPkg", "UsrVehicle"));
+			new GetEntitySchemaPropertiesArgs(
+				EnvironmentName: "dev", SchemaName: "UsrVehicle", PackageName: "UsrPkg"));
 
 		// Assert
 		result.Should().BeEquivalentTo(expectedResult,
@@ -245,7 +246,8 @@ public sealed class EntitySchemaToolTests {
 
 		// Act
 		// Omitting package-name must flow through as a null package so the command returns the merged schema.
-		tool.GetEntitySchemaProperties(new GetEntitySchemaPropertiesArgs("dev", null, "Account"));
+		tool.GetEntitySchemaProperties(new GetEntitySchemaPropertiesArgs(
+			EnvironmentName: "dev", SchemaName: "Account", PackageName: null));
 
 		// Assert
 		commandResolver.Received(1).Resolve<GetEntitySchemaPropertiesCommand>(Arg.Is<GetEntitySchemaPropertiesOptions>(

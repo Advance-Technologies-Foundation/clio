@@ -45,7 +45,21 @@ public sealed class McpProfileGatingTests
 	// tail dropped 2 more single-method schemas, bringing the measured payload down to 30233 bytes.
 	// Issue #1183 adds the semantic merge boundary to the default resident surface. The ratchet remains
 	// the deliberate guard against later default-surface growth.
-	private const int MaxLazyToolsSerializedBytes = 32 * 1024;
+	// Issue #965 re-baselined it to 32*1024 + 256 = 33024: master measured 32741 bytes against the previous
+	// 32*1024 ceiling, i.e. 27 bytes of headroom, so ANY resident schema change was already blocked — that
+	// exhaustion is pre-existing, not caused by this change. Relaxing the 13 genuinely-optional resident
+	// record parameters (list-pages, get-page, get-entity-schema-properties) costs `,"default":null` —
+	// 15 bytes each, emitted by the SDK for every defaulted parameter — which outweighs the 163 bytes of
+	// `required` entries the same change removes; measured 32773 after. The ceiling is therefore pinned to
+	// the measured size rounded up to the next 256 bytes rather than the next whole kilobyte: rounding to
+	// 33*1024 would hand the resident surface ~990 bytes of silent room and stop the ratchet ratcheting,
+	// which is the only thing this constant is for. 251 bytes of headroom is deliberate — enough that a
+	// one-word description edit does not fail the build, small enough that the next real surface addition
+	// still forces the budget decision. The 15-byte annotation could be stripped, but only by mirroring the
+	// SDK's per-method DI-factory registration (WithTools(IEnumerable<Type>) exposes no
+	// SchemaCreateOptions); see
+	// docs/knowledge/McpServer/relaxing-a-record-parameter-costs-default-null-in-tools-list.md.
+	private const int MaxLazyToolsSerializedBytes = (32 * 1024) + 256;
 
 	private static Assembly ClioAssembly => typeof(McpFeatureToggleFilter).Assembly;
 

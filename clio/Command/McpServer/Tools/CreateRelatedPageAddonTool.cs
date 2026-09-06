@@ -107,23 +107,23 @@ public sealed record CreateRelatedPageAddonArgs(
 
 	[property: JsonPropertyName("type-column-uid")]
 	[property: Description("Optional UId of the type column that drives type-specific page sets. Omit for a single page set.")]
-	string? TypeColumnUId,
+	string? TypeColumnUId = null,
 
 	[property: JsonPropertyName("environment-name")]
 	[property: Description("Registered clio environment name, e.g. 'local'. Preferred for normal MCP work.")]
-	string? EnvironmentName,
+	string? EnvironmentName = null,
 
 	[property: JsonPropertyName("uri")]
 	[property: Description("Direct Creatio URL. Use only when bootstrap is broken or before the environment can be registered through reg-web-app.")]
-	string? Uri,
+	string? Uri = null,
 
 	[property: JsonPropertyName("login")]
 	[property: Description("Direct Creatio login paired with `uri`. Emergency fallback only.")]
-	string? Login,
+	string? Login = null,
 
 	[property: JsonPropertyName("password")]
 	[property: Description("Direct Creatio password paired with `uri`. Emergency fallback only.")]
-	string? Password,
+	string? Password = null,
 
 	[property: JsonPropertyName("schema-type")]
 	[property: Description("Target UI: 'web' (RelatedPage add-on, default) or 'mobile' (MobileRelatedPage add-on — the page opened for a record in the Creatio Mobile app). For 'mobile' pass a single is-default page with no role and no type-column-value (the object's default mobile edit page); roles, record types and portal audiences are web-only concepts.")]
@@ -133,27 +133,27 @@ public sealed record CreateRelatedPageAddonArgs(
 public sealed record RelatedPageArg(
 	[property: JsonPropertyName("page-schema-name")]
 	[property: Description("Freedom UI page schema name, e.g. 'UsrDeliveryItemFormPage'. Required UNLESS page-schema-uid is supplied. When both are present, page-schema-uid wins and the name is ignored.")]
-	string PageSchemaName,
+	string? PageSchemaName = null,
 
 	[property: JsonPropertyName("is-default")]
 	[property: Description("When true, this page opens by default when a record is opened. Default false.")]
-	bool? IsDefault,
+	bool? IsDefault = null,
 
 	[property: JsonPropertyName("is-add")]
 	[property: Description("When true, this page is used when adding a new record. Default false.")]
-	bool? IsAdd,
+	bool? IsAdd = null,
 
 	[property: JsonPropertyName("is-ssp-default")]
 	[property: Description("Low-level RelatedPagesMetadata IsSspDefault flag; leave false. This is NOT how the portal audience is set — to target portal (self-service) users, add a page entry with role-name 'All external users'. Default false.")]
-	bool? IsSspDefault,
+	bool? IsSspDefault = null,
 
 	[property: JsonPropertyName("role")]
 	[property: Description("Optional audience role UId. Only two audiences are supported: 'All employees' (a29a3ba5-4b0d-de11-9a51-005056c00008) and the portal 'All external users' (720b771c-e7a7-4f31-9cfb-52cd21c3739f); any other role UId is rejected. Omit for all users (the general audience). Prefer role-name.")]
-	string? Role,
+	string? Role = null,
 
 	[property: JsonPropertyName("type-column-value")]
 	[property: Description("Optional type-column value (used with type-column-uid) for a type-specific page set.")]
-	string? TypeColumnValue,
+	string? TypeColumnValue = null,
 
 	[property: JsonPropertyName("role-name")]
 	[property: Description("Optional audience role NAME (alternative to role). Only 'All external users' (portal/self-service) and 'All employees' (internal) are supported — any other role name is rejected, because the Interface Designer offers no other audience. Omit for all users (the general audience).")]

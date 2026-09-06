@@ -59,21 +59,21 @@ public sealed class PageTemplatesListTool(
 public sealed record PageTemplatesListArgs(
 	[property: JsonPropertyName("schema-type")]
 	[property: Description("Optional schema-type filter: 'web' (Freedom UI page) or 'mobile' (mobile page). Defaults to all.")]
-	string? SchemaType,
+	string? SchemaType = null,
 
 	[property: JsonPropertyName("environment-name")]
 	[property: Description(McpToolDescriptions.EnvironmentName)]
-	string? EnvironmentName,
+	string? EnvironmentName = null,
 
 	[property: JsonPropertyName("uri")]
 	[property: Description(McpToolDescriptions.Uri)]
-	string? Uri,
+	string? Uri = null,
 
 	[property: JsonPropertyName("login")]
 	[property: Description(McpToolDescriptions.Login)]
-	string? Login,
+	string? Login = null,
 
 	[property: JsonPropertyName("password")]
 	[property: Description(McpToolDescriptions.Password)]
-	string? Password
+	string? Password = null
 );

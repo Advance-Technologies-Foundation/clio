@@ -64,29 +64,29 @@ public sealed record SqlSchemaUpdateArgs(
 
 	[property: JsonPropertyName("body")]
 	[property: Description("Full SQL body to save as the schema body. Optional when body-file is provided.")]
-	string? Body,
+	string? Body = null,
 
 	[property: JsonPropertyName("body-file")]
 	[property: Description("Absolute path to a file whose contents are used as the new schema body. Recommended for large bodies. Takes precedence over body when both are provided.")]
-	string? BodyFile,
+	string? BodyFile = null,
 
 	[property: JsonPropertyName("dry-run")]
 	[property: Description("If true, validate and resolve the schema without saving. Default: false")]
-	bool? DryRun,
+	bool? DryRun = null,
 
 	[property: JsonPropertyName("environment-name")]
 	[property: Description(McpToolDescriptions.EnvironmentName)]
-	string? EnvironmentName,
+	string? EnvironmentName = null,
 
 	[property: JsonPropertyName("uri")]
 	[property: Description(McpToolDescriptions.Uri)]
-	string? Uri,
+	string? Uri = null,
 
 	[property: JsonPropertyName("login")]
 	[property: Description(McpToolDescriptions.Login)]
-	string? Login,
+	string? Login = null,
 
 	[property: JsonPropertyName("password")]
 	[property: Description(McpToolDescriptions.Password)]
-	string? Password
+	string? Password = null
 );

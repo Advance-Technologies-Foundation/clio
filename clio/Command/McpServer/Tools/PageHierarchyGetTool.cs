@@ -75,29 +75,29 @@ public sealed record GetPageHierarchyArgs(
 
 	[property: JsonPropertyName("metadata-only")]
 	[property: Description("Optional. When true, omit each schema's raw body and return chain metadata only.")]
-	bool? MetadataOnly,
+	bool? MetadataOnly = null,
 
 	[property: JsonPropertyName("offset")]
 	[property: Description("Optional. Zero-based index of the first chain entry to return (root first). Default 0.")]
-	int? Offset,
+	int? Offset = null,
 
 	[property: JsonPropertyName("limit")]
 	[property: Description("Optional. Maximum number of chain entries to return; 0/omitted returns the whole chain from offset.")]
-	int? Limit,
+	int? Limit = null,
 
 	[property: JsonPropertyName("environment-name")]
 	[property: Description(McpToolDescriptions.EnvironmentName)]
-	string? EnvironmentName,
+	string? EnvironmentName = null,
 
 	[property: JsonPropertyName("uri")]
 	[property: Description(McpToolDescriptions.Uri)]
-	string? Uri,
+	string? Uri = null,
 
 	[property: JsonPropertyName("login")]
 	[property: Description(McpToolDescriptions.Login)]
-	string? Login,
+	string? Login = null,
 
 	[property: JsonPropertyName("password")]
 	[property: Description(McpToolDescriptions.Password)]
-	string? Password
+	string? Password = null
 );

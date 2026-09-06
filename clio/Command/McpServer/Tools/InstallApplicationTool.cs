@@ -57,16 +57,16 @@ public sealed record InstallApplicationArgs(
 	[property: Required]
 	string Name,
 
-	[property: JsonPropertyName("report-path")]
-	[property: Description("Optional local path where the install report should be written")]
-	string? ReportPath,
-
-	[property: JsonPropertyName("check-compilation-errors")]
-	[property: Description("Optional flag that enables compilation-error checking during installation")]
-	bool? CheckCompilationErrors,
-
 	[property: JsonPropertyName("environment-name")]
 	[property: Description(McpToolDescriptions.EnvironmentName)]
 	[property: Required]
-	string EnvironmentName
+	string EnvironmentName,
+
+	[property: JsonPropertyName("report-path")]
+	[property: Description("Optional local path where the install report should be written")]
+	string? ReportPath = null,
+
+	[property: JsonPropertyName("check-compilation-errors")]
+	[property: Description("Optional flag that enables compilation-error checking during installation")]
+	bool? CheckCompilationErrors = null
 );
