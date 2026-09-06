@@ -417,13 +417,21 @@ public sealed class ProcessGraphValidator : IProcessGraphValidator {
 		// it could not fail: with ONE outgoing flow, every branch that gets behind the gateway came through
 		// that same flow, so the divergence test below always finds them overlapping. The filter was a fast
 		// path no test could distinguish from the check it guarded, which is the shape of code that rots.
-		HashSet<string> orGateways = nodes
-			.Where(n => TypeOf(n) is EventType.ExclusiveGateway or EventType.InclusiveGateway)
+		// An ELEMENT that branches on a condition belongs in this set too, and leaving it out was the rule's
+		// blind spot: the platform synthesizes an exclusive gateway for any element with a conditional
+		// outgoing flow, and that synthesized gateway chooses exactly as a declared one does. So
+		// `A -conditional-> B`, `A -conditional-> C`, both into a parallel join, hangs in Running forever and
+		// raised nothing, because A is a userTask and the set held only declared gateways. The edge-level
+		// test below is unchanged - what widened is WHICH sources it is applied to.
+		HashSet<string> choosingElements = nodes
+			.Where(n => TypeOf(n) is EventType.ExclusiveGateway or EventType.InclusiveGateway
+				|| (outgoing[n.Name].Count > 1
+					&& outgoing[n.Name].Any(o => o.FlowKind == ProcessFlowKind.Conditional)))
 			.Select(n => n.Name)
 			.ToHashSet();
 		foreach (ProcessGraphNode node in nodes.Where(n => TypeOf(n) == EventType.ParallelGateway)) {
 			List<ProcessGraphEdge> ins = incoming[node.Name];
-			if (ins.Count < 2 || orGateways.Count == 0) {
+			if (ins.Count < 2 || choosingElements.Count == 0) {
 				continue;
 			}
 			// EDGES, not nodes, and that is the whole rule. Sharing an or-gateway ANCESTOR proves nothing:
@@ -441,11 +449,11 @@ public sealed class ProcessGraphValidator : IProcessGraphValidator {
 			List<HashSet<ProcessGraphEdge>> perBranch = ins
 				.Select(edge => TraverseBackwardEdges(edge, incoming))
 				.ToList();
-			string split = orGateways.FirstOrDefault(gateway => DivergesIntoTwoBranches(gateway, perBranch));
+			string split = choosingElements.FirstOrDefault(gateway => DivergesIntoTwoBranches(gateway, perBranch));
 			if (split != null) {
 				findings.Add(new ProcessGraphFinding(ProcessGraphSeverity.Warning, "R8",
-					$"Parallel join '{node.Name}' waits for every incoming branch, but two of them leave the "
-					+ $"gateway '{split}' by different flows, and that gateway takes only one. If that is the "
+					$"Parallel join '{node.Name}' waits for every incoming branch, but two of them leave "
+					+ $"'{split}' by different flows, and that element takes only one of them. If that is the "
 					+ "shape you meant, the instance will hang in Running with no error - use an exclusive "
 					+ "gateway to merge instead.",
 					node.Name));

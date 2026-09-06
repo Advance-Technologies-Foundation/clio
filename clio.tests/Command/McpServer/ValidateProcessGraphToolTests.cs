@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Reflection;
@@ -542,8 +542,11 @@ public sealed class ValidateProcessGraphToolTests {
 
 	[Test]
 	[Category("Unit")]
-	[Description("R13: a conditional flow from a start event surfaces an error (proves the 'conditional' flow-kind was parsed).")]
-	public void Validate_ShouldSurfaceR13Error_WhenConditionalFlowFromStart() {
+	[Description("R13: a conditional flow from a start event surfaces a WARNING (proves the 'conditional' "
+		+ "flow-kind was parsed - which is this test's purpose, and it does not depend on the severity). The "
+		+ "severity changed: four shipped conditional flows leave an event and run, so an error told an agent "
+		+ "the platform's own content is invalid.")]
+	public void Validate_ShouldSurfaceR13Warning_WhenConditionalFlowFromStart() {
 		// Arrange
 		List<ProcessGraphNodeArg> nodes = [N("s", "startEvent"), N("a", "activityUserTask"), N("e", "endEvent")];
 		List<ProcessGraphEdgeArg> edges = [E("s", "a", "conditional"), E("a", "e")];
@@ -552,8 +555,10 @@ public sealed class ValidateProcessGraphToolTests {
 		ValidateProcessGraphResponse response = Validate(nodes, edges);
 
 		// Assert
-		response.Findings.Should().Contain(f => f.RuleId == "R13" && f.Severity == "error",
-			because: "a conditional flow may originate only from a gateway or activity (R13)");
+		response.Findings.Should().Contain(f => f.RuleId == "R13" && f.Severity == "warning",
+			because: "the flow-kind reached the validator - a dropped kind yields no R13 finding at all");
+		response.Findings.Should().NotContain(f => f.RuleId == "R13" && f.Severity == "error",
+			because: "the source-role clause is advisory now, and the surfaced severity must follow it");
 	}
 
 	[Test]

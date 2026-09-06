@@ -478,4 +478,57 @@ public sealed class ProcessGraphValidatorTests {
 		result.HasErrors.Should().BeTrue(
 			because: "it is still an error - what changed is that the caller is told rather than thrown at");
 	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("R8 sees the SYNTHESIZED gateway. An element with two conditional outgoing flows chooses one "
+		+ "of them exactly as a declared exclusive gateway does, so a parallel join fed by both hangs in "
+		+ "Running forever - and raised nothing while the rule looked only at declared gateway TYPES.")]
+	public void Validate_ShouldReturnR8Warning_WhenAParallelJoinIsFedByAConditionalSplitOnAnActivity() {
+		// Arrange
+		List<ProcessGraphNode> nodes = [
+			Node("s", "startEvent"), Node("a", "activityUserTask"),
+			Node("b", "activityUserTask"), Node("c", "activityUserTask"),
+			Node("join", "parallelGateway"), Node("e", "endEvent")
+		];
+		List<ProcessGraphEdge> edges = [
+			Seq("s", "a"),
+			new("a", "b", ProcessFlowKind.Conditional, "1 > 0"),
+			new("a", "c", ProcessFlowKind.Conditional, "2 > 0"),
+			Seq("b", "join"), Seq("c", "join"), Seq("join", "e")
+		];
+
+		// Act
+		ProcessGraphValidationResult result = Validate(nodes, edges);
+
+		// Assert
+		result.Findings.Should().Contain(f => f.RuleId == "R8",
+			because: "the platform synthesizes an exclusive gateway on 'a', so only one branch ever reaches "
+				+ "the join and it waits for both");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("The same join fed by two PLAIN flows off one element is a genuine AND fork and must stay "
+		+ "silent. Both branches were observed running on a stand, so the join really does receive both.")]
+	public void Validate_ShouldNotReturnR8_WhenAParallelJoinIsFedByAPlainSplit() {
+		// Arrange
+		List<ProcessGraphNode> nodes = [
+			Node("s", "startEvent"), Node("a", "activityUserTask"),
+			Node("b", "activityUserTask"), Node("c", "activityUserTask"),
+			Node("join", "parallelGateway"), Node("e", "endEvent")
+		];
+		List<ProcessGraphEdge> edges = [
+			Seq("s", "a"), Seq("a", "b"), Seq("a", "c"),
+			Seq("b", "join"), Seq("c", "join"), Seq("join", "e")
+		];
+
+		// Act
+		ProcessGraphValidationResult result = Validate(nodes, edges);
+
+		// Assert
+		result.Findings.Should().NotContain(f => f.RuleId == "R8",
+			because: "an element with no conditional outgoing flow gets no synthesized gateway - every branch "
+				+ "is taken, so the join receives both tokens and nothing hangs");
+	}
 }

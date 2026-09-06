@@ -81,7 +81,19 @@ short branch's connector must span lane 0 across the columns the long branch occ
 satisfies all three. §5 puts connector routing out of scope (`AutoPolyline`, no `CI10` points), so the
 engine has no third lever.
 
-### The options, for the owner
+### The options, for the owner — DECIDED: option 2
+
+> **Resolved.** The owner chose option 2 on 2026-09-06 and the engine implements it:
+> `arrivingLanes` records whether each inbound branch skipped columns, and `PreferredLane` returns a
+> skipping branch's lane instead of the mean. The paragraph below this list is kept as the record of
+> what the code did BEFORE that decision — it no longer describes the shipped behaviour.
+>
+> Pinned by `Apply_UnequalSplitWithTheLongBranchFirst_PutsTheMergeOnTheSkippingBranchsLane` (a
+> two-element arm) and `Apply_UnequalSplitWithAOneElementLongBranch_StillPutsTheMergeOnTheSkipping​BranchsLane`
+> (a one-element arm). The second exists because the first cannot fail it: turning
+> `sourceColumn + 1 <= lastSpanColumn` into `<` reverts the whole decision on the one-element arm — the
+> shape §4 calls the norm — and the two-element test stays green. Confirmed RED under that mutation.
+
 
 1. **Accept and document.** Case B's connector may overlap; the guarantee this ticket makes is
    *no two shapes overlap*, not *no connector crosses a shape*. Cheapest, and honest — but §4's
@@ -95,8 +107,8 @@ engine has no third lever.
    top-to-bottom would stop equalling evaluation order, which is the one thing making branch precedence
    visible at all. Not recommended.
 
-Until this is decided the code implements §4 as written, and `PreferredLane`'s documentation records
-the limit in the same words.
+~~Until this is decided the code implements §4 as written, and `PreferredLane`'s documentation records
+the limit in the same words.~~ — superseded by the decision recorded above; the code implements option 2.
 
 ---
 

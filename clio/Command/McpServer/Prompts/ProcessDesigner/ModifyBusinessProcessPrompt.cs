@@ -1,4 +1,4 @@
-using System.ComponentModel;
+﻿using System.ComponentModel;
 using System.ComponentModel.DataAnnotations;
 using ModelContextProtocol.Server;
 
@@ -39,9 +39,15 @@ public static class ModifyBusinessProcessPrompt {
 		 the order their flows were added and the first true one wins. No gateway is needed — the platform
 		 synthesizes one for a conditional flow whose source is an activity. The condition must be a bool (an int is refused; the interpreted engine does not coerce)
 		 and every `[#…#]` parameter reference in it must resolve in that process. A condition on a DEFAULT branch
-		 is refused. The clear-condition operation is `setFlow` with `kind:"sequence"`, which re-kinds in place —
+		 is refused. The clear-condition operation is `setFlow`, which re-kinds in place —
 		 same UId, same position — and REFUSES the one edit that reshapes the process silently: dropping the LAST
-		 conditional flow off an element that still has other outgoing flows. `removeFlow` + `addFlow` is guarded
+		 conditional flow off an element that still has other outgoing flows. WHICH kind you ask for depends on
+		 the source: `kind:"sequence"` off an ordinary element, but off a deciding GATEWAY a plain flow never
+		 survives — it is refused when a conditional sibling exists and normalised to `default` when it is the
+		 gateway's only outgoing flow, because the designer cannot draw one there either. Off a gateway, clear
+		 with `kind:"default"`, and only where the gateway has no default yet. A conditional flow may also have
+		 at most ONE outgoing sibling carrying no condition: the synthesized gateway drops one unconditional flow
+		 and runs the rest, so a second one starts beside whichever branch the condition chose. `removeFlow` + `addFlow` is guarded
 		 by nothing and is NOT a substitute: if it was the last conditional flow off that element the platform
 		 stops synthesizing the gateway, `describe` reports `kind:"sequence"` on both flows — reading exactly
 		 like a cleared condition — and the replacement lands LAST, which, since precedence IS insertion order,
