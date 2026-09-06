@@ -99,10 +99,27 @@ environment recorded; that comparison is the entire delivery mechanism. So:
   environment's recorded version and will not move it backwards without `--force`. So a rebundle that
   lowers the version, or an older clio pointed at a stand that already carries a newer package, is turned
   away on every such environment;
-- **raising it costs nothing to maintain.** Nothing on the clio side has to be kept in step with it. That
-  used to be false: the version was also the `[RequiresPackage]` floor, so raising it forced a refusal on
-  every environment until upgraded, which is why the old guidance reserved it for contract changes. Both
-  the floor and that reason are gone.
+- **raising it costs nothing to MAINTAIN, and that is not the same as costing nothing.** Nothing on the
+  clio side has to be kept in step with it — no constant, no literal. What used to be true and is
+  half-true again is the delivery cost: the version was once also the `[RequiresPackage]` floor, and the
+  floor is gone, but `IBundledPackageConvergence` reintroduced the same refusal with a narrower blast
+  radius. `RequiredPackageChecker` **throws** on a convergence refusal (`PackageRequirementException`),
+  after the requirement gate has already passed — so an environment below the bundled version cannot run
+  any `[RequiresPackage]`-gated command until it reinstalls, and for a source-shipped package like
+  `CrtProcessBuilder` that reinstall is a configuration build plus an instance restart, measured in
+  minutes. Ungated commands are unaffected, which is the whole of the difference from the old floor.
+
+  **So rebundle when the archive's BEHAVIOUR changes, and once more at the end for everything else.**
+  A comment, a docblock or a renamed local still moves the archive bytes (this package ships as SOURCE),
+  and the provenance sentence in the commit message only has to be true at the cut — so batching those
+  into the last rebundle before the pull request produces the same archive, the same true sentence, and
+  one recompile instead of one per review round.
+
+  Be precise about who pays, because it is easy to overstate. Versions cut on an unpushed branch reach no
+  user: everyone jumps from what they had straight to the final one and recompiles ONCE however many times
+  the branch bumped. The environment that pays per bump is the STAND the branch is being tested on —
+  which is real, is where manual verification happens, and is exactly where an extra five minutes lands
+  on the person doing it.
 
 An explicit `[RequiresPackage("CrtProcessBuilder", "X.Y.Z.W")]` literal is a separate and much rarer thing:
 add one in the commit where a command starts calling an operation an older server does not have. It states
