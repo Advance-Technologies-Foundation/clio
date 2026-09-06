@@ -279,11 +279,11 @@ Use `clio help` for the terminal overview and `clio <command> --help` for comman
 <a id="pkg-to-db"></a>
 <a id="2db"></a>
 <a id="todb"></a>
-- [`pkg-to-db`](docs/commands/pkg-to-db.md) - Load packages into Creatio database storage, `2db`, `todb`
+- [`pkg-to-db`](docs/commands/pkg-to-db.md) - Load file-system package definitions into the configuration database (no package data), `2db`, `todb`
 <a id="pkg-to-file-system"></a>
 <a id="2fs"></a>
 <a id="tofs"></a>
-- [`pkg-to-file-system`](docs/commands/pkg-to-file-system.md) - Load packages into Creatio file system storage, `2fs`, `tofs`
+- [`pkg-to-file-system`](docs/commands/pkg-to-file-system.md) - Export configuration-database packages to the file system (no package data), `2fs`, `tofs`
 <a id="publish-app"></a>
 <a id="ph"></a>
 <a id="publish-hub"></a>

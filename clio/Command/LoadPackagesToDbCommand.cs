@@ -41,13 +41,34 @@ namespace Clio.Command
 		#region Methods: Public
 
 		public override int Execute(EnvironmentOptions options) {
+			FileDesignModeLoadResult result = Load(options);
+			if (result == FileDesignModeLoadResult.FileDesignModeDisabled) {
+				// The loader stays silent on this cause because turn-fsm off treats it as its goal state;
+				// for a standalone pkg-to-db it is a failure and must carry the Error log line that the
+				// command-execution-result contract publishes alongside the non-zero exit code.
+				_logger.WriteError(FileDesignModeLoadMessage.Build(
+					FileDesignModeLoadMessage.DatabaseStorageName,
+					FileDesignModeLoadMessage.DisabledFileDesignModeReason));
+			}
+			return result == FileDesignModeLoadResult.Completed ? 0 : 1;
+		}
+
+		/// <summary>
+		/// Runs the same import as <see cref="Execute"/> but reports WHY nothing was imported, so a
+		/// composite caller can tell an environment that already has file system development mode
+		/// disabled apart from a load the platform refused. <c>turn-fsm off</c> needs that distinction:
+		/// the first case is its own goal state, the second is a real failure.
+		/// </summary>
+		/// <param name="options">Environment options of the command.</param>
+		/// <returns>The outcome of the import.</returns>
+		public FileDesignModeLoadResult Load(EnvironmentOptions options) {
 			try {
-				_fileDesignModePackages.LoadPackagesToDb();
+				FileDesignModeLoadResult result = _fileDesignModePackages.LoadPackagesToDb();
 				_logger.WriteLine();
-				return 0;
+				return result;
 			} catch (Exception e) {
 				_logger.WriteError(e.GetReadableMessageException(Program.IsDebugMode));
-				return 1;
+				return FileDesignModeLoadResult.LoadRefused;
 			}
 		}
 

@@ -34,10 +34,49 @@ public class LoadPackagesToDbCommandTests {
 	[Test]
 	[Description("Execute should return 0 on success")]
 	public void Execute_ShouldReturnZero_WhenLoadSucceeds() {
+		// Arrange
+		_fileDesignModePackages.LoadPackagesToDb().Returns(FileDesignModeLoadResult.Completed);
+
+		// Act
 		int result = _command.Execute(new LoadPackagesToDbOptions());
 
-		result.Should().Be(0);
+		// Assert
+		result.Should().Be(0, because: "a completed load must report success to the caller");
 		_fileDesignModePackages.Received(1).LoadPackagesToDb();
+	}
+
+	[Test]
+	[Description("Execute should return 1 when the loader reports a failed load instead of throwing")]
+	public void Execute_ShouldReturnOne_WhenLoadReportsFailure() {
+		// Arrange
+		_fileDesignModePackages.LoadPackagesToDb().Returns(FileDesignModeLoadResult.LoadRefused);
+
+		// Act
+		int result = _command.Execute(new LoadPackagesToDbOptions());
+
+		// Assert
+		result.Should().Be(1,
+			because: "a load refused by the environment (for example disabled file design mode) must not be " +
+			"reported to the caller as exit code 0");
+		_fileDesignModePackages.Received(1).LoadPackagesToDb();
+	}
+
+	[Test]
+	[Description("Execute reports a disabled file design mode as an error itself, because the loader stays silent on that cause for the turn-fsm off caller that treats it as its goal state.")]
+	public void Execute_ShouldReportError_WhenFileDesignModeIsDisabled() {
+		// Arrange
+		_fileDesignModePackages.LoadPackagesToDb().Returns(FileDesignModeLoadResult.FileDesignModeDisabled);
+
+		// Act
+		int result = _command.Execute(new LoadPackagesToDbOptions());
+
+		// Assert
+		// The non-zero exit code and the Error log message are both published failure signals of the
+		// command-execution-result contract, so they must agree.
+		result.Should().Be(1,
+			because: "a standalone LoadPackagesToDb call over an environment with file design mode disabled loaded nothing");
+		_logger.Received(1).WriteError(Arg.Is<string>(message =>
+			message.Contains("database") && message.Contains("disabled file design mode")));
 	}
 
 	[Test]
