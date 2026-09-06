@@ -1,6 +1,8 @@
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text.Json;
+using Clio.Command.McpServer;
 using Clio.Command.McpServer.Tools;
 using FluentAssertions;
 using NUnit.Framework;
@@ -76,8 +78,12 @@ public sealed class EmittedSchemaRequiredContractTests {
 		List<string> violations = [];
 		foreach (EmittedObjectSchema schema in schemas) {
 			// The root schema's single `args` wrapper is genuinely mandatory; its description is the tool
-			// method's parameter text, which legitimately opens by describing an optional inner field.
-			if (schema.IsRoot) {
+			// method's parameter text, which legitimately opens by describing an optional inner field. Only
+			// THAT synthetic shape is exempt: a method-parameter tool puts its real user-facing fields on
+			// the root, so skipping every root would exempt the whole family that carried this defect in
+			// ENG-93347 (link-from-repository-*), which is precisely what this registry-wide guard exists
+			// to cover.
+			if (schema.IsRoot && EmittedSchemaProbe.IsSingleArgsWrapper(schema.Schema)) {
 				continue;
 			}
 			violations.AddRange(EmittedSchemaProbe.RequiredNames(schema.Schema)
@@ -93,6 +99,143 @@ public sealed class EmittedSchemaRequiredContractTests {
 		// binding error.
 		violations.Should().BeEmpty(
 			because: "a field the contract text calls optional must not be one a strict client is forced to send");
+
+		// Anti-vacuity, in two parts: the walk must reach schemas at all, and — since narrowing the root
+		// skip is the whole point of the second condition — it must reach method-parameter roots too,
+		// otherwise the guard would silently go back to covering only the nested `args` objects.
+		schemas.Should().NotBeEmpty(
+			because: "a guard that scans nothing cannot fail, so the catalog must yield required-bearing schemas");
+		schemas.Count(schema => schema.IsRoot && !EmittedSchemaProbe.IsSingleArgsWrapper(schema.Schema))
+			.Should().BeGreaterThan(0,
+				because: "method-parameter tools put their real fields on the root, and this guard must " +
+					"still be scanning them");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[TestCase("update-page", new[] { "schema-name" })]
+	[TestCase("list-pages", new string[0])]
+	[TestCase("get-page-hierarchy", new[] { "schema-name" })]
+	[TestCase("update-schema", new[] { "schema-name" })]
+	[TestCase("update-sql-schema", new[] { "schema-name" })]
+	[TestCase("update-client-unit-schema", new[] { "schema-name" })]
+	[Description("Each record relaxed by issue #965 whose optional fields are NOT worded 'Optional…' is pinned to its exact emitted required set, because the registry-wide description heuristic cannot see wordings such as 'If true, validate without saving' or 'Filter by package name' and would let those relaxations be reverted while staying green.")]
+	public void RelaxedRecords_Should_RequireOnlyTheirIdentityFields_InEmittedInputSchema(
+		string toolName, string[] expectedRequired) {
+		// Arrange & Act
+		using JsonDocument schema = EmittedSchemaProbe.EmittedInputSchema(toolName);
+		JsonElement argsSchema = EmittedSchemaProbe.EffectiveArgumentSchema(schema.RootElement);
+
+		// Assert
+		EmittedSchemaProbe.RequiredNames(argsSchema).Should().BeEquivalentTo(expectedRequired,
+			because: $"'{toolName}' identifies its target by these fields alone — every dry-run flag, " +
+				"filter, limit and connection argument is optional, and a strict client must not be forced " +
+				"to send them");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("reg-web-app advertises environment-name and uri without gaining the connection any-of, because there uri is the application BEING REGISTERED rather than a fallback route to an existing one, and offering a credential-only branch would advertise a payload the tool rejects with exit code 1 (issue #965, PR #1396 review).")]
+	public void RegistryDerivedContract_Should_OmitConnectionAlternative_ForEnvironmentRegistrationTools() {
+		// Arrange
+		McpToolInvokerRegistry registry = EmittedSchemaProbe.BuildProductionRegistry();
+
+		// Act
+		bool built = McpToolRegistrySchemaContract.TryBuild(registry, "reg-web-app", out ToolContractDefinition contract);
+
+		// Assert
+		built.Should().BeTrue(because: "reg-web-app must be registered for its contract to be derivable");
+		string[] advertised = [.. contract.InputSchema.Properties.Select(field => field.Name)];
+		advertised.Should().Contain([EnvironmentName, Uri],
+			because: "this is the second negative control precisely BECAUSE it advertises both names the " +
+				"any-of heuristic keys on");
+		advertised.Should().Contain("active-environment",
+			because: "the environment-registration surface is what tells the heuristic these two names are " +
+				"the record being written, not a way of reaching an environment");
+		contract.InputSchema.AnyOf.Should().BeNull(
+			because: "reg-web-app rejects a uri/login/password payload that carries no environment-name, " +
+				"active-environment or add-from-iis, so advertising it as a complete alternative would " +
+				"send an agent into a guaranteed exit-code-1 failure with credentials attached");
+	}
+
+	/// <summary>
+	/// Tools whose curated <c>required</c> deliberately says MORE than the emitted schema does, with the
+	/// reason. The list is exhaustive and deliberately tiny: every other disagreement is a defect.
+	/// </summary>
+	private static readonly Dictionary<string, string> CuratedStricterThanEmittedByDesign = new() {
+		["get-guidance"] = "'name' is genuinely mandatory, but the record parameter is nullable so that a " +
+			"legacy-alias payload (topic/guide/article via [JsonExtensionData]) reaches the tool and comes " +
+			"back as a typed {success:false, availableGuides:[…]} answer instead of an SDK binding error. " +
+			"The curated contract states the requirement the caller has to satisfy; the emitted schema " +
+			"states what the binder accepts."
+	};
+
+	[Test]
+	[Category("Unit")]
+	[Description("Every resident tool's curated required set matches the required set its emitted schema advertises, because the two surfaces are read by the same agent — get-tool-contract to plan the call and tools/list to validate it — and a disagreement makes one of them a documented lie (issue #965).")]
+	public void CuratedContracts_Should_AgreeWithEmittedSchema_ForResidentTools() {
+		// Arrange
+		McpToolInvokerRegistry registry = EmittedSchemaProbe.BuildProductionRegistry();
+		// Scope is the RESIDENT surface on purpose: those are the tools whose emitted schema a strict
+		// client actually validates a payload against, because they ship in tools/list. A long-tail tool is
+		// dispatched through clio-run, so it is clio-run's schema — not its own — that gates the payload.
+		string[] curatedResidentTools = [.. registry.ToolNames
+			.Where(McpCoreToolProfile.IsResident)
+			.Where(ToolContractCatalog.CuratedToolNames.Contains)
+			.OrderBy(name => name, StringComparer.Ordinal)];
+
+		// Act
+		List<string> disagreements = [];
+		foreach (string toolName in curatedResidentTools) {
+			ToolContractDefinition curated = ToolContractCatalog
+				.GetContracts([toolName], registry).Tools.Single();
+			using JsonDocument emitted = EmittedSchemaProbe.EmittedInputSchema(toolName);
+			string[] emittedRequired = [.. EmittedSchemaProbe
+				.RequiredNames(EmittedSchemaProbe.EffectiveArgumentSchema(emitted.RootElement))
+				.OrderBy(name => name, StringComparer.Ordinal)];
+			string[] curatedRequired = [.. (curated.InputSchema.Required ?? [])
+				.OrderBy(name => name, StringComparer.Ordinal)];
+			if (emittedRequired.SequenceEqual(curatedRequired) ||
+				CuratedStricterThanEmittedByDesign.ContainsKey(toolName)) {
+				continue;
+			}
+			disagreements.Add(
+				$"{toolName}: emitted=[{string.Join(",", emittedRequired)}] curated=[{string.Join(",", curatedRequired)}]");
+		}
+
+		// Assert
+		disagreements.Should().BeEmpty(
+			because: "this is the comparison that was missing: the emitted-schema guards above pass while a " +
+				"curated contract still demands a field the tool's own description tells the caller to omit, " +
+				"which is how get-entity-schema-properties kept asking for package-name and denying every " +
+				"agent the merged, all-packages column view");
+		curatedResidentTools.Length.Should().BeGreaterThan(1,
+			because: "the comparison must cover a real population of resident curated tools, not an empty one");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("get-entity-schema-properties advertises package-name as optional on BOTH surfaces, because omitting it is the documented way to read the merged schema with the columns of every package (issue #965).")]
+	public void GetEntitySchemaProperties_Should_TreatPackageNameAsOptional_OnBothSurfaces() {
+		// Arrange
+		McpToolInvokerRegistry registry = EmittedSchemaProbe.BuildProductionRegistry();
+		const string toolName = "get-entity-schema-properties";
+
+		// Act
+		ToolContractDefinition curated = ToolContractCatalog.GetContracts([toolName], registry).Tools.Single();
+		using JsonDocument emitted = EmittedSchemaProbe.EmittedInputSchema(toolName);
+		JsonElement argsSchema = EmittedSchemaProbe.EffectiveArgumentSchema(emitted.RootElement);
+
+		// Assert
+		EmittedSchemaProbe.RequiredNames(argsSchema).Should().BeEquivalentTo(
+			[EnvironmentName, "schema-name"],
+			because: "the merged read needs an environment and a schema name and nothing else");
+		(curated.InputSchema.Required ?? []).Should().BeEquivalentTo(
+			[EnvironmentName, "schema-name"],
+			because: "the curated contract is what an agent plans the call from, so it must not demand the " +
+				"package-name that switches the tool from 49 own columns to 0");
+		curated.InputSchema.Properties.Should().Contain(field => field.Name == "package-name",
+			because: "the single-package-layer read stays available, it is simply no longer mandatory");
 	}
 
 	[Test]

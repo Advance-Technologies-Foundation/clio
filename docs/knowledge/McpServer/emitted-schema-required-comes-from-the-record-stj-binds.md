@@ -5,6 +5,7 @@ applies-to:
   - clio.tests/Command/McpServer/ColumnIdentityEmittedSchemaTests.cs
   - clio.tests/Command/McpServer/EmittedSchemaProbe.cs
   - clio.tests/Command/McpServer/EmittedSchemaRequiredContractTests.cs
+  - clio.tests/Command/McpServer/ConnectionAlternativeDispatchTests.cs
 date: 2026-08-19
 ---
 
@@ -32,3 +33,27 @@ registered tool's emitted schema and fails when (a) an object advertising BOTH `
 `uri` lists any connection field as required — the runtime accepts either path, so neither is
 mandatory — or (b) a required property's own `description` begins with "Optional". Add a new tool
 without a default on an optional parameter and that guard, not a reviewer, is what catches it.
+
+**Two surfaces, and only comparing them catches the third failure mode (PR #1396 review).** A tool has
+TWO published argument contracts: the emitted `tools/list` schema, and the `get-tool-contract` envelope
+— curated by hand in `ToolContractCatalog.Contracts` for a resident tool, derived from the emitted
+schema for everything else. Guard (a) and guard (b) above read the emitted schema ONLY, so relaxing a
+record while leaving the handwritten contract demanding the same field passes both and leaves the two
+surfaces contradicting each other. That is exactly what happened to `get-entity-schema-properties`: the
+record was relaxed, the curated contract still listed `package-name` as required, and an agent planning
+the call from `get-tool-contract` therefore always sent it — which switches the tool from the merged
+all-packages view (49 own columns) to a single package layer (0 own columns) and silently hides every
+column it was looking for. `CuratedContracts_Should_AgreeWithEmittedSchema_ForResidentTools` is the
+comparison; the scope is the resident set because those are the tools whose emitted schema a strict
+client actually validates against (a long-tail tool is dispatched through `clio-run`, so `clio-run`'s
+schema is what gates the payload). `get-guidance` is the one documented exception: its `name` parameter
+is nullable so a legacy-alias payload reaches the tool and returns a typed answer instead of an SDK
+binding error, while the curated contract keeps stating that a name is what the caller must supply.
+
+**A bare property-name pair is not a connection selector.** The registry-derived contract attaches the
+`environment-name` OR `uri`/`login`/`password` alternative when a schema advertises both names. On
+`reg-web-app` those two names are the record being WRITTEN, not a route to an existing environment, and
+the tool rejects a credential-only payload with a typed exit code 1. The discriminator is the
+environment-registration surface (`active-environment` / `add-from-iis`), NOT description text:
+`get-related-page-addon`, `list-printables` and `MobilePageConversionGuideArgs` all carry custom `uri`
+wording and are genuine fallbacks.

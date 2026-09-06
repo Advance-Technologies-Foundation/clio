@@ -25,6 +25,15 @@ internal static class McpToolRegistrySchemaContract {
 	private const string DescriptionPropertyName = "description";
 	private const string EnvironmentNamePropertyName = "environment-name";
 	private const string UriPropertyName = "uri";
+
+	// reg-web-app is the one tool whose `environment-name` + `uri` pair is NOT a connection selector:
+	// `uri` is the application BEING REGISTERED and `environment-name` is the key it is stored under, so
+	// the two are conjunctive inputs, not alternatives. It is told apart from the genuine fallbacks by the
+	// environment-REGISTRATION surface it alone advertises. Description text deliberately is not used as
+	// the discriminator: get-related-page-addon, list-printables and the mobile-page-conversion-guide args
+	// all carry custom `uri` wording and are genuine fallbacks (issue #965, PR #1396 review).
+	private static readonly string[] EnvironmentRegistrationPropertyNames =
+		["active-environment", "add-from-iis"];
 	private const string Note =
 		"Auto-generated from the registered MCP tool input schema (the same schema clio-run dispatches against); no curated contract is available for this tool yet.";
 
@@ -111,12 +120,14 @@ internal static class McpToolRegistrySchemaContract {
 		List<ToolContractField> properties = [];
 		bool advertisesEnvironmentName = false;
 		bool advertisesUri = false;
+		bool registersEnvironments = false;
 		if (effective.TryGetProperty(PropertiesPropertyName, out JsonElement propertiesElement) &&
 			propertiesElement.ValueKind == JsonValueKind.Object) {
 			foreach (JsonProperty property in propertiesElement.EnumerateObject()) {
 				string name = property.Name;
 				advertisesEnvironmentName |= name == EnvironmentNamePropertyName;
 				advertisesUri |= name == UriPropertyName;
+				registersEnvironments |= EnvironmentRegistrationPropertyNames.Contains(name);
 				string type = ReadType(property.Value);
 				string description = property.Value.ValueKind == JsonValueKind.Object &&
 					property.Value.TryGetProperty(DescriptionPropertyName, out JsonElement descriptionElement) &&
@@ -130,9 +141,11 @@ internal static class McpToolRegistrySchemaContract {
 		// A tool that advertises BOTH a registered environment-name AND the explicit uri fallback accepts
 		// either one, and neither is unconditionally mandatory — which is exactly what an empty `required`
 		// alone fails to say. Emit the SAME `any-of` the curated contracts carry so the derived contract
-		// states the alternative instead of leaving the caller to guess it (issue #965).
+		// states the alternative instead of leaving the caller to guess it (issue #965). A tool that also
+		// advertises the environment-REGISTRATION surface is excluded: there the two names are the record
+		// being written, not a way of reaching an environment (see EnvironmentRegistrationPropertyNames).
 		IReadOnlyList<IReadOnlyList<string>> anyOf =
-			advertisesEnvironmentName && advertisesUri
+			advertisesEnvironmentName && advertisesUri && !registersEnvironments
 				? ToolContractCatalog.EnvironmentOrExplicitConnectionRequirements()
 				: null;
 		return new ToolInputSchemaContract(required, properties, anyOf);

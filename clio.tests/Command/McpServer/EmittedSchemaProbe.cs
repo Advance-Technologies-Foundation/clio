@@ -86,6 +86,39 @@ public static class EmittedSchemaProbe {
 		return description.GetString() ?? string.Empty;
 	}
 
+	/// <summary>
+	/// Determines whether an object schema is the SYNTHETIC single-<c>args</c> wrapper the SDK emits for a
+	/// tool method that takes one complex record parameter.
+	/// </summary>
+	/// <remarks>
+	/// The distinction matters to every registry-wide guard: on a wrapper root the sole <c>required</c>
+	/// entry is the machine-generated <c>args</c> name and the real user-facing fields live one level down,
+	/// whereas on a METHOD-PARAMETER tool (for example <c>link-from-repository-by-environment</c>) the SDK
+	/// puts the real fields on the root itself. Skipping every root indiscriminately therefore exempts the
+	/// whole method-parameter family — the shape that carried this defect in ENG-93347.
+	/// </remarks>
+	/// <param name="objectSchema">The candidate root schema.</param>
+	public static bool IsSingleArgsWrapper(JsonElement objectSchema) {
+		if (objectSchema.ValueKind != JsonValueKind.Object ||
+			!objectSchema.TryGetProperty("properties", out JsonElement properties) ||
+			properties.ValueKind != JsonValueKind.Object) {
+			return false;
+		}
+		List<JsonProperty> topLevel = [.. properties.EnumerateObject()];
+		return topLevel.Count == 1 && topLevel[0].NameEquals("args");
+	}
+
+	/// <summary>
+	/// Returns the schema a caller's arguments are actually validated against: the inner <c>args</c> object
+	/// for a single-record tool, or the root itself for a method-parameter tool.
+	/// </summary>
+	/// <param name="rootSchema">The tool's emitted top-level input schema.</param>
+	public static JsonElement EffectiveArgumentSchema(JsonElement rootSchema) =>
+		IsSingleArgsWrapper(rootSchema) &&
+		rootSchema.GetProperty("properties").GetProperty("args") is { ValueKind: JsonValueKind.Object } args
+			? args
+			: rootSchema;
+
 	/// <summary>Determines whether an object schema advertises a property of the given name.</summary>
 	public static bool Advertises(JsonElement objectSchema, string propertyName) =>
 		objectSchema.ValueKind == JsonValueKind.Object &&
