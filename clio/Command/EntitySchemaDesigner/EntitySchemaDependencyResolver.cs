@@ -9,57 +9,80 @@ using static Clio.Package.SelectQueryHelper;
 namespace Clio.Command.EntitySchemaDesigner;
 
 /// <summary>
-/// Outcome of one dependency-resolution attempt for an entity schema the designer could not open in the
-/// target package.
+/// Outcome of one dependency-candidate lookup for an entity schema the designer could not open in the
+/// target package. Reporting only: this lookup never changes the environment.
 /// </summary>
-/// <param name="DependencyAdded">
-/// <see langword="true"/> only when a dependency was actually added and the caller should retry the load.
-/// </param>
 /// <param name="Candidates">
 /// Packages that contribute <c>schemaName</c>, ranked: installed applications first, then the rest. The
 /// target package itself and every package it already depends on are excluded, so every entry is something
-/// the caller could actually add. Empty when nothing could be determined.
+/// the caller could actually add. Empty when nothing was found.
 /// </param>
 /// <param name="ApplicationCandidateCount">
 /// How many leading <paramref name="Candidates"/> entries are installed applications. Zero means the ranking
 /// signal was unavailable (or matched nothing), and the order carries no recommendation.
 /// </param>
+/// <param name="LookupSucceeded">
+/// <see langword="false"/> when the candidate search itself failed, so an empty
+/// <paramref name="Candidates"/> list is the absence of an answer rather than the answer "no package
+/// contributes this schema". A caller that reports the two identically states a finding of fact it never
+/// established (issue #722).
+/// </param>
+/// <param name="DependenciesKnown">
+/// <see langword="false"/> when the target package's declared dependencies could not be read, so the
+/// subtraction that removes already-declared packages was a no-op and <paramref name="Candidates"/> may
+/// still contain them. The caller must carry that caveat into the message it surfaces, not only into a log
+/// warning an MCP client never sees.
+/// </param>
+/// <param name="LookupFailureReason">
+/// Redacted, bounded description of why the candidate search failed; <see langword="null"/> whenever
+/// <paramref name="LookupSucceeded"/> is <see langword="true"/>.
+/// </param>
 public sealed record EntitySchemaDependencyResolution(
-	bool DependencyAdded,
 	IReadOnlyList<string> Candidates,
-	int ApplicationCandidateCount)
+	int ApplicationCandidateCount,
+	bool LookupSucceeded,
+	bool DependenciesKnown,
+	string? LookupFailureReason = null)
 {
 
-	/// <summary>Result carrying no candidates and no change - the shape every failure path returns.</summary>
-	public static EntitySchemaDependencyResolution None { get; } = new(false, [], 0);
+	/// <summary>
+	/// The lookup ran and found nothing to report - a completed search with an empty answer.
+	/// </summary>
+	public static EntitySchemaDependencyResolution None { get; } = new([], 0, true, true);
+
+	/// <summary>Creates the result for a candidate search that could not be completed.</summary>
+	/// <param name="reason">Redacted, bounded description of the failure.</param>
+	/// <returns>A resolution carrying no candidates and <c>LookupSucceeded: false</c>.</returns>
+	public static EntitySchemaDependencyResolution LookupFailed(string reason) =>
+		new([], 0, false, true, reason);
 
 }
 
 /// <summary>
-/// Resolves the package dependency an entity schema designer request needs when it cannot open a schema in
-/// the target package (the <c>SchemaIsNotAvailableException</c> that surfaces as an HTML error page from
+/// Reports which packages could supply an entity schema the designer could not open in the target package
+/// (the <c>SchemaIsNotAvailableException</c> that surfaces as an HTML error page from
 /// <c>GetSchemaDesignItem</c>).
 /// </summary>
+/// <remarks>
+/// Reporting only - nothing here writes. The predecessor of this type added the dependency itself when
+/// exactly one candidate remained. That was removed once the failing body was captured from a stand: it is
+/// a generic WCF "Request Error" page naming no exception, no schema and no package, so nothing in the
+/// response distinguishes a missing dependency from a WAF block, a 502, or a transient server fault. A
+/// write cannot be gated on evidence that does not exist, and a dependency added on a transient fault that
+/// then clears looks like a success while leaving the package permanently changed. The caller gets the
+/// ranked list and the exact <c>add-package-dependency</c> invocation instead.
+/// </remarks>
 public interface IEntitySchemaDependencyResolver
 {
 
 	/// <summary>
 	/// Determines which packages could supply <paramref name="schemaName"/> to
-	/// <paramref name="targetPackageName"/>, and - only when exactly one candidate remains and
-	/// <paramref name="allowAutoAdd"/> is set - adds it.
-	/// <para>
-	/// Mirrors the auto-dependency behavior of the Creatio <c>PackageElementDependencyApplier</c> that runs
-	/// inside <c>SaveSchema</c> but is absent from the <c>GetSchemaDesignItem</c> code path.
-	/// </para>
+	/// <paramref name="targetPackageName"/>.
 	/// </summary>
 	/// <param name="schemaName">Entity schema name that was unavailable (for example <c>Opportunity</c>).</param>
 	/// <param name="targetPackageName">Package that is being edited (for example <c>Custom</c>).</param>
-	/// <param name="allowAutoAdd">
-	/// Whether this call is allowed to write. Read paths pass <see langword="false"/> and still receive the
-	/// ranked candidate list, which is the only thing that makes their error message actionable.
-	/// </param>
-	/// <returns>The candidates found and whether a dependency was added.</returns>
-	EntitySchemaDependencyResolution Resolve(string schemaName, string targetPackageName, bool allowAutoAdd);
+	/// <returns>The candidates found, and whether the searches behind them actually completed.</returns>
+	EntitySchemaDependencyResolution Resolve(string schemaName, string targetPackageName);
 
 }
 
@@ -74,9 +97,13 @@ internal sealed class EntitySchemaDependencyResolver : IEntitySchemaDependencyRe
 	];
 
 	/// <summary>
-	/// Bound on the two reads this class adds to a path that is already failing. They exist to enrich an
-	/// error message, so a stand that stops answering must cost the caller a bounded wait, not a hung tool
-	/// call - <c>ExecuteSelectQuery</c> defaults to <see cref="System.Threading.Timeout.Infinite"/>.
+	/// Bound on every read this class adds to a path that is already failing - the schema search, the
+	/// dependency read and the installed-application read alike. They exist to enrich an error message, so a
+	/// stand that accepts the connection and then stops answering must cost the caller a bounded wait, not a
+	/// hung tool call: <c>ExecuteSelectQuery</c>, <c>IApplicationPackageListProvider.GetPackages</c> and
+	/// <c>BasePackageOperation.SendRequest</c> all default to
+	/// <see cref="System.Threading.Timeout.Infinite"/>, and a wedged read inside the enrichment would hold a
+	/// long-lived MCP server tenant open indefinitely.
 	/// </summary>
 	private const int DiagnosticReadTimeoutMs = 30_000;
 
@@ -100,8 +127,7 @@ internal sealed class EntitySchemaDependencyResolver : IEntitySchemaDependencyRe
 	}
 
 	/// <inheritdoc/>
-	public EntitySchemaDependencyResolution Resolve(string schemaName, string targetPackageName,
-		bool allowAutoAdd) {
+	public EntitySchemaDependencyResolution Resolve(string schemaName, string targetPackageName) {
 		try {
 			List<string> contributors = FindContributingPackages(schemaName, targetPackageName);
 			if (contributors.Count == 0) {
@@ -119,62 +145,22 @@ internal sealed class EntitySchemaDependencyResolver : IEntitySchemaDependencyRe
 			}
 			HashSet<string> applicationPackages = ReadInstalledApplicationPackages();
 			List<string> ranked = Rank(candidates, applicationPackages, out int applicationCandidateCount);
-			// A single remaining candidate is the ONLY case with one right answer, so it is the only case that
-			// writes. Ranking narrows a longer list but never resolves it: on a measured stand, intersecting
-			// the Lead candidates with the installed applications still leaves three, and adding the wrong one
-			// is a real change to the package. Everything above one is reported, not applied.
-			//
-			// dependenciesKnown gates the write as well: when the dependency read failed, the subtraction
-			// above was a no-op, so "exactly one remains" would be true of an UNFILTERED list - the safety
-			// condition would look satisfied without ever having been evaluated. Reporting stays on in that
-			// case; only the write is withheld.
-			if (allowAutoAdd && dependenciesKnown && ranked.Count == 1
-				&& TryAddDependency(schemaName, targetPackageName, ranked[0])) {
-				return new EntitySchemaDependencyResolution(true, ranked, applicationCandidateCount);
-			}
-			return new EntitySchemaDependencyResolution(false, ranked, applicationCandidateCount);
+			return new EntitySchemaDependencyResolution(ranked, applicationCandidateCount, true,
+				dependenciesKnown);
 		} catch (Exception ex) when (ex is not OutOfMemoryException) {
-			// Broad catch is intentional: FindSchemas, the dependency reads and AddDependencies can fail with
-			// HttpRequestException, JsonException, InvalidOperationException, or ArgumentException depending on
-			// the remote state. None of these should abort the caller - the enriched error message in
-			// LoadSchema takes over when no candidate is returned.
-			_logger.WriteWarning(
-				$"Dependency candidate lookup failed for schema '{schemaName}': {DescribeFailure(ex)}");
-			return EntitySchemaDependencyResolution.None;
+			// Broad catch is intentional: FindSchemas can fail with HttpRequestException, JsonException,
+			// InvalidOperationException, or ArgumentException depending on the remote state. None of these
+			// should abort the caller - the enriched error message in LoadSchema takes over. The failure is
+			// carried in the result, not only logged: the log warning does not reach an MCP client, so a
+			// caller told only "no candidates" would read a search that never ran as a finding of fact.
+			string reason = DescribeFailure(ex);
+			_logger.WriteWarning($"Dependency candidate lookup failed for schema '{schemaName}': {reason}");
+			return EntitySchemaDependencyResolution.LookupFailed(reason);
 		}
 	}
 
 	/// <summary>
-	/// Adds one dependency, reporting failure instead of propagating it so the candidate list survives a
-	/// refused write.
-	/// </summary>
-	/// <remarks>
-	/// The catch is scoped to the write rather than left to the caller's outer catch: a refused
-	/// <c>SavePackageProperties</c> would otherwise discard the candidates that had already been computed,
-	/// and the caller would report "clio found no package…" - the opposite of what happened.
-	/// </remarks>
-	/// <param name="schemaName">Schema being made reachable, used in the progress message.</param>
-	/// <param name="targetPackageName">Package whose dependency list is extended.</param>
-	/// <param name="dependencyName">The single candidate to add.</param>
-	/// <returns><see langword="true"/> when the dependency was added.</returns>
-	private bool TryAddDependency(string schemaName, string targetPackageName, string dependencyName) {
-		try {
-			_logger.WriteInfo(
-				$"Schema '{schemaName}' is not available in package '{targetPackageName}'. " +
-				"Exactly one package contributes it and is not already a dependency - " +
-				$"auto-adding dependency: {dependencyName}");
-			_dependencyManager.AddDependencies(targetPackageName, [new PackageDependencySpec(dependencyName)]);
-			return true;
-		} catch (Exception ex) when (ex is not OutOfMemoryException) {
-			_logger.WriteWarning(
-				$"Could not add dependency '{dependencyName}' to package '{targetPackageName}': " +
-				$"{DescribeFailure(ex)}");
-			return false;
-		}
-	}
-
-	/// <summary>
-	/// Renders a failure for a log line: redacted and length-bounded.
+	/// Renders a failure for a log line and for the surfaced message: redacted and length-bounded.
 	/// </summary>
 	/// <remarks>
 	/// Redaction is not optional here. <c>SelectQueryHelper.ExecuteSelectQuery</c> falls back to the RAW
@@ -184,11 +170,11 @@ internal sealed class EntitySchemaDependencyResolver : IEntitySchemaDependencyRe
 	/// CLI path has no second redaction pass, so it has to happen here.
 	/// </remarks>
 	/// <param name="exception">The failure to describe.</param>
-	/// <returns>The redacted, bounded text to log.</returns>
+	/// <returns>The redacted, bounded text to report.</returns>
 	private static string DescribeFailure(Exception exception) {
 		string redacted = SensitiveErrorTextRedactor.Redact(exception.Message);
 		return redacted.Length > MaxLoggedFailureLength
-			? redacted[..MaxLoggedFailureLength] + "…"
+			? redacted[..MaxLoggedFailureLength] + "\u2026"
 			: redacted;
 	}
 
@@ -201,7 +187,7 @@ internal sealed class EntitySchemaDependencyResolver : IEntitySchemaDependencyRe
 	/// <returns>Contributing package names.</returns>
 	private List<string> FindContributingPackages(string schemaName, string targetPackageName) {
 		IReadOnlyList<EntitySchemaSearchResult> results = _findCommand.FindSchemas(
-			new FindEntitySchemaOptions { SchemaName = schemaName });
+			new FindEntitySchemaOptions { SchemaName = schemaName }, DiagnosticReadTimeoutMs);
 		return results
 			.Where(result => !string.IsNullOrWhiteSpace(result.PackageName))
 			.Select(result => result.PackageName)
@@ -216,10 +202,9 @@ internal sealed class EntitySchemaDependencyResolver : IEntitySchemaDependencyRe
 	/// </summary>
 	/// <remarks>
 	/// These are the package's DIRECT dependencies. A transitively reachable package is therefore still
-	/// listed as a candidate - that is a false positive in the list, not a wrong write: the auto-add path
-	/// only fires when one candidate remains, and adding an already-reachable package is idempotent at the
-	/// platform level. Walking the whole chain would cost one GetPackageProperties request per package on a
-	/// path that is already a failure path.
+	/// listed as a candidate - a false positive in a list the caller reads and chooses from, never something
+	/// clio acts on by itself. Walking the whole chain would cost one GetPackageProperties request per
+	/// package on a path that is already a failure path.
 	/// </remarks>
 	/// <param name="targetPackageName">Package being edited.</param>
 	/// <returns>
@@ -229,7 +214,7 @@ internal sealed class EntitySchemaDependencyResolver : IEntitySchemaDependencyRe
 	/// </returns>
 	private (HashSet<string> Existing, bool ReadSucceeded) ReadExistingDependencies(string targetPackageName) {
 		try {
-			return (_dependencyManager.GetDependencies(targetPackageName)
+			return (_dependencyManager.GetDependencies(targetPackageName, DiagnosticReadTimeoutMs)
 				.ToHashSet(StringComparer.OrdinalIgnoreCase), true);
 		} catch (Exception ex) when (ex is not OutOfMemoryException) {
 			// Degrade to "nothing known to be a dependency": an unfiltered candidate list is still useful,
@@ -237,8 +222,7 @@ internal sealed class EntitySchemaDependencyResolver : IEntitySchemaDependencyRe
 			_logger.WriteWarning(
 				$"Could not read the current dependencies of package '{targetPackageName}': " +
 				$"{DescribeFailure(ex)}. " +
-				"The candidate list may include packages that are already dependencies, and no dependency " +
-				"will be added automatically.");
+				"The candidate list may include packages that are already dependencies.");
 			return (new HashSet<string>(StringComparer.OrdinalIgnoreCase), false);
 		}
 	}

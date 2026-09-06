@@ -75,7 +75,7 @@ internal class RemoteEntitySchemaColumnManagerTests
 		_dependencyResolver = Substitute.For<IEntitySchemaDependencyResolver>();
 		// Stubbed here, not per test: an unstubbed member returning a reference type answers with null, and a
 		// null resolution would fail the load path with a NullReferenceException before any assertion runs.
-		_dependencyResolver.Resolve(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<bool>())
+		_dependencyResolver.Resolve(Arg.Any<string>(), Arg.Any<string>())
 			.Returns(EntitySchemaDependencyResolution.None);
 		_entitySchemaPublisher = Substitute.For<IEntitySchemaPublisher>();
 		_savedSchema = null;
@@ -2807,42 +2807,33 @@ internal class RemoteEntitySchemaColumnManagerTests
 	}
 
 	[Test]
-	[Description("Auto-resolves missing package dependencies and retries LoadSchema when the schema is initially unavailable on a write path (ENG-91314).")]
-	public void ModifyColumn_ShouldAutoResolveDependenciesAndRetry_WhenSchemaIsInitiallyUnavailable() {
-		// Arrange — first TryGetSchemaDesignItem returns null schema; after auto-resolve, second call succeeds.
-		int tryGetCallCount = 0;
-		_designerClient.TryGetSchemaDesignItem(Arg.Any<GetSchemaDesignItemRequestDto>(),
-				Arg.Any<RemoteCommandOptions>())
-			.Returns(_ => {
-				tryGetCallCount++;
-				if (tryGetCallCount == 1) {
-					return new Clio.Command.EntitySchemaDesigner.DesignerResponse<EntityDesignSchemaDto> { Success = false, Schema = null };
-				}
-				return new Clio.Command.EntitySchemaDesigner.DesignerResponse<EntityDesignSchemaDto> { Success = true, Schema = _loadedSchema };
-			});
-		_loadedSchema = CreateSchema(columns: [CreateGuidColumn("Id", IdColumnUId)], primaryDisplayColumn: null);
-		_dependencyResolver.Resolve("UsrVehicle", "UsrPkg", true)
-			.Returns(new EntitySchemaDependencyResolution(true, ["UsrOwner"], 1));
+	[Description("Asks the designer exactly once and never retries after the candidate lookup, because the lookup no longer changes anything that could make a second attempt succeed (issue #722).")]
+	public void ModifyColumn_ShouldNotRetryTheDesignerLoad_WhenSchemaIsUnavailable() {
+		// Arrange
+		SetupUnavailableSchema();
+		_dependencyResolver.Resolve("UsrVehicle", "UsrPkg")
+			.Returns(new EntitySchemaDependencyResolution(["UsrOwner"], 1, true, true));
 		var options = new ModifyEntitySchemaColumnOptions {
 			Package = "UsrPkg", SchemaName = "UsrVehicle",
 			Action = "add", ColumnName = "Name", Type = "Text", Title = "Vehicle name"
 		};
 
 		// Act
-		_manager.ModifyColumn(options);
+		Action act = () => _manager.ModifyColumn(options);
 
 		// Assert
-		_savedSchema.Should().NotBeNull(
-			because: "auto-resolve succeeded and the retry completed the mutation");
-		_dependencyResolver.Received(1).Resolve("UsrVehicle", "UsrPkg", true);
+		act.Should().Throw<EntitySchemaDesignerException>(
+			because: "the schema stayed unavailable, so the enriched diagnosis must surface");
+		_designerClient.ReceivedWithAnyArgs(1).TryGetSchemaDesignItem(default, default);
+		_designerClient.ReceivedWithAnyArgs(1).GetSchemaDesignItem(default, default);
 	}
 
 	[Test]
-	[Description("Falls through to GetSchemaDesignItem (the enriched error path) when auto-resolve finds no candidate and the schema stays unavailable (ENG-91314).")]
-	public void ModifyColumn_ShouldThrowEnrichedError_WhenAutoResolveReturnsFalse() {
+	[Description("Falls through to GetSchemaDesignItem (the enriched error path) when the candidate lookup finds nothing and the schema stays unavailable (ENG-91314).")]
+	public void ModifyColumn_ShouldThrowEnrichedError_WhenNoCandidateIsFound() {
 		// Arrange
 		SetupUnavailableSchema();
-		_dependencyResolver.Resolve("UsrVehicle", "UsrPkg", true)
+		_dependencyResolver.Resolve("UsrVehicle", "UsrPkg")
 			.Returns(EntitySchemaDependencyResolution.None);
 		var options = new ModifyEntitySchemaColumnOptions {
 			Package = "UsrPkg", SchemaName = "UsrVehicle",
@@ -2854,32 +2845,9 @@ internal class RemoteEntitySchemaColumnManagerTests
 
 		// Assert
 		act.Should().Throw<EntitySchemaDesignerException>(
-				because: "when auto-resolve fails, the enriched error from GetSchemaDesignItem must propagate")
+				because: "when no candidate is found, the enriched error from GetSchemaDesignItem must propagate")
 			.WithMessage("*not available in package*",
-				because: "the re-issue must reach GetSchemaDesignItem so the enriched missing-dependency diagnostic surfaces, not the generic 'returned no schema' fallback");
-		_designerClient.ReceivedWithAnyArgs(1).GetSchemaDesignItem(default, default);
-	}
-
-	[Test]
-	[Description("Falls through to GetSchemaDesignItem when auto-resolve adds a dependency but the schema remains inaccessible on retry (ENG-91314).")]
-	public void ModifyColumn_ShouldThrowEnrichedError_WhenRetryAfterAutoResolveStillFails() {
-		// Arrange — every call returns null schema.
-		SetupUnavailableSchema();
-		_dependencyResolver.Resolve("UsrVehicle", "UsrPkg", true)
-			.Returns(new EntitySchemaDependencyResolution(true, ["UsrOwner"], 1));
-		var options = new ModifyEntitySchemaColumnOptions {
-			Package = "UsrPkg", SchemaName = "UsrVehicle",
-			Action = "add", ColumnName = "Name", Type = "Text", Title = "Vehicle name"
-		};
-
-		// Act
-		Action act = () => _manager.ModifyColumn(options);
-
-		// Assert
-		act.Should().Throw<EntitySchemaDesignerException>(
-				because: "even after adding the dependency, a still-inaccessible schema must surface the enriched diagnostic")
-			.WithMessage("*not available in package*",
-				because: "a retry that still yields a null schema must fall through to GetSchemaDesignItem, not emit the generic 'returned no schema' message");
+				because: "the re-issue must reach GetSchemaDesignItem so the enriched diagnostic surfaces, not the generic 'returned no schema' fallback");
 		_designerClient.ReceivedWithAnyArgs(1).GetSchemaDesignItem(default, default);
 	}
 
@@ -2927,7 +2895,7 @@ internal class RemoteEntitySchemaColumnManagerTests
 		});
 
 		// Assert
-		_dependencyResolver.DidNotReceive().Resolve(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<bool>());
+		_dependencyResolver.DidNotReceive().Resolve(Arg.Any<string>(), Arg.Any<string>());
 	}
 
 	[Test]
@@ -2944,7 +2912,7 @@ internal class RemoteEntitySchemaColumnManagerTests
 		});
 
 		// Assert
-		_dependencyResolver.DidNotReceive().Resolve(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<bool>());
+		_dependencyResolver.DidNotReceive().Resolve(Arg.Any<string>(), Arg.Any<string>());
 	}
 
 	[Test]
@@ -3102,8 +3070,8 @@ internal class RemoteEntitySchemaColumnManagerTests
 	public void ModifyColumn_ShouldNameRankedCandidatePackagesInTheError_WhenSchemaIsUnavailable() {
 		// Arrange
 		SetupMarkupSchemaResponse();
-		_dependencyResolver.Resolve("UsrVehicle", "UsrPkg", true).Returns(
-			new EntitySchemaDependencyResolution(false, ["CrtLeadOppMgmtApp", "SalesEnterprise", "CrtOpportunity"], 2));
+		_dependencyResolver.Resolve("UsrVehicle", "UsrPkg").Returns(
+			new EntitySchemaDependencyResolution(["CrtLeadOppMgmtApp", "SalesEnterprise", "CrtOpportunity"], 2, true, true));
 		var options = new ModifyEntitySchemaColumnOptions {
 			Package = "UsrPkg", SchemaName = "UsrVehicle",
 			Action = "add", ColumnName = "Name", Type = "Text", Title = "Vehicle name"
@@ -3133,7 +3101,7 @@ internal class RemoteEntitySchemaColumnManagerTests
 	public void ModifyColumn_ShouldClaimNoCause_WhenNoCandidatePackageWasFound() {
 		// Arrange
 		SetupMarkupSchemaResponse();
-		_dependencyResolver.Resolve("UsrVehicle", "UsrPkg", true)
+		_dependencyResolver.Resolve("UsrVehicle", "UsrPkg")
 			.Returns(EntitySchemaDependencyResolution.None);
 		var options = new ModifyEntitySchemaColumnOptions {
 			Package = "UsrPkg", SchemaName = "UsrVehicle",
@@ -3154,12 +3122,12 @@ internal class RemoteEntitySchemaColumnManagerTests
 	}
 
 	[Test]
-	[Description("Asks the resolver for candidates on a read path but forbids it to write, so a read can name the fix without ever changing the package (issue #722).")]
-	public void GetSchemaProperties_ShouldRequestCandidatesWithoutAllowingAWrite_WhenSchemaIsUnavailable() {
+	[Description("Asks the resolver for candidates on a read path, so a read can name the fix; the lookup itself never changes the package on any path (issue #722).")]
+	public void GetSchemaProperties_ShouldRequestCandidates_WhenSchemaIsUnavailable() {
 		// Arrange
 		SetupMarkupSchemaResponse();
-		_dependencyResolver.Resolve("UsrVehicle", "UsrPkg", false).Returns(
-			new EntitySchemaDependencyResolution(false, ["CrtLeadOppMgmtApp"], 1));
+		_dependencyResolver.Resolve("UsrVehicle", "UsrPkg").Returns(
+			new EntitySchemaDependencyResolution(["CrtLeadOppMgmtApp"], 1, true, true));
 
 		// Act
 		Action act = () => _manager.GetSchemaProperties(new GetEntitySchemaPropertiesOptions {
@@ -3171,8 +3139,7 @@ internal class RemoteEntitySchemaColumnManagerTests
 		act.Should().Throw<NonJsonServiceResponseException>()
 			.Which.Message.Should().Contain("CrtLeadOppMgmtApp",
 				because: "the read path carried no candidate information at all before, which is what made it unactionable");
-		_dependencyResolver.Received(1).Resolve("UsrVehicle", "UsrPkg", false);
-		_dependencyResolver.DidNotReceive().Resolve(Arg.Any<string>(), Arg.Any<string>(), true);
+		_dependencyResolver.Received(1).Resolve("UsrVehicle", "UsrPkg");
 	}
 
 	[Test]
@@ -3186,8 +3153,8 @@ internal class RemoteEntitySchemaColumnManagerTests
 				throw new SessionExpiredServiceResponseException(
 					"GetSchemaDesignItem was answered with the Creatio sign-in response instead of JSON. " +
 					"Verify the environment credentials."));
-		_dependencyResolver.Resolve("UsrVehicle", "UsrPkg", true).Returns(
-			new EntitySchemaDependencyResolution(false, ["CrtLeadOppMgmtApp"], 1));
+		_dependencyResolver.Resolve("UsrVehicle", "UsrPkg").Returns(
+			new EntitySchemaDependencyResolution(["CrtLeadOppMgmtApp"], 1, true, true));
 		var options = new ModifyEntitySchemaColumnOptions {
 			Package = "UsrPkg", SchemaName = "UsrVehicle",
 			Action = "add", ColumnName = "Name", Type = "Text", Title = "Vehicle name"
@@ -3204,7 +3171,7 @@ internal class RemoteEntitySchemaColumnManagerTests
 			because: "a sign-in response says nothing about packages, so naming one would be a claim without evidence");
 		// The resolver is the only thing that can add a dependency, so proving it was never called is what
 		// proves an expired session cannot rewrite a package's dependency list.
-		_dependencyResolver.DidNotReceive().Resolve(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<bool>());
+		_dependencyResolver.DidNotReceive().Resolve(Arg.Any<string>(), Arg.Any<string>());
 	}
 
 	[Test]
@@ -3222,8 +3189,8 @@ internal class RemoteEntitySchemaColumnManagerTests
 			.Returns(_ => new Clio.Command.EntitySchemaDesigner.DesignerResponse<EntityDesignSchemaDto> {
 				Success = true, Schema = null
 			});
-		_dependencyResolver.Resolve("UsrVehicle", "UsrPkg", false).Returns(
-			new EntitySchemaDependencyResolution(false, ["CrtLeadOppMgmtApp"], 1));
+		_dependencyResolver.Resolve("UsrVehicle", "UsrPkg").Returns(
+			new EntitySchemaDependencyResolution(["CrtLeadOppMgmtApp"], 1, true, true));
 
 		// Act
 		Action act = () => _manager.GetSchemaProperties(new GetEntitySchemaPropertiesOptions {
@@ -3239,12 +3206,62 @@ internal class RemoteEntitySchemaColumnManagerTests
 	}
 
 	[Test]
-	[Description("Tells the caller the auto-added dependency did not help, instead of instructing them to add the package clio has just added (issue #722).")]
-	public void ModifyColumn_ShouldReportTheAddedDependency_WhenTheRetryStillFails() {
+	[Description("Reports a successful save instead of a missing dependency when the post-save verification reload cannot read the schema back, because the write and the publish have already succeeded on that path (issue #722).")]
+	public void ModifyColumn_ShouldReportASuccessfulSave_WhenOnlyThePostSaveReloadFails() {
+		// Arrange - the initial load succeeds so the mutation is applied and saved; only the verification
+		// reload that follows SaveSchema/SaveSchemaDbStructure/publish answers "unavailable".
+		_loadedSchema = CreateSchema(columns: [CreateGuidColumn("Id", IdColumnUId)], primaryDisplayColumn: null);
+		SetupLoadedSchema();
+		int tryGetCallCount = 0;
+		_designerClient.TryGetSchemaDesignItem(Arg.Any<GetSchemaDesignItemRequestDto>(),
+				Arg.Any<Clio.Command.RemoteCommandOptions>())
+			.Returns(_ => {
+				tryGetCallCount++;
+				return tryGetCallCount == 1
+					? new Clio.Command.EntitySchemaDesigner.DesignerResponse<EntityDesignSchemaDto> {
+						Success = true, Schema = _loadedSchema
+					}
+					: new Clio.Command.EntitySchemaDesigner.DesignerResponse<EntityDesignSchemaDto> {
+						Success = true, Schema = null
+					};
+			});
+		_designerClient.GetSchemaDesignItem(Arg.Any<GetSchemaDesignItemRequestDto>(),
+				Arg.Any<Clio.Command.RemoteCommandOptions>())
+			.Returns(_ => new Clio.Command.EntitySchemaDesigner.DesignerResponse<EntityDesignSchemaDto> {
+				Success = true, Schema = null
+			});
+		_dependencyResolver.Resolve("UsrVehicle", "UsrPkg")
+			.Returns(new EntitySchemaDependencyResolution(["CrtLeadOppMgmtApp"], 1, true, true));
+		var options = new ModifyEntitySchemaColumnOptions {
+			Package = "UsrPkg", SchemaName = "UsrVehicle",
+			Action = "add", ColumnName = "Name", Type = "Text", Title = "Vehicle name"
+		};
+
+		// Act
+		Action act = () => _manager.ModifyColumn(options);
+
+		// Assert
+		string message = act.Should().Throw<EntitySchemaDesignerException>(
+				because: "the caller still needs to know the read-back did not confirm, even though the write persisted")
+			.Which.Message;
+		message.Should().Contain("saved and published successfully",
+			because: "reporting a succeeded write as a total failure makes an agent repeat a mutation it already applied");
+		message.Should().NotContain("add-package-dependency",
+			because: "the save into this very package has just succeeded, so a missing dependency cannot be the cause");
+		message.Should().NotContain("CrtLeadOppMgmtApp",
+			because: "naming candidates here would offer a fix for a problem the caller does not have");
+		// The lookup must not run at all on this path: it costs remote reads to build a diagnosis that is
+		// known to be wrong before it is computed.
+		_dependencyResolver.DidNotReceive().Resolve(Arg.Any<string>(), Arg.Any<string>());
+	}
+
+	[Test]
+	[Description("Reports that the candidate lookup itself failed, instead of reporting an empty result as the finding 'no package contributes this schema' (issue #722).")]
+	public void ModifyColumn_ShouldReportTheFailedLookup_WhenTheCandidateSearchCouldNotComplete() {
 		// Arrange
 		SetupMarkupSchemaResponse();
-		_dependencyResolver.Resolve("UsrVehicle", "UsrPkg", true).Returns(
-			new EntitySchemaDependencyResolution(true, ["CrtLeadOppMgmtApp"], 1));
+		_dependencyResolver.Resolve("UsrVehicle", "UsrPkg")
+			.Returns(EntitySchemaDependencyResolution.LookupFailed("SelectQuery unreachable"));
 		var options = new ModifyEntitySchemaColumnOptions {
 			Package = "UsrPkg", SchemaName = "UsrVehicle",
 			Action = "add", ColumnName = "Name", Type = "Text", Title = "Vehicle name"
@@ -3255,14 +3272,100 @@ internal class RemoteEntitySchemaColumnManagerTests
 
 		// Assert
 		string message = act.Should().Throw<NonJsonServiceResponseException>(
-				because: "a retry that still fails is still a failed load")
+				because: "the failure must still surface as the classified authoritative type")
 			.Which.Message;
-		message.Should().Contain("added the dependency 'CrtLeadOppMgmtApp'",
-			because: "the caller must know the write already happened before deciding what to do next");
-		message.Should().Contain("remove-package-dependency",
-			because: "a dependency that did not help is a change the caller may want to undo");
-		message.Should().NotContain("add-package-dependency",
-			because: "instructing the caller to add what was just added would send them round the same loop");
+		message.Should().Contain("could not complete the lookup",
+			because: "a search that never ran must not be reported as a search that found nothing");
+		message.Should().Contain("SelectQuery unreachable",
+			because: "the underlying reason has to reach the caller, since the log warning never reaches an MCP client");
+		message.Should().NotContain("found no other package",
+			because: "that sentence is a finding of fact clio never established here");
+	}
+
+	[Test]
+	[Description("Carries the 'this list is not filtered' caveat into the authoritative error when the target package's declared dependencies could not be read, because an MCP client only ever sees that text (issue #722).")]
+	public void ModifyColumn_ShouldCarryTheUnfilteredCaveatIntoTheError_WhenTheDependencyReadFailed() {
+		// Arrange
+		SetupMarkupSchemaResponse();
+		_dependencyResolver.Resolve("UsrVehicle", "UsrPkg").Returns(
+			new EntitySchemaDependencyResolution(["CrtLeadOppMgmtApp", "SalesEnterprise"], 1, true, false));
+		var options = new ModifyEntitySchemaColumnOptions {
+			Package = "UsrPkg", SchemaName = "UsrVehicle",
+			Action = "add", ColumnName = "Name", Type = "Text", Title = "Vehicle name"
+		};
+
+		// Act
+		Action act = () => _manager.ModifyColumn(options);
+
+		// Assert
+		string message = act.Should().Throw<NonJsonServiceResponseException>(
+				because: "the failure must still surface as the classified authoritative type")
+			.Which.Message;
+		message.Should().Contain("NOT filtered",
+			because: "the filter was a no-op, so the caller must be told the list may include declared dependencies");
+		message.Should().NotContain("are not already dependencies of 'UsrPkg'",
+			because: "asserting the list is filtered when the read failed states the opposite of what happened");
+	}
+
+	[Test]
+	[Description("Drops the 'more than one of these can be a valid dependency' sentence when exactly one candidate is reported, because it contradicts the single-item list the caller is reading (issue #722).")]
+	public void ModifyColumn_ShouldNotClaimAmbiguity_WhenExactlyOneCandidateIsReported() {
+		// Arrange
+		SetupMarkupSchemaResponse();
+		_dependencyResolver.Resolve("UsrVehicle", "UsrPkg").Returns(
+			new EntitySchemaDependencyResolution(["CrtLeadOppMgmtApp"], 1, true, true));
+		var options = new ModifyEntitySchemaColumnOptions {
+			Package = "UsrPkg", SchemaName = "UsrVehicle",
+			Action = "add", ColumnName = "Name", Type = "Text", Title = "Vehicle name"
+		};
+
+		// Act
+		Action act = () => _manager.ModifyColumn(options);
+
+		// Assert
+		string message = act.Should().Throw<NonJsonServiceResponseException>(
+				because: "the failure must still surface as the classified authoritative type")
+			.Which.Message;
+		message.Should().NotContain("more than one of these can be a valid dependency",
+			because: "with one item in the list that sentence describes something the caller cannot see");
+		message.Should().Contain("clio does not add it for you",
+			because: "the caller must still be told clio will not perform the change itself");
+	}
+
+	[Test]
+	[Description("Reports the first eight ranked candidates and an accurate overflow count when more contribute the schema, which is the expected shape for the standard schemas issue #722 is about (Lead has 21).")]
+	public void ModifyColumn_ShouldCapAndCountTheCandidateList_WhenMoreThanEightContributeTheSchema() {
+		// Arrange
+		string[] candidates = [
+			"AppOne", "AppTwo", "AppThree", "PkgAlpha", "PkgBravo", "PkgCharlie", "PkgDelta", "PkgEcho",
+			"PkgFoxtrot", "PkgGolf", "PkgHotel"
+		];
+		SetupMarkupSchemaResponse();
+		_dependencyResolver.Resolve("UsrVehicle", "UsrPkg")
+			.Returns(new EntitySchemaDependencyResolution(candidates, 3, true, true));
+		var options = new ModifyEntitySchemaColumnOptions {
+			Package = "UsrPkg", SchemaName = "UsrVehicle",
+			Action = "add", ColumnName = "Name", Type = "Text", Title = "Vehicle name"
+		};
+
+		// Act
+		Action act = () => _manager.ModifyColumn(options);
+
+		// Assert
+		string message = act.Should().Throw<NonJsonServiceResponseException>(
+				because: "the failure must still surface as the classified authoritative type")
+			.Which.Message;
+		message.Should().Contain(
+			"AppOne, AppTwo, AppThree, PkgAlpha, PkgBravo, PkgCharlie, PkgDelta, PkgEcho",
+			because: "exactly the first eight candidates must be named, in ranked order");
+		message.Should().NotContain("PkgFoxtrot",
+			because: "the ninth candidate is past the reporting cap and must be replaced by the overflow count");
+		message.Should().Contain("(+3 more, see find-entity-schema --schema-name UsrVehicle)",
+			because: "the caller needs an accurate count and a way to see the rest");
+		message.Should().Contain("installed applications first",
+			because: "the ranking prefix must survive the truncation");
+		message.Should().Contain("add-package-dependency --package-name UsrPkg",
+			because: "the one-call fix must survive the truncation too");
 	}
 
 	/// <summary>

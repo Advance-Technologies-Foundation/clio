@@ -64,7 +64,7 @@ public class PackageDependencyManagerTests
 		new(new PackageDescriptor { Name = name, UId = uId, PackageVersion = version }, string.Empty, []);
 
 	private void ArrangeInstalledPackages() {
-		_packageListProvider.GetPackages("{}").Returns([
+		_packageListProvider.GetPackages("{}", Arg.Any<int>()).Returns([
 			CreatePackageInfo(TargetPackageName, _targetUId, "1.0.0.0"),
 			CreatePackageInfo(DependencyPackageName, _dependencyUId, "8.2.1.999")
 		]);
@@ -151,7 +151,7 @@ public class PackageDependencyManagerTests
 	[Description("Throws a descriptive error when the target package is not installed in the environment.")]
 	public void AddDependencies_ShouldThrow_WhenTargetPackageNotFound() {
 		// Arrange
-		_packageListProvider.GetPackages("{}").Returns([
+		_packageListProvider.GetPackages("{}", Arg.Any<int>()).Returns([
 			CreatePackageInfo(DependencyPackageName, _dependencyUId, "8.2.1.999")
 		]);
 
@@ -168,7 +168,7 @@ public class PackageDependencyManagerTests
 	[Description("Throws a descriptive error when a requested dependency package is not installed.")]
 	public void AddDependencies_ShouldThrow_WhenDependencyPackageNotFound() {
 		// Arrange
-		_packageListProvider.GetPackages("{}").Returns([
+		_packageListProvider.GetPackages("{}", Arg.Any<int>()).Returns([
 			CreatePackageInfo(TargetPackageName, _targetUId, "1.0.0.0")
 		]);
 		ArrangeGetPackageProperties(new WorkspacePackageDto { UId = _targetUId, Name = TargetPackageName });
@@ -393,7 +393,7 @@ public class PackageDependencyManagerTests
 	[Description("Throws a descriptive error when the target package is not installed in the environment (ENG-91314).")]
 	public void RemoveDependencies_ShouldThrow_WhenTargetPackageNotFound() {
 		// Arrange
-		_packageListProvider.GetPackages("{}").Returns([
+		_packageListProvider.GetPackages("{}", Arg.Any<int>()).Returns([
 			CreatePackageInfo(DependencyPackageName, _dependencyUId, "8.2.1.999")
 		]);
 

@@ -45,6 +45,25 @@ public interface IPackageDependencyManager
 	IReadOnlyList<string> GetDependencies(string packageName);
 
 	/// <summary>
+	/// Reads the dependencies <paramref name="packageName"/> currently declares with an explicit
+	/// per-request timeout, without changing anything.
+	/// </summary>
+	/// <remarks>
+	/// Same contract as <see cref="GetDependencies(string)"/>, which reads with no timeout at all. The bound
+	/// exists for callers that run this read inside an already-failing operation - the entity-schema designer
+	/// reads it only to build an error message. An environment that accepts the connection and then stops
+	/// answering must cost such a caller a bounded wait, not a hung tool call; in a long-lived MCP server an
+	/// unbounded read there holds the tenant open with no way back.
+	/// </remarks>
+	/// <param name="packageName">Package whose dependency list is read.</param>
+	/// <param name="requestTimeoutMs">
+	/// Per-request timeout in milliseconds, applied to both the package lookup and the properties read, or
+	/// <see cref="System.Threading.Timeout.Infinite"/> for no bound.
+	/// </param>
+	/// <returns>The declared dependency package names.</returns>
+	IReadOnlyList<string> GetDependencies(string packageName, int requestTimeoutMs);
+
+	/// <summary>
 	/// Removes the requested dependencies from <paramref name="packageName"/> and persists the change.
 	/// Removing a dependency that is not present is a no-op (idempotent). Dependencies are matched by name
 	/// (case-insensitive); the version is ignored.

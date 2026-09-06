@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Threading;
 using Clio.Command;
 using Clio.Command.EntitySchemaDesigner;
 using Clio.Common;
@@ -27,7 +28,6 @@ internal sealed class EntitySchemaDependencyResolverTests
 	private IServiceUrlBuilder _serviceUrlBuilder;
 	private ILogger _logger;
 	private EntitySchemaDependencyResolver _resolver;
-	private List<PackageDependencySpec> _capturedSpecs;
 
 	[SetUp]
 	public void Setup() {
@@ -40,14 +40,10 @@ internal sealed class EntitySchemaDependencyResolverTests
 		// Stubbed in Setup rather than per test: an unstubbed IReadOnlyList<string> member answers with an
 		// empty collection, which happens to be the "no existing dependencies" case, so a test that meant to
 		// exercise the filter would silently pass without it.
-		_dependencyManager.GetDependencies(Arg.Any<string>()).Returns([]);
+		_dependencyManager.GetDependencies(Arg.Any<string>(), Arg.Any<int>()).Returns([]);
 		SetInstalledApplications();
 		_resolver = new EntitySchemaDependencyResolver(_findCommand, _dependencyManager, _applicationClient,
 			_serviceUrlBuilder, _logger);
-		_capturedSpecs = null;
-		_dependencyManager.AddDependencies(Arg.Any<string>(),
-				Arg.Do<IEnumerable<PackageDependencySpec>>(specs => _capturedSpecs = specs.ToList()))
-			.Returns(callInfo => _capturedSpecs.Select(s => s.Name).ToList());
 	}
 
 	[TearDown]
@@ -69,50 +65,59 @@ internal sealed class EntitySchemaDependencyResolverTests
 			.Returns($"{{\"success\":true,\"rows\":[{rows}]}}");
 	}
 
+	/// <summary>Stubs the schema search used to find contributing packages.</summary>
+	/// <param name="packageNames">Packages to report as contributing the schema.</param>
+	private void SetContributingPackages(params string[] packageNames) {
+		_findCommand.FindSchemas(Arg.Any<FindEntitySchemaOptions>(), Arg.Any<int>())
+			.Returns(packageNames.Select(Result).ToList());
+	}
+
 	private static EntitySchemaSearchResult Result(string packageName) =>
 		new("Opportunity", packageName, "Creatio", "Opportunity");
 
 	[Test]
-	[Description("Adds the single candidate dependency and reports the change when exactly one other package contributes the schema (ENG-91314).")]
-	public void Resolve_ShouldAddDependencyAndReportChange_WhenExactlyOneCandidateExists() {
+	[Description("Reports the single candidate without touching the package, because the failing designer response carries no evidence that a missing dependency is the cause (issue #722).")]
+	public void Resolve_ShouldReportTheCandidateWithoutWriting_WhenExactlyOneCandidateExists() {
 		// Arrange
-		_findCommand.FindSchemas(Arg.Any<FindEntitySchemaOptions>())
-			.Returns([Result("CrtLeadOppMgmtApp"), Result("Custom")]);
+		SetContributingPackages("CrtLeadOppMgmtApp", "Custom");
 
 		// Act
-		EntitySchemaDependencyResolution resolution = _resolver.Resolve("Opportunity", "Custom",
-			allowAutoAdd: true);
+		EntitySchemaDependencyResolution resolution = _resolver.Resolve("Opportunity", "Custom");
 
 		// Assert
-		resolution.DependencyAdded.Should().BeTrue(
-			because: "exactly one candidate package was found and added as a dependency");
-		_capturedSpecs.Should().ContainSingle(because: "only the single candidate should be added");
-		_capturedSpecs[0].Name.Should().Be("CrtLeadOppMgmtApp",
-			because: "the non-target package should be added as a dependency");
+		resolution.Candidates.Should().Equal(["CrtLeadOppMgmtApp"],
+			because: "the caller needs the concrete package name to act on");
+		_dependencyManager.DidNotReceive()
+			.AddDependencies(Arg.Any<string>(), Arg.Any<IEnumerable<PackageDependencySpec>>());
 	}
 
 	[Test]
-	[Description("Reports every candidate without writing anything when more than one package contributes the schema - the case a standard schema always lands in, and the one the previous blanket refusal reported to nobody (issue #722).")]
-	public void Resolve_ShouldReportRankedCandidatesWithoutWriting_WhenMultipleCandidatesExist() {
+	[Description("Never writes a package dependency on any path: the designer answers a genuine SchemaIsNotAvailableException with a generic WCF error page that is indistinguishable from a WAF block or a transient fault, so no evidence for such a write exists (issue #722).")]
+	public void Resolve_ShouldNeverAddADependency_WhateverTheCandidateCount() {
 		// Arrange
-		SetInstalledApplications("CrtLeadOppMgmtApp", "SalesEnterprise");
-		_findCommand.FindSchemas(Arg.Any<FindEntitySchemaOptions>())
-			.Returns([
-				Result("CoreLeadOpportunity"),
-				Result("CrtLeadOppMgmtApp"),
-				Result("SalesEnterprise"),
-				Result("Custom")
-			]);
+		SetContributingPackages("CrtLeadOppMgmtApp");
 
 		// Act
-		EntitySchemaDependencyResolution resolution = _resolver.Resolve("Opportunity", "Custom",
-			allowAutoAdd: true);
+		_resolver.Resolve("Opportunity", "Custom");
 
 		// Assert
-		resolution.DependencyAdded.Should().BeFalse(
-			because: "more than one candidate can be correct, so clio must not choose one on the caller's behalf");
 		_dependencyManager.DidNotReceive()
 			.AddDependencies(Arg.Any<string>(), Arg.Any<IEnumerable<PackageDependencySpec>>());
+		_dependencyManager.DidNotReceive()
+			.RemoveDependencies(Arg.Any<string>(), Arg.Any<IEnumerable<string>>());
+	}
+
+	[Test]
+	[Description("Reports every candidate ranked with installed applications first - the case a standard schema always lands in, and the one the previous blanket refusal reported to nobody (issue #722).")]
+	public void Resolve_ShouldReportRankedCandidates_WhenMultipleCandidatesExist() {
+		// Arrange
+		SetInstalledApplications("CrtLeadOppMgmtApp", "SalesEnterprise");
+		SetContributingPackages("CoreLeadOpportunity", "CrtLeadOppMgmtApp", "SalesEnterprise", "Custom");
+
+		// Act
+		EntitySchemaDependencyResolution resolution = _resolver.Resolve("Opportunity", "Custom");
+
+		// Assert
 		resolution.Candidates.Should().Equal(["CrtLeadOppMgmtApp", "SalesEnterprise", "CoreLeadOpportunity"],
 			because: "installed applications must be ranked first so the caller reads the likely answer first, and each group must be ordered so the reported list is stable");
 		resolution.ApplicationCandidateCount.Should().Be(2,
@@ -120,78 +125,51 @@ internal sealed class EntitySchemaDependencyResolverTests
 	}
 
 	[Test]
-	[Description("Returns the candidates but writes nothing when the caller is a read path that must not mutate the package (issue #722).")]
-	public void Resolve_ShouldNeverWrite_WhenAutoAddIsNotAllowed() {
-		// Arrange
-		_findCommand.FindSchemas(Arg.Any<FindEntitySchemaOptions>())
-			.Returns([Result("CrtLeadOppMgmtApp"), Result("Custom")]);
-
-		// Act
-		EntitySchemaDependencyResolution resolution = _resolver.Resolve("Opportunity", "Custom",
-			allowAutoAdd: false);
-
-		// Assert
-		resolution.DependencyAdded.Should().BeFalse(
-			because: "a read path must never change the target package's dependency list");
-		_dependencyManager.DidNotReceive()
-			.AddDependencies(Arg.Any<string>(), Arg.Any<IEnumerable<PackageDependencySpec>>());
-		resolution.Candidates.Should().Equal(["CrtLeadOppMgmtApp"],
-			because: "the read path still needs the candidate so its error message can name a concrete fix");
-	}
-
-	[Test]
-	[Description("Excludes the target package from the dependency candidates so it does not add a self-dependency (ENG-91314).")]
+	[Description("Excludes the target package from the dependency candidates so it never proposes a self-dependency (ENG-91314).")]
 	public void Resolve_ShouldExcludeTargetPackage_WhenSchemaExistsInTargetToo() {
 		// Arrange
-		_findCommand.FindSchemas(Arg.Any<FindEntitySchemaOptions>())
-			.Returns([Result("Custom"), Result("CrtLeadOppMgmtApp")]);
+		SetContributingPackages("Custom", "CrtLeadOppMgmtApp");
 
 		// Act
-		EntitySchemaDependencyResolution resolution = _resolver.Resolve("Opportunity", "Custom",
-			allowAutoAdd: true);
+		EntitySchemaDependencyResolution resolution = _resolver.Resolve("Opportunity", "Custom");
 
 		// Assert
 		resolution.Candidates.Should().Equal(["CrtLeadOppMgmtApp"],
 			because: "only CrtLeadOppMgmtApp should remain after excluding the target package");
-		_capturedSpecs.Should().ContainSingle(because: "only CrtLeadOppMgmtApp should remain after excluding Custom");
-		_capturedSpecs[0].Name.Should().Be("CrtLeadOppMgmtApp",
-			because: "only the non-target package should remain as a dependency candidate");
 	}
 
 	[Test]
 	[Description("Drops packages the target already depends on, so a candidate list never proposes a dependency that is already declared (issue #722).")]
 	public void Resolve_ShouldExcludeExistingDependencies_WhenTargetAlreadyDependsOnACandidate() {
 		// Arrange
-		_dependencyManager.GetDependencies("Custom").Returns(["crtcore", "CoreLeadOpportunity"]);
-		_findCommand.FindSchemas(Arg.Any<FindEntitySchemaOptions>())
-			.Returns([Result("CoreLeadOpportunity"), Result("CrtLeadOppMgmtApp"), Result("CrtCore")]);
+		_dependencyManager.GetDependencies("Custom", Arg.Any<int>()).Returns(["crtcore", "CoreLeadOpportunity"]);
+		SetContributingPackages("CoreLeadOpportunity", "CrtLeadOppMgmtApp", "CrtCore");
 
 		// Act
-		EntitySchemaDependencyResolution resolution = _resolver.Resolve("Opportunity", "Custom",
-			allowAutoAdd: false);
+		EntitySchemaDependencyResolution resolution = _resolver.Resolve("Opportunity", "Custom");
 
 		// Assert
 		resolution.Candidates.Should().Equal(["CrtLeadOppMgmtApp"],
 			because: "an already-declared dependency is not a fix, and the match must ignore case as package names do");
+		resolution.DependenciesKnown.Should().BeTrue(
+			because: "the dependency read succeeded, so the caller may state that the list is filtered");
 	}
 
 	[Test]
 	[Description("Reports nothing at all when every contributing package is already a dependency, because a missing dependency is then not what the caller is looking at (issue #722).")]
 	public void Resolve_ShouldReportNoCandidates_WhenEveryContributorIsAlreadyADependency() {
 		// Arrange
-		_dependencyManager.GetDependencies("Custom").Returns(["CrtLeadOppMgmtApp"]);
-		_findCommand.FindSchemas(Arg.Any<FindEntitySchemaOptions>())
-			.Returns([Result("CrtLeadOppMgmtApp")]);
+		_dependencyManager.GetDependencies("Custom", Arg.Any<int>()).Returns(["CrtLeadOppMgmtApp"]);
+		SetContributingPackages("CrtLeadOppMgmtApp");
 
 		// Act
-		EntitySchemaDependencyResolution resolution = _resolver.Resolve("Opportunity", "Custom",
-			allowAutoAdd: true);
+		EntitySchemaDependencyResolution resolution = _resolver.Resolve("Opportunity", "Custom");
 
 		// Assert
 		resolution.Candidates.Should().BeEmpty(
 			because: "with no addable candidate there is no evidence for a missing dependency and none must be claimed");
-		_dependencyManager.DidNotReceive()
-			.AddDependencies(Arg.Any<string>(), Arg.Any<IEnumerable<PackageDependencySpec>>());
+		resolution.LookupSucceeded.Should().BeTrue(
+			because: "the search ran to completion, so its empty answer is a finding of fact rather than a missing answer");
 	}
 
 	[Test]
@@ -201,12 +179,10 @@ internal sealed class EntitySchemaDependencyResolverTests
 		_applicationClient.ExecutePostRequest(SelectQueryUrl, Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(),
 				Arg.Any<int>())
 			.Throws(new InvalidOperationException("SelectQuery unavailable"));
-		_findCommand.FindSchemas(Arg.Any<FindEntitySchemaOptions>())
-			.Returns([Result("CrtLeadOppMgmtApp"), Result("CoreLeadOpportunity")]);
+		SetContributingPackages("CrtLeadOppMgmtApp", "CoreLeadOpportunity");
 
 		// Act
-		EntitySchemaDependencyResolution resolution = _resolver.Resolve("Opportunity", "Custom",
-			allowAutoAdd: false);
+		EntitySchemaDependencyResolution resolution = _resolver.Resolve("Opportunity", "Custom");
 
 		// Assert
 		resolution.Candidates.Should().Equal(["CoreLeadOpportunity", "CrtLeadOppMgmtApp"],
@@ -216,59 +192,71 @@ internal sealed class EntitySchemaDependencyResolverTests
 	}
 
 	[Test]
-	[Description("Reports the candidate but refuses to write when the current-dependencies read failed, because the 'exactly one remains' safety condition was then never actually evaluated (issue #722).")]
-	public void Resolve_ShouldNotWrite_WhenTheExistingDependencyReadFailed() {
+	[Description("Marks the candidate list as unfiltered when the current-dependencies read failed, so the caller can carry that caveat into the message instead of asserting the list excludes declared dependencies (issue #722).")]
+	public void Resolve_ShouldReportDependenciesUnknown_WhenTheExistingDependencyReadFailed() {
 		// Arrange
-		_dependencyManager.GetDependencies("Custom").Throws(new InvalidOperationException("SelectQuery failed"));
-		_findCommand.FindSchemas(Arg.Any<FindEntitySchemaOptions>())
-			.Returns([Result("CrtLeadOppMgmtApp")]);
+		_dependencyManager.GetDependencies("Custom", Arg.Any<int>())
+			.Throws(new InvalidOperationException("SelectQuery failed"));
+		SetContributingPackages("CrtLeadOppMgmtApp");
 
 		// Act
-		EntitySchemaDependencyResolution resolution = _resolver.Resolve("Opportunity", "Custom",
-			allowAutoAdd: true);
+		EntitySchemaDependencyResolution resolution = _resolver.Resolve("Opportunity", "Custom");
 
 		// Assert
-		resolution.DependencyAdded.Should().BeFalse(
-			because: "with the existing dependencies unknown the filter was a no-op, so a single remaining candidate proves nothing");
-		_dependencyManager.DidNotReceive()
-			.AddDependencies(Arg.Any<string>(), Arg.Any<IEnumerable<PackageDependencySpec>>());
+		resolution.DependenciesKnown.Should().BeFalse(
+			because: "the subtraction that removes already-declared packages was a no-op, and the caller must say so");
 		resolution.Candidates.Should().Equal(["CrtLeadOppMgmtApp"],
-			because: "a degraded read must withhold the write, not the diagnosis");
+			because: "a degraded read must withhold the claim, not the diagnosis");
 	}
 
 	[Test]
-	[Description("Still reports the candidate it tried to add when the dependency write is refused, so the caller is not told that nothing was found (issue #722).")]
-	public void Resolve_ShouldStillReportTheCandidate_WhenTheDependencyWriteIsRefused() {
+	[Description("Tells the caller the candidate search itself failed, rather than returning an empty list that reads as 'no package contributes this schema' (issue #722).")]
+	public void Resolve_ShouldReportLookupFailure_WhenTheSchemaSearchThrows() {
 		// Arrange
-		_findCommand.FindSchemas(Arg.Any<FindEntitySchemaOptions>())
-			.Returns([Result("CrtLeadOppMgmtApp")]);
-		_dependencyManager.AddDependencies(Arg.Any<string>(), Arg.Any<IEnumerable<PackageDependencySpec>>())
-			.Throws(new InvalidOperationException("Package is not editable"));
+		_findCommand.FindSchemas(Arg.Any<FindEntitySchemaOptions>(), Arg.Any<int>())
+			.Throws(new InvalidOperationException("SelectQuery unreachable"));
 
 		// Act
-		EntitySchemaDependencyResolution resolution = _resolver.Resolve("Opportunity", "Custom",
-			allowAutoAdd: true);
+		EntitySchemaDependencyResolution resolution = _resolver.Resolve("Opportunity", "Custom");
 
 		// Assert
-		resolution.DependencyAdded.Should().BeFalse(
-			because: "the write was refused, so the caller must not be told to retry the load");
-		resolution.Candidates.Should().Equal(["CrtLeadOppMgmtApp"],
-			because: "a refused write must not make the caller report 'clio found no package', which is the opposite of what happened");
-		_logger.Received().WriteWarning(Arg.Is<string>(msg => msg.Contains("Package is not editable")));
+		resolution.LookupSucceeded.Should().BeFalse(
+			because: "a search that never completed is the absence of an answer, not the answer 'nothing contributes this schema'");
+		resolution.LookupFailureReason.Should().Contain("SelectQuery unreachable",
+			because: "the reason must travel in the result, since the log warning never reaches an MCP client");
+		resolution.Candidates.Should().BeEmpty(because: "nothing was found");
 	}
 
 	[Test]
-	[Description("Redacts and bounds the failure text it logs, because SelectQuery falls back to the raw response body when the server answers success:false with no errorInfo (issue #722).")]
-	public void Resolve_ShouldRedactAndBoundLoggedFailures_WhenTheLookupFailsWithASecretBearingMessage() {
+	[Description("Bounds every remote read it adds to an already-failing path, so an environment that accepts the connection and then stops answering costs a bounded wait rather than wedging the caller (issue #722).")]
+	public void Resolve_ShouldBoundEveryDiagnosticRead_WhenEnrichingAFailure() {
+		// Arrange
+		SetContributingPackages("CrtLeadOppMgmtApp");
+
+		// Act
+		_resolver.Resolve("Opportunity", "Custom");
+
+		// Assert
+		_findCommand.Received(1).FindSchemas(Arg.Any<FindEntitySchemaOptions>(),
+			Arg.Is<int>(timeout => timeout > 0 && timeout != Timeout.Infinite));
+		_dependencyManager.Received(1).GetDependencies("Custom",
+			Arg.Is<int>(timeout => timeout > 0 && timeout != Timeout.Infinite));
+		_applicationClient.Received().ExecutePostRequest(SelectQueryUrl, Arg.Any<string>(),
+			Arg.Is<int>(timeout => timeout > 0 && timeout != Timeout.Infinite), Arg.Any<int>(), Arg.Any<int>());
+	}
+
+	[Test]
+	[Description("Redacts and bounds the failure text it reports, because SelectQuery falls back to the raw response body when the server answers success:false with no errorInfo (issue #722).")]
+	public void Resolve_ShouldRedactAndBoundFailures_WhenTheLookupFailsWithASecretBearingMessage() {
 		// Arrange
 		string secretBearingMessage =
 			"SelectQuery failed: {\"Message\":\"Authentication failed.\",\"token\":\"eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxIn0.c2ln\"} "
 			+ new string('x', 600);
-		_findCommand.FindSchemas(Arg.Any<FindEntitySchemaOptions>())
+		_findCommand.FindSchemas(Arg.Any<FindEntitySchemaOptions>(), Arg.Any<int>())
 			.Throws(new InvalidOperationException(secretBearingMessage));
 
 		// Act
-		_resolver.Resolve("Opportunity", "Custom", allowAutoAdd: false);
+		EntitySchemaDependencyResolution resolution = _resolver.Resolve("Opportunity", "Custom");
 
 		// Assert
 		List<string> warnings = _logger.ReceivedCalls()
@@ -278,64 +266,39 @@ internal sealed class EntitySchemaDependencyResolverTests
 		warnings.Should().ContainSingle(because: "the failed lookup must be reported exactly once");
 		warnings[0].Should().NotContain("eyJzdWIiOiIxIn0",
 			because: "an un-redacted server body reaching a warning is the same leak this change removes from the error messages");
-		warnings[0].Length.Should().BeLessThan(secretBearingMessage.Length,
+		resolution.LookupFailureReason.Should().NotContain("eyJzdWIiOiIxIn0",
+			because: "the reason is surfaced to the caller, so it must be redacted before it is carried there");
+		resolution.LookupFailureReason!.Length.Should().BeLessThan(secretBearingMessage.Length,
 			because: "the failure text must be bounded rather than copied whole into an agent transcript");
 	}
 
 	[Test]
-	[Description("Returns no candidates without calling the dependency manager when no other package contains the schema (ENG-91314).")]
+	[Description("Returns no candidates without reading the package dependencies when no other package contains the schema (ENG-91314).")]
 	public void Resolve_ShouldReportNoCandidates_WhenSchemaNotFoundInOtherPackages() {
 		// Arrange
-		_findCommand.FindSchemas(Arg.Any<FindEntitySchemaOptions>())
-			.Returns([]);
+		_findCommand.FindSchemas(Arg.Any<FindEntitySchemaOptions>(), Arg.Any<int>()).Returns([]);
 
 		// Act
-		EntitySchemaDependencyResolution resolution = _resolver.Resolve("UsrNonExistent", "Custom",
-			allowAutoAdd: true);
+		EntitySchemaDependencyResolution resolution = _resolver.Resolve("UsrNonExistent", "Custom");
 
 		// Assert
 		resolution.Candidates.Should().BeEmpty(
-			because: "there are no candidate packages to add as dependencies");
-		resolution.DependencyAdded.Should().BeFalse(
-			because: "nothing was added");
-		_dependencyManager.DidNotReceive()
-			.AddDependencies(Arg.Any<string>(), Arg.Any<IEnumerable<PackageDependencySpec>>());
-	}
-
-	[Test]
-	[Description("Catches exceptions from the dependency manager and reports nothing so the caller falls through to its own error message (ENG-91314).")]
-	public void Resolve_ShouldReportNothing_WhenDependencyManagerThrows() {
-		// Arrange
-		_findCommand.FindSchemas(Arg.Any<FindEntitySchemaOptions>())
-			.Returns([Result("CrtLeadOppMgmtApp")]);
-		_dependencyManager.AddDependencies(Arg.Any<string>(), Arg.Any<IEnumerable<PackageDependencySpec>>())
-			.Throws(new InvalidOperationException("Package not found"));
-
-		// Act
-		EntitySchemaDependencyResolution resolution = _resolver.Resolve("Opportunity", "Custom",
-			allowAutoAdd: true);
-
-		// Assert
-		resolution.DependencyAdded.Should().BeFalse(
-			because: "a failing resolution must not crash the caller; the enriched error message takes over");
-		_logger.Received().WriteWarning(Arg.Is<string>(msg => msg.Contains("Package not found")));
+			because: "there are no candidate packages to report");
+		_dependencyManager.DidNotReceive().GetDependencies(Arg.Any<string>(), Arg.Any<int>());
 	}
 
 	[Test]
 	[Description("Deduplicates package names when the same schema appears multiple times in the same package (ENG-91314).")]
 	public void Resolve_ShouldDeduplicateCandidates_WhenPackageAppearsMultipleTimes() {
 		// Arrange
-		_findCommand.FindSchemas(Arg.Any<FindEntitySchemaOptions>())
-			.Returns([Result("CrtLeadOppMgmtApp"), Result("CrtLeadOppMgmtApp")]);
+		SetContributingPackages("CrtLeadOppMgmtApp", "CrtLeadOppMgmtApp");
 
 		// Act
-		EntitySchemaDependencyResolution resolution = _resolver.Resolve("Opportunity", "Custom",
-			allowAutoAdd: true);
+		EntitySchemaDependencyResolution resolution = _resolver.Resolve("Opportunity", "Custom");
 
 		// Assert
 		resolution.Candidates.Should().ContainSingle(
 			because: "duplicate package names must be collapsed into one candidate");
-		_capturedSpecs.Should().ContainSingle(because: "duplicate package names must be collapsed into one dependency");
 	}
 
 }

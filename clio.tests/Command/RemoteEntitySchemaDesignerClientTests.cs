@@ -4,6 +4,7 @@ using Clio.Command;
 using Clio.Command.EntitySchemaDesigner;
 using Clio.Common;
 using Clio.Common.Responses;
+using Clio.Package;
 using FluentAssertions;
 using NSubstitute;
 using NUnit.Framework;
@@ -419,6 +420,64 @@ internal class RemoteEntitySchemaDesignerClientTests
 		// Assert
 		isRunning.Should().BeNull(
 			because: "an HTML error page means the server has no such method, which must read as unknown rather than 'not running'");
+	}
+
+	[Test]
+	[Description("Reads a bare markup fragment on the OData build probe as unknown, so the widened markup test cannot turn a gateway error page into a parse failure (issue #722).")]
+	public void TryGetIsODataBuildRunning_ReturnsNull_WhenServerReturnsBareMarkupFragment() {
+		// Arrange
+		_serviceUrlBuilder.Build("ServiceModel/WorkspaceExplorerService.svc")
+			.Returns("http://local/ServiceModel/WorkspaceExplorerService.svc");
+		_applicationClient.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(),
+			Arg.Any<int>())
+			.Returns("<div>Request blocked by the gateway.</div>");
+
+		// Act
+		bool? isRunning = _client.TryGetIsODataBuildRunning(new RemoteCommandOptions());
+
+		// Assert
+		isRunning.Should().BeNull(
+			because: "a bare markup fragment is not a service answer, and the widened markup test must classify it as unknown rather than let it reach the parser");
+	}
+
+	[Test]
+	[Description("Classifies the sign-in response on the non-throwing designer probe as an expired session, so an authentication failure can never be read as 'this schema is unavailable in this package' (issue #722).")]
+	public void TryGetSchemaDesignItem_ThrowsSessionExpired_WhenServerReturnsLoginPage() {
+		// Arrange
+		_applicationClient.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(),
+			Arg.Any<int>())
+			.Returns("<html><body><form action=\"/Login/NuiLogin.aspx\"></form></body></html>");
+
+		// Act
+		Action act = () => _client.TryGetSchemaDesignItem(new GetSchemaDesignItemRequestDto {
+			Name = "UsrVehicle",
+			PackageUId = Guid.Parse("22222222-2222-2222-2222-222222222222")
+		}, new RemoteCommandOptions());
+
+		// Assert
+		act.Should().Throw<SessionExpiredServiceResponseException>(
+				because: "returning null here is what let an authentication failure drive a package-dependency diagnosis")
+			.Which.Message.Should().NotContain("NuiLogin",
+				because: "a sign-in page can carry session tokens, so no part of the body may be echoed");
+	}
+
+	[Test]
+	[Description("Classifies a BOM-prefixed sign-in response the same way, because Creatio's WCF endpoints demonstrably emit a byte-order mark and char.IsWhiteSpace does not report one (issue #722).")]
+	public void TryGetSchemaDesignItem_ThrowsSessionExpired_WhenLoginPageIsPrefixedWithAByteOrderMark() {
+		// Arrange
+		_applicationClient.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(),
+			Arg.Any<int>())
+			.Returns("\uFEFF<html><body><form action=\"/Login/NuiLogin.aspx\"></form></body></html>");
+
+		// Act
+		Action act = () => _client.TryGetSchemaDesignItem(new GetSchemaDesignItemRequestDto {
+			Name = "UsrVehicle",
+			PackageUId = Guid.Parse("22222222-2222-2222-2222-222222222222")
+		}, new RemoteCommandOptions());
+
+		// Assert
+		act.Should().Throw<SessionExpiredServiceResponseException>(
+			because: "a byte-order mark must not hide the sign-in classification from the gate that runs before the markup test");
 	}
 
 	[Test]
