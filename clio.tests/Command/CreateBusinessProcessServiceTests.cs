@@ -1,4 +1,5 @@
 using System;
+using System.Text.Json;
 using System.Text.Json.Nodes;
 using Clio.Command;
 using Clio.Common;
@@ -159,4 +160,32 @@ public sealed class CreateBusinessProcessServiceTests {
 
 	// The service wraps the descriptor under a "request" property (ProcessDesignService BodyStyle=Wrapped).
 	private static JsonNode Wrapped(string body) => JsonNode.Parse(body)?["request"];
+	[Test]
+	[Description("A response body that is not the BuildProcess envelope is reported as an UNREADABLE response whose outcome is unknown, not as a raw System.Text.Json message. This path had the same unguarded deserialization as modify, where manual testing on ENG-92713 actually hit it; nobody has tripped it here yet, which is exactly why it needs the guard rather than the luck.")]
+	public void BuildProcess_ShouldReportAnUnreadableResponse_WhenTheBodyIsNotTheEnvelope() {
+		// Arrange — valid JSON, wrong document: what a server-side serialization failure returns
+		IOwnedApplicationClient client = Substitute.For<IOwnedApplicationClient>();
+		// Root is not an object at all — the shape the parser could not map on the real hit (Path: $). An error
+		// DOCUMENT that is an object deserializes into an all-null envelope and is already covered by the
+		// "unexpected response shape" branch; only a body the parser cannot map reaches this guard.
+		client.ExecutePostRequest(BuildUrl, Arg.Any<string>()).Returns(
+			"[{\"ExceptionType\":\"System.Runtime.Serialization.SerializationException\"}]");
+		CreateBusinessProcessService service = CreateService(client, out _);
+
+		// Act
+		Action act = () => service.BuildProcess(Env, new CreateBusinessProcessRequest(SampleDescriptor, "MyApp"));
+
+		// Assert
+		InvalidOperationException thrown = act.Should().Throw<InvalidOperationException>(
+			because: "an unreadable response is a real outcome and has to be named as one").Which;
+		thrown.Message.Should().Contain("UNKNOWN",
+			because: "the process may or may not have been created, and the caller has to re-read before "
+				+ "retrying rather than assume either way");
+		thrown.Message.Should().NotContain("BytePositionInLine",
+			because: "a .NET parser message is written for a developer reading a stack trace, and this one "
+				+ "reaches an agent that cannot act on it");
+		thrown.InnerException.Should().BeOfType<JsonException>(
+			because: "the parser failure is kept for whoever does want it, just not as the message");
+	}
+
 }

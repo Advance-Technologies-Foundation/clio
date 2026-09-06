@@ -1,7 +1,7 @@
 {
   "library": "com.creatio.clio",
-  "libraryVersion": "1.13.93",
-  "sequence": 1013093000,
+  "libraryVersion": "1.13.94",
+  "sequence": 1013094000,
   "availableNames": [
     "agent-execution",
     "app-modeling",
@@ -84,6 +84,7 @@
     "creatio.page-schema-resources",
     "creatio.page-schema-validators",
     "creatio.process-activity-connections",
+    "creatio.process-approval",
     "creatio.process-branch-conditions",
     "creatio.process-data-elements",
     "creatio.process-formulas",
@@ -151,6 +152,7 @@
     "page-schema-resources",
     "page-schema-validators",
     "process-activity-connections",
+    "process-approval",
     "process-branch-conditions",
     "process-data-elements",
     "process-formulas",

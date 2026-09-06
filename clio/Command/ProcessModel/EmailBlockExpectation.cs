@@ -46,7 +46,7 @@ public static class EmailBlockExpectation {
 				continue;
 			}
 
-			string? name = candidate["name"]?.GetValue<string>();
+			string? name = ReadName(candidate["name"]);
 			if (!string.IsNullOrWhiteSpace(name)) {
 				names.Add(name);
 			}
@@ -74,7 +74,7 @@ public static class EmailBlockExpectation {
 
 			// addElement: the descriptor (and therefore the name) is nested under "element".
 			if (op["element"] is JsonObject added && added[EmailKey] is JsonObject) {
-				string? name = added["name"]?.GetValue<string>();
+				string? name = ReadName(added["name"]);
 				if (!string.IsNullOrWhiteSpace(name)) {
 					names.Add(name);
 				}
@@ -82,7 +82,7 @@ public static class EmailBlockExpectation {
 
 			// setElement: the name is on the operation, the block is under "elementUpdate".
 			if (op["elementUpdate"] is JsonObject update && update[EmailKey] is JsonObject) {
-				string? name = op["elementName"]?.GetValue<string>();
+				string? name = ReadName(op["elementName"]);
 				if (!string.IsNullOrWhiteSpace(name)) {
 					names.Add(name);
 				}
@@ -173,7 +173,7 @@ public static class EmailBlockExpectation {
 
 			string? body = email["body"] is JsonValue value && value.TryGetValue(out string? text) ? text : null;
 			if (!string.IsNullOrEmpty(body) && ContainsMacro(body)) {
-				string? name = candidate["name"]?.GetValue<string>();
+				string? name = ReadName(candidate["name"]);
 				if (!string.IsNullOrWhiteSpace(name)) {
 					names.Add(name);
 				}
@@ -235,6 +235,16 @@ public static class EmailBlockExpectation {
 
 	// Singular/plural of "element" for a count, kept in one place so the noun is not a duplicated string literal.
 	private static string ElementNoun(int count) => count == 1 ? "element" : "elements";
+
+	/// <summary>
+	/// Reads an element name, tolerating a node that is not a string.
+	/// <para><c>GetValue&lt;string&gt;()</c> THROWS on <c>"name": 123</c>, and this check runs AFTER a successful
+	/// operation, inside the command's try — so a payload the server happily accepted would be reported to the
+	/// caller as a failed build. Both expectation checks run in the same block, email first, so a throw here would
+	/// take the approval one down with it. Same idiom <c>ApprovalBlockExpectation</c> uses.</para>
+	/// </summary>
+	private static string? ReadName(JsonNode? node) =>
+		node is JsonValue value && value.TryGetValue(out string? text) ? text : null;
 
 	private static bool ContainsMacro(string body) =>
 		body.IndexOf("[[param:", StringComparison.OrdinalIgnoreCase) >= 0

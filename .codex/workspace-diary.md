@@ -928,3 +928,18 @@ docs/knowledge/Common/requirespackage-version-floor-survives-convergence-degrade
 Impact: an environment older than 1.3.1.1 is refused outright on create/modify — not warned — even when
 convergence has degraded; every newly documented performer contract shape is exercised live on both entry
 points. Command+Common 4975 green.
+
+## 2026-09-06 17:35 – ENG-92713 Copilot round 4: bounded derivation, and docs describing our own output
+Context: Fourth Copilot round on crt-process-builder PR 43. Four findings, all valid; a sweep of the two
+recurring claim families turned up two more in a file Copilot had not named.
+Decision: Floor stays 1.4.12.0 while the bundle moves to 1.4.13.0 — Top(1) is an optimisation and the
+narrowed macro check is a no-op today, so neither is behaviour clio depends on or advertises. The guard
+fixture asserting "satisfies" rather than "equals" is what makes that split expressible.
+Discovery: A Top() added over an OrderByAsc has to be checked against the dialect builders, not assumed —
+the unit suite mocks DBExecutor and proves nothing about SQL. MSSQL emits TOP in BuildBeforeColumnsSqlText
+and PostgreSql in BuildAfterQuerySqlText; both order before bounding, so determinism survives. Also:
+rebundle-process-builder.ps1 refuses a dirty package repo and updates the pins itself, so the order is
+commit source -> rebundle -> commit the descriptor bump it makes -> commit clio.
+Files: crt-process-builder a077e25 + cddd4fd, clio eb358755e, clio.tests/Common/BundledProcessBuilderPackageTests.cs
+Impact: The read-vs-write shape asymmetry is now stated in DescribeContracts at both levels it was wrong at,
+which is the claim that produced three separate review rounds.

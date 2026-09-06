@@ -362,6 +362,96 @@ public sealed class ServerProcessDescriberTests {
 	}
 
 	[Test]
+	[Description("Deserializes ALL TWENTY members of an Approval element's approval block from the server response into the DescribedApproval DTO. This block has no clio-side default and no partial mapping to fall back on: a member the DTO does not declare, or one whose [JsonPropertyName] drifts from the server's [DataMember], is dropped SILENTLY on re-serialize — so every name is asserted individually rather than by spot check.")]
+	public void Describe_ShouldReadEveryApprovalMember_WhenServerReportsThem() {
+		// Arrange — every member the server's ApprovalDescriptor can report, with distinguishable values
+		IApplicationClient client = ClientReturning(
+			"{\"DescribeProcessResult\":{\"success\":true,\"name\":\"UsrProc\","
+			+ "\"elements\":[{\"uid\":\"a1b2c3d4-0000-0000-0000-000000000001\",\"name\":\"Approval1\",\"type\":\"ProcessSchemaUserTask\",\"buildType\":\"approval\",\"userTaskName\":\"ApprovalUserTask\","
+			+ "\"approval\":{\"purpose\":\"Approve the order\",\"object\":\"Order\",\"objectUId\":\"1bbf2c48-6bef-4c65-a4f9-e6f27a7dd6cc\","
+			+ "\"recordId\":\"[#Lookup.1bbf2c48-6bef-4c65-a4f9-e6f27a7dd6cc.22222222-3333-4444-5555-666666666666#]\",\"recordIdDisplay\":\"Order #42\","
+			+ "\"approverType\":\"user\",\"approverEmployee\":\"[#Lookup.30da1e63-2ae1-4b62-9d5b-f9e14a0ec3a1.33333333-4444-5555-6666-777777777777#]\",\"approverEmployeeDisplay\":\"Anna Best\","
+			+ "\"approverRole\":\"[#Lookup.1f424900-3d1a-4ffe-badd-a76e62ed952b.44444444-5555-6666-7777-888888888888#]\",\"approverRoleDisplay\":\"All employees\","
+			+ "\"allowDelegation\":true,\"notifyApprover\":true,"
+			+ "\"approverEmailTemplate\":\"[#Lookup.aaaaaaaa-0000-0000-0000-00000000000a.55555555-6666-7777-8888-999999999999#]\",\"approverEmailTemplateDisplay\":\"Approval requested\","
+			+ "\"notifyAuthor\":true,\"authorEmailTemplate\":\"[#Lookup.aaaaaaaa-0000-0000-0000-00000000000a.66666666-7777-8888-9999-aaaaaaaaaaaa#]\",\"authorEmailTemplateDisplay\":\"Approval result\","
+			+ "\"recipient\":\"ops@example.com\",\"ignoreEmailErrors\":false,"
+			+ "\"approvalSchemaUId\":\"9800f45d-7d2e-44c7-85e5-053c06c8c2d4\"}}],"
+			+ "\"flows\":[],\"parameters\":[]}}");
+		ServerProcessDescriber describer = CreateDescriber(client);
+
+		// Act
+		ErrorOr<DescribeProcessResult> result = describer.Describe(new ProcessIdentity("UsrProc", null, null), null);
+
+		// Assert
+		result.IsError.Should().BeFalse(because: "the response is a valid graph");
+		DescribedApproval approval = result.Value.Elements[0].Approval;
+		approval.Should().NotBeNull(because: "the approval block must be deserialized, not dropped by the clio DTO");
+		approval.Purpose.Should().Be("Approve the order", because: "purpose maps to the DTO");
+		approval.Object.Should().Be("Order", because: "the resubmittable object NAME maps to the DTO");
+		approval.ObjectUId.Should().Be("1bbf2c48-6bef-4c65-a4f9-e6f27a7dd6cc",
+			because: "objectUId is the stored identity behind that name");
+		approval.RecordId.Should().Contain("22222222-3333-4444-5555-666666666666",
+			because: "the record under approval maps to the DTO as its stored macro");
+		approval.RecordIdDisplay.Should().Be("Order #42",
+			because: "the Display companion is what makes the macro readable, and it drops just as silently");
+		approval.ApproverType.Should().Be("user", because: "the approver type token maps to the DTO");
+		approval.ApproverEmployee.Should().Contain("33333333-4444-5555-6666-777777777777",
+			because: "the employee behind a user/manager approver maps to the DTO");
+		approval.ApproverEmployeeDisplay.Should().Be("Anna Best", because: "its Display companion maps too");
+		approval.ApproverRole.Should().Contain("44444444-5555-6666-7777-888888888888",
+			because: "the role behind a role approver maps to the DTO");
+		approval.ApproverRoleDisplay.Should().Be("All employees", because: "its Display companion maps too");
+		approval.AllowDelegation.Should().BeTrue(because: "the delegation flag maps to the DTO");
+		approval.NotifyApprover.Should().BeTrue(because: "the approver-notification flag maps to the DTO");
+		approval.ApproverEmailTemplate.Should().Contain("55555555-6666-7777-8888-999999999999",
+			because: "that notification's template maps to the DTO");
+		approval.ApproverEmailTemplateDisplay.Should().Be("Approval requested",
+			because: "its Display companion maps too");
+		approval.NotifyAuthor.Should().BeTrue(because: "the author-notification flag maps to the DTO");
+		approval.AuthorEmailTemplate.Should().Contain("66666666-7777-8888-9999-aaaaaaaaaaaa",
+			because: "the author notification's template maps to the DTO");
+		approval.AuthorEmailTemplateDisplay.Should().Be("Approval result",
+			because: "its Display companion maps too");
+		approval.Recipient.Should().Be("ops@example.com",
+			because: "the author notification's recipient is the field 'Author' cannot work out on its own");
+		approval.IgnoreEmailErrors.Should().BeFalse(
+			because: "the flag maps as WRITTEN — false has to survive, or it would read as 'not written'");
+		approval.ApprovalSchemaUId.Should().Be("9800f45d-7d2e-44c7-85e5-053c06c8c2d4",
+			because: "the derived visa schema is reported for traceability and must not be dropped either");
+	}
+
+	[Test]
+	[Description("Leaves every approval member the server omits at null rather than defaulting it, so a partly reported block cannot read as a verified 'off' — the flags in particular, where false and absent mean different things on this element.")]
+	public void Describe_ShouldLeaveOmittedApprovalMembersNull_WhenServerReportsAPartialBlock() {
+		// Arrange — a server that reports the block with only the two fields it has written
+		IApplicationClient client = ClientReturning(
+			"{\"DescribeProcessResult\":{\"success\":true,\"name\":\"UsrProc\","
+			+ "\"elements\":[{\"uid\":\"a1b2c3d4-0000-0000-0000-000000000001\",\"name\":\"Approval1\",\"type\":\"ProcessSchemaUserTask\",\"buildType\":\"approval\",\"userTaskName\":\"ApprovalUserTask\","
+			+ "\"approval\":{\"object\":\"Order\",\"approverType\":\"manager\"}}],"
+			+ "\"flows\":[],\"parameters\":[]}}");
+		ServerProcessDescriber describer = CreateDescriber(client);
+
+		// Act
+		ErrorOr<DescribeProcessResult> result = describer.Describe(new ProcessIdentity("UsrProc", null, null), null);
+
+		// Assert
+		result.IsError.Should().BeFalse(because: "the response is a valid graph");
+		DescribedApproval approval = result.Value.Elements[0].Approval;
+		approval.Should().NotBeNull(because: "a partial block is still a block");
+		approval.Object.Should().Be("Order", because: "what the server DID report has to arrive");
+		approval.NotifyApprover.Should().BeNull(
+			because: "absent must not become false: on this element 'not written' and 'switched off' are "
+				+ "different states, and only a nullable flag can tell them apart");
+		approval.NotifyAuthor.Should().BeNull(because: "the same holds for the author notification");
+		approval.IgnoreEmailErrors.Should().BeNull(
+			because: "this one is the sharpest case — the schema default is TRUE, so a false here would assert "
+				+ "the opposite of what the element actually does");
+		approval.AllowDelegation.Should().BeNull(because: "the same holds for the delegation flag");
+		approval.Recipient.Should().BeNull(because: "an unreported recipient is unknown, not empty");
+	}
+
+	[Test]
 	[Description("Leaves the email block's hasBody unset (null) when an older server omits it, so the absent flag serializes away instead of defaulting to false and reading as a verified 'no body'.")]
 	public void Describe_ShouldLeaveEmailHasBodyNull_WhenServerOmitsIt() {
 		// Arrange — an older CrtProcessBuilder that reports an email block without the hasBody flag

@@ -15,42 +15,44 @@ namespace Clio.Command;
 /// Consumed by the MCP <c>modify-business-process</c> tool, which sets these properties directly.
 /// </summary>
 // The version literal states what THIS command's code needs — the newest operation it sends that an
-// older server does not have. Today that is `setFlowCondition` plus the formula validator behind the
-// `expression` mapping source, both introduced by ENG-95891 and both first shipping in 1.4.0.0. They need
-// the literal for the two distinct reasons the bundled-packages article names. `setFlowCondition` is an
-// operation an older server does not carry at all: the token would be rejected by the server's own dispatch
-// registry with a "supported operations are …" message, which reads as a clio bug rather than a stale
-// environment.
+// older server does not have. Today that is the element-level performer block and the
+// reference-existence guard behind it (bare-Guid Lookup values, performer contact/role), shipped in
+// the 1.3.1.1 archive: an older server has no performer member and silently discards the block while
+// answering success, and a pre-guard server stores a dead id instead of refusing it. Presence alone
+// cannot express either — the email block's 1.2.0.1 floor set this precedent and is subsumed by this
+// literal. Raised to 1.4.0.37 by ENG-95891: a build's `mappings[]` may carry an `expression` source, and
+// the formula validator behind it is a TIGHTENED VALIDATOR — a server older than 1.4.0.0 stores such a
+// mapping with no check at all, so the same descriptor that is refused on a current environment silently
+// persists a broken formula on an older one, to fail at run time. The article is explicit that a tightened
+// validator takes a literal rather than being left to convergence, because convergence only warns.
 //
-// The literal is 1.4.0.44, and three versions are in play. 1.4.0.41 stopped validating formulas IN THE
-// PACKAGE, because the
-// platform's own pre-save gate was already validating them — a mapped expression and a flow condition alike,
-// measured with both package guards built out and installed
-// (spec/eng-95891-formula-expressions/eng-95891-formula-expressions-save-gate-probe.md). So the formula half
-// of this floor is no longer a tightened validator; .41 checks strictly LESS than .37 did, and an environment
-// between them refuses at least as much. It is above .41 because .42 corrected the rewrite this description
-// promises — every serialised error in one message, and an element-scoped reference named as such — and .44
-// specifically because .44 is the first archive carrying both that and the lookup-constant contract the
-// ENG-96325 merge brought in (see below). Not because .44 is what this clio bundles: the bundle moves on
-// every rebundle and the fixture only asserts the floor is satisfiable by it, so a floor that tracks the
-// bundle would demand an upgrade of environments that already work. What the floor buys is the MESSAGE contract this tool's description
-// promises: below .41 a bad formula is refused in the package's own wording, with its own reference
-// pre-check, and without the serialised-error rewrite — so an unresolvable parameter reference comes back as
-// `{ErrorType:2,ErrorData:{ParameterUId:"…"}}` rather than as a sentence.
+// Raised again to 1.4.0.44, and this time the reason runs the other way. 1.4.0.41 is the version that STOPPED
+// validating formulas in the package, because the platform's own pre-save gate was already doing it — for a
+// mapped expression AND for a flow condition, measured with both package guards built out and installed
+// (spec/eng-95891-formula-expressions/eng-95891-formula-expressions-save-gate-probe.md). What the floor buys
+// is therefore the MESSAGE contract these descriptions promise, not the existence of a refusal: below .41 a
+// bad formula is still refused, but by the package's own wording and its own reference pre-check, and the
+// serialised-error rewrite (PlatformValidationMessage) is not there — so an unresolvable parameter reference
+// comes back as `{ErrorType:2,ErrorData:{ParameterUId:"…"}}`.
 //
-// Do not lower it to .37 on the grounds that .37 refuses too. It does, with different text. And do not lower
-// it below .37 on any grounds: the refusals that SURVIVE the collapse were themselves measured one archive
-// at a time — the activity-result guard in .32 and the element-retarget refusal in .37. (The
-// platform-grammar element segment, which .35 added and which earlier revisions of this comment counted
-// as a third, turns out not to have been load-bearing: the strict RegexParameterValue it mirrored is used
-// only for data-source filter map paths, while a parameter VALUE is parsed by the brace-optional
-// GeneratorUtilities patterns, so the element scoping survived the looser form anyway. Do not cite it as
-// one of the refusals this floor protects; the other two are.) Against an environment at .3, `setFlowCondition` on a result-driven
-// branch is NOT refused: the condition is stored and then ignored at run time, the exact silent failure the
-// description offers protection from.
-// This subsumes the previous 1.3.1.1 floor (the element-level performer block and its reference-existence
-// guard), which subsumed the email block's 1.2.0.1 floor before it. The guard fixture asserts the shipped
-// archive satisfies the literal, so clio can never demand a version it does not itself carry.
+// The floor is above .41 because the review round after .41 corrected the rewrite these descriptions
+// promise: every serialised error in one message rather than the first, and an element-scoped reference named
+// as such rather than called a process parameter. It is .44 specifically because .44 is the first archive
+// carrying BOTH that and the lookup-constant contract the ENG-96325 merge brought in (see below), so it is
+// the lowest version that satisfies everything these descriptions say. Do not re-derive it from whatever
+// this clio happens to bundle: the bundled archive moves on every rebundle, the fixture only asserts the
+// floor is SATISFIABLE by it, and a floor that tracks the bundle demands an upgrade of environments that
+// already work.
+//
+// The floor is NOT lowered back to .37 on the grounds that .37 also refuses. It does, with different text, and
+// a description that names what a refusal says is only true from .41. Nor is it a tightened validator any
+// more: .41 checks strictly LESS than .37 did, so an environment between the two refuses at least as much.
+// The superseded .37 rationale, kept because it is the reason not to go below it either way: each archive on
+// the ENG-95891 branch was decompressed and grepped for the marker of every refusal the descriptions promised,
+// and the activity-result guard (which SURVIVES the collapse) landed in .32, the platform-grammar element
+// segment in .35, the element-retarget refusal in .37.
+// The guard fixture asserts the shipped archive satisfies the literal, so clio can never
+// demand a version it does not itself carry.
 //
 // TWO reasons stand behind this floor now, and the merge of ENG-96325 added the second. Its
 // lookup-constant contract shipped in the 1.4.0.40 archive: a mappings[] 'value' on a Lookup target
@@ -58,16 +60,52 @@ namespace Clio.Command;
 // - the same "server starts accepting an input form an older one refuses" shape that produced the
 // 1.3.1.1 literal. The number below satisfies both that and the message contract described above.
 //
-// AND AN ACCESS-CONTROL PROPERTY, which a review caught me deleting along with it. Below 1.4.0.40 the
-// display-name resolution used a raw Select rather than a rights-aware entity read, and a raw Select
-// bypasses row-level permissions - so the referenced record's name was resolved and stored into the
-// parameter's display value whether or not the acting user may see that record. The old comment
-// called this "NOT a security floor" because no RELEASED archive carried the wider read. That premise
-// is weaker now, not stronger: this branch cut roughly thirty archives between .20 and .52, and its
-// own manual runs installed .18 and .37 - both below the rights-aware read. So do not lower this
-// floor below 1.4.0.40 on message-contract grounds alone; the floor is also what keeps a
-// pre-rights-aware read off an environment clio installs onto.
-[RequiresPackage(BundledPackages.ProcessBuilderPackageName, "1.4.0.44",
+// ===== two requirement lines met in the ENG-92713 merge, and NO released archive carries both =====
+// Master's line above stops at 1.4.0.44; the ENG-92713 line below stops at 1.4.11.0, which was cut
+// BEFORE this branch merged main and therefore predates every formula/branch behaviour master needs.
+// The first archive carrying both is the one cut from the merged package source — the literal below.
+//
+// The version literal states what THIS command needs — the newest server behaviour it depends on that an
+// older one does not have. Two independent lines of that requirement met in this merge, and NO released
+// version carries both, which is why the floor is the version this clio bundles rather than either of them.
+//
+// From ENG-96325 (master, first in 1.4.0.40): the lookup-constant input contract. A mappings[] 'value' on a
+// Lookup target may carry an already-composed [#Lookup.{objectUId}.{recordId}#], which that server decodes
+// to the bare record id while every earlier server rejects it outright as "not a bare Guid". It is NOT a
+// security floor: the raw-Select display-name read it replaced with a rights-aware entity read never
+// shipped in a released archive.
+//
+// From ENG-92713 (this branch): four shapes of one silent failure, none visible in the response. 1.4.2.0
+// added the approval APPROVER, which an older server discards while answering success, leaving an element
+// that saves and runs with nobody assigned. 1.4.3.0 added the refusal of a notification switched on with no
+// email template, and 1.4.4.0 the refusal of the AUTHOR notification with no recipient: an older server
+// ACCEPTS either and produces an element that reports the notification as configured and never sends,
+// because the runtime checks neither before sending, ignores email errors by default, and — despite the
+// caption — never resolves an author, reading only the address the recipient field writes. 1.4.7.0
+// PRESERVES the stored employee across a user<->manager approver switch; clio's guidance now tells agents
+// that {"approver":{"type":"manager"}} is how to say "their manager approves instead", and on an older
+// server that request overwrites the named employee with the current user, rerouting a real approval to
+// whoever ran the modify, self-consistently on read-back. Advertising a route the deployed server turns
+// destructive is precisely what a floor exists to stop.
+//
+// 1.4.11.0 is the newest of them and the reason the floor sits here: describe now distinguishes a WRITTEN
+// ignoreEmailErrors from the schema-level default the platform copies onto every Approval element. An older
+// server cannot, so it answers ignoreEmailErrors:true on an element nobody configured — and since one
+// reported field is enough to count as configured, it reports a block there at all. clio's describe tool
+// tells agents that absence of that field means "not written, never off"; on an older server that promise is
+// false, and a caller acting on it writes a value nobody chose. Same rule as the approver above: a floor
+// moves when clio starts ADVERTISING behaviour the deployed server may not have.
+//
+// 1.4.0.40 predates every ENG-92713 behaviour and 1.4.7.0 predates the merge that brought ENG-96325 in, so
+// the first archive carrying both is the one cut from the merged package source. Presence alone cannot
+// express any of it. The approval block (1.4.1.0), the performer block (1.3.1.1) and the email block
+// (1.2.0.1) set the precedent and are subsumed, as do 1.4.5.0, 1.4.6.0, 1.4.8.0 and 1.4.10.0, which no
+// released clio ever bundled. The guard fixture asserts the shipped archive SATISFIES the literal — not that
+// it equals it: a rebundle that changes only documentation moves the bundle and must not move the floor,
+// since a floor tracks behaviour clio depends on rather than the version it happens to ship. 1.4.10.0 was
+// exactly such a case — it corrected two contract doc comments and did not move this literal; 1.4.11.0
+// changed what the server REPORTS, so it did.
+[RequiresPackage(BundledPackages.ProcessBuilderPackageName, "1.4.12.0",
 	Hint = BundledPackages.ProcessBuilderInstallHint)]
 public sealed class ModifyBusinessProcessOptions : EnvironmentOptions {
 	/// <summary>Process code (schema Name) to edit. Provide exactly one of <see cref="ProcessName"/> or <see cref="ProcessUid"/>.</summary>
@@ -143,8 +181,27 @@ public sealed class ModifyBusinessProcessService(
 		logger.WriteInfo($"Editing process '{processIdentity}' on '{environmentName}'...");
 
 		string responseBody = client.ExecutePostRequest(url, requestBody);
-		ModifyProcessResponseEnvelope envelope =
-			JsonSerializer.Deserialize<ModifyProcessResponseEnvelope>(responseBody, JsonOptions)
+		// The response is parsed inside a try, for the reason ParseOperations just below parses the REQUEST inside
+		// one: a body that is not this envelope makes JsonSerializer throw a message built for a developer — a
+		// .NET type name and a byte offset — and this one reaches an agent, which cannot act on it. Worse, it
+		// arrives on the one path where the caller most needs to know WHAT HAPPENED: a server-side serialization
+		// failure returns a non-envelope body, so the write may or may not have landed and the exception says
+		// nothing either way. Every other outcome here is already named (empty body, missing result, success
+		// false); this was the one that leaked. Reported by manual testing on ENG-92713, hit by feeding a
+		// described approval block back verbatim.
+		ModifyProcessResponseEnvelope envelope;
+		try {
+			envelope = JsonSerializer.Deserialize<ModifyProcessResponseEnvelope>(responseBody, JsonOptions);
+		} catch (JsonException exception) {
+			throw new InvalidOperationException(
+				"ModifyProcess returned a response clio could not read, so whether the edit was applied is "
+				+ "UNKNOWN — re-read the process with describe-business-process before deciding what to do. "
+				+ "The parser detail is on the inner exception; it names a .NET type and a byte offset, which "
+				+ "helps a developer reading a stack trace and is noise to the caller reading this.",
+				exception);
+		}
+
+		envelope = envelope
 			?? throw new InvalidOperationException("ModifyProcess returned an empty response.");
 		ModifyProcessResultDto result = envelope.Result
 			?? throw new InvalidOperationException("ModifyProcess returned an unexpected response shape.");
@@ -262,7 +319,7 @@ public class ModifyBusinessProcessCommand(
 			foreach (string warning in result.Warnings ?? []) {
 				logger.WriteWarning(warning);
 			}
-			WarnOnDiscardedEmailBlocks(options, result.SchemaName);
+			WarnOnDiscardedConfigurationBlocks(options, result.SchemaName);
 			return 0;
 		} catch (Exception exception) {
 			logger.WriteError(exception.Message);
@@ -274,9 +331,12 @@ public class ModifyBusinessProcessCommand(
 	// answers success, so an edit can report an applied operation whose email configuration never landed. Read the
 	// process back and say so. Only runs when the operations actually carried a block; a failed read-back is never
 	// escalated, since it is not evidence of a drop. See EmailBlockExpectation for why this is not version-based.
-	private void WarnOnDiscardedEmailBlocks(ModifyBusinessProcessOptions options, string? schemaName) {
+	private void WarnOnDiscardedConfigurationBlocks(ModifyBusinessProcessOptions options, string? schemaName) {
 		IReadOnlyList<string> expected = EmailBlockExpectation.FromOperations(options.OperationsJson);
-		if (expected.Count == 0) {
+		// The Approval element has the same silent-drop failure, so it is verified from the SAME read-back rather
+		// than a second one — the describe below is the expensive part.
+		IReadOnlyList<ApprovalBlockExpectation.ApprovalExpectation> expectedApproval = ApprovalBlockExpectation.FromOperations(options.OperationsJson);
+		if (expected.Count == 0 && expectedApproval.Count == 0) {
 			return;
 		}
 
@@ -295,6 +355,12 @@ public class ModifyBusinessProcessCommand(
 			EmailBlockExpectation.Missing(described.Value, expected));
 		if (warning is not null) {
 			logger.WriteWarning(warning);
+		}
+
+		string? approvalWarning = ApprovalBlockExpectation.BuildWarning(
+			ApprovalBlockExpectation.Missing(described.Value, expectedApproval));
+		if (approvalWarning is not null) {
+			logger.WriteWarning(approvalWarning);
 		}
 	}
 }
