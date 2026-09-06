@@ -37,15 +37,24 @@ namespace Clio.Command;
 // whoever ran the modify, self-consistently on read-back. Advertising a route the deployed server turns
 // destructive is precisely what a floor exists to stop.
 //
+// 1.4.11.0 is the newest of them and the reason the floor sits here: describe now distinguishes a WRITTEN
+// ignoreEmailErrors from the schema-level default the platform copies onto every Approval element. An older
+// server cannot, so it answers ignoreEmailErrors:true on an element nobody configured — and since one
+// reported field is enough to count as configured, it reports a block there at all. clio's describe tool
+// tells agents that absence of that field means "not written, never off"; on an older server that promise is
+// false, and a caller acting on it writes a value nobody chose. Same rule as the approver above: a floor
+// moves when clio starts ADVERTISING behaviour the deployed server may not have.
+//
 // 1.4.0.40 predates every ENG-92713 behaviour and 1.4.7.0 predates the merge that brought ENG-96325 in, so
-// the first archive carrying both is the one cut from the merged package source — this literal. Presence
-// alone cannot express any of it. The approval block (1.4.1.0), the performer block (1.3.1.1) and the email
-// block (1.2.0.1) set the precedent and are subsumed, as do 1.4.5.0, 1.4.6.0 and 1.4.8.0, which no released
-// clio ever bundled. The guard fixture asserts the shipped archive SATISFIES the literal — not that it
-// equals it: a rebundle that changes only documentation moves the bundle and must not move the floor, since
-// a floor tracks behaviour clio depends on rather than the version it happens to ship. The bundle is 1.4.10.0
-// against this 1.4.9.0 floor for exactly that reason — 1.4.10.0 corrected two contract doc comments.
-[RequiresPackage(BundledPackages.ProcessBuilderPackageName, "1.4.9.0",
+// the first archive carrying both is the one cut from the merged package source. Presence alone cannot
+// express any of it. The approval block (1.4.1.0), the performer block (1.3.1.1) and the email block
+// (1.2.0.1) set the precedent and are subsumed, as do 1.4.5.0, 1.4.6.0, 1.4.8.0 and 1.4.10.0, which no
+// released clio ever bundled. The guard fixture asserts the shipped archive SATISFIES the literal — not that
+// it equals it: a rebundle that changes only documentation moves the bundle and must not move the floor,
+// since a floor tracks behaviour clio depends on rather than the version it happens to ship. 1.4.10.0 was
+// exactly such a case — it corrected two contract doc comments and did not move this literal; 1.4.11.0
+// changed what the server REPORTS, so it did.
+[RequiresPackage(BundledPackages.ProcessBuilderPackageName, "1.4.11.0",
 	Hint = BundledPackages.ProcessBuilderInstallHint)]
 public sealed class ModifyBusinessProcessOptions : EnvironmentOptions {
 	/// <summary>Process code (schema Name) to edit. Provide exactly one of <see cref="ProcessName"/> or <see cref="ProcessUid"/>.</summary>
@@ -121,8 +130,27 @@ public sealed class ModifyBusinessProcessService(
 		logger.WriteInfo($"Editing process '{processIdentity}' on '{environmentName}'...");
 
 		string responseBody = client.ExecutePostRequest(url, requestBody);
-		ModifyProcessResponseEnvelope envelope =
-			JsonSerializer.Deserialize<ModifyProcessResponseEnvelope>(responseBody, JsonOptions)
+		// The response is parsed inside a try, for the reason ParseOperations just below parses the REQUEST inside
+		// one: a body that is not this envelope makes JsonSerializer throw a message built for a developer — a
+		// .NET type name and a byte offset — and this one reaches an agent, which cannot act on it. Worse, it
+		// arrives on the one path where the caller most needs to know WHAT HAPPENED: a server-side serialization
+		// failure returns a non-envelope body, so the write may or may not have landed and the exception says
+		// nothing either way. Every other outcome here is already named (empty body, missing result, success
+		// false); this was the one that leaked. Reported by manual testing on ENG-92713, hit by feeding a
+		// described approval block back verbatim.
+		ModifyProcessResponseEnvelope envelope;
+		try {
+			envelope = JsonSerializer.Deserialize<ModifyProcessResponseEnvelope>(responseBody, JsonOptions);
+		} catch (JsonException exception) {
+			throw new InvalidOperationException(
+				"ModifyProcess returned a response clio could not read, so whether the edit was applied is "
+				+ "UNKNOWN — re-read the process with describe-business-process before deciding what to do. "
+				+ "The parser detail is on the inner exception; it names a .NET type and a byte offset, which "
+				+ "helps a developer reading a stack trace and is noise to the caller reading this.",
+				exception);
+		}
+
+		envelope = envelope
 			?? throw new InvalidOperationException("ModifyProcess returned an empty response.");
 		ModifyProcessResultDto result = envelope.Result
 			?? throw new InvalidOperationException("ModifyProcess returned an unexpected response shape.");

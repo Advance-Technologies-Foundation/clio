@@ -1,4 +1,5 @@
 using System;
+using System.Text.Json;
 using System.Text.Json.Nodes;
 using Clio.Command;
 using Clio.Common;
@@ -146,4 +147,32 @@ public sealed class ModifyBusinessProcessServiceTests {
 
 	// The service wraps the request under a "request" property (ProcessDesignService BodyStyle=Wrapped).
 	private static JsonNode Wrapped(string body) => JsonNode.Parse(body)["request"];
+	[Test]
+	[Description("A response body that is not the ModifyProcess envelope is reported as an UNREADABLE response whose outcome is unknown, not as a raw System.Text.Json message. A server-side serialization failure returns exactly such a body, and it arrives on the one path where the caller most needs to know whether the edit landed — feeding a described approval block back verbatim reached it on ENG-92713.")]
+	public void ModifyProcess_ShouldReportAnUnreadableResponse_WhenTheBodyIsNotTheEnvelope() {
+		// Arrange — the shape a server-side deserialization failure returns: valid JSON, wrong document
+		IOwnedApplicationClient client = Substitute.For<IOwnedApplicationClient>();
+		// Root is not an object at all, which is what the parser reported on the real hit (Path: $). An error
+		// DOCUMENT that happens to be an object deserializes into an all-null envelope instead and is already
+		// covered by the "unexpected response shape" branch; only a body the parser cannot map reaches this guard.
+		client.ExecutePostRequest(ModifyUrl, Arg.Any<string>()).Returns(
+			"[{\"ExceptionType\":\"System.Runtime.Serialization.SerializationException\"}]");
+		ModifyBusinessProcessService service = CreateService(client);
+
+		// Act
+		Action act = () => service.ModifyProcess(Env, new ModifyBusinessProcessRequest("UsrProc", null, Operations));
+
+		// Assert
+		InvalidOperationException thrown = act.Should().Throw<InvalidOperationException>(
+			because: "an unreadable response is a real outcome and has to be named as one").Which;
+		thrown.Message.Should().Contain("UNKNOWN",
+			because: "the write may or may not have landed, and saying so is the only honest report — the caller "
+				+ "has to re-read before retrying rather than assume either way");
+		thrown.Message.Should().NotContain("BytePositionInLine",
+			because: "a .NET parser message names a type and a byte offset, which is written for a developer "
+				+ "reading a stack trace and is unusable to the agent that receives it");
+		thrown.InnerException.Should().BeOfType<JsonException>(
+			because: "the parser failure is kept for a developer who does want it, just not as the message");
+	}
+
 }

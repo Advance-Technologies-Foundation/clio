@@ -300,10 +300,15 @@ public sealed class DescribedElement {
 	/// vocabulary. <c>null</c> for other element kinds and when the server (an older <c>CrtProcessBuilder</c>) does
 	/// not report it.
 	/// <para>Unlike <see cref="Email"/> this reports what is WRITTEN, not the effective value, so an unconfigured
-	/// Approval reports no block at all. Two consequences follow. <c>ignoreEmailErrors</c> is the one field with a
-	/// schema-level default (<c>true</c>): an element nobody saved through the designer USES that value while
-	/// reporting nothing here, so absence means "not written", never "off". And clearing a notification resets its
-	/// template to no source, which makes a CLEARED template indistinguishable from one that was never set.</para>
+	/// Approval reports no block at all. <c>ignoreEmailErrors</c> is the one field where that costs the server real
+	/// work: <c>ApprovalUserTask</c> DECLARES a schema-level default of <c>true</c>, the platform copies it onto
+	/// every element, and it arrives carrying <c>Source = ConstValue</c> — indistinguishable from a written value
+	/// unless the reader also compares which schema last modified it. A server that skips that check reports
+	/// <c>ignoreEmailErrors: true</c> on an element nobody configured (and, because one reported field is enough to
+	/// count as configured, reports a block for it at all). So on a current server absence means "not written",
+	/// never "off" — and the element still USES the platform default at run time, which is why the designer's card
+	/// shows the box ticked while this reports nothing. Clearing a notification likewise resets its template to no
+	/// source, which makes a CLEARED template indistinguishable from one that was never set.</para>
 	/// <para>Every VALUE reported here is one a write accepts — an employee macro, a template's lookup macro, a
 	/// record id — but the SHAPE is not the write shape and the block does NOT re-apply verbatim. This reports flat
 	/// (<c>approverType</c> + <c>approverEmployee</c>; a boolean <c>notifyApprover</c> with
