@@ -128,6 +128,14 @@ environment recorded; that comparison is the entire delivery mechanism. So:
   which is real, is where manual verification happens, and is exactly where an extra five minutes lands
   on the person doing it.
 
+  **And it lands on whoever is VERIFYING the branch, not only on whoever cut the version.** Observed
+  rather than predicted: a rebundle to `1.4.0.63` left a reviewer's clio carrying .63 against a stand
+  still on .61, and convergence refused `describe-business-process` outright — *"This clio carries
+  CrtProcessBuilder 1.4.0.63, but the target environment has 1.4.0.61."* They finished the check through
+  OData, which carries no `[RequiresPackage]` and therefore no gate. So a rebundle mid-review breaks the
+  review, and the person it breaks is not the person who chose to cut. If someone is verifying against a
+  stand, either reinstall it in the same breath or tell them the version moved.
+
 An explicit `[RequiresPackage("CrtProcessBuilder", "X.Y.Z.W")]` literal is a separate and much rarer thing:
 add one in the commit where a command starts calling an operation an older server does not have. It states
 what the CODE needs, not what environments should converge to. A guard test asserts the shipped archive
