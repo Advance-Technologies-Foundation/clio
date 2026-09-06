@@ -1360,8 +1360,9 @@ internal sealed class RemoteEntitySchemaColumnManager : IRemoteEntitySchemaColum
 		if (!resolution.DependenciesKnown) {
 			message.Append(
 				$"clio could not read the dependencies '{packageName}' already declares, so this list is " +
-				"NOT filtered - some of these may already be dependencies. Check with " +
-				$"get-pkg-property or list-packages before adding one. ");
+				"NOT filtered - some of these may already be dependencies. Adding one that is already " +
+				"declared is a no-op, so this costs nothing, but it also fixes nothing: if the package you " +
+				"add was already there, the cause lies elsewhere. ");
 		}
 		message.Append(
 			$"Add the owning one with: clio add-package-dependency --package-name {packageName} " +
