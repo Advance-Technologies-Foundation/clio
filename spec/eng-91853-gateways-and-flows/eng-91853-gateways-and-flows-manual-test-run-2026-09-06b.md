@@ -254,12 +254,24 @@ and cannot tell *which* path it belongs to without clicking.
 
 **Observed**, TC-08, `Record batch processing`, between `Process a portion of records` (user task) and
 `Check remaining records` (exclusive gateway): a **single straight horizontal line carrying an arrowhead
-at BOTH ends**. Two flows share the geometry exactly —
+at BOTH ends**. A double-headed arrow is not BPMN, so the picture alone already says something is wrong;
+what it does not say is whether that is one malformed connector or two superimposed ones.
+
+**Proven, not inferred.** `ProcessDesignService/DescribeProcess` returns four flows for this schema,
+and TWO of them join those same two elements in opposite directions:
 
 ```
-forward   Process a portion of records  ->  Check remaining records
-back edge Check remaining records       ->  Process a portion of records
+ProcessPortion         -> CheckRemainingRecords   kind = sequence      (forward)
+CheckRemainingRecords  -> ProcessPortion          kind = conditional   (the repeat path)
+CheckRemainingRecords  -> EndBatchProcessed       kind = default
+BatchProcessingRequestedStart -> ProcessPortion   kind = sequence
 ```
+
+So it is two distinct flows rendered on identical geometry. **And the loss is worse than direction:**
+the return path is a CONDITIONAL flow — it carries the repeat condition — drawn indistinguishably from
+a plain forward sequence flow. A reader loses the direction, the fact that the return exists as its own
+flow, and the fact that it is taken on a condition. (The default marker visible beside the gateway is
+correct and belongs to the third flow, the one to the end event.)
 
 **Why it is a defect and not the routing the case excuses.** TC-08 pre-excuses one thing — *"a path that
 skips ahead over other steps may have its connector line drawn across those steps"* — and names two
