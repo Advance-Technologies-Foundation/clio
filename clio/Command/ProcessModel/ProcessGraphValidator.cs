@@ -229,11 +229,19 @@ public sealed class ProcessGraphValidator : IProcessGraphValidator {
 
 		// R7 / R9 (warning) — a diverging or-gateway should have a default flow. Stays a WARNING because 65
 		// shipped exclusive gateways deliberately have two conditional flows and no default.
+		//
+		// The message names what the OPERATOR sees. It used to name MismatchItemsCountException, read out of
+		// FlowConditionalGateway.OnVisited - true about the code, and not what anyone finds. A manual run
+		// measured both halves in ONE pass: validate-process-graph promised the exception, and the resulting
+		// SysProcessLog entry read "None of the conditions were met after the element ... The business process
+		// execution has been suspended". Whether the exception is thrown behind that is not the point; it is
+		// not the text the reader can search for, and the recorded outcome is SUSPENDED rather than failed.
 		if (!hasDefault) {
 			findings.Add(new ProcessGraphFinding(ProcessGraphSeverity.Warning, ruleId,
 				$"Diverging gateway '{node.Name}' has no default flow: if no condition matches at run time the "
-				+ "process instance fails with MismatchItemsCountException. Add a default flow, or confirm the "
-				+ "conditions cover every case.", node.Name));
+				+ "instance stops there and the process log reads \"None of the conditions were met after the "
+				+ $"element '{node.Name}'\". Add a default flow, or confirm the conditions cover every case.",
+				node.Name));
 		}
 	}
 

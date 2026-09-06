@@ -32,12 +32,14 @@
   once, and the largest observed is 8-in/6-out. It stays here as guidance about the shape to AIM for, and
   the validator says nothing about arity.
 - **R7** **Exclusive (OR)** diverge → conditional flows + **exactly one default**; one path taken. Converge → proceeds on first arrival (no sync).
-  Enforced in two halves, both **arity-scoped** so a converging gateway is untouched: a **diverging**
-  or-gateway carrying a plain sequence flow is an **error** (the mirror of R11 — the designer offers only
-  conditional and default out of one), while a diverging or-gateway with no default is a **warning**,
-  because 65 shipped exclusive gateways deliberately have two conditional flows and no default. The
-  warning names the consequence: `FlowConditionalGateway.OnVisited` throws `MismatchItemsCountException`
-  when nothing matched and there is no default.
+  Enforced in two halves, both **arity-scoped** so a converging gateway is untouched. Both are
+  **warnings**, and measurement is why: a **diverging** or-gateway carrying a plain sequence flow is the
+  mirror of R11 (the designer offers only conditional and default out of one) but 7 shipped or-gateways
+  are in exactly that shape and run, because the runtime takes any non-conditional outgoing as the
+  default; and a diverging or-gateway with no default at all is 65 more. The no-default warning names
+  what the OPERATOR sees rather than the internal type: the instance stops and `SysProcessLog` reads
+  *"None of the conditions were met after the element …"*, measured on a stand in the same pass that
+  saw the old wording promise `MismatchItemsCountException`.
 - **R8** **Parallel (AND)** diverge → ALL outgoing fire; outgoing must be **plain sequence flows** (no conditions/default). Converge → **waits for all** incoming.
   A converge whose incoming branches come from a common **exclusive** split is a **warning**: the join
   waits for a branch that can never run, and the instance hangs in *Running* with no exception and no log

@@ -266,7 +266,7 @@ public sealed class ValidateProcessGraphToolTests {
 
 	[Test]
 	[Category("Unit")]
-	[Description("R7 names the actual run-time failure rather than saying the process 'dead-ends'. FlowConditionalGateway.OnVisited throws MismatchItemsCountException when no condition matched and no default branch exists, and nothing earlier objects - the platform's own interpretation validator has no branch-coverage rule. Stays a WARNING, because 65 shipped exclusive gateways deliberately have two conditional flows and no default.")]
+	[Description("R7 names the run-time outcome the OPERATOR can search for, not the internal exception type. The rule used to promise MismatchItemsCountException, read out of FlowConditionalGateway.OnVisited; a manual run on a stand saw validate-process-graph say that and the resulting SysProcessLog entry say 'None of the conditions were met after the element ...' instead - and record the instance as SUSPENDED, not failed. Stays a WARNING, because 65 shipped exclusive gateways deliberately have two conditional flows and no default.")]
 	public void Validate_ShouldWarnR7_NamingTheRuntimeException_WhenADivergingGatewayHasNoDefault() {
 		// Arrange
 		List<ProcessGraphNodeArg> nodes = [N("s", "startEvent"), N("g", "exclusiveGateway"),
@@ -280,7 +280,8 @@ public sealed class ValidateProcessGraphToolTests {
 
 		// Assert
 		response.Findings.Should().Contain(
-			f => f.RuleId == "R7" && f.Severity == "warning" && f.Message.Contains("MismatchItemsCountException"),
+			f => f.RuleId == "R7" && f.Severity == "warning"
+				&& f.Message.Contains("None of the conditions were met after the element"),
 			because: "the consequence is specific and findable, and naming it is what lets a reader search for "
 				+ "it - 'dead-ends' names nothing");
 		Validate([N("s", "startEvent"), N("split", "exclusiveGateway"), N("x", "activityUserTask"),
@@ -478,8 +479,9 @@ public sealed class ValidateProcessGraphToolTests {
 		// Assert
 		response.Findings.Should().Contain(
 			f => f.RuleId == "R9" && f.Severity == "warning" && f.NodeName == "split"
-				&& f.Message.Contains("MismatchItemsCountException"),
-			because: "an inclusive gateway reports R9, not R7, and the warning names the failure it causes");
+				&& f.Message.Contains("None of the conditions were met after the element"),
+			because: "an inclusive gateway reports R9, not R7, and the warning quotes the process-log line the "
+				+ "operator will actually read rather than an exception type they cannot search for");
 		response.Findings.Should().NotContain(f => f.NodeName == "merge",
 			because: "the converging inclusive gateway has one way out, so every arity-scoped rule leaves "
 				+ "it alone - the same exemption the exclusive one gets");
