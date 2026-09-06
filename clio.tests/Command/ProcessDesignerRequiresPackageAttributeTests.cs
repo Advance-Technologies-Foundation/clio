@@ -77,7 +77,7 @@ namespace Clio.Tests
             // Assert
             requirement.Should().NotBeNull(
                 because: $"{optionsType.Name} must carry the declarative {BundledPackages.ProcessBuilderPackageName} requirement so the MCP gate fires");
-            requirement!.Version.Should().Be("1.4.0.44",
+            requirement!.Version.Should().Be("1.4.0.60",
                 because: "TWO reasons stand behind this floor. ENG-96325's lookup-constant contract shipped in the 1.4.0.40 archive - a mappings[] value on a Lookup target may carry an already-composed macro that an older server rejects as 'not a bare Guid' - and setFlowCondition is an operation an older server does not carry AT ALL — its dispatch "
                     + "registry rejects the token, which reads to a caller as a clio bug rather than a stale "
                     + "environment — and that alone justifies a versioned floor. What sets the NUMBER changed with "
@@ -99,7 +99,7 @@ namespace Clio.Tests
                     + ".35 added is deliberately NOT in that list any more: the strict pattern it mirrored is used "
                     + "only for data-source filter map paths, so a parameter value's element scoping survived the "
                     + "looser form and the refusal protected nothing. "
-                    + "This subsumes the earlier 1.3.1.1 performer floor and the 1.2.0.1 email floor. When the "
+                    + "ENG-91853 raised it to .58, and THAT one is a plain capability floor rather than a message one: below it the package refuses flows[].kind, flows[].condition and the two gateway element tokens outright, so an agent following the descriptions is refused by the environment rather than by clio, one round-trip later and with no hint that the package is what is behind. This subsumes the earlier 1.3.1.1 performer floor and the 1.2.0.1 email floor. When the "
                     + "next versioned operation ships, move this pin WITH the rebundle in the same commit");
         }
 

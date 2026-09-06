@@ -58,8 +58,29 @@ namespace Clio.Command;
 // lookup-constant contract shipped in the 1.4.0.40 archive: a mappings[] 'value' on a Lookup target
 // may carry an already-composed macro, and an older server rejects it outright as "not a bare Guid"
 // - the same "server starts accepting an input form an older one refuses" shape that produced the
-// 1.3.1.1 literal. The number below satisfies both that and the message contract described above.
-[RequiresPackage(BundledPackages.ProcessBuilderPackageName, "1.4.0.44",
+// 1.3.1.1 literal. The number below satisfies both that and the message contract described above.//
+// Raised to 1.4.0.60 by ENG-91853, and this floor is a CAPABILITY floor rather than a message one: below
+// it the package refuses `flows[].kind` and `flows[].condition` outright, and refuses the two gateway
+// element tokens as unsupported types. Those refusals are honest - an older package tells the caller it
+// cannot do this - but the descriptions above now document a declarative branch as the supported route,
+// so without the floor an agent following them is refused by the environment instead of by clio, one
+// round-trip later and with no hint that the package is what is behind.
+//
+// It moved twice more before shipping, and neither move was about wording. .59 carries two fixes -
+// `setFlow` with an omitted `kind` used to read as 'sequence' and DESTROY a conditional branch while
+// reporting success, and the build path accepted an unbounded `condition`. .60 carries the one that
+// makes `flows[].condition` worth having: below it a condition can only reference a system setting,
+// because a parameter is addressed by a UId that does not exist until this very call creates it. That
+// is 88% of the conditions in the shipped product, so below .60 the declarative branch is a contract
+// clio documents and the environment cannot honour.
+//
+// Be exact about WHICH archive buys what, because an earlier draft of this comment was not: `flows[].kind`
+// and the two gateway type tokens arrive in .58 and .58/.59 accept them. What .60 adds is the by-name
+// condition expansion, and that is the whole reason the floor is not .58. What .60 REACHES is in turn
+// narrower than the 88%: 242 of the 487 element-output conditions address a COLUMN of the returned
+// record, a third meta-path segment the name form cannot express, so by-name expansion covers 65% and
+// the column form still needs the modify path.
+[RequiresPackage(BundledPackages.ProcessBuilderPackageName, "1.4.0.60",
 	Hint = BundledPackages.ProcessBuilderInstallHint)]
 public sealed class CreateBusinessProcessOptions : EnvironmentOptions {
 	/// <summary>Inline JSON process descriptor (name, caption, packageName, elements[], flows[], parameters[], mappings[]).</summary>

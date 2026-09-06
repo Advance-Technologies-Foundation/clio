@@ -1,0 +1,45 @@
+{
+  "runId": "331dc693-6848-4e52-8918-085492fd500f",
+  "issue": "ENG-91853",
+  "mode": "agent",
+  "stand": { "alias": "Creatio", "url": "http://d_krestov_n.tscrm.com:40001" },
+  "packageVersion": "1.4.0.61",
+  "prompt": {
+    "path": "spec/eng-91853-gateways-and-flows/eng-91853-gateways-and-flows-manual-test-prompt.md",
+    "commit": "a556e4098",
+    "cases": 15
+  },
+  "clioCommit": "73dbec829",
+  "knowledge": {
+    "libraryVersion": "1.13.94",
+    "resolvedRevision": "c1a9e69fb3d9e881401453ba22a541aa88071d88"
+  },
+  "isolation": "isolated",
+  "executor": { "turns": 126, "toolCalls": 125, "delegationCalls": 0, "durationMs": 1061638 },
+  "processes": [
+    { "case": "TC-01 (then TC-06)", "name": "UsrPurchaseRequest_Route", "package": "Custom",
+      "note": "XOR gateway, conditional + default; condition SENT as the name [#AmountParameter#] on the build path, STORED as the expanded meta-path; threshold later moved to 250 by TC-06" },
+    { "case": "TC-02", "name": "UsrPurchaseRequest_Escalate", "package": "Custom",
+      "note": "XOR, two conditionals + default" },
+    { "case": "TC-03", "name": "UsrPurchaseRequest_CheckNoFallback", "package": "Custom",
+      "note": "XOR, two conditionals, NO default - the adversarial shape intact" },
+    { "case": "TC-07", "name": "UsrPurchaseRequest_Classify", "package": "Custom",
+      "note": "XOR; stored order is conditional / DEFAULT / conditional - the default sits in the middle, so the in-place role swap preserved positions" },
+    { "case": "TC-12", "name": "UsrPurchaseRequest_Fulfil", "package": "Custom",
+      "note": "NO gateway element; conditional + default straight off an activity - the Group 7 shape" },
+    { "case": "TC-15", "name": "UsrPurchaseRequest_NotifyAfterRoute", "package": "Custom",
+      "note": "XOR with three routes converging on one shared step that appears once" },
+    { "case": "TC-04", "name": "UsrRequest_ConfirmAfterChecks", "package": "Custom",
+      "note": "AND split + AND join, two branches" },
+    { "case": "TC-14", "name": "UsrRequest_ConfirmAfterThreeChecks", "package": "Custom",
+      "note": "AND split + AND join, THREE branches" },
+    { "case": "TC-13", "name": "UsrRequest_DecideNextStep", "package": "Custom",
+      "note": "NO gateway; two plain sequence flows off one step - the implicit parallel split. Plan check warned R12; build succeeded" },
+    { "case": "TC-08", "name": "UsrRecordBatch_Process", "package": "Custom",
+      "note": "XOR with a back edge CheckRemainingRecords -> ProcessPortion" }
+  ],
+  "refusedByDesign": [
+    { "case": "TC-11", "name": "UsrRepeatStep_SelfLoop",
+      "note": "build REFUSED and no schema exists on the stand; plan check independently returned error R15. Validate-vs-build parity holds" }
+  ]
+}

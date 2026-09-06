@@ -3210,3 +3210,160 @@ stories:
     depends_on:
       - story-eng-95891-formula-expressions-1
     blocks: []
+
+  - id: story-eng-91853-gateways-and-flows-1
+    title: "Build exclusive/parallel gateways, conditional and default flows, and branch-aware layout"
+    feature: "eng-91853-gateways-and-flows"
+    repo: "workspace/ProcessBuilder"
+    size: M
+    status: review
+    jira: ENG-91853
+    file: spec/eng-91853-gateways-and-flows/eng-91853-gateways-and-flows-plan.md
+    test_plan: spec/eng-91853-gateways-and-flows/eng-91853-gateways-and-flows-test-plan.md
+    note: >-
+      PR: https://creatio.ghe.com/engineering/crt-process-builder/pull/45
+      Branch feature/ENG-91853-gateways-and-flows, off main (7e93995 - crt-process-builder's default
+      branch is main, not master). Work packages S1-S5, all implemented; 1244 tests pass.
+      TWO comprehensive review gates are closed (spec/reviews/, 2026-09-05 and 2026-09-06) and both
+      manual-test legs have run (spec/eng-91853-gateways-and-flows/...-manual-test-run-2026-09-06b.md):
+      the agent leg attempted all 15 cases and the browser leg verified runtime on a stand, including
+      the one thing nothing else could - a build-path condition written as a NAME expands and then
+      EVALUATES. Status is review rather than done: nothing is pushed and no pull request exists.
+      S4 (branch-aware Y auto-layout) is DONE. ProcessLayoutEngine rewritten from a per-COLUMN vertical
+      stagger to a five-phase lane model: adjacency in flow declaration order, DFS back-edge
+      classification, longest-path columns over the remaining DAG, one lane per branch, Y from the lane.
+      Fixes the three defects the analysis named - L1 (a branch's Y was not stable along its length,
+      because a node alone in its column always landed back on the centre row), L2 (a back-edge starved
+      the Kahn queue and collapsed four of six elements into column 0 on 15% of real gateway processes),
+      L3 (a merge aligned with its split only by accident). Layout.BranchStep = 130 and
+      Layout.GatewaySizePx = 55 added; Layout.VerticalStep is now unreferenced and kept per the written
+      plan, documented as such rather than silently left behind - a deletion candidate for review.
+      TWO DEVIATIONS from layout.md section 4, both traced in
+      spec/eng-91853-gateways-and-flows/eng-91853-gateways-and-flows-layout-addendum.md.
+      (1) A merge's midpoint rounds DOWN, not to even. The spec says round(mean(...)) and does not pin
+      the tie-break; C#'s default breaks the spec's own stated property, because a two-way split on lane
+      L feeds its merge lanes L and L+1 and banker's rounding aligns them only when L is even. An odd
+      parent lane needs no nesting - a second start event pushes a whole component down a lane.
+      (2) NEEDS AN OWNER DECISION: case B is not fixed and cannot be fixed by placement. Measured on the
+      graph the spec writes verbatim, every element lands on lane 0 and the short branch's connector
+      still crosses the long branch. Aligning a merge with its split (L3), keeping the first-declared
+      branch on the parent lane (T-7) and keeping a skipping connector clear (L1) are in direct conflict
+      for that one shape, and connector routing is out of scope. Left as specified. Recommended
+      resolution, traced in the addendum: a merge with a column-skipping inbound branch takes THAT
+      branch's lane, which fixes case B without touching the spec's rows A or E.
+      18 tests added, 7 existing kept and untouched: 1167 unit tests pass (baseline 1149).
+      Validated: dotnet test tests/CrtProcessBuilder/CrtProcessBuilder.Tests.csproj -c dev-nf
+      (dev-n8 is unbuildable on this host - .application/net-core is absent, only net-framework is
+      checked out).
+      Every new test was observed RED against the implementation it replaces: 8 of the first 9 fail on
+      the old engine, and the ninth (idempotence) is deliberately a property both share. Five mutations
+      of the NEW engine each caught, 14 in all: rounding mode, corridor reservation, back-edge
+      exclusion, the second root pass, start-first walk ordering, parent-lane inheritance, branch
+      declaration order, column-order processing, endpoint guards, pair de-duplication, cell claiming,
+      end-event lanes, tree-edges-only DFS, skip-if-already-positioned. Nine of those survived the first
+      round and were closed after review. The corridor reservation initially survived deletion with the
+      whole fixture green - it is reachable only from graphs an argument said were impossible, so the
+      case that pins it was found by enumerating small single-source graphs rather than by reasoning.
+      Reviewed by four parallel lenses; the test-coverage lens found more than the other three combined.
+      Two review claims refuted by measurement: a duplicate element UId cannot reach the engine
+      (MetaItemCollection.InsertItem throws first) and a dangling endpoint cannot be set directly (the
+      TargetRefUId setter throws) - the reachable shape is an element removed after its flows.
+      S1, S2, S3 and S5 are also DONE (commits f9d9ea2, 55b5c99, cb59f2c). Gateways and the three flow
+      kinds are buildable: two gateway element handlers with the measured 55x55 DefaultSize, the
+      default-flow palette item and per-kind name prefixes, a new FlowKindRules holding the authoring
+      rules shared by both write paths, AddFlow/SetFlow on the graph builder with the re-kind body
+      generalised out of ENG-95891's conditional-only version, RemoveFlow detaching its endpoints (T-8),
+      ValidateStructure's stale remark rewritten with three fixtures (T-13), and describe reporting a
+      flow's name while delegating kind classification to the write path's own classifier instead of
+      keeping a second copy.
+      The build path and addFlow no longer refuse `kind` and `condition`; the two-step workaround those
+      refusals named had a window in which the process was saved with a flow that did not yet branch.
+      A lone unconditional flow out of a deciding gateway is NORMALISED to a default branch rather than
+      refused - that shape is 45 shipped gateways, and it exists because the designer cannot draw a plain
+      sequence flow out of a gateway at all.
+      RECORDED, and it invalidates an argument this spec folder itself makes: setting VisualType has NO
+      effect on serialization. ProcessSchemaSequenceFlow.WriteMetaData passes the LITERAL AutoPolyline
+      rather than the property, so CI6 is 1 whatever the object holds - which is why all 9 762 shipped
+      flows read back AutoPolyline. That count is therefore not evidence of designer behaviour. Knowledge
+      record: docs/knowledge/platform/sequence-flow-visualtype-is-written-as-a-literal.md.
+      1201 unit tests pass (from 1149 at the start of the ticket).
+      STILL OPEN on this story: nothing. The remaining work is stories 2 and 3.
+    depends_on: []
+    blocks:
+      - story-eng-91853-gateways-and-flows-2
+
+  - id: story-eng-91853-gateways-and-flows-2
+    title: "Ship gateways and flow kinds through clio's validator, MCP surface and bundled archive"
+    feature: "eng-91853-gateways-and-flows"
+    repo: "clio"
+    size: M
+    status: review
+    pr: https://github.com/Advance-Technologies-Foundation/clio/pull/1398
+    jira: ENG-91853
+    file: spec/eng-91853-gateways-and-flows/eng-91853-gateways-and-flows-plan.md
+    test_plan: spec/eng-91853-gateways-and-flows/eng-91853-gateways-and-flows-test-plan.md
+    note: >-
+      S6-S7 and the rebundle half of S8, on branch feature/ENG-91853-gateways-and-flows off master.
+      The headline is a FIX, not a feature: ProcessGraphValidator.CheckDefaultFlowRules raises an error
+      when a default flow has no sibling conditional flow, and that rejects exactly 45 shipped gateways
+      (40 exclusive, 5 inclusive) whose only outgoing flow is a default one - because the designer
+      cannot draw a plain sequence flow out of an or-gateway at all. R14 must be scoped to sources with
+      MORE THAN ONE outgoing flow. Symmetrically R6 (gateway arity) must NOT be implemented: it would
+      reject 60+ shipped gateways.
+      DescribeProcessPrompt introduces `condition` AND `branchesOnActivityResult` together - ENG-95891
+      reverted its own edit to that file so this ticket ships both at once.
+      DONE (commits 96061c532, 3f2bc0fbd, 61c777e72). R14 is arity-scoped, and the regression test is a
+      converging gateway rather than a phrasing change. Added: R15 self-loop, one default per source,
+      the or-gateway plain-flow error (arity-scoped for the same reason - 14 shipped gateways carry a
+      single plain flow), the empty-condition error, and the parallel-join deadlock warning
+      ai-bp-connection-rules promised and nobody wrote. R7/R9's warning now names
+      MismatchItemsCountException instead of saying the process "dead-ends".
+      The empty-condition rule needed a CONTRACT change and could not have existed before: the edge
+      argument was {source, target, flow-kind}, so the validator could not see conditions. `condition` is
+      now an optional fourth field, and an OMITTED one raises nothing - only a supplied-but-empty one.
+      S7: both prompts and three tool descriptions stopped saying a gateway ELEMENT is not buildable, and
+      say instead what is still out (inclusive/event-based gateways, timer/message starts, intermediate
+      events, sub-processes, formula/script tasks, the activity-result dialect) - the fork narrowed, it
+      did not close. DescribeProcessPrompt introduces condition AND branchesOnActivityResult together,
+      which is what ENG-95891's revert was for, and says never to narrate a condition as "what decides
+      this branch" without checking both. TC-D-01 in the manual QA doc INVERTS from a negative case to a
+      positive one, checking the three things an error message would never have shown.
+      Rebundled 1.4.0.58 from crt-process-builder 571fbb1; floors 1.4.0.44 -> 1.4.0.58, which is a
+      CAPABILITY floor rather than a message one, unlike the two before it. Four surfaces state that
+      literal and each is a tripwire that fired.
+      10011 targeted unit tests pass. Release rather than Debug, because a running MCP server holds the
+      Debug output open; only Release/net10.0 received the new archive, the other three build outputs
+      still carry 1.4.0.57.
+      STILL OPEN: nothing on this story. Stand verification and the PR are session D.
+    depends_on:
+      - story-eng-91853-gateways-and-flows-1
+    blocks:
+      - story-eng-91853-gateways-and-flows-3
+
+  - id: story-eng-91853-gateways-and-flows-3
+    title: "Publish the gateway and branch vocabulary through clio-knowledge"
+    feature: "eng-91853-gateways-and-flows"
+    repo: "clio-knowledge"
+    size: S
+    status: review
+    pr: https://github.com/Advance-Technologies-Foundation/clio-knowledge/pull/135
+    jira: ENG-91853
+    file: spec/eng-91853-gateways-and-flows/eng-91853-gateways-and-flows-plan.md
+    note: >-
+      process-modeling.md and branch-conditions.md, on branch feature/ENG-91853-gateways-and-flows in
+      the linked worktree .worktrees/eng-91853 (that repository's root checkout is coordination-only).
+      Committed: cd0602e rewrites both articles and bumps libraryVersion to 1.13.94; e621362 is the
+      review-gate fix - the article said there was no clear-condition operation, and setFlow with
+      kind 'sequence' is one. The curated-knowledge-names.json re-pin landed on the clio side as
+      ed670759c. Nothing is pushed and no pull request exists.
+      Two facts the articles did not carry and that nothing else records: branch evaluation order is
+      flows[] ARRAY order, first true wins, and nothing encodes it - so the order an agent declares
+      branches in silently decides which one runs; and the layout re-runs over the WHOLE schema on
+      every modify, so hand-arranged element positions do not survive an unrelated edit.
+      REMAINING: activity-connections.md still states five things this change made false (R8 listed as
+      not enforced, gateway elements and default flows listed as unbuildable, R14 stated without its
+      arity scope, and R7/R14 missing the new findings). It is the article branch-conditions.md routes
+      to for R1-R17, so it reaches users; the fix belongs inside the same 1.13.94 bump.
+    depends_on:
+      - story-eng-91853-gateways-and-flows-2
+    blocks: []

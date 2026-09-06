@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.ComponentModel;
 using System.ComponentModel.DataAnnotations;
@@ -11,7 +11,7 @@ using ModelContextProtocol.Server;
 namespace Clio.Command.McpServer.Tools.ProcessDesigner;
 
 /// <summary>
-/// Validates a planned Creatio business-process graph against the BPMN connection rules (R1–R17),
+/// Validates a planned Creatio business-process graph against the BPMN connection rules (R1–R18),
 /// so an AI agent can catch invalid connections before driving the Process Designer. The graph
 /// itself is validated in-memory, but the tool first resolves the requested environment and
 /// queries its installed packages to enforce that the <c>CrtProcessBuilder</c> package is present.
@@ -47,7 +47,7 @@ public sealed class ValidateProcessGraphTool {
 		BudgetPolicy = McpToolBudgetPolicy.ParentKillDefault,
 		RequiresClientRequests = McpToolClientRequests.None,
 		SharedFileResource = McpToolSharedFileResource.None)]
-	[Description("Validates a planned Creatio business-process graph (nodes by data-id, e.g. startEvent/readDataUserTask/exclusiveGateway/endEvent; edges by flow-kind sequence|conditional|default - an omitted flow-kind is a plain sequence flow, an UNKNOWN one is refused rather than treated as plain) against the BPMN connection rules R1-R17. The graph is validated in-memory, but the tool requires the 'CrtProcessBuilder' package to be installed on the target environment (install it with install-process-builder) (named by environment-name). Returns structured findings (error/warning + ruleId). Call this BEFORE driving the designer. IMPORTANT: a passing graph is NOT necessarily buildable — the rules cover the full BPMN catalog (gateways, conditional/default flows, timers, sub-processes), while create-business-process / modify-business-process build only startEvent/signalStart/endEvent/userTask/sendEmail elements. Flows start plain, and modify turns one into a conditional branch with setFlowCondition - so a conditional branch IS buildable even though a gateway ELEMENT is not; check the buildable slice in get-guidance name=process-modeling before promising a build; get-guidance name=process-formulas for an `expression` mapping source or a conditional-flow condition.")]
+	[Description("Validates a planned Creatio business-process graph (nodes by data-id, e.g. startEvent/readDataUserTask/exclusiveGateway/endEvent; edges by flow-kind sequence|conditional|default - an omitted flow-kind is a plain sequence flow, an UNKNOWN one is refused rather than treated as plain) against the BPMN connection rules R1-R18 (R18: a conditional flow may have at most ONE outgoing sibling that carries no condition - the platform drops one of them and runs the other beside the branch the condition chose). The graph is validated in-memory, but the tool requires the 'CrtProcessBuilder' package to be installed on the target environment (install it with install-process-builder) (named by environment-name). Returns structured findings (error/warning + ruleId). Call this BEFORE driving the designer. IMPORTANT: a passing graph is NOT necessarily buildable — the rules cover the full BPMN catalog (gateways, conditional/default flows, timers, sub-processes), while create-business-process / modify-business-process build only startEvent/signalStart/endEvent/userTask/sendEmail elements plus exclusiveGateway and parallelGateway, and all three flow kinds declaratively (flows[].kind with flows[].condition). Still NOT buildable: inclusiveGateway, eventBasedGateway, timer/message starts, intermediate events, sub-processes, formula and script tasks, and the activity-result condition dialect - so the fork narrows rather than closes; check the buildable slice in get-guidance name=process-modeling before promising a build; get-guidance name=process-formulas for an `expression` mapping source or a conditional-flow condition.")]
 	public ValidateProcessGraphResponse Validate([Required] ValidateProcessGraphArgs args) {
 		try {
 			IRequiredPackageChecker checker = _commandResolver.Resolve<IRequiredPackageChecker>(
@@ -60,7 +60,7 @@ public sealed class ValidateProcessGraphTool {
 										   .ToList();
 			List<ProcessGraphEdge> edges = (args.Edges ?? [])
 										   .Select(e =>
-											   new ProcessGraphEdge(e.Source, e.Target, ParseFlowKind(e.FlowKind)))
+											   new ProcessGraphEdge(e.Source, e.Target, ParseFlowKind(e.FlowKind), e.Condition))
 										   .ToList();
 
 			ProcessGraphValidationResult result = _validator.Validate(new ProcessGraph(nodes, edges));
@@ -141,7 +141,11 @@ public sealed record ValidateProcessGraphArgs(
 	List<ProcessGraphNodeArg> Nodes = null,
 
 	[property: JsonPropertyName("edges")]
-	[property: Description("The flows: [{source, target, flow-kind}] where flow-kind is sequence | conditional | default.")]
+	[property: Description("The flows: [{source, target, flow-kind, condition}] where flow-kind is sequence | "
+		+ "conditional | default. 'condition' is optional and only meaningful on a conditional flow; supply it "
+		+ "to have the empty-condition rule checked, because an omitted condition is stored by the platform as "
+		+ "the literal 'true' - a branch that looks conditional and always fires. Flow ORDER is branch "
+		+ "precedence: sibling conditions are evaluated in the order given here and the first true one wins.")]
 	List<ProcessGraphEdgeArg> Edges = null
 	);
 
@@ -154,7 +158,8 @@ public sealed record ProcessGraphNodeArg(
 public sealed record ProcessGraphEdgeArg(
 	[property: JsonPropertyName("source")] string Source = null,
 	[property: JsonPropertyName("target")] string Target = null,
-	[property: JsonPropertyName("flow-kind")] string FlowKind = null);
+	[property: JsonPropertyName("flow-kind")] string FlowKind = null,
+	[property: JsonPropertyName("condition")] string Condition = null);
 
 /// <summary>Response from the <c>validate-process-graph</c> MCP tool.</summary>
 public sealed class ValidateProcessGraphResponse {

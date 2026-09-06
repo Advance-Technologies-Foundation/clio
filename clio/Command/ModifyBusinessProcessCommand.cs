@@ -66,8 +66,29 @@ namespace Clio.Command;
 // is weaker now, not stronger: this branch cut roughly thirty archives between .20 and .52, and its
 // own manual runs installed .18 and .37 - both below the rights-aware read. So do not lower this
 // floor below 1.4.0.40 on message-contract grounds alone; the floor is also what keeps a
-// pre-rights-aware read off an environment clio installs onto.
-[RequiresPackage(BundledPackages.ProcessBuilderPackageName, "1.4.0.44",
+// pre-rights-aware read off an environment clio installs onto.//
+// Raised to 1.4.0.60 by ENG-91853, and this floor is a CAPABILITY floor rather than a message one: below
+// it the package refuses `flows[].kind` and `flows[].condition` outright, and refuses the two gateway
+// element tokens as unsupported types. Those refusals are honest - an older package tells the caller it
+// cannot do this - but the descriptions above now document a declarative branch as the supported route,
+// so without the floor an agent following them is refused by the environment instead of by clio, one
+// round-trip later and with no hint that the package is what is behind.
+//
+// It moved twice more before shipping, and neither move was about wording. .59 carries two fixes -
+// `setFlow` with an omitted `kind` used to read as 'sequence' and DESTROY a conditional branch while
+// reporting success, and the build path accepted an unbounded `condition`. .60 carries the one that
+// makes `flows[].condition` worth having: below it a condition can only reference a system setting,
+// because a parameter is addressed by a UId that does not exist until this very call creates it. That
+// is 88% of the conditions in the shipped product, so below .60 the declarative branch is a contract
+// clio documents and the environment cannot honour.
+//
+// Be exact about WHICH archive buys what, because an earlier draft of this comment was not: `flows[].kind`
+// and the two gateway type tokens arrive in .58 and .58/.59 accept them. What .60 adds is the by-name
+// condition expansion, and that is the whole reason the floor is not .58. What .60 REACHES is in turn
+// narrower than the 88%: 242 of the 487 element-output conditions address a COLUMN of the returned
+// record, a third meta-path segment the name form cannot express, so by-name expansion covers 65% and
+// the column form still needs the modify path.
+[RequiresPackage(BundledPackages.ProcessBuilderPackageName, "1.4.0.60",
 	Hint = BundledPackages.ProcessBuilderInstallHint)]
 public sealed class ModifyBusinessProcessOptions : EnvironmentOptions {
 	/// <summary>Process code (schema Name) to edit. Provide exactly one of <see cref="ProcessName"/> or <see cref="ProcessUid"/>.</summary>

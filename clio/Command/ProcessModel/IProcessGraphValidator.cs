@@ -27,7 +27,16 @@ public enum ProcessFlowKind {
 /// <param name="Source">The source node name.</param>
 /// <param name="Target">The target node name.</param>
 /// <param name="FlowKind">The flow kind.</param>
-public sealed record ProcessGraphEdge(string Source, string Target, ProcessFlowKind FlowKind);
+/// <param name="Condition">
+/// The boolean expression a conditional flow is taken on, when the caller supplies one. Optional and
+/// purely additive: a caller that omits it gets every rule except the one that needs it.
+/// <para>It is here because an OMITTED condition on a conditional flow is not an error the platform
+/// reports - it substitutes the literal <c>true</c>, producing a branch that looks conditional and always
+/// fires. Without the field the validator cannot see the difference, so the check could only live on the
+/// server, where it is found one save later.</para>
+/// </param>
+public sealed record ProcessGraphEdge(string Source, string Target, ProcessFlowKind FlowKind,
+	string Condition = null);
 
 /// <summary>
 /// A planned process graph: the nodes and the flows between them.

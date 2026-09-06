@@ -31,10 +31,19 @@ public static class DescribeProcessPrompt {
 		1. Call `describe-business-process` with `environment-name` and exactly one of `process-name` /
 		   `process-uid` / `process-caption`. It returns a STRUCTURED graph: `elements`
 		   (name, uid, caption, type, buildType, userTaskName, parameters; `signal` for a signal start),
-		   `flows` (source, target, kind), and process `parameters` — not raw metadata.
+		   `flows` (name, source, target, kind, and on a branch its `condition` plus
+		   `branchesOnActivityResult`), and process `parameters` — not raw metadata.
 		2. Call `get-guidance` name `process-modeling` for the element catalog + connection-rule vocabulary.
 		3. Narrate, in plain language, the trigger (start event), the ordered steps (follow the flows by
 		   source/target), each activity's purpose, and any branches (gateways / conditional flows).
+		Reading a branch takes both fields, and they can disagree. `condition` is the stored expression,
+		reported whenever the flow carries condition TEXT — including on a flow whose `kind` is not
+		conditional, where the platform drops it at generation time and it never runs. And when
+		`branchesOnActivityResult` is true the branch is decided by which BUTTONS the preceding activity was
+		completed with, not by the expression: the text is still shown, and the runtime ignores it entirely.
+		So never narrate a condition as "what decides this branch" without checking `kind` and
+		`branchesOnActivityResult` first — on 337 of the 1 406 conditional flows in the shipped 7.8.0 corpus
+		that reading would be wrong.
 		Note: expressions (mapping formulas, filters) are returned RAW, not decoded into semantics — narrate
 		structure, types, flow, and parameter sources; where a condition/filter is not decodable, say so
 		explicitly instead of guessing.

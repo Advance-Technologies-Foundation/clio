@@ -1,0 +1,70 @@
+{
+  "runId": "fd6c8205-6f33-42fe-9130-20ae2b543690",
+  "issue": "ENG-91853",
+  "mode": "agent",
+  "stand": {
+    "alias": "Creatio",
+    "url": "http://d_krestov_n.tscrm.com:40001"
+  },
+  "packageVersion": "1.4.0.65",
+  "prompt": "spec/eng-91853-gateways-and-flows/eng-91853-gateways-and-flows-manual-test-prompt.md",
+  "clioCommit": "f9adb7183801e94329613db30f980c9d42aca6b5",
+  "knowledge": {
+    "libraryVersion": "1.13.97",
+    "resolvedRevision": "adb88d46cc684770b7be9a7743c1a23fab492cd6"
+  },
+  "isolation": "isolated",
+  "executor": "claude -p --strict-mcp-config (clio MCP only)",
+  "processes": [
+    {
+      "name": "UsrRequest_Route",
+      "case": "TC-01 (then TC-06)"
+    },
+    {
+      "name": "UsrRequest_Escalate",
+      "case": "TC-02 (then TC-09)"
+    },
+    {
+      "name": "UsrRequest_RouteNoFallback",
+      "case": "TC-03"
+    },
+    {
+      "name": "UsrRequest_VerifyParallel",
+      "case": "TC-04"
+    },
+    {
+      "name": "UsrRequest_RouteThreeWay",
+      "case": "TC-07"
+    },
+    {
+      "name": "UsrBatch_ProcessPortions",
+      "case": "TC-08"
+    },
+    {
+      "name": "UsrRequest_RouteNoGateway",
+      "case": "TC-12"
+    },
+    {
+      "name": "UsrRequest_TwoPlainPaths",
+      "case": "TC-13"
+    },
+    {
+      "name": "UsrRequest_TwoPlainPathsProbe",
+      "case": "TC-13 positive control"
+    },
+    {
+      "name": "UsrRequest_VerifyTripleParallel",
+      "case": "TC-14"
+    },
+    {
+      "name": "UsrRequest_RouteWithSharedNotify",
+      "case": "TC-15"
+    }
+  ],
+  "refusedByDesign": [
+    "TC-05 (plan check only)",
+    "TC-10 (plan check only)",
+    "TC-11 (refused both ways)"
+  ],
+  "notes": "Fourth executor invocation. The first stalled on a clarifying question; the second and third were blocked by the globally installed clio being unable to parse the settings file, which is not a defect of anything under test. Processes from the earlier partial run (UsrPurchaseRequest_Route_Custom) are NOT in this manifest."
+}

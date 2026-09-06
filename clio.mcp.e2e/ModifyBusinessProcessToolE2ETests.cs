@@ -52,6 +52,91 @@ public sealed class ModifyBusinessProcessToolE2ETests {
 	}
 
 	[Test]
+	[Description("Over the real MCP path, setFlow re-kinds an existing flow in place — the operation ENG-91853 added and the one nothing else in this suite sends. Two directions in one call, because they fail differently: sequence -> conditional must store the condition, and conditional -> sequence is the clear-condition route. The source is an ORDINARY element, and that is the correction: an earlier version of this test asked for kind sequence on a flow out of a GATEWAY, which the builder refuses whenever a conditional sibling exists, so its expected outcome was unreachable and the operation before it could never have been committed either. Unit tests build the operation record positionally in C#, so the JSON binder for op/kind/condition is exercised nowhere else.")]
+	[AllureTag(ToolName)]
+	[AllureName("modify-business-process re-kinds a flow with setFlow in both directions")]
+	public async Task ModifyBusinessProcess_Should_ReKindAFlowWithSetFlow() {
+		// Arrange — an ordinary element with one plain and two conditional branches. Both re-kinds below
+		// stay legal on it: neither leaves a conditional flow beside two unconditional ones, and neither
+		// drops the LAST conditional flow off an element that still has other outgoing flows.
+		await using ArrangeContext context = await ArrangeAsync(requireReachableEnvironment: true);
+		string processName = $"UsrClioBpSetFlowE2e{Guid.NewGuid():N}";
+		await CallToolAsync(context, CreateToolName, new Dictionary<string, object?> {
+			["environment-name"] = context.EnvironmentName,
+			["descriptor"] = BuildThreeBranchTaskDescriptor(processName)
+		});
+
+		// Act — make the plain branch conditional, and clear the condition off one that already is.
+		CallToolResult callResult = await CallToolAsync(context, ToolName, new Dictionary<string, object?> {
+			["environment-name"] = context.EnvironmentName,
+			["process-name"] = processName,
+			["operations"] = """
+				[
+				  { "op": "setFlow", "source": "Decide", "target": "EndA", "kind": "conditional",
+				    "condition": "1 > 0" },
+				  { "op": "setFlow", "source": "Decide", "target": "EndC", "kind": "sequence" }
+				]
+				"""
+		});
+
+		// Assert
+		callResult.IsError.Should().NotBeTrue(
+			because: "re-kinding a flow in both directions must complete without a transport error");
+
+		DescribeProcessResult described = ParseDescribeResult(await CallToolAsync(context, DescribeToolName,
+			new Dictionary<string, object?> {
+				["environment-name"] = context.EnvironmentName, ["process-name"] = processName
+			}));
+		DescribedFlow toA = described.Flows.Single(f => f.Source == "Decide" && f.Target == "EndA");
+		DescribedFlow toC = described.Flows.Single(f => f.Source == "Decide" && f.Target == "EndC");
+
+		toA.Kind.Should().Be("conditional",
+			because: "setFlow's kind has to reach the builder through the JSON binder - dropped, the flow stays "
+				+ "plain and the operation reports success on an edit that did nothing");
+		toA.Condition.Should().Be("1 > 0",
+			because: "kind and condition are separate fields on the same operation and are dropped separately");
+		toC.Kind.Should().Be("sequence",
+			because: "this is the clear-condition route off an ordinary element - a flow that stayed "
+				+ "conditional here means the op was accepted and ignored");
+	}
+
+	[Test]
+	[Description("Off a deciding GATEWAY, setFlow kind sequence is refused when the gateway ALREADY has a default branch - the flow has nothing left to normalise into. A gateway with no default normalises the request instead, and re-kinding the gateway's own default is a silent no-op, so this is the one shape that refuses. Asserted here because the first version of the test above assumed a refusal that does not happen and could never have passed.")]
+	[AllureTag(ToolName)]
+	[AllureName("modify-business-process refuses a second unconditional branch out of a gateway")]
+	public async Task ModifyBusinessProcess_Should_RefuseASecondUnconditionalBranchOutOfAGateway() {
+		// Arrange — a gateway with a default branch and a conditional one.
+		await using ArrangeContext context = await ArrangeAsync(requireReachableEnvironment: true);
+		string processName = $"UsrClioBpGatewayPlainE2e{Guid.NewGuid():N}";
+		await CallToolAsync(context, CreateToolName, new Dictionary<string, object?> {
+			["environment-name"] = context.EnvironmentName,
+			["descriptor"] = BuildTwoBranchDescriptor(processName)
+		});
+
+		// Act — clear the condition off the branch whose gateway already has a default.
+		CallToolResult callResult = await CallToolAsync(context, ToolName, new Dictionary<string, object?> {
+			["environment-name"] = context.EnvironmentName,
+			["process-name"] = processName,
+			["operations"] = """
+				[
+				  { "op": "setFlow", "source": "Decide", "target": "EndB", "kind": "sequence" }
+				]
+				"""
+		});
+
+		// Assert - on the call text rather than IsError, which this surface measures null on a refusal.
+		JsonSerializer.Serialize(callResult).Should().Contain("chooses between its branches",
+			because: "the refusal must say WHY a plain flow cannot leave a gateway, or the caller retries it");
+
+		DescribeProcessResult described = ParseDescribeResult(await CallToolAsync(context, DescribeToolName,
+			new Dictionary<string, object?> {
+				["environment-name"] = context.EnvironmentName, ["process-name"] = processName
+			}));
+		described.Flows.Single(f => f.Source == "Decide" && f.Target == "EndB").Kind.Should().Be("conditional",
+			because: "a refused operation must leave the flow exactly as it was");
+	}
+
+	[Test]
 	[Description("Over the real MCP path, builds a process then edits it (replace start with a record-signal start).")]
 	[AllureTag(ToolName)]
 	[AllureName("modify-business-process edits an existing process")]
@@ -947,6 +1032,53 @@ public sealed class ModifyBusinessProcessToolE2ETests {
 	private static string BuildAmountMappingOperations(string expression) =>
 		"[{\"op\":\"addMapping\",\"mapping\":{\"targetProcessParameter\":\"Amount\",\"expression\":\""
 		+ expression.Replace("\\", "\\\\").Replace("\"", "\\\"") + "\"}}]";
+
+	// A gateway with two branches, so both directions of a setFlow re-kind are legal on it: a lone
+	// unconditional flow out of a deciding gateway would be normalised to the default branch instead.
+	// An ORDINARY element as the branch source, which is where both re-kind directions are legal. One plain
+	// flow and two conditional ones: re-kinding the plain one leaves no unconditional sibling behind, and
+	// re-kinding EndC leaves EndB conditional, so neither operation trips a rule.
+	private static string BuildThreeBranchTaskDescriptor(string processName) =>
+		$$"""
+		{
+		  "name": "{{processName}}",
+		  "caption": "Clio BP SetFlow E2E",
+		  "packageName": "Custom",
+		  "elements": [
+		    { "name": "Start1", "type": "startEvent" },
+		    { "name": "Decide", "type": "performTask" },
+		    { "name": "EndA", "type": "endEvent" },
+		    { "name": "EndB", "type": "endEvent" },
+		    { "name": "EndC", "type": "endEvent" }
+		  ],
+		  "flows": [
+		    { "source": "Start1", "target": "Decide" },
+		    { "source": "Decide", "target": "EndA" },
+		    { "source": "Decide", "target": "EndB", "kind": "conditional", "condition": "2 > 1" },
+		    { "source": "Decide", "target": "EndC", "kind": "conditional", "condition": "3 > 1" }
+		  ]
+		}
+		""";
+
+	private static string BuildTwoBranchDescriptor(string processName) =>
+		$$"""
+		{
+		  "name": "{{processName}}",
+		  "caption": "Clio BP SetFlow E2E",
+		  "packageName": "Custom",
+		  "elements": [
+		    { "name": "Start1", "type": "startEvent" },
+		    { "name": "Decide", "type": "exclusiveGateway" },
+		    { "name": "EndA", "type": "endEvent" },
+		    { "name": "EndB", "type": "endEvent" }
+		  ],
+		  "flows": [
+		    { "source": "Start1", "target": "Decide" },
+		    { "source": "Decide", "target": "EndA", "kind": "default" },
+		    { "source": "Decide", "target": "EndB", "kind": "conditional", "condition": "2 > 1" }
+		  ]
+		}
+		""";
 
 	private static string BuildDescriptor(string processName) =>
 		$$"""
