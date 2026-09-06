@@ -59,6 +59,21 @@ public sealed class ODataBuildGateTests
 	}
 
 	[Test]
+	[Description("Warns when it self-disables on an unreadable probe, because 'no such method' and 'a gateway answered with markup' produce the same null and silently dropping the wait leaves a later locked-file failure with no explanation (issue #722).")]
+	public void WaitUntilIdle_ShouldWarn_WhenTheProbeCannotBeRead() {
+		// Arrange
+		_client.TryGetIsODataBuildRunning(_options).Returns((bool?)null);
+
+		// Act
+		_gate.WaitUntilIdle(_options, "UsrVehicle");
+
+		// Assert
+		_logger.Received(1).WriteWarning(Arg.Is<string>(message =>
+			message.Contains("OData entities build status") && message.Contains("UsrVehicle")));
+		// because: the operator must be able to see in the log that the build wait never ran for this publish
+	}
+
+	[Test]
 	[Description("Returns immediately without waiting when the probe reports the build is already idle.")]
 	public void WaitUntilIdle_ShouldReturnImmediately_WhenProbeReportsIdle() {
 		// Arrange

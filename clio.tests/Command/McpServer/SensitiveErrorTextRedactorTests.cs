@@ -505,4 +505,64 @@ public sealed class SensitiveErrorTextRedactorTests {
 		result.Should().Contain("could not be refreshed",
 			because: "the reason an agent needs in order to self-correct must survive both passes");
 	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Redacts Creatio's session cookie values, which are the session itself: measured leaking verbatim out of a text/plain gateway body through the unparseable-response preview (issue #722).")]
+	public void Redact_ShouldRemoveSessionCookieValues_WhenABlockPageEchoesThem() {
+		// Arrange - the exact body a gateway returned on a stand, with the values that reached a transcript.
+		const string message = "IsODataBuildRunning returned an unparseable response. Response preview: "
+			+ "Blocked by WAF rule 941100. .ASPXAUTH=SECRETCOOKIEVALUE1234; BPMCSRF=CSRFTOKEN9999; sessionid=abc-123";
+
+		// Act
+		string result = SensitiveErrorTextRedactor.Redact(message);
+
+		// Assert
+		result.Should().NotContain("SECRETCOOKIEVALUE1234",
+			because: "a Forms-auth cookie value is a live session and must never reach an agent transcript");
+		result.Should().NotContain("CSRFTOKEN9999",
+			because: "the request-verification token is a credential in the same sense as the auth cookie");
+		result.Should().NotContain("abc-123",
+			because: "the session identifier is enough to ride the session and must be scrubbed too");
+		result.Should().Contain("Blocked by WAF rule 941100",
+			because: "the diagnostic reason an agent needs in order to self-correct must survive redaction");
+		result.Should().Contain(".ASPXAUTH=",
+			because: "keeping the key and dropping only the value is what keeps the message readable");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Redacts the same cookie values when they appear as a Set-Cookie or ASP.NET_SessionId header pair rather than in a cookie string (issue #722).")]
+	public void Redact_ShouldRemoveSessionCookieValues_WhenTheyAppearAsHeaders() {
+		// Arrange
+		const string message = "Set-Cookie: BPMLOADER=x; ASP.NET_SessionId=zzz999sessionvalue; JSESSIONID=jjj111";
+
+		// Act
+		string result = SensitiveErrorTextRedactor.Redact(message);
+
+		// Assert
+		result.Should().NotContain("zzz999sessionvalue",
+			because: "the ASP.NET session identifier is a credential whatever shape it is surfaced in");
+		result.Should().NotContain("jjj111",
+			because: "a servlet session identifier is a credential too, and the environment behind a proxy may issue one");
+	}
+
+	[Test]
+	[Description("Leaves the closing bracket of clio's own \"(URL: ...)\" fragment intact, so the redacted message does not read as an unbalanced parenthesis (issue #722).")]
+	[Category("Unit")]
+	public void Redact_ShouldNotConsumeTheClosingBracket_WhenAUriIsWrappedInParentheses() {
+		// Arrange
+		const string message =
+			"GetSchemaDesignItem answered with an HTML/XML page instead of JSON (URL: http://stand/0/ServiceModel/X.svc/Y).";
+
+		// Act
+		string result = SensitiveErrorTextRedactor.Redact(message);
+
+		// Assert
+		result.Should().Contain("[redacted-uri])",
+			because: "the endpoint is redacted but the caller's sentence must stay readable");
+		result.Should().NotContain("ServiceModel",
+			because: "the endpoint itself must still be removed");
+	}
+
 }

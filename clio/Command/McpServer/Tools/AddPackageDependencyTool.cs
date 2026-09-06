@@ -40,10 +40,11 @@ public sealed class AddPackageDependencyTool(
 				 Adds one or more package dependencies to a Creatio package via PackageService.svc.
 
 				 Use this when the schema designer or compiler fails for a package because it extends objects
-				 owned by an app/package that is NOT in the target package's dependency list — the classic
-				 symptom is `GetSchemaDesignItem returned an HTML error page` when opening a designer for a
-				 layered object (for example an app extending the Opportunity layer without depending on
-				 `CrtLeadOppMgmtApp`). Add the owning app/package as a dependency and the designer works.
+				 owned by an app/package that is NOT in the target package's dependency list — the symptom is
+				 `Schema '<NAME>' could not be opened in package '<PACKAGE>'`, which lists the candidate
+				 packages ranked with installed applications first (for example an app extending the
+				 Opportunity layer without depending on `CrtLeadOppMgmtApp`). Add the owning one from that
+				 list; clio reports the candidates instead of choosing, because more than one can be valid.
 
 				 Adding a dependency that is already present is a no-op (idempotent). The version of each
 				 dependency defaults to its installed version when omitted.

@@ -20,13 +20,32 @@ namespace Clio.Package;
 /// instead of unwrapping to the inner parser exception, whose text is the very thing this guard replaces.
 /// </para>
 /// </summary>
-internal sealed class NonJsonServiceResponseException : InvalidOperationException, IAuthoritativeErrorMessage
+internal class NonJsonServiceResponseException : InvalidOperationException, IAuthoritativeErrorMessage
 {
 	/// <summary>Initializes the exception with a message and the underlying parser failure, when any.</summary>
 	/// <param name="message">Human-readable description of the non-JSON response.</param>
 	/// <param name="innerException">The parser failure, or <see langword="null"/> for an empty body.</param>
 	internal NonJsonServiceResponseException(string message, Exception? innerException = null)
 		: base(message, innerException)
+	{
+	}
+}
+
+/// <summary>
+/// Raised when a Creatio service answered an authenticated request with its sign-in response - the rendered
+/// login page or the JSON 401 fault envelope - after automatic re-authentication had its one chance.
+/// <para>
+/// A distinct type rather than a message variant, because this body says NOTHING about the thing that was
+/// requested. A caller that enriches a failed read with its own diagnosis (for example "the package is
+/// missing a dependency") must skip this case instead of attaching a cause to an authentication problem.
+/// </para>
+/// </summary>
+internal sealed class SessionExpiredServiceResponseException : NonJsonServiceResponseException
+{
+	/// <summary>Initializes the exception with a message describing the rejected request.</summary>
+	/// <param name="message">Human-readable description of the sign-in response.</param>
+	internal SessionExpiredServiceResponseException(string message)
+		: base(message)
 	{
 	}
 }
@@ -151,10 +170,17 @@ internal static class ServiceResponseJsonGuard
 	/// post-BOM whitespace behind, misclassifying an HTML login page as a generic unparseable body and
 	/// previewing it.
 	/// </summary>
-	/// <param name="responseBody">Raw response body.</param>
+	/// <param name="responseBody">Raw response body, which may be <see langword="null"/> or empty.</param>
 	/// <returns><see langword="true"/> when the body opens with markup.</returns>
-	private static bool LooksLikeMarkup(string responseBody)
+	internal static bool LooksLikeMarkup(string? responseBody)
 	{
+		// Null-safe because callers outside Deserialize (RemoteEntitySchemaDesignerClient.TryPostToUrl) reach
+		// this with whatever the application client returned, without a preceding emptiness gate.
+		if (string.IsNullOrEmpty(responseBody))
+		{
+			return false;
+		}
+
 		int index = 0;
 		while (index < responseBody.Length
 			&& (char.IsWhiteSpace(responseBody[index]) || responseBody[index] == ByteOrderMark))

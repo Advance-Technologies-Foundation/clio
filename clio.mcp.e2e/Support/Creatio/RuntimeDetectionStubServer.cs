@@ -64,6 +64,23 @@ internal sealed class RuntimeDetectionStubServer : IAsyncDisposable {
 	public const string SelectQueryHtmlBodyMarker = "select-query-secret-marker";
 
 	/// <summary>
+	/// Marker embedded in every HTML body the stub returns from <c>GetSchemaDesignItem</c> when
+	/// <see cref="RuntimeDetectionStubServerConfiguration.DesignerHtmlMode"/> is set. Tests assert it is
+	/// absent from the surfaced error, so a designer error page leaking into an agent transcript is caught
+	/// (issue #722).
+	/// </summary>
+	public const string DesignerHtmlBodyMarker = "designer-html-secret-marker";
+
+	/// <summary>ASP.NET server-error page: the shape a <c>SchemaIsNotAvailableException</c> arrives in.</summary>
+	public const string DesignerHtmlServerError = "server-error";
+
+	/// <summary>Rendered sign-in page: an expired session, which is an authentication failure, not a package problem.</summary>
+	public const string DesignerHtmlLoginPage = "login-page";
+
+	/// <summary>Bare markup fragment, the IIS/WAF/proxy shape the old doctype-prefixed test did not classify as markup.</summary>
+	public const string DesignerHtmlFragment = "fragment";
+
+	/// <summary>
 	/// Marker embedded in the HTML body the stub returns for any odata request (GET/POST/PATCH/DELETE)
 	/// against <see cref="RuntimeDetectionStubServerConfiguration.ODataNonJsonEntity"/>. Mirrors the
 	/// IIS-served 404/401 pages observed in ENG-95971: the request reaches the stub but never reaches a
@@ -220,6 +237,59 @@ http.createServer((request, response) => {
       sendText(response, config.NetFrameworkUiMarkerEnabled ? 200 : 404, config.NetFrameworkUiMarkerEnabled ? "OK" : "Not Found");
       return;
     }
+    if (config.DesignerHtmlMode && request.method === "POST"
+      && url.endsWith("/ServiceModel/EntitySchemaDesignerService.svc/GetSchemaDesignItem")) {
+      // Issue #722: the designer answers a schema the target package cannot reach with an HTML page. Three
+      // shapes are served, because clio must classify them differently: a server-error page, a sign-in page
+      // (an expired session, which says nothing about packages), and a bare markup fragment.
+      response.writeHead(200, { "Content-Type": "text/html" });
+      if (config.DesignerHtmlMode === "{{DesignerHtmlLoginPage}}") {
+        response.end("<!DOCTYPE html><html><head><title>Creatio</title></head><body>"
+          + "<form action=\"/Login/NuiLogin.aspx\">{{DesignerHtmlBodyMarker}}</form></body></html>");
+        return;
+      }
+      if (config.DesignerHtmlMode === "{{DesignerHtmlFragment}}") {
+        response.end("<div>Request blocked by the gateway. {{DesignerHtmlBodyMarker}}</div>");
+        return;
+      }
+      response.end("<!DOCTYPE html><html><head><title>Runtime Error</title></head><body>"
+        + "Server Error in '/' Application. {{DesignerHtmlBodyMarker}}</body></html>");
+      return;
+    }
+    if (config.DesignerPackageName && !config.AuthRejectedSelectQuerySchemaName && !config.HtmlSelectQuerySchemaName
+      && request.method === "POST"
+      && (url === "/DataService/json/SyncReply/SelectQuery" || url === "/0/DataService/json/SyncReply/SelectQuery")) {
+      // The designer scenario needs three reads answered with real rows: the package the request is scoped
+      // to, the packages that contribute the schema, and the installed applications used to rank them.
+      if (body.includes('"SysPackage"')) {
+        sendJson(response, 200, { success: true, rows: [
+          { Id: "1", Name: config.DesignerPackageName, UId: "aaaaaaaa-0000-0000-0000-000000000001", Maintainer: "Customer", Version: "1.0.0" },
+          { Id: "2", Name: "StubOwnerApp", UId: "aaaaaaaa-0000-0000-0000-000000000002", Maintainer: "Creatio", Version: "1.0.0" },
+          { Id: "3", Name: "StubCoreOwner", UId: "aaaaaaaa-0000-0000-0000-000000000003", Maintainer: "Creatio", Version: "1.0.0" }
+        ] });
+        return;
+      }
+      if (body.includes('"SysSchema"')) {
+        sendJson(response, 200, { success: true, rows: [
+          { Name: config.DesignerSchemaName, UId: "bbbbbbbb-0000-0000-0000-000000000001", PackageName: "StubOwnerApp", PackageMaintainer: "Creatio", ParentSchemaName: null },
+          { Name: config.DesignerSchemaName, UId: "bbbbbbbb-0000-0000-0000-000000000002", PackageName: "StubCoreOwner", PackageMaintainer: "Creatio", ParentSchemaName: null }
+        ] });
+        return;
+      }
+      if (body.includes('"SysInstalledApp"')) {
+        sendJson(response, 200, { success: true, rows: [{ Id: "9", Code: "StubOwnerApp", Name: "Stub Owner App" }] });
+        return;
+      }
+    }
+    if (config.DesignerPackageName && request.method === "POST"
+      && url.endsWith("/ServiceModel/PackageService.svc/GetPackageProperties")) {
+      sendJson(response, 200, { success: true, package: {
+        uId: "aaaaaaaa-0000-0000-0000-000000000001",
+        name: config.DesignerPackageName,
+        dependsOnPackages: []
+      } });
+      return;
+    }
     if (request.method === "POST"
       && (url === "/DataService/json/SyncReply/SelectQuery" || url === "/0/DataService/json/SyncReply/SelectQuery")
       && config.AuthRejectedSelectQuerySchemaName
@@ -362,7 +432,10 @@ internal sealed record RuntimeDetectionStubServerConfiguration(
 	string? ODataNonJsonEntity = null,
 	string? ODataEntity = null,
 	string? ODataPreWriteMode = null,
-	string? AuthRejectedSelectQuerySchemaName = null);
+	string? AuthRejectedSelectQuerySchemaName = null,
+	string? DesignerHtmlMode = null,
+	string? DesignerPackageName = null,
+	string? DesignerSchemaName = null);
 
 /// <summary>
 /// One request served by <see cref="RuntimeDetectionStubServer"/>, as reported by
