@@ -178,7 +178,7 @@ public class CreateUserTaskCommand : RemoteCommand<CreateUserTaskOptions> {
 		UserTaskSchemaSupport.LoadWorkspacePackagesToDatabase(_fileDesignModePackages, Logger, schemaName,
 			$"The user task schema '{schemaName}' has already been created and built on the environment, so do not " +
 			"re-run add-user-task: enable file system development mode (clio turn-fsm on) and run " +
-			$"'clio pkg-to-db' followed by 'clio compile-creatio --package-name {packageName}' to finish applying " +
+			$"'clio pkg-to-db' followed by 'clio compile-package {packageName}' to finish applying " +
 			"the directions.");
 		BuildPackage(packageName);
 	}

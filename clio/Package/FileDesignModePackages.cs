@@ -39,6 +39,33 @@ namespace Clio.Package
 
 	#endregion
 
+	#region Class: FileDesignModeLoadMessage
+
+	/// <summary>
+	/// Builds the single wording used for a package load that did not happen, so the loader and the
+	/// commands that report a context-dependent cause themselves cannot drift apart.
+	/// </summary>
+	public static class FileDesignModeLoadMessage
+	{
+		/// <summary>Storage name of the configuration database direction.</summary>
+		public const string DatabaseStorageName = "database";
+
+		/// <summary>Storage name of the file system direction.</summary>
+		public const string FileSystemStorageName = "file system";
+
+		/// <summary>Reason text for an environment that reports file design mode as disabled.</summary>
+		public const string DisabledFileDesignModeReason = "disabled file design mode";
+
+		/// <summary>Composes the load-failure message for a storage direction and a reason.</summary>
+		/// <param name="storageName">Storage the load targeted.</param>
+		/// <param name="reason">Why nothing was loaded.</param>
+		/// <returns>The message written to the error log.</returns>
+		public static string Build(string storageName, string reason) =>
+			$"Load packages to {storageName} on a web application ended with error: {reason}";
+	}
+
+	#endregion
+
 	#region Interface: IPackagesToFileSystemLoader
 
 	public interface IFileDesignModePackages
@@ -156,7 +183,7 @@ namespace Clio.Package
 				: $"{errorInfo.Message} (error code: {errorInfo.ErrorCode})";
 
 		private void PrintErrorOperationMessage(string storageName, string errorMessage) =>
-			_logger.WriteError($"Load packages to {storageName} on a web application ended with error: {errorMessage}");
+			_logger.WriteError(FileDesignModeLoadMessage.Build(storageName, errorMessage));
 
 		/// <summary>
 		/// Reads the environment's file design mode state. A failed probe is reported as a failure of
@@ -184,7 +211,10 @@ namespace Clio.Package
 				return FileDesignModeLoadResult.FileDesignModeUnknown;
 			}
 			if (!isFileDesignMode) {
-				PrintErrorOperationMessage(storageName, "disabled file design mode");
+				// Deliberately silent: whether a disabled file design mode is an error depends on the caller.
+				// It is one for a standalone pkg-to-db, and it is the goal state of `turn-fsm off`, which must
+				// not exit 0 while an Error-typed log line says the opposite - both are published failure
+				// signals of the MCP command-execution-result contract and they must agree.
 				return FileDesignModeLoadResult.FileDesignModeDisabled;
 			}
 			_logger.WriteLine($"Start load packages to {storageName} on a web application");

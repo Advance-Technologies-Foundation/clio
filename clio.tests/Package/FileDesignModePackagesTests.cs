@@ -92,7 +92,7 @@ public class FileDesignModePackagesTests {
 	}
 
 	[Test]
-	[Description("LoadPackagesToDb reports failure and skips the load request when file design mode is disabled")]
+	[Description("LoadPackagesToDb reports a disabled file design mode without writing an error, because whether that state is a failure is the caller's decision, and skips the load request")]
 	public void LoadPackagesToDb_ShouldReportFailure_WhenFileDesignModeIsDisabled() {
 		// Arrange
 		ArrangeFileDesignModeProbe(success: true, value: false);
@@ -104,7 +104,7 @@ public class FileDesignModePackagesTests {
 		result.Should().Be(FileDesignModeLoadResult.FileDesignModeDisabled,
 			because: "an environment with disabled file design mode cannot load packages, and the caller must " +
 			"be able to tell that state apart from a load the platform refused");
-		_logger.Received(1).WriteError(Arg.Is<string>(message => message.Contains("disabled file design mode")));
+		_logger.DidNotReceive().WriteError(Arg.Any<string>());
 		_applicationClient.DidNotReceive().ExecutePostRequest(LoadPackagesToDbUrl, Arg.Any<string>(),
 			Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>());
 	}
@@ -164,7 +164,7 @@ public class FileDesignModePackagesTests {
 	}
 
 	[Test]
-	[Description("LoadPackagesToFileSystem reports failure when file design mode is disabled")]
+	[Description("LoadPackagesToFileSystem reports a disabled file design mode without writing an error, mirroring the database direction")]
 	public void LoadPackagesToFileSystem_ShouldReportFailure_WhenFileDesignModeIsDisabled() {
 		// Arrange
 		ArrangeFileDesignModeProbe(success: true, value: false);
@@ -175,8 +175,7 @@ public class FileDesignModePackagesTests {
 		// Assert
 		result.Should().Be(FileDesignModeLoadResult.FileDesignModeDisabled,
 			because: "the file system export shares the failure reporting of the database import");
-		_logger.Received(1).WriteError(Arg.Is<string>(message =>
-			message.Contains("file system") && message.Contains("disabled file design mode")));
+		_logger.DidNotReceive().WriteError(Arg.Any<string>());
 		_applicationClient.DidNotReceive().ExecutePostRequest(LoadPackagesToFileSystemUrl, Arg.Any<string>(),
 			Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>());
 	}

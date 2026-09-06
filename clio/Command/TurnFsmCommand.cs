@@ -120,12 +120,12 @@ public class TurnFsmCommand : Command<TurnFsmCommandOptions>
 			// The Web.config flag was written but the running application still answers "disabled".
 			// On .NET Framework the IIS app pool recycles asynchronously on that file change, so the
 			// probe can be answered by a worker that has not picked the new flag up yet.
-			_logger.WriteWarning(
+			_logger.WriteError(
 				"File system mode was written to the configuration, but the environment still reports file " +
 				"design mode as disabled, so no packages were exported. Wait for the web application to " +
 				"restart and run 'clio pkg-to-file-system' to finish the export.");
 		} else {
-			_logger.WriteWarning(
+			_logger.WriteError(
 				"File system mode is already switched on in the configuration, but the packages were not " +
 				"exported. Run 'clio pkg-to-file-system' to finish the export.");
 		}

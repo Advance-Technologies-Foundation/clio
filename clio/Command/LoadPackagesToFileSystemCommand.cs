@@ -37,8 +37,18 @@ public class LoadPackagesToFileSystemCommand : Command<EnvironmentOptions>{
 
 	#region Methods: Public
 
-	public override int Execute(EnvironmentOptions options) =>
-		Load(options) == FileDesignModeLoadResult.Completed ? 0 : 1;
+	public override int Execute(EnvironmentOptions options) {
+		FileDesignModeLoadResult result = Load(options);
+		if (result == FileDesignModeLoadResult.FileDesignModeDisabled) {
+			// The loader stays silent on this cause because turn-fsm off treats it as its goal state; for a
+			// standalone pkg-to-file-system it is a failure and must carry the Error log line that the
+			// command-execution-result contract publishes alongside the non-zero exit code.
+			_logger.WriteError(FileDesignModeLoadMessage.Build(
+				FileDesignModeLoadMessage.FileSystemStorageName,
+				FileDesignModeLoadMessage.DisabledFileDesignModeReason));
+		}
+		return result == FileDesignModeLoadResult.Completed ? 0 : 1;
+	}
 
 	/// <summary>
 	/// Runs the same export as <see cref="Execute"/> but reports WHY nothing was exported, so a

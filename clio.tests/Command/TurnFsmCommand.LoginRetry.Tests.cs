@@ -100,6 +100,9 @@ public class TurnFsmCommandLoginRetryTests {
 			because: "an environment that already has file design mode disabled is in the target state of " +
 			"'turn-fsm off', so the command must finish by writing the configuration instead of failing");
 		context.SetFsmConfigCommand.Received(1).Execute(options);
+		context.Logger.DidNotReceive().WriteError(Arg.Any<string>());
+		context.Logger.Received(1).WriteWarning(Arg.Is<string>(message =>
+			message.Contains("already has file design mode disabled")));
 	}
 
 	[Test]
@@ -170,11 +173,12 @@ public class TurnFsmCommandLoginRetryTests {
 			new LoadPackagesToDbCommand(fileDesignModePackages, logger),
 			applicationClient, environmentSettings, restartCommand, logger,
 			Substitute.For<IRetryDelay>());
-		return new TurnFsmTestContext(command, setFsmConfigCommand, fileDesignModePackages);
+		return new TurnFsmTestContext(command, setFsmConfigCommand, fileDesignModePackages, logger);
 	}
 
 	private sealed record TurnFsmTestContext(
 		TurnFsmCommand Command,
 		SetFsmConfigCommand SetFsmConfigCommand,
-		IFileDesignModePackages FileDesignModePackages);
+		IFileDesignModePackages FileDesignModePackages,
+		ILogger Logger);
 }

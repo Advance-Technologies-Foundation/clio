@@ -43,7 +43,7 @@ directions as applied while nothing on the environment changed. Steps 1-2
 have already run at that point: the user task schema EXISTS on the
 environment and only the directions are missing, so do not re-run
 add-user-task. Enable FSM (clio turn-fsm on) and finish with
-'clio pkg-to-db' followed by 'clio compile-creatio --package-name <PACKAGE>'.
+'clio pkg-to-db' followed by 'clio compile-package <PACKAGE>'.
 
 ## Synopsis
 

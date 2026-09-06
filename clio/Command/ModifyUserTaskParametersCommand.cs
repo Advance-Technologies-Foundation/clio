@@ -313,7 +313,7 @@ public class ModifyUserTaskParametersCommand : RemoteCommand<ModifyUserTaskParam
 		UserTaskSchemaSupport.LoadWorkspacePackagesToDatabase(_fileDesignModePackages, Logger, schemaName,
 			$"The other parameter changes to '{schemaName}' were already saved and built on the environment, so only " +
 			"the directions are missing: enable file system development mode (clio turn-fsm on) and run " +
-			$"'clio pkg-to-db' followed by 'clio compile-creatio --package-name {packageName}'.");
+			$"'clio pkg-to-db' followed by 'clio compile-package {packageName}'.");
 		BuildPackage(packageName);
 	}
 
