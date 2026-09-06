@@ -55,6 +55,24 @@ rebundles, each one a configuration build and a restart on the stand under test.
    a new gate, and it is the only one of the three that does not depend on anyone remembering.
 
 **Do not confuse this with the code-review gates.** Those are working as designed and finding real
-defects; the point is only that their design cannot reach here. AGENTS.md's mandatory doc- and
-MCP-review triggers are the current mitigation and they are trigger-based, i.e. they fire when *the
-command* changes — which is exactly the case that already gets attention.
+defects; the point is only that their design cannot reach here.
+
+**And do not write off AGENTS.md's triggers either — measured, they got two of these three right.** The
+triggers are aimed at FILES, and the diagnosis is different for each instance, which matters because two
+of the three are fixable by sharpening a trigger that already exists rather than by inventing a gate:
+
+| Instance | Trigger | What failed |
+|---|---|---|
+| `bundled-packages.md` | **present, and exact** — AGENTS.md names `BundledPackageConvergence.cs` in the list that says to read this article | the **verb**. It says *read*, and reading an article in order to FOLLOW it is not the act of checking it still holds |
+| `McpCapabilityMap.md` | **absent** — it appears nowhere in AGENTS.md; the required MCP targets are `Tools\*.cs`, `Prompts\*.cs`, `Resources\*.cs`, `clio.tests`, `clio.mcp.e2e`, `clio	pl\**` | nothing fires at all |
+| `CreateBusinessProcessTool`'s `[Description]` | **present** — `Tools\*.cs` is a required target and fires on every edit | the **question**. The rule asks to keep the description aligned with *"the current command behavior"* — this tool's own. Whether a tool it NAMES still exists, or is still resident, is a different question nothing asks |
+
+So the honest form of the limitation is narrower than "triggers fire where attention already is": a
+trigger cannot fire on a file the diff never opens, and that is instance 2 alone. Instances 1 and 3
+landed on a file the trigger DID name, and what was missing was the instruction to **reconcile** rather
+than to follow. Sharpening those two is the cheapest mitigation available, and unlike the habits below
+it depends on nobody remembering anything — which is why it belongs above them.
+
+Changing AGENTS.md's trigger list and verbs is a repository-wide decision affecting every agent that
+works here, so it is recorded as a finding rather than made as a side effect of the ticket that found
+it.
