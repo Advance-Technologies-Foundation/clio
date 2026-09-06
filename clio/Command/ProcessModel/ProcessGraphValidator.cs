@@ -304,9 +304,16 @@ public sealed class ProcessGraphValidator : IProcessGraphValidator {
 	// posture mirrored here: refuse on author, tolerate on read. This tool only ever sees a PLANNED graph, so
 	// the read half does not apply to it. At run time a self-looping task re-executes on every completion, and
 	// nothing on the diagram shows it, because the layout engine skips self-loops when building adjacency.
+	//
+	// No null-source guard, and that is a deletion rather than an omission: CheckMissingNodeFlows runs first
+	// and its ContainsKey(null) throws, so an edge with a null source cannot reach this loop. That fact is
+	// OURS - it lives in this file and would change in our own diff - which is the case where an unreachable
+	// guard is dead code rather than insurance. See
+	// docs/knowledge/Tests/reachability-not-corpus-absence-decides-whether-a-guard-stays.md. If the ordering
+	// in Validate ever changes, this guard comes back in the same commit.
 	private static void CheckSelfLoops(IReadOnlyList<ProcessGraphEdge> edges, List<ProcessGraphFinding> findings) {
 		foreach (ProcessGraphEdge edge in edges
-				.Where(e => e.Source != null && string.Equals(e.Source, e.Target, System.StringComparison.Ordinal))) {
+				.Where(e => string.Equals(e.Source, e.Target, System.StringComparison.Ordinal))) {
 			findings.Add(new ProcessGraphFinding(ProcessGraphSeverity.Error, "R15",
 				$"Flow connects '{edge.Source}' to itself. To repeat an element, route the flow back through a "
 				+ "gateway that decides whether to repeat it.", edge.Source, edge));

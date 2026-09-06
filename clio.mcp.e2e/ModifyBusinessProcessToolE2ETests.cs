@@ -52,6 +52,54 @@ public sealed class ModifyBusinessProcessToolE2ETests {
 	}
 
 	[Test]
+	[Description("Over the real MCP path, setFlow re-kinds an existing flow in place — the operation ENG-91853 added and the one nothing else in this suite sends. Two directions in one process, because they fail differently: sequence -> conditional must store the condition, and default -> sequence is the CLEAR-condition route whose absence the guidance used to assert. Unit tests build the operation record positionally in C#, so the JSON binder for op/kind/condition is exercised nowhere else.")]
+	[AllureTag(ToolName)]
+	[AllureName("modify-business-process re-kinds a flow with setFlow in both directions")]
+	public async Task ModifyBusinessProcess_Should_ReKindAFlowWithSetFlow() {
+		// Arrange — a two-branch process so a default flow is legal on the gateway.
+		await using ArrangeContext context = await ArrangeAsync(requireReachableEnvironment: true);
+		string processName = $"UsrClioBpSetFlowE2e{Guid.NewGuid():N}";
+		await CallToolAsync(context, CreateToolName, new Dictionary<string, object?> {
+			["environment-name"] = context.EnvironmentName,
+			["descriptor"] = BuildTwoBranchDescriptor(processName)
+		});
+
+		// Act — make the plain branch conditional, then turn the default one back into a plain flow.
+		CallToolResult callResult = await CallToolAsync(context, ToolName, new Dictionary<string, object?> {
+			["environment-name"] = context.EnvironmentName,
+			["process-name"] = processName,
+			["operations"] = """
+				[
+				  { "op": "setFlow", "source": "Decide", "target": "EndB", "kind": "conditional",
+				    "condition": "1 > 0" },
+				  { "op": "setFlow", "source": "Decide", "target": "EndA", "kind": "sequence" }
+				]
+				"""
+		});
+
+		// Assert
+		callResult.IsError.Should().NotBeTrue(
+			because: "re-kinding a flow in both directions must complete without a transport error");
+
+		DescribeProcessResult described = ParseDescribeResult(await CallToolAsync(context, DescribeToolName,
+			new Dictionary<string, object?> {
+				["environment-name"] = context.EnvironmentName, ["process-name"] = processName
+			}));
+		DescribedFlow toB = described.Flows.Single(f => f.Source == "Decide" && f.Target == "EndB");
+		DescribedFlow toA = described.Flows.Single(f => f.Source == "Decide" && f.Target == "EndA");
+
+		toB.Kind.Should().Be("conditional",
+			because: "setFlow's kind has to reach the builder through the JSON binder - dropped, the flow stays "
+				+ "plain and the operation reports success on an edit that did nothing");
+		toB.Condition.Should().Be("1 > 0",
+			because: "kind and condition are separate fields on the same operation and are dropped separately");
+		toA.Kind.Should().Be("sequence",
+			because: "this is the clear-condition route, and it is the direction the guidance spent two "
+				+ "revisions asserting did not exist - a default that stayed default here means the op was "
+				+ "accepted and ignored");
+	}
+
+	[Test]
 	[Description("Over the real MCP path, builds a process then edits it (replace start with a record-signal start).")]
 	[AllureTag(ToolName)]
 	[AllureName("modify-business-process edits an existing process")]
@@ -947,6 +995,28 @@ public sealed class ModifyBusinessProcessToolE2ETests {
 	private static string BuildAmountMappingOperations(string expression) =>
 		"[{\"op\":\"addMapping\",\"mapping\":{\"targetProcessParameter\":\"Amount\",\"expression\":\""
 		+ expression.Replace("\\", "\\\\").Replace("\"", "\\\"") + "\"}}]";
+
+	// A gateway with two branches, so both directions of a setFlow re-kind are legal on it: a lone
+	// unconditional flow out of a deciding gateway would be normalised to the default branch instead.
+	private static string BuildTwoBranchDescriptor(string processName) =>
+		$$"""
+		{
+		  "name": "{{processName}}",
+		  "caption": "Clio BP SetFlow E2E",
+		  "packageName": "Custom",
+		  "elements": [
+		    { "name": "Start1", "type": "startEvent" },
+		    { "name": "Decide", "type": "exclusiveGateway" },
+		    { "name": "EndA", "type": "endEvent" },
+		    { "name": "EndB", "type": "endEvent" }
+		  ],
+		  "flows": [
+		    { "source": "Start1", "target": "Decide" },
+		    { "source": "Decide", "target": "EndA", "kind": "default" },
+		    { "source": "Decide", "target": "EndB", "kind": "conditional", "condition": "2 > 1" }
+		  ]
+		}
+		""";
 
 	private static string BuildDescriptor(string processName) =>
 		$$"""

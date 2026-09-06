@@ -3216,13 +3216,18 @@ stories:
     feature: "eng-91853-gateways-and-flows"
     repo: "workspace/ProcessBuilder"
     size: M
-    status: in-progress
+    status: review
     jira: ENG-91853
     file: spec/eng-91853-gateways-and-flows/eng-91853-gateways-and-flows-plan.md
     test_plan: spec/eng-91853-gateways-and-flows/eng-91853-gateways-and-flows-test-plan.md
     note: >-
       Branch feature/ENG-91853-gateways-and-flows, off main (7e93995 - crt-process-builder's default
-      branch is main, not master). Work packages S1-S5.
+      branch is main, not master). Work packages S1-S5, all implemented; 1244 tests pass.
+      TWO comprehensive review gates are closed (spec/reviews/, 2026-09-05 and 2026-09-06) and both
+      manual-test legs have run (spec/eng-91853-gateways-and-flows/...-manual-test-run-2026-09-06b.md):
+      the agent leg attempted all 15 cases and the browser leg verified runtime on a stand, including
+      the one thing nothing else could - a build-path condition written as a NAME expands and then
+      EVALUATES. Status is review rather than done: nothing is pushed and no pull request exists.
       S4 (branch-aware Y auto-layout) is DONE. ProcessLayoutEngine rewritten from a per-COLUMN vertical
       stagger to a five-phase lane model: adjacency in flow declaration order, DFS back-edge
       classification, longest-path columns over the remaining DAG, one lane per branch, Y from the lane.
