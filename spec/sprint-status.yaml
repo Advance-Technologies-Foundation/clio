@@ -3221,6 +3221,7 @@ stories:
     file: spec/eng-91853-gateways-and-flows/eng-91853-gateways-and-flows-plan.md
     test_plan: spec/eng-91853-gateways-and-flows/eng-91853-gateways-and-flows-test-plan.md
     note: >-
+      PR: https://creatio.ghe.com/engineering/crt-process-builder/pull/45
       Branch feature/ENG-91853-gateways-and-flows, off main (7e93995 - crt-process-builder's default
       branch is main, not master). Work packages S1-S5, all implemented; 1244 tests pass.
       TWO comprehensive review gates are closed (spec/reviews/, 2026-09-05 and 2026-09-06) and both
@@ -3296,7 +3297,8 @@ stories:
     feature: "eng-91853-gateways-and-flows"
     repo: "clio"
     size: M
-    status: in-progress
+    status: review
+    pr: https://github.com/Advance-Technologies-Foundation/clio/pull/1398
     jira: ENG-91853
     file: spec/eng-91853-gateways-and-flows/eng-91853-gateways-and-flows-plan.md
     test_plan: spec/eng-91853-gateways-and-flows/eng-91853-gateways-and-flows-test-plan.md
@@ -3343,7 +3345,8 @@ stories:
     feature: "eng-91853-gateways-and-flows"
     repo: "clio-knowledge"
     size: S
-    status: in-progress
+    status: review
+    pr: https://github.com/Advance-Technologies-Foundation/clio-knowledge/pull/135
     jira: ENG-91853
     file: spec/eng-91853-gateways-and-flows/eng-91853-gateways-and-flows-plan.md
     note: >-

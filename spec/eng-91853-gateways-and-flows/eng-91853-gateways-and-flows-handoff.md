@@ -1,5 +1,23 @@
 # ENG-91853 — State of the branch, and what is left
 
+> **PULL REQUESTS ARE OPEN (2026-09-06).** Everything below describes how the branches got here; the
+> branches are pushed and the three pull requests exist.
+>
+> | Repository | PR | Base |
+> |---|---|---|
+> | `crt-process-builder` | [#45](https://creatio.ghe.com/engineering/crt-process-builder/pull/45) | `main` |
+> | `clio` | [#1398](https://github.com/Advance-Technologies-Foundation/clio/pull/1398) | `master` |
+> | `clio-knowledge` | [#135](https://github.com/Advance-Technologies-Foundation/clio-knowledge/pull/135) | `master` |
+>
+> The stand is clean: the six process instances this ticket's runs left parked on user tasks are
+> cancelled. The eleven test PROCESSES stay — they are the manual legs' evidence. Six instances still
+> read `Running` on that stand and none are this ticket's: four date from 2019, one from 2020, and
+> `Parallel check confirmation` from 00:32 belongs to an earlier session.
+>
+> One gap is stated in the clio PR body rather than hidden: the new `clio.mcp.e2e` cases **compile and
+> have never been executed** — that suite is manual-only and its sandbox `EnvironmentName` is unset
+> here. The runtime evidence comes from the manual legs, not from that suite.
+
 Updated 2026-09-06, after the review gate closed. Everything is implemented, unit-green and
 mutation-checked in all three repositories. **Nothing is pushed and no pull request exists.**
 
