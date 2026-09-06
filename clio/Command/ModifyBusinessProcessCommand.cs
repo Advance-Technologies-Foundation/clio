@@ -81,6 +81,13 @@ namespace Clio.Command;
 // because a parameter is addressed by a UId that does not exist until this very call creates it. That
 // is 88% of the conditions in the shipped product, so below .60 the declarative branch is a contract
 // clio documents and the environment cannot honour.
+//
+// Be exact about WHICH archive buys what, because an earlier draft of this comment was not: `flows[].kind`
+// and the two gateway type tokens arrive in .58 and .58/.59 accept them. What .60 adds is the by-name
+// condition expansion, and that is the whole reason the floor is not .58. What .60 REACHES is in turn
+// narrower than the 88%: 242 of the 487 element-output conditions address a COLUMN of the returned
+// record, a third meta-path segment the name form cannot express, so by-name expansion covers 65% and
+// the column form still needs the modify path.
 [RequiresPackage(BundledPackages.ProcessBuilderPackageName, "1.4.0.60",
 	Hint = BundledPackages.ProcessBuilderInstallHint)]
 public sealed class ModifyBusinessProcessOptions : EnvironmentOptions {

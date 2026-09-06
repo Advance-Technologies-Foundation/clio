@@ -236,7 +236,16 @@ public sealed class ProcessGraphValidator : IProcessGraphValidator {
 		// SysProcessLog entry read "None of the conditions were met after the element ... The business process
 		// execution has been suspended". Whether the exception is thrown behind that is not the point; it is
 		// not the text the reader can search for, and the recorded outcome is SUSPENDED rather than failed.
-		if (!hasDefault) {
+		//
+		// SCOPED OFF a gateway that carries a plain sequence flow, because on that shape the message would be
+		// FALSE. FlowConditionalGateway treats any outgoing that is not a conditional flow as the default
+		// branch, so nothing stops and the log says nothing - the instance takes the plain flow. Seven shipped
+		// diverging or-gateways are in exactly that shape and every one of them is reachable here through the
+		// ordinary describe-then-validate route, so this would have promised a run-time failure that cannot
+		// happen, seven times over, on the platform's own content. That shape already has its own warning
+		// above, which says the useful thing instead: mark it 'default' so the diagram states the fallback.
+		bool hasPlainFallback = outs.Any(edge => edge.FlowKind == ProcessFlowKind.Sequence);
+		if (!hasDefault && !hasPlainFallback) {
 			findings.Add(new ProcessGraphFinding(ProcessGraphSeverity.Warning, ruleId,
 				$"Diverging gateway '{node.Name}' has no default flow: if no condition matches at run time the "
 				+ "instance stops there and the process log reads \"None of the conditions were met after the "
@@ -273,8 +282,10 @@ public sealed class ProcessGraphValidator : IProcessGraphValidator {
 			}
 
 			// A conditional flow with no condition is NOT an error the platform reports: it substitutes the
-			// literal "true", producing a branch that looks conditional and always fires. 7 shipped flows are
-			// in that state.
+			// literal "true", producing a branch that looks conditional and always fires. Re-measured: THREE
+			// shipped conditional flows are in that state, and they omit the CI3 key entirely - zero store an
+			// empty string. The "7" this comment used to claim was wrong, which matters because the number is
+			// the argument for the rule being a warning about a real shape rather than a hypothetical.
 			//
 			// A NULL condition is the field being omitted on THIS edge and raises nothing: the field is
 			// optional, and a caller describing a graph's shape rather than its predicates must not be

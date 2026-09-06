@@ -20,15 +20,23 @@ parameters and elements are created by that same call, and `ProcessParameterDesc
 that reference no parameter. Measured over the shipped 7.8.0 corpus — 1 405 conditional flows, 1 402
 with a stored expression, ~341 of them decoding to an empty one the runtime replaces with `true`:
 
-| Expression shape | Count | Buildable before the expansion |
-|---|---|---|
-| element output `[Element:{uid}].[Parameter:{uid}]` | 487 | no |
-| process parameter `[Parameter:{uid}]` | 445 | no |
-| literal / call into the schema's own generated code | 92 | rarely |
-| `[#SysSettings.Code<Type>#]` | 37 | yes |
+| Expression shape | Count | Before the expansion | By NAME today |
+|---|---|---|---|
+| element output, record only `[Element].[Parameter]` | 245 | no | **yes** — `[#Element.Parameter#]` |
+| element output, one COLUMN `[Element].[Parameter].[EntityColumn]` | 242 | no | **no** — see below |
+| process parameter `[Parameter:{uid}]` | 445 | no | **yes** — `[#Name#]` |
+| literal / call into the schema's own generated code | 92 | rarely | n/a |
+| `[#SysSettings.Code<Type>#]` | 37 | yes | passes through |
 
 932 of the 1 061 non-empty expressions — 87.8% — carried a UId that could not exist yet, and
-`SysSettings` at 3.5% was the whole of what worked. A clean-room agent run confirmed the consequence
+`SysSettings` at 3.5% was the whole of what worked.
+
+**The expansion does NOT reach all 932, and the difference is 242 flows.** A condition that addresses a
+COLUMN of the record an element returned carries a THIRD meta-path segment, `[EntityColumn:{uid}]`, and
+`[#Element.Parameter#]` has no way to say it. So by-name coverage is 245 + 445 = **690 of 1 061 = 65%**,
+not 88%, and the column form still belongs to the modify path. Stated separately rather than rounded up
+because "88% is buildable now" is what a reader takes away, and it would be wrong by 242 flows. An
+`[#Element.Parameter.Column#]` arm would close the rest. A clean-room agent run confirmed the consequence
 before the fix: the executor never used `flows[].condition` once and routed every branch through a
 later `modify-business-process`.
 

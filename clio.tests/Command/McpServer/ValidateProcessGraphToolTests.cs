@@ -239,6 +239,11 @@ public sealed class ValidateProcessGraphToolTests {
 				+ "which is the defect the R14 arity scope in this same change exists to undo");
 		response.HasErrors.Should().BeFalse(
 			because: "a shape the shipped corpus contains seven times over must not fail validation");
+		response.Findings.Should().NotContain(f => f.Message.Contains("has no default flow"),
+			because: "the no-default warning promises the instance STOPS and the log says nothing matched, and "
+				+ "on this shape that is false - FlowConditionalGateway takes any non-conditional outgoing as "
+				+ "the default, so the plain flow runs. Firing both warnings here would tell an author their "
+				+ "process breaks at run time when it does not, on all seven shipped gateways of this shape");
 	}
 
 	[Test]
@@ -528,6 +533,11 @@ public sealed class ValidateProcessGraphToolTests {
 		// Assert
 		response.Findings.Should().NotContain(f => f.RuleId == "R8",
 			because: "both branches of an AND split always run, so the join always completes");
+		response.Findings.Should().BeEmpty(
+			because: "a plain AND fork and join is the shape parallel gateways exist FOR, so the whole rule set "
+				+ "must stay silent on it. Asserting only 'no R8' let the or-gateway type filter in "
+				+ "CheckDefaultFlowRules be deleted with every test still green: R7/R9 would then fire on this "
+				+ "parallel gateway and nothing in the suite was looking");
 	}
 
 	[Test]

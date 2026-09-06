@@ -25,23 +25,28 @@ public static class ModifyBusinessProcessPrompt {
 		 `modify-business-process` tool. Steps: (1) call `describe-business-process` to inspect the current elements
 		 and their names; (2) read `get-guidance name=process-modeling` for the operation and field contract;
 		 (3) supply a JSON `operations` array (applied in order) — each item has an `op`: `addElement`,
-		 `removeElement`, `addFlow`, `removeFlow`, `setFlowCondition`, `addParameter`, `addMapping`, `setParameter`,
-		 `removeParameter`, `setFilter`, `clearFilter`, `setSignal`, `setElement`, `setConnections`, or
-		 `clearConnections`
+		 `removeElement`, `addFlow`, `removeFlow`, `setFlow`, `setFlowCondition`, `addParameter`, `addMapping`,
+		 `setParameter`, `removeParameter`, `setFilter`, `clearFilter`, `setSignal`, `setElement`,
+		 `setConnections`, or `clearConnections`
 		 — plus that op's arguments (the element / parameter / mapping / filter / signal shapes match a build;
 		 `setParameter` updates a parameter in place, `removeParameter` is dependency-checked — over mappings,
 		 execution-context parameters AND conditional-flow conditions, sub-processes included; `setFlowCondition`
 		 (`source` + `target` + a non-empty `condition`) turns an existing plain flow into a CONDITIONAL branch in
-		 place, keeping its position, which decides precedence: sibling branches off one element are evaluated in
+		 place, keeping its position; `addFlow` takes `kind` (sequence | conditional | default) and, for a
+		 conditional one, `condition`, so a branch can be declared as the flow is added rather than in two steps;
+		 `setFlow` (`source` + `target` + `kind`, plus `condition` for a conditional one) changes an EXISTING
+		 flow's kind in either direction, also in place. Position decides precedence: sibling branches off one element are evaluated in
 		 the order their flows were added and the first true one wins. No gateway is needed — the platform
 		 synthesizes one for a conditional flow whose source is an activity. The condition must be a bool (an int is refused; the interpreted engine does not coerce)
 		 and every `[#…#]` parameter reference in it must resolve in that process. A condition on a DEFAULT branch
-		 is refused. There is no clear-condition operation, and `removeFlow` + `addFlow` is NOT a substitute for
-		 one: if it was the last conditional flow off that element the platform stops synthesizing the gateway
-		 and EVERY outgoing flow is then taken — a parallel split that `describe` reports as `kind:"sequence"` on
-		 both, reading exactly like a cleared condition. The replacement also lands LAST, and since precedence IS
-		 insertion order that silently changes which sibling branch runs. To CHANGE a condition call
-		 `setFlowCondition` again; to make a branch always taken set its condition to `true`. An EMPTY condition is refused
+		 is refused. The clear-condition operation is `setFlow` with `kind:"sequence"`, which re-kinds in place —
+		 same UId, same position — and REFUSES the one edit that reshapes the process silently: dropping the LAST
+		 conditional flow off an element that still has other outgoing flows. `removeFlow` + `addFlow` is guarded
+		 by nothing and is NOT a substitute: if it was the last conditional flow off that element the platform
+		 stops synthesizing the gateway, `describe` reports `kind:"sequence"` on both flows — reading exactly
+		 like a cleared condition — and the replacement lands LAST, which, since precedence IS insertion order,
+		 silently changes which sibling branch runs. To CHANGE a condition call `setFlowCondition` again; to make
+		 a branch always taken set its condition to `true`. An EMPTY condition is refused
 		 because the platform stores one as the literal `true`. `setFilter`/`clearFilter`
 		 set or remove a `signalStart`'s record filter, `setSignal` reconfigures a `signalStart`'s record trigger
 		 and its tracked-change `changedColumns` in place, and `setElement` changes element-level fields in place —
