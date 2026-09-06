@@ -37,12 +37,11 @@ public class WorkspacePackageTool(
 				 Read get-guidance name=localizable-values before using or extending localization primitives
 				 generated with `as-app`.
 				 With `as-app`, the generated source-code schema is prefixed with the target environment's
-				 SchemaNamePrefix system setting. Creatio refuses a schema whose code does not start with it
-				 when it loads the package from the file system. Pass `environment-name` so that value can be
-				 read, or pass `schema-name-prefix` to set it without contacting Creatio; an EMPTY
-				 `schema-name-prefix` deliberately generates no prefix, so omit the argument rather than
-				 sending an empty string. With neither, the schema is generated unprefixed and a warning is
-				 logged.
+				 SchemaNamePrefix system setting; Creatio refuses a schema whose code does not start with it.
+				 Pass `environment-name` so that value can be read, or `schema-name-prefix` to set it without
+				 contacting Creatio. An EMPTY `schema-name-prefix` deliberately generates NO prefix and is
+				 warned about in execution-log-messages, so omit the argument rather than sending an empty
+				 string. With neither, the schema is generated unprefixed and a warning is logged.
 				 """)]
 	public CommandExecutionResult AddPackage(
 		[Description("add-package parameters")] [Required] AddPackageArgs args

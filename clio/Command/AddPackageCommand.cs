@@ -77,7 +77,7 @@ public class AddPackageCommand(IPackageCreator packageCreator, ILogger logger, I
 				logger.WriteError(PackageCreator.InvalidPackageNameMessage);
 				return 1;
 			}
-			if (!IsRequestedPrefixValid(options.SchemaNamePrefix)) {
+			if (!SchemaNamePrefixResolver.IsValidRequestedPrefix(options.SchemaNamePrefix)) {
 				logger.WriteError(SchemaNamePrefixResolver.InvalidPrefixMessage);
 				return 1;
 			}
@@ -106,22 +106,6 @@ public class AddPackageCommand(IPackageCreator packageCreator, ILogger logger, I
 			logger.WriteError($"{error.Code} - {error.Description}");
 		}
 		return 1;
-	}
-
-	/// <summary>
-	/// Validates a caller-supplied schema-name prefix. Omitted is valid, and so is a literally empty
-	/// value - that is the documented way to ask for an unprefixed schema. A value that is nothing but
-	/// whitespace is not: it is a typo, and honouring it silently would hand the caller exactly the
-	/// unprefixed schema this option exists to prevent, with none of the three warnings.
-	/// </summary>
-	private static bool IsRequestedPrefixValid(string requestedPrefix) {
-		if (requestedPrefix is null) {
-			return true;
-		}
-		if (requestedPrefix.Length > 0 && requestedPrefix.Trim().Length == 0) {
-			return false;
-		}
-		return SchemaNamePrefixResolver.IsValidPrefix(requestedPrefix.Trim());
 	}
 
 	private void WarnWhenPrefixCannotApply(AddPackageOptions options) {

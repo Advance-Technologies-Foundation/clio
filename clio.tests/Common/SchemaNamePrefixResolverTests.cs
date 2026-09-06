@@ -1,6 +1,8 @@
 using System;
 using System.Collections.Generic;
 using System.Net;
+using System.Threading;
+using System.Threading.Tasks;
 using Clio.Common;
 using FluentAssertions;
 using NSubstitute;
@@ -17,16 +19,28 @@ public class SchemaNamePrefixResolverTests {
 
 	private ILogger _logger;
 	private ISysSettingsManager _sysSettingsManager;
+	private EnvironmentSettings _capturedFactoryArgument;
+	private EnvironmentSettings _environmentSettings;
+	private readonly ManualResetEventSlim _neverAnswers = new(false);
 
 	#endregion
 
 	#region Methods: Private
 
-	private SchemaNamePrefixResolver CreateSut(string environmentUri) {
-		EnvironmentSettings environmentSettings = environmentUri is null
+	private SchemaNamePrefixResolver CreateSut(string environmentUri) =>
+		CreateSut(environmentUri, TimeSpan.FromSeconds(SchemaNamePrefixResolver.DefaultReadBudgetSeconds));
+
+	private SchemaNamePrefixResolver CreateSut(string environmentUri, TimeSpan readBudget) {
+		_environmentSettings = environmentUri is null
 			? null
 			: new EnvironmentSettings {Uri = environmentUri, Login = "Supervisor", Password = "Supervisor"};
-		return new SchemaNamePrefixResolver(environmentSettings, _ => _sysSettingsManager, _logger);
+		// The argument is CAPTURED rather than discarded on purpose: the whole point of issue #1309 is
+		// that the prefix comes from the environment the package is destined for, and a factory stub that
+		// ignores its argument would keep every test green if production code passed null instead.
+		return new SchemaNamePrefixResolver(_environmentSettings, settings => {
+			_capturedFactoryArgument = settings;
+			return _sysSettingsManager;
+		}, _logger, readBudget);
 	}
 
 	#endregion
@@ -37,10 +51,18 @@ public class SchemaNamePrefixResolverTests {
 	public void Setup() {
 		_logger = Substitute.For<ILogger>();
 		_sysSettingsManager = Substitute.For<ISysSettingsManager>();
+		_capturedFactoryArgument = null;
+		_environmentSettings = null;
+		// TearDown releases the gate to free the abandoned read thread, so every test must start with it
+		// closed again or the budget test would see a read that answers instantly.
+		_neverAnswers.Reset();
 	}
 
 	[TearDown]
 	public void TearDown() {
+		// Released here, not in the test: the budget test deliberately abandons the read, and an
+		// unreleased gate would leave that thread blocked for the rest of the run.
+		_neverAnswers.Set();
 		_logger.ClearReceivedCalls();
 		_sysSettingsManager.ClearReceivedCalls();
 	}
@@ -58,6 +80,9 @@ public class SchemaNamePrefixResolverTests {
 		// Assert
 		prefix.Should().Be("Usr",
 			because: "the environment decides which prefix Creatio accepts for a generated schema");
+		_capturedFactoryArgument.Should().BeSameAs(_environmentSettings,
+			because: "the prefix must come from the environment the package is destined for, not from "
+				+ "whichever environment happens to be active");
 		_logger.DidNotReceive().WriteWarning(Arg.Any<string>());
 	}
 
@@ -93,8 +118,8 @@ public class SchemaNamePrefixResolverTests {
 	}
 
 	[Test]
-	[Description("Honours an explicit empty prefix as a deliberate request to generate without a prefix.")]
-	public void Resolve_ShouldReturnEmptyWithoutWarning_WhenExplicitPrefixIsEmpty() {
+	[Description("Honours an explicit empty prefix but warns, because an empty MCP string usually means 'not provided'.")]
+	public void Resolve_ShouldReturnEmptyWithWarning_WhenExplicitPrefixIsEmpty() {
 		// Arrange
 		SchemaNamePrefixResolver sut = CreateSut("http://localhost");
 
@@ -103,8 +128,47 @@ public class SchemaNamePrefixResolverTests {
 
 		// Assert
 		prefix.Should().BeEmpty(because: "an explicit empty prefix asks for an unprefixed schema on purpose");
-		_logger.DidNotReceive().WriteWarning(Arg.Any<string>());
+		_logger.Received(1).WriteWarning(Arg.Is<string>(message =>
+			message.Contains("explicitly empty schema-name prefix")
+			&& message.Contains("Omit the argument")));
 		_sysSettingsManager.DidNotReceive().GetSysSettingValueByCode(Arg.Any<string>());
+	}
+
+	[Test]
+	[Description("Rejects a whitespace-only requested prefix instead of silently generating an unprefixed schema.")]
+	public void Resolve_ShouldThrow_WhenExplicitPrefixIsOnlyWhitespace() {
+		// Arrange
+		SchemaNamePrefixResolver sut = CreateSut("http://localhost");
+
+		// Act
+		Action act = () => sut.Resolve("  ");
+
+		// Assert
+		act.Should().Throw<ArgumentException>(
+			because: "the resolver owns the contract, so a caller reaching it directly must not be able to "
+				+ "bypass the whitespace-typo rule and get the unprefixed schema it exists to prevent")
+			.WithMessage($"{SchemaNamePrefixResolver.InvalidPrefixMessage}*");
+	}
+
+	[TestCase(null, true)]
+	[TestCase("", true)]
+	[TestCase("Usr", true)]
+	[TestCase(" Usr ", true)]
+	[TestCase(" ", false)]
+	[TestCase("\t", false)]
+	[TestCase("9x", false)]
+	[Description("Folds the null, empty, whitespace-only and identifier rules for a requested prefix into one predicate.")]
+	public void IsValidRequestedPrefix_ShouldFoldEveryRequestRule_WhenPrefixIsChecked(string requestedPrefix,
+		bool expected) {
+		// Arrange
+		// The rule is a pure predicate; no collaborator participates.
+
+		// Act
+		bool actual = SchemaNamePrefixResolver.IsValidRequestedPrefix(requestedPrefix);
+
+		// Assert
+		actual.Should().Be(expected,
+			because: "every caller of the resolver must get the same answer about what it will honour");
 	}
 
 	[Test]
@@ -121,7 +185,7 @@ public class SchemaNamePrefixResolverTests {
 			because: "add-package must keep working without an environment instead of failing the caller");
 		_logger.Received(1).WriteWarning(Arg.Is<string>(message =>
 			message.Contains("No Creatio environment was resolved")
-			&& message.Contains("loads the package from the file system")
+			&& message.Contains("file-system package-load path")
 			&& message.Contains("--schema-name-prefix")));
 	}
 
@@ -204,6 +268,66 @@ public class SchemaNamePrefixResolverTests {
 			"Authentication error reading the SchemaNamePrefix system setting").SetName("authentication");
 		yield return new TestCaseData(new InvalidOperationException(serverText),
 			"Failed to read the SchemaNamePrefix system setting").SetName("other");
+	}
+
+	[Test]
+	[Description("Stops instead of degrading when the environment read is genuinely cancelled.")]
+	public void Resolve_ShouldPropagate_WhenEnvironmentReadIsCancelled() {
+		// Arrange
+		_sysSettingsManager.GetSysSettingValueByCode(SysSettingCodes.SchemaNamePrefix)
+			.Returns(_ => throw new OperationCanceledException("caller cancelled"));
+		SchemaNamePrefixResolver sut = CreateSut("http://localhost");
+
+		// Act
+		Action act = () => sut.Resolve(null);
+
+		// Assert
+		act.Should().Throw<OperationCanceledException>(
+			because: "a cancelled read that degraded to a warning would hand the caller a completed, "
+				+ "mis-generated package instead of stopping");
+		_logger.DidNotReceive().WriteWarning(Arg.Any<string>());
+	}
+
+	[Test]
+	[Description("Degrades on a transport timeout, which arrives as a cancellation but is not one.")]
+	public void Resolve_ShouldWarnAndReturnEmpty_WhenEnvironmentReadTimesOutInTransport() {
+		// Arrange
+		_sysSettingsManager.GetSysSettingValueByCode(SysSettingCodes.SchemaNamePrefix)
+			.Returns(_ => throw new TaskCanceledException("The request was canceled due to timeout."));
+		SchemaNamePrefixResolver sut = CreateSut("http://localhost");
+
+		// Act
+		string prefix = sut.Resolve(null);
+
+		// Assert
+		prefix.Should().BeEmpty(
+			because: "an unresponsive environment must degrade to an unprefixed package, not crash the "
+				+ "command, even though its timeout derives from OperationCanceledException");
+		_logger.Received(1).WriteWarning(Arg.Is<string>(message =>
+			message.Contains("Network error reading the SchemaNamePrefix system setting")));
+	}
+
+	[Test]
+	[Description("Gives up on a read that never answers, warns, and still returns an empty prefix.")]
+	public void Resolve_ShouldWarnAndReturnEmpty_WhenEnvironmentReadExceedsTheBudget() {
+		// Arrange
+		_sysSettingsManager.GetSysSettingValueByCode(SysSettingCodes.SchemaNamePrefix)
+			.Returns(_ => {
+				_neverAnswers.Wait();
+				return "Usr";
+			});
+		SchemaNamePrefixResolver sut = CreateSut("http://localhost", TimeSpan.FromMilliseconds(200));
+
+		// Act
+		string prefix = sut.Resolve(null);
+
+		// Assert
+		prefix.Should().BeEmpty(
+			because: "a host that accepts the connection and never answers must cost the caller the "
+				+ "prefix, not the package");
+		_logger.Received(1).WriteWarning(Arg.Is<string>(message =>
+			message.Contains("Timed out reading the SchemaNamePrefix system setting")
+			&& message.Contains("--schema-name-prefix")));
 	}
 
 	[Test]

@@ -3,7 +3,6 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Text.Json;
-using System.Text.RegularExpressions;
 using Clio.Common;
 using Clio.Workspace;
 using Clio.Workspaces;
@@ -46,9 +45,12 @@ public class PackageCreator : IPackageCreator{
 
 	#region Fields: Private
 
-	private static readonly Regex PackageNamePattern = new("\\A[A-Za-z_][A-Za-z0-9_]*\\z",
-		RegexOptions.CultureInvariant, TimeSpan.FromSeconds(1));
 	private const int MaxPackageNameLength = 70;
+
+	/// <summary>
+	/// Longest schema code Creatio stores: <c>SysSchema.Name</c> is a <c>MediumText</c> column.
+	/// </summary>
+	internal const int MaxSchemaNameLength = 250;
 
 	private readonly EnvironmentSettings _environmentSettings;
 	private readonly IFileSystem _fileSystem;
@@ -132,12 +134,8 @@ public class PackageCreator : IPackageCreator{
 		SaveAppDescriptorToFile(addDescriptorDto, appDescriptorPath);
 	}
 
-	private void AddLocalizationSchema(string packagesPath, string packageName, string resolvedPrefix) {
+	private void AddLocalizationSchema(string packagesPath, string packageName, string schemaName) {
 		string packagePath = _fileSystem.Combine(packagesPath, packageName);
-		// Every artefact of the generated schema - descriptor Name/Caption, the C# class, the Schemas and
-		// Resources folder names and the metadata code - is derived from this one string inside
-		// SchemaBuilder, so prefixing here prefixes all of them consistently.
-		string schemaName = ApplySchemaNamePrefix(resolvedPrefix, $"{packageName}LocalizableStrings");
 		SourceCodeSchemaOptions options = new(
 			RootNameSpace(packageName),
 			"Owns package-level backend localizable values that have no more natural schema owner. " +
@@ -149,13 +147,42 @@ public class PackageCreator : IPackageCreator{
 	}
 
 	/// <summary>
-	/// Prepends <paramref name="prefix"/> to <paramref name="schemaName"/>, leaving a name that already
-	/// carries it untouched so a package named after the prefix does not produce a doubled schema code.
+	/// Builds the code of the generated localization schema: the package name plus the suffix, carrying
+	/// <paramref name="prefix"/>, and leaving a name that already carries it untouched so a package named
+	/// after the prefix does not produce a doubled schema code.
 	/// </summary>
-	private static string ApplySchemaNamePrefix(string prefix, string schemaName) =>
-		string.IsNullOrEmpty(prefix) || schemaName.StartsWith(prefix, StringComparison.Ordinal)
+	/// <remarks>
+	/// Every artefact of the generated schema - descriptor Name/Caption, the C# class, the Schemas and
+	/// Resources folder names and the metadata code - is derived from this one string inside
+	/// <c>SchemaBuilder</c>, so producing it once prefixes all of them consistently and leaves exactly
+	/// one string for <see cref="EnsureSchemaNameFits"/> to check.
+	/// </remarks>
+	private static string BuildLocalizationSchemaName(string prefix, string packageName) {
+		string schemaName = $"{packageName}LocalizableStrings";
+		return string.IsNullOrEmpty(prefix) || schemaName.StartsWith(prefix, StringComparison.Ordinal)
 			? schemaName
 			: prefix + schemaName;
+	}
+
+	/// <summary>
+	/// Rejects a generated schema name Creatio could never store, before anything is written.
+	/// </summary>
+	/// <remarks>
+	/// <c>SysSchema.Name</c> is a <c>MediumText</c> column, so 250 characters; a longer code is refused by
+	/// the platform with "String or binary data would be truncated" (verified against a 10.1.725 stand
+	/// with a 251-character name). The package name is capped at
+	/// <see cref="MaxPackageNameLength"/> characters, so only a caller-supplied prefix can reach this
+	/// length - and the failure it used to cause landed mid-write, leaving a package directory with no
+	/// schema that every later attempt, valid prefix included, refused as already existing.
+	/// </remarks>
+	private static void EnsureSchemaNameFits(string schemaName) {
+		if (schemaName.Length > MaxSchemaNameLength) {
+			throw new ArgumentException(
+				$"Generated schema name '{schemaName}' is {schemaName.Length} characters long; Creatio "
+				+ $"stores a schema code in SysSchema.Name and accepts at most {MaxSchemaNameLength}. "
+				+ "Shorten the schema-name prefix or the package name.");
+		}
+	}
 
 	private void AddPackageToWorkspaceIfNeeded(string packageName) {
 		if (!IsWorkspace) {
@@ -246,9 +273,12 @@ public class PackageCreator : IPackageCreator{
 		}
 	}
 
-	private void CreatePackageIfNotExists(string packagesPath, string packageName, bool includeLocalizationServices) {
+	/// <summary>
+	/// Writes the package skeleton. The already-exists check is NOT repeated here: <c>CreateCore</c> is
+	/// the single guard site, and it runs before the prefix resolution that precedes this call.
+	/// </summary>
+	private void WritePackageSkeleton(string packagesPath, string packageName, bool includeLocalizationServices) {
 		string packagePath = _fileSystem.Combine(packagesPath, packageName);
-		EnsurePackageDirectoryIsFree(packagesPath, packageName);
 		_templateProvider.CopyTemplateFolder("package", packagePath);
 		if (includeLocalizationServices) {
 			_templateProvider.CopyTemplateFolder("package-localization", packagePath, "", "", false);
@@ -319,7 +349,7 @@ public class PackageCreator : IPackageCreator{
 		bool isValid = !string.IsNullOrWhiteSpace(packageName)
 			&& packageName.Length <= MaxPackageNameLength
 			&& packageName != "_"
-			&& PackageNamePattern.IsMatch(packageName);
+			&& ClioIdentifier.IsIdentifierFragment(packageName);
 		return isValid;
 	}
 
@@ -330,18 +360,23 @@ public class PackageCreator : IPackageCreator{
 	}
 
 	private void CreateCore(string packagesPath, string packageName, bool? asApp, string schemaNamePrefix) {
-		// Order matters twice over. The free-directory check is local and instant, so it runs first: it
-		// must not cost the caller a Creatio request to be told the package already exists. The prefix is
-		// then resolved BEFORE anything is written, because that resolution can reach Creatio and a call
-		// interrupted mid-request would otherwise leave a package directory with no schema and no
-		// descriptor - which the next attempt refuses, and a human has to delete by hand.
+		// Order matters three times over. The free-directory check is local and instant, so it runs
+		// first: it must not cost the caller a Creatio request to be told the package already exists. The
+		// prefix is then resolved BEFORE anything is written, because that resolution can reach Creatio
+		// and a call interrupted mid-request would otherwise leave a package directory with no schema and
+		// no descriptor - which the next attempt refuses, and a human has to delete by hand. The final
+		// schema name is built and length-checked here for the same reason: a name the platform cannot
+		// store used to fail deep inside the write, leaving exactly that unrecoverable directory.
 		EnsurePackageDirectoryIsFree(packagesPath, packageName);
-		string resolvedPrefix = asApp == true
-			? _schemaNamePrefixResolver.Resolve(schemaNamePrefix)
-			: string.Empty;
-		CreatePackageIfNotExists(packagesPath, packageName, asApp == true);
+		string schemaName = null;
 		if (asApp == true) {
-			AddLocalizationSchema(packagesPath, packageName, resolvedPrefix);
+			schemaName = BuildLocalizationSchemaName(_schemaNamePrefixResolver.Resolve(schemaNamePrefix),
+				packageName);
+			EnsureSchemaNameFits(schemaName);
+		}
+		WritePackageSkeleton(packagesPath, packageName, asApp == true);
+		if (asApp == true) {
+			AddLocalizationSchema(packagesPath, packageName, schemaName);
 		}
 		AddPackageToWorkspaceIfNeeded(packageName);
 		if (asApp == true) {

@@ -168,6 +168,25 @@ public class AddPackageCommandTests : BaseCommandTests<AddPackageOptions> {
 	}
 
 	[Test]
+	[Description("Accepts an explicitly empty schema-name prefix as the documented request for an unprefixed schema.")]
+	public void Execute_ShouldForwardEmptySchemaNamePrefix_WhenExplicitlyRequested() {
+		// Arrange
+		AddPackageOptions options = new() {Name = "MyPackage", AsApp = true, SchemaNamePrefix = string.Empty};
+
+		// Act
+		int result = _command.Execute(options);
+
+		// Assert
+		result.Should().Be(0,
+			because: "--schema-name-prefix \"\" is documented as the way to generate without a prefix");
+		_packageCreator.CapturedSchemaNamePrefix.Should().BeEmpty(
+			because: "an explicitly empty prefix is the documented request for an unprefixed schema, not "
+				+ "an omitted one, and only that difference selects between honouring the caller and "
+				+ "reading the environment");
+		_logger.DidNotReceive().WriteError(Arg.Any<string>());
+	}
+
+	[Test]
 	[Description("Warns that a schema-name prefix is consumed by nothing when as-app is not requested.")]
 	public void Execute_ShouldWarn_WhenSchemaNamePrefixIsSuppliedWithoutAsApp() {
 		// Arrange

@@ -78,6 +78,32 @@ public class AddPackageToolTests {
 	}
 
 	[Test]
+	[Description("Forwards an empty schema-name-prefix unchanged so both surfaces mean the same thing by it.")]
+	[Category("Unit")]
+	public void AddPackage_ShouldForwardEmptySchemaNamePrefix_WhenSentAsAnEmptyString() {
+		// Arrange
+		ConsoleLogger.Instance.ClearMessages();
+		FakeAddPackageCommand defaultCommand = new();
+		FakeAddPackageCommand resolvedCommand = new();
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		commandResolver.ResolveWithoutEnvironment<AddPackageCommand>(Arg.Any<AddPackageOptions>())
+			.Returns(resolvedCommand);
+		WorkspacePackageTool tool = new(defaultCommand, ConsoleLogger.Instance, commandResolver);
+
+		// Act
+		CommandExecutionResult result = tool.AddPackage(new AddPackageArgs(
+			"MyPackage", @"C:\Projects\clio-with-core-and-ui\workspace", AsApp: true,
+			SchemaNamePrefix: string.Empty));
+
+		// Assert
+		result.ExitCode.Should().Be(0, "because an explicitly empty prefix is a valid request, not an error");
+		resolvedCommand.CapturedOptions.SchemaNamePrefix.Should().BeEmpty(
+			"because empty must stay distinguishable from omitted - it is what selects between honouring "
+			+ "the caller and reading the environment - and the resolver warns about it either way");
+		ConsoleLogger.Instance.ClearMessages();
+	}
+
+	[Test]
 	[Description("Keeps the production add-package tool name stable and shared with external-process tests.")]
 	[Category("Unit")]
 	public void AddPackage_ShouldExposeStableToolName_WhenDiscovered() {

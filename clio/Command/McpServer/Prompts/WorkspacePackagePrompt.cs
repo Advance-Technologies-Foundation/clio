@@ -44,7 +44,8 @@ public static class WorkspacePackagePrompt {
 		 download configuration, so use `environment-name` `{environmentName ?? "<not provided>"}` when
 		 that remote download is required.
 		 When `as-app` is true, the generated source-code schema must carry the target environment's
-		 SchemaNamePrefix, or Creatio refuses it when it loads the package from the file system.
+		 SchemaNamePrefix, or Creatio refuses it - both from the source-code schema designer and when
+		 it loads the package from the file system.
 		 Use `schema-name-prefix`
 		 `{schemaNamePrefix ?? "<not provided>"}`; when it is not provided, pass `environment-name` so
 		 clio can read that setting instead of generating the schema unprefixed.

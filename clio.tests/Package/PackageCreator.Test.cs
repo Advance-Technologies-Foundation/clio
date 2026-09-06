@@ -234,9 +234,55 @@ internal class PackageCreatorTest : BaseClioModuleTests
 
 		// Assert
 		act.Should().Throw<InvalidOperationException>(
-			because: "the arranged resolver failure must surface rather than be swallowed");
+			because: "the arranged resolver failure must surface rather than be swallowed")
+			.WithMessage("environment read interrupted",
+				because: "EnsurePackageDirectoryIsFree throws the same exception type, so an untyped "
+					+ "assertion would also pass for a run that never reached the resolver at all");
+		_schemaNamePrefixResolverMock.Received(1).Resolve(Arg.Any<string>());
+		_schemaBuilderMock.ReceivedCalls().Should().BeEmpty(
+			because: "the read runs before any generation, so a failed read must reach no generator");
 		FileSystem.Directory.Exists(Path.Combine(PackagesPath, PackageNameOne)).Should().BeFalse(
 			because: "a half-written package directory would make the next attempt fail as already existing");
+	}
+
+	[Test]
+	[Description("Rejects a generated schema name longer than Creatio stores, before any file is written.")]
+	public void Create_ShouldThrowBeforeWriting_WhenGeneratedSchemaNameExceedsThePlatformLimit() {
+		// Arrange
+		string oversizedPrefix = new('A', PackageCreator.MaxSchemaNameLength);
+		_schemaNamePrefixResolverMock.Resolve(Arg.Any<string>()).Returns(oversizedPrefix);
+		PackageCreator creator = InitCreator();
+
+		// Act
+		Action act = () => creator.Create(PackagesPath, PackageNameOne, true, oversizedPrefix);
+
+		// Assert
+		act.Should().Throw<ArgumentException>(
+			because: "a schema code Creatio cannot store is a caller-correctable input, and failing "
+				+ "mid-write used to leave a package directory every later attempt refused")
+			.WithMessage($"*{PackageCreator.MaxSchemaNameLength}*",
+				because: "the error must name the limit the caller has to get under");
+		_schemaBuilderMock.ReceivedCalls().Should().BeEmpty(
+			because: "the length is checked before the schema is generated, not while generating it");
+		FileSystem.Directory.Exists(Path.Combine(PackagesPath, PackageNameOne)).Should().BeFalse(
+			because: "nothing may be written for an input the command is going to reject");
+	}
+
+	[Test]
+	[Description("Accepts a generated schema name that lands exactly on the platform limit.")]
+	public void Create_ShouldSucceed_WhenGeneratedSchemaNameIsExactlyThePlatformLimit() {
+		// Arrange
+		string suffixedName = $"{PackageNameOne}LocalizableStrings";
+		string prefix = new('A', PackageCreator.MaxSchemaNameLength - suffixedName.Length);
+		_schemaNamePrefixResolverMock.Resolve(Arg.Any<string>()).Returns(prefix);
+		PackageCreator creator = InitCreator();
+
+		// Act
+		creator.Create(PackagesPath, PackageNameOne, true, prefix);
+
+		// Assert
+		CapturedSchemaName().Should().HaveLength(PackageCreator.MaxSchemaNameLength,
+			because: "the limit is the longest ACCEPTED name, not the first rejected one");
 	}
 
 	[Test]
