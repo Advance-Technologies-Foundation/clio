@@ -73,6 +73,26 @@ landed on a file the trigger DID name, and what was missing was the instruction 
 than to follow. Sharpening those two is the cheapest mitigation available, and unlike the habits below
 it depends on nobody remembering anything — which is why it belongs above them.
 
-Changing AGENTS.md's trigger list and verbs is a repository-wide decision affecting every agent that
-works here, so it is recorded as a finding rather than made as a side effect of the ticket that found
-it.
+### The two fixes, and why neither was made here
+
+They are one line each:
+
+- **The verb.** AGENTS.md:123 — *"Before changing any of the following, **read** …"* → *read and
+  reconcile*. Reading an article in order to follow it is a different act from checking it still holds,
+  and the trigger already names the right files.
+- **The absence.** Add `docs/McpCapabilityMap.md` to **Required MCP targets** (AGENTS.md:222-230), beside
+  `clio/tpl/**` and the other surfaces that already carry that obligation.
+
+Neither was made in the ticket that found them, for three reasons that compound:
+
+1. **A one-word edit to an instruction file is exactly the size of change that gets made without anyone
+   deciding it.**
+2. **It would be self-certifying.** An amendment discovered by one agent and reviewed by the other half
+   of the same pair has no independent reader — the reviewer is the party that wanted it. That is the
+   same objection that kept a review session from implementing the finding it raised, and it applies with
+   MORE force here, because what is being amended is the instrument that decides what gets reviewed.
+3. **The blast radius is every session.** `CLAUDE.md` in this repository consists of exactly one line,
+   `@AGENTS.md`, so AGENTS.md is loaded by every agent on every session in this repository. A wrong word
+   propagates instantly and silently into work with no connection to the change that introduced it.
+
+Small edit, large surface, no independent reader — that combination wants an owner, not a commit.
