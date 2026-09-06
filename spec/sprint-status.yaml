@@ -3299,7 +3299,7 @@ stories:
     jira: "ENG-94374"
     repo: "crt-process-builder"
     size: S
-    status: ready-for-dev
+    status: in-progress
     file: spec/stories/story-process-versioning-14.md
     prd: spec/prd/prd-process-versioning.md
     adr: spec/adr/adr-process-versioning.md
@@ -3340,6 +3340,8 @@ stories:
     test_plan: spec/test-plans/tp-process-versioning.md
     depends_on:
       - story-process-versioning-15
+    # Merge order only. Agreed 2026-09-06 to BUILD this before 15: the archive is cut last, from
+    # sources its consumer has exercised. Two named pins stay red until 15 - see the story file.
     blocks:
       - story-process-versioning-18
 
@@ -3356,6 +3358,8 @@ stories:
     test_plan: spec/test-plans/tp-process-versioning.md
     depends_on:
       - story-process-versioning-15
+    # Merge order only. Agreed 2026-09-06 to BUILD this before 15: the archive is cut last, from
+    # sources its consumer has exercised. Two named pins stay red until 15 - see the story file.
     blocks:
       - story-process-versioning-18
 

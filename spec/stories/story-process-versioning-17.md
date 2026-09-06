@@ -42,6 +42,35 @@ Destructive ⇒ it owns its own timeout contract and must NOT route through the 
 `Idempotent=true` is deliberate: setting the same version active twice yields the same state.
 The same two counted pins as story 16 move with this tool.
 
+## Sequencing deviation — this story runs BEFORE story 15
+
+Agreed 2026-09-06. `depends_on: story-process-versioning-15` is inverted deliberately; the dependency is
+kept in `sprint-status.yaml` because it still describes the MERGE order.
+
+**Why.** This story touches no package source — the archive's content was final at story 13 — while story 15
+CUTS the archive, which is the one step that is expensive to redo: the SHA pin, and the rule that a
+same-version re-cut is only legitimate while the cut never left the machine. Cutting before the consumer
+exists bets that building and E2E-testing these tools reveals no gap on the package side, and the tools are
+exactly where such a gap surfaces. So the archive is cut last, from sources a consumer has exercised.
+
+**What this costs.** Two named tests in `clio.tests/Common/BundledProcessBuilderPackageTests.cs` are RED from
+here until story 15 lands, and both go green in that one commit:
+
+| Test | Why it is red |
+|---|---|
+| `BundledArchive_ShouldCarryAtLeastEveryDeclaredRequirement` | the floor declared here (1.5.0.0) exceeds the version in the still-old archive (1.4.0.40) |
+| `ToolContractVersionLiterals_ShouldMatchTheBundledArchiveVersion` | this tool's description names 1.5.0.0 while `ExpectedArchiveVersion` is 1.4.0.40 |
+
+`ExpectedOperationContractCount` stays green here — it counts `[OperationContract]` inside the ARCHIVE, which
+still carries five — and moves to 7 in story 15.
+
+**E2E does not need the archive.** `[RequiresPackage]` reads the environment's recorded `SysPackage.Version`,
+so a package deployed to the sandbox straight from the workspace (as story 12's verification did) satisfies
+the floor at 1.5.0.0 with no bundle involved.
+
+**If the package changes** while these stories run, re-stamp `ModifiedOnUtc` only — 1.5.0.0 has not shipped,
+so re-cutting under it stays legitimate.
+
 ## Test Requirements
 
 | Type | What to test | File |
