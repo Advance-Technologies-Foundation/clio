@@ -161,7 +161,7 @@ Commands:
   pin-certificate                             Select the preferred local-machine certificate for IIS HTTPS deployments
   ping-app                                    Verify connectivity to a Creatio environment, ping
   pkg-hotfix                                  Enable/disable hotfix state for package, hf, hotfix
-  pkg-to-db                                   Load packages into Creatio database storage, 2db, todb
+  pkg-to-db                                   Load file-system package definitions into the configuration database (no package data), 2db, todb
   pkg-to-file-system                          Load packages into Creatio file system storage, 2fs, tofs
   prune-db-templates                          Interactively prune managed PostgreSQL templates
   publish-app                                 Publish a workspace to a ZIP archive or hub folder, ph, publish-hub, publish-workspace, publishw

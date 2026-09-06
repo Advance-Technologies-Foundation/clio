@@ -34,9 +34,30 @@ public class LoadPackagesToDbCommandTests {
 	[Test]
 	[Description("Execute should return 0 on success")]
 	public void Execute_ShouldReturnZero_WhenLoadSucceeds() {
+		// Arrange
+		_fileDesignModePackages.LoadPackagesToDb().Returns(true);
+
+		// Act
 		int result = _command.Execute(new LoadPackagesToDbOptions());
 
-		result.Should().Be(0);
+		// Assert
+		result.Should().Be(0, because: "a completed load must report success to the caller");
+		_fileDesignModePackages.Received(1).LoadPackagesToDb();
+	}
+
+	[Test]
+	[Description("Execute should return 1 when the loader reports a failed load instead of throwing")]
+	public void Execute_ShouldReturnOne_WhenLoadReportsFailure() {
+		// Arrange
+		_fileDesignModePackages.LoadPackagesToDb().Returns(false);
+
+		// Act
+		int result = _command.Execute(new LoadPackagesToDbOptions());
+
+		// Assert
+		result.Should().Be(1,
+			because: "a load refused by the environment (for example disabled file design mode) must not be " +
+			"reported to the caller as exit code 0");
 		_fileDesignModePackages.Received(1).LoadPackagesToDb();
 	}
 

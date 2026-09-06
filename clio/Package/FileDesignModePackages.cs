@@ -13,9 +13,30 @@ namespace Clio.Package
 
 		#region Methods: Public
 
-		void LoadPackagesToFileSystem();
+		/// <summary>
+		/// Exports the package definitions registered in the configuration database to the
+		/// web application's file system. Requires file system development mode (FSM) to be enabled
+		/// on the environment.
+		/// </summary>
+		/// <returns>
+		/// <c>true</c> when the platform reported the export as completed; <c>false</c> when the
+		/// environment has FSM disabled, the file design mode state could not be read, or the platform
+		/// returned an error. The failure detail is written to the error log by the implementation.
+		/// </returns>
+		bool LoadPackagesToFileSystem();
 
-		void LoadPackagesToDb();
+		/// <summary>
+		/// Imports the package definitions stored on the web application's file system into the
+		/// configuration database. Requires file system development mode (FSM) to be enabled
+		/// on the environment. It registers package content (schemas, resources, descriptors) only —
+		/// it never installs package data (binding) rows into their target tables.
+		/// </summary>
+		/// <returns>
+		/// <c>true</c> when the platform reported the import as completed; <c>false</c> when the
+		/// environment has FSM disabled, the file design mode state could not be read, or the platform
+		/// returned an error. The failure detail is written to the error log by the implementation.
+		/// </returns>
+		bool LoadPackagesToDb();
 
 		/// <summary>
 		/// Remotely toggles the <c>terrasoft/fileDesignMode</c> flag in the IIS host's
@@ -94,55 +115,65 @@ namespace Clio.Package
 
 		#endregion
 
-		#region Properties: Private
-
-		private bool IsFileDesignModeUrl {
-			get {
-				string responseFormServer
-					= _applicationClient.ExecutePostRequest(_getIsFileDesignModeUrl, string.Empty, Timeout.Infinite, maxRequestAttempts, delayBetweenRetryAttemptsSec);
-				var response = _jsonConverter.DeserializeObject<BoolResponse>(responseFormServer);
-				if (response.Success) {
-					return response.Value;
-				}
-				ErrorInfo errorInfo = response.ErrorInfo;
-				_logger.WriteLine($"Get file design mode ended with error: {GetErrorDetails(response.ErrorInfo)}");
-				return false;
-			}
-		}
-
-		#endregion
-
 		#region Methods: Private
 
 		private static string GetErrorDetails(ErrorInfo errorInfo) =>
-			$"{errorInfo.Message} (error code: {errorInfo.ErrorCode})";
+			errorInfo is null
+				? "unknown error"
+				: $"{errorInfo.Message} (error code: {errorInfo.ErrorCode})";
 
 		private void PrintErrorOperationMessage(string storageName, string errorMessage) =>
-			_logger.WriteLine($"Load packages to {storageName} on a web application ended with error: {errorMessage}");
+			_logger.WriteError($"Load packages to {storageName} on a web application ended with error: {errorMessage}");
 
-		private void LoadPackagesToStorage(string endpoint, string storageName){
-			if (!IsFileDesignModeUrl) {
+		/// <summary>
+		/// Reads the environment's file design mode state. A failed probe is reported as a failure of
+		/// its own instead of being collapsed into "file design mode is disabled": the two states are
+		/// different problems and the caller must not present an unreadable state as a known one.
+		/// </summary>
+		/// <param name="isFileDesignMode">The file design mode state when the probe succeeded.</param>
+		/// <returns><c>true</c> when the state was read; otherwise <c>false</c>.</returns>
+		private bool TryGetIsFileDesignMode(out bool isFileDesignMode) {
+			isFileDesignMode = false;
+			string responseFormServer
+				= _applicationClient.ExecutePostRequest(_getIsFileDesignModeUrl, string.Empty, Timeout.Infinite, maxRequestAttempts, delayBetweenRetryAttemptsSec);
+			var response = _jsonConverter.DeserializeObject<BoolResponse>(responseFormServer);
+			if (!response.Success) {
+				_logger.WriteError($"Get file design mode ended with error: {GetErrorDetails(response.ErrorInfo)}");
+				return false;
+			}
+			isFileDesignMode = response.Value;
+			return true;
+		}
+
+		private bool LoadPackagesToStorage(string endpoint, string storageName){
+			if (!TryGetIsFileDesignMode(out bool isFileDesignMode)) {
+				PrintErrorOperationMessage(storageName, "file design mode state is unknown");
+				return false;
+			}
+			if (!isFileDesignMode) {
 				PrintErrorOperationMessage(storageName, "disabled file design mode");
-				return;
+				return false;
 			}
 			_logger.WriteLine($"Start load packages to {storageName} on a web application");
 			string responseFormServer = _applicationClient.ExecutePostRequest(endpoint, string.Empty,Timeout.Infinite, maxRequestAttempts, delayBetweenRetryAttemptsSec);
 			var response = _jsonConverter.DeserializeObject<BaseResponse>(responseFormServer);
 			if (response.Success) {
 				_logger.WriteLine($"Load packages to {storageName} on a web application completed");
-				return;
+				return true;
 			}
-			ErrorInfo errorInfo = response.ErrorInfo;
 			PrintErrorOperationMessage(storageName, GetErrorDetails(response.ErrorInfo));
+			return false;
 		}
 
 		#endregion
 
 		#region Methods: Public
 
-		public void LoadPackagesToFileSystem() => LoadPackagesToStorage(_loadPackagesToFileSystemUrl, "file system");
+		/// <inheritdoc />
+		public bool LoadPackagesToFileSystem() => LoadPackagesToStorage(_loadPackagesToFileSystemUrl, "file system");
 
-		public void LoadPackagesToDb() => LoadPackagesToStorage(_loadPackagesToDbUrl, "database");
+		/// <inheritdoc />
+		public bool LoadPackagesToDb() => LoadPackagesToStorage(_loadPackagesToDbUrl, "database");
 
 		public SetFileDesignModeResult SetFileDesignMode(bool isFileDesignMode) {
 			string payload = "{\"isFileDesignMode\":" + (isFileDesignMode ? "true" : "false") + "}";

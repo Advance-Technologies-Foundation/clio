@@ -42,9 +42,9 @@ namespace Clio.Command
 
 		public override int Execute(EnvironmentOptions options) {
 			try {
-				_fileDesignModePackages.LoadPackagesToDb();
+				bool loaded = _fileDesignModePackages.LoadPackagesToDb();
 				_logger.WriteLine();
-				return 0;
+				return loaded ? 0 : 1;
 			} catch (Exception e) {
 				_logger.WriteError(e.GetReadableMessageException(Program.IsDebugMode));
 				return 1;

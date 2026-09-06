@@ -51,11 +51,7 @@ internal static class McpToolRegistrySchemaContract {
 			toolName,
 			fullDescription,
 			inputSchema,
-			new ToolOutputContract(
-				"tool-native-response",
-				SuccessField: null,
-				FailureSignals: ["success == false"],
-				Fields: []),
+			BuildOutputContract(toolName),
 			new ToolErrorContract([
 				new ToolErrorCodeContract("tool-not-found", "Requested tool name is not registered by clio MCP."),
 				new ToolErrorCodeContract("missing-required-parameter", "A required parameter is missing."),
@@ -97,6 +93,20 @@ internal static class McpToolRegistrySchemaContract {
 		description = tool.ProtocolTool.Description ?? string.Empty;
 		return true;
 	}
+
+	// The registry knows the dispatchable JSON schema but not the tool method's RETURN type, so the
+	// output shape is taken from the reflection catalog keyed by the same tool name. Without it every
+	// registry-derived contract advertised `success == false` as its failure signal, which a tool
+	// returning CommandExecutionResult never emits — the agent was pointed at a field that never
+	// appears while `exit-code` and `execution-log-messages` carried the real verdict.
+	private static ToolOutputContract BuildOutputContract(string toolName) =>
+		McpToolSchemaCatalog.TryGetOutputContract(toolName, out ToolOutputContract outputContract)
+			? outputContract
+			: new ToolOutputContract(
+				"tool-native-response",
+				SuccessField: null,
+				FailureSignals: ["success == false"],
+				Fields: []);
 
 	private static ToolInputSchemaContract BuildInputSchema(JsonElement schema) {
 		if (schema.ValueKind != JsonValueKind.Object) {

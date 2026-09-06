@@ -39,9 +39,9 @@ public class LoadPackagesToFileSystemCommand : Command<EnvironmentOptions>{
 
 	public override int Execute(EnvironmentOptions options) {
 		try {
-			_fileDesignModePackages.LoadPackagesToFileSystem();
+			bool loaded = _fileDesignModePackages.LoadPackagesToFileSystem();
 			_logger.WriteLine();
-			return 0;
+			return loaded ? 0 : 1;
 		}
 		catch (Exception e) {
 			_logger.WriteError(e.GetReadableMessageException(Program.IsDebugMode));

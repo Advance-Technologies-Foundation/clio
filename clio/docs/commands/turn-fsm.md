@@ -20,6 +20,11 @@ When turning FSM off:
 - Loads packages to the database
 - Updates configuration to disable File Design Mode
 
+Each step must succeed before the next one runs. When the package load fails
+(for example the environment reports file design mode as already disabled, or
+the platform refuses the request), the command stops with exit code 1 and the
+configuration is left unchanged.
+
 Use either:
 - --physicalPath (path to the environment folder)
 - -e / --Environment (registered environment)

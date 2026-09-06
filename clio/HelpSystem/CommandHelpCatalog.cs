@@ -122,7 +122,7 @@ internal sealed class CommandHelpCatalog {
 			["listen"] = "Stream Creatio log events over WebSocket",
 			["publish-app"] = "Publish a workspace to a ZIP archive or hub folder",
 			["pack-nuget-pkg"] = "Pack a package into a NuGet artifact",
-			["pkg-to-db"] = "Load packages into Creatio database storage",
+			["pkg-to-db"] = "Load file-system package definitions into the configuration database (no package data)",
 			["pkg-to-file-system"] = "Load packages into Creatio file system storage",
 			["cfg-worspace"] = "Configure workspace package selection",
 			["compressApp"] = "Archive an application directory into ZIP",

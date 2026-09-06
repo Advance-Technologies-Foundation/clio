@@ -55,6 +55,9 @@ public class Link4RepoCommandPreparationTests : BaseCommandTests<Link4RepoOption
 		_sysSettingsManager = Substitute.For<ISysSettingsManager>();
 		_packageLockManager = Substitute.For<IPackageLockManager>();
 		_fileDesignModePackages = Substitute.For<IFileDesignModePackages>();
+		// Default to a successful load: link-to-repository now fails when the file-system load does not
+		// happen, so only the tests that assert that failure override this.
+		_fileDesignModePackages.LoadPackagesToFileSystem().Returns(true);
 		_command = new TestablePrepLink4RepoCommand(
 			ConsoleLogger.Instance,
 			Substitute.For<IIisScanner>(),
@@ -121,6 +124,37 @@ public class Link4RepoCommandPreparationTests : BaseCommandTests<Link4RepoOption
 		_sysSettingsManager.Received(1).UpdateSysSetting("Maintainer", "MyCompany");
 		_packageLockManager.Received(1).Unlock(Arg.Is<IEnumerable<string>>(
 			x => x.Contains("PkgA")));
+		_fileDesignModePackages.Received(1).LoadPackagesToFileSystem();
+	}
+
+	[Test]
+	[Description("When the file-system load does not happen, preparation fails instead of reporting a successful sync")]
+	public void Execute_Packages_LoadToFileSystemFails_ReturnsError() {
+		// Arrange
+		string envPkg = GetRootedPath("env", "Pkg");
+		string repoPath = GetRootedPath("repo");
+		_mockFs.AddDirectory(Path.Combine(envPkg, "PkgA", "Files"));
+		_mockFs.AddDirectory(Path.Combine(repoPath, "PkgA"));
+		_mockFs.AddFile(Path.Combine(repoPath, "PkgA", "descriptor.json"), new MockFileData("{}"));
+		_jsonConverter.DeserializeObjectFromFile<PackageDescriptorDto>(
+				Path.Combine(repoPath, "PkgA", "descriptor.json"))
+			.Returns(new PackageDescriptorDto {
+				Descriptor = new PackageDescriptor { Name = "PkgA", Maintainer = "MyCompany" }
+			});
+		_sysSettingsManager.GetSysSettingValueByCode("Maintainer").Returns("MyCompany");
+		_fileDesignModePackages.LoadPackagesToFileSystem().Returns(false);
+		Link4RepoOptions options = new() {
+			EnvPkgPath = envPkg,
+			RepoPath = repoPath,
+			Packages = "PkgA"
+		};
+
+		// Act
+		int result = _command.Execute(options);
+
+		// Assert
+		result.Should().Be(1,
+			because: "packages that were never exported to the file system must not be reported as synced");
 		_fileDesignModePackages.Received(1).LoadPackagesToFileSystem();
 	}
 

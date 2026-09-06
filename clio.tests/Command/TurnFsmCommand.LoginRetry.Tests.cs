@@ -41,6 +41,9 @@ public class TurnFsmCommandLoginRetryTests {
 		setFsmConfigCommand.Execute(Arg.Any<SetFsmConfigOptions>()).Returns(0);
 
 		IFileDesignModePackages fileDesignModePackages = Substitute.For<IFileDesignModePackages>();
+		// The loader reports whether the packages were actually loaded; turn-fsm derives its own exit
+		// code from it, so the successful-retry scenario must arrange a successful load.
+		fileDesignModePackages.LoadPackagesToFileSystem().Returns(true);
 		LoadPackagesToFileSystemCommand loadToFs = new(fileDesignModePackages, logger);
 
 		LoadPackagesToDbCommand loadToDb = new(fileDesignModePackages, logger);

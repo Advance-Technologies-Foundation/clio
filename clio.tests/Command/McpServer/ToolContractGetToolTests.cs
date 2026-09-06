@@ -259,6 +259,32 @@ public sealed class ToolContractGetToolTests {
 			because: "environmentName is marked [Required] on the tool method, so the derived contract must mark it required");
 	}
 
+	// Pins the issue #952 secondary defect: a registry-derived (uncurated, hidden) tool that returns a
+	// CommandExecutionResult used to advertise `success == false` as its only failure signal — a field
+	// that envelope never carries — so an agent watching for it saw every failure as a success.
+	[Test]
+	[Category("Unit")]
+	[TestCase("pkg-to-db")]
+	[TestCase("pkg-to-file-system")]
+	[Description("An uncurated tool that returns a command execution result advertises the command-execution-result failure signals instead of a success field it never emits.")]
+	public void ToolContractGet_Should_AdvertiseCommandExecutionFailureSignals_ForUncuratedCommandTool(string toolName) {
+		// Arrange
+		ToolContractGetTool tool = BuildToolWithRegistry();
+
+		// Act
+		ToolContractGetResponse result = tool.GetToolContracts(new ToolContractGetArgs([toolName]));
+
+		// Assert
+		result.Success.Should().BeTrue(
+			because: $"{toolName} is invokable through clio-run and must expose a discoverable contract");
+		ToolContractDefinition entry = result.Tools!.Single();
+		entry.OutputContract.Kind.Should().Be("command-execution-result",
+			because: "the tool returns the command execution envelope, not a tool-native response");
+		entry.OutputContract.FailureSignals.Should().BeEquivalentTo(
+			["exit-code != 0", "execution-log-messages[*].message-type == Error"],
+			because: "an agent must be pointed at the two fields the command execution envelope actually carries");
+	}
+
 	[Test]
 	[Category("Unit")]
 	[Description("The compile-creatio contract carries a create-business-process anti-pattern so an agent is told a process is interpreted and its NeedInstall flag is not a compile trigger (ENG-95706).")]
