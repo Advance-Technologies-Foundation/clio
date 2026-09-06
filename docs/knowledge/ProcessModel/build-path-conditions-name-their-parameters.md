@@ -37,9 +37,16 @@ head is an element of this schema, is touched. Everything else passes through �
 families would refuse the next one the platform adds. Two consequences worth knowing:
 
 - A **bare** name that resolves to nothing is REFUSED, naming the flow by its endpoints and listing the
-  parameters that exist. That is safe because no platform macro family is a single identifier, and it
-  replaces the platform's own `Formula value error: Expression expected (at index 0)`, which names
-  neither the flow nor the name and aborts the entire build.
+  parameters that exist. That is safe because no platform macro family is a single identifier, and that
+  is **measured, not assumed**: across the 1 338 `[# … #]` tokens in the corpus's conditional-flow
+  expressions, bare single-identifier bodies number **zero**. The refusal replaces the platform's own
+  `Formula value error: Expression expected (at index 0)`, which names neither the flow nor the name and
+  aborts the entire build.
+- The ten two-segment bodies that DO ship — six `SysVariable.CurrentUser` and four `SysSettings.…` —
+  all pass through on the head-is-not-an-element check, so that arm carries real content rather than
+  only fixtures. The check is also the ONLY thing separating an element output from a macro family:
+  name an ELEMENT `SysSettings` and `[#SysSettings.Foo#]` resolves against it. Caller-controlled,
+  exotic, and deliberately not fixed — every alternative reintroduces the family enumeration.
 - The **short** meta-path spelling `[#[Parameter:{uid}]#]` carries no dot, so it would read as a bare
   name and be refused. It is passed through by an explicit bracket check, because the platform emits a
   parameter reference both with and without the `[IsOwnerSchema:false].[IsSchema:false].` prefix.
