@@ -102,8 +102,11 @@ public sealed class ContainerMapEntry {
 }
 
 /// <summary>
-/// A deterministic suggestion for one source component type: how it classifies and which mobile
-/// type(s) it maps to (from the WebToMobilePageConversionRules matrix + registry type comparison).
+/// What the conversion DID to every source component of one web type, summarized per type. Derived from the
+/// finished <see cref="MobilePageConversionGuide.ViewConfigDiff"/> and
+/// <see cref="MobilePageConversionGuide.DroppedElements"/> — it is a report, never a prediction, and never
+/// an instruction: the operations are the instruction. A type whose configuration shipped NESTED inside
+/// another element's <c>values</c> has no row here, because the caller has nothing to do about it.
 /// </summary>
 public sealed class ComponentSuggestion {
 	[JsonPropertyName("sourceType")]
@@ -113,11 +116,35 @@ public sealed class ComponentSuggestion {
 	[JsonPropertyName("sourceNames")]
 	public IReadOnlyList<string> SourceNames { get; init; } = [];
 
-	/// <summary>One of the five ComponentMappingCategory values, as a string.</summary>
+	/// <summary>
+	/// One of the five ComponentMappingCategory values, decided by the element map's OUTCOME first:
+	/// <c>DirectMapping</c> — an operation was emitted and this same type is the only suggested one;
+	/// <c>WithAdaptation</c> — an operation was emitted under a different mobile type (a web grid ships as a
+	/// finished <c>crt.List</c>), which <see cref="SuggestedMobileTypes"/> names; <c>AlternativeAvailable</c>
+	/// — NO operation was emitted and the rules file names what to use instead; <c>Unsupported</c> — no
+	/// operation and no advice, for a type the web registry knows; <c>RequiresManualDecision</c> — the same
+	/// for a type unknown to both registries, so probably a custom component. A rules file may substitute its
+	/// own declared value for the two non-direct converted/advised cases, and for nothing else.
+	/// </summary>
+	/// <remarks>
+	/// Read this to REPORT the conversion, not to plan it — the operations are the plan. Presence in the
+	/// MOBILE registry is deliberately not evidence of anything here: the previous implementation treated it
+	/// as such, which is how a type whose every instance an exclusion rule dropped still shipped as "carry it
+	/// over as-is", while a grid the same response converted into five finished <c>crt.List</c> inserts
+	/// shipped as "Unsupported" (ENG-95827).
+	/// </remarks>
 	[JsonPropertyName("category")]
 	public string Category { get; init; }
 
-	/// <summary>Suggested mobile component type(s). Empty for unsupported / manual-decision.</summary>
+	/// <summary>
+	/// The distinct mobile type(s) this web type resolves to, ordered: every type the diff ACTUALLY emitted
+	/// an operation under, plus any the rules file declares that the diff emits no operation for — a
+	/// <c>crt.List</c>'s <c>crt.ListItem</c> row lives inside that list's <c>itemLayout</c>, so no operation
+	/// ever names it. A rule can only ADD here; it can never subtract an emitted type. Empty when nothing
+	/// was emitted and no rule names an alternative. One web type can list several because instances
+	/// diverge: a page's <c>crt.Button</c>s ship mostly as <c>crt.Button</c>, with one <c>crt.MenuItem</c>
+	/// where the action moved into a menu.
+	/// </summary>
 	[JsonPropertyName("suggestedMobileTypes")]
 	public IReadOnlyList<string> SuggestedMobileTypes { get; init; } = [];
 
@@ -126,6 +153,12 @@ public sealed class ComponentSuggestion {
 	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
 	public string PrimaryWebMerge { get; init; }
 
+	/// <summary>
+	/// Advisory text a RULES AUTHOR wrote for this web type, verbatim. Absent unless the published rules file
+	/// carries one — the converter synthesizes none. It explains nothing the other fields already state; the
+	/// three sentences it used to synthesize were a function of <see cref="Category"/> and were deleted with
+	/// the classification that produced them (ENG-95827).
+	/// </summary>
 	[JsonPropertyName("note")]
 	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
 	public string Note { get; init; }
@@ -665,9 +698,15 @@ public sealed class ElementMapEntry {
 }
 
 /// <summary>
-/// Compact, inline contract for a suggested mobile component type, drawn from the mobile registry,
-/// so the model can build the component's <c>values</c> without extra get-component-info round-trips.
+/// Compact, inline contract for one mobile component type the diff EMITS, drawn from the mobile registry, so
+/// the model can read and adjust the component's <c>values</c> without extra get-component-info round-trips.
 /// </summary>
+/// <remarks>
+/// The set follows <see cref="ComponentSuggestion.SuggestedMobileTypes"/>, which is now derived from the
+/// emitted operations. While it was derived from a type table instead, the set was wrong in both directions
+/// on the reference page — no contract for the <c>crt.List</c> the diff inserted five times, and a contract
+/// for a <c>crt.SearchFilter</c> every instance of which was dropped (ENG-95827).
+/// </remarks>
 public sealed class MobileComponentContract {
 	[JsonPropertyName("componentType")]
 	public string ComponentType { get; init; }
@@ -893,7 +932,12 @@ public sealed class MobilePageConversionGuide {
 	[JsonPropertyName("containerMap")]
 	public IReadOnlyList<ContainerMapEntry> ContainerMap { get; init; } = [];
 
-	// ── Component mapping suggestions ─────────────────────────────────
+	// ── What happened, per source component type ────────────────────
+	/// <summary>
+	/// One row per distinct source web type, saying what the conversion did to its instances. Derived from
+	/// the finished diff, for the conversion gate's report — never a plan, and never a second opinion the
+	/// caller weighs against the operations.
+	/// </summary>
 	[JsonPropertyName("componentSuggestions")]
 	public IReadOnlyList<ComponentSuggestion> ComponentSuggestions { get; init; } = [];
 
@@ -948,7 +992,7 @@ public sealed class MobilePageConversionGuide {
 	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
 	public IReadOnlyList<DroppedElement> DroppedElements { get; init; }
 
-	/// <summary>Inline contracts for every suggested / direct-mapped mobile component type.</summary>
+	/// <summary>Inline contracts for every mobile component type the <c>viewConfigDiff</c> emits.</summary>
 	[JsonPropertyName("mobileContracts")]
 	public IReadOnlyList<MobileComponentContract> MobileContracts { get; init; } = [];
 

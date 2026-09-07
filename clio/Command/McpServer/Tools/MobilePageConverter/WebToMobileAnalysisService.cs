@@ -20,8 +20,9 @@ using JsonValue = System.Text.Json.Nodes.JsonValue;
 // This service builds NOTHING and performs no Creatio I/O. It inspects the source web page
 // (merged component bundle + registries + the version-resolved WebToMobilePageConversionRules)
 // and produces a deterministic MobilePageConversionGuide: source structure, the recommended mobile
-// template + container correspondence, per-type component suggestions, and inline mobile
-// component contracts. An LLM uses the guide to build the mobile page body itself.
+// template + container correspondence, per-type component suggestions DERIVED from the finished
+// element map, and inline mobile component contracts for the types that map actually emitted.
+// An LLM uses the guide to build the mobile page body itself.
 // The shared, converter-agnostic category enum and DTOs live in PageConversionModels, and
 // the guide contract lives in MobilePageConversionGuideModels.
 
@@ -44,9 +45,6 @@ using JsonValue = System.Text.Json.Nodes.JsonValue;
 [SuppressMessage("Major Code Smell", "S3358:Ternary operators should not be nested", Justification = "The nested ternaries express a compact fallback chain that reads clearly in context.")]
 [SuppressMessage("Major Code Smell", "S2589:Boolean expressions should not be gratuitous", Justification = "The flagged null checks guard values the analyzer cannot prove non-null across the Newtonsoft/STJ boundary; removing them would risk an NRE on malformed bundles.")]
 public static class WebToMobileAnalysisService {
-
-	private const string ComponentInfoHint =
-		"Use get-component-info with schema-type \"mobile\" to find a supported mobile alternative, or configure this part manually in Freedom UI Mobile Designer.";
 
 	private const string GuidanceArticleName = "freedom-page-web-to-mobile-conversion";
 
@@ -157,18 +155,11 @@ public static class WebToMobileAnalysisService {
 				+ "or the parent template could not be read). Verify the source page and its template ancestry."
 			: null;
 
-		// 2. Component suggestions: classify each distinct present web type via the rules matrix,
-		//    then the registry type sets (direct/unsupported/manual).
-		List<ComponentSuggestion> suggestions = BuildComponentSuggestions(namesByType, rules, mobileTypes, webTypes);
-
-		// 3. Inline contracts for every suggested mobile type (+ direct-mapped types).
-		List<MobileComponentContract> contracts = BuildMobileContracts(suggestions, mobileByType);
-
-		// 4. Web-only sections and data sources (surfaced, not stripped — the model owns the body).
+		// 2. Web-only sections and data sources (surfaced, not stripped — the model owns the body).
 		List<string> webOnly = CollectWebOnlySections(bundle);
 		List<string> dataSources = CollectDataSources(bundle);
 
-		// 5. Instance-level element map (per named element: merge / insert / drop / relocate-children).
+		// 3. Instance-level element map (per named element: merge / insert / drop / relocate-children).
 		Dictionary<string, string> attrToColumn = BuildAttrToColumn(bundle);
 		JObject resources = ParseResources(bundle);
 		// Request (action) conversion: as the element map prebuilds each insert's mobileValues, the
@@ -295,10 +286,19 @@ public static class WebToMobileAnalysisService {
 		// so any per-entry answer computed earlier is answering a different question than the caller asks.
 		StampParentSource(elementMap, mobileTemplateTypesByName);
 
+		// 4. Advisory per-TYPE summaries, DERIVED from the finished map. The position is load-bearing, not
+		//    tidiness: these used to run before BuildElementMap, where they could only answer "what will
+		//    happen to this TYPE" while the caller reads them as "what happened to these ELEMENTS". Every
+		//    elementMap-mutating pass above can change that answer — a grid becomes a crt.List here, an
+		//    exclusion rule drops every crt.SearchFilter here — and BuildMobileContracts follows the
+		//    suggestions, so an early answer also sends a contract set that is wrong in BOTH directions.
+		List<ComponentSuggestion> suggestions = BuildComponentSuggestions(namesByType, rules, webTypes, elementMap);
+		List<MobileComponentContract> contracts = BuildMobileContracts(suggestions, mobileByType);
+
 		IReadOnlyList<NormalizationEntry> spacingNormalization =
 			componentPropertyOverrides.EntriesOf(SpacingGroup);
 
-		// 6. Data sections applied to the mobile body verbatim/filtered (identical structural support on
+		// 5. Data sections applied to the mobile body verbatim/filtered (identical structural support on
 		//    mobile): modelConfig is carried over as-is (preserving attribute types like ForwardReference);
 		//    viewModelConfig drops attributes used only by dropped components.
 		JsonNode modelConfig = PassthroughModelConfig(bundle);
@@ -327,12 +327,12 @@ public static class WebToMobileAnalysisService {
 		dataSectionConflicts.AddRange(vmcArrayConflicts);
 		dataSectionConflicts.AddRange(mcArrayConflicts);
 
-		// 7. Page-level business rules: carry each rule's condition (operand paths remapped from the source
+		// 6. Page-level business rules: carry each rule's condition (operand paths remapped from the source
 		//    DS column path to the mobile viewModel attribute name) and only the actions that survive on
 		//    mobile; drop a rule whose every action drops (object-level rules are untouched).
 		PageBusinessRuleConversionInfo pageBusinessRules = ConvertPageBusinessRules(pageBusinessRulesProbe, elementMap, bundle?.ViewModelConfig);
 
-		// 8. Every localized string the converted body references (top-level captions AND nested tokens such
+		// 7. Every localized string the converted body references (top-level captions AND nested tokens such
 		//    as config.title / text.template), resolved to its text — so the caller registers them all.
 		IReadOnlyDictionary<string, string> resourceStrings = CollectResourceStrings(elementMap, modelConfig, viewModelConfig, resources);
 
@@ -998,58 +998,90 @@ public static class WebToMobileAnalysisService {
 	}
 
 	/// <summary>
-	/// Builds one <see cref="ComponentSuggestion"/> per distinct present web type: classified via the
-	/// component equivalence matrix first (many→one merges noted), then by registry membership
-	/// (direct mapping / unsupported / requires-manual-decision).
+	/// Builds one <see cref="ComponentSuggestion"/> per distinct present web type, DERIVED FROM THE FINISHED
+	/// element map: the mobile type(s) it actually emitted for that web type, and a category that reports what
+	/// HAPPENED rather than what a type table predicted. A type whose configuration shipped nested inside
+	/// another element's <c>values</c> gets no row at all.
 	/// </summary>
+	/// <remarks>
+	/// This used to classify each type BEFORE the element map existed, through <see cref="FindRule"/> — which
+	/// matches only <c>ComponentEquivalenceRule.Web</c>, a key NO shipped rule carries (all four
+	/// <c>components</c> entries are filter/template groups), so it ALWAYS returned null and every type fell
+	/// through to a bare registry-membership test. On the OOTB <c>Leads_FormPage</c> that made the advisory
+	/// channel disagree with the diff about the page's five largest elements: <c>crt.DataGrid</c> shipped as
+	/// "Unsupported, no mobile alternative" while the same response inserted all five grids as finished
+	/// <c>crt.List</c>, and <c>crt.SearchFilter</c> shipped as "carry it over as-is" while an exclusion rule
+	/// dropped every instance. Because <see cref="BuildMobileContracts"/> iterates this list, no
+	/// <c>crt.List</c> contract reached the caller and a dead <c>crt.SearchFilter</c> one did — which is what
+	/// blocked <c>update-page --dry-run</c> with eight unresolved-binding errors on two recorded runs.
+	/// The classification is therefore no longer allowed to come from the rules file AT ALL: a rules author
+	/// may still contribute advisory text (<c>note</c>, <c>primaryWebMerge</c>), but WHAT HAPPENED is read
+	/// from the operations, so publishing a rules file that finally carries a <c>web</c> key cannot
+	/// reintroduce the disagreement (ENG-95827).
+	/// </remarks>
 	private static List<ComponentSuggestion> BuildComponentSuggestions(
 		Dictionary<string, List<string>> namesByType,
 		WebToMobilePageConversionRules rules,
-		IReadOnlySet<string> mobileTypes,
-		IReadOnlySet<string> webTypes) {
+		IReadOnlySet<string> webTypes,
+		List<ElementMapEntry> elementMap) {
 		var suggestions = new List<ComponentSuggestion>();
 		HashSet<string> presentTypes = new(namesByType.Keys, StringComparer.OrdinalIgnoreCase);
+		// What the finished map DID, per source web type. Keyed on WebType, which every entry that came from
+		// a source element carries; a synthesized entry has none and is therefore never attributed to a type.
+		var emittedByWebType = new Dictionary<string, SortedSet<string>>(StringComparer.OrdinalIgnoreCase);
+		var droppedWebTypes = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+		foreach (ElementMapEntry entry in elementMap ?? []) {
+			if (entry?.WebType is not { Length: > 0 } entryWebType) {
+				continue;
+			}
+			if (IsDrop(entry)) {
+				droppedWebTypes.Add(entryWebType);
+				continue;
+			}
+			if (!IsInsert(entry) && !IsMerge(entry)) {
+				continue;
+			}
+			if (!emittedByWebType.TryGetValue(entryWebType, out SortedSet<string> emittedTypes)) {
+				emittedTypes = new SortedSet<string>(StringComparer.OrdinalIgnoreCase);
+				emittedByWebType[entryWebType] = emittedTypes;
+			}
+			// An insert/merge whose mobile type the registry does not know still counts as CONVERTED — the
+			// presence of the key, not the size of the set, is what says an operation was emitted.
+			if (entry.MobileType is { Length: > 0 } entryMobileType) {
+				emittedTypes.Add(entryMobileType);
+			}
+		}
+		HashSet<string> carriedNested = CollectNestedComponentTypes(elementMap);
 
 		foreach ((string type, List<string> names) in namesByType) {
-			ComponentEquivalenceRule rule = FindRule(rules, type);
-			ComponentSuggestion suggestion;
-			if (rule is not null) {
-				ComponentMappingCategory category = ParseCategory(rule.Category);
-				string mergeNote = BuildPrimaryWebMergeNote(rule, presentTypes);
-				suggestion = new ComponentSuggestion {
-					SourceType = type,
-					SourceNames = names,
-					Category = category.ToString(),
-					SuggestedMobileTypes = rule.Mobile ?? [],
-					PrimaryWebMerge = mergeNote,
-					Note = rule.Note
-				};
-			} else if (mobileTypes.Contains(type)) {
-				suggestion = new ComponentSuggestion {
-					SourceType = type,
-					SourceNames = names,
-					Category = ComponentMappingCategory.DirectMapping.ToString(),
-					SuggestedMobileTypes = [type],
-					Note = "Same component type exists on mobile — carry it over as-is."
-				};
-			} else if (webTypes.Contains(type)) {
-				suggestion = new ComponentSuggestion {
-					SourceType = type,
-					SourceNames = names,
-					Category = ComponentMappingCategory.Unsupported.ToString(),
-					SuggestedMobileTypes = [],
-					Note = $"Component \"{type}\" is not supported in Freedom UI Mobile Designer. " + ComponentInfoHint
-				};
-			} else {
-				suggestion = new ComponentSuggestion {
-					SourceType = type,
-					SourceNames = names,
-					Category = ComponentMappingCategory.RequiresManualDecision.ToString(),
-					SuggestedMobileTypes = [],
-					Note = $"Component \"{type}\" is unknown to both registries (possibly a custom component). " + ComponentInfoHint
-				};
+			bool converted = emittedByWebType.TryGetValue(type, out SortedSet<string> emitted);
+			bool anyDropped = droppedWebTypes.Contains(type);
+			if (!converted && !anyDropped && carriedNested.Contains(type)) {
+				// No operation of its own because its configuration travels INSIDE another element's values,
+				// which the caller pastes verbatim. There is nothing to suggest and nothing to decide, and
+				// the row this replaces told the caller to go find a mobile alternative for a component the
+				// same response had already shipped.
+				continue;
 			}
-			suggestions.Add(suggestion);
+			ComponentEquivalenceRule rule = FindRule(rules, type);
+			// The diff is authoritative about what HAPPENED. A matching rule may only ADD mobile types the
+			// diff emits no operation for — a crt.List's crt.ListItem row lives inside that list's
+			// itemLayout, so no operation ever names it — and may never subtract from the emitted set.
+			var suggested = new SortedSet<string>(StringComparer.OrdinalIgnoreCase);
+			if (emitted is not null) {
+				suggested.UnionWith(emitted);
+			}
+			if (rule?.Mobile is { Count: > 0 } declaredTypes) {
+				suggested.UnionWith(declaredTypes.Where(t => !string.IsNullOrWhiteSpace(t)));
+			}
+			suggestions.Add(new ComponentSuggestion {
+				SourceType = type,
+				SourceNames = names,
+				Category = ClassifyFromOutcome(type, converted, suggested, rule, webTypes).ToString(),
+				SuggestedMobileTypes = [.. suggested],
+				PrimaryWebMerge = BuildPrimaryWebMergeNote(rule, presentTypes),
+				Note = rule?.Note
+			});
 		}
 
 		return suggestions
@@ -1057,7 +1089,113 @@ public static class WebToMobileAnalysisService {
 			.ToList();
 	}
 
-	/// <summary>Finds the first equivalence rule whose web type list contains <paramref name="webType"/>.</summary>
+	/// <summary>
+	/// The category a source web type earns, with the element map's OUTCOME as the first and unoverridable
+	/// input: an operation was emitted and the only suggested type is this same type
+	/// (<c>DirectMapping</c>); an operation was emitted under a different type, and a matching rule names
+	/// the shape of that adaptation — or, with no rule, the fact itself is the label
+	/// (<c>WithAdaptation</c>); nothing was emitted and a rule names what the caller could do instead
+	/// (<c>AlternativeAvailable</c>, or whatever the rule declares); nothing was emitted and no rule speaks,
+	/// so the registries decide whether this is a known web component (<c>Unsupported</c>) or probably a
+	/// custom one (<c>RequiresManualDecision</c>).
+	/// </summary>
+	/// <remarks>
+	/// A rules author may only speak where there is no outcome to contradict. Two things follow, and both
+	/// were live defects: presence in the MOBILE registry is no longer evidence that anything converted —
+	/// which is what made a type whose every instance an exclusion rule dropped ship as "carry it over
+	/// as-is" — and a rules file that finally carries a <c>web</c> key cannot relabel a conversion that
+	/// already happened (ENG-95827).
+	/// </remarks>
+	private static ComponentMappingCategory ClassifyFromOutcome(
+		string webType, bool converted, IReadOnlySet<string> suggested,
+		ComponentEquivalenceRule rule, IReadOnlySet<string> webTypes) {
+		if (converted) {
+			if (suggested.Count == 1 && suggested.Contains(webType)) {
+				return ComponentMappingCategory.DirectMapping;
+			}
+			return rule?.Category is { Length: > 0 } declared
+				? ParseCategory(declared)
+				: ComponentMappingCategory.WithAdaptation;
+		}
+		if (rule?.Mobile is { Count: > 0 }) {
+			return rule.Category is { Length: > 0 } advised
+				? ParseCategory(advised)
+				: ComponentMappingCategory.AlternativeAvailable;
+		}
+		// Deliberately NOT keyed on "was anything dropped": a type unknown to both registries is a probable
+		// custom component whichever way its instances went, and that distinction is the only thing this
+		// branch adds over droppedElements, which already carries the per-element cause.
+		return webTypes.Contains(webType)
+			? ComponentMappingCategory.Unsupported
+			: ComponentMappingCategory.RequiresManualDecision;
+	}
+
+	/// <summary>
+	/// A rules-declared category string, defaulting to <c>RequiresManualDecision</c> for an unknown value.
+	/// Reachable only where the element map produced no outcome to contradict, or where it converted under a
+	/// type other than the source's — see <see cref="ClassifyFromOutcome"/>.
+	/// </summary>
+	private static ComponentMappingCategory ParseCategory(string category) =>
+		Enum.TryParse(category, ignoreCase: true, out ComponentMappingCategory parsed)
+			? parsed
+			: ComponentMappingCategory.RequiresManualDecision;
+
+	/// <summary>
+	/// Every component <c>type</c> that travels INSIDE another element's <c>values</c> — a passenger the
+	/// caller pastes without ever addressing it.
+	/// </summary>
+	/// <remarks>
+	/// Read out of the finished map's own payloads, so this is an OBSERVATION rather than the inference
+	/// "this type has no entry, so it must be nested" — which would also swallow a type lost in a
+	/// non-converting scope container. Each payload's ROOT <c>type</c> is the operation's own component and
+	/// is skipped; only descendants count. On the OOTB <c>Leads_FormPage</c> this is six
+	/// <c>crt.ComboboxSearchTextAction</c>, one <c>crt.MessageComposerSelector</c>, one
+	/// <c>crt.EmailComposer</c> and one <c>crt.FeedComposer</c> — nine components the response labelled
+	/// "not supported in Freedom UI Mobile Designer" while shipping their JSON inside values the caller is
+	/// told to paste verbatim (ENG-95827).
+	/// </remarks>
+	private static HashSet<string> CollectNestedComponentTypes(List<ElementMapEntry> elementMap) {
+		var nested = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+		foreach (ElementMapEntry entry in elementMap ?? []) {
+			if (IsDrop(entry) || entry.Values is not JsonObject values) {
+				continue;
+			}
+			foreach (KeyValuePair<string, JsonNode> property in values) {
+				if (string.Equals(property.Key, "type", StringComparison.OrdinalIgnoreCase)) {
+					continue;
+				}
+				CollectComponentTypes(property.Value, nested);
+			}
+		}
+		return nested;
+	}
+
+	/// <summary>Adds every string <c>type</c> property found at or under <paramref name="node"/>.</summary>
+	private static void CollectComponentTypes(JsonNode node, HashSet<string> into) {
+		switch (node) {
+			case JsonObject obj:
+				if (StringProp(obj, "type") is { Length: > 0 } type) {
+					into.Add(type);
+				}
+				foreach (KeyValuePair<string, JsonNode> property in obj) {
+					CollectComponentTypes(property.Value, into);
+				}
+				break;
+			case JsonArray array:
+				foreach (JsonNode item in array) {
+					CollectComponentTypes(item, into);
+				}
+				break;
+			default:
+				break;
+		}
+	}
+
+	/// <summary>
+	/// Finds the first equivalence rule whose web type list contains <paramref name="webType"/>. Feeds ONLY
+	/// the advisory text channel (<c>note</c> / <c>primaryWebMerge</c>) — never the classification, which is
+	/// derived from the emitted operations (see <see cref="BuildComponentSuggestions"/>).
+	/// </summary>
 	private static ComponentEquivalenceRule FindRule(WebToMobilePageConversionRules rules, string webType) {
 		if (rules.Components is null) {
 			return null;
@@ -1108,11 +1246,6 @@ public static class WebToMobileAnalysisService {
 		entry?.ViewConfigTemplates is { Count: > 0 }
 		&& MatchesAnyFilter(entry.Filters, node)
 		&& MatchesPath(entry.Path, sourceAncestors);
-
-	private static ComponentMappingCategory ParseCategory(string category) =>
-		Enum.TryParse(category, ignoreCase: true, out ComponentMappingCategory parsed)
-			? parsed
-			: ComponentMappingCategory.RequiresManualDecision;
 
 	/// <summary>
 	/// When a many→one rule has its primary web type and at least one secondary web type present on the

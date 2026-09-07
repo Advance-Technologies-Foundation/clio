@@ -19,8 +19,8 @@ namespace Clio.Command.McpServer.Tools.MobilePageConverter;
 /// Detects a page's source type and returns an advisory mobile-conversion GUIDE (ENG-89620).
 /// Advisory-only: it reads the source page, classifies its components, and produces a deterministic
 /// guide (recommended mobile template + container correspondence, source component structure,
-/// per-type component suggestions from the WebToMobilePageConversionRules matrix + registry
-/// comparison, and inline mobile component contracts). It builds NO page body and writes NOTHING to
+/// per-type component suggestions derived from the finished element map, and inline mobile component
+/// contracts for the types that map emits). It builds NO page body and writes NOTHING to
 /// Creatio or disk — the caller (LLM) builds the mobile page body itself using create-page +
 /// update-page + validate-page.
 /// Supported source type today: Freedom UI web (<c>freedom-web</c>). Other source types (e.g. Classic

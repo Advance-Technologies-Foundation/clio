@@ -326,7 +326,7 @@ public sealed class WebToMobileConversionServiceTests {
 	}
 
 	[Test]
-	[Description("Component suggestions classify each present type via the matrix first, then registry membership (direct / unsupported / manual).")]
+	[Description("Component suggestions classify from the element map's OUTCOME first; where nothing was emitted a matching equivalence rule may still name what to use instead (crt.Checkbox -> crt.Toggle), and with neither the registries decide known-web (Unsupported) from probably-custom (RequiresManualDecision).")]
 	public void Analyze_ComponentSuggestions_ClassifyViaMatrixAndRegistry() {
 		PageBundleInfo bundle = Bundle("""
 			[ { "name": "Main", "type": "crt.FlexContainer", "items": [
@@ -382,6 +382,100 @@ public sealed class WebToMobileConversionServiceTests {
 		// Element map inserts the primary mobile type; the model adds the ListItem row into its itemLayout.
 		Element(guide, "DataTable").Operation.Should().Be("insert");
 		TypeOf(Element(guide, "DataTable")).Should().Be("crt.List");
+	}
+
+	/// <summary>
+	/// The shape EVERY <c>components</c> entry in the bundled rules file actually has: a filter + template
+	/// group with NO <c>web</c> key. It is therefore the one shape the equivalence lookup can never match,
+	/// which is why the advisory pass had to learn the outcome from the element map instead.
+	/// </summary>
+	private static WebToMobilePageConversionRules TemplateGroupGridRule() =>
+		new() {
+			Components = [
+				new ComponentEquivalenceRule {
+					Filters = [new ElementFilterRule { Type = "crt.DataGrid" }],
+					ViewConfigTemplates = [ListTemplate]
+				}
+			]
+		};
+
+	[Test]
+	[Description("A web type the element map converted under a DIFFERENT mobile type is reported as converted-with-adaptation naming that type, and the emitted type gets its inline contract. Reproduces the shipped rules file exactly: its grid entry is a filter/template group with no `web` key, so the equivalence lookup cannot match and only the finished map knows the grid became a crt.List. Before the advisory pass was derived from the map it ran three steps earlier and answered from registry membership alone, shipping crt.DataGrid as Unsupported with no suggested type while the same response inserted the grid as a finished crt.List — and, because the contract set follows the suggested types, shipping NO crt.List contract, which is what produced eight unresolved-binding errors and blocked update-page --dry-run on two recorded runs (ENG-95827).")]
+	public void Analyze_ComponentSuggestions_ConvertedUnderAnotherMobileType_NamesItAndShipsItsContract() {
+		// Arrange
+		PageBundleInfo bundle = Bundle("""
+			[ { "name": "Main", "type": "crt.FlexContainer", "items": [
+				{ "name": "DataTable", "type": "crt.DataGrid",
+				  "columns": [ { "code": "Name" }, { "code": "Age" } ] } ] } ]
+			""");
+
+		// Act
+		MobilePageConversionGuide guide = Analyze(bundle,
+			webByType: Reg(("crt.FlexContainer", true)),
+			mobileByType: Reg(("crt.List", false)),
+			rules: TemplateGroupGridRule());
+
+		// Assert
+		TypeOf(Element(guide, "DataTable")).Should().Be("crt.List",
+			because: "the template group converts the grid whether or not any equivalence rule matches — this "
+				+ "is the outcome the advisory pass has to agree with, and the premise of the rest of the test");
+		ComponentSuggestion grid = ForType(guide, "crt.DataGrid");
+		grid.Category.Should().Be("WithAdaptation",
+			because: "the type WAS converted, just not to itself; reporting it as Unsupported tells the "
+				+ "developer at the conversion gate that the page's five largest elements are unavailable "
+				+ "while the same response hands them over finished");
+		grid.SuggestedMobileTypes.Should().Equal(new[] { "crt.List" },
+			because: "the only honest answer to \"what did this become\" is what the map emitted — an empty "
+				+ "list sends the caller to get-component-info for a decision already taken");
+		guide.MobileContracts.Should().Contain(c => c.ComponentType == "crt.List",
+			because: "the contract set is built from the suggested types, so a wrong suggestion silently "
+				+ "withholds the contract for a type the caller is pasting — the failure is not an advisory "
+				+ "one, it blocks the save");
+	}
+
+	[Test]
+	[Description("A web type present in the MOBILE registry whose every instance an excludedComponents rule dropped is reported as Unsupported with no suggested type, and gets no inline contract. Registry membership used to be read as evidence that the type converted, so such a type shipped as DirectMapping with the note 'Same component type exists on mobile — carry it over as-is.' — advice to re-add, by hand, exactly what the converter had deliberately removed, plus a contract for a type the page never receives (ENG-95827).")]
+	public void Analyze_ComponentSuggestions_EveryInstanceExcluded_IsUnsupportedWithNoContract() {
+		// Arrange — crt.QuickFilter is in BOTH registries, so only the outcome distinguishes it.
+		PageBundleInfo bundle = Bundle("""
+			[ { "name": "Main", "type": "crt.FlexContainer", "items": [
+				{ "name": "Filter", "type": "crt.QuickFilter" },
+				{ "name": "UsrName", "type": "crt.Input" } ] } ]
+			""");
+		WebToMobilePageConversionRules rules = RulesWithExcludedComponents(
+			new ExcludedComponentFilterRule { Type = "crt.QuickFilter", ParentType = "crt.FlexContainer" });
+
+		// Act
+		MobilePageConversionGuide guide = Analyze(bundle,
+			webByType: Reg(("crt.FlexContainer", true)),
+			mobileByType: Reg(("crt.QuickFilter", false), ("crt.Input", false)),
+			// The container must be a MOBILE type here or it drops as unconvertible and the exclusion has no
+			// surviving host to match against — the fixture would then prove nothing about exclusion.
+			mobileTypes: new HashSet<string>(StringComparer.OrdinalIgnoreCase) {
+				"crt.FlexContainer", "crt.QuickFilter", "crt.Input"
+			},
+			rules: rules);
+
+		// Assert
+		DroppedNames(guide).Should().Contain("Filter",
+			because: "the exclusion rule is what makes this an outcome question rather than a registry one — "
+				+ "the premise of the rest of the test");
+		ComponentSuggestion filter = ForType(guide, "crt.QuickFilter");
+		filter.Category.Should().Be("Unsupported",
+			because: "no operation was emitted for any instance, and being present in the mobile registry is "
+				+ "not evidence that anything converted — reading it as such is what told the caller to carry "
+				+ "over a component an exclusion rule had just removed");
+		filter.SuggestedMobileTypes.Should().BeEmpty(
+			because: "suggesting the type back is suggesting the caller undo the exclusion");
+		filter.Note.Should().BeNull(
+			because: "the three synthesized sentences were a function of `category` and shipped ~2.7 KB of "
+				+ "text that repeated it; this channel now carries only what a rules author wrote");
+		guide.MobileContracts.Should().NotContain(c => c.ComponentType == "crt.QuickFilter",
+			because: "a contract is the caller's licence to build the component — emitting one for a type "
+				+ "every instance of which was dropped invites exactly the re-insertion droppedElements forbids");
+		ForType(guide, "crt.Input").Category.Should().Be("DirectMapping",
+			because: "the surviving sibling must still classify normally, or the assertion above would pass "
+				+ "for a guide that simply reports nothing");
 	}
 
 	[Test]

@@ -85,6 +85,7 @@ public sealed class MobilePageConversionGuideSandboxE2ETests : McpContractFixtur
 		AssertSplitShape(response.Guide!.ViewModelConfigDiff, "viewModelConfigDiff");
 		AssertReasonCodesAreFromTheClosedVocabulary(response.Guide!);
 		AssertConvertedListsCarryTheirRow(response.Guide!);
+		AssertAdvisorySectionsAgreeWithTheDiff(response.Guide!);
 		AssertHeaderActionsConvertToFab(response.Guide!);
 		AssertDataSectionConflictsAreStructured(response.Guide!);
 	}
@@ -600,6 +601,77 @@ public sealed class MobilePageConversionGuideSandboxE2ETests : McpContractFixtur
 	/// vocabulary is the kind of coverage that reads as complete and is not.
 	/// </para>
 	/// </remarks>
+	/// <summary>
+	/// The guide's two ADVISORY sections must agree with the operations, because they are what the mandated
+	/// conversion gate reports to the developer.
+	/// </summary>
+	/// <remarks>
+	/// <para>
+	/// Both invariants are internal to one response, so they hold over the real transport without a second
+	/// source of truth. (1) Every mobile type an <c>insert</c> emits is named by some suggestion row — the
+	/// contract set is built from those rows, so a type the diff emits and no row names ships WITHOUT its
+	/// inline contract. (2) A source type whose EVERY named instance reached <c>droppedElements</c> is not
+	/// reported as converted — that row would tell the developer to carry over, by hand, exactly what the
+	/// converter deliberately removed.
+	/// </para>
+	/// <para>
+	/// Neither section had any e2e assertion before. On the OOTB <c>Leads_FormPage</c> both invariants were
+	/// violated at once and nothing failed: <c>crt.DataGrid</c> shipped as "Unsupported" with no suggested
+	/// type while the same response inserted five finished <c>crt.List</c>, so no <c>crt.List</c> contract
+	/// reached the caller and <c>update-page --dry-run</c> failed with eight unresolved-binding errors; and
+	/// <c>crt.SearchFilter</c> shipped as "carry it over as-is" with all five instances dropped by an
+	/// exclusion rule (ENG-95827).
+	/// </para>
+	/// </remarks>
+	private static void AssertAdvisorySectionsAgreeWithTheDiff(MobilePageConversionGuide guide) {
+		guide.ComponentSuggestions.Should().NotBeEmpty(
+			because: "the seeded page has components, so there is something to classify — without this the "
+				+ "assertions below pass vacuously on an empty section");
+
+		HashSet<string> suggestedTypes = [.. guide.ComponentSuggestions
+			.SelectMany(s => s.SuggestedMobileTypes ?? [])
+			.Where(t => !string.IsNullOrWhiteSpace(t))];
+		string[] emittedTypes = [.. guide.ViewConfigDiff
+			.Where(op => op.Operation == "insert")
+			.Select(TypeOf)
+			.Where(t => !string.IsNullOrWhiteSpace(t))
+			.Distinct()];
+		emittedTypes.Should().NotBeEmpty(
+			because: "the seeded page inserts components, so the comparison below has something to compare");
+		emittedTypes.Should().OnlyContain(
+			t => suggestedTypes.Contains(t),
+			because: "mobileContracts is built from suggestedMobileTypes, so a type the diff EMITS that no "
+				+ "suggestion names ships with no inline contract — the caller then pastes a component whose "
+				+ "properties it was never given, which is a blocked save rather than a missing hint. "
+				+ $"Emitted: [{string.Join(", ", emittedTypes)}]; suggested: [{string.Join(", ", suggestedTypes.OrderBy(t => t, StringComparer.Ordinal))}]");
+
+		var droppedNamesByType = new Dictionary<string, HashSet<string>>(StringComparer.OrdinalIgnoreCase);
+		foreach (DroppedElement dropped in guide.DroppedElements ?? []) {
+			if (string.IsNullOrWhiteSpace(dropped.WebType) || string.IsNullOrWhiteSpace(dropped.WebName)) {
+				continue;
+			}
+			if (!droppedNamesByType.TryGetValue(dropped.WebType, out HashSet<string>? names)) {
+				names = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+				droppedNamesByType[dropped.WebType] = names;
+			}
+			names.Add(dropped.WebName);
+		}
+		foreach (ComponentSuggestion suggestion in guide.ComponentSuggestions) {
+			if (!droppedNamesByType.TryGetValue(suggestion.SourceType ?? string.Empty, out HashSet<string>? dropped)
+				|| suggestion.SourceNames is not { Count: > 0 } sourceNames
+				|| !sourceNames.All(dropped.Contains)) {
+				continue;
+			}
+			suggestion.Category.Should().NotBe("DirectMapping",
+				because: $"every named '{suggestion.SourceType}' on this page reached droppedElements, so "
+					+ "reporting it as directly mapped tells the developer at the conversion gate to carry "
+					+ "over a component the converter removed on purpose");
+			suggestion.Category.Should().NotBe("WithAdaptation",
+				because: $"every named '{suggestion.SourceType}' was dropped, so there is no adaptation to "
+					+ "describe — an adaptation category asserts an element reached the page");
+		}
+	}
+
 	private static void AssertReasonCodesAreFromTheClosedVocabulary(MobilePageConversionGuide guide) {
 		HashSet<string> declared = [.. typeof(ReasonCodes)
 			.GetFields(BindingFlags.Public | BindingFlags.Static)
