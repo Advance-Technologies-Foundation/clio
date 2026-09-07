@@ -116,6 +116,7 @@ public class ListEntityClientSchemasCommand : Command<ListEntityClientSchemasOpt
 	private const string SectionSchemaUIdColumn = "SectionSchemaUId";
 	private const string CardSchemaUIdColumn = "CardSchemaUId";
 	private const string MiniPageSchemaUIdColumn = "MiniPageSchemaUId";
+	private const string TypeColumnUIdColumn = "TypeColumnUId";
 
 	private static readonly HashSet<string> FreedomTemplates = new(StringComparer.OrdinalIgnoreCase) {
 		"PageWithTabsAndProgressBarTemplate",
@@ -205,7 +206,7 @@ public class ListEntityClientSchemasCommand : Command<ListEntityClientSchemasOpt
 			var sections = moduleRows.Select(r => {
 				string sectionUId = r[SectionSchemaUIdColumn]?.ToString();
 				string cardUId = r[CardSchemaUIdColumn]?.ToString();
-				string typeColUId = r["TypeColumnUId"]?.ToString();
+				string typeColUId = r[TypeColumnUIdColumn]?.ToString();
 				(string cardName, string template) = Meta(cardUId);
 				return new MigrationSectionInfo {
 					Caption = r["Caption"]?.ToString(),
@@ -219,29 +220,34 @@ public class ListEntityClientSchemasCommand : Command<ListEntityClientSchemasOpt
 				};
 			}).ToList();
 
-			var editPages = editRows.Select(r => {
+			// Each edit page is bundled with its own row's TypeColumnUId here (where the SysModuleEdit row is in scope),
+			// so the type-name enrichment never has to re-index the raw rows in parallel with the pages (ENG-96553).
+			var editPageEntries = editRows.Select(r => {
 				string cardUId = r[CardSchemaUIdColumn]?.ToString();
 				string miniUId = r[MiniPageSchemaUIdColumn]?.ToString();
 				(string cardName, string template) = Meta(cardUId);
 				(string miniName, string miniTemplate) = Meta(miniUId);
-				return new MigrationEditPageInfo {
-					TypeColumnValue = r["TypeColumnValue"]?.ToString(),
-					CardSchema = cardName,
-					CardSchemaUId = cardUId,
-					Template = template,
-					Kind = ClassifyKind(template),
-					MiniPageSchema = miniName,
-					MiniPageSchemaUId = miniUId,
-					MiniPageTemplate = miniTemplate,
-					MiniPageKind = ClassifyKind(miniTemplate),
-					MiniPageModes = r["MiniPageModes"]?.ToString()
-				};
+				return (
+					page: new MigrationEditPageInfo {
+						TypeColumnValue = r["TypeColumnValue"]?.ToString(),
+						CardSchema = cardName,
+						CardSchemaUId = cardUId,
+						Template = template,
+						Kind = ClassifyKind(template),
+						MiniPageSchema = miniName,
+						MiniPageSchemaUId = miniUId,
+						MiniPageTemplate = miniTemplate,
+						MiniPageKind = ClassifyKind(miniTemplate),
+						MiniPageModes = r["MiniPageModes"]?.ToString()
+					},
+					typeColumnUId: r[TypeColumnUIdColumn]?.ToString());
 			}).ToList();
+			List<MigrationEditPageInfo> editPages = editPageEntries.Select(entry => entry.page).ToList();
 
 			// ENG-96553: for a typed entity, resolve each per-type edit page's Type-lookup GUID to its display name so
 			// the migration plan can name the type instead of the raw GUID. The deterministic GUID->caption join is done
 			// here because the migration engine is a pure offline function over the manifest and cannot query the stand.
-			EnrichTypeDisplayNames(options.EntityName, editRows, editPages);
+			EnrichTypeDisplayNames(options.EntityName, editPageEntries);
 
 			bool empty = sections.Count == 0 && editPages.Count == 0;
 			response = new ListEntityClientSchemasResponse {
@@ -283,71 +289,25 @@ public class ListEntityClientSchemasCommand : Command<ListEntityClientSchemasOpt
 	/// (non-typed entity, unresolvable type column, denied read) leaves the page GUID-only and never fails the resolve.
 	/// </summary>
 	private void EnrichTypeDisplayNames(
-		string entityName, JArray editRows, List<MigrationEditPageInfo> editPages) {
+		string entityName, IReadOnlyList<(MigrationEditPageInfo page, string typeColumnUId)> editPageEntries) {
 		try {
-			// Group the per-type GUID values by the Type column they belong to. editPages is a 1:1 projection of
-			// editRows, so index i carries the same row's TypeColumnUId. Grouping (instead of assuming a single type
-			// column) keeps each page resolved against ITS OWN type column when an entity is registered through more
-			// than one SysModuleEntity row with different type columns. The default page (empty value) and any
-			// non-GUID registration contribute nothing, so a non-typed entity performs no extra round-trip.
-			var valuesByTypeColumn = new Dictionary<string, HashSet<string>>(StringComparer.OrdinalIgnoreCase);
-			for (int i = 0; i < editPages.Count; i++) {
-				string typeValue = editPages[i].TypeColumnValue;
-				if (!Guid.TryParse(typeValue, out _)) {
-					continue;
-				}
-				string typeColumnUId = editRows[i]["TypeColumnUId"]?.ToString();
-				if (string.IsNullOrWhiteSpace(typeColumnUId) || typeColumnUId == EmptyGuid) {
-					continue;
-				}
-				if (!valuesByTypeColumn.TryGetValue(typeColumnUId, out HashSet<string> values)) {
-					values = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-					valuesByTypeColumn[typeColumnUId] = values;
-				}
-				values.Add(typeValue);
-			}
+			Dictionary<string, HashSet<string>> valuesByTypeColumn = GroupTypeValuesByColumn(editPageEntries);
 			if (valuesByTypeColumn.Count == 0) {
 				return;
 			}
+			IReadOnlyDictionary<string, IReadOnlyDictionary<string, string>> captionsByTypeColumn =
+				ResolveCaptionsByTypeColumn(entityName, valuesByTypeColumn);
+			int assigned = AssignTypeDisplayNames(editPageEntries, captionsByTypeColumn);
 
-			// Map each Type column UId to its reference (lookup) schema from the entity's runtime schema (one read),
-			// then batch-resolve that column's distinct GUIDs to captions with a single IN query per reference schema.
-			IReadOnlyList<RuntimeEntitySchemaColumnResult> columns = _runtimeEntitySchemaReader.GetByName(entityName).Columns;
-			var captionsByTypeColumn = new Dictionary<string, IReadOnlyDictionary<string, string>>(StringComparer.OrdinalIgnoreCase);
-			foreach (KeyValuePair<string, HashSet<string>> group in valuesByTypeColumn) {
-				if (!Guid.TryParse(group.Key, out Guid typeColumnGuid)) {
-					continue;
-				}
-				string referenceSchemaName = columns
-					.FirstOrDefault(column => column.UId == typeColumnGuid)?.ReferenceSchemaName;
-				if (string.IsNullOrWhiteSpace(referenceSchemaName)) {
-					continue;
-				}
-				try {
-					captionsByTypeColumn[group.Key] = ResolveTypeCaptions(referenceSchemaName, group.Value);
-				} catch (Exception ex) {
-					// One reference schema being unreadable (e.g. access-denied) must not discard captions already
-					// resolvable for the entity's OTHER type columns; leave this column's pages GUID-only and continue.
-					_logger.WriteWarning(
-						$"Could not resolve type display names for reference schema '{referenceSchemaName}' on entity '{entityName}'. {ex.Message}");
-				}
-			}
-			if (captionsByTypeColumn.Count == 0) {
-				return;
-			}
-
-			// Assign each per-type page the caption resolved for ITS own type column + value.
-			for (int i = 0; i < editPages.Count; i++) {
-				string typeValue = editPages[i].TypeColumnValue;
-				if (string.IsNullOrWhiteSpace(typeValue)) {
-					continue;
-				}
-				string typeColumnUId = editRows[i]["TypeColumnUId"]?.ToString();
-				if (!string.IsNullOrWhiteSpace(typeColumnUId)
-					&& captionsByTypeColumn.TryGetValue(typeColumnUId, out IReadOnlyDictionary<string, string> captions)
-					&& captions.TryGetValue(typeValue, out string caption)) {
-					editPages[i].TypeColumnDisplayValue = caption;
-				}
+			// Diagnosability (ENG-96553): a resolved-but-null TypeColumnDisplayValue is byte-identical to the legitimate
+			// non-typed null, and the catches within only fire on a THROWN read. So if a typed entity produced per-type
+			// GUID values yet NONE resolved to a caption, that is a systemic signal (an unreadable Type lookup, or a
+			// GUID string-form / TypeColumnUId-to-column mismatch) rather than the usual one-off deleted record —
+			// surface it once so a silent full degradation to GUID-only is not mistaken for "not typed".
+			if (assigned == 0) {
+				_logger.WriteWarning(
+					$"Resolved no type display names for typed entity '{entityName}' although {valuesByTypeColumn.Count} Type column(s) " +
+					"carried per-type values; the plan will show raw GUIDs. Verify the Type lookup is readable and the values match its records.");
 			}
 		} catch (Exception ex) {
 			// Type-name enrichment is a readability aid only: the engine renders a GUID + "resolve the type name
@@ -355,6 +315,76 @@ public class ListEntityClientSchemasCommand : Command<ListEntityClientSchemasOpt
 			// page-role resolve into an error.
 			_logger.WriteWarning($"Could not resolve type display names for entity '{entityName}'. {ex.Message}");
 		}
+	}
+
+	/// <summary>
+	/// Groups each page's GUID-parseable per-type value under its OWN row's Type column UId. Every entry already
+	/// carries its own TypeColumnUId (bundled at projection time — no positional re-indexing), so an entity registered
+	/// through more than one SysModuleEntity row with different type columns keeps each page under its own column. The
+	/// default page (empty value) and any non-GUID registration contribute nothing, so a non-typed entity yields none.
+	/// </summary>
+	private static Dictionary<string, HashSet<string>> GroupTypeValuesByColumn(
+		IReadOnlyList<(MigrationEditPageInfo page, string typeColumnUId)> editPageEntries) {
+		var valuesByTypeColumn = new Dictionary<string, HashSet<string>>(StringComparer.OrdinalIgnoreCase);
+		foreach ((MigrationEditPageInfo page, string typeColumnUId) in editPageEntries) {
+			if (!Guid.TryParse(page.TypeColumnValue, out _)
+				|| string.IsNullOrWhiteSpace(typeColumnUId) || typeColumnUId == EmptyGuid) {
+				continue;
+			}
+			if (!valuesByTypeColumn.TryGetValue(typeColumnUId, out HashSet<string> values)) {
+				values = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+				valuesByTypeColumn[typeColumnUId] = values;
+			}
+			values.Add(page.TypeColumnValue);
+		}
+		return valuesByTypeColumn;
+	}
+
+	/// <summary>
+	/// Maps each Type column UId to its reference (lookup) schema from the entity's runtime schema (one read), then
+	/// batch-resolves that column's distinct GUIDs to captions with a single IN query per reference schema. A per-column
+	/// read failure is isolated so it cannot discard captions already resolvable for the entity's other type columns.
+	/// </summary>
+	private IReadOnlyDictionary<string, IReadOnlyDictionary<string, string>> ResolveCaptionsByTypeColumn(
+		string entityName, Dictionary<string, HashSet<string>> valuesByTypeColumn) {
+		IReadOnlyList<RuntimeEntitySchemaColumnResult> columns = _runtimeEntitySchemaReader.GetByName(entityName).Columns;
+		var captionsByTypeColumn = new Dictionary<string, IReadOnlyDictionary<string, string>>(StringComparer.OrdinalIgnoreCase);
+		foreach (KeyValuePair<string, HashSet<string>> group in valuesByTypeColumn) {
+			if (!Guid.TryParse(group.Key, out Guid typeColumnGuid)) {
+				continue;
+			}
+			string referenceSchemaName = columns
+				.FirstOrDefault(column => column.UId == typeColumnGuid)?.ReferenceSchemaName;
+			if (string.IsNullOrWhiteSpace(referenceSchemaName)) {
+				continue;
+			}
+			try {
+				captionsByTypeColumn[group.Key] = ResolveTypeCaptions(referenceSchemaName, group.Value);
+			} catch (Exception ex) {
+				_logger.WriteWarning(
+					$"Could not resolve type display names for reference schema '{referenceSchemaName}' on entity '{entityName}'. {ex.Message}");
+			}
+		}
+		return captionsByTypeColumn;
+	}
+
+	/// <summary>
+	/// Assigns each per-type page the caption resolved for ITS OWN type column + value and returns how many were set.
+	/// </summary>
+	private static int AssignTypeDisplayNames(
+		IReadOnlyList<(MigrationEditPageInfo page, string typeColumnUId)> editPageEntries,
+		IReadOnlyDictionary<string, IReadOnlyDictionary<string, string>> captionsByTypeColumn) {
+		int assigned = 0;
+		foreach ((MigrationEditPageInfo page, string typeColumnUId) in editPageEntries) {
+			if (!string.IsNullOrWhiteSpace(page.TypeColumnValue)
+				&& !string.IsNullOrWhiteSpace(typeColumnUId)
+				&& captionsByTypeColumn.TryGetValue(typeColumnUId, out IReadOnlyDictionary<string, string> captions)
+				&& captions.TryGetValue(page.TypeColumnValue, out string caption)) {
+				page.TypeColumnDisplayValue = caption;
+				assigned++;
+			}
+		}
+		return assigned;
 	}
 
 	/// <summary>
@@ -435,7 +465,7 @@ public class ListEntityClientSchemasCommand : Command<ListEntityClientSchemasOpt
 		new JObject {
 			["Caption"] = Column("Caption"), ["Code"] = Column("Code"),
 			[SectionSchemaUIdColumn] = Column(SectionSchemaUIdColumn), [CardSchemaUIdColumn] = Column(CardSchemaUIdColumn),
-			["TypeColumnUId"] = Column("SysModuleEntity.TypeColumnUId")
+			[TypeColumnUIdColumn] = Column($"SysModuleEntity.{TypeColumnUIdColumn}")
 		},
 		Group(("byEntity", Eq("SysModuleEntity.SysEntitySchemaUId", entityUId, 0))), SectionRowCount);
 
@@ -443,8 +473,10 @@ public class ListEntityClientSchemasCommand : Command<ListEntityClientSchemasOpt
 		new JObject {
 			["TypeColumnValue"] = Column("TypeColumnValue"), [CardSchemaUIdColumn] = Column(CardSchemaUIdColumn),
 			[MiniPageSchemaUIdColumn] = Column(MiniPageSchemaUIdColumn), ["MiniPageModes"] = Column("MiniPageModes"),
-			// The entity's Type column UId (identical across rows) — used to resolve per-type display names (ENG-96553).
-			["TypeColumnUId"] = Column("SysModuleEntity.TypeColumnUId")
+			// The Type column UId of each row's SysModuleEntity — read and resolved PER ROW (not assumed identical
+			// across rows) so an entity registered through several SysModuleEntity rows with different type columns
+			// maps each page to its own reference lookup (ENG-96553).
+			[TypeColumnUIdColumn] = Column($"SysModuleEntity.{TypeColumnUIdColumn}")
 		},
 		Group(("byEntity", Eq("SysModuleEntity.SysEntitySchemaUId", entityUId, 0))), EditPageRowCount);
 
