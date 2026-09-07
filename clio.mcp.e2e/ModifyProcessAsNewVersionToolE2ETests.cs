@@ -63,7 +63,7 @@ public sealed class ModifyProcessAsNewVersionToolE2ETests {
 		// Arrange
 		await using ArrangeContext context = await ArrangeAsync(requireReachableEnvironment: true);
 		string processName = $"UsrClioBpVersionE2e{Guid.NewGuid():N}";
-		await CallToolAsync(context, CreateToolName, new Dictionary<string, object?> {
+		await CallToolExpectingSuccessAsync(context, CreateToolName, new Dictionary<string, object?> {
 			["environment-name"] = context.EnvironmentName,
 			["descriptor"] = BuildDescriptor(processName)
 		});
@@ -77,9 +77,10 @@ public sealed class ModifyProcessAsNewVersionToolE2ETests {
 		});
 
 		// Assert
-		callResult.IsError.Should().NotBeTrue(
-			because: "a successful save should return a normal MCP tool result, not a transport error");
 		string callResultJson = JsonSerializer.Serialize(callResult);
+		callResultJson.Should().Contain("\\u0022exit-code\\u0022:0",
+			because: "the transport reports isError:null for a tool that ran and failed, so the exit-code is "
+				+ "what actually says the version was saved");
 		callResultJson.Should().Contain("Version 1",
 			because: "the platform allocates the number and the tool reports the one it got back — the first "
 				+ "version in a package is 1, because the root's own stamp is not part of the count");
@@ -101,7 +102,7 @@ public sealed class ModifyProcessAsNewVersionToolE2ETests {
 			}));
 		describeJson.Should().Contain("RecordId",
 			because: "the operation was applied to the CLONE, so the parameter must be present on the version");
-		describeJson.Should().Contain("\"isActiveVersion\":false",
+		describeJson.Should().Contain("\"isActiveVersion\": false",
 			because: "creating a version must never change what the environment executes");
 	}
 
@@ -113,7 +114,7 @@ public sealed class ModifyProcessAsNewVersionToolE2ETests {
 		// Arrange
 		await using ArrangeContext context = await ArrangeAsync(requireReachableEnvironment: true);
 		string processName = $"UsrClioBpSnapshotE2e{Guid.NewGuid():N}";
-		await CallToolAsync(context, CreateToolName, new Dictionary<string, object?> {
+		await CallToolExpectingSuccessAsync(context, CreateToolName, new Dictionary<string, object?> {
 			["environment-name"] = context.EnvironmentName,
 			["descriptor"] = BuildDescriptor(processName)
 		});
@@ -126,7 +127,7 @@ public sealed class ModifyProcessAsNewVersionToolE2ETests {
 		});
 
 		// Assert
-		callResult.IsError.Should().NotBeTrue(
+		JsonSerializer.Serialize(callResult).Should().Contain("\\u0022exit-code\\u0022:0",
 			because: "an edit-free version is a legal request, not a validation error");
 		JsonSerializer.Serialize(callResult).Should().Contain("0 operation(s) applied",
 			because: "the snapshot applied nothing, and the count has to say so rather than be omitted");
@@ -179,6 +180,17 @@ public sealed class ModifyProcessAsNewVersionToolE2ETests {
 		  { "op": "addParameter", "parameter": { "name": "RecordId", "type": "Guid", "direction": "In", "caption": "Record Id" } }
 		]
 		""";
+
+	// The MCP transport reports isError:null for a tool that ran and FAILED - the failure lives in the
+	// payload's exit-code. An arrange step checked only for a transport error therefore "succeeds" against
+	// a stand where nothing was created, and the act step then fails pointing at the wrong cause.
+	private static async Task<CallToolResult> CallToolExpectingSuccessAsync(ArrangeContext context,
+		string toolName, Dictionary<string, object?> args) {
+		CallToolResult result = await CallToolAsync(context, toolName, args);
+		JsonSerializer.Serialize(result).Should().Contain("\\u0022exit-code\\u0022:0",
+			because: $"{toolName} had to succeed for the rest of this test to mean anything");
+		return result;
+	}
 
 	private static async Task<CallToolResult> CallToolAsync(ArrangeContext context, string toolName,
 		Dictionary<string, object?> args) {

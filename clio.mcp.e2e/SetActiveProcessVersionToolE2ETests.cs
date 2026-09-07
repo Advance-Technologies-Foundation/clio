@@ -64,11 +64,11 @@ public sealed class SetActiveProcessVersionToolE2ETests {
 		// Arrange
 		await using ArrangeContext context = await ArrangeAsync(requireReachableEnvironment: true);
 		string processName = $"UsrClioBpActivateE2e{Guid.NewGuid():N}";
-		await CallToolAsync(context, CreateToolName, new Dictionary<string, object?> {
+		await CallToolExpectingSuccessAsync(context, CreateToolName, new Dictionary<string, object?> {
 			["environment-name"] = context.EnvironmentName,
 			["descriptor"] = BuildDescriptor(processName)
 		});
-		await CallToolAsync(context, VersionToolName, new Dictionary<string, object?> {
+		await CallToolExpectingSuccessAsync(context, VersionToolName, new Dictionary<string, object?> {
 			["environment-name"] = context.EnvironmentName,
 			["process-name"] = processName,
 			["package-name"] = "Custom"
@@ -82,9 +82,10 @@ public sealed class SetActiveProcessVersionToolE2ETests {
 		});
 
 		// Assert
-		callResult.IsError.Should().NotBeTrue(
-			because: "a successful activation should return a normal MCP tool result, not a transport error");
 		string callResultJson = JsonSerializer.Serialize(callResult);
+		callResultJson.Should().Contain("\\u0022exit-code\\u0022:0",
+			because: "the transport reports isError:null for a tool that ran and failed, so the exit-code is "
+				+ "what actually says the switch happened");
 		callResultJson.Should().Contain(versionName,
 			because: "the reported version comes from a READ-BACK after the write, so seeing the requested name "
 				+ "here is what proves the switch took effect rather than that the request was echoed");
@@ -98,14 +99,14 @@ public sealed class SetActiveProcessVersionToolE2ETests {
 				["environment-name"] = context.EnvironmentName,
 				["process-name"] = versionName
 			}));
-		describeVersionJson.Should().Contain("\"isActiveVersion\":true",
+		describeVersionJson.Should().Contain("\"isActiveVersion\": true",
 			because: "the activated version must be the actual one afterwards");
 		string describeRootJson = JsonSerializer.Serialize(await CallToolAsync(context, DescribeToolName,
 			new Dictionary<string, object?> {
 				["environment-name"] = context.EnvironmentName,
 				["process-name"] = processName
 			}));
-		describeRootJson.Should().Contain("\"isActiveVersion\":false",
+		describeRootJson.Should().Contain("\"isActiveVersion\": false",
 			because: "the platform logs and SWALLOWS a failed sibling deactivation, so two members left active "
 				+ "is a real outcome — and only reading the OTHER member catches it");
 	}
@@ -118,11 +119,11 @@ public sealed class SetActiveProcessVersionToolE2ETests {
 		// Arrange
 		await using ArrangeContext context = await ArrangeAsync(requireReachableEnvironment: true);
 		string processName = $"UsrClioBpReactivateE2e{Guid.NewGuid():N}";
-		await CallToolAsync(context, CreateToolName, new Dictionary<string, object?> {
+		await CallToolExpectingSuccessAsync(context, CreateToolName, new Dictionary<string, object?> {
 			["environment-name"] = context.EnvironmentName,
 			["descriptor"] = BuildDescriptor(processName)
 		});
-		await CallToolAsync(context, VersionToolName, new Dictionary<string, object?> {
+		await CallToolExpectingSuccessAsync(context, VersionToolName, new Dictionary<string, object?> {
 			["environment-name"] = context.EnvironmentName,
 			["process-name"] = processName,
 			["package-name"] = "Custom"
@@ -132,13 +133,13 @@ public sealed class SetActiveProcessVersionToolE2ETests {
 			["environment-name"] = context.EnvironmentName,
 			["version-name"] = versionName
 		};
-		await CallToolAsync(context, ToolName, activateArgs);
+		await CallToolExpectingSuccessAsync(context, ToolName, activateArgs);
 
 		// Act
 		CallToolResult second = await CallToolAsync(context, ToolName, activateArgs);
 
 		// Assert
-		second.IsError.Should().NotBeTrue(
+		JsonSerializer.Serialize(second).Should().Contain("\\u0022exit-code\\u0022:0",
 			because: "re-activating the version that is already actual is a no-op, not a refusal — an agent that "
 				+ "cannot tell whether its first call landed must be able to repeat it safely");
 		JsonSerializer.Serialize(second).Should().Contain(versionName,
@@ -182,6 +183,17 @@ public sealed class SetActiveProcessVersionToolE2ETests {
 		  ]
 		}
 		""";
+
+	// The MCP transport reports isError:null for a tool that ran and FAILED - the failure lives in the
+	// payload's exit-code. An arrange step checked only for a transport error therefore "succeeds" against
+	// a stand where nothing was created, and the act step then fails pointing at the wrong cause.
+	private static async Task<CallToolResult> CallToolExpectingSuccessAsync(ArrangeContext context,
+		string toolName, Dictionary<string, object?> args) {
+		CallToolResult result = await CallToolAsync(context, toolName, args);
+		JsonSerializer.Serialize(result).Should().Contain("\\u0022exit-code\\u0022:0",
+			because: $"{toolName} had to succeed for the rest of this test to mean anything");
+		return result;
+	}
 
 	private static async Task<CallToolResult> CallToolAsync(ArrangeContext context, string toolName,
 		Dictionary<string, object?> args) {
