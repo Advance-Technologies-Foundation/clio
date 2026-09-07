@@ -170,12 +170,30 @@ needs discovering; the clio body needs reconciling to it.
 That run's headline is "run against the package that actually merges" — the standard its own author
 set — and it no longer holds. The run's first finding was that `setFlow` leaves a flow named for its
 old kind; that finding was then fixed in .66. So the fix that came *out of* the browser leg is the
-one thing no browser has seen, and flow names are precisely what the designer's element list and the
-process log display.
+one thing no browser has seen.
 
 Rated Low rather than Medium because I went looking for what that leg would have caught and did not
 find it: the rename cannot collide, and the platform's by-name flow resolution is request-scoped
 (both above). The gap is in the evidence, not — as far as I can reach — in the behaviour.
+
+> **Correction, after this report was committed.** This finding originally read that flow names are
+> "precisely what the designer's element list and the process log display". A stand measurement by
+> the implementation session falsified the first half: with a process open, **the designer displays a
+> flow's code nowhere** — no flow name appears in the page text, the list beside the canvas holds
+> ELEMENTS, and clicking the connector does not surface it. So the browser leg could not have observed
+> the rename either way, and the gap this finding describes is thinner than stated; the evidence that
+> matters is `describe` plus the process log, both verified at .66 and again at .67.
+>
+> I did not measure that claim — I inherited it from the package's own comment at
+> `ProcessGraphBuilder.cs:246` and repeated it. Which makes it an instance of the failure this
+> report's process note names, one level down: a statement believed because it was written down.
+>
+> The same claim is still asserted four times in the shipped source — `DescribeContracts.cs:883`
+> (XML doc on a public contract field), `ProcessGraphBuilder.cs:246` and `:499`, and
+> `ProcessDesignConstants.cs:217` — all four about flow names. The rename in .66/.67 remains
+> justified by the log and the metadata diff, two of the three readers those comments claim; it is
+> the rationale that overstates, not the behaviour. Raised to the implementation session, which holds
+> the stand evidence.
 
 ### 3 — Low · the sprint tracker still says nothing is pushed
 
@@ -276,3 +294,38 @@ superseded commits.
 Findings 2–6 do not block. Findings 1, 2 and 3 are one defect wearing three hats: a document that
 records "as of now", is appended to each round, and is never reconciled. If anything here is worth
 carrying past this ticket, it is that.
+
+---
+
+## Closure
+
+Added rather than edited into the text above, because a report that quietly rewrites its own findings
+is the defect findings 1–3 are about.
+
+| # | Severity | Disposition |
+|---|---|---|
+| 1 | Medium | **Closed.** Provenance reconciled to one line — 1.4.0.67 from `126d63b` (restamp `8fccbb2`), sha `BF9596E5…8DC1`. Both superseded provenance lines removed. |
+| 2 | Low | **Narrowed by measurement, then closed.** See the correction under the finding: the designer shows no flow name, so the leg could not have observed the rename. Re-verified at .67. |
+| 3 | Low | **Closed.** Both stale tracker notes removed. |
+| 4 | Low | **Closed.** The guard is gone; both endpoints now resolve through `NodeByUId`, the file's existing `First()` convention. |
+| 5 | Low | **Closed.** R8's arity arm removed. |
+| 6 | Low | **Closed.** Stray marker removed. |
+
+Two things came out of the closures that the gate itself had not reached:
+
+- **R3 forced a rebundle to .67.** Removing a dead branch is behaviour-neutral, and it still changed
+  the source — so the shipped bytes were no longer the reviewed ones. Stated as a rule, ninth
+  occurrence of this class on the ticket and the first time it has been written down: *a source change
+  absent from the archive means the shipped bytes are not the reviewed ones, even when the change is
+  behaviour-neutral.*
+- **`First()` now depends on finding 4's reachability argument**, so it was re-derived rather than
+  reused. It holds, and more strongly than first stated: `SetFlow` resolves both endpoints at
+  `ProcessGraphBuilder.cs:328` before anything else, and `FindTheFlowBetween` matches a flow on exactly
+  those two UIds — so at the single call site (`:623`) both elements are already proved present. Not
+  "no dangling flow can exist", but "this call resolved them three lines earlier".
+
+Baselines re-verified at 1.4.0.67: package **1257 / 0**; clio `Module=ProcessModel|McpServer`
+**4814 / 0**, 2 skipped. Archive pins clean, ninth check.
+
+**Gate satisfied.** One item raised after closure and not blocking: the four source comments that
+assert the designer displays a flow name, now measured false (see the correction under finding 2).
