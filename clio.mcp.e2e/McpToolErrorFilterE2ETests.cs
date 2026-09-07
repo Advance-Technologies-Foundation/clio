@@ -1,3 +1,6 @@
+using Clio.Mcp.E2E.Support.Configuration;
+using System.Collections.Concurrent;
+using System.Diagnostics;
 using Allure.NUnit;
 using Allure.NUnit.Attributes;
 using Clio.Command.McpServer.Tools;
@@ -402,5 +405,87 @@ public sealed class McpToolErrorFilterE2ETests : McpContractFixtureBase
 		schema.Should().Contain("args",
 			because: "the published schema deliberately stays wrapped — the flat shape is accepted at runtime "
 				+ "only, and the contract text says so rather than claiming the two are identical");
+	}
+
+	[Test]
+	[Category("McpE2E.NoEnvironment")]
+	[AllureName("A flat call mirrors one advisory shape line to the server's stderr, and repeats are capped")]
+	[Description("Drives a REAL clio mcp-server child over stdio and reads its standard error, closing the last unproven link in ENG-95885's observability chain: that Program.IsMcpServerMode is genuinely true in the child, that ReportArgumentShape passes it through to the mirror, that the line reaches the channel an MCP host actually reads, and that the round-5 rate gate caps a repeat. Each of those was pinned separately in unit tests; the wiring between them was not, because an in-process test is never in MCP server mode.")]
+	public async Task FlatCall_ShouldMirrorOneShapeLineToServerStandardError_AndCapTheRepeat() {
+		// Arrange
+		using CancellationTokenSource cancellation = new(TimeSpan.FromMinutes(2));
+		ConcurrentQueue<string> standardError = new();
+		// A DEDICATED session, not the fixture's shared one: the rate gate is per process, so a shared
+		// server that had already mirrored these pairs would make the cap assertion pass vacuously.
+		McpE2ESettings settings = TestConfiguration.Load();
+		await using McpServerSession session = await McpServerSession.StartAsync(
+			settings, elicitationHandler: null, cancellation.Token, standardError.Enqueue);
+
+		// Act — the SAME tool and the SAME canonical-flat shape twice. list-apps declares
+		// [McpAcceptsEmptyArguments] and takes environment-name, so a flat payload is the canonical-flat
+		// case the normalizer accommodates rather than refuses.
+		for (int attempt = 0; attempt < 2; attempt++) {
+			await session.Client.CallToolAsync(
+				"list-apps",
+				new Dictionary<string, object?> { ["environment-name"] = "definitely-not-registered" },
+				cancellationToken: cancellation.Token);
+		}
+		// A different tool, same outcome: the cap is per tool, so this must still get its own line.
+		// The NAME has to be a real resident tool. An unknown name is served by the durable long-tail
+		// handler, which has no MatchedPrimitive and is deliberately never normalized — so a typo here
+		// produces no line at all and the assertion would fail for a reason that has nothing to do with
+		// the cap. (Learned the hard way: the first draft of this case said "get-pkg-list".)
+		await session.Client.CallToolAsync(
+			"list-packages",
+			new Dictionary<string, object?> { ["environment-name"] = "definitely-not-registered" },
+			cancellationToken: cancellation.Token);
+
+		// The mirror is written synchronously by the child, but it still has to travel a pipe and be
+		// pumped by the SDK before this process sees it.
+		string[] shapeLines = await WaitForShapeLinesAsync(standardError, expected: 2, cancellation.Token);
+
+		// Assert
+		shapeLines.Should().NotBeEmpty(
+			because: "the advisory line must reach standard error on a real stdio server — this is the "
+				+ "channel an MCP host captures, and the whole point of mirroring at all");
+		shapeLines.Should().OnlyContain(line => line.Contains("outcome=WrappedFlat", StringComparison.Ordinal),
+			because: "a canonical flat payload is an accommodation, not a refusal, so every mirrored line "
+				+ "here must report the WrappedFlat outcome");
+		shapeLines.Should().OnlyContain(line => line.Contains("[INF]", StringComparison.Ordinal),
+			because: "an accommodation is informational; tagging it as a warning would train a reader to "
+				+ "ignore the tag");
+		shapeLines.Count(line => line.Contains("'list-apps'", StringComparison.Ordinal)).Should().Be(1,
+			because: "the round-5 rate gate caps the mirror at ONE line per tool and outcome per process, "
+				+ "and two identical calls are exactly what it exists to collapse — an uncapped "
+				+ "synchronous write on this, the dominant call shape, is what could block on an "
+				+ "undrained host pipe");
+		shapeLines.Should().Contain(line => line.Contains("'list-packages'", StringComparison.Ordinal),
+			because: "the cap is per tool, so a second tool receiving a flat payload must still be visible "
+				+ "or the closing measurement could not tell which tools agents send flat");
+		standardError.Should().NotContain(line => line.Contains("definitely-not-registered", StringComparison.Ordinal),
+			because: "the line carries key NAMES only: an argument VALUE can be a password or a token, and "
+				+ "clio/AGENTS.md forbids logging secret-bearing configuration");
+	}
+
+	/// <summary>
+	/// Collects the advisory shape lines from the child's standard error, waiting until
+	/// <paramref name="expected"/> have arrived or the harness gives up.
+	/// </summary>
+	/// <remarks>
+	/// Polled rather than sampled: the child writes synchronously, but the bytes still cross a pipe and
+	/// are pumped by the SDK on its own schedule, so a single read after the call returns would race the
+	/// transport rather than test the server. Returns whatever has arrived when the budget expires, so a
+	/// mirror that never appears fails the assertions below instead of hanging the fixture.
+	/// </remarks>
+	private static async Task<string[]> WaitForShapeLinesAsync(
+		ConcurrentQueue<string> standardError, int expected, CancellationToken cancellationToken) {
+		TimeSpan budget = TimeSpan.FromSeconds(20);
+		Stopwatch elapsed = Stopwatch.StartNew();
+		string[] Shape() => [.. standardError.Where(
+			line => line.Contains("mcp-argument-shape", StringComparison.Ordinal))];
+		while (Shape().Length < expected && elapsed.Elapsed < budget) {
+			await Task.Delay(TimeSpan.FromMilliseconds(100), cancellationToken);
+		}
+		return Shape();
 	}
 }
