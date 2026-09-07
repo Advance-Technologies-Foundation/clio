@@ -5,6 +5,7 @@ using System.Diagnostics.CodeAnalysis;
 using System.IO;
 using System.Linq;
 using System.Reflection;
+using System.Runtime.CompilerServices;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using System.Threading;
@@ -402,10 +403,17 @@ public static class McpToolErrorFilter
 			return TryRefuseCallArgumentsCore(context, parameters, out result);
 		}
 		catch (Exception exception) {
+			// Redact() is NOT optional here, and its absence was a real hole rather than missing
+			// defence-in-depth: SurfacedExceptionMessage.Resolve walks to the INNER-MOST exception and
+			// returns its Message verbatim, and the inner-most frame is exactly the one carrying an
+			// absolute path (a TypeLoadException or FileNotFoundException out of the reflection walk) or
+			// a URI. Unredacted, that lands in the tool-call response and the hosting agent's transcript
+			// — threat model R-7, the thing this catch was added to protect. Matches the sibling catch in
+			// HandleCallToolErrorsCore, which has always wrapped the same call (review round 8).
 			result = CreateJsonErrorResult(
 				$"invalid-argument-shape: tool '{parameters.Name ?? UnknownToolName}' sent a payload the "
 				+ "argument-shape classifier could not process: "
-				+ GetSurfacedMessage(exception)
+				+ SensitiveErrorTextRedactor.Redact(GetSurfacedMessage(exception))
 				+ " Nothing ran: the call was refused rather than executed on a shape that could not be "
 				+ "checked.");
 			return true;
@@ -627,7 +635,7 @@ public static class McpToolErrorFilter
 				+ $"outcome={report.Outcome} keys=[{keys}]",
 			isWarning: IsRefusal(report.Outcome),
 			mirrorToStandardError: Program.IsMcpServerMode
-				&& ShouldMirrorShapeOnce(toolName, report.Outcome));
+				&& ShouldMirrorShapeOnce(context.Server, toolName, report.Outcome));
 	}
 
 	/// <summary>
@@ -654,8 +662,11 @@ public static class McpToolErrorFilter
 	/// more machinery than an advisory line justifies today — recorded here so the trade is visible.
 	/// </para>
 	/// </remarks>
-	internal static bool ShouldMirrorShapeOnce(string? toolName, McpArgumentShapeOutcome outcome) =>
-		MirroredShapeOutcomes.TryAdd((toolName ?? UnknownToolName, outcome), true);
+	internal static bool ShouldMirrorShapeOnce(
+		object? session, string? toolName, McpArgumentShapeOutcome outcome) =>
+		MirroredShapeOutcomes
+			.GetValue(session ?? ProcessWideSession, static _ => new())
+			.TryAdd((toolName ?? UnknownToolName, outcome), true);
 
 	/// <summary>
 	/// Forgets every mirrored (tool, outcome) pair. FOR TESTS ONLY — the gate is per-process by design,
@@ -664,14 +675,40 @@ public static class McpToolErrorFilter
 	/// </summary>
 	internal static void ResetMirroredShapeOutcomes() => MirroredShapeOutcomes.Clear();
 
+
 	/// <summary>
-	/// Tool+outcome pairs already mirrored to stderr in this process. Keyed on a TUPLE rather than a
-	/// concatenated string so there is no separator to pick, and therefore no way for a tool name
-	/// containing the separator to collide with a different pair.
+	/// Tool+outcome pairs already mirrored to stderr, kept PER SERVER INSTANCE rather than per process.
 	/// </summary>
-	private static readonly
-		System.Collections.Concurrent.ConcurrentDictionary<(string ToolName, McpArgumentShapeOutcome Outcome), bool>
+	/// <remarks>
+	/// ENG-95885 review round 8. A single static set was defensible for the stdio child — one agent
+	/// session per process, so "once per process" and "once per session" are the same statement. It was
+	/// wrong for <c>mcp-http</c>, which this file documents as long-lived and multi-tenant: the first
+	/// session to send a flat payload for a tool would consume that pair for every later session on the
+	/// same running server, and the stderr channel would then read near-zero because the evidence was
+	/// suppressed, not because agents had stopped sending flat payloads. That directly defeats the
+	/// measurement this line exists for.
+	/// <para>
+	/// Scoped by the request's server instance, held in a <see cref="ConditionalWeakTable{TKey,TValue}"/>
+	/// so a finished session's set is collected with it rather than accumulating for the life of the
+	/// host. Honest about the limit: this is only a per-SESSION scope if the transport gives each session
+	/// its own server instance. If some transport shares one, the behaviour degrades to exactly today's
+	/// per-process cap — never worse — and the ungated logger call still carries full per-call frequency
+	/// for any sink that is configured.
+	/// </para>
+	/// <para>
+	/// Keyed on a TUPLE rather than a concatenated string so there is no separator to pick, and therefore
+	/// no way for a tool name containing the separator to collide with a different pair.
+	/// </para>
+	/// </remarks>
+	private static readonly ConditionalWeakTable<object,
+			System.Collections.Concurrent.ConcurrentDictionary<(string ToolName, McpArgumentShapeOutcome Outcome), bool>>
 		MirroredShapeOutcomes = new();
+
+	/// <summary>
+	/// Stand-in key for a call that carries no server instance, so such calls share one set instead of
+	/// silently losing the cap.
+	/// </summary>
+	private static readonly object ProcessWideSession = new();
 
 	/// <summary>True for the two outcomes that refused the call rather than accommodating it.</summary>
 	private static bool IsRefusal(McpArgumentShapeOutcome outcome) =>

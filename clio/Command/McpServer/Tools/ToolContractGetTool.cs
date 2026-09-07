@@ -163,7 +163,9 @@ public sealed class ToolContractGetTool {
 		+ "{\"<field>\": \"<value>\"} (normalized to the wrapped shape on arrival). Rules: every flat key "
 		+ "must be a real field name — a payload carrying any unknown key (even beside a valid one) is "
 		+ "refused, never answered with defaults; "
-		+ "mixing an \"args\" object with extra top-level keys is refused as ambiguous; an args value must "
+		+ "mixing an \"args\" object with extra top-level keys is refused as ambiguous; two top-level "
+		+ "keys differing only in casing name one argument and are refused the same way, since names "
+		+ "are matched case-insensitively; an args value must "
 		+ "be a JSON object, never a string containing JSON text.";
 
 	// ENG-95885: the accepted-shape rule is deliberately NOT advertised in the published tools/list

@@ -211,11 +211,17 @@ Negative / accepted:
   On a server whose callers all send the wrapped shape this is zero lines; on one being driven by a
   fresh agent it is one line per accommodated first attempt, which is exactly the quantity being
   measured.
-- Reflection (`GetParameters` / `GetProperties` / `GetCustomAttribute`) runs per call on the
-  classification path. Uncached, matching the pre-existing deserialization preflight on the same seam;
-  negligible against a tool call that does an HTTP round-trip to a Creatio tenant. A
-  `ConcurrentDictionary<MethodInfo, …>` cache is the obvious optimization if it ever shows up in a
+- Reflection runs per call on the classification path, and only PART of it is cached. The property walk
+  (`GetProperties` plus the per-property attribute reads behind `IsWireContractProperty`) is memoized
+  per args-record `Type` in `CanonicalNamesByType`, because a type's property set is fixed at compile
+  time; `GetParameters` and the per-method `GetCustomAttribute` reads for the two opt-in attributes are
+  still uncached. That split is deliberate rather than half-finished: the property walk was the
+  expensive one — it grew a `GetConstructors()` scan when the predicate learned about
+  constructor-bound properties — while the remainder is negligible against a tool call that does an HTTP
+  round-trip to a Creatio tenant. Caching the rest is the obvious next step if it ever shows up in a
   profile.
+- The already-wrapped fast path is checked BEFORE any of that reflection, so the steady state this
+  change drives traffic toward skips it entirely.
 
 ## Open questions
 

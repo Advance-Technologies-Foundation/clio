@@ -1038,7 +1038,7 @@ BOTH shapes at runtime, even though `tools/list` still publishes `required: ["ar
 - flat — `{"<field>": "<value>"}` — rewritten into the wrapper on arrival, but only when EVERY
   top-level key is a wire property of the record; all of them move inside the wrapper together
 
-The payload is classified, never wrapped blindly, so `tools/call` has two caller-facing error classes
+The payload is classified, never wrapped blindly, so `tools/call` has three caller-facing error classes
 beyond the deserialization diagnostics above:
 
 - **unknown-argument refusal** — at least one top-level key is not a wire property, whether the whole
@@ -1047,6 +1047,9 @@ beyond the deserialization diagnostics above:
   (`[McpRecoversUnknownArguments]`, today `get-tool-contract`) receives the payload instead.
 - **ambiguous-shape refusal** — an `args` object AND extra top-level keys in the same payload. Refused
   with no silent precedence in either direction.
+- **case-collision refusal** — two top-level keys differing only in casing, which therefore name one
+  argument (names are matched case-insensitively). Refused for the same reason as the hybrid shape:
+  both claim the same field and choosing between them is not the server's call.
 
 An empty `{}` keeps today's missing-parameter error unless the tool declares
 `[McpAcceptsEmptyArguments]` (today `list-apps`, `get-request-info`). An argument the tool binds as an

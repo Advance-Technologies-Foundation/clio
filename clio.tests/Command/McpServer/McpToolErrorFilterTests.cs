@@ -652,6 +652,78 @@ public sealed class McpToolErrorFilterTests
 				+ "must never appear in the advertised set");
 	}
 
+	// --- ENG-95885 review round 8 ---
+
+	[Test]
+	[Category("Unit")]
+	[Description("The classifier's fail-closed refusal REDACTS the exception text. SurfacedExceptionMessage.Resolve walks to the inner-most exception and returns its Message verbatim, so without SensitiveErrorTextRedactor an absolute path or URI from a reflection or parse failure lands in the tool-call response and the hosting agent's transcript — threat model R-7, the exposure this catch exists to prevent (ENG-95885 review round 8).")]
+	public async Task Normalization_ShouldRedactTheExceptionText_WhenTheClassifierThrows() {
+		// Arrange — a matched primitive whose Metadata throws while the classifier is reading the tool
+		// method, carrying exactly the kind of message the inner-most frame really does carry.
+		const string secretPath = @"C:\Users\someone\.clio\appsettings.json";
+		const string secretUri = "https://tenant.creatio.com/0/ServiceModel/AuthService.svc";
+		RequestContext<CallToolRequestParams> context = CreateContext(
+			"list-apps", new Dictionary<string, JsonElement> {
+				["environment-name"] = JsonSerializer.SerializeToElement("local")
+			});
+		context.MatchedPrimitive = new FakeToolWithThrowingMetadata(
+			$"Could not load file '{secretPath}' while contacting {secretUri}");
+		context = WithRoutingAuthority(context);
+		McpRequestHandler<CallToolRequestParams, CallToolResult> handler =
+			McpToolErrorFilter.HandleCallToolErrors(
+				(_, _) => ValueTask.FromResult(new CallToolResult { IsError = false }));
+
+		// Act
+		CallToolResult result = await handler(context, CancellationToken.None);
+
+		// Assert
+		result.IsError.Should().BeTrue(
+			because: "a classifier failure is fail-closed — the call must not proceed on a shape nobody "
+				+ "could check");
+		string text = string.Join(" ", result.Content.OfType<TextContentBlock>().Select(b => b.Text));
+		text.Should().NotContain(secretPath,
+			because: "an absolute path from the inner-most exception must never reach the caller; this is "
+				+ "the whole reason the sibling catch in this file wraps the same call in Redact");
+		text.Should().NotContain(secretUri,
+			because: "a tenant URI is just as identifying as a path and is redacted by the same pass");
+		text.Should().Contain("[redacted-path]",
+			because: "asserting only the ABSENCE of the secret would also pass if the message were dropped "
+				+ "entirely — the redaction marker proves the text went THROUGH the redactor");
+		text.Should().Contain("[redacted-uri]",
+			because: "the same, for the URI pattern");
+		text.Should().Contain("invalid-argument-shape",
+			because: "the caller still needs to know which failure class this was");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("The stderr mirror cap is scoped per server instance, not per process. A single static set was fine for the stdio child (one session per process) but wrong for the long-lived multi-tenant mcp-http host, where the first session to send a flat payload would consume that tool+outcome for every later session and the channel would read near-zero because the evidence was suppressed (ENG-95885 review round 8).")]
+	public void ShouldMirrorShapeOnce_ShouldScopePerSession_NotPerProcess() {
+		// Arrange
+		McpToolErrorFilter.ResetMirroredShapeOutcomes();
+		object sessionOne = new();
+		object sessionTwo = new();
+
+		// Act
+		bool firstInSessionOne = McpToolErrorFilter.ShouldMirrorShapeOnce(
+			sessionOne, "list-apps", McpArgumentShapeOutcome.WrappedFlat);
+		bool repeatInSessionOne = McpToolErrorFilter.ShouldMirrorShapeOnce(
+			sessionOne, "list-apps", McpArgumentShapeOutcome.WrappedFlat);
+		bool firstInSessionTwo = McpToolErrorFilter.ShouldMirrorShapeOnce(
+			sessionTwo, "list-apps", McpArgumentShapeOutcome.WrappedFlat);
+
+		// Assert
+		firstInSessionOne.Should().BeTrue(
+			because: "the first occurrence in a session is the diagnostic the measurement needs");
+		repeatInSessionOne.Should().BeFalse(
+			because: "within one session the cap still holds — that is what keeps an undrained host pipe "
+				+ "from being written to on every call of the dominant shape");
+		firstInSessionTwo.Should().BeTrue(
+			because: "a SECOND session on the same long-lived host must still report its own flat calls; "
+				+ "otherwise the channel reads near-zero because the evidence was suppressed rather than "
+				+ "because agents stopped sending flat payloads");
+	}
+
 	// --- ENG-95885 review round 7 ---
 
 	[Test]
@@ -832,16 +904,16 @@ public sealed class McpToolErrorFilterTests
 
 		// Act
 		bool firstForListApps = McpToolErrorFilter.ShouldMirrorShapeOnce(
-			"list-apps", McpArgumentShapeOutcome.WrappedFlat);
+			session: null, "list-apps", McpArgumentShapeOutcome.WrappedFlat);
 		bool secondForListApps = McpToolErrorFilter.ShouldMirrorShapeOnce(
-			"list-apps", McpArgumentShapeOutcome.WrappedFlat);
+			session: null, "list-apps", McpArgumentShapeOutcome.WrappedFlat);
 		bool otherOutcomeSameTool = McpToolErrorFilter.ShouldMirrorShapeOnce(
-			"list-apps", McpArgumentShapeOutcome.RefusedUnknown);
+			session: null, "list-apps", McpArgumentShapeOutcome.RefusedUnknown);
 		bool sameOutcomeOtherTool = McpToolErrorFilter.ShouldMirrorShapeOnce(
-			"get-page", McpArgumentShapeOutcome.WrappedFlat);
+			session: null, "get-page", McpArgumentShapeOutcome.WrappedFlat);
 		McpToolErrorFilter.ResetMirroredShapeOutcomes();
 		bool afterReset = McpToolErrorFilter.ShouldMirrorShapeOnce(
-			"list-apps", McpArgumentShapeOutcome.WrappedFlat);
+			session: null, "list-apps", McpArgumentShapeOutcome.WrappedFlat);
 
 		// Assert
 		firstForListApps.Should().BeTrue(
@@ -1996,6 +2068,20 @@ public sealed class McpToolErrorFilterTests
 
 	public sealed class FakeToolWithParameterlessAndGetOnlyArgs {
 		public string Execute(FakeParameterlessAndGetOnlyArgs args) => "ok";
+	}
+
+	// A matched primitive whose Metadata read throws, which is how a test reaches the classifier's own
+	// fail-closed catch with a message it controls. The reachable production analogue is a reflection
+	// failure (TypeLoadException, FileNotFoundException) carrying an absolute path.
+	private sealed class FakeToolWithThrowingMetadata(string message) : McpServerTool {
+		public override Tool ProtocolTool { get; } = new() { Name = "fake-throwing-metadata" };
+
+		public override IReadOnlyList<object> Metadata => throw new InvalidOperationException(message);
+
+		public override ValueTask<CallToolResult> InvokeAsync(
+			RequestContext<CallToolRequestParams> request,
+			CancellationToken cancellationToken = default) =>
+			ValueTask.FromResult(new CallToolResult());
 	}
 
 	// --- ENG-95885 round-5 property-shape fixtures ---

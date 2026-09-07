@@ -98,6 +98,10 @@ The payload is CLASSIFIED, never wrapped blindly. Refused shapes:
   validation mistake with a plausible list/default **success** — worse for an agent than a hard failure.
   The good field does not make the typo safe. Only `[McpRecoversUnknownArguments]` (below) forwards it.
 - **hybrid** — an `args` object plus extra top-level keys: refused as ambiguous, no silent precedence.
+- **case collision** — two top-level keys differing only in casing (`environment-name` plus
+  `Environment-Name`). Names are matched case-insensitively, so both claim ONE argument; wrapping
+  them would hand the serializer two properties it treats as the same one, and picking the winner
+  is the same guessing the hybrid shape is refused for. Neither value is echoed back.
 - **empty `{}`** — keeps today's missing-parameter error unless the tool declares capability (below).
 - an argument the tool binds as an object but which arrives as a **JSON string**: refused with a
   shape-naming error. It is never parsed — accepting stringified JSON would widen the contract for good.
