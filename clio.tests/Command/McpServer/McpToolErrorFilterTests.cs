@@ -652,6 +652,173 @@ public sealed class McpToolErrorFilterTests
 				+ "must never appear in the advertised set");
 	}
 
+	// --- ENG-95885 review round 5: the canonical-name predicate must match System.Text.Json ---
+	//
+	// Round 4's bare `SetMethod is not null` was wrong in BOTH directions. Each case below asserts the
+	// predicate's verdict AND what real System.Text.Json does with the same payload, because the whole
+	// finding was that the predicate is a PROXY for binding — so a test that only checks the proxy
+	// against itself would restate the bug instead of catching it.
+
+	[Test]
+	[Category("Unit")]
+	[Description("A NON-PUBLIC setter without [JsonInclude] is not a canonical name. PropertyInfo.SetMethod is non-null for 'private set', but System.Text.Json will not populate it — so admitting the key would wrap it and let the serializer drop the value, the silent-default-success class this change exists to remove (ENG-95885 review round 5).")]
+	public void Normalization_ShouldRefuse_AFlatKeyNamingANonPublicSetter() {
+		// Arrange
+		CallToolRequestParams parameters = new() {
+			Name = "fake-nonpublic-setter-tool",
+			Arguments = new Dictionary<string, JsonElement>(StringComparer.Ordinal) {
+				["name"] = JsonSerializer.SerializeToElement("real"),
+				["hidden"] = JsonSerializer.SerializeToElement("probe")
+			}
+		};
+		MethodInfo method = typeof(FakeToolWithNonPublicSetterArgs).GetMethod(
+			nameof(FakeToolWithNonPublicSetterArgs.Execute), BindingFlags.Public | BindingFlags.Instance)!;
+
+		// Act
+		bool refused = McpToolErrorFilter.TryRefuseArguments(
+			parameters, method, out CallToolResult? result, out _);
+		FakeNonPublicSetterArgs? bound = JsonSerializer.Deserialize<FakeNonPublicSetterArgs>(
+			"""{"name":"real","hidden":"probe"}""", Clio.BindingsModule.CreateMcpSerializerOptions());
+
+		// Assert
+		bound!.Name.Should().Be("real",
+			because: "the public setter is the control: the serializer does populate that one");
+		bound.Hidden.Should().BeNull(
+			because: "this test only means something if System.Text.Json really does refuse to populate a "
+				+ "non-public setter — that is the premise the predicate has to match");
+		refused.Should().BeTrue(
+			because: "a key the serializer cannot bind must be refused, not wrapped alongside the good "
+				+ "field and then silently dropped");
+		string text = string.Join(" ", result!.Content.OfType<TextContentBlock>().Select(b => b.Text));
+		text.Should().Contain("\"hidden\"",
+			because: "the refusal must name the key the caller cannot actually supply");
+		text.Should().Contain("Valid arguments: \"name\".",
+			because: "only the publicly-settable field may be advertised as supplyable");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("A non-public setter carrying [JsonInclude] IS a canonical name, because that attribute is exactly what makes System.Text.Json populate it (ENG-95885 review round 5).")]
+	public void Normalization_ShouldAccept_AFlatKeyNamingAJsonIncludeSetter() {
+		// Arrange
+		CallToolRequestParams parameters = new() {
+			Name = "fake-jsoninclude-tool",
+			Arguments = new Dictionary<string, JsonElement>(StringComparer.Ordinal) {
+				["included"] = JsonSerializer.SerializeToElement("probe")
+			}
+		};
+		MethodInfo method = typeof(FakeToolWithJsonIncludeArgs).GetMethod(
+			nameof(FakeToolWithJsonIncludeArgs.Execute), BindingFlags.Public | BindingFlags.Instance)!;
+
+		// Act
+		bool refused = McpToolErrorFilter.TryRefuseArguments(
+			parameters, method, out CallToolResult? _, out McpArgumentShapeReport report);
+		FakeJsonIncludeArgs? bound = JsonSerializer.Deserialize<FakeJsonIncludeArgs>(
+			"""{"included":"probe"}""", Clio.BindingsModule.CreateMcpSerializerOptions());
+
+		// Assert
+		bound!.Included.Should().Be("probe",
+			because: "[JsonInclude] is what lets the serializer reach a non-public setter, and the "
+				+ "predicate must track the serializer rather than accessibility alone");
+		refused.Should().BeFalse(because: "a key the serializer CAN bind must not be refused");
+		report.Outcome.Should().Be(McpArgumentShapeOutcome.WrappedFlat);
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("A GET-ONLY property bound through a matching CONSTRUCTOR PARAMETER is a canonical name. This is the converse direction round 4 got wrong: its SetMethod is null, yet the value binds perfectly, so excluding it would start REFUSING a flat call that previously worked (ENG-95885 review round 5).")]
+	public void Normalization_ShouldAccept_AFlatKeyNamingAConstructorBoundGetOnlyProperty() {
+		// Arrange
+		CallToolRequestParams parameters = new() {
+			Name = "fake-ctor-bound-tool",
+			Arguments = new Dictionary<string, JsonElement>(StringComparer.Ordinal) {
+				["name"] = JsonSerializer.SerializeToElement("probe")
+			}
+		};
+		MethodInfo method = typeof(FakeToolWithConstructorBoundArgs).GetMethod(
+			nameof(FakeToolWithConstructorBoundArgs.Execute), BindingFlags.Public | BindingFlags.Instance)!;
+
+		// Act
+		bool refused = McpToolErrorFilter.TryRefuseArguments(
+			parameters, method, out CallToolResult? _, out McpArgumentShapeReport report);
+		FakeConstructorBoundArgs? bound = JsonSerializer.Deserialize<FakeConstructorBoundArgs>(
+			"""{"name":"probe"}""", Clio.BindingsModule.CreateMcpSerializerOptions());
+
+		// Assert
+		bound!.Name.Should().Be("probe",
+			because: "the premise of this case is that a get-only property DOES bind through a matching "
+				+ "constructor parameter — without that the test would prove nothing");
+		typeof(FakeConstructorBoundArgs).GetProperty("Name")!.SetMethod.Should().BeNull(
+			because: "the fixture must really have no setter, or it is not the shape round 4 excluded");
+		refused.Should().BeFalse(
+			because: "a real, bindable field must never be refused — that would break a working flat call");
+		report.Outcome.Should().Be(McpArgumentShapeOutcome.WrappedFlat);
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("The precise 'must be a JSON object' error still fires for a composite whose only properties are get-only. That error keys off ExpectsJsonObject, which used to ride on the settable-only canonical-name set — so round 4's narrowing would have silently turned it off for such a type and restored the raw BytePositionInLine text (ENG-95885 review round 5).")]
+	public async Task JsonEncodedObject_ShouldStillReturnPreciseShapeError_ForAGetOnlyOnlyComposite() {
+		// Arrange
+		RequestContext<CallToolRequestParams> context = CreateContext(
+			"fake-getonly-only-tool", new Dictionary<string, JsonElement> {
+				["args"] = JsonSerializer.SerializeToElement("{\"computed\":\"x\"}")
+			});
+		context.MatchedPrimitive = McpServerTool.Create(
+			typeof(FakeToolWithGetOnlyOnlyArgs).GetMethod(
+				nameof(FakeToolWithGetOnlyOnlyArgs.Execute), BindingFlags.Public | BindingFlags.Instance)!,
+			new FakeToolWithGetOnlyOnlyArgs());
+		context = WithRoutingAuthority(context);
+		McpRequestHandler<CallToolRequestParams, CallToolResult> handler =
+			McpToolErrorFilter.HandleCallToolErrors(
+				(_, _) => ValueTask.FromResult(new CallToolResult { IsError = false }));
+
+		// Act
+		CallToolResult result = await handler(context, CancellationToken.None);
+
+		// Assert
+		result.IsError.Should().BeTrue(because: "a JSON-encoded object argument is refused, not decoded");
+		string text = string.Join(" ", result.Content.OfType<TextContentBlock>().Select(b => b.Text));
+		text.Should().Contain("must be a JSON object",
+			because: "the precise shape error must not depend on whether any property is settable");
+		text.Should().NotContain("BytePositionInLine",
+			because: "falling back to the raw deserializer text is exactly the regression this pins");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("An unknown key forwarded to an [McpRecoversUnknownArguments] tool really does land in the args record's [JsonExtensionData] bag after REAL deserialization. This is the one branch that bypasses the refusal, so 'the tool will diagnose it' has to be proven by binding rather than by inspecting the raw JsonElement dictionary (ENG-95885 review round 5).")]
+	public void ForwardedUnknownKey_ShouldLandInTheExtensionDataBag_AfterRealDeserialization() {
+		// Arrange
+		CallToolRequestParams parameters = new() {
+			Name = "fake-recovering-tool",
+			Arguments = new Dictionary<string, JsonElement>(StringComparer.Ordinal) {
+				["some-alias"] = JsonSerializer.SerializeToElement("value")
+			}
+		};
+		MethodInfo method = typeof(FakeUnknownRecoveringTool).GetMethod(
+			nameof(FakeUnknownRecoveringTool.Execute), BindingFlags.Public | BindingFlags.Instance)!;
+
+		// Act
+		bool refused = McpToolErrorFilter.TryRefuseArguments(
+			parameters, method, out CallToolResult? _, out _);
+		JsonElement wrapper = parameters.Arguments!["args"];
+		FakeArgsWithNonContractProperties? bound =
+			JsonSerializer.Deserialize<FakeArgsWithNonContractProperties>(
+				wrapper.GetRawText(), Clio.BindingsModule.CreateMcpSerializerOptions());
+
+		// Assert
+		refused.Should().BeFalse(
+			because: "a tool that declares it recovers unknown keys receives the payload instead of a refusal");
+		bound!.ExtensionData.Should().NotBeNull(
+			because: "the unknown key has to reach the overflow bag, or the tool cannot diagnose anything");
+		bound.ExtensionData!.Should().ContainKey("some-alias",
+			because: "this is the promise the whole opt-out rests on: the key is DELIVERED to the tool, not "
+				+ "silently dropped by System.Text.Json");
+		bound.ExtensionData["some-alias"].GetString().Should().Be("value",
+			because: "the value must survive too, or the tool's rename hint would name a key with no value");
+	}
+
 	// --- ENG-95885 observability (review round 2, finding 3) ---
 	//
 	// The normalizer rewrites Arguments IN PLACE, so without a report captured before the rewrite every
@@ -1512,6 +1679,59 @@ public sealed class McpToolErrorFilterTests
 
 	public sealed class FakeToolWithGetOnlyArgs {
 		public string Execute(FakeArgsWithGetOnlyProperty args) => "ok";
+	}
+
+	// --- ENG-95885 round-5 property-shape fixtures ---
+
+	// A non-public setter WITHOUT [JsonInclude]: SetMethod is non-null, but the serializer will not use it.
+	// Deliberately PAIRED with a public-settable field: a record whose ONLY property is unsettable has an
+	// empty canonical set and hits the classifier's "no wire properties" bail before any unknown-key
+	// decision, so the single-property version of this fixture would test the bail, not the fix.
+	public sealed class FakeNonPublicSetterArgs {
+		[JsonPropertyName("name")]
+		public string? Name { get; set; }
+
+		[JsonPropertyName("hidden")]
+		public string? Hidden { get; private set; }
+	}
+
+	public sealed class FakeToolWithNonPublicSetterArgs {
+		public string Execute(FakeNonPublicSetterArgs args) => "ok";
+	}
+
+	// A non-public setter WITH [JsonInclude]: the serializer will use it, so a caller may supply it.
+	public sealed class FakeJsonIncludeArgs {
+		[JsonInclude]
+		[JsonPropertyName("included")]
+		public string? Included { get; private set; }
+	}
+
+	public sealed class FakeToolWithJsonIncludeArgs {
+		public string Execute(FakeJsonIncludeArgs args) => "ok";
+	}
+
+	// Hand-written immutable args: get-only property bound through the constructor parameter, the shape a
+	// record's init accessor hides. No setter at all, yet it binds.
+	public sealed class FakeConstructorBoundArgs {
+		public FakeConstructorBoundArgs(string? name) => Name = name;
+
+		[JsonPropertyName("name")]
+		public string? Name { get; }
+	}
+
+	public sealed class FakeToolWithConstructorBoundArgs {
+		public string Execute(FakeConstructorBoundArgs args) => "ok";
+	}
+
+	// A composite whose ONLY property is a computed get-only one, so the settable-name count is zero.
+	// Used to prove ExpectsJsonObject does not ride on that count.
+	public sealed class FakeGetOnlyOnlyArgs {
+		[JsonPropertyName("computed")]
+		public string Computed => "derived";
+	}
+
+	public sealed class FakeToolWithGetOnlyOnlyArgs {
+		public string Execute(FakeGetOnlyOnlyArgs args) => "ok";
 	}
 
 	public sealed record FakeTypedArgs(

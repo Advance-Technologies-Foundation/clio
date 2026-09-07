@@ -344,7 +344,7 @@ public class McpServerCommand(ModelContextProtocol.Server.McpServer server,
 		// sequence this method used to spell out inline now lives in McpAdvisoryLog, shared with
 		// McpToolErrorFilter.ReportArgumentShape. The behaviour is unchanged; the copy is not.
 		McpAdvisoryLog.Emit(
-			logger, message, isWarning: true, isMcpServerMode: Program.IsMcpServerMode);
+			logger, message, isWarning: true, mirrorToStandardError: Program.IsMcpServerMode);
 
 	/// <summary>
 	/// Repairs and installs the curated source before the MCP transport starts accepting requests.

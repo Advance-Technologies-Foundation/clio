@@ -328,10 +328,42 @@ public sealed class McpFlatArgumentNormalizationCompletenessTests
 
 	[Test]
 	[Category("Unit")]
+	[Description("The REAL clio-run tool method fails the single-composite trigger gate, so the normalizer provably never rewrites a clio-run payload and can never collide with ClioRunExecutor.RecoverWrappedCall. Round 1 swapped ClioRunTool's own predicates onto the shared assembly-identity check; the boundary tests cover that predicate in isolation and T5a covers a FAKE two-parameter tool, but nothing pinned the outcome on the actual tool (ENG-95885 review round 5).")]
+	public void TheRealClioRunToolMethod_ShouldFailTheSingleCompositeGate() {
+		// Arrange
+		MethodInfo? clioRun = typeof(Clio.Command.McpServer.Tools.ClioRunTool)
+			.GetMethods(BindingFlags.Public | BindingFlags.Instance | BindingFlags.Static)
+			.FirstOrDefault(method => method.GetCustomAttributes()
+				.Any(attribute => attribute.GetType().Name == "McpServerToolAttribute"));
+
+		// Assert — the fixture is only meaningful if it found the real tool method.
+		clioRun.Should().NotBeNull(
+			because: "this case exists to pin the REAL clio-run method; if it cannot be located the "
+				+ "assertion below would pass vacuously");
+
+		// Act
+		bool single = McpToolArgumentSupport.TryGetSingleCompositeParameter(
+			clioRun!, out ParameterInfo? composite);
+		int bindable = clioRun!.GetParameters()
+			.Count(McpToolArgumentSupport.IsBindableToolParameter);
+
+		// Assert
+		bindable.Should().BeGreaterThan(1,
+			because: "clio-run binds top-level keys BY PARAMETER NAME (command plus args), which is what "
+				+ "makes it ineligible for rewriting");
+		single.Should().BeFalse(
+			because: "if the normalizer ever claimed clio-run, it and RecoverWrappedCall would both rewrite "
+				+ "the same arguments object");
+		composite.Should().BeNull();
+	}
+
+	[Test]
+	[Category("Unit")]
 	[Description("EVERY canonical name the classifier will accept as a flat key actually BINDS: deserializing that one key into the real args record leaves the property set, not defaulted. A name that classifies as canonical but does not bind is the silent-default-success failure this PR exists to prevent, arriving through the canonical branch that skips the unknown-key refusal — so it is asserted against real System.Text.Json rather than against a reflection proxy for it (ENG-95885 review round 4).")]
 	public void EveryCanonicalName_ShouldActuallyBind_OnRealDeserialization() {
 		// Arrange
 		List<string> failures = [];
+		int probed = 0;
 		JsonSerializerOptions options = Clio.BindingsModule.CreateMcpSerializerOptions();
 
 		// Act
@@ -354,6 +386,7 @@ public sealed class McpFlatArgumentNormalizationCompletenessTests
 					continue;
 				}
 
+				probed++;
 				object? bound;
 				try {
 					bound = JsonSerializer.Deserialize(
@@ -380,6 +413,11 @@ public sealed class McpFlatArgumentNormalizationCompletenessTests
 		}
 
 		// Assert
+		// Non-vacuity first: BuildProbeJson skips a type it cannot synthesize a value for, so without a
+		// floor this whole case could pass having probed nothing at all (review round 5).
+		probed.Should().BeGreaterThan(20,
+			because: "the resident set carries dozens of canonical names; a collapse to a handful means the "
+				+ "probe silently stopped covering them rather than the invariant holding");
 		failures.Should().BeEmpty(
 			because: "a canonical name that does not bind turns a caller's valid-looking flat call into a "
 				+ $"defaulted record answered as success. Failures:{Environment.NewLine}"

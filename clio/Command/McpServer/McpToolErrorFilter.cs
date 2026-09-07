@@ -429,11 +429,10 @@ public static class McpToolErrorFilter
 			return false;
 		}
 
-		List<string> canonicalNames = GetJsonPropertyNames(wrapper.ParameterType);
-		if (canonicalNames.Count == 0) {
-			return false;
-		}
-
+		// Ordered BEFORE the canonical-name walk on purpose: synthesizing the empty wrapper needs the
+		// wrapper name and the declared capability, nothing else. While this sat after the
+		// canonicalNames.Count == 0 bail, a declared no-arguments tool whose record exposed no settable
+		// wire property would silently lose its {} accommodation (review round 5).
 		if (arguments is null || arguments.Count == 0) {
 			// Fail-closed: only a tool that has EXPLICITLY declared a natural no-arguments operation gets
 			// the empty wrapper synthesized for it. Every other tool keeps today's missing-parameter error.
@@ -442,6 +441,11 @@ public static class McpToolErrorFilter
 			}
 			report = new McpArgumentShapeReport(McpArgumentShapeOutcome.SynthesizedEmpty, []);
 			parameters.Arguments = BuildWrappedArguments(wrapperName, []);
+			return false;
+		}
+
+		List<string> canonicalNames = GetJsonPropertyNames(wrapper.ParameterType);
+		if (canonicalNames.Count == 0) {
 			return false;
 		}
 
@@ -535,8 +539,45 @@ public static class McpToolErrorFilter
 			$"mcp-argument-shape: tool='{toolName ?? UnknownToolName}' "
 				+ $"outcome={report.Outcome} keys=[{keys}]",
 			isWarning: IsRefusal(report.Outcome),
-			isMcpServerMode: Program.IsMcpServerMode);
+			mirrorToStandardError: Program.IsMcpServerMode
+				&& ShouldMirrorShapeOnce(toolName, report.Outcome));
 	}
+
+	/// <summary>
+	/// Rate gate for the stderr mirror: <c>true</c> the FIRST time a given tool reports a given outcome
+	/// in this process, <c>false</c> forever after.
+	/// </summary>
+	/// <remarks>
+	/// ENG-95885 review round 5. <c>Console.Error.WriteLine</c> is SYNCHRONOUS, and this change's own
+	/// premise makes <see cref="McpArgumentShapeOutcome.WrappedFlat"/> the DOMINANT outcome once it
+	/// ships — so the mirror sits on the hottest path of the call-tool pipeline, ahead of the tool. The
+	/// swallowed <c>IOException</c>/<c>ObjectDisposedException</c> cover a CLOSED sink; they do nothing
+	/// for a full-but-open pipe whose host-side reader is slow or not draining, where the write simply
+	/// BLOCKS and stalls the resident server on the common path.
+	/// <para>
+	/// Bounding the mirror to one line per (tool, outcome) keeps the diagnostic — which tools received
+	/// which shapes, the thing ENG-95885's closing measurement actually needs — while capping stderr
+	/// volume at the size of the tool surface instead of the request count. The LOGGER call is
+	/// deliberately left ungated: a file sink cannot block on a host pipe, so full per-call frequency is
+	/// still available to anyone who configures one.
+	/// </para>
+	/// <para>
+	/// This reduces the exposure rather than removing it: a pipe already full when the first line is
+	/// written can still block once. Fully removing it needs an async or timeout-bounded writer, which is
+	/// more machinery than an advisory line justifies today — recorded here so the trade is visible.
+	/// </para>
+	/// </remarks>
+	private static bool ShouldMirrorShapeOnce(string? toolName, McpArgumentShapeOutcome outcome) =>
+		MirroredShapeOutcomes.TryAdd((toolName ?? UnknownToolName, outcome), true);
+
+	/// <summary>
+	/// Tool+outcome pairs already mirrored to stderr in this process. Keyed on a TUPLE rather than a
+	/// concatenated string so there is no separator to pick, and therefore no way for a tool name
+	/// containing the separator to collide with a different pair.
+	/// </summary>
+	private static readonly
+		System.Collections.Concurrent.ConcurrentDictionary<(string ToolName, McpArgumentShapeOutcome Outcome), bool>
+		MirroredShapeOutcomes = new();
 
 	/// <summary>True for the two outcomes that refused the call rather than accommodating it.</summary>
 	private static bool IsRefusal(McpArgumentShapeOutcome outcome) =>
@@ -700,8 +741,13 @@ public static class McpToolErrorFilter
 		if (IsJsonObjectContract(type)) {
 			return true;
 		}
+		// Deliberately NOT GetJsonPropertyNames: that set is narrowed to names a caller may SUPPLY, and
+		// this question is only "does the tool bind this parameter from a JSON object?". Riding on the
+		// narrow set meant a composite whose properties were all get-only flipped this to false, turning
+		// OFF the precise "must be a JSON object, not a JSON string" error and restoring the raw
+		// BytePositionInLine text this change exists to replace (review round 5).
 		return McpToolArgumentSupport.IsCompositeArgsParameter(type)
-			&& GetJsonPropertyNames(type).Count > 0;
+			&& HasAnyWireProperty(type);
 	}
 
 	private static CallToolResult CreateJsonErrorResult(string message) {
@@ -907,6 +953,18 @@ public static class McpToolErrorFilter
 		return false;
 	}
 
+	/// <summary>
+	/// True when the type exposes at least one property on the wire, settable or not. Used only to decide
+	/// that a parameter is bound from a JSON OBJECT — never to decide what a caller may send.
+	/// </summary>
+	private static bool HasAnyWireProperty(Type type) {
+		if (!type.IsClass || type == typeof(string)) {
+			return false;
+		}
+		return type.GetProperties(BindingFlags.Public | BindingFlags.Instance)
+			.Any(IsNotExcludedFromTheWire);
+	}
+
 	private static List<string> GetJsonPropertyNames(Type type) {
 		if (!type.IsClass || type == typeof(string)) {
 			return [];
@@ -933,9 +991,61 @@ public static class McpToolErrorFilter
 	/// A record's positional / <c>init</c> properties all have a set accessor, so nothing shifts today.
 	/// </remarks>
 	private static bool IsWireContractProperty(PropertyInfo property) =>
-		property.SetMethod is not null
-		&& property.GetCustomAttribute<JsonExtensionDataAttribute>() is null
+		IsSettableByJson(property)
+		&& IsNotExcludedFromTheWire(property);
+
+	/// <summary>
+	/// True when the property is exposed on the wire at all — it is neither the overflow bag nor
+	/// permanently ignored. Says nothing about whether a caller can SUPPLY it.
+	/// </summary>
+	private static bool IsNotExcludedFromTheWire(PropertyInfo property) =>
+		property.GetCustomAttribute<JsonExtensionDataAttribute>() is null
 		&& property.GetCustomAttribute<JsonIgnoreAttribute>()?.Condition != JsonIgnoreCondition.Always;
+
+	/// <summary>
+	/// True when System.Text.Json can actually POPULATE this property from caller-supplied JSON.
+	/// </summary>
+	/// <remarks>
+	/// ENG-95885 review round 5. Round 4 used the bare <c>SetMethod is not null</c>, which is an
+	/// imprecise proxy in BOTH directions, and each direction fails in a different way:
+	/// <list type="bullet">
+	/// <item><description><b>Over-admitted</b> a <c>private set</c> / <c>internal set</c> property.
+	/// <see cref="PropertyInfo.SetMethod"/> is non-null for those, but System.Text.Json will not populate
+	/// a non-public setter unless the property also carries <see cref="JsonIncludeAttribute"/> — so the
+	/// key classified as canonical, got wrapped, and was silently dropped at bind time. That is the
+	/// silent-default-success class this whole change exists to remove, arriving through a property shape
+	/// the round-4 fix did not anticipate.</description></item>
+	/// <item><description><b>Under-admitted</b> a get-only property bound through a matching CONSTRUCTOR
+	/// PARAMETER — the ordinary shape of a hand-written immutable args type that does not use record
+	/// <c>init</c> accessors. Its <c>SetMethod</c> is null yet it binds perfectly, so excluding it would
+	/// have started REFUSING a flat call that previously worked. A false refusal is less dangerous than a
+	/// silent drop, but it is still a regression, and it was one this fix introduced.</description></item>
+	/// </list>
+	/// A record's positional and <c>init</c> properties have public set accessors, so nothing shifts for
+	/// any resident args record today; both edges are preventive. The constructor probe is
+	/// case-insensitive because that is how System.Text.Json matches a parameter to a property.
+	/// </remarks>
+	private static bool IsSettableByJson(PropertyInfo property) {
+		if (property.SetMethod is { IsPublic: true }) {
+			return true;
+		}
+		if (property.SetMethod is not null
+			&& property.GetCustomAttribute<JsonIncludeAttribute>() is not null) {
+			return true;
+		}
+		return IsBoundByConstructorParameter(property);
+	}
+
+	/// <summary>
+	/// True when the declaring type has a public constructor parameter whose name matches this property,
+	/// which is how System.Text.Json populates an immutable member that has no setter at all.
+	/// </summary>
+	private static bool IsBoundByConstructorParameter(PropertyInfo property) =>
+		property.DeclaringType is { } owner
+		&& owner.GetConstructors()
+			.Any(constructor => constructor.GetParameters()
+				.Any(parameter => string.Equals(
+					parameter.Name, property.Name, StringComparison.OrdinalIgnoreCase)));
 
 	private static string BuildMissingWrapperMessage(
 		string? toolName, string wrapperName, List<string> allProperties, List<string> matchedKeys) {

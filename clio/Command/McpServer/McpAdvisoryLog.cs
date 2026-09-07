@@ -24,7 +24,7 @@ namespace Clio.Command.McpServer;
 /// kept as well so a configured file sink still receives the line.
 /// </para>
 /// <para>
-/// <paramref name="isMcpServerMode"/> and <paramref name="writeStandardError"/> are parameters rather
+/// <paramref name="mirrorToStandardError"/> and <paramref name="writeStandardError"/> are parameters rather
 /// than reads of <c>Program.IsMcpServerMode</c> and <see cref="Console.Error"/> for one reason: the
 /// stderr mirror is the load-bearing half of the delivery and was previously unreachable from a test,
 /// because an in-process test is never in MCP server mode. Passing them in makes both branches
@@ -46,8 +46,10 @@ internal static class McpAdvisoryLog {
 	/// can forget them.</param>
 	/// <param name="isWarning"><c>true</c> emits at warning level and tags the mirror <c>[WAR]</c>;
 	/// <c>false</c> emits at info level and tags it <c>[INF]</c>.</param>
-	/// <param name="isMcpServerMode">Whether the process is serving the MCP stdio transport. Pass
-	/// <c>Program.IsMcpServerMode</c> in production.</param>
+	/// <param name="mirrorToStandardError">Whether to also write the line to standard error. Production
+	/// passes <c>Program.IsMcpServerMode</c>, optionally ANDed with a caller-owned rate gate — see
+	/// <c>McpToolErrorFilter.ReportArgumentShape</c>, which bounds the mirror because an undrained host
+	/// pipe would otherwise block this synchronous write on its hottest path.</param>
 	/// <param name="writeStandardError">Standard-error writer; defaults to
 	/// <see cref="Console.Error"/>. Overridden by tests to observe the mirror.</param>
 	/// <returns>The redacted, length-bounded text that was emitted, so a caller can assert on or reuse
@@ -56,7 +58,7 @@ internal static class McpAdvisoryLog {
 		ILogger? logger,
 		string message,
 		bool isWarning,
-		bool isMcpServerMode,
+		bool mirrorToStandardError,
 		Action<string>? writeStandardError = null) {
 		string safeMessage = TextUtilities.SanitizeForDisplay(
 			SensitiveErrorTextRedactor.Redact(message ?? string.Empty),
@@ -68,7 +70,7 @@ internal static class McpAdvisoryLog {
 			logger?.WriteInfo(safeMessage);
 		}
 
-		if (!isMcpServerMode) {
+		if (!mirrorToStandardError) {
 			return safeMessage;
 		}
 

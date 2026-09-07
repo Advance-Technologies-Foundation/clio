@@ -35,7 +35,7 @@ public sealed class McpAdvisoryLogTests {
 
 		// Act
 		McpAdvisoryLog.Emit(logger, "plain message", isWarning: false,
-			isMcpServerMode: false, writeStandardError: stderr.Add);
+			mirrorToStandardError: false, writeStandardError: stderr.Add);
 
 		// Assert
 		stderr.Should().BeEmpty(
@@ -53,7 +53,7 @@ public sealed class McpAdvisoryLogTests {
 
 		// Act
 		McpAdvisoryLog.Emit(logger, "shape line", isWarning,
-			isMcpServerMode: true, writeStandardError: stderr.Add);
+			mirrorToStandardError: true, writeStandardError: stderr.Add);
 
 		// Assert
 		stderr.Should().ContainSingle(
@@ -83,7 +83,7 @@ public sealed class McpAdvisoryLogTests {
 
 		// Act
 		Action emit = () => McpAdvisoryLog.Emit(logger, "shape line", isWarning: true,
-			isMcpServerMode: true, writeStandardError: ThrowingWriter);
+			mirrorToStandardError: true, writeStandardError: ThrowingWriter);
 
 		// Assert
 		emit.Should().NotThrow(
@@ -102,7 +102,7 @@ public sealed class McpAdvisoryLogTests {
 
 		// Act
 		Action emit = () => McpAdvisoryLog.Emit(logger, "shape line", isWarning: false,
-			isMcpServerMode: true, writeStandardError: ThrowingWriter);
+			mirrorToStandardError: true, writeStandardError: ThrowingWriter);
 
 		// Assert
 		emit.Should().Throw<InvalidOperationException>(
@@ -118,7 +118,7 @@ public sealed class McpAdvisoryLogTests {
 
 		// Act
 		Action emit = () => McpAdvisoryLog.Emit(logger: null, "shape line", isWarning: false,
-			isMcpServerMode: true, writeStandardError: stderr.Add);
+			mirrorToStandardError: true, writeStandardError: stderr.Add);
 
 		// Assert
 		emit.Should().NotThrow(because: "a missing logger is a normal state for a service-located sink");
@@ -136,7 +136,7 @@ public sealed class McpAdvisoryLogTests {
 
 		// Act
 		string emitted = McpAdvisoryLog.Emit(logger: null, overlong, isWarning: false,
-			isMcpServerMode: true, writeStandardError: stderr.Add);
+			mirrorToStandardError: true, writeStandardError: stderr.Add);
 
 		// Assert
 		emitted.Length.Should().BeLessThan(overlong.Length,
@@ -154,7 +154,7 @@ public sealed class McpAdvisoryLogTests {
 
 		// Act
 		string emitted = McpAdvisoryLog.Emit(logger: null, "shape line", isWarning: true,
-			isMcpServerMode: true, writeStandardError: stderr.Add);
+			mirrorToStandardError: true, writeStandardError: stderr.Add);
 
 		// Assert
 		stderr.Should().ContainSingle().Which.Should().Be($"[WAR] {emitted}",
