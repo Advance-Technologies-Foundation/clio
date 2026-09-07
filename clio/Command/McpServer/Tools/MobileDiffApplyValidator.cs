@@ -123,9 +123,15 @@ internal static class MobileDiffApplyValidator {
 			new JsonDiffApplier().Apply(new JArray(), operations);
 		} catch (JsonDiffApplierException ex) {
 			result.IsValid = false;
+			// The differ's own message names the parameter or element at fault; the remedy line states the
+			// two invariants rather than guessing which one fired. It used to say only "each insert targets a
+			// slot the parent declares", which sent a reader hunting through inserts when the actual cause was
+			// a merge with no `values` — a remedy that reads the same for every cause is worse than none.
 			result.Errors.Add(
 				$"'{ViewConfigDiff}' cannot be applied by the Creatio differ: {ex.Message}. " +
-				"Fix the diff so each insert targets a slot (propertyName) the parent declares.");
+				"Every operation must carry the parameters the applier requires for its own operation kind " +
+				"(a merge needs values), and every insert's parentName/propertyName must resolve to a slot " +
+				"the parent declares.");
 		} catch (Exception) {
 			// Malformed diff shapes (non-object entries, wrong value kinds) are already reported by the
 			// structural mobile validators; only the faithful differ exceptions above are actionable here.

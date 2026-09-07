@@ -187,7 +187,9 @@
     "workplaces"
   ],
   "featureGatedNames": [
+    "creatio.freedom-page-mobile-reason-codes",
     "creatio.freedom-page-web-to-mobile-conversion",
+    "freedom-page-mobile-reason-codes",
     "freedom-page-web-to-mobile-conversion"
   ]
 }

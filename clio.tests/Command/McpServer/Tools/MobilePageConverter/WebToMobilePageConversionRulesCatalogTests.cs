@@ -154,7 +154,24 @@ public sealed class WebToMobilePageConversionRulesCatalogTests {
 	}
 
 	[Test]
-	[Description("Every override rule carries ONLY data: a component type, the values to stamp and whether they merge. No rule may carry caller-facing prose, because the rules file is resolved at runtime and the guide's constraints/nextSteps are the caller's instruction channel.")]
+	[Description("ENG-95827: every bundled excludedComponents filter names both a type and a parentType. A filter missing either is UNUSABLE — nothing to match, or nowhere to look — so the pass skips it, and the exclusion silently stops running. The rules file is fetched at run time, so a typo in a published rule (parenttype) would otherwise disable an exclusion with no signal: this test makes the typo fail at AUTHORING time, in the repository that owns the file, instead of being reported to a caller who cannot fix it. It is the sibling of the componentPropertyOverrides filter check below, which already covered the other half.")]
+	public void LoadBundled_ExcludedComponentFiltersNameTypeAndParentType() {
+		// Arrange & Act
+		WebToMobilePageConversionRules rules = WebToMobilePageConversionRulesCatalog.LoadBundled();
+
+		// Assert
+		rules.ExcludedComponents.Should().OnlyContain(g => g.Filters != null && g.Filters.Count > 0,
+			because: "a group with no filters excludes nothing, so it is dead configuration rather than a rule");
+		rules.ExcludedComponents
+			.SelectMany(g => g.Filters ?? [])
+			.Should().OnlyContain(f => !string.IsNullOrWhiteSpace(f.Type) && !string.IsNullOrWhiteSpace(f.ParentType),
+				because: "both are required for the filter to run at all — type is what is banned and parentType "
+					+ "is the host it is banned from; a filter missing either is discarded and its exclusion "
+					+ "never fires, which on a real page means the banned component ships with no drop entry");
+	}
+
+	[Test]
+	[Description("Every override rule carries ONLY data: a component type, the values to stamp and whether they merge. No rule may carry caller-facing prose, because the rules file is resolved at runtime and prose in the guide is not the caller's instruction channel — the standing rules live in the guidance article. The filters assertion is also the authoring-time guard for a typo that would otherwise stop a standard from running silently (ENG-95827).")]
 	public void LoadBundled_OverridesCarryDataOnly() {
 		// Arrange & Act
 		WebToMobilePageConversionRules rules = WebToMobilePageConversionRulesCatalog.LoadBundled();

@@ -1,5 +1,6 @@
-{
+﻿{
   "version": "latest",
+  "defaultMobileTemplate": "BaseMobilePageTemplate",
   "templates": [
     {
       "web": "ListPageV3Template",
