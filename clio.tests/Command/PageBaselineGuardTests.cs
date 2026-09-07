@@ -308,6 +308,60 @@ public sealed class PageBaselineGuardTests {
 			"because the trace has to name what diverged");
 	}
 
+	[Test]
+	[Description("TryArm_ShouldWarn_WhenThePinIsUncorroboratedAndNoBaselineExists — the pin GOVERNS the save whatever TryArm reports (TryCheckForExternalModification gates on ExpectedChecksum alone and never consults armed), so a pinned overwrite reached the server with no trace at all whenever no local baseline was found for the anchor (PR #1356 gate-3 review).")]
+	public void TryArm_ShouldWarn_WhenThePinIsUncorroboratedAndNoBaselineExists() {
+		// Arrange — no meta.json on disk, exactly as a fresh workspace or a different cwd produces.
+		PageUpdateOptions options = CreateOptions();
+		options.ExpectedChecksum = "caller-pinned-checksum";
+
+		// Act
+		(_, bool armed, string warning) = _guard.TryArm(options, OutputDirectory);
+
+		// Assert
+		armed.Should().BeFalse(because: "with no on-disk baseline there is still nothing to move forward");
+		options.ExpectedChecksum.Should().Be("caller-pinned-checksum",
+			because: "the trace must not change which checksum is authoritative");
+		warning.Should().NotBeNull(
+			because: "a pinned overwrite that could not be corroborated locally must not be byte-identical to a clean save");
+		warning.Should().Contain("could not be corroborated",
+			because: "the trace has to say that the pin came from the caller and nothing local backs it");
+	}
+
+	[Test]
+	[Description("TryArm_ShouldWarn_WhenThePinIsUncorroboratedAndTheBaselineEnvironmentDiffers — an update-page invoked with an explicit --uri/--login, or against another environment name, cannot satisfy MatchesEnvironment, which is the second documented-normal way the pinned path used to leave no trace.")]
+	public void TryArm_ShouldWarn_WhenThePinIsUncorroboratedAndTheBaselineEnvironmentDiffers() {
+		// Arrange
+		AddMetaWithBaseline("other-env", "on-disk-checksum");
+		PageUpdateOptions options = CreateOptions("dev");
+		options.ExpectedChecksum = "caller-pinned-checksum";
+
+		// Act
+		(_, bool armed, string warning) = _guard.TryArm(options, OutputDirectory);
+
+		// Assert
+		armed.Should().BeFalse(because: "a baseline captured elsewhere must not be moved forward by this save");
+		warning.Should().NotBeNull(
+			because: "the pin still governs the comparison, so the save must carry a machine-readable trace");
+		warning.Should().Contain("could not be corroborated",
+			because: "the trace has to state that no local baseline backs the caller's pin");
+	}
+
+	[Test]
+	[Description("TryArm_ShouldNotWarnAboutCorroboration_WhenNoChecksumWasPinned — the trace is about a CALLER pin; an ordinary unpinned save with no baseline is not an overwrite of anything and must stay quiet.")]
+	public void TryArm_ShouldNotWarnAboutCorroboration_WhenNoChecksumWasPinned() {
+		// Arrange — no meta.json on disk and no pin.
+		PageUpdateOptions options = CreateOptions();
+
+		// Act
+		(_, bool armed, string warning) = _guard.TryArm(options, OutputDirectory);
+
+		// Assert
+		armed.Should().BeFalse(because: "there is no baseline to arm from");
+		(warning ?? string.Empty).Should().NotContain("could not be corroborated",
+			because: "warning on every first save of a page would make the trace worthless noise");
+	}
+
 	// ---------------------------------------------------------------------------------------------
 	// ENG-95262 H-1: every meta.json touch runs under the schema's interprocess sentinel, and the
 	// sentinel is released before clio talks to Creatio.

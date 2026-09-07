@@ -40,6 +40,13 @@ answers that with "re-run get-page and retry", which re-pins the same checksum a
 safe (a write is blocked, never corrupted), but the only exit is the `force` reflex this record exists
 to remove. Both are tracked for their own change; see PR #1356's review threads.
 
+**A pinned save always leaves a trace.** `TryArm` warns whenever the caller pinned a checksum and no
+on-disk baseline corroborates it - both when the baseline diverges and when none was matched at all
+for the anchor and environment. The second case is not exotic: an explicit `output-directory`, or an
+`--uri`/`--login` invocation that cannot satisfy `MatchesEnvironment`, both reach it, and the pin
+still governs the comparison there because `TryCheckForExternalModification` gates on
+`ExpectedChecksum` alone and never consults the armed flag.
+
 **Why it is this way** — the on-disk baseline exists to protect plain CLI flows that have no way to
 carry state between two process invocations. It is a fallback, not the truth.
 

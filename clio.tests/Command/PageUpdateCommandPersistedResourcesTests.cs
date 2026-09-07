@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using System.Linq;
 using Clio.Command;
 using Clio.Common;
@@ -173,5 +174,49 @@ public sealed class PageUpdateCommandPersistedResourcesTests {
 		response.Success.Should().BeTrue();
 		rescuedSaveGetSchemaCalls.Should().Be(cleanSaveGetSchemaCalls + 1,
 			because: "the rescue is one cached GetSchema on the failure path - one per validator, or one per key, would multiply the cost of every later save of a page with stored resources");
+	}
+
+	[Test]
+	[Description("A CLEAN TryResolveContext refusal is a COMPLETED read attempt (PR #1356 review): leaving the tri-state carrier at 'not read yet' let the second gate re-resolve the hierarchy and judge the same request from a different snapshot, and swallowing the failure left the caller with the misleading 'neither auto-provided nor registered' message issue #1320 opened with.")]
+	public void TryGetPersistedResourceKeys_ShouldMarkTheCarrierAndWarn_WhenContextResolutionFailsCleanly() {
+		// Arrange - SelectQuery answers successfully with NO rows, so the resolution fails cleanly
+		// rather than throwing, which is the exit the catch block never sees.
+		_applicationClient.ExecutePostRequest(
+				SelectQueryUrl, Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+			.Returns("""{"success": true, "rows": []}""");
+		PageUpdateOptions options = CreateOptions(BuildPersistedResourcePageBody());
+
+		// Act
+		IReadOnlySet<string> keys = _command.TryGetPersistedResourceKeys(options);
+
+		// Assert
+		keys.Should().BeEmpty(
+			because: "an unreadable schema must restore the previous, stricter verdict rather than let a body through");
+		options.PersistedResourceKeysRead.Should().BeTrue(
+			because: "the read attempt completed - recording it is what stops the second gate re-resolving from a fresh snapshot");
+		options.PersistedResourceKeysSnapshot.Should().BeNull(
+			because: "read-but-nothing-available is stored as true plus a null snapshot");
+		_logger.Received().WriteWarning(Arg.Is<string>(message =>
+			message.Contains("Persisted resource keys could not be read")));
+	}
+
+	[Test]
+	[Description("Non-vacuity twin for the carrier: once a clean resolution failure is recorded, a second call answers from the carrier and issues no further remote call - the memoization the PersistedResourceKeysRead remarks promise, on the failure path too.")]
+	public void TryGetPersistedResourceKeys_ShouldNotResolveAgain_WhenACleanFailureWasAlreadyRecorded() {
+		// Arrange
+		_applicationClient.ExecutePostRequest(
+				SelectQueryUrl, Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+			.Returns("""{"success": true, "rows": []}""");
+		PageUpdateOptions options = CreateOptions(BuildPersistedResourcePageBody());
+		_command.TryGetPersistedResourceKeys(options);
+		_applicationClient.ClearReceivedCalls();
+
+		// Act
+		IReadOnlySet<string> keys = _command.TryGetPersistedResourceKeys(options);
+
+		// Assert
+		keys.Should().BeEmpty(because: "the recorded answer is that no keys were available");
+		_applicationClient.DidNotReceive().ExecutePostRequest(
+			SelectQueryUrl, Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>());
 	}
 }

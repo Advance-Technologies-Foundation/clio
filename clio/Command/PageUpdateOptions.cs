@@ -129,11 +129,16 @@
 		/// </summary>
 		/// <remarks>
 		/// The label-resource rescue runs at TWO points in one logical save - the MCP pre-execution gate
-		/// (<c>PageUpdateTool.ValidateBody</c>) and the command-level gate - and each one costs a context
-		/// resolution plus a full <c>GetSchema</c>. Recording the first read here removes the second and
-		/// pins both gates to ONE snapshot, so they cannot reach different verdicts because the schema
-		/// moved between two reads. <c>false</c> plus a <c>null</c> snapshot means "not read yet";
-		/// <c>true</c> plus <c>null</c> means "read, and the keys were unavailable".
+		/// (<c>PageUpdateTool.ValidateBody</c>) and the command-level gate. Recording the first read here
+		/// removes the second <c>GetSchema</c> and pins both gates to ONE snapshot, so they cannot reach
+		/// different verdicts because the schema moved between two reads. <c>false</c> plus a <c>null</c>
+		/// snapshot means "not read yet"; <c>true</c> plus <c>null</c> means "read, and the keys were
+		/// unavailable".
+		/// <para>
+		/// What is memoized is the <c>GetSchema</c> read ONLY. The context resolution is not: both
+		/// <c>PageUpdateTool.TryGetPersistedResourceKeys</c> and the command gate call
+		/// <c>TryResolveContext</c> themselves, so a rescued save still pays that resolution twice.
+		/// </para>
 		/// </remarks>
 		internal bool PersistedResourceKeysRead { get; set; }
 
@@ -283,9 +288,19 @@
 				return options.PersistedResourceKeysSnapshot ?? NoPersistedResourceKeys;
 			}
 			try {
-				return (TryResolveContext(options, out EditableSchemaContext context, out _)
-					? LoadPersistedResourceKeys(options, context)
-					: null) ?? NoPersistedResourceKeys;
+				if (!TryResolveContext(options, out EditableSchemaContext context,
+					out PageUpdateResponse resolutionFailure)) {
+					// A CLEAN resolution failure is still a COMPLETED read attempt. Leaving the carrier at
+					// "not read yet" made the command-level gate re-resolve the whole hierarchy, so the two
+					// gates could judge the same request from two different snapshots - the drift the shared
+					// entry point exists to close. It also produced no warning at all, leaving the caller with
+					// the misleading "resource is neither auto-provided nor registered" (issue #1320).
+					LogPersistedResourceKeyFailure(resolutionFailure?.Error);
+					options.PersistedResourceKeysRead = true;
+					options.PersistedResourceKeysSnapshot = null;
+					return NoPersistedResourceKeys;
+				}
+				return LoadPersistedResourceKeys(options, context) ?? NoPersistedResourceKeys;
 			} catch (Exception ex) when (ex is not OperationCanceledException) {
 				LogPersistedResourceKeyFailure(ex);
 				options.PersistedResourceKeysRead = true;
@@ -336,9 +351,16 @@
 		/// i.e. exactly the misleading cause issue #1320 opened with, one layer down.
 		/// </remarks>
 		private void LogPersistedResourceKeyFailure(Exception exception) =>
+			LogPersistedResourceKeyFailure(exception.Message);
+
+		/// <summary>
+		/// Warns that the persisted-key read did not produce keys. Reached from BOTH exits that can fail:
+		/// a thrown exception and a clean <c>TryResolveContext</c> refusal.
+		/// </summary>
+		private void LogPersistedResourceKeyFailure(string detail) =>
 			_logger?.WriteWarning(SensitiveErrorTextRedactor.Redact(
 				"Persisted resource keys could not be read; the stricter label-resource verdict stands. "
-				+ exception.Message));
+				+ (detail ?? "The target schema context could not be resolved.")));
 
 		/// <summary>
 		/// Builds the user-facing conflict guidance shown when an external modification is detected.

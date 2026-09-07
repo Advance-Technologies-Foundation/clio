@@ -118,6 +118,19 @@ public sealed class PageBaselineGuard : IPageBaselineGuard {
 			_fileSystem, _fileGate, metaFilePath, out string readWarning);
 		string warning = readWarning ?? resolveWarning;
 		if (baseline is null || !PageBaselineStore.MatchesEnvironment(baseline, options.Environment, options.Uri)) {
+			if (callerPinnedChecksum) {
+				// The pin still GOVERNS the save on this path: TryCheckForExternalModification gates on
+				// ExpectedChecksum alone and never consults Armed. So a pinned overwrite used to reach the
+				// server with no trace at all whenever no local baseline matched - and the two commonest
+				// causes are documented-normal, not exotic: an explicit output-directory anchor, and an
+				// --uri/--login invocation that cannot satisfy MatchesEnvironment. "Uncorroborated" is a
+				// weaker statement than "divergent", so the wording differs from the block below, but
+				// staying silent is exactly the invisible bypass this guard exists to expose.
+				warning ??= $"The checksum pinned for '{options.SchemaName}' governs this save but could not be "
+					+ "corroborated locally: no .clio-pages baseline was found for this anchor and environment. "
+					+ "If it was copied out of a conflict response rather than from a fresh get-page, this save "
+					+ "overwrites the change that caused the conflict - re-read the page and merge before saving.";
+			}
 			return (metaFilePath, false, warning);
 		}
 		// The schema-identity half of the baseline is armed on BOTH paths, with ONE exception: the
