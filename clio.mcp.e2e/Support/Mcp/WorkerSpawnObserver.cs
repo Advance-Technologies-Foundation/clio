@@ -97,56 +97,6 @@ internal sealed class WorkerSpawnObserver : IAsyncDisposable {
 	internal IReadOnlyList<ObservedWorker> ReadCurrent() => ReadRegistry(out _);
 
 	/// <summary>
-	/// Polls the registry until it records no worker, or until <paramref name="timeout"/> elapses, and
-	/// returns the LAST snapshot read.
-	/// </summary>
-	/// <remarks>
-	/// <para>
-	/// The registry drains EVENTUALLY — not by the time a call answers, which is what
-	/// <see cref="ReadCurrent"/> alone assumed. <c>StickyWorkerRegistry.TryReach</c> removes the entry
-	/// from memory synchronously but hands the actual release to <c>ReleaseInBackground</c>, an
-	/// UNAWAITED <c>Task.Run</c>, and the registry-file removal is the last link of that chain:
-	/// <c>await Session.DisposeAsync()</c> → <c>await StandardError.StopAsync()</c> →
-	/// <c>Lease.Dispose()</c> → <c>WorkerProcessSupervisor.ReleaseLease</c> → <c>UnregisterWorker</c> →
-	/// a rewrite of <c>workers.json</c> under an interprocess lock. For the STALLED call that first
-	/// await is a session whose backend never answered, so it is the slowest release in the run — which
-	/// is exactly why the single read failed intermittently, and always on the stalled call's worker.
-	/// </para>
-	/// <para>
-	/// The timeout is what still tells "slow to reap" apart from "leaked": a registry that never drains
-	/// returns a non-empty snapshot and fails the assertion, same as before.
-	/// </para>
-	/// <para>
-	/// Waiting on the registry is also the STRONGER condition, so it is the right thing to wait on:
-	/// <c>ReleaseLease</c> calls <c>UnregisterWorker</c> only AFTER the process has exited, so a drained
-	/// registry implies the processes are already gone — never the other way round.
-	/// </para>
-	/// </remarks>
-	/// <param name="timeout">How long to keep waiting before reporting what is still recorded.</param>
-	internal IReadOnlyList<ObservedWorker> WaitUntilRegistryDrains(TimeSpan timeout) {
-		Stopwatch elapsed = Stopwatch.StartNew();
-		IReadOnlyList<ObservedWorker> current = ReadCurrent();
-		while (current.Count > 0 && elapsed.Elapsed < timeout) {
-			Thread.Sleep(PollInterval);
-			current = ReadCurrent();
-		}
-		LastDrainWait = elapsed.Elapsed;
-		return current;
-	}
-
-	/// <summary>
-	/// Gets how long the last <see cref="WaitUntilRegistryDrains"/> actually had to wait.
-	/// </summary>
-	/// <remarks>
-	/// Reported in the assertion diagnostics on purpose. This race does not reproduce on a developer
-	/// workstation — the registry drains there before the first read, which is why a single read survived
-	/// review and only failed on loaded CI agents. Recording the real wait means the next CI run says how
-	/// close it came instead of leaving the next person to re-derive the whole chain, and it is the only
-	/// way to notice this creeping back toward the timeout.
-	/// </remarks>
-	internal TimeSpan LastDrainWait { get; private set; }
-
-	/// <summary>
 	/// Gets registry reads that failed for a reason other than the file being absent or half-written. A
 	/// broken reader would make every observation empty — the same shape as "no worker ever ran" — so the
 	/// instrument reports its own failures rather than letting them read as a result.
