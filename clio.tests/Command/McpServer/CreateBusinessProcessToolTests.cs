@@ -133,6 +133,45 @@ public class CreateBusinessProcessToolTests {
 	}
 
 	[Test]
+	[Description("Forwards a descriptor that contains an openEditPage element with its full block verbatim - the tool is an opaque pass-through, so the new element type and every field (page, recordType, editMode, defaultValues, recordId, recommendation, hint, performer, logActivity, resultsByColumn, completion) rides through to the command byte-for-byte. EDIT mode with a record is used deliberately: the add-mode path is what every describer fixture already pins, so the mode that carries a record is the one whose pass-through was unproven.")]
+	[Category("Unit")]
+	public void CreateBusinessProcess_Should_Forward_OpenEditPage_Descriptor_Verbatim() {
+		// Arrange
+		ConsoleLogger.Instance.ClearMessages();
+		const string openEditPageDescriptor =
+			"{\"name\":\"UsrOpenEditPageProc\",\"packageName\":\"Custom\",\"elements\":[{\"name\":\"OpenPage1\","
+			+ "\"type\":\"openEditPage\",\"openEditPage\":{\"page\":\"AccountPageV2\",\"editMode\":\"edit\","
+			+ "\"recordId\":{\"processParameter\":\"AccountIdParameter\"},"
+			+ "\"recommendation\":\"Check the account details\",\"hint\":\"Confirm the address\","
+			+ "\"performer\":{\"type\":\"role\",\"role\":\"All employees\"},"
+			+ "\"logActivity\":{\"enabled\":false},"
+			+ "\"completion\":{\"mode\":\"onSave\"}}}],"
+			+ "\"flows\":[],"
+			+ "\"parameters\":[{\"name\":\"AccountIdParameter\",\"type\":\"Lookup\",\"direction\":\"In\"}]}";
+		FakeCreateBusinessProcessCommand defaultCommand = new();
+		FakeCreateBusinessProcessCommand resolvedCommand = new();
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		commandResolver.Resolve<CreateBusinessProcessCommand>(Arg.Any<CreateBusinessProcessOptions>())
+			.Returns(resolvedCommand);
+		CreateBusinessProcessTool tool = new(defaultCommand, ConsoleLogger.Instance, commandResolver);
+
+		// Act
+		CommandExecutionResult result = tool.CreateBusinessProcess(
+			new CreateBusinessProcessArgs("docker_fix2", openEditPageDescriptor, null));
+
+		// Assert
+		result.ExitCode.Should().Be(0,
+			because: "a valid openEditPage descriptor must be forwarded for the requested environment");
+		resolvedCommand.CapturedOptions.Should().NotBeNull(
+			because: "the resolved command should receive the forwarded openEditPage descriptor");
+		resolvedCommand.CapturedOptions!.DescriptorJson.Should().Be(openEditPageDescriptor,
+			because: "the openEditPage element and its whole block must pass through byte-for-byte - clio validates "
+				+ "none of it and the server owns every refusal, so a tool that reshaped the block would change "
+				+ "which refusals the caller sees");
+		ConsoleLogger.Instance.ClearMessages();
+	}
+
+	[Test]
 	[Description("Returns a failed result without resolving any command when the environment name is empty.")]
 	[Category("Unit")]
 	public void CreateBusinessProcess_Should_Fail_When_Environment_Is_Empty() {

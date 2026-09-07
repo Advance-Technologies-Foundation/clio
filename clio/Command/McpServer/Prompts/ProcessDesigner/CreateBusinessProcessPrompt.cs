@@ -37,10 +37,52 @@ public static class CreateBusinessProcessPrompt {
 		 columns change, and/or a `filter` to fire only for matching records. To send an email, add a `sendEmail`
 		 element with an `email` block — `mode` (auto/manual), `sender`, `to`/`cc`/`bcc` recipients, `subject`, the
 		 HTML custom-message `body` (`bodyFormat` `html` only), `importance`, `ignoreErrors`, and a manual-mode
-		 `performer`; email TEMPLATES are not supported (custom message only). To put PROCESS DATA in the body use the
+		 `performer`; email TEMPLATES are not supported (custom message only). To route a record for sign-off, add an
+		 `approval` element with an `approval` block — the `object` and the `recordId` under approval, the `approver`
+		 (a nested object taking `type` user|manager|role plus that type's `employee` or `role`), `allowDelegation`,
+		 and the two notifications (`notifyApprover` / `notifyAuthor`, each a nested object taking `emailTemplate`,
+		 the author one also taking a nested `recipient`); use
+		 that dedicated type rather than a generic `userTask` named ApprovalUserTask, which cannot carry any of it.
+		 A notification switched on without a template, or `notifyAuthor` without a recipient, is refused — the
+		 runtime would report the element as configured and never send. To put PROCESS DATA in the body use the
 		 by-name macros the server resolves for you — `[[param:Name]]`, `[[element:Element.Output]]`, or
 		 `[[element:Element.Output.Column]]`; the exact parameter/element names come from the `parameters[]` / `elements[]` you declare in THIS same descriptor
-		 — there is no process to `describe-business-process` yet (that is the modify path); an unknown name is rejected, and column names are case-sensitive. Confirm the target package with the
+		 — there is no process to `describe-business-process` yet (that is the modify path); an unknown name is rejected, and column names are case-sensitive.
+		 To have a USER fill in a record on its edit page, add an `openEditPage` element with an `openEditPage` block —
+		 that is the DEFAULT whenever someone fills in COLUMNS of a record. Of the two other page elements,
+		 Auto-generated page is not buildable here, so choosing it for such a request produces nothing; Pre-configured
+		 page IS buildable (below) and is the right choice only when the user is to work on a SPECIFIC existing Freedom
+		 UI page rather than on a record's columns. Decide the element yourself; ask about the object or column if unsure, never about which
+		 BPMN element to use.
+		 Pick the page FIRST — the target object and, for a typed object, the record type are derived from it: call
+		 `list-entity-client-schemas` for the object, union its `sections[]` and `editPages[]`, and prefer an entry
+		 whose `kind` is `freedom` (state that preference conditionally — an environment with the 8.x-pages feature off
+		 offers Classic pages only). Only a page registered on a SECTION can be opened; anything else is refused,
+		 because the designer resolves the stored page against that same list and would otherwise render its page field
+		 empty and lose the element's configuration on the next human save. `recordType` is an optional CHECK — the designer offers one
+		 entry per page, so the type follows the page; pass it only to assert which registration you expect. Then choose `editMode`: `add` takes `defaultValues` (the same entry shape a Modify data
+		 element's `values` use), `edit` requires `recordId`; the two are mutually exclusive in storage, so supplying
+		 the other mode's field is refused. `completion.mode` `onConditions` requires the element's `filter` in the
+		 same request and vice versa — the runtime gates the filter on the mode, so a mismatched pair would run green
+		 and be silently ignored. Add `performer` (`type` `user`/`manager`/`role`, a `contact` formula or a `role`
+		 name/id, and `showPage`) to say who fills the page in; omitting it leaves the step unassigned. Add
+		 `logActivity` to make the step create an Activity record — each of `startIn`/`duration`/`remindIn` is a
+		 `value`+`unit` pair and the unit is required with a non-zero value, because the platform stores the number
+		 and the unit separately and a number alone silently keeps the old unit.
+		 To hand a user a purpose-built page and resume when they press a completing button, add a
+		 `preconfiguredPage` element with a `preconfiguredPage` block. Its `page` must already exist as a
+		 **Freedom UI** page — the server never creates one, and it refuses both an unknown page and a Classic
+		 UI page — so when nothing suitable exists, propose a page to the user and create it through the normal
+		 `create-page` flow FIRST. At least one completing `button` is REQUIRED and is not defaulted for you:
+		 an element without one saves green and then hangs forever at run time. The page's buttons and data
+		 sources are FACTS you must read with `get-process-page-facts` and pass through unchanged — a page
+		 inherits its buttons from its template chain, so the server cannot see them. Both are CHECKED and a
+		 name the page does not have is REFUSED: an invented button raises a tag nothing matches, and an
+		 invented data source makes the completing button abandon the completion, leaving the page open with
+		 no error and the instance stuck at `Running`.
+		 A SUCCESSFUL build can still report caveats, and they arrive as `message-type: "Warning"` entries in
+		 `execution-log-messages` — there is no separate `warnings` field on the response, so looking for one
+		 and finding nothing is not evidence there were none. Confirm the target package with the
 		 user before building.
 		 """;
 }
