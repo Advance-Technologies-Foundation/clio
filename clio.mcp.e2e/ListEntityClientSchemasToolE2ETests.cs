@@ -1,7 +1,10 @@
 using Allure.NUnit;
 using Allure.NUnit.Attributes;
+using System;
+using System.Linq;
 using Clio.Command;
 using Clio.Command.McpServer.Tools;
+using Clio.Mcp.E2E.Support.Configuration;
 using Clio.Mcp.E2E.Support.Mcp;
 using Clio.Mcp.E2E.Support.Results;
 using FluentAssertions;
@@ -72,5 +75,43 @@ public sealed class ListEntityClientSchemasToolE2ETests : McpContractFixtureBase
 			because: "an unknown registered environment should fail inside tool execution");
 		response.Error.Should().Contain(invalidEnvironmentName,
 			because: "the structured failure should identify the missing environment name");
+	}
+
+	[Test]
+	[Category("McpE2E.Sandbox")]
+	[Description("Against a live stand, returns a resolved typeColumnDisplayValue for each per-type edit page of a typed entity, exercising the GUID->caption join through the real MCP server (ENG-96553).")]
+	[AllureTag(ListEntityClientSchemasTool.ToolName)]
+	[AllureName("list-entity-client-schemas MCP tool resolves type display names on a typed entity")]
+	public async Task ListEntityClientSchemas_Should_Resolve_Type_Display_Names_For_Typed_Entity_On_Stand() {
+		// Arrange - needs a registered sandbox stand; skip gracefully when none is configured so the NoEnvironment
+		// run stays green. The typed entity defaults to the OOTB Case (typed with per-type edit pages) and can be
+		// overridden for a stand without it.
+		McpE2ESettings settings = TestConfiguration.Load();
+		if (string.IsNullOrWhiteSpace(settings.Sandbox.EnvironmentName)) {
+			Assert.Ignore("Set McpE2E__Sandbox__EnvironmentName to a registered stand to run the typed-entity display-name check.");
+		}
+		string entityName = Environment.GetEnvironmentVariable("MCP_E2E_TYPED_ENTITY") ?? "Case";
+		await using var arrangeContext = Arrange(TimeSpan.FromMinutes(3));
+
+		// Act
+		CallToolResult callResult = await arrangeContext.Session.CallToolAsync(
+			ListEntityClientSchemasTool.ToolName,
+			new Dictionary<string, object?> {
+				["args"] = new Dictionary<string, object?> {
+					["entity-name"] = entityName,
+					["environment-name"] = settings.Sandbox.EnvironmentName
+				}
+			},
+			arrangeContext.CancellationTokenSource.Token);
+		ListEntityClientSchemasResponse response = EntitySchemaStructuredResultParser.Extract<ListEntityClientSchemasResponse>(callResult);
+
+		// Assert
+		callResult.IsError.Should().NotBeTrue(because: "a typed entity on a reachable stand binds and returns a structured response");
+		response.Success.Should().BeTrue(because: $"the typed entity '{entityName}' should resolve on the stand");
+		response.EditPages.Should().NotBeNullOrEmpty(because: $"a typed entity like '{entityName}' registers per-type edit pages");
+		bool anyTypeNameResolved = response.EditPages.Any(
+			page => Guid.TryParse(page.TypeColumnValue, out _) && !string.IsNullOrWhiteSpace(page.TypeColumnDisplayValue));
+		anyTypeNameResolved.Should().BeTrue(
+			because: "the tool must resolve at least one per-type edit page's Type GUID to a display name through the real MCP server");
 	}
 }

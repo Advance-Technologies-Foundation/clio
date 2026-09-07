@@ -4,7 +4,6 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using Clio.Command;
-using Clio.Command.EntitySchemaDesigner;
 using Clio.Common;
 using Clio.Common.EntitySchema;
 using FluentAssertions;
@@ -30,7 +29,6 @@ internal class ListEntityClientSchemasCommandTests : BaseCommandTests<ListEntity
 	private IServiceUrlBuilder _serviceUrlBuilder;
 	private ILogger _logger;
 	private IRuntimeEntitySchemaReader _runtimeEntitySchemaReader;
-	private ILookupDefaultDisplayValueResolver _lookupDisplayValueResolver;
 	private ListEntityClientSchemasCommand _command;
 
 	public override void Setup() {
@@ -42,7 +40,6 @@ internal class ListEntityClientSchemasCommandTests : BaseCommandTests<ListEntity
 	public override void TearDown() {
 		_applicationClient.ClearReceivedCalls();
 		_runtimeEntitySchemaReader.ClearReceivedCalls();
-		_lookupDisplayValueResolver.ClearReceivedCalls();
 		base.TearDown();
 	}
 
@@ -52,12 +49,10 @@ internal class ListEntityClientSchemasCommandTests : BaseCommandTests<ListEntity
 		_serviceUrlBuilder = Substitute.For<IServiceUrlBuilder>();
 		_logger = Substitute.For<ILogger>();
 		_runtimeEntitySchemaReader = Substitute.For<IRuntimeEntitySchemaReader>();
-		_lookupDisplayValueResolver = Substitute.For<ILookupDefaultDisplayValueResolver>();
 		containerBuilder.AddSingleton(_applicationClient);
 		containerBuilder.AddSingleton(_serviceUrlBuilder);
 		containerBuilder.AddSingleton(_logger);
 		containerBuilder.AddSingleton(_runtimeEntitySchemaReader);
-		containerBuilder.AddSingleton(_lookupDisplayValueResolver);
 	}
 
 	[Test]
@@ -266,11 +261,11 @@ internal class ListEntityClientSchemasCommandTests : BaseCommandTests<ListEntity
 	}
 
 	[Test]
-	[Description("TryResolve sets a per-type edit page's TypeColumnDisplayValue by resolving its Type-lookup GUID to a display name for a typed entity.")]
+	[Description("TryResolve sets a per-type edit page's TypeColumnDisplayValue by batch-resolving its Type-lookup GUID against the entity's Type-column reference schema for a typed entity.")]
 	public void TryResolve_Should_Resolve_Type_Display_Name_For_Typed_Edit_Page() {
-		// Arrange - entity (call 1) resolves; sections (call 2) empty; edit pages (call 3) carry one per-type page
-		// whose TypeColumnValue is a GUID and whose SysModuleEntity.TypeColumnUId identifies the Type column. The row
-		// carries no card/mini schema UIds, so no metadata batch query is made (3 SelectQuery calls total).
+		// Arrange - entity (call 1), empty sections (call 2), one per-type edit page carrying a GUID TypeColumnValue and
+		// its SysModuleEntity.TypeColumnUId (call 3), then the batched Id->caption read against the reference schema
+		// (call 4). The reader maps the Type column UId to reference schema 'ActivityType' and its display column 'Name'.
 		_applicationClient.ExecutePostRequest(SelectQueryUrl, Arg.Any<string>()).Returns(
 			$$$"""{ "success": true, "rows": [{ "UId": "{{{EntityUId}}}", "ExtendParent": false }] }""",
 			"""{ "success": true, "rows": [] }""",
@@ -279,11 +274,10 @@ internal class ListEntityClientSchemasCommandTests : BaseCommandTests<ListEntity
 			  "TypeColumnValue": "{{{TypeValueGuid}}}",
 			  "TypeColumnUId": "{{{TypeColumnUId}}}"
 			}] }
-			""");
+			""",
+			$$$"""{ "success": true, "rows": [{ "Id": "{{{TypeValueGuid}}}", "DisplayValue": "Task" }] }""");
 		_runtimeEntitySchemaReader.GetByName("Activity").Returns(SchemaWithTypeColumn(TypeReferenceSchema));
-		_lookupDisplayValueResolver
-			.Resolve(TypeReferenceSchema, Guid.Parse(TypeValueGuid), Arg.Any<RemoteCommandOptions>())
-			.Returns(new LookupDefaultResolution("Task", null));
+		_runtimeEntitySchemaReader.GetByName(TypeReferenceSchema).Returns(SchemaWithDisplayColumn("Name"));
 		var options = new ListEntityClientSchemasOptions { EntityName = "Activity" };
 
 		// Act
@@ -296,13 +290,13 @@ internal class ListEntityClientSchemasCommandTests : BaseCommandTests<ListEntity
 		editPage.TypeColumnValue.Should().Be(TypeValueGuid,
 			because: "the raw type GUID is preserved alongside the resolved display name");
 		editPage.TypeColumnDisplayValue.Should().Be("Task",
-			because: "the tool resolves the Type-lookup GUID to its caption so the plan can name the type without a separate read");
+			because: "the tool batch-resolves the Type-lookup GUID to its caption so the plan can name the type without a separate read");
 	}
 
 	[Test]
-	[Description("TryResolve leaves TypeColumnDisplayValue null when the resolver returns no display value (fail-soft marker), so the engine renders the GUID fallback.")]
+	[Description("TryResolve leaves TypeColumnDisplayValue null when the batched caption read returns no matching row, so the engine renders the GUID fallback.")]
 	public void TryResolve_Should_Leave_Type_Display_Name_Null_When_Unresolved() {
-		// Arrange - same typed shape, but the resolver reports an honest not-found marker with no display value.
+		// Arrange - same typed shape, but the batched caption read (call 4) returns no row for the GUID.
 		_applicationClient.ExecutePostRequest(SelectQueryUrl, Arg.Any<string>()).Returns(
 			$$$"""{ "success": true, "rows": [{ "UId": "{{{EntityUId}}}", "ExtendParent": false }] }""",
 			"""{ "success": true, "rows": [] }""",
@@ -311,11 +305,10 @@ internal class ListEntityClientSchemasCommandTests : BaseCommandTests<ListEntity
 			  "TypeColumnValue": "{{{TypeValueGuid}}}",
 			  "TypeColumnUId": "{{{TypeColumnUId}}}"
 			}] }
-			""");
+			""",
+			"""{ "success": true, "rows": [] }""");
 		_runtimeEntitySchemaReader.GetByName("Activity").Returns(SchemaWithTypeColumn(TypeReferenceSchema));
-		_lookupDisplayValueResolver
-			.Resolve(TypeReferenceSchema, Guid.Parse(TypeValueGuid), Arg.Any<RemoteCommandOptions>())
-			.Returns(new LookupDefaultResolution(null, "not-found-or-no-access"));
+		_runtimeEntitySchemaReader.GetByName(TypeReferenceSchema).Returns(SchemaWithDisplayColumn("Name"));
 		var options = new ListEntityClientSchemasOptions { EntityName = "Activity" };
 
 		// Act
@@ -326,14 +319,14 @@ internal class ListEntityClientSchemasCommandTests : BaseCommandTests<ListEntity
 		MigrationEditPageInfo editPage = response.EditPages.Single();
 		editPage.TypeColumnValue.Should().Be(TypeValueGuid, because: "the raw type GUID is still returned for the engine fallback");
 		editPage.TypeColumnDisplayValue.Should().BeNull(
-			because: "with no resolvable display value the field stays null and the engine shows the GUID + resolve-on-stand note");
+			because: "with no matching caption row the field stays null and the engine shows the GUID + resolve-on-stand note");
 	}
 
 	[Test]
-	[Description("TryResolve resolves no type display names — and issues no schema-reader or lookup-resolver call — when the entity is not typed (the edit page has no per-type GUID value).")]
+	[Description("TryResolve resolves no type display names — and issues no schema-reader or caption read — when the entity is not typed (the edit page has no per-type GUID value).")]
 	public void TryResolve_Should_Not_Resolve_Type_Display_Name_When_Not_Typed() {
 		// Arrange - a single default edit page with an empty type value: nothing to resolve, so enrichment must stay a
-		// pure no-op that never touches the schema reader or the lookup resolver.
+		// pure no-op that never touches the schema reader or issues a caption read.
 		_applicationClient.ExecutePostRequest(SelectQueryUrl, Arg.Any<string>()).Returns(
 			$$$"""{ "success": true, "rows": [{ "UId": "{{{EntityUId}}}", "ExtendParent": false }] }""",
 			"""{ "success": true, "rows": [] }""",
@@ -348,14 +341,13 @@ internal class ListEntityClientSchemasCommandTests : BaseCommandTests<ListEntity
 		response.EditPages.Single().TypeColumnDisplayValue.Should().BeNull(
 			because: "a default (non-per-type) page has no type to name");
 		_runtimeEntitySchemaReader.DidNotReceive().GetByName(Arg.Any<string>());
-		_lookupDisplayValueResolver.DidNotReceive().Resolve(
-			Arg.Any<string>(), Arg.Any<Guid>(), Arg.Any<RemoteCommandOptions>());
+		_applicationClient.Received(3).ExecutePostRequest(SelectQueryUrl, Arg.Any<string>());
 	}
 
 	[Test]
-	[Description("TryResolve still succeeds (GUID-only) and never calls the lookup resolver when the schema reader throws while resolving the Type-column reference schema.")]
+	[Description("TryResolve still succeeds (GUID-only) and issues no caption read when the schema reader throws while resolving the Type-column reference schema.")]
 	public void TryResolve_Should_Degrade_To_Guid_Only_When_Schema_Reader_Throws() {
-		// Arrange - a typed page, but the schema reader fails to yield the Type column's reference schema.
+		// Arrange - a typed page, but the schema reader fails to yield the entity's Type column reference schema.
 		_applicationClient.ExecutePostRequest(SelectQueryUrl, Arg.Any<string>()).Returns(
 			$$$"""{ "success": true, "rows": [{ "UId": "{{{EntityUId}}}", "ExtendParent": false }] }""",
 			"""{ "success": true, "rows": [] }""",
@@ -377,8 +369,7 @@ internal class ListEntityClientSchemasCommandTests : BaseCommandTests<ListEntity
 		response.Success.Should().BeTrue(because: "a reader fault degrades to GUID-only, not an error envelope");
 		response.EditPages.Single().TypeColumnDisplayValue.Should().BeNull(
 			because: "with no resolvable reference schema the field stays null");
-		_lookupDisplayValueResolver.DidNotReceive().Resolve(
-			Arg.Any<string>(), Arg.Any<Guid>(), Arg.Any<RemoteCommandOptions>());
+		_applicationClient.Received(3).ExecutePostRequest(SelectQueryUrl, Arg.Any<string>());
 		_logger.Received().WriteWarning(Arg.Is<string>(message => message.Contains("Could not resolve type display names")));
 	}
 
@@ -400,6 +391,15 @@ internal class ListEntityClientSchemasCommandTests : BaseCommandTests<ListEntity
 					IsInherited: false,
 					ReferenceSchemaName: referenceSchemaName)
 			});
+
+	private static RuntimeEntitySchemaResult SchemaWithDisplayColumn(string displayColumn) =>
+		new(
+			UId: Guid.NewGuid(),
+			Name: TypeReferenceSchema,
+			PrimaryColumnUId: Guid.NewGuid(),
+			PrimaryDisplayColumnName: displayColumn,
+			PrimaryDisplayColumnUId: null,
+			Columns: new List<RuntimeEntitySchemaColumnResult>());
 
 	private static string BuildEntityRowsResponse(int count) {
 		var rows = new JArray {
