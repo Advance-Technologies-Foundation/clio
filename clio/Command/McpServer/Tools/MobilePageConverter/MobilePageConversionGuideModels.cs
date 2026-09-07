@@ -279,13 +279,14 @@ public static class ReasonCodes {
 
 	/// <summary>
 	/// A container with no mobile equivalent: it is NOT recreated, and its children were reparented to
-	/// params.target (each carries the new parent in its own operation, so there is nothing to apply).
-	/// Params: <c>webType</c>, <c>target</c>.
+	/// <c>params.newParent</c> (each carries that parent in its own operation, so there is nothing to
+	/// apply). Params: <c>newParent</c>.
 	/// </summary>
 	public const string DropContainerNoMobileEquivalent = "drop-container-no-mobile-equivalent";
 
 	/// <summary>
-	/// An <c>excludedComponents</c> rule matched. Params: <c>webType</c>, <c>host</c>, <c>slot</c>.
+	/// An <c>excludedComponents</c> rule matched. Params: <c>hostType</c>, <c>host</c>, <c>slot</c> —
+	/// <c>slot</c> absent when the rule bans the type from the host's default child collection.
 	/// </summary>
 	public const string DropExcludedByRule = "drop-excluded-by-rule";
 
@@ -293,23 +294,36 @@ public static class ReasonCodes {
 	public const string DropParentExcluded = "drop-parent-excluded";
 
 	/// <summary>
-	/// Chrome inherited from the WEB template, which the mobile template provides natively.
-	/// Params: <c>name</c>.
+	/// Chrome inherited from the WEB template, which the mobile template provides natively at
+	/// <c>params.targetParent</c>.<c>params.targetSlot</c> — the two are separate keys on purpose: a caller
+	/// re-adding the element needs a parent NAME, and a dotted <c>"Parent.slot"</c> string used as one is
+	/// accepted by the applier and saves the element at the viewConfig root, outside every container.
+	/// Params: <c>targetParent</c>, <c>targetSlot</c>, <c>scope</c> — <c>scope</c> absent unless the drop
+	/// happened inside a non-converting scope container.
 	/// </summary>
 	public const string DropInheritedChrome = "drop-inherited-chrome";
 
 	/// <summary>
 	/// The conversion target is absent from the mobile template, so the element could not be placed.
-	/// Params: <c>target</c>.
+	/// Params: <c>missingParent</c>, <c>scope</c> — named <c>missingParent</c> rather than <c>target</c>
+	/// because it is the one parent name in the vocabulary that does NOT exist; reusing the key that
+	/// elsewhere names a parent that does exist is how it gets pasted into an operation.
+	/// <c>scope</c> absent outside a non-converting scope container.
 	/// </summary>
 	public const string DropTargetMissing = "drop-target-missing";
 
 	/// <summary>
-	/// A <c>crt.Button</c> whose request the Mobile app does not support. Params: <c>request</c>.
+	/// A component whose request the Mobile app does not support — a <c>crt.Button</c> on the element path,
+	/// or any action inside a non-converting scope container. Params: <c>request</c>, <c>scope</c>
+	/// (<c>scope</c> absent on the element path). Not to be confused with
+	/// <see cref="DropRequestUnsupported"/>: there the element SURVIVES and only its binding is removed.
 	/// </summary>
 	public const string DropUnsupportedRequest = "drop-unsupported-request";
 
-	/// <summary>The web type has no mobile counterpart in the registry. Params: <c>webType</c>.</summary>
+	/// <summary>
+	/// The web type has no mobile counterpart in the registry. No params: the type is the record's own
+	/// <c>webType</c>, and a param that echoes a sibling field is a second place for the same fact to drift.
+	/// </summary>
 	public const string DropTypeNotInMobileRegistry = "drop-type-not-in-mobile-registry";
 
 	/// <summary>

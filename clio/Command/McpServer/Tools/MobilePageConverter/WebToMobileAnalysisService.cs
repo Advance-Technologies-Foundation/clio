@@ -2046,8 +2046,8 @@ public static class WebToMobileAnalysisService {
 					// below instead of this inherited-chrome one.
 					ctx.Out.Add(Drop(name, type,
 						Reason(ReasonCodes.DropInheritedChrome,
-							("name", Nz(name)), ("scope", Nz(scopeContainer)),
-							("target", $"{nativeTarget.Parent}.{nativeTarget.Property}"))));
+							("scope", Nz(scopeContainer)),
+							("targetParent", Nz(nativeTarget.Parent)), ("targetSlot", Nz(nativeTarget.Property)))));
 					// The native element carries its own action, but the WEB request may differ (a custom usr.* request on an
 					// inherited button); record it so requestConversions still reports the dropped action rather than losing it silently.
 					if (scopedRequest is not null) {
@@ -2107,7 +2107,8 @@ public static class WebToMobileAnalysisService {
 			if (string.Equals(type, "crt.Button", StringComparison.OrdinalIgnoreCase)
 				&& UnsupportedRequestOf(ctx, node) is { } unsupportedRequest) {
 				ctx.Out.Add(Drop(name, type,
-					Reason(ReasonCodes.DropUnsupportedRequest, ("request", Nz(unsupportedRequest)))));
+					Reason(ReasonCodes.DropUnsupportedRequest,
+						("request", Nz(unsupportedRequest)), ("scope", null))));
 				continue;
 			}
 
@@ -2253,8 +2254,9 @@ public static class WebToMobileAnalysisService {
 					if (RetargetSourceIsInheritedChrome(ctx, name)) {
 						ctx.Out.Add(Drop(name, type,
 							Reason(ReasonCodes.DropInheritedChrome,
-								("name", Nz(name)),
-								("target", $"{containerTarget.Parent}.{containerTarget.Property}"))));
+								("scope", null),
+								("targetParent", Nz(containerTarget.Parent)),
+								("targetSlot", Nz(containerTarget.Property)))));
 						if (items is not null) {
 							WalkElements(ctx, items, ResolveParent(ctx, mobileParentName), sourceAncestors: Append(sourceAncestors, name),
 								hostableParentName: hostableParentName);
@@ -2266,7 +2268,8 @@ public static class WebToMobileAnalysisService {
 					// lost with the container that could not be placed.
 					if (RetargetTargetMissing(ctx, containerTarget.Parent)) {
 						ctx.Out.Add(Drop(name, type,
-							Reason(ReasonCodes.DropTargetMissing, ("target", Nz(containerTarget.Parent)))));
+							Reason(ReasonCodes.DropTargetMissing,
+								("missingParent", Nz(containerTarget.Parent)), ("scope", null))));
 						if (items is not null) {
 							WalkElements(ctx, items, ResolveParent(ctx, mobileParentName), sourceAncestors: Append(sourceAncestors, name),
 								hostableParentName: hostableParentName);
@@ -2311,7 +2314,7 @@ public static class WebToMobileAnalysisService {
 			string leafMobileType = ResolveConvertedMobileType(ctx, node, sourceAncestors);
 			if (string.IsNullOrEmpty(leafMobileType)) {
 				ctx.Out.Add(Drop(name, type,
-					Reason(ReasonCodes.DropTypeNotInMobileRegistry, ("webType", Nz(type)))));
+					Reason(ReasonCodes.DropTypeNotInMobileRegistry)));
 				continue;
 			}
 			CaptionResource leafCaption = ResolveCaptionResource(ctx, node, name);
@@ -2333,7 +2336,8 @@ public static class WebToMobileAnalysisService {
 				if (RetargetSourceIsInheritedChrome(ctx, name)) {
 					ctx.Out.Add(Drop(name, type,
 						Reason(ReasonCodes.DropInheritedChrome,
-							("name", Nz(name)), ("target", $"{leafTarget.Parent}.{leafTarget.Property}"))));
+							("scope", null),
+							("targetParent", Nz(leafTarget.Parent)), ("targetSlot", Nz(leafTarget.Property)))));
 					// The native element carries its own action, but the WEB request may differ (a custom usr.* request on an
 					// inherited button); record it so requestConversions reports the dropped action instead of losing it silently.
 					ClassifyClicked(ctx, node, out string nativeSourceRequest);
@@ -2351,7 +2355,8 @@ public static class WebToMobileAnalysisService {
 				// in scope so they too get an explicit outcome rather than vanishing under a missing target.
 				if (RetargetTargetMissing(ctx, leafTarget.Parent)) {
 					ReasonCode targetMissingReason =
-						Reason(ReasonCodes.DropTargetMissing, ("target", Nz(leafTarget.Parent)));
+						Reason(ReasonCodes.DropTargetMissing,
+							("missingParent", Nz(leafTarget.Parent)), ("scope", null));
 					ctx.Out.Add(Drop(name, type, targetMissingReason));
 					ClassifyClicked(ctx, node, out string missingTargetRequest);
 					// Same code object as the element's drop — see the scope path above for why the binding does
@@ -2561,7 +2566,7 @@ public static class WebToMobileAnalysisService {
 		(string Parent, string Property)? scopedTarget, ClickedConvertibility clicked, string request, bool targetMissing) {
 		JsonNode scope = Nz(scopeContainer);
 		if (targetMissing && scopedTarget is { } target) {
-			return Reason(ReasonCodes.DropTargetMissing, ("target", Nz(target.Parent)), ("scope", scope));
+			return Reason(ReasonCodes.DropTargetMissing, ("missingParent", Nz(target.Parent)), ("scope", scope));
 		}
 		if (clicked == ClickedConvertibility.Unsupported) {
 			// Distinguish a KNOWN-unsupported request (the versioned map clears its mobile target) from an
@@ -4734,7 +4739,15 @@ public static class WebToMobileAnalysisService {
 	/// a caller never has to distinguish "absent" from "present and null", and an all-null set yields no
 	/// <c>params</c> object at all.
 	/// </summary>
-	private static ReasonCode Reason(string code, params (string Key, JsonNode Value)[] parameters) {
+	/// <remarks>
+	/// <c>internal</c> rather than private so <see cref="ExcludedComponentsPass"/> uses it too. It used to
+	/// hand-build its own dictionary, which meant the null-dropping contract stated here held for every code
+	/// in the vocabulary except the one that pass emits — and a rules file with no <c>parentType</c> would
+	/// have shipped <c>"hostType": null</c> against a contract that says that cannot happen.
+	/// Pass every parameter a code declares, including the ones that are null on this path: the set is then a
+	/// property of the CODE rather than of the call site, which is what lets a caller branch on presence.
+	/// </remarks>
+	internal static ReasonCode Reason(string code, params (string Key, JsonNode Value)[] parameters) {
 		Dictionary<string, JsonNode> values = null;
 		foreach ((string key, JsonNode value) in parameters ?? []) {
 			if (value is null) {
@@ -4782,7 +4795,7 @@ public static class WebToMobileAnalysisService {
 				// code that names the wrong cause.
 				Reason = IsRelocateChildren(entry)
 					? [Reason(ReasonCodes.DropContainerNoMobileEquivalent,
-						("webType", Nz(entry.WebType)), ("target", Nz(entry.ParentName)))]
+						("newParent", Nz(entry.ParentName)))]
 					: entry.Reason
 			})];
 		return dropped.Count > 0 ? dropped : null;

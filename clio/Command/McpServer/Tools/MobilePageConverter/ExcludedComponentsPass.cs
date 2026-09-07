@@ -559,15 +559,15 @@ internal static class ExcludedComponentsPass {
 	/// disposable).
 	/// </summary>
 	private static IReadOnlyList<ReasonCode> BuildDropReason(
-		ExcludedComponentFilterRule filter, string hostMobileName) {
-		var values = new Dictionary<string, JsonNode>(StringComparer.Ordinal) {
-			["webType"] = filter.Type,
-			["hostType"] = filter.ParentType,
-			["host"] = hostMobileName
-		};
-		if (filter.PropertiesContainerName is { Length: > 0 } slot) {
-			values["slot"] = slot;
-		}
-		return [new ReasonCode { Code = ReasonCodes.DropExcludedByRule, Params = values }];
-	}
+		ExcludedComponentFilterRule filter, string hostMobileName) =>
+		// Through the shared factory, which DROPS null pairs — hand-building the dictionary here shipped
+		// "hostType": null for a rule that declares no parentType, against a wire contract that promises a
+		// caller never has to tell absent from present-and-null. `webType` is gone with it: it echoed the
+		// record's OWN droppedElements[].webType.
+		[WebToMobileAnalysisService.Reason(ReasonCodes.DropExcludedByRule,
+			("hostType", Nz(filter.ParentType)),
+			("host", Nz(hostMobileName)),
+			("slot", Nz(filter.PropertiesContainerName)))];
+
+	private static JsonNode Nz(string value) => string.IsNullOrEmpty(value) ? null : value;
 }

@@ -213,10 +213,16 @@ public sealed class WebToMobileConversionServiceTests {
 			because: "drop-empty-container documents no params, and emitting params:null would force every "
 				+ "caller to handle a third state the contract says does not exist");
 
-		JsonObject withParams = JsonSerializer.SerializeToNode(Dropped(guide, "Timeline"))!.AsObject();
-		withParams["reason"]!.AsArray()[0]!["params"]!["webType"]!.GetValue<string>().Should().Be("crt.Timeline",
-			because: "a code that documents params must serialize them under `params`, addressable by key — "
-				+ "which is the whole reason the sentence became a code");
+		JsonObject unconvertible = JsonSerializer.SerializeToNode(Dropped(guide, "Timeline"))!.AsObject();
+		JsonObject unconvertibleReason = unconvertible["reason"]!.AsArray()[0]!.AsObject();
+		unconvertibleReason["code"]!.GetValue<string>().Should().Be(ReasonCodes.DropTypeNotInMobileRegistry,
+			because: "the two drops in this fixture have DIFFERENT causes, and only the code separates them");
+		unconvertibleReason.ContainsKey("params").Should().BeFalse(
+			because: "this code documents no params: the type is the record's own webType, and a param that "
+				+ "echoes a sibling field is a second place for one fact to drift");
+		unconvertible["webType"]!.GetValue<string>().Should().Be("crt.Timeline",
+			because: "dropping the echo is only safe because the sibling field carries it — assert that, or "
+				+ "the removal above silently loses the type from the wire");
 	}
 
 	/// <summary>
@@ -1187,7 +1193,7 @@ public sealed class WebToMobileConversionServiceTests {
 		Codes(Dropped(guide, "Color")).Should().Contain(ReasonCodes.DropTypeNotInMobileRegistry,
 			because: "an unconvertible TYPE and a positional exclusion need OPPOSITE things said to the user, and "
 				+ "only the code separates them — nothing else pins this cause-to-code mapping");
-		ReasonParam(Dropped(guide, "Color"), ReasonCodes.DropTypeNotInMobileRegistry, "webType").Should().Be("crt.ColorButton",
+		Dropped(guide, "Color").WebType.Should().Be("crt.ColorButton",
 			because: "the param names the type with no mobile counterpart, which is what the user is told");
 		guide.ViewModelConfig.Should().NotBeNull();
 		JsonObject attrs = guide.ViewModelConfig!.AsObject()["attributes"]!.AsObject();
@@ -1216,7 +1222,7 @@ public sealed class WebToMobileConversionServiceTests {
 		Codes(Dropped(guide, "Color")).Should().Contain(ReasonCodes.DropTypeNotInMobileRegistry,
 			because: "an unconvertible TYPE and a positional exclusion need OPPOSITE things said to the user, and "
 				+ "only the code separates them — nothing else pins this cause-to-code mapping");
-		ReasonParam(Dropped(guide, "Color"), ReasonCodes.DropTypeNotInMobileRegistry, "webType").Should().Be("crt.ColorButton",
+		Dropped(guide, "Color").WebType.Should().Be("crt.ColorButton",
 			because: "the param names the type with no mobile counterpart, which is what the user is told");
 		JsonObject attrs = guide.ViewModelConfig!.AsObject()["attributes"]!.AsObject();
 		attrs.ContainsKey("LookupAttribute_ivqsxmp").Should().BeTrue(
@@ -2581,7 +2587,7 @@ public sealed class WebToMobileConversionServiceTests {
 		DroppedElement order = Dropped(guide, "OrderBtn");
 		DroppedNames(guide).Should().Contain("OrderBtn",
 			because: "the FAB target is absent on the mobile template, so an unresolvable insert must not be emitted");
-		ReasonParam(order, ReasonCodes.DropTargetMissing, "target").Should().Be("FloatingActionButton",
+		ReasonParam(order, ReasonCodes.DropTargetMissing, "missingParent").Should().Be("FloatingActionButton",
 			because: "the drop names the conversion target the mobile template lacks, so the fix is traceable to the rule");
 		DroppedRequest orderBinding = guide.RequestConversions!.DroppedRequests
 			.Should().ContainSingle(r => r.ElementName == "OrderBtn",
@@ -4755,7 +4761,7 @@ public sealed class WebToMobileConversionServiceTests {
 			because: "a wrapper with no mobile equivalent is not recreated, so it is reported as dropped rather than emitted as an operation the applier does not have");
 		(guide.DroppedElements ?? []).Single(dropped => dropped.WebName == "Wrapper")
 			.Reason.Should().Contain(reason => reason.Code == ReasonCodes.DropContainerNoMobileEquivalent
-				&& reason.Params!["target"]!.GetValue<string>() == area,
+				&& reason.Params!["newParent"]!.GetValue<string>() == area,
 			because: "the drop names where the children went, which is the only thing the caller could not read off their own operations");
 
 		Element(guide, "LeadName").ParentName.Should().Be(area);
@@ -7559,10 +7565,30 @@ public sealed class WebToMobileConversionServiceTests {
 		DroppedNames(guide).Should().Contain("ProductsSearchFilter",
 			because: "a stripped component is reported as a drop entry, never removed silently");
 		dropped.WebType.Should().Be("crt.SearchFilter", because: "the report must still say what was removed");
-		Codes(dropped).Should().Contain(ReasonCodes.DropExcludedByRule);
-		ReasonParam(dropped, ReasonCodes.DropExcludedByRule, "hostType").Should().Be("crt.ExpansionPanel");
+		Codes(dropped).Should().Contain(ReasonCodes.DropExcludedByRule,
+			because: "an exclusion and an unconvertible type need opposite things said to the user, and only "
+				+ "the code separates them");
+		ReasonParam(dropped, ReasonCodes.DropExcludedByRule, "hostType").Should().Be("crt.ExpansionPanel",
+			because: "the reason must name the host TYPE the rule matched, so the reader can trace it back to "
+				+ "the rules file");
 		ReasonParam(dropped, ReasonCodes.DropExcludedByRule, "slot").Should().Be("tools",
-			because: "the reason must name the rule, the host type and the slot so the reader can trace it back to the rules file");
+			because: "and the slot, because the same type is legal in the host's other child collections");
+		// The serialized shape of a params-BEARING code, over the same transport a caller reads. Asserted here
+		// because drop-excluded-by-rule is the only code in this suite's fixtures that documents three params,
+		// and because this pass used to hand-build its dictionary instead of going through Reason() — which is
+		// how a rule with no parentType would have shipped "hostType": null against a contract that says a
+		// caller never has to tell absent from present-and-null.
+		JsonObject serialized = JsonSerializer.SerializeToNode(dropped)!.AsObject();
+		JsonObject serializedParams = serialized["reason"]!.AsArray()[0]!["params"]!.AsObject();
+		serializedParams.Select(pair => pair.Key).Should().BeEquivalentTo(["hostType", "host", "slot"],
+			because: "the param set is a property of the CODE, not of the call site — a caller that branches on "
+				+ "a key's presence needs the same keys on every emission of the same code");
+		serializedParams["slot"]!.GetValue<string>().Should().Be("tools",
+			because: "a documented param must be addressable BY KEY under `params`, which is the whole reason "
+				+ "the prose sentence became a code");
+		serializedParams.Should().NotContainKey("webType",
+			because: "it echoed the record's own droppedElements[].webType — the article's own rule is that "
+				+ "params never repeats a field the record already has");
 	}
 
 	[Test]
