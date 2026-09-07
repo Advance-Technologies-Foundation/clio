@@ -116,7 +116,10 @@ prebuilt `crt.List` inserts — the mandatory article's paste-as-is rule for gri
 Move both advisory sections after `BuildElementMap` and derive them from the emitted operations:
 
 - `suggestedMobileTypes` = the distinct mobile types the map actually emitted for that source web type;
-- `Unsupported` only when **every** instance of the type reached `droppedElements`;
+- `Unsupported` where nothing nameable was emitted and the web registry knows the type — deliberately
+  **not** keyed on "every instance was dropped", because the one thing this branch adds over
+  `droppedElements` (which already carries the per-element cause) is the registry distinction between a
+  web component mobile lacks and a probable custom component;
 - omit the row entirely for a type that shipped nested inside another operation's `values` — the caller has
   nothing to do about it, and the current label instructs them to undo work already done;
 - delete the three synthesized `note` constants and `ComponentInfoHint` in the same release (see §5.2 —

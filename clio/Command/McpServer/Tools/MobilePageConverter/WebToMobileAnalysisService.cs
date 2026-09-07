@@ -1014,10 +1014,14 @@ public static class WebToMobileAnalysisService {
 	/// dropped every instance. Because <see cref="BuildMobileContracts"/> iterates this list, no
 	/// <c>crt.List</c> contract reached the caller and a dead <c>crt.SearchFilter</c> one did — which is what
 	/// blocked <c>update-page --dry-run</c> with eight unresolved-binding errors on two recorded runs.
-	/// The classification is therefore no longer allowed to come from the rules file AT ALL: a rules author
-	/// may still contribute advisory text (<c>note</c>, <c>primaryWebMerge</c>), but WHAT HAPPENED is read
-	/// from the operations, so publishing a rules file that finally carries a <c>web</c> key cannot
-	/// reintroduce the disagreement (ENG-95827).
+	/// The classification is therefore no longer allowed to come from the rules file wherever an operation
+	/// was emitted and its target can be named: a rules author may still contribute advisory text
+	/// (<c>note</c>, <c>primaryWebMerge</c>) and may still classify a type the map produced nothing for,
+	/// but WHAT HAPPENED is read from the operations. Publishing a rules file that finally carries a
+	/// <c>web</c> key therefore cannot reintroduce the disagreement — note that such a file WOULD change
+	/// which types convert, through <see cref="FindRule"/>'s other call site in
+	/// <c>ResolveConvertedMobileType</c>, but the classification would follow that conversion rather than
+	/// override it (ENG-95827).
 	/// </remarks>
 	private static List<ComponentSuggestion> BuildComponentSuggestions(
 		Dictionary<string, List<string>> namesByType,
@@ -1029,15 +1033,21 @@ public static class WebToMobileAnalysisService {
 		// What the finished map DID, per source web type. Keyed on WebType, which every entry that came from
 		// a source element carries; a synthesized entry has none and is therefore never attributed to a type.
 		var emittedByWebType = new Dictionary<string, SortedSet<string>>(StringComparer.OrdinalIgnoreCase);
-		var droppedWebTypes = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+		var entriedWebTypes = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 		foreach (ElementMapEntry entry in elementMap ?? []) {
 			if (entry?.WebType is not { Length: > 0 } entryWebType) {
 				continue;
 			}
-			if (IsDrop(entry)) {
-				droppedWebTypes.Add(entryWebType);
-				continue;
-			}
+			// EVERY operation marks the type as one that has an entry of its own, not just the two that
+			// emit something. Operation has FOUR values, and the one that neither inserts nor records a
+			// drop — relocate-children, whose container is not recreated on mobile — would otherwise read
+			// identically to "no entry at all" and let the nested-passenger exemption below delete the row
+			// for a type the SAME response reports as lost in droppedElements (ProjectDroppedElements mints
+			// drop-container-no-mobile-equivalent for exactly that entry). The two preconditions are one
+			// predicate — a type is carried nested BECAUSE it resolves to no mobile type, and a container
+			// relocates its children BECAUSE it resolves to no mobile type — so this is reachable, not
+			// theoretical. An allow-list of the emitting operations, never a deny-list of two of them.
+			entriedWebTypes.Add(entryWebType);
 			if (!IsInsert(entry) && !IsMerge(entry)) {
 				continue;
 			}
@@ -1055,12 +1065,17 @@ public static class WebToMobileAnalysisService {
 
 		foreach ((string type, List<string> names) in namesByType) {
 			bool converted = emittedByWebType.TryGetValue(type, out SortedSet<string> emitted);
-			bool anyDropped = droppedWebTypes.Contains(type);
-			if (!converted && !anyDropped && carriedNested.Contains(type)) {
-				// No operation of its own because its configuration travels INSIDE another element's values,
-				// which the caller pastes verbatim. There is nothing to suggest and nothing to decide, and
-				// the row this replaces told the caller to go find a mobile alternative for a component the
-				// same response had already shipped.
+			if (!entriedWebTypes.Contains(type) && carriedNested.Contains(type)) {
+				// NO instance of this type has an entry of any kind, and the type is observed inside another
+				// element's values, which the caller pastes verbatim. There is nothing to suggest and nothing
+				// to decide, and the row this replaces told the caller to go find a mobile alternative for a
+				// component the same response had already shipped.
+				//
+				// The exemption is per TYPE because this section is per type. One instance with an entry of
+				// any kind keeps the row for all of them, so a loss can never be erased by a passenger that
+				// happens to share its type. What this cannot rescue is a type whose every instance is lost
+				// with NO entry at all — the nonConvertingScopeContainers path, which reports nothing
+				// anywhere today; that is a missing reason code, not a suggestion-row question.
 				continue;
 			}
 			ComponentEquivalenceRule rule = FindRule(rules, type);
@@ -1090,33 +1105,43 @@ public static class WebToMobileAnalysisService {
 	}
 
 	/// <summary>
-	/// The category a source web type earns, with the element map's OUTCOME as the first and unoverridable
-	/// input: an operation was emitted and the only suggested type is this same type
-	/// (<c>DirectMapping</c>); an operation was emitted under a different type, and a matching rule names
-	/// the shape of that adaptation — or, with no rule, the fact itself is the label
-	/// (<c>WithAdaptation</c>); nothing was emitted and a rule names what the caller could do instead
-	/// (<c>AlternativeAvailable</c>, or whatever the rule declares); nothing was emitted and no rule speaks,
-	/// so the registries decide whether this is a known web component (<c>Unsupported</c>) or probably a
-	/// custom one (<c>RequiresManualDecision</c>).
+	/// The category a source web type earns. The vocabulary is the mandated article's, not this method's:
+	/// <c>directMapping</c> is "same component type exists on mobile", <c>alternativeAvailable</c> is "maps
+	/// to a different mobile type", <c>withAdaptation</c> is "transferred, but layout/properties need
+	/// adjusting", <c>unsupported</c> is "NOT available on mobile" and <c>requiresManualDecision</c> is
+	/// "unknown/custom or ambiguous UX". So an emitted operation whose target is this same type earns
+	/// <c>DirectMapping</c>, one under a different type earns <c>AlternativeAvailable</c>, and
+	/// <c>WithAdaptation</c> — a judgement about adjustment, which no operation carries — is reachable only
+	/// from a rules file that declares it.
 	/// </summary>
 	/// <remarks>
-	/// A rules author may only speak where there is no outcome to contradict. Two things follow, and both
-	/// were live defects: presence in the MOBILE registry is no longer evidence that anything converted —
-	/// which is what made a type whose every instance an exclusion rule dropped ship as "carry it over
-	/// as-is" — and a rules file that finally carries a <c>web</c> key cannot relabel a conversion that
-	/// already happened (ENG-95827).
+	/// <para>
+	/// Where an operation was emitted AND its target can be named, a rules author may not speak at all.
+	/// That is the whole invariant: presence in the MOBILE registry is no longer evidence that anything
+	/// converted (which is what made a type whose every instance an exclusion rule dropped ship as "carry it
+	/// over as-is"), and a rules file that finally carries a <c>web</c> key cannot relabel a conversion that
+	/// already happened. An earlier revision of this method DID let <c>rule.Category</c> win on the
+	/// converted path, which would have let a published <c>{"web":["crt.DataGrid"],"category":"Unsupported"}</c>
+	/// reproduce the original defect exactly — while this remark claimed the opposite.
+	/// </para>
+	/// <para>
+	/// The converted-but-unnameable case falls through to the registry answer on purpose. A name-mapped
+	/// container twin sets <c>MobileType</c> to null when the mobile template lacks the twin name and the
+	/// web type is absent from the mobile registry, so an operation exists with no target to report;
+	/// returning an adaptation category there would assert a target that <c>suggestedMobileTypes</c> names
+	/// nowhere, and no contract would ship for it either (ENG-95827).
+	/// </para>
 	/// </remarks>
 	private static ComponentMappingCategory ClassifyFromOutcome(
 		string webType, bool converted, IReadOnlySet<string> suggested,
 		ComponentEquivalenceRule rule, IReadOnlySet<string> webTypes) {
-		if (converted) {
-			if (suggested.Count == 1 && suggested.Contains(webType)) {
-				return ComponentMappingCategory.DirectMapping;
-			}
-			return rule?.Category is { Length: > 0 } declared
-				? ParseCategory(declared)
-				: ComponentMappingCategory.WithAdaptation;
+		if (converted && suggested.Count > 0) {
+			return suggested.Count == 1 && suggested.Contains(webType)
+				? ComponentMappingCategory.DirectMapping
+				: ComponentMappingCategory.AlternativeAvailable;
 		}
+		// Nothing was emitted, or something was emitted under a type nothing can name. Only here may a rules
+		// author speak, because only here is there no outcome to contradict.
 		if (rule?.Mobile is { Count: > 0 }) {
 			return rule.Category is { Length: > 0 } advised
 				? ParseCategory(advised)
@@ -1192,10 +1217,18 @@ public static class WebToMobileAnalysisService {
 	}
 
 	/// <summary>
-	/// Finds the first equivalence rule whose web type list contains <paramref name="webType"/>. Feeds ONLY
-	/// the advisory text channel (<c>note</c> / <c>primaryWebMerge</c>) — never the classification, which is
-	/// derived from the emitted operations (see <see cref="BuildComponentSuggestions"/>).
+	/// Finds the first equivalence rule whose web type list contains <paramref name="webType"/>.
 	/// </summary>
+	/// <remarks>
+	/// TWO call sites, and they are not equivalent. In <see cref="BuildComponentSuggestions"/> the rule
+	/// feeds only the advisory text channel (<c>note</c> / <c>primaryWebMerge</c>) plus the classification
+	/// of a type the map produced nothing for. In <c>ResolveConvertedMobileType</c> its <c>Mobile</c> list
+	/// is the LAST fallback for a leaf's target type, so it decides what converts — and therefore reaches
+	/// the classification indirectly, through the entry's <c>MobileType</c>. Do not read this as
+	/// advisory-only and refactor it away: against the bundled rules it returns null for every type (no
+	/// <c>components</c> entry carries a <c>web</c> key), but it is load-bearing the moment a published
+	/// rules file does.
+	/// </remarks>
 	private static ComponentEquivalenceRule FindRule(WebToMobilePageConversionRules rules, string webType) {
 		if (rules.Components is null) {
 			return null;

@@ -105,8 +105,13 @@ public sealed class ContainerMapEntry {
 /// What the conversion DID to every source component of one web type, summarized per type. Derived from the
 /// finished <see cref="MobilePageConversionGuide.ViewConfigDiff"/> and
 /// <see cref="MobilePageConversionGuide.DroppedElements"/> — it is a report, never a prediction, and never
-/// an instruction: the operations are the instruction. A type whose configuration shipped NESTED inside
-/// another element's <c>values</c> has no row here, because the caller has nothing to do about it.
+/// an instruction: the operations are the instruction. A type gets no row here when NO instance of it has
+/// an operation of any kind AND the type is observed inside another element's <c>values</c> — a passenger
+/// the caller pastes without ever addressing it, so there is nothing to do about it. One instance with an
+/// entry of any kind keeps the row for the whole type, so a loss is never erased by a passenger that
+/// happens to share its type. The boundary: a type whose every instance is lost with NO entry at all is
+/// still reported here, but nothing anywhere reports the individual elements — that is a missing reason
+/// code, not a property of this section.
 /// </summary>
 public sealed class ComponentSuggestion {
 	[JsonPropertyName("sourceType")]
@@ -117,33 +122,53 @@ public sealed class ComponentSuggestion {
 	public IReadOnlyList<string> SourceNames { get; init; } = [];
 
 	/// <summary>
-	/// One of the five ComponentMappingCategory values, decided by the element map's OUTCOME first:
-	/// <c>DirectMapping</c> — an operation was emitted and this same type is the only suggested one;
-	/// <c>WithAdaptation</c> — an operation was emitted under a different mobile type (a web grid ships as a
-	/// finished <c>crt.List</c>), which <see cref="SuggestedMobileTypes"/> names; <c>AlternativeAvailable</c>
-	/// — NO operation was emitted and the rules file names what to use instead; <c>Unsupported</c> — no
-	/// operation and no advice, for a type the web registry knows; <c>RequiresManualDecision</c> — the same
-	/// for a type unknown to both registries, so probably a custom component. A rules file may substitute its
-	/// own declared value for the two non-direct converted/advised cases, and for nothing else.
+	/// One of the five ComponentMappingCategory values, in the vocabulary the mandated guidance article
+	/// defines, decided by the element map's OUTCOME first:
+	/// <list type="bullet">
+	/// <item><description><c>DirectMapping</c> — an operation was emitted and this same type is the only
+	/// suggested one ("same component type exists on mobile").</description></item>
+	/// <item><description><c>AlternativeAvailable</c> — an operation was emitted under a DIFFERENT mobile
+	/// type ("maps to a different mobile type"): a web grid ships as a finished <c>crt.List</c>. Also the
+	/// label when nothing was emitted and the rules file names something to use instead.</description></item>
+	/// <item><description><c>WithAdaptation</c> — "transferred, but layout/properties need adjusting". A
+	/// judgement no operation carries, so it is reachable ONLY from a rules file that declares it, and only
+	/// for a type the map produced nothing for.</description></item>
+	/// <item><description><c>Unsupported</c> — no nameable operation and no advice, for a type the WEB
+	/// registry knows.</description></item>
+	/// <item><description><c>RequiresManualDecision</c> — the same for a type unknown to BOTH registries,
+	/// so probably a custom component.</description></item>
+	/// </list>
 	/// </summary>
 	/// <remarks>
-	/// Read this to REPORT the conversion, not to plan it — the operations are the plan. Presence in the
-	/// MOBILE registry is deliberately not evidence of anything here: the previous implementation treated it
-	/// as such, which is how a type whose every instance an exclusion rule dropped still shipped as "carry it
-	/// over as-is", while a grid the same response converted into five finished <c>crt.List</c> inserts
-	/// shipped as "Unsupported" (ENG-95827).
+	/// <para>
+	/// Read this to REPORT the conversion, not to plan it — the operations are the plan. Where an operation
+	/// was emitted AND its target can be named, a rules file cannot speak here at all; everywhere else it
+	/// may substitute its own declared value, because there is no outcome for it to contradict.
+	/// </para>
+	/// <para>
+	/// Presence in the MOBILE registry is deliberately not evidence of anything: the previous implementation
+	/// treated it as such, which is how a type whose every instance an exclusion rule dropped still shipped
+	/// as "carry it over as-is", while a grid the same response converted into five finished <c>crt.List</c>
+	/// inserts shipped as "Unsupported". One consequence to expect rather than read as a bug: an operation
+	/// CAN be emitted under a type the mobile registry cannot name (a name-mapped container twin whose
+	/// mobile type resolves to null), and such a row falls back to <c>Unsupported</c> /
+	/// <c>RequiresManualDecision</c> with an empty <see cref="SuggestedMobileTypes"/> — there is no target
+	/// to report, and a category asserting one would name nothing (ENG-95827).
+	/// </para>
 	/// </remarks>
 	[JsonPropertyName("category")]
 	public string Category { get; init; }
 
 	/// <summary>
-	/// The distinct mobile type(s) this web type resolves to, ordered: every type the diff ACTUALLY emitted
-	/// an operation under, plus any the rules file declares that the diff emits no operation for — a
+	/// The distinct mobile type(s) this web type resolves to: every type the diff ACTUALLY emitted an
+	/// operation under, plus any the rules file declares that the diff emits no operation for — a
 	/// <c>crt.List</c>'s <c>crt.ListItem</c> row lives inside that list's <c>itemLayout</c>, so no operation
-	/// ever names it. A rule can only ADD here; it can never subtract an emitted type. Empty when nothing
-	/// was emitted and no rule names an alternative. One web type can list several because instances
-	/// diverge: a page's <c>crt.Button</c>s ship mostly as <c>crt.Button</c>, with one <c>crt.MenuItem</c>
-	/// where the action moved into a menu.
+	/// ever names it. A rule can only ADD here; it can never subtract an emitted type. Sorted
+	/// case-insensitively, NOT emitted-then-declared: the order carries no meaning and must not be read as
+	/// primary-first. One web type can list several because instances diverge — a page's <c>crt.Button</c>s
+	/// ship mostly as <c>crt.Button</c>, with one <c>crt.MenuItem</c> where the action moved into a menu.
+	/// Empty when nothing was emitted and no rule names an alternative, and also in the rarer case where an
+	/// operation WAS emitted under a type the mobile registry cannot name (see <see cref="Category"/>).
 	/// </summary>
 	[JsonPropertyName("suggestedMobileTypes")]
 	public IReadOnlyList<string> SuggestedMobileTypes { get; init; } = [];
@@ -703,9 +728,12 @@ public sealed class ElementMapEntry {
 /// </summary>
 /// <remarks>
 /// The set follows <see cref="ComponentSuggestion.SuggestedMobileTypes"/>, which is now derived from the
-/// emitted operations. While it was derived from a type table instead, the set was wrong in both directions
-/// on the reference page — no contract for the <c>crt.List</c> the diff inserted five times, and a contract
-/// for a <c>crt.SearchFilter</c> every instance of which was dropped (ENG-95827).
+/// emitted operations, intersected with what the mobile registry carries. While it was derived from a type
+/// table instead, the set was wrong in both directions on the reference page — no contract for the
+/// <c>crt.List</c> the diff inserted five times, and a contract for a <c>crt.SearchFilter</c> every
+/// instance of which was dropped. The registry intersection is a REMAINING hole of the same shape, not a
+/// design choice: an emitted type the registry does not carry still ships without its contract
+/// (ENG-95827).
 /// </remarks>
 public sealed class MobileComponentContract {
 	[JsonPropertyName("componentType")]
@@ -992,7 +1020,14 @@ public sealed class MobilePageConversionGuide {
 	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
 	public IReadOnlyList<DroppedElement> DroppedElements { get; init; }
 
-	/// <summary>Inline contracts for every mobile component type the <c>viewConfigDiff</c> emits.</summary>
+	/// <summary>
+	/// Inline contracts for the mobile component types the <c>viewConfigDiff</c> emits THAT THE MOBILE
+	/// REGISTRY CARRIES. Not every emitted type: a type absent from the registry silently gets no contract,
+	/// and <c>crt.MenuItem</c> — which the bundled rules emit for a header action retargeted into a
+	/// floating-action menu — is absent from the captured registry today. Read a missing contract as "not
+	/// described here", never as "do not build this": the operation is still in the diff and still gets
+	/// pasted.
+	/// </summary>
 	[JsonPropertyName("mobileContracts")]
 	public IReadOnlyList<MobileComponentContract> MobileContracts { get; init; } = [];
 

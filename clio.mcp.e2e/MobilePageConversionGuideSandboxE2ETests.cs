@@ -656,20 +656,48 @@ public sealed class MobilePageConversionGuideSandboxE2ETests : McpContractFixtur
 			}
 			names.Add(dropped.WebName);
 		}
+		// Self-consistency, which always has subjects on a real page: a category that asserts a target must
+		// name one, and a category that asserts none must name none. No row may disagree with the same
+		// response about the same type.
+		foreach (ComponentSuggestion suggestion in guide.ComponentSuggestions) {
+			string[] suggested = [.. suggestion.SuggestedMobileTypes ?? []];
+			switch (suggestion.Category) {
+				case "DirectMapping":
+					suggested.Should().Equal([suggestion.SourceType],
+						because: $"'{suggestion.SourceType}' is reported as mapping directly, so the only "
+							+ "suggested type must be itself — anything else is a different category");
+					break;
+				case "Unsupported" or "RequiresManualDecision":
+					suggested.Should().BeEmpty(
+						because: $"'{suggestion.SourceType}' is reported as not reaching mobile, so naming a "
+							+ "mobile type for it invites the caller to build what the page did not get");
+					break;
+				default:
+					suggested.Should().NotBeEmpty(
+						because: $"'{suggestion.SourceType}' is reported as '{suggestion.Category}', which "
+							+ "asserts a mobile target, so the row has to name it");
+					break;
+			}
+		}
+
+		// And the all-dropped rule, which only has subjects when the seeded pages actually drop something.
+		int allDroppedTypesChecked = 0;
 		foreach (ComponentSuggestion suggestion in guide.ComponentSuggestions) {
 			if (!droppedNamesByType.TryGetValue(suggestion.SourceType ?? string.Empty, out HashSet<string>? dropped)
 				|| suggestion.SourceNames is not { Count: > 0 } sourceNames
 				|| !sourceNames.All(dropped.Contains)) {
 				continue;
 			}
-			suggestion.Category.Should().NotBe("DirectMapping",
+			allDroppedTypesChecked++;
+			suggestion.Category.Should().BeOneOf(["Unsupported", "RequiresManualDecision"],
 				because: $"every named '{suggestion.SourceType}' on this page reached droppedElements, so "
-					+ "reporting it as directly mapped tells the developer at the conversion gate to carry "
-					+ "over a component the converter removed on purpose");
-			suggestion.Category.Should().NotBe("WithAdaptation",
-				because: $"every named '{suggestion.SourceType}' was dropped, so there is no adaptation to "
-					+ "describe — an adaptation category asserts an element reached the page");
+					+ "any category that asserts the type reached mobile tells the developer at the "
+					+ "conversion gate to carry over a component the converter removed on purpose");
 		}
+		// Reported rather than passed silently: an all-dropped-type-free seed set makes the loop above
+		// assert nothing, and a guard that covered nothing must not read as a guard that held.
+		TestContext.Out.WriteLine(
+			$"AssertAdvisorySectionsAgreeWithTheDiff: all-dropped rule covered {allDroppedTypesChecked} type(s).");
 	}
 
 	private static void AssertReasonCodesAreFromTheClosedVocabulary(MobilePageConversionGuide guide) {

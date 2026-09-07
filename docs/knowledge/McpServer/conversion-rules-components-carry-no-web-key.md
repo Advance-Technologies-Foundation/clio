@@ -15,9 +15,15 @@ one also `path`). **None carries a `web` key.** `ComponentEquivalenceRule.Web` d
 
 Two things follow. The equivalence-rule branch — `rule.Category`, `rule.Mobile`, `rule.Note`,
 `BuildPrimaryWebMergeNote` — is exercised **only by hand-built test rules**, never in production;
-`primaryWebMerge` therefore never appears on a real response. And the way a grid actually becomes a
-`crt.List` is a different lookup entirely: `ResolveTemplateTargetType` reads the first
-`viewConfigTemplates[].value.type` of the entry whose `filters`/`path` match, via `RuleAppliesTo`.
+`primaryWebMerge`, `note` and the `AlternativeAvailable`-from-a-rule path therefore never appear on a
+real response. But `FindRule` itself is **not** dead code: it has a second call site in
+`ResolveConvertedMobileType`, where `rule.Mobile` is the last fallback for a leaf's target type. So a
+published rules file carrying a `web` key would change **which types convert**, not just what the
+advisory sections say. Do not refactor `FindRule` away on the strength of the first call site.
+
+The way a grid actually becomes a `crt.List` is a third lookup, touching neither: `ResolveTemplateTargetType`
+reads the first `viewConfigTemplates[].value.type` of the entry whose `filters`/`path` match, via
+`RuleAppliesTo`.
 
 **Why it is this way** — the `web`/`mobile` pair was the original v1 matrix shape. The rules file
 then moved to filter/template groups, which express placement and a full value skeleton rather than

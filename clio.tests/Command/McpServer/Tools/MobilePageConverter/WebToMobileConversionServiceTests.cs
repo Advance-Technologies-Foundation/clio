@@ -340,16 +340,30 @@ public sealed class WebToMobileConversionServiceTests {
 
 		MobilePageConversionGuide guide = Analyze(bundle, webByType: web);
 
-		ForType(guide,"crt.Input").Category.Should().Be("DirectMapping");
-		ForType(guide,"crt.Input").SuggestedMobileTypes.Should().Equal("crt.Input");
-		ForType(guide,"crt.Checkbox").Category.Should().Be("AlternativeAvailable");
-		ForType(guide,"crt.Checkbox").SuggestedMobileTypes.Should().Equal("crt.Toggle");
-		ForType(guide,"crt.DataGrid").Category.Should().Be("AlternativeAvailable");
-		ForType(guide,"crt.DataGrid").SuggestedMobileTypes.Should().Equal("crt.List");
-		ForType(guide,"crt.ColorButton").Category.Should().Be("Unsupported");
-		ForType(guide,"crt.ColorButton").SuggestedMobileTypes.Should().BeEmpty();
-		ForType(guide,"usr.MyWidget").Category.Should().Be("RequiresManualDecision");
-		ForType(guide,"usr.MyWidget").SuggestedMobileTypes.Should().BeEmpty();
+		ForType(guide, "crt.Input").Category.Should().Be("DirectMapping",
+			because: "an operation was emitted under the SAME type, which is what the article's "
+				+ "directMapping means");
+		ForType(guide, "crt.Input").SuggestedMobileTypes.Should().Equal(new[] { "crt.Input" },
+			because: "the emitted target is the source type itself");
+		ForType(guide, "crt.Checkbox").Category.Should().Be("AlternativeAvailable",
+			because: "it converted to a DIFFERENT mobile type, which is the article's own definition of "
+				+ "alternativeAvailable and its own example (crt.Checkbox -> crt.Toggle)");
+		ForType(guide, "crt.Checkbox").SuggestedMobileTypes.Should().Equal(new[] { "crt.Toggle" },
+			because: "the row must name what the map actually produced, not what a type table predicted");
+		ForType(guide, "crt.DataGrid").Category.Should().Be("AlternativeAvailable",
+			because: "the grid converted to crt.List — a different mobile type");
+		ForType(guide, "crt.DataGrid").SuggestedMobileTypes.Should().Equal(new[] { "crt.List" },
+			because: "mobileContracts is built from this list, so it has to name the type the caller pastes");
+		ForType(guide, "crt.ColorButton").Category.Should().Be("Unsupported",
+			because: "no operation was emitted for it and the WEB registry knows the type, so the page "
+				+ "simply did not get it");
+		ForType(guide, "crt.ColorButton").SuggestedMobileTypes.Should().BeEmpty(
+			because: "there is no target to name and no rule advising one");
+		ForType(guide, "usr.MyWidget").Category.Should().Be("RequiresManualDecision",
+			because: "unknown to BOTH registries is the one thing that separates a probable custom "
+				+ "component from a web component mobile lacks");
+		ForType(guide, "usr.MyWidget").SuggestedMobileTypes.Should().BeEmpty(
+			because: "nothing converted and no rule advises an alternative");
 	}
 
 	[Test]
@@ -376,12 +390,20 @@ public sealed class WebToMobileConversionServiceTests {
 			suggestedTarget: "UsrApp_MobileListPage", containerNameMap: null);
 
 		ComponentSuggestion grid = ForType(guide, "crt.DataGrid");
-		grid.Category.Should().Be("AlternativeAvailable");
-		grid.SuggestedMobileTypes.Should().Equal("crt.List", "crt.ListItem");
-		grid.Note.Should().Contain("itemLayout");
+		grid.Category.Should().Be("AlternativeAvailable",
+			because: "the grid converted to a different mobile type, which is the article's definition of "
+				+ "this category — the rule declares the same value, but it is no longer the rule that decides");
+		grid.SuggestedMobileTypes.Should().Equal(new[] { "crt.List", "crt.ListItem" },
+			because: "crt.List is what the map emitted and crt.ListItem is what the rule adds for the row "
+				+ "that lives inside the list's itemLayout, where no operation ever names it");
+		grid.Note.Should().Contain("itemLayout",
+			because: "the rules author's note is the only text this section still carries, and it is what "
+				+ "tells the caller where the ListItem row goes");
 		// Element map inserts the primary mobile type; the model adds the ListItem row into its itemLayout.
-		Element(guide, "DataTable").Operation.Should().Be("insert");
-		TypeOf(Element(guide, "DataTable")).Should().Be("crt.List");
+		Element(guide, "DataTable").Operation.Should().Be("insert",
+			because: "the grid is created on the mobile page rather than layered onto a template twin");
+		TypeOf(Element(guide, "DataTable")).Should().Be("crt.List",
+			because: "the view-config template is what converts the grid, and its value declares crt.List");
 	}
 
 	/// <summary>
@@ -420,10 +442,13 @@ public sealed class WebToMobileConversionServiceTests {
 			because: "the template group converts the grid whether or not any equivalence rule matches — this "
 				+ "is the outcome the advisory pass has to agree with, and the premise of the rest of the test");
 		ComponentSuggestion grid = ForType(guide, "crt.DataGrid");
-		grid.Category.Should().Be("WithAdaptation",
-			because: "the type WAS converted, just not to itself; reporting it as Unsupported tells the "
-				+ "developer at the conversion gate that the page's five largest elements are unavailable "
-				+ "while the same response hands them over finished");
+		grid.Category.Should().Be("AlternativeAvailable",
+			because: "the mandated article defines alternativeAvailable as \"maps to a different mobile "
+				+ "type\", which is exactly what happened; reporting it as Unsupported tells the developer at "
+				+ "the conversion gate that the page's five largest elements are unavailable while the same "
+				+ "response hands them over finished. withAdaptation is NOT the label: the article defines it "
+				+ "as \"layout/properties need adjusting\", a judgement no operation carries, and the same "
+				+ "article orders this payload pasted as-is");
 		grid.SuggestedMobileTypes.Should().Equal(new[] { "crt.List" },
 			because: "the only honest answer to \"what did this become\" is what the map emitted — an empty "
 				+ "list sends the caller to get-component-info for a decision already taken");
@@ -476,6 +501,126 @@ public sealed class WebToMobileConversionServiceTests {
 		ForType(guide, "crt.Input").Category.Should().Be("DirectMapping",
 			because: "the surviving sibling must still classify normally, or the assertion above would pass "
 				+ "for a guide that simply reports nothing");
+	}
+
+	[Test]
+	[Description("A source type whose configuration shipped NESTED inside another element's values gets no suggestion row and no contract at all. Nine components on the OOTB Leads_FormPage travel this way — six crt.ComboboxSearchTextAction plus the three composers — and every one was reported 'not supported in Freedom UI Mobile Designer. Use get-component-info to find a supported mobile alternative' while the same response shipped their JSON inside values the caller is told to paste verbatim (ENG-95827).")]
+	public void Analyze_ComponentSuggestions_TypeCarriedInsideAnotherElementsValues_GetsNoRow() {
+		// Arrange — `tools` is carried VERBATIM rather than walked into child entries precisely because its
+		// member type resolves to no mobile type, so the passenger reaches the page with no operation of its
+		// own. The source walk still sees it through the shape-only slot scan, so a row exists to suppress.
+		PageBundleInfo bundle = Bundle("""
+			[ { "name": "Main", "type": "crt.FlexContainer", "items": [
+				{ "name": "Lookup", "type": "crt.ComboBox",
+				  "tools": [ { "name": "LookupSearchAction", "type": "crt.ComboboxSearchTextAction" } ] } ] } ]
+			""");
+
+		// Act
+		MobilePageConversionGuide guide = Analyze(bundle,
+			webByType: Reg(("crt.FlexContainer", true)),
+			mobileByType: Reg(("crt.ComboBox", false)),
+			// Deliberately WITHOUT crt.ComboboxSearchTextAction: that absence is what makes `tools` a carried
+			// value instead of a walked child-element array, which is the whole mechanism under test.
+			mobileTypes: new HashSet<string>(StringComparer.OrdinalIgnoreCase) {
+				"crt.FlexContainer", "crt.ComboBox"
+			});
+
+		// Assert
+		guide.SourceStructure.Should().Contain(s => s.Name == "LookupSearchAction",
+			because: "the source walk must see the passenger, or there is no row to suppress and the "
+				+ "assertions below pass for the wrong reason");
+		Element(guide, "Lookup").Values!["tools"]![0]!["type"]!.GetValue<string>()
+			.Should().Be("crt.ComboboxSearchTextAction",
+				because: "the passenger really does reach the page inside the parent's pasted values — the "
+					+ "premise that makes reporting it unavailable a contradiction rather than a hint");
+		DroppedNames(guide).Should().NotContain("LookupSearchAction",
+			because: "it was not dropped, so the omission below must come from the nested observation and "
+				+ "not from a drop having been recorded");
+		guide.ComponentSuggestions.Should().NotContain(s => s.SourceType == "crt.ComboboxSearchTextAction",
+			because: "the caller has nothing to do about a component that shipped inside another element's "
+				+ "values; the row this replaces told them to find a mobile alternative for something the "
+				+ "same response had already delivered");
+		guide.MobileContracts.Should().NotContain(c => c.ComponentType == "crt.ComboboxSearchTextAction",
+			because: "a contract is the caller's licence to build the component separately, which would "
+				+ "duplicate the one already inside the parent's values");
+		ForType(guide, "crt.ComboBox").Category.Should().Be("DirectMapping",
+			because: "the carrying parent must still classify normally, or both NotContain assertions above "
+				+ "would pass for a guide whose suggestions section is simply empty");
+	}
+
+	[Test]
+	[Description("A type that travelled nested in one place and was LOST in another keeps its row. The loss arrives as `relocate-children`, the fourth Operation value: a container with no mobile equivalent, which droppedElements reports as drop-container-no-mobile-equivalent. Keying the row omission on the two EMITTING operations plus drop let that entry read identically to 'no entry at all', so one nested passenger deleted the row for a type the same response reports as lost — the two advisory channels then contradicted each other. The two preconditions are one predicate (the type resolves to no mobile type), so this was reachable, not theoretical (ENG-95827, gate 2).")]
+	public void Analyze_ComponentSuggestions_TypeNestedInOnePlaceAndRelocatedInAnother_KeepsItsRow() {
+		// Arrange — crt.FlexContainer is in NEITHER registry here: as a non-empty container its entry becomes
+		// relocate-children, and as a non-resolving member of Host's slot it is carried verbatim.
+		PageBundleInfo bundle = Bundle("""
+			[ { "name": "Root", "type": "crt.GridContainer", "items": [
+				{ "name": "Wrapper", "type": "crt.FlexContainer", "items": [
+					{ "name": "LeadName", "type": "crt.Input" } ] },
+				{ "name": "Host", "type": "crt.Input",
+				  "someSlot": [ { "name": "Nested", "type": "crt.FlexContainer" } ] } ] } ]
+			""");
+
+		// Act
+		MobilePageConversionGuide guide = Analyze(bundle);
+
+		// Assert
+		Codes(Dropped(guide, "Wrapper")).Should().Contain(ReasonCodes.DropContainerNoMobileEquivalent,
+			because: "the container really is reported as lost — which is what makes an absent suggestion "
+				+ "row a contradiction between two channels of the same response, not merely a thin report");
+		Element(guide, "Host").Values!["someSlot"]![0]!["type"]!.GetValue<string>()
+			.Should().Be("crt.FlexContainer",
+				because: "the same type also travels nested, which is the condition that used to erase the "
+					+ "row — the premise of the assertion below");
+		guide.ComponentSuggestions.Should().Contain(s => s.SourceType == "crt.FlexContainer",
+			because: "one instance with an entry of ANY kind keeps the row for the whole type, so a loss can "
+				+ "never be erased by a passenger that happens to share its type");
+		ForType(guide, "crt.FlexContainer").Category.Should().Be("RequiresManualDecision",
+			because: "no operation was emitted for it and it is unknown to both registries, so the row must "
+				+ "send the reader to decide rather than assert a mobile target");
+	}
+
+	[Test]
+	[Description("A matching rule cannot relabel a conversion that already happened, and its declared mobile types are ADDED to the emitted ones rather than substituted. Before this, rule.Category won on the converted path, so a published {\"web\":[\"crt.DataGrid\"],\"category\":\"Unsupported\"} would have reproduced the original ENG-95827 defect exactly — while the method's own remark claimed the opposite. Nothing distinguished union from override either, because in every other fixture the emitted and declared sets coincide (ENG-95827, gate 2).")]
+	public void Analyze_ComponentSuggestions_RuleCannotRelabelAConversion_AndItsTypesOnlyAdd() {
+		// Arrange — the rule matches by `web`, declares the WRONG category and a type the map emits no
+		// operation for; the template group is what actually converts the grid.
+		PageBundleInfo bundle = Bundle("""
+			[ { "name": "Main", "type": "crt.FlexContainer", "items": [
+				{ "name": "DataTable", "type": "crt.DataGrid",
+				  "columns": [ { "code": "Name" }, { "code": "Age" } ] } ] } ]
+			""");
+		var rules = new WebToMobilePageConversionRules {
+			Components = [
+				new ComponentEquivalenceRule {
+					Web = ["crt.DataGrid"], Mobile = ["crt.ListItem"], Category = "Unsupported",
+					Filters = [new ElementFilterRule { Type = "crt.DataGrid" }],
+					ViewConfigTemplates = [ListTemplate]
+				}
+			]
+		};
+
+		// Act
+		MobilePageConversionGuide guide = Analyze(bundle,
+			webByType: Reg(("crt.FlexContainer", true)),
+			mobileByType: Reg(("crt.List", false)),
+			rules: rules);
+
+		// Assert
+		TypeOf(Element(guide, "DataTable")).Should().Be("crt.List",
+			because: "the grid converted — the outcome the rule must not be able to contradict");
+		ComponentSuggestion grid = ForType(guide, "crt.DataGrid");
+		grid.Category.Should().Be("AlternativeAvailable",
+			because: "an operation was emitted and its target can be named, so the rules file may not speak "
+				+ "at all here; honouring its \"Unsupported\" would tell the developer the grid is "
+				+ "unavailable on a response that just built it");
+		grid.SuggestedMobileTypes.Should().Equal(new[] { "crt.List", "crt.ListItem" },
+			because: "the declared type is ADDED to what the map emitted, never substituted — an override "
+				+ "would drop crt.List and starve mobileContracts of the contract for the type the caller is "
+				+ "actually pasting, which is the failure this whole change removes");
+		guide.MobileContracts.Should().Contain(c => c.ComponentType == "crt.List",
+			because: "the contract set follows the suggested types, so the union is what keeps the emitted "
+				+ "type's contract on the wire");
 	}
 
 	[Test]
