@@ -943,3 +943,19 @@ commit source -> rebundle -> commit the descriptor bump it makes -> commit clio.
 Files: crt-process-builder a077e25 + cddd4fd, clio eb358755e, clio.tests/Common/BundledProcessBuilderPackageTests.cs
 Impact: The read-vs-write shape asymmetry is now stated in DescribeContracts at both levels it was wrong at,
 which is the claim that produced three separate review rounds.
+
+## 2026-09-07 12:05 – ENG-92713 DescribeShaped flagged half-translated approval blocks
+Context: r-sadovskyi on clio PR 1341 — a block with a correct nested approver PLUS a leftover flat
+approverType was reported as unconfigured, though the approver had landed.
+Decision: Narrow only the approverType disjunct to "nested approver absent". The notification markers stay
+as they are, pinned by a test.
+Discovery: The three DescribeShaped markers are not symmetric, and that is the whole rule. notifyApprover /
+notifyAuthor share ONE key between read and write shapes (boolean vs object), so they cannot coexist and a
+JsonValue proves nothing bound. The approver uses TWO keys (approverType read, approver write), so both can
+appear — which is exactly a half-translated block. Verified from package source: approverType is on the read
+contract only, and no write contract implements IExtensibleDataObject, so DataContractJsonSerializer drops
+the unknown member unread. Also: RequiresPackage throws, so behind the floor the other ApprovalDropKinds are
+the net for installed-but-not-compiled, not normal-operation paths — this marker is the one that fires.
+Files: clio/Command/ProcessModel/ApprovalBlockExpectation.cs, clio.tests/Command/ProcessModel/ApprovalBlockExpectationTests.cs
+Impact: A marker that short-circuits before the read-back is consulted must be proven, not merely suggestive —
+nothing downstream can correct it.
