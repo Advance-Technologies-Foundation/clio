@@ -1,0 +1,64 @@
+{
+  "run": "2026-09-03-runtime",
+  "kind": "BLIND instrument run - isolated agent, no memory, no repository access, clio MCP only",
+  "scope": "stored AND runtime",
+  "executedBy": "a peer session; every verdict re-read by that session rather than taken from the executor's account",
+  "stand": {
+    "name": "krestov-test",
+    "core": "10.0.731.0",
+    "crtProcessBuilder": "1.4.0.52"
+  },
+  "commits": {
+    "clio": "ab20c4deb",
+    "crtProcessBuilder": "ce9234ea5",
+    "guidance": "044877c4"
+  },
+  "guidanceLibraryVersion": "1.13.87",
+  "verdicts": {
+    "TC-C1": "PASS",
+    "TC-C2": "PASS",
+    "TC-C3": "PASS on the requirement, VOID as a formula test - the agent met it with Duration/DurationPeriod and no formula at all"
+  },
+  "firstTimeCovered": [
+    "a blind run at this generation: it measures whether the SHIPPED library suffices for someone who knows nothing else, which the two earlier runs could not - the feature session executed those with full knowledge of the implementation",
+    "formulas past storage into RUNTIME: the engine evaluates the stored expression and the result reaches the task a person sees"
+  ],
+  "defects": [
+    {
+      "id": "D1",
+      "severity": "High",
+      "summary": "a decimal literal written the ordinary C# way produces 1.2mm and the formula is refused",
+      "evidence": "Process validation failed: ConfirmOrderTotal.Recommendation [Error while executing expression \"...(AmountParameter * 1.2mm).ToString(\"0\")\": Formula value error: ')' or operator expected (at index 50).]",
+      "owner": "the PLATFORM converter, plus the guidance",
+      "verifiedInSource": "Terrasoft.Core GeneratorUtilities.ConvertToDecimalsInCode line 114 appends the decimal suffix with an unconditional regex replace over any digit-dot-digits run - it does not check for an existing suffix, so a suffixed literal arrives doubled",
+      "actionTaken": "guidance rule added where an author writes literals (not only where refusals are explained) and pinned by ProcessFormulaGuidanceTests, shipped as clio-knowledge 1.13.88. The converter is Terrasoft.Core and not ours to fix, which is precisely what makes the sentence mandatory rather than optional."
+    },
+    {
+      "id": "D2",
+      "severity": "Medium",
+      "summary": "odata-read refuses six of ten calls on argument shape - select as a string, filter as a raw OData string",
+      "owner": "clio tool-contract discoverability",
+      "actionTaken": "not this branch; belongs with the MCP parameter-contract work"
+    },
+    {
+      "id": "D3",
+      "severity": "Low",
+      "summary": "the process tools are absent from the resident profile and nothing points at clio-run",
+      "owner": "clio",
+      "actionTaken": "pre-existing and already reported"
+    }
+  ],
+  "efficiency": {
+    "toolCalls": 42,
+    "baseline": 19,
+    "ratio": "2.2x",
+    "failedCalls": 9,
+    "callsSpentOnFormulaVocabulary": 0,
+    "note": "two generations ago, finding the parameter-reference form alone cost 21 calls and sixteen spellings on one process; this run wrote it correctly on the first try, which is what the REFERENCING A PARAMETER section was for"
+  },
+  "notCovered": [
+    "TC-C3 exercised no formula, so the deadline case is void as a test of this feature - a defect of the prompt, not of the agent or the product"
+  ],
+  "standState": "three processes left on krestov-test in the Custom package (BPTest ENG95891 R3 C1..C3), parked on a Perform task with open tasks - closing a task destroys the evidence",
+  "machineState": "the executing machine was left in a TEST configuration: guidance served from a git source at 044877c4 with knowledge-allow-unsequenced enabled, which relaxes content-integrity checking for that source across every clio run on the machine. Settings backup at appsettings.json.bpskills-backup. Anything guidance-dependent measured there is measuring an unpublished library."
+}

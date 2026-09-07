@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text.Json;
@@ -164,6 +164,88 @@ public sealed class CreateBusinessProcessToolE2ETests {
 		describeJson.Should().Contain(SourceOutputParameter,
 			because: "the element's output parameter (the mapping source) is surfaced by describe because it is a result/output");
 	}
+
+	[Test]
+	[Description("Over the real MCP path, a build descriptor's mappings[] may carry an 'expression' source, and it is validated, stored and read back as a Script. The formula is checked by the PLATFORM at the pre-save gate, not by clio's package - from CrtProcessBuilder 1.4.0.41 the package does not look at it at all - so what this proves is that a valid formula survives the gate, is stored as a Script and reads back. The modify path had this coverage and create did not, while the floor was raised on both.")]
+	[AllureTag(ToolName)]
+	[AllureName("create-business-process stores a formula mapping that reads back")]
+	public async Task CreateBusinessProcess_Should_StoreAndReadBackAFormulaMapping() {
+		// Arrange
+		await using ArrangeContext context = await ArrangeAsync(requireReachableEnvironment: true);
+		string processName = $"UsrClioBpCreateFormulaE2e{Guid.NewGuid():N}";
+
+		// Act
+		CallToolResult callResult = await CallToolAsync(context, new Dictionary<string, object?> {
+			["environment-name"] = context.EnvironmentName,
+			["descriptor"] = BuildFormulaMappingDescriptor(processName, "FormulaUtilities.Max(1, 2, 3)")
+		});
+
+		// Assert
+		callResult.IsError.Should().NotBeTrue(
+			because: "FormulaUtilities.Max is one of the four Creatio formula functions and its result fits a Float parameter, so the build must be accepted on the create path exactly as it is on modify");
+		string describeJson = JsonSerializer.Serialize(await DescribeAsync(context, processName));
+		describeJson.Should().Contain("FormulaUtilities.Max(1, 2, 3)",
+			because: "the formula text must survive the save verbatim - the platform, not clio, decides its meaning");
+		describeJson.Should().Contain("Script",
+			because: "a formula is stored as a Script source, not a constant; that is how the runtime knows to evaluate it rather than read it");
+	}
+
+	[Test]
+	[Description("Over the real MCP path, a build descriptor's formula whose result cannot become the target's declared type is refused BY THE SERVER, and the process is not created. Without this the create path would accept what modify refuses, and the difference would only surface at run time.")]
+	[AllureTag(ToolName)]
+	[AllureName("create-business-process refuses a formula the target type cannot hold")]
+	public async Task CreateBusinessProcess_Should_RefuseAFormulaTheTargetTypeCannotHold() {
+		// Arrange - the target is Integer and the formula is fractional.
+		await using ArrangeContext context = await ArrangeAsync(requireReachableEnvironment: true);
+		string processName = $"UsrClioBpCreateBadFormulaE2e{Guid.NewGuid():N}";
+
+		// Act
+		CallToolResult callResult = await CallToolAsync(context, new Dictionary<string, object?> {
+			["environment-name"] = context.EnvironmentName,
+			["descriptor"] = BuildIntegerTargetFormulaDescriptor(processName, "1.5")
+		});
+
+		// Assert
+		// NOT on callResult.IsError: measured null on this refusal, exactly as it is on success — every
+		// sibling assertion in this fixture is deliberately NotBeTrue for that reason, so the flag carries no
+		// signal here. What the description promises is that nothing was CREATED, so that is what is asserted.
+		string describeJson = JsonSerializer.Serialize(await DescribeAsync(context, processName));
+		describeJson.Should().Contain("was not found",
+			because: "the description promises the process is not created, and the refusal now comes from the "
+				+ "whole-schema save gate rather than from the operation - so atomicity is newly load-bearing "
+				+ "on this path and asserting only the message text would not notice a half-created schema. "
+				+ "Asserted POSITIVELY on the not-found answer rather than as NotContain(processName): the "
+				+ "not-found message quotes the name it looked for, so the negative form fails on a correct "
+				+ "result");
+		string callResultJson = JsonSerializer.Serialize(callResult);
+		callResultJson.Should().Contain("Int32",
+			because: "the refusal must name the type the result cannot become, so the caller can correct the formula instead of guessing");
+		callResultJson.Should().Contain("1.5",
+			because: "the refusal must quote the expression, or the caller cannot find it in a multi-mapping "
+				+ "descriptor. Deliberately a SUBSTRING and not equality to \"1.5\": the platform quotes the "
+				+ "expression as its own converter left it, and the converter suffixes a fractional literal with m "
+				+ "- measured, the message reads 'Error while executing expression \"1.5m\"'. An earlier version of "
+				+ "this rationale claimed the text is quoted AS WRITTEN, which the same measurement disproves: a "
+				+ "parameter reference is shown by the parameter NAME, not by the metapath the caller sent");
+	}
+
+	private static string BuildFormulaMappingDescriptor(string processName, string expression) =>
+		"{\"name\":\"" + processName + "\",\"caption\":\"Clio BP Create Formula E2E\",\"packageName\":\"Custom\","
+		+ "\"elements\":[{\"name\":\"StartEvent1\",\"type\":\"startEvent\"},"
+		+ "{\"name\":\"EndEvent1\",\"type\":\"endEvent\"}],"
+		+ "\"flows\":[{\"source\":\"StartEvent1\",\"target\":\"EndEvent1\"}],"
+		+ "\"parameters\":[{\"name\":\"Sum\",\"type\":\"Float\",\"direction\":\"Variable\"}],"
+		+ "\"mappings\":[{\"targetProcessParameter\":\"Sum\",\"expression\":\""
+		+ expression.Replace("\\", "\\\\").Replace("\"", "\\\"") + "\"}]}";
+
+	private static string BuildIntegerTargetFormulaDescriptor(string processName, string expression) =>
+		"{\"name\":\"" + processName + "\",\"caption\":\"Clio BP Create Bad Formula E2E\",\"packageName\":\"Custom\","
+		+ "\"elements\":[{\"name\":\"StartEvent1\",\"type\":\"startEvent\"},"
+		+ "{\"name\":\"EndEvent1\",\"type\":\"endEvent\"}],"
+		+ "\"flows\":[{\"source\":\"StartEvent1\",\"target\":\"EndEvent1\"}],"
+		+ "\"parameters\":[{\"name\":\"Count\",\"type\":\"Integer\",\"direction\":\"Variable\"}],"
+		+ "\"mappings\":[{\"targetProcessParameter\":\"Count\",\"expression\":\""
+		+ expression.Replace("\\", "\\\\").Replace("\"", "\\\"") + "\"}]}";
 
 	[Test]
 	[Description("Over the real MCP path, create-business-process REJECTS an element->process mapping whose types are incompatible (a Boolean element output into an Integer process parameter), enforcing the ENG-92127 type-compatibility rule (AC#3).")]

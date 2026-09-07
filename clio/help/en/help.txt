@@ -16,7 +16,7 @@ Commands:
   alm-deploy                                  Deploy a package to Creatio, deploy
   apply-manifest                              Apply an environment manifest, apply-environment-manifest, applym
   assert                                      Validates infrastructure and filesystem resources
-  autoupdate                                  Enable or disable automatic updates on startup
+  autoupdate                                  Enable or disable automatic clio updates on startup
   build-docker-image                          Build a Docker image for a Creatio .NET 8+ distribution or bundled database backup
   build-theme                                 Build the artifacts of a Creatio theme from brand colours and fonts
   build-workspace                             Build the current workspace in Creatio, build, compile, compile-all, rebuild

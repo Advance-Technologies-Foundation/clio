@@ -30,6 +30,13 @@ public sealed class GetTargetPackageTool(
 
 	/// <summary>Resolves the target package and returns its name, or a classified failure.</summary>
 	[McpServerTool(Name = ToolName, ReadOnly = true, Destructive = false, Idempotent = true, OpenWorld = false)]
+	[McpToolExecution(
+		Location = McpToolExecutionLocation.Worker,
+		Lifetime = McpToolExecutionLifetime.PerCall,
+		OperationFamily = McpToolOperationFamily.None,
+		BudgetPolicy = McpToolBudgetPolicy.ParentKillDefault,
+		RequiresClientRequests = McpToolClientRequests.None,
+		SharedFileResource = McpToolSharedFileResource.None)]
 	[Description("Resolve the package a run's design-time writes land in on a registered environment, and " +
 		"verify it can receive them. Pass package to resolve a package the user named (checks it exists and " +
 		"is not locked); omit package to resolve the package the environment's CurrentPackageId system " +

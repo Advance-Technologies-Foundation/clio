@@ -388,6 +388,41 @@ public sealed class PageValidateToolE2ETests : McpContractFixtureBase {
 	}
 
 	[Test]
+	[Description("Returns valid: true when an inserted crt.EmailComposer carries the platform-authored data.caption literal — a component's data descriptor is component metadata, not page-authored user-visible text, so the localizable-text rule must NOT reject it (issue #1298). Proves the descriptor exemption reaches through the real MCP transport.")]
+	[AllureTag(ToolName)]
+	[AllureName("validate-page accepts platform-authored data.caption on a Timeline composer")]
+	[AllureDescription("Sends a page body whose inserted crt.EmailComposer carries the descriptor the Freedom UI designer writes (uId, schemaType, typeName, caption: \"Email\") and verifies validate-page accepts it — otherwise every page containing a Timeline composer would be unsaveable through clio.")]
+	public async Task PageValidateTool_Should_Accept_Platform_Authored_Composer_Data_Caption() {
+		// Arrange
+		string bodyWithComposerDescriptor = ValidPageBody.Replace(
+			"viewConfigDiff: /**SCHEMA_VIEW_CONFIG_DIFF*/[]/**SCHEMA_VIEW_CONFIG_DIFF*/",
+			"viewConfigDiff: /**SCHEMA_VIEW_CONFIG_DIFF*/[" +
+				"{\"operation\":\"insert\",\"name\":\"EmailComposer\",\"parentName\":\"MessageComposer\"," +
+				"\"propertyName\":\"items\",\"values\":{\"type\":\"crt.EmailComposer\"," +
+				"\"classes\":[\"view-element\"],\"data\":{\"uId\":\"f80b7f5b-ad11-09ed-189a-6190abb76340\"," +
+				"\"schemaType\":\"Email\",\"typeName\":\"crt.EmailComposer\",\"caption\":\"Email\"}," +
+				"\"recordId\":\"$Id\",\"visible\":true}}" +
+				"]/**SCHEMA_VIEW_CONFIG_DIFF*/");
+		await using var context = Arrange(TimeSpan.FromMinutes(3));
+
+		// Act
+		PageValidateResponse response = await CallAsync(
+			context.Session,
+			context.CancellationTokenSource.Token,
+			bodyWithComposerDescriptor);
+
+		// Assert
+		response.Valid.Should().BeTrue(
+			because: "values.data is the composer's own descriptor, written and round-tripped unchanged by the platform (issue #1298)");
+		response.Validation.Should().NotBeNull(
+			because: "validation details are always included in the response");
+		response.Validation!.ContentOk.Should().BeTrue(
+			because: "no content-level validator, including the localizable-text rule, should reject a platform-authored component descriptor");
+		response.Validation.Errors.Should().BeNullOrEmpty(
+			because: "a page carrying a Timeline composer must stay saveable through clio");
+	}
+
+	[Test]
 	[Description("Returns valid: false when viewConfigDiff sets a user-visible text property (placeholder) to an inline string literal instead of a localizable-string binding — proves the localizable-text hard reject fires through the real MCP transport.")]
 	[AllureTag(ToolName)]
 	[AllureName("validate-page rejects inline placeholder literal")]

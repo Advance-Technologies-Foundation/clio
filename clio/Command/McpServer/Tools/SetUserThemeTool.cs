@@ -30,6 +30,13 @@ public class SetUserThemeTool(
 		new(McpToolArgumentSupport.EnvironmentNameAliases, StringComparer.Ordinal);
 
 	/// <summary>Applies (or resets) the current user's profile theme and returns a structured result.</summary>
+	[McpToolExecution(
+		Location = McpToolExecutionLocation.Worker,
+		Lifetime = McpToolExecutionLifetime.PerCall,
+		OperationFamily = McpToolOperationFamily.None,
+		BudgetPolicy = McpToolBudgetPolicy.ParentKillDefault,
+		RequiresClientRequests = McpToolClientRequests.None,
+		SharedFileResource = McpToolSharedFileResource.None)]
 	[McpServerTool(Name = ToolName, ReadOnly = false, Destructive = true, Idempotent = true, OpenWorld = false),
 	 Description("Apply a Creatio theme to the current (authenticated) user's profile on a registered environment, " +
 		"or clear it with reset. Overwrites the profile's current theme, so it is a confirmed write (the host " +
