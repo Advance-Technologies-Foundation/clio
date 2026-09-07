@@ -988,6 +988,13 @@ public sealed class MobilePageConversionGuide {
 	/// operations, rename their fields, or infer merge-vs-insert from <c>containerMap</c>.
 	/// </summary>
 	/// <remarks>
+	/// <c>name</c> is NOT unique in this array: apply the operations IN ORDER and never deduplicate them by
+	/// name. Two operations may legitimately target one element — a merge that shifts a template-provided
+	/// container's <c>layoutConfig</c> beside one that fills its properties — and keeping "the cleaner one"
+	/// discards a shift nothing else reports. The one duplicate that USED to invite that choice, a
+	/// payload-free merge twin beside an operation that already declares the element, is no longer emitted;
+	/// a payload-free merge that arrives alone is still meant to be applied as-is.
+	/// <para>
 	/// Every entry is an applier operation and nothing else. What did NOT convert is not an operation, so
 	/// it is in <see cref="DroppedElements"/>; the source correspondence is in <see cref="NameMap"/>; a
 	/// parent nothing provides is in <see cref="UnresolvedParents"/> (ENG-95827).

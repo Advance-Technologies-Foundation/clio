@@ -124,6 +124,47 @@ public sealed class WebToMobileRealPageRegressionTests {
 				+ "search on mobile, so the artifact has to be checked and not only the verdict");
 	}
 
+	/// <summary>True when an operation's <c>values</c> actually says something — present and, if an object,
+	/// not empty. Kept out of the assertion lambdas because an expression tree cannot hold a pattern.</summary>
+	private static bool CarriesAPayload(ViewConfigDiffOperation operation) =>
+		operation.Values is not null && operation.Values is not JsonObject { Count: 0 };
+
+	/// <summary>True when another operation in the same array names the same element.</summary>
+	private static bool SharesItsNameWithAnother(
+		IReadOnlyList<ViewConfigDiffOperation> operations, ViewConfigDiffOperation operation) =>
+		operation.Name is { Length: > 0 } name
+		&& operations.Count(other => string.Equals(other.Name, name, StringComparison.OrdinalIgnoreCase)) > 1;
+
+	[Test]
+	[Description("On the real page no element is named by two operations where one of them carries nothing. Two merges on one name is the classic dedupe signal, and on this page one of the pair held the only copy of a shifted layoutConfig — a caller that kept 'the cleaner empty one' silently reproduced a misplacement the article itself calls unreportable. The payload-free twin is no longer emitted, so the choice does not arise; a payload-free merge that arrives ALONE still ships, because the applier requires values on a merge and a page business rule needs the element declared (ENG-95827, step 3.5).")]
+	public void Analyze_ShouldNotEmitAPayloadFreeTwin_OnTheRealLeadsFormPageShape() {
+		// Arrange
+		JsonObject fixture = LoadFixture();
+		IReadOnlySet<string> mobileTypes = MobileTypesResolvingSearchFilter(fixture["viewConfig"]!);
+
+		// Act
+		MobilePageConversionGuide guide = Convert(fixture, mobileTypes, BundledRules());
+
+		// Assert
+		IReadOnlyList<ViewConfigDiffOperation> operations = guide.ViewConfigDiff;
+		operations.Should().NotBeEmpty(
+			because: "the real page converts, so the assertions below have subjects");
+		// Asserted over the WHOLE array rather than over a filtered subset, so it cannot pass by having no
+		// subjects: FluentAssertions' OnlyContain fails on an empty collection, and a filter that comes back
+		// empty on this fixture would have made the guard read as held while checking nothing.
+		operations.Should().NotContain(
+			op => !CarriesAPayload(op) && SharesItsNameWithAnother(operations, op),
+			because: "an element named by more than one operation needs every one of them to say something — a "
+				+ "payload-free twin beside a payload-bearing one is the duplicate that invites a caller to keep "
+				+ "the wrong half and lose a layoutConfig shift nothing else reports. A payload-free merge that "
+				+ "arrives ALONE is untouched: the applier requires values on a merge, and a page business rule "
+				+ "needs its template-provided target declared");
+		operations.Where(op => !CarriesAPayload(op)).Should().OnlyHaveUniqueItems(
+			op => op.Name,
+			because: "the same reading from the other side — two payload-free operations on one name would be "
+				+ "two no-ops a caller has to reconcile");
+	}
+
 	[Test]
 	[Description("The rule is surgical on a real page: removing the excludedComponents section from the rules changes the conversion of the five search filters and NOTHING else — no orphan cascade, no container emptied, no attribute pruned, no request reclassified.")]
 	public void Analyze_ShouldChangeNothingBesideTheSearchFilters_OnTheRealLeadsFormPageShape() {

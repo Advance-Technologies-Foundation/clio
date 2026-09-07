@@ -932,6 +932,44 @@ public sealed class WebToMobileConversionServiceTests {
 		};
 
 	[Test]
+	[Description("Two container-map entries pointing at ONE mobile name — which the shipped tabbed rule really does (Tabs->Tabs and CardToggleTabPanel->Tabs) — produce two merges on that name. Only the one that says something survives: two operations on one element is the classic dedupe signal, and keeping 'the cleaner empty one' discards a payload nothing else reports (ENG-95827, step 3.5).")]
+	public void Analyze_TwoContainerEntriesOnOneMobileName_KeepOnlyThePayloadBearingMerge() {
+		// Arrange — both source containers map onto the mobile Tabs; only one carries a caption to merge.
+		PageBundleInfo bundle = Bundle("""
+			[ { "name": "Tabs", "type": "crt.TabPanel", "caption": "#ResourceString(Tabs_caption)#", "items": [] },
+			  { "name": "CardToggleTabPanel", "type": "crt.TabPanel", "items": [] } ]
+			""",
+			resourcesJson: """
+			{ "Tabs_caption": { "en-US": "Tabs" } }
+			""");
+		var bothOntoTabs = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase) {
+			["Tabs"] = "Tabs",
+			["CardToggleTabPanel"] = "Tabs"
+		};
+
+		// Act
+		MobilePageConversionGuide guide = Analyze(bundle, containerNameMap: bothOntoTabs,
+			mobileTemplateTypesByName: new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase) {
+				["Tabs"] = "crt.Tabs"
+			});
+
+		// Assert
+		ViewConfigDiffOperation[] onTabs = [.. guide.ViewConfigDiff
+			.Where(op => string.Equals(op.Name, "Tabs", StringComparison.OrdinalIgnoreCase))];
+		onTabs.Should().HaveCount(1,
+			because: "two merges on one element leave the caller choosing, and the choice has a wrong answer — "
+				+ "the payload-free twin is a no-op the moment a sibling operation declares the element");
+		onTabs[0].Operation.Should().Be("merge",
+			because: "the survivor still layers onto the template-provided element rather than inserting a "
+				+ "second one");
+		onTabs[0].Values!.AsObject().Should().BeEmpty(
+			because: "NEITHER entry carried a payload here, so the survivor is a no-op kept deliberately — the "
+				+ "applier requires `values` on a merge and a page business rule needs its target declared. "
+				+ "Where a sibling DOES carry a payload it wins outright, which is what stops the only copy of "
+				+ "a shift being discarded as 'the duplicate'");
+	}
+
+	[Test]
 	[Description("ENG-94951 drift guard: the hand-written container map these tests drive must be a SUBSET of the shipped tabbed rule. An entry the rules file does not ship makes every test using this map assert against a rules file that does not exist — the blind spot that let the missing general-tab mapping survive.")]
 	public void TabbedContainerMap_ShouldStayASubsetOfTheShippedRules() {
 		// Arrange

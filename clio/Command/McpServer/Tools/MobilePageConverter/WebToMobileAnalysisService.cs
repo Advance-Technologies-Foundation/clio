@@ -4840,11 +4840,41 @@ public static class WebToMobileAnalysisService {
 	/// "no delta" from "an empty delta"; only the wire projection needs the applier's shape.
 	/// </para>
 	/// </remarks>
-	private static IReadOnlyList<ViewConfigDiffOperation> ProjectViewConfigDiff(List<ElementMapEntry> elementMap) =>
-		[.. elementMap
+	private static IReadOnlyList<ViewConfigDiffOperation> ProjectViewConfigDiff(List<ElementMapEntry> elementMap) {
+		// A merge that carries nothing is a no-op the moment ANOTHER operation already declares the same
+		// element. Two merges on one name is the classic dedupe signal, and on the reference page one of the
+		// two holds the only copy of a shifted layoutConfig — a caller that keeps "the cleaner empty one", or
+		// the last one, silently reproduces the misplacement the article itself calls unreportable. Dropping
+		// the redundant twin removes the choice instead of documenting a way to get it wrong. Only the
+		// PAYLOAD-FREE twin goes, and only while a same-named sibling survives: a lone valueless merge still
+		// ships (the applier requires `values` on a merge, and a page business rule targeting a
+		// template-provided element needs the element declared), and two merges that BOTH carry a payload are
+		// the genuine conflict this deliberately does not resolve — see the ViewConfigDiff contract.
+		var namesWithPayload = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+		var namesSeen = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+		foreach (ElementMapEntry entry in elementMap) {
+			if ((!IsInsert(entry) && !IsMerge(entry)) || entry.Name is not { Length: > 0 } name) {
+				continue;
+			}
+			namesSeen[name] = namesSeen.TryGetValue(name, out int count) ? count + 1 : 1;
+			if (entry.Values is JsonObject { Count: > 0 } or JsonArray or JsonValue) {
+				namesWithPayload.Add(name);
+			}
+		}
+		var payloadFreeKept = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+		var kept = new List<ElementMapEntry>();
+		foreach (ElementMapEntry entry in elementMap) {
 			// An ALLOW-list, not a deny-list: a future working-map operation must fail to reach the applier
 			// payload rather than land in it silently.
-			.Where(entry => IsInsert(entry) || IsMerge(entry))
+			if (!IsInsert(entry) && !IsMerge(entry)) {
+				continue;
+			}
+			if (IsRedundantPayloadFreeTwin(entry, namesSeen, namesWithPayload, payloadFreeKept)) {
+				continue;
+			}
+			kept.Add(entry);
+		}
+		return [.. kept
 			.Select(entry => new ViewConfigDiffOperation {
 				Operation = entry.Operation,
 				Name = entry.Name,
@@ -4856,6 +4886,34 @@ public static class WebToMobileAnalysisService {
 				Index = entry.Index,
 				Values = entry.Values ?? (IsMerge(entry) ? new JsonObject() : null)
 			})];
+	}
+
+	/// <summary>
+	/// True for a <c>merge</c> with no payload whose element another operation already declares — the
+	/// duplicate that says nothing and therefore leaves the caller choosing between two operations on one
+	/// name. Two shapes, both reachable from the shipped rules, where two <c>containers</c> entries point at
+	/// one mobile name (<c>Tabs</c> and <c>CardToggleTabPanel</c> both map onto <c>Tabs</c>):
+	/// a payload-BEARING sibling anywhere in the array wins outright, and where NO sibling carries a payload
+	/// the first no-op is kept and the rest go, because one declaration of the element is all the applier and
+	/// a page business rule need.
+	/// </summary>
+	/// <remarks>
+	/// A payload-free merge that arrives ALONE is never touched: the applier lists <c>values</c> as a
+	/// required parameter of <c>merge</c>, and a rule targeting a template-provided element needs that
+	/// element declared. Two merges that BOTH carry a payload are the genuine conflict this deliberately
+	/// does not resolve — the contract tells the caller to apply them in order.
+	/// </remarks>
+	private static bool IsRedundantPayloadFreeTwin(
+		ElementMapEntry entry, IReadOnlyDictionary<string, int> namesSeen, IReadOnlySet<string> namesWithPayload,
+		HashSet<string> payloadFreeKept) {
+		if (!IsMerge(entry)
+			|| entry.Values is not (null or JsonObject { Count: 0 })
+			|| entry.Name is not { Length: > 0 } name
+			|| !namesSeen.TryGetValue(name, out int count) || count <= 1) {
+			return false;
+		}
+		return namesWithPayload.Contains(name) || !payloadFreeKept.Add(name);
+	}
 
 	/// <summary>
 	/// Source name → mobile name for the elements the converter RENAMED, and only those. Null when every
