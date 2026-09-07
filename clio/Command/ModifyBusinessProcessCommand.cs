@@ -105,7 +105,25 @@ namespace Clio.Command;
 // since a floor tracks behaviour clio depends on rather than the version it happens to ship. 1.4.10.0 was
 // exactly such a case — it corrected two contract doc comments and did not move this literal; 1.4.11.0
 // changed what the server REPORTS, so it did.
-[RequiresPackage(BundledPackages.ProcessBuilderPackageName, "1.4.12.0",
+//
+// WHY THE LITERAL IS 1.6.0.0 AND NOT 1.4.11.0. Every version named above existed only on the delivering
+// branch. Meanwhile a released archive moved to a higher MINOR: 1.5.0.0, the Open edit page delivery, which
+// carries no approval support whatsoever — verified by decompressing the shipped archive and finding zero
+// occurrences of ApprovalApplier / ApprovalElementHandler / ApprovalUserTask. System.Version ranks the minor
+// first, so 1.5.0.0 >= 1.4.11.0 is TRUE, and RequiredPackageChecker.IsCompatible compares exactly that
+// (installedVersion >= new PackageVersion(requiredVersion, "")). A floor of 1.4.x was therefore SATISFIED by
+// a server that drops the whole approval block silently — precisely the call this gate exists to refuse, and
+// the failure it cannot see, since ApprovalDescriptor is an unknown member there and no write contract
+// implements IExtensibleDataObject. The behavioural ApprovalBlockExpectation check still catches it after
+// the operation, but a gate that never fires is not defence in depth.
+//
+// So the rule the branch-local numbering hid: a floor is only enforceable while it sits above every RELEASED
+// version, and a later minor cut elsewhere can jump the whole space a development line was numbering in.
+// State the floor as the version that actually SHIPS the behaviour — here 1.6.0.0, the Approval element's
+// minor (crt-process-builder#50) — rather than as the branch stamp the behaviour first appeared under. The
+// two rules compose without conflict: this literal still moves only when clio depends on or advertises new
+// server behaviour, and it is still asserted as "the shipped archive satisfies it", not "equals it".
+[RequiresPackage(BundledPackages.ProcessBuilderPackageName, "1.6.0.0",
 	Hint = BundledPackages.ProcessBuilderInstallHint)]
 public sealed class ModifyBusinessProcessOptions : EnvironmentOptions {
 	/// <summary>Process code (schema Name) to edit. Provide exactly one of <see cref="ProcessName"/> or <see cref="ProcessUid"/>.</summary>
