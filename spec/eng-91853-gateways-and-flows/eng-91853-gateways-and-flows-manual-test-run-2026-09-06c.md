@@ -8,6 +8,19 @@ This run exists because the previous one measured **1.4.0.61**. Between them the
 R18 refusal and the owner's decision to normalise a gateway's plain flow, so the earlier evidence
 says nothing about what merges.
 
+> **The same caveat now applies to THIS run, and is stated rather than left to be discovered.** Its
+> first finding — that `setFlow` leaves a flow named for its old kind — was fixed afterwards, in
+> **1.4.0.66**, which is the archive that merges. So the fix that came OUT of this leg is the one
+> thing this leg did not see.
+>
+> Narrowing it with a measurement the finding did not have: the designer displays a flow's CODE
+> nowhere. With a process open, no flow name appears in the page text at all, and the element list
+> beside the canvas lists ELEMENTS (`Start1`, `Decide`, `Approve`, `Fallback`) and not flows. So a
+> browser could not have observed the rename either way. Where the name does surface is the process
+> log and `describe-business-process`, and the rename was verified there on the stand at 1.4.0.66 —
+> before the swap `ConditionalFlow_Decide_Approve` / `DefaultFlow_Decide_Fallback`, after it the two
+> trade places.
+
 ## What the browser leg established, and nothing else could
 
 The owner's decision was verified in the designer, on the process the decision is about —
@@ -41,10 +54,14 @@ Findings, attributed:
 - **`setFlow` leaves the flow's NAME saying the old kind.** After the TC-07 swap the default branch
   is still called `ConditionalFlow_…` and the conditional one `DefaultFlow_…`. The name reaches the
   process log, and `NamePrefixFor`'s own comment in `ProcessGraphBuilder` says it must say the kind.
-  **Not fixed here, deliberately**: `SetFlowCondition_ShouldPreserveIdentityAndPosition` asserts the
-  opposite ("a silent rename would break a caller that addresses the flow by name") as a decision an
-  earlier round took on purpose. A change is a one-liner guarded to toolkit-generated names only, and
-  it is the owner's call, not this run's.
+  It was left unfixed by this run on purpose — `SetFlowCondition_ShouldPreserveIdentityAndPosition`
+  asserted the opposite ("a silent rename would break a caller that addresses the flow by name") as a
+  decision an earlier round took deliberately, and overturning that at a merge gate is the owner's
+  call. **The owner took it: FIXED in 1.4.0.66.** The name is re-derived in `ReKindFlow`, and only
+  when the old one was toolkit-generated — a designer-authored `SequenceFlow1` is left alone. The
+  tie-breaker was in the same file: `FindTheFlowBetween` documents that an endpoint PAIR is the only
+  handle a caller has, and every operation takes one, so the caller that assertion defended against
+  is not in the contract.
 - **`create-business-process` accepts the shape `validate-process-graph` warns about** (R12, an
   implicit parallel split) with no notice in the build's own response. Already carried as a follow-up.
 - **The terminate-event trap reproduced independently**, with the executor building its own positive

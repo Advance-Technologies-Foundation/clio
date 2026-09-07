@@ -58,7 +58,7 @@ namespace Clio.Command;
 // lookup-constant contract shipped in the 1.4.0.40 archive: a mappings[] 'value' on a Lookup target
 // may carry an already-composed macro, and an older server rejects it outright as "not a bare Guid"
 // - the same "server starts accepting an input form an older one refuses" shape that produced the
-// 1.3.1.1 literal. The number below satisfies both that and the message contract described above.//
+// 1.3.1.1 literal. The number below satisfies both that and the message contract described above.
 // Raised to 1.4.0.60 by ENG-91853, and this floor is a CAPABILITY floor rather than a message one: below
 // it the package refuses `flows[].kind` and `flows[].condition` outright, and refuses the two gateway
 // element tokens as unsupported types. Those refusals are honest - an older package tells the caller it

@@ -426,10 +426,14 @@ public sealed class ProcessGraphValidator : IProcessGraphValidator {
 		// `A -conditional-> B`, `A -conditional-> C`, both into a parallel join, hangs in Running forever and
 		// raised nothing, because A is a userTask and the set held only declared gateways. The edge-level
 		// test below is unchanged - what widened is WHICH sources it is applied to.
+		// No arity filter on the conditional arm, for the reason the paragraph above gives for removing the
+		// one this rule used to have: DivergesIntoTwoBranches needs two branches leaving the element by
+		// DIFFERENT edges, so an element with one outgoing edge can never satisfy it - every per-branch set
+		// is the same singleton and they always overlap. A `Count > 1` here was measured equivalent to no
+		// filter, which is exactly the fast path no test can distinguish from the check it guards.
 		HashSet<string> choosingElements = nodes
 			.Where(n => TypeOf(n) is EventType.ExclusiveGateway or EventType.InclusiveGateway
-				|| (outgoing[n.Name].Count > 1
-					&& outgoing[n.Name].Any(o => o.FlowKind == ProcessFlowKind.Conditional)))
+				|| outgoing[n.Name].Any(o => o.FlowKind == ProcessFlowKind.Conditional))
 			.Select(n => n.Name)
 			.ToHashSet();
 		foreach (ProcessGraphNode node in nodes.Where(n => TypeOf(n) == EventType.ParallelGateway)) {
