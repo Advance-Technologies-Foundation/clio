@@ -1070,3 +1070,22 @@ Also: `McpE2E.Sandbox.EnvironmentName` in clio.mcp.e2e/appsettings.json is how t
 The file is TRACKED, so it was set for the run and reverted — a machine-specific env name does not belong in the
 repo. Re-set it before any future run.
 Result: 11/11 green on the stand.
+
+## 2026-09-07 14:20 – ENG-92713 Three-repo conflict resolution against master
+Context: master moved substantially in all three repos while ENG-92713 was in review; all three PRs went dirty.
+Decision: Nearly every conflict was the UNION, not a choice — master added the openEditPage element (and a
+guidance split) in exactly the places this branch added approval. Resolved by stripping conflict regions rather
+than `git checkout --theirs`, which discards a side's cleanly auto-merged additions.
+Discovery: Three traps worth remembering. (1) Constructor-parameter conflicts must be unioned because the BODY
+auto-merges and assigns both — the compiler catches it, but only after call sites in files that merged CLEANLY
+also need the new parameter INSERTED at its slot, not appended. (2) A conflict boundary can cut a class
+mid-member: keeping both sides then leaves one class unclosed, because its extension bag and brace lived in the
+shared tail the other side reused. (3) A mechanical word-merge of long prose leaves dangling fragments — scan
+for doubled words/punctuation afterwards; it left a stray "flows;" in McpCapabilityMap.
+Also: the same wrong claim ("branching on the approval outcome needs gateways, which are not buildable") sat in
+FOUR places across two repos. It is wrong three ways — no gateway is involved, conditional branches ARE
+buildable via setFlowCondition, and an element output parameter is referenceable as
+[#[Element:{uid}].[Parameter:{uid}]#]. Corrected everywhere.
+Files: clio-knowledge d909592, crt-process-builder 07659d3 + 042d3b9, clio b7dddb260 + 9262af2eb
+Impact: A guard in the other repo's suite (ProcessGuides_ShouldNameTheOwningArticle) caught what the resolution
+missed — run the merged repo's OWN tests before believing a documentation merge is complete.
