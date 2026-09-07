@@ -932,6 +932,44 @@ public sealed class WebToMobileConversionServiceTests {
 		};
 
 	[Test]
+	[Description("templateMatch reports how the recommended mobile template was chosen — \"matched\" for a rule that pairs this page's web template with a counterpart, \"generic-fallback\" for the rules' generic base — and it is discriminated structurally, on the rule's own `web` key, so it cannot drift out of step with how the rule was built. This binary used to reach the caller only inside an English templateNote, on a response whose tool description asserts it carries no prose; the structural alternative (an empty containerMap) was regression-pinned and documented nowhere (ENG-95827, step 5).")]
+	public void Analyze_TemplateMatch_ReportsMatchedVersusGenericFallback() {
+		// Arrange
+		PageBundleInfo bundle = Bundle("""
+			[ { "name": "Main", "type": "crt.FlexContainer", "items": [
+				{ "name": "LeadName", "type": "crt.Input" } ] } ]
+			""");
+		var web = Reg(("crt.FlexContainer", true));
+		var matchedRule = new TemplateMappingRule {
+			Web = "PageWithTabsFreedomTemplate", Mobile = "MobilePageWithTabsFreedomTemplate"
+		};
+		// Exactly what the tool synthesizes when no rule matches: a mobile name and no web template.
+		TemplateMappingRule fallbackRule =
+			MobilePageConversionGuideTool.DefaultTemplateRule(new WebToMobilePageConversionRules {
+				DefaultMobileTemplate = "BaseMobilePageTemplate"
+			});
+
+		// Act
+		MobilePageConversionGuide matched = Analyze(bundle, webByType: web, templateRule: matchedRule);
+		MobilePageConversionGuide generic = Analyze(bundle, webByType: web, templateRule: fallbackRule);
+
+		// Assert
+		matched.TemplateMatch.Should().Be("matched",
+			because: "a rule that names a web template IS a matched pair, and the caller may rely on the "
+				+ "container correspondence that comes with it");
+		generic.TemplateMatch.Should().Be("generic-fallback",
+			because: "the tool's fallback names no web template, so no container or component correspondence "
+				+ "is known and every element lands where the source tree puts it — the one thing the caller "
+				+ "must not mistake for a matched counterpart");
+		generic.RecommendedMobileTemplate.Should().Be("BaseMobilePageTemplate",
+			because: "a generic recommendation is still a recommendation: without one create-page has no "
+				+ "target and both data-section diffs degrade to a root merge");
+		Analyze(bundle, webByType: web).TemplateMatch.Should().BeNull(
+			because: "with no rule at all there is no recommendation to qualify, and an absent value says "
+				+ "that without inventing a third vocabulary word for it");
+	}
+
+	[Test]
 	[Description("Two container-map entries pointing at ONE mobile name — which the shipped tabbed rule really does (Tabs->Tabs and CardToggleTabPanel->Tabs) — produce two merges on that name. Only the one that says something survives: two operations on one element is the classic dedupe signal, and keeping 'the cleaner empty one' discards a payload nothing else reports (ENG-95827, step 3.5).")]
 	public void Analyze_TwoContainerEntriesOnOneMobileName_KeepOnlyThePayloadBearingMerge() {
 		// Arrange — both source containers map onto the mobile Tabs; only one carries a caption to merge.

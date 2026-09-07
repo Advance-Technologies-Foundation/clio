@@ -988,9 +988,24 @@ public sealed class MobilePageConversionGuide {
 	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
 	public string RecommendedMobileTemplate { get; init; }
 
-	[JsonPropertyName("templateNote")]
+	/// <summary>
+	/// How <see cref="RecommendedMobileTemplate"/> was chosen: <c>"matched"</c> when a conversion rule pairs
+	/// this page's web template with a mobile counterpart, <c>"generic-fallback"</c> when none does and the
+	/// recommendation is the rules' generic mobile base. Absent when the rules declare no default and no
+	/// rule matched, i.e. there is no recommendation to qualify.
+	/// </summary>
+	/// <remarks>
+	/// On <c>"generic-fallback"</c> NO container or component name correspondence is known —
+	/// <see cref="ContainerMap"/> is empty and every element is placed where the source tree puts it. Read
+	/// this field rather than inferring the same thing from an empty <c>containerMap</c>: that inference was
+	/// regression-pinned and documented nowhere, and the alternative it replaced was an English
+	/// <c>templateNote</c> on a response whose tool description asserts it carries no prose. The
+	/// review-in-the-designer advisory that note also carried is procedure, and lives in the guidance
+	/// article (ENG-95827).
+	/// </remarks>
+	[JsonPropertyName("templateMatch")]
 	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-	public string TemplateNote { get; init; }
+	public string TemplateMatch { get; init; }
 
 	[JsonPropertyName("containerMap")]
 	public IReadOnlyList<ContainerMapEntry> ContainerMap { get; init; } = [];

@@ -422,18 +422,16 @@ public sealed class MobilePageConversionGuideTool {
 	/// gives clio a template bundle to diff the data sections against — without one, both diffs degrade to a
 	/// root merge (ENG-95827). Name twins, by contrast, cannot be guessed for an unrecognised web template:
 	/// asserting them would relocate elements, which is worse than leaving them where the tree walk puts them.
-	/// The note says the recommendation is generic so the caller does not read it as a matched pair.
+	/// It carries NO <c>web</c> key, and that absence is the discriminator: the response's
+	/// <c>templateMatch</c> reads <c>"generic-fallback"</c> for a rule with no web template of its own and
+	/// <c>"matched"</c> otherwise, so the caller is told which it got as a field rather than as the English
+	/// sentence this used to carry in <c>templateNote</c>. The review-in-the-designer advisory that sentence
+	/// also carried is procedure and lives in the guidance article.
 	/// </remarks>
 	internal static TemplateMappingRule DefaultTemplateRule(WebToMobilePageConversionRules rules) =>
 		string.IsNullOrWhiteSpace(rules?.DefaultMobileTemplate)
 			? null
-			: new TemplateMappingRule {
-				Mobile = rules.DefaultMobileTemplate,
-				Note = "No conversion rule matches this page's web template, so this is the generic mobile base "
-					+ "rather than a matched counterpart: no container or component name correspondence is known, "
-					+ "and every element is placed where the source tree puts it. Review the result in the "
-					+ "designer, and consider adding a templates entry for this web template."
-			};
+			: new TemplateMappingRule { Mobile = rules.DefaultMobileTemplate };
 
 	/// <summary>
 	/// Returns the template mapping rule for a web page whose parent template is

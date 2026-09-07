@@ -114,8 +114,14 @@ public sealed class MobilePageConversionGuideToolTests {
 			because: "no container name twins are known for an unrecognised web template, and inventing them would misplace elements rather than leave them where the tree walk puts them");
 		fallback.Components.Should().BeNullOrEmpty(
 			because: "same reasoning as the containers — a guessed component twin is worse than none");
-		fallback.Note.Should().Contain("generic mobile base",
-			because: "the caller must not read the recommendation as a matched counterpart");
+		fallback.Web.Should().BeNullOrEmpty(
+			because: "the ABSENCE of a web template is the discriminator the response reports as "
+				+ "templateMatch: \"generic-fallback\" — the caller must not read the recommendation as a "
+				+ "matched counterpart, and it now learns that from a field instead of from an English "
+				+ "sentence on a response whose tool description asserts it carries no prose");
+		fallback.Note.Should().BeNull(
+			because: "the sentence this used to carry said two things: the binary, which is now templateMatch, "
+				+ "and a review-in-the-designer advisory, which is procedure and lives in the guidance article");
 	}
 
 	[Test]

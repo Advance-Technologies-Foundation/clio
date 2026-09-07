@@ -346,7 +346,7 @@ public static class WebToMobileAnalysisService {
 			ViewModelConfigDiff = viewModelConfigDiff,
 			DataSectionConflicts = dataSectionConflicts.Count > 0 ? dataSectionConflicts : null,
 			RecommendedMobileTemplate = templateRule?.Mobile,
-			TemplateNote = templateRule?.Note,
+			TemplateMatch = ResolveTemplateMatch(templateRule),
 			ContainerMap = BuildContainerMap(templateRule),
 			ComponentSuggestions = suggestions,
 			ViewConfigDiff = ProjectViewConfigDiff(elementMap),
@@ -4762,6 +4762,17 @@ public static class WebToMobileAnalysisService {
 		}
 		return new ReasonCode { Code = code, Params = values };
 	}
+
+	/// <summary>
+	/// Whether the recommended mobile template is a MATCHED counterpart or the generic base. Discriminated
+	/// structurally, on the rule's own <c>web</c> key: every entry in the rules file's <c>templates</c>
+	/// array declares one, and the generic fallback the tool synthesizes declares none, so the distinction
+	/// needs no flag threaded through the call and cannot drift out of step with how the rule was built.
+	/// </summary>
+	private static string ResolveTemplateMatch(TemplateMappingRule templateRule) =>
+		templateRule is null
+			? null
+			: string.IsNullOrWhiteSpace(templateRule.Web) ? "generic-fallback" : "matched";
 
 	/// <summary>The reason list for a drop, skipping nulls so a caller can pass a conditional code inline.</summary>
 	private static List<ReasonCode> Reasons(params ReasonCode[] codes) =>
