@@ -10,8 +10,9 @@ says nothing about what merges.
 
 > **The same caveat now applies to THIS run, and is stated rather than left to be discovered.** Its
 > first finding — that `setFlow` leaves a flow named for its old kind — was fixed afterwards, in
-> **1.4.0.66**, which is the archive that merges. So the fix that came OUT of this leg is the one
-> thing this leg did not see.
+> **1.4.0.66**. Two archives have shipped since: .66 carries that rename and **.67** — the one that
+> merges — a behaviour-neutral refactor of one endpoint lookup. So the fix that came OUT of this leg
+> is the one thing this leg did not see.
 >
 > Narrowing it with a measurement the finding did not have: the designer displays a flow's CODE
 > nowhere. With a process open, no flow name appears in the page text at all, and the element list
