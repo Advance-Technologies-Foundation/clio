@@ -62,3 +62,18 @@ that checks the author's reasoning finds little: not one finding here came from 
 disagreeing with it. Every one came from re-measuring from a direction the author had not taken. When
 the mandated gate is staffed, spend it on independent measurement, and do not let the reviewer read the
 author's probe before writing their own.
+
+**State the normalisation, or the rule misfires.** `core.autocrlf=true` on this repository's Windows
+checkouts, so identical content hashes two different ways:
+
+```
+git show HEAD:clio/Command/ProcessModel/ProcessGraphValidator.cs | md5sum   e581e472...
+md5sum clio/Command/ProcessModel/ProcessGraphValidator.cs                   a27a331f...
+either of the above | tr -d '\r'                                            e581e472...
+```
+
+The blob stores LF, the worktree holds CRLF. Two sessions on the *same* commit will therefore report
+different hashes for the same bytes depending on whether they hashed the blob or the file — and under
+the rule above that reads as "different bytes, verdicts void", which is a false alarm in the direction
+that wastes a round. Pick one and say which: hash the worktree file after `tr -d '\r'`, or hash the
+output of `git diff`. Found by applying the rule, one exchange after stating it.
