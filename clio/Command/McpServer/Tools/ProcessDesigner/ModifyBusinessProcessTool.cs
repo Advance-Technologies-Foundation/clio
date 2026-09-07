@@ -271,7 +271,7 @@ public class ModifyBusinessProcessTool(
 		 + "Read them, and note some are neutral acknowledgements (a column that was already unbound), not failures. "
 		 + "Use describe-business-process to inspect the current elements/names first. May remove elements — destructive. "
 		 + "Removals are NOT structurally validated (a broken graph can still be saved) and every edit re-lays-out the "
-		 + "whole diagram — read the 'Modifying an existing process' rules in get-guidance name=process-modeling "
+		 + "whole diagram — read the 'Modifying an existing process' rules in get-guidance name=process-modeling (and get-guidance name=process-access-rights for the accessRights block - it owns the permission entries, the grantee kinds, and the two configurations that build green and change nothing) "
 		 + "first. For a setFlowCondition operation or an 'expression' mapping source read get-guidance "
 			 + "name=process-formulas - it owns the accepted vocabulary, the reference syntax, what each "
 			 + "refusal names, and the length bound. "
