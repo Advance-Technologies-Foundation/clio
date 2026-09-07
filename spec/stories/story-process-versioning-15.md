@@ -7,7 +7,7 @@
 **ADR**: [adr-process-versioning.md](../adr/adr-process-versioning.md)
 **Test plan**: [tp-process-versioning.md](../test-plans/tp-process-versioning.md)
 **Repository**: clio
-**Status**: ready-for-dev
+**Status**: in-progress
 **Size**: M
 
 ---
@@ -28,11 +28,11 @@ an environment that installs from clio gets the operations the tools require, an
 
 ## Acceptance Criteria
 
-- [ ] **AC-01** — Given the stamped package, when `rebundle-process-builder.ps1` runs, then the archive, its SHA-256, the archive version and the descriptor stamp are refreshed together
-- [ ] **AC-02** — Given the refreshed bundle, when the package tests run, then archive version, SHA, descriptor stamp, operation count and gate call sites all agree with the archive
-- [ ] **AC-03** — Given the freshly bundled version, when `BundledArchive_ShouldCarryAtLeastEveryDeclaredRequirement` runs, then **no declared `[RequiresPackage]` floor exceeds it** — the tool stories that follow declare their floors at or below this version
-- [ ] **AC-04** — Given a stand recording an equal-or-higher version, when `install-process-builder --force -e <env>` runs, then the install completes and the package service answers
-- [ ] **AC-ERR** — Given the archive's SHA does not match the pin after the run, when the tests run, then they fail naming the mismatch
+- [x] **AC-01** — Given the stamped package, when `rebundle-process-builder.ps1` runs, then the archive, its SHA-256, the archive version and the descriptor stamp are refreshed together
+- [x] **AC-02** — Given the refreshed bundle, when the package tests run, then archive version, SHA, descriptor stamp, operation count and gate call sites all agree with the archive
+- [x] **AC-03** — Given the freshly bundled version, when `BundledArchive_ShouldCarryAtLeastEveryDeclaredRequirement` runs, then **no declared `[RequiresPackage]` floor exceeds it** — the tool stories that follow declare their floors at or below this version
+- [x] **AC-04** — Given a stand recording an equal-or-higher version, when `install-process-builder --force -e <env>` runs, then the install completes and the package service answers
+- [x] **AC-ERR** — Given the archive's SHA does not match the pin after the run, when the tests run, then they fail naming the mismatch
 
 ## Implementation Notes
 

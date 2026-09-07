@@ -162,7 +162,7 @@ public class BundledProcessBuilderPackageTests {
 	/// </para>
 	/// </remarks>
 	private const string ExpectedArchiveSha256 =
-		"3DB9A2BD1FF9B4A4F98E38705FB3223BE4F05571DCAB37752D0DD8063630F15A";
+		"7AA076FD97917D91AF623FB30FFFEEC1A43F56A524F7550A1EAC9C7D16336137";
 
 	/// <summary>
 	/// The <c>PackageVersion</c> the shipped descriptor carries.
@@ -190,7 +190,7 @@ public class BundledProcessBuilderPackageTests {
 	/// </para>
 	/// </para>
 	/// </remarks>
-	private const string ExpectedArchiveVersion = "1.4.0.57";
+	private const string ExpectedArchiveVersion = "1.4.14.0";
 
 	/// <summary>
 	/// The commit of the PRODUCING repository the archive was cut from, written by
@@ -202,7 +202,7 @@ public class BundledProcessBuilderPackageTests {
 	/// corresponding to no commit" is unreachable rather than merely documented. Anyone with a checkout can
 	/// verify the rest with one `git checkout`.</para>
 	/// </summary>
-	private const string ExpectedProducingCommit = "72eb9397640acc9f1d83bbccf4b51c03e0be7a24";
+	private const string ExpectedProducingCommit = "8a0173184201110d2e5ba20b1fa2f8e4e7a3d4ee";
 
 	/// <summary>
 	/// The <c>ModifiedOnUtc</c> the shipped descriptor carries.
@@ -228,7 +228,7 @@ public class BundledProcessBuilderPackageTests {
 	/// command — the previous pin ended in <c>431</c>, which is how the hand edit was eventually noticed.
 	/// </para>
 	/// </remarks>
-	private const string ExpectedDescriptorModifiedOnUtc = "/Date(1788526445000)/";
+	private const string ExpectedDescriptorModifiedOnUtc = "/Date(1788773553000)/";
 
 	/// <summary>
 	/// The <c>ModifiedOnUtc</c> the shipped COMPILE-MARKER SCHEMA descriptor carries.
@@ -259,7 +259,7 @@ public class BundledProcessBuilderPackageTests {
 	/// Three, NOT four, and the difference is worth writing down because it is the first thing anyone
 	/// recomputing this number gets wrong: it is not one gate per gated operation. Of the
 	/// <see cref="ExpectedOperationContractCount"/> operations, one is ungated
-	/// (<see cref="UngatedOperations"/>) and the remaining four are gated at three places, because
+	/// (<see cref="UngatedOperations"/>) and the remaining six are gated at five places, because
 	/// <c>ProcessDesigner.Execute</c> is a SHARED boundary for the two read operations — it applies the guard
 	/// once and both <c>ListUserTasks</c> and <c>DescribeProcess</c> pass through it. Build and modify do not
 	/// use it (they own their own rollback and session-release error handling), so they gate in their own
@@ -292,7 +292,7 @@ public class BundledProcessBuilderPackageTests {
 	/// counts, and neither should be able to drift on its own.
 	/// </para>
 	/// </remarks>
-	private const int ExpectedAuthorizationGateCallSites = 3;
+	private const int ExpectedAuthorizationGateCallSites = 5;
 
 	/// <summary>
 	/// Exact number of <c>[OperationContract]</c> methods the shipped service may expose.
@@ -304,7 +304,7 @@ public class BundledProcessBuilderPackageTests {
 	/// argued exception, so a second one must not be able to arrive unnoticed. Raise this together with the
 	/// allowlist, in the same commit, or not at all.
 	/// </remarks>
-	private const int ExpectedOperationContractCount = 5;
+	private const int ExpectedOperationContractCount = 7;
 
 	/// <summary>
 	/// The operations allowed to ship WITHOUT the authorization gate.

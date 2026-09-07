@@ -14,10 +14,10 @@ namespace Clio.Command;
 /// directly.
 /// </summary>
 // Same missing-operation floor as ModifyProcessAsNewVersion, and for the same reason: SetActiveProcessVersion
-// first exists in the 1.5.0.0 archive, so an environment on any earlier package answers this route with a 404
+// first exists in the 1.4.14.0 archive, so an environment on any earlier package answers this route with a 404
 // rather than a contract error. The literal is what turns that into "your package is behind"; presence-only
 // would let the call through to a transport fault that names nothing.
-[RequiresPackage(BundledPackages.ProcessBuilderPackageName, "1.5.0.0",
+[RequiresPackage(BundledPackages.ProcessBuilderPackageName, "1.4.14.0",
 	Hint = BundledPackages.ProcessBuilderInstallHint)]
 public sealed class SetActiveProcessVersionOptions : EnvironmentOptions {
 	/// <summary>Schema name (code) of the VERSION to activate. Provide exactly one of <see cref="VersionName"/> or <see cref="VersionUid"/>.</summary>

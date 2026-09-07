@@ -17,7 +17,7 @@ namespace Clio.Mcp.E2E;
 /// <summary>
 /// End-to-end coverage for <c>modify-business-process-as-new-version</c>. NOT in CI — run manually. The
 /// advertised-tool test is hermetic; the functional tests build a uniquely named process and then save
-/// versions of it, gated on a reachable environment carrying CrtProcessBuilder 1.5.0.0 or newer and a
+/// versions of it, gated on a reachable environment carrying CrtProcessBuilder 1.4.14.0 or newer and a
 /// writable <c>Custom</c> package.
 /// </summary>
 /// <remarks>
@@ -209,7 +209,7 @@ public sealed class ModifyProcessAsNewVersionToolE2ETests {
 		string? environmentName = settings.Sandbox.EnvironmentName;
 		if (requireReachableEnvironment) {
 			if (string.IsNullOrWhiteSpace(environmentName)) {
-				Assert.Ignore("Configure McpE2E:Sandbox:EnvironmentName (carrying CrtProcessBuilder 1.5.0.0 or "
+				Assert.Ignore("Configure McpE2E:Sandbox:EnvironmentName (carrying CrtProcessBuilder 1.4.14.0 or "
 					+ "newer) to run modify-business-process-as-new-version MCP E2E.");
 			}
 			if (!await ClioCliCommandRunner.IsEnvironmentReachableAsync(settings, environmentName!)) {

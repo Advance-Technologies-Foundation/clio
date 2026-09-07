@@ -18,7 +18,7 @@ namespace Clio.Mcp.E2E;
 /// End-to-end coverage for <c>set-active-business-process-version</c>. NOT in CI — run manually. The
 /// advertised-tool test is hermetic; the functional test builds a process, saves a version of it, activates
 /// that version and reads the family back, gated on a reachable environment carrying CrtProcessBuilder
-/// 1.5.0.0 or newer and a writable <c>Custom</c> package.
+/// 1.4.14.0 or newer and a writable <c>Custom</c> package.
 /// </summary>
 /// <remarks>
 /// This fixture changes what the target environment EXECUTES, and nothing it creates can be removed: a
@@ -212,7 +212,7 @@ public sealed class SetActiveProcessVersionToolE2ETests {
 		string? environmentName = settings.Sandbox.EnvironmentName;
 		if (requireReachableEnvironment) {
 			if (string.IsNullOrWhiteSpace(environmentName)) {
-				Assert.Ignore("Configure McpE2E:Sandbox:EnvironmentName (carrying CrtProcessBuilder 1.5.0.0 or "
+				Assert.Ignore("Configure McpE2E:Sandbox:EnvironmentName (carrying CrtProcessBuilder 1.4.14.0 or "
 					+ "newer) to run set-active-business-process-version MCP E2E.");
 			}
 			if (!await ClioCliCommandRunner.IsEnvironmentReachableAsync(settings, environmentName!)) {
