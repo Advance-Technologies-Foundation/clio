@@ -48,7 +48,10 @@ public static class CreateBusinessProcessPrompt {
 		 `create-page` flow FIRST. At least one completing `button` is REQUIRED and is not defaulted for you:
 		 an element without one saves green and then hangs forever at run time. The page's buttons and data
 		 sources are FACTS you must read with `get-process-page-facts` and pass through unchanged — a page
-		 inherits its buttons from its template chain, so the server cannot see them.
+		 inherits its buttons from its template chain, so the server cannot see them. Both are CHECKED and a
+		 name the page does not have is REFUSED: an invented button raises a tag nothing matches, and an
+		 invented data source makes the completing button abandon the completion, leaving the page open with
+		 no error and the instance stuck at `Running`.
 		 A SUCCESSFUL build can still report caveats, and they arrive as `message-type: "Warning"` entries in
 		 `execution-log-messages` — there is no separate `warnings` field on the response, so looking for one
 		 and finding nothing is not evidence there were none. Confirm the target package with the

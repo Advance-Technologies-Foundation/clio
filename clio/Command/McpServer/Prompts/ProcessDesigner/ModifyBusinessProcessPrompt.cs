@@ -58,7 +58,11 @@ public static class ModifyBusinessProcessPrompt {
 		 never "the page has none" — with ONE exception: changing `page` TO a Freedom UI page REQUIRES
 		 `buttons` in the same call, because the stored buttons name the previous page's buttons and the
 		 operation is refused rather than carried across (re-read `get-process-page-facts` for the new page
-		 first); changing `page` to a Classic UI page is refused outright.
+		 first); changing `page` to a Classic UI page is refused outright. A `dataSources` entry the NEW page
+		 does not declare is refused for the same reason; but `dataSources` have no removal path here, so a
+		 retarget onto a page with FEWER data sources still carries the previous page's parameter forward and
+		 the step can then never finish — describe reports it with `inSync: true` and nothing else shows it.
+		 Build a new element on the new page rather than editing that one.
 		 ANY `setElement` touching such an element also re-reads the page and
 		 reconciles its parameters, so a value dropped by a data-type change is reported in the warnings below;
 		 an element on a Classic UI page keeps that page and is limited to the fields both page types share;
