@@ -65,6 +65,7 @@ public sealed class MobileDropReasonCodeVocabularyTests {
 		"drop-unknown-request",
 		"drop-no-rule-in-scope",
 		"drop-not-an-action-in-scope",
+		"drop-non-converting-scope",
 		// a request binding: lost with its element, or lost on its own
 		"drop-request-chrome-native",
 		"drop-request-unsupported",

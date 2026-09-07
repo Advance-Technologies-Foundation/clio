@@ -2011,6 +2011,11 @@ public static class WebToMobileAnalysisService {
 			// action retargets (e.g. into FloatingActionButton.menuItems) and everything else is dropped, so the
 			// container and its unconverted content are not present on mobile.
 			if (!inNonConvertingScope && ctx.ScopeContainerNames.Contains(name)) {
+				// Reported, not merely skipped. The container produces no mobile element, which is exactly why
+				// it needs a drop entry of its own: without one it was the single source element the response
+				// mentioned NOWHERE — no operation, no drop, and no parentName — while its children each
+				// carried a code naming it as their scope.
+				ctx.Out.Add(Drop(name, type, Reason(ReasonCodes.DropNonConvertingScope)));
 				IReadOnlyList<string> scopeAncestors = Append(sourceAncestors, name);
 				if (items is not null) {
 					WalkElements(ctx, items, mobileParentName, ItemsPropertyName, scopeAncestors, inNonConvertingScope: true,

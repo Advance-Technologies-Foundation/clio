@@ -327,6 +327,20 @@ public static class ReasonCodes {
 	public const string DropUnsupportedRequest = "drop-unsupported-request";
 
 	/// <summary>
+	/// A container the rules declare NON-CONVERTING (<c>nonConvertingScopeContainers</c>, e.g. the web
+	/// page's <c>MainHeader</c>): it produces no mobile element of its own, and each of its children is
+	/// reported separately with its own code. No params — the record's <c>webName</c> is the scope, and the
+	/// children name it in their own <c>params.scope</c>.
+	/// </summary>
+	/// <remarks>
+	/// This code exists because without it the container was the one source element the response reported
+	/// NOWHERE: the walk recursed its subtree in scope mode and continued, so no operation and no drop
+	/// mentioned it, while the article promises droppedElements accounts for every source element that did
+	/// not reach the page (ENG-95827).
+	/// </remarks>
+	public const string DropNonConvertingScope = "drop-non-converting-scope";
+
+	/// <summary>
 	/// The web type has no mobile counterpart in the registry. No params: the type is the record's own
 	/// <c>webType</c>, and a param that echoes a sibling field is a second place for the same fact to drift.
 	/// </summary>

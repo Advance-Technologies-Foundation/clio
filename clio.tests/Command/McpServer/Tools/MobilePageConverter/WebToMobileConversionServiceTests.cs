@@ -2075,8 +2075,20 @@ public sealed class WebToMobileConversionServiceTests {
 		order.Index.Should().BeNull(because: "converted entries are appended after any existing static menuItems");
 		TypeOf(Element(guide, "OtherBtn")).Should().Be("crt.Button",
 			because: "Body is not a declared non-converting scope container, so the same button outside the header is untouched");
-		guide.ViewConfigDiff.Should().NotContain(e => SourceNameOf(guide, e) == "MainHeader",
+		guide.ViewConfigDiff.Should().NotContain(
+			e => string.Equals(e.Name, "MainHeader", StringComparison.OrdinalIgnoreCase),
 			because: "a non-converting scope container produces no mobile element of its own");
+		// Producing nothing is not the same as being unreported. Until drop-non-converting-scope existed the
+		// container was the ONE source element the response mentioned nowhere — no operation, no drop, no
+		// parentName — while its own children each carried a code naming it as their scope, and the article
+		// promises droppedElements accounts for every source element that did not reach the page.
+		Codes(Dropped(guide, "MainHeader")).Should().Equal([ReasonCodes.DropNonConvertingScope],
+			because: "the container must be accounted for, and by the code that says WHY it produced nothing "
+				+ "rather than one that would read as an unconvertible type or an empty container");
+		Dropped(guide, "MainHeader").Reason.Should().ContainSingle()
+			.Which.Params.Should().BeNull(
+				because: "its own webName IS the scope, and the children already name it in params.scope — a "
+					+ "param here would echo a sibling field");
 	}
 
 	[Test]
