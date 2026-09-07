@@ -39,11 +39,18 @@ Worked example, verified on the stand: `PushNotificationAboutAppUpdateAvailableP
 `BaseElements.ConditionalSequenceFlow1.Caption` = `No updates available`, and the designer draws that
 text centred on the connector.
 
-The name in the key is the flow's `Name` — which is exactly why the rename introduced in 1.4.0.66
-matters here: **re-deriving a flow's Name moves the key its label is stored under.** Check what a
-re-kind does to an EXISTING label before shipping the field; `CarryOperatorState` already CLONES
-`Caption` across a re-kind (and the comment there explains why a plain assignment would alias the
-`LocalizableString`), so the value survives the object swap — the open question is the resource key.
+**THE ONE TRAP, and it is invisible from either side alone.** The name in the key is the flow's
+`Name`, and 1.4.0.66 re-derives a flow's Name on a re-kind. **The rename and the label live in the
+same key, so a label written before a re-kind is orphaned by it** — the row stays in the resource
+file under the old key while the flow now looks for a new one. Nothing in the rename code mentions
+labels, because they did not exist when it was written, and nothing in the label code will mention
+the rename unless someone puts it there. That is the whole reason this paragraph exists.
+
+`CarryOperatorState` already CLONES `Caption` across a re-kind (its comment explains why a plain
+assignment would alias the `LocalizableString`), so the in-memory VALUE survives the object swap.
+The open question is only the resource key, and it has to be answered before the field ships: either
+the rename carries the resource row with it, or a re-kind must not rename a flow that carries a
+label, or the label is stored somewhere the Name does not address.
 
 ## How much of a norm this is
 
