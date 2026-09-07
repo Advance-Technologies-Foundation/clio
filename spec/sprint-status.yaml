@@ -3316,11 +3316,13 @@ stories:
       converging gateway rather than a phrasing change. Added: R15 self-loop, one default per source,
       the or-gateway plain-flow error (arity-scoped for the same reason - 14 shipped gateways carry a
       single plain flow), the empty-condition error, and the parallel-join deadlock warning
-      ai-bp-connection-rules promised and nobody wrote. R7/R9's warning now names
-      MismatchItemsCountException instead of saying the process "dead-ends".
+      ai-bp-connection-rules promised and nobody wrote. R7/R9's warning stopped saying the process
+      "dead-ends" - it briefly named MismatchItemsCountException instead, and a manual run replaced
+      that with the process-log line an operator can actually search for.
       The empty-condition rule needed a CONTRACT change and could not have existed before: the edge
       argument was {source, target, flow-kind}, so the validator could not see conditions. `condition` is
-      now an optional fourth field, and an OMITTED one raises nothing - only a supplied-but-empty one.
+      now an optional fourth field. A supplied-but-BLANK one is an error; an OMITTED one is a warning
+      (it was silent until the final review gate, which hid a certain build refusal).
       S7: both prompts and three tool descriptions stopped saying a gateway ELEMENT is not buildable, and
       say instead what is still out (inclusive/event-based gateways, timer/message starts, intermediate
       events, sub-processes, formula/script tasks, the activity-result dialect) - the fork narrowed, it

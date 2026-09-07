@@ -142,10 +142,12 @@ public sealed record ValidateProcessGraphArgs(
 
 	[property: JsonPropertyName("edges")]
 	[property: Description("The flows: [{source, target, flow-kind, condition}] where flow-kind is sequence | "
-		+ "conditional | default. 'condition' is optional and only meaningful on a conditional flow; supply it "
-		+ "to have the empty-condition rule checked, because an omitted condition is stored by the platform as "
-		+ "the literal 'true' - a branch that looks conditional and always fires. Flow ORDER is branch "
-		+ "precedence: sibling conditions are evaluated in the order given here and the first true one wins.")]
+		+ "conditional | default. 'condition' is optional and only meaningful on a conditional flow, and all "
+		+ "three states are checked: a BLANK one is an R13 error (reached outside the build path the platform "
+		+ "stores it as the literal 'true' - a branch that always fires), an OMITTED one an R13 warning (the "
+		+ "build path refuses a conditional flow with no condition, so a shape-only check is fine but the "
+		+ "build will not happen). Flow ORDER is branch precedence: sibling conditions are evaluated in the "
+		+ "order given here and the first true one wins.")]
 	List<ProcessGraphEdgeArg> Edges = null
 	);
 

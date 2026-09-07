@@ -99,7 +99,7 @@ namespace Clio.Tests
                     + ".35 added is deliberately NOT in that list any more: the strict pattern it mirrored is used "
                     + "only for data-source filter map paths, so a parameter value's element scoping survived the "
                     + "looser form and the refusal protected nothing. "
-                    + "ENG-91853 raised it to .58, and THAT one is a plain capability floor rather than a message one: below it the package refuses flows[].kind, flows[].condition and the two gateway element tokens outright, so an agent following the descriptions is refused by the environment rather than by clio, one round-trip later and with no hint that the package is what is behind. This subsumes the earlier 1.3.1.1 performer floor and the 1.2.0.1 email floor. When the "
+                    + "ENG-91853 raised it to .60, and THAT one is a plain capability floor rather than a message one. Be exact about which archive buys what, because .58 is the tempting answer and the wrong one: .58 accepts flows[].kind, flows[].condition and the two gateway element tokens, and .60 is the first that expands a condition written BY NAME - without which a build-path condition reaches only the 3% of shipped conditions that reference a system setting. Below .60 an agent following the descriptions is refused by the environment rather than by clio, one round-trip later and with no hint that the package is what is behind. This subsumes the earlier 1.3.1.1 performer floor and the 1.2.0.1 email floor. When the "
                     + "next versioned operation ships, move this pin WITH the rebundle in the same commit");
         }
 

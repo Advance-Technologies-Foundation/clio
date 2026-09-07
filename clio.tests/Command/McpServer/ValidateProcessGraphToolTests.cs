@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Text.Json;
 using System.Linq;
 using System.Reflection;
 using Clio;
@@ -239,11 +240,19 @@ public sealed class ValidateProcessGraphToolTests {
 				+ "which is the defect the R14 arity scope in this same change exists to undo");
 		response.HasErrors.Should().BeFalse(
 			because: "a shape the shipped corpus contains seven times over must not fail validation");
-		response.Findings.Should().NotContain(f => f.Message.Contains("has no default flow"),
+		response.Findings.Should().Contain(f => f.RuleId == "R7" && f.NodeName == "g").Which.Message
+			.Should().Contain("plain sequence flow",
+				because: "EXACTLY ONE R7 finding on this gateway, and it is the plain-flow one. Both R7 "
+					+ "warnings name the same node, so an absence assertion alone cannot say which fired - "
+					+ "and `Contain` on a single match is what fails if the scoping ever lets both through");
+		response.Findings.Should().NotContain(f => f.Message.Contains("None of the conditions were met"),
 			because: "the no-default warning promises the instance STOPS and the log says nothing matched, and "
 				+ "on this shape that is false - FlowConditionalGateway takes any non-conditional outgoing as "
 				+ "the default, so the plain flow runs. Firing both warnings here would tell an author their "
-				+ "process breaks at run time when it does not, on all seven shipped gateways of this shape");
+				+ "process breaks at run time when it does not, on all seven shipped gateways of this shape. "
+				+ "Keyed on the SAME fragment the positive test asserts, deliberately: this used to key on "
+				+ "'has no default flow' while the positive keyed on the log line, so re-wording the prefix "
+				+ "made this assertion vacuous and left the scoping decision unguarded");
 	}
 
 	[Test]
@@ -272,7 +281,7 @@ public sealed class ValidateProcessGraphToolTests {
 	[Test]
 	[Category("Unit")]
 	[Description("R7 names the run-time outcome the OPERATOR can search for, not the internal exception type. The rule used to promise MismatchItemsCountException, read out of FlowConditionalGateway.OnVisited; a manual run on a stand saw validate-process-graph say that and the resulting SysProcessLog entry say 'None of the conditions were met after the element ...' instead - and record the instance as SUSPENDED, not failed. Stays a WARNING, because 65 shipped exclusive gateways deliberately have two conditional flows and no default.")]
-	public void Validate_ShouldWarnR7_NamingTheRuntimeException_WhenADivergingGatewayHasNoDefault() {
+	public void Validate_ShouldWarnR7_NamingTheProcessLogLine_WhenADivergingGatewayHasNoDefault() {
 		// Arrange
 		List<ProcessGraphNodeArg> nodes = [N("s", "startEvent"), N("g", "exclusiveGateway"),
 			N("a", "activityUserTask"), N("b", "activityUserTask"), N("e", "endEvent")];
@@ -289,14 +298,29 @@ public sealed class ValidateProcessGraphToolTests {
 				&& f.Message.Contains("None of the conditions were met after the element"),
 			because: "the consequence is specific and findable, and naming it is what lets a reader search for "
 				+ "it - 'dead-ends' names nothing");
-		Validate([N("s", "startEvent"), N("split", "exclusiveGateway"), N("x", "activityUserTask"),
-				N("y", "activityUserTask"), N("e", "endEvent")],
-			[E("s", "split"), new ProcessGraphEdgeArg("split", "x", "conditional", "1 > 0"),
-				E("split", "y", "default"), E("x", "e"), E("y", "e")])
-			.Findings.Should().NotContain(f => f.RuleId == "R7" && f.NodeName == "split",
-				because: "the guard that asks whether a default EXISTS was unfalsifiable until this line: "
-					+ "replacing it with `if (true)` left the whole suite green while the warning fired on "
-					+ "every diverging gateway, the canonical conditional+default split included");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("A diverging gateway that HAS a default flow raises no R7. Its own test rather than an "
+		+ "appendix to the no-default case, which is where it lived: a second Act inside an Assert block "
+		+ "cannot say which of the two scenarios broke, and this one is load-bearing - the guard that asks "
+		+ "whether a default exists was unfalsifiable until it was written.")]
+	public void Validate_ShouldNotWarnR7_WhenADivergingGatewayHasADefaultFlow() {
+		// Arrange - the canonical conditional+default split.
+		List<ProcessGraphNodeArg> nodes = [N("s", "startEvent"), N("split", "exclusiveGateway"),
+			N("x", "activityUserTask"), N("y", "activityUserTask"), N("e", "endEvent")];
+		List<ProcessGraphEdgeArg> edges = [E("s", "split"),
+			new ProcessGraphEdgeArg("split", "x", "conditional", "1 > 0"),
+			E("split", "y", "default"), E("x", "e"), E("y", "e")];
+
+		// Act
+		ValidateProcessGraphResponse response = Validate(nodes, edges);
+
+		// Assert
+		response.Findings.Should().NotContain(f => f.RuleId == "R7" && f.NodeName == "split",
+			because: "replacing the default-exists guard with `if (true)` left the whole suite green while "
+				+ "the warning fired on every diverging gateway, this canonical split included");
 	}
 
 	[Test]
@@ -318,7 +342,7 @@ public sealed class ValidateProcessGraphToolTests {
 
 	[Test]
 	[Category("Unit")]
-	[Description("R13: a conditional flow whose condition is supplied but EMPTY is an error. The platform does not report this - it substitutes the literal 'true', producing a branch that looks conditional and always fires, and 7 shipped flows are in that state. The rule needs the optional 'condition' field, which is why it could not exist before.")]
+	[Description("R13: a conditional flow whose condition is supplied but EMPTY is an error. Reached outside the build path the platform does not report it - it substitutes the literal 'true', producing a branch that looks conditional and always fires. ZERO shipped flows store an empty string, out of 1367 - an earlier count of 7 was wrong and was attributed to this case. (The warning half is separate and larger: 344 flows have no CI3 text, but 337 of those branch on an activity RESULT stored in GV2, leaving 7 with nothing at all.) So the error rests on the shape being indefensible rather than on corpus frequency: nobody types whitespace while deferring predicates. The rule needs the optional 'condition' field, which is why it could not exist before.")]
 	public void Validate_ShouldSurfaceR13Error_ForAConditionalFlowWithAnEmptyCondition() {
 		// Arrange
 		List<ProcessGraphNodeArg> nodes = [N("s", "startEvent"), N("g", "exclusiveGateway"),
@@ -341,7 +365,7 @@ public sealed class ValidateProcessGraphToolTests {
 
 	[Test]
 	[Category("Unit")]
-	[Description("An OMITTED condition raises nothing. The field is optional and purely additive, so a caller describing a graph's SHAPE rather than its predicates must not be flooded with findings about conditions they never claimed to supply.")]
+	[Description("An OMITTED condition raises a WARNING and never an error. Silence was the contract until ENG-91853 and it hid a certain build refusal; an error would block the shape-only check the optional field exists for. Note that 'the builder refuses it' does not on its own decide the severity here - EnsureConditionMatchesKind tests IsNullOrWhiteSpace, so the builder refuses a BLANK condition too. What separates them is that omission has a legitimate reading before any predicate exists and whitespace does not.")]
 	public void Validate_ShouldNotSurfaceR13Error_WhenTheConditionIsSimplyOmitted() {
 		// Arrange
 		List<ProcessGraphNodeArg> nodes = [N("s", "startEvent"), N("g", "exclusiveGateway"),
@@ -354,7 +378,16 @@ public sealed class ValidateProcessGraphToolTests {
 
 		// Assert
 		response.Findings.Should().NotContain(f => f.RuleId == "R13" && f.Message.Contains("literal 'true'"),
-			because: "omitting an optional field is not the same as supplying an empty one");
+			because: "omitting an optional field is not the same as supplying an empty one - the literal-'true' "
+				+ "error belongs to a BLANK condition only");
+		response.Findings.Should().Contain(f => f.RuleId == "R13" && f.Severity == "warning"
+				&& f.Message.Contains("the BUILD path refuses it"),
+			because: "silence was the old contract and it hid a guaranteed build refusal: "
+				+ "EnsureConditionMatchesKind rejects a conditional flow with no condition, so the caller has "
+				+ "to be told. A WARNING rather than an error because `condition` is optional on the wire so a "
+				+ "graph's SHAPE can be checked before any predicate exists, and an error would block that. "
+				+ "The MESSAGE is asserted because it is the whole deliverable - a finding that said only "
+				+ "'R13 violated' would leave the caller exactly as stuck as silence did");
 	}
 
 	[Test]
@@ -556,7 +589,11 @@ public sealed class ValidateProcessGraphToolTests {
 
 		// Assert
 		response.Findings.Should().Contain(f => f.RuleId == "R13" && f.Severity == "warning",
-			because: "the flow-kind reached the validator - a dropped kind yields no R13 finding at all");
+			because: "the flow-kind reached the validator - a dropped kind yields no R13 finding at all. Not a pin on "
+				+ "the source-role clause: E() omits the condition, so this graph raises the omitted-condition "
+				+ "warning too and either one satisfies this predicate. Proving the KIND was parsed is the "
+				+ "purpose here and both warnings prove it; the source-role clause is pinned in the validator "
+				+ "fixture, where the condition is supplied");
 		response.Findings.Should().NotContain(f => f.RuleId == "R13" && f.Severity == "error",
 			because: "the source-role clause is advisory now, and the surfaced severity must follow it");
 	}
@@ -702,5 +739,38 @@ public sealed class ValidateProcessGraphToolTests {
 		response.Success.Should().BeFalse(because: "an unknown environment must fail the call cleanly");
 		response.Error.Should().Be(message, because: "the resolver's friendly environment-not-found message must surface verbatim");
 		validator.DidNotReceive().Validate(Arg.Any<ProcessGraph>());
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("The wire keys on ProcessGraphEdgeArg bind from JSON. Nothing executable covered this: "
+		+ "the fixture builds the record POSITIONALLY in C#, so renaming or mistyping a JsonPropertyName "
+		+ "would leave every field null and the suite green, and the only wire-level coverage is an e2e "
+		+ "case that Assert.Ignores without a sandbox and has never run. `condition` is the field this "
+		+ "ticket added and R13 is the only rule that reads it, so a silent null there means the tool "
+		+ "answers about a graph with no conditions in it. Deserialized with DEFAULT options, which are "
+		+ "case-SENSITIVE while the SDK binder is not - so on source/target/condition this test is "
+		+ "stricter than the wire and would fail a rename the binder would still tolerate. `flow-kind` is "
+		+ "the one key that cannot bind under any casing policy without its attribute, and it is the one "
+		+ "that matters: unbound, every edge validates as a plain sequence flow.")]
+	public void ProcessGraphEdgeArg_ShouldBindEveryWireKey_FromJson() {
+		// Arrange - exactly the shape the MCP layer receives.
+		const string json = """
+			{ "source": "Check", "target": "Approve", "flow-kind": "conditional", "condition": "[#Amount#] > 100" }
+			""";
+
+		// Act
+		ProcessGraphEdgeArg edge = JsonSerializer.Deserialize<ProcessGraphEdgeArg>(json);
+
+		// Assert
+		edge.Source.Should().Be("Check", because: "`source` is the first half of the only handle a caller has on a flow");
+		edge.Target.Should().Be("Approve", because: "and `target` is the other half");
+		edge.FlowKind.Should().Be("conditional",
+			because: "the hyphenated key is the one that would break silently under a rename - a C#-cased "
+				+ "`flowKind` would bind nothing and every edge would validate as a plain sequence flow");
+		edge.Condition.Should().Be("[#Amount#] > 100",
+			because: "this is the field ENG-91853 added, and R13 is the only rule that reads it: bound to "
+				+ "null, an empty-condition error and the omitted-condition warning both go silent while "
+				+ "the tool reports on a graph that has no conditions at all");
 	}
 }

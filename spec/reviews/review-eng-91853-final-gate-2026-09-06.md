@@ -409,4 +409,331 @@ something to check. That is the mechanism: a claim propagates in the form of pro
 read as a claim.
 
 And the correction is not exempt from it — twice above, the tidy version came back. **A correction
-that quietly tightens is the defect it was correcting.**
+that quietly tightens is the defect it was correcting.** Its companion, which is the half that tells
+you where to look: **the correction is the most likely place for the defect to reappear, because that
+is where the writer is most confident.** Neither of us caught our own; each caught the other's. If
+that pair ever becomes a check, that asymmetry is why it cannot be a self-check.
+
+### The search that was cheap, and the four rounds that were not
+
+Four rounds hunted the claim that was **wrong** — "the designer's element list shows a flow name" —
+and found nine sites. None of those rounds found a second stale family sitting in the same files: four
+docs asserting *"a re-kind deliberately keeps the existing name"*, false since `.66`, two of them
+twelve and five lines from text being edited at the time. A reviewer reading only the PR comments
+found them; PR review caught what four targeted sweeps did not.
+
+One grep in the other direction then found **five more** — the "lone unconditional continuation"
+family, stale since `5621c73`, including the `create-business-process` tool `[Description]`. So the
+count went 4 → 5 → 9 for one claim and 0 → 4 → 9 for the other, and the difference was never effort:
+
+> The question is not *"where else did we say the wrong thing"* — that needs the wrong thing named
+> first. It is **"what did this change, and where is that described"**, which is answerable from the
+> diff, and therefore cheap and complete rather than lucky.
+
+A closing instance, recorded because it is the same failure one level up: verifying that five-site
+sweep, this review's own greps under-reported **twice** — missing four package sites on the case of a
+word, then concluding the clio tool stated no rule at all when it states it in different words. Both
+misses have one cause: searching for the other session's *sentence* instead of for the *concept*. The
+verification carried the defect it was verifying.
+
+And its counterpart, from the Sonar round — recorded here in its **corrected** form, because the first
+version of this paragraph was wrong and the way it was wrong is the better lesson.
+
+A MINOR smell was reported at `ProcessGraphValidator.cs:439` and neither session could say which loop
+it meant: the file had changed eleven times on the branch and nothing at that line matched the rule.
+Reading line 439 against the revision the report was written for (`d014b6275`) produced
+`foreach (string seed in queue) { visited.Add(seed); }` — canonical S3267, exact line match, present
+twice. That looked like identification and this report wrote it up as a transferable method:
+*"a stale line number is still evidence, if you read it against the revision it was written for."*
+
+**It was the wrong loop.** A current analysis carried the rule's own message —
+*"Loop should be simplified by calling Select(node => node.Name)"* — and pointed at `:471`, a loop
+that reads nothing but `node.Name`, twice. So the honest statement is narrower:
+
+> A stale line number read against its own revision produces a **candidate**. An exact line match on
+> a canonical instance of the right rule *family* is not identification. What identifies an issue is
+> an analysis carrying its message.
+
+The overconfidence is the part worth keeping. A method that produced a plausible answer was written up
+as a method that produces the right one, without anyone asking **what would distinguish the two** —
+which is the same failure as every other instance on this ticket, one layer up: applied to the tool
+rather than to the claim. The `UnionWith` rewrite that came out of it stays, because the consumer
+analysis below shows it equivalent and simpler, but it fixed nothing Sonar had asked for.
+
+Same shape as the two grep misses either way: the search was not bad, it was aimed at the wrong
+artifact. The line number was never ambiguous; the revision was — and then the rule family was.
+
+### The rule that supersedes this report's own discipline
+
+Four instances across two sessions, and they are the same failure:
+
+| Probe | Returned | Could not return |
+|---|---|---|
+| grep for the other session's sentence | 0 hits | the same rule in different words |
+| grep for "in any declaration order" in the clio tool | 0 hits | *"in any order you declare them"* |
+| `project_analyses/search` for the PR's analysis | a master merge commit | the pull request's own analysis |
+| a stale line read against its own revision | an exact line match | the rule id that would confirm or deny it |
+
+Every one of those four passes the discipline this report opened with — *"a probe that can only come
+back one way is not evidence"* — because each demonstrably returned positives elsewhere: the corpus
+grep found 704 neighbouring cases, the "not buildable" sweep found six, `project_analyses` returned
+real analyses, the revision match found a real loop. Validating that a probe *can* answer is not
+enough, and that is why this discipline let four through:
+
+> **Before trusting a probe, say what it would have to return to be wrong.** Not whether it can return
+> anything — whether it can return the specific answer that would falsify the conclusion being drawn.
+
+None of the four could. That is the sharper statement of the rule, it is the one to put first, and it
+was arrived at by the other session — after this review had already recorded the weaker version twice
+and then failed it twice.
+
+### Three guards, three verdicts, one method
+
+The ticket produced three of one shape, and it is worth recording together because each time the
+answer came from the **consumer** and never from the code under the cursor:
+
+| Guard | Mutation | Verdict |
+|---|---|---|
+| `RenameForItsKind`'s null-endpoint check | delete → suite GREEN | unreachable input — `SetFlow` resolves both endpoints three lines earlier; **deleted** |
+| R8's `outgoing[n].Count > 1` arity arm | `> 1` → `> 0` → GREEN | equivalent — the divergence test needs two distinct edges; **deleted** |
+| `TraverseForward`/`Backward`'s `visited.UnionWith(queue)` | delete → GREEN | equivalent — `CheckReachability` queries the sets only for `role != Role.Start` / `!= Role.End`, and the seeds are exactly those roles, so a seed's membership is never asked; **kept**, simpler than the loop it replaced |
+| `NameBlankEndpoints`' early return for a fully-connected edge | delete → GREEN | equivalent — the fallthrough would `with`-copy identical values; an allocation choice, not a guard, and not claimed as pinned |
+
+A green mutation is not a coverage hole and not dead code until you have read who consumes the value.
+**Four for four**, and none of the four was settled by looking at the line under the cursor.
+
+### The Sonar round, and what it cost to check the criterion
+
+The owner required the five Sonar issues fixed. The code changes were verifiable by inspection; the
+*criterion* was not, and checking it turned up two failures that inspection had passed:
+
+| Analysis | Commit | New issues |
+|---|---|---|
+| 13:14 | `1d1bcb515` — one commit **before** the fix | 5 |
+| 13:30 | `6c46b478a` — the fix | **3** (`:67` and `:62` cleared) |
+| 13:38 | `4d6864a48` — branch tip | **0**, Quality Gate OK, all five conditions OK |
+
+Verified here against the tip through the issues API rather than the bot summary, which carries counts
+and not identities. Two lessons with a life beyond this ticket:
+
+- **Sonar accepts a nullability annotation as the reason a guard is needed.** `:67` asked to remove a
+  null check that measurement showed load-bearing (`NullReferenceException` on both paths). Fixing the
+  *signature* — `IReadOnlyList<ProcessGraphNode?>` — cleared the rule with the guard intact. A rule that
+  says "unnecessary" can be answered by making the necessity visible to it rather than by obeying it.
+- **This repository has no PR-time Sonar workflow.** The only scanner invocation is in
+  `reliase-to-nuget.yml`, gated on `release: published`, and commented out. The PR analysis comes from
+  SonarCloud's own integration, roughly five minutes after a push — so "trigger the analysis" has no CI
+  answer here, and a bot comment is always about whichever commit was analysed, not the tip. The right
+  endpoint for a pull request is `project_pull_requests/list`; `project_analyses/search` mixes in
+  master-branch analyses and this review misread it once, reporting an unrelated PR's merge commit as
+  the analysed revision.
+
+---
+
+## Round 2 — pre-push review of the ten human-review fixes (2026-09-07)
+
+Four parallel lenses over the uncommitted diff: correctness, testing coverage, quality/consistency,
+performance. No Blocker. The findings clustered into two groups, and the second is the one worth
+recording because both members of it were written **in this batch**.
+
+### The rule that did not settle the split it was cited for
+
+The blank/omitted R13 severity split was justified with the ticket's own severity rule — *a finding is
+an error iff the builder refuses that shape*. Measured against `FlowKindRules.cs:126`:
+
+```csharp
+bool hasCondition = !string.IsNullOrWhiteSpace(condition);
+```
+
+`IsNullOrWhiteSpace`, not `== null` — so the builder refuses **blank and omitted alike**, and the rule
+makes both errors. It does not separate them. What separates them is whether the shape has a legitimate
+reading **before any predicate exists**: omission does (the field is optional so a caller can check a
+graph's shape first), whitespace does not. That is now the reason at the decision site, in the interface
+doc, in the rules document and in the two test descriptions — replacing a rule that looked like it had
+done the work.
+
+The blank finding's message was corrected in the same place: it predicted that the platform "stores it
+as the literal `true`", which the build path never reaches, because it refuses first. It now names the
+refusal and keeps the literal-`true` outcome scoped to the designer/direct-save route a read-back graph
+in that state actually comes from.
+
+### Two comments that outlived their own mechanism
+
+Both cite a fact this same diff removed, which is the failure mode
+`docs/knowledge/Tests/reachability-not-corpus-absence-decides-whether-a-guard-stays.md` exists to prevent:
+
+- `CheckSelfLoops`'s missing null-source guard was justified by "`CheckMissingNodeFlows` runs first and
+  its `ContainsKey(null)` throws". That throw is precisely what `NameBlankEndpoints` was added to
+  eliminate. The guard is still dead, for a different reason, and the resurrection tripwire was aimed at
+  the wrong edit — it is `NameTheNameless` running first, not the order of the two checks.
+- R18's comment said "R12 does fire on this shape, but as a warning whose text describes an all-plain
+  split". R12 counts only `FlowKind == Sequence` and needs more than one, so on
+  `[conditional, default, sequence]` — the exact shape raised in review as a false positive — it does not
+  fire at all. R18 is the only finding there. The sentence was weaker than the truth.
+
+A third claim in the same class: `NameBlankEndpoints` said its placeholder is "a name no element can
+have". A node named `(missing source)` makes the placeholder resolve and the caller is told about that
+node's flow arity instead. Pre-existing (the single `(missing)` literal had it identically), bounded
+rather than fixed — the alternative is a reserved-name check on every node.
+
+### Test oracles that would have passed for the wrong reason
+
+- `ProcessGraphValidatorTests:167` — the `Cond` helper omits the condition, so R13 now fires **twice**
+  and either warning satisfied `RuleId == "R13" && Severity == Warning`. The source-role clause could
+  have been deleted whole with the test green. Now keyed on the message.
+- The both-blank-endpoint pin asserted only the **absence** of `"to itself"`, a substring of the rule it
+  suppresses, living in the same file as the fix. Now a count plus both placeholders **by name** — which
+  is also the only thing in the suite that pins the two-placeholder decision at all.
+- The plain-flow negative keyed on `"has no default flow"` while its positive twin keyed on
+  `"None of the conditions were met"` — two fragments of one message, so re-wording the prefix made the
+  negative vacuously green. Both now key on the same fragment.
+- `Validate_ShouldWarnR7_NamingTheRuntimeException_...` asserted the inverse of its own name, and carried
+  a **second Act inside its Assert block**. Renamed; the second scenario is its own test.
+
+### Performance
+
+The `joins x candidates x branches x edges` term is genuinely gone — `E` is now paid once per join rather
+than per candidate. But the reviewer priced the replacement honestly: `GroupBy().ToDictionary(g =>
+g.ToHashSet())` allocates three structures per branch and passes twice, turning a per-**candidate** scan
+into a per-**join** allocation — a net loss where a graph has many joins and one or two candidates each,
+which is the ordinary shape. Hand-rolled into one loop; behaviour identical (same ordinal comparer, same
+keys, same sets, no empty groups possible) and pinned by the existing R8 coverage.
+
+Not in this diff and not taken: `ValidateProcessGraphArgs` has no size cap, and
+`McpReadResponseDeadline` **abandons** rather than cancels at 120 s (`Validate` takes no
+`CancellationToken`), so a large graph leaves a thread-pool thread burning behind a benign-looking
+timeout. Worth its own change.
+
+**Result:** `dotnet test --filter "Category=Unit&(Module=ProcessModel|Module=McpServer)"` → **4819
+passed, 0 failed**; 0 `CLIO*` warnings in changed files. The package repository is untouched, so the
+bundled archive stays at **1.4.0.70** and no rebundle is owed.
+
+### Round 3 — the corpus number, measured a third time (2026-09-07)
+
+A peer session published **344** conditional flows with no condition — a quarter of the corpus — and
+argued it inverts R13-omitted from a warning back to silence, since this repository's own demotion rule
+says a shape the corpus contains in bulk is not a finding. Their arithmetic reproduces exactly. Their
+reading does not survive one more join.
+
+Full census, 1711 schemas / 1367 shipped `ProcessSchemaConditionalFlow`:
+
+| `CI3` | `GV2` | count | what it is |
+|---|---|---|---|
+| a real expression | empty | 1023 | formula branch |
+| absent or `"null"` | **has entries** | **337** | **activity-result branch** |
+| absent or `"null"` | empty | **7** | genuinely nothing decides it |
+| empty string | — | 0 | — |
+
+`GV2` is `ProcessSchemaConditionalFlow.ProcessActivitiesSelectedResultsPropertyName`.
+`SpecifyConditionalSequenceFlow` turns it into `ConditionalSequenceFlow.ActivityResults`, and
+`CheckCondition` dispatches on `ResultParameterName` — it **never evaluates an expression**. So an empty
+`CI3` on those 337 is correct, not defective: it is the designer's *Activity results* preset, which R13
+in `ai-bp-connection-rules.md` already names.
+
+Three probes, three answers, and the failure is the same one each time — the probe could not return the
+result that falsifies it:
+
+- key-absent only → **3** ("nobody does this")
+- key-absent + the `"null"` spelling → **344** ("a quarter of the corpus does this")
+- either of those, joined against `GV2` → **7**
+
+**The warning stands**, on 7 rather than on 344. Recorded as
+`docs/knowledge/ProcessModel/conditional-flow-condition-lives-in-two-places.md`, because the next person
+to grep `CI3` will get 3 or 344 and neither is the number the decision turns on.
+
+The measurement did surface one real defect in the tool. `ProcessGraphEdge` carries `Condition` and
+nothing else, so an activity-result flow arriving by describe-then-validate is **indistinguishable** from
+a bare one and raises the warning — 337 shipped flows' worth. The finding is defensible (clio cannot
+build an activity-result condition either) but the remediation "give it a condition, or make the flow
+`sequence`" would destroy the branch, so the message now names the case and points at
+`branchesOnActivityResult`, which `describe-business-process` does report.
+
+Two peer items checked and **not** actionable: the BOM trap (my scripts wrote `utf-8`, not `utf-8-sig`;
+all five markdown files still start with ASCII) and the claim that a comment at `:404` calls R13 "a
+warning" while annotating an `Error` arm — that comment annotates the source-role arm, which does emit
+`Warning`. The peer's `CheckSelfLoops` item was already fixed in round 2, independently and to the same
+conclusion.
+
+### Round 4 — mutation X4, and the gap it found (2026-09-07)
+
+A peer flagged four mutations against this batch's new decisions and named **X4** as the one that
+mattered: narrow R18's counter from `FlowKind != Conditional` to `FlowKind == Sequence`, dropping an
+explicitly declared `default` out of "unconditional". Run here rather than waited for, because the
+rebuttal to the human reviewer's finding 2 rests on exactly that predicate.
+
+**X4 came back GREEN — 4819 passed, 0 failed, with R18 narrowed.**
+
+The rule's disposition was defended three ways — a comment, a corpus count, and a stand measurement
+showing `CrtProcessBuilder` refusing the shape with exit code 1 — and **nothing executable held the
+predicate in place.** The reason is specific and worth keeping: every existing R18 case used
+`[sequence, sequence, conditional]`, where *both* readings of "unconditional" count two. Only a shape
+that MIXES the kinds can tell them apart, and none existed.
+
+Closed by `Validate_ShouldReturnR18Error_WhenAConditionalHasADefaultAndAPlainSibling` —
+`[conditional, default, sequence]` off one element, which is also the exact shape the reviewer raised.
+Verified both directions:
+
+| predicate | result |
+|---|---|
+| `FlowKind != Conditional` (real) | 130/130 ProcessModel, 4820/0 on the full filter |
+| `FlowKind == Sequence` (X4) | **1 failed** — the new test, and only it |
+
+So the rebuttal is now executable rather than argued: narrowing R18 the way the finding asks turns a
+test red, naming the shape and the mechanism (`GetIsDefSequenceFlow` is
+`BpmnElementName != ConditionalSequenceFlowName`, so the `default` marker is never read, and
+`RemoveDefSequenceFlow` drops exactly one non-conditional flow by list order). The test also pins the
+R12-silence fact, so "delete R18 and R12 covers it" fails a test too.
+
+**The lesson, since it is the fourth probe-cannot-falsify-itself finding on this ticket:** a rule
+defended by measurement is not thereby pinned. Corpus counts, stand runs and platform source say the
+rule is *right*; only a mutation says the code still *implements* it. Three defences and no oracle is
+the shape to look for.
+
+### Round 5 — the blocker that was a shared-tree artifact (2026-09-07)
+
+The reviewing session raised a **blocker**: `ProcessGraphValidator.cs:271` read
+`o.FlowKind == ProcessFlowKind.Sequence` — the reviewer's own proposal — and `[conditional, default,
+sequence]` produced no finding of any kind. Measured in this tree, not inferred, and correct for the
+bytes in front of them.
+
+It was the X4 mutation, mid-run. Applied → built → 7-minute test pass → restored. Their read landed
+inside that window. Confirmed after: `:271` is `!= Conditional`, the file hashes identical to the
+pre-mutation backup, and all four R18 tests pass — including the one that *cannot* pass under X4.
+
+**The finding is real and it is a process one, owned here.** A destructive mutation was run in the
+shared working tree while another session was reviewing it, without telling them. The dangerous
+direction is the opposite of what happened: a sample taken during a mutation that *removes* a finding
+would have produced a "reviewed clean" on a state that never existed, and nothing in either workflow
+would have caught it. Mutations now go to a worktree; if that is not possible, the reviewing session is
+told before and after.
+
+Their `anchor NOT FOUND` is what surfaced it — a mutation harness failing to find its anchor was a
+better outcome than silently matching.
+
+**Mutation verdicts, against a re-taken diff and a valid 62/0 baseline:**
+
+| | |
+|---|---|
+| X1 collapse the two placeholders | RED (1) |
+| X2 omitted arm `Warning` → `Error` | RED (5) |
+| X3 drop the omitted arm entirely | RED (1) |
+| X4 R18 counts only `Sequence` | RED (1) — after the new test; **green before it** |
+
+Their first run was discarded for a 5-red baseline caused by a stale diff, and the earlier
+"NO RESULT ×4" was reported as a non-answer rather than a pass. Three separate refusals to report a
+number that could not be stood behind.
+
+**Two items settled against the reviewing session's own retraction.** They withdrew the BOM finding on
+the grounds that my scripts wrote `utf-8`; `git cat-file -p HEAD:<file> | head -c3` returns `757369` on
+all three files and `utf-8-sig` was this batch's patch default, so the finding was correct and the
+retraction was not. Worth naming because every other overreach on this ticket was *claiming too much*
+and this one was *conceding too much* — the same defect with the opposite sign, and harder to spot
+because it reads as rigour.
+
+**Closing edits:** R18's message now names the `default` case explicitly — answering the reviewer at the
+message rather than at the predicate, which is where the answer belongs since the predicate is what the
+platform mechanism forces. Recorded
+`docs/knowledge/Tests/three-defences-and-no-oracle-is-an-unpinned-rule.md`.
+
+**Final: 4820 passed / 0 failed / 2 skipped, 0 `CLIO*` in changed files, archive 1.4.0.70, nothing
+pushed.**

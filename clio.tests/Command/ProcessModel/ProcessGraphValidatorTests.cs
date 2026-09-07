@@ -6,7 +6,8 @@ using NUnit.Framework;
 namespace Clio.Tests.Command.ProcessModel;
 
 /// <summary>
-/// Unit tests for <see cref="ProcessGraphValidator"/> — one case per error/warning rule (R1–R17),
+/// Unit tests for <see cref="ProcessGraphValidator"/> — one case per error/warning rule (R1–R18; both
+/// R13 condition halves live in the tool fixture, where the wire shape of an omitted field is real),
 /// the clean Start->Read data->End graph, and the no-false-positive guarantee.
 /// </summary>
 [TestFixture]
@@ -173,8 +174,12 @@ public sealed class ProcessGraphValidatorTests {
 		ProcessGraphValidationResult result = Validate(nodes, edges);
 
 		// Assert
-		result.Findings.Should().Contain(f => f.RuleId == "R13" && f.Severity == ProcessGraphSeverity.Warning,
-			because: "the source role is still worth reporting - the designer offers no such connection");
+		result.Findings.Should().Contain(f => f.RuleId == "R13" && f.Severity == ProcessGraphSeverity.Warning
+				&& f.Message.Contains("neither a gateway nor an activity"),
+			because: "the source role is still worth reporting - the designer offers no such connection. The "
+				+ "message is asserted because the `Cond` helper omits the condition, so this graph raises TWO "
+				+ "R13 warnings: without it the omitted-condition one satisfies the predicate on its own and "
+				+ "the source-role clause could be deleted whole with this test still green");
 		result.Findings.Should().NotContain(f => f.RuleId == "R13" && f.Severity == ProcessGraphSeverity.Error,
 			because: "an error here told an agent that two shipped CrtBase processes are invalid");
 	}
@@ -380,6 +385,46 @@ public sealed class ProcessGraphValidatorTests {
 
 	[Test]
 	[Category("Unit")]
+	[Description("R18 counts an explicitly declared `default` as UNCONDITIONAL, so "
+		+ "[conditional, default, sequence] is an error. This is the shape raised in review as a false "
+		+ "positive - the premise being that a `default` is the privileged fallback and therefore does not "
+		+ "count. It is not privileged: FlowConditionalGateway.GetIsDefSequenceFlow is "
+		+ "`BpmnElementName != ConditionalSequenceFlowName`, which matches default and plain alike, and "
+		+ "RemoveDefSequenceFlow then removes exactly ONE of them by list order - so the survivor starts "
+		+ "beside the branch the condition chose, and WHICH one survives depends on array order. Measured "
+		+ "twice besides: CrtProcessBuilder refuses this exact graph (exit code 1), and zero of 1711 shipped "
+		+ "schemas are in it.\n"
+		+ "This test exists because the suite could not tell the two readings apart. The other R18 cases use "
+		+ "[sequence, sequence, conditional], where both readings count two - so narrowing the predicate to "
+		+ "`FlowKind == Sequence` left all 4819 tests green while R18 stopped firing on the one shape the "
+		+ "rebuttal is about. Mixing the kinds is what makes the count discriminating.")]
+	public void Validate_ShouldReturnR18Error_WhenAConditionalHasADefaultAndAPlainSibling() {
+		// Arrange - one conditional branch, one declared default, one plain flow, all off the same element.
+		List<ProcessGraphNode> nodes = [
+			Node("s", "startEvent"), Node("t", "userTask"),
+			Node("a", "endEvent"), Node("b", "endEvent"), Node("c", "endEvent")
+		];
+		List<ProcessGraphEdge> edges = [
+			Seq("s", "t"), Cond("t", "a"), Def("t", "b"), Seq("t", "c")
+		];
+
+		// Act
+		ProcessGraphValidationResult result = Validate(nodes, edges);
+
+		// Assert
+		result.Findings.Should().Contain(f => f.RuleId == "R18" && f.Severity == ProcessGraphSeverity.Error,
+			because: "the default and the plain flow are both non-conditional, the synthesized gateway drops "
+				+ "one of the two and runs the other, and marking one of them `default` changes nothing about "
+				+ "that - the marker is not read");
+		result.Findings.Should().NotContain(f => f.RuleId == "R12",
+			because: "R12 counts only SEQUENCE flows and needs more than one, so on this mixed shape it is "
+				+ "silent - which is why R18 is the only finding standing between the author and a silent "
+				+ "double start, and why deleting R18 would leave the shape unreported rather than "
+				+ "double-reported");
+	}
+
+	[Test]
+	[Category("Unit")]
 	[Description("R18 does not fire on one conditional beside a single unconditional flow. 736 shipped "
 		+ "sources carry exactly that shape, 310 of them not gateways, so a finding there is a false positive.")]
 	public void Validate_ShouldNotReturnR18_WhenAConditionalHasOneUnconditionalSibling() {
@@ -574,5 +619,36 @@ public sealed class ProcessGraphValidatorTests {
 			because: "the graph that remains is the canonical valid one, so dropping the null entry leaves "
 				+ "nothing to report - if this ever fails, the null was turned into a finding rather than "
 				+ "dropped, which is a different decision and needs its own test");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("A flow with BOTH endpoints blank is reported as two missing nodes and NOT as a self-loop. "
+		+ "One placeholder for both ends made `{\"edges\":[{}]}` normalise to Source == Target, so the "
+		+ "self-loop rule fabricated an R15 telling the caller to route the flow back through a gateway - "
+		+ "remediation about repeating an element, for someone who forgot both endpoints. The existing test "
+		+ "covers ONE blank endpoint, which is why the collapse stayed invisible.")]
+	public void Validate_ShouldNotReportASelfLoop_WhenBothFlowEndpointsAreBlank() {
+		// Arrange
+		List<ProcessGraphNode> nodes = [Node("s", "startEvent"), Node("e", "endEvent")];
+		List<ProcessGraphEdge> edges = [Seq("s", "e"), new(null, null, ProcessFlowKind.Sequence)];
+
+		// Act
+		ProcessGraphValidationResult result = Validate(nodes, edges);
+
+		// Assert
+		result.Findings.Should().HaveCount(1,
+			because: "one forgotten flow is one mistake and deserves one finding. A count rather than only an "
+				+ "absence assertion: keying this test on the self-loop message alone would let a re-wording "
+				+ "of CheckSelfLoops - a method in this same file - bring the fabricated finding back green");
+		result.Findings.Should().Contain(f => f.RuleId == "R15"
+				&& f.Message.Contains("source '(missing source)'")
+				&& f.Message.Contains("target '(missing target)'"),
+			because: "it IS a flow referencing nodes the graph does not contain, which is what to report - and "
+				+ "the two placeholders are asserted BY NAME because nothing else pins them: swap them and "
+				+ "every other assertion in the suite still passes while the message misnames both ends");
+		result.Findings.Should().NotContain(f => f.Message.Contains("to itself"),
+			because: "an edge that connects nothing is not a self-loop, and the self-loop remediation - route "
+				+ "it back through a gateway - has nothing to do with the caller's mistake");
 	}
 }

@@ -1,4 +1,4 @@
-# Process connection rules & validator spec
+﻿# Process connection rules & validator spec
 
 > The "how you can / cannot connect elements" ruleset for AI process design (subtask 1).
 > Sourced from BPMN 2.0 (OMG) + Creatio Academy 8.x. This is the spec for the
@@ -16,7 +16,7 @@
 - **Intermediate events**: catch (`intermediateCatchEvent*`) / throw (`intermediateThrowEvent*`)
 - **Flows**: sequence, conditional, default
 
-## Rules (R1–R17) — enforceable
+## Rules (R1–R18) — enforceable
 
 **Events**
 - **R1** A start event has **no incoming** sequence flow and exactly **one outgoing**.
@@ -58,12 +58,27 @@
 
 - **R12** Sequence flow: target runs only after source completes. **Multiple outgoing sequence flows from one element = implicit parallel split** (all activate).
 - **R13** Conditional flow may originate **only from a gateway or an activity** (activity → uses *Activity results* preset; gateway → boolean formula).
-  Stricter than the platform, deliberately: `AddEventStandardAllowedOutgoingSequenceFlows` grants a
-  conditional flow to every start and intermediate event, and 4 shipped flows use that. Reading back such
-  a process and re-validating it will report an error on a **valid** platform process.
-  A conditional flow whose condition is supplied but **empty** is also an error: the platform stores an
-  empty condition as the literal `true`, which is a branch that always fires, and 7 shipped flows are in
-  that state. An **omitted** condition raises nothing — the field is optional.
+  Stricter than the designer, and reported as a **WARNING** for that reason:
+  `AddEventStandardAllowedOutgoingSequenceFlows` grants a conditional flow to every start and
+  intermediate event, and 4 shipped flows use that — so an ERROR here told an agent that the platform's
+  own content is invalid. It was one until ENG-91853; the warnings list below is authoritative.
+  The condition itself splits three ways, and the corpus evidence belongs to the second half, not the
+  first. **Blank** (supplied, whitespace) is an **error**: reached outside the build path the platform
+  stores it as the literal `true`, a branch that always fires. **ZERO** shipped flows are in that state
+  — the error rests on the shape being indefensible (nobody types whitespace while deferring predicates)
+  rather than on frequency — 0 of 1367 shipped conditional flows. **Omitted** is a **warning**: the
+  field is optional precisely so a graph's SHAPE can be checked before any predicate exists, but
+  `EnsureConditionMatchesKind` refuses the flow at build time, so the check says so without blocking.
+  Read the census before re-litigating the severity, because the obvious probe gets it wrong twice
+  over: **344** shipped conditional flows have no `CI3` text (3 omit the key, 341 store the literal
+  `"null"`, 0 store an empty string) — but **337** of those branch on an ACTIVITY RESULT held in `GV2`,
+  which `ConditionalSequenceFlow.CheckCondition` evaluates instead of any expression. Only **7** have
+  neither, and they are test schemas. A probe that stops at `CI3` reads 3 or 344 depending on which
+  spellings it tested, and neither number is the one the severity turns on.
+  (An earlier "7" on this line was a different wrong number, attributed to the blank case.)
+  Note what does **not** decide this split: the builder tests `IsNullOrWhiteSpace`, so it refuses blank
+  and omitted alike. "Error iff the builder refuses" would make both errors; what separates them is
+  that omission has a legitimate pre-predicate reading and whitespace does not.
 - **R14** Default flow is legal **only if ≥1 conditional flow** leaves the same element; activates when no sibling conditional can. Diverging Exclusive & Inclusive gateways **require** a default.
   **Arity-scoped** (ENG-91853): the sibling-conditional requirement applies only where the source has
   **more than one** outgoing flow. A *converging* or-gateway's single outgoing flow is a default flow by
@@ -81,6 +96,20 @@
 **Activities / sub-process**
 - **R16** A `callActivity` target process must begin with a **Simple start event**. If an incoming param maps to a **collection**, it runs multi-instance (sequential/parallel), once per item.
 - **R17** `addDataUserTask` (one-record mode) outputs only the new `Id`; to use other fields downstream, chain a `readDataUserTask` filtered on that Id. (Advisory, not a hard error.)
+
+**Branching (added by ENG-91853)**
+- **R18** A conditional flow may have **at most one** outgoing sibling that carries no condition. The
+  platform synthesizes a gateway for any element that branches, and that gateway's fallback matches
+  every flow that is not conditional and removes exactly **one** of them, then runs the rest — so a
+  second unconditional flow always starts, beside the branch the condition chose. UNCONDITIONAL means
+  "not conditional", so an explicitly declared `default` counts (`GetIsDefSequenceFlow` matches default
+  and plain alike).
+  The one **error** in this document the corpus does not contradict: of 1711 schemas, 736 sources carry
+  a conditional flow beside ONE unconditional flow and **zero** carry two, under every reading of the
+  predicate — and `CrtProcessBuilder` refuses to build the shape, so the severity agrees with the
+  builder. Nothing else reports it: R12 counts only `sequence` flows and needs more than one, so on
+  `[conditional, default, sequence]` R18 is the only finding standing between the author and a silent
+  double start.
 
 ## Quick can/can't matrix (source → target via sequence flow)
 
@@ -115,6 +144,9 @@ Emit structured findings `{severity (error|warning), ruleId, message, node/edge}
   flow out of a DIVERGING or-gateway (R7/R9, same arity scope — 14 shipped gateways are the
   one-outgoing shape, and 7 diverging ones carry the plain flow and run); a conditional flow whose
   source is neither a gateway nor an activity (R13 — four shipped flows leave an event and run);
+  a conditional flow with an OMITTED condition (R13 — the build path refuses it, so this is the one
+  warning here whose consequence is certain rather than advisory; it is a warning only because the
+  optional field exists so a caller can check shape before writing predicates);
   a parallel join two of whose incoming branches leave one or-gateway by DIFFERENT flows (R8 —
   ancestry is not enough, and comparing it warns on almost every real graph);
   `addDataUserTask`→consumer without an intervening `readDataUserTask` when non-Id fields are
@@ -130,7 +162,7 @@ Exposed as MCP tool `validate-process-graph` (BaseTool, ReadOnly) so the agent p
 plan before calling `create-business-process`.
 
 ## Pre-flight is the authority (validate before build)
-There is no live designer in the shipped flow. `validate-process-graph` runs these R1–R17 rules
+There is no live designer in the shipped flow. `validate-process-graph` runs these R1–R18 rules
 in-memory over the planned nodes/edges and returns structured findings
 `{ severity (error|warning), ruleId, message, node/edge }`. The agent must run it first and resolve
 every error-severity finding before calling `create-business-process`; the build (server-side

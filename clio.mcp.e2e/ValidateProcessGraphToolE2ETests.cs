@@ -200,7 +200,7 @@ public sealed class ValidateProcessGraphToolE2ETests {
 	}
 
 	[Test]
-	[Description("Over the real MCP path, an edge's condition BINDS from the wire and reaches the rules. The unit tests construct ProcessGraphEdgeArg positionally in C#, so none of them exercises the JSON binder at all, and the binder skips a member it cannot map in silence - rename or mistype the property and every condition arrives null, with the whole suite green and the tool quietly answering about a graph without conditions. A blank condition is the discriminating value: it is the ONE condition R13 reports, while an omitted one is deliberately silent, so the finding exists if and only if the value crossed the wire.")]
+	[Description("Over the real MCP path, an edge's condition BINDS from the wire and reaches the rules. The unit tests construct ProcessGraphEdgeArg positionally in C#, so none of them exercises the JSON binder at all, and the binder skips a member it cannot map in silence - rename or mistype the property and every condition arrives null, with the whole suite green and the tool quietly answering about a graph without conditions. A blank condition is the discriminating value: it is the one condition R13 reports as an ERROR, and its message is unique to it - an omitted condition is reported too since ENG-91853, but as a warning whose text names the build refusal instead. So the error exists if and only if the blank string itself crossed the wire; a dropped key would produce the warning, not this.")]
 	[AllureTag(ToolName)]
 	[AllureName("validate-process-graph binds an edge condition from the wire")]
 	public async Task ValidateProcessGraph_Should_BindEdgeCondition_FromTheWire() {
@@ -234,7 +234,7 @@ public sealed class ValidateProcessGraphToolE2ETests {
 				&& f.Message.Contains("'g' -> 'blank'"),
 			because: "the platform stores a blank condition as the literal 'true' - a branch that always "
 				+ "fires - and the rule can only see that if the blank string itself crossed the wire; a "
-				+ "dropped key arrives as null, which R13 is deliberately silent about");
+				+ "dropped key arrives as null, which R13 reports as a WARNING about the build refusal and never with this text");
 		response.Findings.Should().NotContain(
 			f => f.RuleId == "R13" && f.Message.Contains("'g' -> 'real'"),
 			because: "the sibling carries a real condition, so the VALUE has to survive the crossing and not "
