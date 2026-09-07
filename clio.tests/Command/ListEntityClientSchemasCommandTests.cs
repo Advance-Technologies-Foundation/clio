@@ -471,6 +471,38 @@ internal class ListEntityClientSchemasCommandTests : BaseCommandTests<ListEntity
 		_logger.Received().WriteWarning(Arg.Is<string>(message => message.Contains(TypeReferenceSchema2)));
 	}
 
+	[Test]
+	[Description("TryResolve logs exactly one diagnostic warning (and leaves TypeColumnDisplayValue null) when a typed entity produced per-type GUID values but the resolver resolves zero captions — a systemic signal distinct from the not-typed null.")]
+	public void TryResolve_Should_Warn_When_Typed_Entity_Resolves_Zero_Captions() {
+		// Arrange - a typed page whose GUID the resolver returns WITHOUT a display value (successful call, marker only),
+		// so nothing is assigned and the diagnostic branch (assigned == 0) must fire.
+		_applicationClient.ExecutePostRequest(SelectQueryUrl, Arg.Any<string>()).Returns(
+			$$$"""{ "success": true, "rows": [{ "UId": "{{{EntityUId}}}", "ExtendParent": false }] }""",
+			"""{ "success": true, "rows": [] }""",
+			$$$"""
+			{ "success": true, "rows": [{
+			  "TypeColumnValue": "{{{TypeValueGuid}}}",
+			  "TypeColumnUId": "{{{TypeColumnUId}}}"
+			}] }
+			""");
+		_runtimeEntitySchemaReader.GetByName("Activity").Returns(SchemaWithTypeColumn(TypeReferenceSchema));
+		_lookupDisplayValueResolver
+			.ResolveMany(TypeReferenceSchema, Arg.Any<IReadOnlyCollection<Guid>>(), Arg.Any<RemoteCommandOptions>())
+			.Returns(new Dictionary<Guid, LookupDefaultResolution> {
+				[Guid.Parse(TypeValueGuid)] = new LookupDefaultResolution(null, "not-found-or-no-access")
+			});
+		var options = new ListEntityClientSchemasOptions { EntityName = "Activity" };
+
+		// Act
+		bool result = _command.TryResolve(options, out ListEntityClientSchemasResponse response);
+
+		// Assert
+		result.Should().BeTrue(because: "zero resolved captions is a readability gap, not a failure");
+		response.EditPages.Single().TypeColumnDisplayValue.Should().BeNull(
+			because: "no caption resolved, so the field stays null and the engine shows the GUID fallback");
+		_logger.Received(1).WriteWarning(Arg.Is<string>(message => message.Contains("Resolved no type display names")));
+	}
+
 	private static RuntimeEntitySchemaResult SchemaWithTypeColumn(string referenceSchemaName) =>
 		new(
 			UId: Guid.NewGuid(),

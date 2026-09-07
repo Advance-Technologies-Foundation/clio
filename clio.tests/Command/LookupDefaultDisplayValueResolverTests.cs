@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Net.Http;
+using System.Text.RegularExpressions;
 using System.Threading.Tasks;
 using Clio.Command;
 using Clio.Command.EntitySchemaDesigner;
@@ -264,25 +265,51 @@ internal sealed class LookupDefaultDisplayValueResolverTests
 			because: "the returned Id is parsed to Guid, so a braces/case form difference must still resolve, not silently degrade to GUID-only");
 	}
 
+	// Counts the IN-filter values in a serialized SelectQuery body — one per requested id in that chunk.
+	private static int CountFilterValues(string requestBody) => Regex.Matches(requestBody, "\"value\"\\s*:").Count;
+
 	[Test]
-	[Description("ResolveMany splits an id set larger than the per-query cap across multiple IN queries and unions the results, so a record from every chunk resolves.")]
-	public void ResolveMany_ShouldUnionResultsAcrossChunks_WhenAboveCap() {
-		// Arrange - 401 distinct ids force two queries (cap is 400). A fixed response carries the FIRST and LAST id, so
-		// each is only satisfiable from a DIFFERENT chunk's query — proving the per-chunk results are unioned, not overwritten.
+	[Description("ResolveMany issues exactly one IN query for a request at the chunk cap (400 ids), pinning the boundary so an off-by-one that split 400 into two chunks would fail.")]
+	public void ResolveMany_ShouldIssueOneQuery_ForExactly400Ids() {
+		// Arrange - exactly 400 distinct ids; capture the request bodies to count the IN-filter values per query.
+		ArrangeDisplayColumn("Name");
+		var bodies = new List<string>();
+		_applicationClient.ExecutePostRequest(Arg.Any<string>(), Arg.Do<string>(body => bodies.Add(body)), Arg.Any<int>())
+			.Returns("{\"success\":true,\"rows\":[]}");
+		Guid[] ids = Enumerable.Range(0, 400)
+			.Select(i => Guid.Parse($"11110000-0000-0000-0000-{i:D12}")).ToArray();
+
+		// Act
+		_resolver.ResolveMany(ReferenceSchema, ids, new RemoteCommandOptions());
+
+		// Assert
+		bodies.Should().ContainSingle(because: "400 ids sit exactly at the cap and must resolve in a single IN query");
+		CountFilterValues(bodies[0]).Should().Be(400, because: "the single query must carry all 400 ids");
+	}
+
+	[Test]
+	[Description("ResolveMany splits 401 ids into exactly two IN queries (400 then 1), unions their results (a record from each chunk resolves), and never issues one query per id.")]
+	public void ResolveMany_ShouldSplitInto400Then1_And_UnionResults_For401Ids() {
+		// Arrange - 401 distinct ids force two queries. Capture bodies to assert the per-chunk id counts (400, then 1),
+		// and return the FIRST and LAST id so each is only satisfiable from a DIFFERENT chunk — proving union, not overwrite.
 		ArrangeDisplayColumn("Name");
 		Guid[] ids = Enumerable.Range(0, 401)
 			.Select(i => Guid.Parse($"11110000-0000-0000-0000-{i:D12}")).ToArray();
-		ArrangeSelectResponse(
-			$"{{\"success\":true,\"rows\":[" +
-			$"{{\"Id\":\"{ids[0]:D}\",\"DisplayValue\":\"First\"}}," +
-			$"{{\"Id\":\"{ids[400]:D}\",\"DisplayValue\":\"Last\"}}]}}");
+		var bodies = new List<string>();
+		_applicationClient.ExecutePostRequest(Arg.Any<string>(), Arg.Do<string>(body => bodies.Add(body)), Arg.Any<int>())
+			.Returns(
+				$"{{\"success\":true,\"rows\":[" +
+				$"{{\"Id\":\"{ids[0]:D}\",\"DisplayValue\":\"First\"}}," +
+				$"{{\"Id\":\"{ids[400]:D}\",\"DisplayValue\":\"Last\"}}]}}");
 
 		// Act
 		IReadOnlyDictionary<Guid, LookupDefaultResolution> result =
 			_resolver.ResolveMany(ReferenceSchema, ids, new RemoteCommandOptions());
 
 		// Assert
-		_applicationClient.Received(2).ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>());
+		bodies.Count.Should().Be(2, because: "401 ids exceed the 400 cap by one, so exactly two IN queries are issued");
+		CountFilterValues(bodies[0]).Should().Be(400, because: "the first chunk carries the full cap of ids");
+		CountFilterValues(bodies[1]).Should().Be(1, because: "the second chunk carries the single remaining id");
 		result[ids[0]].DisplayValue.Should().Be("First", because: "an id in the first chunk resolves from the first query");
 		result[ids[400]].DisplayValue.Should().Be("Last",
 			because: "an id in the second chunk resolves from the second query, proving results union across chunks");

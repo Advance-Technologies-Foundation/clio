@@ -99,7 +99,7 @@ public sealed class ListEntityClientSchemasResponse {
 /// ESQ and classifies each page as <c>classic</c>, <c>freedom</c>, or <c>unknown</c> for a Classic-&gt;Freedom
 /// migration. One level only — callers recurse into detail entities by invoking the command per detail entity.
 /// </summary>
-public class ListEntityClientSchemasCommand : Command<ListEntityClientSchemasOptions> {
+internal class ListEntityClientSchemasCommand : Command<ListEntityClientSchemasOptions> {
 
 	// Single-sourced with ClassicEntitySchemaQuery so the sentinel/cap cannot drift between the shared query
 	// builder and its callers.

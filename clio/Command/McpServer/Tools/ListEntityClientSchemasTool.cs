@@ -8,7 +8,7 @@ using ModelContextProtocol.Server;
 namespace Clio.Command.McpServer.Tools;
 
 [McpServerToolType]
-public sealed class ListEntityClientSchemasTool(
+internal sealed class ListEntityClientSchemasTool(
 	ListEntityClientSchemasCommand command,
 	ILogger logger,
 	IToolCommandResolver commandResolver)
