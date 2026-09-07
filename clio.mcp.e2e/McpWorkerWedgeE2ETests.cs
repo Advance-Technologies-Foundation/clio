@@ -74,6 +74,13 @@ public sealed class McpWorkerWedgeE2ETests {
 	/// </summary>
 	private static readonly TimeSpan Budget = TimeSpan.FromSeconds(12);
 
+	/// <summary>
+	/// How long the stalled call's worker may take to disappear from the on-disk registry after the
+	/// sequence has finished. Generous against a stalled session's teardown yet far inside the fixture's
+	/// own five-minute ceiling, because its only job is to separate "slow to reap" from "leaked".
+	/// </summary>
+	private static readonly TimeSpan RegistryDrainWait = TimeSpan.FromSeconds(30);
+
 	/// <summary>Delay before call B, so call A certainly owns the per-tenant monitor first.</summary>
 	private static readonly TimeSpan CallBDelay = TimeSpan.FromSeconds(1.5);
 
@@ -597,10 +604,19 @@ public sealed class McpWorkerWedgeE2ETests {
 		WedgeCallResult resultD,
 		CreatioWedgeStubServer stub,
 		string table) {
+		// Waited for, not sampled: the release is handed to an unawaited Task.Run and the registry-file
+		// removal is the LAST link of that chain, so a call answering does not mean the entry is gone.
+		// See WorkerSpawnObserver.WaitUntilRegistryDrains for the full chain. Sampling it once raced the
+		// stalled call's own release — the slowest in the run — and failed on a worker that was merely
+		// slow to be reaped rather than leaked.
+		IReadOnlyList<ObservedWorker> stillRecorded = observer.WaitUntilRegistryDrains(RegistryDrainWait);
 		string described = observer.Describe();
-		observer.ReadCurrent().Should().BeEmpty(
-			because: $"every lease is disposed when its call answers, so no worker may still be RECORDED "
-				+ $"once the sequence has finished. {described}{table}");
+		stillRecorded.Should().BeEmpty(
+			because: $"every lease is released once its call answers, so within {RegistryDrainWait.TotalSeconds:0}s "
+				+ $"(actually waited {observer.LastDrainWait.TotalMilliseconds:0}ms) "
+				+ $"no worker may still be RECORDED once the sequence has finished — a registry that never "
+				+ $"drains is a leaked worker, which is the thing this case exists to catch. "
+				+ $"{described}{table}");
 		observer.Observed.Where(worker => worker.IsStillRunning()).Should().BeEmpty(
 			because: $"a recorded entry disappearing is not the same as the process dying — the identity "
 				+ $"(pid AND start time) of every worker seen during the run must be gone, or the stalled "
