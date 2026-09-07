@@ -355,4 +355,108 @@ public sealed class PageUpdateToolBaselineTests
 			because: "the arming predicate is whitespace-tolerant while the comparison is strictly Ordinal, so an untrimmed pin would arm the check and then fail it");
 		response.Conflict.Should().BeFalse(because: "the padded value denotes the very checksum the server reports");
 	}
+
+	// ---------------------------------------------------------------------------------------------
+	// AC-2 on the MCP surface (PR #1356 review). The tool's pre-execution gate runs BEFORE the
+	// command: UpdatePage -> TryCreatePreExecutionFailureAsync -> ValidateBody returns earlyFailure
+	// and PageUpdateCommand never executes. So the label-resource rescue has to work in THIS
+	// provider for issue #1320 to be fixed over MCP, and nothing drove it through the tool.
+	// ---------------------------------------------------------------------------------------------
+
+	private const string PersistedResourceKey = "CaseSLA_label";
+
+	/// <summary>
+	/// Body that inserts a field whose label points at <see cref="PersistedResourceKey"/> while binding to a
+	/// DIFFERENT attribute name, so the platform cannot auto-provide the caption: the validator rejects it
+	/// unless the key is found among the keys already persisted on the schema.
+	/// </summary>
+	private static string PersistedResourceBody() =>
+		"define(\"Test_FormPage\", /**SCHEMA_DEPS*/[]/**SCHEMA_DEPS*/, function/**SCHEMA_ARGS*/()/**SCHEMA_ARGS*/ { return { "
+		+ "viewConfigDiff: /**SCHEMA_VIEW_CONFIG_DIFF*/[{\"operation\":\"insert\",\"name\":\"CaseSLA\","
+		+ "\"values\":{\"type\":\"crt.Input\",\"label\":\"$Resources.Strings.CaseSLA_label\",\"control\":\"$PDS_CaseSLA\"}}]"
+		+ "/**SCHEMA_VIEW_CONFIG_DIFF*/, "
+		+ "viewModelConfigDiff: /**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/[{\"operation\":\"merge\",\"path\":[],"
+		+ "\"values\":{\"attributes\":{\"PDS_CaseSLA\":{\"modelConfig\":{\"path\":\"PDS.UsrSLA\"}}}}}]"
+		+ "/**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/, "
+		+ "modelConfigDiff: /**SCHEMA_MODEL_CONFIG_DIFF*/[]/**SCHEMA_MODEL_CONFIG_DIFF*/, "
+		+ "handlers: /**SCHEMA_HANDLERS*/[]/**SCHEMA_HANDLERS*/, "
+		+ "converters: /**SCHEMA_CONVERTERS*/{}/**SCHEMA_CONVERTERS*/, "
+		+ "validators: /**SCHEMA_VALIDATORS*/{}/**SCHEMA_VALIDATORS*/ }; });";
+
+	/// <summary>Re-stubs GetSchema (both client overloads) with the given persisted localizable-string keys.</summary>
+	private void StubSchemaWithPersistedKeys(params string[] persistedKeys) {
+		string entries = string.Join(",", System.Array.ConvertAll(persistedKeys,
+			key => "{\"name\": \"" + key + "\", \"value\": \"stored caption\"}"));
+		string payload = "{\"success\": true, \"schema\": {\"uId\": \"" + SchemaUId + "\", \"name\": \"" + SchemaName
+			+ "\", \"body\": \"old body\", \"localizableStrings\": [" + entries + "]}}";
+		_applicationClient.ExecutePostRequest(GetSchemaUrl, Arg.Any<string>()).Returns(payload);
+		_applicationClient.ExecutePostRequest(
+			GetSchemaUrl, Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>()).Returns(payload);
+	}
+
+	private int GetSchemaCallCount() => _applicationClient.ReceivedCalls().Count(call =>
+		call.GetMethodInfo().Name == nameof(IApplicationClient.ExecutePostRequest) &&
+		call.GetArguments().Length > 0 &&
+		call.GetArguments()[0] as string == GetSchemaUrl);
+
+	private static PageUpdateArgs CreateArgs(string body) =>
+		new(SchemaName, body, null, null, "sandbox", null, null, null,
+			SkipSampling: true, OutputDirectory: "/ws");
+
+	[Test]
+	[Description("AC-2 through the MCP tool, which is the surface issue #1320 was reported against: a label resource that is NOT repeated in `resources` but IS already persisted on the schema passes the tool's PRE-EXECUTION gate and the save is issued. Deleting the provider argument the gate is given, or breaking command resolution inside it, restores the reported bug - and until now did so with a fully green suite.")]
+	public void UpdatePage_ShouldSave_WhenTheLabelResourceIsAlreadyPersistedOnTheSchema() {
+		// Arrange
+		StubSchemaWithPersistedKeys(PersistedResourceKey);
+
+		// Act
+		PageUpdateResponse response = _tool.UpdatePage(CreateArgs(PersistedResourceBody()), null).Result;
+
+		// Assert
+		response.Success.Should().BeTrue(
+			because: "the key is stored on the schema and resolves at runtime, so the pre-execution gate must not reject the save");
+		_applicationClient.Received().ExecutePostRequest(
+			SaveSchemaUrl, Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>());
+	}
+
+	[Test]
+	[Description("Non-vacuity twin for the test above: the SAME body with an empty localizableStrings array is refused by the tool gate and never reaches SaveSchema. A rescue that always reported the key, or never consulted the schema, would pass the positive test and fail here.")]
+	public void UpdatePage_ShouldRefuse_WhenTheLabelResourceIsPersistedNowhere() {
+		// Arrange
+		StubSchemaWithPersistedKeys();
+
+		// Act
+		PageUpdateResponse response = _tool.UpdatePage(CreateArgs(PersistedResourceBody()), null).Result;
+
+		// Assert
+		response.Success.Should().BeFalse(
+			because: "with the key stored nowhere the stricter verdict must stand rather than letting an unresolvable caption through");
+		response.Error.Should().Contain(PersistedResourceKey,
+			because: "the original diagnostic must survive the failed rescue and name the unresolved key");
+		_applicationClient.DidNotReceive().ExecutePostRequest(
+			SaveSchemaUrl, Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>());
+	}
+
+	[Test]
+	[Description("The memoization documented on PersistedResourceKeysRead, asserted at the surface where it matters: the rescue costs exactly ONE extra GetSchema over a clean save even though the tool gate AND the command gate both read the persisted keys - the tool-gate read is reused by the command through the shared options instance.")]
+	public void UpdatePage_ShouldPayExactlyOneExtraGetSchema_WhenTheRescueRunsThroughTheTool() {
+		// Arrange
+		StubSchemaWithPersistedKeys(PersistedResourceKey);
+		PageUpdateResponse cleanResponse = _tool.UpdatePage(CreateArgs(ValidBody), null).Result;
+		int cleanSaveGetSchemaCalls = GetSchemaCallCount();
+		_applicationClient.ClearReceivedCalls();
+
+		// Act
+		PageUpdateResponse response = _tool.UpdatePage(CreateArgs(PersistedResourceBody()), null).Result;
+		int rescuedSaveGetSchemaCalls = GetSchemaCallCount();
+
+		// Assert
+		cleanResponse.Success.Should().BeTrue(
+			because: "the control save must succeed for its call count to be a valid baseline");
+		cleanSaveGetSchemaCalls.Should().BeGreaterThan(0,
+			because: "a zero baseline would make the comparison below vacuous");
+		response.Success.Should().BeTrue(because: "the rescued save must still go through");
+		rescuedSaveGetSchemaCalls.Should().Be(cleanSaveGetSchemaCalls + 1,
+			because: "one read per gate, or one per key, would multiply the cost of every later save of a page with stored resources");
+	}
 }
