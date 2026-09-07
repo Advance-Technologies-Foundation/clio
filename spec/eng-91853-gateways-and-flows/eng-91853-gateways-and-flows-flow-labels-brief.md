@@ -40,7 +40,7 @@ Worked example, verified on the stand: `PushNotificationAboutAppUpdateAvailableP
 text centred on the connector.
 
 **THE ONE TRAP, and it is invisible from either side alone.** The name in the key is the flow's
-`Name`, and 1.4.0.66 re-derives a flow's Name on a re-kind. **The rename and the label live in the
+`Name`, and CrtProcessBuilder re-derives a flow's Name on a re-kind (shipped in 1.4.0.66). **The rename and the label live in the
 same key, so a label written before a re-kind is orphaned by it** — the row stays in the resource
 file under the old key while the flow now looks for a new one. Nothing in the rename code mentions
 labels, because they did not exist when it was written, and nothing in the label code will mention
@@ -85,8 +85,9 @@ Four, plus the archive:
   `setFlow` with a `label` field is the natural home — it already takes `source`/`target`/`kind`/
   `condition` — but check the interaction with the Name re-derivation above first.
 - **clio** — tool descriptions for create/modify, `docs/McpCapabilityMap.md`, `clio.mcp.e2e`
-  coverage, and the bundled archive (next version after whatever the main PR merges — 1.4.0.67 if it
-  merges at .66).
+  coverage, and the bundled archive (the next version after whatever the main PR merges — that PR is at
+  **1.4.0.69** as of 2026-09-07, so plan on .70, and read the version off the branch rather than off
+  this line).
 - **clio-knowledge** — `process-naming` N10 says the label is missing and must stop saying so;
   `process-branch-conditions` should carry the style rule and the 85% figure. `libraryVersion` +
   sequence bump, as always.
@@ -108,3 +109,20 @@ That same shipped process routes its back edge ABOVE the row of elements:
 `m230,184 L230,88 L742,88 L742,184`. The deferred autolayout defect is that our back edge is drawn on
 top of the forward flow; the platform's own content shows the intended answer is to lift it onto a
 free row rather than to move the elements.
+
+## Master moved under this brief on 2026-09-07
+
+The guidance library SPLIT its process guide set while this was parked, so two paths named above have
+moved and one target changed:
+
+- what `create-business-process` can build today, and the element catalog, left `process-modeling`
+  for a new **`process-element-catalog`** — that is where a label field has to be declared buildable,
+  and where the ENG-91853 slice (gateway ELEMENTS, all three flow kinds) was carried during the merge;
+- `process-data-source-filters`, `process-task-category` and `process-task-performer` were split out
+  as well, so the set is 14 articles now;
+- `process-naming` N10 is still the place that says the label is the ONE thing missing from `flows[]`,
+  and still the place that has to stop saying it.
+
+`libraryVersion` reached **1.13.98** on the ENG-91853 branch after that merge. The clio-side pin
+`clio.tests/Command/McpServer/Fixtures/curated-knowledge-names.json` already carries all 14 names, so
+adding a label needs no new article and no new name — only content changes and a version bump.
