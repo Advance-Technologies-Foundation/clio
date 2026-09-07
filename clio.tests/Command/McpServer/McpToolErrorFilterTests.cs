@@ -652,6 +652,154 @@ public sealed class McpToolErrorFilterTests
 				+ "must never appear in the advertised set");
 	}
 
+	// --- ENG-95885 review round 6 ---
+
+	[Test]
+	[Category("Unit")]
+	[Description("A hybrid payload is refused even when the args record exposes NO settable wire property. The zero-canonical-name bail used to run first, so such a payload reached binding untouched with the wrapper silently winning — contradicting the documented invariant that a hybrid shape is always refused with no silent precedence in either direction (ENG-95885 review round 6).")]
+	public async Task Normalization_ShouldRefuseHybridShape_EvenWhenTheRecordHasNoSettableProperty() {
+		// Arrange
+		RequestContext<CallToolRequestParams> context = CreateContext(
+			"fake-getonly-only-tool", new Dictionary<string, JsonElement> {
+				["args"] = JsonDocument.Parse("""{"computed":"from-wrapper"}""").RootElement.Clone(),
+				["computed"] = JsonSerializer.SerializeToElement("from-top-level")
+			});
+		context.MatchedPrimitive = McpServerTool.Create(
+			typeof(FakeToolWithGetOnlyOnlyArgs).GetMethod(
+				nameof(FakeToolWithGetOnlyOnlyArgs.Execute), BindingFlags.Public | BindingFlags.Instance)!,
+			new FakeToolWithGetOnlyOnlyArgs());
+		context = WithRoutingAuthority(context);
+		bool reachedTool = false;
+		McpRequestHandler<CallToolRequestParams, CallToolResult> handler =
+			McpToolErrorFilter.HandleCallToolErrors((_, _) => {
+				reachedTool = true;
+				return ValueTask.FromResult(new CallToolResult { IsError = false });
+			});
+
+		// Act
+		CallToolResult result = await handler(context, CancellationToken.None);
+
+		// Assert
+		reachedTool.Should().BeFalse(
+			because: "having no settable wire property is not a licence to let an ambiguous payload "
+				+ "through — the wrapper would silently win");
+		result.IsError.Should().BeTrue(
+			because: "the caller must be told the shape is ambiguous rather than have one of the two "
+				+ "candidate values chosen for them");
+		string text = string.Join(" ", result.Content.OfType<TextContentBlock>().Select(b => b.Text));
+		text.Should().Contain("ambiguous",
+			because: "the refusal must name the shape problem so the caller sends one shape next time");
+		text.Should().NotContain("from-wrapper",
+			because: "neither candidate value may be echoed as the chosen one");
+		text.Should().NotContain("from-top-level",
+			because: "neither candidate value may be echoed as the chosen one");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("The stderr rate gate caps the mirror at one line per (tool, outcome) per process, and still gives a different tool or a different outcome its own line. This gate is the ENTIRE mitigation for the blocking-write risk on the hot path, so a refactor of its key or its TryAdd must fail here rather than silently restore per-call frequency (ENG-95885 review round 6).")]
+	public void ShouldMirrorShapeOnce_ShouldCapPerToolAndOutcome_ButNotAcrossThem() {
+		// Arrange
+		McpToolErrorFilter.ResetMirroredShapeOutcomes();
+
+		// Act
+		bool firstForListApps = McpToolErrorFilter.ShouldMirrorShapeOnce(
+			"list-apps", McpArgumentShapeOutcome.WrappedFlat);
+		bool secondForListApps = McpToolErrorFilter.ShouldMirrorShapeOnce(
+			"list-apps", McpArgumentShapeOutcome.WrappedFlat);
+		bool otherOutcomeSameTool = McpToolErrorFilter.ShouldMirrorShapeOnce(
+			"list-apps", McpArgumentShapeOutcome.RefusedUnknown);
+		bool sameOutcomeOtherTool = McpToolErrorFilter.ShouldMirrorShapeOnce(
+			"get-page", McpArgumentShapeOutcome.WrappedFlat);
+		McpToolErrorFilter.ResetMirroredShapeOutcomes();
+		bool afterReset = McpToolErrorFilter.ShouldMirrorShapeOnce(
+			"list-apps", McpArgumentShapeOutcome.WrappedFlat);
+
+		// Assert
+		firstForListApps.Should().BeTrue(
+			because: "the first occurrence is the diagnostic — suppressing it would lose the signal the "
+				+ "closing measurement needs");
+		secondForListApps.Should().BeFalse(
+			because: "capping the repeat is the whole mitigation: an unbounded synchronous write on the "
+				+ "dominant call shape is what could block on an undrained host pipe");
+		otherOutcomeSameTool.Should().BeTrue(
+			because: "a refusal is a different event from an accommodation and must not be swallowed by "
+				+ "the accommodation's line");
+		sameOutcomeOtherTool.Should().BeTrue(
+			because: "the cap is per tool, so which tools received flat payloads stays observable");
+		afterReset.Should().BeTrue(
+			because: "the reset hook must actually clear the gate, or a test using it would pass for the "
+				+ "wrong reason depending on execution order");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("A get-only property IS bindable when [JsonConstructor] names the constructor that takes it, even though the type also has a parameterless one. This is the only shape in which the attribute branch changes the answer, so it pins that branch rather than passing for an unrelated reason (ENG-95885 review round 6).")]
+	public void Normalization_ShouldAccept_AGetOnlyPropertyBoundByJsonConstructor() {
+		// Arrange
+		CallToolRequestParams parameters = new() {
+			Name = "fake-jsonctor-tool",
+			Arguments = new Dictionary<string, JsonElement>(StringComparer.Ordinal) {
+				["tag"] = JsonSerializer.SerializeToElement("probe")
+			}
+		};
+		MethodInfo method = typeof(FakeToolWithJsonConstructorArgs).GetMethod(
+			nameof(FakeToolWithJsonConstructorArgs.Execute),
+			BindingFlags.Public | BindingFlags.Instance)!;
+
+		// Act
+		bool refused = McpToolErrorFilter.TryRefuseArguments(
+			parameters, method, out CallToolResult? _, out McpArgumentShapeReport report);
+		FakeJsonConstructorArgs? bound = JsonSerializer.Deserialize<FakeJsonConstructorArgs>(
+			"""{"tag":"probe"}""", Clio.BindingsModule.CreateMcpSerializerOptions());
+
+		// Assert
+		bound!.Tag.Should().Be("probe",
+			because: "the premise is that [JsonConstructor] really does let the serializer populate a "
+				+ "get-only property; without that this case would prove nothing");
+		refused.Should().BeFalse(
+			because: "a field the serializer can populate must never be refused — that would break a "
+				+ "working flat call");
+		report.Outcome.Should().Be(McpArgumentShapeOutcome.WrappedFlat,
+			because: "the key is canonical, so the payload is wrapped rather than refused");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("A get-only property on a type with MORE THAN ONE public constructor and no [JsonConstructor] is not treated as bindable: System.Text.Json will not choose between them, creates the object with the parameterless one, and leaves the property unset. Admitting the key would re-open the silent-drop hole the settable-only guard closed. Asserted against real deserialization rather than against the reasoning behind the predicate (ENG-95885 review round 6).")]
+	public void Normalization_ShouldRefuse_AGetOnlyPropertyWhenAParameterlessConstructorWins() {
+		// Arrange
+		CallToolRequestParams parameters = new() {
+			Name = "fake-parameterless-tool",
+			Arguments = new Dictionary<string, JsonElement>(StringComparer.Ordinal) {
+				["name"] = JsonSerializer.SerializeToElement("real"),
+				["tag"] = JsonSerializer.SerializeToElement("probe")
+			}
+		};
+		MethodInfo method = typeof(FakeToolWithParameterlessAndGetOnlyArgs).GetMethod(
+			nameof(FakeToolWithParameterlessAndGetOnlyArgs.Execute),
+			BindingFlags.Public | BindingFlags.Instance)!;
+
+		// Act
+		bool refused = McpToolErrorFilter.TryRefuseArguments(
+			parameters, method, out CallToolResult? result, out _);
+		FakeParameterlessAndGetOnlyArgs? bound =
+			JsonSerializer.Deserialize<FakeParameterlessAndGetOnlyArgs>(
+				"""{"name":"real","tag":"probe"}""", Clio.BindingsModule.CreateMcpSerializerOptions());
+
+		// Assert
+		bound!.Name.Should().Be("real",
+			because: "the settable property is the control — the serializer does populate that one");
+		bound.Tag.Should().BeNull(
+			because: "this case only means anything if the serializer really does leave the get-only "
+				+ "property unset for this constructor shape");
+		refused.Should().BeTrue(
+			because: "a key the serializer will not populate must be refused, not wrapped and dropped");
+		string text = string.Join(" ", result!.Content.OfType<TextContentBlock>().Select(b => b.Text));
+		text.Should().Contain("Valid arguments: \"name\".",
+			because: "only the property the serializer can actually set may be advertised");
+	}
+
 	// --- ENG-95885 review round 5: the canonical-name predicate must match System.Text.Json ---
 	//
 	// Round 4's bare `SetMethod is not null` was wrong in BOTH directions. Each case below asserts the
@@ -1134,9 +1282,13 @@ public sealed class McpToolErrorFilterTests
 
 		// Assert
 		reachedTool.Should().BeFalse(because: "an ambiguous shape must be refused, not resolved by guessing");
-		result.IsError.Should().BeTrue();
+		result.IsError.Should().BeTrue(
+			because: "the refusal has to reach the caller as an error; a non-error result carrying the "
+				+ "explanation would read as a successful call");
 		string text = string.Join(" ", result.Content.OfType<TextContentBlock>().Select(b => b.Text));
-		text.Should().Contain("ambiguous");
+		text.Should().Contain("ambiguous",
+			because: "the message must name the shape problem, or the caller cannot tell this apart from "
+				+ "an unknown-argument refusal and will retry with the same payload");
 		text.Should().NotContain("from-wrapper", because: "neither candidate value may be silently chosen");
 		text.Should().NotContain("from-top-level", because: "neither candidate value may be silently chosen");
 	}
@@ -1679,6 +1831,43 @@ public sealed class McpToolErrorFilterTests
 
 	public sealed class FakeToolWithGetOnlyArgs {
 		public string Execute(FakeArgsWithGetOnlyProperty args) => "ok";
+	}
+
+	// Two public constructors, with [JsonConstructor] naming the parameterized one. This is the ONLY
+	// shape in which the attribute branch changes the answer, so it is what pins that branch.
+	public sealed class FakeJsonConstructorArgs {
+		public FakeJsonConstructorArgs() {
+		}
+
+		[JsonConstructor]
+		public FakeJsonConstructorArgs(string? tag) => Tag = tag;
+
+		[JsonPropertyName("tag")]
+		public string? Tag { get; }
+	}
+
+	public sealed class FakeToolWithJsonConstructorArgs {
+		public string Execute(FakeJsonConstructorArgs args) => "ok";
+	}
+
+	// Both a public parameterless constructor AND a matching parameterized one. System.Text.Json picks the
+	// parameterless one absent [JsonConstructor], so the get-only `Tag` is never populated even though a
+	// constructor parameter shares its name.
+	public sealed class FakeParameterlessAndGetOnlyArgs {
+		public FakeParameterlessAndGetOnlyArgs() {
+		}
+
+		public FakeParameterlessAndGetOnlyArgs(string? tag) => Tag = tag;
+
+		[JsonPropertyName("name")]
+		public string? Name { get; set; }
+
+		[JsonPropertyName("tag")]
+		public string? Tag { get; }
+	}
+
+	public sealed class FakeToolWithParameterlessAndGetOnlyArgs {
+		public string Execute(FakeParameterlessAndGetOnlyArgs args) => "ok";
 	}
 
 	// --- ENG-95885 round-5 property-shape fixtures ---

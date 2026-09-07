@@ -444,11 +444,13 @@ public static class McpToolErrorFilter
 			return false;
 		}
 
-		List<string> canonicalNames = GetJsonPropertyNames(wrapper.ParameterType);
-		if (canonicalNames.Count == 0) {
-			return false;
-		}
-
+		// Ordered BEFORE the canonical-name walk for the same reason the empty branch above is: refusing an
+		// ambiguous shape needs the wrapper name and the extra keys, never the canonical list. While this
+		// sat AFTER the canonicalNames.Count == 0 bail, a composite exposing no settable wire property let
+		// {"args":{...},"extra":1} bail out untouched and reach binding with the wrapper silently winning —
+		// contradicting the invariant that a hybrid payload is always refused with no silent precedence in
+		// either direction. Same ordering bug the round-5 fix corrected once, a few lines up, and missed
+		// here (review round 6).
 		if (arguments.ContainsKey(wrapperName)) {
 			// Count == 1 was already returned above as the byte-compatible pass-through, so reaching here
 			// means the wrapper arrived WITH extra top-level keys.
@@ -459,6 +461,11 @@ public static class McpToolErrorFilter
 				wrapperName,
 				arguments.Keys.Where(key => !string.Equals(key, wrapperName, StringComparison.Ordinal))));
 			return true;
+		}
+
+		IReadOnlyList<string> canonicalNames = GetJsonPropertyNames(wrapper.ParameterType);
+		if (canonicalNames.Count == 0) {
+			return false;
 		}
 
 		HashSet<string> canonicalNameSet = new(canonicalNames, StringComparer.Ordinal);
@@ -567,8 +574,15 @@ public static class McpToolErrorFilter
 	/// more machinery than an advisory line justifies today — recorded here so the trade is visible.
 	/// </para>
 	/// </remarks>
-	private static bool ShouldMirrorShapeOnce(string? toolName, McpArgumentShapeOutcome outcome) =>
+	internal static bool ShouldMirrorShapeOnce(string? toolName, McpArgumentShapeOutcome outcome) =>
 		MirroredShapeOutcomes.TryAdd((toolName ?? UnknownToolName, outcome), true);
+
+	/// <summary>
+	/// Forgets every mirrored (tool, outcome) pair. FOR TESTS ONLY — the gate is per-process by design,
+	/// and a test that could not reset it would either leak state into its neighbours or have to run
+	/// first to mean anything.
+	/// </summary>
+	internal static void ResetMirroredShapeOutcomes() => MirroredShapeOutcomes.Clear();
 
 	/// <summary>
 	/// Tool+outcome pairs already mirrored to stderr in this process. Keyed on a TUPLE rather than a
@@ -608,7 +622,7 @@ public static class McpToolErrorFilter
 	}
 
 	private static string BuildUnknownArgumentsMessage(
-		string? toolName, string wrapperName, List<string> canonicalNames, List<string> unknownKeys) {
+		string? toolName, string wrapperName, IReadOnlyList<string> canonicalNames, List<string> unknownKeys) {
 		string unknownDisplay = string.Join(", ", unknownKeys.Select(key => $"\"{key}\""));
 		string validDisplay = string.Join(", ", canonicalNames.Select(key => $"\"{key}\""));
 		return $"Tool '{toolName ?? UnknownToolName}' received unknown argument(s) {unknownDisplay}. "
@@ -934,7 +948,7 @@ public static class McpToolErrorFilter
 				continue;
 			}
 
-			List<string> propertyNames = GetJsonPropertyNames(parameter.ParameterType);
+			IReadOnlyList<string> propertyNames = GetJsonPropertyNames(parameter.ParameterType);
 			if (propertyNames.Count == 0) {
 				continue;
 			}
@@ -965,15 +979,43 @@ public static class McpToolErrorFilter
 			.Any(IsNotExcludedFromTheWire);
 	}
 
-	private static List<string> GetJsonPropertyNames(Type type) {
-		if (!type.IsClass || type == typeof(string)) {
-			return [];
-		}
-		return type.GetProperties(BindingFlags.Public | BindingFlags.Instance)
-			.Where(IsWireContractProperty)
-			.Select(p => p.GetCustomAttribute<JsonPropertyNameAttribute>()?.Name ?? p.Name)
-			.ToList();
-	}
+	/// <summary>
+	/// The wire names a caller may supply for <paramref name="type"/>, computed once per type.
+	/// </summary>
+	/// <remarks>
+	/// ENG-95885 review round 6. This walk is no longer rare. Before this change it ran only on the
+	/// mismatch-hint path; now it runs for every payload that is not already wrapper-shaped, which this
+	/// change's own premise makes the DOMINANT shape once it ships. Round 5 made each step heavier too:
+	/// <see cref="IsSettableByJson"/> reads an attribute per non-public-setter property and, for a
+	/// property with no setter at all, allocates a fresh <c>GetConstructors()</c> array and scans every
+	/// parameter of every constructor.
+	/// <para>
+	/// Memoization is safe rather than merely cheap: a type's property set and its attributes are fixed
+	/// at compile time, so the answer cannot change within a process. An earlier round argued a cache was
+	/// not worth its complexity — that judgement was made before round 5 added the constructor probe to
+	/// this path, and it no longer holds.
+	/// </para>
+	/// <para>
+	/// The cached value is an ARRAY behind <see cref="IReadOnlyList{T}"/>, never the mutable
+	/// <see cref="List{T}"/> the uncached version returned: handing every caller a shared mutable list
+	/// would trade a reflection cost for an aliasing bug.
+	/// </para>
+	/// </remarks>
+	private static IReadOnlyList<string> GetJsonPropertyNames(Type type) =>
+		CanonicalNamesByType.GetOrAdd(type, static key => {
+			if (!key.IsClass || key == typeof(string)) {
+				return [];
+			}
+			return key.GetProperties(BindingFlags.Public | BindingFlags.Instance)
+				.Where(IsWireContractProperty)
+				.Select(property =>
+					property.GetCustomAttribute<JsonPropertyNameAttribute>()?.Name ?? property.Name)
+				.ToArray();
+		});
+
+	/// <summary>Canonical wire names per args-record type; see <see cref="GetJsonPropertyNames"/>.</summary>
+	private static readonly System.Collections.Concurrent.ConcurrentDictionary<Type, IReadOnlyList<string>>
+		CanonicalNamesByType = new();
 
 	/// <summary>
 	/// True when <paramref name="property"/> is a field a CALLER can actually supply: not the overflow
@@ -1040,15 +1082,39 @@ public static class McpToolErrorFilter
 	/// True when the declaring type has a public constructor parameter whose name matches this property,
 	/// which is how System.Text.Json populates an immutable member that has no setter at all.
 	/// </summary>
-	private static bool IsBoundByConstructorParameter(PropertyInfo property) =>
-		property.DeclaringType is { } owner
-		&& owner.GetConstructors()
-			.Any(constructor => constructor.GetParameters()
-				.Any(parameter => string.Equals(
-					parameter.Name, property.Name, StringComparison.OrdinalIgnoreCase)));
+	private static bool IsBoundByConstructorParameter(PropertyInfo property) {
+		if (property.DeclaringType is not { } owner) {
+			return false;
+		}
+		ConstructorInfo[] constructors = owner.GetConstructors();
+
+		// An explicit [JsonConstructor] is the one System.Text.Json will use, so it is the only one whose
+		// parameters can bind anything.
+		ConstructorInfo? declared = constructors.FirstOrDefault(
+			constructor => constructor.GetCustomAttribute<JsonConstructorAttribute>() is not null);
+		if (declared is not null) {
+			return HasMatchingParameter(declared, property);
+		}
+
+		// Exactly one constructor, and a parameter on it matching this property, is the unambiguous
+		// immutable shape System.Text.Json binds through. Everything else is false:
+		//   * a lone PARAMETERLESS constructor has no matching parameter, so it falls out here — the
+		//     serializer creates the object with it and then assigns properties, and a property with no
+		//     setter is simply never populated;
+		//   * a parameterless constructor ALONGSIDE others makes Length > 1, so it falls out too.
+		// An explicit guard for the parameterless case was written and then removed: it could not change
+		// the outcome in any combination, and a sensitivity check proved it — dead logic wearing the shape
+		// of a safeguard is worse than no guard, because the next reader trusts it (review round 6).
+		return constructors.Length == 1 && HasMatchingParameter(constructors[0], property);
+	}
+
+	/// <summary>True when the constructor takes a parameter matching this property, as the serializer matches them.</summary>
+	private static bool HasMatchingParameter(ConstructorInfo constructor, PropertyInfo property) =>
+		constructor.GetParameters().Any(parameter =>
+			string.Equals(parameter.Name, property.Name, StringComparison.OrdinalIgnoreCase));
 
 	private static string BuildMissingWrapperMessage(
-		string? toolName, string wrapperName, List<string> allProperties, List<string> matchedKeys) {
+		string? toolName, string wrapperName, IReadOnlyList<string> allProperties, List<string> matchedKeys) {
 		string flatKeysDisplay = string.Join(", ", matchedKeys.Select(k => $"\"{k}\""));
 		string exampleInner = string.Join(", ", allProperties.Select(k => $"\"{k}\": \"...\""));
 		return $"Tool '{toolName ?? UnknownToolName}' expects arguments wrapped inside "
