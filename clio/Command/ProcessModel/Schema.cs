@@ -1122,10 +1122,13 @@ public static class ManagerMap{
 			"webservice" => EventType.WebServiceTask,
 			"callactivity" => EventType.SubProcess,
 			"eventsubprocessexpanded" => EventType.EventSubProcess,
-			// "sendemail" is the dedicated build/describe token for the Send email element (EmailTemplateUserTask) —
-			// an activity like any user task for the connection rules; the camelCase data-id emailTemplateUserTask
-			// is already covered by the "usertask"-suffix arm below.
-			"usertask" or "performtask" or "sendemail" => EventType.UserTask,
+			// "sendemail" and "openeditpage" are the dedicated build/describe tokens for the Send email
+			// (EmailTemplateUserTask) and Open edit page (OpenEditPageUserTask) elements — activities like any user
+			// task for the connection rules. They must be listed EXPLICITLY: neither ends with the "usertask" suffix
+			// the arm below matches on, so a missing entry resolves a VALID graph to Unknown and
+			// validate-process-graph rejects it. The camelCase data-ids emailTemplateUserTask / openEditPageUserTask
+			// are already covered by that suffix arm.
+			"usertask" or "performtask" or "sendemail" or "openeditpage" => EventType.UserTask,
 			var i when i.StartsWith("intermediatecatchevent", StringComparison.Ordinal) => EventType.IntermediateCatchSignalEvent,
 			var i when i.StartsWith("intermediatethrowevent", StringComparison.Ordinal) => EventType.IntermediateThrowSignalEvent,
 			// every system/user action element ends with the "usertask" suffix and is an activity.
