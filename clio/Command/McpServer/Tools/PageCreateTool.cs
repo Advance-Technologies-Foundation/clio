@@ -110,22 +110,6 @@ public sealed record PageCreateArgs(
 	[property: Description("Optional entity schema name to record in the new page dependencies.")]
 	string? EntitySchemaName = null,
 
-	[property: JsonPropertyName("environment-name")]
-	[property: Description(McpToolDescriptions.EnvironmentName)]
-	string? EnvironmentName = null,
-
-	[property: JsonPropertyName("uri")]
-	[property: Description(McpToolDescriptions.Uri)]
-	string? Uri = null,
-
-	[property: JsonPropertyName("login")]
-	[property: Description(McpToolDescriptions.Login)]
-	string? Login = null,
-
-	[property: JsonPropertyName("password")]
-	[property: Description(McpToolDescriptions.Password)]
-	string? Password = null,
-
 	[property: JsonPropertyName("caption-culture")]
 	[property: Description("Optional culture override for the page caption (e.g. 'en-US', 'uk-UA'). Precedence: caption-culture > detected profile culture > en-US. Skips the profile-culture lookup.")]
 	string? CaptionCulture = null,
@@ -133,4 +117,4 @@ public sealed record PageCreateArgs(
 	[property: JsonPropertyName("optional-properties")]
 	[property: Description("Optional JSON array of {key, value} objects to seed into the new schema optionalProperties, e.g. '[{\"key\":\"DashboardsEntitySchemaName\",\"value\":\"UsrMyEntity\"}]'. Used to create a dashboard (template BaseDashboardTemplate): set DashboardsEntitySchemaName, DashboardsElementName, DashboardsClientUnitSchemaUId — read get-guidance name `dashboard-creation` for how to obtain each value.")]
 	string? OptionalProperties = null
-);
+) : ConnectionArgsBase;

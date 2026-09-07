@@ -83,21 +83,5 @@ public sealed record GetPageHierarchyArgs(
 
 	[property: JsonPropertyName("limit")]
 	[property: Description("Optional. Maximum number of chain entries to return; 0/omitted returns the whole chain from offset.")]
-	int? Limit = null,
-
-	[property: JsonPropertyName("environment-name")]
-	[property: Description(McpToolDescriptions.EnvironmentName)]
-	string? EnvironmentName = null,
-
-	[property: JsonPropertyName("uri")]
-	[property: Description(McpToolDescriptions.Uri)]
-	string? Uri = null,
-
-	[property: JsonPropertyName("login")]
-	[property: Description(McpToolDescriptions.Login)]
-	string? Login = null,
-
-	[property: JsonPropertyName("password")]
-	[property: Description(McpToolDescriptions.Password)]
-	string? Password = null
-);
+	int? Limit = null
+) : ConnectionArgsBase;

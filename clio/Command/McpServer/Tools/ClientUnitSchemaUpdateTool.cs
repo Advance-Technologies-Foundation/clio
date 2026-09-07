@@ -86,21 +86,5 @@ public sealed record ClientUnitSchemaUpdateArgs(
 
 	[property: JsonPropertyName("dry-run")]
 	[property: Description("If true, validate and resolve the schema without saving. Default: false")]
-	bool? DryRun = null,
-
-	[property: JsonPropertyName("environment-name")]
-	[property: Description(McpToolDescriptions.EnvironmentName)]
-	string? EnvironmentName = null,
-
-	[property: JsonPropertyName("uri")]
-	[property: Description(McpToolDescriptions.Uri)]
-	string? Uri = null,
-
-	[property: JsonPropertyName("login")]
-	[property: Description(McpToolDescriptions.Login)]
-	string? Login = null,
-
-	[property: JsonPropertyName("password")]
-	[property: Description(McpToolDescriptions.Password)]
-	string? Password = null
-);
+	bool? DryRun = null
+) : ConnectionArgsBase;

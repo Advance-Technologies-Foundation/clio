@@ -105,24 +105,10 @@ public sealed record PageListArgs(
 	[property: Description("Maximum number of results. Omit or pass 0 to use the default of 50. A negative limit is rejected (it must not disable the cap). The response always carries total and truncated so a capped result is observable.")]
 	int? Limit = null,
 
-	[property: JsonPropertyName("environment-name")]
-	[property: Description(McpToolDescriptions.EnvironmentName)]
-	string? EnvironmentName = null,
-
-	[property: JsonPropertyName("uri")]
-	[property: Description(McpToolDescriptions.Uri)]
-	string? Uri = null,
-	[property: JsonPropertyName("login")]
-	[property: Description(McpToolDescriptions.Login)]
-	string? Login = null,
-	[property: JsonPropertyName("password")]
-	[property: Description(McpToolDescriptions.Password)]
-	string? Password = null,
-
 	[property: JsonPropertyName("uid")]
 	[property: Description("Filter by schema UId (exact match). Use to locate a specific page directly from its UId in a Creatio designer URL (#/PageDesigner/<pageUId>).")]
 	string? UId = null
-) {
+) : ConnectionArgsBase {
 	[JsonExtensionData]
 	public Dictionary<string, JsonElement>? ExtensionData { get; init; }
 }
