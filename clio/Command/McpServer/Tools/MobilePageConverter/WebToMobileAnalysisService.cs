@@ -582,7 +582,18 @@ public static class WebToMobileAnalysisService {
 			string name = node["name"]?.ToString();
 			string type = node["type"]?.ToString();
 			bool isMappedContainer = name is { Length: > 0 } && containerNameMap.ContainsKey(name);
-			bool isContainer = isMappedContainer || IsLayoutContainer(type, name, webByType, mobileByType);
+			// A node that HOLDS child components is a container, whatever any registry says — the tree in
+			// hand is the authoritative answer and the only one that cannot be silently absent. BOTH slots
+			// count, and they are read separately because ChildComponentSlots deliberately excludes `items`
+			// (the walk below descends that one on its own). The registry and the name heuristic are left to
+			// the one case the tree cannot settle: an EMPTY container.
+			bool holdsChildComponents =
+				(node[ItemsPropertyName] is JArray itemsSlot
+					&& itemsSlot.Any(child => child is JObject item && IsComponentObject(item)))
+				|| ChildComponentSlots(node).Count > 0;
+			bool isContainer = isMappedContainer
+				|| holdsChildComponents
+				|| IsLayoutContainer(type, name, webByType, mobileByType);
 
 			structure.Add(new SourceComponentInfo {
 				Name = name,
@@ -612,20 +623,28 @@ public static class WebToMobileAnalysisService {
 	}
 
 	/// <summary>
-	/// Determines whether a component is a layout container, preferring the registry <c>container</c>
-	/// flag (web registry, then mobile). For a type unknown to both registries, falls back to a soft
-	/// name-suffix heuristic (<c>...Container</c> / <c>...Panel</c>).
+	/// Whether an EMPTY component is a layout container — the case the tree cannot settle. Prefers a
+	/// PUBLISHED registry <c>container</c> flag (web registry, then mobile); falls back to a soft
+	/// name-suffix heuristic (<c>...Container</c> / <c>...Panel</c>) when neither publishes one.
 	/// </summary>
+	/// <remarks>
+	/// The tri-state read is the point. <c>ComponentRegistryEntry.Container</c> used to be a non-nullable
+	/// bool, so an entry that simply does not carry the key — which is EVERY entry in the live catalog —
+	/// read as a published "no" and ended the lookup there. The heuristic was consequently dead for any type
+	/// either registry knows, and the flag it produced contradicted the parent graph in the same payload.
+	/// </remarks>
 	private static bool IsLayoutContainer(
 		string type, string name,
 		IReadOnlyDictionary<string, ComponentRegistryEntry> webByType,
 		IReadOnlyDictionary<string, ComponentRegistryEntry> mobileByType) {
 		if (!string.IsNullOrWhiteSpace(type)) {
-			if (webByType is not null && webByType.TryGetValue(type, out ComponentRegistryEntry webEntry)) {
-				return webEntry.Container;
+			if (webByType is not null && webByType.TryGetValue(type, out ComponentRegistryEntry webEntry)
+				&& webEntry?.Container is { } webDeclared) {
+				return webDeclared;
 			}
-			if (mobileByType is not null && mobileByType.TryGetValue(type, out ComponentRegistryEntry mobileEntry)) {
-				return mobileEntry.Container;
+			if (mobileByType is not null && mobileByType.TryGetValue(type, out ComponentRegistryEntry mobileEntry)
+				&& mobileEntry?.Container is { } mobileDeclared) {
+				return mobileDeclared;
 			}
 		}
 		return name is { Length: > 0 }

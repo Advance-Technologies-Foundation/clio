@@ -365,7 +365,9 @@ public sealed class ComponentInfoTool(
 			EntityCouplingNote = string.IsNullOrWhiteSpace(entry.EntityCouplingNote) ? null : entry.EntityCouplingNote,
 			CompositeOnly = entry.CompositeOnly == true ? true : null,
 			CompositeOnlyHint = entry.CompositeOnly == true ? CompositeOnlyHintText : null,
-			Container = entry.Container ? true : null,
+			// Straight through now that the entry is tri-state: a published false is a fact worth
+			// reporting, and null is still omitted by the response's own WhenWritingNull.
+			Container = entry.Container,
 			ParentTypes = entry.ParentTypes.Count == 0 ? null : entry.ParentTypes,
 			Properties = entry.Properties.Count == 0 ? null : entry.Properties,
 			Inputs = mergedInputs,
@@ -956,10 +958,12 @@ public sealed class ComponentRegistryEntry : ComponentSelectionMetadata {
 	public bool? CompositeOnly { get; init; }
 
 	/// <summary>
-	/// Gets or sets whether the component is a container.
+	/// Gets or sets whether the component is a container. NULL when the registry does not publish the key,
+	/// which today is EVERY entry — a non-nullable bool made that silence indistinguishable from a published
+	/// "no", and two wire fields shipped that silence as a hard false (ENG-95827).
 	/// </summary>
 	[JsonPropertyName("container")]
-	public bool Container { get; init; }
+	public bool? Container { get; init; }
 
 	/// <summary>
 	/// Gets or sets the supported parent component types.

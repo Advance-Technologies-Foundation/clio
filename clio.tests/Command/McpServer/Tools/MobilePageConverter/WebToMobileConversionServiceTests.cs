@@ -339,6 +339,43 @@ public sealed class WebToMobileConversionServiceTests {
 	}
 
 	[Test]
+	[Description("isContainer is derived from the TREE when no registry publishes a `container` flag — which is every type in the live catalog — and the mobile contract OMITS its own flag rather than shipping a hard false. Both booleans used to read a registry key nobody publishes as a published 'no', so an element holding four children reported isContainer:false while the same payload's parentName graph named it as their parent (ENG-95827, step 3.3).")]
+	public void Analyze_ContainerFlags_DeriveFromTheTree_WhenTheRegistryPublishesNothing() {
+		// Arrange — registries that know the types but publish NO container flag, exactly like the live ones.
+		PageBundleInfo bundle = Bundle("""
+			[ { "name": "OuterBox", "type": "crt.GridContainer", "items": [
+				{ "name": "InnerBox", "type": "crt.FlexContainer", "items": [
+					{ "name": "LeadName", "type": "crt.Input" } ] },
+				{ "name": "EmptyPanel", "type": "crt.GridContainer" } ] } ]
+			""");
+		var silent = new Dictionary<string, ComponentRegistryEntry>(StringComparer.OrdinalIgnoreCase) {
+			["crt.GridContainer"] = new ComponentRegistryEntry { ComponentType = "crt.GridContainer" },
+			["crt.FlexContainer"] = new ComponentRegistryEntry { ComponentType = "crt.FlexContainer" },
+			["crt.Input"] = new ComponentRegistryEntry { ComponentType = "crt.Input" }
+		};
+
+		// Act
+		MobilePageConversionGuide guide = Analyze(bundle, webByType: silent, mobileByType: silent);
+
+		// Assert
+		guide.SourceStructure.Should().Contain(s => s.Name == "OuterBox" && s.IsContainer,
+			because: "it holds child components, which is the whole meaning of the flag — a registry that "
+				+ "publishes nothing cannot make that false");
+		guide.SourceStructure.Should().Contain(s => s.Name == "InnerBox" && s.IsContainer,
+			because: "nesting depth changes nothing: the tree answers this at every level");
+		guide.SourceStructure.Should().Contain(s => s.Name == "LeadName" && !s.IsContainer,
+			because: "a leaf must still read false, or the flag would be true for everything and say nothing");
+		guide.SourceStructure.Should().Contain(s => s.Name == "EmptyPanel" && s.IsContainer,
+			because: "an EMPTY container is the one case the tree cannot settle, so the name heuristic still "
+				+ "answers it — that fallback was dead while a published-false was indistinguishable from "
+				+ "silence");
+		guide.MobileContracts.Should().OnlyContain(c => c.Container == null,
+			because: "the mobile registry declares nothing about these types, and an absent value is the only "
+				+ "honest way to say so — a hard false contradicted this same response's parent graph, while "
+				+ "the sibling get-component-info surface already omitted it");
+	}
+
+	[Test]
 	[Description("Component suggestions classify from the element map's OUTCOME first; where nothing was emitted a matching equivalence rule may still name what to use instead (crt.Checkbox -> crt.Toggle), and with neither the registries decide known-web (Unsupported) from probably-custom (RequiresManualDecision).")]
 	public void Analyze_ComponentSuggestions_ClassifyViaMatrixAndRegistry() {
 		PageBundleInfo bundle = Bundle("""

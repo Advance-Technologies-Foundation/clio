@@ -28,6 +28,12 @@ public sealed class SourceComponentInfo {
 	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
 	public string ParentName { get; init; }
 
+	/// <summary>
+	/// Whether this source element holds child components. Derived from the TREE — a node with a child
+	/// component slot is a container whatever any registry says — falling back to a published registry
+	/// flag and then to a name-suffix heuristic only for an EMPTY element, which the tree cannot settle.
+	/// Always present: unlike <see cref="MobileComponentContract.Container"/> this is never unknown.
+	/// </summary>
 	[JsonPropertyName("isContainer")]
 	public bool IsContainer { get; init; }
 }
@@ -724,8 +730,15 @@ public sealed class MobileComponentContract {
 	[JsonPropertyName("componentType")]
 	public string ComponentType { get; init; }
 
+	/// <summary>
+	/// Whether the mobile registry declares this type a container. ABSENT when it declares nothing, which
+	/// today is every type — read an absent value as "unknown", never as "no". It used to ship a hard
+	/// <c>false</c> for a key no entry publishes, contradicting this same response's own parent graph, while
+	/// the sibling <c>get-component-info</c> surface omitted the same silence (ENG-95827).
+	/// </summary>
 	[JsonPropertyName("container")]
-	public bool Container { get; init; }
+	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+	public bool? Container { get; init; }
 
 	[JsonPropertyName("description")]
 	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
