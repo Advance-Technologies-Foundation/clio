@@ -1,4 +1,5 @@
 using System;
+using System.Linq;
 using Clio.Command;
 using Clio.Command.ProcessModel;
 using Clio.Common;

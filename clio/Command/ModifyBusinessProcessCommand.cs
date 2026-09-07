@@ -60,6 +60,12 @@ namespace Clio.Command;
 // - the same "server starts accepting an input form an older one refuses" shape that produced the
 // 1.3.1.1 literal. The number below satisfies both that and the message contract described above.
 //
+// The preconfiguredPage block ENG-92705 adds needs 1.4.0.0 for the same reason the others are here: a
+// server without it accepts the element through the documented userTask fallback route - a plain user task
+// it does recognise - and silently discards the block while answering success, so the process saves
+// carrying a step that shows nobody a page. It is SUBSUMED by the literal below, which is higher; it is
+// named because the next person to move this floor needs to know it cannot go below 1.4.0.0.
+//
 // ===== two requirement lines met in the ENG-92713 merge, and NO released archive carries both =====
 // Master's line above stops at 1.4.0.44; the ENG-92713 line below stops at 1.4.11.0, which was cut
 // BEFORE this branch merged main and therefore predates every formula/branch behaviour master needs.
@@ -124,62 +130,21 @@ namespace Clio.Command;
 // two rules compose without conflict: this literal still moves only when clio depends on or advertises new
 // server behaviour, and it is still asserted as "the shipped archive satisfies it", not "equals it".
 //
-// ===== A THIRD requirement line, and the same two rules give the same answer =====
-// ENG-91853 arrives with its own floor, and everything above about ENG-96325 and ENG-92713 now applies
-// to it unchanged. Its line is below; the two rules are applied at the end.
-//
-// AND AN ACCESS-CONTROL PROPERTY, which a review caught me deleting along with it. Below 1.4.0.40 the
-// display-name resolution used a raw Select rather than a rights-aware entity read, and a raw Select
-// bypasses row-level permissions - so the referenced record's name was resolved and stored into the
-// parameter's display value whether or not the acting user may see that record. The old comment
-// called this "NOT a security floor" because no RELEASED archive carried the wider read. That premise
-// is weaker now, not stronger: this branch cut roughly thirty archives between .20 and .52, and its
-// own manual runs installed .18 and .37 - both below the rights-aware read. So do not lower this
-// floor below 1.4.0.40 on message-contract grounds alone; the floor is also what keeps a
-// pre-rights-aware read off an environment clio installs onto.//
-// From ENG-91853 (this branch), a CAPABILITY floor rather than a message one, first in 1.4.0.60: below
-// that the package refuses `flows[].kind` and `flows[].condition` outright, and refuses the two gateway
-// element tokens as unsupported types. Those refusals are honest - an older package tells the caller it
-// cannot do this - but the descriptions above now document a declarative branch as the supported route,
-// so without the floor an agent following them is refused by the environment instead of by clio, one
-// round-trip later and with no hint that the package is what is behind.
-//
-// It moved twice more before shipping, and neither move was about wording. .59 carries two fixes -
-// `setFlow` with an omitted `kind` used to read as 'sequence' and DESTROY a conditional branch while
-// reporting success, and the build path accepted an unbounded `condition`. .60 carries the one that
-// makes `flows[].condition` worth having: below it a condition can only reference a system setting,
-// because a parameter is addressed by a UId that does not exist until this very call creates it. That
-// is 88% of the conditions in the shipped product, so below .60 the declarative branch is a contract
-// clio documents and the environment cannot honour.
-//
-// Be exact about WHICH archive buys what, because an earlier draft of this comment was not: `flows[].kind`
-// and the two gateway type tokens arrive in .58 and .58/.59 accept them. What .60 adds is the by-name
-// condition expansion, and that is the whole reason the floor is not .58. What .60 REACHES is in turn
-// narrower than the 88%: 242 of the 487 element-output conditions address a COLUMN of the returned
-// record, a third meta-path segment the name form cannot express, so by-name expansion covers 65% and
-// the column form still needs the modify path.
-//
-// WHY THE LITERAL MOVES TO 1.6.0.1. Apply the two rules the sections above established, in order.
-//
-// Rule 2 first, because it says the CURRENT literal is already broken. ENG-91853 carried "1.4.0.60"
-// while a released archive moved to 1.6.0.0 - the Approval element's minor, cut from master's package
-// source, which contains none of the gateway work: no FlowKindRules, no gateway element handlers, no
-// by-name condition expansion. System.Version ranks the minor first and
-// RequiredPackageChecker.IsCompatible is `installed >= new PackageVersion(required, "")`, so
-// 1.6.0.0 >= 1.4.0.60 is TRUE. The gate PASSES on a server that then refuses `flows[].kind` at build
-// time - the branch-local numbering hid the same jump that ENG-92713 documented one merge earlier, and
-// this is the second time a 1.4.x floor was jumped by a minor cut elsewhere.
-//
-// Rule 1 gives the same answer from the other direction. Two lines meet here and no released archive
-// carries both: 1.6.0.0 was cut from master's source and predates every gateway behaviour; 1.4.0.70 was
-// cut from this branch's and predates the Approval element, the Open edit page delivery and the
-// lookup-constant contract. The first archive carrying both is the one cut from the MERGED package
-// source, which is 1.6.0.1.
-//
-// Both rules still hold afterwards: this literal moves only when clio depends on or advertises new
-// server behaviour, and the guard fixture still asserts the shipped archive SATISFIES it rather than
-// equals it - so a later documentation-only rebundle moves the bundle and must not move this line.
-[RequiresPackage(BundledPackages.ProcessBuilderPackageName, "1.6.0.1",
+// AND ONE PATCH LEVEL ABOVE IT, 1.6.0.1, for a preconfiguredPage promise only THIS command makes: a page
+// change RECONCILES the element's data sources - the call must declare them, an undeclared one is REMOVED
+// and reported, and the removal is REFUSED while another parameter still maps from it. Below 1.6.0.1 the
+// same call is ACCEPTED with dataSources omitted, the previous page's DataSource_* parameter is carried
+// onto a page that does not declare it, and the started instance never leaves Running: the completing
+// button resolves the stored source name against the page the element is now on, finds nothing, and
+// abandons the completion with no error - while describe-business-process still answers inSync:true, so
+// nothing downstream shows it (ENG-95461, reproduced on a stand). The same "silently discards while
+// answering success" shape as the paragraph above, one field over. 1.6.0.1 and not 1.6.0.0 because 1.6.0.0
+// was stamped for the Approval delivery BEFORE that fix merged (crt-process-builder#46, restamped by #51),
+// so it is the lowest archive carrying it - not because it is what this clio bundles. Create stays at
+// 1.6.0.0: it cannot change an element's page, so nothing it advertises depends on this and its
+// environments need no upgrade. The rule above is unchanged by the raise - a floor moves when clio starts
+// ADVERTISING behaviour the deployed server may not have, and this description now does.
+[RequiresPackage(BundledPackages.ProcessBuilderPackageName, "1.6.0.2",
 	Hint = BundledPackages.ProcessBuilderInstallHint)]
 public sealed class ModifyBusinessProcessOptions : EnvironmentOptions {
 	/// <summary>Process code (schema Name) to edit. Provide exactly one of <see cref="ProcessName"/> or <see cref="ProcessUid"/>.</summary>
@@ -212,6 +177,7 @@ public sealed class ModifyBusinessProcessService(
 	ISettingsRepository settingsRepository,
 	IApplicationClientFactory applicationClientFactory,
 	IServiceUrlBuilder serviceUrlBuilder,
+	IProcessPageFactsChecker pageFactsChecker,
 	ILogger logger)
 	: IModifyBusinessProcessService {
 	private static readonly JsonSerializerOptions JsonOptions = new() {
@@ -246,6 +212,18 @@ public sealed class ModifyBusinessProcessService(
 			requestObject["uid"] = request.ProcessUid;
 		}
 		requestObject["operations"] = ParseOperations(request.OperationsJson);
+
+		// Same reason as the build path: an invented button or data-source name survives every server-side check
+		// and only shows itself at run time, as a step that never completes. The retarget path needs it most —
+		// moving a step onto a page with fewer data sources is how a working element becomes an unfinishable one.
+		ProcessPageCheckResult pageCheck =
+			pageFactsChecker.CheckPreconfiguredPages(environmentName, requestObject["operations"]);
+		if (!string.IsNullOrWhiteSpace(pageCheck?.Error)) {
+			throw new InvalidOperationException(pageCheck.Error);
+		}
+		foreach (string pageWarning in pageCheck?.Warnings ?? []) {
+			logger.WriteWarning(pageWarning);
+		}
 
 		using IOwnedApplicationClient client = applicationClientFactory.CreateOwnedEnvironmentClient(environmentSettings);
 		string url = serviceUrlBuilder.Build(ServiceUrlBuilder.KnownRoute.ModifyProcess, environmentSettings);

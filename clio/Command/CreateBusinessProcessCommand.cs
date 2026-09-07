@@ -60,6 +60,12 @@ namespace Clio.Command;
 // - the same "server starts accepting an input form an older one refuses" shape that produced the
 // 1.3.1.1 literal. The number below satisfies both that and the message contract described above.
 //
+// The preconfiguredPage block ENG-92705 adds needs 1.4.0.0 for the same reason the others are here: a
+// server without it accepts the element through the documented userTask fallback route - a plain user task
+// it does recognise - and silently discards the block while answering success, so the process saves
+// carrying a step that shows nobody a page. It is SUBSUMED by the literal below, which is higher; it is
+// named because the next person to move this floor needs to know it cannot go below 1.4.0.0.
+//
 // ===== two requirement lines met in the ENG-92713 merge, and NO released archive carries both =====
 // Master's line above stops at 1.4.0.44; the ENG-92713 line below stops at 1.4.11.0, which was cut
 // BEFORE this branch merged main and therefore predates every formula/branch behaviour master needs.
@@ -170,7 +176,7 @@ namespace Clio.Command;
 // Both rules still hold afterwards: this literal moves only when clio depends on or advertises new
 // server behaviour, and the guard fixture still asserts the shipped archive SATISFIES it rather than
 // equals it - so a later documentation-only rebundle moves the bundle and must not move this line.
-[RequiresPackage(BundledPackages.ProcessBuilderPackageName, "1.6.0.1",
+[RequiresPackage(BundledPackages.ProcessBuilderPackageName, "1.6.0.2",
 	Hint = BundledPackages.ProcessBuilderInstallHint)]
 public sealed class CreateBusinessProcessOptions : EnvironmentOptions {
 	/// <summary>Inline JSON process descriptor (name, caption, packageName, elements[], flows[], parameters[], mappings[]).</summary>
@@ -200,6 +206,7 @@ public sealed class CreateBusinessProcessService(
 	ISettingsRepository settingsRepository,
 	IApplicationClientFactory applicationClientFactory,
 	IServiceUrlBuilder serviceUrlBuilder,
+	IProcessPageFactsChecker pageFactsChecker,
 	ILogger logger)
 	: ICreateBusinessProcessService {
 	private static readonly JsonSerializerOptions JsonOptions = new() {
@@ -224,6 +231,17 @@ public sealed class CreateBusinessProcessService(
 		JsonObject descriptor = ParseDescriptor(request.DescriptorJson);
 		if (!string.IsNullOrWhiteSpace(request.PackageNameOverride)) {
 			descriptor["packageName"] = request.PackageNameOverride;
+		}
+
+		// Before the build, not after: a button or a data source the page does not have is accepted by the
+		// server, saved, and only fails at run time by waiting forever. clio is the only side that can see the
+		// page's merged buttons and data sources.
+		ProcessPageCheckResult pageCheck = pageFactsChecker.CheckPreconfiguredPages(environmentName, descriptor);
+		if (!string.IsNullOrWhiteSpace(pageCheck?.Error)) {
+			throw new InvalidOperationException(pageCheck.Error);
+		}
+		foreach (string pageWarning in pageCheck?.Warnings ?? []) {
+			logger.WriteWarning(pageWarning);
 		}
 
 		using IOwnedApplicationClient client = applicationClientFactory.CreateOwnedEnvironmentClient(environmentSettings);

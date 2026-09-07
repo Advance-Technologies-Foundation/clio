@@ -162,7 +162,7 @@ public class BundledProcessBuilderPackageTests {
 	/// </para>
 	/// </remarks>
 	private const string ExpectedArchiveSha256 =
-		"78C4451E9885F1F4122DA3200F5C69F71FC96300AE0C75D824BC76CDB130F6EB";
+		"6100684FBC130D2DD6F7C35641F77CC71610EA000D882B3E67C4647E579A4523";
 
 	/// <summary>
 	/// The <c>PackageVersion</c> the shipped descriptor carries.
@@ -202,7 +202,7 @@ public class BundledProcessBuilderPackageTests {
 	/// corresponding to no commit" is unreachable rather than merely documented. Anyone with a checkout can
 	/// verify the rest with one `git checkout`.</para>
 	/// </summary>
-	private const string ExpectedProducingCommit = "42e25ec3b937e9102e7c4bf560b74839067730fd";
+	private const string ExpectedProducingCommit = "f6a1bb3ed5010e57270128620227838a32aaad8c";
 
 	/// <summary>
 	/// The <c>ModifiedOnUtc</c> the shipped descriptor carries.
@@ -228,7 +228,7 @@ public class BundledProcessBuilderPackageTests {
 	/// command — the previous pin ended in <c>431</c>, which is how the hand edit was eventually noticed.
 	/// </para>
 	/// </remarks>
-	private const string ExpectedDescriptorModifiedOnUtc = "/Date(1788804558000)/";
+	private const string ExpectedDescriptorModifiedOnUtc = "/Date(1788803252000)/";
 
 	/// <summary>
 	/// The <c>ModifiedOnUtc</c> the shipped COMPILE-MARKER SCHEMA descriptor carries.
@@ -700,7 +700,8 @@ public class BundledProcessBuilderPackageTests {
 		declared.Should().HaveCountGreaterThanOrEqualTo(5,
 			because: "the five process-designer gates must be visible to this scan; if it finds fewer, the "
 				+ "reflection is broken and the version loop below is silently inspecting nothing");
-		// The loop EXECUTES today: two of the five carry a version literal (create/modify, 1.4.0.44). It was
+		// The loop EXECUTES today: two of the five carry a version literal (create 1.4.0.44, modify 1.6.0.1 -
+		// they diverged when modify's page-change reconciliation promise needed a newer archive than create's). It was
 		// vacuous when written, deliberately — the invariant had to be in place before the first literal
 		// appeared, because the commit that adds one is exactly when it must already work. It replaces the old
 		// pin (descriptor version == a constant), which needed hand-synchronising on every rebundle and
