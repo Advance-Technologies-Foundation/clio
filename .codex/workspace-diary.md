@@ -928,6 +928,37 @@ docs/knowledge/Common/requirespackage-version-floor-survives-convergence-degrade
 Impact: an environment older than 1.3.1.1 is refused outright on create/modify — not warned — even when
 convergence has degraded; every newly documented performer contract shape is exercised live on both entry
 points. Command+Common 4975 green.
+
+## 2026-09-06 17:35 – ENG-92713 Copilot round 4: bounded derivation, and docs describing our own output
+Context: Fourth Copilot round on crt-process-builder PR 43. Four findings, all valid; a sweep of the two
+recurring claim families turned up two more in a file Copilot had not named.
+Decision: Floor stays 1.4.12.0 while the bundle moves to 1.4.13.0 — Top(1) is an optimisation and the
+narrowed macro check is a no-op today, so neither is behaviour clio depends on or advertises. The guard
+fixture asserting "satisfies" rather than "equals" is what makes that split expressible.
+Discovery: A Top() added over an OrderByAsc has to be checked against the dialect builders, not assumed —
+the unit suite mocks DBExecutor and proves nothing about SQL. MSSQL emits TOP in BuildBeforeColumnsSqlText
+and PostgreSql in BuildAfterQuerySqlText; both order before bounding, so determinism survives. Also:
+rebundle-process-builder.ps1 refuses a dirty package repo and updates the pins itself, so the order is
+commit source -> rebundle -> commit the descriptor bump it makes -> commit clio.
+Files: crt-process-builder a077e25 + cddd4fd, clio eb358755e, clio.tests/Common/BundledProcessBuilderPackageTests.cs
+Impact: The read-vs-write shape asymmetry is now stated in DescribeContracts at both levels it was wrong at,
+which is the claim that produced three separate review rounds.
+
+## 2026-09-07 12:05 – ENG-92713 DescribeShaped flagged half-translated approval blocks
+Context: r-sadovskyi on clio PR 1341 — a block with a correct nested approver PLUS a leftover flat
+approverType was reported as unconfigured, though the approver had landed.
+Decision: Narrow only the approverType disjunct to "nested approver absent". The notification markers stay
+as they are, pinned by a test.
+Discovery: The three DescribeShaped markers are not symmetric, and that is the whole rule. notifyApprover /
+notifyAuthor share ONE key between read and write shapes (boolean vs object), so they cannot coexist and a
+JsonValue proves nothing bound. The approver uses TWO keys (approverType read, approver write), so both can
+appear — which is exactly a half-translated block. Verified from package source: approverType is on the read
+contract only, and no write contract implements IExtensibleDataObject, so DataContractJsonSerializer drops
+the unknown member unread. Also: RequiresPackage throws, so behind the floor the other ApprovalDropKinds are
+the net for installed-but-not-compiled, not normal-operation paths — this marker is the one that fires.
+Files: clio/Command/ProcessModel/ApprovalBlockExpectation.cs, clio.tests/Command/ProcessModel/ApprovalBlockExpectationTests.cs
+Impact: A marker that short-circuits before the read-back is consulted must be proven, not merely suggestive —
+nothing downstream can correct it.
 ## 2026-08-26 - ENG-92715 Open edit page element: clio side
 Context: clio consumer surface for the new `openEditPage` element type shipped by CrtProcessBuilder (see the cli-process-builder diary entry of the same date for the server half and the platform discoveries behind it).
 Decision: declare the describe block as a TYPED DTO rather than leaving it to the element's extension bag. Note the inconsistency this exposes - the Modify data `changeData` block is still undeclared and reaches callers through `[JsonExtensionData]`; worth aligning, deliberately out of this story's scope.
@@ -1039,3 +1070,22 @@ Also: `McpE2E.Sandbox.EnvironmentName` in clio.mcp.e2e/appsettings.json is how t
 The file is TRACKED, so it was set for the run and reverted — a machine-specific env name does not belong in the
 repo. Re-set it before any future run.
 Result: 11/11 green on the stand.
+
+## 2026-09-07 14:20 – ENG-92713 Three-repo conflict resolution against master
+Context: master moved substantially in all three repos while ENG-92713 was in review; all three PRs went dirty.
+Decision: Nearly every conflict was the UNION, not a choice — master added the openEditPage element (and a
+guidance split) in exactly the places this branch added approval. Resolved by stripping conflict regions rather
+than `git checkout --theirs`, which discards a side's cleanly auto-merged additions.
+Discovery: Three traps worth remembering. (1) Constructor-parameter conflicts must be unioned because the BODY
+auto-merges and assigns both — the compiler catches it, but only after call sites in files that merged CLEANLY
+also need the new parameter INSERTED at its slot, not appended. (2) A conflict boundary can cut a class
+mid-member: keeping both sides then leaves one class unclosed, because its extension bag and brace lived in the
+shared tail the other side reused. (3) A mechanical word-merge of long prose leaves dangling fragments — scan
+for doubled words/punctuation afterwards; it left a stray "flows;" in McpCapabilityMap.
+Also: the same wrong claim ("branching on the approval outcome needs gateways, which are not buildable") sat in
+FOUR places across two repos. It is wrong three ways — no gateway is involved, conditional branches ARE
+buildable via setFlowCondition, and an element output parameter is referenceable as
+[#[Element:{uid}].[Parameter:{uid}]#]. Corrected everywhere.
+Files: clio-knowledge d909592, crt-process-builder 07659d3 + 042d3b9, clio b7dddb260 + 9262af2eb
+Impact: A guard in the other repo's suite (ProcessGuides_ShouldNameTheOwningArticle) caught what the resolution
+missed — run the merged repo's OWN tests before believing a documentation merge is complete.
