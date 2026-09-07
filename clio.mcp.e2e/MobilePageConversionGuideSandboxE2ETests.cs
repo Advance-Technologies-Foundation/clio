@@ -583,8 +583,8 @@ public sealed class MobilePageConversionGuideSandboxE2ETests : McpContractFixtur
 	/// something this test may assume.
 	/// </summary>
 	/// <summary>
-	/// Every <c>reason</c> code on every entry is a declared member of <see cref="ReasonCodes"/>, and no entry
-	/// is left without a reason.
+	/// Every <c>reason</c> code in the response — in ALL FIVE fields that carry one — is a declared member of
+	/// <see cref="ReasonCodes"/>, and no dropped element is left without a reason.
 	/// </summary>
 	/// <remarks>
 	/// This replaced a narrower guard that asserted no drop entry mentioned "multi-data-source" — a page
@@ -593,6 +593,12 @@ public sealed class MobilePageConversionGuideSandboxE2ETests : McpContractFixtur
 	/// form, so matching on it could only pass. Asserting the closed vocabulary keeps the guard and widens it:
 	/// re-introducing a data-source drop — or any other unreviewed reason — fails here rather than shipping a
 	/// code no article documents (ENG-95827).
+	/// <para>
+	/// It walks all five collections deliberately. It used to check <c>droppedElements</c> alone, which was
+	/// the only coded field at the time; the sibling collections then gained codes of their own and were
+	/// covered by nothing over the real transport. A vocabulary guard that inspects one fifth of the
+	/// vocabulary is the kind of coverage that reads as complete and is not.
+	/// </para>
 	/// </remarks>
 	private static void AssertReasonCodesAreFromTheClosedVocabulary(MobilePageConversionGuide guide) {
 		HashSet<string> declared = [.. typeof(ReasonCodes)
@@ -604,19 +610,40 @@ public sealed class MobilePageConversionGuideSandboxE2ETests : McpContractFixtur
 
 		guide.ViewConfigDiff.Should().NotBeEmpty(because: "the seeded page converts, so there is something to apply");
 		guide.ViewConfigDiff.Should().OnlyContain(
-			e => e.Operation == "insert" || e.Operation == "merge" || e.Operation == "relocate-children",
-			because: "elementMap carries only operations to APPLY — a drop is not one, so it belongs in droppedElements");
+			e => e.Operation == "insert" || e.Operation == "merge",
+			because: "viewConfigDiff is pasted into the page, so it may hold only operations the applier HAS — a "
+				+ "drop belongs in droppedElements, and relocate-children is a converter-internal word that "
+				+ "ProjectViewConfigDiff filters out, so seeing either here means the projection regressed");
 
 		List<DroppedElement> dropped = [.. guide.DroppedElements ?? []];
 		dropped.Should().OnlyContain(d => d.Reason != null && d.Reason.Count > 0,
 			because: "nothing was built for a dropped element, so its reason is the only thing that tells the caller what happened to it");
-		string[] unknown = [.. dropped
-			.SelectMany(d => d.Reason!)
-			.Select(r => r.Code)
-			.Where(code => !declared.Contains(code))
+
+		// All five coded fields, not just droppedElements: the request bindings, the page business rules and
+		// the skipped normalizations carry codes from the SAME closed vocabulary, and a caller branches on
+		// them the same way.
+		(string Field, IEnumerable<ReasonCode> Reason)[] coded = [
+			.. dropped.Select(d => ($"droppedElements[{d.WebName}]", (IEnumerable<ReasonCode>)d.Reason!)),
+			.. (guide.RequestConversions?.DroppedRequests ?? [])
+				.Select(r => ($"droppedRequests[{r.ElementName}]", (IEnumerable<ReasonCode>)r.Reason)),
+			.. (guide.RequestConversions?.FlaggedRequests ?? [])
+				.Select(r => ($"flaggedRequests[{r.ElementName}]", (IEnumerable<ReasonCode>)r.Reason)),
+			.. (guide.PageBusinessRules?.DroppedRules ?? [])
+				.Select(r => ($"droppedRules[{r.Caption}]", (IEnumerable<ReasonCode>)r.Reason)),
+			.. (guide.Normalizations ?? new Dictionary<string, NormalizationInfo>())
+				.SelectMany(group => (group.Value?.Skipped ?? [])
+					.Select(skip => ($"normalizations[{group.Key}].skipped[{skip.Name}]",
+						(IEnumerable<ReasonCode>)skip.Reason)))
+		];
+
+		string[] unknown = [.. coded
+			.SelectMany(entry => (entry.Reason ?? []).Select(r => $"{entry.Field}: {r.Code}"))
+			.Where(pair => !declared.Contains(pair[(pair.IndexOf(": ", StringComparison.Ordinal) + 2)..]))
 			.Distinct()];
 		unknown.Should().BeEmpty(
-			because: "a reason code outside ReasonCodes is one the guidance article does not document, so the caller cannot act on it");
+			because: "a reason code outside ReasonCodes is one the guidance article does not document, so the "
+				+ "caller cannot act on it — and this now covers every field that carries a reason, not only "
+				+ "the one that happened to be coded first");
 	}
 
 	/// <summary>
