@@ -1,5 +1,8 @@
+﻿using Clio.Command;
+using Clio.Command.McpServer.Tools.MobilePageConverter;
 using Clio.Mcp.E2E.Support.Configuration;
 using Clio.Mcp.E2E.Support.Mcp;
+using System.Reflection;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 
@@ -112,9 +115,22 @@ public sealed class McpSharedHomeSetUpFixture {
 			}
 			root.Remove(key);
 		}
-		features["mobile-page-converter"] = true;
+		features[FeatureKeyOf(typeof(MobilePageConversionGuideTool))] = true;
 		root["features"] = features;
 	}
+
+	/// <summary>
+	/// Reads the feature key that gates <paramref name="featureGatedType"/> from the type's own
+	/// <see cref="FeatureToggleAttribute"/>, so the suite enables the flag the product actually reads.
+	/// </summary>
+	/// <remarks>
+	/// A literal repeated here would drift silently: renaming the key in clio would leave the suite writing
+	/// a flag nothing reads, and the gated tool would go back to being absent for reasons no message names.
+	/// </remarks>
+	private static string FeatureKeyOf(Type featureGatedType) =>
+		featureGatedType.GetCustomAttribute<FeatureToggleAttribute>()?.FeatureName
+		?? throw new InvalidOperationException(
+			$"{featureGatedType.Name} carries no [FeatureToggle], so the suite cannot enable it by attribute.");
 
 	private static void ProtectDirectoryForCurrentUser(string path) {
 		if (!OperatingSystem.IsWindows()) {
