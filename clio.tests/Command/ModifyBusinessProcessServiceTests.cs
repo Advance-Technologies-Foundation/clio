@@ -108,6 +108,46 @@ public sealed class ModifyBusinessProcessServiceTests {
 	}
 
 	[Test]
+	[Description("A failed edit that names the refusing operation carries that index to the caller. The server split appliedOperations into a count plus a nullable failedOperationIndex precisely so a caller need not bisect the batch against a live environment - and clio's success record is built only on success, so this throw is the only path the index can travel. Without this, the split would end at clio's boundary.")]
+	public void ModifyProcess_ShouldNameTheRefusingOperation_WhenTheServerReportsAnIndex() {
+		// Arrange
+		IOwnedApplicationClient client = Substitute.For<IOwnedApplicationClient>();
+		client.ExecutePostRequest(ModifyUrl, Arg.Any<string>()).Returns(
+			"{\"ModifyProcessResult\":{\"success\":false,\"errorMessage\":\"Element 'X' was not found.\","
+			+ "\"appliedOperations\":2,\"failedOperationIndex\":2}}");
+		ModifyBusinessProcessService service = CreateService(client);
+
+		// Act
+		Action act = () => service.ModifyProcess(Env, new ModifyBusinessProcessRequest("UsrProc", null, Operations));
+
+		// Assert
+		act.Should().Throw<InvalidOperationException>(because: "an aborted edit still fails the call")
+			.WithMessage("*index 2*",
+				because: "the caller has to learn WHICH operation refused, which is the whole reason the server "
+					+ "reports an index separately from the completion count");
+	}
+
+	[Test]
+	[Description("A failed edit whose failure blames no single operation says nothing about an index. The server sends no index when the failure came after the operation loop, and an older CrtProcessBuilder never sends the field - both mean 'no operation is to blame', so inventing 'index 0' from a missing value would recreate the exact ambiguity the split removed.")]
+	public void ModifyProcess_ShouldNotInventAnIndex_WhenTheServerReportsNone() {
+		// Arrange
+		IOwnedApplicationClient client = Substitute.For<IOwnedApplicationClient>();
+		client.ExecutePostRequest(ModifyUrl, Arg.Any<string>()).Returns(
+			"{\"ModifyProcessResult\":{\"success\":false,\"errorMessage\":\"The schema is invalid.\","
+			+ "\"appliedOperations\":2}}");
+		ModifyBusinessProcessService service = CreateService(client);
+
+		// Act
+		Action act = () => service.ModifyProcess(Env, new ModifyBusinessProcessRequest("UsrProc", null, Operations));
+
+		// Assert
+		act.Should().Throw<InvalidOperationException>(because: "an aborted edit still fails the call")
+			.Which.Message.Should().NotContain("index",
+				because: "an absent index must stay absent - a plain int default would have said 'index 0', "
+					+ "which is the ambiguity the nullable field exists to prevent");
+	}
+
+	[Test]
 	[Description("Throws a clear error when the response envelope has no ModifyProcessResult payload.")]
 	public void ModifyProcess_ShouldThrow_WhenResponseShapeUnexpected() {
 		IOwnedApplicationClient client = Substitute.For<IOwnedApplicationClient>();
