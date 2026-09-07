@@ -615,6 +615,43 @@ public sealed class McpToolErrorFilterTests
 			because: "a scalar co-key must still move into the wrapper alongside the composite ones");
 	}
 
+	[Test]
+	[Category("Unit")]
+	[Description("A public GET-ONLY property is not a canonical name, so a flat key naming it is REFUSED as unknown instead of being wrapped and then silently dropped by System.Text.Json at bind time. Without the setter check this key classifies as canonical-flat and reproduces the silent-default-success class through the one branch that skips the unknown-key refusal (ENG-95885 review round 4).")]
+	public async Task Normalization_ShouldRefuse_AFlatKeyNamingAGetOnlyProperty() {
+		// Arrange
+		RequestContext<CallToolRequestParams> context = CreateContext(
+			"fake-get-only-tool", new Dictionary<string, JsonElement> {
+				["computed"] = JsonSerializer.SerializeToElement("probe")
+			});
+		context.MatchedPrimitive = McpServerTool.Create(
+			typeof(FakeToolWithGetOnlyArgs).GetMethod(
+				nameof(FakeToolWithGetOnlyArgs.Execute), BindingFlags.Public | BindingFlags.Instance)!,
+			new FakeToolWithGetOnlyArgs());
+		context = WithRoutingAuthority(context);
+		McpRequestHandler<CallToolRequestParams, CallToolResult> handler =
+			McpToolErrorFilter.HandleCallToolErrors(
+				(_, _) => ValueTask.FromResult(new CallToolResult { IsError = false }));
+
+		// Act
+		CallToolResult result = await handler(context, CancellationToken.None);
+
+		// Assert
+		result.IsError.Should().BeTrue(
+			because: "the serializer cannot set a get-only property, so accepting the key would run the "
+				+ "tool with a defaulted record and report it as a success");
+		string text = string.Join(" ", result.Content.OfType<TextContentBlock>().Select(b => b.Text));
+		text.Should().Contain("unknown argument",
+			because: "the caller must be told the key cannot be supplied, not silently ignored");
+		text.Should().Contain("\"computed\"",
+			because: "the refusal must name the offending key so the caller can remove it");
+		// Asserted on the VALID-arguments segment, not on absence of the word anywhere: the offending key
+		// legitimately appears earlier in the message as the thing being refused.
+		text.Should().Contain("Valid arguments: \"name\".",
+			because: "the settable field is the only argument a caller may send, so a get-only property "
+				+ "must never appear in the advertised set");
+	}
+
 	// --- ENG-95885 observability (review round 2, finding 3) ---
 	//
 	// The normalizer rewrites Arguments IN PLACE, so without a report captured before the rewrite every
@@ -1460,6 +1497,21 @@ public sealed class McpToolErrorFilterTests
 
 	public sealed class FakeToolWithStructuredArgs {
 		public string Execute(FakeStructuredArgs args) => "ok";
+	}
+
+	// One settable wire field and one public GET-ONLY computed property. The get-only shape is live in
+	// this codebase's response types (ComponentInfoResponse.VersionWarning), so an args record acquiring
+	// one is a plausible regression rather than a hypothetical.
+	public sealed record FakeArgsWithGetOnlyProperty(
+		[property: JsonPropertyName("name")]
+		string? Name = null
+	) {
+		[JsonPropertyName("computed")]
+		public string Computed => $"{Name}-derived";
+	}
+
+	public sealed class FakeToolWithGetOnlyArgs {
+		public string Execute(FakeArgsWithGetOnlyProperty args) => "ok";
 	}
 
 	public sealed record FakeTypedArgs(

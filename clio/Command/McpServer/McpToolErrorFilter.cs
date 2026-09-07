@@ -388,21 +388,16 @@ public static class McpToolErrorFilter
 	/// <paramref name="method"/>. Split out from the context-bound entry point so a completeness test can
 	/// drive it across every resident tool method without constructing MCP primitives. Returns <c>true</c>
 	/// when the call must be REFUSED, and otherwise may REWRITE
-	/// <see cref="CallToolRequestParams.Arguments"/> in place — same contract as
-	/// <see cref="TryRefuseCallArguments"/>.
+	/// <see cref="CallToolRequestParams.Arguments"/> in place.
 	/// </summary>
-	internal static bool TryRefuseArguments(
-		CallToolRequestParams parameters,
-		MethodInfo method,
-		out CallToolResult? result) =>
-		TryRefuseArguments(parameters, method, out result, out _);
-
-	/// <summary>
-	/// <see cref="TryRefuseArguments(CallToolRequestParams, MethodInfo, out CallToolResult?)"/>, plus the
-	/// classifier's decision and the payload's ORIGINAL top-level key names in
-	/// <paramref name="report"/> — captured BEFORE the in-place rewrite, which is the only point at which
-	/// a flat first attempt is still distinguishable from a correctly wrapped one (ENG-95885).
-	/// </summary>
+	/// <remarks>
+	/// <paramref name="report"/> carries the classifier's decision and the payload's ORIGINAL top-level
+	/// key names, captured BEFORE the rewrite — the only point at which a flat first attempt is still
+	/// distinguishable from a correctly wrapped one (ENG-95885). A caller that does not need it passes
+	/// <c>out _</c>; there is deliberately no convenience overload, because the only callers that wanted
+	/// one were tests and a production-looking entry point that no production code calls is worse than
+	/// two characters at each test call site.
+	/// </remarks>
 	internal static bool TryRefuseArguments(
 		CallToolRequestParams parameters,
 		MethodInfo method,
@@ -424,12 +419,21 @@ public static class McpToolErrorFilter
 			return false;
 		}
 
+		IDictionary<string, JsonElement>? arguments = parameters.Arguments;
+
+		// The already-wrapped shape is the steady state ENG-95885 drives traffic TOWARD, so it is checked
+		// before any property reflection: GetJsonPropertyNames below walks the args record's properties
+		// and reads two attributes per property on every call. Behaviour-preserving — this payload
+		// returned false either way, whether or not the record had wire properties.
+		if (arguments is { Count: 1 } && arguments.ContainsKey(wrapperName)) {
+			return false;
+		}
+
 		List<string> canonicalNames = GetJsonPropertyNames(wrapper.ParameterType);
 		if (canonicalNames.Count == 0) {
 			return false;
 		}
 
-		IDictionary<string, JsonElement>? arguments = parameters.Arguments;
 		if (arguments is null || arguments.Count == 0) {
 			// Fail-closed: only a tool that has EXPLICITLY declared a natural no-arguments operation gets
 			// the empty wrapper synthesized for it. Every other tool keeps today's missing-parameter error.
@@ -442,10 +446,8 @@ public static class McpToolErrorFilter
 		}
 
 		if (arguments.ContainsKey(wrapperName)) {
-			if (arguments.Count == 1) {
-				// The already-working wrapped shape — byte-compatible pass-through.
-				return false;
-			}
+			// Count == 1 was already returned above as the byte-compatible pass-through, so reaching here
+			// means the wrapper arrived WITH extra top-level keys.
 			report = new McpArgumentShapeReport(
 				McpArgumentShapeOutcome.RefusedAmbiguous, [.. arguments.Keys]);
 			result = CreateJsonErrorResult(BuildAmbiguousShapeMessage(
@@ -522,35 +524,18 @@ public static class McpToolErrorFilter
 		}
 
 		string keys = string.Join(", ", report.TopLevelKeys);
-		string message = Clio.Common.TextUtilities.SanitizeForDisplay(
-			SensitiveErrorTextRedactor.Redact(
-				$"mcp-argument-shape: tool='{toolName ?? UnknownToolName}' "
-				+ $"outcome={report.Outcome} keys=[{keys}]"),
-			maxLength: 1_000);
 
-		// Service-located, not injected: this seam is a static delegate with no constructor. An absent
-		// logger is normal (a unit test that registers only what it exercises) and must stay silent
-		// rather than throw.
-		if (context.Services?.GetService(typeof(Clio.Common.ILogger)) is Clio.Common.ILogger logger) {
-			if (IsRefusal(report.Outcome)) {
-				logger.WriteWarning(message);
-			} else {
-				logger.WriteInfo(message);
-			}
-		}
-
-		if (!Program.IsMcpServerMode) {
-			return;
-		}
-		try {
-			Console.Error.WriteLine($"[{(IsRefusal(report.Outcome) ? "WAR" : "INF")}] {message}");
-		}
-		catch (IOException) {
-			// Stderr is an advisory host channel and may be closed by a detached launcher.
-		}
-		catch (ObjectDisposedException) {
-			// Losing the advisory sink must never fail the tool call it describes.
-		}
+		// Redaction, length-bounding, the logger write, the transport gate, the stderr mirror and the
+		// dead-sink swallow all live in McpAdvisoryLog — one copy, shared with
+		// McpServerCommand.WarnDuringStartup, and reachable from a test in both branches.
+		// Service-located, not injected: this seam is a static delegate with no constructor, and an
+		// absent logger is normal (a unit test that registers only what it exercises).
+		McpAdvisoryLog.Emit(
+			context.Services?.GetService(typeof(Clio.Common.ILogger)) as Clio.Common.ILogger,
+			$"mcp-argument-shape: tool='{toolName ?? UnknownToolName}' "
+				+ $"outcome={report.Outcome} keys=[{keys}]",
+			isWarning: IsRefusal(report.Outcome),
+			isMcpServerMode: Program.IsMcpServerMode);
 	}
 
 	/// <summary>True for the two outcomes that refused the call rather than accommodating it.</summary>
@@ -932,8 +917,24 @@ public static class McpToolErrorFilter
 			.ToList();
 	}
 
+	/// <summary>
+	/// True when <paramref name="property"/> is a field a CALLER can actually supply: not the overflow
+	/// bag, not permanently ignored, and — the part that is easy to miss — <b>settable</b>.
+	/// </summary>
+	/// <remarks>
+	/// ENG-95885 (review round 4): a public get-only computed property has no setter, so
+	/// System.Text.Json silently ignores it when binding. Counting it as a canonical name would classify
+	/// a flat payload carrying that key as canonical-flat, wrap it, let the serializer drop it, and let
+	/// the tool answer with a defaulted record as a SUCCESS — the exact silent-default-success class the
+	/// unknown-key refusal exists to prevent, except arriving through the canonical branch that skips
+	/// that refusal. Excluding it instead makes such a key UNKNOWN, so the caller is told. The pattern is
+	/// live in this codebase's response types (<c>ComponentInfoResponse.VersionWarning</c>), so an args
+	/// record acquiring one is a plausible regression rather than a hypothetical.
+	/// A record's positional / <c>init</c> properties all have a set accessor, so nothing shifts today.
+	/// </remarks>
 	private static bool IsWireContractProperty(PropertyInfo property) =>
-		property.GetCustomAttribute<JsonExtensionDataAttribute>() is null
+		property.SetMethod is not null
+		&& property.GetCustomAttribute<JsonExtensionDataAttribute>() is null
 		&& property.GetCustomAttribute<JsonIgnoreAttribute>()?.Condition != JsonIgnoreCondition.Always;
 
 	private static string BuildMissingWrapperMessage(

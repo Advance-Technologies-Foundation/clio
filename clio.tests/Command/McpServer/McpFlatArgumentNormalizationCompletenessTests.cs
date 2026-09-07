@@ -70,7 +70,7 @@ public sealed class McpFlatArgumentNormalizationCompletenessTests
 			};
 
 			bool refused = McpToolErrorFilter.TryRefuseArguments(
-				parameters, contract.Method, out CallToolResult? result);
+				parameters, contract.Method, out CallToolResult? result, out _);
 
 			if (refused || result is not null) {
 				failures.Add($"{contract.ToolName}: a canonical flat '{canonicalName}' payload was refused");
@@ -118,7 +118,7 @@ public sealed class McpFlatArgumentNormalizationCompletenessTests
 			};
 
 			bool refused = McpToolErrorFilter.TryRefuseArguments(
-				parameters, contract.Method, out CallToolResult? result);
+				parameters, contract.Method, out CallToolResult? result, out _);
 
 			if (!refused || result is null || result.IsError != true) {
 				failures.Add(
@@ -161,7 +161,7 @@ public sealed class McpFlatArgumentNormalizationCompletenessTests
 			};
 
 			bool refused = McpToolErrorFilter.TryRefuseArguments(
-				parameters, contract.Method, out CallToolResult? result);
+				parameters, contract.Method, out CallToolResult? result, out _);
 
 			if (!refused || result is null || result.IsError != true) {
 				failures.Add(
@@ -215,7 +215,8 @@ public sealed class McpFlatArgumentNormalizationCompletenessTests
 			Dictionary<string, JsonElement> arguments = new(StringComparer.Ordinal);
 			CallToolRequestParams parameters = new() { Name = contract.ToolName, Arguments = arguments };
 
-			McpToolErrorFilter.TryRefuseArguments(parameters, contract.Method, out CallToolResult? _);
+			McpToolErrorFilter.TryRefuseArguments(
+				parameters, contract.Method, out CallToolResult? _, out McpArgumentShapeReport _);
 
 			if (!ReferenceEquals(parameters.Arguments, arguments)) {
 				failures.Add(
@@ -324,6 +325,97 @@ public sealed class McpFlatArgumentNormalizationCompletenessTests
 				&& property.GetCustomAttribute<JsonIgnoreAttribute>()?.Condition != JsonIgnoreCondition.Always)
 			.Select(property => property.GetCustomAttribute<JsonPropertyNameAttribute>()?.Name ?? property.Name)
 			.ToList();
+
+	[Test]
+	[Category("Unit")]
+	[Description("EVERY canonical name the classifier will accept as a flat key actually BINDS: deserializing that one key into the real args record leaves the property set, not defaulted. A name that classifies as canonical but does not bind is the silent-default-success failure this PR exists to prevent, arriving through the canonical branch that skips the unknown-key refusal — so it is asserted against real System.Text.Json rather than against a reflection proxy for it (ENG-95885 review round 4).")]
+	public void EveryCanonicalName_ShouldActuallyBind_OnRealDeserialization() {
+		// Arrange
+		List<string> failures = [];
+		JsonSerializerOptions options = Clio.BindingsModule.CreateMcpSerializerOptions();
+
+		// Act
+		foreach (ResidentToolContract contract in EnumerateResidentSingleCompositeArgsTools()) {
+			foreach (string canonicalName in contract.CanonicalPropertyNames) {
+				PropertyInfo? property = contract.ArgsType
+					.GetProperties(BindingFlags.Public | BindingFlags.Instance)
+					.FirstOrDefault(candidate =>
+						(candidate.GetCustomAttribute<JsonPropertyNameAttribute>()?.Name ?? candidate.Name)
+							== canonicalName);
+				if (property is null) {
+					failures.Add($"{contract.ToolName}.{canonicalName}: no property maps to this canonical name");
+					continue;
+				}
+
+				string? probeJson = BuildProbeJson(property.PropertyType);
+				if (probeJson is null) {
+					// A type this probe cannot synthesize a value for is skipped rather than guessed at:
+					// a wrong probe would report a binding failure that does not exist.
+					continue;
+				}
+
+				object? bound;
+				try {
+					bound = JsonSerializer.Deserialize(
+						$"{{\"{canonicalName}\":{probeJson}}}", contract.ArgsType, options);
+				}
+				catch (Exception ex) {
+					failures.Add(
+						$"{contract.ToolName}.{canonicalName}: deserializing a single-key payload threw "
+						+ $"{ex.GetType().Name}: {ex.Message}");
+					continue;
+				}
+
+				if (bound is null) {
+					failures.Add($"{contract.ToolName}.{canonicalName}: the args record deserialized to null");
+					continue;
+				}
+				if (property.GetValue(bound) is null) {
+					failures.Add(
+						$"{contract.ToolName}.{canonicalName}: the key was accepted as canonical but the "
+						+ "property stayed unset after real deserialization — a flat call naming it would be "
+						+ "wrapped and then silently dropped");
+				}
+			}
+		}
+
+		// Assert
+		failures.Should().BeEmpty(
+			because: "a canonical name that does not bind turns a caller's valid-looking flat call into a "
+				+ $"defaulted record answered as success. Failures:{Environment.NewLine}"
+				+ string.Join(Environment.NewLine, failures));
+	}
+
+	// Smallest JSON literal that leaves a non-null value on a property of this type. Returns null for a
+	// type the probe cannot synthesize, so an unsupported shape is skipped rather than mis-reported.
+	private static string? BuildProbeJson(Type type) {
+		Type target = Nullable.GetUnderlyingType(type) ?? type;
+		if (target == typeof(string)) {
+			return "\"probe\"";
+		}
+		if (target == typeof(bool)) {
+			return "true";
+		}
+		if (target == typeof(Guid)) {
+			return "\"11111111-1111-1111-1111-111111111111\"";
+		}
+		if (target.IsEnum) {
+			string[] names = Enum.GetNames(target);
+			return names.Length > 0 ? $"\"{names[0]}\"" : null;
+		}
+		if (target == typeof(int) || target == typeof(long) || target == typeof(short)
+			|| target == typeof(byte) || target == typeof(double) || target == typeof(decimal)
+			|| target == typeof(float)) {
+			return "7";
+		}
+		if (target.IsArray || (target.IsGenericType && typeof(System.Collections.IEnumerable).IsAssignableFrom(target))) {
+			return "[]";
+		}
+		if (target.IsClass) {
+			return "{}";
+		}
+		return null;
+	}
 
 	private sealed record ResidentToolContract(
 		string ToolName,

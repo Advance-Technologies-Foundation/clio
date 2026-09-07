@@ -339,21 +339,12 @@ public class McpServerCommand(ModelContextProtocol.Server.McpServer server,
 	/// </remarks>
 	/// <param name="message">The warning text.</param>
 	/// <param name="logger">The host logger.</param>
-	private static void WarnDuringStartup(string message, ILogger logger) {
-		string safeMessage = TextUtilities.SanitizeForDisplay(
-			SensitiveErrorTextRedactor.Redact(message),
-			maxLength: 1_000);
-		logger.WriteWarning(safeMessage);
-		if (Program.IsMcpServerMode) {
-			try {
-				Console.Error.WriteLine($"[WAR] {safeMessage}");
-			} catch (IOException) {
-				// Stderr is an advisory host channel and may be closed by a detached launcher.
-			} catch (ObjectDisposedException) {
-				// Losing the advisory sink must never prevent the MCP transport from starting.
-			}
-		}
-	}
+	private static void WarnDuringStartup(string message, ILogger logger) =>
+		// ENG-95885 review round 4: the redact / bound / log / mirror-to-stderr / swallow-a-dead-sink
+		// sequence this method used to spell out inline now lives in McpAdvisoryLog, shared with
+		// McpToolErrorFilter.ReportArgumentShape. The behaviour is unchanged; the copy is not.
+		McpAdvisoryLog.Emit(
+			logger, message, isWarning: true, isMcpServerMode: Program.IsMcpServerMode);
 
 	/// <summary>
 	/// Repairs and installs the curated source before the MCP transport starts accepting requests.
