@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 
 namespace Clio.Command.McpServer.Tools;
 
@@ -52,4 +53,54 @@ internal sealed class McpAcceptsEmptyArgumentsAttribute : Attribute {
 /// </remarks>
 [AttributeUsage(AttributeTargets.Method, AllowMultiple = false, Inherited = false)]
 internal sealed class McpRecoversUnknownArgumentsAttribute : Attribute {
+}
+
+/// <summary>
+/// ENG-95885. What the flat-argument classifier DECIDED about one <c>tools/call</c> payload, so the
+/// decision can be observed from outside the filter.
+/// </summary>
+/// <remarks>
+/// The normalizer rewrites <c>Arguments</c> IN PLACE, so without this every downstream observer -
+/// the host log, a support bundle, the Applicant measurement run that gates ENG-95885's closure - sees
+/// only the POST-rewrite wrapped shape and cannot tell a flat first attempt from a correctly wrapped
+/// one. The fix would otherwise make its own success unmeasurable.
+/// </remarks>
+internal enum McpArgumentShapeOutcome {
+
+	/// <summary>The payload was left exactly as it arrived: already wrapped, or outside the trigger gate.</summary>
+	Untouched = 0,
+
+	/// <summary>Top-level keys were moved into the wrapper. This is the accommodation ENG-95885 exists to provide.</summary>
+	WrappedFlat = 1,
+
+	/// <summary>An empty <c>{}</c> payload was given the synthesized empty wrapper (declared capability).</summary>
+	SynthesizedEmpty = 2,
+
+	/// <summary>Refused: at least one top-level key is not a wire property of the args record.</summary>
+	RefusedUnknown = 3,
+
+	/// <summary>Refused: a wrapper object AND extra top-level keys arrived together.</summary>
+	RefusedAmbiguous = 4
+}
+
+/// <summary>
+/// ENG-95885. One classifier decision plus the ORIGINAL top-level key NAMES it applied to, captured
+/// before any rewrite.
+/// </summary>
+/// <remarks>
+/// Carries names only, never VALUES. An argument value can hold a password, a token or a connection
+/// string (<c>reg-web-app</c>, the credential-passthrough tools), and <c>clio/AGENTS.md</c> forbids
+/// logging secret-bearing configuration. Key names are already echoed to the caller by
+/// the unknown-argument and ambiguous-shape errors, so naming them adds no exposure that the response
+/// does not already carry.
+/// </remarks>
+/// <param name="Outcome">What the classifier decided.</param>
+/// <param name="TopLevelKeys">The payload's original top-level key names, pre-rewrite. Empty when nothing interesting happened.</param>
+internal readonly record struct McpArgumentShapeReport(
+	McpArgumentShapeOutcome Outcome,
+	IReadOnlyList<string> TopLevelKeys) {
+
+	/// <summary>The no-op report: nothing was rewritten and nothing was refused.</summary>
+	internal static McpArgumentShapeReport Untouched { get; } =
+		new(McpArgumentShapeOutcome.Untouched, []);
 }

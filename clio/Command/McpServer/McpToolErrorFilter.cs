@@ -376,7 +376,10 @@ public static class McpToolErrorFilter
 			return false;
 		}
 
-		return TryRefuseArguments(parameters, method, out result);
+		bool refused = TryRefuseArguments(
+			parameters, method, out result, out McpArgumentShapeReport report);
+		ReportArgumentShape(context, parameters.Name, report);
+		return refused;
 	}
 
 	/// <summary>
@@ -391,8 +394,22 @@ public static class McpToolErrorFilter
 	internal static bool TryRefuseArguments(
 		CallToolRequestParams parameters,
 		MethodInfo method,
-		out CallToolResult? result) {
+		out CallToolResult? result) =>
+		TryRefuseArguments(parameters, method, out result, out _);
+
+	/// <summary>
+	/// <see cref="TryRefuseArguments(CallToolRequestParams, MethodInfo, out CallToolResult?)"/>, plus the
+	/// classifier's decision and the payload's ORIGINAL top-level key names in
+	/// <paramref name="report"/> — captured BEFORE the in-place rewrite, which is the only point at which
+	/// a flat first attempt is still distinguishable from a correctly wrapped one (ENG-95885).
+	/// </summary>
+	internal static bool TryRefuseArguments(
+		CallToolRequestParams parameters,
+		MethodInfo method,
+		out CallToolResult? result,
+		out McpArgumentShapeReport report) {
 		result = null;
+		report = McpArgumentShapeReport.Untouched;
 
 		// The trigger gate, shared with clio-run by construction (see
 		// McpToolArgumentSupport.TryGetSingleCompositeParameter): a multi-parameter tool such as
@@ -419,6 +436,7 @@ public static class McpToolErrorFilter
 			if (method.GetCustomAttribute<McpAcceptsEmptyArgumentsAttribute>() is null) {
 				return false;
 			}
+			report = new McpArgumentShapeReport(McpArgumentShapeOutcome.SynthesizedEmpty, []);
 			parameters.Arguments = BuildWrappedArguments(wrapperName, []);
 			return false;
 		}
@@ -428,6 +446,8 @@ public static class McpToolErrorFilter
 				// The already-working wrapped shape — byte-compatible pass-through.
 				return false;
 			}
+			report = new McpArgumentShapeReport(
+				McpArgumentShapeOutcome.RefusedAmbiguous, [.. arguments.Keys]);
 			result = CreateJsonErrorResult(BuildAmbiguousShapeMessage(
 				parameters.Name,
 				wrapperName,
@@ -451,14 +471,91 @@ public static class McpToolErrorFilter
 			// declaration forwards the payload (so the tool's own overflow-bag diagnosis wins): the mere
 			// PRESENCE of a [JsonExtensionData] bag proves a record can SEE an unknown key, never that the
 			// tool VALIDATES it, so it is deliberately NOT the forward test.
+			report = new McpArgumentShapeReport(
+				McpArgumentShapeOutcome.RefusedUnknown, [.. arguments.Keys]);
 			result = CreateJsonErrorResult(BuildUnknownArgumentsMessage(
 				parameters.Name, wrapperName, canonicalNames, unknownKeys));
 			return true;
 		}
 
+		// Captured BEFORE the rewrite: afterwards Arguments is {"<wrapper>": {...}} and the flat first
+		// attempt is no longer visible to anyone downstream.
+		report = new McpArgumentShapeReport(McpArgumentShapeOutcome.WrappedFlat, [.. arguments.Keys]);
 		parameters.Arguments = BuildWrappedArguments(wrapperName, arguments);
 		return false;
 	}
+
+	/// <summary>
+	/// ENG-95885. Emits ONE advisory line naming what the flat-argument classifier did to a payload, so
+	/// the call-shape mix is observable from outside the filter. Silent for
+	/// <see cref="McpArgumentShapeOutcome.Untouched"/>, which is both the steady state and the state the
+	/// change is trying to reach — so a healthy server goes quiet rather than logging every call.
+	/// </summary>
+	/// <remarks>
+	/// <para>
+	/// Why this exists: the normalizer replaces <c>Arguments</c> IN PLACE, so a downstream observer sees
+	/// only the wrapped shape and cannot tell an accommodated flat call from a correct one. ENG-95885
+	/// does not close on merge — it closes when the wrapper error class is MEASURED at or near zero on a
+	/// later run — and without this line that measurement cannot distinguish "agents send wrapped now"
+	/// from "the filter is quietly fixing every call". The fix would hide its own effect.
+	/// </para>
+	/// <para>
+	/// Two transport constraints shape the delivery, both learned the hard way elsewhere in this file's
+	/// neighbourhood (see <c>McpServerCommand.WarnDuringStartup</c>): stdout is the JSON-RPC channel, so
+	/// a stray line there CORRUPTS the protocol and <see cref="Clio.Common.ConsoleLogger"/> therefore
+	/// suppresses every console write in MCP server mode; standard error is not part of the transport and
+	/// is the channel MCP hosts capture. The logger call is kept as well so a configured file sink still
+	/// receives the line. Stderr may be closed by a detached launcher, and losing an advisory sink must
+	/// never fail a tool call.
+	/// </para>
+	/// <para>
+	/// Key NAMES only, never values — see <see cref="McpArgumentShapeReport"/>. The text is redacted and
+	/// length-bounded on top of that, because a caller-supplied unknown key is arbitrary text.
+	/// </para>
+	/// </remarks>
+	private static void ReportArgumentShape(
+		RequestContext<CallToolRequestParams> context,
+		string? toolName,
+		in McpArgumentShapeReport report) {
+		if (report.Outcome == McpArgumentShapeOutcome.Untouched) {
+			return;
+		}
+
+		string keys = string.Join(", ", report.TopLevelKeys);
+		string message = Clio.Common.TextUtilities.SanitizeForDisplay(
+			SensitiveErrorTextRedactor.Redact(
+				$"mcp-argument-shape: tool='{toolName ?? UnknownToolName}' "
+				+ $"outcome={report.Outcome} keys=[{keys}]"),
+			maxLength: 1_000);
+
+		// Service-located, not injected: this seam is a static delegate with no constructor. An absent
+		// logger is normal (a unit test that registers only what it exercises) and must stay silent
+		// rather than throw.
+		if (context.Services?.GetService(typeof(Clio.Common.ILogger)) is Clio.Common.ILogger logger) {
+			if (IsRefusal(report.Outcome)) {
+				logger.WriteWarning(message);
+			} else {
+				logger.WriteInfo(message);
+			}
+		}
+
+		if (!Program.IsMcpServerMode) {
+			return;
+		}
+		try {
+			Console.Error.WriteLine($"[{(IsRefusal(report.Outcome) ? "WAR" : "INF")}] {message}");
+		}
+		catch (IOException) {
+			// Stderr is an advisory host channel and may be closed by a detached launcher.
+		}
+		catch (ObjectDisposedException) {
+			// Losing the advisory sink must never fail the tool call it describes.
+		}
+	}
+
+	/// <summary>True for the two outcomes that refused the call rather than accommodating it.</summary>
+	private static bool IsRefusal(McpArgumentShapeOutcome outcome) =>
+		outcome is McpArgumentShapeOutcome.RefusedUnknown or McpArgumentShapeOutcome.RefusedAmbiguous;
 
 	/// <summary>
 	/// Moves EVERY top-level key of <paramref name="arguments"/> into a single wrapper object. Replacing

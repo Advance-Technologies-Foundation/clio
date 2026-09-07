@@ -134,6 +134,16 @@ Rules to keep:
 - **Resident tools only.** The durable long-tail path (`McpDurableCallToolHandler` /
   `InvokeResolvedAsync`) has no `MatchedPrimitive` to reflect and stays wrapped-only; the long tail is
   reached through `clio-run`, which owns its own recovery.
+- **Keep the shape decision observable.** The classifier reports its outcome plus the ORIGINAL top-level
+  key names (`McpArgumentShapeReport`), and `McpToolErrorFilter.ReportArgumentShape` emits one advisory
+  line for every outcome EXCEPT `Untouched`. The rewrite is in place, so without that report a
+  downstream observer sees only the wrapped shape and cannot tell an accommodated flat call from a
+  correct one - and ENG-95885 closes on a MEASURED near-zero wrapper error class, so a silent rewrite
+  would hide the fix's own effect. Two constraints if you touch it: the line carries key NAMES only,
+  never argument VALUES (a value can be a password or a token), and it goes to the logger plus
+  **stderr** - never stdout, which is the JSON-RPC channel. `Untouched` stays silent on purpose: it is
+  the steady state and the state the change is trying to reach.
+
 - **Framework parameters are excluded by SDK ASSEMBLY, never by namespace name.**
   `McpToolArgumentSupport.IsFrameworkOwnedType` keys on the SDK assembly plus `IsAssignableFrom` on
   `McpServer`. Do not reintroduce a `Namespace.StartsWith("ModelContextProtocol")` match — it swallows

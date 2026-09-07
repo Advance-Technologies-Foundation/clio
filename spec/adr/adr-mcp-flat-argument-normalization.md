@@ -98,6 +98,36 @@ count and hands the normalizer a payload it must not rewrite. Assembly identity 
 cannot drift that way at the next SDK upgrade, and the boundary is pinned by
 `McpToolArgumentSupportTests`.
 
+### The rewrite must not hide itself
+
+`Arguments` is replaced in place, so after normalization every downstream observer - the host log, a
+support bundle, the Applicant run that gates this ticket's closure - sees only the wrapped shape. That
+makes an accommodated flat call indistinguishable from a correctly wrapped one, and this ticket closes
+on a **measured** near-zero wrapper error class. Left alone, the fix would make its own success
+unmeasurable.
+
+So the classifier returns `McpArgumentShapeReport` - its outcome plus the payload's original top-level
+key names, captured before the rewrite - and `McpToolErrorFilter.ReportArgumentShape` emits one
+advisory line per non-`Untouched` outcome. Three properties are deliberate:
+
+- **`Untouched` is silent.** It is both the steady state and the state we are trying to reach, so a
+  healthy server logs nothing rather than a line per call. Presence of lines is the signal; absence is
+  success. Pinned by a test whose sensitivity was verified by disabling the guard.
+- **Key names only, never values.** An argument value can hold a password, a token or a connection
+  string, and `clio/AGENTS.md` forbids logging secret-bearing configuration. Names are already echoed
+  to the caller by the unknown-argument and ambiguous-shape errors, so this adds no exposure the
+  response does not already carry. The report type structurally cannot carry a value.
+- **Logger plus stderr, never stdout.** Stdout is the JSON-RPC channel and a stray line there corrupts
+  the protocol - which is why `ConsoleLogger` suppresses every console write in MCP server mode, and
+  why an operator otherwise gets no diagnostic at all (issue #1100). Stderr is outside the transport
+  and is what MCP hosts capture. The logger call is kept so a configured file sink still receives the
+  line, and a closed stderr (detached launcher) is swallowed: losing an advisory sink must never fail
+  the tool call it describes.
+
+The logger is service-located from `context.Services`, not injected, because this seam is a static
+delegate with no constructor - the same reason the execution router and worker dispatcher are located
+there. An absent logger is normal and stays silent.
+
 ### Scope boundary: the durable long-tail path stays wrapped-only
 
 `McpDurableCallToolHandler` / `IClioRunExecutor.InvokeResolvedAsync` are **not** normalized. The filter
@@ -177,6 +207,10 @@ Negative / accepted:
 - Agent-facing error text changed: a JSON-encoded object argument now returns a precise shape-naming
   error instead of the raw `BytePositionInLine` serializer message. One existing e2e assertion was
   widened to accept it.
+- One advisory log line per non-`Untouched` classification (see "The rewrite must not hide itself").
+  On a server whose callers all send the wrapped shape this is zero lines; on one being driven by a
+  fresh agent it is one line per accommodated first attempt, which is exactly the quantity being
+  measured.
 - Reflection (`GetParameters` / `GetProperties` / `GetCustomAttribute`) runs per call on the
   classification path. Uncached, matching the pre-existing deserialization preflight on the same seam;
   negligible against a tool call that does an HTTP round-trip to a Creatio tenant. A

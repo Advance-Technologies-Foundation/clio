@@ -615,6 +615,204 @@ public sealed class McpToolErrorFilterTests
 			because: "a scalar co-key must still move into the wrapper alongside the composite ones");
 	}
 
+	// --- ENG-95885 observability (review round 2, finding 3) ---
+	//
+	// The normalizer rewrites Arguments IN PLACE, so without a report captured before the rewrite every
+	// downstream observer sees only the wrapped shape. ENG-95885 closes on a MEASURED near-zero wrapper
+	// error class, so a silent rewrite would make the fix hide its own effect.
+
+	private static RequestContext<CallToolRequestParams> WithRoutingAuthorityAndLogger(
+		RequestContext<CallToolRequestParams> context, Clio.Common.ILogger logger) {
+		context.Services = new ServiceCollection()
+			.AddSingleton<IMcpExecutionRouter>(
+				new McpExecutionRouter(
+					new McpToolExecutionMetadataReader(new McpToolCompatibilityCatalog()),
+					new McpWorkerCohort([]),
+					new McpWorkerPathGate(() => McpHostTransportKind.Stdio, () => false),
+					workerPathWired: true))
+			.AddSingleton(logger)
+			.BuildServiceProvider();
+		return context;
+	}
+
+	// Flattens the substitute's received log calls into "<MethodName>: <text>" lines, keeping only the
+	// shape report. Asserting on the METHOD name is what pins info-vs-warning; asserting on the text is
+	// what pins names-not-values.
+	private static string CapturedShapeLines(Clio.Common.ILogger logger) =>
+		string.Join(
+			System.Environment.NewLine,
+			logger.ReceivedCalls()
+				.Where(call => call.GetArguments() is [string text]
+					&& text.Contains("mcp-argument-shape", StringComparison.Ordinal))
+				.Select(call => $"{call.GetMethodInfo().Name}: {call.GetArguments()[0]}"));
+
+	[TestCase("environment-name", "WrappedFlat", false)]
+	[TestCase("not-a-field", "RefusedUnknown", true)]
+	[Category("Unit")]
+	[Description("The classifier reports what it did to the payload, naming the outcome and the ORIGINAL top-level keys, so the flat/wrapped call mix stays observable after the in-place rewrite has erased it (ENG-95885 review finding 3).")]
+	public void TryRefuseArguments_ShouldReportTheOutcome_AndTheOriginalKeys(
+		string key, string expectedOutcome, bool expectedRefusal) {
+		// Arrange
+		CallToolRequestParams parameters = new() {
+			Name = "list-apps",
+			Arguments = new Dictionary<string, JsonElement>(StringComparer.Ordinal) {
+				[key] = JsonSerializer.SerializeToElement("some-value")
+			}
+		};
+
+		// Act
+		bool refused = McpToolErrorFilter.TryRefuseArguments(
+			parameters, GetFakeToolMethod(), out CallToolResult? _,
+			out McpArgumentShapeReport report);
+
+		// Assert
+		refused.Should().Be(expectedRefusal,
+			because: "the reporting overload must not change the refusal decision the 3-arg form makes");
+		report.Outcome.ToString().Should().Be(expectedOutcome,
+			because: "the reported outcome is the only record of which shape the caller actually sent");
+		report.TopLevelKeys.Should().ContainSingle().Which.Should().Be(key,
+			because: "the ORIGINAL top-level key must be captured before the rewrite replaces it with the wrapper");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("An already-wrapped payload reports Untouched, so a healthy server that receives only correct shapes goes QUIET instead of logging a line per call (ENG-95885 review finding 3).")]
+	public void TryRefuseArguments_ShouldReportUntouched_WhenPayloadIsAlreadyWrapped() {
+		// Arrange
+		CallToolRequestParams parameters = new() {
+			Name = "list-apps",
+			Arguments = new Dictionary<string, JsonElement>(StringComparer.Ordinal) {
+				["args"] = JsonDocument.Parse("""{"environment-name":"local"}""").RootElement.Clone()
+			}
+		};
+
+		// Act
+		McpToolErrorFilter.TryRefuseArguments(
+			parameters, GetFakeToolMethod(), out CallToolResult? _,
+			out McpArgumentShapeReport report);
+
+		// Assert
+		report.Outcome.Should().Be(McpArgumentShapeOutcome.Untouched,
+			because: "the steady state is also the state ENG-95885 is trying to reach, so it must be silent");
+		report.TopLevelKeys.Should().BeEmpty(
+			because: "nothing happened, so there are no keys worth naming");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("The emitted shape line names the tool, the outcome and the key NAMES, and never the argument VALUES — an argument value can carry a password or a token, which clio/AGENTS.md forbids logging (ENG-95885 review finding 3).")]
+	public async Task Normalization_ShouldLogTheShapeDecision_WithoutEverLoggingArgumentValues() {
+		// Arrange
+		const string secretValue = "sup3r-s3cret-passw0rd";
+		Clio.Common.ILogger logger = Substitute.For<Clio.Common.ILogger>();
+		RequestContext<CallToolRequestParams> context = CreateContext(
+			"list-apps", new Dictionary<string, JsonElement> {
+				["environment-name"] = JsonSerializer.SerializeToElement(secretValue)
+			});
+		context.MatchedPrimitive = CreateRealTool();
+		context = WithRoutingAuthorityAndLogger(context, logger);
+		McpRequestHandler<CallToolRequestParams, CallToolResult> handler =
+			McpToolErrorFilter.HandleCallToolErrors(
+				(_, _) => ValueTask.FromResult(new CallToolResult { IsError = false }));
+
+		// Act
+		await handler(context, CancellationToken.None);
+
+		// Assert
+		string captured = CapturedShapeLines(logger);
+		captured.Should().Contain("WriteInfo",
+			because: "an accommodated flat call is informational, not a warning — nothing went wrong");
+		captured.Should().Contain("outcome=WrappedFlat",
+			because: "the measurement run needs the outcome to count flat first attempts");
+		captured.Should().Contain("environment-name",
+			because: "the key NAME is what makes the line actionable, and the caller is already told it");
+		captured.Should().NotContain(secretValue,
+			because: "an argument VALUE can be a password or a token and must never reach a log sink");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("An already-wrapped call emits NO shape line at all. This is the load-bearing half of the design: the line exists to measure a problem, so the state where the problem is gone must be silent, or every tool call in a healthy session would write to the host log (ENG-95885 review finding 3).")]
+	public async Task Normalization_ShouldEmitNoShapeLine_WhenPayloadIsAlreadyWrapped() {
+		// Arrange
+		Clio.Common.ILogger logger = Substitute.For<Clio.Common.ILogger>();
+		RequestContext<CallToolRequestParams> context = CreateContext(
+			"list-apps", new Dictionary<string, JsonElement> {
+				["args"] = JsonDocument.Parse("""{"environment-name":"local"}""").RootElement.Clone()
+			});
+		context.MatchedPrimitive = CreateRealTool();
+		context = WithRoutingAuthorityAndLogger(context, logger);
+		McpRequestHandler<CallToolRequestParams, CallToolResult> handler =
+			McpToolErrorFilter.HandleCallToolErrors(
+				(_, _) => ValueTask.FromResult(new CallToolResult { IsError = false }));
+
+		// Act
+		CallToolResult result = await handler(context, CancellationToken.None);
+
+		// Assert
+		result.IsError.Should().BeFalse(because: "the already-wrapped shape is the published contract");
+		CapturedShapeLines(logger).Should().BeEmpty(
+			because: "the steady state must cost nothing — a line per correctly-shaped call would make the "
+				+ "host log unreadable and the flat-call signal impossible to spot in it");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("A refused shape is logged as a WARNING rather than info, because unlike an accommodated flat call it means nothing ran (ENG-95885 review finding 3).")]
+	public async Task Normalization_ShouldLogARefusalAsWarning() {
+		// Arrange
+		Clio.Common.ILogger logger = Substitute.For<Clio.Common.ILogger>();
+		RequestContext<CallToolRequestParams> context = CreateContext(
+			"list-apps", new Dictionary<string, JsonElement> {
+				["not-a-field"] = JsonSerializer.SerializeToElement("x")
+			});
+		context.MatchedPrimitive = CreateRealTool();
+		context = WithRoutingAuthorityAndLogger(context, logger);
+		McpRequestHandler<CallToolRequestParams, CallToolResult> handler =
+			McpToolErrorFilter.HandleCallToolErrors(
+				(_, _) => ValueTask.FromResult(new CallToolResult { IsError = false }));
+
+		// Act
+		CallToolResult result = await handler(context, CancellationToken.None);
+
+		// Assert
+		result.IsError.Should().BeTrue(because: "an unknown-only payload is still refused");
+		string captured = CapturedShapeLines(logger);
+		captured.Should().Contain("WriteWarning",
+			because: "a refusal means the call did not run, which is a warning-level event");
+		captured.Should().Contain("outcome=RefusedUnknown",
+			because: "the refusal class must be distinguishable from an accommodation in the log");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Normalization still works when no ILogger is registered: the filter service-locates the logger from a static seam that has no constructor, and an absent advisory sink must never fail the tool call it would have described (ENG-95885 review finding 3).")]
+	public async Task Normalization_ShouldNotThrow_WhenNoLoggerIsRegistered() {
+		// Arrange
+		RequestContext<CallToolRequestParams> context = CreateContext(
+			"list-apps", new Dictionary<string, JsonElement> {
+				["environment-name"] = JsonSerializer.SerializeToElement("local")
+			});
+		context.MatchedPrimitive = CreateRealTool();
+		context = WithRoutingAuthority(context);
+		CallToolRequestParams? forwardedParams = null;
+		McpRequestHandler<CallToolRequestParams, CallToolResult> handler =
+			McpToolErrorFilter.HandleCallToolErrors((forwardedContext, _) => {
+				forwardedParams = forwardedContext.Params;
+				return ValueTask.FromResult(new CallToolResult { IsError = false });
+			});
+
+		// Act
+		CallToolResult result = await handler(context, CancellationToken.None);
+
+		// Assert
+		result.IsError.Should().BeFalse(
+			because: "a missing advisory log sink is not a caller error and must not surface as one");
+		forwardedParams!.Arguments.Should().ContainSingle()
+			.Which.Key.Should().Be("args",
+				because: "the rewrite must still happen when there is nobody to tell about it");
+	}
+
 	[Test]
 	[Category("Unit")]
 	[Description("T2: an already-wrapped payload passes through the filter unchanged — no rewrite, no hint, no error (ENG-95885 R1).")]
