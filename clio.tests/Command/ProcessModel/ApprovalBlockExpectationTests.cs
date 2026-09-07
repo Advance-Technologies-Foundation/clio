@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Linq;
 using Clio.Command.ProcessModel;
@@ -128,6 +128,74 @@ public class ApprovalBlockExpectationTests {
 			.Which.DescribeShaped.Should().BeTrue(
 				because: "approverType exists only on the read shape, so its presence in a REQUEST is proof the "
 					+ "caller pasted a describe result back without translating it");
+	}
+
+	[Test]
+	[Description("A PARTIALLY translated block — the nested approver the write contract wants, plus a leftover flat approverType from the describe it was built from — is NOT flagged as describe-shaped. The two live on different keys so they can coexist, and DataContractJsonSerializer discards the unknown flat member while the nested approver binds, so the approver lands and the element is configured.")]
+	public void FromOperations_ShouldNotFlagABlockWhoseApproverWasTranslated() {
+		// Arrange — a describe result with the approver translated and the flat member left behind
+		const string operations = """
+			[{"op":"setElement","elementName":"Approve1","elementUpdate":{"approval":{
+			   "object":"Order","approverType":"user","approver":{"type":"user"}}}}]
+			""";
+
+		// Act
+		IReadOnlyList<ApprovalBlockExpectation.ApprovalExpectation> expected = ApprovalBlockExpectation.FromOperations(operations);
+
+		// Assert
+		expected.Should().ContainSingle(because: "the operation asks for an approval configuration")
+			.Which.Should().BeEquivalentTo(
+				new { DescribeShaped = false, ExpectsApprover = true },
+				options => options.ExcludingMissingMembers(),
+				because: "approverType is read-shape evidence only when the nested 'approver' is ABSENT — here it "
+					+ "is present and binds, so flagging the block would short-circuit DropsFor and report an "
+					+ "element whose approver landed as unconfigured, while ExpectsApprover must stay on so the "
+					+ "read-back is still checked for the approver that was sent");
+	}
+
+	[Test]
+	[Description("End to end for the partially translated block: with the approver present in the read-back nothing is reported. This is the case the short-circuit used to lose — DescribeShapedRequest returns before the element is resolved, so no later check could have corrected the accusation.")]
+	public void Missing_ShouldStaySilent_WhenAPartiallyTranslatedBlockLandedItsApprover() {
+		// Arrange
+		const string operations = """
+			[{"op":"setElement","elementName":"Approve1","elementUpdate":{"approval":{
+			   "object":"Order","approverType":"user","approver":{"type":"user"}}}}]
+			""";
+		DescribeProcessResult described = new() {
+			Elements = [new DescribedElement {
+				Name = "Approve1",
+				Approval = new DescribedApproval { ApproverType = "user" }
+			}]
+		};
+
+		// Act
+		IReadOnlyList<ApprovalBlockExpectation.DroppedApproval> missing = ApprovalBlockExpectation.Missing(
+			described, ApprovalBlockExpectation.FromOperations(operations));
+
+		// Assert
+		missing.Should().BeEmpty(
+			because: "the server bound the nested approver and discarded the leftover flat member, so the element "
+				+ "IS configured — and behind the version floor this marker is the one that fires in ordinary "
+				+ "operation, which makes a false accusation here the check's most likely output, not its rarest");
+	}
+
+	[Test]
+	[Description("A leftover flat notifyApprover alongside a translated approver IS still flagged, and must be: unlike approverType it shares its key with the write shape, so the boolean cannot coexist with the object it replaced — the notification genuinely bound nothing and telling the caller to translate is correct advice.")]
+	public void FromOperations_ShouldStillFlagALeftoverFlatNotification() {
+		// Arrange
+		const string operations = """
+			[{"op":"setElement","elementName":"Approve1","elementUpdate":{"approval":{
+			   "object":"Order","approver":{"type":"user"},"notifyApprover":true}}}]
+			""";
+
+		// Act
+		IReadOnlyList<ApprovalBlockExpectation.ApprovalExpectation> expected = ApprovalBlockExpectation.FromOperations(operations);
+
+		// Assert
+		expected.Should().ContainSingle(because: "the operation asks for an approval configuration")
+			.Which.DescribeShaped.Should().BeTrue(
+				because: "narrowing the approver marker must not narrow the notification ones — a boolean where "
+					+ "the write contract expects an object binds nothing, so something really was dropped");
 	}
 
 	[Test]

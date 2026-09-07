@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text.Json;
@@ -35,8 +35,8 @@ public static class ApprovalBlockExpectation {
 	private const string NotifyAuthorKey = "notifyAuthor";
 	private const string EmailTemplateKey = "emailTemplate";
 	private const string RecipientKey = "recipient";
-	// A member that exists ONLY on the read shape. Its presence in a REQUEST means a described block was fed
-	// back verbatim rather than translated, which is the one caller mistake this check can see before the server does.
+	// A member that exists ONLY on the read shape, on a DIFFERENT key from the write shape's 'approver'. See
+	// IsReadShapeOnly for why that difference makes its presence weaker evidence than the notification markers'.
 	private const string ApproverTypeKey = "approverType";
 
 	/// <summary>
@@ -112,10 +112,31 @@ public static class ApprovalBlockExpectation {
 			ExpectsAuthorTemplate: HasTemplate(approval[NotifyAuthorKey]),
 			ExpectsAuthorRecipient: approval[NotifyAuthorKey] is JsonObject author
 				&& author[RecipientKey] is JsonObject,
-			DescribeShaped: approval[ApproverTypeKey] is not null
-				|| approval[NotifyApproverKey] is JsonValue
-				|| approval[NotifyAuthorKey] is JsonValue));
+			DescribeShaped: IsReadShapeOnly(approval)));
 	}
+
+	/// <summary>
+	/// True when the block was fed back in the shape describe REPORTS instead of being translated into the one
+	/// create/modify accepts — and, crucially, when nothing in it bound.
+	/// <para>The three markers are NOT symmetric, and the difference decides how each may be tested.
+	/// <c>notifyApprover</c> and <c>notifyAuthor</c> use the SAME key for both shapes — a boolean on read, an
+	/// object on write — so the two cannot coexist and a <c>JsonValue</c> there is proof on its own that the
+	/// notification bound nothing. The approver uses DIFFERENT keys: <c>approverType</c> on read,
+	/// <c>approver</c> on write. Those CAN coexist, and a PARTIALLY translated block is exactly what that looks
+	/// like — the nested approver binds normally and the leftover flat member is discarded unread, because no
+	/// write contract implements <c>IExtensibleDataObject</c> and <c>DataContractJsonSerializer</c> drops an
+	/// unknown member silently rather than rejecting it.</para>
+	/// <para>So the flat member is read-shape evidence only when the nested form is ABSENT. Treating it as proof
+	/// regardless would report an element whose approver landed as unconfigured, and this marker short-circuits
+	/// <see cref="DropsFor"/> before the read-back is consulted, so nothing downstream could correct it. That
+	/// matters more than its narrow shape suggests: behind the version floor every other
+	/// <see cref="ApprovalDropKind"/> describes a server too old to reach this code at all, which leaves this the
+	/// marker that fires in ordinary operation.</para>
+	/// </summary>
+	private static bool IsReadShapeOnly(JsonObject approval) =>
+		(approval[ApproverKey] is not JsonObject && approval[ApproverTypeKey] is not null)
+		|| approval[NotifyApproverKey] is JsonValue
+		|| approval[NotifyAuthorKey] is JsonValue;
 
 	/// <summary>True when a notification block was sent carrying an <c>emailTemplate</c> the server must store.</summary>
 	private static bool HasTemplate(JsonNode? notification) =>
@@ -305,9 +326,11 @@ public static class ApprovalBlockExpectation {
 	/// <param name="ExpectsAuthorTemplate">True when <c>notifyAuthor</c> carried an <c>emailTemplate</c>.</param>
 	/// <param name="ExpectsAuthorRecipient">True when <c>notifyAuthor</c> carried a <c>recipient</c> object.</param>
 	/// <param name="DescribeShaped">
-	/// True when the sent block is in the shape describe REPORTS rather than the one create/modify accepts. Unlike
-	/// the others this is decidable without the server, and it is the caller's own mistake rather than a stale
-	/// deployment — so it is reported first and does not carry the install-a-newer-package advice.
+	/// True when the sent block is in the shape describe REPORTS rather than the one create/modify accepts, AND
+	/// nothing in it bound — a partially translated block whose nested <c>approver</c> applies is not flagged;
+	/// see <see cref="IsReadShapeOnly"/> for why the approver marker is qualified and the notification ones are
+	/// not. Unlike the others this is decidable without the server, and it is the caller's own mistake rather
+	/// than a stale deployment — so it is reported first and does not carry the install-a-newer-package advice.
 	/// </param>
 	public sealed record ApprovalExpectation(string ElementName, bool ExpectsApprover,
 		bool ExpectsApproverTemplate = false, bool ExpectsAuthorTemplate = false,
