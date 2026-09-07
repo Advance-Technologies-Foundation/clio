@@ -49,9 +49,10 @@ public static class CreateBusinessProcessPrompt {
 		 `[[element:Element.Output.Column]]`; the exact parameter/element names come from the `parameters[]` / `elements[]` you declare in THIS same descriptor
 		 — there is no process to `describe-business-process` yet (that is the modify path); an unknown name is rejected, and column names are case-sensitive.
 		 To have a USER fill in a record on its edit page, add an `openEditPage` element with an `openEditPage` block —
-		 that is the DEFAULT whenever someone fills in COLUMNS of a record, and the two other page elements
-		 (Auto-generated page, Pre-configured page) are not buildable here, so choosing one of them for such a request
-		 produces nothing. Decide the element yourself; ask about the object or column if unsure, never about which
+		 that is the DEFAULT whenever someone fills in COLUMNS of a record. Of the two other page elements,
+		 Auto-generated page is not buildable here, so choosing it for such a request produces nothing; Pre-configured
+		 page IS buildable (below) and is the right choice only when the user is to work on a SPECIFIC existing Freedom
+		 UI page rather than on a record's columns. Decide the element yourself; ask about the object or column if unsure, never about which
 		 BPMN element to use.
 		 Pick the page FIRST — the target object and, for a typed object, the record type are derived from it: call
 		 `list-entity-client-schemas` for the object, union its `sections[]` and `editPages[]`, and prefer an entry
@@ -67,6 +68,21 @@ public static class CreateBusinessProcessPrompt {
 		 name/id, and `showPage`) to say who fills the page in; omitting it leaves the step unassigned. Add
 		 `logActivity` to make the step create an Activity record — each of `startIn`/`duration`/`remindIn` is a
 		 `value`+`unit` pair and the unit is required with a non-zero value, because the platform stores the number
-		 and the unit separately and a number alone silently keeps the old unit. Confirm the target package with the user before building.
+		 and the unit separately and a number alone silently keeps the old unit.
+		 To hand a user a purpose-built page and resume when they press a completing button, add a
+		 `preconfiguredPage` element with a `preconfiguredPage` block. Its `page` must already exist as a
+		 **Freedom UI** page — the server never creates one, and it refuses both an unknown page and a Classic
+		 UI page — so when nothing suitable exists, propose a page to the user and create it through the normal
+		 `create-page` flow FIRST. At least one completing `button` is REQUIRED and is not defaulted for you:
+		 an element without one saves green and then hangs forever at run time. The page's buttons and data
+		 sources are FACTS you must read with `get-process-page-facts` and pass through unchanged — a page
+		 inherits its buttons from its template chain, so the server cannot see them. Both are CHECKED and a
+		 name the page does not have is REFUSED: an invented button raises a tag nothing matches, and an
+		 invented data source makes the completing button abandon the completion, leaving the page open with
+		 no error and the instance stuck at `Running`.
+		 A SUCCESSFUL build can still report caveats, and they arrive as `message-type: "Warning"` entries in
+		 `execution-log-messages` — there is no separate `warnings` field on the response, so looking for one
+		 and finding nothing is not evidence there were none. Confirm the target package with the
+		 user before building.
 		 """;
 }

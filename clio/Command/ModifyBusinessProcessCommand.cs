@@ -60,6 +60,12 @@ namespace Clio.Command;
 // - the same "server starts accepting an input form an older one refuses" shape that produced the
 // 1.3.1.1 literal. The number below satisfies both that and the message contract described above.
 //
+// The preconfiguredPage block ENG-92705 adds needs 1.4.0.0 for the same reason the others are here: a
+// server without it accepts the element through the documented userTask fallback route - a plain user task
+// it does recognise - and silently discards the block while answering success, so the process saves
+// carrying a step that shows nobody a page. It is SUBSUMED by the literal below, which is higher; it is
+// named because the next person to move this floor needs to know it cannot go below 1.4.0.0.
+//
 // ===== two requirement lines met in the ENG-92713 merge, and NO released archive carries both =====
 // Master's line above stops at 1.4.0.44; the ENG-92713 line below stops at 1.4.11.0, which was cut
 // BEFORE this branch merged main and therefore predates every formula/branch behaviour master needs.
@@ -123,7 +129,22 @@ namespace Clio.Command;
 // minor (crt-process-builder#50) — rather than as the branch stamp the behaviour first appeared under. The
 // two rules compose without conflict: this literal still moves only when clio depends on or advertises new
 // server behaviour, and it is still asserted as "the shipped archive satisfies it", not "equals it".
-[RequiresPackage(BundledPackages.ProcessBuilderPackageName, "1.6.0.0",
+//
+// AND ONE PATCH LEVEL ABOVE IT, 1.6.0.1, for a preconfiguredPage promise only THIS command makes: a page
+// change RECONCILES the element's data sources - the call must declare them, an undeclared one is REMOVED
+// and reported, and the removal is REFUSED while another parameter still maps from it. Below 1.6.0.1 the
+// same call is ACCEPTED with dataSources omitted, the previous page's DataSource_* parameter is carried
+// onto a page that does not declare it, and the started instance never leaves Running: the completing
+// button resolves the stored source name against the page the element is now on, finds nothing, and
+// abandons the completion with no error - while describe-business-process still answers inSync:true, so
+// nothing downstream shows it (ENG-95461, reproduced on a stand). The same "silently discards while
+// answering success" shape as the paragraph above, one field over. 1.6.0.1 and not 1.6.0.0 because 1.6.0.0
+// was stamped for the Approval delivery BEFORE that fix merged (crt-process-builder#46, restamped by #51),
+// so it is the lowest archive carrying it - not because it is what this clio bundles. Create stays at
+// 1.6.0.0: it cannot change an element's page, so nothing it advertises depends on this and its
+// environments need no upgrade. The rule above is unchanged by the raise - a floor moves when clio starts
+// ADVERTISING behaviour the deployed server may not have, and this description now does.
+[RequiresPackage(BundledPackages.ProcessBuilderPackageName, "1.6.0.1",
 	Hint = BundledPackages.ProcessBuilderInstallHint)]
 public sealed class ModifyBusinessProcessOptions : EnvironmentOptions {
 	/// <summary>Process code (schema Name) to edit. Provide exactly one of <see cref="ProcessName"/> or <see cref="ProcessUid"/>.</summary>
@@ -156,6 +177,7 @@ public sealed class ModifyBusinessProcessService(
 	ISettingsRepository settingsRepository,
 	IApplicationClientFactory applicationClientFactory,
 	IServiceUrlBuilder serviceUrlBuilder,
+	IProcessPageFactsChecker pageFactsChecker,
 	ILogger logger)
 	: IModifyBusinessProcessService {
 	private static readonly JsonSerializerOptions JsonOptions = new() {
@@ -190,6 +212,18 @@ public sealed class ModifyBusinessProcessService(
 			requestObject["uid"] = request.ProcessUid;
 		}
 		requestObject["operations"] = ParseOperations(request.OperationsJson);
+
+		// Same reason as the build path: an invented button or data-source name survives every server-side check
+		// and only shows itself at run time, as a step that never completes. The retarget path needs it most —
+		// moving a step onto a page with fewer data sources is how a working element becomes an unfinishable one.
+		ProcessPageCheckResult pageCheck =
+			pageFactsChecker.CheckPreconfiguredPages(environmentName, requestObject["operations"]);
+		if (!string.IsNullOrWhiteSpace(pageCheck?.Error)) {
+			throw new InvalidOperationException(pageCheck.Error);
+		}
+		foreach (string pageWarning in pageCheck?.Warnings ?? []) {
+			logger.WriteWarning(pageWarning);
+		}
 
 		using IOwnedApplicationClient client = applicationClientFactory.CreateOwnedEnvironmentClient(environmentSettings);
 		string url = serviceUrlBuilder.Build(ServiceUrlBuilder.KnownRoute.ModifyProcess, environmentSettings);

@@ -2,6 +2,7 @@ using System;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using Clio.Command;
+using Clio.Command.ProcessModel;
 using Clio.Common;
 using Clio.UserEnvironment;
 using FluentAssertions;
@@ -32,7 +33,7 @@ public sealed class ModifyBusinessProcessServiceTests {
 		factory.CreateEnvironmentClient(env).Returns(client);
 		IServiceUrlBuilder urlBuilder = Substitute.For<IServiceUrlBuilder>();
 		urlBuilder.Build(ServiceUrlBuilder.KnownRoute.ModifyProcess, env).Returns(ModifyUrl);
-		return new ModifyBusinessProcessService(settings, factory, urlBuilder, Substitute.For<ILogger>());
+		return new ModifyBusinessProcessService(settings, factory, urlBuilder, Substitute.For<IProcessPageFactsChecker>(), Substitute.For<ILogger>());
 	}
 
 	[Test]
