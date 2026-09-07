@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Text.Json;
 using Clio.Command.McpServer.Tools;
@@ -419,7 +419,12 @@ public class SetBackgroundImageCommand : RemoteCommand<SetBackgroundImageOptions
 				return false;
 			}
 			using JsonDocument document = JsonDocument.Parse(response);
-			if (ODataResponseError.TryDetect(document.RootElement, out string serverError)) {
+			//Every caller hands this an ODataKeyFormatter.CollectionPath URL and expects the standard OData
+			//"value" collection below, so the response has to be classified as OData. Under Service the
+			//BaseResponse heuristics run over entity data, and an entity carrying a business Success:false
+			//column was rejected as a service failure.
+			if (CreatioResponseError.TryDetect(document.RootElement, CreatioResponseContext.ODataPayload,
+				out string serverError)) {
 				error = serverError;
 				return false;
 			}

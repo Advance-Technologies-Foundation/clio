@@ -291,6 +291,7 @@ public class LinkCoreSrcCommand : Command<LinkCoreSrcOptions>
 	private readonly IValidator<LinkCoreSrcOptions> _validator;
 	private readonly ISystemServiceManager _systemServiceManager;
 	private readonly IUpdateIISSitePhysicalPathHandler _updateIISSitePhysicalPathHandler;
+	private static readonly TimeSpan KestrelUrlRegexTimeout = TimeSpan.FromSeconds(1);
 
 	#endregion
 
@@ -554,7 +555,9 @@ public class LinkCoreSrcCommand : Command<LinkCoreSrcOptions>
 				updatedJson = System.Text.RegularExpressions.Regex.Replace(
 					updatedJson,
 					@"""Url""\s*:\s*""http://\[\:\:\]:\d+""",
-					$@"""Url"": ""http://[::]:{port}"""
+					$@"""Url"": ""http://[::]:{port}""",
+					System.Text.RegularExpressions.RegexOptions.None,
+					KestrelUrlRegexTimeout
 				);
 
 				// If no Kestrel Http URL was found, try to insert it

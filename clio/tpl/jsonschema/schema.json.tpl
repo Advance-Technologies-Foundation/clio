@@ -37,10 +37,9 @@
 			"type": "string",
 			"description": "Default environment key"
 		},
-		"Autoupdate": {
-			"type": "boolean",
-			"description": "Auto update clio",
-			"default": false
+		"autoupdate": {
+			"$ref": "#/definitions/autoupdatesettings",
+			"description": "Independent best-effort update schedules for clio, knowledge, and the Creatio toolkit"
 		},
 		"dbConnectionStringKeys": {
 			"type": "object",
@@ -113,10 +112,39 @@
 	"description": "Clio environment description file",
 	"required": [
 		"ActiveEnvironmentKey",
-		"Autoupdate",
+		"autoupdate",
 		"Environments"
 	],
 	"definitions": {
+		"autoupdatepolicy": {
+			"type": "object",
+			"additionalProperties": false,
+			"required": ["enabled", "frequency-minutes"],
+			"properties": {
+				"enabled": { "type": "boolean", "default": true },
+				"frequency-minutes": { "type": "integer", "minimum": 1 },
+				"next-run": { "type": "string", "format": "date-time" }
+			}
+		},
+		"autoupdatesettings": {
+			"type": "object",
+			"additionalProperties": false,
+			"required": ["clio", "knowledge", "toolkit"],
+			"properties": {
+				"clio": {
+					"allOf": [{ "$ref": "#/definitions/autoupdatepolicy" }],
+					"default": { "enabled": true, "frequency-minutes": 480 }
+				},
+				"knowledge": {
+					"allOf": [{ "$ref": "#/definitions/autoupdatepolicy" }],
+					"default": { "enabled": true, "frequency-minutes": 60 }
+				},
+				"toolkit": {
+					"allOf": [{ "$ref": "#/definitions/autoupdatepolicy" }],
+					"default": { "enabled": true, "frequency-minutes": 60 }
+				}
+			}
+		},
 		"deploycreatiodefaults": {
 			"type": "object",
 			"additionalProperties": false,

@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text.Json;
@@ -208,6 +208,55 @@ public sealed class ModifyBusinessProcessToolE2ETests {
 		string callResultJson = JsonSerializer.Serialize(callResult);
 		callResultJson.Should().Contain(processName,
 			because: "a successful edit reports the edited schema name (run against an environment with the ProcessDesignService package and a 'City' object)");
+	}
+
+	[Test]
+	[Description("Over the real MCP path: a Lookup PROCESS PARAMETER default set through addParameter's 'value' gets the referenced record's NAME resolved into valueDisplay exactly like a mapping does - and, on that same route, an already-composed [#Lookup...#] macro is REFUSED rather than decoded. Pins the documented distinction between the two paths: name resolution is shared (ProcessParameterService and ProcessMappingService both call the validator), the macro decode is the mapping route only (NormalizeConstantValue has no counterpart in ProcessParameterService). A refactor collapsing either path fails here.")]
+	[AllureTag(ToolName)]
+	[AllureName("modify-business-process resolves a Lookup default's display name on addParameter and refuses the macro there")]
+	public async Task ModifyBusinessProcess_Should_ResolveLookupDefaultName_OnAddParameter_AndRefuseTheMacroThere() {
+		// Arrange
+		await using ArrangeContext context = await ArrangeAsync(requireReachableEnvironment: true);
+		string processName = $"UsrClioBpLookupDefaultE2e{Guid.NewGuid():N}";
+		await CreateProcessAsync(context, processName, BuildPerformTaskDescriptor(processName));
+
+		// Act 1 - a Lookup process parameter whose default is a bare record Guid
+		await ModifyExpectingSuccessAsync(context, processName, $$"""
+			[ { "op": "addParameter", "parameter": { "name": "DefaultCategory", "referenceSchema": "ActivityCategory",
+			    "direction": "In", "value": "{{ToDoActivityCategoryId}}" } } ]
+			""");
+		DescribeProcessResult described = ParseDescribeResult(await CallToolAsync(context, DescribeProcessTool.ToolName,
+			new Dictionary<string, object?> {
+				["environment-name"] = context.EnvironmentName,
+				["process-name"] = processName
+			}));
+		DescribedParameter category = described.Parameters.Single(parameter => parameter.Name == "DefaultCategory");
+
+		// Assert 1 - the default is the ConstValue the runtime reads, and it is NAMED, on this route too
+		category.Source.Should().Be("ConstValue",
+			because: "a process parameter's lookup default is stored in the same encoding as an element-parameter constant");
+		category.Value.Should().BeEquivalentTo(ToDoActivityCategoryId,
+			because: "the stored value stays the bare record id - the name is added beside it, never in its place");
+		AssertResolvedDisplayName(category.ValueDisplay, category.Value);
+
+		// Act 2 - the macro form on THIS route: setParameter has no decode, so it must be refused, not stored
+		CallToolResult refusal = await CallToolAsync(context, ToolName, new Dictionary<string, object?> {
+			["environment-name"] = context.EnvironmentName,
+			["process-name"] = processName,
+			["operations"] = $$"""[ { "op": "setParameter", "parameterName": "DefaultCategory", "parameterUpdate": { "value": "[#Lookup.{{ActivityCategoryObjectUId}}.{{ToDoActivityCategoryId}}#]" } } ]"""
+		});
+
+		// Assert 2 - refused with the bare-Guid route named, and the earlier default untouched
+		SerializeToolText(refusal).Should().Contain("expression",
+			because: "addParameter/setParameter take a bare Guid only; the macro decode is the MAPPING route, so here the "
+				+ "macro must fall through to the standard non-Guid refusal that names the routes");
+		DescribedParameter after = ParseDescribeResult(await CallToolAsync(context, DescribeProcessTool.ToolName,
+			new Dictionary<string, object?> {
+				["environment-name"] = context.EnvironmentName,
+				["process-name"] = processName
+			})).Parameters.Single(parameter => parameter.Name == "DefaultCategory");
+		after.Value.Should().BeEquivalentTo(ToDoActivityCategoryId,
+			because: "a refused setParameter leaves the parameter exactly as it was - the macro was neither decoded nor stored");
 	}
 
 	[Test]
@@ -550,6 +599,355 @@ public sealed class ModifyBusinessProcessToolE2ETests {
 		]
 		""";
 
+	[Test]
+	[Description("Over the real MCP path, setFlowCondition turns an existing plain flow into a conditional one and the condition reads back through describe. Unit tests cannot reach this: the platform's SaveSchema is non-virtual, so persisting the re-kinded flow and reading it back is only provable against a real server.")]
+	[AllureTag(ToolName)]
+	[AllureName("modify-business-process sets a flow condition that reads back")]
+	public async Task ModifyBusinessProcess_Should_SetFlowCondition_ThatReadsBack() {
+		// Arrange - a linear start -> task -> end process, whose task->end flow is a plain sequence flow.
+		await using ArrangeContext context = await ArrangeAsync(requireReachableEnvironment: true);
+		string processName = $"UsrClioBpFlowCondE2e{Guid.NewGuid():N}";
+		await CallToolAsync(context, CreateToolName, new Dictionary<string, object?> {
+			["environment-name"] = context.EnvironmentName,
+			["descriptor"] = BuildDescriptor(processName)
+		});
+
+		// Act
+		CallToolResult callResult = await CallToolAsync(context, ToolName, new Dictionary<string, object?> {
+			["environment-name"] = context.EnvironmentName,
+			["process-name"] = processName,
+			["operations"] = BuildSetFlowConditionOperations("1 == 1")
+		});
+
+		// Assert
+		callResult.IsError.Should().NotBeTrue(
+			because: "setting a condition on an existing flow is a supported edit; no gateway is needed, the platform "
+				+ "synthesizes one for a conditional flow whose source is an activity");
+		DescribedFlow branch = await ReadFlowAsync(context, processName, "task1", "EndEvent1");
+		branch.Kind.Should().Be("conditional",
+			because: "the flow must be re-kinded to a real conditional flow, not merely carry the condition text");
+		branch.Condition.Should().Be("1 == 1",
+			because: "the condition has to survive the save AND clio's own re-serialize - DescribedFlow has no "
+				+ "typed property, and a caller reads it by NAME - the extension-data bag added later carries an "
+				+ "undeclared field but does not make it addressable, so a missing property still costs the "
+				+ "caller the answer");
+	}
+
+	[Test]
+	[Description("Over the real MCP path, a conditional flow reads back with branchesOnActivityResult present and FALSE. The field's whole purpose is to tell a caller that a branch's condition text will be ignored at run time, and a property lost in clio's re-serialize does not surface as an error, it surfaces as a flow that silently claims its condition is live - DescribedFlow has an extension-data bag now, which keeps an UNDECLARED field alive but does not make it addressable by name. The TRUE case cannot be arranged here: only the designer populates a flow's activity-result map, and setFlowCondition refuses to write a condition onto one, so it stays a manual case against a hand-authored process.")]
+	[AllureTag(ToolName)]
+	[AllureTag(DescribeToolName)]
+	[AllureName("describe reports branchesOnActivityResult on a conditional flow")]
+	public async Task ModifyBusinessProcess_Should_ReportBranchesOnActivityResult_OnAConditionalFlow() {
+		// Arrange - the same linear process the condition round-trip uses, so the only new thing under test
+		// is the field itself.
+		await using ArrangeContext context = await ArrangeAsync(requireReachableEnvironment: true);
+		string processName = $"UsrClioBpBranchFlagE2e{Guid.NewGuid():N}";
+		await CallToolAsync(context, CreateToolName, new Dictionary<string, object?> {
+			["environment-name"] = context.EnvironmentName,
+			["descriptor"] = BuildDescriptor(processName)
+		});
+		await CallToolAsync(context, ToolName, new Dictionary<string, object?> {
+			["environment-name"] = context.EnvironmentName,
+			["process-name"] = processName,
+			["operations"] = BuildSetFlowConditionOperations("1 == 1")
+		});
+
+		// Act
+		CallToolResult describeResult = await CallToolAsync(context, DescribeProcessTool.ToolName,
+			new Dictionary<string, object?> {
+				["environment-name"] = context.EnvironmentName,
+				["process-name"] = processName
+			});
+
+		// Assert
+		string describeJson = JsonSerializer.Serialize(describeResult);
+		describeJson.Should().Contain("branchesOnActivityResult",
+			because: "the property has to reach the caller - a flow whose condition the platform ignores is "
+				+ "indistinguishable from one it evaluates unless describe says so");
+		DescribedFlow branch = await ReadFlowAsync(context, processName, "task1", "EndEvent1");
+		branch.BranchesOnActivityResult.Should().BeFalse(
+			because: "a condition written through setFlowCondition is a FORMULA branch; reporting it as "
+				+ "result-driven would tell the caller its own condition will never be evaluated");
+		branch.Condition.Should().Be("1 == 1",
+			because: "the two fields are read from the same flow and both have to survive the round trip - "
+				+ "asserting the flag alone would pass on a describe that dropped the condition");
+	}
+
+	[Test]
+	[Description("Over the real MCP path, an unrecognised macro family is REFUSED by the platform's own pre-save validation. This test asserted a WARNING until it was first run against a stand; the correction is the point, and it is also what removed the package's own accept-with-a-notice for such a family, since the notice was raised and then dropped on every shape anyone measured. Measured at 1.4.0.38 over three families - a fictional one and the two REAL ones the package deliberately did not allow-list, [#ColumnValue...#] and [#SamplingColumnValue...#] - all three refused with 'Process validation failed'; the same holds on a CONDITION, where [#Price#] > 100 is refused with 'Expression expected (at index 0)'. From 1.4.0.41 there is no package-side check on this path at all, so this test now asserts the only thing that ever refused. The Warning channel is real on other paths (see BuildProcessResponse.Warnings) but a macro family cannot demonstrate it on any shape.")]
+	[AllureTag(ToolName)]
+	[AllureName("modify-business-process refuses an unrecognised macro family at the platform gate")]
+	public async Task ModifyBusinessProcess_Should_RefuseAnUnrecognisedMacroFamily_AtThePlatformGate() {
+		// Arrange
+		await using ArrangeContext context = await ArrangeAsync(requireReachableEnvironment: true);
+		string processName = $"UsrClioBpWarnE2e{Guid.NewGuid():N}";
+		await CallToolAsync(context, CreateToolName, new Dictionary<string, object?> {
+			["environment-name"] = context.EnvironmentName,
+			// The FORMULA-TARGET descriptor, which declares the Sum parameter the mapping below targets.
+			// With the plain one this test arranged a mapping onto a parameter that does not exist, so the
+			// operation was refused with "Process parameter 'Sum' was not found." before the macro-family
+			// notice could be raised - a test that never reached the guard it names. It had never been run
+			// against a stand, because this tier is not in CI.
+			["descriptor"] = BuildFormulaTargetDescriptor(processName)
+		});
+
+		// Act - a macro family no converter resolves, on a MAPPING. The platform's pre-save validation is what
+		// refuses it, and since 1.4.0.41 it is the only thing that looks at the expression at all.
+		CallToolResult callResult = await CallToolAsync(context, ToolName, new Dictionary<string, object?> {
+			["environment-name"] = context.EnvironmentName,
+			["process-name"] = processName,
+			["operations"] = BuildFormulaMappingOperations("[#UsrUnknownDialect.Something#]")
+		});
+
+		// Assert
+		string callResultJson = JsonSerializer.Serialize(callResult);
+		callResultJson.Should().Contain("Process validation failed",
+			because: "the refusal comes from the PLATFORM's pre-save validation, not from this package's "
+				+ "validator - naming the phrase is what distinguishes the two, and an earlier version of this "
+				+ "test asserted a Warning that no stand ever produced");
+		callResultJson.Should().Contain("UsrUnknownDialect",
+			because: "the refusal has to quote the expression, or the caller cannot see which macro the platform "
+				+ "could not convert. It survives VERBATIM here for a reason worth knowing: the platform quotes "
+				+ "the CONVERTED text, and an unrecognised family is exactly the text no converter touches - a "
+				+ "fractional literal would come back as 1.5m and a parameter reference as the parameter name");
+	}
+
+	[Test]
+	[Description("Over the real MCP path, an invalid condition is refused BY THE SERVER and nothing is written. This is the check that proves validation is server-side rather than a client-side convenience an agent could route around.")]
+	[AllureTag(ToolName)]
+	[AllureName("modify-business-process refuses an invalid flow condition")]
+	public async Task ModifyBusinessProcess_Should_RefuseInvalidFlowCondition() {
+		// Arrange
+		await using ArrangeContext context = await ArrangeAsync(requireReachableEnvironment: true);
+		string processName = $"UsrClioBpBadCondE2e{Guid.NewGuid():N}";
+		await CallToolAsync(context, CreateToolName, new Dictionary<string, object?> {
+			["environment-name"] = context.EnvironmentName,
+			["descriptor"] = BuildDescriptor(processName)
+		});
+
+		// Act - references an identifier that does not exist in this process.
+		CallToolResult callResult = await CallToolAsync(context, ToolName, new Dictionary<string, object?> {
+			["environment-name"] = context.EnvironmentName,
+			["process-name"] = processName,
+			["operations"] = BuildSetFlowConditionOperations("NoSuchThing == 1")
+		});
+
+		// Assert
+		string callResultJson = JsonSerializer.Serialize(callResult);
+		callResultJson.Should().Contain("NoSuchThing",
+			because: "the refusal must NAME the offending identifier - that is what makes it actionable");
+		callResultJson.Should().Contain("Formula value error",
+			because: "the refusal has to come from the PLATFORM's formula validation and be recognisable as such. "
+				+ "This assertion used to pin \"which does not exist\", the wording of the package's own "
+				+ "unknown-identifier arm; that validator is gone, the platform writes 'Formula value error: "
+				+ "Parameter \"NoSuchThing\" not found' instead, and pinning the platform's phrase is what keeps "
+				+ "this from passing on a generic failure that never reached formula validation at all");
+		callResultJson.Should().Contain("not found",
+			because: "the ARM has to be pinned, not just the identifier: every platform formula refusal carries "
+				+ "the expression text, so the identifier alone would be present whichever fault ran, and only the "
+				+ "unknown-identifier arm says 'not found'");
+		DescribedFlow branch = await ReadFlowAsync(context, processName, "task1", "EndEvent1");
+		branch.Kind.Should().Be("sequence",
+			because: "a refused edit is atomic: the flow must be left exactly as it was, not half-converted");
+		branch.Condition.Should().BeNull(
+			because: "nothing may be stored when validation refused the condition");
+	}
+
+	[Test]
+	[Description("Over the real MCP path, a condition whose parameter reference does not resolve is refused with a SENTENCE rather than with a serialised error object. This is the one class where the platform's own text is materially worse than the validator CrtProcessBuilder 1.4.0.41 deleted: the flow-schema generator throws ProcessParameterValidateException carrying ProcessParameterErrorInfo.ToString(), which is Json.Serialize, so the caller was handed 'Internal error: \"{ErrorType:2,ErrorData:{ParameterUId:\"…\"}}\"' and no remedy. PlatformValidationMessage rewrites that one blob server-side; the rewrite is FORMATTING of the platform's verdict, so nothing here decides validity. Only a real server can prove it: the blob is produced inside the platform's generator, which no unit test reaches.")]
+	[AllureTag(ToolName)]
+	[AllureName("modify-business-process explains an unresolvable parameter reference in a condition")]
+	public async Task ModifyBusinessProcess_Should_ExplainAnUnresolvableParameterReference_InACondition() {
+		// Arrange
+		await using ArrangeContext context = await ArrangeAsync(requireReachableEnvironment: true);
+		string processName = $"UsrClioBpRefBlobE2e{Guid.NewGuid():N}";
+		await CallToolAsync(context, CreateToolName, new Dictionary<string, object?> {
+			["environment-name"] = context.EnvironmentName,
+			["descriptor"] = BuildDescriptor(processName)
+		});
+
+		// Act - a well-formed parameter metapath whose UId is on no parameter of this process. The SHAPE has to
+		// be valid, or the fault is a parse error and the generator's error-info path is never reached.
+		const string missingParameterUId = "11111111-1111-1111-1111-111111111111";
+		CallToolResult callResult = await CallToolAsync(context, ToolName, new Dictionary<string, object?> {
+			["environment-name"] = context.EnvironmentName,
+			["process-name"] = processName,
+			["operations"] = BuildSetFlowConditionOperations(
+				$"[#[Parameter:{{{missingParameterUId}}}]#] > 0")
+		});
+
+		// Assert
+		string callResultJson = JsonSerializer.Serialize(callResult);
+		callResultJson.Should().Contain(missingParameterUId,
+			because: "the UId is the only thing that says WHICH reference is wrong, so the rewrite must keep it");
+		callResultJson.Should().Contain("is not in this process",
+			because: "the caller has to be told what is wrong; that is the whole reason the rewrite exists");
+		callResultJson.Should().NotContain("ErrorType",
+			because: "the serialised ProcessParameterErrorInfo must be REPLACED, not annotated - leaving it "
+				+ "beside the sentence would report the same fault twice and reads as a defect in clio");
+		DescribedFlow branch = await ReadFlowAsync(context, processName, "task1", "EndEvent1");
+		branch.Kind.Should().Be("sequence",
+			because: "a refused edit is atomic - a message change must not have made the refusal non-atomic");
+	}
+
+	// Reads the process back and returns one flow, so a condition assertion can be made against typed fields
+	// instead of substring-matching the escaped MCP envelope.
+	private static async Task<DescribedFlow> ReadFlowAsync(ArrangeContext context, string processName,
+		string source, string target) {
+		CallToolResult describeResult = await CallToolAsync(context, DescribeProcessTool.ToolName,
+			new Dictionary<string, object?> {
+				["environment-name"] = context.EnvironmentName,
+				["process-name"] = processName
+			});
+		CommandExecutionEnvelope envelope = McpCommandExecutionParser.Extract(describeResult);
+		string graphJson = envelope.Output!
+			.Select(message => message.Value)
+			.First(value => !string.IsNullOrWhiteSpace(value)
+				&& value!.TrimStart().StartsWith("{", StringComparison.Ordinal))!;
+		DescribeProcessResult graph = JsonSerializer.Deserialize<DescribeProcessResult>(graphJson,
+			new JsonSerializerOptions { PropertyNameCaseInsensitive = true })!;
+		return graph.Flows.Single(flow => flow.Source == source && flow.Target == target);
+	}
+
+	private static string BuildSetFlowConditionOperations(string condition) =>
+		$$"""
+		[
+		  { "op": "setFlowCondition", "source": "task1", "target": "EndEvent1", "condition": "{{condition}}" }
+		]
+		""";
+
+	[Test]
+	[Description("Over the real MCP path, an 'expression' mapping is validated, stored and read back. This is the OTHER use site of a formula. The check is the PLATFORM's, at the pre-save gate, on any parameter value whose Source is Script - which is every one of these. Unit tests cannot reach it: SaveSchema is non-virtual, so persisting a Script value and reading it back is only provable against a real server.")]
+	[AllureTag(ToolName)]
+	[AllureName("modify-business-process stores a formula mapping that reads back")]
+	public async Task ModifyBusinessProcess_Should_StoreAndReadBackAFormulaMapping() {
+		// Arrange - a Float parameter, so a decimal-valued formula fits it.
+		await using ArrangeContext context = await ArrangeAsync(requireReachableEnvironment: true);
+		string processName = $"UsrClioBpFormulaE2e{Guid.NewGuid():N}";
+		await CallToolAsync(context, CreateToolName, new Dictionary<string, object?> {
+			["environment-name"] = context.EnvironmentName,
+			["descriptor"] = BuildFormulaTargetDescriptor(processName)
+		});
+
+		// Act
+		CallToolResult callResult = await CallToolAsync(context, ToolName, new Dictionary<string, object?> {
+			["environment-name"] = context.EnvironmentName,
+			["process-name"] = processName,
+			["operations"] = BuildFormulaMappingOperations("FormulaUtilities.Max(1, 2, 3)")
+		});
+
+		// Assert
+		callResult.IsError.Should().NotBeTrue(
+			because: "FormulaUtilities.Max is one of the four Creatio formula functions and fits a Float parameter");
+		DescribedParameter parameter = await ReadParameterAsync(context, processName, "Sum");
+		parameter.Source.Should().Be("Script",
+			because: "a formula is stored as a Script source, not a constant - that is how the runtime knows to evaluate it");
+		parameter.Value.Should().Be("FormulaUtilities.Max(1, 2, 3)",
+			because: "the formula text must survive the save verbatim; the platform, not clio, decides its meaning");
+	}
+
+	[Test]
+	[Description("Over the real MCP path, a formula whose result cannot become the target's declared type is refused BY THE SERVER and nothing is stored. This check must agree with the platform's own pre-save gate: accepting here would only defer the same failure to save time with a worse message.")]
+	[AllureTag(ToolName)]
+	[AllureName("modify-business-process refuses a formula that does not fit the target type")]
+	public async Task ModifyBusinessProcess_Should_RefuseFormulaMapping_WhenResultTypeDoesNotFitTheTarget() {
+		// Arrange
+		await using ArrangeContext context = await ArrangeAsync(requireReachableEnvironment: true);
+		string processName = $"UsrClioBpFormulaTypeE2e{Guid.NewGuid():N}";
+		await CallToolAsync(context, CreateToolName, new Dictionary<string, object?> {
+			["environment-name"] = context.EnvironmentName,
+			["descriptor"] = BuildFormulaTargetDescriptor(processName)
+		});
+
+		// Act - a fractional literal into the INTEGER parameter. Conversion retypes it as decimal, which an
+		// Integer target cannot hold; the same expression into the Float parameter is legitimate.
+		CallToolResult callResult = await CallToolAsync(context, ToolName, new Dictionary<string, object?> {
+			["environment-name"] = context.EnvironmentName,
+			["process-name"] = processName,
+			["operations"] = BuildAmountMappingOperations("1.5")
+		});
+
+		// Assert
+		string callResultJson = JsonSerializer.Serialize(callResult);
+		callResultJson.Should().Contain("Int32",
+			because: "the refusal must name the TARGET type, so a caller can tell a type failure from a syntax one");
+		callResultJson.Should().Contain("1.5",
+			because: "the refusal has to echo the expression at all, and the bare '1.5' is deliberately the "
+				+ "substring BOTH forms share: the platform quotes it as its own converter left it, so what "
+				+ "comes back is '1.5m' - asserting on the converted form would pin a platform detail, and "
+				+ "asserting it is quoted 'as written' would assert something measurably untrue");
+		DescribedParameter parameter = await ReadParameterAsync(context, processName, "Amount");
+		parameter.Source.Should().NotBe("Script",
+			because: "a refused mapping must leave the parameter unbound, not half-applied");
+	}
+
+	[Test]
+	[Description("Over the real MCP path, a formula referencing a parameter that is not in the process is refused and the offending token is NAMED - the ticket's AC5. The reference layer is what a caller cannot check for itself, so this is the refusal that carries the most weight.")]
+	[AllureTag(ToolName)]
+	[AllureName("modify-business-process refuses a formula with a dangling parameter reference")]
+	public async Task ModifyBusinessProcess_Should_RefuseFormulaMapping_WhenItReferencesAMissingParameter() {
+		// Arrange
+		await using ArrangeContext context = await ArrangeAsync(requireReachableEnvironment: true);
+		string processName = $"UsrClioBpFormulaRefE2e{Guid.NewGuid():N}";
+		string missing = Guid.NewGuid().ToString();
+		await CallToolAsync(context, CreateToolName, new Dictionary<string, object?> {
+			["environment-name"] = context.EnvironmentName,
+			["descriptor"] = BuildFormulaTargetDescriptor(processName)
+		});
+
+		// Act
+		CallToolResult callResult = await CallToolAsync(context, ToolName, new Dictionary<string, object?> {
+			["environment-name"] = context.EnvironmentName,
+			["process-name"] = processName,
+			["operations"] = BuildFormulaMappingOperations("[#[Parameter:{" + missing + "}]#]")
+		});
+
+		// Assert
+		JsonSerializer.Serialize(callResult).Should().Contain(missing,
+			because: "AC5 requires the refusal to NAME the reference that does not resolve, not merely to refuse");
+		DescribedParameter parameter = await ReadParameterAsync(context, processName, "Sum");
+		parameter.Source.Should().NotBe("Script",
+			because: "nothing may be stored when the reference layer refused the formula");
+	}
+
+	// Reads one process parameter back, so a formula assertion can be made against typed fields instead of
+	// substring-matching the escaped MCP envelope.
+	private static async Task<DescribedParameter> ReadParameterAsync(ArrangeContext context, string processName,
+		string parameterName) {
+		CallToolResult describeResult = await CallToolAsync(context, DescribeProcessTool.ToolName,
+			new Dictionary<string, object?> {
+				["environment-name"] = context.EnvironmentName,
+				["process-name"] = processName
+			});
+		CommandExecutionEnvelope envelope = McpCommandExecutionParser.Extract(describeResult);
+		string graphJson = envelope.Output!
+			.Select(message => message.Value)
+			.First(value => !string.IsNullOrWhiteSpace(value)
+				&& value!.TrimStart().StartsWith("{", StringComparison.Ordinal))!;
+		DescribeProcessResult graph = JsonSerializer.Deserialize<DescribeProcessResult>(graphJson,
+			new JsonSerializerOptions { PropertyNameCaseInsensitive = true })!;
+		return graph.Parameters.Single(parameter => parameter.Name == parameterName);
+	}
+
+	// A process carrying one Integer and one Float process parameter - the pair that makes the type rule
+	// observable: the same fractional formula is refused for Integer and accepted for Float.
+	private static string BuildFormulaTargetDescriptor(string processName) =>
+		"{\"name\":\"" + processName + "\",\"caption\":\"Clio BP Formula E2E\",\"packageName\":\"Custom\","
+		+ "\"elements\":[{\"name\":\"StartEvent1\",\"type\":\"startEvent\"},"
+		+ "{\"name\":\"EndEvent1\",\"type\":\"endEvent\"}],"
+		+ "\"flows\":[{\"source\":\"StartEvent1\",\"target\":\"EndEvent1\"}],"
+		+ "\"parameters\":[{\"name\":\"Amount\",\"type\":\"Integer\",\"direction\":\"Variable\"},"
+		+ "{\"name\":\"Sum\",\"type\":\"Float\",\"direction\":\"Variable\"}]}";
+
+	private static string BuildFormulaMappingOperations(string expression) =>
+		"[{\"op\":\"addMapping\",\"mapping\":{\"targetProcessParameter\":\"Sum\",\"expression\":\""
+		+ expression.Replace("\\", "\\\\").Replace("\"", "\\\"") + "\"}}]";
+
+	private static string BuildAmountMappingOperations(string expression) =>
+		"[{\"op\":\"addMapping\",\"mapping\":{\"targetProcessParameter\":\"Amount\",\"expression\":\""
+		+ expression.Replace("\\", "\\\\").Replace("\"", "\\\"") + "\"}}]";
+
 	private static string BuildDescriptor(string processName) =>
 		$$"""
 		{
@@ -713,6 +1111,55 @@ public sealed class ModifyBusinessProcessToolE2ETests {
 			because: "removing a referenced parameter is hard-blocked, not applied");
 		callResultJson.Should().Contain("Linked",
 			because: "the block message names the parameter that is still referenced");
+	}
+
+	[Test]
+	[Description("Over the real MCP path: removeParameter is blocked when a conditional flow's CONDITION references the parameter, and the refusal names the flow. This is the arm a review found advertised and unverified - the sibling test above is scoped to the element-mapping arm in its own [Description], and no other test here touches the delete guard. It matters more than a routine coverage gap because the condition scan is load-bearing for a decision made in the same change: describe reports a condition on every flow that carries the text, INCLUDING one whose branch the platform decides from an activity result, precisely because the guards scan it - so hiding it would leave a caller refused over something no read API shows. The package pins the scan in unit tests; this pins that the whole path, through the MCP surface, still refuses.")]
+	[AllureTag(ToolName)]
+	[AllureName("modify-business-process blocks removeParameter referenced by a flow condition")]
+	public async Task ModifyBusinessProcess_Should_BlockRemoveParameter_WhenAFlowConditionReferencesIt() {
+		// Arrange - a process with a parameter, then a conditional flow whose condition references it by
+		// the meta-path form describe reports.
+		await using ArrangeContext context = await ArrangeAsync(requireReachableEnvironment: true);
+		string processName = $"UsrClioBpCondGuardE2e{Guid.NewGuid():N}";
+		await CallToolAsync(context, CreateToolName, new Dictionary<string, object?> {
+			["environment-name"] = context.EnvironmentName,
+			["descriptor"] = BuildDescriptorWithMappedParameter(processName)
+		});
+		CallToolResult describeResult = await CallToolAsync(context, DescribeToolName, new Dictionary<string, object?> {
+			["environment-name"] = context.EnvironmentName,
+			["process-name"] = processName
+		});
+		DescribeProcessResult described = ParseDescribeResult(describeResult);
+		string guardedUId = described.Parameters.Single(parameter => parameter.Name == "Linked").UId;
+
+		CallToolResult conditionResult = await CallToolAsync(context, ToolName, new Dictionary<string, object?> {
+			["environment-name"] = context.EnvironmentName,
+			["process-name"] = processName,
+			["operations"] = $$"""
+				[ { "op": "setFlowCondition", "source": "task1", "target": "EndEvent1",
+				    "condition": "[#[Parameter:{{{guardedUId}}}]#] > 0" } ]
+				"""
+		});
+		JsonSerializer.Serialize(conditionResult).Should().NotContain("\"isError\":true",
+			because: "the condition has to be STORED for the guard to have anything to find - a failure here "
+				+ "would make the assertion below pass for the wrong reason");
+
+		// Act - remove the parameter the condition references.
+		CallToolResult callResult = await CallToolAsync(context, ToolName, new Dictionary<string, object?> {
+			["environment-name"] = context.EnvironmentName,
+			["process-name"] = processName,
+			["operations"] = """[ { "op": "removeParameter", "parameterName": "Linked" } ]"""
+		});
+
+		// Assert
+		string callResultJson = JsonSerializer.Serialize(callResult);
+		callResultJson.Should().Contain("Cannot remove",
+			because: "a parameter a live condition references is hard-blocked, not applied - the alternative is "
+				+ "a dangling reference the platform reports later as a raw GUID");
+		callResultJson.Should().Contain("condition on flow",
+			because: "the refusal has to name the SITE, not just refuse: the caller cannot re-point a reference "
+				+ "it is not shown, and 'names each usage site' is what the contract promises");
 	}
 
 	[Test]
@@ -1140,6 +1587,9 @@ public sealed class ModifyBusinessProcessToolE2ETests {
 			because: "a bare record Guid on a Lookup parameter must persist as the ConstValue the runtime's allowed-results derivation reads — the whole point of the ENG-91846 relaxation");
 		category.Value.Should().BeEquivalentTo(ToDoActivityCategoryId,
 			because: "the record id is stored verbatim, so the runtime resolves exactly the requested category");
+		AssertResolvedDisplayName(category.ValueDisplay, category.Value);
+		category.ValueDisplay.Should().NotBe(category.Value,
+			because: "a display value equal to the id is the defect itself, not a fix — the two must differ");
 		DescribedParameter owner = task.Parameters.Single(parameter => parameter.Name == "OwnerId");
 		owner.Source.Should().Be("Script",
 			because: "the [#SysVariable.CurrentUserContact#] performer route is an expression and stores as a formula source");
@@ -1252,6 +1702,97 @@ public sealed class ModifyBusinessProcessToolE2ETests {
 		DescribedElement task = await ReadTaskAsync(context, processName);
 		task.Parameters.Should().NotContain(parameter => parameter.Name == "ActivityCategory",
 			because: "a rejected mapping aborts the edit, so the parameter stays unbound and invisible in describe");
+	}
+
+	[Test]
+	[Description("Over the real MCP path: a MALFORMED lookup macro - the [#Lookup...#] wrapper around something that is not a record id - on a Lookup parameter is REJECTED with the same instructive message as any other non-Guid value, not decoded to garbage and not stored. The decode recognises exactly the stored shape; anything else falls through to the existing refusal.")]
+	[AllureTag(ToolName)]
+	[AllureName("modify-business-process rejects a malformed fixed-lookup macro on a Lookup parameter")]
+	public async Task ModifyBusinessProcess_Should_RejectMalformedLookupMacro_OnLookupParameter() {
+		// Arrange
+		await using ArrangeContext context = await ArrangeAsync(requireReachableEnvironment: true);
+		string processName = $"UsrClioBpBadMacroE2e{Guid.NewGuid():N}";
+		await CreateProcessAsync(context, processName, BuildPerformTaskDescriptor(processName));
+
+		// Act - the wrapper is right, the record segment is a word: nothing here is a record id.
+		CallToolResult callResult = await CallToolAsync(context, ToolName, new Dictionary<string, object?> {
+			["environment-name"] = context.EnvironmentName,
+			["process-name"] = processName,
+			["operations"] = """[ { "op": "addMapping", "mapping": { "elementName": "Task1", "elementParameter": "ActivityCategory", "value": "[#Lookup.ActivityCategory.To do#]" } } ]"""
+		});
+
+		// Assert - refused the way a bare display name is, and nothing was saved.
+		string text = SerializeToolText(callResult);
+		text.Should().Contain("expression",
+			because: "an unrecognised macro shape must fall through to the standard non-Guid refusal, which names the route");
+		DescribedElement task = await ReadTaskAsync(context, processName);
+		task.Parameters.Should().NotContain(parameter => parameter.Name == "ActivityCategory",
+			because: "a rejected mapping aborts the edit, so nothing is stored - a malformed macro must never land as a value");
+	}
+
+	[Test]
+	[Description("Over the real MCP path: a well-formed lookup macro whose record id resolves to NO record of the parameter's reference object is REJECTED naming that object, exactly as the bare id would be - the decode hands the id to the same existence guard, so the macro form cannot smuggle a dangling reference past it.")]
+	[AllureTag(ToolName)]
+	[AllureName("modify-business-process rejects a fixed-lookup macro whose record does not exist")]
+	public async Task ModifyBusinessProcess_Should_RejectLookupMacro_WhenRecordDoesNotExist() {
+		// Arrange
+		await using ArrangeContext context = await ArrangeAsync(requireReachableEnvironment: true);
+		string processName = $"UsrClioBpGhostMacroE2e{Guid.NewGuid():N}";
+		await CreateProcessAsync(context, processName, BuildPerformTaskDescriptor(processName));
+
+		// Act - shape-perfect, but no ActivityCategory row carries this id on any stand.
+		CallToolResult callResult = await CallToolAsync(context, ToolName, new Dictionary<string, object?> {
+			["environment-name"] = context.EnvironmentName,
+			["process-name"] = processName,
+			["operations"] = $$"""[ { "op": "addMapping", "mapping": { "elementName": "Task1", "elementParameter": "ActivityCategory", "value": "[#Lookup.{{ActivityCategoryObjectUId}}.11111111-2222-3333-4444-555555555555#]" } } ]"""
+		});
+
+		// Assert - the existence guard answered, naming the reference object, and nothing was saved.
+		string text = SerializeToolText(callResult);
+		text.Should().Contain("no ActivityCategory record has this id",
+			because: "a decoded macro is checked against the reference object like a bare id; a dangling id must be refused naming that object");
+		DescribedElement task = await ReadTaskAsync(context, processName);
+		task.Parameters.Should().NotContain(parameter => parameter.Name == "ActivityCategory",
+			because: "a rejected mapping aborts the edit, so a reference to nothing is never stored");
+	}
+
+	[Test]
+	[Description("Over the real MCP path: an already-composed [#Lookup.{objectUId}.{recordId}#] passed as a Lookup 'value' is decoded to the bare record id and stored as a ConstValue with the record's NAME as its display value — the round trip clio, its tests and the guide rely on, proven by feeding describe's own output straight back and reading an identical result.")]
+	[AllureTag(ToolName)]
+	[AllureName("modify-business-process decodes a fixed-lookup macro value and round-trips describe's output")]
+	public async Task ModifyBusinessProcess_Should_DecodeLookupMacroValue_AndRoundTripDescribeOutput() {
+		// Arrange
+		await using ArrangeContext context = await ArrangeAsync(requireReachableEnvironment: true);
+		string processName = $"UsrClioBpLookupMacroE2e{Guid.NewGuid():N}";
+		await CreateProcessAsync(context, processName, BuildPerformTaskDescriptor(processName));
+
+		// Act — the macro form a caller may legitimately hold, rather than the bare id.
+		await ModifyExpectingSuccessAsync(context, processName, $$"""
+			[ { "op": "addMapping", "mapping": { "elementName": "Task1", "elementParameter": "ActivityCategory",
+			    "value": "[#Lookup.{{ActivityCategoryObjectUId}}.{{ToDoActivityCategoryId}}#]" } } ]
+			""");
+		DescribedParameter category = (await ReadTaskAsync(context, processName)).Parameters
+			.Single(parameter => parameter.Name == "ActivityCategory");
+
+		// Assert — decoded to the bare id in the encoding the allowed-results derivation reads, and named.
+		category.Source.Should().Be("ConstValue",
+			because: "a decoded macro must land in the SAME encoding a bare id does — a Script macro here silently "
+				+ "degrades the Perform task's result list to the default");
+		category.Value.Should().BeEquivalentTo(ToDoActivityCategoryId,
+			because: "describe must return a bare Guid whatever form the caller wrote, or the round trip breaks");
+		AssertResolvedDisplayName(category.ValueDisplay, category.Value);
+
+		// And feeding describe's OWN output back is a no-op — the round trip the contract advertises.
+		await ModifyExpectingSuccessAsync(context, processName, $$"""
+			[ { "op": "addMapping", "mapping": { "elementName": "Task1", "elementParameter": "ActivityCategory",
+			    "value": "{{category.Value}}" } } ]
+			""");
+		DescribedParameter reapplied = (await ReadTaskAsync(context, processName)).Parameters
+			.Single(parameter => parameter.Name == "ActivityCategory");
+		reapplied.Value.Should().BeEquivalentTo(category.Value,
+			because: "re-submitting a described value must reproduce it exactly — that is what round-tripping means");
+		reapplied.ValueDisplay.Should().Be(category.ValueDisplay,
+			because: "the display name is re-derived on every write, so a re-apply must not lose or change it");
 	}
 
 	[Test]
@@ -1524,6 +2065,48 @@ public sealed class ModifyBusinessProcessToolE2ETests {
 	/// asserting the literal safe against any environment this suite runs on.
 	/// </summary>
 	private const string ToDoActivityCategoryId = "f51c4643-58e6-df11-971b-001d60e938c6";
+
+	/// <summary>
+	/// The en-US display name of <see cref="ToDoActivityCategoryId"/> — what the designer shows in place of the id
+	/// for an English-culture caller. The row is base seed on every stand this suite runs on.
+	/// <para>A PROFILE-CULTURE value, and debug it as one: the server reads the name through the platform's entity
+	/// read (<c>Entity.FetchFromDB</c> → <c>EntitySchemaQuery</c>), which localizes to the CALLER's culture with a
+	/// fallback to the stand's primary language. So this literal holds only while the MCP user's profile culture
+	/// is en-US; under ru-RU the same call yields "Выполнить". The assertions therefore check the SHAPE of the
+	/// value (present, and not a Guid) rather than this literal — see
+	/// <see cref="AssertResolvedDisplayName"/>. The literal is kept for the writes that need the name.</para>
+	/// </summary>
+	private const string ToDoActivityCategoryName = "To do";
+
+	/// <summary>
+	/// The culture-independent half of the display-name contract: a resolved name is PRESENT and is NOT the record
+	/// id. The exact word depends on the MCP user's profile culture on the stand (the server localizes it), so
+	/// asserting <see cref="ToDoActivityCategoryName"/> literally would make the suite fail on any non-English
+	/// profile while proving nothing more than this does: the defect was the Guid, and the Guid is what is ruled out.
+	/// </summary>
+	private static void AssertResolvedDisplayName(string valueDisplay, string rawValue) {
+		valueDisplay.Should().NotBeNullOrWhiteSpace(
+			because: "the server resolves the referenced record's name into the display value; an absent one means the "
+				+ "stand could not name the record, which this suite's base-seed category must never be");
+		Guid.TryParse(valueDisplay, out _).Should().BeFalse(
+			because: "the display value must be a NAME - the raw record id in that slot is exactly the designer defect "
+				+ "ENG-96325 removed");
+		valueDisplay.Should().NotBeEquivalentTo(rawValue,
+			because: "the display value must differ from the stored value it labels - equality would mean the id was "
+				+ "echoed back in a shape the Guid check did not recognise");
+		valueDisplay.Should().NotContainEquivalentOf("error",
+			because: "a message leaking through the name read would be non-empty and non-Guid and still be wrong");
+		valueDisplay.Should().NotContain("[#",
+			because: "on an element parameter the display value is the record's plain name, never a macro - a macro "
+				+ "here means the change-data rendering path was applied to the wrong slot");
+	}
+
+	/// <summary>
+	/// The ActivityCategory OBJECT's schema UId — the first segment of a fixed-lookup macro naming a category
+	/// record. Only the macro-round-trip test needs it: everywhere else the parameter's own reference object
+	/// supplies the typing.
+	/// </summary>
+	private const string ActivityCategoryObjectUId = "961e2086-a12b-4d27-b095-40b1e64d6cc0";
 
 	/// <summary>
 	/// "High" — a base-seed ActivityPriority row, same-UId-everywhere for the same reason as the category

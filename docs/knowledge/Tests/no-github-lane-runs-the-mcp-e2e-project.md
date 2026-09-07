@@ -8,7 +8,7 @@ date: 2026-08-30
 ---
 
 **What is true** — `.github/workflows/build.yml` builds `clio.tests.dll` and runs its existing
-`Category!=Integration` and `Category=Integration` predicates through GitHub-only shards; it also
+`TestCategory!=Integration` and `TestCategory=Integration` predicates through GitHub-only shards; it also
 runs `Clio.Analyzers.Tests.csproj`. No workflow in `.github/workflows/` invokes
 `clio.mcp.e2e.csproj`. A test in that project is therefore never executed by a pull-request check,
 even when it is marked `[Category("Unit")]`, needs no environment and runs in milliseconds - and

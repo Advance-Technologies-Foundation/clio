@@ -1,96 +1,97 @@
 # call-service
 
-Call a Creatio service endpoint.
+## Command Type
 
+    Development commands
 
-## Usage
+## Name
+
+call-service - Call a Creatio service endpoint
+
+## Synopsis
 
 ```bash
-clio call-service [options]
+clio call-service [OPTIONS]
+clio cs [OPTIONS]
 ```
 
 ## Description
 
-Call a Creatio service endpoint.
+Sends a request to any Creatio service route and prints the response, or
+writes it to --destination.
 
-## Aliases
+--service-path is relative to the Creatio application root. Use
+odata/BulkEmailCategory; clio also accepts the equivalent /odata/...,
+0/odata/... and /0/odata/... forms and normalizes the optional 0/
+application alias away, including a repeated 0/0/ prefix. Passing the alias
+twice used to produce a double-rooted URL on .NET Framework environments.
 
-`cs`
-
-## Examples
-
-```bash
-clio call-service -e dev
-```
+A response that is not a successful payload is never saved. clio exits with
+a non-zero code and reports the reason instead when the body is a Creatio
+error envelope ({"Code":-1,"Exception":...}), an OData v4 error
+({"error":{"message":...}}), an ASP.NET routing error whose wording identifies
+a missed route ({"Message":...,"MessageDetail":...} - a custom service answering
+with those same members is accepted as a payload, since the detector is applied
+against the endpoint the response came from), an authentication rejection
+({"Code":1,...}), or a server error page - including one that starts with a
+byte-order mark or an XML declaration before the doctype, which is the shape
+Creatio behind IIS returns for "Request Error"/"Service Unavailable".
 
 ## Options
 
 ```bash
--m, --method <VALUE>
-HTTP method: GET, POST, DELETE, PATCH, or PUT. Defaults to POST.
--f, --input <VALUE>
-Request file
--b, --body <VALUE>
-Request body JSON
--d, --destination <VALUE>
-Destination set
---service-path <VALUE>
-Route service path
--v, --variables <VALUE>
-Result file
---timeout <NUMBER>
-Request timeout in milliseconds. Default: 100000.
+-m, --method           HTTP method: GET, POST, DELETE, PATCH, or PUT. Defaults to POST.
+-f, --input            File to read the request body from
+-b, --body             Request body JSON
+-d, --destination      File to write the response to
+--service-path         Route service path, relative to the application root
+-v, --variables        Values substituted into {{placeholders}} of the body
+--timeout              Request timeout in milliseconds. 60000 when omitted
 ```
 
-## Environment Options
+Inherited from every environment-aware command:
 
 ```bash
--u, --uri <VALUE>
-Application uri
--p, --Password <VALUE>
-User password
--l, --Login <VALUE>
-User login (administrator permission required)
--i, --IsNetCore
-Use NetCore application
--e, --Environment <VALUE>
-Environment name
---maintainer <VALUE>
-Maintainer name
--c, --dev <VALUE>
-Developer mode state for environment
---WorkspacePathes <VALUE>
-Workspace path
--s, --Safe <VALUE>
-Safe action in this environment
---clientId <VALUE>
-OAuth client id
---clientSecret <VALUE>
-OAuth client secret
---authAppUri <VALUE>
-OAuth app URI
---silent
-Use default behavior without user interaction
---restart-environment
-Restart environment after execute command
---db-server-uri <VALUE>
-Db server uri
---db-user <VALUE>
-Database user
---db-password <VALUE>
-Database password
---backup-file <VALUE>
-Full path to backup file
---db-working-folder <VALUE>
-Folder visible to db server
---db-name <VALUE>
-Desired database name
---force
-Force restore
---callback-process <VALUE>
-Callback process name
---ep <VALUE>
-Path to the application root folder
+-e, --environment      Registered environment name
+-u, --uri              Application uri, when no environment is registered
+-l, --login            User login (administrator permission required)
+-p, --password         User password
+--client-id            OAuth client id
+--client-secret        OAuth client secret
+--auth-app-uri         OAuth app URI
+--maintainer           Maintainer name
+-i, --IsNetCore        Target a .NET Core application
+-s, --safe             Safe action in this environment
+--silent               Use default behavior without user interaction
 ```
+
+## Examples
+
+```bash
+# Read an OData collection
+clio call-service -e dev --method GET --service-path odata/BulkEmailCategory
+
+# The same route with the optional application-root alias
+clio call-service -e dev --method GET --service-path /0/odata/BulkEmailCategory
+
+# Post a request body and save the response
+clio call-service -e dev --method POST --service-path ServiceModel/EntityDataService.svc --input request.json --destination result.json
+```
+
+## Notes
+
+- --service-path is normalized: leading /, 0/ and /0/ layers are stripped before the URL is built
+- A Creatio error envelope, an OData error body, an ASP.NET routing error, an authentication rejection or a server error page makes the command exit non-zero without writing --destination
+- A `{Message, MessageDetail}` body is NOT rejected on its own: on a service route it is a valid custom payload unless the wording identifies a routing miss
+- Markup detection ignores a byte-order mark and an XML declaration, so an IIS "Request Error" page is not mistaken for a payload
+- The response body is parsed once: the same document is used to classify the response and to indent what is printed or saved
+
+## Reporting Bugs
+
+    https://github.com/Advance-Technologies-Foundation/clio
+
+## See Also
+
+dataservice
 
 - [Clio Command Reference](../../Commands.md#call-service)

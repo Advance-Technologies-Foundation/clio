@@ -21,6 +21,13 @@ public class CreateUserTaskTool(
 	/// Creates a workspace-owned user task and optionally adds initial parameters.
 	/// </summary>
 	[McpServerTool(Name = "create-user-task", ReadOnly = false, Destructive = false, Idempotent = false, OpenWorld = false)]
+	[McpToolExecution(
+		Location = McpToolExecutionLocation.Worker,
+		Lifetime = McpToolExecutionLifetime.PerCall,
+		OperationFamily = McpToolOperationFamily.None,
+		BudgetPolicy = McpToolBudgetPolicy.ParentKillDefault,
+		RequiresClientRequests = McpToolClientRequests.None,
+		SharedFileResource = McpToolSharedFileResource.None)]
 	[Description("""
 				 Creates a new user task in a package from the specified local workspace and builds that package.
 				 
@@ -59,6 +66,13 @@ public class ModifyUserTaskParametersTool(
 	/// </summary>
 	[McpServerTool(Name = "modify-user-task-parameters", ReadOnly = false, Destructive = true, Idempotent = false,
 		OpenWorld = false)]
+	[McpToolExecution(
+		Location = McpToolExecutionLocation.Worker,
+		Lifetime = McpToolExecutionLifetime.PerCall,
+		OperationFamily = McpToolOperationFamily.None,
+		BudgetPolicy = McpToolBudgetPolicy.ParentKillDefault,
+		RequiresClientRequests = McpToolClientRequests.None,
+		SharedFileResource = McpToolSharedFileResource.None)]
 	[Description("""
 				 Modifies parameters on an existing workspace-owned user task in Creatio.
 				 

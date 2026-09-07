@@ -1,4 +1,5 @@
-using System;
+﻿using System;
+using System.ComponentModel.DataAnnotations;
 using System.Collections.Generic;
 using System.Diagnostics.CodeAnalysis;
 using System.Linq;
@@ -6,6 +7,7 @@ using System.Reflection;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using System.Threading;
+using System.Threading.Tasks;
 using ModelContextProtocol.Protocol;
 using ModelContextProtocol.Server;
 
@@ -28,43 +30,181 @@ public static class McpToolErrorFilter
 	/// <returns>Wrapped call-tool handler.</returns>
 	public static McpRequestHandler<CallToolRequestParams, CallToolResult> HandleCallToolErrors(
 		McpRequestHandler<CallToolRequestParams, CallToolResult> next) =>
-		async (context, cancellationToken) => {
-			if (TryCreateArgumentDeserializationError(context, out CallToolResult? argumentErrorResult)) {
-				return argumentErrorResult;
+		async (context, cancellationToken) =>
+			// ENG-95262 story 7 — the completion-signal choke point, and it is deliberately the OUTERMOST
+			// thing here rather than a wrapper around tool execution. A sticky worker is registered by the
+			// parent (with the target's configuration-build reservation taken) BEFORE the tool method is
+			// invoked, so every exit below strands it if it returns unsignalled — including the two
+			// argument diagnostics and the routing refusals, which answer before any tool runs at all. A
+			// scope opened further in would reproduce the very defect class it exists to remove, one layer
+			// up. Inert unless this process is a worker AND the call is a sticky operation-STARTER, so a
+			// status poll (also sticky, starts nothing) and the whole in-process host are untouched.
+			// Installed inside this filter rather than as a second call-tool filter for the reason stated
+			// below on the routing question: filter composition order is SDK-defined and unverified.
+			await Tools.WorkerOperationCompletionSignal.RunToolCallAsync(
+				context.Server,
+				ResolveExecutionMetadata(context),
+				() => HandleCallToolErrorsCore(next, context, cancellationToken)).ConfigureAwait(false);
+
+	// The filter's original body, unchanged. Extracted so the completion-signal scope above can wrap every
+	// one of its exits without indenting the whole method.
+	private static async Task<CallToolResult> HandleCallToolErrorsCore(
+		McpRequestHandler<CallToolRequestParams, CallToolResult> next,
+		RequestContext<CallToolRequestParams> context,
+		CancellationToken cancellationToken) {
+		if (TryCreateArgumentDeserializationError(context, out CallToolResult? argumentErrorResult)) {
+			return argumentErrorResult;
+		}
+		if (TryCreateMissingCompositeArgumentHint(context, out CallToolResult? hintResult)) {
+			return hintResult;
+		}
+		try {
+			// ENG-95262 dispatch site (a) of three — the MATCHED path. The routing question is asked here,
+			// inside the try, so anything unexpected it raises still leaves through the redacted catch
+			// below rather than reaching the SDK's default handler as raw text (threat model R-7 — the same
+			// reason a SECOND call-tool filter is not added: filter composition order is SDK-defined and
+			// unverified, so a router outside this catch could emit unredacted text into the transcript).
+			MatchedRouteDecision decision = ResolveMatchedRoute(context);
+			if (decision.Refusal is not null) {
+				return decision.Refusal;
 			}
-			if (TryCreateMissingCompositeArgumentHint(context, out CallToolResult? hintResult)) {
-				return hintResult;
+			if (decision.Dispatcher is not null) {
+				// The call is relayed VERBATIM: the matched primitive's name is already the canonical
+				// one, so the caller's own params object goes to the worker unchanged — `_meta` and its
+				// progress token included.
+				return await decision.Dispatcher
+					.DispatchAsync(decision.Route, context.Params,
+						new Relay.McpServerParentSession(context.Server), cancellationToken)
+					.ConfigureAwait(false);
 			}
-			try {
-				// ENG-93373: bound retry-safe (read-only, or the get-page local-write read; never idempotent server writes) tools by a wall-clock
-				// response deadline so a stalled Creatio read can never hang indefinitely. On expiry the helper
-				// returns a structured error-class=creatio-timeout result telling the agent the call is safe to
-				// retry. Destructive tools are excluded — they own their own timeout contract — and fall through
-				// to the unbounded call below. Only MATCHED (advertised) tools are classified here; the unmatched
-				// long-tail is bounded by the durable handler (McpDurableCallToolHandler) using the same gate.
-				if (IsRetrySafeMatchedTool(context)) {
-					return await McpReadResponseDeadline.RunAsync(
-						context.Params?.Name ?? UnknownToolName,
-						token => next(context, token),
-						cancellationToken).ConfigureAwait(false);
-				}
-				return await next(context, cancellationToken);
+			// ENG-93373: bound retry-safe (read-only, or the get-page local-write read; never idempotent server writes) tools by a wall-clock
+			// response deadline so a stalled Creatio read can never hang indefinitely. On expiry the helper
+			// returns a structured error-class=creatio-timeout result telling the agent the call is safe to
+			// retry. Destructive tools are excluded — they own their own timeout contract — and fall through
+			// to the unbounded call below. Only MATCHED (advertised) tools are classified here; the unmatched
+			// long-tail is bounded by the durable handler (McpDurableCallToolHandler) using the same gate.
+			if (IsRetrySafeMatchedTool(context)) {
+				return await McpReadResponseDeadline.RunAsync(
+					context.Params?.Name ?? UnknownToolName,
+					token => next(context, token),
+					cancellationToken).ConfigureAwait(false);
 			}
-			catch (OperationCanceledException) {
-				// Honour cooperative cancellation/timeout — let the host see a cancellation, not a tool error.
-				throw;
+			return await next(context, cancellationToken);
+		}
+		catch (OperationCanceledException) {
+			// Honour cooperative cancellation/timeout — let the host see a cancellation, not a tool error.
+			throw;
+		}
+		catch (Exception ex) {
+			// Without this, an unhandled tool-method exception reaches the SDK's default handler, which
+			// returns a generic "An error occurred invoking '<tool>'" with no detail — so an agent cannot
+			// see WHY the call failed (e.g. "Environment ... not found") and cannot self-correct. Surface
+			// the real (inner-most) message as a structured error result for EVERY tool uniformly — but
+			// redacted, because this text lands in the model/host transcript and inner-most messages
+			// routinely carry absolute paths, request URIs (target hosts), and credentials.
+			return CreateJsonErrorResult(
+				$"MCP tool '{context.Params?.Name ?? UnknownToolName}' failed: {SensitiveErrorTextRedactor.Redact(GetSurfacedMessage(ex))}");
+		}
+	}
+
+	/// <summary>
+	/// Reads the declared execution metadata of the tool this call names, for the completion-signal choke
+	/// point above.
+	/// </summary>
+	/// <param name="context">The call being served.</param>
+	/// <returns>The metadata, or <see langword="null"/> when the name is unclassified or unresolvable.</returns>
+	/// <remarks>
+	/// <para>
+	/// Service-located for the same reason the router is: this seam is a static delegate with no
+	/// constructor. The reader is registered on the transport-neutral <c>BindingsModule.RegisterInto</c>
+	/// path, so a worker always has it.
+	/// </para>
+	/// <para>
+	/// Keyed on the raw request name with no inner command, which is exactly right for the direct and the
+	/// deprecated-alias vectors (the reader canonicalises aliases itself). A sticky family reached through
+	/// <c>clio-run</c> is NOT covered here: the executor's own name is what arrives, and unwrapping it
+	/// would mean re-implementing that tool's two accepted wrapper shapes in this filter.
+	/// </para>
+	/// </remarks>
+	private static McpToolExecutionMetadata? ResolveExecutionMetadata(
+		RequestContext<CallToolRequestParams> context) {
+		if (context.Services?.GetService(typeof(IMcpToolExecutionMetadataReader))
+			is not IMcpToolExecutionMetadataReader reader) {
+			return null;
+		}
+		// The INNER command, not just the dialled name. Every sticky tool is NON-RESIDENT, so the real
+		// caller reaches it through clio-run and the worker sees `clio-run` here — whose own metadata is
+		// not sticky. The ledger then never opens, the completion notification is never sent, and the
+		// worker keeps its admission slot and the target's configuration-build reservation until the
+		// thirty-minute lifetime bound, refusing every later long operation for that target. In other
+		// words the choke point would have covered every path except the one real callers use.
+		//
+		// This is the same shape as the sticky-KEY defect found earlier on this branch, and it is
+		// unwrapped the same way rather than by a third convention.
+		return reader.TryGetMetadata(context.Params?.Name, ReadWrappedCommand(context.Params),
+			out McpToolExecutionMetadata metadata)
+			? metadata
+			: null;
+	}
+
+	/// <summary>
+	/// Reads the inner command name from an executor-wrapped call, or <see langword="null"/> for an
+	/// ordinary one.
+	/// </summary>
+	/// <remarks>
+	/// Mirrors <c>ClioRunTool.RecoverWrappedCall</c>: the command is a string property named
+	/// <c>command</c>, which sits either at the top of the arguments or one level down under <c>args</c>.
+	/// Only the two shapes that tool accepts are recognised, and only for the two executor names — an
+	/// ordinary tool that happens to carry a <c>command</c> argument must never be re-read as a wrapper.
+	/// </remarks>
+	/// <param name="parameters">The call parameters.</param>
+	/// <returns>The inner command name, or <see langword="null"/>.</returns>
+	private static string ReadWrappedCommand(CallToolRequestParams parameters) {
+		string dialled = parameters?.Name?.Trim();
+		if (!string.Equals(dialled, Tools.ClioRunTool.ToolName, StringComparison.OrdinalIgnoreCase)
+			&& !string.Equals(dialled, Tools.ClioRunDestructiveTool.ToolName,
+				StringComparison.OrdinalIgnoreCase)) {
+			return null;
+		}
+		if (parameters?.Arguments is not { } arguments) {
+			return null;
+		}
+		// TOP-LEVEL FIRST, and only then the named `args` wrapper — the same precedence
+		// ClioRunTool.RecoverWrappedCall uses, which reads `command` off the wrapper it was handed.
+		// The earlier version scanned nested objects first, so a mixed payload carrying BOTH — say
+		// {"args":{"command":"get-page",…},"command":"compile-creatio"} — made the executor dispatch
+		// compile-creatio while this filter loaded get-page's metadata. The sticky compile would then open
+		// no completion ledger and hold its worker, its admission slot and the target's
+		// configuration-build reservation until the thirty-minute bound. Two readers of one payload must
+		// not disagree about which command it names.
+		if (arguments.TryGetValue("command", out JsonElement topLevel)
+			&& topLevel.ValueKind == JsonValueKind.String) {
+			string flat = topLevel.GetString();
+			if (!string.IsNullOrWhiteSpace(flat)) {
+				return flat;
 			}
-			catch (Exception ex) {
-				// Without this, an unhandled tool-method exception reaches the SDK's default handler, which
-				// returns a generic "An error occurred invoking '<tool>'" with no detail — so an agent cannot
-				// see WHY the call failed (e.g. "Environment ... not found") and cannot self-correct. Surface
-				// the real (inner-most) message as a structured error result for EVERY tool uniformly — but
-				// redacted, because this text lands in the model/host transcript and inner-most messages
-				// routinely carry absolute paths, request URIs (target hosts), and credentials.
-				return CreateJsonErrorResult(
-					$"MCP tool '{context.Params?.Name ?? UnknownToolName}' failed: {SensitiveErrorTextRedactor.Redact(GetSurfacedMessage(ex))}");
-			}
-		};
+		}
+		if (arguments.TryGetValue("args", out JsonElement wrapper)
+			&& TryReadCommand(wrapper, out string nested)) {
+			return nested;
+		}
+		return null;
+	}
+
+	private static bool TryReadCommand(JsonElement candidate, out string command) {
+		command = null;
+		if (candidate.ValueKind != JsonValueKind.Object
+			|| !candidate.TryGetProperty("command", out JsonElement element)
+			|| element.ValueKind != JsonValueKind.String) {
+			return false;
+		}
+		string value = element.GetString();
+		if (string.IsNullOrWhiteSpace(value)) {
+			return false;
+		}
+		command = value;
+		return true;
+	}
 
 	// True when the matched (advertised) tool is retry-safe and therefore eligible for the read-response
 	// deadline (ENG-93373). MatchedPrimitive is null for an unmatched name — those are bounded by the
@@ -73,12 +213,108 @@ public static class McpToolErrorFilter
 		context.MatchedPrimitive is McpServerTool tool
 		&& McpReadDeadlineGate.IsRetrySafe(tool.ProtocolTool.Name, tool.ProtocolTool.Annotations);
 
+	/// <summary>
+	/// Asks the single execution-routing authority where this MATCHED call executes, and answers with what
+	/// this seam must do: continue in the host process, relay to a worker, or refuse (ENG-95262, ADR §9).
+	/// </summary>
+	/// <remarks>
+	/// <para>
+	/// Three named branches, none of them an implicit fallthrough:
+	/// </para>
+	/// <list type="number">
+	/// <item><description>
+	/// <b>Unmatched name.</b> <c>MatchedPrimitive</c> is <c>null</c>, deliberately left alone: at filter
+	/// time such a name has no canonical yet (alias resolution runs later, in the durable handler) and the
+	/// write-capability confirmation gate has not run, so routing here would key on an unresolved alias and
+	/// miss. Dispatch site (b) routes it, after both. This is the ONLY branch that continues without
+	/// consulting the authority, and it continues because another site consults it.
+	/// </description></item>
+	/// <item><description>
+	/// <b>No router reachable.</b> FAIL-CLOSED, deliberately — this seam used to continue in-process here,
+	/// which made it the one asymmetric site: its two siblings take the router by constructor injection and
+	/// simply cannot exist without it. A silent in-process continuation is harmless only for as long as
+	/// nothing routes to a worker; the moment the relay is wired it becomes "run the whole worker cohort in
+	/// the host process", invisibly — the exact wedge this work removes. Refusing instead makes the wiring
+	/// defect say its own name. It is unreachable in a healthy process: the router is registered on the
+	/// transport-neutral <c>BindingsModule.RegisterInto</c> path, so stdio, mcp-http and the per-request
+	/// tenant containers all resolve it; only a hand-built fixture reaches this branch.
+	/// </description></item>
+	/// <item><description>
+	/// <b>Worker route.</b> The call is relayed to a supervised child through
+	/// <see cref="Relay.IMcpWorkerCallDispatcher"/>, which is service-located here for the same reason the
+	/// router is — this seam is a static delegate with no constructor. An absent dispatcher refuses too,
+	/// rather than continuing: silently running a cohort tool in the host process is exactly the wedge the
+	/// worker path removes.
+	/// </description></item>
+	/// </list>
+	/// <para>
+	/// Note the ORDER against <see cref="McpReadResponseDeadline"/> below: a relayed call is bounded by the
+	/// parent killing its worker, so it must never also be wrapped in the in-process read deadline — which
+	/// bounds the ANSWER while the work runs on, keeping the per-tenant monitor. Routing therefore happens
+	/// first, and a worker-routed call leaves this filter before the deadline wrapper is reached.
+	/// </para>
+	/// <para>
+	/// Keyed on <c>tool.ProtocolTool.Name</c> and NOT on the inner command of a <c>clio-run</c> call: the
+	/// wrapper itself runs in-process, and its inner tool is routed at dispatch site (c), the only place the
+	/// unwrapped name exists (ADR rule 7).
+	/// </para>
+	/// </remarks>
+	private static MatchedRouteDecision ResolveMatchedRoute(RequestContext<CallToolRequestParams> context) {
+		if (context.MatchedPrimitive is not McpServerTool tool) {
+			return MatchedRouteDecision.ContinueInProcess;
+		}
+		if (context.Services?.GetService(typeof(IMcpExecutionRouter)) is not IMcpExecutionRouter router) {
+			// Do NOT turn this back into "continue". That reads as harmless (routing and continuing agree
+			// for every in-process tool) right up until a cohort tool arrives, at which point it silently
+			// runs in the host process. See the remarks above and
+			// McpExecutionRouter.RoutingAuthorityUnreachableResult.
+			return MatchedRouteDecision.Refuse(
+				McpExecutionRouter.RoutingAuthorityUnreachableResult(tool.ProtocolTool.Name));
+		}
+		McpExecutionRoute route = router.Resolve(tool.ProtocolTool.Name, innerCommand: null);
+		if (route.ExecutesInProcess) {
+			return MatchedRouteDecision.ContinueInProcess;
+		}
+		// Service-located for the same reason the router is: this seam is a static delegate, so it has no
+		// constructor to inject into. Absent dispatcher ⇒ refuse, never continue — the two remaining
+		// possibilities stay symmetric with the router branch above.
+		if (context.Services?.GetService(typeof(Relay.IMcpWorkerCallDispatcher))
+			is not Relay.IMcpWorkerCallDispatcher dispatcher) {
+			return MatchedRouteDecision.Refuse(McpExecutionRouter.WorkerPathNotWiredResult(route));
+		}
+		return MatchedRouteDecision.Relay(route, dispatcher);
+	}
+
+	/// <summary>
+	/// What the matched seam must do with one call: continue in the host process, refuse with a named
+	/// result, or relay it to a worker.
+	/// </summary>
+	/// <remarks>
+	/// A three-way answer expressed as one value rather than as two <c>out</c> parameters, so "no router"
+	/// and "worker route" cannot be confused at the call site — they are different words here, and the
+	/// refusal text differs between them.
+	/// </remarks>
+	private readonly record struct MatchedRouteDecision(
+		McpExecutionRoute? Route,
+		Relay.IMcpWorkerCallDispatcher? Dispatcher,
+		CallToolResult? Refusal) {
+
+		internal static MatchedRouteDecision ContinueInProcess => default;
+
+		internal static MatchedRouteDecision Refuse(CallToolResult refusal) =>
+			new(Route: null, Dispatcher: null, refusal);
+
+		internal static MatchedRouteDecision Relay(
+			McpExecutionRoute route, Relay.IMcpWorkerCallDispatcher dispatcher) =>
+			new(route, dispatcher, Refusal: null);
+	}
+
 	// Message selection lives in Clio.Common.SurfacedExceptionMessage, shared with the nested clio-run
 	// dispatcher so both MCP error paths surface the same text (ENG-93365).
 	private static string GetSurfacedMessage(Exception exception) =>
 		Clio.Common.SurfacedExceptionMessage.Resolve(exception);
 
-	private static bool TryCreateArgumentDeserializationError(
+	internal static bool TryCreateArgumentDeserializationError(
 		RequestContext<CallToolRequestParams> context,
 		out CallToolResult? result) {
 		result = null;
@@ -95,17 +331,54 @@ public static class McpToolErrorFilter
 			if (!arguments.TryGetValue(argumentName, out JsonElement argumentValue)) {
 				continue;
 			}
+			//JsonElement.Deserialize happily returns null for a reference type, so {"args":null} never
+			//threw and the tool ran with a null composite argument - odata-read answered with a typed
+			//NRE-derived success:false while the same call through clio-run reported a missing required
+			//argument. A required, non-nullable parameter rejects an explicit JSON null here so both
+			//paths return the same invalid-parameter-type contract. Optional and nullable parameters
+			//are untouched: null is a legitimate value for them.
+			if (argumentValue.ValueKind == JsonValueKind.Null && IsRequiredNonNullable(parameter)) {
+				result = CreateJsonErrorResult(BuildNullArgumentErrorMessage(
+					context.Params.Name, parameter.ParameterType, argumentName));
+				return true;
+			}
 			try {
 				argumentValue.Deserialize(parameter.ParameterType, SerializerOptions);
 			}
 			catch (Exception ex) when (IsDeserializationException(ex)) {
-				result = CreateJsonErrorResult(BuildDeserializationErrorMessage(context.Params.Name, argumentName, ex));
+				result = CreateJsonErrorResult(BuildDeserializationErrorMessage(
+					context.Params.Name,
+					parameter.ParameterType,
+					argumentName,
+					ex));
 				return true;
 			}
 		}
 
 		return false;
 	}
+
+	/// <summary>
+	/// True when the parameter must carry a value: it is marked <see cref="RequiredAttribute"/>, has no
+	/// default, and its type is not a nullable one. A nullable or defaulted parameter accepts null.
+	/// </summary>
+	private static bool IsRequiredNonNullable(ParameterInfo parameter) {
+		if (parameter.GetCustomAttribute<RequiredAttribute>() is null || parameter.HasDefaultValue) {
+			return false;
+		}
+		Type type = parameter.ParameterType;
+		if (Nullable.GetUnderlyingType(type) is not null) {
+			return false;
+		}
+		//A reference type declared as nullable (`Args?`) is annotated rather than a distinct CLR type,
+		//so the nullable context of the declaration is what tells them apart.
+		return new NullabilityInfoContext().Create(parameter).WriteState != NullabilityState.Nullable;
+	}
+
+	private static string BuildNullArgumentErrorMessage(string toolName, Type parameterType, string argumentName) =>
+		$"invalid-parameter-type: argument '{argumentName}' for MCP tool '{toolName}' must be "
+		+ $"{GetExpectedJsonType(parameterType, argumentName)}. Received a JSON null, and the argument "
+		+ "is required.";
 
 	private static CallToolResult CreateJsonErrorResult(string message) {
 		return new CallToolResult {
@@ -123,14 +396,107 @@ public static class McpToolErrorFilter
 		?? parameter.Name
 		?? string.Empty;
 
-	private static string BuildDeserializationErrorMessage(string? toolName, string? argumentName, Exception exception) {
-		// The serializer message can echo back the offending argument value, so redact it too.
-		string detail = SensitiveErrorTextRedactor.Redact(exception.Message);
-		string message = string.IsNullOrWhiteSpace(argumentName)
-			? $"Failed to deserialize arguments for MCP tool '{toolName ?? UnknownToolName}': {detail}"
-			: $"Failed to deserialize argument '{argumentName}' for MCP tool '{toolName ?? UnknownToolName}': {detail}";
-		return message;
+	private static string BuildDeserializationErrorMessage(
+		string? toolName,
+		Type parameterType,
+		string? argumentName,
+		Exception exception) {
+		string preciseArgumentName = GetPreciseArgumentName(parameterType, argumentName, exception);
+		string toolLabel = toolName ?? UnknownToolName;
+		string message;
+		if (string.IsNullOrWhiteSpace(argumentName)) {
+			message = $"invalid-parameter-type: arguments for MCP tool '{toolLabel}' must match the documented shape "
+				+ $"(expected {GetExpectedJsonType(parameterType, preciseArgumentName)}).";
+		} else if (IsNestedBindingFailure(parameterType, exception)) {
+			// The named property's OWN value is not what failed: the caller did send the array or object
+			// the contract asks for, and the incompatible value sits somewhere inside it. Reporting the
+			// CLR type of the outer property here ("must be an array") names a correction the caller has
+			// already made, so the message says where to look instead.
+			message = $"invalid-parameter-type: argument '{preciseArgumentName}' for MCP tool '{toolLabel}' "
+				+ "contains a value that does not match the documented shape.";
+		} else {
+			message = $"invalid-parameter-type: argument '{preciseArgumentName}' for MCP tool '{toolLabel}' "
+				+ $"must be {GetExpectedJsonType(parameterType, preciseArgumentName)}.";
+		}
+		return $"{message} Received an incompatible JSON value.";
 	}
+
+	/// <summary>
+	/// True when the failing JSON path continues BELOW the named property, so the incompatible value is
+	/// nested inside it rather than being that property's own value.
+	/// </summary>
+	/// <remarks>
+	/// <see cref="GetPreciseArgumentName"/> reports only the first path segment, so
+	/// <c>$.rules[0].actions[0].type</c> is reported as <c>rules</c>. Without this distinction the message
+	/// then describes the CLR type of <c>rules</c>, which the caller already supplied correctly.
+	/// </remarks>
+	private static bool IsNestedBindingFailure(Type parameterType, Exception exception) {
+		if (!parameterType.IsClass || parameterType == typeof(string)
+			|| exception is not JsonException { Path: { } path }
+			|| !path.StartsWith("$.", StringComparison.Ordinal)) {
+			return false;
+		}
+		string remainder = path[2..];
+		int boundary = remainder.IndexOfAny(['.', '[']);
+		if (boundary < 0) {
+			return false;
+		}
+		// Only when the first segment actually resolved to a documented property. Otherwise the reported
+		// name is the outer argument itself and "must be <type>" remains the accurate advice.
+		return GetJsonPropertyNames(parameterType)
+			.Contains(remainder[..boundary], StringComparer.OrdinalIgnoreCase);
+	}
+
+	private static string GetPreciseArgumentName(Type parameterType, string? argumentName, Exception exception) {
+		if (parameterType.IsClass && parameterType != typeof(string)
+			&& exception is JsonException { Path: { } path }
+			&& path.StartsWith("$.", StringComparison.Ordinal)) {
+			string propertyName = path[2..].Split(['.', '['], 2)[0];
+			if (GetJsonPropertyNames(parameterType).Contains(propertyName, StringComparer.OrdinalIgnoreCase)) {
+				return propertyName;
+			}
+		}
+		return argumentName ?? string.Empty;
+	}
+
+	private static string GetExpectedJsonType(Type parameterType, string argumentName) {
+		PropertyInfo? property = parameterType.GetProperties(BindingFlags.Public | BindingFlags.Instance)
+			.FirstOrDefault(candidate =>
+				(GetJsonPropertyName(candidate) ?? candidate.Name).Equals(argumentName, StringComparison.OrdinalIgnoreCase));
+		Type type = property?.PropertyType ?? parameterType;
+		if (Nullable.GetUnderlyingType(type) is { } underlyingType) {
+			type = underlyingType;
+		}
+		if (type == typeof(string)) return "a string";
+		if (type == typeof(bool)) return "a boolean";
+		// A dictionary IS an IEnumerable, so it has to be recognized BEFORE the enumerable branch below.
+		// Without this, a contract taking Dictionary<string, JsonElement> — clio-run's own `args` — was
+		// reported as "an array", telling the caller to resend the very shape that had just failed.
+		if (IsJsonObjectContract(type)) return "an object";
+		if (type.IsArray || typeof(System.Collections.IEnumerable).IsAssignableFrom(type) && type != typeof(string)) return "an array";
+		if (type.IsPrimitive || type == typeof(decimal)) return "a number";
+		return "an object";
+	}
+
+	/// <summary>
+	/// True when the CLR type is carried on the wire as a JSON object rather than a JSON array.
+	/// </summary>
+	private static bool IsJsonObjectContract(Type type) =>
+		typeof(System.Collections.IDictionary).IsAssignableFrom(type)
+		//Type.GetInterfaces() lists the interfaces a type implements, never the type itself, so a
+		//property declared AS IReadOnlyDictionary<string,string> - ApplicationCreateArgs'
+		//title-localizations, for one - fell through to the IEnumerable branch and was reported as
+		//"an array". The declared type has to be tested on its own before the implemented ones.
+		|| IsDictionaryDefinition(type)
+		|| type.GetInterfaces().Any(IsDictionaryDefinition);
+
+	private static bool IsDictionaryDefinition(Type candidate) =>
+		candidate.IsGenericType
+		&& (candidate.GetGenericTypeDefinition() == typeof(IDictionary<,>)
+			|| candidate.GetGenericTypeDefinition() == typeof(IReadOnlyDictionary<,>));
+
+	private static string? GetJsonPropertyName(PropertyInfo property) =>
+		property.GetCustomAttribute<JsonPropertyNameAttribute>()?.Name;
 
 	private static bool IsDeserializationException(Exception exception) =>
 		exception is JsonException or NotSupportedException;

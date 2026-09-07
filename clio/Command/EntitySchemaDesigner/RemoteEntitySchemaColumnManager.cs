@@ -69,6 +69,7 @@ internal sealed class RemoteEntitySchemaColumnManager : IRemoteEntitySchemaColum
 	/// Synthetic package label reported by the merged (all-packages) schema read when no package is supplied.
 	/// </summary>
 	internal const string MergedSchemaPackageName = "(merged: all packages)";
+	private const string InheritedColumnSource = "inherited";
 
 	private readonly IApplicationPackageListProvider _applicationPackageListProvider;
 	private readonly IEntitySchemaDefaultValueSourceResolver _defaultValueSourceResolver;
@@ -77,6 +78,7 @@ internal sealed class RemoteEntitySchemaColumnManager : IRemoteEntitySchemaColum
 	private readonly ILookupDefaultDisplayValueResolver _lookupDefaultDisplayValueResolver;
 	private readonly IEntitySchemaCaptionCultureResolver _captionCultureResolver;
 	private readonly IEntitySchemaDependencyResolver _dependencyResolver;
+	private readonly IEntitySchemaPublisher _entitySchemaPublisher;
 	private readonly ILogger _logger;
 
 	public RemoteEntitySchemaColumnManager(IApplicationPackageListProvider applicationPackageListProvider,
@@ -84,6 +86,7 @@ internal sealed class RemoteEntitySchemaColumnManager : IRemoteEntitySchemaColum
 		IRemoteEntitySchemaDesignerClient entitySchemaDesignerClient,
 		IRuntimeEntitySchemaReader runtimeEntitySchemaReader,
 		IEntitySchemaDependencyResolver dependencyResolver,
+		IEntitySchemaPublisher entitySchemaPublisher,
 		ILogger logger) {
 		_applicationPackageListProvider = applicationPackageListProvider;
 		_defaultValueSourceResolver = columnResolvers.DefaultValueSourceResolver;
@@ -92,6 +95,7 @@ internal sealed class RemoteEntitySchemaColumnManager : IRemoteEntitySchemaColum
 		_lookupDefaultDisplayValueResolver = columnResolvers.LookupDisplayValueResolver;
 		_captionCultureResolver = columnResolvers.CaptionCultureResolver;
 		_dependencyResolver = dependencyResolver;
+		_entitySchemaPublisher = entitySchemaPublisher;
 		_logger = logger;
 	}
 
@@ -130,7 +134,7 @@ internal sealed class RemoteEntitySchemaColumnManager : IRemoteEntitySchemaColum
 		}
 
 		EntityDesignSchemaDto reloadedSchema = SaveAndReloadSchema(
-			schema, package, rootOperation, "columns were saved");
+			schema, package, rootOperation, "columns were saved", ResolveODataContractImpact(operations));
 		VerifyColumnMutations(reloadedSchema, operations, effectiveCultureName);
 		foreach (ModifyEntitySchemaColumnOptions operation in operations) {
 			_logger.WriteInfo(
@@ -151,7 +155,7 @@ internal sealed class RemoteEntitySchemaColumnManager : IRemoteEntitySchemaColum
 	/// <param name="publishReason">Human-readable reason appended to publish progress messages.</param>
 	/// <returns>The design schema reloaded after a successful save and publish.</returns>
 	private EntityDesignSchemaDto SaveAndReloadSchema(EntityDesignSchemaDto schema, PackageInfo package,
-		RemoteCommandOptions options, string publishReason) {
+		RemoteCommandOptions options, string publishReason, ODataContractImpact impact) {
 		SaveDesignItemDesignerResponse saveResponse = _entitySchemaDesignerClient.SaveSchema(schema, options);
 		Guid schemaUId = saveResponse.SchemaUId != Guid.Empty ? saveResponse.SchemaUId : schema.UId;
 		if (schemaUId == Guid.Empty) {
@@ -159,14 +163,13 @@ internal sealed class RemoteEntitySchemaColumnManager : IRemoteEntitySchemaColum
 				$"Schema '{schema.Name}' was saved but schema UId is unavailable.");
 		}
 		_entitySchemaDesignerClient.SaveSchemaDbStructure(schemaUId, options);
-		EntitySchemaPublishHelper.PublishAndRebuildOData(
-			_entitySchemaDesignerClient, _logger, options, schema.Name, publishReason);
-		RuntimeEntitySchemaResponse runtimeResponse = _entitySchemaDesignerClient.GetRuntimeEntitySchema(schemaUId,
-			options);
-		if (!runtimeResponse.Success || runtimeResponse.Schema == null) {
-			throw new EntitySchemaDesignerException(
-				$"Schema '{schema.Name}' was saved but is not available in runtime.");
-		}
+		_entitySchemaPublisher.PublishSavedChanges(options, schema.Name, publishReason, impact);
+		// No separate runtime-availability probe here. Publishing refreshes the schema manager through
+		// SchemaManager.RefreshItems, which clears the changed items and re-initialises them as two steps; a
+		// separate request that lands between them is told the schema does not exist even though the save and
+		// the publish both succeeded. Measured on a stand: only the item being changed is missing, for about
+		// nine seconds, while every other schema keeps answering. A probe that can fail that way cannot prove
+		// availability, and the reload below already proves the save round-trips.
 		return LoadSchema(schema.Name, package.Descriptor.UId, package.Descriptor.Name, options,
 			allowDependencyResolution: true);
 	}
@@ -185,8 +188,10 @@ internal sealed class RemoteEntitySchemaColumnManager : IRemoteEntitySchemaColum
 		(EntitySchemaColumnDto targetColumn, _) = FindColumnForRead(schema, requestedColumnName);
 		schema.PrimaryDisplayColumn = targetColumn;
 
+		// The primary-display column is a designer-level property; it appears nowhere in the OData contract,
+		// so setting it never needs the entities assembly rebuilt.
 		EntityDesignSchemaDto reloadedSchema = SaveAndReloadSchema(
-			schema, package, options, "schema properties were saved");
+			schema, package, options, "schema properties were saved", ODataContractImpact.Unchanged);
 		// The server performs no validation and silently no-ops if a target version expects the legacy
 		// primaryDisplayColumnUId; verify the readback so that silent no-op becomes a clear failure.
 		if (!string.Equals(reloadedSchema.PrimaryDisplayColumn?.Name, requestedColumnName,
@@ -201,6 +206,9 @@ internal sealed class RemoteEntitySchemaColumnManager : IRemoteEntitySchemaColum
 
 	public EntitySchemaColumnPropertiesInfo GetColumnProperties(GetEntitySchemaColumnPropertiesOptions options) {
 		ArgumentNullException.ThrowIfNull(options);
+		if (string.IsNullOrWhiteSpace(options.Package)) {
+			return GetMergedColumnProperties(options);
+		}
 		PackageInfo package = ResolvePackage(options.Package);
 		EntityDesignSchemaDto schema = LoadSchema(options.SchemaName, package.Descriptor.UId, package.Descriptor.Name, options, allowDependencyResolution: false);
 		(EntitySchemaColumnDto column, string source) = FindColumnForRead(schema, options.ColumnName);
@@ -234,6 +242,80 @@ internal sealed class RemoteEntitySchemaColumnManager : IRemoteEntitySchemaColum
 			column.UseSeconds,
 			defaultValueConfig,
 			EntitySchemaDesignerSupport.GetFriendlyUsageType(column.UsageType));
+	}
+
+	/// <summary>
+	/// Reads one column from the merged runtime schema when no package is supplied. This path deliberately uses
+	/// <see cref="IRuntimeEntitySchemaReader"/> and leaves the existing package-scoped designer request untouched.
+	/// </summary>
+	private EntitySchemaColumnPropertiesInfo GetMergedColumnProperties(
+		GetEntitySchemaColumnPropertiesOptions options) {
+		if (string.IsNullOrWhiteSpace(options.SchemaName)) {
+			throw new EntitySchemaDesignerException("Schema name is required.");
+		}
+		if (string.IsNullOrWhiteSpace(options.ColumnName)) {
+			throw new EntitySchemaDesignerException("Column name is required.");
+		}
+
+		RuntimeEntitySchemaResult schema = ReadMergedRuntimeSchema(options.SchemaName.Trim());
+		RuntimeEntitySchemaColumnResult? runtimeColumn = schema.Columns.FirstOrDefault(column =>
+			string.Equals(column.Name, options.ColumnName.Trim(), StringComparison.OrdinalIgnoreCase));
+		if (runtimeColumn is null) {
+			throw new EntitySchemaDesignerException(
+				$"Column '{options.ColumnName}' was not found in merged schema '{schema.Name}'.");
+		}
+
+		EntitySchemaColumnDefValueDto? defaultValue = MapRuntimeDefaultValue(runtimeColumn.DefaultValue);
+		EntitySchemaColumnDto enrichmentColumn = new() {
+			Name = runtimeColumn.Name,
+			DefValue = defaultValue,
+			ReferenceSchema = string.IsNullOrWhiteSpace(runtimeColumn.ReferenceSchemaName)
+				? null
+				: new EntityDesignSchemaDto { Name = runtimeColumn.ReferenceSchemaName }
+		};
+		EntitySchemaDefaultValueConfig? defaultValueConfig =
+			EntitySchemaDesignerSupport.CreateDefaultValueConfig(defaultValue);
+		defaultValueConfig = EnrichLookupConstDefaultValue(defaultValueConfig, enrichmentColumn, options);
+
+		return new EntitySchemaColumnPropertiesInfo(
+			schema.Name,
+			MergedSchemaPackageName,
+			runtimeColumn.Name,
+			runtimeColumn.IsInherited ? InheritedColumnSource : "own",
+			runtimeColumn.Caption,
+			runtimeColumn.Description,
+			EntitySchemaDesignerSupport.GetFriendlyTypeName(runtimeColumn.DataValueType),
+			runtimeColumn.IsRequired,
+			runtimeColumn.IsIndexed,
+			runtimeColumn.IsValueCloneable,
+			TrackChanges: null,
+			defaultValueConfig?.Source,
+			EntitySchemaDesignerSupport.GetFriendlyDefaultValue(defaultValue),
+			runtimeColumn.ReferenceSchemaName,
+			runtimeColumn.IsSimpleLookup,
+			runtimeColumn.IsCascade,
+			DoNotControlIntegrity: null,
+			runtimeColumn.IsMultilineText,
+			LocalizableText: null,
+			runtimeColumn.IsAccentInsensitive,
+			runtimeColumn.IsMasked,
+			runtimeColumn.IsFormatValidated,
+			runtimeColumn.UseSeconds,
+			defaultValueConfig,
+			EntitySchemaDesignerSupport.GetFriendlyUsageType(runtimeColumn.UsageType));
+	}
+
+	private static EntitySchemaColumnDefValueDto? MapRuntimeDefaultValue(
+		RuntimeEntitySchemaDefaultValueResult? defaultValue) {
+		return defaultValue is null
+			? null
+			: new EntitySchemaColumnDefValueDto {
+				ValueSourceType = (EntitySchemaColumnDefSource)defaultValue.ValueSourceType,
+				Value = defaultValue.Value,
+				ValueSource = defaultValue.ValueSource,
+				SequencePrefix = defaultValue.SequencePrefix,
+				SequenceNumberOfChars = defaultValue.SequenceNumberOfChars
+			};
 	}
 
 	/// <summary>
@@ -308,7 +390,7 @@ internal sealed class RemoteEntitySchemaColumnManager : IRemoteEntitySchemaColum
 		List<EntitySchemaColumnDto> inheritedColumns = schema.InheritedColumns?.ToList() ?? [];
 		List<EntitySchemaPropertyColumnInfo> columns = ownColumns
 			.Select(column => MapSchemaPropertyColumn(column, "own", cultureName))
-			.Concat(inheritedColumns.Select(column => MapSchemaPropertyColumn(column, "inherited", cultureName)))
+			.Concat(inheritedColumns.Select(column => MapSchemaPropertyColumn(column, InheritedColumnSource, cultureName)))
 			.ToList();
 		return new EntitySchemaPropertiesInfo(
 			schema.Name,
@@ -420,7 +502,7 @@ internal sealed class RemoteEntitySchemaColumnManager : IRemoteEntitySchemaColum
 		return new EntitySchemaPropertyColumnInfo(
 			column.Name,
 			column.UId,
-			column.IsInherited ? "inherited" : "own",
+			column.IsInherited ? InheritedColumnSource : "own",
 			column.Caption,
 			column.Description,
 			EntitySchemaDesignerSupport.GetFriendlyTypeName(column.DataValueType),
@@ -923,7 +1005,7 @@ internal sealed class RemoteEntitySchemaColumnManager : IRemoteEntitySchemaColum
 		EntitySchemaColumnDto inheritedColumn = (schema.InheritedColumns?.ToList() ?? []).FirstOrDefault(column =>
 			string.Equals(column.Name, columnName, StringComparison.OrdinalIgnoreCase));
 		if (inheritedColumn != null) {
-			return (inheritedColumn, "inherited");
+			return (inheritedColumn, InheritedColumnSource);
 		}
 
 		throw new EntitySchemaDesignerException(
@@ -1232,6 +1314,35 @@ internal sealed class RemoteEntitySchemaColumnManager : IRemoteEntitySchemaColum
 			default:
 				throw new EntitySchemaDesignerException($"Unsupported action '{options.Action}'.");
 		}
+	}
+
+	/// <summary>
+	/// Decides whether a batch of column mutations changes the published OData contract, and therefore
+	/// whether the OData entities assembly has to be rebuilt after the publish.
+	/// </summary>
+	/// <remarks>
+	/// Adding or removing a column changes the property list; renaming one changes the property name;
+	/// changing a column's type changes its EDM type; changing its reference schema changes a navigation
+	/// property. Everything else a modify can touch -
+	/// caption, description, default value, mask, usage type, required - is absent from the contract, verified
+	/// against a live stand by publishing those mutations with the rebuild suppressed and diffing the
+	/// <c>$metadata</c> document, which came back byte-for-byte identical. A type or reference supplied with
+	/// the same value it already had still counts as changed: re-reading the column to prove the value is
+	/// unchanged would cost a request to save a rebuild that is already the rare case.
+	/// </remarks>
+	private static ODataContractImpact ResolveODataContractImpact(
+		IEnumerable<ModifyEntitySchemaColumnOptions> operations) {
+		bool changesContract = operations.Any(operation => {
+			EntitySchemaColumnAction action = NormalizeAction(operation.Action);
+			return action switch {
+				EntitySchemaColumnAction.Add => true,
+				EntitySchemaColumnAction.Remove => true,
+				_ => !string.IsNullOrWhiteSpace(operation.NewName)
+					|| !string.IsNullOrWhiteSpace(operation.Type)
+					|| !string.IsNullOrWhiteSpace(operation.ReferenceSchemaName)
+			};
+		});
+		return changesContract ? ODataContractImpact.Changed : ODataContractImpact.Unchanged;
 	}
 
 	private static void EnsureBatchTargetsSingleSchema(

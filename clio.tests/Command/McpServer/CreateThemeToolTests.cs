@@ -25,6 +25,7 @@ namespace Clio.Tests.Command.McpServer;
 [TestFixture]
 [Property("Module", "McpServer")]
 public class CreateThemeToolTests {
+	private static readonly TimeSpan RegexTimeout = TimeSpan.FromSeconds(1);
 
 	[Test]
 	[Category("Unit")]
@@ -789,7 +790,8 @@ public class CreateThemeToolTests {
 				because: $"agents branch on '{code}', so the emitted value and the documented one must stay identical");
 		}
 		string[] documentedCodes = System.Text.RegularExpressions.Regex
-			.Matches(createThemeEntry, @"`(theme-[a-z-]+)")
+			.Matches(createThemeEntry, @"`(theme-[a-z-]+)",
+				System.Text.RegularExpressions.RegexOptions.None, RegexTimeout)
 			.Select(match => match.Groups[1].Value)
 			.Distinct()
 			.ToArray();

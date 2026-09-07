@@ -1,10 +1,12 @@
 using System;
+using System.Diagnostics.CodeAnalysis;
 using System.IO;
 using System.Threading;
 using System.Threading.Tasks;
 using Clio.Command.McpServer.Knowledge;
 using Clio.Command.McpServer.Tools;
 using Clio.Common;
+using Clio.Common.McpWorker;
 using Clio.Common.Telemetry;
 using CommandLine;
 
@@ -13,27 +15,80 @@ namespace Clio.Command.McpServer;
 
 [Verb("mcp-server", Aliases = ["mcp"], HelpText = "Starts mcp server in stdio mode")]
 public class McpServerCommandOptions : BaseCommandOptions
-{ }
+{
+
+	/// <summary>
+	/// Gets or sets a value indicating whether this process serves MCP calls as a short-lived child worker
+	/// of an MCP host, which skips the host's startup bootstrap and shutdown drains.
+	/// </summary>
+	/// <remarks>
+	/// <para>
+	/// Hidden and internal: a worker is spawned by clio's own MCP host, never by a user, and the flag is not
+	/// part of the documented surface.
+	/// </para>
+	/// <para>
+	/// Mode is selected by an OPTION rather than an environment variable for three reasons. An environment
+	/// variable is inherited by grandchildren, so it would silently turn any clio a worker spawns through
+	/// <c>clio-run</c> into a worker too; the flag shows up in the child's command line, which is already the
+	/// worker's identity for the stale-worker reap; and the argument keeps the verb itself first, so the MCP
+	/// mode detection that suppresses the startup update check and neutralises an ambient proxy keeps working
+	/// unchanged. The flag is not secret, so carrying it in argv costs nothing.
+	/// </para>
+	/// <para>
+	/// There is deliberately no <c>--worker-lifetime</c>: sticky versus ordinary is decided parent-side, by
+	/// which environment the parent composes for the child.
+	/// </para>
+	/// </remarks>
+	[Option("worker", Required = false, Hidden = true,
+		HelpText = "Internal: serve MCP calls as a short-lived child worker; skips host bootstrap.")]
+	public bool Worker { get; set; }
+}
 
 
 /// <summary>
 /// Starts Clio's standard-input/output MCP host.
 /// </summary>
+[method: SuppressMessage("Major Code Smell", "S107:Methods should not have too many parameters",
+	Justification = "Composition root for the MCP host: server, flush scheduler, session container cache, " +
+		"tenant execution lock provider, curated-knowledge bootstrap, worker supervisor, worker temp-residue " +
+		"sweeper, shared-resource reservation and logger are all constructor-injected collaborators with no " +
+		"natural grouping; a wrapper parameter object would be an artificial abstraction over the DI " +
+		"container the command already sits in front of.")]
 public class McpServerCommand(ModelContextProtocol.Server.McpServer server,
 	ITelemetryFlushScheduler flushScheduler,
 	ISessionContainerCache sessionContainerCache,
 	ITenantExecutionLockProvider tenantExecutionLockProvider,
 	ICuratedKnowledgeBootstrapService curatedKnowledgeBootstrapService,
+	Common.McpWorker.IWorkerProcessSupervisor workerProcessSupervisor,
+	Common.McpWorker.IWorkerTempResidueSweeper workerTempResidueSweeper,
+	Relay.ISharedResourceReservation sharedResourceReservation,
 	ILogger logger) : Command<McpServerCommandOptions>{
 	internal static readonly TimeSpan CuratedKnowledgeBootstrapTimeout = TimeSpan.FromMilliseconds(
 		CuratedKnowledgeSourceDefaults.StartupInstallDeadlineMilliseconds);
 
 	public override int Execute(McpServerCommandOptions options) {
-		BootstrapCuratedKnowledge(curatedKnowledgeBootstrapService, logger);
+		ArgumentNullException.ThrowIfNull(options);
+		// Worker-side containment first, BEFORE anything that could spawn a descendant: the worker leads its
+		// own process group and arms parent-death signalling, so a hard-killed parent takes the worker and
+		// everything below it. A parent that is SIGKILLed runs no code, so this half cannot live there.
+		ArmWorkerContainment(options, logger);
+		ReapStaleWorkersForHost(options, workerProcessSupervisor, logger);
+		SweepWorkingDirectoryResidueForHost(options, workerTempResidueSweeper, logger);
+		BootstrapCuratedKnowledgeForHost(options, curatedKnowledgeBootstrapService, logger);
 		// FR-05/FR-08 (ENG-93208): wire the tool-execution-lock facade to this host's DI-registered
 		// per-tenant lock provider and session-container cache, so per-tenant serialization and the
 		// in-flight eviction guard operate on the SAME instances ToolCommandResolver uses.
-		McpToolExecutionLock.Configure(tenantExecutionLockProvider, sessionContainerCache);
+		//
+		// The third argument is the ENG-95262 story 7 / AC-03 half: the same singleton
+		// McpWorkerCallDispatcher reserves through before it spawns a worker. Without it the facade keeps
+		// its own static dictionary, and a target-keyed reservation taken by the dispatcher for a
+		// worker-routed compile-creatio sits in a DIFFERENT store from the one an in-process
+		// install-process-builder consults — same key, two dictionaries, so the two stop excluding each
+		// other exactly where the shipped configuration needs them to (install-process-builder is withheld
+		// from the worker cohort deliberately: the kill-safety audit lists it as leaving damage nothing
+		// repairs). One store, therefore, and this is the seam that makes it one.
+		McpToolExecutionLock.Configure(
+			tenantExecutionLockProvider, sessionContainerCache, sharedResourceReservation);
 		McpLogNotifier.Initialize(server);
 		// The using-scoped source is disposed at the END of Execute — strictly after the finally
 		// block has detached the handlers and drained. Do not narrow this scope or dispose earlier:
@@ -56,7 +111,7 @@ public class McpServerCommand(ModelContextProtocol.Server.McpServer server,
 		AppDomain.CurrentDomain.ProcessExit += onProcessExit;
 		// Drain the telemetry spool left over from previous sessions; fire-and-forget,
 		// the server starts serving immediately.
-		flushScheduler.TryScheduleFlush();
+		ScheduleStartupTelemetryFlush(options, flushScheduler);
 		try {
 			server.RunAsync(cts.Token).GetAwaiter().GetResult();
 		} catch (OperationCanceledException) {
@@ -77,13 +132,172 @@ public class McpServerCommand(ModelContextProtocol.Server.McpServer server,
 			// runtime as soon as the main (foreground) thread exits, leaving the on-disk cache
 			// stale indefinitely. The two drains run concurrently so shutdown stays bounded at
 			// ~10 seconds.
-			Task.WhenAll(
-					ComponentRegistryClient.DrainAsync(TimeSpan.FromSeconds(10)),
-					flushScheduler.DrainAsync(TimeSpan.FromSeconds(10)))
-				.GetAwaiter().GetResult();
+			DrainHostBackgroundWork(options, flushScheduler);
 			McpLogNotifier.Reset();
 		}
 		return 0;
+	}
+
+	/// <summary>
+	/// Runs the curated-knowledge bootstrap unless this process is a worker.
+	/// </summary>
+	/// <remarks>
+	/// This is the single biggest worker startup saving: the bootstrap is a budgeted git clone of the
+	/// clio-knowledge repository with a 5,000 ms startup deadline. A worker serves one call and never answers a
+	/// guidance request, so paying that on every spawn would dominate the spawn cost the whole design rests on.
+	/// </remarks>
+	/// <param name="options">The parsed command options; <c>--worker</c> suppresses the bootstrap.</param>
+	/// <param name="bootstrapService">The curated knowledge bootstrap service.</param>
+	/// <param name="logger">The host logger.</param>
+	internal static void BootstrapCuratedKnowledgeForHost(
+		McpServerCommandOptions options,
+		ICuratedKnowledgeBootstrapService bootstrapService,
+		ILogger logger) {
+		if (options.Worker) {
+			return;
+		}
+		BootstrapCuratedKnowledge(bootstrapService, logger);
+	}
+
+	/// <summary>
+	/// Schedules the startup telemetry flush unless this process is a worker.
+	/// </summary>
+	/// <remarks>
+	/// Telemetry stays the PARENT's job. N workers posting where one process did is a regression, not a
+	/// feature — which is also why <c>send-telemetry</c> stays classified as an in-process tool: a branch here
+	/// covers the host's own flush, not a tool call that would reach the same endpoint from a child.
+	/// </remarks>
+	/// <param name="options">The parsed command options; <c>--worker</c> suppresses the flush.</param>
+	/// <param name="flushScheduler">The telemetry flush scheduler.</param>
+	internal static void ScheduleStartupTelemetryFlush(
+		McpServerCommandOptions options,
+		ITelemetryFlushScheduler flushScheduler) {
+		if (options.Worker) {
+			return;
+		}
+		flushScheduler.TryScheduleFlush();
+	}
+
+	/// <summary>
+	/// Drains the host's fire-and-forget background work at shutdown unless this process is a worker.
+	/// </summary>
+	/// <remarks>
+	/// Both drains are bounded at 10 seconds, so a worker that ran them would pay up to ten seconds of pure
+	/// exit latency per call — and neither drain has anything to do: a worker refreshes no component-registry
+	/// catalog and posts no telemetry.
+	/// </remarks>
+	/// <param name="options">The parsed command options; <c>--worker</c> suppresses both drains.</param>
+	/// <param name="flushScheduler">The telemetry flush scheduler.</param>
+	internal static void DrainHostBackgroundWork(
+		McpServerCommandOptions options,
+		ITelemetryFlushScheduler flushScheduler) {
+		if (options.Worker) {
+			return;
+		}
+		Task.WhenAll(
+				ComponentRegistryClient.DrainAsync(TimeSpan.FromSeconds(10)),
+				flushScheduler.DrainAsync(TimeSpan.FromSeconds(10)))
+			.GetAwaiter().GetResult();
+	}
+
+	/// <summary>
+	/// Arms worker-side containment when this process is a worker: process-group promotion plus parent-death
+	/// signalling. A no-op for an ordinary host, which nothing supervises.
+	/// </summary>
+	/// <param name="options">The parsed command options; containment is armed only under <c>--worker</c>.</param>
+	/// <param name="logger">The host logger; the outcome is recorded as a debug line.</param>
+	/// <returns>What arming produced, or <see langword="null"/> when this process is not a worker.</returns>
+	internal static ParentDeathWatchResult ArmWorkerContainment(McpServerCommandOptions options, ILogger logger) {
+		if (!options.Worker) {
+			return null;
+		}
+		ParentDeathWatchResult result = UnixParentDeathWatch.Arm();
+		logger.WriteDebug(
+			$"MCP worker containment armed: group-leader={result.ProcessGroupPromoted}, "
+			+ $"mode={result.Mode}, parent={result.ParentProcessId}, "
+			+ $"parent-already-exited={result.ParentAlreadyExited}.");
+		return result;
+	}
+
+	/// <summary>
+	/// Kills workers left behind by a PREVIOUS parent that died without taking them with it.
+	/// </summary>
+	/// <remarks>
+	/// <para>
+	/// Containment normally makes this unnecessary: a worker leads its own process group and arms
+	/// parent-death signalling, so a hard-killed parent takes its workers down. But arming can FAIL — the
+	/// watch reports that — and a parent killed before it armed leaves a worker recorded on disk with
+	/// nothing to end it. That worker keeps its authenticated session and every descendant it spawned,
+	/// indefinitely.
+	/// </para>
+	/// <para>
+	/// <b>The identity-checked reaper has to be CALLED from here.</b> The method, its interface
+	/// declaration and its tests can all exist while nothing invokes it, and that gap is invisible to
+	/// everything except a search for callers. It runs on the HOST only — a worker spawns no workers, and
+	/// a worker reaping the registry would kill its siblings.
+	/// </para>
+	/// <para>
+	/// Non-fatal by construction: a startup that cannot reap must still serve. The reaper itself compares
+	/// the full pid / start-time / executable-path triple before killing anything, so it cannot take a
+	/// stranger that inherited a recycled pid.
+	/// </para>
+	/// </remarks>
+	/// <param name="options">The parsed command options; skipped under <c>--worker</c>.</param>
+	/// <param name="supervisor">The supervisor owning the on-disk worker registry.</param>
+	/// <param name="logger">The host logger.</param>
+	internal static void ReapStaleWorkersForHost(McpServerCommandOptions options,
+		Common.McpWorker.IWorkerProcessSupervisor supervisor, ILogger logger) {
+		if (options.Worker) {
+			return;
+		}
+		try {
+			Common.McpWorker.StaleWorkerReapReport report = supervisor.ReapStaleWorkers();
+			if (report.Terminated > 0 || report.Warnings.Count > 0) {
+				logger.WriteWarning(
+					$"Reaped {report.Terminated} worker(s) left by a previous clio host"
+					+ (report.Warnings.Count > 0 ? $"; {report.Warnings.Count} warning(s)." : "."));
+			}
+		}
+		catch (Exception exception) {
+			// A startup that cannot clean up must still serve requests.
+			logger.WriteWarning(
+				$"Stale worker cleanup did not run: {SensitiveErrorTextRedactor.Redact(exception.Message)}");
+		}
+	}
+
+	/// <summary>
+	/// Removes the working directories that killed clio processes could not remove themselves.
+	/// </summary>
+	/// <remarks>
+	/// <para>
+	/// Beside the stale-worker reap because it answers the other half of the same question: the reap
+	/// disposes of processes a previous host left running, this disposes of what those processes left on
+	/// disk. A worker is killed on budget expiry, on cancellation and on reap, and a killed process runs
+	/// no <c>finally</c> — so the clean-up that <c>IWorkingDirectoriesProvider.CreateTempDirectory</c>
+	/// relies on is precisely the clean-up the boundary prevents.
+	/// </para>
+	/// <para>
+	/// HOST only, for the same reason as the reap: a worker sweeping the shared temporary root would race
+	/// its own siblings' live working directories. Non-fatal, and quiet — a start that cannot tidy up must
+	/// still serve, and an unreadable temporary directory is not the operator's problem to solve today.
+	/// </para>
+	/// </remarks>
+	/// <param name="options">The parsed command options; skipped under <c>--worker</c>.</param>
+	/// <param name="sweeper">The residue sweeper.</param>
+	/// <param name="logger">The host logger.</param>
+	internal static void SweepWorkingDirectoryResidueForHost(McpServerCommandOptions options,
+		Common.McpWorker.IWorkerTempResidueSweeper sweeper, ILogger logger) {
+		if (options.Worker) {
+			return;
+		}
+		try {
+			sweeper.Sweep();
+		}
+		catch (Exception exception) {
+			logger.WriteWarning(
+				"Abandoned working directories were not swept: "
+				+ SensitiveErrorTextRedactor.Redact(exception.Message));
+		}
 	}
 
 	/// <summary>

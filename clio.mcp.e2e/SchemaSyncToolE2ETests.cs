@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
@@ -1122,7 +1122,10 @@ public sealed class SchemaSyncToolE2ETests : McpContractFixtureBase {
 	}
 
 	// Binding-layer failures reach the client through several equivalent surfaces on the lazy tool
-	// surface: a native resident call fails with the SDK diagnostics ("An error occurred invoking
+	// surface. Since ENG-93365 the pre-method binder emits the contracted diagnostic
+	// ("invalid-parameter-type: argument 'args' for MCP tool 'clio-run' must be an array."); older
+	// surfaces remain accepted because they express the same contract:
+	// a native resident call fails with the SDK diagnostics ("An error occurred invoking
 	// 'sync-schemas'." / "Failed to deserialize argument 'args' for MCP tool 'sync-schemas'"), while a
 	// clio-run-dispatched call can fail at TWO different layers — (a) the executor's own dispatch wraps
 	// a target-side failure and names the target ("Error: tool 'sync-schemas' failed: ..." / "'args' for
@@ -1145,7 +1148,7 @@ public sealed class SchemaSyncToolE2ETests : McpContractFixtureBase {
 			.Should().BeTrue(
 				because: "the binding-layer failure diagnostic should identify either the sync-schemas tool or, when clio-run's own argument binding rejected the payload before dispatch, clio-run itself");
 		diagnostics.Should().MatchRegex(
-			"(An error occurred invoking|Failed to deserialize argument|failed:|must be a JSON object)",
+			"(invalid-parameter-type|An error occurred invoking|Failed to deserialize argument|failed:|must be a JSON object)",
 			because: "the failure should surface a binding-layer diagnostic — either the SDK's native message or the clio-run executor's wrapped equivalent");
 	}
 

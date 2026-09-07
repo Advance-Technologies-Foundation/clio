@@ -20,6 +20,8 @@ internal class LoginDiagnosticsTests {
 	// GitHub #1106 tracks.
 	private const string LoginRejectionMessage = "Unauthorized svc_user for https://host";
 
+	private static readonly TimeSpan RegexTimeout = TimeSpan.FromSeconds(1);
+
 	#endregion
 
 	#region Methods: Private
@@ -30,7 +32,7 @@ internal class LoginDiagnosticsTests {
 		new(scoreboard);
 
 	private static string FieldValue(string message, string fieldName) {
-		Match match = Regex.Match(message, $@"\b{Regex.Escape(fieldName)}=([^\s\]]+)");
+		Match match = Regex.Match(message, $@"\b{Regex.Escape(fieldName)}=([^\s\]]+)", RegexOptions.None, RegexTimeout);
 		match.Success.Should().BeTrue(
 			because: $"the diagnostic context must carry a '{fieldName}' field. Actual message: {message}");
 		return match.Groups[1].Value;

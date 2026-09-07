@@ -33,6 +33,16 @@ public sealed class ShowPassingInfrastructureTool
 	/// </summary>
 	[McpServerTool(Name = ShowPassingInfrastructureToolName, ReadOnly = true, Destructive = false,
 		Idempotent = true, OpenWorld = false)]
+	// In-process: the passing-infrastructure service probes deployment prerequisites (Kubernetes context,
+	// local database and Redis, filesystem paths and permissions) and reads clio settings. No Creatio
+	// environment is resolved, so no call here can block on one.
+	[McpToolExecution(
+		Location = McpToolExecutionLocation.InProcess,
+		Lifetime = McpToolExecutionLifetime.NotApplicable,
+		OperationFamily = McpToolOperationFamily.None,
+		BudgetPolicy = McpToolBudgetPolicy.None,
+		RequiresClientRequests = McpToolClientRequests.None,
+		SharedFileResource = McpToolSharedFileResource.None)]
 	[Description("""
 				 Shows only the passing infrastructure choices that are safe to use for deployment selection.
 

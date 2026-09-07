@@ -1,5 +1,7 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Diagnostics;
+using System.Globalization;
 using System.IO;
 using System.Linq;
 using System.Security.Cryptography;
@@ -25,6 +27,32 @@ public class FileSystem(Ms.IFileSystem msFileSystem) : IFileSystem {
 	#endregion
 
 	internal static readonly Encoding Utf8NoBom = new UTF8Encoding(false);
+
+	// Stated rather than read from configuration so a test can bound a contended publish without
+	// waiting out the production window or mutating process-wide state — the same reasoning
+	// WorkerProcessSupervisor gives for its explicit queue-wait bound.
+	private readonly TimeSpan _atomicPublishRetryWindow = AtomicPublishRetry.DefaultWindow;
+
+	private readonly Func<int, int> _nextBackoffJitterMilliseconds = Random.Shared.Next;
+
+	/// <summary>
+	/// Initializes a file system whose atomic-publish retry window is set explicitly, so a test can
+	/// observe the contended path without waiting out the production deadline.
+	/// </summary>
+	/// <param name="fileSystem">The underlying file system abstraction.</param>
+	/// <param name="atomicPublishRetryWindow">How long a refused publish keeps retrying.</param>
+	/// <param name="nextBackoffJitterMilliseconds">
+	/// Draws the jittered tail of the backoff, given an exclusive upper bound — the shape of
+	/// <see cref="Random.Next(int)"/>. Injected so a test observing the backoff stays deterministic.
+	/// </param>
+	internal FileSystem(Ms.IFileSystem fileSystem, TimeSpan atomicPublishRetryWindow,
+		Func<int, int> nextBackoffJitterMilliseconds = null)
+		: this(fileSystem) {
+		_atomicPublishRetryWindow = atomicPublishRetryWindow;
+		if (nextBackoffJitterMilliseconds != null) {
+			_nextBackoffJitterMilliseconds = nextBackoffJitterMilliseconds;
+		}
+	}
 
 	public char DirectorySeparatorChar => Path.DirectorySeparatorChar;
 
@@ -518,17 +546,190 @@ public class FileSystem(Ms.IFileSystem msFileSystem) : IFileSystem {
 			msFileSystem.File.WriteAllText(filePath, contents, Utf8NoBom);
 			return;
 		}
-		var opts = new System.IO.FileStreamOptions {
-			Mode = System.IO.FileMode.Create,
-			Access = System.IO.FileAccess.Write,
+		var opts = new FileStreamOptions {
+			Mode = FileMode.Create,
+			Access = FileAccess.Write,
 			UnixCreateMode = UnixFileMode.UserRead | UnixFileMode.UserWrite
 		};
-		using var fs = new System.IO.FileStream(filePath, opts);
-		using var w = new System.IO.StreamWriter(fs, Utf8NoBom);
+		// Routed through the injected abstraction rather than a direct System.IO.FileStream so a
+		// substituted file system can observe the owner-only write; the Windows branch above already went
+		// through msFileSystem, and the asymmetry made this branch provable only end to end.
+		using var fs = msFileSystem.FileStream.New(filePath, opts);
+		using var w = new StreamWriter(fs, Utf8NoBom);
 		w.Write(contents);
 	}
 
+	public void WriteOwnerOnlyTextToFileAtomic(string filePath, string contents) {
+		string directory = Path.GetDirectoryName(filePath);
+		string temporary = Path.Combine(
+			string.IsNullOrEmpty(directory) ? "." : directory,
+			$".{Path.GetFileName(filePath)}.{Guid.NewGuid():N}.tmp");
+		try {
+			var opts = new FileStreamOptions {
+				Mode = FileMode.CreateNew,
+				Access = FileAccess.Write,
+				Share = FileShare.None
+			};
+			if (!OperatingSystem.IsWindows()) {
+				// Mandatory: without this the temp file is created world-readable and the move publishes
+				// those permissions, reopening the window WriteOwnerOnlyTextToFile exists to close.
+				// The property is Unix-only and throws when set on Windows, where the per-user profile ACL
+				// is the security boundary instead.
+				opts.UnixCreateMode = UnixFileMode.UserRead | UnixFileMode.UserWrite;
+			}
+			using (var stream = msFileSystem.FileStream.New(temporary, opts)) {
+				using var writer = new StreamWriter(stream, Utf8NoBom, leaveOpen: true);
+				writer.Write(contents);
+				writer.Flush();
+				stream.Flush();
+			}
+			PublishAtomicReplacement(temporary, filePath);
+		}
+		finally {
+			if (msFileSystem.File.Exists(temporary)) {
+				msFileSystem.File.Delete(temporary);
+			}
+		}
+	}
+
+	// Publishes the finished temporary file over the destination.
+	//
+	// On Unix this is rename(2): atomic, and indifferent to any reader that already holds the
+	// destination open. On WINDOWS the same call is MoveFileEx(MOVEFILE_REPLACE_EXISTING), which needs
+	// DELETE access on the destination and is refused while ANOTHER HANDLE IS OPEN ON IT — including an
+	// ordinary reader, because File.ReadAllText opens with FileShare.Read and that share mode denies the
+	// rename. The write is still atomic in the sense that matters (a reader never sees a partial
+	// document); what fails is the publish itself, with UnauthorizedAccessException or IOException.
+	//
+	// That is not hypothetical and not a test artifact: the consumer this method exists for is Playwright
+	// loading a cached storageState while clio refreshes it. Measured on a Windows build agent, six
+	// concurrent writers against one reader produced six UnauthorizedAccessExceptions; the same run on
+	// macOS passes, which is exactly the asymmetry rename(2) predicts.
+	//
+	// MEASURED on Windows 11 (a_kravchuk2, .NET 8), six concurrent writers against one reader loop —
+	// the shape of TC-E-902 — publishing 180 times per arm:
+	//
+	//   bare File.Move          108-113 of 180 publishes FAILED, all UnauthorizedAccessException
+	//   deadline-bounded retry  0 of 180 failed over four runs, worst case 16 attempts, deadline never hit
+	//
+	// The same probe on macOS fails 0 of 180 with the bare move, which is rename(2) behaving as
+	// specified — and is exactly why a green macOS suite said nothing about this.
+	//
+	// The reader's window is short and it is not ours to widen — a third-party consumer opens the file
+	// however it likes. So the writer retries the publish over a bounded window instead. The bound is
+	// deliberate: a genuine ACL or read-only-file error must still surface rather than being spun on,
+	// so the final attempt's exception propagates unchanged.
+	private void PublishAtomicReplacement(string temporary, string filePath) {
+		long startedAt = Stopwatch.GetTimestamp();
+		int attempt = 1;
+		// Bounded by the elapsed-time deadline below, not by `attempt` — a plain for-loop stop
+		// condition cannot express that, so this is a while(true) with an explicit increment
+		// (Sonar S1994: the loop's exit is time-based, not counter-based).
+		while (true) {
+			try {
+				msFileSystem.File.Move(temporary, filePath, overwrite: true);
+				return;
+			}
+			catch (Exception e) when (IsTransientReplacementFailure(e)) {
+				TimeSpan elapsed = Stopwatch.GetElapsedTime(startedAt);
+				if (elapsed >= _atomicPublishRetryWindow) {
+					if (!AtomicPublishRetry.CanDescribeExhausted(e)) {
+						throw;
+					}
+					throw AtomicPublishRetry.DescribeExhausted(e, filePath, elapsed, attempt);
+				}
+				// Capped linear backoff. The bound is a DEADLINE rather than an attempt count, and that
+				// distinction is measured rather than stylistic: an earlier 12-attempt version was
+				// observed needing 13, 15 and 16 attempts under the load above, so a count that looked
+				// generous was already failing. A deadline states the guarantee directly and does not
+				// have to be re-tuned whenever the backoff curve changes.
+				Thread.Sleep(AtomicPublishRetry.NextBackoffMilliseconds(attempt, _nextBackoffJitterMilliseconds));
+				attempt++;
+			}
+		}
+	}
+
+	// Only the two shapes a contending handle produces. Anything else — a missing temporary file, a
+	// denied directory — is a real error and must not be retried into a timeout.
+	private static bool IsTransientReplacementFailure(Exception e) =>
+		e is UnauthorizedAccessException || (e is IOException && e is not FileNotFoundException
+			&& e is not DirectoryNotFoundException);
+
 	#endregion
+}
+
+#endregion
+
+#region Class: AtomicPublishRetry
+
+// The shared vocabulary of clio's two contended-publish loops — this one and
+// SettingsRepository.PublishSettingsFile. The LOOPS stay separate (they retry different calls and
+// screen different exceptions); the window, the backoff curve and the wording of the final failure
+// live here so the two cannot drift apart.
+internal static class AtomicPublishRetry {
+
+	// THE HONEST LIMIT, for whoever comes here to tune this number.
+	//
+	// On Windows there is NO API that atomically replaces a file another process is holding without
+	// FILE_SHARE_DELETE. MoveFileEx and ReplaceFile both need DELETE access on the destination, the
+	// share check happens when the handle is OPENED, and FILE_RENAME_POSIX_SEMANTICS does not rescue
+	// this: it removes the delete-while-open restriction, not the share-mode check. Against a FOREIGN
+	// reader — one whose share mode clio does not get to choose — retrying is the only mechanism
+	// available, so clio CANNOT GUARANTEE EXIT 0. Any reader that keeps the handle open longer than the
+	// window defeats the window, whatever the window is. Raising this number buys probability, never a
+	// guarantee, and it is bounded from above by SettingsRepository's settings-lock timeout, which is
+	// held across the publish.
+	//
+	// Why 5 s and not the 2.5 s it started at: the e2e reader that exposed this holds the file for a
+	// measured 84.4% of its 46 microsecond cycle, and P(the whole window is refused) is that duty cycle
+	// raised to the attempt count. 2.5 s left roughly a 5% failure rate per run; 5 s takes the same
+	// arithmetic well under 1%.
+	internal static readonly TimeSpan DefaultWindow = TimeSpan.FromSeconds(5);
+
+	internal const int BackoffStepMilliseconds = 15;
+	internal const int BackoffCapMilliseconds = 100;
+	internal const int BackoffJitterMilliseconds = 25;
+
+	// Capped linear backoff with a JITTERED TAIL.
+	//
+	// The jitter is HARDENING, not a fix for anything observed: a constant tail can phase-lock with a
+	// periodic reader, but the reader measured here cycles every 46 microseconds and cannot lock with a
+	// 100 ms tail. It is here so a future reader whose period is near the tail cannot land on the
+	// pathological case. The draw is injected rather than taken from Random.Shared inline so a test can
+	// stay deterministic, and it is bounded, so the deadline is overshot by at most one capped sleep
+	// plus the jitter — jitter never makes the wait unbounded.
+	internal static int NextBackoffMilliseconds(int attempt, Func<int, int> nextJitterMilliseconds) {
+		int delay = Math.Min(BackoffStepMilliseconds * attempt, BackoffCapMilliseconds);
+		return delay < BackoffCapMilliseconds
+			? delay
+			: delay + nextJitterMilliseconds(BackoffJitterMilliseconds);
+	}
+
+	// Only the two shapes contention actually produces are re-described, and each keeps its own type,
+	// because callers catch these by type: UnauthorizedAccessException is not an IOException, and
+	// funnelling both into one wrapper would silently stop an existing catch from firing. A DERIVED
+	// IOException (PathTooLongException, say) is deliberately excluded and rethrown untouched —
+	// flattening it to IOException would take a type a caller can catch and lose it.
+	internal static bool CanDescribeExhausted(Exception e) =>
+		e.GetType() == typeof(IOException) || e.GetType() == typeof(UnauthorizedAccessException);
+
+	// The BCL message for a refused replacement is PATHLESS and stackless — literally "The process
+	// cannot access the file because it is being used by another process." with nothing to say which
+	// file, which operation, or that clio already spent seconds retrying. That one sentence is what made
+	// the original diagnosis expensive, so the destination, the retry and its usual cause are stated
+	// here and the original refusal is kept as InnerException.
+	internal static Exception DescribeExhausted(Exception inner, string destination, TimeSpan elapsed,
+		int attempts) {
+		string message =
+			$"Could not publish '{destination}'. clio retried the replacement for "
+			+ $"{elapsed.TotalSeconds.ToString("0.00", CultureInfo.InvariantCulture)} s ({attempts} attempts) "
+			+ "and it was refused every time. The usual cause is another process holding the file open: on "
+			+ "Windows a reader that does not share delete access blocks the replacement outright. Close "
+			+ "whatever is reading the file and run the command again.";
+		return inner is UnauthorizedAccessException
+			? new UnauthorizedAccessException(message, inner)
+			: new IOException(message, inner);
+	}
 }
 
 #endregion

@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Net.Http;
 using ATF.Repository.Providers;
 using Clio.Command.McpServer.Tools;
@@ -12,6 +12,38 @@ namespace Clio.Tests.Command.McpServer;
 [TestFixture]
 [Property("Module", "McpServer")]
 public sealed class SchemaNamePrefixToolTests {
+
+	/// <summary>
+	/// Builds a <see cref="SysSettingsManager"/> whose only meaningful collaborator is the data provider.
+	/// The read path exercised here (<c>GetSysSettingValueByCode</c>) resolves the value through the
+	/// provider, so the remaining constructor dependencies are inert substitutes.
+	/// </summary>
+	private static SysSettingsManager BuildSysSettingsManager(IDataProvider dataProvider) =>
+		new(BuildAuthenticatedClient(),
+			Substitute.For<IServiceUrlBuilder>(),
+			dataProvider,
+			Substitute.For<IWorkingDirectoriesProvider>(),
+			Substitute.For<IFileSystem>(),
+			Substitute.For<System.IO.Abstractions.IFileSystem>(),
+			Substitute.For<ILogger>());
+
+	// These scenarios describe a reachable environment with accepted credentials, so the
+	// authenticated DataService probe has to answer with a real envelope; a substituted client
+	// returns null, and an empty body is deliberately no longer taken as proof of authentication.
+	private static IApplicationClient BuildAuthenticatedClient() {
+		const string acceptedCredentialsEnvelope = "{\"rows\":[],\"success\":true}";
+		IApplicationClient applicationClient = Substitute.For<IApplicationClient>();
+		applicationClient.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>())
+			.Returns(acceptedCredentialsEnvelope);
+		// ExecutePostRequest takes the timeout, attempt count and delay as optional parameters, so a
+		// two-argument stub only matches calls that leave all three at their defaults. The bounded
+		// authentication probe passes its own values, so without this second stub NSubstitute answers
+		// it with null and the empty body is read as rejected credentials.
+		applicationClient.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(),
+				Arg.Any<int>(), Arg.Any<int>())
+			.Returns(acceptedCredentialsEnvelope);
+		return applicationClient;
+	}
 
 	[Test]
 	[Category("Unit")]
@@ -32,7 +64,7 @@ public sealed class SchemaNamePrefixToolTests {
 		// Arrange
 		IDataProvider dataProvider = Substitute.For<IDataProvider>();
 		dataProvider.GetSysSettingValue<string>("SchemaNamePrefix").Returns("Usr");
-		SysSettingsManager manager = new(dataProvider);
+		SysSettingsManager manager = BuildSysSettingsManager(dataProvider);
 		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
 		commandResolver.Resolve<SysSettingsManager>(Arg.Any<EnvironmentOptions>()).Returns(manager);
 		SchemaNamePrefixTool tool = new(commandResolver);
@@ -56,7 +88,7 @@ public sealed class SchemaNamePrefixToolTests {
 		// Arrange
 		IDataProvider dataProvider = Substitute.For<IDataProvider>();
 		dataProvider.GetSysSettingValue<string>("SchemaNamePrefix").Returns(string.Empty);
-		SysSettingsManager manager = new(dataProvider);
+		SysSettingsManager manager = BuildSysSettingsManager(dataProvider);
 		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
 		commandResolver.Resolve<SysSettingsManager>(Arg.Any<EnvironmentOptions>()).Returns(manager);
 		SchemaNamePrefixTool tool = new(commandResolver);
@@ -124,7 +156,7 @@ public sealed class SchemaNamePrefixToolTests {
 		// Arrange
 		IDataProvider dataProvider = Substitute.For<IDataProvider>();
 		dataProvider.GetSysSettingValue<string>("SchemaNamePrefix").Returns("\"Usr\"");
-		SysSettingsManager manager = new(dataProvider);
+		SysSettingsManager manager = BuildSysSettingsManager(dataProvider);
 		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
 		commandResolver.Resolve<SysSettingsManager>(Arg.Any<EnvironmentOptions>()).Returns(manager);
 		SchemaNamePrefixTool tool = new(commandResolver);

@@ -1,62 +1,78 @@
-﻿COMMAND TYPE
-    Remote commands
+COMMAND TYPE
+    Development commands
 
 NAME
     call-service - Call a Creatio service endpoint
 
 SYNOPSIS
     clio call-service [OPTIONS]
+    clio cs [OPTIONS]
 
 DESCRIPTION
-    Calls a Creatio service endpoint. The HTTP method defaults to POST and can
-    be set to GET, POST, DELETE, PATCH, or PUT. Request data can be read from
-    a file or supplied inline with --body.
+    Sends a request to any Creatio service route and prints the response, or
+    writes it to --destination.
+
+    --service-path is relative to the Creatio application root. Use
+    odata/BulkEmailCategory; clio also accepts the equivalent /odata/...,
+    0/odata/... and /0/odata/... forms and normalizes the optional 0/
+    application alias away, including a repeated 0/0/ prefix. Passing the alias
+    twice used to produce a double-rooted URL on .NET Framework environments.
+
+    A response that is not a successful payload is never saved. clio exits with
+    a non-zero code and reports the reason instead when the body is a Creatio
+    error envelope ({"Code":-1,"Exception":...}), an OData v4 error
+    ({"error":{"message":...}}), an ASP.NET routing error whose wording identifies
+    a missed route ({"Message":...,"MessageDetail":...} - a custom service
+    answering with those same members is accepted as a payload, since the
+    detector is applied against the endpoint the response came from), an
+    authentication rejection
+    ({"Code":1,...}), or a server error page - including one that starts with a
+    byte-order mark or an XML declaration before the doctype, which is the shape
+    Creatio behind IIS returns for "Request Error"/"Service Unavailable".
 
 OPTIONS
-    -m, --method              HTTP method. Defaults to POST.
-    -f, --input               Request file.
-    -b, --body                Request body JSON.
-    -d, --destination         Destination file for the response.
-    --service-path            Route service path.
-    -v, --variables           Variables to replace in the request body.
-    --timeout                 Request timeout in milliseconds. Defaults to 60000
-                              for call-service.
-    --maintainer              Maintainer name. Long form only for this command,
-                              because -m is taken by --method here.
-    --silent                  Do not print the response body.
+    -m, --method           HTTP method: GET, POST, DELETE, PATCH, or PUT. Defaults to POST.
+    -f, --input            File to read the request body from
+    -b, --body             Request body JSON
+    -d, --destination      File to write the response to
+    --service-path         Route service path, relative to the application root
+    -v, --variables        Values substituted into {{placeholders}} of the body
+    --timeout              Request timeout in milliseconds. 60000 when omitted
 
-    -e, --environment <ENVIRONMENT>
-        Registered environment to call. When omitted, clio uses the active
-        environment.
+    Inherited from every environment-aware command:
 
-    Environment options (can be used instead of -e):
-        -u, --uri <URI>
-            Application URI
-
-        -l, --login <LOGIN>
-            User login
-
-        -p, --password <PASSWORD>
-            User password
-
-        --client-id <ID>
-            OAuth client id
-
-        --client-secret <SECRET>
-            OAuth client secret
-
-        --auth-app-uri <URI>
-            OAuth app URI
+    -e, --environment      Registered environment name
+    -u, --uri              Application uri, when no environment is registered
+    -l, --login            User login (administrator permission required)
+    -p, --password         User password
+    --client-id            OAuth client id
+    --client-secret        OAuth client secret
+    --auth-app-uri         OAuth app URI
+    --maintainer           Maintainer name. Long form only for this command, because -m is taken
+                           by --method here.
+    -i, --IsNetCore        Target a .NET Core application
+    -s, --safe             Safe action in this environment
+    --silent               Use default behavior without user interaction
 
 EXAMPLES
-    clio call-service -e dev --service-path "odata/Contact(<id>)" \
-        --method PATCH --body '{"Name":"Updated"}'
+    # Read an OData collection
+    clio call-service -e dev --method GET --service-path odata/BulkEmailCategory
 
-    clio call-service -e dev --service-path "odata/Contact(<id>)" \
-        --method PUT --input contact.json
+    # The same route with the optional application-root alias
+    clio call-service -e dev --method GET --service-path /0/odata/BulkEmailCategory
 
-SEE ALSO
-    dataservice
+    # Post a request body and save the response
+    clio call-service -e dev --method POST --service-path ServiceModel/EntityDataService.svc --input request.json --destination result.json
+
+NOTES
+    - --service-path is normalized: leading /, 0/ and /0/ layers are stripped before the URL is built
+    - A Creatio error envelope, an OData error body, an ASP.NET routing error, an authentication rejection or a server error page makes the command exit non-zero without writing --destination
+    - A {Message, MessageDetail} body is NOT rejected on its own: on a service route it is a valid custom payload unless the wording identifies a routing miss
+    - Markup detection ignores a byte-order mark and an XML declaration, so an IIS "Request Error" page is not mistaken for a payload
+    - The response body is parsed once: the same document is used to classify the response and to indent what is printed or saved
 
 REPORTING BUGS
     https://github.com/Advance-Technologies-Foundation/clio
+
+SEE ALSO
+    dataservice

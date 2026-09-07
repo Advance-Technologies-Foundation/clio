@@ -15,6 +15,8 @@ public class Step
 
 	#region Fields: Private
 
+	private static readonly TimeSpan RegexTimeout = TimeSpan.FromSeconds(1);
+
 	/// <summary>
 	/// Finds Type from assembly that matches Step in YAML file
 	/// </summary>
@@ -64,7 +66,7 @@ public class Step
 				return maybeMacro;
 			}
 			const string pattern = @"{{(.*?)}}";
-			Match match = Regex.Match(maybeMacro.ToString() ?? "", pattern);
+			Match match = Regex.Match(maybeMacro.ToString() ?? "", pattern, RegexOptions.None, RegexTimeout);
 
 			if (!match.Success) {
 				return maybeMacro;

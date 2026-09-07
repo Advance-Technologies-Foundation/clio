@@ -21,8 +21,9 @@ public class AppUpdater(ILogger logger, IProcessExecutor processExecutor) : IApp
 	#region Properties: Private
 
 	private const string  LastVersionUrl = "https://api.github.com/repos/Advance-Technologies-Foundation/clio/releases/latest";
+	private static readonly TimeSpan RegexTimeout = TimeSpan.FromSeconds(1);
 	private static readonly Regex SemanticVersionRegex =
-		new(@"\b(?<version>\d+\.\d+\.\d+\.\d+)(?:\+[0-9A-Za-z\.-]+)?\b", RegexOptions.Compiled);
+		new(@"\b(?<version>\d+\.\d+\.\d+\.\d+)(?:\+[0-9A-Za-z\.-]+)?\b", RegexOptions.Compiled, RegexTimeout);
 
 	#endregion
 
@@ -247,7 +248,11 @@ public class AppUpdater(ILogger logger, IProcessExecutor processExecutor) : IApp
 
 	/// <inheritdoc/>
 	public async Task UpdateInBackgroundAsync() {
-		ProcessExecutionOptions options = new("dotnet", "tool update clio -g");
+		ProcessExecutionOptions options = new("dotnet", string.Empty) {
+			ArgumentList = ["tool", "update", "clio", "-g"],
+			ResolveProgramPath = true,
+			WorkingDirectory = Path.GetFullPath(SettingsRepository.AppSettingsFolderPath)
+		};
 		await processExecutor.FireAndForgetAsync(options).ConfigureAwait(false);
 	}
 

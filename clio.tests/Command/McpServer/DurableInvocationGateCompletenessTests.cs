@@ -79,6 +79,8 @@ public sealed class DurableInvocationGateCompletenessTests {
 		"get-component-info",
 		"get-entity-schema-column-properties",
 		"get-entity-schema-properties",
+		// Reads BulkEmail, EmailTemplate, EmailTemplateLang, and BfEmailTemplate content without mutation.
+		"get-email-template",
 		"get-fsm-mode",
 		"get-guidance",
 		"get-knowledge-feedback-policy",

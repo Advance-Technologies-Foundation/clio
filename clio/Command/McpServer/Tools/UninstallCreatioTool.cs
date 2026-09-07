@@ -27,6 +27,15 @@ public class UninstallCreatioTool(
 	public const string UninstallCreatioToolName = "uninstall-creatio";
 
 	[McpServerTool(Name = UninstallCreatioToolName, ReadOnly = false, Destructive = true, Idempotent = false, OpenWorld = false )]
+	// Deploy family, same reasoning as deploy-creatio: a generic kill mid-uninstall can leave a
+	// half-removed site/database, so the bound is the authoritative terminal stage. Streams stage events.
+	[McpToolExecution(
+		Location = McpToolExecutionLocation.Worker,
+		Lifetime = McpToolExecutionLifetime.PerCall,
+		OperationFamily = McpToolOperationFamily.Deploy,
+		BudgetPolicy = McpToolBudgetPolicy.TerminalStage,
+		RequiresClientRequests = McpToolClientRequests.Progress,
+		SharedFileResource = McpToolSharedFileResource.None)]
 	[Description("""
 				 uninstall-creatio command completely removes local Creatio instance from
 				 the machine, including the target IIS site or application, database (both

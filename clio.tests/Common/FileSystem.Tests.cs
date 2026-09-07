@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.IO;
 using System.IO.Abstractions.TestingHelpers;
@@ -993,6 +993,260 @@ public class FileSystemTests
 		// Assert
 		Path.IsPathRooted(actual).Should().BeFalse("because relative input paths must stay relative");
 		actual.Should().Be(expected, "because all separator variants should be normalized to platform separators");
+	}
+
+	#endregion
+
+	#region WriteOwnerOnlyTextToFileAtomic — publishing the replacement
+
+	// The publish step is rename(2) on Unix and MoveFileEx(MOVEFILE_REPLACE_EXISTING) on Windows, and only
+	// the second one can be refused by a reader that already holds the destination open. So the retry
+	// cannot be provoked by real file I/O on this machine — on macOS and Linux the rename simply succeeds.
+	// These tests substitute the move so the contended path is exercised on every platform, which is the
+	// whole point: the defect they pin was invisible to a green macOS suite and only appeared on a Windows
+	// build agent.
+	private sealed class AtomicPublishHarness : IDisposable {
+
+		internal AtomicPublishHarness() {
+			Directory = Path.Combine(Path.GetTempPath(), $"clio-atomic-publish-{Guid.NewGuid():N}");
+			System.IO.Directory.CreateDirectory(Directory);
+			TargetPath = Path.Combine(Directory, "session.json");
+			File = Substitute.For<Ms.IFile>();
+			Ms.IFileSystem real = new Ms.FileSystem();
+			FileSystemUnderTest = Substitute.For<Ms.IFileSystem>();
+			// The temporary file is written for real, so the method under test is exercised end to end up
+			// to the publish; only the publish itself is under the test's control.
+			FileSystemUnderTest.FileStream.Returns(real.FileStream);
+			FileSystemUnderTest.File.Returns(File);
+		}
+
+		internal string Directory { get; }
+
+		internal string TargetPath { get; }
+
+		internal Ms.IFile File { get; }
+
+		internal Ms.IFileSystem FileSystemUnderTest { get; }
+
+		public void Dispose() {
+			try {
+				if (System.IO.Directory.Exists(Directory)) {
+					System.IO.Directory.Delete(Directory, recursive: true);
+				}
+			} catch (IOException) {
+				// A leftover temporary directory must never fail a test run.
+			}
+		}
+	}
+
+	[Test]
+	[Description("A destination briefly held open by a reader denies the rename on Windows; the publish must retry over its bounded window and still succeed rather than losing the write.")]
+	public void WriteOwnerOnlyTextToFileAtomic_Should_PublishTheReplacement_When_AContendingReaderBrieflyDeniesTheRename() {
+		// Arrange
+		using AtomicPublishHarness harness = new();
+		int moveAttempts = 0;
+		harness.File
+			.When(file => file.Move(Arg.Any<string>(), harness.TargetPath, true))
+			.Do(_ => {
+				moveAttempts++;
+				if (moveAttempts <= 2) {
+					throw new UnauthorizedAccessException("Access to the path is denied.");
+				}
+			});
+		FileSystem sut = new(harness.FileSystemUnderTest);
+
+		// Act
+		Action publish = () => sut.WriteOwnerOnlyTextToFileAtomic(harness.TargetPath, "{\"cookies\":[]}");
+
+		// Assert
+		publish.Should().NotThrow(
+			because: "a reader's open handle is a transient condition that clears in milliseconds, and dropping the session write because of it is how a cached credential silently fails to refresh");
+		moveAttempts.Should().Be(3,
+			because: "the publish must retry past the two denials and then succeed on the attempt that finds the destination free");
+	}
+
+	[Test]
+	[Description("A denial that never clears is a real error — an ACL or a read-only file — and must surface unchanged instead of being retried into silence.")]
+	public void WriteOwnerOnlyTextToFileAtomic_Should_SurfaceTheDenial_When_ItPersistsForTheWholeRetryWindow() {
+		// Arrange
+		using AtomicPublishHarness harness = new();
+		int moveAttempts = 0;
+		harness.File
+			.When(file => file.Move(Arg.Any<string>(), harness.TargetPath, true))
+			.Do(_ => {
+				moveAttempts++;
+				throw new UnauthorizedAccessException("Access to the path is denied.");
+			});
+		// A short explicit window: the subject here is that the deadline ENDS, not how long production
+		// waits, and burning the production window in a unit test buys nothing.
+		FileSystem sut = new(harness.FileSystemUnderTest, TimeSpan.FromMilliseconds(120));
+
+		// Act
+		Action publish = () => sut.WriteOwnerOnlyTextToFileAtomic(harness.TargetPath, "{}");
+
+		// Assert
+		publish.Should().Throw<UnauthorizedAccessException>(
+			because: "the retry window exists to outlast a contending reader, not to convert a genuine permission failure into an unbounded wait or a swallowed write");
+		moveAttempts.Should().BeGreaterThan(1,
+			because: "the caller must have been given the benefit of the retry window before the failure is declared final");
+	}
+
+	[Test]
+	[Description("Only a contention shape is retried: a missing temporary file is a programming error and must fail on the first attempt rather than costing the caller the whole retry window.")]
+	public void WriteOwnerOnlyTextToFileAtomic_Should_FailImmediately_When_TheFailureIsNotContention() {
+		// Arrange
+		using AtomicPublishHarness harness = new();
+		int moveAttempts = 0;
+		harness.File
+			.When(file => file.Move(Arg.Any<string>(), harness.TargetPath, true))
+			.Do(_ => {
+				moveAttempts++;
+				throw new FileNotFoundException("The temporary file is gone.");
+			});
+		FileSystem sut = new(harness.FileSystemUnderTest);
+
+		// Act
+		Action publish = () => sut.WriteOwnerOnlyTextToFileAtomic(harness.TargetPath, "{}");
+
+		// Assert
+		publish.Should().Throw<FileNotFoundException>(
+			because: "a vanished temporary file is not contention and no amount of waiting will produce it");
+		moveAttempts.Should().Be(1,
+			because: "retrying a non-contention failure would turn an instant, diagnosable error into a second of unexplained delay on every occurrence");
+	}
+
+	[Test]
+	[Description("A publish that stays refused for the whole window must name the file, say that clio retried and for how long, and keep the original refusal reachable, instead of surfacing the BCL's pathless sentence.")]
+	public void WriteOwnerOnlyTextToFileAtomic_Should_NameTheFileAndTheRetry_When_TheDenialPersistsForTheWholeWindow() {
+		// Arrange
+		using AtomicPublishHarness harness = new();
+		UnauthorizedAccessException refusal = new("The process cannot access the file because it is being used by another process.");
+		harness.File
+			.When(file => file.Move(Arg.Any<string>(), harness.TargetPath, true))
+			.Do(_ => throw refusal);
+		TimeSpan window = TimeSpan.FromMilliseconds(150);
+		FileSystem sut = new(harness.FileSystemUnderTest, window);
+
+		// Act
+		Action publish = () => sut.WriteOwnerOnlyTextToFileAtomic(harness.TargetPath, "{}");
+
+		// Assert
+		ExceptionAssertions<UnauthorizedAccessException> thrown = publish.Should().Throw<UnauthorizedAccessException>(
+			because: "the refusal shape must be preserved for every caller that already catches it by type; only the description improves");
+		thrown.Which.Message.Should().Contain(harness.TargetPath,
+			because: "the BCL reports this failure with no path at all, so the destination clio was publishing has to come from clio");
+		ReportedRetrySeconds(thrown.Which.Message).Should().BeGreaterThanOrEqualTo(window.TotalSeconds,
+			because: "the reader must be told that clio already retried, and for at least as long as the window it was given, so nobody re-diagnoses a contended publish as a one-shot failure");
+		thrown.Which.Message.ToLowerInvariant().Should().Contain("another process",
+			because: "the usual cause is a foreign handle on the destination, and naming it is the difference between an actionable message and a dead end");
+		thrown.Which.InnerException.Should().BeSameAs(refusal,
+			because: "the original refusal carries the platform error code and must stay reachable for anyone diagnosing an unusual cause");
+	}
+
+	// Reads back the retry duration clio reported, so the assertion pins the PROPERTY (at least the
+	// window elapsed) instead of restating whatever the message happens to be formatted as.
+	private static double ReportedRetrySeconds(string message) {
+		System.Text.RegularExpressions.Match match = System.Text.RegularExpressions.Regex.Match(
+			message, @"([0-9]+(?:\.[0-9]+)?) s\b");
+		match.Success.Should().BeTrue(
+			because: $"the failure must state how long clio retried, and '{message}' carries no duration in seconds");
+		return double.Parse(match.Groups[1].Value, System.Globalization.CultureInfo.InvariantCulture);
+	}
+
+	[Test]
+	[Description("The backoff jitters only its capped tail: the rising part is left exact, and the tail is drawn from the injected source so it cannot phase-lock with a periodic reader.")]
+	public void NextBackoffMilliseconds_Should_JitterOnlyTheCappedTail_When_TheBackoffHasReachedItsCap() {
+		// Arrange
+		int cap = AtomicPublishRetry.BackoffCapMilliseconds;
+		int jitterBound = AtomicPublishRetry.BackoffJitterMilliseconds;
+		List<int> requestedBounds = [];
+		int lastRisingAttempt = (cap / AtomicPublishRetry.BackoffStepMilliseconds) - 1;
+		int firstCappedAttempt = (cap / AtomicPublishRetry.BackoffStepMilliseconds) + 1;
+
+		// Act
+		int rising = AtomicPublishRetry.NextBackoffMilliseconds(lastRisingAttempt, bound => {
+			requestedBounds.Add(bound);
+			return 0;
+		});
+		int capped = AtomicPublishRetry.NextBackoffMilliseconds(firstCappedAttempt, bound => {
+			requestedBounds.Add(bound);
+			return jitterBound - 1;
+		});
+
+		// Assert
+		rising.Should().Be(AtomicPublishRetry.BackoffStepMilliseconds * lastRisingAttempt,
+			because: "while the linear ramp is still below the cap it is already spread across attempts, so adding a draw there would only blur a curve that needs no help");
+		requestedBounds.Should().ContainSingle(
+			because: "the source must be consulted exactly once, and only for the capped attempt — a draw per rising attempt would be work with no purpose, and no draw at all would leave the tail constant");
+		capped.Should().BeGreaterThanOrEqualTo(cap,
+			because: "jitter widens the tail rather than shortening it, so a jittered sleep must never wait less than the cap it is built on");
+		capped.Should().BeLessThan(cap + jitterBound,
+			because: "the jitter has to stay bounded or the deadline stops being a deadline: the window can be overshot by at most one capped sleep plus the draw");
+	}
+
+	[Test]
+	[Description("Two different draws produce two different tail delays, which is what proves the tail is actually read from the source rather than being a constant with a decorative parameter.")]
+	public void NextBackoffMilliseconds_Should_VaryTheCappedTail_When_TheJitterSourceDrawsDifferentValues() {
+		// Arrange
+		int cappedAttempt = (AtomicPublishRetry.BackoffCapMilliseconds
+			/ AtomicPublishRetry.BackoffStepMilliseconds) + 1;
+
+		// Act
+		int low = AtomicPublishRetry.NextBackoffMilliseconds(cappedAttempt, _ => 0);
+		int high = AtomicPublishRetry.NextBackoffMilliseconds(cappedAttempt,
+			_ => AtomicPublishRetry.BackoffJitterMilliseconds - 1);
+
+		// Assert
+		high.Should().BeGreaterThan(low,
+			because: "a constant tail can phase-lock with a reader whose period is near it, and the whole point of the draw is that two retries of the same attempt number do not land in the same place");
+	}
+
+	[Test]
+	[Description("The default retry window must buy enough attempts to make a contended publish fail less than once in a hundred runs against the reader duty cycle this window was measured on.")]
+	public void DefaultWindow_Should_DriveTheContendedFailureRateBelowOnePercent_When_TheReaderHoldsTheMeasuredDutyCycle() {
+		// Arrange
+		// Measured on the e2e reader that exposed this: a 46 microsecond cycle with the file held open for
+		// 38.8 of them. A publish is refused when EVERY attempt lands inside a held stretch, so the failure
+		// probability is the duty cycle raised to the number of attempts the window pays for.
+		const double measuredReaderDutyCycle = 0.844;
+		const double acceptableFailureRate = 0.01;
+		int worstCaseSleep = AtomicPublishRetry.BackoffCapMilliseconds
+			+ AtomicPublishRetry.BackoffJitterMilliseconds;
+
+		// Act
+		int guaranteedAttempts = (int)(AtomicPublishRetry.DefaultWindow.TotalMilliseconds / worstCaseSleep);
+		double failureRate = Math.Pow(measuredReaderDutyCycle, guaranteedAttempts);
+
+		// Assert
+		failureRate.Should().BeLessThan(acceptableFailureRate,
+			because: $"the window exists to make the contended publish a non-event, and {guaranteedAttempts} attempts against a {measuredReaderDutyCycle:P1} duty cycle still fail {failureRate:P2} of the time — shortening it puts the e2e back on the red side of one percent");
+	}
+
+	[Test]
+	[Description("The retry loop draws its tail from the injected source rather than a process-wide one, which is what makes the jitter observable and a contended publish reproducible in a test.")]
+	public void WriteOwnerOnlyTextToFileAtomic_Should_DrawTheBackoffJitterFromTheInjectedSource_When_TheDenialReachesTheCappedTail() {
+		// Arrange
+		using AtomicPublishHarness harness = new();
+		harness.File
+			.When(file => file.Move(Arg.Any<string>(), harness.TargetPath, true))
+			.Do(_ => throw new IOException("The process cannot access the file because it is being used by another process."));
+		int draws = 0;
+		// Long enough for the linear ramp (15, 30, 45, 60, 75, 90 ms) to reach the capped tail where the
+		// jitter applies, and no longer — the subject is the wiring, not the wait.
+		TimeSpan window = TimeSpan.FromMilliseconds(450);
+		FileSystem sut = new(harness.FileSystemUnderTest, window, bound => {
+			draws++;
+			return bound - 1;
+		});
+
+		// Act
+		Action publish = () => sut.WriteOwnerOnlyTextToFileAtomic(harness.TargetPath, "{}");
+
+		// Assert
+		publish.Should().Throw<IOException>(
+			because: "a denial that never clears must still end at the deadline; this test is about how the loop waits, not about it giving up");
+		draws.Should().BeGreaterThan(0,
+			because: "reaching the capped tail without consulting the injected source would mean production is jittering from somewhere else, or not at all");
 	}
 
 	#endregion

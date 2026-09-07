@@ -24,6 +24,13 @@ public sealed class InstallApplicationTool(
 	/// <summary>
 	/// Installs an application package into the requested Creatio environment.
 	/// </summary>
+	[McpToolExecution(
+		Location = McpToolExecutionLocation.Worker,
+		Lifetime = McpToolExecutionLifetime.PerCall,
+		OperationFamily = McpToolOperationFamily.None,
+		BudgetPolicy = McpToolBudgetPolicy.ParentKillDefault,
+		RequiresClientRequests = McpToolClientRequests.None,
+		SharedFileResource = McpToolSharedFileResource.None)]
 	[McpServerTool(Name = InstallApplicationToolName, ReadOnly = false, Destructive = true, Idempotent = false,
 		OpenWorld = false)]
 	[Description("Installs an application package into the specified Creatio environment.")]

@@ -16,7 +16,8 @@ This distinction matters most when the response is large.
 
 ## How `get-page` Handles Large Responses
 
-`get-page` produces two distinct payloads:
+`get-page` produces two distinct payloads. The tree below is the **CLI** response shape;
+the MCP tool never inlines these two sections — see "File-based output (MCP)" below.
 
 ```
 PageGetResponse
@@ -31,7 +32,8 @@ PageGetResponse
     └── body  ← the only field the agent actually edits
 ```
 
-The `bundle` section is read-only. The agent edits only `raw.body`.
+The `bundle` section is read-only. The agent edits only the body — `raw.body` over the CLI,
+or the contents of the file at `files.bodyFile` over MCP.
 
 ### File-based output (MCP)
 

@@ -1,0 +1,64 @@
+{
+  "runId": "43c0c528-3e49-4157-b26b-e0c36e6f3060",
+  "issue": "ENG-95891",
+  "mode": "agent",
+  "isolation": "isolated",
+  "supersedes": "916fc5e0-5432-4de9-8b73-a8aeb3d36216",
+  "stand": {
+    "alias": "krestov-test",
+    "url": "http://d_krestov_n.tscrm.com:1026"
+  },
+  "packageVersion": "1.4.0.18",
+  "guidance": {
+    "libraryVersion": "1.13.65",
+    "revision": "eb69cf742a3d9ae6018c956c7683f519eae8a2d5",
+    "transport": "git",
+    "ref": "tmp/eng95891-kb-1165"
+  },
+  "clio": {
+    "branch": "feature/ENG-95891-formula-expressions",
+    "commit": "77a8ff1ba"
+  },
+  "prompt": {
+    "path": "spec/eng-95891-formula-expressions/eng-95891-formula-expressions-manual-test-prompt.md",
+    "note": "process captions suffixed R2 for this run"
+  },
+  "processes": [
+    {
+      "case": "TC-A1",
+      "name": "UsrBpTest_Eng95891A1",
+      "caption": "BPTest ENG95891 R2 A1",
+      "package": "Custom"
+    },
+    {
+      "case": "TC-A2",
+      "name": "UsrBpTest_Eng95891A2",
+      "caption": "BPTest ENG95891 R2 A2",
+      "package": "Custom"
+    },
+    {
+      "case": "TC-A3",
+      "name": "UsrBpTest_Eng95891A3",
+      "caption": "BPTest ENG95891 R2 A3",
+      "package": "Custom"
+    },
+    {
+      "case": "TC-B1",
+      "name": "UsrBpTest_Eng95891B1",
+      "caption": "BPTest ENG95891 R2 B1",
+      "package": "Custom"
+    },
+    {
+      "case": "TC-B2",
+      "name": "UsrBpTest_Eng95891B2",
+      "caption": "BPTest ENG95891 R2 B2",
+      "package": "Custom"
+    },
+    {
+      "case": "TC-B3",
+      "name": "UsrBpTest_Eng95891B3",
+      "caption": "BPTest ENG95891 R2 B3",
+      "package": "Custom"
+    }
+  ]
+}

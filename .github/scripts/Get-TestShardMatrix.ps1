@@ -15,13 +15,11 @@ if ($DisableSharding) {
         include = @(
             @{
                 name = "$Suite-unsharded"
-                runNet8Compatibility = $Suite -eq "unit"
-                runConflictResolverTests = $Suite -eq "unit"
                 shardingDisabled = $true
             }
         )
     } | ConvertTo-Json -Compress -Depth 4
-    exit 0
+    return
 }
 
 $manifest = Get-Content -LiteralPath $ManifestPath -Raw | ConvertFrom-Json
@@ -33,8 +31,6 @@ if ($null -eq $suiteDefinition) {
 $include = @($suiteDefinition.shards | ForEach-Object {
     @{
         name = $_.name
-        runNet8Compatibility = $Suite -eq "unit" -and $_.name -eq "unit-1"
-        runConflictResolverTests = $Suite -eq "unit" -and $_.name -eq "unit-2"
         shardingDisabled = $false
     }
 })

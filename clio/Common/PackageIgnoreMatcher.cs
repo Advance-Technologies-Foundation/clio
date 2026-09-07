@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Text.RegularExpressions;
@@ -9,6 +10,8 @@ namespace Clio.Common
     /// </summary>
     public static class PackageIgnoreMatcher
     {
+        private static readonly TimeSpan RegexTimeout = TimeSpan.FromSeconds(1);
+
         /// <summary>
         /// Cache for compiled regex patterns to improve performance.
         /// </summary>
@@ -38,7 +41,7 @@ namespace Clio.Common
             var regex = _regexCache.GetOrAdd(mask, m =>
             {
                 var pattern = "^" + Regex.Escape(m).Replace("\\*", ".*").Replace("\\?", ".") + "$";
-                return new Regex(pattern, RegexOptions.IgnoreCase | RegexOptions.Compiled);
+                return new Regex(pattern, RegexOptions.IgnoreCase | RegexOptions.Compiled, RegexTimeout);
             });
             return regex.IsMatch(input);
         }

@@ -1,0 +1,62 @@
+{
+  "runId": "916fc5e0-5432-4de9-8b73-a8aeb3d36216",
+  "issue": "ENG-95891",
+  "mode": "agent",
+  "isolation": "isolated",
+  "stand": {
+    "alias": "krestov-test",
+    "url": "http://d_krestov_n.tscrm.com:1026"
+  },
+  "packageVersion": "1.4.0.18",
+  "guidance": {
+    "libraryVersion": "1.13.54",
+    "revision": "950a9989237a127c658b6cfab10a5d413d068b28",
+    "transport": "git"
+  },
+  "clio": {
+    "branch": "feature/ENG-95891-formula-expressions",
+    "commit": "77a8ff1ba"
+  },
+  "prompt": {
+    "path": "spec/eng-95891-formula-expressions/eng-95891-formula-expressions-manual-test-prompt.md"
+  },
+  "processes": [
+    {
+      "case": "TC-A1",
+      "name": "UsrPrice_ComputeTotal",
+      "caption": "BPTest ENG95891 A1",
+      "uid": "e2a77ecc-84ff-4f82-a66e-9a0bdaa5757c",
+      "package": "Custom"
+    },
+    {
+      "case": "TC-A2",
+      "name": "UsrNumbers_ComputeResult",
+      "caption": "BPTest ENG95891 A2",
+      "package": "Custom"
+    },
+    {
+      "case": "TC-A3",
+      "name": "UsrDue_ExtractDateParts",
+      "caption": "BPTest ENG95891 A3",
+      "package": "Custom"
+    },
+    {
+      "case": "TC-B1",
+      "name": "UsrAmount_SetDefault",
+      "caption": "BPTest ENG95891 B1",
+      "package": "Custom"
+    },
+    {
+      "case": "TC-B2",
+      "name": "UsrResult_SetFromTotal",
+      "caption": "BPTest ENG95891 B2",
+      "package": "Custom"
+    },
+    {
+      "case": "TC-B3",
+      "name": "UsrSum_ComputeTotal",
+      "caption": "BPTest ENG95891 B3",
+      "package": "Custom"
+    }
+  ]
+}

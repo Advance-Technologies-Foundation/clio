@@ -14,6 +14,7 @@ namespace Clio.Tests.Command.McpServer;
 public sealed class SharedIssueWorkflowSkillTests {
 	private static readonly string RepositoryRoot = Path.GetFullPath(
 		Path.Combine(AppContext.BaseDirectory, "..", "..", "..", ".."));
+	private static readonly TimeSpan RegexTimeout = TimeSpan.FromSeconds(1);
 
 	[Test]
 	[Category("Unit")]
@@ -38,9 +39,9 @@ public sealed class SharedIssueWorkflowSkillTests {
 		string canonicalFrontmatter = canonical.Split(
 			"\n---\n", StringSplitOptions.None)[0] + "\n---\n";
 		Match claudeRedirect = Regex.Match(
-			claudeWrapper, "Read `(?<path>[^`]+)` completely");
+			claudeWrapper, "Read `(?<path>[^`]+)` completely", RegexOptions.None, RegexTimeout);
 		Match codexRedirect = Regex.Match(
-			codexWrapper, "Read `(?<path>[^`]+)` completely");
+			codexWrapper, "Read `(?<path>[^`]+)` completely", RegexOptions.None, RegexTimeout);
 		string claudeResolvedTarget = Path.GetFullPath(
 			Path.Combine(claudeDirectory, claudeRedirect.Groups["path"].Value));
 		string codexResolvedTarget = Path.GetFullPath(

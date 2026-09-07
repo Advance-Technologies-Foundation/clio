@@ -33,6 +33,13 @@ public sealed class AdviseThemePaletteTool(IThemePaletteAdvisor advisor) {
 
 	/// <summary>Runs one colour-advisory operation and returns its verdict packet.</summary>
 	[McpServerTool(Name = ToolName, ReadOnly = true, Destructive = false, Idempotent = true, OpenWorld = false)]
+	[McpToolExecution(
+		Location = McpToolExecutionLocation.InProcess,
+		Lifetime = McpToolExecutionLifetime.NotApplicable,
+		OperationFamily = McpToolOperationFamily.None,
+		BudgetPolicy = McpToolBudgetPolicy.None,
+		RequiresClientRequests = McpToolClientRequests.None,
+		SharedFileResource = McpToolSharedFileResource.None)]
 	[Description("Colour advisor for the theming palette conversation — returns pre-computed verdicts, not raw numbers. "
 		+ "Stateless and offline; re-call it whenever a colour input changes. Select the step via 'operation': "
 		+ "triage (sort raw brand colours, pick the primary), adapt-primary (is the primary readable / offer a darker one), "

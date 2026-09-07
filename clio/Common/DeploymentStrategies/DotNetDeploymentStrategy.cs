@@ -22,6 +22,7 @@ public class DotNetDeploymentStrategy : IDeploymentStrategy
 	private readonly ILogger _logger;
 	private readonly ISystemServiceManager _serviceManager;
 	private readonly ICreatioHostService _creatioHostService;
+	private static readonly TimeSpan RegexTimeout = TimeSpan.FromSeconds(1);
 
 	/// <summary>
 	/// Initializes a new instance of the DotNetDeploymentStrategy class.
@@ -279,7 +280,9 @@ public class DotNetDeploymentStrategy : IDeploymentStrategy
 				updatedJson = System.Text.RegularExpressions.Regex.Replace(
 					updatedJson,
 					@"""Url""\s*:\s*""http://\[\:\:\]:\d+""",
-					$@"""Url"": ""http://[::]:{ options.SitePort}"""
+					$@"""Url"": ""http://[::]:{ options.SitePort}""",
+					System.Text.RegularExpressions.RegexOptions.None,
+					RegexTimeout
 				);
 
 				// Remove HTTPS endpoint block if it exists
@@ -288,7 +291,8 @@ public class DotNetDeploymentStrategy : IDeploymentStrategy
 					updatedJson,
 					@",?\s*""Https""\s*:\s*\{[^}]*""Certificate""\s*:\s*\{[^}]*\}[^}]*\}",
 					string.Empty,
-					System.Text.RegularExpressions.RegexOptions.Singleline
+					System.Text.RegularExpressions.RegexOptions.Singleline,
+					RegexTimeout
 				);
 
 				// If no Kestrel Http URL was found, we need to ensure it exists

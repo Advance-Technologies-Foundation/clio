@@ -44,13 +44,16 @@ internal sealed class KnowledgeReferenceExampleService : IKnowledgeReferenceExam
 	private const int MaxCollectionCount = 128;
 	private static readonly Regex ImmutableRevisionPattern = new(
 		"^(?:[0-9a-fA-F]{40}|[0-9a-fA-F]{64})$",
-		RegexOptions.CultureInvariant | RegexOptions.NonBacktracking);
+		RegexOptions.CultureInvariant | RegexOptions.NonBacktracking,
+		TimeSpan.FromSeconds(1));
 	private static readonly Regex StableIdPattern = new(
 		"^[a-z0-9]+(?:[.-][a-z0-9]+)*$",
-		RegexOptions.CultureInvariant | RegexOptions.NonBacktracking);
+		RegexOptions.CultureInvariant | RegexOptions.NonBacktracking,
+		TimeSpan.FromSeconds(1));
 	private static readonly Regex EntryPointKeyPattern = new(
 		"^[a-z][A-Za-z0-9]*$",
-		RegexOptions.CultureInvariant | RegexOptions.NonBacktracking);
+		RegexOptions.CultureInvariant | RegexOptions.NonBacktracking,
+		TimeSpan.FromSeconds(1));
 	private readonly IKnowledgeBundleActivator _activator;
 	private readonly IKnowledgeBundleRuntime _runtime;
 	private readonly IKnowledgeReferenceExampleParser _parser;
