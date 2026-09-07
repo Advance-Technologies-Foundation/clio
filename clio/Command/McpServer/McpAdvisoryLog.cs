@@ -23,13 +23,6 @@ namespace Clio.Command.McpServer;
 /// MCP hosts capture, so it is the only console sink an MCP-mode emitter may use. The logger call is
 /// kept as well so a configured file sink still receives the line.
 /// </para>
-/// <para>
-/// <paramref name="mirrorToStandardError"/> and <paramref name="writeStandardError"/> are parameters rather
-/// than reads of <c>Program.IsMcpServerMode</c> and <see cref="Console.Error"/> for one reason: the
-/// stderr mirror is the load-bearing half of the delivery and was previously unreachable from a test,
-/// because an in-process test is never in MCP server mode. Passing them in makes both branches
-/// executable without a mutable static seam or a spawned child process.
-/// </para>
 /// </remarks>
 internal static class McpAdvisoryLog {
 
@@ -38,8 +31,16 @@ internal static class McpAdvisoryLog {
 
 	/// <summary>
 	/// Redacts and length-bounds <paramref name="message"/>, writes it to <paramref name="logger"/>, and
-	/// — only when <paramref name="isMcpServerMode"/> — mirrors it to standard error.
+	/// — only when <paramref name="mirrorToStandardError"/> — mirrors it to standard error.
 	/// </summary>
+	/// <remarks>
+	/// <paramref name="mirrorToStandardError"/> and <paramref name="writeStandardError"/> are parameters
+	/// rather than reads of <c>Program.IsMcpServerMode</c> and <see cref="Console.Error"/> for one
+	/// reason: the stderr mirror is the load-bearing half of the delivery and was otherwise unreachable
+	/// from an in-process test, which is never in MCP server mode. Passing them in makes both branches
+	/// executable without a mutable static seam. The wiring is additionally proven end to end against a
+	/// real stdio child in <c>McpToolErrorFilterE2ETests</c>.
+	/// </remarks>
 	/// <param name="logger">The host logger. <c>null</c> is normal (a static seam that could not locate
 	/// one) and must stay silent rather than throw.</param>
 	/// <param name="message">The advisory text. Redaction and length-bounding happen HERE so no caller

@@ -652,6 +652,134 @@ public sealed class McpToolErrorFilterTests
 				+ "must never appear in the advertised set");
 	}
 
+	// --- ENG-95885 review round 7 ---
+
+	[Test]
+	[Category("Unit")]
+	[Description("A payload the classifier cannot process becomes a structured, redacted error result instead of an exception escaping to the SDK. Normalization runs BEFORE the pipeline's own redacted catch, so anything thrown here would have reached the SDK's unhandled path as raw text — and an inner-most exception message routinely carries paths, URIs and credentials (ENG-95885 review round 7).")]
+	public async Task Normalization_ShouldReturnAStructuredError_WhenTheRewriteThrows() {
+		// Arrange — nested one level below JsonDocument's default 64-deep ceiling, so the payload PARSES
+		// as sent and only crosses the limit when BuildWrappedArguments re-parses it inside the wrapper.
+		// That is the reachable case: the rewrite is what adds the level.
+		const int depth = 64;
+		string deep = new string('[', depth) + new string(']', depth);
+		RequestContext<CallToolRequestParams> context = CreateContext(
+			"list-apps", new Dictionary<string, JsonElement> {
+				["environment-name"] = JsonDocument.Parse(deep).RootElement.Clone()
+			});
+		context.MatchedPrimitive = CreateRealTool();
+		context = WithRoutingAuthority(context);
+		bool reachedTool = false;
+		McpRequestHandler<CallToolRequestParams, CallToolResult> handler =
+			McpToolErrorFilter.HandleCallToolErrors((_, _) => {
+				reachedTool = true;
+				return ValueTask.FromResult(new CallToolResult { IsError = false });
+			});
+
+		// Act
+		CallToolResult? result = null;
+		Func<Task> call = async () => result = await handler(context, CancellationToken.None);
+
+		// Assert
+		await call.Should().NotThrowAsync(
+			because: "an exception from the classifier would leave through the SDK's own unhandled path, "
+				+ "unredacted — which is the whole reason the pipeline has a redacting catch at all");
+		result.Should().NotBeNull(because: "the pipeline must answer rather than fault");
+		result!.IsError.Should().BeTrue(
+			because: "failing to classify a shape is fail-closed: the call must not proceed on a payload "
+				+ "nobody has vouched for");
+		reachedTool.Should().BeFalse(
+			because: "the tool must not run on arguments the classifier could not check");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("A flat key differing from the canonical name only in CASING is accepted, not refused. BindingsModule.CreateMcpSerializerOptions inherits PropertyNameCaseInsensitive = true from the SDK, so the key binds once wrapped — classifying it as unknown refused a call the tool would have served, and told the caller to use the name 'exactly' (ENG-95885 review round 7).")]
+	public void Normalization_ShouldAcceptAFlatKey_ThatDiffersOnlyInCasing() {
+		// Arrange
+		CallToolRequestParams parameters = new() {
+			Name = "list-apps",
+			Arguments = new Dictionary<string, JsonElement>(StringComparer.Ordinal) {
+				["Environment-Name"] = JsonSerializer.SerializeToElement("local")
+			}
+		};
+
+		// Act
+		bool refused = McpToolErrorFilter.TryRefuseArguments(
+			parameters, GetFakeToolMethod(), out CallToolResult? _, out McpArgumentShapeReport report);
+		FakeCompositeArgs? bound = JsonSerializer.Deserialize<FakeCompositeArgs>(
+			"""{"Environment-Name":"local"}""", Clio.BindingsModule.CreateMcpSerializerOptions());
+
+		// Assert
+		bound!.EnvironmentName.Should().Be("local",
+			because: "the premise is that the binder really is case-insensitive; without that the "
+				+ "classifier would be right to refuse and this case would be arguing for a bug");
+		refused.Should().BeFalse(
+			because: "the classifier must match the binder's tolerance rather than being stricter than it");
+		report.Outcome.Should().Be(McpArgumentShapeOutcome.WrappedFlat,
+			because: "a differently-cased canonical key is still a canonical-flat payload");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Two top-level keys that differ only in casing name ONE argument, so the payload is refused rather than wrapped. Case-insensitive matching is what makes this shape possible at all, and wrapping both would hand the serializer two properties it treats as the same one — which value wins is not the normalizer's to choose (ENG-95885 review round 7).")]
+	public void Normalization_ShouldRefuse_TwoKeysDifferingOnlyInCasing() {
+		// Arrange
+		CallToolRequestParams parameters = new() {
+			Name = "list-apps",
+			Arguments = new Dictionary<string, JsonElement>(StringComparer.Ordinal) {
+				["environment-name"] = JsonSerializer.SerializeToElement("lower"),
+				["Environment-Name"] = JsonSerializer.SerializeToElement("upper")
+			}
+		};
+
+		// Act
+		bool refused = McpToolErrorFilter.TryRefuseArguments(
+			parameters, GetFakeToolMethod(), out CallToolResult? result, out McpArgumentShapeReport report);
+
+		// Assert
+		refused.Should().BeTrue(
+			because: "silently keeping one of two colliding values is exactly the guessing this change "
+				+ "refuses to do for a hybrid payload, and this is the same situation");
+		report.Outcome.Should().Be(McpArgumentShapeOutcome.RefusedAmbiguous,
+			because: "the collision is a shape problem, so it is reported as the ambiguous outcome");
+		string text = string.Join(" ", result!.Content.OfType<TextContentBlock>().Select(b => b.Text));
+		text.Should().Contain("differ only in casing",
+			because: "the caller has to know WHY two keys they consider distinct are one argument");
+		text.Should().NotContain("lower",
+			because: "neither colliding value may be echoed as the chosen one");
+		text.Should().NotContain("upper",
+			because: "neither colliding value may be echoed as the chosen one");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("A non-empty flat payload on a composite exposing NO supplyable field is refused, not passed through. This was the third and last instance of the zero-canonical-name ordering trap: the bail let such a payload bind args to null and answer from defaults, which is the silent-default-success this change exists to remove (ENG-95885 review round 7).")]
+	public void Normalization_ShouldRefuse_AFlatPayloadWhenTheRecordExposesNoSupplyableField() {
+		// Arrange
+		CallToolRequestParams parameters = new() {
+			Name = "fake-getonly-only-tool",
+			Arguments = new Dictionary<string, JsonElement>(StringComparer.Ordinal) {
+				["computed"] = JsonSerializer.SerializeToElement("probe")
+			}
+		};
+		MethodInfo method = typeof(FakeToolWithGetOnlyOnlyArgs).GetMethod(
+			nameof(FakeToolWithGetOnlyOnlyArgs.Execute), BindingFlags.Public | BindingFlags.Instance)!;
+
+		// Act
+		bool refused = McpToolErrorFilter.TryRefuseArguments(
+			parameters, method, out CallToolResult? result, out McpArgumentShapeReport report);
+
+		// Assert
+		refused.Should().BeTrue(
+			because: "having nothing a caller may supply is not a licence to run the tool on defaults");
+		report.Outcome.Should().Be(McpArgumentShapeOutcome.RefusedUnknown,
+			because: "every key is unknown when the record exposes no supplyable field");
+		string text = string.Join(" ", result!.Content.OfType<TextContentBlock>().Select(b => b.Text));
+		text.Should().Contain("this tool accepts no arguments",
+			because: "an empty valid-argument list must read as information, not as a formatting bug");
+	}
+
 	// --- ENG-95885 review round 6 ---
 
 	[Test]

@@ -84,8 +84,41 @@ internal static class McpToolArgumentSupport {
 	public static bool IsCompositeArgsParameter(Type type) {
 		ArgumentNullException.ThrowIfNull(type);
 		Type underlying = Nullable.GetUnderlyingType(type) ?? type;
-		return underlying != typeof(string) && !underlying.IsValueType;
+		if (underlying == typeof(string) || underlying.IsValueType) {
+			return false;
+		}
+		return !IsJsonArrayShaped(underlying);
 	}
+
+	/// <summary>
+	/// True for a type System.Text.Json binds from a JSON ARRAY rather than a JSON object.
+	/// </summary>
+	/// <remarks>
+	/// ENG-95885 review round 7. "Non-string reference type" swept in arrays, <c>List&lt;T&gt;</c> and
+	/// every other sequence, none of which arrives as a JSON object — so wrapping a payload for one would
+	/// be nonsense. It was latent only because such a type yields no canonical names today, and
+	/// <c>List&lt;T&gt;</c> shows why that is thin cover: it exposes a public settable <c>Capacity</c>,
+	/// which the canonical-name walk would happily report as a supplyable wire field.
+	/// <para>
+	/// Dictionaries are deliberately NOT excluded: they bind from a JSON object, they are how
+	/// <c>clio-run</c> carries its inner <c>args</c>, and this predicate is shared with
+	/// <c>ClioRunTool</c> by construction — excluding them would change what that tool considers a
+	/// composite parameter, which is the one thing this seam exists to keep in step.
+	/// </para>
+	/// </remarks>
+	private static bool IsJsonArrayShaped(Type type) {
+		if (!typeof(System.Collections.IEnumerable).IsAssignableFrom(type)) {
+			return false;
+		}
+		return !IsDictionaryShaped(type) && !type.GetInterfaces().Any(IsDictionaryShaped);
+	}
+
+	/// <summary>True for a dictionary contract, which binds from a JSON object and stays composite.</summary>
+	private static bool IsDictionaryShaped(Type candidate) =>
+		typeof(System.Collections.IDictionary).IsAssignableFrom(candidate)
+		|| (candidate.IsGenericType
+			&& (candidate.GetGenericTypeDefinition() == typeof(IDictionary<,>)
+				|| candidate.GetGenericTypeDefinition() == typeof(IReadOnlyDictionary<,>)));
 
 	/// <summary>
 	/// The shared trigger predicate: true when <paramref name="method"/> exposes EXACTLY ONE bindable

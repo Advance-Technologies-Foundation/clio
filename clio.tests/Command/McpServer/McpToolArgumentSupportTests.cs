@@ -224,6 +224,34 @@ public sealed class McpToolArgumentSupportTests
 		}
 	}
 
+	[TestCase(typeof(string[]))]
+	[TestCase(typeof(List<string>))]
+	[Category("Unit")]
+	[Description("A sequence is NOT a composite args parameter: System.Text.Json binds it from a JSON array, never a JSON object, so wrapping a payload for one would be nonsense. List<T> shows why 'non-string reference type' was thin cover — it exposes a public settable Capacity, which the canonical-name walk would report as a supplyable wire field (ENG-95885 review round 7).")]
+	public void IsCompositeArgsParameter_ShouldRejectASequence(Type sequence) {
+		// Act
+		bool composite = McpToolArgumentSupport.IsCompositeArgsParameter(sequence);
+
+		// Assert
+		composite.Should().BeFalse(
+			because: $"{sequence.Name} arrives as a JSON array, so it is not an args object the normalizer "
+				+ "may rewrite a flat payload into");
+	}
+
+	[TestCase(typeof(Dictionary<string, string>))]
+	[TestCase(typeof(IReadOnlyDictionary<string, string>))]
+	[Category("Unit")]
+	[Description("A dictionary REMAINS a composite args parameter: it binds from a JSON object, it is how clio-run carries its inner args, and this predicate is shared with ClioRunTool by construction — excluding dictionaries would change what that tool considers composite, which is the one thing this seam exists to keep in step (ENG-95885 review round 7).")]
+	public void IsCompositeArgsParameter_ShouldStillAcceptADictionary(Type dictionary) {
+		// Act
+		bool composite = McpToolArgumentSupport.IsCompositeArgsParameter(dictionary);
+
+		// Assert
+		composite.Should().BeTrue(
+			because: $"{dictionary.Name} arrives as a JSON object, and narrowing the shared predicate past "
+				+ "it would desynchronise the normalizer from clio-run");
+	}
+
 	[Test]
 	[Category("Unit")]
 	[Description("Both predicates reject null instead of throwing a NullReferenceException deeper in the reflection walk (ENG-95885).")]

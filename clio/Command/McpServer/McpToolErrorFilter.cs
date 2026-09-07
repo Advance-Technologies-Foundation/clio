@@ -366,6 +366,58 @@ public static class McpToolErrorFilter
 			return false;
 		}
 
+		return TryRefuseCallArgumentsGuarded(context, parameters, out result);
+	}
+
+	/// <summary>
+	/// <see cref="TryRefuseCallArguments"/>, with every classification failure converted into the same
+	/// structured, REDACTED result the rest of this pipeline produces.
+	/// </summary>
+	/// <remarks>
+	/// ENG-95885 review round 7. This runs BEFORE the <c>try</c> in
+	/// <see cref="HandleCallToolErrorsCore"/> — deliberately, so the deserialization diagnostics see the
+	/// rewritten arguments — which means it also runs OUTSIDE that block's redacted catch. That catch
+	/// exists because an inner-most exception message routinely carries absolute paths, request URIs and
+	/// credentials (threat model R-7), so anything escaping here would reach the SDK's own unhandled path
+	/// as raw text. <see cref="TryCreateArgumentDeserializationError"/> already guards its own
+	/// <c>Deserialize</c> call for exactly this reason; the newer and less-travelled normalization logic
+	/// did not, on what this change makes the majority path.
+	/// <para>
+	/// The concrete reachable case is depth: <see cref="BuildWrappedArguments"/> re-parses the payload one
+	/// level deeper than it arrived, so a caller near <see cref="JsonDocument"/>'s default 64-level
+	/// ceiling crosses it during the rewrite and throws a <see cref="JsonException"/> that no other frame
+	/// was catching.
+	/// </para>
+	/// <para>
+	/// Refusing is the fail-closed choice: the classifier could not decide the shape, so the call must not
+	/// proceed on a payload nobody has vouched for.
+	/// </para>
+	/// </remarks>
+	private static bool TryRefuseCallArgumentsGuarded(
+		RequestContext<CallToolRequestParams> context,
+		CallToolRequestParams parameters,
+		out CallToolResult? result) {
+		result = null;
+		try {
+			return TryRefuseCallArgumentsCore(context, parameters, out result);
+		}
+		catch (Exception exception) {
+			result = CreateJsonErrorResult(
+				$"invalid-argument-shape: tool '{parameters.Name ?? UnknownToolName}' sent a payload the "
+				+ "argument-shape classifier could not process: "
+				+ GetSurfacedMessage(exception)
+				+ " Nothing ran: the call was refused rather than executed on a shape that could not be "
+				+ "checked.");
+			return true;
+		}
+	}
+
+	private static bool TryRefuseCallArgumentsCore(
+		RequestContext<CallToolRequestParams> context,
+		CallToolRequestParams parameters,
+		out CallToolResult? result) {
+		result = null;
+
 		// MatchedPrimitive is null for a tool that is not advertised in tools/list, so the DURABLE
 		// long-tail path (McpDurableCallToolHandler / IClioRunExecutor.InvokeResolvedAsync) is
 		// intentionally NOT normalized: there is no MethodInfo here to reflect a parameter contract from.
@@ -463,15 +515,43 @@ public static class McpToolErrorFilter
 			return true;
 		}
 
+		// NO zero-canonical-name bail here. Rounds 5 and 6 moved the empty-payload and hybrid branches
+		// ahead of one; this was the third instance of the same trap and the only one still live. A
+		// composite exposing no supplyable field (say, one whose sole member is a [JsonExtensionData] bag)
+		// would let a NON-EMPTY flat payload bail out untouched, bind `args` to null and answer from
+		// defaults — the silent-default-success this whole change exists to remove. With the bail gone
+		// every key is simply unknown, which is the refusal the caller can act on (review round 7).
 		IReadOnlyList<string> canonicalNames = GetJsonPropertyNames(wrapper.ParameterType);
-		if (canonicalNames.Count == 0) {
-			return false;
-		}
 
-		HashSet<string> canonicalNameSet = new(canonicalNames, StringComparer.Ordinal);
+		// OrdinalIgnoreCase, matching the BINDER rather than being stricter than it:
+		// BindingsModule.CreateMcpSerializerOptions inherits PropertyNameCaseInsensitive = true from the
+		// SDK, so a key differing only in casing binds fine once wrapped. Classifying it as unknown
+		// refused a call the tool would have served, and the refusal even told the caller to use the name
+		// "exactly". The same tolerance is what makes the PascalCase fallback in GetJsonPropertyNames
+		// correct at all under the SDK's camelCase naming policy (review round 7).
+		HashSet<string> canonicalNameSet = new(canonicalNames, StringComparer.OrdinalIgnoreCase);
 		List<string> unknownKeys = arguments.Keys
 			.Where(key => !canonicalNameSet.Contains(key))
 			.ToList();
+
+		// Case-insensitive matching creates a shape that ordinal matching could not: two DISTINCT
+		// top-level keys claiming the same canonical field. Wrapping both would hand the serializer two
+		// properties it considers the same one, and which value wins is not ours to pick — so this is
+		// refused for the same reason a hybrid payload is.
+		string? collidingField = arguments.Keys
+			.Where(key => canonicalNameSet.Contains(key))
+			.GroupBy(key => key, StringComparer.OrdinalIgnoreCase)
+			.Where(group => group.Count() > 1)
+			.Select(group => group.Key)
+			.FirstOrDefault();
+		if (collidingField is not null) {
+			report = new McpArgumentShapeReport(
+				McpArgumentShapeOutcome.RefusedAmbiguous, [.. arguments.Keys]);
+			result = CreateJsonErrorResult(BuildCaseCollisionMessage(
+				parameters.Name,
+				arguments.Keys.Where(key => string.Equals(key, collidingField, StringComparison.OrdinalIgnoreCase))));
+			return true;
+		}
 		if (unknownKeys.Count > 0
 			&& method.GetCustomAttribute<McpRecoversUnknownArgumentsAttribute>() is null) {
 			// ANY unknown key is refused with the canonical field list — the whole payload unknown, OR a
@@ -624,12 +704,29 @@ public static class McpToolErrorFilter
 	private static string BuildUnknownArgumentsMessage(
 		string? toolName, string wrapperName, IReadOnlyList<string> canonicalNames, List<string> unknownKeys) {
 		string unknownDisplay = string.Join(", ", unknownKeys.Select(key => $"\"{key}\""));
-		string validDisplay = string.Join(", ", canonicalNames.Select(key => $"\"{key}\""));
+		// A record with NO supplyable field is reachable now that the zero-canonical bail is gone, and
+		// "Valid arguments: ." would read as a formatting bug rather than as information.
+		string validDisplay = canonicalNames.Count == 0
+			? "this tool accepts no arguments"
+			: string.Join(", ", canonicalNames.Select(key => $"\"{key}\""));
 		return $"Tool '{toolName ?? UnknownToolName}' received unknown argument(s) {unknownDisplay}. "
 			+ $"Valid arguments: {validDisplay}. "
-			+ $"Use exactly those names, either flat at the top level or wrapped in \"{wrapperName}\" "
+			// Casing is NOT part of "exactly": the binder matches case-insensitively, and the classifier
+			// now matches it rather than being stricter (review round 7).
+			+ $"Use those names, either flat at the top level or wrapped in \"{wrapperName}\" "
 			+ $"({{\"{wrapperName}\": {{...}}}}). Nothing ran: the call was refused rather than executed "
 			+ "with default values.";
+	}
+
+	/// <summary>
+	/// Names the two differently-cased keys that claim one canonical field, so the caller removes one
+	/// rather than guessing which the serializer kept.
+	/// </summary>
+	private static string BuildCaseCollisionMessage(string? toolName, IEnumerable<string> collidingKeys) {
+		string display = string.Join(", ", collidingKeys.Select(key => $"\"{key}\""));
+		return $"Tool '{toolName ?? UnknownToolName}' received {display}, which differ only in casing and "
+			+ "name the same argument. Argument names are matched case-insensitively, so exactly one of "
+			+ "them may be sent. Nothing ran: which value would win is not decided for you.";
 	}
 
 	private static string BuildAmbiguousShapeMessage(
