@@ -369,12 +369,9 @@ internal class ListEntityClientSchemasCommand : Command<ListEntityClientSchemasO
 			try {
 				IReadOnlyDictionary<Guid, LookupDefaultResolution> resolutions =
 					_lookupDisplayValueResolver.ResolveMany(referenceSchemaName, group.Value, resolverOptions);
-				var captions = new Dictionary<Guid, string>();
-				foreach (KeyValuePair<Guid, LookupDefaultResolution> resolution in resolutions) {
-					if (!string.IsNullOrWhiteSpace(resolution.Value?.DisplayValue)) {
-						captions[resolution.Key] = resolution.Value.DisplayValue;
-					}
-				}
+				Dictionary<Guid, string> captions = resolutions
+					.Where(resolution => !string.IsNullOrWhiteSpace(resolution.Value?.DisplayValue))
+					.ToDictionary(resolution => resolution.Key, resolution => resolution.Value.DisplayValue);
 				captionsByTypeColumn[group.Key] = captions;
 			} catch (Exception ex) {
 				// ResolveMany is fail-soft, but keep the per-column guard as defence in depth so an unexpected fault in

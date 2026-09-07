@@ -146,7 +146,7 @@ internal sealed class LookupDefaultDisplayValueResolver : ILookupDefaultDisplayV
 			return result;
 		}
 		foreach (Guid[] chunk in distinctIds.Chunk(MaxIdsPerQuery)) {
-			ResolveChunk(referenceSchemaName.Trim(), displayColumn!, chunk, options, result);
+			ResolveChunk(referenceSchemaName.Trim(), displayColumn, chunk, options, result);
 		}
 		return result;
 	}
