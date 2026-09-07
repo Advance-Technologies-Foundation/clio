@@ -4,6 +4,7 @@ applies-to:
   - clio/Common/McpWorker/WorkerProcessSupervisor.cs
   - clio/Common/McpWorker/StaleWorkerRegistry.cs
   - clio.mcp.e2e/Support/Mcp/WorkerSpawnObserver.cs
+  - clio.mcp.e2e/Support/Mcp/WorkerSpawnObserverReleaseWaitTests.cs
 ticket: ENG-96705
 date: 2026-09-07
 ---
@@ -34,4 +35,6 @@ child is still alive; the second waits a ceiling and then reports a leak for a r
 retried, or — worse — treats a swallowed unregister as an eventual-consistency delay and raises the
 timeout until the test asserts nothing. Wait on the two conditions SEPARATELY: poll the registry for the
 entry and poll process liveness by identity (pid AND start time), and keep failing when either survives.
-`WorkerSpawnObserver.WaitUntilWorkersAreReleased` in `clio.mcp.e2e` is the worked example.
+`WorkerSpawnObserver.WaitUntilWorkersAreReleased` in `clio.mcp.e2e` is the worked example, and
+`WorkerSpawnObserverReleaseWaitTests` pins both halves — including that an entry which never goes still
+fails, and that an unreadable registry is never mistaken for a drained one.
