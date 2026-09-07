@@ -92,6 +92,75 @@ public sealed class MobilePageConversionGuideSandboxE2ETests : McpContractFixtur
 	}
 
 	[Test]
+	[Description("Non-vacuous declaredElements guard: converts real seeded pages until one is built on PageWithRightAreaAndTabsFreedomTemplate, then asserts the bundled rule's contract through the real clio MCP server — the web Tabs strip is CREATED (insert of crt.TabPanel, not a merge onto a Tabs the base mobile template lacks) and the declared RightPanelTab is either inserted under it at index 1 with its caption resource or dropped as empty, never absent. A conversion failure fails the test; no seeded right-area page degrades to Ignore with an explicit reason (never a vacuous pass).")]
+	[AllureTag(ToolName)]
+	[AllureName("get-mobile-page-conversion-guide declares the rule's declared tab on a right-area page")]
+	[AllureDescription("Iterates the seeded application's pages, converts each through the real clio MCP server, and on the first page whose sourceTemplate is PageWithRightAreaAndTabsFreedomTemplate asserts that Tabs is a created insert and RightPanelTab is present in the element map (insert with index 1 and caption resource, or drop); a conversion failure fails the test, and no right-area page at all degrades to Ignore.")]
+	public async Task MobilePageConversionGuideTool_Should_Declare_ExtraTab_On_RightAreaTemplatePage() {
+		// Arrange
+		const string rightAreaTemplate = "PageWithRightAreaAndTabsFreedomTemplate";
+		const string extraTab = "RightPanelTab";
+		McpE2ESettings settings = TestConfiguration.Load();
+		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
+		await using ArrangeContext context = Arrange(TimeSpan.FromMinutes(5));
+		await RequireConverterFeatureOrIgnoreAsync(context);
+		string environmentName = await ResolveReachableEnvironmentAsync(settings);
+		IReadOnlyList<string> candidates = await ResolveSeededTabbedPageCandidatesOrIgnoreAsync(
+			context.Session, context.CancellationTokenSource.Token, environmentName);
+
+		// Act — convert candidates until one is a right-area page; a conversion FAILURE is a regression, not a seed gap.
+		MobilePageConversionGuide? rightAreaGuide = null;
+		string convertedSchemaName = string.Empty;
+		List<string> failedCandidates = [];
+		foreach (string schemaName in candidates) {
+			MobilePageConversionGuide? guide = await ConvertOrCollectFailureAsync(
+				context.Session, context.CancellationTokenSource.Token, environmentName, schemaName, failedCandidates);
+			if (guide is null || !string.Equals(guide.SourceTemplate, rightAreaTemplate, StringComparison.OrdinalIgnoreCase)) {
+				continue;
+			}
+			rightAreaGuide = guide;
+			convertedSchemaName = schemaName;
+			break;
+		}
+
+		// Assert
+		if (rightAreaGuide is null) {
+			if (failedCandidates.Count > 0) {
+				Assert.Fail(
+					$"{failedCandidates.Count} of {candidates.Count} seeded page(s) of '{ApplicationCode}' on environment "
+					+ $"'{environmentName}' failed to convert; get-mobile-page-conversion-guide must succeed on every seeded "
+					+ $"page, so this is a runtime regression, not missing seed data: {string.Join("; ", failedCandidates)}");
+			}
+			Assert.Ignore(
+				$"None of the {candidates.Count} seeded page(s) of '{ApplicationCode}' on environment '{environmentName}' "
+				+ $"is built on {rightAreaTemplate}, so the declaredElements contract could not be exercised end to end. Add a "
+				+ "seeded page on that template (with content in its right profile area) to guard this integration.");
+		}
+		rightAreaGuide.RecommendedMobileTemplate.Should().Be("BaseMobilePageTemplate",
+			because: $"'{convertedSchemaName}' is a right-area page and the bundled rule targets the base mobile record page");
+		ElementMapEntry tabs = rightAreaGuide.ElementMap.Should().ContainSingle(e => e.MobileName == "Tabs",
+			because: "the web tab strip must reach the mobile page exactly once").Subject;
+		tabs.Operation.Should().Be("insert",
+			because: "BaseMobilePageTemplate has no Tabs, so the pair Tabs -> Tabs creates the strip from the web element instead of merging onto nothing");
+		tabs.MobileType.Should().Be("crt.TabPanel", because: "the created strip keeps the web component type");
+		ElementMapEntry declared = rightAreaGuide.ElementMap.Should().ContainSingle(e =>
+				string.Equals(e.MobileName ?? e.WebName, extraTab, StringComparison.OrdinalIgnoreCase),
+			because: "the declared tab is always accounted for: inserted when right-panel content survived, dropped when nothing landed in it").Subject;
+		if (declared.Operation == "insert") {
+			declared.ParentName.Should().Be("Tabs", because: "the rule declares the tab inside the converted strip");
+			declared.MobileType.Should().Be("crt.TabContainer", because: "the declared type is a tab");
+			declared.Index.Should().Be(1, because: "the rule declares index 1, right after General information");
+			declared.CaptionResource?.Key.Should().Be("RightPanelTab_caption",
+				because: "the declared caption resource travels with the entry so the caller registers it");
+			rightAreaGuide.ResourceStrings.Should().ContainKey("RightPanelTab_caption",
+				because: "the declared caption text is exposed for registration like every converted caption");
+		} else {
+			declared.Operation.Should().Be("drop",
+				because: "a declared tab that received no content is removed rather than shipped empty");
+		}
+	}
+
+	[Test]
 	[Description("Non-vacuous MainHeader->FAB guard (ENG-93152): converts real seeded pages until one yields a FloatingActionButton.menuItems entry, then asserts at least one real header-action conversion and its crt.MenuItem/denylist contract. When NO seeded page carries a header action it IGNORES with an explicit reason instead of passing silently, so a regression that stops MainHeader->FAB is caught on any header page and missing seed coverage is surfaced rather than hidden.")]
 	[AllureTag(ToolName)]
 	[AllureName("get-mobile-page-conversion-guide converts MainHeader actions into the floating action button")]

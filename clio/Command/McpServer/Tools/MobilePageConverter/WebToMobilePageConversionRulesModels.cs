@@ -170,8 +170,83 @@ public sealed class TemplateMappingRule {
 	[JsonPropertyName("components")]
 	public IReadOnlyList<ComponentMappingRule> Components { get; init; } = [];
 
+	/// <summary>
+	/// Elements the rule DECLARES on top of the mobile template — any mobile component or container the
+	/// template lacks but the conversion needs (a receiver such as one more tab in a converted tab strip, or a
+	/// plain component the mobile page should always carry). COMPONENT-AGNOSTIC: the mobile type, the parent
+	/// slot, the position, the values and the optional caption all come from the entry; the converter adds no
+	/// type-specific behaviour of its own (a declared <c>crt.TabContainer</c> gets the tab body only because the
+	/// type-driven <c>tabAreaLayers</c> pass treats every inserted tab alike). Each entry is inserted into the
+	/// mobile page as if the template already had it, and a <see cref="Containers"/> pair may name it as its
+	/// <c>mobile</c> side; the web content mapped onto it then walks into it by merge-by-name, exactly like a
+	/// template-provided twin. A declared layout container that receives no surviving content is removed like
+	/// any other empty converter-created container; a declared leaf component is kept as declared.
+	/// </summary>
+	[JsonPropertyName("declaredElements")]
+	public IReadOnlyList<DeclaredElementRule> DeclaredElements { get; init; } = [];
+
 	[JsonPropertyName("note")]
 	public string Note { get; init; }
+}
+
+/// <summary>
+/// One element a template rule declares on top of the mobile template (see
+/// <see cref="TemplateMappingRule.DeclaredElements"/>): its fixed element name, mobile component type (any
+/// registered mobile component or container), the parent slot it is inserted into (a template element OR an
+/// element the conversion itself creates, e.g. the web tab strip converted because the mobile template has
+/// none) and the mobile <c>values</c> it carries.
+/// </summary>
+public sealed class DeclaredElementRule {
+	/// <summary>Fixed mobile element name (e.g. "RightPanelTab"); <c>containers[].mobile</c> may reference it.</summary>
+	[JsonPropertyName("name")]
+	public string Name { get; init; }
+
+	/// <summary>Mobile component type (e.g. "crt.TabContainer", "crt.GridContainer", "crt.Label").</summary>
+	[JsonPropertyName("type")]
+	public string Type { get; init; }
+
+	/// <summary>Mobile parent element name (template-provided or conversion-created, e.g. "Tabs").</summary>
+	[JsonPropertyName("parentName")]
+	public string ParentName { get; init; }
+
+	/// <summary>Parent child-collection slot; defaults to <c>items</c>.</summary>
+	[JsonPropertyName("propertyName")]
+	public string PropertyName { get; init; } = "items";
+
+	/// <summary>Optional 0-based position within the parent's slot; appended when omitted.</summary>
+	[JsonPropertyName("index")]
+	public int? Index { get; init; }
+
+	/// <summary>
+	/// Extra mobile values carried verbatim onto the inserted element (e.g. <c>iconPosition</c>). The
+	/// <c>type</c> and the caption token are added by the converter; a child collection is never declared here.
+	/// </summary>
+	[JsonPropertyName("values")]
+	public IReadOnlyDictionary<string, JsonElement> Values { get; init; } = new Dictionary<string, JsonElement>();
+
+	/// <summary>
+	/// Optional localizable text: the element gets <c>&lt;property&gt;: #ResourceString(key)#</c> (property
+	/// <c>caption</c> unless the entry says otherwise — a field would use <c>label</c>) and the guide's
+	/// <c>resourceStrings</c> carries key → value so the caller registers it on the mobile page.
+	/// </summary>
+	[JsonPropertyName("captionResource")]
+	public DeclaredElementCaptionRule CaptionResource { get; init; }
+
+	[JsonPropertyName("note")]
+	public string Note { get; init; }
+}
+
+/// <summary>Localizable text of a declared element: resource key, its text and the property that references it.</summary>
+public sealed class DeclaredElementCaptionRule {
+	[JsonPropertyName("key")]
+	public string Key { get; init; }
+
+	[JsonPropertyName("value")]
+	public string Value { get; init; }
+
+	/// <summary>Element property that carries the resource token; defaults to <c>caption</c>.</summary>
+	[JsonPropertyName("property")]
+	public string Property { get; init; } = "caption";
 }
 
 /// <summary>

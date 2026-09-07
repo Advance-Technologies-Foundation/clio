@@ -223,6 +223,63 @@ public sealed class WebToMobilePageConversionRulesCatalogTests {
 	}
 
 	[Test]
+	[Description("Bundled right-area template (PageWithRightAreaAndTabsFreedomTemplate -> BaseMobilePageTemplate) converts the web tab strip by pairing Tabs -> Tabs and GeneralInfoTab -> GeneralInfoTab against a mobile template that has neither, and declares ONE declared tab, RightPanelTab, under the converted Tabs at index 1 with a caption resource; the right profile area maps onto that declared tab. No positional entries: the template's only anchor candidate carries no row.")]
+	public void LoadBundled_RightAreaTemplateDeclaresExtraTabForTheRightPanel() {
+		// Arrange
+		WebToMobilePageConversionRules rules = WebToMobilePageConversionRulesCatalog.LoadBundled();
+
+		// Act
+		TemplateMappingRule rightArea = rules.Templates.Single(t => t.Web == "PageWithRightAreaAndTabsFreedomTemplate");
+
+		// Assert
+		rightArea.Mobile.Should().Be("BaseMobilePageTemplate",
+			because: "the web template has no Feed/Attachments, so it targets the base mobile record page, not the tabbed one");
+		rightArea.Containers.Should().Contain(c => c.Web == "Tabs" && c.Mobile == "Tabs",
+			because: "the mobile template has no Tabs: the pair makes the converter CREATE the strip from the web element");
+		rightArea.Containers.Should().Contain(c => c.Web == "GeneralInfoTab" && c.Mobile == "GeneralInfoTab",
+			because: "the general tab is converted as a tab of its own under the created strip");
+		rightArea.Containers.Should().Contain(c => c.Web == "RightAreaProfileContainer" && c.Mobile == "RightPanelTab",
+			because: "the right profile area walks its content into the declared tab");
+		rightArea.Containers.Should().NotContain(c => c.Web.Contains(':'),
+			because: "no mobile anchor with a layoutConfig row exists on BaseMobilePageTemplate, so positional entries would be dead");
+		DeclaredElementRule extra = rightArea.DeclaredElements.Should().ContainSingle(
+			because: "exactly one container is declared on top of the mobile template").Subject;
+		extra.Name.Should().Be("RightPanelTab", because: "the declared tab is the containers pair's mobile side");
+		extra.Type.Should().Be("crt.TabContainer", because: "a tab is a crt.TabContainer");
+		extra.ParentName.Should().Be("Tabs", because: "the declared tab lives in the converted strip");
+		extra.PropertyName.Should().Be("items", because: "a tab strip holds its tabs in items");
+		extra.Index.Should().Be(1, because: "the declared tab follows General information and precedes page-authored tabs");
+		extra.CaptionResource.Should().NotBeNull(because: "a tab needs a caption");
+		extra.CaptionResource.Key.Should().Be("RightPanelTab_caption", because: "the caption is a page resource keyed by the tab name");
+		extra.CaptionResource.Value.Should().NotBeNullOrWhiteSpace(because: "the resource must carry its text");
+	}
+
+	[Test]
+	[Description("Bundled top-area template (PageWithTopAreaAndTabsFreedomTemplate -> BaseMobilePageTemplate) creates the web tab strip by pairing Tabs -> Tabs and GeneralInfoTab -> GeneralInfoTab, merges the top profile area onto AreaProfileContainer, and pairs NOTHING onto MainContainer except MainContainer itself — in particular not the general tab's content grid (GridContainer_uxln7d4): such a pair walks the tab's fields past the tab, which is then dropped as empty together with the strip.")]
+	public void LoadBundled_TopAreaTemplateLeavesTheGeneralGridUnpaired() {
+		// Arrange
+		WebToMobilePageConversionRules rules = WebToMobilePageConversionRulesCatalog.LoadBundled();
+
+		// Act
+		TemplateMappingRule topArea = rules.Templates.Single(t => t.Web == "PageWithTopAreaAndTabsFreedomTemplate");
+
+		// Assert
+		topArea.Mobile.Should().Be("BaseMobilePageTemplate",
+			because: "the web template has no Feed/Attachments, so it targets the base mobile record page");
+		topArea.Containers.Should().Contain(c => c.Web == "Tabs" && c.Mobile == "Tabs",
+			because: "the mobile template has no Tabs: the pair makes the converter CREATE the strip from the web element");
+		topArea.Containers.Should().Contain(c => c.Web == "GeneralInfoTab" && c.Mobile == "GeneralInfoTab",
+			because: "the general tab is converted as a tab of its own under the created strip");
+		topArea.Containers.Should().Contain(c => c.Web == "TopAreaProfileContainer" && c.Mobile == "AreaProfileContainer",
+			because: "the top profile area merges onto the mobile template's profile area");
+		topArea.Containers.Should().NotContain(c => c.Web == "GridContainer_uxln7d4",
+			because: "the general tab's content grid is template chrome to prune, so its fields are hoisted INTO the tab; pairing it redirects them past the tab and empties it");
+		topArea.Containers.Should().OnlyContain(c => c.Mobile != "MainContainer" || c.Web == "MainContainer",
+			because: "no web container other than MainContainer may merge onto MainContainer — content mapped there bypasses the created tab strip");
+		topArea.DeclaredElements.Should().BeNullOrEmpty(because: "the top-area template declares no declared element of its own");
+	}
+
+	[Test]
 	[Description("Bundled tabbed template maps the attachments detail as a name-only, same-component twin: web AttachmentList -> mobile AttachmentFileList (both crt.FileList) with no carryProperties whitelist, so the page's delta over the web-template baseline — recordColumnName included — merges onto the template-provided element instead of being pruned as chrome.")]
 	public void LoadBundled_TabbedTemplateMapsAttachmentListTwin() {
 		WebToMobilePageConversionRules rules = WebToMobilePageConversionRulesCatalog.LoadBundled();

@@ -43,6 +43,38 @@
       ]
     },
     {
+      "web": "PageWithTopAreaAndTabsFreedomTemplate",
+      "mobile": "BaseMobilePageTemplate",
+      "containers": [
+        { "web": "MainContainer", "mobile": "MainContainer" },
+        { "web": "TopAreaProfileContainer", "mobile": "AreaProfileContainer" },
+        { "web": "Tabs", "mobile": "Tabs" },
+        { "web": "GeneralInfoTab", "mobile": "GeneralInfoTab" }
+      ]
+    },
+    {
+      "web": "PageWithRightAreaAndTabsFreedomTemplate",
+      "mobile": "BaseMobilePageTemplate",
+      "declaredElements": [
+        {
+          "name": "RightPanelTab",
+          "type": "crt.TabContainer",
+          "parentName": "Tabs",
+          "propertyName": "items",
+          "index": 1,
+          "values": { "iconPosition": "only-text" },
+          "captionResource": { "key": "RightPanelTab_caption", "value": "Right Panel" }
+        }
+      ],
+      "containers": [
+        { "web": "MainContainer", "mobile": "MainContainer" },
+        { "web": "CardContentWrapper", "mobile": "MainContainer" },
+        { "web": "Tabs", "mobile": "Tabs" },
+        { "web": "GeneralInfoTab", "mobile": "GeneralInfoTab" },
+        { "web": "RightAreaProfileContainer", "mobile": "RightPanelTab" }
+      ]
+    },
+    {
       "web": "BasePageFreedomTemplate",
       "mobile": "BaseMobilePageTemplate",
       "note": "Base record page (non-tabbed). Web BasePageFreedomTemplate maps to the mobile base record page.",
