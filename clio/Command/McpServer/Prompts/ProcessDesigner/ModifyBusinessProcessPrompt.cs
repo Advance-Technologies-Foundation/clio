@@ -55,14 +55,15 @@ public static class ModifyBusinessProcessPrompt {
 		 the assignment),
 		 and a `preconfiguredPage` element's `preconfiguredPage` block (`page`, `buttons`, `dataSources`,
 		 `performer`, `recommendation`), where OMITTING `buttons` or `dataSources` means LEAVE THEM ALONE,
-		 never "the page has none" — with ONE exception: changing `page` TO a Freedom UI page REQUIRES
-		 `buttons` in the same call, because the stored buttons name the previous page's buttons and the
-		 operation is refused rather than carried across (re-read `get-process-page-facts` for the new page
-		 first); changing `page` to a Classic UI page is refused outright. A `dataSources` entry the NEW page
-		 does not declare is refused for the same reason; but `dataSources` have no removal path here, so a
-		 retarget onto a page with FEWER data sources still carries the previous page's parameter forward and
-		 the step can then never finish — describe reports it with `inSync: true` and nothing else shows it.
-		 Build a new element on the new page rather than editing that one.
+		 never "the page has none" — with TWO exceptions when `page` changes TO a Freedom UI page: `buttons` is
+		 REQUIRED in the same call (the stored buttons name the previous page's buttons), and `dataSources` is
+		 REQUIRED whenever the element carries data sources of the previous page (pass `[]` when the new page
+		 declares none) — re-read `get-process-page-facts` for the new page first; changing `page` to a Classic
+		 UI page is refused outright. On a page change the `dataSources` you pass are the new page's whole set:
+		 undeclared data-source parameters are removed and reported, a re-declared one keeps its parameter, and
+		 the removal is refused while something still maps from it (the refusal names the dependents). A
+		 `dataSources` entry the new page does not declare is refused. Strict because a source the current page
+		 does not declare stops the step from ever completing while describe still reports `inSync: true`.
 		 ANY `setElement` touching such an element also re-reads the page and
 		 reconciles its parameters, so a value dropped by a data-type change is reported in the warnings below;
 		 an element on a Classic UI page keeps that page and is limited to the fields both page types share;
