@@ -52,7 +52,7 @@ public sealed class CreateBusinessProcessService(
 	ISettingsRepository settingsRepository,
 	IApplicationClientFactory applicationClientFactory,
 	IServiceUrlBuilder serviceUrlBuilder,
-	IProcessPageButtonChecker pageButtonChecker,
+	IProcessPageFactsChecker pageFactsChecker,
 	ILogger logger)
 	: ICreateBusinessProcessService {
 	private static readonly JsonSerializerOptions JsonOptions = new() {
@@ -79,14 +79,15 @@ public sealed class CreateBusinessProcessService(
 			descriptor["packageName"] = request.PackageNameOverride;
 		}
 
-		// Before the build, not after: a button the page does not carry is accepted by the server, saved, and
-		// only fails at run time by waiting forever. clio is the only side that can see the page's buttons.
-		ProcessPageButtonCheckResult buttonCheck = pageButtonChecker.CheckButtons(environmentName, descriptor);
-		if (!string.IsNullOrWhiteSpace(buttonCheck?.Error)) {
-			throw new InvalidOperationException(buttonCheck.Error);
+		// Before the build, not after: a button or a data source the page does not have is accepted by the
+		// server, saved, and only fails at run time by waiting forever. clio is the only side that can see the
+		// page's merged buttons and data sources.
+		ProcessPageCheckResult pageCheck = pageFactsChecker.CheckPreconfiguredPages(environmentName, descriptor);
+		if (!string.IsNullOrWhiteSpace(pageCheck?.Error)) {
+			throw new InvalidOperationException(pageCheck.Error);
 		}
-		foreach (string buttonWarning in buttonCheck?.Warnings ?? []) {
-			logger.WriteWarning(buttonWarning);
+		foreach (string pageWarning in pageCheck?.Warnings ?? []) {
+			logger.WriteWarning(pageWarning);
 		}
 
 		using IOwnedApplicationClient client = applicationClientFactory.CreateOwnedEnvironmentClient(environmentSettings);

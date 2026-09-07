@@ -170,6 +170,35 @@ public static class ProcessPageFactsProjection {
 	}
 
 	/// <summary>
+	/// Every data-source NAME the merged page declares — unfiltered, unlike the data sources
+	/// <see cref="Project"/> reports.
+	/// </summary>
+	/// <remarks>
+	/// <para>The two sets answer different questions, and a data-source name in a descriptor has to be tested
+	/// against both. The facts report only PAGE-scoped entity sources, because those are the ones the designer's
+	/// own card offers and the only ones that yield a usable element parameter. The RUN TIME is looser: it
+	/// resolves a stored data-source parameter against the page view model's whole data-source map, whatever the
+	/// scope or type. So a name outside the facts set may still resolve at run time, while a name outside THIS
+	/// set cannot resolve at all.</para>
+	/// <para>That difference is the whole reason this method exists — it is the same refuse-versus-warn split the
+	/// button check already makes, for the same reason.</para>
+	/// </remarks>
+	/// <param name="bundle">The merged page bundle, as passed to <see cref="Project"/>.</param>
+	public static List<string> CollectAllDataSourceNames(JObject bundle) {
+		ArgumentNullException.ThrowIfNull(bundle);
+		List<string> names = [];
+		if (bundle["modelConfig"]?["dataSources"] is not JObject dataSources) {
+			return names;
+		}
+		foreach (JProperty property in dataSources.Properties()) {
+			if (!string.IsNullOrWhiteSpace(property.Name)) {
+				names.Add(property.Name);
+			}
+		}
+		return names;
+	}
+
+	/// <summary>
 	/// Whether a button is eligible to complete the page: its handler issues one of the completing requests, or it
 	/// declares no requests at all.
 	/// </summary>

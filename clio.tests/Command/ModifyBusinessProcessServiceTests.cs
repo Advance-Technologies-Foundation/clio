@@ -32,7 +32,7 @@ public sealed class ModifyBusinessProcessServiceTests {
 		factory.CreateEnvironmentClient(env).Returns(client);
 		IServiceUrlBuilder urlBuilder = Substitute.For<IServiceUrlBuilder>();
 		urlBuilder.Build(ServiceUrlBuilder.KnownRoute.ModifyProcess, env).Returns(ModifyUrl);
-		return new ModifyBusinessProcessService(settings, factory, urlBuilder, Substitute.For<IProcessPageButtonChecker>(), Substitute.For<ILogger>());
+		return new ModifyBusinessProcessService(settings, factory, urlBuilder, Substitute.For<IProcessPageFactsChecker>(), Substitute.For<ILogger>());
 	}
 
 	[Test]

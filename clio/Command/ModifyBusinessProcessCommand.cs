@@ -55,7 +55,7 @@ public sealed class ModifyBusinessProcessService(
 	ISettingsRepository settingsRepository,
 	IApplicationClientFactory applicationClientFactory,
 	IServiceUrlBuilder serviceUrlBuilder,
-	IProcessPageButtonChecker pageButtonChecker,
+	IProcessPageFactsChecker pageFactsChecker,
 	ILogger logger)
 	: IModifyBusinessProcessService {
 	private static readonly JsonSerializerOptions JsonOptions = new() {
@@ -91,14 +91,16 @@ public sealed class ModifyBusinessProcessService(
 		}
 		requestObject["operations"] = ParseOperations(request.OperationsJson);
 
-		// Same reason as the build path: an invented button name survives every server-side check and only
-		// shows itself at run time, as a step that never completes.
-		ProcessPageButtonCheckResult buttonCheck = pageButtonChecker.CheckButtons(environmentName, requestObject["operations"]);
-		if (!string.IsNullOrWhiteSpace(buttonCheck?.Error)) {
-			throw new InvalidOperationException(buttonCheck.Error);
+		// Same reason as the build path: an invented button or data-source name survives every server-side check
+		// and only shows itself at run time, as a step that never completes. The retarget path needs it most —
+		// moving a step onto a page with fewer data sources is how a working element becomes an unfinishable one.
+		ProcessPageCheckResult pageCheck =
+			pageFactsChecker.CheckPreconfiguredPages(environmentName, requestObject["operations"]);
+		if (!string.IsNullOrWhiteSpace(pageCheck?.Error)) {
+			throw new InvalidOperationException(pageCheck.Error);
 		}
-		foreach (string buttonWarning in buttonCheck?.Warnings ?? []) {
-			logger.WriteWarning(buttonWarning);
+		foreach (string pageWarning in pageCheck?.Warnings ?? []) {
+			logger.WriteWarning(pageWarning);
 		}
 
 		using IOwnedApplicationClient client = applicationClientFactory.CreateOwnedEnvironmentClient(environmentSettings);

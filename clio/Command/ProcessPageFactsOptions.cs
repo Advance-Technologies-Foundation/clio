@@ -64,18 +64,23 @@ public class ProcessPageFactsCommand : Command<ProcessPageFactsOptions> {
 	/// <paramref name="response"/> error rather than throwing, so the MCP surface can report a failure as data.
 	/// </summary>
 	public bool TryGetFacts(ProcessPageFactsOptions options, out ProcessPageFactsResponse response) =>
-		TryGetFacts(options, out response, out _);
+		TryGetFacts(options, out response, out _, out _);
 
 	/// <summary>
 	/// The same read, additionally handing back EVERY button the page carries — candidates and non-candidates
-	/// alike. The response reports only the candidates, which is the right answer to "which button may complete
-	/// the step"; it is the wrong set for "does this button exist at all", and those are different questions with
-	/// different consequences: a name the page does not carry can only ever hang the step, while a name that is
-	/// present but not a candidate may be a perfectly legitimate custom button.
+	/// alike — and every data-source name it declares, filtered by nothing.
 	/// </summary>
+	/// <remarks>
+	/// The response reports only the candidates and only the page-scoped entity data sources, which is the right
+	/// answer to "what may I choose here"; both are the wrong set for "does this name exist on the page at all",
+	/// and those are different questions with different consequences. A name the page does not carry can only ever
+	/// hang the step, so it is refused; a name that is present but outside the offered set may be a perfectly
+	/// legitimate choice the rule cannot see, so it is only reported.
+	/// </remarks>
 	internal bool TryGetFacts(ProcessPageFactsOptions options, out ProcessPageFactsResponse response,
-			out List<ProcessPageButton> allButtons) {
+			out List<ProcessPageButton> allButtons, out List<string> allDataSourceNames) {
 		allButtons = null;
+		allDataSourceNames = null;
 		if (string.IsNullOrWhiteSpace(options.SchemaName)) {
 			response = new ProcessPageFactsResponse { Success = false, Error = "schema-name is required." };
 			return false;
@@ -123,9 +128,11 @@ public class ProcessPageFactsCommand : Command<ProcessPageFactsOptions> {
 		// that boundary, and an exception escaping here would leave the MCP surface with a raw, unredacted error.
 		List<ProcessPageButton> buttons;
 		List<ProcessPageDataSource> dataSources;
+		List<string> declaredDataSourceNames;
 		try {
 			JObject bundle = JObject.Parse(System.Text.Json.JsonSerializer.Serialize(page.Bundle));
 			(buttons, dataSources) = ProcessPageFactsProjection.Project(bundle, options.Culture);
+			declaredDataSourceNames = ProcessPageFactsProjection.CollectAllDataSourceNames(bundle);
 		} catch (Exception projectionError) {
 			response = new ProcessPageFactsResponse {
 				Success = false,
@@ -136,6 +143,7 @@ public class ProcessPageFactsCommand : Command<ProcessPageFactsOptions> {
 			return false;
 		}
 		allButtons = buttons;
+		allDataSourceNames = declaredDataSourceNames;
 		List<ProcessPageButton> candidates =
 			buttons.Where(ProcessPageFactsProjection.IsCompletingCandidate).ToList();
 		response = new ProcessPageFactsResponse {
