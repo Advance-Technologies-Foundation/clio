@@ -3355,7 +3355,7 @@ stories:
       Committed: cd0602e rewrites both articles and bumps libraryVersion to 1.13.94; e621362 is the
       review-gate fix - the article said there was no clear-condition operation, and setFlow with
       kind 'sequence' is one. The curated-knowledge-names.json re-pin landed on the clio side as
-      ed670759c. Nothing is pushed and no pull request exists.
+      ed670759c. All three branches are pushed and three pull requests are open: clio#1398, engineering/crt-process-builder#45, clio-knowledge#135.
       Two facts the articles did not carry and that nothing else records: branch evaluation order is
       flows[] ARRAY order, first true wins, and nothing encodes it - so the order an agent declares
       branches in silently decides which one runs; and the layout re-runs over the WHOLE schema on
