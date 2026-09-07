@@ -150,9 +150,14 @@ namespace Clio.Command;
 // PASSES on an environment whose server silently discards the block, and install-process-builder
 // installs an archive that satisfies the floor and changes nothing. AccessRightsBlockExpectation's
 // post-operation read-back is the ONLY guard for that block until the rebundle carries the element.
-// RELEASE GATE: this must not ship in a clio release until the rebundle produces an archive whose
-// source tree contains the element AND the literal below moves PAST that version - otherwise the
-// number keeps being satisfied and the precondition stays decorative even once the rebundle exists.
+// The floor is deliberately NOT raised to 1.6.0.2 for it. This attribute is CLASS-level, so it gates
+// every call to this command - raising it would refuse the whole tool on any older environment, for
+// every descriptor, including the majority that carry no accessRights block at all. That exact move
+// was made for the Approval element and reverted in review (79270adbf): "a lockout for everyone in
+// exchange for a block most descriptors never use". changeData and the body-macros restamp left the
+// floor alone for the same reason. AccessRightsBlockExpectation is the guard instead - it reads the
+// process back after the write and warns when the block did not land, which is the behavioural
+// equivalent that does not punish callers who never send one.
 [RequiresPackage(BundledPackages.ProcessBuilderPackageName, "1.6.0.1",
 	Hint = BundledPackages.ProcessBuilderInstallHint)]
 public sealed class ModifyBusinessProcessOptions : EnvironmentOptions {
