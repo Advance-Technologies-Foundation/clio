@@ -178,22 +178,37 @@ find it: the rename cannot collide, and the platform's by-name flow resolution i
 
 > **Correction, after this report was committed.** This finding originally read that flow names are
 > "precisely what the designer's element list and the process log display". A stand measurement by
-> the implementation session falsified the first half: with a process open, **the designer displays a
-> flow's code nowhere** — no flow name appears in the page text, the list beside the canvas holds
-> ELEMENTS, and clicking the connector does not surface it. So the browser leg could not have observed
-> the rename either way, and the gap this finding describes is thinner than stated; the evidence that
-> matters is `describe` plus the process log, both verified at .66 and again at .67.
+> the implementation session falsified the first half. What was actually measured, stated no more
+> strongly than that: **with a process open, no flow name appears anywhere in the page text, and the
+> list beside the canvas holds ELEMENTS, not flows.** A selected connection's own properties were
+> never inspected — the click on the connector did not select it — so whether some inspector surfaces
+> the name remains unmeasured. On that evidence the browser leg would not have observed the rename
+> through the element list, and the gap this finding describes is thinner than stated; the evidence
+> that matters is `describe` plus the process log, verified at .66 and again after each rebundle.
 >
-> I did not measure that claim — I inherited it from the package's own comment at
-> `ProcessGraphBuilder.cs:246` and repeated it. Which makes it an instance of the failure this
-> report's process note names, one level down: a statement believed because it was written down.
+> A first version of this correction wrote "the designer displays a flow's code nowhere" and said the
+> connector click surfaced nothing. Both overstate the measurement, and the implementation session
+> pushed back on exactly that: replacing one overstatement with a tidier one is the same defect. The
+> thin claim stands.
 >
-> The same claim is still asserted four times in the shipped source — `DescribeContracts.cs:883`
-> (XML doc on a public contract field), `ProcessGraphBuilder.cs:246` and `:499`, and
-> `ProcessDesignConstants.cs:217` — all four about flow names. The rename in .66/.67 remains
-> justified by the log and the metadata diff, two of the three readers those comments claim; it is
-> the rationale that overstates, not the behaviour. Raised to the implementation session, which holds
-> the stand evidence.
+> I did not measure the original claim either — I inherited it from the package's own comment at
+> `ProcessGraphBuilder.cs:246` and repeated it into a review report. Which makes it an instance of the
+> failure this report's process note names, one level down: a statement believed because it was
+> written down.
+>
+> **The claim had nine sites, not one.** Five were production text and are corrected: four in the
+> package (`DescribeContracts.cs` — XML doc on a public contract field — `ProcessGraphBuilder.cs`
+> twice, and `ProcessDesignConstants.cs`) plus one a repository away, `DescribeProcessTool.cs:35` in
+> clio, whose tool `[Description]` an agent reads on every `describe-business-process` call. That
+> fifth one is the pattern worth keeping: **a claim quoted across a repository boundary is invisible
+> to a grep of either repository alone.** Four more still carry it, and they are invisible to a grep
+> scoped to production source: `ProcessFlowKindTests.cs:129` (a `[Description]`) and `:1025`,
+> `ProcessConditionalFlowTests.cs:309` (both `because:` prose), and this feature's own
+> `eng-91853-gateways-and-flows-traps.md:196`. Under AGENTS.md's test-style policy those strings are
+> the repository's statement of intent, so they will be read as authority.
+>
+> The rename remains justified throughout by the log and the metadata diff — two of the three readers
+> the comments claimed. It is the rationale that overstated, never the behaviour.
 
 ### 3 — Low · the sprint tracker still says nothing is pushed
 
@@ -324,8 +339,17 @@ Two things came out of the closures that the gate itself had not reached:
   those two UIds — so at the single call site (`:623`) both elements are already proved present. Not
   "no dangling flow can exist", but "this call resolved them three lines earlier".
 
-Baselines re-verified at 1.4.0.67: package **1257 / 0**; clio `Module=ProcessModel|McpServer`
-**4814 / 0**, 2 skipped. Archive pins clean, ninth check.
+Baselines re-verified across the closures: package **1257 / 0** at .67 and again at .68; clio
+`Module=ProcessModel|McpServer` **4814 / 0**, 2 skipped. Archive pins verified clean at .66, .67 and
+.68 — the eighth, ninth and tenth checks of this class on the ticket, each time SHA, version,
+producing commit, and *only a descriptor restamp after it*.
 
-**Gate satisfied.** One item raised after closure and not blocking: the four source comments that
-assert the designer displays a flow name, now measured false (see the correction under finding 2).
+A comment-only correction forced the rebundle to **.68**, which is the rule above applied to its
+least intuitive case: in a source-only package the comments **are** the artifact, so changing one
+changes the shipped bytes.
+
+**Gate satisfied.** One item raised after closure and not blocking: four remaining sites still assert
+that the designer's element list shows a flow name — three test strings in the package and this
+feature's own traps document (see the correction under finding 2). Not blocking because nothing
+behavioural depends on them; worth closing because two are `[Description]`/`because:` prose, which
+AGENTS.md makes the repository's statement of intent.

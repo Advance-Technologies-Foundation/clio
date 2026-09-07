@@ -193,9 +193,15 @@ route through `FindTheFlowBetween` rather than re-introducing a `FirstOrDefault`
 `DesignModeClass(DefNamePrefix = …)`, and the corpus bears them out: `ConditionalSequenceFlow<N>` (1 017)
 / `ConditionalFlow<N>` (275), `DefaultSequenceFlow<N>` (548).
 
-Beyond cosmetics: the flow name appears in process logs, in the designer's element list, and in any
-human diff of two metadata files. A default flow called `SequenceFlow_Gateway1_Terminate1` reads as a
-plain flow to everyone not looking at `CI4`.
+Beyond cosmetics: the flow name appears in process logs and in any human diff of two metadata files.
+A default flow called `SequenceFlow_Gateway1_Terminate1` reads as a plain flow to everyone not looking
+at `CI4`.
+
+> This paragraph named a third reader — the designer's element list — and it is not one. Measured on a
+> stand: with a process open, no flow name appears anywhere in the page text, and the list beside the
+> canvas holds ELEMENTS. The claim originated in one code comment and reached nine places by being
+> quoted, four of them prose that no grep of `src/` would find. (What a SELECTED connector's own
+> properties show was never inspected, so this says only what was measured.)
 
 **Fix.** Add `ConditionalFlowNamePrefix` and `DefaultFlowNamePrefix`; do not overload the existing
 constant. Note `SetFlowCondition` deliberately **keeps** the original name on a re-kind (renaming an
