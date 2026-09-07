@@ -1,4 +1,4 @@
-﻿using Clio.Command.ProcessModel;
+using Clio.Command.ProcessModel;
 using FluentAssertions;
 using NUnit.Framework;
 
