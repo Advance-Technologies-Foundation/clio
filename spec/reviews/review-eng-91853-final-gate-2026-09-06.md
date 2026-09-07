@@ -339,17 +339,74 @@ Two things came out of the closures that the gate itself had not reached:
   those two UIds — so at the single call site (`:623`) both elements are already proved present. Not
   "no dangling flow can exist", but "this call resolved them three lines earlier".
 
-Baselines re-verified across the closures: package **1257 / 0** at .67 and again at .68; clio
-`Module=ProcessModel|McpServer` **4814 / 0**, 2 skipped. Archive pins verified clean at .66, .67 and
-.68 — the eighth, ninth and tenth checks of this class on the ticket, each time SHA, version,
-producing commit, and *only a descriptor restamp after it*.
+Baselines re-verified across every closure: package **1257 / 0** at .67, .68 and .69; clio
+`Module=ProcessModel|McpServer` **4814 / 0** (2 skipped), `Module=Common` **1292 / 0** (3 skipped),
+pins + `WorkspaceTemplateGuidanceDrift` **31 / 0**. Archive pins verified clean at .66 through .69 —
+the eighth to eleventh checks of this class on the ticket, each time SHA, version and producing
+commit, with the last two read by the corrected rule below rather than the wrong one.
 
-A comment-only correction forced the rebundle to **.68**, which is the rule above applied to its
-least intuitive case: in a source-only package the comments **are** the artifact, so changing one
+Two comment-only corrections forced rebundles, to **.68** and **.69**, which is that rule applied to
+its least intuitive case: in a source-only package the comments **are** the artifact, so changing one
 changes the shipped bytes.
 
-**Gate satisfied.** One item raised after closure and not blocking: four remaining sites still assert
-that the designer's element list shows a flow name — three test strings in the package and this
-feature's own traps document (see the correction under finding 2). Not blocking because nothing
-behavioural depends on them; worth closing because two are `[Description]`/`because:` prose, which
-AGENTS.md makes the repository's statement of intent.
+### The B1 rule, corrected by decoding the archive
+
+This class was checked ten times on this ticket against the wrong rule. I had been asserting *"only a
+descriptor restamp may sit after the producing commit"* — which would have raised a **false alarm** the
+first time a legitimate non-archived change landed after a rebundle, as one did (a tests-only commit
+after `b7f5e14`).
+
+The right rule comes from what the artifact actually contains. Decoding the committed `.gz` with the
+format `rebundle-process-builder.ps1` documents — `[int32 nameLength][UTF-16LE path][int32
+contentLength][bytes]` — gives **129 entries: `descriptor.json`, `Files/` ×123, `Resources/` ×1,
+`Schemas/` ×4, and zero whose path mentions "test"**. So:
+
+> No commit after the producing commit may touch `descriptor.json`, `Files/`, `Resources/` or
+> `Schemas/` under the package directory — the restamp's own `descriptor.json` edit excepted.
+> Everything else in the repository, `tests/` included, is outside the bytes.
+
+Run that way against `b7f5e14..HEAD`: the restamp's `descriptor.json` (the exception) and two files
+under `tests/` (outside every archived path). Clean.
+
+The converse also has a least-intuitive case, met on this ticket: a **comment-only** change to package
+source *does* change the artifact, because in a source-only package the comments are compiled by the
+target and shipped as the source itself. `.68` was cut for exactly that.
+
+### A correction that drifted back, inside the correction
+
+Of the five production sites fixed, two state only what was measured — `DescribeContracts.cs:888`
+carries the exemplary form, an explicit *"whether a selected connector's own properties expose a code
+was not established"* — and two re-assert the universal negative the measurement does not reach:
+`ProcessDesignConstants.cs:218` (*"shows a flow's code nowhere on an open process"*) and the
+`describe-business-process` tool `[Description]` (*"the DESIGNER shows a flow's name nowhere"*), the
+latter read by an agent on every call.
+
+In the tool description only the justification was affected: *"do not send a caller there to find it"*
+is sound whether or not an inspector exists, because the element list does not show it. Right
+instruction, overstated reason — the original defect's exact shape, recurring inside its own fix.
+
+**Both closed.** The bound is now explicit in each: `ProcessDesignConstants.cs:219` scopes its
+"nowhere" to *an open process's page text* and adds *"(measured; a selected connector's own properties
+were never inspected, so that much and no more)"*; the tool `[Description]` now reads *"the designer's
+element list does NOT show it and no flow name appears in an open process's page text, so do not go to
+the designer to find it"* — instruction intact, justification bounded. `ProcessDesignConstants` is
+inside `Files/`, so a one-clause comment owed the rebundle to **.69**; the corrected B1 rule above says
+so in both directions, and this was the direction it fired in.
+
+**Gate satisfied. Nothing outstanding.** Nine sites bounded to the measurement, all findings closed,
+no Blocker or High at any point.
+
+### What this exchange is actually about
+
+One comment reached nine places by being quoted, and the count rose 4 → 5 → 9 as the search widened:
+the **repository** boundary hid one site, and the **source/prose** boundary hid four — test
+`[Description]`/`because:` strings and a spec document, which AGENTS.md makes the repository's
+statement of intent and which no grep of `src/` sees.
+
+The sharpest instance is not the count. One of those sites was written *in the same session that was
+reasoning carefully about the claim*, because it arrived as an established sentence rather than as
+something to check. That is the mechanism: a claim propagates in the form of prose, and prose is not
+read as a claim.
+
+And the correction is not exempt from it — twice above, the tidy version came back. **A correction
+that quietly tightens is the defect it was correcting.**
