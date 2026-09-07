@@ -3159,6 +3159,61 @@ internal class RemoteEntitySchemaColumnManagerTests
 				because: "a per-culture no-op must fail loudly instead of being reported as a successful rename - and it is the exact-culture lookup, not a fallback, that catches it");
 	}
 
+
+	[Test]
+	[Description("The scalar --title is anchored to the culture the resolver returns, and --caption-culture is what the resolver is asked about. Both were untested: dropping options.CaptionCulture from the call, or invoking the resolver with the wrong argument, would land the caption under the profile culture and every existing assertion would still pass, because VerifySchemaCaption verifies against the SAME resolved key (PR #1356 review).")]
+	public void SetSchemaProperties_ShouldAnchorTheScalarTitleToTheCaptionCulture_WhenOneIsRequested() {
+		// Arrange
+		_loadedSchema = CreateSchema(columns: [CreateGuidColumn("Id", IdColumnUId)]);
+		SetupLoadedSchema();
+		_captionCultureResolver
+			.ResolveEffectiveCulture(Arg.Any<EnvironmentOptions>(), Arg.Any<string?>())
+			.Returns("uk-UA");
+		var options = new SetEntitySchemaPropertiesOptions {
+			Package = "UsrPkg",
+			SchemaName = "UsrVehicle",
+			Title = "Автомобіль",
+			CaptionCulture = "uk-UA"
+		};
+
+		// Act
+		_manager.SetSchemaProperties(options);
+
+		// Assert
+		_savedSchema.Should().NotBeNull(because: "a caption rename is a save");
+		_savedSchema.Caption.Should().Contain(value =>
+				value.CultureName == "uk-UA" && value.Value == "Автомобіль",
+			because: "the scalar title must land under the culture the resolver produced, not under the en-US default");
+		_savedSchema.Caption.Should().Contain(value =>
+				value.CultureName == "en-US" && value.Value == "Vehicle",
+			because: "the en-US caption the schema already carried must be untouched - landing the scalar there instead would rename a language the caller never named");
+		_captionCultureResolver.Received().ResolveEffectiveCulture(
+			Arg.Any<EnvironmentOptions>(), "uk-UA");
+	}
+
+	[Test]
+	[Description("The culture is resolved LAZILY: only a scalar --title needs an anchor, and a profile-culture lookup is a remote call the pre-existing primary-display-column-only invocation never made. That promise lived in a comment only (PR #1356 review).")]
+	public void SetSchemaProperties_ShouldNotResolveTheCaptionCulture_WhenOnlyThePrimaryDisplayColumnIsSet() {
+		// Arrange
+		EntitySchemaColumnDto captionColumn = CreateTextColumn("Caption", NameColumnUId);
+		_loadedSchema = CreateSchema(columns: [CreateGuidColumn("Id", IdColumnUId), captionColumn],
+			primaryDisplayColumn: null);
+		SetupLoadedSchema();
+		var options = new SetEntitySchemaPropertiesOptions {
+			Package = "UsrPkg",
+			SchemaName = "UsrVehicle",
+			PrimaryDisplayColumn = "Caption"
+		};
+
+		// Act
+		_manager.SetSchemaProperties(options);
+
+		// Assert
+		_savedSchema.Should().NotBeNull(because: "the primary-display change is still saved");
+		_captionCultureResolver.DidNotReceive().ResolveEffectiveCulture(
+			Arg.Any<EnvironmentOptions>(), Arg.Any<string?>());
+	}
+
 	private void SetupLoadedSchema() {
 		Clio.Command.EntitySchemaDesigner.DesignerResponse<EntityDesignSchemaDto> MakeResponse() =>
 			new() { Success = true, Schema = _savedSchema ?? _loadedSchema };
