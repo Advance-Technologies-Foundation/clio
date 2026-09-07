@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using System.Text.Json.Serialization;
@@ -144,6 +145,19 @@ namespace Clio.Command;
 // 1.6.0.0: it cannot change an element's page, so nothing it advertises depends on this and its
 // environments need no upgrade. The rule above is unchanged by the raise - a floor moves when clio starts
 // ADVERTISING behaviour the deployed server may not have, and this description now does.
+// NOTHING IN THIS FLOOR COVERS THE accessRights BLOCK. The Change access rights element is on
+// crt-process-builder main (ENG-92717), but no RELEASED archive carries it yet, so this precondition
+// PASSES on an environment whose server silently discards the block, and install-process-builder
+// installs an archive that satisfies the floor and changes nothing. AccessRightsBlockExpectation's
+// post-operation read-back is the ONLY guard for that block until the rebundle carries the element.
+// The floor is deliberately NOT raised to 1.6.0.2 for it. This attribute is CLASS-level, so it gates
+// every call to this command - raising it would refuse the whole tool on any older environment, for
+// every descriptor, including the majority that carry no accessRights block at all. That exact move
+// was made for the Approval element and reverted in review (79270adbf): "a lockout for everyone in
+// exchange for a block most descriptors never use". changeData and the body-macros restamp left the
+// floor alone for the same reason. AccessRightsBlockExpectation is the guard instead - it reads the
+// process back after the write and warns when the block did not land, which is the behavioural
+// equivalent that does not punish callers who never send one.
 [RequiresPackage(BundledPackages.ProcessBuilderPackageName, "1.6.0.1",
 	Hint = BundledPackages.ProcessBuilderInstallHint)]
 public sealed class ModifyBusinessProcessOptions : EnvironmentOptions {
@@ -371,7 +385,16 @@ public class ModifyBusinessProcessCommand(
 			foreach (string warning in result.Warnings ?? []) {
 				logger.WriteWarning(warning);
 			}
-			WarnOnDiscardedConfigurationBlocks(options, result.SchemaName);
+			// Verification runs AFTER the write landed, so it must never change the outcome the caller sees.
+			// Inside Execute's blanket catch a throw here would report a succeeded operation as failed, and on a
+			// tool that grants and revokes live permissions that invites a retry: a duplicate schema on create, a
+			// re-applied replace on modify.
+			try {
+				WarnOnDiscardedConfigurationBlocks(options, result.SchemaName);
+			} catch (Exception verification) {
+				logger.WriteWarning(
+					$"The edit was applied, but verifying its configuration failed: {verification.Message}. Re-read the process with describe-business-process before reporting a grant or revoke as applied.");
+			}
 			return 0;
 		} catch (Exception exception) {
 			logger.WriteError(exception.Message);
@@ -379,35 +402,58 @@ public class ModifyBusinessProcessCommand(
 		}
 	}
 
-	// Same silent-drop guard as the build path: a server predating sendEmail discards an email block and still
-	// answers success, so an edit can report an applied operation whose email configuration never landed. Read the
-	// process back and say so. Only runs when the operations actually carried a block; a failed read-back is never
-	// escalated, since it is not evidence of a drop. See EmailBlockExpectation for why this is not version-based.
+	// Same silent-drop guard as the build path, for every block an edit can carry: a server predating a
+	// feature discards its block and still answers success, so an edit can report an applied operation whose
+	// configuration never landed. Read the process back ONCE and check both. Only runs when the operations
+	// actually carried a block. See EmailBlockExpectation / AccessRightsBlockExpectation.
 	private void WarnOnDiscardedConfigurationBlocks(ModifyBusinessProcessOptions options, string? schemaName) {
-		IReadOnlyList<string> expected = EmailBlockExpectation.FromOperations(options.OperationsJson);
-		// The Approval element has the same silent-drop failure, so it is verified from the SAME read-back rather
-		// than a second one — the describe below is the expensive part.
-		IReadOnlyList<ApprovalBlockExpectation.ApprovalExpectation> expectedApproval = ApprovalBlockExpectation.FromOperations(options.OperationsJson);
-		if (expected.Count == 0 && expectedApproval.Count == 0) {
+		BlockExpectationIntent intent = BlockExpectationIntent.FromOperations(options.OperationsJson);
+		// The Approval element has the same silent-drop failure, so master's guard verifies it
+		// from the SAME read-back rather than a second one - the describe below is the expensive
+		// part. Email needs no separate expectation here: ReportDescribed covers it from intent.
+		IReadOnlyList<ApprovalBlockExpectation.ApprovalExpectation> expectedApproval =
+			ApprovalBlockExpectation.FromOperations(options.OperationsJson);
+
+		// An accessRights block on addElement is dropped by the server (it applies only email/performer).
+		// That is by design, but the outcome the caller lives with is the same unconfigured element as a
+		// silent drop, so say so rather than leaving them to discover it at run time.
+		// EXCEPT when a setElement in the same array configures that element - which is precisely what the
+		// warning tells the caller to do. Warning about it there would assert something false about a payload
+		// this code recommends, and a warning that is wrong in the recommended workflow teaches callers to
+		// ignore the whole family, including the true ones below.
+		string? ignoredOnAdd = AccessRightsBlockExpectation.BuildAddElementWarning(
+			[.. AccessRightsBlockExpectation.IgnoredOnAddElement(options.OperationsJson)
+				.Except(intent.ConfiguredRights, StringComparer.OrdinalIgnoreCase)]);
+		if (ignoredOnAdd is not null) {
+			logger.WriteWarning(ignoredOnAdd);
+		}
+		// A setFilter/clearFilter carries no block, so it used to return here - and clearing the filter on a
+		// Change access rights element is the single most dangerous edit this surface offers, because it moves
+		// the element from narrowing to acting on EVERY record of its object. Read back for those too.
+		if (intent.IsEmpty && expectedApproval.Count == 0) {
 			return;
 		}
 
-		string identity = string.IsNullOrWhiteSpace(schemaName) ? options.ProcessName : schemaName;
-		if (string.IsNullOrWhiteSpace(identity)) {
+		// The caller identifies the process by name OR uid, and an older CrtProcessBuilder may omit SchemaName
+		// from the result, so falling back to the name alone would report "could not verify" for a modify-by-uid
+		// that was fully verifiable - the UId was in hand the whole time.
+		string code = string.IsNullOrWhiteSpace(schemaName) ? options.ProcessName : schemaName;
+		if (string.IsNullOrWhiteSpace(code) && string.IsNullOrWhiteSpace(options.ProcessUid)) {
+			// Nothing to read back against; silence would be indistinguishable from a verified success.
+			BlockExpectationReporter.WarnAccessRightsUnverified(logger, intent,
+				"the edit returned no process identity to read back");
 			return;
 		}
 
-		ErrorOr<DescribeProcessResult> described =
-			processDescriber.Describe(new ProcessIdentity(identity, null, null), null);
+		ErrorOr<DescribeProcessResult> described = processDescriber.Describe(
+			new ProcessIdentity(string.IsNullOrWhiteSpace(code) ? null : code, options.ProcessUid, null), null);
 		if (described.IsError) {
+			BlockExpectationReporter.WarnAccessRightsUnverified(logger, intent,
+				described.FirstError.Description);
 			return;
 		}
 
-		string? warning = EmailBlockExpectation.BuildWarning(
-			EmailBlockExpectation.Missing(described.Value, expected));
-		if (warning is not null) {
-			logger.WriteWarning(warning);
-		}
+		BlockExpectationReporter.ReportDescribed(logger, described.Value, intent);
 
 		string? approvalWarning = ApprovalBlockExpectation.BuildWarning(
 			ApprovalBlockExpectation.Missing(described.Value, expectedApproval));

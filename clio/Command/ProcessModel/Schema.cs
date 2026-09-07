@@ -1128,7 +1128,12 @@ public static class ManagerMap{
 			// none ends with the "usertask" suffix the arm below matches on, so a missing entry resolves a VALID
 			// graph to Unknown and validate-process-graph rejects it. The camelCase data-ids
 			// emailTemplateUserTask / approvalUserTask / openEditPageUserTask are already covered by that suffix arm.
-			"usertask" or "performtask" or "sendemail" or "approval" or "openeditpage" => EventType.UserTask,
+			// "readdata" / "changedata" / "changeaccessrights" are the same case: dedicated build/describe
+			// tokens whose data-ids (readDataUserTask / changeDataUserTask / changeAdminRightsUserTask) already
+			// resolve through that suffix arm, while the token a descriptor actually carries does not end in
+			// "usertask" and would otherwise fall to Unknown — a hard validator Error on a graph that builds fine.
+			"usertask" or "performtask" or "sendemail" or "approval" or "openeditpage" or "readdata"
+					or "changedata" or "changeaccessrights" => EventType.UserTask,
 			var i when i.StartsWith("intermediatecatchevent", StringComparison.Ordinal) => EventType.IntermediateCatchSignalEvent,
 			var i when i.StartsWith("intermediatethrowevent", StringComparison.Ordinal) => EventType.IntermediateThrowSignalEvent,
 			// every system/user action element ends with the "usertask" suffix and is an activity.
