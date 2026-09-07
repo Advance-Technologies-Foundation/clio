@@ -390,14 +390,19 @@ public sealed class ProcessGraphValidator : IProcessGraphValidator {
 	}
 
 	// R17 (warning) — Add data returns only an Id; chain a Read data before consuming other fields.
+	// Both sides are compared on the NORMALIZED type, not the raw literal. The canvas data-id
+	// (readDataUserTask) and the build/describe token (readData) name the same element, and ManagerMap
+	// resolves both to an Activity, so a raw-literal comparison would warn "chain a Read data" while
+	// pointing at a node that already IS one — and would do it only for the spelling the MCP tools
+	// advertise.
 	private static void CheckAddDataChaining(ProcessGraphNode node, List<ProcessGraphEdge> outs,
 			IReadOnlyDictionary<string, ProcessGraphNode> nodeByName, List<ProcessGraphFinding> findings) {
-		if (node.Type != "addDataUserTask") {
+		if (NormalizedType(node.Type) != "adddatausertask") {
 			return;
 		}
 		foreach (ProcessGraphEdge edge in outs) {
 			if (nodeByName.TryGetValue(edge.Target, out ProcessGraphNode target)
-				&& RoleOf(target) == Role.Activity && target.Type != "readDataUserTask") {
+				&& RoleOf(target) == Role.Activity && !IsReadData(target.Type)) {
 				findings.Add(new ProcessGraphFinding(ProcessGraphSeverity.Warning, "R17",
 					$"Add data '{node.Name}' outputs only the new Id; chain a Read data before '{edge.Target}' consumes other fields.",
 					edge.Target, edge));
@@ -405,8 +410,21 @@ public sealed class ProcessGraphValidator : IProcessGraphValidator {
 		}
 	}
 
+	// Lower-cased, trimmed element type. Every spelling comparison in the rules goes through this so a
+	// data-id, a build token and a casing variant of either are treated as the one element kind they name.
+	private static string NormalizedType(string type) => type?.Trim().ToLowerInvariant() ?? string.Empty;
+
+	// Both spellings of the Read data element: the canvas data-id and the build/describe token.
+	private static bool IsReadData(string type) =>
+		NormalizedType(type) is "readdatausertask" or "readdata";
+
 	// R13 — a conditional flow may originate only from a gateway or an activity; a BLANK condition is an
 	// error, an OMITTED one a warning.
+	//
+	// master renamed this to CheckConditionalFlowOrigins, and that name does NOT survive the merge: on
+	// master the method checked origins only, while here it also checks the condition itself, so the
+	// narrower name would describe half of what runs. The rename's INTENT is kept - a name says what the
+	// method does - which is exactly why the broader name is the right one on this side.
 	private static void CheckConditionalFlows(IReadOnlyList<ProcessGraphEdge> edges,
 			IReadOnlyDictionary<string, ProcessGraphNode> nodeByName, List<ProcessGraphFinding> findings) {
 		foreach (ProcessGraphEdge edge in edges.Where(e => e.FlowKind == ProcessFlowKind.Conditional)) {

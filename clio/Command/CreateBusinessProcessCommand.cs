@@ -129,6 +129,19 @@ namespace Clio.Command;
 // minor (crt-process-builder#50) — rather than as the branch stamp the behaviour first appeared under. The
 // two rules compose without conflict: this literal still moves only when clio depends on or advertises new
 // server behaviour, and it is still asserted as "the shipped archive satisfies it", not "equals it".
+// NOTHING IN THIS FLOOR COVERS THE accessRights BLOCK. The Change access rights element is on
+// crt-process-builder main (ENG-92717), but no RELEASED archive carries it yet, so this precondition
+// PASSES on an environment whose server silently discards the block, and install-process-builder
+// installs an archive that satisfies the floor and changes nothing. AccessRightsBlockExpectation's
+// post-operation read-back is the ONLY guard for that block until the rebundle carries the element.
+// The floor is deliberately NOT raised to 1.6.0.2 for it. This attribute is CLASS-level, so it gates
+// every call to this command - raising it would refuse the whole tool on any older environment, for
+// every descriptor, including the majority that carry no accessRights block at all. That exact move
+// was made for the Approval element and reverted in review (79270adbf): "a lockout for everyone in
+// exchange for a block most descriptors never use". changeData and the body-macros restamp left the
+// floor alone for the same reason. AccessRightsBlockExpectation is the guard instead - it reads the
+// process back after the write and warns when the block did not land, which is the behavioural
+// equivalent that does not punish callers who never send one.
 //
 // ===== A THIRD requirement line, and the same two rules give the same answer =====
 // ENG-91853 arrives with its own floor, and everything above about ENG-96325 and ENG-92713 now applies
@@ -176,7 +189,7 @@ namespace Clio.Command;
 // Both rules still hold afterwards: this literal moves only when clio depends on or advertises new
 // server behaviour, and the guard fixture still asserts the shipped archive SATISFIES it rather than
 // equals it - so a later documentation-only rebundle moves the bundle and must not move this line.
-[RequiresPackage(BundledPackages.ProcessBuilderPackageName, "1.6.0.2",
+[RequiresPackage(BundledPackages.ProcessBuilderPackageName, "1.6.0.3",
 	Hint = BundledPackages.ProcessBuilderInstallHint)]
 public sealed class CreateBusinessProcessOptions : EnvironmentOptions {
 	/// <summary>Inline JSON process descriptor (name, caption, packageName, elements[], flows[], parameters[], mappings[]).</summary>
@@ -352,9 +365,16 @@ public class CreateBusinessProcessCommand(
 			foreach (string warning in result.Warnings ?? []) {
 				logger.WriteWarning(warning);
 			}
-			// Renamed from WarnOnDiscardedEmailBlocks when it grew to cover the approval block too: both are
-			// discarded the same silent way by a server that predates them, so they share one read-back.
-			WarnOnDiscardedConfigurationBlocks(options, result.SchemaName);
+			// Verification runs AFTER the write landed, so it must never change the outcome the caller sees.
+			// Inside Execute's blanket catch a throw here would report a succeeded operation as failed, and on a
+			// tool that grants and revokes live permissions that invites a retry: a duplicate schema on create, a
+			// re-applied replace on modify.
+			try {
+				WarnOnDiscardedConfigurationBlocks(options, result.SchemaName);
+			} catch (Exception verification) {
+				logger.WriteWarning(
+					$"The process was created, but verifying its configuration failed: {verification.Message}. Re-read it with describe-business-process before reporting a grant or revoke as applied.");
+			}
 			return 0;
 		} catch (Exception exception) {
 			logger.WriteError(exception.Message);
@@ -362,35 +382,42 @@ public class CreateBusinessProcessCommand(
 		}
 	}
 
-	// A server that predates sendEmail DISCARDS an email block and still answers success:true, so a build can
-	// report a configured email element that is in fact empty. Read the saved process back and say so when the
-	// block did not land. Only runs when the descriptor actually carried a block, so the ordinary path pays
-	// nothing; a failure to verify is never escalated, because an unreadable description is not evidence of a
-	// dropped block. See EmailBlockExpectation for why this is behavioural rather than version-based.
+	// A server that predates a block DISCARDS it and still answers success:true, so a build can report a
+	// configured element that is in fact empty. Read the saved process back ONCE and check every block the
+	// payload carried: two guards issuing byte-identical describes would double the latency and the retry
+	// budget of the success path for a payload that configures both. Only runs when the descriptor actually
+	// carried a block, so the ordinary path pays nothing. See EmailBlockExpectation / AccessRightsBlockExpectation
+	// for why this is behavioural rather than version-based.
 	private void WarnOnDiscardedConfigurationBlocks(CreateBusinessProcessOptions options, string? schemaName) {
-		IReadOnlyList<string> expected = EmailBlockExpectation.FromDescriptor(options.DescriptorJson);
-		// The Approval element has exactly the same silent-drop failure, so it is verified from the SAME read-back
-		// rather than a second one — the describe below is the expensive part, and one of the two blocks being
-		// absent is no reason to skip the other's check.
-		IReadOnlyList<ApprovalBlockExpectation.ApprovalExpectation> expectedApproval = ApprovalBlockExpectation.FromDescriptor(options.DescriptorJson);
-		// BOTH must be empty to skip. An || here would stop verifying approval on every payload without an email
-		// block, which is most of them, and nothing downstream would notice — pinned by
-		// Execute_ShouldStillVerifyApproval_WhenTheDescriptorCarriesNoEmailBlock.
-		if ((expected.Count == 0 && expectedApproval.Count == 0) || string.IsNullOrWhiteSpace(schemaName)) {
+		BlockExpectationIntent intent = BlockExpectationIntent.FromDescriptor(options.DescriptorJson);
+		// The Approval element has the same silent-drop failure, so master's guard verifies it
+		// from the SAME read-back rather than a second one - the describe below is the expensive
+		// part. Email needs no separate expectation here: ReportDescribed covers it from intent.
+		IReadOnlyList<ApprovalBlockExpectation.ApprovalExpectation> expectedApproval =
+			ApprovalBlockExpectation.FromDescriptor(options.DescriptorJson);
+		if (intent.IsEmpty && expectedApproval.Count == 0) {
+			return;
+		}
+
+		if (string.IsNullOrWhiteSpace(schemaName)) {
+			// Nothing to read back against. Silence here would be indistinguishable from a verified success.
+			BlockExpectationReporter.WarnAccessRightsUnverified(logger, intent,
+				"the operation returned no process name to read back");
 			return;
 		}
 
 		ErrorOr<DescribeProcessResult> described =
 			processDescriber.Describe(new ProcessIdentity(schemaName, null, null), null);
 		if (described.IsError) {
+			// An unreadable description is not evidence of a drop, so this never fails the command. It is not
+			// silence either when access rights were requested: that guard is the only automated check that a
+			// grant or revoke actually landed, and reporting "verified" and "could not check" identically would
+			// let an unapplied revoke pass as applied.
+			BlockExpectationReporter.WarnAccessRightsUnverified(logger, intent, described.FirstError.Description);
 			return;
 		}
 
-		string? dropped = EmailBlockExpectation.BuildWarning(
-			EmailBlockExpectation.Missing(described.Value, expected));
-		if (dropped is not null) {
-			logger.WriteWarning(dropped);
-		}
+		BlockExpectationReporter.ReportDescribed(logger, described.Value, intent);
 
 		string? droppedApproval = ApprovalBlockExpectation.BuildWarning(
 			ApprovalBlockExpectation.Missing(described.Value, expectedApproval));

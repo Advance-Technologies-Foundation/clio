@@ -64,8 +64,8 @@ namespace Clio.Tests
                 because: "the install hint must be consistent across all process-designer gates");
         }
 
-        [TestCase(typeof(CreateBusinessProcessOptions), "1.6.0.2")]
-        [TestCase(typeof(ModifyBusinessProcessOptions), "1.6.0.2")]
+        [TestCase(typeof(CreateBusinessProcessOptions), "1.6.0.3")]
+        [TestCase(typeof(ModifyBusinessProcessOptions), "1.6.0.3")]
         [Test]
         [Description("Create and Modify declare a VERSIONED requirement naming the newest behaviour clio DEPENDS ON or ADVERTISES that an older server may not have. Two requirement lines meet here and no released archive carries both, so the literal is the version cut from the merged package source. From master: the element-level performer block and its reference-existence guard (1.3.1.1), the formula validator behind a mappings[] expression source, and the PlatformValidationMessage rewrite these descriptions promise (1.4.0.44) — a tightened validator takes a literal because convergence only warns. From ENG-92713: the approver an older server discards while answering success, a notification switched on with no template, an author notification with no recipient, the approver preserved across a user<->manager switch (1.4.7.0), and describe telling a WRITTEN ignoreEmailErrors from the schema-level default (1.4.11.0) — which clio ADVERTISES to agents as 'absence means not written, never off'. A rebundle that changes only documentation must NOT move this pin (1.4.8.0 and 1.4.10.0 did not); one that changes what the server reports or accepts must. The bundled-archive guard asserts the shipped archive satisfies the literal, so it can never demand a version clio does not carry.")]
         public void OptionsType_ShouldDeclareVersionedProcessBuilderRequirement_WhenTheCommandShipsVersionedOperations(
