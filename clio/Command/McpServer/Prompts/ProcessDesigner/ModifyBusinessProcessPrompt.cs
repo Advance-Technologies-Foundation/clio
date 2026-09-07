@@ -23,7 +23,8 @@ public static class ModifyBusinessProcessPrompt {
 		$"""
 		 Edit the existing business process `{process}` on Creatio environment `{environmentName}` with the
 		 `modify-business-process` tool. Steps: (1) call `describe-business-process` to inspect the current elements
-		 and their names; (2) read `get-guidance name=process-modeling` for the operation and field contract;
+		 and their names; (2) read `get-guidance name=process-modeling` for the operation and field contract, plus
+		 `get-guidance name=process-parameters` for parameters, mappings and type compatibility;
 		 (3) supply a JSON `operations` array (applied in order) — each item has an `op`: `addElement`,
 		 `removeElement`, `addFlow`, `removeFlow`, `setFlow`, `setFlowCondition`, `addParameter`, `addMapping`,
 		 `setParameter`, `removeParameter`, `setFilter`, `clearFilter`, `setSignal`, `setElement`,
@@ -60,12 +61,18 @@ public static class ModifyBusinessProcessPrompt {
 		 and its tracked-change `changedColumns` in place, and `setElement` changes element-level fields in place —
 		 `useBackgroundMode` on any element kind, a `sendEmail` element's `email` block, where the fields you
 		 pass (`mode`, `sender`, `subject`, `body`, `importance`, `ignoreErrors`, `performer`) replace the current
-		 value but `to`/`cc`/`bcc` recipients match-or-append (an address the line already carries is a no-op, a new one is appended), and a `performTask` element's `performer` block
+		 value but `to`/`cc`/`bcc` recipients match-or-append (an address the line already carries is a no-op, a new one is appended),
+		 and a `performTask` element's `performer` block
 		 (`type:user|manager|role` plus `contact?`/`role?`/`showPage?` — WHO performs the task; `role` is the honest
 		 "assign to a team": the created Activity carries the role in its own OwnerRole column with an EMPTY
 		 owner, so never fake a team by writing a role id into the OwnerId parameter — that id is refused as
 		 referencing no Contact record; the retired CallUserTask is refused by name because its runtime ignores
-		 the assignment); `setConnections` binds the "Connected to" links of the
+		 the assignment);
+		 and an `openEditPage` element's `openEditPage` block, where every omitted field keeps its stored value and a
+		 supplied `defaultValues` array replaces the whole set — but retargeting `page` or changing `editMode` is
+		 DESTRUCTIVE and requires the new mode-specific value (`defaultValues` for `add`, `recordId` for `edit`) in the
+		 same update, after which the branch being left is cleared, because the runtime applies stored pre-filled
+		 values in either mode; `setConnections` binds the "Connected to" links of the
 		 Activity an element creates and is an UPSERT keyed on `column`, so columns you do not list are left alone,
 		 and `clearConnections` unbinds them). An `addMapping` with a `value` on a Lookup parameter takes a bare
 		 non-empty record Guid (the route ships from CrtProcessBuilder 1.3.1.1, and this clio additionally

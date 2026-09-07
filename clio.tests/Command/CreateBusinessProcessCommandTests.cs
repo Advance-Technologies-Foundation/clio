@@ -160,4 +160,25 @@ public sealed class CreateBusinessProcessCommandTests {
 			because: "the command should propagate service-level failures as a non-zero exit code");
 		_logger.Received(1).WriteError(Arg.Is<string>(message => message.Contains("Package 'Custom' was not found.")));
 	}
+	[Test]
+	[Category("Unit")]
+	[Description("A descriptor carrying ONLY an approval block still triggers the read-back check. The two expectation checks share one describe, and the short-circuit that skips it must require BOTH to be empty — flipping its && to || would silently stop verifying approval for every payload without an email block, which is most of them.")]
+	public void Execute_ShouldStillVerifyApproval_WhenTheDescriptorCarriesNoEmailBlock() {
+		// Arrange
+		CreateBusinessProcessOptions options = new() {
+			Environment = "sandbox",
+			DescriptorJson = "{\"name\":\"UsrSampleProcess\",\"packageName\":\"Custom\",\"elements\":["
+				+ "{\"name\":\"Approve1\",\"type\":\"approval\",\"approval\":{\"object\":\"Order\","
+				+ "\"approver\":{\"type\":\"user\",\"employee\":\"Anna\"}}}],\"flows\":[]}"
+		};
+		_createBusinessProcessService.BuildProcess("sandbox", Arg.Any<CreateBusinessProcessRequest>())
+			.Returns(BuildResult());
+
+		// Act
+		_command.Execute(options);
+
+		// Assert
+		_processDescriber.Received(1).Describe(Arg.Any<ProcessIdentity>(), Arg.Any<string>());
+	}
+
 }

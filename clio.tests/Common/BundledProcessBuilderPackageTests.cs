@@ -162,7 +162,7 @@ public class BundledProcessBuilderPackageTests {
 	/// </para>
 	/// </remarks>
 	private const string ExpectedArchiveSha256 =
-		"5CEFDDD6C5A5E6F8884910AE5BFB808BF69E9FF1331EF8894CF7ACD63DE9E867";
+		"8CC0EEE181B1C719E77362388769D6D7726AACE0FD1FC9EF9FB2F49634D7D6D3";
 
 	/// <summary>
 	/// The <c>PackageVersion</c> the shipped descriptor carries.
@@ -190,7 +190,7 @@ public class BundledProcessBuilderPackageTests {
 	/// </para>
 	/// </para>
 	/// </remarks>
-	private const string ExpectedArchiveVersion = "1.4.0.70";
+	private const string ExpectedArchiveVersion = "1.6.0.0";
 
 	/// <summary>
 	/// The commit of the PRODUCING repository the archive was cut from, written by
@@ -202,7 +202,7 @@ public class BundledProcessBuilderPackageTests {
 	/// corresponding to no commit" is unreachable rather than merely documented. Anyone with a checkout can
 	/// verify the rest with one `git checkout`.</para>
 	/// </summary>
-	private const string ExpectedProducingCommit = "a35bb75ea3d8fd0efcc31e9040be74fc5f75091b";
+	private const string ExpectedProducingCommit = "fc85fd1f9a787a55107b6fe6c18d5cf666b64630";
 
 	/// <summary>
 	/// The <c>ModifiedOnUtc</c> the shipped descriptor carries.
@@ -228,7 +228,7 @@ public class BundledProcessBuilderPackageTests {
 	/// command — the previous pin ended in <c>431</c>, which is how the hand edit was eventually noticed.
 	/// </para>
 	/// </remarks>
-	private const string ExpectedDescriptorModifiedOnUtc = "/Date(1788786237000)/";
+	private const string ExpectedDescriptorModifiedOnUtc = "/Date(1788797373000)/";
 
 	/// <summary>
 	/// The <c>ModifiedOnUtc</c> the shipped COMPILE-MARKER SCHEMA descriptor carries.
@@ -700,7 +700,7 @@ public class BundledProcessBuilderPackageTests {
 		declared.Should().HaveCountGreaterThanOrEqualTo(5,
 			because: "the five process-designer gates must be visible to this scan; if it finds fewer, the "
 				+ "reflection is broken and the version loop below is silently inspecting nothing");
-		// The loop EXECUTES today: two of the five carry a version literal (create/modify, 1.4.0.60). It was
+		// The loop EXECUTES today: two of the five carry a version literal (create/modify, 1.4.0.44). It was
 		// vacuous when written, deliberately — the invariant had to be in place before the first literal
 		// appeared, because the commit that adds one is exactly when it must already work. It replaces the old
 		// pin (descriptor version == a constant), which needed hand-synchronising on every rebundle and
