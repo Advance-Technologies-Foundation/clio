@@ -459,4 +459,49 @@ public sealed class PageUpdateToolBaselineTests
 		rescuedSaveGetSchemaCalls.Should().Be(cleanSaveGetSchemaCalls + 1,
 			because: "one read per gate, or one per key, would multiply the cost of every later save of a page with stored resources");
 	}
+
+	/// <summary>
+	/// The same body as <see cref="PersistedResourceBody"/> with the closing `}); ` removed: the markers stay
+	/// present and paired, so the offline content chain runs, but the JS no longer parses.
+	/// </summary>
+	private static string PersistedResourceBodyWithBrokenSyntax() =>
+		PersistedResourceBody().Replace("}; });", "};");
+
+	[Test]
+	[Description("ResolveSyntaxFailure passes offlineOnly: true, so the fail-fast path for an unparsable body must make NO Creatio call at all - not even the persisted-key read. Dropping the flag would reintroduce remote I/O on exactly the path that promises none, including against an unreachable environment, and nothing asserted it (PR #1356 review).")]
+	public void UpdatePage_ShouldMakeNoRemoteCall_WhenTheBodyDoesNotParse() {
+		// Arrange
+		StubSchemaWithPersistedKeys(PersistedResourceKey);
+
+		// Act
+		PageUpdateResponse response =
+			_tool.UpdatePage(CreateArgs(PersistedResourceBodyWithBrokenSyntax()), null).Result;
+
+		// Assert
+		response.Success.Should().BeFalse(because: "a body that does not parse cannot be saved");
+		_applicationClient.DidNotReceive().ExecutePostRequest(GetSchemaUrl, Arg.Any<string>());
+		_applicationClient.DidNotReceive().ExecutePostRequest(
+			GetSchemaUrl, Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>());
+		_applicationClient.DidNotReceive().ExecutePostRequest(
+			SaveSchemaUrl, Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>());
+	}
+
+	[Test]
+	[Description("The ExpectedChecksum echo on the SchemaCreatedExternally branch, asserted like the ChecksumMismatch one already is: without it 'modified outside this session' is the caller's only clue and the refusal is undiagnosable (PR #1356 review).")]
+	public void UpdatePage_ShouldEchoTheExpectedChecksum_WhenTheSchemaWasCreatedExternally() {
+		// Arrange - the baseline records that no editable schema existed, and the caller pinned nothing,
+		// so the absent marker is armed; the server, however, does resolve a schema.
+		AddMetaWithBaseline("sandbox", "baseline-checksum", editableExists: false, editableSchemaUId: null);
+
+		// Act
+		PageUpdateResponse response = _tool.UpdatePage(CreateArgs(ValidBody), null).Result;
+
+		// Assert
+		response.Success.Should().BeFalse(because: "a schema that appeared since the baseline was captured is an external change");
+		response.Conflict.Should().BeTrue();
+		response.ConflictDetails.Reason.Should().Be(PageConflictReasons.SchemaCreatedExternally,
+			because: "the absent marker is what this refusal is formed from");
+		response.ConflictDetails.ExpectedChecksum.Should().Be("baseline-checksum",
+			because: "the echo tells the caller which baseline produced the verdict, exactly as the ChecksumMismatch branch does");
+	}
 }
