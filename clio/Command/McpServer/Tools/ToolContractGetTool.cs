@@ -445,6 +445,7 @@ internal static class ToolContractCatalog {
 	private const string DefaultValueConfigSourceKey = "source";
 	private const string DescriptionLocalizationsFieldName = "description-localizations";
 	private const string DryRunFieldName = "dry-run";
+	private const string EmailIdFieldName = "email-id";
 	private const string ConfirmFieldName = "confirm";
 	private const string EntityFieldName = "entity";
 	private const string EntitySchemaNameDescription = "Entity schema name.";
@@ -619,6 +620,8 @@ internal static class ToolContractCatalog {
 			[ODataCreateTool.ToolName] = BuildODataCreate(),
 			[ODataUpdateTool.ToolName] = BuildODataUpdate(),
 			[ODataDeleteTool.ToolName] = BuildODataDelete(),
+			[EmailTemplateTool.GetToolName] = BuildGetEmailTemplate(),
+			[EmailTemplateTool.UpdateToolName] = BuildUpdateEmailTemplate(),
 			[SchemaSyncTool.ToolName] = BuildSchemaSync(),
 			[PageSyncTool.ToolName] = BuildPageSync(),
 			[GetPkgListTool.GetPkgListToolName] = BuildGetPkgList(),
@@ -702,6 +705,8 @@ internal static class ToolContractCatalog {
 		ODataCreateTool.ToolName,
 		ODataUpdateTool.ToolName,
 		ODataDeleteTool.ToolName,
+		EmailTemplateTool.GetToolName,
+		EmailTemplateTool.UpdateToolName,
 		SchemaSyncTool.ToolName,
 		PageSyncTool.ToolName,
 		GetPkgListTool.GetPkgListToolName,
@@ -2201,6 +2206,92 @@ internal static class ToolContractCatalog {
 			],
 			[],
 			OdataUnregisteredEntityAntiPatterns(includeEsqEscapeRoute: true));
+	}
+
+	private static ToolContractDefinition BuildGetEmailTemplate() {
+		return new ToolContractDefinition(
+			EmailTemplateTool.GetToolName,
+			"Reads every legacy Content designer and current Beefree content variant for a BulkEmail marketing email or EmailTemplate message template. Each variant carries an optimistic checksum for update-email-template.",
+			new ToolInputSchemaContract(
+				[EmailIdFieldName, EnvironmentNameFieldName],
+				[
+					Field(EmailIdFieldName, StringType, "GUID of the BulkEmail or EmailTemplate host record."),
+					Field(EnvironmentNameFieldName, StringType, RegisteredEnvironmentNameDescription),
+					Field("language", StringType, "Optional Beefree language code. Requests an exists=false creation variant when missing."),
+					Field("language-id", StringType, "Optional SysLanguage GUID for EmailTemplateLang. Requests an exists=false creation variant when missing.")
+				]),
+			EnvelopeOutput(
+				SuccessFieldName,
+				[SuccessFalseSignal],
+				Field(SuccessFieldName, BooleanType, "Whether the email content was read."),
+				Field(ErrorFieldName, StringType, FailureMessageDescription),
+				Field(EmailIdFieldName, StringType, "BulkEmail or EmailTemplate host record Id."),
+				Field("host-type", StringType, "bulk-email or message-template."),
+				Field("name", StringType, "Host record name."),
+				Field("variants", ArrayType, "Content variants. Each carries format, language identity, content fields, and checksum.")),
+			CommonErrorContract,
+			[],
+			[],
+			[
+				Example("Read email content before editing", new Dictionary<string, object?> {
+					[EnvironmentNameFieldName] = ExampleEnvironmentName,
+					[EmailIdFieldName] = ExampleLookupValueId
+				})
+			],
+			Flow([EmailTemplateTool.GetToolName], "Read all stored formats and languages without reverse-engineering EmailTemplate/BfEmailTemplate OData fields."),
+			[
+				Flow([EmailTemplateTool.GetToolName, EmailTemplateTool.UpdateToolName],
+					"Read immediately before editing, preserve the intended variant's returned checksum, then update that exact format/language variant.")
+			],
+			[],
+			[]);
+	}
+
+	private static ToolContractDefinition BuildUpdateEmailTemplate() {
+		return new ToolContractDefinition(
+			EmailTemplateTool.UpdateToolName,
+			"Updates one legacy or Beefree email-content variant for an existing BulkEmail or EmailTemplate host. The write requires confirm=true and the checksum returned by an immediately preceding get-email-template call. A missing Beefree row is created, enabling a lossless get-source then update-target copy without converting PageJson into legacy TemplateConfig.",
+			new ToolInputSchemaContract(
+				[EmailIdFieldName, EnvironmentNameFieldName, "format", "expected-checksum", ConfirmFieldName],
+				[
+					Field(EmailIdFieldName, StringType, "GUID of the existing BulkEmail or EmailTemplate host record."),
+					Field(EnvironmentNameFieldName, StringType, RegisteredEnvironmentNameDescription),
+					Field("format", StringType, "beefree or legacy."),
+					Field("expected-checksum", StringType, "Checksum returned by get-email-template for this exact variant."),
+					Field(ConfirmFieldName, BooleanType, "Must be true. False or omitted performs no remote write."),
+					Field("language", StringType, "Optional Beefree language code; empty selects the default variant."),
+					Field("language-id", StringType, "Optional SysLanguage GUID for an EmailTemplateLang legacy translation."),
+					Field("page-json", StringType, "Required for beefree: complete designer JSON."),
+					Field("page-html", StringType, "Required for beefree: complete rendered HTML."),
+					Field("amp-html", StringType, "Optional Beefree AMP HTML."),
+					Field("template-version", NumberType, "Optional Beefree template version."),
+					Field("subject", StringType, "Optional legacy subject."),
+					Field("body", StringType, "Optional legacy body."),
+					Field("template-config", StringType, "Optional legacy Content designer configuration. Never pass Beefree PageJson here."),
+					Field("config-type", NumberType, "Optional legacy EmailTemplate ConfigType."),
+					Field("is-html-body", BooleanType, "Optional legacy IsHtmlBody value.")
+				]),
+			EnvelopeOutput(
+				SuccessFieldName,
+				[SuccessFalseSignal],
+				Field(SuccessFieldName, BooleanType, "Whether the guarded update succeeded."),
+				Field(ErrorFieldName, StringType, FailureMessageDescription),
+				Field(EmailIdFieldName, StringType, "Updated host record Id."),
+				Field("format", StringType, "Updated storage format."),
+				Field("created", BooleanType, "Whether a new language/format storage row was created."),
+				Field("checksum", StringType, "Checksum of the content written.")),
+			CommonErrorContract,
+			[],
+			[],
+			[],
+			Flow([EmailTemplateTool.GetToolName, EmailTemplateTool.UpdateToolName],
+				"Always read first and pass the returned checksum; a mismatch refuses the write so concurrent designer edits are not overwritten."),
+			[
+				Flow([EmailTemplateTool.GetToolName, EmailTemplateTool.UpdateToolName],
+					"To copy modern content between hosts, read the source Beefree variant, read the target for its checksum, then update the target with the source PageJson/PageHtml and the target checksum.")
+			],
+			[],
+			[]);
 	}
 
 	// Shared by odata-read and odata-create: both funnel through CreatioResponseError.TryDetect and
@@ -3881,7 +3972,7 @@ internal static class ToolContractCatalog {
 				[EnvironmentNameFieldName, PagesFieldName],
 				[
 					Field(EnvironmentNameFieldName, StringType, RegisteredEnvironmentNameDescription),
-					Field(PagesFieldName, ArrayType, "Page update requests built from `get-page.raw.body`. Each page item requires `schema-name` and full `body`; optional `resources` is a JSON object string of localizable string key-value pairs the platform does NOT auto-provide (custom tab/group titles, button captions, validator messages, explicit caption overrides). Only include keys with NO matching DS-bound view model attribute on the page; matching keys are auto-provided by the platform \u2014 see `page-schema-resources` guidance. Each page item also accepts `optional-properties` (JSON array of {key, value} merged into schema optionalProperties)."),
+					Field(PagesFieldName, ArrayType, "Page update requests built from the CONTENTS of the file at `get-page.files.bodyFile` \u2014 sync-pages takes the body inline only, so read that file and pass its text as `body` (it has no `body-file` parameter; update-page does). Each page item requires `schema-name` and full `body`; optional `resources` is a JSON object string of localizable string key-value pairs the platform does NOT auto-provide (custom tab/group titles, button captions, validator messages, explicit caption overrides). Only include keys with NO matching DS-bound view model attribute on the page; matching keys are auto-provided by the platform \u2014 see `page-schema-resources` guidance. Each page item also accepts `optional-properties` (JSON array of {key, value} merged into schema optionalProperties)."),
 					Field(ValidateFieldName, BooleanType, "Run client-side content validation before save. Set false only as an escape hatch for pre-existing page defects; the structural floor still runs. This flag and `force` are orthogonal — one gates content checks, the other the baseline/conflict guard — so they can be combined; the per-page result then carries a warning that both guards are relaxed."),
 					Field(VerifyFieldName, BooleanType, "Read the page back after save.")
 				]),
@@ -3900,12 +3991,12 @@ internal static class ToolContractCatalog {
 				Default(VerifyFieldName, BooleanFalseLiteral, "Read-back verification is optional and disabled by default.")
 			],
 			[
-				Example("Validate and save one page body copied from get-page raw.body", new Dictionary<string, object?> {
+				Example("Validate and save one page body read from the get-page files.bodyFile", new Dictionary<string, object?> {
 					[EnvironmentNameFieldName] = ExampleEnvironmentName,
 					[PagesFieldName] = new object[] {
 						new Dictionary<string, object?> {
 							[SchemaNameFieldName] = "UsrTaskApp_FormPage",
-							["body"] = "/* raw.body returned by get-page */ define(...)",
+							["body"] = "/* contents of the body.js written by get-page (files.bodyFile) */ define(...)",
 							[ResourcesFieldName] = "{\"UsrDetailsTab_caption\":\"Details\"}"
 						}
 					},
@@ -4067,11 +4158,12 @@ internal static class ToolContractCatalog {
 	private static ToolContractDefinition BuildPageGet() {
 		return new ToolContractDefinition(
 			PageGetTool.ToolName,
-			"Reads a Freedom UI page bundle plus the raw editable body so the caller can inspect before mutating and edit `raw.body` directly when saving. Before editing `raw.body`, call get-guidance with name `page-modification` and use its checklist to choose specialized guidance.",
+			"Reads a Freedom UI page and MATERIALIZES it on disk: writes `body.js` (the editable own-body), `bundle.json` (the full merged view) and `meta.json` under `.clio-pages/{schema-name}/`, then returns their paths in `files`. REPLACES that directory on every call \u2014 an existing `.clio-pages/{schema-name}/` is deleted recursively before the fresh files are written, so an edit made in place is DESTROYED by the next get-page of the same schema: send it through update-page / sync-pages, or copy it out first. The successful envelope carries `page` and `files`; `editable` is present only when the editable-schema checksum probe succeeded \u2014 it does NOT inline the body or the bundle. The returned paths are on the MCP SERVER host and are consumable only when the client shares that filesystem (stdio, or mcp-http on loopback); a remote client cannot open them. Read the file at `files.bodyFile` to obtain the editable JavaScript source. Before editing that body, call get-guidance with name `page-modification` and use its checklist to choose specialized guidance.",
 			new ToolInputSchemaContract(
 				[SchemaNameFieldName],
 				EnvironmentOrExplicitConnectionFields(
-					Field(SchemaNameFieldName, StringType, "Freedom UI page schema name.")),
+					Field(SchemaNameFieldName, StringType, "Freedom UI page schema name."),
+					Field("output-directory", StringType, "Optional. Directory to anchor the `.clio-pages` output under (typically your project root). An explicit value is honored VERBATIM and is NOT confined to the workspace: `<output-directory>/.clio-pages/{schema-name}/` is REPLACED on every call \u2014 the existing directory is moved aside and then deleted recursively \u2014 so never point it at a directory holding anything but clio page output. Confinement of an explicit anchor is not implemented yet (issue #1185 review); until it is, the caller owns that choice. Omitted, the anchor resolves in THREE steps: the nearest ancestor of the current working directory containing `.clio/workspaceSettings.json`; else the current working directory itself; else \u2014 only when that is the bare home directory \u2014 the managed clio home root. In a plain checkout with no workspace marker the output therefore lands under the CURRENT DIRECTORY, not a workspace root.")),
 				AnyOf: EnvironmentOrExplicitConnectionRequirements()),
 			EnvelopeOutput(
 				SuccessFieldName,
@@ -4080,8 +4172,8 @@ internal static class ToolContractCatalog {
 				],
 				Field(SuccessFieldName, BooleanType, ToolSucceededDescription),
 				Field("page", ObjectType, "Page metadata carrying schema and package identity such as schemaName, schemaUId, packageName, packageUId, and parentSchemaName."),
-				Field("bundle", ObjectType, "Merged page bundle."),
-				Field("raw", ObjectType, "Raw editable payload. The JavaScript source to edit and round-trip through update-page/sync-pages is `raw.body`."),
+				Field("files", ObjectType, "Paths of the files written to disk: `bodyFile` (body.js \u2014 the editable JavaScript source to read, edit and send back), `bundleFile` (bundle.json \u2014 the full merged view; minified JSON, parse it with a JSON tool rather than grep), `metaFile` (meta.json) and `fetchedAt`. The body and the bundle are NOT inlined in this envelope. These are paths on the MCP SERVER host: a client that does not share that filesystem (a remote mcp-http caller) cannot read them. The whole `.clio-pages/{schema-name}/` directory is deleted and rewritten on every get-page of that schema, so do not keep in-progress edits there."),
+				Field("editable", ObjectType, "OPTIONAL \u2014 omitted when the best-effort SysSchema checksum query returned no row or failed; treat its ABSENCE as 'baseline unavailable', never as 'no editable schema'. When present: editable (own) schema state captured at fetch time \u2014 `editableSchemaExists` plus the identity and change signal used as the conflict-detection baseline for a later update-page / sync-pages call."),
 				Field(ErrorFieldName, StringType, FailureMessageDescription)
 			),
 			CommonErrorContract,
@@ -4103,7 +4195,7 @@ internal static class ToolContractCatalog {
 					PageSyncTool.ToolName,
 					PageGetTool.ToolName
 				],
-				"Use after list-pages to inspect `raw.body` before following the canonical page write path and to read back after saving."),
+				"Use after list-pages to read the file at `files.bodyFile` before following the canonical page write path, and to read back after saving."),
 			[
 				Flow(
 					[
@@ -4877,13 +4969,13 @@ internal static class ToolContractCatalog {
 	private static ToolContractDefinition BuildPageUpdate() {
 		return new ToolContractDefinition(
 			PageUpdateTool.ToolName,
-			"Fallback single-page save path for a full Freedom UI page body copied from `get-page.raw.body` when the workflow explicitly requires dry-run or legacy save behavior. Set `validate=false` only for a pre-existing page defect; client-side content and run-process validation are skipped, but JavaScript syntax, AST loadability, replace-mode marker integrity, the mobile JSON-object structure check, and the page baseline/conflict guard remain mandatory. `validate=false` stays combinable with `force=true`; the two flags are orthogonal and the response warns when both guards are down. " +
+			"Fallback single-page save path for a full Freedom UI page body read from `get-page.files.bodyFile` when the workflow explicitly requires dry-run or legacy save behavior. Set `validate=false` only for a pre-existing page defect; client-side content and run-process validation are skipped, but JavaScript syntax, AST loadability, replace-mode marker integrity, the mobile JSON-object structure check, and the page baseline/conflict guard remain mandatory. `validate=false` stays combinable with `force=true`; the two flags are orthogonal and the response warns when both guards are down. " +
 			SchemaValidationService.CustomCssPolicySummary,
 			new ToolInputSchemaContract(
 				[SchemaNameFieldName],
 				EnvironmentOrExplicitConnectionFields(
 					Field(SchemaNameFieldName, StringType, "Freedom UI page schema name."),
-					Field("body", StringType, "Full page body with all marker pairs. Reuse `get-page.raw.body` rather than `bundle` or `bundle.viewConfig`. Either `body` or `body-file` must be provided."),
+					Field("body", StringType, "Full page body with all marker pairs. Reuse the CONTENTS of the file at `get-page.files.bodyFile` rather than the bundle written to `get-page.files.bundleFile`. Either `body` or `body-file` must be provided. WARNING: re-sending the full inherited body verbatim is wrong in BOTH modes, and they fail differently. In `append` a full-config body is rejected UP-FRONT, offline \u2014 that mode takes only the new viewConfigDiff/handlers operations in the diff form, and the rejection itself points at replace mode. In `replace` the body reaches the SERVER and can fail there with 'Object vs Array' when it re-applies merges already inherited from the parent hierarchy, so passing the `get-page.files.bodyFile` path straight through as `body-file` is mechanically accepted but IS the resend hazard, not a recommendation."),
 					Field("body-file", StringType, "Absolute path to a file containing the page body. Used when `body` is empty. Enables passing large bodies without inline JSON escaping."),
 					Field(DryRunFieldName, BooleanType, "Validate without saving."),
 					Field(ValidateFieldName, BooleanType, "Run client-side content and run-process validation before saving. Set false only as an explicit escape hatch for a pre-existing page defect; JavaScript syntax, AST loadability, replace-mode marker integrity, the mobile JSON-object structure check, and the page baseline/conflict guard remain mandatory. It stays combinable with force=true - the two flags are orthogonal (one gates content checks, the other the baseline/conflict guard) - and the response then warns that both are relaxed."),
@@ -4919,9 +5011,9 @@ internal static class ToolContractCatalog {
 				Default("mode", "replace", "Body is written verbatim by default; pass 'append' to merge with the existing body.")
 			],
 			[
-				Example("Dry-run validate one page body copied from get-page raw.body", new Dictionary<string, object?> {
+				Example("Dry-run validate one page body read from the get-page files.bodyFile", new Dictionary<string, object?> {
 					[SchemaNameFieldName] = "UsrTaskApp_FormPage",
-					["body"] = "/* raw.body returned by get-page */ define(...)",
+					["body"] = "/* contents of the body.js written by get-page (files.bodyFile) */ define(...)",
 					[ResourcesFieldName] = "{\"UsrDetailsTab_caption\":\"Details\"}",
 					[DryRunFieldName] = true,
 					[EnvironmentNameFieldName] = ExampleEnvironmentName
@@ -4933,7 +5025,7 @@ internal static class ToolContractCatalog {
 					PageUpdateTool.ToolName,
 					PageGetTool.ToolName
 				],
-				"Use only when the workflow explicitly requires single-page dry-run or legacy save behavior after reading the raw body with get-page."),
+				"Use only when the workflow explicitly requires single-page dry-run or legacy save behavior after reading the body file written by get-page."),
 			[
 				Flow(
 					[
@@ -4971,7 +5063,7 @@ internal static class ToolContractCatalog {
 			new ToolInputSchemaContract(
 				["body"],
 				[
-					Field("body", StringType, "Full JavaScript page body with markers (web) or plain JSON body (mobile). Auto-detected by leading character."),
+					Field("body", StringType, "Full JavaScript page body with markers (web) or plain JSON body (mobile). Auto-detected by leading character. Over MCP, read the file at `get-page.files.bodyFile` and pass its CONTENTS \u2014 validate-page takes the body INLINE only, it has no `body-file` parameter."),
 					Field(ResourcesFieldName, StringType, "Optional JSON object string of localizable strings the platform does NOT auto-provide (custom titles, button captions, validator messages, explicit overrides). Applicable to web pages only. Only include keys with NO matching DS-bound view model attribute on the page \u2014 see `page-schema-resources` guidance.")
 				]),
 			EnvelopeOutput(

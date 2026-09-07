@@ -27,7 +27,9 @@ public static class CreateBusinessProcessPrompt {
 		 parameters (incl. `typeFromElement` to copy an element parameter's exact type, and a constant `value`
 		 default), the `mappings` target/source contract, signal triggers (with `changedColumns` to fire only on
 		 specific column changes and a data source `filter` to restrict which records fire one), and the
-		 type-compatibility rule;
+		 type-compatibility rule; and `get-guidance name=process-formulas` before writing an `expression`
+		 mapping source or a flow condition - it is an expression interpreter over a small registry, not C#,
+		 and the server refuses a bad one rather than storing it;
 		 (3) supply a JSON descriptor with `name`
 		 (unique schema code), `caption`, `packageName`{(string.IsNullOrWhiteSpace(packageName) ? "" : $" (override: `{packageName}`)")} and the `elements` / `flows` / `parameters` / `mappings` arrays.
 		 To run the process when a record is added/changed/deleted, use a `signalStart` element (the platform-native
