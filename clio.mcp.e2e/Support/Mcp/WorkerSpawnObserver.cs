@@ -29,14 +29,30 @@ internal sealed record ObservedWorker(int ProcessId, long StartTimeUtcTicks) {
 			long recordedSeconds = StartTimeUtcTicks / TimeSpan.TicksPerSecond;
 			long observedSeconds = process.StartTime.ToUniversalTime().Ticks / TimeSpan.TicksPerSecond;
 			return recordedSeconds == observedSeconds;
-		} catch (ArgumentException) {
-			// No process carries that identifier any more.
-			return false;
-		} catch (InvalidOperationException) {
-			// The process exited between the lookup and the read.
+		} catch (Exception exception) when (IsProcessInspectionFailure(exception)) {
+			// ArgumentException: no process carries that identifier any more. InvalidOperationException: it
+			// exited between the lookup and the read. Win32Exception: "Access is denied" — BOTH HasExited
+			// and StartTime throw it for a pid recycled by a process owned by another user or running
+			// elevated. That last one was previously uncaught, so it escaped and failed the run with an
+			// error about a stranger's process; waiting on release makes it likelier by widening the window
+			// in which a pid can be recycled. Every one of them answers "no", and soundly rather than
+			// conveniently: identity here is pid AND recorded start time, so a pid that cannot be read
+			// cannot be CONFIRMED as this worker — and the realistic reason it cannot be read is that it
+			// belongs to somebody else.
 			return false;
 		}
 	}
+
+	// Mirrors WorkerProcessSupervisor.IsProcessInspectionFailure deliberately. The product decides which
+	// reaches into another process mean "gone, or never ours" rather than "defect", and an instrument that
+	// disagreed with the code under test would fail a run on a case that code treats as ordinary.
+	private static bool IsProcessInspectionFailure(Exception exception) =>
+		exception is ArgumentException
+			or InvalidOperationException
+			or NotSupportedException
+			or System.ComponentModel.Win32Exception
+			or IOException
+			or UnauthorizedAccessException;
 }
 
 /// <summary>
@@ -182,10 +198,29 @@ internal sealed class WorkerSpawnObserver : IAsyncDisposable {
 		}
 	}
 
-	/// <summary>A single-line summary of what was observed, for assertion diagnostics.</summary>
-	internal string Describe() {
+	/// <summary>
+	/// A single-line summary of what was observed, for assertion diagnostics, taking a FRESH registry read.
+	/// </summary>
+	/// <remarks>
+	/// Use the overload taking a snapshot whenever the caller is asserting on one it already holds — see
+	/// <see cref="Describe(IReadOnlyList{ObservedWorker})"/> for why the difference matters.
+	/// </remarks>
+	internal string Describe() => Describe(ReadCurrent());
+
+	/// <summary>
+	/// A single-line summary of what was observed, rendering the caller's OWN snapshot rather than taking
+	/// a fresh read.
+	/// </summary>
+	/// <remarks>
+	/// The parameterless overload reads the registry again, so a caller that asserts on one snapshot and
+	/// describes with another can produce a failure message that contradicts the failure — most
+	/// confusingly "still-recorded=0" attached to "Expected collection to be empty", when the registry
+	/// merely drained in the milliseconds between the two reads. For a defect that only reproduces on CI
+	/// this message is the entire evidence, so the described state has to be the asserted state.
+	/// </remarks>
+	/// <param name="current">The registry snapshot the caller is reasoning about.</param>
+	internal string Describe(IReadOnlyList<ObservedWorker> current) {
 		IReadOnlyList<ObservedWorker> observed = Observed;
-		IReadOnlyList<ObservedWorker> current = ReadCurrent();
 		string failures = ReadFailures.Count == 0 ? string.Empty : $", read-failures=[{string.Join(" | ", ReadFailures)}]";
 		return $"registry={_registryPath}, workers-seen={observed.Count} "
 			+ $"[{string.Join(", ", observed.Select(worker => worker.ProcessId))}], "

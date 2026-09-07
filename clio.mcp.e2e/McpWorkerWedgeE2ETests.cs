@@ -619,7 +619,18 @@ public sealed class McpWorkerWedgeE2ETests {
 		// the kill REQUEST rather than on confirmed exit. See WorkerSpawnObserver.WaitUntilWorkersAreReleased
 		// for both paths. Sampling once read that eventually-consistent state synchronously.
 		WorkerReleaseObservation released = observer.WaitUntilWorkersAreReleased(WorkerReleaseWait);
-		string described = observer.Describe();
+		// Described from the snapshot the assertions below actually use, NOT from a fresh read: a registry
+		// that drained in the milliseconds between the two would otherwise print "still-recorded=0" beside
+		// "Expected collection to be empty" and send whoever triages the CI failure after a phantom.
+		string described = observer.Describe(released.StillRecorded);
+		// Emitted UNCONDITIONALLY, because a `because` string is materialised only when an assertion FAILS
+		// — and on failure this number is pinned at the ceiling by definition. The runs that could show the
+		// wait creeping toward that ceiling are the GREEN ones, so the green ones are where it has to be
+		// printed. It is the only signal that says whether WorkerReleaseWait is still generous.
+		TestContext.Out.WriteLine(
+			$"[worker-release] waited {released.Waited.TotalMilliseconds:0}ms of "
+			+ $"{WorkerReleaseWait.TotalMilliseconds:0}ms ceiling; registry-read={released.RegistryRead}, "
+			+ $"still-recorded={released.StillRecorded.Count}, still-running={released.StillRunning.Count}");
 		// The instrument first, exactly as the spawn assertion does it — and it has to be repeated HERE:
 		// every read the wait just performed happened after that earlier check, so a reader that started
 		// failing during the wait would otherwise turn an unobserved registry into "no worker is recorded".
