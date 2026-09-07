@@ -40,6 +40,22 @@ internal sealed record ObservedWorker(int ProcessId, long StartTimeUtcTicks) {
 }
 
 /// <summary>
+/// What <see cref="WorkerSpawnObserver.WaitUntilWorkersAreReleased"/> saw when it stopped waiting.
+/// </summary>
+/// <param name="RegistryRead">
+/// Whether the final registry read actually observed the file. FALSE means the instrument failed, which
+/// is a different statement from "no worker is recorded" and must never be asserted as that one.
+/// </param>
+/// <param name="StillRecorded">Entries the final read found in the registry.</param>
+/// <param name="StillRunning">Observed identities whose process was still alive at the final check.</param>
+/// <param name="Waited">How long the wait actually took, for the assertion diagnostics.</param>
+internal sealed record WorkerReleaseObservation(
+	bool RegistryRead,
+	IReadOnlyList<ObservedWorker> StillRecorded,
+	IReadOnlyList<ObservedWorker> StillRunning,
+	TimeSpan Waited);
+
+/// <summary>
 /// Watches the MCP host's on-disk worker registry so a test can OBSERVE that child processes were
 /// spawned, rather than infer it from a call having succeeded.
 /// </summary>
@@ -97,54 +113,61 @@ internal sealed class WorkerSpawnObserver : IAsyncDisposable {
 	internal IReadOnlyList<ObservedWorker> ReadCurrent() => ReadRegistry(out _);
 
 	/// <summary>
-	/// Polls the registry until it records no worker, or until <paramref name="timeout"/> elapses, and
-	/// returns the LAST snapshot read.
+	/// Polls until every worker seen during the run is released — absent from the on-disk registry AND
+	/// no longer running — or until <paramref name="timeout"/> elapses. Returns what was still there.
 	/// </summary>
 	/// <remarks>
 	/// <para>
-	/// The registry drains EVENTUALLY — not by the time a call answers, which is what
-	/// <see cref="ReadCurrent"/> alone assumed. <c>StickyWorkerRegistry.TryReach</c> removes the entry
-	/// from memory synchronously but hands the actual release to <c>ReleaseInBackground</c>, an
-	/// UNAWAITED <c>Task.Run</c>, and the registry-file removal is the last link of that chain:
-	/// <c>await Session.DisposeAsync()</c> → <c>await StandardError.StopAsync()</c> →
-	/// <c>Lease.Dispose()</c> → <c>WorkerProcessSupervisor.ReleaseLease</c> → <c>UnregisterWorker</c> →
-	/// a rewrite of <c>workers.json</c> under an interprocess lock. For the STALLED call that first
-	/// await is a session whose backend never answered, so it is the slowest release in the run — which
-	/// is exactly why the single read failed intermittently, and always on the stalled call's worker.
+	/// <b>Both halves are waited for, because neither is implied by the call answering and neither
+	/// implies the other.</b> A tool whose declared lifetime is <c>PerCall</c> — which is every caller of
+	/// this method today — is served by <c>McpWorkerCallDispatcher.DispatchPerCallAsync</c>, whose
+	/// <c>finally</c> disposes the lease inline, before the result reaches the client. So the removal is
+	/// ATTEMPTED before the answer. The sticky path (<c>StickyWorkerRegistry</c> and its unawaited
+	/// <c>ReleaseInBackground</c>) serves only <c>Sticky</c>-lifetime tools and is NOT involved; do not
+	/// reason about a per-call worker from it.
 	/// </para>
 	/// <para>
-	/// The timeout is what still tells "slow to reap" apart from "leaked": a registry that never drains
-	/// returns a non-empty snapshot and fails the assertion, same as before.
+	/// <b>Attempted is not achieved, and that is the whole reason for the wait.</b>
+	/// <c>WorkerProcessSupervisor.UnregisterWorker</c> routes the removal through the
+	/// <c>workers.lock</c> interprocess gate and SWALLOWS <c>TimeoutException</c>, <c>IOException</c> and
+	/// <c>UnauthorizedAccessException</c> with a warning, leaving the entry in <c>workers.json</c> while
+	/// the call answers normally. A contended gate can also hold the attempt for the gate's own timeout
+	/// before it succeeds. On a loaded agent — several workers, two of them overlapping, sharing one lock
+	/// file — that is how a worker stays RECORDED after its call returned.
 	/// </para>
 	/// <para>
-	/// Waiting on the registry is also the STRONGER condition, so it is the right thing to wait on:
-	/// <c>ReleaseLease</c> calls <c>UnregisterWorker</c> only AFTER the process has exited, so a drained
-	/// registry implies the processes are already gone — never the other way round.
+	/// <b>The registry is NOT the stronger condition.</b> <c>SupervisedWorkerLease.Dispose</c> calls
+	/// <c>ReleaseLease</c> — and so <c>UnregisterWorker</c> — as soon as <c>Terminate()</c> returns
+	/// anything but <c>Failed</c>, and <c>Terminate()</c> is <c>TerminateJobObject</c> on Windows and
+	/// <c>kill(2)</c> on Unix: a request, not a wait. Only the failed-kill path
+	/// (<c>ReleaseWhenExitConfirmed</c>) waits for exit first, and that path deliberately RETAINS the
+	/// entry. So a drained registry means the kill was ISSUED, never that the process is gone — which is
+	/// why process liveness is polled here rather than inferred from the registry.
+	/// </para>
+	/// <para>
+	/// The timeout is what still tells "slow to release" apart from "leaked": nothing retries a swallowed
+	/// removal, so an entry left behind by a failed unregister never drains, the wait expires and the
+	/// assertion fails — which is the case TC-E-601b exists to catch.
 	/// </para>
 	/// </remarks>
-	/// <param name="timeout">How long to keep waiting before reporting what is still recorded.</param>
-	internal IReadOnlyList<ObservedWorker> WaitUntilRegistryDrains(TimeSpan timeout) {
+	/// <param name="timeout">How long to keep waiting before reporting what survived.</param>
+	/// <returns>The final observation, including whether the registry was actually read.</returns>
+	internal WorkerReleaseObservation WaitUntilWorkersAreReleased(TimeSpan timeout) {
 		Stopwatch elapsed = Stopwatch.StartNew();
-		IReadOnlyList<ObservedWorker> current = ReadCurrent();
-		while (current.Count > 0 && elapsed.Elapsed < timeout) {
+		while (true) {
+			// ReadRegistry, not ReadCurrent: the `read` flag is the difference between "the registry holds
+			// no worker" and "the registry could not be read", and only the first may end this wait. Losing
+			// that distinction would let a single unlucky read during the host's own atomic replace of
+			// workers.json certify a leak as a clean release — the loop would poll until it FOUND an empty
+			// answer rather than until the registry was empty.
+			IReadOnlyList<ObservedWorker> recorded = ReadRegistry(out bool read);
+			IReadOnlyList<ObservedWorker> running = [.. Observed.Where(worker => worker.IsStillRunning())];
+			if ((read && recorded.Count == 0 && running.Count == 0) || elapsed.Elapsed >= timeout) {
+				return new WorkerReleaseObservation(read, recorded, running, elapsed.Elapsed);
+			}
 			Thread.Sleep(PollInterval);
-			current = ReadCurrent();
 		}
-		LastDrainWait = elapsed.Elapsed;
-		return current;
 	}
-
-	/// <summary>
-	/// Gets how long the last <see cref="WaitUntilRegistryDrains"/> actually had to wait.
-	/// </summary>
-	/// <remarks>
-	/// Reported in the assertion diagnostics on purpose. This race does not reproduce on a developer
-	/// workstation — the registry drains there before the first read, which is why a single read survived
-	/// review and only failed on loaded CI agents. Recording the real wait means the next CI run says how
-	/// close it came instead of leaving the next person to re-derive the whole chain, and it is the only
-	/// way to notice this creeping back toward the timeout.
-	/// </remarks>
-	internal TimeSpan LastDrainWait { get; private set; }
 
 	/// <summary>
 	/// Gets registry reads that failed for a reason other than the file being absent or half-written. A
@@ -202,6 +225,11 @@ internal sealed class WorkerSpawnObserver : IAsyncDisposable {
 		read = false;
 		try {
 			if (!File.Exists(_registryPath)) {
+				// An ABSENT registry is an authoritative observation of "no worker recorded", not a failed
+				// read: the host creates the file on the first registration and WriteUnguarded persists an
+				// empty array rather than deleting it, so absence here means nothing ever registered — a
+				// state AssertWorkersWereSpawned has already ruled out by the time anything waits on this.
+				read = true;
 				return [];
 			}
 			// Shared read: the host rewrites this file under its own interprocess gate, and a test must
