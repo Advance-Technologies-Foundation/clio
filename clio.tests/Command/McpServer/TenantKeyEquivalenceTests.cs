@@ -67,7 +67,8 @@ public sealed class TenantKeyEquivalenceTests {
 			settingsBootstrapService,
 			credentialContextAccessor,
 			Substitute.For<ITargetUrlValidator>(),
-			cache);
+			cache,
+			new SessionTargetNormalizer());
 	}
 
 	[Test]
@@ -134,5 +135,39 @@ public sealed class TenantKeyEquivalenceTests {
 				+ "the environment name would serve the OLD uri after the environment was re-pointed");
 		keyAfterMove.Should().Contain("https://moved.creatio.com",
 			because: "the target uri is part of the identity the container is cached under");
+	}
+
+	[Test]
+	[Description("GetTargetKey converges the registered-name branch and the explicit-URI branch on ONE key, and that key carries no credential fingerprint — the cardinality the server-wide configuration-build exclusion needs, which is deliberately NOT the tenant key's.")]
+	public void GetTargetKey_ShouldConvergeBothBranchesAndCarryNoCredentialFingerprint() {
+		// Arrange — the same target reached both ways: by its registered name, and by an explicit uri with
+		// its own credentials. The two must be ONE environment as far as a server-wide configuration build
+		// is concerned, and their tenant keys must still differ, because a status poll is per caller.
+		ICredentialContextAccessor accessor = Substitute.For<ICredentialContextAccessor>();
+		ToolCommandResolver resolver = CreateResolver(new KeyCapturingSessionCache(), accessor);
+		EnvironmentOptions byName = new() { Environment = EnvironmentName };
+		EnvironmentOptions byUri = new() {
+			Uri = Url + "/", Login = "OtherPrincipal", Password = "OtherPassword", IsNetCore = true
+		};
+		EnvironmentOptions anotherTarget = new() {
+			Uri = "https://other.creatio.com", Login = "Supervisor", Password = "Supervisor", IsNetCore = true
+		};
+
+		// Act
+		string targetByName = resolver.GetTargetKey(byName);
+		string targetByUri = resolver.GetTargetKey(byUri);
+		string targetElsewhere = resolver.GetTargetKey(anotherTarget);
+		string tenantByName = resolver.GetTenantKey(byName);
+		string tenantByUri = resolver.GetTenantKey(byUri);
+
+		// Assert
+		targetByUri.Should().Be(targetByName,
+			because: "Creatio's configuration build is server-wide, so a target reached by registered name and one reached by explicit uri must land in ONE exclusion bucket — two buckets would let two callers compile one environment at once");
+		targetElsewhere.Should().NotBe(targetByName,
+			because: "keying every target the same way would make one slow compile deny every other stand, which is a global lock wearing the exclusion's name");
+		tenantByUri.Should().NotBe(tenantByName,
+			because: "the TENANT key answers 'whose operation is this' and must still separate two principals — conflating the two cardinalities fails in one direction or the other");
+		targetByName.Should().NotBe(tenantByName,
+			because: "the exclusion key must not carry the credential fingerprint the tenant key appends; if it did, two principals on one environment would each get their own reservation and compile concurrently");
 	}
 }

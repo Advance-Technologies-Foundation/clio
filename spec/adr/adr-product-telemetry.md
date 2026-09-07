@@ -24,7 +24,11 @@ collector → ClickHouse) is owned by the CAADT ingestion ADR.
 ## Decisions
 
 ### 1. Event allow-list is a single source of truth in clio
-`TelemetryService.AllowedEventNames` (14 ordered names) is the authority. clio rejects any
+`TelemetryService.AllowedEventNames` is the authority. **Amended by ENG-92551:** it is now the
+concatenation of `LegacyAppCreationEventNames` (13, deprecated but still accepted so an older
+installed toolkit is not silently zeroed out) and `CanonicalEventNames` (the 14 flow-agnostic stages
+plus `session_usage`); the generated contract leads with the canonical half and labels the other as
+deprecated, so an agent is never offered a legacy name as a choice. clio rejects any
 other `event_name` (`unknown-event-name`). The `get-tool-contract` `event_name` description is
 **generated from** this list, and a unit test asserts they match, so what clio announces can
 never drift from what it enforces. CAADT's copy (`product-telemetry.md`) is a downstream mirror;
@@ -102,9 +106,24 @@ misread as confirmed delivery.
 ### 7. Privacy / value-level guards
 The event name is carried in the dedicated OTLP `event_name` field (decision 9), not as an
 attribute. Beyond it, only an allow-listed set of scalar attributes is stored (`schema_version`,
-`session_id`, `event_timestamp`, `platform`, `clio_version`, `coding_agent`, anonymous random
-`installation_id`, `plugin_version`, `event_id`, optional `duration_ms` and
-`duration_since_session_start_ms`). Unknown fields are rejected; agent-supplied free strings are
+`session_id`, `event_timestamp`, `platform`, `clio_version`, anonymous random
+`installation_id`, `event_id`, optional `coding_agent`, `plugin_version`, `duration_ms` and
+`duration_since_session_start_ms`).
+
+**Amended by ENG-92551** (`schema_version` 2): the set additionally carries `workflow`, optional
+`variant`, optional `model` and the optional counters `input_tokens`, `output_tokens`,
+`cached_input_tokens`. All are bounded — `workflow`/`variant`/`model` are short lowercase tokens, the
+counters are non-negative integers. That bounds their SHAPE, not their content: no bounded token can
+carry a prompt, a path or generated content, so the bulk-leak shapes stay structurally excluded, but
+`variant` is agent-authored per event and a slugged phrase (`acme-corporation`) is well-formed. For
+`workflow` and `model` the values are drawn from a small known set in practice; for `variant` the
+exclusion of customer data rests on the emitting contract's rule, not on a client-side check. Residual
+risk to be recorded against ISEC-9898 rather than claimed away here. Two further changes in the same
+amendment: `coding_agent` and `plugin_version` became OPTIONAL (an agent with no toolkit context is
+told to omit them rather than fabricate a value), and `coding_agent` is stored canonicalised to a
+lowercase slug rather than as the caller sent it, so one host is one cohort.
+
+Unknown fields are rejected; agent-supplied free strings are
 length-bounded and `session_id` is shape-checked, as defense in depth against oversized or
 PII-shaped values. No prompts, secrets, tokens, customer data, or generated content are collected.
 
@@ -114,6 +133,13 @@ fields. v1 **descopes** these on both clio and CAADT: event outcome is encoded b
 (`implementation_completed` vs `implementation_failed`), and `entry_point`/`model`/
 `model_reasoning` are deferred until there is a confirmed product question that needs them. The
 required identity/timing/agent/version fields and the anonymized installation id are collected.
+
+**Amended by ENG-92551 — `model` is no longer descoped.** The confirmed product question arrived:
+with several models driving the same flows, "which model was this run on" is the first thing asked of
+any change in the funnel, so `model` is now collected as an optional bounded token. `entry_point` and
+`model_reasoning` remain descoped. `result` remains encoded by the stage name, which the same change
+generalised — a run's outcome is `workflow_completed` / `workflow_failed` / `plan_blocked` with the
+flow in the `workflow` field, rather than a per-flow event name.
 
 ### 9. Event name is a single source of truth on the dedicated OTLP field
 The event name is carried exactly once end-to-end. clio stores it in the dedicated `event_name`
@@ -144,8 +170,13 @@ one path that transitions an existing `granted` decision to `denied`.
 
 ## Consequences
 
-- Adding or renaming an event requires editing `AllowedEventNames` (clio enforces + announces) and
-  the CAADT contract; the clio sync test guards the clio half.
+- Adding or renaming an event requires editing `CanonicalEventNames` (clio enforces + announces) and
+  the CAADT contract; the clio sync test guards the clio half. `LegacyAppCreationEventNames` is
+  append-never: entries leave it only when the toolkit that emits them is out of support.
+- **ENG-92551, still open:** the edge collector is not in this PR set and its attribute allow-list has
+  not been extended for `workflow`, `variant`, `model` or the three token counters. Until it is, those
+  attributes are stored and uploaded but may be dropped at ingestion; `schema_version` 2 is what a
+  consumer routes on.
 - The edge-collector attribute allow-list must accept the stored attribute set in decision 7, and
   its event-name filter must key on the dedicated OTLP `event_name` field (decision 9), not an
   attribute.

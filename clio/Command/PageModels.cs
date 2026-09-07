@@ -1,5 +1,6 @@
 namespace Clio.Command;
 
+using System;
 using System.Collections.Generic;
 using System.Runtime.Serialization;
 using System.Text.Json.Nodes;
@@ -122,19 +123,21 @@ public sealed class PageGetResponse {
 	public PageMetadataInfo Page { get; init; }
 
 	/// <summary>
-	/// Gets or sets the merged bundle.
+	/// Gets or sets the merged bundle. CLI-only — the MCP tool writes it to <c>bundle.json</c> instead.
 	/// </summary>
 	[JsonProperty("bundle", NullValueHandling = NullValueHandling.Ignore)]
 	[JsonPropertyName("bundle")]
 	[System.Text.Json.Serialization.JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+	[CliOnlyEnvelopeProperty]
 	public PageBundleInfo Bundle { get; init; }
 
 	/// <summary>
-	/// Gets or sets the raw editable payload.
+	/// Gets or sets the raw editable payload. CLI-only — the MCP tool writes it to <c>body.js</c> instead.
 	/// </summary>
 	[JsonProperty("raw", NullValueHandling = NullValueHandling.Ignore)]
 	[JsonPropertyName("raw")]
 	[System.Text.Json.Serialization.JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+	[CliOnlyEnvelopeProperty]
 	public PageRawInfo Raw { get; init; }
 
 	/// <summary>
@@ -180,6 +183,17 @@ public sealed class PageGetResponse {
 	[JsonPropertyName("error")]
 	public string Error { get; init; }
 }
+
+/// <summary>
+/// Marks a serialized response property that the CLI envelope carries but the MCP tool NEVER sets, so the
+/// published MCP tool contract must not describe it. Issue #1185 was exactly this split going undeclared: the
+/// contract promised <c>raw.body</c> that the MCP envelope never returns. Declaring it on the property makes
+/// the split machine-checkable - the contract oracle derives the expected field set from the type and skips
+/// what is marked here, so a NEW property added to the response is required in the contract by default, and
+/// only a deliberate CLI-only addition carries this attribute.
+/// </summary>
+[AttributeUsage(AttributeTargets.Property)]
+public sealed class CliOnlyEnvelopePropertyAttribute : Attribute { }
 
 /// <summary>
 /// Describes the editable (own) schema state at fetch time: whether a replacing schema already

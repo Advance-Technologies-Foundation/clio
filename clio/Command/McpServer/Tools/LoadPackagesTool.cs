@@ -19,6 +19,13 @@ public class LoadPackagesTool(
 	/// </summary>
 	/// <param name="environmentName">Target environment name.</param>
 	/// <returns>Execution result for the operation.</returns>
+	[McpToolExecution(
+		Location = McpToolExecutionLocation.Worker,
+		Lifetime = McpToolExecutionLifetime.PerCall,
+		OperationFamily = McpToolOperationFamily.None,
+		BudgetPolicy = McpToolBudgetPolicy.ParentKillDefault,
+		RequiresClientRequests = McpToolClientRequests.None,
+		SharedFileResource = McpToolSharedFileResource.None)]
 	[McpServerTool(Name = "pkg-to-file-system", ReadOnly = false, Destructive = true, Idempotent = false, OpenWorld = false)]
 	[Description("Loads packages from the database into the file system on a Creatio web application")]
 	public CommandExecutionResult LoadPackagesToFileSystem(
@@ -35,6 +42,13 @@ public class LoadPackagesTool(
 	/// </summary>
 	/// <param name="environmentName">Target environment name.</param>
 	/// <returns>Execution result for the operation.</returns>
+	[McpToolExecution(
+		Location = McpToolExecutionLocation.Worker,
+		Lifetime = McpToolExecutionLifetime.PerCall,
+		OperationFamily = McpToolOperationFamily.None,
+		BudgetPolicy = McpToolBudgetPolicy.ParentKillDefault,
+		RequiresClientRequests = McpToolClientRequests.None,
+		SharedFileResource = McpToolSharedFileResource.None)]
 	[McpServerTool(Name = "pkg-to-db", ReadOnly = false, Destructive = true, Idempotent = false, OpenWorld = false)]
 	[Description("Loads packages from the file system into the database on a Creatio web application")]
 	public CommandExecutionResult LoadPackagesToDb(

@@ -16,6 +16,13 @@ public class PackageHotfixTool(
 	internal const string FinishHotfixToolName = "finish-hotfix";
 
 	[McpServerTool(Name = UnlockForHotfixToolName, ReadOnly = false, Destructive = false, Idempotent = true, OpenWorld = false)]
+	[McpToolExecution(
+		Location = McpToolExecutionLocation.Worker,
+		Lifetime = McpToolExecutionLifetime.PerCall,
+		OperationFamily = McpToolOperationFamily.None,
+		BudgetPolicy = McpToolBudgetPolicy.ParentKillDefault,
+		RequiresClientRequests = McpToolClientRequests.None,
+		SharedFileResource = McpToolSharedFileResource.None)]
 	[Description("Unlocks a Creatio package for hotfix editing by starting hotfix state on the remote environment.")]
 	public CommandExecutionResult UnlockForHotfix(
 		[Description("unlock-for-hotfix parameters")] [Required] PackageHotfixArgs args
@@ -29,6 +36,13 @@ public class PackageHotfixTool(
 	}
 
 	[McpServerTool(Name = FinishHotfixToolName, ReadOnly = false, Destructive = false, Idempotent = false, OpenWorld = false)]
+	[McpToolExecution(
+		Location = McpToolExecutionLocation.Worker,
+		Lifetime = McpToolExecutionLifetime.PerCall,
+		OperationFamily = McpToolOperationFamily.None,
+		BudgetPolicy = McpToolBudgetPolicy.ParentKillDefault,
+		RequiresClientRequests = McpToolClientRequests.None,
+		SharedFileResource = McpToolSharedFileResource.None)]
 	[Description("Finishes hotfix state for a Creatio package, locking it back after hotfix editing.")]
 	public CommandExecutionResult FinishHotfix(
 		[Description("finish-hotfix parameters")] [Required] PackageHotfixArgs args

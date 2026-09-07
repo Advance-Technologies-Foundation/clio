@@ -72,7 +72,8 @@ public sealed class GetUserCultureToolPassthroughTests {
 			settingsBootstrapService,
 			credentialContextAccessor,
 			Substitute.For<ITargetUrlValidator>(),
-			new SessionContainerCache(SessionContainerCacheDefaults.IdleTtl, SessionContainerCacheDefaults.MaxSessions));
+			new SessionContainerCache(SessionContainerCacheDefaults.IdleTtl, SessionContainerCacheDefaults.MaxSessions),
+			new SessionTargetNormalizer());
 	}
 
 	private static ICredentialContextAccessor CreateHeaderAccessor() {

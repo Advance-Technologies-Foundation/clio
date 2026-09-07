@@ -42,7 +42,7 @@ public sealed class CreateBusinessProcessCommandTests {
 
 	[Test]
 	[Category("Unit")]
-	[Description("Writes every server warning out as a WARNING. A build that reports nothing is what a caller reads as \"everything landed\", so a warning deserialized and then dropped is the same defect as one never sent — and worse than silence, because an agent that checks and finds nothing concludes there was nothing to find.")]
+	[Description("Writes every server warning out as a WARNING. The modify twin has had this covered from the start; the create side shipped the channel with service-level tests only, so deleting the loop that writes them left the whole suite green - measured, 8 273 passed against the mutation. A warning here is a caveat on a SUCCESSFUL build: an outcome that applied and is not what the caller would assume, so one deserialized and then dropped is the same defect as one never sent.")]
 	public void Execute_ShouldWriteWarnings_WhenTheServerReportsThem() {
 		// Arrange
 		CreateBusinessProcessOptions options = new() {
@@ -52,19 +52,20 @@ public sealed class CreateBusinessProcessCommandTests {
 		};
 		_createBusinessProcessService.BuildProcess("sandbox", Arg.Any<CreateBusinessProcessRequest>())
 			.Returns(new CreateBusinessProcessResult("UsrSampleProcess", "5c58c4c4-134b-4744-9c67-96d9c69c9d55",
-				new[] { "Element 'ApproveRequest': the referenced page could not be read" }));
+				new[] { "Connection 'OmniChat' is not registered", "Connection 'Account' was CLEARED" }));
 
 		// Act
 		int result = _command.Execute(options);
 
 		// Assert
 		result.Should().Be(0, because: "a warning is a caveat on a SUCCESSFUL build, not a failure");
-		_logger.Received(1).WriteWarning(Arg.Is<string>(text => text.Contains("ApproveRequest")));
+		_logger.Received(1).WriteWarning(Arg.Is<string>(text => text.Contains("OmniChat")));
+		_logger.Received(1).WriteWarning(Arg.Is<string>(text => text.Contains("CLEARED")));
 	}
 
 	[Test]
 	[Category("Unit")]
-	[Description("Writes no warning when the server reported none — including against a package that predates the field, where the member is simply absent rather than empty.")]
+	[Description("Writes no warning when the server reported none, so an empty channel cannot train a reader to ignore it. Pairs with the test above: without this one, a loop that warned unconditionally would also pass.")]
 	public void Execute_ShouldNotWriteAnyWarning_WhenTheServerReportsNone() {
 		// Arrange
 		CreateBusinessProcessOptions options = new() {
@@ -79,11 +80,8 @@ public sealed class CreateBusinessProcessCommandTests {
 		int result = _command.Execute(options);
 
 		// Assert
-		_logger.ReceivedCalls()
-			.Count(call => call.GetMethodInfo().Name == nameof(ILogger.WriteWarning))
-			.Should().Be(0,
-				because: "a warning invented from an absent member would train a reader to ignore the channel");
-		result.Should().Be(0, because: "no warnings is the ordinary successful build");
+		result.Should().Be(0, because: "a build with no caveats is an ordinary success");
+		_logger.DidNotReceiveWithAnyArgs().WriteWarning(default!);
 	}
 
 	[Test]

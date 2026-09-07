@@ -39,6 +39,13 @@ public sealed class PageListTool(
 	};
 
 	[McpServerTool(Name = ToolName, ReadOnly = true, Destructive = false, Idempotent = true, OpenWorld = false)]
+	[McpToolExecution(
+		Location = McpToolExecutionLocation.Worker,
+		Lifetime = McpToolExecutionLifetime.PerCall,
+		OperationFamily = McpToolOperationFamily.None,
+		BudgetPolicy = McpToolBudgetPolicy.ParentKillDefault,
+		RequiresClientRequests = McpToolClientRequests.None,
+		SharedFileResource = McpToolSharedFileResource.None)]
 	[Description("Lists Freedom UI pages with package and parent context. Empty package results get one bounded cross-check; failed checks return success:false. Results default to 50 and report total/truncated. Negative limits fail. Prefer environment-name; direct connection args are emergency fallback.")]
 	public PageListResponse ListPages([Description("Parameters: package-name, code, search-pattern, limit (optional); environment-name preferred; uri/login/password emergency fallback only.")] [Required] PageListArgs args) {
 		string? legacyAliasError = GetLegacyAliasError(args);

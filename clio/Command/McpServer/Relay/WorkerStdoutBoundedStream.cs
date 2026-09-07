@@ -1,0 +1,175 @@
+using System;
+using System.Globalization;
+using System.IO;
+using System.Threading;
+using System.Threading.Tasks;
+
+namespace Clio.Command.McpServer.Relay;
+
+/// <summary>
+/// A read-only view over a worker's standard output that refuses a single MESSAGE larger than a fixed
+/// bound.
+/// </summary>
+/// <remarks>
+/// <para>
+/// R-11 (ENG-95262 credential threat model) asks for worker output to be bounded on both streams. The
+/// standard-error half is the drain's tail limit; this is the standard-output half. The property it
+/// defends is narrow and worth stating exactly: the parent serves EVERY tenant, so a single child that
+/// emits an unterminated stream of bytes must not be able to grow the parent's memory until the host
+/// dies. Before the execution boundary that failure took one process down with it; behind the boundary
+/// the same runaway would take down every session the host is serving.
+/// </para>
+/// <para>
+/// <b>Per MESSAGE, not per session.</b> A long-lived worker legitimately writes many megabytes across
+/// many messages, so a cumulative cap would kill healthy workers for doing their job. The line feed that
+/// delimits JSON-RPC messages on this transport is therefore the reset point, and the bound applies to
+/// one message at a time.
+/// </para>
+/// <para>
+/// <b>Where the number comes from.</b> The largest real payload in this repository is the live component
+/// registry snapshot at ~598 KB (<c>clio.tests/Command/McpServer/Fixtures/ComponentRegistry.live-snapshot.json</c>),
+/// and the largest responses the tool surface can produce — schema hierarchies with bodies, package
+/// inventories on a large environment — are of that order, single-digit megabytes at worst. The bound is
+/// set two orders of magnitude above that, so it cannot truncate a legitimate answer: a cap that fires on
+/// a working call converts a feature into a regression, which is a worse outcome than the memory it
+/// saves. What it does catch is the runaway, which is orders of magnitude away from any real response
+/// and is the only case worth failing.
+/// </para>
+/// <para>
+/// Per-call runtime state rather than a DI service, like its neighbours in this namespace: it wraps one
+/// worker's stream for that worker's lifetime and carries no <c>Clio.*</c> interface, so the assembly
+/// interface scan does not see it.
+/// </para>
+/// </remarks>
+internal sealed class WorkerStdoutBoundedStream : Stream {
+
+	/// <summary>
+	/// The largest single message the relay will read from a worker, in bytes.
+	/// </summary>
+	internal const long DefaultMaxMessageBytes = 64L * 1024 * 1024;
+
+	private readonly Stream _inner;
+	private readonly long _maxMessageBytes;
+	private long _currentMessageBytes;
+
+	/// <summary>
+	/// Initializes a new instance of the <see cref="WorkerStdoutBoundedStream"/> class.
+	/// </summary>
+	/// <param name="inner">The worker's readable standard output.</param>
+	/// <param name="maxMessageBytes">The largest single message to accept.</param>
+	internal WorkerStdoutBoundedStream(Stream inner, long maxMessageBytes = DefaultMaxMessageBytes) {
+		_inner = inner ?? throw new ArgumentNullException(nameof(inner));
+		if (maxMessageBytes <= 0) {
+			throw new ArgumentOutOfRangeException(nameof(maxMessageBytes));
+		}
+		_maxMessageBytes = maxMessageBytes;
+	}
+
+	/// <inheritdoc />
+	public override bool CanRead => _inner.CanRead;
+
+	/// <inheritdoc />
+	public override bool CanSeek => false;
+
+	/// <inheritdoc />
+	public override bool CanWrite => false;
+
+	/// <inheritdoc />
+	public override long Length => throw new NotSupportedException();
+
+	/// <inheritdoc />
+	public override long Position {
+		get => throw new NotSupportedException();
+		set => throw new NotSupportedException();
+	}
+
+	/// <inheritdoc />
+	public override void Flush() => _inner.Flush();
+
+	/// <inheritdoc />
+	public override int Read(byte[] buffer, int offset, int count) {
+		int read = _inner.Read(buffer, offset, count);
+		Account(new ReadOnlySpan<byte>(buffer, offset, read));
+		return read;
+	}
+
+	/// <inheritdoc />
+	public override int Read(Span<byte> buffer) {
+		int read = _inner.Read(buffer);
+		Account(buffer[..read]);
+		return read;
+	}
+
+
+	/// <inheritdoc />
+	public override async ValueTask<int> ReadAsync(Memory<byte> buffer,
+		CancellationToken cancellationToken = default) {
+		int read = await _inner.ReadAsync(buffer, cancellationToken).ConfigureAwait(false);
+		Account(buffer.Span[..read]);
+		return read;
+	}
+
+	/// <inheritdoc />
+	public override Task<int> ReadAsync(byte[] buffer, int offset, int count,
+		CancellationToken cancellationToken) =>
+		ReadAsync(new Memory<byte>(buffer, offset, count), cancellationToken).AsTask();
+
+	/// <inheritdoc />
+	public override long Seek(long offset, SeekOrigin origin) => throw new NotSupportedException();
+
+	/// <inheritdoc />
+	public override void SetLength(long value) => throw new NotSupportedException();
+
+	/// <inheritdoc />
+	public override void Write(byte[] buffer, int offset, int count) => throw new NotSupportedException();
+
+	/// <inheritdoc />
+	protected override void Dispose(bool disposing) {
+		if (disposing) {
+			// Forwarded deliberately: the transport disposes the streams it was handed, and a wrapper that
+			// swallowed that would leave the worker's pipe open for the process's lifetime.
+			_inner.Dispose();
+		}
+		base.Dispose(disposing);
+	}
+
+	/// <inheritdoc />
+	public override async ValueTask DisposeAsync() {
+		await _inner.DisposeAsync().ConfigureAwait(false);
+		await base.DisposeAsync().ConfigureAwait(false);
+	}
+
+	// Counts the length of EVERY message in what the reader just received, not merely of the one still
+	// being read. The distinction is not academic: a first draft reset the counter to the bytes after the
+	// LAST delimiter in the chunk, which made an oversized message invisible whenever a later delimiter
+	// happened to land in the same buffer — and driving the real SDK transport is what exposed it, because
+	// a small payload arrives in exactly one read. Scanning the bytes the reader actually received, rather
+	// than trusting any framing above, is also what keeps the accounting independent of how the SDK chunks
+	// its reads.
+	private void Account(ReadOnlySpan<byte> justRead) {
+		int start = 0;
+		while (start <= justRead.Length) {
+			int delimiter = justRead[start..].IndexOf((byte)'\n');
+			if (delimiter < 0) {
+				// No further boundary: the rest belongs to the message still being read.
+				_currentMessageBytes += justRead.Length - start;
+				break;
+			}
+			_currentMessageBytes += delimiter;
+			ThrowIfOverBound();
+			// That message is complete and within the bound; the next one starts after the delimiter.
+			_currentMessageBytes = 0;
+			start += delimiter + 1;
+		}
+		ThrowIfOverBound();
+	}
+
+	private void ThrowIfOverBound() {
+		if (_currentMessageBytes <= _maxMessageBytes) {
+			return;
+		}
+		long limitMegabytes = _maxMessageBytes / (1024 * 1024);
+		throw new IOException(string.Create(CultureInfo.InvariantCulture,
+			$"The MCP worker sent a single message larger than the {limitMegabytes} MB limit, so the relay stopped reading it. This is a runaway worker, not a large answer: the limit is far above any response clio produces."));
+	}
+}

@@ -57,7 +57,7 @@ public sealed class PageSchemaResolverTests {
 	}
 
 	[Test]
-	[Description("Surfaces a clean lookup failure (not a raw JSON parse exception) when the page lookup returns a non-JSON body — e.g. an expired-session HTML redirect — because the resolver routes through the guarded ExecuteSelectQuery.")]
+	[Description("Surfaces a clean lookup failure (not a raw JSON parse exception) when the page lookup returns a non-JSON body — e.g. an expired-session HTML redirect — and NAMES the HTML page as the cause instead of reporting the domain answer 'Failed to query schema metadata', which would send the caller looking at their own schema (ENG-95262 story 11).")]
 	public void ResolveHierarchy_ShouldFailCleanly_WhenLookupReturnsNonJson() {
 		// Arrange — the SysSchema SelectQuery returns an HTML login page.
 		StubSelectQuery("<!DOCTYPE html><html><body>login</body></html>");
@@ -66,8 +66,8 @@ public sealed class PageSchemaResolverTests {
 		Action act = () => _resolver.ResolveHierarchy("UsrPage", PackageId);
 
 		// Assert
-		act.Should().Throw<InvalidOperationException>().WithMessage("*Failed to query schema metadata*",
-			because: "a non-JSON response must surface as a clean lookup error, not a raw JObject.Parse exception");
+		act.Should().Throw<InvalidOperationException>().WithMessage("*HTML page instead of JSON*",
+			because: "a non-JSON response must surface as a classified auth/transport error naming the HTML page, not as a raw JObject.Parse exception and not as an answer about the requested schema");
 	}
 
 	[Test]

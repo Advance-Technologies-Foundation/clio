@@ -22,8 +22,9 @@ namespace Clio.Command.McpServer.Tools;
 /// </summary>
 [McpServerToolType]
 [SuppressMessage("Major Code Smell", "S107:Methods should not have too many parameters",
-	Justification = "DI composition root: sync-pages requires eight constructor-injected collaborators, including "
-		+ "the ILogger added so the batch base-resolution path has the same diagnostic trail as update-page. A "
+	Justification = "DI composition root: sync-pages requires nine constructor-injected collaborators, including "
+		+ "the ILogger added so the batch base-resolution path has the same diagnostic trail as update-page and the "
+		+ "interprocess file gate that serialises its .clio-pages writes against other clio processes. A "
 		+ "parameter object would obscure the tool's injected contract; this mirrors the S107 suppressions on other "
 		+ "MCP entry points in this assembly.")]
 public sealed class PageSyncTool(
@@ -38,12 +39,27 @@ public sealed class PageSyncTool(
 	// during a sync-pages batch leaves the same diagnostic trail update-page has (ENG-94418 review parity).
 	// Optional with a null default only so the existing target-typed test instantiations keep compiling; in
 	// production the container supplies the real logger.
-	Clio.Common.ILogger? logger = null) {
+	Clio.Common.ILogger? logger = null,
+	// H-1 (ENG-95262): serialises this tool's own .clio-pages writes — the verify read-back body.js and the
+	// post-verify meta.json rewrite — against other clio processes in the same workspace. Optional with a
+	// null default for the same test-instantiation reason as the logger above; a null gate degrades to the
+	// pre-gate direct write, and the container always supplies the real singleton.
+	IInterprocessFileGate? fileGate = null) {
 
 	internal const string ToolName = "sync-pages";
 
 	[McpServerTool(Name = ToolName, ReadOnly = false, Destructive = true,
 		Idempotent = false, OpenWorld = false)]
+	// One of the two sampling callers (PageBodySamplingService): a relay that is not full-duplex degrades the
+	// semantic review to skipped SILENTLY. SharedFileResource is .clio-pages — the verify read-back body.js
+	// and the meta.json rewrite, already routed through IInterprocessFileGate above.
+	[McpToolExecution(
+		Location = McpToolExecutionLocation.Worker,
+		Lifetime = McpToolExecutionLifetime.PerCall,
+		OperationFamily = McpToolOperationFamily.None,
+		BudgetPolicy = McpToolBudgetPolicy.ParentKillDefault,
+		RequiresClientRequests = McpToolClientRequests.Sampling,
+		SharedFileResource = McpToolSharedFileResource.ClioPages)]
 	[Description("Updates multiple Freedom UI page schemas in a single call. " +
 	             "For each page: validates body client-side (optional), runs AI semantic review (optional), saves to Creatio, " +
 	             "and verifies the update (optional). Continues processing remaining pages on failure. " +
@@ -697,8 +713,11 @@ public sealed class PageSyncTool(
 			PageSyncPageResult samplingFailure = CreateSamplingFailure(page, opOptions.SamplingReview, validationResult);
 			if (samplingFailure != null)
 				return samplingFailure;
-			(string metaFilePath, bool baselineArmed, PageUpdateOptions updateOptions) =
+			(string metaFilePath, bool baselineArmed, string baselineWarning, PageUpdateOptions updateOptions) =
 				BuildUpdateRequest(page, opOptions);
+			if (baselineWarning != null) {
+				validationResult = AppendCommandWarnings(validationResult, [baselineWarning]);
+			}
 			opOptions.UpdateCommand.TryUpdatePage(updateOptions, out PageUpdateResponse updateResponse);
 			if (!updateResponse.Success) {
 				return new PageSyncPageResult {
@@ -714,7 +733,12 @@ public sealed class PageSyncTool(
 			if (opOptions.Verify && opOptions.GetCommand != null)
 				return VerifySavedPage(page, opOptions, updateResponse, validationResult);
 			if (baselineArmed) {
-				pageBaselineGuard.RefreshOrDrop(metaFilePath, updateOptions, updateResponse);
+				// The save already landed on the server, so a failed refresh surfaces as a per-page warning
+				// rather than turning this page's result into a failure (ENG-95262 AC-02).
+				string refreshWarning = pageBaselineGuard.RefreshOrDrop(metaFilePath, updateOptions, updateResponse);
+				if (refreshWarning != null) {
+					validationResult = AppendCommandWarnings(validationResult, [refreshWarning]);
+				}
 			}
 			return new PageSyncPageResult {
 				SchemaName = page.SchemaName,
@@ -750,7 +774,8 @@ public sealed class PageSyncTool(
 		};
 	}
 
-	private (string MetaFilePath, bool BaselineArmed, PageUpdateOptions UpdateOptions) BuildUpdateRequest(
+	private (string MetaFilePath, bool BaselineArmed, string BaselineWarning, PageUpdateOptions UpdateOptions)
+		BuildUpdateRequest(
 		PageSyncPageInput page,
 		PageSyncOperationOptions opOptions) {
 		// sync-pages only ever knows the environment name (no per-page URI); set it on the options so
@@ -767,9 +792,9 @@ public sealed class PageSyncTool(
 			Validate = opOptions.Validate,
 			NotifyDesignerPresence = false
 		};
-		(string metaFilePath, bool baselineArmed) =
+		(string metaFilePath, bool baselineArmed, string baselineWarning) =
 			pageBaselineGuard.TryArm(updateOptions, opOptions.OutputDirectory);
-		return (metaFilePath, baselineArmed, updateOptions);
+		return (metaFilePath, baselineArmed, baselineWarning, updateOptions);
 	}
 
 	private PageSyncPageResult VerifySavedPage(
@@ -788,13 +813,12 @@ public sealed class PageSyncTool(
 				Error = $"Page saved but verification failed: {getResponse.Error}"
 			};
 		}
-		string? verifiedBodyFile = WriteVerifiedBodyFile(page.SchemaName, opOptions.OutputDirectory, getResponse.Raw?.Body);
-		if (verifiedBodyFile != null) {
-			WriteFreshMetaAfterVerify(
-				fileSystem.Path.GetDirectoryName(verifiedBodyFile),
-				page.SchemaName,
-				opOptions.EnvironmentName,
-				getResponse);
+		// The network read-back is already in hand, so the publication below holds the schema gate over
+		// the two local writes and nothing else.
+		(string? verifiedBodyFile, string? metaWarning) = PublishVerifiedReadBack(
+			page.SchemaName, opOptions.OutputDirectory, opOptions.EnvironmentName, getResponse);
+		if (metaWarning != null) {
+			validationResult = AppendCommandWarnings(validationResult, [metaWarning]);
 		}
 		return new PageSyncPageResult {
 			SchemaName = page.SchemaName,
@@ -808,14 +832,31 @@ public sealed class PageSyncTool(
 		};
 	}
 
-	private string? WriteVerifiedBodyFile(string schemaName, string? outputDirectory, string body) {
+	// Publishes the verified read-back: body.js and the meta.json baseline captured from the SAME read.
+	//
+	// The two files are written under ONE gate acquisition, because they are one unit of meaning — a
+	// baseline describes the body sitting beside it. Taking the gate twice left a window between them,
+	// and get-page (worker-routed, stage-6 cohort) publishes by SWAPPING the whole schema directory: a
+	// concurrent get-page winning that window replaced the tree, and the meta write then landed a
+	// baseline derived from THIS call's read into ANOTHER generation's directory. The result is the
+	// state the baseline exists to prevent — a stale or false conflict on the next update-page.
+	//
+	// The gate covers the two local writes and nothing else. The network read-back is already complete
+	// when this is called (see VerifySavedPage); holding an interprocess lock across a Creatio round
+	// trip would serialise unrelated callers on network latency, which is exactly what
+	// IInterprocessFileGate's remarks forbid.
+	private (string? BodyFile, string? MetaWarning) PublishVerifiedReadBack(
+		string schemaName, string? outputDirectory, string? environmentName, PageGetResponse getResponse) {
+		string body = getResponse.Raw?.Body;
 		if (body is null) {
-			return null;
+			return (null, null);
 		}
 		// H1: reading the process-global cwd to anchor output must serialize against the workspace tools
 		// that PIN cwd, else a concurrent tenant's cwd pin could place this page under the wrong root.
 		// This runs while ExecuteSyncBatch holds the per-tenant lock, so the ordering is per-tenant →
-		// CwdLock (never the reverse) — no deadlock.
+		// CwdLock (never the reverse) — no deadlock. It also stays OUTSIDE the schema gate below, so the
+		// lock order is per-tenant → CwdLock → schema gate, matching PageFileWriter; taking CwdLock while
+		// holding the schema gate would introduce the opposite order in the same codebase.
 		string anchor;
 		lock (McpToolExecutionLock.CwdLock) {
 			anchor = PageOutputDirectoryResolver.ResolveAnchor(
@@ -825,36 +866,71 @@ public sealed class PageSyncTool(
 				ClioRuntimePaths.Home,
 				outputDirectory);
 		}
-		string schemaDir = fileSystem.Path.Combine(anchor, ".clio-pages", schemaName);
-		fileSystem.Directory.CreateDirectory(schemaDir);
+		string rootDir = fileSystem.Path.Combine(anchor, ".clio-pages");
+		string schemaDir = fileSystem.Path.Combine(rootDir, schemaName);
 		string bodyFile = fileSystem.Path.Combine(schemaDir, "body.js");
-		fileSystem.File.WriteAllText(bodyFile, body);
-		return bodyFile;
+		string metaFile = fileSystem.Path.Combine(schemaDir, "meta.json");
+		// H-1: the verify read-back rewrites files a concurrent clio process may be reading, so the
+		// directory-create and both writes run under the schema's interprocess gate.
+		string? metaWarning = RunUnderSchemaGate(rootDir, schemaName, () => {
+			fileSystem.Directory.CreateDirectory(schemaDir);
+			// A failed body write is the page's failure (it propagates out of the gate to SyncSinglePage's
+			// catch); a failed meta write is only a warning, because the save it describes already landed.
+			fileSystem.File.WriteAllText(bodyFile, body);
+			return WriteFreshMeta(metaFile, schemaName, environmentName, getResponse);
+		});
+		return (bodyFile, metaWarning);
 	}
 
 	// FR-13: the verify read-back already rewrites body.js; without also rewriting meta.json the
 	// stored baseline would keep the PRE-save checksum and the next write would false-conflict.
 	// The fresh meta carries the page metadata and the baseline captured by the verify get-page.
-	private void WriteFreshMetaAfterVerify(
-		string schemaDir, string schemaName, string? environmentName, PageGetResponse getResponse) {
+	//
+	// This is the FOURTH meta.json read-modify-write in clio (after PageBaselineStore's read, refresh and
+	// delete) and the one the earlier design notes omitted: the read below feeds the merge that produces
+	// the bytes written, so read and write must stay inside one gate acquisition — the caller's, which is
+	// already held here. Splitting them would leave exactly the lost-merge window the gate exists to
+	// close. The gate admits the nested gated read on the same thread rather than deadlocking on it.
+	private string? WriteFreshMeta(
+		string metaFile, string schemaName, string? environmentName, PageGetResponse getResponse) {
 		try {
 			string fetchedAt = DateTime.UtcNow.ToString("o");
-			string metaFile = fileSystem.Path.Combine(schemaDir, "meta.json");
 			PageBaselineInfo baseline = BuildBaseline(schemaName, environmentName, getResponse.Editable, fetchedAt);
 			// Preserve the environment identity (e.g. a URI-mode EnvironmentUri) captured by a prior
 			// write so the verify rewrite stays byte-compatible with the update-page baseline and does
 			// not silently disarm conflict detection for a later URI-mode update-page.
 			baseline = PageBaselineStore.MergeEnvironmentIdentity(
-				baseline, PageBaselineStore.TryReadBaseline(fileSystem, metaFile));
-			fileSystem.File.WriteAllText(metaFile, System.Text.Json.JsonSerializer.Serialize(new PageMetaFileModel {
+				baseline, PageBaselineStore.TryReadBaseline(fileSystem, fileGate, metaFile, out _));
+			PageBaselineStore.WriteMetaAtomically(fileSystem, metaFile, new PageMetaFileModel {
 				FetchedAt = fetchedAt,
 				Page = getResponse.Page,
 				Baseline = baseline
-			}));
-		} catch {
-			// best-effort — meta refresh must never fail a verified save.
+			});
+			return null;
+		} catch (Exception ex) {
+			// The verified save has already landed on the server, so this can only be a warning — but it
+			// must be a visible one: the stored baseline now trails the server checksum. Caught INSIDE the
+			// gate so the body write that already succeeded stands and the page result stays a success.
+			return $"The page was saved and verified, but its conflict baseline '{metaFile}' could not be "
+				+ $"rewritten from the verified read-back ({ex.Message}). The next save of this page may report a "
+				+ "conflict that is not real; re-run get-page to recapture the baseline.";
 		}
 	}
+
+	// Runs a .clio-pages disk touch under the schema's interprocess sentinel. A null gate (only in test
+	// instantiations that predate it) degrades to the direct, pre-gate write.
+	private T RunUnderSchemaGate<T>(string? clioPagesRootDir, string schemaName, Func<T> action) {
+		string? lockFilePath = fileGate is null
+			? null
+			: PageBaselineStore.ResolveSchemaLockFilePath(fileSystem, clioPagesRootDir, schemaName);
+		return lockFilePath is null ? action() : fileGate.Enter(lockFilePath, action);
+	}
+
+	private void RunUnderSchemaGate(string? clioPagesRootDir, string schemaName, Action action) =>
+		RunUnderSchemaGate(clioPagesRootDir, schemaName, () => {
+			action();
+			return true;
+		});
 
 	private static PageBaselineInfo BuildBaseline(
 		string schemaName,

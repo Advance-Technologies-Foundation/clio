@@ -49,6 +49,28 @@ public abstract class BaseTool<T>(
 		return McpToolExecutionLock.SharedFallbackKey;
 	}
 
+	/// <summary>
+	/// The NORMALISED TARGET key — credentials excluded — for a shared resource that belongs to the
+	/// SERVER rather than to a caller.
+	/// </summary>
+	/// <remarks>
+	/// Creatio's configuration build is server-wide, so a reservation guarding it must exclude across
+	/// PRINCIPALS as well as across processes. Keying it by the tenant key would let two principals on one
+	/// environment rebuild its configuration concurrently and corrupt each other's package compilation —
+	/// which is why <see cref="Relay.ISharedResourceReservation"/> takes a target key and refuses a tenant
+	/// key. Falls back to the tenant key only when no resolver is available, which is strictly narrower and
+	/// therefore safe.
+	/// </remarks>
+	/// <param name="options">The environment options for this call.</param>
+	/// <returns>The target key.</returns>
+	private protected string ResolveTargetResourceKey(EnvironmentOptions options) {
+		if (commandResolver is not null && options is not null
+			&& !EnvironmentScopedCommandExecutor.UsesEnvironmentlessResolution(options)) {
+			return commandResolver.GetTargetKey(options);
+		}
+		return ResolveTenantLockKey(options);
+	}
+
 	// Runs body under the per-tenant execution lock (FR-05) and marks the session-container entry
 	// in-use for the duration (FR-08 in-flight guard) so eviction cannot dispose the container mid-call
 	// now that different tenants are no longer serialized by a single global lock. Here MarkInUse runs

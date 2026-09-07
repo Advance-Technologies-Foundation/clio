@@ -27,6 +27,13 @@ public sealed class GenerateProcessModelTool(
 	/// </summary>
 	[McpServerTool(Name = GenerateProcessModelToolName, ReadOnly = false, Destructive = true, Idempotent = false,
 		OpenWorld = false)]
+	[McpToolExecution(
+		Location = McpToolExecutionLocation.Worker,
+		Lifetime = McpToolExecutionLifetime.PerCall,
+		OperationFamily = McpToolOperationFamily.None,
+		BudgetPolicy = McpToolBudgetPolicy.ParentKillDefault,
+		RequiresClientRequests = McpToolClientRequests.None,
+		SharedFileResource = McpToolSharedFileResource.None)]
 	[Description("Generates a C# process model file for a process from the specified Creatio environment.")]
 	public CommandExecutionResult GenerateProcessModel(
 		[Description("generate-process-model parameters")]

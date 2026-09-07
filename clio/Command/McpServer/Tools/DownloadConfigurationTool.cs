@@ -26,6 +26,13 @@ public class DownloadConfigurationTool(
 	/// </summary>
 	[McpServerTool(Name = DownloadConfigurationByEnvironmentToolName, ReadOnly = false, Destructive = false,
 		Idempotent = false, OpenWorld = false)]
+	[McpToolExecution(
+		Location = McpToolExecutionLocation.Worker,
+		Lifetime = McpToolExecutionLifetime.PerCall,
+		OperationFamily = McpToolOperationFamily.None,
+		BudgetPolicy = McpToolBudgetPolicy.ParentKillDefault,
+		RequiresClientRequests = McpToolClientRequests.None,
+		SharedFileResource = McpToolSharedFileResource.None)]
 	[Description("Downloads Creatio configuration into the workspace `.application` folder from a registered environment name")]
 	public CommandExecutionResult DownloadConfigurationByEnvironment(
 		[Description("Download-configuration parameters")] [Required] DownloadConfigurationByEnvironmentArgs args
@@ -41,6 +48,18 @@ public class DownloadConfigurationTool(
 	/// </summary>
 	[McpServerTool(Name = DownloadConfigurationByBuildToolName, ReadOnly = false, Destructive = false,
 		Idempotent = false, OpenWorld = false)]
+	// Worker even though the build branch never reaches a Creatio environment (Execute short-circuits to
+	// DownloadFromPath on a non-empty BuildZipPath): "cannot block on Creatio" is necessary but not
+	// sufficient for in-process. This tool pins the PROCESS-WIDE working directory under CwdLock, and that
+	// lock is only deletable once every cwd mutator runs in its own child, where the mutation is private.
+	// In-process would additionally force BudgetPolicy = None on an unbounded zip extraction.
+	[McpToolExecution(
+		Location = McpToolExecutionLocation.Worker,
+		Lifetime = McpToolExecutionLifetime.PerCall,
+		OperationFamily = McpToolOperationFamily.None,
+		BudgetPolicy = McpToolBudgetPolicy.ParentKillDefault,
+		RequiresClientRequests = McpToolClientRequests.None,
+		SharedFileResource = McpToolSharedFileResource.None)]
 	[Description("Downloads Creatio configuration into the workspace `.application` folder from a Creatio zip file or extracted directory")]
 	public CommandExecutionResult DownloadConfigurationByBuild(
 		[Description("Download-configuration parameters")] [Required] DownloadConfigurationByBuildArgs args

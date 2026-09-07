@@ -33,6 +33,16 @@ public sealed class ProcessPageFactsTool(
 		};
 
 	[McpServerTool(Name = ToolName, ReadOnly = true, Destructive = false, Idempotent = true, OpenWorld = false)]
+	// Classified like the other page READS this tool sits beside: it merges the page's schema chain in
+	// process and returns a projection, touching no file. SharedFileResource stays None for that reason —
+	// nothing here read-modify-writes .clio-pages the way update-page/sync-pages do.
+	[McpToolExecution(
+		Location = McpToolExecutionLocation.Worker,
+		Lifetime = McpToolExecutionLifetime.PerCall,
+		OperationFamily = McpToolOperationFamily.None,
+		BudgetPolicy = McpToolBudgetPolicy.ParentKillDefault,
+		RequiresClientRequests = McpToolClientRequests.None,
+		SharedFileResource = McpToolSharedFileResource.None)]
 	[Description(
 		"Read the facts a Pre-configured page process element needs about a Freedom UI page: the buttons that can "
 		+ "complete the page (with the caption the process designer records) and the page-scoped entity data "

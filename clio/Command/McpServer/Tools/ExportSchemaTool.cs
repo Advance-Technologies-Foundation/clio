@@ -27,6 +27,13 @@ public class ExportSchemaTool(
 	// matches get-schema / get-client-unit-schema / get-page, which read remotely and write locally too.
 	[McpServerTool(Name = ExportSchemaToolName, ReadOnly = false, Destructive = false, Idempotent = true,
 		OpenWorld = false)]
+	[McpToolExecution(
+		Location = McpToolExecutionLocation.Worker,
+		Lifetime = McpToolExecutionLifetime.PerCall,
+		OperationFamily = McpToolOperationFamily.None,
+		BudgetPolicy = McpToolBudgetPolicy.ParentKillDefault,
+		RequiresClientRequests = McpToolClientRequests.None,
+		SharedFileResource = McpToolSharedFileResource.None)]
 	[Description("""
 				 Exports a SINGLE schema from a Creatio environment into a bundle folder that
 				 `import-schema` can apply to another environment.
