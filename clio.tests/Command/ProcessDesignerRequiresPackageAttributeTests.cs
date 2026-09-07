@@ -64,12 +64,12 @@ namespace Clio.Tests
                 because: "the install hint must be consistent across all process-designer gates");
         }
 
-        [TestCase(typeof(CreateBusinessProcessOptions))]
-        [TestCase(typeof(ModifyBusinessProcessOptions))]
+        [TestCase(typeof(CreateBusinessProcessOptions), "1.4.0.44")]
+        [TestCase(typeof(ModifyBusinessProcessOptions), "1.6.0.1")]
         [Test]
         [Description("Create and Modify declare a VERSIONED requirement naming the newest operation they send that an older server does not have: `setFlowCondition`, which an older dispatch registry rejects by token. The floor's NUMBER is now set by the message contract rather than by a tightened validator. Until 1.4.0.41 the package validated formulas itself, and the floor tracked when each of its refusals arrived, measured one archive at a time (.32, .35, .37). .41 DELETED that validator, and .42 corrected the rewrite that replaced it (every serialised error in one message, not just the first; an element-scoped reference named as such), because the platform's own pre-save gate already refuses every class of bad formula — a flow condition included, measured with the package's guards built out and installed. So the floor no longer says 'below this a bad formula is not refused'; it says 'below this a refusal reads differently', which is what the shipped tool descriptions promise. Do not lower it below .37 either: the refusals that survive the collapse (the activity-result guard, the element-retarget scan) were measured there. The bundled-archive guard asserts the shipped archive satisfies the literal, so it can never demand a version clio does not carry.")]
         public void OptionsType_ShouldDeclareVersionedProcessBuilderRequirement_WhenTheCommandShipsVersionedOperations(
-            Type optionsType)
+            Type optionsType, string expectedVersion)
         {
             // Arrange & Act
             RequiresPackageAttribute requirement = GetProcessBuilderRequirement(optionsType);
@@ -77,8 +77,19 @@ namespace Clio.Tests
             // Assert
             requirement.Should().NotBeNull(
                 because: $"{optionsType.Name} must carry the declarative {BundledPackages.ProcessBuilderPackageName} requirement so the MCP gate fires");
-            requirement!.Version.Should().Be("1.4.0.44",
-                because: "TWO reasons stand behind this floor. ENG-96325's lookup-constant contract shipped in the 1.4.0.40 archive - a mappings[] value on a Lookup target may carry an already-composed macro that an older server rejects as 'not a bare Guid' - and setFlowCondition is an operation an older server does not carry AT ALL — its dispatch "
+            requirement!.Version.Should().Be(expectedVersion,
+                because: "The two floors are no longer the same number, and that is the point: a floor states "
+                    + "what the OWN command's description promises, never what clio happens to bundle. Modify "
+                    + "moved to 1.6.0.1 because its preconfiguredPage paragraph now promises that a page change "
+                    + "reconciles data sources - declare them, undeclared ones removed and reported, removal "
+                    + "refused while something still maps from one. Below that archive the same call is accepted "
+                    + "with dataSources omitted, the previous page's DataSource_* parameter rides onto a page "
+                    + "that does not declare it, and the instance never leaves Running while describe still "
+                    + "answers inSync:true (ENG-95461, reproduced on a stand). 1.6.0.1 and not 1.6.0.0 because "
+                    + "1.6.0.0 was stamped before that fix merged. Create stays at 1.4.0.44: it cannot change an "
+                    + "element's page, so nothing it says depends on the new behaviour and raising it would "
+                    + "demand an upgrade of environments that already work. What both numbers still carry: "
+                    + "TWO reasons stand behind this floor. ENG-96325's lookup-constant contract shipped in the 1.4.0.40 archive - a mappings[] value on a Lookup target may carry an already-composed macro that an older server rejects as 'not a bare Guid' - and setFlowCondition is an operation an older server does not carry AT ALL — its dispatch "
                     + "registry rejects the token, which reads to a caller as a clio bug rather than a stale "
                     + "environment — and that alone justifies a versioned floor. What sets the NUMBER changed with "
                     + "the formula collapse. The formula half used to be a TIGHTENED VALIDATOR, measured one "

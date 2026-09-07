@@ -73,7 +73,23 @@ namespace Clio.Command;
 // it does recognise - and silently discards the block while answering success, so the process saves
 // carrying a step that shows nobody a page. It is SUBSUMED by the literal below, which is higher; it is
 // named because the next person to move this floor needs to know it cannot go below 1.4.0.0.
-[RequiresPackage(BundledPackages.ProcessBuilderPackageName, "1.4.0.44",
+//
+// AND THE NUMBER MOVED TO 1.6.0.1 for a preconfiguredPage promise this description now makes and an
+// older server does not keep: a page change RECONCILES the element's data sources - the call must
+// declare them, an undeclared one is REMOVED and reported, and the removal is REFUSED while another
+// parameter still maps from it. Below 1.6.0.1 that same call is ACCEPTED with dataSources omitted, the
+// previous page's DataSource_* parameter is carried onto a page that does not declare it, and the
+// started instance never leaves Running: the completing button resolves the stored source name against
+// the page the element is now on, finds nothing, and abandons the completion with no error - while
+// describe-business-process still answers inSync:true, so nothing downstream shows it (ENG-95461,
+// reproduced on a stand). This is the "silently discards while answering success" shape the
+// preconfiguredPage paragraph above describes, one field over, and the only ground for the raise.
+// 1.6.0.1 SPECIFICALLY because 1.6.0.0 was stamped before that fix merged, so it is the lowest archive
+// that carries it - not because it is what this clio bundles. Create keeps its lower floor: it cannot
+// change an element's page, so its description promises none of this and its environments need no
+// upgrade. Do not raise a floor on the next rebundle unless a description here promises something the
+// old archive breaks.
+[RequiresPackage(BundledPackages.ProcessBuilderPackageName, "1.6.0.1",
 	Hint = BundledPackages.ProcessBuilderInstallHint)]
 public sealed class ModifyBusinessProcessOptions : EnvironmentOptions {
 	/// <summary>Process code (schema Name) to edit. Provide exactly one of <see cref="ProcessName"/> or <see cref="ProcessUid"/>.</summary>
