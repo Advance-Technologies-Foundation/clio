@@ -585,17 +585,9 @@ public sealed class ProcessGraphValidator : IProcessGraphValidator {
 			// Keying on edge.Source is safe for the same reason the self-loop guard above is absent, and it
 			// is worth naming because a null key here would throw out of the one method whose contract is
 			// that it never throws: NameTheNameless has already replaced every blank endpoint.
-			List<Dictionary<string, HashSet<ProcessGraphEdge>>> perBranch = [];
-			foreach (ProcessGraphEdge seed in ins) {
-				Dictionary<string, HashSet<ProcessGraphEdge>> bySource = [];
-				foreach (ProcessGraphEdge walked in TraverseBackwardEdges(seed, incoming)) {
-					if (!bySource.TryGetValue(walked.Source, out HashSet<ProcessGraphEdge> group)) {
-						bySource[walked.Source] = group = [];
-					}
-					group.Add(walked);
-				}
-				perBranch.Add(bySource);
-			}
+			List<Dictionary<string, HashSet<ProcessGraphEdge>>> perBranch = ins
+				.Select(seed => GroupWalkedEdgesBySource(seed, incoming))
+				.ToList();
 			string split = choosingElements.FirstOrDefault(gateway => DivergesIntoTwoBranches(gateway, perBranch));
 			if (split != null) {
 				findings.Add(new ProcessGraphFinding(ProcessGraphSeverity.Warning, "R8",
@@ -606,6 +598,31 @@ public sealed class ProcessGraphValidator : IProcessGraphValidator {
 					joinName));
 			}
 		}
+	}
+
+	// One branch's backward walk, grouped by the SOURCE element of each walked edge. Its own method rather
+	// than two nested loops inside CheckParallelJoinDeadlock: the grouping pushed that method's cognitive
+	// complexity to 17 against a limit of 15 (S3776), and the nesting was the whole of the increase.
+	//
+	// Hand-rolled rather than GroupBy().ToDictionary(g => g.ToHashSet()), which allocates THREE structures
+	// per branch - LINQ's internal Lookup, with a Grouping plus backing array per distinct source, then the
+	// dictionary, then the per-group HashSet - and passes over the walked edges twice. This runs once per
+	// join where the projection it replaced ran once per join PER CANDIDATE, so on a graph with many joins
+	// and one or two candidates each the allocation would otherwise be the larger of the two costs.
+	//
+	// Keying on edge.Source is safe for the same reason CheckSelfLoops carries no null guard, and it is
+	// worth naming because a null key would throw out of the one method whose contract is that it never
+	// throws: NameTheNameless has already replaced every blank endpoint.
+	private static Dictionary<string, HashSet<ProcessGraphEdge>> GroupWalkedEdgesBySource(
+			ProcessGraphEdge seed, IReadOnlyDictionary<string, List<ProcessGraphEdge>> incoming) {
+		Dictionary<string, HashSet<ProcessGraphEdge>> bySource = [];
+		foreach (ProcessGraphEdge walked in TraverseBackwardEdges(seed, incoming)) {
+			if (!bySource.TryGetValue(walked.Source, out HashSet<ProcessGraphEdge> group)) {
+				bySource[walked.Source] = group = [];
+			}
+			group.Add(walked);
+		}
+		return bySource;
 	}
 
 	// True when two of the join's branches trace back through DISJOINT outgoing flows of the same gateway -
