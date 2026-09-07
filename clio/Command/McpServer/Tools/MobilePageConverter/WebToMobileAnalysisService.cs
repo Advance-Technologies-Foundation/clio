@@ -294,9 +294,6 @@ public static class WebToMobileAnalysisService {
 		List<ComponentSuggestion> suggestions = BuildComponentSuggestions(namesByType, rules, webTypes, elementMap);
 		List<MobileComponentContract> contracts = BuildMobileContracts(suggestions, mobileByType);
 
-		IReadOnlyList<NormalizationEntry> spacingNormalization =
-			componentPropertyOverrides.EntriesOf(SpacingGroup);
-
 		// 5. Data sections applied to the mobile body verbatim/filtered (identical structural support on
 		//    mobile): modelConfig is carried over as-is (preserving attribute types like ForwardReference);
 		//    viewModelConfig drops attributes used only by dropped components.
@@ -362,23 +359,6 @@ public static class WebToMobileAnalysisService {
 			RequestConversions = requestConversions,
 			AdaptiveLayout = adaptiveLayout.Count > 0 ? adaptiveLayout : null,
 			TabAreaLayers = tabAreaLayers.Count > 0 ? tabAreaLayers : null,
-			// Back-compat alias: spacingNormalization shipped before normalizations existed, so its shape is
-			// preserved verbatim. Every standard — spacing included — is also reported under normalizations.
-			SpacingNormalization = spacingNormalization.Count > 0
-				? new SpacingNormalizationInfo {
-					Note = "Mobile follows the mobile container standards: the web page's own value for every "
-						+ "property listed below was IGNORED (not translated), and the mobile value is already "
-						+ "baked into viewConfigDiff[].values — nothing separate to apply. Read each entry's "
-						+ "`properties` for what was actually written on that element: this section carries "
-						+ "EVERY standard that targets a container type (gap, and any other such as the corner "
-						+ "radius), not the spacing alone, so do not assume it from the section name. Silent "
-						+ "normalization, not a gate decision: report it as ONE aggregated line and never "
-						+ "restore the web values.",
-					Normalized = [.. spacingNormalization.Select(n => new SpacingNormalizationEntry {
-						Name = n.Name, Type = n.Type, Properties = n.Properties
-					})]
-				}
-				: null,
 			Normalizations = BuildNormalizations(componentPropertyOverrides),
 			ResourceStrings = resourceStrings.Count > 0 ? resourceStrings : null,
 			GuidanceArticle = GuidanceArticleName,
@@ -5484,17 +5464,19 @@ public static class WebToMobileAnalysisService {
 			["crt.IndicatorWidget"] = "metricStyle"
 		};
 
-	/// <summary>The group the <c>spacingNormalization</c> back-compat alias mirrors.</summary>
+	/// <summary>
+	/// The curated section name the container standards report into, i.e. the key they occupy in
+	/// <c>normalizations</c>. Kept as a constant because two entries in <see cref="ReportGroupsByType"/>
+	/// share it — renaming it in one place only would split one section into two.
+	/// </summary>
 	private const string SpacingGroup = "spacing";
 
 	/// <summary>
 	/// The guide section a standard reports into, derived from the component TYPE it targets rather than
 	/// declared by the rules file. The binary owns this deliberately: the section is a presentation detail,
-	/// a free-form key in a runtime-resolved file lets an authoring typo ("metricstyle") silently open a new
-	/// section instead of failing, and renaming the spacing rules' group would silently delete the
-	/// documented <c>spacingNormalization</c> alias from the response. An unmapped type falls back to its
-	/// own name, so a new standard still reports somewhere sensible; adding it here is what gives it a
-	/// curated section name.
+	/// and a free-form key in a runtime-resolved file lets an authoring typo ("metricstyle") silently open
+	/// a new section instead of failing. An unmapped type falls back to its own name, so a new standard
+	/// still reports somewhere sensible; adding it here is what gives it a curated section name.
 	/// </summary>
 	private static string ResolveReportGroup(string mobileType) =>
 		mobileType is { Length: > 0 } && ReportGroupsByType.TryGetValue(mobileType, out string group)

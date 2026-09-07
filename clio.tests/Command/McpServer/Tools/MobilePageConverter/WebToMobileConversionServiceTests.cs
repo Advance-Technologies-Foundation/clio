@@ -312,6 +312,13 @@ public sealed class WebToMobileConversionServiceTests {
 	private static ComponentSuggestion ForType(MobilePageConversionGuide guide, string sourceType) =>
 		guide.ComponentSuggestions.Single(s => s.SourceType == sourceType);
 
+	/// <summary>The container-standards section of <c>normalizations</c>, which the deleted
+	/// <c>spacingNormalization</c> alias used to duplicate. Null when nothing was normalized.</summary>
+	private static NormalizationInfo Spacing(MobilePageConversionGuide guide) =>
+		guide.Normalizations is { } groups && groups.TryGetValue("spacing", out NormalizationInfo info)
+			? info
+			: null;
+
 	[Test]
 	[Description("The merged tree (including inherited template components) is surfaced as sourceStructure with parent + container flags.")]
 	public void Analyze_SourceStructure_SurfacesMergedTreeWithContainerFlags() {
@@ -5291,7 +5298,7 @@ public sealed class WebToMobileConversionServiceTests {
 		vals["gap"]!["rowGap"]!.GetValue<string>().Should().Be("medium");
 		vals["gap"]!["columnGap"]!.GetValue<string>().Should().Be("medium",
 			because: "the web spacing is ignored by design — mobile follows the mobile spacing standard");
-		SpacingNormalizationEntry entry = guide.SpacingNormalization!.Normalized.Single(n => n.Name == "InfoGrid");
+		NormalizationEntry entry = Spacing(guide)!.Normalized.Single(n => n.Name == "InfoGrid");
 		entry.Type.Should().Be("crt.GridContainer");
 		entry.Properties.Should().Equal("gap");
 	}
@@ -5312,7 +5319,7 @@ public sealed class WebToMobileConversionServiceTests {
 			because: "a web gap 0/none is deliberately overridden — the known trade-off of the normalization");
 		Element(guide, "PlainColumn").Values!["gap"]!.GetValue<string>().Should().Be("medium",
 			because: "a container without a web gap gets the explicit default added");
-		guide.SpacingNormalization!.Normalized.Select(n => n.Name)
+		Spacing(guide)!.Normalized.Select(n => n.Name)
 			.Should().BeEquivalentTo("TightRow", "PlainColumn");
 	}
 
@@ -5339,7 +5346,7 @@ public sealed class WebToMobileConversionServiceTests {
 			vals["gap"]!["rowGap"]!.GetValue<string>().Should().Be("medium", because: $"{name} is an inserted grid like any other");
 			vals["gap"]!["columnGap"]!.GetValue<string>().Should().Be("medium");
 		}
-		guide.SpacingNormalization!.Normalized.Select(n => n.Name).Should().Contain(new[] { main, area });
+		Spacing(guide)!.Normalized.Select(n => n.Name).Should().Contain(new[] { main, area });
 	}
 
 	[Test]
@@ -5362,7 +5369,7 @@ public sealed class WebToMobileConversionServiceTests {
 		ViewConfigDiffOperation tabs = Element(guide, "Tabs");
 		tabs.Operation.Should().Be("merge", because: "the fixture maps Tabs onto the template's own Tabs");
 		ShouldCarryNoDelta(tabs, "a merge twin gets nothing stamped onto it");
-		guide.SpacingNormalization!.Normalized.Select(n => n.Name).Should().NotContain("Tabs");
+		Spacing(guide)!.Normalized.Select(n => n.Name).Should().NotContain("Tabs");
 	}
 
 	[Test]
@@ -5380,7 +5387,7 @@ public sealed class WebToMobileConversionServiceTests {
 		vals["gap"]!["columnGap"]!.GetValue<string>().Should().Be("large",
 			because: "without the rules group the property-carry behavior is unchanged");
 		vals["gap"]!["rowGap"]!.GetValue<string>().Should().Be("none");
-		guide.SpacingNormalization.Should().BeNull();
+		Spacing(guide).Should().BeNull();
 	}
 
 	[Test]
@@ -5406,7 +5413,7 @@ public sealed class WebToMobileConversionServiceTests {
 		vals["type"]!.GetValue<string>().Should().Be("crt.GridContainer", because: "identity keys are never overridable");
 		vals.ContainsKey("name").Should().BeFalse();
 		vals["gap"]!["rowGap"]!.GetValue<string>().Should().Be("medium");
-		SpacingNormalizationEntry entry = guide.SpacingNormalization!.Normalized.Single(n => n.Name == "InfoGrid");
+		NormalizationEntry entry = Spacing(guide)!.Normalized.Single(n => n.Name == "InfoGrid");
 		entry.Properties.Should().Equal("gap");
 	}
 
@@ -5837,7 +5844,7 @@ public sealed class WebToMobileConversionServiceTests {
 			because: "the container maps to spacing and the widget to metricStyle, by type");
 		guide.Normalizations["spacing"].Normalized.Select(n => n.Name).Should().BeEquivalentTo(["InfoGrid"],
 			because: "the metric must not leak into the container standard's section");
-		guide.SpacingNormalization!.Normalized.Select(n => n.Name).Should().BeEquivalentTo(["InfoGrid"],
+		Spacing(guide)!.Normalized.Select(n => n.Name).Should().BeEquivalentTo(["InfoGrid"],
 			because: "the back-compat alias mirrors the spacing section and nothing else");
 	}
 
@@ -5865,7 +5872,7 @@ public sealed class WebToMobileConversionServiceTests {
 		// Assert
 		guide.Normalizations!.Keys.Should().BeEquivalentTo(["crt.Button"],
 			because: "an uncurated type keys its own section rather than borrowing another standard's");
-		guide.SpacingNormalization.Should().BeNull(
+		Spacing(guide).Should().BeNull(
 			because: "nothing container-related was normalized, so the alias stays absent");
 	}
 
@@ -6180,11 +6187,11 @@ public sealed class WebToMobileConversionServiceTests {
 		MobilePageConversionGuide guide = AnalyzeMetric(bundle, RulesWithMetricOverride());
 
 		// Assert
-		guide.SpacingNormalization!.Normalized.Select(n => n.Name).Should().BeEquivalentTo(["InfoGrid"],
+		Spacing(guide)!.Normalized.Select(n => n.Name).Should().BeEquivalentTo(["InfoGrid"],
 			because: "the alias exists so a caller reading the old section sees the same elements");
-		guide.SpacingNormalization.Normalized.Single().Properties.Should().BeEquivalentTo(["gap"],
+		Spacing(guide)!.Normalized.Single().Properties.Should().BeEquivalentTo(["gap"],
 			because: "and the same properties, in the same shape");
-		guide.SpacingNormalization.Note.Should().NotBeNullOrWhiteSpace(
+		Spacing(guide)!.Note.Should().NotBeNullOrWhiteSpace(
 			because: "the alias keeps its own summary so the old shape stays self-describing");
 	}
 

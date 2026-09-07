@@ -1086,18 +1086,7 @@ public sealed class MobilePageConversionGuide {
 	/// template provides are never touched. This is a SILENT normalization, NOT a gate decision: report it
 	/// as one aggregated line in the plan and the final report; never ask whether to apply it and never
 	/// restore the web spacing. Null when nothing was normalized.
-	/// <para>
-	/// BACK-COMPAT ALIAS: this section shipped before <see cref="Normalizations"/> existed and duplicates
-	/// its <c>"spacing"</c> entry, shape unchanged. New callers should read <see cref="Normalizations"/>,
-	/// which also carries the standards this one cannot express. REMOVAL TARGET: the only consumer is an
-	/// LLM prompt, so this duplicate should go once the guidance article published for
-	/// <c>normalizations</c> has shipped — it is not intended to be permanent.
-	/// </para>
 	/// </summary>
-	[JsonPropertyName("spacingNormalization")]
-	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-	public SpacingNormalizationInfo SpacingNormalization { get; init; }
-
 	// ── Every property normalization the conversion rules declare ──────
 	/// <summary>
 	/// One section per normalization standard the CONVERSION RULES declare, keyed by the rule's
@@ -1368,35 +1357,6 @@ public sealed class TabAreaLayerGroup {
 	public IReadOnlyList<string> MovedChildren { get; init; } = [];
 }
 
-/// <summary>
-/// Advisory summary of the spacing normalization: which inserted containers had their
-/// spacing stamped with the mobile-standard values (gap Medium). The actionable result is already
-/// baked into <c>viewConfigDiff[].values</c>; this section only feeds the plan / final-report line.
-/// </summary>
-public sealed class SpacingNormalizationInfo {
-	/// <summary>Why the web spacing is ignored and how to report the normalization.</summary>
-	[JsonPropertyName("note")]
-	public string Note { get; init; }
-
-	/// <summary>One entry per normalized inserted container.</summary>
-	[JsonPropertyName("normalized")]
-	public IReadOnlyList<SpacingNormalizationEntry> Normalized { get; init; } = [];
-}
-
-/// <summary>One inserted container whose spacing was normalized to the mobile standard.</summary>
-public sealed class SpacingNormalizationEntry {
-	/// <summary>The container's mobile element name.</summary>
-	[JsonPropertyName("name")]
-	public string Name { get; init; }
-
-	/// <summary>The container's mobile component type (e.g. "crt.GridContainer").</summary>
-	[JsonPropertyName("type")]
-	public string Type { get; init; }
-
-	/// <summary>The property names stamped onto the container's mobileValues (e.g. ["gap"]).</summary>
-	[JsonPropertyName("properties")]
-	public IReadOnlyList<string> Properties { get; init; } = [];
-}
 
 /// <summary>
 /// One normalization standard's report: the caller-facing wording carried by the conversion rule that
