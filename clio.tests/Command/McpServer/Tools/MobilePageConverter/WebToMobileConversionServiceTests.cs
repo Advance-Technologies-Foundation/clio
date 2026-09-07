@@ -3512,6 +3512,305 @@ public sealed class WebToMobileConversionServiceTests {
 
 	#endregion
 
+	#region Action targets that do not exist on mobile (ENG-94839)
+
+	/// <summary>Rules whose OpenPage / CreateRecord requests declare a navigation target to verify.</summary>
+	private static readonly WebToMobilePageConversionRules TargetRules = new() {
+		Requests = [
+			new RequestMappingRule {
+				Web = "crt.OpenPageRequest", Mobile = "crt.OpenPageRequest", Category = "DirectMapping",
+				TargetParam = "schemaName", TargetKind = "mobile-page"
+			},
+			new RequestMappingRule {
+				Web = "crt.CreateRecordRequest", Mobile = "crt.CreateRecordRequest", Category = "DirectMapping",
+				TargetParam = "entityName", TargetKind = "entity-default-mobile-page"
+			},
+			new RequestMappingRule {
+				Web = "crt.PrintablesRequest", Mobile = null, Category = "Unsupported", Note = "Printables are web-only."
+			}
+		]
+	};
+
+	private static MobilePageConversionGuide AnalyzeTargets(
+		PageBundleInfo bundle, MobileActionTargetProbeResult probe) =>
+		WebToMobileAnalysisService.Analyze(
+			bundle, RequestMobileTypes, WebTypes,
+			webByType: Reg(("crt.FlexContainer", true)),
+			mobileByType: null,
+			TargetRules, templateRule: null,
+			sourcePage: "UsrApp_FormPage", sourceTemplate: null,
+			suggestedTarget: "UsrApp_MobileFormPage", containerNameMap: null,
+			actionTargetsProbe: probe);
+
+	/// <summary>A probe result that resolved <paramref name="target"/> to <paramref name="state"/>.</summary>
+	private static MobileActionTargetProbeResult ProbeResult(
+		string elementName, string webRequest, string kind, string target, ActionTargetState state,
+		bool probeOk = true, string note = null) =>
+		new() {
+			ProbeOk = probeOk,
+			Note = note,
+			Occurrences = [
+				new ActionTargetOccurrence {
+					ElementName = elementName, Binding = "clicked", WebRequest = webRequest,
+					Kind = kind, Target = target
+				}
+			],
+			TargetsByKey = new Dictionary<string, ActionTargetResolution>(StringComparer.OrdinalIgnoreCase) {
+				[MobileActionTargetProbe.TargetKey(kind, target)] =
+					new ActionTargetResolution { Kind = kind, Target = target, State = state }
+			}
+		};
+
+	private static PageBundleInfo OpenPageButtonBundle(string buttonName, string targetPage) =>
+		ButtonBundle(buttonName, "crt.OpenPageRequest", $$"""{ "schemaName": "{{targetPage}}" }""");
+
+	[Test]
+	[Description("An action whose target page does not exist on mobile is reported as missing, and the control is NOT removed.")]
+	public void Analyze_TargetPageMissing_ReportsWarningAndKeepsTheControl() {
+		// Arrange
+		PageBundleInfo bundle = OpenPageButtonBundle("PostponeButton", "LegacyPage");
+		MobileActionTargetProbeResult probe = ProbeResult(
+			"PostponeButton", "crt.OpenPageRequest", "mobile-page", "LegacyPage", ActionTargetState.Missing);
+
+		// Act
+		MobilePageConversionGuide guide = AnalyzeTargets(bundle, probe);
+
+		// Assert
+		guide.RequestConversions!.UnresolvedTargetRequests.Should().ContainSingle(
+			because: "one action points at a page the mobile app cannot open");
+		UnresolvedTargetRequest finding = guide.RequestConversions.UnresolvedTargetRequests[0];
+		finding.ElementName.Should().Be("PostponeButton", because: "the user must know which control to omit");
+		finding.Binding.Should().Be("clicked", because: "the binding names the dead action");
+		finding.WebRequest.Should().Be("crt.OpenPageRequest", because: "the request type is reported verbatim");
+		finding.TargetKind.Should().Be("mobile-page", because: "the kind comes from the rule that declared it");
+		finding.Target.Should().Be("LegacyPage", because: "the target names what could not be found");
+		finding.State.Should().Be("missing", because: "the absence was verified, not assumed");
+		guide.RequestConversions.TargetsProbed.Should().BeTrue(because: "the environment answered");
+		Element(guide, "PostponeButton").Operation.Should().NotBe("drop",
+			because: "this ticket warns about a dead target; it never removes the control itself");
+		guide.RequestConversions.ConvertedRequests.Should().ContainSingle(r => r.ElementName == "PostponeButton",
+			because: "the request type itself still converts");
+	}
+
+	[Test]
+	[Description("A target the environment could not answer for is reported as unknown, distinct from a verified absence.")]
+	public void Analyze_TargetUnknown_ReportsUnknownState() {
+		// Arrange
+		PageBundleInfo bundle = OpenPageButtonBundle("OpenButton", "MaybePage");
+		MobileActionTargetProbeResult probe = ProbeResult(
+			"OpenButton", "crt.OpenPageRequest", "mobile-page", "MaybePage", ActionTargetState.Unknown);
+
+		// Act
+		MobilePageConversionGuide guide = AnalyzeTargets(bundle, probe);
+
+		// Assert
+		guide.RequestConversions!.UnresolvedTargetRequests.Should().ContainSingle(r => r.State == "unknown",
+			because: "an unanswered target needs a human check, not a removal");
+	}
+
+	[Test]
+	[Description("A resolved target produces no finding at all — the happy path is silent.")]
+	public void Analyze_TargetResolved_ReportsNothing() {
+		// Arrange
+		PageBundleInfo bundle = ButtonBundle(
+			"AddProductButton", "crt.CreateRecordRequest", """{ "entityName": "LeadProduct" }""");
+		MobileActionTargetProbeResult probe = ProbeResult(
+			"AddProductButton", "crt.CreateRecordRequest", "entity-default-mobile-page", "LeadProduct",
+			ActionTargetState.Resolved);
+
+		// Act
+		MobilePageConversionGuide guide = AnalyzeTargets(bundle, probe);
+
+		// Assert
+		guide.RequestConversions!.UnresolvedTargetRequests.Should().BeEmpty(
+			because: "the object has a default mobile page, so the action works");
+		guide.RequestConversions.TargetsProbed.Should().BeTrue(
+			because: "an empty list means all-clear only when the targets were actually probed");
+	}
+
+	[Test]
+	[Description("A menu item whose target page is missing is reported the same way a button is — the ticket names both.")]
+	public void Analyze_MenuItemTargetMissing_IsReported() {
+		// Arrange
+		PageBundleInfo bundle = Bundle("""
+			[ { "name": "Main", "type": "crt.FlexContainer", "items": [
+				{ "name": "OpenLegacyItem", "type": "crt.Button", "caption": "Open",
+				  "clicked": { "request": "crt.OpenPageRequest", "params": { "schemaName": "LegacyPage" } } } ] } ]
+			""");
+		MobileActionTargetProbeResult probe = ProbeResult(
+			"OpenLegacyItem", "crt.OpenPageRequest", "mobile-page", "LegacyPage", ActionTargetState.Missing);
+
+		// Act
+		MobilePageConversionGuide guide = AnalyzeTargets(bundle, probe);
+
+		// Assert
+		guide.RequestConversions!.UnresolvedTargetRequests.Should().ContainSingle(r => r.ElementName == "OpenLegacyItem",
+			because: "a dead navigation is dead whichever component type fires it");
+	}
+
+	[Test]
+	[Description("A finding is suppressed when the conversion dropped its element anyway, so the report never contradicts the element map.")]
+	public void Analyze_ElementDroppedForAnotherReason_SuppressesTheTargetFinding() {
+		// Arrange: the button's request is unsupported on mobile, so the converter drops the whole element.
+		PageBundleInfo bundle = ButtonBundle(
+			"PrintButton", "crt.PrintablesRequest", """{ "schemaName": "LegacyPage" }""");
+		MobileActionTargetProbeResult probe = ProbeResult(
+			"PrintButton", "crt.PrintablesRequest", "mobile-page", "LegacyPage", ActionTargetState.Missing);
+
+		// Act
+		MobilePageConversionGuide guide = AnalyzeTargets(bundle, probe);
+
+		// Assert
+		Element(guide, "PrintButton").Operation.Should().Be("drop",
+			because: "an unsupported request still removes the button, as it did before this ticket");
+		// The whole section stays null here: the leaf drop runs before any binding is recorded, so there is
+		// nothing else to report either — and the target finding must not be what resurrects it.
+		(guide.RequestConversions?.UnresolvedTargetRequests ?? []).Should().BeEmpty(
+			because: "warning about where a removed control would have navigated contradicts its own drop entry");
+	}
+
+	[Test]
+	[Description("A finding is suppressed when the converted body does not carry that binding at all — e.g. web-template chrome pruned before the element map was built, which has no entry to act on.")]
+	public void Analyze_ElementAbsentFromTheElementMap_SuppressesTheTargetFinding() {
+		// Arrange: the probe reports a control the conversion never emitted (pruned chrome, in production).
+		PageBundleInfo bundle = OpenPageButtonBundle("SurvivingButton", "LegacyPage");
+		MobileActionTargetProbeResult probe = ProbeResult(
+			"PrunedHeaderButton", "crt.OpenPageRequest", "mobile-page", "LegacyPage", ActionTargetState.Missing);
+
+		// Act
+		MobilePageConversionGuide guide = AnalyzeTargets(bundle, probe);
+
+		// Assert
+		guide.RequestConversions!.UnresolvedTargetRequests.Should().BeEmpty(
+			because: "a warning naming a control the converted page does not have is not actionable");
+	}
+
+	[Test]
+	[Description("A finding is suppressed when the element survives but the converted values do not carry that binding — the merge-twin case, where the action on mobile belongs to the template.")]
+	public void Analyze_BindingAbsentFromMobileValues_SuppressesTheTargetFinding() {
+		// Arrange: the element converts, but the probe reports a DIFFERENT binding than the one carried.
+		PageBundleInfo bundle = OpenPageButtonBundle("OpenButton", "LegacyPage");
+		var probe = new MobileActionTargetProbeResult {
+			ProbeOk = true,
+			Occurrences = [
+				new ActionTargetOccurrence {
+					ElementName = "OpenButton", Binding = "valueChange", WebRequest = "crt.OpenPageRequest",
+					Kind = "mobile-page", Target = "LegacyPage"
+				}
+			],
+			TargetsByKey = new Dictionary<string, ActionTargetResolution>(StringComparer.OrdinalIgnoreCase) {
+				[MobileActionTargetProbe.TargetKey("mobile-page", "LegacyPage")] =
+					new ActionTargetResolution {
+						Kind = "mobile-page", Target = "LegacyPage", State = ActionTargetState.Missing
+					}
+			}
+		};
+
+		// Act
+		MobilePageConversionGuide guide = AnalyzeTargets(bundle, probe);
+
+		// Assert
+		Element(guide, "OpenButton").Operation.Should().NotBe("drop",
+			because: "the element itself converts normally");
+		guide.RequestConversions!.UnresolvedTargetRequests.Should().BeEmpty(
+			because: "the converted body never carries that binding, so there is nothing for the caller to omit");
+	}
+
+	[Test]
+	[Description("A verified-missing target adds a constraint telling the caller to omit that control — the guide carries the instruction, not only the data.")]
+	public void Analyze_TargetMissing_AddsAnOmitConstraint() {
+		// Arrange
+		PageBundleInfo bundle = OpenPageButtonBundle("PostponeButton", "LegacyPage");
+		MobileActionTargetProbeResult probe = ProbeResult(
+			"PostponeButton", "crt.OpenPageRequest", "mobile-page", "LegacyPage", ActionTargetState.Missing);
+
+		// Act
+		MobilePageConversionGuide guide = AnalyzeTargets(bundle, probe);
+
+		// Assert
+		guide.Constraints.Should().Contain(
+			c => c.Contains("Do NOT add those buttons") && c.Contains("PostponeButton -> LegacyPage"),
+			because: "the tool's contract is that the guide's own constraints carry the rules for applying it, "
+				+ "so the finding must arrive with the instruction that acts on it");
+	}
+
+	[Test]
+	[Description("An unverified target adds the opposite constraint: keep the control and ask the user.")]
+	public void Analyze_TargetUnknown_AddsAKeepAndVerifyConstraint() {
+		// Arrange
+		PageBundleInfo bundle = OpenPageButtonBundle("OpenButton", "MaybePage");
+		MobileActionTargetProbeResult probe = ProbeResult(
+			"OpenButton", "crt.OpenPageRequest", "mobile-page", "MaybePage", ActionTargetState.Unknown);
+
+		// Act
+		MobilePageConversionGuide guide = AnalyzeTargets(bundle, probe);
+
+		// Assert
+		guide.Constraints.Should().Contain(c => c.Contains("KEEP these controls"),
+			because: "an unverified target must never be actioned as an absent one");
+		guide.Constraints.Should().NotContain(c => c.Contains("Do NOT add those buttons"),
+			because: "mixing the two instructions would make the caller delete a control on a guess");
+	}
+
+	[Test]
+	[Description("With no probe supplied the guide is unchanged and reports that targets were not probed — the fail-open pin.")]
+	public void Analyze_WithoutProbe_ChangesNothingAndReportsNotProbed() {
+		// Arrange
+		PageBundleInfo bundle = OpenPageButtonBundle("OpenButton", "LegacyPage");
+
+		// Act
+		MobilePageConversionGuide guide = AnalyzeTargets(bundle, probe: null);
+
+		// Assert
+		guide.RequestConversions!.UnresolvedTargetRequests.Should().BeEmpty(
+			because: "nothing was verified, so nothing may be reported");
+		guide.RequestConversions.TargetsProbed.Should().BeFalse(
+			because: "an empty list must never read as all-clear when no check ran");
+		Element(guide, "OpenButton").Operation.Should().NotBe("drop",
+			because: "missing information must never remove a control");
+		guide.RequestConversions.ConvertedRequests.Should().ContainSingle(r => r.ElementName == "OpenButton",
+			because: "the conversion itself is untouched by the absence of the probe");
+	}
+
+	[Test]
+	[Description("A degraded probe (ProbeOk false) reports nothing even though it collected occurrences, and surfaces WHY nothing was checked.")]
+	public void Analyze_DegradedProbe_ReportsNotProbedAndNoFindings() {
+		// Arrange
+		PageBundleInfo bundle = OpenPageButtonBundle("OpenButton", "LegacyPage");
+		MobileActionTargetProbeResult probe = ProbeResult(
+			"OpenButton", "crt.OpenPageRequest", "mobile-page", "LegacyPage", ActionTargetState.Missing,
+			probeOk: false, note: "Could not verify action targets (denied).");
+
+		// Act
+		MobilePageConversionGuide guide = AnalyzeTargets(bundle, probe);
+
+		// Assert
+		guide.RequestConversions!.TargetsProbed.Should().BeFalse(because: "the reads did not succeed");
+		guide.RequestConversions.UnresolvedTargetRequests.Should().BeEmpty(
+			because: "a verdict from a failed probe would be a guess, and a guess must not reach the user");
+		guide.RequestConversions.TargetsNote.Should().Be("Could not verify action targets (denied).",
+			because: "the user must be able to tell a missing environment from a broken one");
+	}
+
+	[Test]
+	[Description("On the happy path no diagnostic note is emitted — the note exists only to explain an unchecked run.")]
+	public void Analyze_ProbedSuccessfully_EmitsNoNote() {
+		// Arrange
+		PageBundleInfo bundle = OpenPageButtonBundle("OpenButton", "LegacyPage");
+		MobileActionTargetProbeResult probe = ProbeResult(
+			"OpenButton", "crt.OpenPageRequest", "mobile-page", "LegacyPage", ActionTargetState.Missing,
+			note: "should not surface");
+
+		// Act
+		MobilePageConversionGuide guide = AnalyzeTargets(bundle, probe);
+
+		// Assert
+		guide.RequestConversions!.TargetsNote.Should().BeNull(
+			because: "a note beside a successful probe would read as a warning about findings that are real");
+	}
+
+	#endregion
+
 	#region Adaptive (per-breakpoint) layout
 
 	private static JsonObject AdaptiveOf(MobilePageConversionGuide guide, string fieldName) =>

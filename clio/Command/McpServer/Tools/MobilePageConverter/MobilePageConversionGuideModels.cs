@@ -1,5 +1,6 @@
 namespace Clio.Command.McpServer.Tools.MobilePageConverter;
 
+using System;
 using System.Collections.Generic;
 using System.Text.Json;
 using System.Text.Json.Nodes;
@@ -491,8 +492,10 @@ public sealed class MobilePageConversionGuide {
 	/// <c>elementMap</c> drop and recorded under <c>droppedRequests</c>) — including a button retargeted
 	/// into the FAB from a non-converting scope; on any other component type the binding is kept verbatim
 	/// and flagged for manual review (the component stays). This section is an advisory SUMMARY — the
-	/// actionable result is already baked into <c>mobileValues</c>. Null when the source page references no
-	/// requests. (Page <c>handlers</c> are web-only and never transferred.)
+	/// actionable result is already baked into <c>mobileValues</c>, with ONE exception:
+	/// <see cref="RequestConversionInfo.UnresolvedTargetRequests"/> is a warning the caller must act on itself.
+	/// Null when the source page references no requests AND no action target needed reporting.
+	/// (Page <c>handlers</c> are web-only and never transferred.)
 	/// </summary>
 	[JsonPropertyName("requestConversions")]
 	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
@@ -709,6 +712,39 @@ public sealed class RequestConversionInfo {
 	/// <summary>Unknown/custom requests kept verbatim but flagged: verify they exist on mobile.</summary>
 	[JsonPropertyName("flaggedRequests")]
 	public IReadOnlyList<FlaggedRequest> FlaggedRequests { get; init; } = [];
+
+	/// <summary>
+	/// Actions whose REQUEST converts but whose NAVIGATION TARGET could not be confirmed to exist on
+	/// mobile: a <c>crt.OpenPageRequest</c> naming a schema that is not a mobile page, or a
+	/// create/update-record request naming an object with no default mobile edit page. The action is
+	/// still carried into <c>mobileValues</c> — this section is the WARNING, not a removal (ENG-94839).
+	/// <para>
+	/// Branch on each entry's <see cref="UnresolvedTargetRequest.State"/>: <c>missing</c> is a verified
+	/// dead navigation, so OMIT that button / menu item from the mobile page and name it at the
+	/// conversion gate; <c>unknown</c> means the environment could not answer, so keep the control and
+	/// ask the user to verify it. Empty when every target resolved — AND empty when the targets were
+	/// never probed, so read <see cref="TargetsProbed"/> before reporting "all clear".
+	/// </para>
+	/// </summary>
+	[JsonPropertyName("unresolvedTargetRequests")]
+	public IReadOnlyList<UnresolvedTargetRequest> UnresolvedTargetRequests { get; init; } = [];
+
+	/// <summary>
+	/// Whether the environment was actually queried for action-target existence. <c>false</c> means every
+	/// target is <c>unknown</c> by construction (no environment, or the reads failed) and nothing was
+	/// verified — an empty <see cref="UnresolvedTargetRequests"/> is then "not checked", never "all clear".
+	/// </summary>
+	[JsonPropertyName("targetsProbed")]
+	public bool TargetsProbed { get; init; }
+
+	/// <summary>
+	/// Why the action targets were not verified, when <see cref="TargetsProbed"/> is false — no environment,
+	/// an unreadable response, or rules that declare no navigation targets. Null on the normal path. Report it
+	/// alongside "targets were not checked" so the user can tell a missing environment from a broken one.
+	/// </summary>
+	[JsonPropertyName("targetsNote")]
+	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+	public string TargetsNote { get; init; }
 }
 
 /// <summary>A request carried to mobile from a component's event binding.</summary>
@@ -756,6 +792,55 @@ public sealed class FlaggedRequest {
 
 	[JsonPropertyName("reason")]
 	public string Reason { get; init; }
+}
+
+/// <summary>
+/// One action whose navigation target was not confirmed to exist on mobile (ENG-94839). Fully typed: what
+/// to DO about each <see cref="State"/> arrives as a guide <c>constraint</c> composed from these findings,
+/// not as a prose sentence carried on this record.
+/// </summary>
+public sealed class UnresolvedTargetRequest {
+	/// <summary>
+	/// The SOURCE (web) component name that carries the binding, e.g. "PostponeQueueItemButton". Match it
+	/// against <c>elementMap[].webName</c> — NOT <c>mobileName</c>, which a renamed twin changes.
+	/// </summary>
+	[JsonPropertyName("elementName")]
+	public string ElementName { get; init; }
+
+	/// <summary>Event binding the request is wired to (e.g. "clicked", "valueChange").</summary>
+	[JsonPropertyName("binding")]
+	public string Binding { get; init; }
+
+	/// <summary>The web request type whose target this is, e.g. "crt.OpenPageRequest".</summary>
+	[JsonPropertyName("webRequest")]
+	public string WebRequest { get; init; }
+
+	/// <summary>
+	/// What <see cref="Target"/> names — <c>mobile-page</c> (a page schema that must itself be a mobile
+	/// page) or <c>entity-default-mobile-page</c> (an object that must have a default mobile edit page).
+	/// Declared by the conversion rules' <c>targetKind</c> and echoed verbatim, so the set is open by design
+	/// and the value carries the rules file's casing — compare it case-insensitively.
+	/// </summary>
+	[JsonPropertyName("targetKind")]
+	public string TargetKind { get; init; }
+
+	/// <summary>The target value read from the binding's params: a page schema name, or an object name.</summary>
+	[JsonPropertyName("target")]
+	public string Target { get; init; }
+
+	/// <summary>
+	/// <see cref="StateMissing"/> — verified absent on mobile, so omit the control that fires this action;
+	/// <see cref="StateUnknown"/> — the environment could not answer, so the control stands and needs a human
+	/// check. Never treat the two alike.
+	/// </summary>
+	[JsonPropertyName("state")]
+	public string State { get; init; }
+
+	/// <summary>Wire value for a target verified ABSENT on mobile — omit the control that fires the action.</summary>
+	public const string StateMissing = "missing";
+
+	/// <summary>Wire value for a target the environment could not answer for — the control stands.</summary>
+	public const string StateUnknown = "unknown";
 }
 
 /// <summary>
@@ -986,4 +1071,77 @@ public sealed class PageBusinessRuleProbeResult {
 	public bool ProbeOk { get; init; }
 	public string Note { get; init; }
 	internal IReadOnlyList<SourcePageBusinessRule> Rules { get; init; } = [];
+}
+
+/// <summary>
+/// Whether an action's navigation target exists on mobile. <see cref="Unknown"/> is the DEFAULT (value 0)
+/// on purpose: an absent dictionary entry — the shape an unreachable environment produces — must read as
+/// "not answered", never as "absent", so the feature fails open structurally rather than by a flag check.
+/// </summary>
+public enum ActionTargetState {
+	/// <summary>Not answered: not probed, not reachable, ambiguous, or past the escalation budget.</summary>
+	Unknown = 0,
+
+	/// <summary>Verified present on mobile — a mobile page, or an object with a default mobile edit page.</summary>
+	Resolved,
+
+	/// <summary>Verified absent on mobile. The only state that justifies telling the user to omit a control.</summary>
+	Missing
+}
+
+/// <summary>One distinct action target and what the environment said about it.</summary>
+public sealed class ActionTargetResolution {
+	/// <summary>The rules-declared kind, e.g. <c>mobile-page</c> or <c>entity-default-mobile-page</c>.</summary>
+	public string Kind { get; init; }
+
+	/// <summary>The target value as it appears in the binding's params (a page or object name).</summary>
+	public string Target { get; init; }
+
+	/// <summary>What the environment said. See <see cref="ActionTargetState"/>.</summary>
+	public ActionTargetState State { get; init; }
+}
+
+/// <summary>
+/// One place a target-carrying request appears on the source page. Collected from the page body alone
+/// (no environment), so the collector is unit-testable offline and the resolution stays deduplicated:
+/// many occurrences can share one <see cref="ActionTargetResolution"/>.
+/// </summary>
+public sealed class ActionTargetOccurrence {
+	/// <summary>Component that carries the binding.</summary>
+	public string ElementName { get; init; }
+
+	/// <summary>Event binding the request is wired to (e.g. <c>clicked</c>).</summary>
+	public string Binding { get; init; }
+
+	/// <summary>The web request type.</summary>
+	public string WebRequest { get; init; }
+
+	/// <summary>The rules-declared target kind.</summary>
+	public string Kind { get; init; }
+
+	/// <summary>The literal target value read from the params.</summary>
+	public string Target { get; init; }
+}
+
+/// <summary>
+/// Outcome of probing whether the source page's action targets exist on mobile. Best-effort: on any
+/// failure <see cref="ProbeOk"/> is false, <see cref="TargetsByKey"/> is EMPTY and every occurrence
+/// therefore resolves to <see cref="ActionTargetState.Unknown"/>.
+/// </summary>
+public sealed class MobileActionTargetProbeResult {
+	/// <summary>False when the environment could not be queried — every target is then unknown.</summary>
+	public bool ProbeOk { get; init; }
+
+	/// <summary>Human-readable reason the probe degraded; null on the normal path.</summary>
+	public string Note { get; init; }
+
+	/// <summary>Every place a target-carrying request appears on the page, in document order.</summary>
+	public IReadOnlyList<ActionTargetOccurrence> Occurrences { get; init; } = [];
+
+	/// <summary>
+	/// Resolution per DISTINCT target, keyed by <c>MobileActionTargetProbe.TargetKey</c>. An absent key
+	/// means <see cref="ActionTargetState.Unknown"/> — callers must never treat absence as absence-on-mobile.
+	/// </summary>
+	public IReadOnlyDictionary<string, ActionTargetResolution> TargetsByKey { get; init; }
+		= new Dictionary<string, ActionTargetResolution>(StringComparer.OrdinalIgnoreCase);
 }

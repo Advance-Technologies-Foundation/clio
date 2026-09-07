@@ -198,6 +198,50 @@ public sealed class WebToMobilePageConversionRulesCatalogTests {
 			because: "the map lists only requests supported on mobile; unsupported ones are simply not stored");
 	}
 
+	[TestCase("crt.OpenPageRequest", "schemaName", "mobile-page",
+		TestName = "LoadBundled_OpenPageRequest_DeclaresItsPageTarget")]
+	[TestCase("crt.CreateRecordRequest", "entityName", "entity-default-mobile-page",
+		TestName = "LoadBundled_CreateRecordRequest_DeclaresItsObjectTarget")]
+	[TestCase("crt.UpdateRecordRequest", "entityName", "entity-default-mobile-page",
+		TestName = "LoadBundled_UpdateRecordRequest_DeclaresItsObjectTarget")]
+	[Description("The bundled rules declare which params key carries each navigation target and what it names, so target verification is data-driven rather than hardcoded (ENG-94839).")]
+	public void LoadBundled_NavigatingRequests_DeclareTheirTarget(
+		string webRequest, string expectedParam, string expectedKind) {
+		// Arrange & Act
+		WebToMobilePageConversionRules rules = WebToMobilePageConversionRulesCatalog.LoadBundled();
+
+		// Assert
+		RequestMappingRule rule = rules.Requests.Single(r => r.Web == webRequest);
+		rule.TargetParam.Should().Be(expectedParam,
+			because: "the probe reads the target out of that params key and nowhere else");
+		rule.TargetKind.Should().Be(expectedKind,
+			because: "the kind decides HOW clio verifies the target exists on mobile");
+	}
+
+	[Test]
+	[Description("A request with no navigation target declares neither field, so it is never target-checked.")]
+	public void LoadBundled_NonNavigatingRequest_DeclaresNoTarget() {
+		// Arrange & Act
+		WebToMobilePageConversionRules rules = WebToMobilePageConversionRulesCatalog.LoadBundled();
+
+		// Assert
+		RequestMappingRule rule = rules.Requests.Single(r => r.Web == "crt.SaveRecordRequest");
+		rule.TargetParam.Should().BeNull(because: "saving a record navigates nowhere");
+		rule.TargetKind.Should().BeNull(because: "an undeclared target must never be verified");
+	}
+
+	[Test]
+	[Description("Target declaration is all-or-nothing: a rule that names a params key must also say what it names, or the check cannot run.")]
+	public void LoadBundled_TargetDeclarations_ArePaired() {
+		// Arrange & Act
+		WebToMobilePageConversionRules rules = WebToMobilePageConversionRulesCatalog.LoadBundled();
+
+		// Assert
+		rules.Requests.Should().OnlyContain(
+			r => string.IsNullOrWhiteSpace(r.TargetParam) == string.IsNullOrWhiteSpace(r.TargetKind),
+			because: "half a declaration silently disables the check it looks like it enabled");
+	}
+
 	[Test]
 	[Description("Bundled tabbed template carries container-name correspondence: the two type-aligned general-tab pairs GeneralInfoTab->GeneralInfoTab and GeneralInfoTabContainer->GeneralTabContainer (ENG-94951), CardContentWrapper->GeneralTabContainer for general non-tab content, SideAreaProfileContainer->AreaProfileContainer for the profile island (its children go INSIDE the profile Area card, never directly into the general tab's grid), and positional CardContentWrapper:top/:bottom -> Tabs:top/:bottom entries.")]
 	public void LoadBundled_TemplatesCarryContainerCorrespondence() {

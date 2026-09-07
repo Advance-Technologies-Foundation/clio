@@ -205,6 +205,15 @@ public sealed class MobilePageConversionGuideTool {
 			_commandResolver, args.EnvironmentName, args.Uri, args.Login, args.Password,
 			args.SchemaName, pageResponse.Page?.PackageUId);
 
+		// Read-only probe: do the page's action bindings point at targets that EXIST on mobile — a page the
+		// converter has a mobile twin for, an object with a default mobile edit page? Best-effort: an
+		// unreachable environment leaves every target unknown, reports nothing, and changes no conversion
+		// decision (ENG-94839).
+		MobileActionTargetProbeResult actionTargets = MobileActionTargetProbe.Probe(
+			_commandResolver, args.EnvironmentName, args.Uri, args.Login, args.Password,
+			pageResponse.Bundle?.ViewConfig, rules, pageResponse.Bundle?.ModelConfig,
+			pageResponse.Page?.PackageUId, pageResponse.Page?.DesignPackageUId);
+
 		MobilePageConversionGuide guide;
 		try {
 			guide = WebToMobileAnalysisService.Analyze(
@@ -227,7 +236,8 @@ public sealed class MobilePageConversionGuideTool {
 				mobileTemplateLayoutConfigs: mobileTemplateProbe.LayoutConfigsByName,
 				webTemplateBaselineNodes: webTemplateBaseline.Nodes,
 				webTemplateUnavailable: webTemplateBaseline.Unavailable,
-				webTemplateResources: webTemplateBaseline.Resources);
+				webTemplateResources: webTemplateBaseline.Resources,
+				actionTargetsProbe: actionTargets);
 		} catch (Exception ex) {
 			return Fail(args, sourceType, $"Failed to analyze source page '{args.SchemaName}': {ex.Message}");
 		}

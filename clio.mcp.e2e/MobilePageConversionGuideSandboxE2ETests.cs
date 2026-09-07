@@ -776,6 +776,115 @@ public sealed class MobilePageConversionGuideSandboxE2ETests : McpContractFixtur
 			because: $"the viewConfigDiff assembled from the guide for '{convertedSchemaName}' must survive the Creatio differ clones. Errors: {string.Join("; ", applied.Errors)}");
 	}
 
+	[Test]
+	[Description("ENG-94839 end to end: a converted page whose actions navigate somewhere must report, against the LIVE environment, whether each target exists on mobile. Asserts the probe actually ran (targetsProbed), that every finding uses the declared vocabulary, that it names a control the element map really carries, and — the warn-only contract — that a verified-missing target never removes that control. A conversion failure always fails the test; only a seed with no navigating action degrades to Ignore.")]
+	[AllureTag(ToolName)]
+	[AllureName("get-mobile-page-conversion-guide verifies each action's navigation target against the environment")]
+	[AllureDescription("Converts the seeded application's pages through the real clio MCP server until one carries an action whose request declares a navigation target, then asserts the guide reports the target verification as typed data and leaves the control in place.")]
+	public async Task MobilePageConversionGuideTool_Should_Verify_Action_Targets_Against_The_Environment() {
+		// Arrange
+		McpE2ESettings settings = TestConfiguration.Load();
+		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
+		await using ArrangeContext context = Arrange(TimeSpan.FromMinutes(5));
+		await RequireConverterFeatureOrIgnoreAsync(context);
+		string environmentName = await ResolveReachableEnvironmentAsync(settings);
+		// Every seeded page is a candidate: a navigating action can sit on any page shape, not only a tabbed one.
+		IReadOnlyList<string> candidates = await ResolveSeededTabbedPageCandidatesOrIgnoreAsync(
+			context.Session, context.CancellationTokenSource.Token, environmentName);
+		IReadOnlySet<string> declaredKinds = ResolveBundledTargetKinds();
+		declaredKinds.Should().NotBeEmpty(
+			because: "the shipped rules must declare at least one navigation target, or this surface is dead data");
+		IReadOnlySet<string> navigatingRequests = ResolveBundledNavigatingRequests();
+
+		// Act — convert candidates until one carries an action that actually NAVIGATES. Selecting on
+		// TargetsProbed alone would be vacuous: the probe reports ProbeOk for a page with no navigating action
+		// at all, so the first page with any request binding would satisfy it and every assertion below would
+		// iterate an empty list. A conversion FAILURE is a regression, not a seed gap, so it fails the test.
+		MobilePageConversionGuide? guide = null;
+		string convertedSchemaName = string.Empty;
+		List<string> failedCandidates = [];
+		foreach (string schemaName in candidates) {
+			MobilePageConversionGuide? candidate = await ConvertOrCollectFailureAsync(
+				context.Session, context.CancellationTokenSource.Token, environmentName, schemaName, failedCandidates);
+			if (candidate?.RequestConversions is { TargetsProbed: true } candidateConversions
+				&& CarriesNavigatingAction(candidateConversions, navigatingRequests)) {
+				guide = candidate;
+				convertedSchemaName = schemaName;
+				break;
+			}
+		}
+		if (guide is null) {
+			if (failedCandidates.Count > 0) {
+				Assert.Fail(
+					$"{failedCandidates.Count} of {candidates.Count} seeded page(s) of '{ApplicationCode}' on environment "
+					+ $"'{environmentName}' failed to convert; get-mobile-page-conversion-guide must succeed on every seeded "
+					+ $"page, so this is a runtime regression, not missing seed data: {string.Join("; ", failedCandidates)}");
+			}
+			Assert.Ignore(
+				$"All {candidates.Count} seeded page(s) of '{ApplicationCode}' on environment '{environmentName}' "
+				+ "converted successfully, but none carried an action whose request declares a navigation target. Add a "
+				+ "page with a button firing crt.OpenPageRequest or crt.CreateRecordRequest to the seed application to "
+				+ "exercise this surface.");
+		}
+
+		// Assert — the findings are usable typed data, consistent with the element map, and non-destructive.
+		RequestConversionInfo conversions = guide!.RequestConversions!;
+		CarriesNavigatingAction(conversions, navigatingRequests).Should().BeTrue(
+			because: $"'{convertedSchemaName}' was selected precisely because it fires a navigating request, so "
+				+ "the assertions below are about a page the probe genuinely had to resolve targets for");
+		var survivingWebNames = new HashSet<string>(
+			guide.ElementMap
+				.Where(e => e.Operation != "drop" && !string.IsNullOrWhiteSpace(e.WebName))
+				.Select(e => e.WebName!),
+			StringComparer.OrdinalIgnoreCase);
+
+		foreach (UnresolvedTargetRequest finding in conversions.UnresolvedTargetRequests) {
+			finding.State.Should().BeOneOf(["missing", "unknown"],
+				because: $"'{convertedSchemaName}' must report a state the caller knows how to act on, and the two "
+					+ "differ: only a verified absence justifies omitting a control");
+			declaredKinds.Should().Contain(finding.TargetKind,
+				because: $"the kind on '{finding.ElementName}' must come from the shipped rules, never from a literal "
+					+ "the analysis service invented");
+			finding.Target.Should().NotBeNullOrWhiteSpace(
+				because: "a finding the user cannot trace back to a page or object name is not actionable");
+			survivingWebNames.Should().Contain(finding.ElementName!,
+				because: $"'{finding.ElementName}' on '{convertedSchemaName}' is reported as carrying a dead action, so "
+					+ "it must still be ON the converted page — a finding about a control the guide already dropped "
+					+ "would contradict its own element map");
+		}
+	}
+
+	/// <summary>
+	/// The <c>targetKind</c> values the SHIPPED rules declare, read from the rules file rather than restated
+	/// here: the vocabulary is data, and a rules update that adds a kind must not fail this test.
+	/// </summary>
+	private static IReadOnlySet<string> ResolveBundledTargetKinds() =>
+		WebToMobilePageConversionRulesCatalog.LoadBundled().Requests
+			.Select(r => r.TargetKind)
+			.Where(kind => !string.IsNullOrWhiteSpace(kind))
+			.ToHashSet(StringComparer.OrdinalIgnoreCase)!;
+
+	/// <summary>
+	/// The web requests the SHIPPED rules say carry a navigation target — the ones whose presence on a page
+	/// means the probe had real work to do. Read from the rules for the same reason as the kinds.
+	/// </summary>
+	private static IReadOnlySet<string> ResolveBundledNavigatingRequests() =>
+		WebToMobilePageConversionRulesCatalog.LoadBundled().Requests
+			.Where(r => !string.IsNullOrWhiteSpace(r.TargetParam) && !string.IsNullOrWhiteSpace(r.Web))
+			.Select(r => r.Web)
+			.ToHashSet(StringComparer.OrdinalIgnoreCase)!;
+
+	/// <summary>
+	/// Whether the converted page actually fired a navigating request, across every outcome the conversion
+	/// records. Without this the fixture would select a page whose only action is e.g. a save button, and its
+	/// per-finding assertions would iterate nothing.
+	/// </summary>
+	private static bool CarriesNavigatingAction(
+		RequestConversionInfo conversions, IReadOnlySet<string> navigatingRequests) =>
+		conversions.ConvertedRequests.Any(r => navigatingRequests.Contains(r.WebRequest ?? string.Empty))
+		|| conversions.FlaggedRequests.Any(r => navigatingRequests.Contains(r.Request ?? string.Empty))
+		|| conversions.DroppedRequests.Any(r => navigatingRequests.Contains(r.WebRequest ?? string.Empty));
+
 	/// <summary>
 	/// Converts one seeded page through the real MCP server. A transport-level error or an unsuccessful
 	/// response is collected into <paramref name="failedCandidates"/> (the caller fails the test on any —
