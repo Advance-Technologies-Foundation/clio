@@ -59,17 +59,37 @@ public sealed class ProcessGraphValidator : IProcessGraphValidator {
 	// The MCP schema marks no field required, so an agent reaches this by omitting one. Naming the nameless
 	// keeps every other rule running over the rest of the graph, which is the point: the caller wants the
 	// findings for the nodes they did name.
+	// The parameters are annotated NULLABLE deliberately, and it is the fix for a real defect rather than a
+	// concession to an analyser: `{"elements":[null]}` deserializes to a list CONTAINING null, so the old
+	// non-null signature was a lie about what this method accepts, and a static analyser reading it called
+	// the guards unnecessary. Removing them on that advice was measured: NullReferenceException on both the
+	// element and the flow path, i.e. a validator that throws instead of reporting, out of the one method
+	// whose contract is that it never does. Pinned by
+	// Validate_ShouldReportAndKeepGoing_WhenAnElementEntryIsNull and ...WhenAFlowEntryIsNull, which did not
+	// exist before - the existing null-NAME test covers a different input, which is why the deletion looked
+	// safe.
 	private static (IReadOnlyList<ProcessGraphNode>, IReadOnlyList<ProcessGraphEdge>) NameTheNameless(
-			IReadOnlyList<ProcessGraphNode> nodes, IReadOnlyList<ProcessGraphEdge> edges,
+			IReadOnlyList<ProcessGraphNode?> nodes, IReadOnlyList<ProcessGraphEdge?> edges,
 			List<ProcessGraphFinding> findings) {
-		const string missing = "(missing)";
-		if (nodes.All(node => !string.IsNullOrWhiteSpace(node?.Name))
-			&& edges.All(edge => !string.IsNullOrWhiteSpace(edge?.Source) && !string.IsNullOrWhiteSpace(edge?.Target))) {
+		bool everyNodeNamed = nodes.All(node => node is not null && !string.IsNullOrWhiteSpace(node.Name));
+		bool everyEdgeConnected = edges.All(edge =>
+			edge is not null && !string.IsNullOrWhiteSpace(edge.Source) && !string.IsNullOrWhiteSpace(edge.Target));
+		if (everyNodeNamed && everyEdgeConnected) {
+			// The ORIGINAL lists, not copies: this is the shape almost every call has, and it is the reason
+			// the null handling below costs nothing on it.
 			return (nodes, edges);
 		}
+		return (NameUnnamedElements(nodes, findings), NameBlankEndpoints(edges));
+	}
+
+	// A null ENTRY is dropped rather than reported: there is no element to report about, and inventing a
+	// finding for one would describe the caller's serializer rather than their graph. A null NAME on a real
+	// element IS reported, because that element exists and cannot be referenced.
+	private static List<ProcessGraphNode> NameUnnamedElements(IReadOnlyList<ProcessGraphNode?> nodes,
+			List<ProcessGraphFinding> findings) {
 		List<ProcessGraphNode> named = [];
 		int unnamed = 0;
-		foreach (ProcessGraphNode node in nodes) {
+		foreach (ProcessGraphNode? node in nodes) {
 			if (node is null) {
 				continue;
 			}
@@ -83,16 +103,28 @@ public sealed class ProcessGraphValidator : IProcessGraphValidator {
 				+ "endpoints by name, so an unnamed element cannot be connected to anything.", placeholder));
 			named.Add(node with { Name = placeholder });
 		}
-		// A blank endpoint is left as a name no element can have, so the missing-node rule reports it in the
-		// ordinary way rather than this method inventing a second vocabulary for the same mistake.
-		List<ProcessGraphEdge> connected = edges.Where(edge => edge is not null).Select(edge =>
-			string.IsNullOrWhiteSpace(edge.Source) || string.IsNullOrWhiteSpace(edge.Target)
+		return named;
+	}
+
+	// A blank endpoint is left as a name no element can have, so the missing-node rule reports it in the
+	// ordinary way rather than this method inventing a second vocabulary for the same mistake.
+	private static List<ProcessGraphEdge> NameBlankEndpoints(IReadOnlyList<ProcessGraphEdge?> edges) {
+		const string missing = "(missing)";
+		List<ProcessGraphEdge> connected = [];
+		foreach (ProcessGraphEdge? edge in edges) {
+			if (edge is null) {
+				continue;
+			}
+			bool blankSource = string.IsNullOrWhiteSpace(edge.Source);
+			bool blankTarget = string.IsNullOrWhiteSpace(edge.Target);
+			connected.Add(blankSource || blankTarget
 				? edge with {
-					Source = string.IsNullOrWhiteSpace(edge.Source) ? missing : edge.Source,
-					Target = string.IsNullOrWhiteSpace(edge.Target) ? missing : edge.Target
+					Source = blankSource ? missing : edge.Source,
+					Target = blankTarget ? missing : edge.Target
 				}
-				: edge).ToList();
-		return (named, connected);
+				: edge);
+		}
+		return connected;
 	}
 
 	private static EventType TypeOf(ProcessGraphNode node) => ManagerMap.ResolveDataId(node.Type);
@@ -530,9 +562,7 @@ public sealed class ProcessGraphValidator : IProcessGraphValidator {
 	private static HashSet<string> TraverseForward(IEnumerable<string> seeds, IReadOnlyDictionary<string, List<ProcessGraphEdge>> outgoing) {
 		HashSet<string> visited = [];
 		Queue<string> queue = new(seeds);
-		foreach (string seed in queue) {
-			visited.Add(seed);
-		}
+		visited.UnionWith(queue);
 		while (queue.Count > 0) {
 			string current = queue.Dequeue();
 			if (!outgoing.TryGetValue(current, out List<ProcessGraphEdge> outs)) {
@@ -549,9 +579,7 @@ public sealed class ProcessGraphValidator : IProcessGraphValidator {
 	private static HashSet<string> TraverseBackward(IEnumerable<string> seeds, IReadOnlyDictionary<string, List<ProcessGraphEdge>> incoming) {
 		HashSet<string> visited = [];
 		Queue<string> queue = new(seeds);
-		foreach (string seed in queue) {
-			visited.Add(seed);
-		}
+		visited.UnionWith(queue);
 		while (queue.Count > 0) {
 			string current = queue.Dequeue();
 			if (!incoming.TryGetValue(current, out List<ProcessGraphEdge> ins)) {

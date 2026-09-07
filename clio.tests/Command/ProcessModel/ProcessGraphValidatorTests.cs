@@ -531,4 +531,48 @@ public sealed class ProcessGraphValidatorTests {
 			because: "an element with no conditional outgoing flow gets no synthesized gateway - every branch "
 				+ "is taken, so the join receives both tokens and nothing hangs");
 	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("A null ENTRY in elements[] yields findings instead of an exception. Distinct from a node "
+		+ "whose NAME is null, which the case above covers: `{\"elements\":[null]}` deserializes to a list "
+		+ "CONTAINING null, so the guard is about the entry, not the field. No test covered this, which is "
+		+ "why deleting that guard stayed green and a static analyser could call it unnecessary.")]
+	public void Validate_ShouldReportAndKeepGoing_WhenAnElementEntryIsNull() {
+		// Arrange
+		List<ProcessGraphNode> nodes = [Node("s", "startEvent"), null, Node("e", "endEvent")];
+		List<ProcessGraphEdge> edges = [Seq("s", "e")];
+
+		// Act
+		ProcessGraphValidationResult result = Validate(nodes, edges);
+
+		// Assert
+		result.Should().NotBeNull(
+			because: "IProcessGraphValidator documents never throwing on malformed input, and a null entry is "
+				+ "malformed input the MCP schema does not forbid");
+		result.Findings.Should().NotContain(f => f.RuleId == "UNNAMED",
+			because: "a null ENTRY is not an unnamed element - there is no element - so it is dropped rather "
+				+ "than reported as one, and the named nodes are still analysed");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("A null ENTRY in flows[] yields findings instead of an exception, for the same reason and "
+		+ "through a different guard - the edge projection's own null filter.")]
+	public void Validate_ShouldReportAndKeepGoing_WhenAFlowEntryIsNull() {
+		// Arrange
+		List<ProcessGraphNode> nodes = [Node("s", "startEvent"), Node("e", "endEvent")];
+		List<ProcessGraphEdge> edges = [Seq("s", "e"), null];
+
+		// Act
+		ProcessGraphValidationResult result = Validate(nodes, edges);
+
+		// Assert
+		result.Should().NotBeNull(
+			because: "a null flow entry must not take the whole validation down either");
+		result.HasErrors.Should().BeFalse(
+			because: "the graph that remains is the canonical valid one, so dropping the null entry leaves "
+				+ "nothing to report - if this ever fails, the null was turned into a finding rather than "
+				+ "dropped, which is a different decision and needs its own test");
+	}
 }
