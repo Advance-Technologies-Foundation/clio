@@ -421,6 +421,7 @@ public class ModifyBusinessProcessToolTests {
 					+ "possible configuration as a no-op");
 			surface.Should().NotContain("match no records",
 				because: "the same inversion in the future tense - both phrasings reached shipped text before");
+		}
 	}
 
 
