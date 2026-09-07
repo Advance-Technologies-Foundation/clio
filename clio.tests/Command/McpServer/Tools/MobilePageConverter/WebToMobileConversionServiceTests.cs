@@ -194,6 +194,25 @@ public sealed class WebToMobileConversionServiceTests {
 	private static string[] Codes(DroppedElement dropped) => Codes(dropped?.Reason);
 
 	/// <summary>
+	/// A merge twin with NOTHING to carry: <c>values</c> is an EMPTY object, never absent.
+	/// </summary>
+	/// <remarks>
+	/// Asserted through one helper because the shape is a contract, not a per-test detail.
+	/// <c>JsonDiffApplier</c> lists <c>values</c> as a REQUIRED parameter of <c>merge</c>, and
+	/// <c>GetSplittedOperations</c> checks every operation BEFORE applying any — so one valueless merge
+	/// throws <c>RequiredParameterNotFound</c> and fails the WHOLE diff, on a response whose contract is
+	/// "paste it verbatim". Nine assertions here used to pin the absent form as expected output, which is
+	/// how a gate-3 blocker stayed green (ENG-95827). Empty still says what absent said — this element is a
+	/// twin and nothing about it changed — while actually applying, as a no-op.
+	/// </remarks>
+	private static void ShouldCarryNoDelta(ViewConfigDiffOperation merge, string because) {
+		merge.Values.Should().NotBeNull(
+			because: "the applier REQUIRES values on a merge and validates every operation before applying any, "
+				+ "so an absent one fails the entire diff rather than just this element");
+		merge.Values!.AsObject().Should().BeEmpty(because: because);
+	}
+
+	/// <summary>
 	/// One reason param as a string — null when absent. Used instead of substring-matching a sentence, so a
 	/// test states WHICH value it pins and where it lives.
 	/// </summary>
@@ -3045,7 +3064,7 @@ public sealed class WebToMobileConversionServiceTests {
 		twin.Operation.Should().Be("merge");
 		twin.Name.Should().Be("List");
 		// No component-specific values are prebuilt by clio; the how-to is delegated to componentSuggestions.
-		twin.Values.Should().BeNull();
+		ShouldCarryNoDelta(twin, "clio prebuilds no component-specific values here — the how-to is delegated to componentSuggestions");
 		guide.NameMap.Should().Contain(new KeyValuePair<string, string>("DataTable", "List"),
 			because: "the rename is how a caller ties the operation back to its source element, now that the operation carries no source name");
 		// No duplicate insert for the grid; the conversion detail lives in the general components rule.
@@ -3117,8 +3136,7 @@ public sealed class WebToMobileConversionServiceTests {
 		ViewConfigDiffOperation twin = guide.ViewConfigDiff.Single(e => SourceNameOf(guide, e) == "FolderTree");
 		twin.Operation.Should().Be("merge",
 			because: "the element still exists on mobile, so it stays a valid page-business-rule target");
-		twin.Values.Should().BeNull(
-			because: "the page carries none of the whitelisted properties, so there is no payload to prebuild");
+		ShouldCarryNoDelta(twin, "the page carries none of the whitelisted properties, so there is no payload to prebuild");
 		guide.ViewConfigDiff.Should().NotContain(e => SourceNameOf(guide, e) == "FolderTree" && e.Operation == "insert",
 			because: "an empty carry-whitelist still keeps the element as a merge target — it must never fall through to an insert that duplicates the template's own element");
 	}
@@ -3149,7 +3167,7 @@ public sealed class WebToMobileConversionServiceTests {
 		ViewConfigDiffOperation twin = guide.ViewConfigDiff.Single(e => SourceNameOf(guide, e) == "AttachmentList");
 		twin.Operation.Should().Be("merge", because: "the mobile template provides AttachmentFileList — configured by merge-by-name, not inserted");
 		twin.Name.Should().Be("AttachmentFileList");
-		twin.Values.Should().BeNull(because: "without the web-template baseline the twin cannot tell the page's change from the template default, so it carries nothing rather than the whole web node (no primaryColumnName leakage)");
+		ShouldCarryNoDelta(twin, "without the web-template baseline the twin cannot tell the page's change from the template default, so it carries nothing rather than the whole web node (no primaryColumnName leakage)");
 		guide.ViewConfigDiff.Should().NotContain(e => SourceNameOf(guide, e) == "AttachmentList" && e.Operation == "insert", because: "the twin merges onto the template element rather than inserting a duplicate list");
 	}
 
@@ -3250,7 +3268,7 @@ public sealed class WebToMobileConversionServiceTests {
 		// An advisory merge entry (null values), NOT nothing and NOT an insert.
 		ViewConfigDiffOperation twin = guide.ViewConfigDiff.Single(e => SourceNameOf(guide, e) == "Feed");
 		twin.Operation.Should().Be("merge", because: "the element is kept as a merge-by-name twin (a valid business-rule target), never inserted as a duplicate");
-		twin.Values.Should().BeNull(because: "the page changed nothing over the baseline, so there is nothing to merge — the mobile template already provides Feed");
+		ShouldCarryNoDelta(twin, "the page changed nothing over the baseline, so there is nothing to merge — the mobile template already provides Feed");
 		// And it is KEPT (surfaced in sourceStructure), not pruned — the test cannot pass with the mechanism deleted.
 		guide.SourceStructure.Should().Contain(s => s.Name == "Feed",
 			because: "an unchanged auto-twin is kept (surfaced in sourceStructure), not pruned away");
@@ -3591,8 +3609,7 @@ public sealed class WebToMobileConversionServiceTests {
 
 		// Assert
 		ViewConfigDiffOperation twin = guide.ViewConfigDiff.Single(e => SourceNameOf(guide, e) == "Feed");
-		twin.Values.Should().BeNull(
-			because: "the binding is unchanged from the baseline and nothing else changed — the inherited interaction stays on the template element, so the twin is advisory");
+		ShouldCarryNoDelta(twin, "the binding is unchanged from the baseline and nothing else changed — the inherited interaction stays on the template element, so the twin is advisory");
 	}
 
 	[Test]
@@ -3615,8 +3632,7 @@ public sealed class WebToMobileConversionServiceTests {
 			componentNameMap: componentNameMap);
 
 		ViewConfigDiffOperation twin = Element(guide, "AttachmentList");
-		twin.Values.Should().BeNull(
-			because: "with no baseline the page's own changes cannot be told from the template's values, so no delta can be prebuilt");
+		ShouldCarryNoDelta(twin, "with no baseline the page's own changes cannot be told from the template's values, so no delta can be prebuilt");
 		twin.Name.Should().Be("AttachmentFileList",
 			because: "the instruction has to name the mobile element the caller now configures by hand");
 	}
@@ -3667,10 +3683,15 @@ public sealed class WebToMobileConversionServiceTests {
 
 		// Assert
 		ViewConfigDiffOperation structural = Element(guide, "Grid");
-		structural.Values.Should().BeNull(
-			because: "a structural twin never gets a prebuilt delta — the conversion is type-driven");
-		structural.Values.Should().BeNull(
-			because: "a structural twin gets no prebuilt delta at all — the conversion is type-driven, and the absence of values is what says so");
+		ShouldCarryNoDelta(structural, "a structural twin never gets a prebuilt delta — the conversion is type-driven");
+		(guide.DroppedElements ?? []).SelectMany(Codes).Should().OnlyContain(
+			code => code == ReasonCodes.DropContainerNoMobileEquivalent,
+			because: "the only drop this fixture produces is a wrapper with no mobile counterpart, whose children "
+				+ "were flattened into the parent above it — that is ordinary conversion. An unreadable WEB "
+				+ "template degraded nothing here, and this is the assertion that says so now that the advisory "
+				+ "channel it used to be reported through no longer exists");
+		guide.ViewConfigDiff.Should().NotBeEmpty(
+			because: "the page's own elements must still convert; an empty diff would make the assertion above vacuous");
 	}
 
 	[Test]
@@ -4938,7 +4959,7 @@ public sealed class WebToMobileConversionServiceTests {
 
 		ViewConfigDiffOperation tabs = Element(guide, "Tabs");
 		tabs.Operation.Should().Be("merge", because: "the fixture maps Tabs onto the template's own Tabs");
-		tabs.Values.Should().BeNull(because: "a merge twin gets nothing stamped onto it");
+		ShouldCarryNoDelta(tabs, "a merge twin gets nothing stamped onto it");
 		guide.SpacingNormalization!.Normalized.Select(n => n.Name).Should().NotContain("Tabs");
 	}
 
@@ -8085,8 +8106,36 @@ public sealed class WebToMobileConversionServiceTests {
 		// Assert
 		ViewConfigDiffOperation tabs = Element(guide, "Tabs");
 		tabs.Operation.Should().Be("merge", because: "Tabs is the mobile template's own twin, matched by name via the container map");
-		tabs.Values.Should().BeNull(
-			because: "a merge twin carries no converter-owned mobileValues here — the pass only ever writes into an INSERT entry's own JsonObject, so SalesTab using Tabs as parentName must not fabricate one");
+		ShouldCarryNoDelta(tabs, "a merge twin carries no converter-owned values here — the pass only ever writes into an INSERT entry's own JsonObject, so SalesTab using Tabs as parentName must not fabricate one");
+	}
+
+	[Test]
+	[Description("THE GATE THIS CHANGE NEEDED: the guide's own viewConfigDiff, serialized VERBATIM and run through the Creatio differ clone, is accepted. The contract now tells the caller to paste the array as-is, so the only honest oracle applies it as-is. The sandbox E2E's assembler filtered merges OUT and synthesized absent values, so it was structurally blind to a merge with no `values` — which the applier lists as REQUIRED and checks for on every operation before applying any, making one such merge fatal for the whole array. Three of seven merges on the OOTB Leads_FormPage have no delta.")]
+	public void Analyze_ViewConfigDiff_ShouldApplyVerbatimThroughTheCreatioDiffer() {
+		// Arrange — Tabs is a no-delta merge twin (the shape the applier rejects when `values` is absent),
+		// with inserts beneath it so the array is not trivially small.
+		PageBundleInfo bundle = Bundle("""
+			[ { "name": "Tabs", "type": "crt.TabPanel", "items": [
+				{ "name": "SalesTab", "type": "crt.TabContainer", "items": [
+					{ "name": "Budget", "type": "crt.Input" } ] } ] } ]
+			""");
+
+		// Act
+		MobilePageConversionGuide guide = AnalyzeWithEmptyRemoval(bundle);
+		string body = new JsonObject {
+			["viewConfigDiff"] = JsonSerializer.SerializeToNode(guide.ViewConfigDiff)
+		}.ToJsonString();
+		SchemaValidationResult applied = MobileDiffApplyValidator.Validate(body);
+
+		// Assert
+		guide.ViewConfigDiff.Should().Contain(operation => operation.Operation == "merge",
+			because: "the arrangement must really contain the operation shape this test exists for, or it passes vacuously");
+		guide.ViewConfigDiff.Should().Contain(operation => operation.Operation == "insert",
+			because: "a merge-only array would not exercise parent resolution, which is the other half of what the differ checks");
+		applied.IsValid.Should().BeTrue(
+			because: "the response tells the caller to PASTE viewConfigDiff verbatim, so every operation in it must "
+				+ "survive the differ the platform actually runs — no filtering and no field synthesis by the "
+				+ $"caller. Errors: {string.Join("; ", applied.Errors)}");
 	}
 
 	[Test]

@@ -741,9 +741,12 @@ public sealed class MobilePageConversionGuideSandboxE2ETests : McpContractFixtur
 				((JsonObject)parent.Values!).ContainsKey(slot).Should().BeTrue(
 					because: $"'{parent.Name}' on '{schemaName}' is targeted as a parent through '{slot}', so the converter must have declared that slot — the Creatio differ resolves the parent collection generically as itemInfo.Item[propertyName] and refuses the child insert with 'is not a container for other items' for ANY slot it cannot find there");
 			}
-			SchemaValidationResult applied = MobileDiffApplyValidator.Validate(AssembleViewConfigDiffBody(guide));
+			SchemaValidationResult applied = MobileDiffApplyValidator.Validate(ViewConfigDiffBody(guide));
 			applied.IsValid.Should().BeTrue(
-				because: $"the viewConfigDiff assembled from the guide for '{schemaName}' must survive the Creatio differ clones; before the converter declared container child slots this failed with 'is not a container for other items'. Errors: {string.Join("; ", applied.Errors)}");
+				because: $"the guide's viewConfigDiff for '{schemaName}' must survive the Creatio differ clones AS "
+					+ "SHIPPED — the response tells the caller to paste it, so nothing here may filter or repair it; "
+					+ "before the converter declared container child slots this failed with 'is not a container for "
+					+ $"other items'. Errors: {string.Join("; ", applied.Errors)}");
 		}
 
 		// Assert (aggregate) — never pass vacuously.
@@ -892,9 +895,10 @@ public sealed class MobilePageConversionGuideSandboxE2ETests : McpContractFixtur
 			because: $"a container insert ('{matchedParent.Name}' on '{convertedSchemaName}') always carries a mobileValues object built by the converter");
 		((JsonObject)matchedParent.Values!).ContainsKey(matchedSlot).Should().BeTrue(
 			because: $"'{matchedParent.Name}' ({TypeOf(matchedParent)}) on '{convertedSchemaName}' is outside the removable-type list and is targeted through '{matchedSlot}' — exactly the class of parent a type-list-keyed seeding would leave slotless for the differ to refuse");
-		SchemaValidationResult applied = MobileDiffApplyValidator.Validate(AssembleViewConfigDiffBody(matchedGuide!));
+		SchemaValidationResult applied = MobileDiffApplyValidator.Validate(ViewConfigDiffBody(matchedGuide!));
 		applied.IsValid.Should().BeTrue(
-			because: $"the viewConfigDiff assembled from the guide for '{convertedSchemaName}' must survive the Creatio differ clones. Errors: {string.Join("; ", applied.Errors)}");
+			because: $"the guide's viewConfigDiff for '{convertedSchemaName}' must survive the Creatio differ clones "
+				+ $"as shipped, unfiltered and unrepaired. Errors: {string.Join("; ", applied.Errors)}");
 	}
 
 	/// <summary>
@@ -968,33 +972,23 @@ public sealed class MobilePageConversionGuideSandboxE2ETests : McpContractFixtur
 	}
 
 	/// <summary>
-	/// Assembles the mobile body's <c>viewConfigDiff</c> from the element map's INSERT entries, in map
-	/// order — the same mechanical assembly the guide's nextSteps instruct the caller to perform
-	/// (parent-before-child order is the converter's own guarantee, asserted by the tabAreaLayers test
-	/// above). Merge entries are left out on purpose: a merge twin layers onto a template-provided element
-	/// the diff never declares, which the validator's seeded base already covers.
+	/// The guide's own <c>viewConfigDiff</c>, serialized VERBATIM as the mobile body's section.
 	/// </summary>
-	private static string AssembleViewConfigDiffBody(MobilePageConversionGuide guide) {
-		var viewConfigDiff = new JsonArray();
-		foreach (ViewConfigDiffOperation entry in guide.ViewConfigDiff) {
-			if (entry.Operation != "insert" || entry.Name is not { Length: > 0 }) {
-				continue;
-			}
-			var operation = new JsonObject {
-				["operation"] = "insert",
-				["name"] = entry.Name,
-				// A genuine converter insert always carries a JsonObject; the fallback only keeps a
-				// hypothetical value-less entry from crashing the assembly instead of the differ gate.
-				["values"] = entry.Values?.DeepClone() ?? new JsonObject { ["type"] = TypeOf(entry) }
-			};
-			if (entry.ParentName is { Length: > 0 }) {
-				operation["parentName"] = entry.ParentName;
-				operation["propertyName"] = entry.PropertyName is { Length: > 0 } ? entry.PropertyName : "items";
-			}
-			viewConfigDiff.Add(operation);
-		}
-		return new JsonObject { ["viewConfigDiff"] = viewConfigDiff }.ToJsonString();
-	}
+	/// <remarks>
+	/// This used to assemble the body from the INSERT entries alone, synthesizing a <c>values</c> object for
+	/// any entry that lacked one and re-defaulting <c>propertyName</c>. That made the differ gate
+	/// structurally blind to the one shape it exists to catch: <c>JsonDiffApplier</c> lists <c>values</c> as
+	/// a REQUIRED parameter of <c>merge</c> and validates EVERY operation before applying any, so a single
+	/// valueless merge fails the whole array — and three of the seven merges on the OOTB
+	/// <c>Leads_FormPage</c> carry no delta. Filtering merges out and inventing missing values is exactly
+	/// the transcription the response was reshaped to remove, so an oracle that does it proves the caller's
+	/// work rather than the converter's. The contract is now "paste this array"; this pastes this array
+	/// (ENG-95827, gate 3 blocker).
+	/// </remarks>
+	private static string ViewConfigDiffBody(MobilePageConversionGuide guide) =>
+		new JsonObject {
+			["viewConfigDiff"] = JsonSerializer.SerializeToNode(guide.ViewConfigDiff)
+		}.ToJsonString();
 
 	/// <summary>
 	/// The bundled rules' <c>emptyContainerRemoval.removableTypes</c> list — read from the converter's own

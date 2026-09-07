@@ -4642,6 +4642,10 @@ public static class WebToMobileAnalysisService {
 	private static bool IsRelocateChildren(ElementMapEntry entry) =>
 		string.Equals(entry?.Operation, "relocate-children", StringComparison.Ordinal);
 
+	/// <summary>True when this entry layers onto an element the target page already has.</summary>
+	private static bool IsMerge(ElementMapEntry entry) =>
+		string.Equals(entry?.Operation, "merge", StringComparison.Ordinal);
+
 	/// <summary>
 	/// Projects the working element map into the mobile page's <c>viewConfigDiff</c> — applier operations
 	/// and nothing else.
@@ -4651,6 +4655,19 @@ public static class WebToMobileAnalysisService {
 	/// vocabulary is insert / merge / set / move / remove), and it never needed to be applied anyway —
 	/// every child of such a container already carries the reparented <c>parentName</c> in its own
 	/// operation. It is reported as a dropped element instead, which is what it is.
+	/// <para>
+	/// A <c>merge</c> with nothing to carry is emitted with an EMPTY <c>values</c> object rather than with
+	/// none. <c>JsonDiffApplier</c> lists <c>values</c> as a REQUIRED parameter of <c>merge</c>
+	/// (<c>_operationRequiredParameters</c>) and <c>IsFalsy(null)</c> is true, so an absent one throws
+	/// <c>RequiredParameterNotFound</c> — and <c>GetSplittedOperations</c> checks every operation BEFORE
+	/// applying any, so a single valueless merge fails the WHOLE diff, not just itself. Three of the seven
+	/// merges on the OOTB <c>Leads_FormPage</c> have no delta, so this was not a corner case: the response
+	/// told the caller to paste it verbatim and the paste could not apply (ENG-95827, gate 3 blocker).
+	/// <c>{}</c> is not falsy, and merging an empty object is a no-op, so the operation now applies and
+	/// means what it always meant — "this element is a twin; nothing about it changed". The INTERNAL
+	/// <see cref="ElementMapEntry.Values"/> stays null, because the passes that read it distinguish
+	/// "no delta" from "an empty delta"; only the wire projection needs the applier's shape.
+	/// </para>
 	/// </remarks>
 	private static IReadOnlyList<ViewConfigDiffOperation> ProjectViewConfigDiff(List<ElementMapEntry> elementMap) =>
 		[.. elementMap
@@ -4664,7 +4681,7 @@ public static class WebToMobileAnalysisService {
 				// know about the applier in order to trust what they are pasting.
 				PropertyName = entry.PropertyName,
 				Index = entry.Index,
-				Values = entry.Values
+				Values = entry.Values ?? (IsMerge(entry) ? new JsonObject() : null)
 			})];
 
 	/// <summary>
