@@ -183,8 +183,7 @@ public static class WebToMobileAnalysisService {
 			tree, map, componentMap, mobileTypes, mobileByType, webByType, rules, attrToColumn, resources,
 			requestMap, convertedRequests, droppedRequests, flaggedRequests, sourceLayouts, gridContainerColumns,
 			positionalParentByAnchor, positionalAnchorByWebAnchor,
-			mobileTypesByName, webBaselineNodes, webTemplateResources,
-			out IReadOnlyDictionary<string, (string Property, JsonNode Value)> pendingBindings);
+			mobileTypesByName, webBaselineNodes, webTemplateResources);
 
 		// Removes components an excludedComponents rule bans from a host (type-agnostic — which
 		// type/host/property is banned comes entirely from the rules), in the two shapes a banned component
@@ -355,7 +354,6 @@ public static class WebToMobileAnalysisService {
 			ComponentSuggestions = suggestions,
 			ViewConfigDiff = ProjectViewConfigDiff(elementMap),
 			NameMap = ProjectNameMap(elementMap),
-			PendingBindings = ProjectPendingBindings(pendingBindings, elementMap),
 			UnresolvedParents = ProjectUnresolvedParents(elementMap),
 			DroppedElements = ProjectDroppedElements(elementMap),
 			MobileContracts = contracts,
@@ -1924,15 +1922,6 @@ public static class WebToMobileAnalysisService {
 		IReadOnlySet<string> ScopeContainerNames,
 		IReadOnlySet<string> ContentContainerTypes) {
 
-		/// <summary>
-		/// The value binding each inserted element still needs, keyed by MOBILE name, collected while its
-		/// values were built. The source property (<c>control</c>/<c>value</c>) is held out of the values
-		/// because the mobile binding property is a type-specific rename of it — see
-		/// <see cref="PendingBinding"/> — so the value is captured here instead of discarded, and reported
-		/// on the response so the caller does not have to go back to the source page to find it.
-		/// </summary>
-		public Dictionary<string, (string Property, JsonNode Value)> PendingBindings { get; }
-			= new(StringComparer.Ordinal);
 	}
 
 	/// <summary>
@@ -1954,10 +1943,6 @@ public static class WebToMobileAnalysisService {
 	/// Produces one <see cref="ElementMapEntry"/> per named element of the resolved tree, deciding
 	/// merge / insert / drop / relocate-children. Pure: reads only the supplied bundle-derived data.
 	/// </summary>
-	/// <param name="pendingBindings">
-	/// The value binding each inserted element still needs, keyed by mobile name — captured while the
-	/// values were built rather than discarded. See <see cref="PendingBinding"/>.
-	/// </param>
 	private static List<ElementMapEntry> BuildElementMap(
 		JArray tree,
 		IReadOnlyDictionary<string, string> map,
@@ -1978,8 +1963,7 @@ public static class WebToMobileAnalysisService {
 		IReadOnlyDictionary<string, string> positionalAnchorByWebAnchor,
 		IReadOnlyDictionary<string, string> mobileTypesByName,
 		IReadOnlyDictionary<string, JObject> webBaselineNodes,
-		JObject webBaselineResources,
-		out IReadOnlyDictionary<string, (string Property, JsonNode Value)> pendingBindings) {
+		JObject webBaselineResources) {
 		var ctx = new ElementMapContext(map,
 			componentMap ?? new Dictionary<string, ComponentMappingRule>(StringComparer.OrdinalIgnoreCase),
 			mobileTypes, mobileByType ?? new Dictionary<string, ComponentRegistryEntry>(),
@@ -1994,7 +1978,6 @@ public static class WebToMobileAnalysisService {
 			CollectScopeContainerNames(rules),
 			ContentContainerTypesOf(rules));
 		WalkElements(ctx, tree, mobileParentName: null);
-		pendingBindings = ctx.PendingBindings;
 		return ctx.Out;
 	}
 
@@ -3006,10 +2989,8 @@ public static class WebToMobileAnalysisService {
 	}
 
 	/// <summary>
-	/// Source-node properties never copied into the prebuilt mobile <c>values</c>: the element identity/type
-	/// (<c>name</c>/<c>type</c>) and the value binding (<c>control</c>/<c>value</c>) — the binding is a
-	/// type-specific rename (e.g. a mobile ComboBox must bind via <c>value</c>; <c>control</c> needs
-	/// <c>items</c> or it crashes) and is left to the caller to add. <c>dataSourceName</c> is NOT excluded:
+	/// Source-node properties never copied into the prebuilt mobile <c>values</c>: the element
+	/// identity/type (<c>name</c>/<c>type</c>), and nothing else. <c>dataSourceName</c> is NOT excluded:
 	/// a surviving element only ever references the primary data source (foreign-DS elements are dropped
 	/// wholesale), so its <c>dataSourceName</c> is the valid primary DS and some components require it (e.g.
 	/// <c>crt.Feed</c> needs <c>dataSourceName</c> + <c>entitySchemaName</c>). NOTE: <c>items</c> is NOT here
@@ -3017,27 +2998,28 @@ public static class WebToMobileAnalysisService {
 	/// walk); as a STRING it is a real collection binding (e.g. <c>crt.CommunicationOptions</c>/<c>crt.List</c>
 	/// <c>items: "$Attr"</c>) and is carried like any other property. Everything else is carried verbatim.
 	/// </summary>
+	/// <remarks>
+	/// The value binding (<c>control</c>) used to be held out of here, on the premise that the mobile binding
+	/// property is a TYPE-SPECIFIC RENAME of the web one — "a mobile ComboBox must bind via <c>value</c>;
+	/// <c>control</c> needs <c>items</c> or it crashes". That premise was backwards. The mobile runtime
+	/// deserializes the binding from the JSON key <c>control</c> into a Dart field it happens to NAME
+	/// <c>value</c> (<c>@JsonKey(name: 'control') final String? value;</c>), and the misreading came from that
+	/// field name. Every channel agrees on the wire name: the mobile registry declares <c>control</c> and NO
+	/// <c>value</c> input for crt.ComboBox / crt.Input / crt.NumberInput / crt.DateTimePicker / crt.WebInput /
+	/// crt.Toggle, and the web registry marks <c>control</c> as the <c>FormControl</c> input on 26 of its 28
+	/// binding-bearing components (the exceptions being crt.AllowedResults' <c>activityResultControl</c>, which
+	/// this set never held out anyway, and the deprecated crt.DeprecatedInput's <c>value</c>). It is the same
+	/// name on both sides, so there was never anything to rename — and holding it back cost 31 of 136 inserts
+	/// on the OOTB Leads_FormPage their binding, which both recorded runs recovered with an extra full
+	/// get-page round trip.
+	/// </remarks>
+	/// <remarks>
+	/// Nothing is pruned against the mobile registry here, including the binding: while
+	/// <c>MobileComponentRegistry.json</c> does not publish real per-component property lists, EVERY property
+	/// is copied from the web component verbatim. Removing the ones a mobile component does not accept is
+	/// ENG-96589's job, and it is blocked on that registry — do not anticipate it by adding names to this set.
+	/// </remarks>
 	private static readonly HashSet<string> ExcludedSourceProps = new(StringComparer.OrdinalIgnoreCase) {
-		"name", "type", "control", "value"
-	};
-
-	/// <summary>
-	/// The source properties that carry the element's VALUE BINDING. Held out of the prebuilt values (the
-	/// mobile binding property is a type-specific rename), and captured into
-	/// <c>ElementMapContext.PendingBindings</c> so the caller is told what to re-attach.
-	/// </summary>
-	private static readonly HashSet<string> ValueBindingProps = new(StringComparer.OrdinalIgnoreCase) {
-		"control", "value"
-	};
-
-	/// <summary>
-	/// The keys held back when a <c>preserveSourceProperties</c> template copies the whole source node: only the
-	/// element's identity (<c>name</c>) and its resolved <c>type</c> (set from the template's <c>value.type</c>).
-	/// Unlike <see cref="ExcludedSourceProps"/> this KEEPS the value binding (<c>control</c>/<c>value</c>), so a
-	/// like-for-like field conversion (crt.Checkbox → crt.Toggle) carries its binding across instead of leaving it
-	/// to the caller — which is the whole point of opting a template into the full copy.
-	/// </summary>
-	private static readonly HashSet<string> PreserveExcludedProps = new(StringComparer.OrdinalIgnoreCase) {
 		"name", "type"
 	};
 
@@ -3080,7 +3062,10 @@ public static class WebToMobileAnalysisService {
 		// on which slots are structural (walked out) versus carried.
 		IReadOnlyList<string> childAncestors = Append(sourceAncestors, mobileName);
 		if (!hasTemplate || preserve) {
-			HashSet<string> excluded = preserve ? PreserveExcludedProps : ExcludedSourceProps;
+			// One set for both paths. They used to differ by the value binding — the preserveSourceProperties
+		// template kept it "so a like-for-like field conversion carries its binding across instead of leaving
+		// it to the caller", which is now what EVERY insert does.
+		HashSet<string> excluded = ExcludedSourceProps;
 			foreach (JProperty prop in node.Properties()) {
 				// `items` as an ARRAY is ALWAYS the structural child-element slot (emitted by the tree walk), empty
 				// or not; as a STRING it is a real collection binding (items: "$Attr") and is carried below.
@@ -3098,13 +3083,6 @@ public static class WebToMobileAnalysisService {
 					continue;
 				}
 				if (excluded.Contains(prop.Name)) {
-					// The value binding is held out of the values on purpose (the mobile property is a
-					// type-specific rename of it), but it is CAPTURED rather than discarded so the response can
-					// name what still has to be attached — see PendingBinding (ENG-95827).
-					if (ValueBindingProps.Contains(prop.Name) && !string.IsNullOrEmpty(mobileName)) {
-						ctx.PendingBindings[mobileName] =
-							(prop.Name, JsonNode.Parse(prop.Value.ToString(Newtonsoft.Json.Formatting.None)));
-					}
 					continue;
 				}
 				// Event bindings (clicked / valueChange / updated …) carry a request — they are converted
@@ -3368,9 +3346,9 @@ public static class WebToMobileAnalysisService {
 
 	/// <summary>
 	/// Lays the rendered structure over the values: a key the template names WINS, a key it does not name
-	/// survives. The element's identity and its value binding are the exception — the copy rule refuses to carry
-	/// them on purpose, so filling that gap from a template would let the rules file rename an element or prebuild
-	/// the type-specific binding (which a like-for-like conversion carries via preserveSourceProperties instead).
+	/// survives. The element's identity is the exception — the copy rule refuses to carry <c>name</c> and
+	/// <c>type</c> on purpose, so filling that gap from a template would let the rules file rename an element
+	/// or retype it out from under the resolved mobile type.
 	/// </summary>
 	private static void OverlayRenderedValues(ElementMapContext ctx, JObject target, string mobileType,
 		JObject rendered) {
@@ -4877,31 +4855,6 @@ public static class WebToMobileAnalysisService {
 			renames[entry.WebName] = entry.Name;
 		}
 		return renames.Count > 0 ? renames : null;
-	}
-
-	/// <summary>
-	/// The value bindings the inserts still need. Collected while the values were built (the source
-	/// property is excluded from them by <see cref="ExcludedSourceProps"/>), and reported only for an
-	/// element that actually reached <c>viewConfigDiff</c> as an insert.
-	/// </summary>
-	private static IReadOnlyList<PendingBinding> ProjectPendingBindings(
-		IReadOnlyDictionary<string, (string Property, JsonNode Value)> captured,
-		List<ElementMapEntry> elementMap) {
-		if (captured is not { Count: > 0 }) {
-			return null;
-		}
-		HashSet<string> inserted = [.. elementMap
-			.Where(entry => string.Equals(entry.Operation, "insert", StringComparison.Ordinal)
-				&& !string.IsNullOrEmpty(entry.Name))
-			.Select(entry => entry.Name)];
-		List<PendingBinding> pending = [.. captured
-			.Where(binding => inserted.Contains(binding.Key))
-			.Select(binding => new PendingBinding {
-				Name = binding.Key,
-				SourceProperty = binding.Value.Property,
-				SourceValue = binding.Value.Value
-			})];
-		return pending.Count > 0 ? pending : null;
 	}
 
 	/// <summary>

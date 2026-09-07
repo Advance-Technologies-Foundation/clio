@@ -141,34 +141,52 @@ inserts whose values carry neither `value` nor `control`:
 `pendingBindings` — added on this branch — reports `name`, `sourceProperty` and `sourceValue`. It does **not
 carry the mobile target property**, which is the one thing the caller cannot derive.
 
-### 3.2 Four channels, no agreement
+### 3.2 Four channels, one outlier — and it was ours
 
 | channel | says |
 |---|---|
 | `mobileContracts[].allowedProperties` (ComboBox) | `control` **and** `value` **and** `items` — does not disambiguate |
 | `mobileContracts[].description` (ComboBox) | *"Key inputs … `control`, `label`, …"* |
 | shipped mobile registry snapshot, `inputs` | `control: string`, `items: string` — **no `value` input at all** |
-| [`MobilePageConversionGuideModels.cs:461`](../../clio/Command/McpServer/Tools/MobilePageConverter/MobilePageConversionGuideModels.cs) | *"a mobile `crt.ComboBox` binds via `value`, while `control` requires `items` or the page crashes"* |
+| **Creatio mobile (Flutter) runtime** | `@JsonKey(fromJson: bindingAttributeFromJson, name: 'control') final String? value;` — the wire key is **`control`**; `value` is only the Dart field name |
+| web registry, `FormControl` input | `control` on **26 of 28** binding-bearing components (exceptions: `crt.AllowedResults` → `activityResultControl`, deprecated `crt.DeprecatedInput` → `value`) |
+| ~~[`MobilePageConversionGuideModels.cs:461`](../../clio/Command/McpServer/Tools/MobilePageConverter/MobilePageConversionGuideModels.cs)~~ | *"a mobile `crt.ComboBox` binds via `value`, while `control` requires `items` or the page crashes"* — **the only channel that said `value`, and it was wrong** |
 
 Both recorded runs **refused to decide from the response** and spent an extra full `get-page` round trip to
 recover the property (`Leads:219` — *"Both keys appear in the mobile crt.ComboBox/crt.Input
 allowedProperties, so the contract is ambiguous"*; `Orders:203` — *"Extracted 188 element bindings to source
 the value bindings"*). The Leads run then wrote `control` on all 31.
 
-### 3.3 The fix, and why it is not step one
+### 3.3 Resolved — and the fix was the opposite of the one proposed
 
-The audit proposed deriving the target property from a `FormControl` marker in the mobile registry. **That
-mechanism does not hold on the shipped data**: 0 of 35 mobile components declare a `FormControl` input in
-`MobileComponentRegistry.live-snapshot.json` (the web registry declares 44). A variant built on *"exactly one
-of `control`/`value` is declared"* is worse — it passes only against the trimmed test fixture and never fires
-against the live registry, where the affected types declare both.
+The audit proposed adding a `targetProperty` to `pendingBindings`, gated on settling `control`-vs-`value`
+empirically. It also proposed deriving that property from a `FormControl` marker in the mobile registry,
+which does not hold on shipped data: 0 of 35 mobile components declare one (the web registry declares 44),
+and a variant built on *"exactly one of `control`/`value` is declared"* passes only against the trimmed test
+fixture. The premise *"`control` requires `items` or the page crashes"* had **no source anywhere in either
+repository**, and encoding `targetProperty` from it would have hard-coded an unsourced claim onto 20 of 31
+fields.
 
-And the premise in the XML doc — *"`control` requires `items` or the page crashes"* — **has no source
-anywhere in either repository.** Encoding `targetProperty` from the current prose would hard-code an
-unsourced claim onto 20 of 31 fields on the reference page.
+The mobile runtime settled it: **the wire key is `control` on both sides.** There is no rename, so there is
+nothing to report and nothing to attach. The fix therefore deletes rather than adds:
 
-So: settle `control`-vs-`value` empirically on a stand first. Then `targetProperty` is a one-line addition at
-the capture site, where the mobile type is already in scope.
+- `ExcludedSourceProps` drops to `{name, type}` — the value binding is copied like every other property,
+  which is what the `preserveSourceProperties` template path already did *"so a like-for-like field
+  conversion carries its binding across instead of leaving it to the caller"*. The two sets were identical
+  once the binding came out, and are now one.
+- `pendingBindings`, `PendingBinding`, `ValueBindingProps`, the capture and the context dictionary are all
+  dead — deleted. One wire field and a 31-element manual step gone.
+- **Both** source spellings are copied verbatim, `value` included and NOT normalized to `control`. While
+  `MobileComponentRegistry.json` publishes no real per-component property list, every property is copied
+  from the web component as-is; removing what a mobile component cannot accept is
+  [ENG-96589](https://creatio.atlassian.net/browse/ENG-96589), blocked on that registry. `BuildMobileValues`
+  already stated this rule for the general case (citing the registry's missing `inputs`, ENG-91859) — the
+  binding hold-out was its one exception.
+
+This obliges a clio-knowledge change, and now a mandatory one rather than a tidy-up: the article describes
+`pendingBindings` as a field (`:42-45`) and instructs the caller to *"add ONLY what pendingBindings names"*
+(`:241-245`), including *"the value binding (control, or value for lookups) — type-specific, so it is not
+prebuilt"* — a third variant of the same misreading, for a field that no longer exists.
 
 ---
 

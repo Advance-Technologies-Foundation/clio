@@ -448,7 +448,7 @@ public sealed class CaptionResource {
 
 /// <summary>
 /// ONE operation of the mobile page's <c>viewConfigDiff</c>, in the mobile diff applier's own shape —
-/// nothing else. Apply the list in order; add only what <c>pendingBindings</c> names.
+/// nothing else. Apply the list in order; there is nothing to add.
 /// </summary>
 /// <remarks>
 /// The shape is the applier's, verified against it rather than invented: <c>Insert</c> resolves its
@@ -501,46 +501,17 @@ public sealed class ViewConfigDiffOperation {
 	public int? Index { get; init; }
 
 	/// <summary>
-	/// The component values. On an <c>insert</c> this carries the <c>type</c> and every source property
-	/// the mobile component supports; on a <c>merge</c> only the delta over what the template provides,
+	/// The component values. On an <c>insert</c> this carries the <c>type</c> and EVERY source property
+	/// except the element's <c>name</c> — the value binding (<c>control</c>, the same wire name on both
+	/// sides) included, and deliberately without pruning against the mobile registry while that registry
+	/// publishes no real per-component property list (ENG-96589); on a <c>merge</c> only the delta over
+	/// what the template provides,
 	/// with no <c>type</c>. Absent when a merge has nothing to apply — the template's own configuration
 	/// stands and there is nothing to add.
 	/// </summary>
 	[JsonPropertyName("values")]
 	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
 	public JsonNode Values { get; init; }
-}
-
-/// <summary>
-/// The value binding an <c>insert</c> still needs, which the converter cannot place itself.
-/// </summary>
-/// <remarks>
-/// The source element binds its value through <see cref="SourceProperty"/> (<c>control</c> or
-/// <c>value</c>), and the mobile component's binding property is a TYPE-SPECIFIC rename of it — a mobile
-/// <c>crt.ComboBox</c> binds via <c>value</c>, while <c>control</c> requires <c>items</c> or the page
-/// crashes. Which property each mobile type wants is not derivable from anything the response carries:
-/// <c>mobileContracts[].allowedProperties</c> lists BOTH for <c>crt.ComboBox</c> and <c>crt.Input</c>.
-/// So the converter reports the binding it found instead of guessing at where to put it — 31 of 136
-/// inserts on a real <c>Leads_FormPage</c> need one, and before this the value was simply discarded and
-/// the caller told in prose to "add the value binding" with no way to know what it was (ENG-95827).
-/// <para>
-/// Attach <see cref="SourceValue"/> to the inserted component under the property that component's
-/// contract wants. When the conversion rules gain per-type binding data this list disappears and the
-/// binding is folded into <c>values</c>.
-/// </para>
-/// </remarks>
-public sealed class PendingBinding {
-	/// <summary>The mobile element from <c>viewConfigDiff</c> that needs the binding.</summary>
-	[JsonPropertyName("name")]
-	public string Name { get; init; }
-
-	/// <summary>The property the SOURCE element bound through: <c>control</c> or <c>value</c>.</summary>
-	[JsonPropertyName("sourceProperty")]
-	public string SourceProperty { get; init; }
-
-	/// <summary>The binding expression to re-attach, verbatim (e.g. <c>$UsrName</c>).</summary>
-	[JsonPropertyName("sourceValue")]
-	public JsonNode SourceValue { get; init; }
 }
 
 /// <summary>
@@ -971,7 +942,8 @@ public sealed class MobilePageConversionGuide {
 
 	/// <summary>
 	/// The mobile page's <c>viewConfigDiff</c>, ready to apply in order. PASTE IT as the page's
-	/// <c>viewConfigDiff</c> and add only what <see cref="PendingBindings"/> names — do not rebuild the
+	/// <c>viewConfigDiff</c> — there is nothing to add: every source property, the value binding
+	/// (<c>control</c>) included, is already in each operation's <c>values</c>. Do not rebuild the
 	/// operations, rename their fields, or infer merge-vs-insert from <c>containerMap</c>.
 	/// </summary>
 	/// <remarks>
@@ -995,14 +967,6 @@ public sealed class MobilePageConversionGuide {
 	[JsonPropertyName("nameMap")]
 	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
 	public IReadOnlyDictionary<string, string> NameMap { get; init; }
-
-	/// <summary>
-	/// The value bindings the inserts still need, which the converter cannot place itself. Apply each to the
-	/// named element under the binding property its mobile contract wants. Null when none is needed.
-	/// </summary>
-	[JsonPropertyName("pendingBindings")]
-	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-	public IReadOnlyList<PendingBinding> PendingBindings { get; init; }
 
 	/// <summary>
 	/// Inserts whose parent is provided by NEITHER this diff nor the probed mobile template — a

@@ -205,7 +205,7 @@ public sealed class WebToMobileConversionServiceTests {
 		JsonObject json = JsonSerializer.SerializeToNode(Dropped(guide, "Inner"))!.AsObject();
 		json.Select(property => property.Key).Should().BeSubsetOf(["webName", "webType", "reason"],
 			because: "droppedElements is an audit record — a key beyond these three is conversion metadata that "
-				+ "belongs in nameMap / pendingBindings / unresolvedParents, which is the split this change made");
+				+ "belongs in nameMap / droppedElements / unresolvedParents, which is the split this change made");
 		JsonObject first = json["reason"]!.AsArray()[0]!.AsObject();
 		first["code"]!.GetValue<string>().Should().Be(ReasonCodes.DropEmptyContainer,
 			because: "`code` is the field a caller switches on, so its JSON name is part of the contract");
@@ -1574,7 +1574,7 @@ public sealed class WebToMobileConversionServiceTests {
 	}
 
 	[Test]
-	[Description("insert mobileValues carries the type, the field label, and every source property verbatim — including one the mobile registry does not declare (registry is incomplete, ENG-91859); only the value binding is left out.")]
+	[Description("insert values carry the type, the field label, and EVERY source property verbatim — including one the mobile registry does not declare (registry is incomplete, ENG-91859) and the value binding itself, under both source spellings (control and value). Nothing is left for the caller to attach.")]
 	public void Analyze_FieldInsert_MobileValues_CarriesSupportedPropsAndLabel() {
 		PageBundleInfo bundle = Bundle(
 			viewConfigJson: """
@@ -1623,24 +1623,24 @@ public sealed class WebToMobileConversionServiceTests {
 		// … including one the mobile registry does not declare (no registry-membership pruning while the
 		// registry is incomplete — ENG-91859); only the value binding is left out.
 		leadVals.ContainsKey("usrWebOnly").Should().BeTrue(because: "registry-absent props are no longer dropped");
-		leadVals.ContainsKey("control").Should().BeFalse(because: "the value binding is held out of values because the mobile binding property is a type-specific rename");
-		// The other half of that hold-out: the binding is REPORTED rather than discarded. Before
-		// pendingBindings existed the response said nothing about it, so 31 of 136 inserts on a real page
-		// silently lost their value binding with a green suite (ENG-95827, gate 3).
-		PendingBinding pending = guide.PendingBindings.Should().ContainSingle(b => b.Name == "LeadName",
-			because: "an insert whose value binding was held out of values must say so, or the caller cannot know "
-				+ "a binding existed — and ProjectPendingBindings returns null both when nothing needs one and "
-				+ "when the capture is broken, so only an assertion tells those apart")
-			.Subject;
-		pending.SourceProperty.Should().Be("control",
-			because: "the caller needs the property the SOURCE bound through to know which mobile property to "
-				+ "re-attach it under; mobileContracts allows both control and value, so it is not derivable");
-		pending.SourceValue.Should().NotBeNull(
-			because: "reporting that a binding is missing without saying what it was leaves the caller exactly "
-				+ "where the deleted prose instruction left them");
-
+		// The value binding is carried like any other property. It used to be held back, on the premise that
+		// the mobile binding property is a TYPE-SPECIFIC RENAME of the web one — which was backwards: the
+		// mobile runtime reads the JSON key `control` into a Dart field it merely NAMES `value`, and the
+		// mobile registry declares `control` and no `value` input for every affected type. Holding it back
+		// cost 31 of 136 inserts on a real Leads_FormPage their binding and bought nothing.
+		leadVals["control"]!.GetValue<string>().Should().Be("$LeadName",
+			because: "`control` is the same wire name on both sides, so the binding is a verbatim copy — "
+				+ "withholding it made the caller fetch the source page again to recover 31 values the "
+				+ "converter already had in hand");
+		JsonObject jobVals = Element(guide, "JobTitle").Values!.AsObject();
+		jobVals["value"]!.GetValue<string>().Should().Be("$QualifiedContactJobTitle",
+			because: "the OTHER source spelling is copied too, and deliberately NOT translated to `control`: "
+				+ "while MobileComponentRegistry.json publishes no real per-component property list, every "
+				+ "property is copied from the web component as-is and removing what a mobile component "
+				+ "cannot accept is ENG-96589's job");
 		// No caption but bound to PDS.JobTitle → auto-provided column-code label.
-		Element(guide, "JobTitle").Values!.AsObject()["label"]!.GetValue<string>().Should().Be("$Resources.Strings.JobTitle");
+		jobVals["label"]!.GetValue<string>().Should().Be("$Resources.Strings.JobTitle",
+			because: "a field with no caption still gets a label, from its bound column code");
 	}
 
 	[Test]
@@ -1681,8 +1681,13 @@ public sealed class WebToMobileConversionServiceTests {
 		vals["type"]!.GetValue<string>().Should().Be("crt.EntityStageProgressBar");
 		vals["entityName"]!.GetValue<string>().Should().Be("Lead", because: "an empty mobile contract must not drop any property");
 		vals["shape"]!.GetValue<string>().Should().Be("rounded");
-		// Structural keys / the value binding are still excluded regardless of the contract.
-		vals.ContainsKey("control").Should().BeFalse(because: "the value binding is always excluded");
+		// The value binding is carried like everything else — on a type whose mobile contract declares NO
+		// inputs at all, which is where a hold-out would be least recoverable by the caller.
+		vals["control"]!.GetValue<string>().Should().Be("$Stage",
+			because: "the copy rule prunes nothing against the mobile registry, and the binding is the same "
+				+ "wire name on both sides — an empty contract is exactly the case where withholding it left "
+				+ "the caller with no way to find out what the property was called");
+		// Structural keys are still excluded regardless of the contract.
 	}
 
 	[Test]
@@ -5019,7 +5024,7 @@ public sealed class WebToMobileConversionServiceTests {
 		foreach (ViewConfigDiffOperation operation in new[] { Synthesized(guide, main), Element(guide, "LeadName") }) {
 			JsonObject json = JsonSerializer.SerializeToNode(operation)!.AsObject();
 			json.Select(pair => pair.Key).Should().BeSubsetOf(applierKeys,
-				because: "viewConfigDiff is pasted verbatim, so an operation may carry no key beyond what the applier reads — conversion metadata belongs in nameMap / droppedElements / pendingBindings");
+				because: "viewConfigDiff is pasted verbatim, so an operation may carry no key beyond what the applier reads — conversion metadata belongs in nameMap / droppedElements / unresolvedParents");
 			json["operation"]!.GetValue<string>().Should().Be("insert");
 			json["name"]!.GetValue<string>().Should().NotBeNullOrEmpty(
 				because: "an operation without a name addresses nothing");
