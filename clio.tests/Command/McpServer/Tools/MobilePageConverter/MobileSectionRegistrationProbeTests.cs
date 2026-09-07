@@ -132,7 +132,17 @@ public sealed class MobileSectionRegistrationProbeTests {
 			resolver, "env", null, null, null, PageUId, isFormPage: false);
 
 		info.ProbeOk.Should().BeFalse();
-		info.Note.Should().Contain("Could not query the environment");
+		info.Note.Should().Contain("could not be queried",
+			because: "the caller needs to know the environment did not answer");
+		info.Note.Should().NotContain("network down",
+			because: "the exception MESSAGE must not reach the wire — it used to be interpolated, so a caller "
+				+ "received a raw System.Text.Json parser complaint as the explanation of a registration "
+				+ "probe, and the response's content depended on an internal type's phrasing");
+		info.SourcePageIsSection.Should().BeNull(
+			because: "a failed probe establishes nothing, and a non-nullable bool made that silence "
+				+ "indistinguishable from a measured \"no\" under a header that calls these read-only FACTS");
+		info.MobileSectionRegistered.Should().BeNull(
+			because: "same for every environment-derived flag");
 	}
 
 	[Test]
@@ -142,7 +152,8 @@ public sealed class MobileSectionRegistrationProbeTests {
 			commandResolver: null, "env", null, null, null, pageSchemaUId: null, isFormPage: false);
 
 		info.ProbeOk.Should().BeFalse();
-		info.SourcePageIsSection.Should().BeFalse();
+		info.SourcePageIsSection.Should().BeNull(
+			because: "not probed is not the same as probed-and-no");
 	}
 
 	[Test]

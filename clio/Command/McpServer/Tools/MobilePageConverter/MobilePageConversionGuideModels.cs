@@ -796,9 +796,15 @@ public sealed class WorkplaceInfo {
 /// this; the model performs the writes (odata-update / odata-create) after the user approves (Gate S).
 /// </summary>
 public sealed class SectionRegistrationInfo {
-	/// <summary>True when a SysModule row references the source page as its section / list page.</summary>
+	/// <summary>
+	/// True when a SysModule row references the source page as its section / list page. ABSENT when the
+	/// environment could not be queried — see <see cref="ProbeOk"/>. It used to be a non-nullable bool, so a
+	/// failed probe shipped <c>false</c> for it and for every flag below, indistinguishable from a measured
+	/// "no", under a section header that calls these read-only FACTS (ENG-95827).
+	/// </summary>
 	[JsonPropertyName("sourcePageIsSection")]
-	public bool SourcePageIsSection { get; init; }
+	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+	public bool? SourcePageIsSection { get; init; }
 
 	/// <summary>Id of the matched SysModule row — the odata-update target for MobileSectionSchemaUId.</summary>
 	[JsonPropertyName("sysModuleId")]
@@ -822,21 +828,20 @@ public sealed class SectionRegistrationInfo {
 	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
 	public string MobileSectionSchemaUId { get; init; }
 
-	/// <summary>True when MobileSectionSchemaUId is already set to a non-empty schema UId.</summary>
+	/// <summary>
+	/// True when MobileSectionSchemaUId is already set to a non-empty schema UId. Absent when the probe
+	/// failed, and absent when the source page is not a section at all.
+	/// </summary>
 	[JsonPropertyName("mobileSectionRegistered")]
-	public bool MobileSectionRegistered { get; init; }
+	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+	public bool? MobileSectionRegistered { get; init; }
 
-	/// <summary>True when the source page is an edit/form page (vs a list/section page).</summary>
+	/// <summary>
+	/// True when the source page is an edit/form page (vs a list/section page). Present even on a failed
+	/// probe: it is read from the page itself, not from the environment.
+	/// </summary>
 	[JsonPropertyName("isFormPage")]
 	public bool IsFormPage { get; init; }
-
-	/// <summary>Best-effort: the source page is the entity's default edit page (RelatedPage addon).</summary>
-	[JsonPropertyName("sourcePageIsDefaultEditPage")]
-	public bool SourcePageIsDefaultEditPage { get; init; }
-
-	/// <summary>Best-effort: a mobile default edit page (MobileRelatedPage addon) already exists.</summary>
-	[JsonPropertyName("mobileDefaultEditPageExists")]
-	public bool MobileDefaultEditPageExists { get; init; }
 
 	/// <summary>Workplaces the source section is currently a member of.</summary>
 	[JsonPropertyName("currentWorkplaces")]
@@ -846,7 +851,11 @@ public sealed class SectionRegistrationInfo {
 	[JsonPropertyName("availableMobileWorkplaces")]
 	public IReadOnlyList<WorkplaceInfo> AvailableMobileWorkplaces { get; init; } = [];
 
-	/// <summary>Human-readable registration steps the model should propose to the user (Gate S).</summary>
+	/// <summary>
+	/// The registration steps to propose to the user at Gate S, as authored text. The one prose channel
+	/// this section keeps on purpose: each step names a clio tool and its arguments, so it is a procedure
+	/// the caller executes rather than a description of the fields beside it.
+	/// </summary>
 	[JsonPropertyName("registrationActions")]
 	public IReadOnlyList<string> RegistrationActions { get; init; } = [];
 
@@ -854,7 +863,10 @@ public sealed class SectionRegistrationInfo {
 	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
 	public string Note { get; init; }
 
-	/// <summary>False when the environment could not be queried (registration facts are best-effort/unknown).</summary>
+	/// <summary>
+	/// False when the environment could not be queried. READ THIS FIRST: on false, every environment-derived
+	/// flag above is ABSENT rather than false, and nothing here may be reported to the user as established.
+	/// </summary>
 	[JsonPropertyName("probeOk")]
 	public bool ProbeOk { get; init; }
 }
@@ -897,18 +909,28 @@ public sealed class MobilePageConversionGuide {
 	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
 	public IReadOnlyList<string> WebOnlySections { get; init; }
 
-	/// <summary>Data source names declared on the source page (mobile supports one).</summary>
+	/// <summary>
+	/// Data source names declared on the source page. All of them: a real record page declares a dozen, and
+	/// they are carried over in full. This used to say "(mobile supports one)", which contradicted
+	/// <see cref="ModelConfig"/> two fields below — whose own doc orders every attribute kept exactly as
+	/// provided and names the failure that pruning causes (<c>Item with the path … not found</c>). Reading
+	/// the old parenthesis as an instruction meant deleting eleven data sources and breaking every
+	/// <c>modelConfig.path</c> in the view-model diff (ENG-95827).
+	/// </summary>
 	[JsonPropertyName("dataSources")]
 	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
 	public IReadOnlyList<string> DataSources { get; init; }
 
 	// ── Data sections (apply to the mobile body via *Diff) ────────────
 	/// <summary>
-	/// The source page's full merged <c>modelConfig</c> (data sources + attributes). Mobile has identical
-	/// structural support, so APPLY IT VERBATIM via <c>modelConfigDiff</c> — keep every attribute and ALL of
-	/// its properties exactly as provided (do not omit, rename, or reconstruct any fields). Dropping or
-	/// altering an attribute's declared metadata can make its binding unresolvable in Mobile Designer
-	/// (<c>Item with the path … not found</c>). Null when the source page declares no model config.
+	/// The source page's full merged <c>modelConfig</c> (data sources + attributes), for REFERENCE only.
+	/// The paste target is <see cref="ModelConfigDiff"/>, which is derived from this and is the only one of
+	/// the two the caller writes. Do NOT apply this object: the cheapest way to "apply it verbatim" is a
+	/// single root merge, which <see cref="ModelConfigDiff"/>'s own doc forbids because it drops the
+	/// template's baseline arrays. Present so the caller can SEE what the diff was built from — in
+	/// particular that every attribute keeps all of its declared metadata, since dropping any of it makes
+	/// the binding unresolvable in Mobile Designer (<c>Item with the path … not found</c>). Null when the
+	/// source page declares no model config.
 	/// </summary>
 	[JsonPropertyName("modelConfig")]
 	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
@@ -916,9 +938,10 @@ public sealed class MobilePageConversionGuide {
 
 	/// <summary>
 	/// The source page's merged <c>viewModelConfig</c>, already FILTERED for mobile: attributes referenced
-	/// only by dropped/unsupported components are removed (see <see cref="ViewConfigDiff"/>). Apply it via
-	/// <c>viewModelConfigDiff</c>. Reference only OOTB mobile converters — a definitive mobile converter
-	/// list is forthcoming; flag any custom converter for manual review. Null when none is declared.
+	/// only by dropped/unsupported components are removed (see <see cref="ViewConfigDiff"/>). For REFERENCE
+	/// only — the paste target is <see cref="ViewModelConfigDiff"/>, derived from this. Reference only OOTB
+	/// mobile converters — a definitive mobile converter list is forthcoming; flag any custom converter for
+	/// manual review. Null when none is declared.
 	/// </summary>
 	[JsonPropertyName("viewModelConfig")]
 	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
@@ -1087,9 +1110,12 @@ public sealed class MobilePageConversionGuide {
 	/// breakpoint (<c>small</c> phone = 1, <c>medium</c>/<c>large</c> tablet = the web columns) and which
 	/// cell each child occupies. Both sides are ALREADY baked into the operations' values — the container's
 	/// <c>adaptive</c> columns into its own values and each child's placement into
-	/// <c>viewConfigDiff[].values.layoutConfig.adaptive</c> — so there is nothing separate to apply. This
-	/// is an advisory summary / PROPOSAL — present it at the conversion gate so the user can adjust or
-	/// decline it. Null when no multi-column grid container is present (a single-column grid gets no adaptive).
+	/// <c>viewConfigDiff[].values.layoutConfig.adaptive</c> — so there is nothing separate to apply. Present
+	/// it at the conversion gate as what the conversion DID, and if the user wants it different, the change
+	/// is an edit to those <c>values</c> before pasting: this section is a readable index of them, not a
+	/// switch. It used to call itself a proposal the user could "adjust or decline" while being baked in,
+	/// which described a choice the response gave the caller no mechanism to honour (ENG-95827).
+	/// Null when no multi-column grid container is present (a single-column grid gets no adaptive).
 	/// </summary>
 	[JsonPropertyName("adaptiveLayout")]
 	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
