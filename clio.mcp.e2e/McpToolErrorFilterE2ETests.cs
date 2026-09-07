@@ -1,3 +1,4 @@
+using System.Text.Json.Nodes;
 using Clio.Mcp.E2E.Support.Configuration;
 using System.Collections.Concurrent;
 using System.Diagnostics;
@@ -126,6 +127,18 @@ public sealed class McpToolErrorFilterE2ETests : McpContractFixtureBase
 		string responseText = string.Join("\n",
 			callResult.Content.OfType<TextContentBlock>().Select(b => b.Text));
 
+		// The POSITIVE half first. Both absence checks below name strings this path never emits —
+		// WrapperHintFragment comes from the missing-wrapper hint and "Unknown args" from
+		// McpToolArgumentSupport.BuildLegacyAliasError, a different path — so on the regression this case
+		// is named for (a canonical key ceasing to classify as canonical) the call would be REFUSED and
+		// both would still hold. A test that passes on its own regression is worse than none, because the
+		// next reviewer counts it as coverage (review round 9).
+		callResult.IsError.Should().NotBeTrue(
+			because: "a canonical flat key is normalized and the tool executes; a refusal here is the "
+				+ "regression this case exists to catch");
+		responseText.Should().NotContain("Nothing ran",
+			because: "that phrase is the classifier's refusal marker — its presence means the flat key was "
+				+ "not accepted");
 		responseText.Should().NotContain(WrapperHintFragment,
 			because: "the flat key 'name' is a canonical wire property, so the payload is normalized instead of refused");
 		responseText.Should().NotContain("Unknown args",
@@ -156,6 +169,9 @@ public sealed class McpToolErrorFilterE2ETests : McpContractFixtureBase
 		string responseText = string.Join("\n",
 			callResult.Content.OfType<TextContentBlock>().Select(b => b.Text));
 
+		callResult.IsError.Should().NotBeTrue(
+			because: "the wrapped shape is the PUBLISHED contract, so it must execute — asserting only "
+				+ "that no hint appeared would pass on a refusal too (review round 9)");
 		responseText.Should().NotContain(WrapperHintFragment,
 			because: "correctly wrapped arguments should pass through the filter without a wrapper hint");
 	}
@@ -401,10 +417,19 @@ public sealed class McpToolErrorFilterE2ETests : McpContractFixtureBase
 
 		// Assert
 		listApps.Should().NotBeNull(because: "list-apps is a resident tool and must be advertised");
-		string schema = listApps!.ProtocolTool.InputSchema.ToString();
-		schema.Should().Contain("args",
-			because: "the published schema deliberately stays wrapped — the flat shape is accepted at runtime "
-				+ "only, and the contract text says so rather than claiming the two are identical");
+		// `required`, NOT the serialized blob. A single-composite tool's schema contains the PROPERTY name
+		// "args" whether or not `required` still lists it, so a substring check would stay green through
+		// the exact regression this case is named for — dropping `args` from `required` to "align" the
+		// published schema with the runtime tolerance. This is the only guard on the boundary that keeps
+		// this change a tolerance layer instead of a contract change (review round 9).
+		JsonNode schema = JsonNode.Parse(listApps!.ProtocolTool.InputSchema.ToString())!;
+		schema["required"].Should().NotBeNull(
+			because: "a schema with no required set at all would already be the regression");
+		schema["required"]!.AsArray().Select(node => node!.GetValue<string>())
+			.Should().Contain("args",
+				because: "the published contract stays required:[\"args\"] — the flat shape is a runtime "
+					+ "tolerance only, and the ADR records tightening or loosening tools/list as a "
+					+ "permanent non-goal");
 	}
 
 	[Test]
@@ -415,7 +440,8 @@ public sealed class McpToolErrorFilterE2ETests : McpContractFixtureBase
 		// Arrange
 		using CancellationTokenSource cancellation = new(TimeSpan.FromMinutes(2));
 		ConcurrentQueue<string> standardError = new();
-		// A DEDICATED session, not the fixture's shared one: the rate gate is per process, so a shared
+		// A DEDICATED server process, not the fixture's shared one: the gate lives for the life of the
+		// process, so a shared
 		// server that had already mirrored these pairs would make the cap assertion pass vacuously.
 		McpE2ESettings settings = TestConfiguration.Load();
 		await using McpServerSession session = await McpServerSession.StartAsync(

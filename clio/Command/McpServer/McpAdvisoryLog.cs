@@ -30,6 +30,13 @@ internal static class McpAdvisoryLog {
 	private const int MaxMessageLength = 1_000;
 
 	/// <summary>
+	/// Longest text handed to the redactor. Generous relative to <see cref="MaxMessageLength"/> so a
+	/// pattern straddling the final cap is still matched, but bounded so no caller-supplied string sets
+	/// the size of the regex work.
+	/// </summary>
+	private const int RedactionInputBudget = 4 * MaxMessageLength;
+
+	/// <summary>
 	/// Redacts and length-bounds <paramref name="message"/>, writes it to <paramref name="logger"/>, and
 	/// — only when <paramref name="mirrorToStandardError"/> — mirrors it to standard error.
 	/// </summary>
@@ -61,8 +68,15 @@ internal static class McpAdvisoryLog {
 		bool isWarning,
 		bool mirrorToStandardError,
 		Action<string>? writeStandardError = null) {
+		// Bound FIRST, then redact. Redaction used to run over the whole unbounded message with the cap
+		// applied to its OUTPUT, which paid a regex pass per pattern over text about to be discarded —
+		// and worse, a crafted key can burn SensitiveErrorTextRedactor's 1s regex budget, after which it
+		// returns a bare placeholder for the WHOLE message and the diagnostic is gone. Redacting a
+		// pre-bounded string is strictly safer, never weaker: every placeholder it writes is shorter than
+		// the text it replaces (review round 9).
 		string safeMessage = TextUtilities.SanitizeForDisplay(
-			SensitiveErrorTextRedactor.Redact(message ?? string.Empty),
+			SensitiveErrorTextRedactor.Redact(
+				TextUtilities.SanitizeForDisplay(message ?? string.Empty, RedactionInputBudget)),
 			maxLength: MaxMessageLength);
 
 		if (isWarning) {

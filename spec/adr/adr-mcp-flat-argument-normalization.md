@@ -123,6 +123,17 @@ advisory line per non-`Untouched` outcome. Three properties are deliberate:
   and is what MCP hosts capture. The logger call is kept so a configured file sink still receives the
   line, and a closed stderr (detached launcher) is swallowed: losing an advisory sink must never fail
   the tool call it describes.
+- **The stderr half is stdio-only, and its rate cap is per process because that IS per session there.**
+  The mirror is gated on `Program.IsMcpServerMode`, which covers the `mcp-server` / `mcp` verb alone -
+  never `mcp-http` - so one process is one agent session on the only transport that reaches it, and a
+  process-wide `(tool, outcome)` set caps stderr at the size of the tool surface rather than the request
+  count. Do NOT re-key that gate on anything request-scoped to "make it per-session for `mcp-http`": the
+  short-circuit means that host writes no mirror line at all, `RequestContext.Server` is not one stable
+  reference per stdio session, and keying on it removes the cap entirely. Observability on `mcp-http`
+  comes from the ungated logger call instead. See
+  [`docs/knowledge/McpServer/is-mcp-server-mode-excludes-the-http-host.md`](../../docs/knowledge/McpServer/is-mcp-server-mode-excludes-the-http-host.md);
+  if that host ever needs the mirror, the gate to change is the transport one
+  (`McpHostTransport.Current`), with a stable session identifier and a process-wide backstop.
 
 The logger is service-located from `context.Services`, not injected, because this seam is a static
 delegate with no constructor - the same reason the execution router and worker dispatcher are located

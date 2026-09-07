@@ -80,7 +80,15 @@ internal enum McpArgumentShapeOutcome {
 	RefusedUnknown = 3,
 
 	/// <summary>Refused: a wrapper object AND extra top-level keys arrived together.</summary>
-	RefusedAmbiguous = 4
+	RefusedAmbiguous = 4,
+
+	/// <summary>Refused: the classifier itself failed, so the shape could not be decided at all.</summary>
+	/// <remarks>
+	/// The only outcome reporting a SERVER-side defect rather than a caller mistake — a payload at the
+	/// JSON depth ceiling, or a reflection failure while reading the tool's contract. Its audience is the
+	/// operator, which is exactly why it must not be the one outcome that emits nothing.
+	/// </remarks>
+	RefusedUnclassifiable = 5
 }
 
 /// <summary>

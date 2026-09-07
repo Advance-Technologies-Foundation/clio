@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using Clio.Command.McpServer;
 using FluentAssertions;
 using NSubstitute;
@@ -143,6 +144,42 @@ public sealed class McpAdvisoryLogTests {
 			because: "an arbitrary-length caller fragment must be truncated before it reaches a sink");
 		stderr.Should().ContainSingle().Which.Length.Should().BeLessThan(overlong.Length,
 			because: "the mirrored line carries the same bounded text the logger received");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("The message is BOUNDED before it is redacted, not after, so no caller-supplied string sets the size of the regex work. Redaction used to run over the whole unbounded message with the cap applied to its OUTPUT - which paid a pass per pattern over text about to be discarded, and let a crafted fragment burn SensitiveErrorTextRedactor's 1s regex budget, after which it returns a bare placeholder for the WHOLE message and the diagnostic the ADR's closing measurement depends on is gone. The ordering is pinned by a deterministic consequence rather than by timing: content sitting BEYOND the redaction-input budget must not appear in the output, which it would if redaction ran first and its placeholders compressed the earlier text enough to pull that content inside the final cap (ENG-95885 review round 9).")]
+	public void Emit_ShouldBoundBeforeRedacting_SoContentPastTheBudgetCannotSurvive() {
+		// Arrange — long redactable URIs ahead of a distinctive tail marker placed past the 4,000-char
+		// redaction-input budget. Redact-first would collapse each URI to a short placeholder and pull
+		// the marker inside the 1,000-char output cap; bound-first discards the marker before the
+		// redactor ever sees it. That difference is deterministic, unlike a regex-timeout race.
+		List<string> stderr = [];
+		string uris = string.Concat(Enumerable.Range(0, 20).Select(index =>
+			$"https://tenant-{index}-{new string('h', 180)}.creatio.com/0/rest/Probe "));
+		const string tailMarker = "PAST-THE-BUDGET-MARKER";
+		string message =
+			$"mcp-argument-shape: tool='list-apps' outcome=WrappedFlat keys=[{uris}{tailMarker}]";
+
+		// Act
+		string emitted = McpAdvisoryLog.Emit(logger: null, message, isWarning: false,
+			mirrorToStandardError: true, writeStandardError: stderr.Add);
+
+		// Assert
+		message.IndexOf(tailMarker, StringComparison.Ordinal).Should().BeGreaterThan(4_000,
+			because: "the arrangement only discriminates if the marker really sits past the budget — "
+				+ "asserting it keeps this test honest if the constants ever move");
+		emitted.Should().NotContain(tailMarker,
+			because: "content beyond the redaction-input budget is cut BEFORE redaction; if the redactor "
+				+ "ran first, its placeholders would compress the URIs enough for this marker to reach "
+				+ "the emitted line — which is exactly the ordering being ruled out");
+		emitted.Should().StartWith("mcp-argument-shape: tool='list-apps' outcome=WrappedFlat",
+			because: "the server-authored diagnostic still leads the line — bounding first must not cost "
+				+ "the signal the line exists to carry");
+		stderr.Should().ContainSingle(
+			because: "one advisory line is mirrored, bounded the same way the logger's copy is")
+			.Which.Should().Contain("outcome=WrappedFlat",
+				because: "the mirrored copy carries the same surviving diagnostic");
 	}
 
 	[Test]

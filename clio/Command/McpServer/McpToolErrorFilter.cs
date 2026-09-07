@@ -5,7 +5,6 @@ using System.Diagnostics.CodeAnalysis;
 using System.IO;
 using System.Linq;
 using System.Reflection;
-using System.Runtime.CompilerServices;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using System.Threading;
@@ -416,6 +415,17 @@ public static class McpToolErrorFilter
 				+ SensitiveErrorTextRedactor.Redact(GetSurfacedMessage(exception))
 				+ " Nothing ran: the call was refused rather than executed on a shape that could not be "
 				+ "checked.");
+			// Reported like every other refusal. ReportArgumentShape is called from the Core, INSIDE the
+			// try below, so a throw used to return from here having emitted NOTHING — and this is the one
+			// refusal class whose audience is the operator rather than the agent, and the only one that
+			// signals a server-side defect rather than a caller mistake. It was the one outcome leaving no
+			// trace in any log an operator can read (review round 9).
+			ReportArgumentShape(
+				context,
+				parameters.Name,
+				new McpArgumentShapeReport(
+					McpArgumentShapeOutcome.RefusedUnclassifiable,
+					[.. parameters.Arguments?.Keys ?? []]));
 			return true;
 		}
 	}
@@ -622,7 +632,9 @@ public static class McpToolErrorFilter
 			return;
 		}
 
-		string keys = string.Join(", ", report.TopLevelKeys);
+		// Bounded and sanitized BEFORE composing, so the redactor never runs its patterns over an
+		// unbounded caller-supplied string (review round 9).
+		string keys = DescribeCallerKeys(report.TopLevelKeys);
 
 		// Redaction, length-bounding, the logger write, the transport gate, the stderr mirror and the
 		// dead-sink swallow all live in McpAdvisoryLog — one copy, shared with
@@ -635,7 +647,7 @@ public static class McpToolErrorFilter
 				+ $"outcome={report.Outcome} keys=[{keys}]",
 			isWarning: IsRefusal(report.Outcome),
 			mirrorToStandardError: Program.IsMcpServerMode
-				&& ShouldMirrorShapeOnce(context.Server, toolName, report.Outcome));
+				&& ShouldMirrorShapeOnce(toolName, report.Outcome));
 	}
 
 	/// <summary>
@@ -661,58 +673,46 @@ public static class McpToolErrorFilter
 	/// written can still block once. Fully removing it needs an async or timeout-bounded writer, which is
 	/// more machinery than an advisory line justifies today — recorded here so the trade is visible.
 	/// </para>
+	/// <para>
+	/// PER PROCESS, and that is per SESSION here rather than a compromise: the mirror is reached only
+	/// when <c>Program.IsMcpServerMode</c> is true, which <c>Program.IsMcpCommand</c> sets for the
+	/// <c>mcp-server</c> / <c>mcp</c> verb ALONE — one stdio child per agent session. See
+	/// <c>docs/knowledge/McpServer/is-mcp-server-mode-excludes-the-http-host.md</c>; the review round
+	/// that keyed this gate on the request's server instance to "fix mcp-http" was correcting a
+	/// scenario the short-circuit makes unreachable, and lost the cap doing it —
+	/// <c>RequestContext.Server</c> is not one stable reference per stdio session, so the weak table
+	/// handed every call its own set and the mirror wrote on EVERY normalized call (caught by
+	/// <c>McpToolErrorFilterE2ETests.FlatCall_ShouldMirrorOneShapeLineToServerStandardError_AndCapTheRepeat</c>,
+	/// which went red on that commit). If <c>mcp-http</c> ever needs the mirror, the gate to change is
+	/// the TRANSPORT one — <c>McpHostTransport.Current</c>, which both hosts set — and a per-session
+	/// scope then needs a stable session identifier plus a process-wide backstop, because that host
+	/// serves a non-initializing client statelessly with a fresh server instance per request.
+	/// </para>
 	/// </remarks>
-	internal static bool ShouldMirrorShapeOnce(
-		object? session, string? toolName, McpArgumentShapeOutcome outcome) =>
-		MirroredShapeOutcomes
-			.GetValue(session ?? ProcessWideSession, static _ => new())
-			.TryAdd((toolName ?? UnknownToolName, outcome), true);
+	internal static bool ShouldMirrorShapeOnce(string? toolName, McpArgumentShapeOutcome outcome) =>
+		MirroredShapeOutcomes.TryAdd((toolName ?? UnknownToolName, outcome), true);
 
-	/// <summary>
-	/// Forgets every mirrored (tool, outcome) pair. FOR TESTS ONLY — the gate is per-process by design,
-	/// and a test that could not reset it would either leak state into its neighbours or have to run
-	/// first to mean anything.
-	/// </summary>
+	/// <summary>Forgets every mirrored (tool, outcome) pair. For tests only.</summary>
 	internal static void ResetMirroredShapeOutcomes() => MirroredShapeOutcomes.Clear();
 
-
 	/// <summary>
-	/// Tool+outcome pairs already mirrored to stderr, kept PER SERVER INSTANCE rather than per process.
+	/// Tool+outcome pairs already mirrored to stderr, for the life of the process.
 	/// </summary>
 	/// <remarks>
-	/// ENG-95885 review round 8. A single static set was defensible for the stdio child — one agent
-	/// session per process, so "once per process" and "once per session" are the same statement. It was
-	/// wrong for <c>mcp-http</c>, which this file documents as long-lived and multi-tenant: the first
-	/// session to send a flat payload for a tool would consume that pair for every later session on the
-	/// same running server, and the stderr channel would then read near-zero because the evidence was
-	/// suppressed, not because agents had stopped sending flat payloads. That directly defeats the
-	/// measurement this line exists for.
-	/// <para>
-	/// Scoped by the request's server instance, held in a <see cref="ConditionalWeakTable{TKey,TValue}"/>
-	/// so a finished session's set is collected with it rather than accumulating for the life of the
-	/// host. Honest about the limit: this is only a per-SESSION scope if the transport gives each session
-	/// its own server instance. If some transport shares one, the behaviour degrades to exactly today's
-	/// per-process cap — never worse — and the ungated logger call still carries full per-call frequency
-	/// for any sink that is configured.
-	/// </para>
-	/// <para>
 	/// Keyed on a TUPLE rather than a concatenated string so there is no separator to pick, and therefore
-	/// no way for a tool name containing the separator to collide with a different pair.
-	/// </para>
+	/// no way for a tool name containing the separator to collide with a different pair. Bounded by the
+	/// tool surface times the four non-<see cref="McpArgumentShapeOutcome.Untouched"/> outcomes, so it
+	/// cannot grow with the request count. See <see cref="ShouldMirrorShapeOnce"/> for why per-process is
+	/// the right scope on the only transport that reaches the mirror.
 	/// </remarks>
-	private static readonly ConditionalWeakTable<object,
-			System.Collections.Concurrent.ConcurrentDictionary<(string ToolName, McpArgumentShapeOutcome Outcome), bool>>
-		MirroredShapeOutcomes = new();
-
-	/// <summary>
-	/// Stand-in key for a call that carries no server instance, so such calls share one set instead of
-	/// silently losing the cap.
-	/// </summary>
-	private static readonly object ProcessWideSession = new();
+	private static readonly System.Collections.Concurrent.ConcurrentDictionary<
+		(string ToolName, McpArgumentShapeOutcome Outcome), bool> MirroredShapeOutcomes = new();
 
 	/// <summary>True for the two outcomes that refused the call rather than accommodating it.</summary>
 	private static bool IsRefusal(McpArgumentShapeOutcome outcome) =>
-		outcome is McpArgumentShapeOutcome.RefusedUnknown or McpArgumentShapeOutcome.RefusedAmbiguous;
+		outcome is McpArgumentShapeOutcome.RefusedUnknown
+			or McpArgumentShapeOutcome.RefusedAmbiguous
+			or McpArgumentShapeOutcome.RefusedUnclassifiable;
 
 	/// <summary>
 	/// Moves EVERY top-level key of <paramref name="arguments"/> into a single wrapper object. Replacing
@@ -738,9 +738,46 @@ public static class McpToolErrorFilter
 		return wrapped;
 	}
 
+	/// <summary>Most caller-supplied key names echoed back in one refusal.</summary>
+	private const int MaxEchoedKeys = 10;
+
+	/// <summary>Longest single caller-supplied key name echoed back.</summary>
+	private const int MaxEchoedKeyLength = 120;
+
+	/// <summary>
+	/// Renders caller-supplied key NAMES for a message: capped in count, capped per key, sanitized.
+	/// </summary>
+	/// <remarks>
+	/// ENG-95885 review round 9. These names come from <c>arguments.Keys</c> — the payload, not the
+	/// record's field set — so they are arbitrary caller text, and they land in a
+	/// <c>TextContentBlock</c> that reaches the hosting agent's transcript. The asymmetry was the tell:
+	/// the advisory LOG line was already sanitized and length-bounded while this, the higher-risk sink,
+	/// was neither. Two consequences it removes:
+	/// <list type="bullet">
+	/// <item><description>a key carrying a newline or an ESC sequence would forge lines reading as
+	/// clio's own text, or put a raw terminal escape inside server-authored framing;</description></item>
+	/// <item><description>a payload of many long distinct keys would cost a proportional
+	/// <c>string.Join</c> and then a regex pass per redaction pattern over the result, for a call that
+	/// never reaches a tool.</description></item>
+	/// </list>
+	/// The older echo path (<see cref="TryDetectFlatArgsMismatch"/>) only ever emitted names the server
+	/// itself declared, so this is a new exposure rather than an inherited one. Server-authored lists —
+	/// the canonical field names — are deliberately NOT routed through here: they are already trusted
+	/// and bounded, and truncating them would hide part of the answer the caller needs to fix the call.
+	/// </remarks>
+	private static string DescribeCallerKeys(IEnumerable<string> keys) {
+		List<string> all = [.. keys];
+		string shown = string.Join(", ", all
+			.Take(MaxEchoedKeys)
+			.Select(key =>
+				$"\"{Clio.Common.TextUtilities.SanitizeForDisplay(key, MaxEchoedKeyLength)}\""));
+		int hidden = all.Count - Math.Min(all.Count, MaxEchoedKeys);
+		return hidden > 0 ? $"{shown} and {hidden} more" : shown;
+	}
+
 	private static string BuildUnknownArgumentsMessage(
 		string? toolName, string wrapperName, IReadOnlyList<string> canonicalNames, List<string> unknownKeys) {
-		string unknownDisplay = string.Join(", ", unknownKeys.Select(key => $"\"{key}\""));
+		string unknownDisplay = DescribeCallerKeys(unknownKeys);
 		// A record with NO supplyable field is reachable now that the zero-canonical bail is gone, and
 		// "Valid arguments: ." would read as a formatting bug rather than as information.
 		string validDisplay = canonicalNames.Count == 0
@@ -760,7 +797,7 @@ public static class McpToolErrorFilter
 	/// rather than guessing which the serializer kept.
 	/// </summary>
 	private static string BuildCaseCollisionMessage(string? toolName, IEnumerable<string> collidingKeys) {
-		string display = string.Join(", ", collidingKeys.Select(key => $"\"{key}\""));
+		string display = DescribeCallerKeys(collidingKeys);
 		return $"Tool '{toolName ?? UnknownToolName}' received {display}, which differ only in casing and "
 			+ "name the same argument. Argument names are matched case-insensitively, so exactly one of "
 			+ "them may be sent. Nothing ran: which value would win is not decided for you.";
@@ -768,7 +805,7 @@ public static class McpToolErrorFilter
 
 	private static string BuildAmbiguousShapeMessage(
 		string? toolName, string wrapperName, IEnumerable<string> extraKeys) {
-		string extraDisplay = string.Join(", ", extraKeys.Select(key => $"\"{key}\""));
+		string extraDisplay = DescribeCallerKeys(extraKeys);
 		return $"Tool '{toolName ?? UnknownToolName}' received an ambiguous argument shape: "
 			+ $"a \"{wrapperName}\" object AND top-level key(s) {extraDisplay}. "
 			+ $"Send exactly one shape — wrapped {{\"{wrapperName}\": {{...}}}} or flat {{...}} — "
