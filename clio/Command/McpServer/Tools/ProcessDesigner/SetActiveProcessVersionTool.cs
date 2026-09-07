@@ -56,7 +56,7 @@ public class SetActiveProcessVersionTool(
 		 + "designer asks before making a new version actual. Do not call this on your own initiative after "
 		 + "modify-business-process-as-new-version — call it because the user asked for it. "
 		 + "Requires the ProcessDesignService (CrtProcessBuilder) package on the target environment at "
-		 + "CrtProcessBuilder 1.4.15.0 or newer, which is where this operation first exists — an older package is "
+		 + "CrtProcessBuilder 1.4.15.1 or newer, which is where this operation first exists — an older package is "
 		 + "refused up front, naming both versions; install or update it with install-process-builder. Use "
 		 + "describe-business-process to see the family and which member is active.")]
 	public CommandExecutionResult SetActiveProcessVersion(

@@ -14,11 +14,11 @@ namespace Clio.Command;
 /// </summary>
 // The floor is a MISSING OPERATION, not a changed input form — a stricter case than the sibling literals on
 // Create/Modify, and the reason this one cannot be presence-only. ModifyProcessAsNewVersion first exists in the
-// 1.4.15.0 archive; an environment on any earlier package answers the route with a 404 rather than a contract
+// 1.4.15.1 archive; an environment on any earlier package answers the route with a 404 rather than a contract
 // error, so without the literal the caller would see a transport failure instead of "your package is behind".
 // The guard fixture asserts the shipped archive satisfies this literal, so clio can never demand a version it
 // does not itself carry.
-[RequiresPackage(BundledPackages.ProcessBuilderPackageName, "1.4.15.0",
+[RequiresPackage(BundledPackages.ProcessBuilderPackageName, "1.4.15.1",
 	Hint = BundledPackages.ProcessBuilderInstallHint)]
 public sealed class ModifyProcessAsNewVersionOptions : EnvironmentOptions {
 	/// <summary>Process code (schema Name) of the SOURCE. Provide exactly one of <see cref="ProcessName"/> or <see cref="ProcessUid"/>.</summary>
