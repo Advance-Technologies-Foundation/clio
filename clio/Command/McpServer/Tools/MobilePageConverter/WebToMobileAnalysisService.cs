@@ -370,7 +370,7 @@ public static class WebToMobileAnalysisService {
 				? new SpacingNormalizationInfo {
 					Note = "Mobile follows the mobile container standards: the web page's own value for every "
 						+ "property listed below was IGNORED (not translated), and the mobile value is already "
-						+ "baked into elementMap[].mobileValues — nothing separate to apply. Read each entry's "
+						+ "baked into viewConfigDiff[].values — nothing separate to apply. Read each entry's "
 						+ "`properties` for what was actually written on that element: this section carries "
 						+ "EVERY standard that targets a container type (gap, and any other such as the corner "
 						+ "radius), not the spacing alone, so do not assume it from the section name. Silent "
@@ -4627,13 +4627,19 @@ public static class WebToMobileAnalysisService {
 			.Select(entry => new DroppedElement {
 				WebName = entry.WebName,
 				WebType = entry.WebType,
-				Reason = entry.Reason is { Count: > 0 } reason
-					? reason
-					// A relocate-children container is a drop from the PAGE's point of view: it is not
-					// recreated on mobile. It needs no reason of its own while it sits in the working map —
-					// the operation said it — so the code is minted here, where it becomes a report.
-					: [Reason(ReasonCodes.DropContainerNoMobileEquivalent,
+				// Keyed on the OPERATION, never on reason-emptiness. A relocate-children container is a drop
+				// from the PAGE's point of view — it is not recreated on mobile — and it needs no reason of its
+				// own while it sits in the working map, because the operation said it; the code is minted here,
+				// where it becomes a report. Keying on "the reason list is empty" instead would label ANY
+				// reasonless drop as a flattened container: the most benign code in the vocabulary, claiming the
+				// children were reparented, on an element that may have been genuinely lost. Unreachable today
+				// (every Drop call site passes a code) but Drop's signature is params ReasonCode[], so
+				// Drop(name, type) compiles — and this same file forbids exactly that kind of silent reuse of a
+				// code that names the wrong cause.
+				Reason = IsRelocateChildren(entry)
+					? [Reason(ReasonCodes.DropContainerNoMobileEquivalent,
 						("webType", Nz(entry.WebType)), ("target", Nz(entry.ParentName)))]
+					: entry.Reason
 			})];
 		return dropped.Count > 0 ? dropped : null;
 	}
@@ -4645,6 +4651,10 @@ public static class WebToMobileAnalysisService {
 	/// <summary>True when this entry layers onto an element the target page already has.</summary>
 	private static bool IsMerge(ElementMapEntry entry) =>
 		string.Equals(entry?.Operation, "merge", StringComparison.Ordinal);
+
+	/// <summary>True when this entry creates a new element on the target page.</summary>
+	private static bool IsInsert(ElementMapEntry entry) =>
+		string.Equals(entry?.Operation, "insert", StringComparison.Ordinal);
 
 	/// <summary>
 	/// Projects the working element map into the mobile page's <c>viewConfigDiff</c> — applier operations
@@ -4671,7 +4681,9 @@ public static class WebToMobileAnalysisService {
 	/// </remarks>
 	private static IReadOnlyList<ViewConfigDiffOperation> ProjectViewConfigDiff(List<ElementMapEntry> elementMap) =>
 		[.. elementMap
-			.Where(entry => !IsDrop(entry) && !IsRelocateChildren(entry))
+			// An ALLOW-list, not a deny-list: a future working-map operation must fail to reach the applier
+			// payload rather than land in it silently.
+			.Where(entry => IsInsert(entry) || IsMerge(entry))
 			.Select(entry => new ViewConfigDiffOperation {
 				Operation = entry.Operation,
 				Name = entry.Name,
@@ -5372,7 +5384,7 @@ public static class WebToMobileAnalysisService {
 			? $", {accumulator.Skipped.Count} skipped (kept their web values — worth calling out, see skipped[])"
 			: string.Empty;
 		return $"{group}: {accumulator.Normalized.Count} element(s) normalized{skipped} — one entry per element "
-			+ "in normalized[] below. The values are already in elementMap[].mobileValues; the web "
+			+ "in normalized[] below. The values are already in viewConfigDiff[].values; the web "
 			+ "page's own values for those properties were IGNORED by design. Do NOT restore them, do NOT "
 			+ "treat the difference as a defect, and never raise it as a gate question.";
 	}

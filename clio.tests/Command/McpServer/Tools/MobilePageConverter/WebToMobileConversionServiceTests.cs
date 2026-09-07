@@ -194,6 +194,32 @@ public sealed class WebToMobileConversionServiceTests {
 	private static string[] Codes(DroppedElement dropped) => Codes(dropped?.Reason);
 
 	/// <summary>
+	/// The SERIALIZED shape of a dropped element is the contract a caller branches on, and the in-memory
+	/// <see cref="Codes(IReadOnlyList{ReasonCode})"/> / <see cref="ReasonParam(IReadOnlyList{ReasonCode}, string, string)"/>
+	/// helpers cannot see it: they read CLR objects, so a wrong <c>[JsonPropertyName]</c>, a missing
+	/// <c>[JsonIgnore(WhenWritingNull)]</c>, or a <c>params</c> emitted as <c>null</c> is invisible to every
+	/// other assertion in this file. Until this existed, a wire-contract change validated its wire contract
+	/// only in a sandbox E2E that skips without a seeded stand (ENG-95827, gate 3).
+	/// </summary>
+	private static void SerializedDropShapeIsTheContract(MobilePageConversionGuide guide) {
+		JsonObject json = JsonSerializer.SerializeToNode(Dropped(guide, "Inner"))!.AsObject();
+		json.Select(property => property.Key).Should().BeSubsetOf(["webName", "webType", "reason"],
+			because: "droppedElements is an audit record — a key beyond these three is conversion metadata that "
+				+ "belongs in nameMap / pendingBindings / unresolvedParents, which is the split this change made");
+		JsonObject first = json["reason"]!.AsArray()[0]!.AsObject();
+		first["code"]!.GetValue<string>().Should().Be(ReasonCodes.DropEmptyContainer,
+			because: "`code` is the field a caller switches on, so its JSON name is part of the contract");
+		first.ContainsKey("params").Should().BeFalse(
+			because: "drop-empty-container documents no params, and emitting params:null would force every "
+				+ "caller to handle a third state the contract says does not exist");
+
+		JsonObject withParams = JsonSerializer.SerializeToNode(Dropped(guide, "Timeline"))!.AsObject();
+		withParams["reason"]!.AsArray()[0]!["params"]!["webType"]!.GetValue<string>().Should().Be("crt.Timeline",
+			because: "a code that documents params must serialize them under `params`, addressable by key — "
+				+ "which is the whole reason the sentence became a code");
+	}
+
+	/// <summary>
 	/// A merge twin with NOTHING to carry: <c>values</c> is an EMPTY object, never absent.
 	/// </summary>
 	/// <remarks>
@@ -919,6 +945,11 @@ public sealed class WebToMobileConversionServiceTests {
 		MobilePageConversionGuide guide = Analyze(bundle, webByType: Reg(("crt.FlexContainer", true)));
 
 		DroppedNames(guide).Should().Contain("Color", because: "crt.ColorButton is unsupported on mobile");
+		Codes(Dropped(guide, "Color")).Should().Contain(ReasonCodes.DropTypeNotInMobileRegistry,
+			because: "an unconvertible TYPE and a positional exclusion need OPPOSITE things said to the user, and "
+				+ "only the code separates them — nothing else pins this cause-to-code mapping");
+		ReasonParam(Dropped(guide, "Color"), ReasonCodes.DropTypeNotInMobileRegistry, "webType").Should().Be("crt.ColorButton",
+			because: "the param names the type with no mobile counterpart, which is what the user is told");
 		guide.ViewModelConfig.Should().NotBeNull();
 		JsonObject attrs = guide.ViewModelConfig!.AsObject()["attributes"]!.AsObject();
 		attrs.ContainsKey("AttrA").Should().BeFalse(because: "referenced only by the dropped ColorButton");
@@ -943,6 +974,11 @@ public sealed class WebToMobileConversionServiceTests {
 		MobilePageConversionGuide guide = Analyze(bundle, webByType: Reg(("crt.FlexContainer", true)));
 
 		DroppedNames(guide).Should().Contain("Color", because: "crt.ColorButton is unsupported on mobile");
+		Codes(Dropped(guide, "Color")).Should().Contain(ReasonCodes.DropTypeNotInMobileRegistry,
+			because: "an unconvertible TYPE and a positional exclusion need OPPOSITE things said to the user, and "
+				+ "only the code separates them — nothing else pins this cause-to-code mapping");
+		ReasonParam(Dropped(guide, "Color"), ReasonCodes.DropTypeNotInMobileRegistry, "webType").Should().Be("crt.ColorButton",
+			because: "the param names the type with no mobile counterpart, which is what the user is told");
 		JsonObject attrs = guide.ViewModelConfig!.AsObject()["attributes"]!.AsObject();
 		attrs.ContainsKey("LookupAttribute_ivqsxmp").Should().BeTrue(
 			because: "the surviving Lookup field auto-captions off it via $Resources.Strings.<attr>, so it is still used");
@@ -1348,7 +1384,21 @@ public sealed class WebToMobileConversionServiceTests {
 		// … including one the mobile registry does not declare (no registry-membership pruning while the
 		// registry is incomplete — ENG-91859); only the value binding is left out.
 		leadVals.ContainsKey("usrWebOnly").Should().BeTrue(because: "registry-absent props are no longer dropped");
-		leadVals.ContainsKey("control").Should().BeFalse(because: "the value binding is added by the caller, not prebuilt");
+		leadVals.ContainsKey("control").Should().BeFalse(because: "the value binding is held out of values because the mobile binding property is a type-specific rename");
+		// The other half of that hold-out: the binding is REPORTED rather than discarded. Before
+		// pendingBindings existed the response said nothing about it, so 31 of 136 inserts on a real page
+		// silently lost their value binding with a green suite (ENG-95827, gate 3).
+		PendingBinding pending = guide.PendingBindings.Should().ContainSingle(b => b.Name == "LeadName",
+			because: "an insert whose value binding was held out of values must say so, or the caller cannot know "
+				+ "a binding existed — and ProjectPendingBindings returns null both when nothing needs one and "
+				+ "when the capture is broken, so only an assertion tells those apart")
+			.Subject;
+		pending.SourceProperty.Should().Be("control",
+			because: "the caller needs the property the SOURCE bound through to know which mobile property to "
+				+ "re-attach it under; mobileContracts allows both control and value, so it is not derivable");
+		pending.SourceValue.Should().NotBeNull(
+			because: "reporting that a binding is missing without saying what it was leaves the caller exactly "
+				+ "where the deleted prose instruction left them");
 
 		// No caption but bound to PDS.JobTitle → auto-provided column-code label.
 		Element(guide, "JobTitle").Values!.AsObject()["label"]!.GetValue<string>().Should().Be("$Resources.Strings.JobTitle");
@@ -1819,6 +1869,11 @@ public sealed class WebToMobileConversionServiceTests {
 		// Assert
 		DroppedNames(guide).Should().Contain("MoreBtn",
 			because: "a container-only dropdown with no clicked of its own is not itself a FAB entry");
+		Codes(Dropped(guide, "MoreBtn")).Should().Contain(ReasonCodes.DropNotAnActionInScope,
+			because: "the dropdown is NOT lost content — its items were flattened into the FAB and appear on "
+				+ "their own — and only the code distinguishes that from a component no rule matched at all");
+		ReasonParam(Dropped(guide, "MoreBtn"), ReasonCodes.DropNotAnActionInScope, "scope").Should().Be("MainHeader",
+			because: "the scope container is what makes the drop legible instead of looking arbitrary");
 		ViewConfigDiffOperation print = Element(guide, "PrintItem");
 		print.Operation.Should().Be("insert", because: "the nested menu item has a supported clicked and converts");
 		TypeOf(print).Should().Be("crt.MenuItem", because: "a converted header action becomes a mobile menu item");
@@ -2884,7 +2939,15 @@ public sealed class WebToMobileConversionServiceTests {
 
 		foreach (string chrome in new[] { "Main", "MainHeader", "TitleContainer", "BackButton", "PageTitle" }) {
 			guide.SourceStructure.Should().NotContain(s => s.Name == chrome, because: $"{chrome} is provided by the web template");
-			guide.ViewConfigDiff.Should().NotContain(e => SourceNameOf(guide, e) == chrome);
+			// Keyed on the operation's OWN name, not on SourceNameOf. sourceStructure is built AFTER
+			// PruneTemplateComponents, so a pruned name is absent from it, and SourceNameOf resolves only
+			// through sourceStructure or nameMap — making a SourceNameOf-keyed NotContain unsatisfiable for
+			// every operation whatever the converter emits. The line above proved the line below vacuous, and
+			// a regression that inserted MainHeader would have passed (ENG-95827, gate 3).
+			guide.ViewConfigDiff.Should().NotContain(
+				e => string.Equals(e.Name, chrome, StringComparison.OrdinalIgnoreCase),
+				because: $"{chrome} is inherited web chrome the mobile template provides itself, so an operation "
+					+ "naming it would duplicate the native element");
 		}
 		// The page's own field survives (hoisted out of the dropped Main wrapper) and is converted.
 		guide.SourceStructure.Should().Contain(s => s.Name == "UsrName");
@@ -3316,7 +3379,16 @@ public sealed class WebToMobileConversionServiceTests {
 			bundle, webByType: web, containerNameMap: containerNameMap,
 			templateComponentNames: templateNames, mobileTemplateTypesByName: mobileTypes);
 
-		guide.ViewConfigDiff.Should().NotContain(e => SourceNameOf(guide, e) == "Feed", because: "name matches but type differs - it stays inherited chrome and is pruned, not merged onto the differently-typed mobile Feed");
+		// Keyed on the operation's OWN name. sourceStructure is built AFTER PruneTemplateComponents, so the
+		// pruned Feed is absent from it, and SourceNameOf resolves only through sourceStructure or nameMap —
+		// making a SourceNameOf-keyed NotContain unsatisfiable whatever the converter emits. This was the
+		// ONLY assertion in the test, so the whole test proved nothing: a regression that merged the
+		// mismatched Feed onto the mobile crt.Feed passed (ENG-95827, gate 3).
+		guide.ViewConfigDiff.Should().NotContain(
+			e => string.Equals(e.Name, "Feed", StringComparison.OrdinalIgnoreCase),
+			because: "name matches but type differs - it stays inherited chrome and is pruned, not merged onto the differently-typed mobile Feed");
+		guide.SourceStructure.Should().NotContain(s => s.Name == "Feed",
+			because: "the type-mismatched element is pruned as chrome, which is the PREMISE of the assertion above");
 	}
 
 	[Test]
@@ -3819,6 +3891,86 @@ public sealed class WebToMobileConversionServiceTests {
 		Codes(progressBinding.Reason).Should().Equal([ReasonCodes.FlagRequestUnmapped],
 			because: "the code says KEEP AND VERIFY; the request to verify is the record's own request field, so "
 				+ "the code needs no param to repeat it");
+	}
+
+	[Test]
+	[Description("A NON-button component whose event-binding request is KNOWN-unsupported (present in the rules map with no mobile target) keeps rendering while only its binding is removed, reported as drop-request-unsupported carrying the rules author's note as a param. The last reason code with no producing test: the sibling flag-path test uses a request ABSENT from the map, so it exercises the unmapped branch instead and this arm was reached by nothing (ENG-95827, gate 3).")]
+	public void Analyze_NonButtonKnownUnsupportedRequest_BindingDroppedWithNoteParam() {
+		// Arrange — crt.PrintablesRequest is in RequestRules with Mobile = null and an authored Note.
+		PageBundleInfo bundle = Bundle("""
+			[ { "name": "Main", "type": "crt.FlexContainer", "items": [
+				{ "name": "Progress", "type": "crt.EntityStageProgressBar", "caption": "P",
+				  "updated": { "request": "crt.PrintablesRequest", "params": {} } } ] } ]
+			""");
+		var mobileTypes = new HashSet<string>(StringComparer.OrdinalIgnoreCase) {
+			"crt.FlexContainer", "crt.EntityStageProgressBar"
+		};
+
+		// Act
+		MobilePageConversionGuide guide = WebToMobileAnalysisService.Analyze(
+			bundle, mobileTypes, WebTypes,
+			webByType: Reg(("crt.FlexContainer", true)),
+			mobileByType: null,
+			RequestRules, templateRule: null,
+			sourcePage: "UsrApp_FormPage", sourceTemplate: null,
+			suggestedTarget: "UsrApp_MobileFormPage", containerNameMap: null);
+
+		// Assert
+		DroppedNames(guide).Should().NotContain("Progress",
+			because: "only a crt.Button is dropped for a dead action — every other component still renders, just "
+				+ "without that binding");
+		Element(guide, "Progress").Values!.AsObject().ContainsKey("updated").Should().BeFalse(
+			because: "the binding itself must be gone, or the page ships a request the mobile app cannot serve");
+		DroppedRequest binding = guide.RequestConversions!.DroppedRequests.Should().ContainSingle(
+			r => r.ElementName == "Progress" && r.WebRequest == "crt.PrintablesRequest",
+			because: "a removed binding is a lost action and must be reported, not silently stripped").Subject;
+		Codes(binding.Reason).Should().Equal([ReasonCodes.DropRequestUnsupported],
+			because: "a KNOWN-unsupported request is a different fact from an unmapped one — the caller must not be "
+				+ "told to go verify a request clio already knows is unavailable. It is also NOT the element-level "
+				+ "drop-unsupported-request: there the whole component is gone, here it is on the page without "
+				+ "its action");
+		ReasonParam(binding.Reason, ReasonCodes.DropRequestUnsupported, "note").Should().Be("Printables are web-only.",
+			because: "the rules author's note is the only rules-file text that still reaches a caller, and it must "
+				+ "arrive as a param BESIDE the code rather than as the reason itself — that demotion is what "
+				+ "stops a rules author writing the sentence a caller acts on");
+	}
+
+	[Test]
+	[Description("The same known-unsupported binding with NO authored note emits no params object at all — pinning the Reason() contract that an all-null param set yields no `params` key, so a caller never has to distinguish absent from present-and-null. This is the only conditionally-null param in the converter, and it was exercised by nothing.")]
+	public void Analyze_KnownUnsupportedRequestWithoutNote_EmitsNoParamsObject() {
+		// Arrange — same shape, but the rule carries no Note.
+		var rulesWithoutNote = new WebToMobilePageConversionRules {
+			Requests = [
+				new RequestMappingRule { Web = "crt.PrintablesRequest", Mobile = null, Category = "Unsupported" }
+			]
+		};
+		PageBundleInfo bundle = Bundle("""
+			[ { "name": "Main", "type": "crt.FlexContainer", "items": [
+				{ "name": "Progress", "type": "crt.EntityStageProgressBar", "caption": "P",
+				  "updated": { "request": "crt.PrintablesRequest", "params": {} } } ] } ]
+			""");
+		var mobileTypes = new HashSet<string>(StringComparer.OrdinalIgnoreCase) {
+			"crt.FlexContainer", "crt.EntityStageProgressBar"
+		};
+
+		// Act
+		MobilePageConversionGuide guide = WebToMobileAnalysisService.Analyze(
+			bundle, mobileTypes, WebTypes,
+			webByType: Reg(("crt.FlexContainer", true)),
+			mobileByType: null,
+			rulesWithoutNote, templateRule: null,
+			sourcePage: "UsrApp_FormPage", sourceTemplate: null,
+			suggestedTarget: "UsrApp_MobileFormPage", containerNameMap: null);
+
+		// Assert
+		DroppedRequest binding = guide.RequestConversions!.DroppedRequests.Should().ContainSingle(
+			r => r.ElementName == "Progress",
+			because: "the binding is still lost whether or not the rules author wrote a note").Subject;
+		binding.Reason.Should().ContainSingle(
+			because: "one cause, one code — an unsupported request is not a composite outcome")
+			.Which.Params.Should().BeNull(
+				because: "Reason() drops null-valued pairs and yields NO params object when every pair is null, "
+					+ "which is what keeps a caller from having to tell absent from present-and-null");
 	}
 
 	[Test]
@@ -8084,6 +8236,7 @@ public sealed class WebToMobileConversionServiceTests {
 		MobilePageConversionGuide guide = AnalyzeWithEmptyRemoval(bundle);
 
 		// Assert
+		SerializedDropShapeIsTheContract(guide);
 		DroppedNames(guide).Should().Contain("Inner",
 			because: "Inner's only child (Timeline) is unsupported and never becomes an insert, so Inner is never occupied and RemoveEmptyContainers drops it in round 1");
 		DroppedNames(guide).Should().Contain("Outer",

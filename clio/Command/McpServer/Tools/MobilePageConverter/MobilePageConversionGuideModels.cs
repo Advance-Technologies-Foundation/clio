@@ -133,7 +133,7 @@ public sealed class ComponentSuggestion {
 
 /// <summary>
 /// A source element that did NOT reach the mobile page, and why. Separate from
-/// <see cref="MobilePageConversionGuide.ElementMap"/> on purpose: that map is a list of operations to APPLY,
+/// <see cref="MobilePageConversionGuide.ViewConfigDiff"/> on purpose: that list holds operations to APPLY,
 /// while this is the audit trail of what was not built — for the caller to REPORT, never to act on.
 /// </summary>
 /// <remarks>
@@ -197,7 +197,7 @@ public sealed class ReasonCode {
 /// <c>operation: "insert"</c> plus the presence of <c>mobileType</c>; <c>*-retargeted</c> and
 /// <c>*-positioned</c> restated <c>parentName</c> / <c>propertyName</c> / <c>index</c>, which already carry
 /// the RESULT; <c>synthesized-by-converter</c> restated an absent <c>webName</c>. An entry in
-/// <see cref="MobilePageConversionGuide.ElementMap"/> is a deterministic instruction to apply, so a code
+/// <see cref="MobilePageConversionGuide.ViewConfigDiff"/> is a deterministic instruction to apply, so a code
 /// explaining it added bytes and nothing else and they are gone (ENG-95827).
 /// <para>
 /// A DROP is the opposite: nothing gets built, so there is no instruction to read the cause off. It was
@@ -273,9 +273,14 @@ public static class ReasonCodes {
 	public const string DropNotAnActionInScope = "drop-not-an-action-in-scope";
 
 	// ── Why a request BINDING did not convert ────────
-	// These describe the BINDING, not the element. Where the element itself was dropped, the entry carries
-	// that element's OWN code verbatim instead of a code of its own — the two collections then agree by
-	// construction, rather than by two sentences someone has to keep saying the same thing (ENG-95827).
+	// These describe the BINDING, not the element. The rule is narrower than an earlier draft of this comment
+	// claimed, and the difference matters: a binding reuses the ELEMENT's own code object only where nothing
+	// distinguishes the binding's loss from the element's — the scope path and the leaf missing-target path,
+	// where the two records are one fact and a second vocabulary could only drift from the first. Where the
+	// binding carries something the element's code does not, it gets a code of its own that names the entry
+	// to look up instead: inherited chrome (the native control's request may differ from the web one) and
+	// the two reconciliation passes. Read as "always reuse", this comment would invite collapsing three
+	// distinct codes into one (ENG-95827).
 
 	/// <summary>
 	/// The element was dropped as inherited chrome and the mobile template's native control carries its own
@@ -420,7 +425,14 @@ public sealed class ViewConfigDiffOperation {
 	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
 	public string ParentName { get; init; }
 
-	/// <summary>The parent's child collection. Absent when it is the default <c>items</c>.</summary>
+	/// <summary>
+	/// The parent's child collection. ALWAYS present on an <c>insert</c> — including when it is the default
+	/// <c>items</c>, which the applier would have assumed anyway — because this list is meant to be pasted
+	/// and an explicit slot is one less thing a reader must know about the applier to trust what they are
+	/// pasting. Absent on a <c>merge</c>, which resolves by <c>name</c> alone. (This summary previously said
+	/// "absent when it is the default items", which would have a caller read a present
+	/// <c>propertyName: "items"</c> as a NON-default slot — the one inference the field exists to prevent.)
+	/// </summary>
 	[JsonPropertyName("propertyName")]
 	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
 	public string PropertyName { get; init; }
@@ -825,7 +837,7 @@ public sealed class MobilePageConversionGuide {
 
 	/// <summary>
 	/// The source page's merged <c>viewModelConfig</c>, already FILTERED for mobile: attributes referenced
-	/// only by dropped/unsupported components are removed (see <see cref="ElementMap"/>). Apply it via
+	/// only by dropped/unsupported components are removed (see <see cref="ViewConfigDiff"/>). Apply it via
 	/// <c>viewModelConfigDiff</c>. Reference only OOTB mobile converters — a definitive mobile converter
 	/// list is forthcoming; flag any custom converter for manual review. Null when none is declared.
 	/// </summary>
@@ -966,9 +978,9 @@ public sealed class MobilePageConversionGuide {
 	/// Requests (actions) referenced by the source page's component event bindings (a button's
 	/// <c>clicked</c>, a field's <c>valueChange</c>/<c>updated</c>), deterministically converted for
 	/// mobile. Supported requests are remapped in-place inside the affected element's
-	/// <c>elementMap[].mobileValues</c>. An unsupported or unknown/custom request is handled by component
+	/// <c>viewConfigDiff[].values</c>. An unsupported or unknown/custom request is handled by component
 	/// type: on a <c>crt.Button</c> the whole element is DROPPED (a dead button, appearing as an
-	/// <c>elementMap</c> drop and recorded under <c>droppedRequests</c>) — including a button retargeted
+	/// <c>droppedElements</c> entry and recorded under <c>droppedRequests</c>) — including a button retargeted
 	/// into the FAB from a non-converting scope; on any other component type the binding is kept verbatim
 	/// and flagged for manual review (the component stays). This section is an advisory SUMMARY — the
 	/// actionable result is already baked into <c>mobileValues</c>. Null when the source page references no
@@ -982,9 +994,9 @@ public sealed class MobilePageConversionGuide {
 	/// <summary>
 	/// The responsive layout applied to each MULTI-column mobile grid container: how many grid columns per
 	/// breakpoint (<c>small</c> phone = 1, <c>medium</c>/<c>large</c> tablet = the web columns) and which
-	/// cell each child occupies. Both sides are ALREADY baked into mobileValues — the container's
+	/// cell each child occupies. Both sides are ALREADY baked into the operations' values — the container's
 	/// <c>adaptive</c> columns into its own values and each child's placement into
-	/// <c>elementMap[].mobileValues.layoutConfig.adaptive</c> — so there is nothing separate to apply. This
+	/// <c>viewConfigDiff[].values.layoutConfig.adaptive</c> — so there is nothing separate to apply. This
 	/// is an advisory summary / PROPOSAL — present it at the conversion gate so the user can adjust or
 	/// decline it. Null when no multi-column grid container is present (a single-column grid gets no adaptive).
 	/// </summary>
@@ -996,7 +1008,7 @@ public sealed class MobilePageConversionGuide {
 	/// <summary>
 	/// The containers the converter SYNTHESIZES inside every tab it creates: the designer's
 	/// tab-body grid and the Area card inside it that receives the tab's content. Already baked into
-	/// <see cref="ElementMap"/> as ordinary
+	/// <see cref="ViewConfigDiff"/> as ordinary
 	/// <c>insert</c> entries placed right after the tab's own entry — there is nothing separate to apply.
 	/// This is an informational summary of a MANDATORY structure, NOT a proposal: report it at the
 	/// conversion gate as fact, never offer to skip or replace it. Null when the page has no
@@ -1013,7 +1025,7 @@ public sealed class MobilePageConversionGuide {
 	/// standard, so the WEB page's container spacing is deliberately IGNORED (discarded, not translated) —
 	/// every <c>crt.GridContainer</c> / <c>crt.FlexContainer</c> the converter INSERTS (converted from web
 	/// and synthesized tab-body / Area layers alike) already carries gap Medium on all axes in
-	/// <c>elementMap[].mobileValues</c>, so there is nothing separate to apply. Merge twins the mobile
+	/// <c>viewConfigDiff[].values</c>, so there is nothing separate to apply. Merge twins the mobile
 	/// template provides are never touched. This is a SILENT normalization, NOT a gate decision: report it
 	/// as one aggregated line in the plan and the final report; never ask whether to apply it and never
 	/// restore the web spacing. Null when nothing was normalized.
@@ -1174,7 +1186,7 @@ public sealed class DroppedPageBusinessRule {
 /// <summary>
 /// Advisory summary of how the source page's component event-binding requests (actions) were converted
 /// for mobile. The actionable result is already applied to each affected element's
-/// <c>elementMap[].mobileValues</c>; this section explains what happened so the user can review.
+/// <c>viewConfigDiff[].values</c>; this section explains what happened so the user can review.
 /// </summary>
 public sealed class RequestConversionInfo {
 	/// <summary>Requests carried to mobile (kept in the binding; remapped when the mobile name differs).</summary>
@@ -1245,7 +1257,7 @@ public sealed class FlaggedRequest {
 
 /// <summary>
 /// The adaptive (per-breakpoint) layout applied to one multi-column mobile grid container. Both sides are
-/// ALREADY baked into mobileValues by the tool — the container's <c>adaptive</c> columns into the
+/// ALREADY baked into the operations' values by the tool — the container's <c>adaptive</c> columns into the
 /// container's own values, and each child's placement into its <c>mobileValues.layoutConfig.adaptive</c> —
 /// so there is nothing separate to apply (no duplicate merge). This is an advisory summary; present it at
 /// the conversion gate so the user can adjust or decline.
@@ -1302,7 +1314,7 @@ public sealed class TabAreaLayerGroup {
 /// <summary>
 /// Advisory summary of the spacing normalization: which inserted containers had their
 /// spacing stamped with the mobile-standard values (gap Medium). The actionable result is already
-/// baked into <c>elementMap[].mobileValues</c>; this section only feeds the plan / final-report line.
+/// baked into <c>viewConfigDiff[].values</c>; this section only feeds the plan / final-report line.
 /// </summary>
 public sealed class SpacingNormalizationInfo {
 	/// <summary>Why the web spacing is ignored and how to report the normalization.</summary>
@@ -1408,7 +1420,7 @@ public sealed class AdaptiveLayoutItem {
 	/// <summary>
 	/// The <c>layoutConfig.adaptive</c> object: keys <c>small</c> / <c>medium</c> / <c>large</c>, each
 	/// <c>{ row, column, colSpan, rowSpan }</c> (1-based). Identical to what is already written into the
-	/// field's <c>elementMap[].mobileValues.layoutConfig.adaptive</c>.
+	/// field's <c>viewConfigDiff[].values.layoutConfig.adaptive</c>.
 	/// </summary>
 	[JsonPropertyName("layoutConfigAdaptive")]
 	public JsonNode LayoutConfigAdaptive { get; init; }
