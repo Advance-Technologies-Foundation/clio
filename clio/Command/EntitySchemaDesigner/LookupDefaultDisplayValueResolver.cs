@@ -22,7 +22,7 @@ namespace Clio.Command.EntitySchemaDesigner;
 /// any expected failure degrades to a record-resolution marker (never an exception), so enrichment can
 /// never make the readback fail relative to the GUID-only behavior it augments.
 /// </remarks>
-internal interface ILookupDefaultDisplayValueResolver
+public interface ILookupDefaultDisplayValueResolver
 {
 	/// <summary>
 	/// Resolves the display value of the referenced record for a lookup <c>Const</c> default.
@@ -36,6 +36,21 @@ internal interface ILookupDefaultDisplayValueResolver
 	/// stays GUID-only (no regression).
 	/// </returns>
 	LookupDefaultResolution Resolve(string referenceSchemaName, Guid recordId, RemoteCommandOptions options);
+
+	/// <summary>
+	/// Batch counterpart of <see cref="Resolve"/>: resolves many referenced records of ONE reference schema to their
+	/// display values in a single chunked <c>IN</c> query per batch — never one query per id — so a caller with dozens
+	/// of ids stays within its request budget. Returns one <see cref="LookupDefaultResolution"/> per DISTINCT non-empty
+	/// id, keyed by <see cref="Guid"/> (so brace/case lexical form on either side cannot cause a miss), with the same
+	/// fail-soft contract and markers as <see cref="Resolve"/>. An empty or all-empty <paramref name="recordIds"/>
+	/// yields an empty map.
+	/// </summary>
+	/// <param name="referenceSchemaName">Name of the referenced lookup entity schema shared by all ids.</param>
+	/// <param name="recordIds">Identifiers of the records to resolve.</param>
+	/// <param name="options">Remote command options identifying the target environment.</param>
+	/// <returns>A map from each distinct non-empty id to its <see cref="LookupDefaultResolution"/>.</returns>
+	IReadOnlyDictionary<Guid, LookupDefaultResolution> ResolveMany(
+		string referenceSchemaName, IReadOnlyCollection<Guid> recordIds, RemoteCommandOptions options);
 }
 
 /// <summary>
@@ -53,7 +68,7 @@ internal interface ILookupDefaultDisplayValueResolver
 /// display column, e.g. an <c>ImageLookup</c> → <c>SysImage</c> reference). <see langword="null"/> when a
 /// display value is present or enrichment did not apply.
 /// </param>
-internal sealed record LookupDefaultResolution(string? DisplayValue, string? RecordResolution);
+public sealed record LookupDefaultResolution(string? DisplayValue, string? RecordResolution);
 
 /// <summary>
 /// Default <see cref="ILookupDefaultDisplayValueResolver"/> implementation. Discovers the referenced
@@ -75,6 +90,12 @@ internal sealed class LookupDefaultDisplayValueResolver : ILookupDefaultDisplayV
 
 	private const string DisplayValueAlias = "DisplayValue";
 	private const string IdColumnPath = "Id";
+
+	/// <summary>
+	/// Max ids per batched <c>IN</c> query. Every id is one query parameter and MSSql caps a statement at 2100, so
+	/// a larger id set is split across queries whose results are unioned. Kept well under the ceiling.
+	/// </summary>
+	private const int MaxIdsPerQuery = 400;
 
 	private readonly IApplicationClient _applicationClient;
 	private readonly IServiceUrlBuilder _serviceUrlBuilder;
@@ -103,6 +124,87 @@ internal sealed class LookupDefaultDisplayValueResolver : ILookupDefaultDisplayV
 			return new LookupDefaultResolution(null, DisplayColumnUnavailableMarker);
 		}
 		return QueryDisplayValue(referenceSchemaName.Trim(), displayColumn!, recordId, options);
+	}
+
+	/// <inheritdoc />
+	public IReadOnlyDictionary<Guid, LookupDefaultResolution> ResolveMany(
+		string referenceSchemaName, IReadOnlyCollection<Guid> recordIds, RemoteCommandOptions options) {
+		var result = new Dictionary<Guid, LookupDefaultResolution>();
+		if (string.IsNullOrWhiteSpace(referenceSchemaName) || recordIds is null) {
+			return result;
+		}
+		Guid[] distinctIds = recordIds.Where(id => id != Guid.Empty).Distinct().ToArray();
+		if (distinctIds.Length == 0) {
+			return result;
+		}
+		string? displayColumn = TryGetDisplayColumnName(referenceSchemaName);
+		if (string.IsNullOrWhiteSpace(displayColumn)) {
+			// No resolvable display column: mark every requested id, exactly as the single Resolve does.
+			foreach (Guid id in distinctIds) {
+				result[id] = new LookupDefaultResolution(null, DisplayColumnUnavailableMarker);
+			}
+			return result;
+		}
+		foreach (Guid[] chunk in distinctIds.Chunk(MaxIdsPerQuery)) {
+			ResolveChunk(referenceSchemaName.Trim(), displayColumn!, chunk, options, result);
+		}
+		return result;
+	}
+
+	private void ResolveChunk(
+		string schemaName, string displayColumn, Guid[] chunk, RemoteCommandOptions options,
+		Dictionary<Guid, LookupDefaultResolution> result) {
+		object query = SelectQueryHelper.BuildSelectQueryWithOrFilter(
+			schemaName,
+			[
+				new SelectQueryHelper.SelectQueryColumnDefinition(IdColumnPath, IdColumnPath),
+				new SelectQueryHelper.SelectQueryColumnDefinition(displayColumn, DisplayValueAlias)
+			],
+			IdColumnPath,
+			chunk.Select(id => id.ToString("D")).ToList(),
+			SelectQueryHelper.GuidDataValueType,
+			rowCount: chunk.Length);
+		try {
+			LookupRecordSelectResponse response = SelectQueryHelper.ExecuteSelectQuery<LookupRecordSelectResponse>(
+				_applicationClient, _serviceUrlBuilder, query, options.TimeOut);
+			var found = new Dictionary<Guid, string>();
+			foreach (LookupRecordRow row in response.Rows ?? []) {
+				// Parse the returned Id to Guid ourselves (not via a typed Guid property) so ANY lexical form the
+				// endpoint returns — braces, parentheses, or upper case — still keys correctly and matches the
+				// requested id, instead of missing and silently degrading every record to GUID-only.
+				string? display = NormalizeDisplayValue(row.DisplayValue);
+				if (display is not null && Guid.TryParse(row.Id, out Guid id)) {
+					found[id] = display;
+				}
+			}
+			foreach (Guid id in chunk) {
+				result[id] = found.TryGetValue(id, out string? display)
+					? new LookupDefaultResolution(display, null)
+					: new LookupDefaultResolution(null, NotFoundMarker);
+			}
+		} catch (NonJsonServiceResponseException ex) {
+			// Non-JSON/empty body says nothing about these records; degrade to GUID-only (no marker), as Resolve does.
+			_logger.WriteWarning($"Could not resolve lookup display values for '{schemaName}'. {ex.Message}");
+			MarkChunk(chunk, result, marker: null);
+		} catch (InvalidOperationException ex) when (IsAccessDenied(ex.Message)) {
+			MarkChunk(chunk, result, NoAccessMarker);
+		} catch (InvalidOperationException ex) {
+			_logger.WriteWarning($"Could not resolve lookup display values for '{schemaName}'. {ex.Message}");
+			MarkChunk(chunk, result, NotFoundMarker);
+		} catch (Exception ex) when (ex is HttpRequestException
+				or System.Net.WebException
+				or System.Threading.Tasks.TaskCanceledException
+				or JsonException) {
+			// Transport, timeout, or malformed-response fault: degrade to GUID-only so enrichment never fails.
+			_logger.WriteWarning($"Could not resolve lookup display values for '{schemaName}'. {ex.Message}");
+			MarkChunk(chunk, result, marker: null);
+		}
+	}
+
+	private static void MarkChunk(Guid[] chunk, Dictionary<Guid, LookupDefaultResolution> result, string? marker) {
+		foreach (Guid id in chunk) {
+			result[id] = new LookupDefaultResolution(null, marker);
+		}
 	}
 
 	private string? TryGetDisplayColumnName(string referenceSchemaName) {
@@ -201,8 +303,10 @@ internal sealed class LookupDefaultDisplayValueResolver : ILookupDefaultDisplayV
 
 	private sealed class LookupRecordRow
 	{
+		// Kept as a string (not a typed Guid) because System.Text.Json only parses the plain 'D' Guid form; the batch
+		// path parses this with Guid.TryParse so a braced/parenthesised/upper-case Id from the endpoint still matches.
 		[JsonPropertyName("Id")]
-		public Guid Id { get; set; }
+		public string? Id { get; set; }
 
 		[JsonPropertyName("DisplayValue")]
 		public string? DisplayValue { get; set; }

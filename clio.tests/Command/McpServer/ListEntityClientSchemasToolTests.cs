@@ -175,7 +175,8 @@ public class ListEntityClientSchemasToolTests {
 
 		public FakeListEntityClientSchemasCommand()
 			: base(Substitute.For<IApplicationClient>(), Substitute.For<IServiceUrlBuilder>(), ConsoleLogger.Instance,
-				Substitute.For<Clio.Common.EntitySchema.IRuntimeEntitySchemaReader>()) {
+				Substitute.For<Clio.Common.EntitySchema.IRuntimeEntitySchemaReader>(),
+				Substitute.For<Clio.Command.EntitySchemaDesigner.ILookupDefaultDisplayValueResolver>()) {
 		}
 
 		public override bool TryResolve(ListEntityClientSchemasOptions options, out ListEntityClientSchemasResponse response) {

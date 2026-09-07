@@ -3,6 +3,7 @@ namespace Clio.Command;
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using Clio.Command.EntitySchemaDesigner;
 using Clio.Common;
 using Clio.Common.EntitySchema;
 using CommandLine;
@@ -147,15 +148,18 @@ public class ListEntityClientSchemasCommand : Command<ListEntityClientSchemasOpt
 	private readonly IServiceUrlBuilder _serviceUrlBuilder;
 	private readonly ILogger _logger;
 	private readonly IRuntimeEntitySchemaReader _runtimeEntitySchemaReader;
+	private readonly ILookupDefaultDisplayValueResolver _lookupDisplayValueResolver;
 
 	/// <summary>Initializes a new instance of the <see cref="ListEntityClientSchemasCommand"/> class.</summary>
 	public ListEntityClientSchemasCommand(
 		IApplicationClient applicationClient, IServiceUrlBuilder serviceUrlBuilder, ILogger logger,
-		IRuntimeEntitySchemaReader runtimeEntitySchemaReader) {
+		IRuntimeEntitySchemaReader runtimeEntitySchemaReader,
+		ILookupDefaultDisplayValueResolver lookupDisplayValueResolver) {
 		_applicationClient = applicationClient;
 		_serviceUrlBuilder = serviceUrlBuilder;
 		_logger = logger;
 		_runtimeEntitySchemaReader = runtimeEntitySchemaReader;
+		_lookupDisplayValueResolver = lookupDisplayValueResolver;
 	}
 
 	/// <summary>
@@ -291,11 +295,11 @@ public class ListEntityClientSchemasCommand : Command<ListEntityClientSchemasOpt
 	private void EnrichTypeDisplayNames(
 		string entityName, IReadOnlyList<(MigrationEditPageInfo page, string typeColumnUId)> editPageEntries) {
 		try {
-			Dictionary<string, HashSet<string>> valuesByTypeColumn = GroupTypeValuesByColumn(editPageEntries);
+			Dictionary<string, HashSet<Guid>> valuesByTypeColumn = GroupTypeValuesByColumn(editPageEntries);
 			if (valuesByTypeColumn.Count == 0) {
 				return;
 			}
-			IReadOnlyDictionary<string, IReadOnlyDictionary<string, string>> captionsByTypeColumn =
+			IReadOnlyDictionary<string, IReadOnlyDictionary<Guid, string>> captionsByTypeColumn =
 				ResolveCaptionsByTypeColumn(entityName, valuesByTypeColumn);
 			int assigned = AssignTypeDisplayNames(editPageEntries, captionsByTypeColumn);
 
@@ -323,33 +327,37 @@ public class ListEntityClientSchemasCommand : Command<ListEntityClientSchemasOpt
 	/// through more than one SysModuleEntity row with different type columns keeps each page under its own column. The
 	/// default page (empty value) and any non-GUID registration contribute nothing, so a non-typed entity yields none.
 	/// </summary>
-	private static Dictionary<string, HashSet<string>> GroupTypeValuesByColumn(
+	private static Dictionary<string, HashSet<Guid>> GroupTypeValuesByColumn(
 		IReadOnlyList<(MigrationEditPageInfo page, string typeColumnUId)> editPageEntries) {
-		var valuesByTypeColumn = new Dictionary<string, HashSet<string>>(StringComparer.OrdinalIgnoreCase);
+		var valuesByTypeColumn = new Dictionary<string, HashSet<Guid>>(StringComparer.OrdinalIgnoreCase);
 		foreach ((MigrationEditPageInfo page, string typeColumnUId) in editPageEntries) {
-			if (!Guid.TryParse(page.TypeColumnValue, out _)
+			if (!Guid.TryParse(page.TypeColumnValue, out Guid typeValue)
 				|| string.IsNullOrWhiteSpace(typeColumnUId) || typeColumnUId == EmptyGuid) {
 				continue;
 			}
-			if (!valuesByTypeColumn.TryGetValue(typeColumnUId, out HashSet<string> values)) {
-				values = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+			if (!valuesByTypeColumn.TryGetValue(typeColumnUId, out HashSet<Guid> values)) {
+				values = [];
 				valuesByTypeColumn[typeColumnUId] = values;
 			}
-			values.Add(page.TypeColumnValue);
+			values.Add(typeValue);
 		}
 		return valuesByTypeColumn;
 	}
 
 	/// <summary>
 	/// Maps each Type column UId to its reference (lookup) schema from the entity's runtime schema (one read), then
-	/// batch-resolves that column's distinct GUIDs to captions with a single IN query per reference schema. A per-column
-	/// read failure is isolated so it cannot discard captions already resolvable for the entity's other type columns.
+	/// batch-resolves that column's distinct GUIDs to captions through the shared <see cref="ILookupDefaultDisplayValueResolver"/>
+	/// (one chunked IN query per reference schema). A per-column failure is isolated so it cannot discard captions
+	/// already resolvable for the entity's other type columns.
 	/// </summary>
-	private IReadOnlyDictionary<string, IReadOnlyDictionary<string, string>> ResolveCaptionsByTypeColumn(
-		string entityName, Dictionary<string, HashSet<string>> valuesByTypeColumn) {
+	private IReadOnlyDictionary<string, IReadOnlyDictionary<Guid, string>> ResolveCaptionsByTypeColumn(
+		string entityName, Dictionary<string, HashSet<Guid>> valuesByTypeColumn) {
 		IReadOnlyList<RuntimeEntitySchemaColumnResult> columns = _runtimeEntitySchemaReader.GetByName(entityName).Columns;
-		var captionsByTypeColumn = new Dictionary<string, IReadOnlyDictionary<string, string>>(StringComparer.OrdinalIgnoreCase);
-		foreach (KeyValuePair<string, HashSet<string>> group in valuesByTypeColumn) {
+		// The resolver reads via the injected environment-bound client; only TimeOut is taken from the options object,
+		// so a default RemoteCommandOptions is sufficient (this command carries no timeout option of its own).
+		var resolverOptions = new RemoteCommandOptions();
+		var captionsByTypeColumn = new Dictionary<string, IReadOnlyDictionary<Guid, string>>(StringComparer.OrdinalIgnoreCase);
+		foreach (KeyValuePair<string, HashSet<Guid>> group in valuesByTypeColumn) {
 			if (!Guid.TryParse(group.Key, out Guid typeColumnGuid)) {
 				continue;
 			}
@@ -359,8 +367,18 @@ public class ListEntityClientSchemasCommand : Command<ListEntityClientSchemasOpt
 				continue;
 			}
 			try {
-				captionsByTypeColumn[group.Key] = ResolveTypeCaptions(referenceSchemaName, group.Value);
+				IReadOnlyDictionary<Guid, LookupDefaultResolution> resolutions =
+					_lookupDisplayValueResolver.ResolveMany(referenceSchemaName, group.Value, resolverOptions);
+				var captions = new Dictionary<Guid, string>();
+				foreach (KeyValuePair<Guid, LookupDefaultResolution> resolution in resolutions) {
+					if (!string.IsNullOrWhiteSpace(resolution.Value?.DisplayValue)) {
+						captions[resolution.Key] = resolution.Value.DisplayValue;
+					}
+				}
+				captionsByTypeColumn[group.Key] = captions;
 			} catch (Exception ex) {
+				// ResolveMany is fail-soft, but keep the per-column guard as defence in depth so an unexpected fault in
+				// one reference schema cannot discard captions already resolvable for the entity's OTHER type columns.
 				_logger.WriteWarning(
 					$"Could not resolve type display names for reference schema '{referenceSchemaName}' on entity '{entityName}'. {ex.Message}");
 			}
@@ -373,44 +391,20 @@ public class ListEntityClientSchemasCommand : Command<ListEntityClientSchemasOpt
 	/// </summary>
 	private static int AssignTypeDisplayNames(
 		IReadOnlyList<(MigrationEditPageInfo page, string typeColumnUId)> editPageEntries,
-		IReadOnlyDictionary<string, IReadOnlyDictionary<string, string>> captionsByTypeColumn) {
+		IReadOnlyDictionary<string, IReadOnlyDictionary<Guid, string>> captionsByTypeColumn) {
 		int assigned = 0;
 		foreach ((MigrationEditPageInfo page, string typeColumnUId) in editPageEntries) {
-			if (!string.IsNullOrWhiteSpace(page.TypeColumnValue)
-				&& !string.IsNullOrWhiteSpace(typeColumnUId)
-				&& captionsByTypeColumn.TryGetValue(typeColumnUId, out IReadOnlyDictionary<string, string> captions)
-				&& captions.TryGetValue(page.TypeColumnValue, out string caption)) {
+			// Look up by the parsed Guid so the page's TypeColumnValue and the resolved Id match regardless of lexical
+			// form (braces / casing); the default page (empty value) simply fails Guid.TryParse and is skipped.
+			if (!string.IsNullOrWhiteSpace(typeColumnUId)
+				&& Guid.TryParse(page.TypeColumnValue, out Guid typeValueGuid)
+				&& captionsByTypeColumn.TryGetValue(typeColumnUId, out IReadOnlyDictionary<Guid, string> captions)
+				&& captions.TryGetValue(typeValueGuid, out string caption)) {
 				page.TypeColumnDisplayValue = caption;
 				assigned++;
 			}
 		}
 		return assigned;
-	}
-
-	/// <summary>
-	/// Resolves a set of lookup-record GUIDs to their display-column captions with a single batched <c>IN</c> query
-	/// per <see cref="ClassicEntitySchemaQuery.InFilterChunkSize"/> chunk — never one query per GUID, so a typed
-	/// entity with many per-type pages stays within the MCP read deadline. Returns value-&gt;caption for the records
-	/// that resolved; a missing, deleted, or access-denied record is simply absent and its page stays GUID-only.
-	/// </summary>
-	private IReadOnlyDictionary<string, string> ResolveTypeCaptions(
-		string referenceSchemaName, IReadOnlyCollection<string> typeValues) {
-		var result = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
-		string displayColumn = _runtimeEntitySchemaReader.GetByName(referenceSchemaName).PrimaryDisplayColumnName;
-		if (string.IsNullOrWhiteSpace(displayColumn)) {
-			return result;
-		}
-		foreach (string[] chunk in typeValues.Chunk(ClassicEntitySchemaQuery.InFilterChunkSize)) {
-			JArray rows = Select(BuildSelectDisplayValuesByIds(referenceSchemaName, displayColumn, chunk));
-			foreach (JToken row in rows) {
-				string id = row["Id"]?.ToString();
-				string caption = row["DisplayValue"]?.ToString();
-				if (!string.IsNullOrWhiteSpace(id) && !string.IsNullOrWhiteSpace(caption)) {
-					result[id] = caption;
-				}
-			}
-		}
-		return result;
 	}
 
 	private IReadOnlyDictionary<string, (string name, string template)> ResolveSchemaMetaBatch(IEnumerable<string> uIds) {
@@ -479,11 +473,4 @@ public class ListEntityClientSchemasCommand : Command<ListEntityClientSchemasOpt
 			[TypeColumnUIdColumn] = Column($"SysModuleEntity.{TypeColumnUIdColumn}")
 		},
 		Group(("byEntity", Eq("SysModuleEntity.SysEntitySchemaUId", entityUId, 0))), EditPageRowCount);
-
-	// Batched Id -> display-value read against a Type-lookup reference schema (ENG-96553); mirrors the
-	// BuildSelectSchemasByUId IN-query pattern so many per-type GUIDs resolve in one round-trip. dataValueType 0 = Guid.
-	private static JObject BuildSelectDisplayValuesByIds(
-		string schemaName, string displayColumn, IReadOnlyCollection<string> ids) => Query(schemaName,
-		new JObject { ["Id"] = Column("Id"), ["DisplayValue"] = Column(displayColumn) },
-		Group(("byId", InFilter("Id", ids, 0))), ids.Count);
 }
