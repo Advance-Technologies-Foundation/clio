@@ -62,7 +62,9 @@ clear error rather than reporting a silent success.
                            this override > the connected user's profile culture > en-US
 
 At least one settable property (--primary-display-column, --title or
---title-localizations) is required.
+--title-localizations) is required. --title and --title-localizations are
+mutually exclusive: supplying both is rejected, because the write applies the
+map only and the scalar would be dropped silently.
 ```
 
 Environment options are also available:

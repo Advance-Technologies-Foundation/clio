@@ -26,6 +26,16 @@ public class SetEntitySchemaPropertiesOptions : RemoteCommandOptions
 		"At least one schema property to set is required " +
 		"(for example --primary-display-column, --title or --title-localizations).";
 
+	/// <summary>
+	/// Single source of truth for the "--title together with --title-localizations" rejection.
+	/// The write path applies the map and IGNORES the scalar, so accepting both would report success
+	/// on a request whose caption for the effective culture was never written.
+	/// </summary>
+	internal const string TitleAndTitleLocalizationsConflictError =
+		"--title and --title-localizations are mutually exclusive. " +
+		"Supply the scalar caption for the effective caption culture, " +
+		"or list every culture you want to change in --title-localizations.";
+
 	// Required is enforced in ValidateOptions (not via CommandLineParser's Required=true) so the hidden
 	// --package-name / --name aliases work when used standalone — the parser enforces Required on the
 	// canonical token's presence, which would reject an alias-only invocation. Mirrors ModifyEntitySchemaColumnOptions.
@@ -52,11 +62,13 @@ public class SetEntitySchemaPropertiesOptions : RemoteCommandOptions
 	public string? PrimaryDisplayColumn { get; set; }
 
 	/// <summary>
-	/// Gets or sets the new schema caption for a single culture. Ignored when
-	/// <see cref="TitleLocalizations"/> is supplied.
+	/// Gets or sets the new schema caption for a single culture. Mutually exclusive with
+	/// <see cref="TitleLocalizations"/>; supplying both is rejected by
+	/// <see cref="SetEntitySchemaPropertiesCommand.ValidateOptions"/>.
 	/// </summary>
 	[Option("title", Required = false,
-		HelpText = "New schema caption for the effective caption culture (see --caption-culture)")]
+		HelpText = "New schema caption for the effective caption culture (see --caption-culture). "
+			+ "Mutually exclusive with --title-localizations")]
 	public string? Title { get; set; }
 
 	/// <summary>
@@ -64,7 +76,8 @@ public class SetEntitySchemaPropertiesOptions : RemoteCommandOptions
 	/// <c>{"en-US":"Mention language"}</c>. Cultures that are not listed are left untouched.
 	/// </summary>
 	[Option("title-localizations", Required = false,
-		HelpText = "New schema caption per culture as JSON, e.g. '{\"en-US\":\"Mention language\"}'")]
+		HelpText = "New schema caption per culture as JSON, e.g. '{\"en-US\":\"Mention language\"}'. "
+			+ "Mutually exclusive with --title")]
 	public string? TitleLocalizations { get; set; }
 
 	/// <summary>
@@ -147,6 +160,12 @@ public class SetEntitySchemaPropertiesCommand : Command<SetEntitySchemaPropertie
 			// and failing only at the readback check.
 			options.ParsedTitleLocalizations = EntitySchemaDesignerSupport.NormalizeSchemaCaptionLocalizations(
 				options.ParsedTitleLocalizations, "title-localizations");
+		}
+		if (!string.IsNullOrWhiteSpace(options.Title) && options.ParsedTitleLocalizations is { Count: > 0 }) {
+			// The write path applies the map and never the scalar, so accepting both silently dropped
+			// --title on a published destructive write and still reported success.
+			throw new ArgumentException(
+				SetEntitySchemaPropertiesOptions.TitleAndTitleLocalizationsConflictError, nameof(options));
 		}
 		if (!options.HasAnyPropertyToSet) {
 			throw new ArgumentException(SetEntitySchemaPropertiesOptions.NoPropertyToSetError, nameof(options));

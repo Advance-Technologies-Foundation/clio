@@ -341,7 +341,10 @@ internal static class EntitySchemaDesignerSupport
 			// schema.Caption and the save, the publish and the OData rebuild all complete before the
 			// readback verification throws "was not persisted".
 			try {
-				CultureInfo.GetCultureInfo(cultureName);
+				// predefinedOnly: true - the single-argument overload MANUFACTURES a fallback culture for a
+				// well-formed but invented tag on ICU, so "xx-YY" used to pass this guard and reach the save.
+				// It also bounds the BCL's static, non-evicting culture cache to the finite predefined set.
+				CultureInfo.GetCultureInfo(cultureName, predefinedOnly: true);
 			} catch (CultureNotFoundException) {
 				throw new EntitySchemaDesignerException(
 					$"{fieldName} contains an unknown culture name '{cultureName}'.");

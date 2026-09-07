@@ -226,6 +226,11 @@ internal sealed class RemoteEntitySchemaColumnManager : IRemoteEntitySchemaColum
 	/// the caller did not mention untouched. A scalar <c>--title</c> is anchored to the culture produced by
 	/// <paramref name="effectiveCultureNameProvider"/>, which is invoked only in that case.
 	/// </summary>
+	/// <remarks>
+	/// The map wins over the scalar here, but the two can no longer arrive together:
+	/// <see cref="SetEntitySchemaPropertiesCommand.ValidateOptions"/> rejects that combination, so this
+	/// precedence is a defensive fallback rather than a documented behaviour a caller can rely on.
+	/// </remarks>
 	/// <returns>The culture-to-caption map that must be verified after the save; EMPTY when no caption
 	/// change was requested. Empty rather than <see langword="null"/> (Sonar S1168) - the only consumer,
 	/// <see cref="VerifySchemaCaption"/>, iterates it, so an empty map already means "verify nothing".</returns>

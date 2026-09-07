@@ -135,4 +135,90 @@ public sealed class SetEntitySchemaPropertiesTitleTests {
 			.WithMessage("*title-localizations*",
 				"because the message must name the argument the caller has to fix");
 	}
+
+	[Test]
+	[Description("ValidateOptions_ShouldReject_WhenBothTitleAndTitleLocalizationsAreSupplied - the write path applies the map and never the scalar, so accepting both silently dropped --title on a published, destructive write and still reported success.")]
+	public void ValidateOptions_ShouldReject_WhenBothTitleAndTitleLocalizationsAreSupplied() {
+		// Arrange
+		SetEntitySchemaPropertiesOptions options = CreateOptions();
+		options.Title = "Car";
+		options.TitleLocalizations = "{\"uk-UA\":\"Автомобіль\"}";
+
+		// Act
+		Action act = () => SetEntitySchemaPropertiesCommand.ValidateOptions(options);
+
+		// Assert
+		act.Should().Throw<ArgumentException>(
+				"because the caption the caller asked for under the effective culture would never be written")
+			.WithMessage("*mutually exclusive*",
+				"because the caller has to learn that the two options are alternatives, not additive");
+	}
+
+	[Test]
+	[Description("ValidateOptions_ShouldReject_WhenTheLocalizationMapKeyIsAnInventedCulture - CultureInfo.GetCultureInfo(name) MANUFACTURES a fallback culture for a well-formed but invented tag on ICU, so \"xx-YY\" used to pass this guard, be saved and published, and fail only at the readback.")]
+	public void ValidateOptions_ShouldReject_WhenTheLocalizationMapKeyIsAnInventedCulture() {
+		// Arrange
+		SetEntitySchemaPropertiesOptions options = CreateOptions();
+		options.TitleLocalizations = "{\"xx-YY\":\"Mention language\"}";
+
+		// Act
+		Action act = () => SetEntitySchemaPropertiesCommand.ValidateOptions(options);
+
+		// Assert
+		act.Should().Throw<EntitySchemaDesignerException>(
+				"because an invented culture must be refused before the schema is saved and published")
+			.WithMessage("*xx-YY*",
+				"because the message must name the culture the caller has to fix");
+	}
+
+	[Test]
+	[Description("ValidateOptions_ShouldReject_WhenAParsedLocalizationMapKeyIsAnInventedCulture - the MCP surface hands the map over already deserialized, so it must reach the same culture-name guard as the CLI JSON string.")]
+	public void ValidateOptions_ShouldReject_WhenAParsedLocalizationMapKeyIsAnInventedCulture() {
+		// Arrange
+		SetEntitySchemaPropertiesOptions options = CreateOptions();
+		options.ParsedTitleLocalizations = new Dictionary<string, string> { ["xx-YY"] = "Mention language" };
+
+		// Act
+		Action act = () => SetEntitySchemaPropertiesCommand.ValidateOptions(options);
+
+		// Assert
+		act.Should().Throw<EntitySchemaDesignerException>(
+				"because both surfaces must reject an invented culture rather than only the CLI one")
+			.WithMessage("*xx-YY*",
+				"because the message must name the culture the caller has to fix");
+	}
+
+	[Test]
+	[Description("ValidateOptions_ShouldReject_WhenTitleLocalizationsJsonIsAnEmptyObject - an empty object parses cleanly, so without this branch the request reached the save with nothing to write and reported success.")]
+	public void ValidateOptions_ShouldReject_WhenTitleLocalizationsJsonIsAnEmptyObject() {
+		// Arrange
+		SetEntitySchemaPropertiesOptions options = CreateOptions();
+		options.TitleLocalizations = "{}";
+
+		// Act
+		Action act = () => SetEntitySchemaPropertiesCommand.ValidateOptions(options);
+
+		// Assert
+		act.Should().Throw<EntitySchemaDesignerException>(
+				"because a caption request that names no culture cannot change anything")
+			.WithMessage("*title-localizations*",
+				"because the message must name the argument the caller has to fix");
+	}
+
+	[Test]
+	[Description("ValidateOptions_ShouldReject_WhenAParsedLocalizationMapCaptionIsInTheWrongScript - the ENG-91044 script guard has to run on the MCP map path too, otherwise Cyrillic text lands under en-US on a published write.")]
+	public void ValidateOptions_ShouldReject_WhenAParsedLocalizationMapCaptionIsInTheWrongScript() {
+		// Arrange
+		SetEntitySchemaPropertiesOptions options = CreateOptions();
+		options.ParsedTitleLocalizations = new Dictionary<string, string> { ["en-US"] = "Мова згадки" };
+
+		// Act
+		Action act = () => SetEntitySchemaPropertiesCommand.ValidateOptions(options);
+
+		// Assert
+		act.Should().Throw<EntitySchemaDesignerException>(
+				"because a caption whose script contradicts its culture is the ENG-91044 defect this guard exists for")
+			.WithMessage("*en-US*",
+				"because the message must name the culture whose caption is wrong");
+	}
 }
