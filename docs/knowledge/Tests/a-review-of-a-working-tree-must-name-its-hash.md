@@ -63,17 +63,33 @@ disagreeing with it. Every one came from re-measuring from a direction the autho
 the mandated gate is staffed, spend it on independent measurement, and do not let the reviewer read the
 author's probe before writing their own.
 
-**State the normalisation, or the rule misfires.** `core.autocrlf=true` on this repository's Windows
-checkouts, so identical content hashes two different ways:
+**Anchor to the git blob or the commit - never to the worktree file.** `core.autocrlf=true` on this
+repository's Windows checkouts, so identical content hashes two different ways:
 
 ```
 git show HEAD:clio/Command/ProcessModel/ProcessGraphValidator.cs | md5sum   e581e472...
 md5sum clio/Command/ProcessModel/ProcessGraphValidator.cs                   a27a331f...
-either of the above | tr -d '\r'                                            e581e472...
+either of the above, piped through `tr -d` to strip CR                      e581e472...
 ```
 
-The blob stores LF, the worktree holds CRLF. Two sessions on the *same* commit will therefore report
-different hashes for the same bytes depending on whether they hashed the blob or the file — and under
-the rule above that reads as "different bytes, verdicts void", which is a false alarm in the direction
-that wastes a round. Pick one and say which: hash the worktree file after `tr -d '\r'`, or hash the
-output of `git diff`. Found by applying the rule, one exchange after stating it.
+The blob stores LF, the worktree holds CRLF, so two sessions on the *same* commit report different
+hashes for the same bytes - which under this record's rule reads as "different bytes, verdicts void",
+a false alarm in the direction that wastes a round.
+
+The first remedy written here was "pick one convention and say which". That is wrong, and the reason
+generalises: **the worktree hash depends on a local config setting.** `core.autocrlf` differs between
+machines and checkouts, so `a27a331f` is not reproducible by anyone else even on byte-identical
+content, while `e581e472` is what git stores and every checkout agrees on it. An anchor that varies by
+machine is not an anchor, and a rule that needs a footnote is a rule the next pair skips.
+
+**And then most of this record disappears.** A content hash was only ever needed because the subject
+was *uncommitted*. Once the work is committed, the commit id **is** the anchor - reproducible,
+immutable, and naming the whole tree rather than one file at a time. So the hash discipline is a
+workaround, and the thing it works around is reviewing uncommitted work.
+
+That is the single cause behind both records in this directory:
+[[three-defences-and-no-oracle-is-an-unpinned-rule]] says a defence is not an oracle; this one says an
+observation is not a fact until it names what it observed - **and the only reason it must name a hash
+is that it was pointed at a working tree.** Commit first and the anchor is free. Whether the mandated
+gate should therefore run against a commit is the owner's trade, because it changes when the gate can
+fire and what the workflow costs; what is recorded here is that the two findings have one cause.
