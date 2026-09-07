@@ -117,12 +117,14 @@ public sealed class ProcessGraphValidator : IProcessGraphValidator {
 			}
 			bool blankSource = string.IsNullOrWhiteSpace(edge.Source);
 			bool blankTarget = string.IsNullOrWhiteSpace(edge.Target);
-			connected.Add(blankSource || blankTarget
-				? edge with {
-					Source = blankSource ? missing : edge.Source,
-					Target = blankTarget ? missing : edge.Target
-				}
-				: edge);
+			if (!blankSource && !blankTarget) {
+				connected.Add(edge);
+				continue;
+			}
+			connected.Add(edge with {
+				Source = blankSource ? missing : edge.Source,
+				Target = blankTarget ? missing : edge.Target
+			});
 		}
 		return connected;
 	}
@@ -468,8 +470,8 @@ public sealed class ProcessGraphValidator : IProcessGraphValidator {
 				|| outgoing[n.Name].Any(o => o.FlowKind == ProcessFlowKind.Conditional))
 			.Select(n => n.Name)
 			.ToHashSet();
-		foreach (ProcessGraphNode node in nodes.Where(n => TypeOf(n) == EventType.ParallelGateway)) {
-			List<ProcessGraphEdge> ins = incoming[node.Name];
+		foreach (string joinName in nodes.Where(n => TypeOf(n) == EventType.ParallelGateway).Select(n => n.Name)) {
+			List<ProcessGraphEdge> ins = incoming[joinName];
 			if (ins.Count < 2 || choosingElements.Count == 0) {
 				continue;
 			}
@@ -491,11 +493,11 @@ public sealed class ProcessGraphValidator : IProcessGraphValidator {
 			string split = choosingElements.FirstOrDefault(gateway => DivergesIntoTwoBranches(gateway, perBranch));
 			if (split != null) {
 				findings.Add(new ProcessGraphFinding(ProcessGraphSeverity.Warning, "R8",
-					$"Parallel join '{node.Name}' waits for every incoming branch, but two of them leave "
+					$"Parallel join '{joinName}' waits for every incoming branch, but two of them leave "
 					+ $"'{split}' by different flows, and that element takes only one of them. If that is the "
 					+ "shape you meant, the instance will hang in Running with no error - use an exclusive "
 					+ "gateway to merge instead.",
-					node.Name));
+					joinName));
 			}
 		}
 	}
