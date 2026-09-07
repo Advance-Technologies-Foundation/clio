@@ -181,6 +181,7 @@ public class SetActiveProcessVersionCommand(
 			logger.WriteInfo(
 				"New process instances will start on this version. Instances already running stay on the version "
 				+ "they started with — activation never migrates them.");
+			WarnOnPartialActivation(options, result);
 			foreach (string warning in result.Warnings ?? []) {
 				logger.WriteWarning(warning);
 			}
@@ -189,6 +190,58 @@ public class SetActiveProcessVersionCommand(
 			logger.WriteError(exception.Message);
 			return 1;
 		}
+	}
+
+	/// <summary>
+	/// Reports the two ways a reported SUCCESS is still not what the caller asked for.
+	/// </summary>
+	/// <remarks>
+	/// <para>
+	/// The read-back exists to expose exactly these, and until now the success path discarded both. A non-zero
+	/// deactivation count is the platform having logged and SWALLOWED a failure to deactivate a sibling (ADR
+	/// choice 4): two members stay flagged active and package order — not this call — decides which one runs,
+	/// which is the state PRD SM-03's counter-metric forbids reporting as a plain success. A read-back naming
+	/// a DIFFERENT member than the request is the second: it is read from the environment rather than echoed
+	/// precisely so a caller can see that, and printing "Version X is now the actual one" with exit 0 for some
+	/// other X hides it.
+	/// </para>
+	/// <para>
+	/// Warnings and not a failure: the write DID happen and the environment answered about its own state, so
+	/// exit 1 would tell an operator to retry something that already took effect. What they need is to be told
+	/// which version actually runs.
+	/// </para>
+	/// </remarks>
+	private void WarnOnPartialActivation(SetActiveProcessVersionOptions options,
+		SetActiveProcessVersionResult result) {
+		if (result.DeactivationFailureCount > 0) {
+			logger.WriteWarning(
+				$"{result.DeactivationFailureCount} sibling(s) are ALSO still flagged active, so which one runs "
+				+ "is decided by package order rather than by this call. Read the family back with "
+				+ "describe-business-process before reporting the rollback as done.");
+		}
+		if (!ReadBackMatchesRequest(options, result)) {
+			logger.WriteWarning(
+				$"The environment reports '{result.ActiveVersionName}' (UId: {result.ActiveVersionSchemaUId}) as "
+				+ "the actual version, which is NOT the version this call asked for. The activation was accepted "
+				+ "but the version that runs is not the one requested.");
+		}
+	}
+
+	// Compared on whichever identity the caller supplied, because the other one is a value clio never sent and
+	// therefore has nothing to disagree with. UIds are parsed rather than string-compared: the server is free
+	// to render a GUID in a different case or format than the caller typed, and that is not a mismatch.
+	private static bool ReadBackMatchesRequest(SetActiveProcessVersionOptions options,
+		SetActiveProcessVersionResult result) {
+		if (!string.IsNullOrWhiteSpace(options.VersionName)) {
+			return string.IsNullOrWhiteSpace(result.ActiveVersionName)
+				|| string.Equals(result.ActiveVersionName, options.VersionName.Trim(),
+					StringComparison.OrdinalIgnoreCase);
+		}
+		if (!Guid.TryParse(options.VersionUid, out Guid requested)
+			|| !Guid.TryParse(result.ActiveVersionSchemaUId, out Guid reported)) {
+			return true;
+		}
+		return requested == reported;
 	}
 }
 

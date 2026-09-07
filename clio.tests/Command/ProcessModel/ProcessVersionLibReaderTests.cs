@@ -2,10 +2,12 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Net;
+using System.Threading;
 using System.Threading.Tasks;
 using ATF.Repository.Mock;
 using ATF.Repository.Providers;
 using Clio.Command.ProcessModel;
+using Clio.CreatioModel;
 using FluentAssertions;
 using NSubstitute;
 using NSubstitute.ExceptionExtensions;
@@ -33,6 +35,9 @@ public sealed class ProcessVersionLibReaderTests {
 	private static readonly Guid ChildUId = Guid.Parse("b5e5162a-254a-430f-8978-4738c6ebf76b");
 	private static readonly Guid PackageUId = Guid.Parse("864d1545-a641-46c3-b866-e57bd6d39579");
 
+	/// <summary>The root of a SECOND, unrelated process, used to prove the family filter actually filters.</summary>
+	private static readonly Guid ForeignRootUId = Guid.Parse("1a9d5c30-6f47-4a1b-9d52-0c8e3b7d4f21");
+
 	/// <summary>
 	/// The keys are the view's column names, because that is what ATF puts in the select and what the mock
 	/// replays — not the model's property names, which differ for <c>Parent</c>.
@@ -55,11 +60,31 @@ public sealed class ProcessVersionLibReaderTests {
 	/// The mock replays one canned row set for every query on the schema, so the row under test is placed
 	/// first: the by-UId read then resolves to it whether or not the filter reaches the provider.
 	/// </summary>
+	/// <remarks>
+	/// Measured on ATF.Repository.Mock 2.0.3.1: <c>DataProviderMock</c> honours NEITHER the <c>Where</c>
+	/// predicate, NOR <c>Take</c>, NOR the <c>FirstOrDefault</c> predicate — 62 canned rows come back as 62
+	/// for every one of those. That is why the family selection is asserted through
+	/// <see cref="ProcessVersionLibReader.SelectFamily"/>, which runs in memory over whatever the provider
+	/// returned: a filter that lives only in the query is invisible to every test in this file.
+	/// </remarks>
 	private static ProcessVersionLibReader ReaderOver(params Dictionary<string, object>[] rows) {
 		DataProviderMock provider = new();
 		provider.MockItems(SchemaName).Returns(rows.ToList());
 		return new ProcessVersionLibReader(provider);
 	}
+
+	/// <summary>A row object of the kind the describe caption arm already holds when it calls the reader.</summary>
+	private static VwProcessLib RowObject(Guid uid, string name, int? version, bool? isActive, Guid rootUId) =>
+		new() {
+			UId = uid,
+			Name = name,
+			Caption = "Invoice approval",
+			Version = version,
+			IsActiveVersion = isActive,
+			VersionParentUId = rootUId,
+			PackageUId = PackageUId,
+			Enabled = true
+		};
 
 	[Test]
 	[Description("An unversioned process reports version 0, active, a one-member root family and NO warning.")]
@@ -295,6 +320,178 @@ public sealed class ProcessVersionLibReaderTests {
 		facts.Warning.Should().Contain("simulated request timeout",
 			because: "the caller is told why the facts are absent, and a timeout is the most likely why");
 		facts.Version.Should().BeNull(because: "a read that did not complete establishes nothing");
+	}
+
+	[Test]
+	[Description("Rows of a SECOND process reach the reader and are excluded: the family filter is the single guard against publishing an unrelated schema as the version to launch, and describe hands that pointer to an agent which is told to re-describe by it and run it.")]
+	public void Read_Should_ExcludeForeignFamilies_When_TheViewReturnsMoreThanOne() {
+		// Arrange - the foreign row is the one flagged active, so losing the filter does not merely add a
+		// member: it makes the answer name a schema belonging to a different process, or refuse to name one at
+		// all because two are flagged.
+		ProcessVersionLibReader sut = ReaderOver(
+			Row(RootUId, "InvoiceVisaProcess", version: 0, isActive: false, rootUId: RootUId),
+			Row(ChildUId, "InvoiceVisaProcessInvoice1", version: 1, isActive: true, rootUId: RootUId),
+			Row(Guid.NewGuid(), "UsrOrder_ApproveCustom1", version: 1, isActive: true, rootUId: ForeignRootUId,
+				caption: "Order approval"));
+
+		// Act
+		ProcessVersionFacts facts = sut.Read(RootUId.ToString());
+
+		// Assert
+		facts.Versions.Select(v => v.Name).Should()
+			.BeEquivalentTo(["InvoiceVisaProcess", "InvoiceVisaProcessInvoice1"],
+				because: "the reported family is the read schema's own, and a member of another process in it "
+					+ "would be published to an agent as a version of this one");
+		facts.ActiveVersionName.Should().Be("InvoiceVisaProcessInvoice1",
+			because: "the active member is chosen within the family; a foreign flagged row must not be able to "
+				+ "become the pointer describe tells the agent to launch");
+		facts.ActiveVersionSchemaUId.Should().Be(ChildUId.ToString(),
+			because: "the pointer is what an agent re-describes and runs, so it must identify this family");
+		facts.Warning.Should().BeNull(
+			because: "everything was established; a second family leaking in would show up here as the "
+				+ "two-members-flagged gap instead");
+	}
+
+	[Test]
+	[Description("A schema whose family key the view did not establish publishes no values at all. VersionParentUId is the one column left non-nullable, so a view NULL arrives as Guid.Empty — and using it as an identity would select every other row that also defaulted.")]
+	public void Read_Should_ReportNotEstablished_When_TheFamilyKeyIsDefaulted() {
+		// Arrange
+		ProcessVersionLibReader sut = ReaderOver(
+			Row(RootUId, "InvoiceVisaProcess", version: 3, isActive: true, rootUId: Guid.Empty));
+
+		// Act
+		ProcessVersionFacts facts = sut.Read(RootUId.ToString());
+
+		// Assert
+		facts.Warning.Should().Contain("no version family key",
+			because: "the warning names WHICH fact was missing, and this one is the identity everything else "
+				+ "is keyed on");
+		facts.Version.Should().BeNull(
+			because: "the row's own version was readable, but publishing it beside a family nobody could "
+				+ "select would present a partial answer as a complete one");
+		facts.Versions.Should().BeNull(because: "no family could be selected, so none may be reported");
+		facts.ActiveVersionSource.Should().BeNull(because: "no authority established anything here");
+	}
+
+	[Test]
+	[Description("A family read that comes back with no member of the schema's own family reports Versions as absent rather than empty: an empty list reads as 'checked, and there are no versions', which is the one claim this reader must never make without having checked.")]
+	public void Read_Should_ReportNotEstablished_When_TheFamilyReadReturnsNothing() {
+		// Arrange - reachable through the row entry point, where the row the caller holds and the family the
+		// view answers with are two separate reads that can disagree.
+		DataProviderMock provider = new();
+		provider.MockItems(SchemaName).Returns([
+			Row(Guid.NewGuid(), "UsrOrder_Approve", version: 0, isActive: true, rootUId: ForeignRootUId)
+		]);
+		ProcessVersionLibReader sut = new(provider);
+
+		// Act
+		ProcessVersionFacts facts = sut.Read(RowObject(RootUId, "InvoiceVisaProcess", 0, true, RootUId));
+
+		// Assert
+		facts.Warning.Should().Contain("no version family",
+			because: "the caller is told the family could not be established, not handed an empty one");
+		facts.Versions.Should().BeNull(
+			because: "an empty list would read as a checked answer with no versions in it");
+		facts.Version.Should().BeNull(because: "a partial family answer publishes no version facts");
+	}
+
+	[Test]
+	[Description("The row entry point skips the identity lookup the caller already performed. The describe caption arm holds this exact row, and re-fetching it by UId is a DataService round-trip that establishes nothing new.")]
+	public void Read_Should_SkipTheIdentityQuery_When_TheCallerSuppliesTheRow() {
+		// Arrange
+		DataProviderMock provider = new();
+		IItemsMock items = provider.MockItems(SchemaName).Returns([
+			Row(RootUId, "InvoiceVisaProcess", version: 0, isActive: false, rootUId: RootUId),
+			Row(ChildUId, "InvoiceVisaProcessInvoice1", version: 1, isActive: true, rootUId: RootUId)
+		]);
+		ProcessVersionLibReader sut = new(provider);
+
+		// Act
+		ProcessVersionFacts facts = sut.Read(RowObject(RootUId, "InvoiceVisaProcess", 0, false, RootUId));
+
+		// Assert
+		items.ReceivedCount.Should().Be(1,
+			because: "only the FAMILY still has to be read; the schema's own row was handed in, and the UId "
+				+ "entry point pays two queries for the same answer");
+		facts.ActiveVersionName.Should().Be("InvoiceVisaProcessInvoice1",
+			because: "skipping the identity query must not change the facts the reader establishes");
+		facts.Warning.Should().BeNull(because: "the family was read and its active member established");
+	}
+
+	[Test]
+	[Description("A read that is merely SLOW degrades exactly like one that failed. RemoteDataProvider is constructed with no timeout, so without a clio-side budget the only bound was the 120 s MCP read deadline — and by the time that fires the whole describe is lost along with the graph it had already built.")]
+	public void Read_Should_ReportNotEstablished_When_TheReadOutrunsItsBudget() {
+		// Arrange
+		IDataProvider provider = Substitute.For<IDataProvider>();
+		provider.GetItems(null).ReturnsForAnyArgs(_ => {
+			Thread.Sleep(TimeSpan.FromSeconds(2));
+			return null;
+		});
+		ProcessVersionLibReader sut = new(provider, TimeSpan.FromMilliseconds(100));
+
+		// Act
+		Func<ProcessVersionFacts> act = () => sut.Read(RootUId.ToString());
+
+		// Assert
+		ProcessVersionFacts facts = act.Should().NotThrow(
+				because: "a version read that outran its budget must degrade, not turn a working describe into "
+					+ "an error - the same contract a FAILED read already had")
+			.Which;
+		facts.Warning.Should().Contain("did not complete within",
+			because: "the caller is told the read was abandoned rather than that the process has no versions");
+		facts.Version.Should().BeNull(because: "an abandoned read establishes nothing");
+		facts.ActiveVersionSource.Should().BeNull(because: "no authority answered inside the budget");
+	}
+
+	[Test]
+	[Description("A truncated family whose flagged member fell outside the FETCH blames the reader's own cap, not the platform. The library did flag one; this reader never read the row, and 'flagged no active version' beside FamilyTruncated is a pair of contradictory claims an agent then reports as fact.")]
+	public void Read_Should_BlameItsOwnCap_When_TheFlaggedMemberFellOutsideTheFetch() {
+		// Arrange - the flagged member sits past FamilyCap + 1, which is all the query takes and in no defined
+		// order, so it is absent from the fetched set entirely.
+		Dictionary<string, object>[] rows = Enumerable.Range(0, 60)
+			.Select(i => Row(i == 0 ? RootUId : Guid.NewGuid(), $"UsrProcess_Custom{i}", version: i,
+				isActive: i == 55, rootUId: RootUId))
+			.ToArray();
+		ProcessVersionLibReader sut = ReaderOver(rows);
+
+		// Act
+		ProcessVersionFacts facts = sut.Read(RootUId.ToString());
+
+		// Assert
+		facts.FamilyTruncated.Should().BeTrue(because: "60 members is over the reader's cap of 50");
+		facts.Warning.Should().Contain($"exceeded the {ProcessVersionLibReader.FamilyCap}-member read cap",
+			because: "the honest statement is about this reader's bound, which is what actually stopped the "
+				+ "active member being seen");
+		facts.Warning.Should().NotContain("flagged no active version",
+			because: "the library DID flag one - claiming otherwise is a statement about the platform that "
+				+ "this read never checked, and it contradicts FamilyTruncated in the same answer");
+		facts.ActiveVersionName.Should().BeNull(
+			because: "no member of the fetched set was flagged, so none may be named");
+	}
+
+	[Test]
+	[Description("A truncated family whose flagged member WAS fetched still names it, and says it fell outside the members reported. The cap is applied after the active member is resolved precisely so a long family can still be told which version runs.")]
+	public void Read_Should_StillNameTheActiveVersion_When_ItFellOutsideTheReportedMembers() {
+		// Arrange - the flagged member is the 51st fetched row and carries the HIGHEST version, so it survives
+		// the fetch and is then ordered out of the 50 published.
+		Dictionary<string, object>[] rows = Enumerable.Range(0, 60)
+			.Select(i => Row(i == 0 ? RootUId : Guid.NewGuid(), $"UsrProcess_Custom{i}",
+				version: i == 50 ? 59 : i, isActive: i == 50, rootUId: RootUId))
+			.ToArray();
+		ProcessVersionLibReader sut = ReaderOver(rows);
+
+		// Act
+		ProcessVersionFacts facts = sut.Read(RootUId.ToString());
+
+		// Assert
+		facts.ActiveVersionName.Should().Be("UsrProcess_Custom50",
+			because: "the active member is looked up in the fetched set rather than the capped one, so the "
+				+ "caller can still reach the version that runs");
+		facts.Versions.Should().NotContain(v => v.Name == "UsrProcess_Custom50",
+			because: "it sorts last by version and the published list is capped at 50");
+		facts.Warning.Should().Contain($"fell outside the {ProcessVersionLibReader.FamilyCap} members reported",
+			because: "naming a version that is absent from the list beside it would read as a contradiction "
+				+ "unless the gap says why");
 	}
 
 }

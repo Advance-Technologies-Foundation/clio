@@ -165,11 +165,15 @@ public sealed class ModifyProcessAsNewVersionService(
 		[JsonPropertyName("versionName")]
 		public string? VersionName { get; set; }
 
+		// Nullable so an OMITTED field stays absent instead of arriving as 0 / false. The read half of this
+		// feature made three view columns nullable to hold exactly that line — 0 is a real answer there and
+		// means "family root" — and the command below turns both of these into affirmative statements about
+		// what the environment runs, which silence must not be allowed to make.
 		[JsonPropertyName("version")]
-		public int Version { get; set; }
+		public int? Version { get; set; }
 
 		[JsonPropertyName("isActiveVersion")]
-		public bool IsActiveVersion { get; set; }
+		public bool? IsActiveVersion { get; set; }
 
 		[JsonPropertyName("versionRootSchemaUId")]
 		public string? VersionRootSchemaUId { get; set; }
@@ -211,16 +215,26 @@ public class ModifyProcessAsNewVersionCommand(
 				options.Environment,
 				new ModifyProcessAsNewVersionRequest(options.ProcessName, options.ProcessUid, options.PackageName,
 					options.OperationsJson));
+			// The number is printed only when the environment reported one: in this feature's vocabulary 0 means
+			// the schema is a family ROOT, so a defaulted 0 standing in for an omitted field would state the
+			// opposite of what a new version is.
+			string version = result.Version is null ? "A new version" : $"Version {result.Version}";
 			logger.WriteInfo(
-				$"Version {result.Version} '{result.VersionName}' created ({result.AppliedOperations} operation(s) "
+				$"{version} '{result.VersionName}' created ({result.AppliedOperations} operation(s) "
 				+ $"applied; UId: {result.VersionSchemaUId}; family root: {result.VersionRootSchemaUId}).");
 			// Said on EVERY success, not only when it is surprising: the caller asked to save a version, and what
 			// the environment RUNS is the one thing that did not change. Leaving it implicit is how an agent
-			// concludes the edit is live and stops.
-			logger.WriteInfo(result.IsActiveVersion
-				? "This version is reported ACTIVE — unexpected for a create; verify with describe-business-process."
-				: "The source version is still the actual one and keeps running. Use "
-					+ "set-active-business-process-version to switch, if that is what the user asked for.");
+			// concludes the edit is live and stops. An UNREPORTED flag gets a neutral sentence rather than the
+			// reassuring one, because "the source still runs" is a claim about the environment that nothing
+			// established.
+			logger.WriteInfo(result.IsActiveVersion switch {
+				true => "This version is reported ACTIVE — unexpected for a create; verify with "
+					+ "describe-business-process.",
+				false => "The source version is still the actual one and keeps running. Use "
+					+ "set-active-business-process-version to switch, if that is what the user asked for.",
+				null => "The environment did not report which version is actual — verify with "
+					+ "describe-business-process before reporting what runs."
+			});
 			foreach (string warning in result.Warnings ?? []) {
 				logger.WriteWarning(warning);
 			}
@@ -247,14 +261,18 @@ public sealed record ModifyProcessAsNewVersionRequest(string ProcessName, string
 /// </summary>
 /// <param name="VersionName">Name the PLATFORM composed (root + package + number), not one the caller chose.</param>
 /// <param name="VersionSchemaUId">UId of the created version — how the caller addresses it later.</param>
-/// <param name="Version">The number the platform allocated (max in the target package + 1).</param>
+/// <param name="Version">
+/// The number the platform allocated (max in the target package + 1), or <c>null</c> when the environment did
+/// not report one — never 0, which in this feature means the schema is a family root.
+/// </param>
 /// <param name="IsActiveVersion">
-/// False on a successful create. Reported rather than assumed, so a caller can see that creating a version did
-/// not change what the environment executes.
+/// False on a successful create, or <c>null</c> when the environment did not report it. Reported rather than
+/// assumed, so a caller can see that creating a version did not change what the environment executes — and
+/// absent rather than false when nothing said so.
 /// </param>
 /// <param name="VersionRootSchemaUId">UId of the family ROOT. The family is FLAT — a version of a version still points at the root.</param>
 /// <param name="AppliedOperations">Number of operations applied to the clone.</param>
 /// <param name="Warnings">Outcomes that applied but are not what the caller would assume; <c>null</c> when there are none.</param>
-public sealed record ModifyProcessAsNewVersionResult(string? VersionName, string? VersionSchemaUId, int Version,
-	bool IsActiveVersion, string? VersionRootSchemaUId, int AppliedOperations,
+public sealed record ModifyProcessAsNewVersionResult(string? VersionName, string? VersionSchemaUId, int? Version,
+	bool? IsActiveVersion, string? VersionRootSchemaUId, int AppliedOperations,
 	IReadOnlyList<string>? Warnings = null);

@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using System.Threading;
 using System.Threading.Tasks;
 using Allure.NUnit;
@@ -94,21 +95,28 @@ public sealed class SetActiveProcessVersionToolE2ETests {
 
 		// The read-back inside the tool proves the server agrees with itself; describing the family proves the
 		// environment as a whole did, and that the previously-actual member really stopped being actual.
-		string describeVersionJson = JsonSerializer.Serialize(await CallToolAsync(context, DescribeToolName,
+		//
+		// Parsed rather than substring-matched: the graph is a JSON string nested inside the envelope, so
+		// System.Text.Json escapes each of its quotes — which is why the exit-code assertions above search for
+		// \\u0022 — and a Contain("\\"isActiveVersion\\": true") looks for a sequence that cannot occur.
+		JsonObject describedVersion = DescribedProcessGraph.Read(await CallToolAsync(context, DescribeToolName,
 			new Dictionary<string, object?> {
 				["environment-name"] = context.EnvironmentName,
 				["process-name"] = versionName
 			}));
-		describeVersionJson.Should().Contain("\"isActiveVersion\": true",
+		describedVersion["isActiveVersion"]!.GetValue<bool>().Should().BeTrue(
 			because: "the activated version must be the actual one afterwards");
-		string describeRootJson = JsonSerializer.Serialize(await CallToolAsync(context, DescribeToolName,
+		JsonObject describedRoot = DescribedProcessGraph.Read(await CallToolAsync(context, DescribeToolName,
 			new Dictionary<string, object?> {
 				["environment-name"] = context.EnvironmentName,
 				["process-name"] = processName
 			}));
-		describeRootJson.Should().Contain("\"isActiveVersion\": false",
+		describedRoot["isActiveVersion"]!.GetValue<bool>().Should().BeFalse(
 			because: "the platform logs and SWALLOWS a failed sibling deactivation, so two members left active "
 				+ "is a real outcome — and only reading the OTHER member catches it");
+		describedRoot["activeVersionName"]!.GetValue<string>().Should().Be(versionName,
+			because: "the family read from the ROOT must point at the member just activated, which is what "
+				+ "proves the switch reached the environment rather than only the response");
 	}
 
 	[Test]

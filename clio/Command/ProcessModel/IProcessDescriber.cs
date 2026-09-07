@@ -30,8 +30,15 @@ public interface IProcessDescriber {
 	/// </summary>
 	/// <param name="identity">The process identity (exactly one of code/uid/caption populated).</param>
 	/// <param name="culture">Optional culture used to resolve localized captions.</param>
+	/// <param name="includeVersionFacts">
+	/// Whether to overlay the process library's version facts. Opt-OUT rather than opt-in because the
+	/// describe command, whose output publishes them, must never be able to lose them by omission; the two
+	/// read-back callers that consume <c>elements[]</c> alone pass <c>false</c>, since for them the facts cost
+	/// an ATF session plus two DataService round-trips on a WRITE path and are then discarded.
+	/// </param>
 	/// <returns>The structured description, or an error (not found / unreachable / server failure).</returns>
-	ErrorOr<DescribeProcessResult> Describe(ProcessIdentity identity, string culture);
+	ErrorOr<DescribeProcessResult> Describe(ProcessIdentity identity, string culture,
+		bool includeVersionFacts = true);
 }
 
 /// <inheritdoc cref="IProcessDescriber" />
@@ -43,22 +50,49 @@ public sealed class ServerProcessDescriber(
 
 	private const string DescribeErrorCode = "DescribeProcess";
 
+	/// <summary>
+	/// Upper bound on the caption candidates fetched for ranking.
+	/// </summary>
+	/// <remarks>
+	/// The same number as <see cref="ProcessVersionLibReader.FamilyCap"/> and for the same stated reason: a
+	/// caption belongs to a whole version family, so this read has the same unbounded-response risk on the
+	/// same view. Above it the refusal message would also grow with the family, and it is returned into an
+	/// MCP response as agent context.
+	/// </remarks>
+	private const int CaptionCandidateCap = ProcessVersionLibReader.FamilyCap;
+
 	private static readonly JsonSerializerOptions JsonOptions = new() {
 		DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,
 		PropertyNameCaseInsensitive = true
 	};
 
+	/// <summary>
+	/// Version facts nobody asked for.
+	/// </summary>
+	/// <remarks>
+	/// Assigned rather than left alone on the opt-out path, so ADR choice 5's invariant survives it: the wire
+	/// result deserializes into the same type as the read model, and a newer <c>CrtProcessBuilder</c> that
+	/// already returns a <c>version</c> key would otherwise leave a server-supplied value standing while
+	/// nothing in clio established it. It carries a warning because the one-directional contract on
+	/// <see cref="DescribeProcessResult.VersionReadWarning"/> admits no absent value without one.
+	/// </remarks>
+	private static readonly ProcessVersionFacts VersionFactsNotRequested = new() {
+		Warning = "the version facts were not requested for this read, so they were not established"
+	};
+
 	/// <inheritdoc />
-	public ErrorOr<DescribeProcessResult> Describe(ProcessIdentity identity, string culture) {
-		ErrorOr<JsonObject> requestObject = BuildIdentityPayload(identity);
-		if (requestObject.IsError) {
-			return requestObject.Errors;
+	public ErrorOr<DescribeProcessResult> Describe(ProcessIdentity identity, string culture,
+		bool includeVersionFacts = true) {
+		ErrorOr<ResolvedIdentity> resolved = BuildIdentityPayload(identity);
+		if (resolved.IsError) {
+			return resolved.Errors;
 		}
+		JsonObject requestObject = resolved.Value.Payload;
 		if (!string.IsNullOrWhiteSpace(culture)) {
-			requestObject.Value["culture"] = culture;
+			requestObject["culture"] = culture;
 		}
 
-		string body = new JsonObject { ["request"] = requestObject.Value }.ToJsonString();
+		string body = new JsonObject { ["request"] = requestObject }.ToJsonString();
 		string url = serviceUrlBuilder.Build(ServiceUrlBuilder.KnownRoute.DescribeProcess);
 		string responseBody;
 		try {
@@ -86,9 +120,28 @@ public sealed class ServerProcessDescriber(
 		}
 		// Version facts are overlaid only here, after every refusal path: a described graph without them is
 		// still a correct answer, but a version warning attached to an error would be noise.
-		ApplyVersionFacts(result, versionLibReader.Read(result.SchemaUId));
+		ApplyVersionFacts(result, includeVersionFacts
+			? ReadVersionFacts(resolved.Value.Row, result.SchemaUId)
+			: VersionFactsNotRequested);
 		return result;
 	}
+
+	/// <summary>
+	/// Reads the version facts, reusing the row the caption arm already fetched when it is the same schema.
+	/// </summary>
+	/// <remarks>
+	/// The caption arm has already read this schema's <c>VwProcessLib</c> row, which carries every field the
+	/// facts need about the schema itself, so re-fetching it by UId is a round-trip that establishes nothing.
+	/// The UId comparison is the guard that makes the reuse safe: describe was asked by the resolved NAME, so
+	/// a server that answered for a different schema than the caption resolved to must not have the old row's
+	/// version and active-version flag reported against it.
+	/// </remarks>
+	private ProcessVersionFacts ReadVersionFacts(VwProcessLib resolvedRow, string describedSchemaUId) =>
+		resolvedRow is not null
+		&& Guid.TryParse(describedSchemaUId, out Guid describedUId)
+		&& resolvedRow.UId == describedUId
+			? versionLibReader.Read(resolvedRow)
+			: versionLibReader.Read(describedSchemaUId);
 
 	/// <summary>
 	/// Overlays the process library's version facts onto a described graph.
@@ -128,12 +181,17 @@ public sealed class ServerProcessDescriber(
 			Enabled = member.Enabled
 		};
 
-	private ErrorOr<JsonObject> BuildIdentityPayload(ProcessIdentity identity) {
+	/// <summary>The describe request payload, plus the process-library row the caption arm resolved.</summary>
+	/// <param name="Payload">The identity payload the server is asked with.</param>
+	/// <param name="Row">The resolved row on the caption path; <c>null</c> on the name and uid paths.</param>
+	private sealed record ResolvedIdentity(JsonObject Payload, VwProcessLib Row);
+
+	private ErrorOr<ResolvedIdentity> BuildIdentityPayload(ProcessIdentity identity) {
 		if (!string.IsNullOrWhiteSpace(identity.UId)) {
-			return new JsonObject { ["uid"] = identity.UId.Trim() };
+			return new ResolvedIdentity(new JsonObject { ["uid"] = identity.UId.Trim() }, null);
 		}
 		if (!string.IsNullOrWhiteSpace(identity.Code)) {
-			return new JsonObject { ["name"] = identity.Code.Trim() };
+			return new ResolvedIdentity(new JsonObject { ["name"] = identity.Code.Trim() }, null);
 		}
 		if (!string.IsNullOrWhiteSpace(identity.Caption)) {
 			return ResolveCaption(identity.Caption);
@@ -158,21 +216,34 @@ public sealed class ServerProcessDescriber(
 	/// share a caption now ask the caller for a code instead of silently picking one.
 	/// </para>
 	/// </remarks>
-	private ErrorOr<JsonObject> ResolveCaption(string caption) =>
-		ProcessLibRead.Guarded<ErrorOr<JsonObject>>(() => {
+	private ErrorOr<ResolvedIdentity> ResolveCaption(string caption) =>
+		ProcessLibRead.Guarded<ErrorOr<ResolvedIdentity>>(() => {
 			IAppDataContext ctx = AppDataContextFactory.GetAppDataContext(dataProvider);
 			// All matches, not the first: the policy needs the candidate set to tell one family from two
 			// processes. Cheap because the model no longer declares the metadata blob (ENG-94374 story 1).
+			//
+			// Bounded for the reason ProcessVersionLibReader.FamilyCap states about the family read — same
+			// view, same deadline-bounded surface — and one row over the cap so an overflow can be REFUSED
+			// rather than ranked out of a set that is silently partial. Above the cap the resolver cannot
+			// honestly prove the candidates are one family, which is the same choice BuildFacts makes when
+			// the active member falls outside its own cap.
 			List<VwProcessLib> byCaption = ctx.Models<VwProcessLib>()
 				.Where(p => p.Caption == caption)
+				.Take(CaptionCandidateCap + 1)
 				.ToList();
+			if (byCaption.Count > CaptionCandidateCap) {
+				return Error.Failure("ResolveId",
+					$"caption '{caption}' matches more than {CaptionCandidateCap} schemas, which is more "
+					+ "candidates than can be ranked into one version family. Re-run with the exact process "
+					+ "code.");
+			}
 			ErrorOr<VwProcessLib> resolved = ProcessLibResolver.Resolve(caption, byName: null, byCaption);
 			if (resolved.IsError) {
 				return resolved.FirstError.Type == ErrorType.NotFound
 					? Error.Failure("ResolveId", $"process not found (caption '{caption}')")
 					: Error.Failure("ResolveId", resolved.FirstError.Description);
 			}
-			return new JsonObject { ["name"] = resolved.Value.Name };
+			return new ResolvedIdentity(new JsonObject { ["name"] = resolved.Value.Name }, resolved.Value);
 		}, e => Error.Failure("ResolveId", e.Message));
 
 	/// <summary>WCF <c>BodyStyle=Wrapped</c> response envelope (wire-only).</summary>
@@ -242,8 +313,11 @@ public class DescribeProcessResult {
 	public string VersionRootSchemaUId { get; set; }
 
 	/// <summary>
-	/// Which authority established the active version. Stated rather than implied, because the runtime
-	/// consults the schema manager instead of this view and the two can rank a tied family differently.
+	/// Which authority established the active version — <c>process-library-view</c> whenever the facts were
+	/// established, and ABSENT alongside <see cref="VersionReadWarning"/> on every answer that established
+	/// none, so its presence is itself the signal that an authority answered. Stated rather than implied,
+	/// because the runtime consults the schema manager instead of this view and the two can rank a tied
+	/// family differently.
 	/// </summary>
 	[JsonPropertyName("activeVersionSource")]
 	public string ActiveVersionSource { get; set; }

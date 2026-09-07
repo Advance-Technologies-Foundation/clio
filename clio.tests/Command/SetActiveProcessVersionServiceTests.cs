@@ -153,6 +153,30 @@ public sealed class SetActiveProcessVersionServiceTests {
 	}
 
 	[Test]
+	[Description("Carries a non-zero deactivation count out of a SUCCESSFUL activation. Nothing in this repository proves the platform cannot answer success:true beside a swallowed sibling failure — the DTO member exists because it was considered reachable — and the count was previously only ever paired with success:false, so the combination was untested rather than shown impossible.")]
+	public void SetActiveVersion_ShouldReportSiblingsStillActive_WhenTheActivationSucceededAnyway() {
+		// Arrange
+		IOwnedApplicationClient client = Substitute.For<IOwnedApplicationClient>();
+		client.ExecutePostRequest(ActivateUrl, Arg.Any<string>()).Returns(
+			"{\"SetActiveProcessVersionResult\":{\"success\":true,\"activeVersionName\":\"UsrProcCustom2\","
+			+ "\"activeVersionSchemaUId\":\"5c58c4c4-134b-4744-9c67-96d9c69c9d55\","
+			+ "\"deactivationFailureCount\":2}}");
+		SetActiveProcessVersionService service = CreateService(client);
+
+		// Act
+		SetActiveProcessVersionResult result =
+			service.SetActiveVersion(Env, new SetActiveProcessVersionRequest("UsrProcCustom2", null));
+
+		// Assert
+		result.DeactivationFailureCount.Should().Be(2,
+			because: "this is the one signal the read-back design exists to expose, and dropping it on the "
+				+ "success path hands the caller an unqualified success over a family where package order "
+				+ "decides what runs");
+		result.ActiveVersionName.Should().Be("UsrProcCustom2",
+			because: "the values the server did establish still travel beside the count");
+	}
+
+	[Test]
 	[Description("Refuses a request with no version identity before any HTTP call.")]
 	public void SetActiveVersion_ShouldThrow_WhenNoIdentityGiven() {
 		IOwnedApplicationClient client = Substitute.For<IOwnedApplicationClient>();

@@ -189,11 +189,15 @@ public class SetActiveProcessVersionToolTests {
 	[Category("Unit")]
 	[Description("The tool is excluded from the 120 s read-response deadline. The gate is `!destructive && …`, so Destructive = true is what excludes it — and that matters: a deadline that abandoned this call would leave the family mid-switch with nobody reading it back.")]
 	public void SetActiveProcessVersion_ShouldNotBeBoundedByTheReadResponseDeadline() {
-		// Arrange
-		const string toolName = SetActiveProcessVersionTool.SetActiveProcessVersionToolName;
+		// Arrange — the flags come off the DECLARED attribute, not from this test. Supplied by hand they made
+		// the assertion a statement about IsRetrySafe's arithmetic, which stayed green if the tool's own
+		// Destructive flag were flipped — the one change that would actually put this write under the deadline.
+		MethodInfo method = typeof(SetActiveProcessVersionTool)
+			.GetMethod(nameof(SetActiveProcessVersionTool.SetActiveProcessVersion))!;
+		McpServerToolAttribute declared = method.GetCustomAttribute<McpServerToolAttribute>()!;
 
 		// Act
-		bool retrySafe = McpReadDeadlineGate.IsRetrySafe(toolName, readOnly: false, destructive: true);
+		bool retrySafe = McpReadDeadlineGate.IsRetrySafe(declared.Name!, declared.ReadOnly, declared.Destructive);
 
 		// Assert
 		retrySafe.Should().BeFalse(

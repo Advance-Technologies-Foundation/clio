@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Net;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using System.Text.Json.Serialization;
@@ -9,9 +10,11 @@ using ATF.Repository.Providers;
 using Clio.Command;
 using Clio.Command.ProcessModel;
 using Clio.Common;
+using Clio.CreatioModel;
 using ErrorOr;
 using FluentAssertions;
 using NSubstitute;
+using NSubstitute.ExceptionExtensions;
 using NUnit.Framework;
 
 namespace Clio.Tests.Command.ProcessModel;
@@ -132,10 +135,35 @@ public sealed class ServerProcessDescriberTests {
 		return provider;
 	}
 
+	/// <summary>
+	/// A reader answering the same facts through EITHER entry point, so a test that does not care which one
+	/// the describer chose cannot break when the caption arm starts reusing the row it already fetched.
+	/// </summary>
 	private static IProcessVersionLibReader ReaderReturning(ProcessVersionFacts facts) {
 		IProcessVersionLibReader reader = Substitute.For<IProcessVersionLibReader>();
 		reader.Read(Arg.Any<string>()).Returns(facts);
+		reader.Read(Arg.Any<VwProcessLib>()).Returns(facts);
 		return reader;
+	}
+
+	/// <summary>One caption candidate whose UId is FIXED, so it can be matched against a described graph.</summary>
+	private static IDataProvider CaptionCandidateWithUId(string uid, string name, string caption, bool? isActive,
+		string family) {
+		DataProviderMock provider = new();
+		provider.MockItems("VwProcessLib").Returns([
+			new Dictionary<string, object> {
+				["Id"] = Guid.Parse(uid),
+				["UId"] = Guid.Parse(uid),
+				["Name"] = name,
+				["Caption"] = caption,
+				["Version"] = 1,
+				["IsActiveVersion"] = isActive,
+				["VersionParentUId"] = Guid.Parse(family),
+				["PackageUId"] = Guid.Parse(PackageUId),
+				["Enabled"] = true
+			}
+		]);
+		return provider;
 	}
 
 	private static ProcessVersionFamilyMember Member(string uid, string name, int version, bool isActive,
@@ -1106,6 +1134,119 @@ public sealed class ServerProcessDescriberTests {
 		result.IsError.Should().BeTrue(because: "an unresolvable caption is still a failure");
 		result.FirstError.Description.Should().Be("process not found (caption 'Nothing has this caption')",
 			because: "routing through the shared resolver must not restate an error message callers already match on");
+	}
+
+	[Test]
+	[Description("The caption arm hands the reader the row it already fetched instead of a UId string, so the identity lookup is not paid twice on the identity this feature exists to fix and the one agents are steered toward.")]
+	public void Describe_ShouldReuseTheResolvedRow_WhenTheCaptionResolvedTheDescribedSchema() {
+		// Arrange
+		IProcessVersionLibReader reader = ReaderReturning(new ProcessVersionFacts {
+			Version = 1,
+			IsActiveVersion = true,
+			ActiveVersionSchemaUId = ChildUId,
+			ActiveVersionName = "InvoiceVisaProcessInvoice1",
+			VersionRootSchemaUId = RootUId,
+			ActiveVersionSource = "process-library-view"
+		});
+		ServerProcessDescriber describer = CreateDescriber(ClientReturning(GraphResponse(ChildUId)), reader,
+			CaptionCandidateWithUId(ChildUId, "InvoiceVisaProcessInvoice1", "Invoice approval", true, RootUId));
+
+		// Act
+		ErrorOr<DescribeProcessResult> result = describer.Describe(
+			new ProcessIdentity(null, null, "Invoice approval"), null);
+
+		// Assert
+		result.Value.IsActiveVersion.Should().BeTrue(
+			because: "reusing the row must not change the facts the caller is given");
+		reader.Received(1).Read(Arg.Is<VwProcessLib>(row => row.UId == Guid.Parse(ChildUId)));
+		reader.DidNotReceive().Read(Arg.Any<string>());
+	}
+
+	[Test]
+	[Description("The resolved row is reused only for the schema it identifies: describe is asked by NAME, so a server that answered for a different schema than the caption resolved to must not have the old row's version facts reported against it.")]
+	public void Describe_ShouldReReadByUId_WhenTheServerDescribedADifferentSchema() {
+		// Arrange — the caption resolved ChildUId, the server answered about RootUId.
+		IProcessVersionLibReader reader = ReaderReturning(new ProcessVersionFacts { Version = 0 });
+		ServerProcessDescriber describer = CreateDescriber(ClientReturning(GraphResponse(RootUId)), reader,
+			CaptionCandidateWithUId(ChildUId, "InvoiceVisaProcessInvoice1", "Invoice approval", true, RootUId));
+
+		// Act
+		describer.Describe(new ProcessIdentity(null, null, "Invoice approval"), null);
+
+		// Assert
+		reader.Received(1).Read(RootUId);
+		reader.DidNotReceive().Read(Arg.Any<VwProcessLib>());
+	}
+
+	[Test]
+	[Description("A read-back caller that consumes elements[] alone can opt out of the version overlay, and then no DataService read happens at all — on a write path those two round-trips were paid and the facts discarded.")]
+	public void Describe_ShouldSkipTheVersionRead_WhenTheCallerDidNotAskForTheFacts() {
+		// Arrange
+		IProcessVersionLibReader reader = ReaderReturning(new ProcessVersionFacts { Version = 7 });
+		ServerProcessDescriber describer = CreateDescriber(ClientReturning(GraphResponse(RootUId)), reader);
+
+		// Act
+		ErrorOr<DescribeProcessResult> result = describer.Describe(new ProcessIdentity("UsrProc", null, null),
+			null, includeVersionFacts: false);
+
+		// Assert
+		result.IsError.Should().BeFalse(because: "the graph is still the answer the caller asked for");
+		reader.DidNotReceive().Read(Arg.Any<string>());
+		reader.DidNotReceive().Read(Arg.Any<VwProcessLib>());
+		result.Value.Version.Should().BeNull(
+			because: "every version member is still ASSIGNED on this path, so a newer server that already "
+				+ "reports a version key cannot leave one standing that clio never established");
+		result.Value.VersionReadWarning.Should().Contain("not requested",
+			because: "an absent value with no warning is the one combination the contract forbids, and the "
+				+ "reason it is absent here is that nobody asked");
+	}
+
+	[Test]
+	[Description("A caption matching more candidates than can be ranked is refused rather than ranked out of a silently partial set. The family read on this same view is capped for the stated response-size and latency reason, and this read carries the same risk on the same deadline-bounded surface.")]
+	public void Describe_ShouldRefuse_WhenTheCaptionMatchesMoreCandidatesThanCanBeRanked() {
+		// Arrange — one more than the cap, which is what the fetch takes so an overflow is detectable.
+		IApplicationClient client = ClientReturning(GraphResponse(RootUId));
+		(string, string, bool?, string)[] candidates = Enumerable.Range(0, ProcessVersionLibReader.FamilyCap + 1)
+			.Select(i => ($"UsrProcess_{i}", "Crowded caption", (bool?)(i == 0), RootUId))
+			.ToArray();
+		ServerProcessDescriber describer = CreateDescriber(client,
+			dataProvider: CaptionCandidates(candidates));
+
+		// Act
+		ErrorOr<DescribeProcessResult> result = describer.Describe(
+			new ProcessIdentity(null, null, "Crowded caption"), null);
+
+		// Assert
+		result.IsError.Should().BeTrue(
+			because: "above the cap the resolver cannot prove the candidates are one family, so answering "
+				+ "would be a guess and truncating would be a silent one");
+		result.FirstError.Description.Should().Contain("more candidates than can be ranked",
+			because: "the refusal has to say it ran out of room rather than that the caption is ambiguous");
+		client.DidNotReceiveWithAnyArgs().ExecutePostRequest(default, default, default, default, default);
+	}
+
+	[Test]
+	[Description("A caption query that throws yields a ResolveId failure carrying the exception message. ResolveCaption replaced a catch (Exception) with the shared narrower ladder, and nothing exercised its failure arm in either direction.")]
+	public void Describe_ShouldFailWithTheMessage_WhenTheCaptionQueryThrows() {
+		// Arrange
+		IApplicationClient client = ClientReturning(GraphResponse(RootUId));
+		IDataProvider provider = Substitute.For<IDataProvider>();
+		provider.GetItems(null).ThrowsForAnyArgs(new WebException("simulated caption transport failure"));
+		ServerProcessDescriber describer = CreateDescriber(client, dataProvider: provider);
+
+		// Act
+		ErrorOr<DescribeProcessResult> result = describer.Describe(
+			new ProcessIdentity(null, null, "Invoice approval"), null);
+
+		// Assert
+		result.IsError.Should().BeTrue(
+			because: "the caption could not be resolved, so there is no schema to describe");
+		result.FirstError.Code.Should().Be("ResolveId",
+			because: "the caption arm keeps its own error vocabulary rather than leaking the reader's");
+		result.FirstError.Description.Should().Contain("simulated caption transport failure",
+			because: "an escaped exception inside the MCP server is what the shared ladder exists to prevent, "
+				+ "and the caller still has to learn why the caption did not resolve");
+		client.DidNotReceiveWithAnyArgs().ExecutePostRequest(default, default, default, default, default);
 	}
 
 }

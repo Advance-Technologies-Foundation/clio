@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using Clio.Command.ProcessModel;
 using Clio.CreatioModel;
 using ErrorOr;
@@ -22,8 +23,9 @@ public sealed class ProcessLibResolverTests {
 
 	/// <summary>
 	/// A candidate that is its own family, which is what an unversioned process is: VersionParentUId is
-	/// COALESCE(parent.UId, own.UId), so it can never be left unset without making distinct processes look
-	/// like one family to the resolver.
+	/// COALESCE(parent.UId, own.UId), so a distinct value per row is what the view really returns. Left unset
+	/// it would be Guid.Empty, and the two tests that DO pass Guid.Empty are the ones asserting the resolver
+	/// refuses to read a shared default as a family.
 	/// </summary>
 	private static VwProcessLib Row(string name, string caption) =>
 		new() { Name = name, Caption = caption, VersionParentUId = Guid.NewGuid() };
@@ -293,6 +295,71 @@ public sealed class ProcessLibResolverTests {
 			because: "get-process-signature, generate-process-model and run-process would otherwise answer for a graph nobody runs, with nothing in their output to say so");
 		result.FirstError.Description.Should().Contain("is NOT the active version",
 			because: "the shipped help promises a caption resolves to the active version, so the refusal has to say why it could not");
+	}
+
+	[Test]
+	[Description("Refuses two candidates from DIFFERENT processes whose family key the view did not establish, even though exactly one is flagged active. VersionParentUId is the one column this feature left non-nullable, so a view NULL arrives as Guid.Empty — and treating one shared default as one family answers for the first process while silently dropping the second, which is verbatim the failure the family key exists to prevent.")]
+	public void Resolve_Should_Return_Conflict_When_TheCandidatesShareOnlyADefaultedFamilyKey() {
+		// Arrange - the view INNER JOINs SysPackage for these columns, so a schema whose package does not
+		// resolve yields NULL, which the non-nullable Guid collapses into Guid.Empty.
+		List<VwProcessLib> byCaption = [
+			VersionRow("UsrOrder_Approve", "Approval", 0, isActiveVersion: true, family: Guid.Empty),
+			VersionRow("UsrInvoice_Approve", "Approval", 0, isActiveVersion: false, family: Guid.Empty)
+		];
+
+		// Act
+		ErrorOr<VwProcessLib> result = ProcessLibResolver.Resolve("Approval", null, byCaption);
+
+		// Assert
+		result.IsError.Should().BeTrue(
+			because: "a defaulted key is not a family: it matches every other row that also defaulted, so one "
+				+ "flagged candidate proves nothing about which process was meant");
+		result.FirstError.Type.Should().Be(ErrorType.Conflict,
+			because: "the caller must be asked for a code rather than handed a schema from a process they may "
+				+ "not have named");
+		result.FirstError.Description.Should().Contain("no version family key",
+			because: "'Multiple processes match' would send the reader hunting for a difference the view never "
+				+ "established, and the reader guards this same value with this same reason");
+	}
+
+	[Test]
+	[Description("A lone caption match still resolves when its family key is defaulted: with one candidate there is no family question to answer, and refusing would break resolution for a process whose package does not resolve.")]
+	public void Resolve_Should_Return_TheSingleMatch_When_ItsFamilyKeyIsDefaulted() {
+		// Arrange
+		List<VwProcessLib> byCaption = [
+			VersionRow("UsrProcess_only", "Business process 1", 0, isActiveVersion: null, family: Guid.Empty)
+		];
+
+		// Act
+		ErrorOr<VwProcessLib> result = ProcessLibResolver.Resolve("Business process 1", null, byCaption);
+
+		// Assert
+		result.IsError.Should().BeFalse(
+			because: "the family key narrows a candidate SET; with one candidate there is nothing to narrow, "
+				+ "and the non-empty check must not turn a working resolution into an error");
+		result.Value.Name.Should().Be("UsrProcess_only", because: "the only match is the answer");
+	}
+
+	[Test]
+	[Description("A refusal names a handful of candidates and then says how many it withheld. The population this feature targets is a heavily versioned family, and the message is returned into an MCP response as agent context, so an unbounded list grows the refusal with the family.")]
+	public void Resolve_Should_Bound_TheCandidateList_When_ManyProcessesShareTheCaption() {
+		// Arrange
+		List<VwProcessLib> byCaption = Enumerable.Range(0, ProcessLibResolver.CandidatesNamed + 3)
+			.Select(i => VersionRow($"UsrProcess_{i}", "Approval", 0, isActiveVersion: true,
+				family: Guid.NewGuid()))
+			.ToList();
+
+		// Act
+		ErrorOr<VwProcessLib> result = ProcessLibResolver.Resolve("Approval", null, byCaption);
+
+		// Assert
+		result.IsError.Should().BeTrue(because: "eight distinct processes sharing a caption is real ambiguity");
+		result.FirstError.Description.Should().Contain("and 3 more",
+			because: "a silently shortened list would read as the complete candidate set, which is the one "
+				+ "thing a caller uses it for");
+		result.FirstError.Description.Should().NotContain("UsrProcess_7",
+			because: $"only the first {ProcessLibResolver.CandidatesNamed} are named, and the tail states the "
+				+ "rest as a count instead");
 	}
 
 }

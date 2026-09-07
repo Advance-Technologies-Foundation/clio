@@ -80,9 +80,11 @@ public sealed record ProcessVersionFacts {
 	public bool FamilyTruncated { get; init; }
 
 	/// <summary>
-	/// Which authority answered. Always <c>process-library-view</c> here, and stated rather than implied
-	/// because the runtime consults the schema manager instead, and the two rank candidates by different
-	/// tail keys: a family that ties on the user property and the schema property can diverge.
+	/// Which authority answered — <c>process-library-view</c> whenever the facts were established, and absent
+	/// alongside <see cref="Warning"/> on every answer that established none, so its presence is itself the
+	/// signal that an authority answered. Stated rather than implied because the runtime consults the schema
+	/// manager instead, and the two rank candidates by different tail keys: a family that ties on the user
+	/// property and the schema property can diverge.
 	/// </summary>
 	public string ActiveVersionSource { get; init; }
 
@@ -102,17 +104,30 @@ public interface IProcessVersionLibReader {
 	/// </summary>
 	/// <param name="schemaUId">The schema UId, as a GUID string.</param>
 	/// <returns>
-	/// The facts. A transport or payload failure, an unparsable identity and an absent row all yield
-	/// facts whose values are absent and whose <see cref="ProcessVersionFacts.Warning"/> says why — this
-	/// method does not throw for them, because a version read must never turn a successful describe into
-	/// an error. It does not swallow everything: an ATF expression failure is a defect in this code and
-	/// propagates.
+	/// The facts. A transport or payload failure, an unparsable identity, an absent row and a read that
+	/// outran its wall-clock budget all yield facts whose values are absent and whose
+	/// <see cref="ProcessVersionFacts.Warning"/> says why — this method does not throw for them, because a
+	/// version read must never turn a successful describe into an error. It does not swallow everything: an
+	/// ATF expression failure is a defect in this code and propagates.
 	/// </returns>
 	ProcessVersionFacts Read(string schemaUId);
+
+	/// <summary>
+	/// Reads the version facts for a schema whose process-library row the caller already holds.
+	/// </summary>
+	/// <param name="row">The row, as the caller's own query returned it.</param>
+	/// <returns>The facts, on the same terms as <see cref="Read(string)"/>.</returns>
+	/// <remarks>
+	/// Exists because the describe caption path has already fetched this exact row — it carries every field
+	/// the facts need about the schema itself — and re-fetching it by UId is a DataService round-trip that
+	/// establishes nothing new. The trade-off is that the row is read BEFORE the describe POST rather than
+	/// after it, which is already true of the caption resolution that produced it.
+	/// </remarks>
+	ProcessVersionFacts Read(VwProcessLib row);
 }
 
 /// <inheritdoc cref="IProcessVersionLibReader" />
-public sealed class ProcessVersionLibReader(IDataProvider dataProvider) : IProcessVersionLibReader {
+public sealed class ProcessVersionLibReader : IProcessVersionLibReader {
 
 	/// <summary>The only authority this reader can speak for.</summary>
 	internal const string ProcessLibraryViewSource = "process-library-view";
@@ -123,35 +138,103 @@ public sealed class ProcessVersionLibReader(IDataProvider dataProvider) : IProce
 	/// </summary>
 	internal const int FamilyCap = 50;
 
+	/// <summary>
+	/// Wall-clock budget for one whole version read, family included.
+	/// </summary>
+	/// <remarks>
+	/// The same order as the describe POST's own 10 s, because the two sit inside one deadline-bounded MCP
+	/// read and this one had no clio-side bound at all: <c>RemoteDataProvider</c> is constructed with no
+	/// timeout, so its ceiling was whatever the ATF library defaults to. Degrading on failure was never
+	/// enough — <see cref="ProcessLibRead.Guarded"/> converts a read that FAILS into a warning but cannot
+	/// convert one that is merely SLOW, and by the time the MCP read deadline fires the describe is lost
+	/// along with the graph it had already built.
+	/// </remarks>
+	internal static readonly TimeSpan DefaultReadBudget = TimeSpan.FromSeconds(10);
+
+	private readonly IDataProvider _dataProvider;
+	private readonly TimeSpan _readBudget;
+
+	/// <summary>
+	/// Creates a reader bounded by <see cref="DefaultReadBudget"/>.
+	/// </summary>
+	/// <param name="dataProvider">The DataService provider the read goes through.</param>
+	public ProcessVersionLibReader(IDataProvider dataProvider)
+		: this(dataProvider, DefaultReadBudget) { }
+
+	// Separate from the public constructor because Microsoft DI selects a constructor whose every parameter
+	// it can resolve, and a registered TimeSpan is not something this container has: a single constructor
+	// carrying an optional budget would make the registration unresolvable.
+	internal ProcessVersionLibReader(IDataProvider dataProvider, TimeSpan readBudget) {
+		_dataProvider = dataProvider;
+		_readBudget = readBudget;
+	}
+
 	/// <inheritdoc />
 	public ProcessVersionFacts Read(string schemaUId) {
 		if (!Guid.TryParse(schemaUId, out Guid uid)) {
 			return NotEstablished($"'{schemaUId}' is not a schema UId");
 		}
-		return ProcessLibRead.Guarded(() => {
-			IAppDataContext ctx = AppDataContextFactory.GetAppDataContext(dataProvider);
+		return WithinBudget(() => ProcessLibRead.Guarded(() => {
+			IAppDataContext ctx = AppDataContextFactory.GetAppDataContext(_dataProvider);
 			VwProcessLib row = ctx.Models<VwProcessLib>().FirstOrDefault(p => p.UId == uid);
-			if (row is null) {
-				return NotEstablished($"the process library has no row for schema '{uid}'");
-			}
-			// The family key is the one column this feature left non-nullable, and it is used as an IDENTITY.
-			// A defaulted value would not select a family: it would select every row that also defaulted, and
-			// publish an unrelated process as the version to launch.
-			if (row.VersionParentUId == Guid.Empty) {
-				return NotEstablished($"the process library reports no version family key for schema '{uid}'");
-			}
-			return BuildFacts(row, ReadFamily(ctx, row.VersionParentUId));
-		}, ReadFailed);
+			return row is null
+				? NotEstablished($"the process library has no row for schema '{uid}'")
+				: FactsForRow(ctx, row);
+		}, ReadFailed));
 	}
 
-	private List<VwProcessLib> ReadFamily(IAppDataContext ctx, Guid rootUId) =>
+	/// <inheritdoc />
+	public ProcessVersionFacts Read(VwProcessLib row) {
+		if (row is null) {
+			return NotEstablished("no process-library row was supplied");
+		}
+		return WithinBudget(() => ProcessLibRead.Guarded(
+			() => FactsForRow(AppDataContextFactory.GetAppDataContext(_dataProvider), row), ReadFailed));
+	}
+
+	/// <summary>
+	/// The rows of one family out of a fetched set that may carry rows of others.
+	/// </summary>
+	/// <remarks>
+	/// The identical predicate is also pushed into the query, and the duplication is deliberate. The query's
+	/// copy is a performance narrowing that nothing in clio can observe — the view SQL is not in this
+	/// repository and the test provider replays its canned set whatever the filter says — while this copy is
+	/// the guard that DECIDES, on rows a test can hand it. Without it, the single defence against publishing
+	/// an unrelated process as <c>activeVersionName</c> lived only in a LINQ clause whose deletion left every
+	/// test green.
+	/// </remarks>
+	internal static List<VwProcessLib> SelectFamily(IEnumerable<VwProcessLib> fetched, Guid rootUId) =>
 		// One row over the cap, so a family longer than the cap can be reported as truncated rather than
-		// silently cut. The root is included without a second query: the view computes VersionParentUId as
-		// COALESCE(parent.UId, own.UId), so a root's value is its own UId.
-		ctx.Models<VwProcessLib>()
+		// silently cut.
+		fetched
 			.Where(p => p.VersionParentUId == rootUId)
 			.Take(FamilyCap + 1)
 			.ToList();
+
+	private ProcessVersionFacts FactsForRow(IAppDataContext ctx, VwProcessLib row) {
+		// The family key is the one column this feature left non-nullable, and it is used as an IDENTITY.
+		// A defaulted value would not select a family: it would select every row that also defaulted, and
+		// publish an unrelated process as the version to launch.
+		if (row.VersionParentUId == Guid.Empty) {
+			return NotEstablished($"the process library reports no version family key for schema '{row.UId}'");
+		}
+		return BuildFacts(row, ReadFamily(ctx, row.VersionParentUId));
+	}
+
+	private static List<VwProcessLib> ReadFamily(IAppDataContext ctx, Guid rootUId) =>
+		// The root is included without a second query: the view computes VersionParentUId as
+		// COALESCE(parent.UId, own.UId), so a root's value is its own UId.
+		SelectFamily(
+			ctx.Models<VwProcessLib>()
+				.Where(p => p.VersionParentUId == rootUId)
+				.Take(FamilyCap + 1)
+				.ToList(),
+			rootUId);
+
+	private ProcessVersionFacts WithinBudget(Func<ProcessVersionFacts> read) =>
+		ProcessLibRead.WithinBudget(_readBudget, read,
+			() => NotEstablished(
+				$"the process library read did not complete within {_readBudget.TotalSeconds:0.##}s"));
 
 	private static ProcessVersionFacts BuildFacts(VwProcessLib row, List<VwProcessLib> fetched) {
 		if (fetched.Count == 0) {
@@ -187,7 +270,7 @@ public sealed class ProcessVersionLibReader(IDataProvider dataProvider) : IProce
 			Versions = family.Select(ToMember).ToList(),
 			FamilyTruncated = fetched.Count > FamilyCap,
 			ActiveVersionSource = ProcessLibraryViewSource,
-			Warning = Unestablished(row, flagged, family)
+			Warning = Unestablished(row, flagged, family, truncated: fetched.Count > FamilyCap)
 		};
 	}
 
@@ -201,7 +284,7 @@ public sealed class ProcessVersionLibReader(IDataProvider dataProvider) : IProce
 	/// <see cref="ProcessVersionFacts"/> says cannot occur, and the one a caller reads as "unversioned".
 	/// </remarks>
 	private static string Unestablished(VwProcessLib row, List<VwProcessLib> flagged,
-		List<VwProcessLib> published) {
+		List<VwProcessLib> published, bool truncated) {
 		List<string> gaps = [];
 		if (row.Version is null) {
 			gaps.Add("the view established no version number for this schema");
@@ -210,7 +293,14 @@ public sealed class ProcessVersionLibReader(IDataProvider dataProvider) : IProce
 			gaps.Add("the view established no active-version flag for this schema");
 		}
 		if (flagged.Count == 0) {
-			gaps.Add($"the process library flagged no active version in family '{row.VersionParentUId}'");
+			// On a truncated family this reader's OWN cap is a sufficient explanation, and blaming the platform
+			// for flagging nothing would be a claim about the library it never checked — the flagged member can
+			// be absent from the fetch entirely, since the query takes FamilyCap + 1 rows in no defined order.
+			// Saying both at once ("no active version" beside FamilyTruncated) is worse than saying neither.
+			gaps.Add(truncated
+				? $"the family exceeded the {FamilyCap}-member read cap, so the active version may not have "
+					+ "been read"
+				: $"the process library flagged no active version in family '{row.VersionParentUId}'");
 		} else if (flagged.Count > 1) {
 			gaps.Add($"the process library flags {flagged.Count} active versions in family "
 				+ $"'{row.VersionParentUId}' ({string.Join(", ", flagged.Select(p => p.Name))}), and which one "

@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using System.Threading;
 using System.Threading.Tasks;
 using Allure.NUnit;
@@ -95,15 +96,23 @@ public sealed class ModifyProcessAsNewVersionToolE2ETests {
 
 		// Reading the family back is the only proof the version really exists and really carries the edit: a
 		// server that answered success while saving nothing would satisfy every assertion above.
-		string describeJson = JsonSerializer.Serialize(await CallToolAsync(context, DescribeToolName,
+		//
+		// Parsed rather than substring-matched: the graph is a JSON string nested inside the envelope, so
+		// System.Text.Json escapes each of its quotes — which is why the exit-code assertion above searches for
+		// \\u0022 — and a Contain("\\"isActiveVersion\\": false") looks for a sequence that cannot occur.
+		CallToolResult describeResult = await CallToolAsync(context, DescribeToolName,
 			new Dictionary<string, object?> {
 				["environment-name"] = context.EnvironmentName,
 				["process-name"] = $"{processName}Custom1"
-			}));
-		describeJson.Should().Contain("RecordId",
+			});
+		JsonSerializer.Serialize(describeResult).Should().Contain("RecordId",
 			because: "the operation was applied to the CLONE, so the parameter must be present on the version");
-		describeJson.Should().Contain("\"isActiveVersion\": false",
+		JsonObject describedVersion = DescribedProcessGraph.Read(describeResult);
+		describedVersion["isActiveVersion"]!.GetValue<bool>().Should().BeFalse(
 			because: "creating a version must never change what the environment executes");
+		describedVersion["version"]!.GetValue<int>().Should().Be(1,
+			because: "the family the environment reports must agree with the number the tool reported, which "
+				+ "is what separates a saved version from a response that merely claimed one");
 	}
 
 	[Test]

@@ -394,12 +394,36 @@ target's configuration build. Lose it and the package installs, the gate reports
 
 ### In this repository, in ONE commit
 
-| Update | Where |
-|---|---|
-| `ExpectedArchiveSha256` | `clio.tests/Common/BundledProcessBuilderPackageTests.cs` |
-| `ExpectedDescriptorModifiedOnUtc` | same file |
-| `ExpectedArchiveVersion` | same file |
-| `ExpectedProducingCommit` | same file — `git rev-parse HEAD` of the PACKAGE repo, before the restamp |
+| Update | Where | Written by |
+|---|---|---|
+| `ExpectedArchiveSha256` | `clio.tests/Common/BundledProcessBuilderPackageTests.cs` | the script |
+| `ExpectedDescriptorModifiedOnUtc` | same file | the script |
+| `ExpectedArchiveVersion` | same file | the script |
+| `ExpectedProducingCommit` | same file — `git rev-parse HEAD` of the PACKAGE repo, before the restamp | the script |
+| `ExpectedSchemaDescriptorModifiedOnUtc` | same file — the COMPILE-MARKER schema's stamp; `set-pkg-version` does not touch schema descriptors (step 2b) | **BY HAND** |
+| `ExpectedOperationContractCount` | same file — `[OperationContract]` methods the shipped service exposes | **BY HAND** |
+| `ExpectedAuthorizationGateCallSites` | same file — live `_guard.EnsureCanManageProcessDesign()` call sites | **BY HAND** |
+
+**The last three are not written by anything.** The script refreshes the four provenance pins and knows
+nothing about the other three, so a rebundle that changed the service surface meets them as a red test with
+no explanation attached. That is what the two security counts are for, and why they are named here rather
+than only in the fixture: they are the ONLY reviewability a committed binary has on this boundary, because
+`ExpectedArchiveSha256` proves the bytes changed and says nothing about what they now contain.
+
+- `ExpectedOperationContractCount` is EXACT, not a floor: a floor cannot notice a new operation arriving
+  WITHOUT a gate, since the count simply rises and still clears it. Move it together with
+  `UngatedOperations`, in the same commit, or not at all.
+- `ExpectedAuthorizationGateCallSites` is the number of live gate calls, which is NOT one per operation —
+  `ProcessDesigner.Execute` is a shared boundary for the read operations. The constant's own remarks carry
+  the arithmetic; edit them with the number, because a derivation that no longer totals the pin gives the
+  next maintainer a documented reason to LOWER it, and a lowered pin accepts an archive with operations
+  de-gated.
+- **Which side moves first:** the package repository. Both counts are properties of the shipped sources, so
+  they cannot be computed until the archive exists — add the operation and its gate there, land its
+  guard-deny test there (a call-site count cannot tell a gate that MOVED from one that is present but off
+  the execution path), then cut the archive and move both pins here. The ADR's pre-implementation checklist
+  states the same rule: operation-contract count and authorization-gate call sites move together, on both
+  sides.
 
 **No PRODUCTION constant to update** — that is the point of the current design: clio reads the shipped
 version from the archive, so nothing in the product can fall out of step with it. `ExpectedArchiveVersion`

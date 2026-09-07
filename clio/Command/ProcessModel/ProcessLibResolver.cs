@@ -1,5 +1,6 @@
 namespace Clio.Command.ProcessModel;
 
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using Clio.CreatioModel;
@@ -19,6 +20,15 @@ using ErrorOr;
 internal static class ProcessLibResolver {
 
 	/// <summary>
+	/// How many candidates a refusal names before it summarises the rest.
+	/// </summary>
+	/// <remarks>
+	/// Enough for a caller to recognise the process they meant; the refusal's job is to make them re-run with a
+	/// code, not to reproduce the family.
+	/// </remarks>
+	internal const int CandidatesNamed = 5;
+
+	/// <summary>
 	/// Picks the resolved process row, or returns a typed error.
 	/// </summary>
 	/// <param name="nameOrCaption">The value the caller passed (process code or display caption).</param>
@@ -26,8 +36,17 @@ internal static class ProcessLibResolver {
 	/// <param name="byCaption">Rows matching the value by <c>Caption</c> (used only when there is no name match).</param>
 	/// <returns>
 	/// The matched row; <see cref="ErrorType.NotFound"/> when nothing matches; or
-	/// <see cref="ErrorType.Conflict"/> when the caption matches more than one process.
+	/// <see cref="ErrorType.Conflict"/> for any of the five shapes it refuses — the candidates span several
+	/// distinct processes; they are one family flagging more than one active version; they are one family for
+	/// which no active version was established; they are one family whose key the view did not establish (so
+	/// nothing proves they belong together); or the only match is the one the view flags explicitly NOT active.
+	/// An UNESTABLISHED active-version flag on a lone match deliberately does NOT refuse: it is no statement
+	/// about the row, and refusing on it would break resolution for a process whose package does not resolve.
 	/// </returns>
+	/// <remarks>
+	/// The last two refusals are new with the family-aware policy: a lone caption match that used to resolve
+	/// unconditionally can now fail.
+	/// </remarks>
 	public static ErrorOr<VwProcessLib> Resolve(string nameOrCaption, VwProcessLib byName,
 		IReadOnlyList<VwProcessLib> byCaption) {
 		// Exact match by the system Name (process code) wins — Name is unique.
@@ -48,13 +67,19 @@ internal static class ProcessLibResolver {
 		// and narrowing on the count alone would answer for the first process while silently dropping the
 		// second. That set is not exotic — the other row is flagged false whenever it is a family root whose
 		// active member was renamed away from this caption, and null whenever its package does not resolve,
-		// which is why the column is nullable at all. VersionParentUId is COALESCE(parent.UId, own.UId) and
-		// never null (ADR choice 6), so a single distinct value across the candidates is what actually
-		// establishes "these rows are one process".
-		bool oneFamily = captionMatches
+		// which is why the column is nullable at all. VersionParentUId is COALESCE(parent.UId, own.UId), so a
+		// single distinct value across the candidates is what actually establishes "these rows are one process".
+		//
+		// The single value must also be a REAL key. VersionParentUId is the one column this feature left
+		// non-nullable, so a view NULL arrives as Guid.Empty — and two candidates from DIFFERENT processes that
+		// both defaulted would then share one distinct value and pass as a family, which is verbatim the failure
+		// the paragraph above says the family key exists to prevent. ProcessVersionLibReader.Read guards the
+		// identical value on the identical column for the same reason.
+		List<Guid> families = captionMatches
 			.Select(p => p.VersionParentUId)
 			.Distinct()
-			.Count() == 1;
+			.ToList();
+		bool oneFamily = families.Count == 1 && families[0] != Guid.Empty;
 		IReadOnlyList<VwProcessLib> activeVersions = captionMatches
 			.Where(p => p.IsActiveVersion == true)
 			.ToList();
@@ -69,7 +94,8 @@ internal static class ProcessLibResolver {
 			return captionMatches[0];
 		}
 		return Error.Conflict("ResolveProcessByNameOrCaption",
-			RefusalReason(nameOrCaption, captionMatches, oneFamily, activeVersions.Count)
+			RefusalReason(nameOrCaption, captionMatches, oneFamily, activeVersions.Count,
+				familyKeyUnestablished: families.Contains(Guid.Empty))
 			+ " Re-run with the exact process code.");
 	}
 
@@ -82,9 +108,13 @@ internal static class ProcessLibResolver {
 	/// a second process that does not exist.
 	/// </remarks>
 	private static string RefusalReason(string nameOrCaption, IReadOnlyList<VwProcessLib> captionMatches,
-		bool oneFamily, int activeCount) {
-		string candidates = string.Join("; ",
-			captionMatches.Select(p => $"'{p.Caption}' (code: {p.Name})"));
+		bool oneFamily, int activeCount, bool familyKeyUnestablished) {
+		string candidates = Candidates(captionMatches);
+		if (familyKeyUnestablished) {
+			return $"Caption '{nameOrCaption}' matches {captionMatches.Count} schemas for which the process "
+				+ "library established no version family key, so nothing shows whether they are one process or "
+				+ $"several: {candidates}.";
+		}
 		if (!oneFamily) {
 			return $"Multiple processes match caption '{nameOrCaption}': {candidates}.";
 		}
@@ -98,5 +128,21 @@ internal static class ProcessLibResolver {
 		}
 		return $"Caption '{nameOrCaption}' belongs to one process family, but the process library established "
 			+ $"no active version for it: {candidates}.";
+	}
+
+	/// <summary>
+	/// The candidate codes a caller needs in order to pick one, bounded.
+	/// </summary>
+	/// <remarks>
+	/// The population this feature targets is a heavily versioned family, and this text is returned into an MCP
+	/// response as agent context, so an unbounded join grows the refusal with the family. The tail states the
+	/// number withheld: a silently shortened list would read as the complete candidate set.
+	/// </remarks>
+	private static string Candidates(IReadOnlyList<VwProcessLib> captionMatches) {
+		string listed = string.Join("; ",
+			captionMatches.Take(CandidatesNamed).Select(p => $"'{p.Caption}' (code: {p.Name})"));
+		return captionMatches.Count <= CandidatesNamed
+			? listed
+			: $"{listed}; and {captionMatches.Count - CandidatesNamed} more";
 	}
 }

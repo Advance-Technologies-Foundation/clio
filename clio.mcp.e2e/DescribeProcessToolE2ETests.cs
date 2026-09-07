@@ -197,58 +197,10 @@ public sealed class DescribeProcessToolE2ETests {
 		});
 	}
 
-	/// <summary>
-	/// Pulls the described graph out of the tool envelope.
-	/// </summary>
-	/// <remarks>
-	/// The graph is not a field of the envelope: describe writes it through <c>ILogger.WriteInfo</c>, so it
-	/// arrives as an escaped STRING inside one of the reported log messages. It is located by content rather
-	/// than by property path, so a rename inside the envelope shape cannot silently turn these assertions into
-	/// a scan of the wrong text — and parsed rather than substring-matched, because
-	/// <c>DescribeProcessResult</c> carries a <c>[JsonExtensionData]</c> bag that would let a server-sent key
-	/// satisfy a naive `Contain`.
-	/// </remarks>
-	private static JsonObject ReadDescribedGraph(CallToolResult callResult) {
-		string text = string.Concat(callResult.Content.OfType<TextContentBlock>().Select(block => block.Text));
-		JsonNode envelope = JsonNode.Parse(text);
-		envelope.Should().NotBeNull(because: "the MCP tool must answer with a parsable envelope");
-		JsonObject graph = EmbeddedStrings(envelope!)
-			.Select(TryParseObject)
-			.FirstOrDefault(candidate => candidate is not null && candidate.ContainsKey("schemaUId"));
-		graph.Should().NotBeNull(
-			because: $"describe-business-process must report a graph carrying schemaUId; the envelope was: {text}");
-		return graph!;
-	}
-
-	private static IEnumerable<string> EmbeddedStrings(JsonNode node) {
-		switch (node) {
-			case JsonObject jsonObject:
-				foreach (KeyValuePair<string, JsonNode?> property in jsonObject) {
-					if (property.Value is null) { continue; }
-					foreach (string nested in EmbeddedStrings(property.Value)) { yield return nested; }
-				}
-				break;
-			case JsonArray jsonArray:
-				foreach (JsonNode? item in jsonArray) {
-					if (item is null) { continue; }
-					foreach (string nested in EmbeddedStrings(item)) { yield return nested; }
-				}
-				break;
-			case JsonValue jsonValue when jsonValue.TryGetValue(out string? value) && value is not null:
-				yield return value;
-				break;
-		}
-	}
-
-	private static JsonObject TryParseObject(string candidate) {
-		if (!candidate.TrimStart().StartsWith('{')) { return null; }
-		try {
-			return JsonNode.Parse(candidate) as JsonObject;
-		} catch (JsonException) {
-			// A log message that merely opens with a brace is not the graph; keep looking.
-			return null;
-		}
-	}
+	// One reader for all three process-designer fixtures: the escaping trap it exists for caught the two
+	// siblings that hand-rolled a substring check instead.
+	private static JsonObject ReadDescribedGraph(CallToolResult callResult) =>
+		DescribedProcessGraph.Read(callResult);
 
 	private static IEnumerable<int?> VersionNumbers(JsonObject graph) =>
 		graph["versions"]!.AsArray().Select(member => (int?)member!["version"]?.GetValue<int>());

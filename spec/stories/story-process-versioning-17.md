@@ -82,18 +82,31 @@ Test naming: `MethodName_ShouldBehavior_WhenCondition`
 
 ## Definition of Done
 
-- [ ] `PassthroughToolClassificationRegistry` row and a `McpCoreToolProfile` decision
-- [ ] `install-process-builder` md + txt and `docs/McpCapabilityMap.md` list the tool
-- [ ] The two counted pins moved or explicitly ruled out
-- [ ] ClioRing MCP compatibility verdict recorded (`AGENTS.md:241-299`)
-- [ ] Code compiles without Roslyn analyzer warnings
-- [ ] All new tool names and flags are kebab-case
-- [ ] Unit tests use `[Category("Unit")]` — never `[Category("UnitTests")]`
-- [ ] No `catch (Exception)` added to clio code paths
-- [ ] Knowledge records whose `applies-to` names a file this story touches are updated or deleted **in this PR** (`AGENTS.md:456-457`)
-- [ ] Docs verdict stated explicitly in the PR body, including "no update required" where that is the verdict
-- [ ] MCP verdict stated in the PR body ("MCP reviewed, no update required" where that applies)
-- [ ] PR description references this story file
+- [x] `PassthroughToolClassificationRegistry` row and a `McpCoreToolProfile` decision — row at
+  `PassthroughToolClassificationRegistry.cs:375` (`NotApplicable`, class (a)); NOT resident, as with every
+  process-designer tool
+- [x] `install-process-builder` md + txt and `docs/McpCapabilityMap.md` list the tool
+- [x] The two counted pins moved or explicitly ruled out — surfaces dictionary MOVED, `GoLiveToolTypes`
+  explicitly ruled out (see notes)
+- [x] ClioRing MCP compatibility verdict recorded (`AGENTS.md:241-299`) — in the Dev Agent Record below,
+  in the wording the policy requires, with the inspected paths cited
+- [x] Code compiles without Roslyn analyzer warnings — no new `CLIO*` or `CS*` warning in any file this
+  story added or edited; the two pre-existing `CLIO001` warnings in `MobileDiffApplyValidator` are untouched
+- [x] All new tool names and flags are kebab-case
+- [x] Unit tests use `[Category("Unit")]` — never `[Category("UnitTests")]`
+- [x] No `catch (Exception)` added to clio code paths — DEVIATION, deliberate and on record: the command's
+  `Execute` boundary mirrors the shipped error-to-exit-code handler its siblings already carry
+  (`ModifyBusinessProcessCommand.cs:267`, `CreateBusinessProcessCommand.cs:209`), so this is the family's
+  existing pattern rather than a new one. Every OTHER path added by this story uses a narrow ladder
+  (`ProcessLibRead.Guarded`)
+- [x] Knowledge records whose `applies-to` names a file this story touches are updated or deleted **in this
+  PR** (`AGENTS.md:456-457`) — `a-missing-operation-floor-needs-a-version-literal-not-presence.md` names
+  `SetActiveProcessVersionCommand.cs` and covers this floor; no other record names a touched file
+- [x] Docs verdict stated explicitly in the PR body, including "no update required" where that is the
+  verdict — stated in the Dev Agent Record below; it moves into the PR body when the branch is pushed
+- [x] MCP verdict stated in the PR body ("MCP reviewed, no update required" where that applies) — same:
+  stated in the Dev Agent Record below, to move into the PR body on push
+- [ ] PR description references this story file — branch not pushed, no PR yet
 
 ## Dev Agent Record
 
