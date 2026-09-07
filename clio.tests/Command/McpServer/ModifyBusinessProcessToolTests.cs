@@ -1,4 +1,8 @@
+using System;
+using System.IO;
+using System.Reflection;
 using Clio.Command;
+using Clio.Command.McpServer.Prompts.ProcessDesigner;
 using Clio.Command.McpServer.Tools;
 using Clio.Command.McpServer.Tools.ProcessDesigner;
 using Clio.Command.ProcessModel;
@@ -14,6 +18,17 @@ namespace Clio.Tests.Command.McpServer;
 public class ModifyBusinessProcessToolTests {
 	private const string SampleOperations =
 		"[{\"op\":\"removeElement\",\"elementName\":\"StartEvent1\"}]";
+
+	private static readonly string RepositoryRoot = Path.GetFullPath(
+		Path.Combine(AppContext.BaseDirectory, "..", "..", "..", ".."));
+
+	/// <summary>
+	/// Reads a tool method's shipped <see cref="System.ComponentModel.DescriptionAttribute"/> text - the string an
+	/// agent actually receives from <c>tools/list</c>, rather than a copy of it kept in the test.
+	/// </summary>
+	private static string ReadToolDescription(Type toolType, string methodName) =>
+		toolType.GetMethod(methodName)!
+			.GetCustomAttribute<System.ComponentModel.DescriptionAttribute>()!.Description;
 
 	[Test]
 	[Description("Resolves the modify-business-process MCP tool for the requested environment and forwards the identity and operations into command options.")]
@@ -261,6 +276,66 @@ public class ModifyBusinessProcessToolTests {
 		public override int Execute(ModifyBusinessProcessOptions options) {
 			CapturedOptions = options;
 			return _exitCode;
+		}
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Neither write tool promises the character index for the whole 'Formula value error:' family, because the index is a PARSE artifact and half the measured family carries none. Three classes carry it - a syntax fault, 'Expression expected', and 'No applicable method'. Three do not - an unknown identifier ('Parameter \"X\" not found'), a type conversion ('Cannot convert type A to B'), and a newline. The last two are the commonest ways to get a formula wrong, so a caller told to expect an index goes looking for a missing one on exactly the messages that already say what to fix.")]
+	public void FormulaRefusalDescriptions_ShouldScopeTheCharacterIndexToParseFaults() {
+		// Arrange
+		string modifyDescription = ReadToolDescription(typeof(ModifyBusinessProcessTool),
+			nameof(ModifyBusinessProcessTool.ModifyBusinessProcess));
+		string createDescription = ReadToolDescription(typeof(CreateBusinessProcessTool),
+			nameof(CreateBusinessProcessTool.CreateBusinessProcess));
+
+		// Act
+		(string Surface, string Text)[] surfaces = [
+			("modify-business-process [Description]", modifyDescription),
+			("create-business-process [Description]", createDescription)
+		];
+
+		// Assert
+		foreach ((string surface, string text) in surfaces) {
+			text.Should().NotContain("whole 'Formula value error:' family",
+				because: $"'{surface}' would be scoping the index to the whole family, and the platform splits it "
+					+ "down the middle: the index comes from the parser, so a fault raised after the parse - a "
+					+ "binding or a conversion - has no position to report");
+			text.Should().Contain("type mismatch",
+				because: $"'{surface}' has to name a conversion fault as one that carries no index; 'Cannot convert "
+					+ "type \"Decimal\" to \"Int32\"' is measured and says exactly what to fix, so sending a caller "
+					+ "to look for an index it does not have is what makes them distrust it");
+			text.Should().Contain("unknown identifier",
+				because: $"'{surface}' has to name the other one; 'Parameter \"System\" not found' was measured "
+					+ "three times over and appears in no exception list either description offered");
+		}
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Every shipped clio surface that tells a caller how to get rid of a flow condition also carries the consequence of the destructive route. Removing the last conditional flow off an element stops the platform synthesizing the exclusive gateway, so EVERY outgoing flow is then taken - and describe reports kind:'sequence' on both, which reads exactly like the condition was cleared as asked. A surface that teaches remove-and-add without that sentence turns an approval gate into a parallel split silently.")]
+	public void ClearingACondition_ShouldCarryTheGatewayHazard_OnEveryShippedSurface() {
+		// Arrange
+		const string hazard = "stops synthesizing the gateway";
+		string toolDescription = ReadToolDescription(typeof(ModifyBusinessProcessTool),
+			nameof(ModifyBusinessProcessTool.ModifyBusinessProcess));
+		string prompt = ModifyBusinessProcessPrompt.PromptByProcess("env", "UsrSampleProcess");
+		string capabilityMap = File.ReadAllText(Path.Combine(RepositoryRoot, "docs", "McpCapabilityMap.md"));
+
+		// Act
+		(string Surface, string Text)[] surfaces = [
+			("modify-business-process [Description]", toolDescription),
+			("modify-business-process prompt", prompt),
+			("docs/McpCapabilityMap.md", capabilityMap)
+		];
+
+		// Assert
+		foreach ((string surface, string text) in surfaces) {
+			text.Should().Contain(hazard,
+				because: $"'{surface}' tells a caller what to do about an unwanted flow condition, and without this "
+					+ "consequence they take the remove-and-add route, lose the synthesized gateway, and every "
+					+ "outgoing branch runs - measured on a stand at the shipping archive: an approval path became "
+					+ "unreachable for every input and describe still reported kind:'sequence' on both flows");
 		}
 	}
 }

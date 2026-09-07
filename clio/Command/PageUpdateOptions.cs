@@ -786,7 +786,8 @@
 			}
 			if (serverError.Contains("requires an element of type 'Object'", StringComparison.OrdinalIgnoreCase) &&
 				serverError.Contains("type 'Array'", StringComparison.OrdinalIgnoreCase)) {
-				return serverError + " [hint: this typically happens when re-sending the full get-page raw.body — " +
+				return serverError + " [hint: this typically happens when re-sending the full get-page body verbatim in " +
+					"mode='replace' — the mode in which the body reaches the server; " +
 					"backend re-applies existing merges that now conflict with parent hierarchy. " +
 					"Send only NEW viewConfigDiff/handlers operations (the new component insert + matching handler), " +
 					"not the entire inherited body. See docs://mcp/guides/page-modification for the minimal-diff pattern.]";
@@ -829,7 +830,7 @@
 			if (string.IsNullOrWhiteSpace(options.Body)) {
 				return new PageUpdateResponse {
 					Success = false,
-					Error = "body is required and must not be empty. Reuse get-page raw.body instead of bundle or viewConfig fragments."
+					Error = "body is required and must not be empty. Reuse the get-page body (CLI: raw.body; MCP: the contents of the file at files.bodyFile) instead of bundle or viewConfig fragments."
 				};
 			}
 			return null;
