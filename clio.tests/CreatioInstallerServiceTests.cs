@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.IO.Abstractions.TestingHelpers;
 using System.Linq;
+using Clio.Command;
 using Clio.Command.CreatioInstallCommand;
 using Clio.Common;
 using Clio.Common.IIS;
@@ -69,6 +70,9 @@ internal class CreatioInstallerServiceTests : BaseClioModuleTests{
 		_tcpPortReservationReader = Substitute.For<ITcpPortReservationReader>();
 		_tcpPortReservationReader.GetReservedPorts(Arg.Any<int>(), Arg.Any<int>()).Returns([]);
 		containerBuilder.AddSingleton(_tcpPortReservationReader);
+		IWindowsFeatureManager windowsFeatureManager = Substitute.For<IWindowsFeatureManager>();
+		windowsFeatureManager.GetMissedComponents().Returns([]);
+		containerBuilder.AddSingleton(windowsFeatureManager);
 	}
 
 	protected override MockFileSystem CreateFs() {

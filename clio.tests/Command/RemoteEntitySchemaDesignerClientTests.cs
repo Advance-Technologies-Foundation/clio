@@ -25,6 +25,8 @@ internal class RemoteEntitySchemaDesignerClientTests
 		_serviceUrlBuilder = Substitute.For<IServiceUrlBuilder>();
 		_serviceUrlBuilder.Build("ServiceModel/EntitySchemaDesignerService.svc")
 			.Returns("http://local/ServiceModel/EntitySchemaDesignerService.svc");
+		_serviceUrlBuilder.Build(ServiceUrlBuilder.KnownRoute.GetEntitySchemaDesignItem)
+			.Returns("http://local/ServiceModel/EntitySchemaDesignerService.svc/GetSchemaDesignItem");
 		_client = new RemoteEntitySchemaDesignerClient(_applicationClient, new JsonConverter(), _serviceUrlBuilder);
 	}
 
@@ -48,6 +50,7 @@ internal class RemoteEntitySchemaDesignerClientTests
 		response.Should().NotBeNull(because: "a valid designer payload should deserialize without correction");
 		response.Success.Should().BeTrue(because: "the response body marks the request as successful");
 		response.Schema.Name.Should().Be("UsrCodex0307", because: "the schema payload should remain intact");
+		_serviceUrlBuilder.Received(1).Build(ServiceUrlBuilder.KnownRoute.GetEntitySchemaDesignItem);
 	}
 
 	[Test]

@@ -384,7 +384,7 @@ Use `clio help` for the terminal overview and `clio <command> --help` for comman
 <a id="client-unit-schema-get"></a>
 - [`get-client-unit-schema`](docs/commands/get-client-unit-schema.md) - Read body and metadata of a client unit (JavaScript) schema on a remote Creatio environment, `client-unit-schema-get`
 <a id="get-entity-schema-column-properties"></a>
-- [`get-entity-schema-column-properties`](docs/commands/get-entity-schema-column-properties.md) - Get column properties from a remote Creatio entity schema
+- [`get-entity-schema-column-properties`](docs/commands/get-entity-schema-column-properties.md) - Get one column's properties (omit `--package` for merged discovery across all packages)
 <a id="find-entity-schema"></a>
 - [`find-entity-schema`](docs/commands/find-entity-schema.md) - Find entity schemas in a Creatio environment by name, pattern, or UId
 <a id="get-entity-schema-properties"></a>

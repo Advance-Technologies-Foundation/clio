@@ -581,7 +581,7 @@ public sealed class ApplicationInfoService(
 		try
 		{
 			string responseJson = client.ExecutePostRequest(
-				serviceUrlBuilder.Build("ServiceModel/EntitySchemaDesignerService.svc/GetSchemaDesignItem"),
+				serviceUrlBuilder.Build(ServiceUrlBuilder.KnownRoute.GetEntitySchemaDesignItem),
 				JsonSerializer.Serialize(new
 				{
 					name = entityName,

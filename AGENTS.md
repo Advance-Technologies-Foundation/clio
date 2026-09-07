@@ -51,6 +51,15 @@ Existing examples in `ServiceUrlBuilder.KnownRoutes`:
 `ServiceUrlBuilder.Build(KnownRoute)` automatically prepends `0/` for `.NET Framework` environments
 (`IsNetCore = false`), so always register the raw `/rest/…` path in `KnownRoutes`.
 
+## Service URL ownership
+
+Every new fixed Creatio service endpoint, whether DataService, WCF, REST, or another platform route,
+must be registered in `ServiceUrlBuilder.KnownRoute` and `ServiceUrlBuilder.KnownRoutes`, except for an
+explicitly documented prefix exception such as the site-root authentication route. Callers must
+use `IServiceUrlBuilder.Build(KnownRoute)` instead of hardcoding the route or constructing a method URL
+from a string base path. Continue the enum's numeric sequence, add route tests for both .NET Framework
+(`0/` prefix) and .NET Core, and keep dynamic URLs (for example user-supplied service paths) as strings.
+
 ## Adding a new ClioGate endpoint
 
 1. Add a method to `cliogate/Files/cs/CreatioApiGateway.cs` with `[WebInvoke]` and `CheckCanManageSolution()` as the first call.

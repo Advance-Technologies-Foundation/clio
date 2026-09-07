@@ -17,7 +17,7 @@ namespace Clio.Tests;
 /// </summary>
 /// <remarks>
 /// This guard lives in <c>clio.tests</c> (not <c>clio.mcp.e2e</c>) so it runs in the standard
-/// pre-merge Unit lane (<c>dotnet test clio.tests.csproj --filter "Category!=Integration"</c>).
+/// pre-merge Unit lane (<c>dotnet test clio.tests.csproj --filter "TestCategory!=Integration"</c>).
 /// It reflects over the <c>clio.mcp.e2e</c> assembly via a project reference; the e2e tests
 /// themselves are not executed here.
 /// </remarks>
