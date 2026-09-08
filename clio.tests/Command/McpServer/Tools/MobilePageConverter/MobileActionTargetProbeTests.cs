@@ -487,8 +487,8 @@ public sealed class MobileActionTargetProbeTests {
 	}
 
 	[Test]
-	[Description("The object the page itself is bound to is never reported absent: creating its default mobile page IS this conversion's closing step.")]
-	public void Probe_TargetIsTheSourcePagesOwnObject_ReportsUnknownWithoutReading() {
+	[Description("The object the page itself is bound to is not reported at all: creating its default mobile page IS this conversion's closing step, so neither 'missing' nor 'please verify' is a question worth asking.")]
+	public void Probe_TargetIsTheSourcePagesOwnObject_IsNotReported() {
 		// Arrange — an object with no MobileRelatedPage add-on at all, which is the pre-conversion state.
 		EnvironmentStub environment = Environment(Route(Rows(), Rows(EntityRow("Lead"))), addonMetaData: "{\"Pages\":[]}");
 
@@ -498,10 +498,13 @@ public sealed class MobileActionTargetProbeTests {
 			modelConfig: SourcePageBoundTo("Lead"));
 
 		// Assert
+		result.Occurrences.Should().BeEmpty(
+			because: "flagging the create-Lead action while the same guide instructs the user to create Lead's "
+				+ "mobile edit page would have one response contradict the other");
 		StateOf(result, MobileActionTargetProbe.KindEntityDefaultMobilePage, "Lead")
 			.Should().Be(ActionTargetState.Unknown,
-				because: "telling the user to delete a create-Lead button while also telling them to register "
-					+ "Lead's mobile edit page would be self-contradictory");
+				because: "an unreported target must also stay unresolved, so nothing downstream can conclude it "
+					+ "is absent");
 		environment.AddonClient.DidNotReceive().GetSchema(Arg.Any<AddonGetRequestDto>());
 	}
 

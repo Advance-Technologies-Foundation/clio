@@ -3579,7 +3579,8 @@ public sealed class WebToMobileConversionServiceTests {
 		guide.RequestConversions!.UnresolvedTargetRequests.Should().ContainSingle(
 			because: "one action points at a page the mobile app cannot open");
 		UnresolvedTargetRequest finding = guide.RequestConversions.UnresolvedTargetRequests[0];
-		finding.ElementName.Should().Be("PostponeButton", because: "the user must know which control to omit");
+		finding.ElementName.Should().Be("PostponeButton",
+			because: "the user must know which control carries the dead action");
 		finding.Binding.Should().Be("clicked", because: "the binding names the dead action");
 		finding.WebRequest.Should().Be("crt.OpenPageRequest", because: "the request type is reported verbatim");
 		finding.TargetKind.Should().Be("mobile-page", because: "the kind comes from the rule that declared it");
@@ -3713,7 +3714,7 @@ public sealed class WebToMobileConversionServiceTests {
 		Element(guide, "OpenButton").Operation.Should().NotBe("drop",
 			because: "the element itself converts normally");
 		guide.RequestConversions!.UnresolvedTargetRequests.Should().BeEmpty(
-			because: "the converted body never carries that binding, so there is nothing for the caller to omit");
+			because: "the converted body never carries that binding, so there is nothing for the caller to act on");
 	}
 
 	[Test]
@@ -3728,13 +3729,19 @@ public sealed class WebToMobileConversionServiceTests {
 		MobilePageConversionGuide guide = AnalyzeTargets(bundle, probe);
 
 		// Assert
-		guide.Constraints.Should().Contain(
-			c => c.Contains("KEEP these buttons / menu items") && c.Contains("PostponeButton -> LegacyPage"),
+		string constraint = guide.Constraints.Should().ContainSingle(c => c.Contains("PostponeButton -> LegacyPage"),
 			because: "the tool's contract is that the guide's own constraints carry the rules for applying it, "
-				+ "so the finding must arrive with the instruction that acts on it");
-		guide.Constraints.Should().NotContain(c => c.Contains("Do NOT add"),
+				+ "so the finding must arrive with the instruction that acts on it").Subject;
+		constraint.Should().Contain("KEEP these controls",
+			because: "the instruction must name what to do, and the probe can report any control type, not just "
+				+ "a button");
+		// Scoped to THIS constraint on purpose: the base list legitimately says "do NOT add a second Scaffold",
+		// so a list-wide scan would couple this test to unrelated wording.
+		constraint.Should().NotContainEquivalentOf("do not add",
 			because: "a broken destination is reported, never removed — the control stays on the page and the "
 				+ "developer decides what to do about its target");
+		constraint.Should().NotContainEquivalentOf("omit",
+			because: "the retired instruction must not come back under a synonym either");
 	}
 
 	[Test]
@@ -3749,9 +3756,14 @@ public sealed class WebToMobileConversionServiceTests {
 		MobilePageConversionGuide guide = AnalyzeTargets(bundle, probe);
 
 		// Assert
-		guide.Constraints.Should().Contain(c => c.Contains("Keep these controls too"),
+		string constraint = guide.Constraints.Should().ContainSingle(c => c.Contains("OpenButton -> MaybePage"),
+			because: "an instruction with no list of what it applies to is not actionable").Subject;
+		constraint.Should().Contain("KEEP these controls",
 			because: "an unverified target must never be actioned as an absent one");
-		guide.Constraints.Should().NotContain(c => c.Contains("KEEP these buttons / menu items"),
+		constraint.Should().Contain("elementMap",
+			because: "'keep' must be anchored to the entry, or an agent building a body from scratch may insert "
+				+ "its own copy of a control the mobile template already provides");
+		constraint.Should().NotContainEquivalentOf("does not exist",
 			because: "reporting an unverified target as a verified break would send the user chasing a page "
 				+ "that may well already exist");
 	}

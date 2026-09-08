@@ -493,7 +493,7 @@ public sealed class MobilePageConversionGuide {
 	/// into the FAB from a non-converting scope; on any other component type the binding is kept verbatim
 	/// and flagged for manual review (the component stays). This section is an advisory SUMMARY — the
 	/// actionable result is already baked into <c>mobileValues</c>, with ONE exception:
-	/// <see cref="RequestConversionInfo.UnresolvedTargetRequests"/> is a warning the caller must act on itself.
+	/// <see cref="RequestConversionInfo.UnresolvedTargetRequests"/> is a warning the caller must REPORT itself.
 	/// Null when the source page references no requests AND no action target needed reporting.
 	/// (Page <c>handlers</c> are web-only and never transferred.)
 	/// </summary>

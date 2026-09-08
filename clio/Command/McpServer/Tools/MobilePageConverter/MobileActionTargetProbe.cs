@@ -145,8 +145,8 @@ public static class MobileActionTargetProbe {
 		try {
 			// Inside the try on purpose: the walk reads an authored page body, and the never-throws contract
 			// must be structural rather than a property of today's parser.
-			occurrences = CollectActionTargets(viewConfig, targeted);
 			sourceEntities = CollectSourceEntityNames(modelConfig);
+			occurrences = ExceptSourceEntityTargets(CollectActionTargets(viewConfig, targeted), sourceEntities);
 		} catch (Exception ex) {
 			return NotProbed([], $"Could not read the page's action bindings ({ex.Message}).");
 		}
@@ -169,8 +169,7 @@ public static class MobileActionTargetProbe {
 			ResolvePageTargets(commandResolver, options, client, urlBuilder, rules,
 				DistinctTargetsOfKind(occurrences, KindMobilePage), designPackageUId, resolutions);
 			ResolveEntityTargets(commandResolver, options, client, urlBuilder,
-				DistinctTargetsOfKind(occurrences, KindEntityDefaultMobilePage), pagePackageUId,
-				sourceEntities, resolutions);
+				DistinctTargetsOfKind(occurrences, KindEntityDefaultMobilePage), pagePackageUId, resolutions);
 
 			return new MobileActionTargetProbeResult {
 				ProbeOk = true, Occurrences = occurrences, TargetsByKey = resolutions
@@ -211,12 +210,12 @@ public static class MobileActionTargetProbe {
 	/// The objects the source page's own data sources are bound to, read from
 	/// <c>modelConfig.dataSources.*.config.entitySchemaName</c>.
 	/// <para>
-	/// These are EXEMPT from the default-mobile-page check, and that exemption is load-bearing. A record page
-	/// for <c>Lead</c> routinely carries a "create Lead" action; before the conversion runs there is no
-	/// <c>MobileRelatedPage</c> add-on for <c>Lead</c> — creating it IS the conversion's own closing step, the
-	/// one <see cref="MobileSectionRegistrationProbe"/> spells out as "register it as the object's default
-	/// MOBILE edit page". Reporting it absent would make one response tell the caller to register that page
-	/// and to delete the control that opens it.
+	/// Targets naming these objects are DROPPED FROM THE REPORT entirely, and that exemption is load-bearing.
+	/// A record page for <c>Lead</c> routinely carries a "create Lead" action; before the conversion runs there
+	/// is no <c>MobileRelatedPage</c> add-on for <c>Lead</c> — creating it IS the conversion's own closing
+	/// step, the one <see cref="MobileSectionRegistrationProbe"/> spells out as "register it as the object's
+	/// default MOBILE edit page". Reporting it would have one response flag an action as broken and, in its
+	/// <c>sectionRegistration</c> section, instruct the caller to create the very page it is missing.
 	/// </para>
 	/// </summary>
 	internal static IReadOnlySet<string> CollectSourceEntityNames(JsonObject modelConfig) {
@@ -232,6 +231,19 @@ public static class MobileActionTargetProbe {
 		}
 		return names;
 	}
+
+	/// <summary>
+	/// Drops the occurrences whose object is one the source page is itself bound to. See
+	/// <see cref="CollectSourceEntityNames"/> for why those are not reportable: the conversion creates their
+	/// mobile page, so neither "missing" nor "please verify" is a question worth putting to the user.
+	/// </summary>
+	private static IReadOnlyList<ActionTargetOccurrence> ExceptSourceEntityTargets(
+		IReadOnlyList<ActionTargetOccurrence> occurrences, IReadOnlySet<string> sourceEntities) =>
+		sourceEntities.Count == 0
+			? occurrences
+			: [.. occurrences.Where(o =>
+				!string.Equals(o.Kind, KindEntityDefaultMobilePage, StringComparison.OrdinalIgnoreCase)
+				|| !sourceEntities.Contains(o.Target))];
 
 	/// <summary>Whether this build knows how to verify a target of <paramref name="kind"/>.</summary>
 	private static bool IsRecognizedKind(string kind) =>
@@ -508,14 +520,7 @@ public static class MobileActionTargetProbe {
 		IToolCommandResolver commandResolver, EnvironmentOptions options,
 		IApplicationClient client, IServiceUrlBuilder urlBuilder,
 		IReadOnlyList<string> names, string pagePackageUId,
-		IReadOnlySet<string> sourceEntities,
 		IDictionary<string, ActionTargetResolution> into) {
-		// The page's own objects are what this conversion is FOR; their mobile page does not exist yet by
-		// definition. Answer Unknown without a round trip — see CollectSourceEntityNames.
-		names = [.. names.Where(name => !sourceEntities.Contains(name))];
-		foreach (string sourceEntity in sourceEntities) {
-			Record(into, KindEntityDefaultMobilePage, sourceEntity, ActionTargetState.Unknown);
-		}
 		if (names.Count == 0) {
 			return;
 		}
@@ -743,7 +748,7 @@ public static class MobileActionTargetProbe {
 	/// Reads a boolean property, tolerating a bool stored as the STRING <c>"true"</c>. Deliberately as lenient
 	/// as <c>RelatedPageAddonService</c>'s reader: the two surfaces classify the same persisted add-on, and a
 	/// stricter read here would report "no default mobile page" for a record the other surface reports as the
-	/// default — a disagreement that lands on the delete-the-control side.
+	/// default — a disagreement that lands on the false-alarm side.
 	/// </summary>
 	private static bool Bool(JsonObject obj, string property) {
 		if (obj is null || !obj.TryGetPropertyValue(property, out JsonNode node) || node is not JsonValue value) {

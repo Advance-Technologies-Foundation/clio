@@ -1744,7 +1744,9 @@ public static class WebToMobileAnalysisService {
 			return;
 		}
 		string Describe(IEnumerable<UnresolvedTargetRequest> items) =>
-			string.Join(", ", items.Select(r => $"{r.ElementName} -> {r.Target}"));
+			string.Join(", ", items
+				.Select(r => $"{r.ElementName} -> {r.Target}")
+				.Distinct(StringComparer.Ordinal));
 
 		List<UnresolvedTargetRequest> missing = [.. unresolvedTargetRequests
 			.Where(r => string.Equals(r.State, UnresolvedTargetRequest.StateMissing, StringComparison.Ordinal))];
@@ -1752,10 +1754,11 @@ public static class WebToMobileAnalysisService {
 			constraints.Add(
 				"requestConversions.unresolvedTargetRequests reports action(s) whose TARGET does not exist on the "
 				+ "Creatio Mobile app: " + Describe(missing)
-				+ ". KEEP these buttons / menu items — build them exactly as their elementMap entries say. This is a "
-				+ "REPORT, not a removal: the request itself converts, only its destination is missing. Name each "
-				+ "control and its target at the conversion gate and say the action will not work until that target "
-				+ "exists, then let the user decide — convert the target page, repoint the action, or accept it as is.");
+				+ ". KEEP these controls (a button, a menu item, whatever fires the action) — build each one exactly "
+				+ "as its elementMap entry says, and add nothing the entry does not call for. This is a REPORT, not a "
+				+ "removal: the request itself converts, only its destination is missing. Name each control and its "
+				+ "target at the conversion gate and say the action will not work until that target exists, then let "
+				+ "the user decide — convert the target page, repoint the action, or accept it as is.");
 		}
 		List<UnresolvedTargetRequest> unknown = [.. unresolvedTargetRequests
 			.Where(r => string.Equals(r.State, UnresolvedTargetRequest.StateUnknown, StringComparison.Ordinal))];
@@ -1763,8 +1766,9 @@ public static class WebToMobileAnalysisService {
 			constraints.Add(
 				"requestConversions.unresolvedTargetRequests reports action(s) whose target could NOT be verified: "
 				+ Describe(unknown)
-				+ ". Keep these controls too, and ask the user to confirm each target exists on mobile before relying "
-				+ "on it — unverified is not the same as absent, so do not report them as broken.");
+				+ ". KEEP these controls as well — again exactly as their elementMap entries say, adding nothing the "
+				+ "entry does not call for — and ask the user to confirm each target exists on mobile before relying "
+				+ "on it. Unverified is not the same as absent: do not report these as broken.");
 		}
 	}
 
