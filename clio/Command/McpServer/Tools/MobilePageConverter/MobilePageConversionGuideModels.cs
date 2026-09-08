@@ -190,8 +190,11 @@ public sealed class ElementMapEntry {
 	/// <c>type</c> — the whitelisted keys when the rule declares <c>carryProperties</c>, otherwise the page's
 	/// DELTA over the web-template baseline for a same-component twin (e.g. crt.FileList → crt.FileList): only
 	/// what the page changed, so a property left at the template default is omitted and the mobile element
-	/// keeps its own default; merge them by name. Null when there is nothing prebuilt (a structural/advisory
-	/// merge, an unchanged same-component twin, or an operation that carries no values).
+	/// keeps its own default; merge them by name. For a STRUCTURAL twin (the target element is a different
+	/// component, crt.DataGrid -> crt.List) it is the structure the rules file declares for the target type -
+	/// the list's crt.ListItem row - and nothing of the source. Null when there is nothing prebuilt (an
+	/// advisory merge with no declared structure, an unchanged same-component twin, or an operation that
+	/// carries no values).
 	/// </summary>
 	[JsonPropertyName("mobileValues")]
 	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]

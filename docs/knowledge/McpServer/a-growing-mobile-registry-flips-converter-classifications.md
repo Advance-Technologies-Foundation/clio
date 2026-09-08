@@ -25,6 +25,19 @@ one the converter needs: whether the component exists SOMEWHERE on mobile, not w
 sits at the target position. The mobile template probe (`mobileTemplateTypesByName`) is the
 authority for the latter and must be preferred wherever it is available.
 
+**Follow-up (2026-09-07)** — resolving the twin's mobile type from the template probe fixed the
+wrong payload but left the list with no row at all: the rules file HAS the grid → list
+`crt.ListItem` template, and it was applied only on the INSERT path, while a list page's mobile
+template already provides the `List`, so the grid converts by merge-by-name.
+
+The row now arrives, but NOT on the twin. A structural twin carries nothing of its own: the
+structure the rules declare for it is a separate named element the template already provides in a
+single-object slot, so it is emitted as its OWN merge entry addressed by that element's name (read
+from the probe's `SlotElementsByOwner`, never assumed). Putting it in the parent's merge values
+instead is a silent no-op — `crt.List` is not a container, `itemLayout` is an input, and the differ
+discards a merge property whose slot already holds a named element, which every OOTB mobile list
+template fills. See `a-row-belongs-to-the-template-element-not-the-parent-merge.md`.
+
 **What breaks if you ignore it** — the failure is silent in both directions. A wrong merge writes
 properties the target component does not declare, and the mobile runtime ignores them rather than
 erroring, so the page saves, validates and opens; only the missing UI shows it. And the converter's

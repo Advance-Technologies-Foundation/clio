@@ -227,7 +227,9 @@ public sealed class MobilePageConversionGuideTool {
 				mobileTemplateLayoutConfigs: mobileTemplateProbe.LayoutConfigsByName,
 				webTemplateBaselineNodes: webTemplateBaseline.Nodes,
 				webTemplateUnavailable: webTemplateBaseline.Unavailable,
-				webTemplateResources: webTemplateBaseline.Resources);
+				webTemplateResources: webTemplateBaseline.Resources,
+				mobileTypeDefinitions: mobileState.GlobalReferences?.TypeDefinitions,
+				mobileTemplateSlotElements: mobileTemplateProbe.SlotElementsByOwner);
 		} catch (Exception ex) {
 			return Fail(args, sourceType, $"Failed to analyze source page '{args.SchemaName}': {ex.Message}");
 		}
@@ -518,7 +520,8 @@ public sealed class MobilePageConversionGuideTool {
 		JsonNode ViewModelConfig,
 		JsonNode ModelConfig,
 		bool Unavailable,
-		IReadOnlyDictionary<string, string> TypesByName);
+		IReadOnlyDictionary<string, string> TypesByName,
+		IReadOnlyDictionary<string, WebToMobileAnalysisService.MobileTemplateSlotElement> SlotElementsByOwner);
 
 	/// <summary>
 	/// Best-effort read of the mobile template (<paramref name="mobileSchemaName"/>) bundle: maps each mobile
@@ -534,9 +537,11 @@ public sealed class MobilePageConversionGuideTool {
 		var emptyParents = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
 		var emptyTypes = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
 		var emptyPlacements = new Dictionary<string, JsonObject>(StringComparer.OrdinalIgnoreCase);
+		var emptySlots = new Dictionary<string, WebToMobileAnalysisService.MobileTemplateSlotElement>(
+			StringComparer.OrdinalIgnoreCase);
 		if (string.IsNullOrWhiteSpace(mobileSchemaName)) {
 			return new MobileTemplateProbe(emptyParents, emptyPlacements, ViewModelConfig: null, ModelConfig: null,
-				Unavailable: false, TypesByName: emptyTypes);
+				Unavailable: false, TypesByName: emptyTypes, SlotElementsByOwner: emptySlots);
 		}
 		try {
 			PageGetOptions options = new() {
@@ -551,19 +556,22 @@ public sealed class MobilePageConversionGuideTool {
 				IReadOnlyDictionary<string, string> parents = emptyParents;
 				IReadOnlyDictionary<string, string> types = emptyTypes;
 				IReadOnlyDictionary<string, JsonObject> placements = emptyPlacements;
+				IReadOnlyDictionary<string, WebToMobileAnalysisService.MobileTemplateSlotElement> slots =
+					emptySlots;
 				if (bundle.ViewConfig is { } viewConfig) {
 					parents = WebToMobileAnalysisService.CollectParentByName(viewConfig);
 					types = WebToMobileAnalysisService.CollectComponentTypesByName(viewConfig);
 					placements = WebToMobileAnalysisService.CollectLayoutConfigByName(viewConfig);
+					slots = WebToMobileAnalysisService.CollectSlotElementsByOwner(viewConfig);
 				}
 				return new MobileTemplateProbe(parents, placements, bundle.ViewModelConfig, bundle.ModelConfig,
-					Unavailable: false, TypesByName: types);
+					Unavailable: false, TypesByName: types, SlotElementsByOwner: slots);
 			}
 		} catch (Exception) {
 			// Best-effort: a failed mobile-template read falls back to defaults; Unavailable flags it below.
 		}
 		return new MobileTemplateProbe(emptyParents, emptyPlacements, ViewModelConfig: null, ModelConfig: null,
-			Unavailable: true, TypesByName: emptyTypes);
+			Unavailable: true, TypesByName: emptyTypes, SlotElementsByOwner: emptySlots);
 	}
 
 	/// <summary>
