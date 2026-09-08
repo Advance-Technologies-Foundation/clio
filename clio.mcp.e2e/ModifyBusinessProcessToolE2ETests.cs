@@ -101,6 +101,76 @@ public sealed class ModifyBusinessProcessToolE2ETests {
 	}
 
 	[Test]
+	[Description("Over the real MCP path, setFlow's `label` covers the four outcomes that can only be proven against a real server, because a flow's caption is a LocalizableString and lives in the schema RESOURCES rather than in metadata — nothing in-memory shows whether the row was written, moved or deleted. (1) THE TRAP: a re-kind re-derives a generated flow's NAME and the resource key is built from that name, so a label the caller never mentioned could be orphaned under the old key; it is not. (2) a supplied label replaces the old one across the same re-kind. (3) an EMPTY label clears it, which is the only way to remove one. (4) a label applied while the KIND does not change still lands — `kind` is mandatory on setFlow, so relabelling alone takes the no-op early return, and returning before the label would report success and write nothing.")]
+	[AllureTag(ToolName)]
+	[AllureName("modify-business-process writes, keeps and clears a flow label with setFlow")]
+	public async Task ModifyBusinessProcess_Should_WriteKeepAndClearAFlowLabelWithSetFlow() {
+		// Arrange — every branch labelled, which is the state a designer-authored process is normally in:
+		// 84.9% of the conditional flows in the shipped product carry a label.
+		await using ArrangeContext context = await ArrangeAsync(requireReachableEnvironment: true);
+		string processName = $"UsrClioBpFlowLabelE2e{Guid.NewGuid():N}";
+		await CallToolAsync(context, CreateToolName, new Dictionary<string, object?> {
+			["environment-name"] = context.EnvironmentName,
+			["descriptor"] = BuildLabelledThreeBranchTaskDescriptor(processName)
+		});
+
+		// Act — one batch covering all four: EndA is re-kinded with NO label mentioned (the trap), EndB is
+		// re-kinded WITH a new label, EndC's label is cleared, and Start1->Decide is relabelled while its kind
+		// stays exactly what it already is.
+		CallToolResult callResult = await CallToolAsync(context, ToolName, new Dictionary<string, object?> {
+			["environment-name"] = context.EnvironmentName,
+			["process-name"] = processName,
+			["operations"] = """
+				[
+				  { "op": "setFlow", "source": "Decide", "target": "EndA", "kind": "conditional",
+				    "condition": "1 > 0" },
+				  { "op": "setFlow", "source": "Decide", "target": "EndB", "kind": "conditional",
+				    "condition": "2 > 1", "label": "Renamed outcome" },
+				  { "op": "setFlow", "source": "Decide", "target": "EndC", "kind": "conditional",
+				    "condition": "3 > 1", "label": "" },
+				  { "op": "setFlow", "source": "Start1", "target": "Decide", "kind": "sequence",
+				    "label": "Amount confirmed" }
+				]
+				"""
+		});
+
+		// Assert
+		callResult.IsError.Should().NotBeTrue(
+			because: "writing, keeping and clearing labels in one batch must complete without a transport error");
+
+		DescribeProcessResult described = ParseDescribeResult(await CallToolAsync(context, DescribeToolName,
+			new Dictionary<string, object?> {
+				["environment-name"] = context.EnvironmentName, ["process-name"] = processName
+			}));
+		DescribedFlow toA = described.Flows.Single(f => f.Source == "Decide" && f.Target == "EndA");
+		DescribedFlow toB = described.Flows.Single(f => f.Source == "Decide" && f.Target == "EndB");
+		DescribedFlow toC = described.Flows.Single(f => f.Source == "Decide" && f.Target == "EndC");
+		DescribedFlow intoDecide = described.Flows.Single(f => f.Source == "Start1" && f.Target == "Decide");
+
+		// Through the extension-data bag: a flow's stored NAME is not a typed member of DescribedFlow - the
+		// DTO carries only what the guards address by name, and a flow is addressed by its endpoint PAIR
+		// everywhere in the write API. It still arrives, and it is what this assertion needs.
+		toA.AdditionalData["name"].GetString().Should().Be("ConditionalFlow_Decide_EndA",
+			because: "the generated name IS re-derived by the re-kind - that is what moves the resource key out "
+				+ "from under the label, and without this assertion the next one proves nothing");
+		toA.Label.Should().Be("Take this branch",
+			because: "an omitted label means the caller said nothing about it, so the row has to be "
+				+ "re-materialised under the NEW name rather than orphaned under the old one - which is the "
+				+ "whole question this test exists to answer, and it cannot be answered in memory");
+		toB.Label.Should().Be("Renamed outcome",
+			because: "a supplied label replaces the previous one across the same re-kind");
+		toC.Label.Should().BeNull(
+			because: "an empty label CLEARS the caption, and a cleared caption deletes its resource row rather "
+				+ "than leaving a blank one - describe reports null, not an empty string");
+		intoDecide.Label.Should().Be("Amount confirmed",
+			because: "kind is mandatory on setFlow, so relabelling alone passes the kind the flow already has "
+				+ "and takes the no-op early return - a label lost there is a success report on an edit that "
+				+ "wrote nothing");
+		intoDecide.Kind.Should().Be("sequence",
+			because: "and the no-op is still a no-op: the flow must not be re-kinded by a relabel");
+	}
+
+	[Test]
 	[Description("Off a deciding GATEWAY, setFlow kind sequence is refused when the gateway ALREADY has a default branch - the flow has nothing left to normalise into. A gateway with no default normalises the request instead, and re-kinding the gateway's own default is a silent no-op, so this is the one shape that refuses. Asserted here because the first version of the test above assumed a refusal that does not happen and could never have passed.")]
 	[AllureTag(ToolName)]
 	[AllureName("modify-business-process refuses a second unconditional branch out of a gateway")]
@@ -1539,6 +1609,33 @@ public sealed class ModifyBusinessProcessToolE2ETests {
 		    { "source": "Decide", "target": "EndA" },
 		    { "source": "Decide", "target": "EndB", "kind": "conditional", "condition": "2 > 1" },
 		    { "source": "Decide", "target": "EndC", "kind": "conditional", "condition": "3 > 1" }
+		  ]
+		}
+		""";
+
+	// The three-branch fixture with every flow LABELLED, which is the state a designer-authored process is
+	// normally in. Kept separate from BuildThreeBranchTaskDescriptor so the re-kind test above keeps
+	// asserting the unlabelled case - a label present in both would hide a label-only regression in either.
+	private static string BuildLabelledThreeBranchTaskDescriptor(string processName) =>
+		$$"""
+		{
+		  "name": "{{processName}}",
+		  "caption": "Clio BP Flow Label E2E",
+		  "packageName": "Custom",
+		  "elements": [
+		    { "name": "Start1", "type": "startEvent" },
+		    { "name": "Decide", "type": "performTask" },
+		    { "name": "EndA", "type": "endEvent" },
+		    { "name": "EndB", "type": "endEvent" },
+		    { "name": "EndC", "type": "endEvent" }
+		  ],
+		  "flows": [
+		    { "source": "Start1", "target": "Decide", "label": "Amount known" },
+		    { "source": "Decide", "target": "EndA", "label": "Take this branch" },
+		    { "source": "Decide", "target": "EndB", "kind": "conditional", "condition": "2 > 1",
+		      "label": "Original outcome" },
+		    { "source": "Decide", "target": "EndC", "kind": "conditional", "condition": "3 > 1",
+		      "label": "Everything else" }
 		  ]
 		}
 		""";

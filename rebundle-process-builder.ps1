@@ -246,7 +246,18 @@ if ($SkipTests) {
     try {
         dotnet build MainSolution.slnx -c dev-nf --nologo -v q
         if ($LASTEXITCODE -ne 0) { Die 'Package build failed. Shipping sources the target cannot compile installs a package that never works.' }
-        dotnet test tests/CrtProcessBuilder/CrtProcessBuilder.Tests.csproj -c dev-nf --no-build --nologo -v q
+        # The test project is DISCOVERED, not hardcoded. Its path moved once already - the package repo
+        # relocated it to tests/UnitTests/<project>/ when it grew a Jenkins pipeline - and a hardcoded
+        # path fails as `MSBUILD : error MSB1009: Project file does not exist`, which reads as a broken
+        # checkout rather than as a stale line in this script. Exactly one match is required: zero means
+        # the suite would be silently skipped while the rebundle carried on to ship the archive.
+        $testProjects = @(Get-ChildItem -Path 'tests' -Recurse -Filter 'CrtProcessBuilder.Tests.csproj' -File)
+        if ($testProjects.Count -ne 1) {
+            Die "Expected exactly one CrtProcessBuilder.Tests.csproj under $PackageRepoPath	ests, found $($testProjects.Count).
+Without it the package tests - the only check that each operation is still bound to its authorization
+gate - cannot run, and this script must not ship an archive it did not test."
+        }
+        dotnet test $testProjects[0].FullName -c dev-nf --no-build --nologo -v q
         if ($LASTEXITCODE -ne 0) { Die 'Package tests failed.' }
     } finally { Pop-Location }
     Ok 'build + tests green'

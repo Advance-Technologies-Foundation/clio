@@ -1181,6 +1181,27 @@ public sealed class DescribedFlow {
 	public bool? BranchesOnActivityResult { get; set; }
 
 	/// <summary>
+	/// The flow's LABEL on the diagram - the text the designer draws on the connector - or <c>null</c> when
+	/// it carries none.
+	/// <para>It does not live in the process metadata. The flow's caption is a platform
+	/// <c>LocalizableString</c>, so it is stored in the schema's RESOURCES as
+	/// <c>BaseElements.&lt;FlowName&gt;.Caption</c> - which is why diffing two processes' <c>metadata.json</c>
+	/// says nothing about their labels.</para>
+	/// <para>Typed rather than left to <see cref="AdditionalData"/> for the reason <see cref="Condition"/>
+	/// gives: the post-write guard reads it BY NAME to tell a caller their label did not land, and a
+	/// <c>JsonElement</c> in a dictionary is not that.</para>
+	/// <para>Omitted rather than written as null when absent, and that matters on exactly the servers this
+	/// feature is new to. <c>describe</c> is allowed against a package that predates the field (its
+	/// <c>[RequiresPackage]</c> is presence-only), and such a server never sends it. Writing an explicit
+	/// <c>null</c> would assert "this flow has no label" for every flow on a server that said nothing about
+	/// labels at all - and the difference is the whole point of the guard, since a designer-authored process
+	/// there very likely HAS labels the caller must not overwrite blind.</para>
+	/// </summary>
+	[JsonPropertyName("label")]
+	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+	public string Label { get; set; }
+
+	/// <summary>
 	/// Every other field the server returns on a flow, so a description round-trips losslessly - the same bag
 	/// the graph root, nodes and parameters already carry. Added with the nullability fix above: without it a
 	/// newer <c>CrtProcessBuilder</c> reporting a new flow field needs a matching clio property AND a clio

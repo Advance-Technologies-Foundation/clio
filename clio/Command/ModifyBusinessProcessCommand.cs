@@ -413,6 +413,12 @@ public class ModifyBusinessProcessCommand(
 		// part. Email needs no separate expectation here: ReportDescribed covers it from intent.
 		IReadOnlyList<ApprovalBlockExpectation.ApprovalExpectation> expectedApproval =
 			ApprovalBlockExpectation.FromOperations(options.OperationsJson);
+		// Flow labels ride the SAME read-back, and on THIS path the drop is worse than on the build path:
+		// a modify is normally applied to a designer-authored process, where 84.9% of conditional flows
+		// already carry a label, so a caller relabelling a branch against a package below 1.6.0.8 is told the
+		// edit succeeded while the old label is still what is drawn.
+		IReadOnlyList<FlowLabelExpectation.FlowLabel> expectedLabels =
+			FlowLabelExpectation.FromOperations(options.OperationsJson);
 
 		// An accessRights block on addElement is dropped by the server (it applies only email/performer).
 		// That is by design, but the outcome the caller lives with is the same unconfigured element as a
@@ -430,7 +436,7 @@ public class ModifyBusinessProcessCommand(
 		// A setFilter/clearFilter carries no block, so it used to return here - and clearing the filter on a
 		// Change access rights element is the single most dangerous edit this surface offers, because it moves
 		// the element from narrowing to acting on EVERY record of its object. Read back for those too.
-		if (intent.IsEmpty && expectedApproval.Count == 0) {
+		if (intent.IsEmpty && expectedApproval.Count == 0 && expectedLabels.Count == 0) {
 			return;
 		}
 
@@ -459,6 +465,12 @@ public class ModifyBusinessProcessCommand(
 			ApprovalBlockExpectation.Missing(described.Value, expectedApproval));
 		if (approvalWarning is not null) {
 			logger.WriteWarning(approvalWarning);
+		}
+
+		string? droppedLabels = FlowLabelExpectation.BuildWarning(
+			FlowLabelExpectation.MissingLabels(described.Value, expectedLabels));
+		if (droppedLabels is not null) {
+			logger.WriteWarning(droppedLabels);
 		}
 	}
 }

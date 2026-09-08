@@ -40,6 +40,8 @@ Worked example, verified on the stand: `PushNotificationAboutAppUpdateAvailableP
 `BaseElements.ConditionalSequenceFlow1.Caption` = `No updates available`, and the designer draws that
 text centred on the connector.
 
+> **ANSWERED on 2026-09-08: the trap is benign and needs none of the three remedies this paragraph proposes.** A re-kind re-materialises the resource row under the new name and leaves nothing under the old one. Measured through the `FreeTheDefaultSlot()` route specifically. Do not implement the guard the paragraph below invites - see the end of this file, and `docs/knowledge/platform/a-flow-rekind-does-not-orphan-its-label.md`.
+
 **THE ONE TRAP, and it is invisible from either side alone.** The name in the key is the flow's
 `Name`, and CrtProcessBuilder re-derives a flow's Name on a re-kind (shipped in 1.4.0.66). **The rename and the label live in the
 same key, so a label written before a re-kind is orphaned by it** — the row stays in the resource
@@ -98,6 +100,8 @@ Four, plus the archive:
 
 ## Verify before building
 
+> **ANSWERED on 2026-09-08, and the answer was yes.** The paragraph below is kept as written because it is the reason the spike was done first; read "Measured 2026-09-08" at the end of this file for what it found. Nothing here turned out to be rework.
+
 The load-bearing assumption is that assigning `ProcessSchemaSequenceFlow.Caption` from our build
 path produces the resource row and a rendered label. It is plausible — the element path already
 does this and element captions render — but it has NOT been demonstrated for a flow. Do the minimal
@@ -147,3 +151,101 @@ Two things to know before starting, neither of which is in the text above:
   `AddFlow_SecondDefaultOffADecidingGateway_NamesARemedyThatWorks` already executes it.
 
 Everything else in this brief was re-read against master at `ddff7cc62` and still holds.
+
+## Measured 2026-09-08 — the spike answered both open questions, and both answers were favourable
+
+Everything in this section is a measurement on `Creatio` (`<dev-stand>:40001`, .NET Framework, MSSQL),
+against `CrtProcessBuilder` **1.6.0.7** for the spike and **1.6.0.8** for the shipped field. The spike
+process is `UsrBPFlowLabelSpike1` (schemaUId `619e63b4-0432-41d1-8092-126649dd18a4`, package `Custom`).
+
+### 1. The load-bearing assumption HOLDS. A flow Caption renders.
+
+`flows[].label` → `ProcessSchemaSequenceFlow.Caption` → a resource row → a label drawn on the
+connector. All three kinds, in one process, on the first attempt:
+
+| flow | key written | drawn |
+|---|---|---|
+| `SequenceFlow_StartSpike_Threshold` | `BaseElements.SequenceFlow_StartSpike_Threshold.Caption` | `Amount known` |
+| `ConditionalFlow_Threshold_EndHigh` | `BaseElements.ConditionalFlow_Threshold_EndHigh.Caption` | `Above the threshold` |
+| `DefaultFlow_Threshold_EndLow` | `BaseElements.DefaultFlow_Threshold_EndLow.Caption` | `Everything else` |
+
+The keys are exactly the ones the corpus scan predicted, and the designer draws all three centred on
+their connectors — verified visually and in the DOM (each label is a `div.foreign-text` inside the
+designer's canvas SVG, positioned on its connector). So nothing above this line was rework.
+
+The designer URL, which cost more time than the spike itself:
+`/0/Nui/ViewModule.aspx?vm=SchemaDesigner#process/<schemaUId>`. Recorded in
+`docs/knowledge/platform/the-process-designer-has-one-url-and-guessing-wedges-the-shell.md`, together
+with the DOM query that reads the labels back without a screenshot.
+
+### 2. THE TRAP IS BENIGN. A re-kind does not orphan the label.
+
+This was the question the brief said "has to be answered before the field ships", and the answer is
+that neither of the three remedies it listed is needed. Driven through the exact route
+`FlowKindRules.FreeTheDefaultSlot()` prescribes — `setFlow kind: conditional` on the existing default:
+
+```
+before   BaseElements.DefaultFlow_Threshold_EndLow.Caption     = Everything else
+after    BaseElements.ConditionalFlow_Threshold_EndLow.Caption = Everything else
+         (no row left under the old key — exactly three rows in the schema, one per flow)
+```
+
+Two mechanisms make it work and neither mentions the other: `CarryOperatorState` already CLONES
+`Caption` onto the replacement object, and the platform re-materialises the whole resource set from
+the object graph at save time — so the row is not "moved", it is rewritten under whatever name the
+flow has when the schema is saved, and the old key is simply never written again. Recorded in
+`docs/knowledge/platform/a-flow-rekind-does-not-orphan-its-label.md`, including the warning against
+the guard this trap invites: refusing a re-kind on a labelled flow would break the shipped remedy on
+the flows most likely to be labelled.
+
+### 3. Two more behaviours, measured because the contract now promises them
+
+- **An empty label CLEARS.** `setFlow` with `label: ""` deleted the row outright rather than leaving
+  it blank, and `describe` then reports `label: null`. So "omitted keeps, empty clears" is a real
+  distinction on the server and not just in clio's parsing.
+- **A relabel on a kind NO-OP lands.** `setFlow` with the kind the flow already has takes the
+  early return in `SetFlow`; the label is applied before it returns. Measured: `Amount known` →
+  `Amount confirmed` on an unchanged `sequence` flow. Without that line the operation would have
+  reported success and written nothing, which is the only way to relabel a flow at all — `kind` is
+  mandatory on `setFlow`.
+
+### 4. describe DID report nothing, and now reports the label
+
+Confirmed on 1.6.0.7 before the change: a flow came back with exactly
+`branchesOnActivityResult, condition, kind, name, source, target`. On 1.6.0.8 it carries `label`.
+clio's `DescribedFlow` gained a TYPED property rather than relying on its `[JsonExtensionData]` bag,
+because the post-write guard reads it by name.
+
+### What shipped, and where the version landed
+
+The archive is **1.6.0.8**, not the 1.6.0.7 this brief planned on: 1.6.0.7 was spent on the spike and
+installed on the stand, so re-cutting under it would have reached that environment as "already
+converged" — the exact trap `rebundle-process-builder.ps1` documents. Package commit
+`98b1a8c` (the spike is `92c1b0f`, kept as its own commit because it is the measurement, not the
+feature).
+
+`[RequiresPackage]` stayed at **1.6.0.3** deliberately. A label is an optional field whose absence is
+detectable after the fact, so it gets the read-back warning the sendEmail body macros already
+established (`FlowLabelExpectation`) rather than a floor that would refuse every build and edit on an
+environment one archive behind. The reasoning is in the comment block above
+`CreateBusinessProcessOptions`, next to the rule it looks like an exception to.
+
+### Two things fixed on the way, both of which blocked the canonical procedure
+
+- `rebundle-process-builder.ps1` still ran the package tests from `tests/CrtProcessBuilder/` — the
+  path they were moved out of in package commit `3f791d7`. It failed as
+  `MSBUILD : error MSB1009: Project file does not exist`, which reads as a broken checkout. The
+  script now DISCOVERS the project and refuses unless it finds exactly one, because zero matches
+  would have skipped the suite and shipped the archive anyway.
+- Both `.application/net-framework` junctions in the package checkout were dangling (the local
+  Creatio core moved to `.devenv/repos/core`), and they fail differently — `core-bin` takes the whole
+  build down, `bin` takes only the test project down with one MSB3245, AFTER the package's own
+  `Build succeeded`. The existing knowledge record covered only the first; it now covers both and
+  names the new core location.
+
+### Still open, and NOT part of this change
+
+The autolayout defect this brief noted in passing is untouched: our back edge is still drawn over the
+forward flow rather than lifted onto a free row. The shipped example
+(`PushNotificationAboutAppUpdateAvailableProcess`, `m230,184 L230,88 L742,88 L742,184`) remains the
+reference for what the intended answer looks like.
