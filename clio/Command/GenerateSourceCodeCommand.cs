@@ -56,7 +56,12 @@ public class GenerateSourceCodeCommand : RemoteCommand<GenerateSourceCodeOptions
 	public override int Execute(GenerateSourceCodeOptions options) {
 		_options = options;
 		Logger.WriteWarning("This command may take a while to complete, please wait...");
-		Logger.WriteWarning("Clio will timeout if the operation takes more than 60 minutes. You can adjust the timeout using --timeout option.");
+		// The RESOLVED timeout, not the literal 60 minutes. `timeout` is now a real MCP argument, so a caller
+		// who passed one was being told in the same response that the ceiling is 60 minutes and pointed at a
+		// CLI switch it never used - the wrong-diagnostic class issue #1303 is about (PR #1354 review).
+		Logger.WriteWarning(
+			$"Clio will timeout if the operation takes more than {TimeSpan.FromMilliseconds(options.TimeOut).TotalMinutes:0.##} minutes. "
+			+ "You can adjust the timeout using the --timeout option (CLI) or the 'timeout' argument (MCP).");
 		return base.Execute(options);
 	}
 

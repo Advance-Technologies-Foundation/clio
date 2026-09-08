@@ -158,7 +158,7 @@ namespace Clio.Command;
 // floor alone for the same reason. AccessRightsBlockExpectation is the guard instead - it reads the
 // process back after the write and warns when the block did not land, which is the behavioural
 // equivalent that does not punish callers who never send one.
-[RequiresPackage(BundledPackages.ProcessBuilderPackageName, "1.6.0.1",
+[RequiresPackage(BundledPackages.ProcessBuilderPackageName, "1.6.0.3",
 	Hint = BundledPackages.ProcessBuilderInstallHint)]
 public sealed class ModifyBusinessProcessOptions : EnvironmentOptions {
 	/// <summary>Process code (schema Name) to edit. Provide exactly one of <see cref="ProcessName"/> or <see cref="ProcessUid"/>.</summary>

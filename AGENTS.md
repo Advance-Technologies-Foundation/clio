@@ -144,7 +144,10 @@ steps as the fallback for a host without `pwsh`.
 **`-Version` is required and must go UP on every rebundle.** clio reads the shipped version out of the
 archive and compares it against the version the environment recorded; an unchanged version therefore
 reaches new installs only, and nobody who already has the package is ever asked to update. There is no
-version constant to keep in step, so raising it costs nothing. Do NOT reintroduce one — see
+version constant to keep in step, so raising it costs nothing to MAINTAIN — which is not the same as
+costing nothing: `RequiredPackageChecker` throws on a convergence refusal, and a rebundle during
+ENG-91853 left a reviewer's clio on .63 refusing `describe-business-process` against a stand still on
+.61. Raise it deliberately, not casually. Do NOT reintroduce a constant — see
 [spec/adr/adr-bundled-package-version-source-of-truth.md](spec/adr/adr-bundled-package-version-source-of-truth.md).
 
 That article carries the rebundle procedure and the three platform facts whose failure modes are SILENT:

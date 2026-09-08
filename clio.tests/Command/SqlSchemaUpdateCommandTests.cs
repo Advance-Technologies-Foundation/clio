@@ -150,4 +150,27 @@ public sealed class SqlSchemaUpdateCommandTests {
 		result.Should().BeFalse();
 		response.Error.Should().Be("sql error");
 	}
+
+	[Test]
+	[Description("An empty SaveSchema body is reported as a classified, service-named failure carrying the unknown-outcome note, not as the raw Newtonsoft parser message (issue #1322).")]
+	public void TryUpdateSchema_ShouldReportClassifiedFailure_WhenSaveSchemaReturnsEmptyBody() {
+		// Arrange
+		_applicationClient.ExecutePostRequest(SelectQueryUrl, Arg.Any<string>()).Returns(SchemaFoundJson);
+		_applicationClient.ExecutePostRequest(GetSchemaUrl, Arg.Any<string>()).Returns(GetSchemaSuccessJson);
+		_applicationClient.ExecutePostRequest(SaveSchemaUrl, Arg.Any<string>()).Returns(string.Empty);
+		var options = new SqlSchemaUpdateOptions { SchemaName = "UsrSqlScript", Body = "SELECT 1;" };
+
+		// Act
+		bool result = _command.TryUpdateSchema(options, out SqlSchemaUpdateResponse response);
+
+		// Assert
+		result.Should().BeFalse("an unusable save answer is not a successful update");
+		response.Error.Should().Contain("ScriptSchemaDesignerService SaveSchema",
+				"the caller must learn which service and operation answered with nothing")
+			.And.Contain(SaveSchemaUrl, "the endpoint URL is what makes a missing route diagnosable")
+			.And.Contain(SchemaDesignerHelper.SaveOutcomeUnknownNote,
+				"an unusable answer leaves the write unobserved, so the failure must say the outcome is unknown")
+			.And.NotContain("Error reading JObject",
+				"the bare Newtonsoft parser message is exactly what issue #1322 reported as unactionable");
+	}
 }
