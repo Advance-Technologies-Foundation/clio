@@ -717,15 +717,18 @@ public sealed class RequestConversionInfo {
 	/// Actions whose REQUEST converts but whose NAVIGATION TARGET could not be confirmed to exist on
 	/// mobile: a <c>crt.OpenPageRequest</c> naming a schema that is not a mobile page, or a
 	/// create/update-record request naming an object with no default mobile edit page. The action is
-	/// still carried into <c>mobileValues</c> — this section is a WARNING, never a removal (ENG-94839).
+	/// (ENG-94839). The CONTROL always survives; only a dead action is removed.
 	/// <para>
-	/// KEEP every control this names: a broken destination is the developer's decision to make, not the
-	/// converter's, and the mobile page is built from the element map unchanged. Branch on each entry's
-	/// <see cref="UnresolvedTargetRequest.State"/> only for what to SAY: <c>missing</c> is a verified dead
-	/// navigation — name the control and its target at the conversion gate so the user can convert that page
-	/// or repoint the action; <c>unknown</c> means the environment could not answer, so ask them to check it
-	/// rather than reporting it broken. Empty when every target resolved — AND empty when the targets were
-	/// never probed, so read <see cref="TargetsProbed"/> before reporting "all clear".
+	/// Branch on each entry's <see cref="UnresolvedTargetRequest.State"/>. <c>missing</c> is a verified dead
+	/// navigation: the binding has ALREADY been stripped from that element's <c>mobileValues</c> and the same
+	/// action also appears in <see cref="DroppedRequests"/> — so build the element exactly as the element map
+	/// says (it renders, it just does nothing) and tell the user which action was lost and why. <c>unknown</c>
+	/// means the environment could not answer: the binding was KEPT, so the action still works if the target
+	/// is really there — ask the user to confirm it rather than reporting it broken.
+	/// </para>
+	/// <para>
+	/// Empty when every target resolved — AND empty when the targets were never probed, so read
+	/// <see cref="TargetsProbed"/> before reporting "all clear".
 	/// </para>
 	/// </summary>
 	[JsonPropertyName("unresolvedTargetRequests")]
@@ -797,14 +800,15 @@ public sealed class FlaggedRequest {
 }
 
 /// <summary>
-/// One action whose navigation target was not confirmed to exist on mobile (ENG-94839). Reporting only —
-/// the control it names stays on the converted page. Fully typed: what to SAY about each <see cref="State"/>
-/// arrives as a guide <c>constraint</c> composed from these findings, not as prose carried on this record.
+/// One action whose navigation target was not confirmed to exist on mobile (ENG-94839). The control it names
+/// stays on the converted page; a verified-absent target costs the ACTION, not the control. Fully typed: what
+/// to do about each <see cref="State"/> arrives as a guide <c>constraint</c> composed from these findings.
 /// </summary>
 public sealed class UnresolvedTargetRequest {
 	/// <summary>
-	/// The SOURCE (web) component name that carries the binding, e.g. "PostponeQueueItemButton". Match it
-	/// against <c>elementMap[].webName</c> — NOT <c>mobileName</c>, which a renamed twin changes.
+	/// The component that carries the binding, named as the CONVERTED element is — the same name
+	/// <see cref="ConvertedRequest.ElementName"/> and <see cref="DroppedRequest.ElementName"/> use for the
+	/// same binding, so the collections line up on one key.
 	/// </summary>
 	[JsonPropertyName("elementName")]
 	public string ElementName { get; init; }
@@ -831,16 +835,16 @@ public sealed class UnresolvedTargetRequest {
 	public string Target { get; init; }
 
 	/// <summary>
-	/// <see cref="StateMissing"/> — verified absent on mobile, so this action will not work until the target
-	/// is created; <see cref="StateUnknown"/> — the environment could not answer, so it may well be fine.
-	/// The control stays on the page either way; the state decides only how confidently you report it.
+	/// <see cref="StateMissing"/> — verified absent, so the binding was REMOVED (the control still renders);
+	/// <see cref="StateUnknown"/> — the environment could not answer, so the binding was KEPT and may well be
+	/// fine. The control survives either way; the state says what happened to its action.
 	/// </summary>
 	[JsonPropertyName("state")]
 	public string State { get; init; }
 
 	/// <summary>
-	/// Wire value for a target verified ABSENT on mobile: the action will fail until that page or default
-	/// mobile page exists. Report it; do not remove the control that fires it.
+	/// Wire value for a target verified ABSENT on mobile: the binding was stripped so the converted page never
+	/// ships an action that always fails. The control that fired it is still there.
 	/// </summary>
 	public const string StateMissing = "missing";
 
@@ -1091,8 +1095,8 @@ public enum ActionTargetState {
 	Resolved,
 
 	/// <summary>
-	/// Verified absent on mobile. The only state that justifies REPORTING the action as broken — it never
-	/// justifies removing the control that fires it.
+	/// Verified absent on mobile. The only state that strips the binding — and it never removes the control
+	/// that fires it.
 	/// </summary>
 	Missing
 }
