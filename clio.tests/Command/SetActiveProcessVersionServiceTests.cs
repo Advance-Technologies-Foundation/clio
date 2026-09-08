@@ -1,4 +1,5 @@
 using System;
+using System.Text.Json;
 using System.Text.Json.Nodes;
 using Clio.Command;
 using Clio.Common;
@@ -128,6 +129,53 @@ public sealed class SetActiveProcessVersionServiceTests {
 				because: "two members flagged active is an unresolved state the caller has to act on")
 			.WithMessage("*2 sibling(s)*")
 			.WithMessage("*package order*");
+	}
+
+	[Test]
+	[Description("A body clio cannot parse is reported as an unreadable response rather than as a parser error. AGENTS.md records that a wrong ProcessDesignService path answers with an HTML error page, so this is reachable. On the activation path the unexplained state is WHICH version the environment executes, and activation re-saves every member of the family - so the message points at a read rather than inviting a blind retry.")]
+	public void SetActiveVersion_ShouldReportAnUnreadableResponse_WhenTheBodyIsNotTheEnvelope() {
+		// Arrange - the shape a server-side deserialization failure returns: valid JSON, wrong document
+		IOwnedApplicationClient client = Substitute.For<IOwnedApplicationClient>();
+		client.ExecutePostRequest(ActivateUrl, Arg.Any<string>()).Returns(
+			"[{\"ExceptionType\":\"System.Runtime.Serialization.SerializationException\"}]");
+		SetActiveProcessVersionService service = CreateService(client);
+
+		// Act
+		Action act = () => service.SetActiveVersion(Env, new SetActiveProcessVersionRequest("UsrProcCustom2", null));
+
+		// Assert
+		InvalidOperationException thrown = act.Should().Throw<InvalidOperationException>(
+			because: "an unreadable response is a real outcome and has to be named as one").Which;
+		thrown.Message.Should().Contain("UNKNOWN",
+			because: "the write may have taken effect, and which version now runs cannot be read out of a body "
+				+ "clio could not parse");
+		thrown.Message.Should().Contain("describe-business-process",
+			because: "the recovery is a READ - retrying an activation blind re-saves the whole family again");
+		thrown.Message.Should().NotContain("BytePositionInLine",
+			because: "a .NET parser message names a type and a byte offset, written for a developer reading a "
+				+ "stack trace and unusable to the agent that receives it");
+		thrown.InnerException.Should().BeOfType<JsonException>(
+			because: "the parser detail is kept for a developer rather than discarded");
+	}
+
+	[Test]
+	[Description("The server's warnings[] reach the caller on the FAILURE path too. They are a declared response member that the package's own fixtures pin as wire contract, and this throw is where a failed activation leaves clio - so a warning not appended here is discarded. What the write DID do (re-saving every member of the family) is not less relevant because the outcome was refused.")]
+	public void SetActiveVersion_ShouldRelayServerWarnings_WhenTheActivationFailed() {
+		// Arrange
+		IOwnedApplicationClient client = Substitute.For<IOwnedApplicationClient>();
+		client.ExecutePostRequest(ActivateUrl, Arg.Any<string>()).Returns(
+			"{\"SetActiveProcessVersionResult\":{\"success\":false,\"errorMessage\":\"Read-back disagreed.\","
+			+ "\"warnings\":[\"Every member of the family was re-saved in one transaction.\"]}}");
+		SetActiveProcessVersionService service = CreateService(client);
+
+		// Act
+		Action act = () => service.SetActiveVersion(Env, new SetActiveProcessVersionRequest("UsrProcCustom2", null));
+
+		// Assert
+		act.Should().Throw<InvalidOperationException>(because: "the activation was refused")
+			.Which.Message.Should().Contain("re-saved",
+				because: "the family write happened regardless of the outcome, and it is the one side effect the "
+					+ "caller cannot discover afterwards with a read");
 	}
 
 	[Test]

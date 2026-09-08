@@ -340,6 +340,23 @@ public sealed class DescribeProcessCommandTests {
 			}, "a family entry has to be complete enough to choose and address a version from it alone");
 		entry["isActiveVersion"]!.GetValue<bool>().Should().BeTrue(
 			because: "the entry that runs must be identifiable inside the list, not only at the graph root");
+		// Both of these had their KEY pinned above and their value asserted nowhere - in unit or E2E - which is
+		// the defect class this fixture guards against explicitly elsewhere (the approval-block test asserts all
+		// twenty members individually "rather than by spot check"). A key present with a wrong value is worse
+		// than a missing key, because it reads as an answer.
+		entry["packageUId"]!.GetValue<string>().Should().Be("864d1545-a641-46c3-b866-e57bd6d39579",
+			because: "packageUId is promised in the tool description and is how a caller decides whether a "
+				+ "version sits in a package it may edit; carrying the wrong package makes that decision wrong");
+		entry["enabled"]!.GetValue<bool>().Should().BeTrue(
+			because: "enabled is promised too, and it is FAMILY state rather than per-version state "
+				+ "(BaseProcessSchemaManager.EnableProcess keys on the root SysSchema.Id), so it must relay what "
+				+ "the reader established for the family and never be synthesised per entry");
+		entry["isRoot"]!.GetValue<bool>().Should().BeFalse(
+			because: "this entry is a version rather than the family root, and isRoot is the only field that "
+				+ "answers that - the version NUMBER does not, since a root's number is stamped and stock "
+				+ "content carries roots numbered 1 and 2");
+		entry["version"]!.GetValue<int>().Should().Be(1,
+			because: "the number is what a caller reads to order the family and to name the next version");
 		JsonObject root = JsonNode.Parse(written)!.AsObject();
 		root.Should().ContainKeys(new[] {
 				"version", "isActiveVersion", "activeVersionSchemaUId", "activeVersionName",

@@ -41,9 +41,10 @@ public class ModifyProcessAsNewVersionTool(
 		 + "'operations' array is exactly the one modify-business-process takes, with the same op vocabulary and "
 		 + "the same descriptors, so read that tool's description for the operation reference. An EMPTY or "
 		 + "omitted operations array is legal and takes a plain snapshot of the source as a new version. "
-		 + "Optionally name the target package with 'package-name'; omit it to let the platform choose (the "
-		 + "source's package when you may edit it, the design package otherwise) — a version does NOT inherit "
-		 + "the root's package, and cross-package version families are normal. "
+		 + "Optionally name the target package with 'package-name'; omitted, the version goes to the SOURCE's "
+		 + "package, always — there is no fallback to a design package, so if the source's package does not "
+		 + "accept edits the call is refused and you must name an editable one. A version does NOT inherit the "
+		 + "root's package, and cross-package version families are normal. "
 		 + "The new version is created INACTIVE: creating it changes NOTHING about what the environment "
 		 + "executes, and the source keeps running until something activates the new one. Activating is a "
 		 + "SEPARATE, explicit step — call set-active-business-process-version, and only if the user asked for "
@@ -61,9 +62,12 @@ public class ModifyProcessAsNewVersionTool(
 		 + "operation — so every version you create is permanent; take that into account before creating one "
 		 + "speculatively. Requires the ProcessDesignService (CrtProcessBuilder) package on the target "
 		 + "environment at CrtProcessBuilder 1.6.1.0 or newer, which is where this operation first exists — an "
-		 + "older package is refused up front, naming both versions; install or update it with "
-		 + "install-process-builder. After a successful save the version stays INTERPRETED and runs as-is once "
-		 + "activated: do NOT run compile-creatio. Use describe-business-process to inspect the family.")]
+		 + "older package is refused up front, naming the version this operation needs; install or update it "
+		 + "with install-process-builder. After a successful save the version normally stays INTERPRETED and "
+		 + "runs as-is once activated, so compile-creatio is not needed — UNLESS the response warns that the "
+		 + "version cannot execute until the configuration is compiled, which happens when the source process "
+		 + "was itself not interpretable. Heed the warning over this sentence: run compile-creatio in that case. "
+		 + "Use describe-business-process to inspect the family.")]
 	public CommandExecutionResult ModifyProcessAsNewVersion(
 		[Description("modify-business-process-as-new-version parameters")] [Required]
 		ModifyProcessAsNewVersionArgs args
@@ -89,16 +93,19 @@ public class ModifyProcessAsNewVersionTool(
 		};
 		// Same post-op note as the in-place edit: a saved version is interpreted and runs as-is once activated,
 		// so "saved" must not be read as "must be compiled" (ENG-95706).
+		//
+		// CONDITIONAL, unlike the in-place sibling's, and the difference is real rather than defensive. A clone
+		// inherits IsInterpretable through the metadata round-trip and the server never recomputes it, so a
+		// version taken from a non-interpretable source is saved with IsInterpretable false and the package
+		// warns that it cannot execute until the configuration is compiled. Appending the note anyway put that
+		// warning and its exact opposite in one response - and an agent that believed the note would activate
+		// a version that throws NotImplementedException out of CreateProcess on first run.
 		CommandExecutionResult result = InternalExecute<ModifyProcessAsNewVersionCommand>(options);
 		if (result.ExitCode != 0) {
 			return result;
 		}
 
-		return result with {
-			Note = string.IsNullOrWhiteSpace(result.Note)
-				? CommandExecutionResult.CompileNotRequiredNote
-				: result.Note + " " + CommandExecutionResult.CompileNotRequiredNote
-		};
+		return result.WithCompileNotRequiredNote();
 	}
 }
 

@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using System.Text.Json.Serialization;
+using Clio.Command.ProcessModel;
 using Clio.Common;
 using Clio.UserEnvironment;
 
@@ -59,6 +60,7 @@ public sealed class ModifyProcessAsNewVersionService(
 	ISettingsRepository settingsRepository,
 	IApplicationClientFactory applicationClientFactory,
 	IServiceUrlBuilder serviceUrlBuilder,
+	IProcessPageFactsChecker pageFactsChecker,
 	ILogger logger)
 	: IModifyProcessAsNewVersionService {
 	private static readonly JsonSerializerOptions JsonOptions = new() {
@@ -96,6 +98,23 @@ public sealed class ModifyProcessAsNewVersionService(
 		// the empty case sends an empty array rather than being refused the way the in-place edit refuses it.
 		requestObject["operations"] = ParseOperations(request.OperationsJson);
 
+		// The SAME pre-check both sibling write paths run, and skipping it here was not a decision anyone made:
+		// this path takes the identical operations vocabulary, so an invented button or data-source name survives
+		// every server-side check on a version exactly as it does on an in-place edit, and shows itself only at
+		// run time as a step that never completes.
+		//
+		// It matters MORE here, not less. An in-place edit that produces an unfinishable step can be edited
+		// again; a version cannot be deleted, so the artifact carrying the bad reference is permanent, and the
+		// caller is likely to activate it precisely because it looked like a clean snapshot.
+		ProcessPageCheckResult pageCheck =
+			pageFactsChecker.CheckPreconfiguredPages(environmentName, requestObject["operations"]);
+		if (!string.IsNullOrWhiteSpace(pageCheck?.Error)) {
+			throw new InvalidOperationException(pageCheck.Error);
+		}
+		foreach (string pageWarning in pageCheck?.Warnings ?? []) {
+			logger.WriteWarning(pageWarning);
+		}
+
 		using IOwnedApplicationClient client = applicationClientFactory.CreateOwnedEnvironmentClient(environmentSettings);
 		string url = serviceUrlBuilder.Build(ServiceUrlBuilder.KnownRoute.ModifyProcessAsNewVersion, environmentSettings);
 		// ProcessDesignService uses BodyStyle=Wrapped: the request is wrapped under a "request" property.
@@ -104,10 +123,33 @@ public sealed class ModifyProcessAsNewVersionService(
 		logger.WriteInfo($"Saving a new version of process '{processIdentity}' on '{environmentName}'...");
 
 		string responseBody = client.ExecutePostRequest(url, requestBody);
-		ResponseEnvelope envelope =
-			JsonSerializer.Deserialize<ResponseEnvelope>(responseBody, JsonOptions)
-			?? throw new InvalidOperationException("ModifyProcessAsNewVersion returned an empty response.");
-		ResultDto result = envelope.Result
+		// Parsed inside a try, for the reason the in-place sibling added the same guard after a real incident
+		// (ModifyBusinessProcessCommand, "Reported by manual testing on ENG-92713"): a body that is not this
+		// envelope makes JsonSerializer throw a message built for a developer - a .NET type name and a byte
+		// offset - and this one reaches an agent, which cannot act on it. AGENTS.md records that a wrong
+		// ProcessDesignService path returns an HTML error page, so `'<' is an invalid start of a value` is a
+		// reachable outcome, not a hypothetical.
+		//
+		// The stakes are HIGHER here than on the in-place path. There the unexplained artifact is an edit that
+		// may or may not have landed; here it may be a VERSION that is already persisted and that the platform
+		// offers no way to delete. So the message says that explicitly rather than only "unknown".
+		ResponseEnvelope? envelope;
+		try {
+			envelope = JsonSerializer.Deserialize<ResponseEnvelope>(responseBody, JsonOptions);
+		} catch (JsonException exception) {
+			throw new InvalidOperationException(
+				"ModifyProcessAsNewVersion returned a response clio could not read, so whether a version was "
+				+ "created is UNKNOWN - and a version that DID persist cannot be deleted. Re-read the process "
+				+ "with describe-business-process and check its versions[] before retrying, because a retry "
+				+ "would allocate a second version rather than replace the first. The parser detail is on the "
+				+ "inner exception; it names a .NET type and a byte offset, which helps a developer reading a "
+				+ "stack trace and is noise to the caller reading this.",
+				exception);
+		}
+
+		ResultDto result = (envelope
+				?? throw new InvalidOperationException("ModifyProcessAsNewVersion returned an empty response."))
+			.Result
 			?? throw new InvalidOperationException("ModifyProcessAsNewVersion returned an unexpected response shape.");
 		if (!result.Success) {
 			throw new InvalidOperationException(BuildFailureMessage(result));
@@ -120,12 +162,42 @@ public sealed class ModifyProcessAsNewVersionService(
 	// A failure that still names a version is NOT a failed create: the version exists and the platform offers no
 	// way to delete one, so dropping the name here would leave the caller unable to address something that is
 	// really on their environment. Both cases travel on errorMessage, and only the identity tells them apart.
+	//
+	// This throw is where a refused version leaves clio, so anything not appended here is discarded. That is why
+	// the operation diagnosis is relayed too: the server writes appliedOperations AND failedOperationIndex from
+	// one Failure helper precisely so the two tell one story, and the tool's own [Description] points the caller
+	// at modify-business-process's description, which promises the index. Dropping them left a 40-operation batch
+	// refused at index 17 answering with a bare sentence, and the agent bisecting against a live environment -
+	// which is the work splitting the field was meant to remove.
 	private static string BuildFailureMessage(ResultDto result) {
 		string message = result.ErrorMessage ?? "ModifyProcessAsNewVersion failed.";
-		return string.IsNullOrWhiteSpace(result.VersionName) && string.IsNullOrWhiteSpace(result.VersionSchemaUId)
-			? message
-			: message + $" The version '{result.VersionName}' (UId: {result.VersionSchemaUId}) WAS created and "
+		// Only when an operation actually refused. Absent means the failure was not an operation's - an identity
+		// that did not resolve, a read-only package, the save itself - and inventing index 0 there would name a
+		// descriptor that was never the problem.
+		if (result.FailedOperationIndex.HasValue) {
+			message += $" The operation at index {result.FailedOperationIndex.Value} is the one that refused.";
+		}
+
+		// The count is the recovery route for a caller that gets NO index, including one talking to a server too
+		// old to send it, so it is reported whenever the server sent operations at all.
+		if (result.AppliedOperations > 0) {
+			message += $" {result.AppliedOperations} operation(s) had been applied to the version draft.";
+		}
+
+		if (!string.IsNullOrWhiteSpace(result.VersionName) || !string.IsNullOrWhiteSpace(result.VersionSchemaUId)) {
+			message += $" The version '{result.VersionName}' (UId: {result.VersionSchemaUId}) WAS created and "
 				+ "still exists — a version cannot be deleted.";
+		}
+
+		// Relayed on the failure path too. warnings[] is a declared response member the package's own fixtures
+		// pin as wire contract, and this throw is where a refused create leaves clio - so a warning not appended
+		// here is discarded. It matters most on exactly the exits that name a version: the artifact exists, and
+		// what the server has to say about it is part of what the caller must act on.
+		if (result.Warnings is { Count: > 0 }) {
+			message += " " + string.Join(" ", result.Warnings);
+		}
+
+		return message;
 	}
 
 	private static JsonArray ParseOperations(string operationsJson) {
@@ -180,6 +252,13 @@ public sealed class ModifyProcessAsNewVersionService(
 
 		[JsonPropertyName("appliedOperations")]
 		public int AppliedOperations { get; set; }
+
+		// Nullable, and declared for the same reason the two above are: System.Text.Json discards an undeclared
+		// member SILENTLY, so leaving this off the DTO dropped the diagnosis the server pays to produce at all
+		// eleven of its refusal sites. int? rather than int because ABSENT and "index 0" are different answers -
+		// 0 names the first descriptor, and a failure that was not an operation's sends nothing.
+		[JsonPropertyName("failedOperationIndex")]
+		public int? FailedOperationIndex { get; set; }
 
 		[JsonPropertyName("warnings")]
 		public List<string>? Warnings { get; set; }

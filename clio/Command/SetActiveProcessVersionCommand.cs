@@ -88,10 +88,30 @@ public sealed class SetActiveProcessVersionService(
 		logger.WriteInfo($"Activating version '{versionIdentity}' on '{environmentName}'...");
 
 		string responseBody = client.ExecutePostRequest(url, requestBody);
-		ResponseEnvelope envelope =
-			JsonSerializer.Deserialize<ResponseEnvelope>(responseBody, JsonOptions)
-			?? throw new InvalidOperationException("SetActiveProcessVersion returned an empty response.");
-		ResultDto result = envelope.Result
+		// The same guard the in-place sibling added after a real incident (ModifyBusinessProcessCommand,
+		// "Reported by manual testing on ENG-92713") and for the same reason: a body that is not this envelope
+		// makes JsonSerializer throw about a .NET type and a byte offset, and that reaches an agent. AGENTS.md
+		// records that a wrong ProcessDesignService path answers with an HTML error page.
+		//
+		// On THIS path the unexplained state is which version the environment executes, so the message says what
+		// to read rather than inviting a retry: activation re-saves every member of the family, and repeating it
+		// blind is not a free probe.
+		ResponseEnvelope? envelope;
+		try {
+			envelope = JsonSerializer.Deserialize<ResponseEnvelope>(responseBody, JsonOptions);
+		} catch (JsonException exception) {
+			throw new InvalidOperationException(
+				"SetActiveProcessVersion returned a response clio could not read, so WHICH version the "
+				+ "environment now runs is UNKNOWN - the write may have taken effect. Read the family back with "
+				+ "describe-business-process and check isActiveVersion before retrying or reporting this. The "
+				+ "parser detail is on the inner exception; it names a .NET type and a byte offset, which helps "
+				+ "a developer reading a stack trace and is noise to the caller reading this.",
+				exception);
+		}
+
+		ResultDto result = (envelope
+				?? throw new InvalidOperationException("SetActiveProcessVersion returned an empty response."))
+			.Result
 			?? throw new InvalidOperationException("SetActiveProcessVersion returned an unexpected response shape.");
 		if (!result.Success) {
 			throw new InvalidOperationException(BuildFailureMessage(result));
@@ -115,6 +135,16 @@ public sealed class SetActiveProcessVersionService(
 			message += $" {result.DeactivationFailureCount} sibling(s) are ALSO still flagged active, so which "
 				+ "one runs is decided by package order rather than by this call.";
 		}
+
+		// Relayed on the FAILURE path too, not just on success. warnings[] is a declared response member that the
+		// package's own fixtures pin as wire contract, and this throw is where a failed activation leaves clio -
+		// so anything not appended here is discarded. The warnings describe what the write DID do (activation
+		// re-saves every member of the family in one transaction), and that is not less relevant because the
+		// outcome was refused: it is what the caller has to reason about before retrying.
+		if (result.Warnings is { Count: > 0 }) {
+			message += " " + string.Join(" ", result.Warnings);
+		}
+
 		return message;
 	}
 
@@ -219,7 +249,16 @@ public class SetActiveProcessVersionCommand(
 				+ "is decided by package order rather than by this call. Read the family back with "
 				+ "describe-business-process before reporting the rollback as done.");
 		}
-		if (!ReadBackMatchesRequest(options, result)) {
+		// Three states, not two, and the third used to be reported as a clean success. The read-back IS the
+		// operation here - the platform's own write reports nothing usable - so a response that establishes
+		// NOTHING about which version is actual has not confirmed the thing this command exists to confirm.
+		// Treating a blank read-back as "matches" made silence indistinguishable from agreement.
+		if (!ReadBackEstablished(options, result)) {
+			logger.WriteWarning(
+				"The activation was accepted, but the environment did not report which version is actual, so "
+				+ "clio could NOT confirm the change took effect. Read the family back with "
+				+ "describe-business-process and check isActiveVersion before reporting this as done.");
+		} else if (!ReadBackMatchesRequest(options, result)) {
 			logger.WriteWarning(
 				$"The environment reports '{result.ActiveVersionName}' (UId: {result.ActiveVersionSchemaUId}) as "
 				+ "the actual version, which is NOT the version this call asked for. The activation was accepted "
@@ -227,15 +266,27 @@ public class SetActiveProcessVersionCommand(
 		}
 	}
 
+	// Whether the server came back with the identity the caller actually supplied. Asked on that identity alone
+	// because the other one is a value clio never sent: a response that omits it is not evidence of anything,
+	// and a response that omits the one that WAS sent leaves the outcome unestablished rather than agreed.
+	private static bool ReadBackEstablished(SetActiveProcessVersionOptions options,
+		SetActiveProcessVersionResult result) =>
+		!string.IsNullOrWhiteSpace(options.VersionName)
+			? !string.IsNullOrWhiteSpace(result.ActiveVersionName)
+			: Guid.TryParse(result.ActiveVersionSchemaUId, out _);
+
 	// Compared on whichever identity the caller supplied, because the other one is a value clio never sent and
 	// therefore has nothing to disagree with. UIds are parsed rather than string-compared: the server is free
 	// to render a GUID in a different case or format than the caller typed, and that is not a mismatch.
+	// Only ever reached once ReadBackEstablished has said the caller's own identity came back, so neither branch
+	// needs to decide what an ABSENT read-back means - that question has an answer of its own now, and it is not
+	// "matches". A caller's unparseable --uid still answers true: that is a malformed request rather than a
+	// disagreement about which version runs, and the option parsing owns it.
 	private static bool ReadBackMatchesRequest(SetActiveProcessVersionOptions options,
 		SetActiveProcessVersionResult result) {
 		if (!string.IsNullOrWhiteSpace(options.VersionName)) {
-			return string.IsNullOrWhiteSpace(result.ActiveVersionName)
-				|| string.Equals(result.ActiveVersionName, options.VersionName.Trim(),
-					StringComparison.OrdinalIgnoreCase);
+			return string.Equals(result.ActiveVersionName, options.VersionName.Trim(),
+				StringComparison.OrdinalIgnoreCase);
 		}
 		if (!Guid.TryParse(options.VersionUid, out Guid requested)
 			|| !Guid.TryParse(result.ActiveVersionSchemaUId, out Guid reported)) {

@@ -107,6 +107,43 @@ public sealed class SetActiveProcessVersionCommandTests {
 	}
 
 	[Test]
+	[Description("A read-back that establishes NOTHING is warned about rather than reported as a clean success. The read-back IS the operation here - the platform's write reports nothing usable - so a blank name on the identity the caller supplied means clio could not confirm the change took effect. Treating it as a match made silence indistinguishable from agreement, and there was no test for the blank case.")]
+	public void Execute_ShouldWarn_WhenTheReadBackEstablishedNoVersion() {
+		// Arrange — success, but the server named no version on the identity that was sent
+		_service.SetActiveVersion("sandbox", Arg.Any<SetActiveProcessVersionRequest>())
+			.Returns(new SetActiveProcessVersionResult(null, null, 0));
+
+		// Act
+		int result = _command.Execute(ByName());
+
+		// Assert
+		result.Should().Be(0,
+			because: "the write was accepted, so exit 1 would tell an operator to retry something that may "
+				+ "already have taken effect");
+		_logger.Received(1).WriteWarning(Arg.Is<string>(message =>
+			message.Contains("did not report which version is actual")
+			&& message.Contains("could NOT confirm")));
+	}
+
+	[Test]
+	[Description("A blank read-back must not be reported as the MISMATCH warning either: those are different states and the mismatch message quotes a name, which would read as an empty version name. Pins that exactly one warning is written, so a future edit cannot make the two fire together.")]
+	public void Execute_ShouldNotClaimAMismatch_WhenTheReadBackEstablishedNoVersion() {
+		// Arrange
+		_service.SetActiveVersion("sandbox", Arg.Any<SetActiveProcessVersionRequest>())
+			.Returns(new SetActiveProcessVersionResult(null, null, 0));
+
+		// Act
+		_command.Execute(ByName());
+
+		// Assert
+		WarningCount().Should().Be(1,
+			because: "an unestablished read-back is one state with one warning - adding the mismatch warning "
+				+ "would tell the caller a different version runs, which is a claim nothing established");
+		_logger.DidNotReceive().WriteWarning(Arg.Is<string>(message =>
+			message.Contains("NOT the version this call asked")));
+	}
+
+	[Test]
 	[Description("A read-back UId rendered in a different case is not a mismatch: the server is free to format a GUID however it likes, and a warning there would cry wolf on every uid-addressed activation.")]
 	public void Execute_ShouldNotWarn_WhenTheReadBackUidDiffersOnlyInCase() {
 		// Arrange

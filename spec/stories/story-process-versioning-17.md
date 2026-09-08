@@ -106,7 +106,7 @@ Test naming: `MethodName_ShouldBehavior_WhenCondition`
   verdict — stated in the Dev Agent Record below; it moves into the PR body when the branch is pushed
 - [x] MCP verdict stated in the PR body ("MCP reviewed, no update required" where that applies) — same:
   stated in the Dev Agent Record below, to move into the PR body on push
-- [ ] PR description references this story file — branch not pushed, no PR yet
+- [x] PR description references this story file — open in clio#1410 (https://github.com/Advance-Technologies-Foundation/clio/pull/1410)
 
 ## Dev Agent Record
 

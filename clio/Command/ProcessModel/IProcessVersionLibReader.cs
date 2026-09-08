@@ -31,7 +31,10 @@ public sealed record ProcessVersionFamilyMember {
 	/// <summary>Whether the process library reports this member as the active version.</summary>
 	public bool? IsActiveVersion { get; init; }
 
-	/// <summary>Whether this member is the family root (version 0).</summary>
+	/// <summary>
+	/// Whether this member is the family root. The only field that answers it: a root's version number is
+	/// stamped rather than derived — commonly 0, but stock content carries roots numbered 1 and 2.
+	/// </summary>
 	public bool IsRoot { get; init; }
 
 	/// <summary>UId of the package this member lives in.</summary>
@@ -74,9 +77,33 @@ public sealed record ProcessVersionFacts {
 	public string VersionRootSchemaUId { get; init; }
 
 	/// <summary>The family, ascending by version. <c>null</c> when it could not be established.</summary>
+	/// <remarks>
+	/// A LOWER BOUND on the family, not a census of it, and this is the one place in this reader where an
+	/// incomplete answer can arrive without a warning.
+	/// <para>
+	/// Every other gap is detectable from the rows themselves and is reported through
+	/// <see cref="Warning"/> - a null version number, a family with no member flagged active, the reader's own
+	/// cap via <see cref="FamilyTruncated"/>. This one is not: the set comes from <c>VwProcessLib</c>, a
+	/// platform view whose SQL is neither in this repository nor in the core sources, so a family member the
+	/// view does not return is indistinguishable from a member that does not exist. Nothing here can
+	/// cross-check it, and the substitute provider replays a canned set whatever the filter says, so no test
+	/// can observe it either.
+	/// </para>
+	/// <para>
+	/// Consequence for a caller: treat a SHORT list as "these members are certainly in the family", never as
+	/// "the family has only these". A decision that depends on the family being complete - is this the last
+	/// version, is there anything left to activate - is not supported by this field, and
+	/// <see cref="ActiveVersionSchemaUId"/> plus <see cref="Warning"/> are what to read instead. Making it a
+	/// census would need a second, independent source for the family; there is none in this surface today.
+	/// </para>
+	/// </remarks>
 	public IReadOnlyList<ProcessVersionFamilyMember> Versions { get; init; }
 
 	/// <summary>Whether the family was longer than the cap and <see cref="Versions"/> is partial.</summary>
+	/// <remarks>
+	/// Covers THIS reader's cap only. It is not a completeness signal for the underlying view - see the
+	/// remarks on <see cref="Versions"/> - so <c>false</c> means "not cut by us", never "all of them".
+	/// </remarks>
 	public bool FamilyTruncated { get; init; }
 
 	/// <summary>

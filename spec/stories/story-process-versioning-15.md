@@ -71,20 +71,39 @@ Test naming: `MethodName_ShouldBehavior_WhenCondition`
   verdict — stated below; it moves into the PR body when the branch is pushed
 - [x] MCP verdict stated in the PR body ("MCP reviewed, no update required" where that applies) — same:
   stated below, to move into the PR body on push
-- [ ] PR description references this story file — branch not pushed, no PR yet
+- [x] PR description references this story file — open in clio#1410 (https://github.com/Advance-Technologies-Foundation/clio/pull/1410)
 
 ## Dev Agent Record
 
 - Implementation started: 2026-09-06
-- Implementation completed: 2026-09-08 (archive re-cut at 1.6.1.0 after `main` moved off the 1.4 line)
+- Implementation completed: 2026-09-08 (archive re-cut at 1.6.1.1 to carry the review fixes, and to be the
+  first cut packed from a git EXPORT of the producing commit rather than from a working tree)
 - Tests passing: full `Category=Unit` suite green; `BundledProcessBuilderPackageTests` green, which is what
   makes the pins meaningful rather than merely present
 - Notes:
 
 **Shipped.** `clio/CrtProcessBuilder/CrtProcessBuilder.gz` re-cut through `rebundle-process-builder.ps1`,
-and the four provenance pins plus the two security counts moved with it. The archive shipped at 1.6.1.0;
+and the four provenance pins plus the two security counts moved with it. The archive shipped at 1.6.1.1;
 earlier numbers on this branch were superseded before leaving the machine and are burned rather than reused,
 for the reason `ExpectedArchiveSha256` states.
+
+**The 1.6.1.1 cut is where the SHA pin became reproducible.** Review found that the 1.6.1.0 archive named
+bytes the documented recipe could not produce: thirteen entries were LF in the archive where a clean
+checkout renders CRLF, because the script packed the working TREE. Identical content, unreproducible hash —
+so the pin was detecting change while establishing nothing about provenance, on the sole prescribed control
+over a binary that installs executable C# onto customer environments. `rebundle-process-builder.ps1` now
+exports the producing commit with `core.autocrlf=false -c core.eol=lf`, overlays the one tooling-owned
+`descriptor.json`, and packs THAT. Re-measured entry by entry for this cut against
+`git show <ExpectedProducingCommit>:<path>`: **153 entries, 152 byte-identical, 0 line-ending-only
+differences, 0 content differences**; the 153rd is `descriptor.json`, pinned separately by version and
+`ModifiedOnUtc`. The clean-tree gate could never have caught the old defect — a tree can be clean, current
+and CRLF at once — which is why the fix is structural and is recorded in
+`docs/knowledge/Common/a-bundled-archive-must-be-packed-from-the-commit-not-the-working-tree.md`.
+
+**The declared floors stay at 1.6.1.0, deliberately.** The two operations first EXIST in 1.6.1.0, so raising
+the `[RequiresPackage]` literal to 1.6.1.1 would refuse environments that can run them. Floor 1.6.1.0 plus a
+bundled 1.6.1.1 is also what makes the convergence refusal reachable again — an environment on exactly
+1.6.1.0 passes the gate and is then told, naming both versions, that this clio carries newer bytes.
 
 **The two security counts are the reviewability.** A `.gz` renders in a diff as a byte count, so
 `ExpectedOperationContractCount` (5 → 7) and `ExpectedAuthorizationGateCallSites` (3 → 5) are the only
@@ -122,5 +141,8 @@ argument, flag, description, destructive classification, result content or error
 process-designer tool call and no `clio-run` nested command reaching one. The bundled archive is not part of
 any Ring-consumed contract.
 
-**Not re-verified on a stand after the re-cut.** AC-04's install was run against a stand on the earlier cut;
-the 1.6.1.0 archive has not been installed. The pins prove the bytes and the inventory, not the install.
+**Not re-verified on a stand after the re-cut.** AC-04's install was run against a stand on an earlier cut;
+the 1.6.1.1 archive has NOT been installed anywhere, and the package's own unit suite was not run for it
+either — `-SkipTests` was used because this machine's `.application/net-framework` is the 8.1.2 zip and
+carries no `bin/Terrasoft.Configuration.dll`, so the fixtures cannot compile locally. The pins prove the
+bytes and the inventory; the install and the package suite are CI's and a stand's to establish.

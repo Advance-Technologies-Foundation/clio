@@ -338,8 +338,10 @@ public class DescribeProcessResult {
 
 	/// <summary>
 	/// Why a version fact is missing. The invariant is one-directional: a missing value ALWAYS comes with
-	/// this warning naming the fact that could not be established, while a successful read of an
-	/// unversioned process carries version 0 and no warning.
+	/// this warning naming the fact that could not be established, while a successful read carries the
+	/// schema's own stamped number and no warning — commonly 0, and 0 does NOT mean the family has no
+	/// versions, since the root of a family with versions 1-3 reports 0 as well. Family size is answered by
+	/// <see cref="Versions"/>, never by the number.
 	/// </summary>
 	/// <remarks>
 	/// It is NOT limited to a read that failed outright. A read can succeed and establish less than
@@ -399,7 +401,11 @@ public sealed class DescribedProcessVersion {
 	[JsonPropertyName("isActiveVersion")]
 	public bool? IsActiveVersion { get; set; }
 
-	/// <summary>Whether this member is the family root, i.e. version 0.</summary>
+	/// <summary>
+	/// Whether this member is the family root. The ONLY field that answers that: a root's own version number
+	/// is stamped rather than derived, so it is commonly 0 but stock content carries roots numbered 1 and 2,
+	/// and <see cref="Version"/> therefore cannot be used to identify one.
+	/// </summary>
 	[JsonPropertyName("isRoot")]
 	public bool IsRoot { get; set; }
 

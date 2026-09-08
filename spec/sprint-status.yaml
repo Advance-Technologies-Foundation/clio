@@ -3218,7 +3218,7 @@ stories:
     jira: "ENG-94374"
     repo: "clio"
     size: M
-    status: in-progress
+    status: review
     file: spec/stories/story-process-versioning-1.md
     prd: spec/prd/prd-process-versioning.md
     adr: spec/adr/adr-process-versioning.md
@@ -3234,7 +3234,7 @@ stories:
     jira: "ENG-94374"
     repo: "clio"
     size: M
-    status: in-progress
+    status: review
     file: spec/stories/story-process-versioning-2.md
     prd: spec/prd/prd-process-versioning.md
     adr: spec/adr/adr-process-versioning.md
@@ -3252,7 +3252,7 @@ stories:
     jira: "ENG-94374"
     repo: "clio"
     size: M
-    status: in-progress
+    status: review
     file: spec/stories/story-process-versioning-3.md
     prd: spec/prd/prd-process-versioning.md
     adr: spec/adr/adr-process-versioning.md
@@ -3268,7 +3268,7 @@ stories:
     jira: "ENG-94374"
     repo: "clio"
     size: S
-    status: in-progress
+    status: review
     file: spec/stories/story-process-versioning-4.md
     prd: spec/prd/prd-process-versioning.md
     adr: spec/adr/adr-process-versioning.md
@@ -3283,7 +3283,7 @@ stories:
     jira: "ENG-94374"
     repo: "clio"
     size: S
-    status: in-progress
+    status: review
     file: spec/stories/story-process-versioning-5.md
     prd: spec/prd/prd-process-versioning.md
     adr: spec/adr/adr-process-versioning.md
@@ -3298,7 +3298,7 @@ stories:
     jira: "ENG-94374"
     repo: "clio-knowledge"
     size: M
-    status: in-progress
+    status: review
     file: spec/stories/story-process-versioning-6.md
     prd: spec/prd/prd-process-versioning.md
     adr: spec/adr/adr-process-versioning.md
@@ -3329,7 +3329,7 @@ stories:
     jira: "ENG-94374"
     repo: "clio"
     size: L
-    status: in-progress
+    status: review
     file: spec/stories/story-process-versioning-8.md
     prd: spec/prd/prd-process-versioning.md
     adr: spec/adr/adr-process-versioning.md
@@ -3344,7 +3344,7 @@ stories:
     jira: "ENG-94374"
     repo: "crt-process-builder"
     size: M
-    status: in-progress
+    status: review
     file: spec/stories/story-process-versioning-9.md
     prd: spec/prd/prd-process-versioning.md
     adr: spec/adr/adr-process-versioning.md
@@ -3360,7 +3360,7 @@ stories:
     jira: "ENG-94374"
     repo: "crt-process-builder"
     size: M
-    status: in-progress
+    status: review
     file: spec/stories/story-process-versioning-10.md
     prd: spec/prd/prd-process-versioning.md
     adr: spec/adr/adr-process-versioning.md
@@ -3376,7 +3376,7 @@ stories:
     jira: "ENG-94374"
     repo: "crt-process-builder"
     size: M
-    status: in-progress
+    status: review
     file: spec/stories/story-process-versioning-11.md
     prd: spec/prd/prd-process-versioning.md
     adr: spec/adr/adr-process-versioning.md
@@ -3392,7 +3392,7 @@ stories:
     jira: "ENG-94374"
     repo: "crt-process-builder"
     size: M
-    status: in-progress
+    status: review
     file: spec/stories/story-process-versioning-12.md
     prd: spec/prd/prd-process-versioning.md
     adr: spec/adr/adr-process-versioning.md
@@ -3409,7 +3409,7 @@ stories:
     jira: "ENG-94374"
     repo: "crt-process-builder"
     size: L
-    status: in-progress
+    status: review
     file: spec/stories/story-process-versioning-13.md
     prd: spec/prd/prd-process-versioning.md
     adr: spec/adr/adr-process-versioning.md
@@ -3425,7 +3425,7 @@ stories:
     jira: "ENG-94374"
     repo: "crt-process-builder"
     size: S
-    status: in-progress
+    status: review
     file: spec/stories/story-process-versioning-14.md
     prd: spec/prd/prd-process-versioning.md
     adr: spec/adr/adr-process-versioning.md
@@ -3442,7 +3442,7 @@ stories:
     jira: "ENG-94374"
     repo: "clio"
     size: M
-    status: in-progress
+    status: review
     file: spec/stories/story-process-versioning-15.md
     prd: spec/prd/prd-process-versioning.md
     adr: spec/adr/adr-process-versioning.md
@@ -3459,7 +3459,7 @@ stories:
     jira: "ENG-94374"
     repo: "clio"
     size: M
-    status: in-progress
+    status: review
     file: spec/stories/story-process-versioning-16.md
     prd: spec/prd/prd-process-versioning.md
     adr: spec/adr/adr-process-versioning.md
@@ -3477,7 +3477,7 @@ stories:
     jira: "ENG-94374"
     repo: "clio"
     size: M
-    status: in-progress
+    status: review
     file: spec/stories/story-process-versioning-17.md
     prd: spec/prd/prd-process-versioning.md
     adr: spec/adr/adr-process-versioning.md
@@ -3495,7 +3495,7 @@ stories:
     jira: "ENG-94374"
     repo: "clio-knowledge"
     size: S
-    status: in-progress
+    status: review
     file: spec/stories/story-process-versioning-18.md
     prd: spec/prd/prd-process-versioning.md
     adr: spec/adr/adr-process-versioning.md

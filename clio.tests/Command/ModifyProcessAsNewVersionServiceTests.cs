@@ -1,6 +1,8 @@
 using System;
+using System.Text.Json;
 using System.Text.Json.Nodes;
 using Clio.Command;
+using Clio.Command.ProcessModel;
 using Clio.Common;
 using Clio.UserEnvironment;
 using FluentAssertions;
@@ -37,7 +39,8 @@ public sealed class ModifyProcessAsNewVersionServiceTests {
 		factory.CreateEnvironmentClient(env).Returns(client);
 		IServiceUrlBuilder urlBuilder = Substitute.For<IServiceUrlBuilder>();
 		urlBuilder.Build(ServiceUrlBuilder.KnownRoute.ModifyProcessAsNewVersion, env).Returns(VersionUrl);
-		return new ModifyProcessAsNewVersionService(settings, factory, urlBuilder, Substitute.For<ILogger>());
+		return new ModifyProcessAsNewVersionService(settings, factory, urlBuilder,
+			Substitute.For<IProcessPageFactsChecker>(), Substitute.For<ILogger>());
 	}
 
 	[Test]
@@ -160,6 +163,81 @@ public sealed class ModifyProcessAsNewVersionServiceTests {
 		act.Should().Throw<InvalidOperationException>(
 				because: "the server refused before saving anything")
 			.WithMessage("Package 'Custom' is locked.");
+	}
+
+	[Test]
+	[Description("A failed version save that names the refusing operation carries that index to the caller. The server writes failedOperationIndex at all eleven of its refusal sites, and this throw is the only path it can travel - the success record is built only on success. Without the DTO member System.Text.Json discards it silently, so a 40-operation batch refused at index 17 answered with a bare sentence and the agent bisected against a live environment.")]
+	public void ModifyAsNewVersion_ShouldNameTheRefusingOperation_WhenTheServerReportsAnIndex() {
+		// Arrange
+		IOwnedApplicationClient client = Substitute.For<IOwnedApplicationClient>();
+		client.ExecutePostRequest(VersionUrl, Arg.Any<string>()).Returns(
+			"{\"ModifyProcessAsNewVersionResult\":{\"success\":false,\"errorMessage\":\"Element 'X' was not found.\","
+			+ "\"appliedOperations\":2,\"failedOperationIndex\":2}}");
+		ModifyProcessAsNewVersionService service = CreateService(client);
+
+		// Act
+		Action act = () => service.ModifyAsNewVersion(Env,
+			new ModifyProcessAsNewVersionRequest("UsrProc", null, null, Operations));
+
+		// Assert
+		InvalidOperationException thrown = act.Should().Throw<InvalidOperationException>(
+			because: "a refused version save still fails the call").Which;
+		thrown.Message.Should().Contain("index 2",
+			because: "the caller has to learn WHICH operation refused, which is the whole reason the server "
+				+ "reports an index separately from the completion count");
+		thrown.Message.Should().Contain("2 operation(s)",
+			because: "the count is the other half of the same diagnosis and the recovery route for a caller "
+				+ "that gets no index at all - reporting one and dropping the other tells half a story");
+	}
+
+	[Test]
+	[Description("A failed version save whose failure blames no single operation says nothing about an index. The server sends none when the failure came after the operation loop - a read-only package, the save itself - and an older package never sends the field, so inventing 'index 0' from a missing value would name a descriptor that was never the problem.")]
+	public void ModifyAsNewVersion_ShouldNotInventAnIndex_WhenTheServerReportsNone() {
+		// Arrange
+		IOwnedApplicationClient client = Substitute.For<IOwnedApplicationClient>();
+		client.ExecutePostRequest(VersionUrl, Arg.Any<string>()).Returns(
+			"{\"ModifyProcessAsNewVersionResult\":{\"success\":false,\"errorMessage\":\"The schema is invalid.\","
+			+ "\"appliedOperations\":2}}");
+		ModifyProcessAsNewVersionService service = CreateService(client);
+
+		// Act
+		Action act = () => service.ModifyAsNewVersion(Env,
+			new ModifyProcessAsNewVersionRequest("UsrProc", null, null, Operations));
+
+		// Assert
+		act.Should().Throw<InvalidOperationException>(because: "a refused version save still fails the call")
+			.Which.Message.Should().NotContain("index",
+				because: "an absent index must stay absent - a plain int default would have said 'index 0', "
+					+ "which is the ambiguity the nullable field exists to prevent");
+	}
+
+	[Test]
+	[Description("A body clio cannot parse is reported as an unreadable response rather than as a parser error. AGENTS.md records that a wrong ProcessDesignService path answers with an HTML error page, so this is reachable. On THIS path the stakes are higher than on the in-place edit: the unexplained artifact may be a version that is already persisted and that the platform offers no way to delete, so the message has to say that a retry would allocate a second one.")]
+	public void ModifyAsNewVersion_ShouldReportAnUnreadableResponse_WhenTheBodyIsNotTheEnvelope() {
+		// Arrange — the shape a server-side deserialization failure returns: valid JSON, wrong document
+		IOwnedApplicationClient client = Substitute.For<IOwnedApplicationClient>();
+		client.ExecutePostRequest(VersionUrl, Arg.Any<string>()).Returns(
+			"[{\"ExceptionType\":\"System.Runtime.Serialization.SerializationException\"}]");
+		ModifyProcessAsNewVersionService service = CreateService(client);
+
+		// Act
+		Action act = () => service.ModifyAsNewVersion(Env,
+			new ModifyProcessAsNewVersionRequest("UsrProc", null, null, Operations));
+
+		// Assert
+		InvalidOperationException thrown = act.Should().Throw<InvalidOperationException>(
+			because: "an unreadable response is a real outcome and has to be named as one").Which;
+		thrown.Message.Should().Contain("UNKNOWN",
+			because: "whether a version was created cannot be determined from a body clio could not read, and "
+				+ "saying so is the only honest report");
+		thrown.Message.Should().Contain("cannot be deleted",
+			because: "a version that DID persist is permanent, which is what makes this different from the "
+				+ "in-place path and what the caller must know before acting");
+		thrown.Message.Should().NotContain("BytePositionInLine",
+			because: "a .NET parser message names a type and a byte offset, written for a developer reading a "
+				+ "stack trace and unusable to the agent that receives it");
+		thrown.InnerException.Should().BeOfType<JsonException>(
+			because: "the parser detail is kept for a developer rather than discarded");
 	}
 
 	[Test]

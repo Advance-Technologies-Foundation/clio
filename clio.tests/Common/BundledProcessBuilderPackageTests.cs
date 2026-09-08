@@ -132,13 +132,15 @@ public class BundledProcessBuilderPackageTests {
 	/// the pin names the commit BEFORE the version moved — by design, and unavoidably, because the script does
 	/// not commit. Today's pins show it plainly: <see cref="ExpectedProducingCommit"/> resolves to a descriptor
 	/// reading a version one restamp behind the archive beside it.
-	/// <para>So reproducing the bytes is not a checkout, and not two steps either: check out the pin, re-run
-	/// <c>set-pkg-version</c> with the pinned version, then hand-set <c>ModifiedOnUtc</c> to
-	/// <see cref="ExpectedDescriptorModifiedOnUtc"/>, then pack. The third step is not optional —
-	/// <c>SetPackageVersionCommand</c> writes <c>DateTime.Now</c> and takes no timestamp argument, so re-running
-	/// it stamps the present and the descriptor bytes differ every time. That pin exists for exactly this. Even
-	/// then the hash matches only on a host that renders the same line endings and the same path separator, which
-	/// is why the line-ending note above is not a footnote.</para>
+	/// <para>So reproducing the bytes is not a checkout, and not two steps either: EXPORT the pinned commit
+	/// with <c>git -c core.autocrlf=false -c core.eol=lf archive --format=zip</c>, re-run
+	/// <c>set-pkg-version</c> with the pinned version, hand-set <c>ModifiedOnUtc</c> to
+	/// <see cref="ExpectedDescriptorModifiedOnUtc"/>, overlay that one file onto the export, then pack it. The
+	/// timestamp step is not optional — <c>SetPackageVersionCommand</c> writes <c>DateTime.Now</c> and takes no
+	/// timestamp argument, so re-running it stamps the present and the descriptor bytes differ every time. That
+	/// pin exists for exactly this. The two <c>-c</c> flags are not optional either: they are what removes the
+	/// host from the recipe, and dropping them reproduces the old machine-dependent hash. What remains
+	/// host-dependent is the PATH SEPARATOR the archive records per entry, so cut and verify on Windows.</para>
 	/// <para>What the pin establishes is which SOURCES the
 	/// archive was built from — which is the question that actually matters, since the descriptor is the one
 	/// file the rebundle rewrites and the one whose expected content is pinned separately. Committing the
@@ -148,21 +150,32 @@ public class BundledProcessBuilderPackageTests {
 	/// commit at all.</para>
 	/// </para>
 	/// <para>
-	/// It has since been wrong a THIRD way, which no amount of checking the date would have caught: the bytes
-	/// did not correspond to ANY commit. Nine sources differed from a real checkout of the referenced commit by
-	/// LINE ENDINGS alone — the archive carried LF where a checkout produces CRLF — because it was cut from
-	/// freshly written files before they had round-tripped through git, and this host normalises on checkout
-	/// (<c>core.autocrlf=true</c>). Identical content, different bytes, unreproducible hash. So the reference
-	/// is only verifiable if the archive is packed from a CLEAN checkout: pack from a tree carrying
-	/// just-written files and the pin records bytes nobody can reproduce, which leaves this constant detecting
-	/// change while establishing nothing about provenance. That entry-by-entry audit was run for the 1.3.1.1
-	/// cut and is what caught the line-ending case; it was NOT re-run for the archive pinned below.
-	/// Two statements about the same bytes, one reassuring and one not, is exactly the shape this file exists
-	/// to prevent, so read the summary above as authoritative on what was and was not checked for THIS cut.
+	/// It was wrong a THIRD way twice, and that class is now CLOSED at the source rather than watched for. The
+	/// bytes did not correspond to ANY commit: nine sources (and, at the 1.6.1.0 cut, thirteen) differed from a
+	/// real checkout of the referenced commit by LINE ENDINGS alone — the archive carried LF where a checkout
+	/// produces CRLF — because the archive was packed from freshly written files before they had round-tripped
+	/// through git, on a host that normalises on checkout (<c>core.autocrlf=true</c>). Identical content,
+	/// different bytes, unreproducible hash: this constant went on detecting change while establishing nothing
+	/// about provenance, which is the one job it exists for.
+	/// <para>
+	/// The fix is structural, so no future cut has to remember it. <c>rebundle-process-builder.ps1</c> no longer
+	/// packs the working tree at all: it exports the producing commit with <c>core.autocrlf=false</c> and
+	/// <c>core.eol=lf</c>, overlays the single tooling-owned <c>descriptor.json</c>, and packs THAT. The
+	/// clean-tree gate provably could not catch the old defect — a tree can be clean, correct and CRLF at once —
+	/// and this removes the operator's editor and git configuration from the hash instead of gating on them.
+	/// </para>
+	/// <para>
+	/// Measured for the archive pinned below, entry by entry against
+	/// <c>git show &lt;ExpectedProducingCommit&gt;:&lt;path&gt;</c>: 153 entries, 152 byte-IDENTICAL to the
+	/// commit blob, 0 line-ending-only differences, 0 content differences. The 153rd is
+	/// <c>descriptor.json</c>, which by contract cannot match the pre-restamp commit and is pinned separately by
+	/// <see cref="ExpectedArchiveVersion"/> and <see cref="ExpectedDescriptorModifiedOnUtc"/>. That audit was
+	/// re-run for THIS cut rather than inherited from an earlier one.
+	/// </para>
 	/// </para>
 	/// </remarks>
 	private const string ExpectedArchiveSha256 =
-		"000D1FAD34926EF54E52F57B0330F205CCBCC0F59AE5B1AB70D91F49C4847048";
+		"810227EB742AC7B349787D7B0383323FC446179CE4BCFC8CFCFD8D1E1CA5BF23";
 
 	/// <summary>
 	/// The <c>PackageVersion</c> the shipped descriptor carries.
@@ -190,7 +203,7 @@ public class BundledProcessBuilderPackageTests {
 	/// </para>
 	/// </para>
 	/// </remarks>
-	private const string ExpectedArchiveVersion = "1.6.1.0";
+	private const string ExpectedArchiveVersion = "1.6.1.1";
 
 	/// <summary>
 	/// The commit of the PRODUCING repository the archive was cut from, written by
@@ -202,7 +215,7 @@ public class BundledProcessBuilderPackageTests {
 	/// corresponding to no commit" is unreachable rather than merely documented. Anyone with a checkout can
 	/// verify the rest with one `git checkout`.</para>
 	/// </summary>
-	private const string ExpectedProducingCommit = "7694ed2c62979b1569e30e4ed42c14f9f1a22003";
+	private const string ExpectedProducingCommit = "f25ebedec276effcc19a744408b7f5f2849ba3d1";
 
 	/// <summary>
 	/// The <c>ModifiedOnUtc</c> the shipped descriptor carries.
@@ -228,7 +241,7 @@ public class BundledProcessBuilderPackageTests {
 	/// command — the previous pin ended in <c>431</c>, which is how the hand edit was eventually noticed.
 	/// </para>
 	/// </remarks>
-	private const string ExpectedDescriptorModifiedOnUtc = "/Date(1788862642000)/";
+	private const string ExpectedDescriptorModifiedOnUtc = "/Date(1788872060000)/";
 
 	/// <summary>
 	/// The <c>ModifiedOnUtc</c> the shipped COMPILE-MARKER SCHEMA descriptor carries.

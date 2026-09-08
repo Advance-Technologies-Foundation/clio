@@ -61,8 +61,10 @@ public class SetActiveProcessVersionTool(
 		 + "modify-business-process-as-new-version — call it because the user asked for it. "
 		 + "Requires the ProcessDesignService (CrtProcessBuilder) package on the target environment at "
 		 + "CrtProcessBuilder 1.6.1.0 or newer, which is where this operation first exists — an older package is "
-		 + "refused up front, naming both versions; install or update it with install-process-builder. Use "
-		 + "describe-business-process to see the family and which member is active.")]
+		 + "refused up front, naming the version this operation needs; install or update it with "
+		 + "install-process-builder. Activating does not normally require compile-creatio — but if the response "
+		 + "warns that the version cannot execute until the configuration is compiled, heed that warning and "
+		 + "run it. Use describe-business-process to see the family and which member is active.")]
 	public CommandExecutionResult SetActiveProcessVersion(
 		[Description("set-active-business-process-version parameters")] [Required]
 		SetActiveProcessVersionArgs args
@@ -86,16 +88,17 @@ public class SetActiveProcessVersionTool(
 		};
 		// Same post-op note as both edit paths: activating a version does not put the environment into a state
 		// that needs compiling, and an agent that assumes otherwise runs compile-creatio for nothing (ENG-95706).
+		//
+		// Gated for the same reason the create path gates it: the version being activated may be one saved from
+		// a non-interpretable source, and the note must never be the sentence that contradicts a warning in its
+		// own response. Activation is the more dangerous of the two to get wrong - it is the call that puts the
+		// version in front of the runtime.
 		CommandExecutionResult result = InternalExecute<SetActiveProcessVersionCommand>(options);
 		if (result.ExitCode != 0) {
 			return result;
 		}
 
-		return result with {
-			Note = string.IsNullOrWhiteSpace(result.Note)
-				? CommandExecutionResult.CompileNotRequiredNote
-				: result.Note + " " + CommandExecutionResult.CompileNotRequiredNote
-		};
+		return result.WithCompileNotRequiredNote();
 	}
 }
 

@@ -57,7 +57,7 @@ Test naming: `MethodName_ShouldBehavior_WhenCondition`
 - [x] Rebundle only from a clean checkout — a tree carrying just-written files produces an unreproducible SHA (the stamp was taken on a committed tree; the rebundle itself is story 15)
 - [x] Code compiles clean; tests use fixture-level `[TestFixture(Category = "UnitTests")]` — this repo's convention, and the opposite of clio's
 - [x] Workspace-diary entry added (`CLAUDE.md:131-150`) — mandatory in this repo
-- [ ] PR description references this story file — branch not pushed, no PR yet
+- [x] PR description references this story file — open in crt-process-builder#47 (https://creatio.ghe.com/engineering/crt-process-builder/pull/47)
 - [x] N/A — ClioRing MCP compatibility verdict: this story ships no code, per the Implementation Notes
 
 ## Dev Agent Record
