@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.IO.Abstractions.TestingHelpers;
 using System.Linq;
@@ -6,7 +6,10 @@ using System.Text.Json;
 using Clio.Command;
 using Clio.Command.McpServer.Tools;
 using FluentAssertions;
+using NSubstitute;
 using NUnit.Framework;
+using IFileSystem = System.IO.Abstractions.IFileSystem;
+using IPath = System.IO.Abstractions.IPath;
 
 namespace Clio.Tests.Command;
 
@@ -93,6 +96,18 @@ public sealed class PageBaselineGuardTests {
 			FetchedAt = "2026-06-16T10:00:00Z",
 			Page = new PageMetadataInfo { SchemaName = SchemaName }
 		})));
+
+	/// <summary>
+	/// A file system whose path resolution refuses every input, which is the only way to reach the guard's
+	/// discovery catch block: MockFileSystem resolves even malformed anchors instead of throwing.
+	/// </summary>
+	private static IFileSystem BuildFileSystemThatCannotResolvePaths() {
+		IFileSystem fileSystem = Substitute.For<IFileSystem>();
+		IPath path = Substitute.For<IPath>();
+		path.GetFullPath(Arg.Any<string>()).Returns(_ => throw new ArgumentException("the anchor is not of a legal form"));
+		fileSystem.Path.Returns(path);
+		return fileSystem;
+	}
 
 	private static PageUpdateOptions CreateOptions(string environment = "dev") =>
 		new() { SchemaName = SchemaName, Body = "body", Environment = environment };
@@ -384,6 +399,63 @@ public sealed class PageBaselineGuardTests {
 			because: "the pin still governs the comparison, so the save must carry a machine-readable trace");
 		warning.Should().Contain("could not be corroborated",
 			because: "the trace has to state that no local baseline backs the caller's pin");
+	}
+
+	[Test]
+	[Description("TryArm_ShouldWarnAboutBothTheCorruptBaselineAndTheUncorroboratedPin_WhenTheMetaCannotBeRead — the two traces describe different facts and co-occur: TryReadBaseline sets its warning only when meta.json EXISTS but cannot be read, and on that path it also returns a null baseline, so a single `??=` slot dropped the pinned-save trace in exactly the case where the pin is least trustworthy (PR #1356 gate-3 re-review).")]
+	public void TryArm_ShouldWarnAboutBothTheCorruptBaselineAndTheUncorroboratedPin_WhenTheMetaCannotBeRead() {
+		// Arrange — a meta.json that exists but does not deserialize, plus a caller pin.
+		_fileSystem.AddFile(_metaPath, new MockFileData("not-json{{{"));
+		PageUpdateOptions options = CreateOptions("dev");
+		options.ExpectedChecksum = "caller-pinned-checksum";
+
+		// Act
+		(_, bool armed, string warning) = _guard.TryArm(options, OutputDirectory);
+
+		// Assert
+		armed.Should().BeFalse(because: "an unparseable baseline must fail toward no-check, never block the write");
+		warning.Should().NotBeNull();
+		warning.Should().Contain("could not be corroborated",
+			because: "the pin still governs the comparison here, so losing this trace hides an uncorroborated overwrite behind an unrelated parse error");
+		warning.Should().Contain("baseline",
+			because: "the corrupt-baseline fact must survive alongside the pin trace rather than be replaced by it");
+	}
+
+	[Test]
+	[Description("TryArm_ShouldNotClaimDetectionIsDisarmed_WhenTheAnchorCannotBeResolvedOnAPinnedSave — TryCheckForExternalModification gates on ExpectedChecksum alone and never consults Armed, so on a pinned save detection IS running; telling the caller it is off is not merely unhelpful but affirmatively false (PR #1356 gate-3 re-review).")]
+	public void TryArm_ShouldNotClaimDetectionIsDisarmed_WhenTheAnchorCannotBeResolvedOnAPinnedSave() {
+		// Arrange - a file system whose path resolution throws, which is the only way into the guard's
+		// catch block; MockFileSystem resolves even malformed anchors rather than refusing them.
+		PageBaselineGuard guard = new(BuildFileSystemThatCannotResolvePaths(), _fileGate);
+		PageUpdateOptions options = CreateOptions("dev");
+		options.ExpectedChecksum = "caller-pinned-checksum";
+
+		// Act
+		(_, bool armed, string warning) = guard.TryArm(options, OutputDirectory);
+
+		// Assert
+		armed.Should().BeFalse(because: "nothing local was discovered, so nothing can be moved forward");
+		warning.Should().NotBeNull();
+		warning.Should().NotContain("DISARMED",
+			because: "the pin governs the comparison on this path, so the save IS checked - against a baseline nothing local backs");
+		warning.Should().Contain("could not be corroborated",
+			because: "that is the accurate statement about a pin no local baseline can confirm");
+	}
+
+	[Test]
+	[Description("Non-vacuity twin: with no pin there is genuinely nothing driving the comparison, so the unresolvable anchor must keep saying DISARMED - suppressing the wording unconditionally would trade one false statement for another.")]
+	public void TryArm_ShouldStillSayDisarmed_WhenTheAnchorCannotBeResolvedAndNothingWasPinned() {
+		// Arrange
+		PageBaselineGuard guard = new(BuildFileSystemThatCannotResolvePaths(), _fileGate);
+		PageUpdateOptions options = CreateOptions("dev");
+
+		// Act
+		(_, bool armed, string warning) = guard.TryArm(options, OutputDirectory);
+
+		// Assert
+		armed.Should().BeFalse();
+		warning.Should().Contain("DISARMED",
+			because: "an unpinned save really does reach the server with no external-modification check at all");
 	}
 
 	[Test]

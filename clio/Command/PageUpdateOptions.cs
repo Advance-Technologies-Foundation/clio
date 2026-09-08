@@ -328,9 +328,17 @@
 			}
 			IReadOnlySet<string> keys = null;
 			try {
-				if (!context.IsCreateReplacing &&
-					TryGetSchema(context.TemplateSchemaUId, out JObject schema, out _)) {
-					keys = ResourceStringHelper.GetExistingKeys(schema[LocalizableStringsKey] as JArray);
+				if (!context.IsCreateReplacing) {
+					// A CLEAN GetSchema refusal is the third way this read ends with no keys, and it used to
+					// be the only silent one: the designer service answers success:false (schema not found,
+					// access denied, a redirected target UId), TryGetSchema returns false with the server's
+					// own message, and discarding it through `out _` handed the caller back the misleading
+					// "resource 'X' is neither auto-provided ... nor registered" that issue #1320 opened with.
+					if (TryGetSchema(context.TemplateSchemaUId, out JObject schema, out string schemaError)) {
+						keys = ResourceStringHelper.GetExistingKeys(schema[LocalizableStringsKey] as JArray);
+					} else {
+						LogPersistedResourceKeyFailure(schemaError);
+					}
 				}
 			} catch (Exception ex) when (ex is not OperationCanceledException) {
 				LogPersistedResourceKeyFailure(ex);
@@ -354,8 +362,9 @@
 			LogPersistedResourceKeyFailure(exception.Message);
 
 		/// <summary>
-		/// Warns that the persisted-key read did not produce keys. Reached from BOTH exits that can fail:
-		/// a thrown exception and a clean <c>TryResolveContext</c> refusal.
+		/// Warns that the persisted-key read did not produce keys. Reached from ALL THREE exits that can
+		/// fail: a thrown exception, a clean <c>TryResolveContext</c> refusal, and a clean
+		/// <c>TryGetSchema</c> refusal carrying the designer service's own message.
 		/// </summary>
 		private void LogPersistedResourceKeyFailure(string detail) =>
 			_logger?.WriteWarning(SensitiveErrorTextRedactor.Redact(

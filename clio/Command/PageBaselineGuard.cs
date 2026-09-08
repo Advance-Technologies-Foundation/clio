@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using Clio.Command.McpServer.Tools;
 using Clio.Common;
 using IFileSystem = System.IO.Abstractions.IFileSystem;
@@ -121,15 +122,31 @@ public sealed class PageBaselineGuard : IPageBaselineGuard {
 					out resolveWarning);
 			}
 		} catch (Exception ex) {
-			// A malformed anchor/body-file path must not break the write — degrade to no check, but say so:
-			// silently skipping the check is exactly the invisible failure AC-02 removes.
-			return (null, false,
-				$"External-modification detection is DISARMED for '{options.SchemaName}': the .clio-pages baseline "
-				+ $"location could not be resolved ({ex.Message}).");
+			// A malformed anchor/body-file path must not break the write — degrade to no LOCAL check, but say
+			// so: silently skipping the check is exactly the invisible failure AC-02 removes. "DISARMED" is
+			// only true when nothing governs the comparison. On a pinned save it is affirmatively FALSE:
+			// TryCheckForExternalModification gates on ExpectedChecksum alone and never consults Armed, so
+			// detection runs, driven entirely by a client-supplied baseline that nothing local can
+			// corroborate. Telling the caller it is off would be the more dangerous of the two errors.
+			return (null, false, callerPinnedChecksum
+				? $"The checksum pinned for '{options.SchemaName}' governs this save but could not be corroborated "
+					+ $"locally: the .clio-pages baseline location could not be resolved ({ex.Message}). "
+					+ "If it was copied out of a conflict response rather than from a fresh get-page, this save "
+					+ "overwrites the change that caused the conflict - re-read the page and merge before saving."
+				: $"External-modification detection is DISARMED for '{options.SchemaName}': the .clio-pages "
+					+ $"baseline location could not be resolved ({ex.Message}).");
 		}
 		PageBaselineInfo baseline = PageBaselineStore.TryReadBaseline(
 			_fileSystem, _fileGate, metaFilePath, out string readWarning);
-		string warning = readWarning ?? resolveWarning;
+		// ACCUMULATE, never `??=` into one slot. The discovery warnings and the pinned-save trace describe
+		// DIFFERENT facts and co-occur on exactly the path where the pin is least trustworthy:
+		// TryReadBaseline sets readWarning only when .clio-pages/meta.json exists but cannot be read or
+		// deserialized, and on that path it also returns a null baseline - so a single slot filled by the
+		// corrupt-meta warning silently swallowed the trace saying an uncorroborated pin is driving the
+		// save. ResolveMetaFilePath's malformed-body-file warning collided the same way.
+		List<string> warnings = new();
+		AddWarning(warnings, readWarning);
+		AddWarning(warnings, resolveWarning);
 		if (baseline is null || !PageBaselineStore.MatchesEnvironment(baseline, options.Environment, options.Uri)) {
 			if (callerPinnedChecksum) {
 				// The pin still GOVERNS the save on this path: TryCheckForExternalModification gates on
@@ -139,12 +156,13 @@ public sealed class PageBaselineGuard : IPageBaselineGuard {
 				// --uri/--login invocation that cannot satisfy MatchesEnvironment. "Uncorroborated" is a
 				// weaker statement than "divergent", so the wording differs from the block below, but
 				// staying silent is exactly the invisible bypass this guard exists to expose.
-				warning ??= $"The checksum pinned for '{options.SchemaName}' governs this save but could not be "
+				AddWarning(warnings,
+					$"The checksum pinned for '{options.SchemaName}' governs this save but could not be "
 					+ "corroborated locally: no .clio-pages baseline was found for this anchor and environment. "
 					+ "If it was copied out of a conflict response rather than from a fresh get-page, this save "
-					+ "overwrites the change that caused the conflict - re-read the page and merge before saving.";
+					+ "overwrites the change that caused the conflict - re-read the page and merge before saving.");
 			}
-			return (metaFilePath, false, warning);
+			return (metaFilePath, false, JoinWarnings(warnings));
 		}
 		// The schema-identity half of the baseline is armed on BOTH paths, with ONE exception: the
 		// schema-absent marker is armed only on the unpinned path. A caller-pinned checksum asserts
@@ -170,16 +188,30 @@ public sealed class PageBaselineGuard : IPageBaselineGuard {
 			// only a machine reads.
 			if (!string.IsNullOrWhiteSpace(baseline.Checksum)
 				&& !string.Equals(baseline.Checksum, options.ExpectedChecksum, StringComparison.Ordinal)) {
-				warning ??= $"The checksum pinned for '{options.SchemaName}' differs from the baseline clio last "
+				AddWarning(warnings,
+					$"The checksum pinned for '{options.SchemaName}' differs from the baseline clio last "
 					+ "recorded for this page. If it was copied out of a conflict response rather than from a fresh "
 					+ "get-page, this save overwrites the change that caused the conflict - re-read the page and "
-					+ "merge before saving.";
+					+ "merge before saving.");
 			}
-			return (metaFilePath, true, warning);
+			return (metaFilePath, true, JoinWarnings(warnings));
 		}
 		options.ExpectedChecksum = baseline.Checksum;
-		return (metaFilePath, true, warning);
+		return (metaFilePath, true, JoinWarnings(warnings));
 	}
+
+	private static void AddWarning(List<string> warnings, string warning) {
+		if (!string.IsNullOrWhiteSpace(warning)) {
+			warnings.Add(warning.Trim());
+		}
+	}
+
+	/// <summary>
+	/// Collapses the accumulated traces back into the single string the tuple contract carries. Null when
+	/// nothing was recorded, so "no warning" stays distinguishable from "an empty one".
+	/// </summary>
+	private static string JoinWarnings(List<string> warnings) =>
+		warnings.Count == 0 ? null : string.Join(" ", warnings);
 
 	/// <inheritdoc />
 	public string RefreshOrDrop(string metaFilePath, PageUpdateOptions options, PageUpdateResponse response) {

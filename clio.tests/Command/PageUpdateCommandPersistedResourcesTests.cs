@@ -201,6 +201,27 @@ public sealed class PageUpdateCommandPersistedResourcesTests {
 	}
 
 	[Test]
+	[Description("The THIRD failure exit, and the last silent one (PR #1356 gate-3 re-review): TryGetSchema returns false with the designer service's own message whenever it answers success:false - schema not found, access denied, a redirected target UId - and discarding that reason through `out _` handed the caller back the misleading 'neither auto-provided nor registered' that issue #1320 opened with, one layer down.")]
+	public void TryGetPersistedResourceKeys_ShouldWarn_WhenTheSchemaReadIsRefusedCleanly() {
+		// Arrange - resolution succeeds, then GetSchema answers success:false rather than throwing.
+		_applicationClient.ExecutePostRequest(GetSchemaUrl, Arg.Any<string>())
+			.Returns("""{"success": false, "errorInfo": {"message": "Access denied to schema"}}""");
+		PageUpdateOptions options = CreateOptions(BuildPersistedResourcePageBody());
+
+		// Act
+		IReadOnlySet<string> keys = _command.TryGetPersistedResourceKeys(options);
+
+		// Assert
+		keys.Should().BeEmpty(
+			because: "a refused read must restore the previous, stricter verdict rather than let a body through");
+		options.PersistedResourceKeysRead.Should().BeTrue(
+			because: "the read attempt completed, so the second gate must not re-issue it from a fresh snapshot");
+		_logger.Received().WriteWarning(Arg.Is<string>(message =>
+			message.Contains("Persisted resource keys could not be read")
+			&& message.Contains("Access denied to schema")));
+	}
+
+	[Test]
 	[Description("Non-vacuity twin for the carrier: once a clean resolution failure is recorded, a second call answers from the carrier and issues no further remote call - the memoization the PersistedResourceKeysRead remarks promise, on the failure path too.")]
 	public void TryGetPersistedResourceKeys_ShouldNotResolveAgain_WhenACleanFailureWasAlreadyRecorded() {
 		// Arrange
