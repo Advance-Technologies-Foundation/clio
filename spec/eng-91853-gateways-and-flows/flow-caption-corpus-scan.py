@@ -2,17 +2,74 @@
 
 A flow's caption is not in metadata.json - it is a localizable string, stored in the package's
 Resources/<Schema>.Process/resource.<culture>.xml under BaseElements.<FlowName>.Caption.
+
+Run it against a PackageStore checkout:
+
+    python flow-caption-corpus-scan.py [path-to-PackageStore]
+
+The path may also come from the CRT_PACKAGE_STORE environment variable; it defaults to
+C:/Projects/PackageStore. Nothing else is needed - this file is self-contained, which it was not
+when it was first committed: it `exec`'d two helpers out of a session-scoped scratchpad directory
+under one user's AppData\\Local\\Temp, so it raised FileNotFoundError on every other machine and on
+the same machine once temp was cleaned. The figures it produces are quoted as fact in shipped MCP
+tool descriptions, in package documentation, in a docs/knowledge record and in test descriptions, so
+being unable to re-derive them was the real defect rather than the broken import.
 """
 import collections
 import io
 import json
 import os
 import re
+import sys
 
-exec(open(r"C:/Users/D8671~1.KRE/AppData/Local/Temp/claude/C--Projects-clio/9f00abfa-1ac1-42fc-b0fa-fbbf43a0e380/scratchpad/scan_h1.py")
-     .read().split("h1, h2_gateway")[0].split('"""', 2)[2])
+# The flow-element container inside a process schema's metadata. A sub-process owns its children in
+# its OWN BK4, which is why the walk below is recursive rather than a single lookup.
+ELEMENTS_KEY = "BK4"
 
-ROOT = r"C:/Projects/PackageStore"
+# A flow's kind is read from the CLR CLASS first and the FlowType enum (CI4) second - the order the
+# run time reads them, and the order that makes the corpus's one anomaly (a default flow stamped with
+# the sequence palette item) land where the platform would put it.
+# ProcessSchemaEditSequenceFlowType: Sequence=0 (absent), Default=1, Conditional=2.
+FLOW_CLASSES = {
+    "Terrasoft.Core.Process.ProcessSchemaSequenceFlow": "sequence",
+    "Terrasoft.Core.Process.ProcessSchemaConditionalFlow": "conditional",
+}
+FLOW_TYPE_DEFAULT = 1
+
+
+def collect(node, out):
+    """Appends every flow-element dict in the schema to `out`, sub-process children included."""
+    if isinstance(node, dict):
+        for key, value in node.items():
+            if key == ELEMENTS_KEY and isinstance(value, list):
+                for item in value:
+                    if isinstance(item, dict):
+                        out.append(item)
+                        collect(item, out)
+            else:
+                collect(value, out)
+    elif isinstance(node, list):
+        for item in node:
+            collect(item, out)
+
+
+def kind_of(element):
+    """'sequence' | 'conditional' | 'default' for a flow element, None for anything that is not one."""
+    kind = FLOW_CLASSES.get(element.get("BL1"))
+    if kind is None:
+        return None
+    if kind == "conditional":
+        return "conditional"
+    return "default" if element.get("CI4") == FLOW_TYPE_DEFAULT else "sequence"
+
+
+ROOT = (sys.argv[1] if len(sys.argv) > 1
+        else os.environ.get("CRT_PACKAGE_STORE", r"C:/Projects/PackageStore"))
+if not os.path.isdir(ROOT):
+    raise SystemExit(
+        "Not a directory: %s\nPass a PackageStore checkout as the first argument, or set "
+        "CRT_PACKAGE_STORE." % ROOT)
+
 ITEM = re.compile(r'<Item\s+Name="BaseElements\.([^".]+)\.Caption"\s+Value="([^"]*)"')
 
 by_kind = collections.Counter()

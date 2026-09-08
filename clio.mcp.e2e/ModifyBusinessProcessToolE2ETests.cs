@@ -129,7 +129,8 @@ public sealed class ModifyBusinessProcessToolE2ETests {
 				  { "op": "setFlow", "source": "Decide", "target": "EndC", "kind": "conditional",
 				    "condition": "3 > 1", "label": "" },
 				  { "op": "setFlow", "source": "Start1", "target": "Decide", "kind": "sequence",
-				    "label": "Amount confirmed" }
+				    "label": "Amount confirmed" },
+				  { "op": "addFlow", "source": "EndA", "target": "EndB", "label": "Carried on" }
 				]
 				"""
 		});
@@ -146,6 +147,7 @@ public sealed class ModifyBusinessProcessToolE2ETests {
 		DescribedFlow toB = described.Flows.Single(f => f.Source == "Decide" && f.Target == "EndB");
 		DescribedFlow toC = described.Flows.Single(f => f.Source == "Decide" && f.Target == "EndC");
 		DescribedFlow intoDecide = described.Flows.Single(f => f.Source == "Start1" && f.Target == "Decide");
+		DescribedFlow added = described.Flows.Single(f => f.Source == "EndA" && f.Target == "EndB");
 
 		// Through the extension-data bag: a flow's stored NAME is not a typed member of DescribedFlow - the
 		// DTO carries only what the guards address by name, and a flow is addressed by its endpoint PAIR
@@ -155,8 +157,12 @@ public sealed class ModifyBusinessProcessToolE2ETests {
 				+ "from under the label, and without this assertion the next one proves nothing");
 		toA.Label.Should().Be("Take this branch",
 			because: "an omitted label means the caller said nothing about it, so the row has to be "
-				+ "re-materialised under the NEW name rather than orphaned under the old one - which is the "
-				+ "whole question this test exists to answer, and it cannot be answered in memory");
+				+ "re-materialised under the NEW name rather than orphaned under the old one. What this "
+				+ "asserts is the round trip through the real server; the ROW-level proof - that nothing "
+				+ "lingers under the old key - was taken by hand and is recorded in "
+				+ "docs/knowledge/platform/a-flow-rekind-does-not-orphan-its-label.md, because describe reads "
+				+ "the manager's runtime instance in the same warm app pool that just wrote through the design "
+				+ "instance and a cached instance could satisfy this without touching storage");
 		toB.Label.Should().Be("Renamed outcome",
 			because: "a supplied label replaces the previous one across the same re-kind");
 		toC.Label.Should().BeNull(
@@ -168,6 +174,10 @@ public sealed class ModifyBusinessProcessToolE2ETests {
 				+ "wrote nothing");
 		intoDecide.Kind.Should().Be("sequence",
 			because: "and the no-op is still a no-op: the flow must not be re-kinded by a relabel");
+		added.Label.Should().Be("Carried on",
+			because: "addFlow is the OTHER operation that writes a label, and nothing else in this suite sends "
+				+ "one through it - dropping operation.Label from AddFlowOperation would otherwise leave every "
+				+ "suite green while clio's guard blamed the environment's package version");
 	}
 
 	[Test]

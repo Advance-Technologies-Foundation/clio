@@ -571,4 +571,70 @@ public sealed class ModifyBusinessProcessCommandTests {
 			because: "the command should propagate service-level failures as a non-zero exit code");
 		_logger.Received(1).WriteError(Arg.Is<string>(message => message.Contains("StartEvent1")));
 	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("An operations array whose ONLY special content is a flow label still triggers the read-back, and the warning still reaches the caller. On the modify path the drop is worse than on the build path: an edit normally lands on a designer-authored process where a label already exists, so a caller relabelling a branch against an old package is told the edit succeeded while the OLD label is still what is drawn. Both mutations are otherwise invisible — dropping the `expectedLabels.Count == 0` clause makes the guard dead code for a labels-only edit, and deleting the WriteWarning block loses the only signal.")]
+	public void Execute_ShouldWarn_WhenAFlowLabelWasDiscarded() {
+		// Arrange
+		ModifyBusinessProcessOptions options = new() {
+			Environment = "sandbox",
+			ProcessName = "UsrSampleProcess",
+			OperationsJson = "[{\"op\":\"setFlow\",\"source\":\"Decide\",\"target\":\"Yes\","
+				+ "\"kind\":\"sequence\",\"label\":\"Approved\"}]"
+		};
+		_modifyBusinessProcessService.ModifyProcess("sandbox", Arg.Any<ModifyBusinessProcessRequest>())
+			.Returns(BuildResult());
+		// The old label is STILL on the flow - the shape a package below the capability version leaves after
+		// answering success, and the one a caller cannot distinguish from "my edit applied".
+		_processDescriber.Describe(Arg.Any<ProcessIdentity>(), null)
+			.Returns(new DescribeProcessResult {
+				Elements = [],
+				Flows = [new DescribedFlow { Source = "Decide", Target = "Yes", Label = "Rejected" }]
+			});
+		List<string> warnings = [];
+		_logger.When(logger => logger.WriteWarning(Arg.Any<string>()))
+			.Do(call => warnings.Add(call.Arg<string>()));
+
+		// Act
+		int result = _command.Execute(options);
+
+		// Assert
+		result.Should().Be(0,
+			because: "a dropped label is a caveat about an edit that SUCCEEDED, never a failure");
+		_processDescriber.Received(1).Describe(Arg.Any<ProcessIdentity>(), null);
+		warnings.Should().ContainSingle(warning => warning.Contains("Decide -> Yes ('Approved')"),
+			because: "the caller asked for 'Approved' and the connector still says something else");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("When the read-back itself fails, a labels-only edit is told the check did not happen. The intent-based unverified warning says nothing for such a payload — it configures no block — so silence here would print a plain success on an edit whose label was discarded, and the decision not to raise the package floor for this field depends on the read-back being able to speak.")]
+	public void Execute_ShouldReportLabelsUnverified_WhenTheReadBackFails() {
+		// Arrange
+		ModifyBusinessProcessOptions options = new() {
+			Environment = "sandbox",
+			ProcessName = "UsrSampleProcess",
+			OperationsJson = "[{\"op\":\"setFlow\",\"source\":\"Decide\",\"target\":\"Yes\","
+				+ "\"kind\":\"sequence\",\"label\":\"Approved\"}]"
+		};
+		_modifyBusinessProcessService.ModifyProcess("sandbox", Arg.Any<ModifyBusinessProcessRequest>())
+			.Returns(BuildResult());
+		_processDescriber.Describe(Arg.Any<ProcessIdentity>(), null)
+			.Returns(Error.Failure(description: "the request timed out"));
+		List<string> warnings = [];
+		_logger.When(logger => logger.WriteWarning(Arg.Any<string>()))
+			.Do(call => warnings.Add(call.Arg<string>()));
+
+		// Act
+		int result = _command.Execute(options);
+
+		// Assert
+		result.Should().Be(0, because: "an unreadable description is not evidence of a drop");
+		warnings.Should().ContainSingle(warning => warning.Contains("Could not verify")
+				&& warning.Contains("Decide -> Yes ('Approved')")
+				&& warning.Contains("the request timed out"),
+			because: "'could not check' and 'verified' must not look the same to the caller");
+	}
+
 }

@@ -320,4 +320,73 @@ public sealed class CreateBusinessProcessCommandTests {
 		_processDescriber.Received(1).Describe(Arg.Any<ProcessIdentity>(), Arg.Any<string>());
 	}
 
+	[Test]
+	[Category("Unit")]
+	[Description("A descriptor whose ONLY special content is a flow label still triggers the read-back, and the warning still reaches the caller. Both halves are pinned here because both mutations are invisible otherwise: dropping the `expectedLabels.Count == 0` clause from the short-circuit makes the label guard dead code for exactly the payload it was written for — a two-branch decision with labels and nothing else — and deleting the WriteWarning block loses the only signal a caller gets. This fixture already records that the create side once shipped a channel with service-level tests only and a deleted emission left 8 273 tests green.")]
+	public void Execute_ShouldWarn_WhenAFlowLabelWasDiscarded() {
+		// Arrange
+		CreateBusinessProcessOptions options = new() {
+			Environment = "sandbox",
+			DescriptorJson = "{\"name\":\"UsrSampleProcess\",\"packageName\":\"Custom\",\"elements\":["
+				+ "{\"name\":\"Decide\",\"type\":\"userTask\"},{\"name\":\"Yes\",\"type\":\"endEvent\"}],"
+				+ "\"flows\":[{\"source\":\"Decide\",\"target\":\"Yes\",\"label\":\"Approved\"}]}"
+		};
+		_createBusinessProcessService.BuildProcess("sandbox", Arg.Any<CreateBusinessProcessRequest>())
+			.Returns(BuildResult());
+		// The saved flow comes back with NO label - what a package below the capability version leaves behind
+		// after answering success.
+		_processDescriber.Describe(Arg.Any<ProcessIdentity>(), null)
+			.Returns(new DescribeProcessResult {
+				Elements = [],
+				Flows = [new DescribedFlow { Source = "Decide", Target = "Yes" }]
+			});
+		List<string> warnings = [];
+		_logger.When(logger => logger.WriteWarning(Arg.Any<string>()))
+			.Do(call => warnings.Add(call.Arg<string>()));
+
+		// Act
+		int result = _command.Execute(options);
+
+		// Assert
+		result.Should().Be(0,
+			because: "a dropped label is a caveat about a build that SUCCEEDED, never a failure");
+		_processDescriber.Received(1).Describe(Arg.Any<ProcessIdentity>(), null);
+		warnings.Should().ContainSingle(warning => warning.Contains("Decide -> Yes ('Approved')"),
+			because: "the caller has to be told which label is not drawn, by the only handle they have on the "
+				+ "flow");
+		warnings.Should().ContainSingle(warning => warning.Contains("install-process-builder"),
+			because: "the remedy has to arrive with the finding, or the caller audits their own payload");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("When the read-back itself fails, a labels-only payload is told the check did not happen rather than nothing at all. The intent-based unverified warning is silent for such a payload — it configures no block — so without this the command would print a plain success on a build whose labels were all discarded. That matters more than for the sibling guards: the decision not to raise the package floor for this field rests entirely on the read-back being able to report a drop.")]
+	public void Execute_ShouldReportLabelsUnverified_WhenTheReadBackFails() {
+		// Arrange
+		CreateBusinessProcessOptions options = new() {
+			Environment = "sandbox",
+			DescriptorJson = "{\"name\":\"UsrSampleProcess\",\"packageName\":\"Custom\",\"elements\":["
+				+ "{\"name\":\"Decide\",\"type\":\"userTask\"},{\"name\":\"Yes\",\"type\":\"endEvent\"}],"
+				+ "\"flows\":[{\"source\":\"Decide\",\"target\":\"Yes\",\"label\":\"Approved\"}]}"
+		};
+		_createBusinessProcessService.BuildProcess("sandbox", Arg.Any<CreateBusinessProcessRequest>())
+			.Returns(BuildResult());
+		_processDescriber.Describe(Arg.Any<ProcessIdentity>(), null)
+			.Returns(Error.Failure(description: "the request timed out"));
+		List<string> warnings = [];
+		_logger.When(logger => logger.WriteWarning(Arg.Any<string>()))
+			.Do(call => warnings.Add(call.Arg<string>()));
+
+		// Act
+		int result = _command.Execute(options);
+
+		// Assert
+		result.Should().Be(0, because: "an unreadable description is not evidence of a drop");
+		warnings.Should().ContainSingle(warning => warning.Contains("Could not verify")
+				&& warning.Contains("Decide -> Yes ('Approved')")
+				&& warning.Contains("the request timed out"),
+			because: "'could not check' and 'verified' must not look the same, and the reason is what makes "
+				+ "the caveat actionable");
+	}
+
 }

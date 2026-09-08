@@ -93,6 +93,64 @@ public sealed class ServerProcessDescriberTests {
 				+ "non-nullable bool, WhenWritingNull could not omit it and the payload fabricated an answer");
 	}
 
+	[Test]
+	[Category("Unit")]
+	[Description("A flow's label round-trips by its WIRE NAME, and this is the only place the JSON member is exercised at all: FlowLabelExpectationTests builds DescribedFlow with an object initialiser, so a renamed or dropped [JsonPropertyName] there changes nothing. The consequence of getting it wrong is not a missing field, it is a WRONG WARNING - the post-write guard reads Label typed, finds null on every flow, and tells the caller their labels did not land and their CrtProcessBuilder is out of date, on a build that worked perfectly. DescribedFlow also carries a [JsonExtensionData] bag, so the value still reaches the caller's output through AdditionalData and the describe result looks entirely correct while the guard is crying wolf.")]
+	public void Describe_ShouldRoundTripAFlowLabel() {
+		// Arrange
+		IApplicationClient client = ClientReturning(
+			"{\"DescribeProcessResult\":{\"success\":true,\"name\":\"UsrProc\","
+			+ "\"elements\":[],"
+			+ "\"flows\":[{\"source\":\"task1\",\"target\":\"end1\",\"kind\":\"conditional\","
+			+ "\"condition\":\"[#Amount#] > 100\",\"label\":\"Above the threshold\"}],"
+			+ "\"parameters\":[]}}");
+		ServerProcessDescriber describer = CreateDescriber(client);
+
+		// Act
+		ErrorOr<DescribeProcessResult> result = describer.Describe(new ProcessIdentity("UsrProc", null, null), null);
+		string reserialized = JsonSerializer.Serialize(result.Value, DescribeProcessCommand.OutputOptions);
+
+		// Assert
+		result.Value.Flows[0].Label.Should().Be("Above the threshold",
+			because: "the TYPED property is what the post-write guard reads by name; a value that only survives "
+				+ "in the extension-data bag leaves the guard reporting a dropped label on a build that worked");
+		result.Value.Flows[0].Condition.Should().Be("[#Amount#] > 100",
+			because: "both fields come off the same flow, so asserting the label alone would pass on a describe "
+				+ "that dropped everything else");
+		JsonNode output = JsonNode.Parse(reserialized);
+		output["flows"]![0]!["label"]!.GetValue<string>().Should().Be("Above the threshold",
+			because: "the outbound half is separate, and this field is what the shipped guidance tells an agent "
+				+ "to read before overwriting a human's label");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("A flow the server reports WITHOUT a label must not gain an explicit null on the way out. The server omits the member for an unlabelled flow - measured on a 1.6.0.8 stand - and clio mirrors that omission rather than fabricating a value. Note what this does NOT buy, because an earlier revision of the property's docblock claimed it did: absence still cannot distinguish 'this flow has no label' from 'this package predates the field', since both produce the same bytes. What it does buy is that clio does not ASSERT the first of those; the way to tell them apart is the installed package version, and the guidance says so.")]
+	public void Describe_ShouldNotInventAFlowLabel_WhenTheServerOmitsIt() {
+		// Arrange
+		IApplicationClient client = ClientReturning(
+			"{\"DescribeProcessResult\":{\"success\":true,\"name\":\"UsrProc\","
+			+ "\"elements\":[],"
+			+ "\"flows\":[{\"source\":\"task1\",\"target\":\"end1\",\"kind\":\"sequence\"}],"
+			+ "\"parameters\":[]}}");
+		ServerProcessDescriber describer = CreateDescriber(client);
+
+		// Act
+		ErrorOr<DescribeProcessResult> result = describer.Describe(new ProcessIdentity("UsrProc", null, null), null);
+		string reserialized = JsonSerializer.Serialize(result.Value, DescribeProcessCommand.OutputOptions);
+
+		// Assert
+		result.Value.Flows[0].Label.Should().BeNull(
+			because: "the server said nothing about a label, and clio must not turn that into a claim");
+		result.Value.Flows[0].Source.Should().Be("task1",
+			because: "the rest of the flow still round-trips; asserting the absence alone would pass on a "
+				+ "describe that dropped everything");
+		JsonNode output = JsonNode.Parse(reserialized);
+		output["flows"]![0]!.AsObject().ContainsKey("label").Should().BeFalse(
+			because: "an absent label is OMITTED, matching what the server itself does for an unlabelled flow - "
+				+ "emitting null here would only move the ambiguity into clio's own output");
+	}
+
 	private static IApplicationClient ClientReturning(string response) {
 		IApplicationClient client = Substitute.For<IApplicationClient>();
 		client.ExecutePostRequest(DescribeUrl, Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())

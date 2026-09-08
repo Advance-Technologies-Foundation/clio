@@ -253,7 +253,7 @@ if ($SkipTests) {
         # the suite would be silently skipped while the rebundle carried on to ship the archive.
         $testProjects = @(Get-ChildItem -Path 'tests' -Recurse -Filter 'CrtProcessBuilder.Tests.csproj' -File)
         if ($testProjects.Count -ne 1) {
-            Die "Expected exactly one CrtProcessBuilder.Tests.csproj under $PackageRepoPath	ests, found $($testProjects.Count).
+            Die "Expected exactly one CrtProcessBuilder.Tests.csproj under $(Join-Path $PackageRepoPath 'tests'), found $($testProjects.Count).
 Without it the package tests - the only check that each operation is still bound to its authorization
 gate - cannot run, and this script must not ship an archive it did not test."
         }

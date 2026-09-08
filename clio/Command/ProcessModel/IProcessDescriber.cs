@@ -1190,12 +1190,17 @@ public sealed class DescribedFlow {
 	/// <para>Typed rather than left to <see cref="AdditionalData"/> for the reason <see cref="Condition"/>
 	/// gives: the post-write guard reads it BY NAME to tell a caller their label did not land, and a
 	/// <c>JsonElement</c> in a dictionary is not that.</para>
-	/// <para>Omitted rather than written as null when absent, and that matters on exactly the servers this
-	/// feature is new to. <c>describe</c> is allowed against a package that predates the field (its
-	/// <c>[RequiresPackage]</c> is presence-only), and such a server never sends it. Writing an explicit
-	/// <c>null</c> would assert "this flow has no label" for every flow on a server that said nothing about
-	/// labels at all - and the difference is the whole point of the guard, since a designer-authored process
-	/// there very likely HAS labels the caller must not overwrite blind.</para>
+	/// <para>ABSENCE DOES NOT SAY WHY, and an earlier revision of this remark claimed it did. Measured on a
+	/// 1.6.0.8 stand: the server omits <c>label</c> for a flow that carries none, exactly as a server
+	/// predating the field omits it for every flow - so "this flow has no label" and "this environment does
+	/// not report labels" are the same bytes. Clio mirrors that omission rather than inventing an explicit
+	/// <c>null</c>, which would only move the ambiguity, not resolve it.</para>
+	/// <para>The consequence is worth stating because the shipped guidance tells an agent to read this field
+	/// before overwriting a human's label: on an environment below the capability version an all-absent
+	/// result is NOT evidence that a designer-authored process is unlabelled. What distinguishes the two is
+	/// the installed package version - <c>clio list-packages</c> or <c>get-info</c> - and the guidance says
+	/// so. The write side needs no such check: <see cref="FlowLabelExpectation"/> reads the flows back and
+	/// reports a label that did not land, whatever the reason.</para>
 	/// </summary>
 	[JsonPropertyName("label")]
 	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]

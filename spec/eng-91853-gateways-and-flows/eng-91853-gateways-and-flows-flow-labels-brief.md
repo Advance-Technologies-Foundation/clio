@@ -58,7 +58,8 @@ label, or the label is stored somewhere the Name does not address.
 ## How much of a norm this is
 
 Measured over the whole shipped 7.8.0 corpus, 1710 schemas containing flows
-(`scan_flow_captions.py` in the session scratchpad; the scan cross-references flow names from
+(`flow-caption-corpus-scan.py`, committed beside this brief and runnable as
+`python flow-caption-corpus-scan.py <PackageStore>`; the scan cross-references flow names from
 `metadata.json` against the per-schema resource file):
 
 | flow kind | flows | labelled | share |

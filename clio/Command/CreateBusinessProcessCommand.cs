@@ -416,6 +416,7 @@ public class CreateBusinessProcessCommand(
 			// Nothing to read back against. Silence here would be indistinguishable from a verified success.
 			BlockExpectationReporter.WarnAccessRightsUnverified(logger, intent,
 				"the operation returned no process name to read back");
+			WarnLabelsUnverified(expectedLabels, "the operation returned no process name to read back");
 			return;
 		}
 
@@ -427,6 +428,7 @@ public class CreateBusinessProcessCommand(
 			// grant or revoke actually landed, and reporting "verified" and "could not check" identically would
 			// let an unapplied revoke pass as applied.
 			BlockExpectationReporter.WarnAccessRightsUnverified(logger, intent, described.FirstError.Description);
+			WarnLabelsUnverified(expectedLabels, described.FirstError.Description);
 			return;
 		}
 
@@ -453,6 +455,20 @@ public class CreateBusinessProcessCommand(
 			FlowLabelExpectation.MissingLabels(described.Value, expectedLabels));
 		if (droppedLabels is not null) {
 			logger.WriteWarning(droppedLabels);
+		}
+	}
+
+	// The two early-outs above cannot verify a label, and the intent-based unverified warning says nothing
+	// about one - a labels-only payload configures no block, so `intent` is empty and every branch of
+	// WarnAccessRightsUnverified returns null. Silence there would matter more than for the other guards: the
+	// decision NOT to raise the package floor for this field rests on the read-back being able to report a
+	// drop, so a labels-only build against an old package would print a plain success on a process whose
+	// labels were all discarded.
+	private void WarnLabelsUnverified(IReadOnlyList<FlowLabelExpectation.FlowLabel> expectedLabels,
+			string reason) {
+		string? unverified = FlowLabelExpectation.BuildUnverifiedWarning(expectedLabels, reason);
+		if (unverified is not null) {
+			logger.WriteWarning(unverified);
 		}
 	}
 }
