@@ -85,6 +85,27 @@ public class TurnFsmCommandLoginRetryTests {
 	}
 
 	[Test]
+	[Description("Imports the packages and then applies the configuration when turning FSM off on an environment whose import completes, because that is the primary success path of the off direction and the switch that dispatches it has no other pin.")]
+	public void Execute_WritesConfiguration_WhenTurningFsmOff_AndImportCompletes() {
+		// Arrange
+		TurnFsmTestContext context = BuildContext();
+		context.FileDesignModePackages.LoadPackagesToDb().Returns(FileDesignModeLoadResult.Completed);
+		TurnFsmCommandOptions options = new() { IsFsm = "off", Uri = EnvironmentUri };
+
+		// Act
+		int result = context.Command.Execute(options);
+
+		// Assert
+		result.Should().Be(0,
+			because: "a completed import is the one outcome that lets 'turn-fsm off' write the configuration "
+				+ "and report success");
+		context.SetFsmConfigCommand.Received(1).Execute(options);
+		context.Logger.DidNotReceive().WriteError(Arg.Any<string>());
+		context.Logger.DidNotReceive().WriteWarning(Arg.Any<string>());
+		context.FileDesignModePackages.Received(1).LoadPackagesToDb();
+	}
+
+	[Test]
 	[Description("Applies the file system mode configuration when turning FSM off on an environment that already reports file design mode as disabled, because that state is the goal of the off direction and never had anything to import.")]
 	public void Execute_WritesConfiguration_WhenTurningFsmOff_OnAlreadyDisabledEnvironment() {
 		// Arrange
@@ -140,6 +161,33 @@ public class TurnFsmCommandLoginRetryTests {
 			"to file system mode");
 		context.SetFsmConfigCommand.Received(1).Execute(options);
 		context.FileDesignModePackages.Received(1).LoadPackagesToFileSystem();
+		// A refused export and an environment still reporting FSM disabled need different remediation, so
+		// asserting only the exit code would leave the two branches indistinguishable to the suite.
+		context.Logger.Received(1).WriteError(Arg.Is<string>(message =>
+			message.Contains("already switched on in the configuration")));
+	}
+
+	[Test]
+	[Description("Reports the configuration as written but the export as skipped when turning FSM on and the environment still answers that file design mode is disabled, which is the semantics the FsmModeTool description promises to agents.")]
+	public void Execute_ReportsConfigurationWritten_WhenTurningFsmOn_AndEnvironmentStillReportsDisabled() {
+		// Arrange
+		TurnFsmTestContext context = BuildContext();
+		context.FileDesignModePackages.LoadPackagesToFileSystem()
+			.Returns(FileDesignModeLoadResult.FileDesignModeDisabled);
+		TurnFsmCommandOptions options = new() { IsFsm = "on", Uri = EnvironmentUri };
+
+		// Act
+		int result = context.Command.Execute(options);
+
+		// Assert
+		result.Should().Be(1,
+			because: "nothing was exported, so the switch to file system mode is not complete");
+		context.SetFsmConfigCommand.Received(1).Execute(options);
+		// This branch has to say the configuration was written and the environment has not caught up yet,
+		// which is a different situation from a refused export.
+		context.Logger.Received(1).WriteError(Arg.Is<string>(message =>
+			message.Contains("still reports file design mode as disabled")
+			&& message.Contains("clio pkg-to-file-system")));
 	}
 
 	private const string EnvironmentUri = "http://localhost:1919";

@@ -320,11 +320,33 @@ public class Link4RepoCommand : Command<Link4RepoOptions> {
 
 		// 7. Sync packages to file system (2fs)
 		_logger.WriteInfo("Loading packages to file system (2fs)...");
-		if (_fileDesignModePackages.LoadPackagesToFileSystem() != FileDesignModeLoadResult.Completed) {
-			_logger.WriteError("Packages were not synced to the file system: loading packages to the file system failed.");
-			return 1;
+		FileDesignModeLoadResult loadResult = _fileDesignModePackages.LoadPackagesToFileSystem();
+		switch (loadResult) {
+			case FileDesignModeLoadResult.Completed:
+				_logger.WriteInfo("Packages synced to file system successfully.");
+				break;
+			case FileDesignModeLoadResult.FileDesignModeDisabled:
+				// The loader is silent on this cause, so naming it is this call site's job. Linking does not
+				// depend on the export - the --unlocked flow creates the same symlinks without ever calling it -
+				// and steps 5 and 6 have already rewritten Maintainer and unlocked the packages. Aborting here
+				// would leave the environment changed with no links to show for it, so warn and carry on.
+				_logger.WriteWarning(FileDesignModeLoadMessage.Build(
+					FileDesignModeLoadMessage.FileSystemStorageName,
+					FileDesignModeLoadMessage.DisabledFileDesignModeReason));
+				_logger.WriteWarning(
+					"The packages were unlocked and 'Maintainer' was applied, and the links are still created, " +
+					"but the environment exported nothing to its file system. Run 'clio turn-fsm on' and then " +
+					"'clio pkg-to-file-system' to finish the export.");
+				break;
+			default:
+				// LoadRefused / FileDesignModeUnknown: the platform refused the export or its state could not
+				// be read, so nothing downstream can be trusted. The detail is already in the error log.
+				_logger.WriteError(
+					"Packages were not synced to the file system, so no links were created. The packages were " +
+					"unlocked and 'Maintainer' was applied. Fix the reported error and run " +
+					"'clio link-to-repository' again.");
+				return 1;
 		}
-		_logger.WriteInfo("Packages synced to file system successfully.");
 
 		return 0;
 	}

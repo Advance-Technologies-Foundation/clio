@@ -43,8 +43,8 @@ namespace Clio.Command
 		public override int Execute(EnvironmentOptions options) {
 			FileDesignModeLoadResult result = Load(options);
 			if (result == FileDesignModeLoadResult.FileDesignModeDisabled) {
-				// The loader stays silent on this cause because turn-fsm off treats it as its goal state;
-				// for a standalone pkg-to-db it is a failure and must carry the Error log line that the
+				// The loader stays silent on this cause because turn-fsm off treats it as its goal state.
+				// For a standalone pkg-to-db it is a failure, so it must carry the Error log line that the
 				// command-execution-result contract publishes alongside the non-zero exit code.
 				_logger.WriteError(FileDesignModeLoadMessage.Build(
 					FileDesignModeLoadMessage.DatabaseStorageName,

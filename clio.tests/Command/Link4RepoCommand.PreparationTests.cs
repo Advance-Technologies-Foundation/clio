@@ -128,8 +128,8 @@ public class Link4RepoCommandPreparationTests : BaseCommandTests<Link4RepoOption
 	}
 
 	[Test]
-	[Description("When the file-system load does not happen, preparation fails instead of reporting a successful sync")]
-	public void Execute_Packages_LoadToFileSystemFails_ReturnsError() {
+	[Description("When the platform refuses the file-system load, preparation fails instead of reporting a successful sync")]
+	public void Execute_Packages_LoadToFileSystemRefused_ReturnsErrorAndDoesNotLink() {
 		// Arrange
 		string envPkg = GetRootedPath("env", "Pkg");
 		string repoPath = GetRootedPath("repo");
@@ -156,6 +156,51 @@ public class Link4RepoCommandPreparationTests : BaseCommandTests<Link4RepoOption
 		result.Should().Be(1,
 			because: "packages that were never exported to the file system must not be reported as synced");
 		_fileDesignModePackages.Received(1).LoadPackagesToFileSystem();
+		_command.CapturedPackages.Should().BeNull(
+			because: "a refused export aborts before the symlink step, so nothing is linked");
+	}
+
+	[Test]
+	[Description("When the environment reports file design mode as disabled, preparation names FSM as the cause, "
+		+ "keeps linking, and does not claim the packages were synced")]
+	public void Execute_Packages_LoadToFileSystemDisabled_WarnsNamingFsmAndStillLinks() {
+		// Arrange
+		string envPkg = GetRootedPath("env", "Pkg");
+		string repoPath = GetRootedPath("repo");
+		_mockFs.AddDirectory(Path.Combine(envPkg, "PkgA", "Files"));
+		_mockFs.AddDirectory(Path.Combine(repoPath, "PkgA"));
+		_mockFs.AddFile(Path.Combine(repoPath, "PkgA", "descriptor.json"), new MockFileData("{}"));
+		_jsonConverter.DeserializeObjectFromFile<PackageDescriptorDto>(
+				Path.Combine(repoPath, "PkgA", "descriptor.json"))
+			.Returns(new PackageDescriptorDto {
+				Descriptor = new PackageDescriptor { Name = "PkgA", Maintainer = "MyCompany" }
+			});
+		_sysSettingsManager.GetSysSettingValueByCode("Maintainer").Returns("MyCompany");
+		_fileDesignModePackages.LoadPackagesToFileSystem()
+			.Returns(FileDesignModeLoadResult.FileDesignModeDisabled);
+		Link4RepoOptions options = new() {
+			EnvPkgPath = envPkg,
+			RepoPath = repoPath,
+			Packages = "PkgA"
+		};
+
+		// Act
+		int result = _command.Execute(options);
+
+		// Assert
+		string[] logMessages = ConsoleLogger.Instance.FlushAndSnapshotMessages()
+			.Select(m => m.Value.ToString()).ToArray();
+		result.Should().Be(0,
+			because: "the symlink step does not depend on the export - the --unlocked flow links without "
+				+ "ever running it - and Maintainer and the unlock have already been applied");
+		_command.CapturedPackages.Should().Be("PkgA",
+			because: "linking must still run rather than leaving the environment mutated with no links");
+		logMessages.Should().Contain(m => m.Contains(FileDesignModeLoadMessage.DisabledFileDesignModeReason),
+			because: "the loader is silent on this cause, so this call site has to name it");
+		logMessages.Should().Contain(m => m.Contains("clio turn-fsm on"),
+			because: "the operator needs the command that makes the export possible");
+		logMessages.Should().NotContain(m => m.Contains("Packages synced to file system successfully."),
+			because: "nothing was exported, and claiming otherwise is the defect this PR removes");
 	}
 
 	[Test]

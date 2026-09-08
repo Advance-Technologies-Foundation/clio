@@ -148,6 +148,50 @@ public class FileDesignModePackagesTests {
 	}
 
 	[Test]
+	[Description("LoadPackagesToDb reports the probe failure as an unknown mode instead of crashing when the server answers Success=false with no ErrorInfo")]
+	public void LoadPackagesToDb_ShouldReportUnknownMode_WhenTheProbeFailsWithoutErrorInfo() {
+		// Arrange - neither arrange helper can produce this shape: both populate ErrorInfo whenever
+		// Success is false, which is exactly why the null guard was unreachable from the suite.
+		_applicationClient
+			.ExecutePostRequest(GetIsFileDesignModeUrl, string.Empty, Timeout.Infinite, Arg.Any<int>(), Arg.Any<int>())
+			.Returns("is-file-design-mode-response");
+		_jsonConverter.DeserializeObject<BoolResponse>("is-file-design-mode-response")
+			.Returns(new BoolResponse { Success = false, Value = false, ErrorInfo = null });
+
+		// Act
+		FileDesignModeLoadResult result = _sut.LoadPackagesToDb();
+
+		// Assert
+		result.Should().Be(FileDesignModeLoadResult.FileDesignModeUnknown,
+			because: "a response that carries no error detail still leaves the mode unread, and the caller has "
+				+ "to get that as a result rather than as a NullReferenceException");
+		_logger.Received(1).WriteError(Arg.Is<string>(message =>
+			message.Contains("Get file design mode ended with error") && message.Contains("unknown error")));
+		_applicationClient.DidNotReceive().ExecutePostRequest(LoadPackagesToDbUrl, Arg.Any<string>(),
+			Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>());
+	}
+
+	[Test]
+	[Description("LoadPackagesToDb reports a refused load instead of crashing when the server answers Success=false with no ErrorInfo")]
+	public void LoadPackagesToDb_ShouldReportRefusedLoad_WhenTheLoadFailsWithoutErrorInfo() {
+		// Arrange
+		ArrangeFileDesignModeProbe(success: true, value: true);
+		_applicationClient
+			.ExecutePostRequest(LoadPackagesToDbUrl, string.Empty, Timeout.Infinite, Arg.Any<int>(), Arg.Any<int>())
+			.Returns("load-response");
+		_jsonConverter.DeserializeObject<BaseResponse>("load-response")
+			.Returns(new BaseResponse { Success = false, ErrorInfo = null });
+
+		// Act
+		FileDesignModeLoadResult result = _sut.LoadPackagesToDb();
+
+		// Assert
+		result.Should().Be(FileDesignModeLoadResult.LoadRefused,
+			because: "the load did not happen, and a missing error detail must not turn that into a crash");
+		_logger.Received(1).WriteError(Arg.Is<string>(message => message.Contains("unknown error")));
+	}
+
+	[Test]
 	[Description("LoadPackagesToDb reports success when file design mode is enabled and the platform completes the load")]
 	public void LoadPackagesToDb_ShouldReportSuccess_WhenPlatformCompletesTheLoad() {
 		// Arrange
