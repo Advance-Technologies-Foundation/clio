@@ -162,7 +162,7 @@ public class BundledProcessBuilderPackageTests {
 	/// </para>
 	/// </remarks>
 	private const string ExpectedArchiveSha256 =
-		"6F840884DC65A865D397C8F94C81CE391B4265F53FCFE3483F85E18AC3A0A793";
+		"795CAB224DF4E16A98C8378A37AB0B96168B505A3FB297C4B81181742F5AC0DD";
 
 	/// <summary>
 	/// The <c>PackageVersion</c> the shipped descriptor carries.
@@ -190,7 +190,7 @@ public class BundledProcessBuilderPackageTests {
 	/// </para>
 	/// </para>
 	/// </remarks>
-	private const string ExpectedArchiveVersion = "1.4.15.1";
+	private const string ExpectedArchiveVersion = "1.6.0.2";
 
 	/// <summary>
 	/// The commit of the PRODUCING repository the archive was cut from, written by
@@ -202,7 +202,7 @@ public class BundledProcessBuilderPackageTests {
 	/// corresponding to no commit" is unreachable rather than merely documented. Anyone with a checkout can
 	/// verify the rest with one `git checkout`.</para>
 	/// </summary>
-	private const string ExpectedProducingCommit = "ca8b3f2777d8b3bfa3184e7967529b4a02282855";
+	private const string ExpectedProducingCommit = "44b14ccefc35a0fc72800db847554a10d798b111";
 
 	/// <summary>
 	/// The <c>ModifiedOnUtc</c> the shipped descriptor carries.
@@ -228,7 +228,7 @@ public class BundledProcessBuilderPackageTests {
 	/// command — the previous pin ended in <c>431</c>, which is how the hand edit was eventually noticed.
 	/// </para>
 	/// </remarks>
-	private const string ExpectedDescriptorModifiedOnUtc = "/Date(1788786188000)/";
+	private const string ExpectedDescriptorModifiedOnUtc = "/Date(1788814640000)/";
 
 	/// <summary>
 	/// The <c>ModifiedOnUtc</c> the shipped COMPILE-MARKER SCHEMA descriptor carries.
@@ -314,7 +314,7 @@ public class BundledProcessBuilderPackageTests {
 	/// counts, and neither should be able to drift on its own.
 	/// </para>
 	/// </remarks>
-	private const int ExpectedAuthorizationGateCallSites = 5;
+	private const int ExpectedAuthorizationGateCallSites = 3;
 
 	/// <summary>
 	/// Exact number of <c>[OperationContract]</c> methods the shipped service may expose.
@@ -326,7 +326,7 @@ public class BundledProcessBuilderPackageTests {
 	/// argued exception, so a second one must not be able to arrive unnoticed. Raise this together with the
 	/// allowlist, in the same commit, or not at all.
 	/// </remarks>
-	private const int ExpectedOperationContractCount = 7;
+	private const int ExpectedOperationContractCount = 5;
 
 	/// <summary>
 	/// The operations allowed to ship WITHOUT the authorization gate.
@@ -753,8 +753,11 @@ public class BundledProcessBuilderPackageTests {
 			because: $"every gate must be visible to this scan and no other type may carry one. Add or remove "
 				+ $"a gate and {nameof(ProcessBuilderGatedTypes)} moves in the same commit, so a lost "
 				+ "declaration cannot pass as slack and a new one cannot arrive unreviewed");
-		// The loop EXECUTES today: four of the seven carry a version literal — create/modify at 1.4.0.44, and
-		// both versioning options at the version their operations first ship in. It was vacuous when written,
+		// The loop EXECUTES today: four of the seven carry a version literal, and they do NOT agree with each
+		// other — create at 1.4.0.44, modify at 1.6.0.1 (they diverged when modify's page-change
+		// reconciliation promise needed a newer archive than create's), and both versioning options at the
+		// version their own operations first ship in. That spread is the reason the assertion counts literals
+		// rather than pinning a value: no single number describes the set. It was vacuous when written,
 		// deliberately — the invariant had to be in place before the first literal appeared, because the
 		// commit that adds one is exactly when it must already work. It replaces the old pin (descriptor
 		// version == a constant), which needed hand-synchronising on every rebundle and asserted a

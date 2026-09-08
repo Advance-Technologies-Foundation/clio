@@ -7,16 +7,19 @@ date: 2026-08-19
 ---
 
 **What is true** — `describe-business-process` deserializes the server payload into the
-`Described*` types and re-serializes them for the caller. `DescribeProcessResult`,
-`DescribedElement` and `DescribedEmail` each hold a `[JsonExtensionData]` overflow bag, so an
-unknown field survives the round trip. The three filter types — `DescribedFilter`,
-`DescribedFilterGroup` and `DescribedFilterCondition` — do **not**. Every filter field therefore
-needs a property on both sides: the descriptor in the ProcessBuilder package *and* a matching
-`[JsonPropertyName]` property here. `Macro`, `MacroArgument` and `DatePart` exist for exactly that
-reason. `DescribedProcessVersion` is bag-less too, but for the opposite reason and not as a gap: clio
-builds every family entry itself from the process library, so there is no server field to drop. The
-overlay in `ServerProcessDescriber.ApplyVersionFacts` records that this inverts the day the server
-starts reporting the family, and that adding the bag belongs to that change.
+`Described*` types and re-serializes them for the caller. The types that model an ELEMENT and its
+per-kind configuration blocks each hold a `[JsonExtensionData]` overflow bag, so an unknown field
+survives the round trip — today `DescribeProcessResult`, `DescribedElement`, `DescribedEmail`,
+`DescribedPerformer` and `DescribedApproval`, and a block added later is expected to carry one too.
+The three filter types — `DescribedFilter`, `DescribedFilterGroup` and `DescribedFilterCondition` —
+do **not**, and neither do `DescribedConnection`, `DescribedSignal`, `DescribedFlow` or
+`DescribedParameter`. Every filter field therefore needs a property on both sides: the descriptor
+in the ProcessBuilder package *and* a matching `[JsonPropertyName]` property here. `Macro`,
+`MacroArgument` and `DatePart` exist for exactly that reason. `DescribedProcessVersion` is bag-less
+too, but for the opposite reason and not as a gap: clio builds every family entry itself from the
+process library, so there is no server field to drop. The overlay in
+`ServerProcessDescriber.ApplyVersionFacts` records that this inverts the day the server starts
+reporting the family, and that adding the bag belongs to that change.
 
 **Why it is this way** — the filter DTOs were hand-mirrored from the package's
 `FilterConditionDescriptor` when the vocabulary was small, and `System.Text.Json` discards members

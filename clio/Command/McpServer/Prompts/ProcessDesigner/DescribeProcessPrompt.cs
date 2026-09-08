@@ -30,10 +30,16 @@ public static class DescribeProcessPrompt {
 
 		1. Call `describe-business-process` with `environment-name` and exactly one of `process-name` /
 		   `process-uid` / `process-caption`. It returns a STRUCTURED graph: `elements`
-		   (name, uid, caption, type, buildType, userTaskName, parameters; `signal` for a signal start),
+		   (name, uid, caption, type, buildType, userTaskName, parameters; `signal` for a signal start, and a
+		   configuration block for a configured element - `email`, `readData`, `changeData`, `openEditPage`),
 		   `flows` (source, target, kind), and process `parameters` — not raw metadata. It also reports the
 		   version standing: `version`, `isActiveVersion`, `activeVersionName`, `activeVersionSchemaUId` and
 		   the `versions[]` family.
+		   A `preconfiguredPage` element also carries its `preconfiguredPage` block: the page it shows, its
+		   completing `buttons`, and `dataSources[]` — where `parameter` names the element parameter that
+		   receives the id of the record the page saved, the handle later steps map from and the only place it
+		   is reported. Read `inSync` and `shadowedPageParameters` there too: `inSync: true` means "nothing
+		   left to synchronize", not "the element carries every page parameter".
 		2. CHECK `isActiveVersion` BEFORE narrating anything. Every saved version is a separate schema with
 		   its own name, so resolving by `process-name` returns the family ROOT — and on a versioned process
 		   that is NOT what the runtime executes. Three outcomes: true, narrate this graph; false WITH an
@@ -46,6 +52,13 @@ public static class DescribeProcessPrompt {
 		4. Narrate, in plain language, the trigger (start event), the ordered steps (follow the flows by
 		   source/target), each activity's purpose, and any branches (gateways / conditional flows). State
 		   which version you read, and say so explicitly when it is not the active one.
+		An `openEditPage` block tells you which page the step opens, for which object and record type, whether the
+		user ADDS a record (with the values pre-filled for them) or EDITS an existing one (and which), the
+		recommendation shown on the page, and when the step counts as complete. Narrate it in those terms rather than
+		by parameter name. One read-back caveat worth stating if you see it: the block can report pre-filled values
+		AND a record together, because the runtime applies stored values in either mode — that combination cannot be
+		written through the tool, so flag it as something a human configured by hand.
+
 		Note: expressions (mapping formulas, filters) are returned RAW, not decoded into semantics — narrate
 		structure, types, flow, and parameter sources; where a condition/filter is not decodable, say so
 		explicitly instead of guessing.

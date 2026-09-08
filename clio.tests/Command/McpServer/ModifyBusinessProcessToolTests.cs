@@ -3,11 +3,17 @@ using System.IO;
 using System.Reflection;
 using Clio.Command;
 using Clio.Command.McpServer.Prompts.ProcessDesigner;
+using System.Linq;
+using System.Reflection;
+using System.Text.RegularExpressions;
 using Clio.Command.McpServer.Tools;
+using Clio.Command.McpServer.Prompts.ProcessDesigner;
 using Clio.Command.McpServer.Tools.ProcessDesigner;
 using Clio.Command.ProcessModel;
 using Clio.Common;
+using System.Linq;
 using FluentAssertions;
+using ModelContextProtocol.Server;
 using NSubstitute;
 using NUnit.Framework;
 
@@ -29,6 +35,24 @@ public class ModifyBusinessProcessToolTests {
 	private static string ReadToolDescription(Type toolType, string methodName) =>
 		toolType.GetMethod(methodName)!
 			.GetCustomAttribute<System.ComponentModel.DescriptionAttribute>()!.Description;
+
+	[Test]
+	[Category("Unit")]
+	[Description("Pins the destructive classification of modify-business-process. This annotation - not the description prose - is what an MCP host reads to decide whether a call needs human approval, so a silent flip back to false would let a host auto-run it.")]
+	public void ModifyBusinessProcess_Should_Be_Marked_As_Destructive() {
+		// Arrange
+		System.Reflection.MethodInfo method = typeof(ModifyBusinessProcessTool).GetMethod(nameof(ModifyBusinessProcessTool.ModifyBusinessProcess))!;
+		McpServerToolAttribute attribute = method
+			.GetCustomAttributes(typeof(McpServerToolAttribute), inherit: false)
+			.Cast<McpServerToolAttribute>()
+			.Single();
+
+		// Act
+		bool destructive = attribute.Destructive;
+
+		// Assert
+		destructive.Should().BeTrue(because: "modify-business-process edits an existing process in place and can revoke record permissions through an accessRights block");
+	}
 
 	[Test]
 	[Description("Resolves the modify-business-process MCP tool for the requested environment and forwards the identity and operations into command options.")]
@@ -179,6 +203,66 @@ public class ModifyBusinessProcessToolTests {
 	}
 
 	[Test]
+	[Description("Forwards a setElement operation carrying an openEditPage block verbatim - the tool is an opaque pass-through, so the destructive mode switch and its replacement payload ride through to the command unmodified. The mode switch is chosen deliberately: it is the operation whose refusal rules live entirely server-side, so a tool that reshaped the block would change which refusals the caller sees while every clio-side test still passed.")]
+	[Category("Unit")]
+	public void ModifyBusinessProcess_Should_Forward_OpenEditPage_SetElement_Verbatim() {
+		// Arrange
+		ConsoleLogger.Instance.ClearMessages();
+		const string openEditPageOps =
+			"[{\"op\":\"setElement\",\"elementName\":\"OpenPage1\",\"elementUpdate\":{\"openEditPage\":{"
+			+ "\"editMode\":\"edit\",\"recordId\":{\"processParameter\":\"AccountIdParameter\"},"
+			+ "\"performer\":{\"type\":\"user\",\"showPage\":true},"
+			+ "\"logActivity\":{\"enabled\":true,\"duration\":{\"value\":5,\"unit\":\"minutes\"}},"
+			+ "\"completion\":{\"mode\":\"onSave\"}}}}]";
+		FakeModifyBusinessProcessCommand defaultCommand = new();
+		FakeModifyBusinessProcessCommand resolvedCommand = new();
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		commandResolver.Resolve<ModifyBusinessProcessCommand>(Arg.Any<ModifyBusinessProcessOptions>())
+			.Returns(resolvedCommand);
+		ModifyBusinessProcessTool tool = new(defaultCommand, ConsoleLogger.Instance, commandResolver);
+
+		// Act
+		CommandExecutionResult result = tool.ModifyBusinessProcess(
+			new ModifyBusinessProcessArgs("docker_fix2", openEditPageOps, "UsrSampleProcess", null));
+
+		// Assert
+		result.ExitCode.Should().Be(0,
+			because: "a valid openEditPage setElement operation must be forwarded for the requested environment");
+		resolvedCommand.CapturedOptions.Should().NotBeNull(
+			because: "the resolved command should receive the forwarded operations");
+		resolvedCommand.CapturedOptions!.OperationsJson.Should().Be(openEditPageOps,
+			because: "the openEditPage block must pass through unchanged - the mode switch, its record payload and "
+				+ "the nested completion block are all judged server-side, so reshaping any of them here would "
+				+ "alter the request without changing a single clio-side assertion");
+		ConsoleLogger.Instance.ClearMessages();
+	}
+
+	[Test]
+	[Description("The rendered modify prompt carries no line duplicated verbatim and no clause left without its object. This is a MERGE guard, not a style check: the text is one 30-line sentence assembled from per-element fragments, so a merge that lands the same fragment twice, or truncates one mid-clause, produces a string that still compiles, still ships, and is fed verbatim to an LLM on every invocation - degrading instruction-following with nothing to notice it. That damage reached this file once already.")]
+	[Category("Unit")]
+	public void RenderedPrompt_Should_CarryNoDuplicatedLine_NorAClauseWithoutItsObject() {
+		// Arrange
+		string prompt = ModifyBusinessProcessPrompt.PromptByProcess("docker_fix2", "UsrSampleProcess");
+		string[] lines = prompt.Split('\n').Select(line => line.Trim()).Where(line => line.Length > 0).ToArray();
+
+		// Act
+		string[] duplicatedNeighbours = lines
+			.Zip(lines.Skip(1), (first, second) => first == second ? first : null)
+			.Where(line => line != null)
+			.ToArray()!;
+		int connectionsClause = Regex.Matches(prompt,
+			Regex.Escape("`setConnections` binds the \"Connected to\" links of the")).Count;
+
+		// Assert
+		duplicatedNeighbours.Should().BeEmpty(
+			because: "a fragment landing twice is what a bad merge produces here, and a duplicated noun phrase "
+				+ "inside one long sentence reads as emphasis to a model rather than as damage");
+		connectionsClause.Should().Be(1,
+			because: "the clause is what introduces setConnections; a second copy means one of them was cut off "
+				+ "from the object it introduces, leaving an enumeration item that never says what it binds");
+	}
+
+	[Test]
 	[Description("Returns a failed result without resolving any command when the environment name is empty.")]
 	[Category("Unit")]
 	public void ModifyBusinessProcess_Should_Fail_When_Environment_Is_Empty() {
@@ -262,6 +346,43 @@ public class ModifyBusinessProcessToolTests {
 		ConsoleLogger.Instance.ClearMessages();
 	}
 
+	[Test]
+	[Description("Forwards a setElement operation carrying an accessRights block verbatim — the tool is an opaque pass-through, so a replaced add collection, a remove collection cleared with an empty array, and the object retarget that clears the stored record filter all ride through unchanged, together with the setFilter re-issued in the same array.")]
+	[Category("Unit")]
+	public void ModifyBusinessProcess_Should_Forward_AccessRights_SetElement_Verbatim() {
+		// Arrange
+		ConsoleLogger.Instance.ClearMessages();
+		const string accessRightsOps =
+			"[{\"op\":\"setElement\",\"elementName\":\"GrantRights\",\"elementUpdate\":{\"accessRights\":{"
+			+ "\"object\":\"Contact\",\"considerTimeInFilter\":false,"
+			+ "\"add\":[{\"operations\":[\"read\"],\"level\":\"permit\","
+			+ "\"grantee\":{\"type\":\"role\",\"role\":\"System administrators\"}}],"
+			+ "\"remove\":[]}}},"
+			+ "{\"op\":\"setFilter\",\"elementName\":\"GrantRights\",\"filter\":{\"object\":\"Contact\","
+			+ "\"conditions\":[{\"column\":\"Id\",\"comparison\":\"equal\",\"processParameter\":\"ContactId\"}]}}]";
+		FakeModifyBusinessProcessCommand defaultCommand = new();
+		FakeModifyBusinessProcessCommand resolvedCommand = new();
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		commandResolver.Resolve<ModifyBusinessProcessCommand>(Arg.Any<ModifyBusinessProcessOptions>())
+			.Returns(resolvedCommand);
+		ModifyBusinessProcessTool tool = new(defaultCommand, ConsoleLogger.Instance, commandResolver);
+
+		// Act
+		CommandExecutionResult result = tool.ModifyBusinessProcess(
+			new ModifyBusinessProcessArgs("docker_fix2", accessRightsOps, "UsrSampleProcess", null));
+
+		// Assert
+		result.ExitCode.Should().Be(0,
+			because: "a valid accessRights setElement operation must be forwarded for the requested environment");
+		resolvedCommand.CapturedOptions.Should().NotBeNull(
+			because: "the resolved command should receive the forwarded operations");
+		resolvedCommand.CapturedOptions!.OperationsJson.Should().Be(accessRightsOps,
+			because: "replace-and-clear semantics live in the exact arrays the caller sent — an empty "
+				+ "remove array means CLEAR, so dropping or rewriting it here would silently keep permissions "
+				+ "the caller asked to stop revoking, and the paired setFilter must survive in the same order");
+		ConsoleLogger.Instance.ClearMessages();
+	}
+
 	private sealed class FakeModifyBusinessProcessCommand : ModifyBusinessProcessCommand {
 		private readonly int _exitCode;
 
@@ -278,6 +399,31 @@ public class ModifyBusinessProcessToolTests {
 			return _exitCode;
 		}
 	}
+	[Test]
+	[Category("Unit")]
+	[Description("Pins the DIRECTION of the record-filter consequence in the always-loaded tool description and in the prompt. An ABSENT record filter is the WIDENING state - the runtime gates on a non-empty filter, so the query runs unfiltered with record permissions disabled - while a PRESENT-but-conditionless one is the inert state. The shipped text had these two swapped, on every surface at once, which told callers that the widest permission change the feature can produce was harmless. Prose is the whole contract here: the element has no output parameters, so nothing at run time contradicts a wrong description.")]
+	public void ModifyBusinessProcessTool_ShouldStateTheRecordFilterConsequence_InTheWideningDirection() {
+		// Arrange
+		string[] surfaces = [
+			typeof(ModifyBusinessProcessTool).GetMethod(nameof(ModifyBusinessProcessTool.ModifyBusinessProcess))!
+				.GetCustomAttribute<System.ComponentModel.DescriptionAttribute>()!.Description,
+			ModifyBusinessProcessPrompt.PromptByProcess("sandbox", "UsrSampleProcess")
+		];
+
+		// Act & Assert
+		foreach (string surface in surfaces) {
+			surface.Should().Contain("EVERY record",
+				because: "a Change access rights element with no record filter applies the change to every row of "
+					+ "its object, and this is the only place a caller is ever told so");
+			surface.Should().NotContain("matches no records",
+				because: "that is the inverted claim this feature shipped with - it describes the "
+					+ "present-but-conditionless state, and applying it to an absent filter presents the widest "
+					+ "possible configuration as a no-op");
+			surface.Should().NotContain("match no records",
+				because: "the same inversion in the future tense - both phrasings reached shipped text before");
+		}
+	}
+
 
 	[Test]
 	[Category("Unit")]
