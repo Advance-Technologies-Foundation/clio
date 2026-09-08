@@ -1173,6 +1173,229 @@ public sealed class PageUpdateToolE2ETests : McpContractFixtureBase {
 	}
 
 	[Test]
+	[Description("AC-1 behavioural round trip (PR #1356 review): get-page's `editable.checksum` is passed verbatim as update-page's `checksum` on two consecutive pinned saves, both of which must report conflict:false, and the checksum get-page returns after a save must be byte-identical to the `newChecksum` that save reported. The stale first baseline is then re-sent and must be refused with reason `checksum-mismatch` without landing a save. This is the exact reproduction in issue #1320; the contract test above only asserts that the served description mentions `checksum`.")]
+	[AllureTag(ToolName)]
+	[AllureName("update-page round-trips get-page's checksum through two consecutive pinned saves")]
+	[AllureDescription("Against the seeded page ClioMcp_BlankPageToSave on a real stand: (1) get-page captures editable.checksum; (2) update-page pins that value via `checksum` and must save with conflict:false; (3) get-page again and its editable.checksum must equal the newChecksum the save reported - the byte-for-byte equality between the value get-page hands out and the value the update comparison performs StringComparison.Ordinal against; (4) a second update-page pinned to the fresh checksum must also save with conflict:false, which no existing test drives; (5) re-sending the now-stale first baseline must fail with conflict:true / checksum-mismatch and must not change the server checksum. The original body is restored with force=true in cleanup.")]
+	public async Task PageUpdateTool_Should_RoundTrip_GetPage_Checksum_Through_Consecutive_Pinned_Saves() {
+		// Arrange
+		McpE2ESettings settings = TestConfiguration.Load();
+		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
+		if (!settings.AllowDestructiveMcpTests) {
+			Assert.Ignore("AllowDestructiveMcpTests is false — skipping destructive update-page checksum round-trip test.");
+		}
+		string environmentName = await ResolveReachableEnvironmentAsync(settings);
+		await using var arrangeContext = Arrange(TimeSpan.FromMinutes(5));
+		const string savePage = "ClioMcp_BlankPageToSave";
+		string sessionDir = Directory.CreateTempSubdirectory("clio-e2e-checksum-roundtrip-").FullName;
+		string? originalBody = null;
+		try {
+			PageGetResponse firstGet = await GetPageAsync(arrangeContext, savePage, environmentName, sessionDir);
+			firstGet.Success.Should().BeTrue(
+				because: $"get-page must load the seeded page '{savePage}' before the round trip. Error: {firstGet.Error}");
+			firstGet.Editable.Should().NotBeNull(
+				because: "the editable state carries the checksum this whole test round-trips");
+			string firstChecksum = firstGet.Editable.Checksum;
+			firstChecksum.Should().NotBeNullOrWhiteSpace(
+				because: "an empty baseline would make every pinned assertion below vacuous");
+			originalBody = await File.ReadAllTextAsync(firstGet.Files.BodyFile);
+
+			// Act 1: pin the checksum get-page just returned, verbatim.
+			PageUpdateResponse firstSave = await UpdatePageAsync(
+				arrangeContext, savePage, BodyWithContainer(originalBody, "UsrE2ERoundTripContainerA"),
+				environmentName, sessionDir, checksum: firstChecksum);
+
+			// Assert 1: the value get-page handed out is accepted as the baseline by the save that pins it.
+			firstSave.Success.Should().BeTrue(
+				because: $"the checksum came straight from get-page, so the pinned save must go through. Error: {firstSave.Error}");
+			firstSave.Conflict.Should().BeFalse(
+				because: "a baseline that matches the server state is not a conflict");
+			firstSave.NewChecksum.Should().NotBeNullOrWhiteSpace(
+				because: "the post-save query must report the fresh checksum for the next pinned save to use");
+			firstSave.NewChecksum.Should().NotBe(firstChecksum,
+				because: "SaveSchema must bump SysSchema.Checksum, otherwise the pin cannot detect anything (assumption A-01)");
+
+			// Act 2: read the page back and compare what get-page returns against what the save reported.
+			PageGetResponse secondGet = await GetPageAsync(arrangeContext, savePage, environmentName, sessionDir);
+			secondGet.Success.Should().BeTrue(
+				because: $"get-page must read the saved page back. Error: {secondGet.Error}");
+			secondGet.Editable.Should().NotBeNull(
+				because: "the read-back must carry an editable state for its checksum to be comparable");
+			string secondChecksum = secondGet.Editable.Checksum;
+
+			// Assert 2: byte-for-byte equality of the two baselines - the subject of issue #1320.
+			secondChecksum.Should().Be(firstSave.NewChecksum,
+				because: "the value get-page returns as editable.checksum must be byte-identical to the value the " +
+					"update comparison performs StringComparison.Ordinal against; any divergence here is issue #1320");
+
+			// Act 3: a second consecutive pinned save, on the fresh baseline.
+			PageUpdateResponse secondSave = await UpdatePageAsync(
+				arrangeContext, savePage, BodyWithContainer(originalBody, "UsrE2ERoundTripContainerB"),
+				environmentName, sessionDir, checksum: secondChecksum);
+
+			// Assert 3: two consecutive pinned saves both succeed - the reported #1320 symptom is gone.
+			secondSave.Success.Should().BeTrue(
+				because: $"the second save pins the checksum the first save produced, so it must not conflict. Error: {secondSave.Error}");
+			secondSave.Conflict.Should().BeFalse(
+				because: "a chain of pinned saves each carrying the previous save's checksum must never report a conflict");
+			secondSave.NewChecksum.Should().NotBeNullOrWhiteSpace(
+				because: "the second save's fresh checksum is the evidence the no-save-landed check below relies on");
+
+			// Act 4: non-vacuity - re-send the now two-generations-stale first baseline.
+			PageUpdateResponse staleSave = await UpdatePageAsync(
+				arrangeContext, savePage, BodyWithContainer(originalBody, "UsrE2ERoundTripContainerC"),
+				environmentName, sessionDir, checksum: firstChecksum);
+
+			// Assert 4: the pin actually bites, so the two successes above are not "the check never runs".
+			staleSave.Success.Should().BeFalse(
+				because: "a pin naming a superseded checksum must be refused, otherwise the two successes prove nothing");
+			staleSave.Conflict.Should().BeTrue(
+				because: "the refusal must carry the machine-readable conflict marker through the real MCP transport");
+			staleSave.ConflictDetails.Should().NotBeNull(
+				because: "the conflict must explain itself with structured details");
+			staleSave.ConflictDetails.Reason.Should().Be(PageConflictReasons.ChecksumMismatch,
+				because: "the stale pin differs from the server checksum, which is precisely the checksum-mismatch reason");
+
+			// Assert 5: the refused save must not have landed.
+			PageGetResponse thirdGet = await GetPageAsync(arrangeContext, savePage, environmentName, sessionDir);
+			thirdGet.Success.Should().BeTrue(
+				because: $"get-page must confirm the server state after the refusal. Error: {thirdGet.Error}");
+			thirdGet.Editable.Checksum.Should().Be(secondSave.NewChecksum,
+				because: "a refused save must leave the schema exactly as the last accepted save left it");
+		} finally {
+			if (!string.IsNullOrWhiteSpace(originalBody)) {
+				PageUpdateResponse restore = await UpdatePageAsync(
+					arrangeContext, savePage, originalBody, environmentName, sessionDir, force: true);
+				restore.Success.Should().BeTrue(
+					because: $"the E2E test must restore the seeded page body. Error: {restore.Error}");
+			}
+			TryDeleteDirectory(sessionDir);
+		}
+	}
+
+	[Test]
+	[Description("AC-2 behavioural pin (PR #1356 review): a label resource key registered through `resources` on a first real save does NOT have to be repeated on the second save - the persisted-key rescue in the tool's pre-execution gate resolves it from the schema. The same body carrying a key that was never registered anywhere is refused, so the acceptance is not just 'the validator never looked'.")]
+	[AllureTag(ToolName)]
+	[AllureName("update-page accepts a persisted label resource that a later save omits")]
+	[AllureDescription("Against the seeded page ClioMcp_BlankPageToSave on a real stand: (1) a body whose inserted field labels itself with a resource key while its control binds to a differently named attribute (so the platform cannot auto-provide the caption) is refused when the key is registered nowhere - the non-vacuity probe; (2) the same shape saves once with the key supplied via `resources`, which persists it on the schema; (3) a second save of the same body omits `resources` entirely and must still succeed, which is the additive behaviour the tool contract advertises and issue #1320's second symptom. The original body is restored with force=true in cleanup.")]
+	public async Task PageUpdateTool_Should_Accept_Persisted_Label_Resource_Omitted_By_A_Later_Save() {
+		// Arrange
+		McpE2ESettings settings = TestConfiguration.Load();
+		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
+		if (!settings.AllowDestructiveMcpTests) {
+			Assert.Ignore("AllowDestructiveMcpTests is false — skipping destructive update-page persisted-resource test.");
+		}
+		string environmentName = await ResolveReachableEnvironmentAsync(settings);
+		await using var arrangeContext = Arrange(TimeSpan.FromMinutes(5));
+		const string savePage = "ClioMcp_BlankPageToSave";
+		const string persistedKey = "UsrE2EPersistedLabel";
+		const string neverRegisteredKey = "UsrE2ENeverRegisteredLabel";
+		string sessionDir = Directory.CreateTempSubdirectory("clio-e2e-persisted-resource-").FullName;
+		string? originalBody = null;
+		try {
+			PageGetResponse firstGet = await GetPageAsync(arrangeContext, savePage, environmentName, sessionDir);
+			firstGet.Success.Should().BeTrue(
+				because: $"get-page must load the seeded page '{savePage}' before the resource probes. Error: {firstGet.Error}");
+			originalBody = await File.ReadAllTextAsync(firstGet.Files.BodyFile);
+
+			// Act 1: non-vacuity probe - a key registered nowhere must be refused.
+			PageUpdateResponse unregistered = await UpdatePageAsync(
+				arrangeContext, savePage, BodyWithLabelResource(originalBody, neverRegisteredKey),
+				environmentName, sessionDir, force: true);
+
+			// Assert 1: without this refusal the acceptance below would prove nothing.
+			unregistered.Success.Should().BeFalse(
+				because: "the label binds a resource key that is neither supplied nor persisted, so the caption cannot resolve");
+			unregistered.Error.Should().Contain(neverRegisteredKey,
+				because: "the diagnostic must name the key that could not be resolved");
+
+			// Act 2: register the key on a real save.
+			PageUpdateResponse registeringSave = await UpdatePageAsync(
+				arrangeContext, savePage, BodyWithLabelResource(originalBody, persistedKey),
+				environmentName, sessionDir, force: true,
+				resources: $"{{\"{persistedKey}\":\"E2E persisted label\"}}");
+
+			// Assert 2: the save lands and reports the key it registered.
+			registeringSave.Success.Should().BeTrue(
+				because: $"the key is supplied in `resources`, so the save must go through. Error: {registeringSave.Error}");
+			registeringSave.RegisteredResourceKeys.Should().Contain(persistedKey,
+				because: "the response must report the key it persisted on the schema for the omission below to be meaningful");
+
+			// Act 3: the same body, `resources` omitted entirely.
+			PageUpdateResponse omittingSave = await UpdatePageAsync(
+				arrangeContext, savePage, BodyWithLabelResource(originalBody, persistedKey),
+				environmentName, sessionDir, force: true);
+
+			// Assert 3: the persisted-key rescue resolves the key from the schema.
+			omittingSave.Success.Should().BeTrue(
+				because: $"the key is already persisted on the schema, so it does not have to be repeated. Error: {omittingSave.Error}");
+		} finally {
+			if (!string.IsNullOrWhiteSpace(originalBody)) {
+				PageUpdateResponse restore = await UpdatePageAsync(
+					arrangeContext, savePage, originalBody, environmentName, sessionDir, force: true);
+				restore.Success.Should().BeTrue(
+					because: $"the E2E test must restore the seeded page body. Error: {restore.Error}");
+			}
+			TryDeleteDirectory(sessionDir);
+		}
+	}
+
+	/// <summary>
+	/// Returns <paramref name="originalBody"/> with a single container insert placed into its (empty)
+	/// <c>SCHEMA_VIEW_CONFIG_DIFF</c>, so consecutive saves submit genuinely different bodies and each one
+	/// bumps <c>SysSchema.Checksum</c>. Throws when the marker was not empty, rather than silently returning a
+	/// body identical to the input and turning the caller's checksum assertions vacuous.
+	/// </summary>
+	private static string BodyWithContainer(string originalBody, string containerName) => ReplaceEmptyMarker(
+		originalBody,
+		"SCHEMA_VIEW_CONFIG_DIFF",
+		"[{\"operation\":\"insert\",\"name\":\"" + containerName +
+		"\",\"values\":{\"type\":\"crt.FlexContainer\",\"direction\":\"row\",\"items\":[]}," +
+		"\"parentName\":\"Main\",\"propertyName\":\"items\",\"index\":0}]");
+
+	/// <summary>
+	/// Returns <paramref name="originalBody"/> with an inserted field whose label points at
+	/// <paramref name="resourceKey"/> while its control binds to a DIFFERENTLY named declared attribute, so the
+	/// platform cannot auto-provide the caption: the body is accepted only when the key is supplied in
+	/// <c>resources</c> or already persisted on the schema.
+	/// </summary>
+	private static string BodyWithLabelResource(string originalBody, string resourceKey) {
+		string withField = ReplaceEmptyMarker(
+			originalBody,
+			"SCHEMA_VIEW_CONFIG_DIFF",
+			"[{\"operation\":\"insert\",\"name\":\"UsrE2EResourceField\"," +
+			"\"values\":{\"type\":\"crt.Input\",\"label\":\"$Resources.Strings." + resourceKey +
+			"\",\"control\":\"$UsrE2EResourceAttribute\"}," +
+			"\"parentName\":\"Main\",\"propertyName\":\"items\",\"index\":0}]");
+		return ReplaceEmptyMarker(
+			withField,
+			"SCHEMA_VIEW_MODEL_CONFIG_DIFF",
+			"[{\"operation\":\"merge\",\"path\":[\"attributes\"]," +
+			"\"values\":{\"UsrE2EResourceAttribute\":{\"value\":\"\"}}}]");
+	}
+
+	/// <summary>
+	/// Substitutes <paramref name="content"/> between the named marker pair, accepting only an empty current
+	/// content (<c>[]</c>, <c>{}</c> or nothing) so the helper never discards authoring the seeded page already
+	/// carries. Throws an explicit diagnostic instead of returning the body unchanged - a silent no-op here
+	/// would make the caller assert against the wrong body and report an unrelated cause.
+	/// </summary>
+	private static string ReplaceEmptyMarker(string body, string markerName, string content) {
+		string marker = $"/**{markerName}*/";
+		Match match = Regex.Match(
+			body,
+			$@"{Regex.Escape(marker)}\s*(\[\s*\]|\{{\s*\}})?\s*{Regex.Escape(marker)}",
+			RegexOptions.CultureInvariant);
+		if (!match.Success) {
+			throw new InvalidOperationException(
+				$"The seeded page body has no empty '{markerName}' marker pair to fill, so this fixture cannot " +
+				"build its probe body. Re-seed the page from BlankPageTemplate, or update the helper for the new shape.");
+		}
+		return body.Remove(match.Index, match.Length)
+			.Insert(match.Index, marker + content + marker);
+	}
+
+	[Test]
 	[Description("A successful update-page save pushes a Designer Presence save event that a second session can receive for the page sender.")]
 	[AllureTag(ToolName)]
 	[AllureName("update-page publishes Designer Presence save event")]
@@ -1300,7 +1523,9 @@ public sealed class PageUpdateToolE2ETests : McpContractFixtureBase {
 		string environmentName,
 		string outputDirectory,
 		bool? force = null,
-		string? mode = null) {
+		string? mode = null,
+		string? checksum = null,
+		string? resources = null) {
 		Dictionary<string, object?> args = new() {
 			["schema-name"] = schemaName,
 			["body"] = body,
@@ -1313,6 +1538,12 @@ public sealed class PageUpdateToolE2ETests : McpContractFixtureBase {
 		}
 		if (!string.IsNullOrWhiteSpace(mode)) {
 			args["mode"] = mode;
+		}
+		if (checksum is not null) {
+			args["checksum"] = checksum;
+		}
+		if (resources is not null) {
+			args["resources"] = resources;
 		}
 		CallToolResult result = await arrangeContext.Session.CallToolAsync(
 			ToolName,
