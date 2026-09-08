@@ -67,9 +67,13 @@ public sealed class TransientPlatformConditionRetryGateTests {
 	}
 
 	[Test]
-	[Description("Does not treat a failed data assertion / business-rule message as a known transient platform condition.")]
+	[Description("Does not treat a failed data assertion / business-rule message as a known transient platform condition, because it carries none of the three transient signatures.")]
 	public void IsKnownTransientPlatformCondition_ShouldReturnFalse_ForBusinessRuleFailure() {
-		// Arrange
+		// Arrange — deliberately marker-FREE, and this test asserts only that. Unlike the already-created,
+		// create-timeout and contention cases below, a business-rule rejection has no envelope-level
+		// signature to exclude on: the wording comes from the platform, not from clio, so there is no
+		// stable literal to key on. It therefore falls through on marker absence, which is exactly what is
+		// being pinned here — see the "NOT enforced" half of the gate's own <remarks>.
 		CallToolResult result = TextResult("success:false, error: an application with this code already exists.");
 
 		// Act
@@ -77,21 +81,28 @@ public sealed class TransientPlatformConditionRetryGateTests {
 
 		// Assert
 		isTransient.Should().BeFalse(
-			because: "a business-rule failure is a real, repeatable outcome and must not be retried as if it were a platform hiccup");
+			because: "a business-rule failure carries none of the three transient platform signatures, so it falls straight through as a real, repeatable outcome");
 	}
 
 	[Test]
-	[Description("Does not treat a contention error-class message as a known transient platform condition.")]
+	[Description("Does not treat a contention error-class answer as a known transient platform condition even when the SAME payload also carries a transient marker, so the exclusion is proven to fire rather than merely to be unreached.")]
 	public void IsKnownTransientPlatformCondition_ShouldReturnFalse_ForContentionErrorClass() {
-		// Arrange
-		CallToolResult result = TextResult("success:false, error-class=contention, error: the record is locked by another process.");
+		// Arrange — the marker phrase is deliberately IN the payload, and the error-class uses the real
+		// serialized envelope shape ("error-class":"contention", from the
+		// [property: JsonPropertyName("error-class")] member of the application tool responses). Without
+		// both, this test would pass against a gate with zero contention logic, purely on marker absence.
+		// A contention rejection raised while the stand is also rebuilding its OData library carries both
+		// signals at once, which is precisely the co-occurrence the exclusion exists for.
+		CallToolResult result = TextResult(
+			"{\"success\":false,\"error-class\":\"contention\","
+			+ "\"error\":\"the record is locked by another process. Creatio is currently rebuilding the OData library, try again later.\"}");
 
 		// Act
 		bool isTransient = TransientPlatformConditionRetryGate.IsKnownTransientPlatformCondition(result);
 
 		// Assert
 		isTransient.Should().BeFalse(
-			because: "contention has its own dedicated handling elsewhere in the harness and is not one of the three known transient platform conditions this gate matches");
+			because: "contention has its own dedicated handling elsewhere in the harness, so it must be excluded explicitly rather than only when no transient marker happens to share the payload");
 	}
 
 	[Test]
@@ -165,6 +176,66 @@ public sealed class TransientPlatformConditionRetryGateTests {
 		// Assert
 		isTransient.Should().BeFalse(
 			because: "the application was already created, so retrying would resubmit the same name/code against an application that already exists, even though the last load error embeds the OData-rebuild marker");
+	}
+
+	[Test]
+	[Description("Excludes the ApplicationCreateService timeout-recovery \"could not be loaded\" failure from the transient match, because the CreateApp POST may already have landed server-side and a retry would submit a duplicate create.")]
+	public void IsKnownTransientPlatformCondition_ShouldReturnFalse_ForApplicationCreateTimeoutFailure() {
+		// Arrange — the sibling of the already-created prefix, produced by the SAME
+		// LoadApplicationInfoWithRetry helper (clio/Command/ApplicationCreateService.cs:546) and likewise
+		// carrying the appended last-load error, which is where the marker comes from. This path is
+		// reached only from `catch (Exception exception) when (IsTimeout(exception))` around the CreateApp
+		// POST, so the application probably exists; the marker in the same payload is the realistic case,
+		// not a contrived one, because the load underneath runs SelectQuery +
+		// ServiceResponseJsonGuard.Deserialize, exactly the code that fails during an OData rebuild.
+		CallToolResult result = TextResult(
+			"CreateApp request timed out and application 'UsrCodex1234' could not be loaded after 5 attempts. "
+			+ "Last error: Creatio is currently rebuilding the OData library, try again later.");
+
+		// Act
+		bool isTransient = TransientPlatformConditionRetryGate.IsKnownTransientPlatformCondition(result);
+
+		// Assert
+		isTransient.Should().BeFalse(
+			because: "the CreateApp POST timed out rather than being refused, so the application may already exist and retrying would resubmit the same name/code even though the last load error embeds the OData-rebuild marker");
+	}
+
+	[Test]
+	[Description("Does not classify arbitrary 401/permission text as a known transient platform condition just because it embeds the word the login-rejection prefix starts with.")]
+	public void IsKnownTransientPlatformCondition_ShouldReturnFalse_ForLoose401TextWithoutLoginRejectionShape() {
+		// Arrange — the bare prefix appears, but not the " for <url>" segment that the real
+		// "Unauthorized <user> for <url>" message always carries, so this is NOT a rejected login.
+		CallToolResult result = TextResult(
+			"{\"success\":false,\"error\":\"the operation returned 401 Unauthorized and the caller lacks the CanManageSolution permission.\"}");
+
+		// Act
+		bool isTransient = TransientPlatformConditionRetryGate.IsKnownTransientPlatformCondition(result);
+
+		// Assert
+		isTransient.Should().BeFalse(
+			because: "matching the bare prefix across the whole concatenated payload would classify any 401 text, permission message or log line as a rejected login and trigger back-to-back session restarts with no wait between them");
+	}
+
+	[Test]
+	[Description("Does not report a login rejection for loose 401 text lacking the message's companion segment, even when the payload arrived with escaped quotes.")]
+	public void IsLoginRejection_ShouldReturnFalse_ForLoose401TextWithEscapedQuotes() {
+		// Arrange — a TextContentBlock.Text is itself a string PROPERTY, so DescribePayload's serialization
+		// re-encodes these quotes (System.Text.Json emits "). IsLoginRejection now normalizes that
+		// encoding, which on its own would WIDEN what it matches; this pins that the companion-segment
+		// requirement more than offsets it, so the net effect is tighter and not looser.
+		CallToolResult result = new() {
+			IsError = true,
+			Content = [new TextContentBlock {
+				Text = "{\"success\":false,\"error\":\"401 Unauthorized while reading https://example.creatio.com/0/rest\"}"
+			}]
+		};
+
+		// Act
+		bool isLoginRejection = TransientPlatformConditionRetryGate.IsLoginRejection(result);
+
+		// Assert
+		isLoginRejection.Should().BeFalse(
+			because: "the payload never carries the \" for \" segment that follows the user name in the real rejection message, so re-authenticating would be the wrong response");
 	}
 
 	[Test]

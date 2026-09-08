@@ -46,9 +46,15 @@ internal static class BoundedPollGate {
 	/// </param>
 	/// <returns>The probe result that satisfied <paramref name="isSatisfied"/>, or the last probe result observed.</returns>
 	/// <exception cref="Exception">
-	/// Rethrown when the attempt budget is exhausted and every single attempt failed with an exception
-	/// matched by <paramref name="isTransientProbeFailure"/> — nothing is swallowed; the last observed
-	/// failure is surfaced instead of a synthetic "not satisfied" result with no probe result to show.
+	/// Rethrown when the attempt budget is exhausted and the FINAL attempt failed with an exception matched
+	/// by <paramref name="isTransientProbeFailure"/> — nothing is swallowed. The final attempt is the
+	/// deciding one, not merely the "no attempt ever succeeded" case: a poll that succeeded on an early
+	/// attempt and then failed on every remaining one would otherwise return that early, stale result and
+	/// discard the exceptions entirely. At the <c>PageSyncToolE2ETests</c> call site that mattered
+	/// concretely — <c>isTransientProbeFailure</c> there matches <see cref="InvalidOperationException"/>,
+	/// which is also what <c>EntitySchemaStructuredResultParser.Extract</c> throws for a genuinely
+	/// malformed envelope, so a real <c>get-page</c> regression used to surface as the far vaguer "marker
+	/// not in body" assertion failure instead of the parse error that actually happened.
 	/// </exception>
 	internal static async Task<TResult> PollUntilAsync<TResult>(
 		Func<CancellationToken, Task<TResult>> probeAsync,
@@ -90,10 +96,12 @@ internal static class BoundedPollGate {
 			}
 		}
 
-		if (!hasResult && lastProbeFailure is not null) {
-			// The whole budget was exhausted with nothing but transient-looking probe failures and never
-			// a single successful probe: rethrow the last one so it is surfaced as the real diagnostic,
-			// rather than silently reporting "not satisfied" with no result to show for it.
+		if (lastProbeFailure is not null) {
+			// The budget ran out on a FAILED attempt: rethrow it so it is surfaced as the real diagnostic
+			// rather than silently reporting "not satisfied". A successful probe clears this field (see the
+			// try block), so a non-null value here means precisely "the last attempt threw" — which covers
+			// both the never-succeeded case and the succeed-then-fail interleaving where `last` still holds
+			// a stale early result that no longer describes what the final probe observed.
 			ExceptionDispatchInfo.Capture(lastProbeFailure).Throw();
 		}
 

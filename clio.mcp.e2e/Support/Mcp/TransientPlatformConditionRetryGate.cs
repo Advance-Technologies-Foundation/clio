@@ -20,24 +20,44 @@ namespace Clio.Mcp.E2E.Support.Mcp;
 /// own readiness poll — a fixed attempt cap, a fixed inter-attempt delay, and a wall-clock ceiling on
 /// top of both so a misbehaving stand can never hang the suite.
 /// <para>
-/// The predicate is deliberately narrow. It must NOT retry:
+/// The predicate is deliberately narrow, and the cases it must NOT retry fall into two groups that are
+/// kept apart on purpose — the earlier revision of this list did not, which hid a real gap.
+/// </para>
+/// <para>
+/// ENFORCED by an explicit exclusion, checked before any marker match, because for these a marker CAN
+/// legitimately appear in the same payload and a retry would still be wrong:
 /// <list type="bullet">
 /// <item><description>a SUCCESSFUL answer whose large payload happens to embed one of the marker
 /// phrases — a failure signal (a transport-level error, or the tools' own <c>success:false</c> shape)
 /// is required before any marker is even considered, because <c>create-app</c> is not idempotent and
-/// replaying a successful create would be wrong;</description></item>
-/// <item><description>a failed assertion on returned data (a wrong value, a missing field) — that is a
-/// real defect and retrying it would hide it;</description></item>
-/// <item><description><c>success:false</c> carrying a business-rule message (validation, a duplicate
-/// name, a missing dependency) — that is a real, repeatable outcome, not a platform hiccup;</description></item>
-/// <item><description><c>error-class=contention</c> — contention has its own dedicated handling
-/// elsewhere in the harness and is not one of the three platform conditions this gate exists for;</description></item>
+/// replaying a successful create would be wrong (<see cref="HasFailureSignal"/>);</description></item>
 /// <item><description>a create that already happened — <c>ApplicationCreateService</c>'s "created but
 /// its metadata could not be loaded" failure names a real side effect on the platform, so retrying it
-/// would replay the same application name/code against an application that already exists.</description></item>
+/// would replay the same application name/code against an application that already exists
+/// (<see cref="ApplicationAlreadyCreatedMarker"/>);</description></item>
+/// <item><description>a create whose POST timed out — <c>ApplicationCreateService.PollApplicationInfo</c>
+/// is reached from <c>catch (Exception exception) when (IsTimeout(exception))</c>, so the request may
+/// well have landed server-side; that is the whole reason the poll exists. Its failure prefix is the
+/// sibling of the already-created one and carries the same last-load error, which is exactly where a
+/// marker turns up (<see cref="ApplicationCreateTimeoutMarker"/>);</description></item>
+/// <item><description><c>error-class=contention</c> — contention has its own dedicated handling
+/// elsewhere in the harness and is not one of the three platform conditions this gate exists for. Matched
+/// on the serialized envelope field rather than inferred from marker absence
+/// (<see cref="ContentionErrorClassMarker"/>).</description></item>
 /// </list>
-/// Only the three exact signatures documented on <see cref="IsKnownTransientPlatformCondition"/> match,
-/// so anything else — including the cases above — falls straight through as a real result.
+/// </para>
+/// <para>
+/// NOT enforced, and deliberately so — these carry no signature in the envelope, so they fall through
+/// only because none of the three transient markers is present:
+/// <list type="bullet">
+/// <item><description>a failed assertion on returned data (a wrong value, a missing field) — there is
+/// nothing in the payload to key an exclusion on, and none of the three markers describes it;</description></item>
+/// <item><description><c>success:false</c> carrying a business-rule message (validation, a duplicate
+/// name, a missing dependency). The wording of those rejections comes from the platform, not from clio,
+/// so there is no stable literal to exclude on. A business-rule failure whose payload ALSO embeds a
+/// transient marker is therefore still retried; the cost is the wasted retry window, not a wrong side
+/// effect, because a genuine duplicate create is rejected outright rather than succeeding twice.</description></item>
+/// </list>
 /// </para>
 /// </remarks>
 internal static class TransientPlatformConditionRetryGate {
@@ -57,6 +77,24 @@ internal static class TransientPlatformConditionRetryGate {
 	/// rather than retyped, so the two call sites can never drift apart.
 	/// </summary>
 	internal const string LoginRejectionMarker = LoginDiagnostics.LoginRejectionMessagePrefix;
+
+	/// <summary>
+	/// The segment that separates the user name from the URL in the same server message
+	/// (<c>"Unauthorized " + userName + " for " + AppUrl</c>), required to appear AFTER
+	/// <see cref="LoginRejectionMarker"/> before a payload counts as a login rejection.
+	/// </summary>
+	/// <remarks>
+	/// <see cref="LoginDiagnostics"/> itself qualifies the prefix with <c>StartsWith</c> on the exception
+	/// message (<c>clio/Common/LoginDiagnostics.cs:159</c>). This gate can only see a serialized payload,
+	/// not the exception, so it cannot anchor at position 0 — but a bare <c>Contains("Unauthorized ")</c>
+	/// over <c>StructuredContent + Content</c> concatenated is far looser than the real signature: any 401
+	/// text, permission-denied message, log line or URL embedding the word anywhere in a failed payload
+	/// would be classified both as transient AND as a login rejection, and the login-rejection branch
+	/// replaces the fixed <see cref="RetryDelay"/> with a full session restart — so a false positive costs
+	/// up to <c>MaxAttempts - 1</c> back-to-back <c>McpServerSession.StartAsync</c> calls with no wait
+	/// between them. Requiring the companion segment restores the shape of the actual message.
+	/// </remarks>
+	internal const string LoginRejectionSubjectSeparator = " for ";
 
 	/// <summary>
 	/// The verbatim wording <c>ServiceResponseJsonGuard</c> uses when a Creatio service answered with an
@@ -83,6 +121,41 @@ internal static class TransientPlatformConditionRetryGate {
 	/// signature is excluded from the transient match even when a marker also appears in the same payload.
 	/// </summary>
 	internal const string ApplicationAlreadyCreatedMarker = "was created but its metadata could not be loaded";
+
+	/// <summary>
+	/// The sibling failure prefix from the same <c>LoadApplicationInfoWithRetry</c> helper, used by
+	/// <see cref="Clio.Command.ApplicationCreateService"/>'s timeout-recovery poll
+	/// (<c>clio/Command/ApplicationCreateService.cs:546</c>, <c>PollApplicationInfo</c>): <c>"CreateApp
+	/// request timed out and application '&lt;code&gt;' could not be loaded ..."</c>, likewise followed by
+	/// the last load error.
+	/// </summary>
+	/// <remarks>
+	/// This one matters MORE than <see cref="ApplicationAlreadyCreatedMarker"/>, not less. It is reached
+	/// only from <c>catch (Exception exception) when (IsTimeout(exception))</c> around the <c>CreateApp</c>
+	/// POST (<c>clio/Command/ApplicationCreateService.cs:173</c>), so the request may already have landed
+	/// server-side — that possibility is the entire reason the poll exists. The load path underneath it is
+	/// <c>SelectQuery</c> + <c>ServiceResponseJsonGuard.Deserialize</c>, which is precisely the code that
+	/// emits <see cref="HtmlPageInsteadOfJsonMarker"/> / <see cref="RedirectedToLoginPageMarker"/> and
+	/// which fails during an OData rebuild. So the natural sequence is: POST times out under rebuild load →
+	/// the application probably exists → the appended last-load error carries a marker → without this
+	/// exclusion the gate retries → a duplicate <c>create-app</c> with the same name and code. The retried
+	/// case and the excluded case are the same physical scenario wearing two different prefixes.
+	/// <para>
+	/// Matched on the invariant leading fragment only, since the application code is interpolated into the
+	/// middle of the message.
+	/// </para>
+	/// </remarks>
+	internal const string ApplicationCreateTimeoutMarker = "CreateApp request timed out and application";
+
+	/// <summary>
+	/// The serialized <c>error-class</c> envelope field carrying the contention classification
+	/// (<c>ApplicationSectionCreateFailureClass.Contention.ToWireValue()</c> is <c>"contention"</c>, surfaced
+	/// through the <c>[property: JsonPropertyName("error-class")]</c> member of the application tool
+	/// responses). Checked EXPLICITLY rather than left to fall through on marker absence: a contention
+	/// rejection raised while the stand is also rebuilding its OData library carries both signals in one
+	/// payload, and the documented contract is that contention is never retried here.
+	/// </summary>
+	internal const string ContentionErrorClassMarker = "\"error-class\":\"contention\"";
 
 	/// <summary>
 	/// The failure-shape marker the MCP tools use in their JSON envelope (<c>{"success":false,"error":...}</c>).
@@ -123,9 +196,12 @@ internal static class TransientPlatformConditionRetryGate {
 	/// is not idempotent — then looking for one of three exact signatures in the call's serialized
 	/// structured content and text content: <see cref="ODataRebuildMarker"/>, <see cref="LoginRejectionMarker"/>,
 	/// or either of <see cref="HtmlPageInsteadOfJsonMarker"/> / <see cref="RedirectedToLoginPageMarker"/>.
-	/// <see cref="ApplicationAlreadyCreatedMarker"/> is excluded before the marker match: it means the
-	/// create already happened, and retrying would replay the same application name/code. Pure and
-	/// stand-free, so it is unit-tested directly (<c>TransientPlatformConditionRetryGateTests</c>).
+	/// The login rejection additionally requires its companion segment
+	/// (<see cref="LoginRejectionSubjectSeparator"/>), so the bare word does not classify any 401 text as a
+	/// rejected login. <see cref="IsExcludedRealOutcome"/> runs before the marker match, so the two
+	/// create-may-already-have-happened prefixes and an explicit <c>error-class=contention</c> never match
+	/// even when a marker appears in the same payload. Pure and stand-free, so it is unit-tested directly
+	/// (<c>TransientPlatformConditionRetryGateTests</c>).
 	/// </summary>
 	/// <param name="callResult">The tool call result to inspect, or <see langword="null"/>.</param>
 	/// <returns><c>true</c> when one of the known transient signatures is present on a failed answer; otherwise <c>false</c>.</returns>
@@ -137,7 +213,7 @@ internal static class TransientPlatformConditionRetryGate {
 
 		string normalized = NormalizeEscapedQuotes(text);
 
-		if (normalized.Contains(ApplicationAlreadyCreatedMarker, StringComparison.Ordinal)) {
+		if (IsExcludedRealOutcome(normalized)) {
 			return false;
 		}
 
@@ -146,7 +222,7 @@ internal static class TransientPlatformConditionRetryGate {
 		}
 
 		return normalized.Contains(ODataRebuildMarker, StringComparison.Ordinal)
-			|| normalized.Contains(LoginRejectionMarker, StringComparison.Ordinal)
+			|| HasLoginRejectionSignature(normalized)
 			|| normalized.Contains(HtmlPageInsteadOfJsonMarker, StringComparison.Ordinal)
 			|| normalized.Contains(RedirectedToLoginPageMarker, StringComparison.Ordinal);
 	}
@@ -159,7 +235,23 @@ internal static class TransientPlatformConditionRetryGate {
 	/// <param name="callResult">The tool call result to inspect, or <see langword="null"/>.</param>
 	/// <returns><c>true</c> when the login-rejection signature is present; otherwise <c>false</c>.</returns>
 	internal static bool IsLoginRejection(CallToolResult? callResult) =>
-		DescribePayload(callResult).Contains(LoginRejectionMarker, StringComparison.Ordinal);
+		HasLoginRejectionSignature(NormalizeEscapedQuotes(DescribePayload(callResult)));
+
+	/// <summary>
+	/// The login-rejection signature: <see cref="LoginRejectionMarker"/> followed — later in the same
+	/// payload — by <see cref="LoginRejectionSubjectSeparator"/>, matching the shape of the message
+	/// <c>Creatio.Client.CreatioClient.Login()</c> actually produces rather than the bare prefix on its own.
+	/// </summary>
+	/// <param name="normalizedPayload">The payload with escaped quotes normalized back to plain quotes.</param>
+	/// <returns><c>true</c> when the login-rejection signature is present.</returns>
+	private static bool HasLoginRejectionSignature(string normalizedPayload) {
+		int prefixIndex = normalizedPayload.IndexOf(LoginRejectionMarker, StringComparison.Ordinal);
+		return prefixIndex >= 0
+			&& normalizedPayload.IndexOf(
+				LoginRejectionSubjectSeparator,
+				prefixIndex + LoginRejectionMarker.Length,
+				StringComparison.Ordinal) >= 0;
+	}
 
 	/// <summary>
 	/// Re-invokes <paramref name="invokeAsync"/> while its answer matches
@@ -209,6 +301,21 @@ internal static class TransientPlatformConditionRetryGate {
 	}
 
 	private static bool OverallDeadlineReached(TimeSpan elapsed) => elapsed >= OverallDeadline;
+
+	/// <summary>
+	/// The exclusions that are enforced explicitly, checked BEFORE any marker match because for each of
+	/// them a transient marker can legitimately appear in the very same payload:
+	/// <see cref="ApplicationAlreadyCreatedMarker"/> and <see cref="ApplicationCreateTimeoutMarker"/> (the
+	/// two <c>LoadApplicationInfoWithRetry</c> prefixes — the create may already have taken effect, so a
+	/// retry would replay the same application name/code), and <see cref="ContentionErrorClassMarker"/>
+	/// (handled elsewhere in the harness by contract).
+	/// </summary>
+	/// <param name="normalizedPayload">The payload with escaped quotes normalized back to plain quotes.</param>
+	/// <returns><c>true</c> when the answer names a real outcome that must never be retried.</returns>
+	private static bool IsExcludedRealOutcome(string normalizedPayload) =>
+		normalizedPayload.Contains(ApplicationAlreadyCreatedMarker, StringComparison.Ordinal)
+		|| normalizedPayload.Contains(ApplicationCreateTimeoutMarker, StringComparison.Ordinal)
+		|| normalizedPayload.Contains(ContentionErrorClassMarker, StringComparison.Ordinal);
 
 	/// <summary>
 	/// A failure signal is required before any marker match counts as a known transient platform

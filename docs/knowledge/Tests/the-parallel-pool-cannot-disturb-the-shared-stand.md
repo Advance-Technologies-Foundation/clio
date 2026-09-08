@@ -1,7 +1,6 @@
 ---
 description: every [Parallelizable(ParallelScope.Self)] fixture in clio.mcp.e2e is stand-free by construction, so a flaky sandbox failure can never be blamed on the parallel pool - the OData rebuild that causes it is started inside the sequential queue and outlives the command
 applies-to:
-  - clio.mcp.e2e/
   - clio.mcp.e2e/clio.mcp.e2e.runsettings
   - clio.mcp.e2e/Support/Mcp/TransientPlatformConditionRetryGate.cs
   - clio.tests/McpFixturePolicyTests.cs

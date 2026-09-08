@@ -36,6 +36,10 @@ public sealed class PageSyncToolE2ETests : McpContractFixtureBase {
 	// call. Poll instead of reading once, bounded to a few seconds total (small budget on purpose — this
 	// guards a short eventual-consistency window, not the multi-minute schema-recompile window
 	// ApplicationToolE2ETests.CanonicalMainEntityReadbackAttempts polls for).
+	// The window itself is recorded in
+	// docs/knowledge/McpServer/a-completed-sync-pages-write-is-not-always-visible-to-the-next-get-page.md,
+	// because agents chaining sync-pages then get-page hit exactly the same gap — it is not a
+	// test-only concern, and the record also names why re-adding a fixed post-save delay is the wrong fix.
 	private const int MarkerReadbackAttempts = 6;
 	private static readonly TimeSpan MarkerReadbackPollInterval = TimeSpan.FromSeconds(1);
 	// The returned object must carry the real schema-section property keys

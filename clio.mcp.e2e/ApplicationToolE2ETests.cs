@@ -389,7 +389,17 @@ public sealed class ApplicationToolE2ETests {
 		}
 
 		TestConfiguration.EnsureSandboxIsConfigured(settings);
-		await using ApplicationArrangeContext arrangeContext = await ArrangeAsync(settings, TimeSpan.FromMinutes(10));
+		// Arrange budget raised above the 10 minutes the other create-app tests use, because THIS test wraps
+		// its create in TransientPlatformConditionRetryGate and ArrangeAsync creates a single
+		// CancellationTokenSource covering the whole test — session start, tool listing, every create-app
+		// attempt and the ProgressDeliveryTimeout wait all share it. The gate's retry window is additive on
+		// top of the create-app calls themselves, not free: up to (MaxAttempts - 1) x RetryDelay = 120s of
+		// waiting, bounded by its own 3-minute OverallDeadline. 15 minutes therefore leaves 5 minutes of
+		// headroom over that hard ceiling. It matters because an exhausted CTS does NOT degrade gracefully
+		// here: Task.Delay / CallToolAsync would throw OperationCanceledException instead of the gate
+		// returning its last answer, so the documented "the test's own assertions still decide" property —
+		// and the [payload] / [progress] diagnostics printed below — would both be lost.
+		await using ApplicationArrangeContext arrangeContext = await ArrangeAsync(settings, TimeSpan.FromMinutes(15));
 		string suffix = Guid.NewGuid().ToString("N")[..8];
 		string createdApplicationCode = $"UsrCodex{suffix}";
 		string applicationName = $"Codex E2E {suffix}";
