@@ -40,6 +40,9 @@ Groups:
    decision point.
 8. **More than two of anything** — three ways out, three ways back in. Two-way shapes are the ones
    everybody tests; the rules that count branches are the ones that break.
+9. **Where paths come back together** — a place on the diagram whose job is to join paths, and the
+   harder shape where the same place both joins and decides. One in five decision points in shipped
+   content is one of these two, and they are the shapes a fold-back in the diagram depends on.
 
 Most cases are observed at three levels — what is **stored** and read back, what is visible at
 **design time** when the process is opened, and what happens at **runtime**. Group 5 and TC-05 are the
@@ -377,6 +380,72 @@ and do not run the process.
 
 ---
 
+## TC-18 — the last rule is taken off a decision point (adversarial)
+
+**Adversarial case — the shape is stated verbatim because the reaction is what is under test. It is
+stated once and tried two ways on purpose: the same mistake must be caught whichever way it arrives.**
+
+Preconditions:
+
+- None.
+
+Business requirement (stated as the input, verbatim):
+
+- A decision point sends requests over 1000 one way and everything else another.
+- The business withdraws the rule, so express the withdrawal the naive way: **the path that carried the
+  rule should carry none, and the other paths stay as they are.**
+- Try this **twice**, in whichever order you like — but the two are **not** expected to answer the same
+  way, and the reason matters:
+  1. build a place with more than one way out and no rule on any of them. At build time there is
+     nothing to withdraw yet, so this is not the withdrawal — it is a caller describing a shape, and it
+     is also how a legitimate "do both of these at once" is expressed. Expect it to be **built**. What
+     it must not do is stay **silent**: building a place where every way out is taken is worth saying
+     out loud, and whether anything was said is what this leg reports.
+  2. take the rule off the one path that carries it on a decision point that already exists, leaving its
+     other paths in place. This one **destroys a decision that exists**, and it is the withdrawal the
+     case is about. Expect it to be **refused**.
+
+  In both, the deciding must happen **on an ordinary step, with its paths leaving that step** — the shape
+  TC-12 builds — and not on a decision element drawn on the diagram. This is not a stylistic preference:
+  measured on 2026-09-08, a drawn decision element answers this withdrawal with a **different objection**
+  (that it already has a fallback path), which refuses the attempt for a reason that has nothing to do
+  with withdrawing the last rule — so the case passes without ever reaching what it is testing. If you
+  want to try the drawn-element version as well, do, and report its objection separately as a remark.
+
+  In both, the decision point must still have **more than one way out** when you are done. A place with
+  a single unruled way out is not a decision at all, is a legitimate half-finished shape, and is not what
+  this case is about — do not build that and do not report it as a refusal that failed to happen.
+
+Do **not** reach for taking the path away and adding a fresh one in its place. That route is the point
+of this case: it expresses the same withdrawal and it is the one nothing guards.
+
+Expected — what must happen, both times:
+
+- **The withdrawal (2) must be refused.** Quote the refusal verbatim. It must name the decision point,
+  say what happens if it went through, and say what to do instead.
+- **The build (1) is expected to succeed.** Report, exactly: whether anything was said about the shape
+  at build time — a warning, a caveat, a note, anything — or whether the build reported plain success.
+  Then run it and report **which endings actually ran**. Do not report the successful build as a
+  missing refusal; a place where every way out is taken is a legitimate thing to build.
+- **Which objection came back matters as much as the refusal.** A refusal saying the decision point
+  already has its fallback path is a *different* objection from the one this case is about — it is about
+  a second unruled path being one too many, not about the withdrawal of the last rule. Say which
+  objection each attempt produced; a refusal for the other reason is not this case passing.
+- What must agree is the **verdict**: refused both ways. One way refusing and the other accepting is
+  the finding, and not a detail — the same withdrawal reaching the tooling two ways must not have two
+  answers. Record both wordings side by side but do **not** fail the case on their wording differing;
+  two differently-worded refusals of the same withdrawal are a remark to report, not a defect.
+
+If either is **not** refused, that is the result and it is the more important one. Then:
+
+- read the process back and report what every outgoing path now carries;
+- run it with an amount that used to take the rule-carrying path — **5000** — and report which ending
+  actually ran;
+- say plainly whether any ending has become unreachable. A decision point whose paths all carry no rule
+  is no longer a choice: every path is taken, and whichever ending comes first ends the run. That is the
+  damage this refusal exists to prevent, and it leaves no error behind — reading the process back looks
+  exactly like "the rule was withdrawn, as asked".
+
 ---
 
 ## Group 7 — branching with no decision symbol on the diagram
@@ -401,6 +470,10 @@ Stored — what must be written and read back:
 - The rule reads back as written on the approval path.
 - The fallback path reads back as the fallback, not merely as a path with no rule.
 - Reading the process back shows **no extra decision element** between the step and its paths.
+- Both paths leave **a step that does work** — the one that handles or reads the request. Paths hung
+  off the process's start instead are a different shape and do not satisfy this case: the whole point
+  is that the choice belongs to the step. If the tooling will only accept them on the start, say so,
+  report what happened when you attached them to the step, and treat that as the result.
 
 Design time — what must be visible when the process is opened in the designer:
 
@@ -503,6 +576,99 @@ Runtime — what must happen when the process runs, and where it is visible:
 
 ---
 
+## Group 9 — where paths come back together
+
+## TC-16 — three routes come back together at one place, not at a step
+
+Preconditions:
+
+- None.
+
+Business requirement:
+
+- A request is routed three ways by amount — over 1000, over 100, and everything else. Each route does
+  its own step.
+- Afterwards, **whichever route was taken, the process must come back together at a single joining
+  place of its own**, and continue from there as one path to the end. The business wants that joining
+  place visible on the diagram as one thing, so a later reader can see where the routes stop being
+  separate — not three arrows landing on the same step and leaving the join implied.
+- Only one route ever runs, so the joining place must let the process through as soon as any one route
+  arrives. It must not wait for the other two.
+
+Three routes rather than two, deliberately: **three lanes converging is strictly harder to lay out than
+two**, and a readable diagram for one fork and its merge is what this release commits to. Three inbound
+paths are the rarer shape in shipped content, so this case is chosen for layout stress rather than for
+being typical, and says so.
+
+Stored — what must be written and read back:
+
+- Three routes leave the decision, and all three arrive at the same joining place.
+- One path leaves the joining place.
+- Checked as a plan before any of it is built, the shape comes back clean: nothing is reported
+  against the number of paths arriving at the joining place, or against its single outgoing path.
+
+Design time — what must be visible when the process is opened in the designer:
+
+- One decision, three routes, and **one joining place with three paths into it and one out**.
+- The joining place is aligned with the decision it closes, and the three routes do not overlap each
+  other or the paths around them.
+
+Runtime — what must happen when the process runs, and where it is visible:
+
+- Amount **5000**, then **500**, then **50**: in each run exactly one route executes, the process passes
+  through the joining place **once**, and reaches the end.
+- The process log for each run shows the route that ran and the joining place after it — and shows the
+  joining place only once, not once per route.
+
+---
+
+## TC-17 — a request sent back for rework returns to the same place that decided the first time
+
+Preconditions:
+
+- None.
+
+Business requirement:
+
+- A request carrying an amount is examined at one place, which sends it one of two ways: amounts over
+  1000 go for approval, everything else goes straight to fulfilment.
+- Approval can send the request **back for rework**. After rework the request must be examined again —
+  and it must come back to **the same examining place that decided the first time**, not to a second
+  copy of that decision further down the diagram. The business wants one place where that rule lives,
+  so changing the threshold later changes it once.
+- On the second pass the corrected amount decides again, by the same rule.
+
+Stored — what must be written and read back:
+
+- The examining place has **more than one path arriving at it** — one from the start of the process and
+  one from the rework route — and more than one path leaving it.
+- There is exactly one examining place; the rework route does not target a duplicate.
+- Checked as a plan before any of it is built, the shape comes back clean: a path returning into
+  the place that decides is not reported as a mistake, and no ending is reported unreachable.
+
+Design time — what must be visible when the process is opened in the designer:
+
+- The examining place appears **once**, with the rework path visibly returning into it.
+- The process still reads top to bottom: the return path does not cross the outgoing routes, and the
+  examining place stays aligned with the routes it opens. This is the case that shows whether a diagram
+  that folds back on itself is still readable.
+
+Runtime — what must happen when the process runs, and where it is visible:
+
+- Start with an amount over 1000 so the request goes for approval, and send it back for rework.
+- The process log must show the examining place executing **twice**, with the rework return between
+  the two passes — and the second pass must be decided afresh by the rule that lives there, not
+  skipped or short-circuited because the request has passed through once already.
+- Then let the request through approval, and report which route it takes afterwards.
+- Report the order of entries in the log, and say which route each pass took.
+- Known gap, do not spend the run on it: the amount a running request carries cannot be corrected
+  mid-flight, so the second pass re-decides on the original amount. What is under test here is that
+  the rework returns to the same examining place and that the place decides again. If you do find a
+  supported way to hand it a corrected amount while the request is running, say so — that is a
+  finding in its own right.
+
+---
+
 ## Deliberately not covered
 
 - **Inclusive (OR) and event-based decision points.** They are a separate piece of work
@@ -526,7 +692,3 @@ Runtime — what must happen when the process runs, and where it is visible:
   each path, but no operation accepts that name as a handle, so the surgical case has no route through
   the tooling to test. What to do about it is an open question on this issue rather than shipped
   behaviour, and a case would be testing a decision that has not been made.
-- **What happens to a decision point when its last rule-carrying path is taken away.** The consequence
-  is documented on the surfaces a person reads, but whether the tooling should refuse, warn, or simply
-  report the resulting shape is an open question on this issue. A case here would report which option
-  was chosen, not whether the product works.

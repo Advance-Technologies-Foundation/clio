@@ -1,0 +1,35 @@
+{
+  "runId": "e433b91a-534d-4c9b-8e16-d3b96b4ae277",
+  "issue": "ENG-91853",
+  "mode": "agent",
+  "stand": { "alias": "Creatio", "url": "http://d_krestov_n.tscrm.com:40001" },
+  "packageVersion": "1.6.0.3",
+  "prompt": "spec/eng-91853-gateways-and-flows/eng-91853-gateways-and-flows-manual-test-prompt.md",
+  "promptScope": "TC-18 only, third attempt, on the corrected case text (deciding on an ordinary step)",
+  "clioCommit": "77ad6722343d29367eac754edc6c05b99d793e1b",
+  "knowledge": { "libraryVersion": "1.13.99", "resolvedRevision": "af57c415" },
+  "isolation": "isolated",
+  "executor": "claude -p --strict-mcp-config (clio MCP only), branch build",
+  "processes": [
+    { "name": "UsrBPTestR9Tc18Build_Threshold", "caption": "BPTest R9 TC18 (build)", "case": "TC-18 attempt 1 — accepted" },
+    { "name": "UsrBPTestR9Tc18Modify_Threshold", "caption": "BPTest R9 TC18 (modify)", "case": "TC-18 attempt 2 — refused" },
+    { "name": "UsrBPTestR9Tc18Gateway_Threshold", "caption": "BPTest R9 TC18 (gateway remark)", "case": "TC-18 remark — refused by a different objection" }
+  ],
+  "runtimeInstances": [
+    { "instance": "9cd41719-a765-4881-af46-527d2e6da71d", "input": "amount 5000, branches straight to terminate ends", "logged": "Process request -> High amount handled", "note": "one ending logged: the first terminate ends the instance, so the fan-out is invisible" },
+    { "instance": "b54d0abf-42b6-4e71-87fc-92445037f395", "input": "amount 5000, a marker step on each branch", "logged": "Process request -> Mark high branch reached -> Mark other branch reached -> High amount handled", "note": "BOTH branches ran in one execution — measured" }
+  ],
+  "verdicts": {
+    "TC-18": "RUN, and it found a defect. Not a pass: build accepts the withdrawal, modify refuses it. The case's expectation of one verdict through both doors is not met."
+  },
+  "findings": [
+    "G4 — create-business-process accepts a decision expressed as two plain outgoing flows off an ordinary step; modify-business-process refuses the same end state via WouldDropTheLastBranch, with a message naming the consequence. Runtime measured: both branches execute in a single instance (SysProcessElementLog, instance b54d0abf). Graded by merge base 5781c6aa5: the ACCEPTANCE is pre-existing (no such guard existed), the REFUSAL is new in this PR (FlowKindRules.cs absent at base) — so this change introduced the disagreement by guarding one door only.",
+    "The review session's pre-registered prediction that the two doors would AGREE is refuted: EnsureADefaultHasSomethingToFallBackFrom fires only on kind == Default, so a withdrawal expressed as [plain, plain] never reaches the build-side guard.",
+    "Gateway remark confirmed as predicted: on a drawn gateway element the same withdrawal is refused by the 'already has its default branch' objection (FlowKindRules.cs:302), which is why the case had to move to an ordinary step."
+  ],
+  "standHousekeeping": [
+    "Probe Contact 188e2d82-e223-4c7e-9614-4289be0db116 ('BPTest R9 TC18 Probe Contact') could not be deleted: odata-delete returned IIS 405 Method Not Allowed — DELETE is blocked at the web-server level on this stand. Needs manual cleanup.",
+    "The autoupdate cross-version defect recurred (fifth time): the branch clio writes autoupdate as an object, the released clio behind the session MCP then fails every environment call with 'clio settings bootstrap is broken'. Repaired by writing the scalar form; timestamped backup kept. Still no owner."
+  ],
+  "verifiedIndependently": true
+}

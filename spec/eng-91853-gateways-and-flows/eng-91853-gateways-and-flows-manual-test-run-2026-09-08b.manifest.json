@@ -1,0 +1,110 @@
+{
+  "runId": "2ebac4d9-2bae-48df-aea2-304dbe76c581",
+  "issue": "ENG-91853",
+  "mode": "agent",
+  "stand": {
+    "alias": "Creatio",
+    "url": "http://d_krestov_n.tscrm.com:40001"
+  },
+  "packageVersion": "1.6.0.3",
+  "prompt": "spec/eng-91853-gateways-and-flows/eng-91853-gateways-and-flows-manual-test-prompt.md",
+  "promptScope": "TC-01..TC-15 (Groups 1-8); TC-16/TC-17 run separately, TC-18 not run",
+  "clioCommit": "77ad6722343d29367eac754edc6c05b99d793e1b",
+  "clioBinaryBuiltAt": "2026-09-08T06:57:16+03:00",
+  "knowledge": {
+    "libraryVersion": "1.13.99",
+    "resolvedRevision": "af57c415"
+  },
+  "isolation": "isolated",
+  "executor": "claude -p --strict-mcp-config (clio MCP only), branch build clio/bin/Release/net8.0/clio.dll",
+  "processes": [
+    {
+      "name": "UsrBPTestR7_TC01",
+      "case": "TC-01, then edited in place by TC-06"
+    },
+    {
+      "name": "UsrBPTestR7_TC02",
+      "case": "TC-02"
+    },
+    {
+      "name": "UsrBPTestR7_TC03",
+      "case": "TC-03"
+    },
+    {
+      "name": "UsrBPTestR7_TC04",
+      "case": "TC-04"
+    },
+    {
+      "name": "UsrBPTestR7_TC07",
+      "case": "TC-07"
+    },
+    {
+      "name": "UsrBPTestR7_TC08",
+      "case": "TC-08"
+    },
+    {
+      "name": "UsrBPTestR7_TC09",
+      "case": "TC-09"
+    },
+    {
+      "name": "UsrBPTestR7_TC11",
+      "case": "TC-11 (refusal probe)"
+    },
+    {
+      "name": "UsrBPTestR7_TC12",
+      "case": "TC-12 — built on the WRONG shape, see G3"
+    },
+    {
+      "name": "UsrBPTestR7_TC13",
+      "case": "TC-13"
+    },
+    {
+      "name": "UsrBPTestR7_TC14",
+      "case": "TC-14"
+    },
+    {
+      "name": "UsrBPTestR7_TC15",
+      "case": "TC-15"
+    }
+  ],
+  "refusedByDesign": [
+    "TC-05 (plan check only)",
+    "TC-10 (plan check only)",
+    "TC-11 (refused both ways)"
+  ],
+  "verdicts": {
+    "executorReported": "15/15 pass",
+    "afterVerification": "14 pass as reported; TC-12 pass is void (wrong shape, G3). TC-15 was incomplete at the end of the run and is now PROVEN: the three blocking activities were completed from outside the run and each instance logged 'Merge routes' and 'Notify requester' exactly once."
+  },
+  "findings": [
+    "G1 (CORRECTED) — modify-business-process accepts a start event with two outgoing flows that create-business-process REFUSES (measured at 1.6.0.3). ValidateStructure has one caller (ProcessGraphBuilder.cs:98, create-path only by design) and judges the whole graph, so the fix axis is whole-graph guard vs per-operation FlowKindRules rule vs demote everywhere — three answers, not two. Both handlers do call the platform's EnsureValidForSave, which is why TC-11's self-loop refuses through both doors. The first version of this report wrongly said create accepted the shape.",
+    "G2 — a step with two plain outgoing flows runs BOTH paths (measured); the build path emits no warning, only a voluntary plan check surfaces R12. Reviewer's line: a build-response-contract change belongs in the next change, not this one.",
+    "G3 — TC-12's shape was abandoned by the executor because both runs stalled on the case's Perform task; it then re-hung the flows on the start event, which is what exposed G1. Case amended to name the element; needs a rerun."
+  ],
+  "harnessLimitations": [
+    "RESOLVED — a performTask blocks on an unassigned Activity, but the block is removable from outside the run: odata-update Activity StatusId=4bdbb88f-58e6-df11-971b-001d60e938c6 (ActivityStatus 'Completed', Finish:true) resumes the instance. Measured: TC-15's three activities completed at 07:33, each instance then logged Merge routes + Notify requester; TC-01's two instances reached Completed.",
+    "The UI route (close the Activity from the process log) needs a logged-in session; the stand redirects a headless browser to Login/NuiLogin.aspx and this harness does not type passwords into login forms.",
+    "Open question for the prompt contract: whether completing activities is in scope for the executor. It was refused by its own permission classifier and reported rather than worked around, which is correct behaviour under the current contract.",
+    "Clean-room isolation held on the write side: the executor's memory notes landed in its own session store, not the project's."
+  ],
+  "verifiedIndependently": true,
+  "notes": "Verification used the BRANCH binary over stdio for schema read-back, not the released clio behind the interactive session's MCP.",
+  "probes": [
+    {
+      "what": "create-business-process with Start -conditional-> A + Start -default-> B",
+      "when": "2026-09-08, after the run",
+      "binary": "branch clio 77ad67223 over stdio",
+      "result": "exit-code 1, refused: 'start event 'Start' must have a single outgoing flow'",
+      "note": "nothing was created"
+    }
+  ],
+  "versionEvidence": {
+    "sysPackage": {
+      "name": "CrtProcessBuilder",
+      "version": "1.6.0.3",
+      "modifiedOn": "2026-09-07T23:21:40Z"
+    },
+    "installCallsInRun": 0,
+    "conclusion": "the stand was at 1.6.0.3 for the whole run; the mid-run bump hypothesis is refuted"
+  }
+}

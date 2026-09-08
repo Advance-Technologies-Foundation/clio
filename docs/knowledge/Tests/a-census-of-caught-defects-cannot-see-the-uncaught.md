@@ -1,5 +1,5 @@
 ---
-description: Counting defects you found measures your detection, not your defect rate - the count reads as a total and is a floor; ENG-91853's own tally of six failed this test
+description: Counting defects you found measures your detection, not your defect rate - the count reads as a total and is a floor; ENG-91853's own tally failed this test
 applies-to:
   - docs/knowledge/Tests/three-defences-and-no-oracle-is-an-unpinned-rule.md
   - spec/reviews/
@@ -11,7 +11,7 @@ date: 2026-09-08
 Its population is the instances that surfaced; anything that never surfaced leaves no trace in it. So
 every such count is a **floor**, and stating it as a total is a claim the data cannot support.
 
-ENG-91853 produced a tally that failed its own test. Six probes returned a confident wrong answer, and
+ENG-91853 produced a tally that failed its own test. Five probes returned a confident wrong answer, and
 in each the probe was structurally incapable of returning the falsifying result:
 
 | probe | said | truth | why it could not know |
@@ -21,11 +21,16 @@ in each the probe was structurally incapable of returning the falsifying result:
 | `GV2` value check | 337 | 7 | a `$type`-only dict read as non-empty |
 | `CI4` enum | 0 | 71 | `Default=1` read as `2` |
 | `head -50` on a commit message | six blocks | seven | message longer than the window |
-| a hash reported from `--format=%s` | — | — | the subject cannot carry the id |
 
-The conclusion drawn from it was *"not one was caught by care"*. What the data supports is **"of the six
-we caught, none was caught by care"** — four were caught by a second party running a differently
-*shaped* probe, one by a failing test, one by a `rev-parse`.
+A sixth instance was filed here and does not belong: a "hash" reported from `git --format=%s`. That
+probe was not incapable of falsifying itself — `%s` returned the subject line accurately, and the
+subject simply is not the commit id. That is a faithful read of the wrong referent, a different family
+with its own record: [[a-faithful-read-of-the-wrong-referent]].
+
+The conclusion drawn from the tally was *"not one was caught by care"*. What the data supports is
+**"of the five we caught, none was caught by care"** — four were caught by a second party running a
+differently *shaped* probe, and one by a failing test. (The `rev-parse` that caught the sixth belongs
+with it, in the record named above.)
 
 **Why it is this way** — the correction is not pedantry, and it strengthens the argument rather than
 weakening it. If the catching mechanism was always an independently-shaped second look, then what
@@ -36,14 +41,14 @@ The worked example arrived the same day. A `libraryVersion` collision between a 
 same number, different content, which would have merged, passed CI and been invisible to every
 consumer — was found by a reviewer **checking something else**. Neither session was looking at that
 field, no test covered it, and no amount of either session re-reading its own work would have surfaced
-it. It does not appear in the six because it was never a probe's wrong answer; it was nobody's probe at
+it. It does not appear in the five because it was never a probe's wrong answer; it was nobody's probe at
 all.
 
 **What breaks if you ignore it** — a review summary that counts findings invites the reading "we found
-six, so there were six", and the number is most persuasive exactly when the review was most thorough.
+five, so there were five", and the number is most persuasive exactly when the review was most thorough.
 The honest form names the mechanism instead of the total: say how each was caught, and the reader can
-tell which parts of the work had a second look and which did not. On this ticket, "four of six were
-caught by a differently-shaped probe from another party" is the load-bearing sentence; "six" is not.
+tell which parts of the work had a second look and which did not. On this ticket, "four of five were
+caught by a differently-shaped probe from another party" is the load-bearing sentence; "five" is not.
 
 **The sibling failure: a count that was right when taken and is used later as current.** This is not a
 probe incapable of falsification — the probe was fine — it is that *nothing re-reads a number you have
@@ -61,7 +66,7 @@ needs a *differently shaped* probe. A number that has gone stale needs only to b
 moment of use** — which is cheap, and which nobody does, because a number one has already stated reads
 as known rather than as measured.
 
-**Independence is reliable when it is STRUCTURAL, not when it is chosen.** Every one of the six above
+**Independence is reliable when it is STRUCTURAL, not when it is chosen.** Every one of the five above
 was caught by a second party who *could* have run the first party's probe and happened not to — which
 makes the mechanism luck wearing the shape of method. The strongest instance on this ticket was not
 one of them: a blind manual runner with no repository access observed four routings showing an unset

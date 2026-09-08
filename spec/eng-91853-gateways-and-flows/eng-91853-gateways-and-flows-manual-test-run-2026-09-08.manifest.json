@@ -1,0 +1,66 @@
+{
+  "runId": "c8140d14-0c66-4ae3-8e3e-9b48e196268f",
+  "issue": "ENG-91853",
+  "mode": "agent",
+  "stand": {
+    "alias": "Creatio",
+    "url": "http://d_krestov_n.tscrm.com:40001"
+  },
+  "packageVersion": "1.6.0.3",
+  "prompt": "spec/eng-91853-gateways-and-flows/eng-91853-gateways-and-flows-manual-test-prompt.md",
+  "promptScope": "TC-16, TC-17 only (Group 9); TC-18 written but not run",
+  "clioCommit": "77ad6722343d29367eac754edc6c05b99d793e1b",
+  "knowledge": {
+    "libraryVersion": "1.13.99",
+    "resolvedRevision": "af57c415",
+    "notes": "ENG-91853 knowledge branch, knowledge-allow-unsequenced enabled"
+  },
+  "isolation": "isolated",
+  "executor": "claude -p --strict-mcp-config (clio MCP only), branch build clio/bin/Release/net8.0/clio.dll",
+  "processes": [
+    {
+      "name": "UsrBpTest_R6Tc16",
+      "caption": "BPTest R6 TC16",
+      "case": "TC-16"
+    },
+    {
+      "name": "UsrBpTest_R6Tc17",
+      "caption": "BPTest R6 TC17",
+      "case": "TC-17"
+    }
+  ],
+  "runtimeInstances": [
+    {
+      "case": "TC-16",
+      "instance": "38d2ed41-0a02-4382-ab5e-2919d0077e35",
+      "input": "amount 5000"
+    },
+    {
+      "case": "TC-16",
+      "instance": "0f5532a8-f7d0-4a1c-af07-f61d5f92da39",
+      "input": "amount 500"
+    },
+    {
+      "case": "TC-16",
+      "instance": "80244ea3-d2a4-4e8e-affa-6523c36d591e",
+      "input": "amount 50"
+    },
+    {
+      "case": "TC-17",
+      "instance": "98396187-046f-48da-a634-054fbe11fcca",
+      "input": "amount 5000, rejected then approved"
+    }
+  ],
+  "verdicts": {
+    "TC-16": "pass",
+    "TC-17": "pass on the structural requirement; the corrected-amount leg is not executable (F2)"
+  },
+  "findings": [
+    "F1 — first measured confirmation of the PINNED three-way merge lane (layout addendum case E) on a real fan; the fork/join asymmetry is specified arithmetic, not a defect. The readability criticism is carried forward as an owner decision.",
+    "F2 — TC-17's corrected-amount runtime leg cannot be done by any executor; suite amended, product gap recorded (ENG-91844)",
+    "F3 — neither case ran validate-process-graph; run afterwards against the branch binary, both shapes clean, confirming R14's carve-out (45 shipped gateways) by measurement for the first time"
+  ],
+  "verifiedIndependently": true,
+  "notes": "Claims re-verified after the run by describe-business-process read-back and SysProcessLog / SysProcessElementLog queries. TC-01..TC-15 run separately (run 2ebac4d9-2bae-48df-aea2-304dbe76c581).",
+  "clioBinaryBuiltAt": "2026-09-08T06:57:16+03:00"
+}
