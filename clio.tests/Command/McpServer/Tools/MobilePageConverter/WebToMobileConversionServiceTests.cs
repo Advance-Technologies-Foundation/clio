@@ -3587,7 +3587,7 @@ public sealed class WebToMobileConversionServiceTests {
 		finding.State.Should().Be("missing", because: "the absence was verified, not assumed");
 		guide.RequestConversions.TargetsProbed.Should().BeTrue(because: "the environment answered");
 		Element(guide, "PostponeButton").Operation.Should().NotBe("drop",
-			because: "this ticket warns about a dead target; it never removes the control itself");
+			because: "a dead target is reported, never removed — the control is carried to mobile either way");
 		guide.RequestConversions.ConvertedRequests.Should().ContainSingle(r => r.ElementName == "PostponeButton",
 			because: "the request type itself still converts");
 	}
@@ -3717,8 +3717,8 @@ public sealed class WebToMobileConversionServiceTests {
 	}
 
 	[Test]
-	[Description("A verified-missing target adds a constraint telling the caller to omit that control — the guide carries the instruction, not only the data.")]
-	public void Analyze_TargetMissing_AddsAnOmitConstraint() {
+	[Description("A verified-missing target adds a constraint telling the caller to KEEP the control and report it — the guide carries the instruction, and that instruction is never a removal.")]
+	public void Analyze_TargetMissing_AddsAKeepAndReportConstraint() {
 		// Arrange
 		PageBundleInfo bundle = OpenPageButtonBundle("PostponeButton", "LegacyPage");
 		MobileActionTargetProbeResult probe = ProbeResult(
@@ -3729,9 +3729,12 @@ public sealed class WebToMobileConversionServiceTests {
 
 		// Assert
 		guide.Constraints.Should().Contain(
-			c => c.Contains("Do NOT add those buttons") && c.Contains("PostponeButton -> LegacyPage"),
+			c => c.Contains("KEEP these buttons / menu items") && c.Contains("PostponeButton -> LegacyPage"),
 			because: "the tool's contract is that the guide's own constraints carry the rules for applying it, "
 				+ "so the finding must arrive with the instruction that acts on it");
+		guide.Constraints.Should().NotContain(c => c.Contains("Do NOT add"),
+			because: "a broken destination is reported, never removed — the control stays on the page and the "
+				+ "developer decides what to do about its target");
 	}
 
 	[Test]
@@ -3746,10 +3749,11 @@ public sealed class WebToMobileConversionServiceTests {
 		MobilePageConversionGuide guide = AnalyzeTargets(bundle, probe);
 
 		// Assert
-		guide.Constraints.Should().Contain(c => c.Contains("KEEP these controls"),
+		guide.Constraints.Should().Contain(c => c.Contains("Keep these controls too"),
 			because: "an unverified target must never be actioned as an absent one");
-		guide.Constraints.Should().NotContain(c => c.Contains("Do NOT add those buttons"),
-			because: "mixing the two instructions would make the caller delete a control on a guess");
+		guide.Constraints.Should().NotContain(c => c.Contains("KEEP these buttons / menu items"),
+			because: "reporting an unverified target as a verified break would send the user chasing a page "
+				+ "that may well already exist");
 	}
 
 	[Test]

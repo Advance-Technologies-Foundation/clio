@@ -1728,8 +1728,15 @@ public static class WebToMobileAnalysisService {
 	/// Adds the ENG-94839 action-target rules to <paramref name="constraints"/>. The tool's contract is that
 	/// the guide is self-describing — its own <c>constraints</c> carry the rules for applying THIS
 	/// conversion — so the findings must arrive with the instruction that acts on them, not only as data a
-	/// separate article explains. The two states get different instructions on purpose: only a VERIFIED
-	/// absence justifies leaving a control off the page.
+	/// separate article explains.
+	/// <para>
+	/// That instruction is REPORT, never remove. A broken navigation target does not justify dropping the
+	/// control: the developer decides whether to convert the target page, repoint the action, or leave it. The
+	/// converter carries the control either way, and this tool is advisory — telling the caller to leave the
+	/// button out of the body it builds WOULD be the removal, so the wording must not. The two states differ
+	/// only in what to tell the user: a verified absence names a page to convert, an unverified one names a
+	/// check to make.
+	/// </para>
 	/// </summary>
 	private static void AddUnresolvedTargetConstraints(
 		List<string> constraints, IReadOnlyList<UnresolvedTargetRequest> unresolvedTargetRequests) {
@@ -1745,10 +1752,10 @@ public static class WebToMobileAnalysisService {
 			constraints.Add(
 				"requestConversions.unresolvedTargetRequests reports action(s) whose TARGET does not exist on the "
 				+ "Creatio Mobile app: " + Describe(missing)
-				+ ". Do NOT add those buttons / menu items to the mobile page — the request converts, but there is no "
-				+ "page for it to open, so the control would fail every time it is used. Their elementMap entries are "
-				+ "otherwise ordinary, so skipping them is YOUR step, not the converter's. Report each omitted control "
-				+ "and its target at the conversion gate, and offer to convert the target page instead.");
+				+ ". KEEP these buttons / menu items — build them exactly as their elementMap entries say. This is a "
+				+ "REPORT, not a removal: the request itself converts, only its destination is missing. Name each "
+				+ "control and its target at the conversion gate and say the action will not work until that target "
+				+ "exists, then let the user decide — convert the target page, repoint the action, or accept it as is.");
 		}
 		List<UnresolvedTargetRequest> unknown = [.. unresolvedTargetRequests
 			.Where(r => string.Equals(r.State, UnresolvedTargetRequest.StateUnknown, StringComparison.Ordinal))];
@@ -1756,8 +1763,8 @@ public static class WebToMobileAnalysisService {
 			constraints.Add(
 				"requestConversions.unresolvedTargetRequests reports action(s) whose target could NOT be verified: "
 				+ Describe(unknown)
-				+ ". KEEP these controls — an unverified target is not an absent one — and ask the user to confirm each "
-				+ "target exists on mobile before relying on it.");
+				+ ". Keep these controls too, and ask the user to confirm each target exists on mobile before relying "
+				+ "on it — unverified is not the same as absent, so do not report them as broken.");
 		}
 	}
 

@@ -31,7 +31,7 @@ returns a DataService failure envelope, and `DataServiceSelectResponse` turns th
 exception; that failure is loud. The silent one is worse: classifying a page by its parent WITHOUT
 an escalation tier reports every page under a custom base (`UsrMyMobileBase` extending
 `BaseMobilePageTemplate`) as "not a mobile page". In `MobileActionTargetProbe` that verdict reaches
-the caller as `state: "missing"`, which the guide's own constraint turns into "do not add that
-button to the mobile page" — so a working control is dropped from the conversion on the strength of
-a lookup that never had the answer. Any consumer needing web-vs-mobile in bulk must keep the rule:
-a page the cheap tier cannot place is `Unknown`, never `Missing`.
+the caller as `state: "missing"`, which the guide reports as a verified broken navigation — so the
+developer is sent to fix a button that already works, on the strength of a lookup that never had the
+answer. Any consumer needing web-vs-mobile in bulk must keep the rule: a page the cheap tier cannot
+place is `Unknown`, never `Missing`.

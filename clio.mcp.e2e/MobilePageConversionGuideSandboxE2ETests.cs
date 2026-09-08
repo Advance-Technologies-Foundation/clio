@@ -841,7 +841,7 @@ public sealed class MobilePageConversionGuideSandboxE2ETests : McpContractFixtur
 		foreach (UnresolvedTargetRequest finding in conversions.UnresolvedTargetRequests) {
 			finding.State.Should().BeOneOf(["missing", "unknown"],
 				because: $"'{convertedSchemaName}' must report a state the caller knows how to act on, and the two "
-					+ "differ: only a verified absence justifies omitting a control");
+					+ "differ in how confidently the broken target is reported");
 			declaredKinds.Should().Contain(finding.TargetKind,
 				because: $"the kind on '{finding.ElementName}' must come from the shipped rules, never from a literal "
 					+ "the analysis service invented");
@@ -849,8 +849,8 @@ public sealed class MobilePageConversionGuideSandboxE2ETests : McpContractFixtur
 				because: "a finding the user cannot trace back to a page or object name is not actionable");
 			survivingWebNames.Should().Contain(finding.ElementName!,
 				because: $"'{finding.ElementName}' on '{convertedSchemaName}' is reported as carrying a dead action, so "
-					+ "it must still be ON the converted page — a finding about a control the guide already dropped "
-					+ "would contradict its own element map");
+					+ "it must still be ON the converted page: the finding is a warning, and a warning about a "
+					+ "control the guide already dropped would contradict its own element map");
 		}
 	}
 

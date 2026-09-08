@@ -717,12 +717,14 @@ public sealed class RequestConversionInfo {
 	/// Actions whose REQUEST converts but whose NAVIGATION TARGET could not be confirmed to exist on
 	/// mobile: a <c>crt.OpenPageRequest</c> naming a schema that is not a mobile page, or a
 	/// create/update-record request naming an object with no default mobile edit page. The action is
-	/// still carried into <c>mobileValues</c> — this section is the WARNING, not a removal (ENG-94839).
+	/// still carried into <c>mobileValues</c> — this section is a WARNING, never a removal (ENG-94839).
 	/// <para>
-	/// Branch on each entry's <see cref="UnresolvedTargetRequest.State"/>: <c>missing</c> is a verified
-	/// dead navigation, so OMIT that button / menu item from the mobile page and name it at the
-	/// conversion gate; <c>unknown</c> means the environment could not answer, so keep the control and
-	/// ask the user to verify it. Empty when every target resolved — AND empty when the targets were
+	/// KEEP every control this names: a broken destination is the developer's decision to make, not the
+	/// converter's, and the mobile page is built from the element map unchanged. Branch on each entry's
+	/// <see cref="UnresolvedTargetRequest.State"/> only for what to SAY: <c>missing</c> is a verified dead
+	/// navigation — name the control and its target at the conversion gate so the user can convert that page
+	/// or repoint the action; <c>unknown</c> means the environment could not answer, so ask them to check it
+	/// rather than reporting it broken. Empty when every target resolved — AND empty when the targets were
 	/// never probed, so read <see cref="TargetsProbed"/> before reporting "all clear".
 	/// </para>
 	/// </summary>
@@ -795,9 +797,9 @@ public sealed class FlaggedRequest {
 }
 
 /// <summary>
-/// One action whose navigation target was not confirmed to exist on mobile (ENG-94839). Fully typed: what
-/// to DO about each <see cref="State"/> arrives as a guide <c>constraint</c> composed from these findings,
-/// not as a prose sentence carried on this record.
+/// One action whose navigation target was not confirmed to exist on mobile (ENG-94839). Reporting only —
+/// the control it names stays on the converted page. Fully typed: what to SAY about each <see cref="State"/>
+/// arrives as a guide <c>constraint</c> composed from these findings, not as prose carried on this record.
 /// </summary>
 public sealed class UnresolvedTargetRequest {
 	/// <summary>
@@ -829,14 +831,17 @@ public sealed class UnresolvedTargetRequest {
 	public string Target { get; init; }
 
 	/// <summary>
-	/// <see cref="StateMissing"/> — verified absent on mobile, so omit the control that fires this action;
-	/// <see cref="StateUnknown"/> — the environment could not answer, so the control stands and needs a human
-	/// check. Never treat the two alike.
+	/// <see cref="StateMissing"/> — verified absent on mobile, so this action will not work until the target
+	/// is created; <see cref="StateUnknown"/> — the environment could not answer, so it may well be fine.
+	/// The control stays on the page either way; the state decides only how confidently you report it.
 	/// </summary>
 	[JsonPropertyName("state")]
 	public string State { get; init; }
 
-	/// <summary>Wire value for a target verified ABSENT on mobile — omit the control that fires the action.</summary>
+	/// <summary>
+	/// Wire value for a target verified ABSENT on mobile: the action will fail until that page or default
+	/// mobile page exists. Report it; do not remove the control that fires it.
+	/// </summary>
 	public const string StateMissing = "missing";
 
 	/// <summary>Wire value for a target the environment could not answer for — the control stands.</summary>
@@ -1085,7 +1090,10 @@ public enum ActionTargetState {
 	/// <summary>Verified present on mobile — a mobile page, or an object with a default mobile edit page.</summary>
 	Resolved,
 
-	/// <summary>Verified absent on mobile. The only state that justifies telling the user to omit a control.</summary>
+	/// <summary>
+	/// Verified absent on mobile. The only state that justifies REPORTING the action as broken — it never
+	/// justifies removing the control that fires it.
+	/// </summary>
 	Missing
 }
 

@@ -29,7 +29,7 @@ namespace Clio.Command.McpServer.Tools.MobilePageConverter;
 /// It performs DataService <c>SelectQuery</c> reads plus two designer reads and never writes. It NEVER
 /// throws: any failure degrades to <see cref="MobileActionTargetProbeResult.ProbeOk"/> = false with an
 /// EMPTY resolution map, which every consumer reads as <see cref="ActionTargetState.Unknown"/> — the
-/// fail-open value. Nothing is ever removed from the page on missing information, matching
+/// fail-open value. Nothing on the page is ever reported broken on missing information, matching
 /// <c>WebToMobileAnalysisService.RetargetTargetMissing</c>, which likewise refuses to conclude "absent"
 /// from an unread probe.
 /// </para>
@@ -179,7 +179,7 @@ public static class MobileActionTargetProbe {
 			// Covers the DataService failure envelope and a non-JSON body alike: IApplicationClient returns a
 			// proxy/auth error PAGE as an ordinary string rather than throwing, so it is the SelectQuery helper
 			// this file calls that raises it. Reading such a body as "no rows" would report every target as
-			// absent and tell the user to delete working controls.
+			// absent and send the user off to fix controls that already work.
 			//
 			// The message is REDACTED because this note is surfaced to the MCP caller on the guide
 			// (requestConversions.targetsNote): a Creatio read failure routinely names the tenant host, the
@@ -399,9 +399,9 @@ public static class MobileActionTargetProbe {
 	/// <paramref name="PossiblyTruncated"/> is the load-bearing half. A <c>SelectQuery</c> is capped by
 	/// <c>rowCount</c> and reports no overflow, so a chunk that came back exactly full may have left rows
 	/// behind — and a name whose rows were left behind is INDISTINGUISHABLE from a name that does not exist.
-	/// Concluding <see cref="ActionTargetState.Missing"/> from that would tell the user to delete a control
-	/// whose target is actually there, so every absence-flavoured verdict is downgraded to
-	/// <see cref="ActionTargetState.Unknown"/> when this is set.
+	/// Concluding <see cref="ActionTargetState.Missing"/> from that would report a working control as broken,
+	/// so every absence-flavoured verdict is downgraded to <see cref="ActionTargetState.Unknown"/> when this
+	/// is set.
 	/// </para>
 	/// </summary>
 	private sealed record SchemaLookup<TRow>(
