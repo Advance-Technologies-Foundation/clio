@@ -368,4 +368,10 @@ Expected — what must happen:
   norm this change documents, not a case.
 - **Words a person typed in the designer by hand.** Reading a designer-authored label back is worth
   testing, but no case here can create one: this suite is run through the tooling only, with no
-  browser. Whoever runs the browser pass should add it.
+  browser. Whoever runs the browser pass should add it, and two things will save them an hour:
+  the designer opens at `/0/Nui/ViewModule.aspx?vm=SchemaDesigner#process/<schemaUId>` and NOTHING
+  else resolves — a guessed shell hash route leaves the whole app stuck on its splash screen for the
+  rest of the session — and a connector's words can be read straight out of the canvas with
+  `[...document.querySelectorAll('div.foreign-text')].map(e => e.textContent.trim())`, which needs no
+  screenshot and does not care how small the window is. Both are written up in
+  `docs/knowledge/platform/the-process-designer-has-one-url-and-guessing-wedges-the-shell.md`.
