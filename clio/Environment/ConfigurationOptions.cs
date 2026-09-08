@@ -758,8 +758,12 @@ namespace Clio
 						fileSystem.File.Delete(tempFilePath);
 					}
 				}
-				catch (IOException) { }
-				catch (UnauthorizedAccessException) { }
+				catch (IOException) {
+					// See the comment above: the orphaned .tmp is the cheaper loss.
+				}
+				catch (UnauthorizedAccessException) {
+					// See the comment above: the orphaned .tmp is the cheaper loss.
+				}
 			}
 			TrySaveSchema(fileSystem);
 		}
