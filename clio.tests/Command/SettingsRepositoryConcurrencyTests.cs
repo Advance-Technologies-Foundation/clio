@@ -663,14 +663,35 @@ public sealed class SettingsRepositoryProcessConcurrencyTests {
 /// Exercises <c>SaveSettingsUnlocked</c> against a real <see cref="System.IO.Abstractions.FileSystem"/>
 /// instead of <see cref="MockFileSystem"/>, so <c>isRealFileSystem</c> is <c>true</c> and
 /// <c>WriteSettingsTempFile</c> takes the branch every actual clio invocation takes: a
-/// <see cref="FileStream"/> opened with <see cref="FileMode.CreateNew"/> / <see cref="FileShare.None"/>,
-/// the Windows ACL / Unix mode copy in <c>GetSettingsFileSecurity</c>, and
-/// <c>stream.Flush(flushToDisk: true)</c>. The mock-based tests in
-/// <c>SettingsRepositoryConcurrencyTests</c> never reach this branch — see the scope note on its
-/// <c>FaultingTempWriteFileSystem</c> double.
+/// <see cref="FileStream"/> opened with <see cref="FileMode.CreateNew"/> / <see cref="FileShare.None"/>
+/// and <c>stream.Flush(flushToDisk: true)</c>.
 /// </summary>
+/// <remarks>
+/// <para>NOT the first coverage of that branch. <c>SettingsRepositoryProcessConcurrencyTests</c> below
+/// spawns eight real <c>clio reg-web-app</c> processes against a shared real CLIO_HOME, and every one of
+/// them takes it under genuine contention. What this fixture adds is a faster, targeted assertion set that
+/// can inject a fault in-process, which eight child processes cannot.</para>
+/// <para>Scope of the permission copy, stated precisely because the earlier wording overstated it. On
+/// Unix the mode copy IS load-bearing and is pinned below: the temp file is created with
+/// <c>options.UnixCreateMode</c> taken from the destination and the rename keeps the TEMP file's inode, so
+/// dropping it republishes a cleartext-credential file at the default umask. On Windows the ACL copy is
+/// NOT load-bearing on any reachable path and therefore has no test: <c>GetSettingsFileSecurity</c>
+/// returns <c>(null, null)</c> unless the destination already exists, and when it does exist
+/// <c>PublishOverExisting</c> uses <c>File.Replace</c>, which preserves the destination's own security
+/// descriptor. Any Windows assertion would stay green with <c>SetAccessControl</c> deleted, so writing one
+/// would add exactly the kind of unfalsifiable test this fixture was corrected for.</para>
+/// <para>Also note the copy does not run on the very first write of either test: the destination is created
+/// by the constructor's bootstrap, and during THAT save <c>GetSettingsFileSecurity</c> early-returns
+/// <c>(null, null)</c>. It runs from the second save onward.</para>
+/// </remarks>
 [TestFixture]
-[Category("Unit")]
+// Category is INTEGRATION, matching SettingsRepositoryProcessConcurrencyTests above and
+// NewPkgCommandFileSystemTestCase, per project-context.md:191-193: Unit means "no I/O, NSubstitute mocks
+// only", and this fixture's whole purpose is real disk I/O — Directory.CreateDirectory, a real
+// System.IO.Abstractions.FileSystem, real File.Replace, real Flush(flushToDisk: true). Tagging it Unit put
+// per-host filesystem behaviour (File.Replace semantics, temp-directory policy, AV interference) inside
+// the Category=Unit&Module=Command smart-regression filter that exists to keep the per-push loop fast.
+[Category("Integration")]
 [Property("Module", "Command")]
 // Own fixture, not merged into SettingsRepositoryConcurrencyTests above, for two reasons that are both
 // process-wide state:
@@ -715,7 +736,7 @@ public sealed class SettingsRepositoryRealFileSystemPublishTests {
 	}
 
 	[Test]
-	[Description("On the real file system (isRealFileSystem true, so WriteSettingsTempFile uses the FileStream/FileMode.CreateNew/FileShare.None/Flush(flushToDisk: true) branch), a successful save publishes complete, parseable JSON at the destination and leaves no .tmp artifact beside it.")]
+	[Description("SMOKE TEST for the real branch, and deliberately titled as one: it proves WriteSettingsTempFile's FileStream/FileMode.CreateNew/FileShare.None/Flush(flushToDisk: true) path runs end to end and publishes complete, parseable JSON. It does NOT pin atomicity - every assertion here is a post-condition of a completed write, which truncate-in-place satisfies too. The falsifying test is SaveSettings_ShouldLeaveTheExistingDestinationByteIdentical_WhenSerializationThrowsPartWayThroughOnTheRealFileSystem below.")]
 	public void ConfigureEnvironment_ShouldPublishCompleteParseableSettings_WhenUsingTheRealFileSystem() {
 		// Arrange
 		SettingsRepository deployment = new(_fileSystem);
@@ -731,15 +752,15 @@ public sealed class SettingsRepositoryRealFileSystemPublishTests {
 		Settings persisted = null;
 		Action parse = () => persisted = JsonConvert.DeserializeObject<Settings>(content);
 		parse.Should().NotThrow(
-			because: "the published file must be complete, parseable JSON — a caller must never observe a partially written temp file that leaked to the destination path");
+			because: "the real branch must run end to end and emit valid JSON; this says nothing about torn intermediate states, which the mid-serialize-fault test below is what actually rules out");
 		persisted.Environments.Should().ContainKey("deployed",
 			because: "the atomic replace on the real FileStream branch must have actually landed the new content at the destination path");
 		Directory.GetFiles(_clioHome, "*.tmp").Should().BeEmpty(
-			because: "the real FileStream branch must clean up its temp file once the destination has been published, leaving no orphaned artifact behind");
+			because: "the real FileStream branch must clean up its temp file once the destination has been published. Weak on its own - SaveSettingsUnlocked's finally deletes unconditionally and an implementation that creates no temp file passes trivially - so it is a hygiene check, not the atomicity proof");
 	}
 
 	[Test]
-	[Description("On the real file system, repeated saves never leave the destination in a torn state: every read taken immediately after a successful ConfigureEnvironment call sees a complete file carrying every environment registered so far, and no .tmp artifact survives between saves.")]
+	[Description("The one place in the repository that proves File.Replace is PERMITTED against clio's own open reader handle. From the second save onward ConfigureEnvironment reaches CommitSettingsFile's verify-expected-content path, which calls File.Replace at ConfigurationOptions.cs:871 INSIDE the using(OpenCurrentSettings(...)) scope opened at :863 - a self-overlapping share mode (FileShare.Read | FileShare.Delete) that the mock branch never reaches, because it falls through to Move. Five iterations exercise it five times. The per-iteration completeness assertions are cumulative-content checks, not atomicity proofs.")]
 	public void ConfigureEnvironment_ShouldOnlyEverReplaceDestinationWithAFinishedFile_WhenSavingRepeatedlyOnTheRealFileSystem() {
 		// Arrange
 		SettingsRepository deployment = new(_fileSystem);
@@ -756,10 +777,81 @@ public sealed class SettingsRepositoryRealFileSystemPublishTests {
 			Settings persisted = JsonConvert.DeserializeObject<Settings>(content);
 			for (int seen = 1; seen <= index; seen++) {
 				persisted.Environments.Should().ContainKey($"deployed-{seen}",
-					because: $"save #{index} must publish a complete file that still carries every environment registered by the {seen} saves so far — the destination is only ever replaced by a finished file, never a partial one");
+					because: $"save #{index} must publish a complete file that still carries every environment registered by the {seen} saves so far, so the File.Replace performed against clio's own open reader handle neither failed nor lost earlier content");
 			}
 			Directory.GetFiles(_clioHome, "*.tmp").Should().BeEmpty(
 				because: $"after save #{index} on the real FileStream branch no temp artifact may remain beside the destination");
 		}
+	}
+
+	[Test]
+	[Description("THE FALSIFYING TEST for this fixture's title. A serialization fault part-way through the write leaves the EXISTING appsettings.json byte-identical, because WriteSettingsTempFile's real branch serializes into a temp file and only a FINISHED file is ever published. Mutation-checked: reverting that branch to the pre-4dcd41777 truncate-in-place shape (File.CreateText(AppSettingsFile)) makes this test fail, since FileMode.Create truncates the destination at open - before a single byte is written - so the previous complete file is destroyed whether or not the writer had flushed.")]
+	public void SaveSettings_ShouldLeaveTheExistingDestinationByteIdentical_WhenSerializationThrowsPartWayThroughOnTheRealFileSystem() {
+		// Arrange - a real, complete destination to protect, published through this very same real-FS path.
+		SettingsRepository deployment = new(_fileSystem);
+		deployment.ConfigureEnvironment("survivor",
+			new EnvironmentSettings { Uri = "https://survivor.example.com" });
+		string destinationPath = SettingsRepository.AppSettingsFile;
+		byte[] before = File.ReadAllBytes(destinationPath);
+		before.Should().NotBeEmpty(
+			because: "the fault has to be injected against a destination that actually has content to lose");
+
+		// A THROWING GETTER ORDERED LAST is what makes this deterministic instead of a timing race:
+		// Newtonsoft emits Order=999 after every inherited member, so bytes are already in the writer when
+		// the throw lands. No concurrency, no fault-injecting file-system double, same result on every
+		// platform - which is why this shape was chosen over racing a reader against the publish.
+		TearingSettings faulting = new() { ActiveEnvironmentKey = "survivor" };
+
+		// Act
+		Action act = () => SettingsRepository.SaveSettings(_fileSystem, faulting);
+
+		// Assert
+		Exception thrown = act.Should().Throw<Exception>(
+			because: "a serialization fault is a real error the caller must see, not a silently skipped save")
+			.Which;
+		thrown.ToString().Should().Contain(TearingSettings.FaultMarker,
+			because: "the throw must be the INJECTED one - without this the test would also pass on an unrelated early failure that never reached the writer, and would then prove nothing about the destination");
+		File.ReadAllBytes(destinationPath).Should().Equal(before,
+			because: "the destination is written only by publishing a finished temp file, so a mid-serialize throw must leave the previous complete file exactly as it was");
+		Directory.GetFiles(_clioHome, "*.tmp").Should().BeEmpty(
+			because: "the failed temp file must not survive as an orphaned partial artifact");
+	}
+
+	[Test]
+	[Platform("Unix,Linux,MacOsX")]
+	[Description("On Unix the destination's file mode survives the atomic replace. WriteSettingsTempFile creates the temp file with options.UnixCreateMode taken from the destination and the publish keeps the TEMP file's inode, so dropping UnixCreateMode would republish appsettings.json at the default umask. That regression is completely silent - nothing throws and the content is correct - while the file holds Login/Password in cleartext for every registered environment. Platform-gated per the cross-platform policy, following DbHubAtomicFileWriterPermissionTests' precedent.")]
+	public void ConfigureEnvironment_ShouldPreserveTheDestinationUnixFileMode_WhenRepublishingOnTheRealFileSystem() {
+		// Arrange - the constructor's bootstrap save creates the destination, and GetSettingsFileSecurity
+		// early-returns (null, null) on THAT save, so the mode must be set afterwards and asserted across a
+		// SECOND save. That ordering is the whole point: it is the only save where the copy runs.
+		SettingsRepository deployment = new(_fileSystem);
+		deployment.ConfigureEnvironment("first", new EnvironmentSettings { Uri = "https://first.example.com" });
+		string destinationPath = SettingsRepository.AppSettingsFile;
+		const UnixFileMode ownerOnly = UnixFileMode.UserRead | UnixFileMode.UserWrite;
+		File.SetUnixFileMode(destinationPath, ownerOnly);
+
+		// Act
+		deployment.ConfigureEnvironment("second", new EnvironmentSettings { Uri = "https://second.example.com" });
+
+		// Assert
+		File.GetUnixFileMode(destinationPath).Should().Be(ownerOnly,
+			because: "a cleartext-credential file must not become group- or world-readable merely because clio republished it");
+		JsonConvert.DeserializeObject<Settings>(File.ReadAllText(destinationPath)).Environments
+			.Should().ContainKey("second",
+				because: "the mode assertion has to be about a save that actually landed, or it holds vacuously over an unchanged file");
+	}
+
+	/// <summary>
+	/// A <see cref="Settings"/> whose serialization throws AFTER content has been written. <c>Order = 999</c>
+	/// is load-bearing: Newtonsoft emits inherited members first, so the throw is guaranteed to land
+	/// mid-stream rather than depending on buffer sizes or platform timing. <see cref="Settings"/> is a
+	/// non-sealed public class, and Newtonsoft serializes the runtime type, so no production seam is needed.
+	/// </summary>
+	private sealed class TearingSettings : Settings {
+
+		internal const string FaultMarker = "clio-test-injected-serialization-fault";
+
+		[JsonProperty("clio-test-fault", Order = 999)]
+		public string Fault => throw new InvalidOperationException(FaultMarker);
 	}
 }

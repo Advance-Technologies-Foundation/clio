@@ -745,9 +745,21 @@ namespace Clio
 					isRealFileSystem, policy);
 			}
 			finally {
-				if (fileSystem.File.Exists(tempFilePath)) {
-					fileSystem.File.Delete(tempFilePath);
+				// SWALLOWED ON PURPOSE, and this is the only place in the save path where that is right.
+				// The original failure is the one the caller has to see: a write error, an exhausted
+				// publish retry, SettingsFileChangedException. An unguarded Delete in `finally` REPLACES
+				// whichever of those was in flight if it throws itself, and the Exists/Delete pair is racy
+				// by construction - a concurrent clio in its own finally, or a virus scanner holding the
+				// handle, is enough. The cost of losing the cleanup is one orphaned .tmp beside
+				// appsettings.json; the cost of losing the original exception is an operator told the
+				// wrong thing about why their save failed.
+				try {
+					if (fileSystem.File.Exists(tempFilePath)) {
+						fileSystem.File.Delete(tempFilePath);
+					}
 				}
+				catch (IOException) { }
+				catch (UnauthorizedAccessException) { }
 			}
 			TrySaveSchema(fileSystem);
 		}
@@ -1095,7 +1107,8 @@ namespace Clio
 			}
 			catch (Newtonsoft.Json.JsonException exception) {
 				throw new InvalidOperationException(
-					"Cannot update settings because appsettings.json changed to unreadable content.", exception);
+					"Cannot update settings because appsettings.json changed to unreadable content. "
+					+ $"Fix or delete {AppSettingsFile} and retry.", exception);
 			}
 		}
 
