@@ -1,5 +1,5 @@
 ---
-description: DescribedFilter / DescribedFilterGroup / DescribedFilterCondition in IProcessDescriber.cs carry no [JsonExtensionData], so a filter field the ProcessBuilder package emits and clio does not declare is dropped on re-serialize with no error (DescribedFlow was in this set and no longer is)
+description: this record OWNS which Described* types in IProcessDescriber.cs carry a [JsonExtensionData] overflow bag and which drop an undeclared field in silence - the filter types, DescribedConnection, DescribedSignal and DescribedParameter have none, and the membership has moved once (DescribedFlow left the bagless set), so recount it rather than trusting a list
 applies-to:
   - clio/Command/ProcessModel/IProcessDescriber.cs
 ticket: ENG-91842
@@ -9,13 +9,26 @@ date: 2026-08-19
 **What is true** — `describe-business-process` deserializes the server payload into the
 `Described*` types and re-serializes them for the caller. The types that model an ELEMENT and its
 per-kind configuration blocks each hold a `[JsonExtensionData]` overflow bag, so an unknown field
-survives the round trip — today `DescribeProcessResult`, `DescribedElement`, `DescribedEmail`,
-`DescribedPerformer` and `DescribedApproval`, and a block added later is expected to carry one too.
-The three filter types — `DescribedFilter`, `DescribedFilterGroup` and `DescribedFilterCondition` —
-do **not**, and neither do `DescribedConnection`, `DescribedSignal`, `DescribedFlow` or
-`DescribedParameter`. Every filter field therefore needs a property on both sides: the descriptor
-in the ProcessBuilder package *and* a matching `[JsonPropertyName]` property here. `Macro`,
-`MacroArgument` and `DatePart` exist for exactly that reason.
+survives the round trip. **Counted against the file, not remembered** — this membership has moved
+once already and the list is the thing that goes stale:
+
+- **bag, an undeclared field survives:** `DescribeProcessResult` (the graph root),
+  `DescribedElement`, `DescribedFlow`, `DescribedEmail`, `DescribedPerformer`, `DescribedApproval`,
+  `DescribedOpenEditPage` (+ `ResultsByColumn`, `LogActivity`, `ActivityInterval`),
+  `DescribedPreconfiguredPage` (+ `Performer`, `DataSource`, `Button`)
+- **no bag, still dropped in silence:** `DescribedFilter`, `DescribedFilterGroup`,
+  `DescribedFilterCondition`, `DescribedFilterElementRef`, `DescribedConnection`,
+  `DescribedSignal`, `DescribedParameter`
+
+`DescribedFlow` LEFT the bagless set with the `branchesOnActivityResult` nullability fix, and this
+record's body went on listing it there afterwards while its own description line said otherwise —
+which is the argument for recounting rather than editing from memory. A configuration block added
+later is expected to carry one; a filter type is not.
+
+Every filter field therefore needs a property on both sides: the descriptor in the ProcessBuilder
+package *and* a matching `[JsonPropertyName]` property here. `Macro`, `MacroArgument` and `DatePart`
+exist for exactly that reason. And a bag is no licence to skip the property where the value is READ
+by name — see `describe-process-output-is-capped-by-the-described-dtos.md`, which owns that half.
 
 **Why it is this way** — the filter DTOs were hand-mirrored from the package's
 `FilterConditionDescriptor` when the vocabulary was small, and `System.Text.Json` discards members

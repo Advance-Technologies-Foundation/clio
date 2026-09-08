@@ -40,16 +40,23 @@ FLOW_TYPE_DEFAULT = 1
 def collect(node, out):
     """Appends every flow-element dict in the schema to `out`, sub-process children included."""
     if isinstance(node, dict):
-        for key, value in node.items():
-            if key == ELEMENTS_KEY and isinstance(value, list):
-                for item in value:
-                    if isinstance(item, dict):
-                        out.append(item)
-                        collect(item, out)
-            else:
-                collect(value, out)
+        _collect_from_dict(node, out)
     elif isinstance(node, list):
         for item in node:
+            collect(item, out)
+
+
+def _collect_from_dict(node, out):
+    """The dict half: ELEMENTS_KEY holds flow elements, and every other value is walked through."""
+    for key, value in node.items():
+        if key != ELEMENTS_KEY or not isinstance(value, list):
+            collect(value, out)
+            continue
+        for item in value:
+            if isinstance(item, dict):
+                out.append(item)
+            # Unconditional, and equivalent: collect() is a no-op on anything that is neither a
+            # dict nor a list, so a non-dict entry costs a call and changes nothing.
             collect(item, out)
 
 

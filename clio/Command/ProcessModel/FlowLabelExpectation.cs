@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Text.Json.Nodes;
 
 namespace Clio.Command.ProcessModel;
@@ -253,7 +254,7 @@ public static class FlowLabelExpectation {
 			// the descriptor's source/target, and FindFlowNode trims a modify operation's), and describe
 			// reports the canonical element name. Storing the padded form here would make FindFlow miss and
 			// the guard verify nothing at all — a false NEGATIVE on exactly the payload it exists to catch.
-			FlowLabel flow = new(source!.Trim(), target!.Trim(), label!.Trim());
+			FlowLabel flow = new(source.Trim(), target.Trim(), label.Trim());
 			(string, string) key = (flow.Source, flow.Target);
 			if (!byEndpoints.ContainsKey(key)) {
 				order.Add(key);
@@ -271,30 +272,15 @@ public static class FlowLabelExpectation {
 
 	private static bool IsLabelWritingOperation(JsonNode? node) {
 		string? op = ReadText(node)?.Trim();
-		if (string.IsNullOrEmpty(op)) {
-			return false;
-		}
-
-		foreach (string writer in LabelWritingOperations) {
-			if (string.Equals(op, writer, StringComparison.OrdinalIgnoreCase)) {
-				return true;
-			}
-		}
-
-		return false;
+		return !string.IsNullOrEmpty(op)
+			&& LabelWritingOperations.Contains(op, StringComparer.OrdinalIgnoreCase);
 	}
 
 	// Endpoint names are compared case-insensitively, matching how the server resolves an element by name.
-	private static DescribedFlow? FindFlow(DescribeProcessResult described, FlowLabel wanted) {
-		foreach (DescribedFlow flow in described.Flows) {
-			if (string.Equals(flow?.Source, wanted.Source, StringComparison.OrdinalIgnoreCase)
-					&& string.Equals(flow?.Target, wanted.Target, StringComparison.OrdinalIgnoreCase)) {
-				return flow;
-			}
-		}
-
-		return null;
-	}
+	private static DescribedFlow? FindFlow(DescribeProcessResult described, FlowLabel wanted) =>
+		described.Flows.FirstOrDefault(flow =>
+			string.Equals(flow?.Source, wanted.Source, StringComparison.OrdinalIgnoreCase)
+			&& string.Equals(flow?.Target, wanted.Target, StringComparison.OrdinalIgnoreCase));
 
 	private static string? ReadText(JsonNode? node) => BlockExpectationJson.ReadText(node);
 
