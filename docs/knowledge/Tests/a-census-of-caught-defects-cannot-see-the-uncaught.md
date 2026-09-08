@@ -89,6 +89,21 @@ is vulnerable to exactly the same thing, and neither party noticed when it was p
 re-run proves nothing against a baseline that is intermittently red. Establish the baseline's stability
 before attributing anything to the variable.
 
+**Resolved, and the counterfactual stopped being one.** The lane later went GREEN with **no intervention
+at all** — nobody touched the floor, the stand or the test — on the very head where the gap between
+the shipped version and the floor was the WIDEST of the whole ticket: shipped `1.6.0.6` against a floor
+of `1.6.0.3`, unchanged in both gated commands. Under the floor hypothesis that head should have been
+the reddest, and it was the first fully clean one.
+
+So the paragraph above is no longer a prediction. Had the floor been lowered while the lane was red, it
+would have gone green, the causal story would have held, and a gate that refuses an environment unable
+to honour the contract would have been quietly removed on the strength of a flake.
+
+What made the difference was not a better diagnosis. It was refusing to act on a red lane whose mechanism
+was not understood, and saying so, for four days across two sessions. The reading that settled it arrived
+unprompted, because CI re-ran on a later push. **A transient failure is answered by a second reading, and
+the pressure is always to answer it with a change.**
+
 **The two directions of a bad probe are the same defect at opposite prices, and only one of them is comfortable.** A probe that fails toward *"there is a problem"* costs a wasted check. One that fails toward *"no problem"* ships the defect. The asymmetry is not in the error - it is in what happens next: **nobody re-runs a clean result**, because a clean result is what you were hoping for, while a reported problem gets investigated by definition.
 
 Both landed within an hour of each other on this ticket, in opposite directions, in a two-party review:
