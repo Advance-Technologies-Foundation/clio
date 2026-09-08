@@ -330,7 +330,7 @@ public sealed class GenerateSourceCodeToolTests
 
 	[Test]
 	[Category("Unit")]
-	[Description("Reports a genuinely unknown argument under 'Unknown args' together with the valid-field hint.")]
+	[Description("Answers the 'timeOut' mis-spelling with an actionable rename hint to 'timeout' rather than a bare unknown-argument list, and refuses before resolving the command.")]
 	public void GenerateSourceCode_ShouldRenameTimeOutSpelling_RatherThanCallingItUnknown() {
 		// Arrange
 		FakeGenerateSourceCodeCommand resolvedCommand = new();
