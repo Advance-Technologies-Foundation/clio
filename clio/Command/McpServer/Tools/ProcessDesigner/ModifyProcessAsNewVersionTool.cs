@@ -60,7 +60,7 @@ public class ModifyProcessAsNewVersionTool(
 		 + "half-created version to clean up. Note that a version can never be DELETED — the platform has no such "
 		 + "operation — so every version you create is permanent; take that into account before creating one "
 		 + "speculatively. Requires the ProcessDesignService (CrtProcessBuilder) package on the target "
-		 + "environment at CrtProcessBuilder 1.4.15.1 or newer, which is where this operation first exists — an "
+		 + "environment at CrtProcessBuilder 1.6.1.0 or newer, which is where this operation first exists — an "
 		 + "older package is refused up front, naming both versions; install or update it with "
 		 + "install-process-builder. After a successful save the version stays INTERPRETED and runs as-is once "
 		 + "activated: do NOT run compile-creatio. Use describe-business-process to inspect the family.")]

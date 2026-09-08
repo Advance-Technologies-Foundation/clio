@@ -162,7 +162,7 @@ public class BundledProcessBuilderPackageTests {
 	/// </para>
 	/// </remarks>
 	private const string ExpectedArchiveSha256 =
-		"795CAB224DF4E16A98C8378A37AB0B96168B505A3FB297C4B81181742F5AC0DD";
+		"000D1FAD34926EF54E52F57B0330F205CCBCC0F59AE5B1AB70D91F49C4847048";
 
 	/// <summary>
 	/// The <c>PackageVersion</c> the shipped descriptor carries.
@@ -190,7 +190,7 @@ public class BundledProcessBuilderPackageTests {
 	/// </para>
 	/// </para>
 	/// </remarks>
-	private const string ExpectedArchiveVersion = "1.6.0.2";
+	private const string ExpectedArchiveVersion = "1.6.1.0";
 
 	/// <summary>
 	/// The commit of the PRODUCING repository the archive was cut from, written by
@@ -202,7 +202,7 @@ public class BundledProcessBuilderPackageTests {
 	/// corresponding to no commit" is unreachable rather than merely documented. Anyone with a checkout can
 	/// verify the rest with one `git checkout`.</para>
 	/// </summary>
-	private const string ExpectedProducingCommit = "44b14ccefc35a0fc72800db847554a10d798b111";
+	private const string ExpectedProducingCommit = "7694ed2c62979b1569e30e4ed42c14f9f1a22003";
 
 	/// <summary>
 	/// The <c>ModifiedOnUtc</c> the shipped descriptor carries.
@@ -228,7 +228,7 @@ public class BundledProcessBuilderPackageTests {
 	/// command — the previous pin ended in <c>431</c>, which is how the hand edit was eventually noticed.
 	/// </para>
 	/// </remarks>
-	private const string ExpectedDescriptorModifiedOnUtc = "/Date(1788814640000)/";
+	private const string ExpectedDescriptorModifiedOnUtc = "/Date(1788862642000)/";
 
 	/// <summary>
 	/// The <c>ModifiedOnUtc</c> the shipped COMPILE-MARKER SCHEMA descriptor carries.
@@ -314,7 +314,7 @@ public class BundledProcessBuilderPackageTests {
 	/// counts, and neither should be able to drift on its own.
 	/// </para>
 	/// </remarks>
-	private const int ExpectedAuthorizationGateCallSites = 3;
+	private const int ExpectedAuthorizationGateCallSites = 5;
 
 	/// <summary>
 	/// Exact number of <c>[OperationContract]</c> methods the shipped service may expose.
@@ -326,7 +326,7 @@ public class BundledProcessBuilderPackageTests {
 	/// argued exception, so a second one must not be able to arrive unnoticed. Raise this together with the
 	/// allowlist, in the same commit, or not at all.
 	/// </remarks>
-	private const int ExpectedOperationContractCount = 5;
+	private const int ExpectedOperationContractCount = 7;
 
 	/// <summary>
 	/// The operations allowed to ship WITHOUT the authorization gate.

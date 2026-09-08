@@ -106,7 +106,7 @@ namespace Clio.Tests
         [TestCase(typeof(ModifyProcessAsNewVersionOptions))]
         [TestCase(typeof(SetActiveProcessVersionOptions))]
         [Test]
-        [Description("The two versioning commands declare 1.4.15.1 for a STRICTER reason than its siblings: the ModifyProcessAsNewVersion OPERATION does not exist before that archive at all. Create/Modify name a version because an older server MISHANDLES a newer input form; these name a version because an older server has no such route, and answers a 404 the caller would read as a transport fault rather than 'your package is behind'. The bundled-archive guard asserts the shipped archive satisfies the literal, so the floor can never demand a version clio does not carry - which is why these floors land with their tools and the archive ships first.")]
+        [Description("The two versioning commands declare 1.6.1.0 for a STRICTER reason than its siblings: the ModifyProcessAsNewVersion OPERATION does not exist before that archive at all. Create/Modify name a version because an older server MISHANDLES a newer input form; these name a version because an older server has no such route, and answers a 404 the caller would read as a transport fault rather than 'your package is behind'. The bundled-archive guard asserts the shipped archive satisfies the literal, so the floor can never demand a version clio does not carry - which is why these floors land with their tools and the archive ships first.")]
         public void VersioningOptionsType_ShouldDeclareTheVersionTheOperationFirstShippedIn(Type optionsType)
         {
             // Arrange & Act
@@ -115,8 +115,8 @@ namespace Clio.Tests
             // Assert
             requirement.Should().NotBeNull(
                 because: $"{optionsType.Name} calls an operation that only exists in a recent {BundledPackages.ProcessBuilderPackageName}, so the gate must fire");
-            requirement!.Version.Should().Be("1.4.15.1",
-                because: "both versioning operations first ship in the 1.4.15.1 archive. Presence-only would let "
+            requirement!.Version.Should().Be("1.6.1.0",
+                because: "both versioning operations first ship in the 1.6.1.0 archive. Presence-only would let "
                     + "the call reach an older package and come back a 404 - the one failure shape that reads as "
                     + "clio being broken rather than the environment being behind");
             requirement.Hint.Should().Be(ExpectedProcessBuilderHint,

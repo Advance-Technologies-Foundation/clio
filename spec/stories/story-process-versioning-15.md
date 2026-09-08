@@ -76,13 +76,13 @@ Test naming: `MethodName_ShouldBehavior_WhenCondition`
 ## Dev Agent Record
 
 - Implementation started: 2026-09-06
-- Implementation completed: 2026-09-07 (archive re-cut at 1.4.15.1 after the code review)
+- Implementation completed: 2026-09-08 (archive re-cut at 1.6.1.0 after `main` moved off the 1.4 line)
 - Tests passing: full `Category=Unit` suite green; `BundledProcessBuilderPackageTests` green, which is what
   makes the pins meaningful rather than merely present
 - Notes:
 
 **Shipped.** `clio/CrtProcessBuilder/CrtProcessBuilder.gz` re-cut through `rebundle-process-builder.ps1`,
-and the four provenance pins plus the two security counts moved with it. The archive shipped at 1.4.15.1;
+and the four provenance pins plus the two security counts moved with it. The archive shipped at 1.6.1.0;
 earlier numbers on this branch were superseded before leaving the machine and are burned rather than reused,
 for the reason `ExpectedArchiveSha256` states.
 
@@ -123,4 +123,4 @@ process-designer tool call and no `clio-run` nested command reaching one. The bu
 any Ring-consumed contract.
 
 **Not re-verified on a stand after the re-cut.** AC-04's install was run against a stand on the earlier cut;
-the 1.4.15.1 archive has not been installed. The pins prove the bytes and the inventory, not the install.
+the 1.6.1.0 archive has not been installed. The pins prove the bytes and the inventory, not the install.

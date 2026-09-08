@@ -12,7 +12,7 @@ date: 2026-09-06
 different reasons, and they are not interchangeable. The older ones (`CreateBusinessProcessOptions`,
 `ModifyBusinessProcessOptions`) name a version because an older server MISHANDLES a newer *input form* it
 still accepts. `ModifyProcessAsNewVersionOptions` and `SetActiveProcessVersionOptions` name one because the
-*operations themselves* do not exist before `CrtProcessBuilder 1.4.15.1`.
+*operations themselves* do not exist before `CrtProcessBuilder 1.6.1.0`.
 
 **Why it is this way** — the presence-only form exists so the convergence rule (`IBundledPackageConvergence`)
 can own "keep the environment current" without a literal restating that policy where it cannot track the
