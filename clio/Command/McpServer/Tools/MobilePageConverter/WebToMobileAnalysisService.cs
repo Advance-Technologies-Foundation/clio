@@ -454,7 +454,11 @@ public static class WebToMobileAnalysisService {
 			}
 			if (string.Equals(entry.Operation, "merge", StringComparison.OrdinalIgnoreCase)
 				|| string.Equals(entry.Operation, "insert", StringComparison.OrdinalIgnoreCase)) {
-				survivors[entry.WebName] = string.IsNullOrWhiteSpace(entry.MobileName) ? entry.WebName : entry.MobileName;
+				// FIRST entry wins. A structural twin emits a SECOND entry under the same web name for the row it
+				// merges onto the template's own element (EmitStructuralTwinSlotEntries, always after the parent):
+				// retargeting "hide DataTable" onto that row would hide a row and leave the list on the page.
+				survivors.TryAdd(entry.WebName,
+					string.IsNullOrWhiteSpace(entry.MobileName) ? entry.WebName : entry.MobileName);
 			}
 		}
 
@@ -2759,8 +2763,9 @@ public static class WebToMobileAnalysisService {
 	/// crt.FileList → crt.FileList), the page's DELTA over the web-template baseline is carried
 	/// (<see cref="BuildDeltaTwinMergeValues"/>) — a name twin of one component is just the same element renamed
 	/// between the web and mobile templates. A twin whose target element is a DIFFERENT component (a
-	/// structural conversion, e.g. crt.DataGrid → crt.List) carries only the STRUCTURE the rules file
-	/// declares for the target type (<see cref="BuildStructuralTwinMergeValues"/>) — the test is the target
+	/// structural conversion, e.g. crt.DataGrid → crt.List) carries NOTHING here: the structure the rules file
+	/// declares for the target type is emitted as its own entry (<see cref="EmitStructuralTwinSlotEntries"/>)
+	/// against the template's named element — the test is the target
 	/// element's own type, never whether the web type exists somewhere on mobile.
 	/// </summary>
 	private static JsonNode BuildTwinMergeValues(ElementMapContext ctx, JObject node, ComponentMappingRule rule,
@@ -2837,6 +2842,8 @@ public static class WebToMobileAnalysisService {
 			if (values is null) {
 				continue;
 			}
+			// Emitted AFTER the parent twin and under the same web name: ConvertPageBusinessRules keeps the
+			// first entry for a web name, so the rule target stays the list rather than this row.
 			ctx.Out.Add(new ElementMapEntry {
 				WebName = node["name"]?.ToString(), WebType = Nz(webType), Operation = "merge",
 				MobileName = slotElement.Name, MobileType = Nz(!string.IsNullOrWhiteSpace(slotElement.Type)

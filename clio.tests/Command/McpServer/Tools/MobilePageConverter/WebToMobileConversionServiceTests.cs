@@ -1481,6 +1481,96 @@ public sealed class WebToMobileConversionServiceTests {
 		vals["items"]!.GetValue<string>().Should().Be("$SimilarLeadList");
 	}
 
+	/// <summary>
+	/// A crt.List whose <c>itemLayout</c> is typed by a NAMED type — the shape the generated mobile registry
+	/// emits for every nested-config field — with the definitions supplied separately per test.
+	/// </summary>
+	private static MobilePageConversionGuide AnalyzeListWithNamedSlotType(
+		string namedType, object definition, string slotJson = """[ { "type": "crt.ListItem", "title": "$A" } ]""") {
+		PageBundleInfo bundle = Bundle(
+			viewConfigJson: $$"""
+			[ { "name": "Main", "type": "crt.FlexContainer", "items": [
+				{ "name": "TheList", "type": "crt.List", "items": "$TheList", "itemLayout": {{slotJson}} } ] } ]
+			""");
+		var mobileByType = new Dictionary<string, ComponentRegistryEntry>(StringComparer.OrdinalIgnoreCase) {
+			["crt.List"] = new ComponentRegistryEntry {
+				ComponentType = "crt.List",
+				Inputs = new Dictionary<string, JsonElement> {
+					["items"] = JsonSerializer.SerializeToElement(new { type = "string" }),
+					["itemLayout"] = JsonSerializer.SerializeToElement(new { type = namedType })
+				}
+			},
+			["crt.ListItem"] = new ComponentRegistryEntry { ComponentType = "crt.ListItem" }
+		};
+		var webByType = new Dictionary<string, ComponentRegistryEntry>(StringComparer.OrdinalIgnoreCase) {
+			["crt.FlexContainer"] = new ComponentRegistryEntry { ComponentType = "crt.FlexContainer", Container = true }
+		};
+		return Analyze(
+			bundle, webByType: webByType, mobileByType: mobileByType,
+			mobileTypes: Names("crt.FlexContainer", "crt.List", "crt.ListItem"),
+			mobileTypeDefinitions: new Dictionary<string, JsonElement>(StringComparer.OrdinalIgnoreCase) {
+				[namedType] = JsonSerializer.SerializeToElement(definition)
+			});
+	}
+
+	[Test]
+	[Description("ENG-91859: a named type whose definition declares `fields` resolves to an object shape, so the web array wrapper is dropped. This is how 26 of the generated payload's named-type slots resolve - the ViewElementConfig sentinel covers only 14 of them, so without the `fields` branch the rest read as indeterminate and the row ships as an array into a single-config slot.")]
+	public void Analyze_NamedSlotType_WithFields_ResolvesToObject() {
+		// Arrange + Act
+		MobilePageConversionGuide guide = AnalyzeListWithNamedSlotType(
+			"ListItemViewElementConfig", new { fields = new { title = new { type = "string" } } });
+
+		// Assert
+		Element(guide, "TheList").MobileValues!.AsObject()["itemLayout"]!.GetValueKind()
+			.Should().Be(JsonValueKind.Object,
+				because: "a definition with `fields` describes ONE map, so the slot holds a single config");
+	}
+
+	[Test]
+	[Description("ENG-91859: a named type that aliases a container (`type: array`) resolves to that container, so a single web object is wrapped. The definition states the container outright and nothing else in it has to be read.")]
+	public void Analyze_NamedSlotType_AliasingArray_ResolvesToArray() {
+		// Arrange + Act
+		MobilePageConversionGuide guide = AnalyzeListWithNamedSlotType(
+			"RowCollection", new { type = "array", items = new { type = "string" } },
+			slotJson: """{ "type": "crt.ListItem", "title": "$A" }""");
+
+		// Assert
+		Element(guide, "TheList").MobileValues!.AsObject()["itemLayout"]!.GetValueKind()
+			.Should().Be(JsonValueKind.Array,
+				because: "the slot declares a collection, so the single web object is wrapped rather than shipped bare");
+	}
+
+	[Test]
+	[Description("ENG-91859: when a malformed definition carries BOTH an explicit container `type` and `fields`, the explicit statement wins. They disagree only in a malformed definition, and answering Object there would ship a map into a slot whose own schema says it is an array.")]
+	public void Analyze_NamedSlotType_ExplicitTypeOutranksFields() {
+		// Arrange + Act
+		MobilePageConversionGuide guide = AnalyzeListWithNamedSlotType(
+			"Contradictory",
+			new { type = "array", fields = new { title = new { type = "string" } } },
+			slotJson: """{ "type": "crt.ListItem", "title": "$A" }""");
+
+		// Assert
+		Element(guide, "TheList").MobileValues!.AsObject()["itemLayout"]!.GetValueKind()
+			.Should().Be(JsonValueKind.Array,
+				because: "`fields` only IMPLIES a map while `type` states the container, so the explicit one is read first");
+	}
+
+	[Test]
+	[Description("ENG-91859: a definition that aliases another NAME (including itself) resolves in one hop only - it is not followed - so the shape stays indeterminate and the value is carried untouched. Following the alias chain is what would let a self-referential definition from the CDN loop.")]
+	public void Analyze_NamedSlotType_SelfReferentialAlias_StaysIndeterminateAndCarriesUntouched() {
+		// Arrange + Act
+		// A value with no `type` of its own, so the child-element walk cannot claim it and what is asserted is
+		// the resolver's answer alone.
+		MobilePageConversionGuide guide = AnalyzeListWithNamedSlotType(
+			"SelfAlias", new { type = "SelfAlias" }, slotJson: """[ { "value": "$A" } ]""");
+
+		// Assert
+		JsonNode slot = Element(guide, "TheList").MobileValues!.AsObject()["itemLayout"]!;
+		slot.GetValueKind().Should().Be(JsonValueKind.Array,
+			because: "an unresolvable named type must leave the value exactly as the source page had it - "
+				+ "guessing a container is what a one-hop limit exists to avoid");
+	}
+
 	#region Child-element array traversal (menuItems / tools / data arrays)
 
 	[Test]
@@ -2543,6 +2633,30 @@ public sealed class WebToMobileConversionServiceTests {
 			.Select(n => n!.GetValue<string>()).Should().Equal("Feed");
 	}
 
+	[Test]
+	[Description("A structural twin emits TWO entries under one web name -- the list, then the prebuilt row merged onto the template's own crt.ListItem -- and a page business rule targeting that web element must retarget onto the LIST. Regression: the survivors map was assigned through the indexer, so the row (emitted second) overwrote the list and 'hide-element DataTable' hid the row while leaving the list on the page.")]
+	public void ConvertPageBusinessRules_StructuralTwinRowEntry_TargetsTheListNotTheRow() {
+		// Arrange
+		PageBusinessRuleProbeResult probe = ProbeOf(
+			SourceRule("Hide the grid", ElementAction("hide-element", "DataTable")));
+		// The order EmitStructuralTwinSlotEntries produces: the parent twin first, then its row.
+		var elementMap = new List<ElementMapEntry> {
+			El("DataTable", "merge", "List"),
+			El("DataTable", "merge", "ListItem")
+		};
+
+		// Act
+		PageBusinessRuleConversionInfo result = WebToMobileAnalysisService.ConvertPageBusinessRules(probe, elementMap);
+
+		// Assert
+		result.ConvertedRules.Should().HaveCount(1,
+			because: "the grid survives on mobile as a list, so the rule converts");
+		result.ConvertedRules[0].Rule!["actions"]!.AsArray()[0]!["items"]!.AsArray()
+			.Select(n => n!.GetValue<string>()).Should().Equal(["List"],
+				because: "the row is an implementation detail of the conversion; hiding it would leave the list "
+					+ "visible and empty, which is not what the source rule asked for");
+	}
+
 	/// <summary>
 	/// A <c>containers</c> twin that pairs a web TAB with the mobile tab's CONTENT container, as the shipped
 	/// tabbed rule still does for <c>FeedTabContainer</c> and <c>AttachmentsTabContainer</c>. The web side is a
@@ -3052,6 +3166,38 @@ public sealed class WebToMobileConversionServiceTests {
 	}
 
 	[Test]
+	[Description("ENG-91859: when the probe knows NO element for the list's row slot, the structural twin degrades to advisory - no row entry at all - instead of guessing a name. A merge is addressed by name, so a guessed name is a silent no-op one level over: the caller would be told to configure an element the template does not have.")]
+	public void Analyze_StructuralTwin_NoSlotElementInProbe_EmitsNoRowEntry() {
+		// Arrange
+		PageBundleInfo bundle = Bundle("""
+			[ { "name": "ListContainer", "type": "crt.FlexContainer", "items": [
+				{ "name": "DataTable", "type": "crt.DataGrid", "columns": [
+					{ "code": "PDS_Title" }, { "code": "PDS_Stage" } ] } ] } ]
+			""");
+		var web = Reg(("crt.FlexContainer", true), ("crt.DataGrid", false));
+		var containerNameMap = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase) { ["ListContainer"] = "ListContainer" };
+		var componentNameMap = new Dictionary<string, ComponentMappingRule>(StringComparer.OrdinalIgnoreCase) {
+			["DataTable"] = new ComponentMappingRule { Web = "DataTable", Mobile = "List", Note = "Primary list component." }
+		};
+
+		// Act — the probe reports the List, but nothing for its itemLayout slot.
+		MobilePageConversionGuide guide = Analyze(
+			bundle, webByType: web, containerNameMap: containerNameMap,
+			templateComponentNames: Names("ListContainer", "DataTable"), componentNameMap: componentNameMap,
+			mobileTypes: Names("crt.FlexContainer", "crt.List", "crt.ListItem"),
+			mobileTemplateTypesByName: MobileTypesByName(("List", "crt.List")),
+			mobileTemplateSlotElements: null);
+
+		// Assert
+		guide.ElementMap.Should().NotContain(e => e.MobileType == "crt.ListItem",
+			because: "there is no template element to merge the row onto, and a guessed name would be a silent "
+				+ "no-op the caller cannot see");
+		guide.ElementMap.Single(e => e.MobileName == "List").MobileValues.Should().BeNull(
+			because: "the row must not fall back onto the parent's merge values - that slot already holds the "
+				+ "template's own named element, so the differ would discard it");
+	}
+
+	[Test]
 	[Description("An explicit MobileType on the components rule wins over the mobile template probe: the rule author stated the target component deliberately, so carried values are shape-coerced against that contract even when the probe reports something else.")]
 	public void Analyze_TemplateComponentTwin_PrefersTheRuleMobileType_OverTheTemplateProbe() {
 		// Arrange
@@ -3380,6 +3526,35 @@ public sealed class WebToMobileConversionServiceTests {
 		typesByName.Should().Contain("Outer", "crt.FlexContainer");
 		typesByName.Should().Contain("Inner", "crt.TabContainer");
 		typesByName.Should().Contain("Feed", "crt.Feed", because: "the deepest node is only reached by the items recursion");
+	}
+
+	[Test]
+	[Description("ENG-91859: CollectSlotElementsByOwner records the element a mobile template puts in each SINGLE-OBJECT slot, keyed owner/slot, reaching nodes through both the items recursion and a non-items child slot. `items` itself is never a slot (it is the child collection), and the FIRST occurrence of an owner/slot wins so a template that repeats a name cannot silently retarget the merge.")]
+	public void CollectSlotElementsByOwner_RecursesAndKeepsTheFirstOccurrence() {
+		// Arrange
+		JsonArray viewConfig = JsonNode.Parse("""
+			[ { "name": "Scaffold", "type": "crt.Scaffold",
+			    "floatAction": { "name": "Fab", "type": "crt.FloatingActionButton" },
+			    "items": [
+			      { "name": "List", "type": "crt.List",
+			        "itemLayout": { "name": "ListItem", "type": "crt.ListItem" } },
+			      { "name": "List", "type": "crt.List",
+			        "itemLayout": { "name": "ShadowRow", "type": "crt.ListItem" } } ] } ]
+			""")!.AsArray();
+
+		// Act
+		Dictionary<string, WebToMobileAnalysisService.MobileTemplateSlotElement> slots =
+			WebToMobileAnalysisService.CollectSlotElementsByOwner(viewConfig);
+
+		// Assert
+		slots[WebToMobileAnalysisService.SlotElementKey("List", "itemLayout")].Name.Should().Be("ListItem",
+			because: "the first occurrence wins; the later duplicate must not retarget a merge onto another element");
+		slots[WebToMobileAnalysisService.SlotElementKey("Scaffold", "floatAction")].Type
+			.Should().Be("crt.FloatingActionButton",
+				because: "a single-object slot outside items has to be reached too - that is where the FAB lives");
+		slots.Keys.Should().NotContain(WebToMobileAnalysisService.SlotElementKey("Scaffold", "items"),
+			because: "items is the child COLLECTION, not a single-object slot, and merging by name into it is a "
+				+ "different operation entirely");
 	}
 
 	[Test]
