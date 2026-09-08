@@ -15,7 +15,7 @@ the headline finding of run 1 — D1, that a build-path condition could not name
 | | |
 |---|---|
 | Issue | ENG-91853 |
-| Stand | `Creatio` → `http://d_krestov_n.tscrm.com:40001` (.NET Framework, MSSQL, `IsDemoMode`) |
+| Stand | `Creatio` → `http://<dev-stand>:40001` (.NET Framework, MSSQL, `IsDemoMode`) |
 | Mode / isolation | `agent` / `isolated` (no API key; hooks and user `CLAUDE.md` still load) |
 | clio | `73dbec829` |
 | Package | **1.4.0.61**, installed by this run and verified (stand was on 1.4.0.59) |
@@ -151,7 +151,7 @@ That run appends design-time and runtime verdicts to **this** file.
 
 # Browser leg — 2026-09-06, design time and runtime
 
-Run against the same stand (`Creatio`, `http://d_krestov_n.tscrm.com:40001`), package **1.4.0.61**,
+Run against the same stand (`Creatio`, `http://<dev-stand>:40001`), package **1.4.0.61**,
 against the eleven processes the agent leg left in `Custom`. Verdicts below are read from the stand —
 the process log and the designer — not from any tool's own account of success.
 

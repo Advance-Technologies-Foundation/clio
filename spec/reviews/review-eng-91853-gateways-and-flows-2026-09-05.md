@@ -492,7 +492,7 @@ reviewer** — and if the answer is option 1, `layout §4`'s verification table 
 
 ## Stand verification V1-V9 — EXECUTED
 
-Stand: **`Creatio`** = `http://d_krestov_n.tscrm.com:40001` (the freshly built local one; the remote
+Stand: **`Creatio`** = `http://<dev-stand>:40001` (the freshly built local one; the remote
 `ts1-infr-web01:88/studioenu_15979382_0905` the user first named answers **HTTP 500** and is unusable).
 Core 10.1.37, .NET Framework 4.8, MSSQL, `IsDemoMode: true` — demo mode did **not** block process
 execution. `CrtProcessBuilder` **1.4.0.58** installed from `clio/bin/Release/net10.0` and confirmed by

@@ -3,7 +3,7 @@
 Third attempt at TC-18, and the first that tested what the case exists to test. Run
 `e433b91a-534d-4c9b-8e16-d3b96b4ae277`, same stand and versions: branch clio `77ad67223`,
 CrtProcessBuilder **1.6.0.3**, knowledge `af57c415` / 1.13.99, `Creatio` —
-`d_krestov_n.tscrm.com:40001`.
+`<dev-stand>:40001`.
 
 ## The result: the two ways disagree, and the accepted one silently fans out
 

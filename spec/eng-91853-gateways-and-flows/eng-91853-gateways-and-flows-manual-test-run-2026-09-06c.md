@@ -1,7 +1,7 @@
 # ENG-91853 manual test run — 2026-09-06c (agent + browser)
 
 Run id `fd6c8205-6f33-42fe-9130-20ae2b543690`. Stand `Creatio`
-(`http://d_krestov_n.tscrm.com:40001`), `CrtProcessBuilder` **1.4.0.65**, knowledge library
+(`http://<dev-stand>:40001`), `CrtProcessBuilder` **1.4.0.65**, knowledge library
 **1.13.97** pinned to `adb88d4` of the ticket branch.
 
 This run exists because the previous one measured **1.4.0.61**. Between them the package gained the

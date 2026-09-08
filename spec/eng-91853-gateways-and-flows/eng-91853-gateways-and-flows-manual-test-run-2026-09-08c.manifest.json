@@ -4,7 +4,7 @@
   "mode": "agent",
   "stand": {
     "alias": "Creatio",
-    "url": "http://d_krestov_n.tscrm.com:40001"
+    "url": "http://<dev-stand>:40001"
   },
   "packageVersion": "1.6.0.3",
   "prompt": "spec/eng-91853-gateways-and-flows/eng-91853-gateways-and-flows-manual-test-prompt.md",

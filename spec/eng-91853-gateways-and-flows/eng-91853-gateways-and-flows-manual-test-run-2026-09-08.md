@@ -11,7 +11,7 @@ TC-01…TC-15 are running separately (see the manifest for that run's id).
 | clio | branch build `clio/bin/Release/net8.0/clio.dll`, `feature/ENG-91853-gateways-and-flows` @ `77ad67223` |
 | Guidance library | pinned `af57c415` — 1.13.99, the ENG-91853 knowledge branch, `knowledge-allow-unsequenced` on |
 | CrtProcessBuilder | 1.6.0.3 on the stand |
-| Stand | `Creatio` — `d_krestov_n.tscrm.com:40001`, core 10.1.37.0, .NET Framework |
+| Stand | `Creatio` — `<dev-stand>:40001`, core 10.1.37.0, .NET Framework |
 | Processes left in place | `BPTest R6 TC16` (`UsrBpTest_R6Tc16`), `BPTest R6 TC17` (`UsrBpTest_R6Tc17`), package `Custom` |
 
 Every claim below was re-verified by me against the stand after the run, independently of the

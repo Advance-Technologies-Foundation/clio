@@ -3,7 +3,7 @@
 The remaining fifteen cases, run after TC-16/TC-17, on the same stand and the same versions.
 Run `2ebac4d9-2bae-48df-aea2-304dbe76c581`, `BPTest R7 TC01`…`TC15` in package `Custom`.
 Identity: branch clio `77ad67223` (binary built 06:57), CrtProcessBuilder **1.6.0.3**, knowledge
-`af57c415` / 1.13.99, stand `Creatio` — `d_krestov_n.tscrm.com:40001`.
+`af57c415` / 1.13.99, stand `Creatio` — `<dev-stand>:40001`.
 
 The executor reports all fifteen as PASS. Twelve processes were built; TC-05 and TC-10 are plan checks
 that build nothing, and TC-11 was refused by design. I re-verified the load-bearing claims from the

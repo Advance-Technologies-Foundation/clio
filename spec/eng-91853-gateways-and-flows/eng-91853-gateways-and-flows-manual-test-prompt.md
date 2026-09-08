@@ -2,7 +2,7 @@
 
 You are testing a Creatio environment through the clio MCP tools. Work only from this prompt.
 
-Environment: `Creatio` — `http://d_krestov_n.tscrm.com:40001` (Supervisor). Any .NET Framework Creatio
+Environment: `Creatio` — `http://<dev-stand>:40001` (Supervisor). Any .NET Framework Creatio
 reachable through clio will do; the environment must be one where business processes can be created
 through the tooling. If the tooling refuses to write somewhere, find somewhere it will — that refusal
 is part of what is being tested, so report it and keep going.

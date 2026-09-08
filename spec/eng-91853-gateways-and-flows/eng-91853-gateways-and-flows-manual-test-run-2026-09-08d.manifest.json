@@ -2,7 +2,7 @@
   "runId": "e433b91a-534d-4c9b-8e16-d3b96b4ae277",
   "issue": "ENG-91853",
   "mode": "agent",
-  "stand": { "alias": "Creatio", "url": "http://d_krestov_n.tscrm.com:40001" },
+  "stand": { "alias": "Creatio", "url": "http://<dev-stand>:40001" },
   "packageVersion": "1.6.0.3",
   "prompt": "spec/eng-91853-gateways-and-flows/eng-91853-gateways-and-flows-manual-test-prompt.md",
   "promptScope": "TC-18 only, third attempt, on the corrected case text (deciding on an ordinary step)",

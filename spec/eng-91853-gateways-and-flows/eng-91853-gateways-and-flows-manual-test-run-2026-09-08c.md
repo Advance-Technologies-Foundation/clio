@@ -2,7 +2,7 @@
 
 The two cases left open by the earlier runs. Same stand and versions: branch clio `77ad67223` (binary
 06:57), CrtProcessBuilder **1.6.0.3** (`SysPackage.ModifiedOn` 2026-09-07T23:21:40Z), knowledge
-`af57c415` / 1.13.99, stand `Creatio` — `d_krestov_n.tscrm.com:40001`. Run
+`af57c415` / 1.13.99, stand `Creatio` — `<dev-stand>:40001`. Run
 `6408af27-3bbe-4e6d-a04c-12f980cdf9b6`, blind `claude -p`, clio MCP only.
 
 This run's prompt differed from its predecessors in two ways, both consequences of what the earlier

@@ -11,7 +11,7 @@ the guard and stopped instead of working around it.**
 
 | | |
 |---|---|
-| Stand | `Creatio` — `d_krestov_n.tscrm.com:40001`, core 10.1.37.0 |
+| Stand | `Creatio` — `<dev-stand>:40001`, core 10.1.37.0 |
 | Package at setup | CrtProcessBuilder **1.4.0.70** (branch numbering) |
 | Package during the run | **1.6.0.3** — the executor upgraded it mid-run, see *What the executor did unasked* |
 | clio | branch build from HEAD `77ad67223`; the previous build was 355 changed `.cs` behind and was rebuilt |
