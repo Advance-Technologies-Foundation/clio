@@ -1,4 +1,4 @@
-﻿using System.Collections.Generic;
+using System.Collections.Generic;
 using System.Linq;
 using Role = Clio.Command.ProcessModel.ManagerMap.ProcessElementRole;
 using EventType = Clio.Command.ProcessModel.ManagerMap.EventType;
@@ -268,13 +268,21 @@ public sealed class ProcessGraphValidator : IProcessGraphValidator {
 		if (!outs.Any(o => o.FlowKind == ProcessFlowKind.Conditional)) {
 			return;
 		}
-		int unconditional = outs.Count(o => o.FlowKind != ProcessFlowKind.Conditional);
-		if (unconditional < 2) {
+		List<ProcessGraphEdge> unconditional =
+			outs.Where(o => o.FlowKind != ProcessFlowKind.Conditional).ToList();
+		if (unconditional.Count < 2) {
 			return;
 		}
+		// The offending flows are NAMED. Without them an agent reading this has the element and has to
+		// re-derive which of its outgoing flows are the unconditional ones before it can act - and this is
+		// the only ERROR rule in the set, so it is the one finding standing between an author and a silent
+		// double start. ProcessGraphFinding.Edge is deliberately left null rather than carrying one of
+		// them: it holds a SINGLE edge, there are two or more by the time we are here, and picking one
+		// would point an agent at an arbitrary member of the set as though it were the culprit.
+		string offenders = string.Join(", ", unconditional.Select(o => $"'{node.Name}' -> '{o.Target}'"));
 		findings.Add(new ProcessGraphFinding(ProcessGraphSeverity.Error, "R18",
-			$"Element '{node.Name}' branches on a condition while carrying {unconditional} flows that have "
-			+ "none. Only one of those is the fallback — the platform starts the other one as well, beside "
+			$"Element '{node.Name}' branches on a condition while carrying {unconditional.Count} flows that have "
+			+ $"none ({offenders}). Only one of those is the fallback — the platform starts the other one as well, beside "
 			+ "whichever branch the condition chose. Marking one of them 'default' does not settle which: "
 			+ "the runtime never reads that marker (GetIsDefSequenceFlow matches every non-conditional flow, "
 			+ "default and plain alike) and drops one by declaration order. Give the extra flow a condition, "
@@ -339,10 +347,29 @@ public sealed class ProcessGraphValidator : IProcessGraphValidator {
 				+ "taken when no condition matched.", node.Name));
 		}
 
+		CheckDivergingOrGatewayFallback(node, eventType, outs, hasDefault, findings);
+	}
+
+	// The or-gateway fallback warnings, split out of CheckDefaultFlowRules: that method's name describes
+	// the two R14 arity rules, and these two are R7/R9 answering a different question - which branch is
+	// the fallback - so four findings under one name left the method itself as the only record of the
+	// split.
+	private static void CheckDivergingOrGatewayFallback(ProcessGraphNode node, EventType eventType,
+			List<ProcessGraphEdge> outs, bool hasDefault, List<ProcessGraphFinding> findings) {
 		if (eventType is not (EventType.ExclusiveGateway or EventType.InclusiveGateway) || outs.Count <= 1) {
 			return;
 		}
 		string ruleId = eventType == EventType.ExclusiveGateway ? "R7" : "R9";
+
+		// ONE predicate for both warnings, and the if/else is the substance rather than tidiness. The two
+		// are MUTUALLY EXCLUSIVE by construction - a gateway either carries a plain sequence flow or it does
+		// not - and while the predicate was computed twice in two independent `if`s, that fact lived nowhere
+		// but in the two expressions happening to agree. Editing one of them was enough to make the pair
+		// fire together, and the second message is FALSE on the shape the first one reports: with a plain
+		// flow present nothing stops at run time, so "the instance stops there" would be a promise of a
+		// failure that cannot happen - which is the defect the scoping comment below was written to prevent
+		// and which the duplication left one keystroke away.
+		bool hasPlainFallback = outs.Any(edge => edge.FlowKind == ProcessFlowKind.Sequence);
 
 		// R7 / R9 (warning) — a DIVERGING or-gateway's outgoing flows should each say how they are chosen.
 		// The mirror of R11, and a WARNING rather than an error for the same reason R14 is arity-scoped and R6
@@ -355,7 +382,7 @@ public sealed class ProcessGraphValidator : IProcessGraphValidator {
 		// flow as the default branch. Calling that invalid would repeat the mistake R14 was arity-scoped to
 		// undo - a rule that rejects real, shipped, running processes - in a brand new rule, and it is
 		// reachable by the ordinary describe-then-validate route rather than only by hand-written input.
-		if (outs.Any(o => o.FlowKind == ProcessFlowKind.Sequence)) {
+		if (hasPlainFallback) {
 			findings.Add(new ProcessGraphFinding(ProcessGraphSeverity.Warning, ruleId,
 				$"Diverging gateway '{node.Name}' has a plain sequence flow. At run time it is taken as the "
 				+ "default branch; say so explicitly with kind 'default', or give it a condition, so the "
@@ -379,8 +406,7 @@ public sealed class ProcessGraphValidator : IProcessGraphValidator {
 		// ordinary describe-then-validate route, so this would have promised a run-time failure that cannot
 		// happen, seven times over, on the platform's own content. That shape already has its own warning
 		// above, which says the useful thing instead: mark it 'default' so the diagram states the fallback.
-		bool hasPlainFallback = outs.Any(edge => edge.FlowKind == ProcessFlowKind.Sequence);
-		if (!hasDefault && !hasPlainFallback) {
+		else if (!hasDefault) {
 			findings.Add(new ProcessGraphFinding(ProcessGraphSeverity.Warning, ruleId,
 				$"Diverging gateway '{node.Name}' has no default flow: if no condition matches at run time the "
 				+ "instance stops there and the process log reads \"None of the conditions were met after the "

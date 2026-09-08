@@ -24,6 +24,15 @@ public sealed class ProcessGraphValidatorTests {
 
 	private static ProcessGraphEdge Def(string from, string to) => new(from, to, ProcessFlowKind.Default);
 
+	// A flow whose KIND is not conditional but which carries a condition anyway - the shape ModelBuilder
+	// and DescribeProcessPrompt both document as a trap, because the condition is dropped during flow-
+	// schema generation and the branch then runs unconditionally.
+	private static ProcessGraphEdge SeqWithCondition(string from, string to, string condition) =>
+		new(from, to, ProcessFlowKind.Sequence, condition);
+
+	private static ProcessGraphEdge DefWithCondition(string from, string to, string condition) =>
+		new(from, to, ProcessFlowKind.Default, condition);
+
 	private ProcessGraphValidationResult Validate(IReadOnlyList<ProcessGraphNode> nodes, IReadOnlyList<ProcessGraphEdge> edges)
 		=> _validator.Validate(new ProcessGraph(nodes, edges));
 
@@ -245,6 +254,56 @@ public sealed class ProcessGraphValidatorTests {
 				+ "the source-role clause could be deleted whole with this test still green");
 		result.Findings.Should().NotContain(f => f.RuleId == "R13" && f.Severity == ProcessGraphSeverity.Error,
 			because: "an error here told an agent that two shipped CrtBase processes are invalid");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("A condition supplied for a flow whose kind is NOT conditional is reported by "
+		+ "nothing, and that is pinned here as a deliberate boundary rather than left as a gap. "
+		+ "CheckConditionalFlows iterates only the edges whose FlowKind is Conditional, so the shape "
+		+ "never reaches a predicate. It is a real trap - the condition is dropped during flow-schema "
+		+ "generation and the branch then runs unconditionally, which DescribeProcessPrompt documents "
+		+ "- so if a warning is ever added, this test is what has to change, and changing it is the "
+		+ "moment to argue the severity against the shipped corpus the way R7/R9/R13/R14 were.")]
+	public void Validate_ShouldReportNothing_WhenANonConditionalFlowCarriesACondition() {
+		// Arrange
+		List<ProcessGraphNode> nodes = [
+			Node("s", "startEvent"), Node("a", "activityUserTask"), Node("g", "exclusiveGateway"),
+			Node("b", "activityUserTask"), Node("c", "activityUserTask"), Node("e", "endEvent")
+		];
+		List<ProcessGraphEdge> edges = [
+			Seq("s", "a"),
+			// the two shapes under test: a condition on a PLAIN flow and on a DEFAULT one
+			SeqWithCondition("a", "g", "[#Amount#] > 100"),
+			new("g", "b", ProcessFlowKind.Conditional, "[#Amount#] > 100"),
+			DefWithCondition("g", "c", "[#Amount#] <= 100"),
+			Seq("b", "e"), Seq("c", "e")
+		];
+
+		// The arrangement itself is asserted first. Everything below is an assertion of SILENCE, and a
+		// silent expectation passes just as well when the shape under test is not present - so if a
+		// helper ever stopped carrying the condition through, this test would stay green while no
+		// longer testing anything.
+		edges.Should().Contain(e => e.FlowKind == ProcessFlowKind.Sequence
+				&& e.Condition == "[#Amount#] > 100",
+			because: "the graph has to actually carry a condition on a PLAIN flow, or the silence"
+				+ " asserted below is silence about nothing");
+		edges.Should().Contain(e => e.FlowKind == ProcessFlowKind.Default
+				&& e.Condition == "[#Amount#] <= 100",
+			because: "and on a DEFAULT flow, which is the second of the two shapes under test");
+
+		// Act
+		ProcessGraphValidationResult result = Validate(nodes, edges);
+
+		// Assert
+		result.Findings.Should().NotContain(f => f.RuleId == "R13",
+			because: "R13 owns conditions and reads only conditional flows, so a condition on a plain or "
+				+ "default flow is outside every one of its clauses - it is not an empty condition and not "
+				+ "an omitted one, because the flow is not conditional in the first place");
+		result.HasErrors.Should().BeFalse(
+			because: "nothing in the rule set makes this an error, and an agent checking this graph's "
+				+ "SHAPE is told it is buildable - which it is; what it is not told is that the two "
+				+ "conditions will be discarded and both branches taken");
 	}
 
 	[Test]
