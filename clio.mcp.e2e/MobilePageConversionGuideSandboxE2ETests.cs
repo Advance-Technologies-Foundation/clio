@@ -161,6 +161,68 @@ public sealed class MobilePageConversionGuideSandboxE2ETests : McpContractFixtur
 	}
 
 	[Test]
+	[Description("Non-vacuous unmapped-intermediate-template climb guard (ENG-94838): converts real seeded pages until one whose direct parent template carries no bundled conversion rule (e.g. an intermediate chrome-only template such as PageWithTabsAndProgressBarTemplate), then asserts through the real clio MCP server that the reported sourceTemplate is NOT that raw unmapped parent and instead matches a bundled rule-bearing ancestor — proving ResolveEffectiveTemplateName climbed past the unmapped layer instead of trusting it as the baseline. No seeded page with an unmapped-parent template degrades to Ignore with an explicit reason (never a vacuous pass); a conversion failure fails the test.")]
+	[AllureTag(ToolName)]
+	[AllureName("get-mobile-page-conversion-guide climbs past an unmapped intermediate template")]
+	[AllureDescription("Reads list-pages for the seeded application, filters to pages whose direct parentSchemaName matches no bundled WebToMobilePageConversionRules.Templates entry, converts each through the real clio MCP server, and on the first successful conversion asserts sourceTemplate differs from the raw unmapped parent and itself matches a bundled template rule — exercising the intermediate-template-climb branch of ResolveEffectiveTemplateName through the real MCP transport, not just the pure-function unit tests.")]
+	public async Task MobilePageConversionGuideTool_Should_Climb_Past_Unmapped_Intermediate_Template() {
+		// Arrange
+		McpE2ESettings settings = TestConfiguration.Load();
+		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
+		await using ArrangeContext context = Arrange(TimeSpan.FromMinutes(5));
+		await RequireConverterFeatureOrIgnoreAsync(context);
+		string environmentName = await ResolveReachableEnvironmentAsync(settings);
+		WebToMobilePageConversionRules bundledRules = WebToMobilePageConversionRulesCatalog.LoadBundled();
+		IReadOnlyList<(string SchemaName, string ParentSchemaName)> candidates =
+			await ResolveSeededPagesWithUnmappedParentOrIgnoreAsync(
+				context.Session, context.CancellationTokenSource.Token, environmentName, bundledRules);
+
+		// Act — convert candidates until one succeeds; a conversion FAILURE is a regression, not a seed gap.
+		MobilePageConversionGuide? guide = null;
+		string convertedSchemaName = string.Empty;
+		string rawUnmappedParent = string.Empty;
+		List<string> failedCandidates = [];
+		foreach ((string schemaName, string parentSchemaName) in candidates) {
+			MobilePageConversionGuide? candidate = await ConvertOrCollectFailureAsync(
+				context.Session, context.CancellationTokenSource.Token, environmentName, schemaName, failedCandidates);
+			if (candidate is null) {
+				continue;
+			}
+			guide = candidate;
+			convertedSchemaName = schemaName;
+			rawUnmappedParent = parentSchemaName;
+			break;
+		}
+
+		// Assert
+		if (guide is null) {
+			if (failedCandidates.Count > 0) {
+				Assert.Fail(
+					$"{failedCandidates.Count} of {candidates.Count} seeded page(s) of '{ApplicationCode}' on environment "
+					+ $"'{environmentName}' with an unmapped direct-parent template failed to convert; "
+					+ "get-mobile-page-conversion-guide must succeed on every seeded page, so this is a runtime regression, "
+					+ $"not missing seed data: {string.Join("; ", failedCandidates)}");
+			}
+			Assert.Ignore(
+				$"None of the {candidates.Count} candidate seeded page(s) of '{ApplicationCode}' on environment "
+				+ $"'{environmentName}' with an unmapped direct-parent template converted successfully, so the "
+				+ "intermediate-template-climb path could not be exercised end to end.");
+		}
+		guide!.SourceTemplate.Should().NotBeNullOrWhiteSpace(
+			because: $"'{convertedSchemaName}' has a resolvable ancestor chain, so the climb must land on a named template");
+		guide.SourceTemplate.Should().NotBe(rawUnmappedParent,
+			because: $"'{convertedSchemaName}''s direct parent '{rawUnmappedParent}' carries no bundled conversion rule, so "
+				+ "ResolveEffectiveTemplateName must climb past it instead of trusting it as the chrome-subtraction baseline "
+				+ "(the exact regression an unmapped intermediate template like PageWithTabsAndProgressBarTemplate used to cause)");
+		// The bundled catalog is the converter's own baseline contract (mirrors ResolveBundledRemovableTypes / Position
+		// AnchorName above); the registry may serve a newer rules version at runtime, but a climb that lands outside the
+		// bundled catalog entirely would still prove the climb happened without proving it reached a genuine template.
+		MobilePageConversionGuideTool.ResolveTemplateRule(bundledRules, guide.SourceTemplate).Should().NotBeNull(
+			because: $"the climb from '{convertedSchemaName}''s unmapped parent '{rawUnmappedParent}' must land on an "
+				+ $"ancestor that itself matches a bundled template rule, not merely on some other differently-named ancestor");
+	}
+
+	[Test]
 	[Description("Non-vacuous MainHeader->FAB guard (ENG-93152): converts real seeded pages until one yields a FloatingActionButton.menuItems entry, then asserts at least one real header-action conversion and its crt.MenuItem/denylist contract. When NO seeded page carries a header action it IGNORES with an explicit reason instead of passing silently, so a regression that stops MainHeader->FAB is caught on any header page and missing seed coverage is surfaced rather than hidden.")]
 	[AllureTag(ToolName)]
 	[AllureName("get-mobile-page-conversion-guide converts MainHeader actions into the floating action button")]
@@ -1073,6 +1135,50 @@ public sealed class MobilePageConversionGuideSandboxE2ETests : McpContractFixtur
 		Assert.Ignore(
 			$"Seeded application '{installedApplication.Code}' has no Freedom UI pages on environment '{environmentName}'. Add at least one page to the seed application.");
 		return string.Empty;
+	}
+
+	/// <summary>
+	/// Seeded pages whose direct <c>parentSchemaName</c> is distinct from their own name AND matches no
+	/// entry in <paramref name="bundledRules"/>.Templates — the precondition
+	/// <see cref="MobilePageConversionGuideTool.ResolveEffectiveTemplateName"/>'s climb branch exists for
+	/// (an unmapped intermediate template such as PageWithTabsAndProgressBarTemplate, or any other
+	/// rule-unmatched direct parent). Ignores the test when no such page is seeded.
+	/// </summary>
+	private static async Task<IReadOnlyList<(string SchemaName, string ParentSchemaName)>>
+		ResolveSeededPagesWithUnmappedParentOrIgnoreAsync(
+			McpServerSession session, CancellationToken cancellationToken, string environmentName,
+			WebToMobilePageConversionRules bundledRules) {
+		ApplicationListItemEnvelope installedApplication = await SeededApplicationResolver.ResolveOrIgnoreAsync(
+			session, cancellationToken, environmentName, ApplicationCode);
+		CallToolResult callResult = await session.CallToolAsync(
+			PageListTool.ToolName,
+			new Dictionary<string, object?> {
+				["args"] = new Dictionary<string, object?> {
+					["environment-name"] = environmentName,
+					["code"] = installedApplication.Code
+				}
+			},
+			cancellationToken);
+		PageListResponse pageList = EntitySchemaStructuredResultParser.Extract<PageListResponse>(callResult);
+		pageList.Success.Should().BeTrue(
+			because: $"list-pages must succeed before a seeded page can be converted; an MCP-level failure would hide real runtime regressions. Error: {pageList.Error}");
+
+		List<(string SchemaName, string ParentSchemaName)> candidates = (pageList.Pages ?? [])
+			.Where(page => !string.IsNullOrWhiteSpace(page.SchemaName)
+				&& !string.IsNullOrWhiteSpace(page.ParentSchemaName)
+				&& !string.Equals(page.ParentSchemaName, page.SchemaName, StringComparison.OrdinalIgnoreCase)
+				&& MobilePageConversionGuideTool.ResolveTemplateRule(bundledRules, page.ParentSchemaName) is null)
+			.Select(page => (page.SchemaName!, page.ParentSchemaName!))
+			.ToList();
+		if (candidates.Count == 0) {
+			Assert.Ignore(
+				$"None of the seeded page(s) of '{installedApplication.Code}' on environment '{environmentName}' has a "
+				+ "direct parent template that is both distinct from its own name and unmatched by any bundled "
+				+ "WebToMobilePageConversionRules.Templates entry (an unmapped intermediate template such as "
+				+ "PageWithTabsAndProgressBarTemplate), so the intermediate-template-climb path could not be exercised end "
+				+ "to end. Add a seeded page layered over such an intermediate template to the seed application.");
+		}
+		return candidates;
 	}
 
 	private static async Task<string> ResolveReachableEnvironmentAsync(McpE2ESettings settings) {

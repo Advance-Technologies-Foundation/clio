@@ -2755,6 +2755,30 @@ public sealed class WebToMobileConversionServiceTests {
 	}
 
 	[Test]
+	[Description("Direct parent is NOT a replacing schema (its name differs from the page's own) but is itself an unmapped " +
+		"INTERMEDIATE template that adds its own chrome (e.g. a DCM stage progress bar) on top of a mapped ancestor: " +
+		"climb past the unmapped parent to the rule-matching template instead of trusting the direct parent blindly — " +
+		"reproduces the production case of a page inheriting through PageWithTabsAndProgressBarTemplate.")]
+	public void ResolveEffectiveTemplateName_ParentIsUnmappedIntermediateTemplate_ClimbsPastIt() {
+		string result = MobilePageConversionGuideTool.ResolveEffectiveTemplateName(
+			Page("UsrPage_dlzi7uh", "PageWithTabsAndProgressBarTemplate"),
+			Chain("UsrPage_dlzi7uh", "PageWithTabsAndProgressBarTemplate", "PageWithTabsFreedomTemplate", "BasePageFreedomTemplate"),
+			Rules);
+		result.Should().Be("PageWithTabsFreedomTemplate");
+	}
+
+	[Test]
+	[Description("Direct parent is an unmapped intermediate template AND no ancestor anywhere matches a rule: falls back " +
+		"to the first differently-named ancestor (the direct parent itself), same as the no-rule-match replacing case.")]
+	public void ResolveEffectiveTemplateName_ParentIsUnmappedIntermediateTemplate_NoRuleAnywhere_ReturnsDirectParent() {
+		string result = MobilePageConversionGuideTool.ResolveEffectiveTemplateName(
+			Page("UsrPage_dlzi7uh", "SomeUnmappedIntermediateTemplate"),
+			Chain("UsrPage_dlzi7uh", "SomeUnmappedIntermediateTemplate", "SomeUnmappedRootTemplate"),
+			Rules);
+		result.Should().Be("SomeUnmappedIntermediateTemplate");
+	}
+
+	[Test]
 	[Description("Empty-layout diagnostic: when the source has components but the baseline subtracts the whole tree (the self-parent bug), LayoutResolution reports 'empty' instead of returning a silently-empty layout.")]
 	public void Analyze_LayoutSubtractedToEmpty_SetsLayoutResolutionDiagnostic() {
 		PageBundleInfo bundle = Bundle("""
