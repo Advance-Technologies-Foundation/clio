@@ -383,10 +383,32 @@ public sealed class ProcessGraphValidator : IProcessGraphValidator {
 		// undo - a rule that rejects real, shipped, running processes - in a brand new rule, and it is
 		// reachable by the ordinary describe-then-validate route rather than only by hand-written input.
 		if (hasPlainFallback) {
+			// The REMEDY is scoped on hasDefault, and only the remedy - the observation is true either way.
+			// "Say so explicitly with kind 'default'" is sound on a gateway that has no default and is an
+			// edit THIS SAME RUN REJECTS on one that does: a second default trips the at-most-one R14 error
+			// forty lines up. A warning that advises an edit the validator errors on is worse than silence,
+			// because the caller follows it and the next call refuses.
+			// The opening claim needs scoping too. "At run time it is taken as the default branch" holds when
+			// the plain flow is the only unconditional one; with a marked default beside it neither is
+			// preferred, because GetIsDefSequenceFlow matches every non-conditional flow alike and drops
+			// exactly one by declaration order. Saying the plain flow is the fallback there would name a
+			// specific branch the runtime does not commit to.
+			// R18 also errors on [conditional, default, plain] and R14 on [default, plain], so this warning
+			// never stands alone on the scoped arm. It is kept rather than suppressed because it carries the
+			// one fact neither error states - that flow ORDER is what decides - and R18 is silent on
+			// [default, plain], which has no conditional flow at all.
 			findings.Add(new ProcessGraphFinding(ProcessGraphSeverity.Warning, ruleId,
-				$"Diverging gateway '{node.Name}' has a plain sequence flow. At run time it is taken as the "
-				+ "default branch; say so explicitly with kind 'default', or give it a condition, so the "
-				+ "diagram states which branch is the fallback.", node.Name));
+				hasDefault
+					? $"Diverging gateway '{node.Name}' has a plain sequence flow beside a flow already marked "
+						+ "'default'. The runtime does not prefer the marked one: GetIsDefSequenceFlow matches "
+						+ "every non-conditional flow and drops exactly ONE of them by declaration order, so "
+						+ "which branch is the fallback is decided by flow order and nothing on the diagram "
+						+ "states it. Give this flow a condition, or remove it. Do NOT mark it 'default' as "
+						+ "well - two defaults on one element are an error."
+					: $"Diverging gateway '{node.Name}' has a plain sequence flow. At run time it is taken as "
+						+ "the default branch; say so explicitly with kind 'default', or give it a condition, "
+						+ "so the diagram states which branch is the fallback.",
+				node.Name));
 		}
 
 		// R7 / R9 (warning) — a diverging or-gateway should have a default flow. Stays a WARNING because 65

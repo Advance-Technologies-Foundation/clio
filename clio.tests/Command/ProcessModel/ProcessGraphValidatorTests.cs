@@ -1,4 +1,4 @@
-﻿using System.Collections.Generic;
+using System.Collections.Generic;
 using Clio.Command.ProcessModel;
 using FluentAssertions;
 using NUnit.Framework;
@@ -304,6 +304,62 @@ public sealed class ProcessGraphValidatorTests {
 			because: "nothing in the rule set makes this an error, and an agent checking this graph's "
 				+ "SHAPE is told it is buildable - which it is; what it is not told is that the two "
 				+ "conditions will be discarded and both branches taken");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("R7's plain-sequence-flow warning fires whenever a plain flow is present, which "
+		+ "includes a gateway that ALREADY has a default. Its remedy there used to be 'say so "
+		+ "explicitly with kind default' - an edit this same validator then reports as an R14 error, "
+		+ "because two defaults on one element are undecidable. A warning that advises an edit the "
+		+ "next run refuses is worse than silence. The second half of this test FOLLOWS the old "
+		+ "advice and asserts the error, so the contradiction is demonstrated and a restored wording "
+		+ "cannot go green.")]
+	public void Validate_ShouldNotAdviseASecondDefault_WhenADivergingGatewayAlreadyHasOne() {
+		// Arrange
+		List<ProcessGraphNode> nodes = [
+			Node("s", "startEvent"), Node("g", "exclusiveGateway"), Node("a", "activityUserTask"),
+			Node("b", "activityUserTask"), Node("c", "activityUserTask"), Node("e", "endEvent")
+		];
+		List<ProcessGraphEdge> edges = [
+			Seq("s", "g"),
+			new("g", "a", ProcessFlowKind.Conditional, "[#Amount#] > 100"),
+			Def("g", "b"),
+			Seq("g", "c"),
+			Seq("a", "e"), Seq("b", "e"), Seq("c", "e")
+		];
+
+		// Act
+		ProcessGraphValidationResult result = Validate(nodes, edges);
+
+		// Assert
+		ProcessGraphFinding warning = result.Findings
+			.Should().ContainSingle(f => f.RuleId == "R7",
+				because: "the gateway carries a plain sequence flow, which is what R7 reports")
+			.Subject;
+		warning.Message.Should().NotContain("kind 'default'",
+			because: "a flow marked 'default' is already present, so advising another one sends the "
+				+ "caller into the R14 error asserted below - this is the assertion that would have "
+				+ "caught a warning contradicting an error in the same rule set");
+		warning.Message.Should().Contain("declaration order",
+			because: "and it has to say the useful thing instead: GetIsDefSequenceFlow matches every "
+				+ "non-conditional flow alike, so neither branch is preferred and flow ORDER decides "
+				+ "which one is dropped - the one fact neither R14 nor R18 states");
+
+		// And the reason the old remedy was wrong: following it produces an error.
+		List<ProcessGraphEdge> followedTheOldAdvice = [
+			Seq("s", "g"),
+			new("g", "a", ProcessFlowKind.Conditional, "[#Amount#] > 100"),
+			Def("g", "b"),
+			Def("g", "c"),
+			Seq("a", "e"), Seq("b", "e"), Seq("c", "e")
+		];
+		Validate(nodes, followedTheOldAdvice).Findings.Should()
+			.Contain(f => f.RuleId == "R14" && f.Severity == ProcessGraphSeverity.Error
+					&& f.Message.Contains("default flows"),
+				because: "marking the plain flow 'default' as the old message advised gives the element "
+					+ "two defaults, and R14 refuses that outright - so the warning was routing callers "
+					+ "from a Warning straight into an Error");
 	}
 
 	[Test]
