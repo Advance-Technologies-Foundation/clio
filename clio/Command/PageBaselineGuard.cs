@@ -89,6 +89,19 @@ public sealed class PageBaselineGuard : IPageBaselineGuard {
 		// the schema UId and the schema-absent marker - is still armed from it, because pinning a checksum
 		// says nothing about schema identity, and dropping those two would silently disable the
 		// schema-uid-mismatch and schema-created-externally conflicts on the pinned path (issue #1320).
+		// Normalize the pin ONCE, here, at the choke point every caller reaches - not at an individual
+		// mapper. The arming predicate below is whitespace-tolerant (IsNullOrWhiteSpace) while the
+		// comparison downstream is a strict Ordinal one (PageUpdateOptions.cs:437), so a padded value arms
+		// the check and then fails it, reporting a ChecksumMismatch that never happened. The MCP mapper
+		// trims its own argument, but the CLI `--expected-checksum` is bound verbatim by CommandLineParser
+		// and is never trimmed, so a value passed with a trailing newline - the natural shape when it is
+		// piped from a file or from a shell substitution that keeps it - produced exactly the false
+		// conflict this change set exists to remove. Whitespace-only collapses
+		// to null so it stays equivalent to "not supplied" rather than arming the guard with nothing to
+		// compare.
+		options.ExpectedChecksum = string.IsNullOrWhiteSpace(options.ExpectedChecksum)
+			? null
+			: options.ExpectedChecksum.Trim();
 		bool callerPinnedChecksum = !string.IsNullOrWhiteSpace(options.ExpectedChecksum);
 		string metaFilePath;
 		string resolveWarning;

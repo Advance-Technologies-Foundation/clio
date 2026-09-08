@@ -180,6 +180,45 @@ public sealed class PageBaselineGuardTests {
 	}
 
 	[Test]
+	[Description("TryArm must normalize a padded caller-pinned checksum so the strict Ordinal comparison downstream cannot fail on whitespace alone.")]
+	public void TryArm_ShouldTrimTheCallerPinnedChecksum_WhenItArrivesPadded() {
+		// Arrange — the shape a CLI caller produces when the value is piped from a file or from a shell
+		// substitution that keeps the trailing newline. TryArm's own arming predicate is whitespace-
+		// tolerant (IsNullOrWhiteSpace), but TryCheckForExternalModification compares with
+		// StringComparison.Ordinal, so an untrimmed pin arms the guard and then reports a ChecksumMismatch
+		// that never happened. The MCP mapper trims its argument; --expected-checksum is bound verbatim by
+		// CommandLineParser, so the normalization has to live here, at the shared choke point.
+		AddMetaWithBaseline("dev", "disk-checksum");
+		PageUpdateOptions options = CreateOptions("dev");
+		options.ExpectedChecksum = "  manual-checksum\n";
+
+		// Act
+		(_, bool armed, _) = _guard.TryArm(options, OutputDirectory);
+
+		// Assert
+		options.ExpectedChecksum.Should().Be("manual-checksum",
+			because: "the pin must reach the Ordinal comparison already normalized, or padding alone produces a false conflict");
+		armed.Should().BeTrue(
+			because: "trimming must not change whether the matching on-disk baseline is refreshed after the save");
+	}
+
+	[Test]
+	[Description("TryArm must treat a whitespace-only caller-pinned checksum as not supplied rather than arming the guard with nothing to compare.")]
+	public void TryArm_ShouldTreatAWhitespaceOnlyCallerChecksumAsNotSupplied() {
+		// Arrange
+		AddMetaWithBaseline("dev", "disk-checksum");
+		PageUpdateOptions options = CreateOptions("dev");
+		options.ExpectedChecksum = "   ";
+
+		// Act
+		_guard.TryArm(options, OutputDirectory);
+
+		// Assert
+		options.ExpectedChecksum.Should().Be("disk-checksum",
+			because: "whitespace-only is equivalent to no pin, so the on-disk baseline must supply the comparison value instead of an unusable blank");
+	}
+
+	[Test]
 	[Description("TryArm must NOT arm when --expected-checksum is pinned but no matching on-disk baseline exists, so nothing is refreshed.")]
 	public void TryArm_ShouldNotArm_WhenExplicitChecksumSetAndNoBaseline() {
 		// Arrange — no meta.json on disk.
