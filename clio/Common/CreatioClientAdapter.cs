@@ -1,5 +1,7 @@
 using System;
 using System.Collections.Generic;
+using System.IO;
+using System.Net;
 using System.Net.Http;
 using System.Net.WebSockets;
 using System.Threading;
@@ -208,6 +210,152 @@ public class CreatioClientAdapter : IOwnedApplicationClient {
 		int maxAttempts = 1, int delaySec = 1, CancellationToken cancellationToken = default) =>
 		_loginDiagnostics.TrackRequestAsync(() =>
 			Client.ExecuteGetRequestAsync(url, requestTimeout, maxAttempts, delaySec, cancellationToken));
+
+	/// <inheritdoc />
+	public async Task<byte[]> ExecuteGetRequestBoundedAsync(string url, long maxBytes,
+		int requestTimeout = 100_000, CancellationToken cancellationToken = default) {
+		// The transfer runs through the ONE configured, authenticated client. CreatioClient.DownloadFileByGetAsync
+		// issues its request with HttpCompletionOption.ResponseHeadersRead and copies the body incrementally to
+		// disk, so it streams exactly like a hand-built transport would - while keeping everything a parallel
+		// stack loses: the OAuth/bearer token, the configured certificate-validation policy (useUntrustedSsl is
+		// held by the client, never by this adapter) and the session-recovery retry. The earlier version
+		// borrowed cookies into a fresh HttpClientHandler, which dropped all three and worked for cookie
+		// sessions only.
+		// The raw OData response is staged on disk before it is handed back, and the downstream download opens
+		// that path with an ordinary FileMode.Create - which under the usual umask 022 leaves an ambient 0644
+		// file that any other local account can read while the transfer runs. The staging file therefore lives
+		// inside a directory created owner-only IN THE SAME CALL that creates it, so there is no window in which
+		// the business data underneath is reachable by anyone else, whatever mode the file itself ends up with.
+		string scratchDirectory = CreateOwnerOnlyScratchDirectory();
+		string scratch = Path.Combine(scratchDirectory, "response.tmp");
+		// One deadline across send, stream acquisition and EVERY body read. With ResponseHeadersRead a server
+		// can answer the headers in milliseconds and then withhold the body forever: the reads would then be
+		// governed by the caller token alone, and MCP host cancellation is not guaranteed to arrive, so the
+		// invocation would hang with no bound at all.
+		using CancellationTokenSource deadline = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+		if (requestTimeout > 0) {
+			deadline.CancelAfter(requestTimeout);
+		}
+		// The ceiling is enforced WHILE the body arrives. The download exposes no per-chunk hook, so the growing
+		// scratch file is watched and the transfer is cancelled the moment it passes the limit: the body is never
+		// held in memory, and the file cannot outgrow the ceiling by more than one poll interval.
+		long observedBytes = 0;
+		using CancellationTokenSource watchStop = new();
+		Task watcher = WatchScratchSizeAsync(scratch, maxBytes, deadline, watchStop.Token,
+			observed => Interlocked.Exchange(ref observedBytes, observed));
+		try {
+			await Client.DownloadFileByGetAsync(url, scratch, requestTimeout, deadline.Token).ConfigureAwait(false);
+			await watchStop.CancelAsync().ConfigureAwait(false);
+			await watcher.ConfigureAwait(false);
+			long finalLength = File.Exists(scratch) ? new FileInfo(scratch).Length : 0;
+			long observed = Math.Max(Interlocked.Read(ref observedBytes), finalLength);
+			if (observed > maxBytes) {
+				throw new ResponseTooLargeException(observed, maxBytes);
+			}
+			return await File.ReadAllBytesAsync(scratch, cancellationToken).ConfigureAwait(false);
+		}
+		// The ceiling trips the same source the deadline does, so the oversize case is separated FIRST -
+		// otherwise an abandoned oversized transfer would be reported as a timeout.
+		catch (OperationCanceledException) when (Interlocked.Read(ref observedBytes) > maxBytes) {
+			throw new ResponseTooLargeException(Interlocked.Read(ref observedBytes), maxBytes);
+		}
+		// Deadline expiry and caller cancellation arrive as the SAME exception type from the linked source, and
+		// they mean different things to the caller: one is the server failing to deliver in time (retryable,
+		// and the message has to say so), the other is the caller withdrawing the request (nothing to report).
+		// Distinguishing them is only possible here, where both tokens are still in scope.
+		catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested
+			&& deadline.IsCancellationRequested) {
+			throw new TimeoutException(
+				$"the request to '{url}' did not complete within {requestTimeout} ms. The response headers may "
+				+ "have arrived while the body stalled; narrow the query with 'select' or 'top', or raise the "
+				+ "request timeout.");
+		}
+		finally {
+			// Awaited rather than fired: the synchronous Cancel runs the watcher's continuations inline on
+			// this thread, which is the one unwinding the failure path.
+			await watchStop.CancelAsync().ConfigureAwait(false);
+			DeleteScratchQuietly(scratch);
+			DeleteScratchDirectoryQuietly(scratchDirectory);
+		}
+	}
+
+	// Polls the partially written scratch file and trips the shared deadline source once it passes the ceiling,
+	// so an oversized body is abandoned mid-transfer instead of being measured after it has all arrived.
+	private static async Task WatchScratchSizeAsync(string path, long maxBytes, CancellationTokenSource abort,
+		CancellationToken stop, Action<long> report) {
+		try {
+			while (!stop.IsCancellationRequested) {
+				await Task.Delay(ScratchPollInterval, stop).ConfigureAwait(false);
+				long length;
+				try {
+					if (!File.Exists(path)) {
+						continue;
+					}
+					length = new FileInfo(path).Length;
+				}
+				catch (IOException) {
+					continue;
+				}
+				if (length > maxBytes) {
+					report(length);
+					await abort.CancelAsync().ConfigureAwait(false);
+					return;
+				}
+			}
+		}
+		catch (OperationCanceledException) {
+			// The ordinary end of the watch: the download finished, or the caller went away.
+		}
+	}
+
+	// Owner-only AT CREATION rather than tightened afterwards: File/Directory.SetUnixFileMode runs after the
+	// directory already exists, and everything staged during that gap is world-readable. The mode argument is
+	// applied by the mkdir syscall itself, so the directory is never briefly open.
+	private static string CreateOwnerOnlyScratchDirectory() {
+		string path = Path.Combine(Path.GetTempPath(), $"clio-bounded-{Guid.NewGuid():N}");
+		if (OperatingSystem.IsWindows()) {
+			// %TEMP% on Windows is per-user (under the profile) and inherits its owner-only ACL, so the
+			// directory is not shared the way the Unix temp root is. Explicit DACL tightening is the same
+			// tracked follow-up FileSecurityHardening records rather than shipping unverified ACL code.
+			Directory.CreateDirectory(path);
+			return path;
+		}
+		Directory.CreateDirectory(path, OwnerOnlyDirectory);
+		return path;
+	}
+
+	private const UnixFileMode OwnerOnlyDirectory =
+		UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute;
+
+	private static void DeleteScratchDirectoryQuietly(string path) {
+		try {
+			if (Directory.Exists(path)) {
+				Directory.Delete(path, true);
+			}
+		}
+		catch (IOException) {
+			// A leftover staging directory is not worth replacing the real failure with a second exception.
+		}
+		catch (UnauthorizedAccessException) {
+			// Same reasoning as above.
+		}
+	}
+
+	private static void DeleteScratchQuietly(string path) {
+		try {
+			if (File.Exists(path)) {
+				File.Delete(path);
+			}
+		}
+		catch (IOException) {
+			// A leftover scratch file is not worth replacing the real failure with a second exception.
+		}
+		catch (UnauthorizedAccessException) {
+			// Same reasoning as above.
+		}
+	}
+
+	private static readonly TimeSpan ScratchPollInterval = TimeSpan.FromMilliseconds(25);
 
 	public string ExecutePostRequest(string url, string requestData, int requestTimeout = Timeout.Infinite,
 		int maxAttempts = 1, int delaySec = 1) {

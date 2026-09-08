@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Collections.Generic;
 using System.ComponentModel;
 using System.ComponentModel.DataAnnotations;
 using System.Linq;
@@ -19,9 +20,33 @@ namespace Clio.Command.McpServer.Tools;
 /// survived it.
 /// </summary>
 [McpServerToolType]
-public sealed class ODataUpdateTool(IToolCommandResolver commandResolver) {
+public sealed class ODataUpdateTool(IToolCommandResolver commandResolver, IODataFileContract fileContract) {
+
+	//File I/O is behaviour, so it arrives through DI rather than being reached statically: that is what lets
+	//a failure-path test substitute a file-contract fake instead of driving the production write plumbing.
+	private readonly IODataFileContract _fileContract =
+		fileContract ?? throw new ArgumentNullException(nameof(fileContract));
 
 	internal const string ToolName = "odata-update";
+
+	private const string DataRequiredMessage =
+		"data is required and must be a non-empty object of field/value pairs.";
+
+	private const string ValidArgumentsHint =
+		"Valid: entity, id, environment-name, data, rows-file, confirm.";
+
+	/// <summary>
+	/// The camelCase / snake_case spellings an LLM emits for this tool's kebab-case fields. Without this map
+	/// (and the overflow bag it reads) a request carrying inline <c>data</c> plus <c>rows_file</c> bound only
+	/// the inline object, slipped past the mutual-exclusion check, and PATCHed an ambiguous request.
+	/// </summary>
+	private static readonly IReadOnlyDictionary<string, string> ArgumentAliases =
+		new Dictionary<string, string>(StringComparer.Ordinal) {
+			["environmentName"] = "environment-name",
+			["environment_name"] = "environment-name",
+			["rowsFile"] = "rows-file",
+			["rows_file"] = "rows-file"
+		};
 
 	/// <summary>Updates a single Creatio record using OData v4.</summary>
 	[McpServerTool(Name = ToolName, ReadOnly = false, Destructive = true, Idempotent = true, OpenWorld = false)]
@@ -45,18 +70,33 @@ public sealed class ODataUpdateTool(IToolCommandResolver commandResolver) {
 		"Use odata-read to find the record by its fields and obtain its Id. " +
 		"Call get-tool-contract for odata-update to see usage examples and discovery workflow hints.")]
 	public ODataWriteResponse Update(
-		[Description("Parameters: entity, id, data, environment-name (all required).")]
+		[Description("Parameters: entity, id, data or rows-file, environment-name (required).")]
 		[Required]
 		ODataUpdateArgs args) {
 		try {
+			//Runs before the confirmation gate, before the file is touched and before any PATCH: an unbound
+			//file-source key such as rows_file would otherwise be dropped silently and the inline data sent
+			//instead, which is the ambiguous request this rejects.
+			string? argumentError = McpToolArgumentSupport.BuildLegacyAliasError(
+				args.ExtensionData,
+				ArgumentAliases,
+				".",
+				ValidArgumentsHint);
+			if (argumentError is not null) {
+				return ODataWriteResponse.Failure(argumentError);
+			}
 			ODataWriteResponse invalidTarget = ODataKeyedWrite.ValidateTarget(args.Entity, args.Id, "update");
 			if (invalidTarget is not null) {
 				return invalidTarget;
 			}
-			if (args.Data is not { ValueKind: JsonValueKind.Object } data || !data.EnumerateObject().MoveNext()) {
-				return ODataWriteResponse.Failure("data is required and must be a non-empty object of field/value pairs.");
-			}
+			// The confirmation gate runs BEFORE the file is touched. It is the first meaningful guard, so an
+			// exploratory confirm=false call must answer "here is what would change", not "rows-file was not
+			// found" - and an exploratory call should not read and parse a payload it will not send.
 			ODataWriteResponse notConfirmed = ODataKeyedWrite.RequireConfirmation(args.Confirm, args.Entity, args.Id, "update", "change");
+			ODataWriteResponse payloadFailure = ResolveData(args, notConfirmed, out JsonElement data);
+			if (payloadFailure is not null) {
+				return payloadFailure;
+			}
 			if (notConfirmed is not null) {
 				return notConfirmed;
 			}
@@ -87,6 +127,60 @@ public sealed class ODataUpdateTool(IToolCommandResolver commandResolver) {
 			return ODataWriteResponse.Failure(SensitiveErrorTextRedactor.Redact(ex.Message));
 		}
 	}
+
+	/// <summary>
+	/// Resolves the field/value payload from either the inline <c>data</c> argument or <c>rows-file</c>,
+	/// and returns the failure response to send back when the payload is unusable.
+	/// </summary>
+	/// <param name="args">Tool arguments.</param>
+	/// <param name="notConfirmed">Confirmation refusal to return instead of reading the file, or <c>null</c>.</param>
+	/// <param name="data">Resolved non-empty JSON object payload when the method returns <c>null</c>.</param>
+	/// <returns><c>null</c> when the payload is valid; otherwise the response to return to the caller.</returns>
+	private ODataWriteResponse ResolveData(ODataUpdateArgs args, ODataWriteResponse notConfirmed, out JsonElement data) {
+		data = default;
+		bool hasRowsFile = !string.IsNullOrWhiteSpace(args.RowsFile);
+		if (args.Data is not null && hasRowsFile) {
+			return ODataWriteResponse.Failure("Provide either data or rows-file, not both.");
+		}
+		if (args.Data is null && !hasRowsFile) {
+			return ODataWriteResponse.Failure(DataRequiredMessage);
+		}
+		JsonElement? requestedData = args.Data;
+		if (requestedData is null) {
+			if (notConfirmed is not null) {
+				return notConfirmed;
+			}
+			ODataWriteResponse fileFailure = ReadFileData(args.RowsFile, out JsonElement fileData);
+			if (fileFailure is not null) {
+				return fileFailure;
+			}
+			requestedData = fileData;
+		}
+		if (requestedData is not { ValueKind: JsonValueKind.Object } payload || !payload.EnumerateObject().MoveNext()) {
+			return ODataWriteResponse.Failure(DataRequiredMessage);
+		}
+		data = payload;
+		return null;
+	}
+
+	/// <summary>Reads and parses the JSON payload held in <paramref name="rowsFile"/>.</summary>
+	/// <param name="rowsFile">Path supplied through the <c>rows-file</c> argument.</param>
+	/// <param name="fileData">Parsed payload when the method returns <c>null</c>.</param>
+	/// <returns><c>null</c> on success; otherwise the failure response to return to the caller.</returns>
+	private ODataWriteResponse ReadFileData(string rowsFile, out JsonElement fileData) {
+		fileData = default;
+		if (!_fileContract.TryReadJson(rowsFile, "rows-file", out string dataJson, out string fileError)) {
+			return ODataWriteResponse.Failure(fileError);
+		}
+		try {
+			// JsonDocument rents from ArrayPool<byte>; Clone() detaches the element, so dispose here.
+			using JsonDocument document = JsonDocument.Parse(dataJson);
+			fileData = document.RootElement.Clone();
+			return null;
+		} catch (JsonException ex) {
+			return ODataWriteResponse.Failure($"rows-file must contain valid JSON: {ex.Message}");
+		}
+	}
 }
 
 /// <summary>Arguments for <see cref="ODataUpdateTool"/>.</summary>
@@ -112,8 +206,8 @@ public sealed record ODataUpdateArgs {
 		"Set lookup fields via their <Field>Id column with a GUID (e.g. AccountId), not the display name; " +
 		"to CLEAR a lookup send null - the platform silently drops the empty GUID " +
 		"(00000000-0000-0000-0000-000000000000) on lookup fields rather than clearing the reference. " +
-		"Example: { \"Name\": \"New name\", \"JobTitle\": \"CEO\" }")]
-	[Required]
+		"Example: { \"Name\": \"New name\", \"JobTitle\": \"CEO\" } " +
+		"Exactly one of data or rows-file is required; supplying both is rejected.")]
 	public JsonElement? Data { get; init; }
 
 	/// <summary>Registered clio environment name.</summary>
@@ -126,4 +220,13 @@ public sealed record ODataUpdateArgs {
 	[JsonPropertyName("confirm")]
 	[Description("Must be true to authorize this destructive update. When false or omitted, the tool refuses and returns what would change without making any remote call.")]
 	public bool Confirm { get; init; }
+
+	/// <summary>Optional path to a JSON object of fields to change, used instead of <see cref="Data"/>.</summary>
+	[JsonPropertyName("rows-file")]
+	[Description("Optional path to a JSON object of field/value pairs. Use this instead of data for large payloads; confirm=true is still required.")]
+	public string? RowsFile { get; init; }
+
+	/// <summary>Unbound JSON members, rejected before any file access or Creatio request.</summary>
+	[JsonExtensionData]
+	public Dictionary<string, JsonElement>? ExtensionData { get; init; }
 }

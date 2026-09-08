@@ -5,7 +5,7 @@ applies-to:
   - clio/Command/McpServer/Tools/ODataDeleteTool.cs
   - clio/Command/McpServer/Tools/ODataCreateTool.cs
   - clio/Command/McpServer/Tools/ODataKeyedWrite.cs
-  - clio/Command/McpServer/Tools/ODataResponseError.cs
+  - clio/Common/CreatioResponseError.cs
   - clio/Common/CreatioClientAdapter.cs
 ticket: ENG-95971
 date: 2026-08-25

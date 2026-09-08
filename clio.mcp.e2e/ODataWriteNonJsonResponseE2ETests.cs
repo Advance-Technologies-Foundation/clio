@@ -23,7 +23,6 @@ namespace Clio.Mcp.E2E;
 [AllureFeature(ODataUpdateTool.ToolName)]
 [NonParallelizable]
 public sealed class ODataWriteNonJsonResponseE2ETests {
-	private const string RegisterToolName = "reg-web-app";
 	private const string StubbedEntity = "labClientStatus";
 	private const string RecordId = "8ecab4a1-0ca3-4515-9399-efe0a19390bd";
 
@@ -127,80 +126,20 @@ public sealed class ODataWriteNonJsonResponseE2ETests {
 	}
 
 	/// <summary>
-	/// Stands up the isolated clio home, the non-JSON odata stub, a real mcp-server session, and a
-	/// registered environment pointing at the stub, then runs <paramref name="act"/> against them.
-	/// Centralizes the arrange so the three write-tool tests do not each re-implement it.
+	/// Runs <paramref name="act"/> against a session whose registered environment points at a stub answering
+	/// every odata request for <see cref="StubbedEntity"/> with an HTML error page.
 	/// </summary>
-	private static async Task RunAgainstNonJsonStubAsync(
-		Func<McpServerSession, string, CancellationToken, Task> act) {
-		string tempHome = Path.Combine(Path.GetTempPath(), $"clio-odata-write-nonjson-e2e-{Guid.NewGuid():N}");
-		Directory.CreateDirectory(tempHome);
-		try {
-			string envVarName = OperatingSystem.IsWindows() ? "LOCALAPPDATA" : "HOME";
-			McpE2ESettings settings = TestConfiguration.Load();
-			settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
-			settings.ProcessEnvironmentVariables[envVarName] = tempHome;
-			using TemporaryClioSettingsOverride settingsOverride = TemporaryClioSettingsOverride.ReplaceContent(
-				"""
-				{
-				  "ActiveEnvironmentKey": null,
-				  "Environments": {}
-				}
-				""",
-				settings.ClioProcessPath,
-				settings.ProcessEnvironmentVariables);
-			await using RuntimeDetectionStubServer stubServer = RuntimeDetectionStubServer.Start(
-				new RuntimeDetectionStubServerConfiguration(
-					NetCoreHealthEnabled: true,
-					NetFrameworkHealthEnabled: true,
-					NetCoreServiceEnabled: false,
-					NetFrameworkServiceEnabled: true,
-					NetCoreUiMarkerEnabled: false,
-					NetFrameworkUiMarkerEnabled: true,
-					ODataNonJsonEntity: StubbedEntity));
-			using CancellationTokenSource cancellationTokenSource = new(TimeSpan.FromMinutes(3));
-			await using McpServerSession session = await McpServerSession.StartAsync(settings, cancellationTokenSource.Token);
-			string environmentName = $"odata-write-nonjson-{Guid.NewGuid():N}";
-			await RegisterEnvironmentAsync(session, environmentName, stubServer.BaseUrl, cancellationTokenSource.Token);
-
-			await act(session, environmentName, cancellationTokenSource.Token);
-		} finally {
-			TryDeleteDirectory(tempHome);
-		}
-	}
-
-	private static void TryDeleteDirectory(string path) {
-		try {
-			if (Directory.Exists(path)) {
-				Directory.Delete(path, recursive: true);
-			}
-		} catch {
-			// Best-effort cleanup of the isolated home directory; a leaked temp dir must not fail the test.
-		}
-	}
-
-	private static async Task RegisterEnvironmentAsync(
-		McpServerSession session,
-		string environmentName,
-		string baseUrl,
-		CancellationToken cancellationToken) {
-		IReadOnlyCollection<string> toolNames = await session.ListReachableToolNamesAsync(cancellationToken);
-		toolNames.Should().Contain(RegisterToolName,
-			because: $"the {RegisterToolName} MCP tool must be discoverable before the test can register the stub environment");
-
-		CallToolResult registerResult = await session.CallToolAsync(
-			RegisterToolName,
-			new Dictionary<string, object?> {
-				["args"] = new Dictionary<string, object?> {
-					["environment-name"] = environmentName,
-					["uri"] = baseUrl,
-					["login"] = "Supervisor",
-					["password"] = "Supervisor"
-				}
-			},
-			cancellationToken);
-		CommandExecutionEnvelope execution = McpCommandExecutionParser.Extract(registerResult);
-		execution.ExitCode.Should().Be(0,
-			because: "the stub environment must register successfully before the odata-* write tools can be exercised against it");
-	}
+	private static Task RunAgainstNonJsonStubAsync(
+		Func<McpServerSession, string, CancellationToken, Task> act) =>
+		StubEnvironmentStand.RunAsync(
+			"clio-odata-write-nonjson-e2e",
+			new RuntimeDetectionStubServerConfiguration(
+				NetCoreHealthEnabled: true,
+				NetFrameworkHealthEnabled: true,
+				NetCoreServiceEnabled: false,
+				NetFrameworkServiceEnabled: true,
+				NetCoreUiMarkerEnabled: false,
+				NetFrameworkUiMarkerEnabled: true,
+				ODataNonJsonEntity: StubbedEntity),
+			(session, environmentName, _, cancellationToken) => act(session, environmentName, cancellationToken));
 }

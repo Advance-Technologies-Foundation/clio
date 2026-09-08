@@ -1,6 +1,7 @@
 ﻿using System.Diagnostics;
 using System.Globalization;
 using System.Net;
+using System.Net.Http;
 using System.Net.Sockets;
 using System.Text.Json;
 
@@ -41,6 +42,15 @@ internal sealed class RuntimeDetectionStubServer : IAsyncDisposable {
 		return new RuntimeDetectionStubServer(process, scriptPath, $"http://127.0.0.1:{port.ToString(CultureInfo.InvariantCulture)}");
 	}
 
+	/// <summary>Bytes the oversized OData endpoint managed to send before the client abandoned the transfer.</summary>
+	/// <param name="cancellationToken">Token for the probe request.</param>
+	public async Task<long> GetODataSentBytesAsync(CancellationToken cancellationToken) {
+		using HttpClient client = new();
+		string body = await client.GetStringAsync($"{BaseUrl}/stub/odata-sent-bytes", cancellationToken);
+		using JsonDocument document = JsonDocument.Parse(body);
+		return document.RootElement.GetProperty("sent").GetInt64();
+	}
+
 	public async ValueTask DisposeAsync() {
 		try {
 			if (!_process.HasExited) {
@@ -70,6 +80,15 @@ internal sealed class RuntimeDetectionStubServer : IAsyncDisposable {
 	/// real OData controller, so the body is plain HTML instead of any recognized JSON shape.
 	/// </summary>
 	public const string ODataNonJsonBodyMarker = "odata-nonjson-secret-marker";
+
+	/// <summary>
+	/// The exact body the stub returns for a GET against
+	/// <see cref="RuntimeDetectionStubServerConfiguration.ODataEchoEntity"/>. Held as a single constant so a
+	/// file-mode test can assert the persisted bytes are byte-for-byte the response, not a re-serialization.
+	/// </summary>
+	public const string ODataEchoCollectionBody =
+		"{\"@odata.count\":2,\"value\":[{\"Id\":\"11111111-1111-1111-1111-111111111111\",\"Name\":\"Alpha\"},"
+		+ "{\"Id\":\"22222222-2222-2222-2222-222222222222\",\"Name\":\"Beta\"}]}";
 
 	/// <summary>
 	/// Plain-text marker in the non-JSON body the stub returns for the pre-write <c>$metadata</c> and
@@ -175,11 +194,20 @@ function sendText(response, statusCode, body) {
   response.end(body);
 }
 
+// Bytes the oversized endpoint managed to push before the client hung up. A test cannot see "the transfer
+// was abandoned" from the client side - the call simply returns an error either way - so the server reports
+// how far it got.
+let sentBytes = 0;
+
 http.createServer((request, response) => {
   let body = "";
   request.on("data", chunk => { body += chunk; });
   request.on("end", () => {
     const url = request.url || "";
+    if (request.method === "GET" && url === "/stub/odata-sent-bytes") {
+      sendJson(response, 200, { sent: sentBytes });
+      return;
+    }
     if (request.method === "GET" && url === "{{RecordedRequestsPath}}") {
       // The stub's own introspection endpoint: deliberately NOT recorded, so reading it does not
       // perturb what the test is asserting about.
@@ -261,6 +289,81 @@ http.createServer((request, response) => {
         return;
       }
       sendText(response, 404, "Not Found");
+      return;
+    }
+    if (config.ODataEchoEntity && url.includes("/odata/" + config.ODataEchoEntity)) {
+      // A minimal but REAL OData endpoint: GET answers a fixed collection byte-for-byte, POST echoes the
+      // row's Name back as the created record Id, and PATCH succeeds only when the request body carries the
+      // expected marker. That is what makes a successful file-mode call provable end to end - the response
+      // bytes on disk, and the fact that a file-backed payload actually reached the write request.
+      if (request.method === "GET") {
+        const oversized = config.ODataOversizedBytes || 0;
+        // odata-update runs a BY-KEY pre-write field probe before it PATCHes, and that probe is only
+        // satisfied by a body that IS the addressed record: an Id equal to the key in the URL plus every
+        // $select-ed field. The collection body below is byte-pinned by the read-to-file test, so it cannot
+        // double as the probe answer - a by-key GET gets its own single-record document whose Id is echoed
+        // back out of the request URL. Guarded on the oversized mode so that test keeps owning the GET.
+        const keyMatch = oversized > 0 ? null : /\/odata\/[^/?(]+\(([^)]*)\)/.exec(url);
+        if (keyMatch) {
+          const key = decodeURIComponent(keyMatch[1]).replace(/^guid'/, "").replace(/'/g, "");
+          sendJson(response, 200, {
+            "@odata.context": "http://127.0.0.1/odata/$metadata#" + config.ODataEchoEntity + "/$entity",
+            Id: key,
+            Name: "Alpha"
+          });
+          return;
+        }
+        if (oversized > 0) {
+          // Streams a body far past clio's ceiling WITHOUT a Content-Length, honouring backpressure, and
+          // records how much it actually managed to send. A client that buffers the whole response before
+          // applying its limit drains everything; one that stops at the limit makes the server stop far
+          // short, and sentBytes is what tells the two apart.
+          response.writeHead(200, { "Content-Type": "application/json" });
+          response.write("{\"value\":[{\"Id\":\"1\",\"Filler\":\"");
+          const chunk = "x".repeat(64 * 1024);
+          let stopped = false;
+          const stop = () => { stopped = true; };
+          response.on("close", stop);
+          response.on("error", stop);
+          const pump = () => {
+            while (!stopped && sentBytes < oversized) {
+              sentBytes += chunk.length;
+              if (!response.write(chunk)) {
+                response.once("drain", pump);
+                return;
+              }
+            }
+            if (!stopped) { response.end("\"}]}"); }
+          };
+          pump();
+          return;
+        }
+        response.writeHead(200, { "Content-Type": "application/json" });
+        response.end({{JsonSerializer.Serialize(ODataEchoCollectionBody)}});
+        return;
+      }
+      if (request.method === "POST") {
+        let name = null;
+        try { name = JSON.parse(body).Name; } catch (error) { name = null; }
+        if (!name) {
+          response.writeHead(200, { "Content-Type": "text/html" });
+          response.end("<html><body>post body did not carry a Name</body></html>");
+          return;
+        }
+        sendJson(response, 200, { Id: String(name) });
+        return;
+      }
+      if (request.method === "PATCH") {
+        if (!config.ODataWriteRequiredMarker || !body.includes(config.ODataWriteRequiredMarker)) {
+          response.writeHead(200, { "Content-Type": "text/html" });
+          response.end("<html><body>patch body did not carry the expected marker</body></html>");
+          return;
+        }
+        response.writeHead(204);
+        response.end();
+        return;
+      }
+      sendText(response, 405, "Method Not Allowed");
       return;
     }
     if (config.ODataPreWriteMode && config.ODataEntity) {
@@ -360,6 +463,9 @@ internal sealed record RuntimeDetectionStubServerConfiguration(
 	string? ODataRoutingErrorEntity = null,
 	string? HtmlSelectQuerySchemaName = null,
 	string? ODataNonJsonEntity = null,
+	string? ODataEchoEntity = null,
+	string? ODataWriteRequiredMarker = null,
+	int ODataOversizedBytes = 0,
 	string? ODataEntity = null,
 	string? ODataPreWriteMode = null,
 	string? AuthRejectedSelectQuerySchemaName = null);
