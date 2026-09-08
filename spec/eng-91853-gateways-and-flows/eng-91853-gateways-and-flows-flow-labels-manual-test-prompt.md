@@ -28,6 +28,15 @@ failure to complete the task.
 **Work the cases yourself, in order, and write up each one as you finish it.** Do not hand the suite,
 or any part of it, to another agent to work in the background: nothing collects that work afterwards.
 
+**BUILD YOUR OWN PROCESSES. Do not adopt one that is already on the stand as a precondition.**
+Several processes with label-ish names are already there, left by work that is not this suite — as of
+2026-09-08: `UsrBPFlowLabelSpike1` (the spike that proved the mechanism), `UsrBPLabelSmoke` (a smoke
+check), and a family of `UsrClioBpFlowLabelE2e…` fixtures from automated runs. Their names read exactly
+like what several cases below ask you to build, and TC-03 is where that bites: it says to build the
+unlabelled process first if you have to, which is an invitation to reuse one instead. Do not. You do not
+know what state they are in, and a case whose precondition you inherited rather than established
+measures nothing — leave them alone and leave them in place.
+
 **Build the shape each case describes, and do not reshape it to make an observation easier.** If you
 cannot see something, say so; renaming the steps, removing an element or moving the paths elsewhere
 turns the case into a different one that measures nothing.
