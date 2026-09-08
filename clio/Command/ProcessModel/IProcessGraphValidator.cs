@@ -27,7 +27,20 @@ public enum ProcessFlowKind {
 /// <param name="Source">The source node name.</param>
 /// <param name="Target">The target node name.</param>
 /// <param name="FlowKind">The flow kind.</param>
-public sealed record ProcessGraphEdge(string Source, string Target, ProcessFlowKind FlowKind);
+/// <param name="Condition">
+/// The boolean expression a conditional flow is taken on, when the caller supplies one. Optional on the
+/// wire, so a caller can check a graph's SHAPE before writing any predicate - but omission is not
+/// unexamined: it is reported as an R13 <see cref="ProcessGraphSeverity.Warning"/>.
+/// <para>Three states, three outcomes. A non-blank condition is accepted. A BLANK one is an R13 error:
+/// reached through the designer or a direct save the platform substitutes the literal <c>true</c>,
+/// producing a branch that looks conditional and always fires. An OMITTED one is an R13 warning - the
+/// build path refuses it just as it refuses a blank one, so the caller has to be told, but a shape-only
+/// check is a legitimate call and an error would block it.</para>
+/// <para>Without the field the validator could not see any of the three, so the check could only live on
+/// the server, where it is found one save later.</para>
+/// </param>
+public sealed record ProcessGraphEdge(string Source, string Target, ProcessFlowKind FlowKind,
+	string Condition = null);
 
 /// <summary>
 /// A planned process graph: the nodes and the flows between them.
@@ -47,7 +60,7 @@ public enum ProcessGraphSeverity {
 }
 
 /// <summary>
-/// A single validation finding against one of the connection rules (R1–R17).
+/// A single validation finding against one of the connection rules (R1–R18).
 /// </summary>
 /// <param name="Severity">Whether the finding blocks building or is advisory.</param>
 /// <param name="RuleId">The rule identifier (e.g. <c>R1</c>, <c>R14</c>, or <c>UNKNOWN</c> for an unrecognized element type).</param>
@@ -69,7 +82,7 @@ public sealed record ProcessGraphFinding(
 public sealed record ProcessGraphValidationResult(bool HasErrors, IReadOnlyList<ProcessGraphFinding> Findings);
 
 /// <summary>
-/// Validates a planned process graph against the Creatio BPMN connection rules (R1–R17) in-memory,
+/// Validates a planned process graph against the Creatio BPMN connection rules (R1–R18) in-memory,
 /// so an AI agent gets deterministic pre-build feedback before building the process with
 /// <c>create-business-process</c> / <c>modify-business-process</c>.
 /// </summary>

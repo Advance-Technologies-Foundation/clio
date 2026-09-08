@@ -36,3 +36,19 @@ opposite error is accepting a floor as a REPLACEMENT for convergence: the litera
 names the feature threshold, while convergence tracks every rebundle; both are needed. The ADR
 (`spec/adr/adr-bundled-package-version-source-of-truth.md`) permits a hand-typed literal added in
 the commit that creates the need - it forbids only deriving the literal from the archive.
+
+**Updated by ENG-95891.** The Create/Modify floor moved up from 1.3.1.1; the literal itself lives in the
+`[RequiresPackage]` attributes on `CreateBusinessProcessOptions` / `ModifyBusinessProcessOptions` and is
+deliberately not restated here - this paragraph named 1.4.0.3 and went stale the same day, which is the very
+failure the closing sentence below warns about. For a while the floor EQUALLED
+the bundled version, and while that holds the two refusals stop being nested: `installed >= floor` already implies
+`installed >= bundled`, so `TryGetConvergenceRefusal` cannot fire on that command at all, and the sentence above
+about the floor's refusal set being a subset of convergence's is true only in the degenerate sense that the sets are
+equal. Agent-facing text must therefore not promise "the convergence message naming both versions" as the refusal a
+caller will see — in that state it names one.
+
+That state has ended: the branch cut further archives and the bundled version is well ahead of the floor again, so
+the nesting is back and the general rule above applies. Do NOT restate the bundled version here — this record said
+"1.4.0.3 is also the version clio bundles" and was 23 patches stale within a day. The bundled version has exactly
+one home, `ExpectedArchiveVersion` in `clio.tests/Common/BundledProcessBuilderPackageTests.cs`; what belongs in a
+record is the CONDITION (floor equals bundled) and what it does, not the numbers that happen to satisfy it today.

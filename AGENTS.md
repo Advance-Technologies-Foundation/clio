@@ -131,14 +131,19 @@ clio ships two Creatio packages inside its own distribution — `cliogate` (preb
 - a `[RequiresPackage]` version literal
 
 The normal path is one call — `pwsh ./rebundle-process-builder.ps1 -PackageRepoPath <ProcessBuilder
-checkout> -Version X.Y.Z.W`. It runs the whole procedure, computes the pins from the archive it just
-produced, and checks the archive's inventory. The article documents it, and keeps the manual steps as the
+checkout> -Version X.Y.Z.W`. It runs the whole procedure, refreshes all four clio-side pins — only the
+SHA is computed from the archive it just produced; the version comes from `-Version`, the stamp from the
+package descriptor after the restamp, and the commit from that repository's HEAD before it — and checks
+the archive's inventory. The article documents it, and keeps the manual steps as the
 fallback for a host without `pwsh`.
 
 **`-Version` is required and must go UP on every rebundle.** clio reads the shipped version out of the
 archive and compares it against the version the environment recorded; an unchanged version therefore
 reaches new installs only, and nobody who already has the package is ever asked to update. There is no
-version constant to keep in step, so raising it costs nothing. Do NOT reintroduce one — see
+version constant to keep in step, so raising it costs nothing to MAINTAIN — which is not the same as
+costing nothing: `RequiredPackageChecker` throws on a convergence refusal, and a rebundle during
+ENG-91853 left a reviewer's clio on .63 refusing `describe-business-process` against a stand still on
+.61. Raise it deliberately, not casually. Do NOT reintroduce a constant — see
 [spec/adr/adr-bundled-package-version-source-of-truth.md](spec/adr/adr-bundled-package-version-source-of-truth.md).
 
 That article carries the rebundle procedure and the three platform facts whose failure modes are SILENT:
