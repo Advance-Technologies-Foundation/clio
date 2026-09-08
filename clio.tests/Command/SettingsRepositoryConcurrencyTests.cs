@@ -25,9 +25,18 @@ namespace Clio.Tests.Command;
 public sealed class SettingsRepositoryConcurrencyTests {
 
 	private MockFileSystem _fileSystem;
+	private System.IO.Abstractions.IFileSystem _originalStaticFileSystem;
 
 	[SetUp]
 	public void SetUp() {
+		// The SettingsRepository constructor overwrites the PROCESS-WIDE static SettingsRepository.FileSystem
+		// whenever a non-null file system is passed (ConfigurationOptions.cs:627-630), and every test below
+		// constructs repositories with mocks. Without this save/restore the last mock stays published as the
+		// default for any later `new SettingsRepository()` that passes none of its own - and worse, a fixture
+		// that captures the static in ITS OWN SetUp (SettingsRepositoryRealFileSystemPublishTests does)
+		// captures the leaked mock and then faithfully restores the leak. Latent only while nothing does a
+		// no-arg construction, so it is closed here rather than left as a trap for the test that adds one.
+		_originalStaticFileSystem = SettingsRepository.FileSystem;
 		_fileSystem = TestFileSystem.MockFileSystem();
 		_fileSystem.AddFile(SettingsRepository.AppSettingsFile, new MockFileData(JsonConvert.SerializeObject(
 			new Settings {
@@ -37,6 +46,9 @@ public sealed class SettingsRepositoryConcurrencyTests {
 				}
 			})));
 	}
+
+	[TearDown]
+	public void TearDown() => SettingsRepository.FileSystem = _originalStaticFileSystem;
 
 	[Test]
 	[Description("Two repositories created from the same snapshot preserve both environment registrations.")]
