@@ -89,6 +89,15 @@ is vulnerable to exactly the same thing, and neither party noticed when it was p
 re-run proves nothing against a baseline that is intermittently red. Establish the baseline's stability
 before attributing anything to the variable.
 
+**The two directions of a bad probe are the same defect at opposite prices, and only one of them is comfortable.** A probe that fails toward *"there is a problem"* costs a wasted check. One that fails toward *"no problem"* ships the defect. The asymmetry is not in the error - it is in what happens next: **nobody re-runs a clean result**, because a clean result is what you were hoping for, while a reported problem gets investigated by definition.
+
+Both landed within an hour of each other on this ticket, in opposite directions, in a two-party review:
+
+- A reviewer grepped for a setting with `--include=".editorconfig"`, which does not match a dotfile, and read the empty result as the setting being unpinned. It was pinned. Cost: one check that would have found the work already done.
+- I opened four files, found each lacked a byte-order mark on the base branch, and wrote *"all four start with `usi` on master"* - a true statement about the four I had opened, presented as a fact about the set. The set was nine, and **three more of the marks were also mine**. Cost: three defects shipped, in a commit whose message claimed the class was fixed.
+
+The second is worse and reads better. It produced a tidy conclusion, a confident commit message, and no reason for anyone to look again - which is exactly what a partial probe buys when it happens to flatter. So the question to ask of a clean result is not "is this right" but **"what would this probe have returned if the answer were no"** - and if a partial one returns the same thing, it has told you nothing.
+
 Related: [[three-defences-and-no-oracle-is-an-unpinned-rule]] — the same shape one level down, where a
 rule defended three ways still has nothing that would go red. And
 [[merge-before-choosing-a-version-number]], which is the staleness failure with its own remedy.

@@ -364,6 +364,45 @@ public sealed class ProcessGraphValidatorTests {
 
 	[Test]
 	[Category("Unit")]
+	[Description("The R7 plain-flow warning is the ONLY finding on a diverging gateway shaped "
+		+ "[default, plain->gateway]. R14's first rule is exempt there - a plain sibling leading "
+		+ "into a gateway puts the decision one element further on, which is the platform's own "
+		+ "GetOutgoingsDefFlows behaviour - and R18 has no conditional flow to key on. Pinned "
+		+ "because the case for keeping this warning rests on it: read as redundant with the two "
+		+ "errors, deleting it would silence this shape completely.")]
+	public void Validate_ShouldWarnR7Alone_WhenAPlainSiblingLeadsToAGatewayBesideADefault() {
+		// Arrange
+		List<ProcessGraphNode> nodes = [
+			Node("s", "startEvent"), Node("g", "exclusiveGateway"), Node("h", "exclusiveGateway"),
+			Node("b", "activityUserTask"), Node("c", "activityUserTask"), Node("e", "endEvent")
+		];
+		List<ProcessGraphEdge> edges = [
+			Seq("s", "g"),
+			Def("g", "b"),
+			Seq("g", "h"),
+			Seq("h", "c"),
+			Seq("b", "e"), Seq("c", "e")
+		];
+
+		// Act
+		ProcessGraphValidationResult result = Validate(nodes, edges);
+
+		// Assert
+		result.Findings.Should().ContainSingle(f => f.RuleId == "R7",
+			because: "the gateway carries a plain sequence flow beside a marked default, and this is "
+				+ "the finding that reports it");
+		result.Findings.Should().NotContain(f => f.RuleId == "R14",
+			because: "R14's first rule is EXEMPT when a plain sibling leads into a gateway - the "
+				+ "decision lives one element on, and unscoped that rule rejected 45 shipped gateways");
+		result.Findings.Should().NotContain(f => f.RuleId == "R18",
+			because: "R18 keys on a conditional flow being present and there is none here");
+		result.HasErrors.Should().BeFalse(
+			because: "which is the whole point: no error covers this shape, so the warning is the only "
+				+ "thing standing between an author and a fallback decided by flow order alone");
+	}
+
+	[Test]
+	[Category("Unit")]
 	[Description("R14: a default flow with no sibling conditional flow is an error where the source actually BRANCHES. The source is a DIVERGING activity, and that matters: this test used to arrange a single default flow out of an exclusive gateway, which is the CONVERGING shape 45 shipped gateways are in, and it asserted the rule that rejected them.")]
 	public void Validate_ShouldReturnR14Error_WhenDivergingSourceHasADefaultWithNoConditional() {
 		// Arrange

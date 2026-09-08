@@ -393,10 +393,18 @@ public sealed class ProcessGraphValidator : IProcessGraphValidator {
 			// preferred, because GetIsDefSequenceFlow matches every non-conditional flow alike and drops
 			// exactly one by declaration order. Saying the plain flow is the fallback there would name a
 			// specific branch the runtime does not commit to.
-			// R18 also errors on [conditional, default, plain] and R14 on [default, plain], so this warning
-			// never stands alone on the scoped arm. It is kept rather than suppressed because it carries the
-			// one fact neither error states - that flow ORDER is what decides - and R18 is silent on
-			// [default, plain], which has no conditional flow at all.
+			// Kept rather than suppressed, and NOT because it is merely redundant-but-harmless: on one shape
+			// it is the only finding there is. R18 errors on [conditional, default, plain], and R14's
+			// first rule errors on [default, plain] - but that rule carries `&& !plainSiblingLeadsToAGateway`
+			// (see :334), so on [default, plain->GATEWAY] R14 is EXEMPT, and R18 has no conditional flow to
+			// key on either. A diverging or-gateway in that shape is reported by this warning ALONE. Anyone
+			// later reading "the errors cover it" and deleting this would silence that case completely, which
+			// is why the exemption is named here and not left to be rediscovered at :334.
+			// It also carries the one fact neither error states - that flow ORDER is what decides.
+			// The gap is STRUCTURAL, not measured: how often an or-gateway ships as [default, plain->gateway]
+			// is unknown. The single shipped instance R14's comment names, CrtLeadOppMgmtApp/LeadDistribution's
+			// ReadDataUserTask1, is a USER TASK, and this guard fires only on Exclusive/Inclusive - so it does
+			// not reach this arm and says nothing about its frequency.
 			findings.Add(new ProcessGraphFinding(ProcessGraphSeverity.Warning, ruleId,
 				hasDefault
 					? $"Diverging gateway '{node.Name}' has a plain sequence flow beside a flow already marked "
