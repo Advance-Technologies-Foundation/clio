@@ -3358,7 +3358,7 @@ stories:
     feature: "eng-91853-gateways-and-flows"
     repo: "clio-knowledge"
     size: S
-    status: review
+    status: done
     pr: https://github.com/Advance-Technologies-Foundation/clio-knowledge/pull/135
     jira: ENG-91853
     file: spec/eng-91853-gateways-and-flows/eng-91853-gateways-and-flows-plan.md
@@ -3368,7 +3368,12 @@ stories:
       Committed: cd0602e rewrites both articles and bumps libraryVersion to 1.13.94; e621362 is the
       review-gate fix - the article said there was no clear-condition operation, and setFlow with
       kind 'sequence' is one. The curated-knowledge-names.json re-pin landed on the clio side as
-      ed670759c. All three branches are pushed and three pull requests are open: clio#1398, engineering/crt-process-builder#45, clio-knowledge#135.
+      ed670759c. MERGED 2026-09-08 as 8a21fd9c4 and RELEASED: master carries libraryVersion 1.13.99 and the
+        Latest release is 1.13.99 (12:59:11Z), so the guidance is live - which still needs
+        `update-knowledge` on any environment holding an older generation, because a stale cache
+        keeps serving the OLD articles silently. Remaining: clio#1398 and
+        engineering/crt-process-builder#45, package first - clio's ExpectedProducingCommit names
+        a package commit.
       Two facts the articles did not carry and that nothing else records: branch evaluation order is
       flows[] ARRAY order, first true wins, and nothing encodes it - so the order an agent declares
       branches in silently decides which one runs; and the layout re-runs over the WHOLE schema on
