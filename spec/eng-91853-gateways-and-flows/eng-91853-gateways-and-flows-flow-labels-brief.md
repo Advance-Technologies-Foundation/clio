@@ -1,8 +1,9 @@
 # ENG-91853 follow-up — flow LABELS on the diagram
 
 Parked on 2026-09-07 by the owner, to be implemented in a separate session, on this branch
-(`feature/ENG-91853-flow-labels`), as a separate pull request **opened only after the main ENG-91853
-PRs merge**. Nothing here is implemented yet. Everything below is measured, not assumed.
+(`feature/ENG-91853-flow-labels`), as a separate pull request. **That gate is now open: all three ENG-91853
+PRs merged on 2026-09-08** (package `4a000d035`, knowledge `8a21fd9c4` released as 1.13.99, clio
+`ddff7cc62`). Nothing here is implemented yet. Everything below is measured, not assumed.
 
 ## The gap
 
@@ -85,9 +86,9 @@ Four, plus the archive:
   `setFlow` with a `label` field is the natural home — it already takes `source`/`target`/`kind`/
   `condition` — but check the interaction with the Name re-derivation above first.
 - **clio** — tool descriptions for create/modify, `docs/McpCapabilityMap.md`, `clio.mcp.e2e`
-  coverage, and the bundled archive (the next version after whatever the main PR merges — that PR is at
-  **1.4.0.69** as of 2026-09-07, so plan on .70, and read the version off the branch rather than off
-  this line).
+  coverage, and the bundled archive (the next version after what master now ships, which is
+  **1.6.0.6** — so plan on 1.6.0.7. Read it out of the DESCRIPTOR rather than off this line: the
+  number moved eight times during the main ticket because `main` kept claiming the next one).
 - **clio-knowledge** — `process-naming` N10 says the label is missing and must stop saying so;
   `process-branch-conditions` should carry the style rule and the 85% figure. `libraryVersion` +
   sequence bump, as always.
@@ -123,6 +124,26 @@ moved and one target changed:
 - `process-naming` N10 is still the place that says the label is the ONE thing missing from `flows[]`,
   and still the place that has to stop saying it.
 
-`libraryVersion` reached **1.13.98** on the ENG-91853 branch after that merge. The clio-side pin
+`libraryVersion` is **1.13.99** on master and released as such (2026-09-08 12:59Z). The clio-side pin
 `clio.tests/Command/McpServer/Fixtures/curated-knowledge-names.json` already carries all 14 names, so
 adding a label needs no new article and no new name — only content changes and a version bump.
+
+## Refreshed 2026-09-08, after the main ticket merged
+
+Three numbers in this brief had gone stale and are corrected above: the archive to plan on is
+**1.6.0.7** (master ships 1.6.0.6, not 1.4.0.69), the guidance library is **1.13.99** and released,
+and the "opened only after the main PRs merge" gate is now open.
+
+Two things to know before starting, neither of which is in the text above:
+
+- **This branch carries the brief and `flow-caption-corpus-scan.py`, and master does not.** They
+  exist nowhere else, so start from this branch rather than from master, or they are invisible.
+- **The re-kind trap named above got sharper during the main ticket, and in a way that matters
+  here.** `FlowKindRules.FreeTheDefaultSlot()` now tells a caller to free a gateway's default slot
+  with `setFlow` + `kind: conditional` on the EXISTING default — that is a re-kind, on a flow a
+  designer is most likely to have labelled, since 85% of conditional flows carry one. So the remedy
+  this ticket shipped routes callers straight through the orphaning path. Whatever answer the resource
+  key gets has to cover that route specifically, and there is a test to extend rather than write:
+  `AddFlow_SecondDefaultOffADecidingGateway_NamesARemedyThatWorks` already executes it.
+
+Everything else in this brief was re-read against master at `ddff7cc62` and still holds.
