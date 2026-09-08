@@ -198,7 +198,7 @@ public sealed class WebToMobilePageConversionRulesCatalogTests {
 			because: "the map lists only requests supported on mobile; unsupported ones are simply not stored");
 	}
 
-	[TestCase("crt.OpenPageRequest", "schemaName", "mobile-page",
+	[TestCase("crt.OpenPageRequest", "schemaName", "web-page",
 		TestName = "LoadBundled_OpenPageRequest_DeclaresItsPageTarget")]
 	[TestCase("crt.CreateRecordRequest", "entityName", "entity-default-mobile-page",
 		TestName = "LoadBundled_CreateRecordRequest_DeclaresItsObjectTarget")]

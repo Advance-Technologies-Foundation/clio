@@ -213,7 +213,7 @@
     { "web": "crt.CopyRecordRequest", "mobile": "crt.CopyRecordRequest", "category": "DirectMapping" },
     { "web": "crt.CancelRecordChangesRequest", "mobile": "crt.CancelRecordChangesRequest", "category": "DirectMapping" },
     { "web": "crt.ClosePageRequest", "mobile": "crt.ClosePageRequest", "category": "DirectMapping" },
-    { "web": "crt.OpenPageRequest", "mobile": "crt.OpenPageRequest", "category": "DirectMapping", "targetParam": "schemaName", "targetKind": "mobile-page" },
+    { "web": "crt.OpenPageRequest", "mobile": "crt.OpenPageRequest", "category": "DirectMapping", "targetParam": "schemaName", "targetKind": "web-page" },
     { "web": "crt.OpenLookupPageRequest", "mobile": "crt.OpenLookupPageRequest", "category": "DirectMapping" },
     { "web": "crt.OpenCustomWebViewPageRequest", "mobile": "crt.OpenCustomWebViewPageRequest", "category": "DirectMapping" },
     { "web": "crt.ShowDialogRequest", "mobile": "crt.ShowDialogRequest", "category": "DirectMapping" },

@@ -295,13 +295,14 @@ public sealed class WebToMobileRealPageRegressionTests {
 			null, "env", null, null, null,
 			new MobileActionTargetProbeRequest(
 				fixture["viewConfig"]!.DeepClone().AsArray(), BundledRules(),
-				ModelConfig: null, PagePackageUId: null, DesignPackageUId: null));
+				ModelConfig: null, PagePackageUId: null));
 
 		// Assert
 		collected.Occurrences.Should().Contain(
 			o => o.WebRequest == "crt.OpenPageRequest" && o.Target == "PostponeQueueItemPage"
-				&& o.Kind == "mobile-page",
-			because: "the pinned page opens a specific page by schema name, which must be verified as a mobile page");
+				&& o.Kind == "web-page",
+			because: "the pinned page opens a page by schema name, and a web page's schemaName names a WEB page — "
+				+ "which the mobile app cannot open, so it needs no lookup to be reported");
 		collected.Occurrences.Where(o => o.WebRequest == "crt.CreateRecordRequest")
 			.Select(o => o.Target).Should().BeEquivalentTo(["LeadProduct", "Lead", "Opportunity"],
 				because: "each create action names the object whose default mobile page must exist");
@@ -463,7 +464,7 @@ public sealed class WebToMobileRealPageRegressionTests {
 			null, "env", null, null, null,
 			new MobileActionTargetProbeRequest(
 				fixture["viewConfig"]!.DeepClone().AsArray(), rules,
-				ModelConfig: null, PagePackageUId: null, DesignPackageUId: null));
+				ModelConfig: null, PagePackageUId: null));
 		var byKey = new Dictionary<string, ActionTargetResolution>(StringComparer.OrdinalIgnoreCase);
 		foreach (ActionTargetOccurrence occurrence in collected.Occurrences) {
 			byKey[MobileActionTargetProbe.TargetKey(occurrence.Kind, occurrence.Target)] =

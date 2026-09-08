@@ -1142,13 +1142,11 @@ public sealed class ActionTargetOccurrence {
 /// conversion is itself about.
 /// </param>
 /// <param name="PagePackageUId">The source page's package UId, used to address an object's add-on.</param>
-/// <param name="DesignPackageUId">The source page's design package UId, the fallback for a hierarchy read.</param>
 public sealed record MobileActionTargetProbeRequest(
 	JsonArray ViewConfig,
 	WebToMobilePageConversionRules Rules,
 	JsonObject ModelConfig,
-	string PagePackageUId,
-	string DesignPackageUId);
+	string PagePackageUId);
 
 /// <summary>
 /// Outcome of probing whether the source page's action targets exist on mobile. Best-effort: on any

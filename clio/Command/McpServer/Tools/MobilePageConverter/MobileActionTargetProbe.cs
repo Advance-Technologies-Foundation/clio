@@ -36,8 +36,15 @@ namespace Clio.Command.McpServer.Tools.MobilePageConverter;
 /// </summary>
 public static class MobileActionTargetProbe {
 
-	/// <summary>Target kind: the value names a page schema that must itself be a mobile page.</summary>
-	internal const string KindMobilePage = "mobile-page";
+	/// <summary>
+	/// Target kind: the value names a WEB page schema. Always reported, never looked up — a web page's
+	/// <c>schemaName</c> names a web page BY CONSTRUCTION (the converter only accepts a web source, and it
+	/// carries the value verbatim: <c>crt.OpenPageRequest</c> declares no <c>paramMap</c> and nothing rewrites
+	/// the parameter). The Creatio Mobile app cannot open a web page, so the action is dead on mobile no matter
+	/// what the environment holds. Asking it a question whose answer is fixed would only add round trips and a
+	/// way to be wrong.
+	/// </summary>
+	internal const string KindWebPage = "web-page";
 
 	/// <summary>Target kind: the value names an object that must have a default mobile edit page.</summary>
 	internal const string KindEntityDefaultMobilePage = "entity-default-mobile-page";
@@ -63,14 +70,6 @@ public static class MobileActionTargetProbe {
 	private const int TextDataValueType = 1;
 
 	/// <summary>
-	/// Ceiling on the AUTHORITATIVE per-page escalation (a designer <c>GetParentSchemas</c> round trip each).
-	/// Only pages the cheap parent-template classification could not place reach it, so an ordinary page needs
-	/// none; the cap exists so a pathological page cannot turn one guide call into dozens of POSTs. A target
-	/// past the budget is <see cref="ActionTargetState.Unknown"/>, never <see cref="ActionTargetState.Missing"/>.
-	/// </summary>
-	private const int MaxAuthoritativeProbes = 5;
-
-	/// <summary>
 	/// Ceiling on the per-object add-on reads (one <c>GetSchema</c> round trip each). Same rationale and same
 	/// fail-open overflow as <see cref="MaxAuthoritativeProbes"/>.
 	/// </summary>
@@ -81,21 +80,6 @@ public static class MobileActionTargetProbe {
 	/// truncated result would be misread as "this layer does not exist".
 	/// </summary>
 	private const int RowsPerNameHeadroom = 4;
-
-	/// <summary>
-	/// Mobile page template roots shipped with clio, used when the environment's template catalog cannot be
-	/// read. The authoritative set is the union of this, the versioned rules file's mobile templates, and the
-	/// environment's own catalog — no single source is trusted alone: the platform catalog serves a CURATED
-	/// subset (see <see cref="SchemaTemplateCatalog"/>), and the rules file only names templates it maps.
-	/// Documented under "Template Hierarchy" in <c>spec/mobile-pages/mobile-pages-reference.md</c>.
-	/// </summary>
-	private static readonly string[] BundledMobileTemplateRoots = [
-		"BlankMobilePageTemplate",
-		"BaseMobileTemplate",
-		"BaseMobilePageTemplate",
-		"MobilePageWithTabsFreedomTemplate",
-		"BaseMobileListTemplate"
-	];
 
 	/// <summary>
 	/// The key one distinct action target is resolved under. Single-sourced so the probe that WRITES a
@@ -119,8 +103,14 @@ public static class MobileActionTargetProbe {
 		IToolCommandResolver commandResolver,
 		string environment, string uri, string login, string password,
 		MobileActionTargetProbeRequest request) {
-		WebToMobilePageConversionRules rules = request?.Rules;
-		IReadOnlyDictionary<string, RequestMappingRule> targeted = BuildTargetedRequestMap(rules);
+		// Guard the REQUEST, not each member: a null-conditional on the first access and a plain dereference on
+		// the next reads as safe and is not — the same shape that made CarriesBindingOnMobile throwable.
+		if (request is null) {
+			return new MobileActionTargetProbeResult {
+				ProbeOk = false, Note = "Action targets were not verified (no page inputs were supplied)."
+			};
+		}
+		IReadOnlyDictionary<string, RequestMappingRule> targeted = BuildTargetedRequestMap(request.Rules);
 		if (targeted.Count == 0) {
 			// Not an environment failure: the rules simply declare no navigation targets (an older published
 			// rules file). Report "not probed" so an empty finding list is never read as "all clear".
@@ -144,6 +134,20 @@ public static class MobileActionTargetProbe {
 			// Nothing on the page navigates anywhere: the check ran and found nothing to verify.
 			return new MobileActionTargetProbeResult { ProbeOk = true };
 		}
+
+		// Settled without asking anyone: a web-page reference is dead on mobile by construction. Doing this
+		// BEFORE the environment is reached is what lets an offline run still report it.
+		var resolutions = new Dictionary<string, ActionTargetResolution>(StringComparer.OrdinalIgnoreCase);
+		foreach (string webPage in DistinctTargetsOfKind(occurrences, KindWebPage)) {
+			Record(resolutions, KindWebPage, webPage, ActionTargetState.Missing);
+		}
+
+		IReadOnlyList<string> entityTargets = DistinctTargetsOfKind(occurrences, KindEntityDefaultMobilePage);
+		if (entityTargets.Count == 0) {
+			return new MobileActionTargetProbeResult {
+				ProbeOk = true, Occurrences = occurrences, TargetsByKey = resolutions
+			};
+		}
 		if (commandResolver is null) {
 			return NotProbed(occurrences, "Action targets were not verified (missing environment client).");
 		}
@@ -157,11 +161,7 @@ public static class MobileActionTargetProbe {
 				commandResolver.Resolve<IApplicationClient>(options),
 				commandResolver.Resolve<IServiceUrlBuilder>(options));
 
-			var resolutions = new Dictionary<string, ActionTargetResolution>(StringComparer.OrdinalIgnoreCase);
-			ResolvePageTargets(context, rules,
-				DistinctTargetsOfKind(occurrences, KindMobilePage), request.DesignPackageUId, resolutions);
-			ResolveEntityTargets(context,
-				DistinctTargetsOfKind(occurrences, KindEntityDefaultMobilePage), request.PagePackageUId, resolutions);
+			ResolveEntityTargets(context, entityTargets, request.PagePackageUId, resolutions);
 
 			return new MobileActionTargetProbeResult {
 				ProbeOk = true, Occurrences = occurrences, TargetsByKey = resolutions
@@ -252,7 +252,7 @@ public static class MobileActionTargetProbe {
 
 	/// <summary>Whether this build knows how to verify a target of <paramref name="kind"/>.</summary>
 	private static bool IsRecognizedKind(string kind) =>
-		string.Equals(kind, KindMobilePage, StringComparison.OrdinalIgnoreCase)
+		string.Equals(kind, KindWebPage, StringComparison.OrdinalIgnoreCase)
 		|| string.Equals(kind, KindEntityDefaultMobilePage, StringComparison.OrdinalIgnoreCase);
 
 	/// <summary>
@@ -349,83 +349,6 @@ public static class MobileActionTargetProbe {
 	}
 
 	/// <summary>
-	/// Resolves every <see cref="KindMobilePage"/> target: ONE batched <c>SysSchema</c> read classifies each
-	/// name by its parent template, and only the residue no template set places escalates to the authoritative
-	/// designer read. The numeric client-unit schema type (9 web / 10 mobile) is NOT a queryable
-	/// <c>SysSchema</c> column — it lives in the schema metadata and is only exposed by
-	/// <see cref="IPageDesignerHierarchyClient.GetParentSchemas"/> — which is why this is two-tier rather than
-	/// one authoritative query.
-	/// </summary>
-	private static void ResolvePageTargets(
-		ProbeContext context, WebToMobilePageConversionRules rules,
-		IReadOnlyList<string> names, string designPackageUId,
-		IDictionary<string, ActionTargetResolution> into) {
-		if (names.Count == 0) {
-			return;
-		}
-		(HashSet<string> mobileRoots, HashSet<string> webRoots) = LoadTemplateRoots(context, rules);
-		SchemaLookup<PageSchemaRow> lookup = ReadPageSchemaRows(context, names);
-
-		var residue = new List<(string Name, string UId)>();
-		foreach (string name in names) {
-			lookup.RowsByName.TryGetValue(name, out List<PageSchemaRow> rows);
-			ActionTargetState? settled =
-				ClassifyPageRowsByTemplate(rows, lookup.PossiblyTruncated, mobileRoots, webRoots);
-			if (settled is { } state) {
-				Record(into, KindMobilePage, name, state);
-			} else {
-				residue.Add((name, rows[0].UId));
-			}
-		}
-		EscalateUnplacedPages(context, residue, designPackageUId, into);
-	}
-
-	/// <summary>
-	/// Places one page from its <c>SysSchema</c> rows alone, or returns <see langword="null"/> when the cheap
-	/// tier cannot answer and the authoritative designer read must decide.
-	/// </summary>
-	/// <remarks>
-	/// Every branch that could conclude ABSENCE is gated on the read being complete: a truncated result cannot
-	/// tell "this page has no row" from "its row was cut off", nor "every layer is web-rooted" from "the
-	/// mobile-rooted layer is the one that was cut". Both degrade to <see cref="ActionTargetState.Unknown"/>.
-	/// </remarks>
-	private static ActionTargetState? ClassifyPageRowsByTemplate(
-		IReadOnlyList<PageSchemaRow> rows, bool possiblyTruncated,
-		HashSet<string> mobileRoots, HashSet<string> webRoots) {
-		if (rows is not { Count: > 0 }) {
-			// No client-unit schema of that name — unambiguous, and independent of any template allowlist:
-			// the action opens something that does not exist.
-			return possiblyTruncated ? ActionTargetState.Unknown : ActionTargetState.Missing;
-		}
-		if (rows.Any(row => mobileRoots.Contains(row.ParentName ?? string.Empty))) {
-			return ActionTargetState.Resolved;
-		}
-		if (!possiblyTruncated
-			&& rows.All(row => !string.IsNullOrWhiteSpace(row.ParentName) && webRoots.Contains(row.ParentName))) {
-			// It exists, but every layer descends from a WEB template — a page that was never converted.
-			return ActionTargetState.Missing;
-		}
-		return null;
-	}
-
-	/// <summary>
-	/// Settles the pages the template classification could not place, by the authoritative designer read.
-	/// Past <see cref="MaxAuthoritativeProbes"/> the rest are <see cref="ActionTargetState.Unknown"/> — a
-	/// budget may cost an answer, never invent one.
-	/// </summary>
-	private static void EscalateUnplacedPages(
-		ProbeContext context, IReadOnlyList<(string Name, string UId)> residue,
-		string designPackageUId, IDictionary<string, ActionTargetResolution> into) {
-		int budget = MaxAuthoritativeProbes;
-		foreach ((string Name, string UId) target in residue) {
-			ActionTargetState state = budget-- > 0
-				? ClassifyPageByHierarchy(context, target.UId, designPackageUId)
-				: ActionTargetState.Unknown;
-			Record(into, KindMobilePage, target.Name, state);
-		}
-	}
-
-	/// <summary>
 	/// The per-call environment seam, threaded through the resolution passes as one value. Carrying the
 	/// resolver alongside the two clients it produced keeps every read on the SAME per-call container: a pass
 	/// that re-resolved from somewhere else could silently answer for a different tenant.
@@ -434,113 +357,13 @@ public static class MobileActionTargetProbe {
 		IToolCommandResolver Resolver, EnvironmentOptions Options,
 		IApplicationClient Client, IServiceUrlBuilder UrlBuilder);
 
-	/// <summary>One <c>SysSchema</c> row of a client-unit schema, as the batched classification reads it.</summary>
-	private sealed record PageSchemaRow(string UId, string ParentName);
-
 	/// <summary>
-	/// The result of a batched <c>SysSchema</c> read.
-	/// <para>
-	/// <paramref name="PossiblyTruncated"/> is the load-bearing half. A <c>SelectQuery</c> is capped by
-	/// <c>rowCount</c> and reports no overflow, so a chunk that came back exactly full may have left rows
-	/// behind — and a name whose rows were left behind is INDISTINGUISHABLE from a name that does not exist.
-	/// Concluding <see cref="ActionTargetState.Missing"/> from that would report a working control as broken,
-	/// so every absence-flavoured verdict is downgraded to <see cref="ActionTargetState.Unknown"/> when this
-	/// is set.
-	/// </para>
+	/// Why a batched <c>SysSchema</c> read reports whether it may have been TRUNCATED. A <c>SelectQuery</c> is
+	/// capped by <c>rowCount</c> and reports no overflow, so a read that came back exactly full may have left
+	/// rows behind — and a name whose rows were left behind is INDISTINGUISHABLE from a name that does not
+	/// exist. Concluding <see cref="ActionTargetState.Missing"/> from that would report a working control as
+	/// broken, so an absence verdict is downgraded to <see cref="ActionTargetState.Unknown"/> when it is set.
 	/// </summary>
-	private sealed record SchemaLookup<TRow>(
-		IReadOnlyDictionary<string, List<TRow>> RowsByName, bool PossiblyTruncated);
-
-	/// <summary>
-	/// Reads the <c>SysSchema</c> rows for every named page in as few round trips as the ESQ parameter cap
-	/// allows. A page can have several rows (a base schema plus replacing layers), so rows are grouped by name
-	/// and the classification folds over all of them.
-	/// </summary>
-	private static SchemaLookup<PageSchemaRow> ReadPageSchemaRows(
-		ProbeContext context, IReadOnlyList<string> names) {
-		var byName = new Dictionary<string, List<PageSchemaRow>>(StringComparer.OrdinalIgnoreCase);
-		bool truncated = false;
-		foreach (IReadOnlyList<string> chunk in Chunk(names)) {
-			int requestedRows = chunk.Count * RowsPerNameHeadroom;
-			JObject query = ClassicEntitySchemaQuery.Query(
-				SysSchemaName,
-				new JObject {
-					["Name"] = ClassicEntitySchemaQuery.Column("Name"),
-					["UId"] = ClassicEntitySchemaQuery.Column("UId"),
-					["ParentName"] = ClassicEntitySchemaQuery.Column("[SysSchema:Id:Parent].Name")
-				},
-				ClassicEntitySchemaQuery.Group(
-					("byName", ClassicEntitySchemaQuery.InFilter("Name", chunk, TextDataValueType)),
-					("byManager", ClassicEntitySchemaQuery.Eq("ManagerName", ClientUnitSchemaManagerName, TextDataValueType))),
-				requestedRows);
-			JArray rows = ClassicEntitySchemaQuery.Select(context.Client, context.UrlBuilder, query);
-			truncated |= rows.Count >= requestedRows;
-			foreach (JToken row in rows) {
-				string name = row["Name"]?.ToString();
-				if (string.IsNullOrWhiteSpace(name)) {
-					continue;
-				}
-				if (!byName.TryGetValue(name, out List<PageSchemaRow> pageRows)) {
-					pageRows = [];
-					byName[name] = pageRows;
-				}
-				pageRows.Add(new PageSchemaRow(row["UId"]?.ToString(), row["ParentName"]?.ToString()));
-			}
-		}
-		return new SchemaLookup<PageSchemaRow>(byName, truncated);
-	}
-
-	/// <summary>
-	/// The authoritative per-page answer: the designer hierarchy carries the numeric schema type, so index 0
-	/// (the schema itself) settles web vs mobile. Fails to <see cref="ActionTargetState.Unknown"/> on its own
-	/// rather than aborting the probe, so one unreadable target never suppresses the other targets' verdicts.
-	/// </summary>
-	private static ActionTargetState ClassifyPageByHierarchy(
-		ProbeContext context, string pageSchemaUId, string designPackageUId) {
-		if (!Guid.TryParse(pageSchemaUId, out _)) {
-			return ActionTargetState.Unknown;
-		}
-		try {
-			IPageDesignerHierarchyClient hierarchyClient =
-				context.Resolver.Resolve<IPageDesignerHierarchyClient>(context.Options);
-			// The design package is schema-specific ("where a new replacing schema would be created"), and the
-			// schema being read here is NOT the source page — so resolve it for the target, exactly as
-			// PageBusinessRuleSchemaProvider and ClassicListColumnResolver do. The source page's package is the
-			// fallback only: a wrong package context can change WHICH layer answers, and answering from the
-			// wrong layer is how a mobile page gets classified off someone else's hierarchy.
-			string targetDesignPackageUId = ResolveDesignPackageOrFallback(
-				hierarchyClient, pageSchemaUId, designPackageUId);
-			IReadOnlyList<PageDesignerHierarchySchema> hierarchy =
-				hierarchyClient.GetParentSchemas(pageSchemaUId, targetDesignPackageUId);
-			if (hierarchy is null || hierarchy.Count == 0) {
-				return ActionTargetState.Unknown;
-			}
-			return PageSchemaTypeExtensions.FromNumericValue(hierarchy[0].SchemaType) switch {
-				PageSchemaType.Mobile => ActionTargetState.Resolved,
-				PageSchemaType.Web => ActionTargetState.Missing,
-				_ => ActionTargetState.Unknown
-			};
-		} catch (Exception) {
-			return ActionTargetState.Unknown;
-		}
-	}
-
-	/// <summary>
-	/// The design package for <paramref name="pageSchemaUId"/>, falling back to <paramref name="fallback"/>
-	/// (the source page's) when the platform cannot answer. Best-effort by design: a wrong package still
-	/// yields either a correct answer or a failure that degrades to
-	/// <see cref="ActionTargetState.Unknown"/>, so this must never abort the classification.
-	/// </summary>
-	private static string ResolveDesignPackageOrFallback(
-		IPageDesignerHierarchyClient hierarchyClient, string pageSchemaUId, string fallback) {
-		try {
-			string resolved = hierarchyClient.GetDesignPackageUId(pageSchemaUId);
-			return string.IsNullOrWhiteSpace(resolved) ? fallback : resolved;
-		} catch (Exception) {
-			return fallback;
-		}
-	}
-
 	/// <summary>
 	/// Resolves every <see cref="KindEntityDefaultMobilePage"/> target: one batched <c>SysSchema</c> read for
 	/// the objects' base-row UIds, then one <c>MobileRelatedPage</c> add-on read per object. That add-on is
@@ -696,41 +519,6 @@ public static class MobileActionTargetProbe {
 			// Every read is inside the try, not just the parse: this is internal and directly unit-tested, so
 			// a second caller could reach it without the outer degradation the probe's own path provides.
 			return ActionTargetState.Unknown;
-		}
-	}
-
-	/// <summary>
-	/// The mobile and web page-template root names used to classify a page by its parent. Best-effort on the
-	/// environment tier: when the catalog cannot be read the bundled and rules-declared roots still place every
-	/// OOTB shape, and anything they cannot place escalates to the authoritative read instead.
-	/// </summary>
-	private static (HashSet<string> Mobile, HashSet<string> Web) LoadTemplateRoots(
-		ProbeContext context, WebToMobilePageConversionRules rules) {
-		var mobile = new HashSet<string>(BundledMobileTemplateRoots, StringComparer.OrdinalIgnoreCase);
-		var web = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-		foreach (TemplateMappingRule rule in rules?.Templates ?? []) {
-			if (!string.IsNullOrWhiteSpace(rule?.Mobile)) {
-				mobile.Add(rule.Mobile);
-			}
-			if (!string.IsNullOrWhiteSpace(rule?.Web)) {
-				web.Add(rule.Web);
-			}
-		}
-		try {
-			ISchemaTemplateCatalog catalog = context.Resolver.Resolve<ISchemaTemplateCatalog>(context.Options);
-			AddTemplateNames(catalog.GetTemplates(PageSchemaType.Mobile), mobile);
-			AddTemplateNames(catalog.GetTemplates(PageSchemaType.Web), web);
-		} catch (Exception) {
-			// Best-effort: classification continues on the bundled + rules-declared roots.
-		}
-		// A name known as a MOBILE root must never also disqualify a page as web-only.
-		web.ExceptWith(mobile);
-		return (mobile, web);
-	}
-
-	private static void AddTemplateNames(IReadOnlyList<PageTemplateInfo> templates, HashSet<string> into) {
-		foreach (PageTemplateInfo template in (templates ?? []).Where(t => !string.IsNullOrWhiteSpace(t?.Name))) {
-			into.Add(template.Name);
 		}
 	}
 

@@ -1743,9 +1743,11 @@ public static class WebToMobileAnalysisService {
 		if (unresolvedTargetRequests is not { Count: > 0 }) {
 			return;
 		}
+		// The kind travels with each entry because the two carry different remedies: a web-page reference has
+		// to be repointed or dropped, an object needs its default mobile page created.
 		string Describe(IEnumerable<UnresolvedTargetRequest> items) =>
 			string.Join(", ", items
-				.Select(r => $"{r.ElementName} -> {r.Target}")
+				.Select(r => $"{r.ElementName} -> {r.Target} ({r.TargetKind})")
 				.Distinct(StringComparer.Ordinal));
 
 		List<UnresolvedTargetRequest> missing = [.. unresolvedTargetRequests
@@ -1756,9 +1758,12 @@ public static class WebToMobileAnalysisService {
 				+ "Creatio Mobile app: " + Describe(missing)
 				+ ". KEEP these controls (a button, a menu item, whatever fires the action) — build each one exactly "
 				+ "as its elementMap entry says, and add nothing the entry does not call for. This is a REPORT, not a "
-				+ "removal: the request itself converts, only its destination is missing. Name each control and its "
-				+ "target at the conversion gate and say the action will not work until that target exists, then let "
-				+ "the user decide — convert the target page, repoint the action, or accept it as is.");
+				+ "removal: the request itself converts, only its destination is missing. A 'web-page' target names a "
+				+ "WEB page, which the Creatio Mobile app cannot open at all — repoint it at that page's converted "
+				+ "mobile twin, or drop the action. An 'entity-default-mobile-page' target is an object with no "
+				+ "default mobile edit page yet — converting that object's form page and registering it fixes every "
+				+ "action pointing there. Name each control and its target at the conversion gate, say the action "
+				+ "will not work until that is done, and let the user decide.");
 		}
 		List<UnresolvedTargetRequest> unknown = [.. unresolvedTargetRequests
 			.Where(r => string.Equals(r.State, UnresolvedTargetRequest.StateUnknown, StringComparison.Ordinal))];
