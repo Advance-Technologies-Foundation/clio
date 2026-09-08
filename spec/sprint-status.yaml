@@ -3216,22 +3216,28 @@ stories:
     feature: "eng-91853-gateways-and-flows"
     repo: "workspace/ProcessBuilder"
     size: M
-    status: review
+    status: done
     jira: ENG-91853
     file: spec/eng-91853-gateways-and-flows/eng-91853-gateways-and-flows-plan.md
     test_plan: spec/eng-91853-gateways-and-flows/eng-91853-gateways-and-flows-test-plan.md
     note: >-
       PR: https://creatio.ghe.com/engineering/crt-process-builder/pull/45
       Branch feature/ENG-91853-gateways-and-flows, off main (7e93995 - crt-process-builder's default
-      branch is main, not master). Work packages S1-S5, all implemented; 1528 tests pass.
+      branch is main, not master). Work packages S1-S5, all implemented; 1530 tests pass at the
+      RELOCATED path: -c dev-nf against tests/UnitTests/CrtProcessBuilder.Tests/, not
+      tests/CrtProcessBuilder/. main moved the test project in the Jenkins pipeline merge (#44).
       TWO comprehensive review gates are closed (spec/reviews/, 2026-09-05 and 2026-09-06) and both
       manual-test legs have run (spec/eng-91853-gateways-and-flows/...-manual-test-run-2026-09-06b.md):
       the agent leg attempted all 15 cases and the browser leg verified runtime on a stand, including
       the one thing nothing else could - a build-path condition written as a NAME expands and then
-      EVALUATES. Pushed and under review at crt-process-builder 0d8088d; all 20 review threads are
-      resolved. Rebundled into clio at 1.6.0.6 - the version moved through 1.6.0.1-1.6.0.6 because main
-      claimed the earlier numbers while this branch was landing, so read it out of the descriptor rather
-      than from any document. Status stays review: only the merge remains, and it is a human's.
+      EVALUATES. MERGED into main 2026-09-08 as 4a000d035, head 9dba08b, all 25 review threads resolved.
+      Shipped at CrtProcessBuilder 1.6.0.6 - the version moved through 1.6.0.1-1.6.0.6 because main
+      claimed the earlier numbers while this branch was landing, so read it out of the descriptor
+      rather than from any document. Merging this FIRST was the whole ordering constraint: clio's
+      ExpectedProducingCommit pins 016dd61, which is now an ancestor of main, so that provenance
+      resolves. Two findings arrived after the pre-merge push and are fixed at 9dba08b: a doc command
+      naming the pre-relocation test path, and seven files that had silently acquired a byte-order
+      mark - review flagged four of the seven, a census found the rest.
       S4 (branch-aware Y auto-layout) is DONE. ProcessLayoutEngine rewritten from a per-COLUMN vertical
       stagger to a five-phase lane model: adjacency in flow declaration order, DFS back-edge
       classification, longest-path columns over the remaining DAG, one lane per branch, Y from the lane.
