@@ -1865,6 +1865,47 @@ public sealed class ToolContractGetToolTests {
 		contract.OutputContract.Fields.Should().Contain(field =>
 				field.Name == "entities" && field.Description.Contains("`virtual`", StringComparison.Ordinal),
 			because: "get-app-info should document virtual status within each entity result");
+		contract.OutputContract.Fields.Should().Contain(field =>
+				field.Name == "entities" &&
+				field.Description.Contains("default-value-config", StringComparison.Ordinal) &&
+				field.Description.Contains("stable record GUID", StringComparison.Ordinal) &&
+				field.Description.Contains("sequence-prefix", StringComparison.Ordinal),
+			because: "the get-app-info contract must document the typed column default so a defaulted column round-trips to sync-schemas (issue #969)");
+		contract.OutputContract.Fields.Should().Contain(field =>
+				field.Name == "entities" &&
+				field.Description.Contains("None", StringComparison.Ordinal),
+			because: "the contract must tell the agent how to remove a default via source: None (issue #969)");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Advertises the sync-schemas default-value fields for columns and update-operations, including the lookup record-GUID Const rule and default removal.")]
+	public void ToolContractGet_Should_Advertise_Sync_Schemas_Default_Value_Fields() {
+		// Arrange
+		ToolContractGetTool tool = BuildToolWithRegistry();
+
+		// Act
+		ToolContractGetResponse result = tool.GetToolContracts(new ToolContractGetArgs([
+			SchemaSyncTool.ToolName
+		]));
+
+		// Assert
+		result.Success.Should().BeTrue(
+			because: "the sync-schemas contract should be available through get-tool-contract");
+		ToolContractField operationsField = result.Tools!.Single().InputSchema.Properties
+			.Single(field => field.Name == "operations");
+		operationsField.Description.Should().Contain("default-value-config",
+			because: "the structured default-value field is the primary way to declare a column default and must be discoverable in the contract (issue #969)");
+		operationsField.Description.Should().Contain("STABLE RECORD GUID",
+			because: "a lookup Const default is the stable record GUID and the contract must say so");
+		operationsField.Description.Should().Contain("Sequence",
+			because: "Sequence defaults (sequence-prefix + sequence-number-of-chars) are accepted and must be documented");
+		operationsField.Description.Should().Contain("SystemValue",
+			because: "SystemValue defaults (value-source = system value GUID) are accepted and must be documented");
+		operationsField.Description.Should().Contain("None",
+			because: "explicit default removal via source: None must be documented");
+		operationsField.Description.Should().Contain("default-value-source",
+			because: "the legacy Const/None shorthand remains accepted and must stay documented");
 	}
 
 	[Test]
