@@ -317,6 +317,7 @@ internal static class PassthroughToolClassificationRegistry {
 			["get-package-file"] = PassthroughClassification.NotApplicable, // BaseTool<T>.ExecuteResolved<TCommand,TResponse> is already resolver-backed (class a)
 			["get-page"] = PassthroughClassification.NotApplicable,
 			["get-page-hierarchy"] = PassthroughClassification.NotApplicable,
+			["get-process-page-facts"] = PassthroughClassification.NotApplicable,
 			["get-process-signature"] = PassthroughClassification.NotApplicable,
 			["get-record-rights"] = PassthroughClassification.NotApplicable,
 			["get-related-page-addon"] = PassthroughClassification.NotApplicable,
@@ -351,6 +352,8 @@ internal static class PassthroughToolClassificationRegistry {
 			["odata-delete"] = PassthroughClassification.NotApplicable,
 			["odata-read"] = PassthroughClassification.NotApplicable,
 			["odata-update"] = PassthroughClassification.NotApplicable,
+			["get-email-template"] = PassthroughClassification.NotApplicable,
+			["update-email-template"] = PassthroughClassification.NotApplicable,
 			["pkg-to-db"] = PassthroughClassification.NotApplicable,
 			["pkg-to-file-system"] = PassthroughClassification.NotApplicable,
 			["push-workspace"] = PassthroughClassification.NotApplicable,

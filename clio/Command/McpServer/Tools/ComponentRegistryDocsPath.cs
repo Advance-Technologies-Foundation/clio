@@ -1,4 +1,6 @@
 using System;
+using System.Collections.Generic;
+using System.Diagnostics.CodeAnalysis;
 using System.Text.RegularExpressions;
 
 namespace Clio.Command.McpServer.Tools;
@@ -53,5 +55,40 @@ internal static partial class ComponentRegistryDocsPath {
 			return false;
 		}
 		return AllowedPathRegex().IsMatch(normalisedPath);
+	}
+
+	/// <summary>
+	/// Maps each documentation namespace to the registry flavor that publishes it. This is
+	/// the single place that encodes the producer-side convention "one registry flavor owns
+	/// exactly one docs namespace" — verified against the live CDN payloads
+	/// (<c>ComponentRegistry.json</c> → only <c>docs/</c>, <c>MobileComponentRegistry.json</c>
+	/// → only <c>mobile-docs/</c>, <c>RequestRegistry.json</c> → only <c>request-docs/</c>,
+	/// <c>MobileRequestRegistry.json</c> → only <c>mobile-request-docs/</c>) and against the
+	/// live-snapshot fixtures under <c>clio.tests/Command/McpServer/Fixtures/</c>.
+	/// </summary>
+	private static readonly IReadOnlyList<(string Prefix, RegistryFlavor Flavor)> NamespaceFlavors = [
+		("mobile-request-docs/", RegistryFlavor.MobileRequests),
+		("mobile-docs/", RegistryFlavor.Mobile),
+		("request-docs/", RegistryFlavor.Requests),
+		("docs/", RegistryFlavor.Web)
+	];
+
+	/// <summary>
+	/// Resolves which registry flavor owns a normalised documentation path, so the docs
+	/// client can consult that flavor's <c>*_LOCAL_FILE</c> developer override. The four
+	/// prefixes are disjoint (each is anchored and ends in <c>/</c>), so at most one matches.
+	/// </summary>
+	/// <param name="normalisedPath">A path already accepted by <see cref="TryNormalise"/>.</param>
+	/// <param name="flavor">On success, the owning registry flavor.</param>
+	/// <returns><see langword="true"/> when the namespace is recognised.</returns>
+	public static bool TryResolveFlavor(string normalisedPath, [NotNullWhen(true)] out RegistryFlavor? flavor) {
+		foreach ((string prefix, RegistryFlavor candidate) in NamespaceFlavors) {
+			if (normalisedPath.StartsWith(prefix, StringComparison.Ordinal)) {
+				flavor = candidate;
+				return true;
+			}
+		}
+		flavor = null;
+		return false;
 	}
 }
