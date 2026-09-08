@@ -300,9 +300,11 @@ on top of the `0`/`1`/`-1` contract: when the target environment runs an older c
 command's floor — or its version is undeterminable (the gate fails closed) — the `BaseTool` path
 returns the distinct `exit-code` `78` (`Program.CreatioVersionRequirementExitCode`) with the stable
 `CreatioVersionRequirementException.ErrorCode` (`version-too-old` / `version-undeterminable`) embedded
-in the message. Typed-response tools (`create-theme`, `list-themes`, `check-theming-access`) carry no
+in the message. Typed-response tools (`create-theme`, `list-themes`) carry no
 exit code, so they refuse with `{ success: false, error }` where the same stable ErrorCode travels in
-the `error` message. The gate is enforced at the shared `ResolveCommand` chokepoint, ordered before
+the `error` message. `check-theming-access` is **not** gated: it reads only the generic
+RightsService/LicenseService endpoints, runs on any Creatio version, and reports the ThemeService
+floor back as `themeServiceMinVersion` instead of refusing. The gate is enforced at the shared `ResolveCommand` chokepoint, ordered before
 the package gate — the same relative precedence as the CLI dispatch gate (feature-toggle →
 creatio-version → package).
 
@@ -468,13 +470,18 @@ the identical batch after an ambiguous failure is safe. Details an external AI r
 
 **Per-operation `status`, transient retry, and resume-plan.** Each entry in `results` carries a
 machine-readable `status` (`completed` | `failed`), an `operation-index` (zero-based index into the
-request `operations`), and — only when the operation was retried for a transient network fault — an
+request `operations`, or the sentinel `-1` on a whole-call rejection where no operation was
+examined), and — only when the operation was retried for a transient network fault — an
 `attempts` count. Transient network failures (DNS/reset/timeout/gateway) are retried per operation
 (up to 3 attempts with short backoff) before the op fails. On a mid-batch abort the response carries
 a `resume-plan` (the failed op plus the not-run ops, in re-submittable shape). Because the schema ops
 are convergent, re-submitting the whole batch verbatim is safe; resubmitting only
 `resume-plan.operations` is the efficient path and is required for `seed-data` (NOT replay-safe),
-which the plan converts to a standalone op instead of recreating the schema.
+which the plan converts to a standalone op instead of recreating the schema. A WHOLE-CALL rejection
+is different from a mid-batch abort: arguments that fail the top-level field-shape check (or an
+omitted/empty `operations` array) put ONE entry in `results` — `type: "sync-schemas"`,
+`operation-index: -1` — and emit NO `resume-plan`, because nothing ran and the whole call is
+resubmitted after the fix.
 
 
 ### 4. User Task Engineering
@@ -760,7 +767,7 @@ Companion surfaces (see the `process-modeling` guidance):
 
 ### 12. Theming
 
-These tools manage custom themes — one part of branding a Creatio app: build a theme from brand colours and fonts, apply it to an environment, and manage the theme catalog. `advise-theme-palette` runs offline; `build-theme` needs no environment, and both it and `create-theme` in brand mode reach fonts.google.com for a short bounded availability probe per custom font family, because brand mode drives the same build engine (both still work without connectivity: the `@import` is kept and a "could not verify" warning is returned); the rest act on a registered environment (`environment-name`) via the native ThemeService, which requires Creatio 10.0.0 or later — on an older (or version-undeterminable) environment they refuse with the version-gate error (see "Version gate (exit 78)"). All theming tools take a single `args` object with kebab-case fields.
+These tools manage custom themes — one part of branding a Creatio app: build a theme from brand colours and fonts, apply it to an environment, and manage the theme catalog. `advise-theme-palette` runs offline; `build-theme` needs no environment, and both it and `create-theme` in brand mode reach fonts.google.com for a short bounded availability probe per custom font family, because brand mode drives the same build engine (both still work without connectivity: the `@import` is kept and a "could not verify" warning is returned); the rest act on a registered environment (`environment-name`) via the native ThemeService, which requires Creatio 10.0.0 or later — on an older (or version-undeterminable) environment they refuse with the version-gate error (see "Version gate (exit 78)"). `check-theming-access` is the exception: it touches only RightsService/LicenseService, is not version-gated, and reports the ThemeService floor as `themeServiceMinVersion`. All theming tools take a single `args` object with kebab-case fields.
 
 - `build-theme`
   Render a theme's `theme.css` (and, in workspace mode, `theme.json`) from a primary colour, optional secondary/accent/system colours, and fonts, over a bundled version-pinned template. Writes into a workspace package when given `workspace-directory` + `package-name`, otherwise returns the CSS. Never mutates an environment. Each custom font family is checked against Google Fonts: one the catalogue does not publish gets NO `@import` plus a warning (it then renders only where installed locally), and an unverifiable probe keeps the import plus a warning — so the emitted CSS can vary with probe outcomes, which the warnings always disclose.
@@ -785,7 +792,7 @@ These tools manage custom themes — one part of branding a Creatio app: build a
 - `clear-themes-cache`
   Refresh the theme catalog cache; needed only when theme files change on the environment outside a clio install.
 - `check-theming-access`
-  Report whether the caller has the `CanManageThemes` operation and `CanCustomizeBranding` license, to gate authoring on a real permission check.
+  Report whether the caller has the `CanManageThemes` operation and `CanCustomizeBranding` license, to gate authoring on a real permission check. Not version-gated — it reads only the generic RightsService/LicenseService endpoints, so it is safe as the first step of the branding flow on any Creatio version, and it returns `themeServiceMinVersion` so a caller on an older core learns the write-command floor from the answer instead of from a refusal.
 - `set-user-theme`
   Apply a theme to the current (authenticated) user's profile — only that account, not everyone (that is the global `DefaultTheme`) — or clear it with `reset`. A confirmed write (`Destructive=true`: it overwrites the profile's current theme, so the MCP host prompts before it runs; on the lazy tool surface it is re-issued through `clio-run-destructive`) — still reversible with `reset`. Requires the `CanCustomizeBranding` license and `CanChangeOwnTheme` operation; the change is visible on the user's next page refresh.
 
