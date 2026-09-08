@@ -199,15 +199,23 @@ public static class MobileActionTargetProbe {
 	}
 
 	/// <summary>
-	/// The objects the source page's own data sources are bound to, read from
-	/// <c>modelConfig.dataSources.*.config.entitySchemaName</c>.
+	/// The object the source page is FOR: the entity of its PRIMARY data source, read from
+	/// <c>modelConfig.primaryDataSourceName</c> -&gt; <c>dataSources[name].config.entitySchemaName</c>. Empty when
+	/// the page declares no primary (a list page, or a body that predates the marker).
 	/// <para>
-	/// Targets naming these objects are DROPPED FROM THE REPORT entirely, and that exemption is load-bearing.
-	/// A record page for <c>Lead</c> routinely carries a "create Lead" action; before the conversion runs there
-	/// is no <c>MobileRelatedPage</c> add-on for <c>Lead</c> — creating it IS the conversion's own closing
-	/// step, the one <see cref="MobileSectionRegistrationProbe"/> spells out as "register it as the object's
-	/// default MOBILE edit page". Reporting it would have one response flag an action as broken and, in its
+	/// Targets naming this object are DROPPED FROM THE REPORT, and that exemption is load-bearing. A record
+	/// page for <c>Lead</c> routinely carries a "create Lead" action; before the conversion runs there is no
+	/// <c>MobileRelatedPage</c> add-on for <c>Lead</c> — creating it IS the conversion's own closing step, the
+	/// one <see cref="MobileSectionRegistrationProbe"/> spells out as "register it as the object's default
+	/// MOBILE edit page". Reporting it would have one response flag an action as broken and, in its
 	/// <c>sectionRegistration</c> section, instruct the caller to create the very page it is missing.
+	/// </para>
+	/// <para>
+	/// ONLY the primary. Every OTHER data source on the page — a details list, a timeline tile, an attachment
+	/// list — names an object this conversion does nothing about, so its default mobile page is a fair
+	/// question. The real <c>Leads_FormPage</c> declares twelve data sources across nine objects
+	/// (<c>LeadProduct</c>, <c>Opportunity</c>, <c>Activity</c>, …); exempting all of them silenced the
+	/// feature on the very page it was built for.
 	/// </para>
 	/// </summary>
 	internal static IReadOnlySet<string> CollectSourceEntityNames(JsonObject modelConfig) {
@@ -215,11 +223,16 @@ public static class MobileActionTargetProbe {
 		if (modelConfig?["dataSources"] is not JsonObject dataSources) {
 			return names;
 		}
-		foreach (KeyValuePair<string, JsonNode> dataSource in dataSources) {
-			if (dataSource.Value is JsonObject source && source["config"] is JsonObject config
-				&& Str(config, "entitySchemaName") is { } entity && !string.IsNullOrWhiteSpace(entity)) {
-				names.Add(entity.Trim());
-			}
+		// The marker is authoritative; the conventional name is the fallback for a body that omits it. When
+		// neither resolves, nothing is exempt — an unnecessary question costs the user a glance, while a wrong
+		// exemption costs them the finding entirely.
+		string primaryName = Str(modelConfig, "primaryDataSourceName");
+		JsonObject primary =
+			(!string.IsNullOrWhiteSpace(primaryName) ? dataSources[primaryName] : null) as JsonObject
+			?? dataSources["PDS"] as JsonObject;
+		if (primary?["config"] is JsonObject config
+			&& Str(config, "entitySchemaName") is { } entity && !string.IsNullOrWhiteSpace(entity)) {
+			names.Add(entity.Trim());
 		}
 		return names;
 	}

@@ -152,8 +152,26 @@ public sealed class MobileActionTargetProbeTests {
 	/// <summary>A modelConfig whose single data source binds the page to <paramref name="entityName"/>.</summary>
 	private static JsonObject SourcePageBoundTo(string entityName) =>
 		JsonNode.Parse($$"""
-		{ "dataSources": { "PDS": { "type": "crt.EntityDataSource",
-		    "config": { "entitySchemaName": "{{entityName}}" } } } }
+		{
+		  "primaryDataSourceName": "PDS",
+		  "dataSources": { "PDS": { "type": "crt.EntityDataSource",
+		    "config": { "entitySchemaName": "{{entityName}}" } } }
+		}
+		""").AsObject();
+
+	/// <summary>
+	/// A record page's real modelConfig shape: a primary data source plus DETAIL sources bound to other
+	/// objects — the shape the OOTB <c>Leads_FormPage</c> has (twelve sources across nine objects).
+	/// </summary>
+	private static JsonObject SourcePageWithDetails(string primaryEntity, string detailEntity) =>
+		JsonNode.Parse($$"""
+		{
+		  "primaryDataSourceName": "PDS",
+		  "dataSources": {
+		    "PDS": { "type": "crt.EntityDataSource", "config": { "entitySchemaName": "{{primaryEntity}}" } },
+		    "DetailListDS": { "type": "crt.EntityDataSource", "config": { "entitySchemaName": "{{detailEntity}}" } }
+		  }
+		}
 		""").AsObject();
 
 	// ── Collection (pure, no environment) ───────────────────────────────────────────────────────
@@ -512,6 +530,44 @@ public sealed class MobileActionTargetProbeTests {
 				because: "an unreported target must also stay unresolved, so nothing downstream can conclude it "
 					+ "is absent");
 		environment.AddonClient.DidNotReceive().GetSchema(Arg.Any<AddonGetRequestDto>());
+	}
+
+	[Test]
+	[Description("A DETAIL list's object is still checked: the conversion creates a mobile page for the page's own record, not for every object the page happens to show.")]
+	public void Probe_TargetIsADetailListObject_IsStillChecked() {
+		// Arrange: the shape of the real Leads_FormPage — primary Lead, plus a details list of another object.
+		EnvironmentStub environment = Environment(
+			Route(Rows(), Rows(EntityRow("LeadProduct"))), addonMetaData: "{\"Pages\":[]}");
+
+		// Act
+		MobileActionTargetProbeResult result = Probe(
+			environment, ViewConfig("crt.CreateRecordRequest", "entityName", "LeadProduct"),
+			modelConfig: SourcePageWithDetails("Lead", "LeadProduct"));
+
+		// Assert
+		StateOf(result, MobileActionTargetProbe.KindEntityDefaultMobilePage, "LeadProduct")
+			.Should().Be(ActionTargetState.Missing,
+				because: "exempting every data source silences the feature on exactly the pages it exists for — "
+					+ "only the PRIMARY object is the one this conversion creates a page for");
+	}
+
+	[Test]
+	[Description("Without a primaryDataSourceName marker the conventional PDS entry still identifies the page's own object.")]
+	public void Probe_ModelConfigWithoutPrimaryMarker_FallsBackToPds() {
+		// Arrange
+		EnvironmentStub environment = Environment(
+			Route(Rows(), Rows(EntityRow("Lead"))), addonMetaData: "{\"Pages\":[]}");
+		JsonObject modelConfig = JsonNode.Parse("""
+		{ "dataSources": { "PDS": { "config": { "entitySchemaName": "Lead" } } } }
+		""").AsObject();
+
+		// Act
+		MobileActionTargetProbeResult result = Probe(
+			environment, ViewConfig("crt.CreateRecordRequest", "entityName", "Lead"), modelConfig: modelConfig);
+
+		// Assert
+		result.Occurrences.Should().BeEmpty(
+			because: "a body that predates the marker still names its primary source by the platform convention");
 	}
 
 	[Test]
