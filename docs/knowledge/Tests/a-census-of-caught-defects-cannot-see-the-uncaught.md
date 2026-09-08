@@ -61,6 +61,29 @@ needs a *differently shaped* probe. A number that has gone stale needs only to b
 moment of use** — which is cheap, and which nobody does, because a number one has already stated reads
 as known rather than as measured.
 
+**Independence is reliable when it is STRUCTURAL, not when it is chosen.** Every one of the six above
+was caught by a second party who *could* have run the first party's probe and happened not to — which
+makes the mechanism luck wearing the shape of method. The strongest instance on this ticket was not
+one of them: a blind manual runner with no repository access observed four routings showing an unset
+`Integer` parameter takes the `< 100` branch, and a reviewer with no stand read
+`IntegerDataValueType.DefValue => 0` showing it is so by construction. Neither could have produced the
+other's evidence. The runs alone are consistent with a mis-set stand; the type alone predicts nothing
+about routing. When you can choose who looks second, choose someone who **cannot** reproduce the first
+method.
+
+**And the trap on the other side: a green result after an intervention cannot distinguish a fix from a
+flake.** A required lane failed on one commit of this ticket and passed on the next two, with no
+relevant change between them. The leading hypothesis — a version floor refusing the test stand — was
+wrong, and had the floor been lowered to make the lane green, **it would have gone green**, because the
+failure was transient. That would have produced a passing lane, a plausible causal story, and a shipped
+gate that no longer refuses an environment which cannot honour the contract: the flake would have
+CONFIRMED the wrong fix.
+
+The single-variable experiment proposed to settle it — change only the suspected variable and re-run —
+is vulnerable to exactly the same thing, and neither party noticed when it was proposed. A one-variable
+re-run proves nothing against a baseline that is intermittently red. Establish the baseline's stability
+before attributing anything to the variable.
+
 Related: [[three-defences-and-no-oracle-is-an-unpinned-rule]] — the same shape one level down, where a
 rule defended three ways still has nothing that would go red. And
 [[merge-before-choosing-a-version-number]], which is the staleness failure with its own remedy.
