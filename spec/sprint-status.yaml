@@ -3216,19 +3216,28 @@ stories:
     feature: "eng-91853-gateways-and-flows"
     repo: "workspace/ProcessBuilder"
     size: M
-    status: review
+    status: done
     jira: ENG-91853
     file: spec/eng-91853-gateways-and-flows/eng-91853-gateways-and-flows-plan.md
     test_plan: spec/eng-91853-gateways-and-flows/eng-91853-gateways-and-flows-test-plan.md
     note: >-
       PR: https://creatio.ghe.com/engineering/crt-process-builder/pull/45
       Branch feature/ENG-91853-gateways-and-flows, off main (7e93995 - crt-process-builder's default
-      branch is main, not master). Work packages S1-S5, all implemented; 1244 tests pass.
+      branch is main, not master). Work packages S1-S5, all implemented; 1530 tests pass at the
+      RELOCATED path: -c dev-nf against tests/UnitTests/CrtProcessBuilder.Tests/, not
+      tests/CrtProcessBuilder/. main moved the test project in the Jenkins pipeline merge (#44).
       TWO comprehensive review gates are closed (spec/reviews/, 2026-09-05 and 2026-09-06) and both
       manual-test legs have run (spec/eng-91853-gateways-and-flows/...-manual-test-run-2026-09-06b.md):
       the agent leg attempted all 15 cases and the browser leg verified runtime on a stand, including
       the one thing nothing else could - a build-path condition written as a NAME expands and then
-      EVALUATES. Status is review rather than done: nothing is pushed and no pull request exists.
+      EVALUATES. MERGED into main 2026-09-08 as 4a000d035, head 9dba08b, all 25 review threads resolved.
+      Shipped at CrtProcessBuilder 1.6.0.6 - the version moved through 1.6.0.1-1.6.0.6 because main
+      claimed the earlier numbers while this branch was landing, so read it out of the descriptor
+      rather than from any document. Merging this FIRST was the whole ordering constraint: clio's
+      ExpectedProducingCommit pins 016dd61, which is now an ancestor of main, so that provenance
+      resolves. Two findings arrived after the pre-merge push and are fixed at 9dba08b: a doc command
+      naming the pre-relocation test path, and seven files that had silently acquired a byte-order
+      mark - review flagged four of the seven, a census found the rest.
       S4 (branch-aware Y auto-layout) is DONE. ProcessLayoutEngine rewritten from a per-COLUMN vertical
       stagger to a five-phase lane model: adjacency in flow declaration order, DFS back-edge
       classification, longest-path columns over the remaining DAG, one lane per branch, Y from the lane.
@@ -3314,13 +3323,15 @@ stories:
       reverted its own edit to that file so this ticket ships both at once.
       DONE (commits 96061c532, 3f2bc0fbd, 61c777e72). R14 is arity-scoped, and the regression test is a
       converging gateway rather than a phrasing change. Added: R15 self-loop, one default per source,
-      the or-gateway plain-flow error (arity-scoped for the same reason - 14 shipped gateways carry a
+      the or-gateway plain-flow WARNING (arity-scoped for the same reason - 14 shipped gateways carry a
       single plain flow), the empty-condition error, and the parallel-join deadlock warning
-      ai-bp-connection-rules promised and nobody wrote. R7/R9's warning now names
-      MismatchItemsCountException instead of saying the process "dead-ends".
+      ai-bp-connection-rules promised and nobody wrote. R7/R9's warning stopped saying the process
+      "dead-ends" - it briefly named MismatchItemsCountException instead, and a manual run replaced
+      that with the process-log line an operator can actually search for.
       The empty-condition rule needed a CONTRACT change and could not have existed before: the edge
       argument was {source, target, flow-kind}, so the validator could not see conditions. `condition` is
-      now an optional fourth field, and an OMITTED one raises nothing - only a supplied-but-empty one.
+      now an optional fourth field. A supplied-but-BLANK one is an error; an OMITTED one is a warning
+      (it was silent until the final review gate, which hid a certain build refusal).
       S7: both prompts and three tool descriptions stopped saying a gateway ELEMENT is not buildable, and
       say instead what is still out (inclusive/event-based gateways, timer/message starts, intermediate
       events, sub-processes, formula/script tasks, the activity-result dialect) - the fork narrowed, it
@@ -3328,13 +3339,21 @@ stories:
       which is what ENG-95891's revert was for, and says never to narrate a condition as "what decides
       this branch" without checking both. TC-D-01 in the manual QA doc INVERTS from a negative case to a
       positive one, checking the three things an error message would never have shown.
-      Rebundled 1.4.0.58 from crt-process-builder 571fbb1; floors 1.4.0.44 -> 1.4.0.58, which is a
-      CAPABILITY floor rather than a message one, unlike the two before it. Four surfaces state that
-      literal and each is a tripwire that fired.
-      10011 targeted unit tests pass. Release rather than Debug, because a running MCP server holds the
-      Debug output open; only Release/net10.0 received the new archive, the other three build outputs
-      still carry 1.4.0.57.
-      STILL OPEN: nothing on this story. Stand verification and the PR are session D.
+      Rebundled 1.6.0.6 from crt-process-builder 016dd61. The FLOORS DID NOT MOVE and stay at 1.6.0.3,
+      in two places (CreateBusinessProcessCommand, ModifyBusinessProcessCommand): a [RequiresPackage]
+      floor tracks what clio depends on or advertises, not what it ships, and the guard fixture asserts
+      the archive SATISFIES the literal rather than equalling it. Three further sites gate the package by
+      PRESENCE with no version (describe-business-process, list-user-tasks, validate-process-graph) and
+      they refuse a behind environment just the same, because convergence never reads the attribute's
+      version - see docs/knowledge/Common/a-presence-only-requirespackage-still-takes-a-convergence-
+      refusal.md. So a stand upgrade affects five commands, not the two carrying a literal.
+      10312 targeted unit tests pass on
+      Category=Unit&(Module=ProcessModel|Module=McpServer|Module=Command|Module=Common). Release rather
+      than Debug, because a running MCP server holds the Debug output open; only Release/net10.0 received
+      the new archive, so an install run from any other output ships whatever archive that folder holds.
+      STILL OPEN: nothing on this story. PR 1398 is open with all 10 threads resolved; both manual legs
+      and the stand verification have run (four blind rounds on 2026-09-08, evidence committed under
+      spec/eng-91853-gateways-and-flows/). The merge is a human's.
     depends_on:
       - story-eng-91853-gateways-and-flows-1
     blocks:
@@ -3345,7 +3364,7 @@ stories:
     feature: "eng-91853-gateways-and-flows"
     repo: "clio-knowledge"
     size: S
-    status: review
+    status: done
     pr: https://github.com/Advance-Technologies-Foundation/clio-knowledge/pull/135
     jira: ENG-91853
     file: spec/eng-91853-gateways-and-flows/eng-91853-gateways-and-flows-plan.md
@@ -3355,7 +3374,12 @@ stories:
       Committed: cd0602e rewrites both articles and bumps libraryVersion to 1.13.94; e621362 is the
       review-gate fix - the article said there was no clear-condition operation, and setFlow with
       kind 'sequence' is one. The curated-knowledge-names.json re-pin landed on the clio side as
-      ed670759c. All three branches are pushed and three pull requests are open: clio#1398, engineering/crt-process-builder#45, clio-knowledge#135.
+      ed670759c. MERGED 2026-09-08 as 8a21fd9c4 and RELEASED: master carries libraryVersion 1.13.99 and the
+        Latest release is 1.13.99 (12:59:11Z), so the guidance is live - which still needs
+        `update-knowledge` on any environment holding an older generation, because a stale cache
+        keeps serving the OLD articles silently. Remaining: clio#1398 and
+        engineering/crt-process-builder#45, package first - clio's ExpectedProducingCommit names
+        a package commit.
       Two facts the articles did not carry and that nothing else records: branch evaluation order is
       flows[] ARRAY order, first true wins, and nothing encodes it - so the order an agent declares
       branches in silently decides which one runs; and the layout re-runs over the WHOLE schema on

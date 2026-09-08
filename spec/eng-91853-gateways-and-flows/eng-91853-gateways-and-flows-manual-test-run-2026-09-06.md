@@ -17,7 +17,7 @@ that**, and it is in the half of the ticket that was supposed to remove a two-st
 | | |
 |---|---|
 | Issue | ENG-91853 |
-| Stand | `Creatio` → `http://d_krestov_n.tscrm.com:40001` (.NET Framework, MSSQL, `IsDemoMode: true`) |
+| Stand | `Creatio` → `http://<dev-stand>:40001` (.NET Framework, MSSQL, `IsDemoMode: true`) |
 | Mode | `agent` (no manifest existed, so `browser` could not run) |
 | Isolation | `isolated` — no `ANTHROPIC_API_KEY`, no `apiKeyHelper`. Hooks, user `CLAUDE.md`, skills and plugins still loaded. **Efficiency numbers here are not comparable with a `bare` run.** |
 | clio commit | `97017ec32` |

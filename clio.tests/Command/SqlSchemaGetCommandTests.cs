@@ -123,4 +123,48 @@ public sealed class SqlSchemaGetCommandTests {
 		result.Should().BeFalse();
 		response.Error.Should().Contain("UsrSqlScript").And.Contain("ScriptSchemaDesignerService");
 	}
+
+	[Test]
+	[Description("An empty GetSchema body is reported as a classified, service-named failure rather than the raw Newtonsoft parser message (issue #1322).")]
+	public void TryGetSchema_ShouldReportClassifiedFailure_WhenGetSchemaReturnsEmptyBody() {
+		// Arrange
+		_applicationClient.ExecutePostRequest(SelectQueryUrl, Arg.Any<string>()).Returns(SchemaFoundJson);
+		_applicationClient.ExecutePostRequest(GetSchemaUrl, Arg.Any<string>()).Returns(string.Empty);
+		var options = new SqlSchemaGetOptions { SchemaName = "UsrSqlScript" };
+
+		// Act
+		bool result = _command.TryGetSchema(options, out SqlSchemaGetResponse response);
+
+		// Assert
+		result.Should().BeFalse("an empty designer answer carries no schema");
+		response.Error.Should().Contain("ScriptSchemaDesignerService GetSchema",
+				"the caller must learn which service and operation answered with nothing")
+			.And.Contain(GetSchemaUrl, "the endpoint URL is what makes a missing route diagnosable")
+			.And.NotContain("Error reading JObject",
+				"the bare Newtonsoft parser message is exactly what issue #1322 reported as unactionable");
+	}
+
+	[Test]
+	[Description("An HTML page from GetSchema is classified as such, names the service and URL, and its markup is never echoed back.")]
+	public void TryGetSchema_ShouldNotEchoMarkup_WhenGetSchemaReturnsHtmlPage() {
+		// Arrange
+		_applicationClient.ExecutePostRequest(SelectQueryUrl, Arg.Any<string>()).Returns(SchemaFoundJson);
+		_applicationClient.ExecutePostRequest(GetSchemaUrl, Arg.Any<string>())
+			.Returns("<!DOCTYPE html><html><body>Login<input value=\"topsecret\"/></body></html>");
+		var options = new SqlSchemaGetOptions { SchemaName = "UsrSqlScript" };
+
+		// Act
+		bool result = _command.TryGetSchema(options, out SqlSchemaGetResponse response);
+
+		// Assert
+		result.Should().BeFalse("an HTML page is not a designer payload");
+		response.Error.Should().Contain("ScriptSchemaDesignerService GetSchema",
+				"the caller must learn which service and operation answered with a page")
+			.And.Contain(GetSchemaUrl, "the endpoint URL is what makes a redirected request diagnosable")
+			.And.Contain("HTML page instead of JSON", "the cause must be classified, not guessed at")
+			.And.NotContain("topsecret",
+				"a login or error page can carry session tokens, so the body is never echoed back")
+			.And.NotContain("Error reading JObject",
+				"the bare Newtonsoft parser message is exactly what issue #1322 reported as unactionable");
+	}
 }

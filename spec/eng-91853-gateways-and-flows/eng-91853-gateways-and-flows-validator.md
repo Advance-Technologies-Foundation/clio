@@ -40,7 +40,7 @@ Rule numbering comes from
 | — | *"parallel converge that can deadlock"* (promised in the spec) | ✘ | **ADD as warning** — §2.6 |
 | — | a conditional flow must carry a condition | ✘ (no condition in the arg shape) | **ADD** — §2.5 |
 | — | at most one default flow per source | ✘ | **ADD as error** — §2.7 |
-| — | a diverging or-gateway must not use plain sequence flows | ✘ | **ADD as error** — §2.8 |
+| — | a diverging or-gateway must not use plain sequence flows | ✘ | **ADD as warning** — §2.8 |
 
 ---
 
@@ -176,7 +176,7 @@ Corpus: **0** sources carry two default flows, in 9 762 flows. The designer keep
   (ENG-95891 made the same call when it refused to clear an author's result selection rather than doing
   it on the caller's behalf). Refuse and name both flows.
 
-### 2.8 ADD "a diverging or-gateway must not use plain sequence flows" — error, arity-scoped
+### 2.8 ADD "a diverging or-gateway must not use plain sequence flows" — warning, arity-scoped
 
 The mirror of R11. From an or-gateway the designer offers only conditional and default
 (`ProcessSchemaElementManager.cs:431-434`; `getFlowExcludeTypes` removes plain `connection`,
@@ -185,10 +185,25 @@ The mirror of R11. From an or-gateway the designer offers only conditional and d
 Arity scope matters: 14 shipped exclusive gateways *do* carry a single plain sequence flow — all with
 exactly **one** outgoing flow, i.e. legacy converging gateways from an older designer.
 
-- **error** when the gateway has **>1** outgoing flow and any is plain `sequence`;
+- **warning** when the gateway has **>1** outgoing flow and any is plain `sequence`;
 - **no finding** when it has exactly one outgoing flow (legacy-tolerated on read);
 - and the **builder normalises**: asked for a single unconditional continuation out of an or-gateway, it
   emits a **default** flow — matching the 40 shipped merges and the designer's only option.
+
+**Why it warns rather than errors, decided on measurement after this section was written.** This
+document specified an error and the shipped code emits a warning; the severity changed, not the rule.
+Seven or-gateways in the shipped 7.8.0 corpus are diverging *and* carry a plain sequence flow —
+`Compensation/BonusVisaBaseSubProcess`, `Compensation/BonusVisaBaseSubProcessCompensation1`,
+`CrtOpportunityManagement/Presentation780`, `LeadFinance/LeadManagementFinance`,
+`OldGoogleIntegration/SynchronizeWithGoogleModuleProcess`, `OpportunityBank/Presentation780Finance`,
+`PRMBase/CreateOrUpdatePartnerParamHistory` — and every one of them runs, because
+`FlowConditionalGateway.GetIsDefSequenceFlow` treats any outgoing that is not a conditional flow as the
+default branch. All seven are reachable here through the ordinary describe-then-validate route rather
+than only by hand-written input, so an error would tell an agent the platform's own content is invalid
+— which is precisely the mistake arity-scoping R14 was introduced to undo, repeated in a brand new
+rule. That is this module's governing policy: **where the shipped corpus contains the shape, the rule
+is a warning.** It also decided R7, R9, R13 and R14, and it is the reason R18 is the set's only error —
+zero shipped schemas carry that shape and the builder refuses to construct it.
 
 ---
 

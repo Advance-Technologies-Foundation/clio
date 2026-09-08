@@ -88,8 +88,8 @@ engine has no third lever.
 > skipping branch's lane instead of the mean. The paragraph below this list is kept as the record of
 > what the code did BEFORE that decision — it no longer describes the shipped behaviour.
 >
-> Pinned by `Apply_UnequalSplitWithTheLongBranchFirst_PutsTheMergeOnTheSkippingBranchsLane` (a
-> two-element arm) and `Apply_UnequalSplitWithAOneElementLongBranch_StillPutsTheMergeOnTheSkipping​BranchsLane`
+> Pinned by `Apply_UnequalSplitWithTheLongBranchFirst_PutsTheMergeOnTheSkippingBranchLane` (a
+> two-element arm) and `Apply_UnequalSplitWithAOneElementLongBranch_StillPutsTheMergeOnTheSkipping​BranchLane`
 > (a one-element arm). The second exists because the first cannot fail it: turning
 > `sourceColumn + 1 <= lastSpanColumn` into `<` reverts the whole decision on the one-element arm — the
 > shape §4 calls the norm — and the two-element test stays green. Confirmed RED under that mutation.

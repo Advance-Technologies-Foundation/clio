@@ -2,7 +2,7 @@
   "runId": "331dc693-6848-4e52-8918-085492fd500f",
   "issue": "ENG-91853",
   "mode": "agent",
-  "stand": { "alias": "Creatio", "url": "http://d_krestov_n.tscrm.com:40001" },
+  "stand": { "alias": "Creatio", "url": "http://<dev-stand>:40001" },
   "packageVersion": "1.4.0.61",
   "prompt": {
     "path": "spec/eng-91853-gateways-and-flows/eng-91853-gateways-and-flows-manual-test-prompt.md",
