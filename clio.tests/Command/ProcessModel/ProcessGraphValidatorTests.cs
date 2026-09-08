@@ -28,6 +28,69 @@ public sealed class ProcessGraphValidatorTests {
 
 	[Test]
 	[Category("Unit")]
+	[Description("A graph written with the BUILD tokens the MCP tools advertise (readData / changeData / changeAccessRights / sendEmail) validates with no error findings. These spellings do not end in \"usertask\", so before ENG-92717 they resolved to EventType.Unknown and CheckUnknownTypes raised a hard error on a graph that builds fine.")]
+	[TestCase("readData")]
+	[TestCase("changeData")]
+	[TestCase("changeAccessRights")]
+	[TestCase("sendEmail")]
+	public void Validate_ShouldReturnNoErrors_WhenGraphUsesBuildTokens(string elementType) {
+		// Arrange
+		List<ProcessGraphNode> nodes = [Node("s", "startEvent"), Node("x", elementType), Node("e", "endEvent")];
+		List<ProcessGraphEdge> edges = [Seq("s", "x"), Seq("x", "e")];
+
+		// Act
+		ProcessGraphValidationResult result = Validate(nodes, edges);
+
+		// Assert
+		result.HasErrors.Should().BeFalse(
+			because: $"'{elementType}' is a build token create-business-process accepts, so validating a graph "
+				+ "that uses it must not report the element as unrecognized");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("R17 fires whatever casing the Add data source node uses: the rule normalizes the type, so a data-id spelled AddDataUserTask is the same element kind as addDataUserTask and must not escape the warning.")]
+	[TestCase("addDataUserTask")]
+	[TestCase("AddDataUserTask")]
+	[TestCase("adddatausertask")]
+	public void Validate_ShouldRaiseR17_WhenAddDataChainsIntoANonReadDataInAnySourceCasing(string addDataType) {
+		// Arrange
+		List<ProcessGraphNode> nodes =
+			[Node("s", "startEvent"), Node("a", addDataType), Node("t", "performTask"), Node("e", "endEvent")];
+		List<ProcessGraphEdge> edges = [Seq("s", "a"), Seq("a", "t"), Seq("t", "e")];
+
+		// Act
+		ProcessGraphValidationResult result = Validate(nodes, edges);
+
+		// Assert
+		result.Findings.Should().Contain(finding => finding.RuleId == "R17",
+			because: $"'{addDataType}' names the Add data element, so the chaining advice must reach the caller "
+				+ "regardless of how the surface spelled the type");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("R17 does not fire when Add data chains into a Read data written as the build token 'readData'. Widening the type vocabulary made readData resolve to an Activity, so a rule comparing the raw literal 'readDataUserTask' would warn 'chain a Read data' while pointing AT a Read data element.")]
+	[TestCase("readDataUserTask")]
+	[TestCase("readData")]
+	[TestCase("ReadDataUserTask")]
+	public void Validate_ShouldNotRaiseR17_WhenAddDataChainsIntoAReadDataInAnySpelling(string readDataType) {
+		// Arrange
+		List<ProcessGraphNode> nodes =
+			[Node("s", "startEvent"), Node("a", "addDataUserTask"), Node("r", readDataType), Node("e", "endEvent")];
+		List<ProcessGraphEdge> edges = [Seq("s", "a"), Seq("a", "r"), Seq("r", "e")];
+
+		// Act
+		ProcessGraphValidationResult result = Validate(nodes, edges);
+
+		// Assert
+		result.Findings.Should().NotContain(finding => finding.RuleId == "R17",
+			because: $"'{readDataType}' IS a Read data element, so advising the caller to chain one before it "
+				+ "would send an agent to insert a redundant element");
+	}
+
+	[Test]
+	[Category("Unit")]
 	[Description("A valid Start -> Read data -> End graph produces zero error findings.")]
 	public void Validate_ShouldReturnNoErrors_WhenStartReadDataEndGraphIsValid() {
 		// Arrange

@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Text.Json;
 using System.Text.Json.Nodes;
@@ -59,7 +59,90 @@ namespace Clio.Command;
 // may carry an already-composed macro, and an older server rejects it outright as "not a bare Guid"
 // - the same "server starts accepting an input form an older one refuses" shape that produced the
 // 1.3.1.1 literal. The number below satisfies both that and the message contract described above.
-[RequiresPackage(BundledPackages.ProcessBuilderPackageName, "1.4.0.44",
+//
+// The preconfiguredPage block ENG-92705 adds needs 1.4.0.0 for the same reason the others are here: a
+// server without it accepts the element through the documented userTask fallback route - a plain user task
+// it does recognise - and silently discards the block while answering success, so the process saves
+// carrying a step that shows nobody a page. It is SUBSUMED by the literal below, which is higher; it is
+// named because the next person to move this floor needs to know it cannot go below 1.4.0.0.
+//
+// ===== two requirement lines met in the ENG-92713 merge, and NO released archive carries both =====
+// Master's line above stops at 1.4.0.44; the ENG-92713 line below stops at 1.4.11.0, which was cut
+// BEFORE this branch merged main and therefore predates every formula/branch behaviour master needs.
+// The first archive carrying both is the one cut from the merged package source — the literal below.
+//
+// The version literal states what THIS command needs — the newest server behaviour it depends on that an
+// older one does not have. Two independent lines of that requirement met in this merge, and NO released
+// version carries both, which is why the floor is the version this clio bundles rather than either of them.
+//
+// From ENG-96325 (master, first in 1.4.0.40): the lookup-constant input contract. A mappings[] 'value' on a
+// Lookup target may carry an already-composed [#Lookup.{objectUId}.{recordId}#], which that server decodes
+// to the bare record id while every earlier server rejects it outright as "not a bare Guid". It is NOT a
+// security floor: the raw-Select display-name read it replaced with a rights-aware entity read never
+// shipped in a released archive.
+//
+// From ENG-92713 (this branch): four shapes of one silent failure, none visible in the response. 1.4.2.0
+// added the approval APPROVER, which an older server discards while answering success, leaving an element
+// that saves and runs with nobody assigned. 1.4.3.0 added the refusal of a notification switched on with no
+// email template, and 1.4.4.0 the refusal of the AUTHOR notification with no recipient: an older server
+// ACCEPTS either and produces an element that reports the notification as configured and never sends,
+// because the runtime checks neither before sending, ignores email errors by default, and — despite the
+// caption — never resolves an author, reading only the address the recipient field writes. 1.4.7.0
+// PRESERVES the stored employee across a user<->manager approver switch; clio's guidance now tells agents
+// that {"approver":{"type":"manager"}} is how to say "their manager approves instead", and on an older
+// server that request overwrites the named employee with the current user, rerouting a real approval to
+// whoever ran the modify, self-consistently on read-back. Advertising a route the deployed server turns
+// destructive is precisely what a floor exists to stop.
+//
+// 1.4.11.0 is the newest of them and the reason the floor sits here: describe now distinguishes a WRITTEN
+// ignoreEmailErrors from the schema-level default the platform copies onto every Approval element. An older
+// server cannot, so it answers ignoreEmailErrors:true on an element nobody configured — and since one
+// reported field is enough to count as configured, it reports a block there at all. clio's describe tool
+// tells agents that absence of that field means "not written, never off"; on an older server that promise is
+// false, and a caller acting on it writes a value nobody chose. Same rule as the approver above: a floor
+// moves when clio starts ADVERTISING behaviour the deployed server may not have.
+//
+// 1.4.0.40 predates every ENG-92713 behaviour and 1.4.7.0 predates the merge that brought ENG-96325 in, so
+// the first archive carrying both is the one cut from the merged package source. Presence alone cannot
+// express any of it. The approval block (1.4.1.0), the performer block (1.3.1.1) and the email block
+// (1.2.0.1) set the precedent and are subsumed, as do 1.4.5.0, 1.4.6.0, 1.4.8.0 and 1.4.10.0, which no
+// released clio ever bundled. The guard fixture asserts the shipped archive SATISFIES the literal — not that
+// it equals it: a rebundle that changes only documentation moves the bundle and must not move the floor,
+// since a floor tracks behaviour clio depends on rather than the version it happens to ship. 1.4.10.0 was
+// exactly such a case — it corrected two contract doc comments and did not move this literal; 1.4.11.0
+// changed what the server REPORTS, so it did.
+//
+// WHY THE LITERAL IS 1.6.0.0 AND NOT 1.4.11.0. Every version named above existed only on the delivering
+// branch. Meanwhile a released archive moved to a higher MINOR: 1.5.0.0, the Open edit page delivery, which
+// carries no approval support whatsoever — verified by decompressing the shipped archive and finding zero
+// occurrences of ApprovalApplier / ApprovalElementHandler / ApprovalUserTask. System.Version ranks the minor
+// first, so 1.5.0.0 >= 1.4.11.0 is TRUE, and RequiredPackageChecker.IsCompatible compares exactly that
+// (installedVersion >= new PackageVersion(requiredVersion, "")). A floor of 1.4.x was therefore SATISFIED by
+// a server that drops the whole approval block silently — precisely the call this gate exists to refuse, and
+// the failure it cannot see, since ApprovalDescriptor is an unknown member there and no write contract
+// implements IExtensibleDataObject. The behavioural ApprovalBlockExpectation check still catches it after
+// the operation, but a gate that never fires is not defence in depth.
+//
+// So the rule the branch-local numbering hid: a floor is only enforceable while it sits above every RELEASED
+// version, and a later minor cut elsewhere can jump the whole space a development line was numbering in.
+// State the floor as the version that actually SHIPS the behaviour — here 1.6.0.0, the Approval element's
+// minor (crt-process-builder#50) — rather than as the branch stamp the behaviour first appeared under. The
+// two rules compose without conflict: this literal still moves only when clio depends on or advertises new
+// server behaviour, and it is still asserted as "the shipped archive satisfies it", not "equals it".
+// NOTHING IN THIS FLOOR COVERS THE accessRights BLOCK. The Change access rights element is on
+// crt-process-builder main (ENG-92717), but no RELEASED archive carries it yet, so this precondition
+// PASSES on an environment whose server silently discards the block, and install-process-builder
+// installs an archive that satisfies the floor and changes nothing. AccessRightsBlockExpectation's
+// post-operation read-back is the ONLY guard for that block until the rebundle carries the element.
+// The floor is deliberately NOT raised to 1.6.0.2 for it. This attribute is CLASS-level, so it gates
+// every call to this command - raising it would refuse the whole tool on any older environment, for
+// every descriptor, including the majority that carry no accessRights block at all. That exact move
+// was made for the Approval element and reverted in review (79270adbf): "a lockout for everyone in
+// exchange for a block most descriptors never use". changeData and the body-macros restamp left the
+// floor alone for the same reason. AccessRightsBlockExpectation is the guard instead - it reads the
+// process back after the write and warns when the block did not land, which is the behavioural
+// equivalent that does not punish callers who never send one.
+[RequiresPackage(BundledPackages.ProcessBuilderPackageName, "1.6.0.0",
 	Hint = BundledPackages.ProcessBuilderInstallHint)]
 public sealed class CreateBusinessProcessOptions : EnvironmentOptions {
 	/// <summary>Inline JSON process descriptor (name, caption, packageName, elements[], flows[], parameters[], mappings[]).</summary>
@@ -89,6 +172,7 @@ public sealed class CreateBusinessProcessService(
 	ISettingsRepository settingsRepository,
 	IApplicationClientFactory applicationClientFactory,
 	IServiceUrlBuilder serviceUrlBuilder,
+	IProcessPageFactsChecker pageFactsChecker,
 	ILogger logger)
 	: ICreateBusinessProcessService {
 	private static readonly JsonSerializerOptions JsonOptions = new() {
@@ -115,6 +199,17 @@ public sealed class CreateBusinessProcessService(
 			descriptor["packageName"] = request.PackageNameOverride;
 		}
 
+		// Before the build, not after: a button or a data source the page does not have is accepted by the
+		// server, saved, and only fails at run time by waiting forever. clio is the only side that can see the
+		// page's merged buttons and data sources.
+		ProcessPageCheckResult pageCheck = pageFactsChecker.CheckPreconfiguredPages(environmentName, descriptor);
+		if (!string.IsNullOrWhiteSpace(pageCheck?.Error)) {
+			throw new InvalidOperationException(pageCheck.Error);
+		}
+		foreach (string pageWarning in pageCheck?.Warnings ?? []) {
+			logger.WriteWarning(pageWarning);
+		}
+
 		using IOwnedApplicationClient client = applicationClientFactory.CreateOwnedEnvironmentClient(environmentSettings);
 		string url = serviceUrlBuilder.Build(ServiceUrlBuilder.KnownRoute.BuildProcess, environmentSettings);
 		// ProcessDesignService uses BodyStyle=Wrapped: the descriptor is wrapped under a "request" property.
@@ -122,8 +217,27 @@ public sealed class CreateBusinessProcessService(
 		logger.WriteInfo($"Building process '{descriptor["name"]}' on '{environmentName}'...");
 
 		string responseBody = client.ExecutePostRequest(url, requestBody);
-		BuildProcessResponseEnvelope envelope =
-			JsonSerializer.Deserialize<BuildProcessResponseEnvelope>(responseBody, JsonOptions)
+		// The response is parsed inside a try, for the reason ParseOperations just below parses the REQUEST inside
+		// one: a body that is not this envelope makes JsonSerializer throw a message built for a developer — a
+		// .NET type name and a byte offset — and this one reaches an agent, which cannot act on it. Worse, it
+		// arrives on the one path where the caller most needs to know WHAT HAPPENED: a server-side serialization
+		// failure returns a non-envelope body, so the write may or may not have landed and the exception says
+		// nothing either way. Every other outcome here is already named (empty body, missing result, success
+		// false); this was the one that leaked. Reported by manual testing on ENG-92713, hit by feeding a
+		// described approval block back verbatim.
+		BuildProcessResponseEnvelope envelope;
+		try {
+			envelope = JsonSerializer.Deserialize<BuildProcessResponseEnvelope>(responseBody, JsonOptions);
+		} catch (JsonException exception) {
+			throw new InvalidOperationException(
+				"BuildProcess returned a response clio could not read, so whether the process was created is "
+				+ "UNKNOWN — re-read it with describe-business-process before deciding what to do. The parser "
+				+ "detail is on the inner exception; it names a .NET type and a byte offset, which helps a "
+				+ "developer reading a stack trace and is noise to the caller reading this.",
+				exception);
+		}
+
+		envelope = envelope
 			?? throw new InvalidOperationException("BuildProcess returned an empty response.");
 		BuildProcessResultDto result = envelope.Result
 			?? throw new InvalidOperationException("BuildProcess returned an unexpected response shape.");
@@ -204,7 +318,16 @@ public class CreateBusinessProcessCommand(
 			foreach (string warning in result.Warnings ?? []) {
 				logger.WriteWarning(warning);
 			}
-			WarnOnDiscardedEmailBlocks(options, result.SchemaName);
+			// Verification runs AFTER the write landed, so it must never change the outcome the caller sees.
+			// Inside Execute's blanket catch a throw here would report a succeeded operation as failed, and on a
+			// tool that grants and revokes live permissions that invites a retry: a duplicate schema on create, a
+			// re-applied replace on modify.
+			try {
+				WarnOnDiscardedConfigurationBlocks(options, result.SchemaName);
+			} catch (Exception verification) {
+				logger.WriteWarning(
+					$"The process was created, but verifying its configuration failed: {verification.Message}. Re-read it with describe-business-process before reporting a grant or revoke as applied.");
+			}
 			return 0;
 		} catch (Exception exception) {
 			logger.WriteError(exception.Message);
@@ -212,27 +335,47 @@ public class CreateBusinessProcessCommand(
 		}
 	}
 
-	// A server that predates sendEmail DISCARDS an email block and still answers success:true, so a build can
-	// report a configured email element that is in fact empty. Read the saved process back and say so when the
-	// block did not land. Only runs when the descriptor actually carried a block, so the ordinary path pays
-	// nothing; a failure to verify is never escalated, because an unreadable description is not evidence of a
-	// dropped block. See EmailBlockExpectation for why this is behavioural rather than version-based.
-	private void WarnOnDiscardedEmailBlocks(CreateBusinessProcessOptions options, string? schemaName) {
-		IReadOnlyList<string> expected = EmailBlockExpectation.FromDescriptor(options.DescriptorJson);
-		if (expected.Count == 0 || string.IsNullOrWhiteSpace(schemaName)) {
+	// A server that predates a block DISCARDS it and still answers success:true, so a build can report a
+	// configured element that is in fact empty. Read the saved process back ONCE and check every block the
+	// payload carried: two guards issuing byte-identical describes would double the latency and the retry
+	// budget of the success path for a payload that configures both. Only runs when the descriptor actually
+	// carried a block, so the ordinary path pays nothing. See EmailBlockExpectation / AccessRightsBlockExpectation
+	// for why this is behavioural rather than version-based.
+	private void WarnOnDiscardedConfigurationBlocks(CreateBusinessProcessOptions options, string? schemaName) {
+		BlockExpectationIntent intent = BlockExpectationIntent.FromDescriptor(options.DescriptorJson);
+		// The Approval element has the same silent-drop failure, so master's guard verifies it
+		// from the SAME read-back rather than a second one - the describe below is the expensive
+		// part. Email needs no separate expectation here: ReportDescribed covers it from intent.
+		IReadOnlyList<ApprovalBlockExpectation.ApprovalExpectation> expectedApproval =
+			ApprovalBlockExpectation.FromDescriptor(options.DescriptorJson);
+		if (intent.IsEmpty && expectedApproval.Count == 0) {
+			return;
+		}
+
+		if (string.IsNullOrWhiteSpace(schemaName)) {
+			// Nothing to read back against. Silence here would be indistinguishable from a verified success.
+			BlockExpectationReporter.WarnAccessRightsUnverified(logger, intent,
+				"the operation returned no process name to read back");
 			return;
 		}
 
 		ErrorOr<DescribeProcessResult> described =
 			processDescriber.Describe(new ProcessIdentity(schemaName, null, null), null);
 		if (described.IsError) {
+			// An unreadable description is not evidence of a drop, so this never fails the command. It is not
+			// silence either when access rights were requested: that guard is the only automated check that a
+			// grant or revoke actually landed, and reporting "verified" and "could not check" identically would
+			// let an unapplied revoke pass as applied.
+			BlockExpectationReporter.WarnAccessRightsUnverified(logger, intent, described.FirstError.Description);
 			return;
 		}
 
-		string? dropped = EmailBlockExpectation.BuildWarning(
-			EmailBlockExpectation.Missing(described.Value, expected));
-		if (dropped is not null) {
-			logger.WriteWarning(dropped);
+		BlockExpectationReporter.ReportDescribed(logger, described.Value, intent);
+
+		string? droppedApproval = ApprovalBlockExpectation.BuildWarning(
+			ApprovalBlockExpectation.Missing(described.Value, expectedApproval));
+		if (droppedApproval is not null) {
+			logger.WriteWarning(droppedApproval);
 		}
 
 		// A package that predates the body-macro feature stores the [[…]] placeholders verbatim and still answers
