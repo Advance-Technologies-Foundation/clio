@@ -625,6 +625,43 @@ public sealed class ComponentInfoCommandTests {
 	}
 
 	[Test]
+	[Description("--pretty renders documentationSource and documentationWarning even when no markdown was served, because with a local override active the warning is the only signal the developer gets.")]
+	public async Task Pretty_Output_Renders_Documentation_Provenance_When_Local_Override_Lacks_The_Doc() {
+		// Arrange
+		const string registry = """
+		{
+		  "components": [
+		    { "componentType": "crt.Button", "category": "action", "properties": {},
+		      "references": { "docs": ["docs/button.component.md"] } }
+		  ]
+		}
+		""";
+		using CapturedLogger logger = new();
+		FakeDocsClient docsClient = new FakeDocsClient()
+			.SeedLocalMiss("latest", "docs/button.component.md", RegistryFlavor.Web.LocalFileEnvironmentVariable);
+		ComponentInfoCommand command = CreateCommandWith(
+			new RecordingCatalog(registry, echoRequestedVersion: true),
+			logger,
+			resolverFactoryProbeCount: 0,
+			docsClient: docsClient);
+
+		// Act
+		int exit = await command.ExecuteAsync(
+			new ComponentInfoCommandOptions { ComponentType = "crt.Button", Pretty = true }, CancellationToken.None);
+
+		// Assert
+		exit.Should().Be(0, because: "a missing recipe degrades gracefully rather than failing the lookup");
+		logger.Captured.Should().Contain("documentationSource:",
+			because: "the operator must be able to tell a working-copy read from a published one");
+		logger.Captured.Should().Contain("documentationWarning:",
+			because: "with no markdown served the warning is the only signal the --pretty inner loop gets");
+		logger.Captured.Should().Contain("docs/button.component.md",
+			because: "the warning must name the file the developer has to generate");
+		logger.Captured.Should().Contain(RegistryFlavor.Web.LocalFileEnvironmentVariable,
+			because: "naming the override that captured the path is what makes the warning actionable");
+	}
+
+	[Test]
 	[Description("List --pretty renders a 'composites:' section listing each composite caption.")]
 	public async Task Pretty_Output_Renders_Composites_Section_In_List_Mode() {
 		using CapturedLogger logger = new();
@@ -702,21 +739,33 @@ public sealed class ComponentInfoCommandTests {
 
 	/// <summary>
 	/// Test double for the docs client. Returns a pre-seeded markdown blob for the
-	/// matching (version, path) tuple or <see langword="null"/> otherwise — matching
+	/// matching (version, path) tuple or a <c>None</c>-sourced result otherwise — matching
 	/// the contract that the real client uses to signal "skip this doc".
 	/// </summary>
 	private sealed class FakeDocsClient : IComponentRegistryDocsClient {
-		private readonly Dictionary<(string Version, string DocPath), string> _docs = new();
+		private readonly Dictionary<(string Version, string DocPath), ComponentDocumentationFetchResult> _docs = new();
 		public List<(string Version, string DocPath)> Requests { get; } = new();
 
-		public FakeDocsClient Seed(string version, string docPath, string content) {
-			_docs[(version, docPath)] = content;
+		public FakeDocsClient Seed(
+			string version,
+			string docPath,
+			string content,
+			ComponentDocumentationSource source = ComponentDocumentationSource.Cdn) {
+			_docs[(version, docPath)] = new ComponentDocumentationFetchResult(content, source);
 			return this;
 		}
 
-		public Task<string> GetDocAsync(string version, string docPath, CancellationToken cancellationToken = default) {
+		public FakeDocsClient SeedLocalMiss(string version, string docPath, string overrideVariable) {
+			_docs[(version, docPath)] = new ComponentDocumentationFetchResult(
+				Content: null, ComponentDocumentationSource.None, overrideVariable);
+			return this;
+		}
+
+		public Task<ComponentDocumentationFetchResult> GetDocAsync(string version, string docPath, CancellationToken cancellationToken = default) {
 			Requests.Add((version, docPath));
-			return Task.FromResult(_docs.TryGetValue((version, docPath), out string value) ? value : null);
+			return Task.FromResult(_docs.TryGetValue((version, docPath), out ComponentDocumentationFetchResult value)
+				? value
+				: ComponentDocumentationFetchResult.Missing);
 		}
 	}
 

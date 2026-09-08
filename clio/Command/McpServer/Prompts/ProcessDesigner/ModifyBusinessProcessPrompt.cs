@@ -23,7 +23,8 @@ public static class ModifyBusinessProcessPrompt {
 		$"""
 		 Edit the existing business process `{process}` on Creatio environment `{environmentName}` with the
 		 `modify-business-process` tool. Steps: (1) call `describe-business-process` to inspect the current elements
-		 and their names; (2) read `get-guidance name=process-modeling` for the operation and field contract;
+		 and their names; (2) read `get-guidance name=process-modeling` for the operation and field contract, plus
+		 `get-guidance name=process-parameters` for parameters, mappings and type compatibility;
 		 (3) supply a JSON `operations` array (applied in order) — each item has an `op`: `addElement`,
 		 `removeElement`, `addFlow`, `removeFlow`, `setFlowCondition`, `addParameter`, `addMapping`, `setParameter`,
 		 `removeParameter`, `setFilter`, `clearFilter`, `setSignal`, `setElement`, `setConnections`, or
@@ -47,12 +48,40 @@ public static class ModifyBusinessProcessPrompt {
 		 and its tracked-change `changedColumns` in place, and `setElement` changes element-level fields in place —
 		 `useBackgroundMode` on any element kind, a `sendEmail` element's `email` block, where the fields you
 		 pass (`mode`, `sender`, `subject`, `body`, `importance`, `ignoreErrors`, `performer`) replace the current
-		 value but `to`/`cc`/`bcc` recipients match-or-append (an address the line already carries is a no-op, a new one is appended), and a `performTask` element's `performer` block
+		 value but `to`/`cc`/`bcc` recipients match-or-append (an address the line already carries is a no-op, a new one is appended),
+		 a Change access rights
+		 element's `accessRights` block (a partial update: a supplied `add`/`remove` REPLACES that whole collection
+		 and `[]` clears it — clearing ONE is safe only while the other still holds an entry, since an element
+		 left with BOTH empty builds and runs green while changing nothing; and ANY object change, the first
+		 configuration included, clears the stored record filter unless it already targets the incoming object,
+		 which leaves the element applying the permission change to EVERY record of the new object rather than
+		 to none — re-issue `setFilter` in the same array),
+		 and a `performTask` element's `performer` block
 		 (`type:user|manager|role` plus `contact?`/`role?`/`showPage?` — WHO performs the task; `role` is the honest
 		 "assign to a team": the created Activity carries the role in its own OwnerRole column with an EMPTY
 		 owner, so never fake a team by writing a role id into the OwnerId parameter — that id is refused as
 		 referencing no Contact record; the retired CallUserTask is refused by name because its runtime ignores
-		 the assignment); `setConnections` binds the "Connected to" links of the
+		 the assignment);
+		 and an `openEditPage` element's `openEditPage` block, where every omitted field keeps its stored value and a
+		 supplied `defaultValues` array replaces the whole set — but retargeting `page` or changing `editMode` is
+		 DESTRUCTIVE and requires the new mode-specific value (`defaultValues` for `add`, `recordId` for `edit`) in the
+		 same update, after which the branch being left is cleared, because the runtime applies stored pre-filled
+		 values in either mode;
+		 and a `preconfiguredPage` element's `preconfiguredPage` block (`page`, `buttons`, `dataSources`,
+		 `performer`, `recommendation`), where OMITTING `buttons` or `dataSources` means LEAVE THEM ALONE,
+		 never "the page has none" — with TWO exceptions when `page` changes TO a Freedom UI page: `buttons` is
+		 REQUIRED in the same call (the stored buttons name the previous page's buttons), and `dataSources` is
+		 REQUIRED whenever the element carries data sources of the previous page (pass `[]` when the new page
+		 declares none) — re-read `get-process-page-facts` for the new page first; changing `page` to a Classic
+		 UI page is refused outright. On a page change the `dataSources` you pass are the new page's whole set:
+		 undeclared data-source parameters are removed and reported, a re-declared one keeps its parameter, and
+		 the removal is refused while something still maps from it (the refusal names the dependents). A
+		 `dataSources` entry the new page does not declare is refused. Strict because a source the current page
+		 does not declare stops the step from ever completing while describe still reports `inSync: true`.
+		 ANY `setElement` touching such an element also re-reads the page and
+		 reconciles its parameters, so a value dropped by a data-type change is reported in the warnings below;
+		 an element on a Classic UI page keeps that page and is limited to the fields both page types share;
+		 `setConnections` binds the "Connected to" links of the
 		 Activity an element creates and is an UPSERT keyed on `column`, so columns you do not list are left alone,
 		 and `clearConnections` unbinds them). An `addMapping` with a `value` on a Lookup parameter takes a bare
 		 non-empty record Guid (the route ships from CrtProcessBuilder 1.3.1.1, and this clio additionally
@@ -64,6 +93,18 @@ public static class ModifyBusinessProcessPrompt {
 		 (nothing is saved). Example — switch a process to start on record save: `removeElement` the start event,
 		 `addElement` a `signalStart`, then `addFlow` from it to the first task. Confirm destructive removals
 		 (`removeElement` / `removeFlow` / `removeParameter` / `clearConnections`) with the user before proceeding.
+		 Confirm access-rights changes the same way: a `setElement` carrying ANY `accessRights` block changes who
+		 can reach live records - an `add` widens access to everyone it names, and a `remove` entry or a
+		 collection cleared with `[]` revokes or drops record permissions, and the element has NO output to
+		 report what it did at run time — show the user the object, the record `filter` that decides WHICH
+		 records are affected, and every grantee with its operations and level — calling out `restrict` as the
+		 platform Deny level, DESTRUCTIVE rather than inert and landing in the `add` GRANT collection: UseDenyRecordRights gates only record positioning, never whether a right row is written. Against a grantee who already holds Allow it DOWNGRADES that row to Deny, and a fresh insert writes one row per operation - the one you named at your level and the OTHER TWO at Deny - so operations:['read'] denies edit and delete as well. Prefer a remove entry to take access away, and a supplied `add`/`remove`
+		 as a REPLACEMENT that drops every entry it does not restate — and get an explicit yes before applying it.
+		 If the element's `accessRights` read back with an EMPTY `add` or `remove`, check the collection's
+		 `addUnreadable`/`removeUnreadable` count before you ask. Zero means it is genuinely empty; anything
+		 else (or -1, the collection itself did not decode) means the before-state you are showing is
+		 INCOMPLETE and a replacement would drop entries neither of you can see — say that plainly, and prefer
+		 omitting the field to restating it.
 		 A SUCCESSFUL edit can still report caveats, and they arrive as `message-type: "Warning"` entries in
 		 `execution-log-messages` — there is no separate `warnings` field on the response, so looking for one and
 		 finding nothing is not evidence there were none. Read them: a connection bound to a column with no

@@ -7,13 +7,15 @@ date: 2026-08-19
 ---
 
 **What is true** — `describe-business-process` deserializes the server payload into the
-`Described*` types and re-serializes them for the caller. `DescribeProcessResult`,
-`DescribedElement` and `DescribedEmail` each hold a `[JsonExtensionData]` overflow bag, so an
-unknown field survives the round trip. The three filter types — `DescribedFilter`,
-`DescribedFilterGroup` and `DescribedFilterCondition` — do **not**. Every filter field therefore
-needs a property on both sides: the descriptor in the ProcessBuilder package *and* a matching
-`[JsonPropertyName]` property here. `Macro`, `MacroArgument` and `DatePart` exist for exactly that
-reason.
+`Described*` types and re-serializes them for the caller. The types that model an ELEMENT and its
+per-kind configuration blocks each hold a `[JsonExtensionData]` overflow bag, so an unknown field
+survives the round trip — today `DescribeProcessResult`, `DescribedElement`, `DescribedEmail`,
+`DescribedPerformer` and `DescribedApproval`, and a block added later is expected to carry one too.
+The three filter types — `DescribedFilter`, `DescribedFilterGroup` and `DescribedFilterCondition` —
+do **not**, and neither do `DescribedConnection`, `DescribedSignal`, `DescribedFlow` or
+`DescribedParameter`. Every filter field therefore needs a property on both sides: the descriptor
+in the ProcessBuilder package *and* a matching `[JsonPropertyName]` property here. `Macro`,
+`MacroArgument` and `DatePart` exist for exactly that reason.
 
 **Why it is this way** — the filter DTOs were hand-mirrored from the package's
 `FilterConditionDescriptor` when the vocabulary was small, and `System.Text.Json` discards members
