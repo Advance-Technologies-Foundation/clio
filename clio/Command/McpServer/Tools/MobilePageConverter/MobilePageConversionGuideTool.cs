@@ -211,8 +211,9 @@ public sealed class MobilePageConversionGuideTool {
 		// decision (ENG-94839).
 		MobileActionTargetProbeResult actionTargets = MobileActionTargetProbe.Probe(
 			_commandResolver, args.EnvironmentName, args.Uri, args.Login, args.Password,
-			pageResponse.Bundle?.ViewConfig, rules, pageResponse.Bundle?.ModelConfig,
-			pageResponse.Page?.PackageUId, pageResponse.Page?.DesignPackageUId);
+			new MobileActionTargetProbeRequest(
+				pageResponse.Bundle?.ViewConfig, rules, pageResponse.Bundle?.ModelConfig,
+				pageResponse.Page?.PackageUId, pageResponse.Page?.DesignPackageUId));
 
 		MobilePageConversionGuide guide;
 		try {

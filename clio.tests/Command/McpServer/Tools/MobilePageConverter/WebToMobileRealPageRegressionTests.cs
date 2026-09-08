@@ -293,8 +293,9 @@ public sealed class WebToMobileRealPageRegressionTests {
 		// Act
 		MobileActionTargetProbeResult collected = MobileActionTargetProbe.Probe(
 			null, "env", null, null, null,
-			fixture["viewConfig"]!.DeepClone().AsArray(), BundledRules(), modelConfig: null,
-			pagePackageUId: null, designPackageUId: null);
+			new MobileActionTargetProbeRequest(
+				fixture["viewConfig"]!.DeepClone().AsArray(), BundledRules(),
+				ModelConfig: null, PagePackageUId: null, DesignPackageUId: null));
 
 		// Assert
 		collected.Occurrences.Should().Contain(
@@ -460,8 +461,9 @@ public sealed class WebToMobileRealPageRegressionTests {
 		// the occurrence list this helper then resolves itself.
 		MobileActionTargetProbeResult collected = MobileActionTargetProbe.Probe(
 			null, "env", null, null, null,
-			fixture["viewConfig"]!.DeepClone().AsArray(), rules, modelConfig: null,
-			pagePackageUId: null, designPackageUId: null);
+			new MobileActionTargetProbeRequest(
+				fixture["viewConfig"]!.DeepClone().AsArray(), rules,
+				ModelConfig: null, PagePackageUId: null, DesignPackageUId: null));
 		var byKey = new Dictionary<string, ActionTargetResolution>(StringComparer.OrdinalIgnoreCase);
 		foreach (ActionTargetOccurrence occurrence in collected.Occurrences) {
 			byKey[MobileActionTargetProbe.TargetKey(occurrence.Kind, occurrence.Target)] =

@@ -3973,15 +3973,14 @@ public static class WebToMobileAnalysisService {
 		if (string.IsNullOrWhiteSpace(occurrence.ElementName) || string.IsNullOrWhiteSpace(occurrence.Binding)) {
 			return false;
 		}
-		foreach (ElementMapEntry entry in elementMap ?? []) {
-			if (!string.Equals(entry?.Operation, "drop", StringComparison.OrdinalIgnoreCase)
-				&& string.Equals(entry.WebName, occurrence.ElementName, StringComparison.OrdinalIgnoreCase)
-				&& entry.MobileValues is JsonObject values
-				&& values.ContainsKey(occurrence.Binding)) {
-				return true;
-			}
-		}
-		return false;
+		// The null guard is on the ENTRY, not on entry.Operation: a null-conditional on the first member and a
+		// plain dereference on the next reads as safe and is not.
+		return (elementMap ?? []).Any(entry =>
+			entry is not null
+			&& !string.Equals(entry.Operation, "drop", StringComparison.OrdinalIgnoreCase)
+			&& string.Equals(entry.WebName, occurrence.ElementName, StringComparison.OrdinalIgnoreCase)
+			&& entry.MobileValues is JsonObject values
+			&& values.ContainsKey(occurrence.Binding));
 	}
 
 	/// <summary>

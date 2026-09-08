@@ -1132,6 +1132,25 @@ public sealed class ActionTargetOccurrence {
 }
 
 /// <summary>
+/// The page-side inputs one action-target probe reads. Grouped into a record rather than passed as loose
+/// parameters: they all describe ONE source page, and they travel together to every future caller.
+/// </summary>
+/// <param name="ViewConfig">The merged <c>viewConfig</c> — the only place action bindings are read from.</param>
+/// <param name="Rules">Resolved conversion rules; their <c>requests</c> section declares which targets to check.</param>
+/// <param name="ModelConfig">
+/// The merged <c>modelConfig</c>. Only its data-source entity names are read, to leave out the objects the
+/// conversion is itself about.
+/// </param>
+/// <param name="PagePackageUId">The source page's package UId, used to address an object's add-on.</param>
+/// <param name="DesignPackageUId">The source page's design package UId, the fallback for a hierarchy read.</param>
+public sealed record MobileActionTargetProbeRequest(
+	JsonArray ViewConfig,
+	WebToMobilePageConversionRules Rules,
+	JsonObject ModelConfig,
+	string PagePackageUId,
+	string DesignPackageUId);
+
+/// <summary>
 /// Outcome of probing whether the source page's action targets exist on mobile. Best-effort: on any
 /// failure <see cref="ProbeOk"/> is false, <see cref="TargetsByKey"/> is EMPTY and every occurrence
 /// therefore resolves to <see cref="ActionTargetState.Unknown"/>.

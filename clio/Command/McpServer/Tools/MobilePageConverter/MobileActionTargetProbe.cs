@@ -113,23 +113,13 @@ public static class MobileActionTargetProbe {
 	/// <param name="uri">Explicit environment URI.</param>
 	/// <param name="login">Explicit login.</param>
 	/// <param name="password">Explicit password.</param>
-	/// <param name="viewConfig">The source page's merged <c>viewConfig</c> — the only place bindings are read from.</param>
-	/// <param name="rules">Resolved conversion rules; their <c>requests</c> section declares which targets to check.</param>
-	/// <param name="modelConfig">
-	/// The source page's merged <c>modelConfig</c>. Only its data-source entity names are read, to exempt the
-	/// objects THIS conversion is itself about — see <see cref="CollectSourceEntityNames"/>.
-	/// </param>
-	/// <param name="pagePackageUId">The source page's package UId, used to address an object's add-on.</param>
-	/// <param name="designPackageUId">The source page's design package UId, used for the designer hierarchy read.</param>
+	/// <param name="request">The page-side inputs: body, resolved rules and the package identity to read with.</param>
 	/// <returns>The occurrences found on the page and, when the reads succeeded, one resolution per distinct target.</returns>
 	public static MobileActionTargetProbeResult Probe(
 		IToolCommandResolver commandResolver,
 		string environment, string uri, string login, string password,
-		JsonArray viewConfig,
-		WebToMobilePageConversionRules rules,
-		JsonObject modelConfig,
-		string pagePackageUId,
-		string designPackageUId) {
+		MobileActionTargetProbeRequest request) {
+		WebToMobilePageConversionRules rules = request?.Rules;
 		IReadOnlyDictionary<string, RequestMappingRule> targeted = BuildTargetedRequestMap(rules);
 		if (targeted.Count == 0) {
 			// Not an environment failure: the rules simply declare no navigation targets (an older published
@@ -145,8 +135,8 @@ public static class MobileActionTargetProbe {
 		try {
 			// Inside the try on purpose: the walk reads an authored page body, and the never-throws contract
 			// must be structural rather than a property of today's parser.
-			sourceEntities = CollectSourceEntityNames(modelConfig);
-			occurrences = ExceptSourceEntityTargets(CollectActionTargets(viewConfig, targeted), sourceEntities);
+			sourceEntities = CollectSourceEntityNames(request.ModelConfig);
+			occurrences = ExceptSourceEntityTargets(CollectActionTargets(request.ViewConfig, targeted), sourceEntities);
 		} catch (Exception ex) {
 			return NotProbed([], $"Could not read the page's action bindings ({ex.Message}).");
 		}
@@ -162,14 +152,16 @@ public static class MobileActionTargetProbe {
 			var options = new EnvironmentOptions {
 				Environment = environment, Uri = uri, Login = login, Password = password
 			};
-			IApplicationClient client = commandResolver.Resolve<IApplicationClient>(options);
-			IServiceUrlBuilder urlBuilder = commandResolver.Resolve<IServiceUrlBuilder>(options);
+			var context = new ProbeContext(
+				commandResolver, options,
+				commandResolver.Resolve<IApplicationClient>(options),
+				commandResolver.Resolve<IServiceUrlBuilder>(options));
 
 			var resolutions = new Dictionary<string, ActionTargetResolution>(StringComparer.OrdinalIgnoreCase);
-			ResolvePageTargets(commandResolver, options, client, urlBuilder, rules,
-				DistinctTargetsOfKind(occurrences, KindMobilePage), designPackageUId, resolutions);
-			ResolveEntityTargets(commandResolver, options, client, urlBuilder,
-				DistinctTargetsOfKind(occurrences, KindEntityDefaultMobilePage), pagePackageUId, resolutions);
+			ResolvePageTargets(context, rules,
+				DistinctTargetsOfKind(occurrences, KindMobilePage), request.DesignPackageUId, resolutions);
+			ResolveEntityTargets(context,
+				DistinctTargetsOfKind(occurrences, KindEntityDefaultMobilePage), request.PagePackageUId, resolutions);
 
 			return new MobileActionTargetProbeResult {
 				ProbeOk = true, Occurrences = occurrences, TargetsByKey = resolutions
@@ -196,12 +188,12 @@ public static class MobileActionTargetProbe {
 	private static IReadOnlyDictionary<string, RequestMappingRule> BuildTargetedRequestMap(
 		WebToMobilePageConversionRules rules) {
 		var map = new Dictionary<string, RequestMappingRule>(StringComparer.OrdinalIgnoreCase);
-		foreach (RequestMappingRule rule in rules?.Requests ?? []) {
-			if (!string.IsNullOrWhiteSpace(rule?.Web)
-				&& !string.IsNullOrWhiteSpace(rule.TargetParam)
-				&& IsRecognizedKind(rule.TargetKind)) {
-				map[rule.Web] = rule;
-			}
+		IEnumerable<RequestMappingRule> declared = (rules?.Requests ?? []).Where(rule =>
+			!string.IsNullOrWhiteSpace(rule?.Web)
+			&& !string.IsNullOrWhiteSpace(rule.TargetParam)
+			&& IsRecognizedKind(rule.TargetKind));
+		foreach (RequestMappingRule rule in declared) {
+			map[rule.Web] = rule;
 		}
 		return map;
 	}
@@ -338,14 +330,9 @@ public static class MobileActionTargetProbe {
 	private static IReadOnlyList<string> DistinctTargetsOfKind(
 		IReadOnlyList<ActionTargetOccurrence> occurrences, string kind) {
 		var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-		var ordered = new List<string>();
-		foreach (ActionTargetOccurrence occurrence in occurrences) {
-			if (string.Equals(occurrence.Kind, kind, StringComparison.OrdinalIgnoreCase)
-				&& seen.Add(occurrence.Target)) {
-				ordered.Add(occurrence.Target);
-			}
-		}
-		return ordered;
+		return [.. occurrences
+			.Where(o => string.Equals(o.Kind, kind, StringComparison.OrdinalIgnoreCase) && seen.Add(o.Target))
+			.Select(o => o.Target)];
 	}
 
 	/// <summary>
@@ -357,50 +344,82 @@ public static class MobileActionTargetProbe {
 	/// one authoritative query.
 	/// </summary>
 	private static void ResolvePageTargets(
-		IToolCommandResolver commandResolver, EnvironmentOptions options,
-		IApplicationClient client, IServiceUrlBuilder urlBuilder,
-		WebToMobilePageConversionRules rules,
+		ProbeContext context, WebToMobilePageConversionRules rules,
 		IReadOnlyList<string> names, string designPackageUId,
 		IDictionary<string, ActionTargetResolution> into) {
 		if (names.Count == 0) {
 			return;
 		}
-		(HashSet<string> mobileRoots, HashSet<string> webRoots) = LoadTemplateRoots(commandResolver, options, rules);
-		SchemaLookup<PageSchemaRow> lookup = ReadPageSchemaRows(client, urlBuilder, names);
+		(HashSet<string> mobileRoots, HashSet<string> webRoots) = LoadTemplateRoots(context, rules);
+		SchemaLookup<PageSchemaRow> lookup = ReadPageSchemaRows(context, names);
 
 		var residue = new List<(string Name, string UId)>();
 		foreach (string name in names) {
-			if (!lookup.RowsByName.TryGetValue(name, out List<PageSchemaRow> rows) || rows.Count == 0) {
-				// No client-unit schema of that name — unambiguous, and independent of any template allowlist:
-				// the action opens something that does not exist. UNLESS the read may have been truncated, in
-				// which case "no row" cannot be told apart from "the row was cut off the result".
-				Record(into, KindMobilePage, name,
-					lookup.PossiblyTruncated ? ActionTargetState.Unknown : ActionTargetState.Missing);
-				continue;
+			lookup.RowsByName.TryGetValue(name, out List<PageSchemaRow> rows);
+			ActionTargetState? settled =
+				ClassifyPageRowsByTemplate(rows, lookup.PossiblyTruncated, mobileRoots, webRoots);
+			if (settled is { } state) {
+				Record(into, KindMobilePage, name, state);
+			} else {
+				residue.Add((name, rows[0].UId));
 			}
-			if (rows.Any(row => mobileRoots.Contains(row.ParentName ?? string.Empty))) {
-				Record(into, KindMobilePage, name, ActionTargetState.Resolved);
-				continue;
-			}
-			if (!lookup.PossiblyTruncated
-				&& rows.All(row => !string.IsNullOrWhiteSpace(row.ParentName) && webRoots.Contains(row.ParentName))) {
-				// It exists, but every layer descends from a WEB template — a page that was never converted.
-				// Skipped on a truncated read for the same reason: a mobile-rooted layer may simply be missing
-				// from the rows, and concluding "web-only" from a partial set would be a guess.
-				Record(into, KindMobilePage, name, ActionTargetState.Missing);
-				continue;
-			}
-			residue.Add((name, rows[0].UId));
 		}
+		EscalateUnplacedPages(context, residue, designPackageUId, into);
+	}
 
+	/// <summary>
+	/// Places one page from its <c>SysSchema</c> rows alone, or returns <see langword="null"/> when the cheap
+	/// tier cannot answer and the authoritative designer read must decide.
+	/// </summary>
+	/// <remarks>
+	/// Every branch that could conclude ABSENCE is gated on the read being complete: a truncated result cannot
+	/// tell "this page has no row" from "its row was cut off", nor "every layer is web-rooted" from "the
+	/// mobile-rooted layer is the one that was cut". Both degrade to <see cref="ActionTargetState.Unknown"/>.
+	/// </remarks>
+	private static ActionTargetState? ClassifyPageRowsByTemplate(
+		IReadOnlyList<PageSchemaRow> rows, bool possiblyTruncated,
+		HashSet<string> mobileRoots, HashSet<string> webRoots) {
+		if (rows is not { Count: > 0 }) {
+			// No client-unit schema of that name — unambiguous, and independent of any template allowlist:
+			// the action opens something that does not exist.
+			return possiblyTruncated ? ActionTargetState.Unknown : ActionTargetState.Missing;
+		}
+		if (rows.Any(row => mobileRoots.Contains(row.ParentName ?? string.Empty))) {
+			return ActionTargetState.Resolved;
+		}
+		if (!possiblyTruncated
+			&& rows.All(row => !string.IsNullOrWhiteSpace(row.ParentName) && webRoots.Contains(row.ParentName))) {
+			// It exists, but every layer descends from a WEB template — a page that was never converted.
+			return ActionTargetState.Missing;
+		}
+		return null;
+	}
+
+	/// <summary>
+	/// Settles the pages the template classification could not place, by the authoritative designer read.
+	/// Past <see cref="MaxAuthoritativeProbes"/> the rest are <see cref="ActionTargetState.Unknown"/> — a
+	/// budget may cost an answer, never invent one.
+	/// </summary>
+	private static void EscalateUnplacedPages(
+		ProbeContext context, IReadOnlyList<(string Name, string UId)> residue,
+		string designPackageUId, IDictionary<string, ActionTargetResolution> into) {
 		int budget = MaxAuthoritativeProbes;
 		foreach ((string Name, string UId) target in residue) {
 			ActionTargetState state = budget-- > 0
-				? ClassifyPageByHierarchy(commandResolver, options, target.UId, designPackageUId)
+				? ClassifyPageByHierarchy(context, target.UId, designPackageUId)
 				: ActionTargetState.Unknown;
 			Record(into, KindMobilePage, target.Name, state);
 		}
 	}
+
+	/// <summary>
+	/// The per-call environment seam, threaded through the resolution passes as one value. Carrying the
+	/// resolver alongside the two clients it produced keeps every read on the SAME per-call container: a pass
+	/// that re-resolved from somewhere else could silently answer for a different tenant.
+	/// </summary>
+	private sealed record ProbeContext(
+		IToolCommandResolver Resolver, EnvironmentOptions Options,
+		IApplicationClient Client, IServiceUrlBuilder UrlBuilder);
 
 	/// <summary>One <c>SysSchema</c> row of a client-unit schema, as the batched classification reads it.</summary>
 	private sealed record PageSchemaRow(string UId, string ParentName);
@@ -425,7 +444,7 @@ public static class MobileActionTargetProbe {
 	/// and the classification folds over all of them.
 	/// </summary>
 	private static SchemaLookup<PageSchemaRow> ReadPageSchemaRows(
-		IApplicationClient client, IServiceUrlBuilder urlBuilder, IReadOnlyList<string> names) {
+		ProbeContext context, IReadOnlyList<string> names) {
 		var byName = new Dictionary<string, List<PageSchemaRow>>(StringComparer.OrdinalIgnoreCase);
 		bool truncated = false;
 		foreach (IReadOnlyList<string> chunk in Chunk(names)) {
@@ -441,7 +460,7 @@ public static class MobileActionTargetProbe {
 					("byName", ClassicEntitySchemaQuery.InFilter("Name", chunk, TextDataValueType)),
 					("byManager", ClassicEntitySchemaQuery.Eq("ManagerName", ClientUnitSchemaManagerName, TextDataValueType))),
 				requestedRows);
-			JArray rows = ClassicEntitySchemaQuery.Select(client, urlBuilder, query);
+			JArray rows = ClassicEntitySchemaQuery.Select(context.Client, context.UrlBuilder, query);
 			truncated |= rows.Count >= requestedRows;
 			foreach (JToken row in rows) {
 				string name = row["Name"]?.ToString();
@@ -464,14 +483,13 @@ public static class MobileActionTargetProbe {
 	/// rather than aborting the probe, so one unreadable target never suppresses the other targets' verdicts.
 	/// </summary>
 	private static ActionTargetState ClassifyPageByHierarchy(
-		IToolCommandResolver commandResolver, EnvironmentOptions options,
-		string pageSchemaUId, string designPackageUId) {
+		ProbeContext context, string pageSchemaUId, string designPackageUId) {
 		if (!Guid.TryParse(pageSchemaUId, out _)) {
 			return ActionTargetState.Unknown;
 		}
 		try {
 			IPageDesignerHierarchyClient hierarchyClient =
-				commandResolver.Resolve<IPageDesignerHierarchyClient>(options);
+				context.Resolver.Resolve<IPageDesignerHierarchyClient>(context.Options);
 			// The design package is schema-specific ("where a new replacing schema would be created"), and the
 			// schema being read here is NOT the source page — so resolve it for the target, exactly as
 			// PageBusinessRuleSchemaProvider and ClassicListColumnResolver do. The source page's package is the
@@ -517,9 +535,7 @@ public static class MobileActionTargetProbe {
 	/// <c>create-related-page-addon --schema-type mobile</c> writes at the end of a conversion.
 	/// </summary>
 	private static void ResolveEntityTargets(
-		IToolCommandResolver commandResolver, EnvironmentOptions options,
-		IApplicationClient client, IServiceUrlBuilder urlBuilder,
-		IReadOnlyList<string> names, string pagePackageUId,
+		ProbeContext context, IReadOnlyList<string> names, string pagePackageUId,
 		IDictionary<string, ActionTargetResolution> into) {
 		if (names.Count == 0) {
 			return;
@@ -535,7 +551,7 @@ public static class MobileActionTargetProbe {
 
 		var uIdByName = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
 		var seenNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-		bool truncated = ReadEntitySchemaRows(client, urlBuilder, names, uIdByName, seenNames);
+		bool truncated = ReadEntitySchemaRows(context, names, uIdByName, seenNames);
 
 		int budget = MaxEntityAddonProbes;
 		foreach (string name in names) {
@@ -549,7 +565,7 @@ public static class MobileActionTargetProbe {
 				continue;
 			}
 			ActionTargetState state = budget-- > 0
-				? ClassifyEntityDefaultMobilePage(commandResolver, options, entityUId, packageUId)
+				? ClassifyEntityDefaultMobilePage(context, entityUId, packageUId)
 				: ActionTargetState.Unknown;
 			Record(into, KindEntityDefaultMobilePage, name, state);
 		}
@@ -566,7 +582,7 @@ public static class MobileActionTargetProbe {
 	/// <see cref="SchemaLookup{TRow}"/> for why that must downgrade every absence verdict.
 	/// </returns>
 	private static bool ReadEntitySchemaRows(
-		IApplicationClient client, IServiceUrlBuilder urlBuilder, IReadOnlyList<string> names,
+		ProbeContext context, IReadOnlyList<string> names,
 		IDictionary<string, string> uIdByName, ISet<string> seenNames) {
 		bool truncated = false;
 		foreach (IReadOnlyList<string> chunk in Chunk(names)) {
@@ -582,7 +598,7 @@ public static class MobileActionTargetProbe {
 					("byName", ClassicEntitySchemaQuery.InFilter("Name", chunk, TextDataValueType)),
 					("byManager", ClassicEntitySchemaQuery.Eq("ManagerName", EntitySchemaManagerName, TextDataValueType))),
 				requestedRows);
-			JArray rows = ClassicEntitySchemaQuery.Select(client, urlBuilder, query);
+			JArray rows = ClassicEntitySchemaQuery.Select(context.Client, context.UrlBuilder, query);
 			truncated |= rows.Count >= requestedRows;
 			foreach (JToken row in rows) {
 				string name = row["Name"]?.ToString();
@@ -604,13 +620,13 @@ public static class MobileActionTargetProbe {
 	/// Degrades per object rather than aborting the probe.
 	/// </summary>
 	private static ActionTargetState ClassifyEntityDefaultMobilePage(
-		IToolCommandResolver commandResolver, EnvironmentOptions options,
-		string entitySchemaUId, Guid packageUId) {
+		ProbeContext context, string entitySchemaUId, Guid packageUId) {
 		if (!Guid.TryParse(entitySchemaUId, out Guid entityUId)) {
 			return ActionTargetState.Unknown;
 		}
 		try {
-			IAddonSchemaDesignerClient addonClient = commandResolver.Resolve<IAddonSchemaDesignerClient>(options);
+			IAddonSchemaDesignerClient addonClient =
+				context.Resolver.Resolve<IAddonSchemaDesignerClient>(context.Options);
 			AddonSchemaDto schema = addonClient.GetSchema(new AddonGetRequestDto {
 				AddonName = MobileRelatedPageAddonName,
 				TargetSchemaUId = entityUId,
@@ -676,8 +692,7 @@ public static class MobileActionTargetProbe {
 	/// OOTB shape, and anything they cannot place escalates to the authoritative read instead.
 	/// </summary>
 	private static (HashSet<string> Mobile, HashSet<string> Web) LoadTemplateRoots(
-		IToolCommandResolver commandResolver, EnvironmentOptions options,
-		WebToMobilePageConversionRules rules) {
+		ProbeContext context, WebToMobilePageConversionRules rules) {
 		var mobile = new HashSet<string>(BundledMobileTemplateRoots, StringComparer.OrdinalIgnoreCase);
 		var web = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 		foreach (TemplateMappingRule rule in rules?.Templates ?? []) {
@@ -689,7 +704,7 @@ public static class MobileActionTargetProbe {
 			}
 		}
 		try {
-			ISchemaTemplateCatalog catalog = commandResolver.Resolve<ISchemaTemplateCatalog>(options);
+			ISchemaTemplateCatalog catalog = context.Resolver.Resolve<ISchemaTemplateCatalog>(context.Options);
 			AddTemplateNames(catalog.GetTemplates(PageSchemaType.Mobile), mobile);
 			AddTemplateNames(catalog.GetTemplates(PageSchemaType.Web), web);
 		} catch (Exception) {
@@ -701,10 +716,8 @@ public static class MobileActionTargetProbe {
 	}
 
 	private static void AddTemplateNames(IReadOnlyList<PageTemplateInfo> templates, HashSet<string> into) {
-		foreach (PageTemplateInfo template in templates ?? []) {
-			if (!string.IsNullOrWhiteSpace(template?.Name)) {
-				into.Add(template.Name);
-			}
+		foreach (PageTemplateInfo template in (templates ?? []).Where(t => !string.IsNullOrWhiteSpace(t?.Name))) {
+			into.Add(template.Name);
 		}
 	}
 

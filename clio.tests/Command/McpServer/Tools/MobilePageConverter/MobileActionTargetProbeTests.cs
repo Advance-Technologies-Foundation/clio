@@ -146,7 +146,8 @@ public sealed class MobileActionTargetProbeTests {
 		JsonObject modelConfig = null) =>
 		MobileActionTargetProbe.Probe(
 			environment.Resolver, "env", null, null, null,
-			viewConfig, rules ?? RulesWithTargets(), modelConfig, PackageUId, DesignPackageUId);
+			new MobileActionTargetProbeRequest(
+				viewConfig, rules ?? RulesWithTargets(), modelConfig, PackageUId, DesignPackageUId));
 
 	/// <summary>A modelConfig whose single data source binds the page to <paramref name="entityName"/>.</summary>
 	private static JsonObject SourcePageBoundTo(string entityName) =>
@@ -425,10 +426,15 @@ public sealed class MobileActionTargetProbeTests {
 			addonMetaData: "{\"Pages\":[]}");
 
 		// Act
-		Probe(environment, ViewConfig("crt.CreateRecordRequest", "entityName", "Opportunity"));
+		MobileActionTargetProbeResult result = Probe(
+			environment, ViewConfig("crt.CreateRecordRequest", "entityName", "Opportunity"));
 
 		// Assert — the add-on must be read for the BASE schema: a replacing layer is not a different object,
 		// and reading one would classify the wrong physical schema's page set.
+		StateOf(result, MobileActionTargetProbe.KindEntityDefaultMobilePage, "Opportunity")
+			.Should().Be(ActionTargetState.Missing,
+				because: "the base row's add-on declares an empty page set, and that is the verdict that must "
+					+ "reach the caller — not one derived from a replacing layer");
 		environment.AddonClient.Received(1).GetSchema(
 			Arg.Is<AddonGetRequestDto>(request =>
 				request.TargetSchemaUId == Guid.Parse(EntitySchemaUId)
@@ -688,7 +694,8 @@ public sealed class MobileActionTargetProbeTests {
 
 		// Act
 		MobileActionTargetProbeResult result = MobileActionTargetProbe.Probe(
-			null, "env", null, null, null, viewConfig, RulesWithTargets(), null, PackageUId, DesignPackageUId);
+			null, "env", null, null, null,
+			new MobileActionTargetProbeRequest(viewConfig, RulesWithTargets(), null, PackageUId, DesignPackageUId));
 
 		// Assert
 		result.ProbeOk.Should().BeFalse(because: "there was no environment to ask");
@@ -738,8 +745,9 @@ public sealed class MobileActionTargetProbeTests {
 		// Act
 		MobileActionTargetProbeResult result = MobileActionTargetProbe.Probe(
 			environment.Resolver, "env", null, null, null,
-			ViewConfig("crt.CreateRecordRequest", "entityName", "Opportunity"),
-			RulesWithTargets(), modelConfig: null, pagePackageUId: null, designPackageUId: DesignPackageUId);
+			new MobileActionTargetProbeRequest(
+				ViewConfig("crt.CreateRecordRequest", "entityName", "Opportunity"),
+				RulesWithTargets(), ModelConfig: null, PagePackageUId: null, DesignPackageUId: DesignPackageUId));
 
 		// Assert
 		StateOf(result, MobileActionTargetProbe.KindEntityDefaultMobilePage, "Opportunity")
@@ -763,8 +771,9 @@ public sealed class MobileActionTargetProbeTests {
 	private static IReadOnlyList<ActionTargetOccurrence> CollectWith(
 		JsonArray viewConfig, WebToMobilePageConversionRules rules = null) {
 		MobileActionTargetProbeResult result = MobileActionTargetProbe.Probe(
-			null, "env", null, null, null, viewConfig, rules ?? RulesWithTargets(), null,
-			PackageUId, DesignPackageUId);
+			null, "env", null, null, null,
+			new MobileActionTargetProbeRequest(
+				viewConfig, rules ?? RulesWithTargets(), null, PackageUId, DesignPackageUId));
 		return result.Occurrences;
 	}
 }
