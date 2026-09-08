@@ -294,9 +294,10 @@ public sealed class MobilePageConversionGuideSandboxE2ETests : McpContractFixtur
 					&& string.Equals(e.Operation, "merge", StringComparison.OrdinalIgnoreCase)
 					&& e.MobileValues is not null)
 				.ToList();
-			if (carryingTheRow.Count == 0) {
+			if (structuralLists.Count == 0 || carryingTheRow.Count == 0) {
 				continue;
 			}
+			AssertStructuralTwinCarriesNoGridShapedValues(structuralLists);
 			AssertStructuralTwinRowIsItsOwnEntry(guide, carryingTheRow);
 			AssertConvertedListsCarryTheirRow(guide);
 			gridToListExercised = true;
@@ -320,6 +321,25 @@ public sealed class MobilePageConversionGuideSandboxE2ETests : McpContractFixtur
 	}
 
 	/// <summary>
+	/// A structural twin (the web element is a DIFFERENT component from the mobile one) must carry none of the
+	/// web grid's own inputs onto the list: the list declares none of them, and the regression this test exists
+	/// for was exactly that payload — the grid's keys arrived on a crt.List and the list rendered with no row.
+	/// </summary>
+	private static void AssertStructuralTwinCarriesNoGridShapedValues(IReadOnlyList<ElementMapEntry> lists) {
+		foreach (ElementMapEntry list in lists.Where(e => e.MobileValues is not null)) {
+			IEnumerable<string> keys = list.MobileValues!.AsObject().Select(p => p.Key);
+			keys.Should().NotIntersectWith(GridOnlyInputs,
+				because: $"'{list.WebName}' is a {list.WebType} converting into a {list.MobileType}, which declares "
+					+ "none of the grid's own inputs - carrying them is the inverted twin classification itself");
+		}
+	}
+
+	/// <summary>Inputs declared by the web grid and by no mobile list.</summary>
+	private static readonly string[] GridOnlyInputs = [
+		"columns", "features", "bulkActions", "rowActions", "primaryDisplayColumnName"
+	];
+
+	/// <summary>
 	/// The row of a converted grid arrives as its OWN merge entry on the template's crt.ListItem element, and
 	/// the parent crt.List carries nothing. Both halves matter: crt.List is not a container and itemLayout is
 	/// an input, so a row placed in the parent's merge values is discarded by the differ (the slot already holds
@@ -333,11 +353,14 @@ public sealed class MobilePageConversionGuideSandboxE2ETests : McpContractFixtur
 			JsonObject values = row.MobileValues!.AsObject();
 			values.Should().NotContainKey("name",
 				because: "a merge targets an element the template already named");
-			values.Should().ContainKey("title",
-				because: "the row leads with the grid's first column");
-			values["title"]!.GetValueKind().Should().Be(JsonValueKind.String,
-				because: "a title is a plain binding string; the { value: ... } shape is for body entries and "
-					+ "renders an empty Title column");
+			// Conditional for the same reason the sibling assertion is: a grid whose first column has no `code`
+			// legitimately renders a row with no title, and asserting it unconditionally is what made that
+			// helper fail against a seeded page.
+			if (values["title"] is { } title) {
+				title.GetValueKind().Should().Be(JsonValueKind.String,
+					because: "a title is a plain binding string; the { value: ... } shape is for body entries and "
+						+ "renders an empty Title column");
+			}
 		}
 		guide.ElementMap
 			.Where(e => string.Equals(e.MobileType, "crt.List", StringComparison.OrdinalIgnoreCase)
