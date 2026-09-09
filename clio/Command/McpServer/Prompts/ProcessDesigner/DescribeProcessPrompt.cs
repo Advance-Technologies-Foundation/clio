@@ -31,8 +31,8 @@ public static class DescribeProcessPrompt {
 		1. Call `describe-business-process` with `environment-name` and exactly one of `process-name` /
 		   `process-uid` / `process-caption`. It returns a STRUCTURED graph: `elements`
 		   (name, uid, caption, type, buildType, userTaskName, parameters; `signal` for a signal start, and a
-		   configuration block for a configured element - `email`, `readData`, `changeData`, `openEditPage`),
-		   `flows` (name, source, target, kind, and on a branch its `condition` plus
+		   configuration block for a configured element - `email`, `readData`, `changeData`, `addData`,
+		   `openEditPage`), `flows` (name, source, target, kind, and on a branch its `condition` plus
 		   `branchesOnActivityResult`), and process `parameters` — not raw metadata.
 		   A `preconfiguredPage` element also carries its `preconfiguredPage` block: the page it shows, its
 		   completing `buttons`, and `dataSources[]` — where `parameter` names the element parameter that
