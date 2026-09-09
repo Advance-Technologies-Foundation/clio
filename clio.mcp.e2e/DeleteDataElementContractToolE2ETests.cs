@@ -26,6 +26,11 @@ namespace Clio.Mcp.E2E;
 /// That split is not a convenience — the descriptions and the bundled archive are versioned separately, so the
 /// window where the text promises an element the bundled package cannot build is a real state, and these tests
 /// are what make the description side of it observable.</para>
+/// <para>What these tests do NOT establish is that an agent ever reads this text. These tools are on the lazy
+/// surface, so a session reaches them through <c>clio-run</c> and can configure the element end to end without
+/// a single description in context — observed in an agent run on 2026-09-09. The descriptions are the
+/// resident-session copy of an obligation whose load-bearing copy is the <c>process-delete-data</c> guidance
+/// article; asserting them here keeps the two from drifting, and is not evidence of delivery.</para>
 /// </summary>
 [TestFixture]
 [AllureNUnit]
@@ -56,8 +61,11 @@ public sealed class DeleteDataElementContractToolE2ETests : McpContractFixtureBa
 			because: "the count is what turns an approval into an informed one, and it is the step most often "
 				+ "skipped");
 		description.Should().Contain("get an explicit yes",
-			because: "AC6 asks the agent to confirm the selected records, and the tool description is the only "
-				+ "surface always in the agent's context");
+			because: "AC6 asks the agent to confirm the selected records, and the description restates the "
+				+ "obligation for the sessions where this tool is resident - it is NOT a surface guaranteed to "
+				+ "be in context, because the process-designer tools sit on the lazy surface and an agent "
+				+ "driving them through clio-run never sees a description at all, which is why the "
+				+ "process-delete-data article is the load-bearing copy");
 		description.Should().Contain("NAME THE OBJECT AS THE DESIGNER NAMES IT",
 			because: "the object picker offers the platform's junction tables interleaved with the business "
 				+ "objects, so a shortened name can hide that the step deletes membership rows rather than records");
