@@ -86,60 +86,6 @@ public sealed class ApplicationInfoService(
 			[4] = "Sequence"
 		};
 
-	private static readonly IReadOnlyDictionary<int, string> DataValueTypeNames =
-		new Dictionary<int, string>
-		{
-			[0] = "Guid",
-			[1] = "Text",
-			[4] = "Integer",
-			[5] = "Float",
-			[6] = "Money",
-			[7] = "DateTime",
-			[8] = "Date",
-			[9] = "Time",
-			[10] = "Lookup",
-			[11] = "Enum",
-			[12] = "Boolean",
-			[13] = "Blob",
-			[14] = "Image",
-			[15] = "CUSTOM_OBJECT",
-			[16] = "IMAGELOOKUP",
-			[17] = "COLLECTION",
-			[18] = "Color",
-			[19] = "LOCALIZABLE_STRING",
-			[20] = "ENTITY",
-			[21] = "ENTITY_COLLECTION",
-			[22] = "ENTITY_COLUMN_MAPPING_COLLECTION",
-			[23] = "HASH_TEXT",
-			[24] = "SECURE_TEXT",
-			[25] = "FILE",
-			[26] = "MAPPING",
-			[27] = "SHORT_TEXT",
-			[28] = "MEDIUM_TEXT",
-			[29] = "MAXSIZE_TEXT",
-			[30] = "LONG_TEXT",
-			[31] = "FLOAT1",
-			[32] = "FLOAT2",
-			[33] = "FLOAT3",
-			[34] = "FLOAT4",
-			[35] = "LOCALIZABLE_PARAMETER_VALUES_LIST",
-			[36] = "METADATA_TEXT",
-			[37] = "STAGE_INDICATOR",
-			[38] = "OBJECT_LIST",
-			[39] = "COMPOSITE_OBJECT_LIST",
-			[40] = "FLOAT8",
-			[41] = "FILE_LOCATOR",
-			[42] = "PHONE_TEXT",
-			[43] = "RICH_TEXT",
-			[44] = "WEB_TEXT",
-			[45] = "EMAIL_TEXT",
-			[46] = "COMPOSITE_OBJECT",
-			[47] = "FLOAT0",
-			[48] = "MONEY0",
-			[49] = "MONEY1",
-			[50] = "MONEY3"
-		};
-
 	/// <inheritdoc />
 	public ApplicationInfoResult GetApplicationInfo(string environmentName, string? id, string? code)
 	{
@@ -395,9 +341,9 @@ public sealed class ApplicationInfoService(
 		return new ApplicationColumnInfoResult(
 			name,
 			ResolveLocalizedText(column.Caption, designColumn?.Caption, name),
-			DataValueTypeNames.TryGetValue(column.DataValueType, out string? dataValueTypeName)
-				? dataValueTypeName
-				: column.DataValueType.ToString(),
+			// GetDisplayName, NOT GetNameOrOrdinal: this tool ships the platform client-enum spelling
+			// (SHORT_TEXT, FLOAT1) and its output must stay byte-identical (ENG-93202).
+			CreatioDataValueType.GetDisplayName(column.DataValueType),
 			column.ReferenceSchemaName,
 			defaultValueSource,
 			defaultValue,

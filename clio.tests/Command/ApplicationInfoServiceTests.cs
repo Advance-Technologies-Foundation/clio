@@ -459,6 +459,31 @@ public sealed class ApplicationInfoServiceTests {
 		_applicationClientFactory.DidNotReceiveWithAnyArgs().CreateEnvironmentClient(default);
 	}
 
+	[Test]
+	[Description("Keeps reporting the historical SCREAMING_SNAKE data-value-type spelling after the duplicate type table was folded into the canonical registry.")]
+	public void GetApplicationInfo_Should_Preserve_Historical_DataValueType_Spelling() {
+		// Arrange — dataValueType 32 is one of the 35 codes whose historical get-app-info spelling (FLOAT2)
+		// differs from the canonical name (Float2). Pinning it here is what catches an accidental swap of
+		// GetDisplayName for GetNameOrOrdinal, which would silently rewrite this tool's output (ENG-93202).
+		ConfigureHappyPathResponses();
+		_applicationClient.ExecutePostRequest(
+				Arg.Is<string>(url => url.EndsWith("RuntimeEntitySchemaRequest", StringComparison.Ordinal)),
+				Arg.Is<string>(body => body.Contains("\"uId\":\"entity-b\"", StringComparison.Ordinal)))
+			.Returns("""{"success":true,"schema":{"uId":"entity-b","name":"UsrBeta","caption":{"en-US":"Beta caption"},"columns":{"Items":{"amount":{"name":"UsrAmount","caption":{"en-US":"Amount"},"dataValueType":32,"isInherited":false},"hash":{"name":"UsrHash","caption":{"en-US":"Hash"},"dataValueType":23,"isInherited":false},"future":{"name":"UsrFuture","caption":{"en-US":"Future"},"dataValueType":999,"isInherited":false}}}}}""");
+
+		// Act
+		ApplicationInfoResult result = _sut.GetApplicationInfo("sandbox", null, "APP");
+
+		// Assert
+		result.Entities[1].Columns.Should().BeEquivalentTo(new[] {
+			new { Name = "UsrAmount", DataValueType = "FLOAT2" },
+			new { Name = "UsrFuture", DataValueType = "999" },
+			new { Name = "UsrHash", DataValueType = "HASH_TEXT" }
+		}, options => options.ExcludingMissingMembers(),
+			because: "get-app-info output must stay byte-identical to what it emitted before the duplicate "
+				+ "type table was removed, including its ordinal fallback for an unmodelled code");
+	}
+
 	private void ConfigureHappyPathResponses() {
 		_applicationClient.ExecutePostRequest(
 				Arg.Is<string>(url => url.EndsWith("SelectQuery", StringComparison.Ordinal)),

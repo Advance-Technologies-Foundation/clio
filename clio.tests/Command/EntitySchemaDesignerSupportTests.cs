@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Globalization;
 using System.Linq;
 using Clio.Command.EntitySchemaDesigner;
+using Clio.Common;
 using FluentAssertions;
 using Terrasoft.Core.Entities;
 using NUnit.Framework;
@@ -29,7 +30,7 @@ internal sealed class EntitySchemaDesignerSupportTests {
 		dataValueType.Should().Be(expectedValue,
 			because: "resolved binary-like type names should map to the expected runtime data value type");
 	}
-	
+
 	[Test]
 	[Description("Every column type clio can write is read back as a name that resolves to the same runtime type, so a readback value can always be sent straight back through the write vocabulary.")]
 	public void GetFriendlyTypeName_Should_RoundTrip_EverySupportedWriteType() {
@@ -75,6 +76,109 @@ internal sealed class EntitySchemaDesignerSupportTests {
 		// Assert
 		friendlyName.Should().Be(expectedName,
 			because: "readback must report the semantic type name from the documented write vocabulary");
+	}
+
+	[Test]
+	[Description("Every column type clio can write is reported by the canonical read vocabulary under a name the write vocabulary accepts back, so a read value can be sent straight into a write call.")]
+	public void GetNameOrOrdinal_Should_RoundTrip_EverySupportedWriteType() {
+		// Arrange — the read-side mirror of GetFriendlyTypeName_Should_RoundTrip_EverySupportedWriteType, for
+		// the canonical vocabulary that dataforge-get-table-columns and get-app-info emit. Before ENG-93202
+		// none of the decimal or money scales resolved here, so a caller could read a Decimal(0.01) column's
+		// type and be rejected when sending it straight back. This fixture owns the guard (not the Common one)
+		// because it protects SupportedDataValueTypes/SupportedDataValueTypeAliases, which live in this module:
+		// under the AGENTS smart-regression policy a Module=Command-only change must execute it.
+		IReadOnlyCollection<int> writableDataValueTypes =
+			[.. EntitySchemaDesignerSupport.SupportedDataValueTypes.Values.Distinct()];
+
+		// Act & Assert
+		writableDataValueTypes.Should().NotBeEmpty(
+			because: "the write registry must actually yield types, otherwise this guard passes vacuously");
+		foreach (int dataValueType in writableDataValueTypes) {
+			string canonicalName = CreatioDataValueType.GetNameOrOrdinal(dataValueType);
+			canonicalName.Should().NotBe(dataValueType.ToString(CultureInfo.InvariantCulture),
+				because: $"runtime type {dataValueType} is writable, so the read surface must report a semantic "
+					+ "name rather than falling through to the raw ordinal");
+			EntitySchemaDesignerSupport.TryResolveDataValueType(canonicalName, out int resolved).Should().BeTrue(
+				because: $"the canonical read name '{canonicalName}' must be accepted by the write vocabulary");
+			resolved.Should().Be(dataValueType,
+				because: $"the canonical read name '{canonicalName}' must resolve back to the same runtime type");
+		}
+	}
+
+	// Read names that resolve to a DIFFERENT type on write. Pre-existing collisions, NOT a licence to add
+	// more — see docs/knowledge/Command/read-name-write-token-collisions.md for why neither side of code 5
+	// can be changed from here.
+	private static readonly IReadOnlyDictionary<int, int> KnownReadNameWriteCollisions = new Dictionary<int, int> {
+		// Documented, deliberate collapse: Creatio stores Date and Time as DateTime (issue #949).
+		[8] = 7,
+		[9] = 7,
+		// Code 5 is NOT a collapse: canonical "Float" (unbounded) hits the ["float"] = "decimal2" alias.
+		[5] = 32
+	};
+
+	[Test]
+	[Description("No canonical read name resolves to a different runtime type on write, apart from the known collisions, so a type read from a column cannot silently create a column of another type.")]
+	public void GetNameOrOrdinal_Should_Not_Resolve_To_A_Different_Type_On_Write() {
+		// Arrange — the inverse of the guard above, and the one that can see codes the write vocabulary does
+		// NOT cover. The forward guard iterates writable codes only, so a read-only code whose name collides
+		// with another type's write token is invisible to it. A read surface emits all 49 codes.
+		IReadOnlyList<CreatioDataValueTypeInfo> allTypes = CreatioDataValueType.Types;
+
+		// Act
+		Dictionary<int, int> collisions = [];
+		foreach (CreatioDataValueTypeInfo type in allTypes) {
+			if (EntitySchemaDesignerSupport.TryResolveDataValueType(CreatioDataValueType.GetNameOrOrdinal(type.Code), out int resolved)
+				&& resolved != type.Code) {
+				collisions[type.Code] = resolved;
+			}
+		}
+
+		// Assert
+		allTypes.Should().NotBeEmpty(
+			because: "the registry must actually yield types, otherwise this guard passes vacuously");
+		collisions.Should().BeEquivalentTo(KnownReadNameWriteCollisions,
+			because: "a canonical read name that resolves to a different type on write silently creates the "
+				+ "wrong column; the known set is documented on KnownReadNameWriteCollisions, so any addition "
+				+ "here is a new silent-corruption path and any removal means a collision was fixed and the "
+				+ "documented set should shrink with it");
+	}
+
+	// Canonical spelling, as emitted by dataforge-get-table-columns.
+	[TestCase("Float0", 47)]
+	[TestCase("Float1", 31)]
+	[TestCase("Float2", 32)]
+	[TestCase("Float3", 33)]
+	[TestCase("Float4", 34)]
+	[TestCase("Float8", 40)]
+	[TestCase("Money0", 48)]
+	[TestCase("Money1", 49)]
+	[TestCase("Money3", 50)]
+	[TestCase("PhoneText", 42)]
+	[TestCase("WebText", 44)]
+	[TestCase("EmailText", 45)]
+	// Historical display spelling, as emitted by get-app-info. One alias covers both because
+	// TryResolveDataValueType normalizes case-insensitively and strips non-alphanumerics.
+	[TestCase("FLOAT0", 47)]
+	[TestCase("FLOAT2", 32)]
+	[TestCase("FLOAT8", 40)]
+	[TestCase("MONEY0", 48)]
+	[TestCase("MONEY3", 50)]
+	[TestCase("PHONE_TEXT", 42)]
+	[TestCase("WEB_TEXT", 44)]
+	[TestCase("EMAIL_TEXT", 45)]
+	[Description("Resolves the canonical read-surface type names, so a type read back from a column can be sent straight into a write call without translation.")]
+	public void TryResolveDataValueType_Should_Resolve_CanonicalReadSurfaceNames(string typeName, int expectedValue) {
+		// Arrange — before ENG-93202 none of the decimal or money scales had a write token under their
+		// canonical spelling, so reading a Decimal(0.01) column as Float2 and sending it back was rejected.
+
+		// Act
+		bool resolved = EntitySchemaDesignerSupport.TryResolveDataValueType(typeName, out int dataValueType);
+
+		// Assert
+		resolved.Should().BeTrue(
+			because: $"'{typeName}' is a name a clio read surface emits, so the write vocabulary must accept it");
+		dataValueType.Should().Be(expectedValue,
+			because: $"'{typeName}' must resolve to the same runtime data value type it was read from");
 	}
 
 	[TestCase("Money", 6)]

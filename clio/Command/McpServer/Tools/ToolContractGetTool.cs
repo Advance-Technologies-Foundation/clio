@@ -509,7 +509,32 @@ internal static class ToolContractCatalog {
 		// The SecureText aliases are spelled out in prose rather than as `Password = SecureText`: the
 		// key-equals-value form reads as a hard-coded credential to static analysis (S2068).
 		"Other aliases: Blob = Binary, ImageLink = ImageLookup, EmailAddress = Email, " +
-		"Decimal/Float = Decimal2. The Creatio display names 'Encrypted' and 'Password' both map to SecureText.";
+		"Decimal/Float = Decimal2. The Creatio display names 'Encrypted' and 'Password' both map to SecureText. " +
+		"Most canonical names the read tools report are accepted here too: Float0-Float4/Float8 = " +
+		"Decimal0-Decimal4/Decimal8, Money0/Money1/Money3 = Currency0/Currency1/Currency3, " +
+		"PhoneText = PhoneNumber, WebText = WebLink, EmailText = Email. Three read names resolve to a " +
+		"DIFFERENT type here, so do not echo them blindly: 'Float' (the unbounded float a read reports for " +
+		"dataValueType 5) resolves to Decimal2, and 'Date'/'Time' resolve to DateTime. Read names for " +
+		"non-writable types (Enum, HashText, Collection, Entity, StageIndicator, FileLocator and the other " +
+		"structural types) are rejected — there is no way to create those columns through clio.";
+
+	// The `data-type` values are stated explicitly because a caller has to decide from them whether a column
+	// is numeric. A partial type map that fell back to "Text" once reported every decimal scale as text, and
+	// callers filtered a numeric column as a lexicographic string comparison (ENG-93202).
+	private const string DataForgeColumnsFieldDescription =
+		"Runtime column projections with `name`, `caption`, `description`, `data-type`, `required`, and " +
+		"`reference-schema-name`. `data-type` is the canonical Creatio type name — Text, Integer, Float, " +
+		"Float0-Float4/Float8 (decimal scales; Float2 is the common 'Decimal (0.01)'), Money/Money0/Money1/" +
+		"Money3 (currency scales), Boolean, DateTime, Date, Time, Lookup, Guid, ShortText/MediumText/LongText/" +
+		"MaxSizeText, PhoneText, WebText, EmailText, RichText, and so on. All Float*/Money*/Integer names are " +
+		"numeric, so compare them numerically rather than as strings. A type clio does not model yet is " +
+		"reported as its raw numeric ordinal (for example `51`) rather than as a guessed type name. " +
+		"Do NOT assume a name read here is writable: the write tools accept it back only for the types they " +
+		"can create, and three names mean a DIFFERENT type on write — " +
+		"`Float` writes Decimal2 (send Float2/Decimal2 explicitly for a scaled decimal, and note an " +
+		"unbounded Float column cannot be created by clio at all), while `Date` and `Time` both write " +
+		"DateTime. Names such as Enum, HashText, StageIndicator, Collection, Entity or FileLocator are " +
+		"read-only: the write tools reject them. Read the `type` field of those tools for the accepted list.";
 
 	// Shared by the create-lookup / create-entity-schema `columns` arrays. Spelling out the column identity
 	// field matters: these two contracts used to say only "Optional initial columns", so a caller had no way
@@ -2040,7 +2065,7 @@ internal static class ToolContractCatalog {
 					Field("table-name", StringType, "Target runtime entity schema name.")),
 				OutputFields = DataForgeEnvelopeFields(
 					QueryCorrelationIdentifierDescription,
-					Field(ColumnsFieldName, ArrayType, "Runtime column projections with `name`, `caption`, `description`, `data-type`, `required`, and `reference-schema-name`.")),
+					Field(ColumnsFieldName, ArrayType, DataForgeColumnsFieldDescription)),
 				Examples = [
 					Example("Read Contact runtime columns for a configured environment", new Dictionary<string, object?> {
 						["table-name"] = ExampleContactSchemaName,
@@ -2073,7 +2098,8 @@ internal static class ToolContractCatalog {
 					Field("similar-tables", ArrayType, "Similar table results."),
 					Field("similar-lookups", ArrayType, "Similar lookup results."),
 					Field("relations", ObjectType, "Resolved relation paths keyed by source-target pair."),
-					Field(ColumnsFieldName, ObjectType, "Resolved runtime column projections keyed by table name."),
+					Field(ColumnsFieldName, ObjectType, "Resolved runtime column projections keyed by table name. "
+						+ $"Each projection has the same shape and `data-type` vocabulary as {DataForgeTool.DataForgeGetTableColumnsToolName}."),
 					Field("coverage", ObjectType, "Coverage flags for health, tables, lookups, relations, and table-columns.")),
 				Examples = [
 					Example("Aggregate app-modeling context for a configured environment", new Dictionary<string, object?> {

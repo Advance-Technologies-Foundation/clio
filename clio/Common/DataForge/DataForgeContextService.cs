@@ -22,32 +22,8 @@ public interface IDataForgeContextService {
 }
 
 internal static class DataForgeRuntimeSchemaMapper {
-	private static readonly IReadOnlyDictionary<int, string> DataValueTypeNames = new Dictionary<int, string> {
-		[0] = "Guid",
-		[1] = "Text",
-		[4] = "Integer",
-		[5] = "Float",
-		[6] = "Money",
-		[7] = "DateTime",
-		[8] = "Date",
-		[9] = "Time",
-		[10] = "Lookup",
-		[11] = "Enum",
-		[12] = "Boolean",
-		[13] = "Blob",
-		[18] = "Color",
-		[23] = "HASH_TEXT",
-		[24] = "SECURE_TEXT",
-		[27] = "SHORT_TEXT",
-		[28] = "MEDIUM_TEXT",
-		[29] = "MAXSIZE_TEXT",
-		[30] = "LONG_TEXT",
-		[42] = "PHONE_TEXT",
-		[43] = "RICH_TEXT",
-		[44] = "WEB_TEXT",
-		[45] = "EMAIL_TEXT"
-	};
-
+	// Type names come from the canonical registry: never reintroduce a local numeric->name table here, and
+	// never fall back to a real type name for an unmapped code (ENG-93202).
 	internal static IReadOnlyList<DataForgeColumnResult> MapColumns(RuntimeEntitySchemaResult schema) {
 		return schema.Columns
 			.Where(column => !column.IsInherited)
@@ -55,17 +31,11 @@ internal static class DataForgeRuntimeSchemaMapper {
 				column.Name,
 				column.Caption,
 				column.Description,
-				ResolveDataType(column.DataValueType),
+				CreatioDataValueType.GetNameOrOrdinal(column.DataValueType),
 				column.IsRequired,
 				column.ReferenceSchemaName))
 			.OrderBy(column => column.Name, StringComparer.OrdinalIgnoreCase)
 			.ToList();
-	}
-
-	private static string ResolveDataType(int dataValueType) {
-		return DataValueTypeNames.TryGetValue(dataValueType, out string? dataTypeName)
-			? dataTypeName
-			: "Text";
 	}
 }
 
