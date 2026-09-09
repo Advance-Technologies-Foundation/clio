@@ -1,0 +1,44 @@
+{
+  "runId": "080eaf6f-aae2-47f3-ac38-f48900f0a0c3",
+  "issue": "ENG-91853",
+  "scope": "flow labels",
+  "mode": "agent",
+  "startedAt": "2026-09-09T04:12:33Z",
+  "stand": { "alias": "Creatio", "coreVersion": "10.1.37.0", "packageVersion": "1.6.0.9" },
+  "prompt": "spec/eng-91853-gateways-and-flows/eng-91853-gateways-and-flows-flow-labels-manual-test-prompt.md",
+  "promptCommit": "76fe8b2fb",
+  "clio": { "branch": "feature/ENG-91853-flow-labels", "carries": "FlowLabelExpectation, 1.6.0.8 floor" },
+  "knowledge": { "libraryVersion": "1.13.100", "resolvedRevision": "74a34f337d8406e49deaa7ef88c966636822b9cc" },
+  "isolation": "isolated",
+  "processes": [
+    { "name": "UsrBPLabelTC01", "createdOn": "2026-09-09T04:16:09Z", "case": "TC-01" },
+    { "name": "UsrBPLabelTC02", "createdOn": "2026-09-09T04:17:57Z", "case": "TC-02" },
+    { "name": "UsrBPLabelTC03", "createdOn": "2026-09-09T04:19:12Z", "case": "TC-03, then edited by TC-04 and TC-05" },
+    { "name": "UsrBPLabelTC06", "createdOn": "2026-09-09T04:20:54Z", "case": "TC-06, read by TC-07" },
+    { "name": "UsrBPLabelTC09", "createdOn": "2026-09-09T04:22:28Z", "case": "TC-09" }
+  ],
+  "verdicts": {
+    "TC-01": "pass", "TC-02": "pass", "TC-03": "pass (the 'nothing else moved' half is unverifiable after the fact)",
+    "TC-04": "pass", "TC-05": "pass — cleared label removes the key, not an empty string",
+    "TC-06": "pass — threshold and label independent in both directions, routing intact after the clear",
+    "TC-07": "pass — the ambiguity was resolved by evidence, not assumed",
+    "TC-08": "unrunnable, correctly declared; stand is newer than the capability floor",
+    "TC-09": "pass — label survives the re-kind, once, on the same arrow",
+    "TC-10": "pass — refused at BUILD, earlier than the case anticipated; refusal reproduced verbatim"
+  },
+  "verifiedIndependently": true,
+  "verificationEvidence": [
+    "VwProcessLib.CreatedOn for every BPLabel* process vs the 04:12:33Z run start — nothing adopted",
+    "raw schema JSON for TC-03 and TC-06 — no 'label' key after a clear, not an empty string",
+    "SysProcessLog + SysProcessElementLog — 7 instances, all Completed, one path each",
+    "TC-10 refusal reproduced through the build path; nothing created"
+  ],
+  "gaps": [
+    "No design-time level observed anywhere in this run: no designer was opened, and the executor said so. TC-01, TC-02, TC-05 and TC-09 need a browser pass for the level that matters most to this feature.",
+    "The executor's sentence 'All ten processes below are named BPLabel TC<NN>' overstates: five processes exist, which is what the cases require."
+  ],
+  "standResidue": [
+    "BPLabel TC01/TC02/TC03/TC06/TC09 and BPLabel smoke left in Custom",
+    "7 activities completed by the executor, all in processes it built this run"
+  ]
+}

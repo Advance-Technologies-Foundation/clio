@@ -37,6 +37,18 @@ instead of looking at the diagram, and each wrong guess costs a wedged SPA and a
 wedge is easy to misread as the stand being down or the change having broken the client, because the
 splash screen is exactly what a failing app looks like.
 
+**AND IT DOES NOT RELOAD ON A HASH-ONLY CHANGE, SILENTLY.** Navigating from
+`…?vm=SchemaDesigner#process/<uidA>` to `#process/<uidB>` leaves the PREVIOUS process on screen. The
+address bar shows the new UId, so every signal a caller checks says the navigation worked — while
+`document.title` still names the old process and the DOM still holds its labels. A pass over four
+processes nearly recorded the first one's labels as the second's on exactly this.
+
+`location.reload()` after changing the hash fixes it. Read `document.title` as the check: it carries
+the process caption, so it falsifies the mistake directly rather than leaving you to notice that two
+processes reported suspiciously similar diagrams. And budget the wait — about 40 seconds per process
+on a local stand; a read at 20 seconds returns an empty node list, which looks exactly like "this
+process has no labels drawn".
+
 **Cheaper than a screenshot, when the question is only "is the text there":** the designer renders a
 connector label as a `div.foreign-text` inside its canvas SVG, so
 
@@ -48,3 +60,16 @@ returns every element caption and flow label on the diagram. That works regardle
 which matters because the in-app browser blocks the app's own `//core/...` bootstrap loader
 (`ERR_BLOCKED_BY_CLIENT`) and a real logged-in browser window may be sized too small to screenshot a
 diagram usefully.
+
+**Count the nodes, not just the text**, when the question is whether something was REMOVED:
+
+```js
+const t = [...document.querySelectorAll('div.foreign-text')];
+({ drawn: t.map(e => e.textContent.trim()).filter(Boolean),
+   emptyBoxes: t.filter(e => !e.textContent.trim()).length })
+```
+
+A cleared caption and a caption that is present-but-blank read identically in a list of trimmed
+strings, and they are different outcomes — one draws nothing, the other can draw an empty label box on
+the connector. The count distinguishes them and the text cannot. Measured this way, a cleared flow
+label contributes no node at all.
