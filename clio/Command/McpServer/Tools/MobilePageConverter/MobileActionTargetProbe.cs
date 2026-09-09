@@ -28,8 +28,7 @@ namespace Clio.Command.McpServer.Tools.MobilePageConverter;
 /// <para>
 /// It performs DataService <c>SelectQuery</c> reads plus one designer read per object and issues no write
 /// call. (The add-on <c>GetSchema</c> is a read that the SERVER answers by auto-provisioning an empty
-/// descriptor — see <c>docs/knowledge/McpServer/mobile-related-page-addon-read-shape-is-unverified.md</c>;
-/// that side effect is the platform's, and it is idempotent.) It NEVER throws: any failure degrades to <see cref="MobileActionTargetProbeResult.ProbeOk"/> = false and
+/// descriptor when none exists; that side effect is the platform's, and it is idempotent.) It NEVER throws: any failure degrades to <see cref="MobileActionTargetProbeResult.ProbeOk"/> = false and
 /// leaves the affected targets ABSENT from the resolution map, which every consumer reads as
 /// <see cref="ActionTargetState.Unknown"/> — the fail-open value. Nothing on the page is ever reported
 /// broken on missing information.
@@ -88,8 +87,11 @@ public static class MobileActionTargetProbe {
 	private const int MaxEntityAddonProbes = 8;
 
 	/// <summary>
-	/// Row headroom per requested name: a schema can appear as a base row plus replacing layers, and a
-	/// truncated result would be misread as "this layer does not exist".
+	/// Row headroom per requested name: a schema appears as a base row plus one row per replacing layer, and
+	/// there is no bound on how many layers an object carries. The read ORDERS base rows first
+	/// (<see cref="ClassicEntitySchemaQuery.ColumnOrderedAsc"/>), so this cap can no longer cost the base row
+	/// — it only decides how many extra layers are seen, which is what separates "this object has no rows at
+	/// all" (absent) from "rows but no base row" (unknown).
 	/// </summary>
 	private const int RowsPerNameHeadroom = 4;
 
@@ -488,7 +490,11 @@ public static class MobileActionTargetProbe {
 				new JObject {
 					["Name"] = ClassicEntitySchemaQuery.Column("Name"),
 					["UId"] = ClassicEntitySchemaQuery.Column("UId"),
-					["ExtendParent"] = ClassicEntitySchemaQuery.Column("ExtendParent")
+					// ORDERED ascending, so the base row (ExtendParent = false) is always inside the row window.
+					// A SelectQuery caps an UNORDERED result, and an OOTB object routinely carries more schema
+					// layers than the per-name headroom: on a real stand Account, Lead, Activity and Case all
+					// lost their base row to this window and degraded to Unknown.
+					["ExtendParent"] = ClassicEntitySchemaQuery.ColumnOrderedAsc("ExtendParent")
 				},
 				ClassicEntitySchemaQuery.Group(
 					("byName", ClassicEntitySchemaQuery.InFilter("Name", chunk, TextDataValueType)),
