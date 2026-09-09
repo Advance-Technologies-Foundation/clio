@@ -3,6 +3,7 @@ description: web-vs-mobile for a Freedom UI page (schemaType 9 vs 10) cannot be 
 applies-to:
   - clio/Command/PageListOptions.cs
   - clio/Command/PageSchemaType.cs
+  - clio/Command/McpServer/Tools/MobilePageConverter/MobileActionTargetProbe.cs
 ticket: ENG-94839
 date: 2026-09-07
 ---

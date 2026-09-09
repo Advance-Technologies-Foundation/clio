@@ -206,9 +206,10 @@ public sealed class MobilePageConversionGuideTool {
 			args.SchemaName, pageResponse.Page?.PackageUId);
 
 		// Read-only probe: do the page's action bindings point at targets that EXIST on mobile — a page the
-		// converter has a mobile twin for, an object with a default mobile edit page? Best-effort: an
-		// unreachable environment leaves every target unknown, reports nothing, and changes no conversion
-		// decision (ENG-94839).
+		// converter has a mobile twin for, an object with a default mobile edit page? Best-effort and
+		// per-tier: an unreachable environment leaves every OBJECT target unknown, which reports nothing and
+		// changes no conversion decision. A web-page target needs no read at all, so it is still reported and
+		// still costs its binding (never its control) even offline (ENG-94839).
 		MobileActionTargetProbeResult actionTargets = MobileActionTargetProbe.Probe(
 			_commandResolver, args.EnvironmentName, args.Uri, args.Login, args.Password,
 			new MobileActionTargetProbeRequest(

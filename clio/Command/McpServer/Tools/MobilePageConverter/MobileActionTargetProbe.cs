@@ -26,12 +26,21 @@ namespace Clio.Command.McpServer.Tools.MobilePageConverter;
 /// file cannot make an older clio report a target it does not know how to verify.
 /// </para>
 /// <para>
-/// It performs DataService <c>SelectQuery</c> reads plus two designer reads and never writes. It NEVER
-/// throws: any failure degrades to <see cref="MobileActionTargetProbeResult.ProbeOk"/> = false with an
-/// EMPTY resolution map, which every consumer reads as <see cref="ActionTargetState.Unknown"/> — the
-/// fail-open value. Nothing on the page is ever reported broken on missing information, matching
-/// <c>WebToMobileAnalysisService.RetargetTargetMissing</c>, which likewise refuses to conclude "absent"
-/// from an unread probe.
+/// It performs DataService <c>SelectQuery</c> reads plus one designer read per object and issues no write
+/// call. (The add-on <c>GetSchema</c> is a read that the SERVER answers by auto-provisioning an empty
+/// descriptor — see <c>docs/knowledge/McpServer/mobile-related-page-addon-read-shape-is-unverified.md</c>;
+/// that side effect is the platform's, and it is idempotent.) It NEVER throws: any failure degrades to <see cref="MobileActionTargetProbeResult.ProbeOk"/> = false and
+/// leaves the affected targets ABSENT from the resolution map, which every consumer reads as
+/// <see cref="ActionTargetState.Unknown"/> — the fail-open value. Nothing on the page is ever reported
+/// broken on missing information.
+/// </para>
+/// <para>
+/// The two kinds are resolved in SEPARATE tiers, and degrade separately.
+/// <see cref="KindWebPage"/> is settled offline — a web page cannot open on mobile by construction — so it
+/// survives an unreachable environment; only <see cref="KindEntityDefaultMobilePage"/> needs reads, and it
+/// is what <see cref="MobileActionTargetProbeResult.ProbeOk"/> reports on. Collapsing the two into one
+/// boolean is how a page carrying BOTH kinds used to lose its web-page verdict whenever the object reads
+/// failed, while the same verdict on a page carrying only web-page targets reported fine (ENG-94839).
 /// </para>
 /// </summary>
 public static class MobileActionTargetProbe {
@@ -70,8 +79,11 @@ public static class MobileActionTargetProbe {
 	private const int TextDataValueType = 1;
 
 	/// <summary>
-	/// Ceiling on the per-object add-on reads (one <c>GetSchema</c> round trip each). Same rationale and same
-	/// fail-open overflow as <see cref="MaxAuthoritativeProbes"/>.
+	/// Ceiling on the per-object add-on reads (one <c>GetSchema</c> round trip each), so a page firing
+	/// create/update actions at many objects cannot turn one guide call into an unbounded fan of round trips.
+	/// Overflowing it fails OPEN: every object past the ceiling resolves to
+	/// <see cref="ActionTargetState.Unknown"/> and <see cref="MobileActionTargetProbeResult.Note"/> says so,
+	/// because "not asked" must not read as "asked, and the answer was no".
 	/// </summary>
 	private const int MaxEntityAddonProbes = 8;
 
@@ -104,7 +116,7 @@ public static class MobileActionTargetProbe {
 		string environment, string uri, string login, string password,
 		MobileActionTargetProbeRequest request) {
 		// Guard the REQUEST, not each member: a null-conditional on the first access and a plain dereference on
-		// the next reads as safe and is not — the same shape that made CarriesBindingOnMobile throwable.
+		// the next reads as safe and is not, and this method's contract is that it never throws.
 		if (request is null) {
 			return new MobileActionTargetProbeResult {
 				ProbeOk = false, Note = "Action targets were not verified (no page inputs were supplied)."
@@ -128,7 +140,7 @@ public static class MobileActionTargetProbe {
 			sourceEntities = CollectSourceEntityNames(request.ModelConfig);
 			occurrences = ExceptSourceEntityTargets(CollectActionTargets(request.ViewConfig, targeted), sourceEntities);
 		} catch (Exception ex) {
-			return NotProbed([], $"Could not read the page's action bindings ({ex.Message}).");
+			return NotProbed([], Describe("Could not read the page's action bindings", ex));
 		}
 		if (occurrences.Count == 0) {
 			// Nothing on the page navigates anywhere: the check ran and found nothing to verify.
@@ -149,7 +161,8 @@ public static class MobileActionTargetProbe {
 			};
 		}
 		if (commandResolver is null) {
-			return NotProbed(occurrences, "Action targets were not verified (missing environment client).");
+			return NotProbed(occurrences, "Object action targets were not verified (missing environment client).",
+				resolutions);
 		}
 
 		try {
@@ -159,25 +172,27 @@ public static class MobileActionTargetProbe {
 			var context = new ProbeContext(
 				commandResolver, options,
 				commandResolver.Resolve<IApplicationClient>(options),
-				commandResolver.Resolve<IServiceUrlBuilder>(options));
+				commandResolver.Resolve<IServiceUrlBuilder>(options),
+				// Resolved ONCE rather than per object: the add-on read runs up to MaxEntityAddonProbes times,
+				// and re-resolving inside that loop buys nothing but container work.
+				commandResolver.Resolve<IAddonSchemaDesignerClient>(options));
 
-			ResolveEntityTargets(context, entityTargets, request.PagePackageUId, resolutions);
+			EntityTierOutcome outcome =
+				ResolveEntityTargets(context, entityTargets, request.PagePackageUId, resolutions);
 
 			return new MobileActionTargetProbeResult {
-				ProbeOk = true, Occurrences = occurrences, TargetsByKey = resolutions
+				ProbeOk = outcome.Answered, Occurrences = occurrences, TargetsByKey = resolutions,
+				Note = outcome.Note
 			};
 		} catch (Exception ex) {
 			// Covers the DataService failure envelope and a non-JSON body alike: IApplicationClient returns a
 			// proxy/auth error PAGE as an ordinary string rather than throwing, so it is the SelectQuery helper
 			// this file calls that raises it. Reading such a body as "no rows" would report every target as
 			// absent and send the user off to fix controls that already work.
-			//
-			// The message is REDACTED because this note is surfaced to the MCP caller on the guide
-			// (requestConversions.targetsNote): a Creatio read failure routinely names the tenant host, the
-			// integration login (a SecurityException quotes it), or a local settings path.
 			return NotProbed(occurrences,
-				$"Could not verify action targets ({SensitiveErrorTextRedactor.Redact(ex.Message)}). "
-				+ "Check each action's target page manually.");
+				Describe("Could not verify object action targets", ex)
+				+ " Check each action's target object manually.",
+				resolutions);
 		}
 	}
 
@@ -254,6 +269,33 @@ public static class MobileActionTargetProbe {
 	private static bool IsRecognizedKind(string kind) =>
 		string.Equals(kind, KindWebPage, StringComparison.OrdinalIgnoreCase)
 		|| string.Equals(kind, KindEntityDefaultMobilePage, StringComparison.OrdinalIgnoreCase);
+
+	/// <summary>
+	/// Whether a <see cref="ActionTargetState.Missing"/> verdict on this kind is strong enough to REMOVE the
+	/// action's binding, as opposed to only reporting it. The single seam that decides it, so the rule lives
+	/// in one place instead of being re-derived at each consumer.
+	/// <para>
+	/// Only <see cref="KindWebPage"/> qualifies, and it qualifies because its verdict is DEFINITIONAL: the
+	/// value names a web page by construction, the Creatio Mobile app cannot open one, and no environment
+	/// read was involved — so the verdict cannot be wrong for a reason outside this process.
+	/// </para>
+	/// <para>
+	/// <see cref="KindEntityDefaultMobilePage"/> deliberately does NOT qualify. Its verdict comes from reading
+	/// the object's <c>MobileRelatedPage</c> add-on, and that read addresses the add-on more cheaply than
+	/// <c>RelatedPageAddonService.BuildAddonGetRequest</c> does — no resolved parent schema, and the SOURCE
+	/// page's package rather than the object's own. A body carrying no page set classifies as
+	/// <see cref="ActionTargetState.Missing"/>, which is ALSO the shape a mis-addressed read plausibly returns
+	/// (the server auto-provisions the descriptor), and the two cannot be told apart by inspection. Removing a
+	/// working action on that is not a risk worth taking for a diagnosis the report already delivers, so an
+	/// object target is reported and left alone (ENG-94839; removal is ENG-96178 / ENG-95084's scope).
+	/// </para>
+	/// </summary>
+	/// <param name="kind">A rules-declared <c>targetKind</c>.</param>
+	/// <returns>Whether a verified absence of this kind removes the binding.</returns>
+	internal static bool StripsBindingOnMissing(string kind) =>
+		// Trimmed to match TargetKey, which trims the kind when it builds the key a resolution is stored
+		// under: an untrimmed Kind would otherwise be FOUND by the lookup and then silently not stripped.
+		string.Equals(kind?.Trim(), KindWebPage, StringComparison.OrdinalIgnoreCase);
 
 	/// <summary>
 	/// Every place a target-carrying request appears in the page body. PURE — no environment, so the whole
@@ -353,36 +395,42 @@ public static class MobileActionTargetProbe {
 	/// resolver alongside the two clients it produced keeps every read on the SAME per-call container: a pass
 	/// that re-resolved from somewhere else could silently answer for a different tenant.
 	/// </summary>
+	/// <summary>
+	/// What the object tier did. <c>Answered</c> is what <see cref="MobileActionTargetProbeResult.ProbeOk"/>
+	/// reports, so a tier that performed NO read must say false however cleanly it returned — otherwise the
+	/// caller is told the object targets were verified when nothing was asked. <c>Note</c> is null only when
+	/// the tier ran in full; it is set both when the tier did not run and when it ran incompletely.
+	/// </summary>
+	private sealed record EntityTierOutcome(bool Answered, string Note);
+
 	private sealed record ProbeContext(
 		IToolCommandResolver Resolver, EnvironmentOptions Options,
-		IApplicationClient Client, IServiceUrlBuilder UrlBuilder);
+		IApplicationClient Client, IServiceUrlBuilder UrlBuilder,
+		IAddonSchemaDesignerClient AddonClient);
 
-	/// <summary>
-	/// Why a batched <c>SysSchema</c> read reports whether it may have been TRUNCATED. A <c>SelectQuery</c> is
-	/// capped by <c>rowCount</c> and reports no overflow, so a read that came back exactly full may have left
-	/// rows behind — and a name whose rows were left behind is INDISTINGUISHABLE from a name that does not
-	/// exist. Concluding <see cref="ActionTargetState.Missing"/> from that would report a working control as
-	/// broken, so an absence verdict is downgraded to <see cref="ActionTargetState.Unknown"/> when it is set.
-	/// </summary>
 	/// <summary>
 	/// Resolves every <see cref="KindEntityDefaultMobilePage"/> target: one batched <c>SysSchema</c> read for
 	/// the objects' base-row UIds, then one <c>MobileRelatedPage</c> add-on read per object. That add-on is
 	/// what the Creatio Mobile app resolves for a create/update-record action, and it is the same add-on
 	/// <c>create-related-page-addon --schema-type mobile</c> writes at the end of a conversion.
 	/// </summary>
-	private static void ResolveEntityTargets(
+	/// <returns>Whether the tier answered, and what limited it — see <see cref="EntityTierOutcome"/>.</returns>
+	private static EntityTierOutcome ResolveEntityTargets(
 		ProbeContext context, IReadOnlyList<string> names, string pagePackageUId,
 		IDictionary<string, ActionTargetResolution> into) {
 		if (names.Count == 0) {
-			return;
+			return new EntityTierOutcome(true, null);
 		}
 		if (!Guid.TryParse(pagePackageUId, out Guid packageUId)) {
 			// The add-on read is addressed by package; without one nothing can be verified. Unknown, not
-			// Missing — the absence is in clio's inputs, not in the environment.
+			// Missing — the absence is in clio's inputs, not in the environment. And NOT "answered": no read
+			// happened, so reporting targetsProbed:true here would claim a verification that never ran, the
+			// same degradation PageBusinessRuleProbe reports for the identical input.
 			foreach (string name in names) {
 				Record(into, KindEntityDefaultMobilePage, name, ActionTargetState.Unknown);
 			}
-			return;
+			return new EntityTierOutcome(false,
+				"Object action targets were not verified (the source page package could not be resolved).");
 		}
 
 		var uIdByName = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
@@ -390,6 +438,7 @@ public static class MobileActionTargetProbe {
 		bool truncated = ReadEntitySchemaRows(context, names, uIdByName, seenNames);
 
 		int budget = MaxEntityAddonProbes;
+		bool budgetExhausted = false;
 		foreach (string name in names) {
 			if (!uIdByName.TryGetValue(name, out string entityUId)) {
 				// No rows at all: the object does not exist, so the action is dead — unless the read may have
@@ -400,22 +449,33 @@ public static class MobileActionTargetProbe {
 					seenNames.Contains(name) || truncated ? ActionTargetState.Unknown : ActionTargetState.Missing);
 				continue;
 			}
-			ActionTargetState state = budget-- > 0
-				? ClassifyEntityDefaultMobilePage(context, entityUId, packageUId)
-				: ActionTargetState.Unknown;
-			Record(into, KindEntityDefaultMobilePage, name, state);
+			if (budget-- <= 0) {
+				// Fail open AND say so: an unasked target must not look like one the environment answered "no" to.
+				budgetExhausted = true;
+				Record(into, KindEntityDefaultMobilePage, name, ActionTargetState.Unknown);
+				continue;
+			}
+			Record(into, KindEntityDefaultMobilePage, name,
+				ClassifyEntityDefaultMobilePage(context, entityUId, packageUId));
 		}
+		// Answered either way: the reads that ran did succeed. The note is what says some were never asked.
+		return new EntityTierOutcome(true, budgetExhausted
+			? $"Only the first {MaxEntityAddonProbes} object targets were checked; the rest are reported as "
+				+ "unverified. Check them manually."
+			: null);
 	}
 
 	/// <summary>
 	/// Reads the objects' <c>SysSchema</c> rows and keeps the BASE row UId per name — the stable unit, exactly
-	/// as <see cref="ClassicEntitySchemaQuery.ResolveEntityUId"/> picks it; a replacing layer is not a
+	/// as <c>ClassicEntitySchemaQuery.ResolveEntityUId</c> picks it; a replacing layer is not a
 	/// different object and must not be addressed instead. <paramref name="seenNames"/> separates "no rows at
 	/// all" from "rows but no base row", which resolve differently.
 	/// </summary>
 	/// <returns>
-	/// Whether a chunk came back exactly full, i.e. rows may have been left behind — see
-	/// <see cref="SchemaLookup{TRow}"/> for why that must downgrade every absence verdict.
+	/// Whether a chunk came back EXACTLY full, i.e. rows may have been left behind. A <c>SelectQuery</c> is
+	/// capped by <c>rowCount</c> and reports no overflow, so a name whose rows were cut off the result is
+	/// INDISTINGUISHABLE from a name that does not exist — which is why a full read downgrades every absence
+	/// verdict from <see cref="ActionTargetState.Missing"/> to <see cref="ActionTargetState.Unknown"/>.
 	/// </returns>
 	private static bool ReadEntitySchemaRows(
 		ProbeContext context, IReadOnlyList<string> names,
@@ -461,9 +521,7 @@ public static class MobileActionTargetProbe {
 			return ActionTargetState.Unknown;
 		}
 		try {
-			IAddonSchemaDesignerClient addonClient =
-				context.Resolver.Resolve<IAddonSchemaDesignerClient>(context.Options);
-			AddonSchemaDto schema = addonClient.GetSchema(new AddonGetRequestDto {
+			AddonSchemaDto schema = context.AddonClient.GetSchema(new AddonGetRequestDto {
 				AddonName = MobileRelatedPageAddonName,
 				TargetSchemaUId = entityUId,
 				TargetParentSchemaUId = Guid.Empty,
@@ -540,10 +598,43 @@ public static class MobileActionTargetProbe {
 		IDictionary<string, ActionTargetResolution> into, string kind, string target, ActionTargetState state) =>
 		into[TargetKey(kind, target)] = new ActionTargetResolution { Kind = kind, Target = target, State = state };
 
-	/// <summary>A degraded result: the occurrences are known, nothing about their targets is.</summary>
+	/// <summary>
+	/// Composes a degradation note from a LOCALLY authored sentence plus, when there is one, the failure
+	/// detail neutralized as data.
+	/// </summary>
+	/// <remarks>
+	/// <see cref="SensitiveErrorTextRedactor.RedactUntrustedOrNull"/>, never plain <c>Redact</c>: this note is
+	/// surfaced to the MCP caller on the guide (<c>requestConversions.targetsNote</c>) in a server whose tool
+	/// surface includes destructive tools, and the failure detail is prose a third party CHOOSES rather than
+	/// values inside prose clio wrote. A DataService failure envelope carries the server's own
+	/// <c>errorInfo.message</c> verbatim (<c>DataServiceSelectResponse</c> interpolates it), and the page-walk
+	/// path can quote a page-authored key. <c>Redact</c> scrubs URIs, paths and credential shapes and has no
+	/// opinion on prose, line breaks or length — so on its own it neither bounds an unbounded body nor stops a
+	/// forged instruction block. The untrusted variant additionally flattens, clamps and fences the text, and
+	/// returns null when there is nothing to say so the sentence stands alone.
+	/// </remarks>
+	private static string Describe(string what, Exception ex) {
+		string detail = SensitiveErrorTextRedactor.RedactUntrustedOrNull(ex?.Message);
+		return string.IsNullOrEmpty(detail) ? $"{what}." : $"{what}: {detail}.";
+	}
+
+	/// <summary>
+	/// A degraded result: the OBJECT tier could not answer. Any resolution already settled WITHOUT the
+	/// environment — a web-page target is dead by construction — is carried through, because a tier that
+	/// never needed the environment is not made doubtful by the environment failing. Dropping them was how a
+	/// page carrying one web-page target AND one object target silently lost the web-page warning that a page
+	/// carrying the web-page target alone reports fine (ENG-94839).
+	/// </summary>
+	/// <param name="occurrences">Where target-carrying requests appear on the page; collected offline.</param>
+	/// <param name="note">Why the object tier did not answer, for the caller's <c>targetsNote</c>.</param>
+	/// <param name="settled">Resolutions that needed no environment read; empty when the walk itself failed.</param>
 	private static MobileActionTargetProbeResult NotProbed(
-		IReadOnlyList<ActionTargetOccurrence> occurrences, string note) =>
-		new() { ProbeOk = false, Note = note, Occurrences = occurrences };
+		IReadOnlyList<ActionTargetOccurrence> occurrences, string note,
+		IReadOnlyDictionary<string, ActionTargetResolution> settled = null) =>
+		new() {
+			ProbeOk = false, Note = note, Occurrences = occurrences,
+			TargetsByKey = settled ?? new Dictionary<string, ActionTargetResolution>(StringComparer.OrdinalIgnoreCase)
+		};
 
 	/// <summary>
 	/// Reads a scalar property as text. A non-string scalar falls back to its literal form, matching

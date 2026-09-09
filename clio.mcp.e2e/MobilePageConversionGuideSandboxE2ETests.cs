@@ -832,10 +832,14 @@ public sealed class MobilePageConversionGuideSandboxE2ETests : McpContractFixtur
 		CarriesNavigatingAction(conversions, navigatingRequests).Should().BeTrue(
 			because: $"'{convertedSchemaName}' was selected precisely because it fires a navigating request, so "
 				+ "the assertions below are about a page the probe genuinely had to resolve targets for");
-		var survivingWebNames = new HashSet<string>(
+		// Keyed on MOBILE names, because that is what a finding's elementName IS (ProcessEventBindings is
+		// called with the converted element's mobile name). Building this from WebName passed only while the
+		// two happened to coincide, and would false-fail on a renamed twin or on an inserted element, whose
+		// WebName is legitimately null.
+		var survivingMobileNames = new HashSet<string>(
 			guide.ElementMap
-				.Where(e => e.Operation != "drop" && !string.IsNullOrWhiteSpace(e.WebName))
-				.Select(e => e.WebName!),
+				.Where(e => e.Operation != "drop" && !string.IsNullOrWhiteSpace(e.MobileName))
+				.Select(e => e.MobileName!),
 			StringComparer.OrdinalIgnoreCase);
 
 		foreach (UnresolvedTargetRequest finding in conversions.UnresolvedTargetRequests) {
@@ -847,10 +851,19 @@ public sealed class MobilePageConversionGuideSandboxE2ETests : McpContractFixtur
 					+ "the analysis service invented");
 			finding.Target.Should().NotBeNullOrWhiteSpace(
 				because: "a finding the user cannot trace back to a page or object name is not actionable");
-			survivingWebNames.Should().Contain(finding.ElementName!,
-				because: $"'{finding.ElementName}' on '{convertedSchemaName}' is reported as carrying a dead action, so "
-					+ "it must still be ON the converted page: the finding is a warning, and a warning about a "
-					+ "control the guide already dropped would contradict its own element map");
+			survivingMobileNames.Should().Contain(finding.ElementName!,
+				because: $"'{finding.ElementName}' on '{convertedSchemaName}' is reported as carrying an unreachable "
+					+ "target, so the CONTROL must still be on the converted page: naming a control the guide "
+					+ "already dropped would contradict its own element map");
+			if (finding.BindingRemoved) {
+				finding.State.Should().Be("missing",
+					because: "an action is only ever removed for an absence that was established, never for one "
+						+ "the environment could not answer for");
+				conversions.DroppedRequests.Should().Contain(
+					r => r.ElementName == finding.ElementName && r.Binding == finding.Binding,
+					because: "a removed binding is a dropped request, so the two collections must agree over the "
+						+ "real MCP transport and not only in unit tests");
+			}
 		}
 	}
 

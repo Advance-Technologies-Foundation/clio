@@ -541,7 +541,7 @@ public sealed class RequestMappingRule {
 
 	/// <summary>
 	/// What <see cref="TargetParam"/>'s value NAMES, so clio knows how to verify the target exists on mobile:
-	/// <c>mobile-page</c> (a page schema that must itself be a mobile page) or
+	/// <c>web-page</c> (a WEB page schema, which the Creatio Mobile app cannot open at all) or
 	/// <c>entity-default-mobile-page</c> (an object that must have a default mobile edit page). Null/absent
 	/// means no check.
 	/// </summary>
