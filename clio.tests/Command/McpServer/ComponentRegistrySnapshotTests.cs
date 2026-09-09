@@ -45,6 +45,9 @@ public sealed class ComponentRegistrySnapshotTests {
 		ComponentCatalogState state = ComponentInfoCatalog.LoadFromStream(stream);
 
 		// Assert — root-level envelope.
+		EnvelopeUnmappedKeys(snapshotPath).Should().BeEmpty(
+			because: "a new key at the ROOT of the payload lands on the envelope's own bucket, which no "
+				+ "caller reads and, until this assertion, no test inspected either");
 		state.GlobalReferences.Should().NotBeNull(
 			because: "the live payload now ships a top-level 'references' block (baseInputs + global typeDefinitions)");
 		UnmappedKeys(state.GlobalReferences!.UnmappedExtensions).Should().BeEmpty(
@@ -185,8 +188,16 @@ public sealed class ComponentRegistrySnapshotTests {
 					because: $"any new key under mobile '{entry.ComponentType}'.references.* must be mapped");
 			}
 		}
-		state.Entries.Should().NotBeEmpty(
-			because: "the live mobile catalog must list at least one component");
+		EnvelopeUnmappedKeys(snapshotPath).Should().BeEmpty(
+			because: "the mobile producer stamps provenance at the ROOT of the payload, so that is where "
+				+ "an unmapped key appears first");
+		// A floor, not NotBeEmpty: the web guard has carried one since ENG-91571 and this one did not,
+		// so the fixture could rot from the live 46 down to a handful and stay green. 30 sits below the
+		// 35 it pins today, which is itself behind the live catalog: raise it when the fixture is
+		// refreshed at cutover.
+		state.Entries.Count.Should().BeGreaterThan(30,
+			because: "a fixture that quietly shrank would leave every per-entry assertion above passing "
+				+ "vacuously, which is the asymmetry this guard had against the web one");
 	}
 
 	[Test]
@@ -218,6 +229,25 @@ public sealed class ComponentRegistrySnapshotTests {
 			UnmappedKeys(composite.UnmappedExtensions).Should().BeEmpty(
 				because: $"every key on composite '{composite.Caption}' must be mapped, not dropped to an UnmappedExtensions bucket");
 		}
+	}
+
+	/// <summary>
+	/// The envelope's OWN <c>UnmappedExtensions</c> bucket, which no other assertion can reach.
+	/// </summary>
+	/// <remarks>
+	/// <see cref="ComponentInfoCatalog"/> deserialises the envelope, keeps
+	/// <c>Components</c> / <c>References</c> / <c>Composites</c> and drops the envelope object, and
+	/// <see cref="ComponentCatalogState"/> has no field for the bucket. So a new ROOT-LEVEL producer key
+	/// reached neither a caller nor a test, while the doc comment on the bucket claimed this guard covered
+	/// it. Root level is where the next key lands: the mobile producer stamps provenance there.
+	/// </remarks>
+	private static IEnumerable<string> EnvelopeUnmappedKeys(string snapshotPath) {
+		using FileStream stream = File.OpenRead(snapshotPath);
+		ComponentRegistryEnvelope? envelope = JsonSerializer.Deserialize<ComponentRegistryEnvelope>(
+			stream,
+			new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+		envelope.Should().NotBeNull(because: $"'{snapshotPath}' must deserialise as a wrapped envelope");
+		return UnmappedKeys(envelope!.UnmappedExtensions);
 	}
 
 	private static IEnumerable<string> UnmappedKeys(IDictionary<string, JsonElement>? bucket) =>
