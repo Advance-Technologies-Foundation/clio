@@ -42,9 +42,12 @@ public sealed class CreatioDataValueTypeTests {
 		// Assert
 		actualCodes.Should().Equal(expectedCodes,
 			because: "the registry must model every platform data value type code and no invented one");
-		types.Select(type => type.Name).Should().OnlyHaveUniqueItems(
-			because: "BuildByName is last-wins, so two rows sharing a canonical name would make GetCode, GetKind "
-				+ "and IsNumeric resolve that name to whichever row happens to be declared last");
+		// OrdinalIgnoreCase, not the default comparer: ByName is keyed case-insensitively, so two rows whose
+		// names differ only in case are distinct to an ordinal check yet collide last-wins in the index.
+		types.Select(type => type.Name).Distinct(StringComparer.OrdinalIgnoreCase).Should().HaveSameCount(types,
+			because: "BuildByName is keyed OrdinalIgnoreCase and is last-wins, so two rows whose names differ "
+				+ "only in case would make GetCode, GetKind and IsNumeric resolve that name to whichever row "
+				+ "happens to be declared last");
 		types.Should().AllSatisfy(type => type.DisplayName.Should().NotBeNullOrWhiteSpace(
 			because: $"code {type.Code} must carry a display spelling or get-app-info degrades it to an ordinal"));
 	}

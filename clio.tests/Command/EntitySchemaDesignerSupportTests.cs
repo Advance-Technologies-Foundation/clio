@@ -124,12 +124,15 @@ internal sealed class EntitySchemaDesignerSupportTests {
 		// with another type's write token is invisible to it. A read surface emits all 49 codes.
 		IReadOnlyList<CreatioDataValueTypeInfo> allTypes = CreatioDataValueType.Types;
 
-		// Act
+		// Act — both read vocabularies, because get-app-info emits DisplayName and carries the same echo
+		// hazard. They yield the same set today; iterating both keeps a future DisplayName edit guarded.
 		Dictionary<int, int> collisions = [];
 		foreach (CreatioDataValueTypeInfo type in allTypes) {
-			if (EntitySchemaDesignerSupport.TryResolveDataValueType(CreatioDataValueType.GetNameOrOrdinal(type.Code), out int resolved)
-				&& resolved != type.Code) {
-				collisions[type.Code] = resolved;
+			foreach (string readName in new[] { type.Name, type.DisplayName }) {
+				if (EntitySchemaDesignerSupport.TryResolveDataValueType(readName, out int resolved)
+					&& resolved != type.Code) {
+					collisions[type.Code] = resolved;
+				}
 			}
 		}
 

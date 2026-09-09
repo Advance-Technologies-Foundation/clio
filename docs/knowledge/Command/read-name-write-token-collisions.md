@@ -35,7 +35,7 @@ columns at all.
 name for code 5 and is matched **case-sensitively** by `SimpleToFullFilterConverter`, so renaming the
 canonical spelling breaks filter parameter typing. The `float`/`decimal` → `decimal2` alias is documented
 in the shipped `type` contract and pinned by
-`TryResolveDataValueType_Should_Resolve_Decimal_As_Float`, so removing it breaks a released write
+`TryResolveDataValueType_Should_Resolve_Decimal_As_Decimal2`, so removing it breaks a released write
 contract. Fixing it needs a deliberate contract decision, not a drive-by rename.
 
 **What breaks if you ignore it** — an agent reads a column as `Float` and, following a contract that says

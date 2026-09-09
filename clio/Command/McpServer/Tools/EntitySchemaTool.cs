@@ -862,7 +862,10 @@ public sealed record CreateEntitySchemaColumnArgs(
 	[property: Description("""
 						  Column type. Supported values:
 						  Guid, Text, ShortText, MediumText, LongText, MaxSizeText,
+						  Text50, Text250, Text500, TextUnlimited, RichText, PhoneNumber, WebLink,
 						  Integer, Float, Boolean, DateTime, Lookup,
+						  Decimal0, Decimal1, Decimal2, Decimal3, Decimal4, Decimal8,
+						  Currency0, Currency1, Currency2, Currency3,
 						  Binary, Image, ImageLookup, File, SecureText, Email, Color.
 						  Case-insensitive.
 						  Date and Time are accepted but are ALIASES of DateTime: Creatio stores the column as

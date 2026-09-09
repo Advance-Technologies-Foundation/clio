@@ -35,9 +35,10 @@ covers both read vocabularies, and why a new read-surface name needs an **alias*
 
 **Why it is this way** — the three consumers genuinely disagree and no single vocabulary satisfies all of
 them. Measured at ENG-93202: of the 30 codes clio can write, the designer's friendly names are accepted by
-the write path 30/30 but **14 are absent from the canonical name index** (so `IsNumeric("Decimal1")` is
-`false`); the canonical names are 49/49 resolvable by the kind classifier by construction but needed 12
-aliases to be accepted on write. The canonical vocabulary won for the read surfaces because it covers all
+the write path 30/30 but **14 do not resolve to their own code through the canonical name index** — 13 are
+absent from it outright (so `IsNumeric("Decimal1")` is `false`), and `Float` is present but keyed to code
+**5**, so looking up the friendly name of code 32 answers for a different type. The canonical names are
+49/49 resolvable by the kind classifier by construction but needed 12 aliases to be accepted on write. The canonical vocabulary won for the read surfaces because it covers all
 49 codes, whereas `GetFriendlyTypeName` is scoped to *writable* types — its guard test iterates
 `SupportedDataValueTypes.Values` — and a read surface sees all 49. The display vocabulary survives only so
 `get-app-info` output does not churn.

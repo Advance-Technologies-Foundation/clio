@@ -308,11 +308,11 @@ public sealed class DataForgeToolE2ETests {
 		response.Success.Should().BeTrue(
 			because: "CurrencyRate runtime schema reads should succeed through the shared by-name runtime reader");
 
-		DataForgeColumnResult? rate = response.Columns.SingleOrDefault(column => column.Name == "Rate");
-		rate.Should().NotBeNull(
+		DataForgeColumnResult rate = response.Columns.Should().ContainSingle(column => column.Name == "Rate",
 			because: "Rate is declared on CurrencyRate itself, so it survives the non-inherited column filter; "
-				+ "if the platform ever moves it to a parent schema this assertion must be retargeted rather than relaxed");
-		rate!.DataType.Should().NotBe("Text",
+				+ "if the platform ever moves it to a parent schema this assertion must be retargeted rather than relaxed")
+			.Subject;
+		rate.DataType.Should().NotBe("Text",
 			because: "reporting a live Decimal8 column as Text is the defect ENG-93202 reported");
 		rate.DataType.Should().Be("Float8",
 			because: "dataValueType 40 is Float8 in the canonical registry, which the kind classifier resolves as numeric");
