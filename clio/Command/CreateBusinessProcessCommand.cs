@@ -406,8 +406,11 @@ public class CreateBusinessProcessCommand(
 			return;
 		}
 
+		// Version facts are not read: this read-back consumes elements[] only, and asking for them would buy an
+		// ATF session and two DataService round-trips per create, on a write path, for values it discards.
 		ErrorOr<DescribeProcessResult> described =
-			processDescriber.Describe(new ProcessIdentity(schemaName, null, null), null);
+			processDescriber.Describe(new ProcessIdentity(schemaName, null, null), null,
+				includeVersionFacts: false);
 		if (described.IsError) {
 			// An unreadable description is not evidence of a drop, so this never fails the command. It is not
 			// silence either when access rights were requested: that guard is the only automated check that a
