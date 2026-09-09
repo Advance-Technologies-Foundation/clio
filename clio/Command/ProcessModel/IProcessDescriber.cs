@@ -942,6 +942,37 @@ public sealed class DescribedEmail {
 	public string Subject { get; set; }
 
 	/// <summary>
+	/// Which message the element sends: <c>custom</c> (<c>BodyTemplateType = "1"</c>) or <c>template</c>
+	/// (<c>"0"</c>); null when the element carries no stored mode — which the platform RUNS as template mode, so null
+	/// beside a null <see cref="Template"/> is the pre-run signal of the <c>Localizable template not found</c> trap.
+	/// Null also from a server that predates template mode (ENG-95986), which reports no such member.
+	/// </summary>
+	[JsonPropertyName("messageSource")]
+	public string MessageSource { get; set; }
+
+	/// <summary>TEMPLATE mode: the stored <c>EmailTemplate</c> record id; null when none is set. Re-appliable through <c>email.template</c>.</summary>
+	[JsonPropertyName("template")]
+	public string Template { get; set; }
+
+	/// <summary>The template's name as the designer shows it; null when the schema stores no display value.</summary>
+	[JsonPropertyName("templateDisplay")]
+	public string TemplateDisplay { get; set; }
+
+	/// <summary>
+	/// The entity the template's macros resolve against — the macro-source parameter's reference object by name;
+	/// null when the element carries none (a template without an object cannot be personalized).
+	/// </summary>
+	[JsonPropertyName("templateObject")]
+	public string TemplateObject { get; set; }
+
+	/// <summary>
+	/// TEMPLATE mode: the macro-source record binding (<c>EmailTemplateEntityId</c>) with its source and value,
+	/// projected like a recipient; null when unbound. Re-appliable through <c>email.templateEntity</c>.
+	/// </summary>
+	[JsonPropertyName("templateEntity")]
+	public DescribedParameter TemplateEntity { get; set; }
+
+	/// <summary>
 	/// True when the element carries a custom-message body. A lightweight presence flag beside <see cref="Body"/>,
 	/// for callers that only need to know a body exists without pulling the (possibly large) decoded HTML.
 	/// <para>Nullable defensively, NOT because a known server omits it: the flag is a non-nullable <c>bool</c>

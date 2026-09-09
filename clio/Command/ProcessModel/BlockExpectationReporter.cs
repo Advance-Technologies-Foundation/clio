@@ -52,6 +52,10 @@ internal static class BlockExpectationReporter {
 			AccessRightsBlockExpectation.Missing(described, intent.ConfiguredRights)));
 		Warn(logger, EmailBlockExpectation.BuildWarning(
 			EmailBlockExpectation.Missing(described, intent.ConfiguredEmail)));
+		// A template that did not land is a SECOND silent-drop shape on the same block: the block itself is reported
+		// (the server knows email blocks), only the template member is gone, so the element is in the wrong mode.
+		Warn(logger, EmailBlockExpectation.BuildTemplateWarning(
+			EmailBlockExpectation.UnlandedTemplates(described, intent.TemplatedEmail)));
 	}
 
 	/// <summary>

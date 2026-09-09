@@ -960,6 +960,80 @@ public sealed class CreateBusinessProcessToolE2ETests {
 		}
 		""";
 
+	[Test]
+	[Description("Over the real MCP path, create-business-process builds a sendEmail element in TEMPLATE mode (ENG-95986) - an object-bound stock template with its macro source bound to a Lookup process parameter - and describe-business-process reads the template id, its display name, the macro-source object and the templateEntity binding back, with no body reported. Depends on the stock template 'Case feedback request notification' (authored against Case) being present on the environment.")]
+	[AllureTag(ToolName)]
+	[AllureName("create-business-process builds a template-mode sendEmail and describe reads the template back")]
+	public async Task CreateBusinessProcess_Should_BuildTemplateModeSendEmail_AndReadTemplateBack() {
+		// Arrange
+		await using ArrangeContext context = await ArrangeAsync(requireReachableEnvironment: true);
+		string processName = $"UsrClioBpEmailTplE2e{Guid.NewGuid():N}";
+
+		// Act
+		CallToolResult callResult = await CallToolAsync(context, new Dictionary<string, object?> {
+			["environment-name"] = context.EnvironmentName,
+			["descriptor"] = BuildTemplateModeEmailDescriptor(processName)
+		});
+
+		// Assert
+		callResult.IsError.Should().NotBeTrue(
+			because: "a template-mode sendEmail element must build without a transport error");
+		string callResultJson = JsonSerializer.Serialize(callResult);
+		callResultJson.Should().Contain("created (UId:",
+			because: "only a genuinely successful build logs the created-schema line (run against an environment whose CrtProcessBuilder supports template mode and which carries the stock 'Case feedback request notification' template)");
+		callResultJson.Should().NotContain("sent a 'template' that the read-back does NOT show",
+			because: "the template-landed check must stay silent when the deployed package stored the template");
+
+		DescribeProcessResult graph = ParseDescribeGraph(await DescribeAsync(context, processName));
+		DescribedElement sendEmail = graph.Elements.Single(element => element.Name == "AskFeedback");
+		sendEmail.Email.Should().NotBeNull(because: "describe surfaces the element's configuration in its email block");
+		sendEmail.Email.MessageSource.Should().Be("template",
+			because: "BodyTemplateType '0' decodes to the template message source");
+		sendEmail.Email.Template.Should().NotBeNullOrWhiteSpace(
+			because: "the resolved template's record id is stored on EmailTemplateId and reads back for re-application");
+		sendEmail.Email.TemplateDisplay.Should().Be("Case feedback request notification",
+			because: "the template NAME is stored as the lookup's display value, the shape the designer shows");
+		sendEmail.Email.TemplateObject.Should().Be("Case",
+			because: "the macro-source parameter's reference is set to the template's object, and describe names it");
+		sendEmail.Email.TemplateEntity.Should().NotBeNull(
+			because: "the templateEntity binding to the CaseId process parameter must read back");
+		sendEmail.Email.TemplateEntity.ReferenceSchema.Should().Be("Case",
+			because: "the macro-source parameter is typed as a Lookup to the template's object");
+		sendEmail.Email.HasBody.Should().BeFalse(
+			because: "a template element reports no body, so the block re-applies without a template-beside-body refusal");
+	}
+
+	// A sendEmail element in TEMPLATE mode against an object-bound stock template, with the macro source bound to a
+	// Lookup process parameter of that object. `sender` is omitted for the same reason as in the full-contract
+	// descriptor; the template NAME is stock content shipped by the case packages, not stand data.
+	private static string BuildTemplateModeEmailDescriptor(string processName) =>
+		$$"""
+		{
+		  "name": "{{processName}}",
+		  "caption": "Clio BP Email Template E2E",
+		  "packageName": "Custom",
+		  "parameters": [
+		    { "name": "CaseId", "type": "Lookup", "referenceSchema": "Case", "direction": "In", "caption": "Case" }
+		  ],
+		  "elements": [
+		    { "name": "StartEvent1", "type": "startEvent" },
+		    { "name": "AskFeedback", "type": "sendEmail", "caption": "Ask for feedback",
+		      "email": {
+		        "messageSource": "template",
+		        "template": "Case feedback request notification",
+		        "templateEntity": { "processParameter": "CaseId" },
+		        "mode": "auto",
+		        "to": [ { "expression": "[#SysVariable.CurrentUserContact#]", "referenceSchema": "Contact" } ]
+		      } },
+		    { "name": "EndEvent1", "type": "endEvent" }
+		  ],
+		  "flows": [
+		    { "source": "StartEvent1", "target": "AskFeedback" },
+		    { "source": "AskFeedback", "target": "EndEvent1" }
+		  ]
+		}
+		""";
+
 	// A sendEmail element carrying a custom-message HTML body with a distinctive probe token, so the describe read-back
 	// proves the body round-tripped (build stores it as a ConstValue on the Body parameter, describe decodes it) rather
 	// than just that a sendEmail element exists. StartEvent1 -> SendEmail1 -> EndEvent1 is a minimal valid graph.

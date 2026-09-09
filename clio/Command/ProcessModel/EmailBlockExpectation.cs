@@ -229,6 +229,121 @@ public static class EmailBlockExpectation {
 			+ "designer's Content designer.";
 	}
 
+	/// <summary>
+	/// Element names whose build descriptor <c>email.template</c> names a template (ENG-95986). A template must be
+	/// verified after a build for the same reason a body macro is: a CrtProcessBuilder that predates template mode
+	/// declares no <c>template</c> member, so its serializer DISCARDS the field and the build still answers success —
+	/// leaving an element that either has NO mode (which the platform runs as template mode with no template, the
+	/// <c>Localizable template not found</c> run-time failure) or, when a subject travelled with it, a CUSTOM-message
+	/// element with no body. Both are wrong modes reported as configured.
+	/// </summary>
+	/// <param name="descriptorJson">The build descriptor JSON exactly as the caller supplied it.</param>
+	public static IReadOnlyList<string> TemplateElements(string descriptorJson) {
+		JsonObject? descriptor = BlockExpectationJson.Parse(descriptorJson) as JsonObject;
+		if (descriptor?[ElementsKey] is not JsonArray elements) {
+			return Array.Empty<string>();
+		}
+
+		List<string> names = [];
+		foreach (JsonNode? element in elements) {
+			if (element is JsonObject candidate && CarriesTemplate(candidate[EmailKey])) {
+				string? name = ReadName(candidate["name"]);
+				if (!string.IsNullOrWhiteSpace(name)) {
+					names.Add(name);
+				}
+			}
+		}
+
+		return names;
+	}
+
+	/// <summary>
+	/// Element names whose modify operations name a template — <c>addElement</c> (under <c>element.email</c>) and
+	/// <c>setElement</c> (under <c>elementUpdate.email</c>) — for the same post-operation verification.
+	/// </summary>
+	/// <param name="operationsJson">The operations array JSON exactly as the caller supplied it.</param>
+	public static IReadOnlyList<string> TemplateElementsFromOperations(string operationsJson) {
+		if (BlockExpectationJson.Parse(operationsJson) is not JsonArray operations) {
+			return Array.Empty<string>();
+		}
+
+		List<string> names = [];
+		foreach (JsonNode? operation in operations) {
+			if (operation is not JsonObject op) {
+				continue;
+			}
+
+			if (op["element"] is JsonObject added && CarriesTemplate(added[EmailKey])) {
+				string? name = ReadName(added["name"]);
+				if (!string.IsNullOrWhiteSpace(name)) {
+					names.Add(name);
+				}
+			}
+
+			if (op["elementUpdate"] is JsonObject update && CarriesTemplate(update[EmailKey])) {
+				string? name = ReadName(op["elementName"]);
+				if (!string.IsNullOrWhiteSpace(name)) {
+					names.Add(name);
+				}
+			}
+		}
+
+		return names;
+	}
+
+	/// <summary>
+	/// Of the elements that sent a template (<see cref="TemplateElements"/> / <see cref="TemplateElementsFromOperations"/>),
+	/// those whose read-back reports NO template — the signature of a server that discarded the member. An element
+	/// absent from the read-back, or one reporting no email block at all, is not reported here: <see cref="Missing"/>
+	/// already covers the dropped block, and an unresolvable identifier is a reason to stay quiet.
+	/// </summary>
+	/// <param name="described">The description read back after the successful operation.</param>
+	/// <param name="templateElements">Element names returned by the two template detectors.</param>
+	public static IReadOnlyList<string> UnlandedTemplates(DescribeProcessResult described,
+			IReadOnlyList<string> templateElements) {
+		if (templateElements.Count == 0 || described?.Elements is null) {
+			return Array.Empty<string>();
+		}
+
+		List<string> unlanded = [];
+		foreach (string name in templateElements) {
+			DescribedElement? element = BlockExpectationJson.ResolveElement(described, name);
+			if (element?.Email is { } email && string.IsNullOrWhiteSpace(email.Template)) {
+				unlanded.Add(name);
+			}
+		}
+
+		return unlanded;
+	}
+
+	/// <summary>
+	/// The caller-facing warning for a template that did not land. Returns null when every template landed, so a
+	/// caller can treat null as "no warning to emit".
+	/// </summary>
+	public static string? BuildTemplateWarning(IReadOnlyList<string> unlanded) {
+		if (unlanded.Count == 0) {
+			return null;
+		}
+
+		string elements = string.Join("', '", unlanded);
+		string subject = ElementNoun(unlanded.Count);
+		return $"The operation reported success, but the Send email {subject} '{elements}' sent a 'template' that the "
+			+ "read-back does NOT show (describe reports no template on the element). The usual cause is a deployed "
+			+ "CrtProcessBuilder that predates the template message mode (ENG-95986): it has no 'template' member, so it "
+			+ "discards the field while answering success. The element is then in the WRONG mode — no mode at all, which "
+			+ "the platform runs as template mode with no template and fails with 'Localizable template not found', or a "
+			+ "custom message with no body when a subject travelled with the template. Do not report it as configured: "
+			+ "install a package that supports template mode (clio install-process-builder) and re-apply the email block, "
+			+ "or pick the template in the designer.";
+	}
+
+	// True when an email block names a template — the field that a pre-template server discards.
+	private static bool CarriesTemplate(JsonNode? email) =>
+		email is JsonObject block
+		&& block["template"] is JsonValue value
+		&& value.TryGetValue(out string? template)
+		&& !string.IsNullOrWhiteSpace(template);
+
 	// Singular/plural of "element" for a count, kept in one place so the noun is not a duplicated string literal.
 	private static string ElementNoun(int count) => BlockExpectationJson.ElementNoun(count);
 

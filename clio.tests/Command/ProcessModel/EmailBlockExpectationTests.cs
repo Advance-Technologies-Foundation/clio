@@ -264,4 +264,83 @@ public class EmailBlockExpectationTests {
 
 	#endregion
 
+
+	#region Methods: Templates (ENG-95986)
+
+	[Test]
+	[Description("A build descriptor's elements naming an email template are the ones whose template must be verified after the build; an email block without a template, or with a blank one, is not a template expectation.")]
+	public void TemplateElements_ShouldReturnOnlyElementsNamingATemplate() {
+		// Arrange
+		const string descriptor = """
+			{"name":"UsrProc","elements":[
+				{"name":"Custom1","type":"sendEmail","email":{"body":"<p>x</p>"}},
+				{"name":"Tpl1","type":"sendEmail","email":{"template":"Case closure notification"}},
+				{"name":"Blank1","type":"sendEmail","email":{"template":"  "}},
+				{"name":"Tpl2","type":"sendEmail","email":{"messageSource":"template","template":"80cdb129-de99-433f-8783-9d71c205607b"}}]}
+			""";
+
+		// Act
+		IReadOnlyList<string> expected = EmailBlockExpectation.TemplateElements(descriptor);
+
+		// Assert
+		expected.Should().BeEquivalentTo(["Tpl1", "Tpl2"],
+			because: "only an element that sent a template can have its template discarded by an older server");
+	}
+
+	[Test]
+	[Description("Both modify routes that can carry a template are detected: addElement under 'element.email' and setElement under 'elementUpdate.email' with the name on the operation.")]
+	public void TemplateElementsFromOperations_ShouldDetectBothRoutes() {
+		// Arrange
+		const string operations = """
+			[{"op":"addElement","element":{"name":"Added1","type":"sendEmail","email":{"template":"Welcome"}}},
+			 {"op":"setElement","elementName":"Existing1","elementUpdate":{"email":{"template":"Welcome","subject":"Hi"}}},
+			 {"op":"setElement","elementName":"Existing2","elementUpdate":{"email":{"subject":"only a subject"}}}]
+			""";
+
+		// Act
+		IReadOnlyList<string> expected = EmailBlockExpectation.TemplateElementsFromOperations(operations);
+
+		// Assert
+		expected.Should().BeEquivalentTo(["Added1", "Existing1"],
+			because: "a subject-only update names no template and must not be accused of losing one");
+	}
+
+	[Test]
+	[Description("A sent template that the read-back does not show is reported; an element whose read-back carries the template is not, and one absent from the read-back or without an email block is left to the block-landed check.")]
+	public void UnlandedTemplates_ShouldReportOnlyElementsWhoseReadBackLacksTheTemplate() {
+		// Arrange
+		var described = new DescribeProcessResult {
+			Elements = [
+				new DescribedElement { Name = "Landed", Email = new DescribedEmail { MessageSource = "template", Template = "80cdb129-de99-433f-8783-9d71c205607b" } },
+				new DescribedElement { Name = "Dropped", Email = new DescribedEmail { Subject = "Hi" } },
+				new DescribedElement { Name = "NoBlock", Email = null }
+			]
+		};
+
+		// Act
+		IReadOnlyList<string> unlanded = EmailBlockExpectation.UnlandedTemplates(described,
+			["Landed", "Dropped", "NoBlock", "Unknown"]);
+
+		// Assert
+		unlanded.Should().BeEquivalentTo(["Dropped"],
+			because: "only an element that reports an email block WITHOUT the template it was sent proves the member was discarded; a missing block is the other check's finding and an unknown element is no evidence");
+	}
+
+	[Test]
+	[Description("The template warning names the elements, the wrong-mode consequence and the one action that fixes it, and is null when every template landed.")]
+	public void BuildTemplateWarning_ShouldNameElementsAndRemedy_OrBeNullWhenNothingUnlanded() {
+		// Arrange, Act
+		string? warning = EmailBlockExpectation.BuildTemplateWarning(["Tpl1"]);
+		string? none = EmailBlockExpectation.BuildTemplateWarning([]);
+
+		// Assert
+		warning.Should().Contain("'Tpl1'", because: "the caller must know which element lost its template");
+		warning.Should().Contain("Localizable template not found",
+			because: "the run-time failure of an element left without a mode is the reason the warning exists");
+		warning.Should().Contain("install-process-builder", because: "the remedy is a package that supports template mode");
+		none.Should().BeNull(because: "no warning is emitted when every sent template reads back");
+	}
+
+	#endregion
+
 }
