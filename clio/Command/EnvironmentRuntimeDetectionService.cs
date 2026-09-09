@@ -7,7 +7,15 @@ using System.Linq;
 using Clio.Common;
 namespace Clio.Command;
 
+/// <summary>Decides whether a Creatio site runs on .NET Core / NET8 or on .NET Framework.</summary>
 public interface IEnvironmentRuntimeDetectionService {
+	/// <summary>Probes the site and reports which runtime serves it.</summary>
+	/// <param name="environmentSettings">Environment to probe. The URI is required; credentials are optional and
+	/// enable the authenticated SelectQuery probe, which is the strongest signal available.</param>
+	/// <returns><see langword="true"/> for .NET Core / NET8, <see langword="false"/> for .NET Framework.</returns>
+	/// <exception cref="InvalidOperationException">The probes were inconclusive, or the host could not be reached.
+	/// This is an ordinary outcome, not a malfunction: the caller is expected to surface the diagnostic and let the
+	/// user override detection with <c>--IsNetCore</c>.</exception>
 	bool Detect(EnvironmentSettings environmentSettings);
 }
 
@@ -16,6 +24,13 @@ internal sealed class EnvironmentRuntimeDetectionService(
 	IHttpClientFactory httpClientFactory,
 	IServiceUrlBuilderFactory serviceUrlBuilderFactory)
 	: IEnvironmentRuntimeDetectionService {
+	/// <summary>Name of the registered <see cref="HttpClient"/> used for the unauthenticated probes.</summary>
+	/// <remarks>The registration in <c>BindingsModule</c> disables automatic redirects on purpose - see
+	/// <see cref="ExecuteHttpGetProbe"/>.</remarks>
+	internal const string HttpClientName = "environment-runtime-detection";
+
+	/// <summary>Timeout of the authenticated SelectQuery probe. The unauthenticated GET probes take theirs from
+	/// the <see cref="HttpClientName"/> registration.</summary>
 	private const int ProbeTimeoutMs = 10000;
 	private static readonly JsonSerializerOptions JsonOptions = new() {
 		PropertyNameCaseInsensitive = true
@@ -55,7 +70,7 @@ internal sealed class EnvironmentRuntimeDetectionService(
 		string baseUri,
 		RuntimeProbeResult netCoreProbe,
 		RuntimeProbeResult netFrameworkProbe) {
-		if (TryResolveByUiMarkers(netCoreProbe, netFrameworkProbe, out bool resolvedByUiMarkers)) {
+		if (ResolveByUiMarkers(netCoreProbe, netFrameworkProbe) is bool resolvedByUiMarkers) {
 			return resolvedByUiMarkers;
 		}
 		int successfulHealthProbeCount = (netCoreProbe.HealthProbe.Succeeded ? 1 : 0)
@@ -69,46 +84,51 @@ internal sealed class EnvironmentRuntimeDetectionService(
 	private static bool ResolveAmbiguousServiceSuccess(
 		RuntimeProbeResult netCoreProbe,
 		RuntimeProbeResult netFrameworkProbe) =>
-		TryResolveByUiMarkers(netCoreProbe, netFrameworkProbe, out bool resolvedByUiMarkers)
-			? resolvedByUiMarkers
-			: throw new InvalidOperationException(BuildAmbiguousMessage(netCoreProbe, netFrameworkProbe));
+		ResolveByUiMarkers(netCoreProbe, netFrameworkProbe)
+			?? throw new InvalidOperationException(BuildAmbiguousMessage(netCoreProbe, netFrameworkProbe));
 
 	private static bool ResolveByUiMarkersOrThrow(
 		string baseUri,
 		RuntimeProbeResult netCoreProbe,
 		RuntimeProbeResult netFrameworkProbe) =>
-		TryResolveByUiMarkers(netCoreProbe, netFrameworkProbe, out bool resolvedByUiMarkers)
-			? resolvedByUiMarkers
-			: throw new InvalidOperationException(BuildFailureMessage(baseUri, netCoreProbe, netFrameworkProbe));
+		ResolveByUiMarkers(netCoreProbe, netFrameworkProbe)
+			?? throw new InvalidOperationException(BuildFailureMessage(baseUri, netCoreProbe, netFrameworkProbe));
 
-	/// <summary>
-	/// Resolves the runtime from the login-page markers.
-	/// A marker that answered <see cref="HttpStatusCode.NotFound"/> or <see cref="HttpStatusCode.Gone"/> proves the
-	/// runtime is absent, while a transport error (timeout, reset connection on a cold site) proves nothing, so an
-	/// explicit "not found" on one side decides the runtime even when the other side never answered at all.
-	/// </summary>
-	private static bool TryResolveByUiMarkers(
+	/// <summary>Resolves the runtime from the two login-page markers.</summary>
+	/// <param name="netCoreProbe">Probe results taken against the .NET Core / NET8 routes.</param>
+	/// <param name="netFrameworkProbe">Probe results taken against the .NET Framework <c>0/</c> routes.</param>
+	/// <returns><see langword="true"/> for .NET Core / NET8, <see langword="false"/> for .NET Framework, and
+	/// <see langword="null"/> when the markers do not decide, which leaves the caller to raise its own diagnostic.</returns>
+	/// <remarks>
+	/// Two rules, in order. First, exactly one marker route answering (see <see cref="ExecuteHttpGetProbe"/> for what
+	/// counts as answering) names the runtime outright. Second, a marker that answered
+	/// <see cref="HttpStatusCode.NotFound"/> or <see cref="HttpStatusCode.Gone"/> proves that runtime is absent - but
+	/// this only decides the runtime when the other marker produced no HTTP response at all, which is what a cold site
+	/// does when it drops the connection or runs out of time. Any other status on the other side (401, 403, 500, a
+	/// gateway error) is left undecided on purpose: it is as consistent with a wrong base URL, or with a host that is
+	/// not Creatio, as it is with the runtime this rule would pick.
+	/// </remarks>
+	private static bool? ResolveByUiMarkers(
 		RuntimeProbeResult netCoreProbe,
-		RuntimeProbeResult netFrameworkProbe,
-		out bool isNetCore) {
-		int successfulUiMarkerProbeCount = (netCoreProbe.UiMarkerProbe.Succeeded ? 1 : 0)
+		RuntimeProbeResult netFrameworkProbe) {
+		int answeringUiMarkerProbeCount = (netCoreProbe.UiMarkerProbe.Succeeded ? 1 : 0)
 			+ (netFrameworkProbe.UiMarkerProbe.Succeeded ? 1 : 0);
-		if (successfulUiMarkerProbeCount == 1) {
-			isNetCore = netCoreProbe.UiMarkerProbe.Succeeded;
+		if (answeringUiMarkerProbeCount == 1) {
+			return netCoreProbe.UiMarkerProbe.Succeeded;
+		}
+		if (ProvesAbsence(netCoreProbe.UiMarkerProbe) && DidNotAnswer(netFrameworkProbe.UiMarkerProbe)) {
+			return false;
+		}
+		if (ProvesAbsence(netFrameworkProbe.UiMarkerProbe) && DidNotAnswer(netCoreProbe.UiMarkerProbe)) {
 			return true;
 		}
-		bool isNetCoreMarkerAbsent = IsDefinitiveAbsence(netCoreProbe.UiMarkerProbe);
-		bool isNetFrameworkMarkerAbsent = IsDefinitiveAbsence(netFrameworkProbe.UiMarkerProbe);
-		if (isNetCoreMarkerAbsent ^ isNetFrameworkMarkerAbsent) {
-			isNetCore = isNetFrameworkMarkerAbsent;
-			return true;
-		}
-		isNetCore = false;
-		return false;
+		return null;
 	}
 
-	private static bool IsDefinitiveAbsence(ProbeAttempt attempt) =>
-		!attempt.Succeeded && attempt.StatusCode is HttpStatusCode.NotFound or HttpStatusCode.Gone;
+	private static bool ProvesAbsence(ProbeAttempt attempt) =>
+		attempt.StatusCode is HttpStatusCode.NotFound or HttpStatusCode.Gone;
+
+	private static bool DidNotAnswer(ProbeAttempt attempt) => !attempt.Succeeded && attempt.StatusCode is null;
 
 	private RuntimeProbeResult Probe(EnvironmentSettings baseSettings, bool isNetCore, bool canAuthenticate) {
 		EnvironmentSettings probeSettings = Clone(baseSettings, isNetCore);
@@ -157,21 +177,31 @@ internal sealed class EnvironmentRuntimeDetectionService(
 		}
 	}
 
+	/// <summary>Sends one unauthenticated GET and reports what the route answered.</summary>
+	/// <remarks>
+	/// The registered client does not follow redirects, and a 3xx counts as the route existing. Both halves matter.
+	/// A .NET Framework site answers <c>0/Login/NuiLogin.aspx</c> with a 302 to the same page off the site root, so
+	/// following the redirect would report the status of a different URL than the one being probed - and since a 404
+	/// is read as proof that a runtime is absent, a redirect that lands on a 404 would convict the wrong runtime.
+	/// </remarks>
 	private ProbeAttempt ExecuteHttpGetProbe(string url) {
 		try {
-			using HttpClient client = httpClientFactory.CreateClient(nameof(EnvironmentRuntimeDetectionService));
-			client.Timeout = TimeSpan.FromMilliseconds(ProbeTimeoutMs);
+			using HttpClient client = httpClientFactory.CreateClient(HttpClientName);
 			using HttpResponseMessage response = client.GetAsync(url).GetAwaiter().GetResult();
-			if (!response.IsSuccessStatusCode) {
-				return new ProbeAttempt(false,
-					$"The remote server returned an error: ({(int)response.StatusCode}) {response.ReasonPhrase}.",
-					response.StatusCode);
+			if (IsRouteServed(response.StatusCode)) {
+				return new ProbeAttempt(true, null, response.StatusCode);
 			}
-
-			return new ProbeAttempt(true, null, response.StatusCode);
+			return new ProbeAttempt(false,
+				$"The remote server returned an error: ({(int)response.StatusCode}) {response.ReasonPhrase}.",
+				response.StatusCode);
 		} catch (Exception exception) {
 			return new ProbeAttempt(false, exception.GetBaseException().Message);
 		}
+	}
+
+	private static bool IsRouteServed(HttpStatusCode statusCode) {
+		int code = (int)statusCode;
+		return code is >= 200 and < 400;
 	}
 
 	private static string ExecuteAuthenticatedServiceProbe(IApplicationClient client, string serviceUrl) {

@@ -6,10 +6,15 @@ NAME
 
 DESCRIPTION
     Register new web application settings or update existing ones.
-    When login/password or OAuth credentials are provided, clio also validates
-    the resolved route with an authenticated SelectQuery probe. Without
-    credentials, clio falls back to unauthenticated health and login-marker
-    probes and stops if that signal is inconclusive.
+    Omit --IsNetCore and clio detects the runtime itself. When login/password or
+    OAuth credentials are provided, the strongest signal is an authenticated
+    SelectQuery probe on each route family. Otherwise, and whenever both service
+    probes fail, clio compares the two login pages: a login page that answers
+    (including with a redirect) names the runtime, and a login page that answers
+    404 proves that runtime is absent. The health endpoints are only a last
+    resort, because /api/HealthCheck/Ping answers on a .NET Framework site too.
+    Detection stops with a diagnostic rather than guessing when the probes stay
+    inconclusive - pass --IsNetCore to skip it entirely.
 
 SYNOPSIS
     clio reg-web-app <ENVIRONMENT_NAME> -u http://mysite.creatio.com -l administrator -p password
@@ -29,9 +34,16 @@ OPTIONS
 
     --Maintainer            -m          Maintainer name
 
+    --IsNetCore             -i          Override runtime auto-detection:
+                                        true for .NET Core / NET8,
+                                        false for .NET Framework
+
 EXAMPLE
     clio reg-web-app <ENVIRONMENT_NAME> -u http://mysite.creatio.com -l administrator -p password
         creates new environment, named <ENVIRONMENT_NAME> or updates existing environment settings
+
+    clio reg-web-app <ENVIRONMENT_NAME> -u http://mysite.creatio.com -l administrator -p password --IsNetCore false
+        same, but skips runtime detection and registers the environment as .NET Framework
 
 REPORTING BUGS
     https://github.com/Advance-Technologies-Foundation/clio

@@ -288,6 +288,17 @@ public class BindingsModule {
 		// unauthenticated GET to an operator-registered host has no reason to follow a redirect. The response-size
 		// cap is a defence-in-depth bound: sysenums.js is a small static file (~50KB today), so a multi-megabyte
 		// response is itself the signal something is wrong, well before the brace-matched parser would need to look at it.
+		// Dedicated client for the unauthenticated runtime-detection probes of reg-web-app. AllowAutoRedirect=false
+		// is load-bearing, not hygiene: a .NET Framework site answers /0/Login/NuiLogin.aspx with a 302 to the same
+		// page off the site root, and detection reads a 404 as proof that a runtime is absent — so following the
+		// redirect would let the status of a different URL convict the wrong runtime. Timeout is set here, once,
+		// under the same rule as the clients above.
+		services.AddHttpClient(EnvironmentRuntimeDetectionService.HttpClientName)
+			.ConfigureHttpClient(client => client.Timeout = TimeSpan.FromSeconds(10))
+			.ConfigurePrimaryHttpMessageHandler(() => new System.Net.Http.HttpClientHandler {
+				UseCookies = false,
+				AllowAutoRedirect = false
+			});
 		services.AddHttpClient(ClassicEnumVocabularyResolver.HttpClientName)
 			.ConfigureHttpClient(client => {
 				client.Timeout = TimeSpan.FromSeconds(120);
