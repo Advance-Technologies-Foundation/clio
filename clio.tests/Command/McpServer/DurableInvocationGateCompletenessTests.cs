@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text.Json;
@@ -79,6 +79,8 @@ public sealed class DurableInvocationGateCompletenessTests {
 		"get-component-info",
 		"get-entity-schema-column-properties",
 		"get-entity-schema-properties",
+		// Reads BulkEmail, EmailTemplate, EmailTemplateLang, and BfEmailTemplate content without mutation.
+		"get-email-template",
 		"get-fsm-mode",
 		"get-guidance",
 		"get-knowledge-feedback-policy",
@@ -88,6 +90,7 @@ public sealed class DurableInvocationGateCompletenessTests {
 		// Reads an exact package-relative file and its generated project; never writes package content.
 		"get-package-file",
 		"get-page-hierarchy",
+		"get-process-page-facts",
 		"get-process-signature",
 		"get-record-rights",
 		"get-related-page-addon",

@@ -7,8 +7,11 @@ ticket: ENG-95891
 date: 2026-08-29
 ---
 
-**What is true** — three facts that only bite together, when `setFlowCondition` turns an existing plain
-flow into a conditional one.
+**What is true** — three facts that only bite together, when an existing flow is RE-KINDED. Two
+operations do that: `setFlowCondition`, which turns a plain flow into a conditional one, and
+`setFlow` (ENG-91853), which changes the kind in either direction — including AWAY from conditional,
+where fact (1) applies symmetrically because the CLR type has to change back. Both funnel through the
+same `ReKindFlow` primitive, so all three facts and the warning at the end are about both.
 
 1. **The kind is the CLR type, not the enum.** `ProcessSchemaConditionalFlow` overrides
    `CreateSequenceFlowElement` to copy `ConditionExpression`; the base `ProcessSchemaSequenceFlow` overrides that method too, and its override never copies the condition. Setting `FlowType = Conditional` on the base class gives a flow that *describes* as conditional
@@ -39,7 +42,9 @@ surfacing later to whoever opens the page. Skip (2) and two overlapping conditio
 `Amount > 1000`) resolve differently after an edit that changed nothing a human can see in the metadata.
 Skip (3) and the operation throws a platform exception that names nothing about flows.
 
-Both the write path and its regression tests live in the ProcessBuilder repository
-(`Graph/ProcessGraphBuilder.SetFlowCondition`, `ProcessConditionalFlowTests`). Recorded here because the
-clio-side tool and prompt text describe the in-place guarantee to agents, and a reader who does not know
-why it is in place will eventually "simplify" it into remove-and-add.
+Both write paths and their regression tests live in the ProcessBuilder repository
+(`Graph/ProcessGraphBuilder.SetFlowCondition` and `.SetFlow`, both through `ReKindFlow`;
+`ProcessConditionalFlowTests` and `ProcessFlowKindTests`). Recorded here because the clio-side tool and
+prompt text describe the in-place guarantee to agents, and a reader who does not know why it is in
+place will eventually "simplify" it into remove-and-add — and there are now two operations to
+"simplify", which is why naming only one was worth correcting.

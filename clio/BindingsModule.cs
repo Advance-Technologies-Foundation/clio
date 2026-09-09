@@ -461,6 +461,7 @@ public class BindingsModule {
 		services.AddTransient<CreateLookupCommand>();
 		services.AddTransient<PageListCommand>();
 		services.AddTransient<PageGetCommand>();
+		services.AddTransient<ProcessPageFactsCommand>();
 		services.AddTransient<GetPageHierarchyCommand>();
 		services.AddTransient<PageUpdateCommand>();
 		// Shared page conflict-baseline + file-output services consumed by both the CLI verbs
@@ -811,6 +812,8 @@ public class BindingsModule {
 		services.AddTransient<ODataCreateTool>();
 		services.AddTransient<ODataUpdateTool>();
 		services.AddTransient<ODataDeleteTool>();
+		services.AddTransient<IEmailTemplateContentService, EmailTemplateContentService>();
+		services.AddTransient<EmailTemplateTool>();
 		services.AddTransient<OpenCfgCommand>();
 		services.AddTransient<InstallGateCommand>();
 		services.AddTransient<InstallProcessBuilderCommand>();
