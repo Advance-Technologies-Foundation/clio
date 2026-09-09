@@ -3166,6 +3166,39 @@ public sealed class WebToMobileConversionServiceTests {
 	}
 
 	[Test]
+	[Description("ENG-91859: with NO mobile template read at all, a rule-mapped twin degrades to advisory instead of falling back to the web type. The fallback asks whether the web component exists somewhere on mobile, and once the catalog covers the Flutter runtime crt.DataGrid does - so an unavailable probe would silently restore the grid-shaped payload on every page for as long as the probe is down. 'The name is not on the template' and 'nothing was read' are indistinguishable inside the walk unless the flag is carried in.")]
+	public void Analyze_TemplateComponentTwin_MobileTemplateUnavailable_DegradesInsteadOfTrustingTheWebType() {
+		// Arrange
+		PageBundleInfo bundle = Bundle("""
+			[ { "name": "ListContainer", "type": "crt.FlexContainer", "items": [
+				{ "name": "DataTable", "type": "crt.DataGrid",
+				  "columns": [ { "code": "PDS_Title" } ], "features": { "sorting": true } } ] } ]
+			""");
+		var web = Reg(("crt.FlexContainer", true), ("crt.DataGrid", false));
+		var containerNameMap = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase) { ["ListContainer"] = "ListContainer" };
+		var componentNameMap = new Dictionary<string, ComponentMappingRule>(StringComparer.OrdinalIgnoreCase) {
+			["DataTable"] = new ComponentMappingRule { Web = "DataTable", Mobile = "List", Note = "Primary list component." }
+		};
+
+		// Act — the post-ENG-91859 catalog knows crt.DataGrid, and the template probe never ran.
+		MobilePageConversionGuide guide = Analyze(
+			bundle, webByType: web, containerNameMap: containerNameMap,
+			templateComponentNames: Names("ListContainer", "DataTable"), componentNameMap: componentNameMap,
+			mobileTypes: Names("crt.FlexContainer", "crt.DataGrid", "crt.List"),
+			mobileTemplateTypesByName: null,
+			mobileTemplateUnavailable: true);
+
+		// Assert
+		ElementMapEntry twin = Element(guide, "DataTable");
+		twin.MobileType.Should().BeNull(
+			because: "with no template read, nothing says what sits under 'List' - and the web type is not "
+				+ "an answer to that question, it only says crt.DataGrid exists somewhere on mobile");
+		twin.MobileValues.Should().BeNull(
+			because: "a twin whose target type is unknown must carry nothing; the alternative is the "
+				+ "grid-shaped payload this ticket exists to stop");
+	}
+
+	[Test]
 	[Description("ENG-91859: when the probe knows NO element for the list's row slot, the structural twin degrades to advisory - no row entry at all - instead of guessing a name. A merge is addressed by name, so a guessed name is a silent no-op one level over: the caller would be told to configure an element the template does not have.")]
 	public void Analyze_StructuralTwin_NoSlotElementInProbe_EmitsNoRowEntry() {
 		// Arrange
@@ -6362,8 +6395,9 @@ public sealed class WebToMobileConversionServiceTests {
 		values["layoutConfig"]?["rowSpan"]?.GetValue<int>().Should().Be(1,
 			because: "the template does not name layoutConfig, so it survives — this is what keeps the element placed");
 		values["features"]?["rows"]?["selection"]?["enable"]?.GetValue<bool>().Should().BeTrue(
-			because: "a carried property the template does not name is untouched; pruning what mobile crt.List does "
-				+ "not declare belongs to the registry (ENG-91859), not to this mapping");
+			because: "a carried property the template does not name is untouched. Pruning what mobile crt.List does "
+				+ "not declare is a REGISTRY-driven concern and belongs to ENG-96589, which owns the insert half; "
+				+ "ENG-91859 changed only the MERGE path, where a structural twin now carries nothing at all");
 		values["primaryColumnName"]?.GetValue<string>().Should().Be("DataGrid_rcdtw3fDS_Id");
 		values["columns"].Should().NotBeNull(because: "feeding the row must not consume its source");
 		values.ToJsonString().Should().NotContain("{{").And.NotContain("$each",

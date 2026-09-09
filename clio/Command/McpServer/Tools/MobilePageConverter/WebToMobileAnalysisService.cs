@@ -206,7 +206,8 @@ public static class WebToMobileAnalysisService {
 			attrToColumn, resources,
 			requestMap, convertedRequests, droppedRequests, flaggedRequests, sourceLayouts, gridContainerColumns,
 			positionalParentByAnchor, positionalAnchorByWebAnchor,
-			mobileTypesByName, mobileTemplateSlotElements, webBaselineNodes, webTemplateResources);
+			mobileTypesByName, mobileTemplateSlotElements, webBaselineNodes, webTemplateResources,
+			mobileTemplateUnavailable);
 
 		// Removes components an excludedComponents rule bans from a host (type-agnostic — which
 		// type/host/property is banned comes entirely from the rules), in the two shapes a banned component
@@ -2015,7 +2016,8 @@ public static class WebToMobileAnalysisService {
 		IReadOnlyDictionary<string, JObject> WebBaselineNodes,
 		JObject WebBaselineResources,
 		IReadOnlySet<string> ScopeContainerNames,
-		IReadOnlySet<string> ContentContainerTypes);
+		IReadOnlySet<string> ContentContainerTypes,
+		bool MobileTemplateUnavailable);
 
 	/// <summary>
 	/// The set of NON-CONVERTING scope container names — declared EXPLICITLY by the rules'
@@ -2058,7 +2060,8 @@ public static class WebToMobileAnalysisService {
 		IReadOnlyDictionary<string, string> mobileTypesByName,
 		IReadOnlyDictionary<string, MobileTemplateSlotElement> mobileTemplateSlotElements,
 		IReadOnlyDictionary<string, JObject> webBaselineNodes,
-		JObject webBaselineResources) {
+		JObject webBaselineResources,
+		bool mobileTemplateUnavailable) {
 		var ctx = new ElementMapContext(map,
 			componentMap ?? new Dictionary<string, ComponentMappingRule>(StringComparer.OrdinalIgnoreCase),
 			mobileTypes, mobileByType ?? new Dictionary<string, ComponentRegistryEntry>(),
@@ -2074,7 +2077,8 @@ public static class WebToMobileAnalysisService {
 			webBaselineNodes ?? new Dictionary<string, JObject>(StringComparer.OrdinalIgnoreCase),
 			webBaselineResources,
 			CollectScopeContainerNames(rules),
-			ContentContainerTypesOf(rules));
+			ContentContainerTypesOf(rules),
+			mobileTemplateUnavailable);
 		WalkElements(ctx, tree, mobileParentName: null);
 		return ctx.Out;
 	}
@@ -2262,12 +2266,18 @@ public static class WebToMobileAnalysisService {
 				// (ENG-91859): crt.DataGrid became a known mobile type, so DataTable → List began to look like a
 				// same-component twin and carried DataGrid-shaped values (columns, features, bulkActions, …) onto
 				// an element that is a crt.List and declares none of them. The list then rendered with no row.
+				// The last resort is available ONLY when the probe actually answered for something: with no
+				// template read at all, "the name is not there" and "nothing was read" look identical, and
+				// falling through would restore the very regression above — silently, on every page, for as
+				// long as the probe is down. An unprobed twin degrades to advisory instead.
 				string twinMobileType = !string.IsNullOrWhiteSpace(compRule.MobileType)
 					? compRule.MobileType
 					: ctx.MobileTypesByName.TryGetValue(compRule.Mobile, out string templateTwinType)
 						&& !string.IsNullOrWhiteSpace(templateTwinType)
 							? templateTwinType
-							: (ctx.MobileTypes.Contains(type ?? "") ? type : null);
+							: (!ctx.MobileTemplateUnavailable && ctx.MobileTypes.Contains(type ?? "")
+								? type
+								: null);
 				// Payload and reason depend on the twin's kind; see BuildTwinMergeValues.
 				JsonNode twinValues = BuildTwinMergeValues(ctx, node, compRule, twinMobileType, type,
 					sourceAncestors);
