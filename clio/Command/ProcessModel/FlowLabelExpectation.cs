@@ -439,16 +439,7 @@ public static class FlowLabelExpectation {
 			if (filterByOp) {
 				string? op = BlockExpectationJson.ReadText(candidate[OpKey])?.Trim();
 				if (string.Equals(op, FlowForgettingOperation, StringComparison.OrdinalIgnoreCase)) {
-					// The flow is going away, so any label asked for earlier in this batch is moot. Forget
-					// the pair rather than leaving an expectation a later re-add cannot supersede.
-					string? goneSource = BlockExpectationJson.ReadText(candidate[SourceKey]);
-					string? goneTarget = BlockExpectationJson.ReadText(candidate[TargetKey]);
-					if (!string.IsNullOrWhiteSpace(goneSource) && !string.IsNullOrWhiteSpace(goneTarget)) {
-						(string, string) goneKey = (goneSource.Trim(), goneTarget.Trim());
-						if (byEndpoints.Remove(goneKey)) {
-							order.RemoveAll(pair => EndpointPairComparer.Instance.Equals(pair, goneKey));
-						}
-					}
+					Forget(candidate, byEndpoints, order);
 					continue;
 				}
 				if (!IsLabelWritingOperation(candidate[OpKey])) {
@@ -486,6 +477,28 @@ public static class FlowLabelExpectation {
 		}
 
 		return labelled;
+	}
+
+	/// <summary>
+	/// Drops any pending expectation for the pair a <c>removeFlow</c> names.
+	/// <para>Extracted from the loop rather than inlined. With it inline the collector reached a cognitive
+	/// complexity of 27 against a limit of 15 - four levels of nesting for one bookkeeping step that has
+	/// nothing to do with reading a label. Same behaviour, and the loop now reads as the three decisions it
+	/// actually makes: forget, skip, or record.</para>
+	/// </summary>
+	private static void Forget(JsonObject candidate,
+		Dictionary<(string Source, string Target), FlowLabel> byEndpoints,
+		List<(string Source, string Target)> order) {
+		string? source = BlockExpectationJson.ReadText(candidate[SourceKey]);
+		string? target = BlockExpectationJson.ReadText(candidate[TargetKey]);
+		if (string.IsNullOrWhiteSpace(source) || string.IsNullOrWhiteSpace(target)) {
+			return;
+		}
+
+		(string, string) key = (source.Trim(), target.Trim());
+		if (byEndpoints.Remove(key)) {
+			order.RemoveAll(pair => EndpointPairComparer.Instance.Equals(pair, key));
+		}
 	}
 
 	private static bool IsLabelWritingOperation(JsonNode? node) {
