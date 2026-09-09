@@ -215,3 +215,97 @@ the flow is where the layout put it. It belongs with the layout work — the sam
 lane rules and the open back-edge overlap — and not against this change. Stated here because a
 design-time pass that only counts DOM nodes cannot see it, and because "the analyst can tell which
 arrow is which at a glance" is the business requirement TC-01 and TC-02 are written from.
+
+
+### A label a PERSON typed, read back by clio — the item the suite calls uncoverable
+
+The suite's "deliberately not covered" list says a designer-authored label cannot be created by a
+tooling-only run and needs a browser pass. True as stated — but it does not have to be *created*: the
+shipped product is full of them. On this stand, `BaseElements.%Flow%.Caption` in `en-US` matches
+**867 rows across 249 schemas**, of which exactly **17** are clio's — the ones written by this
+change's own runs today, identifiable by the `<Prefix>Flow_<source>_<target>` underscore shape the
+toolkit generates. The rest predate the feature and none of it was written by clio.
+
+Do not read that as a census, and the reason is instructive. A first count of this put it at "100+
+across 81 schemas", which is a substantial undercount, and the cause is that the designer has used at
+least **three** naming styles for a flow: `ConditionalSequenceFlow5` (476 rows),
+`ConditionalFlow1` (149), and descriptive names like `ConditionalFlowLeadUndefined` or
+`QualifiedAccountExistsSequenceFlow` (the remainder) — so any classifier built from one style
+silently drops the others. In the other direction the `%Flow%` wildcard over-matches a handful of
+things that are not flows at all: an element literally named `CancelFlow`, and
+`DeleteCashflow.Parameters.IsMatchConditions.Caption`, where the match is inside the word
+*Cashflow*. 867 is therefore an upper bound on designer-authored flow labels, not a count of them.
+
+None of which the claim below depends on. What matters is that there are **hundreds**, that clio did
+not write them, and that clio reads them correctly.
+
+Joined to their schemas (`SysSchema.Id = SysLocalizableValue.SysSchemaId`, via SQL because `SysSchema`
+is not readable through OData) and then read back through `describe-business-process`:
+
+| shipped process | stored in resources | reported by clio |
+|---|---|---|
+| `AccountLeadConversionScoreUpdate` | `MQLs found`, `No MQLs found` | `default → 'MQLs found'`, `conditional → 'No MQLs found'` |
+| `AddContact` | `Has LinkedIn`, `Has Facebook` | both `conditional`, same text |
+
+Identical, and this is the direction that had never been tested: every other result in this report is
+clio reading back what clio wrote. Here clio reads what a **human authored in the designer**, on
+content that predates the feature — which is precisely what TC-07 relies on when it says `describe` is
+the only way to learn that a designer's label exists.
+
+Worth noting from the same row set: `AccountLeadConversionScoreUpdate` carries its label on the
+**default** arm (`MQLs found`) and on the conditional arm (`No MQLs found`). That is the shipped
+product doing what the guidance tells callers to do — label both arms, name the outcome — and an
+instance of the 25.5% of default flows that carry a label.
+
+**Method note, because it cost a wrong conclusion first.** `SysLocalizableValue.SysSchemaId` is
+`SysSchema.Id` — the row id — and `VwProcessLib.Id` is the schema **UId**. They are different columns
+of different tables. Feeding a `SysSchemaId` to `describe-business-process` as `process-uid` returns a
+bare `Object reference not set to an instance of an object`, which reads like a defect in describe and
+is not one: it is the wrong identifier, and the same wrong-referent shape this repository already has a
+record for. Nothing was filed.
+
+**And seen drawn — the item is now closed end to end.** `AddContact` opened in the designer, title
+`Add one contact to account (sub process)` (the same caption clio reported, so it is the right
+process), canvas read:
+
+```
+nodes: 5   empty: 0
+drawn: Has LinkedIn, Has Facebook, Add linkedin, Add Facebook, Add contact
+```
+
+So for content **no tooling wrote**, all three levels agree: the resource row, clio's read-back, and
+what the designer draws. That is the full chain the suite says it cannot reach, and it did not need a
+label to be created — only one to be found.
+
+**Re-taken independently, both halves.** The message that reported this section said the shipped
+labels were verified in the resources and through clio but **not yet on a canvas** — the browser
+session was believed expired. The section said otherwise, and the section is right: the session was
+alive. Both halves re-measured from scratch rather than accepted.
+
+`AccountLeadConversionScoreUpdate`, read back through `describe-business-process`:
+
+```
+SequenceFlow3             sequence      label None
+SequenceFlow5             sequence      label None
+DefaultSequenceFlow3      default       label 'MQLs found'
+ConditionalSequenceFlow5  conditional   label 'No MQLs found'
+SequenceFlow9             sequence      label None
+```
+
+Matching its resource rows exactly — and note the three plain flows report `None`, not `''`, on
+content clio never touched. `AddContact` re-opened in the designer, title
+`Add one contact to account (sub process)` verified before reading: **5 nodes, 0 empty**, drawn
+`Has LinkedIn`, `Has Facebook`, `Add linkedin`, `Add Facebook`, `Add contact`. Identical to the
+first reading and to the two resource rows.
+
+So the full chain on human-authored content is now measured twice by two parties, which is the same
+bar the rest of this report holds itself to.
+
+**A useful comparison came with it.** `AddContact` is hand-laid-out by whoever shipped it, and its two
+branches fan **symmetrically** — one up to `Add Facebook`, one down to `Add linkedin` — with each label
+sitting over its own segment. Attribution is instant, and the reason is the geometry: the two
+connectors leave the activity in opposite directions. Our generated three-way fan stacks its branches
+downward instead, which is what puts the second and third labels near segments that run close
+together. Same feature, same drawing code for the label; different fan geometry. It is one more piece
+of evidence that the remark above belongs to connector routing rather than to labels, and it shows
+what the target looks like.

@@ -61,6 +61,19 @@ which matters because the in-app browser blocks the app's own `//core/...` boots
 (`ERR_BLOCKED_BY_CLIENT`) and a real logged-in browser window may be sized too small to screenshot a
 diagram usefully.
 
+**And a process has TWO GUIDs, which is how you get a bare NRE out of `describe`.**
+`SysLocalizableValue.SysSchemaId` is `SysSchema.Id` — the row key — while the value
+`describe-business-process` wants as `process-uid` is `SysSchema.UId`, which is also what
+`VwProcessLib.Id` holds. Measured on one process: `SysSchema.Id` is
+`89AC9141-0F18-4D3B-8962-5D372E89C202` and the UId is `18E26981-DDAF-4E99-AC75-5D14EE237B00`. Two
+different GUIDs, same process.
+
+Feed the first one to `describe-business-process` and the answer is
+`Object reference not set to an instance of an object` — no mention of an identifier, no mention of a
+lookup that found nothing. It reads like a defect in describe, and it is not one; it is a faithful
+read of the wrong referent, which this repository has a record for. So when starting from a resource
+row, join through `SysSchema` and take `UId`, or address the process by NAME and skip the question.
+
 **Count the nodes, not just the text**, when the question is whether something was REMOVED:
 
 ```js
