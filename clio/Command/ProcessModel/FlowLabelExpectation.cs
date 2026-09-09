@@ -355,20 +355,32 @@ public static class FlowLabelExpectation {
 	/// </summary>
 	private static string AsStored(string label) {
 		var kept = new StringBuilder(label.Length);
-		for (int index = 0; index < label.Length; index++) {
+		int index = 0;
+		while (index < label.Length) {
 			char character = label[index];
 			// A surrogate PAIR is one valid astral character and survives intact; a LONE half is not a
 			// character and the server drops it, so a per-char filter cannot express this.
-			if (char.IsHighSurrogate(character)) {
-				if (index + 1 < label.Length && char.IsLowSurrogate(label[index + 1])) {
-					kept.Append(character).Append(label[index + 1]);
-					index++;
-				}
+			if (char.IsHighSurrogate(character)
+				&& index + 1 < label.Length
+				&& char.IsLowSurrogate(label[index + 1])) {
+				kept.Append(character).Append(label[index + 1]);
+				index += 2;
 				continue;
 			}
-			if (char.IsLowSurrogate(character) || IsUnstorable(character)) {
+
+			// Advanced BEFORE the branches below, so the counter is never touched inside them. A `for` here
+			// updated its own stop-condition variable in the body (Sonar S127) - the pair branch has to
+			// consume TWO code units, which a for-header cannot express.
+			index++;
+			if (char.IsSurrogate(character)) {
+				// A PAIRED high surrogate was consumed above, so anything reaching here is an unpaired half:
+				// not a character at all.
 				continue;
 			}
+			if (IsUnstorable(character)) {
+				continue;
+			}
+
 			kept.Append(character);
 		}
 

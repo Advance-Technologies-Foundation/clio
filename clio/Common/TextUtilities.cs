@@ -93,7 +93,8 @@ namespace Clio.Common
 				return text;
 			}
 			var sb = new StringBuilder(text.Length);
-			for (int index = 0; index < text.Length; index++) {
+			int index = 0;
+			while (index < text.Length) {
 				char character = text[index];
 				// An UNPAIRED surrogate half is dropped, not spaced: it is invalid UTF-16, which a JSON
 				// serializer refuses outright - so a caller value carrying one would make this helper the
@@ -101,14 +102,21 @@ namespace Clio.Common
 				// TRUNCATION against splitting a pair was not enough; a lone half the caller supplied passed
 				// straight through. A valid PAIR survives, so this needs the pairwise scan rather than a
 				// per-character test. The package half states the same rule in SafeText.Sanitize.
-				if (char.IsHighSurrogate(character)) {
-					if (index + 1 < text.Length && char.IsLowSurrogate(text[index + 1])) {
-						sb.Append(character).Append(text[index + 1]);
-						index++;
-					}
+				if (char.IsHighSurrogate(character)
+					&& index + 1 < text.Length
+					&& char.IsLowSurrogate(text[index + 1])) {
+					sb.Append(character).Append(text[index + 1]);
+					index += 2;
 					continue;
 				}
-				if (char.IsLowSurrogate(character)) {
+
+				// Advanced BEFORE the branches below, so the counter is never touched inside them. A `for` here
+				// updated its own stop-condition variable in the body (Sonar S127) - the pair branch has to
+				// consume TWO code units, which a for-header cannot express.
+				index++;
+				if (char.IsSurrogate(character)) {
+					// A PAIRED high surrogate was consumed above, so anything reaching here is an unpaired half:
+					// not a character at all.
 					continue;
 				}
 				sb.Append(char.IsControl(character) ? ' ' : character);
