@@ -282,14 +282,14 @@ public static class MobileActionTargetProbe {
 	/// read was involved — so the verdict cannot be wrong for a reason outside this process.
 	/// </para>
 	/// <para>
-	/// <see cref="KindEntityDefaultMobilePage"/> deliberately does NOT qualify. Its verdict comes from reading
-	/// the object's <c>MobileRelatedPage</c> add-on, and that read addresses the add-on more cheaply than
-	/// <c>RelatedPageAddonService.BuildAddonGetRequest</c> does — no resolved parent schema, and the SOURCE
-	/// page's package rather than the object's own. A body carrying no page set classifies as
-	/// <see cref="ActionTargetState.Missing"/>, which is ALSO the shape a mis-addressed read plausibly returns
-	/// (the server auto-provisions the descriptor), and the two cannot be told apart by inspection. Removing a
-	/// working action on that is not a risk worth taking for a diagnosis the report already delivers, so an
-	/// object target is reported and left alone (ENG-94839; removal is ENG-96178 / ENG-95084's scope).
+	/// <see cref="KindEntityDefaultMobilePage"/> deliberately does NOT qualify, and NOT because the read is
+	/// unreliable — it answers its question correctly (see
+	/// <see cref="ClassifyEntityDefaultMobilePage"/>). It does not qualify because the
+	/// <c>MobileRelatedPage</c> add-on is not the ONLY place a default mobile page can come from: a legacy
+	/// default page can exist without ever being registered in the add-on. So "the add-on declares no default"
+	/// is a fact about the add-on, not proof that the action is dead — and an action that works must never be
+	/// removed on a diagnosis the report already delivers in full (ENG-94839; removal is ENG-96178 /
+	/// ENG-95084's scope).
 	/// </para>
 	/// </summary>
 	/// <param name="kind">A rules-declared <c>targetKind</c>.</param>
@@ -521,6 +521,16 @@ public static class MobileActionTargetProbe {
 	/// Reads the object's <c>MobileRelatedPage</c> add-on and reports whether it declares a default page.
 	/// Degrades per object rather than aborting the probe.
 	/// </summary>
+	/// <remarks>
+	/// The question is "does this object have AT LEAST ONE default mobile page, in ANY package", so the
+	/// request is addressed differently from <c>RelatedPageAddonService.BuildAddonGetRequest</c> — and
+	/// deliberately, not as a shortcut. That method resolves the object's own package and parent schema
+	/// because it backs a read-modify-WRITE against one package; this read only asks, and
+	/// <c>UseFullHierarchy</c> makes the server walk the hierarchy itself. Verified against a stand: the same
+	/// object read through four different packages returns an identical page set, so
+	/// <c>TargetPackageUId</c> does not select the answer — which is why the SOURCE page's package (the one
+	/// clio already has, with no extra round trip) is a legitimate value here.
+	/// </remarks>
 	private static ActionTargetState ClassifyEntityDefaultMobilePage(
 		ProbeContext context, string entitySchemaUId, Guid packageUId) {
 		if (!Guid.TryParse(entitySchemaUId, out Guid entityUId)) {
@@ -547,16 +557,18 @@ public static class MobileActionTargetProbe {
 	/// </summary>
 	/// <remarks>
 	/// <para>
-	/// A BLANK body is deliberately <see cref="ActionTargetState.Unknown"/>, not <c>Missing</c>. It is the
-	/// shape a never-configured object returns AND the shape a request the server did not understand returns
-	/// (<c>AddonSchemaDto.MetaData</c> defaults to empty), and the two cannot be told apart by inspection.
-	/// Since this probe addresses the add-on more cheaply than <c>RelatedPageAddonService</c> does — no
-	/// resolved parent schema, and the SOURCE page's package rather than the object's own — a blank body is a
-	/// realistic symptom of that shortcut, and a shortcut must never present as a verified absence.
+	/// A BLANK body is <see cref="ActionTargetState.Unknown"/>, not <c>Missing</c>: that is the shape
+	/// <c>AddonSchemaDto.MetaData</c> defaults to when the server did not answer with a payload at all, which
+	/// says nothing about the object. An unconfigured object is NOT this shape — a stand returns a
+	/// well-formed <c>{"Pages":[],"TypeColumnUId":null}</c> for one, which is a real answer and classifies as
+	/// <c>Missing</c>.
 	/// </para>
 	/// <para>
-	/// Only an UNTYPED default counts. Record types and roles are web-only concepts on this add-on (see
-	/// <c>create-related-page-addon</c>), so a typed entry is not the page a plain create/update action opens.
+	/// Only an UNTYPED default counts: a typed entry is bound to a record type, so it is not the page a plain
+	/// create/update action opens. <c>Role</c> is IGNORED on purpose — mobile entries do carry one (a stand
+	/// shows <c>Contact</c> and <c>Account</c> bound to "All employees" while <c>Lead</c> carries none), but
+	/// the question is whether the object has at least one default mobile page at all, not whether the
+	/// current user would be served it.
 	/// </para>
 	/// </remarks>
 	/// <param name="metaData">The add-on's raw <c>metaData</c> JSON string.</param>

@@ -1780,9 +1780,11 @@ public static class WebToMobileAnalysisService {
 			}
 			if (kinds.Contains(MobileActionTargetProbe.KindEntityDefaultMobilePage)) {
 				parts.Add(
-					"An \"entity-default-mobile-page\" target is an object with no default mobile edit page yet — "
-					+ "converting that object's form page and registering it is what makes every action pointing "
-					+ "there work.");
+					"An \"entity-default-mobile-page\" target is an object whose MobileRelatedPage add-on declares "
+					+ "no default mobile page. Say exactly that, NOT \"the page does not exist\": a LEGACY default "
+					+ "mobile page can exist without ever being registered in that add-on, so the action may work "
+					+ "already. If there is genuinely no mobile page for that object, converting its form page and "
+					+ "registering it is what makes every action pointing there work.");
 			}
 			return parts.Count == 0 ? string.Empty : " " + string.Join(" ", parts);
 		}
@@ -1807,10 +1809,10 @@ public static class WebToMobileAnalysisService {
 			constraints.Add(
 				"requestConversions.unresolvedTargetRequests reports action(s) whose target was READ as absent on "
 				+ "mobile: " + Describe(reportedMissing)
-				+ ". These bindings were KEPT and convert normally — the read reports what the target declares "
-				+ "today, it does not prove the action is dead, so nothing was removed. Build each element exactly "
-				+ "as its elementMap entry says, name the control and its target at the conversion gate, and let "
-				+ "the user decide."
+				+ ". These bindings were KEPT and convert normally, and the request was not modified at all — the "
+				+ "read reports what the target DECLARES, which is not the same as proving the action is dead, so "
+				+ "nothing was removed. Build each element exactly as its elementMap entry says, name the control "
+				+ "and its target at the conversion gate as something to CHECK, and let the user decide."
 				+ Remedies(reportedMissing));
 		}
 		List<UnresolvedTargetRequest> unknown = [..

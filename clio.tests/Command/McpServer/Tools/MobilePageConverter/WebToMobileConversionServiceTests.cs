@@ -3645,7 +3645,8 @@ public sealed class WebToMobileConversionServiceTests {
 		PageBundleInfo bundle = ButtonBundle(
 			"AddProductButton", "crt.CreateRecordRequest", """{ "entityName": "LeadProduct" }""");
 		MobileActionTargetProbeResult probe = ProbeResult(
-			"AddProductButton", "crt.CreateRecordRequest", "entity-default-mobile-page", "LeadProduct",
+			"AddProductButton", "crt.CreateRecordRequest",
+			MobileActionTargetProbe.KindEntityDefaultMobilePage, "LeadProduct",
 			ActionTargetState.Resolved);
 
 		// Act
@@ -3882,8 +3883,13 @@ public sealed class WebToMobileConversionServiceTests {
 			because: "the add-on read addresses the add-on more cheaply than RelatedPageAddonService does, so a "
 				+ "body carrying no page set is equally the shape a mis-addressed read returns — removing a "
 				+ "working action on that is not a trade this tool makes");
-		ClickedOf(guide, "ProductsAddButton").Should().ContainKey("clicked",
-			because: "nothing about the request changes when the absence cannot be proven");
+		JsonObject clicked = ClickedOf(guide, "ProductsAddButton")["clicked"]!.AsObject();
+		clicked["request"]!.GetValue<string>().Should().Be("crt.CreateRecordRequest",
+			because: "the request itself is not modified at all — the add-on declaring no default page is a "
+				+ "fact about the add-on, and a LEGACY default mobile page can exist without being registered "
+				+ "there, so the action may work already");
+		clicked["params"]!["entityName"]!.GetValue<string>().Should().Be("LeadProduct",
+			because: "the params must survive untouched too, or the action is silently repointed");
 		guide.RequestConversions.ConvertedRequests.Should().ContainSingle(r => r.ElementName == "ProductsAddButton",
 			because: "a kept action converted, so it belongs in convertedRequests and NOT in droppedRequests");
 		guide.RequestConversions.DroppedRequests.Should().NotContain(r => r.ElementName == "ProductsAddButton",
