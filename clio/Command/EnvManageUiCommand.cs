@@ -1076,8 +1076,19 @@ public class EnvManageUiCommand : Command<EnvManageUiOptions>, IEnvManageUiComma
 		var settings = CloneEnvironmentSettings(environmentSettings);
 		var serviceUrlBuilder = ActivatorUtilities.CreateInstance<ServiceUrlBuilder>(_serviceProvider, settings);
 		using IOwnedApplicationClient client = _applicationClientFactory.CreateOwnedClient(settings);
+		// The verdict reader and the availability probe are constructed against THIS environment, not
+		// resolved from the container. They now decide completion and the exit code, so a container-bound
+		// instance would read the compilation result of - and probe the availability of - whichever
+		// environment the process was started with, while the build ran on the cloned one.
+		var compilationLogParser = ActivatorUtilities.CreateInstance<CompilationLogParser>(_serviceProvider);
+		var resultReader = ActivatorUtilities.CreateInstance<CompilationResultReader>(_serviceProvider,
+			client, serviceUrlBuilder, compilationLogParser);
+		var availabilityProbe = ActivatorUtilities.CreateInstance<EnvironmentAvailabilityProbe>(
+			_serviceProvider, serviceUrlBuilder);
+		var reloadWatcher = ActivatorUtilities.CreateInstance<EnvironmentReloadWatcher>(_serviceProvider,
+			availabilityProbe);
 		var command = ActivatorUtilities.CreateInstance<CompileConfigurationCommand>(_serviceProvider,
-			client, settings, serviceUrlBuilder);
+			client, settings, serviceUrlBuilder, reloadWatcher, resultReader);
 		return command.Execute(BuildEnvUiCompileOptions(envName));
 	}
 

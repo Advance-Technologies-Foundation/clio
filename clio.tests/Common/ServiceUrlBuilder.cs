@@ -173,6 +173,15 @@ internal class ServiceUrlBuilderCommandTests
 
 	public static IEnumerable<TestCaseDataWithKnownRoutes> TestCasesWithKnownRoute {
 		get {
+			// Registered WITHOUT a leading slash, unlike the /rest/... entries, so both prefix shapes are
+			// pinned here rather than left to CreateUrl's normalisation happening to be right.
+			yield return new TestCaseDataWithKnownRoutes(false, "http://localhost",
+				ServiceUrlBuilder.KnownRoute.LastCompilationResult,
+				"http://localhost/0/api/ConfigurationStatus/GetLastCompilationResult");
+			yield return new TestCaseDataWithKnownRoutes(true, "http://localhost",
+				ServiceUrlBuilder.KnownRoute.LastCompilationResult,
+				"http://localhost/api/ConfigurationStatus/GetLastCompilationResult");
+
 			yield return new TestCaseDataWithKnownRoutes(false, "http://localhost",
 				ServiceUrlBuilder.KnownRoute.RestoreFromPackageBackup,
 				"http://localhost/0/ServiceModel/PackageInstallerService.svc/RestoreFromPackageBackup");

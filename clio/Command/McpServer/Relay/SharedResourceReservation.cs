@@ -254,10 +254,13 @@ public sealed class SharedResourceReservation : ISharedResourceReservation {
 	/// </remarks>
 	internal static string BuildAlreadyReservedMessage(string toolName, string environmentName) =>
 		string.Format(CultureInfo.InvariantCulture,
-			"'{0}' was not started: a configuration build is already in progress for '{1}'. Creatio "
-			+ "serialises configuration builds server-wide, so compile-creatio and install-process-builder "
-			+ "exclude each other on one environment no matter which caller, principal or clio process "
-			+ "started the running one. Poll compile-status and wait for it to finish. The call was not "
-			+ "executed and issued no request to Creatio.",
-			toolName, environmentName ?? "the requested environment");
+			"'{0}' was not started: THIS clio process is already running a configuration build for '{1}', "
+			+ "and it excludes compile-creatio and install-process-builder from each other on one "
+			+ "environment across every caller and principal it serves. It is a local guard, NOT a "
+			+ "server-wide one: a different clio process is not covered by it, and what actually serialises "
+			+ "concurrent builds is the Creatio platform, which rejects a second one on the node. Poll "
+			+ "compile-status for the running operation. A build that never reports completion stops "
+			+ "blocking after {2:0} minutes, when this reservation is reclaimed. The call was not executed "
+			+ "and issued no request to Creatio.",
+			toolName, environmentName ?? "the requested environment", DefaultReclaimCeiling.TotalMinutes);
 }
