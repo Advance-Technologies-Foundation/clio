@@ -76,21 +76,21 @@ public sealed record GetProcessSignatureArgs(
 
 	[property: JsonPropertyName("culture")]
 	[property: Description("Optional culture used to resolve localized parameter captions (default en-US)")]
-	string? Culture,
+	string? Culture = null,
 
 	[property: JsonPropertyName("environment-name")]
 	[property: Description(McpToolDescriptions.EnvironmentName)]
-	string? EnvironmentName,
+	string? EnvironmentName = null,
 
 	[property: JsonPropertyName("uri")]
 	[property: Description("Creatio base URI (emergency fallback only; prefer environment-name)")]
-	string? Uri,
+	string? Uri = null,
 
 	[property: JsonPropertyName("login")]
 	[property: Description(McpToolDescriptions.Login)]
-	string? Login,
+	string? Login = null,
 
 	[property: JsonPropertyName("password")]
 	[property: Description(McpToolDescriptions.Password)]
-	string? Password
+	string? Password = null
 );

@@ -127,11 +127,11 @@ public sealed record RestoreDbByEnvironmentArgs(
 
 	[property: JsonPropertyName("backupPath")]
 	[property: Description("Optional backup file path override")]
-	string? BackupPath,
+	string? BackupPath = null,
 
 	[property: JsonPropertyName("dbName")]
 	[property: Description("Optional database name override")]
-	string? DbName,
+	string? DbName = null,
 
 	[property: JsonPropertyName("force")]
 	[property: Description("Force overwrite behavior in legacy environment restore mode")]
@@ -162,10 +162,6 @@ public sealed record RestoreDbByCredentialsArgs(
 	[property: Description("Database password")]
 	string? DbPassword,
 
-	[property: JsonPropertyName("dbWorkingFolder")]
-	[property: Description("Optional database-visible working folder for MSSQL restore mode")]
-	string? DbWorkingFolder,
-
 	[property: JsonPropertyName("backupPath")]
 	[property: Description("Backup file path")]
 	[property: Required]
@@ -186,7 +182,11 @@ public sealed record RestoreDbByCredentialsArgs(
 
 	[property: JsonPropertyName("disableResetPassword")]
 	[property: Description("Attempt to disable forced password reset after a successful restore when the existing version and environment checks allow it")]
-	bool DisableResetPassword = true);
+	bool DisableResetPassword = true,
+
+	[property: JsonPropertyName("dbWorkingFolder")]
+	[property: Description("Optional database-visible working folder for MSSQL restore mode")]
+	string? DbWorkingFolder = null);
 
 /// <summary>
 /// MCP arguments for restoring a database to a configured local database server.

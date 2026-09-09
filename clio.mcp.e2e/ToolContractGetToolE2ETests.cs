@@ -1208,6 +1208,108 @@ public sealed class ToolContractGetToolE2ETests : McpContractFixtureBase {
 				because: "the served contract must not restore a fixed list of producer fields"));
 	}
 
+	[Test]
+	[Description("Verifies the live registry-derived contracts of the page/addon long-tail tools advertise no connection field as required and state the environment-name OR uri/login/password alternative instead (issue #965).")]
+	[AllureTag(ToolContractGetTool.ToolName)]
+	[AllureName("get-tool-contract stops demanding every connection field at once")]
+	[AllureDescription("Starts the real clio MCP server without a Creatio environment, requests the contracts of list-page-templates, create-page, get-related-page-addon and create-related-page-addon, and verifies each one advertises only its genuine inputs as required while carrying the connection any-of.")]
+	public async Task ToolContractGet_ShouldNotRequireConnectionFields_ForPageAndAddonTools() {
+		// Arrange
+		await using var context = Arrange(TimeSpan.FromMinutes(3));
+		string[] connectionFields = ["environment-name", "uri", "login", "password"];
+		Dictionary<string, string[]> expectedRequired = new() {
+			[PageTemplatesListTool.ToolName] = [],
+			[PageCreateTool.ToolName] = ["schema-name", "template", "package-name"],
+			[GetRelatedPageAddonTool.ToolName] = ["entity-schema-name", "package-name"],
+			[CreateRelatedPageAddonTool.ToolName] = ["entity-schema-name", "package-name", "pages"]
+		};
+
+		// Act
+		ToolContractGetResponse response = await CallAsync(
+			context.Session,
+			context.CancellationTokenSource.Token,
+			new Dictionary<string, object?> {
+				["tool-names"] = expectedRequired.Keys.ToArray()
+			});
+
+		// Assert
+		response.Success.Should().BeTrue(
+			because: "each of these long-tail tools must expose a registry-derived contract");
+		foreach ((string toolName, string[] required) in expectedRequired) {
+			ToolContractDefinition contract = response.Tools!.Single(definition => definition.Name == toolName);
+			(contract.InputSchema.Required ?? []).Should().BeEquivalentTo(required,
+				because: $"'{toolName}' accepts an environment-name-only payload, so its live contract must " +
+					"advertise only the inputs it genuinely cannot run without");
+			(contract.InputSchema.Required ?? []).Should().NotContain(connectionFields,
+				because: $"a strict client validating '{toolName}' against this contract would otherwise refuse " +
+					"to send the very payload the tool documentation advertises");
+			contract.InputSchema.AnyOf.Should().BeEquivalentTo(
+				new[] { new[] { "environment-name" }, new[] { "uri", "login", "password" } },
+				because: $"'{toolName}' must still tell the caller HOW to connect now that no single connection " +
+					"field is mandatory");
+		}
+	}
+
+	[Test]
+	[Description("Verifies the live contract of get-entity-schema-properties no longer demands package-name, so an agent planning from get-tool-contract can reach the merged all-packages column view its own description recommends (issue #965).")]
+	[AllureTag(ToolContractGetTool.ToolName)]
+	[AllureName("get-tool-contract agrees with the emitted schema on optional package-name")]
+	[AllureDescription("Starts the real clio MCP server and requests the curated contract of get-entity-schema-properties, verifying package-name is advertised but not required — the exact disagreement with tools/list that issue #965 reports.")]
+	public async Task ToolContractGet_ShouldNotRequirePackageName_ForGetEntitySchemaProperties() {
+		// Arrange
+		await using var context = Arrange(TimeSpan.FromMinutes(3));
+
+		// Act
+		ToolContractGetResponse response = await CallAsync(
+			context.Session,
+			context.CancellationTokenSource.Token,
+			new Dictionary<string, object?> {
+				["tool-names"] = new[] { GetEntitySchemaPropertiesTool.GetEntitySchemaPropertiesToolName }
+			});
+
+		// Assert
+		response.Success.Should().BeTrue(
+			because: "get-entity-schema-properties has a curated contract and must resolve");
+		ToolContractDefinition contract = response.Tools!.Single();
+		(contract.InputSchema.Required ?? []).Should().BeEquivalentTo(
+			["environment-name", "schema-name"],
+			because: "supplying package-name switches the tool to a single package layer and reports zero own " +
+				"columns, so the contract must not force it on every caller");
+		contract.InputSchema.Properties.Select(field => field.Name).Should().Contain("package-name",
+			because: "the single-package-layer read stays available, it is simply no longer mandatory");
+	}
+
+	[Test]
+	[Description("Verifies the live registry-derived contract of reg-web-app carries no connection any-of, because there uri is the application being registered and a credential-only payload is rejected with exit code 1 (issue #965, PR #1396 review).")]
+	[AllureTag(ToolContractGetTool.ToolName)]
+	[AllureName("get-tool-contract does not offer reg-web-app a credential-only branch")]
+	[AllureDescription("Starts the real clio MCP server and requests the registry-derived contract of reg-web-app, verifying it advertises environment-name and uri without claiming the two are alternatives.")]
+	public async Task ToolContractGet_ShouldOmitConnectionAlternative_ForRegWebApp() {
+		// Arrange
+		await using var context = Arrange(TimeSpan.FromMinutes(3));
+
+		// Act
+		ToolContractGetResponse response = await CallAsync(
+			context.Session,
+			context.CancellationTokenSource.Token,
+			new Dictionary<string, object?> {
+				["tool-names"] = new[] { "reg-web-app" }
+			});
+
+		// Assert
+		response.Success.Should().BeTrue(
+			because: "reg-web-app is a registered tool and must expose a registry-derived contract");
+		ToolContractDefinition contract = response.Tools!.Single();
+		contract.InputSchema.Properties.Select(field => field.Name)
+			.Should().Contain(["environment-name", "uri"],
+				because: "this is the control case precisely BECAUSE it advertises both names the any-of " +
+					"heuristic keys on");
+		contract.InputSchema.AnyOf.Should().BeNull(
+			because: "a uri/login/password payload with no environment-name, active-environment or " +
+				"add-from-iis is refused by the tool itself, so advertising it as a complete alternative " +
+				"would send an agent into a guaranteed failure with credentials attached");
+	}
+
 	private static async Task<ToolContractGetResponse> CallAsync(
 		McpServerSession session,
 		CancellationToken cancellationToken,

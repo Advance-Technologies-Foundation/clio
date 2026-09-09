@@ -102,5 +102,5 @@ public sealed record PackageDependencyArg(
 
 	[property: JsonPropertyName("version")]
 	[property: Description("Optional package version; defaults to the installed version of the dependency")]
-	string Version
+	string? Version = null
 );
