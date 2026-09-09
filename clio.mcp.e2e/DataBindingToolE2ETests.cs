@@ -15,7 +15,7 @@ namespace Clio.Mcp.E2E;
 /// End-to-end tests for the data-binding MCP tools.
 /// </summary>
 [TestFixture]
-[Category("McpE2E.Sandbox")]
+[Category("McpE2E.NoEnvironment")]
 [AllureNUnit]
 [AllureFeature("data-binding")]
 [NonParallelizable]

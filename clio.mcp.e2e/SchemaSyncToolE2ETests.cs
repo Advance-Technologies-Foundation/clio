@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
@@ -25,7 +25,6 @@ namespace Clio.Mcp.E2E;
 /// End-to-end tests for the sync-schemas composite MCP tool.
 /// </summary>
 [TestFixture]
-[Category("McpE2E.Sandbox")]
 [AllureNUnit]
 [AllureFeature("sync-schemas")]
 [NonParallelizable]
@@ -55,6 +54,7 @@ public sealed class SchemaSyncToolE2ETests : McpContractFixtureBase {
 		}
 	}
 
+	[Category("McpE2E.NoEnvironment")]
 	[Test]
 	[Description("Exposes sync-schemas via the get-tool-contract compact index so callers can discover and invoke it on the lazy surface.")]
 	[AllureTag(ToolName)]
@@ -73,6 +73,7 @@ public sealed class SchemaSyncToolE2ETests : McpContractFixtureBase {
 			because: "sync-schemas must be discoverable on the lazy surface (get-tool-contract compact index) so MCP clients can find the composite tool even though it is not resident in tools/list");
 	}
 
+	[Category("McpE2E.NoEnvironment")]
 	[Test]
 	[Description("Returns a binding-layer error when sync-schemas is called without the required args wrapper on the lazy surface.")]
 	[AllureTag(ToolName)]
@@ -99,6 +100,7 @@ public sealed class SchemaSyncToolE2ETests : McpContractFixtureBase {
 			because: "missing args should fail during MCP binding before sync-schemas can produce a structured tool response");
 	}
 
+	[Category("McpE2E.NoEnvironment")]
 	[Test]
 	[Description("Returns a binding-layer error when sync-schemas args has the wrong type on the lazy surface.")]
 	[AllureTag(ToolName)]
@@ -128,6 +130,7 @@ public sealed class SchemaSyncToolE2ETests : McpContractFixtureBase {
 			because: "wrong-type args should fail at the binding layer before sync-schemas can produce a structured tool response");
 	}
 
+	[Category("McpE2E.Sandbox")]
 	[Test]
 	[Description("Executes sync-schemas on a real sandbox environment and keeps each result message list aligned with its own operation.")]
 	[AllureTag(ToolName)]
@@ -227,6 +230,7 @@ public sealed class SchemaSyncToolE2ETests : McpContractFixtureBase {
 			because: "the added column should reference the lookup created in the same sync-schemas batch");
 	}
 
+	[Category("McpE2E.Sandbox")]
 	[Test]
 	[Description("Runs sync-schemas on a real sandbox environment with an IProgress sink and verifies it streams per-operation stage markers (e.g. '1/2: create-entity ...'), so MCP clients see semantic progress instead of one silent await (ENG-93087).")]
 	[AllureTag(ToolName)]
@@ -304,6 +308,7 @@ public sealed class SchemaSyncToolE2ETests : McpContractFixtureBase {
 			because: "the first operation's stage marker must reach the client before the second operation's, matching batch execution order");
 	}
 
+	[Category("McpE2E.Sandbox")]
 	[Test]
 	[Description("Creates a virtual entity through sync-schemas and verifies readback plus absence of a PostgreSQL table.")]
 	[AllureTag(ToolName)]
@@ -355,6 +360,7 @@ public sealed class SchemaSyncToolE2ETests : McpContractFixtureBase {
 			because: "sync-schemas must not cause Creatio to materialize a PostgreSQL table for a virtual entity");
 	}
 
+	[Category("McpE2E.NoEnvironment")]
 	[Test]
 	[Description("Rejects seed rows for virtual entity creation before environment resolution.")]
 	[AllureTag(ToolName)]
@@ -413,6 +419,7 @@ public sealed class SchemaSyncToolE2ETests : McpContractFixtureBase {
 			because: "the caller must be told to correct the field shape before resubmitting the operation itself");
 	}
 
+	[Category("McpE2E.NoEnvironment")]
 	[Test]
 	[Description("Rejects inherited BaseLookup columns in create-lookup operations before environment resolution.")]
 	[AllureTag(ToolName)]
@@ -473,6 +480,7 @@ public sealed class SchemaSyncToolE2ETests : McpContractFixtureBase {
 			because: "validation should happen before environment resolution");
 	}
 
+	[Category("McpE2E.NoEnvironment")]
 	[Test]
 	[Description("Emits a machine-readable resume plan when a batch aborts mid-way (ENG-93374).")]
 	[AllureTag(ToolName)]
@@ -551,6 +559,7 @@ public sealed class SchemaSyncToolE2ETests : McpContractFixtureBase {
 	// that name never appears in the diagnostic, proving the rejection happens BEFORE environment resolution.
 	// ---------------------------------------------------------------------------------------------------
 
+	[Category("McpE2E.NoEnvironment")]
 	[Test]
 	[Description("Rejects a top-level camelCase argument instead of running the whole batch against a null target (issue #1303).")]
 	[AllureTag(ToolName)]
@@ -599,6 +608,7 @@ public sealed class SchemaSyncToolE2ETests : McpContractFixtureBase {
 			because: "the field-shape check must run before environment resolution");
 	}
 
+	[Category("McpE2E.NoEnvironment")]
 	[Test]
 	[Description("Rejects seed rows sent under the 'seed-data' field name and explains that seed-data is an operation type (issue #1303 A1).")]
 	[AllureTag(ToolName)]
@@ -650,6 +660,7 @@ public sealed class SchemaSyncToolE2ETests : McpContractFixtureBase {
 			because: "the field-shape check must run before environment resolution");
 	}
 
+	[Category("McpE2E.NoEnvironment")]
 	[Test]
 	[Description("Rejects an operation that names the schema with 'name' instead of 'schema-name' (issue #1303).")]
 	[AllureTag(ToolName)]
@@ -692,6 +703,7 @@ public sealed class SchemaSyncToolE2ETests : McpContractFixtureBase {
 			because: "the field-shape check must run before environment resolution");
 	}
 
+	[Category("McpE2E.NoEnvironment")]
 	[Test]
 	[Description("Rejects a genuinely unknown operation field and lists the valid field names (issue #1303).")]
 	[AllureTag(ToolName)]
@@ -739,6 +751,7 @@ public sealed class SchemaSyncToolE2ETests : McpContractFixtureBase {
 			because: "the field-shape check must run before environment resolution");
 	}
 
+	[Category("McpE2E.NoEnvironment")]
 	[Test]
 	[Description("Rejects an operation with a blank schema-name in MCP terms, never leaking the find-entity-schema CLI switches (issue #1303 C2).")]
 	[AllureTag(ToolName)]
@@ -791,6 +804,7 @@ public sealed class SchemaSyncToolE2ETests : McpContractFixtureBase {
 			because: "the required-field check must run before environment resolution");
 	}
 
+	[Category("McpE2E.NoEnvironment")]
 	[Test]
 	[Description("Omits a shape-rejected operation from resume-plan.operations so the caller is not told to replay the payload just rejected (issue #1303).")]
 	[AllureTag(ToolName)]
@@ -856,6 +870,7 @@ public sealed class SchemaSyncToolE2ETests : McpContractFixtureBase {
 			because: "the instruction must explain why the failed operation is absent from the resubmit list");
 	}
 
+	[Category("McpE2E.NoEnvironment")]
 	[Test]
 	[Description("Keeps binding the legacy 'operation' key so the field-shape rejection does not break callers that spell the operation type the old way (issue #1303 regression guard).")]
 	[AllureTag(ToolName)]
@@ -898,6 +913,7 @@ public sealed class SchemaSyncToolE2ETests : McpContractFixtureBase {
 			because: "the field-shape rejection must not fire for an operation the tool can still read");
 	}
 
+	[Category("McpE2E.NoEnvironment")]
 	[Test]
 	[Description("Rejects a standalone seed-data operation with no seed rows before environment resolution (ENG-93374).")]
 	[AllureTag(ToolName)]
@@ -938,6 +954,7 @@ public sealed class SchemaSyncToolE2ETests : McpContractFixtureBase {
 			because: "local validation must happen before environment resolution");
 	}
 
+	[Category("McpE2E.Sandbox")]
 	[Test]
 	[Description("Applies structured default-value-config through sync-schemas update-entity and verifies the resulting DateTime column readback.")]
 	[AllureTag(ToolName)]
@@ -1513,6 +1530,7 @@ public sealed class SchemaSyncToolE2ETests : McpContractFixtureBase {
 			because: "the failure should surface a binding-layer diagnostic — either the SDK's native message or the clio-run executor's wrapped equivalent");
 	}
 
+	[Category("McpE2E.NoEnvironment")]
 	[Test]
 	[Description("Rejects flat seed-rows (missing 'values' wrapper) without requiring a reachable environment.")]
 	[AllureTag(ToolName)]
@@ -1567,6 +1585,7 @@ public sealed class SchemaSyncToolE2ETests : McpContractFixtureBase {
 			because: "the error must name the missing 'values' wrapper so the caller can correct the format");
 	}
 
+	[Category("McpE2E.Sandbox")]
 	[Test]
 	[Description("Round-trips the get-entity read shape through sync-schemas update-entity: adds via the columns coercion path and the data-value-type alias, modifies via the name alias, and removes via the name alias, then verifies all three on a real environment (ENG-90313).")]
 	[AllureTag(ToolName)]
@@ -1693,6 +1712,7 @@ public sealed class SchemaSyncToolE2ETests : McpContractFixtureBase {
 			because: "the name-alias remove must drop the existing column");
 	}
 
+	[Category("McpE2E.Sandbox")]
 	[Test]
 	[Description("Preserves the inherited Id primary column when sync-schemas creates a BaseEntity-derived schema with a custom Guid, and accepts an ordered remove/re-add of that Guid in one update batch.")]
 	[AllureTag(ToolName)]
@@ -1822,6 +1842,7 @@ public sealed class SchemaSyncToolE2ETests : McpContractFixtureBase {
 			because: "the final schema should contain exactly one re-added custom Guid column");
 	}
 
+	[Category("McpE2E.Sandbox")]
 	[Test]
 	[Description("Creates an absent schema through sync-schemas on a real sandbox environment and reports the convergent created outcome (Story 5 AC-E2E absent-create).")]
 	[AllureTag(ToolName)]
@@ -1867,6 +1888,7 @@ public sealed class SchemaSyncToolE2ETests : McpContractFixtureBase {
 			because: $"an absent schema created on the real environment must report the convergent created outcome. Payload: {payload}");
 	}
 
+	[Category("McpE2E.Sandbox")]
 	[Test]
 	[Description("Re-running create-entity for an existing schema with one extra column adds only the missing column and reports the reconciled outcome (Story 5 AC-E2E existing-reconcile).")]
 	[AllureTag(ToolName)]
@@ -1955,6 +1977,7 @@ public sealed class SchemaSyncToolE2ETests : McpContractFixtureBase {
 			because: "the reconcile must add only the missing column");
 	}
 
+	[Category("McpE2E.Sandbox")]
 	[Test]
 	[Description("Re-running an identical convergent batch (no seed-rows) reports success with every operation already-satisfied and applies no duplicate mutation (Story 5 AC-03 replay idempotency).")]
 	[AllureTag(ToolName)]
@@ -2040,6 +2063,7 @@ public sealed class SchemaSyncToolE2ETests : McpContractFixtureBase {
 			because: "AC-03: an identical replay must apply no duplicate mutation, so the schema column set is unchanged");
 	}
 
+	[Category("McpE2E.Sandbox")]
 	[Test]
 	[Description("Attempting to create a schema whose name is already owned by a different (base) package reports success:false with the collision outcome and collision-info (Story 5 AC-E2E cross-package collision).")]
 	[AllureTag(ToolName)]

@@ -19,12 +19,12 @@ namespace Clio.Mcp.E2E;
 /// End-to-end tests for the DB-first data-binding MCP tools.
 /// </summary>
 [TestFixture]
-[Category("McpE2E.Sandbox")]
 [AllureNUnit]
 [AllureFeature("data-binding-db")]
 [NonParallelizable]
 public sealed class DataBindingDbToolE2ETests : DataBindingDbFixtureBase {
 
+	[Category("McpE2E.NoEnvironment")]
 	[Test]
 	[Description("Exposes every DB-first data-binding MCP tool via the get-tool-contract compact index so callers can discover and invoke them on the lazy surface.")]
 	[AllureTag(CreateDbToolName)]
@@ -49,6 +49,7 @@ public sealed class DataBindingDbToolE2ETests : DataBindingDbFixtureBase {
 			because: "read-data-binding-db must be discoverable on the lazy surface, otherwise agents keep exporting the whole package to prove a projection");
 	}
 
+	[Category("McpE2E.Sandbox")]
 	[Test]
 	[Description("Creates a DB-first data binding through MCP on a real Creatio environment, verifying the command exits with code 0 and emits a completion message.")]
 	[AllureTag(CreateDbToolName)]
@@ -78,6 +79,7 @@ public sealed class DataBindingDbToolE2ETests : DataBindingDbFixtureBase {
 			"successful create-data-binding-db execution should emit a completion message");
 	}
 
+	[Category("McpE2E.NoEnvironment")]
 	[Test]
 	[Description("Fails create-data-binding-db through MCP with exit code 1 when environment-name is empty, matching the command-layer validation guard.")]
 	[AllureTag(CreateDbToolName)]
@@ -105,6 +107,7 @@ public sealed class DataBindingDbToolE2ETests : DataBindingDbFixtureBase {
 			"create-data-binding-db should emit a human-readable validation error when environment-name is empty");
 	}
 
+	[Category("McpE2E.NoEnvironment")]
 	[Test]
 	[Description("Fails upsert-data-binding-row-db through MCP with exit code 1 when environment-name is empty, matching the command-layer validation guard.")]
 	[AllureTag(UpsertRowDbToolName)]
@@ -133,6 +136,7 @@ public sealed class DataBindingDbToolE2ETests : DataBindingDbFixtureBase {
 			"upsert-data-binding-row-db should emit a human-readable validation error when environment-name is empty");
 	}
 
+	[Category("McpE2E.NoEnvironment")]
 	[Test]
 	[Description("Fails remove-data-binding-row-db through MCP with exit code 1 when environment-name is empty, matching the command-layer validation guard.")]
 	[AllureTag(RemoveRowDbToolName)]
@@ -161,6 +165,7 @@ public sealed class DataBindingDbToolE2ETests : DataBindingDbFixtureBase {
 			"remove-data-binding-row-db should emit a human-readable validation error when environment-name is empty");
 	}
 
+	[Category("McpE2E.NoEnvironment")]
 	[Test]
 	[Description("read-data-binding-db reaches its binding-resolution layer over the real MCP server and reports a human-readable failure for an unresolvable environment, so an agent never mistakes an unreachable read for a proven projection.")]
 	[AllureTag(ReadDbToolName)]
@@ -188,6 +193,7 @@ public sealed class DataBindingDbToolE2ETests : DataBindingDbFixtureBase {
 			"an unresolvable read must say why, because an empty result would read as 'the binding ships no columns'");
 	}
 
+	[Category("McpE2E.NoEnvironment")]
 	[Test]
 	[Description("Returns a binding-layer error when create-data-binding-db is called without the MCP args wrapper. On the lazy surface the call is dispatched through clio-run, so the same binding failure surfaces as an executor-wrapped error that still names the target tool.")]
 	[AllureTag(CreateDbToolName)]
@@ -207,6 +213,7 @@ public sealed class DataBindingDbToolE2ETests : DataBindingDbFixtureBase {
 		AssertInvocationFailure(callResult, CreateDbToolName);
 	}
 
+	[Category("McpE2E.NoEnvironment")]
 	[Test]
 	[Description("Returns a binding-layer error when upsert-data-binding-row-db receives a non-object args payload. On the lazy surface the hidden tool is dispatched through clio-run, so the malformed args payload fails binding clio-run's own args parameter and the diagnostic names clio-run instead of the target tool.")]
 	[AllureTag(UpsertRowDbToolName)]
@@ -230,6 +237,7 @@ public sealed class DataBindingDbToolE2ETests : DataBindingDbFixtureBase {
 		AssertInvocationFailure(callResult, ClioRunTool.ToolName);
 	}
 
+	[Category("McpE2E.NoEnvironment")]
 	[Test]
 	[Description("Returns a binding-layer error when remove-data-binding-row-db is called without the MCP args wrapper. On the lazy surface the call is dispatched through clio-run, so the same binding failure surfaces as an executor-wrapped error that still names the target tool.")]
 	[AllureTag(RemoveRowDbToolName)]
@@ -249,6 +257,7 @@ public sealed class DataBindingDbToolE2ETests : DataBindingDbFixtureBase {
 		AssertInvocationFailure(callResult, RemoveRowDbToolName);
 	}
 
+	[Category("McpE2E.Sandbox")]
 	[Test]
 	[Description("Re-running create-data-binding-db with the same row Name skips the insert and does not emit 'Created row' for the duplicate, but still succeeds and includes the existing row Id in the binding.")]
 	[AllureTag(CreateDbToolName)]
@@ -289,6 +298,7 @@ public sealed class DataBindingDbToolE2ETests : DataBindingDbFixtureBase {
 				because: "duplicate Name must not produce a second INSERT and must not appear in the 'Created row' output");
 	}
 
+	[Category("McpE2E.Sandbox")]
 	[Test]
 	[Description("Creates a DB-first binding for Account when the requested row references only supported columns, even if the runtime schema contains other unsupported columns.")]
 	[AllureTag(CreateDbToolName)]
@@ -320,6 +330,7 @@ public sealed class DataBindingDbToolE2ETests : DataBindingDbFixtureBase {
 			"successful Account DB-first binding creation should emit a completion message");
 	}
 
+	[Category("McpE2E.Sandbox")]
 	[Test]
 	[Description("Upserts a row whose Id exists in the table but is not yet bound to the target binding, and verifies the row is UPDATED (exit 0) instead of failing with the insert-required-field error, proving the live-but-unbound adoption path over the real MCP wire.")]
 	[AllureTag(UpsertRowDbToolName)]

@@ -106,13 +106,18 @@ ENG-92558 ввів 26 `[Parallelizable(ParallelScope.Self)]` фікстур і `
 приховану зв'язаність, тому спершу треба чистий сигнал. Обмеження з ENG-92558: воркерів ≤ 3, жодного
 `[assembly: Parallelizable]`.
 
-### Stage 3 — перетегувати 29 хибно-Sandbox тестів
+### Stage 3 — перетегувати 28 хибно-Sandbox тестів
 
-`SchemaSyncToolE2ETests` (15), `DataBindingDbToolE2ETests` (8), `DataBindingToolE2ETests` (3),
-`DataForgeToolE2ETests` (1), `ClearBrowserSessionToolE2ETests` (1), `GetBrowserSessionToolE2ETests` (1) —
-клас-левел `[Category("McpE2E.Sandbox")]` → пер-методні категорії. Фікстури лишаються
-`[NonParallelizable]` (містять Sandbox-тести). Wall-clock TeamCity не змінює; повертає 29 тестів у
-швидкий гейт і робить критерій `Skipped == 0` досяжним. Верифікація: локальний `NoEnvironment` sweep.
+`SchemaSyncToolE2ETests` (15), `DataBindingDbToolE2ETests` (8), `DataBindingToolE2ETests` (3 — уся
+фікстура, тож клас-левел тег стає `NoEnvironment`), `ClearBrowserSessionToolE2ETests` (1),
+`GetBrowserSessionToolE2ETests` (1) — клас-левел `[Category("McpE2E.Sandbox")]` → пер-методні
+категорії за правилом тирингу (`requireEnvironment: false` / `requireReachableEnvironment: false` в
+arrange ⇒ `NoEnvironment`, інакше `Sandbox`). Аудит нарахував 29: двадцять дев'ятий —
+`DataForgeStatus_Should_Ignore_Poisoned_Proxy_Environment_Variables` — резолвить досяжний стенд перед
+отруєнням proxy-змінних, тобто справедливо `Sandbox`; лишається. Змішані фікстури лишаються
+`[NonParallelizable]` (містять Sandbox-тести; інваріант `McpFixturePolicyTests`). Wall-clock TeamCity не
+змінює; повертає 28 тестів у швидкий гейт і робить критерій `Skipped == 0` досяжним. Верифікація:
+локальний прогін цих фікстур під `--filter Category=McpE2E.NoEnvironment` — усі 28 виконуються, 0 skipped.
 
 ### Не робимо в цьому PR
 - **Пониження рівня** (видалення e2e-дублів, згортання 93 advertisement-тестів) — змінює покриття; це
@@ -127,7 +132,7 @@ ENG-92558 ввів 26 `[Parallelizable(ParallelScope.Self)]` фікстур і `
 |---|---|---|
 | 0 | Baseline: локальний `NoEnvironment` sweep (trx) + тривалість PR #1399 | числа в §7 |
 | 1 | Stage 1 → коміт → `McpFixturePolicyTests` зелені → змінені NoEnv-фікстури зелені локально → push | `CLIO MCP e2e tests (ATF)` = success; `Tests passed` не менше baseline; тривалість менша |
-| 2 | Stage 3 → коміт → локальний `NoEnvironment` sweep: `Skipped == 0` серед перетегованих → push | статус success; локально +29 тестів у тирі |
+| 2 | Stage 3 → коміт → локальний `NoEnvironment` sweep: `Skipped == 0` серед перетегованих → push | статус success; локально +28 тестів у тирі |
 | 3 | Stage 2 → коміт → push | статус success **двічі поспіль** (вимога ENG-92558 для паралелізму) |
 | 4 | Фінальний 3-lens agentic review (AGENTS.md gate 3) | Blocker/High = 0 |
 
@@ -170,5 +175,6 @@ dotnet test clio.tests/clio.tests.csproj -f net10.0 --no-build --filter "FullyQu
 | baseline (PR #1399) | `77cc191` | 15999000 | pending → … | … | … |
 | Stage 1 — локально | робоче дерево | — | 13 фікстур / 63 тести: 25 passed, 19 skipped (Ignore через недосяжний стенд / вимкнений feature-flag), 19 failed — усі 19 з одним і тим самим текстом `EnsureSandboxIsConfigured` (задокументований локальний fail-fast без `Sandbox:EnvironmentName`, відтворюється на `master`); `McpFixturePolicyTests` 11/11 | 49 с на 63 тести з 13 стартами замість 63 (`CreateRelatedPageAddon`: 4–96 мс/тест замість ~3.8 с) | — |
 | Stage 1 — TeamCity | … | … | … | … | … |
-| Stage 3 | … | … | … | … | … |
+| Stage 3 — локально | робоче дерево | — | `--filter Category=McpE2E.NoEnvironment` по 5 перетегованих фікстурах: **28 passed, 0 failed, 0 skipped** (до перетегування ці 28 у швидкому гейті не запускались узагалі) | 39 с | — |
+| Stage 3 — TeamCity | … | … | … | … | … |
 | Stage 2 | … | … | … | … | … |
