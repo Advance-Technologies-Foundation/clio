@@ -1,4 +1,4 @@
-using System.ComponentModel;
+﻿using System.ComponentModel;
 using System.ComponentModel.DataAnnotations;
 using System.Text.Json.Serialization;
 using Clio.Common;
@@ -28,7 +28,7 @@ public class CreateBusinessProcessTool(
 	 Description("BEFORE CALLING with an accessRights block: that block changes who can read, edit or delete LIVE records. Show the user the target object, the element record filter that decides WHICH records are affected, and every grantee with its operations and level - calling out level:delegate as onward re-sharing, level:restrict as the platform Deny level, which is DESTRUCTIVE rather than inert: it DOWNGRADES an existing Allow row for that grantee to Deny, and on a fresh insert denies the two operations you did not name, so it deserves the same confirmation as a remove, a remove entry as a revoke, and a supplied add/remove as a REPLACEMENT that drops every entry it does not restate - and get an explicit yes. The element has no output parameters, so nothing at run time will report what it did. "
 		 + "Build a business process on a Creatio environment from a declarative JSON descriptor. The "
 		 + "descriptor is an object with: name (schema code), caption, packageName, elements[] "
-		 + "({name (the element handle/local code), type:startEvent|signalStart|endEvent|userTask|sendEmail|approval|deleteData|exclusiveGateway|parallelGateway|"
+		 + "({name (the element handle/local code), type:startEvent|signalStart|endEvent|userTask|sendEmail|approval|exclusiveGateway|parallelGateway|"
 		 + "openEditPage|preconfiguredPage (aliases readData/changeData/deleteData/changeAccessRights/performTask), caption, userTaskName?, "
 		 + "approval? (approval elements only — the designer's Approval element, which requests a visa on a record: "
 		 + "{object:<EntityName> (required on a first configuration — the object whose record goes for approval, "
@@ -141,7 +141,7 @@ public class CreateBusinessProcessTool(
 		 + "and looking identical, so '\"Lookup\" object in folder' is NOT 'Lookup' — an element on one of those "
 		 + "deletes membership rows rather than records, and runs green either way. When the target is one, say so "
 		 + "in the same breath. "
-		 + "get-guidance name=process-data-elements carries the message template. The server also WARNS in the "
+		 + "get-guidance name=process-delete-data carries the message template. The server also WARNS in the "
 		 + "response when a deleteData element is built unable to run — no target object, or no record filter — "
 		 + "because such an element deletes nothing and fails on its first run; treat that warning as a build "
 		 + "that is not finished, not as noise), "

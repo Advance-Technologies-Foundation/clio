@@ -1,7 +1,7 @@
 {
   "library": "com.creatio.clio",
-  "libraryVersion": "1.13.98",
-  "sequence": 1013098000,
+  "libraryVersion": "1.13.100",
+  "sequence": 1013100000,
   "availableNames": [
     "agent-execution",
     "app-modeling",
@@ -164,6 +164,7 @@
     "process-branch-conditions",
     "process-data-elements",
     "process-data-source-filters",
+    "process-delete-data",
     "process-element-catalog",
     "process-formulas",
     "process-modeling",
