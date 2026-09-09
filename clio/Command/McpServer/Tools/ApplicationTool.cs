@@ -45,6 +45,10 @@ public sealed class ApplicationGetListTool(
 		BudgetPolicy = McpToolBudgetPolicy.ParentKillDefault,
 		RequiresClientRequests = McpToolClientRequests.None,
 		SharedFileResource = McpToolSharedFileResource.None)]
+	// ENG-95885: listing the applications of the active environment is a natural no-arguments call, so an
+	// empty {} payload is accepted (the normalizer synthesizes the empty args wrapper) instead of failing
+	// with a missing-parameter error the agent then has to reverse-engineer.
+	[McpAcceptsEmptyArguments]
 	[Description("Gets list of all applications from Creatio through backend MCP.")]
 	public ApplicationListResponse ApplicationGetList(
 		[Description("Parameters: environment-name (required unless credential passthrough supplies the tenant)")]
