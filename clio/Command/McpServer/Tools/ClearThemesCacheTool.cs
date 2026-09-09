@@ -21,6 +21,13 @@ public class ClearThemesCacheTool(
 	internal const string ToolName = "clear-themes-cache";
 
 	/// <summary>Refreshes the theme catalog cache on the target environment.</summary>
+	[McpToolExecution(
+		Location = McpToolExecutionLocation.Worker,
+		Lifetime = McpToolExecutionLifetime.PerCall,
+		OperationFamily = McpToolOperationFamily.None,
+		BudgetPolicy = McpToolBudgetPolicy.ParentKillDefault,
+		RequiresClientRequests = McpToolClientRequests.None,
+		SharedFileResource = McpToolSharedFileResource.None)]
 	[McpServerTool(Name = ToolName, ReadOnly = false, Destructive = false, Idempotent = true, OpenWorld = false),
 	 Description("Refresh the Creatio theme cache for a registered environment. " +
 		"Requires Creatio " + ThemeServiceRequirement.MinVersion + " or later on the target environment. " +

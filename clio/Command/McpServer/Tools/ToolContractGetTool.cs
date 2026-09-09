@@ -67,6 +67,16 @@ public sealed class ToolContractGetTool {
 	}
 
 	[McpServerTool(Name = ToolName, ReadOnly = true, Destructive = false, Idempotent = true, OpenWorld = false)]
+	// InProcess (the inventory's file-level heuristic said worker): the tool serves the curated static
+	// contract catalog plus IMcpToolInvokerRegistry annotations and resolves no environment anywhere, so it
+	// can never block on Creatio — §3's own rule names tool contracts as in-process.
+	[McpToolExecution(
+		Location = McpToolExecutionLocation.InProcess,
+		Lifetime = McpToolExecutionLifetime.NotApplicable,
+		OperationFamily = McpToolOperationFamily.None,
+		BudgetPolicy = McpToolBudgetPolicy.None,
+		RequiresClientRequests = McpToolClientRequests.None,
+		SharedFileResource = McpToolSharedFileResource.None)]
 	[Description("Returns clio MCP tool contracts. Omit tool-names for a compact index of ALL tools (names + one-line purpose + safety flags) — cheap discovery without full schemas; pass tool-names to expand those tools' full contracts (parameter schema, aliases, defaults, examples, and preferred or fallback workflow hints); pass detail=full (with no tool-names) to expand every tool's full contract at once.")]
 	public ToolContractGetResponse GetToolContracts(
 		[Description("Parameters: tool-names (optional array of tool names) and detail (optional 'index' | 'full'). Omit entirely for a compact index of all tools; pass tool-names for full contracts; pass detail=full to expand all full contracts.")]
@@ -435,6 +445,7 @@ internal static class ToolContractCatalog {
 	private const string DefaultValueConfigSourceKey = "source";
 	private const string DescriptionLocalizationsFieldName = "description-localizations";
 	private const string DryRunFieldName = "dry-run";
+	private const string EmailIdFieldName = "email-id";
 	private const string ConfirmFieldName = "confirm";
 	private const string EntityFieldName = "entity";
 	private const string EntitySchemaNameDescription = "Entity schema name.";
@@ -609,6 +620,8 @@ internal static class ToolContractCatalog {
 			[ODataCreateTool.ToolName] = BuildODataCreate(),
 			[ODataUpdateTool.ToolName] = BuildODataUpdate(),
 			[ODataDeleteTool.ToolName] = BuildODataDelete(),
+			[EmailTemplateTool.GetToolName] = BuildGetEmailTemplate(),
+			[EmailTemplateTool.UpdateToolName] = BuildUpdateEmailTemplate(),
 			[SchemaSyncTool.ToolName] = BuildSchemaSync(),
 			[PageSyncTool.ToolName] = BuildPageSync(),
 			[GetPkgListTool.GetPkgListToolName] = BuildGetPkgList(),
@@ -692,6 +705,8 @@ internal static class ToolContractCatalog {
 		ODataCreateTool.ToolName,
 		ODataUpdateTool.ToolName,
 		ODataDeleteTool.ToolName,
+		EmailTemplateTool.GetToolName,
+		EmailTemplateTool.UpdateToolName,
 		SchemaSyncTool.ToolName,
 		PageSyncTool.ToolName,
 		GetPkgListTool.GetPkgListToolName,
@@ -1195,12 +1210,12 @@ internal static class ToolContractCatalog {
 	}
 
 	private static ToolContractDefinition BuildSendTelemetry() {
-		return BuildSendTelemetryContract(SendTelemetryTool.ToolName, "Use at product workflow milestones after the user has granted consent; until consent is granted nothing is stored, so events sent earlier are silently dropped. The set of events and their order is owned by the consuming skill/contract. Delivery is non-blocking and fire-and-forget.");
+		return BuildSendTelemetryContract(SendTelemetryTool.ToolName, "Use at the stages of whatever Creatio workflow you are running, once consent is granted. While consent is unknown a send without telemetry_consent is rejected with telemetry-consent-required (ask the user, then retry carrying the decision); once denied, a send succeeds with status consent-denied and stores nothing. Which stages land where is owned by the consuming contract. Delivery is non-blocking and fire-and-forget.");
 	}
 
 	private static ToolContractDefinition BuildGetTelemetryConsent() {
 		return BuildGetTelemetryConsentContract(GetTelemetryConsentTool.ToolName,
-			"Use before sending the first product telemetry event to check whether consent is already stored. When telemetry_consent is unknown, the consuming workflow obtains the user's decision and persists it once via send-telemetry; until consent is granted, send-telemetry stores nothing, so events sent earlier are silently dropped.");
+			"Use before sending the first product telemetry event to check whether consent is already stored. When telemetry_consent is unknown, the consuming workflow obtains the user's decision and persists it once via send-telemetry; a send made before that is rejected with telemetry-consent-required rather than dropped, so ask the user and retry carrying the decision.");
 	}
 
 	private static ToolContractDefinition BuildWithdrawTelemetryConsent() {
@@ -1231,7 +1246,7 @@ internal static class ToolContractCatalog {
 	private static ToolContractDefinition BuildGetTelemetryConsentContract(string toolName, string flowNotes) {
 		return new ToolContractDefinition(
 			toolName,
-			"Reads locally persisted product telemetry consent without storing any telemetry event. Telemetry covers an AI-assisted Creatio app-development session run through this MCP server, driven by a consuming skill/contract; if no such skill is active, do not call this tool or prompt for consent.",
+			"Reads locally persisted product telemetry consent without storing any telemetry event. Telemetry covers AI-assisted Creatio work of EVERY kind run through this MCP server, not only app creation; an agent working on a developer's behalf is in scope EVEN WHEN NO SKILL FILE IS LOADED — 'no skill loaded' is not 'ad-hoc use'. Skip it only for non-agent use such as a plain script or a CI job. Call this before the first telemetry event of a run. When it reads unknown, ASK THE DEVELOPER yourself — no skill is required to own that prompt — and persist their answer once via send-telemetry; until then a send without telemetry_consent is rejected with telemetry-consent-required rather than dropped. Consent is per installation and persists across sessions.",
 			new ToolInputSchemaContract([], []),
 			EnvelopeOutput(
 				SuccessFieldName,
@@ -1258,21 +1273,29 @@ internal static class ToolContractCatalog {
 	private static ToolContractDefinition BuildSendTelemetryContract(string toolName, string flowNotes) {
 		return new ToolContractDefinition(
 			toolName,
-			"Stores a single product telemetry event (about an AI-assisted Creatio app-development session run through this MCP server, driven by a consuming skill/contract) as a local OpenTelemetry-shaped JSON file after user consent. If no such skill is active, do not call this tool. When a telemetry endpoint is configured, stored events are uploaded in the background and removed locally on success; no agent action is needed.",
+			"Stores a single product telemetry event about AI-assisted Creatio work run through this MCP server as a local OpenTelemetry-shaped JSON file after user consent. It covers EVERY workflow, not only app creation, and an agent working on a developer's behalf is in scope even when no skill file is loaded. When a telemetry endpoint is configured, stored events are uploaded in the background and removed locally on success; no agent action is needed.",
 			new ToolInputSchemaContract(
-				["session_id", EventNameFieldName, "coding_agent", "plugin_version"],
+				["session_id", EventNameFieldName],
 				[
-					Field("session_id", StringType, "Stable product workflow session identifier reused across all events in one app-creation conversation."),
+					Field("session_id", StringType, "Opaque random identifier (generate a fresh GUID) reused for every event of one workflow run. Never derive it from user, account, host, file-path or email data, and never reuse another run's id."),
 					Field(EventNameFieldName, StringType,
-						$"Product event name. Allowed values: {string.Join(", ", Clio.Common.Telemetry.TelemetryService.AllowedEventNames)}."),
-					Field("coding_agent", StringType, "Agent or host name, for example Claude Code, Codex, GitHub Copilot CLI, or Cursor."),
-					Field("plugin_version", StringType, "Product plugin version."),
+						$"Product event name — a flow-agnostic stage. USE ONE OF THESE: {string.Join(", ", Clio.Common.Telemetry.TelemetryService.CanonicalEventNames)}. The following are also accepted but DEPRECATED — they encode app-creation into the name that the `workflow` field now carries, so never pick one for a new contract: {string.Join(", ", Clio.Common.Telemetry.TelemetryService.LegacyAppCreationEventNames)}."),
+					Field("workflow", StringType, $"Which flow this run is, for example app-creation, classic-to-freedom-migration, mobile-page-conversion, branding or app-maintenance. Send it on every event: the stage names are shared, so without it a stage cannot be attributed to a flow, and it also keys the run's elapsed-time state. Must be {Clio.Common.Telemetry.TelemetryService.TokenShapeSentence}. Send a slug or OMIT the field — never a display name such as 'Classic-to-Freedom Migration': an invalid token rejects the WHOLE event, not just the field. A field you omit, or leave blank, is recorded as the reserved 'unattributed'."),
+					Field("variant", StringType, "Optional bounded qualifier the flow defines for that stage — a migration scope, a blocked reason, a unit kind. Same token shape as workflow; never free text and never customer data. OMIT it rather than sending a value that is not that shape: an invalid token rejects the WHOLE event, not just the field."),
+					Field("model", StringType, "Optional identifier of the model driving the run, for example claude-opus-5 or gpt-5. Send the id, lowercased, not a display name or a version guess. Same token shape as workflow. OMIT it rather than sending a value that is not that shape — a host placeholder such as '<synthetic>', a display name, anything with spaces or capitals: an invalid token rejects the WHOLE event, not just the field, so a stage that would otherwise have been recorded is lost."),
+					Field("input_tokens", NumberType, "Optional running total of prompt tokens consumed by the session at the moment this stage was reached. Non-negative; snapshot, not a delta."),
+					Field("output_tokens", NumberType, "Optional running total of generated tokens consumed by the session at the moment this stage was reached. Non-negative; snapshot, not a delta."),
+					Field("cached_input_tokens", NumberType, "Optional running total of prompt tokens served from cache. Non-negative; snapshot, not a delta."),
+					Field("coding_agent", StringType, "Optional agent or host name, for example Claude Code, Codex, GitHub Copilot CLI, or Cursor. Send the value your toolkit supplies, verbatim; OMIT it rather than guessing. Stored canonicalised to a lowercase slug so one host is one cohort."),
+					Field("plugin_version", StringType, "Optional product plugin version, taken verbatim from the toolkit that supplies it. OMIT it when nothing supplies one — a guessed version or a placeholder such as 'unknown' lands real runs in a cohort that never existed."),
 					Field(TelemetryConsentFieldName, StringType, "Optional first-use consent value after asking the user: granted or denied."),
-					Field("duration_ms", NumberType, "Optional elapsed time in milliseconds for the step this event represents, where applicable. Omit it and clio infers the duration from local session timing when it can.")
+					Field("duration_ms", NumberType, "Optional elapsed time in milliseconds for the step this event represents, where applicable. Omit it and clio infers the duration from local session timing when it can. A stage that repeats within one run (work_item_completed) carries no inferred duration: the cost of a single unit is the interval between consecutive such events, which a consumer computes from their timestamps, because an anchor here would instead measure the gap since the previously REPORTED unit and would collapse to milliseconds whenever an agent reports several units together.")
 				],
 				Validators: [
 					new ToolContractValidator("enum", "unknown-event-name", EventNameFieldName,
-						Context: "event_name must be one of the documented product event names.")
+						Context: "event_name must be one of the documented product event names."),
+					new ToolContractValidator("token", "invalid-token", Fields: ["workflow", "variant", "model"],
+						Context: $"workflow, variant and model must each be {Clio.Common.Telemetry.TelemetryService.TokenShapeSentence}. A value that is not rejects the whole event; omit the optional ones instead of sending one.")
 				]),
 			EnvelopeOutput(
 				SuccessFieldName,
@@ -1293,7 +1316,7 @@ internal static class ToolContractCatalog {
 				new ToolErrorCodeContract("unsupported-fields",
 					"The payload contains fields outside the documented product telemetry fields."),
 				new ToolErrorCodeContract("missing-required-field",
-					"A required telemetry field (session_id, event_name, coding_agent, or plugin_version) is blank."),
+					"A required telemetry field (session_id or event_name) is blank. coding_agent and plugin_version are optional: omitting them is accepted, guessing them is not."),
 				new ToolErrorCodeContract("unknown-event-name",
 					"event_name is not one of the documented product event names."),
 				new ToolErrorCodeContract("unknown-consent",
@@ -1303,25 +1326,32 @@ internal static class ToolContractCatalog {
 				new ToolErrorCodeContract("invalid-session-id",
 					"session_id must be 1-128 characters of letters, digits, '.', '_', ':' or '-'."),
 				new ToolErrorCodeContract("field-too-long",
-					"A scalar metadata field (coding_agent or plugin_version) exceeds the 64-character limit.")
+					"A scalar metadata field (coding_agent or plugin_version) exceeds the 64-character limit."),
+				new ToolErrorCodeContract("invalid-token-count",
+					"input_tokens, output_tokens or cached_input_tokens is negative."),
+				new ToolErrorCodeContract("invalid-token",
+					$"workflow, variant or model is not {Clio.Common.Telemetry.TelemetryService.TokenShapeSentence}. The event is rejected as a whole, so omit an optional token you cannot supply in that shape rather than sending it.")
 			]),
 			[],
 			[
 				new ToolContractDefaultValue(TelemetryConsentFieldName, "omitted after first run", "Consent is persisted locally after the first granted or denied value.")
 			],
 			[
-				Example("Store a Business Plan generated event after consent", new Dictionary<string, object?> {
+				Example("Store a plan-presented stage for a migration run", new Dictionary<string, object?> {
 					["session_id"] = "018f6e4a-0000-7000-9000-000000000001",
-					[EventNameFieldName] = "business_plan_generated",
+					[EventNameFieldName] = "plan_presented",
+					["workflow"] = "classic-to-freedom-migration",
 					["coding_agent"] = "Codex",
-					["plugin_version"] = "0.1.0"
+					["plugin_version"] = "1.6.0"
 				})
 			],
 			Flow([toolName], flowNotes),
 			[],
 			[],
 			[
-				new ToolAntiPattern("Adding custom telemetry fields", "The send-telemetry tool accepts only the documented product telemetry fields listed in this contract (including the optional duration_ms); any other field is rejected as unsupported-fields.")
+				new ToolAntiPattern("Adding custom telemetry fields", "The send-telemetry tool accepts only the documented product telemetry fields listed in this contract (session_id, event_name, workflow, variant, model, input_tokens, output_tokens, cached_input_tokens, coding_agent, plugin_version, telemetry_consent, duration_ms); any other field is rejected as unsupported-fields."),
+				new ToolAntiPattern("Inventing a per-flow event name", "event_name is a flow-agnostic stage and the flow travels in the workflow field. A name like migration_plan_approved or branding_approved is rejected as unknown-event-name — send the stage plus your workflow instead."),
+				new ToolAntiPattern("Omitting workflow", "A stage without workflow cannot be attributed to a flow, so it silently degrades the funnel it was meant to measure. Send workflow on every event.")
 			]);
 	}
 
@@ -2176,6 +2206,92 @@ internal static class ToolContractCatalog {
 			],
 			[],
 			OdataUnregisteredEntityAntiPatterns(includeEsqEscapeRoute: true));
+	}
+
+	private static ToolContractDefinition BuildGetEmailTemplate() {
+		return new ToolContractDefinition(
+			EmailTemplateTool.GetToolName,
+			"Reads every legacy Content designer and current Beefree content variant for a BulkEmail marketing email or EmailTemplate message template. Each variant carries an optimistic checksum for update-email-template.",
+			new ToolInputSchemaContract(
+				[EmailIdFieldName, EnvironmentNameFieldName],
+				[
+					Field(EmailIdFieldName, StringType, "GUID of the BulkEmail or EmailTemplate host record."),
+					Field(EnvironmentNameFieldName, StringType, RegisteredEnvironmentNameDescription),
+					Field("language", StringType, "Optional Beefree language code. Requests an exists=false creation variant when missing."),
+					Field("language-id", StringType, "Optional SysLanguage GUID for EmailTemplateLang. Requests an exists=false creation variant when missing.")
+				]),
+			EnvelopeOutput(
+				SuccessFieldName,
+				[SuccessFalseSignal],
+				Field(SuccessFieldName, BooleanType, "Whether the email content was read."),
+				Field(ErrorFieldName, StringType, FailureMessageDescription),
+				Field(EmailIdFieldName, StringType, "BulkEmail or EmailTemplate host record Id."),
+				Field("host-type", StringType, "bulk-email or message-template."),
+				Field("name", StringType, "Host record name."),
+				Field("variants", ArrayType, "Content variants. Each carries format, language identity, content fields, and checksum.")),
+			CommonErrorContract,
+			[],
+			[],
+			[
+				Example("Read email content before editing", new Dictionary<string, object?> {
+					[EnvironmentNameFieldName] = ExampleEnvironmentName,
+					[EmailIdFieldName] = ExampleLookupValueId
+				})
+			],
+			Flow([EmailTemplateTool.GetToolName], "Read all stored formats and languages without reverse-engineering EmailTemplate/BfEmailTemplate OData fields."),
+			[
+				Flow([EmailTemplateTool.GetToolName, EmailTemplateTool.UpdateToolName],
+					"Read immediately before editing, preserve the intended variant's returned checksum, then update that exact format/language variant.")
+			],
+			[],
+			[]);
+	}
+
+	private static ToolContractDefinition BuildUpdateEmailTemplate() {
+		return new ToolContractDefinition(
+			EmailTemplateTool.UpdateToolName,
+			"Updates one legacy or Beefree email-content variant for an existing BulkEmail or EmailTemplate host. The write requires confirm=true and the checksum returned by an immediately preceding get-email-template call. A missing Beefree row is created, enabling a lossless get-source then update-target copy without converting PageJson into legacy TemplateConfig.",
+			new ToolInputSchemaContract(
+				[EmailIdFieldName, EnvironmentNameFieldName, "format", "expected-checksum", ConfirmFieldName],
+				[
+					Field(EmailIdFieldName, StringType, "GUID of the existing BulkEmail or EmailTemplate host record."),
+					Field(EnvironmentNameFieldName, StringType, RegisteredEnvironmentNameDescription),
+					Field("format", StringType, "beefree or legacy."),
+					Field("expected-checksum", StringType, "Checksum returned by get-email-template for this exact variant."),
+					Field(ConfirmFieldName, BooleanType, "Must be true. False or omitted performs no remote write."),
+					Field("language", StringType, "Optional Beefree language code; empty selects the default variant."),
+					Field("language-id", StringType, "Optional SysLanguage GUID for an EmailTemplateLang legacy translation."),
+					Field("page-json", StringType, "Required for beefree: complete designer JSON."),
+					Field("page-html", StringType, "Required for beefree: complete rendered HTML."),
+					Field("amp-html", StringType, "Optional Beefree AMP HTML."),
+					Field("template-version", NumberType, "Optional Beefree template version."),
+					Field("subject", StringType, "Optional legacy subject."),
+					Field("body", StringType, "Optional legacy body."),
+					Field("template-config", StringType, "Optional legacy Content designer configuration. Never pass Beefree PageJson here."),
+					Field("config-type", NumberType, "Optional legacy EmailTemplate ConfigType."),
+					Field("is-html-body", BooleanType, "Optional legacy IsHtmlBody value.")
+				]),
+			EnvelopeOutput(
+				SuccessFieldName,
+				[SuccessFalseSignal],
+				Field(SuccessFieldName, BooleanType, "Whether the guarded update succeeded."),
+				Field(ErrorFieldName, StringType, FailureMessageDescription),
+				Field(EmailIdFieldName, StringType, "Updated host record Id."),
+				Field("format", StringType, "Updated storage format."),
+				Field("created", BooleanType, "Whether a new language/format storage row was created."),
+				Field("checksum", StringType, "Checksum of the content written.")),
+			CommonErrorContract,
+			[],
+			[],
+			[],
+			Flow([EmailTemplateTool.GetToolName, EmailTemplateTool.UpdateToolName],
+				"Always read first and pass the returned checksum; a mismatch refuses the write so concurrent designer edits are not overwritten."),
+			[
+				Flow([EmailTemplateTool.GetToolName, EmailTemplateTool.UpdateToolName],
+					"To copy modern content between hosts, read the source Beefree variant, read the target for its checksum, then update the target with the source PageJson/PageHtml and the target checksum.")
+			],
+			[],
+			[]);
 	}
 
 	// Shared by odata-read and odata-create: both funnel through CreatioResponseError.TryDetect and
@@ -3715,7 +3831,7 @@ internal static class ToolContractCatalog {
 	private static ToolContractDefinition BuildSchemaSync() {
 		return new ToolContractDefinition(
 			SchemaSyncTool.ToolName,
-			"Batches create-lookup, create-entity, update-entity, and inline seed operations in one call. create-lookup, create-entity, and update-entity are convergent supersets: each reads current server state first and applies only the missing delta (create-if-absent, add-only-missing-columns, per-column add-if-absent/modify-if-different/remove→ensure-absent; columns not named in the request are left untouched). Only an explicit `modify` changes a present column's type: an `add` (including a `columns` add-batch item) that names a present column of a DIFFERENT type is reported as a column collision instead of silently mutating it. Because of this, re-submitting the identical batch verbatim after an ambiguous failure is a safe recovery path for the schema operations — already-applied schema operations replay as already-satisfied/reconciled with no duplicate mutation, but any seed-data is re-run (see the seed-data replay caveat below), so prefer the resume-plan when the batch seeds data. Transient network failures (DNS/reset/timeout/gateway) are retried per operation (up to 3 attempts with short backoff); on a mid-batch abort the response carries a resume-plan whose operations exclude the already-completed ops and convert a post-create seed failure to a standalone seed-data op. A fully successful batch carries a resume-plan (with no failed-operation) when a create converged to already-satisfied and its INLINE seed-rows were therefore skipped to stay replay-safe: resubmit those standalone seed-data operations only if the rows are not yet on the server. Seed-data replay safety: a row is replay-safe only when the target schema has a `Name` column AND the row carries a `Name`; rows without a `Name` (or schemas without a `Name` column) are non-convergent — a stable-`Id`, no-`Name` row PK-conflicts on replay, so seed-data is NOT replay-safe and the resume-plan is the recommended path for it. Requests use operations[*].type; do not send operations[*].operation. Before setting is-virtual to true, call get-guidance with name virtual-entities.",
+			"Batches create-lookup, create-entity, update-entity, and inline seed operations in one call. create-lookup, create-entity, and update-entity are convergent supersets: each reads current server state first and applies only the missing delta (create-if-absent, add-only-missing-columns, per-column add-if-absent/modify-if-different/remove→ensure-absent; columns not named in the request are left untouched). Only an explicit `modify` changes a present column's type: an `add` (including a `columns` add-batch item) that names a present column of a DIFFERENT type is reported as a column collision instead of silently mutating it. Because of this, re-submitting the identical batch verbatim after an ambiguous failure is a safe recovery path for the schema operations — already-applied schema operations replay as already-satisfied/reconciled with no duplicate mutation, but any seed-data is re-run (see the seed-data replay caveat below), so prefer the resume-plan when the batch seeds data. Transient network failures (DNS/reset/timeout/gateway) are retried per operation (up to 3 attempts with short backoff); on a mid-batch abort the response carries a resume-plan whose operations exclude the already-completed ops and convert a post-create seed failure to a standalone seed-data op. A fully successful batch carries a resume-plan (with no failed-operation) when a create converged to already-satisfied and its INLINE seed-rows were therefore skipped to stay replay-safe: resubmit those standalone seed-data operations only if the rows are not yet on the server. Seed-data replay safety: a row is replay-safe only when the target schema has a `Name` column AND the row carries a `Name`; rows without a `Name` (or schemas without a `Name` column) are non-convergent — a stable-`Id`, no-`Name` row PK-conflicts on replay, so seed-data is NOT replay-safe and the resume-plan is the recommended path for it. Requests use operations[*].type; do not send operations[*].operation. Field names are VALIDATED, not ignored, with a rename hint (e.g. 'seed-data' -> 'seed-rows', 'name' -> 'schema-name') and the list of valid fields. An unbindable TOP-LEVEL field fails the call before any server request, so nothing at all is applied. An unbindable operations[i] field fails before THAT operation's first server call: nothing is applied for it, but operations earlier in the batch have already run and stand as `completed` in `results`. Field-name validation covers exactly TWO levels - the top-level arguments and each operations[i] object. Keys nested inside columns[*], update-operations[*] and seed-rows[*] are deliberately bound loosely and an unknown one there is DROPPED silently under success: true, because the get-app-info column round-trip depends on that looseness; send only the documented keys inside those three collections. Note that seed-data is an operation TYPE ('type': 'seed-data'), never a field: rows always go in seed-rows. operations[*].schema-name is required and non-empty and is checked up front. Before setting is-virtual to true, call get-guidance with name virtual-entities.",
 			new ToolInputSchemaContract(
 				[EnvironmentNameFieldName, PackageNameFieldName, OperationsFieldName],
 				EnvironmentPackageFields(
@@ -3737,8 +3853,8 @@ internal static class ToolContractCatalog {
 					SuccessFalseSignal
 				],
 				Field(SuccessFieldName, BooleanType, "Whether every sync-schemas operation succeeded."),
-				Field("results", ArrayType, "Per-operation results for the operations that ran, keyed by canonical `type`. Each item carries `type`, `schema-name`, `success`, `status` (completed|failed), `operation-index` (zero-based index into the request operations), an additive `outcome` discriminator (`created` | `reconciled` | `already-satisfied` | `collision`; omitted for seed-data and when null), and — only when the operation was retried for a transient fault — `attempts`. A durable collision — a same-name schema in a DIFFERENT package (except a create-entity op with `extend-parent: true`, where a same-name schema in another package is the replacement target and is classified `created`, not a collision), or a same-package schema whose parent/kind is incompatible with the request — fails that op with `success: false`, `outcome: collision`, a user-friendly `error`, and `collision-info` (the owning package); the batch then stops on first failure. An `update-entity` per-column type collision — an `add` naming a present column of a different type — also fails with `success: false` and `outcome: collision`, but carries no `collision-info` (that block names a colliding schema's package); its `error` names every colliding column and points at the explicit-`modify` remedy. A per-column modify-conflict rejected by the backend is NOT a collision: it fails with `success: false` + `error`, no `collision-info` and no `collision` outcome. Operations that never ran are NOT in this array; see `resume-plan`."),
-				Field("resume-plan", ObjectType, "Present only when the batch aborted before completing. Carries `instruction`, `failed-operation` (operation-index/type/schema-name/error), `not-run-operation-indexes`, and `operations` — the failed operation followed by every not-run operation, echoed in re-submittable input shape. Resubmit resume-plan.operations as a new sync-schemas call for the efficient path; resubmitting the whole batch verbatim is also safe for the convergent schema operations (they replay as already-satisfied/reconciled) but re-runs any seed-data, which is not replay-safe.")
+				Field("results", ArrayType, "Per-operation results for the operations that ran, keyed by canonical `type`. Each item carries `type`, `schema-name`, `success`, `status` (completed|failed), `operation-index` (zero-based index into the request operations, or the sentinel `-1` on a WHOLE-CALL rejection, where no operation was examined), an additive `outcome` discriminator (`created` | `reconciled` | `already-satisfied` | `collision`; omitted for seed-data and when null), and — only when the operation was retried for a transient fault — `attempts`. A durable collision — a same-name schema in a DIFFERENT package (except a create-entity op with `extend-parent: true`, where a same-name schema in another package is the replacement target and is classified `created`, not a collision), or a same-package schema whose parent/kind is incompatible with the request — fails that op with `success: false`, `outcome: collision`, a user-friendly `error`, and `collision-info` (the owning package); the batch then stops on first failure. An `update-entity` per-column type collision — an `add` naming a present column of a different type — also fails with `success: false` and `outcome: collision`, but carries no `collision-info` (that block names a colliding schema's package); its `error` names every colliding column and points at the explicit-`modify` remedy. A per-column modify-conflict rejected by the backend is NOT a collision: it fails with `success: false` + `error`, no `collision-info` and no `collision` outcome. Operations that never ran are NOT in this array; see `resume-plan`. The one exception is a WHOLE-CALL rejection - arguments that fail the top-level field-shape check, an omitted or empty `operations` array - where nothing ran at all: `results` then carries a SINGLE entry whose `type` is the tool name `sync-schemas` (not one of the canonical operation types), whose `operation-index` is `-1`, and no `resume-plan` is emitted, because the whole call is resubmitted after the fix."),
+				Field("resume-plan", ObjectType, "Present when the batch aborted before completing, and ALSO on a fully successful batch that deferred an inline seed (the deferred seed-data operations are carried in `operations`) — presence is not equivalent to failure. Carries `instruction`, `failed-operation` (operation-index/type/schema-name/error), `not-run-operation-indexes`, and `operations` — normally the failed operation followed by every not-run operation, echoed in re-submittable input shape. Exception: when the operation failed a FIELD-SHAPE check (an unbindable field name, an unbindable `type`, a missing `schema-name`, or a virtual `create-entity` carrying `seed-rows`) it is deliberately OMITTED from `operations`, because replaying it verbatim would just repeat the rejected payload; `instruction` then tells the caller to correct the field names first and resubmit it alongside the listed operations, and `operations` may be EMPTY when the shape-rejected operation was the last one and nothing was deferred — the plan is still emitted, because `failed-operation` and `not-run-operation-indexes` are what a recovering caller reads. Resubmit resume-plan.operations as a new sync-schemas call for the efficient path; resubmitting the whole batch verbatim is also safe for the convergent schema operations (they replay as already-satisfied/reconciled) but re-runs any seed-data, which is not replay-safe.")
 			),
 			CommonErrorContract,
 			EnvironmentPackageAliases(),
@@ -3856,7 +3972,7 @@ internal static class ToolContractCatalog {
 				[EnvironmentNameFieldName, PagesFieldName],
 				[
 					Field(EnvironmentNameFieldName, StringType, RegisteredEnvironmentNameDescription),
-					Field(PagesFieldName, ArrayType, "Page update requests built from `get-page.raw.body`. Each page item requires `schema-name` and full `body`; optional `resources` is a JSON object string of localizable string key-value pairs the platform does NOT auto-provide (custom tab/group titles, button captions, validator messages, explicit caption overrides). Only include keys with NO matching DS-bound view model attribute on the page; matching keys are auto-provided by the platform \u2014 see `page-schema-resources` guidance. Each page item also accepts `optional-properties` (JSON array of {key, value} merged into schema optionalProperties)."),
+					Field(PagesFieldName, ArrayType, "Page update requests built from the CONTENTS of the file at `get-page.files.bodyFile` \u2014 sync-pages takes the body inline only, so read that file and pass its text as `body` (it has no `body-file` parameter; update-page does). Each page item requires `schema-name` and full `body`; optional `resources` is a JSON object string of localizable string key-value pairs the platform does NOT auto-provide (custom tab/group titles, button captions, validator messages, explicit caption overrides). Only include keys with NO matching DS-bound view model attribute on the page; matching keys are auto-provided by the platform \u2014 see `page-schema-resources` guidance. Each page item also accepts `optional-properties` (JSON array of {key, value} merged into schema optionalProperties)."),
 					Field(ValidateFieldName, BooleanType, "Run client-side content validation before save. Set false only as an escape hatch for pre-existing page defects; the structural floor still runs. This flag and `force` are orthogonal — one gates content checks, the other the baseline/conflict guard — so they can be combined; the per-page result then carries a warning that both guards are relaxed."),
 					Field(VerifyFieldName, BooleanType, "Read the page back after save.")
 				]),
@@ -3875,12 +3991,12 @@ internal static class ToolContractCatalog {
 				Default(VerifyFieldName, BooleanFalseLiteral, "Read-back verification is optional and disabled by default.")
 			],
 			[
-				Example("Validate and save one page body copied from get-page raw.body", new Dictionary<string, object?> {
+				Example("Validate and save one page body read from the get-page files.bodyFile", new Dictionary<string, object?> {
 					[EnvironmentNameFieldName] = ExampleEnvironmentName,
 					[PagesFieldName] = new object[] {
 						new Dictionary<string, object?> {
 							[SchemaNameFieldName] = "UsrTaskApp_FormPage",
-							["body"] = "/* raw.body returned by get-page */ define(...)",
+							["body"] = "/* contents of the body.js written by get-page (files.bodyFile) */ define(...)",
 							[ResourcesFieldName] = "{\"UsrDetailsTab_caption\":\"Details\"}"
 						}
 					},
@@ -4042,11 +4158,12 @@ internal static class ToolContractCatalog {
 	private static ToolContractDefinition BuildPageGet() {
 		return new ToolContractDefinition(
 			PageGetTool.ToolName,
-			"Reads a Freedom UI page bundle plus the raw editable body so the caller can inspect before mutating and edit `raw.body` directly when saving. Before editing `raw.body`, call get-guidance with name `page-modification` and use its checklist to choose specialized guidance.",
+			"Reads a Freedom UI page and MATERIALIZES it on disk: writes `body.js` (the editable own-body), `bundle.json` (the full merged view) and `meta.json` under `.clio-pages/{schema-name}/`, then returns their paths in `files`. REPLACES that directory on every call \u2014 an existing `.clio-pages/{schema-name}/` is deleted recursively before the fresh files are written, so an edit made in place is DESTROYED by the next get-page of the same schema: send it through update-page / sync-pages, or copy it out first. The successful envelope carries `page` and `files`; `editable` is present only when the editable-schema checksum probe succeeded \u2014 it does NOT inline the body or the bundle. The returned paths are on the MCP SERVER host and are consumable only when the client shares that filesystem (stdio, or mcp-http on loopback); a remote client cannot open them. Read the file at `files.bodyFile` to obtain the editable JavaScript source. Before editing that body, call get-guidance with name `page-modification` and use its checklist to choose specialized guidance.",
 			new ToolInputSchemaContract(
 				[SchemaNameFieldName],
 				EnvironmentOrExplicitConnectionFields(
-					Field(SchemaNameFieldName, StringType, "Freedom UI page schema name.")),
+					Field(SchemaNameFieldName, StringType, "Freedom UI page schema name."),
+					Field("output-directory", StringType, "Optional. Directory to anchor the `.clio-pages` output under (typically your project root). An explicit value is honored VERBATIM and is NOT confined to the workspace: `<output-directory>/.clio-pages/{schema-name}/` is REPLACED on every call \u2014 the existing directory is moved aside and then deleted recursively \u2014 so never point it at a directory holding anything but clio page output. Confinement of an explicit anchor is not implemented yet (issue #1185 review); until it is, the caller owns that choice. Omitted, the anchor resolves in THREE steps: the nearest ancestor of the current working directory containing `.clio/workspaceSettings.json`; else the current working directory itself; else \u2014 only when that is the bare home directory \u2014 the managed clio home root. In a plain checkout with no workspace marker the output therefore lands under the CURRENT DIRECTORY, not a workspace root.")),
 				AnyOf: EnvironmentOrExplicitConnectionRequirements()),
 			EnvelopeOutput(
 				SuccessFieldName,
@@ -4055,8 +4172,8 @@ internal static class ToolContractCatalog {
 				],
 				Field(SuccessFieldName, BooleanType, ToolSucceededDescription),
 				Field("page", ObjectType, "Page metadata carrying schema and package identity such as schemaName, schemaUId, packageName, packageUId, and parentSchemaName."),
-				Field("bundle", ObjectType, "Merged page bundle."),
-				Field("raw", ObjectType, "Raw editable payload. The JavaScript source to edit and round-trip through update-page/sync-pages is `raw.body`."),
+				Field("files", ObjectType, "Paths of the files written to disk: `bodyFile` (body.js \u2014 the editable JavaScript source to read, edit and send back), `bundleFile` (bundle.json \u2014 the full merged view; minified JSON, parse it with a JSON tool rather than grep), `metaFile` (meta.json) and `fetchedAt`. The body and the bundle are NOT inlined in this envelope. These are paths on the MCP SERVER host: a client that does not share that filesystem (a remote mcp-http caller) cannot read them. The whole `.clio-pages/{schema-name}/` directory is deleted and rewritten on every get-page of that schema, so do not keep in-progress edits there."),
+				Field("editable", ObjectType, "OPTIONAL \u2014 omitted when the best-effort SysSchema checksum query returned no row or failed; treat its ABSENCE as 'baseline unavailable', never as 'no editable schema'. When present: editable (own) schema state captured at fetch time \u2014 `editableSchemaExists` plus the identity and change signal used as the conflict-detection baseline for a later update-page / sync-pages call."),
 				Field(ErrorFieldName, StringType, FailureMessageDescription)
 			),
 			CommonErrorContract,
@@ -4078,7 +4195,7 @@ internal static class ToolContractCatalog {
 					PageSyncTool.ToolName,
 					PageGetTool.ToolName
 				],
-				"Use after list-pages to inspect `raw.body` before following the canonical page write path and to read back after saving."),
+				"Use after list-pages to read the file at `files.bodyFile` before following the canonical page write path, and to read back after saving."),
 			[
 				Flow(
 					[
@@ -4852,13 +4969,13 @@ internal static class ToolContractCatalog {
 	private static ToolContractDefinition BuildPageUpdate() {
 		return new ToolContractDefinition(
 			PageUpdateTool.ToolName,
-			"Fallback single-page save path for a full Freedom UI page body copied from `get-page.raw.body` when the workflow explicitly requires dry-run or legacy save behavior. Set `validate=false` only for a pre-existing page defect; client-side content and run-process validation are skipped, but JavaScript syntax, AST loadability, replace-mode marker integrity, the mobile JSON-object structure check, and the page baseline/conflict guard remain mandatory. `validate=false` stays combinable with `force=true`; the two flags are orthogonal and the response warns when both guards are down. " +
+			"Fallback single-page save path for a full Freedom UI page body read from `get-page.files.bodyFile` when the workflow explicitly requires dry-run or legacy save behavior. Set `validate=false` only for a pre-existing page defect; client-side content and run-process validation are skipped, but JavaScript syntax, AST loadability, replace-mode marker integrity, the mobile JSON-object structure check, and the page baseline/conflict guard remain mandatory. `validate=false` stays combinable with `force=true`; the two flags are orthogonal and the response warns when both guards are down. " +
 			SchemaValidationService.CustomCssPolicySummary,
 			new ToolInputSchemaContract(
 				[SchemaNameFieldName],
 				EnvironmentOrExplicitConnectionFields(
 					Field(SchemaNameFieldName, StringType, "Freedom UI page schema name."),
-					Field("body", StringType, "Full page body with all marker pairs. Reuse `get-page.raw.body` rather than `bundle` or `bundle.viewConfig`. Either `body` or `body-file` must be provided."),
+					Field("body", StringType, "Full page body with all marker pairs. Reuse the CONTENTS of the file at `get-page.files.bodyFile` rather than the bundle written to `get-page.files.bundleFile`. Either `body` or `body-file` must be provided. WARNING: re-sending the full inherited body verbatim is wrong in BOTH modes, and they fail differently. In `append` a full-config body is rejected UP-FRONT, offline \u2014 that mode takes only the new viewConfigDiff/handlers operations in the diff form, and the rejection itself points at replace mode. In `replace` the body reaches the SERVER and can fail there with 'Object vs Array' when it re-applies merges already inherited from the parent hierarchy, so passing the `get-page.files.bodyFile` path straight through as `body-file` is mechanically accepted but IS the resend hazard, not a recommendation."),
 					Field("body-file", StringType, "Absolute path to a file containing the page body. Used when `body` is empty. Enables passing large bodies without inline JSON escaping."),
 					Field(DryRunFieldName, BooleanType, "Validate without saving."),
 					Field(ValidateFieldName, BooleanType, "Run client-side content and run-process validation before saving. Set false only as an explicit escape hatch for a pre-existing page defect; JavaScript syntax, AST loadability, replace-mode marker integrity, the mobile JSON-object structure check, and the page baseline/conflict guard remain mandatory. It stays combinable with force=true - the two flags are orthogonal (one gates content checks, the other the baseline/conflict guard) - and the response then warns that both are relaxed."),
@@ -4894,9 +5011,9 @@ internal static class ToolContractCatalog {
 				Default("mode", "replace", "Body is written verbatim by default; pass 'append' to merge with the existing body.")
 			],
 			[
-				Example("Dry-run validate one page body copied from get-page raw.body", new Dictionary<string, object?> {
+				Example("Dry-run validate one page body read from the get-page files.bodyFile", new Dictionary<string, object?> {
 					[SchemaNameFieldName] = "UsrTaskApp_FormPage",
-					["body"] = "/* raw.body returned by get-page */ define(...)",
+					["body"] = "/* contents of the body.js written by get-page (files.bodyFile) */ define(...)",
 					[ResourcesFieldName] = "{\"UsrDetailsTab_caption\":\"Details\"}",
 					[DryRunFieldName] = true,
 					[EnvironmentNameFieldName] = ExampleEnvironmentName
@@ -4908,7 +5025,7 @@ internal static class ToolContractCatalog {
 					PageUpdateTool.ToolName,
 					PageGetTool.ToolName
 				],
-				"Use only when the workflow explicitly requires single-page dry-run or legacy save behavior after reading the raw body with get-page."),
+				"Use only when the workflow explicitly requires single-page dry-run or legacy save behavior after reading the body file written by get-page."),
 			[
 				Flow(
 					[
@@ -4946,7 +5063,7 @@ internal static class ToolContractCatalog {
 			new ToolInputSchemaContract(
 				["body"],
 				[
-					Field("body", StringType, "Full JavaScript page body with markers (web) or plain JSON body (mobile). Auto-detected by leading character."),
+					Field("body", StringType, "Full JavaScript page body with markers (web) or plain JSON body (mobile). Auto-detected by leading character. Over MCP, read the file at `get-page.files.bodyFile` and pass its CONTENTS \u2014 validate-page takes the body INLINE only, it has no `body-file` parameter."),
 					Field(ResourcesFieldName, StringType, "Optional JSON object string of localizable strings the platform does NOT auto-provide (custom titles, button captions, validator messages, explicit overrides). Applicable to web pages only. Only include keys with NO matching DS-bound view model attribute on the page \u2014 see `page-schema-resources` guidance.")
 				]),
 			EnvelopeOutput(
@@ -5446,7 +5563,7 @@ internal static class ToolContractCatalog {
 	private static ToolContractDefinition BuildNewUiProject() {
 		return new ToolContractDefinition(
 			CreateUiProjectTool.CreateUiProjectToolName,
-			"Scaffolds a Freedom UI Angular remote-module project inside an existing clio workspace. Pure local file-system scaffolding under <workspaceDirectory>/projects/<projectName> and <workspaceDirectory>/packages/<packageName>; no Creatio environment is contacted. The MCP wrapper pins the process working directory to workspaceDirectory and runs the underlying CLI in silent mode, so the interactive 'download package?' prompt is auto-answered 'no'.",
+			"Scaffolds a Freedom UI Angular remote-module project inside an existing clio workspace. Writes under <workspaceDirectory>/projects/<projectName> and <workspaceDirectory>/packages/<packageName>. It DOES read the environment once: a SysPackage lookup runs unconditionally to check whether the package already exists (UiProjectCreator.Create), so the tool needs a reachable environment even though it changes nothing on it. The MCP wrapper pins the process working directory to workspaceDirectory and runs the underlying CLI in silent mode, so the interactive 'download package?' prompt is auto-answered 'no'.",
 			new ToolInputSchemaContract(
 				[WorkspaceDirectoryFieldName, ProjectNameFieldName, "packageName", VendorPrefixFieldName],
 				[
@@ -5529,7 +5646,7 @@ internal static class ToolContractCatalog {
 			AntiPatterns: [
 				new ToolAntiPattern(
 					$"{CreateUiProjectTool.CreateUiProjectToolName} → {CompileCreatioTool.CompileCreatioToolName}",
-					"new-ui-project is local file-system scaffolding only. No Creatio assemblies change and no environment is contacted, so a compile-creatio follow-up serves no purpose."),
+					"new-ui-project writes only local files: no Creatio assemblies change, so a compile-creatio follow-up serves no purpose. (It does read the environment once for a SysPackage existence check, but that changes nothing there.)"),
 				new ToolAntiPattern(
 					$"{ApplicationCreateTool.ApplicationCreateToolName} → {CreateUiProjectTool.CreateUiProjectToolName}",
 					"create-app installs an application into a Creatio environment; new-ui-project scaffolds an Angular remote module on the local file system. They address different artifacts and should not be chained as if one followed from the other."),

@@ -1,6 +1,11 @@
 root = true
 
 [*.cs]
+# UTF-8 WITHOUT a BOM. A BOM added by an editor or a script shows line 1 as modified in every
+# future diff of the file, and `git status` does not warn about it - four files on ENG-91853
+# were committed with one nobody chose. 21% of clio's .cs files carry one; BOM-less is the
+# majority and now the declared convention.
+charset = utf-8
 # CLIO analyzer severity policy
 # CLIO001-CLIO099 are treated as warnings
 dotnet_diagnostic.CLIO001.severity = warning

@@ -15,6 +15,13 @@ public class StopTool(
 
 	private RequestContext<CallToolRequestParams> _requestContext;
 
+	[McpToolExecution(
+		Location = McpToolExecutionLocation.Worker,
+		Lifetime = McpToolExecutionLifetime.PerCall,
+		OperationFamily = McpToolOperationFamily.None,
+		BudgetPolicy = McpToolBudgetPolicy.ParentKillDefault,
+		RequiresClientRequests = McpToolClientRequests.Progress,
+		SharedFileResource = McpToolSharedFileResource.None)]
 	[McpServerTool(Name = "stop-creatio", ReadOnly = false, Destructive = true, Idempotent = true, OpenWorld = false),
 	 Description("Stops Creatio instance by environment name")]
 	public CommandExecutionResult StopCreatioByName(
@@ -31,6 +38,13 @@ public class StopTool(
 		});
 	}
 
+	[McpToolExecution(
+		Location = McpToolExecutionLocation.Worker,
+		Lifetime = McpToolExecutionLifetime.PerCall,
+		OperationFamily = McpToolOperationFamily.None,
+		BudgetPolicy = McpToolBudgetPolicy.ParentKillDefault,
+		RequiresClientRequests = McpToolClientRequests.None,
+		SharedFileResource = McpToolSharedFileResource.None)]
 	[McpServerTool(Name = "stop-all-creatio", ReadOnly = false, Destructive = true, Idempotent = true, OpenWorld = false),
 	 Description("Stops all Creatio instances")]
 	public CommandExecutionResult StopAllCreatio(
@@ -49,6 +63,14 @@ public class StopTool(
 	/// that were configured against the original tool name. New clients should use
 	/// <c>stop-all-creatio</c>.
 	/// </summary>
+	[McpToolExecution(
+		Location = McpToolExecutionLocation.Worker,
+		Lifetime = McpToolExecutionLifetime.PerCall,
+		OperationFamily = McpToolOperationFamily.None,
+		BudgetPolicy = McpToolBudgetPolicy.ParentKillDefault,
+		RequiresClientRequests = McpToolClientRequests.None,
+		SharedFileResource = McpToolSharedFileResource.None,
+		AliasOf = "stop-all-creatio")]
 	[McpServerTool(Name = "StopAllCreatio", ReadOnly = false, Destructive = true, Idempotent = true, OpenWorld = false),
 	 Description("[Deprecated: use stop-all-creatio] Stops all Creatio instances")]
 	public CommandExecutionResult StopAllCreatioLegacy(

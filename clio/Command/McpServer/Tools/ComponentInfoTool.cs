@@ -87,6 +87,13 @@ public sealed class ComponentInfoTool(
 	/// <param name="cancellationToken">Cancellation token propagated by the MCP host.</param>
 	/// <returns>A structured response with a component list or a full component definition.</returns>
 	[McpServerTool(Name = ToolName, ReadOnly = true, Destructive = false, Idempotent = true, OpenWorld = false)]
+	[McpToolExecution(
+		Location = McpToolExecutionLocation.Worker,
+		Lifetime = McpToolExecutionLifetime.PerCall,
+		OperationFamily = McpToolOperationFamily.None,
+		BudgetPolicy = McpToolBudgetPolicy.ParentKillDefault,
+		RequiresClientRequests = McpToolClientRequests.None,
+		SharedFileResource = McpToolSharedFileResource.None)]
 	[Description("Get curated Freedom UI component metadata by component type or list all known types. " +
 		"PROACTIVELY list the catalog (omit component-type, or pass 'list') at the start of any page work to discover the full component set " +
 		"— including non-obvious components such as crt.Gallery — instead of authoring types from memory or waiting for the user to ask you to search. " +
@@ -222,7 +229,8 @@ public sealed class ComponentInfoTool(
 		}
 
 		if (state.Lookup.TryGetValue(args.ComponentType.Trim(), out ComponentRegistryEntry? entry)) {
-			string? documentation = await LoadDocumentationAsync(entry, state.ResolvedVersion, cancellationToken).ConfigureAwait(false);
+			ComponentDocumentationOutcome documentation =
+				await LoadDocumentationAsync(entry, state.ResolvedVersion, cancellationToken).ConfigureAwait(false);
 			return CreateDetailResponse(entry, state.ResolvedVersion, resolvedFrom, documentation, state.GlobalReferences, resolvedFromReason);
 		}
 
@@ -329,7 +337,7 @@ public sealed class ComponentInfoTool(
 			return ComponentInfoResponseFactory.CreateCompositeNotFoundResponse(
 				state.Composites, caption, isMobile, state.ResolvedVersion, resolvedFrom, resolvedFromReason);
 		}
-		string? documentation = await ComponentDocumentationLoader
+		ComponentDocumentationOutcome documentation = await ComponentDocumentationLoader
 			.LoadAsync(docsClient, composite.Docs, state.ResolvedVersion, cancellationToken).ConfigureAwait(false);
 		return ComponentInfoResponseFactory.CreateCompositeDetailResponse(
 			composite, documentation, state.ResolvedVersion, resolvedFrom, resolvedFromReason);
@@ -339,9 +347,12 @@ public sealed class ComponentInfoTool(
 		ComponentRegistryEntry entry,
 		string? resolvedTargetVersion,
 		string? resolvedFrom,
-		string? documentation,
+		ComponentDocumentationOutcome? documentation,
 		RegistryGlobalReferences? globalReferences,
 		string? resolvedFromReason = null) {
+		// Null is accepted so callers that never load documentation (list/summary builders and
+		// focused tests) do not have to name an empty outcome.
+		documentation ??= ComponentDocumentationOutcome.NotDeclared;
 		IReadOnlyDictionary<string, JsonElement>? mergedInputs = MergeBindings(globalReferences?.BaseInputs, entry.Inputs);
 		ComponentReferencesResponse? references = BuildReferencesResponse(entry, globalReferences);
 		return new ComponentInfoResponse {
@@ -371,7 +382,9 @@ public sealed class ComponentInfoTool(
 			ResolvedTargetVersion = resolvedTargetVersion,
 			ResolvedFrom = resolvedFrom,
 			ResolvedFromReason = resolvedFromReason,
-			Documentation = string.IsNullOrEmpty(documentation) ? null : documentation,
+			Documentation = string.IsNullOrEmpty(documentation.Documentation) ? null : documentation.Documentation,
+			DocumentationSource = documentation.Source,
+			DocumentationWarning = documentation.Warning,
 			References = references
 		};
 	}
@@ -436,7 +449,7 @@ public sealed class ComponentInfoTool(
 	/// and the CLI verb produce identical <c>documentation</c> payloads. See the loader
 	/// for the cache → CDN pipeline contract and the partial-failure semantics.
 	/// </summary>
-	private Task<string?> LoadDocumentationAsync(
+	private Task<ComponentDocumentationOutcome> LoadDocumentationAsync(
 		ComponentRegistryEntry entry,
 		string resolvedVersion,
 		CancellationToken cancellationToken) =>
@@ -822,6 +835,30 @@ public sealed class ComponentInfoResponse : ComponentSelectionMetadata {
 	[JsonPropertyName("documentation")]
 	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
 	public string? Documentation { get; init; }
+
+	/// <summary>
+	/// Gets the tier that served <see cref="Documentation"/>: <c>local</c> (the developer working
+	/// copy next to a <c>*_LOCAL_FILE</c> registry override), <c>cache</c>, <c>cdn</c>,
+	/// <c>mixed</c> when the declared files came from different tiers, or <c>none</c> when
+	/// nothing could be served. Emitted on detail responses whose registry entry declares
+	/// <c>references.docs[]</c>; omitted when it declares none, so an absent field means
+	/// "no documentation exists" rather than "provenance unknown" (issue #1361).
+	/// </summary>
+	[JsonPropertyName("documentationSource")]
+	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+	public string? DocumentationSource { get; init; }
+
+	/// <summary>
+	/// Gets the operator-facing explanation emitted only when a component-registry
+	/// local-file override is active and at least one declared documentation file was not
+	/// present in the working copy. While an override is active the published CDN copy is deliberately
+	/// never substituted, so this warning is the only signal that a recipe is missing. The
+	/// registry-relative path and the override variable name are named; the resolved host
+	/// path is deliberately not echoed onto the wire.
+	/// </summary>
+	[JsonPropertyName("documentationWarning")]
+	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+	public string? DocumentationWarning { get; init; }
 
 	/// <summary>
 	/// Gets the disambiguation flag for a <c>mode: "composite"</c> detail response: emitted

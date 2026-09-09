@@ -1,5 +1,5 @@
 ---
-description: DescribedFilter / DescribedFilterGroup / DescribedFilterCondition in IProcessDescriber.cs carry no [JsonExtensionData], so a filter field the ProcessBuilder package emits and clio does not declare is dropped on re-serialize with no error
+description: DescribedFilter / DescribedFilterGroup / DescribedFilterCondition in IProcessDescriber.cs carry no [JsonExtensionData], so a filter field the ProcessBuilder package emits and clio does not declare is dropped on re-serialize with no error (DescribedFlow was in this set and no longer is)
 applies-to:
   - clio/Command/ProcessModel/IProcessDescriber.cs
 ticket: ENG-91842
@@ -7,13 +7,15 @@ date: 2026-08-19
 ---
 
 **What is true** — `describe-business-process` deserializes the server payload into the
-`Described*` types and re-serializes them for the caller. `DescribeProcessResult`,
-`DescribedElement` and `DescribedEmail` each hold a `[JsonExtensionData]` overflow bag, so an
-unknown field survives the round trip. The three filter types — `DescribedFilter`,
-`DescribedFilterGroup` and `DescribedFilterCondition` — do **not**. Every filter field therefore
-needs a property on both sides: the descriptor in the ProcessBuilder package *and* a matching
-`[JsonPropertyName]` property here. `Macro`, `MacroArgument` and `DatePart` exist for exactly that
-reason.
+`Described*` types and re-serializes them for the caller. The types that model an ELEMENT and its
+per-kind configuration blocks each hold a `[JsonExtensionData]` overflow bag, so an unknown field
+survives the round trip — today `DescribeProcessResult`, `DescribedElement`, `DescribedEmail`,
+`DescribedPerformer` and `DescribedApproval`, and a block added later is expected to carry one too.
+The three filter types — `DescribedFilter`, `DescribedFilterGroup` and `DescribedFilterCondition` —
+do **not**, and neither do `DescribedConnection`, `DescribedSignal`, `DescribedFlow` or
+`DescribedParameter`. Every filter field therefore needs a property on both sides: the descriptor
+in the ProcessBuilder package *and* a matching `[JsonPropertyName]` property here. `Macro`,
+`MacroArgument` and `DatePart` exist for exactly that reason.
 
 **Why it is this way** — the filter DTOs were hand-mirrored from the package's
 `FilterConditionDescriptor` when the vocabulary was small, and `System.Text.Json` discards members
@@ -27,3 +29,7 @@ dropped member, so the condition simply reads back incomplete — which looks li
 to persist it. This already happened live to macro read-back with green unit tests on both sides; the
 same property was added pre-emptively for `datePart`. A DTO change also needs clio rebuilt and the
 MCP server restarted, or a stale process keeps serving the old shape.
+
+**`DescribedFlow` was in this set and is not any more.** It joined when it gained `condition`, and left in the same ticket: it now carries `[JsonExtensionData]`, added alongside the `branchesOnActivityResult` nullability fix, so an undeclared flow field reaches the caller instead of vanishing. Do not restate the old claim — the file says otherwise thirty lines from the bag.
+
+What did NOT change is that a field needing to be read BY NAME still needs a typed property: the bag preserves an undeclared field, it does not make it addressable, and both the parameter-delete and element-retarget guards read `condition` by name. The filter types above have neither, which is why this record still exists.

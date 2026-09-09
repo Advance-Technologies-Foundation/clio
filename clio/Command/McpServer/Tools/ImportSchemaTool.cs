@@ -24,6 +24,13 @@ public class ImportSchemaTool(
 	/// <returns>The command result, naming the action taken.</returns>
 	[McpServerTool(Name = ImportSchemaToolName, ReadOnly = false, Destructive = true, Idempotent = false,
 		OpenWorld = false)]
+	[McpToolExecution(
+		Location = McpToolExecutionLocation.Worker,
+		Lifetime = McpToolExecutionLifetime.PerCall,
+		OperationFamily = McpToolOperationFamily.None,
+		BudgetPolicy = McpToolBudgetPolicy.ParentKillDefault,
+		RequiresClientRequests = McpToolClientRequests.None,
+		SharedFileResource = McpToolSharedFileResource.None)]
 	[Description("""
 				 Imports a schema bundle produced by `export-schema` into a package of a Creatio
 				 environment, creating or REPLACING exactly one schema.
