@@ -7,7 +7,7 @@
 **ADR**: [adr-process-versioning.md](../adr/adr-process-versioning.md)
 **Test plan**: [tp-process-versioning.md](../test-plans/tp-process-versioning.md)
 **Repository**: crt-process-builder
-**Status**: in-progress
+**Status**: done
 **Size**: S
 
 ---
