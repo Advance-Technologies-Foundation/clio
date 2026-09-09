@@ -237,6 +237,48 @@ public sealed class ValidateProcessGraphToolE2ETests {
 			because: "the rejected value has to reach the caller through the MCP envelope to be actionable");
 	}
 
+	[Test]
+	[Description("Over the real MCP path, an edge's condition BINDS from the wire and reaches the rules. The unit tests construct ProcessGraphEdgeArg positionally in C#, so none of them exercises the JSON binder at all, and the binder skips a member it cannot map in silence - rename or mistype the property and every condition arrives null, with the whole suite green and the tool quietly answering about a graph without conditions. A blank condition is the discriminating value: it is the one condition R13 reports as an ERROR, and its message is unique to it - an omitted condition is reported too since ENG-91853, but as a warning whose text names the build refusal instead. So the error exists if and only if the blank string itself crossed the wire; a dropped key would produce the warning, not this.")]
+	[AllureTag(ToolName)]
+	[AllureName("validate-process-graph binds an edge condition from the wire")]
+	public async Task ValidateProcessGraph_Should_BindEdgeCondition_FromTheWire() {
+		// Arrange: two conditional branches off one gateway - one with a blank condition, one with a real
+		// one. R13 must name the first and only the first.
+		await using ArrangeContext arrangeContext = await ArrangeAsync();
+		string environmentName = await ResolveEnvironmentOrIgnoreAsync();
+		Dictionary<string, object?> graph = new() {
+			["environment-name"] = environmentName,
+			["nodes"] = new[] {
+				Node("s", "startEvent"), Node("g", "exclusiveGateway"), Node("blank", "activityUserTask"),
+				Node("real", "activityUserTask"), Node("e", "endEvent")
+			},
+			["edges"] = new[] {
+				Edge("s", "g", "sequence"),
+				Edge("g", "blank", "conditional", "   "),
+				Edge("g", "real", "conditional", "1 > 0"),
+				Edge("blank", "e", "sequence"), Edge("real", "e", "sequence")
+			}
+		};
+
+		// Act
+		CallToolResult callResult = await CallToolAsync(arrangeContext, graph);
+		ValidateProcessGraphResponse response = EntitySchemaStructuredResultParser.Extract<ValidateProcessGraphResponse>(callResult);
+
+		// Assert
+		response.Success.Should().BeTrue(
+			because: "the package is present, so the graph is validated and findings are returned");
+		response.Findings.Should().Contain(
+			f => f.RuleId == "R13" && f.Severity == "error" && f.Message.Contains("empty condition")
+				&& f.Message.Contains("'g' -> 'blank'"),
+			because: "the platform stores a blank condition as the literal 'true' - a branch that always "
+				+ "fires - and the rule can only see that if the blank string itself crossed the wire; a "
+				+ "dropped key arrives as null, which R13 reports as a WARNING about the build refusal and never with this text");
+		response.Findings.Should().NotContain(
+			f => f.RuleId == "R13" && f.Message.Contains("'g' -> 'real'"),
+			because: "the sibling carries a real condition, so the VALUE has to survive the crossing and not "
+				+ "just the key - a binder that mapped every condition to the empty string would report both");
+	}
+
 	// Ignores on BOTH conditions that make these tests meaningless: no environment configured, and a configured
 	// environment that cannot be reached. Checking only the former made an unreachable stand FAIL the fixture
 	// instead of skipping it, which is how every other Sandbox fixture here behaves and what the tier's
@@ -280,6 +322,14 @@ public sealed class ValidateProcessGraphToolE2ETests {
 
 	private static Dictionary<string, object?> Edge(string source, string target, string flowKind) =>
 		new() { ["source"] = source, ["target"] = target, ["flow-kind"] = flowKind };
+
+	// The four-argument form exists to put "condition" ON THE WIRE. Every other edge in this fixture is
+	// built without it, so nothing here would notice the key being dropped by the binder.
+	private static Dictionary<string, object?> Edge(string source, string target, string flowKind,
+			string condition) =>
+		new() {
+			["source"] = source, ["target"] = target, ["flow-kind"] = flowKind, ["condition"] = condition
+		};
 
 	private static async Task<CallToolResult> CallToolAsync(ArrangeContext arrangeContext, Dictionary<string, object?> graphArgs) {
 		// Long-tail tools are never resident in tools/list on the lazy surface, so the availability canary

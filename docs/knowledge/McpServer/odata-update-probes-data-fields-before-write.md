@@ -4,7 +4,10 @@ applies-to:
   - clio/Command/McpServer/Tools/ODataUpdateTool.cs
   - clio/Command/McpServer/Tools/ODataFieldValidation.cs
   - clio/Command/McpServer/Tools/ODataKeyedWrite.cs
+  - clio/Command/McpServer/Tools/ODataDateTimeGuard.cs
+  - clio/Command/McpServer/Tools/ODataCreateTool.cs
   - clio.tests/Command/McpServer/ODataUpdateToolTests.cs
+  - clio.tests/Command/McpServer/ODataCreateToolTests.cs
   - clio.mcp.e2e/ODataUpdatePreWriteValidationE2ETests.cs
 ticket: GH-1212
 date: 2026-08-27
@@ -17,8 +20,11 @@ accepted by Creatio's OData v4 endpoint: it answers with an empty (204-like) bod
 while leaving the target untouched — silent data loss, made worse by the asymmetry that
 `odata-read` `$select` rejects the same property names strictly.
 
-Scope note: only field NAMES are validated, and only as names — there is no value-level or
-lookup-vs-plain-Guid check on either path. A related value-level variant exists — a lookup
+Scope note: this validation covers field NAMES only. The one value-level check that ships
+alongside it is the zone-less date-time guard (`ODataDateTimeGuard`, see
+`odata-datetime-literals-need-an-explicit-zone.md`), which refuses a date-time literal carrying no
+UTC designator and no offset before the request leaves the process; there is still no
+lookup-vs-plain-Guid check on either path. That related value-level variant — a lookup
 (reference) column set to the empty GUID is silently dropped by the platform while `null`
 clears the reference — and `odata-update` deliberately does NOT reject it: enforcing it needs
 the entity's foreign-key set, which is only available on the CSDL path, so the same call would
@@ -115,7 +121,10 @@ creates no record — observed (work build `394_15918340_0922`, 2026-08-28) a PO
 property 'labNope' does not exist on type 'Terrasoft.Configuration.OData.Contact'. Make sure to only
 use property names that are defined by the type.","type":"","stacktrace":""}}}`
 with no record created — unlike the PATCH silent drop. `odata-create` therefore gets a loud,
-self-correcting failure rather than a silent no-write and needs no client-side pre-validation;
-`odata-delete` sends no field set and is unaffected. (As with the documented PATCH build divergence,
+self-correcting failure rather than a silent no-write and needs no client-side pre-validation of field
+NAMES. It is NOT exempt from the value-level guard: `ODataDateTimeGuard` runs per row before every POST,
+and the CSDL is read at most once per batch - only when some row actually carries a date-shaped literal,
+and on a short single-attempt budget, because there the type map merely sharpens an optional guard and
+must never hold up or fail the insert. `odata-delete` sends no field set and is unaffected. (As with the documented PATCH build divergence,
 this POST strictness is a single-build observation; if a future build loosens POST to a silent drop,
 `odata-create` would inherit the same gap and this note must be revisited.)

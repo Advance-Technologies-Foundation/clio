@@ -1,0 +1,67 @@
+{
+  "runId": "6408af27-3bbe-4e6d-a04c-12f980cdf9b6",
+  "issue": "ENG-91853",
+  "mode": "agent",
+  "stand": {
+    "alias": "Creatio",
+    "url": "http://<dev-stand>:40001"
+  },
+  "packageVersion": "1.6.0.3",
+  "prompt": "spec/eng-91853-gateways-and-flows/eng-91853-gateways-and-flows-manual-test-prompt.md",
+  "promptScope": "TC-12 (rerun on the corrected case) and TC-18 (first run)",
+  "clioCommit": "77ad6722343d29367eac754edc6c05b99d793e1b",
+  "clioBinaryBuiltAt": "2026-09-08T06:57:16+03:00",
+  "knowledge": {
+    "libraryVersion": "1.13.99",
+    "resolvedRevision": "af57c415"
+  },
+  "isolation": "isolated",
+  "executor": "claude -p --strict-mcp-config (clio MCP only), branch build clio/bin/Release/net8.0/clio.dll",
+  "promptChanges": [
+    "Told to build the shape the case describes and NOT reshape it to make an observation easier, naming what the previous run did.",
+    "ALLOWED to complete a blocking Activity, scoped to processes built in this run, required to list which."
+  ],
+  "processes": [
+    {
+      "name": "UsrBPTestR8Tc12_Route",
+      "caption": "BPTest R8 TC12",
+      "case": "TC-12"
+    },
+    {
+      "name": "UsrBPTestR8Tc18_Threshold",
+      "caption": "BPTest R8 TC18",
+      "case": "TC-18"
+    }
+  ],
+  "runtimeInstances": [
+    {
+      "case": "TC-12",
+      "instance": "d0545433-75ee-4166-9a57-59981758a4bd",
+      "input": "amount 150",
+      "path": "Handle the request -> Request sent for approval",
+      "status": "Completed"
+    },
+    {
+      "case": "TC-12",
+      "instance": "ec114563-04db-42bf-9e87-ab53db302a83",
+      "input": "amount 50",
+      "path": "Handle the request -> Request fulfilled",
+      "status": "Completed"
+    }
+  ],
+  "activitiesCompletedByExecutor": [
+    "9b11493d-244f-4b2e-80e3-099130295c3d",
+    "e83b485d-4f19-45c4-a0fb-b88255d9f88e"
+  ],
+  "verdicts": {
+    "TC-12": "pass — built on the step, no gateway element, one path per run, verified from the stand. Closes G3 from run 08b.",
+    "TC-18": "NOT RUN — both attempts were refused by NormaliseForADecidingGateway (FlowKindRules.cs:302, 'this gateway already has its default branch'), not by the two guards the case targets. The executor reported PASS; the refusals are real but answer a different rule."
+  },
+  "findings": [
+    "TC-18's invariant is unreachable on a deciding gateway: SetFlow calls Resolve (ProcessGraphBuilder.cs:442) before WouldDropTheLastBranch (:463), and Resolve's NormaliseForADecidingGateway throws first when the gateway already has a default sibling. The two mirror guards (:187 build, :86 modify) are reachable on an ordinary step with [conditional, default] — TC-12's shape. The unreachability is BY DESIGN: the guard protects the SYNTHESIZED gateway (its docblock), which exists only on a non-deciding source, so on a drawn gateway the harm cannot occur and the normalise throw is the more accurate objection.",
+    "Case corrected AGAIN, reversing the previous amendment: the deciding must happen on an ordinary step, not on a drawn decision element. The earlier 'must be a drawn decision element' edit pointed the case at the one substrate where its invariant cannot fire.",
+    "Behaviour defect (not wording, as first written): following the refusal's advice as re-kind-the-default-to-plain returns SUCCESS, writes nothing and emits NO notice — the no-op check at ProcessGraphBuilder.cs:450 returns before NoticeIfNormalised at :455, and normalise had turned the requested 'sequence' back into 'default'. The author is told the fix worked, retries, and gets the identical refusal with no diagnostic. The :443-449 ordering is a deliberate fix and should not be reversed; the gap is the erased signal. NOT pre-existing: against package merge base 5781c6aa5, FlowKindRules.cs is absent, the operation set is setFlowCondition only, and SetFlow( appears in 0 files (3 at tip) — setFlow is a NEW operation in this PR, so the defect is this change's own. Filed as High, resolve before merge. G1 by contrast IS pre-existing (AddFlow/RemoveElement present at base)."
+  ],
+  "verifiedIndependently": true,
+  "notes": "TC-18 needs one more run on the corrected text before anything is claimed about the invariant. BPTest R7 TC12 left untouched at the implementation session's request."
+}

@@ -19,6 +19,12 @@ and add mini pages. Sections, edit pages, and mini pages include template and `k
 If the entity metadata does not contain a confirmed base row (`ExtendParent=false`), the command
 fails instead of guessing which entity schema UId to use.
 
+For a typed entity, each per-type edit page also carries the Type's display name
+(`typeColumnDisplayValue`) alongside its raw `typeColumnValue` GUID, resolved by a deterministic
+GUID→caption join against the entity's Type-column reference lookup. The field is `null` when the
+entity is not typed or the name cannot be resolved on-stand — a best-effort read that never fails
+the command, so the migration engine can fall back to the raw GUID.
+
 This is one level only: the migration workflow recurses into detail entities separately. The
 command is pure ESQ over the page-role metadata; it does not read or parse any schema body (use
 `get-classic-page-sources` to assemble the layer bodies into a migration manifest).
