@@ -199,8 +199,9 @@ public class GetClientUnitSchemaCommand : Command<GetClientUnitSchemaOptions> {
 		if (string.IsNullOrWhiteSpace(options.SchemaName)) {
 			return (null, "schema-name or schema-uid is required");
 		}
-		return SchemaDesignerHelper.ResolveSchemaUId(
+		(string resolvedUId, string resolveError) = SchemaDesignerHelper.ResolveSchemaUId(
 			_applicationClient, _serviceUrlBuilder, options.SchemaName, Kind);
+		return (resolvedUId, resolveError);
 	}
 
 	public override int Execute(GetClientUnitSchemaOptions options) {

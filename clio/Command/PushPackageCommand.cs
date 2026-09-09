@@ -157,34 +157,14 @@
 		{
 			PackageInstallOptions packageInstallOptions = ExtractPackageInstallOptions(options);
 			bool createBackup = options.SkipBackup != true;
-			bool success = false;
+			List<int> failedMarketplaceIds = new();
 			try
 			{
-				if (options.MarketplaceIds != null && options.MarketplaceIds.Any())
-				{
-					foreach (int MarketplaceId in options.MarketplaceIds)
-					{
-						string fullPath = string.Empty;
-						Task.Run(async () =>
-						{
-							fullPath = await _marketplace.GetFileByIdAsync(MarketplaceId);
-						}).Wait();
-						
-						bool _loopSuccess = _packageInstaller.Install(fullPath, _environmentSettings,
-							packageInstallOptions, options.ReportPath, createBackup);
-						if (_loopSuccess) {
-							_logger.WriteLine($"Done installing app by id: {MarketplaceId}");
-						} else {
-							_logger.WriteError($"Error installing app by id: {MarketplaceId}");
-						}
-					}
-					success = true;
-				}
-				else
-				{
-					success = _packageInstaller.Install(options.Name, _environmentSettings,
-						packageInstallOptions, options.ReportPath, createBackup);
-				}
+				bool success = options.MarketplaceIds != null && options.MarketplaceIds.Any()
+					? InstallMarketplaceApplications(options, packageInstallOptions, createBackup,
+						failedMarketplaceIds)
+					: _packageInstaller.Install(options.Name, _environmentSettings, packageInstallOptions,
+						options.ReportPath, createBackup);
 				if (options.ForceCompilation && success) {
 					CompileConfigurationOptions compileOptions = CreateFromPushPkgOptions(options);
 					success &= _compileConfigurationCommand.Execute(compileOptions) == 0;
@@ -192,15 +172,92 @@
 				if (success) {
 					_logger.WriteLine("Done");
 				} else {
-					_logger.WriteError("Error");
+					_logger.WriteError(BuildFailureMessage(options, failedMarketplaceIds));
 				}
 				return success ? 0 : 1;
 			}
 			catch (Exception e)
 			{
-				_logger.WriteError(e.StackTrace);
+				string message = string.IsNullOrWhiteSpace(e.Message)
+					? "no error message was provided."
+					: e.Message;
+				_logger.WriteError($"{e.GetType().Name}: {message}");
+				if (!string.IsNullOrWhiteSpace(e.StackTrace)) {
+					_logger.WriteError(e.StackTrace);
+				}
 				return 1;
 			}
+		}
+
+		/// <summary>
+		/// Installs every requested marketplace application and records the ids that failed.
+		/// </summary>
+		/// <param name="options">The options the command was invoked with.</param>
+		/// <param name="packageInstallOptions">Install options passed to the package installer.</param>
+		/// <param name="createBackup">Whether a package backup is created before each installation.</param>
+		/// <param name="failedMarketplaceIds">Collects the ids whose installation failed.</param>
+		/// <returns><c>true</c> only when every requested application installed.</returns>
+		private bool InstallMarketplaceApplications(PushPkgOptions options,
+			PackageInstallOptions packageInstallOptions, bool createBackup, List<int> failedMarketplaceIds) {
+			bool success = true;
+			foreach (int marketplaceId in options.MarketplaceIds) {
+				string fullPath = string.Empty;
+				Task.Run(async () => {
+					fullPath = await _marketplace.GetFileByIdAsync(marketplaceId);
+				}).Wait();
+				bool loopSuccess = _packageInstaller.Install(fullPath, _environmentSettings,
+					packageInstallOptions, options.ReportPath, createBackup);
+				if (loopSuccess) {
+					_logger.WriteLine($"Done installing app by id: {marketplaceId}");
+				} else {
+					_logger.WriteError($"Error installing app by id: {marketplaceId}");
+					failedMarketplaceIds.Add(marketplaceId);
+				}
+				success &= loopSuccess;
+			}
+			return success;
+		}
+
+		/// <summary>
+		/// Builds the closing failure line so that it always names what failed instead of printing a bare
+		/// "Error". The command is invoked either with a package name or with marketplace application
+		/// ids, so both have to be covered.
+		/// </summary>
+		/// <param name="options">The options the command was invoked with.</param>
+		/// <param name="failedMarketplaceIds">
+		/// Marketplace application ids whose installation failed. Only the failed ones belong here, so that
+		/// a partially failed batch does not accuse the applications that installed fine.
+		/// </param>
+		/// <returns>A non-empty message naming the package or the marketplace ids that failed.</returns>
+		internal static string BuildFailureMessage(PushPkgOptions options,
+			IReadOnlyCollection<int> failedMarketplaceIds = null) =>
+			BuildFailureMessage(options?.Name, failedMarketplaceIds);
+
+		/// <summary>
+		/// Builds the closing failure line from the identity of what was being installed.
+		/// </summary>
+		/// <param name="packageName">Name or path the command was invoked with; may be <c>null</c>.</param>
+		/// <param name="failedMarketplaceIds">
+		/// Marketplace application ids whose installation failed; <c>null</c> when the command did not
+		/// install from the marketplace.
+		/// </param>
+		/// <returns>A non-empty message naming the package or the marketplace ids that failed.</returns>
+		/// <remarks>
+		/// The line carries the identity only. The reason is already on the preceding line, written by
+		/// <c>BasePackageInstaller</c> as "Package installation failed: &lt;reason&gt;", and repeating the
+		/// phrase made the closing line less informative than the one above it. It also used to end with
+		/// "See the installation log above.", which was wrong on the path where the package was never
+		/// found and no installation ran at all. Shared with <c>install-application</c>, which reaches the
+		/// same failure through the same installer, so both verbs close with the same wording.
+		/// </remarks>
+		internal static string BuildFailureMessage(string packageName,
+			IReadOnlyCollection<int> failedMarketplaceIds = null) {
+			if (!string.IsNullOrWhiteSpace(packageName)) {
+				return $"Failed package: \"{packageName}\".";
+			}
+			return failedMarketplaceIds is {Count: > 0}
+				? $"Failed marketplace application id(s): {string.Join(", ", failedMarketplaceIds)}."
+				: "Package installation failed.";
 		}
 
 		/// <summary>
