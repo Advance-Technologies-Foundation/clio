@@ -103,6 +103,26 @@ namespace Clio.Tests
                     + "next versioned operation ships, move this pin WITH the rebundle in the same commit ENG-91853 raises BOTH to 1.6.0.2 and closes the one-patch gap - not by discarding the rule above but by applying it: the gateway ELEMENTS, the three declarative flow kinds and the by-name condition expansion are advertised by create (it builds them) AND by modify (setFlow re-kinds a flow in place), so both commands depend on the same newer archive. 1.6.0.2 and not 1.6.0.1 because master and this branch BOTH stamped 1.6.0.1, on different content - two archives at one version, which is the case where an environment already carrying it is never offered the other. The number is the first cut from a package source that merges both lines.");
         }
 
+        [TestCase(typeof(ModifyProcessAsNewVersionOptions))]
+        [TestCase(typeof(SetActiveProcessVersionOptions))]
+        [Test]
+        [Description("The two versioning commands declare 1.6.1.0 for a STRICTER reason than its siblings: the ModifyProcessAsNewVersion OPERATION does not exist before that archive at all. Create/Modify name a version because an older server MISHANDLES a newer input form; these name a version because an older server has no such route, and answers a 404 the caller would read as a transport fault rather than 'your package is behind'. The bundled-archive guard asserts the shipped archive satisfies the literal, so the floor can never demand a version clio does not carry - which is why these floors land with their tools and the archive ships first.")]
+        public void VersioningOptionsType_ShouldDeclareTheVersionTheOperationFirstShippedIn(Type optionsType)
+        {
+            // Arrange & Act
+            RequiresPackageAttribute requirement = GetProcessBuilderRequirement(optionsType);
+
+            // Assert
+            requirement.Should().NotBeNull(
+                because: $"{optionsType.Name} calls an operation that only exists in a recent {BundledPackages.ProcessBuilderPackageName}, so the gate must fire");
+            requirement!.Version.Should().Be("1.6.1.0",
+                because: "both versioning operations first ship in the 1.6.1.0 archive. Presence-only would let "
+                    + "the call reach an older package and come back a 404 - the one failure shape that reads as "
+                    + "clio being broken rather than the environment being behind");
+            requirement.Hint.Should().Be(ExpectedProcessBuilderHint,
+                because: "the install hint must be consistent across all process-designer gates");
+        }
+
         [Test]
         [Description("get-process-signature must NOT be gated on the process-builder package: it reads the built-in DataService (ProcessSchemaRequest / VwProcessLib), not ProcessDesignService, so gating its public CLI verb on the experimental package was a shipped-capability regression (PR #715).")]
         public void GetProcessSignatureOptions_ShouldNotDeclareProcessBuilderRequirement_BecauseItUsesTheBuiltInDataService()

@@ -399,11 +399,30 @@ git -C <ProcessBuilder> commit -m "<ticket> rebundle to X.Y.Z.W"
 #    which installs, satisfies the gate, and then 404s on the other runtime.
 Remove-Item packages/CrtProcessBuilder/Files/Bin -Recurse -Force
 
-# 4. Pack straight into the clio checkout. --skip-pdb matches what the script passes: today step 3 has
+# 3b. Export the sources from the PRODUCING COMMIT, and pack THAT - never the working tree.
+#    This is what makes the SHA pin reproducible. Packing a working tree makes the hash depend on the line
+#    endings of the machine that packed it: a file just written by a tool is LF in the tree, and the same
+#    file after a clean checkout on Windows (core.autocrlf=true, or `* text=auto`) is CRLF. Same commit,
+#    same content, different bytes, different SHA-256 - so a reviewer following this recipe got a hash that
+#    did not match the pin, with nothing to say whether the archive had been tampered with or just repacked.
+#    It happened twice: once with nine files, once with thirteen.
+#
+#    The two -c flags are NOT optional and are the whole point. `git archive` runs the same working-tree
+#    conversion a checkout does, so without them it emits CRLF wherever core.autocrlf=true and the hash is
+#    machine-dependent again. With them it hands back blob bytes - LF - on every platform and every git
+#    configuration, which is what lets anyone verify the pin from the commit id alone.
+git -c core.autocrlf=false -c core.eol=lf -C <ProcessBuilder> archive --format=zip `
+  -o <tmp>/package.zip <ExpectedProducingCommit> -- packages/CrtProcessBuilder
+Expand-Archive <tmp>/package.zip -DestinationPath <tmp>/export
+#    descriptor.json is the ONE file that cannot come from the commit: the restamp is in the tree, and by
+#    contract the pin names the PRE-restamp commit. Overlay it.
+Copy-Item packages/CrtProcessBuilder/descriptor.json <tmp>/export/packages/CrtProcessBuilder/descriptor.json
+
+# 4. Pack the EXPORT into the clio checkout. --skip-pdb matches what the script passes: today step 3 has
 #    already removed the only .pdb there is, so the flag changes nothing about the output - but the archive
 #    is pinned BYTE-FOR-BYTE by SHA-256, and the two paths have to produce the same bytes for that pin to
 #    mean anything. Any .pdb that ever appears outside Files/Bin would otherwise make them diverge.
-dotnet <clio>/clio/bin/Debug/net8.0/clio.dll compress ./packages/CrtProcessBuilder --skip-pdb `
+dotnet <clio>/clio/bin/Debug/net8.0/clio.dll compress <tmp>/export/packages/CrtProcessBuilder --skip-pdb `
   -d <clio>/clio/CrtProcessBuilder/CrtProcessBuilder.gz
 
 # 5. VERIFY the archive rather than trusting step 3 - its failure is silent.
@@ -426,12 +445,36 @@ target's configuration build. Lose it and the package installs, the gate reports
 
 ### In this repository, in ONE commit
 
-| Update | Where |
-|---|---|
-| `ExpectedArchiveSha256` | `clio.tests/Common/BundledProcessBuilderPackageTests.cs` |
-| `ExpectedDescriptorModifiedOnUtc` | same file |
-| `ExpectedArchiveVersion` | same file |
-| `ExpectedProducingCommit` | same file — `git rev-parse HEAD` of the PACKAGE repo, before the restamp |
+| Update | Where | Written by |
+|---|---|---|
+| `ExpectedArchiveSha256` | `clio.tests/Common/BundledProcessBuilderPackageTests.cs` | the script |
+| `ExpectedDescriptorModifiedOnUtc` | same file | the script |
+| `ExpectedArchiveVersion` | same file | the script |
+| `ExpectedProducingCommit` | same file — `git rev-parse HEAD` of the PACKAGE repo, before the restamp | the script |
+| `ExpectedSchemaDescriptorModifiedOnUtc` | same file — the COMPILE-MARKER schema's stamp; `set-pkg-version` does not touch schema descriptors (step 2b) | **BY HAND** |
+| `ExpectedOperationContractCount` | same file — `[OperationContract]` methods the shipped service exposes | **BY HAND** |
+| `ExpectedAuthorizationGateCallSites` | same file — live `_guard.EnsureCanManageProcessDesign()` call sites | **BY HAND** |
+
+**The last three are not written by anything.** The script refreshes the four provenance pins and knows
+nothing about the other three, so a rebundle that changed the service surface meets them as a red test with
+no explanation attached. That is what the two security counts are for, and why they are named here rather
+than only in the fixture: they are the ONLY reviewability a committed binary has on this boundary, because
+`ExpectedArchiveSha256` proves the bytes changed and says nothing about what they now contain.
+
+- `ExpectedOperationContractCount` is EXACT, not a floor: a floor cannot notice a new operation arriving
+  WITHOUT a gate, since the count simply rises and still clears it. Move it together with
+  `UngatedOperations`, in the same commit, or not at all.
+- `ExpectedAuthorizationGateCallSites` is the number of live gate calls, which is NOT one per operation —
+  `ProcessDesigner.Execute` is a shared boundary for the read operations. The constant's own remarks carry
+  the arithmetic; edit them with the number, because a derivation that no longer totals the pin gives the
+  next maintainer a documented reason to LOWER it, and a lowered pin accepts an archive with operations
+  de-gated.
+- **Which side moves first:** the package repository. Both counts are properties of the shipped sources, so
+  they cannot be computed until the archive exists — add the operation and its gate there, land its
+  guard-deny test there (a call-site count cannot tell a gate that MOVED from one that is present but off
+  the execution path), then cut the archive and move both pins here. The ADR's pre-implementation checklist
+  states the same rule: operation-contract count and authorization-gate call sites move together, on both
+  sides.
 
 **No PRODUCTION constant to update** — that is the point of the current design: clio reads the shipped
 version from the archive, so nothing in the product can fall out of step with it. `ExpectedArchiveVersion`
@@ -443,11 +486,17 @@ is the `-Version` argument, canonicalised — deliberately not read back, for th
 that line. `ExpectedDescriptorModifiedOnUtc` is read from the package repository's `descriptor.json` AFTER
 the restamp. And `ExpectedProducingCommit` is that repository's HEAD BEFORE it, so the pin names the commit
 whose descriptor still carries the OLD version — by design, and unavoidably, since the script does not
-commit. Reproducing the bytes is therefore: check out the pin, re-run `set-pkg-version` with the pinned
-version, hand-set `ModifiedOnUtc` to the pinned value, then pack. That third step is not optional:
-`set-pkg-version` writes `DateTime.Now` and takes no timestamp argument, so re-running it stamps the present
-and the bytes differ every time — which is what `ExpectedDescriptorModifiedOnUtc` is for. And even then the
-hash matches only on a host rendering the same line endings and path separator. Forgetting the producing-commit
+commit. Reproducing the bytes is therefore: export the pinned commit with the two `-c` flags of step 3b, re-run
+`set-pkg-version` with the pinned version, hand-set `ModifiedOnUtc` to the pinned value, overlay that
+`descriptor.json` onto the export, then pack. The timestamp step is not optional: `set-pkg-version` writes
+`DateTime.Now` and takes no timestamp argument, so re-running it stamps the present and the bytes differ
+every time — which is what `ExpectedDescriptorModifiedOnUtc` is for.
+
+Nothing in that recipe depends on the verifier's machine any more, and that is a recent change. Exporting
+from the commit with `core.autocrlf=false` and `core.eol=lf` yields blob bytes on every host, so the hash no
+longer varies with an editor setting or a git configuration — the property the previous wording had to admit
+it lacked. What is still host-dependent is the PATH SEPARATOR the archive records per entry, so cut and
+verify on Windows. Forgetting the producing-commit
 pin on the manual path is worse than forgetting the others. A stale SHA turns the fixture red. A stale producing
 commit stays 40 hex characters, passes every test, and points confidently at the wrong commit, which is
 the failure the constant was added to remove.
