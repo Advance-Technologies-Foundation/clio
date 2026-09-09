@@ -184,3 +184,34 @@ directly. Every row in the table above was taken after a reload and with the tit
 
 Loading takes about 40 seconds per process on this stand — the first read at 20 seconds returned an
 empty list, which looks exactly like "no labels are drawn". Wait, then read the title.
+
+
+### Re-taken by a second party, 2026-09-09
+
+The table above was measured once, by the session that wrote it, and its own trap note says that pass
+nearly recorded one process's labels as another's. So it was taken again, independently, in the same
+real Chrome, with `document.title` verified before every read:
+
+| case | process | title read | nodes | drawn | empty |
+|---|---|---|---|---|---|
+| TC-01 | `BPLabel TC01` | `BPLabel TC01` | 8 | `Needs approval`, `Within limit` + 6 element captions | 0 |
+| TC-02 | `BPLabel TC02` | `BPLabel TC02` | 11 | `High value`, `Medium value`, `Everything else` + 8 captions | 0 |
+| TC-05 | `BPLabel TC03` | `BPLabel TC03` | 7 | `Above the limit` + 6 captions | **0** |
+| TC-09 | `BPLabel TC09` | `BPLabel TC09` | 7 | `Everything else` **×1** + 6 captions | 0 |
+
+Identical to the first pass in every cell. The design-time level is therefore measured twice by two
+parties, and TC-05's zero-empty-nodes result — the one the case turns on — is confirmed rather than
+single-sourced.
+
+**And one thing only a picture answers, which the DOM query cannot.** TC-02 was also looked at.
+`High value` sits squarely on its own horizontal connector and is immediately attributable. The other
+two are drawn near connector segments that run close together on a three-way fan: `Medium value` sits
+between the horizontal run above it and the drop below, and `Everything else` on the lower horizontal
+run. Nothing is mispositioned and no label is attached to the wrong arrow — but attribution for the
+second and third branch is by *following the line*, not by proximity alone.
+
+That is a remark about **connector routing**, not about labels: the words are where their flow is, and
+the flow is where the layout put it. It belongs with the layout work — the same place as the pinned
+lane rules and the open back-edge overlap — and not against this change. Stated here because a
+design-time pass that only counts DOM nodes cannot see it, and because "the analyst can tell which
+arrow is which at a glance" is the business requirement TC-01 and TC-02 are written from.
