@@ -122,7 +122,10 @@ public sealed class DescribeProcessToolTests {
 			because: "an absent label has two meanings - no label, or a package that cannot report one - and "
 				+ "the prompt has to name the version that separates them, or an agent reports the ambiguous "
 				+ "read as a fact");
+	}
 
+	[Test]
+	[Category("Unit")]
 	[Description("The describe-business-process description states the version contract: which field reaches the running version, and that absent version fields mean unknown rather than unversioned.")]
 	public void DescribeProcess_ShouldStateTheVersionContract_WhenItsDescriptionIsRead() {
 		// Arrange

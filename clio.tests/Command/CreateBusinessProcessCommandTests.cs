@@ -339,7 +339,7 @@ public sealed class CreateBusinessProcessCommandTests {
 			.Returns(BuildResult());
 		// The saved flow comes back with NO label - what a package below the capability version leaves behind
 		// after answering success.
-		_processDescriber.Describe(Arg.Any<ProcessIdentity>(), null)
+		_processDescriber.Describe(Arg.Any<ProcessIdentity>(), null, Arg.Any<bool>())
 			.Returns(new DescribeProcessResult {
 				Elements = [],
 				Flows = [new DescribedFlow { Source = "Decide", Target = "Yes" }]
@@ -354,7 +354,7 @@ public sealed class CreateBusinessProcessCommandTests {
 		// Assert
 		result.Should().Be(0,
 			because: "a dropped label is a caveat about a build that SUCCEEDED, never a failure");
-		_processDescriber.Received(1).Describe(Arg.Any<ProcessIdentity>(), null);
+		_processDescriber.Received(1).Describe(Arg.Any<ProcessIdentity>(), null, false);
 		warnings.Should().ContainSingle(warning => warning.Contains("Decide -> Yes ('Approved')"),
 			because: "the caller has to be told which label is not drawn, by the only handle they have on the "
 				+ "flow");
@@ -374,7 +374,7 @@ public sealed class CreateBusinessProcessCommandTests {
 		_createBusinessProcessService.BuildProcess("sandbox", Arg.Any<CreateBusinessProcessRequest>())
 			.Returns(BuildResult());
 		// The saved flow comes back carrying exactly the label that was sent: the ordinary, healthy outcome.
-		_processDescriber.Describe(Arg.Any<ProcessIdentity>(), null)
+		_processDescriber.Describe(Arg.Any<ProcessIdentity>(), null, Arg.Any<bool>())
 			.Returns(new DescribeProcessResult {
 				Elements = [],
 				Flows = [new DescribedFlow { Source = "Decide", Target = "Yes", Label = "Approved" }]
@@ -406,7 +406,7 @@ public sealed class CreateBusinessProcessCommandTests {
 		};
 		_createBusinessProcessService.BuildProcess("sandbox", Arg.Any<CreateBusinessProcessRequest>())
 			.Returns(BuildResult());
-		_processDescriber.Describe(Arg.Any<ProcessIdentity>(), null)
+		_processDescriber.Describe(Arg.Any<ProcessIdentity>(), null, Arg.Any<bool>())
 			.Returns(Error.Failure(description: "the request timed out"));
 		List<string> warnings = [];
 		_logger.When(logger => logger.WriteWarning(Arg.Any<string>()))
