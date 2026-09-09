@@ -1,4 +1,4 @@
-using System.Collections.Generic;
+﻿using System.Collections.Generic;
 using Clio.Common;
 
 namespace Clio.Command.ProcessModel;
@@ -8,9 +8,10 @@ namespace Clio.Command.ProcessModel;
 /// <c>modify-business-process</c>.
 /// <para><see cref="BlockExpectationJson"/> keeps the payload-reading mechanics; this keeps the reporting. Both
 /// commands read the saved process back once and then report the SAME outcomes in the same words — an
-/// element the read-back cannot resolve, a missing record filter, a dropped accessRights block and a dropped
-/// email block — and both need the same "could not verify" wording when the read-back itself fails. Only how
-/// each command IDENTIFIES the process differs, and that stays in the command.</para>
+/// element the read-back cannot resolve, a missing record filter, a dropped accessRights block, a dropped
+/// email block and a dropped flow label — and both need the same "could not verify" wording when the
+/// read-back itself fails. Only how each command IDENTIFIES the process differs, and that stays in the
+/// command.</para>
 /// <para>Sharing it is not only de-duplication: these messages are the sole automated evidence that a grant or
 /// revoke landed, so two copies drifting apart would mean the same state described two different ways depending
 /// on which command the caller happened to use.</para>
@@ -41,6 +42,38 @@ internal static class BlockExpectationReporter {
 		Warn(logger, EmailBlockExpectation.BuildWarning(
 			EmailBlockExpectation.Missing(described, intent.ConfiguredEmail)));
 	}
+
+	/// <summary>
+	/// Reports the flow labels the read-back shows did not land.
+	/// <para>Lives here rather than in each command for the reason in this class's own remark: the two copies
+	/// were byte-identical, and a warning that says a caller's label was discarded must not be able to say it
+	/// two different ways depending on which command they used.</para>
+	/// <para>Not folded into <see cref="ReportDescribed"/>, because a label is not part of
+	/// <see cref="BlockExpectationIntent"/> — it is read from the payload's <c>flows[]</c> / operations rather
+	/// than from configured blocks, and threading it through the intent would put a flow concern inside a type
+	/// that is entirely about elements.</para>
+	/// </summary>
+	internal static void ReportFlowLabels(ILogger logger, DescribeProcessResult described,
+			IReadOnlyList<FlowLabelExpectation.FlowLabel> expectedLabels) {
+		// The UId-addressed caveat comes FIRST, matching the order ReportDescribed uses: what could not be
+		// checked, then what was found wrong. A caller who sees only the second would read silence about the
+		// first as confirmation.
+		Warn(logger, FlowLabelExpectation.BuildUnverifiableWarning(
+			FlowLabelExpectation.Unverifiable(expectedLabels)));
+		Warn(logger, FlowLabelExpectation.BuildWarning(
+			FlowLabelExpectation.Missing(described, expectedLabels)));
+	}
+
+	/// <summary>
+	/// The "could not check a label" counterpart, for the early-outs where no description could be read.
+	/// <para>The intent-based <see cref="WarnAccessRightsUnverified"/> is silent for a labels-only payload —
+	/// it configures no block, so the intent is empty and every branch returns null — and silence matters more
+	/// here than for the other guards: the decision NOT to raise the package floor for this field rests
+	/// entirely on the read-back being able to report a drop.</para>
+	/// </summary>
+	internal static void WarnFlowLabelsUnverified(ILogger logger,
+			IReadOnlyList<FlowLabelExpectation.FlowLabel> expectedLabels, string reason) =>
+		Warn(logger, FlowLabelExpectation.BuildUnverifiedWarning(expectedLabels, reason));
 
 	/// <summary>
 	/// The access-rights guard must not report "could not check" the same way it reports "verified": it is the

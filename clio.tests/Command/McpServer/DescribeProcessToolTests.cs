@@ -1,4 +1,4 @@
-using System.Reflection;
+﻿using System.Reflection;
 using Clio.Command;
 using Clio.Command.McpServer.Prompts;
 using Clio.Command.McpServer.Prompts.ProcessDesigner;
@@ -95,6 +95,28 @@ public sealed class DescribeProcessToolTests {
 		prompt.Should().Contain(DescribeProcessTool.ToolName, because: "the prompt references the production tool name");
 		prompt.Should().Contain("process-name", because: "the prompt keeps the identity arguments visible");
 		prompt.Should().Contain("process-modeling", because: "the prompt points callers at the narration guidance");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("The prompt's per-flow field list names EVERY field describe reports, and this pins it field by field because the prompt does NOT defer that list to guidance - step 2 sends the caller to get-guidance for the element catalog and connection-rule vocabulary only. An agent driven by this prompt is told what a flow carries and has no reason to look further, so a field added to the tool and not to the prompt is invisible to it. That is exactly what happened to `label`: the tool, the capability map, the unit tests and the e2e all gained it while the prompt still enumerated six fields, and nothing turned red because this fixture asserted only the tool name and the identity arguments. Add the next flow field here as well as to the prompt.")]
+	public void DescribeProcessPrompt_ShouldEnumerateEveryFlowFieldDescribeReports() {
+		// Act
+		string prompt = DescribeProcessPrompt.DescribeProcessGuidance("UsrProcess_493d4c9", "dev");
+
+		// Assert
+		foreach (string field in new[] {
+				"name", "source", "target", "kind", "label", "condition", "branchesOnActivityResult"
+			}) {
+			prompt.Should().Contain(field,
+				because: $"a caller reading this prompt learns a flow's shape from it, so '{field}' being "
+					+ "absent means an agent never looks for it");
+		}
+
+		prompt.Should().Contain("1.6.0.8",
+			because: "an absent label has two meanings - no label, or a package that cannot report one - and "
+				+ "the prompt has to name the version that separates them, or an agent reports the ambiguous "
+				+ "read as a fact");
 	}
 
 	private sealed class FakeDescribeProcessCommand : DescribeProcessCommand {

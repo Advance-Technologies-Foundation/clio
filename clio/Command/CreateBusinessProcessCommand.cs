@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Text.Json;
 using System.Text.Json.Nodes;
@@ -394,9 +394,15 @@ public class CreateBusinessProcessCommand(
 	// A server that predates a block DISCARDS it and still answers success:true, so a build can report a
 	// configured element that is in fact empty. Read the saved process back ONCE and check every block the
 	// payload carried: two guards issuing byte-identical describes would double the latency and the retry
-	// budget of the success path for a payload that configures both. Only runs when the descriptor actually
-	// carried a block, so the ordinary path pays nothing. See EmailBlockExpectation / AccessRightsBlockExpectation
-	// for why this is behavioural rather than version-based.
+	// budget of the success path for a payload that configures both. See EmailBlockExpectation /
+	// AccessRightsBlockExpectation for why this is behavioural rather than version-based.
+	// This used to say "only runs when the descriptor actually carried a block, so the ordinary path pays
+	// nothing", and the flow label made that false: ANY descriptor with one labelled flow now performs the
+	// round trip, and the guidance says LABEL EVERY BRANCH, so it is the COMMON path rather than the
+	// exception. The trade is deliberate - one extra read buys the only signal that a label landed, which
+	// is what lets the package floor stay where it is - but it has a visible cost worth stating: a describe
+	// that fails for reasons of its own now emits "Could not verify ..." on a build where the caller
+	// previously saw a clean success. A descriptor with no blocks AND no labels still short-circuits.
 	private void WarnOnDiscardedConfigurationBlocks(CreateBusinessProcessOptions options, string? schemaName) {
 		BlockExpectationIntent intent = BlockExpectationIntent.FromDescriptor(options.DescriptorJson);
 		// The Approval element has the same silent-drop failure, so master's guard verifies it
@@ -414,9 +420,9 @@ public class CreateBusinessProcessCommand(
 
 		if (string.IsNullOrWhiteSpace(schemaName)) {
 			// Nothing to read back against. Silence here would be indistinguishable from a verified success.
-			BlockExpectationReporter.WarnAccessRightsUnverified(logger, intent,
-				"the operation returned no process name to read back");
-			WarnLabelsUnverified(expectedLabels, "the operation returned no process name to read back");
+			const string noName = "the operation returned no process name to read back";
+			BlockExpectationReporter.WarnAccessRightsUnverified(logger, intent, noName);
+			BlockExpectationReporter.WarnFlowLabelsUnverified(logger, expectedLabels, noName);
 			return;
 		}
 
@@ -428,7 +434,8 @@ public class CreateBusinessProcessCommand(
 			// grant or revoke actually landed, and reporting "verified" and "could not check" identically would
 			// let an unapplied revoke pass as applied.
 			BlockExpectationReporter.WarnAccessRightsUnverified(logger, intent, described.FirstError.Description);
-			WarnLabelsUnverified(expectedLabels, described.FirstError.Description);
+			BlockExpectationReporter.WarnFlowLabelsUnverified(logger, expectedLabels,
+				described.FirstError.Description);
 			return;
 		}
 
@@ -451,25 +458,7 @@ public class CreateBusinessProcessCommand(
 			logger.WriteWarning(unresolved);
 		}
 
-		string? droppedLabels = FlowLabelExpectation.BuildWarning(
-			FlowLabelExpectation.MissingLabels(described.Value, expectedLabels));
-		if (droppedLabels is not null) {
-			logger.WriteWarning(droppedLabels);
-		}
-	}
-
-	// The two early-outs above cannot verify a label, and the intent-based unverified warning says nothing
-	// about one - a labels-only payload configures no block, so `intent` is empty and every branch of
-	// WarnAccessRightsUnverified returns null. Silence there would matter more than for the other guards: the
-	// decision NOT to raise the package floor for this field rests on the read-back being able to report a
-	// drop, so a labels-only build against an old package would print a plain success on a process whose
-	// labels were all discarded.
-	private void WarnLabelsUnverified(IReadOnlyList<FlowLabelExpectation.FlowLabel> expectedLabels,
-			string reason) {
-		string? unverified = FlowLabelExpectation.BuildUnverifiedWarning(expectedLabels, reason);
-		if (unverified is not null) {
-			logger.WriteWarning(unverified);
-		}
+		BlockExpectationReporter.ReportFlowLabels(logger, described.Value, expectedLabels);
 	}
 }
 

@@ -83,6 +83,8 @@ by_kind = collections.Counter()
 with_caption = collections.Counter()
 samples = collections.defaultdict(list)
 schemas = 0
+skipped_metadata = []
+skipped_resources = []
 
 for dirpath, _, filenames in os.walk(ROOT):
     if "metadata.json" not in filenames:
@@ -92,7 +94,13 @@ for dirpath, _, filenames in os.walk(ROOT):
     try:
         with io.open(os.path.join(dirpath, "metadata.json"), encoding="utf-8-sig") as fh:
             data = json.load(fh)
-    except Exception:
+    except (IOError, OSError, ValueError) as exc:
+        # COUNTED, not swallowed. This script solely owns the 84.9% / 25.5% / 0.7% figures now quoted as
+        # fact in shipped tool descriptions and in published guidance, and a bare `continue` made a
+        # half-read corpus indistinguishable from a complete one - the percentages would simply shift and
+        # still look plausible. Narrowed from `except Exception` too, so a defect in this script (a typo,
+        # a bad regex) raises instead of silently reducing the denominator.
+        skipped_metadata.append((dirpath, str(exc)))
         continue
     elements = []
     collect(data, elements)
@@ -110,9 +118,14 @@ for dirpath, _, filenames in os.walk(ROOT):
     captions = {}
     if os.path.exists(res):
         try:
-            text = io.open(res, encoding="utf-8-sig").read()
+            with io.open(res, encoding="utf-8-sig") as fh:      # context-managed: the handle leaked before
+                text = fh.read()
             captions = {m.group(1): m.group(2) for m in ITEM.finditer(text)}
-        except Exception:
+        except (IOError, OSError, UnicodeDecodeError) as exc:
+            # An unreadable resource file makes every flow in that schema look UNLABELLED, which biases
+            # the headline percentages DOWNWARD - the direction that would make the recommendation look
+            # weaker than it is. Counted for the same reason as above.
+            skipped_resources.append((res, str(exc)))
             captions = {}
     for name, kind in flows.items():
         by_kind[kind] += 1
@@ -123,6 +136,25 @@ for dirpath, _, filenames in os.walk(ROOT):
                 samples[kind].append(cap)
 
 print("schemas with flows:", schemas)
+# Reported UNCONDITIONALLY, so a clean run states that it was clean rather than staying silent about it.
+# A reader comparing two runs' percentages has to know whether both read the same corpus.
+print("skipped, unreadable metadata.json:", len(skipped_metadata))
+print("skipped, unreadable resource.en-US.xml:", len(skipped_resources))
+for path, exc in skipped_metadata[:10]:
+    print("   metadata:", path, "->", exc)
+for path, exc in skipped_resources[:10]:
+    print("   resource:", path, "->", exc)
+if skipped_metadata or skipped_resources:
+    print("   NOTE: the shares below are computed over what was READ. A skipped resource file makes every")
+    print("         flow in that schema look unlabelled, so the labelled shares are a LOWER bound.")
+    print("   SCOPE: the skipped metadata.json files are not corrupt - they are the LEGACY key-value")
+    print("          metadata format ('= MetaData.Schema.UId \"...\"'), which this scanner does not parse.")
+    print("          Measured once: 389 of them on a 7.8.0 branch declare real flows (about 2 280")
+    print("          sequence and 138 conditional), and 364 of those 389 are entity-EVENT processes")
+    print("          embedded in an entity schema rather than processes anyone built in the designer.")
+    print("          So the shares below describe standalone JSON-metadata processes. Including the")
+    print("          legacy set would push the SEQUENCE share further down - auto-generated plumbing is")
+    print("          not labelled - and add conditional flows whose label rate nobody has measured.")
 print()
 print("%-12s %8s %8s %7s" % ("kind", "flows", "labelled", "share"))
 total = labelled = 0

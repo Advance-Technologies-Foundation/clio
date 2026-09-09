@@ -181,6 +181,64 @@ public sealed class ModifyBusinessProcessToolE2ETests {
 	}
 
 	[Test]
+	[Description("Over the real MCP path, removeFlow REFUSES a field it does not read rather than ignoring it, and the atomic batch around it applies nothing. removeFlow resolves a flow by its endpoint PAIR alone, so a kind, condition or label carried over from a describe used to be silently discarded for two of the three and refused for the third - the asymmetry the pre-merge review called the worst of both worlds. It is refused for all three now, and not for tidiness: on a pair joined by two flows, honouring the removal while ignoring a kind would delete a flow the caller did not name. The read-back is the point of running this against a real server - the whole batch must be intact, because ProcessModifyHandler aborts before SaveEdited and a partial apply would be invisible to a unit test.")]
+	[AllureTag(ToolName)]
+	[AllureName("modify-business-process refuses removeFlow with a field it does not read")]
+	public async Task ModifyBusinessProcess_Should_RefuseRemoveFlowCarryingAFieldItDoesNotRead() {
+		// Arrange — a labelled three-branch process, the shape a describe-then-echo workflow produces.
+		await using ArrangeContext context = await ArrangeAsync(requireReachableEnvironment: true);
+		string processName = $"UsrClioBpRemoveFlowFieldE2e{Guid.NewGuid():N}";
+		await CallToolAsync(context, CreateToolName, new Dictionary<string, object?> {
+			["environment-name"] = context.EnvironmentName,
+			["descriptor"] = BuildLabelledThreeBranchTaskDescriptor(processName)
+		});
+
+		// Act — the echo an agent naturally produces from a described flow: the whole object, kind included.
+		// A second operation follows it so the batch's atomicity is observable.
+		CallToolResult callResult = await CallToolAsync(context, ToolName, new Dictionary<string, object?> {
+			["environment-name"] = context.EnvironmentName,
+			["process-name"] = processName,
+			["operations"] = """
+				[
+				  { "op": "removeFlow", "source": "Decide", "target": "EndC", "kind": "conditional" },
+				  { "op": "setFlow", "source": "Decide", "target": "EndB", "kind": "conditional",
+				    "condition": "2 > 1", "label": "Should not be written" }
+				]
+				"""
+		});
+
+		// Assert - on the call TEXT rather than IsError, which this surface measures null on a refusal (the
+		// sibling gateway-refusal test below records the same thing; asserting IsError here failed against a
+		// server that had refused correctly).
+		// Quote-free fragments ONLY. The text is a serialized envelope, so every apostrophe in the refusal
+		// arrives as ' - the trap this fixture already records, and the reason an assertion on
+		// "does not take a 'kind'" fails against a server that refused perfectly.
+		string message = SerializeToolText(callResult);
+		message.Should().Contain("does not take a",
+			because: "the refusal has to name the field the caller sent, or they cannot tell which of three "
+				+ "to strip from their echo");
+		message.Should().Contain("kind",
+			because: "and the field it names has to be the one that was sent");
+		message.Should().Contain("source and target alone",
+			because: "a caller who does not learn WHY removeFlow cannot honour it will send it again");
+		message.Should().Contain("remove one you did not name",
+			because: "the CONSEQUENCE is what makes this a refusal rather than pedantry, and it is the half a "
+				+ "caller needs to accept the extra step");
+
+		DescribeProcessResult described = ParseDescribeResult(await CallToolAsync(context, DescribeToolName,
+			new Dictionary<string, object?> {
+				["environment-name"] = context.EnvironmentName, ["process-name"] = processName
+			}));
+		described.Flows.Should().Contain(flow => flow.Source == "Decide" && flow.Target == "EndC",
+			because: "the refused removal must not have happened - this is the half a unit test cannot see, "
+				+ "because the abort has to land before SaveEdited on the real server");
+		described.Flows.Single(f => f.Source == "Decide" && f.Target == "EndB").Label
+			.Should().NotBe("Should not be written",
+				because: "the batch is ATOMIC: a refusal in operation one must discard operation two as well, "
+					+ "and a label written here would prove it half-applied");
+	}
+
+	[Test]
 	[Description("Off a deciding GATEWAY, setFlow kind sequence is refused when the gateway ALREADY has a default branch - the flow has nothing left to normalise into. A gateway with no default normalises the request instead, and re-kinding the gateway's own default is a silent no-op, so this is the one shape that refuses. Asserted here because the first version of the test above assumed a refusal that does not happen and could never have passed.")]
 	[AllureTag(ToolName)]
 	[AllureName("modify-business-process refuses a second unconditional branch out of a gateway")]

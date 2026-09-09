@@ -95,10 +95,20 @@ namespace Clio.Common
 				sb.Append(char.IsControl(character) ? ' ' : character);
 			}
 			string sanitized = sb.ToString();
-			if (sanitized.Length > maxLength) {
-				return sanitized.Substring(0, maxLength) + "...";
+			if (sanitized.Length <= maxLength) {
+				return sanitized;
 			}
-			return sanitized;
+			// Never cut BETWEEN a surrogate pair. Substring counts UTF-16 units, so a cap landing inside an
+			// astral character (emoji, and every supplementary-plane script) would emit a lone high surrogate:
+			// invalid UTF-16 that a console renders as a replacement glyph and a JSON serializer has to escape
+			// as an unpaired code unit, in the middle of otherwise readable text. Backing off one unit drops
+			// the whole character instead, which is what the caller means by truncation.
+			int cut = maxLength;
+			if (char.IsHighSurrogate(sanitized[cut - 1])) {
+				cut--;
+			}
+
+			return sanitized.Substring(0, cut) + "...";
 		}
 
 		/// <summary>

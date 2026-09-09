@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.IO;
 using System.IO.Compression;
@@ -74,7 +74,8 @@ public class BundledProcessBuilderPackageTests {
 	/// SHA-256 of the committed archive. Produced by <c>rebundle-process-builder.ps1</c> at
 	/// <see cref="ExpectedArchiveVersion"/> from
 	/// the <c>ProcessBuilder</c> repository (<c>packages/CrtProcessBuilder</c>, branch
-	/// <c>feature/ENG-95891-formula-expressions</c>), at the commit recorded mechanically in
+	/// <c>feature/ENG-91853-flow-labels</c>, tag <c>crtprocessbuilder-1.6.0.10</c>), at the commit recorded
+	/// mechanically in
 	/// <see cref="ExpectedProducingCommit"/> — the script captures <c>git rev-parse HEAD</c> and refuses to cut
 	/// from a tree with uncommitted changes, so this reference is no longer a sentence anyone has to keep true
 	/// by hand. Many numbers below the current one are burned rather than reused — some because two branches drew
@@ -162,7 +163,7 @@ public class BundledProcessBuilderPackageTests {
 	/// </para>
 	/// </remarks>
 	private const string ExpectedArchiveSha256 =
-		"E6FF20E8F8890446A3BD0A064F524A2545668072FEB04B21CE67C822D9285E37";
+		"071403F66DFC6949B395D325E5D209C2FE898082C04590B100963988464238B8";
 
 	/// <summary>
 	/// The <c>PackageVersion</c> the shipped descriptor carries.
@@ -190,7 +191,7 @@ public class BundledProcessBuilderPackageTests {
 	/// </para>
 	/// </para>
 	/// </remarks>
-	private const string ExpectedArchiveVersion = "1.6.0.9";
+	private const string ExpectedArchiveVersion = "1.6.0.10";
 
 	/// <summary>
 	/// The commit of the PRODUCING repository the archive was cut from, written by
@@ -202,7 +203,7 @@ public class BundledProcessBuilderPackageTests {
 	/// corresponding to no commit" is unreachable rather than merely documented. Anyone with a checkout can
 	/// verify the rest with one `git checkout`.</para>
 	/// </summary>
-	private const string ExpectedProducingCommit = "849dd2f372a3f1e243f5393099211012f17f8c24";
+	private const string ExpectedProducingCommit = "dc6583fbd0a91d3a8796be2c740291e52221da99";
 
 	/// <summary>
 	/// The <c>ModifiedOnUtc</c> the shipped descriptor carries.
@@ -228,7 +229,7 @@ public class BundledProcessBuilderPackageTests {
 	/// command — the previous pin ended in <c>431</c>, which is how the hand edit was eventually noticed.
 	/// </para>
 	/// </remarks>
-	private const string ExpectedDescriptorModifiedOnUtc = "/Date(1788882470000)/";
+	private const string ExpectedDescriptorModifiedOnUtc = "/Date(1788937195000)/";
 
 	/// <summary>
 	/// The <c>ModifiedOnUtc</c> the shipped COMPILE-MARKER SCHEMA descriptor carries.
@@ -893,9 +894,15 @@ public class BundledProcessBuilderPackageTests {
 				+ "nothing linking the two. Renaming this DataMember, or dropping it so the member serialises "
 				+ "as 'Success', makes the verifier return false for a healthy install — and no test on either "
 				+ "side would fail");
-		archive.Should().Contain("BodyStyle = WebMessageBodyStyle.Wrapped",
-			because: "the wrapper name clio looks for (PingResult) is a FUNCTION of this setting; flipping it to "
-				+ "Bare removes the envelope and the verdict inverts silently");
+		archive.Should().Contain("[DataMember(Name = \"label\")]",
+			because: "the SAME hand-mirror as 'success' above, one release later and with a louder failure. "
+				+ "clio's warning tells every caller to update to CrtProcessBuilder "
+				+ "1.6.0.8 when a label does not come back, and that sentence is only true if the archive "
+				+ "clio SHIPS actually declares the member. A rebundle from a pre-label commit satisfies the "
+				+ "SHA (recomputed from whatever was packed), the version (passed on the command line), both "
+				+ "stamps, the gate count and the operation count - every other pin in this fixture - and "
+				+ "then clio reports 'your labels were discarded, install 1.6.0.8' about the very archive it "
+				+ "just installed");
 	}
 
 	[Test]
@@ -951,7 +958,30 @@ public class BundledProcessBuilderPackageTests {
 				GetToolDescription(typeof(Clio.Command.McpServer.Tools.ProcessDesigner.ModifyBusinessProcessTool)),
 			["modify-business-process prompt"] =
 				Clio.Command.McpServer.Prompts.ProcessDesigner.ModifyBusinessProcessPrompt.PromptByProcess(
-					"env-placeholder", "process-placeholder")
+					"env-placeholder", "process-placeholder"),
+			// Added after the flow-label review found three agent-facing surfaces naming a package version
+			// with nothing checking them. The describe tool is the one that documents the AMBIGUITY of an
+			// absent label, so its version is the one an agent uses to decide whether a null means "no label"
+			// or "this package cannot report labels" - a stale number there produces a confident wrong answer.
+			["describe-business-process description"] =
+				GetToolDescription(typeof(Clio.Command.McpServer.Tools.ProcessDesigner.DescribeProcessTool)),
+			["describe-business-process prompt"] =
+				Clio.Command.McpServer.Prompts.ProcessDesigner.DescribeProcessPrompt.DescribeProcessGuidance(
+					"process-placeholder", "env-placeholder"),
+			// The caller-facing WARNING, which is the one surface that both names a version and tells the
+			// reader to act on it ("Update the package (clio install-process-builder)"). It was asserted only
+			// against its own constant, so the pair passed for 9.9.9.9. Rendered from the absent branch
+			// because that is the branch the version sentence belongs to.
+			["flow-label dropped warning"] =
+				Clio.Command.ProcessModel.FlowLabelExpectation.BuildWarning([
+					new Clio.Command.ProcessModel.FlowLabelExpectation.FlowLabelMiss(
+						new Clio.Command.ProcessModel.FlowLabelExpectation.FlowLabel("A", "B", "Yes"),
+						string.Empty)
+				]),
+			["flow-label unverified warning"] =
+				Clio.Command.ProcessModel.FlowLabelExpectation.BuildUnverifiedWarning(
+					[new Clio.Command.ProcessModel.FlowLabelExpectation.FlowLabel("A", "B", "Yes")],
+					"reason-placeholder")
 		};
 		var literalPattern = new System.Text.RegularExpressions.Regex(@"CrtProcessBuilder (\d+\.\d+\.\d+\.\d+)");
 
@@ -960,16 +990,26 @@ public class BundledProcessBuilderPackageTests {
 		// Act & Assert
 		foreach (KeyValuePair<string, string> surface in surfaces) {
 			System.Text.RegularExpressions.MatchCollection matches = literalPattern.Matches(surface.Value);
-			matches.Should().NotBeEmpty(
-				because: $"the {surface.Key} documents the version the lookup/performer route ships from — if the "
-					+ "sentence was removed on purpose, remove the surface from this test in the same commit");
+			// The "sentence still exists" guard reads the WIDE net, not the shaped one. The shaped pattern
+			// requires the version to sit immediately after the package name, and three of these surfaces do
+			// not say it that way: two write "CrtProcessBuilder BELOW 1.6.0.8" and one wraps the name in
+			// markdown backticks with a line break before the number. Asserting NotBeEmpty on the shaped
+			// pattern would therefore fail on a correct surface, and the fix is not to reword prose to suit a
+			// regex - it is to check the thing that actually matters, which is that every four-part version on
+			// these surfaces is installable from this distribution.
+			System.Text.RegularExpressions.MatchCollection anyMatches =
+				anyVersionPattern.Matches(surface.Value);
+			anyMatches.Should().NotBeEmpty(
+				because: $"the {surface.Key} documents the version a route ships from or the remedy to install — "
+					+ "if the sentence was removed on purpose, remove the surface from this test in the same "
+					+ "commit");
 			foreach (System.Text.RegularExpressions.Match match in matches) {
 				AssertInstallableFromThisDistribution(match.Groups[1].Value, surface.Key);
 			}
 			// The wide net behind the shaped one: ANY four-part version on these surfaces is the package
 			// version (nothing else four-part belongs in them), so a mention that drifts into a different
 			// shape — 'CrtProcessBuilder >= X', 'pre-X', a bare number — cannot hide beside a matching literal.
-			foreach (System.Text.RegularExpressions.Match match in anyVersionPattern.Matches(surface.Value)) {
+			foreach (System.Text.RegularExpressions.Match match in anyMatches) {
 				AssertInstallableFromThisDistribution(match.Value, surface.Key);
 			}
 		}

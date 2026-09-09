@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Text.Json;
 using System.Linq;
@@ -574,7 +574,7 @@ public sealed class ModifyBusinessProcessCommandTests {
 
 	[Test]
 	[Category("Unit")]
-	[Description("An operations array whose ONLY special content is a flow label still triggers the read-back, and the warning still reaches the caller. On the modify path the drop is worse than on the build path: an edit normally lands on a designer-authored process where a label already exists, so a caller relabelling a branch against an old package is told the edit succeeded while the OLD label is still what is drawn. Both mutations are otherwise invisible — dropping the `expectedLabels.Count == 0` clause makes the guard dead code for a labels-only edit, and deleting the WriteWarning block loses the only signal.")]
+	[Description("An operations array whose ONLY special content is a flow label still triggers the read-back, and the warning still reaches the caller. On the modify path the drop is worse than on the build path: an edit normally lands on a designer-authored process where a label already exists, so a caller relabelling a branch against an old package is told the edit succeeded while the OLD label is still what is drawn. Both mutations are otherwise invisible — dropping the `expectedLabels.Count == 0` clause makes the guard dead code for a labels-only edit, and deleting the WriteWarning block loses the only signal. NOTE: this fixture pinned the WRONG wording until the pre-merge review. The read-back here returns 'Rejected', so the outcome is a MISMATCH, and the assertion demanded the absent-case sentence ('no diagram label ... (Approved)') while its own because-clause said 'the connector still says something else'. The test was documenting the defect. It now asserts the mismatch branch, including that the destructive package remedy is NOT prescribed for a cause the package version did not create.")]
 	public void Execute_ShouldWarn_WhenAFlowLabelWasDiscarded() {
 		// Arrange
 		ModifyBusinessProcessOptions options = new() {
@@ -603,8 +603,46 @@ public sealed class ModifyBusinessProcessCommandTests {
 		result.Should().Be(0,
 			because: "a dropped label is a caveat about an edit that SUCCEEDED, never a failure");
 		_processDescriber.Received(1).Describe(Arg.Any<ProcessIdentity>(), null);
-		warnings.Should().ContainSingle(warning => warning.Contains("Decide -> Yes ('Approved')"),
-			because: "the caller asked for 'Approved' and the connector still says something else");
+		warnings.Should().ContainSingle(
+			warning => warning.Contains("Decide -> Yes (asked for 'Approved', drawn 'Rejected')"),
+			because: "the caller asked for 'Approved' and the connector still says something else - so the "
+				+ "warning has to carry BOTH, and the old label is the datum that tells them the edit did not "
+				+ "take rather than that the field vanished");
+		warnings.Should().NotContain(warning => warning.Contains("install-process-builder"),
+			because: "a package that discards the field leaves NOTHING on the flow; text coming back means "
+				+ "the field arrived, so recommending a configuration build and an instance restart here "
+				+ "prescribes a destructive remedy for a cause it cannot fix");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("A label that LANDED emits no warning at all. See the create twin for why this is the mutation the other label tests cannot catch: dropping the MissingLabels filter keeps every one of them green while turning every successful labelled edit into a false report that the label was discarded. Pinned on both write paths because the emission is per-command and one path can regress alone.")]
+	public void Execute_ShouldNotWarn_WhenTheFlowLabelLanded() {
+		// Arrange
+		ModifyBusinessProcessOptions options = new() {
+			Environment = "sandbox",
+			ProcessName = "UsrSampleProcess",
+			OperationsJson = "[{\"op\":\"setFlow\",\"source\":\"Decide\",\"target\":\"Yes\",\"kind\":\"sequence\",\"label\":\"Approved\"}]"
+		};
+		_modifyBusinessProcessService.ModifyProcess("sandbox", Arg.Any<ModifyBusinessProcessRequest>())
+			.Returns(BuildResult());
+		// The edit took: the flow comes back with the new label.
+		_processDescriber.Describe(Arg.Any<ProcessIdentity>(), null)
+			.Returns(new DescribeProcessResult {
+				Elements = [],
+				Flows = [new DescribedFlow { Source = "Decide", Target = "Yes", Label = "Approved" }]
+			});
+		List<string> warnings = [];
+		_logger.When(logger => logger.WriteWarning(Arg.Any<string>()))
+			.Do(call => warnings.Add(call.Arg<string>()));
+
+		// Act
+		int result = _command.Execute(options);
+
+		// Assert
+		result.Should().Be(0, because: "a verified label is an ordinary success");
+		warnings.Should().BeEmpty(
+			because: "the relabel is drawn exactly as asked, so there is nothing to caveat");
 	}
 
 	[Test]

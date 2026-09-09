@@ -446,9 +446,9 @@ public class ModifyBusinessProcessCommand(
 		string code = string.IsNullOrWhiteSpace(schemaName) ? options.ProcessName : schemaName;
 		if (string.IsNullOrWhiteSpace(code) && string.IsNullOrWhiteSpace(options.ProcessUid)) {
 			// Nothing to read back against; silence would be indistinguishable from a verified success.
-			BlockExpectationReporter.WarnAccessRightsUnverified(logger, intent,
-				"the edit returned no process identity to read back");
-			WarnLabelsUnverified(expectedLabels, "the edit returned no process identity to read back");
+			const string noIdentity = "the edit returned no process identity to read back";
+			BlockExpectationReporter.WarnAccessRightsUnverified(logger, intent, noIdentity);
+			BlockExpectationReporter.WarnFlowLabelsUnverified(logger, expectedLabels, noIdentity);
 			return;
 		}
 
@@ -457,7 +457,8 @@ public class ModifyBusinessProcessCommand(
 		if (described.IsError) {
 			BlockExpectationReporter.WarnAccessRightsUnverified(logger, intent,
 				described.FirstError.Description);
-			WarnLabelsUnverified(expectedLabels, described.FirstError.Description);
+			BlockExpectationReporter.WarnFlowLabelsUnverified(logger, expectedLabels,
+				described.FirstError.Description);
 			return;
 		}
 
@@ -469,22 +470,7 @@ public class ModifyBusinessProcessCommand(
 			logger.WriteWarning(approvalWarning);
 		}
 
-		string? droppedLabels = FlowLabelExpectation.BuildWarning(
-			FlowLabelExpectation.MissingLabels(described.Value, expectedLabels));
-		if (droppedLabels is not null) {
-			logger.WriteWarning(droppedLabels);
-		}
-	}
-
-	// See the twin on CreateBusinessProcessCommand: a labels-only payload leaves `intent` empty, so the
-	// intent-based unverified warning is silent, and the no-floor decision for this field depends on the
-	// read-back being able to speak.
-	private void WarnLabelsUnverified(IReadOnlyList<FlowLabelExpectation.FlowLabel> expectedLabels,
-			string reason) {
-		string? unverified = FlowLabelExpectation.BuildUnverifiedWarning(expectedLabels, reason);
-		if (unverified is not null) {
-			logger.WriteWarning(unverified);
-		}
+		BlockExpectationReporter.ReportFlowLabels(logger, described.Value, expectedLabels);
 	}
 }
 

@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text.Json;
@@ -77,7 +77,9 @@ public sealed class CreateBusinessProcessCommandTests {
 				+ "parameters that is indistinguishable from success");
 	}
 
-	[Description("Writes every server warning out as a WARNING. The modify twin has had this covered from the start; the create side shipped the channel with service-level tests only, so deleting the loop that writes them left the whole suite green - measured, 8 273 passed against the mutation. A warning here is a caveat on a SUCCESSFUL build: an outcome that applied and is not what the caller would assume, so one deserialized and then dropped is the same defect as one never sent.")]
+	[Test]
+	[Category("Unit")]
+	[Description("Writes every server warning out as a WARNING. A warning here is a caveat on a SUCCESSFUL build: an outcome that applied and is not what the caller would assume, so one deserialized and then dropped is the same defect as one never sent. NOTE ON THE ORIGINAL DESCRIPTION, kept because the correction is the useful part: it claimed 'deleting the loop that writes them left the whole suite green - measured, 8 273 passed against the mutation'. That measurement was real and its conclusion was wrong. This test and its negative twin below were written with [Description] but WITHOUT [Test], so neither had ever run - the mutation survived because nothing was executing, not because the coverage was weak. Attributes added; the pair now actually guards the channel.")]
 	public void Execute_ShouldWriteWarnings_WhenTheServerReportsThem() {
 		// Arrange
 		CreateBusinessProcessOptions options = new() {
@@ -203,7 +205,9 @@ public sealed class CreateBusinessProcessCommandTests {
 		_processDescriber.Received(1).Describe(Arg.Any<ProcessIdentity>(), null);
 	}
 
-	[Description("Writes no warning when the server reported none, so an empty channel cannot train a reader to ignore it. Pairs with the test above: without this one, a loop that warned unconditionally would also pass.")]
+	[Test]
+	[Category("Unit")]
+	[Description("Writes no warning when the server reported none, so an empty channel cannot train a reader to ignore it. Pairs with the test above: without this one, a loop that warned unconditionally would also pass. This is also the only create-side guard against a warning channel that fires SPURIOUSLY, which is the failure mode every read-back guard on this command can introduce - so it running matters more than its own subject suggests. It had no [Test] attribute until the flow-label review found it.")]
 	public void Execute_ShouldNotWriteAnyWarning_WhenTheServerReportsNone() {
 		// Arrange
 		CreateBusinessProcessOptions options = new() {
@@ -356,6 +360,37 @@ public sealed class CreateBusinessProcessCommandTests {
 				+ "flow");
 		warnings.Should().ContainSingle(warning => warning.Contains("install-process-builder"),
 			because: "the remedy has to arrive with the finding, or the caller audits their own payload");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("A label that LANDED emits no warning at all. This is the one mutation the rest of the label coverage cannot see: replacing BuildWarning(MissingLabels(described, expected)) with BuildWarning(expected) - dropping the filter - leaves every MissingLabels unit test green and every dropped-label assertion green, because both still hold. What changes is that EVERY successful labelled build then tells the caller their labels were discarded and points them at a destructive package install. A guard that fires on success is worse than no guard: it trains a reader to ignore the channel that carries the true findings.")]
+	public void Execute_ShouldNotWarn_WhenTheFlowLabelLanded() {
+		// Arrange
+		CreateBusinessProcessOptions options = new() {
+			Environment = "sandbox",
+			DescriptorJson = "{\"name\":\"UsrSampleProcess\",\"packageName\":\"Custom\",\"elements\":[{\"name\":\"Decide\",\"type\":\"userTask\"},{\"name\":\"Yes\",\"type\":\"endEvent\"}],\"flows\":[{\"source\":\"Decide\",\"target\":\"Yes\",\"label\":\"Approved\"}]}"
+		};
+		_createBusinessProcessService.BuildProcess("sandbox", Arg.Any<CreateBusinessProcessRequest>())
+			.Returns(BuildResult());
+		// The saved flow comes back carrying exactly the label that was sent: the ordinary, healthy outcome.
+		_processDescriber.Describe(Arg.Any<ProcessIdentity>(), null)
+			.Returns(new DescribeProcessResult {
+				Elements = [],
+				Flows = [new DescribedFlow { Source = "Decide", Target = "Yes", Label = "Approved" }]
+			});
+		List<string> warnings = [];
+		_logger.When(logger => logger.WriteWarning(Arg.Any<string>()))
+			.Do(call => warnings.Add(call.Arg<string>()));
+
+		// Act
+		int result = _command.Execute(options);
+
+		// Assert
+		result.Should().Be(0, because: "a verified label is an ordinary success");
+		warnings.Should().BeEmpty(
+			because: "the label is drawn exactly as asked, so there is nothing to caveat - and a warning here "
+				+ "would name a real flow and a real label, which is what makes a spurious one credible");
 	}
 
 	[Test]

@@ -374,33 +374,87 @@ and without it the ticket's own basic case draws flows through elements.
 
 ## 8. Definition of Done
 
-- [ ] Both gateway kinds and all three flow kinds build, modify, save and **run** on a stand (V1–V9).
-- [ ] The `(class, FlowType, ManagerItemUId, VisualType)` quadruple asserted per kind, and the metadata
-      byte-diffed against the capture (V2).
-- [ ] `describe` reports gateways with a `buildType`, and flows with `kind`, `condition`,
-      `branchesOnActivityResult` and `name`.
-- [ ] `setFlow` changes a flow's kind **in place**, preserving its `UId` **and** its `FlowElements` index;
+**Split per story, deliberately.** One shared 17-item checklist covered four stories in three
+repositories, and the predictable thing happened: it was never ticked at all, so `story-2` closed
+`done` against a list with nothing checked — while two of its items were genuinely unmet and one had
+been descoped to another ticket entirely. A single list cannot be ticked honestly by one story, and an
+unticked list tells a reviewer nothing about which story owes what. Each story below carries only what
+it can actually close.
+
+### Story 1 — `CrtProcessBuilder`: gateways and flow kinds (`done`)
+
+- [x] The `(class, FlowType, ManagerItemUId, VisualType)` quadruple asserted per kind, and the metadata
+      byte-diffed against the capture (V2). Knowledge:
+      `docs/knowledge/platform/sequence-flow-visualtype-is-written-as-a-literal.md`.
+- [x] `setFlow` changes a flow's kind **in place**, preserving its `UId` **and** its `FlowElements` index;
       `setFlowCondition` still works as an alias.
-- [ ] Layout: no overlap for one split level with **unequal** branch lengths, with and without a merge; a
-      back-edge lays out left-to-right; idempotent; adding a branch does not move existing branches.
-- [ ] R14 produces **no** finding for a converging or-gateway with a single default flow; the self-loop
-      rule fires; the new rules fire; client and server agree on every error-severity rule.
-- [ ] `removeFlow` leaves no stale `Outgoings` / `Incomings`.
-- [ ] Package unit suite green and not regressed below the 928-test ENG-95891 baseline; clio targeted
-      filter green, recorded in the PR.
-- [ ] `clio.mcp.e2e` extended for every changed tool.
-- [ ] **MCP reviewed** — statement naming the tools, prompts and e2e files touched.
-- [ ] **ClioRing compatibility reviewed, no Ring-consumed contract changed** — inspected
+- [x] `removeFlow` leaves no stale `Outgoings` / `Incomings`.
+- [x] Package unit suite green and not regressed below the 928-test ENG-95891 baseline (1 201 at close).
+
+### Story 2 — clio: validator, MCP surface, bundled archive (`done`)
+
+- [x] Both gateway kinds and all three flow kinds build, modify, save and **run** on a stand (V1–V9) —
+      manual runs 2026-09-06, 2026-09-08, `…-08b`, `…-08c`, `…-08d`.
+- [x] `describe` reports gateways with a `buildType`, and flows with `kind`, `condition`,
+      `branchesOnActivityResult` and `name`.
+- [x] R14 produces **no** finding for a converging or-gateway with a single default flow; the self-loop
+      rule fires; the new rules fire; client and server agree on every error-severity rule. R14 scoped to
+      sources with more than one outgoing flow — unscoped it called 45 shipped gateways invalid.
+- [x] `clio.mcp.e2e` extended for every changed tool.
+- [x] **MCP reviewed** — statement naming the tools, prompts and e2e files touched.
+- [x] **ClioRing compatibility reviewed, no Ring-consumed contract changed** — inspected
       `clio-ring/ClioRing.Ipc`, `clio-ring/ClioRing`, `clio-ring/ClioRing.Desktop/actions.json`; Ring's
       tool surface is `clio-deploy-creatio`, `clio-env-info`, `clio-import-iis-environments`,
       `clio-list-packages`, `clio-manage-envs`, `clio-restart`, `clio-uninstall-creatio`, `clio-version`
       — no process-designer tool and no `clio-run` nested process command.
-- [ ] Docs and MCP descriptions updated; `DescribeProcessPrompt` gains **both** fields; guidance raised as
-      a clio-knowledge PR with a `libraryVersion` + `sequence` bump and the curated-names fixture re-pinned.
-- [ ] Two `docs/knowledge/` records added (§5).
-- [ ] Package rebundled with an **increased** `-Version` above 1.4.0.57; pins updated; `[RequiresPackage]`
+- [x] Docs and MCP descriptions updated; `DescribeProcessPrompt` gains **both** fields (`kind`,
+      `condition`).
+- [x] Two `docs/knowledge/` records added (§5).
+- [x] Package rebundled with an **increased** `-Version` above 1.4.0.57; pins updated; `[RequiresPackage]`
       floors raised with the reason credited; clio rebuilt before any local install verification.
-- [ ] Agentic code review: comprehensive fan-out before opening each PR and again before ready-to-merge.
-- [ ] `spec/sprint-status.yaml` rows added for all three repositories and moved to `done` at close.
-- [ ] **The spec folder is committed.** The 2026-08-27 version of these documents was lost because it was
+- [x] clio targeted filter green, recorded in the PR.
+
+### Story 3 — clio-knowledge: the gateway and branch vocabulary (`done`)
+
+- [x] Guidance raised as a clio-knowledge PR with a `libraryVersion` + `sequence` bump
+      (PR #135, 1.13.94).
+
+### Flow-label follow-up — `story-eng-91853-flow-labels-1`
+
+The label was descoped out of the main scope and is delivered separately. Its own list, because none of
+the above can express it:
+
+- [x] `label` accepted on `flows[]`, `addFlow` and `setFlow`, and reported on every flow by `describe`,
+      with the three-state contract (omit keeps / value replaces / `""` clears) symmetric on both sides.
+- [x] A label survives a re-kind, drawn exactly once — measured on a stand, and the resource-key trap
+      recorded in `docs/knowledge/platform/a-flow-rekind-does-not-orphan-its-label.md`.
+- [x] The design-time level observed in a real designer, not only in storage: labels drawn, and a
+      cleared label leaving **no** DOM node rather than an empty one.
+- [x] A read-back guard rather than a raised `[RequiresPackage]` floor, with the reason recorded beside
+      the rule it looks like an exception to; both write paths warn, and the warning distinguishes the
+      three outcomes it can report (absent / different / a clear that did not land) rather than
+      rendering all three as the first.
+- [x] `DescribeProcessPrompt` gains the THIRD flow field, and the prompt's field list is pinned test-side
+      so the fourth cannot be forgotten the same way.
+- [x] Guidance raised with a `libraryVersion` + `sequence` bump (1.13.100) **and the curated-names
+      fixture re-pinned** (1.13.101) — the half of the original item that was missed.
+- [x] `clio.mcp.e2e` extended for both write paths, all four `setFlow` states plus `addFlow`.
+- [x] Version literals covered by the bundled-archive net, including the caller-facing warning text.
+- [x] Agentic code review: comprehensive fan-out before opening each PR and again before ready-to-merge.
+
+### Family-level
+
+- [x] `spec/sprint-status.yaml` rows added for all three repositories and moved to `done` at close.
+- [x] **The spec folder is committed.** The 2026-08-27 version of these documents was lost because it was
       left untracked through a merge; the Jira attachment was the only surviving copy.
+
+### Descoped — not this ticket's to close
+
+- **Layout: no overlap for one split level with unequal branch lengths, with and without a merge; a
+  back-edge lays out left-to-right; idempotent; adding a branch does not move existing branches.**
+  Carried to **ENG-95890** by the ticket's own split (§5 "What stays out" in
+  `eng-91853-gateways-and-flows-layout.md`). It was an unticked line on a shared list for three stories
+  that never owned it, which is most of why the list read as incomplete. The label work added a second
+  input to it — a three-way fan stacks downward, so two descending branches share a corridor and the
+  labels on them sit near each other's lines; the fan DIRECTION is deliberate and argued, the corridor
+  is the open part.

@@ -1,4 +1,4 @@
-using System.ComponentModel;
+﻿using System.ComponentModel;
 using System.ComponentModel.DataAnnotations;
 using ModelContextProtocol.Server;
 
@@ -36,7 +36,10 @@ public static class ModifyBusinessProcessPrompt {
 		 place, keeping its position; `addFlow` takes `kind` (sequence | conditional | default) and, for a
 		 conditional one, `condition`, so a branch can be declared as the flow is added rather than in two steps;
 		 `setFlow` (`source` + `target` + `kind`, plus `condition` for a conditional one) changes an EXISTING
-		 flow's kind in either direction, also in place. Position decides precedence: sibling branches off one element are evaluated in
+		 flow's kind in either direction, also in place. Both also take `label` — the text drawn ON the
+		 connector — where omitting it keeps whatever is there, a non-empty value replaces it and `""` removes
+		 it; `describe-business-process` first, because a label is usually a person's own wording and a write
+		 that carries one overwrites it silently. Position decides precedence: sibling branches off one element are evaluated in
 		 the order their flows were added and the first true one wins. No gateway is needed — the platform
 		 synthesizes one for a conditional flow whose source is an activity. The condition must be a bool (an int is refused; the interpreted engine does not coerce)
 		 and every `[#…#]` parameter reference in it must resolve in that process. A condition on a DEFAULT branch

@@ -1,7 +1,8 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text.Json.Nodes;
+using Clio.Common;
 
 namespace Clio.Command.ProcessModel;
 
@@ -45,6 +46,12 @@ public static class FlowLabelExpectation {
 	/// </summary>
 	internal const string MinimumPackageVersion = "1.6.0.8";
 
+	// How many FLOWS a single warning will name before it says "+ N more". The server accepts 1 000
+	// operations per request, and every one of them can carry a label, so an unbounded join renders a
+	// thousand endpoint pairs into an agent's context - defeating the per-value cap below, which bounds
+	// each label and not their number. Ten is enough to act on and short enough to read.
+	private const int MaxRenderedFlows = 10;
+
 	// How much caller-supplied text a warning will echo. Long enough that a real label is never cut - the
 	// shipped corpus's longest is well under it - and short enough that a pathological one cannot bloat the
 	// message an agent reads.
@@ -53,14 +60,36 @@ public static class FlowLabelExpectation {
 	/// <summary>The modify operations that WRITE a flow label. Nothing else on the operations array does.</summary>
 	private static readonly string[] LabelWritingOperations = ["addFlow", "setFlow"];
 
+	/// <summary>
+	/// The operation that makes a pending expectation MOOT rather than superseding it.
+	/// <para>Not a label writer, and not ignorable either. <c>addFlow(A,B,"Yes")</c> then
+	/// <c>removeFlow(A,B)</c> then a plain <c>addFlow(A,B)</c> leaves a flow with no label and an
+	/// expectation that says "Yes" — the remove was filtered out by op, and the re-add carries no label so
+	/// it does not supersede. The guard then reports a dropped label and tells the caller to install a
+	/// package, on a batch that did exactly what was asked: the precise false positive this design exists
+	/// to avoid.</para>
+	/// </summary>
+	private const string FlowForgettingOperation = "removeFlow";
+
 	/// <summary>One flow the caller asked to label, addressed the only way the write side allows.</summary>
 	/// <param name="Source">Source element name, trimmed the way the server trims it before resolving it.</param>
 	/// <param name="Target">Target element name, trimmed the same way.</param>
 	/// <param name="Label">
 	/// The label text that was sent, trimmed. An EMPTY string is a deliberate CLEAR and is carried as one:
-	/// see <see cref="MissingLabels"/> for the asymmetry in how the two are verified.
+	/// see <see cref="Missing"/> for the asymmetry in how the two are verified.
 	/// </param>
 	public sealed record FlowLabel(string Source, string Target, string Label);
+
+	/// <summary>
+	/// One label that did not land, paired with what the read-back actually shows on that flow.
+	/// <para><see cref="Drawn"/> is the datum that separates the three outcomes <see cref="Missing"/>
+	/// reports, and the warning is false for two of them without it: it is the only thing distinguishing "the
+	/// package discarded the field" (nothing drawn) from "the server stored something else" (something else
+	/// drawn), and the only way a caller can see that a CLEAR left the old text standing.</para>
+	/// </summary>
+	/// <param name="Wanted">The label the caller asked for. An empty <c>Label</c> was a request to CLEAR.</param>
+	/// <param name="Drawn">What the read-back reports on that flow, trimmed; empty when it carries none.</param>
+	public sealed record FlowLabelMiss(FlowLabel Wanted, string Drawn);
 
 	/// <summary>
 	/// The labels a BUILD descriptor asks for — every <c>flows[]</c> entry carrying a <c>label</c> member.
@@ -109,13 +138,13 @@ public static class FlowLabelExpectation {
 	/// </summary>
 	/// <param name="described">The description read back after the successful operation.</param>
 	/// <param name="expected">The labels returned by <see cref="FromDescriptor"/> / <see cref="FromOperations"/>.</param>
-	public static IReadOnlyList<FlowLabel> MissingLabels(DescribeProcessResult described,
+	public static IReadOnlyList<FlowLabelMiss> Missing(DescribeProcessResult described,
 			IReadOnlyList<FlowLabel> expected) {
 		if (expected.Count == 0 || described?.Flows is null) {
-			return Array.Empty<FlowLabel>();
+			return Array.Empty<FlowLabelMiss>();
 		}
 
-		List<FlowLabel> missing = [];
+		List<FlowLabelMiss> missing = [];
 		foreach (FlowLabel wanted in expected) {
 			DescribedFlow? flow = FindFlow(described, wanted);
 			if (flow is null) {
@@ -127,13 +156,13 @@ public static class FlowLabelExpectation {
 				// A clear: only a read-back that still shows text is evidence. An empty read-back is the
 				// requested state AND what a dropped field looks like, so it is not a finding.
 				if (drawn.Length != 0) {
-					missing.Add(wanted);
+					missing.Add(new FlowLabelMiss(wanted, drawn));
 				}
 				continue;
 			}
 
 			if (!string.Equals(drawn, wanted.Label, StringComparison.Ordinal)) {
-				missing.Add(wanted);
+				missing.Add(new FlowLabelMiss(wanted, drawn));
 			}
 		}
 
@@ -141,22 +170,113 @@ public static class FlowLabelExpectation {
 	}
 
 	/// <summary>
+	/// Of the labels that were sent, those this guard can NEVER verify, because the caller addressed the
+	/// flow by UId rather than by element name.
+	/// <para>Both write paths accept either form — <c>FindFlowNode</c> tries a UId first — while
+	/// <c>describe</c> reports <c>source</c> and <c>target</c> as element NAMES. So a UId-addressed write
+	/// produces an expectation that <see cref="Missing"/> can never match, and a dropped label on it goes
+	/// unreported with no caveat either: the unverified warning fires only when the describe itself failed,
+	/// and this describe succeeds.</para>
+	/// <para>That matters more than an ordinary blind spot, because the read-back is the SOLE reason this
+	/// field has no raised <c>[RequiresPackage]</c> floor. Silence here is the exact state the floor was not
+	/// raised on the strength of avoiding.</para>
+	/// <para>Detected by SHAPE rather than by "the flow was not found", deliberately. An unfound flow is
+	/// genuinely ambiguous — it may have been removed later in the same batch — and reporting all of them
+	/// would cry wolf on working builds, which is what <see cref="Missing"/> exists not to do. A GUID
+	/// endpoint is unambiguous: describe never reports one, so it can never match, whatever else the batch
+	/// did.</para>
+	/// </summary>
+	/// <param name="expected">The labels returned by <see cref="FromDescriptor"/> / <see cref="FromOperations"/>.</param>
+	public static IReadOnlyList<FlowLabel> Unverifiable(IReadOnlyList<FlowLabel> expected) {
+		List<FlowLabel> unverifiable = [];
+		foreach (FlowLabel wanted in expected) {
+			if (Guid.TryParse(wanted.Source, out _) || Guid.TryParse(wanted.Target, out _)) {
+				unverifiable.Add(wanted);
+			}
+		}
+
+		return unverifiable;
+	}
+
+	/// <summary>
+	/// The caveat for a label addressed by UId, which no read-back can confirm.
+	/// </summary>
+	/// <param name="unverifiable">The labels returned by <see cref="Unverifiable"/>.</param>
+	public static string? BuildUnverifiableWarning(IReadOnlyList<FlowLabel> unverifiable) {
+		if (unverifiable.Count == 0) {
+			return null;
+		}
+
+		string subject = Subject(unverifiable.Count);
+		return $"The operation reported success, but the diagram label on the {subject} "
+			+ $"{Describe(unverifiable)} could NOT be verified: the flow was addressed by UId, and the "
+			+ "read-back reports a flow's endpoints as element NAMES, so there is nothing to compare. A "
+			+ $"CrtProcessBuilder below {MinimumPackageVersion} discards the label silently, and this check "
+			+ "is the only signal that it did. Re-send the same operation naming the SOURCE and TARGET "
+			+ "elements, or re-read the process with describe-business-process, before reporting the label "
+			+ "as applied.";
+	}
+
+	/// <summary>
 	/// The caller-facing warning for labels that did not land. Returns <c>null</c> when nothing is missing, so
 	/// a caller can treat null as "no warning to emit".
+	/// <para><see cref="Missing"/> reports THREE different outcomes and they need three different
+	/// sentences, because two of them make the obvious wording false. A label that came back DIFFERENT is not
+	/// "no label", and a package that discards the field cannot be the cause — one that discards it leaves
+	/// nothing, not something else. A CLEAR that did not land leaves the OLD text drawn, so telling the caller
+	/// to re-apply a label they asked to remove inverts what they wanted. Only the absent case is caused by an
+	/// old package, so only it prescribes <c>install-process-builder</c> — which is a destructive tool that
+	/// runs a configuration build and restarts the instance, and must not be recommended for a cause it cannot
+	/// fix.</para>
+	/// <para>Every case shows what IS drawn, because that is the datum a caller needs to tell an old label
+	/// that survived from a server that stored something else.</para>
 	/// </summary>
-	/// <param name="missing">The labels returned by <see cref="MissingLabels"/>.</param>
-	public static string? BuildWarning(IReadOnlyList<FlowLabel> missing) {
+	/// <param name="missing">The misses returned by <see cref="Missing"/>.</param>
+	public static string? BuildWarning(IReadOnlyList<FlowLabelMiss> missing) {
 		if (missing.Count == 0) {
 			return null;
 		}
 
-		string subject = missing.Count == 1 ? "flow" : "flows";
-		return $"The operation reported success, but the read-back shows no diagram label on the {subject} "
-			+ $"{Describe(missing)}. The usual cause is a deployed CrtProcessBuilder below "
-			+ $"{MinimumPackageVersion}, which declares no 'label' field on a flow and therefore discards it "
-			+ "silently. Update the package (clio install-process-builder) and re-apply the labels, or label "
-			+ "the connectors in the process designer. Until then a decision with two branches renders as two "
-			+ "identical unlabelled arrows.";
+		List<FlowLabelMiss> absent = [];
+		List<FlowLabelMiss> different = [];
+		List<FlowLabelMiss> notCleared = [];
+		foreach (FlowLabelMiss miss in missing) {
+			if (miss.Wanted.Label.Length == 0) {
+				notCleared.Add(miss);
+			} else if (miss.Drawn.Length == 0) {
+				absent.Add(miss);
+			} else {
+				different.Add(miss);
+			}
+		}
+
+		List<string> parts = [];
+		if (absent.Count != 0) {
+			parts.Add($"The read-back shows no diagram label on the {Subject(absent.Count)} "
+				+ $"{DescribeWanted(absent)}. The usual cause is a deployed CrtProcessBuilder below "
+				+ $"{MinimumPackageVersion}, which declares no 'label' field on a flow and therefore discards "
+				+ "it silently. Update the package (clio install-process-builder) and re-apply the labels, or "
+				+ "label the connectors in the process designer. Until then a decision with two branches "
+				+ "renders as two identical unlabelled arrows.");
+		}
+
+		if (different.Count != 0) {
+			parts.Add($"The read-back shows DIFFERENT text on the {Subject(different.Count)} "
+				+ $"{DescribeDifference(different)}. The package version is NOT the cause here - one that "
+				+ "discards the field leaves nothing rather than something else - so the label reached the "
+				+ "server and came back changed: the process was edited elsewhere between the write and this "
+				+ "read, or the text was normalised on the way in. Re-read it with describe-business-process "
+				+ "and re-apply only if the drawn text is not what the diagram should say.");
+		}
+
+		if (notCleared.Count != 0) {
+			parts.Add($"The {Subject(notCleared.Count)} {DescribeDrawn(notCleared)} still carries a diagram "
+				+ "label after being asked to drop it, so the connector still reads the old text. Re-apply the "
+				+ "clear, or remove the label in the process designer. Updating the package will not help: one "
+				+ "that discards the field leaves the old label exactly where it was.");
+		}
+
+		return "The operation reported success. " + string.Join(" ", parts);
 	}
 
 	/// <summary>
@@ -182,40 +302,61 @@ public static class FlowLabelExpectation {
 			+ "process with describe-business-process before reporting the labels as applied.";
 	}
 
-	// One rendering for both warnings, so the way a flow is named cannot drift between them.
-	private static string Describe(IReadOnlyList<FlowLabel> flows) {
-		List<string> pairs = [];
-		foreach (FlowLabel flow in flows) {
-			pairs.Add($"{Sanitize(flow.Source)} -> {Sanitize(flow.Target)} ('{Sanitize(flow.Label)}')");
-		}
+	private static string Subject(int count) => count == 1 ? "flow" : "flows";
 
-		return string.Join(", ", pairs);
+	// One join for every renderer, so the cap cannot be applied to some warnings and not others.
+	private static string Join<T>(IReadOnlyList<T> items, Func<T, string> render) {
+		IEnumerable<string> rendered = items.Take(MaxRenderedFlows).Select(render);
+		string listed = string.Join(", ", rendered);
+		int hidden = items.Count - MaxRenderedFlows;
+		return hidden > 0 ? $"{listed} (+ {hidden} more)" : listed;
 	}
 
+	// One rendering of the endpoint pair for every warning, so the way a flow is NAMED cannot drift between
+	// them. What is quoted after the pair differs per outcome, which is the point of having four of these.
+	private static string Endpoints(FlowLabel flow) =>
+		$"{Sanitize(flow.Source)} -> {Sanitize(flow.Target)}";
+
+	private static string Describe(IReadOnlyList<FlowLabel> flows) =>
+		Join(flows, flow => $"{Endpoints(flow)} ('{Sanitize(flow.Label)}')");
+
+	// The absent case: the asked-for label is the useful one to echo, because nothing is drawn.
+	private static string DescribeWanted(IReadOnlyList<FlowLabelMiss> misses) =>
+		Join(misses, miss => $"{Endpoints(miss.Wanted)} ('{Sanitize(miss.Wanted.Label)}')");
+
+	// The mismatch case needs BOTH, and needs them distinguishable: which one is drawn is the whole finding.
+	private static string DescribeDifference(IReadOnlyList<FlowLabelMiss> misses) =>
+		Join(misses, miss =>
+			$"{Endpoints(miss.Wanted)} (asked for '{Sanitize(miss.Wanted.Label)}', drawn "
+			+ $"'{Sanitize(miss.Drawn)}')");
+
+	// The failed clear: the caller asked for '' and echoing that tells them nothing. What is still on the
+	// connector is the finding.
+	private static string DescribeDrawn(IReadOnlyList<FlowLabelMiss> misses) =>
+		Join(misses, miss => $"{Endpoints(miss.Wanted)} (still drawn: '{Sanitize(miss.Drawn)}')");
+
 	/// <summary>
-	/// Caller-supplied text made safe to echo into a warning: line breaks collapsed to spaces and the length
-	/// capped, with an ellipsis when it was cut.
+	/// Caller-supplied text made safe to echo into a warning: every control character replaced by a space and
+	/// the length capped, with an ellipsis when it was cut.
 	/// <para>The label is the first field on this path where multi-line prose is the INTENDED input, and this
 	/// warning is read by an agent as tool-result text. A label carrying a line break followed by
 	/// something that looks like a log prefix would otherwise forge what reads as a separate line inside
 	/// clio's own output, and an unbounded one would bloat it. The package applies the same two rules to every
 	/// value it interpolates into a message (<c>SafeText.Sanitize</c>) and states the same threat model; this
-	/// is the clio-side half of it.</para>
-	/// <para>It bounds the MESSAGE only. Nothing bounds what is STORED, deliberately - see the remark on
-	/// <c>ProcessGraphBuilder.ApplyLabel</c>: a flow caption is excluded from code generation and
-	/// <c>SysLocalizableValue.Value</c> is <c>nvarchar(MAX)</c>, so there is nothing to protect there and a
-	/// write-level bound would only differ from what an element caption has always allowed.</para>
+	/// is the clio-side half of it, and it is the shared <see cref="TextUtilities.SanitizeForDisplay"/> rather
+	/// than a local rule, so the two cannot drift.</para>
+	/// <para>It bounds the MESSAGE only. What is STORED is bounded differently and for a different reason:
+	/// the write path filters control characters (see <c>ProcessGraphBuilder.ApplyLabel</c>) because a caption
+	/// is extracted into an XML resource attribute, but it applies no LENGTH cap, since a flow caption is
+	/// excluded from code generation and <c>SysLocalizableValue.Value</c> is <c>nvarchar(MAX)</c>.</para>
 	/// </summary>
-	private static string Sanitize(string text) {
-		if (string.IsNullOrEmpty(text)) {
-			return text;
-		}
-
-		string oneLine = text.Replace("\r\n", " ").Replace('\r', ' ').Replace('\n', ' ').Trim();
-		return oneLine.Length <= MaxRenderedTextLength
-			? oneLine
-			: oneLine.Substring(0, MaxRenderedTextLength) + "…";
-	}
+	private static string Sanitize(string text) =>
+		// Delegates to the shared helper rather than re-implementing it. The local version collapsed only
+		// CR/LF, which is NARROWER than the threat model stated above: U+001B and U+0085 (NEL) both forge
+		// output in a terminal and both survived it. SanitizeForDisplay replaces EVERY control character,
+		// which is the rule this doc claims. Its ellipsis is "..." rather than a single glyph; that is the
+		// only behavioural difference, and one test asserts on it.
+		TextUtilities.SanitizeForDisplay(text, MaxRenderedTextLength);
 
 	// One collector for both payload shapes: a build descriptor's flows[] entries and the modify operations
 	// that write a flow carry the same three fields at the same level, so splitting this in two would be two
@@ -234,15 +375,31 @@ public static class FlowLabelExpectation {
 				continue;
 			}
 
-			if (filterByOp && !IsLabelWritingOperation(candidate[OpKey])) {
-				continue;
+			if (filterByOp) {
+				string? op = BlockExpectationJson.ReadText(candidate[OpKey])?.Trim();
+				if (string.Equals(op, FlowForgettingOperation, StringComparison.OrdinalIgnoreCase)) {
+					// The flow is going away, so any label asked for earlier in this batch is moot. Forget
+					// the pair rather than leaving an expectation a later re-add cannot supersede.
+					string? goneSource = BlockExpectationJson.ReadText(candidate[SourceKey]);
+					string? goneTarget = BlockExpectationJson.ReadText(candidate[TargetKey]);
+					if (!string.IsNullOrWhiteSpace(goneSource) && !string.IsNullOrWhiteSpace(goneTarget)) {
+						(string, string) goneKey = (goneSource.Trim(), goneTarget.Trim());
+						if (byEndpoints.Remove(goneKey)) {
+							order.RemoveAll(entry => EndpointPairComparer.Instance.Equals(entry, goneKey));
+						}
+					}
+					continue;
+				}
+				if (!IsLabelWritingOperation(candidate[OpKey])) {
+					continue;
+				}
 			}
 
-			string? label = ReadText(candidate[LabelKey]);
-			string? source = ReadText(candidate[SourceKey]);
-			string? target = ReadText(candidate[TargetKey]);
+			string? label = BlockExpectationJson.ReadText(candidate[LabelKey]);
+			string? source = BlockExpectationJson.ReadText(candidate[SourceKey]);
+			string? target = BlockExpectationJson.ReadText(candidate[TargetKey]);
 			// A flow with no endpoints is not addressable in the read-back at all, and a MISSING label member
-			// asked for nothing. A blank one is kept: it is the deliberate clear, and MissingLabels verifies it
+			// asked for nothing. A blank one is kept: it is the deliberate clear, and Missing verifies it
 			// asymmetrically.
 			if (label == null
 					|| string.IsNullOrWhiteSpace(source)
@@ -271,7 +428,7 @@ public static class FlowLabelExpectation {
 	}
 
 	private static bool IsLabelWritingOperation(JsonNode? node) {
-		string? op = ReadText(node)?.Trim();
+		string? op = BlockExpectationJson.ReadText(node)?.Trim();
 		return !string.IsNullOrEmpty(op)
 			&& LabelWritingOperations.Contains(op, StringComparer.OrdinalIgnoreCase);
 	}
@@ -281,8 +438,6 @@ public static class FlowLabelExpectation {
 		described.Flows.FirstOrDefault(flow =>
 			string.Equals(flow?.Source, wanted.Source, StringComparison.OrdinalIgnoreCase)
 			&& string.Equals(flow?.Target, wanted.Target, StringComparison.OrdinalIgnoreCase));
-
-	private static string? ReadText(JsonNode? node) => BlockExpectationJson.ReadText(node);
 
 	// The supersede key has to agree with FindFlow, which matches endpoints case-insensitively: with an
 	// ordinal key, `setFlow` on "decide"->"Yes" would not supersede an `addFlow` on "Decide"->"Yes" and the

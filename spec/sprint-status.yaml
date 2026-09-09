@@ -3398,6 +3398,11 @@ stories:
     repo: "clio + workspace/ProcessBuilder + clio-knowledge"
     size: M
     status: review
+    pr: https://github.com/Advance-Technologies-Foundation/clio/pull/1414
+    prs:
+      - https://github.com/Advance-Technologies-Foundation/clio/pull/1414
+      - https://creatio.ghe.com/engineering/cli-process-builder/pull/53
+      - https://github.com/Advance-Technologies-Foundation/clio-knowledge/pull/138
     jira: ENG-91853
     file: spec/eng-91853-gateways-and-flows/eng-91853-gateways-and-flows-flow-labels-brief.md
     notes: >
@@ -3414,7 +3419,8 @@ stories:
       and nothing lingers under the old one. Measured through the exact route FreeTheDefaultSlot()
       prescribes. So none of the three remedies the brief proposed was needed, and the guard they
       invite would have broken the shipped remedy on the flows most likely to carry a label.
-      Package CrtProcessBuilder 1.6.0.8 (sources 98b1a8c, restamp f38349c): flows[].label on the build
+      Package CrtProcessBuilder 1.6.0.10 (sources dc6583f, tag crtprocessbuilder-1.6.0.10;
+      1.6.0.9 at 849dd2f was the pre-review cut, also tagged): flows[].label on the build
       path, label on addFlow/setFlow, label in the describe projection, and a refusal of label on
       setFlowCondition/removeFlow, where it deserializes off the shared operation descriptor and is
       read by nobody. On setFlow, OMITTED keeps / EMPTY clears / text replaces - and the label is
@@ -3447,8 +3453,12 @@ stories:
       skipped suite), and the knowledge record on the .application junctions covered one of the two
       links. The second fails differently and later: only the TEST project falls over, with one
       MSB3245, after the package's own Build succeeded.
-      Validated: package 1547 tests; clio full Category=Unit 11392 pass / 25 skip; clio.mcp.e2e's two
-      label fixtures against the live stand `Creatio` on 1.6.0.8; knowledge bundle 148. Release rather
+      Validated: package 1547 tests; clio full Category=Unit 11410 pass / 25 skip; clio.mcp.e2e's two
+      label fixtures against the live stand `Creatio` on 1.6.0.9; knowledge bundle 148.
+      Pre-merge review remediation then produced 1.6.0.10 and knowledge 1.13.101. (The earlier
+      figures in this note read 1.6.0.8 / 98b1a8c / f38349c / 11392: that was the FIRST cut, superseded
+      by the review-fix rebundle, and a note naming a version other than the one that ships makes the
+      producing-commit pair - the only reviewability a committed .gz has - point at the wrong bytes.) Release rather
       than Debug throughout, because a running MCP server holds the Debug output open - and only
       Release/net10.0 received the new archive, so an install from any other output ships whatever that
       folder holds.

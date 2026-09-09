@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text.Json;
@@ -10,11 +10,16 @@ namespace Clio.Command.ProcessModel;
 /// The payload-reading and element-matching mechanics shared by the post-operation block guards
 /// (<see cref="EmailBlockExpectation"/>, <see cref="AccessRightsBlockExpectation"/>,
 /// <see cref="FlowLabelExpectation"/>).
-/// <para>Both guards answer the same three questions about a caller's payload — which elements asked for
-/// this block on a build, which asked for it on a modify, and which described element corresponds to a
-/// name the caller used — and only the block key and the presence predicate differ. Keeping the mechanics
-/// here means a fix to the parsing or the name-or-uid matching lands once instead of once per block, and
-/// the next block to need a guard adds a key rather than a fourth copy.</para>
+/// <para>The two BLOCK guards answer the same three questions about a caller's payload — which elements
+/// asked for this block on a build, which asked for it on a modify, and which described element
+/// corresponds to a name the caller used — and only the block key and the presence predicate differ.
+/// Keeping the mechanics here means a fix to the parsing or the name-or-uid matching lands once instead of
+/// once per block, and the next block to need a guard adds a key rather than a fourth copy.</para>
+/// <para><see cref="FlowLabelExpectation"/> is in the see-also list but is NOT one of those: it has no
+/// block key, no presence predicate and no element matching, because a label hangs off a FLOW and a flow
+/// is addressed by its endpoint pair rather than by an element name. It reuses exactly one thing from
+/// here, <see cref="Parse"/> and <see cref="ReadText"/>, so do not read this class as an extension point
+/// that would accommodate it - the element-shaped helpers below do not apply to it.</para>
 /// </summary>
 internal static class BlockExpectationJson {
 
