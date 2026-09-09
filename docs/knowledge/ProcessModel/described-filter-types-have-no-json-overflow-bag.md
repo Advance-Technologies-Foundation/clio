@@ -1,5 +1,5 @@
 ---
-description: this record OWNS which Described* types in IProcessDescriber.cs carry a [JsonExtensionData] overflow bag and which drop an undeclared field in silence - the filter types, DescribedConnection, DescribedSignal and DescribedParameter have none, and the membership has moved once (DescribedFlow left the bagless set), so recount it rather than trusting a list
+description: this record OWNS which Described* types in IProcessDescriber.cs carry a [JsonExtensionData] overflow bag and which drop an undeclared field in silence - the filter types, DescribedConnection, DescribedSignal and DescribedParameter have none, the membership MOVES (DescribedFlow left the bagless set) and this record has been wrong about that twice, so recount it against the file rather than trusting a list
 applies-to:
   - clio/Command/ProcessModel/IProcessDescriber.cs
 ticket: ENG-91842
@@ -37,7 +37,7 @@ expected to carry one; a filter type is not.
 Every filter field therefore needs a property on both sides: the descriptor in the ProcessBuilder
 package *and* a matching `[JsonPropertyName]` property here. `Macro`, `MacroArgument` and `DatePart`
 exist for exactly that reason. And a bag is no licence to skip the property where the value is READ
-by name — see `describe-process-output-is-capped-by-the-described-dtos.md`, which owns that half.
+by name — the parameter-delete and element-retarget guards both read `condition` that way, and a bag preserves an undeclared field without making it addressable. See `describe-process-output-is-capped-by-the-described-dtos.md`, which owns that half. The filter types listed above have NEITHER a property nor a bag, which is why this record exists.
 
 **Why it is this way** — the filter DTOs were hand-mirrored from the package's
 `FilterConditionDescriptor` when the vocabulary was small, and `System.Text.Json` discards members
@@ -51,7 +51,3 @@ dropped member, so the condition simply reads back incomplete — which looks li
 to persist it. This already happened live to macro read-back with green unit tests on both sides; the
 same property was added pre-emptively for `datePart`. A DTO change also needs clio rebuilt and the
 MCP server restarted, or a stale process keeps serving the old shape.
-
-**`DescribedFlow` was in this set and is not any more.** It joined when it gained `condition`, and left in the same ticket: it now carries `[JsonExtensionData]`, added alongside the `branchesOnActivityResult` nullability fix, so an undeclared flow field reaches the caller instead of vanishing. Do not restate the old claim — the file says otherwise thirty lines from the bag.
-
-What did NOT change is that a field needing to be read BY NAME still needs a typed property: the bag preserves an undeclared field, it does not make it addressable, and both the parameter-delete and element-retarget guards read `condition` by name. The filter types above have neither, which is why this record still exists.
