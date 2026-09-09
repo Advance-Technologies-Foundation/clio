@@ -242,7 +242,7 @@ internal sealed class EntitySchemaDependencyResolver : IEntitySchemaDependencyRe
 			return response.Rows
 				.Select(row => row.Code)
 				.Where(code => !string.IsNullOrWhiteSpace(code))
-				.ToHashSet(StringComparer.OrdinalIgnoreCase)!;
+				.ToHashSet(StringComparer.OrdinalIgnoreCase);
 		} catch (Exception ex) when (ex is not OutOfMemoryException) {
 			// Ranking is an ordering hint; losing it must never suppress the candidate list itself.
 			_logger.WriteWarning(

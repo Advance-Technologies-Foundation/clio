@@ -68,9 +68,10 @@ public sealed class ODataBuildGateTests
 		_gate.WaitUntilIdle(_options, "UsrVehicle");
 
 		// Assert
-		_logger.Received(1).WriteWarning(Arg.Is<string>(message =>
-			message.Contains("OData entities build status") && message.Contains("UsrVehicle")));
-		// because: the operator must be able to see in the log that the build wait never ran for this publish
+		WarningMessages().Should().ContainSingle(
+			because: "the operator must be able to see in the log that the build wait never ran for this publish")
+			.Which.Should().Contain("OData entities build status").And.Contain("UsrVehicle",
+				because: "the warning has to name both the probe that could not be read and the schema whose publish went unguarded, or it cannot be acted on");
 	}
 
 	[Test]
@@ -220,6 +221,14 @@ public sealed class ODataBuildGateTests
 	private int ProbeCallCount() => _client.ReceivedCalls()
 		.Count(call => call.GetMethodInfo().Name
 			== nameof(IRemoteEntitySchemaDesignerClient.TryGetIsODataBuildRunning));
+
+	// Reads the warnings through the recorded-calls API for the same reason as ProbeCallCount(): the
+	// expectation reads as a plain assertion on observed text, and a failure names the messages that
+	// were actually written instead of only the call count.
+	private string[] WarningMessages() => _logger.ReceivedCalls()
+		.Where(call => call.GetMethodInfo().Name == nameof(ILogger.WriteWarning))
+		.Select(call => (string)call.GetArguments()[0])
+		.ToArray();
 
 	private static readonly object[] UnexpectedProbeFaults = [
 		new object[] { new TimeoutException("the status request did not complete in time") },
