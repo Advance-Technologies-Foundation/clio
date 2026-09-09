@@ -1211,8 +1211,27 @@ public class BindingsModule {
 		// manager would silently skip the authenticated DataService probe, so every command reached through
 		// this factory would keep reporting a rejected read as an empty success (the defect issue #1222 fixes).
 		// The client stays lazy, so building the factory result costs no HTTP call on its own.
-		services.AddTransient<Func<EnvironmentSettings, ISysSettingsManager>>(sp =>
-			envSettings => BuildEnvironmentScopedSysSettingsManager(sp, envSettings));
+		//
+		// EVERY DEPENDENCY IS RESOLVED HERE, EAGERLY, AND THE RETURNED DELEGATE CAPTURES THE INSTANCES
+		// RATHER THAN THE PROVIDER (issue #1421). The delegate is invoked long after it is created, and on
+		// the MCP surface it can be invoked long after the provider it came from is GONE: the SDK gives
+		// every request its own service scope (McpServerOptions.ScopeRequests defaults to true) and disposes
+		// that scope the moment the tool's response is returned, while the long-running tools deliberately
+		// leave work running past their response deadline. A delegate that closed over `sp` therefore threw
+		// ObjectDisposedException on its first call in that detached continuation - and because the response
+		// had already been sent, the caller was told the work was still in progress when it had in fact
+		// stopped, which is how create-app-section came to report section-created=in-progress for a section
+		// it never created.
+		services.AddTransient<Func<EnvironmentSettings, ISysSettingsManager>>(sp => {
+			IReauthExecutor reauthExecutor = sp.GetRequiredService<IReauthExecutor>();
+			IWorkingDirectoriesProvider workingDirectoriesProvider =
+				sp.GetRequiredService<IWorkingDirectoriesProvider>();
+			Clio.Common.IFileSystem clioFileSystem = sp.GetRequiredService<Clio.Common.IFileSystem>();
+			IFileSystem fileSystem = sp.GetRequiredService<IFileSystem>();
+			ILogger logger = sp.GetRequiredService<ILogger>();
+			return envSettings => BuildEnvironmentScopedSysSettingsManager(
+				envSettings, reauthExecutor, workingDirectoriesProvider, clioFileSystem, fileSystem, logger);
+		});
 
 		RegisterFluentValidators(services);
 		return settingsRepository;
@@ -1273,24 +1292,43 @@ public class BindingsModule {
 	/// DI-resolved manager gets, so a read rejected by authentication is reported as a failure rather
 	/// than as an empty success.
 	/// </summary>
+	/// <remarks>
+	/// Takes the already-resolved collaborators instead of an <see cref="IServiceProvider"/> ON PURPOSE.
+	/// The factory that calls this is invoked from work that outlives the request whose scope produced it
+	/// (see the registration site), so resolving anything here would resolve from a disposed provider.
+	/// Keeping the provider out of this signature makes that mistake unavailable rather than merely
+	/// unmade (issue #1421).
+	/// </remarks>
+	/// <param name="envSettings">The environment the manager reads settings from.</param>
+	/// <param name="reauthExecutor">Re-authentication executor; used only on the token path.</param>
+	/// <param name="workingDirectoriesProvider">Working-directory provider.</param>
+	/// <param name="clioFileSystem">clio's own file-system abstraction.</param>
+	/// <param name="fileSystem">The <c>System.IO.Abstractions</c> file system.</param>
+	/// <param name="logger">Logger.</param>
+	/// <returns>A manager bound to <paramref name="envSettings"/>.</returns>
 	private static ISysSettingsManager BuildEnvironmentScopedSysSettingsManager(
-		IServiceProvider sp, EnvironmentSettings envSettings) {
+		EnvironmentSettings envSettings,
+		IReauthExecutor reauthExecutor,
+		IWorkingDirectoriesProvider workingDirectoriesProvider,
+		Clio.Common.IFileSystem clioFileSystem,
+		IFileSystem fileSystem,
+		ILogger logger) {
 		Lazy<CreatioClient> lazyCreatioClient = new(() => BuildCreatioClient(envSettings));
 		// Same token rule as RegisterActiveEnvironmentServices: with an access token OR an OAuth client
 		// the adapter must never fall back to CreatioClient.Login() when it receives a login page -
 		// that crosses the bearer credential boundary (multi-tenant safety, ENG-93208 B1), and an OAuth
 		// profile has no username/password to log in with at all.
 		IApplicationClient applicationClient = UsesTokenAuthentication(envSettings)
-			? new CreatioClientAdapter(lazyCreatioClient, sp.GetRequiredService<IReauthExecutor>())
+			? new CreatioClientAdapter(lazyCreatioClient, reauthExecutor)
 			: new CreatioClientAdapter(lazyCreatioClient);
 		return new SysSettingsManager(
 			applicationClient,
 			new ServiceUrlBuilder(envSettings),
 			BuildRemoteDataProvider(envSettings),
-			sp.GetRequiredService<IWorkingDirectoriesProvider>(),
-			sp.GetRequiredService<Clio.Common.IFileSystem>(),
-			sp.GetRequiredService<IFileSystem>(),
-			sp.GetRequiredService<ILogger>());
+			workingDirectoriesProvider,
+			clioFileSystem,
+			fileSystem,
+			logger);
 	}
 
 	/// <summary>

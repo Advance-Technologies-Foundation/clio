@@ -3,6 +3,7 @@ using System.IO.Abstractions.TestingHelpers;
 using Clio;
 using Clio.Command.McpServer;
 using Clio.Command.McpServer.Knowledge;
+using Clio.Common;
 using Clio.Tests.Infrastructure;
 using FluentAssertions;
 using Microsoft.Extensions.DependencyInjection;
@@ -105,5 +106,36 @@ public class BindingsModuleMcpHostGateTests {
 			because: "AddMcpServer registers the McpServer singleton when the host is requested");
 		provider.GetRequiredService<McpServerCommand>().Should().NotBeNull(
 			because: "the mcp-server command must resolve from the container that hosts the MCP server");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("The per-environment ISysSettingsManager factory still builds a manager after the scope it was resolved from has been disposed, because the long-running MCP tools invoke it from work that deliberately outlives their response.")]
+	public void SysSettingsManagerFactory_ShouldStillBuildAManager_WhenTheResolvingScopeIsAlreadyDisposed() {
+		// Arrange — resolve the factory the way a tool does, from a REQUEST SCOPE, then end that scope.
+		// The MCP SDK gives every request its own scope (McpServerOptions.ScopeRequests defaults to true)
+		// and disposes it as soon as the tool's response is returned, while create-app-section and the
+		// other long-running tools keep working past their response deadline. A factory that closed over
+		// the provider therefore threw ObjectDisposedException on the first call in that continuation, and
+		// the caller — already holding a "still in progress, keep polling" envelope — was never told
+		// (issue #1421).
+		MockFileSystem fileSystem = TestFileSystem.MockFileSystem();
+		IServiceProvider provider = new BindingsModule(fileSystem)
+			.Register(profile: BindingsModuleRegistrationProfile.Bootstrap, registerMcpHost: false);
+		Func<EnvironmentSettings, ISysSettingsManager> factory;
+		using (IServiceScope scope = provider.CreateScope()) {
+			factory = scope.ServiceProvider.GetRequiredService<Func<EnvironmentSettings, ISysSettingsManager>>();
+		}
+
+		// Act — the delegate is invoked only now, when the scope that produced it no longer exists.
+		Func<ISysSettingsManager> invokeAfterDisposal = () => factory(new EnvironmentSettings {
+			Uri = "http://localhost", Login = "Supervisor", Password = "Supervisor"
+		});
+
+		// Assert
+		invokeAfterDisposal.Should().NotThrow(
+			because: "work detached past the response deadline resolves this factory after its request scope is gone, so the factory must not depend on that scope");
+		invokeAfterDisposal().Should().NotBeNull(
+			because: "the detached continuation needs a usable manager, not merely the absence of an exception");
 	}
 }
