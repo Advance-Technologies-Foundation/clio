@@ -7,7 +7,7 @@
 **ADR**: [adr-process-versioning.md](../adr/adr-process-versioning.md)
 **Test plan**: [tp-process-versioning.md](../test-plans/tp-process-versioning.md)
 **Repository**: crt-process-builder
-**Status**: in-progress
+**Status**: done
 **Size**: M
 
 ---
@@ -58,7 +58,7 @@ Test naming: `MethodName_ShouldBehavior_WhenCondition`
 - [x] Workspace-diary entry added (`CLAUDE.md:131-150`) — mandatory in this repo
 - [x] `docs/process-builder-architecture.md` and `.puml` updated together
 - [x] ClioRing MCP compatibility verdict recorded (`AGENTS.md:241-299`) — **the anchor does not exist**: crt-process-builder has no `AGENTS.md`, and its `CLAUDE.md` is 150 lines with no ClioRing section. Verdict stated in the PR body instead: no MCP surface changes here (the package operation is not reached by any clio tool until stories 16-17), so nothing for ClioRing to be compatible with yet.
-- [ ] PR description references this story file
+- [x] PR description references this story file
 
 ## Dev Agent Record
 
