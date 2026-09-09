@@ -39,6 +39,18 @@ The same mechanism gives the CLEAR: assigning an empty caption writes no row, wh
 existing one rather than leaving it blank. That is why an empty `label` is the clear on `setFlow`, and
 why `describe` reports a cleared label as `null` — there is nothing left to report.
 
+**And the same mechanism cleans up after `removeFlow`.** Measured on a stand: removing a labelled flow
+took `BaseElements.ConditionalFlow_Threshold_EndHigh.Caption` with it, leaving only the surviving
+flow's row. No orphan. Worth stating because it is the one face of this mechanism somebody would
+otherwise have to check for themselves — a row keyed on a name, and a delete that never mentions
+resources, is exactly the shape that looks like a leak. It is not: a flow that is gone from
+`schema.FlowElements` is not in the object graph the resource set is rebuilt from, so its row is
+simply never written again.
+
+So the rule to carry is one sentence with three faces: **the resource set is rewritten from the object
+graph on every save**, and rename, clear and delete all fall out of that rather than being implemented
+anywhere.
+
 **Why it is this way** — the label is text a human reads, so the platform made it localizable, and
 localizable members are extracted from the schema into per-culture resources at save time. Nothing in
 `metadata.json` hints that the field exists, and nothing in the rename code mentions labels, because
