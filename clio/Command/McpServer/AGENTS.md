@@ -77,6 +77,87 @@ the pipeline mechanism already covers it. Destructive tools own their own timeou
 `create-app-section`'s `section-created: in-progress`); never route a destructive tool through the
 read deadline. See `spec/adr/adr-read-only-mcp-response-deadline.md`.
 
+## Accepted argument shapes (flat-args normalization)
+
+For a tool whose ONLY bindable parameter is a composite `args` record, two call shapes are accepted at
+runtime (ENG-95885). Normalization lives at the call-tool pipeline layer
+(`McpToolErrorFilter.TryRefuseCallArguments`), NOT per tool, so it is transport-neutral and covers the
+whole resident set with no per-tool edits:
+
+- wrapped — `{"args": {"<field>": "<value>"}}` — what `tools/list` publishes; unchanged, byte-compatible.
+- flat — `{"<field>": "<value>"}` — rewritten into the wrapper on arrival ONLY when EVERY top-level key is
+  a wire property; all of them are moved inside the wrapper together.
+
+The payload is CLASSIFIED, never wrapped blindly. Refused shapes:
+
+- **any unknown key** — at least one top-level key is not a wire property, whether the WHOLE payload is
+  unknown or a real field sits next to a typo (`{"environment-name":"dev","filer":"x"}`): refused with the
+  canonical field list. The PARTIAL case is refused for the same reason as the all-unknown case — for the
+  resident majority whose args record has no `[JsonExtensionData]` overflow bag, wrapping the payload lets
+  the serializer silently DROP the typo at bind time (it ignores unmapped members) and the tool answers a
+  validation mistake with a plausible list/default **success** — worse for an agent than a hard failure.
+  The good field does not make the typo safe. Only `[McpRecoversUnknownArguments]` (below) forwards it.
+- **hybrid** — an `args` object plus extra top-level keys: refused as ambiguous, no silent precedence.
+- **case collision** — two top-level keys differing only in casing (`environment-name` plus
+  `Environment-Name`). Names are matched case-insensitively, so both claim ONE argument; wrapping
+  them would hand the serializer two properties it treats as the same one, and picking the winner
+  is the same guessing the hybrid shape is refused for. Neither value is echoed back.
+- **empty `{}`** — keeps today's missing-parameter error unless the tool declares capability (below).
+- an argument the tool binds as an object but which arrives as a **JSON string**: refused with a
+  shape-naming error. It is never parsed — accepting stringified JSON would widen the contract for good.
+
+Two EXPLICIT, fail-closed declarations opt a tool out of a refusal. Both live in
+`Tools/McpFlatArgumentContract.cs`, both go on the tool METHOD, and neither is ever inferred from the
+generated schema (the schema's required-property set is a weak proxy for runtime semantics — e.g.
+`DataForgeMaintenanceArgs.EnvironmentName` is schema-optional yet `EnsureRequired`-checked):
+
+- `[McpAcceptsEmptyArguments]` — the tool has a documented no-arguments operation, so `{}` is a real call
+  and the empty wrapper is synthesized. Today: `list-apps`, `get-request-info`.
+- `[McpRecoversUnknownArguments]` — the tool binds a `[JsonExtensionData]` bag AND inspects it (alias
+  rename, flat recovery, or an explicit unknown-arg error), so a payload carrying any unknown key is
+  forwarded to its richer diagnosis instead of refused. Today: `get-tool-contract`.
+  `McpFlatArgumentNormalizationCompletenessTests` fails the build if this is declared on an args record
+  that has no overflow bag.
+
+Rules to keep:
+
+- **The published schema stays wrapped.** This is a tolerant RUNTIME layer, not a schema change:
+  `tools/list` keeps `required: ["args"]`. Never claim the schema and the accepted input set are
+  identical. The canonical agent-facing statement is
+  `ToolContractGetTool.AcceptedArgumentShapesHint`; `McpServerInstructions` stays pointer-only.
+- **The trigger predicate is shared, not copied.** `McpToolArgumentSupport.TryGetSingleCompositeParameter`
+  is the one definition of "exactly one bindable non-framework composite parameter", used by both the
+  normalizer and `ClioRunTool`. A multi-parameter tool (`clio-run`'s `command` + `args`) or a
+  single-scalar tool binds top-level keys BY PARAMETER NAME and must never be rewritten — otherwise the
+  normalizer and `ClioRunExecutor.RecoverWrappedCall` fight over the same payload.
+- **Aliases stay rejection-only.** A non-canonical spelling produces a rename hint
+  (`McpToolArgumentSupport.EnvironmentNameAliases`), never a silent binding.
+- **Mutate `Arguments` on the EXISTING `Params` instance.** Building a new `CallToolRequestParams` drops
+  `_meta`, the progress token and task metadata, breaking `notifications/progress` and the
+  `_meta.clioStageEvent` stream ClioRing consumes.
+- **Resident tools only.** The durable long-tail path (`McpDurableCallToolHandler` /
+  `InvokeResolvedAsync`) has no `MatchedPrimitive` to reflect and stays wrapped-only; the long tail is
+  reached through `clio-run`, which owns its own recovery.
+- **Keep the shape decision observable.** The classifier reports its outcome plus the ORIGINAL top-level
+  key names (`McpArgumentShapeReport`), and `McpToolErrorFilter.ReportArgumentShape` emits one advisory
+  line for every outcome EXCEPT `Untouched`. The rewrite is in place, so without that report a
+  downstream observer sees only the wrapped shape and cannot tell an accommodated flat call from a
+  correct one - and ENG-95885 closes on a MEASURED near-zero wrapper error class, so a silent rewrite
+  would hide the fix's own effect. Two constraints if you touch it: the line carries key NAMES only,
+  never argument VALUES (a value can be a password or a token), and it goes to the logger plus
+  **stderr** - never stdout, which is the JSON-RPC channel. `Untouched` stays silent on purpose: it is
+  the steady state and the state the change is trying to reach.
+
+- **Framework parameters are excluded by SDK ASSEMBLY, never by namespace name.**
+  `McpToolArgumentSupport.IsFrameworkOwnedType` keys on the SDK assembly plus `IsAssignableFrom` on
+  `McpServer`. Do not reintroduce a `Namespace.StartsWith("ModelContextProtocol")` match — it swallows
+  unrelated same-prefix namespaces and misses an `McpServer` subclass declared elsewhere, either of
+  which moves the bindable-parameter count and hands the normalizer a payload it must not rewrite.
+
+**Why the accepted input set is wider than the published schema, and why it can never be narrowed
+again:** see [`spec/adr/adr-mcp-flat-argument-normalization.md`](../../../spec/adr/adr-mcp-flat-argument-normalization.md).
+Tightening `tools/list` back to reject a flat payload is an explicit, permanent non-goal recorded there.
+
 ## Uniformity rules
 
 - New MCP tools should inherit from `BaseTool<TOptions>` unless there is a strong reason not to.

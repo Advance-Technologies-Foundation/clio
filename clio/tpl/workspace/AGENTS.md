@@ -86,6 +86,7 @@ The running app reads packages from the filesystem. Do **NOT** use `push-workspa
 | **C# (`Files/src/cs`)** and/or **Angular (`projects/...`)** | `dotnet build MainSolution.slnx -c dev-n8` (one build covers both — the Angular `.esproj` runs the npm build), **then** restart via `clio-run` (tool `restart-by-environment-name`, which waits for readiness by default). Nothing else. (`npm run build` alone also works for a client-only iteration, but still restart afterwards.) |
 | **Schema via clio MCP** (schema tools such as `modify-entity-schema-column`, `update-entity-schema` — resolve the current set via `get-tool-contract`) | After the MCP call, flush the DB changes to the filesystem via `clio-run` (tool `pkg-to-file-system`, aka **2fs**) so they land in the workspace and persist. |
 | **Schema/metadata edited directly on the filesystem** | Load the filesystem packages into the running database/runtime via `clio-run` (tool `pkg-to-db`, aka **2db**). |
+| **Package data (a `Data/` binding folder)** | `pkg-to-db` loads package definitions only; it leaves package data alone, so an edited or hand-made binding folder stays local. Apply the same values on the environment through `clio-run` (tools `create-data-binding-db`, then `upsert-data-binding-row-db`) — read `get-guidance name=data-bindings` first. |
 
 Key FSM facts learned the hard way:
 - The package's compiled assembly comes from your local `dotnet build` (the workspace is the FS the app loads). **Build before you restart.** A restart is what loads the freshly built DLL.
