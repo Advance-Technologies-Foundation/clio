@@ -56,3 +56,12 @@ section is there but clio reported an error". The only trace either way is one l
 Before adding any lazily-resolving factory, or any new tool that detaches past its deadline, assume the
 request scope is gone by the time the work needs anything: resolve eagerly, or resolve through
 `IToolCommandResolver` (the session container, which the in-flight guard does pin).
+
+Resolving eagerly is only half the rule. **What is captured eagerly must also be non-disposable.**
+Microsoft.Extensions.DependencyInjection tracks a disposable transient in the scope it was resolved from
+and disposes it together with that scope, so a disposable service captured at registration time is
+captured already-dead — the same silent failure one layer below the one this record is about, and one
+that neither test guarding the factory today would catch. The five services the factory captures are
+safe on purpose: `ILogger` and `IReauthExecutor` are stateless singletons, and both file-system
+abstractions and `IWorkingDirectoriesProvider` are transients implementing no `IDisposable`. Making any
+of them disposable is a breaking change to this factory even though nothing in its signature says so.

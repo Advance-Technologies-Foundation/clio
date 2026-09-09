@@ -1222,6 +1222,13 @@ public class BindingsModule {
 		// had already been sent, the caller was told the work was still in progress when it had in fact
 		// stopped, which is how create-app-section came to report section-created=in-progress for a section
 		// it never created.
+		//
+		// KEEP EVERY SERVICE IN THIS LIST NON-DISPOSABLE. Microsoft.Extensions.DependencyInjection tracks
+		// a disposable TRANSIENT in the scope it was resolved from and disposes it with that scope, so a
+		// disposable added here would be captured already-dead and reproduce the same silent failure one
+		// layer down - where neither of the tests guarding this factory would see it. Today all five are
+		// safe: ILogger and IReauthExecutor are stateless singletons, and the two file systems and the
+		// working-directories provider are transients that implement no IDisposable.
 		services.AddTransient<Func<EnvironmentSettings, ISysSettingsManager>>(sp => {
 			IReauthExecutor reauthExecutor = sp.GetRequiredService<IReauthExecutor>();
 			IWorkingDirectoriesProvider workingDirectoriesProvider =
@@ -1284,9 +1291,6 @@ public class BindingsModule {
 	// a hardcoded absolute URI (Sonar S1075). It is only ever used when the environment supplies no Uri.
 	private static readonly string DefaultLocalhostUri = $"{Uri.UriSchemeHttp}://localhost";
 
-	// Builds an ATF RemoteDataProvider for the environment. Bearer-first: an AccessToken is
-	// consumed via the dedicated bearer ctor and must never reach the login/password path
-	// (multi-tenant safety, ENG-93208 B1). Login/password are passed as-is (no Supervisor default).
 	/// <summary>
 	/// Builds a <see cref="SysSettingsManager"/> for one environment with the same dependency set the
 	/// DI-resolved manager gets, so a read rejected by authentication is reported as a failure rather
@@ -1345,6 +1349,9 @@ public class BindingsModule {
 	private static bool UsesTokenAuthentication(EnvironmentSettings settings) =>
 		!string.IsNullOrEmpty(settings.AccessToken) || !string.IsNullOrEmpty(settings.ClientId);
 
+	// Builds an ATF RemoteDataProvider for the environment. Bearer-first: an AccessToken is
+	// consumed via the dedicated bearer ctor and must never reach the login/password path
+	// (multi-tenant safety, ENG-93208 B1). Login/password are passed as-is (no Supervisor default).
 	private static RemoteDataProvider BuildRemoteDataProvider(EnvironmentSettings settings) {
 		if (!string.IsNullOrEmpty(settings.AccessToken)) {
 			return new RemoteDataProvider(settings.Uri, settings.AccessToken, settings.IsNetCore);

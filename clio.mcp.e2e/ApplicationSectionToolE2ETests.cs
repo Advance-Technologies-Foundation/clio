@@ -40,11 +40,13 @@ public sealed class ApplicationSectionToolE2ETests {
 	private const string SectionListToolName = ApplicationSectionGetListTool.ApplicationSectionGetListToolName;
 
 	/// <summary>
-	/// Bound on the wait for work detached past the response deadline to become visible: 30 polls one
-	/// second apart. Sized off the observed insert cost (roughly 30-100 s depending on the stand) with
-	/// room to spare, so a stand that is merely slow still passes while work that STOPPED - the clio#1421
-	/// failure, where the continuation died within a second of the response - fails with a diagnostic
-	/// instead of hanging until the fixture token fires.
+	/// Bound on the wait for work detached past the response deadline to become visible: 30 polls ten
+	/// seconds apart, so five minutes of polling. Sized off the observed insert cost (roughly 30-100 s
+	/// depending on the stand) with room to spare, so a stand that is merely slow still passes while work
+	/// that STOPPED - the clio#1421 failure, where the continuation died within a second of the response -
+	/// fails with a diagnostic instead of hanging until the fixture token fires. The fixture token is set
+	/// well above five minutes plus the polls' own round trips for exactly that reason: a test that dies
+	/// on its own token reports a timeout instead of the assertion that explains what went wrong.
 	/// </summary>
 	private const int DetachedWorkPollAttempts = 30;
 
@@ -949,9 +951,17 @@ public sealed class ApplicationSectionToolE2ETests {
 		// Arrange
 		McpE2ESettings settings = TestConfiguration.Load();
 		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
-		// Read at startup by the fresh clio MCP process, so the static default picks up the 1s override
-		// and every create-app-section call in this session answers before its work is anywhere near done.
-		settings.ProcessEnvironmentVariables[McpProgressHeartbeat.ResponseDeadlineOverrideEnvVar] = "1";
+		// Read at startup by the fresh clio MCP process, so the static default picks up this override and
+		// every create-app-section call in this session answers before its work is anywhere near done.
+		//
+		// FIFTY MILLISECONDS, NOT ONE SECOND, AND THE DIFFERENCE IS WHAT MAKES THIS TEST BITE. The
+		// detached work touches DI twice: once before the insert (the application-info read) and once
+		// after it (the metadata read-back). A deadline the pre-insert read can beat leaves the broken
+		// build creating the section anyway and failing only the read-back - the section then exists,
+		// list-app-sections finds it, and this test passes against the very defect it exists for. A
+		// deadline this short expires before the first of the two, so an unfixed build creates nothing,
+		// which is the half of clio#1421 worth pinning. The parser accepts any 0 < n <= 600.
+		settings.ProcessEnvironmentVariables[McpProgressHeartbeat.ResponseDeadlineOverrideEnvVar] = "0.05";
 		string? environmentName = settings.Sandbox.EnvironmentName;
 		if (!settings.AllowDestructiveMcpTests) {
 			Assert.Ignore("AllowDestructiveMcpTests is false — skipping destructive create-app-section test.");
@@ -962,7 +972,7 @@ public sealed class ApplicationSectionToolE2ETests {
 		}
 
 		string caption = $"E2E Deadline {Guid.NewGuid():N}"[..24];
-		using CancellationTokenSource cancellationTokenSource = new(TimeSpan.FromMinutes(8));
+		using CancellationTokenSource cancellationTokenSource = new(TimeSpan.FromMinutes(12));
 		await using McpServerSession session = await McpServerSession.StartAsync(settings, cancellationTokenSource.Token);
 		await SeededApplicationResolver.ResolveOrIgnoreAsync(
 			session, cancellationTokenSource.Token, environmentName!, ApplicationCode);
@@ -984,7 +994,7 @@ public sealed class ApplicationSectionToolE2ETests {
 
 			// Assert — first half of the contract: the classified in-progress envelope.
 			createResponse.SectionCreated.Should().Be("in-progress",
-				because: $"a 1s deadline cannot outlast a real section insert, so the tool must answer in-progress. Actual: {DescribeCallResult(createResult)}");
+				because: $"a 50 ms deadline cannot outlast a real section insert, so the tool must answer in-progress. Actual: {DescribeCallResult(createResult)}");
 
 			// Assert — second half: the work the envelope promised is still running must actually land.
 			// Polling is what the retry-guidance tells an agent to do, so the test does exactly that.

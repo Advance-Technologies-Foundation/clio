@@ -12,9 +12,11 @@ using NUnit.Framework;
 namespace Clio.Tests.Command;
 
 /// <summary>
-/// Covers the ENG-92563 Lever 1 gate: <see cref="BindingsModule.Register"/> only registers the MCP
-/// stdio host (and the <see cref="McpServerCommand"/> that depends on the McpServer singleton) when
-/// the caller explicitly opts in via <c>registerMcpHost:true</c>.
+/// Covers what <see cref="BindingsModule.Register"/> does and does not put in the graph: the ENG-92563
+/// Lever 1 gate (the MCP stdio host, and the <see cref="McpServerCommand"/> that depends on the
+/// McpServer singleton, are registered only when the caller opts in via <c>registerMcpHost:true</c>),
+/// the knowledge-bundle version fallback for source builds, and - since clio#1421 - the rule that a
+/// registered factory must outlive the scope it was resolved from.
 /// </summary>
 [TestFixture]
 [Property("Module", "Command")]
