@@ -315,8 +315,8 @@ public sealed class PageBaselineGuardTests {
 	}
 
 	[Test]
-	[Description("TryArm_ShouldKeepTheCallerChecksumButStillArmSchemaIdentity_WhenTheCallerPinnedAChecksum — pinning a checksum says nothing about schema identity, so dropping the baseline's schema UId and absent marker would silently disable the schema-uid-mismatch and schema-created-externally conflicts on the pinned path (issue #1320).")]
-	public void TryArm_ShouldKeepTheCallerChecksumButStillArmSchemaIdentity_WhenTheCallerPinnedAChecksum() {
+	[Description("TryArm_ShouldKeepTheCallerChecksumAndNotArmSchemaIdentityFromDisk_WhenTheCallerPinnedAChecksum — the checksum comparison runs against the RESOLVED target schema, so a matching pin already proves the caller read that schema; a disk-derived schema UId is the weaker witness and must not veto a pin the server corroborates with schema-uid-mismatch (PR #1356 gate-3 review of issue #1320).")]
+	public void TryArm_ShouldKeepTheCallerChecksumAndNotArmSchemaIdentityFromDisk_WhenTheCallerPinnedAChecksum() {
 		// Arrange
 		AddMetaWithBaseline("dev", "caller-pinned-checksum");
 		PageUpdateOptions options = CreateOptions();
@@ -332,12 +332,63 @@ public sealed class PageBaselineGuardTests {
 			"because the guard must report the baseline it resolved");
 		options.ExpectedChecksum.Should().Be("caller-pinned-checksum",
 			"because the caller-supplied checksum is the authoritative conflict baseline and must not be overwritten from disk");
-		options.ExpectedSchemaUId.Should().Be(SchemaUId,
-			"because the schema-identity half of the baseline must stay armed so a schema-uid mismatch is still detected");
+		options.ExpectedSchemaUId.Should().BeNull(
+			"because the pin is compared against the resolved target schema's own checksum, which already proves the caller read that schema - a stale on-disk UId must not turn a server-corroborated pin into a schema-uid-mismatch");
 		options.ExpectedSchemaAbsent.Should().BeFalse(
 			"because the baseline recorded an existing editable schema");
 		warning.Should().BeNull(
 			"because a readable, matching baseline whose checksum AGREES with the pin is the normal path and must not report anything");
+	}
+
+	[Test]
+	[Description("TryArm_ShouldNotArmAnythingAndNotTouchDisk_WhenTheWriteIsRedirectedByTargetPackageUId — the .clio-pages baseline is keyed by schema name and get-page has no redirect option, so it describes the automatically resolved schema, never the one --target-package-uid sends the write to. Arming from it refused the redirected save, and reporting armed let RefreshOrDrop stamp the redirected schema's identity into the schema-name-keyed baseline, breaking the next ordinary save too (PR #1356 gate-3 review).")]
+	public void TryArm_ShouldNotArmAnythingAndNotTouchDisk_WhenTheWriteIsRedirectedByTargetPackageUId() {
+		// Arrange — a matching baseline IS on disk, so the test would pass for the wrong reason without it.
+		AddMetaWithBaseline("dev", "disk-checksum");
+		PageUpdateOptions options = CreateOptions("dev");
+		options.TargetPackageUId = "99999999-8888-7777-6666-555555555555";
+
+		// Act
+		(string metaFilePath, bool armed, string warning) = _guard.TryArm(options, OutputDirectory);
+
+		// Assert
+		armed.Should().BeFalse(
+			because: "reporting armed would let RefreshOrDrop write the redirected schema's UId and checksum into the baseline keyed by the schema NAME, so the next non-redirected save would be refused as schema-uid-mismatch");
+		metaFilePath.Should().BeNull(because: "there is nothing to refresh, so no baseline path is reported");
+		options.ExpectedChecksum.Should().BeNull(because: "the baseline checksum describes the auto-resolved schema, not the redirect target");
+		options.ExpectedSchemaUId.Should().BeNull(because: "the baseline schema identity describes the auto-resolved schema, not the redirect target");
+		options.ExpectedSchemaAbsent.Should().BeFalse(because: "an absence marker about another schema is not evidence about this one");
+		_fileGate.EnteredLockPaths.Should().BeEmpty(
+			because: "an inapplicable baseline must not be read at all - taking the gate would mean the guard still consulted disk");
+		warning.Should().NotBeNull(because: "a save that reaches the server with no external-modification check must say so");
+		warning.Should().Contain("target-package-uid",
+			because: "the trace has to name the option that made the baseline inapplicable");
+	}
+
+	[Test]
+	[Description("TryArm_ShouldClearThePinAndWarn_WhenTheWriteIsRedirectedByTargetSchemaUId — a checksum copied from a get-page response describes the automatically resolved schema, so keeping it as the comparison value against a redirect target reports a conflict that says nothing about either schema.")]
+	public void TryArm_ShouldClearThePinAndWarn_WhenTheWriteIsRedirectedByTargetSchemaUId() {
+		// Arrange
+		AddMetaWithBaseline("dev", "disk-checksum");
+		PageUpdateOptions options = CreateOptions("dev");
+		options.ExpectedChecksum = "caller-pinned-checksum";
+		options.TargetSchemaUId = "99999999-8888-7777-6666-444444444444";
+
+		// Act
+		(string metaFilePath, bool armed, string warning) = _guard.TryArm(options, OutputDirectory);
+
+		// Assert
+		options.ExpectedChecksum.Should().BeNull(
+			because: "get-page has no redirect, so a checksum taken from it cannot describe the schema --target-schema-uid writes to");
+		armed.Should().BeFalse(because: "no baseline governs a redirected write, so nothing may be moved forward after it");
+		metaFilePath.Should().BeNull(because: "there is nothing to refresh, so no baseline path is reported");
+		options.ExpectedSchemaUId.Should().BeNull(because: "the disk identity describes the auto-resolved schema");
+		_fileGate.EnteredLockPaths.Should().BeEmpty(because: "an inapplicable baseline must not be read at all");
+		warning.Should().NotBeNull();
+		warning.Should().Contain("was ignored",
+			because: "silently dropping a checksum the caller supplied would leave the caller believing the save was checked");
+		warning.Should().Contain("target-package-uid",
+			because: "the trace names both redirect options so the caller can tell which family of arguments disabled the check");
 	}
 
 	[Test]

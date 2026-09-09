@@ -31,11 +31,15 @@ public interface IPageBaselineGuard {
 	/// envelope (<c>null</c> on the normal path). When a caller already pinned
 	/// <see cref="PageUpdateOptions.ExpectedChecksum"/>
 	/// explicitly (CLI <c>--expected-checksum</c> or MCP <c>checksum</c>), that manual checksum wins the
-	/// comparison and is left untouched, and the baseline's schema UId is still armed while the
-	/// schema-absent marker is NOT (a pinned checksum asserts the schema existed, so a stale absent
-	/// marker must not veto it) — but if a matching on-disk baseline exists, the method still reports armed so the
+	/// comparison and is left untouched, and NEITHER the baseline's schema UId nor its schema-absent marker
+	/// is armed from disk — the comparison already runs against the resolved target schema, so a matching
+	/// pin proves the caller read that schema and a stale on-disk identity must not veto it — but if a
+	/// matching on-disk baseline exists, the method still reports armed so the
 	/// post-save refresh moves that baseline forward to the new checksum, instead of leaving it pinned at
 	/// the overwritten value (which would raise a false conflict on the next unpinned save).
+	/// When <see cref="PageUpdateOptions.TargetPackageUId"/> or <see cref="PageUpdateOptions.TargetSchemaUId"/>
+	/// redirects the write, the baseline describes a different schema than the one being written, so nothing
+	/// is read or armed, any pinned checksum is cleared, and the method reports not armed with a warning.
 	/// <para>
 	/// The warning exists because "no check" is a legitimate outcome AND a failure mode, and the two used
 	/// to be indistinguishable. A missing baseline stays silent; an unreadable one, or an anchor that
@@ -86,10 +90,9 @@ public sealed class PageBaselineGuard : IPageBaselineGuard {
 	/// <inheritdoc />
 	public (string MetaFilePath, bool Armed, string Warning) TryArm(PageUpdateOptions options, string outputDirectory) {
 		// A caller-pinned checksum (CLI --expected-checksum, MCP `checksum`) is honored verbatim: it wins
-		// the comparison and is never overwritten from disk. Everything ELSE the on-disk baseline knows -
-		// the schema UId and the schema-absent marker - is still armed from it, because pinning a checksum
-		// says nothing about schema identity, and dropping those two would silently disable the
-		// schema-uid-mismatch and schema-created-externally conflicts on the pinned path (issue #1320).
+		// the comparison and is never overwritten from disk. The schema-absent marker is still armed from
+		// the on-disk baseline on the unpinned path only, and the baseline's schema UId likewise - see the
+		// arming block below for why a pin makes the disk-derived UId the weaker witness (issue #1320).
 		// Normalize the pin ONCE, here, at the choke point every caller reaches - not at an individual
 		// mapper. The arming predicate below is whitespace-tolerant (IsNullOrWhiteSpace) while the
 		// comparison downstream is a strict Ordinal one (PageUpdateOptions.cs:437), so a padded value arms
@@ -104,6 +107,30 @@ public sealed class PageBaselineGuard : IPageBaselineGuard {
 			? null
 			: options.ExpectedChecksum.Trim();
 		bool callerPinnedChecksum = !string.IsNullOrWhiteSpace(options.ExpectedChecksum);
+		// A REDIRECT makes the baseline inapplicable, so nothing here is armed and nothing is even read.
+		// The baseline is keyed by schema name alone and `get-page` has no redirect option, so both the
+		// on-disk baseline and any checksum copied out of a get-page response describe the schema the
+		// hierarchy resolver picks automatically - never the one --target-package-uid/--target-schema-uid
+		// sends the write to. Arming from it produced a false schema-uid-mismatch or
+		// schema-deleted-externally, and reporting armed let RefreshOrDrop stamp the REDIRECTED schema's
+		// identity into the schema-name-keyed baseline, so the next ordinary save was refused too.
+		bool redirected = !string.IsNullOrWhiteSpace(options.TargetPackageUId)
+			|| !string.IsNullOrWhiteSpace(options.TargetSchemaUId);
+		if (redirected) {
+			options.ExpectedChecksum = null;
+			options.ExpectedSchemaUId = null;
+			options.ExpectedSchemaAbsent = false;
+			return (null, false, callerPinnedChecksum
+				? $"The checksum pinned for '{options.SchemaName}' was ignored and external-modification "
+					+ "detection did not run for this save: target-package-uid / target-schema-uid redirect "
+					+ "the write to a schema that neither the .clio-pages baseline nor a checksum taken from "
+					+ "get-page describes, because get-page always reads the automatically resolved schema and "
+					+ "has no redirect of its own. The write proceeds unchecked."
+				: $"External-modification detection did not run for this save of '{options.SchemaName}': "
+					+ "target-package-uid / target-schema-uid redirect the write to a schema the .clio-pages "
+					+ "baseline does not describe, because get-page always reads the automatically resolved "
+					+ "schema and has no redirect of its own. The write proceeds unchecked.");
+		}
 		string metaFilePath;
 		string resolveWarning;
 		try {
@@ -164,13 +191,16 @@ public sealed class PageBaselineGuard : IPageBaselineGuard {
 			}
 			return (metaFilePath, false, JoinWarnings(warnings));
 		}
-		// The schema-identity half of the baseline is armed on BOTH paths, with ONE exception: the
-		// schema-absent marker is armed only on the unpinned path. A caller-pinned checksum asserts
-		// "an editable schema existed and had this checksum", so a stale on-disk `editableSchemaExists:
-		// false` must not veto it - arming it there produced a false schema-created-externally on a save
-		// whose pin matched the server, and, when the schema had since been deleted, skipped the checksum
-		// comparison altogether (IsCreateReplacing short-circuits before it).
-		options.ExpectedSchemaUId = baseline.EditableSchemaUId;
+		// The schema-identity half of the baseline is armed on the UNPINNED path only. A caller-pinned
+		// checksum asserts "an editable schema existed and had this checksum", so a stale on-disk
+		// `editableSchemaExists: false` must not veto it - arming it there produced a false
+		// schema-created-externally on a save whose pin matched the server, and, when the schema had since
+		// been deleted, skipped the checksum comparison altogether (IsCreateReplacing short-circuits before
+		// it). The disk-derived schema UId is the weaker witness for the same reason: the comparison runs
+		// against the checksum of the RESOLVED target schema, so a matching pin already proves the caller
+		// read exactly that schema, while a stale on-disk UId would refuse it as schema-uid-mismatch. A
+		// genuine identity change is still refused - the content differs, so the checksum comparison
+		// reports checksum-mismatch instead (issue #1320).
 		options.ExpectedSchemaAbsent = !baseline.EditableSchemaExists && !callerPinnedChecksum;
 		if (callerPinnedChecksum) {
 			// The explicit checksum wins the comparison, so it is left untouched. The matching on-disk
@@ -197,6 +227,7 @@ public sealed class PageBaselineGuard : IPageBaselineGuard {
 			return (metaFilePath, true, JoinWarnings(warnings));
 		}
 		options.ExpectedChecksum = baseline.Checksum;
+		options.ExpectedSchemaUId = baseline.EditableSchemaUId;
 		return (metaFilePath, true, JoinWarnings(warnings));
 	}
 

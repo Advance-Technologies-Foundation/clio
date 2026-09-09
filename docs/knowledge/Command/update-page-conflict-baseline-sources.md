@@ -8,14 +8,16 @@ ticket: GH-1320
 date: 2026-09-03
 ---
 
-**What is true** — `PageBaselineGuard.TryArm` splits the baseline in two, and only one half is
-conditional. The CHECKSUM comparison prefers a caller-pinned `PageUpdateOptions.ExpectedChecksum` and
-otherwise reads `.clio-pages/{schema}/meta.json`. The SCHEMA-IDENTITY half is armed from that same
-on-disk baseline on **both** paths — `ExpectedSchemaUId` unconditionally, and only the schema-absent
-marker (`ExpectedSchemaAbsent`) is withheld when the caller pinned a checksum. That on-disk
-baseline is keyed by **(anchor directory, schema name)** only — not by schema UId — and the anchor is
-resolved from the process cwd unless `output-directory` overrides it. It is rewritten both by
-`get-page` and, post-save, by `RefreshOrDrop`.
+**What is true** — what `PageBaselineGuard.TryArm` arms depends on how the save was addressed, and
+there are three cases. On the UNPINNED, non-redirected path all three fields come from
+`.clio-pages/{schema}/meta.json`: the checksum, `ExpectedSchemaUId`, and the schema-absent marker
+`ExpectedSchemaAbsent`. On a PINNED save (CLI `--expected-checksum`, MCP `checksum`) the caller's
+checksum alone governs the comparison — neither identity field is armed from disk. On a REDIRECTED
+save (`target-package-uid` / `target-schema-uid`) nothing is armed, the baseline is not even read, a
+pin that was passed is dropped, and the response carries a warning that detection did not run. That
+on-disk baseline is keyed by **(anchor directory, schema name)** only — not by schema UId — and the
+anchor is resolved from the process cwd unless `output-directory` overrides it. It is rewritten both
+by `get-page` and, post-save, by `RefreshOrDrop`.
 
 Consequently a baseline can be present, environment-matched, and still not describe the body the
 caller is editing: a different cwd between the `get-page` and the `update-page` call, or a post-save
@@ -27,20 +29,38 @@ The MCP `update-page` tool exposes a `checksum` argument for exactly this. Passi
 actually read. It does not weaken detection: a genuinely stale caller checksum still mismatches the
 current `SysSchema.Checksum` and is still refused.
 
-**Two scope limits, both deliberate and both still open.** First, the remedy is on `update-page`
+**A pin outranks the on-disk identity fields, because it is the more specific statement about the
+same schema.** The checksum comparison runs against the schema this save resolved to, so a pin that
+matches proves the caller read exactly that content and a stale on-disk `EditableSchemaUId` has
+nothing left to establish. Detection is not weakened: a real identity change carries a different
+checksum and is still refused, as `ChecksumMismatch` rather than `SchemaUIdMismatch`.
+`schema-deleted-externally` still fires on a pinned, non-redirected save, because there the
+resolution itself reports that a replacing schema must be CREATED while the caller pinned a checksum
+for one that already exists. Arming the UId from disk instead made `BuildConflictErrorMessage` answer
+a matching pin with "re-run get-page and retry", which re-pins the same checksum and loops, leaving
+`force` as the only exit.
+
+**A redirect makes the baseline inapplicable, not merely stale — so it is disarmed rather than
+enforced.** `get-page` has no `target-package-uid` / `target-schema-uid`, so both baseline sources
+describe the schema the hierarchy resolver picks automatically, never the one a redirect sends the
+write to. Arming from it failed twice over: the write was refused as `schema-uid-mismatch` /
+`schema-deleted-externally` for an edit nothing external had touched, and — because the guard also
+reported armed — `RefreshOrDrop` then stamped the REDIRECTED schema's UId and checksum into a
+`meta.json` keyed by schema name, corrupting the baseline of the automatically resolved schema so
+that the next ordinary save of the same page was refused too. `TryArm` now returns not-armed with a
+warning, which also keeps `RefreshOrDrop` away from that file. A warning and not `conflict: true`
+deliberately: nothing about the write is wrong, it is only unverifiable, and a conflict would send
+the caller into the retry loop and then to `force`.
+
+**One scope limit is still open:** the remedy is on `update-page`
 only. `sync-pages` is the tool clio calls the canonical page write path (`update-page` even carries a
 `ToolDeprecation` saying so), and `PageSyncPageInput` has no `checksum` member — `BuildUpdateRequest`
 never sets `ExpectedChecksum`, so every `sync-pages` write is on the unpinned path with `force: true`
-as its only escape. An agent following clio's own guidance takes that path. Second, because
-`ExpectedSchemaUId` is armed from disk even on a pinned save, the two schema-identity checks run
-BEFORE the checksum comparison: a save that redirects with `target-package-uid` / `target-schema-uid`,
-or one whose on-disk `EditableSchemaUId` is stale, can be refused as `schema-deleted-externally` /
-`schema-uid-mismatch` even though the pin matches the server exactly — and `BuildConflictErrorMessage`
-answers that with "re-run get-page and retry", which re-pins the same checksum and loops. It fails
-safe (a write is blocked, never corrupted), but the only exit is the `force` reflex this record exists
-to remove. Both are tracked for their own change; see PR #1356's review threads.
+as its only escape. An agent following clio's own guidance takes that path. Tracked for its own
+change; see PR #1356's review threads.
 
-**A pinned save always leaves a trace.** `TryArm` warns whenever the caller pinned a checksum and no
+**A pinned save always leaves a trace.** On the non-redirected path (a redirect returns its own
+warning before any of this runs), `TryArm` warns whenever the caller pinned a checksum and no
 on-disk baseline corroborates it - both when the baseline diverges and when none was matched at all
 for the anchor and environment. The second case is not exotic: an explicit `output-directory`, or an
 `--uri`/`--login` invocation that cannot satisfy `MatchesEnvironment`, both reach it, and the pin
