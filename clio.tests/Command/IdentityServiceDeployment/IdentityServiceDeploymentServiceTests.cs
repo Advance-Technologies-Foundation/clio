@@ -415,7 +415,7 @@ public sealed class IdentityServiceDeploymentServiceTests
 	public void ExtractIdentityService_Should_Preserve_Recognized_Target_When_Staging_Fails()
 	{
 		// Arrange
-		string archivePath = Path.Combine(Path.GetTempPath(), $"{Guid.NewGuid():N}.zip");
+		string archivePath = Path.Combine(RealTempPath, $"{Guid.NewGuid():N}.zip");
 		using (ZipArchive archive = ZipFile.Open(archivePath, ZipArchiveMode.Create)) {
 			archive.CreateEntry("conflict");
 			archive.CreateEntry("conflict/file.txt");
@@ -443,7 +443,7 @@ public sealed class IdentityServiceDeploymentServiceTests
 	public void ExtractIdentityService_Should_Preserve_Recognized_Target_When_Archive_Is_Unrelated()
 	{
 		// Arrange
-		string archivePath = Path.Combine(Path.GetTempPath(), $"{Guid.NewGuid():N}.zip");
+		string archivePath = Path.Combine(RealTempPath, $"{Guid.NewGuid():N}.zip");
 		using (ZipArchive archive = ZipFile.Open(archivePath, ZipArchiveMode.Create)) {
 			archive.CreateEntry("unrelated.txt");
 		}
@@ -471,7 +471,7 @@ public sealed class IdentityServiceDeploymentServiceTests
 	public void ExtractIdentityService_Should_Preserve_Recognized_Target_When_AppSettings_Is_Malformed()
 	{
 		// Arrange
-		string archivePath = Path.Combine(Path.GetTempPath(), $"{Guid.NewGuid():N}.zip");
+		string archivePath = Path.Combine(RealTempPath, $"{Guid.NewGuid():N}.zip");
 		using (ZipArchive archive = ZipFile.Open(archivePath, ZipArchiveMode.Create)) {
 			archive.CreateEntry("IdentityService.dll");
 			ZipArchiveEntry appsettings = archive.CreateEntry("appsettings.json");
@@ -504,7 +504,7 @@ public sealed class IdentityServiceDeploymentServiceTests
 		if (!OperatingSystem.IsWindows()) {
 			Assert.Ignore("Windows directory-link credential redirection is Windows-specific.");
 		}
-		string rootPath = Path.Combine(Path.GetTempPath(), $"identity-link-{Guid.NewGuid():N}");
+		string rootPath = Path.Combine(RealTempPath, $"identity-link-{Guid.NewGuid():N}");
 		string externalPath = Path.Combine(rootPath, "external");
 		string targetPath = Path.Combine(rootPath, "target");
 		Directory.CreateDirectory(externalPath);
@@ -539,7 +539,7 @@ public sealed class IdentityServiceDeploymentServiceTests
 
 	private static string CreateCreatioEnvironmentPath(string? connectionStrings = null)
 	{
-		string path = Path.Combine(Path.GetTempPath(), $"creatio-env-{Guid.NewGuid():N}");
+		string path = Path.Combine(RealTempPath, $"creatio-env-{Guid.NewGuid():N}");
 		Directory.CreateDirectory(path);
 		File.WriteAllText(Path.Combine(path, "ConnectionStrings.config"),
 			connectionStrings ?? """
@@ -562,7 +562,7 @@ public sealed class IdentityServiceDeploymentServiceTests
 
 	private static string CreateIdentityArchive()
 	{
-		string archivePath = Path.Combine(Path.GetTempPath(), $"{Guid.NewGuid():N}.zip");
+		string archivePath = Path.Combine(RealTempPath, $"{Guid.NewGuid():N}.zip");
 		using ZipArchive archive = ZipFile.Open(archivePath, ZipArchiveMode.Create);
 		ZipArchiveEntry appsettings = archive.CreateEntry("appsettings.json");
 		using (StreamWriter writer = new(appsettings.Open())) {
@@ -622,8 +622,46 @@ public sealed class IdentityServiceDeploymentServiceTests
 		return archivePath;
 	}
 
+	/// <summary>
+	/// Resolves the temporary directory to its physical path so no ancestor is a filesystem link.
+	/// </summary>
+	/// <remarks>
+	/// On macOS <c>/var</c> is a symlink to <c>/private/var</c>, so every path built under
+	/// <see cref="Path.GetTempPath"/> sits inside a reparse point and
+	/// <c>IdentityServiceDeploymentService.EnsurePathHasNoReparsePoints</c> correctly refuses it.
+	/// The production guard must stay strict, so the fixture supplies an already-resolved root
+	/// (the equivalent of <c>pwd -P</c>) instead.
+	/// </remarks>
+	private static readonly string RealTempPath = ResolveRealPath(Path.GetTempPath());
+
+	private static string ResolveRealPath(string path) {
+		string currentPath = Path.GetFullPath(path);
+		for (int depth = 0; depth < 64; depth++) {
+			string? linkedAncestor = null;
+			string? linkTarget = null;
+			for (string? ancestor = currentPath;
+				ancestor is not null;
+				ancestor = Path.GetDirectoryName(ancestor)) {
+				FileSystemInfo? target = new DirectoryInfo(ancestor).ResolveLinkTarget(returnFinalTarget: true);
+				if (target is null) {
+					continue;
+				}
+				linkedAncestor = ancestor;
+				linkTarget = target.FullName;
+				break;
+			}
+			if (linkedAncestor is null || linkTarget is null) {
+				return currentPath;
+			}
+			currentPath = Path.GetFullPath(string.Equals(currentPath, linkedAncestor, StringComparison.Ordinal)
+				? linkTarget
+				: Path.Combine(linkTarget, Path.GetRelativePath(linkedAncestor, currentPath)));
+		}
+		return currentPath;
+	}
+
 	private static string CreateIdentityTargetPath() =>
-		Path.Combine(Path.GetTempPath(), $"identity-target-{Guid.NewGuid():N}");
+		Path.Combine(RealTempPath, $"identity-target-{Guid.NewGuid():N}");
 
 	private sealed class StubHttpClientFactory : IHttpClientFactory
 	{
