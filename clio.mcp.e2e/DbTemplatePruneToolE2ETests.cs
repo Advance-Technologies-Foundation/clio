@@ -16,7 +16,7 @@ namespace Clio.Mcp.E2E;
 [Category("McpE2E.NoEnvironment")]
 [AllureNUnit]
 [AllureFeature("database template pruning")]
-public sealed class DbTemplatePruneToolE2ETests {
+public sealed class DbTemplatePruneToolE2ETests : McpContractFixtureBase {
 	[Test]
 	[Description("Discovers both template-pruning tools and returns a structured configuration failure for an unknown server.")]
 	[AllureTag(DbTemplatePruneTool.ListDbTemplatesToolName)]
@@ -24,11 +24,8 @@ public sealed class DbTemplatePruneToolE2ETests {
 	[AllureDescription("Starts the real MCP process, discovers both tools, and calls inventory for an unknown configured server.")]
 	public async Task ListDbTemplates_UnknownServer_ReturnsStructuredFailure() {
 		// Arrange
-		McpE2ESettings settings = TestConfiguration.Load();
-		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
 		using CancellationTokenSource cancellation = new(TimeSpan.FromMinutes(2));
-		await using McpServerSession session = await AllureApi.Step("Arrange MCP server session", async () =>
-			await McpServerSession.StartAsync(settings, cancellation.Token));
+		McpServerSession session = Session;
 
 		// Act
 		IReadOnlyCollection<string> names = await AllureApi.Step("Act by discovering reachable tools", async () =>
@@ -59,11 +56,8 @@ public sealed class DbTemplatePruneToolE2ETests {
 	[AllureDescription("Calls the long-tail destructive tool by raw name and verifies the durable approval gate prevents execution.")]
 	public async Task PruneDbTemplates_DirectCall_RequiresConfirmation() {
 		// Arrange
-		McpE2ESettings settings = TestConfiguration.Load();
-		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
 		using CancellationTokenSource cancellation = new(TimeSpan.FromMinutes(2));
-		await using McpServerSession session = await AllureApi.Step("Arrange MCP server session", async () =>
-			await McpServerSession.StartAsync(settings, cancellation.Token));
+		McpServerSession session = Session;
 
 		// Act
 		CallToolResult result = await AllureApi.Step("Act by calling destructive tool through raw name", async () =>
@@ -89,11 +83,8 @@ public sealed class DbTemplatePruneToolE2ETests {
 	[AllureDescription("Routes through clio-run-destructive and verifies an empty explicit selection fails before server access.")]
 	public async Task PruneDbTemplates_EmptySelection_ReturnsValidationFailure() {
 		// Arrange
-		McpE2ESettings settings = TestConfiguration.Load();
-		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
 		using CancellationTokenSource cancellation = new(TimeSpan.FromMinutes(2));
-		await using McpServerSession session = await AllureApi.Step("Arrange MCP server session", async () =>
-			await McpServerSession.StartAsync(settings, cancellation.Token));
+		McpServerSession session = Session;
 
 		// Act
 		CallToolResult result = await AllureApi.Step("Act by calling approved executor with empty selection", async () =>

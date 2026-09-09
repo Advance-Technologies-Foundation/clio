@@ -22,7 +22,7 @@ namespace Clio.Mcp.E2E;
 [TestFixture]
 [AllureNUnit]
 [NonParallelizable]
-public sealed class ApplicationToolE2ETests {
+public sealed class ApplicationToolE2ETests : McpContractFixtureBase {
 	private const string ListToolName = ApplicationGetListTool.ApplicationGetListToolName;
 	private const string InfoToolName = ApplicationGetInfoTool.ApplicationGetInfoToolName;
 	private const string CreateToolName = ApplicationCreateTool.ApplicationCreateToolName;
@@ -885,15 +885,26 @@ public sealed class ApplicationToolE2ETests {
 				+ $"Actual create-app payload: {DescribeCallResult(actResult.CallResult)}");
 	}
 
-	private static async Task<ApplicationArrangeContext> ArrangeAsync(McpE2ESettings settings, TimeSpan timeout) {
+	private async Task<ApplicationArrangeContext> ArrangeAsync(McpE2ESettings settings, TimeSpan timeout) {
+		// Still resolved per test: the settings instance is per test and is what the reachability probe
+		// and the progress-marker test's private re-login session spawn clio from.
 		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
 		CancellationTokenSource cancellationTokenSource = new(timeout);
 		string environmentName = await ResolveReachableEnvironmentAsync(settings);
-		McpServerSession session = await McpServerSession.StartAsync(settings, cancellationTokenSource.Token);
-		return new ApplicationArrangeContext(environmentName, session, cancellationTokenSource);
+		return new ApplicationArrangeContext(environmentName, Session, cancellationTokenSource);
 	}
 
-	private static async Task<string> ResolveReachableEnvironmentAsync(McpE2ESettings settings) {
+	private Task<string>? _reachableEnvironmentName;
+
+	// One reachability probe per fixture: each probe is a separate `clio ping-app` process (up to two per
+	// call with the fallback), and the answer cannot change between the tests of one fixture run. The
+	// probe stays in the test body, not in [OneTimeSetUp]: an Assert.Ignore raised there faults the cached
+	// task, so every later test re-observes the same Ignore instead of re-probing — the per-test skip
+	// reporting is unchanged while the process count is not.
+	private Task<string> ResolveReachableEnvironmentAsync(McpE2ESettings settings) =>
+		_reachableEnvironmentName ??= ResolveReachableEnvironmentCoreAsync(settings);
+
+	private static async Task<string> ResolveReachableEnvironmentCoreAsync(McpE2ESettings settings) {
 		string? configuredEnvironmentName = settings.Sandbox.EnvironmentName;
 		if (!string.IsNullOrWhiteSpace(configuredEnvironmentName) &&
 			await CanReachEnvironmentAsync(settings, configuredEnvironmentName)) {
@@ -1367,13 +1378,14 @@ public sealed class ApplicationToolE2ETests {
 	}
 
 
+	// The session belongs to the fixture (McpContractFixtureBase) and outlives this per-test context.
 	private sealed record ApplicationArrangeContext(
 		string EnvironmentName,
 		McpServerSession Session,
 		CancellationTokenSource CancellationTokenSource) : IAsyncDisposable {
-		public async ValueTask DisposeAsync() {
-			await Session.DisposeAsync();
+		public ValueTask DisposeAsync() {
 			CancellationTokenSource.Dispose();
+			return ValueTask.CompletedTask;
 		}
 	}
 

@@ -2,7 +2,6 @@ using Allure.NUnit;
 using Allure.NUnit.Attributes;
 using Clio.Command;
 using Clio.Command.McpServer.Tools;
-using Clio.Mcp.E2E.Support.Configuration;
 using Clio.Mcp.E2E.Support.Mcp;
 using Clio.Mcp.E2E.Support.Results;
 using FluentAssertions;
@@ -18,7 +17,7 @@ namespace Clio.Mcp.E2E;
 [AllureNUnit]
 [AllureFeature(GetRelatedPageAddonTool.ToolName)]
 [NonParallelizable]
-public sealed class GetRelatedPageAddonToolE2ETests {
+public sealed class GetRelatedPageAddonToolE2ETests : McpContractFixtureBase {
 	private const string ToolName = GetRelatedPageAddonTool.ToolName;
 
 	[Test]
@@ -28,7 +27,7 @@ public sealed class GetRelatedPageAddonToolE2ETests {
 	[AllureDescription("Starts the real clio MCP server and verifies get-related-page-addon is discoverable via the get-tool-contract compact index even though long-tail tools are not resident in tools/list.")]
 	public async Task GetRelatedPageAddon_Should_Be_Discoverable_On_Lazy_Surface() {
 		// Arrange
-		await using ArrangeContext arrangeContext = await ArrangeAsync(TimeSpan.FromMinutes(3));
+		await using ArrangeContext arrangeContext = Arrange(TimeSpan.FromMinutes(3));
 
 		// Act
 		IReadOnlyCollection<string> toolNames = await arrangeContext.Session.ListReachableToolNamesAsync(
@@ -46,7 +45,7 @@ public sealed class GetRelatedPageAddonToolE2ETests {
 	[AllureDescription("Starts the real clio MCP server, calls get-related-page-addon with an intentionally missing environment, and verifies the structured response reports the unresolved environment.")]
 	public async Task GetRelatedPageAddon_ShouldReportInvalidEnvironment_WhenEnvironmentMissing() {
 		// Arrange
-		await using ArrangeContext arrangeContext = await ArrangeAsync(TimeSpan.FromMinutes(3));
+		await using ArrangeContext arrangeContext = Arrange(TimeSpan.FromMinutes(3));
 		string invalidEnvironmentName = $"missing-get-related-page-env-{Guid.NewGuid():N}";
 
 		// Act
@@ -80,7 +79,7 @@ public sealed class GetRelatedPageAddonToolE2ETests {
 	[AllureDescription("Starts the real clio MCP server, calls get-related-page-addon with schema-type=mobile and an intentionally missing environment, and verifies the mobile schema-type binds and the structured response reports the unresolved environment instead of an MCP binding error.")]
 	public async Task GetRelatedPageAddon_ShouldBindMobileSchemaType_AndReportInvalidEnvironment() {
 		// Arrange
-		await using ArrangeContext arrangeContext = await ArrangeAsync(TimeSpan.FromMinutes(3));
+		await using ArrangeContext arrangeContext = Arrange(TimeSpan.FromMinutes(3));
 		string invalidEnvironmentName = $"missing-get-mobile-related-page-env-{Guid.NewGuid():N}";
 
 		// Act
@@ -115,7 +114,7 @@ public sealed class GetRelatedPageAddonToolE2ETests {
 	[AllureDescription("Starts the real clio MCP server, calls get-related-page-addon with a blank entity-schema-name, and verifies the structured response reports the missing field without an MCP binding error.")]
 	public async Task GetRelatedPageAddon_ShouldRejectBlankEntitySchemaName_WhenWhitespace() {
 		// Arrange
-		await using ArrangeContext arrangeContext = await ArrangeAsync(TimeSpan.FromMinutes(3));
+		await using ArrangeContext arrangeContext = Arrange(TimeSpan.FromMinutes(3));
 
 		// Act
 		CallToolResult callResult = await arrangeContext.Session.CallToolAsync(
@@ -140,20 +139,4 @@ public sealed class GetRelatedPageAddonToolE2ETests {
 			because: "the structured response should name the missing required field");
 	}
 
-	private static async Task<ArrangeContext> ArrangeAsync(TimeSpan timeout) {
-		McpE2ESettings settings = TestConfiguration.Load();
-		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
-		CancellationTokenSource cancellationTokenSource = new(timeout);
-		McpServerSession session = await McpServerSession.StartAsync(settings, cancellationTokenSource.Token);
-		return new ArrangeContext(session, cancellationTokenSource);
-	}
-
-	private sealed record ArrangeContext(
-		McpServerSession Session,
-		CancellationTokenSource CancellationTokenSource) : IAsyncDisposable {
-		public async ValueTask DisposeAsync() {
-			await Session.DisposeAsync();
-			CancellationTokenSource.Dispose();
-		}
-	}
 }

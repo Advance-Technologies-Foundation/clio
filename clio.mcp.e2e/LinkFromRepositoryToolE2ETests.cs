@@ -23,7 +23,7 @@ namespace Clio.Mcp.E2E;
 // attribute restores normal execution.
 [AllureFeature("link-from-repository")]
 [NonParallelizable]
-public sealed class LinkFromRepositoryToolE2ETests {
+public sealed class LinkFromRepositoryToolE2ETests : McpContractFixtureBase {
 	private const string EnvironmentToolName = LinkFromRepositoryTool.LinkFromRepositoryByEnvironmentToolName;
 	private const string EnvPkgPathToolName = LinkFromRepositoryTool.LinkFromRepositoryByEnvPackagePathToolName;
 
@@ -141,7 +141,7 @@ public sealed class LinkFromRepositoryToolE2ETests {
 
 	[AllureStep("Arrange link-from-repository MCP sandbox")]
 	[AllureDescription("Arrange by creating temporary repository and Creatio package directories, seeding a package folder, and starting a real clio MCP server session")]
-	private static async Task<LinkFromRepositoryArrangeContext> ArrangeAsync() {
+	private async Task<LinkFromRepositoryArrangeContext> ArrangeAsync() {
 		McpE2ESettings settings = TestConfiguration.Load();
 		if (!settings.AllowDestructiveMcpTests) {
 			Assert.Ignore("Set McpE2E:AllowDestructiveMcpTests=true to run destructive MCP end-to-end tests.");
@@ -169,12 +169,11 @@ public sealed class LinkFromRepositoryToolE2ETests {
 		await File.WriteAllTextAsync(Path.Combine(secondEnvironmentPackagePath, "env.txt"), "environment");
 
 		CancellationTokenSource cancellationTokenSource = new(TimeSpan.FromMinutes(2));
-		McpServerSession session = await McpServerSession.StartAsync(settings, cancellationTokenSource.Token);
 		return new LinkFromRepositoryArrangeContext(
 			rootDirectory,
 			environmentPackagesPath,
 			repositoryRootPath,
-			session,
+			Session,
 			cancellationTokenSource);
 	}
 
@@ -358,19 +357,21 @@ public sealed class LinkFromRepositoryToolE2ETests {
 			because: "a failed link-from-repository request should not create a new package directory for a package that does not exist in the repository");
 	}
 
+	// The session belongs to the fixture (McpContractFixtureBase) and outlives this per-test context;
+	// only the per-test temporary repository/package tree is owned here.
 	private sealed record LinkFromRepositoryArrangeContext(
 		string RootDirectory,
 		string EnvironmentPackagesPath,
 		string RepositoryRootPath,
 		McpServerSession Session,
 		CancellationTokenSource CancellationTokenSource) : IAsyncDisposable {
-		public async ValueTask DisposeAsync() {
-			await Session.DisposeAsync();
+		public ValueTask DisposeAsync() {
 			CancellationTokenSource.Dispose();
 
 			if (Directory.Exists(RootDirectory)) {
 				Directory.Delete(RootDirectory, recursive: true);
 			}
+			return ValueTask.CompletedTask;
 		}
 	}
 

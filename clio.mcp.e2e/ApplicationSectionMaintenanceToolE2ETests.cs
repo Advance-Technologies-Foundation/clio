@@ -18,7 +18,7 @@ namespace Clio.Mcp.E2E;
 [TestFixture]
 [AllureNUnit]
 [NonParallelizable]
-public sealed class ApplicationSectionMaintenanceToolE2ETests {
+public sealed class ApplicationSectionMaintenanceToolE2ETests : McpContractFixtureBase {
 	private const string SectionListToolName = ApplicationSectionGetListTool.ApplicationSectionGetListToolName;
 	private const string SectionDeleteToolName = ApplicationSectionDeleteTool.ApplicationSectionDeleteToolName;
 	private const string SectionCreateToolName = ApplicationSectionCreateTool.ApplicationSectionCreateToolName;
@@ -37,7 +37,7 @@ public sealed class ApplicationSectionMaintenanceToolE2ETests {
 		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
 		string environmentName = await ResolveReachableEnvironmentAsync(settings);
 		using CancellationTokenSource cancellationTokenSource = new(TimeSpan.FromMinutes(3));
-		await using McpServerSession session = await McpServerSession.StartAsync(settings, cancellationTokenSource.Token);
+		McpServerSession session = Session;
 
 		// Act
 		CallToolResult callResult = await session.CallToolAsync(
@@ -72,7 +72,7 @@ public sealed class ApplicationSectionMaintenanceToolE2ETests {
 		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
 		string environmentName = await ResolveReachableEnvironmentAsync(settings);
 		using CancellationTokenSource cancellationTokenSource = new(TimeSpan.FromMinutes(3));
-		await using McpServerSession session = await McpServerSession.StartAsync(settings, cancellationTokenSource.Token);
+		McpServerSession session = Session;
 		ApplicationListItemEnvelope installedApplication = await SeededApplicationResolver.ResolveOrIgnoreAsync(
 			session,
 			cancellationTokenSource.Token,
@@ -121,7 +121,7 @@ public sealed class ApplicationSectionMaintenanceToolE2ETests {
 		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
 		string environmentName = await ResolveReachableEnvironmentAsync(settings);
 		using CancellationTokenSource cancellationTokenSource = new(TimeSpan.FromMinutes(3));
-		await using McpServerSession session = await McpServerSession.StartAsync(settings, cancellationTokenSource.Token);
+		McpServerSession session = Session;
 
 		// Act
 		CallToolResult callResult = await session.CallToolAsync(
@@ -166,7 +166,7 @@ public sealed class ApplicationSectionMaintenanceToolE2ETests {
 
 		string caption = $"E2E Del {Guid.NewGuid():N}"[..24];
 		using CancellationTokenSource cancellationTokenSource = new(TimeSpan.FromMinutes(5));
-		await using McpServerSession session = await McpServerSession.StartAsync(settings, cancellationTokenSource.Token);
+		McpServerSession session = Session;
 		string? createdSectionCode = null;
 		try {
 			// Act 1: create a new section in the seeded application
@@ -277,7 +277,17 @@ public sealed class ApplicationSectionMaintenanceToolE2ETests {
 		return ApplicationResultParser.ExtractSectionList(callResult);
 	}
 
-	private static async Task<string> ResolveReachableEnvironmentAsync(McpE2ESettings settings) {
+	private Task<string>? _reachableEnvironmentName;
+
+	// One reachability probe per fixture: each probe is a separate `clio ping-app` process (up to two per
+	// call with the fallback), and the answer cannot change between the tests of one fixture run. The
+	// probe stays in the test body, not in [OneTimeSetUp]: an Assert.Ignore raised there faults the cached
+	// task, so every later test re-observes the same Ignore instead of re-probing — the per-test skip
+	// reporting is unchanged while the process count is not.
+	private Task<string> ResolveReachableEnvironmentAsync(McpE2ESettings settings) =>
+		_reachableEnvironmentName ??= ResolveReachableEnvironmentCoreAsync(settings);
+
+	private static async Task<string> ResolveReachableEnvironmentCoreAsync(McpE2ESettings settings) {
 		string? configuredEnvironmentName = settings.Sandbox.EnvironmentName;
 		if (!string.IsNullOrWhiteSpace(configuredEnvironmentName) &&
 			await CanReachEnvironmentAsync(settings, configuredEnvironmentName)) {

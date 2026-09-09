@@ -29,7 +29,7 @@ namespace Clio.Mcp.E2E;
 [TestFixture]
 [AllureNUnit]
 [AllureFeature("clear-redis-db")]
-public sealed class ClearRedisToolE2ETests {
+public sealed class ClearRedisToolE2ETests : McpContractFixtureBase {
 	private const string EnvironmentToolName = ClearRedisTool.ClearRedisByEnvironmentName;
 	private const string CredentialsToolName = ClearRedisTool.ClearRedisByCredentialsToolName;
 
@@ -83,9 +83,7 @@ public sealed class ClearRedisToolE2ETests {
 	// URL), so they are env-free (McpE2E.NoEnvironment).
 	// No AllowDestructiveMcpTests gate: rejecting an invalid request mutates nothing.
 	private async Task<ClearRedisArrangeContext> ArrangeWithoutRedisAsync() {
-		return await AllureApi.Step("Arrange clear-redis invalid-input state (no sandbox Redis)", async () => {
-			McpE2ESettings settings = TestConfiguration.Load();
-			settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
+		return await AllureApi.Step("Arrange clear-redis invalid-input state (no sandbox Redis)", () => {
 			const string environmentName = "clear-redis-synthetic-env";
 			SandboxEnvironmentContext sandboxContext = new(
 				environmentName,
@@ -98,8 +96,7 @@ public sealed class ClearRedisToolE2ETests {
 				RedisConnectionString: string.Empty,
 				DatabaseConnectionString: string.Empty);
 			CancellationTokenSource cancellationTokenSource = new(TimeSpan.FromMinutes(2));
-			McpServerSession session = await McpServerSession.StartAsync(settings, cancellationTokenSource.Token);
-			return new ClearRedisArrangeContext(sandboxContext, session, cancellationTokenSource);
+			return Task.FromResult(new ClearRedisArrangeContext(sandboxContext, Session, cancellationTokenSource));
 		});
 	}
 
@@ -195,13 +192,14 @@ public sealed class ClearRedisToolE2ETests {
 			because: "the failure log should help a human understand that the credentials-based request failed because the target URL was invalid");
 	}
 
+	// The session belongs to the fixture (McpContractFixtureBase) and outlives this per-test context.
 	private sealed record ClearRedisArrangeContext(
 		SandboxEnvironmentContext SandboxContext,
 		McpServerSession Session,
 		CancellationTokenSource CancellationTokenSource) : IAsyncDisposable {
-		public async ValueTask DisposeAsync() {
-			await Session.DisposeAsync();
+		public ValueTask DisposeAsync() {
 			CancellationTokenSource.Dispose();
+			return ValueTask.CompletedTask;
 		}
 	}
 

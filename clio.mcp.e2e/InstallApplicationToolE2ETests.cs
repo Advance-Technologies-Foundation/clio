@@ -19,7 +19,7 @@ namespace Clio.Mcp.E2E;
 [AllureNUnit]
 [AllureFeature("install-application")]
 [NonParallelizable]
-public sealed class InstallApplicationToolE2ETests {
+public sealed class InstallApplicationToolE2ETests : McpContractFixtureBase {
 	private const string ToolName = InstallApplicationTool.InstallApplicationToolName;
 
 	[Test]
@@ -93,7 +93,7 @@ public sealed class InstallApplicationToolE2ETests {
 			because: "invalid environment failures must not create the requested report file");
 	}
 
-	private static async Task<InstallApplicationArrangeContext> ArrangeSuccessAsync(McpE2ESettings settings) {
+	private async Task<InstallApplicationArrangeContext> ArrangeSuccessAsync(McpE2ESettings settings) {
 		string? environmentName = settings.Sandbox.EnvironmentName;
 		// Fall back to the bundled minimal package fixture so the success path is self-contained on a
 		// reachable sandbox without requiring McpE2E:Sandbox:ApplicationPackagePath to be configured.
@@ -117,30 +117,28 @@ public sealed class InstallApplicationToolE2ETests {
 		string reportPath = Path.Combine(rootDirectory, "install-application.log");
 		CancellationTokenSource cancellationTokenSource = new(TimeSpan.FromMinutes(10));
 		Directory.CreateDirectory(rootDirectory);
-		McpServerSession session = await McpServerSession.StartAsync(settings, cancellationTokenSource.Token);
 		return new InstallApplicationArrangeContext(
 			rootDirectory,
 			reportPath,
 			applicationPackagePath!,
 			environmentName!,
-			session,
+			Session,
 			cancellationTokenSource);
 	}
 
-	private static async Task<InstallApplicationArrangeContext> ArrangeFailureAsync(McpE2ESettings settings) {
+	private Task<InstallApplicationArrangeContext> ArrangeFailureAsync(McpE2ESettings settings) {
 		ClioProcessDescriptor process = ClioExecutableResolver.Resolve(settings);
 		string rootDirectory = Path.Combine(process.WorkingDirectory, $"install-application-invalid-e2e-{Guid.NewGuid():N}");
 		string reportPath = Path.Combine(rootDirectory, "install-application.log");
 		CancellationTokenSource cancellationTokenSource = new(TimeSpan.FromMinutes(3));
 		Directory.CreateDirectory(rootDirectory);
-		McpServerSession session = await McpServerSession.StartAsync(settings, cancellationTokenSource.Token);
-		return new InstallApplicationArrangeContext(
+		return Task.FromResult(new InstallApplicationArrangeContext(
 			rootDirectory,
 			reportPath,
 			ApplicationPackagePath: settings.Sandbox.ApplicationPackagePath ?? @"C:\Packages\missing-app.gz",
 			EnvironmentName: string.Empty,
-			session,
-			cancellationTokenSource);
+			Session,
+			cancellationTokenSource));
 	}
 
 	// Path to the minimal package fixture copied next to the test assembly (see clio.mcp.e2e.csproj).
@@ -178,6 +176,7 @@ public sealed class InstallApplicationToolE2ETests {
 		return new InstallApplicationActResult(callResult, execution);
 	}
 
+	// The session belongs to the fixture (McpContractFixtureBase) and outlives this per-test context.
 	private sealed record InstallApplicationArrangeContext(
 		string RootDirectory,
 		string ReportPath,
@@ -185,12 +184,12 @@ public sealed class InstallApplicationToolE2ETests {
 		string EnvironmentName,
 		McpServerSession Session,
 		CancellationTokenSource CancellationTokenSource) : IAsyncDisposable {
-		public async ValueTask DisposeAsync() {
-			await Session.DisposeAsync();
+		public ValueTask DisposeAsync() {
 			CancellationTokenSource.Dispose();
 			if (Directory.Exists(RootDirectory)) {
 				Directory.Delete(RootDirectory, recursive: true);
 			}
+			return ValueTask.CompletedTask;
 		}
 	}
 
