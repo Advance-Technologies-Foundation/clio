@@ -95,9 +95,11 @@ public class BundledProcessBuilderPackageTests {
 	/// element's result flag moves to the output the runtime will actually write. The MINOR digit had already
 	/// moved at 1.6.0.0; every PATCH digit over it fixes something a review or a manual case found, and each is
 	/// raised so a stand still carrying an earlier one is DETECTABLY behind — same-version re-cuts make equal
-	/// version numbers mean nothing, which the convergence check cannot see through. 1.6.0.7 identifies the
-	/// FIRST cut of this story, taken before four review fixes landed; the bytes here are 1.6.0.8 and carry
-	/// them, which is why the number moved rather than being re-used.</para>
+	/// version numbers mean nothing, which the convergence check cannot see through. Two numbers are burned
+	/// below this one for that reason, both of them cuts of THIS story that reached a reviewer: 1.6.0.7 was the
+	/// first cut, taken before four review fixes landed, and 1.6.0.8 carried those but not the top-N clear that
+	/// a second review round found (the pair was cleared only on a mode change, never on an in-place update).
+	/// The bytes here are 1.6.0.9 and carry both rounds.</para>
 	/// <para>
 	/// This cut DID run under <c>-SkipTests</c>, and the SHA above was therefore refreshed by hand rather than
 	/// by the script. Why, and what was done instead: the package's suite is green on the producing commit
@@ -176,7 +178,7 @@ public class BundledProcessBuilderPackageTests {
 	/// </para>
 	/// </remarks>
 	private const string ExpectedArchiveSha256 =
-		"AB022836AAF2362D7D8E132E157CDF5BE59AE4C601B79B7FA340B40DDCBC6EFC";
+		"F1F204C32C10E5254D80E188CA14E1711913FAA799D2B14EF7AB31B17F292145";
 
 	/// <summary>
 	/// The <c>PackageVersion</c> the shipped descriptor carries.
@@ -204,7 +206,7 @@ public class BundledProcessBuilderPackageTests {
 	/// </para>
 	/// </para>
 	/// </remarks>
-	private const string ExpectedArchiveVersion = "1.6.0.8";
+	private const string ExpectedArchiveVersion = "1.6.0.9";
 
 	/// <summary>
 	/// The commit of the PRODUCING repository the archive was cut from, written by
@@ -216,7 +218,7 @@ public class BundledProcessBuilderPackageTests {
 	/// corresponding to no commit" is unreachable rather than merely documented. Anyone with a checkout can
 	/// verify the rest with one `git checkout`.</para>
 	/// </summary>
-	private const string ExpectedProducingCommit = "6b45a3758dbaaf1c0221a894775ae0205299f887";
+	private const string ExpectedProducingCommit = "03c4a583bc28c0278ba27a17e433d166d0bb95e2";
 
 	/// <summary>
 	/// The <c>ModifiedOnUtc</c> the shipped descriptor carries.
@@ -242,7 +244,7 @@ public class BundledProcessBuilderPackageTests {
 	/// command — the previous pin ended in <c>431</c>, which is how the hand edit was eventually noticed.
 	/// </para>
 	/// </remarks>
-	private const string ExpectedDescriptorModifiedOnUtc = "/Date(1788957457000)/";
+	private const string ExpectedDescriptorModifiedOnUtc = "/Date(1788962069000)/";
 
 	/// <summary>
 	/// The <c>ModifiedOnUtc</c> the shipped COMPILE-MARKER SCHEMA descriptor carries.
