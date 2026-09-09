@@ -93,7 +93,24 @@ namespace Clio.Common
 				return text;
 			}
 			var sb = new StringBuilder(text.Length);
-			foreach (char character in text) {
+			for (int index = 0; index < text.Length; index++) {
+				char character = text[index];
+				// An UNPAIRED surrogate half is dropped, not spaced: it is invalid UTF-16, which a JSON
+				// serializer refuses outright - so a caller value carrying one would make this helper the
+				// cause of a serialization failure in the very message it exists to make safe. Guarding the
+				// TRUNCATION against splitting a pair was not enough; a lone half the caller supplied passed
+				// straight through. A valid PAIR survives, so this needs the pairwise scan rather than a
+				// per-character test. The package half states the same rule in SafeText.Sanitize.
+				if (char.IsHighSurrogate(character)) {
+					if (index + 1 < text.Length && char.IsLowSurrogate(text[index + 1])) {
+						sb.Append(character).Append(text[index + 1]);
+						index++;
+					}
+					continue;
+				}
+				if (char.IsLowSurrogate(character)) {
+					continue;
+				}
 				sb.Append(char.IsControl(character) ? ' ' : character);
 			}
 			string sanitized = sb.ToString();

@@ -74,7 +74,7 @@ public class BundledProcessBuilderPackageTests {
 	/// SHA-256 of the committed archive. Produced by <c>rebundle-process-builder.ps1</c> at
 	/// <see cref="ExpectedArchiveVersion"/> from
 	/// the <c>ProcessBuilder</c> repository (<c>packages/CrtProcessBuilder</c>, branch
-	/// <c>feature/ENG-91853-flow-labels</c>, tag <c>crtprocessbuilder-1.6.0.14</c>), at the commit recorded
+	/// <c>feature/ENG-91853-flow-labels</c>, tag <c>crtprocessbuilder-1.6.0.15</c>), at the commit recorded
 	/// mechanically in
 	/// <see cref="ExpectedProducingCommit"/> — the script captures <c>git rev-parse HEAD</c> and refuses to cut
 	/// from a tree with uncommitted changes, so this reference is no longer a sentence anyone has to keep true
@@ -163,7 +163,7 @@ public class BundledProcessBuilderPackageTests {
 	/// </para>
 	/// </remarks>
 	private const string ExpectedArchiveSha256 =
-		"9D7B6D25F73FB28EAE756CB77C27BAB79875262662F82422E4F8CDC7D432F1C5";
+		"D4DF0D544A4513F3EF11BA75E2D22F58339DE465FFD2CBC1061B4FA899C041FB";
 
 	/// <summary>
 	/// The <c>PackageVersion</c> the shipped descriptor carries.
@@ -191,7 +191,7 @@ public class BundledProcessBuilderPackageTests {
 	/// </para>
 	/// </para>
 	/// </remarks>
-	private const string ExpectedArchiveVersion = "1.6.0.14";
+	private const string ExpectedArchiveVersion = "1.6.0.15";
 
 	/// <summary>
 	/// The commit of the PRODUCING repository the archive was cut from, written by
@@ -203,7 +203,7 @@ public class BundledProcessBuilderPackageTests {
 	/// corresponding to no commit" is unreachable rather than merely documented. Anyone with a checkout can
 	/// verify the rest with one `git checkout`.</para>
 	/// </summary>
-	private const string ExpectedProducingCommit = "704a3d328b33a08b33aa7482adce97612ded1dd7";
+	private const string ExpectedProducingCommit = "3469b16a8c0dfcb0749036e19375dc7a9a184acf";
 
 	/// <summary>
 	/// The <c>ModifiedOnUtc</c> the shipped descriptor carries.
@@ -229,7 +229,7 @@ public class BundledProcessBuilderPackageTests {
 	/// command — the previous pin ended in <c>431</c>, which is how the hand edit was eventually noticed.
 	/// </para>
 	/// </remarks>
-	private const string ExpectedDescriptorModifiedOnUtc = "/Date(1788965836000)/";
+	private const string ExpectedDescriptorModifiedOnUtc = "/Date(1788968747000)/";
 
 	/// <summary>
 	/// The <c>ModifiedOnUtc</c> the shipped COMPILE-MARKER SCHEMA descriptor carries.

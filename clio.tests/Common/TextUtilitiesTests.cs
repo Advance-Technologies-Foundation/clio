@@ -228,6 +228,26 @@ public sealed class TextUtilitiesTests
 
 	[Test]
 	[Category("Unit")]
+	[Description("A pre-existing UNPAIRED surrogate half is dropped, not merely protected from being split by truncation. It is invalid UTF-16, which System.Text.Json refuses - so a caller value carrying one would make this helper the cause of a serialization failure inside the very message it exists to make safe. Guarding the cut was not enough; a lone half passed straight through untouched, and no test covered that. Found by Copilot on the package PR, against the package twin, and the same gap was here. Built from a char cast because a lone surrogate cannot survive a string literal in metadata.")]
+	[TestCase(0xD83D, TestName = "SanitizeForDisplay_DropsALoneHighSurrogate")]
+	[TestCase(0xDE00, TestName = "SanitizeForDisplay_DropsALoneLowSurrogate")]
+	public void SanitizeForDisplay_ShouldDropAnUnpairedSurrogate(int codeUnit) {
+		// Arrange - with a precondition, because a substituted U+FFFD would pass vacuously
+		string text = "before" + (char)codeUnit + "after";
+		char.IsSurrogate(text[6]).Should().BeTrue(
+			because: "the value under test has to really carry an unpaired half");
+
+		// Act
+		string sanitized = TextUtilities.SanitizeForDisplay(text);
+
+		// Assert
+		sanitized.Should().Be("beforeafter",
+			because: "the half is removed rather than spaced - it is not a character, and leaving it makes "
+				+ "the JSON serializer throw on the message this helper was building");
+	}
+
+	[Test]
+	[Category("Unit")]
 	[Description("An astral character that FITS is kept whole, so the back-off does not fire when there is room. Asserted separately because a version that always dropped the final unit would satisfy the test above.")]
 	public void SanitizeForDisplay_ShouldKeepAnAstralCharacter_WhenItFitsWithinTheCap() {
 		// Arrange
