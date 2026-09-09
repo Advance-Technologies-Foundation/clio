@@ -212,7 +212,7 @@ can report a conflict against a page that has not actually changed. This edge fa
 schema body from the server and merges your incoming fragment into it.
 
 A `viewConfigDiff` entry is replaced only when **both** `operation` and `name` match one of
-yours — and, for a `remove`, whether it targets `properties`. Incoming wins, and the replacement
+yours — and, for a `remove` or a `set`, whether it targets `properties`. Incoming wins, and the replacement
 keeps the existing entry's position. Every other existing operation is preserved verbatim and in
 place, including a second operation on a component you already target (a `move` and a `merge` for
 one name are both valid and both survive the merge — though "survive" means kept in the body, not
@@ -224,7 +224,7 @@ stale values *after* your replacement. When those two entries set disjoint keys,
 keys go with it. Handlers dedupe by `request`.
 
 `SCHEMA_CONVERTERS` and `SCHEMA_VALIDATORS` entries merge by type key, and incoming wins. The final merged web body is rejected when a custom validator reference has no matching
-`SCHEMA_VALIDATORS` declaration.
+`SCHEMA_VALIDATORS` declaration. Built-in `crt.*` validators need no local declaration.
 
 **Preserved is not the same as applied**, and this part is not about append at all — it is how the
 platform differ resolves any final body, so a hand-authored `--mode replace` body produces it too.

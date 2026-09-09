@@ -153,12 +153,13 @@ DESCRIPTION
     --mode replace (default) saves the body verbatim. --mode append loads the
     current schema body from the server and merges your incoming fragment into it.
     A viewConfigDiff entry is replaced only when both operation and name match one
-    of yours - and, for a remove, whether it targets properties. Incoming wins and
-    keeps the existing entry's position; every other existing operation is preserved
-    verbatim, including a second operation on a component you already target. One
-    exception: if your fragment supersedes an identity the page carries TWICE, only
-    the first is replaced and the later one is dropped, since keeping it would
-    re-apply stale values after your replacement. Handlers dedupe by request.
+    of yours - and, for a remove or a set, whether it targets properties. Incoming
+    wins and keeps the existing entry's position; every other existing operation
+    is preserved verbatim, including a second operation on a component you already
+    target. One exception: if your fragment supersedes an identity the page
+    carries TWICE, only the first is replaced and the later one is dropped, since
+    keeping it would re-apply stale values after your replacement. Handlers
+    dedupe by request.
     SCHEMA_CONVERTERS and SCHEMA_VALIDATORS entries merge by type key and
     incoming wins. The merged web body is rejected when a custom
     validator reference lacks a matching SCHEMA_VALIDATORS declaration;
