@@ -29,6 +29,7 @@ namespace Clio.Mcp.E2E;
 [TestFixture]
 [AllureNUnit]
 [AllureFeature("clear-redis-db")]
+[Parallelizable(ParallelScope.Self)]
 public sealed class ClearRedisToolE2ETests : McpContractFixtureBase {
 	private const string EnvironmentToolName = ClearRedisTool.ClearRedisByEnvironmentName;
 	private const string CredentialsToolName = ClearRedisTool.ClearRedisByCredentialsToolName;

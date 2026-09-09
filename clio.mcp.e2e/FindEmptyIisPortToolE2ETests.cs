@@ -13,6 +13,7 @@ namespace Clio.Mcp.E2E;
 [Category("McpE2E.NoEnvironment")]
 [AllureNUnit]
 [AllureFeature("find-empty-iis-port")]
+[Parallelizable(ParallelScope.Self)]
 public sealed class FindEmptyIisPortToolE2ETests : McpContractFixtureBase
 {
 	private const string ToolName = FindEmptyIisPortTool.FindEmptyIisPortToolName;

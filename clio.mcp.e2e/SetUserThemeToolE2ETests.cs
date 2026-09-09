@@ -24,7 +24,7 @@ namespace Clio.Mcp.E2E;
 [Category("McpE2E.NoEnvironment")]
 [AllureNUnit]
 [AllureFeature("set-user-theme")]
-[NonParallelizable]
+[Parallelizable(ParallelScope.Self)]
 public sealed class SetUserThemeToolE2ETests : McpContractFixtureBase {
 	[Test]
 	[AllureTag(SetUserThemeTool.ToolName)]

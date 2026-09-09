@@ -12,7 +12,7 @@ namespace Clio.Mcp.E2E;
 [TestFixture]
 [Category("McpE2E.NoEnvironment")]
 [AllureNUnit]
-[NonParallelizable]
+[Parallelizable(ParallelScope.Self)]
 public sealed class EmailTemplateToolE2ETests : McpContractFixtureBase {
 	[Test]
 	[Description("Exposes both email-template tools through the compact lazy-surface index with correct safety flags.")]

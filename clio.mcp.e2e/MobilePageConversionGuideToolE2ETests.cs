@@ -24,7 +24,7 @@ namespace Clio.Mcp.E2E;
 [Category("McpE2E.NoEnvironment")]
 [AllureNUnit]
 [AllureFeature(MobilePageConversionGuideTool.ToolName)]
-[NonParallelizable]
+[Parallelizable(ParallelScope.Self)]
 public sealed class MobilePageConversionGuideToolE2ETests : McpContractFixtureBase {
 
 	private const string ToolName = MobilePageConversionGuideTool.ToolName;
@@ -117,7 +117,7 @@ public sealed class MobilePageConversionGuideToolE2ETests : McpContractFixtureBa
 [Category("McpE2E.NoEnvironment")]
 [AllureNUnit]
 [AllureFeature(MobilePageConversionGuideTool.ToolName)]
-[NonParallelizable]
+[Parallelizable(ParallelScope.Self)]
 public sealed class MobilePageConversionGuideToolFeatureGateE2ETests : McpContractFixtureBase {
 
 	private const string ToolName = MobilePageConversionGuideTool.ToolName;

@@ -17,7 +17,7 @@ namespace Clio.Mcp.E2E;
 [Category("McpE2E.NoEnvironment")]
 [AllureNUnit]
 [AllureFeature(CreateRelatedPageAddonTool.ToolName)]
-[NonParallelizable]
+[Parallelizable(ParallelScope.Self)]
 public sealed class CreateRelatedPageAddonToolE2ETests : McpContractFixtureBase {
 	private const string ToolName = CreateRelatedPageAddonTool.ToolName;
 

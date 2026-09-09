@@ -23,7 +23,7 @@ namespace Clio.Mcp.E2E;
 [Category("McpE2E.NoEnvironment")]
 [AllureNUnit]
 [AllureFeature("clear-themes-cache")]
-[NonParallelizable]
+[Parallelizable(ParallelScope.Self)]
 public sealed class ClearThemesCacheToolE2ETests : McpContractFixtureBase {
 	[Test]
 	[AllureTag(ClearThemesCacheTool.ToolName)]

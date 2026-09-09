@@ -300,6 +300,41 @@ public sealed class McpFixturePolicyTests {
 			because: "a stand probe or an Assert.Ignore in [OneTimeSetUp] turns one unreachable sandbox into a whole-fixture failure (or a fixture-level skip that hides which test needed the stand), which is the exact regression the shared-server conversion was reviewed against");
 	}
 
+	[Test]
+	[Description("Every [Parallelizable(ParallelScope.Self)] e2e fixture stays free of the two things that CAN collide inside the parallel pool itself: a process-global Environment.SetEnvironmentVariable (leaks into whichever child server another worker is starting at that moment) and a TemporaryClioSettingsOverride (a bare read-modify-write of an appsettings.json that, without a fixture-owned home, is the suite-shared one every other pooled server reads). Stand safety is covered by SandboxFixtures_ShouldBeNonParallelizable; this guard is about pool-internal isolation.")]
+	public void ParallelFixtures_ShouldNotMutateProcessEnvironmentOrSharedSettings() {
+		// Arrange
+		string e2eRoot = Path.Combine(RepositoryRoot, "clio.mcp.e2e");
+		Directory.Exists(e2eRoot).Should().BeTrue(
+			because: $"this guard scans the e2e fixture sources under {e2eRoot}; a moved project must fail here rather than pass on an empty scan");
+		// Class-level attribute on its own line, never the same token quoted inside a comment.
+		const string parallelAttribute = "\n[Parallelizable(ParallelScope.Self)]\n";
+		string[] forbiddenInParallelFixtures = [
+			"Environment.SetEnvironmentVariable(",
+			"TemporaryClioSettingsOverride."
+		];
+		string[] parallelFixtureSources = Directory.EnumerateFiles(e2eRoot, "*.cs", SearchOption.TopDirectoryOnly)
+			.Where(path => File.ReadAllText(path).Contains(parallelAttribute, StringComparison.Ordinal))
+			.OrderBy(path => path, StringComparer.Ordinal)
+			.ToArray();
+
+		// Act
+		string[] violations = parallelFixtureSources
+			.SelectMany(path => {
+				string source = File.ReadAllText(path);
+				return forbiddenInParallelFixtures
+					.Where(token => source.Contains(token, StringComparison.Ordinal))
+					.Select(token => $"{Path.GetFileName(path)}: parallel fixture uses {token}");
+			})
+			.ToArray();
+
+		// Assert
+		parallelFixtureSources.Should().HaveCountGreaterThanOrEqualTo(60,
+			because: "the pool holds the 26 files vetted by ENG-92558 plus the 40 added by PR #1427; a smaller set means the scan missed the sources and this guard pins nothing");
+		violations.Should().BeEmpty(
+			because: "a pooled fixture that poisons the test-host environment or rewrites the shared appsettings.json turns an unrelated pooled fixture red with a failure that points nowhere near the change - the flake class ENG-94529 and TeamCity 15893259 already paid for once; move such a fixture back to [NonParallelizable] or give it a fixture-owned CLIO_HOME instead");
+	}
+
 	private static bool HasCategory(IEnumerable<CategoryAttribute> attributes, string category) =>
 		attributes.Any(attribute => string.Equals(attribute.Name, category, StringComparison.Ordinal));
 }

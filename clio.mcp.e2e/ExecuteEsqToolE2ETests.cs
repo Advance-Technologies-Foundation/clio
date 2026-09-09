@@ -15,7 +15,7 @@ namespace Clio.Mcp.E2E;
 [Category("McpE2E.NoEnvironment")]
 [AllureNUnit]
 [AllureFeature(ExecuteEsqTool.ToolName)]
-[NonParallelizable]
+[Parallelizable(ParallelScope.Self)]
 public sealed class ExecuteEsqToolE2ETests : McpContractFixtureBase {
 	[Test]
 	[Description("Exposes execute-esq as a discoverable, non-destructive tool via the get-tool-contract compact index on the lazy MCP surface.")]

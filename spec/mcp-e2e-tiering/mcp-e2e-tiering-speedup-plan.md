@@ -119,6 +119,27 @@ ENG-92558 ввів 26 `[Parallelizable(ParallelScope.Self)]` фікстур і `
 приховану зв'язаність, тому спершу треба чистий сигнал. Обмеження з ENG-92558: воркерів ≤ 3, жодного
 `[assembly: Parallelizable]`.
 
+**Що зроблено (після зеленого 15999407).** Скринінг 73 NoEnvironment-only фікстур, що лишались поза
+пулом, за чотирма ознаками: (а) `McpContractFixtureBase`/`DataBindingDbFixtureBase` (один сервер на
+фікстуру); (б) жодного `Environment.SetEnvironmentVariable`; (в) `TemporaryClioSettingsOverride`/власний
+старт сервера — лише з ізольованим домом; (г) інструменти, що не пишуть у спільний `CLIO_HOME`. Пройшли
+**41 клас у 40 файлах** — від `AddPackage` до `UploadImage`, включно з ізольованими
+`Knowledge*`, `GuidanceGetDiagnostics`, `RequestInfo`, `MobilePageConversionGuide` (обидва класи) і
+трьома фікстурами, що взагалі не мали маркера (`ClearRedis`, `FindEmptyIisPort`, `RemovePackageDependency`).
+Пул: 27 → 68 класів фікстур (26 → 66 файлів). `NumberOfTestWorkers` лишається 2.
+
+**Свідомо лишені серійними**: `ExperimentalToolE2ETests` (пише feature-флаги у спільний
+`appsettings.json`), `ComponentInfoToolE2ETests` (пер-тестові сервери з власними env-змінними),
+`BuildThemeToolE2ETests` (у файлі є фікстура з живою мережею без тиру), `SendTelemetry*`,
+`ReadResponseDeadline`, `SettingsHealth`, `McpWorker*`, `CuratedKnowledge*`, `McpServerShutdown` та інші,
+що стартують власні процеси або мутують оточення тест-хоста.
+
+**Чому це безпечно для стенду.** NUnit виконує паралельні фікстури у власній «зміні» і не запускає їх
+одночасно з `[NonParallelizable]`-чергою; крім того, жодна фікстура пулу не має `Sandbox`-тестів
+(інваріант `McpFixturePolicyTests`). Єдині можливі колізії — між фікстурами самого пулу через спільний
+`CLIO_HOME` або процесне оточення; саме їх відсіює скринінг, а новий guard у `McpFixturePolicyTests`
+(`ParallelFixtures_ShouldNotMutateProcessEnvironmentOrSharedSettings`) не дає їм повернутись.
+
 ### Stage 3 — перетегувати 28 хибно-Sandbox тестів
 
 `SchemaSyncToolE2ETests` (15), `DataBindingDbToolE2ETests` (8), `DataBindingToolE2ETests` (3 — уся
@@ -187,7 +208,8 @@ dotnet test clio.tests/clio.tests.csproj -f net10.0 --no-build --filter "FullyQu
 |---|---|---|---|---|---|
 | baseline (PR #1399) | `77cc191` | 15999000 | success | **57m 32s** (статус pending `12:35:36Z` → success `13:33:08Z`; це весь білд — деплой Creatio + install-gate + seed + крок тестів, з яких ~44m 20s — тести за даними запиту) | статус не несе кількості (`"TeamCity build finished"`) |
 | Stage 1 — локально | робоче дерево | — | 13 фікстур / 63 тести: 25 passed, 19 skipped (Ignore через недосяжний стенд / вимкнений feature-flag), 19 failed — усі 19 з одним і тим самим текстом `EnsureSandboxIsConfigured` (задокументований локальний fail-fast без `Sandbox:EnvironmentName`, відтворюється на `master`); `McpFixturePolicyTests` 11/11 | 49 с на 63 тести з 13 стартами замість 63 (`CreateRelatedPageAddon`: 4–96 мс/тест замість ~3.8 с) | — |
-| Stage 1 — TeamCity | … | … | … | … | … |
+| Stage 1 + Stage 3 — TeamCity (PR #1427) | `c8472c0` | [15999407](https://teamcity-rnd.bpmonline.com/buildConfiguration/Team_Atf_ClioMcpE2eTests/15999407) | **success** | **≈50 хв** (черга `13:52:24Z` → success `14:42:56Z`; мітка pending недоступна через combined-status API, похибка ≈ ±30 с) — **−7.5 хв проти 57m 32s** (−13 % білду; ~−17 % тестового кроку, бо деплой незмінний). Це відповідає S ≈ 8 с на Windows-агенті при 49 знятих стартах + ~25 знятих `ping-app` | статус не несе кількості; порівняння `Tests passed` 15999000 vs 15999407 — у TeamCity |
 | Stage 3 — локально | робоче дерево | — | `--filter Category=McpE2E.NoEnvironment` по 5 перетегованих фікстурах: **28 passed, 0 failed, 0 skipped** (до перетегування ці 28 у швидкому гейті не запускались узагалі) | 39 с | — |
-| Stage 3 — TeamCity | … | … | … | … | … |
-| Stage 2 | … | … | … | … | … |
+| Stage 3 — TeamCity | `c8472c0` | 15999407 | success (той самий білд, що й Stage 1) | — | — |
+| Stage 2 — локально | робоче дерево | — | повний тир `NoEnvironment`, 2 воркери: **485 тестів** (457 + 28 перетегованих), 480 passed, ті самі 2 контейнерні failures і 3 skips, що й у baseline — **жодного нового падіння чи skip** | **10m 58s** проти 12m 40s baseline (−13 %, при +28 тестах) | `McpFixturePolicyTests` 13/13 (новий guard `ParallelFixtures_ShouldNotMutateProcessEnvironmentOrSharedSettings`) |
+| Stage 2 — TeamCity | … | … | … | … | … |

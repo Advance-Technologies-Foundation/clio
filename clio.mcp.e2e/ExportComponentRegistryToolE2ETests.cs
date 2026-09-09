@@ -20,7 +20,7 @@ namespace Clio.Mcp.E2E;
 [Category("McpE2E.NoEnvironment")]
 [AllureNUnit]
 [AllureFeature("export-component-registry")]
-[NonParallelizable]
+[Parallelizable(ParallelScope.Self)]
 public sealed class ExportComponentRegistryToolE2ETests : McpContractFixtureBase {
 	private const string ToolName = ExportComponentRegistryTool.ToolName;
 

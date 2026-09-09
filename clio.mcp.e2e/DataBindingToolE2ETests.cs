@@ -18,7 +18,7 @@ namespace Clio.Mcp.E2E;
 [Category("McpE2E.NoEnvironment")]
 [AllureNUnit]
 [AllureFeature("data-binding")]
-[NonParallelizable]
+[Parallelizable(ParallelScope.Self)]
 public sealed class DataBindingToolE2ETests : McpContractFixtureBase {
 	private const string CreateToolName = CreateDataBindingTool.CreateDataBindingToolName;
 	private const string AddRowToolName = AddDataBindingRowTool.AddDataBindingRowToolName;

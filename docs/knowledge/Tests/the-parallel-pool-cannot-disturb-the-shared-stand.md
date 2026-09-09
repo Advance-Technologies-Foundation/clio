@@ -8,15 +8,19 @@ ticket: clio#1381
 date: 2026-09-04
 ---
 
-**What is true** — `clio.mcp.e2e.runsettings` sets `NumberOfTestWorkers=2`, but the 26 fixtures marked
-`[Parallelizable(ParallelScope.Self)]` cannot touch the run's Creatio instance. Each one is guarded in
-one of four ways, verified fixture by fixture: an invalid random `environment-name`
-(`$"missing-*-{Guid.NewGuid():N}"`) that fails resolution before any mutation; an isolated `CLIO_HOME`
-pointing at a fixture-owned path or a loopback stub; purely local synthetic file operations; or
-deliberately corrupt input that fails before the mutating stage (`DeployCreatioToolE2ETests`,
-`RestoreDbToolE2ETests`). None of them carries `McpE2E.Sandbox` — they are `McpE2E.NoEnvironment` only,
-and `clio.tests/McpFixturePolicyTests.cs` already enforces that split. There is no assembly-level
-`[Parallelizable]` or `LevelOfParallelism` override, so those 26 are the entire pool.
+**What is true** — `clio.mcp.e2e.runsettings` sets `NumberOfTestWorkers=2`, but the 68 fixture classes
+marked `[Parallelizable(ParallelScope.Self)]` (27 vetted by ENG-92558, 41 more by PR #1427; 66 source
+files) cannot touch the run's Creatio instance. Each one is guarded in one of four ways, verified fixture by fixture: an invalid
+random `environment-name` (`$"missing-*-{Guid.NewGuid():N}"`) that fails resolution before any mutation;
+an isolated `CLIO_HOME` pointing at a fixture-owned path or a loopback stub; purely local synthetic file
+operations; or deliberately corrupt input that fails before the mutating stage
+(`DeployCreatioToolE2ETests`, `RestoreDbToolE2ETests`). None of them carries `McpE2E.Sandbox` — they
+are `McpE2E.NoEnvironment` only, and `clio.tests/McpFixturePolicyTests.cs` already enforces that split.
+The PR #1427 cohort was additionally screened for the two things that CAN collide inside the pool
+itself: a write to the suite-shared `CLIO_HOME` (`ExperimentalToolE2ETests` toggles feature flags there
+and therefore stays serial) and a process-global `Environment.SetEnvironmentVariable`
+(`SendTelemetry*E2ETests`, `DataForgeToolE2ETests` stay serial). There is no assembly-level
+`[Parallelizable]` or `LevelOfParallelism` override, so those 68 are the entire pool.
 
 **Why it is this way** — the `McpE2E.NoEnvironment` tier exists precisely to be a fast deterministic gate
 that runs with no Creatio, so its fixtures are the only ones allowed into the parallel pool.

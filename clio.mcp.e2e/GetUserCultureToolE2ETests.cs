@@ -16,7 +16,7 @@ namespace Clio.Mcp.E2E;
 [Category("McpE2E.NoEnvironment")]
 [AllureNUnit]
 [AllureFeature(GetUserCultureTool.ToolName)]
-[NonParallelizable]
+[Parallelizable(ParallelScope.Self)]
 public sealed class GetUserCultureToolE2ETests : McpContractFixtureBase {
 	[Test]
 	[Description("Exposes get-user-culture via the get-tool-contract compact index with a non-destructive safety flag on the lazy tool surface.")]

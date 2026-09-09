@@ -18,7 +18,7 @@ namespace Clio.Mcp.E2E;
 [Category("McpE2E.NoEnvironment")]
 [AllureNUnit]
 [AllureFeature(SetRecordRightsTool.ToolName)]
-[NonParallelizable]
+[Parallelizable(ParallelScope.Self)]
 public sealed class SetRecordRightsToolE2ETests : McpContractFixtureBase {
 	[Test]
 	[Description("Exposes set-record-rights as a discoverable, destructive tool via the get-tool-contract compact index on the lazy MCP surface.")]

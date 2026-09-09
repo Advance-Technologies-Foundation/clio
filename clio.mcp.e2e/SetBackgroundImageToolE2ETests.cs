@@ -22,7 +22,7 @@ namespace Clio.Mcp.E2E;
 [Category("McpE2E.NoEnvironment")]
 [AllureNUnit]
 [AllureFeature("set-background-image")]
-[NonParallelizable]
+[Parallelizable(ParallelScope.Self)]
 public sealed class SetBackgroundImageToolE2ETests : McpContractFixtureBase {
 	[Test]
 	[AllureTag(SetBackgroundImageTool.ToolName)]

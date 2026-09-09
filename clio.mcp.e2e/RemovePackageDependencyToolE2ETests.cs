@@ -17,6 +17,7 @@ namespace Clio.Mcp.E2E;
 [Category("McpE2E.NoEnvironment")]
 [AllureNUnit]
 [AllureFeature("remove-package-dependency")]
+[Parallelizable(ParallelScope.Self)]
 public sealed class RemovePackageDependencyToolE2ETests : McpContractFixtureBase {
 
 	private const string ToolName = RemovePackageDependencyTool.RemovePackageDependencyToolName;

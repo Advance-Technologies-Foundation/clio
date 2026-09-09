@@ -23,7 +23,7 @@ namespace Clio.Mcp.E2E;
 [Category("McpE2E.NoEnvironment")]
 [AllureNUnit]
 [AllureFeature("list-themes")]
-[NonParallelizable]
+[Parallelizable(ParallelScope.Self)]
 public sealed class ListThemesToolE2ETests : McpContractFixtureBase {
 	[Test]
 	[AllureTag(ListThemesTool.ToolName)]

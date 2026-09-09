@@ -16,7 +16,7 @@ namespace Clio.Mcp.E2E;
 [Category("McpE2E.NoEnvironment")]
 [AllureNUnit]
 [AllureFeature(ListEntityClientSchemasTool.ToolName)]
-[NonParallelizable]
+[Parallelizable(ParallelScope.Self)]
 public sealed class ListEntityClientSchemasToolE2ETests : McpContractFixtureBase {
 
 	[Test]

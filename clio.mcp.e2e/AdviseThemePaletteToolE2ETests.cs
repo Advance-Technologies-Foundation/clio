@@ -22,7 +22,7 @@ namespace Clio.Mcp.E2E;
 [Category("McpE2E.NoEnvironment")]
 [AllureNUnit]
 [AllureFeature("advise-theme-palette")]
-[NonParallelizable]
+[Parallelizable(ParallelScope.Self)]
 public sealed class AdviseThemePaletteToolE2ETests : McpContractFixtureBase {
 	private const string ToolName = AdviseThemePaletteTool.ToolName;
 

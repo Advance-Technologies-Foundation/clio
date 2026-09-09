@@ -23,7 +23,7 @@ namespace Clio.Mcp.E2E;
 [Category("McpE2E.NoEnvironment")]
 [AllureNUnit]
 [AllureFeature("update-theme")]
-[NonParallelizable]
+[Parallelizable(ParallelScope.Self)]
 public sealed class UpdateThemeToolE2ETests : McpContractFixtureBase {
 	[Test]
 	[AllureTag(UpdateThemeTool.ToolName)]
