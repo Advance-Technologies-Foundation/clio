@@ -564,11 +564,19 @@ public static class MobileActionTargetProbe {
 	/// <c>Missing</c>.
 	/// </para>
 	/// <para>
-	/// Only an UNTYPED default counts: a typed entry is bound to a record type, so it is not the page a plain
-	/// create/update action opens. <c>Role</c> is IGNORED on purpose — mobile entries do carry one (a stand
-	/// shows <c>Contact</c> and <c>Account</c> bound to "All employees" while <c>Lead</c> carries none), but
-	/// the question is whether the object has at least one default mobile page at all, not whether the
-	/// current user would be served it.
+	/// The mobile UI offers no record-type and no audience choice: an object has at most ONE mobile page. Every
+	/// object observed on a stand matches that — <c>Contact</c>, <c>Account</c> and <c>Lead</c> each carry a
+	/// single entry with <c>TypeColumnValue: null</c> under a null top-level <c>TypeColumnUId</c>, and the rest
+	/// carry none. So <c>Role</c> is IGNORED and only an UNTYPED entry counts.
+	/// </para>
+	/// <para>
+	/// Both reads are kept as GUARDS rather than as claims about the mobile UI. The serialized shape is shared
+	/// with the web <c>RelatedPage</c> add-on, where record types and audiences are real, and clio's own writer
+	/// applies one spec builder to both add-ons with no mobile-specific restriction — so a typed or
+	/// audience-scoped entry can be WRITTEN into this add-on even though the mobile UI would not produce one.
+	/// A <c>Role</c> seen on a mobile entry is not evidence to the contrary: the two observed are the GENERAL
+	/// audience ("All employees", i.e. everyone), which is what a stamped default looks like, and <c>Lead</c>
+	/// carries no role at all.
 	/// </para>
 	/// </remarks>
 	/// <param name="metaData">The add-on's raw <c>metaData</c> JSON string.</param>
