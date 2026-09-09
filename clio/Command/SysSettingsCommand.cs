@@ -731,8 +731,12 @@ namespace Clio.Command
 				var _ => (SysSettingErrorCategories.Configuration,
 					SysSettingFailureTexts.ConfigurationRecovery),
 			};
-			return new SysSettingFailure($"Failed {operationLabel}.", category, resolutionEx.Message, recovery,
-				correlationId);
+			//SafeDetail, like the three sibling arms of CategorizeFailure. "clio-local" is not the same as
+			//"safe to emit": two resolver throw sites embed an absolute settings-file path verbatim, and on
+			//Windows that path carries the OS account name. Redact turns it into [redacted-path] and leaves
+			//the sentence ("clio settings bootstrap is broken. Repair ...") fully actionable.
+			return new SysSettingFailure($"Failed {operationLabel}.", category, SafeDetail(resolutionEx.Message),
+				recovery, correlationId);
 		}
 
 		private static SysSettingFailure Authentication(string operationLabel, string correlationId) =>
@@ -962,18 +966,20 @@ namespace Clio.Command
 		// Redaction runs BEFORE the cap, deliberately: SensitiveErrorTextRedactor matches a token as a whole
 		// unit, so capping first can split one in half and leave the visible fragment unredacted. This is the
 		// same order ServiceResponseJsonGuard.BuildPreview uses.
-		// The cap itself goes through TruncateWithoutSplittingSurrogatePair rather than a raw slice: Redact
-		// only scrubs secrets, it does not touch surrogates, so an astral character straddling the cap point
-		// would leave a lone high surrogate in SysSettingFailure.Error/.Cause - and System.Text.Json throws
-		// on invalid UTF-16, failing the whole tool response instead of truncating one message.
+		// The cap itself goes through ClampPreservingFence rather than a raw slice, on two counts.
+		// Surrogates: Redact only scrubs secrets, it does not touch surrogates, so an astral character
+		// straddling the cap point would leave a lone high surrogate in SysSettingFailure.Error/.Cause - and
+		// System.Text.Json throws on invalid UTF-16, failing the whole tool response instead of truncating
+		// one message. Fences: DataProviderFailureException.Message arrives already composed AND fenced by
+		// ServerReportedFailureText.ComposeMessage, so a blind cut removed the closing marker whenever the
+		// platform's own ErrorMessage ran past roughly 214 characters - a length the SERVER chooses - and
+		// every field emitted after it then read as untrusted to anything keying on the markers.
 		private static string SafeDetail(string message) {
 			if (string.IsNullOrEmpty(message)) {
 				return message;
 			}
 			string redacted = McpServer.SensitiveErrorTextRedactor.Redact(message);
-			return redacted.Length <= MaxPromotedMessageLength
-				? redacted
-				: TextUtilities.TruncateWithoutSplittingSurrogatePair(redacted, MaxPromotedMessageLength) + "...";
+			return McpServer.SensitiveErrorTextRedactor.ClampPreservingFence(redacted, MaxPromotedMessageLength);
 		}
 		// Bounds every walk over an exception chain. A chain this deep is not something a transport
 		// produces, and the bound is what keeps a hand-built or self-referencing chain from looping.

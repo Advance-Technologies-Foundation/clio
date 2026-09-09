@@ -1,4 +1,4 @@
-namespace Clio.Package
+﻿namespace Clio.Package
 {
 	using System;
 	using System.Net.Http;
@@ -138,7 +138,12 @@ namespace Clio.Package
 			try {
 				return _compilationHistoryPoller.GetBaseline();
 			} catch (Exception exception) {
-				_logger.WriteWarning($"Could not read the compilation history baseline: {exception.Message}");
+				//GetReadableMessageException, not .Message: a DataProviderFailureException's Message is the
+				//AGENT rendering and carries the [untrusted-source-text begin] … [end] fence, which on a
+				//terminal has no reader and makes an ordinary platform failure read as clio malfunctioning.
+				//The extension picks the carrier's ConsoleMessage instead (PR #1374 review).
+				_logger.WriteWarning(
+					$"Could not read the compilation history baseline: {exception.GetReadableMessageException()}");
 				return null;
 			}
 		}
@@ -167,8 +172,12 @@ namespace Clio.Package
 				Exception pollFault = Volatile.Read(ref pollFaultBox[0]);
 				if (pollFault is not null) {
 					StopMonitoring(cts, pollThread, httpTask);
+					//The carrier is CHAINED, not interpolated. Interpolating its message made
+					//DescribeOuterContext treat this wrapper's own text as redundant (outer.Message contains
+					//the carrier's) and drop it, so the line lost every mention of the compile - the wrappers'
+					//context was destroyed by the very interpolation meant to carry it.
 					throw new InvalidOperationException(
-						$"Package compilation could not be monitored: {pollFault.Message}", pollFault);
+						"Package compilation could not be monitored", pollFault);
 				}
 
 				if (httpTask.IsCompleted) {

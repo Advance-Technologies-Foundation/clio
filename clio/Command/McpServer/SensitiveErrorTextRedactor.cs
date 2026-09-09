@@ -31,7 +31,15 @@ internal static partial class SensitiveErrorTextRedactor {
 	private const string RedactedValue = "[redacted]";
 
 	// scheme://[user[:pass]@]host[:port][/path…] — also catches credentials embedded in the authority.
-	[GeneratedRegex(@"\b[a-zA-Z][a-zA-Z0-9+.\-]*://[^\s""'<>]+", RegexOptions.CultureInvariant, RegexTimeoutMilliseconds)]
+	// Carries the SAME \uXXXX guard as EmailRegex below, for the same reason and against the same input:
+	// Redact also runs over already-serialized JSON (ClioRunTool.RedactFailureContent), where a quote is
+	// written as " and "u0022" is a legal scheme prefix, so
+	//   Request to "https://host/x" failed
+	// matched from the "u" of the escape and left "\[redacted-uri]" - not a valid JSON escape, so the whole
+	// tool response stopped parsing for the caller. The backslash is also excluded from the tail class, so a
+	// match can no longer swallow the CLOSING escape either; both escapes survive and the value between them
+	// is what gets replaced.
+	[GeneratedRegex(@"(?<!\\u?[0-9A-Fa-f]{0,3})\b[a-zA-Z][a-zA-Z0-9+.\-]*://[^\s""'<>\\]+", RegexOptions.CultureInvariant, RegexTimeoutMilliseconds)]
 	private static partial Regex UriRegex();
 
 	// Windows drive-rooted (C:\…) and UNC (\\host\share\…) absolute paths.
@@ -73,8 +81,17 @@ internal static partial class SensitiveErrorTextRedactor {
 	// required so plain "host" words and "key:value" prose are not touched. Bracketed IPv6 is matched
 	// first so its inner colons are not split. The data/connection layer leaks endpoints in this
 	// scheme-less shape that UriRegex (which requires "scheme://") never catches.
+	// Carries the SAME \uXXXX guard as UriRegex and EmailRegex: on already-serialized JSON,
+	//   Could not connect to "db.internal:1433" - timeout
+	// matched from the "u" of the opening escape ("u0022db" is a legal DNS label) and left
+	// "\[redacted-uri]", which is not a valid JSON escape - the whole tool response then failed to parse.
+	// KNOWN RESIDUAL: with the guard, a host sitting immediately behind an escaped quote is no longer
+	// matched at all, because the pre-existing (?<![\w:./@-]) guard rejects a start preceded by the
+	// escape's last hex digit - so it is left unredacted rather than corrupted. That is the better of the
+	// two failures (a readable response beats a lost one), and the real fix is to redact the PARSED string
+	// values instead of scrubbing serialized JSON as text, which is tracked alongside #1376 and #1377.
 	[GeneratedRegex(
-		@"(?<![\w:./@-])(?:\[[0-9A-Fa-f:]+\]|(?:[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?\.)+[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?|\d{1,3}(?:\.\d{1,3}){3}):\d{1,5}\b",
+		@"(?<!\\u?[0-9A-Fa-f]{0,3})(?<![\w:./@-])(?:\[[0-9A-Fa-f:]+\]|(?:[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?\.)+[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?|\d{1,3}(?:\.\d{1,3}){3}):\d{1,5}\b",
 		RegexOptions.CultureInvariant, RegexTimeoutMilliseconds)]
 	private static partial Regex HostPortRegex();
 
@@ -210,6 +227,50 @@ internal static partial class SensitiveErrorTextRedactor {
 		return fenced
 			? UntrustedDiagnosticPrefix + flattened + UntrustedDiagnosticSuffix
 			: flattened;
+	}
+
+	/// <summary>
+	/// Clamps <paramref name="text"/> to <paramref name="maxLength"/> WITHOUT stripping the closing
+	/// untrusted-source-text marker off an already-fenced diagnostic.
+	/// </summary>
+	/// <remarks>
+	/// An outer cap applied to a composed diagnostic is not the same problem as the cap inside
+	/// <see cref="NeutralizeOrNull"/>: that one clamps the payload BEFORE appending the suffix, so the
+	/// closer always survives. A caller that re-caps the finished message (<c>SysSettingsCommand.SafeDetail</c>
+	/// re-capping <c>DataProviderFailureException.Message</c>, which is
+	/// <c>ServerReportedFailureText.ComposeMessage</c>'s fenced output) cuts the closer off instead,
+	/// leaving an opener with no terminator. Every field emitted after such a message - <c>error-category</c>,
+	/// <c>cause</c>, <c>recovery-action</c>, <c>correlation-id</c> - then falls inside the fence for any
+	/// reader keying on the markers, which is exactly what issue #1333's fence exists to prevent.
+	/// <para>So the payload is cut and the closer re-appended, keeping the total within budget. Unfenced
+	/// text takes the plain truncation, and a budget too small to hold the fence at all degrades to plain
+	/// truncation rather than emitting a fence with no content.</para>
+	/// </remarks>
+	/// <param name="text">The possibly-fenced message to clamp.</param>
+	/// <param name="maxLength">The largest result length allowed, ellipsis and closer included.</param>
+	internal static string ClampPreservingFence(string text, int maxLength) {
+		const string ellipsis = "...";
+		if (string.IsNullOrEmpty(text) || text.Length <= maxLength) {
+			return text;
+		}
+		int openerAt = text.IndexOf(UntrustedDiagnosticPrefix, StringComparison.Ordinal);
+		bool isFenced = openerAt >= 0 && text.EndsWith(UntrustedDiagnosticSuffix, StringComparison.Ordinal);
+		if (!isFenced) {
+			return TextUtilities.TruncateWithoutSplittingSurrogatePair(text, maxLength) + ellipsis;
+		}
+		// The payload is what gets cut; the label before the opener and the closer after it are clio's own
+		// framing and are kept whole. Budget = what is left once both are reserved.
+		int framingLength = openerAt + UntrustedDiagnosticPrefix.Length
+			+ UntrustedDiagnosticSuffix.Length + ellipsis.Length;
+		int payloadBudget = maxLength - framingLength;
+		if (payloadBudget <= 0) {
+			return TextUtilities.TruncateWithoutSplittingSurrogatePair(text, maxLength) + ellipsis;
+		}
+		string payload = text[(openerAt + UntrustedDiagnosticPrefix.Length)..^UntrustedDiagnosticSuffix.Length];
+		return text[..(openerAt + UntrustedDiagnosticPrefix.Length)]
+			+ TextUtilities.TruncateWithoutSplittingSurrogatePair(payload, payloadBudget)
+			+ ellipsis
+			+ UntrustedDiagnosticSuffix;
 	}
 
 	/// <summary>

@@ -142,6 +142,13 @@ public class SysSettingsManager : ISysSettingsManager
 	/// </summary>
 	private const int MaxRejectedResponseDetailLength = 300;
 
+	/// <summary>
+	/// Depth bound for every exception-chain walk in this class, matching the sibling walkers in
+	/// <see cref="AuthenticationFailureClassifier"/> and <c>SysSettingsCommand</c>. A self-referencing
+	/// chain would otherwise loop forever.
+	/// </summary>
+	private const int MaxExceptionUnwrapDepth = 16;
+
 	#region Fields: Private
 
 	private readonly IApplicationClient _creatioClient;
@@ -492,24 +499,46 @@ public class SysSettingsManager : ISysSettingsManager
 	/// the <see cref="SocketException"/> / <see cref="WebException"/> / <see cref="HttpRequestException"/>
 	/// those consumers match on. A <see cref="HttpRequestException"/> that DOES carry a status code came
 	/// from a server that answered, so it keeps falling back.
+	/// <para>
+	/// UNWRAPS the way <see cref="AuthenticationFailureClassifier"/> does - fanning out over
+	/// <see cref="AggregateException.InnerExceptions"/> as well as following
+	/// <see cref="Exception.InnerException"/>, bounded by <see cref="MaxExceptionUnwrapDepth"/>. The
+	/// Creatio client reaches transport faults through <c>Task.Result</c>, which wraps them in an
+	/// <see cref="AggregateException"/> whose <c>InnerException</c> is only the FIRST inner fault, so a
+	/// walk that follows <c>InnerException</c> alone misses the wrapping this repository documents as the
+	/// norm. A non-matching <see cref="WebException"/> status must not end the walk either: a reset
+	/// connection arrives as <c>ConnectionClosed</c>/<c>ReceiveFailure</c>/<c>SendFailure</c> wrapping the
+	/// deciding <see cref="SocketException"/>, so the arm returns <see langword="true"/> on a match and
+	/// otherwise keeps unwrapping. The depth bound stops a self-referencing chain from looping forever.
+	/// </para>
 	/// </remarks>
-	private static bool IsConnectionLevelFailure(Exception exception) {
-		for (Exception current = exception; current is not null; current = current.InnerException) {
-			switch (current) {
-				case SocketException:
-					return true;
-				case WebException webException:
-					return webException.Status is WebExceptionStatus.ConnectFailure
-						or WebExceptionStatus.NameResolutionFailure
-						or WebExceptionStatus.ProxyNameResolutionFailure
-						or WebExceptionStatus.SecureChannelFailure
-						or WebExceptionStatus.TrustFailure;
-				case HttpRequestException { StatusCode: null }:
-					return true;
-			}
-		}
+	private static bool IsConnectionLevelFailure(Exception exception) =>
+		IsConnectionLevelFailure(exception, depth: 0);
 
-		return false;
+	private static bool IsConnectionLevelFailure(Exception exception, int depth) {
+		if (exception is null || depth >= MaxExceptionUnwrapDepth) {
+			return false;
+		}
+		// An aggregate is a container, not a fault: every fault it holds is examined, because
+		// InnerException would surface only the first one.
+		if (exception is AggregateException aggregate) {
+			return aggregate.InnerExceptions.Any(inner => IsConnectionLevelFailure(inner, depth + 1));
+		}
+		switch (exception) {
+			case SocketException:
+				return true;
+			case WebException {
+				Status: WebExceptionStatus.ConnectFailure
+					or WebExceptionStatus.NameResolutionFailure
+					or WebExceptionStatus.ProxyNameResolutionFailure
+					or WebExceptionStatus.SecureChannelFailure
+					or WebExceptionStatus.TrustFailure
+			}:
+				return true;
+			case HttpRequestException { StatusCode: null }:
+				return true;
+		}
+		return IsConnectionLevelFailure(exception.InnerException, depth + 1);
 	}
 
 	/// <summary>

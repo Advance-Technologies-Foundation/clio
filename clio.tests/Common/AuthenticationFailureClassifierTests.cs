@@ -317,4 +317,58 @@ internal sealed class AuthenticationFailureClassifierTests {
 		AuthenticationFailureClassifier.HasTypedStatus(chain).Should().BeFalse(
 			because: "unwrapping must not invent a status the chain does not carry");
 	}
+
+	[Test]
+	[TestCase("UsrAny", TestName = "PerCodeVerdict_PlainCode")]
+	[TestCase("UsrUnauthorizedRetryLimit", TestName = "PerCodeVerdict_CodeContainingUnauthorized")]
+	[Description("A sys-settings write that LANDED answers saveResult:{code:true} alongside top-level success:false, so the whole envelope must not be free-text scanned - the setting's own code is always in that body (PR #1372 review).")]
+	public void IsAuthenticationFailureResponse_ShouldReturnFalse_ForAPerCodeSaveVerdict(string code) {
+		// Arrange
+		string body =
+			$$"""{"saveResult":{"{{code}}":true},"rowsAffected":-1,"nextPrcElReady":false,"success":false}""";
+
+		// Act
+		bool result = AuthenticationFailureClassifier.IsAuthenticationFailureResponse(body);
+
+		// Assert
+		result.Should().BeFalse(
+			because: "the platform answered per code; reporting a landed write as a credential rejection tells the operator to repair working credentials for a write that succeeded");
+	}
+
+	[Test]
+	[Description("A standalone 401-shaped token inside a per-code save envelope is still not a rejected session (PR #1372 review).")]
+	public void IsAuthenticationFailureResponse_ShouldReturnFalse_WhenASaveVerdictBodyCarriesA401Token() {
+		// Arrange
+		const string body =
+			"""{"saveResult":{"UsrAny":true},"rowsAffected":-1,"success":false,"responseStatus":{"ErrorCode":"","Message":"row 401 skipped","Errors":[]}}""";
+
+		// Act
+		bool result = AuthenticationFailureClassifier.IsAuthenticationFailureResponse(body);
+
+		// Assert
+		result.Should().BeFalse(
+			because: "any field the platform later adds to a save envelope would otherwise become a new false-positive vector");
+	}
+
+	[Test]
+	[Description("The saveResult exemption is shape-based: a login page or fault envelope never reaches it, so a genuinely rejected session is still detected (PR #1372 review).")]
+	public void IsAuthenticationFailureResponse_ShouldStillReturnTrue_ForAFaultEnvelopeWithoutASaveVerdict() {
+		// Arrange
+		const string body = """{"Message":"Authentication failed.","StackTrace":null}""";
+
+		// Act & Assert
+		AuthenticationFailureClassifier.IsAuthenticationFailureResponse(body).Should().BeTrue(
+			because: "exempting a flagless object would silence the very case the predicate exists for");
+	}
+
+	[Test]
+	[Description("A saveResult that is not an object carries no per-code verdict and earns no exemption (PR #1372 review).")]
+	public void IsAuthenticationFailureResponse_ShouldNotExempt_AScalarSaveResult() {
+		// Arrange
+		const string body = """{"saveResult":"Authentication failed.","success":false}""";
+
+		// Act & Assert
+		AuthenticationFailureClassifier.IsAuthenticationFailureResponse(body).Should().BeTrue(
+			because: "only an object keyed by code is the platform's per-code verdict shape");
+	}
 }

@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Linq;
 using System.Text.Json;
 using Clio.Command.McpServer;
@@ -651,6 +651,92 @@ public sealed class SensitiveErrorTextRedactorTests {
 		fenced?.Replace("[untrusted-source-text begin]", string.Empty, StringComparison.OrdinalIgnoreCase)
 			.Replace("[untrusted-source-text end]", string.Empty, StringComparison.OrdinalIgnoreCase)
 		?? string.Empty;
+
+	[Test]
+	[Category("Unit")]
+	[TestCase("Request to \"https://prod.creatio.com/0/rest/x\" failed", "prod.creatio.com", TestName = "SerializedJson_QuotedUri")]
+	[TestCase("Could not connect to \"db.internal:1433\" - timeout", "db.internal:1433", TestName = "SerializedJson_QuotedHostPort")]
+	[TestCase("the inline literal \"name@firm.com\" instead of x", "name@firm.com", TestName = "SerializedJson_QuotedEmail")]
+	[Description("Every rule that can begin a match on the 'u' of a \u0022 escape carries the same guard: a quoted URL and a quoted host:port are as routine in clio error text as an address, and eating the escape leaves a dangling backslash that stops the whole tool response from parsing (PR #1372 review).")]
+	public void Redact_ShouldKeepSerializedJsonParseable_ForEveryQuotedSecretShape(string inner, string secret) {
+		// Arrange - the exact shape ClioRunTool.RedactFailureContent scrubs.
+		string serialized = JsonSerializer.Serialize(new { success = false, error = inner });
+		serialized.Should().Contain("\u0022",
+			because: "the fixture is only meaningful while System.Text.Json still escapes a quote as \u0022");
+
+		// Act
+		string redacted = SensitiveErrorTextRedactor.Redact(serialized);
+
+		// Assert
+		Action parse = () => JsonSerializer.Deserialize<JsonElement>(redacted);
+		parse.Should().NotThrow(
+			because: $"a match that begins inside the escape around '{secret}' leaves \\[redacted-...], which is not a "
+				+ "valid JSON escape - the caller then loses the entire response, not one field");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("The \\uXXXX guards must not stop a plain URI or a plain host:port from being redacted (PR #1372 review).")]
+	[TestCase("Request to https://prod.creatio.com/0/rest/x failed", "prod.creatio.com", TestName = "Plain_Uri")]
+	[TestCase("Could not connect to db.internal:1433 - timeout", "db.internal:1433", TestName = "Plain_HostPort")]
+	public void Redact_ShouldStillReplace_AnUnescapedEndpoint(string text, string secret) {
+		// Act
+		string redacted = SensitiveErrorTextRedactor.Redact(text);
+
+		// Assert
+		redacted.Should().NotContain(secret,
+			because: "the guard exists for text that is already serialized JSON; ordinary prose must keep being scrubbed");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Clamping an already-fenced diagnostic keeps its closing marker: without it every field emitted after the message falls inside the fence for a reader keying on the markers (PR #1372 review).")]
+	public void ClampPreservingFence_ShouldKeepTheCloser_WhenAFencedMessageIsOverlong() {
+		// Arrange - what ServerReportedFailureText.ComposeMessage produces, with a payload the SERVER chose
+		// the length of.
+		string composed = "Failed reading records from entity schema 'SysSettings': "
+			+ "[untrusted-source-text begin] " + new string('x', 400) + " [untrusted-source-text end]";
+		composed.Length.Should().BeGreaterThan(300);
+
+		// Act
+		string clamped = SensitiveErrorTextRedactor.ClampPreservingFence(composed, 300);
+
+		// Assert
+		clamped.Length.Should().BeLessThanOrEqualTo(300,
+			because: "the caller asked for a budget and must get one");
+		clamped.Should().StartWith("Failed reading records from entity schema 'SysSettings': [untrusted-source-text begin] ",
+			because: "the label and the opener are clio's own framing and are kept whole");
+		clamped.Should().EndWith(" [untrusted-source-text end]",
+			because: "an opener with no terminator makes error-category, cause, recovery-action and "
+				+ "correlation-id all read as untrusted source text");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("An unfenced message keeps the plain truncation behaviour, ellipsis included (PR #1372 review).")]
+	public void ClampPreservingFence_ShouldTruncatePlainly_WhenTheMessageIsNotFenced() {
+		// Arrange
+		string plain = new('y', 400);
+
+		// Act
+		string clamped = SensitiveErrorTextRedactor.ClampPreservingFence(plain, 300);
+
+		// Assert
+		clamped.Should().HaveLength(303).And.EndWith("...",
+			because: "unfenced text has no framing to preserve, so the pre-existing cap-plus-ellipsis stands");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("A message already within budget is returned untouched (PR #1372 review).")]
+	public void ClampPreservingFence_ShouldReturnTheInput_WhenItFitsTheBudget() {
+		// Arrange
+		const string composed = "Failed updating sys-setting: [untrusted-source-text begin] Column 'Name' is required. [untrusted-source-text end]";
+
+		// Act & Assert
+		SensitiveErrorTextRedactor.ClampPreservingFence(composed, 300).Should().Be(composed,
+			because: "no cut is needed, so no ellipsis may appear");
+	}
 
 	private static int CountOccurrences(string text, string token) {
 		int count = 0;

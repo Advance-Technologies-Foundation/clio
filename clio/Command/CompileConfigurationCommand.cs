@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Globalization;
@@ -124,7 +124,10 @@ public class CompileConfigurationCommand : RemoteCommand<CompileConfigurationOpt
 		// progress lines stopped, and it leaves the command's exit code to the compile itself.
 		Exception pollFault = Volatile.Read(ref pollFaultBox[0]);
 		if (pollFault is not null) {
-			_logger.WriteWarning($"Compilation progress could not be monitored: {pollFault.Message}");
+			//Console rendering, not .Message - see TryGetBaseline below for why the fence must not reach a
+			//terminal.
+			_logger.WriteWarning(
+				$"Compilation progress could not be monitored: {pollFault.GetReadableMessageException()}");
 		}
 		if (CommandSuccess) {
 			_logger.WriteLine();
@@ -162,7 +165,12 @@ public class CompileConfigurationCommand : RemoteCommand<CompileConfigurationOpt
 		try {
 			return _compilationHistoryPoller.GetBaseline();
 		} catch (Exception exception) {
-			_logger.WriteWarning($"Could not read the compilation history baseline: {exception.Message}");
+			//GetReadableMessageException, not .Message: a DataProviderFailureException's Message is the AGENT
+			//rendering and carries the [untrusted-source-text begin] … [end] fence, which on a terminal has no
+			//reader and makes an ordinary platform failure read as clio malfunctioning. The extension picks
+			//the carrier's ConsoleMessage instead (PR #1374 review).
+			_logger.WriteWarning(
+				$"Could not read the compilation history baseline: {exception.GetReadableMessageException()}");
 			return null;
 		}
 	}

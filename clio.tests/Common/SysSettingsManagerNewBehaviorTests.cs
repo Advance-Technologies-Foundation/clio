@@ -2,6 +2,7 @@
 using System.IO;
 using System.Collections.Generic;
 using System.Linq;
+using System.Net;
 using System.Net.Http;
 using System.Net.Sockets;
 using System.Security.Authentication;
@@ -278,6 +279,90 @@ public class SysSettingsManagerNewBehaviorTests {
 		thrown.InnerException.Should().BeOfType<SocketException>(
 			because: "the classifiers walk the chain for the SocketException that proves the request never left the client");
 	}
+
+	private static readonly object[] ConnectionLevelWrappings = [
+		new object[] { "aggregate-fanout",
+			(Func<Exception>)(() => new AggregateException(
+				new InvalidOperationException("unrelated"), new SocketException(61))) },
+		new object[] { "webexception-connection-closed",
+			(Func<Exception>)(() => new WebException("closed", new SocketException(61),
+				WebExceptionStatus.ConnectionClosed, response: null)) },
+		new object[] { "webexception-receive-failure",
+			(Func<Exception>)(() => new WebException("receive", new SocketException(61),
+				WebExceptionStatus.ReceiveFailure, response: null)) },
+		new object[] { "webexception-send-failure",
+			(Func<Exception>)(() => new WebException("send", new SocketException(61),
+				WebExceptionStatus.SendFailure, response: null)) },
+		new object[] { "nested-one-level-down",
+			(Func<Exception>)(() => new AggregateException(
+				new InvalidOperationException("outer", new SocketException(61)))) },
+	];
+
+	[Test]
+	[TestCaseSource(nameof(ConnectionLevelWrappings))]
+	[Description("The cliogate short-circuit rethrows the typed transport fault through every wrapping the repo documents as the norm: an AggregateException fans out (Task.Result wraps that way) and a non-matching WebException status keeps unwrapping instead of ending the walk (PR #1372 review).")]
+	public void GetSysSettingValueByCode_RethrowsTheTransportFault_ThroughEveryDocumentedWrapping(
+		string shape, Func<Exception> buildFault) {
+		// The cliogate short-circuit throws the transport fault; the DataService fallback below answers
+		// Success == false, which is what the REAL ATF provider does on that path. That is the only setup in
+		// which falling back is observable: it turns the typed fault into a prose-only
+		// DataProviderFailureException with nothing left for a type-based classifier to read.
+		IDataProvider dataProvider = new ClassifyingDataProvider(
+			new CliogateFailingDataProvider(new UnsuccessfulDataProvider("platform prose"), buildFault));
+		ISysSettingsManager sut = BuildSut(dataProvider);
+
+		Action act = () => sut.GetSysSettingValueByCode("SchemaNamePrefix");
+
+		// NOT FluentAssertions' .Which: an AggregateException carrying two faults makes it refuse to pick a
+		// subject, and the aggregate shape is one of the cases under test.
+		Exception thrown = Assert.Catch(() => act());
+
+		thrown.Should().NotBeNull(
+			because: $"the {shape} shape must still surface a failure");
+		thrown.Should().NotBeOfType<DataProviderFailureException>(
+			because: $"a false 'not a connection failure' on the {shape} shape swallows the typed fault, retries "
+				+ "the same dead endpoint, and leaves the type-based classifiers with prose and no inner fault");
+		CarriesConnectionLevelFault(thrown).Should().BeTrue(
+			because: "the typed transport fault is what ApplicationSectionCreateCommand and ApplicationInfoService match on");
+	}
+
+	[Test]
+	[Description("The chain walk is depth-bounded at 16 like its four siblings in this PR, so a fault buried deeper is not searched for - the bound is what keeps a hand-built or cyclic chain from looping forever (PR #1372 review).")]
+	public void GetSysSettingValueByCode_StopsWalking_BeyondTheDepthBound() {
+		IDataProvider dataProvider = new ClassifyingDataProvider(new CliogateFailingDataProvider(
+			new UnsuccessfulDataProvider("platform prose"), () => WrapDeeply(new SocketException(61), depth: 20)));
+		ISysSettingsManager sut = BuildSut(dataProvider);
+
+		Action act = () => sut.GetSysSettingValueByCode("SchemaNamePrefix");
+
+		Exception thrown = Assert.Catch(() => act());
+
+		thrown.Should().BeOfType<DataProviderFailureException>(
+			because: "the walk gives up at the bound rather than searching an unbounded chain, so the read falls "
+				+ "back - the bound is a deliberate trade, and this pins where it sits");
+	}
+
+	// A finite chain deeper than MaxExceptionUnwrapDepth. Exception.InnerException is set at construction
+	// and cannot be made to point back at itself without reflection, so depth is what the bound is pinned
+	// with; the cyclic case the bound also covers cannot be built through the public API.
+	private static Exception WrapDeeply(Exception deciding, int depth) {
+		Exception current = deciding;
+		for (int level = 0; level < depth; level++) {
+			current = new InvalidOperationException($"level {level}", current);
+		}
+		return current;
+	}
+
+	// Mirrors what a consumer does: walks the chain (fanning out over an aggregate) for the typed fault.
+	private static bool CarriesConnectionLevelFault(Exception exception) => exception switch {
+		null => false,
+		AggregateException aggregate => aggregate.InnerExceptions.Any(CarriesConnectionLevelFault),
+		SocketException => true,
+		WebException => true,
+		HttpRequestException { StatusCode: null } => true,
+		var other => CarriesConnectionLevelFault(other.InnerException)
+	};
+
 
 	[Test]
 	[Description("A server that DOES answer badly still falls back: a status-carrying HttpRequestException (the cliogate-less 404) leaves the short-circuit and lets the DataService read supply the value.")]

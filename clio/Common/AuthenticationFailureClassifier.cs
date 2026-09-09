@@ -301,6 +301,18 @@ public static class AuthenticationFailureClassifier {
 		if (IsSuccessfulDataServiceResponse(responseBody)) {
 			return false;
 		}
+		// A PER-CODE VERDICT ENVELOPE is authoritative too, and the success flag above never exempts it: a
+		// sys-settings write that LANDED answers saveResult:{code:true} alongside a top-level
+		// success:false (pinned by SysSettingsManagerNewBehaviorTests - "saveResult[code] is the
+		// authoritative per-setting result; top-level success is unreliable"). Without this arm the
+		// exemption was inert on EVERY sys-settings update and the whole body was free-text scanned - and
+		// since saveResult is keyed BY CODE, the setting's own name is always in that body, so updating a
+		// setting whose code contains "unauthorized", or whose envelope carries a standalone 401 token,
+		// threw SessionRejectedException for a write that succeeded. The platform answered per code; that
+		// answer wins over prose.
+		if (CarriesPerCodeSaveVerdict(responseBody)) {
+			return false;
+		}
 		// CAPPED before every scan below, which is the precondition ClassifyProviderErrorMessage documents and
 		// this method used to break. The body is server-controlled and uncapped: on a full HTML login page or a
 		// large payload the compiled regexes' 1 s MatchTimeout turns into a RegexMatchTimeoutException on the
@@ -336,6 +348,31 @@ public static class AuthenticationFailureClassifier {
 			// ({"Message":"Authentication failed.","StackTrace":null}), so exempting a flagless object would
 			// silence the very case this predicate exists for. Only an explicit success:true is an exemption.
 			return false;
+		} catch (JsonException) {
+			return false;
+		}
+	}
+
+	/// <summary>
+	/// <see langword="true"/> when the body is a JSON object carrying a <c>saveResult</c> OBJECT - the
+	/// platform's per-code verdict for a DataService save. A rejected session never reaches this shape:
+	/// it answers a login page or a fault envelope, neither of which parses to an object with a
+	/// <c>saveResult</c> member.
+	/// </summary>
+	/// <remarks>
+	/// Deliberately does NOT read the per-code booleans. A save that the platform actively refused is
+	/// still an answer FROM an authenticated session, so it belongs to the caller's own result parsing
+	/// (<c>SysSettingsManager.UpdateSysSetting</c> reads <c>saveResult[code]</c>), not to credential
+	/// classification. All this arm establishes is that the platform gave a per-code verdict at all,
+	/// which is what makes free-text scanning the surrounding envelope wrong.
+	/// </remarks>
+	private static bool CarriesPerCodeSaveVerdict(string responseBody) {
+		try {
+			using JsonDocument document = JsonDocument.Parse(responseBody);
+			return document.RootElement.ValueKind == JsonValueKind.Object
+				&& document.RootElement.EnumerateObject().Any(property =>
+					string.Equals(property.Name, "saveResult", StringComparison.OrdinalIgnoreCase)
+					&& property.Value.ValueKind == JsonValueKind.Object);
 		} catch (JsonException) {
 			return false;
 		}
