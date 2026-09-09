@@ -246,7 +246,7 @@ if ($SkipTests) {
     try {
         dotnet build MainSolution.slnx -c dev-nf --nologo -v q
         if ($LASTEXITCODE -ne 0) { Die 'Package build failed. Shipping sources the target cannot compile installs a package that never works.' }
-        dotnet test tests/CrtProcessBuilder/CrtProcessBuilder.Tests.csproj -c dev-nf --no-build --nologo -v q
+        dotnet test tests/UnitTests/CrtProcessBuilder.Tests/CrtProcessBuilder.Tests.csproj -c dev-nf --no-build --nologo -v q
         if ($LASTEXITCODE -ne 0) { Die 'Package tests failed.' }
     } finally { Pop-Location }
     Ok 'build + tests green'
