@@ -3401,7 +3401,7 @@ stories:
     pr: https://github.com/Advance-Technologies-Foundation/clio/pull/1414
     prs:
       - https://github.com/Advance-Technologies-Foundation/clio/pull/1414
-      - https://creatio.ghe.com/engineering/cli-process-builder/pull/53
+      - https://creatio.ghe.com/engineering/crt-process-builder/pull/53
       - https://github.com/Advance-Technologies-Foundation/clio-knowledge/pull/138
     jira: ENG-91853
     file: spec/eng-91853-gateways-and-flows/eng-91853-gateways-and-flows-flow-labels-brief.md
