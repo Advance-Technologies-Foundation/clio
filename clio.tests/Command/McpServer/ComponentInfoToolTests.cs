@@ -2088,8 +2088,8 @@ public sealed class ComponentInfoToolTests {
 	}
 
 	/// <summary>
-	/// ENG-96840 regression double: its <see cref="ResolveAsync"/> completes ASYNCHRONOUSLY (it yields
-	/// and delays), mirroring the real resolver whose probe runs on a <c>Task.Run</c> thread. If the
+	/// ENG-96840 regression double: its <see cref="ResolveAsync"/> completes ASYNCHRONOUSLY (it yields),
+	/// mirroring the real resolver whose probe runs on a <c>Task.Run</c> thread. If the
 	/// caller returns the resolve Task unawaited from inside its <c>using</c>, <see cref="Dispose"/> runs
 	/// before the continuation, and <see cref="DisposedBeforeResolveCompleted"/> latches <c>true</c> —
 	/// the exact premature-disposal race that made the real owned CreatioClient throw ObjectDisposedException.
