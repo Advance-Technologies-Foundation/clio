@@ -103,7 +103,10 @@ namespace Clio.Common
 			// BUILDING a message about another failure, so it must never be the thing that throws. The
 			// package's SafeText.Sanitize clamps the same case for the same reason.
 			if (maxLength <= 0) {
-				return sanitized.Length == 0 ? sanitized : "...";
+				// Not a ternary on emptiness: sanitized CANNOT be empty here. IsNullOrEmpty returned above, and
+				// the loop replaces each character one-for-one, so its length equals the input length. A guard
+				// implying otherwise is a belief that spreads into real defensive code.
+				return "...";
 			}
 			if (sanitized.Length <= maxLength) {
 				return sanitized;

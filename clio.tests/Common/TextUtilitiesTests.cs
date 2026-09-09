@@ -241,4 +241,20 @@ public sealed class TextUtilitiesTests
 			because: "nothing exceeded the cap, so nothing is cut and no ellipsis is added");
 	}
 
+	[Test]
+	[Category("Unit")]
+	[TestCase(0, TestName = "SanitizeForDisplay_ShouldNotThrow_WhenCapIsZero")]
+	[TestCase(-1, TestName = "SanitizeForDisplay_ShouldNotThrow_WhenCapIsNegative")]
+	[TestCase(int.MinValue, TestName = "SanitizeForDisplay_ShouldNotThrow_WhenCapIsIntMinValue")]
+	[Description("A non-positive cap yields the ellipsis rather than throwing. Its own comment calls this a REGRESSION GUARD and nothing guarded the guard: the surrogate back-off reads sanitized[cut - 1], which is an IndexOutOfRange at cut == 0, and deleting the clamp left the whole suite green. This helper is called while BUILDING a message about another failure, so a throw here masks the error it was reporting - the package's SafeText.Sanitize carries the same clamp and the same three cases for the same reason.")]
+	public void SanitizeForDisplay_ShouldNotThrow_WhenMaxLengthIsNotPositive(int maxLength) {
+		// Act
+		string sanitized = TextUtilities.SanitizeForDisplay("some untrusted value", maxLength);
+
+		// Assert
+		sanitized.Should().Be("...",
+			because: "no budget for the value degrades to marking that something was cut, never to throwing "
+				+ "inside a message build");
+	}
+
 }

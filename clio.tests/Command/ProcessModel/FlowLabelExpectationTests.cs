@@ -574,6 +574,45 @@ public class FlowLabelExpectationTests {
 	#endregion
 
 	[Test]
+	[Description("A miss with NOTHING drawn renders as absent even when the caller asked to clear - the classification asks 'is anything drawn?' first. Missing never emits that combination (it skips a clear whose read-back is empty, because that is the requested state), but FlowLabelMiss is public and a hand-built one reaches BuildWarning, where testing Wanted first rendered the nonsense '(still drawn: '') still carries a diagram label'. Nothing guarded the ordering: it is behaviour-preserving for every input Missing can produce, so reverting it was green.")]
+	public void BuildWarning_ShouldClassifyOnWhatIsDrawn_NotOnWhatWasWanted() {
+		// Arrange - the combination Missing cannot emit, which is exactly why it needs asserting
+		IReadOnlyList<FlowLabelExpectation.FlowLabelMiss> missing = [
+			new FlowLabelExpectation.FlowLabelMiss(
+				new FlowLabelExpectation.FlowLabel("Decide", "Yes", string.Empty), string.Empty)
+		];
+
+		// Act
+		string warning = FlowLabelExpectation.BuildWarning(missing);
+
+		// Assert
+		warning.Should().NotContain("still carries a diagram label",
+			because: "nothing is drawn, so the failed-clear wording is false of it - and that wording is what "
+				+ "a Wanted-first classification produced");
+		warning.Should().Contain("shows no diagram label",
+			because: "the absent branch is the one true of a flow with nothing drawn, whatever was asked for");
+	}
+
+	[Test]
+	[Description("A label carrying a character the server cannot store is compared against what the server WILL have stored, not against what was sent. The package filters the control characters an XML resource attribute cannot hold, so 'Ap<U+0001>proved' is stored as 'Approved' - and an expectation holding the unfiltered text made Missing report a DIFFERENT-text miss on a write that did exactly what the package documents. The two sides now apply the same rule.")]
+	public void FromOperations_ShouldRecordTheLabelAsTheServerWillStoreIt() {
+		// Arrange, Act
+		IReadOnlyList<FlowLabelExpectation.FlowLabel> expected = FlowLabelExpectation.FromOperations(
+			"[{\"op\":\"setFlow\",\"source\":\"Decide\",\"target\":\"Yes\",\"kind\":\"sequence\","
+			+ "\"label\":\"Ap\\u0001proved\"}]");
+		DescribeProcessResult described = Described(("Decide", "Yes", "Approved"));
+
+		// Assert
+		expected.Single().Label.Should().Be("Approved",
+			because: "the write path drops the character before storing, so an expectation holding it would "
+				+ "never match a healthy read-back");
+		FlowLabelExpectation.Missing(described, expected).Should().BeEmpty(
+			because: "the label landed exactly as the package documents, so there is nothing to warn about - "
+				+ "and a DIFFERENT-text miss here would send the caller looking for a server that changed "
+				+ "their text");
+	}
+
+	[Test]
 	[Description("More misses than the render cap yields a bounded message with a '+ N more' suffix. The server accepts 1 000 operations per request and every one can carry a label, so an unbounded join renders a thousand endpoint pairs into an agent's context - which the per-VALUE cap does not bound, because it bounds each label and not their number. No test covered this: every other list in this fixture holds at most three misses.")]
 	public void BuildWarning_ShouldCapHowManyFlowsItNames() {
 		// Arrange - twelve misses against a cap of ten.
@@ -672,6 +711,25 @@ public class FlowLabelExpectationTests {
 		uidAddressed.Should().BeEmpty(
 			because: "a name-addressed flow is verifiable in principle; whether it was found is Missing's "
 				+ "question and its answer is deliberately silent");
+	}
+
+	[Test]
+	[Description("A description carrying NO flows does not crash, and the UId-addressed label is still reported. Flows is a plain nullable list, and this fixture's own dominant idiom leaves it unset - Missing_ShouldReturnEmpty_WhenThereIsNothingToCompare passes a bare DescribeProcessResult, and around twenty command tests set Elements and nothing else - so an unguarded dereference turns a SUCCEEDED operation into an NRE on its warning path, and the next test written in the file's own style would have found it. Reported rather than skipped because that is the honest answer: with nothing to compare against, a UId-addressed label is unverifiable for the same reason it always is, only more so.")]
+	public void UidAddressed_ShouldReportAndNotThrow_WhenTheDescriptionCarriesNoFlows() {
+		// Arrange
+		IReadOnlyList<FlowLabelExpectation.FlowLabel> expected = FlowLabelExpectation.FromOperations("""
+			[{"op":"setFlow","source":"3f2504e0-4f89-11d3-9a0c-0305e82c3301",
+			  "target":"Yes","kind":"sequence","label":"Approved"}]
+			""");
+
+		// Act - Flows left null, exactly as the sibling guard's own test and the command fixtures do
+		IReadOnlyList<FlowLabelExpectation.FlowLabel> uidAddressed =
+			FlowLabelExpectation.UidAddressed(new DescribeProcessResult(), expected);
+
+		// Assert
+		uidAddressed.Select(flow => flow.Label).Should().BeEquivalentTo(["Approved"],
+			because: "no read-back to compare against makes a UId-addressed label MORE unverifiable, not "
+				+ "less - and whatever the answer, an NRE on the warning path of a successful edit is not it");
 	}
 
 	[Test]

@@ -208,7 +208,18 @@ public static class FlowLabelExpectation {
 			// stay silent on exactly the payloads this exists for. An element NAMED as 32 bare hex digits is
 			// the theoretical cost, and the read-back conjunct below covers it anyway.
 			bool addressedByUid = Guid.TryParse(wanted.Source, out _) || Guid.TryParse(wanted.Target, out _);
-			if (addressedByUid && FindFlow(described, wanted) is null) {
+			if (!addressedByUid) {
+				continue;
+			}
+			
+			// A description carrying NO flows at all is reported, not skipped, and that is the answer rather
+			// than a convenience: with nothing to compare against, a UId-addressed label is unverifiable for
+			// the same reason it always is, only more so. <see cref="Missing"/> returns empty in that state
+			// because an absent flow is not evidence of a DROP; here the claim is weaker and survives it.
+			// The null check is also required: Flows is a plain nullable list and this file's own dominant
+			// test idiom leaves it unset, so dereferencing it turns a successful operation into an NRE on
+			// its warning path.
+			if (described?.Flows is null || FindFlow(described, wanted) is null) {
 				uidAddressed.Add(wanted);
 			}
 		}
@@ -325,6 +336,31 @@ public static class FlowLabelExpectation {
 			+ "process with describe-business-process before reporting the labels as applied.";
 	}
 
+	/// <summary>
+	/// The label text as the SERVER will store it, so the read-back can be compared like for like.
+	/// <para>Trimmed, because both write paths trim. And filtered for the control characters an XML
+	/// resource attribute cannot hold, because the package filters them at its own write funnel - a
+	/// caption is extracted into the schema resource file and written there as an attribute value. Without
+	/// this, a label of <c>"Ap[U+0001]proved"</c> stores as <c>Approved</c>, the expectation still holds the
+	/// unfiltered text, and <see cref="Missing"/> reports a DIFFERENT-text miss on a write that did exactly
+	/// what the package documents.</para>
+	/// <para>Tab, LF and CR are KEPT, matching the package: they are legal XML and the writer escapes
+	/// them. A label made ENTIRELY of unstorable characters is not this method's problem - the package
+	/// REFUSES that outright, so the operation fails and no read-back comparison happens.</para>
+	/// </summary>
+	private static string AsStored(string label) {
+		string filtered = label.All(character => !IsUnstorable(character))
+			? label
+			: new string(label.Where(character => !IsUnstorable(character)).ToArray());
+		return filtered.Trim();
+	}
+
+	// Mirrors ProcessGraphBuilder.IsXmlInvalid on the package side. A hand mirror across two
+	// repositories, like the DataMember names - the archive-content pin in the bundled-package fixture is
+	// what keeps the two from drifting apart unnoticed.
+	private static bool IsUnstorable(char character) =>
+		char.IsControl(character) && character != '\t' && character != '\n' && character != '\r';
+
 	private static string Subject(int count) => count == 1 ? "flow" : "flows";
 
 	// One join for every renderer, so the cap cannot be applied to some warnings and not others.
@@ -436,7 +472,7 @@ public static class FlowLabelExpectation {
 			// the descriptor's source/target, and FindFlowNode trims a modify operation's), and describe
 			// reports the canonical element name. Storing the padded form here would make FindFlow miss and
 			// the guard verify nothing at all — a false NEGATIVE on exactly the payload it exists to catch.
-			FlowLabel flow = new(source.Trim(), target.Trim(), label.Trim());
+			FlowLabel flow = new(source.Trim(), target.Trim(), AsStored(label));
 			(string, string) key = (flow.Source, flow.Target);
 			if (!byEndpoints.ContainsKey(key)) {
 				order.Add(key);

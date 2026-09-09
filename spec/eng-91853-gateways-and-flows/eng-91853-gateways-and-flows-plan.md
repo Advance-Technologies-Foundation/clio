@@ -454,6 +454,24 @@ the above can express it:
 
 ### Descoped — not this ticket's to close
 
+- **`docs/McpCapabilityMap.md`'s `describe-business-process` bullet contradicts itself and repeats
+  itself.** Two copies of the parameter-value sentence disagree about whether `expression` exists on a
+  described parameter; the `performer` paragraph appears verbatim twice; the Lookup-`ConstValue`
+  paragraph appears twice. Pre-existing accretion in a ~1 400-word bullet. Deciding which of two
+  contradictory sentences is current needs a read of the describe path, which is separate work from
+  this feature — editing one clause inside that bullet does not make this change the owner of the
+  rest. **Tracked here rather than left to be noticed, because "someone will notice later" is how the
+  bullet reached 1 400 words.**
+- **The two newest label refusals are on no agent-facing surface**: an all-unstorable label
+  (1.6.0.11) and a colliding resource key (1.6.0.11). Both abort an atomic batch, and this ticket's
+  own standard is that a batch-aborting refusal names the version it ships from — so they want
+  documenting. Deliberately NOT gating this change, for a reason worth keeping: N-H2's hazard was
+  SILENCE below the version, whereas both of these fail loudly and self-describe (the collision
+  refusal's own message tells the caller to rename an element). An agent is told, not stranded.
+  The realistic trigger, worth stating when the prose is written: N10 says "LABEL EVERY CONDITIONAL
+  AND DEFAULT ARM" while N2 gives a PROCESS code the shape `<prefix><Object>_<Action>`, so an agent
+  carrying that convention one field over into ELEMENT names produces exactly the colliding names.
+
 - **Layout: no overlap for one split level with unequal branch lengths, with and without a merge; a
   back-edge lays out left-to-right; idempotent; adding a branch does not move existing branches.**
   Carried to **ENG-95890** by the ticket's own split (§5 "What stays out" in
