@@ -1,7 +1,8 @@
-using System;
+﻿using System;
 using System.Text.Json;
 using Clio.Command.McpServer;
 using Clio.Common;
+using Newtonsoft.Json.Linq;
 
 namespace Clio.Package;
 
@@ -49,6 +50,12 @@ internal sealed class NonJsonServiceResponseException : InvalidOperationExceptio
 /// </summary>
 internal static class ServiceResponseJsonGuard
 {
+	// The URL is emitted as its own trailing segment ("... . URL: <url> Next sentence") rather than inside
+	// parentheses: the MCP boundary redacts a URI with a pattern that runs to the next whitespace, so a
+	// closing ")" or "." pressed against the URL is swallowed with it and the message reaches the agent
+	// malformed ("(URL: [redacted-uri]" with no closing bracket). A space after the URL keeps the message
+	// well-formed in both the redacted and the unredacted channel.
+
 	/// <summary>Upper bound on the response preview embedded in the error message.</summary>
 	private const int ResponsePreviewMaxLength = 200;
 
@@ -95,6 +102,65 @@ internal static class ServiceResponseJsonGuard
 	}
 
 	/// <summary>
+	/// Parses <paramref name="responseBody"/> into a Newtonsoft <see cref="JObject"/>, or reports a
+	/// classified failure instead of letting the raw parser text reach the caller.
+	/// <para>
+	/// The Newtonsoft counterpart of <see cref="Deserialize{T}"/>, added because the schema-designer
+	/// helpers work on dynamic <c>JObject</c> payloads and were calling <c>JObject.Parse</c> directly.
+	/// An empty body there surfaced Newtonsoft's own
+	/// <c>"Error reading JObject from JsonReader. Path '', line 0, position 0."</c>, which names neither
+	/// the service nor the route (issue #1322).
+	/// </para>
+	/// <para>
+	/// It reports through an out-parameter rather than throwing, because those helpers already return
+	/// <c>(result, error)</c> tuples and a thrown exception would be flattened into
+	/// <c>Exception.Message</c> by the command's catch-all, losing the distinction between "parse
+	/// failed" and any other failure.
+	/// </para>
+	/// </summary>
+	/// <param name="operationName">Human-readable operation label used to open the error message.</param>
+	/// <param name="url">Endpoint the body came from.</param>
+	/// <param name="responseBody">Raw response body as returned by the application client.</param>
+	/// <param name="hint">Optional caller-authored tail appended to the message; locally authored text only.</param>
+	/// <param name="parsed">The parsed object, or <see langword="null"/> when parsing failed.</param>
+	/// <param name="error">The classified failure message, or <see langword="null"/> on success.</param>
+	/// <returns><see langword="true"/> when the body parsed into a JSON object.</returns>
+	internal static bool TryParseJObject(
+		string operationName,
+		string url,
+		string? responseBody,
+		string? hint,
+		out JObject? parsed,
+		out string? error)
+	{
+		parsed = null;
+		if (string.IsNullOrWhiteSpace(responseBody))
+		{
+			error = Append(BuildEmptyBodyMessage(operationName, url), hint);
+			return false;
+		}
+
+		try
+		{
+			parsed = JObject.Parse(responseBody);
+		}
+		catch (Newtonsoft.Json.JsonException parseException)
+		{
+			// Newtonsoft, not System.Text.Json: JObject.Parse throws JsonReaderException, which does not
+			// derive from System.Text.Json.JsonException, so catching the latter would let it escape.
+			error = Append(BuildNonJsonMessage(operationName, url, responseBody, parseException), hint);
+			return false;
+		}
+
+		error = null;
+		return true;
+	}
+
+	/// <summary>Appends a locally authored hint to a message when one was supplied.</summary>
+	private static string Append(string message, string? hint) =>
+		string.IsNullOrWhiteSpace(hint) ? message : $"{message} {hint}";
+
+	/// <summary>
 	/// Builds the message for a body that could not be parsed as JSON, choosing between the HTML case
 	/// (hints, no body preview) and the generic unparseable case (parser detail plus a bounded preview).
 	/// </summary>
@@ -114,7 +180,7 @@ internal static class ServiceResponseJsonGuard
 			// The body is deliberately NOT previewed here: a login page or an ASP.NET error page can carry
 			// session cookies, request tokens, and stack traces, and this text is copied verbatim into an
 			// agent transcript.
-			return $"{operationName} returned an HTML page instead of JSON (URL: {url}). "
+			return $"{operationName} returned an HTML page instead of JSON. URL: {url} "
 				+ "The request was most likely redirected to a login page, or the server raised an unhandled "
 				+ "error and answered with an HTML error page. Verify that: "
 				+ "1) the environment is registered with valid credentials (reg-web-app, then healthcheck); "
@@ -127,7 +193,7 @@ internal static class ServiceResponseJsonGuard
 		// VALUE in its text (for example "The JSON value 'hunter2' could not be converted … Path: $.password"),
 		// so an unredacted parser message leaks the same secrets the preview redaction exists to catch. The MCP
 		// boundary redacts again, but the CLI path (logger warnings, terminal output) has no second pass.
-		return $"{operationName} returned an unparseable response (URL: {url}). "
+		return $"{operationName} returned an unparseable response. URL: {url} "
 			+ $"Parser error: {SensitiveErrorTextRedactor.Redact(parseException.Message)}. "
 			+ $"Response preview: {BuildResponsePreview(responseBody)}";
 	}
@@ -140,9 +206,11 @@ internal static class ServiceResponseJsonGuard
 	/// <param name="url">Endpoint the body came from.</param>
 	/// <returns>The error message to surface.</returns>
 	internal static string BuildEmptyBodyMessage(string operationName, string url) =>
-		$"{operationName} returned an empty response (URL: {url}). "
-		+ "The server accepted the request but sent no body — retry the request, and if it persists check "
-		+ "the environment health (healthcheck) and the Creatio server log for that endpoint.";
+		$"{operationName} returned an empty response. URL: {url} "
+		+ "The response body was empty, and clio's synchronous client does not expose the HTTP status, so "
+		+ "whether the request was accepted is unknown — an unrouted endpoint answers 404 with an empty body "
+		+ "just as a served endpoint can answer 200 with one. Retry the request, and if it persists check the "
+		+ "route, the environment health (healthcheck) and the Creatio server log for that endpoint.";
 
 	/// <summary>
 	/// Returns whether the body starts with markup (an HTML page, an XML/SOAP fault, or a doctype),
