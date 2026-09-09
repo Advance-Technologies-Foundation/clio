@@ -226,15 +226,45 @@ shipped product is full of them. On this stand, `BaseElements.%Flow%.Caption` in
 change's own runs today, identifiable by the `<Prefix>Flow_<source>_<target>` underscore shape the
 toolkit generates. The rest predate the feature and none of it was written by clio.
 
-Do not read that as a census, and the reason is instructive. A first count of this put it at "100+
-across 81 schemas", which is a substantial undercount, and the cause is that the designer has used at
-least **three** naming styles for a flow: `ConditionalSequenceFlow5` (476 rows),
-`ConditionalFlow1` (149), and descriptive names like `ConditionalFlowLeadUndefined` or
-`QualifiedAccountExistsSequenceFlow` (the remainder) — so any classifier built from one style
-silently drops the others. In the other direction the `%Flow%` wildcard over-matches a handful of
-things that are not flows at all: an element literally named `CancelFlow`, and
-`DeleteCashflow.Parameters.IsMatchConditions.Caption`, where the match is inside the word
-*Cashflow*. 867 is therefore an upper bound on designer-authored flow labels, not a count of them.
+867 / 249 reproduces on both sides of this pass — same predicate, `COUNT(*)` and
+`COUNT(DISTINCT SysSchemaId)` — so the upper bound is two-party. **Do not read it as a census**, and
+three separate reasons why are worth keeping apart, because each has its own remedy.
+
+**A first count of this put it at "100+ across 81 schemas", and that was a page size read as a
+population.** The read used `odata-read` with `top: 100` and came back `count: 100` — where `count` is
+documented, in the tool's own contract, as *the number of records returned in this page*. A real total
+needs `count: true`, which returns `total-count`. So the published figure was the limit the caller had
+chosen, handed back and mistaken for a measurement, and "81 schemas" was the distinct count *within*
+that page. It is a referent trap of the kind this report keeps finding — an accurately named field read
+as answering a question it does not answer — and the remedy is one argument, not a better classifier.
+
+**And the tool describes that field twice, in two surfaces, with two different precisions.** Checking
+the contract claim rather than accepting it turned up the reason this is easier to walk into than it
+sounds. `get-tool-contract` — the surface that was read — says *"Number of records returned in this
+page"* (`ToolContractGetTool.cs:2125`), which is unambiguous. The live response schema of `odata-read`
+itself says *"Number of records returned."* (`ODataReadTool.cs:614`), which is not: "returned" reads
+as "returned by the query" as readily as "returned in this response". The unambiguous sentence about
+paging — *"Response count remains the number of records in this page"* — sits on the **`count` request
+parameter**, which a caller who never passes `count: true` has no reason to read.
+
+So the person who read the contract read the right thing and was told the truth; a person who reads
+the tool's own output schema is told something weaker, and the clarification is filed behind an
+argument they are not using. `next-link` is the reliable tell in the meantime — it is present in the
+response whenever records exist beyond `top`. Raised as a separate item; it is a one-line alignment in
+a tool this change does not otherwise touch.
+
+**Separately, and this one would corrupt a correct total too:** the designer has used at least
+**three** naming styles for a flow — `ConditionalSequenceFlow5` (476 rows), `ConditionalFlow1` (149),
+and descriptive names like `ConditionalFlowLeadUndefined` or `QualifiedAccountExistsSequenceFlow` (the
+remainder). Any classifier built from the styles you happen to have seen silently drops the ones you
+have not, so this survives fixing the pagination and needs the corpus to discover rather than the
+contract.
+
+**And the predicate over-matches in the other direction.** `%Flow%` catches things that are not flows
+at all: an element literally named `CancelFlow`, and
+`DeleteCashflow.Parameters.IsMatchConditions.Caption`, where the match lands inside the word
+*Cashflow*. So 867 is an upper bound on designer-authored flow labels however it is counted — upper
+bound is the honest word, and no amount of pagination discipline makes it a census.
 
 None of which the claim below depends on. What matters is that there are **hundreds**, that clio did
 not write them, and that clio reads them correctly.
@@ -293,7 +323,11 @@ SequenceFlow9             sequence      label None
 ```
 
 Matching its resource rows exactly — and note the three plain flows report `None`, not `''`, on
-content clio never touched. `AddContact` re-opened in the designer, title
+content clio never touched. **That closes a loop nothing in this report planned.** Every other place
+the null-versus-empty distinction is observed here — TC-05 above, the raw-schema check in the
+manifest — is clio reading back its own write, so it could in principle have been an artefact of the
+writer rather than a property of the read path. This one is not: nobody wrote these three flows
+through the toolkit, and they still come back absent rather than blank. `AddContact` re-opened in the designer, title
 `Add one contact to account (sub process)` verified before reading: **5 nodes, 0 empty**, drawn
 `Has LinkedIn`, `Has Facebook`, `Add linkedin`, `Add Facebook`, `Add contact`. Identical to the
 first reading and to the two resource rows.
