@@ -219,8 +219,8 @@ unchanged — checksum, schema UId and absent marker are all armed from disk.
 
 Two scope limits worth knowing before you rely on the pin:
 
-- **`sync-pages` does not accept a checksum** (tracked from PR #1356's review and still
-  open). It is the canonical page write path and `update-page` is documented as the
+- **`sync-pages` does not accept a checksum** — a standing scope limit of this change, not a
+  defect on this page. It is the canonical page write path and `update-page` is documented as the
   fallback, but `PageSyncPageInput` has no `checksum` member, so every `sync-pages` write
   compares against the `.clio-pages` baseline and has `--force` as its only escape. The
   remedy on this page is `update-page`-only.

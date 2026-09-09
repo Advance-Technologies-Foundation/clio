@@ -214,8 +214,9 @@ internal sealed class RemoteEntitySchemaColumnManager : IRemoteEntitySchemaColum
 			_logger.WriteInfo(
 				$"Primary-display column set to '{requestedColumnName}' for schema '{options.SchemaName}'.");
 		}
-		foreach (KeyValuePair<string, string> localization in
-			requestedTitles ?? (IReadOnlyDictionary<string, string>)new Dictionary<string, string>()) {
+		// ApplySchemaCaption returns ReadOnlyDictionary.Empty, never null (Sonar S1168), so a null-coalesce
+		// here was a dead branch that also allocated on every caption-less save.
+		foreach (KeyValuePair<string, string> localization in requestedTitles) {
 			_logger.WriteInfo(
 				$"Schema caption set to '{localization.Value}' ({localization.Key}) for schema '{options.SchemaName}'.");
 		}

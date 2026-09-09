@@ -107,8 +107,14 @@ public sealed class PageUpdateTool(
 				args,
 				server,
 				cancellationToken);
-		if (earlyFailure != null)
+		if (earlyFailure != null) {
+			// The label-resource validators are the ONLY consumer of the persisted-key rescue, so its
+			// failure reason is produced on exactly the path that returns here - before the warning merge
+			// at the end of this method. Without this the caller sees only the validator's own
+			// "resource ... is neither auto-provided nor registered" and never why the rescue was skipped.
+			AppendPersistedResourceKeyWarning(earlyFailure, options);
 			return earlyFailure;
+		}
 		(string metaFilePath, bool baselineArmed, string baselineWarning) =
 			pageBaselineGuard.TryArm(options, args.OutputDirectory);
 		PageUpdateResponse response = ExecuteWithCleanLog(options, () => {
@@ -142,7 +148,20 @@ public sealed class PageUpdateTool(
 				lintWarnings),
 			BaselineWarnings(baselineWarning, refreshWarning));
 		response.Warnings = mergedWarnings.Count > 0 ? mergedWarnings : null;
+		AppendPersistedResourceKeyWarning(response, options);
 		return response;
+	}
+
+	// Puts a failed persisted-key read on the response's warning channel. A failed read only leaves the
+	// stricter verdict standing, so it is never an error - but it must be visible, because the log
+	// channel it is also written to does not reach an MCP caller of this typed-response tool.
+	private static void AppendPersistedResourceKeyWarning(PageUpdateResponse response, PageUpdateOptions options) {
+		if (response is null || string.IsNullOrWhiteSpace(options.PersistedResourceKeysFailure)) {
+			return;
+		}
+		List<string> warnings = response.Warnings?.ToList() ?? [];
+		warnings.Add(options.PersistedResourceKeysFailure);
+		response.Warnings = warnings;
 	}
 
 	private async Task<(PageUpdateResponse Failure,
@@ -663,15 +682,15 @@ public sealed class PageUpdateTool(
 		}
 	}
 
+	/// <summary>The empty answer: nothing was read, so the stricter verdict stands (Sonar S1168).</summary>
+	private static readonly IReadOnlySet<string> NoPersistedResourceKeys =
+		new HashSet<string>(StringComparer.Ordinal);
+
 	/// <summary>
 	/// Reads the resource keys already stored on the target schema, resolving the command lazily.
 	/// Used only when a label-resource validator has already failed, so the extra round-trips are never
 	/// paid by a body that validates cleanly.
 	/// </summary>
-	/// <summary>The empty answer: nothing was read, so the stricter verdict stands (Sonar S1168).</summary>
-	private static readonly IReadOnlySet<string> NoPersistedResourceKeys =
-		new HashSet<string>(StringComparer.Ordinal);
-
 	private IReadOnlySet<string> TryGetPersistedResourceKeys(PageUpdateOptions options) {
 		try {
 			return ResolveCommand<PageUpdateCommand>(options).TryGetPersistedResourceKeys(options)
@@ -680,9 +699,12 @@ public sealed class PageUpdateTool(
 			// Only command RESOLUTION can fail here - the read itself reports its own reason inside the
 			// command. Failing closed leaves the stricter verdict standing, but the reason must be
 			// observable rather than surfacing as a misleading "resource is not registered".
-			_logger?.WriteWarning(SensitiveErrorTextRedactor.Redact(
-				"Persisted resource keys could not be read; the stricter label-resource verdict stands. "
-				+ ex.Message));
+			string warning = PageUpdateCommand.BuildPersistedResourceKeyWarning(ex.Message);
+			_logger?.WriteWarning(warning);
+			// WriteWarning alone is unreachable for this tool's caller: UpdatePage answers with a typed
+			// PageUpdateResponse that has no log member, and ExecuteWithCleanLog discards the capture
+			// buffer. The carrier is what UpdatePage puts on the response's warning channel.
+			options.PersistedResourceKeysFailure ??= warning;
 			return NoPersistedResourceKeys;
 		}
 	}

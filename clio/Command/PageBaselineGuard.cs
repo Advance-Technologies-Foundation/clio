@@ -69,6 +69,16 @@ public interface IPageBaselineGuard {
 /// <inheritdoc />
 public sealed class PageBaselineGuard : IPageBaselineGuard {
 
+	/// <summary>
+	/// Single source of truth for the advice appended to every uncorroborated / divergent pinned-checksum
+	/// warning. The three exits that emit it carried a character-for-character copy each, and the tests
+	/// assert on it with <c>Contain(...)</c> against a space-joined string - so rewording one copy would
+	/// have gone unnoticed.
+	/// </summary>
+	internal const string PinnedChecksumMergeAdvice =
+		"If it was copied out of a conflict response rather than from a fresh get-page, this save "
+		+ "overwrites the change that caused the conflict - re-read the page and merge before saving.";
+
 	private readonly IFileSystem _fileSystem;
 	private readonly IInterprocessFileGate _fileGate;
 
@@ -158,8 +168,7 @@ public sealed class PageBaselineGuard : IPageBaselineGuard {
 			return (null, false, callerPinnedChecksum
 				? $"The checksum pinned for '{options.SchemaName}' governs this save but could not be corroborated "
 					+ $"locally: the .clio-pages baseline location could not be resolved ({ex.Message}). "
-					+ "If it was copied out of a conflict response rather than from a fresh get-page, this save "
-					+ "overwrites the change that caused the conflict - re-read the page and merge before saving."
+					+ PinnedChecksumMergeAdvice
 				: $"External-modification detection is DISARMED for '{options.SchemaName}': the .clio-pages "
 					+ $"baseline location could not be resolved ({ex.Message}).");
 		}
@@ -186,8 +195,7 @@ public sealed class PageBaselineGuard : IPageBaselineGuard {
 				AddWarning(warnings,
 					$"The checksum pinned for '{options.SchemaName}' governs this save but could not be "
 					+ "corroborated locally: no .clio-pages baseline was found for this anchor and environment. "
-					+ "If it was copied out of a conflict response rather than from a fresh get-page, this save "
-					+ "overwrites the change that caused the conflict - re-read the page and merge before saving.");
+					+ PinnedChecksumMergeAdvice);
 			}
 			return (metaFilePath, false, JoinWarnings(warnings));
 		}
@@ -220,9 +228,7 @@ public sealed class PageBaselineGuard : IPageBaselineGuard {
 				&& !string.Equals(baseline.Checksum, options.ExpectedChecksum, StringComparison.Ordinal)) {
 				AddWarning(warnings,
 					$"The checksum pinned for '{options.SchemaName}' differs from the baseline clio last "
-					+ "recorded for this page. If it was copied out of a conflict response rather than from a fresh "
-					+ "get-page, this save overwrites the change that caused the conflict - re-read the page and "
-					+ "merge before saving.");
+					+ "recorded for this page. " + PinnedChecksumMergeAdvice);
 			}
 			return (metaFilePath, true, JoinWarnings(warnings));
 		}

@@ -36,6 +36,17 @@ public class SetEntitySchemaPropertiesOptions : RemoteCommandOptions
 		"Supply the scalar caption for the effective caption culture, " +
 		"or list every culture you want to change in --title-localizations.";
 
+	/// <summary>
+	/// Single source of truth for the "raw --title-localizations JSON together with an already-populated
+	/// <see cref="ParsedTitleLocalizations"/>" rejection. Only ONE of the two can be normalized and
+	/// written, so accepting both dropped the raw JSON and still reported success on a published
+	/// destructive write - the same defect class as
+	/// <see cref="TitleAndTitleLocalizationsConflictError"/>, only silent.
+	/// </summary>
+	internal const string TitleLocalizationsSourceConflictError =
+		"--title-localizations was supplied both as raw JSON and as an already-parsed map. " +
+		"Supply exactly one of the two - the raw JSON would otherwise be discarded.";
+
 	// Required is enforced in ValidateOptions (not via CommandLineParser's Required=true) so the hidden
 	// --package-name / --name aliases work when used standalone — the parser enforces Required on the
 	// canonical token's presence, which would reject an alias-only invocation. Mirrors ModifyEntitySchemaColumnOptions.
@@ -148,6 +159,14 @@ public class SetEntitySchemaPropertiesCommand : Command<SetEntitySchemaPropertie
 		}
 		if (string.IsNullOrWhiteSpace(options.SchemaName)) {
 			throw new ArgumentException("Schema name is required.", nameof(options));
+		}
+		if (!string.IsNullOrWhiteSpace(options.TitleLocalizations) && options.ParsedTitleLocalizations is not null) {
+			// ParsedTitleLocalizations is a PUBLIC settable carrier, so a caller can populate it and still
+			// pass the raw JSON. Only one of the two survives normalization below, so the other one is
+			// dropped - on a published destructive write that reported success. Reject instead of guessing
+			// which of the two the caller meant.
+			throw new ArgumentException(
+				SetEntitySchemaPropertiesOptions.TitleLocalizationsSourceConflictError, nameof(options));
 		}
 		if (!string.IsNullOrWhiteSpace(options.TitleLocalizations) && options.ParsedTitleLocalizations is null) {
 			options.ParsedTitleLocalizations =

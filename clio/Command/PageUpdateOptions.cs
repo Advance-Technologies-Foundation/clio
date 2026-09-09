@@ -147,6 +147,20 @@
 		/// <see cref="PersistedResourceKeysRead"/> is <c>true</c>.
 		/// </summary>
 		internal IReadOnlySet<string>? PersistedResourceKeysSnapshot { get; set; }
+
+		/// <summary>
+		/// Gets or sets the reason the persisted-resource-key read produced no keys, or <c>null</c> when it
+		/// did not fail. MCP-internal carrier, same category as <see cref="PersistedResourceKeysSnapshot"/>.
+		/// </summary>
+		/// <remarks>
+		/// The reason cannot travel on the logger alone. <c>update-page</c> answers with a typed
+		/// <see cref="PageUpdateResponse"/> that has no log member, and the MCP tool wraps execution in
+		/// <c>ExecuteWithCleanLog</c>, which discards the capture buffer - so an MCP caller saw only the
+		/// misleading "resource 'X' is neither auto-provided ... nor registered" that issue #1320 opened
+		/// with. Both surfaces read this carrier and surface it on the response's warning channel: a
+		/// failed read never changes the verdict, so it is a warning, never an error.
+		/// </remarks>
+		internal string? PersistedResourceKeysFailure { get; set; }
 	}
 
 	/// <summary>
@@ -295,14 +309,14 @@
 					// gates could judge the same request from two different snapshots - the drift the shared
 					// entry point exists to close. It also produced no warning at all, leaving the caller with
 					// the misleading "resource is neither auto-provided nor registered" (issue #1320).
-					LogPersistedResourceKeyFailure(resolutionFailure?.Error);
+					LogPersistedResourceKeyFailure(options, resolutionFailure?.Error);
 					options.PersistedResourceKeysRead = true;
 					options.PersistedResourceKeysSnapshot = null;
 					return NoPersistedResourceKeys;
 				}
 				return LoadPersistedResourceKeys(options, context) ?? NoPersistedResourceKeys;
 			} catch (Exception ex) when (ex is not OperationCanceledException) {
-				LogPersistedResourceKeyFailure(ex);
+				LogPersistedResourceKeyFailure(options, ex);
 				options.PersistedResourceKeysRead = true;
 				options.PersistedResourceKeysSnapshot = null;
 				return NoPersistedResourceKeys;
@@ -337,11 +351,11 @@
 					if (TryGetSchema(context.TemplateSchemaUId, out JObject schema, out string schemaError)) {
 						keys = ResourceStringHelper.GetExistingKeys(schema[LocalizableStringsKey] as JArray);
 					} else {
-						LogPersistedResourceKeyFailure(schemaError);
+						LogPersistedResourceKeyFailure(options, schemaError);
 					}
 				}
 			} catch (Exception ex) when (ex is not OperationCanceledException) {
-				LogPersistedResourceKeyFailure(ex);
+				LogPersistedResourceKeyFailure(options, ex);
 				keys = null;
 			}
 			options.PersistedResourceKeysRead = true;
@@ -358,18 +372,32 @@
 		/// resolution reaches the caller as "resource 'X' is neither auto-provided ... nor registered",
 		/// i.e. exactly the misleading cause issue #1320 opened with, one layer down.
 		/// </remarks>
-		private void LogPersistedResourceKeyFailure(Exception exception) =>
-			LogPersistedResourceKeyFailure(exception.Message);
+		private void LogPersistedResourceKeyFailure(PageUpdateOptions options, Exception exception) =>
+			LogPersistedResourceKeyFailure(options, exception.Message);
 
 		/// <summary>
 		/// Warns that the persisted-key read did not produce keys. Reached from ALL THREE exits that can
 		/// fail: a thrown exception, a clean <c>TryResolveContext</c> refusal, and a clean
 		/// <c>TryGetSchema</c> refusal carrying the designer service's own message.
 		/// </summary>
-		private void LogPersistedResourceKeyFailure(string detail) =>
-			_logger?.WriteWarning(SensitiveErrorTextRedactor.Redact(
+		private void LogPersistedResourceKeyFailure(PageUpdateOptions options, string detail) {
+			string warning = BuildPersistedResourceKeyWarning(detail);
+			_logger?.WriteWarning(warning);
+			// The log is for the CLI reader; the carrier is what reaches an MCP caller's typed response.
+			// Keep the FIRST reason - it is the one closest to the actual cause.
+			options.PersistedResourceKeysFailure ??= warning;
+		}
+
+		/// <summary>
+		/// Single source of truth for the persisted-resource-key failure wording, shared with
+		/// <c>PageUpdateTool.TryGetPersistedResourceKeys</c> so the two surfaces cannot drift.
+		/// </summary>
+		internal static string BuildPersistedResourceKeyWarning(string detail) =>
+			SensitiveErrorTextRedactor.Redact(
 				"Persisted resource keys could not be read; the stricter label-resource verdict stands. "
-				+ (detail ?? "The target schema context could not be resolved.")));
+				+ (string.IsNullOrWhiteSpace(detail)
+					? "The target schema context could not be resolved."
+					: detail));
 
 		/// <summary>
 		/// Builds the user-facing conflict guidance shown when an external modification is detected.
@@ -581,6 +609,10 @@
 				AppendBaselineWarning(response, _pageBaselineGuard.RefreshOrDrop(metaFilePath, options, response));
 			}
 			AppendBaselineWarning(response, baselineWarning);
+			// A failed persisted-key read never changes the verdict, but its reason must reach the caller
+			// on the response - not only the log - so a 401 or an unresolved hierarchy is not reported as
+			// "resource is neither auto-provided nor registered" (issue #1320).
+			AppendBaselineWarning(response, options.PersistedResourceKeysFailure);
 			_logger.WriteInfo(JsonConvert.SerializeObject(response));
 			return success ? 0 : 1;
 		}

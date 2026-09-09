@@ -1288,8 +1288,16 @@ public sealed class PageUpdateToolE2ETests : McpContractFixtureBase {
 		string environmentName = await ResolveReachableEnvironmentAsync(settings);
 		await using var arrangeContext = Arrange(TimeSpan.FromMinutes(5));
 		const string savePage = "ClioMcp_BlankPageToSave";
-		const string persistedKey = "UsrE2EPersistedLabel";
-		const string neverRegisteredKey = "UsrE2ENeverRegisteredLabel";
+		// Both probe keys are UNIQUE PER RUN. Registration is additive - ResourceStringHelper.CleanAndMerge
+		// copies every existing entry before adding - so re-sending a key this test already persisted on the
+		// shared seeded page answers resourcesRegistered: 0, and Assert 2 below (which requires the key in
+		// RegisteredResourceKeys) would fail on every run after the first. The cleanup block can only restore
+		// the BODY; a localizableStrings entry cannot be removed through update-page, so a fresh key per run
+		// is what keeps the only behavioural AC-2 proof re-runnable. Accepted cost: each run leaves one
+		// unreferenced resource string on ClioMcp_BlankPageToSave.
+		string runId = Guid.NewGuid().ToString("N")[..8];
+		string persistedKey = $"UsrE2EPersistedLabel{runId}";
+		string neverRegisteredKey = $"UsrE2ENeverRegisteredLabel{runId}";
 		string sessionDir = Directory.CreateTempSubdirectory("clio-e2e-persisted-resource-").FullName;
 		string? originalBody = null;
 		try {

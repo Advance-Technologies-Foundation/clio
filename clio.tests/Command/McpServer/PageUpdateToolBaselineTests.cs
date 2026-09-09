@@ -419,6 +419,53 @@ public sealed class PageUpdateToolBaselineTests
 			SaveSchemaUrl, Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>());
 	}
 
+	/// <summary>
+	/// Makes the persisted-key read fail CLEANLY: resolution succeeds, then GetSchema answers
+	/// <c>success:false</c> with the designer service's own message rather than throwing.
+	/// </summary>
+	private void StubSchemaReadRefusal(string message) {
+		string payload = "{\"success\": false, \"errorInfo\": {\"message\": \"" + message + "\"}}";
+		_applicationClient.ExecutePostRequest(GetSchemaUrl, Arg.Any<string>()).Returns(payload);
+		_applicationClient.ExecutePostRequest(
+			GetSchemaUrl, Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>()).Returns(payload);
+	}
+
+	[Test]
+	[Description("The reason a persisted-key read failed must reach an MCP caller, not only the log: update-page answers with a typed PageUpdateResponse that has no log member and ExecuteWithCleanLog discards the capture buffer, so a 401 or an inaccessible schema used to surface as nothing but the validator's own 'neither auto-provided nor registered' - the misleading cause issue #1320 opened with (PR #1356 round-5 review).")]
+	public void UpdatePage_ShouldReportWhyTheRescueFailed_WhenTheSchemaReadIsRefused() {
+		// Arrange
+		const string refusal = "Access denied to schema";
+		StubSchemaReadRefusal(refusal);
+
+		// Act
+		PageUpdateResponse response = _tool.UpdatePage(CreateArgs(PersistedResourceBody()), null).Result;
+
+		// Assert
+		response.Success.Should().BeFalse(
+			because: "an unreadable schema must leave the stricter label-resource verdict standing");
+		response.Warnings.Should().NotBeNull(
+			because: "the warning channel is the only member of the typed response that can carry the reason");
+		response.Warnings.Should().Contain(warning =>
+				warning.Contains("Persisted resource keys could not be read") && warning.Contains(refusal),
+			because: "the caller has to see that the rescue was skipped and why, not just that the key is unregistered");
+	}
+
+	[Test]
+	[Description("Non-vacuity twin for the test above: a save whose persisted-key read SUCCEEDS must carry no such warning, so the assertion above cannot pass on a response that warns unconditionally.")]
+	public void UpdatePage_ShouldNotReportARescueFailure_WhenTheSchemaReadSucceeds() {
+		// Arrange
+		StubSchemaWithPersistedKeys(PersistedResourceKey);
+
+		// Act
+		PageUpdateResponse response = _tool.UpdatePage(CreateArgs(PersistedResourceBody()), null).Result;
+
+		// Assert
+		response.Success.Should().BeTrue(because: "the key is persisted, so the rescue resolves it");
+		(response.Warnings ?? []).Should().NotContain(warning =>
+				warning.Contains("Persisted resource keys could not be read"),
+			because: "a read that produced keys did not fail and must not warn");
+	}
+
 	[Test]
 	[Description("Non-vacuity twin for the test above: the SAME body with an empty localizableStrings array is refused by the tool gate and never reaches SaveSchema. A rescue that always reported the key, or never consulted the schema, would pass the positive test and fail here.")]
 	public void UpdatePage_ShouldRefuse_WhenTheLabelResourceIsPersistedNowhere() {

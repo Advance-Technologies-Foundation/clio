@@ -221,4 +221,40 @@ public sealed class SetEntitySchemaPropertiesTitleTests {
 			.WithMessage("*en-US*",
 				"because the message must name the culture whose caption is wrong");
 	}
+
+	[Test]
+	[Description("ValidateOptions_ShouldReject_WhenTitleLocalizationsAreSuppliedAsBothJsonAndAParsedMap - ParsedTitleLocalizations is a public settable carrier, so both can arrive; only one survives normalization and the other was dropped silently on a published, destructive write that still reported success.")]
+	public void ValidateOptions_ShouldReject_WhenTitleLocalizationsAreSuppliedAsBothJsonAndAParsedMap() {
+		// Arrange
+		SetEntitySchemaPropertiesOptions options = CreateOptions();
+		options.TitleLocalizations = "{\"en-US\":\"Vehicle\"}";
+		options.ParsedTitleLocalizations = new Dictionary<string, string> { ["en-US"] = "Car" };
+
+		// Act
+		Action act = () => SetEntitySchemaPropertiesCommand.ValidateOptions(options);
+
+		// Assert
+		act.Should().Throw<ArgumentException>(
+				"because the raw JSON would be discarded and the caption saved would not be the caption requested")
+			.WithMessage("*raw JSON*",
+				"because the caller has to learn which of the two inputs is being ignored");
+	}
+
+	[Test]
+	[Description("ValidateOptions_ShouldCanonicalizeTheCultureKey_WhenTheLocalizationMapUsesANonCanonicalTag - the map keys are persisted verbatim into a published schema while the scalar caption resolvers return CultureInfo.Name, so a non-canonical tag produced two different stored spellings for one culture.")]
+	public void ValidateOptions_ShouldCanonicalizeTheCultureKey_WhenTheLocalizationMapUsesANonCanonicalTag() {
+		// Arrange
+		SetEntitySchemaPropertiesOptions options = CreateOptions();
+		options.TitleLocalizations = "{\"uk-ua\":\"Автомобіль\"}";
+
+		// Act
+		SetEntitySchemaPropertiesCommand.ValidateOptions(options);
+
+		// Assert
+		options.ParsedTitleLocalizations.Should().ContainKey("uk-UA")
+			.WhoseValue.Should().Be("Автомобіль",
+				"because the resolved CultureInfo.Name is what gets persisted, matching the scalar caption resolvers");
+		options.ParsedTitleLocalizations!.Keys.Should().OnlyContain(key => key == "uk-UA",
+			"because the raw non-canonical spelling must not survive into the published schema");
+	}
 }

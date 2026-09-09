@@ -335,7 +335,14 @@ internal static class EntitySchemaDesignerSupport
 		if (normalized is null) {
 			return null;
 		}
-		foreach (string cultureName in normalized.Keys) {
+		// The resolved CultureInfo.Name is KEPT, not just used for its throw/no-throw: the map's keys are
+		// persisted verbatim into a published schema, and the two scalar caption resolvers in this same
+		// area both return the canonical tag (CaptionCultureResolver / EntitySchemaCaptionCultureResolver).
+		// Without this, "uk-ua" was stored as written while the same request routed through --caption-culture
+		// stored "uk-UA", and the OrdinalIgnoreCase readback reported the non-canonical one as verified.
+		Dictionary<string, string> canonicalized = new(StringComparer.OrdinalIgnoreCase);
+		foreach (KeyValuePair<string, string> entry in normalized) {
+			CultureInfo culture;
 			// The scalar --caption-culture is validated through CultureInfo before any write, so an
 			// unknown culture supplied as a KEY has to be rejected here too. Without it "xx-YY" reaches
 			// schema.Caption and the save, the publish and the OData rebuild all complete before the
@@ -344,14 +351,21 @@ internal static class EntitySchemaDesignerSupport
 				// predefinedOnly: true - the single-argument overload MANUFACTURES a fallback culture for a
 				// well-formed but invented tag on ICU, so "xx-YY" used to pass this guard and reach the save.
 				// It also bounds the BCL's static, non-evicting culture cache to the finite predefined set.
-				CultureInfo.GetCultureInfo(cultureName, predefinedOnly: true);
+				culture = CultureInfo.GetCultureInfo(entry.Key, predefinedOnly: true);
 			} catch (CultureNotFoundException) {
 				throw new EntitySchemaDesignerException(
-					$"{fieldName} contains an unknown culture name '{cultureName}'.");
+					$"{fieldName} contains an unknown culture name '{entry.Key}'.");
 			}
+			// Two distinct raw tags can canonicalize to one name (a legacy alias and its replacement).
+			// Last-wins would discard one requested caption silently, so refuse instead.
+			if (canonicalized.TryGetValue(culture.Name, out string existing) && existing != entry.Value) {
+				throw new EntitySchemaDesignerException(
+					$"{fieldName} contains two different captions for culture '{culture.Name}'.");
+			}
+			canonicalized[culture.Name] = entry.Value;
 		}
-		CaptionCultureScriptGuard.EnsureLocalizationMapMatchesCulture(normalized, fieldName);
-		return normalized;
+		CaptionCultureScriptGuard.EnsureLocalizationMapMatchesCulture(canonicalized, fieldName);
+		return canonicalized;
 	}
 
 	internal static string GetLocalizableValue(IEnumerable<LocalizableStringDto> values, string cultureName = null) {

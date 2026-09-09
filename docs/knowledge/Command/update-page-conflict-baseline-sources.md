@@ -56,8 +56,8 @@ the caller into the retry loop and then to `force`.
 only. `sync-pages` is the tool clio calls the canonical page write path (`update-page` even carries a
 `ToolDeprecation` saying so), and `PageSyncPageInput` has no `checksum` member — `BuildUpdateRequest`
 never sets `ExpectedChecksum`, so every `sync-pages` write is on the unpinned path with `force: true`
-as its only escape. An agent following clio's own guidance takes that path. Tracked for its own
-change; see PR #1356's review threads.
+as its only escape. An agent following clio's own guidance takes that path. Extending the
+checksum contract to `sync-pages` is deliberately out of scope here and needs its own change.
 
 **A pinned save always leaves a trace.** On the non-redirected path (a redirect returns its own
 warning before any of this runs), `TryArm` warns whenever the caller pinned a checksum and no
