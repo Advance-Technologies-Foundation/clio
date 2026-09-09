@@ -419,7 +419,7 @@ it can actually close.
 - [x] Guidance raised as a clio-knowledge PR with a `libraryVersion` + `sequence` bump
       (PR #135, 1.13.94).
 
-### Flow-label follow-up — `story-eng-91853-flow-labels-1`
+### Flow-label follow-up — `story-eng-91853-flow-labels-1` (`review`)
 
 The label was descoped out of the main scope and is delivered separately. Its own list, because none of
 the above can express it:
@@ -437,10 +437,14 @@ the above can express it:
 - [x] `DescribeProcessPrompt` gains the THIRD flow field, and the prompt's field list is pinned test-side
       so the fourth cannot be forgotten the same way.
 - [x] Guidance raised with a `libraryVersion` + `sequence` bump (1.13.100) **and the curated-names
-      fixture re-pinned** (1.13.101) — the half of the original item that was missed.
+      fixture re-pinned** (1.13.102) — the half of the original item that was missed.
 - [x] `clio.mcp.e2e` extended for both write paths, all four `setFlow` states plus `addFlow`.
 - [x] Version literals covered by the bundled-archive net, including the caller-facing warning text.
-- [x] Agentic code review: comprehensive fan-out before opening each PR and again before ready-to-merge.
+- [x] Agentic code review before opening each PR.
+- [ ] Agentic code review again before ready-to-merge. **This is the item that cannot be self-ticked**: the
+      gate IS the review, so ticking it while the story sits at `review` claims the outcome of something
+      still running. Two passes are in (5 High + 12 Medium, then 4 High + 2 regressions + 9 Medium, all
+      addressed); it is ticked when a pass comes back with nothing that blocks.
 
 ### Family-level
 

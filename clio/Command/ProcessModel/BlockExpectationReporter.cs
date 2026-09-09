@@ -1,4 +1,4 @@
-﻿using System.Collections.Generic;
+using System.Collections.Generic;
 using Clio.Common;
 
 namespace Clio.Command.ProcessModel;
@@ -10,7 +10,8 @@ namespace Clio.Command.ProcessModel;
 /// commands read the saved process back once and then report the SAME outcomes in the same words — an
 /// element the read-back cannot resolve, a missing record filter, a dropped accessRights block, a dropped
 /// email block and a dropped flow label — and both need the same "could not verify" wording when the
-/// read-back itself fails. Only how each command IDENTIFIES the process differs, and that stays in the
+/// read-back itself fails. The label arrives through its OWN pair of entry points rather than through
+/// <see cref="ReportDescribed"/>; see the remark there. Only how each command IDENTIFIES the process differs, and that stays in the
 /// command.</para>
 /// <para>Sharing it is not only de-duplication: these messages are the sole automated evidence that a grant or
 /// revoke landed, so two copies drifting apart would mean the same state described two different ways depending
@@ -19,8 +20,18 @@ namespace Clio.Command.ProcessModel;
 internal static class BlockExpectationReporter {
 
 	/// <summary>
-	/// Emits every warning a successful read-back justifies, in the order a caller should read them: what could
-	/// not be checked, then what was configured too widely, then what was dropped outright.
+	/// Emits every BLOCK warning a successful read-back justifies, in the order a caller should read them: what
+	/// could not be checked, then what was configured too widely, then what was dropped outright.
+	/// <para>NOT every warning that read-back justifies. A dropped flow LABEL is justified by the same
+	/// description and is emitted by <see cref="ReportFlowLabels"/>, which every caller must also call — the
+	/// label is not part of <see cref="BlockExpectationIntent"/>, so it cannot be threaded through here
+	/// without putting a flow concern inside a type that is entirely about elements. A caller that reads this
+	/// name as "everything" ships with no label verification, which is why it is said here rather than left
+	/// to be inferred.</para>
+	/// <para>One consequence of the split, stated because it breaks the ordering promise above: both commands
+	/// call this first and <see cref="ReportFlowLabels"/> second, so the labels' own "could not be checked"
+	/// caveat lands AFTER everything this method reports as dropped outright. Within each method the order
+	/// holds; across the two it does not.</para>
 	/// </summary>
 	internal static void ReportDescribed(ILogger logger, DescribeProcessResult described,
 			BlockExpectationIntent intent) {
@@ -58,8 +69,8 @@ internal static class BlockExpectationReporter {
 		// The UId-addressed caveat comes FIRST, matching the order ReportDescribed uses: what could not be
 		// checked, then what was found wrong. A caller who sees only the second would read silence about the
 		// first as confirmation.
-		Warn(logger, FlowLabelExpectation.BuildUnverifiableWarning(
-			FlowLabelExpectation.Unverifiable(expectedLabels)));
+		Warn(logger, FlowLabelExpectation.BuildUidAddressedWarning(
+			FlowLabelExpectation.UidAddressed(described, expectedLabels)));
 		Warn(logger, FlowLabelExpectation.BuildWarning(
 			FlowLabelExpectation.Missing(described, expectedLabels)));
 	}

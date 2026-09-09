@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text.Json.Nodes;
@@ -180,36 +180,54 @@ public static class FlowLabelExpectation {
 	/// <para>That matters more than an ordinary blind spot, because the read-back is the SOLE reason this
 	/// field has no raised <c>[RequiresPackage]</c> floor. Silence here is the exact state the floor was not
 	/// raised on the strength of avoiding.</para>
-	/// <para>Detected by SHAPE rather than by "the flow was not found", deliberately. An unfound flow is
-	/// genuinely ambiguous — it may have been removed later in the same batch — and reporting all of them
-	/// would cry wolf on working builds, which is what <see cref="Missing"/> exists not to do. A GUID
-	/// endpoint is unambiguous: describe never reports one, so it can never match, whatever else the batch
-	/// did.</para>
+	/// <para>Detected by GUID SHAPE **and** by the read-back, and it needs both. Shape alone is not enough:
+	/// on the BUILD path a UId cannot address anything - the descriptor resolves endpoints through a
+	/// name-keyed dictionary that fails on a miss - so a GUID-shaped endpoint that survives a build belongs
+	/// to an element legitimately NAMED like one, which describe reports and <see cref="FindFlow"/> matches.
+	/// Without the read-back conjunct every such build printed "there is nothing to compare" beside a
+	/// comparison that had just succeeded.</para>
+	/// <para>And "the flow was not found" alone is not enough either, in the other direction: an unfound
+	/// NAME-addressed flow is genuinely ambiguous - it may have been removed later in the same batch - and
+	/// reporting all of those would cry wolf on working builds, which is what <see cref="Missing"/> exists
+	/// not to do. It takes the conjunction to name only the flows that could never have been checked.</para>
+	/// <para>One case it still reports and arguably should not: a label addressed by UId whose flow was then
+	/// REMOVED later in the same batch. The remove is keyed on the endpoint pair as a STRING, so a
+	/// name-addressed <c>removeFlow</c> cannot forget a UId-addressed expectation, and the two states —
+	/// "removed, so moot" and "never verifiable" — are the same bytes from here. Separating them needs a
+	/// UId-to-name resolution clio does not have. It is noise rather than a wrong claim: the label genuinely
+	/// was not verified.</para>
 	/// </summary>
+	/// <param name="described">The description read back after the successful operation.</param>
 	/// <param name="expected">The labels returned by <see cref="FromDescriptor"/> / <see cref="FromOperations"/>.</param>
-	public static IReadOnlyList<FlowLabel> Unverifiable(IReadOnlyList<FlowLabel> expected) {
-		List<FlowLabel> unverifiable = [];
+	public static IReadOnlyList<FlowLabel> UidAddressed(DescribeProcessResult described,
+			IReadOnlyList<FlowLabel> expected) {
+		List<FlowLabel> uidAddressed = [];
 		foreach (FlowLabel wanted in expected) {
-			if (Guid.TryParse(wanted.Source, out _) || Guid.TryParse(wanted.Target, out _)) {
-				unverifiable.Add(wanted);
+			// Guid.TryParse rather than TryParseExact("D"): the server's FindFlowNode accepts whatever
+			// Guid.Parse accepts, so the N/B/P/X forms address a flow just as well and a narrower net would
+			// stay silent on exactly the payloads this exists for. An element NAMED as 32 bare hex digits is
+			// the theoretical cost, and the read-back conjunct below covers it anyway.
+			bool addressedByUid = Guid.TryParse(wanted.Source, out _) || Guid.TryParse(wanted.Target, out _);
+			if (addressedByUid && FindFlow(described, wanted) is null) {
+				uidAddressed.Add(wanted);
 			}
 		}
 
-		return unverifiable;
+		return uidAddressed;
 	}
 
 	/// <summary>
 	/// The caveat for a label addressed by UId, which no read-back can confirm.
 	/// </summary>
-	/// <param name="unverifiable">The labels returned by <see cref="Unverifiable"/>.</param>
-	public static string? BuildUnverifiableWarning(IReadOnlyList<FlowLabel> unverifiable) {
-		if (unverifiable.Count == 0) {
+	/// <param name="uidAddressed">The labels returned by <see cref="UidAddressed"/>.</param>
+	public static string? BuildUidAddressedWarning(IReadOnlyList<FlowLabel> uidAddressed) {
+		if (uidAddressed.Count == 0) {
 			return null;
 		}
 
-		string subject = Subject(unverifiable.Count);
+		string subject = Subject(uidAddressed.Count);
 		return $"The operation reported success, but the diagram label on the {subject} "
-			+ $"{Describe(unverifiable)} could NOT be verified: the flow was addressed by UId, and the "
+			+ $"{Describe(uidAddressed)} could NOT be verified: the flow was addressed by UId, and the "
 			+ "read-back reports a flow's endpoints as element NAMES, so there is nothing to compare. A "
 			+ $"CrtProcessBuilder below {MinimumPackageVersion} discards the label silently, and this check "
 			+ "is the only signal that it did. Re-send the same operation naming the SOURCE and TARGET "
@@ -240,11 +258,16 @@ public static class FlowLabelExpectation {
 		List<FlowLabelMiss> absent = [];
 		List<FlowLabelMiss> different = [];
 		List<FlowLabelMiss> notCleared = [];
+		// Classified on DRAWN first, not on what was wanted. Missing never emits a miss with both halves
+		// empty - it skips that case - but FlowLabelMiss is public, so a hand-built one can reach here,
+		// and testing Wanted first rendered it as "(still drawn: '') still carries a diagram label".
+		// Asking "is anything drawn?" first makes every branch true of what it describes whatever it is
+		// handed.
 		foreach (FlowLabelMiss miss in missing) {
-			if (miss.Wanted.Label.Length == 0) {
-				notCleared.Add(miss);
-			} else if (miss.Drawn.Length == 0) {
+			if (miss.Drawn.Length == 0) {
 				absent.Add(miss);
+			} else if (miss.Wanted.Label.Length == 0) {
+				notCleared.Add(miss);
 			} else {
 				different.Add(miss);
 			}
@@ -295,8 +318,8 @@ public static class FlowLabelExpectation {
 			return null;
 		}
 
-		string subject = expected.Count == 1 ? "flow" : "flows";
-		return $"Could not verify that the diagram label on the {subject} {Describe(expected)} landed: "
+		return $"Could not verify that the diagram label on the {Subject(expected.Count)} "
+			+ $"{Describe(expected)} landed: "
 			+ $"{reason}. The operation itself succeeded. A CrtProcessBuilder below {MinimumPackageVersion} "
 			+ "discards the field silently, and this read-back is the only signal that it did — re-read the "
 			+ "process with describe-business-process before reporting the labels as applied.";
@@ -320,9 +343,11 @@ public static class FlowLabelExpectation {
 	private static string Describe(IReadOnlyList<FlowLabel> flows) =>
 		Join(flows, flow => $"{Endpoints(flow)} ('{Sanitize(flow.Label)}')");
 
-	// The absent case: the asked-for label is the useful one to echo, because nothing is drawn.
+	// The absent case: the asked-for label is the useful one to echo, because nothing is drawn - which
+	// is the same rendering the unverified/uid-addressed warnings use, so it delegates rather than
+	// producing a byte-identical string from a second place.
 	private static string DescribeWanted(IReadOnlyList<FlowLabelMiss> misses) =>
-		Join(misses, miss => $"{Endpoints(miss.Wanted)} ('{Sanitize(miss.Wanted.Label)}')");
+		Describe(misses.Select(miss => miss.Wanted).ToList());
 
 	// The mismatch case needs BOTH, and needs them distinguishable: which one is drawn is the whole finding.
 	private static string DescribeDifference(IReadOnlyList<FlowLabelMiss> misses) =>
@@ -385,7 +410,7 @@ public static class FlowLabelExpectation {
 					if (!string.IsNullOrWhiteSpace(goneSource) && !string.IsNullOrWhiteSpace(goneTarget)) {
 						(string, string) goneKey = (goneSource.Trim(), goneTarget.Trim());
 						if (byEndpoints.Remove(goneKey)) {
-							order.RemoveAll(entry => EndpointPairComparer.Instance.Equals(entry, goneKey));
+							order.RemoveAll(pair => EndpointPairComparer.Instance.Equals(pair, goneKey));
 						}
 					}
 					continue;

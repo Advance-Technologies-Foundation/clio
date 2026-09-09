@@ -85,7 +85,9 @@ namespace Clio.Common
 		/// <param name="text">The untrusted text to sanitize.</param>
 		/// <param name="maxLength">The maximum length of the sanitized text before it is truncated.</param>
 		/// <returns>A single-line, length-capped, control-character-free rendering of <paramref name="text"/>;
-		/// the input unchanged when it is <c>null</c> or empty.</returns>
+		/// the input unchanged when it is <c>null</c> or empty. Always VALID UTF-16: a cap that would fall
+		/// between a surrogate pair drops the whole character rather than emitting a lone surrogate, which
+		/// a JSON serializer refuses. A non-positive cap yields the ellipsis alone rather than throwing.</returns>
 		public static string SanitizeForDisplay(string text, int maxLength = 500) {
 			if (string.IsNullOrEmpty(text)) {
 				return text;
@@ -95,6 +97,14 @@ namespace Clio.Common
 				sb.Append(char.IsControl(character) ? ' ' : character);
 			}
 			string sanitized = sb.ToString();
+			// Clamped BEFORE the cut, and this is a REGRESSION GUARD rather than defensiveness: the previous
+			// implementation answered "..." for a non-positive cap, and the surrogate back-off below reads
+			// sanitized[cut - 1], which throws IndexOutOfRange at cut == 0. This helper is called while
+			// BUILDING a message about another failure, so it must never be the thing that throws. The
+			// package's SafeText.Sanitize clamps the same case for the same reason.
+			if (maxLength <= 0) {
+				return sanitized.Length == 0 ? sanitized : "...";
+			}
 			if (sanitized.Length <= maxLength) {
 				return sanitized;
 			}

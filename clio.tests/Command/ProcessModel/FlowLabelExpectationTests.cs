@@ -1,4 +1,4 @@
-﻿using System.Collections.Generic;
+using System.Collections.Generic;
 using System.Linq;
 using Clio.Command.ProcessModel;
 using FluentAssertions;
@@ -220,7 +220,7 @@ public class FlowLabelExpectationTests {
 			FlowLabelExpectation.Missing(described, expected);
 
 		// Assert
-		missing.Should().BeEmpty(because: "an unmatched flow is an unverifiable one, not a failed one");
+		missing.Should().BeEmpty(because: "an unmatched flow is an uidAddressed one, not a failed one");
 	}
 
 	[Test]
@@ -573,56 +573,137 @@ public class FlowLabelExpectationTests {
 
 	#endregion
 
-	#region Methods: Unverifiable
+	[Test]
+	[Description("More misses than the render cap yields a bounded message with a '+ N more' suffix. The server accepts 1 000 operations per request and every one can carry a label, so an unbounded join renders a thousand endpoint pairs into an agent's context - which the per-VALUE cap does not bound, because it bounds each label and not their number. No test covered this: every other list in this fixture holds at most three misses.")]
+	public void BuildWarning_ShouldCapHowManyFlowsItNames() {
+		// Arrange - twelve misses against a cap of ten.
+		List<FlowLabelExpectation.FlowLabelMiss> missing = [];
+		for (int index = 0; index < 12; index++) {
+			missing.Add(Absent("Decide", $"End{index}", $"Outcome {index}"));
+		}
+
+		// Act
+		string warning = FlowLabelExpectation.BuildWarning(missing);
+
+		// Assert
+		warning.Should().Contain("(+ 2 more)",
+			because: "the caller has to know the list was cut, and by how much, or they act on ten and think "
+				+ "that was all of them");
+		warning.Should().Contain("Decide -> End9",
+			because: "the tenth is inside the cap and still named");
+		warning.Should().NotContain("Decide -> End10",
+			because: "the eleventh is beyond the cap - naming it would mean the cap does nothing");
+	}
+
+	[Test]
+	[Description("A removeFlow FORGETS a label asked for earlier in the same batch, so a later plain re-add does not inherit it. addFlow(A,B,'Yes') then removeFlow(A,B) then addFlow(A,B) leaves a flow with no label and, without the forget, an expectation that still says 'Yes' - the remove is filtered out by op and the re-add carries no label so it does not supersede. The guard would then report a dropped label and prescribe a package install on a batch that did exactly what was asked: the precise false positive its docblock names, and untested until now - the superseding region's tests never send this three-operation shape on one pair.")]
+	public void FromOperations_ShouldForgetALabel_WhenTheFlowIsRemovedLaterInTheBatch() {
+		// Arrange, Act
+		IReadOnlyList<FlowLabelExpectation.FlowLabel> expected = FlowLabelExpectation.FromOperations("""
+			[{"op":"addFlow","source":"Decide","target":"Yes","label":"Approved"},
+			 {"op":"removeFlow","source":"Decide","target":"Yes"},
+			 {"op":"addFlow","source":"Decide","target":"Yes"}]
+			""");
+
+		// Assert
+		expected.Should().BeEmpty(
+			because: "the flow the label was asked for was removed, so nothing about it can be verified and "
+				+ "nothing should be claimed - an expectation surviving here becomes a false 'update the "
+				+ "package' warning on a correct batch");
+	}
+
+	[Test]
+	[Description("A removeFlow for a DIFFERENT pair forgets nothing. Asserted separately because a forget that ignored its endpoints would satisfy the test above while silently discarding every expectation in any batch containing a removal.")]
+	public void FromOperations_ShouldNotForgetALabel_WhenTheRemovalNamesAnotherPair() {
+		// Arrange, Act
+		IReadOnlyList<FlowLabelExpectation.FlowLabel> expected = FlowLabelExpectation.FromOperations("""
+			[{"op":"addFlow","source":"Decide","target":"Yes","label":"Approved"},
+			 {"op":"removeFlow","source":"Decide","target":"No"}]
+			""");
+
+		// Assert
+		expected.Select(flow => flow.Label).Should().BeEquivalentTo(["Approved"],
+			because: "the removal touched another flow, so the label asked for on this one is still expected");
+	}
+
+	#region Methods: UidAddressed
 
 	[Test]
 	[Description("A flow addressed by UId is reported as UNVERIFIABLE rather than silently unchecked. Both write paths accept a UId - FindFlowNode tries one first - while describe reports endpoints as element NAMES, so such an expectation can never match and a dropped label on it produced no finding AND no caveat: the unverified warning fires only when the describe itself failed, and here it succeeds. That silence is the precise state the [RequiresPackage] floor was left unraised on the strength of avoiding.")]
-	public void Unverifiable_ShouldReportAFlowAddressedByUid() {
-		// Arrange
-		IReadOnlyList<FlowLabelExpectation.FlowLabel> expected = FlowLabelExpectation.FromOperations("""
-			[{"op":"setFlow","source":"3f2504e0-4f89-11d3-9a0c-0305e82c3301",
-			  "target":"Yes","kind":"sequence","label":"Approved"},
+	[TestCase("source", TestName = "UidAddressed_ShouldReportAFlowWhoseSourceIsAUid")]
+	[TestCase("target", TestName = "UidAddressed_ShouldReportAFlowWhoseTargetIsAUid")]
+	public void UidAddressed_ShouldReportAFlowAddressedByUid(string uidEnd) {
+		// Arrange - BOTH ends are exercised, because the predicate is an OR and the first version of this
+		// fixture put the GUID in `source` twice. Deleting the Target clause was green, and a
+		// setFlow addressed {"source":"Decide","target":"<uid>"} fell into total silence.
+		const string uid = "3f2504e0-4f89-11d3-9a0c-0305e82c3301";
+		string source = uidEnd == "source" ? uid : "Decide";
+		string target = uidEnd == "source" ? "Yes" : uid;
+		IReadOnlyList<FlowLabelExpectation.FlowLabel> expected = FlowLabelExpectation.FromOperations($$"""
+			[{"op":"setFlow","source":"{{source}}","target":"{{target}}","kind":"sequence","label":"Approved"},
 			 {"op":"setFlow","source":"Decide","target":"No","kind":"sequence","label":"Rejected"}]
 			""");
+		DescribeProcessResult described = Described(("Decide", "No", "Rejected"));
 
 		// Act
-		IReadOnlyList<FlowLabelExpectation.FlowLabel> unverifiable =
-			FlowLabelExpectation.Unverifiable(expected);
+		IReadOnlyList<FlowLabelExpectation.FlowLabel> uidAddressed =
+			FlowLabelExpectation.UidAddressed(described, expected);
 
 		// Assert
-		unverifiable.Select(flow => flow.Label).Should().BeEquivalentTo(["Approved"],
-			because: "only the UId-addressed flow is unverifiable - the name-addressed one is checked "
+		uidAddressed.Select(flow => flow.Label).Should().BeEquivalentTo(["Approved"],
+			because: "only the UId-addressed flow is uidAddressed - the name-addressed one is checked "
 				+ "normally, and reporting both would make the caveat meaningless");
 	}
 
 	[Test]
-	[Description("Detection is by SHAPE, not by 'the flow was not found'. An unfound flow is genuinely ambiguous - it may have been removed later in the same batch - and reporting every one of them would cry wolf on working builds, which Missing exists not to do. A GUID endpoint is unambiguous because describe never reports one.")]
-	public void Unverifiable_ShouldNotReportAFlowMerelyAbsentFromTheReadBack() {
+	[Description("Detection is by SHAPE AND by the read-back, not by shape alone. An unfound name-addressed flow is genuinely ambiguous - it may have been removed later in the same batch - and reporting every one of them would cry wolf on working builds, which Missing exists not to do.")]
+	public void UidAddressed_ShouldNotReportAFlowMerelyAbsentFromTheReadBack() {
 		// Arrange
 		IReadOnlyList<FlowLabelExpectation.FlowLabel> expected = FlowLabelExpectation.FromOperations("""
 			[{"op":"addFlow","source":"Decide","target":"Gone","label":"Approved"}]
 			""");
+		DescribeProcessResult described = Described(("Decide", "Yes", "Approved"));
 
 		// Act
-		IReadOnlyList<FlowLabelExpectation.FlowLabel> unverifiable =
-			FlowLabelExpectation.Unverifiable(expected);
+		IReadOnlyList<FlowLabelExpectation.FlowLabel> uidAddressed =
+			FlowLabelExpectation.UidAddressed(described, expected);
 
 		// Assert
-		unverifiable.Should().BeEmpty(
+		uidAddressed.Should().BeEmpty(
 			because: "a name-addressed flow is verifiable in principle; whether it was found is Missing's "
 				+ "question and its answer is deliberately silent");
 	}
 
 	[Test]
-	[Description("The caveat names the flow, says WHY it cannot be checked, and gives the action that makes it checkable - re-sending with element names. Naming the version matters here for the same reason as in the dropped-label warning: an older package discards the field silently and this check is the only signal.")]
-	public void BuildUnverifiableWarning_ShouldNameTheFlowTheReasonAndTheRemedy() {
+	[Description("An element legitimately NAMED like a GUID is not reported, because the read-back FOUND it. Shape alone was not enough: on the BUILD path a UId cannot address anything - the descriptor resolves endpoints through a name-keyed dictionary that fails on a miss - so every GUID-shaped endpoint that survives a build belongs to an element with that NAME, and describe reports it. Without the read-back conjunct every such build printed 'there is nothing to compare' beside a comparison that had just succeeded.")]
+	public void UidAddressed_ShouldNotReportAnElementMerelyNamedLikeAUid() {
 		// Arrange
-		IReadOnlyList<FlowLabelExpectation.FlowLabel> unverifiable = [
+		const string uid = "3f2504e0-4f89-11d3-9a0c-0305e82c3301";
+		IReadOnlyList<FlowLabelExpectation.FlowLabel> expected = FlowLabelExpectation.FromDescriptor($$"""
+			{"flows":[{"source":"{{uid}}","target":"Yes","label":"Approved"}]}
+			""");
+		DescribeProcessResult described = Described((uid, "Yes", "Approved"));
+
+		// Act
+		IReadOnlyList<FlowLabelExpectation.FlowLabel> uidAddressed =
+			FlowLabelExpectation.UidAddressed(described, expected);
+
+		// Assert
+		uidAddressed.Should().BeEmpty(
+			because: "the flow was found and its label compared, so there is nothing uidAddressed about it - "
+				+ "the name merely looks like a UId");
+	}
+
+	[Test]
+	[Description("The caveat names the flow, says WHY it cannot be checked, and gives the action that makes it checkable - re-sending with element names. Naming the version matters here for the same reason as in the dropped-label warning: an older package discards the field silently and this check is the only signal.")]
+	public void BuildUidAddressedWarning_ShouldNameTheFlowTheReasonAndTheRemedy() {
+		// Arrange
+		IReadOnlyList<FlowLabelExpectation.FlowLabel> uidAddressed = [
 			new FlowLabelExpectation.FlowLabel("3f2504e0-4f89-11d3-9a0c-0305e82c3301", "Yes", "Approved")
 		];
 
 		// Act
-		string warning = FlowLabelExpectation.BuildUnverifiableWarning(unverifiable);
+		string warning = FlowLabelExpectation.BuildUidAddressedWarning(uidAddressed);
 
 		// Assert
 		warning.Should().Contain("addressed by UId",
@@ -635,10 +716,10 @@ public class FlowLabelExpectationTests {
 	}
 
 	[Test]
-	[Description("Nothing unverifiable yields null, so an ordinary name-addressed write emits no caveat.")]
-	public void BuildUnverifiableWarning_ShouldReturnNull_WhenEverythingIsVerifiable() {
+	[Description("Nothing uidAddressed yields null, so an ordinary name-addressed write emits no caveat.")]
+	public void BuildUidAddressedWarning_ShouldReturnNull_WhenEverythingIsVerifiable() {
 		// Act
-		string warning = FlowLabelExpectation.BuildUnverifiableWarning([]);
+		string warning = FlowLabelExpectation.BuildUidAddressedWarning([]);
 
 		// Assert
 		warning.Should().BeNull(because: "a verifiable write must not carry a caveat about verification");

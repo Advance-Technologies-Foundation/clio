@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.IO;
 using System.IO.Compression;
@@ -74,7 +74,7 @@ public class BundledProcessBuilderPackageTests {
 	/// SHA-256 of the committed archive. Produced by <c>rebundle-process-builder.ps1</c> at
 	/// <see cref="ExpectedArchiveVersion"/> from
 	/// the <c>ProcessBuilder</c> repository (<c>packages/CrtProcessBuilder</c>, branch
-	/// <c>feature/ENG-91853-flow-labels</c>, tag <c>crtprocessbuilder-1.6.0.10</c>), at the commit recorded
+	/// <c>feature/ENG-91853-flow-labels</c>, tag <c>crtprocessbuilder-1.6.0.11</c>), at the commit recorded
 	/// mechanically in
 	/// <see cref="ExpectedProducingCommit"/> — the script captures <c>git rev-parse HEAD</c> and refuses to cut
 	/// from a tree with uncommitted changes, so this reference is no longer a sentence anyone has to keep true
@@ -163,7 +163,7 @@ public class BundledProcessBuilderPackageTests {
 	/// </para>
 	/// </remarks>
 	private const string ExpectedArchiveSha256 =
-		"071403F66DFC6949B395D325E5D209C2FE898082C04590B100963988464238B8";
+		"A4AC56296B06CE340593B4681EA638D16C4780606D63B6AAA6C01324B54BAE4C";
 
 	/// <summary>
 	/// The <c>PackageVersion</c> the shipped descriptor carries.
@@ -191,7 +191,7 @@ public class BundledProcessBuilderPackageTests {
 	/// </para>
 	/// </para>
 	/// </remarks>
-	private const string ExpectedArchiveVersion = "1.6.0.10";
+	private const string ExpectedArchiveVersion = "1.6.0.11";
 
 	/// <summary>
 	/// The commit of the PRODUCING repository the archive was cut from, written by
@@ -203,7 +203,7 @@ public class BundledProcessBuilderPackageTests {
 	/// corresponding to no commit" is unreachable rather than merely documented. Anyone with a checkout can
 	/// verify the rest with one `git checkout`.</para>
 	/// </summary>
-	private const string ExpectedProducingCommit = "dc6583fbd0a91d3a8796be2c740291e52221da99";
+	private const string ExpectedProducingCommit = "5e94574ca8f3697abcf04134847efe74fbe95e0e";
 
 	/// <summary>
 	/// The <c>ModifiedOnUtc</c> the shipped descriptor carries.
@@ -229,7 +229,7 @@ public class BundledProcessBuilderPackageTests {
 	/// command — the previous pin ended in <c>431</c>, which is how the hand edit was eventually noticed.
 	/// </para>
 	/// </remarks>
-	private const string ExpectedDescriptorModifiedOnUtc = "/Date(1788937195000)/";
+	private const string ExpectedDescriptorModifiedOnUtc = "/Date(1788942976000)/";
 
 	/// <summary>
 	/// The <c>ModifiedOnUtc</c> the shipped COMPILE-MARKER SCHEMA descriptor carries.
@@ -894,6 +894,9 @@ public class BundledProcessBuilderPackageTests {
 				+ "nothing linking the two. Renaming this DataMember, or dropping it so the member serialises "
 				+ "as 'Success', makes the verifier return false for a healthy install — and no test on either "
 				+ "side would fail");
+		archive.Should().Contain("BodyStyle = WebMessageBodyStyle.Wrapped",
+			because: "the wrapper name clio looks for (PingResult) is a FUNCTION of this setting; flipping it to "
+				+ "Bare removes the envelope and the verdict inverts silently");
 		archive.Should().Contain("[DataMember(Name = \"label\")]",
 			because: "the SAME hand-mirror as 'success' above, one release later and with a louder failure. "
 				+ "clio's warning tells every caller to update to CrtProcessBuilder "

@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Text.Json;
 using System.Linq;
@@ -643,6 +643,78 @@ public sealed class ModifyBusinessProcessCommandTests {
 		result.Should().Be(0, because: "a verified label is an ordinary success");
 		warnings.Should().BeEmpty(
 			because: "the relabel is drawn exactly as asked, so there is nothing to caveat");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("A label addressed by UId reaches the caller as an explicit 'could not verify' caveat. This pins the EMISSION, which nothing did: BlockExpectationReporter.ReportFlowLabels has no fixture of its own and neither command fixture sent a UId-addressed label, so deleting the two lines that emit this was green. What went undetected is exactly the silence the [RequiresPackage] floor was left unraised on the strength of avoiding - the same defect class as the two dead tests this remediation revived, in the same file family.")]
+	public void Execute_ShouldReportALabelAddressedByUidAsUnverifiable() {
+		// Arrange
+		ModifyBusinessProcessOptions options = new() {
+			Environment = "sandbox",
+			ProcessName = "UsrSampleProcess",
+			OperationsJson = "[{\"op\":\"setFlow\",\"source\":\"3f2504e0-4f89-11d3-9a0c-0305e82c3301\",\"target\":\"Yes\",\"kind\":\"sequence\",\"label\":\"Approved\"}]"
+		};
+		_modifyBusinessProcessService.ModifyProcess("sandbox", Arg.Any<ModifyBusinessProcessRequest>())
+			.Returns(BuildResult());
+		// The read-back reports endpoints as element NAMES, so the UId-addressed expectation can never match
+		// it - which is the whole point: the label may have landed or been discarded and nothing here can say.
+		_processDescriber.Describe(Arg.Any<ProcessIdentity>(), null)
+			.Returns(new DescribeProcessResult {
+				Elements = [],
+				Flows = [new DescribedFlow { Source = "Decide", Target = "Yes", Label = "Approved" }]
+			});
+		List<string> warnings = [];
+		_logger.When(logger => logger.WriteWarning(Arg.Any<string>()))
+			.Do(call => warnings.Add(call.Arg<string>()));
+
+		// Act
+		int result = _command.Execute(options);
+
+		// Assert
+		result.Should().Be(0, because: "an unverifiable label is a caveat on an edit that SUCCEEDED");
+		warnings.Should().ContainSingle(warning => warning.Contains("addressed by UId"),
+			because: "the caller has to learn the check did not happen, and why, or they read silence as "
+				+ "confirmation");
+		warnings.Should().NotContain(warning => warning.Contains("shows no diagram label"),
+			because: "nothing was found to be missing - claiming a drop here would be a finding the read-back "
+				+ "cannot support");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("When one label is unverifiable and another really was dropped, BOTH reach the caller and the caveat comes FIRST. The order is load-bearing and is stated as such in ReportFlowLabels, matching what ReportDescribed does for the block guards: a caller who reads a definite finding first and a 'could not check' second is being invited to treat the second as an afterthought. Inverting the two emission lines was green before this.")]
+	public void Execute_ShouldReportTheUnverifiableCaveatBeforeTheDroppedLabel() {
+		// Arrange
+		ModifyBusinessProcessOptions options = new() {
+			Environment = "sandbox",
+			ProcessName = "UsrSampleProcess",
+			OperationsJson = "[{\"op\":\"setFlow\",\"source\":\"3f2504e0-4f89-11d3-9a0c-0305e82c3301\",\"target\":\"Yes\",\"kind\":\"sequence\",\"label\":\"Approved\"},{\"op\":\"setFlow\",\"source\":\"Decide\",\"target\":\"No\",\"kind\":\"sequence\",\"label\":\"Rejected\"}]"
+		};
+		_modifyBusinessProcessService.ModifyProcess("sandbox", Arg.Any<ModifyBusinessProcessRequest>())
+			.Returns(BuildResult());
+		// Decide->No exists and came back with NO label: a real drop. The UId-addressed one cannot be checked.
+		_processDescriber.Describe(Arg.Any<ProcessIdentity>(), null)
+			.Returns(new DescribeProcessResult {
+				Elements = [],
+				Flows = [new DescribedFlow { Source = "Decide", Target = "No" }]
+			});
+		List<string> warnings = [];
+		_logger.When(logger => logger.WriteWarning(Arg.Any<string>()))
+			.Do(call => warnings.Add(call.Arg<string>()));
+
+		// Act
+		_command.Execute(options);
+
+		// Assert
+		int caveat = warnings.FindIndex(warning => warning.Contains("addressed by UId"));
+		int dropped = warnings.FindIndex(warning => warning.Contains("shows no diagram label"));
+		caveat.Should().BeGreaterThanOrEqualTo(0, because: "the unverifiable label must be reported");
+		dropped.Should().BeGreaterThanOrEqualTo(0, because: "the genuinely dropped label must be reported");
+		caveat.Should().BeLessThan(dropped,
+			because: "what could not be CHECKED is read first and what was found wrong second - the order "
+				+ "ReportDescribed uses for the block guards, and the reason is the same: a caveat after a "
+				+ "definite finding reads as an afterthought");
 	}
 
 	[Test]

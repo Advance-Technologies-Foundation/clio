@@ -2,6 +2,7 @@
 description: SchemaResourceManager matches resource items by NAME case-insensitively and OVERWRITES on a duplicate instead of throwing, so two flows whose generated names collide (SequenceFlow_<source>_<target> with an underscore in an element name) share one row and one flow shows the other's label
 applies-to:
   - clio/Command/ProcessModel/FlowLabelExpectation.cs
+  - clio/CrtProcessBuilder/CrtProcessBuilder.gz
   - docs/knowledge/platform/a-flow-rekind-does-not-orphan-its-label.md
 ticket: ENG-91853
 date: 2026-09-09
@@ -44,8 +45,17 @@ underscore-free element codes, so clio's own generated names cannot collide. It 
 whose name carries an underscore, which means a designer-authored or hand-written name — and those
 are exactly the processes a label edit lands on.
 
-**What breaks if you ignore it** — you go looking for a bug in the label write path, or in clio's
-read-back guard, for a label that is drawn on the wrong connector. Both are working correctly: the
+**Guarded, since CrtProcessBuilder 1.6.0.10** — `ProcessGraphBuilder.RefuseCollidingResourceKey`
+refuses a label WRITE on a flow whose generated name is not unique in the schema, naming the cause
+(an element code carrying an underscore). Scoped to a label write deliberately: refusing every
+collision would newly reject graphs that work today, since a collision has always been tolerated
+while both flows carried no caption, and shipped processes are in that state. So the corruption is
+now unreachable through the toolkit — but the PLATFORM behaviour above is unchanged, and anything
+else that writes a schema resource is still subject to it.
+
+**What breaks if you ignore it** — below 1.6.0.10, or through any other writer, you go looking for a
+bug in the label write path, or in clio's read-back guard, for a label that is drawn on the wrong
+connector. Both are working correctly: the
 label was stored under a key that another flow also claims, one row up in the platform. The
 read-back guard cannot see it either, because it matches flows by endpoint pair and both pairs
 resolve to a flow whose caption is whatever survived. Check for a duplicate generated flow name

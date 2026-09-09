@@ -402,10 +402,20 @@ public class ModifyBusinessProcessCommand(
 		}
 	}
 
-	// Same silent-drop guard as the build path, for every block an edit can carry: a server predating a
-	// feature discards its block and still answers success, so an edit can report an applied operation whose
-	// configuration never landed. Read the process back ONCE and check both. Only runs when the operations
-	// actually carried a block. See EmailBlockExpectation / AccessRightsBlockExpectation.
+	// Same silent-drop guard as the build path, for every guard an edit can trigger: a server predating a
+	// feature DISCARDS its block and still answers success:true, so an edit can report an applied operation
+	// whose configuration never landed. Read the saved process back ONCE and check every guard the payload
+	// triggered: separate describes would double the latency and the retry budget of the success path. See
+	// EmailBlockExpectation / AccessRightsBlockExpectation for why this is behavioural rather than
+	// version-based.
+	//
+	// This used to say "check both" and "only runs when the operations actually carried a block". The flow
+	// label made both false: there are three guards now, and the short-circuit below lets ANY operations
+	// array carrying one labelled flow through - which the guidance ("LABEL EVERY BRANCH") makes the common
+	// path rather than the exception. Its twin on CreateBusinessProcessCommand carries the same correction,
+	// including the visible cost: a describe that fails for reasons of its own now emits "Could not verify
+	// ..." where the caller previously saw a clean success. An array with no blocks AND no labels still
+	// short-circuits and pays nothing.
 	private void WarnOnDiscardedConfigurationBlocks(ModifyBusinessProcessOptions options, string? schemaName) {
 		BlockExpectationIntent intent = BlockExpectationIntent.FromOperations(options.OperationsJson);
 		// The Approval element has the same silent-drop failure, so master's guard verifies it

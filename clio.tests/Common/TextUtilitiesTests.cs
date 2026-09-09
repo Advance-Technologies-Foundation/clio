@@ -207,4 +207,38 @@ public sealed class TextUtilitiesTests
 		// Assert
 		rendered.Should().BeEmpty(because: "an interpolated null must not become the word 'null' or an NRE");
 	}
+	[Test]
+	[Category("Unit")]
+	[Description("The cut never lands BETWEEN a surrogate pair. Substring counts UTF-16 units, so a cap falling inside an astral character (an emoji, and every supplementary-plane script) emitted a lone high surrogate - invalid UTF-16 that a console renders as a replacement glyph and that System.Text.Json refuses outright, which SensitiveErrorTextRedactorTests already relies on. This helper has 15+ call sites and its output reaches MCP tool results, so the failure would surface far from here as a serialization error rather than as truncated text. None of the tests above uses a non-BMP character, so deleting the back-off was green.")]
+	public void SanitizeForDisplay_ShouldNotSplitASurrogatePair_WhenTheCapFallsInsideOne() {
+		// Arrange - three ASCII characters then one astral character: five UTF-16 units.
+		const string text = "abc\U0001F600";
+
+		// Act
+		string sanitized = TextUtilities.SanitizeForDisplay(text, maxLength: 4);
+
+		// Assert
+		sanitized.Should().Be("abc...",
+			because: "the whole astral character is dropped rather than half of it kept, and the cut is still "
+				+ "marked with this helper's three-dot ellipsis");
+		sanitized.Should().NotContain("\uD83D",
+			because: "a lone high surrogate is what the naive cut produced, and it cannot be serialized into "
+				+ "a tool result at all");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("An astral character that FITS is kept whole, so the back-off does not fire when there is room. Asserted separately because a version that always dropped the final unit would satisfy the test above.")]
+	public void SanitizeForDisplay_ShouldKeepAnAstralCharacter_WhenItFitsWithinTheCap() {
+		// Arrange
+		const string text = "abc\U0001F600";
+
+		// Act
+		string sanitized = TextUtilities.SanitizeForDisplay(text, maxLength: 5);
+
+		// Assert
+		sanitized.Should().Be(text,
+			because: "nothing exceeded the cap, so nothing is cut and no ellipsis is added");
+	}
+
 }

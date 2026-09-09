@@ -221,9 +221,11 @@ public sealed class ModifyBusinessProcessToolE2ETests {
 			because: "and the field it names has to be the one that was sent");
 		message.Should().Contain("source and target alone",
 			because: "a caller who does not learn WHY removeFlow cannot honour it will send it again");
-		message.Should().Contain("remove one you did not name",
+		message.Should().Contain("act on one you did not name",
 			because: "the CONSEQUENCE is what makes this a refusal rather than pedantry, and it is the half a "
-				+ "caller needs to accept the extra step");
+				+ "caller needs to accept the extra step. Wording note: this read 'remove one you did not "
+				+ "name' until the guard was generalised to serve setFlowCondition as well, which is also how "
+				+ "this test confirmed the stand was really running the new package rather than a cached one");
 
 		DescribeProcessResult described = ParseDescribeResult(await CallToolAsync(context, DescribeToolName,
 			new Dictionary<string, object?> {

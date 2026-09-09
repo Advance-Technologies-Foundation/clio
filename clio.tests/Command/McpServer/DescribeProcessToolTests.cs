@@ -1,4 +1,4 @@
-﻿using System.Reflection;
+using System.Reflection;
 using Clio.Command;
 using Clio.Command.McpServer.Prompts;
 using Clio.Command.McpServer.Prompts.ProcessDesigner;
@@ -104,14 +104,18 @@ public sealed class DescribeProcessToolTests {
 		// Act
 		string prompt = DescribeProcessPrompt.DescribeProcessGuidance("UsrProcess_493d4c9", "dev");
 
-		// Assert
-		foreach (string field in new[] {
-				"name", "source", "target", "kind", "label", "condition", "branchesOnActivityResult"
-			}) {
-			prompt.Should().Contain(field,
-				because: $"a caller reading this prompt learns a flow's shape from it, so '{field}' being "
-					+ "absent means an agent never looks for it");
-		}
+		// Assert - on the CONTIGUOUS enumeration, not on the bare words. Asserting Contain("label") was
+		// useless: the prompt discusses labels in five other places, so deleting `label` from the flows
+		// enumeration - the exact regression this test is named for - left it green. Same for "kind" and
+		// "condition", which appear throughout the surrounding prose. Only branchesOnActivityResult was
+		// really pinned. The fragment below is the enumeration itself, so a field removed from it fails here.
+		prompt.Should().Contain("`flows` (name, source, target, kind, `label`, and on a branch its `condition`",
+			because: "the per-flow field list is what an agent reads to learn a flow's shape, and this prompt "
+				+ "does NOT defer that list to guidance - so a field missing from THIS enumeration is a field "
+				+ "no agent looks for, whatever else the prose mentions");
+		prompt.Should().Contain("`branchesOnActivityResult`",
+			because: "the last field of the enumeration continues on the next line and would otherwise fall "
+				+ "outside the fragment above");
 
 		prompt.Should().Contain("1.6.0.8",
 			because: "an absent label has two meanings - no label, or a package that cannot report one - and "
