@@ -23,6 +23,26 @@
       ]
     },
     {
+      "web": "ListPageV2Template",
+      "mobile": "BaseMobileListTemplate",
+      "containers": [
+        { "web": "MainContainer", "mobile": "MainContainer" },
+        { "web": "LeftFilterContainer", "mobile": "HeaderContainer" },
+        { "web": "RightFilterContainer", "mobile": "HeaderContainer" },
+        { "web": "ListContainer", "mobile": "ListContainer" }
+      ],
+      "components": [
+        { "web": "DataTable", "mobile": "List", "note": "Primary list component." },
+        {
+          "web": "FolderTree",
+          "mobile": "FolderTreeActions",
+          "mobileType": "crt.FolderTreeActions",
+          "carryProperties": ["sourceSchemaName", "rootSchemaName"],
+          "note": "Folder tree. The mobile template (BaseMobileListTemplate) already provides the FolderTreeActions element; carry the web folder-schema binding (sourceSchemaName + rootSchemaName) onto it by merge-by-name so the mobile folder tree resolves the section entity. Without this the web crt.FolderTree node (inherited template chrome) is pruned and rootSchemaName is lost."
+        }
+      ]
+    },
+    {
       "web": "PageWithTabsFreedomTemplate",
       "mobile": "MobilePageWithTabsFreedomTemplate",
       "note": "Tabbed record page (Tabs + Feed + Attachments). Preferred target for web tabbed record pages.",
@@ -47,7 +67,6 @@
       "mobile": "BaseMobilePageTemplate",
       "containers": [
         { "web": "MainContainer", "mobile": "MainContainer" },
-        { "web": "TopAreaProfileContainer", "mobile": "AreaProfileContainer" },
         { "web": "Tabs", "mobile": "Tabs" },
         { "web": "GeneralInfoTab", "mobile": "GeneralInfoTab" }
       ]
@@ -63,7 +82,7 @@
           "propertyName": "items",
           "index": 1,
           "values": { "iconPosition": "only-text" },
-          "captionResource": { "key": "RightPanelTab_caption", "value": "Right Panel" }
+          "captionResource": { "key": "RightPanelTab_caption", "value": "Details" }
         }
       ],
       "containers": [
@@ -72,6 +91,15 @@
         { "web": "Tabs", "mobile": "Tabs" },
         { "web": "GeneralInfoTab", "mobile": "GeneralInfoTab" },
         { "web": "RightAreaProfileContainer", "mobile": "RightPanelTab" }
+      ]
+    },
+    {
+      "web": "PageWithAreaFreedomTemplate",
+      "mobile": "BaseMobilePageTemplate",
+      "containers": [
+        { "web": "MainContainer", "mobile": "MainContainer" },
+        { "web": "CardContentWrapper", "mobile": "MainContainer" },
+        { "web": "TopAreaProfileContainer", "mobile": "AreaProfileContainer" }
       ]
     },
     {
@@ -162,6 +190,15 @@
             "visible": "{{ source.visible }}",
             "clicked": "{{ source.clicked }}"
           }
+        }
+      ]
+    },
+    {
+      "filters": [{ "type": "crt.TabPanel", "values": { "name": "Tabs" } }],
+      "viewConfigTemplates": [
+        {
+          "preserveSourceProperties": true,
+          "value": { "type": "crt.TabPanel", "scrollable": true, "bodyBackgroundColor": "transparent" }
         }
       ]
     }
