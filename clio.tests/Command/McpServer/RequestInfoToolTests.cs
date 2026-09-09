@@ -451,6 +451,35 @@ public sealed class RequestInfoToolTests {
 	}
 
 	[Test]
+	[Description("ENG-96840: the environment-scoped resolver must be awaited INSIDE its using — a non-async caller that returned the resolve Task unawaited disposed the owned application client while the probe was still running on its Task.Run thread, so every call degraded to probe-error.")]
+	public async Task GetRequestInfo_ShouldNotDisposeResolver_BeforeAsyncProbeCompletes() {
+		// Arrange
+		RequestInfoCatalog catalog = new(new InMemoryRequestRegistryClient(TestRegistryJson));
+		AsyncDisposalTrackingResolver resolver = new(
+			new PlatformVersionResolution("8.3.4", VersionResolutionSource.Environment));
+		IPlatformVersionResolverFactory factory = Substitute.For<IPlatformVersionResolverFactory>();
+		factory.Create(Arg.Any<EnvironmentSettings>()).Returns(resolver);
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		commandResolver.Resolve<EnvironmentSettings>(Arg.Any<EnvironmentOptions>())
+			.Returns(new EnvironmentSettings { Uri = "http://test-stand" });
+		RequestInfoTool tool = new(
+			catalog,
+			new InMemoryMobileRequestCatalog(TestMobileRegistryJson),
+			new FakeDocsClient(),
+			factory,
+			commandResolver);
+
+		// Act
+		RequestInfoResponse response = await tool.GetRequestInfo(new RequestInfoArgs(EnvironmentName: "dev"));
+
+		// Assert
+		resolver.DisposedBeforeResolveCompleted.Should().BeFalse(
+			because: "the owned application client must stay alive until the async probe completes; disposing it mid-probe made every environment-scoped get-request-info throw ObjectDisposedException and degrade to probe-error (ENG-96840)");
+		response.ResolvedFrom.Should().Be("environment",
+			because: "with the resolver alive through the probe, the environment version resolves cleanly instead of latest-fallback");
+	}
+
+	[Test]
 	[Description("An explicit valid 'version' scopes the catalog without any environment probe and reports the authoritative 'environment' tier when the registry serves that exact version.")]
 	public async Task GetRequestInfo_ShouldReportEnvironmentTier_WhenExplicitValidVersionMatchesCatalog() {
 		// Arrange — the in-memory client echoes the requested version, so the served catalog matches it exactly.
@@ -862,6 +891,36 @@ public sealed class RequestInfoToolTests {
 			docsClient ?? new FakeDocsClient(),
 			factory,
 			commandResolver);
+	}
+
+	/// <summary>
+	/// ENG-96840 regression double: its <see cref="ResolveAsync"/> completes ASYNCHRONOUSLY (it yields
+	/// and delays), mirroring the real resolver whose probe runs on a <c>Task.Run</c> thread. If the
+	/// caller returns the resolve Task unawaited from inside its <c>using</c>, <see cref="Dispose"/> runs
+	/// before the continuation and <see cref="DisposedBeforeResolveCompleted"/> latches <c>true</c> — the
+	/// premature-disposal race that made the real owned CreatioClient throw ObjectDisposedException.
+	/// </summary>
+	private sealed class AsyncDisposalTrackingResolver(PlatformVersionResolution resolution)
+		: IOwnedPlatformVersionResolver {
+		private volatile bool _resolveCompleted;
+
+		public bool DisposedBeforeResolveCompleted { get; private set; }
+
+		public async Task<PlatformVersionResolution> ResolveAsync(CancellationToken cancellationToken = default) {
+			// Task.Yield forces an asynchronous return: a buggy caller that returns this Task unawaited
+			// from inside its using disposes us at this point, before the line below runs.
+			await Task.Yield();
+			_resolveCompleted = true;
+			return resolution;
+		}
+
+		// Deterministic, timing-free: being disposed while the resolve has not completed means the
+		// caller returned the resolve Task unawaited from inside its using — the ENG-96840 race.
+		public void Dispose() {
+			if (!_resolveCompleted) {
+				DisposedBeforeResolveCompleted = true;
+			}
+		}
 	}
 
 	/// <summary>
