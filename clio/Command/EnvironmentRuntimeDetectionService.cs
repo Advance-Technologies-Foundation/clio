@@ -1,4 +1,5 @@
 using System;
+using System.Net;
 using System.Net.Http;
 using System.Text.Json;
 using System.Text.Json.Serialization;
@@ -54,45 +55,60 @@ internal sealed class EnvironmentRuntimeDetectionService(
 		string baseUri,
 		RuntimeProbeResult netCoreProbe,
 		RuntimeProbeResult netFrameworkProbe) {
+		if (TryResolveByUiMarkers(netCoreProbe, netFrameworkProbe, out bool resolvedByUiMarkers)) {
+			return resolvedByUiMarkers;
+		}
 		int successfulHealthProbeCount = (netCoreProbe.HealthProbe.Succeeded ? 1 : 0)
 			+ (netFrameworkProbe.HealthProbe.Succeeded ? 1 : 0);
 		if (successfulHealthProbeCount == 1) {
 			return netCoreProbe.HealthProbe.Succeeded;
 		}
-		int successfulUiMarkerProbeCount = (netCoreProbe.UiMarkerProbe.Succeeded ? 1 : 0)
-			+ (netFrameworkProbe.UiMarkerProbe.Succeeded ? 1 : 0);
-		return successfulUiMarkerProbeCount switch {
-			1 when netCoreProbe.UiMarkerProbe.Succeeded => true,
-			1 => false,
-			_ => throw new InvalidOperationException(BuildUnauthenticatedFailureMessage(baseUri, netCoreProbe, netFrameworkProbe))
-		};
+		throw new InvalidOperationException(BuildUnauthenticatedFailureMessage(baseUri, netCoreProbe, netFrameworkProbe));
 	}
 
 	private static bool ResolveAmbiguousServiceSuccess(
 		RuntimeProbeResult netCoreProbe,
-		RuntimeProbeResult netFrameworkProbe) {
-		int successfulUiMarkerProbeCount = (netCoreProbe.UiMarkerProbe.Succeeded ? 1 : 0)
-			+ (netFrameworkProbe.UiMarkerProbe.Succeeded ? 1 : 0);
-
-		return successfulUiMarkerProbeCount switch {
-			1 when netCoreProbe.UiMarkerProbe.Succeeded => true,
-			1 => false,
-			_ => throw new InvalidOperationException(BuildAmbiguousMessage(netCoreProbe, netFrameworkProbe))
-		};
-	}
+		RuntimeProbeResult netFrameworkProbe) =>
+		TryResolveByUiMarkers(netCoreProbe, netFrameworkProbe, out bool resolvedByUiMarkers)
+			? resolvedByUiMarkers
+			: throw new InvalidOperationException(BuildAmbiguousMessage(netCoreProbe, netFrameworkProbe));
 
 	private static bool ResolveByUiMarkersOrThrow(
 		string baseUri,
 		RuntimeProbeResult netCoreProbe,
-		RuntimeProbeResult netFrameworkProbe) {
+		RuntimeProbeResult netFrameworkProbe) =>
+		TryResolveByUiMarkers(netCoreProbe, netFrameworkProbe, out bool resolvedByUiMarkers)
+			? resolvedByUiMarkers
+			: throw new InvalidOperationException(BuildFailureMessage(baseUri, netCoreProbe, netFrameworkProbe));
+
+	/// <summary>
+	/// Resolves the runtime from the login-page markers.
+	/// A marker that answered <see cref="HttpStatusCode.NotFound"/> or <see cref="HttpStatusCode.Gone"/> proves the
+	/// runtime is absent, while a transport error (timeout, reset connection on a cold site) proves nothing, so an
+	/// explicit "not found" on one side decides the runtime even when the other side never answered at all.
+	/// </summary>
+	private static bool TryResolveByUiMarkers(
+		RuntimeProbeResult netCoreProbe,
+		RuntimeProbeResult netFrameworkProbe,
+		out bool isNetCore) {
 		int successfulUiMarkerProbeCount = (netCoreProbe.UiMarkerProbe.Succeeded ? 1 : 0)
 			+ (netFrameworkProbe.UiMarkerProbe.Succeeded ? 1 : 0);
-		return successfulUiMarkerProbeCount switch {
-			1 when netCoreProbe.UiMarkerProbe.Succeeded => true,
-			1 => false,
-			_ => throw new InvalidOperationException(BuildFailureMessage(baseUri, netCoreProbe, netFrameworkProbe))
-		};
+		if (successfulUiMarkerProbeCount == 1) {
+			isNetCore = netCoreProbe.UiMarkerProbe.Succeeded;
+			return true;
+		}
+		bool isNetCoreMarkerAbsent = IsDefinitiveAbsence(netCoreProbe.UiMarkerProbe);
+		bool isNetFrameworkMarkerAbsent = IsDefinitiveAbsence(netFrameworkProbe.UiMarkerProbe);
+		if (isNetCoreMarkerAbsent ^ isNetFrameworkMarkerAbsent) {
+			isNetCore = isNetFrameworkMarkerAbsent;
+			return true;
+		}
+		isNetCore = false;
+		return false;
 	}
+
+	private static bool IsDefinitiveAbsence(ProbeAttempt attempt) =>
+		!attempt.Succeeded && attempt.StatusCode is HttpStatusCode.NotFound or HttpStatusCode.Gone;
 
 	private RuntimeProbeResult Probe(EnvironmentSettings baseSettings, bool isNetCore, bool canAuthenticate) {
 		EnvironmentSettings probeSettings = Clone(baseSettings, isNetCore);
@@ -148,10 +164,11 @@ internal sealed class EnvironmentRuntimeDetectionService(
 			using HttpResponseMessage response = client.GetAsync(url).GetAwaiter().GetResult();
 			if (!response.IsSuccessStatusCode) {
 				return new ProbeAttempt(false,
-					$"The remote server returned an error: ({(int)response.StatusCode}) {response.ReasonPhrase}.");
+					$"The remote server returned an error: ({(int)response.StatusCode}) {response.ReasonPhrase}.",
+					response.StatusCode);
 			}
 
-			return new ProbeAttempt(true, null);
+			return new ProbeAttempt(true, null, response.StatusCode);
 		} catch (Exception exception) {
 			return new ProbeAttempt(false, exception.GetBaseException().Message);
 		}
@@ -300,7 +317,7 @@ internal sealed class EnvironmentRuntimeDetectionService(
 		string UiMarkerUrl,
 		ProbeAttempt UiMarkerProbe);
 
-	private sealed record ProbeAttempt(bool Succeeded, string? ErrorMessage);
+	private sealed record ProbeAttempt(bool Succeeded, string? ErrorMessage, HttpStatusCode? StatusCode = null);
 
 	private sealed class SelectQueryProbeResponse {
 		[JsonPropertyName("success")]
