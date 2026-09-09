@@ -22,6 +22,18 @@ namespace Clio.Tests.Command.IdentityServiceDeployment;
 [Property("Module", "Command")]
 public sealed class IdentityServiceDeploymentServiceTests
 {
+	/// <summary>
+	/// Resolves the temporary directory to its physical path so no ancestor is a filesystem link.
+	/// </summary>
+	/// <remarks>
+	/// On macOS <c>/var</c> is a symlink to <c>/private/var</c>, so every path built under
+	/// <see cref="Path.GetTempPath"/> sits inside a reparse point and
+	/// <c>IdentityServiceDeploymentService.EnsurePathHasNoReparsePoints</c> correctly refuses it.
+	/// The production guard must stay strict, so the fixture supplies an already-resolved root
+	/// (the equivalent of <c>pwd -P</c>) instead.
+	/// </remarks>
+	private static readonly string RealTempPath = ResolveRealPath(Path.GetTempPath());
+
 	[Test]
 	[Description("Deploy uses the persisted registered environment so EnvironmentPath survives option filling and ConnectionStrings.config can be read.")]
 	[Platform("Win", Reason = "deploy-identity performs Windows-only IIS deployment (DeploymentStrategyFactory throws PlatformNotSupportedException off-Windows); skipped on non-Windows")]
@@ -537,6 +549,31 @@ public sealed class IdentityServiceDeploymentServiceTests
 		}
 	}
 
+	[Test]
+	[Description("Resolves the temp root to a path whose every ancestor, including the filesystem root, can be inspected without throwing.")]
+	public void ResolveRealPath_Should_Resolve_Temp_Root_On_Every_Supported_Platform()
+	{
+		// Arrange
+		string tempPath = Path.GetTempPath();
+
+		// Act
+		string resolvedPath = ResolveRealPath(tempPath);
+
+		// Assert
+		Path.IsPathRooted(resolvedPath).Should().BeTrue(
+			because: "the resolved temp root must stay an absolute path usable as a deployment target");
+		Directory.Exists(resolvedPath).Should().BeTrue(
+			because: "resolving links must yield the same existing directory, not a path that was never created");
+		EnumerateSelfAndAncestors(resolvedPath).Should().OnlyContain(
+			ancestorPath => !File.GetAttributes(ancestorPath).HasFlag(FileAttributes.ReparsePoint),
+			because: "the resolved root must satisfy the production guard's own predicate — on macOS the raw "
+				+ "temp path fails it because /var is a link to /private/var");
+		Action act = () => ResolveRealPath(Path.GetPathRoot(resolvedPath)!);
+		act.Should().NotThrow(
+			because: "the walk reaches the filesystem root, where Windows raises DirectoryNotFoundException "
+				+ "for a drive root that is not a link");
+	}
+
 	private static string CreateCreatioEnvironmentPath(string? connectionStrings = null)
 	{
 		string path = Path.Combine(RealTempPath, $"creatio-env-{Guid.NewGuid():N}");
@@ -622,42 +659,59 @@ public sealed class IdentityServiceDeploymentServiceTests
 		return archivePath;
 	}
 
-	/// <summary>
-	/// Resolves the temporary directory to its physical path so no ancestor is a filesystem link.
-	/// </summary>
-	/// <remarks>
-	/// On macOS <c>/var</c> is a symlink to <c>/private/var</c>, so every path built under
-	/// <see cref="Path.GetTempPath"/> sits inside a reparse point and
-	/// <c>IdentityServiceDeploymentService.EnsurePathHasNoReparsePoints</c> correctly refuses it.
-	/// The production guard must stay strict, so the fixture supplies an already-resolved root
-	/// (the equivalent of <c>pwd -P</c>) instead.
-	/// </remarks>
-	private static readonly string RealTempPath = ResolveRealPath(Path.GetTempPath());
+	private static IEnumerable<string> EnumerateSelfAndAncestors(string path) {
+		for (string? currentPath = path; currentPath is not null; currentPath = Path.GetDirectoryName(currentPath)) {
+			yield return currentPath;
+		}
+	}
 
 	private static string ResolveRealPath(string path) {
-		string currentPath = Path.GetFullPath(path);
+		string currentPath = Path.TrimEndingDirectorySeparator(Path.GetFullPath(path));
 		for (int depth = 0; depth < 64; depth++) {
 			string? linkedAncestor = null;
 			string? linkTarget = null;
 			for (string? ancestor = currentPath;
 				ancestor is not null;
 				ancestor = Path.GetDirectoryName(ancestor)) {
-				FileSystemInfo? target = new DirectoryInfo(ancestor).ResolveLinkTarget(returnFinalTarget: true);
+				string? target = TryResolveLinkTarget(ancestor);
 				if (target is null) {
 					continue;
 				}
 				linkedAncestor = ancestor;
-				linkTarget = target.FullName;
+				linkTarget = target;
 				break;
 			}
 			if (linkedAncestor is null || linkTarget is null) {
 				return currentPath;
 			}
-			currentPath = Path.GetFullPath(string.Equals(currentPath, linkedAncestor, StringComparison.Ordinal)
-				? linkTarget
-				: Path.Combine(linkTarget, Path.GetRelativePath(linkedAncestor, currentPath)));
+			currentPath = Path.TrimEndingDirectorySeparator(Path.GetFullPath(
+				string.Equals(currentPath, linkedAncestor, StringComparison.Ordinal)
+					? linkTarget
+					: Path.Combine(linkTarget, Path.GetRelativePath(linkedAncestor, currentPath))));
 		}
 		return currentPath;
+	}
+
+	/// <summary>
+	/// Returns the final target of a directory link, or <see langword="null"/> when the path is not a link.
+	/// </summary>
+	/// <remarks>
+	/// <see cref="FileSystemInfo.ResolveLinkTarget"/> throws for paths it cannot inspect as a link —
+	/// on Windows a drive root such as <c>C:\</c> raises <see cref="DirectoryNotFoundException"/> —
+	/// and the fixture must treat every such path as an ordinary directory instead of failing.
+	/// A link cycle or a broken link raises <see cref="IOException"/> too and is therefore also treated
+	/// as an ordinary directory; the path then stays inside the link and the production guard rejects it,
+	/// which is acceptable because the temp root this fixture resolves always exists.
+	/// </remarks>
+	private static string? TryResolveLinkTarget(string path) {
+		try {
+			return new DirectoryInfo(path).ResolveLinkTarget(returnFinalTarget: true)?.FullName;
+		}
+		catch (Exception exception)
+			when (exception is IOException or UnauthorizedAccessException
+				or ArgumentException or NotSupportedException) {
+			return null;
+		}
 	}
 
 	private static string CreateIdentityTargetPath() =>
