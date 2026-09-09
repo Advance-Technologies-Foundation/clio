@@ -375,9 +375,14 @@ Expected — what must happen:
 - **Words on the branches out of a wait-for-all fork.** Every branch there starts, so there is nothing
   for a reader to choose between and nothing for words to disambiguate. Labelling them is against the
   norm this change documents, not a case.
-- **Words a person typed in the designer by hand.** Reading a designer-authored label back is worth
-  testing, but no case here can create one: this suite is run through the tooling only, with no
-  browser. Whoever runs the browser pass should add it, and two things will save them an hour:
+- **AUTHORING words in the designer by hand** — and note this bullet has shrunk. Reading a
+  designer-authored label back is **no longer uncovered**: it does not need one to be created,
+  because the shipped product is full of them. On a stock stand, hundreds of flow-caption resource
+  rows predate this feature, and two shipped processes have been checked end to end -
+  `AccountLeadConversionScoreUpdate` and `AddContact` - with the resource row, clio's read-back and
+  the drawn canvas all agreeing, twice, by two parties. See the run report. What is left here is only
+  a person TYPING one, which needs a human at a browser and proves nothing about the read path that
+  the above does not already prove. If you do it anyway, two things will save you an hour:
   the designer opens at `/0/Nui/ViewModule.aspx?vm=SchemaDesigner#process/<schemaUId>` and NOTHING
   else resolves — a guessed shell hash route leaves the whole app stuck on its splash screen for the
   rest of the session — and a connector's words can be read straight out of the canvas with
