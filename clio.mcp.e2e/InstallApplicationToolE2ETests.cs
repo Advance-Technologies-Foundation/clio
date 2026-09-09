@@ -186,8 +186,14 @@ public sealed class InstallApplicationToolE2ETests : McpContractFixtureBase {
 		CancellationTokenSource CancellationTokenSource) : IAsyncDisposable {
 		public ValueTask DisposeAsync() {
 			CancellationTokenSource.Dispose();
-			if (Directory.Exists(RootDirectory)) {
-				Directory.Delete(RootDirectory, recursive: true);
+			// Best-effort, as in McpContractFixtureBase: the shared child server is still alive here and
+			// may briefly hold the report file it just wrote, and a leaked temp dir must not fail a green test.
+			try {
+				if (Directory.Exists(RootDirectory)) {
+					Directory.Delete(RootDirectory, recursive: true);
+				}
+			} catch (IOException) {
+			} catch (UnauthorizedAccessException) {
 			}
 			return ValueTask.CompletedTask;
 		}

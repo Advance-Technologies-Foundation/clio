@@ -140,7 +140,7 @@ public sealed class LinkFromRepositoryToolE2ETests : McpContractFixtureBase {
 	}
 
 	[AllureStep("Arrange link-from-repository MCP sandbox")]
-	[AllureDescription("Arrange by creating temporary repository and Creatio package directories, seeding a package folder, and starting a real clio MCP server session")]
+	[AllureDescription("Arrange by creating temporary repository and Creatio package directories and seeding a package folder for the fixture-shared clio MCP server session")]
 	private async Task<LinkFromRepositoryArrangeContext> ArrangeAsync() {
 		McpE2ESettings settings = TestConfiguration.Load();
 		if (!settings.AllowDestructiveMcpTests) {
@@ -368,8 +368,15 @@ public sealed class LinkFromRepositoryToolE2ETests : McpContractFixtureBase {
 		public ValueTask DisposeAsync() {
 			CancellationTokenSource.Dispose();
 
-			if (Directory.Exists(RootDirectory)) {
-				Directory.Delete(RootDirectory, recursive: true);
+			// Best-effort, as in McpContractFixtureBase: the shared child server is still alive here, and a
+			// leaked temp dir must not fail a green test. Every link target sits inside RootDirectory, and a
+			// recursive delete removes a reparse point without following it.
+			try {
+				if (Directory.Exists(RootDirectory)) {
+					Directory.Delete(RootDirectory, recursive: true);
+				}
+			} catch (IOException) {
+			} catch (UnauthorizedAccessException) {
 			}
 			return ValueTask.CompletedTask;
 		}

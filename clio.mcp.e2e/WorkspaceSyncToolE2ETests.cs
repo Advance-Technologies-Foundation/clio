@@ -40,8 +40,14 @@ public sealed class WorkspaceSyncToolE2ETests : McpContractFixtureBase {
 
 	[OneTimeTearDown]
 	public void CleanupSharedRestoreWorkspace() {
-		if (_sharedRootDirectory is not null && Directory.Exists(_sharedRootDirectory)) {
-			Directory.Delete(_sharedRootDirectory, recursive: true);
+		// NUnit runs this before the base class stops the shared server, so the child may still hold a
+		// handle under the workspace; best-effort like McpContractFixtureBase.CleanupFixtureDirectories.
+		try {
+			if (_sharedRootDirectory is not null && Directory.Exists(_sharedRootDirectory)) {
+				Directory.Delete(_sharedRootDirectory, recursive: true);
+			}
+		} catch (IOException) {
+		} catch (UnauthorizedAccessException) {
 		}
 	}
 
@@ -153,33 +159,6 @@ public sealed class WorkspaceSyncToolE2ETests : McpContractFixtureBase {
 		AssertGateDidNotRefuse(restoreResult, "cliogate");
 	}
 
-	private async Task<WorkspaceSyncArrangeContext> ArrangeInvalidEnvironmentAsync(string toolPrefix) {
-		return await AllureApi.Step("Arrange workspace-sync invalid-environment MCP session", () => {
-			string rootDirectory = Path.Combine(Path.GetTempPath(), $"clio-{toolPrefix}-mcp-e2e-{Guid.NewGuid():N}");
-			string workspacePath = Path.Combine(rootDirectory, "workspace");
-			string restoreWorkspacePath = Path.Combine(rootDirectory, "restore-workspace");
-			string environmentName = $"missing-{toolPrefix}-env-{Guid.NewGuid():N}";
-			Directory.CreateDirectory(workspacePath);
-
-			McpE2ESettings settings = TestConfiguration.Load();
-			settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
-			CancellationTokenSource cancellationTokenSource = new(TimeSpan.FromMinutes(2));
-			return Task.FromResult(new WorkspaceSyncArrangeContext(
-				settings,
-				rootDirectory,
-				workspacePath,
-				WorkspaceName: "workspace",
-				restoreWorkspacePath,
-				RestoreWorkspaceName: "restore-workspace",
-				environmentName,
-				PackageName: string.Empty,
-				PackageMetadata: null,
-				Session,
-				cancellationTokenSource,
-				OwnsRootDirectory: true));
-		});
-	}
-
 	private async Task<WorkspaceSyncArrangeContext> ArrangeSandboxWorkspaceAsync(bool includePackage = true) {
 		return await AllureApi.Step("Arrange workspace-sync sandbox lifecycle", async () => {
 			McpE2ESettings settings = TestConfiguration.Load();
@@ -212,7 +191,6 @@ public sealed class WorkspaceSyncToolE2ETests : McpContractFixtureBase {
 
 			McpServerSession session = Session;
 			return new WorkspaceSyncArrangeContext(
-				settings,
 				rootDirectory,
 				workspacePath,
 				workspaceName,
@@ -244,7 +222,6 @@ public sealed class WorkspaceSyncToolE2ETests : McpContractFixtureBase {
 			CopyDirectory(_sharedWorkspacePath!, testWorkspacePath);
 			McpServerSession session = Session;
 			return new WorkspaceSyncArrangeContext(
-				settings,
 				testRootDirectory,
 				testWorkspacePath,
 				Path.GetFileName(testWorkspacePath),
@@ -560,7 +537,6 @@ public sealed class WorkspaceSyncToolE2ETests : McpContractFixtureBase {
 	}
 
 	private sealed record WorkspaceSyncArrangeContext(
-		McpE2ESettings Settings,
 		string RootDirectory,
 		string WorkspacePath,
 		string WorkspaceName,
@@ -578,8 +554,13 @@ public sealed class WorkspaceSyncToolE2ETests : McpContractFixtureBase {
 
 			// Restore-test contexts reuse the shared fixture workspace (see EnsureSharedRestoreWorkspaceAsync),
 			// which is deleted once in [OneTimeTearDown]; only the per-test throwaway roots are owned here.
-			if (OwnsRootDirectory && Directory.Exists(RootDirectory)) {
-				Directory.Delete(RootDirectory, recursive: true);
+			// Best-effort, as in McpContractFixtureBase: the shared child server is still alive at this point.
+			try {
+				if (OwnsRootDirectory && Directory.Exists(RootDirectory)) {
+					Directory.Delete(RootDirectory, recursive: true);
+				}
+			} catch (IOException) {
+			} catch (UnauthorizedAccessException) {
 			}
 			return ValueTask.CompletedTask;
 		}

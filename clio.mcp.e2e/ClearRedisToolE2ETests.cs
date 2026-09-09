@@ -77,13 +77,13 @@ public sealed class ClearRedisToolE2ETests : McpContractFixtureBase {
 		AssertFailureMessageMentionsInvalidUrl(actResult);
 	}
 
-	// Lightweight arrange for the invalid-input tests: uses synthetic connection details and starts the
-	// MCP server, but does NOT require sandbox configuration or connect to a real Redis. Both negative
+	// Lightweight arrange for the invalid-input tests: uses synthetic connection details on the
+	// fixture-shared MCP server, and does NOT require sandbox configuration or connect to a real Redis. Both negative
 	// cases fail before any live Redis is touched (unknown-environment lookup; deliberately unreachable
 	// URL), so they are env-free (McpE2E.NoEnvironment).
 	// No AllowDestructiveMcpTests gate: rejecting an invalid request mutates nothing.
-	private async Task<ClearRedisArrangeContext> ArrangeWithoutRedisAsync() {
-		return await AllureApi.Step("Arrange clear-redis invalid-input state (no sandbox Redis)", () => {
+	private Task<ClearRedisArrangeContext> ArrangeWithoutRedisAsync() {
+		return AllureApi.Step("Arrange clear-redis invalid-input state (no sandbox Redis)", () => {
 			const string environmentName = "clear-redis-synthetic-env";
 			SandboxEnvironmentContext sandboxContext = new(
 				environmentName,

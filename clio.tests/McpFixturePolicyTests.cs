@@ -251,6 +251,55 @@ public sealed class McpFixturePolicyTests {
 			because: "the opt-in has to be checked before the environment is resolved and before the first clio process is spawned, otherwise the guard runs after the damage");
 	}
 
+	[Test]
+	[Description("Every fixture on the shared-server base keeps stand access and skips out of [OneTimeSetUp]: the server may start once per fixture, but the destructive opt-in, the sandbox-configuration check, the reachability probe and Assert.Ignore must stay inside test bodies, so NUnit still reports a missing stand per test instead of as a whole-fixture setup failure and no [OneTimeSetUp] ever reaches Creatio.")]
+	public void SharedServerFixtures_ShouldKeepStandAccessAndSkipsOutOfOneTimeSetUp() {
+		// Arrange
+		string e2eRoot = Path.Combine(RepositoryRoot, "clio.mcp.e2e");
+		Directory.Exists(e2eRoot).Should().BeTrue(
+			because: $"this guard scans the e2e fixture sources under {e2eRoot}; a moved project must fail here rather than pass on an empty scan");
+		string[] forbiddenInOneTimeSetUp = [
+			"Assert.Ignore",
+			"ResolveReachableEnvironmentAsync",
+			"ResolveEnvironmentOnceAsync",
+			"ClioCliCommandRunner",
+			"EnsureSandboxIsConfigured",
+			"AllowDestructiveMcpTests"
+		];
+		string[] sharedServerFixtureSources = Directory.EnumerateFiles(e2eRoot, "*.cs", SearchOption.TopDirectoryOnly)
+			.Where(path => {
+				string source = File.ReadAllText(path);
+				return source.Contains(": McpContractFixtureBase", StringComparison.Ordinal)
+					|| source.Contains(": DataBindingDbFixtureBase", StringComparison.Ordinal);
+			})
+			.OrderBy(path => path, StringComparer.Ordinal)
+			.ToArray();
+
+		// Act
+		List<string> violations = [];
+		foreach (string path in sharedServerFixtureSources) {
+			string source = File.ReadAllText(path);
+			// Match the attribute on its own one-tab line only, never the same token quoted inside a comment.
+			const string oneTimeSetUpAttribute = "\n\t[OneTimeSetUp]\n";
+			for (int setUpIndex = source.IndexOf(oneTimeSetUpAttribute, StringComparison.Ordinal);
+					setUpIndex >= 0;
+					setUpIndex = source.IndexOf(oneTimeSetUpAttribute, setUpIndex + 1, StringComparison.Ordinal)) {
+				// A fixture method ends at the first closing brace indented by exactly one tab.
+				int methodEnd = source.IndexOf("\n\t}\n", setUpIndex, StringComparison.Ordinal);
+				string body = methodEnd < 0 ? source[setUpIndex..] : source[setUpIndex..methodEnd];
+				violations.AddRange(forbiddenInOneTimeSetUp
+					.Where(token => body.Contains(token, StringComparison.Ordinal))
+					.Select(token => $"{Path.GetFileName(path)}: [OneTimeSetUp] references {token}"));
+			}
+		}
+
+		// Assert
+		sharedServerFixtureSources.Should().HaveCountGreaterThanOrEqualTo(13,
+			because: "at least the thirteen fixtures converted to the shared server plus the earlier contract fixtures inherit the base; a smaller set means the scan missed the sources and this guard pins nothing");
+		violations.Should().BeEmpty(
+			because: "a stand probe or an Assert.Ignore in [OneTimeSetUp] turns one unreachable sandbox into a whole-fixture failure (or a fixture-level skip that hides which test needed the stand), which is the exact regression the shared-server conversion was reviewed against");
+	}
+
 	private static bool HasCategory(IEnumerable<CategoryAttribute> attributes, string category) =>
 		attributes.Any(attribute => string.Equals(attribute.Name, category, StringComparison.Ordinal));
 }

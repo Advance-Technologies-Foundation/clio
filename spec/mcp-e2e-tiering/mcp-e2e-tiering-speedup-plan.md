@@ -68,7 +68,7 @@ per-key семафори `ApplicationSectionCreateSerializationGuard` звіль
 | `CreateRelatedPageAddonToolE2ETests` | 7 | 7 → 1 | — | NoEnvironment |
 | `LinkFromRepositoryToolE2ETests` | 5 | 5 → 1 | — | temp-каталоги лишаються per-test |
 | `GetRelatedPageAddonToolE2ETests` | 4 | 4 → 1 | — | NoEnvironment |
-| `ApplicationSectionMaintenanceToolE2ETests` | 4 | 4 → 1 | 4–8 → 1–2 | |
+| `ApplicationSectionMaintenanceToolE2ETests` | 4 | 4 → 1 | 3–6 → 1–2 | lifecycle-тест ніколи не пробував |
 | `WorkspaceSyncToolE2ETests` | 4 | 4 → 1 | — | shared-restore workspace уже мемоізований (ENG-92459) |
 | `DbTemplatePruneToolE2ETests` (NoEnv-клас) | 3 | 3 → 1 | — | Sandbox-клас у тому ж файлі не чіпаємо |
 | `WatchCompilationToolE2ETests` | 3 | 3 → 1 | 1 → 1 | feature-gate `SkipIfFeatureDisabled` лишається в тесті |
@@ -76,9 +76,11 @@ per-key семафори `ApplicationSectionCreateSerializationGuard` звіль
 | `InstallApplicationToolE2ETests` | 2 | 2 → 1 | 1 → 1 | |
 | `RemovePackageDependencyToolE2ETests` | 2 | 2 → 1 | — | NoEnvironment |
 | `ClearRedisToolE2ETests` | 2 | 2 → 1 | — | NoEnvironment |
-| **Разом** | **63** | **63 → 14** (−49) | ~−40 проб | |
+| **Разом** | **63** | **63 → 14** (−49) | 28 → 3 викликів проби (−25 процесів при досяжному стенді, до −42 із fallback) | |
 
-Очікуваний виграш: **49 × S + ~40 × 1 с** ≈ 4–9 хв wall-clock залежно від S на агенті.
+Очікуваний виграш: **49 × S + 25–42 × ~1 с** ≈ 4–9 хв wall-clock залежно від S на агенті. Виграш
+залежить від лейну: фікстура, всі тести якої скіпаються (немає destructive opt-in / стенду), раніше не
+стартувала жодного сервера, тепер стартує один — це ціна одного `[OneTimeSetUp]` на фікстуру.
 
 **Не входить** (не верифікується статусом TeamCity, бо категорія `McpE2E.ProcessDesigner` виключена
 фільтром job'а): `ModifyBusinessProcessToolE2ETests` (56 → 1), `CreateBusinessProcessToolE2ETests`
@@ -87,9 +89,20 @@ per-key семафори `ApplicationSectionCreateSerializationGuard` звіль
 але його може перевірити лише хтось зі стендом із `CrtProcessBuilder`. Окремий PR після цього.
 
 **Ризики і як їх ловимо**
-- *Стан, що протікає між тестами через спільний процес* — єдиний відомий: кеш `PlatformVersionResolver`
-  (5 хв, per-env), нешкідливий. Якщо TeamCity покаже падіння, яке зникає при ізоляції — фікстура
-  повертається на старт-на-тест (по одній, як каже ENG-92558 story 4).
+- *Стан, що живе між тестами у спільному процесі* — він є, і він продуктовий: сервер тримає один
+  DI-контейнер і одну автентифіковану сесію Creatio на ключ середовища (`SessionContainerCache`, 5 хв
+  idle-eviction), а після recycle стенду (`push-workspace`, `install-application`) наступний виклик
+  іде зі старим cookie і покладається на `ReauthExecutor`. Раніше кожен тест логінився з нового процесу
+  й цей шлях не перевірявся взагалі; тепер перевіряється — так само, як у реального агента з довгоживучим
+  сервером. Жоден асерт конвертованих фікстур не залежить від «свіжого» логіну
+  (запис: `docs/knowledge/Tests/shared-mcp-server-per-fixture-keeps-the-tenant-session-across-tests.md`).
+  Якщо TeamCity покаже падіння одразу після recycle-тесту з login-сторінкою або `Could not verify package
+  requirements` — це дефект re-auth-шляху продукту або harness-очікування recovery, не привід повертати
+  старт-на-тест. `PlatformVersionResolver` (5 хв, per-env) конвертовані фікстури не читають.
+- *Семантика `[OneTimeSetUp]`* — старт сервера більше не обмежений таймаутом кожного тесту (2–15 хв), а
+  5-хвилинним CTS фікстури; провал старту тепер позначає **всі** тести фікстури як Failed, тоді як раніше
+  тест із власним гейтом дав би Ignored. `McpFixturePolicyTests.SharedServerFixtures_ShouldKeepStandAccessAndSkipsOutOfOneTimeSetUp`
+  пінить протилежний інваріант: жоден `[OneTimeSetUp]` не торкається стенду і не робить `Assert.Ignore`.
 - *`Assert.Ignore` у `OneTimeSetUp`* — не використовуємо: ігнор лишається per-test.
 - *Порядок тестів* — не має значення: імена ресурсів унікальні (`Guid`).
 
@@ -172,7 +185,7 @@ dotnet test clio.tests/clio.tests.csproj -f net10.0 --no-build --filter "FullyQu
 
 | Етап | Коміт | TeamCity build | Статус | Тривалість | Tests passed |
 |---|---|---|---|---|---|
-| baseline (PR #1399) | `77cc191` | 15999000 | pending → … | … | … |
+| baseline (PR #1399) | `77cc191` | 15999000 | success | **57m 32s** (статус pending `12:35:36Z` → success `13:33:08Z`; це весь білд — деплой Creatio + install-gate + seed + крок тестів, з яких ~44m 20s — тести за даними запиту) | статус не несе кількості (`"TeamCity build finished"`) |
 | Stage 1 — локально | робоче дерево | — | 13 фікстур / 63 тести: 25 passed, 19 skipped (Ignore через недосяжний стенд / вимкнений feature-flag), 19 failed — усі 19 з одним і тим самим текстом `EnsureSandboxIsConfigured` (задокументований локальний fail-fast без `Sandbox:EnvironmentName`, відтворюється на `master`); `McpFixturePolicyTests` 11/11 | 49 с на 63 тести з 13 стартами замість 63 (`CreateRelatedPageAddon`: 4–96 мс/тест замість ~3.8 с) | — |
 | Stage 1 — TeamCity | … | … | … | … | … |
 | Stage 3 — локально | робоче дерево | — | `--filter Category=McpE2E.NoEnvironment` по 5 перетегованих фікстурах: **28 passed, 0 failed, 0 skipped** (до перетегування ці 28 у швидкому гейті не запускались узагалі) | 39 с | — |

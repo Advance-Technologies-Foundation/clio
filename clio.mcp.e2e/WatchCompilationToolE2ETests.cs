@@ -29,7 +29,7 @@ public sealed class WatchCompilationToolE2ETests : McpContractFixtureBase {
 	[AllureName("watch-compilation is discoverable on the lazy surface of the clio MCP server")]
 	public async Task WatchCompilation_Should_Be_Advertised_By_Mcp_Server() {
 		// Arrange
-		// ArrangeAsync already Assert.Ignores when the watch-compilation feature is disabled, so this
+		// ArrangeGated already Assert.Ignores when the watch-compilation feature is disabled, so this
 		// test only runs against a server that registered the gated tool. On the lazy surface even an
 		// ENABLED gated tool is never resident in tools/list - discoverability is asserted through the
 		// union of tools/list and the get-tool-contract compact index.

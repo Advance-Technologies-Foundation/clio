@@ -4,16 +4,35 @@ using Clio.Mcp.E2E.Support.Configuration;
 namespace Clio.Mcp.E2E.Support.Mcp;
 
 /// <summary>
-/// Base class for MCP contract (NoEnvironment) test fixtures.
+/// Base class for fixtures that can share one clio MCP server process.
 /// Starts a single clio MCP server process once for the entire fixture
 /// and tears it down after all tests finish, eliminating the per-test
-/// ~10 s startup overhead.
+/// startup overhead (~10 s on the TeamCity agent, ~4 s on a Linux workstation).
 /// </summary>
 /// <remarks>
-/// Only use for fixtures that share a read-only or stateless server.
-/// Fixtures that modify server-side settings at startup (e.g. SettingsHealthToolE2ETests)
-/// or that spawn a raw process to test shutdown behaviour (McpServerShutdownE2ETests)
-/// must NOT inherit from this class.
+/// <para>
+/// A fixture may inherit when every test would start the server with the SAME settings — the
+/// NoEnvironment contract fixtures, and the Sandbox fixtures whose tests load identical
+/// <c>TestConfiguration</c> settings (ApplicationTool, DataForge, WorkspaceSync, …). The server itself
+/// touches no stand: starting it performs the MCP handshake and nothing else, so the destructive opt-in,
+/// <c>EnsureSandboxIsConfigured</c>, the reachability probe and every <c>Assert.Ignore</c> stay INSIDE the
+/// test bodies (NUnit then still reports skips per test; a stand that is missing never turns into a
+/// whole-fixture <c>[OneTimeSetUp]</c> failure). <c>clio.tests/McpFixturePolicyTests</c> pins that rule.
+/// </para>
+/// <para>
+/// What a shared process does keep between tests is the server's own per-tenant state: one DI container
+/// and therefore one authenticated Creatio session per environment key, with a 5-minute idle eviction
+/// (<c>SessionContainerCache</c>), refreshed by <c>ReauthExecutor</c> when the platform rejects a stale
+/// cookie after a recycle. That is production behaviour — a real agent's server lives across recycles
+/// too — and no shared-server assertion depends on a fresh login.
+/// </para>
+/// <para>
+/// Fixtures that need a DIFFERENT server per test — an <c>appsettings.json</c> or environment variable
+/// that has to be in place before the child starts (SettingsHealthToolE2ETests, the deadline and
+/// worker-budget fixtures), or a raw process to test shutdown behaviour (McpServerShutdownE2ETests) —
+/// must NOT inherit from this class; a single test with such a need starts and owns its private
+/// <see cref="McpServerSession"/> instead (see the DataForge proxy-poisoning test).
+/// </para>
 /// </remarks>
 public abstract class McpContractFixtureBase {
 
@@ -116,6 +135,37 @@ public abstract class McpContractFixtureBase {
 	/// the fixture owns its lifecycle.
 	/// </summary>
 	private protected McpServerSession Session => _session!;
+
+	// Suppressed: NUnit1032 sees Task<T> as IDisposable, but this is a completed (or faulted) cached probe
+	// result that owns no handle — Task.Dispose would be a no-op here, and tearing it down would only
+	// discard the memoized answer the tests are meant to share.
+	[System.Diagnostics.CodeAnalysis.SuppressMessage("Structure", "NUnit1032:An IDisposable field/property should be Disposed in a TearDown method",
+		Justification = "A cached, already-completed probe Task holds no disposable resource.")]
+	private Task<string>? _environmentResolvedOnce;
+
+	/// <summary>
+	/// Runs an environment-resolution probe (typically one or two <c>clio ping-app</c> child processes
+	/// ending in <see cref="Assert.Ignore(string)"/> when nothing is reachable) at most once per fixture
+	/// and hands every later test the same answer.
+	/// </summary>
+	/// <param name="probe">The fixture's own probe; invoked only by the first caller.</param>
+	/// <returns>The cached probe task — the resolved environment name, or the probe's fault.</returns>
+	/// <remarks>
+	/// <para>
+	/// Call it from the test body, not from <c>[OneTimeSetUp]</c>: an <c>Assert.Ignore</c> raised by the
+	/// probe faults the cached task with that <c>IgnoreException</c>, and every later <c>await</c> rethrows
+	/// it, so NUnit still reports each test individually as Ignored — the same per-test skip reporting as
+	/// re-probing, for one probe process instead of one per test. Any other probe fault is cached as well;
+	/// that is deliberate — a clio binary that cannot be started fails the fixture either way.
+	/// </para>
+	/// <para>
+	/// The <c>??=</c> is not atomic. That is sufficient because every fixture that probes a stand is
+	/// <c>[NonParallelizable]</c> (an invariant <c>clio.tests/McpFixturePolicyTests</c> enforces), so its
+	/// tests run one at a time on the single fixture instance.
+	/// </para>
+	/// </remarks>
+	private protected Task<string> ResolveEnvironmentOnceAsync(Func<Task<string>> probe) =>
+		_environmentResolvedOnce ??= probe();
 
 	/// <summary>
 	/// Returns an <see cref="ArrangeContext"/> that references the shared server and

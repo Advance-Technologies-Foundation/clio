@@ -20,8 +20,10 @@ empty runner profile propagates into every child server. On the TeamCity agent t
 is always registered and active, which is why the tier is green there and red on a clean container
 until one environment is registered — any reachable-or-not URL will do:
 `clio reg-web-app local-unreachable -u http://127.0.0.1:9 -l Supervisor -p Supervisor`
-(`reg-web-app` prints a runtime auto-detect error for an unreachable host but still registers and
-activates the environment).
+(`reg-web-app` prints a runtime auto-detect error for an unreachable host but still registers it, and
+on a profile with no active environment makes it the active one — an existing active environment is
+never replaced). Point `CLIO_HOME` at a scratch directory first if the dummy entry must stay out of
+the real profile; both `McpSharedHomeSetUpFixture` and `TestConfiguration.Load` honour it.
 
 **Why it is this way** — the flag answers "can env-bound tools run at all", and an install with no
 active environment cannot run them regardless of which name the caller passes; the tests target the

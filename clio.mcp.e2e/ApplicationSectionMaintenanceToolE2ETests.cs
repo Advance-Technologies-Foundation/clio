@@ -154,7 +154,6 @@ public sealed class ApplicationSectionMaintenanceToolE2ETests : McpContractFixtu
 	public async Task ApplicationSectionDelete_Should_Remove_Created_Section_From_Section_List() {
 		// Arrange
 		McpE2ESettings settings = TestConfiguration.Load();
-		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
 		string? environmentName = settings.Sandbox.EnvironmentName;
 		if (!settings.AllowDestructiveMcpTests) {
 			Assert.Ignore("AllowDestructiveMcpTests is false — skipping destructive delete-app-section lifecycle test.");
@@ -277,15 +276,10 @@ public sealed class ApplicationSectionMaintenanceToolE2ETests : McpContractFixtu
 		return ApplicationResultParser.ExtractSectionList(callResult);
 	}
 
-	private Task<string>? _reachableEnvironmentName;
-
-	// One reachability probe per fixture: each probe is a separate `clio ping-app` process (up to two per
-	// call with the fallback), and the answer cannot change between the tests of one fixture run. The
-	// probe stays in the test body, not in [OneTimeSetUp]: an Assert.Ignore raised there faults the cached
-	// task, so every later test re-observes the same Ignore instead of re-probing — the per-test skip
-	// reporting is unchanged while the process count is not.
+	// One `ping-app` probe (two, with the fallback) per fixture instead of per test; the caching contract
+	// and why the skip reporting stays per-test are documented on ResolveEnvironmentOnceAsync.
 	private Task<string> ResolveReachableEnvironmentAsync(McpE2ESettings settings) =>
-		_reachableEnvironmentName ??= ResolveReachableEnvironmentCoreAsync(settings);
+		ResolveEnvironmentOnceAsync(() => ResolveReachableEnvironmentCoreAsync(settings));
 
 	private static async Task<string> ResolveReachableEnvironmentCoreAsync(McpE2ESettings settings) {
 		string? configuredEnvironmentName = settings.Sandbox.EnvironmentName;
@@ -294,8 +288,13 @@ public sealed class ApplicationSectionMaintenanceToolE2ETests : McpContractFixtu
 			return configuredEnvironmentName;
 		}
 
+		// The "d2" fallback serves read-only runs on a developer machine. With the destructive opt-in on,
+		// the arranged environment receives create-app-section writes and the answer is now cached for the
+		// whole fixture, so a transient sandbox blip must skip — never redirect the writes to whatever "d2"
+		// resolves to (clio.mcp.e2e/AGENTS.md: destructive tests target the dedicated sandbox only).
 		const string fallbackEnvironmentName = "d2";
-		if (await CanReachEnvironmentAsync(settings, fallbackEnvironmentName)) {
+		if (!settings.AllowDestructiveMcpTests
+			&& await CanReachEnvironmentAsync(settings, fallbackEnvironmentName)) {
 			return fallbackEnvironmentName;
 		}
 

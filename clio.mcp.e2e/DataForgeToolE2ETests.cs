@@ -58,7 +58,7 @@ public sealed class DataForgeToolE2ETests : McpContractFixtureBase {
 		// Arrange
 		McpE2ESettings settings = TestConfiguration.Load();
 		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
-		await using DataForgeArrangeContext arrangeContext = await ArrangeAsync(settings, TimeSpan.FromMinutes(3), requireReachableEnvironment: true);
+		await using DataForgeArrangeContext arrangeContext = await ArrangeAsync(settings, TimeSpan.FromMinutes(3));
 
 		// Act
 		CallToolResult callResult = await CallToolAsync(
@@ -159,7 +159,7 @@ public sealed class DataForgeToolE2ETests : McpContractFixtureBase {
 		// Arrange
 		McpE2ESettings settings = TestConfiguration.Load();
 		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
-		await using DataForgeArrangeContext arrangeContext = await ArrangeAsync(settings, TimeSpan.FromMinutes(8), requireReachableEnvironment: true);
+		await using DataForgeArrangeContext arrangeContext = await ArrangeAsync(settings, TimeSpan.FromMinutes(8));
 		await EnsureSimilarityIndexReadyAsync(settings, arrangeContext);
 
 		// Act
@@ -192,7 +192,7 @@ public sealed class DataForgeToolE2ETests : McpContractFixtureBase {
 		// Arrange
 		McpE2ESettings settings = TestConfiguration.Load();
 		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
-		await using DataForgeArrangeContext arrangeContext = await ArrangeAsync(settings, TimeSpan.FromMinutes(8), requireReachableEnvironment: true);
+		await using DataForgeArrangeContext arrangeContext = await ArrangeAsync(settings, TimeSpan.FromMinutes(8));
 		await EnsureSimilarityIndexReadyAsync(settings, arrangeContext);
 
 		// Act
@@ -224,7 +224,7 @@ public sealed class DataForgeToolE2ETests : McpContractFixtureBase {
 		// Arrange
 		McpE2ESettings settings = TestConfiguration.Load();
 		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
-		await using DataForgeArrangeContext arrangeContext = await ArrangeAsync(settings, TimeSpan.FromMinutes(8), requireReachableEnvironment: true);
+		await using DataForgeArrangeContext arrangeContext = await ArrangeAsync(settings, TimeSpan.FromMinutes(8));
 		await EnsureSimilarityIndexReadyAsync(settings, arrangeContext);
 
 		// Act
@@ -257,7 +257,7 @@ public sealed class DataForgeToolE2ETests : McpContractFixtureBase {
 		// Arrange
 		McpE2ESettings settings = TestConfiguration.Load();
 		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
-		await using DataForgeArrangeContext arrangeContext = await ArrangeAsync(settings, TimeSpan.FromMinutes(3), requireReachableEnvironment: true);
+		await using DataForgeArrangeContext arrangeContext = await ArrangeAsync(settings, TimeSpan.FromMinutes(3));
 
 		// Act
 		CallToolResult callResult = await CallToolAsync(
@@ -289,7 +289,7 @@ public sealed class DataForgeToolE2ETests : McpContractFixtureBase {
 		// Arrange
 		McpE2ESettings settings = TestConfiguration.Load();
 		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
-		await using DataForgeArrangeContext arrangeContext = await ArrangeAsync(settings, TimeSpan.FromMinutes(3), requireReachableEnvironment: true);
+		await using DataForgeArrangeContext arrangeContext = await ArrangeAsync(settings, TimeSpan.FromMinutes(3));
 
 		// Act
 		CallToolResult callResult = await CallToolAsync(
@@ -324,7 +324,7 @@ public sealed class DataForgeToolE2ETests : McpContractFixtureBase {
 			Assert.Ignore("Set McpE2E:AllowDestructiveMcpTests=true to run destructive Data Forge MCP end-to-end tests.");
 		}
 
-		await using DataForgeArrangeContext arrangeContext = await ArrangeAsync(settings, TimeSpan.FromMinutes(3), requireReachableEnvironment: true);
+		await using DataForgeArrangeContext arrangeContext = await ArrangeAsync(settings, TimeSpan.FromMinutes(3));
 
 		// Act — dataforge-initialize is destructive and long-tail (ENG-92761): drive it through the
 		// host-gated clio-run-destructive executor, which returns the target tool's result verbatim.
@@ -358,7 +358,7 @@ public sealed class DataForgeToolE2ETests : McpContractFixtureBase {
 			Assert.Ignore("Set McpE2E:AllowDestructiveMcpTests=true to run destructive Data Forge MCP end-to-end tests.");
 		}
 
-		await using DataForgeArrangeContext arrangeContext = await ArrangeAsync(settings, TimeSpan.FromMinutes(3), requireReachableEnvironment: true);
+		await using DataForgeArrangeContext arrangeContext = await ArrangeAsync(settings, TimeSpan.FromMinutes(3));
 
 		// Act — dataforge-update is destructive and long-tail (ENG-92761): drive it through the
 		// host-gated clio-run-destructive executor, which returns the target tool's result verbatim.
@@ -603,27 +603,18 @@ public sealed class DataForgeToolE2ETests : McpContractFixtureBase {
 		}
 	}
 
-	private async Task<DataForgeArrangeContext> ArrangeAsync(
-		McpE2ESettings settings,
-		TimeSpan timeout,
-		bool requireReachableEnvironment) {
+	private async Task<DataForgeArrangeContext> ArrangeAsync(McpE2ESettings settings, TimeSpan timeout) {
 		CancellationTokenSource cancellationTokenSource = new(timeout);
-		string? environmentName = requireReachableEnvironment
-			? await ResolveReachableEnvironmentAsync(settings)
-			: settings.Sandbox.EnvironmentName;
+		string environmentName = await ResolveReachableEnvironmentAsync(settings);
 		return new DataForgeArrangeContext(Session, cancellationTokenSource, environmentName);
 	}
 
-	private Task<string>? _reachableEnvironmentName;
-
-	// One reachability probe per fixture: the probe is a separate `clio ping-app` process and its answer
-	// cannot change between the tests of one fixture run. The probe stays in the test body, not in
-	// [OneTimeSetUp]: an Assert.Ignore raised there faults the cached task, so every later test re-observes
-	// the same Ignore instead of re-probing — the per-test skip reporting is unchanged while the process
-	// count is not. The proxy-poisoning test relies on this probe running with a CLEAN process environment;
-	// it is either the first caller (clean by construction) or reuses an earlier clean answer.
+	// One `ping-app` probe per fixture instead of per test; the caching contract and why the skip reporting
+	// stays per-test are documented on ResolveEnvironmentOnceAsync. The proxy-poisoning test relies on the
+	// probe running with a CLEAN process environment: it is either the first caller (clean by construction)
+	// or reuses an earlier clean answer — the poisoned window never reaches a probe.
 	private Task<string> ResolveReachableEnvironmentAsync(McpE2ESettings settings) =>
-		_reachableEnvironmentName ??= ResolveReachableEnvironmentCoreAsync(settings);
+		ResolveEnvironmentOnceAsync(() => ResolveReachableEnvironmentCoreAsync(settings));
 
 	private static async Task<string> ResolveReachableEnvironmentCoreAsync(McpE2ESettings settings) {
 		string? configuredEnvironmentName = settings.Sandbox.EnvironmentName;
