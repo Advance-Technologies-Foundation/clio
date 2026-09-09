@@ -3209,6 +3209,301 @@ stories:
       single-response budget is process-data-elements, and that is ENG-96536.
     depends_on:
       - story-eng-95891-formula-expressions-1
+
+# ENG-94374 — business process versioning (read, save as new version, set actual)
+
+  - id: story-process-versioning-1
+    title: "Read version facts from the process-library view"
+    feature: "process-versioning"
+    jira: "ENG-94374"
+    repo: "clio"
+    size: M
+    status: done
+    file: spec/stories/story-process-versioning-1.md
+    prd: spec/prd/prd-process-versioning.md
+    adr: spec/adr/adr-process-versioning.md
+    test_plan: spec/test-plans/tp-process-versioning.md
+    depends_on: []
+    blocks:
+      - story-process-versioning-2
+      - story-process-versioning-3
+
+  - id: story-process-versioning-2
+    title: "Report version facts in the describe response"
+    feature: "process-versioning"
+    jira: "ENG-94374"
+    repo: "clio"
+    size: M
+    status: done
+    file: spec/stories/story-process-versioning-2.md
+    prd: spec/prd/prd-process-versioning.md
+    adr: spec/adr/adr-process-versioning.md
+    test_plan: spec/test-plans/tp-process-versioning.md
+    depends_on:
+      - story-process-versioning-1
+    blocks:
+      - story-process-versioning-3
+      - story-process-versioning-4
+      - story-process-versioning-5
+
+  - id: story-process-versioning-3
+    title: "Resolve a caption to the active version, in one place"
+    feature: "process-versioning"
+    jira: "ENG-94374"
+    repo: "clio"
+    size: M
+    status: done
+    file: spec/stories/story-process-versioning-3.md
+    prd: spec/prd/prd-process-versioning.md
+    adr: spec/adr/adr-process-versioning.md
+    test_plan: spec/test-plans/tp-process-versioning.md
+    depends_on:
+      - story-process-versioning-1
+      - story-process-versioning-2
+    blocks: []
+
+  - id: story-process-versioning-4
+    title: "State the version contract on the MCP surface"
+    feature: "process-versioning"
+    jira: "ENG-94374"
+    repo: "clio"
+    size: S
+    status: done
+    file: spec/stories/story-process-versioning-4.md
+    prd: spec/prd/prd-process-versioning.md
+    adr: spec/adr/adr-process-versioning.md
+    test_plan: spec/test-plans/tp-process-versioning.md
+    depends_on:
+      - story-process-versioning-2
+    blocks: []
+
+  - id: story-process-versioning-5
+    title: "Prove the version read end to end against a stand"
+    feature: "process-versioning"
+    jira: "ENG-94374"
+    repo: "clio"
+    size: S
+    status: done
+    file: spec/stories/story-process-versioning-5.md
+    prd: spec/prd/prd-process-versioning.md
+    adr: spec/adr/adr-process-versioning.md
+    test_plan: spec/test-plans/tp-process-versioning.md
+    depends_on:
+      - story-process-versioning-2
+    blocks: []
+
+  - id: story-process-versioning-6
+    title: "Publish the process-versions guidance article"
+    feature: "process-versioning"
+    jira: "ENG-94374"
+    repo: "clio-knowledge"
+    size: M
+    status: review
+    file: spec/stories/story-process-versioning-6.md
+    prd: spec/prd/prd-process-versioning.md
+    adr: spec/adr/adr-process-versioning.md
+    test_plan: spec/test-plans/tp-process-versioning.md
+    depends_on: []
+    blocks:
+      - story-process-versioning-7
+      - story-process-versioning-18
+
+  - id: story-process-versioning-7
+    title: "Re-pin clio's guidance fixture to the published generation"
+    feature: "process-versioning"
+    jira: "ENG-94374"
+    repo: "clio"
+    size: S
+    status: ready-for-dev
+    file: spec/stories/story-process-versioning-7.md
+    prd: spec/prd/prd-process-versioning.md
+    adr: spec/adr/adr-process-versioning.md
+    test_plan: spec/test-plans/tp-process-versioning.md
+    depends_on:
+      - story-process-versioning-6
+    blocks: []
+
+  - id: story-process-versioning-8
+    title: "Spike: measure the version-creation mechanics on a stand"
+    feature: "process-versioning"
+    jira: "ENG-94374"
+    repo: "clio"
+    size: L
+    status: done
+    file: spec/stories/story-process-versioning-8.md
+    prd: spec/prd/prd-process-versioning.md
+    adr: spec/adr/adr-process-versioning.md
+    test_plan: spec/test-plans/tp-process-versioning.md
+    depends_on: []
+    blocks:
+      - story-process-versioning-9
+
+  - id: story-process-versioning-9
+    title: "ModifyProcessAsNewVersion contracts, guard and transport"
+    feature: "process-versioning"
+    jira: "ENG-94374"
+    repo: "crt-process-builder"
+    size: M
+    status: done
+    file: spec/stories/story-process-versioning-9.md
+    prd: spec/prd/prd-process-versioning.md
+    adr: spec/adr/adr-process-versioning.md
+    test_plan: spec/test-plans/tp-process-versioning.md
+    depends_on:
+      - story-process-versioning-8
+    blocks:
+      - story-process-versioning-10
+
+  - id: story-process-versioning-10
+    title: "Materialise the clone through a metadata round-trip"
+    feature: "process-versioning"
+    jira: "ENG-94374"
+    repo: "crt-process-builder"
+    size: M
+    status: done
+    file: spec/stories/story-process-versioning-10.md
+    prd: spec/prd/prd-process-versioning.md
+    adr: spec/adr/adr-process-versioning.md
+    test_plan: spec/test-plans/tp-process-versioning.md
+    depends_on:
+      - story-process-versioning-9
+    blocks:
+      - story-process-versioning-11
+
+  - id: story-process-versioning-11
+    title: "Apply the edits to the clone through the shared applier"
+    feature: "process-versioning"
+    jira: "ENG-94374"
+    repo: "crt-process-builder"
+    size: M
+    status: done
+    file: spec/stories/story-process-versioning-11.md
+    prd: spec/prd/prd-process-versioning.md
+    adr: spec/adr/adr-process-versioning.md
+    test_plan: spec/test-plans/tp-process-versioning.md
+    depends_on:
+      - story-process-versioning-10
+    blocks:
+      - story-process-versioning-12
+
+  - id: story-process-versioning-12
+    title: "Number, name and persist the new version"
+    feature: "process-versioning"
+    jira: "ENG-94374"
+    repo: "crt-process-builder"
+    size: M
+    status: done
+    file: spec/stories/story-process-versioning-12.md
+    prd: spec/prd/prd-process-versioning.md
+    adr: spec/adr/adr-process-versioning.md
+    test_plan: spec/test-plans/tp-process-versioning.md
+    depends_on:
+      - story-process-versioning-11
+    blocks:
+      - story-process-versioning-13
+      - story-process-versioning-14
+
+  - id: story-process-versioning-13
+    title: "SetActiveProcessVersion with a verified read-back"
+    feature: "process-versioning"
+    jira: "ENG-94374"
+    repo: "crt-process-builder"
+    size: L
+    status: done
+    file: spec/stories/story-process-versioning-13.md
+    prd: spec/prd/prd-process-versioning.md
+    adr: spec/adr/adr-process-versioning.md
+    test_plan: spec/test-plans/tp-process-versioning.md
+    depends_on:
+      - story-process-versioning-12
+    blocks:
+      - story-process-versioning-14
+
+  - id: story-process-versioning-14
+    title: "Stamp the package version for the rebundle"
+    feature: "process-versioning"
+    jira: "ENG-94374"
+    repo: "crt-process-builder"
+    size: S
+    status: done
+    file: spec/stories/story-process-versioning-14.md
+    prd: spec/prd/prd-process-versioning.md
+    adr: spec/adr/adr-process-versioning.md
+    test_plan: spec/test-plans/tp-process-versioning.md
+    depends_on:
+      - story-process-versioning-12
+      - story-process-versioning-13
+    blocks:
+      - story-process-versioning-15
+
+  - id: story-process-versioning-15
+    title: "Rebundle into clio and move the pins"
+    feature: "process-versioning"
+    jira: "ENG-94374"
+    repo: "clio"
+    size: M
+    status: done
+    file: spec/stories/story-process-versioning-15.md
+    prd: spec/prd/prd-process-versioning.md
+    adr: spec/adr/adr-process-versioning.md
+    test_plan: spec/test-plans/tp-process-versioning.md
+    depends_on:
+      - story-process-versioning-14
+    blocks:
+      - story-process-versioning-16
+      - story-process-versioning-17
+
+  - id: story-process-versioning-16
+    title: "Expose modify-business-process-as-new-version through MCP"
+    feature: "process-versioning"
+    jira: "ENG-94374"
+    repo: "clio"
+    size: M
+    status: done
+    file: spec/stories/story-process-versioning-16.md
+    prd: spec/prd/prd-process-versioning.md
+    adr: spec/adr/adr-process-versioning.md
+    test_plan: spec/test-plans/tp-process-versioning.md
+    depends_on:
+      - story-process-versioning-15
+    # Merge order only. Agreed 2026-09-06 to BUILD this before 15: the archive is cut last, from
+    # sources its consumer has exercised. Two named pins stay red until 15 - see the story file.
+    blocks:
+      - story-process-versioning-18
+
+  - id: story-process-versioning-17
+    title: "Expose set-active-business-process-version through MCP"
+    feature: "process-versioning"
+    jira: "ENG-94374"
+    repo: "clio"
+    size: M
+    status: done
+    file: spec/stories/story-process-versioning-17.md
+    prd: spec/prd/prd-process-versioning.md
+    adr: spec/adr/adr-process-versioning.md
+    test_plan: spec/test-plans/tp-process-versioning.md
+    depends_on:
+      - story-process-versioning-15
+    # Merge order only. Agreed 2026-09-06 to BUILD this before 15: the archive is cut last, from
+    # sources its consumer has exercised. Two named pins stay red until 15 - see the story file.
+    blocks:
+      - story-process-versioning-18
+
+  - id: story-process-versioning-18
+    title: "Guidance for saving a new version and rolling back"
+    feature: "process-versioning"
+    jira: "ENG-94374"
+    repo: "clio-knowledge"
+    size: S
+    status: review
+    file: spec/stories/story-process-versioning-18.md
+    prd: spec/prd/prd-process-versioning.md
+    adr: spec/adr/adr-process-versioning.md
+    test_plan: spec/test-plans/tp-process-versioning.md
+    depends_on:
+      - story-process-versioning-6
+      - story-process-versioning-16
+      - story-process-versioning-17
     blocks: []
 
   - id: story-eng-91853-gateways-and-flows-1

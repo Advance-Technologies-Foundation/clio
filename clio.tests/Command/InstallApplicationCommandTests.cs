@@ -64,7 +64,7 @@ public sealed class InstallApplicationCommandTests : BaseCommandTests<InstallApp
 	}
 
 	[Test]
-	[Description("Logs an error message and returns one when the application installer reports failure.")]
+	[Description("GH-1299: names the package that failed instead of the bare \"Error\" line when the application installer reports failure.")]
 	public void Execute_Should_Log_Error_And_Return_One_When_Installer_Fails() {
 		// Arrange
 		InstallApplicationOptions options = new() {
@@ -79,7 +79,8 @@ public sealed class InstallApplicationCommandTests : BaseCommandTests<InstallApp
 		// Assert
 		result.Should().Be(1,
 			because: "failed application installation should return a non-zero exit code");
-		_logger.Received(1).WriteError("Error");
+		_logger.Received(1).WriteError(Arg.Is<string>(value =>
+			value.Contains(@"C:\Packages\app.gz") && !value.Contains("Package installation failed")));
 		_logger.DidNotReceive().WriteInfo(Arg.Any<string>());
 	}
 
