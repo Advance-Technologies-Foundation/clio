@@ -436,34 +436,15 @@ public static class FlowLabelExpectation {
 				continue;
 			}
 
-			if (filterByOp) {
-				string? op = BlockExpectationJson.ReadText(candidate[OpKey])?.Trim();
-				if (string.Equals(op, FlowForgettingOperation, StringComparison.OrdinalIgnoreCase)) {
-					Forget(candidate, byEndpoints, order);
-					continue;
-				}
-				if (!IsLabelWritingOperation(candidate[OpKey])) {
-					continue;
-				}
-			}
-
-			string? label = BlockExpectationJson.ReadText(candidate[LabelKey]);
-			string? source = BlockExpectationJson.ReadText(candidate[SourceKey]);
-			string? target = BlockExpectationJson.ReadText(candidate[TargetKey]);
-			// A flow with no endpoints is not addressable in the read-back at all, and a MISSING label member
-			// asked for nothing. A blank one is kept: it is the deliberate clear, and Missing verifies it
-			// asymmetrically.
-			if (label == null
-					|| string.IsNullOrWhiteSpace(source)
-					|| string.IsNullOrWhiteSpace(target)) {
+			if (filterByOp && ConsumedByANonWritingOperation(candidate, byEndpoints, order)) {
 				continue;
 			}
 
-			// TRIMMED, because both server write paths trim before resolving an element (the build path trims
-			// the descriptor's source/target, and FindFlowNode trims a modify operation's), and describe
-			// reports the canonical element name. Storing the padded form here would make FindFlow miss and
-			// the guard verify nothing at all — a false NEGATIVE on exactly the payload it exists to catch.
-			FlowLabel flow = new(source.Trim(), target.Trim(), AsStored(label));
+			FlowLabel? flow = ReadLabelledFlow(candidate);
+			if (flow is null) {
+				continue;
+			}
+
 			(string, string) key = (flow.Source, flow.Target);
 			if (!byEndpoints.ContainsKey(key)) {
 				order.Add(key);
@@ -471,12 +452,54 @@ public static class FlowLabelExpectation {
 			byEndpoints[key] = flow;
 		}
 
-		List<FlowLabel> labelled = [];
-		foreach ((string, string) key in order) {
-			labelled.Add(byEndpoints[key]);
+		return order.Select(key => byEndpoints[key]).ToList();
+	}
+
+	/// <summary>
+	/// Handles an operation that does not WRITE a label, reporting whether it consumed the entry.
+	/// <para>Two outcomes, and the caller treats them alike: a <c>removeFlow</c> is acted on (its pair is
+	/// forgotten) and anything other than <c>addFlow</c> / <c>setFlow</c> is simply not a label write. Either
+	/// way the entry contributes no expectation.</para>
+	/// <para>Split out with <see cref="ReadLabelledFlow"/> for a measured reason rather than taste: with both
+	/// inline the collector's cognitive complexity was 27, and extracting only the forget step left it at 17
+	/// against a limit of 15 — Sonar S3776 twice. The op decision and the field parse are two separate
+	/// judgements about one entry, and reading them as three named steps is also how the loop now says what
+	/// it does: consume, parse, or record.</para>
+	/// </summary>
+	private static bool ConsumedByANonWritingOperation(JsonObject candidate,
+			Dictionary<(string Source, string Target), FlowLabel> byEndpoints,
+			List<(string Source, string Target)> order) {
+		string? op = BlockExpectationJson.ReadText(candidate[OpKey])?.Trim();
+		if (string.Equals(op, FlowForgettingOperation, StringComparison.OrdinalIgnoreCase)) {
+			Forget(candidate, byEndpoints, order);
+			return true;
 		}
 
-		return labelled;
+		return !IsLabelWritingOperation(candidate[OpKey]);
+	}
+
+	/// <summary>
+	/// One entry read as a labelled flow, or <c>null</c> when it asks for no label this guard can verify.
+	/// <para>A flow with no endpoints is not addressable in the read-back at all, and a MISSING label member
+	/// asked for nothing. A BLANK one is kept: it is the deliberate clear, and <see cref="Missing"/> verifies
+	/// it asymmetrically.</para>
+	/// <para>Endpoints are TRIMMED, because both server write paths trim before resolving an element (the
+	/// build path trims the descriptor's source/target, and <c>FindFlowNode</c> trims a modify operation's)
+	/// and describe reports the canonical element name. Storing the padded form would make
+	/// <see cref="FindFlow"/> miss and the guard verify nothing at all — a false NEGATIVE on exactly the
+	/// payload it exists to catch.</para>
+	/// </summary>
+	private static FlowLabel? ReadLabelledFlow(JsonObject candidate) {
+		string? label = BlockExpectationJson.ReadText(candidate[LabelKey]);
+		string? source = BlockExpectationJson.ReadText(candidate[SourceKey]);
+		string? target = BlockExpectationJson.ReadText(candidate[TargetKey]);
+		if (label == null
+				|| string.IsNullOrWhiteSpace(source)
+				|| string.IsNullOrWhiteSpace(target)) {
+			return null;
+		}
+
+		return new FlowLabel(source.Trim(), target.Trim(), AsStored(label));
 	}
 
 	/// <summary>

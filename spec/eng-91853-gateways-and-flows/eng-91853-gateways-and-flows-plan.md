@@ -441,10 +441,13 @@ the above can express it:
 - [x] `clio.mcp.e2e` extended for both write paths, all four `setFlow` states plus `addFlow`.
 - [x] Version literals covered by the bundled-archive net, including the caller-facing warning text.
 - [x] Agentic code review before opening each PR.
-- [ ] Agentic code review again before ready-to-merge. **This is the item that cannot be self-ticked**: the
-      gate IS the review, so ticking it while the story sits at `review` claims the outcome of something
-      still running. Two passes are in (5 High + 12 Medium, then 4 High + 2 regressions + 9 Medium, all
-      addressed); it is ticked when a pass comes back with nothing that blocks.
+- [x] Agentic code review again before ready-to-merge. **Not self-ticked** — ticked on an independent
+      reviewer's return, which is the only thing that can close this item. Three passes plus a
+      spot-check: 5 High + 12 Medium; then 4 High + 2 regressions I had created + 9 Medium; then 1
+      Medium that gated merge (an NRE I introduced on a successful operation's warning path while
+      closing a data-loss bug) + 7 Low. Every pass found real defects in the previous pass's fixes,
+      including two reviewer items that were over-specified or wrong. Closed clean at clio
+      `bc55da3f0` / package `66a1c08` / knowledge `ec7829f`.
 
 ### Family-level
 
