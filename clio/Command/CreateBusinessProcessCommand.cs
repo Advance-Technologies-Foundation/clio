@@ -142,7 +142,54 @@ namespace Clio.Command;
 // floor alone for the same reason. AccessRightsBlockExpectation is the guard instead - it reads the
 // process back after the write and warns when the block did not land, which is the behavioural
 // equivalent that does not punish callers who never send one.
-[RequiresPackage(BundledPackages.ProcessBuilderPackageName, "1.6.0.0",
+//
+// ===== A THIRD requirement line, and the same two rules give the same answer =====
+// ENG-91853 arrives with its own floor, and everything above about ENG-96325 and ENG-92713 now applies
+// to it unchanged. Its line is below; the two rules are applied at the end.
+//
+// From ENG-91853 (this branch), a CAPABILITY floor rather than a message one, first in 1.4.0.60: below
+// that the package refuses `flows[].kind` and `flows[].condition` outright, and refuses the two gateway
+// element tokens as unsupported types. Those refusals are honest - an older package tells the caller it
+// cannot do this - but the descriptions above now document a declarative branch as the supported route,
+// so without the floor an agent following them is refused by the environment instead of by clio, one
+// round-trip later and with no hint that the package is what is behind.
+//
+// It moved twice more before shipping, and neither move was about wording. .59 carries two fixes -
+// `setFlow` with an omitted `kind` used to read as 'sequence' and DESTROY a conditional branch while
+// reporting success, and the build path accepted an unbounded `condition`. .60 carries the one that
+// makes `flows[].condition` worth having: below it a condition can only reference a system setting,
+// because a parameter is addressed by a UId that does not exist until this very call creates it. That
+// is 88% of the conditions in the shipped product, so below .60 the declarative branch is a contract
+// clio documents and the environment cannot honour.
+//
+// Be exact about WHICH archive buys what, because an earlier draft of this comment was not: `flows[].kind`
+// and the two gateway type tokens arrive in .58 and .58/.59 accept them. What .60 adds is the by-name
+// condition expansion, and that is the whole reason the floor is not .58. What .60 REACHES is in turn
+// narrower than the 88%: 242 of the 487 element-output conditions address a COLUMN of the returned
+// record, a third meta-path segment the name form cannot express, so by-name expansion covers 65% and
+// the column form still needs the modify path.
+//
+// WHY THE LITERAL MOVES TO 1.6.0.1. Apply the two rules the sections above established, in order.
+//
+// Rule 2 first, because it says the CURRENT literal is already broken. ENG-91853 carried "1.4.0.60"
+// while a released archive moved to 1.6.0.0 - the Approval element's minor, cut from master's package
+// source, which contains none of the gateway work: no FlowKindRules, no gateway element handlers, no
+// by-name condition expansion. System.Version ranks the minor first and
+// RequiredPackageChecker.IsCompatible is `installed >= new PackageVersion(required, "")`, so
+// 1.6.0.0 >= 1.4.0.60 is TRUE. The gate PASSES on a server that then refuses `flows[].kind` at build
+// time - the branch-local numbering hid the same jump that ENG-92713 documented one merge earlier, and
+// this is the second time a 1.4.x floor was jumped by a minor cut elsewhere.
+//
+// Rule 1 gives the same answer from the other direction. Two lines meet here and no released archive
+// carries both: 1.6.0.0 was cut from master's source and predates every gateway behaviour; 1.4.0.70 was
+// cut from this branch's and predates the Approval element, the Open edit page delivery and the
+// lookup-constant contract. The first archive carrying both is the one cut from the MERGED package
+// source, which is 1.6.0.1.
+//
+// Both rules still hold afterwards: this literal moves only when clio depends on or advertises new
+// server behaviour, and the guard fixture still asserts the shipped archive SATISFIES it rather than
+// equals it - so a later documentation-only rebundle moves the bundle and must not move this line.
+[RequiresPackage(BundledPackages.ProcessBuilderPackageName, "1.6.0.3",
 	Hint = BundledPackages.ProcessBuilderInstallHint)]
 public sealed class CreateBusinessProcessOptions : EnvironmentOptions {
 	/// <summary>Inline JSON process descriptor (name, caption, packageName, elements[], flows[], parameters[], mappings[]).</summary>
