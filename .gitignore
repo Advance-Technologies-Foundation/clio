@@ -243,3 +243,7 @@ graphify-out
 # Python bytecode from scripts/ (twice swept into a commit by an add -A).
 __pycache__/
 *.pyc
+
+# Agent working artifacts (Jira analysis, implementation plans). Internal by nature - they carry
+# ticket URLs, stand names and internal repository references - and this repository is public.
+.ai_temp/
