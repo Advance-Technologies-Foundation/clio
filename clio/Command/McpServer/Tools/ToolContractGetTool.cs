@@ -4816,6 +4816,7 @@ internal static class ToolContractCatalog {
 			CommonErrorContract,
 			EnvironmentPackageSchemaAliases(
 				ColumnNameParameterAlias(),
+				ColumnNameReadbackAlias(),
 				ReferenceSchemaNameParameterAlias(),
 				DefaultValueParameterAlias(),
 				DefaultValueConfigParameterAlias(),
@@ -5313,6 +5314,17 @@ internal static class ToolContractCatalog {
 	private static ToolContractAlias ColumnNameParameterAlias() {
 		return Alias(ParameterScope, ColumnNameFieldName, "columnName", RejectedStatus,
 			$"Use '{ColumnNameFieldName}' instead of 'columnName'.");
+	}
+
+	// The 'name' spelling modify-entity-schema-column really HONORS for its column identity, published with the
+	// same AcceptedStatus the page business-rule tools use for their 'schema-name' alias (PR #1352 review). It was
+	// expressed only through the tool's any-of and the two field descriptions, so an agent scanning 'aliases' for
+	// the spellings it may send found the rejected ones and missed this one — honored aliases now live in exactly
+	// one place per tool, whichever way the tool enforces them.
+	private static ToolContractAlias ColumnNameReadbackAlias() {
+		return Alias(ParameterScope, ColumnNameFieldName, "name", AcceptedStatus,
+			$"'name' is accepted as an alias for '{ColumnNameFieldName}' — it is the spelling get-app-info reports "
+			+ "a column identity under, so a readback payload can be sent back unchanged. Supply exactly one of the two.");
 	}
 
 	private static ToolContractAlias BindingNameParameterAlias() {

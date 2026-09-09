@@ -3054,6 +3054,33 @@ public sealed class ToolContractGetToolTests {
 
 	[Test]
 	[Category("Unit")]
+	[Description("The honored 'name' spelling of the column identity is published as an accepted alias, so an agent scanning the contract's aliases finds every spelling it may send in one place instead of reading the any-of and the field descriptions for the honored ones (PR #1352 review).")]
+	public void ToolContractGet_Should_PublishHonoredColumnIdentityAlias_ForModifyEntitySchemaColumn() {
+		// Arrange
+		ToolContractGetTool tool = BuildToolWithRegistry();
+
+		// Act
+		ToolContractGetResponse result = tool.GetToolContracts(
+			new ToolContractGetArgs(["modify-entity-schema-column"]));
+
+		// Assert
+		ToolContractDefinition contract = result.Tools!.Single();
+		contract.Aliases.Should().Contain(alias =>
+				alias.CanonicalName == "column-name" && alias.Alias == "name" && alias.Status == "accepted",
+			because: "the runtime resolves 'name' as the column identity, so the aliases array — the one place an " +
+				"agent looks for spellings it may send — must say so rather than leaving it to the any-of");
+		contract.Aliases.Should().Contain(alias =>
+				alias.CanonicalName == "column-name" && alias.Alias == "columnName" && alias.Status == "rejected",
+			because: "publishing the honored alias must not displace the rejected camelCase one — the two carry " +
+				"opposite instructions and a reader needs both");
+		contract.Aliases!.Where(alias => alias.Alias == "name")
+			.Should().OnlyContain(alias => alias.Status == "accepted",
+				because: "one spelling cannot be both honored and refused — a stale rejected entry beside the " +
+					"accepted one would tell an agent not to send a call the tool answers");
+	}
+
+	[Test]
+	[Category("Unit")]
 	[Description("The modify-entity-schema-column contract enumerates the accepted column types and maps the Creatio display name Money onto the command value Currency2, so the vocabulary is discoverable without provoking a failed write (issue #955).")]
 	public void ToolContractGet_Should_EnumerateColumnTypes_ForModifyEntitySchemaColumn() {
 		// Arrange
