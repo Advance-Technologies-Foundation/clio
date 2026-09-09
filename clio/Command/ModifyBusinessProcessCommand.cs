@@ -445,8 +445,11 @@ public class ModifyBusinessProcessCommand(
 			return;
 		}
 
+		// Version facts are not read: this read-back consumes elements[] only, and asking for them would buy an
+		// ATF session and two DataService round-trips per edit, on a write path, for values it discards.
 		ErrorOr<DescribeProcessResult> described = processDescriber.Describe(
-			new ProcessIdentity(string.IsNullOrWhiteSpace(code) ? null : code, options.ProcessUid, null), null);
+			new ProcessIdentity(string.IsNullOrWhiteSpace(code) ? null : code, options.ProcessUid, null), null,
+			includeVersionFacts: false);
 		if (described.IsError) {
 			BlockExpectationReporter.WarnAccessRightsUnverified(logger, intent,
 				described.FirstError.Description);

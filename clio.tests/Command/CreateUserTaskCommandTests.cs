@@ -35,6 +35,7 @@ public class CreateUserTaskCommandTests : BaseCommandTests<CreateUserTaskOptions
 		IJsonConverter jsonConverter = Substitute.For<IJsonConverter>();
 		IFileSystem fileSystem = Substitute.For<IFileSystem>();
 		IFileDesignModePackages fileDesignModePackages = Substitute.For<IFileDesignModePackages>();
+		fileDesignModePackages.LoadPackagesToDb().Returns(FileDesignModeLoadResult.Completed);
 		IUserTaskMetadataDirectionApplier metadataDirectionApplier = Substitute.For<IUserTaskMetadataDirectionApplier>();
 		IUserTaskLookupSchemaResolver lookupSchemaResolver = Substitute.For<IUserTaskLookupSchemaResolver>();
 		EnvironmentSettings settings = new() {
@@ -134,6 +135,81 @@ public class CreateUserTaskCommandTests : BaseCommandTests<CreateUserTaskOptions
 			"UsrMyUserTask",
 			Arg.Is<IReadOnlyDictionary<string, int>>(directions =>
 				directions.Count == 1 && directions["IsError"] == 1));
+		fileDesignModePackages.Received(1).LoadPackagesToDb();
+	}
+
+	[Test]
+	[Description("Fails the command when the direction metadata could not be loaded into the configuration database, instead of building the package from the unchanged database copy.")]
+	[Category("Unit")]
+	public void Execute_Should_Fail_When_Direction_Metadata_Is_Not_Loaded_To_Database() {
+		// Arrange
+		IApplicationClient applicationClient = Substitute.For<IApplicationClient>();
+		IServiceUrlBuilder serviceUrlBuilder = Substitute.For<IServiceUrlBuilder>();
+		IWorkspacePathBuilder workspacePathBuilder = Substitute.For<IWorkspacePathBuilder>();
+		IJsonConverter jsonConverter = Substitute.For<IJsonConverter>();
+		IFileSystem fileSystem = Substitute.For<IFileSystem>();
+		IFileDesignModePackages fileDesignModePackages = Substitute.For<IFileDesignModePackages>();
+		fileDesignModePackages.LoadPackagesToDb().Returns(FileDesignModeLoadResult.FileDesignModeDisabled);
+		IUserTaskMetadataDirectionApplier metadataDirectionApplier = Substitute.For<IUserTaskMetadataDirectionApplier>();
+		IUserTaskLookupSchemaResolver lookupSchemaResolver = Substitute.For<IUserTaskLookupSchemaResolver>();
+		EnvironmentSettings settings = new() {
+			Uri = "https://localhost",
+			IsNetCore = false
+		};
+		Guid packageUId = Guid.Parse("a00051f4-cde3-4f3f-b08e-c5ad1a5c735a");
+		Guid schemaUId = Guid.Parse("8ab0dd66-18a8-4dc5-a452-74e0dc325bcf");
+		Guid schemaId = Guid.Parse("937d9454-ef79-49e3-b098-4340bca01fd8");
+		Guid editPageSchemaUId = Guid.Parse("c748bf4e-e4e1-454e-8f5b-4f65f91d8396");
+		Guid dcmEditPageSchemaUId = Guid.Parse("d748bf4e-e4e1-454e-8f5b-4f65f91d8396");
+		string packagePath = TestFileSystem.GetRootedPath("workspace", "packages", "MyPackage");
+		string descriptorPath = Path.Combine(packagePath, "descriptor.json");
+		serviceUrlBuilder.Build(ServiceUrlBuilder.KnownRoute.CreateUserTaskSchema).Returns(CreateNewSchemaUrl);
+		serviceUrlBuilder.Build(ServiceUrlBuilder.KnownRoute.SaveUserTaskSchema).Returns(SaveSchemaUrl);
+		serviceUrlBuilder.Build(ServiceUrlBuilder.KnownRoute.BuildPackage).Returns(BuildPackageUrl);
+		workspacePathBuilder.IsWorkspace.Returns(true);
+		workspacePathBuilder.BuildPackagePath("MyPackage").Returns(packagePath);
+		fileSystem.ExistsDirectory(packagePath).Returns(true);
+		fileSystem.ExistsFile(descriptorPath).Returns(true);
+		jsonConverter.DeserializeObjectFromFile<PackageDescriptorDto>(descriptorPath).Returns(new PackageDescriptorDto {
+			Descriptor = new PackageDescriptor {
+				Name = "MyPackage",
+				UId = packageUId,
+				Type = PackageType.Assembly
+			}
+		});
+		applicationClient
+			.ExecutePostRequest(CreateNewSchemaUrl, Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+			.Returns(CreateNewSchemaResponse(schemaUId, schemaId, packageUId, editPageSchemaUId, dcmEditPageSchemaUId));
+		applicationClient
+			.ExecutePostRequest(SaveSchemaUrl, Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+			.Returns($$"""{"success":true,"schemaUid":"{{schemaUId}}","validationErrors":[]}""");
+		applicationClient
+			.ExecutePostRequest(BuildPackageUrl, Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+			.Returns("{}");
+
+		CreateUserTaskCommand command =
+			new(applicationClient, settings, serviceUrlBuilder, workspacePathBuilder, jsonConverter, fileSystem,
+				fileDesignModePackages, metadataDirectionApplier, lookupSchemaResolver);
+		CreateUserTaskOptions options = new() {
+			Package = "MyPackage",
+			Code = "UsrMyUserTask",
+			Title = "My user task",
+			Culture = "en-US",
+			Parameters = ["code=IsError;title=Is error;type=Boolean;direction=Out"]
+		};
+
+		// Act
+		int result = command.Execute(options);
+
+		// Assert
+		result.Should().Be(1,
+			because: "direction metadata that never reached the configuration database must not be reported as applied");
+		metadataDirectionApplier.Received(1).ApplyDirections("MyPackage", "UsrMyUserTask",
+			Arg.Any<IReadOnlyDictionary<string, int>>());
+		// Only the build that follows the schema save happens; the second build that would compile the
+		// direction metadata is skipped, because there is nothing new in the configuration database to compile.
+		applicationClient.Received(1).ExecutePostRequest(BuildPackageUrl, Arg.Any<string>(), Arg.Any<int>(),
+			Arg.Any<int>(), Arg.Any<int>());
 		fileDesignModePackages.Received(1).LoadPackagesToDb();
 	}
 
