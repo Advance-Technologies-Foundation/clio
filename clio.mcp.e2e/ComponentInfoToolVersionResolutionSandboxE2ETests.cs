@@ -50,8 +50,14 @@ public sealed class ComponentInfoToolVersionResolutionSandboxE2ETests {
 		// Assert
 		response.Success.Should().BeTrue(
 			because: "a reachable environment must resolve its platform version and return the component catalog, not fail");
-		response.ResolvedFrom.Should().Be("environment",
-			because: "ENG-96840: a reachable stand must resolve resolvedFrom=environment — the pre-fix disposal race degraded it to latest-fallback with reason probe-error, and the NoEnvironment lane's environment-or-latest-fallback tolerance cannot catch that regression");
+		response.ResolvedFrom.Should().BeOneOf(
+			new[] {
+				ComponentInfoResolution.ResolvedFromEnvironment,
+				ComponentInfoResolution.ResolvedFromEnvironmentSuperset
+			},
+			because: "ENG-96840: a reachable stand must resolve from the environment tier (the version probe succeeded) — either 'environment' (exact per-version catalog on the CDN) or 'environment-superset' (version known from the stand, latest served as the closest catalog). The pre-fix disposal race degraded resolution to 'latest-fallback' with reason 'probe-error' (source != Environment); the NoEnvironment lane's environment-or-latest-fallback tolerance cannot catch that regression");
+		response.ResolvedFrom.Should().NotBe(ComponentInfoResolution.ResolvedFromLatestFallback,
+			because: "latest-fallback is the degraded tier the ENG-96840 disposal race produced on a stand that was in fact answerable");
 		response.ResolvedFromReason.Should().NotBe("probe-error",
 			because: "probe-error is the exact ENG-96840 classification produced when the owned CreatioClient is disposed mid-probe; a reachable stand must not report it");
 		response.ResolvedTargetVersion.Should().NotBeNullOrEmpty(
