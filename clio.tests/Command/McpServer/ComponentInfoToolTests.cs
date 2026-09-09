@@ -1678,6 +1678,68 @@ public sealed class ComponentInfoToolTests {
 	}
 
 	[Test]
+	[Description("A detail response threads the documentation provenance onto documentationSource, and names every locally missing file plus the override variable in documentationWarning.")]
+	public async Task ComponentInfoTool_Detail_Should_Surface_Documentation_Provenance() {
+		// Arrange
+		const string registryJson = """
+		{
+		  "components": [
+		    { "componentType": "crt.WithDocs", "category": "display", "properties": {},
+		      "references": { "docs": ["docs/with-docs.intro.md", "docs/with-docs.missing.md"] } }
+		  ]
+		}
+		""";
+		FakeDocsClient docs = new FakeDocsClient()
+			.Seed("latest", "docs/with-docs.intro.md", "# Intro", ComponentDocumentationSource.Local)
+			.SeedLocalMiss("latest", "docs/with-docs.missing.md", RegistryFlavor.Web.LocalFileEnvironmentVariable);
+		ComponentInfoTool tool = BuildTool(
+			new ComponentInfoCatalog(new InMemoryRegistryClient(registryJson)),
+			new InMemoryMobileCatalog(TestMobileRegistryJson),
+			docs);
+
+		// Act
+		ComponentInfoResponse response = await tool.GetComponentInfo(new ComponentInfoArgs("crt.WithDocs"));
+
+		// Assert
+		response.DocumentationSource.Should().Be("local",
+			because: "the only tier that served anything was the developer working copy");
+		response.DocumentationWarning.Should().Contain("docs/with-docs.missing.md",
+			because: "with the override active nothing substitutes the published copy, so the missing file has to be named");
+		response.DocumentationWarning.Should().Contain(RegistryFlavor.Web.LocalFileEnvironmentVariable,
+			because: "the developer needs to know which override captured the path");
+		response.DocumentationWarning.Should().NotContain("Not found locally: 'docs/with-docs.intro.md'",
+			because: "a file that WAS served must never appear in the missing list");
+	}
+
+	[Test]
+	[Description("A composite detail response threads the same provenance fields as a component detail response.")]
+	public async Task ComponentInfoTool_Composite_Detail_Should_Surface_Documentation_Provenance() {
+		// Arrange
+		const string json = """
+		{
+		  "components": [ { "componentType": "crt.X", "properties": {} } ],
+		  "composites": [
+		    { "caption": "Multi", "description": "Multi-doc composite.", "docs": ["docs/multi.a.md"] }
+		  ]
+		}
+		""";
+		FakeDocsClient docs = new FakeDocsClient()
+			.Seed("latest", "docs/multi.a.md", "# Part A", ComponentDocumentationSource.FileCache);
+		ComponentInfoTool tool = BuildTool(
+			new ComponentInfoCatalog(new InMemoryRegistryClient(json)),
+			new InMemoryMobileCatalog(TestMobileRegistryJson),
+			docs);
+
+		// Act
+		ComponentInfoResponse response = await tool.GetComponentInfo(new ComponentInfoArgs(Composite: "Multi"));
+
+		// Assert
+		response.DocumentationSource.Should().Be("cache",
+			because: "the composite surface must report provenance exactly as the component surface does");
+		response.DocumentationWarning.Should().BeNull(because: "nothing was missing");
+	}
+
+	[Test]
 	[Description("Components without a references.docs[] block produce a detail response with documentation omitted entirely (null, JsonIgnore strips it from the wire).")]
 	public async Task ComponentInfoTool_Should_Omit_Documentation_When_No_Docs_Are_Listed() {
 		ComponentInfoTool tool = CreateTool();
@@ -1686,6 +1748,9 @@ public sealed class ComponentInfoToolTests {
 
 		response.Documentation.Should().BeNull(
 			because: "the curated registry entry has no references.docs[] so the docs client must not be called");
+		response.DocumentationSource.Should().BeNull(
+			because: "an absent documentationSource must mean 'no documentation exists', not 'provenance unknown'");
+		response.DocumentationWarning.Should().BeNull(because: "there is no declared file to be missing");
 	}
 
 	[Test]
@@ -2054,21 +2119,33 @@ public sealed class ComponentInfoToolTests {
 
 	/// <summary>
 	/// Test double for the docs client. Returns a pre-seeded markdown blob for the
-	/// matching (version, path) tuple or <see langword="null"/> otherwise — matching
+	/// matching (version, path) tuple or a <c>None</c>-sourced result otherwise — matching
 	/// the contract that the real client uses to signal "skip this doc".
 	/// </summary>
 	private sealed class FakeDocsClient : IComponentRegistryDocsClient {
-		private readonly Dictionary<(string Version, string DocPath), string> _docs = new();
+		private readonly Dictionary<(string Version, string DocPath), ComponentDocumentationFetchResult> _docs = new();
 		public List<(string Version, string DocPath)> Requests { get; } = new();
 
-		public FakeDocsClient Seed(string version, string docPath, string content) {
-			_docs[(version, docPath)] = content;
+		public FakeDocsClient Seed(
+			string version,
+			string docPath,
+			string content,
+			ComponentDocumentationSource source = ComponentDocumentationSource.Cdn) {
+			_docs[(version, docPath)] = new ComponentDocumentationFetchResult(content, source);
 			return this;
 		}
 
-		public Task<string?> GetDocAsync(string version, string docPath, CancellationToken cancellationToken = default) {
+		public FakeDocsClient SeedLocalMiss(string version, string docPath, string overrideVariable) {
+			_docs[(version, docPath)] = new ComponentDocumentationFetchResult(
+				Content: null, ComponentDocumentationSource.None, overrideVariable);
+			return this;
+		}
+
+		public Task<ComponentDocumentationFetchResult> GetDocAsync(string version, string docPath, CancellationToken cancellationToken = default) {
 			Requests.Add((version, docPath));
-			return Task.FromResult(_docs.TryGetValue((version, docPath), out string? value) ? value : null);
+			return Task.FromResult(_docs.TryGetValue((version, docPath), out ComponentDocumentationFetchResult? value)
+				? value
+				: ComponentDocumentationFetchResult.Missing);
 		}
 	}
 }
