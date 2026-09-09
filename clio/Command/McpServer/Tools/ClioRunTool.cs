@@ -567,22 +567,18 @@ public sealed class ClioRunExecutor(
 	// A complex args parameter is a non-string reference/record type (e.g. SchemaSyncArgs) that the
 	// tool expects to receive as a single bound argument object; scalars (string, bool, numbers, enums)
 	// are not, so a single scalar parameter is bound by name from the args object's matching key.
-	private static bool IsComplexArgsParameter(Type type) {
-		Type underlying = Nullable.GetUnderlyingType(type) ?? type;
-		return underlying != typeof(string) && !underlying.IsValueType;
-	}
+	// ENG-95885: the definition now lives in McpToolArgumentSupport so this executor and
+	// McpToolErrorFilter's flat-argument normalizer share ONE notion of "single composite args
+	// parameter" and can never drift into fighting over the same payload.
+	private static bool IsComplexArgsParameter(Type type) =>
+		McpToolArgumentSupport.IsCompositeArgsParameter(type);
 
 	// Parameters the SDK injects from the request context (RequestContext, CancellationToken,
 	// IServiceProvider, McpServer, etc.) are not bound from the arguments object, so they are excluded
-	// when deciding whether a tool exposes a single user-supplied parameter.
-	private static bool IsBindableToolParameter(ParameterInfo parameter) {
-		Type type = parameter.ParameterType;
-		if (type == typeof(CancellationToken) || type == typeof(IServiceProvider) ||
-			typeof(ModelContextProtocol.Server.McpServer).IsAssignableFrom(type)) {
-			return false;
-		}
-		return !(type.IsGenericType && type.GetGenericTypeDefinition() == typeof(RequestContext<>));
-	}
+	// when deciding whether a tool exposes a single user-supplied parameter. Shared definition — see
+	// McpToolArgumentSupport.IsBindableToolParameter.
+	private static bool IsBindableToolParameter(ParameterInfo parameter) =>
+		McpToolArgumentSupport.IsBindableToolParameter(parameter);
 
 	// Top-3 nearest real tool names for an unknown `command`, ordered by Levenshtein distance to the
 	// requested name then ordinally by name — the same ranking the BuildSuggestions helper in

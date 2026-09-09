@@ -77,6 +77,14 @@ public sealed class ToolContractGetTool {
 		BudgetPolicy = McpToolBudgetPolicy.None,
 		RequiresClientRequests = McpToolClientRequests.None,
 		SharedFileResource = McpToolSharedFileResource.None)]
+	// ENG-95885 (field-test defect: a FLAT name-only call silently returned the full tool INDEX as a
+	// success). A flat {"name":"<tool>"} payload carries no key that is a canonical wire property of
+	// ToolContractGetArgs ("tool-names" / "detail"), so the normalizer classifies it unknown-only. This
+	// declaration forwards it instead of refusing it: the key binds into the args record's
+	// [JsonExtensionData] overflow bag and TryRecoverFlatToolNames below resolves the NAMED contract.
+	// Before ENG-95885 the flat call bound `args` to null, fell through to the no-tool-names branch, and
+	// handed the agent the entire index back as a plausible success.
+	[McpRecoversUnknownArguments]
 	[Description("Returns clio MCP tool contracts. Omit tool-names for a compact index of ALL tools (names + one-line purpose + safety flags) — cheap discovery without full schemas; pass tool-names to expand those tools' full contracts (parameter schema, aliases, defaults, examples, and preferred or fallback workflow hints); pass detail=full (with no tool-names) to expand every tool's full contract at once.")]
 	public ToolContractGetResponse GetToolContracts(
 		[Description("Parameters: tool-names (optional array of tool names) and detail (optional 'index' | 'full'). Omit entirely for a compact index of all tools; pass tool-names for full contracts; pass detail=full to expand all full contracts.")]
@@ -135,7 +143,40 @@ public sealed class ToolContractGetTool {
 	}
 
 	private const string ExpectedArgsShapeHint =
-		"Expected args shape: {\"tool-names\": [\"list-pages\", ...] } or omit tool-names to list all.";
+		"Expected args shape: {\"tool-names\": [\"list-pages\", ...] } or omit tool-names to list all. "
+		+ AcceptedArgumentShapesHint;
+
+	/// <summary>
+	/// ENG-95885. The canonical statement of clio's runtime argument-shape contract, carried on the
+	/// <c>get-tool-contract</c> surface — the one tool every agent reads before calling anything else.
+	/// </summary>
+	/// <remarks>
+	/// This is deliberately framed as a TOLERANT RUNTIME layer, not a schema change: <c>tools/list</c>
+	/// keeps publishing <c>required: ["args"]</c>, so the published schema and the accepted input set are
+	/// NOT identical and this text must never claim they are. Server instructions stay pointer-only
+	/// (<c>McpServerInstructions</c>), and the narrative guidance articles live in the external
+	/// clio-knowledge repository — so the rule is stated once, here, next to the contracts it governs.
+	/// </remarks>
+	internal const string AcceptedArgumentShapesHint =
+		"Argument shapes accepted at runtime by any tool whose only parameter is an args record: "
+		+ "wrapped {\"args\": {\"<field>\": \"<value>\"}} (the shape tools/list publishes) and flat "
+		+ "{\"<field>\": \"<value>\"} (normalized to the wrapped shape on arrival). Rules: every flat key "
+		+ "must be a real field name — a payload carrying any unknown key (even beside a valid one) is "
+		+ "refused, never answered with defaults; "
+		+ "mixing an \"args\" object with extra top-level keys is refused as ambiguous; two top-level "
+		+ "keys differing only in casing name one argument and are refused the same way, since names "
+		+ "are matched case-insensitively; an args value must "
+		+ "be a JSON object, never a string containing JSON text.";
+
+	// ENG-95885: the accepted-shape rule is deliberately NOT advertised in the published tools/list
+	// description. That payload is ratcheted by a byte budget
+	// (McpProfileGatingTests.RegisterEnabledPrimitives_ShouldKeepToolsSerializedSizeWithinBudget_WhenCalled,
+	// 32768 bytes) and the current default surface leaves ~15 bytes of headroom, so even a one-line
+	// summary (~236 bytes) breaks it. Raising the ceiling for a rule an agent needs at the moment a call
+	// FAILS would trade every session's context for text most sessions never read. The rule therefore
+	// lives where it is actually consumed: the error text below (ExpectedArgsShapeHint), the normalizer's
+	// refusal messages in McpToolErrorFilter, the full get-tool-contract output, and
+	// clio/Command/McpServer/AGENTS.md.
 
 	private static readonly Dictionary<string, string> LegacyAliases = new(StringComparer.Ordinal) {
 		["toolNames"] = ToolNamesParam,
@@ -445,6 +486,7 @@ internal static class ToolContractCatalog {
 	private const string DefaultValueConfigSourceKey = "source";
 	private const string DescriptionLocalizationsFieldName = "description-localizations";
 	private const string DryRunFieldName = "dry-run";
+	private const string EmailIdFieldName = "email-id";
 	private const string ConfirmFieldName = "confirm";
 	private const string EntityFieldName = "entity";
 	private const string EntitySchemaNameDescription = "Entity schema name.";
@@ -619,6 +661,8 @@ internal static class ToolContractCatalog {
 			[ODataCreateTool.ToolName] = BuildODataCreate(),
 			[ODataUpdateTool.ToolName] = BuildODataUpdate(),
 			[ODataDeleteTool.ToolName] = BuildODataDelete(),
+			[EmailTemplateTool.GetToolName] = BuildGetEmailTemplate(),
+			[EmailTemplateTool.UpdateToolName] = BuildUpdateEmailTemplate(),
 			[SchemaSyncTool.ToolName] = BuildSchemaSync(),
 			[PageSyncTool.ToolName] = BuildPageSync(),
 			[GetPkgListTool.GetPkgListToolName] = BuildGetPkgList(),
@@ -702,6 +746,8 @@ internal static class ToolContractCatalog {
 		ODataCreateTool.ToolName,
 		ODataUpdateTool.ToolName,
 		ODataDeleteTool.ToolName,
+		EmailTemplateTool.GetToolName,
+		EmailTemplateTool.UpdateToolName,
 		SchemaSyncTool.ToolName,
 		PageSyncTool.ToolName,
 		GetPkgListTool.GetPkgListToolName,
@@ -2201,6 +2247,92 @@ internal static class ToolContractCatalog {
 			],
 			[],
 			OdataUnregisteredEntityAntiPatterns(includeEsqEscapeRoute: true));
+	}
+
+	private static ToolContractDefinition BuildGetEmailTemplate() {
+		return new ToolContractDefinition(
+			EmailTemplateTool.GetToolName,
+			"Reads every legacy Content designer and current Beefree content variant for a BulkEmail marketing email or EmailTemplate message template. Each variant carries an optimistic checksum for update-email-template.",
+			new ToolInputSchemaContract(
+				[EmailIdFieldName, EnvironmentNameFieldName],
+				[
+					Field(EmailIdFieldName, StringType, "GUID of the BulkEmail or EmailTemplate host record."),
+					Field(EnvironmentNameFieldName, StringType, RegisteredEnvironmentNameDescription),
+					Field("language", StringType, "Optional Beefree language code. Requests an exists=false creation variant when missing."),
+					Field("language-id", StringType, "Optional SysLanguage GUID for EmailTemplateLang. Requests an exists=false creation variant when missing.")
+				]),
+			EnvelopeOutput(
+				SuccessFieldName,
+				[SuccessFalseSignal],
+				Field(SuccessFieldName, BooleanType, "Whether the email content was read."),
+				Field(ErrorFieldName, StringType, FailureMessageDescription),
+				Field(EmailIdFieldName, StringType, "BulkEmail or EmailTemplate host record Id."),
+				Field("host-type", StringType, "bulk-email or message-template."),
+				Field("name", StringType, "Host record name."),
+				Field("variants", ArrayType, "Content variants. Each carries format, language identity, content fields, and checksum.")),
+			CommonErrorContract,
+			[],
+			[],
+			[
+				Example("Read email content before editing", new Dictionary<string, object?> {
+					[EnvironmentNameFieldName] = ExampleEnvironmentName,
+					[EmailIdFieldName] = ExampleLookupValueId
+				})
+			],
+			Flow([EmailTemplateTool.GetToolName], "Read all stored formats and languages without reverse-engineering EmailTemplate/BfEmailTemplate OData fields."),
+			[
+				Flow([EmailTemplateTool.GetToolName, EmailTemplateTool.UpdateToolName],
+					"Read immediately before editing, preserve the intended variant's returned checksum, then update that exact format/language variant.")
+			],
+			[],
+			[]);
+	}
+
+	private static ToolContractDefinition BuildUpdateEmailTemplate() {
+		return new ToolContractDefinition(
+			EmailTemplateTool.UpdateToolName,
+			"Updates one legacy or Beefree email-content variant for an existing BulkEmail or EmailTemplate host. The write requires confirm=true and the checksum returned by an immediately preceding get-email-template call. A missing Beefree row is created, enabling a lossless get-source then update-target copy without converting PageJson into legacy TemplateConfig.",
+			new ToolInputSchemaContract(
+				[EmailIdFieldName, EnvironmentNameFieldName, "format", "expected-checksum", ConfirmFieldName],
+				[
+					Field(EmailIdFieldName, StringType, "GUID of the existing BulkEmail or EmailTemplate host record."),
+					Field(EnvironmentNameFieldName, StringType, RegisteredEnvironmentNameDescription),
+					Field("format", StringType, "beefree or legacy."),
+					Field("expected-checksum", StringType, "Checksum returned by get-email-template for this exact variant."),
+					Field(ConfirmFieldName, BooleanType, "Must be true. False or omitted performs no remote write."),
+					Field("language", StringType, "Optional Beefree language code; empty selects the default variant."),
+					Field("language-id", StringType, "Optional SysLanguage GUID for an EmailTemplateLang legacy translation."),
+					Field("page-json", StringType, "Required for beefree: complete designer JSON."),
+					Field("page-html", StringType, "Required for beefree: complete rendered HTML."),
+					Field("amp-html", StringType, "Optional Beefree AMP HTML."),
+					Field("template-version", NumberType, "Optional Beefree template version."),
+					Field("subject", StringType, "Optional legacy subject."),
+					Field("body", StringType, "Optional legacy body."),
+					Field("template-config", StringType, "Optional legacy Content designer configuration. Never pass Beefree PageJson here."),
+					Field("config-type", NumberType, "Optional legacy EmailTemplate ConfigType."),
+					Field("is-html-body", BooleanType, "Optional legacy IsHtmlBody value.")
+				]),
+			EnvelopeOutput(
+				SuccessFieldName,
+				[SuccessFalseSignal],
+				Field(SuccessFieldName, BooleanType, "Whether the guarded update succeeded."),
+				Field(ErrorFieldName, StringType, FailureMessageDescription),
+				Field(EmailIdFieldName, StringType, "Updated host record Id."),
+				Field("format", StringType, "Updated storage format."),
+				Field("created", BooleanType, "Whether a new language/format storage row was created."),
+				Field("checksum", StringType, "Checksum of the content written.")),
+			CommonErrorContract,
+			[],
+			[],
+			[],
+			Flow([EmailTemplateTool.GetToolName, EmailTemplateTool.UpdateToolName],
+				"Always read first and pass the returned checksum; a mismatch refuses the write so concurrent designer edits are not overwritten."),
+			[
+				Flow([EmailTemplateTool.GetToolName, EmailTemplateTool.UpdateToolName],
+					"To copy modern content between hosts, read the source Beefree variant, read the target for its checksum, then update the target with the source PageJson/PageHtml and the target checksum.")
+			],
+			[],
+			[]);
 	}
 
 	// Shared by odata-read and odata-create: both funnel through CreatioResponseError.TryDetect and
@@ -3740,7 +3872,7 @@ internal static class ToolContractCatalog {
 	private static ToolContractDefinition BuildSchemaSync() {
 		return new ToolContractDefinition(
 			SchemaSyncTool.ToolName,
-			"Batches create-lookup, create-entity, update-entity, and inline seed operations in one call. create-lookup, create-entity, and update-entity are convergent supersets: each reads current server state first and applies only the missing delta (create-if-absent, add-only-missing-columns, per-column add-if-absent/modify-if-different/remove→ensure-absent; columns not named in the request are left untouched). Only an explicit `modify` changes a present column's type: an `add` (including a `columns` add-batch item) that names a present column of a DIFFERENT type is reported as a column collision instead of silently mutating it. Because of this, re-submitting the identical batch verbatim after an ambiguous failure is a safe recovery path for the schema operations — already-applied schema operations replay as already-satisfied/reconciled with no duplicate mutation, but any seed-data is re-run (see the seed-data replay caveat below), so prefer the resume-plan when the batch seeds data. Transient network failures (DNS/reset/timeout/gateway) are retried per operation (up to 3 attempts with short backoff); on a mid-batch abort the response carries a resume-plan whose operations exclude the already-completed ops and convert a post-create seed failure to a standalone seed-data op. A fully successful batch carries a resume-plan (with no failed-operation) when a create converged to already-satisfied and its INLINE seed-rows were therefore skipped to stay replay-safe: resubmit those standalone seed-data operations only if the rows are not yet on the server. Seed-data replay safety: a row is replay-safe only when the target schema has a `Name` column AND the row carries a `Name`; rows without a `Name` (or schemas without a `Name` column) are non-convergent — a stable-`Id`, no-`Name` row PK-conflicts on replay, so seed-data is NOT replay-safe and the resume-plan is the recommended path for it. Requests use operations[*].type; do not send operations[*].operation. Before setting is-virtual to true, call get-guidance with name virtual-entities.",
+			"Batches create-lookup, create-entity, update-entity, and inline seed operations in one call. create-lookup, create-entity, and update-entity are convergent supersets: each reads current server state first and applies only the missing delta (create-if-absent, add-only-missing-columns, per-column add-if-absent/modify-if-different/remove→ensure-absent; columns not named in the request are left untouched). Only an explicit `modify` changes a present column's type: an `add` (including a `columns` add-batch item) that names a present column of a DIFFERENT type is reported as a column collision instead of silently mutating it. Because of this, re-submitting the identical batch verbatim after an ambiguous failure is a safe recovery path for the schema operations — already-applied schema operations replay as already-satisfied/reconciled with no duplicate mutation, but any seed-data is re-run (see the seed-data replay caveat below), so prefer the resume-plan when the batch seeds data. Transient network failures (DNS/reset/timeout/gateway) are retried per operation (up to 3 attempts with short backoff); on a mid-batch abort the response carries a resume-plan whose operations exclude the already-completed ops and convert a post-create seed failure to a standalone seed-data op. A fully successful batch carries a resume-plan (with no failed-operation) when a create converged to already-satisfied and its INLINE seed-rows were therefore skipped to stay replay-safe: resubmit those standalone seed-data operations only if the rows are not yet on the server. Seed-data replay safety: a row is replay-safe only when the target schema has a `Name` column AND the row carries a `Name`; rows without a `Name` (or schemas without a `Name` column) are non-convergent — a stable-`Id`, no-`Name` row PK-conflicts on replay, so seed-data is NOT replay-safe and the resume-plan is the recommended path for it. Requests use operations[*].type; do not send operations[*].operation. Field names are VALIDATED, not ignored, with a rename hint (e.g. 'seed-data' -> 'seed-rows', 'name' -> 'schema-name') and the list of valid fields. An unbindable TOP-LEVEL field fails the call before any server request, so nothing at all is applied. An unbindable operations[i] field fails before THAT operation's first server call: nothing is applied for it, but operations earlier in the batch have already run and stand as `completed` in `results`. Field-name validation covers exactly TWO levels - the top-level arguments and each operations[i] object. Keys nested inside columns[*], update-operations[*] and seed-rows[*] are deliberately bound loosely and an unknown one there is DROPPED silently under success: true, because the get-app-info column round-trip depends on that looseness; send only the documented keys inside those three collections. Note that seed-data is an operation TYPE ('type': 'seed-data'), never a field: rows always go in seed-rows. operations[*].schema-name is required and non-empty and is checked up front. Before setting is-virtual to true, call get-guidance with name virtual-entities.",
 			new ToolInputSchemaContract(
 				[EnvironmentNameFieldName, PackageNameFieldName, OperationsFieldName],
 				EnvironmentPackageFields(
@@ -3762,8 +3894,8 @@ internal static class ToolContractCatalog {
 					SuccessFalseSignal
 				],
 				Field(SuccessFieldName, BooleanType, "Whether every sync-schemas operation succeeded."),
-				Field("results", ArrayType, "Per-operation results for the operations that ran, keyed by canonical `type`. Each item carries `type`, `schema-name`, `success`, `status` (completed|failed), `operation-index` (zero-based index into the request operations), an additive `outcome` discriminator (`created` | `reconciled` | `already-satisfied` | `collision`; omitted for seed-data and when null), and — only when the operation was retried for a transient fault — `attempts`. A durable collision — a same-name schema in a DIFFERENT package (except a create-entity op with `extend-parent: true`, where a same-name schema in another package is the replacement target and is classified `created`, not a collision), or a same-package schema whose parent/kind is incompatible with the request — fails that op with `success: false`, `outcome: collision`, a user-friendly `error`, and `collision-info` (the owning package); the batch then stops on first failure. An `update-entity` per-column type collision — an `add` naming a present column of a different type — also fails with `success: false` and `outcome: collision`, but carries no `collision-info` (that block names a colliding schema's package); its `error` names every colliding column and points at the explicit-`modify` remedy. A per-column modify-conflict rejected by the backend is NOT a collision: it fails with `success: false` + `error`, no `collision-info` and no `collision` outcome. Operations that never ran are NOT in this array; see `resume-plan`."),
-				Field("resume-plan", ObjectType, "Present only when the batch aborted before completing. Carries `instruction`, `failed-operation` (operation-index/type/schema-name/error), `not-run-operation-indexes`, and `operations` — the failed operation followed by every not-run operation, echoed in re-submittable input shape. Resubmit resume-plan.operations as a new sync-schemas call for the efficient path; resubmitting the whole batch verbatim is also safe for the convergent schema operations (they replay as already-satisfied/reconciled) but re-runs any seed-data, which is not replay-safe.")
+				Field("results", ArrayType, "Per-operation results for the operations that ran, keyed by canonical `type`. Each item carries `type`, `schema-name`, `success`, `status` (completed|failed), `operation-index` (zero-based index into the request operations, or the sentinel `-1` on a WHOLE-CALL rejection, where no operation was examined), an additive `outcome` discriminator (`created` | `reconciled` | `already-satisfied` | `collision`; omitted for seed-data and when null), and — only when the operation was retried for a transient fault — `attempts`. A durable collision — a same-name schema in a DIFFERENT package (except a create-entity op with `extend-parent: true`, where a same-name schema in another package is the replacement target and is classified `created`, not a collision), or a same-package schema whose parent/kind is incompatible with the request — fails that op with `success: false`, `outcome: collision`, a user-friendly `error`, and `collision-info` (the owning package); the batch then stops on first failure. An `update-entity` per-column type collision — an `add` naming a present column of a different type — also fails with `success: false` and `outcome: collision`, but carries no `collision-info` (that block names a colliding schema's package); its `error` names every colliding column and points at the explicit-`modify` remedy. A per-column modify-conflict rejected by the backend is NOT a collision: it fails with `success: false` + `error`, no `collision-info` and no `collision` outcome. Operations that never ran are NOT in this array; see `resume-plan`. The one exception is a WHOLE-CALL rejection - arguments that fail the top-level field-shape check, an omitted or empty `operations` array - where nothing ran at all: `results` then carries a SINGLE entry whose `type` is the tool name `sync-schemas` (not one of the canonical operation types), whose `operation-index` is `-1`, and no `resume-plan` is emitted, because the whole call is resubmitted after the fix."),
+				Field("resume-plan", ObjectType, "Present when the batch aborted before completing, and ALSO on a fully successful batch that deferred an inline seed (the deferred seed-data operations are carried in `operations`) — presence is not equivalent to failure. Carries `instruction`, `failed-operation` (operation-index/type/schema-name/error), `not-run-operation-indexes`, and `operations` — normally the failed operation followed by every not-run operation, echoed in re-submittable input shape. Exception: when the operation failed a FIELD-SHAPE check (an unbindable field name, an unbindable `type`, a missing `schema-name`, or a virtual `create-entity` carrying `seed-rows`) it is deliberately OMITTED from `operations`, because replaying it verbatim would just repeat the rejected payload; `instruction` then tells the caller to correct the field names first and resubmit it alongside the listed operations, and `operations` may be EMPTY when the shape-rejected operation was the last one and nothing was deferred — the plan is still emitted, because `failed-operation` and `not-run-operation-indexes` are what a recovering caller reads. Resubmit resume-plan.operations as a new sync-schemas call for the efficient path; resubmitting the whole batch verbatim is also safe for the convergent schema operations (they replay as already-satisfied/reconciled) but re-runs any seed-data, which is not replay-safe.")
 			),
 			CommonErrorContract,
 			EnvironmentPackageAliases(),
@@ -4891,7 +5023,7 @@ internal static class ToolContractCatalog {
 					Field(ResourcesFieldName, StringType, "Optional JSON object string of localizable strings the platform does NOT auto-provide (custom tab/group titles, button captions, validator messages, explicit overrides). Only include keys with NO matching DS-bound view model attribute on the page \u2014 see `page-schema-resources` guidance. Additions/overrides only: keys already stored on the schema stay registered and do NOT have to be repeated on a later save."),
 					Field("optional-properties", StringType, "JSON array of {key, value} objects merged into schema optionalProperties (e.g. '[{\"key\":\"entitySchemaName\",\"value\":\"UsrMyEntity\"}]')."),
 					Field(VerifyFieldName, BooleanType, "If true, read the page back after saving and return its metadata. Best-effort \u2014 verify failure does not fail the update."),
-					Field("mode", StringType, "Write mode. 'replace' (default) saves the body verbatim. 'append' merges the incoming fragment with the schema's current body \u2014 viewConfigDiff entries dedupe by `name`, handlers by `request`, and SCHEMA_CONVERTERS / SCHEMA_VALIDATORS entries by type key (incoming wins). The final merged web body rejects unresolved custom validator references."),
+					Field("mode", StringType, "Write mode. 'replace' (default) saves the body verbatim. 'append' merges the incoming fragment with the schema's current body \u2014 viewConfigDiff entries are replaced only when BOTH `operation` and `name` match — and, for a `remove`, whether it targets `properties` — with incoming winning in place. Every existing operation the fragment does not collide with is preserved, including a second operation on the same component. The one exception: a FURTHER existing entry of an identity the fragment already superseded is dropped rather than re-applied after the replacement. Handlers dedupe by `request`. SCHEMA_CONVERTERS and SCHEMA_VALIDATORS entries merge by type key and incoming wins, and the final merged web body is rejected when a custom validator reference has no matching SCHEMA_VALIDATORS declaration. Separately, at APPLY time: preserved is not the same as applied, and this part is not append-specific — a 'replace' body produces it too. The differ applies whole operation GROUPS in a fixed order (merges, then removes/inserts/moves, `set` last), never in viewConfigDiff array order. So a `merge`, `move`, or element `remove` that ends up beside an `insert` for one `name`, or a `move` whose name the same body also element-removes, resolves against a base without that component and is silently dropped. The same holds for any two operations whose groups run in sequence for one name: a `merge` beside an element `remove` or a `set`, and a property `remove` beside an element `remove` or beside a `set`. The response then carries an advisory `warnings` entry naming the component; fold the transform's values into the `insert`, or use `set`. Reordering the array changes nothing."),
 					Field("target-package-uid", StringType, "Explicit target package UId for the replacing schema. Overrides automatic design-package resolution."),
 					Field("target-schema-uid", StringType, "Explicit schema UId to save into directly. Bypasses hierarchy resolution entirely."),
 					Field("checksum", StringType, "Conflict baseline: the `editable.checksum` returned by the get-page call this edit is based on. When supplied it is the authoritative baseline, so the save is compared against the body you actually fetched rather than the on-disk .clio-pages baseline, which can be stale or anchored elsewhere."),
@@ -4909,6 +5041,7 @@ internal static class ToolContractCatalog {
 				Field("bodyLength", NumberType, "Saved body length."),
 				Field("dryRun", BooleanType, "Whether the call ran in validation mode."),
 				Field("resourcesRegistered", NumberType, "Number of registered resources."),
+				Field("warnings", ArrayType, "Advisory non-fatal warnings; omitted when there are none. The save already succeeded — never retry on a warning. Covers an operation the differ will silently drop because another operation for the same component name cancels it (see `mode`), an `insert` this body replaced with a `merge`/`move`/`remove`, an existing operation an `append` could not preserve because the fragment superseded an identity the page carried twice (re-read with get-page), page-body lint findings, and the best-effort Designer Presence push."),
 				Field(ErrorFieldName, StringType, FailureMessageDescription)
 			),
 			CommonErrorContract,

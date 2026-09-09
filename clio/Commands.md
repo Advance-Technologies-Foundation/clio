@@ -279,11 +279,11 @@ Use `clio help` for the terminal overview and `clio <command> --help` for comman
 <a id="pkg-to-db"></a>
 <a id="2db"></a>
 <a id="todb"></a>
-- [`pkg-to-db`](docs/commands/pkg-to-db.md) - Load packages into Creatio database storage, `2db`, `todb`
+- [`pkg-to-db`](docs/commands/pkg-to-db.md) - Load file-system package definitions into the configuration database (no package data), `2db`, `todb`
 <a id="pkg-to-file-system"></a>
 <a id="2fs"></a>
 <a id="tofs"></a>
-- [`pkg-to-file-system`](docs/commands/pkg-to-file-system.md) - Load packages into Creatio file system storage, `2fs`, `tofs`
+- [`pkg-to-file-system`](docs/commands/pkg-to-file-system.md) - Export configuration-database packages to the file system (no package data), `2fs`, `tofs`
 <a id="publish-app"></a>
 <a id="ph"></a>
 <a id="publish-hub"></a>
@@ -445,6 +445,9 @@ Use `clio help` for the terminal overview and `clio <command> --help` for comman
 <a id="get-page"></a>
 <a id="page-get"></a>
 - [`get-page`](docs/commands/get-page.md) - Get a Freedom UI page bundle and raw schema body, `page-get`
+<a id="get-process-page-facts"></a>
+<a id="page-facts"></a>
+- [`get-process-page-facts`](docs/commands/get-process-page-facts.md) - Read the completing-button candidates and page-scoped data sources a Pre-configured page process element needs, `page-facts`
 <a id="get-page-hierarchy"></a>
 <a id="page-hierarchy-get"></a>
 - [`get-page-hierarchy`](docs/commands/get-page-hierarchy.md) - Get the full Freedom UI page replacing-schema chain (root first) with each schema's raw body in one round-trip, `page-hierarchy-get`

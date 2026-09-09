@@ -291,6 +291,76 @@ public sealed class ToolContractGetToolTests {
 			because: "environmentName is marked [Required] on the tool method, so the derived contract must mark it required");
 	}
 
+	// Pins the issue #952 secondary defect: a registry-derived (uncurated, hidden) tool that returns a
+	// CommandExecutionResult used to advertise `success == false` as its only failure signal — a field
+	// that envelope never carries — so an agent watching for it saw every failure as a success.
+	[Test]
+	[Category("Unit")]
+	[TestCase("pkg-to-db")]
+	[TestCase("pkg-to-file-system")]
+	[Description("An uncurated tool that returns a command execution result advertises the command-execution-result failure signals instead of a success field it never emits.")]
+	public void ToolContractGet_Should_AdvertiseCommandExecutionFailureSignals_ForUncuratedCommandTool(string toolName) {
+		// Arrange
+		ToolContractGetTool tool = BuildToolWithRegistry();
+
+		// Act
+		ToolContractGetResponse result = tool.GetToolContracts(new ToolContractGetArgs([toolName]));
+
+		// Assert
+		result.Success.Should().BeTrue(
+			because: $"{toolName} is invokable through clio-run and must expose a discoverable contract");
+		ToolContractDefinition entry = result.Tools!.Single();
+		entry.OutputContract.Kind.Should().Be("command-execution-result",
+			because: "the tool returns the command execution envelope, not a tool-native response");
+		entry.OutputContract.FailureSignals.Should().BeEquivalentTo(
+			["exit-code != 0", "execution-log-messages[*].message-type == Error"],
+			because: "an agent must be pointed at the two fields the command execution envelope actually carries");
+	}
+
+	// Guards the blast radius of the issue #952 output-contract change: BuildOutputContract keys the
+	// advertised output shape on a McpToolSchemaCatalog lookup, so a regression in that lookup would flip
+	// EVERY registry-derived contract back to the tool-native-response default at once, silently. The
+	// reflection catalog enumerates every [McpServerTool] method in the assembly while the invoker
+	// registry additionally filters by feature toggle, so the catalog is a superset and no dispatchable
+	// tool may fall back.
+	[Test]
+	[Category("Unit")]
+	[Description("Every tool the invoker registry can dispatch resolves an output contract in the reflection catalog, so no registry-derived contract falls back to the tool-native-response default.")]
+	public void ToolContractGet_Should_ResolveOutputContractForEveryDispatchableTool() {
+		// Arrange
+		McpToolInvokerRegistry registry = BuildInvokerRegistry();
+
+		// Act
+		string[] unresolved = registry.ToolNames
+			.Where(toolName => !McpToolSchemaCatalog.TryGetOutputContract(toolName, out _))
+			.OrderBy(toolName => toolName, StringComparer.Ordinal)
+			.ToArray();
+
+		// Assert
+		registry.ToolNames.Should().NotBeEmpty(
+			because: "the assertion below is only meaningful when the registry actually discovered tools");
+		unresolved.Should().BeEmpty(
+			because: "a dispatchable tool whose name does not resolve in the reflection catalog silently " +
+			"reverts to advertising `success == false`, the exact defect GitHub issue #952 reported");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("An output contract lookup for a name that is not a registered MCP tool reports a miss, which is what makes the registry contract builder fall back to its defensive tool-native-response default.")]
+	public void ToolContractGet_Should_ReportOutputContractMiss_ForUnregisteredToolName() {
+		// Arrange
+		const string unregisteredToolName = "clio-tests-not-a-registered-mcp-tool";
+
+		// Act
+		bool resolved = McpToolSchemaCatalog.TryGetOutputContract(unregisteredToolName, out ToolOutputContract contract);
+
+		// Assert
+		resolved.Should().BeFalse(
+			because: "a name that no MCP tool declares must not resolve an output contract");
+		contract.Should().BeNull(
+			because: "the miss must leave no contract behind for the caller to publish as if it were reflected");
+	}
+
 	[Test]
 	[Category("Unit")]
 	[Description("The compile-creatio contract carries a create-business-process anti-pattern so an agent is told a process is interpreted and its NeedInstall flag is not a compile trigger (ENG-95706).")]
@@ -3282,5 +3352,79 @@ public sealed class ToolContractGetToolTests {
 			because: "the legacy stdio client's ClientInfo must be detected end-to-end so the no-names call returns full tool contracts, not the compact index");
 		result.Index.Should().BeNull(
 			because: "the legacy client's full-shape response must not also carry the compact index");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("The curated update-page contract describes the append merge identity as (operation, name) — the shipped agent-facing claim, since update-page is non-resident and the [Description] attribute is never merged in (GitHub #1132)")]
+	public void ToolContractGet_Should_Describe_UpdatePage_Mode_With_Operation_And_Name_Identity() {
+		// Arrange
+		// update-page is NOT in McpCoreToolProfile.CoreToolTypes, so the curated Contracts entry is the
+		// ENTIRE description an agent ever reads. Pinning it here is mandatory: editing the tool's
+		// [Description] attribute alone ships nothing, and without this assertion the curated string can
+		// silently rot back to the pre-#1132 "dedupe by name" claim the code no longer implements.
+		ToolContractGetTool tool = new();
+
+		// Act
+		ToolContractGetResponse result = tool.GetToolContracts(new ToolContractGetArgs([PageUpdateTool.ToolName]));
+
+		// Assert
+		result.Success.Should().BeTrue(
+			because: "the update-page contract must be resolvable through get-tool-contract");
+		ToolContractField modeField = result.Tools!.Single(contract => contract.Name == PageUpdateTool.ToolName)
+			.InputSchema.Properties.Single(field => field.Name == "mode");
+		modeField.Description.Should().Contain("`operation` and `name`",
+			because: "an agent must be told the append merge identity is the operation AND the name, so it can predict which existing entries a fragment replaces");
+		modeField.Description.Should().Contain("does not collide with is preserved",
+			because: "the safety guarantee the issue disputed — an unrelated append never drops an existing operation — must be stated on the surface agents actually read");
+		modeField.Description.Should().Contain("The one exception",
+			because: "the merger DOES drop a further existing entry of a superseded identity; promising unqualified preservation would repeat the #1132 defect of shipping a claim the code does not honour");
+		modeField.Description.Should().NotContain("dedupe by `name`",
+			because: "the pre-#1132 claim describes behaviour the merger no longer has and caused the silent loss of an existing move operation");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("The curated update-page contract discloses that the differ applies whole operation groups in a fixed order, so an operation preserved beside another for one name can be silently dropped (GitHub #1240)")]
+	public void ToolContractGet_Should_Disclose_ApplyOrder_Inertness_In_UpdatePage_Mode() {
+		// Arrange
+		// Same reason the identity test above is mandatory: update-page is non-resident, so this curated
+		// string is the only description an agent receives. #1132 shipped a merger that PRESERVES both
+		// operations, which reads as "both take effect" — it is not true, and the contract has to say so.
+		ToolContractGetTool tool = new();
+
+		// Act
+		ToolContractGetResponse result = tool.GetToolContracts(new ToolContractGetArgs([PageUpdateTool.ToolName]));
+
+		// Assert
+		result.Success.Should().BeTrue(
+			because: "the update-page contract must be resolvable through get-tool-contract");
+		ToolContractField modeField = result.Tools!.Single(contract => contract.Name == PageUpdateTool.ToolName)
+			.InputSchema.Properties.Single(field => field.Name == "mode");
+		modeField.Description.Should().Contain("whole operation GROUPS in a fixed order",
+			because: "an agent that believes the array is applied in order will keep authoring a transform beside an insert and keep wondering why nothing happened");
+		modeField.Description.Should().Contain("silently dropped",
+			because: "preserved-but-inert is the exact confusion #1240 filed; naming the outcome is what makes the warning actionable");
+		modeField.Description.Should().Contain("not append-specific",
+			because: "the inertness comes from the differ, not the merger, so a hand-authored 'replace' body produces it too — scoping the caveat to append would mislead");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("The curated update-page output contract declares the warnings array the envelope carries, so an agent knows to read it")]
+	public void ToolContractGet_Should_Declare_Warnings_In_UpdatePage_Output_Envelope() {
+		// Arrange
+		ToolContractGetTool tool = new();
+
+		// Act
+		ToolContractGetResponse result = tool.GetToolContracts(new ToolContractGetArgs([PageUpdateTool.ToolName]));
+
+		// Assert
+		result.Success.Should().BeTrue(
+			because: "the update-page contract must be resolvable through get-tool-contract");
+		ToolContractField warningsField = result.Tools!.Single(contract => contract.Name == PageUpdateTool.ToolName)
+			.OutputContract.Fields.Single(field => field.Name == "warnings");
+		warningsField.Description.Should().Contain("never retry on a warning",
+			because: "these findings are advisory and the save already succeeded; an agent that reads a warning as a failure will re-save and can trip conflict detection");
 	}
 }

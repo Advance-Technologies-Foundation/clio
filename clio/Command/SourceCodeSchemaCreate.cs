@@ -79,11 +79,9 @@ namespace Clio.Command {
 				}
 				_logger.WriteInfo($"         package : {options.PackageName} (uId={packageUId})");
 				LogStep(ref stepNumber, totalSteps, $"Checking schema-name uniqueness for '{options.SchemaName}'");
-				if (SchemaDesignerHelper.SchemaNameExists(_applicationClient, _serviceUrlBuilder, options.SchemaName, Kind)) {
-					response = new SourceCodeSchemaCreateResponse {
-						Success = false,
-						Error = $"Schema '{options.SchemaName}' already exists in this environment."
-					};
+				SourceCodeSchemaCreateResponse duplicateFailure = CheckSchemaIsAbsent(options.SchemaName);
+				if (duplicateFailure != null) {
+					response = duplicateFailure;
 					LogFailure(response.Error);
 					return false;
 				}
@@ -98,9 +96,15 @@ namespace Clio.Command {
 				}
 				string captionCulture = _captionCultureResolver.Resolve(options, options.CaptionCulture);
 				SchemaDesignerHelper.ApplySchemaMetadata(schema, options.SchemaName, caption, options.Description, captionCulture);
-				string saveError = SchemaDesignerHelper.SaveSchema(_applicationClient, _serviceUrlBuilder, schema, Kind);
+				string saveError = SchemaDesignerHelper.SaveSchema(
+					_applicationClient, _serviceUrlBuilder, schema, Kind, out bool outcomeUnknown);
 				if (saveError != null) {
-					response = new SourceCodeSchemaCreateResponse { Success = false, Error = saveError };
+					response = new SourceCodeSchemaCreateResponse {
+						Success = false,
+						Error = outcomeUnknown
+							? $"{saveError} {SchemaDesignerHelper.SaveOutcomeUnknownNote}"
+							: saveError
+					};
 					LogFailure(response.Error);
 					return false;
 				}
@@ -120,6 +124,36 @@ namespace Clio.Command {
 				LogFailure(response.Error);
 				return false;
 			}
+		}
+
+		/// <summary>
+		/// Checks that the target schema name is free, returning the failure response when it is taken or
+		/// when the check could not be answered.
+		/// </summary>
+		/// <remarks>
+		/// Branches on the discriminated resolve outcome, the same way create-sql-schema does: only an
+		/// answered "there is no such schema" licenses the create. An unanswerable check (an empty or HTML
+		/// SelectQuery body, a DataService failure envelope) says nothing about the schema, so it aborts
+		/// instead of reading as "absent" and creating over an existing schema.
+		/// </remarks>
+		/// <param name="schemaName">Schema name the create would take.</param>
+		/// <returns>The failure response, or <see langword="null"/> when the name is free.</returns>
+		private SourceCodeSchemaCreateResponse CheckSchemaIsAbsent(string schemaName) {
+			SchemaResolveResult existing = SchemaDesignerHelper.ResolveSchemaUId(
+				_applicationClient, _serviceUrlBuilder, schemaName, Kind);
+			if (existing.IsResolved) {
+				return new SourceCodeSchemaCreateResponse {
+					Success = false,
+					Error = $"Schema '{schemaName}' already exists in this environment."
+				};
+			}
+			if (existing.IsNotFound) {
+				return null;
+			}
+			return new SourceCodeSchemaCreateResponse {
+				Success = false,
+				Error = $"Could not check whether schema '{schemaName}' already exists: {existing.Error}"
+			};
 		}
 
 		public override int Execute(SourceCodeSchemaCreateOptions options) {
