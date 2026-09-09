@@ -268,7 +268,7 @@ public sealed class McpFixturePolicyTests {
 		];
 		string[] sharedServerFixtureSources = Directory.EnumerateFiles(e2eRoot, "*.cs", SearchOption.TopDirectoryOnly)
 			.Where(path => {
-				string source = File.ReadAllText(path);
+				string source = ReadSourceWithLfLineEndings(path);
 				return source.Contains(": McpContractFixtureBase", StringComparison.Ordinal)
 					|| source.Contains(": DataBindingDbFixtureBase", StringComparison.Ordinal);
 			})
@@ -278,7 +278,7 @@ public sealed class McpFixturePolicyTests {
 		// Act
 		List<string> violations = [];
 		foreach (string path in sharedServerFixtureSources) {
-			string source = File.ReadAllText(path);
+			string source = ReadSourceWithLfLineEndings(path);
 			// Match the attribute on its own one-tab line only, never the same token quoted inside a comment.
 			const string oneTimeSetUpAttribute = "\n\t[OneTimeSetUp]\n";
 			for (int setUpIndex = source.IndexOf(oneTimeSetUpAttribute, StringComparison.Ordinal);
@@ -314,14 +314,14 @@ public sealed class McpFixturePolicyTests {
 			"TemporaryClioSettingsOverride."
 		];
 		string[] parallelFixtureSources = Directory.EnumerateFiles(e2eRoot, "*.cs", SearchOption.TopDirectoryOnly)
-			.Where(path => File.ReadAllText(path).Contains(parallelAttribute, StringComparison.Ordinal))
+			.Where(path => ReadSourceWithLfLineEndings(path).Contains(parallelAttribute, StringComparison.Ordinal))
 			.OrderBy(path => path, StringComparer.Ordinal)
 			.ToArray();
 
 		// Act
 		string[] violations = parallelFixtureSources
 			.SelectMany(path => {
-				string source = File.ReadAllText(path);
+				string source = ReadSourceWithLfLineEndings(path);
 				return forbiddenInParallelFixtures
 					.Where(token => source.Contains(token, StringComparison.Ordinal))
 					.Select(token => $"{Path.GetFileName(path)}: parallel fixture uses {token}");
@@ -330,11 +330,19 @@ public sealed class McpFixturePolicyTests {
 
 		// Assert
 		parallelFixtureSources.Should().HaveCountGreaterThanOrEqualTo(60,
-			because: "the pool holds the 26 files vetted by ENG-92558 plus the 40 added by PR #1427; a smaller set means the scan missed the sources and this guard pins nothing");
+			because: "the pool holds the 26 files vetted by ENG-92558 plus the 39 added by PR #1427; a smaller set means the scan missed the sources and this guard pins nothing");
 		violations.Should().BeEmpty(
 			because: "a pooled fixture that poisons the test-host environment or rewrites the shared appsettings.json turns an unrelated pooled fixture red with a failure that points nowhere near the change - the flake class ENG-94529 and TeamCity 15893259 already paid for once; move such a fixture back to [NonParallelizable] or give it a fixture-owned CLIO_HOME instead");
 	}
 
 	private static bool HasCategory(IEnumerable<CategoryAttribute> attributes, string category) =>
 		attributes.Any(attribute => string.Equals(attribute.Name, category, StringComparison.Ordinal));
+
+	/// <summary>
+	/// Reads a fixture source with line endings normalized to LF, so the line-anchored patterns above
+	/// ("\n\t[OneTimeSetUp]\n", "\n[Parallelizable(ParallelScope.Self)]\n", "\n\t}\n") match on a Windows
+	/// checkout where core.autocrlf turned every line ending into CRLF.
+	/// </summary>
+	private static string ReadSourceWithLfLineEndings(string path) =>
+		File.ReadAllText(path).Replace("\r\n", "\n", StringComparison.Ordinal);
 }

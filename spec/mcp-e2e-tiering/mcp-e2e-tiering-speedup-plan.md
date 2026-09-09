@@ -123,10 +123,15 @@ ENG-92558 ввів 26 `[Parallelizable(ParallelScope.Self)]` фікстур і `
 пулом, за чотирма ознаками: (а) `McpContractFixtureBase`/`DataBindingDbFixtureBase` (один сервер на
 фікстуру); (б) жодного `Environment.SetEnvironmentVariable`; (в) `TemporaryClioSettingsOverride`/власний
 старт сервера — лише з ізольованим домом; (г) інструменти, що не пишуть у спільний `CLIO_HOME`. Пройшли
-**41 клас у 40 файлах** — від `AddPackage` до `UploadImage`, включно з ізольованими
+**40 класів у 39 файлах** — від `AddPackage` до `UploadImage`, включно з ізольованими
 `Knowledge*`, `GuidanceGetDiagnostics`, `RequestInfo`, `MobilePageConversionGuide` (обидва класи) і
 трьома фікстурами, що взагалі не мали маркера (`ClearRedis`, `FindEmptyIisPort`, `RemovePackageDependency`).
-Пул: 27 → 68 класів фікстур (26 → 66 файлів). `NumberOfTestWorkers` лишається 2.
+Пул: 27 → 67 класів фікстур (26 → 65 файлів). `NumberOfTestWorkers` лишається 2.
+
+Спочатку пройшов і 41-й — `ListEntityClientSchemasToolE2ETests`, — але паралельно з цим PR у `master`
+злився PR #1399, який додав у ту саму фікстуру `McpE2E.Sandbox`-тест на типізовану сутність стенду.
+GitHub Actions ганяє merge-коміт, тож `SandboxFixtures_ShouldBeNonParallelizable` впав саме там; фікстура
+повернулась до `[NonParallelizable]`. Це і є очікувана робота інваріанту: пул визначає guard, а не історія файлу.
 
 **Свідомо лишені серійними**: `ExperimentalToolE2ETests` (пише feature-флаги у спільний
 `appsettings.json`), `ComponentInfoToolE2ETests` (пер-тестові сервери з власними env-змінними),

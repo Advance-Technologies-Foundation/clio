@@ -19,7 +19,10 @@ namespace Clio.Mcp.E2E;
 [Category("McpE2E.NoEnvironment")]
 [AllureNUnit]
 [AllureFeature(ListEntityClientSchemasTool.ToolName)]
-[Parallelizable(ParallelScope.Self)]
+// Serial on purpose: the typed-entity test below is McpE2E.Sandbox and reads the shared stand, so this
+// fixture cannot join the NoEnvironment parallel pool
+// (McpFixturePolicyTests.SandboxFixtures_ShouldBeNonParallelizable_WhenTheyContainSandboxTests).
+[NonParallelizable]
 public sealed class ListEntityClientSchemasToolE2ETests : McpContractFixtureBase {
 
 	[Test]
