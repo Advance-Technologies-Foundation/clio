@@ -1,4 +1,4 @@
-using System.ComponentModel;
+﻿using System.ComponentModel;
 using System.ComponentModel.DataAnnotations;
 using System.Text.Json.Serialization;
 using Clio.Common;
@@ -28,7 +28,7 @@ public class CreateBusinessProcessTool(
 	 Description("Build a business process on a Creatio environment from a declarative JSON descriptor. The "
 		 + "descriptor is an object with: name (schema code), caption, packageName, elements[] "
 		 + "({name (the element handle/local code), type:startEvent|signalStart|endEvent|userTask|sendEmail "
-		 + "(aliases readData/performTask), caption, userTaskName?, "
+		 + "(aliases readData/changeData/deleteData/performTask), caption, userTaskName?, "
 		 + "readData? (readData elements only: {source:<EntityName> (required), mode?:first (the only supported "
 		 + "mode — the first record of the sorted selection; collection/count/aggregation are planned), "
 		 + "columns?:[<ColumnName>,...] (TOP-LEVEL column names only — omit or pass [] to read ALL columns; a "
@@ -47,6 +47,18 @@ public class CreateBusinessProcessTool(
 		 + "(effectively mandatory — the runtime refuses to update with an empty filter; to target one record, filter "
 		 + "on Id against a process parameter or a trigger output such as a signalStart element's RecordId — NOT a "
 		 + "preceding readData element's column outputs, see the readData NOTE), "
+		 + "deleteData? (deleteData elements only: {source:<EntityName> (required)}) — configures WHICH OBJECT the "
+		 + "element deletes records from; WHICH records is the element's filter block, and here the filter is "
+		 + "MANDATORY in effect: the runtime throws an empty-filter error and deletes NOTHING without one. There is no "
+		 + "delete-everything mode, and no column values — the block has exactly one field. DESTRUCTIVE, AND THIS "
+		 + "IS A HARD REQUIREMENT: deletion is irreversible, cascades to dependent records, and repeats on EVERY "
+		 + "run of the process. Before calling this tool with a deleteData element you MUST (1) COUNT what the "
+		 + "filter matches — a count-only read on the same object (count:true, top:0) — or name why no count is "
+		 + "possible (the filter references a process parameter or trigger output whose value exists only at run "
+		 + "time; no readable data connection; a condition the read cannot express), (2) tell the user in their "
+		 + "own language the OBJECT, the NUMBER, the filter in plain prose, and the three consequences, and "
+		 + "(3) get an explicit yes — a vague reply is not one, and consent lapses if the filter then changes. "
+		 + "get-guidance name=process-data-elements carries the message template), "
 		 + "email? (sendEmail elements only — the Send email/EmailTemplateUserTask element, CUSTOM MESSAGE only, no "
 		 + "email templates: {mode?:auto|manual (how the email is sent; the designer requires a sender for auto), "
 		 + "sender? (a MailboxSyncSettings record id, or a sender email address configured on the environment), "

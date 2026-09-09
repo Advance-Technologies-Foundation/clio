@@ -1,4 +1,4 @@
-using System.ComponentModel;
+﻿using System.ComponentModel;
 using System.ComponentModel.DataAnnotations;
 using System.Text.Json.Serialization;
 using Clio.Common;
@@ -71,7 +71,7 @@ public class ModifyBusinessProcessTool(
 		 + "element and its flows; partial update: omit on to keep the current change type, omit entity to keep the "
 		 + "current one (retargeting it clears any old-entity filter), omit changedColumns to clear column tracking; "
 		 + "changedColumns is valid only for on:modified), setElement (elementName + an 'elementUpdate':"
-		 + "{useBackgroundMode?, readData?, changeData?, email?, performer?} — changes element-level fields IN PLACE, preserving the element and its "
+		 + "{useBackgroundMode?, readData?, changeData?, deleteData?, email?, performer?} — changes element-level fields IN PLACE, preserving the element and its "
 		 + "flows; only the fields you pass change. useBackgroundMode applies to ANY element kind. readData "
 		 + "{source?, mode?:first, columns?, sort?:{column, direction?:asc|desc}} reconfigures a readData element's "
 		 + "data configuration: omit source to keep the current source object, omit columns/sort to keep the current "
@@ -90,6 +90,12 @@ public class ModifyBusinessProcessTool(
 		 + "refused while another parameter still maps from the element (the refusal names each dependent). On ANY "
 		 + "target change (first configuration included) the stored record filter clears unless it already "
 		 + "targets the incoming object — re-issue setFilter when it cleared), "
+		 + "deleteData {source?} reconfigures a deleteData element: omit source to keep the current target "
+		 + "object. Retargeting source is refused while another parameter still maps from the element, and on ANY "
+		 + "target change (first configuration included) the stored record filter clears unless it already targets "
+		 + "the incoming object — re-issue setFilter when it cleared, because a deleteData element with no filter "
+		 + "deletes nothing and fails at run time. DESTRUCTIVE: confirm the object and the records with the user "
+		 + "before retargeting), "
 		 + "email "
 		 + "(sendEmail elements only, same block as create-business-process) rewrites the fields you pass — mode, "
 		 + "sender, subject, body, importance, ignoreErrors, performer replace the current value IN PLACE, but "
