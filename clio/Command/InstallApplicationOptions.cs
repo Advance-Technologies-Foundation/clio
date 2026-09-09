@@ -106,7 +106,9 @@ namespace Clio.Command {
 					return 0;
 				}
 
-				_logger.WriteError("Error");
+				// The installer already wrote "Package installation failed: <reason>"; this line adds the
+				// identity of what failed. Shared with push-pkg so both verbs close identically.
+				_logger.WriteError(PushPackageCommand.BuildFailureMessage(options.Name));
 				return 1;
 			}
 			catch (InvalidGZipArchiveInstallException exception) {

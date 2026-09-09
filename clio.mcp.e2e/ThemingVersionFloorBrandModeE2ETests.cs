@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Net;
 using System.Text;
 using System.Threading.Tasks;
@@ -107,6 +108,48 @@ public sealed class ThemingVersionFloorBrandModeE2ETests : McpContractFixtureBas
 			because: "the stable version-too-old error code must travel in the message so agents can branch on the failure class");
 		result.Error.Should().Contain($"requires Creatio {ThemeServiceRequirement.MinVersion} or later",
 			because: "the failure must state the floor the target environment misses");
+	}
+
+	[Test]
+	[AllureTag(CheckThemingAccessTool.ToolName)]
+	[AllureName("check-theming-access is NOT refused on a pre-10 environment")]
+	[AllureDescription("Calls check-theming-access against the registered pre-10 loopback stub and verifies the outcome is decided by the RightsService/LicenseService probe, not by a version gate: the answer must never carry the version-too-old code or the ThemeService floor refusal.")]
+	[Description("check-theming-access lost its [RequiresCreatioVersion] gate (issue #1303 C5). Against a LIVE pre-10 environment it must no longer be refused up front; the stub answers only auth + ApplicationInfoService, so the probe still fails, but for a transport reason rather than the version floor.")]
+	public async Task CheckThemingAccess_Should_NotBeRefusedWithVersionTooOld_WhenTargetIsPre10Environment() {
+		// Arrange
+		await using ArrangeContext context = Arrange(TimeSpan.FromMinutes(3));
+
+		// Act
+		CallToolResult callResult = await context.Session.CallToolAsync(
+			CheckThemingAccessTool.ToolName,
+			new Dictionary<string, object?> {
+				["args"] = new Dictionary<string, object?> {
+					["environment-name"] = EnvironmentName
+				}
+			},
+			context.CancellationTokenSource.Token);
+		string diagnostics = DescribeCallOutcome(callResult);
+
+		// Assert
+		diagnostics.Should().Contain("Unexpected response",
+			because: $"the outcome must be decided by the RightsService probe actually reaching the stub (which 404s it), proving the tool EXECUTED instead of being refused by a version gate. Outcome: {diagnostics}");
+		diagnostics.Should().NotContain(CreatioVersionRequirementException.VersionTooOldCode,
+			because: $"check-theming-access reads only RightsService/LicenseService, so a pre-{ThemeServiceRequirement.MinVersion} target must never be refused with the version-too-old code. Outcome: {diagnostics}");
+		diagnostics.Should().NotContain($"requires Creatio {ThemeServiceRequirement.MinVersion} or later",
+			because: $"the removed [RequiresCreatioVersion] gate must not resurface as a floor refusal on the advisory access probe. Outcome: {diagnostics}");
+	}
+
+	/// <summary>
+	/// Flattens an MCP call outcome into one diagnostic string covering BOTH shapes the stub can produce:
+	/// a structured <see cref="ThemingAccessResult"/> failure, or a raw text/protocol error when the 404-ing
+	/// stub breaks the probe before a structured payload is written. Both are acceptable here — the test only
+	/// asserts on the ABSENCE of the version-gate wording, so it must search everything the caller would see.
+	/// </summary>
+	private static string DescribeCallOutcome(CallToolResult callResult) {
+		string text = string.Join(
+			System.Environment.NewLine,
+			callResult.Content.OfType<TextContentBlock>().Select(block => block.Text));
+		return $"IsError={callResult.IsError}; {text}";
 	}
 
 	/// <summary>

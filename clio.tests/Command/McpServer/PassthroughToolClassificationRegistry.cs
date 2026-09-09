@@ -317,6 +317,7 @@ internal static class PassthroughToolClassificationRegistry {
 			["get-package-file"] = PassthroughClassification.NotApplicable, // BaseTool<T>.ExecuteResolved<TCommand,TResponse> is already resolver-backed (class a)
 			["get-page"] = PassthroughClassification.NotApplicable,
 			["get-page-hierarchy"] = PassthroughClassification.NotApplicable,
+			["get-process-page-facts"] = PassthroughClassification.NotApplicable,
 			["get-process-signature"] = PassthroughClassification.NotApplicable,
 			["get-record-rights"] = PassthroughClassification.NotApplicable,
 			["get-related-page-addon"] = PassthroughClassification.NotApplicable,
@@ -342,6 +343,7 @@ internal static class PassthroughToolClassificationRegistry {
 			["list-themes"] = PassthroughClassification.NotApplicable,
 			["list-user-tasks"] = PassthroughClassification.NotApplicable,
 			["modify-business-process"] = PassthroughClassification.NotApplicable,
+			["modify-business-process-as-new-version"] = PassthroughClassification.NotApplicable, // BaseTool<T>.InternalExecute<TCommand> - the same already-resolver-backed class (a) pattern as modify-business-process
 			["modify-entity-schema-column"] = PassthroughClassification.NotApplicable,
 			["modify-user-task-parameters"] = PassthroughClassification.NotApplicable,
 			["new-integration-test-project"] = PassthroughClassification.NotApplicable,
@@ -351,6 +353,8 @@ internal static class PassthroughToolClassificationRegistry {
 			["odata-delete"] = PassthroughClassification.NotApplicable,
 			["odata-read"] = PassthroughClassification.NotApplicable,
 			["odata-update"] = PassthroughClassification.NotApplicable,
+			["get-email-template"] = PassthroughClassification.NotApplicable,
+			["update-email-template"] = PassthroughClassification.NotApplicable,
 			["pkg-to-db"] = PassthroughClassification.NotApplicable,
 			["pkg-to-file-system"] = PassthroughClassification.NotApplicable,
 			["push-workspace"] = PassthroughClassification.NotApplicable,
@@ -369,6 +373,7 @@ internal static class PassthroughToolClassificationRegistry {
 			["restore-db-to-local-server"] = PassthroughClassification.NotApplicable,
 			["restore-workspace"] = PassthroughClassification.NotApplicable,
 			["run-process"] = PassthroughClassification.NotApplicable,
+			["set-active-business-process-version"] = PassthroughClassification.NotApplicable, // BaseTool<T>.InternalExecute<TCommand> - the same already-resolver-backed class (a) pattern as modify-business-process
 			["set-background-image"] = PassthroughClassification.NotApplicable,
 			["set-fsm-mode"] = PassthroughClassification.NotApplicable,
 			["set-logo"] = PassthroughClassification.NotApplicable,
