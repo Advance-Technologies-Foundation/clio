@@ -74,7 +74,7 @@ public class BundledProcessBuilderPackageTests {
 	/// SHA-256 of the committed archive. Produced by <c>rebundle-process-builder.ps1</c> at
 	/// <see cref="ExpectedArchiveVersion"/> from
 	/// the <c>ProcessBuilder</c> repository (<c>packages/CrtProcessBuilder</c>, branch
-	/// <c>feature/ENG-95891-formula-expressions</c>), at the commit recorded mechanically in
+	/// <c>feature/ENG-96503-read-data-count-aggregation</c>), at the commit recorded mechanically in
 	/// <see cref="ExpectedProducingCommit"/> — the script captures <c>git rev-parse HEAD</c> and refuses to cut
 	/// from a tree with uncommitted changes, so this reference is no longer a sentence anyone has to keep true
 	/// by hand. Many numbers below the current one are burned rather than reused — some because two branches drew
@@ -89,16 +89,30 @@ public class BundledProcessBuilderPackageTests {
 	/// reaching a clio commit. Do not take one above the global maximum across all branches: another branch sitting
 	/// higher does not make its number yours to continue, and adopting it produces a version that looks newer than
 	/// work it does not contain. See docs/agent-instructions/bundled-packages.md for the commands.</para>
-	/// <para>What this cut carries, over the 1.3.1.1 performer/lookup delivery it replaces: server-side
-	/// VALIDATION of formula expressions — an <c>expression</c> mapping source and a conditional-flow condition
-	/// are now parsed, their parameter references resolved against the process, and their result type checked
-	/// against the declared target, instead of being stored unchecked. The MINOR digit moved at 1.4.0.0 because
-	/// that is a new capability; every PATCH digit over it fixes something a review or a manual case found, and
-	/// each is raised so a stand still carrying an earlier one is DETECTABLY behind — same-version re-cuts make
-	/// equal version numbers mean nothing, which the convergence check cannot see through.</para>
+	/// <para>What this cut carries, over the 1.6.0.6 line it replaces: the Read data element's <c>count</c> and
+	/// <c>aggregation</c> modes (ENG-96503) — <c>readData.mode</c> now takes <c>first</c> | <c>count</c> |
+	/// <c>aggregation</c>, the aggregation pair is validated against the source object's column types, and the
+	/// element's result flag moves to the output the runtime will actually write. The MINOR digit had already
+	/// moved at 1.6.0.0; every PATCH digit over it fixes something a review or a manual case found, and each is
+	/// raised so a stand still carrying an earlier one is DETECTABLY behind — same-version re-cuts make equal
+	/// version numbers mean nothing, which the convergence check cannot see through. 1.6.0.7 identifies the
+	/// FIRST cut of this story, taken before four review fixes landed; the bytes here are 1.6.0.8 and carry
+	/// them, which is why the number moved rather than being re-used.</para>
 	/// <para>
-	/// The cut ran with the package's own gate tests passing rather than under <c>-SkipTests</c>, and the
-	/// script verified the archive inventory it produced. The byte-for-byte comparison of every archive entry
+	/// This cut DID run under <c>-SkipTests</c>, and the SHA above was therefore refreshed by hand rather than
+	/// by the script. Why, and what was done instead: the package's suite is green on the producing commit
+	/// (1573 of 1574 with the CI filter) except for
+	/// <c>CiContractGuardTests.FeatureToggling_LoadedIdentityMatchesThePlatformDemandAndTheTestKit</c>, which
+	/// fails on this machine because the local <c>.application/net-framework/core-bin</c> binds
+	/// <c>Creatio.FeatureToggling</c> 1.0.18.0 while the test project references the 1.0.19.0 CI provisions —
+	/// verified identical with the change stashed, i.e. a stale local dependency set, not a defect in the cut.
+	/// The four <c>IProcessDesignGuard</c> deny cases that <c>-SkipTests</c> warns about — the only check that
+	/// each operation is still bound to its authorization gate — were run separately and pass (57 of 57 across
+	/// <c>ProcessBuildHandlerTests</c>, <c>ProcessModifyHandlerTests</c> and
+	/// <c>ProcessDesignerOrchestratorTests</c>). The build was validated with
+	/// <c>MSBuildWarningsAsMessages=MSB3245</c> in the environment, which demotes only the three references the
+	/// local core-bin lacks and leaves the repository's warning policy untouched.
+	/// The script verified the archive inventory it produced. The byte-for-byte comparison of every archive entry
 	/// against the commit's CHECKOUT rendering was NOT re-run here, and the clean-tree refusal does NOT cover
 	/// it: a clean TREE and a clean CHECKOUT are different states. `git add` normalises to LF in the INDEX while
 	/// the working tree keeps what was written, so LF files can be committed, leave the tree clean, pass the
@@ -162,7 +176,7 @@ public class BundledProcessBuilderPackageTests {
 	/// </para>
 	/// </remarks>
 	private const string ExpectedArchiveSha256 =
-		"B25DC977A9A0A0B84719777329D817E4AE67DE8146DCB41B12616CCFD54D94D1";
+		"AB022836AAF2362D7D8E132E157CDF5BE59AE4C601B79B7FA340B40DDCBC6EFC";
 
 	/// <summary>
 	/// The <c>PackageVersion</c> the shipped descriptor carries.
@@ -190,7 +204,7 @@ public class BundledProcessBuilderPackageTests {
 	/// </para>
 	/// </para>
 	/// </remarks>
-	private const string ExpectedArchiveVersion = "1.6.0.7";
+	private const string ExpectedArchiveVersion = "1.6.0.8";
 
 	/// <summary>
 	/// The commit of the PRODUCING repository the archive was cut from, written by
@@ -202,7 +216,7 @@ public class BundledProcessBuilderPackageTests {
 	/// corresponding to no commit" is unreachable rather than merely documented. Anyone with a checkout can
 	/// verify the rest with one `git checkout`.</para>
 	/// </summary>
-	private const string ExpectedProducingCommit = "d2a7f6eb84a82a0773954960980868ed6944ebd1";
+	private const string ExpectedProducingCommit = "6b45a3758dbaaf1c0221a894775ae0205299f887";
 
 	/// <summary>
 	/// The <c>ModifiedOnUtc</c> the shipped descriptor carries.
@@ -228,7 +242,7 @@ public class BundledProcessBuilderPackageTests {
 	/// command — the previous pin ended in <c>431</c>, which is how the hand edit was eventually noticed.
 	/// </para>
 	/// </remarks>
-	private const string ExpectedDescriptorModifiedOnUtc = "/Date(1788947842000)/";
+	private const string ExpectedDescriptorModifiedOnUtc = "/Date(1788957457000)/";
 
 	/// <summary>
 	/// The <c>ModifiedOnUtc</c> the shipped COMPILE-MARKER SCHEMA descriptor carries.
