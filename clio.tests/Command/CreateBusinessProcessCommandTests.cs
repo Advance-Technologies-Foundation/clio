@@ -61,7 +61,7 @@ public sealed class CreateBusinessProcessCommandTests {
 				["accessRights"] = JsonDocument.Parse("{\"object\":\"Order\"}").RootElement.Clone()
 			}
 		};
-		_processDescriber.Describe(Arg.Any<ProcessIdentity>(), null)
+		_processDescriber.Describe(Arg.Any<ProcessIdentity>(), null, Arg.Any<bool>())
 			.Returns(new DescribeProcessResult { Elements = [element] });
 		List<string> warnings = [];
 		_logger.When(logger => logger.WriteWarning(Arg.Any<string>()))
@@ -112,7 +112,7 @@ public sealed class CreateBusinessProcessCommandTests {
 		};
 		_createBusinessProcessService.BuildProcess("sandbox", Arg.Any<CreateBusinessProcessRequest>())
 			.Returns(BuildResult());
-		_processDescriber.Describe(Arg.Any<ProcessIdentity>(), null).Returns(
+		_processDescriber.Describe(Arg.Any<ProcessIdentity>(), null, Arg.Any<bool>()).Returns(
 			new DescribeProcessResult { Elements = [new DescribedElement { Name = "SomethingElse" }] });
 		List<string> warnings = [];
 		_logger.When(logger => logger.WriteWarning(Arg.Any<string>()))
@@ -138,7 +138,7 @@ public sealed class CreateBusinessProcessCommandTests {
 		CreateBusinessProcessOptions options = new() { Environment = "sandbox", DescriptorJson = descriptor };
 		_createBusinessProcessService.BuildProcess("sandbox", Arg.Any<CreateBusinessProcessRequest>())
 			.Returns(BuildResult());
-		_processDescriber.Describe(Arg.Any<ProcessIdentity>(), null).Returns(
+		_processDescriber.Describe(Arg.Any<ProcessIdentity>(), null, Arg.Any<bool>()).Returns(
 			new DescribeProcessResult { Elements = [new DescribedElement { Name = "Grant" }] });
 		List<string> warnings = [];
 		_logger.When(logger => logger.WriteWarning(Arg.Any<string>()))
@@ -166,7 +166,7 @@ public sealed class CreateBusinessProcessCommandTests {
 		CreateBusinessProcessOptions options = new() { Environment = "sandbox", DescriptorJson = descriptor };
 		_createBusinessProcessService.BuildProcess("sandbox", Arg.Any<CreateBusinessProcessRequest>())
 			.Returns(BuildResult());
-		_processDescriber.Describe(Arg.Any<ProcessIdentity>(), null)
+		_processDescriber.Describe(Arg.Any<ProcessIdentity>(), null, Arg.Any<bool>())
 			.Returns(Error.Failure("Describe.Failed", "the environment did not answer"));
 		List<string> warnings = [];
 		_logger.When(logger => logger.WriteWarning(Arg.Any<string>()))
@@ -195,14 +195,14 @@ public sealed class CreateBusinessProcessCommandTests {
 		CreateBusinessProcessOptions options = new() { Environment = "sandbox", DescriptorJson = descriptor };
 		_createBusinessProcessService.BuildProcess("sandbox", Arg.Any<CreateBusinessProcessRequest>())
 			.Returns(BuildResult());
-		_processDescriber.Describe(Arg.Any<ProcessIdentity>(), null).Returns(
+		_processDescriber.Describe(Arg.Any<ProcessIdentity>(), null, Arg.Any<bool>()).Returns(
 			new DescribeProcessResult { Elements = [] });
 
 		// Act
 		_command.Execute(options);
 
 		// Assert
-		_processDescriber.Received(1).Describe(Arg.Any<ProcessIdentity>(), null);
+		_processDescriber.Received(1).Describe(Arg.Any<ProcessIdentity>(), null, false);
 	}
 
 	[Test]
@@ -321,7 +321,7 @@ public sealed class CreateBusinessProcessCommandTests {
 		_command.Execute(options);
 
 		// Assert
-		_processDescriber.Received(1).Describe(Arg.Any<ProcessIdentity>(), Arg.Any<string>());
+		_processDescriber.Received(1).Describe(Arg.Any<ProcessIdentity>(), Arg.Any<string>(), false);
 	}
 
 	[Test]

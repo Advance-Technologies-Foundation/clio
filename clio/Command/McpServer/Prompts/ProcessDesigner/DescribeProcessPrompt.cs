@@ -33,15 +33,26 @@ public static class DescribeProcessPrompt {
 		   (name, uid, caption, type, buildType, userTaskName, parameters; `signal` for a signal start, and a
 		   configuration block for a configured element - `email`, `readData`, `changeData`, `openEditPage`),
 		   `flows` (name, source, target, kind, `label`, and on a branch its `condition` plus
-		   `branchesOnActivityResult`), and process `parameters` — not raw metadata.
+		   `branchesOnActivityResult`), and process `parameters` — not raw metadata. It also reports the
+		   version standing: `version`, `isActiveVersion`, `activeVersionName`, `activeVersionSchemaUId` and
+		   the `versions[]` family.
 		   A `preconfiguredPage` element also carries its `preconfiguredPage` block: the page it shows, its
 		   completing `buttons`, and `dataSources[]` — where `parameter` names the element parameter that
 		   receives the id of the record the page saved, the handle later steps map from and the only place it
 		   is reported. Read `inSync` and `shadowedPageParameters` there too: `inSync: true` means "nothing
 		   left to synchronize", not "the element carries every page parameter".
-		2. Call `get-guidance` name `process-modeling` for the element catalog + connection-rule vocabulary.
-		3. Narrate, in plain language, the trigger (start event), the ordered steps (follow the flows by
-		   source/target), each activity's purpose, and any branches (gateways / conditional flows).
+		2. CHECK `isActiveVersion` BEFORE narrating anything. Every saved version is a separate schema with
+		   its own name, so resolving by `process-name` returns the family ROOT — and on a versioned process
+		   that is NOT what the runtime executes. Three outcomes: true, narrate this graph; false WITH an
+		   `activeVersionSchemaUId`, describe again by that UId and narrate THAT graph; false or absent
+		   WITHOUT one, there is nothing to redirect to — read `versionReadWarning`, say the version standing
+		   is unknown, and do NOT fall back to the graph you hold or assume the process is unversioned. The
+		   warning can also arrive beside fields that WERE established, so read it even when values are
+		   present.
+		3. Call `get-guidance` name `process-modeling` for the element catalog + connection-rule vocabulary.
+		4. Narrate, in plain language, the trigger (start event), the ordered steps (follow the flows by
+		   source/target), each activity's purpose, and any branches (gateways / conditional flows). State
+		   which version you read, and say so explicitly when it is not the active one.
 		An `openEditPage` block tells you which page the step opens, for which object and record type, whether the
 		user ADDS a record (with the values pre-filled for them) or EDITS an existing one (and which), the
 		recommendation shown on the page, and when the step counts as complete. Narrate it in those terms rather than

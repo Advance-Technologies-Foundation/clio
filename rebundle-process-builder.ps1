@@ -417,11 +417,72 @@ if (Test-Path -LiteralPath $binDir) {
 $objDir = Join-Path $packageDir 'Files\obj'
 if (Test-Path -LiteralPath $objDir) { Remove-Item -LiteralPath $objDir -Recurse -Force; Ok 'Files/obj removed' }
 
-# ---------------------------------------------------------------- 4. pack into the clio checkout
-Step '4. Pack straight into the clio checkout'
-dotnet $clioDll compress $packageDir --skip-pdb -d $archive
-if ($LASTEXITCODE -ne 0) { Die 'compress failed.' }
-Ok $archive
+# ------------------------------------------------- 3b. materialise the sources from the COMMIT, not the tree
+# The archive is cut from `git archive <producing commit>`, never from the working tree, and this is a
+# correctness fix rather than tidiness.
+#
+# Packing the tree made the hash depend on the LINE ENDINGS of the machine that ran the script. A file
+# freshly written by a tool sits in the tree as LF; the same file after a clean checkout on Windows
+# (core.autocrlf=true, or `* text=auto` in .gitattributes) is CRLF. Both are the same commit and the same
+# content, and they produce DIFFERENT bytes and therefore a different SHA-256 - so a reviewer following the
+# documented recipe on their own machine got a hash that did not match the pin, with nothing to tell them
+# whether the archive had been tampered with or merely repacked. That is the sole prescribed control on a
+# binary that installs executable C# onto customer environments, and it was decided by an editor setting.
+# It had already happened once with nine files and once more with thirteen.
+#
+# The existing clean-tree gate provably cannot catch it: a tree can be clean, correct and CRLF at the same
+# time.
+#
+# `git archive` ALONE is not enough, and this was measured rather than assumed: it runs the same
+# working-tree conversion a checkout does, so with core.autocrlf=true it emits CRLF and the hash still
+# depends on the operator's git configuration. The export is therefore pinned with `-c core.autocrlf=false
+# -c core.eol=lf`, which makes it hand back blob bytes - LF - on every platform and every configuration.
+# That is what turns the pin into something a reviewer can reproduce from the commit id alone, and it is
+# why the reproduction recipe in docs/agent-instructions/bundled-packages.md quotes the flags: dropping
+# them yields a different, machine-dependent hash.
+#
+# The one file that cannot come from the commit is descriptor.json: the restamp above is not committed yet,
+# and by contract the pin names the PRE-restamp commit. So it is overlaid from the tree, where this script
+# has just written it. That keeps exactly one file's bytes owned by tooling instead of by git, and the
+# tooling is deterministic - see the reproduction recipe in docs/agent-instructions/bundled-packages.md.
+Step '3b. Materialise the package from the producing commit (never from the working tree)'
+$packRoot = Join-Path ([IO.Path]::GetTempPath()) ("clio-rebundle-" + [Guid]::NewGuid().ToString('n'))
+New-Item -ItemType Directory -Path $packRoot -Force | Out-Null
+try {
+    # ZIP rather than tar, and expanded in-process. `tar` on PATH here can be GNU tar, which reads a
+    # Windows `C:\...` argument as a REMOTE host spec and fails with "Cannot connect to C: resolve
+    # failed" - measured. Expand-Archive has no such ambiguity and needs nothing installed.
+    $zipPath = Join-Path $packRoot 'package.zip'
+    git -c core.autocrlf=false -c core.eol=lf -C $PackageRepoPath archive --format=zip -o $zipPath `
+        $producingCommit -- 'packages/CrtProcessBuilder'
+    if ($LASTEXITCODE -ne 0) { Die "git archive failed for $producingCommit in $PackageRepoPath." }
+    Expand-Archive -LiteralPath $zipPath -DestinationPath $packRoot -Force
+    Remove-Item -LiteralPath $zipPath -Force
+
+    $packDir = Join-Path $packRoot 'packages\CrtProcessBuilder'
+    if (-not (Test-Path -LiteralPath $packDir)) {
+        Die ("The export produced no packages/CrtProcessBuilder at $producingCommit. The commit does not " +
+            'carry the package, which means the producing commit is not the one you meant to ship.')
+    }
+    # Both are gitignored, so an export cannot contain them. Asserted rather than assumed: if either ever
+    # became tracked, this script's whole point - a source-only archive - would fail silently.
+    foreach ($leaked in @((Join-Path $packDir 'Files\Bin'), (Join-Path $packDir 'Files\obj'))) {
+        if (Test-Path -LiteralPath $leaked) {
+            Die ("$leaked is TRACKED at $producingCommit, so build output would ship inside a source-only " +
+                'package. Untrack it before cutting.')
+        }
+    }
+    Copy-Item -LiteralPath $descriptor -Destination (Join-Path $packDir 'descriptor.json') -Force
+    Ok "exported $producingCommit to $packDir (descriptor.json overlaid from the restamped tree)"
+
+    # ---------------------------------------------------------------- 4. pack into the clio checkout
+    Step '4. Pack straight into the clio checkout'
+    dotnet $clioDll compress $packDir --skip-pdb -d $archive
+    if ($LASTEXITCODE -ne 0) { Die 'compress failed.' }
+    Ok $archive
+} finally {
+    if (Test-Path -LiteralPath $packRoot) { Remove-Item -LiteralPath $packRoot -Recurse -Force }
+}
 
 # ---------------------------------------------------------------- 5. verify, do not trust
 Step '5. Verify the archive contents (step 3 is easy to forget and its failure is silent)'

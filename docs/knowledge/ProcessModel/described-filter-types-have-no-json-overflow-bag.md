@@ -9,8 +9,9 @@ date: 2026-08-19
 **What is true** — `describe-business-process` deserializes the server payload into the
 `Described*` types and re-serializes them for the caller. The types that model an ELEMENT and its
 per-kind configuration blocks each hold a `[JsonExtensionData]` overflow bag, so an unknown field
-survives the round trip. **Counted against the file, not remembered** — this membership has moved
-once already and the list is the thing that goes stale:
+survives the round trip. **Counted against the file, not remembered** — this membership has now gone
+stale TWICE, and both times in a record whose whole point is that the list goes stale. Counted at the
+merge of ENG-91853 and ENG-94374: 14 types carry a bag, 8 do not.
 
 - **bag, an undeclared field survives:** `DescribeProcessResult` (the graph root),
   `DescribedElement`, `DescribedFlow`, `DescribedEmail`, `DescribedPerformer`, `DescribedApproval`,
@@ -19,11 +20,19 @@ once already and the list is the thing that goes stale:
 - **no bag, still dropped in silence:** `DescribedFilter`, `DescribedFilterGroup`,
   `DescribedFilterCondition`, `DescribedFilterElementRef`, `DescribedConnection`,
   `DescribedSignal`, `DescribedParameter`
+- **no bag, and NOT a gap:** `DescribedProcessVersion`. clio builds every family entry itself from
+  the process library, so there is no server field to drop. `ServerProcessDescriber.ApplyVersionFacts`
+  records that this inverts the day the server starts reporting the family, and that adding the bag
+  belongs to that change.
 
-`DescribedFlow` LEFT the bagless set with the `branchesOnActivityResult` nullability fix, and this
-record's body went on listing it there afterwards while its own description line said otherwise —
-which is the argument for recounting rather than editing from memory. A configuration block added
-later is expected to carry one; a filter type is not.
+**`DescribedFlow` carries a bag**, and it is worth saying loudly because two successive versions of
+this record got it wrong in opposite directions. It LEFT the bagless set with the
+`branchesOnActivityResult` nullability fix, and this record's body went on listing it as bagless
+afterwards while its own description line said otherwise. The version-readback work then rewrote the
+paragraph and put it back among the bagless types. Neither edit was careless — the list simply cannot
+be maintained from memory, which is the argument for recounting it against
+`IProcessDescriber.cs` every time this paragraph is touched. A configuration block added later is
+expected to carry one; a filter type is not.
 
 Every filter field therefore needs a property on both sides: the descriptor in the ProcessBuilder
 package *and* a matching `[JsonPropertyName]` property here. `Macro`, `MacroArgument` and `DatePart`
