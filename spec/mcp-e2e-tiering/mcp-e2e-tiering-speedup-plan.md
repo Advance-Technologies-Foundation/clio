@@ -204,6 +204,13 @@ dotnet test clio.tests/clio.tests.csproj -f net10.0 --no-build --filter "FullyQu
   ще один прихований процес на кожне використання.
 - Проба досяжності робиться через `clio ping-app` (окремий процес), у `ApplicationToolE2ETests` та
   `ApplicationSectionMaintenanceToolE2ETests` — до **двох** проб на тест (configured + fallback `d2`).
+- TeamCity **не серіалізує** білди `Team_Atf_ClioMcpE2eTests` для різних комітів однієї гілки: скрипт черги
+  (`.github/scripts/queue-teamcity-build.ps1`) дедуплікує лише той самий SHA, тож push у PR під час живого
+  білду ставить другий **одночасний** full-Creatio білд. Спостереження 2026-09-09: 16000226 (tip `6ac7245`)
+  стартував о `17:29Z` паралельно з 16000208 і впав за 2.5 хв, до першого тесту; 16000208 при цьому дійшов до
+  success. Причина падіння звідси невидима (лог TeamCity доступний лише з корпоративної мережі). Практичний
+  висновок для цього плану: не пушити наступний етап, поки статус попереднього білду ще `pending`, а статус
+  коміту, що запустився поверх живого білду, вважати недійсним і перезапускати після його завершення.
 
 ---
 
@@ -217,4 +224,6 @@ dotnet test clio.tests/clio.tests.csproj -f net10.0 --no-build --filter "FullyQu
 | Stage 3 — локально | робоче дерево | — | `--filter Category=McpE2E.NoEnvironment` по 5 перетегованих фікстурах: **28 passed, 0 failed, 0 skipped** (до перетегування ці 28 у швидкому гейті не запускались узагалі) | 39 с | — |
 | Stage 3 — TeamCity | `c8472c0` | 15999407 | success (той самий білд, що й Stage 1) | — | — |
 | Stage 2 — локально | робоче дерево | — | повний тир `NoEnvironment`, 2 воркери: **485 тестів** (457 + 28 перетегованих), 480 passed, ті самі 2 контейнерні failures і 3 skips, що й у baseline — **жодного нового падіння чи skip** | **10m 58s** проти 12m 40s baseline (−13 %, при +28 тестах) | `McpFixturePolicyTests` 13/13 (новий guard `ParallelFixtures_ShouldNotMutateProcessEnvironmentOrSharedSettings`) |
-| Stage 2 — TeamCity | … | … | … | … | … |
+| Stage 2 — TeamCity (PR #1427) | `b2d21c8` | [16000208](https://teamcity-rnd.bpmonline.com/buildConfiguration/Team_Atf_ClioMcpE2eTests/16000208) | **success** | **47m 04s** (pending `17:12:55Z` → success `17:59:59Z`) — **−3.3 хв проти Stage 1+3 (≈50m 20s) і −10.5 хв проти baseline 57m 32s** (−18 % білду; ≈ −24 % тестового кроку, якщо деплой ≈13 хв незмінний: 44m 20s → ≈33m 50s). Останні ~2.5 хв білд перекривався з 16000226 (рядок нижче) — на результат не вплинуло | статус не несе кількості; порівняння `Tests passed` 15999000 vs 16000208 — у TeamCity |
+| merge `master` + CI-фікс — TeamCity | `6ac7245` | [16000226](https://teamcity-rnd.bpmonline.com/buildConfiguration/Team_Atf_ClioMcpE2eTests/16000226) | **failure за 2.5 хв** | queued `17:29:08Z` → failure `17:31:36Z`: упав до першого тесту (повний прогін ≈47–50 хв, сам деплой Creatio >10 хв), стартувавши **паралельно** з ще живим 16000208 — скрипт черги дедуплікує лише той самий коміт, тож новий коміт ставить другий одночасний full-Creatio білд (небезпека, описана в коментарі `queue-teamcity-build.ps1`). Лог TeamCity з контейнера недоступний (хост зовні резолвиться у публічний nginx з 404). На тому ж коміті GitHub Actions зелені, `clio.mcp.e2e` збирається під net8.0 і net10.0. Чистий перезапуск — наступний рядок | — |
+| tip після завершення 16000208 — TeamCity | коміт з цим рядком | заповнюється зі статусу `CLIO MCP e2e tests (ATF)` на голові PR | … | очікування: ≈47 хв, як 16000208 (той самий код + мерж `master` + `ListEntityClientSchemas` знову серійна) | — |
