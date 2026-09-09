@@ -34,7 +34,7 @@
     "TC-10 refusal reproduced through the build path; nothing created"
   ],
   "gaps": [
-    "No design-time level observed anywhere in this run: no designer was opened, and the executor said so. TC-01, TC-02, TC-05 and TC-09 need a browser pass for the level that matters most to this feature.",
+    "No design-time level observed anywhere in this run: no designer was opened, and the executor said so. CLOSED after the fact, not by this executor: a designer pass over TC-01, TC-02, TC-05 and TC-09 is appended to the report, re-taken independently by a second party, and extended to shipped designer-authored content that no tooling wrote.",
     "The executor's sentence 'All ten processes below are named BPLabel TC<NN>' overstates: five processes exist, which is what the cases require."
   ],
   "standResidue": [

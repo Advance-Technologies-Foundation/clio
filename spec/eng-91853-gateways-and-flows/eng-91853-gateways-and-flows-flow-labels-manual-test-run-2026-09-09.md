@@ -309,3 +309,53 @@ downward instead, which is what puts the second and third labels near segments t
 together. Same feature, same drawing code for the label; different fan geometry. It is one more piece
 of evidence that the remark above belongs to connector routing rather than to labels, and it shows
 what the target looks like.
+
+**The geometry is measurable — and the comparison does not end where it looks like it ends.** Element
+positions come back from `describe-business-process`, so the two fans can be compared in numbers
+rather than described. `AddContact` straddles its source:
+
+```
+AddDataUserTask3   442;77     ← 95 above
+AddDataUserTask1   307;172      the branching activity
+AddDataUserTask2   442;264    → 92 below
+```
+
+Symmetric to within three pixels. `BPLabel TC02` stacks from its source instead:
+
+```
+AmountExaminedGateway      240;173     the gateway
+EscalateHighValueRequest   420;173   →   0   same row
+ReviewMediumValueRequest   420;303   → +130
+ProcessRequestAsUsual      420;433   → +260
+```
+
+Which explains the observation exactly, **including the part of it that looked arbitrary**: the first
+branch shares the gateway's own row, so its connector is a clean horizontal run and `High value` is
+unambiguous. That is why one of the three read well and two did not. Branches two and three both
+descend before running horizontally, so their descending segments share one corridor and a label on
+each lands near the other's line. Which label reads well is not arbitrary — it follows from three
+numbers.
+
+**But do not read `AddContact` as the target, which is where the sentence above overreaches.** The
+downward stack is a decision with reasons on the record — [layout §"Why branches go **downward**
+rather than being centred on the parent"](eng-91853-gateways-and-flows-layout.md) — and both survive
+this measurement:
+
+1. **A centred fan moves branches that already exist.** The layout re-runs on every modify and saves,
+   so with lanes `−1, 0, +1` a single `addFlow` reshuffles the diagram and a reviewer sees noise
+   instead of a change. Downward assignment leaves every previously placed branch where it was.
+2. **Top-to-bottom order *is* runtime evaluation order.** The runtime takes the first `true` in array
+   order, phase 1 preserves declaration order, and nothing in the schema encodes precedence — so the
+   vertical stack is the only place a human can read it. Straddling destroys that.
+
+And labels **strengthen** the second reason rather than weakening it. Before this change the vertical
+order encoded precedence between arrows a reader could not name; now the arrows say `High value`,
+`Medium value`, `Everything else` top to bottom, and the reading is "these are tried in this order"
+in words. The corpus agrees on the other half too: `dy = 0` is the most common single branch offset
+(379 of 974 measured targets), i.e. one branch keeping the parent's row — which is what
+`EscalateHighValueRequest` at `420;173` does.
+
+So the residue is **not** the fan direction. It is that two descending branches share a corridor, which
+is connector routing and label placement along a segment — and it stays with ENG-95890. What the
+`AddContact` comparison actually establishes is that the label is drawn where its flow is, in both
+geometries, which is a statement about this change and a clean one.
