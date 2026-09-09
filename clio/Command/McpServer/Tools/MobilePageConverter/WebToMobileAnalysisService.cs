@@ -2061,16 +2061,21 @@ public static class WebToMobileAnalysisService {
 
 	/// <summary>
 	/// Admits the rule's <c>declaredElements</c>. An entry is skipped, with a reason, when: it repeats a name an
-	/// earlier entry declared (the earlier one stands); its type is not a registered mobile component (nothing
-	/// downstream would catch the typo — the guide would tell the caller to insert a component that does not
-	/// exist); its parent is neither an element of the PROBED mobile template, nor another admitted declaration,
-	/// nor an element this conversion creates (a <c>containers</c> pair's mobile side, or a page-authored element
-	/// converted under its own name) — decided only when the template was probed, since without the probe the
-	/// template's names are unknown and every other template-presence gate is off too; or the source page already
-	/// uses its name for an element of its own (a same-named web element that a pair maps onto the declared one is
-	/// not a conflict: the pair says the two are one element, and the web one is walked as a twin). A skipped
-	/// parent cascades: a declaration whose parent was skipped is skipped with it. An entry missing its name, type
-	/// or parent is dropped silently, as before — it cannot be named in a report.
+	/// earlier entry declared (the earlier one stands); the PROBED mobile template already has an element under
+	/// this name (the template element wins — the rule declares only what the template lacks, it never redefines
+	/// what the template has; decided only when the template was probed, for the same reason as the parent check
+	/// below) — this is the same precedence <see cref="WithDeclaredElements"/> documents for its own maps, enforced
+	/// here so a real template element is never shadowed by a stale or mistaken declaration at emission time; its
+	/// type is not a registered mobile component (nothing downstream would catch the typo — the guide would tell
+	/// the caller to insert a component that does not exist); its parent is neither an element of the PROBED mobile
+	/// template, nor another admitted declaration, nor an element this conversion creates (a <c>containers</c>
+	/// pair's mobile side, or a page-authored element converted under its own name) — decided only when the
+	/// template was probed, since without the probe the template's names are unknown and every other
+	/// template-presence gate is off too; or the source page already uses its name for an element of its own (a
+	/// same-named web element that a pair maps onto the declared one is not a conflict: the pair says the two are
+	/// one element, and the web one is walked as a twin). A skipped parent cascades: a declaration whose parent was
+	/// skipped is skipped with it. An entry missing its name, type or parent is dropped silently, as before — it
+	/// cannot be named in a report.
 	/// </summary>
 	private static DeclaredElementSelection SelectDeclaredElements(TemplateMappingRule rule,
 		IReadOnlySet<string> mobileTypes, JsonArray pageViewConfig, IReadOnlyDictionary<string, string> containerNameMap,
@@ -2093,6 +2098,12 @@ public static class WebToMobileAnalysisService {
 			}
 			if (!seen.Add(declared.Name)) {
 				skipped.Add($"{declared.Name}: declared more than once (the earlier declaration stands)");
+				continue;
+			}
+			if (templateProbeAvailable && probedTypesByName.ContainsKey(declared.Name)) {
+				skipped.Add($"{declared.Name}: the probed mobile template already has an element with this name "
+					+ "(the template element wins; the rule declares only what the template lacks)");
+				removedNames.Add(declared.Name);
 				continue;
 			}
 			if (!mobileTypes.Contains(declared.Type)) {
@@ -2193,8 +2204,12 @@ public static class WebToMobileAnalysisService {
 	/// template provides needs no such ordering and the entry goes to the front of the map, ahead of the content
 	/// that walks into it. Content mapped onto a declared element by a <c>containers</c> pair is walked as its
 	/// children (merge-by-name), so the entry must precede that content — both placements satisfy that.
+	/// <paramref name="extras"/> is reordered PARENT-FIRST (see <see cref="OrderDeclaredElementsParentFirst"/>)
+	/// before emission, so a declaration whose parent is another declaration of the same rule is emitted correctly
+	/// regardless of which one the rules file lists first.
 	/// </summary>
 	private static void EmitDeclaredElements(ElementMapContext ctx, IReadOnlyList<DeclaredElementRule> extras) {
+		extras = OrderDeclaredElementsParentFirst(extras);
 		int frontInsertAt = 0;
 		foreach (DeclaredElementRule extra in extras) {
 			var values = new JsonObject { ["type"] = extra.Type };
@@ -2244,6 +2259,43 @@ public static class WebToMobileAnalysisService {
 				ctx.Out.Insert(frontInsertAt++, entry);
 			}
 		}
+	}
+
+	/// <summary>
+	/// Reorders <paramref name="extras"/> so a declaration whose <c>parentName</c> is another declaration's
+	/// <c>name</c> (in the SAME rule) always comes after that parent, regardless of which one the rules file lists
+	/// first — <see cref="EmitDeclaredElements"/> processes the list in order and looks up the parent's entry
+	/// among what it has ALREADY emitted, so a forward reference (a child declared before its declared-element
+	/// parent) would otherwise find no parent entry yet and be misclassified as parented by the template. A
+	/// declaration whose parent is NOT another declaration of this rule (the common case — the template, a
+	/// converter-created element, or a page element) is left in its original relative position; a mutual/cyclic
+	/// parent reference (a rules-file error outside this method's remit) is broken deterministically by emitting
+	/// each name at most once, in first-encountered order, rather than looping forever.
+	/// </summary>
+	private static IReadOnlyList<DeclaredElementRule> OrderDeclaredElementsParentFirst(
+		IReadOnlyList<DeclaredElementRule> extras) {
+		if (extras.Count < 2) {
+			return extras;
+		}
+		Dictionary<string, DeclaredElementRule> byName = extras
+			.GroupBy(e => e.Name, StringComparer.OrdinalIgnoreCase)
+			.ToDictionary(g => g.Key, g => g.First(), StringComparer.OrdinalIgnoreCase);
+		var ordered = new List<DeclaredElementRule>(extras.Count);
+		var visited = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+		void Visit(DeclaredElementRule extra) {
+			if (!visited.Add(extra.Name)) {
+				return; // already emitted earlier in this pass, or a cycle unwinding back onto itself — stop either way
+			}
+			if (byName.TryGetValue(extra.ParentName, out DeclaredElementRule parent)
+				&& !string.Equals(parent.Name, extra.Name, StringComparison.OrdinalIgnoreCase)) {
+				Visit(parent);
+			}
+			ordered.Add(extra);
+		}
+		foreach (DeclaredElementRule extra in extras) {
+			Visit(extra);
+		}
+		return ordered;
 	}
 
 	private static void WalkElements(ElementMapContext ctx, JArray nodes, string mobileParentName,
@@ -4553,10 +4605,19 @@ public static class WebToMobileAnalysisService {
 				if (!IsEmptyRemovalCandidate(entry, removable) || occupied.Contains(entry.MobileName)) {
 					continue;
 				}
-				elementMap[i] = Drop(entry.WebName ?? entry.MobileName, entry.WebType ?? entry.MobileType,
-					entry.DeclaredByRule
-						? EmptyContainerDropReason + " (declared by the template rule's declaredElements; nothing was mapped into it)"
-						: EmptyContainerDropReason);
+				// A DeclaredByRule entry has no web counterpart (WebName is documented-null); folding its
+				// MobileName into the WebName slot via ?? would misreport a mobile-only element as a dropped
+				// WEB element. Route it into MobileType/MobileName instead so the guide keeps the documented
+				// contract.
+				elementMap[i] = entry.DeclaredByRule
+					? new ElementMapEntry {
+						MobileName = entry.MobileName,
+						MobileType = Nz(entry.MobileType),
+						Operation = "drop",
+						Reason = EmptyContainerDropReason
+							+ " (declared by the template rule's declaredElements; nothing was mapped into it)",
+					}
+					: Drop(entry.WebName, entry.WebType ?? entry.MobileType, EmptyContainerDropReason);
 				if (entry.WebName is { Length: > 0 }) {
 					removed.Add(entry.WebName);
 				}
