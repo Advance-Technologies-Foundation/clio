@@ -259,6 +259,76 @@ public sealed class ToolContractGetToolTests {
 			because: "environmentName is marked [Required] on the tool method, so the derived contract must mark it required");
 	}
 
+	// Pins the issue #952 secondary defect: a registry-derived (uncurated, hidden) tool that returns a
+	// CommandExecutionResult used to advertise `success == false` as its only failure signal — a field
+	// that envelope never carries — so an agent watching for it saw every failure as a success.
+	[Test]
+	[Category("Unit")]
+	[TestCase("pkg-to-db")]
+	[TestCase("pkg-to-file-system")]
+	[Description("An uncurated tool that returns a command execution result advertises the command-execution-result failure signals instead of a success field it never emits.")]
+	public void ToolContractGet_Should_AdvertiseCommandExecutionFailureSignals_ForUncuratedCommandTool(string toolName) {
+		// Arrange
+		ToolContractGetTool tool = BuildToolWithRegistry();
+
+		// Act
+		ToolContractGetResponse result = tool.GetToolContracts(new ToolContractGetArgs([toolName]));
+
+		// Assert
+		result.Success.Should().BeTrue(
+			because: $"{toolName} is invokable through clio-run and must expose a discoverable contract");
+		ToolContractDefinition entry = result.Tools!.Single();
+		entry.OutputContract.Kind.Should().Be("command-execution-result",
+			because: "the tool returns the command execution envelope, not a tool-native response");
+		entry.OutputContract.FailureSignals.Should().BeEquivalentTo(
+			["exit-code != 0", "execution-log-messages[*].message-type == Error"],
+			because: "an agent must be pointed at the two fields the command execution envelope actually carries");
+	}
+
+	// Guards the blast radius of the issue #952 output-contract change: BuildOutputContract keys the
+	// advertised output shape on a McpToolSchemaCatalog lookup, so a regression in that lookup would flip
+	// EVERY registry-derived contract back to the tool-native-response default at once, silently. The
+	// reflection catalog enumerates every [McpServerTool] method in the assembly while the invoker
+	// registry additionally filters by feature toggle, so the catalog is a superset and no dispatchable
+	// tool may fall back.
+	[Test]
+	[Category("Unit")]
+	[Description("Every tool the invoker registry can dispatch resolves an output contract in the reflection catalog, so no registry-derived contract falls back to the tool-native-response default.")]
+	public void ToolContractGet_Should_ResolveOutputContractForEveryDispatchableTool() {
+		// Arrange
+		McpToolInvokerRegistry registry = BuildInvokerRegistry();
+
+		// Act
+		string[] unresolved = registry.ToolNames
+			.Where(toolName => !McpToolSchemaCatalog.TryGetOutputContract(toolName, out _))
+			.OrderBy(toolName => toolName, StringComparer.Ordinal)
+			.ToArray();
+
+		// Assert
+		registry.ToolNames.Should().NotBeEmpty(
+			because: "the assertion below is only meaningful when the registry actually discovered tools");
+		unresolved.Should().BeEmpty(
+			because: "a dispatchable tool whose name does not resolve in the reflection catalog silently " +
+			"reverts to advertising `success == false`, the exact defect GitHub issue #952 reported");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("An output contract lookup for a name that is not a registered MCP tool reports a miss, which is what makes the registry contract builder fall back to its defensive tool-native-response default.")]
+	public void ToolContractGet_Should_ReportOutputContractMiss_ForUnregisteredToolName() {
+		// Arrange
+		const string unregisteredToolName = "clio-tests-not-a-registered-mcp-tool";
+
+		// Act
+		bool resolved = McpToolSchemaCatalog.TryGetOutputContract(unregisteredToolName, out ToolOutputContract contract);
+
+		// Assert
+		resolved.Should().BeFalse(
+			because: "a name that no MCP tool declares must not resolve an output contract");
+		contract.Should().BeNull(
+			because: "the miss must leave no contract behind for the caller to publish as if it were reflected");
+	}
+
 	[Test]
 	[Category("Unit")]
 	[Description("The compile-creatio contract carries a create-business-process anti-pattern so an agent is told a process is interpreted and its NeedInstall flag is not a compile trigger (ENG-95706).")]

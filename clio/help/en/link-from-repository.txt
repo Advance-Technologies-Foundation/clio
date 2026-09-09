@@ -26,7 +26,11 @@ DESCRIPTION
       1. Maintainer check - ensures the site's Maintainer sys setting matches the
          package descriptor so Creatio allows editing these packages.
       2. Unlock - unlocks packages on the site for file system development.
-      3. 2fs - syncs package content from DB to local file system.
+      3. 2fs - syncs package content from DB to local file system. This step
+         requires file system development mode (FSM) to be enabled on the
+         environment; when the export is refused, nothing was written to the
+         Pkg folder, so the command stops with exit code 1 instead of linking
+         symlinks that point at packages that were never exported.
     Use --skip-preparation to disable this behavior.
     --unlocked and --packages are mutually exclusive.
 
