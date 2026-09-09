@@ -6,6 +6,66 @@ namespace Clio.Package
 	using Clio.Common;
 	using Clio.Common.Responses;
 
+	#region Enum: FileDesignModeLoadResult
+
+	/// <summary>
+	/// Outcome of a package load between the configuration database and the web application's file
+	/// system. The three failure causes are kept apart because callers react to them differently:
+	/// <c>turn-fsm off</c> may continue over an environment that already has FSM disabled, but must
+	/// never continue over a load the platform actually refused.
+	/// </summary>
+	/// <remarks>
+	/// The default value is deliberately a failure, not <see cref="Completed"/>: an unstubbed test
+	/// substitute returns the enum's zero value, and a zero that means success would silently push
+	/// every such test onto the happy path.
+	/// </remarks>
+	public enum FileDesignModeLoadResult
+	{
+		/// <summary>The platform refused the load, or the request itself failed.</summary>
+		LoadRefused = 0,
+
+		/// <summary>The file design mode state could not be read, so nothing was attempted.</summary>
+		FileDesignModeUnknown = 1,
+
+		/// <summary>
+		/// The environment reported file design mode as disabled, so nothing was loaded. The
+		/// environment is untouched and, for the caller that wanted FSM off, already in the target state.
+		/// </summary>
+		FileDesignModeDisabled = 2,
+
+		/// <summary>The platform reported the load as completed.</summary>
+		Completed = 3
+	}
+
+	#endregion
+
+	#region Class: FileDesignModeLoadMessage
+
+	/// <summary>
+	/// Builds the single wording used for a package load that did not happen, so the loader and the
+	/// commands that report a context-dependent cause themselves cannot drift apart.
+	/// </summary>
+	public static class FileDesignModeLoadMessage
+	{
+		/// <summary>Storage name of the configuration database direction.</summary>
+		public const string DatabaseStorageName = "database";
+
+		/// <summary>Storage name of the file system direction.</summary>
+		public const string FileSystemStorageName = "file system";
+
+		/// <summary>Reason text for an environment that reports file design mode as disabled.</summary>
+		public const string DisabledFileDesignModeReason = "disabled file design mode";
+
+		/// <summary>Composes the load-failure message for a storage direction and a reason.</summary>
+		/// <param name="storageName">Storage the load targeted.</param>
+		/// <param name="reason">Why nothing was loaded.</param>
+		/// <returns>The message written to the error log.</returns>
+		public static string Build(string storageName, string reason) =>
+			$"Load packages to {storageName} on a web application ended with error: {reason}";
+	}
+
+	#endregion
+
 	#region Interface: IPackagesToFileSystemLoader
 
 	public interface IFileDesignModePackages
@@ -13,9 +73,30 @@ namespace Clio.Package
 
 		#region Methods: Public
 
-		void LoadPackagesToFileSystem();
+		/// <summary>
+		/// Exports the package definitions registered in the configuration database to the
+		/// web application's file system. Requires file system development mode (FSM) to be enabled
+		/// on the environment.
+		/// </summary>
+		/// <returns>
+		/// <see cref="FileDesignModeLoadResult.Completed"/> when the platform reported the export as
+		/// completed; otherwise the reason nothing was exported. The failure detail is written to the
+		/// error log by the implementation.
+		/// </returns>
+		FileDesignModeLoadResult LoadPackagesToFileSystem();
 
-		void LoadPackagesToDb();
+		/// <summary>
+		/// Imports the package definitions stored on the web application's file system into the
+		/// configuration database. Requires file system development mode (FSM) to be enabled
+		/// on the environment. It registers package content (schemas, resources, descriptors) only —
+		/// it never installs package data (binding) rows into their target tables.
+		/// </summary>
+		/// <returns>
+		/// <see cref="FileDesignModeLoadResult.Completed"/> when the platform reported the import as
+		/// completed; otherwise the reason nothing was imported. The failure detail is written to the
+		/// error log by the implementation.
+		/// </returns>
+		FileDesignModeLoadResult LoadPackagesToDb();
 
 		/// <summary>
 		/// Remotely toggles the <c>terrasoft/fileDesignMode</c> flag in the IIS host's
@@ -94,55 +175,70 @@ namespace Clio.Package
 
 		#endregion
 
-		#region Properties: Private
-
-		private bool IsFileDesignModeUrl {
-			get {
-				string responseFormServer
-					= _applicationClient.ExecutePostRequest(_getIsFileDesignModeUrl, string.Empty, Timeout.Infinite, maxRequestAttempts, delayBetweenRetryAttemptsSec);
-				var response = _jsonConverter.DeserializeObject<BoolResponse>(responseFormServer);
-				if (response.Success) {
-					return response.Value;
-				}
-				ErrorInfo errorInfo = response.ErrorInfo;
-				_logger.WriteLine($"Get file design mode ended with error: {GetErrorDetails(response.ErrorInfo)}");
-				return false;
-			}
-		}
-
-		#endregion
-
 		#region Methods: Private
 
 		private static string GetErrorDetails(ErrorInfo errorInfo) =>
-			$"{errorInfo.Message} (error code: {errorInfo.ErrorCode})";
+			errorInfo is null
+				? "unknown error"
+				: $"{errorInfo.Message} (error code: {errorInfo.ErrorCode})";
 
 		private void PrintErrorOperationMessage(string storageName, string errorMessage) =>
-			_logger.WriteLine($"Load packages to {storageName} on a web application ended with error: {errorMessage}");
+			_logger.WriteError(FileDesignModeLoadMessage.Build(storageName, errorMessage));
 
-		private void LoadPackagesToStorage(string endpoint, string storageName){
-			if (!IsFileDesignModeUrl) {
-				PrintErrorOperationMessage(storageName, "disabled file design mode");
-				return;
+		/// <summary>
+		/// Reads the environment's file design mode state. A failed probe is reported as a failure of
+		/// its own instead of being collapsed into "file design mode is disabled": the two states are
+		/// different problems and the caller must not present an unreadable state as a known one.
+		/// </summary>
+		/// <param name="isFileDesignMode">The file design mode state when the probe succeeded.</param>
+		/// <returns><c>true</c> when the state was read; otherwise <c>false</c>.</returns>
+		private bool TryGetIsFileDesignMode(out bool isFileDesignMode) {
+			isFileDesignMode = false;
+			string responseFormServer
+				= _applicationClient.ExecutePostRequest(_getIsFileDesignModeUrl, string.Empty, Timeout.Infinite, maxRequestAttempts, delayBetweenRetryAttemptsSec);
+			var response = _jsonConverter.DeserializeObject<BoolResponse>(responseFormServer);
+			if (!response.Success) {
+				_logger.WriteError($"Get file design mode ended with error: {GetErrorDetails(response.ErrorInfo)}");
+				return false;
+			}
+			isFileDesignMode = response.Value;
+			return true;
+		}
+
+		private FileDesignModeLoadResult LoadPackagesToStorage(string endpoint, string storageName){
+			if (!TryGetIsFileDesignMode(out bool isFileDesignMode)) {
+				PrintErrorOperationMessage(storageName, "file design mode state is unknown");
+				return FileDesignModeLoadResult.FileDesignModeUnknown;
+			}
+			if (!isFileDesignMode) {
+				// Deliberately silent: whether a disabled file design mode is an error depends on the caller.
+				// It is one for a standalone pkg-to-db, and it is the goal state of `turn-fsm off`, which must
+				// not exit 0 while an Error-typed log line says the opposite - both are published failure
+				// signals of the MCP command-execution-result contract and they must agree.
+				return FileDesignModeLoadResult.FileDesignModeDisabled;
 			}
 			_logger.WriteLine($"Start load packages to {storageName} on a web application");
 			string responseFormServer = _applicationClient.ExecutePostRequest(endpoint, string.Empty,Timeout.Infinite, maxRequestAttempts, delayBetweenRetryAttemptsSec);
 			var response = _jsonConverter.DeserializeObject<BaseResponse>(responseFormServer);
 			if (response.Success) {
 				_logger.WriteLine($"Load packages to {storageName} on a web application completed");
-				return;
+				return FileDesignModeLoadResult.Completed;
 			}
-			ErrorInfo errorInfo = response.ErrorInfo;
 			PrintErrorOperationMessage(storageName, GetErrorDetails(response.ErrorInfo));
+			return FileDesignModeLoadResult.LoadRefused;
 		}
 
 		#endregion
 
 		#region Methods: Public
 
-		public void LoadPackagesToFileSystem() => LoadPackagesToStorage(_loadPackagesToFileSystemUrl, "file system");
+		/// <inheritdoc />
+		public FileDesignModeLoadResult LoadPackagesToFileSystem() =>
+			LoadPackagesToStorage(_loadPackagesToFileSystemUrl, "file system");
 
-		public void LoadPackagesToDb() => LoadPackagesToStorage(_loadPackagesToDbUrl, "database");
+		/// <inheritdoc />
+		public FileDesignModeLoadResult LoadPackagesToDb() =>
+			LoadPackagesToStorage(_loadPackagesToDbUrl, "database");
 
 		public SetFileDesignModeResult SetFileDesignMode(bool isFileDesignMode) {
 			string payload = "{\"isFileDesignMode\":" + (isFileDesignMode ? "true" : "false") + "}";
