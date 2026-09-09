@@ -3419,9 +3419,10 @@ stories:
       and nothing lingers under the old one. Measured through the exact route FreeTheDefaultSlot()
       prescribes. So none of the three remedies the brief proposed was needed, and the guard they
       invite would have broken the shipped remedy on the flows most likely to carry a label.
-      Package CrtProcessBuilder 1.6.0.13 (sources dff43da, tag crtprocessbuilder-1.6.0.13; each
+      Package CrtProcessBuilder 1.6.0.14 (sources 704a3d3, tag crtprocessbuilder-1.6.0.14; each
       superseded cut is tagged too - 1.6.0.9 at 849dd2f pre-review, then .10 dc6583f, .11 5e94574,
-      .12 66a1c08 after review passes one to three): flows[].label on the build
+      .12 66a1c08 across review passes one to three, .13 dff43da for the Copilot findings):
+      flows[].label on the build
       path, label on addFlow/setFlow, label in the describe projection, and a refusal of label on
       setFlowCondition/removeFlow, where it deserializes off the shared operation descriptor and is
       read by nobody. On setFlow, OMITTED keeps / EMPTY clears / text replaces - and the label is

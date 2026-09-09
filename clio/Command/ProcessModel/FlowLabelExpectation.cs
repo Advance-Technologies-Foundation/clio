@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Text;
 using System.Text.Json.Nodes;
 using Clio.Common;
 
@@ -35,11 +36,15 @@ public static class FlowLabelExpectation {
 
 	/// <summary>
 	/// The first <c>CrtProcessBuilder</c> that carries a flow <c>label</c> at all.
-	/// <para>Named ONCE and read by both the warning text and its test, because the same four digits appear
-	/// in this repository with the opposite lifecycle: <c>ExpectedArchiveVersion</c> in the bundled-package
-	/// guard fixture is a pin on the archive that currently ships and MUST move on every rebundle, while this
-	/// is the version a CAPABILITY arrived in and must not move at all. Two identical literals whose correct
-	/// behaviour diverges is a grep-and-replace waiting to corrupt a caller-facing message.</para>
+	/// <para>Named once for the WARNING and its test, which is where a drifting literal misleads a caller
+	/// directly. It is deliberately NOT the only occurrence - the four digits are also hand-typed into four
+	/// shipped agent-facing descriptions - and what made a constant worth having is that a version with the
+	/// SAME SHAPE appears in this repository with the opposite lifecycle:
+	/// <c>ExpectedArchiveVersion</c> in the bundled-package guard fixture pins the archive that currently
+	/// ships and MUST move on every rebundle, while this is the version a CAPABILITY arrived in and must not
+	/// move at all. Two literals of the same shape whose correct behaviour diverges is a grep-and-replace
+	/// waiting to corrupt a caller-facing message. (The two are no longer equal - the archive has moved
+	/// several times since - so do not read them as one number.)</para>
 	/// <para>It is also the one thing this guard family names a number for. The three sibling guards describe
 	/// their cause qualitatively ("predates the sendEmail element") and carry no version, deliberately; a
 	/// label's cause is a single archive and saying which one turns "it did not work" into a diagnosis.</para>
@@ -338,7 +343,7 @@ public static class FlowLabelExpectation {
 
 	/// <summary>
 	/// The label text as the SERVER will store it, so the read-back can be compared like for like.
-	/// <para>Trimmed, because both write paths trim. And filtered for the control characters an XML
+	/// <para>Trimmed, because both write paths trim. And filtered for the characters an XML
 	/// resource attribute cannot hold, because the package filters them at its own write funnel - a
 	/// caption is extracted into the schema resource file and written there as an attribute value. Without
 	/// this, a label of <c>"Ap[U+0001]proved"</c> stores as <c>Approved</c>, the expectation still holds the
@@ -349,17 +354,41 @@ public static class FlowLabelExpectation {
 	/// REFUSES that outright, so the operation fails and no read-back comparison happens.</para>
 	/// </summary>
 	private static string AsStored(string label) {
-		string filtered = label.All(character => !IsUnstorable(character))
-			? label
-			: new string(label.Where(character => !IsUnstorable(character)).ToArray());
-		return filtered.Trim();
+		var kept = new StringBuilder(label.Length);
+		for (int index = 0; index < label.Length; index++) {
+			char character = label[index];
+			// A surrogate PAIR is one valid astral character and survives intact; a LONE half is not a
+			// character and the server drops it, so a per-char filter cannot express this.
+			if (char.IsHighSurrogate(character)) {
+				if (index + 1 < label.Length && char.IsLowSurrogate(label[index + 1])) {
+					kept.Append(character).Append(label[index + 1]);
+					index++;
+				}
+				continue;
+			}
+			if (char.IsLowSurrogate(character) || IsUnstorable(character)) {
+				continue;
+			}
+			kept.Append(character);
+		}
+
+		return kept.ToString().Trim();
 	}
 
-	// Mirrors ProcessGraphBuilder.IsXmlInvalid on the package side. A hand mirror across two
-	// repositories, like the DataMember names - the archive-content pin in the bundled-package fixture is
-	// what keeps the two from drifting apart unnoticed.
+	// Mirrors ProcessGraphBuilder.StripXmlInvalid / IsXmlInvalid on the package side, INCLUDING the
+	// surrogate handling above and U+FFFE / U+FFFF here. A hand mirror across two repositories, like the
+	// DataMember names. What keeps the two from drifting is a human reading both halves plus the paired
+	// tests on each side - and ONE mechanical check: the bundled-package fixture greps the shipped archive
+	// for this rule's own source text, beside the DataMember probes. That probe is not decoration. The SHA
+	// pin cannot do this job and says so itself - it detects a CHANGED archive, not a STALE one - so
+	// without the content probe an archive cut before a widening satisfies every pin here while clio
+	// predicts a stored label the server never stores. That mis-prediction surfaces as "the text came back
+	// DIFFERENT" quoting two strings that look identical, because the character at fault is invisible. The first version of both halves tested char.IsControl alone, which a
+	// Copilot review caught: those code points are not control characters and are not valid XML either,
+	// so a label carrying one passed the filter and still broke resource serialization on the server.
 	private static bool IsUnstorable(char character) =>
-		char.IsControl(character) && character != '\t' && character != '\n' && character != '\r';
+		(char.IsControl(character) && character != '\t' && character != '\n' && character != '\r')
+			|| character == '\uFFFE' || character == '\uFFFF';
 
 	private static string Subject(int count) => count == 1 ? "flow" : "flows";
 
@@ -407,7 +436,9 @@ public static class FlowLabelExpectation {
 	/// is the clio-side half of it, and it is the shared <see cref="TextUtilities.SanitizeForDisplay"/> rather
 	/// than a local rule, so the two cannot drift.</para>
 	/// <para>It bounds the MESSAGE only. What is STORED is bounded differently and for a different reason:
-	/// the write path filters control characters (see <c>ProcessGraphBuilder.ApplyLabel</c>) because a caption
+	/// the write path filters what an XML attribute cannot hold - not only CONTROL characters, but also
+	/// U+FFFE, U+FFFF and a lone surrogate half (see <c>ProcessGraphBuilder.StripXmlInvalid</c>) - because a
+	/// caption
 	/// is extracted into an XML resource attribute, but it applies no LENGTH cap, since a flow caption is
 	/// excluded from code generation and <c>SysLocalizableValue.Value</c> is <c>nvarchar(MAX)</c>.</para>
 	/// </summary>

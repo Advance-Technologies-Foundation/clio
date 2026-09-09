@@ -1,5 +1,6 @@
 using System.Collections.Generic;
 using System.Linq;
+using System.Text.Json;
 using Clio.Command.ProcessModel;
 using FluentAssertions;
 using NUnit.Framework;
@@ -663,6 +664,64 @@ public class FlowLabelExpectationTests {
 		// Assert
 		expected.Select(flow => flow.Label).Should().BeEquivalentTo(["Approved"],
 			because: "the removal touched another flow, so the label asked for on this one is still expected");
+	}
+
+	[Test]
+	[Description("The expectation drops the same characters the SERVER drops - including the ones that are not control characters. XmlWriter also rejects U+FFFE and U+FFFF, and the first version of both halves of this hand mirror tested char.IsControl alone. Asserted here as well as package-side because the two are hand-mirrored across repositories: if only one half widens, Missing starts reporting a DIFFERENT-text miss on a write that did exactly what the server documents. A LONE SURROGATE is deliberately NOT a case here, and the reason belongs in the record rather than in a workaround: it cannot reach this code through the JSON entry point at all, because System.Text.Json substitutes U+FFFD for invalid UTF-16 on the way in - which is a valid XML character the filter correctly keeps. The surrogate branch stays in AsStored for parity with the package half and for a non-JSON caller; it is simply not exercisable from here, and a test that forced it would be testing the test. So say it plainly: the PACKAGE-side test is the sole guard on that clause, which is uncomfortable given this very description argues that cross-repo drift in this function is the risk - if it ever needs pinning here, make AsStored internal rather than contriving a JSON payload that cannot carry the value.")]
+	[TestCase(0xFFFE, TestName = "FromOperations_DropsNonCharacterFFFE")]
+	[TestCase(0xFFFF, TestName = "FromOperations_DropsNonCharacterFFFF")]
+	public void FromOperations_ShouldDropEveryCharacterTheServerCannotStore(int codeUnit) {
+		// Arrange - built from a char cast, not a JSON escape in an attribute: a lone surrogate cannot be
+		// encoded in UTF-8, so metadata would substitute U+FFFD and the assertion would pass vacuously.
+		string label = "Ap" + (char)codeUnit + "proved";
+		string operations = "[{\"op\":\"setFlow\",\"source\":\"Decide\",\"target\":\"Yes\","
+			+ "\"kind\":\"sequence\",\"label\":" + System.Text.Json.JsonSerializer.Serialize(label) + "}]";
+
+		// Act
+		IReadOnlyList<FlowLabelExpectation.FlowLabel> expected =
+			FlowLabelExpectation.FromOperations(operations);
+
+		// Assert
+		expected.Single().Label.Should().Be("Approved",
+			because: "the server drops this character before storing, so an expectation that kept it would "
+				+ "never match a healthy read-back and would report a drop that did not happen");
+	}
+
+	[Test]
+	[Description("Tab, LF and CR are KEPT, matching the server. This pins the half of the mirror that PROTECTS text rather than the half that drops it, and that half had no test on either side: deleting the LF carve-out from IsUnstorable left the entire clio suite green. The consequence is the guard's own worst outcome - a multi-line label is the documented intended input for this field, so if only clio's carve-out drifted, the expectation would hold the joined text while the server stored the broken one, and Missing would report DIFFERENT text on a write that landed byte for byte. BuildWarning_ShouldCollapseLineBreaksInTheEchoedLabel looks like it covers this and does not: it builds its input through the Absent helper, which constructs a FlowLabel directly and never reaches AsStored.")]
+	public void FromOperations_ShouldKeepTabLineFeedAndCarriageReturn() {
+		// Arrange - a trailing non-whitespace character, or Trim would remove the evidence
+		string label = "Line 1" + (char)0x0A + "Line 2" + (char)0x09 + "col" + (char)0x0D + "x";
+		string operations = "[{\"op\":\"setFlow\",\"source\":\"Decide\",\"target\":\"Yes\","
+			+ "\"kind\":\"sequence\",\"label\":" + JsonSerializer.Serialize(label) + "}]";
+
+		// Act
+		IReadOnlyList<FlowLabelExpectation.FlowLabel> expected =
+			FlowLabelExpectation.FromOperations(operations);
+
+		// Assert
+		expected.Single().Label.Should().Be(label,
+			because: "these three are the only control characters an XML attribute accepts, the server keeps "
+				+ "them, and an expectation that dropped them would report a mismatch against a value the "
+				+ "server stored exactly as sent");
+	}
+
+	[Test]
+	[Description("A surrogate PAIR survives, so widening the filter did not make every emoji a casualty. The rule needs a pairwise scan for exactly this reason - a per-character predicate cannot keep one half only when the next completes it.")]
+	public void FromOperations_ShouldKeepASurrogatePair() {
+		// Arrange
+		const string label = "Approved 😀";
+		string operations = "[{\"op\":\"setFlow\",\"source\":\"Decide\",\"target\":\"Yes\","
+			+ "\"kind\":\"sequence\",\"label\":" + System.Text.Json.JsonSerializer.Serialize(label) + "}]";
+
+		// Act
+		IReadOnlyList<FlowLabelExpectation.FlowLabel> expected =
+			FlowLabelExpectation.FromOperations(operations);
+
+		// Assert
+		expected.Single().Label.Should().Be(label,
+			because: "a valid astral character is legal XML and the server keeps it, so the expectation must "
+				+ "too or it would report a mismatch on an identical value");
 	}
 
 	#region Methods: UidAddressed

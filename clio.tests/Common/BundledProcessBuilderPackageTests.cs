@@ -74,7 +74,7 @@ public class BundledProcessBuilderPackageTests {
 	/// SHA-256 of the committed archive. Produced by <c>rebundle-process-builder.ps1</c> at
 	/// <see cref="ExpectedArchiveVersion"/> from
 	/// the <c>ProcessBuilder</c> repository (<c>packages/CrtProcessBuilder</c>, branch
-	/// <c>feature/ENG-91853-flow-labels</c>, tag <c>crtprocessbuilder-1.6.0.13</c>), at the commit recorded
+	/// <c>feature/ENG-91853-flow-labels</c>, tag <c>crtprocessbuilder-1.6.0.14</c>), at the commit recorded
 	/// mechanically in
 	/// <see cref="ExpectedProducingCommit"/> — the script captures <c>git rev-parse HEAD</c> and refuses to cut
 	/// from a tree with uncommitted changes, so this reference is no longer a sentence anyone has to keep true
@@ -163,7 +163,7 @@ public class BundledProcessBuilderPackageTests {
 	/// </para>
 	/// </remarks>
 	private const string ExpectedArchiveSha256 =
-		"714FFEC17F8270D12BA987C72D12E1F55647F7EDB0200D9B9E216A6BFE034B3C";
+		"9D7B6D25F73FB28EAE756CB77C27BAB79875262662F82422E4F8CDC7D432F1C5";
 
 	/// <summary>
 	/// The <c>PackageVersion</c> the shipped descriptor carries.
@@ -191,7 +191,7 @@ public class BundledProcessBuilderPackageTests {
 	/// </para>
 	/// </para>
 	/// </remarks>
-	private const string ExpectedArchiveVersion = "1.6.0.13";
+	private const string ExpectedArchiveVersion = "1.6.0.14";
 
 	/// <summary>
 	/// The commit of the PRODUCING repository the archive was cut from, written by
@@ -203,7 +203,7 @@ public class BundledProcessBuilderPackageTests {
 	/// corresponding to no commit" is unreachable rather than merely documented. Anyone with a checkout can
 	/// verify the rest with one `git checkout`.</para>
 	/// </summary>
-	private const string ExpectedProducingCommit = "dff43daefb1529211d1ab0689a9f0549a7707099";
+	private const string ExpectedProducingCommit = "704a3d328b33a08b33aa7482adce97612ded1dd7";
 
 	/// <summary>
 	/// The <c>ModifiedOnUtc</c> the shipped descriptor carries.
@@ -229,7 +229,7 @@ public class BundledProcessBuilderPackageTests {
 	/// command — the previous pin ended in <c>431</c>, which is how the hand edit was eventually noticed.
 	/// </para>
 	/// </remarks>
-	private const string ExpectedDescriptorModifiedOnUtc = "/Date(1788962768000)/";
+	private const string ExpectedDescriptorModifiedOnUtc = "/Date(1788965836000)/";
 
 	/// <summary>
 	/// The <c>ModifiedOnUtc</c> the shipped COMPILE-MARKER SCHEMA descriptor carries.
@@ -897,6 +897,14 @@ public class BundledProcessBuilderPackageTests {
 		archive.Should().Contain("BodyStyle = WebMessageBodyStyle.Wrapped",
 			because: "the wrapper name clio looks for (PingResult) is a FUNCTION of this setting; flipping it to "
 				+ "Bare removes the envelope and the verdict inverts silently");
+		archive.Should().Contain("\'\\uFFFE\'",
+			because: "the character filter is hand-mirrored in FlowLabelExpectation.IsUnstorable, and THIS is "
+				+ "the only thing in this fixture that can catch the two halves diverging. The SHA pin cannot: "
+				+ "it detects a CHANGED archive, not a stale one, and its own remark says so. Without this "
+				+ "probe an archive cut before the filter was widened satisfies every other pin here while "
+				+ "clio predicts a stored label the server never stores - which makes clio report DIFFERENT "
+				+ "text on a write that landed exactly as sent, in a message whose two quoted strings look "
+				+ "identical because the offending character is invisible");
 		archive.Should().Contain("[DataMember(Name = \"label\")]",
 			because: "the SAME hand-mirror as 'success' above, one release later and with a louder failure. "
 				+ "clio's warning tells every caller to update to CrtProcessBuilder "
