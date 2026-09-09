@@ -672,6 +672,12 @@ public sealed class SensitiveErrorTextRedactorTests {
 		parse.Should().NotThrow(
 			because: $"a match that begins inside the escape around '{secret}' leaves \\[redacted-...], which is not a "
 				+ "valid JSON escape - the caller then loses the entire response, not one field");
+		//BOTH properties, deliberately. Asserting only parseability would pass for a guard that stops
+		//matching the secret altogether - trading a corrupted response for a leaked one, which this file's
+		//own policy rejects ("over-redacting a host header value is acceptable; leaking a path is not").
+		redacted.Should().NotContain(secret,
+			because: "the value is still sensitive when it sits between escaped quotes; the guard must move "
+				+ "the match off the escape, not abandon it");
 	}
 
 	[Test]

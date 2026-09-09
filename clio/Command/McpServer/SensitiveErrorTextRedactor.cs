@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;
@@ -39,7 +39,13 @@ internal static partial class SensitiveErrorTextRedactor {
 	// tool response stopped parsing for the caller. The backslash is also excluded from the tail class, so a
 	// match can no longer swallow the CLOSING escape either; both escapes survive and the value between them
 	// is what gets replaced.
-	[GeneratedRegex(@"(?<!\\u?[0-9A-Fa-f]{0,3})\b[a-zA-Z][a-zA-Z0-9+.\-]*://[^\s""'<>\\]+", RegexOptions.CultureInvariant, RegexTimeoutMilliseconds)]
+	// The guard is paired with a positive lookbehind for a COMPLETE escape, alternated with the ordinary ,
+	// because the two must not be traded against each other: rejecting the start inside the escape is what
+	// keeps the response parseable, and permitting a start right after the escape is what keeps the URI
+	// redacted. Without the second half,  alone refuses the position (a hex digit and "h" are both word
+	// characters, so there is no boundary between them) and the host ships in the clear - trading a
+	// corrupted response for a leaked one, which this class's policy above rejects outright.
+	[GeneratedRegex(@"(?<!\\u?[0-9A-Fa-f]{0,3})(?:(?<=\\u[0-9A-Fa-f]{4})|\b)[a-zA-Z][a-zA-Z0-9+.\-]*://[^\s""'<>\\]+", RegexOptions.CultureInvariant, RegexTimeoutMilliseconds)]
 	private static partial Regex UriRegex();
 
 	// Windows drive-rooted (C:\…) and UNC (\\host\share\…) absolute paths.
@@ -85,13 +91,13 @@ internal static partial class SensitiveErrorTextRedactor {
 	//   Could not connect to "db.internal:1433" - timeout
 	// matched from the "u" of the opening escape ("u0022db" is a legal DNS label) and left
 	// "\[redacted-uri]", which is not a valid JSON escape - the whole tool response then failed to parse.
-	// KNOWN RESIDUAL: with the guard, a host sitting immediately behind an escaped quote is no longer
-	// matched at all, because the pre-existing (?<![\w:./@-]) guard rejects a start preceded by the
-	// escape's last hex digit - so it is left unredacted rather than corrupted. That is the better of the
-	// two failures (a readable response beats a lost one), and the real fix is to redact the PARSED string
-	// values instead of scrubbing serialized JSON as text, which is tracked alongside #1376 and #1377.
+	// Same pairing as UriRegex, and load-bearing for the same reason: the pre-existing (?<![\w:./@-]) guard
+	// rejects a start preceded by the escape's last hex digit, so the guard ALONE would stop matching the
+	// host altogether and leak it in the clear. Alternating it with a positive lookbehind for a complete
+	// escape keeps both properties - the response parses AND the endpoint is replaced. Mid-token rejection
+	// is unaffected: "xfoo.bar:80" has no complete escape before it, so it still takes the negative arm.
 	[GeneratedRegex(
-		@"(?<!\\u?[0-9A-Fa-f]{0,3})(?<![\w:./@-])(?:\[[0-9A-Fa-f:]+\]|(?:[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?\.)+[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?|\d{1,3}(?:\.\d{1,3}){3}):\d{1,5}\b",
+		@"(?<!\\u?[0-9A-Fa-f]{0,3})(?:(?<=\\u[0-9A-Fa-f]{4})|(?<![\w:./@-]))(?:\[[0-9A-Fa-f:]+\]|(?:[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?\.)+[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?|\d{1,3}(?:\.\d{1,3}){3}):\d{1,5}\b",
 		RegexOptions.CultureInvariant, RegexTimeoutMilliseconds)]
 	private static partial Regex HostPortRegex();
 
