@@ -150,9 +150,9 @@ public class BundledDashboardsMigratorPackageTests {
 		ExpectedArchiveVersion.Should().MatchRegex("^[0-9]+(\\.[0-9]+){3}$",
 			because: "four parts and no suffix: the install command refuses a suffixed distribution outright");
 		archive.Should().Contain("\"InstallScripts\"",
-			because: "the package runs an AfterInstall script that registers its section; clio set-pkg-version drops "
-				+ "this block (PackageDescriptor does not model it), so the descriptor must be stamped by hand and this "
-				+ "line is what catches a rebundle that used the command anyway");
+			because: "the package runs an AfterInstall script that grants rights on its log section; a descriptor "
+				+ "writer that drops blocks it does not model (set-pkg-version once did) would ship a package whose "
+				+ "script never runs, with every other pin green");
 	}
 
 	[Test]

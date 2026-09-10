@@ -99,9 +99,6 @@ Set-StrictMode -Version Latest
 # Everything package-specific, in one place. Keys:
 #   Build / Test        script blocks run inside the package repository (step 1).
 #   TestProjectFilter   the test csproj the Test block needs, discovered rather than hardcoded (may be $null).
-#   StampByHand         $true when `clio set-pkg-version` must NOT be used: PackageDescriptor does not model
-#                       every field of descriptor.json, and the command DROPS what it does not model. The
-#                       migrator's descriptor carries an InstallScripts block, so it is stamped by text edit.
 #   AppDescriptor       app-descriptor.json whose three-part Version must prefix -Version ($null = none).
 #   ExpectedDlls        exact archive .dll inventory (paths under the package root).
 #   CompileMarker       schema folder that must exist ($null = none; the package's own schemas compile it).
@@ -115,7 +112,6 @@ $packages = @{
         Build = { dotnet build MainSolution.slnx -c dev-nf --nologo -v q }
         TestProjectFilter = 'CrtProcessBuilder.Tests.csproj'
         Test = { param($proj) dotnet test $proj -c dev-nf --no-build --nologo -v q }
-        StampByHand = $false
         AppDescriptor = $null
         ExpectedDlls = @('Files/Libs/ErrorOr.dll', 'Files/Libs/ATF.Repository.dll')
         CompileMarker = 'CrtProcessBuilderCompileMarker'
@@ -129,7 +125,6 @@ $packages = @{
         Build = { cmd /c .\build-framework.cmd }
         TestProjectFilter = $null
         Test = { param($proj) cmd /c .\run-unit-tests-framework.cmd --no-build }
-        StampByHand = $true
         AppDescriptor = 'Files\app-descriptor.json'
         ExpectedDlls = @()
         CompileMarker = $null
@@ -163,10 +158,6 @@ function Die ([string] $text) {
 foreach ($p in @($packageDir, $descriptor)) {
     if (-not (Test-Path -LiteralPath $p)) { Die "Not found: $p. Is -PackageRepoPath the $Package checkout?" }
 }
-$rawDescriptorPath = $descriptor
-# Preserve the file's own BOM state: the guard fixture's text probes do not care, but git does.
-$descriptorEncoding = if ((Get-Content -LiteralPath $descriptor -AsByteStream -TotalCount 3) -join ',' -eq '239,187,191') {
-    [Text.UTF8Encoding]::new($true) } else { [Text.UTF8Encoding]::new($false) }
 # Which build output to drive and refresh. NOT hardcoded: the repo's own build.ps1 uses Release/net10.0
 # while a developer typically has Debug, and picking the wrong one is the very failure this script exists
 # to prevent - an install resolves the archive from the BUILD OUTPUT, so refreshing Debug while the user
@@ -440,30 +431,8 @@ them) and say in the commit message why the version stayed.
 }
 
 Step "2. Stamp PackageVersion AND ModifiedOnUtc (version: $beforeVersion -> $Version)"
-if ($pkg.StampByHand) {
-    # Text edit, not set-pkg-version: PackageDescriptor models a subset of descriptor.json and the command
-    # writes back only that subset - measured, it dropped this package's InstallScripts block. Whole seconds
-    # (…000) so the provenance oracle in the guard fixture still reads this as tool-written.
-    $nowMs = [DateTimeOffset]::UtcNow.ToUnixTimeSeconds() * 1000
-    $stampText = "/Date($nowMs)/"
-    # Edit only the package-level part of the descriptor - everything before "DependsOn" - because each
-    # dependency entry carries a PackageVersion of its own and a whole-file replace would stamp the first one.
-    $text = Get-Content -LiteralPath $rawDescriptorPath -Raw
-    $split = $text.IndexOf('"DependsOn"')
-    if ($split -lt 0) { $split = $text.Length }
-    $head = $text.Substring(0, $split); $tail = $text.Substring($split)
-    $head = [regex]::Replace($head, '"ModifiedOnUtc"\s*:\s*"[^"]*"', "`"ModifiedOnUtc`": `"$stampText`"", 1)
-    if ($head -match '"PackageVersion"\s*:\s*"[^"]*"') {
-        $head = [regex]::Replace($head, '"PackageVersion"\s*:\s*"[^"]*"', "`"PackageVersion`": `"$($parsedNew.ToString())`"", 1)
-    } else {
-        $head = [regex]::Replace($head, '("Name"\s*:\s*"' + [regex]::Escape($Package) + '",)',
-            "`$1`n    `"PackageVersion`": `"$($parsedNew.ToString())`",", 1)
-    }
-    [IO.File]::WriteAllText($rawDescriptorPath, $head + $tail, $descriptorEncoding)
-} else {
     dotnet $clioDll set-pkg-version $packageDir --package-version $Version
     if ($LASTEXITCODE -ne 0) { Die 'set-pkg-version refused. Nothing was written; fix the version and re-run.' }
-}
 
 $afterStamp = Get-DescriptorField $descriptor 'ModifiedOnUtc'
 if ($afterStamp -eq $beforeStamp) {
