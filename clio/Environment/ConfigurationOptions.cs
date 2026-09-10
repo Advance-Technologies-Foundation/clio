@@ -1021,9 +1021,9 @@ namespace Clio
 			result.Knowledge ??= new KnowledgeConfiguration();
 			result.KnowledgeFeedback ??= new KnowledgeFeedbackSettings();
 			result.Autoupdate ??= new AutoUpdateSettings();
-			result.Autoupdate.Clio ??= new AutoUpdatePolicy { FrequencyMinutes = 480 };
+			result.Autoupdate.Clio ??= new AutoUpdatePolicy { Enabled = false, FrequencyMinutes = 480 };
 			result.Autoupdate.Knowledge ??= new AutoUpdatePolicy { FrequencyMinutes = 60 };
-			result.Autoupdate.Toolkit ??= new AutoUpdatePolicy { FrequencyMinutes = 60 };
+			result.Autoupdate.Toolkit ??= new AutoUpdatePolicy { Enabled = false, FrequencyMinutes = 60 };
 			if (result.Autoupdate.Clio.FrequencyMinutes <= 0) result.Autoupdate.Clio.FrequencyMinutes = 480;
 			if (result.Autoupdate.Knowledge.FrequencyMinutes <= 0) result.Autoupdate.Knowledge.FrequencyMinutes = 60;
 			if (result.Autoupdate.Toolkit.FrequencyMinutes <= 0) result.Autoupdate.Toolkit.FrequencyMinutes = 60;
@@ -1353,10 +1353,6 @@ namespace Clio
 		public bool TryScheduleAutoupdate(AutoUpdateTarget target, DateTimeOffset now) {
 			bool due = false;
 			UpdateSettingsIfChanged(settings => {
-				if ((settings.SettingsVersion ?? 0) < 1
-					&& settings.Autoupdate is { WasLegacyScalar: true, Clio.Enabled: false }) {
-					settings.Autoupdate.Clio.Enabled = true;
-				}
 				AutoUpdatePolicy policy = GetPolicy(settings.Autoupdate, target);
 				due = policy.Enabled && now > policy.NextRun;
 				if (due) {
