@@ -32,6 +32,7 @@ namespace Clio.Tests.McpE2EHarness;
 /// </para>
 /// </remarks>
 [TestFixture]
+[Property("Module", "McpServer")]
 [Category("Unit")]
 public sealed class WorkerSpawnObserverReleaseWaitTests {
 

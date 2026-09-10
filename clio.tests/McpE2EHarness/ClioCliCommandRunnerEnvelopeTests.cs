@@ -1,4 +1,3 @@
-using System;
 using Clio.Mcp.E2E.Support.Configuration;
 using FluentAssertions;
 using NUnit.Framework;
@@ -6,6 +5,7 @@ using NUnit.Framework;
 namespace Clio.Tests.McpE2EHarness;
 
 [TestFixture]
+[Property("Module", "McpServer")]
 [Category("Unit")]
 public sealed class ClioCliCommandRunnerEnvelopeTests {
 	[TestCase("{\"success\":true}")]

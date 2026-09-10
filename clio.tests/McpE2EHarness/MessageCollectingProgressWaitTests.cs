@@ -17,12 +17,13 @@ namespace Clio.Tests.McpE2EHarness;
 /// here with a hand-driven sink and no environment at all.
 /// </summary>
 [TestFixture]
+[Property("Module", "McpServer")]
+[Category("Unit")]
 public sealed class MessageCollectingProgressWaitTests {
 	private static readonly TimeSpan GenerousTimeout = TimeSpan.FromSeconds(30);
 
 	private static ProgressNotificationValue Beat(string message) => new() { Progress = 0, Message = message };
 
-	[Category("Unit")]
 	[Test]
 	[Description("Verifies the bounded progress wait returns a notification that is reported AFTER the wait began, which is the dispatch race that made the application progress tests flaky.")]
 	public async Task WaitForMessages_Should_Observe_Notification_Reported_After_Wait_Started() {
@@ -44,7 +45,6 @@ public sealed class MessageCollectingProgressWaitTests {
 			because: "the bounded wait must observe a notification delivered after it started, which is exactly the race that made the immediate assertion flaky");
 	}
 
-	[Category("Unit")]
 	[Test]
 	[Description("Verifies the bounded progress wait returns immediately when the awaited condition is already satisfied, so a wait never costs wall-clock time on the healthy path.")]
 	public async Task WaitForMessages_Should_Return_Immediately_When_Condition_Already_Satisfied() {
@@ -63,7 +63,6 @@ public sealed class MessageCollectingProgressWaitTests {
 			because: "an already-satisfied condition must resolve from the current snapshot rather than blocking for another notification");
 	}
 
-	[Category("Unit")]
 	[Test]
 	[Description("Verifies the bounded progress wait fails with a diagnostic that lists the notifications that DID arrive, so a genuinely missing stage marker is still reported precisely instead of as a bare timeout.")]
 	public async Task WaitForMessages_Should_Time_Out_With_Diagnostic_Listing_Observed_Messages() {
@@ -89,7 +88,6 @@ public sealed class MessageCollectingProgressWaitTests {
 				because: "every observed marker belongs in the diagnostic, not just the first");
 	}
 
-	[Category("Unit")]
 	[Test]
 	[Description("Verifies the count-based bounded wait resolves once the requested number of notifications has been observed, covering the keep-alive assertion path.")]
 	public async Task WaitForCount_Should_Resolve_When_Minimum_Notification_Count_Observed() {

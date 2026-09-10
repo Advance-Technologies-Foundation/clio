@@ -367,7 +367,7 @@ Before committing any change, run only the tests for affected modules — do not
 | Module trait | Source paths |
 |---|---|
 | `Command` | `clio/Command/` (root-level command files) |
-| `McpServer` | `clio/Command/McpServer/` |
+| `McpServer` | `clio/Command/McpServer/`, `clio.mcp.e2e/Support/` (its harness tests live in `clio.tests/McpE2EHarness/`) |
 | `ApplicationCommand` | `clio/Command/ApplicationCommand/` |
 | `CreatioInstallCommand` | `clio/Command/CreatioInstallCommand/` |
 | `ProcessModel` | `clio/Command/ProcessModel/` |

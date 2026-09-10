@@ -1,6 +1,5 @@
 using System;
 using System.Collections.Generic;
-using Clio.Command.McpServer.Tools;
 using Clio.Mcp.E2E.Support.Configuration;
 using FluentAssertions;
 using NUnit.Framework;
@@ -8,9 +7,9 @@ using NUnit.Framework;
 namespace Clio.Tests.McpE2EHarness;
 
 [TestFixture]
+[Property("Module", "McpServer")]
 [Category("Unit")]
 public sealed class UninstallWarningIisApplicationPoolResolverTests {
-	private const string ToolName = UninstallCreatioTool.UninstallCreatioToolName;
 	private const string ApplicationsXml = """
 		<?xml version="1.0" encoding="UTF-8"?>
 		<appcmd>

@@ -14,6 +14,7 @@ namespace Clio.Tests.McpE2EHarness;
 /// arrange step already created.
 /// </summary>
 [TestFixture]
+[Property("Module", "McpServer")]
 [Category("Unit")]
 public sealed class FixtureCleanupOwnershipTests {
 	[Test]
