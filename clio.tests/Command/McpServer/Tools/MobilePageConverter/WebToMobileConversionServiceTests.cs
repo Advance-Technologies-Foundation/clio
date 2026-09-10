@@ -3148,6 +3148,12 @@ public sealed class WebToMobileConversionServiceTests {
 			because: "the row must never ride on the parent List's merge values - that slot already holds the "
 				+ "template's own named element, so the differ would discard it silently");
 		ElementMapEntry row = guide.ElementMap.Single(e => e.MobileName == "ListItem");
+		List<ElementMapEntry> emitted = guide.ElementMap.ToList();
+		emitted.IndexOf(list).Should().BeLessThan(emitted.IndexOf(row),
+			because: "the parent twin MUST be emitted before its row: both entries carry the same webName, and "
+				+ "ConvertPageBusinessRules keeps the FIRST entry per web name (survivors.TryAdd), so a reorder "
+				+ "inside WalkElements/EmitStructuralTwinSlotEntries silently retargets a page rule such as "
+				+ "'hide DataTable' from the list onto the row - and nothing else in the suite looks at position");
 		row.Operation.Should().Be("merge",
 			because: "the template provides the row element; inserting a second one would duplicate it");
 		row.MobileType.Should().Be("crt.ListItem",
@@ -3166,7 +3172,41 @@ public sealed class WebToMobileConversionServiceTests {
 	}
 
 	[Test]
-	[Description("ENG-91859: with NO mobile template read at all, a rule-mapped twin degrades to advisory instead of falling back to the web type. The fallback asks whether the web component exists somewhere on mobile, and once the catalog covers the Flutter runtime crt.DataGrid does - so an unavailable probe would silently restore the grid-shaped payload on every page for as long as the probe is down. 'The name is not on the template' and 'nothing was read' are indistinguishable inside the walk unless the flag is carried in.")]
+	[Description("ENG-91859: a probe that RAN and returned nothing degrades the twin exactly like a probe that never ran. The Unavailable flag cannot tell them apart - LoadMobileTemplateProbe reports Unavailable=false with an empty map both for a page with no known mobile template and for a template whose bundle read fine but carried no viewConfig - so the predicate is not the probe at all: it is the RULES DECLARATION. ResolveTemplateTargetType says crt.DataGrid converts to a DIFFERENT mobile type, which makes the element a structural twin by declaration and its own web type never the answer. Guarding on the probe's Unavailable flag instead left the web-type fallback live in precisely those two cases, which restores the grid-shaped payload on a crt.List.")]
+	public void Analyze_TemplateComponentTwin_ProbeAvailableButEmpty_DegradesLikeAnUnprobedTemplate() {
+		// Arrange
+		PageBundleInfo bundle = Bundle("""
+			[ { "name": "ListContainer", "type": "crt.FlexContainer", "items": [
+				{ "name": "DataTable", "type": "crt.DataGrid",
+				  "columns": [ { "code": "PDS_Title" } ], "features": { "sorting": true } } ] } ]
+			""");
+		var web = Reg(("crt.FlexContainer", true), ("crt.DataGrid", false));
+		var containerNameMap = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase) { ["ListContainer"] = "ListContainer" };
+		var componentNameMap = new Dictionary<string, ComponentMappingRule>(StringComparer.OrdinalIgnoreCase) {
+			["DataTable"] = new ComponentMappingRule { Web = "DataTable", Mobile = "List", Note = "Primary list component." }
+		};
+
+		// Act - the probe did NOT report itself unavailable; it simply has no names.
+		MobilePageConversionGuide guide = Analyze(
+			bundle, webByType: web, containerNameMap: containerNameMap,
+			templateComponentNames: Names("ListContainer", "DataTable"), componentNameMap: componentNameMap,
+			mobileTypes: Names("crt.FlexContainer", "crt.DataGrid", "crt.List"),
+			mobileTemplateTypesByName: null,
+			mobileTemplateUnavailable: false);
+
+		// Assert
+		ElementMapEntry twin = Element(guide, "DataTable");
+		twin.MobileType.Should().BeNull(
+			because: "the rules convert crt.DataGrid to a DIFFERENT mobile type, so its own type is never the "
+				+ "answer, and with an empty probe nothing else says what sits under 'List' - crt.DataGrid "
+				+ "merely existing somewhere in the mobile catalog is not an answer to that question");
+		twin.MobileValues.Should().BeNull(
+			because: "a same-component twin would carry the grid delta - columns, features, bulkActions - "
+				+ "onto an element that declares none of them");
+	}
+
+	[Test]
+	[Description("ENG-91859: with NO mobile template read at all, a rule-mapped twin degrades to advisory instead of falling back to the web type. The fallback asks whether the web component exists SOMEWHERE on mobile, and once the catalog covers the Flutter runtime crt.DataGrid does - so an unprobed template would silently restore the grid-shaped payload on every page for as long as the probe is down. This is the sibling of the test above, and it holds for the same reason: the predicate is the rules file's declared conversion target (ResolveTemplateTargetType), not the probe's state, so an element the rules convert to a different mobile type degrades whether the probe answered or not.")]
 	public void Analyze_TemplateComponentTwin_MobileTemplateUnavailable_DegradesInsteadOfTrustingTheWebType() {
 		// Arrange
 		PageBundleInfo bundle = Bundle("""
@@ -3197,6 +3237,184 @@ public sealed class WebToMobileConversionServiceTests {
 			because: "a twin whose target type is unknown must carry nothing; the alternative is the "
 				+ "grid-shaped payload this ticket exists to stop");
 	}
+
+	[Test]
+	[Description("ENG-91859: an Object-declared slot fed a MULTI-entry array is truncated to its first element, and the guide must SAY SO. CoerceToDeclaredShape keeps the first JObject and drops the rest; before the named-type resolver landed a class-typed descriptor read as indeterminate and the array survived, so the only thing now standing between a seven-field row and a one-field row is a producer-side declaration in another repository. If that declaration ever regresses the loss must reach the caller as a constraint instead of shipping as a page that validates, saves and opens with most of the row missing.")]
+	public void Analyze_ObjectDeclaredSlot_FlagsTheDiscardedArrayElements_InsteadOfTruncatingSilently() {
+		// Arrange — crt.ListItem.body declared by CLASS (resolves to Object) while the page writes the
+		// field LIST every mobile row actually contains.
+		PageBundleInfo bundle = Bundle("""
+			[ { "name": "Main", "type": "crt.FlexContainer", "items": [
+				{ "name": "Row", "type": "crt.ListItem", "title": "$DS_Title",
+				  "body": [ { "value": "$DS_Stage" }, { "value": "$DS_Amount" }, { "value": "$DS_Owner" } ] } ] } ]
+			""");
+		var mobileByType = new Dictionary<string, ComponentRegistryEntry>(StringComparer.OrdinalIgnoreCase) {
+			["crt.FlexContainer"] = new ComponentRegistryEntry { ComponentType = "crt.FlexContainer", Container = true },
+			["crt.ListItem"] = new ComponentRegistryEntry {
+				ComponentType = "crt.ListItem",
+				Inputs = new Dictionary<string, JsonElement> {
+					["title"] = JsonSerializer.SerializeToElement(new { type = "string" }),
+					// The regression this guards: body typed as the producer's nested-element sentinel.
+					["body"] = JsonSerializer.SerializeToElement(new { type = "ViewElementConfig" })
+				}
+			}
+		};
+		var webByType = new Dictionary<string, ComponentRegistryEntry>(StringComparer.OrdinalIgnoreCase) {
+			["crt.FlexContainer"] = new ComponentRegistryEntry { ComponentType = "crt.FlexContainer", Container = true }
+		};
+
+		// Act
+		MobilePageConversionGuide guide = Analyze(
+			bundle, webByType: webByType, mobileByType: mobileByType,
+			mobileTypes: Names("crt.FlexContainer", "crt.ListItem"));
+
+		// Assert
+		JsonObject values = Element(guide, "Row").MobileValues!.AsObject();
+		values["body"]!.GetValueKind().Should().Be(JsonValueKind.Object,
+			because: "the coercion itself is unchanged - the registry says one object, so one object is emitted; "
+				+ "this test is about the loss being REPORTED, not about suppressing the coercion");
+		guide.Constraints.Should().Contain(c => c.Contains("crt.ListItem.body") && c.Contains("DISCARDED"),
+			because: "two of the three body entries were thrown away, and a caller who is not told cannot "
+				+ "distinguish a one-field row the source authored from a row the converter cut down");
+		guide.Constraints.Should().Contain(c => c.Contains("3 entries"),
+			because: "the flag has to say HOW MUCH was lost, otherwise the reader cannot judge whether to "
+				+ "restore anything by hand");
+	}
+
+	[Test]
+	[Description("ENG-91859: a single-object slot declared by a named type the GLOBAL references bag does not carry still resolves, because the component's OWN references.typeDefinitions is consulted first. The mobile producer registers some named types per component, and reading only the document-level bag resolves such a type to null - indeterminate - which is precisely the degraded branch that ships an array into a slot holding one config and renders the list with no row. Mirrors ChartWidgetValidation.MergeChartTypeDefinitions, the established precedent in this tool family.")]
+	public void Analyze_NamedSlotType_ResolvesFromThePerComponentTypeDefinitions_NotOnlyTheGlobalBag() {
+		// Arrange — itemLayout is typed by a name that exists ONLY in crt.List's own references bag.
+		PageBundleInfo bundle = Bundle("""
+			[ { "name": "Main", "type": "crt.FlexContainer", "items": [
+				{ "name": "SimilarLeadList", "type": "crt.List", "items": "$SimilarLeadList",
+				  "itemLayout": [ { "name": "Row", "type": "crt.ListItem", "title": "$DS_LeadName" } ] } ] } ]
+			""");
+		var mobileByType = new Dictionary<string, ComponentRegistryEntry>(StringComparer.OrdinalIgnoreCase) {
+			["crt.List"] = new ComponentRegistryEntry {
+				ComponentType = "crt.List",
+				Inputs = new Dictionary<string, JsonElement> {
+					["items"] = JsonSerializer.SerializeToElement(new { type = "string" }),
+					["itemLayout"] = JsonSerializer.SerializeToElement(new { type = "MobileListItemConfig" })
+				},
+				References = new ComponentReferences {
+					TypeDefinitions = new Dictionary<string, JsonElement> {
+						["MobileListItemConfig"] = JsonSerializer.SerializeToElement(new {
+							fields = new { title = new { type = "string" } }
+						})
+					}
+				}
+			},
+			["crt.ListItem"] = new ComponentRegistryEntry { ComponentType = "crt.ListItem" }
+		};
+		var webByType = new Dictionary<string, ComponentRegistryEntry>(StringComparer.OrdinalIgnoreCase) {
+			["crt.FlexContainer"] = new ComponentRegistryEntry { ComponentType = "crt.FlexContainer", Container = true }
+		};
+		// The document-level bag knows a DIFFERENT named type; the one that matters is per-component only.
+		var globalTypeDefinitions = new Dictionary<string, JsonElement>(StringComparer.OrdinalIgnoreCase) {
+			["GridLayoutConfig"] = JsonSerializer.SerializeToElement(new { fields = new { column = new { type = "number" } } })
+		};
+
+		// Act
+		MobilePageConversionGuide guide = Analyze(
+			bundle, webByType: webByType, mobileByType: mobileByType,
+			mobileTypes: Names("crt.FlexContainer", "crt.List", "crt.ListItem"),
+			mobileTypeDefinitions: globalTypeDefinitions);
+
+		// Assert
+		JsonObject values = Element(guide, "SimilarLeadList").MobileValues!.AsObject();
+		values["itemLayout"]!.GetValueKind().Should().Be(JsonValueKind.Object,
+			because: "the named type resolves through crt.List's OWN typeDefinitions, so the slot is known to "
+				+ "hold one element and the web array wrapper is dropped - reading only the global bag would "
+				+ "answer indeterminate and ship the array");
+		guide.ElementMap.Should().NotContain(e => e.WebName == "Row",
+			because: "a slot resolved to a single object is carried and coerced, never walked out into its own "
+				+ "entry; the walk is what puts a crt.ListItem into the guide as a sibling of its list");
+	}
+
+	[Test]
+	[Description("ENG-91859: the grid-to-list verdict guarded end-to-end by MobilePageConversionGuideSandboxE2ETests runs here too, against a SYNTHETIC mobile template bundle pushed through the same production collectors LoadMobileTemplateProbe uses (CollectComponentTypesByName + CollectSlotElementsByOwner). The sandbox test can only assert on a seeded page that converts a grid, and on a stand without one it calls Assert.Ignore - which reads as a pass - so before this test the only end-to-end guard for the change had never executed. Re-derives the three sandbox assertions: no grid-shaped inputs on the crt.List, the row is its own merge entry on the template's element, and no itemLayout inside the parent List's merge.")]
+	public void Analyze_StructuralTwin_FromASyntheticTemplateProbe_SatisfiesTheSandboxVerdict() {
+		// Arrange — the mobile template exactly as the probe would read it off a bundle.
+		JsonArray templateViewConfig = JsonNode.Parse("""
+			[ { "name": "MobileScaffold", "type": "crt.Scaffold", "items": [
+				{ "name": "List", "type": "crt.List", "items": "$Items",
+				  "itemLayout": { "name": "ListItem", "type": "crt.ListItem" } } ] } ]
+			""")!.AsArray();
+		IReadOnlyDictionary<string, string> probedTypes =
+			WebToMobileAnalysisService.CollectComponentTypesByName(templateViewConfig);
+		IReadOnlyDictionary<string, WebToMobileAnalysisService.MobileTemplateSlotElement> probedSlots =
+			WebToMobileAnalysisService.CollectSlotElementsByOwner(templateViewConfig);
+		PageBundleInfo bundle = Bundle("""
+			[ { "name": "ListContainer", "type": "crt.FlexContainer", "items": [
+				{ "name": "DataTable", "type": "crt.DataGrid",
+				  "columns": [ { "code": "PDS_Title" }, { "code": "PDS_Stage" } ],
+				  "features": { "sorting": true }, "bulkActions": [ { "code": "Delete" } ],
+				  "primaryDisplayColumnName": "PDS_Title" } ] } ]
+			""");
+		var web = Reg(("crt.FlexContainer", true), ("crt.DataGrid", false));
+		var containerNameMap = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase) { ["ListContainer"] = "ListContainer" };
+		var componentNameMap = new Dictionary<string, ComponentMappingRule>(StringComparer.OrdinalIgnoreCase) {
+			["DataTable"] = new ComponentMappingRule { Web = "DataTable", Mobile = "List", Note = "Primary list component." }
+		};
+
+		// A web-template baseline is supplied deliberately: without one the delta payload degrades to null for
+		// its own reason, and the "no grid-shaped values" half of the verdict would then hold vacuously — it
+		// would keep passing even if a structural twin were reclassified as a same-component one.
+		IReadOnlyDictionary<string, JObject> webBaseline = BaselineNodes("""
+			[ { "name": "ListContainer", "type": "crt.FlexContainer", "items": [
+				{ "name": "DataTable", "type": "crt.DataGrid" } ] } ]
+			""");
+
+		// Act — the post-ENG-91859 catalog knows crt.DataGrid, which is what makes the wrong branch reachable.
+		MobilePageConversionGuide guide = Analyze(
+			bundle, webByType: web, containerNameMap: containerNameMap,
+			templateComponentNames: Names("ListContainer", "DataTable"), componentNameMap: componentNameMap,
+			mobileTypes: Names("crt.FlexContainer", "crt.DataGrid", "crt.List", "crt.ListItem"),
+			mobileTemplateTypesByName: probedTypes,
+			mobileTemplateSlotElements: probedSlots,
+			webTemplateBaselineNodes: webBaseline);
+
+		// Assert — the sandbox's three verdict helpers, re-derived.
+		List<ElementMapEntry> structuralLists = guide.ElementMap
+			.Where(e => (e.Operation == "insert" || e.Operation == "merge")
+				&& e.MobileType == "crt.List"
+				&& !string.IsNullOrWhiteSpace(e.WebType)
+				&& e.WebType != "crt.List")
+			.ToList();
+		structuralLists.Should().NotBeEmpty(
+			because: "a vacuous run is what made the sandbox test report green on the very regression it exists "
+				+ "for; the arrangement has to actually produce a structural grid-to-list conversion");
+		foreach (ElementMapEntry list in structuralLists.Where(e => e.MobileValues is not null)) {
+			list.MobileValues!.AsObject().Select(p => p.Key).Should().NotIntersectWith(GridOnlyInputs,
+				because: "a crt.List declares none of the grid's own inputs, and carrying them onto it IS the "
+					+ "inverted twin classification");
+		}
+		List<ElementMapEntry> rows = guide.ElementMap
+			.Where(e => e.MobileType == "crt.ListItem" && e.Operation == "merge" && e.MobileValues is not null)
+			.ToList();
+		rows.Should().ContainSingle(
+			because: "the row arrives as its OWN merge entry addressed by the template's element name");
+		rows[0].MobileName.Should().Be("ListItem",
+			because: "the name comes from the probe's slot map, never from a guessed pattern");
+		rows[0].MobileValues!.AsObject().Should().NotContainKey("name",
+			because: "a merge targets an element the template already named");
+		// Not filtered on MobileValues being non-null: on this arrangement the parent merge carries nothing at
+		// all, and an OnlyContain over the resulting empty set would pass for the wrong reason.
+		List<ElementMapEntry> listMerges = guide.ElementMap
+			.Where(e => e.MobileType == "crt.List" && e.Operation == "merge")
+			.ToList();
+		listMerges.Should().NotBeEmpty(because: "the template provides the List, so the grid converts by merge");
+		listMerges.Should().NotContain(
+			e => e.MobileValues != null && e.MobileValues.AsObject().ContainsKey("itemLayout"),
+			because: "crt.List is not a container and itemLayout is an input, so a row inside the parent's "
+				+ "merge is discarded by the differ and the list renders empty with nothing reporting it");
+	}
+
+	/// <summary>Inputs declared by the web grid and by no mobile list — the sandbox E2E test's own list.</summary>
+	private static readonly string[] GridOnlyInputs = [
+		"columns", "features", "bulkActions", "rowActions", "primaryDisplayColumnName"
+	];
 
 	[Test]
 	[Description("ENG-91859: when the probe knows NO element for the list's row slot, the structural twin degrades to advisory - no row entry at all - instead of guessing a name. A merge is addressed by name, so a guessed name is a silent no-op one level over: the caller would be told to configure an element the template does not have.")]

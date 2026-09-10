@@ -95,10 +95,15 @@ public sealed class CaptionResource {
 }
 
 /// <summary>
-/// Instance-level conversion decision for ONE named element of the source page (ENG-89620). One
-/// entry per named element of <c>sourceStructure</c>. The <see cref="Operation"/> tells the caller
-/// exactly what to do with this element on the mobile page; it never has to infer merge-vs-insert
-/// from <c>containerMap</c> + <c>componentSuggestions</c>.
+/// Instance-level conversion decision for ONE named element of the source page (ENG-89620). Usually one
+/// entry per named element of <c>sourceStructure</c>, but a STRUCTURAL twin — a web element converting into
+/// a DIFFERENT mobile component (crt.DataGrid → crt.List) — contributes TWO entries under the same
+/// <see cref="WebName"/>: FIRST the element that replaced the web one, THEN the named element the mobile
+/// template provides in its single-object slot, carrying the row (crt.ListItem). Callers must apply every
+/// entry in list order and must NOT key or de-duplicate the map by <see cref="WebName"/> — the second entry
+/// is where a converted list's row lives, and dropping it renders the list blank (ENG-91859).
+/// The <see cref="Operation"/> tells the caller exactly what to do with this element on the mobile page;
+/// it never has to infer merge-vs-insert from <c>containerMap</c> + <c>componentSuggestions</c>.
 /// </summary>
 public sealed class ElementMapEntry {
 	/// <summary>

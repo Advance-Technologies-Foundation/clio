@@ -30,9 +30,20 @@ resolver landed, `{"type": "ViewElementConfig"}` read as *indeterminate*, so
 `CoerceToDeclaredShape` left the array alone and a wrong declaration cost only the agent's reading.
 Since that resolver (`a-named-type-must-resolve-to-a-container-shape.md`) the same descriptor
 resolves to **Object**, and the object branch keeps an array's FIRST element and drops the rest. So
-declaring `body` as an array is now what stops a seven-field row from arriving with one — and the
-only thing standing between the two behaviours is a producer-side declaration in another
-repository, with no clio-side test able to fail if it is reverted.
+declaring `body` as an array is now what stops a seven-field row from arriving with one, and the
+thing that decides it is a producer-side declaration in another repository.
+
+Two clio-side guards were added for that (ENG-91859), and neither one can *prevent* the reversion:
+
+- `CoerceToDeclaredShape` now records every Object-coercion that discarded array elements and the
+  guide reports them as a `CONTENT WAS DISCARDED BY A REGISTRY SHAPE COERCION` constraint naming
+  `type.property` and how many entries were lost. So the truncation reaches the caller instead of
+  shipping as a page that validates, saves and opens with most of the row missing.
+- `Mobile_Registry_Snapshot_Should_Declare_ListItem_Body_As_An_Array` pins the declaration in the
+  fixture. It is **vacuous today**: the pinned mobile fixture is the pre-cutover 35-component pin
+  and contains no `crt.ListItem` at all, so its no-type branch only asserts that the fixture is
+  still that pin. It starts checking the declaration on the first fixture refresh after the
+  producer publishes.
 
 The mobile generator publishes the array form deliberately
 (`preprocessorComponentProperties` with `overridesExtracted: true` in the **mobile-app** repository's

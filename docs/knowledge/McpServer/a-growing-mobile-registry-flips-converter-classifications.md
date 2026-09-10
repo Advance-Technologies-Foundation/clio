@@ -1,5 +1,5 @@
 ---
-description: the web-to-mobile converter decides several things by asking "does this type exist in the mobile registry", so ENG-91859 growing that catalog from 46 to 87 types silently flips those decisions from the safe branch to the confident one - a class of regression, not one bug
+description: the web-to-mobile converter decides several things by asking "does this type exist in the mobile registry", so ENG-91859 growing that catalog by roughly a factor of two silently flips those decisions from the safe branch to the confident one - a class of regression, not one bug
 applies-to:
   - clio/Command/McpServer/Tools/MobilePageConverter/WebToMobileAnalysisService.cs
   - clio/Command/McpServer/Data/WebToMobilePageConversionRules.json
@@ -10,8 +10,10 @@ date: 2026-09-03
 **What is true** — several converter decisions are written as "is this web type present in the
 mobile registry", and they were authored while the published mobile catalog held 46 types extracted
 from the *web* monorepo. ENG-91859 replaces that producer with one that scans the Flutter runtime
-and publishes 87. Every such test that was reliably FALSE becomes TRUE, and the converter moves
-from its cautious branch to its confident one for ~41 types at once.
+and publishes substantially more (95 components / 64 requests as the generator stood on 2026-09-09 —
+a moving number until the producer publishes, so treat it as a magnitude, not a pin). Every such test
+that was reliably FALSE becomes TRUE, and the converter moves from its cautious branch to its
+confident one for dozens of types at once.
 
 Measured on a real page before the fix: `crt.DataGrid` went from `Unsupported` (advisory merge, no
 payload) to `DirectMapping`, and the `DataTable -> List` twin carried DataGrid-shaped values
