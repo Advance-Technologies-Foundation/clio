@@ -38,13 +38,13 @@ public sealed class DeployIdentityTool(
 	[Description("""
 				 Deploys IdentityService to IIS, connects the target Creatio environment, creates a fresh clio OAuth
 				 client bound to an existing Creatio user, and stores the returned client credentials in the local
-				 clio appsettings environment.
+				 clio appsettings environment after validating discovery, token issuance, and a read-only CRM bearer request.
 
 				 When zipFile is omitted, the command finds IdentityService.zip under the registered environment
 				 EnvironmentPath. When identitySitePort is omitted, the command selects the first free IIS port
 				 in range 40001-40100. Explicit zipFile and identitySitePort values still win.
 				 Set noApp to deploy and connect IdentityService without creating an OAuth app or verifying
-				 client_credentials. Set createTechUser to create a new technical user instead of binding the
+				 client_credentials or CRM OAuth access. Set createTechUser to create a new technical user instead of binding the
 				 fresh OAuth app to the existing Supervisor user.
 				 Secret values are written only to clio settings and are not returned in the tool response.
 				 """)]
