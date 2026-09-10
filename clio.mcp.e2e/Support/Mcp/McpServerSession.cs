@@ -101,7 +101,9 @@ internal sealed class McpServerSession : IAsyncDisposable {
 	// write itself is normally a no-op - the shared-home fixture seeds the alias before any pooled fixture
 	// starts - but a lock plus the IOException catch below keeps a sharing violation out of [OneTimeSetUp],
 	// where it would red a whole fixture with a message about knowledge bootstrap.
-	private static readonly Lock CuratedKnowledgeSettingsLock = new();
+	// A plain object, not System.Threading.Lock: this project also targets net8.0, where that type does
+	// not exist and the name binds to an inaccessible internal one (CS0122).
+	private static readonly object CuratedKnowledgeSettingsLock = new();
 
 	private static void SuppressCuratedKnowledgeBootstrap(McpE2ESettings settings) {
 		if (!settings.SuppressCuratedKnowledgeBootstrap
