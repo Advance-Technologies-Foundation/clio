@@ -173,6 +173,30 @@ GitHub Actions ганяє merge-коміт, тож `SandboxFixtures_ShouldBeNonP
 `CLIO_HOME` або процесне оточення; саме їх відсіює скринінг, а новий guard у `McpFixturePolicyTests`
 (`ParallelFixtures_ShouldNotMutateProcessEnvironmentOrSharedSettings`) не дає їм повернутись.
 
+### Stage 4 — винести з e2e-проєкту тести, що не запускають ані сервер, ані стенд
+
+**Привід.** У прогоні тиру `NoEnvironment` **254 з 480** тестів відпрацьовують швидше за 50 мс. Це не
+означає «не e2e»: для 215 із них вартість просто переїхала у `[OneTimeSetUp]` разом зі стартом сервера
+(Stage 1), і тіло тесту — це один MCP-виклик проти справжнього процесу. Але 31 тест **узагалі не згадує
+сервер**: це юніт-тести харнеса, які лежали у проєкті, чий єдиний лейн — 47-хвилинний білд зі стендом.
+
+**Зроблено.** Перенесено 6 фікстур (37 тестів) у `clio.tests/McpE2EHarness/` з категорією `Unit`:
+`UninstallWarningIisApplicationPoolResolver` (18), `WorkerSpawnObserverReleaseWait` (5),
+`FixtureCleanupOwnership` (5), `MessageCollectingProgressWait` (4), `ClioCliCommandRunnerRedaction` (3),
+`ClioCliCommandRunnerEnvelope` (2). Асерти не змінювались. Аудит вважав це блокером («або спільна
+support-збірка, або лишити як є»), але третій шлях виявився дешевшим: `clio.tests` **уже** посилається на
+`clio.mcp.e2e`, тож вистачило одного `InternalsVisibleTo("clio.tests")` — типи `Support/` лишились
+`internal`. Тепер ці 37 виконуються **за 1 с** у швидкому лейні; тир `NoEnvironment` — 449 тестів замість 485.
+
+**Не перенесено попри мілісекунди:** `McpWorkerWorkingDirectoryE2ETests` спавнить справжній дочірній
+процес і перевіряє робочий каталог, який той про себе повідомляє. Швидкість — не критерій; критерій —
+що саме тест запускає.
+
+**Побічно виправлено:** `ListEntityClientSchemasToolE2ETests` отримав від master (PR #1399)
+`Sandbox`-тест поверх клас-левел тега `NoEnvironment`. Категорії NUnit адитивні, тож швидкий тир
+вибирав і його — і той скіпався без стенду, ламаючи критерій `Skipped == 0`. Тепер пер-методні
+категорії, як і в Stage 3.
+
 ### Stage 3 — перетегувати 28 хибно-Sandbox тестів
 
 `SchemaSyncToolE2ETests` (15), `DataBindingDbToolE2ETests` (8), `DataBindingToolE2ETests` (3 — уся
@@ -255,3 +279,4 @@ dotnet test clio.tests/clio.tests.csproj -f net10.0 --no-build --filter "FullyQu
 | Stage 2 — TeamCity (PR #1427) | `b2d21c8` | [16000208](https://teamcity-rnd.bpmonline.com/buildConfiguration/Team_Atf_ClioMcpE2eTests/16000208) | **success** | **47m 04s** (pending `17:12:55Z` → success `17:59:59Z`) — **−3.3 хв проти Stage 1+3 (≈50m 20s) і −10.5 хв проти baseline 57m 32s** (−18 % білду; ≈ −24 % тестового кроку, якщо деплой ≈13 хв незмінний: 44m 20s → ≈33m 50s). Останні ~2.5 хв білд перекривався з 16000226 (рядок нижче) — на результат не вплинуло | статус не несе кількості; порівняння `Tests passed` 15999000 vs 16000208 — у TeamCity |
 | merge `master` + CI-фікс — TeamCity | `6ac7245` | [16000226](https://teamcity-rnd.bpmonline.com/buildConfiguration/Team_Atf_ClioMcpE2eTests/16000226) | **failure за 2.5 хв** | queued `17:29:08Z` → failure `17:31:36Z`: упав до першого тесту (повний прогін ≈47–50 хв, сам деплой Creatio >10 хв), стартувавши **паралельно** з ще живим 16000208 — скрипт черги дедуплікує лише той самий коміт, тож новий коміт ставить другий одночасний full-Creatio білд (небезпека, описана в коментарі `queue-teamcity-build.ps1`). Лог TeamCity з контейнера недоступний (хост зовні резолвиться у публічний nginx з 404). На тому ж коміті GitHub Actions зелені, `clio.mcp.e2e` збирається під net8.0 і net10.0. Чистий перезапуск — наступний рядок | — |
 | tip після завершення 16000208 — TeamCity | `23f7423` | [16000274](https://teamcity-rnd.bpmonline.com/buildConfiguration/Team_Atf_ClioMcpE2eTests/16000274) | **success** | **47m 17s** (pending `18:10:21Z` → success `18:57:38Z`), +13 с до 16000208 — той самий код паралельного пулу після мержу `master` (з `ListEntityClientSchemasToolE2ETests` знову серійною). Разом із 16000208 це **два поспіль зелені прогони** змін паралелізму, як вимагає ENG-92558; GitHub Actions на тому ж коміті зелені | статус не несе кількості |
+| виправлення 3-lens review + фікс net8.0 | `1792af2` | [16002928](https://teamcity-rnd.bpmonline.com/buildConfiguration/Team_Atf_ClioMcpE2eTests/16002928) | **success** | **47m 55s** (pending `06:26:07Z` → success `07:14:02Z`). Підтверджує правки review на стенді. Перед цим 16002480 і 16002823 упали за 4m41s і 4m38s — **не** через накладання білдів, а через `System.Threading.Lock` (тип із .NET 9) у проєкті, що таргетить і net8.0: падіння було на кроці збірки, до першого тесту. Правило: падіння за ~4–5 хв тут означає помилку компіляції, а не стенд; збирати треба **обидва** TFM (запис у `docs/knowledge/process/`) | статус не несе кількості |

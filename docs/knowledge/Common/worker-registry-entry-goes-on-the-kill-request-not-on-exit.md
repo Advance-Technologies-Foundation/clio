@@ -4,7 +4,7 @@ applies-to:
   - clio/Common/McpWorker/WorkerProcessSupervisor.cs
   - clio/Common/McpWorker/StaleWorkerRegistry.cs
   - clio.mcp.e2e/Support/Mcp/WorkerSpawnObserver.cs
-  - clio.mcp.e2e/Support/Mcp/WorkerSpawnObserverReleaseWaitTests.cs
+  - clio.tests/McpE2EHarness/WorkerSpawnObserverReleaseWaitTests.cs
 ticket: ENG-96705
 date: 2026-09-07
 ---

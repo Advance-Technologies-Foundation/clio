@@ -202,7 +202,7 @@ protection / rulesets з цього аналізу неможливо. Хай т
 
 | Фікстура | Тестів | Категорія сьогодні | Що тестує |
 |---|---:|---|---|
-| `UninstallWarningIisApplicationPoolResolverE2ETests` | **18** | `McpE2E.NoEnvironment` | парсинг XML `appcmd` + `ClioEnvironmentCommandResolver` — чиста строкова логіка |
+| `UninstallWarningIisApplicationPoolResolverE2ETests` (перенесено) | **18** | `McpE2E.NoEnvironment` | парсинг XML `appcmd` + `ClioEnvironmentCommandResolver` — чиста строкова логіка |
 | `TransientPlatformConditionRetryGateTests` | 14 | `Unit` | retry-gate |
 | `DataForgeReadinessGateTests` | 13 | `Unit` | readiness-gate |
 | `BoundedPollGateTests` | 5 | `Unit` | bounded poll |
@@ -225,6 +225,22 @@ protection / rulesets з цього аналізу неможливо. Хай т
 `clio.mcp.e2e/Support/`. Перенести їхні тести в `clio.tests` = або винести харнес у спільну
 support-збірку, або лишити як є. Це рішення про структуру проєктів, не про тести — тому воно
 окремим пунктом, а не «просто перекласти файли».
+
+**СТАН: виконано для 6 фікстур (37 тестів), PR #1427.** Третій варіант виявився дешевшим за обидва
+розглянуті: `clio.tests` **уже** посилається на `clio.mcp.e2e` (через нього працює
+`McpFixturePolicyTests`), тож достатньо було одного `InternalsVisibleTo("clio.tests")` у
+`clio.mcp.e2e.csproj` — ані спільної збірки, ані зміни видимості типів. Перенесено у
+`clio.tests/McpE2EHarness/`: `UninstallWarningIisApplicationPoolResolver` (18, суфікс `E2E` знято з
+імені класу), `WorkerSpawnObserverReleaseWait` (5), `FixtureCleanupOwnership` (5),
+`MessageCollectingProgressWait` (4), `ClioCliCommandRunnerRedaction` (3),
+`ClioCliCommandRunnerEnvelope` (2). Категорію змінено з `McpE2E.NoEnvironment` на `Unit`, атрибути
+Allure знято (пакет не підключений у `clio.tests`). Тепер вони виконуються **за 1 секунду** в unit-лейні
+замість ~47-хвилинного стенд-білду. Асерти не змінювались.
+
+**Свідомо НЕ перенесено:** `McpWorkerWorkingDirectoryE2ETests` — попри мілісекундну тривалість він
+**спавнить справжній дочірній процес** (`WorkerProcessSupervisor` + `clio.process.fixture`) і перевіряє
+робочий каталог, який той процес повідомляє про себе. Це між-процесна поведінка, тобто справжній e2e;
+швидкість тут не критерій. Решта рядків таблиці з категорією `Unit` уже лежать у `clio.tests`.
 
 ### 5.2 Хибно позначені `Sandbox` (arrange не потребує середовища)
 

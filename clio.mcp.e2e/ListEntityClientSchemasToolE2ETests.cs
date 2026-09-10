@@ -16,7 +16,9 @@ namespace Clio.Mcp.E2E;
 /// End-to-end tests for the list-entity-client-schemas MCP tool (entity page-role graph).
 /// </summary>
 [TestFixture]
-[Category("McpE2E.NoEnvironment")]
+// Per-method tier categories, not a class-level one: NUnit categories are additive, so a class-level
+// McpE2E.NoEnvironment would also select the Sandbox test below into the fast tier, where it can only
+// skip - and that tier's acceptance criterion is Skipped == 0 (mcp-e2e-tiering-spec.md, mixed fixtures).
 [AllureNUnit]
 [AllureFeature(ListEntityClientSchemasTool.ToolName)]
 // Serial on purpose: the typed-entity test below is McpE2E.Sandbox and reads the shared stand, so this
@@ -26,6 +28,7 @@ namespace Clio.Mcp.E2E;
 public sealed class ListEntityClientSchemasToolE2ETests : McpContractFixtureBase {
 
 	[Test]
+	[Category("McpE2E.NoEnvironment")]
 	[Description("Exposes list-entity-client-schemas as a discoverable, non-destructive tool via the get-tool-contract compact index on the lazy MCP surface.")]
 	[AllureTag(ListEntityClientSchemasTool.ToolName)]
 	[AllureName("list-entity-client-schemas MCP tool is discoverable on the lazy surface")]
@@ -51,6 +54,7 @@ public sealed class ListEntityClientSchemasToolE2ETests : McpContractFixtureBase
 	}
 
 	[Test]
+	[Category("McpE2E.NoEnvironment")]
 	[Description("Binds list-entity-client-schemas arguments through the real MCP server and returns a structured failure for an unknown environment.")]
 	[AllureTag(ListEntityClientSchemasTool.ToolName)]
 	[AllureName("list-entity-client-schemas MCP tool binds arguments")]

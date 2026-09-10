@@ -3,12 +3,12 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
-using Allure.NUnit;
-using Allure.NUnit.Attributes;
+using Clio.Mcp.E2E;
 using FluentAssertions;
+using NUnit.Framework;
 using ModelContextProtocol;
 
-namespace Clio.Mcp.E2E;
+namespace Clio.Tests.McpE2EHarness;
 
 /// <summary>
 /// Deterministic coverage for the bounded progress wait that <see cref="MessageCollectingProgress"/>
@@ -17,19 +17,14 @@ namespace Clio.Mcp.E2E;
 /// here with a hand-driven sink and no environment at all.
 /// </summary>
 [TestFixture]
-[AllureNUnit]
 public sealed class MessageCollectingProgressWaitTests {
 	private static readonly TimeSpan GenerousTimeout = TimeSpan.FromSeconds(30);
 
 	private static ProgressNotificationValue Beat(string message) => new() { Progress = 0, Message = message };
 
-	[Category("McpE2E.NoEnvironment")]
+	[Category("Unit")]
 	[Test]
 	[Description("Verifies the bounded progress wait returns a notification that is reported AFTER the wait began, which is the dispatch race that made the application progress tests flaky.")]
-	[AllureFeature("mcp-progress-heartbeat")]
-	[AllureTag("mcp-progress-heartbeat")]
-	[AllureName("Progress wait observes a notification delivered after the wait started")]
-	[AllureDescription("Starts the bounded wait against an empty sink, then reports the awaited marker, and verifies the wait completes with the marker instead of failing on the empty snapshot it saw first.")]
 	public async Task WaitForMessages_Should_Observe_Notification_Reported_After_Wait_Started() {
 		// Arrange
 		MessageCollectingProgress progress = new();
@@ -49,13 +44,9 @@ public sealed class MessageCollectingProgressWaitTests {
 			because: "the bounded wait must observe a notification delivered after it started, which is exactly the race that made the immediate assertion flaky");
 	}
 
-	[Category("McpE2E.NoEnvironment")]
+	[Category("Unit")]
 	[Test]
 	[Description("Verifies the bounded progress wait returns immediately when the awaited condition is already satisfied, so a wait never costs wall-clock time on the healthy path.")]
-	[AllureFeature("mcp-progress-heartbeat")]
-	[AllureTag("mcp-progress-heartbeat")]
-	[AllureName("Progress wait returns immediately when already satisfied")]
-	[AllureDescription("Reports the markers before waiting and verifies the bounded wait returns the existing snapshot without waiting for a further notification.")]
 	public async Task WaitForMessages_Should_Return_Immediately_When_Condition_Already_Satisfied() {
 		// Arrange
 		MessageCollectingProgress progress = new();
@@ -72,13 +63,9 @@ public sealed class MessageCollectingProgressWaitTests {
 			because: "an already-satisfied condition must resolve from the current snapshot rather than blocking for another notification");
 	}
 
-	[Category("McpE2E.NoEnvironment")]
+	[Category("Unit")]
 	[Test]
 	[Description("Verifies the bounded progress wait fails with a diagnostic that lists the notifications that DID arrive, so a genuinely missing stage marker is still reported precisely instead of as a bare timeout.")]
-	[AllureFeature("mcp-progress-heartbeat")]
-	[AllureTag("mcp-progress-heartbeat")]
-	[AllureName("Progress wait timeout names the notifications that arrived")]
-	[AllureDescription("Reports two of three markers, waits for the third with a short timeout, and verifies the TimeoutException enumerates the observed markers.")]
 	public async Task WaitForMessages_Should_Time_Out_With_Diagnostic_Listing_Observed_Messages() {
 		// Arrange
 		MessageCollectingProgress progress = new();
@@ -102,13 +89,9 @@ public sealed class MessageCollectingProgressWaitTests {
 				because: "every observed marker belongs in the diagnostic, not just the first");
 	}
 
-	[Category("McpE2E.NoEnvironment")]
+	[Category("Unit")]
 	[Test]
 	[Description("Verifies the count-based bounded wait resolves once the requested number of notifications has been observed, covering the keep-alive assertion path.")]
-	[AllureFeature("mcp-progress-heartbeat")]
-	[AllureTag("mcp-progress-heartbeat")]
-	[AllureName("Progress wait resolves on notification count for keep-alive assertions")]
-	[AllureDescription("Starts a count-based wait against an empty sink, reports one heartbeat, and verifies the wait resolves — the keep-alive path used by the long-running-call test.")]
 	public async Task WaitForCount_Should_Resolve_When_Minimum_Notification_Count_Observed() {
 		// Arrange
 		MessageCollectingProgress progress = new();

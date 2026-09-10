@@ -1,16 +1,15 @@
-using Allure.NUnit;
-using Allure.NUnit.Attributes;
+using System;
+using System.Collections.Generic;
 using Clio.Command.McpServer.Tools;
 using Clio.Mcp.E2E.Support.Configuration;
 using FluentAssertions;
+using NUnit.Framework;
 
-namespace Clio.Mcp.E2E;
+namespace Clio.Tests.McpE2EHarness;
 
 [TestFixture]
-[Category("McpE2E.NoEnvironment")]
-[AllureNUnit]
-[AllureFeature("uninstall-creatio")]
-public sealed class UninstallWarningIisApplicationPoolResolverE2ETests {
+[Category("Unit")]
+public sealed class UninstallWarningIisApplicationPoolResolverTests {
 	private const string ToolName = UninstallCreatioTool.UninstallCreatioToolName;
 	private const string ApplicationsXml = """
 		<?xml version="1.0" encoding="UTF-8"?>
@@ -21,8 +20,6 @@ public sealed class UninstallWarningIisApplicationPoolResolverE2ETests {
 
 	[Test]
 	[Description("Reads Uri from raw clio environment output when EnvironmentPath is empty.")]
-	[AllureTag(ToolName)]
-	[AllureName("Uninstall warning harness reads URI without EnvironmentPath")]
 	public void ResolveEnvironmentValue_ShouldReturnUri_WhenEnvironmentPathIsEmpty() {
 		// Arrange
 		const string rawEnvironment = "EnvironmentPath: \r\nUri: http://ts1-agent80:88/studio\r\n";
@@ -37,8 +34,6 @@ public sealed class UninstallWarningIisApplicationPoolResolverE2ETests {
 
 	[Test]
 	[Description("Matches a registered sandbox URI to one IIS application behind a wildcard binding.")]
-	[AllureTag(ToolName)]
-	[AllureName("Uninstall warning harness resolves wildcard IIS binding")]
 	public void Resolve_ShouldReturnApplicationPool_WhenWildcardBindingAndPathMatch() {
 		// Arrange
 		Uri environmentUri = new("http://ts1-agent80:88/studio/");
@@ -59,8 +54,6 @@ public sealed class UninstallWarningIisApplicationPoolResolverE2ETests {
 
 	[Test]
 	[Description("Uses TeamCity's explicit pool when the public sandbox URL is routed independently of local IIS paths.")]
-	[AllureTag(ToolName)]
-	[AllureName("Uninstall warning harness resolves TeamCity routed IIS pool")]
 	public void Resolve_ShouldReturnExpectedPool_WhenPublicUrlDoesNotMatchLocalIisPath() {
 		// Arrange
 		Uri environmentUri = new("http://ts1-agent54:88/studioenu_15736567_0716");
@@ -87,8 +80,6 @@ public sealed class UninstallWarningIisApplicationPoolResolverE2ETests {
 
 	[Test]
 	[Description("Rejects TeamCity's routed pool when multiple applications share the sandbox profile.")]
-	[AllureTag(ToolName)]
-	[AllureName("Uninstall warning harness identifies routed shared pool as non-applicable")]
 	public void Resolve_ShouldThrowSharedPoolException_WhenRoutedPoolIsSharedWithinSandboxSite() {
 		// Arrange
 		Uri environmentUri = new("http://ts1-agent54:88/studioenu_15736978_0716");
@@ -117,8 +108,6 @@ public sealed class UninstallWarningIisApplicationPoolResolverE2ETests {
 
 	[Test]
 	[Description("Uses an explicit pool when a local root-site URL matches the pool's sole IIS application.")]
-	[AllureTag(ToolName)]
-	[AllureName("Uninstall warning harness resolves explicit local root-site pool")]
 	public void Resolve_ShouldReturnExpectedPool_WhenLocalRootSiteMatchesDirectly() {
 		// Arrange
 		Uri environmentUri = new("http://localhost:40293/");
@@ -144,8 +133,6 @@ public sealed class UninstallWarningIisApplicationPoolResolverE2ETests {
 
 	[Test]
 	[Description("Rejects an explicit pool that does not identify the registered sandbox URL target.")]
-	[AllureTag(ToolName)]
-	[AllureName("Uninstall warning harness rejects unrelated explicit pool")]
 	public void Resolve_ShouldThrow_WhenExpectedPoolDoesNotMatchUriTarget() {
 		// Arrange
 		Uri environmentUri = new("http://ts1-agent54:88/studioenu_15736567_0716");
@@ -168,8 +155,6 @@ public sealed class UninstallWarningIisApplicationPoolResolverE2ETests {
 
 	[Test]
 	[Description("Rejects an unrelated explicitly named pool even when multiple IIS applications share it.")]
-	[AllureTag(ToolName)]
-	[AllureName("Uninstall warning harness rejects unrelated shared explicit pool")]
 	public void Resolve_ShouldThrow_WhenUnrelatedExpectedPoolHasMultipleAssignments() {
 		// Arrange
 		Uri environmentUri = new("http://ts1-agent54:88/studioenu_15736567_0716");
@@ -193,8 +178,6 @@ public sealed class UninstallWarningIisApplicationPoolResolverE2ETests {
 
 	[Test]
 	[Description("Rejects a routed pool whose sole IIS assignment belongs to an unrelated live site.")]
-	[AllureTag(ToolName)]
-	[AllureName("Uninstall warning harness rejects unrelated routed pool assignment")]
 	public void Resolve_ShouldThrow_WhenRoutedPoolAssignmentDoesNotIdentifyTarget() {
 		// Arrange
 		Uri environmentUri = new("http://ts1-agent54:88/studioenu_15736567_0716");
@@ -222,8 +205,6 @@ public sealed class UninstallWarningIisApplicationPoolResolverE2ETests {
 
 	[Test]
 	[Description("Rejects a routed pool assignment whose referenced IIS site is absent.")]
-	[AllureTag(ToolName)]
-	[AllureName("Uninstall warning harness rejects routed pool without live site")]
 	public void Resolve_ShouldThrow_WhenRoutedPoolSiteIsMissing() {
 		// Arrange
 		Uri environmentUri = new("http://ts1-agent54:88/studioenu_15736567_0716");
@@ -246,8 +227,6 @@ public sealed class UninstallWarningIisApplicationPoolResolverE2ETests {
 
 	[Test]
 	[Description("Rejects a non-HTTP sandbox URI before resolving an explicit IIS application pool.")]
-	[AllureTag(ToolName)]
-	[AllureName("Uninstall warning harness rejects non-HTTP routed target")]
 	public void Resolve_ShouldThrow_WhenUriSchemeIsNotHttp() {
 		// Arrange
 		Uri environmentUri = new("file://ts1-agent54/studioenu_15736567_0716");
@@ -265,8 +244,6 @@ public sealed class UninstallWarningIisApplicationPoolResolverE2ETests {
 
 	[Test]
 	[Description("Reads a TeamCity configuration parameter through its Java-properties file indirection.")]
-	[AllureTag(ToolName)]
-	[AllureName("Uninstall warning harness reads TeamCity application pool parameter")]
 	public void TeamCityBuildParameterResolve_ShouldReturnApplicationPoolName_WhenConfigurationFileDefinesParameter() {
 		// Arrange
 		const string buildPropertiesPath = "build.properties";
@@ -287,8 +264,6 @@ public sealed class UninstallWarningIisApplicationPoolResolverE2ETests {
 
 	[Test]
 	[Description("Returns no TeamCity parameter when the referenced configuration-properties file is unavailable.")]
-	[AllureTag(ToolName)]
-	[AllureName("Uninstall warning harness fails closed without TeamCity configuration properties")]
 	public void TeamCityBuildParameterResolve_ShouldReturnNull_WhenConfigurationFileIsMissing() {
 		// Arrange
 		const string buildPropertiesPath = "build.properties";
@@ -307,8 +282,6 @@ public sealed class UninstallWarningIisApplicationPoolResolverE2ETests {
 
 	[Test]
 	[Description("Rejects a sandbox URI whose IIS binding does not match.")]
-	[AllureTag(ToolName)]
-	[AllureName("Uninstall warning harness rejects unmatched IIS binding")]
 	public void Resolve_ShouldThrow_WhenBindingDoesNotMatch() {
 		// Arrange
 		Uri environmentUri = new("http://ts1-agent80:88/studio?access_token=secret-sentinel");
@@ -332,8 +305,6 @@ public sealed class UninstallWarningIisApplicationPoolResolverE2ETests {
 
 	[Test]
 	[Description("Rejects a sandbox URI that ambiguously matches applications in more than one IIS site.")]
-	[AllureTag(ToolName)]
-	[AllureName("Uninstall warning harness rejects ambiguous IIS target")]
 	public void Resolve_ShouldThrow_WhenApplicationMatchIsAmbiguous() {
 		// Arrange
 		Uri environmentUri = new("http://ts1-agent80:88/studio");
@@ -362,8 +333,6 @@ public sealed class UninstallWarningIisApplicationPoolResolverE2ETests {
 
 	[Test]
 	[Description("Rejects a matched IIS application that has no application-pool name.")]
-	[AllureTag(ToolName)]
-	[AllureName("Uninstall warning harness rejects application without pool")]
 	public void Resolve_ShouldThrow_WhenApplicationPoolNameIsMissing() {
 		// Arrange
 		Uri environmentUri = new("http://ts1-agent80:88/studio");
@@ -390,8 +359,6 @@ public sealed class UninstallWarningIisApplicationPoolResolverE2ETests {
 
 	[Test]
 	[Description("Rejects a foreign registered hostname even when a wildcard IIS binding and application path match.")]
-	[AllureTag(ToolName)]
-	[AllureName("Uninstall warning harness rejects foreign host on wildcard binding")]
 	public void Resolve_ShouldThrow_WhenRegisteredHostIsNotLocal() {
 		// Arrange
 		Uri environmentUri = new("http://other-agent:88/studio");
@@ -413,8 +380,6 @@ public sealed class UninstallWarningIisApplicationPoolResolverE2ETests {
 
 	[Test]
 	[Description("Recognizes the current machine name as a local destructive E2E target.")]
-	[AllureTag(ToolName)]
-	[AllureName("Uninstall warning harness recognizes current machine name")]
 	public void HostIdentifiesCurrentMachine_ShouldReturnTrue_WhenHostIsMachineName() {
 		// Arrange
 		string host = Environment.MachineName;
@@ -429,8 +394,6 @@ public sealed class UninstallWarningIisApplicationPoolResolverE2ETests {
 
 	[Test]
 	[Description("Rejects user information in the registered sandbox URI without leaking it into diagnostics.")]
-	[AllureTag(ToolName)]
-	[AllureName("Uninstall warning harness rejects URI user information safely")]
 	public void Resolve_ShouldThrowWithoutSecret_WhenUriContainsUserInformation() {
 		// Arrange
 		Uri environmentUri = new("http://secret-user:secret-password@ts1-agent80:88/studio");

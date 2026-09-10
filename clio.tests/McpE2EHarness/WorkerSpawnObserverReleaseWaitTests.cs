@@ -1,11 +1,14 @@
+using System;
 using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
+using Clio.Mcp.E2E.Support.Mcp;
 using FluentAssertions;
+using NUnit.Framework;
 
-namespace Clio.Mcp.E2E.Support.Mcp;
+namespace Clio.Tests.McpE2EHarness;
 
 /// <summary>
 /// Pins <see cref="WorkerSpawnObserver.WaitUntilWorkersAreReleased"/>, the instrument TC-E-601b's cleanup
@@ -29,7 +32,7 @@ namespace Clio.Mcp.E2E.Support.Mcp;
 /// </para>
 /// </remarks>
 [TestFixture]
-[Category("McpE2E.NoEnvironment")]
+[Category("Unit")]
 public sealed class WorkerSpawnObserverReleaseWaitTests {
 
 	/// <summary>

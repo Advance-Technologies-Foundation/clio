@@ -37,6 +37,15 @@
 	</ItemGroup>
 
 	<ItemGroup>
+		<!-- The harness types under Support/ are internal on purpose. clio.tests holds the tests that
+		     exercise them without a server or a stand, so that they run in the fast unit lane instead of
+		     the ~47-minute stand-backed TeamCity build that gates clio.mcp.e2e. -->
+		<AssemblyAttribute Include="System.Runtime.CompilerServices.InternalsVisibleTo">
+			<_Parameter1>clio.tests</_Parameter1>
+		</AssemblyAttribute>
+	</ItemGroup>
+
+	<ItemGroup>
 		<ProjectReference Include="..\clio\clio.csproj" />
 		<ProjectReference Include="..\clio.process.fixture\clio.process.fixture.csproj" ReferenceOutputAssembly="false" />
 	</ItemGroup>
