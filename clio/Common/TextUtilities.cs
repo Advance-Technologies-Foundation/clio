@@ -78,15 +78,21 @@ namespace Clio.Common
 
 		/// <summary>
 		/// Prepares untrusted text (typically a raw HTTP response body from a Creatio service) for safe inclusion
-		/// in a user-facing message, log line, or MCP tool result. Replaces every control character with a space so
-		/// a hostile or misbehaving endpoint cannot forge extra output lines or inject terminal escape sequences,
-		/// and caps the result at <paramref name="maxLength"/> characters (appending an ellipsis) so a large
-		/// non-JSON payload — for example a whole HTML login page — cannot flood the output.
+		/// in a user-facing message, log line, or MCP tool result. Replaces every character that could forge output
+		/// with a space so a hostile or misbehaving endpoint cannot invent extra output lines or inject terminal
+		/// escape sequences - the <c>char.IsControl</c> set PLUS <c>UnicodeCategory.Format</c> and the two Unicode
+		/// separators, since <c>char.IsControl</c> is FALSE for both and U+2028/U+2029 and the BiDi overrides
+		/// U+202A-U+202E / U+2066-U+2069 otherwise pass untouched while reordering RENDERED text (Trojan Source,
+		/// CVE-2021-42574). It also caps the result at <paramref name="maxLength"/> characters (appending an
+		/// ellipsis) so a large non-JSON payload — for example a whole HTML login page — cannot flood the
+		/// output. Hand-mirrored in CrtProcessBuilder <c>SafeText.Sanitize</c>: the two halves are kept in step
+		/// by hand, so widening one means widening the other.
 		/// </summary>
 		/// <param name="text">The untrusted text to sanitize.</param>
 		/// <param name="maxLength">The maximum length of the sanitized text before it is truncated.</param>
-		/// <returns>A single-line, length-capped, control-character-free rendering of <paramref name="text"/>;
-		/// the input unchanged when it is <c>null</c> or empty. Always VALID UTF-16: a cap that would fall
+		/// <returns>A single-line, length-capped rendering of <paramref name="text"/> with every output-forging
+		/// character replaced; the input unchanged when it is <c>null</c> or empty. Always VALID UTF-16: a cap
+		/// that would fall
 		/// between a surrogate pair drops the whole character rather than emitting a lone surrogate, which
 		/// a JSON serializer refuses. A non-positive cap yields the ellipsis alone rather than throwing.</returns>
 		// A character that must not reach a terminal or a tool result verbatim. See the remark at the
