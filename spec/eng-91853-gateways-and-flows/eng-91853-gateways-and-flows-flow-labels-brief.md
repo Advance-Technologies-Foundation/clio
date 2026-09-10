@@ -219,7 +219,14 @@ because the post-write guard reads it by name.
 
 ### What shipped, and where the version landed
 
-The archive is **1.6.0.8**, not the 1.6.0.7 this brief planned on: 1.6.0.7 was spent on the spike and
+**SUPERSEDED — do not run a provenance check against the pair below.** The archive named here was the
+FIRST cut; the branch has rebundled several times since. The shipped pair is whatever
+`ExpectedArchiveVersion` / `ExpectedProducingCommit` pin in
+`clio.tests/Common/BundledProcessBuilderPackageTests.cs`, and those are the only values the
+staleness and tag controls may be run against. Kept as a record of the first cut and why it was
+numbered as it was:
+
+The archive was **1.6.0.8**, not the 1.6.0.7 this brief planned on: 1.6.0.7 was spent on the spike and
 installed on the stand, so re-cutting under it would have reached that environment as "already
 converged" — the exact trap `rebundle-process-builder.ps1` documents. Package commit
 `98b1a8c` (the spike is `92c1b0f`, kept as its own commit because it is the measurement, not the

@@ -144,7 +144,7 @@ public sealed class ServerProcessDescriberTests {
 
 	[Test]
 	[Category("Unit")]
-	[Description("A flow the server reports WITHOUT a label must not gain an explicit null on the way out. The server omits the member for an unlabelled flow - measured on a 1.6.0.8 stand - and clio mirrors that omission rather than fabricating a value. Note what this does NOT buy, because an earlier revision of the property's docblock claimed it did: absence still cannot distinguish 'this flow has no label' from 'this package predates the field', since both produce the same bytes. What it does buy is that clio does not ASSERT the first of those; the way to tell them apart is the installed package version, and the guidance says so.")]
+	[Description("A flow the server reports WITHOUT a label must not gain an explicit null on the way out. The server omits the member for an unlabelled flow - measured on a 1.6.0.8 stand - and clio mirrors that omission rather than fabricating a value. Note what this does NOT buy, because an earlier revision of the property's docblock claimed it did: absence still cannot distinguish 'this flow has no label' from 'this package predates the field', since both produce the same bytes. What it does buy is that clio does not ASSERT the first of those. Nothing tells them apart, the installed version included - clio normally refuses a package older than the one it ships, so a high number is no evidence the member is present - which is why the guidance now says to treat an all-absent read as uninformative rather than to go and check a number.")]
 	public void Describe_ShouldNotInventAFlowLabel_WhenTheServerOmitsIt() {
 		// Arrange
 		IApplicationClient client = ClientReturning(
@@ -246,6 +246,46 @@ public sealed class ServerProcessDescriberTests {
 		client.ExecutePostRequest(DescribeUrl, Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
 			.Returns(response);
 		return client;
+	}
+
+	[Test]
+	[Description("A best-effort read spends ONE attempt at half the timeout. It is a VERIFICATION of a "
+		+ "write that already committed, and the caller treats a failure as a caveat rather than an error, "
+		+ "so the full budget - three attempts at ten seconds - would stall the common success path for "
+		+ "about half a minute to establish something that then gets reported as unverified anyway. The "
+		+ "population that pays all of it is the one these guards target: an environment whose "
+		+ "DescribeProcess route is failing. Asserted here because every other stub in this fixture passes "
+		+ "Arg.Any<int>() in both positions, so deleting the whole budget leaves the suite green.")]
+	public void Describe_ShouldSpendTheShortBudget_WhenBestEffort() {
+		// Arrange
+		IApplicationClient client = ClientReturning(GraphResponse(RootUId));
+		ServerProcessDescriber describer = CreateDescriber(client);
+
+		// Act
+		describer.Describe(new ProcessIdentity("UsrProc", null, null), null,
+			includeVersionFacts: false, bestEffort: true);
+
+		// Assert
+		client.Received(1).ExecutePostRequest(DescribeUrl, Arg.Any<string>(), 5_000, 1, 1);
+		client.DidNotReceive().ExecutePostRequest(DescribeUrl, Arg.Any<string>(), 10_000, 3, 1);
+	}
+
+	[Test]
+	[Description("An ORDINARY read keeps the full retry budget. Here the description is the caller's "
+		+ "answer rather than a caveat on something already done, so a transient failure has to be retried "
+		+ "instead of reported. Asserted separately because a version that always took the short budget "
+		+ "would satisfy the best-effort test above.")]
+	public void Describe_ShouldSpendTheFullBudget_WhenNotBestEffort() {
+		// Arrange
+		IApplicationClient client = ClientReturning(GraphResponse(RootUId));
+		ServerProcessDescriber describer = CreateDescriber(client);
+
+		// Act
+		describer.Describe(new ProcessIdentity("UsrProc", null, null), null);
+
+		// Assert
+		client.Received(1).ExecutePostRequest(DescribeUrl, Arg.Any<string>(), 10_000, 3, 1);
+		client.DidNotReceive().ExecutePostRequest(DescribeUrl, Arg.Any<string>(), 5_000, 1, 1);
 	}
 
 	[Test]

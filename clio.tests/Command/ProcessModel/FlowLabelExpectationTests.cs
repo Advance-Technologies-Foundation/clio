@@ -8,8 +8,9 @@ using NUnit.Framework;
 namespace Clio.Tests.Command.ProcessModel;
 
 /// <summary>
-/// Covers the silent-drop detection for a flow's diagram label: a CrtProcessBuilder below 1.6.0.8 declares no
-/// <c>label</c> member on a flow, so its serializer discards the field and the operation still answers success.
+/// Covers the silent-drop detection for a flow's diagram label: a CrtProcessBuilder that PREDATES the member
+/// (it first shipped in 1.6.0.8, which is provenance and not a floor to quote at a caller) declares no
+/// <c>label</c> on a flow, so its serializer discards the field and the operation still answers success.
 /// The caller then gets exactly the two identical unlabelled arrows the label exists to prevent, with nothing
 /// saying so. These tests pin the pure halves — what the payload asked for, what the read-back is missing, and
 /// what the caller is told.
@@ -135,6 +136,32 @@ public class FlowLabelExpectationTests {
 	#endregion
 
 	#region Methods: Missing
+
+	[Test]
+	[Description("Two flows joining ONE endpoint pair are not verified against an arbitrary one of them. "
+		+ "The pair is the only handle a label has, and picking the first match would compare the wanted "
+		+ "label against a SIBLING flow's - reporting 'the label did not land' on a write that applied "
+		+ "exactly as sent, a false positive in the one signal this feature has. Unverified is the right "
+		+ "way round for a guard. Not reachable through the package today (AddFlow refuses a second flow "
+		+ "on a connected pair, FindTheFlowBetween refuses to act when more than one matches, and the "
+		+ "batch is atomic) - asserted because a designer-authored process can still hold such a pair and "
+		+ "nothing here should assume otherwise.")]
+	public void Missing_ShouldNotAccuseWhenTwoFlowsShareTheEndpointPair() {
+		// Arrange - the read-back holds two Decide->Merge flows; the wanted label matches the SECOND
+		IReadOnlyList<FlowLabelExpectation.FlowLabel> expected = FlowLabelExpectation.FromDescriptor("""
+			{"flows":[{"source":"Decide","target":"Merge","label":"No"}]}
+			""");
+		DescribeProcessResult described = Described(("Decide", "Merge", "Yes"), ("Decide", "Merge", "No"));
+
+		// Act
+		IReadOnlyList<FlowLabelExpectation.FlowLabelMiss> missing =
+			FlowLabelExpectation.Missing(described, expected);
+
+		// Assert
+		missing.Should().BeEmpty(
+			because: "the ambiguous pair yields no finding at all - the first match carries 'Yes', and "
+				+ "reporting that as a dropped 'No' would accuse a correct write");
+	}
 
 	[Test]
 	[Description("A label the read-back does not show is the finding this guard exists for: the operation answered success and the connector is unlabelled.")]
@@ -264,9 +291,12 @@ public class FlowLabelExpectationTests {
 			because: "the endpoint pair plus the text is what the caller needs to re-apply it");
 		warning.Should().Contain("Decide -> No ('Rejected')",
 			because: "every dropped label is reported, not just the first");
-		warning.Should().Contain(FlowLabelExpectation.MinimumPackageVersion,
-			because: "naming the version turns 'it did not work' into a diagnosis - read from the constant, "
-				+ "because a second copy of the literal is what a one-place fix would then have to chase");
+		warning.Should().Contain("PREDATES",
+			because: "the diagnosis is the CAPABILITY gap, not an ordering one, so the text names a package that predates the member rather than a number no reader can be below");
+		warning.Should().NotMatchRegex(@"\d+\.\d+\.\d+\.\d+",
+			because: "a four-part version number here is the dead end this guard was corrected to stop "
+				+ "handing a caller - convergence refuses every environment below the archive clio ships, "
+				+ "so any floor a message names has already been satisfied by whoever is reading it");
 		warning.Should().Contain("install-process-builder",
 			because: "the remedy has to be actionable in the same breath as the finding");
 		warning.Should().Contain("flows",
@@ -341,8 +371,12 @@ public class FlowLabelExpectationTests {
 			because: "the failed clear keeps its own wording too");
 		warning.Should().Contain("install-process-builder",
 			because: "the absent case is present here, and it is the one outcome the package update fixes");
-		warning.Should().Contain(FlowLabelExpectation.MinimumPackageVersion,
-			because: "the version belongs to the absent case, which this set contains");
+		warning.Should().Contain("PREDATES",
+			because: "the absent case is the one that carries the cause, and it has to be the reachable one");
+		warning.Should().NotMatchRegex(@"\d+\.\d+\.\d+\.\d+",
+			because: "a four-part version number here is the dead end this guard was corrected to stop "
+				+ "handing a caller - convergence refuses every environment below the archive clio ships, "
+				+ "so any floor a message names has already been satisfied by whoever is reading it");
 	}
 
 	[Test]
@@ -812,7 +846,7 @@ public class FlowLabelExpectationTests {
 	}
 
 	[Test]
-	[Description("The caveat names the flow, says WHY it cannot be checked, and gives the action that makes it checkable - re-sending with element names. Naming the version matters here for the same reason as in the dropped-label warning: an older package discards the field silently and this check is the only signal.")]
+	[Description("The caveat names the flow, says WHY it cannot be checked, and gives the action that makes it checkable - re-sending with element names. Naming the CAUSE matters here for the same reason as in the dropped-label warning - a package predating the member discards the field silently and the read-back is the only signal - while naming a VERSION does not, because convergence puts every reader above any floor the text could quote.")]
 	public void BuildUidAddressedWarning_ShouldNameTheFlowTheReasonAndTheRemedy() {
 		// Arrange
 		IReadOnlyList<FlowLabelExpectation.FlowLabel> uidAddressed = [
@@ -828,8 +862,12 @@ public class FlowLabelExpectationTests {
 				+ "a transient failure and retry the same way");
 		warning.Should().Contain("element NAMES",
 			because: "the remedy is to re-send naming the endpoints, and that has to be in the message");
-		warning.Should().Contain(FlowLabelExpectation.MinimumPackageVersion,
-			because: "the unchecked risk is the silent discard, so the version bounding it belongs here");
+		warning.Should().Contain("PREDATES",
+			because: "the unchecked risk is the silent discard, so the cause bounding it belongs here - stated as a capability, because that is the only form of it a caller can act on");
+		warning.Should().NotMatchRegex(@"\d+\.\d+\.\d+\.\d+",
+			because: "a four-part version number here is the dead end this guard was corrected to stop "
+				+ "handing a caller - convergence refuses every environment below the archive clio ships, "
+				+ "so any floor a message names has already been satisfied by whoever is reading it");
 	}
 
 	[Test]
@@ -862,8 +900,12 @@ public class FlowLabelExpectationTests {
 			because: "the caller has to know which label was left unverified");
 		warning.Should().Contain("the request timed out",
 			because: "'could not verify' without the reason is not actionable");
-		warning.Should().Contain(FlowLabelExpectation.MinimumPackageVersion,
-			because: "the version is what turns the caveat into something the caller can check");
+		warning.Should().Contain("PREDATES",
+			because: "the caveat has to say what the caller can actually check, and a version they are already above is not it");
+		warning.Should().NotMatchRegex(@"\d+\.\d+\.\d+\.\d+",
+			because: "a four-part version number here is the dead end this guard was corrected to stop "
+				+ "handing a caller - convergence refuses every environment below the archive clio ships, "
+				+ "so any floor a message names has already been satisfied by whoever is reading it");
 	}
 
 	[Test]

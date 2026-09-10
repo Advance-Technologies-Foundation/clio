@@ -425,8 +425,8 @@ public class ModifyBusinessProcessCommand(
 			ApprovalBlockExpectation.FromOperations(options.OperationsJson);
 		// Flow labels ride the SAME read-back, and on THIS path the drop is worse than on the build path:
 		// a modify is normally applied to a designer-authored process, where 84.9% of conditional flows
-		// already carry a label, so a caller relabelling a branch against a package below 1.6.0.8 is told the
-		// edit succeeded while the old label is still what is drawn.
+		// already carry a label, so a caller relabelling a branch against a package that PREDATES the label
+		// is told the edit succeeded while the old label is still what is drawn.
 		IReadOnlyList<FlowLabelExpectation.FlowLabel> expectedLabels =
 			FlowLabelExpectation.FromOperations(options.OperationsJson);
 
@@ -466,7 +466,7 @@ public class ModifyBusinessProcessCommand(
 		// ATF session and two DataService round-trips per edit, on a write path, for values it discards.
 		ErrorOr<DescribeProcessResult> described = processDescriber.Describe(
 			new ProcessIdentity(string.IsNullOrWhiteSpace(code) ? null : code, options.ProcessUid, null), null,
-			includeVersionFacts: false);
+			includeVersionFacts: false, bestEffort: true);
 		if (described.IsError) {
 			BlockExpectationReporter.WarnAccessRightsUnverified(logger, intent,
 				described.FirstError.Description);

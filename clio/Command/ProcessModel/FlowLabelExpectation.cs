@@ -10,7 +10,7 @@ namespace Clio.Command.ProcessModel;
 /// <summary>
 /// Post-operation check that a flow <c>label</c> the caller SENT was actually APPLIED by the server.
 /// <para>The failure is silent, and silent in the ordinary direction rather than a corner: a
-/// <c>CrtProcessBuilder</c> below <see cref="MinimumPackageVersion"/> declares no <c>label</c> member on its
+/// <c>CrtProcessBuilder</c> that PREDATES the flow <c>label</c> declares no <c>label</c> member on its
 /// flow descriptor, so its <c>DataContractJsonSerializer</c> DISCARDS the field and the operation still
 /// answers <c>success:true</c>. The caller gets the two identical unlabelled arrows the label exists to
 /// prevent, while every signal they can see says the write worked.</para>
@@ -34,22 +34,18 @@ public static class FlowLabelExpectation {
 	private const string TargetKey = "target";
 	private const string OpKey = "op";
 
-	/// <summary>
-	/// The first <c>CrtProcessBuilder</c> that carries a flow <c>label</c> at all.
-	/// <para>Named once for the WARNING and its test, which is where a drifting literal misleads a caller
-	/// directly. It is deliberately NOT the only occurrence - the four digits are also hand-typed into four
-	/// shipped agent-facing descriptions - and what made a constant worth having is that a version with the
-	/// SAME SHAPE appears in this repository with the opposite lifecycle:
-	/// <c>ExpectedArchiveVersion</c> in the bundled-package guard fixture pins the archive that currently
-	/// ships and MUST move on every rebundle, while this is the version a CAPABILITY arrived in and must not
-	/// move at all. Two literals of the same shape whose correct behaviour diverges is a grep-and-replace
-	/// waiting to corrupt a caller-facing message. (The two are no longer equal - the archive has moved
-	/// several times since - so do not read them as one number.)</para>
-	/// <para>It is also the one thing this guard family names a number for. The three sibling guards describe
-	/// their cause qualitatively ("predates the sendEmail element") and carry no version, deliberately; a
-	/// label's cause is a single archive and saying which one turns "it did not work" into a diagnosis.</para>
-	/// </summary>
-	internal const string MinimumPackageVersion = "1.6.0.8";
+	// There is deliberately NO minimum-version constant here, and no version number in any text this
+	// class renders. A number cannot BE the diagnosis. Both write commands and describe carry
+	// [RequiresPackage] for this package, and RequiredPackageChecker throws on a convergence refusal for
+	// every environment whose installed version is below the one clio SHIPS - so a caller who can reach
+	// this guard at all is already above any floor a message could name, and "update to X.Y.Z.W" is
+	// advice they have already satisfied: a dead end that hides the real cause instead of naming it.
+	//
+	// The reachable cause is a CAPABILITY gap, not an ordering one - a cut from a line that never carried
+	// the member, which docs/agent-instructions/bundled-packages.md records under "a numeric floor cannot
+	// express a CAPABILITY once two branches cut numbers". So the three sibling guards' convention holds
+	// here too: name the cause qualitatively, the way EmailBlockExpectation says "predates the sendEmail
+	// element", and point at clio install-process-builder.
 
 	// How many FLOWS a single warning will name before it says "+ N more". The server accepts 1 000
 	// operations per request, and every one of them can carry a label, so an unbounded join renders a
@@ -245,7 +241,7 @@ public static class FlowLabelExpectation {
 		return $"The operation reported success, but the diagram label on the {subject} "
 			+ $"{Describe(uidAddressed)} could NOT be verified: the flow was addressed by UId, and the "
 			+ "read-back reports a flow's endpoints as element NAMES, so there is nothing to compare. A "
-			+ $"CrtProcessBuilder below {MinimumPackageVersion} discards the label silently, and this check "
+			+ "CrtProcessBuilder that PREDATES the flow label discards it silently, and this read-back "
 			+ "is the only signal that it did. Re-send the same operation naming the SOURCE and TARGET "
 			+ "elements, or re-read the process with describe-business-process, before reporting the label "
 			+ "as applied.";
@@ -292,9 +288,13 @@ public static class FlowLabelExpectation {
 		List<string> parts = [];
 		if (absent.Count != 0) {
 			parts.Add($"The read-back shows no diagram label on the {Subject(absent.Count)} "
-				+ $"{DescribeWanted(absent)}. The usual cause is a deployed CrtProcessBuilder below "
-				+ $"{MinimumPackageVersion}, which declares no 'label' field on a flow and therefore discards "
-				+ "it silently. Update the package (clio install-process-builder) and re-apply the labels, or "
+				+ $"{DescribeWanted(absent)}. The usual cause is a deployed CrtProcessBuilder that PREDATES "
+				+ "the flow label: it declares no 'label' field on a flow and therefore discards it "
+				+ "silently. This is USUALLY a CAPABILITY gap rather than an old version number: clio normally "
+				+ "refuses an environment running a package older than the one it ships, so what is missing is "
+				+ "the member rather than a higher number. Reinstall the package clio ships "
+				+ "(clio install-process-builder) and "
+				+ "re-apply the labels, or "
 				+ "label the connectors in the process designer. Until then a decision with two branches "
 				+ "renders as two identical unlabelled arrows.");
 		}
@@ -336,7 +336,7 @@ public static class FlowLabelExpectation {
 
 		return $"Could not verify that the diagram label on the {Subject(expected.Count)} "
 			+ $"{Describe(expected)} landed: "
-			+ $"{reason}. The operation itself succeeded. A CrtProcessBuilder below {MinimumPackageVersion} "
+			+ $"{reason}. The operation itself succeeded. A CrtProcessBuilder that PREDATES the flow label "
 			+ "discards the field silently, and this read-back is the only signal that it did — re-read the "
 			+ "process with describe-business-process before reporting the labels as applied.";
 	}
@@ -574,10 +574,32 @@ public static class FlowLabelExpectation {
 	}
 
 	// Endpoint names are compared case-insensitively, matching how the server resolves an element by name.
-	private static DescribedFlow? FindFlow(DescribeProcessResult described, FlowLabel wanted) =>
-		described.Flows.FirstOrDefault(flow =>
+	//
+	// AMBIGUITY RETURNS NULL rather than the first match. An endpoint pair is not unique on a
+	// multigraph, and picking arbitrarily would compare one flow's label against another's and report
+	// "the label did not land" on a write that applied exactly as sent - a FALSE POSITIVE in the only
+	// signal this feature has. Null puts it in the same bucket as a flow that is not there at all:
+	// unverified rather than wrongly accused, which is the right way round for a guard.
+	//
+	// The state is not reachable through this package today, and the check is here anyway because the
+	// cost of being wrong is asymmetric. ProcessGraphBuilder.AddFlow refuses a second flow between an
+	// already-connected pair, FindTheFlowBetween refuses to act when more than one matches (naming the
+	// count), and the batch is atomic - a throw aborts before SaveEdited - so any label-writing
+	// operation addressing a duplicated pair is refused before this guard ever runs. That is an
+	// argument about the package clio SHIPS, and deliberately not one about every server: convergence
+	// orders version NUMBERS and cannot promise a capability, which is the whole reason the warning
+	// texts in this file stopped naming a floor. A designer-authored process can also hold such a
+	// pair outright. So the reachability argument is why this is not urgent, and the asymmetric cost
+	// of being wrong - a false accusation in the only signal this feature has - is why it is here.
+	private static DescribedFlow? FindFlow(DescribeProcessResult described, FlowLabel wanted) {
+		// Take(2) is the whole question: one match is the answer, two or more is ambiguity, and a third
+		// tells us nothing further. The server accepts 1 000 operations per request and each can carry a
+		// label, so an unbounded materialisation here is 1 000 full scans of a large designer process.
+		List<DescribedFlow> matches = [.. described.Flows.Where(flow =>
 			string.Equals(flow?.Source, wanted.Source, StringComparison.OrdinalIgnoreCase)
-			&& string.Equals(flow?.Target, wanted.Target, StringComparison.OrdinalIgnoreCase));
+			&& string.Equals(flow?.Target, wanted.Target, StringComparison.OrdinalIgnoreCase)).Take(2)];
+		return matches.Count == 1 ? matches[0] : null;
+	}
 
 	// The supersede key has to agree with FindFlow, which matches endpoints case-insensitively: with an
 	// ordinal key, `setFlow` on "decide"->"Yes" would not supersede an `addFlow` on "Decide"->"Yes" and the

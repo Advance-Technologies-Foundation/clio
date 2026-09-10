@@ -190,14 +190,18 @@ namespace Clio.Command;
 // server behaviour, and the guard fixture still asserts the shipped archive SATISFIES it rather than
 // equals it - so a later documentation-only rebundle moves the bundle and must not move this line.
 //
-// WHY THE LABEL DID NOT MOVE IT. `flows[].label` ships in 1.6.0.8 and these descriptions advertise it, so
-// the rule above reads as though the literal owes a bump. It does not, and the distinction is the one the
-// sendEmail body macros already established: what earns a floor is a capability whose absence the caller
-// cannot be TOLD about. A label is an optional field on an optional concern, and its absence is
-// detectable after the fact - FlowLabelExpectation reads the flows back and names every label that is not
-// what is drawn. Raising the floor instead would refuse every build and every edit on an environment one
-// archive behind, including the ones that ask for no label at all, to protect a field the read-back
-// already covers. The floor is for what clio DEPENDS on; a warning is for what it merely offers.
+// WHY THE LABEL DID NOT MOVE IT. These descriptions advertise `flows[].label`, so the rule above reads as
+// though the literal owes a bump. It does not, and the distinction is the one the sendEmail body macros
+// already established: what earns a floor is a capability whose absence the caller cannot be TOLD about.
+// A label is an optional field on an optional concern, and its absence is detectable after the fact -
+// FlowLabelExpectation reads the flows back and names every label that is not what is drawn.
+//
+// An earlier version of this comment argued the point differently: that raising the floor would refuse
+// every build on an environment one archive behind. That reasoning was wrong and is worth recording as
+// wrong, because it reads plausibly - BundledPackageConvergence already imposes exactly that refusal on
+// anything below the archive clio ships, so a raised floor would add no refusal that is not already
+// there. The conclusion survives its own argument: the floor is for what clio DEPENDS on, a warning is
+// for what it merely offers.
 [RequiresPackage(BundledPackages.ProcessBuilderPackageName, "1.6.0.3",
 	Hint = BundledPackages.ProcessBuilderInstallHint)]
 public sealed class CreateBusinessProcessOptions : EnvironmentOptions {
@@ -410,8 +414,8 @@ public class CreateBusinessProcessCommand(
 		// part. Email needs no separate expectation here: ReportDescribed covers it from intent.
 		IReadOnlyList<ApprovalBlockExpectation.ApprovalExpectation> expectedApproval =
 			ApprovalBlockExpectation.FromDescriptor(options.DescriptorJson);
-		// Flow labels ride the SAME read-back for the same reason: a package below 1.6.0.8 declares no
-		// `label` member on a flow and discards it, silently, on a build that answers success.
+		// Flow labels ride the SAME read-back for the same reason: a package that PREDATES the label
+		// declares no `label` member on a flow and discards it, silently, on a build that answers success.
 		IReadOnlyList<FlowLabelExpectation.FlowLabel> expectedLabels =
 			FlowLabelExpectation.FromDescriptor(options.DescriptorJson);
 		if (intent.IsEmpty && expectedApproval.Count == 0 && expectedLabels.Count == 0) {
@@ -430,7 +434,7 @@ public class CreateBusinessProcessCommand(
 		// ATF session and two DataService round-trips per create, on a write path, for values it discards.
 		ErrorOr<DescribeProcessResult> described =
 			processDescriber.Describe(new ProcessIdentity(schemaName, null, null), null,
-				includeVersionFacts: false);
+				includeVersionFacts: false, bestEffort: true);
 		if (described.IsError) {
 			// An unreadable description is not evidence of a drop, so this never fails the command. It is not
 			// silence either when access rights were requested: that guard is the only automated check that a

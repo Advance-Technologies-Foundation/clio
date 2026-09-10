@@ -73,8 +73,11 @@ public static class DescribeProcessPrompt {
 		wording, most flows that have one were labelled by hand, and a `setFlow` or `addFlow` carrying a
 		`label` overwrites it silently. Report the label you found before proposing to change it. An ABSENT
 		`label` is genuinely ambiguous and must not be reported as "this flow has no label": the server omits
-		the key both when the flow carries none and when the environment's `CrtProcessBuilder` is older than
-		1.6.0.8 and cannot report one at all. Distinguish them with `list-packages` before making a claim.
+		the key both when the flow carries none and when the environment's `CrtProcessBuilder` PREDATES
+		the label member and cannot report one at all. A version NUMBER cannot tell those apart - clio already
+		refuses a package older than the one it ships, so a high number is no evidence the member is there. If
+		NO flow in the process reports a label, treat the read as uninformative rather than concluding the
+		process is unlabelled.
 		Note: expressions (mapping formulas, filters) are returned RAW, not decoded into semantics — narrate
 		structure, types, flow, and parameter sources; where a condition/filter is not decodable, say so
 		explicitly instead of guessing.

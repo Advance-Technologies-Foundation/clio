@@ -66,7 +66,7 @@ public sealed class ModifyBusinessProcessCommandTests {
 				["accessRights"] = JsonDocument.Parse("{\"object\":\"Order\"}").RootElement.Clone()
 			}
 		};
-		_processDescriber.Describe(Arg.Any<ProcessIdentity>(), null, Arg.Any<bool>())
+		_processDescriber.Describe(Arg.Any<ProcessIdentity>(), null, Arg.Any<bool>(), Arg.Any<bool>())
 			.Returns(new DescribeProcessResult { Elements = [element] });
 		List<string> warnings = [];
 		_logger.When(logger => logger.WriteWarning(Arg.Any<string>()))
@@ -76,7 +76,7 @@ public sealed class ModifyBusinessProcessCommandTests {
 		_command.Execute(options);
 
 		// Assert
-		_processDescriber.Received(1).Describe(Arg.Any<ProcessIdentity>(), null, false);
+		_processDescriber.Received(1).Describe(Arg.Any<ProcessIdentity>(), null, false, true);
 		warnings.Should().NotContain(message => message.Contains("Could not verify"),
 			because: "the UId was in hand the whole time, so declaring the check unperformable would be a "
 				+ "wrong warning in a workflow the tool supports");
@@ -94,7 +94,7 @@ public sealed class ModifyBusinessProcessCommandTests {
 		};
 		_modifyBusinessProcessService.ModifyProcess("sandbox", Arg.Any<ModifyBusinessProcessRequest>())
 			.Returns(BuildResult());
-		_processDescriber.Describe(Arg.Any<ProcessIdentity>(), null, Arg.Any<bool>())
+		_processDescriber.Describe(Arg.Any<ProcessIdentity>(), null, Arg.Any<bool>(), Arg.Any<bool>())
 			.Returns(_ => throw new InvalidOperationException("read-back exploded"));
 
 		// Act
@@ -118,7 +118,7 @@ public sealed class ModifyBusinessProcessCommandTests {
 		};
 		_modifyBusinessProcessService.ModifyProcess("sandbox", Arg.Any<ModifyBusinessProcessRequest>())
 			.Returns(BuildResult());
-		_processDescriber.Describe(Arg.Any<ProcessIdentity>(), null, Arg.Any<bool>()).Returns(
+		_processDescriber.Describe(Arg.Any<ProcessIdentity>(), null, Arg.Any<bool>(), Arg.Any<bool>()).Returns(
 			new DescribeProcessResult { Elements = [new DescribedElement { Name = "Mail", Email = null }] });
 		List<string> warnings = [];
 		_logger.When(logger => logger.WriteWarning(Arg.Any<string>()))
@@ -158,7 +158,7 @@ public sealed class ModifyBusinessProcessCommandTests {
 				["accessRights"] = JsonDocument.Parse("{\"object\":\"Order\"}").RootElement.Clone()
 			}
 		};
-		_processDescriber.Describe(Arg.Any<ProcessIdentity>(), null, Arg.Any<bool>())
+		_processDescriber.Describe(Arg.Any<ProcessIdentity>(), null, Arg.Any<bool>(), Arg.Any<bool>())
 			.Returns(new DescribeProcessResult { Elements = [element] });
 		List<string> warnings = [];
 		_logger.When(logger => logger.WriteWarning(Arg.Any<string>()))
@@ -192,7 +192,7 @@ public sealed class ModifyBusinessProcessCommandTests {
 				["accessRights"] = JsonDocument.Parse("{\"object\":\"Order\"}").RootElement.Clone()
 			}
 		};
-		_processDescriber.Describe(Arg.Any<ProcessIdentity>(), null, Arg.Any<bool>())
+		_processDescriber.Describe(Arg.Any<ProcessIdentity>(), null, Arg.Any<bool>(), Arg.Any<bool>())
 			.Returns(new DescribeProcessResult { Elements = [element] });
 		List<string> warnings = [];
 		_logger.When(logger => logger.WriteWarning(Arg.Any<string>()))
@@ -227,7 +227,7 @@ public sealed class ModifyBusinessProcessCommandTests {
 				["accessRights"] = JsonDocument.Parse("{\"object\":\"Order\"}").RootElement.Clone()
 			}
 		};
-		_processDescriber.Describe(Arg.Any<ProcessIdentity>(), null, Arg.Any<bool>())
+		_processDescriber.Describe(Arg.Any<ProcessIdentity>(), null, Arg.Any<bool>(), Arg.Any<bool>())
 			.Returns(new DescribeProcessResult { Elements = [element] });
 		List<string> warnings = [];
 		_logger.When(logger => logger.WriteWarning(Arg.Any<string>()))
@@ -237,7 +237,7 @@ public sealed class ModifyBusinessProcessCommandTests {
 		_command.Execute(options);
 
 		// Assert
-		_processDescriber.Received(1).Describe(Arg.Any<ProcessIdentity>(), null, false);
+		_processDescriber.Received(1).Describe(Arg.Any<ProcessIdentity>(), null, false, true);
 		warnings.Should().ContainSingle(message => message.Contains("EVERY record of the target object"),
 			because: "the element is left acting on every row of its object and carries no output parameter to "
 				+ "say so, so this warning is the only signal the caller gets");
@@ -255,7 +255,7 @@ public sealed class ModifyBusinessProcessCommandTests {
 		};
 		_modifyBusinessProcessService.ModifyProcess("sandbox", Arg.Any<ModifyBusinessProcessRequest>())
 			.Returns(BuildResult());
-		_processDescriber.Describe(Arg.Any<ProcessIdentity>(), null, Arg.Any<bool>())
+		_processDescriber.Describe(Arg.Any<ProcessIdentity>(), null, Arg.Any<bool>(), Arg.Any<bool>())
 			.Returns(Error.Failure(description: "the environment refused the read"));
 		List<string> warnings = [];
 		_logger.When(logger => logger.WriteWarning(Arg.Any<string>()))
@@ -286,7 +286,7 @@ public sealed class ModifyBusinessProcessCommandTests {
 		};
 		_modifyBusinessProcessService.ModifyProcess("sandbox", Arg.Any<ModifyBusinessProcessRequest>())
 			.Returns(BuildResult());
-		_processDescriber.Describe(Arg.Any<ProcessIdentity>(), null, Arg.Any<bool>()).Returns(new DescribeProcessResult {
+		_processDescriber.Describe(Arg.Any<ProcessIdentity>(), null, Arg.Any<bool>(), Arg.Any<bool>()).Returns(new DescribeProcessResult {
 			Elements = [new DescribedElement { Name = "ReadOrders", UserTaskName = "ReadDataUserTask" }]
 		});
 		List<string> warnings = [];
@@ -312,7 +312,7 @@ public sealed class ModifyBusinessProcessCommandTests {
 		};
 		_modifyBusinessProcessService.ModifyProcess("sandbox", Arg.Any<ModifyBusinessProcessRequest>())
 			.Returns(BuildResult());
-		_processDescriber.Describe(Arg.Any<ProcessIdentity>(), null, Arg.Any<bool>()).Returns(
+		_processDescriber.Describe(Arg.Any<ProcessIdentity>(), null, Arg.Any<bool>(), Arg.Any<bool>()).Returns(
 			new DescribeProcessResult { Elements = [new DescribedElement { Name = "Grant" }] });
 		List<string> warnings = [];
 		_logger.When(logger => logger.WriteWarning(Arg.Any<string>()))
@@ -338,7 +338,7 @@ public sealed class ModifyBusinessProcessCommandTests {
 		};
 		_modifyBusinessProcessService.ModifyProcess("sandbox", Arg.Any<ModifyBusinessProcessRequest>())
 			.Returns(BuildResult());
-		_processDescriber.Describe(Arg.Any<ProcessIdentity>(), null, Arg.Any<bool>())
+		_processDescriber.Describe(Arg.Any<ProcessIdentity>(), null, Arg.Any<bool>(), Arg.Any<bool>())
 			.Returns(Error.Failure("Describe.Failed", "the environment did not answer"));
 		List<string> warnings = [];
 		_logger.When(logger => logger.WriteWarning(Arg.Any<string>()))
@@ -363,7 +363,7 @@ public sealed class ModifyBusinessProcessCommandTests {
 		};
 		_modifyBusinessProcessService.ModifyProcess("sandbox", Arg.Any<ModifyBusinessProcessRequest>())
 			.Returns(BuildResult());
-		_processDescriber.Describe(Arg.Any<ProcessIdentity>(), null, Arg.Any<bool>()).Returns(
+		_processDescriber.Describe(Arg.Any<ProcessIdentity>(), null, Arg.Any<bool>(), Arg.Any<bool>()).Returns(
 			new DescribeProcessResult { Elements = [new DescribedElement { Name = "SomethingElse" }] });
 		List<string> warnings = [];
 		_logger.When(logger => logger.WriteWarning(Arg.Any<string>()))
@@ -587,7 +587,7 @@ public sealed class ModifyBusinessProcessCommandTests {
 			.Returns(BuildResult());
 		// The old label is STILL on the flow - the shape a package below the capability version leaves after
 		// answering success, and the one a caller cannot distinguish from "my edit applied".
-		_processDescriber.Describe(Arg.Any<ProcessIdentity>(), null, Arg.Any<bool>())
+		_processDescriber.Describe(Arg.Any<ProcessIdentity>(), null, Arg.Any<bool>(), Arg.Any<bool>())
 			.Returns(new DescribeProcessResult {
 				Elements = [],
 				Flows = [new DescribedFlow { Source = "Decide", Target = "Yes", Label = "Rejected" }]
@@ -602,7 +602,7 @@ public sealed class ModifyBusinessProcessCommandTests {
 		// Assert
 		result.Should().Be(0,
 			because: "a dropped label is a caveat about an edit that SUCCEEDED, never a failure");
-		_processDescriber.Received(1).Describe(Arg.Any<ProcessIdentity>(), null, false);
+		_processDescriber.Received(1).Describe(Arg.Any<ProcessIdentity>(), null, false, true);
 		warnings.Should().ContainSingle(
 			warning => warning.Contains("Decide -> Yes (asked for 'Approved', drawn 'Rejected')"),
 			because: "the caller asked for 'Approved' and the connector still says something else - so the "
@@ -627,7 +627,7 @@ public sealed class ModifyBusinessProcessCommandTests {
 		_modifyBusinessProcessService.ModifyProcess("sandbox", Arg.Any<ModifyBusinessProcessRequest>())
 			.Returns(BuildResult());
 		// The edit took: the flow comes back with the new label.
-		_processDescriber.Describe(Arg.Any<ProcessIdentity>(), null, Arg.Any<bool>())
+		_processDescriber.Describe(Arg.Any<ProcessIdentity>(), null, Arg.Any<bool>(), Arg.Any<bool>())
 			.Returns(new DescribeProcessResult {
 				Elements = [],
 				Flows = [new DescribedFlow { Source = "Decide", Target = "Yes", Label = "Approved" }]
@@ -659,7 +659,7 @@ public sealed class ModifyBusinessProcessCommandTests {
 			.Returns(BuildResult());
 		// The read-back reports endpoints as element NAMES, so the UId-addressed expectation can never match
 		// it - which is the whole point: the label may have landed or been discarded and nothing here can say.
-		_processDescriber.Describe(Arg.Any<ProcessIdentity>(), null, Arg.Any<bool>())
+		_processDescriber.Describe(Arg.Any<ProcessIdentity>(), null, Arg.Any<bool>(), Arg.Any<bool>())
 			.Returns(new DescribeProcessResult {
 				Elements = [],
 				Flows = [new DescribedFlow { Source = "Decide", Target = "Yes", Label = "Approved" }]
@@ -694,7 +694,7 @@ public sealed class ModifyBusinessProcessCommandTests {
 		_modifyBusinessProcessService.ModifyProcess("sandbox", Arg.Any<ModifyBusinessProcessRequest>())
 			.Returns(BuildResult());
 		// Decide->No exists and came back with NO label: a real drop. The UId-addressed one cannot be checked.
-		_processDescriber.Describe(Arg.Any<ProcessIdentity>(), null, Arg.Any<bool>())
+		_processDescriber.Describe(Arg.Any<ProcessIdentity>(), null, Arg.Any<bool>(), Arg.Any<bool>())
 			.Returns(new DescribeProcessResult {
 				Elements = [],
 				Flows = [new DescribedFlow { Source = "Decide", Target = "No" }]
@@ -730,7 +730,7 @@ public sealed class ModifyBusinessProcessCommandTests {
 		};
 		_modifyBusinessProcessService.ModifyProcess("sandbox", Arg.Any<ModifyBusinessProcessRequest>())
 			.Returns(BuildResult());
-		_processDescriber.Describe(Arg.Any<ProcessIdentity>(), null, Arg.Any<bool>())
+		_processDescriber.Describe(Arg.Any<ProcessIdentity>(), null, Arg.Any<bool>(), Arg.Any<bool>())
 			.Returns(Error.Failure(description: "the request timed out"));
 		List<string> warnings = [];
 		_logger.When(logger => logger.WriteWarning(Arg.Any<string>()))

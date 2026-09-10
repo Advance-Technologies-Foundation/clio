@@ -4,10 +4,19 @@ Run `080eaf6f-aae2-47f3-ac38-f48900f0a0c3`, blind `claude -p`, clio MCP only, st
 
 | | |
 |---|---|
-| clio | rebuilt from `feature/ENG-91853-flow-labels`, binary carries `FlowLabelExpectation` and the `1.6.0.8` floor |
+| clio | rebuilt from `feature/ENG-91853-flow-labels`, binary carries `FlowLabelExpectation` and, at the time, a `1.6.0.8` constant in its warning text. Calling that a "floor" was wrong even then — the enforced floor is `[RequiresPackage] 1.6.0.3` — and the constant has since been REMOVED: a review showed no caller can be below it, because clio refuses an environment running a package older than the archive it ships. The warnings now name the cause qualitatively and carry no version |
 | Guidance library | re-pinned 1.13.99 → `74a34f33` / **1.13.100**; the served `process-branch-conditions` article verified to contain LABEL BOTH ARMS and the corpus figures |
 | Stand | the dev stand, core 10.1.37.0, `CrtProcessBuilder` **1.6.0.9** |
 | Suite | `…-flow-labels-manual-test-prompt.md` at `76fe8b2fb`, plus a run header (env alias, `BPLabel TC<NN>` naming, no package operations, Activity completion permitted and to be listed, refusals to be quoted verbatim) |
+
+**Which archive this evidence covers.** The stand carried `CrtProcessBuilder` **1.6.0.9** when this run
+was taken, and the manifest records that. The branch has rebundled several times since and now ships a
+later cut, so this report is evidence about 1.6.0.9 and is NOT re-readable as evidence about the
+shipped archive. Two things close part of the gap and neither replaces a re-run: the flow-label MCP
+e2e cases were re-run against the shipped archive after it was installed on the same stand, and
+convergence now refuses an environment below the bundled version outright, so a stand still on 1.6.0.9
+cannot even be reached by the write commands until it is reinstalled. Re-running the full suite against
+the shipped cut is deliberately out of scope for this document; it is a new run with its own manifest.
 
 Nine of ten cases ran; TC-08 needs a package older than the capability and was correctly reported
 unrunnable. **Every claim below was re-verified from the stand after the run**, through the branch

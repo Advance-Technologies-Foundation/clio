@@ -100,7 +100,7 @@ public sealed class DescribeProcessToolTests {
 
 	[Test]
 	[Category("Unit")]
-	[Description("The prompt's per-flow field list names EVERY field describe reports, and this pins it field by field because the prompt does NOT defer that list to guidance - step 2 sends the caller to get-guidance for the element catalog and connection-rule vocabulary only. An agent driven by this prompt is told what a flow carries and has no reason to look further, so a field added to the tool and not to the prompt is invisible to it. That is exactly what happened to `label`: the tool, the capability map, the unit tests and the e2e all gained it while the prompt still enumerated six fields, and nothing turned red because this fixture asserted only the tool name and the identity arguments. Add the next flow field here as well as to the prompt.")]
+	[Description("The prompt's per-flow field list names EVERY field describe reports, and this pins it field by field because the prompt does NOT defer that list to guidance - step 2 sends the caller to get-guidance for the element catalog and connection-rule vocabulary only. An agent driven by this prompt is told what a flow carries and has no reason to look further, so a field added to the tool and not to the prompt is invisible to it. That is exactly what happened to `label`: the tool, the capability map, the unit tests and the e2e all gained it while the prompt still enumerated six fields, and nothing turned red because this fixture asserted only the tool name and the identity arguments. Add the next flow field here as well as to the prompt. It also pins the ABSENT-label wording in BOTH clio-owned describe channels - the tool [Description] and the prompt - because an agent reads one or the other, and the inverse version pin in BundledProcessBuilderPackageTests only forbids a NUMBER: deleting the sentence outright would make that test greener rather than redder.")]
 	public void DescribeProcessPrompt_ShouldEnumerateEveryFlowFieldDescribeReports() {
 		// Act
 		string prompt = DescribeProcessPrompt.DescribeProcessGuidance("UsrProcess_493d4c9", "dev");
@@ -118,10 +118,22 @@ public sealed class DescribeProcessToolTests {
 			because: "the last field of the enumeration continues on the next line and would otherwise fall "
 				+ "outside the fragment above");
 
-		prompt.Should().Contain("1.6.0.8",
+		// The TOOL description carries the same disambiguation, and an agent may read either one. Asserted
+		// on both because the inverse pin in BundledProcessBuilderPackageTests only forbids a VERSION -
+		// deleting the sentence outright would make that test greener, not redder.
+		string toolText = ((System.ComponentModel.DescriptionAttribute)typeof(DescribeProcessTool)
+			.GetMethod(nameof(DescribeProcessTool.DescribeProcess))!
+			.GetCustomAttributes(typeof(System.ComponentModel.DescriptionAttribute), false).Single()).Description;
+		toolText.Should().Contain("PREDATES",
+			because: "an agent reading the tool contract instead of the prompt must reach the same warning "
+				+ "about what an absent label can mean");
+		prompt.Should().Contain("PREDATES",
 			because: "an absent label has two meanings - no label, or a package that cannot report one - and "
-				+ "the prompt has to name the version that separates them, or an agent reports the ambiguous "
-				+ "read as a fact");
+				+ "the prompt has to name the second one, or an agent reports the ambiguous read as a fact");
+		prompt.Should().Contain("version NUMBER cannot tell those apart",
+			because: "naming a version here would be worse than saying nothing: clio already refuses a "
+				+ "package older than the one it ships, so a high number reads as evidence the member is "
+				+ "present when it is no evidence at all");
 	}
 
 	[Test]

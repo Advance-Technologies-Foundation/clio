@@ -440,6 +440,32 @@ public class BundledProcessBuilderPackageTests {
 		return Encoding.UTF8.GetString(buffer.ToArray());
 	}
 
+	// True when <paramref name="typeName"/>'s OWN declaration carries the `label` DataMember. The
+	// archive ships SOURCE and every contract type sits in its own `#region Class: <Name>` block, so the
+	// region is that type's extent - which is what turns a name appearing on three contracts into an
+	// answer about ONE of them.
+	//
+	// Two ways this could quietly become the whole-blob check it replaced, both closed here. The region
+	// name is matched WITH its line terminator, so a later `#region Class: <Name>V2` cannot be found by
+	// a prefix search for <Name>. And an UNTERMINATED region answers false rather than widening: taking
+	// the rest of the archive as the window would let a member on any later type satisfy the probe,
+	// which is exactly the vacuity this helper exists to remove. `DescribeProcessFlow` is the last
+	// region in its file, so that is not a hypothetical shape.
+	private static bool DeclaresLabelOn(string archive, string typeName) {
+		int start = archive.IndexOf($"#region Class: {typeName}\r", StringComparison.Ordinal);
+		if (start < 0) {
+			start = archive.IndexOf($"#region Class: {typeName}\n", StringComparison.Ordinal);
+		}
+
+		if (start < 0) {
+			return false;
+		}
+
+		int end = archive.IndexOf("#endregion", start, StringComparison.Ordinal);
+		return end >= 0
+			&& archive[start..end].Contains("[DataMember(Name = \"label\")]", StringComparison.Ordinal);
+	}
+
 	/// <summary>
 	/// Reads the shipped version the way production does — through the real
 	/// <see cref="BundledPackageCatalog"/> over the real archive in this test project's build output.
@@ -975,15 +1001,24 @@ public class BundledProcessBuilderPackageTests {
 				+ "clio predicts a stored label the server never stores - which makes clio report DIFFERENT "
 				+ "text on a write that landed exactly as sent, in a message whose two quoted strings look "
 				+ "identical because the offending character is invisible");
-		archive.Should().Contain("[DataMember(Name = \"label\")]",
-			because: "the SAME hand-mirror as 'success' above, one release later and with a louder failure. "
-				+ "clio's warning tells every caller to update to CrtProcessBuilder "
-				+ "1.6.0.8 when a label does not come back, and that sentence is only true if the archive "
-				+ "clio SHIPS actually declares the member. A rebundle from a pre-label commit satisfies the "
-				+ "SHA (recomputed from whatever was packed), the version (passed on the command line), both "
-				+ "stamps, the gate count and the operation count - every other pin in this fixture - and "
-				+ "then clio reports 'your labels were discarded, install 1.6.0.8' about the very archive it "
-				+ "just installed");
+		// A field NAME alone cannot be a probe, and this line used to be one. `label` lives on THREE
+		// contracts in this archive - the create flow descriptor, the modify operation descriptor and the
+		// describe projection - so a containment check over the whole blob is satisfied by any ONE of them
+		// while the other two are absent. docs/agent-instructions/bundled-packages.md rejects exactly that
+		// shape: "only a FIELD ON A NAMED TYPE settles it". All three are asserted because clio's warning
+		// needs all three to be true - two write paths that STORE the label and a read side that REPORTS
+		// it - and an archive carrying only the describe member would satisfy a bare name check while the
+		// write path silently drops the field and clio blames the caller for an archive it just installed.
+		DeclaresLabelOn(archive, "ProcessFlowDescriptor").Should().BeTrue(
+			because: "the CREATE path stores the label from this descriptor; without the member a build "
+				+ "answers success and stores nothing");
+		DeclaresLabelOn(archive, "ProcessOperationDescriptor").Should().BeTrue(
+			because: "the MODIFY path stores it from this one, and relabelling an existing flow is the case "
+				+ "clio's post-write warning exists for - 84.9% of shipped conditional flows already carry a "
+				+ "human's wording, so a silent drop here overwrites nothing and reports success");
+		DeclaresLabelOn(archive, "DescribeProcessFlow").Should().BeTrue(
+			because: "the READ side reports it, and the read-back IS the guard - without this member every "
+				+ "label reads as absent and clio reports a correct write as a dropped label");
 		archive.Should().Contain("BodyStyle = WebMessageBodyStyle.Wrapped",
 			because: "the wrapper name clio looks for (PingResult) is a FUNCTION of this setting; flipping it to "
 				+ "Bare removes the envelope and the verdict inverts silently");
@@ -1049,28 +1084,6 @@ public class BundledProcessBuilderPackageTests {
 			["modify-business-process prompt"] =
 				Clio.Command.McpServer.Prompts.ProcessDesigner.ModifyBusinessProcessPrompt.PromptByProcess(
 					"env-placeholder", "process-placeholder"),
-			// Added after the flow-label review found three agent-facing surfaces naming a package version
-			// with nothing checking them. The describe tool is the one that documents the AMBIGUITY of an
-			// absent label, so its version is what an agent uses to decide whether a null means "no label" or
-			// "this package cannot report labels" - a stale number there produces a confident wrong answer.
-			["describe-business-process description"] =
-				GetToolDescription(typeof(Clio.Command.McpServer.Tools.ProcessDesigner.DescribeProcessTool)),
-			["describe-business-process prompt"] =
-				Clio.Command.McpServer.Prompts.ProcessDesigner.DescribeProcessPrompt.DescribeProcessGuidance(
-					"process-placeholder", "env-placeholder"),
-			// The caller-facing WARNING, the one surface that both names a version and tells the reader to act
-			// on it ("Update the package (clio install-process-builder)"). It was asserted only against its own
-			// constant, so the pair passed for 9.9.9.9.
-			["flow-label dropped warning"] =
-				Clio.Command.ProcessModel.FlowLabelExpectation.BuildWarning([
-					new Clio.Command.ProcessModel.FlowLabelExpectation.FlowLabelMiss(
-						new Clio.Command.ProcessModel.FlowLabelExpectation.FlowLabel("A", "B", "Yes"),
-						string.Empty)
-				]),
-			["flow-label unverified warning"] =
-				Clio.Command.ProcessModel.FlowLabelExpectation.BuildUnverifiedWarning(
-					[new Clio.Command.ProcessModel.FlowLabelExpectation.FlowLabel("A", "B", "Yes")],
-					"reason-placeholder")
 		};
 		var literalPattern = new System.Text.RegularExpressions.Regex(@"CrtProcessBuilder (\d+\.\d+\.\d+\.\d+)");
 
@@ -1079,18 +1092,19 @@ public class BundledProcessBuilderPackageTests {
 		// Act & Assert
 		foreach (KeyValuePair<string, string> surface in surfaces) {
 			System.Text.RegularExpressions.MatchCollection matches = literalPattern.Matches(surface.Value);
-			// The "sentence still exists" guard reads the WIDE net, not the shaped one. The shaped pattern
-			// requires the version to sit immediately after the package name, and three of these surfaces do
-			// not say it that way: two write "CrtProcessBuilder BELOW 1.6.0.8" and one wraps the name in
-			// markdown backticks with a line break before the number. Asserting NotBeEmpty on the shaped
-			// pattern would fail on a CORRECT surface, and the fix is not to reword prose to suit a regex - it
-			// is to check what matters, which is that every four-part version here is installable.
-			System.Text.RegularExpressions.MatchCollection anyMatches =
-				anyVersionPattern.Matches(surface.Value);
-			anyMatches.Should().NotBeEmpty(
+			// Back to the SHAPED pattern. This briefly read the wide net instead, to accommodate four
+			// surfaces added here that stated the version in another shape - and that traded a guard on
+			// five surfaces for a convenience on four, because any stray four-part number then satisfied
+			// it and deleting a "CrtProcessBuilder X.Y.Z.W" sentence stopped turning this red. Those four
+			// surfaces no longer name a version at all - the flow-label texts now describe their cause as a
+			// CAPABILITY, since convergence puts every reader above any floor a message could name - so
+			// they are out of this registry and guarded by their own inverse test below.
+			matches.Should().NotBeEmpty(
 				because: $"the {surface.Key} documents the version a route ships from or the remedy to install — "
 					+ "if the sentence was removed on purpose, remove the surface from this test in the same "
 					+ "commit");
+			System.Text.RegularExpressions.MatchCollection anyMatches =
+				anyVersionPattern.Matches(surface.Value);
 			foreach (System.Text.RegularExpressions.Match match in matches) {
 				AssertInstallableFromThisDistribution(match.Groups[1].Value, surface.Key);
 			}
@@ -1100,6 +1114,85 @@ public class BundledProcessBuilderPackageTests {
 			foreach (System.Text.RegularExpressions.Match match in anyMatches) {
 				AssertInstallableFromThisDistribution(match.Value, surface.Key);
 			}
+		}
+	}
+
+	[Test]
+	[Description("The archive probe answers about ONE named type. `label` is declared on three contracts "
+		+ "in this same archive, so a probe that answered from anywhere in the blob would report a member "
+		+ "present on a type that had lost it - the bare-name check this helper replaced. All three "
+		+ "production call sites assert TRUE, so none of them can see this direction; DescribeProcessConnection "
+		+ "is a real region in the shipped archive that carries no label, which anchors the test on the "
+		+ "artifact rather than on a fabricated string.")]
+	public void DeclaresLabelOn_ShouldBeFalse_ForATypeThatDoesNotDeclareIt() {
+		// Arrange
+		string archive = ReadBundledArchiveAsText();
+
+		// Act
+		bool onAnotherContract = DeclaresLabelOn(archive, "DescribeProcessConnection");
+		bool onAnAbsentType = DeclaresLabelOn(archive, "NoSuchContractInThisArchive");
+
+		// Assert
+		onAnotherContract.Should().BeFalse(
+			because: "the member sits on three OTHER contracts in this archive, so answering true here "
+				+ "would mean the probe reads the whole blob and settles nothing about a named type");
+		onAnAbsentType.Should().BeFalse(
+			because: "a type the archive does not contain declares nothing, and a probe that cannot find "
+				+ "its type must fail closed rather than widen its window");
+	}
+
+	[Test]
+	[Description("The flow-label surfaces must name NO package version. A number cannot be the diagnosis "
+		+ "here: every write command and describe carries [RequiresPackage] for this package, and "
+		+ "RequiredPackageChecker throws on a convergence refusal for any environment below the archive clio "
+		+ "SHIPS - so a reader who can see one of these texts is already above any floor it could quote, and "
+		+ "the remedy would be one they have satisfied. The reachable cause is a CAPABILITY gap - a cut from "
+		+ "a line that never carried the member - which is why these read like the sibling guards ('predates "
+		+ "the sendEmail element'). This is the INVERSE of the literal pin above and exists because the "
+		+ "number was removed on purpose: without it, re-adding a helpful-looking version turns nothing red.")]
+	public void FlowLabelSurfaces_ShouldNameNoPackageVersion() {
+		// Arrange
+		var surfaces = new Dictionary<string, string> {
+			["describe-business-process description"] =
+				GetToolDescription(typeof(Clio.Command.McpServer.Tools.ProcessDesigner.DescribeProcessTool)),
+			["describe-business-process prompt"] =
+				Clio.Command.McpServer.Prompts.ProcessDesigner.DescribeProcessPrompt.DescribeProcessGuidance(
+					"process-placeholder", "env-placeholder"),
+			["flow-label dropped warning"] =
+				Clio.Command.ProcessModel.FlowLabelExpectation.BuildWarning([
+					new Clio.Command.ProcessModel.FlowLabelExpectation.FlowLabelMiss(
+						new Clio.Command.ProcessModel.FlowLabelExpectation.FlowLabel("A", "B", "Yes"), string.Empty)
+				]),
+			["flow-label unverified warning"] =
+				Clio.Command.ProcessModel.FlowLabelExpectation.BuildUnverifiedWarning(
+					[new Clio.Command.ProcessModel.FlowLabelExpectation.FlowLabel("A", "B", "Yes")], "reason-placeholder"),
+			// BuildWarning has THREE branches and the entry above renders only the absent one, so a version
+			// re-added to either of the others would have passed. BuildUidAddressedWarning is a fourth
+			// caller-facing string entirely, emitted from BlockExpectationReporter.
+			["flow-label different-text warning"] =
+				Clio.Command.ProcessModel.FlowLabelExpectation.BuildWarning([
+					new Clio.Command.ProcessModel.FlowLabelExpectation.FlowLabelMiss(
+						new Clio.Command.ProcessModel.FlowLabelExpectation.FlowLabel("A", "B", "Yes"), "No")
+				]),
+			["flow-label failed-clear warning"] =
+				Clio.Command.ProcessModel.FlowLabelExpectation.BuildWarning([
+					new Clio.Command.ProcessModel.FlowLabelExpectation.FlowLabelMiss(
+						new Clio.Command.ProcessModel.FlowLabelExpectation.FlowLabel("A", "B", string.Empty), "Old")
+				]),
+			["flow-label uid-addressed caveat"] =
+				Clio.Command.ProcessModel.FlowLabelExpectation.BuildUidAddressedWarning(
+					[new Clio.Command.ProcessModel.FlowLabelExpectation.FlowLabel("A", "B", "Yes")])
+		};
+		var anyVersion = new System.Text.RegularExpressions.Regex(@"\d+\.\d+\.\d+\.\d+");
+
+		// Act & Assert
+		foreach (KeyValuePair<string, string> surface in surfaces) {
+			surface.Value.Should().NotBeNullOrEmpty(
+				because: $"the {surface.Key} has to render something, or this test passes on an empty string");
+			anyVersion.Matches(surface.Value).Should().BeEmpty(
+				because: $"the {surface.Key} states its cause as a capability, not a version - a four-part "
+					+ "number there is advice the reader has already satisfied, and it hides the real cause "
+					+ "instead of naming it");
 		}
 	}
 

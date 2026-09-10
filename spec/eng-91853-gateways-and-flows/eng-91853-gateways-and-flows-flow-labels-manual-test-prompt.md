@@ -8,7 +8,11 @@ reachable through clio will do, as long as business processes can be created thr
 Application/section: none. Every process below is standalone and takes its input directly, so no
 section has to be configured first.
 
-As of 2026-09-08 that stand carries `CrtProcessBuilder` **1.6.0.9**, which is what the change ships. Nine
+As of 2026-09-08 that stand carried `CrtProcessBuilder` **1.6.0.9**. That is NOT what the change ships -
+the shipped archive is whatever `ExpectedArchiveVersion` pins in
+`clio.tests/Common/BundledProcessBuilderPackageTests.cs`, and it has moved several times since this
+line was written. Read the installed version off the stand before trusting any result here, never off
+this sentence. Nine
 of the ten cases run there; TC-08 needs an older package and says so itself.
 
 **Read this before you start, because one case depends on the order.** This suite is about the text a
@@ -271,10 +275,18 @@ literally because the reaction is what is under test.
 
 Preconditions:
 
-- The environment's process-building package (`CrtProcessBuilder`) is **older than 1.6.0.8** — the
-  version in which an arrow first became able to carry words. Check it before you start and report the
-  version you found. If it is already 1.6.0.8 or newer, **stop this case** and report it as unrunnable
-  on this environment; do not downgrade anything.
+- The environment's process-building package (`CrtProcessBuilder`) **predates the flow label** — it does
+  not declare the member, so an arrow cannot carry words. The member first shipped in 1.6.0.8, but do
+  NOT use that number as the test: a higher-numbered cut from a branch line that never carried the
+  member also qualifies, and reading the version as the criterion would wrongly rule it out. Report the
+  version you found and whether labels come back at all. If the package carries the member, **stop this
+  case** and report it as unrunnable on this environment; do not downgrade anything.
+
+- **This case is very likely unrunnable anywhere, by construction.** Both write commands and describe
+  carry `[RequiresPackage]` for this package, and clio refuses an environment running one older than the
+  archive it ships — so on nearly every route a pre-label package is rejected before the guard under
+  test could ever run. What remains reachable is the capability case above. If you cannot produce the
+  state, say so and move on; do not manufacture it.
 
 **Measured 2026-09-08, after the change was verified: no environment in reach can run this case, and
 that is expected rather than a hole.** `Creatio` is at **1.6.0.9** — this feature's own verification
@@ -287,7 +299,8 @@ move on.
 What that costs is small, and worth knowing so the gap is not over-read: this is the one case in the
 suite whose behaviour is already pinned automatically. Two unit tests per write path assert exactly
 this warning — that the read-back happens for a labels-only payload, and that the text naming the
-flow, the version and `install-process-builder` reaches the caller. What TC-08 adds is the real
+flow, the CAUSE and `install-process-builder` reaches the caller. Those tests now assert the text
+carries NO version number at all, so do not read its absence as a regression. What TC-08 adds is the real
 server's silence underneath it, not the warning itself.
 
 Business requirement:

@@ -3714,10 +3714,18 @@ stories:
       and nothing lingers under the old one. Measured through the exact route FreeTheDefaultSlot()
       prescribes. So none of the three remedies the brief proposed was needed, and the guard they
       invite would have broken the shipped remedy on the flows most likely to carry a label.
-      Package CrtProcessBuilder 1.6.0.16 (sources 9c9aee2, tag crtprocessbuilder-1.6.0.16; each
-      superseded cut is tagged too - 1.6.0.9 at 849dd2f pre-review, then .10 dc6583f, .11 5e94574,
-      .12 66a1c08 across review passes one to three, .13 dff43da for the Copilot findings):
-      flows[].label on the build
+      Package CrtProcessBuilder 1.6.1.4 (sources 9c86d9b094cb35590f163bc5b1f627389a1c8262, tag
+      crtprocessbuilder-1.6.1.4). Do NOT read that pair from here: the authoritative values are
+      ExpectedArchiveVersion and ExpectedProducingCommit in
+      clio.tests/Common/BundledProcessBuilderPackageTests.cs, which the rebundle script writes.
+      This sentence is prose and prose goes stale at the next rebundle - it already did, naming
+      1.6.0.16 / 9c9aee2 through four later cuts, and a reviewer taking those numbers would have run
+      the article's staleness and tag controls against an archive that is not shipped. Superseded
+      cuts, as dated chronology only: 1.6.0.9 at 849dd2f pre-review, then .10 dc6583f, .11 5e94574,
+      .12 66a1c08 across review passes one to three, .13 dff43da for the Copilot findings, .16
+      9c9aee2, then the 1.6.1.x line after the origin/master merge.
+
+      What the package carries, unchanged since .8: flows[].label on the build
       path, label on addFlow/setFlow, label in the describe projection, and a refusal of label on
       setFlowCondition/removeFlow, where it deserializes off the shared operation descriptor and is
       read by nobody. On setFlow, OMITTED keeps / EMPTY clears / text replaces - and the label is
@@ -3743,7 +3751,10 @@ stories:
       listing). And the null-vs-absent claim this change first shipped was WRONG in both directions:
       measured on a 1.6.0.8 stand, the server omits `label` for an unlabelled flow exactly as an older
       server omits it for every flow, so absence cannot say which - the DTO doc, both tool descriptions
-      and N10 now say so and point at the package version as the way to tell.
+      and N10 now say so. (Later corrected again: those surfaces first pointed at the installed package
+      version as the way to tell, which a review showed cannot work - convergence refuses anything below
+      the archive clio ships, so a number is no evidence the member is present. They now say an
+      all-absent read is uninformative.)
       Two things fixed because they blocked the canonical rebundle: the rebundle script still ran the
       package tests from the path the package repo moved them out of (MSB1009, which reads as a broken
       checkout - the project is DISCOVERED now, and zero matches is a refusal rather than a silently
